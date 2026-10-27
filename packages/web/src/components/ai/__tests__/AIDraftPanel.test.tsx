@@ -112,6 +112,18 @@ describe("AIDraftPanel", () => {
     expect(createAIDraftMock).not.toHaveBeenCalled();
   });
 
+  it.each([
+    [new ApiError(422, "No event details", "NOTHING_TO_DRAFT_FROM"), "There is nothing to draft from yet: no event details or words from the guest. Continue with manual review."],
+    [new ApiError(404, "Enquiry not found", "NOT_FOUND"), "A draft is made only for the venue you work at. Continue with manual review."],
+    [new ApiError(502, "AI draft generation failed", "AI_DRAFT_GENERATION_FAILED"), "AI draft generation is unavailable. Continue with manual review."],
+  ])("says why a server-built draft did not come (%s)", async (error, words) => {
+    getAIAssistantStatusMock.mockResolvedValue(configuredStatus());
+    const request = vi.fn(() => Promise.reject(error));
+    render(<AIDraftPanel title="Enquiry summary" useCase="enquiry_summary" actionLabel="Draft summary" request={request} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Draft summary" }));
+    expect((await screen.findByRole("alert")).textContent).toBe(words);
+  });
+
   it("renders nothing and never offers generation when no provider is configured", async () => {
     getAIAssistantStatusMock.mockResolvedValue(disabledStatus());
     const { container } = render(

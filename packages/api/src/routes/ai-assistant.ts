@@ -7,7 +7,8 @@ import {
   AIAssistantDisabledError,
   createAIGenerationAdapterFromEnv,
   generateAIDraft,
-  scrubDraftContext,
+  DRAFTS_BUILT_ON_THE_SERVER,
+  scrubDraftRequest,
   type AIGenerationAdapter,
 } from "../services/ai-assistant.js";
 import { AIBudgetReachedError, venueAllowanceMeter, type AIUsageMeter } from "../services/ai-usage.js";
@@ -24,12 +25,13 @@ import { aiDraftVenue } from "../utils/query.js";
 // an account with no venue, or a client's, cannot spend a venue's allowance.
 //
 // The screen builds a general draft's context, so the server holds it to the
-// privacy rule before any provider reads it (release audit ai-1): contact
-// details, people's names and record ids are dropped and every email address
-// and phone number in its words is taken out (scrubDraftContext). An
-// enquiry's summary is built on the server from the enquiry itself
-// (routes/enquiry-summary-draft.ts); a summary sent here is held to the same
-// rule.
+// privacy rule before any provider reads it (release audit ai-1): it may hold
+// at most MAX_AI_DRAFT_CONTEXT_CHARACTERS, keys naming contact details, a
+// person or a record id are dropped, and every email address and phone number
+// in its words and its tone is taken out (scrubDraftRequest). An enquiry's
+// summary and a proposal's message are built on the server from the venue's
+// own record, each by its own route, and are refused here (400
+// DRAFT_HAS_ITS_OWN_ROUTE).
 // ---------------------------------------------------------------------------
 
 function validationError(reply: FastifyReply, details: unknown): FastifyReply {
@@ -57,6 +59,13 @@ export async function aiAssistantRoutes(
   server.post("/drafts", { preHandler: [authenticate] }, async (request, reply) => {
     const parsed = CreateAIDraftRequestSchema.safeParse(request.body);
     if (!parsed.success) return validationError(reply, parsed.error.issues);
+    const ownRoute = DRAFTS_BUILT_ON_THE_SERVER[parsed.data.useCase];
+    if (ownRoute !== undefined) {
+      return reply.status(400).send({
+        error: `This draft is built from the venue's own record by ${ownRoute}`,
+        code: "DRAFT_HAS_ITS_OWN_ROUTE",
+      });
+    }
     const venueId = aiDraftVenue(request.user);
     if (venueId === null) {
       return reply.status(403).send({ error: "AI drafts are made for the venue you work at", code: "FORBIDDEN" });
@@ -70,7 +79,7 @@ export async function aiAssistantRoutes(
     try {
       const draft = await generateAIDraft(
         adapter,
-        { ...parsed.data, context: scrubDraftContext(parsed.data.context) },
+        scrubDraftRequest(parsed.data),
         { venueId, userId: request.user.id },
       );
       return { data: draft };

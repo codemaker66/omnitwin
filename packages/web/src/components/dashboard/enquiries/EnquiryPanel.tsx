@@ -7,6 +7,7 @@ import { ActivityIndicator, ActivityStatus } from "../../shared/Activity.js";
 import { AIDraftPanel } from "../../ai/AIDraftPanel.js";
 import { draftEnquirySummary } from "../../../api/ai-assistant.js";
 import { useAIDraftsAvailable } from "../../../hooks/use-ai-drafts-available.js";
+import { useAuthStore } from "../../../stores/auth-store.js";
 import { StageChip } from "./EnquiryStages.js";
 import { EnquiryNameText, enquiryName } from "./EnquiryLedger.js";
 import type { RoomPhoto } from "./enquiry-room-photo.js";
@@ -680,12 +681,16 @@ function EnquiryDrafts({ enquiry }: { readonly enquiry: Enquiry }): ReactElement
   // The panel still mounts only once someone opens the section. A proposal's
   // message is drafted in the proposal itself, where it can be used.
   const available = useAIDraftsAvailable();
+  // A summary is drafted for the venue the person works at, and charged to
+  // it: an enquiry at another venue (a platform admin reads every venue's) is
+  // not offered one, as the server would not find it there.
+  const workVenueId = useAuthStore((state) => state.user?.venueId ?? null);
   const [open, setOpen] = useState(false);
   // The server builds the summary from the enquiry it holds, so only the id
   // goes: never the guest's name, email address or message (ai-1).
   const enquiryId = enquiry.id;
   const summarise = useCallback(() => draftEnquirySummary(enquiryId), [enquiryId]);
-  if (available !== true) return null;
+  if (available !== true || workVenueId !== enquiry.venueId) return null;
   return (
     <section className="enq-section">
       <details className="enq-drafts" onToggle={(event) => { setOpen(event.currentTarget.open); }}>

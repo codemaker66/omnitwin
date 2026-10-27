@@ -1183,6 +1183,7 @@ export {
   AIDraftSendStateSchema,
   AIDraftContextSchema,
   CreateAIDraftRequestSchema,
+  MAX_AI_DRAFT_CONTEXT_CHARACTERS,
   AIAssistantStatusSchema,
   AIDraftSchema,
   ProposalMessageDraftSchema,

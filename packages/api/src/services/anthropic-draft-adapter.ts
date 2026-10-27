@@ -13,6 +13,7 @@ import {
   failedCall,
   meterAnthropicMessage,
   reserveForAnthropicRequest,
+  undatedModel,
   type AICallAttribution,
   type AIUsageMeter,
   type PriceTable,
@@ -167,10 +168,6 @@ export function readAnthropicStructuredAnswer(message: Anthropic.Beta.BetaMessag
   }
 }
 
-/** The model asked, or a dated snapshot of it ("claude-opus-5-5-20261001"). */
-function sameModel(served: string, requested: string): boolean {
-  return served === requested || (served.startsWith(`${requested}-`) && /^\d{8}$/u.test(served.slice(requested.length + 1)));
-}
 
 /**
  * Whether a model other than the one asked wrote the answer: a server-side
@@ -181,7 +178,8 @@ function sameModel(served: string, requested: string): boolean {
 export function servedByAnotherModel(message: Anthropic.Beta.BetaMessage, requestedModel: string): boolean {
   if ((message.usage.iterations ?? []).some((entry) => entry.type === "fallback_message")) return true;
   if (message.content.some((block) => block.type === "fallback")) return true;
-  return !sameModel(message.model, requestedModel);
+  // The model asked, or a dated snapshot of it ("claude-opus-5-5-20261001").
+  return undatedModel(message.model) !== undatedModel(requestedModel);
 }
 
 /** The draft's text, or an error when Claude declined, was cut off, or

@@ -7,7 +7,8 @@ import * as schema from "../db/schema.js";
 import type { Env } from "../env.js";
 import { aiAssistantRoutes } from "../routes/ai-assistant.js";
 import type { AIGenerationAdapter, AIGenerationInput } from "../services/ai-assistant.js";
-import { generateAIDraft, isWithheldContextKey, scrubDraftContext } from "../services/ai-assistant.js";
+import { contextKeyWords, generateAIDraft, isWithheldContextKey, scrubDraftContext } from "../services/ai-assistant.js";
+import { scrubContactDetails } from "../services/proposal-message-draft.js";
 
 process.env["DATABASE_URL"] = "postgresql://mock:mock@localhost/mock";
 process.env["JWT_SECRET"] = "test-jwt-secret-that-is-at-least-32-characters-long";
@@ -70,8 +71,8 @@ describe("AI assistant routes", () => {
       url: "/ai/drafts",
       headers: { authorization: `Bearer ${staffToken()}` },
       payload: {
-        useCase: "enquiry_summary",
-        context: { enquiryId: "demo", guestCount: 90 },
+        useCase: "truth_mode_explanation",
+        context: { targetId: "demo", guestCount: 90 },
       },
     });
     expect(res.statusCode).toBe(503);
@@ -131,7 +132,7 @@ describe("AI assistant draft generation", () => {
 // ---------------------------------------------------------------------------
 
 describe("what a general draft may send a provider (ai-1)", () => {
-  const ENQUIRY_WORDS = "Jane Doe, jane@example.com, call me on 07700 900123; my father is a wheelchair user and two guests are coeliac";
+  const WORDS = "Jane Doe, jane@example.com, call me on 07700 900123; my father is a wheelchair user and two guests are coeliac";
 
   async function capturing(): Promise<{ readonly app: FastifyInstance; readonly seen: AIGenerationInput[] }> {
     const seen: AIGenerationInput[] = [];
@@ -139,7 +140,7 @@ describe("what a general draft may send a provider (ai-1)", () => {
       status: { configured: true, provider: "capture", model: "capture-model", disabledReason: null },
       generateText(input) {
         seen.push(input);
-        return Promise.resolve("A dinner enquiry for about ninety guests.");
+        return Promise.resolve("A dinner for about ninety guests.");
       },
     };
     const app = Fastify();
@@ -148,77 +149,102 @@ describe("what a general draft may send a provider (ai-1)", () => {
     return { app, seen };
   }
 
-  it("drafts an enquiry summary with no email, phone, name or id reaching the provider", async () => {
+  const asStaff = { authorization: `Bearer ${staffToken()}` };
+
+  it.each([
+    ["enquiry_summary", "POST /enquiries/:id/summary-draft"],
+    ["proposal_draft", "POST /proposals/:id/message-draft"],
+  ])("refuses a %s, which is built on the server from the venue's own record, asking the provider nothing", async (useCase, route) => {
     const { app, seen } = await capturing();
     try {
       const res = await app.inject({
-        method: "POST",
-        url: "/ai/drafts",
-        headers: { authorization: `Bearer ${staffToken()}` },
+        method: "POST", url: "/ai/drafts", headers: asStaff,
+        payload: { useCase, context: { enquiryId: "8d6c1a52-0000-4000-8000-000000000001", name: "Jane Doe", email: "jane@example.com", message: WORDS } },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json()).toEqual({ error: `This draft is built from the venue's own record by ${route}`, code: "DRAFT_HAS_ITS_OWN_ROUTE" });
+      expect(seen).toEqual([]);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("drops contact, person and id keys at any depth and scrubs every string and the tone before the provider reads them", async () => {
+    const { app, seen } = await capturing();
+    try {
+      const res = await app.inject({
+        method: "POST", url: "/ai/drafts", headers: asStaff,
         payload: {
-          useCase: "enquiry_summary",
+          useCase: "beo_supplier_instruction_draft",
+          requestedTone: "Plain, for Jane at jane@example.com or 07700 900123",
           context: {
-            enquiryId: "8d6c1a52-0000-4000-8000-000000000001",
-            name: "Jane Doe",
-            email: "jane@example.com",
-            guestPhone: "07700 900123",
-            eventType: "dinner",
-            estimatedGuests: 90,
-            message: ENQUIRY_WORDS,
-            details: { contact_email: "jane@example.com", notes: ["Ring 0141 552 1234 after six"] },
-            currentStatus: "submitted",
+            handoffPackId: "8d6c1a52-0000-4000-8000-000000000001",
+            guestEmail: "jane@example.com",
+            organiser: { displayName: "Jane Doe" },
+            clientName: "Jane Doe",
+            summary: WORDS,
+            pickList: [{ name: "Round table 5ft", quantity: 12 }],
+            room: { name: "Grand Hall" },
+            supplierInstructions: ["Ring the florist on 0141 552 1234 after six"],
           },
         },
       });
       expect(res.statusCode).toBe(200);
-      expect(seen).toHaveLength(1);
       const [input] = seen;
       if (input === undefined) throw new Error("expected the provider to be asked");
-      expect(Object.keys(input.context).sort()).toEqual(["currentStatus", "details", "estimatedGuests", "eventType", "message"]);
       expect(input.context).toEqual({
-        eventType: "dinner",
-        estimatedGuests: 90,
-        message: "Jane Doe, (email address), call me on (phone number); my father is a wheelchair user and two guests are coeliac",
-        details: { notes: ["Ring (phone number) after six"] },
-        currentStatus: "submitted",
+        summary: "Jane Doe, (email address), call me on (phone number); my father is a wheelchair user and two guests are coeliac",
+        pickList: [{ name: "Round table 5ft", quantity: 12 }],
+        room: { name: "Grand Hall" },
+        supplierInstructions: ["Ring the florist on (phone number) after six"],
       });
       for (const sent of [JSON.stringify(input.context), input.prompt, input.instructions]) {
-        expect(sent).not.toMatch(/jane@example\.com|07700|900123|0141 552 1234|enquiryId|8d6c1a52/u);
+        expect(sent).not.toMatch(/jane@example\.com|07700|900123|0141 552 1234|8d6c1a52|displayName|clientName/u);
       }
-      expect(input.prompt).toContain("(email address)");
-      expect(input.prompt).toContain("(phone number)");
-      // The draft's own record of its context is what was sent.
-      expect(res.json<{ data: { body: string } }>().data.body).toBe("A dinner enquiry for about ninety guests.");
+      expect(input.instructions).toContain("Tone: Plain, for Jane at (email address) or (phone number).");
     } finally {
       await app.close();
     }
   });
 
-  it("holds every general draft to the same rule, not only the enquiry summary", async () => {
+  it("refuses a context too large to send, before anything reads it", async () => {
     const { app, seen } = await capturing();
     try {
       const res = await app.inject({
-        method: "POST",
-        url: "/ai/drafts",
-        headers: { authorization: `Bearer ${staffToken()}` },
-        payload: {
-          useCase: "beo_supplier_instruction_draft",
-          context: { handoffPackId: "pack-1", summary: "Florist on 07700 900123", supplierInstructions: ["Email flowers@example.com by noon"] },
-        },
+        method: "POST", url: "/ai/drafts", headers: asStaff,
+        payload: { useCase: "truth_mode_explanation", context: { note: "x".repeat(16_001) } },
       });
-      expect(res.statusCode).toBe(200);
-      expect(seen[0]?.context).toEqual({ summary: "Florist on (phone number)", supplierInstructions: ["Email (email address) by noon"] });
+      expect(res.statusCode).toBe(400);
+      expect(res.json()).toMatchObject({ code: "VALIDATION_ERROR" });
+      expect(seen).toEqual([]);
     } finally {
       await app.close();
     }
   });
 
-  it("withholds contact, name and id keys, and keeps words that only end in id", () => {
-    for (const key of ["email", "guestEmail", "contact_email", "e-mail", "phone", "guestPhone", "mobile", "telephone", "address",
-      "postcode", "name", "guestName", "clientName", "full_name", "id", "enquiryId", "handoffPackId", "targetId", "venue_id", "ids", "bookingIds"]) {
+  // Release review, 27 October 2026: the email pattern was tried at every
+  // letter of a run with no space, so 40,000 such letters took two seconds
+  // and the time grew with the square. Anchored at a word's start, it is one try.
+  it("scrubs long runs of text with no space in time that grows with the text, not its square", () => {
+    const started = performance.now();
+    for (const text of ["x".repeat(200_000), `a@${"b".repeat(200_000)}`, "a.".repeat(100_000), "1-".repeat(100_000)]) {
+      scrubContactDetails(text);
+    }
+    // Unanchored, the first alone took well over a minute.
+    expect(performance.now() - started).toBeLessThan(2_000);
+  });
+
+  it("reads a key word by word: contact details, a person and ids go, a room's or an item's name stays", () => {
+    expect(contextKeyWords("guestFullName")).toEqual(["guest", "full", "name"]);
+    expect(contextKeyWords("handoff_pack_id")).toEqual(["handoff", "pack", "id"]);
+    expect(contextKeyWords("COVIDNote")).toEqual(["covid", "note"]);
+    for (const key of ["email", "guestEmail", "contact_email", "e-mail", "phone", "guestPhone", "tel", "contactNumber", "mobile", "mobileNumber",
+      "address", "venueAddress", "postcode", "instagram", "guest", "client", "organiser", "contact", "bookerName", "displayName", "guestFullName",
+      "firstName", "clientName", "id", "enquiryId", "enquiry-id", "handoffPackId", "targetId", "venue_id", "ids", "bookingIds", "uuid", "ref", "reference"]) {
       expect(isWithheldContextKey(key), key).toBe(true);
     }
-    for (const key of ["paid", "valid", "eventType", "estimatedGuests", "message", "selectedTarget", "roomName", "summary", "humanReviewRequired"]) {
+    for (const key of ["paid", "valid", "COVID", "PAID", "name", "roomName", "itemName", "pickList", "pickListItems", "mobileBar", "microphones",
+      "eventType", "estimatedGuests", "message", "selectedTarget", "summary", "humanReviewRequired", "supplierInstructions"]) {
       expect(isWithheldContextKey(key), key).toBe(false);
     }
     expect(scrubDraftContext({ count: 3, flag: true, none: null, list: [1, "a@b.co"] })).toEqual({ count: 3, flag: true, none: null, list: [1, "(email address)"] });

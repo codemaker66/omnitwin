@@ -394,12 +394,13 @@ const PRIVACY: LegalDocument = {
               detail:
                 "Object storage for the venue's imagery and for the 3D capture of its rooms.",
             },
-            // What the AI drafts send is read from the code that builds them:
-            // services/enquiry-summary-draft.ts and proposal-message-draft.ts.
+            // What is sent is read from the code that builds it:
+            // services/enquiry-summary-draft.ts, proposal-message-draft.ts
+            // and event-brief-draft.ts (the planner's brief reader, T-650).
             {
               term: "Anthropic",
               detail:
-                "AI drafting for the venue's events team, used only when a member of the team asks for a draft: a summary of your enquiry, or the wording of a message to you about a proposal. Anthropic's Claude is sent the details of your event (the occasion, date, guest count and room) and the words of your enquiry and of your messages about the proposal, with any email address or phone number in them taken out first. A message to you is also sent your name, so that it can address you; a summary is not. Your email address and phone number are not sent. A member of the events team reads every draft and decides what to use; nothing it writes is sent to you without a person choosing to send it.",
+                "AI help for the venue's events team, used only when a member of the team asks for it: a summary of your enquiry, the wording of a message to you about a proposal, or reading a description of your event that the team has typed into the planner. Anthropic's Claude is sent what that piece of work needs: the details of your event (such as the occasion, date, guest count and room), where your enquiry stands and the day it arrived, and the words of your enquiry and of your messages about the proposal, or the team's own description of your event. Email addresses and phone numbers it can recognise in those words are taken out first; anything else written there, such as a name, is sent as written. A message to you is also sent your name, so that it can address you. The email address and phone number you gave in the enquiry form's own fields are not sent. A member of the events team reads everything it writes and decides what to use; nothing it writes is sent to you without a person choosing to send it.",
             },
           ],
         },

@@ -43,8 +43,8 @@ const ENQUIRY = "a5555555-5555-4555-8555-555555555555";
 
 const WORDS = "Jane Doe, jane@example.com, call me on 07700 900123; my father is a wheelchair user and two guests are coeliac";
 
-function as(role: string, venueId: string | null): { authorization: string } {
-  return { authorization: `Bearer ${JSON.stringify({ id: randomUUID(), email: `${role}@example.test`, role, platformRole: "none", venueId })}` };
+function as(role: string, venueId: string | null, platformRole: "none" | "admin" = "none"): { authorization: string } {
+  return { authorization: `Bearer ${JSON.stringify({ id: randomUUID(), email: `${role}@example.test`, role, platformRole, venueId })}` };
 }
 
 describe.skipIf(testUrl === undefined)("enquiry summary drafts built on the server, on isolated PostgreSQL", () => {
@@ -149,7 +149,10 @@ describe.skipIf(testUrl === undefined)("enquiry summary drafts built on the serv
     }
   }, 60_000);
 
-  it("summarises from the enquiry the venue holds, with no name, contact details or id reaching the provider", async () => {
+  // The guest's name, email address and phone number as the form's own fields
+  // hold them are never sent; a name the guest wrote in their message is, as
+  // written (the privacy page says so), with contact details taken out.
+  it("summarises from the enquiry the venue holds, sending no name, contact or id field and no contact details in the guest's words", async () => {
     await enquiry();
     const answer = await ask(as("staff", VENUE));
     expect(answer.statusCode).toBe(200);
@@ -193,7 +196,19 @@ describe.skipIf(testUrl === undefined)("enquiry summary drafts built on the serv
   });
 
   it.each([
+    ["the venue's hallkeeper", as("hallkeeper", VENUE)],
+    ["the venue's manager", as("manager", VENUE)],
+    ["the venue's admin", as("admin", VENUE)],
+    ["a platform admin who works at the venue", as("admin", VENUE, "admin")],
+  ])("summarises for %s, as the enquiry inbox admits them", async (_, headers) => {
+    await enquiry();
+    expect((await ask(headers)).statusCode).toBe(200);
+    expect(seen).toHaveLength(1);
+  });
+
+  it.each([
     ["an account with no venue", as("admin", null)],
+    ["a platform admin with no venue", as("admin", null, "admin")],
     ["a client of the venue", as("client", VENUE)],
     ["a planner at the venue", as("planner", VENUE)],
   ])("refuses %s, sending nothing", async (_, headers) => {

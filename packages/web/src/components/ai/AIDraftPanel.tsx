@@ -3,6 +3,7 @@ import { Bot, ShieldCheck } from "lucide-react";
 import { ActivityIndicator } from "../shared/Activity.js";
 import type { AIDraft, AIDraftUseCase, CanonicalJsonValue } from "@omnitwin/types";
 import { createAIDraft, getAIAssistantStatus } from "../../api/ai-assistant.js";
+import { ApiError } from "../../api/client.js";
 import "./AIDraftPanel.css";
 
 type StatusState =
@@ -29,6 +30,19 @@ type AIDraftPanelProps = DraftSource & {
   readonly useCase: AIDraftUseCase;
   readonly actionLabel?: string;
 };
+
+/** Why no draft came, in the panel's words. A server-built draft can be
+ *  refused for what it would be drawn from; anything else is the AI being
+ *  unavailable, and the work carries on by hand. */
+function failureWords(error: unknown): string {
+  if (error instanceof ApiError && error.status === 422 && error.code === "NOTHING_TO_DRAFT_FROM") {
+    return "There is nothing to draft from yet: no event details or words from the guest. Continue with manual review.";
+  }
+  if (error instanceof ApiError && error.status === 404) {
+    return "A draft is made only for the venue you work at. Continue with manual review.";
+  }
+  return "AI draft generation is unavailable. Continue with manual review.";
+}
 
 export function AIDraftPanel({
   title,
@@ -68,11 +82,8 @@ export function AIDraftPanel({
     const asked = request !== undefined ? request() : createAIDraft({ useCase, context, requestedTone });
     asked
       .then((draft) => { setDraftState({ kind: "ready", draft }); })
-      .catch(() => {
-        setDraftState({
-          kind: "error",
-          message: "AI draft generation is unavailable. Continue with manual review.",
-        });
+      .catch((error: unknown) => {
+        setDraftState({ kind: "error", message: failureWords(error) });
       });
   }, [context, request, requestedTone, status, useCase]);
 

@@ -302,17 +302,47 @@ export function buildAIDraftPrompt(input: CreateAIDraftRequest): string {
 
 // What a general draft's context may not carry to a provider, whatever the
 // screen that built it sent (release audit ai-1, 27 October 2026): contact
-// details, a person's name, and record ids, none of which an internal draft
-// needs. Ids are matched as camelCase or snake_case endings ("enquiryId",
-// "handoff_pack_id"), so a word that merely ends in "id" ("paid") stays.
-const CONTACT_KEY = /e-?mail|phone|mobile|telephone|whats_?app|fax|address|postcode|zip_?code/iu;
-const NAME_KEY = /^(?:name|full_?name|first_?name|last_?name|sur_?name|guest_?name|client_?name|contact_?name|customer_?name|enquirer_?name)$/iu;
-const ID_KEY = /^id$|^ids$|(?:Id|ID|_id|Ids|IDs|_ids)$/u;
+// details, a person, and record ids, none of which an internal draft needs.
+// A key is read word by word, split at camelCase, digits, "_", "-" and ".":
+// "guestEmail" is guest + email, "handoff_pack_id" ends in id, while "paid",
+// "COVID", "roomName" and "pickListItems" stay. A person's name is withheld
+// where the key says whose it is ("clientName", "organiser", "displayName");
+// a bare "name" is a room's or an item's as often as a person's, and stays,
+// its words scrubbed like every other string. The enquiry summary and the
+// proposal's message are built on the server and refused here.
+const CONTACT_WORDS: ReadonlySet<string> = new Set([
+  "email", "mail", "phone", "telephone", "tel", "whatsapp", "fax", "address", "postcode", "zip", "zipcode",
+  "instagram", "twitter", "facebook", "linkedin",
+]);
+const PERSON_WORDS: ReadonlySet<string> = new Set([
+  "guest", "client", "contact", "customer", "enquirer", "booker", "organiser", "organizer", "attendee", "person", "user",
+  "host", "bride", "groom", "couple",
+]);
+const NAME_QUALIFIERS: ReadonlySet<string> = new Set(["first", "last", "full", "sur", "given", "family", "display", "middle", "maiden", "nick", "preferred"]);
+const ID_WORDS: ReadonlySet<string> = new Set(["id", "ids", "uuid", "uuids", "ref", "refs", "reference", "references"]);
+
+/** A key's words, lower case: "guestFullName" is guest, full, name. */
+export function contextKeyWords(key: string): readonly string[] {
+  return key
+    .replace(/([a-z0-9])([A-Z])/gu, "$1 $2")
+    .replace(/([A-Z]+)([A-Z][a-z])/gu, "$1 $2")
+    .split(/[^A-Za-z]+/u)
+    .filter((word) => word !== "")
+    .map((word) => word.toLowerCase());
+}
 
 /** Whether a context key is one a general draft never sends: contact
- *  details, a person's name or a record id. */
+ *  details, a person, or a record id. */
 export function isWithheldContextKey(key: string): boolean {
-  return CONTACT_KEY.test(key) || NAME_KEY.test(key) || ID_KEY.test(key);
+  const words = contextKeyWords(key);
+  if (words.length === 0) return false;
+  if (words.some((word) => CONTACT_WORDS.has(word))) return true;
+  // A mobile number, never the mobile bar.
+  if (words.includes("mobile") && (words.length === 1 || words.includes("number") || words.includes("phone"))) return true;
+  if (ID_WORDS.has(words[words.length - 1] ?? "")) return true;
+  // A person, or a name that says it is a person's.
+  if (words.some((word) => PERSON_WORDS.has(word))) return true;
+  return words.includes("name") && words.some((word) => NAME_QUALIFIERS.has(word));
 }
 
 // Array.isArray does not narrow a readonly array.
@@ -342,6 +372,24 @@ export function scrubDraftContext(context: Readonly<Record<string, CanonicalJson
     kept[key] = scrubContextValue(value);
   }
   return kept;
+}
+
+/** The drafts built on the server from the venue's own record, each by its
+ *  own route; POST /ai/drafts refuses them rather than send a context a
+ *  screen built (release audit ai-1). */
+export const DRAFTS_BUILT_ON_THE_SERVER: Readonly<Partial<Record<AIDraftUseCase, string>>> = {
+  enquiry_summary: "POST /enquiries/:id/summary-draft",
+  proposal_draft: "POST /proposals/:id/message-draft",
+};
+
+/** A general draft request as it may reach a provider: its context held to
+ *  the rule above, and its tone, which goes into the rules, scrubbed too. */
+export function scrubDraftRequest(request: CreateAIDraftRequest): CreateAIDraftRequest {
+  return {
+    ...request,
+    context: scrubDraftContext(request.context),
+    ...(request.requestedTone === undefined ? {} : { requestedTone: scrubContactDetails(request.requestedTone).text }),
+  };
 }
 
 /** A review-gated draft, from a call attributed to the venue it is for and the person who asked. */

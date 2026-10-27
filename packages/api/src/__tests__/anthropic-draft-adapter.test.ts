@@ -222,6 +222,20 @@ describe("Anthropic adapter", () => {
     })]);
   });
 
+  it("takes a dated snapshot of the asked model as the asked model, and prices it at that model's rates", async () => {
+    const usage = new TallyAIUsageMeter();
+    const adapter = new AnthropicAIGenerationAdapter({
+      model: "claude-opus-5-5",
+      apiKey: "test-key-not-real",
+      usage,
+      send: () => Promise.resolve({ ...message([text("Dear Morgan, thank you.")]), model: "claude-opus-5-5-20261001" }),
+    });
+    const draft = await generateAIDraft(adapter, { useCase: "proposal_draft", context: { clientName: "Morgan" } }, ATTRIBUTION);
+    expect(draft.body).toBe("Dear Morgan, thank you.");
+    // 10 in and 20 out at Opus 5.5's $4/$20, not the table's highest rates.
+    expect(usage.entries).toEqual([expect.objectContaining({ outcome: "ok", model: "claude-opus-5-5-20261001", costMicroUsd: 10 * 4 + 20 * 20 })]);
+  });
+
   it("is chosen from the environment without a base URL", () => {
     const env = validateEnv({
       ...BASE_ENV,

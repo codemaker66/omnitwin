@@ -50,9 +50,18 @@ export type AIDraftSendState = z.infer<typeof AIDraftSendStateSchema>;
 export const AIDraftContextSchema = z.record(z.string(), CanonicalJsonValueSchema);
 export type AIDraftContext = z.infer<typeof AIDraftContextSchema>;
 
+/** The most a draft's context may hold, as canonical JSON. The largest the
+ *  server builds (a proposal's message: the client's words and latest
+ *  message, 2,000 characters each, with the event's facts) is under 5,000;
+ *  this bounds what a screen can send to be scrubbed and sent on. */
+export const MAX_AI_DRAFT_CONTEXT_CHARACTERS = 16_000;
+
 export const CreateAIDraftRequestSchema = z.object({
   useCase: AIDraftUseCaseSchema,
-  context: AIDraftContextSchema,
+  context: AIDraftContextSchema.refine(
+    (context) => stableCanonicalJson(context).length <= MAX_AI_DRAFT_CONTEXT_CHARACTERS,
+    { message: `A draft's context may hold at most ${String(MAX_AI_DRAFT_CONTEXT_CHARACTERS)} characters.` },
+  ),
   requestedTone: SafePlanningWordingSchema.optional(),
 }).strict();
 export type CreateAIDraftRequest = z.infer<typeof CreateAIDraftRequestSchema>;

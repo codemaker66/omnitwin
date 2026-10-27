@@ -18,6 +18,7 @@ const { mocks } = vi.hoisted(() => ({
   mocks: {
     addToast: vi.fn(),
     aiDraftsAvailable: vi.fn<() => boolean | undefined>(),
+    workVenueId: vi.fn<() => string>(() => "venue-1"),
     countEnquiryStages: vi.fn(),
     createOpportunityFromEnquiry: vi.fn(),
     getCalendar: vi.fn(),
@@ -60,8 +61,8 @@ vi.mock("../../../stores/toast-store.js", () => ({
 
 vi.mock("../../../stores/auth-store.js", () => ({
   useAuthStore: (
-    selector: (state: { readonly user: { readonly name: string } }) => unknown,
-  ): unknown => selector({ user: { name: "Elaine MacGregor" } }),
+    selector: (state: { readonly user: { readonly name: string; readonly venueId: string } }) => unknown,
+  ): unknown => selector({ user: { name: "Elaine MacGregor", venueId: mocks.workVenueId() } }),
 }));
 
 vi.mock("../../ai/AIDraftPanel.js", () => ({
@@ -848,6 +849,19 @@ describe("EnquiriesView decisions", () => {
       expect(post.mock.calls.some(([to]) => to === "/ai/drafts")).toBe(false);
     } finally {
       post.mockRestore();
+    }
+  });
+
+  it("offers no AI summary of an enquiry at a venue the person does not work at", async () => {
+    mocks.listEnquiryPage.mockResolvedValue(page([enquiry(3)], {}));
+    mocks.workVenueId.mockReturnValue("venue-2");
+    try {
+      render(<EnquiriesView canDraftWithAI />);
+      fireEvent.click(await screen.findByRole("button", { name: /^Client 3,/u }));
+      expect(await screen.findByRole("heading", { name: "Client 3" })).toBeTruthy();
+      expect(screen.queryByText("Draft with AI")).toBeNull();
+    } finally {
+      mocks.workVenueId.mockReturnValue("venue-1");
     }
   });
 
