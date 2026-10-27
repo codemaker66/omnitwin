@@ -23,7 +23,7 @@ import {
 //   DELETE /:id         remove one; its consent record stays, without it
 // ---------------------------------------------------------------------------
 
-const IdParam = z.object({ id: z.string().uuid() });
+const IdParam = z.object({ id: z.uuid() });
 
 export async function dietaryMemoryRoutes(server: FastifyInstance, opts: { db: Database }): Promise<void> {
   const { db } = opts;

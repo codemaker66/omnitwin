@@ -353,6 +353,8 @@ export function RoomSplatScene({
 
   return (
     <Canvas
+      // A visitor's walk: a stopped view promises no layout and offers no planner.
+      surface="walk"
       frameloop="demand"
       flat
       dpr={[1, 2]}

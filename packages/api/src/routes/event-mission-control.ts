@@ -49,12 +49,12 @@ import {
 } from "../services/event-mission-control.js";
 import { canAccessInternalEvent, canManageVenue } from "../utils/query.js";
 
-const EventParamSchema = z.object({ eventId: z.string().uuid() }).strict();
-const MissionParamSchema = z.object({ missionId: z.string().uuid() }).strict();
-const PhaseParamSchema = z.object({ missionId: z.string().uuid(), missionPhaseId: z.string().uuid() }).strict();
-const TaskParamSchema = z.object({ missionId: z.string().uuid(), missionTaskId: z.string().uuid() }).strict();
-const IncidentParamSchema = z.object({ missionId: z.string().uuid(), incidentId: z.string().uuid() }).strict();
-const PresenceParamSchema = z.object({ missionId: z.string().uuid(), sessionId: z.string().uuid() }).strict();
+const EventParamSchema = z.object({ eventId: z.uuid() }).strict();
+const MissionParamSchema = z.object({ missionId: z.uuid() }).strict();
+const PhaseParamSchema = z.object({ missionId: z.uuid(), missionPhaseId: z.uuid() }).strict();
+const TaskParamSchema = z.object({ missionId: z.uuid(), missionTaskId: z.uuid() }).strict();
+const IncidentParamSchema = z.object({ missionId: z.uuid(), incidentId: z.uuid() }).strict();
+const PresenceParamSchema = z.object({ missionId: z.uuid(), sessionId: z.uuid() }).strict();
 
 type EventRow = typeof events.$inferSelect;
 type MissionRow = typeof eventMissions.$inferSelect;

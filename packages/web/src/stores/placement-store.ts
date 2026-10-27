@@ -15,7 +15,7 @@ import {
 import { plannerFeatureEnabled } from "../lib/planner-features.js";
 import { DANCE_FLOOR_PANELS, cardIsWholeSet, placesAsCard, resizeDanceFloor, type ResizeAnchor } from "../lib/setup-cards.js";
 import { getCatalogueItem, isAtMaxCount } from "../lib/catalogue.js";
-import { createTableGroup, rearrangeTableGroup, tableGroupChairFootprint } from "../lib/table-group.js";
+import { createTableGroup, diningTablesAmong, rearrangeTableGroup, tableGroupChairFootprint, ungroupedKeepingTables } from "../lib/table-group.js";
 import {
   FILL_AISLE_RULE,
   fillOverReceipt,
@@ -931,6 +931,8 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     const state = get();
     const expandedIds = expandIdsToGroupMembers(ids, state.placedItems);
     if (expandedIds.size < 2) return;
+    // Tables keep their own chairs: Group never joins two dining tables (QoL B-03; a table with a lectern or a floor may group).
+    if (diningTablesAmong(state.placedItems.filter((item) => expandedIds.has(item.id))).length > 1) return;
     const newGroupId = generatePlacedId();
     set({
       placedItems: state.placedItems.map((item) =>
@@ -943,11 +945,9 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     if (isLayoutTimelineMutationLocked()) return;
     if (ids.size === 0) return;
     const state = get();
-    const expandedIds = expandIdsToGroupMembers(ids, state.placedItems);
-    set({
-      placedItems: state.placedItems.map((item) =>
-        expandedIds.has(item.id) ? { ...item, groupId: null } : item,
-      ),
-    });
+    // Each table keeps its own chairs; everything else leaves the group (lib/table-group ungroupedKeepingTables).
+    const ungrouped = ungroupedKeepingTables(expandIdsToGroupMembers(ids, state.placedItems), state.placedItems);
+    if (ungrouped === state.placedItems) return;
+    set({ placedItems: ungrouped });
   },
 }));

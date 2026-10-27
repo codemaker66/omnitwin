@@ -16,8 +16,9 @@ import { getCatalogueItemBySlug } from "../../lib/catalogue.js";
 
 const renderer = vi.hoisted(() => ({ value: {} as Record<string, unknown> }));
 vi.mock("@react-three/fiber", () => ({ useThree: () => renderer.value }));
+vi.mock("../../api/configuration-conflict.js", () => ({ parseRevisionConflict: vi.fn(() => null) }));
 vi.mock("../../api/configurations.js", () => ({
-  publicBatchSave: vi.fn(), authBatchSave: vi.fn(), parseRevisionConflict: vi.fn(() => null),
+  publicBatchSave: vi.fn(), authBatchSave: vi.fn(),
 }));
 vi.mock("../../api/action-log.js", () => ({ postActionBatch: vi.fn() }));
 

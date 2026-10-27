@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { PlannerCanvasBoundary } from "../PlannerCanvasBoundary.js";
+import { PlannerWorkContext } from "../scene/planner-work.js";
 
 afterEach(() => {
   cleanup();
@@ -25,24 +26,49 @@ describe("PlannerCanvasBoundary", () => {
     expect(screen.getByText("3d scene mounted")).toBeTruthy();
   });
 
-  it("shows a graceful 2D-planner fallback when the 3D canvas throws", () => {
+  it("continues in the planner's own 2D view of this layout, in place, when the 3D canvas throws", () => {
     // The boundary logs a warning and React logs the caught error; silence both.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const continueIn2d = vi.fn();
+    const before = window.location.href;
+
+    shouldThrow = true;
+    render(
+      <PlannerWorkContext.Provider value={{ continueIn2d }}>
+        <PlannerCanvasBoundary>
+          <MaybeBoom />
+        </PlannerCanvasBoundary>
+      </PlannerWorkContext.Provider>,
+    );
+
+    const alert = screen.getByRole("alert");
+    expect(alert.textContent).toContain("Your layout is safe");
+    // /blueprint opened a demonstration plan, not this layout.
+    expect(screen.queryByRole("link")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Continue in 2D" }));
+    expect(continueIn2d).toHaveBeenCalledOnce();
+    expect(window.location.href).toBe(before);
+
+    warn.mockRestore();
+    error.mockRestore();
+  });
+
+  it("offers no 2D view while the editor allows none", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
 
     shouldThrow = true;
     render(
-      <PlannerCanvasBoundary>
-        <MaybeBoom />
-      </PlannerCanvasBoundary>,
+      <PlannerWorkContext.Provider value={{ continueIn2d: null }}>
+        <PlannerCanvasBoundary>
+          <MaybeBoom />
+        </PlannerCanvasBoundary>
+      </PlannerWorkContext.Provider>,
     );
-
-    // Routes to the WebGL-free 2D planner.
-    const link = screen.getByRole("link", { name: /2D planner/i });
-    expect(link.getAttribute("href")).toBe("/blueprint");
-    // Honest, SAFE copy — names WebGL, makes no unsupported claim.
-    expect(screen.getByText(/WebGL/i)).toBeTruthy();
-    expect(screen.getByRole("alert")).toBeTruthy();
+    expect(screen.getByRole("alert").textContent).not.toContain("2D");
+    expect(screen.queryByRole("button", { name: "Continue in 2D" })).toBeNull();
+    expect(screen.getByRole("button", { name: /try 3d again/i })).toBeTruthy();
 
     warn.mockRestore();
     error.mockRestore();

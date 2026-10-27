@@ -14,6 +14,7 @@ import { drawnDanceFloor } from "../../lib/setup-cards.js";
 import { ghostRaisePx } from "../../lib/touch-arbiter.js";
 import { createPlacedItem } from "../../lib/placement.js";
 import { setPlannerFeaturesForTesting } from "../../lib/planner-features.js";
+import { noteMainDraw } from "../../lib/main-draw-clock.js";
 import { useTouchGestureStore } from "../../stores/touch-gesture-store.js";
 
 const graphics = vi.hoisted(() => ({ get: vi.fn<() => {
@@ -31,10 +32,19 @@ vi.mock("@react-three/fiber", () => ({
   useFrame: (callback: () => void) => { frames.latest = callback; },
 }));
 vi.mock("../FurnitureProxy.js", () => ({ FurnitureProxy: () => { proxy.renders += 1; return null; } }));
-// The set's ghost has its own tests (GhostSet.test.tsx); here, which set it is asked to show.
-const ghostSet = vi.hoisted(() => ({ card: null as string | null }));
+// The set's ghost has its own tests (GhostSet.test.tsx); here, which set it is asked to show, and its warm-up.
+const ghostSet = vi.hoisted(() => ({ card: null as string | null, warming: false, groupRef: null as ((group: Group | null) => void) | null }));
 vi.mock("../GhostSet.js", () => ({
-  GhostSet: ({ params }: { readonly params: { readonly card: string } }) => { ghostSet.card = params.card; return null; },
+  GhostSet: ({ params, warming, groupRef }: {
+    readonly params: { readonly card: string };
+    readonly warming: boolean;
+    readonly groupRef?: (group: Group | null) => void;
+  }) => {
+    ghostSet.card = params.card;
+    ghostSet.warming = warming;
+    ghostSet.groupRef = groupRef ?? null;
+    return null;
+  },
 }));
 
 function runFrame(): void {
@@ -138,6 +148,78 @@ it("sets a Round of 10 armed from v2's rail down whole, in one write, with no ch
   } finally {
     useCatalogueStore.getState().disarm();
   }
+});
+
+describe("a card's set warms as a piece does", () => {
+  /** A Round of 10 armed, and the set's group as GhostSet would hand it over: one mesh, not yet shown. */
+  function armedSet(): { readonly set: Group; readonly mesh: Mesh } {
+    setPlannerFeaturesForTesting(null);
+    act(() => { useCatalogueStore.getState().armCard("round"); });
+    render(<PlacementGhost />);
+    const set = new Group();
+    const mesh = new Mesh(new BoxGeometry(), new MeshBasicMaterial());
+    set.add(mesh);
+    set.visible = false;
+    act(() => { ghostSet.groupRef?.(set); });
+    return { set, mesh };
+  }
+
+  /** A frame update, and the main view's draw that follows it. */
+  function frameAndDraw(): void {
+    runFrame();
+    act(() => { noteMainDraw(performance.now()); });
+  }
+
+  afterEach(() => { useCatalogueStore.getState().disarm(); });
+
+  it("counts a warm frame only for a main-view draw that takes the set's meshes in", () => {
+    const { set, mesh } = armedSet();
+    expect(ghostSet.warming).toBe(true);
+    // Draws before the commit that shows the set warm nothing: the warm-up waits for it.
+    for (let frame = 0; frame < 5; frame += 1) frameAndDraw();
+    expect(ghostSet.warming).toBe(true);
+    // Shown, but its mesh only on the sun's shadow-caster layer: the main camera draws none of it.
+    set.visible = true;
+    mesh.layers.set(9);
+    frameAndDraw();
+    expect(ghostSet.warming).toBe(true);
+    mesh.layers.set(0);
+    frameAndDraw();
+    frameAndDraw();
+    expect(ghostSet.warming).toBe(true);
+    frameAndDraw();
+    expect(ghostSet.warming).toBe(false);
+  });
+
+  it("does not wait long for a set that never draws", () => {
+    armedSet();
+    for (let frame = 0; frame < 60; frame += 1) frameAndDraw();
+    expect(ghostSet.warming).toBe(true);
+    runFrame();
+    expect(ghostSet.warming).toBe(false);
+  });
+
+  it("warms the set when a card is armed over the same table picked from the list", () => {
+    const table = getCatalogueItemBySlug("round-table-6ft-white");
+    if (table === undefined) throw new Error("Missing the round table");
+    setPlannerFeaturesForTesting(null);
+    act(() => { useCatalogueStore.getState().selectItem(table.id); });
+    render(<PlacementGhost />);
+    // The piece's warm-up ends (the page draws no three ghost for it here).
+    runFrame();
+    act(() => { useCatalogueStore.getState().armCard("round"); });
+    // The hand holds the same table, now with its ring of chairs: the set warms all the same.
+    expect(useCatalogueStore.getState().selectedItemId).toBe(table.id);
+    expect(ghostSet.card).toBe("round");
+    expect(ghostSet.warming).toBe(true);
+  });
+
+  it("leaves the set where GhostSet stands it", () => {
+    const { set } = armedSet();
+    set.visible = true;
+    runFrame();
+    expect(set.position.toArray()).toEqual([0, 0, 0]);
+  });
 });
 
 it("keeps the seating dialog for an imported dining table", () => {

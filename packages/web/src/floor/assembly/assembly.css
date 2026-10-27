@@ -14,18 +14,25 @@
   padding: 9px 16px 10px;
   border: 1px solid rgba(201, 138, 91, 0.38);
   border-radius: 999px;
-  background: rgba(19, 17, 16, 0.72);
+  background: rgba(19, 17, 16, 0.88);
   color: var(--house-text-1, #f4efe6);
   font: 500 13px/1.2 Inter, system-ui, sans-serif;
   letter-spacing: 0.01em;
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
   cursor: pointer;
   transition: opacity 220ms ease, background-color 160ms ease, border-color 160ms ease, transform 90ms ease;
 }
 
+/* On a phone the planner's dock (VerticalToolbox's mobile dock) floats over the
+   canvas's lowest band: 10 px above the client's event dock or the cockpit's
+   bottom bar, whichever the shell has, and at least 74 px tall. The pill rests
+   12 px above it (10 + 74 + 12 = 96), where a thumb can reach it. */
+.cockpit-shell.is-mobile .assembly-replay {
+  left: max(16px, env(safe-area-inset-left));
+  bottom: calc(var(--client-event-dock-height, var(--cockpit-bottom-height, 0px)) + env(safe-area-inset-bottom, 0px) + 96px);
+}
+
 .assembly-replay:hover {
-  background: rgba(27, 25, 23, 0.86);
+  background: rgba(27, 25, 23, 0.94);
   border-color: rgba(220, 164, 117, 0.6);
 }
 

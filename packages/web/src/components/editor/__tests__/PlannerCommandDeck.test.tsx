@@ -175,7 +175,9 @@ describe("PlannerCommandDeck", () => {
     useCockpitStore.getState().setPlannedGuestCount(24);
 
     render(<PlannerCommandDeck />);
-    expect(screen.getByTestId("planner-command-action-auto-fill").textContent).toMatch(/Auto-fill 24/);
+    const layOut = screen.getByTestId("planner-command-action-auto-fill");
+    expect(layOut.textContent).toBe("Lay out");
+    expect(layOut.getAttribute("aria-label")).toBe("Lay out tables and seats for 24 guests");
     fireEvent.click(screen.getByTestId("planner-command-action-auto-fill"));
 
     expect(usePlacementStore.getState().placedItems).toHaveLength(0);
@@ -212,7 +214,17 @@ describe("PlannerCommandDeck", () => {
     }
   });
 
-  it("starts a cinematic showcase tour from the command deck", () => {
+  it("names its commands in the venue's words: Lay out, Draw and Present (F-15)", () => {
+    render(<PlannerCommandDeck />);
+    const deck = screen.getByTestId("planner-command-deck");
+    expect(screen.getByRole("button", { name: "Lay out tables and seats for your guests" }).textContent).toBe("Lay out");
+    expect(screen.getByRole("button", { name: "Draw on the floor" }).textContent).toBe("Draw");
+    expect(screen.getByTestId("planner-command-action-showcase").textContent).toBe("Present");
+    const words = [deck.textContent ?? "", ...[...deck.querySelectorAll("[aria-label],[title]")].flatMap((node) => [node.getAttribute("aria-label") ?? "", node.getAttribute("title") ?? ""])].join(" ");
+    expect(words).not.toMatch(/auto-fill|laser|showcase|cinematic/iu);
+  });
+
+  it("starts the Present tour from the command deck", () => {
     useRoomDimensionsStore.setState({ dimensions: { width: 42, length: 21, height: 7 } });
 
     render(<PlannerCommandDeck />);
@@ -243,7 +255,11 @@ describe("PlannerCommandDeck", () => {
     useBookmarkStore.getState().clearTour();
     useCockpitStore.setState({ sceneSource: { ...source, captureSource: "package" } });
     view.rerender(<PlannerCommandDeck />);
-    expect(screen.getByTestId<HTMLButtonElement>("planner-command-action-showcase").disabled).toBe(true);
+    const present = screen.getByTestId<HTMLButtonElement>("planner-command-action-showcase");
+    expect(present.disabled).toBe(true);
+    // A disabled control says why, in its name and its tooltip (spec 13 rule 6).
+    expect(present.getAttribute("aria-label")).toBe("Present is not ready for this view of the room yet");
+    expect(present.getAttribute("title")).toBe("Present is not ready for this view of the room yet");
     fireEvent.click(screen.getByTestId("planner-command-action-showcase"));
     expect(useBookmarkStore.getState().tour).toBeNull();
     useCockpitStore.setState({ sceneSource: { ...source, configId: "another" } });
