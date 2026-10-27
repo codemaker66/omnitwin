@@ -5,6 +5,7 @@ import { getShareDeposit, startShareDepositCheckout } from "../../api/deposits.j
 import { ActivityIndicator, ActivityStatus } from "../shared/Activity.js";
 import { useLatestRequest } from "../../hooks/use-latest-request.js";
 import { documentMoney, venueLongDate } from "./proposal-document-format.js";
+import { keepDepositReturnToken } from "./deposit-return.js";
 
 // ---------------------------------------------------------------------------
 // The client's deposit (Plan 19 L5), below their accepted proposal. The venue
@@ -132,7 +133,9 @@ export function ClientDeposit({ token, returned }: { readonly token: string; rea
   if (load.view === null || request === null) return null;
 
   const mode = load.view.mode;
-  const standing = depositStandingWords(request);
+  const found = depositStandingWords(request);
+  // Read only once the link can no longer pay (withdrawn, or the proposal archived).
+  const standing = { ...found, payable: found.payable && load.view.payable };
   const amount = documentMoney(request.amountMinor, request.currency);
 
   const pay = (): void => {
@@ -140,7 +143,11 @@ export function ClientDeposit({ token, returned }: { readonly token: string; rea
     setOpening(true);
     setFailure(null);
     startShareDepositCheckout(token, request.id).then(
-      (url) => { window.location.assign(url); },
+      (url) => {
+        // Stripe is given an address without the token; this tab keeps it to come back.
+        keepDepositReturnToken(token);
+        window.location.assign(url);
+      },
       (error: unknown) => {
         setFailure(checkoutFailureWords(error));
         setOpening(false);

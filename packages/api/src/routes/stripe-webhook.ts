@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { formatDepositMoney, type DepositPaymentState } from "@omnitwin/types";
 import { depositPayments, proposalDepositRequests, proposals } from "../db/schema.js";
 import type { Database } from "../db/client.js";
-import { WebhookSignatureError, type DepositPayments } from "../services/payments/deposit-gateway.js";
+import { STRIPE_API_VERSION, WebhookSignatureError, type DepositPayments } from "../services/payments/deposit-gateway.js";
 import { parseStripeEvent } from "../services/payments/deposit-events.js";
 import { applyStripeEvent, type LedgerOutcome } from "../services/payments/deposit-ledger.js";
 import { notifyCommercialTeam } from "../services/commercial-notifications.js";
@@ -21,9 +21,12 @@ import { proposalDeskPath } from "../services/client-answer-notice.js";
 // the misconfiguration shows in Stripe's dashboard.
 //
 // 2xx tells Stripe to stop: a duplicate and an event about nothing of ours
-// both answer 200. A failure to apply answers 5xx and Stripe retries, for up
-// to three days, which is also how an event that arrives before the payment
-// it concerns is written is applied later.
+// both answer 200, and the event is not applied again. That includes an event
+// about a payment row not yet written, which cannot happen for one of ours:
+// the client is given a checkout page only after its row has committed, and a
+// refund that arrives before the payment's own report is matched through its
+// PaymentIntent. A failure to apply answers 5xx and Stripe retries, for up to
+// three days.
 // ---------------------------------------------------------------------------
 
 /** The states the venue team hears about the moment Stripe reports them. */
@@ -53,6 +56,7 @@ async function announce(db: Database, outcome: LedgerOutcome, logger: FastifyBas
       currency: depositPayments.currency,
       amountRefundedMinor: depositPayments.amountRefundedMinor,
       amountReceivedMinor: depositPayments.amountReceivedMinor,
+      currencyReceived: depositPayments.currencyReceived,
     })
       .from(depositPayments)
       .innerJoin(proposalDepositRequests, eq(proposalDepositRequests.id, depositPayments.depositRequestId))
@@ -62,7 +66,7 @@ async function announce(db: Database, outcome: LedgerOutcome, logger: FastifyBas
     if (row === undefined) return;
     const asked = formatDepositMoney(row.amountMinor, row.currency);
     const body = outcome.after === "mismatch"
-      ? `Stripe reported ${formatDepositMoney(row.amountReceivedMinor ?? 0, row.currency)} against the ${asked} deposit asked for on ${row.title}. Check the payment in Stripe before relying on it.`
+      ? `Stripe reported ${row.amountReceivedMinor === null ? "a payment with no amount" : formatDepositMoney(row.amountReceivedMinor, row.currencyReceived ?? row.currency)} against the ${asked} deposit asked for on ${row.title}. Check the payment in Stripe before relying on it.`
       : outcome.after === "refunded" || outcome.after === "partially_refunded"
         ? `${formatDepositMoney(row.amountRefundedMinor, row.currency)} of the ${asked} deposit on ${row.title} was refunded in Stripe.`
         : outcome.after === "failed"
@@ -128,6 +132,12 @@ export async function stripeWebhookRoutes(
       return reply.status(400).send({ error: "Live-mode events are refused: deposits are in test mode", code: "LIVE_EVENT_REFUSED" });
     }
 
+    // Events come in the endpoint's API version, set in Stripe's dashboard.
+    // Another version is read as long as its shape parses; said, so a drift
+    // is seen before it matters.
+    if (parsed.apiVersion !== null && parsed.apiVersion !== STRIPE_API_VERSION) {
+      request.log.warn({ event: "stripe.webhook_api_version", apiVersion: parsed.apiVersion, expected: STRIPE_API_VERSION }, "Stripe webhook endpoint uses another API version");
+    }
     const outcome = await applyStripeEvent(db, parsed, payments.gateway);
     await announce(db, outcome, request.log);
     return reply.status(200).send({ received: true, outcome: outcome.kind });

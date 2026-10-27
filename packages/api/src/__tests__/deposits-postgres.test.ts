@@ -83,6 +83,22 @@ describe.skipIf(paymentsTestUrl === undefined)("deposits through the routes on m
   const pay = (f: AcceptedProposalFixture, requestId: string) =>
     call<{ url: string }>("POST", `/proposal-share/${f.token}/deposit/checkout`, {}, { requestId });
 
+  async function sessionsOf(requestId: string): Promise<{ readonly id: string; readonly session: string }[]> {
+    const { rows } = await pool.query<{ id: string; stripe_checkout_session_id: string }>(
+      "SELECT id, stripe_checkout_session_id FROM deposit_payments WHERE deposit_request_id = $1 ORDER BY created_at", [requestId]);
+    return rows.map((row) => ({ id: row.id, session: row.stripe_checkout_session_id }));
+  }
+
+  async function stripeSays(type: string, object: Record<string, unknown>): Promise<string | undefined> {
+    const body = stripeEvent(type, object);
+    const res = await server.inject({ method: "POST", url: "/webhooks/stripe", payload: body, headers: { "content-type": "application/json", "stripe-signature": stripeSignature(body) } });
+    return res.json<{ outcome?: string }>().outcome;
+  }
+
+  const paidSession = (session: string, metadata: unknown, intent = `pi_${randomUUID().replaceAll("-", "")}`) => ({
+    id: session, payment_status: "paid", amount_total: 50_000, currency: "gbp", payment_intent: intent, metadata,
+  });
+
   describe("the venue asks", () => {
     it("for a percentage of the accepted quote, in whole pence, against the proposal's event", async () => {
       const f = await accepted({ totalMinor: 333_333 });
@@ -160,10 +176,14 @@ describe.skipIf(paymentsTestUrl === undefined)("deposits through the routes on m
       expect(gateway.created.length - before).toBe(1);
       const sent = gateway.created.at(-1);
       expect(sent).toMatchObject({ amountMinor: 50_000, currency: "GBP", customerEmail: f.clientEmail });
-      expect(sent?.successUrl).toBe(`https://venviewer.test/proposal-share/${f.token}?deposit=returned`);
+      // Stripe keeps and shows these addresses: never the client's share token.
+      expect(sent?.successUrl).toBe("https://venviewer.test/deposit-return?outcome=returned");
+      expect(sent?.cancelUrl).toBe("https://venviewer.test/deposit-return?outcome=left");
+      expect(JSON.stringify(sent)).not.toContain(f.token);
+      expect(sent?.description).toBe("Deposit: Autumn gala, Grand Hall");
       expect(sent?.metadata).toMatchObject({ venue_id: f.venueId, proposal_id: f.proposalId, deposit_request_id: requestId });
       const view = await call<ClientDepositView>("GET", `/proposal-share/${f.token}/deposit`);
-      expect(view.body.data).toMatchObject({ mode: "test", request: { id: requestId, state: "requested", amountMinor: 50_000 } });
+      expect(view.body.data).toMatchObject({ mode: "test", payable: true, request: { id: requestId, state: "requested", amountMinor: 50_000 } });
     });
 
     it("keeps one page when Pay is pressed twice at once, closing the spare at Stripe", async () => {
@@ -238,6 +258,94 @@ describe.skipIf(paymentsTestUrl === undefined)("deposits through the routes on m
       expect(res.body.code).toBe("PAYMENT_PROVIDER_UNAVAILABLE");
       const { rows } = await pool.query("SELECT count(*)::int AS n FROM deposit_payments WHERE deposit_request_id = $1", [requestId]);
       expect(rows[0]).toEqual({ n: 0 });
+    });
+  });
+
+  describe("when Stripe and our record disagree for a moment (the webhook lags)", () => {
+    it("believes Stripe when the client pays as the venue withdraws: refused, recorded, and shown to the client", async () => {
+      const f = await accepted();
+      const requestId = (await ask(f, { basis: "amount", amountMinor: 50_000 })).body.data?.id ?? "";
+      await pay(f, requestId);
+      const [attempt] = await sessionsOf(requestId);
+      gateway.completed.add(attempt?.session ?? "");
+      const withdrawn = await call("POST", `/proposals/${f.proposalId}/deposit/${requestId}/cancel`, f.staff);
+      expect(withdrawn.status).toBe(409);
+      expect(withdrawn.body.code).toBe("DEPOSIT_PAID_AS_WITHDRAWN");
+      // No new deposit is asked for over money already being paid.
+      expect(await stripeSays("checkout.session.completed", paidSession(attempt?.session ?? "", gateway.created.at(-1)?.metadata))).toBe("applied");
+      expect((await ask(f, { basis: "amount", amountMinor: 60_000 })).body.code).toBe("DEPOSIT_HELD");
+      // The client sees what they paid, read only.
+      const view = (await call<ClientDepositView>("GET", `/proposal-share/${f.token}/deposit`)).body.data;
+      expect(view).toMatchObject({ payable: false, request: { id: requestId, state: "paid" } });
+    });
+
+    it("never opens a second page while Stripe says the first was paid", async () => {
+      const f = await accepted();
+      const requestId = (await ask(f, { basis: "amount", amountMinor: 50_000 })).body.data?.id ?? "";
+      await pay(f, requestId);
+      const [first] = await sessionsOf(requestId);
+      // About to lapse in our record, and already paid at Stripe.
+      await pool.query("UPDATE deposit_payments SET session_expires_at = now() + interval '1 minute' WHERE id = $1", [first?.id]);
+      gateway.completed.add(first?.session ?? "");
+      const before = gateway.created.length;
+      const again = await pay(f, requestId);
+      expect(again.status).toBe(409);
+      expect(again.body.code).toBe("DEPOSIT_SETTLING");
+      expect(gateway.created.length).toBe(before);
+    });
+
+    it("closes a lapsing page at Stripe before opening the next, so two pages are never both payable", async () => {
+      const f = await accepted();
+      const requestId = (await ask(f, { basis: "amount", amountMinor: 50_000 })).body.data?.id ?? "";
+      await pay(f, requestId);
+      const [first] = await sessionsOf(requestId);
+      await pool.query("UPDATE deposit_payments SET session_expires_at = now() + interval '1 minute' WHERE id = $1", [first?.id]);
+      const next = await pay(f, requestId);
+      expect(next.status).toBe(200);
+      expect(gateway.expired).toContain(first?.session);
+      expect(await sessionsOf(requestId)).toHaveLength(2);
+    });
+
+    it("says so when Stripe cannot be reached to close a withdrawn request's page", async () => {
+      const f = await accepted();
+      const requestId = (await ask(f, { basis: "amount", amountMinor: 50_000 })).body.data?.id ?? "";
+      await pay(f, requestId);
+      gateway.failNextClose = true;
+      const withdrawn = await call("POST", `/proposals/${f.proposalId}/deposit/${requestId}/cancel`, f.staff);
+      expect(withdrawn.status).toBe(502);
+      expect(withdrawn.body.error).toContain("If they pay on it, the payment is recorded");
+    });
+  });
+
+  describe("after a refund", () => {
+    it("can be withdrawn once refunded in full, and asked for again", async () => {
+      const f = await accepted();
+      const requestId = (await ask(f, { basis: "amount", amountMinor: 50_000 })).body.data?.id ?? "";
+      await pay(f, requestId);
+      const [attempt] = await sessionsOf(requestId);
+      const intent = `pi_${randomUUID().replaceAll("-", "")}`;
+      await stripeSays("checkout.session.completed", paidSession(attempt?.session ?? "", gateway.created.at(-1)?.metadata, intent));
+      const refund = (amount: number) => stripeSays("charge.refunded", {
+        id: `ch_${randomUUID().replaceAll("-", "")}`, payment_intent: intent, amount_captured: 50_000, amount_refunded: amount, currency: "gbp", created: Math.floor(Date.now() / 1000), paid: true,
+      });
+      await refund(20_000);
+      expect((await call("POST", `/proposals/${f.proposalId}/deposit/${requestId}/cancel`, f.staff)).body.code).toBe("DEPOSIT_SETTLING");
+      await refund(50_000);
+      const withdrawn = await call<DepositRequestView>("POST", `/proposals/${f.proposalId}/deposit/${requestId}/cancel`, f.staff);
+      expect(withdrawn.status).toBe(200);
+      expect((await ask(f, { basis: "amount", amountMinor: 60_000 })).status).toBe(201);
+    });
+  });
+
+  describe("on a proposal the team archived after acceptance", () => {
+    it("shows the client the deposit read only, and takes no payment", async () => {
+      const f = await accepted();
+      const requestId = (await ask(f, { basis: "amount", amountMinor: 50_000 })).body.data?.id ?? "";
+      await pool.query("UPDATE proposals SET status = 'archived' WHERE id = $1", [f.proposalId]);
+      await pool.query("INSERT INTO proposal_status_history (proposal_id, from_status, to_status) VALUES ($1, 'accepted', 'archived')", [f.proposalId]);
+      const view = await call<ClientDepositView>("GET", `/proposal-share/${f.token}/deposit`);
+      expect(view.body.data).toMatchObject({ payable: false, request: { id: requestId } });
+      expect((await pay(f, requestId)).body.code).toBe("DEPOSIT_REQUEST_CHANGED");
     });
   });
 

@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
 import type { FastifyInstance, FastifyReply } from "fastify";
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 import { z } from "zod";
 import {
   CurrencySchema,
+  DEPOSIT_HOLDING_STATES,
   DEPOSIT_PAYABLE_STATES,
   DEPOSIT_SETTLING_STATES,
   RequestDepositSchema,
@@ -67,6 +68,17 @@ const VERSION_CHANGED = {
 const AMOUNT_MISMATCH = {
   error: "This deposit no longer matches the proposal that was accepted, so it cannot be paid. The venue team has been told.",
   code: "DEPOSIT_AMOUNT_MISMATCH",
+} as const;
+
+const PROVIDER_UNAVAILABLE = {
+  error: "Stripe did not open the payment page. Nothing was charged. Please try again in a moment.",
+  code: "PAYMENT_PROVIDER_UNAVAILABLE",
+} as const;
+
+/** Stripe has taken the payment; the webhook has not told us yet. */
+const PAID_PENDING = {
+  error: "Stripe has a payment for this deposit. It shows here as soon as Stripe confirms it.",
+  code: "DEPOSIT_SETTLING",
 } as const;
 
 const REFUSAL_WORDS: Readonly<Record<"no_quote" | "zero_total" | "over_total" | "under_minimum", string>> = {
@@ -144,6 +156,12 @@ export async function proposalDepositRoutes(
       // given another accepted version is not asked to pay.
       const [held] = await tx.select().from(proposals).where(eq(proposals.id, proposal.id)).limit(1).for("update");
       if (held?.status !== "accepted" || held.sentVersion !== accepted.version || held.deletedAt !== null) return "changed" as const;
+      // Money already paid on this proposal (on a request withdrawn as the
+      // client paid, say) is refunded before another deposit is asked for.
+      const earlier = await tx.select().from(depositPayments)
+        .innerJoin(proposalDepositRequests, eq(proposalDepositRequests.id, depositPayments.depositRequestId))
+        .where(eq(proposalDepositRequests.proposalId, proposal.id));
+      if (earlier.some(({ deposit_payments: attempt }) => DEPOSIT_HOLDING_STATES.includes(paymentRowState(attempt)))) return "held" as const;
       try {
         const [row] = await tx.insert(proposalDepositRequests).values({
           venueId: proposal.venueId,
@@ -166,6 +184,9 @@ export async function proposalDepositRoutes(
       }
     });
     if (outcome === "changed") return reply.status(409).send(VERSION_CHANGED);
+    if (outcome === "held") {
+      return reply.status(409).send({ error: "A deposit has been paid on this proposal already. Refund it in full in Stripe before asking for another.", code: "DEPOSIT_HELD" });
+    }
     if (outcome === "already") {
       return reply.status(409).send({ error: "A deposit has already been asked for on this proposal. Withdraw it first to ask for another.", code: "DEPOSIT_ALREADY_REQUESTED" });
     }
@@ -179,11 +200,14 @@ export async function proposalDepositRoutes(
     if (proposal === undefined) return reply.status(404).send({ error: "Proposal not found", code: "NOT_FOUND" });
     if (!canManageCommercial(request.user, proposal.venueId)) return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
 
+    // Withdrawn first, so no new page can be opened for it; then each page
+    // still open is closed at Stripe, which says whether it was paid in the
+    // meantime. Stripe, not our record (which can lag its webhook), decides.
     const outcome = await db.transaction(async (tx) => {
       const held = await holdRequest(tx, params.data.requestId);
       if (held?.proposalId !== proposal.id || held.venueId !== proposal.venueId) return "missing" as const;
       const attempts = await tx.select().from(depositPayments).where(eq(depositPayments.depositRequestId, held.id));
-      if (attempts.some((attempt) => DEPOSIT_SETTLING_STATES.includes(paymentRowState(attempt)))) return "settling" as const;
+      if (attempts.some((attempt) => DEPOSIT_HOLDING_STATES.includes(paymentRowState(attempt)))) return "held" as const;
       if (held.cancelledAt !== null) return { row: held, attempts, open: [] as string[] };
       const [row] = await tx.update(proposalDepositRequests)
         .set({ cancelledAt: new Date(), cancelledBy: request.user.id })
@@ -195,20 +219,32 @@ export async function proposalDepositRoutes(
       return { row, attempts, open };
     });
     if (outcome === "missing") return reply.status(404).send({ error: "Deposit request not found", code: "NOT_FOUND" });
-    if (outcome === "settling") {
-      return reply.status(409).send({ error: "The client has paid, or is paying, this deposit. Refund it in Stripe instead.", code: "DEPOSIT_SETTLING" });
+    if (outcome === "held") {
+      return reply.status(409).send({ error: "The client has paid, or is paying, this deposit. Refund it in full in Stripe first; it can then be withdrawn.", code: "DEPOSIT_SETTLING" });
     }
-    // Its open checkout pages are closed, so nobody pays a withdrawn request.
-    // A payment Stripe took in the moment before is still recorded by the
-    // webhook and shown, never lost.
+    let paidMeanwhile = false;
+    let unreachable = false;
     if (payments.status === "ready") {
       for (const sessionId of outcome.open) {
         try {
-          await payments.gateway.expireCheckoutSession(sessionId);
+          if (await payments.gateway.closeCheckoutSession(sessionId) === "complete") paidMeanwhile = true;
         } catch (err) {
-          request.log.warn({ event: "deposit.expire_failed", sessionId, err }, "a withdrawn deposit's checkout page could not be closed");
+          unreachable = true;
+          request.log.warn({ event: "deposit.close_failed", sessionId, err }, "a withdrawn deposit's checkout page could not be closed");
         }
       }
+    }
+    if (paidMeanwhile) {
+      return reply.status(409).send({
+        error: "The client paid as this was withdrawn. The payment stays on record and shows here once Stripe confirms it; refund it in Stripe if it should not stand.",
+        code: "DEPOSIT_PAID_AS_WITHDRAWN",
+      });
+    }
+    if (unreachable) {
+      return reply.status(502).send({
+        error: "Withdrawn, but Stripe could not be reached to close the payment page the client has open. If they pay on it, the payment is recorded and shown here.",
+        code: "PAYMENT_PROVIDER_UNAVAILABLE",
+      });
     }
     return { data: requestView(outcome.row, outcome.attempts) };
   });
@@ -223,13 +259,24 @@ async function inForce(db: Pick<Database, "select">, proposalId: string) {
   return row;
 }
 
-async function clientView(db: Pick<Database, "select">, mode: "test" | "live", proposalId: string): Promise<ClientDepositView> {
-  const row = await inForce(db, proposalId);
-  if (row === undefined) return { mode, request: null };
+/**
+ * What the client's link shows: the request in force, else the latest
+ * withdrawn request that a payment settled on, read only. A payment made is
+ * never hidden from the person who made it.
+ */
+async function clientView(db: Pick<Database, "select">, mode: "test" | "live", proposal: { readonly id: string; readonly status: string }): Promise<ClientDepositView> {
+  const requests = await db.select().from(proposalDepositRequests)
+    .where(eq(proposalDepositRequests.proposalId, proposal.id))
+    .orderBy(desc(proposalDepositRequests.createdAt));
+  if (requests.length === 0) return { mode, request: null, payable: false };
   const attempts = await db.select().from(depositPayments)
-    .where(eq(depositPayments.depositRequestId, row.id))
+    .where(inArray(depositPayments.depositRequestId, requests.map((row) => row.id)))
     .orderBy(desc(depositPayments.createdAt));
-  return { mode, request: requestView(row, attempts) };
+  const views = requests.map((row) => requestView(row, attempts.filter((attempt) => attempt.depositRequestId === row.id)));
+  const current = views.find((view) => view.cancelledAt === null)
+    ?? views.find((view) => view.state !== "cancelled" && view.state !== "requested")
+    ?? null;
+  return { mode, request: current, payable: current !== null && current.cancelledAt === null && proposal.status === "accepted" };
 }
 
 export async function proposalShareDepositRoutes(
@@ -238,10 +285,14 @@ export async function proposalShareDepositRoutes(
 ): Promise<void> {
   const { db, payments } = opts;
 
-  /** The proposal behind a link, when it is accepted and its venue takes deposits. */
+  /**
+   * The proposal behind a link that reads as accepted (an accepted proposal
+   * the team has since archived still does), at a venue that takes deposits.
+   * Reading needs no more; paying also needs the proposal still accepted.
+   */
   async function resolve(token: string, reply: FastifyReply) {
     const resolved = await resolveProposalShareToken(db, token);
-    if (resolved?.presented !== "accepted" || resolved.proposal.status !== "accepted") {
+    if (resolved?.presented !== "accepted") {
       void reply.status(404).send({ error: "Not found", code: "NOT_FOUND" });
       return null;
     }
@@ -258,7 +309,7 @@ export async function proposalShareDepositRoutes(
     if (!params.success) return reply.status(400).send({ error: "Invalid share token", code: "VALIDATION_ERROR" });
     const resolved = await resolve(params.data.token, reply);
     if (resolved === null) return reply;
-    return { data: await clientView(db, resolved.mode, resolved.proposal.id) };
+    return { data: await clientView(db, resolved.mode, resolved.proposal) };
   });
 
   server.post("/:token/deposit/checkout", {
@@ -272,13 +323,17 @@ export async function proposalShareDepositRoutes(
     if (resolved === null) return reply;
     const { proposal } = resolved;
     const gateway = resolved.payments.gateway;
+    if (proposal.status !== "accepted") {
+      return reply.status(409).send({ error: "This proposal is no longer taking payments here. Please contact the venue team.", code: "DEPOSIT_REQUEST_CHANGED" });
+    }
 
     const row = await inForce(db, proposal.id);
     if (row?.id !== body.data.requestId) {
       return reply.status(409).send({ error: "This deposit request has changed. Reload the page to see the one in force.", code: "DEPOSIT_REQUEST_CHANGED" });
     }
     // Checked against the accepted version before Stripe is asked for anything.
-    const integrity = requestIntegrity(row, await acceptedVersion(db, proposal));
+    const accepted = await acceptedVersion(db, proposal);
+    const integrity = requestIntegrity(row, accepted);
     if (!integrity.ok) {
       request.log.error({ event: "deposit.amount_mismatch", proposalId: proposal.id, depositRequestId: row.id, refusal: integrity.refusal }, "a deposit request no longer matches its accepted version");
       try {
@@ -299,34 +354,51 @@ export async function proposalShareDepositRoutes(
     if (attempts.some((attempt) => DEPOSIT_SETTLING_STATES.includes(paymentRowState(attempt)))) {
       return reply.status(409).send({ error: "This deposit has been paid, or is being paid.", code: "DEPOSIT_SETTLING" });
     }
-    // A checkout page still open for a while is the same page again, so one
-    // request never has two pages that could both be paid.
+    // A checkout page still open for a while is the same page again. One
+    // about to lapse is closed at Stripe before another is opened, and if
+    // Stripe says it was paid (our record can lag its webhook) no second page
+    // is opened: one request never has two pages that could both be paid.
     const reopenBy = Date.now() + 5 * 60 * 1000;
-    const reusable = attempts.find((attempt) => DEPOSIT_PAYABLE_STATES.includes(paymentRowState(attempt)) && attempt.sessionExpiresAt.getTime() > reopenBy);
+    const payable = attempts.filter((attempt) => DEPOSIT_PAYABLE_STATES.includes(paymentRowState(attempt)));
+    const reusable = payable.find((attempt) => attempt.sessionExpiresAt.getTime() > reopenBy);
     if (reusable !== undefined) return { data: { url: reusable.checkoutUrl } };
+    for (const lapsing of payable) {
+      let closed: "closed" | "complete";
+      try {
+        closed = await gateway.closeCheckoutSession(lapsing.stripeCheckoutSessionId);
+      } catch (err) {
+        request.log.error({ event: "deposit.close_failed", sessionId: lapsing.stripeCheckoutSessionId, err }, "a lapsing checkout page could not be closed");
+        return reply.status(502).send(PROVIDER_UNAVAILABLE);
+      }
+      if (closed === "complete") return reply.status(409).send(PAID_PENDING);
+    }
 
     const paymentId = randomUUID();
     const client = await proposalClient(db, proposal);
-    const back = `${resolved.payments.frontendUrl}/proposal-share/${params.data.token}`;
+    // Back to a page with no share token in its address: Stripe keeps these
+    // URLs and shows the cancel one on its page, and the token is the
+    // client's key to their proposal. The browser that left keeps the token
+    // for this tab and returns to it (pages/DepositReturnPage.tsx).
+    const back = `${resolved.payments.frontendUrl}/deposit-return`;
     let session;
     try {
       session = await gateway.createCheckoutSession({
         amountMinor: row.amountMinor,
         currency: CurrencySchema.parse(row.currency),
-        description: `Deposit: ${proposal.title}`.slice(0, 200),
+        description: `Deposit: ${accepted?.title ?? proposal.title}`.slice(0, 200),
         customerEmail: client.email,
-        successUrl: `${back}?deposit=returned`,
-        cancelUrl: `${back}?deposit=left`,
+        successUrl: `${back}?outcome=returned`,
+        cancelUrl: `${back}?outcome=left`,
         expiresAt: new Date(Date.now() + CHECKOUT_SESSION_LIFETIME_MS),
         metadata: { venue_id: proposal.venueId, proposal_id: proposal.id, deposit_request_id: row.id, deposit_payment_id: paymentId },
         idempotencyKey: `venviewer-deposit-${paymentId}`,
       });
     } catch (err) {
       request.log.error({ event: "deposit.checkout_failed", depositRequestId: row.id, err }, "Stripe did not open a checkout page");
-      return reply.status(502).send({ error: "Stripe could not be reached. Nothing was charged. Please try again in a moment.", code: "PAYMENT_PROVIDER_UNAVAILABLE" });
+      return reply.status(502).send(PROVIDER_UNAVAILABLE);
     }
     if (session.livemode && gateway.mode !== "live") {
-      await gateway.expireCheckoutSession(session.id).catch(() => undefined);
+      await gateway.closeCheckoutSession(session.id).catch(() => undefined);
       request.log.error({ event: "deposit.live_session_refused", depositRequestId: row.id }, "Stripe opened a live checkout page for a test-mode deployment");
       return reply.status(503).send({ error: "Payments are switched off for this deployment", code: "PAYMENTS_REFUSED" });
     }
@@ -356,8 +428,8 @@ export async function proposalShareDepositRoutes(
     });
     if (written.kind !== "written") {
       // Ours is not needed: close it so it can never be paid.
-      await gateway.expireCheckoutSession(session.id).catch((err: unknown) => {
-        request.log.warn({ event: "deposit.expire_failed", sessionId: session.id, err }, "an unneeded checkout page could not be closed");
+      await gateway.closeCheckoutSession(session.id).catch((err: unknown) => {
+        request.log.warn({ event: "deposit.close_failed", sessionId: session.id, err }, "an unneeded checkout page could not be closed");
       });
     }
     if (written.kind === "withdrawn") return reply.status(409).send({ error: "The venue team has withdrawn this deposit request.", code: "DEPOSIT_REQUEST_CHANGED" });
