@@ -479,15 +479,18 @@ describe.skipIf(target === undefined)("the layout review loop on migrated Postgr
     }
   }
 
-  it("an approve and a reject that deadlock at migration 0058's global lock: one is recorded, the other is asked to try again", async () => {
+  it("an approve and a reject queued for the same row: one is recorded, the other refused with a 409, never a 500", async () => {
     const f = await fixture();
     await expectReview(f, "planner", "submit");
     await expectReview(f, "staff", "start-review");
     email.mockClear();
     const [approve, reject] = await holding(async (holder) => {
-      // The approve queues for the row first; the reject's UPDATE takes the
-      // global lock, then queues behind it. Released, the approve holds the
-      // row and needs the global lock for its first write: a deadlock.
+      // The approve queues for the row first; the reject's UPDATE takes
+      // migration 0058's global lock, then queues behind it. Released, the
+      // approve holds the row and needs the global lock for its first write:
+      // a deadlock while product writes take that lock exclusively. Once they
+      // take it shared (#262), the approve goes first and the reject's
+      // compare-and-set finds it approved.
       await holder.query("SELECT id FROM configurations WHERE id = $1 FOR UPDATE", [f.configId]);
       const approving = review(f, "staff", "approve");
       await lockWaiters(1);
@@ -498,9 +501,9 @@ describe.skipIf(target === undefined)("the layout review loop on migrated Postgr
     });
 
     expect([approve.statusCode, reject.statusCode].sort(), `${approve.body} ${reject.body}`).toEqual([200, 409]);
-    const loser = approve.statusCode === 409 ? approve : reject;
-    expect(loser.json<{ code: string }>().code).toBe("RETRY");
     const winner = approve.statusCode === 200 ? "approved" : "rejected";
+    if (winner === "rejected") expect(approve.json<{ code: string }>().code).toBe("RETRY");
+    else expect(["RETRY", "INVALID_TRANSITION"]).toContain(reject.json<{ code: string }>().code);
     const saved = await state(f);
     expect(saved.config?.reviewStatus).toBe(winner);
     expect(saved.history).toEqual(["draft→submitted", "submitted→under_review", `under_review→${winner}`]);
