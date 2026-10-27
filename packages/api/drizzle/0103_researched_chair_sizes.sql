@@ -26,8 +26,17 @@
 -- researched size is left as it is, so replaying is inert. A row at any other
 -- size was changed by something this file does not know about: it stops and
 -- names the row rather than overwrite it. A missing row is left for the
--- canonical seed, which registers it at the researched size. The file is one
--- transaction; a failed statement leaves the database as it was.
+-- canonical seed, which registers it at the researched size. The migrator runs
+-- this file in one transaction with every other pending file, so a stop leaves
+-- the database as it was.
+--
+-- Each row is locked FOR NO KEY UPDATE, the lock an UPDATE of non-key columns
+-- takes anyway: a layout save that references a chair (its foreign key takes
+-- FOR KEY SHARE) goes on while the migrator's transaction is open. The rows
+-- are locked in id order, so two writers never take them in opposite orders,
+-- and a lock held elsewhere stops the deploy after 5 s rather than hanging it.
+SET LOCAL lock_timeout = '5s';
+--> statement-breakpoint
 DO $sizes$
 DECLARE
   chair record;
@@ -35,12 +44,13 @@ DECLARE
 BEGIN
   FOR chair IN
     SELECT * FROM (VALUES
-      ('ea8b110e-b4a6-5185-8ee3-932d77508721', 0.410, 0.410, 0.920, 0.430, 0.410, 0.920),
+      ('1ca08680-3741-5119-9db9-b7aa1c554e2e', 0.500, 0.550, 0.950, 0.510, 0.510, 0.750),
       ('34780845-a465-5abb-ab8f-953ff90bc9c1', 0.450, 0.450, 0.900, 0.420, 0.580, 0.880),
-      ('1ca08680-3741-5119-9db9-b7aa1c554e2e', 0.500, 0.550, 0.950, 0.510, 0.510, 0.750)
+      ('ea8b110e-b4a6-5185-8ee3-932d77508721', 0.410, 0.410, 0.920, 0.430, 0.410, 0.920)
     ) AS sizes(id, was_width_m, was_depth_m, was_height_m, width_m, depth_m, height_m)
+    ORDER BY id
   LOOP
-    SELECT * INTO stored FROM asset_definitions WHERE id = chair.id::uuid FOR UPDATE;
+    SELECT * INTO stored FROM asset_definitions WHERE id = chair.id::uuid FOR NO KEY UPDATE;
     IF NOT FOUND THEN
       CONTINUE;
     END IF;

@@ -141,7 +141,12 @@ describe("the researched chair sizes migration", () => {
     const chairs = new Set(CANONICAL_ASSETS.filter((asset) => asset.category === "chair").map((asset) => asset.id));
     expect(corrections.size).toBe(3);
     for (const id of corrections.keys()) expect(chairs.has(id), `${id} is a chair`).toBe(true);
-    expect(sql).toContain("FOR UPDATE");
+    // The lock an UPDATE of non-key columns takes, in id order, with a bounded wait: a layout save's
+    // foreign key (FOR KEY SHARE) is never blocked behind the migrator's transaction.
+    expect(sql).toContain("FOR NO KEY UPDATE");
+    expect(sql).not.toMatch(/\bFOR UPDATE\b/u);
+    expect(sql).toMatch(/\) AS sizes\([^)]*\)\s+ORDER BY id\s+LOOP/u);
+    expect(sql).toMatch(/SET LOCAL lock_timeout = '\d+s';/u);
     expect(sql).toContain("CHAIR_SIZES_CONFLICT");
     expect(sql).toMatch(/SET width_m = chair\.width_m, depth_m = chair\.depth_m, height_m = chair\.height_m\s+WHERE id = chair\.id::uuid/u);
     expect(sql).not.toMatch(/\bDELETE\s+FROM\b/iu);
