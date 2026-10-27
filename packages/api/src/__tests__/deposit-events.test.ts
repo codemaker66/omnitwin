@@ -10,7 +10,7 @@ import { factsAfter, parseStripeEvent, type DepositEvent, type PaymentFacts } fr
 
 const PAYMENT_ID = "8c6d4f7e-1d0b-4e37-9a38-7b1f2f0c9d11";
 const EMPTY: PaymentFacts = {
-  amountMinor: 50_000, stripePaymentIntentId: null, amountReceivedMinor: null, currencyReceived: null,
+  amountMinor: 50_000, currency: "GBP", stripePaymentIntentId: null, amountReceivedMinor: null, currencyReceived: null,
   amountRefundedMinor: 0, paidAt: null, processingAt: null, declinedAt: null, failureMessage: null,
   failedAt: null, expiredAt: null, lastEventAt: null,
 };
@@ -86,7 +86,7 @@ describe("folding events into a payment's facts", () => {
     const outcomes = new Set(permutations(events).map((order) => JSON.stringify(fold(order))));
     expect(outcomes.size).toBe(1);
     const facts = fold(events);
-    expect(depositPaymentState({ ...facts, currency: "GBP" })).toBe("refunded");
+    expect(depositPaymentState(facts)).toBe("refunded");
     expect(facts.amountRefundedMinor).toBe(50_000);
     expect(facts.paidAt?.toISOString()).toBe(t(5).toISOString());
     expect(facts.stripePaymentIntentId).toBe("pi_1");
@@ -100,13 +100,13 @@ describe("folding events into a payment's facts", () => {
 
   it("keeps a payment paid when its page lapses or a decline arrives after the success", () => {
     const facts = fold([[paid, t(6)], [expired, t(3_600)], [declined, t(1)]]);
-    expect(depositPaymentState({ ...facts, currency: "GBP" })).toBe("paid");
+    expect(depositPaymentState(facts)).toBe("paid");
     expect(facts.failureMessage).toBe("Your card was declined.");
   });
 
   it("records a refund that arrives before the payment's own report as a paid, refunded payment", () => {
     const facts = fold([[refundSome, t(30)]]);
-    expect(depositPaymentState({ ...facts, currency: "GBP" })).toBe("partially_refunded");
+    expect(depositPaymentState(facts)).toBe("partially_refunded");
     expect(facts.amountReceivedMinor).toBe(50_000);
   });
 
@@ -116,12 +116,34 @@ describe("folding events into a payment's facts", () => {
     expect(fold([[declined, t(1)], [later, t(9)]]).failureMessage).toBe("Your card has insufficient funds.");
   });
 
+  it("keeps a reported currency that differs from the one asked for, in either order", () => {
+    const euros: DepositEvent = { ...succeeded, currency: "eur" } as DepositEvent;
+    for (const order of permutations<readonly [DepositEvent, Date]>([[paid, t(6)], [euros, t(7)]])) {
+      const facts = fold(order);
+      expect(facts.currencyReceived).toBe("EUR");
+      expect(depositPaymentState(facts)).toBe("mismatch");
+    }
+  });
+
+  it("keeps the same one of two different wrong amounts whatever their order", () => {
+    const short: DepositEvent = { ...succeeded, amountMinor: 40_000 } as DepositEvent;
+    const shorter: DepositEvent = { ...succeeded, amountMinor: 30_000 } as DepositEvent;
+    const kept = new Set(permutations<readonly [DepositEvent, Date]>([[short, t(6)], [shorter, t(7)], [paid, t(8)]]).map((order) => fold(order).amountReceivedMinor));
+    expect([...kept]).toEqual([30_000]);
+  });
+
+  it("never calls a payment reported without an amount paid", () => {
+    const silent: DepositEvent = { ...paid, amountMinor: null, currency: null } as DepositEvent;
+    expect(depositPaymentState(fold([[silent, t(6)]]))).toBe("mismatch");
+    expect(depositPaymentState(fold([[silent, t(6)], [succeeded, t(7)]]))).toBe("paid");
+  });
+
   it("keeps a reported amount that differs from the one asked for, in either order", () => {
     const short: DepositEvent = { ...succeeded, amountMinor: 40_000 } as DepositEvent;
     for (const order of permutations<readonly [DepositEvent, Date]>([[paid, t(6)], [short, t(7)]])) {
       const facts = fold(order);
       expect(facts.amountReceivedMinor).toBe(40_000);
-      expect(depositPaymentState({ ...facts, currency: "GBP" })).toBe("mismatch");
+      expect(depositPaymentState(facts)).toBe("mismatch");
     }
   });
 });

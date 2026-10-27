@@ -123,10 +123,13 @@ export interface DepositPaymentFacts {
 
 /**
  * The state the facts add up to, whatever order they arrived in. Paid wins
- * over every failure; an amount received that is not the amount asked for is
- * a mismatch for the venue to look at, never "paid".
+ * over every failure; an amount received that is not the amount asked for, or
+ * a payment reported without one, is a mismatch for the venue to look at,
+ * never "paid".
  */
 export function depositPaymentState(facts: DepositPaymentFacts): DepositPaymentState {
+  // Reported paid without an amount: nothing to check it against, so not "paid".
+  if (facts.paidAt !== null && facts.amountReceivedMinor === null) return "mismatch";
   if (facts.amountReceivedMinor !== null
     && (facts.amountReceivedMinor !== facts.amountMinor
       || (facts.currencyReceived !== null && facts.currencyReceived.toUpperCase() !== facts.currency.toUpperCase()))) {

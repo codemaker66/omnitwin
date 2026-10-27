@@ -48,6 +48,8 @@ const Envelope = z.object({
   type: z.string().min(1).max(100),
   created: z.number().int().positive(),
   livemode: z.boolean(),
+  /** The API version the endpoint renders events in; deposits read 2026-08-26.dahlia. */
+  api_version: z.string().nullable().optional(),
   data: z.object({ object: z.unknown() }).loose(),
 }).loose();
 
@@ -65,6 +67,7 @@ export interface ParsedStripeEvent {
   readonly id: string;
   readonly type: string;
   readonly livemode: boolean;
+  readonly apiVersion: string | null;
   readonly created: Date;
   readonly event: DepositEvent;
 }
@@ -90,7 +93,7 @@ export function parseStripeEvent(raw: unknown): ParsedStripeEvent | null {
   if (!envelope.success) return null;
   const { id, type, livemode, created } = envelope.data;
   const object = envelope.data.data.object;
-  const base = { id, type, livemode, created: new Date(created * 1000) };
+  const base = { id, type, livemode, apiVersion: envelope.data.api_version ?? null, created: new Date(created * 1000) };
 
   const session = (): z.infer<typeof SessionObject> | null => {
     const parsed = SessionObject.safeParse(object);
@@ -147,9 +150,10 @@ export function parseStripeEvent(raw: unknown): ParsedStripeEvent | null {
   }
 }
 
-/** What a payment row holds of Stripe's reports. */
+/** What a payment row holds of Stripe's reports, beside what was asked for. */
 export interface PaymentFacts {
   readonly amountMinor: number;
+  readonly currency: string;
   readonly stripePaymentIntentId: string | null;
   readonly amountReceivedMinor: number | null;
   readonly currencyReceived: string | null;
@@ -174,19 +178,28 @@ function latest(current: Date | null, next: Date): Date {
 }
 
 /**
- * The amount Stripe reports, kept once; a report that differs from the amount
- * asked for replaces one that matched, so a mismatch, once seen, stays seen.
+ * The amount and currency Stripe reports, as one report. Of all the reports
+ * seen, the one kept is the least by a fixed order: one that differs from
+ * what was asked for before one that matches (so a mismatch, once seen, stays
+ * seen), then the smaller amount, then a named currency before none. A fixed
+ * order, not arrival order, so any order of the same reports keeps the same.
  */
 function reported(facts: MutableFacts, amountMinor: number | null, currency: string | null): void {
   if (amountMinor === null) return;
-  const upper = currency === null ? null : currency.toUpperCase();
-  const matches = facts.amountReceivedMinor === facts.amountMinor;
-  if (facts.amountReceivedMinor === null || (matches && amountMinor !== facts.amountMinor)) {
-    facts.amountReceivedMinor = amountMinor;
-    facts.currencyReceived = upper;
-  } else if (facts.currencyReceived === null && upper !== null) {
-    facts.currencyReceived = upper;
+  const asked = facts.currency.toUpperCase();
+  const key = (amount: number, unit: string | null): readonly [number, number, string] => [
+    amount === facts.amountMinor && (unit === null || unit === asked) ? 1 : 0,
+    amount,
+    unit ?? "~",
+  ];
+  const next = key(amountMinor, currency === null ? null : currency.toUpperCase());
+  if (facts.amountReceivedMinor !== null) {
+    const kept = key(facts.amountReceivedMinor, facts.currencyReceived);
+    const before = next[0] !== kept[0] ? next[0] < kept[0] : next[1] !== kept[1] ? next[1] < kept[1] : next[2] < kept[2];
+    if (!before) return;
   }
+  facts.amountReceivedMinor = amountMinor;
+  facts.currencyReceived = currency === null ? null : currency.toUpperCase();
 }
 
 /** The facts once this event is folded in. Order-independent and idempotent. */

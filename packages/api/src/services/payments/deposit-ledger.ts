@@ -1,4 +1,5 @@
 import { eq } from "drizzle-orm";
+import { z } from "zod";
 import { depositPaymentState, type DepositPaymentState } from "@omnitwin/types";
 import { depositPayments, stripeEvents } from "../../db/schema.js";
 import type { Database } from "../../db/client.js";
@@ -38,6 +39,7 @@ export type LedgerOutcome =
 export function paymentFacts(row: PaymentRow): PaymentFacts {
   return {
     amountMinor: row.amountMinor,
+    currency: row.currency,
     stripePaymentIntentId: row.stripePaymentIntentId,
     amountReceivedMinor: row.amountReceivedMinor,
     currencyReceived: row.currencyReceived,
@@ -53,7 +55,7 @@ export function paymentFacts(row: PaymentRow): PaymentFacts {
 }
 
 export function paymentRowState(row: PaymentRow): DepositPaymentState {
-  return depositPaymentState({ ...paymentFacts(row), currency: row.currency });
+  return depositPaymentState(paymentFacts(row));
 }
 
 /** The payment row an event is about, held for the rest of the transaction. */
@@ -103,7 +105,7 @@ async function hintFor(db: Database, event: DepositEvent, gateway: DepositGatewa
   if (known !== undefined) return null;
   const metadata = await gateway.paymentIntentMetadata(event.paymentIntentId);
   const id = metadata?.["deposit_payment_id"];
-  return id !== undefined && /^[0-9a-f-]{36}$/u.test(id) ? id : null;
+  return id !== undefined && z.uuid().safeParse(id).success ? id : null;
 }
 
 export async function applyStripeEvent(db: Database, parsed: ParsedStripeEvent, gateway: DepositGateway): Promise<LedgerOutcome> {
@@ -119,7 +121,7 @@ export async function applyStripeEvent(db: Database, parsed: ParsedStripeEvent, 
     if (payment === null) return { kind: "ignored" };
 
     const before = paymentRowState(payment);
-    const { amountMinor: _asked, ...facts } = factsAfter(paymentFacts(payment), parsed.event, parsed.created);
+    const { amountMinor: _asked, currency: _in, ...facts } = factsAfter(paymentFacts(payment), parsed.event, parsed.created);
     const [updated] = await tx.update(depositPayments).set({ ...facts, updatedAt: new Date() })
       .where(eq(depositPayments.id, payment.id))
       .returning();
