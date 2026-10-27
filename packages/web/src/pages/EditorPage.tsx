@@ -10,6 +10,7 @@ import { SaveSendPanel } from "../components/editor/SaveSendPanel.js";
 import { MobilePlannerTopBar } from "../components/editor/MobilePlannerTopBar.js";
 import { EventLinkedPlannerBootstrap } from "../components/editor/EventLinkedPlannerBootstrap.js";
 import { SubmitForReviewPanel } from "../components/editor/SubmitForReviewPanel.js";
+import { PlannerLeavingNotes } from "../components/editor/PlannerLeavingNotes.js";
 import { EditorBridge } from "../components/editor/EditorBridge.js";
 import { LayoutLiveLayer } from "../components/editor/LayoutLiveLayer.js";
 import { PlannerCockpit } from "../components/editor/cockpit/PlannerCockpit.js";
@@ -35,6 +36,7 @@ import {
 } from "../lib/planner-venue-resolution.js";
 import * as spacesApi from "../api/spaces.js";
 import { recordPlannerArrivalChoice } from "../lib/planner-room-arrival.js";
+import { layoutLeftByRoomSwitch } from "../lib/planner-room-switch.js";
 import { PlannerWorkContext, type PlannerWork } from "../components/scene/planner-work.js";
 import "../components/editor/MobilePlannerChrome.css";
 
@@ -213,6 +215,7 @@ export function EditorPage(): React.ReactElement {
   const urlConfigId = params.configId ?? params.code;
   const routeVenueSlug = params.venueSlug;
   const [searchParams] = useSearchParams();
+  const location = useLocation();
   const requestedEventId = searchParams.get("eventId");
   const carriedSearch = searchParams.toString();
   // "Start a new plan" asks for a fresh plan, never a reused one (A-X3).
@@ -261,6 +264,19 @@ export function EditorPage(): React.ReactElement {
       void useEditorStore.getState().loadConfiguration(urlConfigId, isAuthenticated);
     }
   }, [urlConfigId, storeConfigId, isAuthenticated]);
+
+  // The slate's room switch (QoL D-X3) leaves this page on /plan?space=<room>
+  // with the layout it left still open, and the bootstrap below opens a room
+  // only when none is. The switch has already given that layout's unsaved work
+  // its chance to save (saveBeforeLayoutChange); closing exactly that layout
+  // lets the bootstrap open the room. The note about anything left behind
+  // survives the reset.
+  const leavingLayout = layoutLeftByRoomSwitch(location.state);
+  useEffect(() => {
+    if (urlConfigId !== undefined || requestedEventId !== null) return;
+    if (leavingLayout === null || storeConfigId !== leavingLayout) return;
+    useEditorStore.getState().reset();
+  }, [leavingLayout, requestedEventId, storeConfigId, urlConfigId]);
 
   // DEV-only session-replay bridge (G4 slice 4, the __venPerf pattern):
   // window.__venReplay() replays the open config's audit trail and diffs
@@ -677,7 +693,7 @@ function PlannerCommsLayer(): React.ReactElement {
       {!mobile && showStandaloneTruthIndicator && <TruthModeIndicator summary={truthSummary} />}
       {saveError !== null ? (
         <SaveErrorToast message={saveError} isAuthenticated={authState} conflict={saveConflict} />
-      ) : null}
+      ) : <PlannerLeavingNotes />}
     </>
   );
 }
