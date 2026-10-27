@@ -101,7 +101,8 @@ crafted pieces, so the planner downloads no furniture GLB.
   Assembly) moves or hides a batch's pieces, that batch's shade is not drawn
   and `FurnitureContactShadows` grounds them as the reveal presents them. A
   test holds every piece to it: what a piece shows within 2 cm of the floor
-  (its triangles' edges, sampled), in groups, is a foot when no wider than
+  (its triangles' edges, sampled), in groups, is a foot when it reaches within
+  5 mm of the floor (a covered poseur's pockets hang 4 mm up) and is no wider than
   16 cm and not under a wider group, and every foot stands inside a spot. A
   hem, a plinth, a base or a panel is wider, and the footprint shadow every
   placed piece gets grounds it. That test added the rounds' feet (the bare
