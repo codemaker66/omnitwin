@@ -12,6 +12,7 @@ import {
 } from "@omnitwin/types";
 import type { Env } from "../env.js";
 import { ANTHROPIC_PROVIDER, AnthropicAIGenerationAdapter } from "./anthropic-draft-adapter.js";
+import { scrubContactDetails } from "./proposal-message-draft.js";
 import {
   ANTHROPIC_PRICE_TABLE,
   estimatedCall,
@@ -297,6 +298,50 @@ export function buildAIDraftPrompt(input: CreateAIDraftRequest): string {
     "Structured context:",
     stableCanonicalJson(input.context),
   ].join("\n");
+}
+
+// What a general draft's context may not carry to a provider, whatever the
+// screen that built it sent (release audit ai-1, 27 October 2026): contact
+// details, a person's name, and record ids, none of which an internal draft
+// needs. Ids are matched as camelCase or snake_case endings ("enquiryId",
+// "handoff_pack_id"), so a word that merely ends in "id" ("paid") stays.
+const CONTACT_KEY = /e-?mail|phone|mobile|telephone|whats_?app|fax|address|postcode|zip_?code/iu;
+const NAME_KEY = /^(?:name|full_?name|first_?name|last_?name|sur_?name|guest_?name|client_?name|contact_?name|customer_?name|enquirer_?name)$/iu;
+const ID_KEY = /^id$|^ids$|(?:Id|ID|_id|Ids|IDs|_ids)$/u;
+
+/** Whether a context key is one a general draft never sends: contact
+ *  details, a person's name or a record id. */
+export function isWithheldContextKey(key: string): boolean {
+  return CONTACT_KEY.test(key) || NAME_KEY.test(key) || ID_KEY.test(key);
+}
+
+// Array.isArray does not narrow a readonly array.
+function isList(value: CanonicalJsonValue): value is readonly CanonicalJsonValue[] {
+  return Array.isArray(value);
+}
+
+function scrubContextValue(value: CanonicalJsonValue): CanonicalJsonValue {
+  if (typeof value === "string") return scrubContactDetails(value).text;
+  if (isList(value)) return value.map(scrubContextValue);
+  if (value !== null && typeof value === "object") return scrubDraftContext(value);
+  return value;
+}
+
+/**
+ * A general draft's context as it may reach a provider: every key that names
+ * contact details, a person or a record id dropped, at any depth, and every
+ * string's email addresses and phone numbers replaced by the same scrub the
+ * proposal's message and event briefs use ("(email address)", "(phone
+ * number)"). The screen builds this context, so the server holds it to the
+ * rule rather than trusting each screen to.
+ */
+export function scrubDraftContext(context: Readonly<Record<string, CanonicalJsonValue>>): Record<string, CanonicalJsonValue> {
+  const kept: Record<string, CanonicalJsonValue> = {};
+  for (const [key, value] of Object.entries(context)) {
+    if (isWithheldContextKey(key)) continue;
+    kept[key] = scrubContextValue(value);
+  }
+  return kept;
 }
 
 /** A review-gated draft, from a call attributed to the venue it is for and the person who asked. */

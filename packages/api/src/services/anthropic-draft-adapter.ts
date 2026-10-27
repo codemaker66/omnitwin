@@ -22,11 +22,21 @@ import {
 // Claude, through Anthropic's own SDK, as an AI draft provider. The draft's
 // rules go in the system prompt and the venue's structured context goes in
 // the user turn inside <context> tags, so a client's words stay data rather
-// than instructions. A refusal or a cut-off answer is an error, never a
-// partial draft: the route reports it and nothing reaches the composer.
+// than instructions; the context is written with JSON's escapes for <, > and
+// &, so words that hold "</context>" cannot close it early. A refusal or a
+// cut-off answer is an error, never a partial draft: the route reports it and
+// nothing reaches the composer.
+//
+// A draft is written by the model that was asked, or not at all. Drafts are
+// sent without the server-side refusal fallback, so a model that declines is
+// a refusal the person sees, never a draft another model wrote in its place;
+// and an answer that says another model served it is refused all the same.
 //
 // It also answers in a given JSON shape (structured outputs) for typed event
-// briefs (T-650), with the same refusal and cut-off rules.
+// briefs (T-650), with the same refusal and cut-off rules. A brief still asks
+// for the refusal fallback: its answer is typed, checked field by field
+// against the contract and the engine's bounds, and recorded with the model
+// that served it, before a planner reviews it.
 //
 // Every call is metered (T-656): its worst case is reserved against the
 // venue's monthly allowance before it is sent (AIBudgetReachedError when it
@@ -65,6 +75,26 @@ export class AIDraftNotProducedError extends Error {
   }
 }
 
+/** The model asked did not write the answer: another did, in its place. The
+ *  ledger records the call as the asked model's refusal. */
+export class AIDraftFromAnotherModelError extends AIDraftNotProducedError {
+  constructor() {
+    super("Another model than the one asked answered, so there is no draft");
+    this.name = "AIDraftFromAnotherModelError";
+  }
+}
+
+/** The context as JSON that cannot close its own tags. A client's words can
+ *  hold "</context>"; written with JSON's escapes for <, > and & they read
+ *  the same to a JSON reader but cannot end the data early and pass as
+ *  instructions. */
+export function contextTagJson(context: AIGenerationInput["context"]): string {
+  return stableCanonicalJson(context)
+    .replaceAll("<", "\\u003c")
+    .replaceAll(">", "\\u003e")
+    .replaceAll("&", "\\u0026");
+}
+
 export type AnthropicDraftRequest = Anthropic.Beta.MessageCreateParamsNonStreaming;
 /** A message as the SDK returns it, with the request id it reads from the response. */
 export type AnthropicDraftReply = Anthropic.Beta.BetaMessage & { readonly _request_id?: string | null };
@@ -81,17 +111,19 @@ function withServerFallback(model: string, request: AnthropicDraftRequest): Anth
 // Drafts carry no cache breakpoint: their rules (about 1,500 characters for a
 // proposal's message, under 600 for the other drafts) are below the 512-token
 // minimum Claude Opus 5.5 caches, and a shorter prefix silently never caches.
+// Nor do they ask for the server-side refusal fallback: a draft is the asked
+// model's words or none (see readAnthropicDraftText).
 export function buildAnthropicDraftRequest(model: string, input: AIGenerationInput): AnthropicDraftRequest {
-  return withServerFallback(model, {
+  return {
     model,
     max_tokens: MAX_TOKENS,
     output_config: { effort: "medium" },
     system: input.instructions,
     messages: [{
       role: "user",
-      content: `<context>\n${stableCanonicalJson(input.context)}\n</context>`,
+      content: `<context>\n${contextTagJson(input.context)}\n</context>`,
     }],
-  });
+  };
 }
 
 /**
@@ -135,8 +167,27 @@ export function readAnthropicStructuredAnswer(message: Anthropic.Beta.BetaMessag
   }
 }
 
-/** The draft's text, or an error when Claude declined or was cut off. */
-export function readAnthropicDraftText(message: Anthropic.Beta.BetaMessage): string {
+/** The model asked, or a dated snapshot of it ("claude-opus-5-5-20261001"). */
+function sameModel(served: string, requested: string): boolean {
+  return served === requested || (served.startsWith(`${requested}-`) && /^\d{8}$/u.test(served.slice(requested.length + 1)));
+}
+
+/**
+ * Whether a model other than the one asked wrote the answer: a server-side
+ * fallback served it (a `fallback_message` entry in `usage.iterations`, the
+ * API's own signal, or a `fallback` block where one model gave way to
+ * another), or the message names another model.
+ */
+export function servedByAnotherModel(message: Anthropic.Beta.BetaMessage, requestedModel: string): boolean {
+  if ((message.usage.iterations ?? []).some((entry) => entry.type === "fallback_message")) return true;
+  if (message.content.some((block) => block.type === "fallback")) return true;
+  return !sameModel(message.model, requestedModel);
+}
+
+/** The draft's text, or an error when Claude declined, was cut off, or
+ *  another model than the one asked wrote it. */
+export function readAnthropicDraftText(message: Anthropic.Beta.BetaMessage, requestedModel: string): string {
+  if (servedByAnotherModel(message, requestedModel)) throw new AIDraftFromAnotherModelError();
   if (message.stop_reason === "refusal") {
     throw new AIDraftNotProducedError("Claude declined to write this draft");
   }
@@ -199,7 +250,13 @@ export class AnthropicAIGenerationAdapter implements AIGenerationAdapter, AIStru
   }
 
   async generateText(input: AIGenerationInput, attribution: AICallAttribution): Promise<string> {
-    return this.metered(buildAnthropicDraftRequest(this.model, input), input.useCase, attribution, undefined, readAnthropicDraftText);
+    return this.metered(
+      buildAnthropicDraftRequest(this.model, input),
+      input.useCase,
+      attribution,
+      undefined,
+      (message) => readAnthropicDraftText(message, this.model),
+    );
   }
 
   async generateStructured(input: AIStructuredGenerationInput, attribution: AICallAttribution): Promise<unknown> {
@@ -239,7 +296,8 @@ export class AnthropicAIGenerationAdapter implements AIGenerationAdapter, AIStru
     try {
       answer = read(message);
     } catch (error) {
-      await hold.settle({ ...used, outcome: anthropicOutcome(message, false) });
+      const outcome = error instanceof AIDraftFromAnotherModelError ? "refusal" : anthropicOutcome(message, false);
+      await hold.settle({ ...used, outcome });
       throw error;
     }
     await hold.settle({ ...used, outcome: anthropicOutcome(message, true) });

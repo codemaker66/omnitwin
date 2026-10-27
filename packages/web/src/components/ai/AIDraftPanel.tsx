@@ -16,19 +16,26 @@ type DraftState =
   | { readonly kind: "ready"; readonly draft: AIDraft }
   | { readonly kind: "error"; readonly message: string };
 
-interface AIDraftPanelProps {
+// A draft is asked for one of two ways: with the context this screen holds,
+// sent to POST /ai/drafts (which takes contact details, names and ids out of
+// it before a provider reads it), or by a request whose context the server
+// builds from its own record, as an enquiry's summary is (release audit ai-1).
+type DraftSource =
+  | { readonly context: Record<string, CanonicalJsonValue>; readonly requestedTone?: string; readonly request?: never }
+  | { readonly request: () => Promise<AIDraft>; readonly context?: never; readonly requestedTone?: never };
+
+type AIDraftPanelProps = DraftSource & {
   readonly title: string;
   readonly useCase: AIDraftUseCase;
-  readonly context: Record<string, CanonicalJsonValue>;
-  readonly requestedTone?: string;
   readonly actionLabel?: string;
-}
+};
 
 export function AIDraftPanel({
   title,
   useCase,
   context,
   requestedTone,
+  request,
   actionLabel = "Generate draft",
 }: AIDraftPanelProps): ReactElement | null {
   const [status, setStatus] = useState<StatusState>({ kind: "loading" });
@@ -58,7 +65,8 @@ export function AIDraftPanel({
   const handleGenerate = useCallback(() => {
     if (status.kind !== "ready" || !status.configured) return;
     setDraftState({ kind: "loading" });
-    createAIDraft({ useCase, context, requestedTone })
+    const asked = request !== undefined ? request() : createAIDraft({ useCase, context, requestedTone });
+    asked
       .then((draft) => { setDraftState({ kind: "ready", draft }); })
       .catch(() => {
         setDraftState({
@@ -66,7 +74,7 @@ export function AIDraftPanel({
           message: "AI draft generation is unavailable. Continue with manual review.",
         });
       });
-  }, [context, requestedTone, status, useCase]);
+  }, [context, request, requestedTone, status, useCase]);
 
   // No provider, no panel. An always-disabled "Generate draft" button was a
   // dead end on every surface that mounts this, so the panel only exists once

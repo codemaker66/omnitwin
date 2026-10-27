@@ -99,6 +99,19 @@ describe("AIDraftPanel", () => {
     expect(screen.queryByRole("textbox")).toBeNull();
   });
 
+  // Release audit ai-1: a draft whose context the server builds from its own
+  // record (an enquiry's summary) is asked for by that request alone; the
+  // screen's context route is never called.
+  it("asks a server-built draft by its own request, never sending a context to /ai/drafts", async () => {
+    getAIAssistantStatusMock.mockResolvedValue(configuredStatus());
+    const request = vi.fn(() => Promise.resolve({ ...draft(), useCase: "enquiry_summary" as const, body: "A wedding for 150." }));
+    render(<AIDraftPanel title="Enquiry summary" useCase="enquiry_summary" actionLabel="Draft summary" request={request} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Draft summary" }));
+    expect(await screen.findByDisplayValue("A wedding for 150.")).toBeDefined();
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(createAIDraftMock).not.toHaveBeenCalled();
+  });
+
   it("renders nothing and never offers generation when no provider is configured", async () => {
     getAIAssistantStatusMock.mockResolvedValue(disabledStatus());
     const { container } = render(

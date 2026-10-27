@@ -228,6 +228,18 @@ export function canManageVenueTeam(
   return holdsVenueRole(user, venueId, VENUE_TEAM_INVITER_ROLE_SET);
 }
 
+/**
+ * The venue a general AI draft is charged to (T-656): the asker's own, where
+ * they work on its floor or its commercial team; null for anyone else (an
+ * account with no venue, a client, a planner, an event-scoped caterer), who
+ * cannot spend a venue's allowance.
+ */
+export function aiDraftVenue(user: Pick<JwtUser, "role" | "venueId" | "platformRole">): string | null {
+  const venueId = user.venueId;
+  if (venueId === null) return null;
+  return canManageVenue(user, venueId) || canManageCommercial(user, venueId) ? venueId : null;
+}
+
 /** Reading the venue's AI usage and spend (T-656): its managers and admins. */
 export function canReadAIUsage(
   user: Pick<JwtUser, "role" | "venueId" | "platformRole">,

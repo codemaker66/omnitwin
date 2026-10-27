@@ -41,7 +41,7 @@ soft-deleted in practice).
 | Outcome | Meaning |
 | --- | --- |
 | `ok` | an answer the route could use |
-| `refusal` | Claude declined (after any fallback) |
+| `refusal` | Claude declined (after any fallback), or another model than the one asked wrote a draft, which is then not passed on |
 | `max_tokens` | cut off before it finished |
 | `error` | the provider failed, or the answer was unusable |
 | `budget_blocked` | refused by the allowance; nothing was sent, so no tokens and no cost (a check constraint enforces this) |
@@ -174,9 +174,11 @@ failed write is logged as above. A second `settle` is ignored.
   dearest input-side rate (fresh input or either cache write);
 - output: `max_tokens` (16,000) at the output rate;
 - fallback: when the request carries the server-side fallback, a second attempt
-  at the dearest rates among that model's fallback models.
+  at the dearest rates among that model's fallback models. Only event briefs
+  carry it: a draft is written by the model asked or not at all (27 October
+  2026), so a draft is reserved as one attempt.
 
-At Claude Opus 5.5 this is about $0.80 for a draft and $1 for a brief. Real
+At Claude Opus 5.5 this is about $0.36 for a draft and $1 for a brief. Real
 calls cost cents: the 8 October proposal-draft evaluation measured a mean of
 $0.0096–$0.0130 a draft
 ([report](../reports/claude-proposal-drafts-eval-2026-10-08.md)). Event briefs
@@ -203,7 +205,7 @@ What can still escape:
 - **A ledger write that fails after a call** is logged with everything it
   would have held. Its reservation keeps the money held until it lapses ten
   minutes later; after that the spend is unrecorded.
-- **The server-side `default` fallback** is reserved as one extra hop. If the
+- **The server-side `default` fallback** (event briefs only) is reserved as one extra hop. If the
   API chained more, the ledger would still be exact (it prices
   `usage.iterations`), but the call could cost more than it reserved.
 - **A wrong or stale price table** gives a wrong ledger. The stored tokens and

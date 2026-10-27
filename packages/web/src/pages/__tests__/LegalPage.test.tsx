@@ -40,6 +40,7 @@ const SUB_PROCESSORS = [
   "Clerk",
   "Sentry",
   "Cloudflare R2",
+  "Anthropic",
 ] as const;
 
 function textOf(type: (typeof TYPES)[number]): string {
@@ -80,7 +81,7 @@ describe("every document", () => {
     // Each document carries its own date: the privacy policy changed when the
     // dietary note gained its retention rule; the other two did not.
     const expected = type === "privacy"
-      ? { iso: "2026-10-26", text: "26 October 2026" }
+      ? { iso: "2026-10-27", text: "27 October 2026" }
       : { iso: "2026-08-15", text: "15 August 2026" };
     expect(time?.getAttribute("datetime")).toBe(expected.iso);
     expect(time?.textContent).toBe(expected.text);
@@ -159,6 +160,21 @@ describe("the privacy policy", () => {
     for (const processor of SUB_PROCESSORS) {
       expect(text, `privacy policy does not name ${processor}`).toContain(processor);
     }
+  });
+
+  // Release audit ai-1: the events team's AI drafts send an enquiry's words to
+  // Anthropic, so the policy names it, says what is sent and what is not,
+  // and that a person decides what is used.
+  it("names Anthropic for AI drafting, what it is sent, what it is not, and that a person decides", () => {
+    render(<LegalPage type="privacy" />);
+    const section = document.getElementById("who-else");
+    const text = section?.textContent ?? "";
+    expect(text).toContain("Anthropic");
+    expect(text).toContain("used only when a member of the team asks for a draft");
+    expect(text).toContain("with any email address or phone number in them taken out first");
+    expect(text).toContain("A message to you is also sent your name, so that it can address you; a summary is not.");
+    expect(text).toContain("Your email address and phone number are not sent.");
+    expect(text).toContain("nothing it writes is sent to you without a person choosing to send it");
   });
 
   it("lists every field the public enquiry endpoint accepts", () => {

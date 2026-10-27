@@ -84,9 +84,11 @@ const ORIGINAL_EDITION = { text: LAST_UPDATED, iso: "2026-08-15" } as const;
 
 /** The privacy policy's own date: it changed when the dietary note gained its
  *  retention rule (fix-first item 18) and, the same day, the choice to have
- *  it remembered ("ask once, then remember"); and on 26 October, when it said
- *  how long deleted data stays in the database's backups (T-068). */
-const PRIVACY_UPDATED = { text: "26 October 2026", iso: "2026-10-26" } as const;
+ *  it remembered ("ask once, then remember"); on 26 October, when it said
+ *  how long deleted data stays in the database's backups (T-068); and on 27
+ *  October, when it named Anthropic, which writes the events team's AI
+ *  drafts (release audit ai-1), before AI drafting is switched on. */
+const PRIVACY_UPDATED = { text: "27 October 2026", iso: "2026-10-27" } as const;
 
 /** The allergy note's keeping period, from the one definition the API's
  *  retention pass and the planner also read. */
@@ -391,6 +393,13 @@ const PRIVACY: LegalDocument = {
               term: "Cloudflare R2",
               detail:
                 "Object storage for the venue's imagery and for the 3D capture of its rooms.",
+            },
+            // What the AI drafts send is read from the code that builds them:
+            // services/enquiry-summary-draft.ts and proposal-message-draft.ts.
+            {
+              term: "Anthropic",
+              detail:
+                "AI drafting for the venue's events team, used only when a member of the team asks for a draft: a summary of your enquiry, or the wording of a message to you about a proposal. Anthropic's Claude is sent the details of your event (the occasion, date, guest count and room) and the words of your enquiry and of your messages about the proposal, with any email address or phone number in them taken out first. A message to you is also sent your name, so that it can address you; a summary is not. Your email address and phone number are not sent. A member of the events team reads every draft and decides what to use; nothing it writes is sent to you without a person choosing to send it.",
             },
           ],
         },

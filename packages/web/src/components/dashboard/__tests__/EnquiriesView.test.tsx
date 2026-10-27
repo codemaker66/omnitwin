@@ -4,7 +4,7 @@ import { MemoryRouter } from "react-router-dom";
 import type { Booking, CalendarBookingEntry, CalendarResponse } from "@omnitwin/types";
 import type { Enquiry, EnquiryListQuery, EnquiryPage, EnquiryStageCounts } from "../../../api/enquiries.js";
 import type { Space, VenueDetail } from "../../../api/spaces.js";
-import { ApiError } from "../../../api/client.js";
+import { ApiError, api } from "../../../api/client.js";
 import { EnquiriesView } from "../EnquiriesView.js";
 
 // ---------------------------------------------------------------------------
@@ -65,7 +65,12 @@ vi.mock("../../../stores/auth-store.js", () => ({
 }));
 
 vi.mock("../../ai/AIDraftPanel.js", () => ({
-  AIDraftPanel: ({ useCase }: { readonly useCase: string }) => <div data-use-case={useCase}>AI draft</div>,
+  AIDraftPanel: ({ useCase, request }: { readonly useCase: string; readonly request?: () => Promise<unknown> }) => (
+    <div data-use-case={useCase}>
+      AI draft
+      <button type="button" onClick={() => { void request?.().catch(() => undefined); }}>Ask for the draft</button>
+    </div>
+  ),
 }));
 
 vi.mock("../../../hooks/use-ai-drafts-available.js", () => ({
@@ -817,6 +822,33 @@ describe("EnquiriesView decisions", () => {
     drafts.open = true;
     fireEvent(drafts, new Event("toggle"));
     expect(screen.getAllByText("AI draft").map((panel) => panel.getAttribute("data-use-case"))).toEqual(["enquiry_summary"]);
+  });
+
+  // Release audit ai-1: the summary's context was built here and sent as it
+  // was, the guest's name, email address and message word for word. The
+  // server now builds it from the enquiry it holds; only the id goes, in the path.
+  it("asks for the enquiry summary by the enquiry's id alone, sending no email address, name or message", async () => {
+    const asked = { ...enquiry(3), guestEmail: "jane@example.com", guestPhone: "07700 900123", guestName: "Jane Doe",
+      message: "Jane Doe, jane@example.com, call me on 07700 900123" };
+    mocks.listEnquiryPage.mockResolvedValue(page([asked], {}));
+    const post = vi.spyOn(api, "post").mockRejectedValue(new Error("not answered in this test"));
+    try {
+      render(<EnquiriesView canDraftWithAI />);
+      fireEvent.click(await screen.findByRole("button", { name: /^Jane Doe,/u }));
+      const drafts = screen.getByText("Draft with AI").closest("details");
+      if (drafts === null) throw new Error("Expected the drafting disclosure");
+      drafts.open = true;
+      fireEvent(drafts, new Event("toggle"));
+      fireEvent.click(screen.getByRole("button", { name: "Ask for the draft" }));
+      await waitFor(() => { expect(post).toHaveBeenCalledTimes(1); });
+      const [path, body] = post.mock.calls[0] ?? [];
+      expect(path).toBe("/enquiries/enquiry-3/summary-draft");
+      expect(body).toEqual({});
+      expect(JSON.stringify(body)).not.toMatch(/email|enquiryId|jane@example\.com|07700|Jane Doe/u);
+      expect(post.mock.calls.some(([to]) => to === "/ai/drafts")).toBe(false);
+    } finally {
+      post.mockRestore();
+    }
   });
 
   it("offers AI drafting only where a provider is configured", async () => {
