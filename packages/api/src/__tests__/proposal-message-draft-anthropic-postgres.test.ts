@@ -225,6 +225,21 @@ describe.skipIf(testUrl === undefined)("proposal message drafts with the Anthrop
     expect((await pool.query("SELECT count(*)::int AS n FROM ai_usage_reservations")).rows[0]).toEqual({ n: 0 });
   });
 
+  // Plan 19, L6: a proposal's message never states a price, availability or
+  // capacity, whatever Claude wrote; the composer is told what was taken out.
+  it("takes out a sentence that says the date is free, and says so on the draft", async () => {
+    await proposalWithEnquiry("Is 1 June 2027 still free, and how much would it be?");
+    replies.push({ text: "Dear Elaine, thank you for your note. 1 June 2027 is still free in the Grand Hall. The team will confirm the figures with you." });
+    const answer = await ask(STAFF);
+    expect(answer.statusCode).toBe(200);
+    const draft = ProposalMessageDraftSchema.parse(answer.body["data"]);
+    expect(draft.draft.body).toBe("Dear Elaine, thank you for your note. The team will confirm the figures with you.");
+    expect(draft.draft.withheldCommitments).toEqual(["availability"]);
+    expect(JSON.stringify(sent[0]?.["system"])).toContain("Only the venue's events team confirms these.");
+    // The call was made and is recorded as an answer.
+    expect(await ledger()).toEqual([expect.objectContaining({ feature: "proposal_draft", outcome: "ok" })]);
+  });
+
   it("never sends the provider an email address or phone number from the client's words", async () => {
     await proposalWithEnquiry("Call me on 07700 900123 or write to elaine.c@example.org.");
     expect((await ask(STAFF)).statusCode).toBe(200);

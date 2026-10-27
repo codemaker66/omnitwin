@@ -66,9 +66,39 @@ is the asked model, for the check and for its price alike (`undatedModel` in
 the ledger's first real call. Event briefs keep the fallback: their
 answer is typed and checked field by field before a planner reviews it.
 
+## What a draft may not say (Plan 19, L6)
+
+A draft never states a price, availability or capacity: only the venue's team
+confirms these, from the quote, the Diary and the venue's sourced figures.
+
+- **The rules** (`buildAIDraftInstructions`) tell the model so for every use
+  case, and to say the events team will confirm any of them it is asked about.
+- **The check after the model** (`withholdDraftCommitments` in
+  `packages/types/src/ai-draft-commitments.ts`) reads the draft sentence by
+  sentence and takes out each sentence that states one ("£65 per head", "the
+  Grand Hall is free on the 17th", "it seats 200", "we can comfortably
+  accommodate your guests"). Sentences about the topic without a claim stay
+  ("the team will confirm prices and availability", "your 150 guests").
+  `createReviewGatedAIDraft` applies it to every draft, and `AIDraftSchema`
+  refuses a body that still holds a claim.
+- **The draft says what was taken out** (`withheldCommitments`), and both draft
+  surfaces say it in words: "It gave a price, which only the team confirms,
+  so that part was taken out."
+- **A draft that is nothing else** is no draft: 502, the composer says it could
+  not be written, and the call stays recorded.
+
+The patterns are tested on 73 tuned sentences and 31 written before the
+patterns first ran on them (all 31 read right on that first run; one was
+missed after a later change and then fixed, so that set is no longer unseen).
+All were written by the developing agent, not venue staff. The live
+evaluation (`eval:proposal-drafts`) now records `withheldCommitments` per
+draft and `withWithheldCommitments` in its summary, so the next run with a key
+measures how often Claude still states one.
+
 ## Checks
 
 ```
+pnpm --filter @omnitwin/types exec vitest run src/__tests__/ai-draft-commitments.test.ts
 pnpm --filter @omnitwin/api exec vitest run src/__tests__/anthropic-draft-adapter.test.ts src/__tests__/ai-assistant.test.ts
 VENVIEWER_ROUTE_TEST_DATABASE_URL=… pnpm --filter @omnitwin/api exec vitest run src/__tests__/enquiry-summary-draft-postgres.test.ts src/__tests__/proposal-message-draft-anthropic-postgres.test.ts
 pnpm --filter @omnitwin/web exec vitest run src/components/dashboard/__tests__/EnquiriesView.test.tsx src/pages/__tests__/LegalPage.test.tsx

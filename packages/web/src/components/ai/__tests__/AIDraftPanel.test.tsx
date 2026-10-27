@@ -46,6 +46,7 @@ function draft(): AIDraft {
     title: "Truth Mode explanation draft",
     body: "Planning explanation for staff review.",
     blockedUnsafeClaims: [],
+    withheldCommitments: [],
     safeLanguageApplied: false,
     humanReviewRequired: true,
     provenance: "ai_generated",
@@ -122,6 +123,23 @@ describe("AIDraftPanel", () => {
     render(<AIDraftPanel title="Enquiry summary" useCase="enquiry_summary" actionLabel="Draft summary" request={request} />);
     fireEvent.click(await screen.findByRole("button", { name: "Draft summary" }));
     expect((await screen.findByRole("alert")).textContent).toBe(words);
+  });
+
+  // Plan 19, L6: a price, availability or capacity the AI stated was taken out
+  // on the server, and the panel says so.
+  it("says what was taken out of the draft, and nothing when nothing was", async () => {
+    getAIAssistantStatusMock.mockResolvedValue(configuredStatus());
+    createAIDraftMock.mockResolvedValueOnce({ ...draft(), withheldCommitments: ["capacity"] });
+    render(<AIDraftPanel title="Draft" useCase="truth_mode_explanation" context={{ selectedTarget: "Grand Hall" }} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Generate draft" }));
+    expect((await screen.findByTestId("ai-draft-withheld")).textContent)
+      .toBe("It said how many a room holds, which only the team confirms, so that part was taken out.");
+    cleanup();
+    createAIDraftMock.mockResolvedValueOnce(draft());
+    render(<AIDraftPanel title="Draft" useCase="truth_mode_explanation" context={{ selectedTarget: "Grand Hall" }} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Generate draft" }));
+    expect(await screen.findByDisplayValue(draft().body)).toBeDefined();
+    expect(screen.queryByTestId("ai-draft-withheld")).toBeNull();
   });
 
   it("renders nothing and never offers generation when no provider is configured", async () => {

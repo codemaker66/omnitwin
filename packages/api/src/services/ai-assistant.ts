@@ -4,6 +4,7 @@ import {
   CreateAIDraftRequestSchema,
   createReviewGatedAIDraft,
   stableCanonicalJson,
+  withholdDraftCommitments,
   type AIAssistantStatus,
   type AIDraft,
   type AIDraftUseCase,
@@ -11,7 +12,7 @@ import {
   type CreateAIDraftRequest,
 } from "@omnitwin/types";
 import type { Env } from "../env.js";
-import { ANTHROPIC_PROVIDER, AnthropicAIGenerationAdapter } from "./anthropic-draft-adapter.js";
+import { AIDraftNotProducedError, ANTHROPIC_PROVIDER, AnthropicAIGenerationAdapter } from "./anthropic-draft-adapter.js";
 import { scrubContactDetails } from "./proposal-message-draft.js";
 import {
   ANTHROPIC_PRICE_TABLE,
@@ -282,6 +283,10 @@ export function buildAIDraftInstructions(input: CreateAIDraftRequest): string {
   return [
     reader?.audience ?? "You are drafting internal Venviewer planning support text.",
     "Do not claim certification, legal compliance, fire approval, occupancy approval, guaranteed accessibility, production readiness, or photoreal digital-twin status.",
+    // Plan 19, L6: only the venue's team confirms these. The draft is also
+    // checked after it is written, and a sentence that states one is taken
+    // out (withholdDraftCommitments in @omnitwin/types).
+    "Never state a price, a cost, a fee, a deposit, a discount or any amount of money; never say whether a date, a time or a room is available, free, held, booked or confirmed; and never say how many people a room seats, holds or can take, or that it is big enough. Only the venue's events team confirms these. Where the context or the client asks about one of them, say the events team will confirm it.",
     // A client's own words reach the context verbatim, so the context is
     // read as data: what it asks for can be answered, but it cannot rewrite
     // these rules or make the draft confirm what the venue has not.
@@ -392,7 +397,12 @@ export function scrubDraftRequest(request: CreateAIDraftRequest): CreateAIDraftR
   };
 }
 
-/** A review-gated draft, from a call attributed to the venue it is for and the person who asked. */
+/**
+ * A review-gated draft, from a call attributed to the venue it is for and the
+ * person who asked. A sentence stating a price, availability or capacity is
+ * taken out (the draft says which kinds were); a draft that is nothing else is
+ * no draft (AIDraftNotProducedError), and the call stays recorded as made.
+ */
 export async function generateAIDraft(
   adapter: AIGenerationAdapter,
   request: CreateAIDraftRequest,
@@ -406,6 +416,9 @@ export async function generateAIDraft(
     prompt: buildAIDraftPrompt(parsed),
     context: parsed.context,
   }, attribution);
+  if (withholdDraftCommitments(body).text === "") {
+    throw new AIDraftNotProducedError("Every sentence of the draft stated a price, availability or capacity");
+  }
   return createReviewGatedAIDraft({
     useCase: parsed.useCase,
     title: titleForAIDraft(parsed.useCase),

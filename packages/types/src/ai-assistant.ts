@@ -11,6 +11,7 @@ import {
   SafePlanningWordingSchema,
   UNSAFE_PUBLIC_CLAIM_PHRASES,
 } from "./evidence-runtime.js";
+import { AIDraftCommitmentKindSchema, findDraftCommitments, withholdDraftCommitments } from "./ai-draft-commitments.js";
 
 // ---------------------------------------------------------------------------
 // AI Assistant Foundation v0
@@ -86,8 +87,20 @@ export const AIDraftSchema = z.object({
         message: `Unsafe public/client claim phrase "${unsafe}" is not allowed in AI draft output.`,
       });
     }
+    // A draft never states a price, availability or capacity (ai-draft-commitments.ts).
+    const [claim] = findDraftCommitments(text);
+    if (claim !== undefined) {
+      ctx.addIssue({
+        code: "custom",
+        message: `An AI draft may not state ${claim.kind === "price" ? "a price" : claim.kind}: "${claim.phrase}".`,
+      });
+    }
   }),
   blockedUnsafeClaims: z.array(z.enum(UNSAFE_PUBLIC_CLAIM_PHRASES)).max(20),
+  /** The kinds of claim taken out of the model's words: a sentence stating a
+   *  price, availability or capacity. Empty when nothing was; absent on a
+   *  draft from before 27 October 2026. */
+  withheldCommitments: z.array(AIDraftCommitmentKindSchema).max(3).default([]),
   safeLanguageApplied: z.boolean(),
   humanReviewRequired: z.literal(true),
   provenance: z.literal("ai_generated"),
@@ -149,6 +162,12 @@ export function aiDraftDigest(input: {
   return sha256Hex(`${AI_DRAFT_DIGEST_DOMAIN_PREFIX}${stableCanonicalJson(input)}`);
 }
 
+/**
+ * The model's words as a draft people review: every sentence stating a price,
+ * availability or capacity taken out, unsupported certainty replaced, and the
+ * draft marked AI-written, unverified and never sent. Throws (the body is
+ * empty) when nothing is left once the claims are out.
+ */
 export function createReviewGatedAIDraft(input: {
   readonly useCase: AIDraftUseCase;
   readonly title: string;
@@ -157,13 +176,15 @@ export function createReviewGatedAIDraft(input: {
   readonly generatedAt: string;
 }): AIDraft {
   const title = safePlanningLanguage(input.title);
-  const sanitized = sanitizeAIDraftText(input.body);
+  const withheld = withholdDraftCommitments(input.body);
+  const sanitized = sanitizeAIDraftText(withheld.text);
   return AIDraftSchema.parse({
     schemaVersion: AI_ASSISTANT_SCHEMA_VERSION,
     useCase: input.useCase,
     title,
     body: sanitized.text,
     blockedUnsafeClaims: sanitized.blockedUnsafeClaims,
+    withheldCommitments: withheld.withheld,
     safeLanguageApplied: sanitized.safeLanguageApplied || title !== input.title,
     humanReviewRequired: true,
     provenance: "ai_generated",

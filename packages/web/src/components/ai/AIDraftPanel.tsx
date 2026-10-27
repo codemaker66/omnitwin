@@ -4,6 +4,7 @@ import { ActivityIndicator } from "../shared/Activity.js";
 import type { AIDraft, AIDraftUseCase, CanonicalJsonValue } from "@omnitwin/types";
 import { createAIDraft, getAIAssistantStatus } from "../../api/ai-assistant.js";
 import { ApiError } from "../../api/client.js";
+import { withheldWords } from "../../lib/ai-draft-words.js";
 import "./AIDraftPanel.css";
 
 type StatusState =
@@ -139,6 +140,11 @@ export function AIDraftPanel({
           {draftState.draft.safeLanguageApplied && (
             <p className="ai-draft-panel__note">
               Unsupported certainty was removed.
+            </p>
+          )}
+          {draftState.draft.withheldCommitments.length > 0 && (
+            <p className="ai-draft-panel__note" data-testid="ai-draft-withheld">
+              {withheldWords(draftState.draft.withheldCommitments)}
             </p>
           )}
         </div>

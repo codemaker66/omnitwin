@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useState, type ReactElement } from "react";
-import { FORWARD_BOOK_RECORD_ROLES } from "@omnitwin/types";
+import { AI_USAGE_READ_ROLES, FORWARD_BOOK_RECORD_ROLES } from "@omnitwin/types";
 import * as spacesApi from "../../api/spaces.js";
 import type { VenueDetail } from "../../api/spaces.js";
 import { diaryVenueOf, hasRole } from "../../lib/role-capabilities.js";
 import { useAuthStore } from "../../stores/auth-store.js";
 import { useToastStore } from "../../stores/toast-store.js";
 import { ActivityIndicator } from "../shared/Activity.js";
+import { AIUsageSettings } from "./ai-usage/AIUsageSettings.js";
 import { ChangeoverSettings } from "./changeovers/ChangeoverSettings.js";
 import { ForwardBookSettings } from "./forward-book/ForwardBookSettings.js";
 import { markInitials, markInk } from "./venue-mark.js";
@@ -54,6 +55,9 @@ export function VenueSettings(): ReactElement {
   // own admin or manager (canRecordForwardBook).
   const readsDiary = user !== null && diaryVenueOf(user) !== null;
   const recordsForwardBook = user !== null && user.venueId === venueId && hasRole(FORWARD_BOOK_RECORD_ROLES, user.role);
+  // What the venue's AI use has cost: money, so its own admin and manager
+  // read it (the API's canReadAIUsage, T-656).
+  const readsAIUsage = user !== null && user.venueId === venueId && hasRole(AI_USAGE_READ_ROLES, user.role);
   const addToast = useToastStore((state) => state.addToast);
 
   const [venue, setVenue] = useState<VenueDetail | null>(null);
@@ -341,6 +345,7 @@ export function VenueSettings(): ReactElement {
 
       <ChangeoverSettings venueId={venueId} />
       {readsDiary && <ForwardBookSettings venueId={venueId} canRecord={recordsForwardBook} />}
+      {readsAIUsage && <AIUsageSettings venueId={venueId} />}
     </section>
   );
 }

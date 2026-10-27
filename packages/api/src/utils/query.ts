@@ -1,4 +1,9 @@
-import { FORWARD_BOOK_RECORD_ROLES, PRICING_WRITE_ROLES as PRICE_SETTER_ROLES, VENUE_TEAM_INVITER_ROLES } from "@omnitwin/types";
+import {
+  AI_USAGE_READ_ROLES as AI_USAGE_READERS,
+  FORWARD_BOOK_RECORD_ROLES,
+  PRICING_WRITE_ROLES as PRICE_SETTER_ROLES,
+  VENUE_TEAM_INVITER_ROLES,
+} from "@omnitwin/types";
 import { isPlatformAdmin, type JwtUser } from "../middleware/auth.js";
 
 // ---------------------------------------------------------------------------
@@ -129,7 +134,7 @@ const INVENTORY_WRITE_ROLES: ReadonlySet<string> = new Set(["admin", "manager"])
 const VENUE_TEAM_INVITER_ROLE_SET: ReadonlySet<string> = new Set(VENUE_TEAM_INVITER_ROLES);
 
 /** Reading what the venue's AI use has cost (T-656): money, so its managers and admins. */
-const AI_USAGE_READ_ROLES: ReadonlySet<string> = new Set(["admin", "manager"]);
+const AI_USAGE_READ_ROLES: ReadonlySet<string> = new Set<string>(AI_USAGE_READERS);
 
 function holdsVenueRole(
   user: Pick<JwtUser, "role" | "venueId" | "platformRole">,

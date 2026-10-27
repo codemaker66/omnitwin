@@ -7,7 +7,8 @@ import * as schema from "../db/schema.js";
 import type { Env } from "../env.js";
 import { aiAssistantRoutes } from "../routes/ai-assistant.js";
 import type { AIGenerationAdapter, AIGenerationInput } from "../services/ai-assistant.js";
-import { contextKeyWords, generateAIDraft, isWithheldContextKey, scrubDraftContext } from "../services/ai-assistant.js";
+import { buildAIDraftInstructions, contextKeyWords, generateAIDraft, isWithheldContextKey, scrubDraftContext } from "../services/ai-assistant.js";
+import { AIDraftNotProducedError } from "../services/anthropic-draft-adapter.js";
 import { scrubContactDetails } from "../services/proposal-message-draft.js";
 
 process.env["DATABASE_URL"] = "postgresql://mock:mock@localhost/mock";
@@ -248,5 +249,60 @@ describe("what a general draft may send a provider (ai-1)", () => {
       expect(isWithheldContextKey(key), key).toBe(false);
     }
     expect(scrubDraftContext({ count: 3, flag: true, none: null, list: [1, "a@b.co"] })).toEqual({ count: 3, flag: true, none: null, list: [1, "(email address)"] });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Plan 19, L6: a draft never states a price, availability or capacity. The
+// rules say so, and every draft is checked after the model wrote it.
+// ---------------------------------------------------------------------------
+
+describe("what a draft may not say (L6)", () => {
+  function answering(text: string): AIGenerationAdapter {
+    return {
+      status: { configured: true, provider: "mock", model: "mock-draft", disabledReason: null },
+      generateText() {
+        return Promise.resolve(text);
+      },
+    };
+  }
+  const ATTRIBUTION = { venueId: VENUE_ID, userId: USER_ID };
+
+  it.each(["proposal_draft", "enquiry_summary", "beo_supplier_instruction_draft", "truth_mode_explanation"] as const)(
+    "tells the model, for %s, that only the team confirms a price, availability or capacity",
+    (useCase) => {
+      const rules = buildAIDraftInstructions({ useCase, context: {} });
+      expect(rules).toContain("Never state a price, a cost, a fee, a deposit, a discount or any amount of money");
+      expect(rules).toContain("never say whether a date, a time or a room is available, free, held, booked or confirmed");
+      expect(rules).toContain("never say how many people a room seats, holds or can take, or that it is big enough");
+      expect(rules).toContain("say the events team will confirm it");
+    },
+  );
+
+  it("takes out each sentence that states one, says which kinds, and keeps the rest", async () => {
+    const draft = await generateAIDraft(answering([
+      "Dear Elaine,",
+      "",
+      "Thank you for thinking of the Grand Hall. Good news: 17 September 2027 is free! The hall seats up to 200 and dinner is £65 per head.",
+      "",
+      "The team will confirm the figures with you.",
+      "",
+      "The Events Team",
+    ].join("\n")), { useCase: "proposal_draft", context: { clientName: "Elaine" } }, ATTRIBUTION, new Date("2026-10-27T12:00:00.000Z"));
+    expect(draft.body).toBe("Dear Elaine,\n\nThank you for thinking of the Grand Hall.\n\nThe team will confirm the figures with you.\n\nThe Events Team");
+    expect(draft.withheldCommitments).toEqual(["price", "availability", "capacity"]);
+    expect(draft.body).not.toMatch(/£|free|seats/u);
+  });
+
+  it("records nothing withheld from a draft that states none", async () => {
+    const draft = await generateAIDraft(answering("Dear Elaine, thank you for your enquiry about your 150 guests."),
+      { useCase: "proposal_draft", context: {} }, ATTRIBUTION);
+    expect(draft.withheldCommitments).toEqual([]);
+    expect(draft.body).toBe("Dear Elaine, thank you for your enquiry about your 150 guests.");
+  });
+
+  it("gives no draft when every sentence states one", async () => {
+    await expect(generateAIDraft(answering("The date is free. The room seats 200. It costs £900."),
+      { useCase: "enquiry_summary", context: {} }, ATTRIBUTION)).rejects.toBeInstanceOf(AIDraftNotProducedError);
   });
 });

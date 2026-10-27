@@ -249,8 +249,9 @@ five minutes.
   roughly 900–1,300 tokens. It goes as a system block with a five-minute
   `cache_control` breakpoint (`cacheSystem: true`). Everything that varies
   (the room, today's date, the description) is in the user turn after it.
-- **Drafts: not cached.** Their rules are about 1,500 characters for a
-  proposal message and under 600 for the others, below the minimum, so they
+- **Drafts: not cached.** Their rules are about 1,900 characters for a
+  proposal message and under 1,000 for the others (27 October 2026, with the
+  price, availability and capacity rule), below the minimum, so they
   carry no breakpoint.
 
 The hit rate is unmeasured until a key is set. Once one is, the ledger's
@@ -270,11 +271,20 @@ It also returns this month's allowance: limit, spent, held by calls in flight,
 and remaining. The `currency` is `USD` and the response names the price-table
 version.
 
-The venue's own `admin` and `manager`, and platform admins, may read it.
+The venue's own `admin` and `manager`, and platform admins, may read it
+(`AI_USAGE_READ_ROLES` in `@omnitwin/types`, read by `canReadAIUsage`).
 Everyone else gets 403 `FORBIDDEN`: staff, sales, hallkeeper, planner, client,
 caterer, and any other venue's managers. An unknown venue is 404, and a bad
-parameter or unknown query key is 400. There is no screen for it yet; how usage
-is shown or billed waits on Blake.
+parameter or unknown query key is 400.
+
+**The screen (Plan 19, L6, 27 October 2026):** Venue settings shows the
+venue's admin and manager an "AI drafting" section
+(`packages/web/src/components/dashboard/ai-usage/AIUsageSettings.tsx`): this
+month's spend against the allowance, money set aside for drafts being
+written, drafts the allowance refused, each feature's calls, unanswered calls
+and cost, and the two months before. Costs show in US dollars as the ledger
+records them, with a spend under a cent shown as "under US$0.01", never as
+nothing. How usage is billed to venues still waits on Blake.
 
 ## Who may spend a venue's allowance
 

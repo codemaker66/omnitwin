@@ -1203,6 +1203,15 @@ export {
 } from "./ai-assistant.js";
 
 export {
+  AI_DRAFT_COMMITMENT_KINDS,
+  AIDraftCommitmentKindSchema,
+  findDraftCommitments,
+  withholdDraftCommitments,
+  type AIDraftCommitment,
+  type AIDraftCommitmentKind,
+} from "./ai-draft-commitments.js";
+
+export {
   COMMERCIAL_SPINE_SCHEMA_VERSION,
   OPPORTUNITY_STAGES,
   OPPORTUNITY_STAGE_TRANSITIONS,

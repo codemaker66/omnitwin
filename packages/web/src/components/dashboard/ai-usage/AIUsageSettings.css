@@ -1,0 +1,188 @@
+/* AI drafting (T-656; Plan 19, L6): an ivory sheet in the workspace register,
+   beside the Venue settings' other sections. Colours come from the register's
+   --reg-* names only; the words carry every figure, and the bar only echoes
+   the allowance line above it. */
+
+.ai-usage {
+  display: grid;
+  gap: 18px;
+  padding: 24px 26px 26px;
+  border: 1px solid var(--reg-rule);
+  border-radius: 8px;
+  background: var(--reg-surface);
+  color: var(--reg-text-1);
+  font-family: var(--house-sans);
+}
+
+.ai-usage__head h3 {
+  margin: 0 0 6px;
+  font: 400 28px/1.1 var(--house-serif);
+  letter-spacing: -0.01em;
+}
+
+.ai-usage__head p,
+.ai-usage__empty,
+.ai-usage__footnote,
+.ai-usage__left {
+  margin: 0;
+  max-width: 62ch;
+  color: var(--reg-text-2);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.ai-usage__footnote {
+  font-size: 13px;
+}
+
+.ai-usage__allowance {
+  display: grid;
+  gap: 10px;
+}
+
+.ai-usage__figure {
+  margin: 0;
+  font: 400 32px/1.1 var(--house-serif);
+  font-variant-numeric: tabular-nums;
+}
+
+.ai-usage__figure span {
+  color: var(--reg-text-2);
+  font: 400 16px/1.4 var(--house-sans);
+}
+
+.ai-usage__bar {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--reg-raised);
+  border: 1px solid var(--reg-rule);
+}
+
+.ai-usage__bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--reg-settled);
+  transition: width 400ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.ai-usage__bar[data-full="true"] span {
+  background: var(--reg-attention);
+}
+
+.ai-usage__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ai-usage__table caption {
+  padding-bottom: 8px;
+  color: var(--reg-text-2);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-align: left;
+  text-transform: uppercase;
+}
+
+.ai-usage__table th,
+.ai-usage__table td {
+  padding: 10px 12px 10px 0;
+  border-bottom: 1px solid var(--reg-rule);
+  text-align: right;
+}
+
+.ai-usage__table th:first-child,
+.ai-usage__table td:first-child {
+  text-align: left;
+}
+
+.ai-usage__table thead th {
+  color: var(--reg-text-2);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.ai-usage__table tbody th {
+  font-weight: 400;
+}
+
+.ai-usage__months {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+
+.ai-usage__months div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--reg-rule);
+}
+
+.ai-usage__months dt {
+  font-weight: 600;
+}
+
+.ai-usage__months dd {
+  margin: 0;
+  color: var(--reg-text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.ai-usage__error {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
+.ai-usage__error p {
+  margin: 0;
+  color: var(--reg-alert);
+  font-weight: 600;
+}
+
+.ai-usage__quiet {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0 18px;
+  border: 1px solid var(--reg-edge);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--reg-text-1);
+  font: 600 14px/1 var(--house-sans);
+  cursor: pointer;
+}
+
+.ai-usage__quiet:hover {
+  background: var(--reg-surface-hover);
+}
+
+.ai-usage__quiet:focus-visible {
+  outline: 2px solid var(--reg-focus);
+  outline-offset: 2px;
+}
+
+@media (max-width: 720px) {
+  .ai-usage {
+    padding: 20px 16px 22px;
+  }
+
+  .ai-usage__figure {
+    font-size: 26px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-usage__bar span {
+    transition: none;
+  }
+}

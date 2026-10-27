@@ -109,8 +109,8 @@ function withServerFallback(model: string, request: AnthropicDraftRequest): Anth
   return { ...request, betas: [SERVER_FALLBACK_BETA], fallbacks: "default" };
 }
 
-// Drafts carry no cache breakpoint: their rules (about 1,500 characters for a
-// proposal's message, under 600 for the other drafts) are below the 512-token
+// Drafts carry no cache breakpoint: their rules (about 1,900 characters for a
+// proposal's message, under 1,000 for the other drafts) are below the 512-token
 // minimum Claude Opus 5.5 caches, and a shorter prefix silently never caches.
 // Nor do they ask for the server-side refusal fallback: a draft is the asked
 // model's words or none (see readAnthropicDraftText).

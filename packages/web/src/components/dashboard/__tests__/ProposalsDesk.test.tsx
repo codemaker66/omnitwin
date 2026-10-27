@@ -4489,7 +4489,7 @@ describe("Draft the message with AI", () => {
   const draft = (overrides: Record<string, unknown> = {}, drewOn: Record<string, boolean> = DREW_ON): Record<string, unknown> => ({
     draft: {
       schemaVersion: "ai_assistant.v0", useCase: "proposal_draft", title: "Proposal draft", body: BODY,
-      blockedUnsafeClaims: [], safeLanguageApplied: false, humanReviewRequired: true, provenance: "ai_generated",
+      blockedUnsafeClaims: [], withheldCommitments: [], safeLanguageApplied: false, humanReviewRequired: true, provenance: "ai_generated",
       evidenceStatus: "unverified", sendState: "draft_only", generatedAt: NOW, digest: "c".repeat(64), ...overrides,
     },
     drewOn,
@@ -4746,6 +4746,14 @@ describe("Draft the message with AI", () => {
     expect(within(block).getByTestId("ai-draft-claim").textContent)
       .toBe("It includes \"photoreal digital twin\", which a proposal may not say. Change it before saving.");
     expect(within(block).getByText("Unsupported certainty was taken out of it.")).toBeDefined();
+    expect(within(block).getByTestId("ai-draft-use")).toBeDefined();
+    expect(within(block).queryByTestId("ai-draft-withheld")).toBeNull();
+    fireEvent.click(within(block).getByTestId("ai-draft-away"));
+
+    // Plan 19, L6: what the server took out of the model's words is said, calmly.
+    block = await drafted(element, draft({ withheldCommitments: ["price", "availability"] }));
+    expect(within(block).getByTestId("ai-draft-withheld").textContent)
+      .toBe("It gave a price and said whether a date or room is free, which only the team confirms, so those parts were taken out.");
     expect(within(block).getByTestId("ai-draft-use")).toBeDefined();
   });
 
