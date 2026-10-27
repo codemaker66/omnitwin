@@ -154,6 +154,75 @@ describe("browser Sentry event scrubber and guests' allergy notes", () => {
   });
 });
 
+describe("browser Sentry and capability urls (share tokens, guest layout ids)", () => {
+  const TOKEN = "tok_SECRET123";
+
+  it.each([
+    ["proposal-share"], ["plan-view"], ["supplier-share"], ["proposal"], ["plan"],
+  ])("keeps the page's /%s/ token out of the event's request url", (prefix) => {
+    const scrubbed = scrubSentryEvent({ request: { url: `https://venviewer.com/${prefix}/${TOKEN}?from=email` } });
+    expect(scrubbed.request?.url).toBe(`https://venviewer.com/${prefix}/:token`);
+  });
+
+  it("templates a fetch breadcrumb's url and message", () => {
+    const fetch: Breadcrumb = {
+      category: "fetch",
+      message: `POST https://api.venviewer.com/proposal-share/${TOKEN}/approve?x=1`,
+      data: { method: "POST", url: `https://api.venviewer.com/proposal-share/${TOKEN}/approve?x=1`, status_code: 500 },
+    };
+    const scrubbed = scrubSentryBreadcrumb(fetch);
+    expect(scrubbed.data?.["url"]).toBe("https://api.venviewer.com/proposal-share/:token/approve?[redacted]");
+    // The message keeps its query as the SDK wrote it; the token goes.
+    expect(scrubbed.message).toBe("POST https://api.venviewer.com/proposal-share/:token/approve?x=1");
+    expect(JSON.stringify(scrubbed)).not.toContain(TOKEN);
+    expect(scrubbed.data?.["status_code"]).toBe(500);
+  });
+
+  it("templates a view-only plan's PDF download", () => {
+    const xhr: Breadcrumb = { category: "xhr", data: { url: `https://api.venviewer.com/public/plan-views/${TOKEN}/plan.pdf` } };
+    expect(scrubSentryBreadcrumb(xhr).data?.["url"]).toBe("https://api.venviewer.com/public/plan-views/:token/plan.pdf");
+  });
+
+  it("templates both ends of a navigation breadcrumb", () => {
+    const navigation: Breadcrumb = { category: "navigation", data: { from: `/proposal-share/${TOKEN}`, to: `/plan/${TOKEN}` } };
+    expect(scrubSentryBreadcrumb(navigation).data).toEqual({ from: "/proposal-share/:token", to: "/plan/:token" });
+  });
+
+  it("templates a url in a breadcrumb that carries only a message", () => {
+    const logged: Breadcrumb = { category: "console", message: `could not load /supplier-share/${TOKEN}` };
+    expect(scrubSentryBreadcrumb(logged).message).toBe("could not load /supplier-share/:token");
+  });
+
+  it("leaves the venue's own pages alone", () => {
+    const navigation: Breadcrumb = { category: "navigation", data: { from: "/dashboard/proposals", to: "/dashboard?view=enquiries" } };
+    expect(scrubSentryBreadcrumb(navigation).data).toEqual({ from: "/dashboard/proposals", to: "/dashboard?[redacted]" });
+    expect(scrubSentryEvent({ request: { url: "https://venviewer.com/dashboard/proposals" } }).request?.url)
+      .toBe("https://venviewer.com/dashboard/proposals");
+  });
+
+  it("never sends the raw token, wherever an event quotes it", () => {
+    const event: Event = {
+      request: { url: `https://venviewer.com/proposal-share/${TOKEN}` },
+      message: `Approve failed on /proposal-share/${TOKEN}`,
+      exception: { values: [{ type: "ApiError", value: `POST https://api.venviewer.com/proposal-share/${TOKEN}/approve answered 500` }] },
+      breadcrumbs: [
+        { category: "navigation", data: { from: "/", to: `/proposal-share/${TOKEN}` } },
+        { category: "fetch", data: { url: `https://api.venviewer.com/proposal-share/${TOKEN}`, status_code: 200 } },
+      ],
+      contexts: { page: { path: `/plan-view/${TOKEN}` } },
+      tags: { route: `/supplier-share/${TOKEN}` },
+    };
+
+    const scrubbed = scrubSentryEvent(event);
+
+    expect(JSON.stringify(scrubbed)).not.toContain(TOKEN);
+    expect(scrubbed.exception?.values?.[0]?.value).toBe("POST https://api.venviewer.com/proposal-share/:token/approve answered 500");
+    expect(scrubbed.breadcrumbs?.[1]?.data?.["status_code"]).toBe(200);
+    // The caller's event is not changed.
+    expect(event.request?.url).toBe(`https://venviewer.com/proposal-share/${TOKEN}`);
+  });
+});
+
 describe("browser Sentry loading", () => {
   const DSN = "https://public@example.ingest.sentry.io/1";
 

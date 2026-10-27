@@ -1,4 +1,5 @@
 import type { Breadcrumb, ErrorEvent, NodeOptions } from "@sentry/node";
+import { templateCapabilityPaths, templateCapabilityPathsDeep } from "@omnitwin/types";
 
 // ---------------------------------------------------------------------------
 // Redaction — keeps query strings out of request logs and error reports.
@@ -13,6 +14,12 @@ import type { Breadcrumb, ErrorEvent, NodeOptions } from "@sentry/node";
 //   3. Sentry transactions: `event.request.url`, plus span attributes the
 //      OpenTelemetry HTTP instrumentation records (`url.full`, `http.url`,
 //      `http.target`, `url.query`).
+//
+// The same three places, and anything else an event, breadcrumb or
+// transaction quotes, also lose the segment after a capability path
+// (/proposal-share/<token>, /public/configurations/<guest layout id> and the
+// rest in @omnitwin/types capability-paths): whoever reads a log or an event
+// could otherwise open the proposal, approve it or overwrite the layout.
 //
 // Everything here is pure and has no runtime dependency on @sentry/node
 // (type imports only), so it can be imported without initialising the SDK.
@@ -66,12 +73,13 @@ function headerValue(value: string | string[] | undefined): string | undefined {
 /**
  * Drop-in replacement for Fastify's default `req` log serializer
  * (fastify@5 lib/logger-pino.js `asReqValue`): the same six fields, with
- * only `url` changed so the query string never reaches the log.
+ * only `url` changed so the query string and a capability path's token never
+ * reach the log.
  */
 export function requestLogSerializer(request: LoggableRequest): SerializedRequest {
   return {
     method: request.method,
-    url: withoutQuery(request.url),
+    url: templateCapabilityPaths(withoutQuery(request.url)),
     version: headerValue(request.headers?.["accept-version"]),
     host: request.host,
     remoteAddress: request.ip,
@@ -236,7 +244,7 @@ export function scrubErrorEvent(event: ErrorEvent): ErrorEvent {
       delete event.request.headers["cookie"];
     }
   }
-  return event;
+  return templateCapabilityPathsDeep(event);
 }
 
 /** Breadcrumb categories the SDK uses for outgoing http calls. */
@@ -263,7 +271,7 @@ export function scrubBreadcrumb(breadcrumb: Breadcrumb): Breadcrumb {
   if (isHttp && breadcrumb.message !== undefined) {
     breadcrumb.message = withoutQuery(breadcrumb.message);
   }
-  return breadcrumb;
+  return templateCapabilityPathsDeep(breadcrumb);
 }
 
 /**
@@ -282,5 +290,5 @@ export function scrubTransaction(event: ScrubbableTransaction): ScrubbableTransa
   for (const span of event.spans ?? []) {
     scrubAttributes(span.data);
   }
-  return event;
+  return templateCapabilityPathsDeep(event);
 }
