@@ -44,6 +44,14 @@ websocket autosave. The single-object REST routes (`POST/PATCH/DELETE
 /configurations/:id/objects/…`) do not advance the revision and so announce nothing;
 the planner does not use them.
 
+The websocket autosave (`update_objects`, `delete_object`, `flush`) has no
+first-party sender, and its commit cannot land on a migrated database:
+`configuration_layout_revisions_source_check` (migrations 0025, 0063) has never
+admitted its `websocket_autosave` source, so every flush that reaches the insert
+answers `AUTOSAVE_FAILED`. Found 27 Oct 2026 by the release audit's socket tests;
+admitting the source (a migration) or retiring the socket's writes is an open
+decision. Either way, each flush first reads its person again (below).
+
 ## Client rules
 
 Code: `packages/web/src/lib/layout-live/` (pure core and the socket client),
@@ -87,9 +95,15 @@ Code: `packages/web/src/lib/layout-live/` (pure core and the socket client),
   (Redis, or a verified Postgres LISTEN/NOTIFY) is the precondition for a second
   replica.
 - **Access is checked at join and every 20 s.** The heartbeat re-reads each member's
-  role and venue and the layout's owner, venue and deletion; anyone no longer
-  admitted gets `live.revoked` and is removed (the socket stays for autosave, which
-  authorises every flush). A database error skips that pass rather than revoking all.
+  role and venue, whether their Clerk account is still linked, and the layout's
+  owner, venue and deletion; anyone no longer admitted gets `live.revoked` and is
+  removed (the socket stays for autosave). A database error skips that pass rather
+  than revoking all.
+- **Every flush acts with the person's current role** (release audit configs-4):
+  `persistAutoSaveSnapshot` reads the users row `FOR SHARE` inside its transaction
+  (`ws/socket-identity.ts`). A missing row, an unlinked or relinked Clerk account,
+  a move or a demotion refuses the flush with `FORBIDDEN` and closes the socket; a
+  venue admin demoted to staff meets the review lock.
 - **Public-preview guests** keep single-person planning; the client never opens
   the live room for a public draft.
 - The hub drops a client frame silently when it is malformed, over 128 KB or over

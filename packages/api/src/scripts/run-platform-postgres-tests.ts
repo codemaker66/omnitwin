@@ -56,6 +56,8 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/public-enquiry-venue-slug-postgres.test.ts",
   // The reference loadouts list: photo count and cover subqueries name their loadout (VENVIEWER-API-1).
   "src/__tests__/reference-loadouts-postgres.test.ts",
+  // An open socket acts with its person's current role: /ws/configurations saves and /ws/diary commands.
+  "src/__tests__/socket-identity-postgres.test.ts",
 ] as const;
 
 /**
