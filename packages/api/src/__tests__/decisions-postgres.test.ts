@@ -10,8 +10,8 @@ import { DecisionSchema, DecisionWithHistorySchema, type Decision } from "@omnit
 import * as schema from "../db/schema.js";
 import { decisionRoutes } from "../routes/decisions.js";
 import { updateBookingCore, transitionBookingCore, type MutationActor } from "../services/booking-mutations.js";
-import { decideDecision, prepareBookingTimeMove, readDecision, withdrawDecision } from "../services/decisions.js";
-import { insertBoundBookings } from "../services/event-binding.js";
+import { decideDecision, listDecisions, prepareBookingTimeMove, readDecision, withdrawDecision } from "../services/decisions.js";
+import { defaultEventPhaseRows, insertBoundBookings } from "../services/event-binding.js";
 
 // ---------------------------------------------------------------------------
 // Goal 09 M1 (with M2's booking time move) on migrated PostgreSQL: the hard
@@ -21,6 +21,13 @@ import { insertBoundBookings } from "../services/event-binding.js";
 // failure changes nothing and is kept in the history, a withdrawn decision
 // cannot be decided, a booking gone from the Diary fails cleanly, and the
 // database keeps decided decisions final and the history append-only.
+//
+// And the release review's cases (27 October 2026): a decision with more in
+// its way than it can list stays readable; the phases the Diary moves with a
+// booking are the ones the decision moves, and a change to them makes it
+// stale; a gap that shrinks and the same event's other day are consequences;
+// a closure and an unready hold block the move; "keep" always declines; an
+// answer names the decision it is for; nothing kept names a person.
 //
 // Never loads .env or DATABASE_URL: the explicit disposable platform database only.
 // ---------------------------------------------------------------------------
@@ -36,7 +43,7 @@ if (target !== undefined) {
 }
 
 const NOW = new Date("2030-03-01T09:00:00.000Z");
-const at = (hours: number, day = 10): Date => new Date(Date.UTC(2030, 2, day, hours));
+const at = (hours: number, day = 10, minutes = 0): Date => new Date(Date.UTC(2030, 2, day, hours, minutes));
 
 describe.skipIf(target === undefined)("prepared decisions on migrated PostgreSQL (goal 09 M1)", () => {
   let pool: Pool;
@@ -83,12 +90,31 @@ describe.skipIf(target === undefined)("prepared decisions on migrated PostgreSQL
     return { venueId, spaceId, staff: await person("staff"), admin: await person("admin"), sales: await person("sales"), hallkeeper: await person("hallkeeper") };
   }
 
-  async function ink(v: Venue, title: string, startsAt: Date, endsAt: Date): Promise<string> {
+  async function entry(v: Venue, kind: "ink" | "hold" | "internal_block", title: string, startsAt: Date, endsAt: Date, eventId?: string): Promise<{ id: string; eventId: string | null }> {
     const [row] = await insertBoundBookings(db, [{
-      id: randomUUID(), venueId: v.venueId, spaceId: v.spaceId, kind: "ink", title, createdBy: v.admin.id, startsAt, endsAt,
+      id: randomUUID(), venueId: v.venueId, spaceId: v.spaceId, kind, title, createdBy: v.admin.id, startsAt, endsAt,
+      ...(eventId === undefined ? {} : { eventId }),
     }]);
     if (row === undefined) throw new Error("fixture booking not written");
+    return { id: row.id, eventId: row.eventId };
+  }
+
+  async function ink(v: Venue, title: string, startsAt: Date, endsAt: Date): Promise<string> {
+    return (await entry(v, "ink", title, startsAt, endsAt)).id;
+  }
+
+  async function phase(eventId: string, spaceId: string, startsAt: Date, durationMinutes: number): Promise<string> {
+    const [template] = defaultEventPhaseRows(eventId);
+    if (template === undefined) throw new Error("No phase template");
+    const [row] = await db.insert(schema.eventPhases).values({
+      ...template, templateKey: null, name: "Set-up", spaceId, startsAt, durationMinutes, sortOrder: 100,
+    }).returning({ id: schema.eventPhases.id });
+    if (row === undefined) throw new Error("Phase not written");
     return row.id;
+  }
+
+  async function turnaround(v: Venue, minutes: number): Promise<void> {
+    await db.insert(schema.turnaroundRules).values({ venueId: v.venueId, spaceId: v.spaceId, name: "Room turnaround", minutes });
   }
 
   async function booking(id: string) {
@@ -103,6 +129,8 @@ describe.skipIf(target === undefined)("prepared decisions on migrated PostgreSQL
     return result.value;
   }
 
+  const choose = (decision: Decision, optionId: string): { optionId: string; decisionDigest: string } => ({ optionId, decisionDigest: decision.digest });
+
   async function history(v: Venue, decisionId: string): Promise<readonly string[]> {
     const read = await readDecision(db, v.staff, decisionId);
     if (!read.ok) throw new Error(read.code);
@@ -113,24 +141,31 @@ describe.skipIf(target === undefined)("prepared decisions on migrated PostgreSQL
     return Number((await pool.query<{ n: string }>("SELECT count(*)::text AS n FROM diary_commands WHERE booking_id = $1", [bookingId])).rows[0]?.n);
   }
 
+  async function kept(decisionId: string): Promise<string> {
+    const [row] = (await pool.query<{ kept: string }>("SELECT body::text || coalesce(receipt::text, '') AS kept FROM decisions WHERE id = $1", [decisionId])).rows;
+    return row?.kept ?? "";
+  }
+
+  const move = (decision: Decision) => decision.options.find((option) => option.id === "move");
+
   it("prepares a move from what the Diary holds: options, a recommendation with reasons, and what is not worked out", async () => {
     const v = await venue();
     const id = await ink(v, "Crawford wedding", at(14), at(18));
     const decision = await prepared(v, id, at(15), at(19));
     expect(DecisionSchema.parse(decision)).toMatchObject({
-      actionClass: "booking_time_move", status: "prepared", subject: { kind: "booking", id },
+      actionClass: "booking_time_move", status: "prepared", subject: { kind: "booking", id }, subjectTitle: "Crawford wedding",
       recommendedOptionId: "move", approverRoles: ["staff", "admin"], receipt: null, supersedes: null,
-      requested: { startsAt: at(15).toISOString(), endsAt: at(19).toISOString(), reason: "The client asked for a later start" },
+      requested: { startsAt: at(15).toISOString(), endsAt: at(19).toISOString() }, reason: "The client asked for a later start",
     });
-    expect(decision.intendedOutcome).toContain('Move "Crawford wedding" to');
-    const move = decision.options.find((option) => option.id === "move");
-    expect(move).toMatchObject({ executable: true, recommended: true, consequences: [] });
-    expect(move?.mutations).toEqual([expect.objectContaining({ kind: "booking.update", bookingId: id, startsAt: at(15).toISOString(), endsAt: at(19).toISOString() })]);
+    expect(decision.intendedOutcome).toMatch(/^Move the booking to /u);
+    expect(move(decision)).toMatchObject({ executable: true, recommended: true, consequences: [] });
+    expect(move(decision)?.mutations).toEqual([expect.objectContaining({ kind: "booking.update", bookingId: id, startsAt: at(15).toISOString(), endsAt: at(19).toISOString() })]);
     expect(decision.options.find((option) => option.id === "keep")).toMatchObject({ executable: true, recommended: false, mutations: [] });
     expect(decision.missingFacts[0]).toContain("staff rota, catering and equipment is not worked out yet");
     expect(await history(v, decision.id)).toEqual(["prepared"]);
-    // Preparing changes nothing.
+    // Preparing changes nothing, and what is kept names no one.
     expect((await booking(id)).startsAt.toISOString()).toBe(at(14).toISOString());
+    expect(await kept(decision.id)).not.toMatch(/Crawford|client asked/u);
   });
 
   it("explains the no-fit: a confirmed booking in the way makes the move not executable, and keeping it is recommended", async () => {
@@ -138,12 +173,12 @@ describe.skipIf(target === undefined)("prepared decisions on migrated PostgreSQL
     const id = await ink(v, "Merchants' dinner", at(10), at(12));
     await ink(v, "Spring gala", at(14), at(18));
     const decision = await prepared(v, id, at(15), at(17));
-    const move = decision.options.find((option) => option.id === "move");
-    expect(move).toMatchObject({ executable: false, recommended: false, mutations: [] });
-    expect(move?.consequences).toEqual([expect.objectContaining({ kind: "ink_double_book", severity: "blocking" })]);
-    expect(move?.reasons[0]).toMatch(/^It cannot move there: /u);
+    expect(move(decision)).toMatchObject({ executable: false, recommended: false, mutations: [] });
+    expect(move(decision)?.consequences).toEqual([expect.objectContaining({ kind: "ink_double_book", severity: "blocking" })]);
+    expect(move(decision)?.reasons[0]).toMatch(/^It cannot move there: Another confirmed booking has the room then \(/u);
     expect(decision.recommendedOptionId).toBe("keep");
-    const refused = await decideDecision(db, v.staff, decision.id, { optionId: "move", subjectDigest: decision.basis.subjectDigest }, NOW);
+    expect(await kept(decision.id)).not.toMatch(/Spring gala|Merchants/u);
+    const refused = await decideDecision(db, v.staff, decision.id, choose(decision, "move"), NOW);
     expect(refused).toMatchObject({ ok: false, status: 409, code: "OPTION_NOT_EXECUTABLE" });
     expect((await booking(id)).startsAt.toISOString()).toBe(at(10).toISOString());
   });
@@ -152,11 +187,10 @@ describe.skipIf(target === undefined)("prepared decisions on migrated PostgreSQL
     const v = await venue();
     const id = await ink(v, "Crawford wedding", at(14), at(18));
     const decision = await prepared(v, id, at(15), at(19));
-    const choice = { optionId: "move", subjectDigest: decision.basis.subjectDigest };
     // Two approvals at once: one executes, the other is answered with its receipt.
     const [first, second] = await Promise.all([
-      decideDecision(db, v.staff, decision.id, choice, NOW),
-      decideDecision(db, v.admin, decision.id, choice, NOW),
+      decideDecision(db, v.staff, decision.id, choose(decision, "move"), NOW),
+      decideDecision(db, v.admin, decision.id, choose(decision, "move"), NOW),
     ]);
     const results = [first, second];
     expect(results.filter((result) => result.ok && result.replay !== true)).toHaveLength(1);
@@ -171,7 +205,7 @@ describe.skipIf(target === undefined)("prepared decisions on migrated PostgreSQL
     expect(await commands(id)).toBe(1);
     expect(await history(v, decision.id)).toEqual(["prepared", "executed"]);
     // Another choice after it was decided is refused, and changes nothing.
-    expect(await decideDecision(db, v.staff, decision.id, { optionId: "keep", subjectDigest: decision.basis.subjectDigest }, NOW))
+    expect(await decideDecision(db, v.staff, decision.id, choose(decision, "keep"), NOW))
       .toMatchObject({ ok: false, status: 409, code: "DECISION_CLOSED" });
   });
 
@@ -182,11 +216,11 @@ describe.skipIf(target === undefined)("prepared decisions on migrated PostgreSQL
     // A colleague edits the booking after the decision was prepared.
     const edited = await updateBookingCore(db, v.staff, id, { notes: "Florist arrives at noon" });
     expect(edited.ok).toBe(true);
-    const stale = await decideDecision(db, v.admin, decision.id, { optionId: "move", subjectDigest: decision.basis.subjectDigest }, NOW);
+    const stale = await decideDecision(db, v.admin, decision.id, choose(decision, "move"), NOW);
     expect(stale).toMatchObject({ ok: false, status: 409, code: "DECISION_STALE" });
     if (stale.ok) throw new Error("expected stale");
     const revised = DecisionSchema.parse((stale.details as { revised: unknown }).revised);
-    expect(revised).toMatchObject({ status: "prepared", supersedes: decision.id, requested: decision.requested });
+    expect(revised).toMatchObject({ status: "prepared", supersedes: decision.id, requested: decision.requested, reason: decision.reason });
     expect((await booking(id)).startsAt.toISOString()).toBe(at(14).toISOString());
     expect(await commands(id)).toBe(0);
     const old = await readDecision(db, v.staff, decision.id);
@@ -194,7 +228,7 @@ describe.skipIf(target === undefined)("prepared decisions on migrated PostgreSQL
     expect(old.value.decision).toMatchObject({ status: "superseded", supersededBy: revised.id, receipt: null });
     expect(old.value.history.map((event) => event.kind)).toEqual(["prepared", "stale"]);
     // The revised decision executes.
-    const done = await decideDecision(db, v.admin, revised.id, { optionId: "move", subjectDigest: revised.basis.subjectDigest }, NOW);
+    const done = await decideDecision(db, v.admin, revised.id, choose(revised, "move"), NOW);
     expect(done).toMatchObject({ ok: true, value: { status: "executed" } });
     expect((await booking(id)).startsAt.toISOString()).toBe(at(15).toISOString());
   });
@@ -205,16 +239,15 @@ describe.skipIf(target === undefined)("prepared decisions on migrated PostgreSQL
     const decision = await prepared(v, id, at(15), at(17));
     // A confirmed booking now holds the new time: the move's consequences changed.
     await ink(v, "Spring gala", at(16), at(20));
-    const stale = await decideDecision(db, v.admin, decision.id, { optionId: "move", subjectDigest: decision.basis.subjectDigest }, NOW);
+    const stale = await decideDecision(db, v.admin, decision.id, choose(decision, "move"), NOW);
     expect(stale).toMatchObject({ ok: false, code: "DECISION_STALE" });
     if (stale.ok) throw new Error("expected stale");
     const revised = DecisionSchema.parse((stale.details as { revised: unknown }).revised);
-    expect(revised.options.find((option) => option.id === "move")).toMatchObject({ executable: false });
+    expect(move(revised)).toMatchObject({ executable: false });
     expect(revised.recommendedOptionId).toBe("keep");
 
     const later = await prepared(v, id, at(8), at(9));
-    const expired = await decideDecision(db, v.admin, later.id, { optionId: "move", subjectDigest: later.basis.subjectDigest },
-      new Date(Date.parse(later.expiresAt) + 1));
+    const expired = await decideDecision(db, v.admin, later.id, choose(later, "move"), new Date(Date.parse(later.expiresAt) + 1));
     expect(expired).toMatchObject({ ok: false, code: "DECISION_STALE" });
     expect((await booking(id)).startsAt.toISOString()).toBe(at(10).toISOString());
   });
@@ -224,14 +257,14 @@ describe.skipIf(target === undefined)("prepared decisions on migrated PostgreSQL
     const other = await venue();
     const id = await ink(v, "Crawford wedding", at(14), at(18));
     const decision = await prepared(v, id, at(15), at(19), v.sales);
-    const choice = { optionId: "move", subjectDigest: decision.basis.subjectDigest };
     // Sales may ask and read, not approve a time; nor may the hallkeeper.
-    expect(await decideDecision(db, v.sales, decision.id, choice, NOW)).toMatchObject({ ok: false, status: 403, code: "NOT_AN_APPROVER" });
-    expect(await decideDecision(db, v.hallkeeper, decision.id, choice, NOW)).toMatchObject({ ok: false, status: 403, code: "NOT_AN_APPROVER" });
+    expect(await decideDecision(db, v.sales, decision.id, choose(decision, "move"), NOW)).toMatchObject({ ok: false, status: 403, code: "NOT_AN_APPROVER" });
+    expect(await decideDecision(db, v.hallkeeper, decision.id, choose(decision, "move"), NOW)).toMatchObject({ ok: false, status: 403, code: "NOT_AN_APPROVER" });
     // Another venue's staff and admin do not find it.
-    expect(await decideDecision(db, other.admin, decision.id, choice, NOW)).toMatchObject({ ok: false, status: 404 });
+    expect(await decideDecision(db, other.admin, decision.id, choose(decision, "move"), NOW)).toMatchObject({ ok: false, status: 404 });
     expect(await readDecision(db, other.staff, decision.id)).toMatchObject({ ok: false, status: 404 });
-    // A staff member approves a time, never a guest-count change at the same venue.
+    // A guest-count change: a staff member does not approve it, and its admin
+    // cannot have it carried out as a booking move.
     const { intendedOutcome, requested, basis, options, recommendedOptionId, missingFacts, assumptions, question, urgency } = decision;
     const [guestCount] = await db.insert(schema.decisions).values({
       venueId: v.venueId, actionClass: "guest_count_change", subjectKind: "booking", subjectId: id,
@@ -239,7 +272,10 @@ describe.skipIf(target === undefined)("prepared decisions on migrated PostgreSQL
       preparedBy: v.staff.id, preparedAt: NOW, expiresAt: new Date(NOW.getTime() + 3_600_000),
     }).returning();
     if (guestCount === undefined) throw new Error("fixture decision not written");
-    expect(await decideDecision(db, v.staff, guestCount.id, choice, NOW)).toMatchObject({ ok: false, status: 403, code: "NOT_AN_APPROVER" });
+    const read = await readDecision(db, v.admin, guestCount.id);
+    if (!read.ok) throw new Error(read.code);
+    expect(await decideDecision(db, v.staff, guestCount.id, choose(read.value.decision, "move"), NOW)).toMatchObject({ ok: false, status: 403, code: "NOT_AN_APPROVER" });
+    expect(await decideDecision(db, v.admin, guestCount.id, choose(read.value.decision, "move"), NOW)).toMatchObject({ ok: false, status: 409, code: "NOT_CARRIED_OUT_YET" });
     expect((await booking(id)).startsAt.toISOString()).toBe(at(14).toISOString());
   });
 
@@ -247,8 +283,7 @@ describe.skipIf(target === undefined)("prepared decisions on migrated PostgreSQL
     const v = await venue();
     const id = await ink(v, "Crawford wedding", at(14), at(18));
     const decision = await prepared(v, id, at(15), at(19));
-    const choice = { optionId: "move", subjectDigest: decision.basis.subjectDigest };
-    await expect(decideDecision(db, v.admin, decision.id, choice, NOW, {
+    await expect(decideDecision(db, v.admin, decision.id, choose(decision, "move"), NOW, {
       afterMutation: () => Promise.reject(new Error("the receipt write is lost")),
     })).rejects.toThrow("the receipt write is lost");
     expect((await booking(id)).startsAt.toISOString()).toBe(at(14).toISOString());
@@ -257,44 +292,167 @@ describe.skipIf(target === undefined)("prepared decisions on migrated PostgreSQL
     const read = await readDecision(db, v.staff, decision.id);
     expect(read).toMatchObject({ ok: true, value: { decision: { status: "prepared" } } });
     // Recovery: the same decision, decided again, executes once.
-    expect(await decideDecision(db, v.admin, decision.id, choice, NOW)).toMatchObject({ ok: true, value: { status: "executed" } });
+    expect(await decideDecision(db, v.admin, decision.id, choose(decision, "move"), NOW)).toMatchObject({ ok: true, value: { status: "executed" } });
     expect(await commands(id)).toBe(1);
   });
 
-  it("records a decline, a withdrawal, and a booking that left the Diary, each changing nothing", async () => {
+  it("records a decline, a withdrawal, and a booking that left the Diary, each changing nothing, and answers a retry as the first time", async () => {
     const v = await venue();
     const id = await ink(v, "Crawford wedding", at(14), at(18));
     const keep = await prepared(v, id, at(15), at(19));
-    expect(await decideDecision(db, v.staff, keep.id, { optionId: "keep", subjectDigest: keep.basis.subjectDigest }, NOW))
+    expect(await decideDecision(db, v.staff, keep.id, choose(keep, "keep"), NOW))
       .toMatchObject({ ok: true, value: { status: "declined", receipt: { optionId: "keep", outcome: "declined", commandIds: [] } } });
 
     const withdrawn = await prepared(v, id, at(16), at(20), v.sales);
     expect(await withdrawDecision(db, v.hallkeeper, withdrawn.id, NOW)).toMatchObject({ ok: false, status: 403 });
     expect(await withdrawDecision(db, v.sales, withdrawn.id, NOW)).toMatchObject({ ok: true, value: { status: "withdrawn" } });
-    expect(await decideDecision(db, v.admin, withdrawn.id, { optionId: "move", subjectDigest: withdrawn.basis.subjectDigest }, NOW))
+    expect(await decideDecision(db, v.admin, withdrawn.id, choose(withdrawn, "move"), NOW))
       .toMatchObject({ ok: false, status: 409, code: "DECISION_CLOSED" });
 
     const gone = await prepared(v, id, at(9), at(13));
     const cancelled = await transitionBookingCore(db, v.admin, id, { toState: "cancelled" });
     expect(cancelled.ok).toBe(true);
-    const failed = await decideDecision(db, v.admin, gone.id, { optionId: "move", subjectDigest: gone.basis.subjectDigest }, NOW);
+    const failed = await decideDecision(db, v.admin, gone.id, choose(gone, "move"), NOW);
     expect(failed).toMatchObject({ ok: false, status: 409, code: "BOOKING_NOT_ACTIVE" });
+    expect(failed.replay).toBeUndefined();
+    // The same choice made again is answered as the first time was, marked as a replay.
+    expect(await decideDecision(db, v.admin, gone.id, choose(gone, "move"), NOW))
+      .toMatchObject({ ok: false, status: 409, code: "BOOKING_NOT_ACTIVE", replay: true });
     const read = await readDecision(db, v.staff, gone.id);
-    expect(read).toMatchObject({ ok: true, value: { decision: { status: "failed", receipt: { outcome: "failed", refusal: { code: "BOOKING_NOT_ACTIVE" } } } } });
+    // A cancelled booking is still in the Diary's records: its title is still read.
+    expect(read).toMatchObject({ ok: true, value: { decision: { status: "failed", subjectTitle: "Crawford wedding", receipt: { outcome: "failed", refusal: { code: "BOOKING_NOT_ACTIVE" } } } } });
     expect((await booking(id)).startsAt.toISOString()).toBe(at(14).toISOString());
   });
 
-  it("keeps a decided decision final and its history append-only at the database", async () => {
+  it("keeps a decided decision final and its history append-only, and lets its reason be erased and nothing else", async () => {
     const v = await venue();
     const id = await ink(v, "Crawford wedding", at(14), at(18));
     const decision = await prepared(v, id, at(15), at(19));
     await expect(pool.query("UPDATE decisions SET body = '{}'::jsonb WHERE id = $1", [decision.id])).rejects.toThrow(/never changes/u);
-    expect(await decideDecision(db, v.staff, decision.id, { optionId: "keep", subjectDigest: decision.basis.subjectDigest }, NOW)).toMatchObject({ ok: true });
+    expect(await decideDecision(db, v.staff, decision.id, choose(decision, "keep"), NOW)).toMatchObject({ ok: true });
     await expect(pool.query("UPDATE decisions SET status = 'prepared', receipt = NULL, decided_at = NULL WHERE id = $1", [decision.id]))
       .rejects.toThrow(/final/u);
     await expect(pool.query("DELETE FROM decisions WHERE id = $1", [decision.id])).rejects.toThrow(/kept/u);
     await expect(pool.query("UPDATE decision_events SET kind = 'executed' WHERE decision_id = $1", [decision.id])).rejects.toThrow(/append-only/u);
     await expect(pool.query("DELETE FROM decision_events WHERE decision_id = $1", [decision.id])).rejects.toThrow(/append-only/u);
+    // The reason, free text that can name a person, is erased on request, even once decided.
+    await expect(pool.query("UPDATE decisions SET reason = 'Another reason' WHERE id = $1", [decision.id])).rejects.toThrow(/only ever erased/u);
+    await expect(pool.query("UPDATE decisions SET reason = NULL, expires_at = expires_at + interval '1 day' WHERE id = $1", [decision.id]))
+      .rejects.toThrow(/only ever erased/u);
+    await pool.query("UPDATE decisions SET reason = NULL WHERE id = $1", [decision.id]);
+    expect(await readDecision(db, v.staff, decision.id)).toMatchObject({ ok: true, value: { decision: { reason: null, status: "declined" } } });
+  });
+
+  it("keeps a decision with more in its way than it can list readable, with the rest counted", async () => {
+    const v = await venue();
+    // Thirty-one confirmed bookings, one a day, each with a long title.
+    const longTitle = "Annual dinner of the Incorporation ".repeat(5).trim();
+    const days = Array.from({ length: 31 }, (_, index) => index + 1);
+    await insertBoundBookings(db, days.map((day) => ({
+      id: randomUUID(), venueId: v.venueId, spaceId: v.spaceId, kind: "ink" as const, title: longTitle, createdBy: v.admin.id,
+      startsAt: at(12, day), endsAt: at(13, day),
+    })));
+    const id = await ink(v, "Crawford wedding", new Date(Date.UTC(2030, 3, 5, 10)), new Date(Date.UTC(2030, 3, 5, 11)));
+    // A move a month long, an honest slip of the date: everything is in its way.
+    const decision = await prepared(v, id, at(0, 1), at(23, 31), v.hallkeeper);
+    const consequences = move(decision)?.consequences ?? [];
+    expect(consequences).toHaveLength(30);
+    expect(consequences.at(-1)).toMatchObject({ kind: "more", severity: "blocking" });
+    expect(move(decision)?.executable).toBe(false);
+    expect(await kept(decision.id)).not.toContain("Incorporation");
+    // The venue's list and the decision still read, and it can be taken back.
+    const list = await listDecisions(db, v.staff, { limit: 50 });
+    expect(list.ok && list.value.map((entry) => entry.id)).toContain(decision.id);
+    expect(await withdrawDecision(db, v.hallkeeper, decision.id, NOW)).toMatchObject({ ok: true, value: { status: "withdrawn" } });
+  });
+
+  it("moves the event phases the Diary moves with the booking, finds what they meet, and the Diary agrees", async () => {
+    const v = await venue();
+    await turnaround(v, 60);
+    await ink(v, "Breakfast meeting", at(8), at(10));
+    const wedding = await entry(v, "ink", "Crawford wedding", at(14), at(18));
+    if (wedding.eventId === null) throw new Error("the wedding has no event");
+    // Its set-up runs before the booking itself, as set-up does.
+    const setUp = await phase(wedding.eventId, v.spaceId, at(12), 120);
+    const decision = await prepared(v, wedding.id, at(12), at(16));
+    // Two hours earlier, the set-up starts at 10:00, as breakfast clears.
+    expect(move(decision)?.consequences).toEqual([expect.objectContaining({ kind: "insufficient_turnaround", severity: "warning" })]);
+    expect(move(decision)?.consequences[0]?.summary).toMatch(/^Only 0 minutes next to the room's use .*the turnaround guideline is 60 minutes\.$/u);
+    expect(decision).toMatchObject({ recommendedOptionId: "keep", question: "Is the shorter turnaround workable for the team?" });
+    expect(decision.assumptions).toContain("1 of its event's timed phases move with it, as the Diary moves them.");
+    // The approver accepts the shortfall; the Diary moves the set-up where the decision said.
+    expect(await decideDecision(db, v.staff, decision.id, choose(decision, "move"), NOW)).toMatchObject({ ok: true, value: { status: "executed" } });
+    const [moved] = await db.select({ startsAt: schema.eventPhases.startsAt }).from(schema.eventPhases).where(eq(schema.eventPhases.id, setUp));
+    expect(moved?.startsAt?.toISOString()).toBe(at(10).toISOString());
+  });
+
+  it("is stale when a phase that moves with the booking was added after it was prepared", async () => {
+    const v = await venue();
+    const wedding = await entry(v, "ink", "Crawford wedding", at(14), at(18));
+    if (wedding.eventId === null) throw new Error("the wedding has no event");
+    const decision = await prepared(v, wedding.id, at(15), at(19));
+    await phase(wedding.eventId, v.spaceId, at(12), 120);
+    expect(await decideDecision(db, v.admin, decision.id, choose(decision, "move"), NOW)).toMatchObject({ ok: false, code: "DECISION_STALE" });
+    expect((await booking(wedding.id)).startsAt.toISOString()).toBe(at(14).toISOString());
+  });
+
+  it("lists a turnaround that gets worse, and one against the same event's other day", async () => {
+    const v = await venue();
+    await turnaround(v, 60);
+    // Fifty minutes before the next booking today: short already.
+    const lunch = await ink(v, "Lunch", at(10), at(12, 10, 10));
+    await ink(v, "Afternoon tea", at(13), at(15));
+    const worse = await prepared(v, lunch, at(10, 10, 30), at(12, 10, 55));
+    expect(move(worse)?.consequences).toEqual([expect.objectContaining({ kind: "insufficient_turnaround", summary: expect.stringMatching(/^Only 5 minutes /u) })]);
+    expect(worse.recommendedOptionId).toBe("keep");
+
+    // A two-day conference, one event; day one moved half an hour after breakfast.
+    const other = await venue();
+    await turnaround(other, 60);
+    await ink(other, "Breakfast meeting", at(7, 20), at(8, 20));
+    const dayOne = await entry(other, "ink", "Conference day 1", at(9, 20), at(17, 20));
+    if (dayOne.eventId === null) throw new Error("the conference has no event");
+    await entry(other, "ink", "Conference day 2", at(9, 21), at(17, 21), dayOne.eventId);
+    const sibling = await prepared(other, dayOne.id, at(8, 20, 30), at(16, 20, 30));
+    expect(move(sibling)?.consequences).toEqual([expect.objectContaining({ kind: "insufficient_turnaround", summary: expect.stringMatching(/^Only 30 minutes /u) })]);
+  });
+
+  it("blocks a move into a room closure, and a hold the Diary would not move", async () => {
+    const v = await venue();
+    await entry(v, "internal_block", "Closed: ceiling repairs", at(15), at(17));
+    const id = await ink(v, "Crawford wedding", at(10), at(12));
+    const closed = await prepared(v, id, at(15), at(16));
+    expect(move(closed)).toMatchObject({ executable: false, consequences: [expect.objectContaining({ kind: "room_closed", severity: "blocking" })] });
+    expect(await kept(closed.id)).not.toContain("ceiling");
+
+    // A hold without its decision date, owner and next action.
+    const hold = await entry(v, "hold", "Provisional wedding", at(9, 12), at(12, 12));
+    const unready = await prepared(v, hold.id, at(10, 12), at(13, 12));
+    expect(move(unready)).toMatchObject({ executable: false });
+    expect(move(unready)?.consequences).toContainEqual(expect.objectContaining({ kind: "hold_not_ready", severity: "blocking" }));
+  });
+
+  it("declines on 'keep' whatever changed, refuses an answer naming another decision, and answers the same move asked twice with the one prepared", async () => {
+    const v = await venue();
+    const id = await ink(v, "Crawford wedding", at(14), at(18));
+    const decision = await prepared(v, id, at(15), at(19));
+    const again = await prepareBookingTimeMove(db, v.sales, { bookingId: id, startsAt: at(15).toISOString(), endsAt: at(19).toISOString() }, NOW);
+    expect(again).toMatchObject({ ok: true, status: 200, replay: true, value: { id: decision.id } });
+    const other = await prepared(v, id, at(16), at(20));
+    // The answer names the decision shown: the other decision's digest is refused.
+    expect(await decideDecision(db, v.admin, other.id, choose(decision, "move"), NOW)).toMatchObject({ ok: false, status: 409, code: "DECISION_MISMATCH" });
+    // The booking changes; keeping it still declines, with nothing to revise.
+    expect((await updateBookingCore(db, v.staff, id, { notes: "Florist arrives at noon" })).ok).toBe(true);
+    expect(await decideDecision(db, v.admin, decision.id, choose(decision, "keep"), NOW)).toMatchObject({ ok: true, value: { status: "declined" } });
+    expect(await history(v, decision.id)).toEqual(["prepared", "declined"]);
+  });
+
+  it("reads the booking's title from the Diary when a decision is read", async () => {
+    const v = await venue();
+    const id = await ink(v, "Crawford wedding", at(14), at(18));
+    const decision = await prepared(v, id, at(15), at(19));
+    expect((await updateBookingCore(db, v.staff, id, { title: "Crawford and Lee wedding" })).ok).toBe(true);
+    expect(await readDecision(db, v.staff, decision.id)).toMatchObject({ ok: true, value: { decision: { subjectTitle: "Crawford and Lee wedding" } } });
   });
 
   describe("the routes", () => {
@@ -314,11 +472,10 @@ describe.skipIf(target === undefined)("prepared decisions on migrated PostgreSQL
       const listed = await app.inject({ method: "GET", url: "/decisions?status=prepared", headers: as(v.hallkeeper) });
       expect(listed.json<{ data: { id: string }[] }>().data.map((row) => row.id)).toContain(decision.id);
 
-      const choice = { optionId: "move", subjectDigest: decision.basis.subjectDigest };
-      const done = await app.inject({ method: "POST", url: `/decisions/${decision.id}/decide`, headers: as(v.admin), payload: choice });
+      const done = await app.inject({ method: "POST", url: `/decisions/${decision.id}/decide`, headers: as(v.admin), payload: choose(decision, "move") });
       expect(done.statusCode).toBe(200);
       expect(done.headers["idempotency-replay"]).toBeUndefined();
-      const again = await app.inject({ method: "POST", url: `/decisions/${decision.id}/decide`, headers: as(v.staff), payload: choice });
+      const again = await app.inject({ method: "POST", url: `/decisions/${decision.id}/decide`, headers: as(v.staff), payload: choose(decision, "move") });
       expect(again.statusCode).toBe(200);
       expect(again.headers["idempotency-replay"]).toBe("true");
       expect(await commands(id)).toBe(1);
@@ -335,11 +492,56 @@ describe.skipIf(target === undefined)("prepared decisions on migrated PostgreSQL
       expect((await app.inject({ method: "POST", url: "/decisions/booking-time-moves", headers: as(v.staff),
         payload: { bookingId: id, startsAt: at(19).toISOString(), endsAt: at(15).toISOString() } })).statusCode).toBe(400);
       const wrong = await app.inject({ method: "POST", url: `/decisions/${decision.id}/decide`, headers: as(v.admin),
-        payload: { optionId: "move", subjectDigest: "0".repeat(64) } });
+        payload: { optionId: "move", decisionDigest: "0".repeat(64) } });
       expect(wrong.statusCode).toBe(409);
       expect(wrong.json()).toMatchObject({ code: "DECISION_MISMATCH" });
       expect((await app.inject({ method: "GET", url: "/decisions", headers: { authorization: `Bearer ${JSON.stringify({ id: randomUUID(), email: "c@x.invalid", role: "client", platformRole: "none", venueId: v.venueId })}` } })).statusCode).toBe(403);
       expect((await booking(id)).startsAt.toISOString()).toBe(at(14).toISOString());
+    });
+
+    it("refuses times outside the years the Diary plans in and a reason too long, and keeps a reason whole", async () => {
+      const v = await venue();
+      const id = await ink(v, "Crawford wedding", at(14), at(18));
+      const ask = (payload: Record<string, unknown>) => app.inject({ method: "POST", url: "/decisions/booking-time-moves", headers: as(v.staff),
+        payload: { bookingId: id, startsAt: at(15).toISOString(), endsAt: at(19).toISOString(), ...payload } });
+      expect((await ask({ startsAt: "9999-12-30T10:00:00.000Z", endsAt: "9999-12-30T12:00:00.000Z" })).statusCode).toBe(400);
+      expect((await ask({ startsAt: "0001-01-02T10:00:00.000Z", endsAt: "0001-01-02T12:00:00.000Z" })).statusCode).toBe(400);
+      expect((await ask({ reason: "a".repeat(501) })).statusCode).toBe(400);
+      // A character outside the basic plane is two code units, and one character: the reason keeps it whole.
+      const whole = await ask({ reason: `${"a".repeat(499)}\u{1F37E}` });
+      expect(whole.statusCode).toBe(201);
+      expect(DecisionSchema.parse(whole.json<{ data: unknown }>().data).reason).toBe(`${"a".repeat(499)}\u{1F37E}`);
+    });
+
+    it("leaves a decision it cannot read out of the list, and says so when it is asked for", async () => {
+      const v = await venue();
+      const id = await ink(v, "Crawford wedding", at(14), at(18));
+      const readableOne = await prepared(v, id, at(15), at(19));
+      const [broken] = (await pool.query<{ id: string }>(
+        `INSERT INTO decisions (venue_id, action_class, subject_kind, subject_id, body, prepared_by, expires_at)
+         VALUES ($1, 'booking_time_move', 'booking', $2, '{"intendedOutcome": "From an older version"}'::jsonb, $3, now() + interval '1 day') RETURNING id`,
+        [v.venueId, id, v.staff.id])).rows;
+      if (broken === undefined) throw new Error("fixture row not written");
+      const listed = await app.inject({ method: "GET", url: "/decisions", headers: as(v.staff) });
+      expect(listed.statusCode).toBe(200);
+      const ids = listed.json<{ data: { id: string }[] }>().data.map((row) => row.id);
+      expect(ids).toContain(readableOne.id);
+      expect(ids).not.toContain(broken.id);
+      const asked = await app.inject({ method: "GET", url: `/decisions/${broken.id}`, headers: as(v.staff) });
+      expect(asked.statusCode).toBe(409);
+      expect(asked.json()).toMatchObject({ code: "DECISION_UNREADABLE" });
+    });
+
+    it("answers a failed decision's retry as the first time, refusal and all", async () => {
+      const v = await venue();
+      const id = await ink(v, "Crawford wedding", at(14), at(18));
+      const decision = await prepared(v, id, at(15), at(19));
+      expect((await transitionBookingCore(db, v.admin, id, { toState: "cancelled" })).ok).toBe(true);
+      const first = await app.inject({ method: "POST", url: `/decisions/${decision.id}/decide`, headers: as(v.admin), payload: choose(decision, "move") });
+      const retry = await app.inject({ method: "POST", url: `/decisions/${decision.id}/decide`, headers: as(v.admin), payload: choose(decision, "move") });
+      expect([first.statusCode, retry.statusCode]).toEqual([409, 409]);
+      expect([first.json<{ code: string }>().code, retry.json<{ code: string }>().code]).toEqual(["BOOKING_NOT_ACTIVE", "BOOKING_NOT_ACTIVE"]);
+      expect([first.headers["idempotency-replay"], retry.headers["idempotency-replay"]]).toEqual([undefined, "true"]);
     });
   });
 });

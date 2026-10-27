@@ -6749,7 +6749,7 @@ export const venueEngagementEvents = pgTable("venue_engagement_events", {
   index("venue_engagement_events_space_idx").on(table.spaceId).where(sql`${table.spaceId} IS NOT NULL`),
 ]);
 
-// Goal 09 M1, migration 0103: prepared decisions and their history. What a
+// Goal 09 M1, migration 0105: prepared decisions and their history. What a
 // decision was prepared as (`body`) never changes; where it stands changes
 // once, from prepared, with its receipt (decisions_guard_update). The history
 // is append-only. services/decisions.ts is the only writer.
@@ -6761,6 +6761,8 @@ export const decisions = pgTable("decisions", {
   subjectKind: varchar("subject_kind", { length: 20 }).$type<"booking">().notNull(),
   subjectId: uuid("subject_id").notNull(),
   body: jsonb("body").$type<DecisionBody>().notNull(),
+  /** Why, in the asker's words: erasable, the only column that may change after a decision is decided. */
+  reason: text("reason"),
   preparedBy: uuid("prepared_by").notNull().references(() => users.id, { onDelete: "restrict" }),
   preparedAt: timestamp("prepared_at", { withTimezone: true }).defaultNow().notNull(),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
@@ -6775,6 +6777,7 @@ export const decisions = pgTable("decisions", {
   check("decisions_status", sql`${table.status} IN ('prepared', 'executed', 'declined', 'failed', 'superseded', 'withdrawn')`),
   check("decisions_subject_kind", sql`${table.subjectKind} IN ('booking')`),
   check("decisions_body_object", sql`jsonb_typeof(${table.body}) = 'object'`),
+  check("decisions_reason", sql`${table.reason} IS NULL OR char_length(${table.reason}) BETWEEN 1 AND 500`),
   check("decisions_window", sql`${table.expiresAt} > ${table.preparedAt}`),
   check("decisions_receipt", sql`(${table.status} IN ('executed', 'declined', 'failed')) = (${table.receipt} IS NOT NULL AND jsonb_typeof(${table.receipt}) = 'object')`),
   check("decisions_decided_at", sql`(${table.status} = 'prepared') = (${table.decidedAt} IS NULL)`),

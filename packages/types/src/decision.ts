@@ -74,10 +74,14 @@ const Digest = z.string().regex(/^[a-f0-9]{64}$/u);
 const Words = z.string().trim().min(1).max(500);
 
 /** What one option would bring about that someone has to know: a clash the
- *  Diary's conflict engine finds that the booking does not have today, or a
- *  check it could not make. */
+ *  Diary's conflict engine finds that the booking does not have today (or
+ *  has, but worse), a room closed then, a hold the Diary would not move
+ *  without its follow-up details, a check it could not make, or how many more
+ *  there are than are listed. Written from the Diary's times and rooms, never
+ *  its titles: a decision is kept for good, and a title can be a person's name. */
+export const DECISION_CONSEQUENCE_KINDS = ["room_closed", "hold_not_ready", "not_checked", "more"] as const;
 export const DecisionConsequenceSchema = z.object({
-  kind: z.union([CalendarConflictTypeSchema, z.literal("not_checked")]),
+  kind: z.union([CalendarConflictTypeSchema, z.enum(DECISION_CONSEQUENCE_KINDS)]),
   severity: ConflictSeveritySchema,
   summary: Words,
   /** The other bookings or phases it concerns. */
@@ -114,10 +118,12 @@ export type DecisionOption = z.infer<typeof DecisionOptionSchema>;
 /** What the decision was prepared on, as the venue held it then. */
 export const DecisionBasisSchema = z.object({
   /** The booking's whole state, as the Diary's update precondition reads it. */
+  bookingDigest: Digest,
+  /** The booking and the event phases that would move with it: a phase added,
+   *  moved or taken away since makes the decision stale. */
   subjectDigest: Digest,
   /** The options' consequences as worked out then: neighbours that moved since change them. */
   consequenceDigest: Digest,
-  title: Words,
   spaceId: z.uuid(),
   startsAt: Instant,
   endsAt: Instant,
@@ -142,9 +148,18 @@ export const DecisionSchema = z.object({
   actionClass: DecisionActionClassSchema,
   status: DecisionStatusSchema,
   subject: z.object({ kind: z.literal("booking"), id: z.uuid() }).strict(),
+  /** The booking's title as the Diary holds it now, read when the decision is
+   *  read; null once the booking is deleted. Never kept in the decision. */
+  subjectTitle: z.string().max(500).nullable(),
+  /** The approver's answer must name this: the decision as read, so a
+   *  decision read before it changed, or another decision, is never decided. */
+  digest: Digest,
   intendedOutcome: Words,
   /** What was asked for, as asked: a revised decision is prepared from it. */
-  requested: z.object({ startsAt: Instant, endsAt: Instant, reason: Words.nullable() }).strict(),
+  requested: z.object({ startsAt: Instant, endsAt: Instant }).strict(),
+  /** Why, in the asker's words. Kept apart from the decision's fixed body, so
+   *  it can be erased: free text can name a person. */
+  reason: Words.nullable(),
   basis: DecisionBasisSchema,
   options: z.array(DecisionOptionSchema).min(1).max(6),
   recommendedOptionId: z.string().min(1).max(40).nullable(),
@@ -201,11 +216,17 @@ export const DecisionWithHistorySchema = z.object({
 }).strict();
 export type DecisionWithHistory = z.infer<typeof DecisionWithHistorySchema>;
 
+/** A time a booking can be moved to: within the years the Diary plans in. */
+const MoveInstant = Instant.refine((value) => {
+  const at = Date.parse(value);
+  return at >= Date.UTC(2000, 0, 1) && at < Date.UTC(2200, 0, 1);
+}, { message: "must be between the years 2000 and 2199" });
+
 /** Asking for a booking to move: the decision is prepared from what the Diary holds. */
 export const PrepareBookingTimeMoveSchema = z.object({
   bookingId: z.uuid(),
-  startsAt: Instant,
-  endsAt: Instant,
+  startsAt: MoveInstant,
+  endsAt: MoveInstant,
   /** Why, in the asker's words: shown with the decision. */
   reason: Words.optional(),
 }).strict().refine((value) => Date.parse(value.endsAt) > Date.parse(value.startsAt), {
@@ -214,11 +235,12 @@ export const PrepareBookingTimeMoveSchema = z.object({
 });
 export type PrepareBookingTimeMove = z.infer<typeof PrepareBookingTimeMoveSchema>;
 
-/** Deciding: the option chosen, and the basis the approver was shown, so a
- *  decision read before it changed is never decided by mistake. */
+/** Deciding: the option chosen, and the digest of the decision the approver
+ *  was shown, so a decision read before it changed, or another decision on
+ *  the same booking, is never decided by mistake. */
 export const DecideDecisionSchema = z.object({
   optionId: z.string().min(1).max(40),
-  subjectDigest: Digest,
+  decisionDigest: Digest,
 }).strict();
 export type DecideDecision = z.infer<typeof DecideDecisionSchema>;
 

@@ -1,14 +1,18 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, desc, eq, gt, isNull, lt, notInArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNull, lt, notInArray, sql } from "drizzle-orm";
 import {
   DECISION_APPROVER_ROLES,
   DECISION_SCHEMA_VERSION,
+  DecisionBodySchema,
   DecisionSchema,
   EVENT_ENDED_STATUSES,
+  PREPARABLE_DECISION_CLASSES,
   canApproveDecision,
   sha256Hex,
   stableCanonicalJson,
+  type CalendarConflict,
   type CanonicalJsonValue,
+  type ConflictSeverity,
   type Decision,
   type DecisionBody,
   type DecisionConsequence,
@@ -24,6 +28,7 @@ import { bookings, decisionEvents, decisions, eventPhases, events, turnaroundRul
 import { canReadDiary } from "../utils/query.js";
 import {
   bookingMutationStateDigest,
+  holdHygieneIssues,
   updateBookingCore,
   type BookingDbConn,
   type BookingMutationResult,
@@ -37,6 +42,7 @@ import {
   type ConflictTurnaroundRuleInput,
 } from "./calendar-conflicts.js";
 import { realDiaryCommandDeps } from "./diary-commands.js";
+import { phaseMovesWithBooking } from "./event-binding.js";
 
 // ---------------------------------------------------------------------------
 // Prepared decisions (goal 09 M1, with M2's first: a booking time move).
@@ -44,23 +50,36 @@ import { realDiaryCommandDeps } from "./diary-commands.js";
 // Prepare: from what the Diary holds, never from what a screen sends, work out
 // the move's consequences with the Diary's own conflict engine (a confirmed
 // booking in the way, a hold it would overlap, too little turnaround either
-// side, a pair no turnaround rule covers), offer "move" and "keep" with a
-// recommendation and its reasons, say what is not worked out, and record it.
+// side, a pair no turnaround rule covers), and with the Diary's own rules (a
+// room closed then, a hold the update would refuse to move), offer "move" and
+// "keep" with a recommendation and its reasons, say what is not worked out,
+// and record it. The event's phases that the Diary's move carries with the
+// booking are carried here by the same rule, and are part of what the
+// decision was prepared on.
 //
 // Decide: only someone holding the approval for this class at this venue
-// (DECISION_APPROVER_ROLES; never canManageVenue). In one transaction, under
-// a lock on the decision: a decided decision replays its receipt to the same
-// choice and refuses another; the booking and its neighbours are read again,
-// and if the booking or the move's consequences changed since it was
-// prepared, nothing executes: the decision is superseded by a revised one,
-// which is returned. Otherwise the move runs as the Diary's own update
-// command (updateBookingCore, with the booking's prepared state as its
-// precondition, recorded in the diary_commands ledger under the decision's
-// command id), and the receipt and history are written with it. The venue's
-// own rules can still refuse it (another booking took the slot in the
-// meantime): then nothing changes and the decision is recorded as failed. An
-// unexpected error rolls the whole step back, the decision stays prepared,
-// and the error is recorded in its history.
+// (DECISION_APPROVER_ROLES; never canManageVenue), naming the decision as they
+// read it. "Keep" is the decline, whenever it is chosen. In one transaction,
+// under a lock on the decision: a decided decision replays its answer to the
+// same choice and refuses another; the booking and its neighbours are read
+// again, and if the booking, the phases moving with it or the move's
+// consequences changed since it was prepared, nothing executes: the decision
+// is superseded by a revised one, which is returned. Otherwise the move runs
+// as the Diary's own update command (updateBookingCore, with the booking's
+// prepared state as its precondition, recorded in the diary_commands ledger
+// under the decision's command id), and the receipt and history are written
+// with it. The venue's own rules can still refuse it: then nothing changes and
+// the decision is recorded as failed. An unexpected error while carrying it
+// out rolls the whole step back, the decision stays prepared, and the error
+// is recorded in its history.
+//
+// Kept for good, so nothing kept names a person: consequences are written from
+// times, the booking's title is read from the Diary when a decision is read,
+// and the asker's reason sits in its own erasable column.
+//
+// Not covered: a hold pencilled into the new time in the instant between the
+// last read and the move is not seen (a confirmed booking is refused by the
+// database's own no-overlap rule).
 // ---------------------------------------------------------------------------
 
 const HOUR_MS = 3_600_000;
@@ -69,13 +88,24 @@ const DAY_MS = 24 * HOUR_MS;
 const DECISION_LIFETIME_MS = DAY_MS;
 /** How far either side of a move the Diary is read for its consequences. */
 const NEIGHBOUR_WINDOW_MS = DAY_MS;
+/** The most consequences a decision lists; the rest are counted. */
+const MAX_CONSEQUENCES = 30;
+/** The longest a decision's sentence is kept. */
+const MAX_WORDS = 500;
 
 /** Not yet worked out for a time move: said on every one until it is (goal 09 M2). */
 const NOT_WORKED_OUT = "What the move means for the staff rota, catering and equipment is not worked out yet; check them before approving.";
 
 export type DecisionResult<T> =
   | { readonly ok: true; readonly status: 200 | 201; readonly value: T; readonly replay?: boolean }
-  | { readonly ok: false; readonly status: 400 | 403 | 404 | 409; readonly code: string; readonly error: string; readonly details?: unknown };
+  | {
+    readonly ok: false;
+    readonly status: 400 | 403 | 404 | 409;
+    readonly code: string;
+    readonly error: string;
+    readonly details?: unknown;
+    readonly replay?: boolean;
+  };
 
 /** Seams for tests: a fault after the move and before its receipt, to prove the step is one. */
 export interface DecideFaults {
@@ -97,18 +127,41 @@ function venueTime(at: Date): string {
   return VENUE_TIME.format(at);
 }
 
+function span(startsAt: Date, endsAt: Date): string {
+  return `${venueTime(startsAt)} \u2013 ${venueTime(endsAt)}`;
+}
+
+/** At most `max` characters, never half of one: a character outside the
+ *  basic plane is two code units, and half of it is not text. */
+export function clip(text: string, max: number = MAX_WORDS): string {
+  if (text.length <= max) return text;
+  let cut = text.slice(0, max - 1);
+  const last = cut.charCodeAt(cut.length - 1);
+  if (last >= 0xd800 && last <= 0xdbff) cut = cut.slice(0, -1);
+  return `${cut}\u2026`;
+}
+
 function digestOf(value: CanonicalJsonValue): string {
   return sha256Hex(`venviewer.decision.v1\n${stableCanonicalJson(value)}`);
 }
 
-export function toDecision(row: DecisionRow): Decision {
-  return DecisionSchema.parse({
+/** What an approver's answer names: this decision, as it was prepared. */
+export function decisionDigest(row: Pick<DecisionRow, "id" | "body">): string {
+  return digestOf({ id: row.id, body: row.body });
+}
+
+/** The decision as it is shown, or null when the row cannot be read as one. */
+function readable(row: DecisionRow, subjectTitle: string | null): Decision | null {
+  const parsed = DecisionSchema.safeParse({
     schemaVersion: DECISION_SCHEMA_VERSION,
     id: row.id,
     venueId: row.venueId,
     actionClass: row.actionClass,
     status: row.status,
     subject: { kind: row.subjectKind, id: row.subjectId },
+    subjectTitle: subjectTitle === null ? null : clip(subjectTitle),
+    digest: decisionDigest(row),
+    reason: row.reason,
     ...row.body,
     preparedBy: row.preparedBy,
     preparedAt: row.preparedAt.toISOString(),
@@ -117,54 +170,74 @@ export function toDecision(row: DecisionRow): Decision {
     supersededBy: row.supersededBy,
     receipt: row.receipt,
   });
+  return parsed.success ? parsed.data : null;
 }
 
+/** The titles of the bookings these decisions are about, as the Diary holds them now. */
+async function titlesOf(conn: BookingDbConn, rows: readonly DecisionRow[]): Promise<ReadonlyMap<string, string>> {
+  const ids = [...new Set(rows.map((row) => row.subjectId))];
+  if (ids.length === 0) return new Map();
+  const found = await conn.select({ id: bookings.id, title: bookings.title }).from(bookings)
+    .where(and(inArray(bookings.id, ids), isNull(bookings.deletedAt)));
+  return new Map(found.map((row) => [row.id, row.title]));
+}
+
+async function shown(conn: BookingDbConn, row: DecisionRow): Promise<Decision | null> {
+  return readable(row, (await titlesOf(conn, [row])).get(row.subjectId) ?? null);
+}
+
+const UNREADABLE = deny(409, "DECISION_UNREADABLE", "This decision was kept in a form this version cannot show, so it cannot be acted on here.");
+
 // ---------------------------------------------------------------------------
-// Consequences, from the Diary's own conflict engine
+// Consequences, from the Diary's own conflict engine and rules
 // ---------------------------------------------------------------------------
 
-interface Neighbourhood {
+export interface Neighbourhood {
   readonly bookings: readonly ConflictBookingInput[];
   readonly phases: readonly ConflictPhaseInput[];
   readonly rules: readonly ConflictTurnaroundRuleInput[];
 }
 
-async function neighbourhood(conn: BookingDbConn, booking: BookingRow, to: { readonly startsAt: Date; readonly endsAt: Date }): Promise<Neighbourhood> {
+interface Move {
+  readonly startsAt: Date;
+  readonly endsAt: Date;
+}
+
+async function neighbourhood(conn: BookingDbConn, booking: BookingRow, to: Move): Promise<Neighbourhood> {
   const from = new Date(Math.min(booking.startsAt.getTime(), to.startsAt.getTime()) - NEIGHBOUR_WINDOW_MS);
   const until = new Date(Math.max(booking.endsAt.getTime(), to.endsAt.getTime()) + NEIGHBOUR_WINDOW_MS);
-  const [bookingRows, phaseRows, ruleRows] = await Promise.all([
-    conn.select().from(bookings).where(and(
-      eq(bookings.venueId, booking.venueId),
-      eq(bookings.spaceId, booking.spaceId),
-      isNull(bookings.deletedAt),
-      lt(bookings.startsAt, until),
-      gt(bookings.endsAt, from),
-    )).orderBy(asc(bookings.startsAt), asc(bookings.id)),
-    conn.select({
-      id: eventPhases.id,
-      spaceId: eventPhases.spaceId,
-      name: eventPhases.name,
-      startsAt: eventPhases.startsAt,
-      durationMinutes: eventPhases.durationMinutes,
-      eventId: events.id,
-      eventName: events.name,
-      eventType: events.eventType,
-    }).from(eventPhases).innerJoin(events, eq(eventPhases.eventId, events.id)).where(and(
-      eq(events.venueId, booking.venueId),
-      isNull(events.deletedAt),
-      notInArray(events.status, [...EVENT_ENDED_STATUSES]),
-      eq(eventPhases.spaceId, booking.spaceId),
-      lt(eventPhases.startsAt, until),
-      gt(sql`${eventPhases.startsAt} + make_interval(mins => ${eventPhases.durationMinutes})`, from),
-    )).orderBy(asc(eventPhases.startsAt), asc(eventPhases.id)),
-    conn.select({
-      spaceId: turnaroundRules.spaceId,
-      eventType: turnaroundRules.eventType,
-      name: turnaroundRules.name,
-      minutes: turnaroundRules.minutes,
-      isActive: turnaroundRules.isActive,
-    }).from(turnaroundRules).where(and(eq(turnaroundRules.venueId, booking.venueId), isNull(turnaroundRules.deletedAt))),
-  ]);
+  // One statement at a time: a transaction's connection runs one query at once.
+  const bookingRows = await conn.select().from(bookings).where(and(
+    eq(bookings.venueId, booking.venueId),
+    eq(bookings.spaceId, booking.spaceId),
+    isNull(bookings.deletedAt),
+    lt(bookings.startsAt, until),
+    gt(bookings.endsAt, from),
+  )).orderBy(asc(bookings.startsAt), asc(bookings.id));
+  const phaseRows = await conn.select({
+    id: eventPhases.id,
+    spaceId: eventPhases.spaceId,
+    name: eventPhases.name,
+    startsAt: eventPhases.startsAt,
+    durationMinutes: eventPhases.durationMinutes,
+    eventId: events.id,
+    eventName: events.name,
+    eventType: events.eventType,
+  }).from(eventPhases).innerJoin(events, eq(eventPhases.eventId, events.id)).where(and(
+    eq(events.venueId, booking.venueId),
+    isNull(events.deletedAt),
+    notInArray(events.status, [...EVENT_ENDED_STATUSES]),
+    eq(eventPhases.spaceId, booking.spaceId),
+    lt(eventPhases.startsAt, until),
+    gt(sql`${eventPhases.startsAt} + make_interval(mins => ${eventPhases.durationMinutes})`, from),
+  )).orderBy(asc(eventPhases.startsAt), asc(eventPhases.id));
+  const ruleRows = await conn.select({
+    spaceId: turnaroundRules.spaceId,
+    eventType: turnaroundRules.eventType,
+    name: turnaroundRules.name,
+    minutes: turnaroundRules.minutes,
+    isActive: turnaroundRules.isActive,
+  }).from(turnaroundRules).where(and(eq(turnaroundRules.venueId, booking.venueId), isNull(turnaroundRules.deletedAt)));
   return {
     bookings: bookingRows.map((row) => ({
       id: row.id, spaceId: row.spaceId, kind: row.kind, status: row.status, title: row.title, eventType: row.eventType,
@@ -178,50 +251,123 @@ async function neighbourhood(conn: BookingDbConn, booking: BookingRow, to: { rea
   };
 }
 
-/** The Diary as it would be with the booking moved: the booking at its new
- *  times, and its event's phases inside it carried with it, as the move does. */
-function moved(world: Neighbourhood, booking: BookingRow, to: { readonly startsAt: Date; readonly endsAt: Date }): Neighbourhood {
+/** The event phases the Diary's move would carry with the booking, by its own rule. */
+export function carriedPhases(world: Neighbourhood, booking: BookingRow): readonly ConflictPhaseInput[] {
+  const eventId = booking.eventId;
+  if (eventId === null) return [];
+  const live = world.bookings.filter((entry) => entry.status === "active" && entry.deletedAt === null);
+  const move = { bookingId: booking.id, eventId, from: { spaceId: booking.spaceId, startsAt: booking.startsAt, endsAt: booking.endsAt } };
+  return world.phases.filter((phase) => phaseMovesWithBooking(phase, move, live));
+}
+
+/** The Diary as it would be with the booking moved, and the phases it carries with it. */
+function moved(world: Neighbourhood, booking: BookingRow, to: Move, carried: readonly ConflictPhaseInput[]): Neighbourhood {
   const delta = to.startsAt.getTime() - booking.startsAt.getTime();
-  const carried = (phase: ConflictPhaseInput): boolean => booking.eventId !== null && phase.eventId === booking.eventId
-    && phase.startsAt.getTime() >= booking.startsAt.getTime() && phase.endsAt.getTime() <= booking.endsAt.getTime();
+  const carriedIds = new Set(carried.map((phase) => phase.id));
   return {
     ...world,
     bookings: world.bookings.map((entry) => entry.id === booking.id ? { ...entry, startsAt: to.startsAt, endsAt: to.endsAt } : entry),
-    phases: world.phases.map((phase) => carried(phase)
+    phases: world.phases.map((phase) => carriedIds.has(phase.id)
       ? { ...phase, startsAt: new Date(phase.startsAt.getTime() + delta), endsAt: new Date(phase.endsAt.getTime() + delta) }
       : phase),
   };
 }
 
-function pairKey(type: string, ids: readonly [string, string]): string {
-  return `${type}:${[...ids].sort().join("|")}`;
+/** What the decision is prepared on: the booking's state, and the phases moving with it. */
+function subjectDigestOf(booking: BookingRow, carried: readonly ConflictPhaseInput[]): string {
+  return digestOf({
+    booking: bookingMutationStateDigest(booking),
+    phases: [...carried]
+      .sort((a, b) => a.id.localeCompare(b.id))
+      .map((phase) => ({ id: phase.id, startsAt: phase.startsAt.toISOString(), endsAt: phase.endsAt.toISOString() })),
+  });
 }
 
-/** What the move brings about for this booking that it does not have now. */
-export function moveConsequences(world: Neighbourhood, booking: BookingRow, to: { readonly startsAt: Date; readonly endsAt: Date }): readonly DecisionConsequence[] {
+const SEVERITY_RANK: Readonly<Record<ConflictSeverity, number>> = { blocking: 0, warning: 1, info: 2 };
+const TURNAROUND = /^Only (\d+) minutes between .* the applicable turnaround guideline is (\d+) minutes/su;
+
+/** A consequence in the decision's own words: what and when, never whose. */
+function consequenceSummary(conflict: CalendarConflict, next: Neighbourhood, ours: ReadonlySet<string>): string {
+  const otherId = conflict.entryIds.find((id) => !ours.has(id)) ?? conflict.entryIds[1];
+  const other = next.bookings.find((entry) => entry.id === otherId) ?? next.phases.find((phase) => phase.id === otherId);
+  const when = other === undefined ? "" : ` (${span(other.startsAt, other.endsAt)})`;
+  switch (conflict.type) {
+    case "ink_double_book":
+      return `Another confirmed booking has the room then${when}.`;
+    case "hold_overlap":
+      return conflict.severity === "info"
+        ? `Two provisional holds would overlap${when}; the earlier option decides first.`
+        : `A hold and a confirmed booking would overlap${when}; the hold could not be confirmed while the booking stands.`;
+    case "insufficient_turnaround": {
+      const figures = TURNAROUND.exec(conflict.explanation);
+      return figures === null
+        ? `Less than the turnaround guideline next to the room's use${when}.`
+        : `Only ${figures[1] ?? "?"} minutes next to the room's use${when}; the turnaround guideline is ${figures[2] ?? "?"} minutes.`;
+    }
+    case "viewing_overlap":
+      return `A viewing would overlap the room's use${when}.`;
+  }
+}
+
+/** Blocking first, then warnings, then the rest; past the most a decision lists, counted. */
+function listed(found: readonly DecisionConsequence[]): DecisionConsequence[] {
+  const ordered = [...found].sort((a, b) => SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity]);
+  if (ordered.length <= MAX_CONSEQUENCES) return ordered;
+  const kept = ordered.slice(0, MAX_CONSEQUENCES - 1);
+  const rest = ordered.slice(MAX_CONSEQUENCES - 1);
+  const worst = rest.reduce<ConflictSeverity>((severity, entry) => SEVERITY_RANK[entry.severity] < SEVERITY_RANK[severity] ? entry.severity : severity, "info");
+  return [...kept, { kind: "more", severity: worst, summary: `And ${String(rest.length)} more like those above.`, concerns: [] }];
+}
+
+/**
+ * What the move brings about that the booking does not have now, or has
+ * worse: every conflict the engine finds after the move that it did not find,
+ * word for word, before (a gap that shrinks is a new finding), a room closure
+ * at the new time, and a hold the Diary's update would refuse to move.
+ */
+export function moveConsequences(world: Neighbourhood, booking: BookingRow, to: Move): readonly DecisionConsequence[] {
+  const carried = carriedPhases(world, booking);
+  const next = moved(world, booking, to, carried);
+  const key = (conflict: CalendarConflict): string => `${conflict.type}|${[...conflict.entryIds].sort().join(",")}|${conflict.explanation}`;
   const before = detectCalendarConflicts({ bookings: world.bookings, phases: world.phases, turnaroundRules: world.rules });
-  const next = moved(world, booking, to);
   const after = detectCalendarConflicts({ bookings: next.bookings, phases: next.phases, turnaroundRules: next.rules });
-  const had = new Set(before.conflicts.map((conflict) => pairKey(conflict.type, conflict.entryIds)));
-  const mine = (ids: readonly [string, string]): boolean => ids.includes(booking.id)
-    || (booking.eventId !== null && world.phases.some((phase) => phase.eventId === booking.eventId && ids.includes(phase.id)));
+  const had = new Set(before.conflicts.map(key));
+  const ours = new Set([booking.id, ...carried.map((phase) => phase.id)]);
   const found: DecisionConsequence[] = after.conflicts
-    .filter((conflict) => mine(conflict.entryIds) && !had.has(pairKey(conflict.type, conflict.entryIds)))
+    .filter((conflict) => !had.has(key(conflict)))
     .map((conflict) => ({
       kind: conflict.type,
       severity: conflict.severity,
-      summary: conflict.explanation.slice(0, 500),
-      concerns: conflict.entryIds.filter((id) => id !== booking.id),
+      summary: clip(consequenceSummary(conflict, next, ours)),
+      concerns: conflict.entryIds.filter((id) => id !== booking.id).slice(0, 20),
     }));
+  // A room closed then: the conflict engine does not weigh a closure against a booking.
+  if (booking.kind !== "internal_block") {
+    for (const block of next.bookings) {
+      if (block.kind !== "internal_block" || block.status !== "active" || block.deletedAt !== null || block.id === booking.id) continue;
+      if (block.startsAt.getTime() < to.endsAt.getTime() && block.endsAt.getTime() > to.startsAt.getTime()) {
+        found.push({ kind: "room_closed", severity: "blocking", summary: `The room is closed then (${span(block.startsAt, block.endsAt)}).`, concerns: [block.id] });
+      }
+    }
+  }
+  // The Diary's update refuses to move a live hold without its follow-up details.
+  if (holdHygieneIssues(booking).length > 0) {
+    found.push({
+      kind: "hold_not_ready",
+      severity: "blocking",
+      summary: "The hold needs its decision date, owner and a dated next action before the Diary will move it.",
+      concerns: [],
+    });
+  }
   if (after.checks.turnaround.status !== "checked") {
     found.push({
       kind: "not_checked",
       severity: "info",
-      summary: `Turnaround is not fully checked: ${after.checks.turnaround.detail}`.slice(0, 500),
+      summary: clip(`Turnaround is not fully checked: ${after.checks.turnaround.detail}`),
       concerns: [],
     });
   }
-  return found;
+  return listed(found);
 }
 
 // ---------------------------------------------------------------------------
@@ -239,25 +385,30 @@ function urgencyOf(startsAt: Date, now: Date): Decision["urgency"] {
 export async function prepareTimeMoveBody(
   conn: BookingDbConn,
   booking: BookingRow,
-  requested: { readonly startsAt: string; readonly endsAt: string; readonly reason: string | null },
+  requested: { readonly startsAt: string; readonly endsAt: string },
   now: Date,
 ): Promise<DecisionBody> {
   const to = { startsAt: new Date(requested.startsAt), endsAt: new Date(requested.endsAt) };
-  const consequences = moveConsequences(await neighbourhood(conn, booking, to), booking, to);
+  const world = await neighbourhood(conn, booking, to);
+  const consequences = moveConsequences(world, booking, to);
   const blocking = consequences.filter((consequence) => consequence.severity === "blocking");
   const warnings = consequences.filter((consequence) => consequence.severity === "warning");
+  const notes = consequences.filter((consequence) => consequence.severity === "info" && consequence.kind !== "not_checked");
   const executable = blocking.length === 0;
   const recommendMove = executable && warnings.length === 0;
+  const turnaroundShort = warnings.some((consequence) => consequence.kind === "insufficient_turnaround");
   const move: DecisionOption = {
     id: "move",
-    label: `Move it to ${venueTime(to.startsAt)} – ${venueTime(to.endsAt)}`,
+    label: clip(`Move it to ${span(to.startsAt, to.endsAt)}`),
     executable,
     recommended: recommendMove,
     reasons: !executable
-      ? blocking.map((consequence) => `It cannot move there: ${consequence.summary}`).slice(0, 10)
+      ? blocking.slice(0, 10).map((consequence) => clip(`It cannot move there: ${consequence.summary}`))
       : warnings.length > 0
-        ? warnings.map((consequence) => consequence.summary).slice(0, 10)
-        : ["The Diary finds no clash and no turnaround shortfall at the new time."],
+        ? warnings.slice(0, 10).map((consequence) => consequence.summary)
+        : notes.length > 0
+          ? notes.slice(0, 10).map((consequence) => consequence.summary)
+          : ["The Diary finds nothing in the way at the new time."],
     consequences: [...consequences],
     mutations: executable ? [{
       kind: "booking.update",
@@ -269,38 +420,48 @@ export async function prepareTimeMoveBody(
   };
   const keep: DecisionOption = {
     id: "keep",
-    label: `Keep it at ${venueTime(booking.startsAt)} – ${venueTime(booking.endsAt)}`,
+    label: clip(`Keep it at ${span(booking.startsAt, booking.endsAt)}`),
     executable: true,
     recommended: !recommendMove,
     reasons: recommendMove
       ? ["Nothing changes; the request is answered no."]
       : executable
-        ? ["Nothing changes, and the shortfall above does not arise."]
-        : ["Nothing changes. Moving it would need the booking in the way to move first."],
+        ? ["Nothing changes, and what is listed above does not arise."]
+        : ["Nothing changes. Moving it would need what is in the way to change first."],
     consequences: [],
     mutations: [],
   };
-  const options = [move, keep];
   const notChecked = consequences.some((consequence) => consequence.kind === "not_checked");
-  return {
-    intendedOutcome: `Move "${booking.title}" to ${venueTime(to.startsAt)}${requested.reason === null ? "" : `: ${requested.reason}`}`.slice(0, 500),
+  const carried = carriedPhases(world, booking);
+  const body = {
+    intendedOutcome: clip(`Move the booking to ${span(to.startsAt, to.endsAt)}`),
     requested,
     basis: {
-      subjectDigest: bookingMutationStateDigest(booking),
+      bookingDigest: bookingMutationStateDigest(booking),
+      subjectDigest: subjectDigestOf(booking, carried),
       consequenceDigest: digestOf(consequences),
-      title: booking.title.slice(0, 500),
       spaceId: booking.spaceId,
       startsAt: booking.startsAt.toISOString(),
       endsAt: booking.endsAt.toISOString(),
     },
-    options,
+    options: [move, keep],
     recommendedOptionId: recommendMove ? "move" : "keep",
     missingFacts: [NOT_WORKED_OUT, ...(notChecked ? ["No turnaround rule covers every booking next to it, so some gaps are not checked."] : [])],
-    assumptions: ["The booking keeps its room; only its times change."],
-    question: warnings.length > 0 && executable ? "Is the shorter turnaround workable for the team?" : null,
+    assumptions: [
+      "The booking keeps its room; only its times change.",
+      ...(carried.length > 0 ? [`${String(carried.length)} of its event's timed phases move with it, as the Diary moves them.`] : []),
+    ],
+    question: turnaroundShort
+      ? "Is the shorter turnaround workable for the team?"
+      : warnings.length > 0 && executable ? "Is what is listed above workable for the team?" : null,
     urgency: urgencyOf(booking.startsAt, now),
     approverRoles: [...DECISION_APPROVER_ROLES.booking_time_move],
   };
+  // Checked before it is kept, never after: a decision that cannot be read
+  // back would be kept for good and break the venue's list.
+  const parsed = DecisionBodySchema.safeParse(body);
+  if (!parsed.success) throw new Error(`A prepared decision did not hold its shape: ${parsed.error.message}`);
+  return parsed.data;
 }
 
 async function appendEvent(
@@ -317,6 +478,7 @@ async function insertDecision(
   conn: BookingDbConn,
   booking: BookingRow,
   body: DecisionBody,
+  reason: string | null,
   preparedBy: string,
   now: Date,
   supersedes: string | null,
@@ -328,6 +490,7 @@ async function insertDecision(
     subjectKind: "booking",
     subjectId: booking.id,
     body,
+    reason,
     preparedBy,
     preparedAt: now,
     expiresAt: new Date(now.getTime() + lifetime),
@@ -357,11 +520,29 @@ export async function prepareBookingTimeMove(
   if (booking.startsAt.getTime() === Date.parse(input.startsAt) && booking.endsAt.getTime() === Date.parse(input.endsAt)) {
     return deny(400, "NO_CHANGE", "The booking is already at these times.");
   }
-  const row = await db.transaction(async (tx) => {
-    const body = await prepareTimeMoveBody(tx, booking, { startsAt: input.startsAt, endsAt: input.endsAt, reason: input.reason ?? null }, now);
-    return insertDecision(tx, booking, body, actor.id, now, null);
+  const requested = { startsAt: new Date(input.startsAt).toISOString(), endsAt: new Date(input.endsAt).toISOString() };
+  return db.transaction(async (tx) => {
+    // The same move asked for again while one stands is answered with it.
+    const standing = await tx.select().from(decisions).where(and(
+      eq(decisions.subjectKind, "booking"),
+      eq(decisions.subjectId, booking.id),
+      eq(decisions.status, "prepared"),
+      gt(decisions.expiresAt, now),
+      sql`${decisions.body}->'requested'->>'startsAt' = ${requested.startsAt}`,
+      sql`${decisions.body}->'requested'->>'endsAt' = ${requested.endsAt}`,
+    )).orderBy(desc(decisions.preparedAt)).limit(1);
+    const existing = standing[0];
+    if (existing !== undefined && existing.body.basis.bookingDigest === bookingMutationStateDigest(booking)) {
+      const decision = await shown(tx, existing);
+      if (decision !== null) return { ok: true, status: 200, value: decision, replay: true } as const;
+    }
+    const body = await prepareTimeMoveBody(tx, booking, requested, now);
+    const row = await insertDecision(tx, booking, body, input.reason ?? null, actor.id, now, null);
+    // Read back inside the step: a decision that cannot be shown is never kept.
+    const decision = readable(row, booking.title);
+    if (decision === null) throw new Error("A prepared decision could not be read back");
+    return { ok: true, status: 201, value: decision } as const;
   });
-  return { ok: true, status: 201, value: toDecision(row) };
 }
 
 // ---------------------------------------------------------------------------
@@ -380,12 +561,16 @@ export async function readDecision(
   const [row] = await db.select().from(decisions).where(eq(decisions.id, decisionId)).limit(1);
   // Another venue's decision is not found: its existence is not told.
   if (row === undefined || !worksAt(actor, row.venueId)) return deny(404, "DECISION_NOT_FOUND", "Decision not found");
+  const decision = await shown(db, row);
+  if (decision === null) return UNREADABLE;
   const history = await db.select().from(decisionEvents)
     .where(eq(decisionEvents.decisionId, row.id))
     .orderBy(asc(decisionEvents.createdAt), asc(decisionEvents.id));
-  return { ok: true, status: 200, value: { decision: toDecision(row), history: history.map(toEvent) } };
+  return { ok: true, status: 200, value: { decision, history: history.map(toEvent) } };
 }
 
+/** The venue's decisions, newest first. One that cannot be read as a decision
+ *  is left out of the list rather than failing it. */
 export async function listDecisions(
   db: Database,
   actor: MutationActor,
@@ -397,7 +582,8 @@ export async function listDecisions(
     .where(and(eq(decisions.venueId, venueId), filter.status === undefined ? undefined : eq(decisions.status, filter.status)))
     .orderBy(desc(decisions.preparedAt), desc(decisions.id))
     .limit(filter.limit);
-  return { ok: true, status: 200, value: rows.map(toDecision) };
+  const titles = await titlesOf(db, rows);
+  return { ok: true, status: 200, value: rows.flatMap((row) => readable(row, titles.get(row.subjectId) ?? null) ?? []) };
 }
 
 // ---------------------------------------------------------------------------
@@ -428,42 +614,74 @@ async function close(
 }
 
 function refusalOf(result: Extract<BookingMutationResult, { ok: false }>): DecisionReceipt["refusal"] {
-  return { code: result.code.slice(0, 80), message: result.error.slice(0, 500) };
+  return { code: result.code.slice(0, 80), message: clip(result.error) };
+}
+
+/** A decision as shown after a step, which must read back; a row that will
+ *  not is rolled back rather than answered. */
+async function after(tx: Tx, row: DecisionRow): Promise<Decision> {
+  const decision = await shown(tx, row);
+  if (decision === null) throw new Error("A decided decision could not be read back");
+  return decision;
 }
 
 /**
  * Decide a prepared decision: the option chosen, by someone who holds the
- * approval for its class at its venue. Returns the decided decision, its
- * receipt replayed (`replay`) for the same choice made again, or the revised
- * decision when this one was stale (409 DECISION_STALE, details.revised).
+ * approval for its class at its venue, naming the decision as they read it.
+ * Returns the decided decision; the same choice made again is answered as it
+ * was the first time (`replay`); a stale one returns the revised decision
+ * (409 DECISION_STALE, details.revised).
  */
 export async function decideDecision(
   db: Database,
   actor: MutationActor,
   decisionId: string,
-  input: { readonly optionId: string; readonly subjectDigest: string },
+  input: { readonly optionId: string; readonly decisionDigest: string },
   now: Date = new Date(),
   faults: DecideFaults = {},
 ): Promise<DecisionResult<Decision>> {
+  // Only an error while the change is being carried out is kept in the history.
+  const step = { carryingOut: false };
   try {
     return await db.transaction(async (tx) => {
+      // Who may see it is settled before anything is locked.
+      const [seen] = await tx.select({ venueId: decisions.venueId }).from(decisions).where(eq(decisions.id, decisionId)).limit(1);
+      if (seen === undefined || !worksAt(actor, seen.venueId)) return deny(404, "DECISION_NOT_FOUND", "Decision not found");
       const [row] = await tx.select().from(decisions).where(eq(decisions.id, decisionId)).limit(1).for("update");
-      if (row === undefined || !worksAt(actor, row.venueId)) return deny(404, "DECISION_NOT_FOUND", "Decision not found");
+      if (row === undefined) return deny(404, "DECISION_NOT_FOUND", "Decision not found");
       if (!canApproveDecision(actor, row.venueId, row.actionClass)) {
-        return deny(403, "NOT_AN_APPROVER", `Approving this decision needs the venue's ${row.body.approverRoles.join(" or ")}.`);
+        return deny(403, "NOT_AN_APPROVER", `Approving this decision needs the venue's ${DECISION_APPROVER_ROLES[row.actionClass].join(" or ")}.`);
       }
+      if (!PREPARABLE_DECISION_CLASSES.includes(row.actionClass)) {
+        return deny(409, "NOT_CARRIED_OUT_YET", "Decisions of this kind cannot be carried out here yet.");
+      }
+      const current = await shown(tx, row);
+      if (current === null) return UNREADABLE;
       if (row.status !== "prepared") {
-        // The same choice made again (a double press, a retry) is answered with what happened.
-        if (row.receipt !== null && row.receipt.optionId === input.optionId) {
-          return { ok: true, status: 200, value: toDecision(row), replay: true };
+        // The same choice made again (a double press, a retry) is answered as it was the first time.
+        const receipt = row.receipt;
+        if (receipt !== null && receipt.optionId === input.optionId) {
+          if (receipt.outcome === "failed") {
+            return { ...deny(409, receipt.refusal?.code ?? "DECISION_FAILED", receipt.refusal?.message ?? "This decision failed.", { decision: current }), replay: true };
+          }
+          return { ok: true, status: 200, value: current, replay: true };
         }
-        return deny(409, "DECISION_CLOSED", `This decision is already ${row.status}.`, { decision: toDecision(row) });
+        return deny(409, "DECISION_CLOSED", `This decision is already ${row.status}.`, { decision: current });
       }
-      if (input.subjectDigest !== row.body.basis.subjectDigest) {
-        return deny(409, "DECISION_MISMATCH", "This is not the decision that was shown. Read it again before deciding.", { decision: toDecision(row) });
+      if (input.decisionDigest !== current.digest) {
+        return deny(409, "DECISION_MISMATCH", "This is not the decision that was shown. Read it again before deciding.", { decision: current });
       }
       const option = row.body.options.find((candidate) => candidate.id === input.optionId);
       if (option === undefined) return deny(400, "UNKNOWN_OPTION", "That is not one of this decision's options.");
+
+      // Keeping it is the decline, whatever has changed since: nothing to check.
+      // (A move the Diary would refuse has no change to make either, and is not a decline.)
+      if (option.executable && option.mutations.length === 0) {
+        const receipt: DecisionReceipt = { optionId: option.id, decidedBy: actor.id, decidedAt: now.toISOString(), outcome: "declined", commandIds: [], refusal: null };
+        const closed = await close(tx, row, "declined", now, { receipt });
+        await appendEvent(tx, row, "declined", actor.id, { optionId: option.id });
+        return { ok: true, status: 200, value: await after(tx, closed) };
+      }
 
       // The Diary as it is now: the booking, locked, and the move's consequences.
       const [booking] = await tx.select().from(bookings).where(eq(bookings.id, row.subjectId)).limit(1).for("update");
@@ -476,37 +694,31 @@ export async function decideDecision(
         };
         const closed = await close(tx, row, "failed", now, { receipt });
         await appendEvent(tx, row, "failed", actor.id, { optionId: option.id, code: "BOOKING_NOT_ACTIVE" });
-        return deny(409, "BOOKING_NOT_ACTIVE", receipt.refusal?.message ?? "", { decision: toDecision(closed) });
+        return deny(409, "BOOKING_NOT_ACTIVE", receipt.refusal?.message ?? "", { decision: await after(tx, closed) });
       }
       const revisedBody = await prepareTimeMoveBody(tx, booking, row.body.requested, now);
       const stale = expired
-        || bookingMutationStateDigest(booking) !== row.body.basis.subjectDigest
+        || revisedBody.basis.subjectDigest !== row.body.basis.subjectDigest
         || revisedBody.basis.consequenceDigest !== row.body.basis.consequenceDigest;
       if (stale) {
         // Never executes: the revised choice goes back to the approver.
-        const revised = await insertDecision(tx, booking, revisedBody, actor.id, now, row.id);
+        const revised = await insertDecision(tx, booking, revisedBody, row.reason, actor.id, now, row.id);
         await close(tx, row, "superseded", now, { supersededBy: revised.id });
         await appendEvent(tx, row, "stale", actor.id, { optionId: option.id, expired, revisedDecisionId: revised.id });
         return deny(409, "DECISION_STALE", "The Diary changed since this was prepared. Here is the decision as it stands now; nothing was changed.", {
-          revised: toDecision(revised),
+          revised: await after(tx, revised),
         });
       }
       if (!option.executable) {
         return deny(409, "OPTION_NOT_EXECUTABLE", option.reasons[0] ?? "This option cannot be carried out as things stand.");
       }
 
-      if (option.mutations.length === 0) {
-        const receipt: DecisionReceipt = { optionId: option.id, decidedBy: actor.id, decidedAt: now.toISOString(), outcome: "declined", commandIds: [], refusal: null };
-        const closed = await close(tx, row, "declined", now, { receipt });
-        await appendEvent(tx, row, "declined", actor.id, { optionId: option.id });
-        return { ok: true, status: 200, value: toDecision(closed) };
-      }
-
+      step.carryingOut = true;
       const ledger = realDiaryCommandDeps(db);
       const commandIds: string[] = [];
       for (const mutation of option.mutations) {
         const result = await updateBookingCore(tx, actor, mutation.bookingId, { startsAt: mutation.startsAt, endsAt: mutation.endsAt }, {
-          expectedStateDigest: row.body.basis.subjectDigest,
+          expectedStateDigest: row.body.basis.bookingDigest,
         });
         if (!result.ok) {
           // The venue's own rules refused it: nothing changed, and that is the answer.
@@ -515,7 +727,7 @@ export async function decideDecision(
           };
           const closed = await close(tx, row, "failed", now, { receipt });
           await appendEvent(tx, row, "failed", actor.id, { optionId: option.id, code: result.code });
-          return deny(409, result.code, result.error, { decision: toDecision(closed) });
+          return deny(409, result.code, result.error, { decision: await after(tx, closed) });
         }
         const recorded = await ledger.recordCommand(tx, {
           commandId: mutation.commandId, venueId: row.venueId, userId: actor.id, kind: "booking.update",
@@ -528,15 +740,17 @@ export async function decideDecision(
       const receipt: DecisionReceipt = { optionId: option.id, decidedBy: actor.id, decidedAt: now.toISOString(), outcome: "executed", commandIds, refusal: null };
       const closed = await close(tx, row, "executed", now, { receipt });
       await appendEvent(tx, row, "executed", actor.id, { optionId: option.id, commandIds: commandIds.join(",") });
-      return { ok: true, status: 200, value: toDecision(closed) };
+      return { ok: true, status: 200, value: await after(tx, closed) };
     });
   } catch (error) {
     if (error instanceof RollbackWith) return error.result;
-    // Everything in the step rolled back: the decision is still prepared, and
-    // the error is kept in its history so the next person sees it happened.
-    const [row] = await db.select({ id: decisions.id, venueId: decisions.venueId }).from(decisions).where(eq(decisions.id, decisionId)).limit(1);
-    if (row !== undefined) {
-      await appendEvent(db, row, "execution_error", actor.id, { optionId: input.optionId, message: "The change could not be completed; nothing was changed." });
+    if (step.carryingOut) {
+      // Everything in the step rolled back: the decision is still prepared, and
+      // the error is kept in its history so the next person sees it happened.
+      const [row] = await db.select({ id: decisions.id, venueId: decisions.venueId }).from(decisions).where(eq(decisions.id, decisionId)).limit(1);
+      if (row !== undefined) {
+        await appendEvent(db, row, "execution_error", actor.id, { optionId: input.optionId, message: "The change could not be completed; nothing was changed." });
+      }
     }
     throw error;
   }
@@ -550,14 +764,18 @@ export async function withdrawDecision(
   now: Date = new Date(),
 ): Promise<DecisionResult<Decision>> {
   return db.transaction(async (tx) => {
+    const [seen] = await tx.select({ venueId: decisions.venueId }).from(decisions).where(eq(decisions.id, decisionId)).limit(1);
+    if (seen === undefined || !worksAt(actor, seen.venueId)) return deny(404, "DECISION_NOT_FOUND", "Decision not found");
     const [row] = await tx.select().from(decisions).where(eq(decisions.id, decisionId)).limit(1).for("update");
-    if (row === undefined || !worksAt(actor, row.venueId)) return deny(404, "DECISION_NOT_FOUND", "Decision not found");
+    if (row === undefined) return deny(404, "DECISION_NOT_FOUND", "Decision not found");
     if (row.preparedBy !== actor.id && !canApproveDecision(actor, row.venueId, row.actionClass)) {
       return deny(403, "FORBIDDEN", "Only whoever asked for it, or someone who may approve it, can take it back.");
     }
-    if (row.status !== "prepared") return deny(409, "DECISION_CLOSED", `This decision is already ${row.status}.`, { decision: toDecision(row) });
+    const current = await shown(tx, row);
+    if (current === null) return UNREADABLE;
+    if (row.status !== "prepared") return deny(409, "DECISION_CLOSED", `This decision is already ${row.status}.`, { decision: current });
     const closed = await close(tx, row, "withdrawn", now);
     await appendEvent(tx, row, "withdrawn", actor.id);
-    return { ok: true, status: 200, value: toDecision(closed) };
+    return { ok: true, status: 200, value: await after(tx, closed) };
   });
 }

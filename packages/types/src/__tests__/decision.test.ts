@@ -38,7 +38,11 @@ describe("approving a decision", () => {
     const booking = "00000000-0000-4000-8000-0000000000d3";
     expect(PrepareBookingTimeMoveSchema.safeParse({ bookingId: booking, startsAt: "2030-03-10T15:00:00.000Z", endsAt: "2030-03-10T14:00:00.000Z" }).success).toBe(false);
     expect(PrepareBookingTimeMoveSchema.safeParse({ bookingId: booking, startsAt: "2030-03-10T15:00:00.000Z", endsAt: "2030-03-10T19:00:00.000Z" }).success).toBe(true);
-    expect(DecideDecisionSchema.safeParse({ optionId: "move", subjectDigest: "a".repeat(64) }).success).toBe(true);
-    expect(DecideDecisionSchema.safeParse({ optionId: "move", subjectDigest: "nope" }).success).toBe(false);
+    expect(DecideDecisionSchema.safeParse({ optionId: "move", decisionDigest: "a".repeat(64) }).success).toBe(true);
+    expect(DecideDecisionSchema.safeParse({ optionId: "move", decisionDigest: "nope" }).success).toBe(false);
+    // Release review: a year the database's window either side cannot reach failed with a 500.
+    for (const year of ["0001", "1999", "2200", "9999"]) {
+      expect(PrepareBookingTimeMoveSchema.safeParse({ bookingId: booking, startsAt: `${year}-03-10T15:00:00.000Z`, endsAt: `${year}-03-10T19:00:00.000Z` }).success, year).toBe(false);
+    }
   });
 });

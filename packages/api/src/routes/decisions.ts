@@ -19,7 +19,7 @@ import {
 //   POST /decisions/booking-time-moves  prepare a move from what the Diary holds
 //   GET  /decisions?status=prepared     the venue's decisions, newest first
 //   GET  /decisions/:id                 a decision and its history
-//   POST /decisions/:id/decide          { optionId, subjectDigest }
+//   POST /decisions/:id/decide          { optionId, decisionDigest }
 //   POST /decisions/:id/withdraw        take back a prepared decision
 //
 // Everything is at the venue the person works at: another venue's decision is
@@ -27,7 +27,7 @@ import {
 // (DECISION_APPROVER_ROLES in @omnitwin/types), and runs as the Diary's own
 // command after the Diary is read again; a stale decision answers 409
 // DECISION_STALE with the revised decision, having changed nothing. A choice
-// made again is answered with its receipt (Idempotency-Replay: true). An
+// made again is answered as the first time was (Idempotency-Replay: true). An
 // executed move is announced to the live Diary after commit, as its own
 // writes are.
 // ---------------------------------------------------------------------------
@@ -43,6 +43,8 @@ function validationError(reply: FastifyReply, details: unknown): FastifyReply {
 }
 
 function send<T>(reply: FastifyReply, result: DecisionResult<T>): FastifyReply {
+  // A choice made again is answered as it was the first time, refusal included.
+  if (result.replay === true) void reply.header("Idempotency-Replay", "true");
   if (!result.ok) {
     return reply.status(result.status).send({
       error: result.error,
@@ -50,14 +52,14 @@ function send<T>(reply: FastifyReply, result: DecisionResult<T>): FastifyReply {
       ...(result.details === undefined ? {} : { details: result.details }),
     });
   }
-  if (result.replay === true) void reply.header("Idempotency-Replay", "true");
   return reply.status(result.status).send({ data: result.value });
 }
 
 export async function decisionRoutes(server: FastifyInstance, opts: { readonly db: Database }): Promise<void> {
   const { db } = opts;
 
-  server.post("/booking-time-moves", { preHandler: [authenticate] }, async (request, reply) => {
+  // Preparing keeps a decision for good: asked for at a person's pace, not a script's.
+  server.post("/booking-time-moves", { preHandler: [authenticate], config: { rateLimit: { max: 30, timeWindow: "1 minute" } } }, async (request, reply) => {
     const body = PrepareBookingTimeMoveSchema.safeParse(request.body);
     if (!body.success) return validationError(reply, body.error.issues);
     return send(reply, await prepareBookingTimeMove(db, request.user, body.data));
