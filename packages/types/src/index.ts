@@ -2612,3 +2612,4 @@ export * from "./gangway-review.js";
 // The venue team (Plan 19 L1): venue admins invite their own staff; Blake
 // decided on 24 October 2026 that venue administrators invite any role.
 export * from "./venue-team.js";
+export * from "./decision.js";
