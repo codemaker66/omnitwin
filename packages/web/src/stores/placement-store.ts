@@ -11,6 +11,7 @@ import {
   snapToWallEdge,
   getPlacementViolations,
   withTableNumbers,
+  GRID_SPACING_M,
 } from "../lib/placement.js";
 import { plannerFeatureEnabled } from "../lib/planner-features.js";
 import { DANCE_FLOOR_PANELS, cardIsWholeSet, placesAsCard, resizeDanceFloor, type ResizeAnchor } from "../lib/setup-cards.js";
@@ -46,12 +47,71 @@ import {
   isTableDressingApplicator,
 } from "../lib/table-dressing.js";
 import { isLayoutTimelineMutationLocked } from "../lib/layout-timeline-preview-lock.js";
+import { doorKeepOuts, keptClearLine, type DoorClearSpace } from "../lib/door-clear-spaces.js";
+import { doorSlideForPieces, doorsBlockedBy } from "../lib/keep-doors-clear.js";
+import type { LayoutRect } from "../lib/auto-layout.js";
+import { announceDoorSlide, useDoorClearSpaceStore } from "./door-clear-space-store.js";
 
 // ---------------------------------------------------------------------------
 // Placement store — manages placed furniture and ghost state. Undo/redo for
 // placement changes lives on the editor-store history timeline; EditorBridge
 // mirrors placedItems into editor objects (and back on undo).
+//
+// Doors (Blake, 27 Oct 2026: "Keep them clear automatically"): the automatic
+// layouts keep the open room's door clear spaces, and a piece set down in
+// one moves to the nearest clear spot, with one line naming the door.
 // ---------------------------------------------------------------------------
+
+/** The open room's door clear spaces as the layout engines' keep-outs; none when its doors are not recorded. */
+function roomDoorKeepOuts(): readonly LayoutRect[] {
+  return doorKeepOuts(useDoorClearSpaceStore.getState().spaces);
+}
+
+/**
+ * New pieces as they will stand: moved together to the nearest spot clear of
+ * the open room's doors (lib/keep-doors-clear) when any stands in front of
+ * one, with `held` on a grid point when snapping; otherwise as they are.
+ */
+function clearOfDoors(
+  pieces: readonly PlacedItem[],
+  held: PlacedItem,
+  placedItems: readonly PlacedItem[],
+  snap: boolean,
+): { readonly pieces: readonly PlacedItem[]; readonly slide: { readonly dx: number; readonly dz: number; readonly doors: readonly DoorClearSpace[] } | null } {
+  const spaces = useDoorClearSpaceStore.getState().spaces;
+  if (spaces.length === 0) return { pieces, slide: null };
+  const dims = useRoomDimensionsStore.getState().dimensions;
+  const slide = doorSlideForPieces(
+    pieces,
+    [...placedItems, ...pieces],
+    { spaces, roomWidthM: toRealWorld(dims.width), roomLengthM: toRealWorld(dims.length) },
+    snap ? GRID_SPACING_M : null,
+    { anchor: { x: toRealWorld(held.x), z: toRealWorld(held.z) } },
+  );
+  if (slide.kind !== "slide") return { pieces, slide: null };
+  const dx = toRenderSpace(slide.dx);
+  const dz = toRenderSpace(slide.dz);
+  return {
+    pieces: pieces.map((piece) => {
+      const x = piece.x + dx;
+      const z = piece.z + dz;
+      return { ...piece, x, z, y: candidateSurfaceHeight(piece.catalogueItemId, x, z, placedItems, new Set()) };
+    }),
+    slide: { dx, dz, doors: slide.doors },
+  };
+}
+
+/** The piece a set keeps on the grid as it slides clear of a door: its first dining table, else its first piece. */
+function slideAnchor(pieces: readonly PlacedItem[]): PlacedItem | undefined {
+  return diningTablesAmong(pieces)[0] ?? pieces[0];
+}
+
+/** After writing: the pieces slide out from where they were set down, and one line names the doors. */
+function announceKeptClear(ids: readonly string[], slide: { readonly dx: number; readonly dz: number; readonly doors: readonly DoorClearSpace[] } | null): void {
+  if (slide === null) return;
+  announceDoorSlide({ ids, dx: slide.dx, dz: slide.dz });
+  postPlacementNotice(keptClearLine(slide.doors));
+}
 
 function candidateSurfaceHeight(
   catalogueItemId: string,
@@ -299,12 +359,16 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
       state.placedItems,
       new Set(),
     );
-    const [item] = numberNew(state.placedItems, [createPlacedItem(catalogueItemId, finalX, finalZ, rotationY, null, surfaceY)]);
+    const created = createPlacedItem(catalogueItemId, finalX, finalZ, rotationY, null, surfaceY);
+    // Set down in front of a door, it moves to the nearest clear spot first, so it is numbered where it lands.
+    const kept = clearOfDoors([created], created, state.placedItems, state.snapEnabled);
+    const [item] = numberNew(state.placedItems, kept.pieces);
     if (item === undefined) return;
     const next = [...state.placedItems, item];
     if (refusedByStore(state.placedItems, next)) return;
     set({ placedItems: next });
     announcePlaced([item.id]);
+    announceKeptClear([item.id], kept.slide);
   },
 
   placeChairBrush: (
@@ -342,11 +406,23 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
       );
       return createPlacedItem(catalogueItemId, point.x, point.z, point.rotationY, null, surfaceY);
     });
-    if (newItems.length === 0) return [];
-    const next = [...state.placedItems, ...newItems];
+    // A row brushed across a doorway leaves the door's clear space empty.
+    const spaces = useDoorClearSpaceStore.getState().spaces;
+    const doorsKept = new Set<DoorClearSpace>();
+    const clearItems = newItems.filter((item) => {
+      const doors = doorsBlockedBy(item, spaces);
+      for (const door of doors) doorsKept.add(door);
+      return doors.length === 0;
+    });
+    if (clearItems.length === 0) {
+      if (doorsKept.size > 0) postPlacementNotice(keptClearLine(spaces.filter((space) => doorsKept.has(space))));
+      return [];
+    }
+    const next = [...state.placedItems, ...clearItems];
     if (refusedByStore(state.placedItems, next)) return [];
     set({ placedItems: next });
-    const ids = newItems.map((item) => item.id);
+    if (doorsKept.size > 0) postPlacementNotice(keptClearLine(spaces.filter((space) => doorsKept.has(space))));
+    const ids = clearItems.map((item) => item.id);
     announcePlaced(ids);
     return ids;
   },
@@ -657,11 +733,16 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
       );
       return chairY !== item.y ? { ...item, y: chairY } : item;
     });
-    const numbered = numberNew(state.placedItems, adjusted);
+    // Set down in front of a door, the table and its chairs move to the nearest clear spot together.
+    const table = adjusted.find((item) => item.catalogueItemId === catalogueItemId);
+    const kept = table === undefined ? { pieces: adjusted, slide: null } : clearOfDoors(adjusted, table, state.placedItems, state.snapEnabled);
+    const numbered = numberNew(state.placedItems, kept.pieces);
     const next = [...state.placedItems, ...numbered];
     if (refusedByStore(state.placedItems, next)) return;
     set({ placedItems: next });
-    announcePlaced(numbered.map((item) => item.id));
+    const ids = numbered.map((item) => item.id);
+    announcePlaced(ids);
+    announceKeptClear(ids, kept.slide);
   },
 
   placeSetup: (pieces: readonly PlacedItem[]) => {
@@ -677,13 +758,17 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
       }
       counted.push(piece.catalogueItemId);
     }
-    // As they stand: a card's set comes settled where it was judged (lib/place-in-hand), a copy at its original's heights.
-    const numbered = numberNew(state.placedItems, pieces);
+    // As they stand: a card's set comes settled where it was judged (lib/place-in-hand), a copy at its original's heights;
+    // set down in front of a door, the set moves to the nearest clear spot together.
+    const anchor = slideAnchor(pieces);
+    const kept = anchor === undefined ? { pieces, slide: null } : clearOfDoors(pieces, anchor, state.placedItems, state.snapEnabled);
+    const numbered = numberNew(state.placedItems, kept.pieces);
     const next = [...state.placedItems, ...numbered];
     if (refusedByStore(state.placedItems, next)) return [];
     set({ placedItems: next });
     const ids = numbered.map((piece) => piece.id);
     announcePlaced(ids);
+    announceKeptClear(ids, kept.slide);
     return ids;
   },
 
@@ -694,17 +779,33 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     const keptIds = new Set(kept.map((piece) => piece.id));
     const changes = new Map(add.filter((piece) => keptIds.has(piece.id)).map((piece) => [piece.id, piece]));
     const joining = add.filter((piece) => !keptIds.has(piece.id));
-    const changed = kept.map((piece) => changes.get(piece.id) ?? piece);
-    const atCap = capPassedBy(state.placedItems, [...changed, ...joining]);
+    const edit = kept.map((piece) => changes.get(piece.id) ?? piece);
+    // What the edit moves or adds, set down in front of a door, slides on to the nearest clear spot
+    // together, as a drag does; what it changes in place (Replace) stays where it stands.
+    const before = new Map(state.placedItems.map((piece) => [piece.id, piece]));
+    const moved = (piece: PlacedItem): boolean => {
+      const was = before.get(piece.id);
+      return was === undefined || was.x !== piece.x || was.z !== piece.z;
+    };
+    const moving = [...edit.filter((piece) => changes.has(piece.id) && moved(piece)), ...joining];
+    const anchor = slideAnchor(moving);
+    // Measured against what stays, so no moving piece settles on itself.
+    const staying = edit.filter((piece) => !moving.includes(piece));
+    const clear = anchor === undefined ? { pieces: moving, slide: null } : clearOfDoors(moving, anchor, staying, state.snapEnabled);
+    const slid = new Map(clear.pieces.map((piece) => [piece.id, piece]));
+    const changed = edit.map((piece) => slid.get(piece.id) ?? piece);
+    const joined = joining.map((piece) => slid.get(piece.id) ?? piece);
+    const atCap = capPassedBy(state.placedItems, [...changed, ...joined]);
     if (atCap !== null) {
       postPlacementNotice(atCap);
       return [];
     }
-    if (refusedByStore(state.placedItems, [...changed, ...joining])) return [];
+    if (refusedByStore(state.placedItems, [...changed, ...joined])) return [];
     const edited = numberEdited(changed, new Set(changes.keys()));
-    const numbered = numberNew(edited, joining);
+    const numbered = numberNew(edited, joined);
     set({ placedItems: [...edited, ...numbered] });
     announcePlaced(numbered.map((piece) => piece.id));
+    announceKeptClear(moving.map((piece) => piece.id), clear.slide);
     return [...changes.keys(), ...numbered.map((piece) => piece.id)];
   },
 
@@ -783,6 +884,8 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
         roomLengthM: toRealWorld(dims.length),
         exits,
         rule: FILL_AISLE_RULE,
+        // The same doors the prompt's preview kept clear (AutoFillPrompt), so what it said is what lands.
+        doorSpaces: roomDoorKeepOuts(),
       }, state.placedItems);
       if (fill === null) return null;
       const refilled = refillPieces(state.placedItems, fill.refillIds, fill.plan);
@@ -800,7 +903,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     }
     // Room dimensions are render-space; the plan works in metres. Spacing runs
     // between the backs of the chairs (lib/auto-fill).
-    const plan = planBanquetFill(tableItem, targetGuests, chairsPerTable, toRealWorld(dims.width), toRealWorld(dims.length));
+    const plan = planBanquetFill(tableItem, targetGuests, chairsPerTable, toRealWorld(dims.width), toRealWorld(dims.length), { doorSpaces: roomDoorKeepOuts() });
     if (plan === null) return null;
 
     // Map each planned table (metres, room-centred) back to render space and
@@ -835,7 +938,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
 
     const dims = useRoomDimensionsStore.getState().dimensions;
     // Room dimensions are render-space; the plan works in metres.
-    const plan = planTheatreFill(chairItem, targetGuests, toRealWorld(dims.width), toRealWorld(dims.length));
+    const plan = planTheatreFill(chairItem, targetGuests, toRealWorld(dims.width), toRealWorld(dims.length), { doorSpaces: roomDoorKeepOuts() });
     if (plan === null) return null;
 
     // Each planned seat (metres, room-centred, facing the stage) → a floor-level
@@ -860,6 +963,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
       guests,
       roomWidthM: toRealWorld(dims.width),
       roomLengthM: toRealWorld(dims.length),
+      doorSpaces: roomDoorKeepOuts(),
     });
     if (fix === null) return null;
     // One write, so the editor history records one step and one undo takes it back.

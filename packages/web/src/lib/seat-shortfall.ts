@@ -14,6 +14,7 @@ import {
   tableOwnChairs,
 } from "./table-group.js";
 import { BANQUET_CHAIR_CLEARANCE_M } from "./auto-fill.js";
+import { rectsOverlap, type LayoutRect } from "./auto-layout.js";
 import { countLabel } from "./count-label.js";
 
 // ---------------------------------------------------------------------------
@@ -27,7 +28,8 @@ import { countLabel } from "./count-label.js";
 //     banquet (the catalogue's recorded count: 10 at a 6 ft round);
 //   - "Add tables for 16" when those tables are full, set like the ones
 //     already there, in free floor at the banquet spacing (0.6 m clear
-//     behind every chair, to the next chairs, any other furniture or a wall);
+//     behind every chair, to the next chairs, any other furniture or a wall),
+//     never in a door's clear space;
 //   - nothing to tap when neither fits, so the lens can say so plainly.
 //
 // It only ever adds: the existing tables keep their places and their chairs
@@ -40,8 +42,9 @@ export type SeatShortfallOffer =
   | { readonly kind: "chairs"; readonly short: number; readonly guests: number; readonly chairs: number; readonly tables: number; readonly seatsPerTable: number }
   /** `tables` new tables like those on the floor, with `chairs` chairs between them. */
   | { readonly kind: "tables"; readonly short: number; readonly guests: number; readonly chairs: number; readonly tables: number; readonly tableItemId: string; readonly round: boolean }
-  /** The tables are full and the room has no space for another at this spacing. */
-  | { readonly kind: "no-room"; readonly short: number; readonly guests: number };
+  /** The tables are full and the room has no space for another at this spacing
+   *  (`doorsKeptClear` when only the doors' clear spaces would have had room). */
+  | { readonly kind: "no-room"; readonly short: number; readonly guests: number; readonly doorsKeptClear?: true };
 
 export interface SeatShortfallInput {
   readonly placedItems: readonly PlacedItem[];
@@ -52,6 +55,8 @@ export interface SeatShortfallInput {
   readonly roomLengthM: number;
   /** The chair new tables are set with; the event's (plannerChairSlug) unless named. */
   readonly chairSlug?: string;
+  /** The room's door clear spaces (lib/door-clear-spaces doorKeepOuts): no new table stands in one. */
+  readonly doorSpaces?: readonly LayoutRect[];
 }
 
 export interface SeatShortfallFixResult {
@@ -172,9 +177,16 @@ function freeTableSpots(input: SeatShortfallInput, table: CatalogueItem, seats: 
   }
   candidates.sort((a, b) => (Math.hypot(a.x, a.z) - Math.hypot(b.x, b.z)) || (a.z - b.z) || (a.x - b.x));
 
+  // A group's bounds hold its chairs' footprints: bounds clear of a door's
+  // clear space keep every chair out of it (the doors' own rule, auto-fill).
+  const inDoorSpace = (spot: Spot): boolean => (input.doorSpaces ?? []).some(
+    (space) => rectsOverlap({ cx: spot.x, cz: spot.z, width: 2 * hw, depth: 2 * hd }, space),
+  );
+
   const spots: Spot[] = [];
   for (const candidate of candidates) {
     if (spots.length >= wanted) break;
+    if (inDoorSpace(candidate)) continue;
     if (obstacles.some((o) => gapTo(candidate.x, candidate.z, o) < clearance - EPS)) continue;
     const spaced = spots.every((spot) => (round
       ? Math.hypot(candidate.x - spot.x, candidate.z - spot.z) >= 2 * radius + clearance - EPS
@@ -233,7 +245,10 @@ function planShortfall(input: SeatShortfallInput): Planned | null {
   const partialTableSeats = Math.min(short, spots.length * seats);
   if (spare > 0 && spare >= partialTableSeats) return chairsOffer(spare);
   if (table !== null && spots.length > 0) return tablesOffer(table, spots.length, partialTableSeats);
-  return { offer: { kind: "no-room", short, guests }, tables, spots: [] };
+  // Say so when the doors' clear spaces are what leave no room.
+  const doorsKeptClear = table !== null && seats > 0 && (input.doorSpaces ?? []).length > 0
+    && freeTableSpots({ ...input, doorSpaces: [] }, table, seats, 1).length > 0;
+  return { offer: { kind: "no-room", short, guests, ...(doorsKeptClear ? { doorsKeptClear } : {}) }, tables, spots: [] };
 }
 
 /** The one action to offer for a seat shortfall, or null when nothing is short. Pure. */
@@ -300,7 +315,9 @@ export function seatShortfallDetail(offer: SeatShortfallOffer): string {
     case "tables":
       return `${countLabel(offer.tables, offer.round ? "round table" : "table")} with ${countLabel(offer.chairs, "chair")}, ${String(BANQUET_CHAIR_CLEARANCE_M)} m clear behind every chair.`;
     case "no-room":
-      return "The tables are full, and there is no room for another at this spacing.";
+      return offer.doorsKeptClear === true
+        ? "The tables are full, and there is no room for another at this spacing with the doors kept clear."
+        : "The tables are full, and there is no room for another at this spacing.";
   }
 }
 

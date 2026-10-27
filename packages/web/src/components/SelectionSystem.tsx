@@ -44,6 +44,8 @@ import { plannerChromeRequested } from "../lib/planner-chrome-flag.js";
 import { plannerFeatureEnabled } from "../lib/planner-features.js";
 import { judgesCard } from "../lib/setup-cards.js";
 import { placePieceInHand } from "../lib/place-in-hand.js";
+import { slideDropClearOfDoors } from "../lib/door-clear-actions.js";
+import { useDoorClearSpaceStore } from "../stores/door-clear-space-store.js";
 import { placementFloorPoint } from "../lib/planner-interaction-floor.js";
 import {
   FingerTrail,
@@ -390,6 +392,7 @@ export function SelectionSystem(): null {
       if (touchGesture.current !== null) touchGesture.current = "camera";
       useToolStore.getState().setLiveValue(null);
       useSelectionStore.getState().setActiveGuides([]);
+      useDoorClearSpaceStore.getState().setCarrying(false);
     }
     cancelPointerGesture.current = closePointerGesture;
 
@@ -452,6 +455,9 @@ export function SelectionSystem(): null {
             invalidateRef.current();
           }
         }
+        // Let go in front of a door, the pieces slide on to the nearest clear
+        // spot (Blake's door rule; FurnitureMotion draws the slide).
+        if (slideDropClearOfDoors(lastMovingIds.current, dragItemId.current)) invalidateRef.current();
         // Let go: the pieces swing upright and set their weight down. A hand
         // that rested let the loop sleep, so the release must wake it.
         if (!prefersReducedMotion() && lastMovingIds.current.size > 0) {
@@ -551,6 +557,7 @@ export function SelectionSystem(): null {
         // The browser may have taken the touch already; the window still hears it.
       }
       isDragging.current = true;
+      useDoorClearSpaceStore.getState().setCarrying(true);
       if (!useSelectionStore.getState().selectedIds.has(itemId)) useSelectionStore.getState().select(itemId);
       haptic(10);
       // It rises above the finger at once, so the finger never hides it.
@@ -934,6 +941,7 @@ export function SelectionSystem(): null {
           if (!useSelectionStore.getState().selectedIds.has(dragItemId.current)) {
             useSelectionStore.getState().select(dragItemId.current);
           }
+          if (gestureKind.current === "move") useDoorClearSpaceStore.getState().setCarrying(true);
           // Rotate/Scale sweep from each item's value at drag start.
           if (gestureKind.current !== "move") {
             const placedItems = usePlacementStore.getState().placedItems;
