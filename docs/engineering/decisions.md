@@ -51,7 +51,11 @@ the years 2000 and 2199.
   other side of its neighbour meets that neighbour's guideline as a new
   finding, and the gap a booking leaves between two others is not one. A
   turnaround the move makes longer is not one either: that is what the move
-  is for. A gap next to what moves that no turnaround rule covers is said too
+  is for. The engine merges an event's entries in a room into one block of
+  time; the move is weighed with the booking's block as only the booking, the
+  phases it carries and what meets them, so another day of the same event or
+  a phase the Diary leaves where it is never stretches it over a neighbour
+  and hides that gap. Gaps within the event are not weighed. A gap next to what moves that no turnaround rule covers is said too
   ("not fully checked"); a gap elsewhere is not the move's, and does not make
   the decision stale.
 - Two more come from outside the engine: a live hold the Diary's update would

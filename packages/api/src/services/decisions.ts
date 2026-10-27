@@ -380,6 +380,56 @@ function conflictKey(conflict: CalendarConflict): string {
     : `${conflict.type}|${[...conflict.entryIds].sort().join(",")}`;
 }
 
+/**
+ * Which block of time each other entry of the moved booking's event is
+ * weighed in: the conflict engine merges all of an event's entries in a room
+ * into one block, so another day's booking of the same event, or a phase the
+ * Diary leaves where it is (a rehearsal two days before, a clear-down at the
+ * old date), would stretch the moved booking over its neighbours and hide
+ * their gaps. A phase goes with the booking of the event that carries it, by
+ * the Diary's rule as it stands, or alone; another booking alone.
+ */
+function apartKeysOf(world: Neighbourhood, booking: BookingRow, carried: readonly ConflictPhaseInput[]): ReadonlyMap<string, string> {
+  const eventId = booking.eventId;
+  const keys = new Map<string, string>();
+  if (eventId === null) return keys;
+  const carriedIds = new Set(carried.map((phase) => phase.id));
+  const live = world.bookings.filter((entry) => entry.status === "active" && entry.deletedAt === null);
+  const siblings = live.filter((entry) => entry.eventId === eventId && entry.id !== booking.id);
+  for (const entry of world.bookings) {
+    if (entry.eventId === eventId && entry.id !== booking.id) keys.set(entry.id, `${eventId}~${entry.id}`);
+  }
+  for (const phase of world.phases) {
+    if (phase.eventId !== eventId || carriedIds.has(phase.id)) continue;
+    const carrier = siblings.find((sibling) => phaseMovesWithBooking(phase, {
+      bookingId: sibling.id, eventId, from: { spaceId: sibling.spaceId, startsAt: sibling.startsAt, endsAt: sibling.endsAt },
+    }, live));
+    keys.set(phase.id, `${eventId}~${carrier?.id ?? phase.id}`);
+  }
+  return keys;
+}
+
+/** The room with the moved booking's block of time as only the booking and
+ *  the phases it carries, and what touches them; the rest of its event apart. */
+function weighedApart(world: Neighbourhood, booking: BookingRow, carried: readonly ConflictPhaseInput[], keys: ReadonlyMap<string, string>): Neighbourhood {
+  if (keys.size === 0) return world;
+  const carriedIds = new Set(carried.map((phase) => phase.id));
+  const block = [
+    ...world.bookings.filter((entry) => entry.id === booking.id && entry.kind === "ink"),
+    ...world.phases.filter((phase) => carriedIds.has(phase.id)),
+  ];
+  const from = Math.min(...block.map((entry) => entry.startsAt.getTime()));
+  const until = Math.max(...block.map((entry) => entry.endsAt.getTime()));
+  // An entry of the event that meets the block is part of it, as the engine would have it.
+  const meets = (entry: { readonly startsAt: Date; readonly endsAt: Date }): boolean =>
+    block.length > 0 && entry.startsAt.getTime() <= until && entry.endsAt.getTime() >= from;
+  const apart = <T extends { readonly id: string; readonly eventId: string | null; readonly startsAt: Date; readonly endsAt: Date }>(entry: T): T => {
+    const key = keys.get(entry.id);
+    return key === undefined || meets(entry) ? entry : { ...entry, eventId: key };
+  };
+  return { ...world, bookings: world.bookings.map(apart), phases: world.phases.map(apart) };
+}
+
 /** How long a booking's times overlap a closure's. */
 function overlapMs(times: Move, block: ConflictBookingInput): number {
   return Math.max(0, Math.min(times.endsAt.getTime(), block.endsAt.getTime()) - Math.max(times.startsAt.getTime(), block.startsAt.getTime()));
@@ -395,12 +445,22 @@ function overlapMs(times: Move, block: ConflictBookingInput): number {
 export function moveConsequences(world: Neighbourhood, booking: BookingRow, to: Move): readonly DecisionConsequence[] {
   const carried = carriedPhases(world, booking);
   const next = moved(world, booking, to, carried);
-  const before = detectCalendarConflictsInDetail({ bookings: world.bookings, phases: world.phases, turnaroundRules: world.rules }).report;
-  const after = detectCalendarConflictsInDetail({ bookings: next.bookings, phases: next.phases, turnaroundRules: next.rules });
+  const keys = apartKeysOf(world, booking, carried);
+  const now = weighedApart(world, booking, carried, keys);
+  const then = weighedApart(next, booking, carried, keys);
+  const before = detectCalendarConflictsInDetail({ bookings: now.bookings, phases: now.phases, turnaroundRules: now.rules }).report;
+  const after = detectCalendarConflictsInDetail({ bookings: then.bookings, phases: then.phases, turnaroundRules: then.rules });
+  // The event's own entries need no turnaround between them: the engine never weighs that gap.
+  const ownEvent = new Set(booking.eventId === null ? [booking.id] : [
+    ...world.bookings.filter((entry) => entry.eventId === booking.eventId).map((entry) => entry.id),
+    ...[...world.phases, ...world.endedEventPhases].filter((phase) => phase.eventId === booking.eventId).map((phase) => phase.id),
+  ]);
+  const withinEvent = (ids: readonly string[]): boolean => ids.every((id) => ownEvent.has(id));
   const had = new Map(before.conflicts.map((conflict) => [conflictKey(conflict), conflict]));
   const ours = new Set([booking.id, ...carried.map((phase) => phase.id)]);
   const found: DecisionConsequence[] = [];
   for (const conflict of after.report.conflicts) {
+    if (conflict.type === "insufficient_turnaround" && withinEvent(conflict.entryIds)) continue;
     const prior = had.get(conflictKey(conflict));
     let wasMinutes: number | null = null;
     if (prior !== undefined) {
@@ -439,7 +499,8 @@ export function moveConsequences(world: Neighbourhood, booking: BookingRow, to: 
   }
   // Only the gaps either side of what moves: a pair elsewhere in the window
   // is not the move's, and the decision is not made stale by it.
-  const uncoveredNextToIt = after.uncoveredGaps.some((gap) => [...gap.before, ...gap.after].some((id) => ours.has(id)));
+  const uncoveredNextToIt = after.uncoveredGaps.some((gap) => !withinEvent([...gap.before, ...gap.after])
+    && [...gap.before, ...gap.after].some((id) => ours.has(id)));
   const notChecked: DecisionConsequence[] = !uncoveredNextToIt ? [] : [{
     kind: "not_checked",
     severity: "info",

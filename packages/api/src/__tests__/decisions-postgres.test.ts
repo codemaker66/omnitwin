@@ -542,6 +542,43 @@ describe.skipIf(target === undefined)("prepared decisions on migrated PostgreSQL
     expect(move(earlier)?.consequences).toEqual([expect.objectContaining({ kind: "insufficient_turnaround", summary: expect.stringMatching(/^Only 0 minutes /u) })]);
   });
 
+  it("weighs the move's own block only, so the rest of its event never hides a gap", async () => {
+    // Final review: the engine merges an event's entries in a room into one
+    // block, so a rehearsal the move leaves behind stretched the wedding over
+    // breakfast, and the 10 minutes between them went unseen.
+    const v = await venue();
+    await turnaround(v, 60);
+    await ink(v, "Breakfast", at(11), at(12, 10, 50));
+    const wedding = await entry(v, "ink", "Crawford wedding", at(14), at(18));
+    if (wedding.eventId === null) throw new Error("the wedding has no event");
+    await phase(wedding.eventId, v.spaceId, at(20, 8), 60);
+    const earlier = await prepared(v, wedding.id, at(13), at(17));
+    expect(move(earlier)?.consequences).toEqual([expect.objectContaining({ kind: "insufficient_turnaround", summary: expect.stringMatching(/^Only 10 minutes /u) })]);
+    expect(earlier.recommendedOptionId).toBe("keep");
+
+    // A clear-down the Diary leaves at the old date, three days before the new one.
+    const w = await venue();
+    await turnaround(w, 60);
+    await ink(w, "Breakfast", at(11, 13), at(13, 13, 50));
+    const later = await entry(w, "ink", "Crawford wedding", at(14), at(18));
+    if (later.eventId === null) throw new Error("the wedding has no event");
+    await phase(later.eventId, w.spaceId, at(18), 60);
+    const moved = await prepared(w, later.id, at(14, 13), at(18, 13));
+    expect(move(moved)?.consequences).toEqual([expect.objectContaining({ kind: "insufficient_turnaround", summary: expect.stringMatching(/^Only 10 minutes /u) })]);
+
+    // A conference's first day; its second moved to just after breakfast. Its own first day needs no turnaround.
+    const c = await venue();
+    await turnaround(c, 60);
+    const dayOne = await entry(c, "ink", "Conference day 1", at(9, 20), at(17, 20));
+    if (dayOne.eventId === null) throw new Error("the conference has no event");
+    const dayTwo = await entry(c, "ink", "Conference day 2", at(10, 21), at(17, 21), dayOne.eventId);
+    await ink(c, "Breakfast meeting", at(7, 21), at(8, 21, 50));
+    const early = await prepared(c, dayTwo.id, at(9, 21), at(17, 21));
+    expect(move(early)?.consequences).toEqual([expect.objectContaining({ kind: "insufficient_turnaround", summary: expect.stringMatching(/^Only 10 minutes /u) })]);
+    const evening = await prepared(c, dayTwo.id, at(17, 20, 30), at(23, 20));
+    expect(move(evening)?.consequences).toEqual([]);
+  });
+
   it("is made stale by a gap next to the move that no rule covers, and never by one elsewhere", async () => {
     // A booking pencilled next to where the wedding is going, with no rule for the gap: the approver did not see it.
     const v = await venue();
