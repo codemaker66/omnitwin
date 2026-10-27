@@ -2,6 +2,8 @@ import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type React
 import { ActivityStatus } from "../../shared/Activity.js";
 import { usePlacementStore } from "../../../stores/placement-store.js";
 import { useRoomDimensionsStore } from "../../../stores/room-dimensions-store.js";
+import { useDoorClearSpaceStore } from "../../../stores/door-clear-space-store.js";
+import { doorKeepOuts } from "../../../lib/door-clear-spaces.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
 import { RENDER_SCALE } from "../../../constants/scale.js";
 import { MAX_GUEST_FLOW_AGENTS } from "../../../lib/guest-flow-layout-input.js";
@@ -55,6 +57,8 @@ export interface AutoFillPromptProps {
 export function AutoFillPrompt({ style, published, onPlaced, onCancel }: AutoFillPromptProps): ReactElement {
   const plannedGuestCount = useCockpitStore((state) => state.plannedGuestCount);
   const dimensions = useRoomDimensionsStore((state) => state.dimensions);
+  // The open room's doors, as the placement store keeps them: what the button says is what lands.
+  const doorSpaces = useDoorClearSpaceStore((state) => state.spaces);
   const [draft, setDraft] = useState(() => (plannedGuestCount === null ? "" : String(plannedGuestCount)));
   const inputRef = useRef<HTMLInputElement>(null);
   const baseId = useId();
@@ -74,8 +78,8 @@ export function AutoFillPrompt({ style, published, onPlaced, onCancel }: AutoFil
   const plan = useMemo(
     () => (guests === null
       ? null
-      : planAutoFill(style, guests, dimensions.width / RENDER_SCALE, dimensions.length / RENDER_SCALE)),
-    [guests, style, dimensions],
+      : planAutoFill(style, guests, dimensions.width / RENDER_SCALE, dimensions.length / RENDER_SCALE, doorKeepOuts(doorSpaces))),
+    [guests, style, dimensions, doorSpaces],
   );
   const figure = publishedFigureFor(published, option.format);
   const short = plan === null ? null : roomAtSpacingLine(plan, figure);
