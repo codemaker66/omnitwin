@@ -177,12 +177,14 @@ export const CaptureControlSourceRecordSchema = z
     sourceId: z.string().trim().min(1).max(160).regex(SAFE_ID),
     sourceClass: CaptureControlSourceClassSchema,
     poseAuthorityLevel: CapturePoseAuthorityLevelSchema,
-    alignmentMethods: z.array(CaptureControlAlignmentMethodSchema).min(1),
+    // Ceilings far above a real record's lists; they refuse a body built to
+    // make the parser work (one issue per element of an unbounded array).
+    alignmentMethods: z.array(CaptureControlAlignmentMethodSchema).min(1).max(50),
     qaStatus: CaptureControlQaStatusSchema,
-    sourceRefs: z.array(CaptureControlReferenceSchema).min(1),
-    transformArtifactRefs: z.array(CaptureControlReferenceSchema).default([]),
-    residualMetricRefs: z.array(CaptureControlReferenceSchema).default([]),
-    staleWhen: z.array(CaptureControlStalenessTriggerSchema).default([]),
+    sourceRefs: z.array(CaptureControlReferenceSchema).min(1).max(500),
+    transformArtifactRefs: z.array(CaptureControlReferenceSchema).max(500).default([]),
+    residualMetricRefs: z.array(CaptureControlReferenceSchema).max(500).default([]),
+    staleWhen: z.array(CaptureControlStalenessTriggerSchema).max(50).default([]),
     reviewerRole: z.string().trim().min(1).max(120).regex(SAFE_TOKEN).nullable(),
     notes: z.string().trim().max(1000).nullable().default(null),
   })
