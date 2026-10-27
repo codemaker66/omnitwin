@@ -96,34 +96,87 @@ export async function cleanupPreviewConfigurations(db: Database, now: Date = new
   return deletedIds.length;
 }
 
+/** Where an upload's object lives (routes/uploads.ts `deleteUploadObject`);
+ *  tests give a fake. */
+export interface UploadObjectStore {
+  /** Resolves true once the object is gone, false when its storage cannot be
+   *  reached from here (not configured); rejects on a provider error. */
+  remove(fileKey: string, visibility: "private" | "public"): Promise<boolean>;
+}
+
+export interface OrphanedFileCleanup {
+  /** File rows deleted, each after its object was deleted. */
+  readonly deleted: number;
+  /** Orphans kept for the next run: their object could not be deleted. */
+  readonly kept: number;
+}
+
+/** The most orphans one pass deletes: each is a call to the bucket made
+ *  while its row is locked, so a backlog drains over a few nights. */
+export const ORPHANED_FILE_BATCH = 200;
+
 /**
- * Deletes loadout-context file records that are older than 24 hours and have
- * no corresponding reference_photos entry. These are abandoned presigned-URL
- * uploads: the user received a presigned URL but never attached the file to a
- * loadout. Scoped to context='loadout' to avoid touching venue/space/asset
- * files which are referenced differently (direct URL columns, not reference_photos).
+ * Deletes loadout-context uploads that are older than 24 hours and have no
+ * reference_photos entry, object first, then row. These are abandoned
+ * presigned-URL uploads: the user received a presigned URL but never attached
+ * the file to a loadout. Scoped to context='loadout' to avoid touching
+ * venue/space/asset files which are referenced differently (direct URL
+ * columns, not reference_photos). See F17 in audit findings.
  *
- * See F17 in audit findings.
+ * Deleting only the row left the object in the bucket with nothing pointing
+ * at it, so the upload outlived every record of it. Now, in one transaction:
+ * the orphans are locked (FOR UPDATE SKIP LOCKED: attaching a photo takes a
+ * key-share lock on its file, so a file being attached is skipped, and none
+ * can be attached until the pass commits), checked again for a photo, their
+ * objects deleted, and only the rows whose object went are deleted. An object
+ * that cannot be deleted (a provider error, or no storage configured here)
+ * keeps its row, so the next run tries again and no key is forgotten.
  */
-export async function cleanupOrphanedFiles(db: Database): Promise<number> {
-  const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+export async function cleanupOrphanedFiles(
+  db: Database,
+  store: UploadObjectStore,
+  now: Date = new Date(),
+): Promise<OrphanedFileCleanup> {
+  const cutoff = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
-  const stale = await db.select({ id: files.id })
-    .from(files)
-    .where(and(
-      eq(files.context, "loadout"),
-      lt(files.uploadedAt, cutoff),
-      notExists(
-        db.select({ one: sql`1` })
-          .from(referencePhotos)
-          .where(eq(referencePhotos.fileId, files.id)),
-      ),
-    ));
+  return db.transaction(async (tx) => {
+    const stale = await tx.select({ id: files.id, fileKey: files.fileKey, visibility: files.visibility })
+      .from(files)
+      .where(and(
+        eq(files.context, "loadout"),
+        lt(files.uploadedAt, cutoff),
+        notExists(
+          tx.select({ one: sql`1` })
+            .from(referencePhotos)
+            .where(eq(referencePhotos.fileId, files.id)),
+        ),
+      ))
+      .orderBy(files.uploadedAt)
+      .limit(ORPHANED_FILE_BATCH)
+      .for("update", { skipLocked: true });
+    if (stale.length === 0) return { deleted: 0, kept: 0 };
 
-  if (stale.length === 0) return 0;
+    // Read again under the locks: a photo committed while this pass waited
+    // keeps its file.
+    const attached = new Set((await tx.select({ fileId: referencePhotos.fileId })
+      .from(referencePhotos)
+      .where(inArray(referencePhotos.fileId, stale.map((row) => row.id)))).map((row) => row.fileId));
 
-  const staleIds = stale.map((f) => f.id);
-  await db.delete(files).where(inArray(files.id, staleIds));
+    const gone: string[] = [];
+    let kept = 0;
+    for (const row of stale) {
+      if (attached.has(row.id)) continue;
+      let removed: boolean;
+      try {
+        removed = await store.remove(row.fileKey, row.visibility === "public" ? "public" : "private");
+      } catch {
+        removed = false;
+      }
+      if (removed) gone.push(row.id);
+      else kept += 1;
+    }
 
-  return stale.length;
+    if (gone.length > 0) await tx.delete(files).where(inArray(files.id, gone));
+    return { deleted: gone.length, kept };
+  });
 }

@@ -7,7 +7,9 @@
 //
 // Runs daily from .github/workflows/cleanup.yml:
 //   1. Stale preview configurations (unclaimed, >72h old, no enquiry)
-//   2. Orphaned file rows (loadout context, >24h old, no reference_photos link)
+//   2. Orphaned uploads (loadout context, >24h old, no reference_photos link):
+//      each object is deleted from its bucket, then its row. With no bucket
+//      settings in the job's environment the orphans are kept and counted.
 //   3. Guests' allergy notes past their retention (removeLapsedDietaryNotes):
 //      from a layout and its event sheets DIETARY_NOTE_RETENTION.daysAfterEvent
 //      days after the event, as the privacy policy and the planner say.
@@ -22,7 +24,8 @@
 // POST /admin/cleanup, because the product promises them. Their errors carry
 // a SQLSTATE only, never the note: this job's log is public with the
 // repository. Neither touches object storage (PR #130 stopped storing sheet
-// PDFs), so the job needs only DATABASE_URL.
+// PDFs). The job needs DATABASE_URL, and the PRIVATE_UPLOADS_R2_* settings
+// to delete orphaned uploads' objects (pass 2).
 //
 // Exit codes: 0 = success, 1 = error
 // ---------------------------------------------------------------------------
@@ -30,7 +33,8 @@
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { createDb, type Database } from "../db/client.js";
-import { cleanupPreviewConfigurations, cleanupOrphanedFiles } from "../services/cleanup.js";
+import { cleanupPreviewConfigurations, cleanupOrphanedFiles, type UploadObjectStore } from "../services/cleanup.js";
+import { uploadObjectStore, type UploadStorageEnv } from "../routes/uploads.js";
 import { removeUnusedRememberedNotes } from "../services/dietary-memory.js";
 import { removeLapsedDietaryNotes } from "../services/dietary-retention.js";
 import { removeExpiredEngagementEvents } from "../services/enquiry-funnel.js";
@@ -38,6 +42,8 @@ import { removeExpiredEngagementEvents } from "../services/enquiry-funnel.js";
 export interface ScheduledCleanupResult {
   readonly deletedConfigs: number;
   readonly deletedFiles: number;
+  /** Orphaned uploads whose object could not be deleted, kept for the next run. */
+  readonly keptOrphanedFiles: number;
   /** Layouts and event sheets whose allergy note passed its retention. */
   readonly lapsedNoteLayouts: number;
   readonly lapsedNoteSheets: number;
@@ -48,13 +54,14 @@ export interface ScheduledCleanupResult {
 /** Every scheduled pass, in order. Each log line carries counts only. */
 export async function runScheduledCleanup(
   db: Database,
+  uploadObjects: UploadObjectStore,
   log: (line: string) => void = (line) => { console.log(line); },
 ): Promise<ScheduledCleanupResult> {
   const deletedConfigs = await cleanupPreviewConfigurations(db);
   log(`[cleanup] Deleted ${String(deletedConfigs)} stale preview configuration(s)`);
 
-  const deletedFiles = await cleanupOrphanedFiles(db);
-  log(`[cleanup] Deleted ${String(deletedFiles)} orphaned file(s)`);
+  const orphanedFiles = await cleanupOrphanedFiles(db, uploadObjects);
+  log(`[cleanup] Deleted ${String(orphanedFiles.deleted)} orphaned file(s) and their stored objects; kept ${String(orphanedFiles.kept)} whose object could not be deleted`);
 
   const lapsed = await removeLapsedDietaryNotes(db);
   log(`[cleanup] Removed the allergy note from ${String(lapsed.layouts)} layout(s) and ${String(lapsed.sheets)} event sheet(s) past their retention`);
@@ -67,7 +74,8 @@ export async function runScheduledCleanup(
 
   return {
     deletedConfigs,
-    deletedFiles,
+    deletedFiles: orphanedFiles.deleted,
+    keptOrphanedFiles: orphanedFiles.kept,
     lapsedNoteLayouts: lapsed.layouts,
     lapsedNoteSheets: lapsed.sheets,
     rememberedNotesRemoved: remembered.removed,
@@ -85,9 +93,28 @@ async function main(): Promise<void> {
   const db = createDb(databaseUrl);
 
   console.log("[cleanup] Starting scheduled cleanup...");
-  await runScheduledCleanup(db);
+  await runScheduledCleanup(db, uploadObjectStore(storageEnvFrom(process.env)));
   console.log("[cleanup] Done");
   process.exit(0);
+}
+
+/** The buckets' settings from the job's environment. Without the private
+ *  bucket's, orphaned uploads are kept (and counted) rather than forgotten. */
+export function storageEnvFrom(source: Readonly<Record<string, string | undefined>>): UploadStorageEnv {
+  const read = (name: string): string | undefined => {
+    const value = source[name]?.trim();
+    return value === undefined || value === "" ? undefined : value;
+  };
+  return {
+    R2_ACCOUNT_ID: read("R2_ACCOUNT_ID"),
+    R2_ACCESS_KEY_ID: read("R2_ACCESS_KEY_ID"),
+    R2_SECRET_ACCESS_KEY: read("R2_SECRET_ACCESS_KEY"),
+    R2_BUCKET_NAME: read("R2_BUCKET_NAME"),
+    PRIVATE_UPLOADS_R2_ACCOUNT_ID: read("PRIVATE_UPLOADS_R2_ACCOUNT_ID"),
+    PRIVATE_UPLOADS_R2_ACCESS_KEY_ID: read("PRIVATE_UPLOADS_R2_ACCESS_KEY_ID"),
+    PRIVATE_UPLOADS_R2_SECRET_ACCESS_KEY: read("PRIVATE_UPLOADS_R2_SECRET_ACCESS_KEY"),
+    PRIVATE_UPLOADS_R2_BUCKET: read("PRIVATE_UPLOADS_R2_BUCKET"),
+  };
 }
 
 // Runs only as the script itself, so tests can import runScheduledCleanup.
