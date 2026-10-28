@@ -48,14 +48,11 @@
   border-bottom-color: transparent;
 }
 
+/* While the camera moves the panel only dims, as one piece: its bar keeps its
+   own background, so nothing in it changes look and back on every orbit. */
 .vv-floating-widget.is-auto-compact {
   opacity: 0.55;
   pointer-events: none;
-}
-
-.vv-floating-widget.is-auto-compact .vv-floating-widget__bar {
-  background:
-    linear-gradient(135deg, rgba(19, 32, 34, 0.72), rgba(255, 255, 255, 0.025));
 }
 
 .vv-floating-widget__handle,
