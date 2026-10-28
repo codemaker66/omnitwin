@@ -137,23 +137,43 @@ interface ChromePresence {
 | `left` | `.reference-left-dock`: the lens rail, the room header (crest, venue, "Layout saved") and On the floor | A vertical spine at the left edge, top-aligned with the dock: "On the floor" set vertically in 11 px capitals, with the count |
 | `right` | `CockpitRightDock` (Details) and the right-hand column under it: the 3D/2D switch, Event details and Send | A vertical spine at the right edge, top-aligned with the dock: "Details", plus the selected piece's name when there is a selection |
 | `top` | `ToolPill`, and the round "…" if it belongs to the same cluster | A short tab at the top edge on the pill's centre line, naming the current tool |
-| `bottom` | The room timeline bar (`CockpitBottom`, when present), the command deck (Furniture … Present) and the view controls (Plan · Room · Walk · hour) | A short tab at the bottom edge on the deck's centre line, naming the view and hour ("Room · 22:00") |
+| `bottom` | The room timeline bar (`CockpitBottom`, when present), the command deck (Furniture … Present) and the view controls (Plan · Room · Walk · hour) | A short tab at the bottom edge on the deck's centre line. Builder's call (review round, 28 Oct): it names nothing. The view controls differ by room and are absent from most rooms for visitors, and the hour exists only under the Grand Hall's sky, so there is no one current state to name |
 
 - **The spine** is a `<button aria-expanded="false" aria-controls="…">` named "Show On the floor" and so on.
   - Hit target at least 36 px, 44 px on coarse pointers.
   - One 2 px focus ring. Hover changes colour only.
-- **The fold mark.** Each open unit has a small mark at its outer top corner, pointing toward its own edge: `‹` for
-  the left unit, `›` for the right, a chevron up for the top and down for the bottom.
+- **The fold mark.** Each open unit has a small mark pointing toward its own edge: `‹` for the left unit, `›` for
+  the right, a chevron up for the top and down for the bottom.
+  - It sits on the unit's edge, half on the unit and half off it, where the unit has only its own padding (review
+    round, 28 Oct). The first placing, at the outer top corner, put the right mark over the Details panel's
+    "Clear furniture selection" x and the left one over the lowest lens buttons, and left a gap the hand fell
+    through above the bottom bar. So:
+    - the side docks' marks straddle their inner edges, level with their headings (24 × 40 px; 28 × 48 on coarse
+      pointers), and co-editing presence begins where the right one ends;
+    - the tool bar's mark hangs from the top of the screen onto the bar's upper edge;
+    - the bottom bar's hangs under the deck, 4 px onto its lower edge.
   - It is a `<button aria-expanded="true">` named "Fold On the floor" and so on.
-  - Under `(hover: hover) and (pointer: fine)` it shows only while the unit is hovered or contains focus. It stays
-    in the tab order, and focus makes it visible.
+  - Under `(hover: hover) and (pointer: fine)` it shows only while the unit is hovered or contains keyboard focus.
+    It stays in the tab order, and focus makes it visible.
   - Where there is no hover, it is always shown.
 - **Focus.** After a fold, focus goes to the spine. After an unfold, focus goes to that unit's fold mark, so the
-  same key reverses it.
+  same key reverses it. Focus never stays on chrome that has just gone (WCAG 2.4.3):
+  - clearing moves it to the crest (a phone's seal);
+  - bringing the tools back while the left unit is folded moves it to the left spine (a phone's top bar);
+  - focus the chrome moves to the crest arrives without the crest's name, so the next Esc restores at once.
+- **A fold closes nothing.** A menu inside the unit goes and comes back with it. The catalogue beside the left dock
+  and a note in the room are not the unit's to close (review round: folding Details used to close the catalogue
+  and drop the tool to Select). Only clear-all closes popovers and panels first.
+- **What a spine says.** Its name is short ("Show On the floor"). The tool bar's spine also names the tool in hand,
+  in its name and on its face ("Show the tool bar · Measure"). What else a spine shows (the count, save trouble,
+  the selected piece) is its description, so a screen reader hears it too.
 - **Hidden means unreachable.** A folded unit, and every surface while cleared, becomes `visibility: hidden` when
   its exit transition ends, so it cannot be tabbed, clicked or read. It stays mounted, so its state survives.
 - **Never folded.** The phase-preview lock (shown in place of Details during a phase preview) and every other
   safety notice stay visible whatever the folds.
+  - During a phase preview, its one exit (the room timeline's "Exit preview") and the right-hand column stay
+    visible too. They come back under the folds when the preview ends (review round: a folded bottom bar hid the
+    only way out of a preview).
 
 ### Clear-all and the crest
 
@@ -163,25 +183,36 @@ interface ChromePresence {
   - While cleared, a seal holding the same crest sits at exactly the crest's resting position. It sits there even
     if the left unit was folded. It is the one control on screen, labelled "Show the tools · \".
   - Both are at least 36 px (44 px on coarse pointers), with an accessible name and the one focus ring.
+  - Its label shows under it when a mouse rests on it for 400 ms or keyboard focus reaches it. The label is a real
+    element inside the crest, so the hand can move onto it without it going, and it sits on the Escape ladder's
+    tooltip rung, so Esc puts it away without moving either (WCAG 1.4.13; review round). It covers only the line
+    about saving, never the link home.
 - **Toggles:**
   - `\`, a binding at `KEY_PRIORITY.planner`. It never fires while typing in a field or while a dialog holds the
-    keyboard.
+    keyboard. It also answers `\` typed with AltGr (German, French, Spanish and Nordic keyboards, which the
+    browser reports as Ctrl and Alt) and with a Mac's Option.
   - The crest.
   - A labelled "Hide the tools · \" item in the planner's existing overflow menu. That menu ("…") lives in
     `VerticalToolbox.tsx`, which is lane E's file, so the item goes to lane E as a one-line change request. The
     crest's own label already gives a named pointer path.
   - On phones, the More sheet: a change request to planner-qol.
 - **Clearing first closes** the open popovers and panels: Escape layers of kind `popover` and `panel`, such as the
-  "…" tools, the catalogue and the hour popover. Then it hides the chrome. An Esc on a bare screen never closes
-  something invisible.
+  catalogue and the hour popover. Then it hides the chrome. An Esc on a bare screen never closes something
+  invisible.
+  - The desktop "…" tools are not an Escape layer yet (`VerticalToolbox.tsx`'s own state). Until lane E registers
+    them as a `panel`, they fold with the tool bar and hide with the rest, and come back open.
   - Operations (placing, measuring, drawing, Present) and the selection carry on. They are visible in the room, and
     Esc reaches them first.
 - **What clear-all hides:**
   - the four units and their spines;
   - the When ribbon;
   - open floating tool panels;
+  - the Submit for review pill;
   - the phone top bar, dock and sheets;
   - anything carrying `data-chrome-surface`;
+  - The units move as the Motion section says. The rest (floating panels, the ribbon, the review pill, opted-in
+    surfaces) only fade, because a floating panel's place is its own inline transform, which a scale would
+    pull toward the corner (review round).
   - the Assembly's resting "Replay the assembly", via one rule in `assembly.css` keyed on
     `.assembly-replay[data-playing="false"]`.
 - **What clear-all never hides:**
@@ -194,9 +225,16 @@ interface ChromePresence {
 - **Restore** returns exactly the per-unit folds that were in place. Menus closed by clearing stay closed.
 - **Teaching.** The first three times on a device, a one-line note by the seal reads "The tools are hidden · press \
   or the crest to bring them back". It uses `role="status"` and fades after about 4 s.
+  - It sits just right of the crest, on its centre line, measured, because the crest moves with the venue's name
+    and the rail's width. The crest's own name waits while the note speaks, so the two never overlap.
+  - Its `role="status"` region is in the accessibility tree before its words arrive, with only the ink fading, so
+    the words are spoken. A region that appears already holding its text often is not.
 - **Save truth.** While cleared, or while the left unit is folded, any not-saved, failed, offline or
   changed-elsewhere state appears as a status word beside the seal or on the left spine. It uses the header's own
   words and status ink. While saved, nothing extra shows.
+  - The header's live region goes with a folded or cleared dock. So a second, always-present status region speaks
+    the trouble whenever the header is folded or cleared away, and the left spine carries it as its description
+    (review round).
 - **Leaving the cockpit** (2D, another page) resets `cleared`. Folds stay.
 
 ### Motion
@@ -207,7 +245,8 @@ interface ChromePresence {
 - **Clear-all from the crest or a menu** uses the same pairs, with no stagger.
 - **Keyboard-initiated** changes are instant: `\`, Esc, and Enter or Space on a spine, mark or crest.
 - **Centred units** (the deck and view controls) are centred with `transform: translateX(-50%)`. The motion uses the
-  individual `translate` and `scale` properties, so the centring is never overwritten.
+  individual `translate` and `scale` properties, so the centring is never overwritten. Coming back, from an unfold
+  or a restore, each unit keeps the corner it left from, so the centred ones never slide sideways as they grow.
 - **Reduced motion:** 120 ms opacity only.
 - **Silent.**
 

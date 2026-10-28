@@ -10,6 +10,7 @@ import { usePlannerVenueIdentity } from "../../../hooks/use-planner-venue-identi
 import { canReadInternalEventData, customerEventPath, isCustomerRole } from "../../../lib/event-access.js";
 import { useOnlineStatus } from "../../../hooks/use-online-status.js";
 import { useChromePresenceStore } from "../../../stores/chrome-presence-store.js";
+import { CrestLabel, useCrestLabel } from "./CrestLabel.js";
 
 interface HeaderSaveState {
   readonly configId: string | null;
@@ -58,15 +59,17 @@ export function ReferenceRoomHeader(): ReactElement {
   // way home (Blake, 28 Oct 2026: "Crest hides; name goes home", T-680).
   const toolsCleared = useChromePresenceStore((state) => state.cleared);
   const crestLabel = toolsCleared ? "Show the tools" : "Hide the tools";
+  const crestName = useCrestLabel();
   return (
     <header className="reference-room-header" aria-label="Room and save status">
       <div className="reference-identity">
         <button type="button" className="reference-crest" data-planner-crest aria-label={crestLabel}
-          aria-keyshortcuts={"\\"} data-label={`${crestLabel} · \\`}
+          aria-keyshortcuts={"\\"} {...crestName.handlers}
           onClick={() => { useChromePresenceStore.getState().toggleCleared(); }}>
           {venue.logoUrl !== null && venue.logoUrl !== failedLogo
             ? <img src={venue.logoUrl} width="32" height="40" alt="" onError={() => { setFailedLogo(venue.logoUrl); }} />
             : <Building2 className="reference-venue-icon" size={28} aria-hidden="true" />}
+          <CrestLabel text={`${crestLabel} · \\`} shown={crestName.shown} />
         </button>
         <Link to={homePath} className="reference-wordmark" aria-busy={venue.loading} aria-label={`${venue.name} ${homeLabel}`}>
           <span className="reference-venue-copy">

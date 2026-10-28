@@ -56,8 +56,10 @@ export function PlannerCockpit({ mobile = false, hasLinkedEvent = false }: { rea
       {mobile ? null : <div className="reference-left-dock" key="left-dock">
         <CockpitNavRail />
         <div className="reference-left-content"><ReferenceRoomHeader /><SceneOutliner /></div>
-        <ChromeFoldMark unit="left" />
       </div>}
+      {/* On the dock's edge, outside it: the dock clips, and its lens rail
+          runs to its foot. */}
+      {mobile ? null : <ChromeFoldMark key="left-fold-mark" unit="left" />}
       {mobile ? null : <ChromeSpine key="left-spine" unit="left" />}
       {/* T-615: the stage is the planner's <main>, and the landmark belongs
           here rather than on the shell in EditorPage. A <main> wrapped around

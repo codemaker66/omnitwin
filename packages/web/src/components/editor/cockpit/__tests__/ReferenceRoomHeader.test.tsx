@@ -7,6 +7,7 @@ import { useAuthStore } from "../../../../stores/auth-store.js";
 import { useLayoutTimelinePreviewStore } from "../../../../stores/layout-timeline-preview-store.js";
 import { useChromePresenceStore } from "../../../../stores/chrome-presence-store.js";
 import { ReferenceRoomHeader } from "../ReferenceRoomHeader.js";
+import { CREST_LABEL_DELAY_MS, focusCrestQuietly } from "../CrestLabel.js";
 
 vi.mock("../../../../api/spaces.js", async (importOriginal) => ({
   ...await importOriginal<typeof import("../../../../api/spaces.js")>(),
@@ -62,6 +63,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   useEditorStore.setState({ saveToServer: originalSave, reloadAfterConflict: originalReload, saveConflict: null });
   useLayoutTimelinePreviewStore.getState().clear();
   useChromePresenceStore.getState().resetCleared();
@@ -179,15 +181,69 @@ describe("ReferenceRoomHeader", () => {
 
     const hide = screen.getByRole("button", { name: "Hide the tools" });
     expect(hide.getAttribute("aria-keyshortcuts")).toBe("\\");
-    expect(hide.getAttribute("data-label")).toBe("Hide the tools · \\");
+    expect(hide.querySelector(".reference-crest__label")?.textContent).toBe("Hide the tools · \\");
     fireEvent.click(hide);
     expect(useChromePresenceStore.getState().cleared).toBe(true);
 
     const show = screen.getByRole("button", { name: "Show the tools" });
-    expect(show.getAttribute("data-label")).toBe("Show the tools · \\");
+    expect(show.querySelector(".reference-crest__label")?.textContent).toBe("Show the tools · \\");
     fireEvent.click(show);
     expect(useChromePresenceStore.getState().cleared).toBe(false);
     expect(screen.getByRole("button", { name: "Hide the tools" })).toBeTruthy();
+  });
+
+  // WCAG 1.4.13 (review finding, 28 Oct): the crest's name shows when the hand
+  // rests on the crest, the hand can move onto it, and Esc puts it away
+  // without moving either and without touching the tools.
+  it("names the crest when a hand rests on it, and Esc puts the name away alone", () => {
+    vi.useFakeTimers();
+    showHeader();
+    const button = crest();
+    const label = button.querySelector(".reference-crest__label");
+    expect(label?.getAttribute("aria-hidden")).toBe("true");
+    fireEvent.pointerEnter(button, { pointerType: "touch" });
+    act(() => { vi.advanceTimersByTime(CREST_LABEL_DELAY_MS); });
+    expect(label?.getAttribute("data-shown")).toBe("false");
+    fireEvent.pointerLeave(button, { pointerType: "touch" });
+
+    fireEvent.pointerEnter(button, { pointerType: "mouse" });
+    act(() => { vi.advanceTimersByTime(CREST_LABEL_DELAY_MS - 10); });
+    expect(label?.getAttribute("data-shown")).toBe("false");
+    act(() => { vi.advanceTimersByTime(10); });
+    expect(label?.getAttribute("data-shown")).toBe("true");
+
+    act(() => { window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })); });
+    expect(label?.getAttribute("data-shown")).toBe("false");
+    expect(useChromePresenceStore.getState().cleared).toBe(false);
+
+    // Put away, it stays away until the hand leaves; the next rest shows it again.
+    act(() => { vi.advanceTimersByTime(CREST_LABEL_DELAY_MS); });
+    expect(label?.getAttribute("data-shown")).toBe("false");
+    fireEvent.pointerLeave(button, { pointerType: "mouse" });
+    fireEvent.pointerEnter(button, { pointerType: "mouse" });
+    act(() => { vi.advanceTimersByTime(CREST_LABEL_DELAY_MS); });
+    expect(label?.getAttribute("data-shown")).toBe("true");
+  });
+
+  it("shows the crest's name to the keyboard, but not when the chrome moves focus there itself", () => {
+    showHeader();
+    const button = crest();
+    const label = button.querySelector(".reference-crest__label");
+    act(() => { focusCrestQuietly(button); });
+    expect(document.activeElement).toBe(button);
+    expect(label?.getAttribute("data-shown")).toBe("false");
+    act(() => { button.blur(); });
+    act(() => { button.focus(); });
+    expect(label?.getAttribute("data-shown")).toBe("true");
+  });
+
+  it("lets the first-use note speak instead of the crest's name", () => {
+    vi.useFakeTimers();
+    showHeader();
+    act(() => { useChromePresenceStore.setState({ hintPending: true }); });
+    fireEvent.pointerEnter(crest(), { pointerType: "mouse" });
+    act(() => { vi.advanceTimersByTime(CREST_LABEL_DELAY_MS); });
+    expect(crest().querySelector(".reference-crest__label")?.getAttribute("data-shown")).toBe("false");
   });
 
   it("checks the live preview lock even before React replaces the prior click handler", () => {

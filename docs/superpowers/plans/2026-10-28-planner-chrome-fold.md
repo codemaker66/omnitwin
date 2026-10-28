@@ -23,7 +23,8 @@ New buttons (spines, fold marks, a hint, a save word, a phone seal) live in one 
   Every storage access sits inside try/catch, and anything malformed means everything is open.
 - **Clear-all is never persisted.** Leaving the cockpit resets it.
 - **Keys.**
-  - `\` is `{ key: "\\" }` at `KEY_PRIORITY.planner`, with `inFields` false and `duringModal` false.
+  - `\` is `{ key: "\\" }` at `KEY_PRIORITY.planner`, with `inFields` false and `duringModal` false. After the
+    review round it is also `{ key: "\\", mod: true, alt: true }` (AltGr) and `{ key: "\\", alt: true }` (Option).
   - The new kind `chrome` goes last in `ESCAPE_ORDER`.
   - No other file may quote `"Escape"` or add a `keydown` listener (`planner-keyboard-owner.test.ts`).
 - **Motion.**
@@ -35,9 +36,15 @@ New buttons (spines, fold marks, a hint, a save word, a phone seal) live in one 
 - **Silent:** no sound calls.
 - **Copy, verbatim:**
   - "Hide the tools · \\" and "Show the tools · \\" (the crest, while shown and while cleared);
-  - "Fold On the floor", "Show On the floor", "Fold Details", "Show Details", "Fold the tools", "Show the tools",
-    "Fold furniture and views", "Show furniture and views";
+  - "Fold On the floor", "Show On the floor", "Fold Details", "Show Details" (the right unit takes the open lens's
+    name, such as "Fold Guests"), "Fold the tool bar", "Show the tool bar", "Fold the bottom bar", "Show the bottom
+    bar". These were renamed while building: "the tools" belongs to the crest alone, and the bottom bar holds more
+    than furniture and views. The folded tool bar's spine adds the tool in hand: "Show the tool bar · Measure";
   - "The tools are hidden · press \\ or the crest to bring them back".
+- **Review round (28 Oct).** An adversarial review confirmed 26 findings (17 once merged), all fixed before
+  shipping. The spec records each decision where it applies: mark placement, a fold closing nothing, the phase
+  preview's exit, focus, the crest's label, the live regions, AltGr, and what only fades. The findings are in
+  `D:/claude/planner-chrome-fold-20261028/review-findings.md`.
 - **Hint and target sizes.** The hint shows while fewer than 3 have been shown on the device, for about 4 s. Hit
   targets are at least 36 px, 44 px on coarse pointers.
 - **Files.** Do not edit `AssemblyReplay.tsx`, `GrandAssembly.tsx`, `FloatingWidgetFrame*`, `PlannerCockpit.css`,

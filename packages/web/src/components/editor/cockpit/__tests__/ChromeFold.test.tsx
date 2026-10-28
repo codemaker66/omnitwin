@@ -4,9 +4,11 @@ import { registerEscapeLayer } from "../../../../lib/planner-keys.js";
 import { useChromePresenceStore } from "../../../../stores/chrome-presence-store.js";
 import { useCockpitStore } from "../../../../stores/cockpit-store.js";
 import { useEditorStore } from "../../../../stores/editor-store.js";
+import { useToolStore } from "../../../../stores/tool-store.js";
 import {
   CHROME_SETTLE_MS,
   CLEAR_HINT_MS,
+  CLEAR_HINT_TEXT,
   ChromeClearHint,
   ChromeFoldControls,
   ChromeFoldMark,
@@ -14,6 +16,7 @@ import {
   ChromeSpine,
   PhoneChromeSeal,
   chromeSaveTrouble,
+  settleChromeFocus,
   useChromePresence,
 } from "../ChromeFold.js";
 
@@ -37,8 +40,8 @@ function Presence(): null {
   return null;
 }
 
-function press(key: string, target: EventTarget = window): void {
-  target.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
+function press(key: string, target: EventTarget = window, modifiers: KeyboardEventInit = {}): void {
+  target.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...modifiers }));
 }
 
 /** The person's last input was the pointer, so motion plays. */
@@ -59,6 +62,7 @@ beforeEach(() => {
   useChromePresenceStore.setState({ folded: ALL_OPEN, cleared: false, instant: false, hintPending: false, hintsShown: 0 });
   useCockpitStore.setState({ activeMode: "design" });
   useEditorStore.setState({ configId: "cfg-demo", venueId: null, isSaving: false, isDirty: false, saveError: null, saveConflict: null });
+  useToolStore.setState({ activeTool: "select" });
 });
 
 afterEach(() => {
@@ -122,6 +126,19 @@ describe("the page-wide side", () => {
     const field = screen.getByRole("searchbox", { name: "Find a table or piece" });
     field.focus();
     act(() => { press("\\", field); });
+    act(() => { press("\\", field, { ctrlKey: true, altKey: true }); });
+    expect(useChromePresenceStore.getState().cleared).toBe(false);
+  });
+
+  // Review finding, 28 Oct: \ is AltGr on German, French, Spanish and Nordic
+  // keyboards (Ctrl and Alt as the browser reports it), and Option on a Mac's.
+  it("backslash works wherever the keyboard keeps it", () => {
+    render(<Presence />);
+    act(() => { press("\\", window, { ctrlKey: true, altKey: true }); });
+    expect(useChromePresenceStore.getState().cleared).toBe(true);
+    act(() => { press("\\", window, { altKey: true, shiftKey: true }); });
+    expect(useChromePresenceStore.getState().cleared).toBe(false);
+    act(() => { press("\\", window, { ctrlKey: true }); });
     expect(useChromePresenceStore.getState().cleared).toBe(false);
   });
 
@@ -148,6 +165,40 @@ describe("the page-wide side", () => {
     act(() => { useChromePresenceStore.getState().fold("top"); });
     expect(root.hasAttribute("data-planner-chrome-motion")).toBe(false);
   });
+
+  // Review finding, 28 Oct: keyboard focus never stays on chrome that has gone.
+  it("moves focus off chrome that has gone: to the crest while cleared, to the left spine after", () => {
+    useChromePresenceStore.setState({ folded: { ...ALL_OPEN, left: true } });
+    render(
+      <>
+        <button type="button" data-planner-crest>Crest</button>
+        <button type="button">On the dock</button>
+        <ChromeSpine unit="left" />
+      </>,
+    );
+    const crest = screen.getByRole("button", { name: "Crest" });
+    const onTheDock = screen.getByRole("button", { name: "On the dock" });
+    const spine = screen.getByRole("button", { name: "Show On the floor" });
+    const hidden = new Set<Element>([onTheDock]);
+    const onScreen = (element: Element): boolean => !hidden.has(element);
+
+    onTheDock.focus();
+    settleChromeFocus(document, onTheDock, true, onScreen);
+    expect(document.activeElement).toBe(crest);
+
+    // Brought back with the left dock folded, the crest goes with its dock.
+    hidden.clear();
+    hidden.add(crest);
+    settleChromeFocus(document, crest, false, onScreen);
+    expect(document.activeElement).toBe(spine);
+
+    // Focus on something still seen stays put; nothing focused, nothing moves.
+    settleChromeFocus(document, spine, true, onScreen);
+    expect(document.activeElement).toBe(spine);
+    spine.blur();
+    settleChromeFocus(document, document.body, true, onScreen);
+    expect(document.activeElement).toBe(document.body);
+  });
 });
 
 describe("spines, marks and the crest's companions", () => {
@@ -163,8 +214,17 @@ describe("spines, marks and the crest's companions", () => {
     );
     for (const name of ["On the floor", "Details", "the tool bar", "the bottom bar"]) {
       expect(screen.getByRole("button", { name: `Fold ${name}` }).getAttribute("aria-expanded")).toBe("true");
-      expect(screen.getByRole("button", { name: `Show ${name}` }).getAttribute("aria-expanded")).toBe("false");
+      expect(screen.getByRole("button", { name: new RegExp(`^Show ${name}( · |$)`, "u") }).getAttribute("aria-expanded")).toBe("false");
     }
+  });
+
+  it("the tool bar's spine names the hand in use, in its name and on its face", () => {
+    useToolStore.setState({ activeTool: "measure" });
+    render(<ChromeSpine unit="top" />);
+    const spine = screen.getByRole("button", { name: "Show the tool bar · Measure" });
+    expect(spine.textContent).toContain("Measure");
+    act(() => { useToolStore.setState({ activeTool: "add" }); });
+    expect(screen.getByRole("button", { name: "Show the tool bar" }).textContent).toBe("");
   });
 
   it("names the right dock after the open lens", () => {
@@ -185,26 +245,43 @@ describe("spines, marks and the crest's companions", () => {
   it("a spine unfolds and focus returns to the mark", async () => {
     useChromePresenceStore.setState({ folded: { ...ALL_OPEN, top: true } });
     render(<ChromeFoldControls unit="top" />);
-    fireEvent.click(screen.getByRole("button", { name: "Show the tool bar" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Show the tool bar/u }));
     expect(useChromePresenceStore.getState().folded.top).toBe(false);
     await act(async () => { await nextFrame(); });
     expect(document.activeElement).toBe(screen.getByRole("button", { name: "Fold the tool bar" }));
   });
 
-  it("folded left spine names save trouble", () => {
+  it("folded left spine shows save trouble, and describes it to a screen reader", () => {
     useChromePresenceStore.setState({ folded: { ...ALL_OPEN, left: true } });
     useEditorStore.setState({ isDirty: true, saveError: "Network error" });
     render(<ChromeSpine unit="left" />);
-    expect(screen.getByRole("button", { name: "Show On the floor" }).textContent).toContain("Retry save");
+    const spine = screen.getByRole("button", { name: "Show On the floor" });
+    expect(spine.textContent).toContain("Retry save");
+    // What a screen reader hears besides the name: the count as the dock says it, then the trouble.
+    const [count, trouble] = (spine.getAttribute("aria-describedby") ?? "").split(" ").map((id) => document.getElementById(id));
+    expect(count?.querySelector(".chrome-sr-only")?.textContent).toBe("0 pieces on the floor.");
+    expect(count?.querySelector("[aria-hidden='true']")?.textContent).toBe("0");
+    expect(trouble?.textContent).toBe("Retry save");
   });
 
-  it("says save trouble beside the crest, and only trouble", () => {
+  // Review finding, 28 Oct: the header's live region goes with a folded or
+  // cleared dock, so this one speaks the save truth instead. It is in the
+  // accessibility tree from the start, so what arrives in it is announced.
+  it("speaks save trouble whenever the header is folded or cleared away, and shows it while cleared", () => {
     render(<ChromeSaveWord />);
-    const word = screen.getByRole("status");
-    expect(word.getAttribute("data-trouble")).toBe("false");
+    const voice = screen.getByRole("status");
+    const word = voice.closest(".chrome-save-word");
+    expect(voice.textContent).toBe("");
     act(() => { useEditorStore.setState({ saveError: "Network error" }); });
-    expect(word.textContent).toBe("Retry save");
-    expect(word.getAttribute("data-trouble")).toBe("true");
+    expect(voice.textContent).toBe("");
+    act(() => { useChromePresenceStore.getState().fold("left"); });
+    expect(voice.textContent).toBe("Retry save");
+    expect(word?.getAttribute("data-shown")).toBe("false");
+    act(() => { useChromePresenceStore.getState().clearAll(); });
+    expect(word?.getAttribute("data-shown")).toBe("true");
+    act(() => { useEditorStore.setState({ saveError: null }); });
+    expect(voice.textContent).toBe("");
+    expect(word?.getAttribute("data-shown")).toBe("false");
   });
 
   it("chromeSaveTrouble keeps quiet unless saving is in trouble", () => {
@@ -221,21 +298,25 @@ describe("spines, marks and the crest's companions", () => {
   it("the hint shows three times then never, and leaves on its own", () => {
     vi.useFakeTimers();
     render(<ChromeClearHint />);
-    const hint = screen.getByRole("status");
+    // The voice is in the tree, empty, before the words arrive.
+    const voice = screen.getByRole("status");
+    const hint = voice.closest(".chrome-clear-hint");
+    expect(voice.textContent).toBe("");
     const shown: string[] = [];
     for (let i = 0; i < 4; i += 1) {
       act(() => { useChromePresenceStore.getState().clearAll(); });
-      shown.push(hint.getAttribute("data-shown") ?? "");
+      shown.push(hint?.getAttribute("data-shown") ?? "");
       act(() => { useChromePresenceStore.getState().restoreAll(); });
     }
     expect(shown).toEqual(["true", "true", "true", "false"]);
 
     useChromePresenceStore.setState({ hintsShown: 0 });
     act(() => { useChromePresenceStore.getState().clearAll(); });
-    expect(hint.textContent).toBe("The tools are hidden · press \\ or the crest to bring them back");
+    expect(voice.textContent).toBe(CLEAR_HINT_TEXT);
+    expect(CLEAR_HINT_TEXT).toBe("The tools are hidden · press \\ or the crest to bring them back");
     act(() => { vi.advanceTimersByTime(CLEAR_HINT_MS); });
-    expect(hint.getAttribute("data-shown")).toBe("false");
-    expect(hint.textContent).toBe("");
+    expect(hint?.getAttribute("data-shown")).toBe("false");
+    expect(voice.textContent).toBe("");
   });
 
   it("the phone seal restores", () => {

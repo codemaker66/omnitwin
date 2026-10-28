@@ -232,8 +232,8 @@ function stepBack(event: KeyboardEvent): void {
 
 /**
  * Steps back every open layer of these kinds, once each, in the ladder's order,
- * and says how many it closed. Folding chrome away calls it for popovers and
- * panels, so nothing stays open where the person can no longer see it. It
+ * and says how many it closed. Clearing the chrome away calls it for popovers
+ * and panels, so nothing stays open where the person can no longer see it. It
  * gives no focus back: the person is acting somewhere else.
  */
 export function closeOpenLayers(kinds: readonly EscapeLayerKind[]): number {

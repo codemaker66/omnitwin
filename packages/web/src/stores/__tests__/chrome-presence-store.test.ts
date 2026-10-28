@@ -132,16 +132,25 @@ describe("the chrome presence store", () => {
     expect(reloaded.useChromePresenceStore.getState().hintPending).toBe(false);
   });
 
-  it("fold and clearAll close open popovers and panels", async () => {
+  it("a fold closes nothing; clearing closes the open popovers and panels first", async () => {
+    // The catalogue beside the left dock is a panel: folding Details must not
+    // close it and drop the tool back to Select (review finding, 28 Oct).
     const { useChromePresenceStore } = await freshStore();
     const keys = await import("../../lib/planner-keys.js");
-    useChromePresenceStore.getState().fold("bottom");
-    expect(keys.closeOpenLayers).toHaveBeenLastCalledWith(["popover", "panel"]);
     vi.mocked(keys.closeOpenLayers).mockClear();
-    useChromePresenceStore.getState().unfold("bottom");
+    for (const unit of ["left", "right", "top", "bottom"] as const) useChromePresenceStore.getState().fold(unit);
+    for (const unit of ["left", "right", "top", "bottom"] as const) useChromePresenceStore.getState().unfold(unit);
     expect(keys.closeOpenLayers).not.toHaveBeenCalled();
     useChromePresenceStore.getState().clearAll();
     expect(keys.closeOpenLayers).toHaveBeenCalledWith(["popover", "panel"]);
+  });
+
+  it("names the attributes it is mirrored as", async () => {
+    const { CHROME_PRESENCE_ATTRIBUTES, chromeFoldAttribute } = await freshStore();
+    expect(chromeFoldAttribute("left")).toBe("data-planner-fold-left");
+    expect(CHROME_PRESENCE_ATTRIBUTES).toEqual([
+      "data-planner-fold-left", "data-planner-fold-right", "data-planner-fold-top", "data-planner-fold-bottom", "data-planner-chrome",
+    ]);
   });
 
   it("resetCleared clears without touching folds", async () => {

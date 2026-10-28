@@ -43,6 +43,7 @@ import {
 
 import { annotationSafeArea, placeSceneAnnotations, rectanglesOverlap, type AnnotationMeasure, type AnnotationRect } from "../../lib/cockpit-scene-annotation-layout.js";
 import { useEscapeLayer } from "../../lib/planner-keys.js";
+import { CHROME_PRESENCE_ATTRIBUTES } from "../../stores/chrome-presence-store.js";
 import "./CockpitSceneAnnotations.css";
 
 // ---------------------------------------------------------------------------
@@ -464,6 +465,8 @@ function SceneAnnotations({ annotations }: { readonly annotations: readonly Scen
       const relevant = records.some((record) => {
         if (rootRef.current?.contains(record.target) === true) return false;
         if (record.type === "childList") return true;
+        // A dock folding away or coming back (T-680) changes no size.
+        if (record.target === canvas.ownerDocument.documentElement) return true;
         return record.target instanceof Element
           && (record.target.closest(`${BLOCKING_UI}, ${MODAL_UI}`) !== null
             || record.target.querySelector(MODAL_UI) !== null);
@@ -474,6 +477,7 @@ function SceneAnnotations({ annotations }: { readonly annotations: readonly Scen
       childList: true, subtree: true, attributes: true,
       attributeFilter: ["style", "class", "hidden", "open", "aria-hidden", "data-visible"],
     });
+    membership.observe(canvas.ownerDocument.documentElement, { attributes: true, attributeFilter: [...CHROME_PRESENCE_ATTRIBUTES] });
     window.addEventListener("resize", markDirty);
     window.addEventListener("scroll", markDirty, true);
     return () => {

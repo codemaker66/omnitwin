@@ -20,6 +20,17 @@ export const CHROME_FOLDS_STORAGE_KEY = "venviewer.planner-chrome-folds";
 /** How many times a device is told how to bring cleared chrome back. */
 export const CLEAR_HINT_LIMIT = 3;
 
+/** The attribute on <html> that says how one unit stands ("folded", or "unfolding" for one settle). */
+export function chromeFoldAttribute(unit: ChromeFoldUnit): string {
+  return `data-planner-fold-${unit}`;
+}
+
+/** The attribute on <html> that says the chrome is "cleared" (or "restoring" for one settle). */
+export const CHROME_CLEARED_ATTRIBUTE = "data-planner-chrome";
+
+/** Every attribute the cockpit mirrors this state onto <html> as; whatever lays itself out around the chrome watches them. */
+export const CHROME_PRESENCE_ATTRIBUTES: readonly string[] = [...CHROME_FOLD_UNITS.map(chromeFoldAttribute), CHROME_CLEARED_ATTRIBUTE];
+
 const ALL_OPEN: ChromeFolds = { left: false, right: false, top: false, bottom: false };
 
 interface Remembered {
@@ -94,8 +105,8 @@ export const useChromePresenceStore = create<ChromePresenceState>()((set, get) =
   const setFold = (unit: ChromeFoldUnit, folded: boolean): void => {
     const state = get();
     if (state.folded[unit] === folded) return;
-    // Nothing stays open where the person can no longer see it.
-    if (folded) closeOpenLayers(["popover", "panel"]);
+    // A fold closes nothing: a menu inside the unit goes and comes back with
+    // it, and the catalogue or a note beside it is not the unit's to close.
     const next: ChromeFolds = { ...state.folded, [unit]: folded };
     set({ folded: next, instant: lastInputWasKeys() });
     remember(next, state.hintsShown);
