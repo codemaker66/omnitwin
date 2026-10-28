@@ -28,6 +28,15 @@
   max-width: calc(100vw - 32px);
 }
 
+/* The new chrome: in the zone above the dock, which places it on every width. */
+.door-clear-notice.is-zoned {
+  position: static;
+  top: auto;
+  left: auto;
+  max-width: min(520px, 100%);
+  transform: none;
+}
+
 .door-clear-notice__card {
   display: flex;
   align-items: center;

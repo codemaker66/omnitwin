@@ -13,19 +13,23 @@ import "./DoorClearNotice.css";
 const NO_BLOCKERS: readonly DoorBlocker[] = [];
 
 // ---------------------------------------------------------------------------
-// DoorClearNotice — a table already in front of a door (Blake, 27 Oct 2026:
-// "Keep them clear automatically (Recommended)").
+// DoorClearNotice — a table in front of a door. Blake, 28 Oct 2026: "let
+// people place tables within the red zone but have a warning on it (an
+// aesthetic warning of some kind, not something annoying or makes it look
+// bad)".
 //
-// A layout saved before the door rule, or a piece nudged into a door's clear
-// space by keys or typed figures, is never moved by itself. This says which
-// table stands in front of which door, with one tap to move it clear
-// (lib/door-clear-actions: free floor only, one undo step). When there is no
-// free floor nearby, it says so instead of offering a tap that cannot work.
-// It keeps out of the way while a piece is carried or placed and while the
-// hall assembles. The status region stays mounted so a screen reader hears it.
+// A piece placed in a door's clear space, or a layout saved before the door
+// rule, is never moved by itself. This says calmly which table is in front of
+// which door, beside the floor's warm glow (DoorClearSpaceLayer), with one tap
+// to move it clear (lib/door-clear-actions: free floor only, one undo step).
+// When there is no free floor nearby, it says so instead of offering a tap
+// that cannot work. It keeps out of the way while a piece is carried or
+// placed and while the hall assembles. The status region stays mounted so a
+// screen reader hears it. In the new chrome it sits in the zone above the
+// dock (`zoned`), apart from the slate's own notice.
 // ---------------------------------------------------------------------------
 
-export function DoorClearNotice({ mobile = false }: { readonly mobile?: boolean }): ReactElement {
+export function DoorClearNotice({ mobile = false, zoned = false }: { readonly mobile?: boolean; readonly zoned?: boolean }): ReactElement {
   const placedItems = usePlacementStore((state) => state.placedItems);
   const spaces = useDoorClearSpaceStore((state) => state.spaces);
   const carrying = useDoorClearSpaceStore((state) => state.carrying);
@@ -51,7 +55,7 @@ export function DoorClearNotice({ mobile = false }: { readonly mobile?: boolean 
 
   return (
     <div
-      className={mobile ? "door-clear-notice is-mobile" : "door-clear-notice"}
+      className={zoned ? "door-clear-notice is-zoned" : mobile ? "door-clear-notice is-mobile" : "door-clear-notice"}
       role="status"
       aria-live="polite"
       data-testid="door-clear-notice-region"
