@@ -1,9 +1,10 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type PointerEvent, type ReactElement } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type PointerEvent, type ReactElement } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import { NativeCanvas as Canvas } from "../scene/NativeCanvas.js";
 import { CaptureToneMapping } from "../scene/CaptureToneMapping.js";
 import { PlannerRenderPipeline } from "../scene/PlannerRenderPipeline.js";
-import { nativeFrameComposer } from "../../lib/native-frame-composer.js";
+import { nativeFrameComposer, nativeFramePrecompile } from "../../lib/native-frame-composer.js";
+import { requestNativePrecompile } from "../../lib/native-precompile.js";
 import { governedRender, profilePixelRatio, readRenderDeviceContext, selectRenderProfile } from "../../lib/render-quality.js";
 import { gpuProbeSettled, probeGpu, subscribeGpuProbe } from "../../lib/gpu-class.js";
 import { RenderGovernor } from "../scene/RenderGovernor.js";
@@ -207,6 +208,15 @@ function PlannerScenePrecompiler({
   const generation = useRef(0);
 
   useEffect(() => { invalidate(); }, [camera, gl, invalidate, scene, signature]);
+  // Under a composer the scene draws into its pass's own targets: the
+  // composer compiles them, queued ahead of the frames that would draw them
+  // (lib/native-precompile.ts, F-01). A frame-loop compile below would come
+  // on the very frame that draws, synchronously, too late. The composer is
+  // read when the job runs: one replaced while it waited compiles its own.
+  useLayoutEffect(() => {
+    if (nativeFramePrecompile(gl) === null) return;
+    void requestNativePrecompile(gl, (signal) => nativeFramePrecompile(gl)?.(signal) ?? Promise.resolve());
+  }, [camera, gl, scene, signature]);
   useEffect(() => () => {
     generation.current++;
     previous.current = null;
