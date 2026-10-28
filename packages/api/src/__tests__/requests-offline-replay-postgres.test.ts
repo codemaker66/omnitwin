@@ -308,6 +308,88 @@ describe.skipIf(target === undefined)("offline request steps replayed on migrate
     }
   });
 
+  it("refuses a queued step pressed against a state the request has left, and leaves a colleague's work alone", async () => {
+    const f = await fixture();
+    // Elaine presses "Could not" in the cellar while the request is still sent.
+    const key = randomUUID();
+    // Meanwhile Graham takes it and starts.
+    expect((await step(f.graham, f.requestId, { to: "accepted" }, randomUUID())).statusCode).toBe(200);
+    expect((await step(f.graham, f.requestId, { to: "underway" }, randomUUID())).statusCode).toBe(200);
+
+    const late = await step(f.elaine, f.requestId, { to: "resolved", outcome: "not_possible", expectedState: "sent" }, key);
+    expect(late.statusCode).toBe(409);
+    expect(late.json<{ code: string; error: string; ownerName: string }>()).toMatchObject({
+      code: "REQUEST_STATE_CONFLICT", error: "Graham has this now.", ownerName: "Graham",
+    });
+    const current = await row(f.requestId);
+    expect(current.state).toBe("underway");
+    expect(current.ownerUserId).toBe(f.graham);
+    expect(current.outcome).toBeNull();
+    // Refused for good: the resend is the same refusal.
+    const resent = await step(f.elaine, f.requestId, { to: "resolved", outcome: "not_possible", expectedState: "sent" }, key);
+    expect(resent.statusCode).toBe(409);
+    expect(resent.headers["idempotency-replay"]).toBe("true");
+    expect((await row(f.requestId)).state).toBe("underway");
+  });
+
+  it("applies a queued chain whose every step was pressed against the state the one before it left", async () => {
+    const f = await fixture();
+    const seen = await step(f.elaine, f.requestId, { to: "acknowledged", expectedState: "sent" }, randomUUID());
+    const taken = await step(f.elaine, f.requestId, { to: "accepted", expectedState: "acknowledged" }, randomUUID());
+    const done = await step(f.elaine, f.requestId, { to: "resolved", outcome: "done", expectedState: "accepted" }, randomUUID());
+    expect([seen.statusCode, taken.statusCode, done.statusCode]).toEqual([200, 200, 200]);
+    expect((await row(f.requestId)).state).toBe("resolved");
+  });
+
+  it("takes a key sent twice at once as one step: a handover is handed over once, an accept recorded as applied", async () => {
+    for (let round = 0; round < 20; round += 1) {
+      const f = await fixture();
+      expect((await step(f.elaine, f.requestId, { to: "accepted" }, randomUUID())).statusCode).toBe(200);
+      const key = randomUUID();
+      // Two tabs replaying one queue on the same "online".
+      const [first, second] = await Promise.all([
+        step(f.elaine, f.requestId, { to: "handed-over", toUserId: f.graham }, key),
+        step(f.elaine, f.requestId, { to: "handed-over", toUserId: f.graham }, key),
+      ]);
+      expect([first.statusCode, second.statusCode], `round ${String(round)}`).toEqual([200, 200]);
+      expect([first.headers["idempotency-replay"], second.headers["idempotency-replay"]].sort()).toEqual(["false", "true"]);
+      const handovers = (await history(f.requestId)).filter((entry) => entry.toState === "handed-over");
+      expect(handovers, `round ${String(round)}`).toHaveLength(1);
+      const ledger = await db.select().from(schema.diaryCommands).where(eq(schema.diaryCommands.commandId, key));
+      expect(ledger).toHaveLength(1);
+      expect(ledger[0]?.outcome).toBe("applied");
+    }
+    for (let round = 0; round < 20; round += 1) {
+      const f = await fixture();
+      const key = randomUUID();
+      const [first, second] = await Promise.all([
+        step(f.elaine, f.requestId, { to: "accepted" }, key),
+        step(f.elaine, f.requestId, { to: "accepted" }, key),
+      ]);
+      expect([first.statusCode, second.statusCode], `round ${String(round)}`).toEqual([200, 200]);
+      const [ledger] = await db.select().from(schema.diaryCommands).where(eq(schema.diaryCommands.commandId, key));
+      expect(ledger?.outcome).toBe("applied");
+      expect((await history(f.requestId)).filter((entry) => entry.toState === "accepted")).toHaveLength(1);
+      expect((await row(f.requestId)).ownerUserId).toBe(f.elaine);
+    }
+  }, 120_000);
+
+  it("refuses a key sent by anyone but the person who pressed it, or for another step", async () => {
+    const f = await fixture();
+    const key = randomUUID();
+    expect((await step(f.elaine, f.requestId, { to: "acknowledged" }, key)).statusCode).toBe(200);
+    // A colleague at the same venue with Elaine's key is not handed her outcome.
+    const borrowed = await step(f.graham, f.requestId, { to: "acknowledged" }, key);
+    expect(borrowed.statusCode).toBe(409);
+    expect(borrowed.json<Record<string, unknown>>()).toMatchObject({ code: "IDEMPOTENCY_KEY_REUSED" });
+    expect(borrowed.json<Record<string, unknown>>()["data"]).toBeUndefined();
+    // Nor is the same key a different step for Elaine.
+    const otherStep = await step(f.elaine, f.requestId, { to: "accepted" }, key);
+    expect(otherStep.statusCode).toBe(409);
+    expect(otherStep.json<{ code: string }>().code).toBe("IDEMPOTENCY_KEY_REUSED");
+    expect((await row(f.requestId)).state).toBe("acknowledged");
+  });
+
   it("keeps the keyless step exactly as it was: a second press meets the ladder", async () => {
     const f = await fixture();
     expect((await step(f.elaine, f.requestId, { to: "acknowledged" }, null)).statusCode).toBe(200);

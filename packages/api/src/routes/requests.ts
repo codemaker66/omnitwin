@@ -122,21 +122,23 @@ function publishRequestChange(
 // they may still handle the floor, so a queued press from someone whose
 // access has gone is refused, never applied in their old name.
 
-/** The command a step is on the conversation ledger. */
+/** The command a step is on the conversation ledger, with the state it was
+ *  pressed against when the press says (a replay from the offline queue). */
 function stepCommand(requestId: string, commandId: string, transition: RequestTransition): ConversationCommand {
+  const expected = transition.expectedState === undefined ? {} : { expectedState: transition.expectedState };
   switch (transition.to) {
     case "acknowledged":
-      return { kind: "request.acknowledge", commandId, requestId, payload: {} };
+      return { kind: "request.acknowledge", commandId, requestId, ...expected, payload: {} };
     case "accepted":
-      return { kind: "request.accept", commandId, requestId, payload: {} };
+      return { kind: "request.accept", commandId, requestId, ...expected, payload: {} };
     case "underway":
-      return { kind: "request.underway", commandId, requestId, payload: {} };
+      return { kind: "request.underway", commandId, requestId, ...expected, payload: {} };
     case "handed-over":
-      return { kind: "request.handover", commandId, requestId, payload: { toUserId: transition.toUserId } };
+      return { kind: "request.handover", commandId, requestId, ...expected, payload: { toUserId: transition.toUserId } };
     case "resolved":
-      return { kind: "request.resolve", commandId, requestId, payload: { outcome: transition.outcome, note: transition.note } };
+      return { kind: "request.resolve", commandId, requestId, ...expected, payload: { outcome: transition.outcome, note: transition.note } };
     case "reopened":
-      return { kind: "request.reopen", commandId, requestId, payload: { note: transition.note } };
+      return { kind: "request.reopen", commandId, requestId, ...expected, payload: { note: transition.note } };
     default: {
       const exhausted: never = transition;
       throw new Error(`Unhandled transition ${String(exhausted)}`);

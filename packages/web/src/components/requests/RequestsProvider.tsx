@@ -7,7 +7,14 @@ import {
   type ReactElement,
   type ReactNode,
 } from "react";
-import { summariseRequest, type RequestTransition, type VenueHandler, type VenueRequest } from "@omnitwin/types";
+import {
+  RequestStateSchema,
+  RequestTransitionSchema,
+  summariseRequest,
+  type RequestTransition,
+  type VenueHandler,
+  type VenueRequest,
+} from "@omnitwin/types";
 import { DayBoardSlotRequestsContext } from "../../pages/hallkeeper/lib/slot-requests-contract.js";
 import { ApiError } from "../../api/client.js";
 import { listVenueHandlers, listVenueRequests, makeVenueRequest, moveVenueRequest } from "../../api/requests.js";
@@ -25,6 +32,7 @@ import {
   SLOT_REQUESTS_UNAVAILABLE,
   SlotRequestsContext,
   mintRequestKey,
+  projectRequest,
   stepWords,
   type AskForSomething,
   type ReplayNotice,
@@ -103,14 +111,24 @@ function classifyStepFailure(cause: unknown): StepFailure {
 
 /** Why a replayed step was not done, in the words of the person reading it. */
 function refusalWords(op: QueuedRequestStep, cause: unknown): string {
-  const step = `Your “${stepWords(op.transition)}” on ${op.summary} was not sent.`;
-  if (cause instanceof ApiError && cause.status === 403) {
-    return `${step} This account can no longer act on this venue’s requests.`;
+  const words = `“${stepWords(op.transition)}” on ${op.summary}`;
+  // Refused for who is asking: the step may have landed before access went,
+  // so it is "not confirmed", never "not sent".
+  if (cause instanceof ApiError && (cause.status === 403 || cause.code === "IDEMPOTENCY_REQUIRES_VENUE")) {
+    return `Your ${words} could not be confirmed: this account can no longer act on this venue’s requests.`;
   }
   if (cause instanceof ApiError && cause.status === 404) {
-    return `${step} This request is no longer on the board.`;
+    return `Your ${words} was not sent. This request is no longer on the board.`;
   }
-  return `${step} ${messageFor(cause)}`;
+  return `Your ${words} was not sent. ${messageFor(cause)}`;
+}
+
+/** A kept step this page can read: one written by another version of the
+ *  page, or damaged, is never sent and never drawn. */
+function readableStep(op: QueuedRequestStep): boolean {
+  return RequestTransitionSchema.safeParse(op.transition).success
+    && RequestStateSchema.safeParse(op.expectedState).success
+    && typeof op.summary === "string";
 }
 
 export function RequestsProvider({ children }: { readonly children: ReactNode }): ReactElement {
@@ -192,7 +210,7 @@ export function RequestsProvider({ children }: { readonly children: ReactNode })
       .then((ops) => {
         const byRequest = new Map<string, WaitingStep[]>();
         for (const op of ops) {
-          if (op.kind !== "request_step" || op.venueId !== venueId) continue;
+          if (op.kind !== "request_step" || op.venueId !== venueId || !readableStep(op)) continue;
           const list = byRequest.get(op.requestId) ?? [];
           list.push({
             commandId: op.commandId,
@@ -274,12 +292,27 @@ export function RequestsProvider({ children }: { readonly children: ReactNode })
     if (!enabled || userId === null) return Promise.resolve();
     if (drainRef.current !== null) return drainRef.current;
     const refused: ReplayNotice[] = [];
+    // Requests whose earlier step was refused in this replay: this person's
+    // later steps on them were pressed on top of it, so they are not sent.
+    const overtaken = new Set<string>();
     let answered = false;
+    const say = (op: QueuedRequestStep, message: string): void => {
+      if (op.bookingId !== null) refused.push({ id: op.commandId, bookingId: op.bookingId, requestId: op.requestId, message });
+    };
     const run = drainEventDayOps((op) => {
-      if (op.kind !== "request_step" || op.venueId !== venueId || op.authorUserId !== userId) {
-        return Promise.resolve("left" as const);
+      if (op.kind !== "request_step" || op.venueId !== venueId) return Promise.resolve("left" as const);
+      // Sent only as the person who pressed it, asked again before every
+      // send: the person signed in can change while a replay runs.
+      if (op.authorUserId !== useAuthStore.getState().user?.id) return Promise.resolve("left" as const);
+      if (!readableStep(op)) {
+        say(op, "A step kept by another version of this page could not be read, so it was not sent.");
+        return Promise.resolve("refused" as const);
       }
-      return moveVenueRequest(op.requestId, op.transition, op.commandId)
+      if (overtaken.has(op.requestId)) {
+        say(op, `Your “${stepWords(op.transition)}” on ${op.summary} was not sent: the step before it was not.`);
+        return Promise.resolve("refused" as const);
+      }
+      return moveVenueRequest(op.requestId, { ...op.transition, expectedState: op.expectedState }, op.commandId)
         .then((moved) => {
           answered = true;
           merge(moved);
@@ -291,9 +324,8 @@ export function RequestsProvider({ children }: { readonly children: ReactNode })
           if (failure === "connection" || failure === "session") throw cause;
           answered = true;
           if (failure === "recorded") return "applied" as const;
-          if (op.bookingId !== null) {
-            refused.push({ id: op.commandId, bookingId: op.bookingId, requestId: op.requestId, message: refusalWords(op, cause) });
-          }
+          overtaken.add(op.requestId);
+          say(op, refusalWords(op, cause));
           return "refused" as const;
         });
     })
@@ -403,11 +435,14 @@ export function RequestsProvider({ children }: { readonly children: ReactNode })
       bookingId: request.bookingId,
       summary: summariseRequest({ kind: request.kind, quantity: request.quantity }),
       transition,
+      // What this person saw when they pressed: the server's state with their
+      // own waiting steps landed on it.
+      expectedState: projectRequest(request, waiting.get(request.id) ?? [], userId).state,
       commandId,
       authorUserId: userId,
       authorName: userName ?? "A colleague",
     }).then(() => readWaiting());
-  }, [venueId, userId, userName, readWaiting]);
+  }, [venueId, userId, userName, readWaiting, waiting]);
 
   const move = useCallback((request: VenueRequest, transition: RequestTransition): void => {
     // One key per press: sending it again is this press again, never a second step.
@@ -426,10 +461,12 @@ export function RequestsProvider({ children }: { readonly children: ReactNode })
     // A colleague's waiting step is theirs to send and holds nothing back.
     if (waiting.get(request.id)?.some((step) => step.authorUserId === userId) === true) {
       void keep(request, transition, commandId)
-        // A replay already under way listed the queue before this press:
-        // the second asks again once it has finished.
-        .then(() => drain())
-        .then(() => drain())
+        .then(() => {
+          // Kept: the card says "Waiting to send" from here. A replay already
+          // under way listed the queue before this press, so the second
+          // asks again once it has finished; neither holds the card busy.
+          void drain().then(() => drain());
+        })
         .catch(cannotKeep)
         .finally(() => { setBusyId(null); });
       return;

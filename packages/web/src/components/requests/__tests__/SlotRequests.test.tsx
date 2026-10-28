@@ -182,6 +182,7 @@ beforeEach(() => {
 afterEach(() => { cleanup(); useAuthStore.getState().setUser(null); });
 
 const FIONA = { id: "00000000-0000-4000-8000-0000000000f1", name: "Fiona", role: "staff" as const };
+const GRAHAM_BOOKING = GRAND_HALL.bookingId;
 const GRAHAM = { id: "00000000-0000-4000-8000-0000000000f2", name: "Graham", role: "hallkeeper" as const };
 
 // Goal 19 S4: the longer ladder from the slab — hand over to a named
@@ -400,17 +401,17 @@ describe("steps pressed with no connection", () => {
     return mocks.move.mock.calls[call]?.[1] as RequestTransition | undefined;
   }
 
-  /** What the replay could not do: a card of its own, read politely. */
-  async function noticeIn(place: HTMLElement): Promise<HTMLElement> {
-    const words = await within(place).findByText(/was not sent\./u);
-    const card = words.closest("li");
-    if (card === null) throw new Error("A notice is a card of its own");
-    expect(card.getAttribute("role")).toBe("status");
-    return card;
+  /** What the replay could not do: each a card of its own, read politely. */
+  function noticesIn(place: HTMLElement): readonly HTMLElement[] {
+    return [...place.querySelectorAll<HTMLElement>(".vv-request-notice")];
   }
 
-  function noticesIn(place: HTMLElement): readonly HTMLElement[] {
-    return within(place).queryAllByText(/was not sent\./u);
+  async function noticeIn(place: HTMLElement): Promise<HTMLElement> {
+    await waitFor(() => { expect(noticesIn(place).length).toBeGreaterThan(0); });
+    const card = noticesIn(place)[0];
+    if (card === undefined) throw new Error("A notice is a card of its own");
+    expect(card.getAttribute("role")).toBe("status");
+    return card;
   }
 
   async function backOnline(): Promise<void> {
@@ -445,9 +446,11 @@ describe("steps pressed with no connection", () => {
     await backOnline();
 
     await waitFor(() => { expect(mocks.move).toHaveBeenCalledTimes(2); });
-    // The replay is the same press: the same request, step and key.
+    // The replay is the same press: the same request, step and key, and the
+    // state it was pressed against. The press itself carried no expectation.
     expect(mocks.move.mock.calls[1]?.[0]).toBe(request.id);
-    expect(stepOf(1)).toEqual({ to: "acknowledged" });
+    expect(stepOf(0)).toEqual({ to: "acknowledged" });
+    expect(stepOf(1)).toEqual({ to: "acknowledged", expectedState: "sent" });
     expect(keyOf(1)).toBe(pressed);
     await waitFor(() => { expect(within(hall).queryByText("Waiting to send: Seen")).toBeNull(); });
     expect(await listPendingEventDayOps()).toEqual([]);
@@ -480,7 +483,8 @@ describe("steps pressed with no connection", () => {
     await backOnline();
 
     await waitFor(() => { expect(mocks.move).toHaveBeenCalledTimes(2); });
-    expect([stepOf(0), stepOf(1)]).toEqual([{ to: "acknowledged" }, { to: "accepted" }]);
+    // Each pressed against the state the one before it left.
+    expect([stepOf(0), stepOf(1)]).toEqual([{ to: "acknowledged", expectedState: "sent" }, { to: "accepted", expectedState: "acknowledged" }]);
     expect(keyOf(0)).not.toBe(keyOf(1));
     expect(sentBeforeReconnect).toBeGreaterThanOrEqual(1);
     await waitFor(() => { expect(within(hall).queryByText(/Waiting to send/u)).toBeNull(); });
@@ -553,7 +557,8 @@ describe("steps pressed with no connection", () => {
     await backOnline();
 
     const notice = await noticeIn(hall);
-    expect(notice.textContent).toContain("Your “Seen” on Chairs × 10 was not sent. This account can no longer act on this venue’s requests.");
+    // It may have landed before access went: "not confirmed", never "not sent".
+    expect(notice.textContent).toContain("Your “Seen” on Chairs × 10 could not be confirmed: this account can no longer act on this venue’s requests.");
     expect(await listPendingEventDayOps()).toEqual([]);
     // Refused for good: another reconnect sends nothing.
     await backOnline();
@@ -576,7 +581,7 @@ describe("steps pressed with no connection", () => {
     await backOnline();
     await waitFor(() => { expect(mocks.move).toHaveBeenCalledTimes(1); });
     // The first stopped the replay; the second was never sent ahead of it.
-    expect(stepOf(0)).toEqual({ to: "acknowledged" });
+    expect(stepOf(0)).toEqual({ to: "acknowledged", expectedState: "sent" });
     expect(within(hall).getByText("Waiting to send: Seen · I’ll do it")).toBeTruthy();
     expect(noticesIn(hall)).toHaveLength(0);
     expect(await listPendingEventDayOps()).toHaveLength(2);
@@ -587,7 +592,7 @@ describe("steps pressed with no connection", () => {
     mocks.list.mockResolvedValue([request]);
     await enqueueEventDayRequestStep({
       venueId: VENUE, requestId: request.id, bookingId: GRAND_HALL.bookingId, summary: "Chairs × 10",
-      transition: { to: "accepted" }, commandId: "00000000-0000-4000-8000-0000000000d9",
+      transition: { to: "accepted" }, expectedState: "sent", commandId: "00000000-0000-4000-8000-0000000000d9",
       authorUserId: GRAHAM.id, authorName: "Graham",
     });
     renderBoard();
@@ -606,6 +611,80 @@ describe("steps pressed with no connection", () => {
     const left = await listPendingEventDayOps();
     expect(left).toHaveLength(1);
     expect(left[0]).toMatchObject({ authorUserId: GRAHAM.id, transition: { to: "accepted" } });
+  });
+
+  it("never sends a step pressed on top of one the server refused: a kept Done does not close a colleague's work", async () => {
+    const request = chairs();
+    mocks.list.mockResolvedValue([request]);
+    mocks.move.mockRejectedValue(OFFLINE());
+    renderBoard();
+    const hall = await screen.findByRole("region", { name: "Requests for Grand Hall" });
+    fireEvent.click(await within(hall).findByRole("button", { name: "I’ll do it" }));
+    await within(hall).findByText("Waiting to send: I’ll do it");
+    fireEvent.click(within(hall).getByRole("button", { name: "Finish" }));
+    fireEvent.click(within(hall).getByRole("button", { name: "Done" }));
+    await within(hall).findByText("Waiting to send: I’ll do it · Done");
+
+    // Graham took it while this phone was in the cellar.
+    mocks.move.mockReset();
+    mocks.move.mockRejectedValueOnce(new ApiError(409, "Graham has this.", "REQUEST_TAKEN"));
+    mocks.list.mockResolvedValue([{ ...request, state: "accepted" as const, ownerUserId: GRAHAM.id, ownerName: "Graham" }]);
+    await backOnline();
+
+    await waitFor(() => { expect(noticesIn(hall)).toHaveLength(2); });
+    // Only the accept was asked; the Done behind it never left the phone.
+    expect(mocks.move).toHaveBeenCalledTimes(1);
+    expect(stepOf(0)).toEqual({ to: "accepted", expectedState: "sent" });
+    expect(hall.textContent).toContain("Your “I’ll do it” on Chairs × 10 was not sent. Graham has this.");
+    expect(hall.textContent).toContain("Your “Done” on Chairs × 10 was not sent: the step before it was not.");
+    expect(await listPendingEventDayOps()).toEqual([]);
+  });
+
+  it("stops sending a person's kept steps the moment someone else is signed in", async () => {
+    const first = chairs();
+    const second = chairs({ id: "00000000-0000-4000-8000-0000000000c2", kind: "tables", quantity: 2, createdAt: "2026-09-26T09:30:00.000Z" });
+    mocks.list.mockResolvedValue([first, second]);
+    mocks.move.mockRejectedValue(OFFLINE());
+    renderBoard();
+    const hall = await screen.findByRole("region", { name: "Requests for Grand Hall" });
+    const cards = await within(hall).findAllByRole("listitem");
+    for (const card of cards) fireEvent.click(within(card).getByRole("button", { name: "Seen" }));
+    await waitFor(async () => { expect(await listPendingEventDayOps()).toHaveLength(2); });
+
+    // The phone changes hands while the first replay is in flight.
+    mocks.move.mockReset();
+    mocks.move.mockImplementationOnce(() => {
+      useAuthStore.getState().setUser({ ...hallkeeper, id: GRAHAM.id, name: "Graham" });
+      return Promise.resolve({ ...first, state: "acknowledged" as const });
+    });
+    await backOnline();
+    await waitFor(() => { expect(mocks.move).toHaveBeenCalledTimes(1); });
+    await act(async () => { await new Promise((settle) => { setTimeout(settle, 50); }); });
+    expect(mocks.move).toHaveBeenCalledTimes(1);
+    const left = await listPendingEventDayOps();
+    expect(left).toHaveLength(1);
+    expect(left[0]).toMatchObject({ authorUserId: hallkeeper.id });
+  });
+
+  it("puts away a kept step it cannot read, says so, and still draws the board", async () => {
+    const request = chairs();
+    mocks.list.mockResolvedValue([request]);
+    const kept: RequestStepInput = {
+      venueId: VENUE, requestId: request.id, bookingId: GRAHAM_BOOKING, summary: "Chairs × 10",
+      transition: { to: "acknowledged" }, expectedState: "sent",
+      commandId: "00000000-0000-4000-8000-0000000000d8", authorUserId: hallkeeper.id, authorName: "Elaine",
+    };
+    // A step another version of the page kept, which this one does not know:
+    // what the store hands back, not what this bundle's types allow.
+    Reflect.set(kept, "transition", { to: "teleported" });
+    await enqueueEventDayRequestStep(kept);
+    renderBoard();
+    const hall = await screen.findByRole("region", { name: "Requests for Grand Hall" });
+    expect(await within(hall).findByRole("button", { name: "Seen" })).toBeTruthy();
+    expect(within(hall).queryByText(/Waiting to send/u)).toBeNull();
+    expect((await noticeIn(hall)).textContent).toContain("could not be read, so it was not sent");
+    expect(mocks.move).not.toHaveBeenCalled();
+    expect(await listPendingEventDayOps()).toEqual([]);
   });
 
   it("says a refusal that is not about the connection on the card at once, and keeps nothing", async () => {

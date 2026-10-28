@@ -104,7 +104,7 @@ describe("event-day offline queue", () => {
   const SEEN = "00000000-0000-4000-8000-00000000e001";
   const TAKE = "00000000-0000-4000-8000-00000000e002";
   const step = (commandId: string, transition: RequestStepInput["transition"]): RequestStepInput => ({
-    venueId: VENUE, requestId: REQUEST, bookingId: BOOKING, summary: "Chairs × 10", transition, commandId,
+    venueId: VENUE, requestId: REQUEST, bookingId: BOOKING, summary: "Chairs × 10", transition, expectedState: "sent", commandId,
     authorUserId: "00000000-0000-4000-8000-0000000000ff", authorName: "Elaine",
   });
 

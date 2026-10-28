@@ -10,7 +10,6 @@ import {
   nextRequestState,
   type RequestKind,
   type RequestOutcome,
-  type RequestState,
   type RequestUrgency,
   type VenueHandler,
   type VenueRequest,
@@ -23,7 +22,7 @@ import {
 import { useAuthStore } from "../../stores/auth-store.js";
 import { SlotConversation } from "../conversations/SlotConversation.js";
 import { ActivityIndicator, ActivityStatus } from "../shared/Activity.js";
-import { mintRequestKey, stepWords, useSlotRequests, type WaitingStep } from "./requests-context.js";
+import { mintRequestKey, projectRequest, stepWords, useSlotRequests, type WaitingStep } from "./requests-context.js";
 import "./slot-requests.css";
 
 // ---------------------------------------------------------------------------
@@ -94,23 +93,6 @@ function howLongAgo(iso: string, nowMs: number): string {
   return hours === 1 ? "an hour ago" : `${String(hours)} hours ago`;
 }
 
-/** Where the request stands once this person's waiting steps land, so the
- *  slab offers the next press, not one already made. Only for what to offer:
- *  the card still says what the server says. */
-function afterWaiting(request: VenueRequest, steps: readonly WaitingStep[], meId: string | null): {
-  readonly state: RequestState;
-  readonly mine: boolean;
-} {
-  let state = request.state;
-  let mine = request.ownerUserId !== null && request.ownerUserId === meId;
-  for (const step of steps) {
-    if (step.authorUserId !== meId || !nextRequestState(state, step.transition.to).ok) continue;
-    state = step.transition.to;
-    if (state === "accepted") mine = true;
-  }
-  return { state, mine };
-}
-
 /** "Waiting to send: Seen · I’ll do it", and a colleague's steps by name. */
 function waitingLines(steps: readonly WaitingStep[], meId: string | null): readonly string[] {
   const mine = steps.filter((step) => step.authorUserId === meId).map((step) => stepWords(step.transition));
@@ -141,7 +123,7 @@ function RequestCard({ request, nowMs }: {
   const senior = me !== null && (OFFICE_ROLES.includes(me.role) || me.platformRole === "admin");
   const waiting = waitingSteps(request.id);
   // L9: the next press follows the presses still waiting to send.
-  const next = afterWaiting(request, waiting, meId);
+  const next = projectRequest(request, waiting, meId);
   const mine = next.mine;
   const handedToMe = next.state === "handed-over" && request.handoverToUserId !== null && request.handoverToUserId === meId;
   const busy = busyId === request.id;

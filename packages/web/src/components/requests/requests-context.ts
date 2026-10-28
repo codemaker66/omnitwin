@@ -1,11 +1,13 @@
 import { createContext, useContext } from "react";
-import type {
-  RequestKind,
-  RequestOutcome,
-  RequestTransition,
-  RequestUrgency,
-  VenueHandler,
-  VenueRequest,
+import {
+  nextRequestState,
+  type RequestKind,
+  type RequestOutcome,
+  type RequestState,
+  type RequestTransition,
+  type RequestUrgency,
+  type VenueHandler,
+  type VenueRequest,
 } from "@omnitwin/types";
 import type { SlotRequestsProps } from "../../pages/hallkeeper/lib/slot-requests-contract.js";
 
@@ -55,6 +57,25 @@ export interface ReplayNotice {
   readonly message: string;
 }
 
+/** Where a request stands once this person's waiting steps land: the state
+ *  the next press is pressed against, and whether they will own it. Only for
+ *  what to offer and what a kept press expects; the card says what the
+ *  server says. */
+export function projectRequest(
+  request: Pick<VenueRequest, "state" | "ownerUserId">,
+  steps: readonly WaitingStep[],
+  meId: string | null,
+): { readonly state: RequestState; readonly mine: boolean } {
+  let state = request.state;
+  let mine = request.ownerUserId !== null && request.ownerUserId === meId;
+  for (const step of steps) {
+    if (step.authorUserId !== meId || !nextRequestState(state, step.transition.to).ok) continue;
+    state = step.transition.to;
+    if (state === "accepted") mine = true;
+  }
+  return { state, mine };
+}
+
 const OUTCOME_WORDS: Readonly<Record<RequestOutcome, string>> = {
   done: "Done",
   not_possible: "Could not",
@@ -84,17 +105,17 @@ export function stepWords(transition: RequestTransition): string {
   }
 }
 
-/** The same guard the mission record uses: a phone on a page served without
- *  a secure context has no randomUUID, and a request pressed there still
- *  needs a key the server can dedupe on. */
+/** A v4 UUID for a press. A phone on a page served without a secure context
+ *  has no randomUUID, but it has getRandomValues, so the key is as random
+ *  there as anywhere: it lands in a ledger shared by the whole house. */
 export function mintRequestKey(): string {
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-    return crypto.randomUUID();
-  }
-  const tail = `${Date.now().toString(16)}${Math.floor(Math.random() * 0xffff_ffff).toString(16)}`
-    .padEnd(12, "0")
-    .slice(0, 12);
-  return `00000000-0000-4000-8000-${tail}`;
+  if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  bytes[6] = ((bytes[6] ?? 0) & 0x0f) | 0x40;
+  bytes[8] = ((bytes[8] ?? 0) & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
 export interface SlotRequestsApi {

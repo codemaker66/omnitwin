@@ -3,6 +3,7 @@ import type {
   ConversationCommand,
   ConversationCommandAck,
   Message,
+  RequestTransition,
   SlotObservation,
   Thread,
   VenueRequest,
@@ -27,6 +28,7 @@ import {
 } from "./requests.js";
 import { readObservationByKey, recordObservationCore, type ObservationDeny } from "./observations.js";
 import { pushForReply, pushForRequestLanded, tell } from "./push-triggers.js";
+import { pokeEscalationScheduler } from "./escalation-wake.js";
 
 // ---------------------------------------------------------------------------
 // Conversation command dispatch (goal 19 S2; D5).
@@ -70,10 +72,15 @@ export interface ConversationCommandExecution {
 
 interface Recorded {
   readonly venueId: string;
+  readonly userId: string | null;
+  readonly kind: string;
   readonly outcome: string;
   readonly statusCode: number;
   readonly errorCode: string | null;
 }
+
+/** A Database, or the transaction a request step runs in. */
+type LedgerConn = Pick<Database, "select" | "insert">;
 
 type Deny = ConversationDeny | RequestDeny | ObservationDeny;
 
@@ -103,15 +110,18 @@ function rejected(
   };
 }
 
-async function readRecorded(db: Database, commandId: string): Promise<Recorded | null> {
+async function readRecorded(db: LedgerConn, commandId: string): Promise<Recorded | null> {
   const [row] = await db.select().from(diaryCommands).where(eq(diaryCommands.commandId, commandId)).limit(1);
   if (row === undefined) return null;
-  return { venueId: row.venueId, outcome: row.outcome, statusCode: row.statusCode, errorCode: row.errorCode };
+  return {
+    venueId: row.venueId, userId: row.userId, kind: row.kind,
+    outcome: row.outcome, statusCode: row.statusCode, errorCode: row.errorCode,
+  };
 }
 
 /** Write the ledger row; "duplicate" when the id was already recorded. */
 async function record(
-  db: Database,
+  db: LedgerConn,
   command: ConversationCommand,
   venueId: string,
   actor: RequestActor,
@@ -120,18 +130,7 @@ async function record(
   errorCode: string | null,
 ): Promise<"recorded" | "duplicate"> {
   try {
-    await db.insert(diaryCommands).values({
-      commandId: command.commandId,
-      venueId,
-      userId: actor.id,
-      kind: command.kind,
-      // Provenance for a fact about the room (D11): the booking it was
-      // seen against, with the actor and the time the ledger already keeps.
-      bookingId: command.kind === "observation.record" ? command.payload.bookingId : null,
-      outcome,
-      statusCode,
-      errorCode,
-    });
+    await db.insert(diaryCommands).values(ledgerRow(command, venueId, actor, outcome, statusCode, errorCode));
     return "recorded";
   } catch (error) {
     if (pgErrorCode(error) === PG_UNIQUE_VIOLATION) return "duplicate";
@@ -195,6 +194,14 @@ async function replay(
   if (!canManageVenue(actor, recorded.venueId)) {
     return { ack: rejected(command, 403, "FORBIDDEN", "Forbidden", nowMs, true), changed: null };
   }
+  // A key belongs to the press that minted it: the same person, the same
+  // command. Anyone else sending it is told so, never handed that outcome.
+  if (recorded.userId !== actor.id || recorded.kind !== command.kind) {
+    return {
+      ack: rejected(command, 409, "IDEMPOTENCY_KEY_REUSED", "This key was already used for a different step.", nowMs, true),
+      changed: null,
+    };
+  }
   const state = await freshState(db, actor, command, recorded.venueId);
   if (isDeny(state)) {
     return { ack: rejected(command, state.status, state.code, state.error, nowMs, true), changed: null };
@@ -222,6 +229,116 @@ interface Applied {
   readonly replay: boolean;
   readonly changed: ConversationChanged | null;
   readonly ack: FreshState;
+}
+
+type RequestStepCommand = Extract<ConversationCommand, { readonly requestId: string }>;
+
+function isRequestStep(command: ConversationCommand): command is RequestStepCommand {
+  return "requestId" in command;
+}
+
+/** The step a request command takes, with the state it was pressed against. */
+function transitionOf(command: RequestStepCommand): RequestTransition {
+  const expected = command.expectedState === undefined ? {} : { expectedState: command.expectedState };
+  switch (command.kind) {
+    case "request.acknowledge": return { to: "acknowledged", ...expected };
+    case "request.accept": return { to: "accepted", ...expected };
+    case "request.underway": return { to: "underway", ...expected };
+    case "request.handover": return { to: "handed-over", toUserId: command.payload.toUserId, ...expected };
+    case "request.resolve": return { to: "resolved", outcome: command.payload.outcome, note: command.payload.note, ...expected };
+    case "request.reopen": return { to: "reopened", note: command.payload.note, ...expected };
+    default: {
+      const exhausted: never = command;
+      throw new Error(`Unhandled request step ${String(exhausted)}`);
+    }
+  }
+}
+
+type StepRun =
+  | { readonly kind: "recorded"; readonly recorded: Recorded }
+  | { readonly kind: "applied"; readonly request: VenueRequest }
+  | { readonly kind: "denied"; readonly deny: RequestDeny };
+
+/**
+ * A request step (L9). Reading the ledger, taking the step and recording it
+ * happen in ONE transaction, behind a lock on the request's row: the same key
+ * sent twice at once (two tabs replaying one offline queue, a socket and a
+ * REST retry) is one step, a crash cannot leave a step taken and unrecorded,
+ * and an accept that landed is never recorded as refused. A handover is not
+ * idempotent through the ladder (handed-over → handed-over is a step), so the
+ * ladder alone could not promise this.
+ */
+async function executeRequestStep(
+  db: Database,
+  actor: RequestActor,
+  connectionVenueId: string,
+  command: RequestStepCommand,
+  now: () => number,
+): Promise<ConversationCommandExecution> {
+  let run: StepRun;
+  try {
+    run = await db.transaction(async (tx): Promise<StepRun> => {
+      await tx.select({ id: requests.id }).from(requests).where(eq(requests.id, command.requestId)).for("update");
+      const already = await readRecorded(tx, command.commandId);
+      if (already !== null) return { kind: "recorded", recorded: already };
+      const result = await transitionRequestCore(tx, actor, command.requestId, transitionOf(command));
+      if (isDeny(result)) {
+        await tx.insert(diaryCommands).values(ledgerRow(command, connectionVenueId, actor, "rejected", result.status, result.code));
+        return { kind: "denied", deny: result };
+      }
+      await tx.insert(diaryCommands).values(ledgerRow(command, connectionVenueId, actor, "applied", 200, null));
+      return { kind: "applied", request: result.request };
+    });
+  } catch (error) {
+    // The key was recorded by another request's step in the meantime (a
+    // reused key): its outcome is replayed, or refused, never re-run.
+    if (pgErrorCode(error) !== PG_UNIQUE_VIOLATION) throw error;
+    const recorded = await readRecorded(db, command.commandId);
+    if (recorded === null) throw error;
+    run = { kind: "recorded", recorded };
+  }
+  const nowMs = now();
+  if (run.kind === "recorded") return replay(db, actor, command, run.recorded, nowMs);
+  if (run.kind === "denied") {
+    const ownerName = run.deny.ownerName;
+    return { ack: rejected(command, run.deny.status, run.deny.code, run.deny.error, nowMs, false, ownerName), changed: null };
+  }
+  // Committed: a handover's relief deadline is now there for the scheduler.
+  if (command.kind === "request.handover") pokeEscalationScheduler();
+  return {
+    ack: {
+      type: "conversation.ack",
+      commandId: command.commandId,
+      outcome: "applied",
+      replay: false,
+      status: 200,
+      request: run.request,
+      serverNowMs: nowMs,
+    },
+    changed: { kind: "request.updated", request: run.request, notificationIds: [] },
+  };
+}
+
+function ledgerRow(
+  command: ConversationCommand,
+  venueId: string,
+  actor: RequestActor,
+  outcome: "applied" | "rejected",
+  statusCode: number,
+  errorCode: string | null,
+): typeof diaryCommands.$inferInsert {
+  return {
+    commandId: command.commandId,
+    venueId,
+    userId: actor.id,
+    kind: command.kind,
+    // Provenance for a fact about the room (D11): the booking it was
+    // seen against, with the actor and the time the ledger already keeps.
+    bookingId: command.kind === "observation.record" ? command.payload.bookingId : null,
+    outcome,
+    statusCode,
+    errorCode,
+  };
 }
 
 async function runCore(
@@ -261,24 +378,10 @@ async function runCore(
     case "request.underway":
     case "request.handover":
     case "request.resolve":
-    case "request.reopen": {
-      const transition = command.kind === "request.acknowledge" ? { to: "acknowledged" as const }
-        : command.kind === "request.accept" ? { to: "accepted" as const }
-          : command.kind === "request.underway" ? { to: "underway" as const }
-            : command.kind === "request.handover" ? { to: "handed-over" as const, toUserId: command.payload.toUserId }
-              : command.kind === "request.resolve"
-                ? { to: "resolved" as const, outcome: command.payload.outcome, note: command.payload.note }
-                : { to: "reopened" as const, note: command.payload.note };
-      const result = await transitionRequestCore(db, actor, command.requestId, transition);
-      if (isDeny(result)) return result;
-      return {
-        ok: true,
-        status: 200,
-        replay: false,
-        changed: { kind: "request.updated", request: result.request, notificationIds: [] },
-        ack: { request: result.request },
-      };
-    }
+    case "request.reopen":
+      // Request steps run in executeRequestStep, in one transaction with
+      // their ledger row; nothing reaches here with one.
+      throw new Error(`${command.kind} runs in executeRequestStep`);
     case "observation.record": {
       // A fact about the room (goal 19 S5): the core is idempotent on
       // (venue, key), so the same tap over a dying socket and over REST is
@@ -307,6 +410,8 @@ export async function executeConversationCommand(
   command: ConversationCommand,
   now: () => number = () => Date.now(),
 ): Promise<ConversationCommandExecution> {
+  if (isRequestStep(command)) return executeRequestStep(db, actor, connectionVenueId, command, now);
+
   const already = await readRecorded(db, command.commandId);
   if (already !== null) return replay(db, actor, command, already, now());
 

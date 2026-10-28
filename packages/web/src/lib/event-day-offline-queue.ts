@@ -1,6 +1,7 @@
 import type {
   CreateEventDayIssueInput,
   RecordObservation,
+  RequestState,
   RequestTransition,
   UpdateOpsTaskStatusInput,
 } from "@omnitwin/types";
@@ -58,6 +59,9 @@ export interface QueuedRequestStep {
   /** What was asked ("Chairs × 10"), for those words. */
   readonly summary: string;
   readonly transition: RequestTransition;
+  /** The state the request was in, as this person saw it, when the step was
+   *  pressed: the replay is refused if the request has moved on since. */
+  readonly expectedState: RequestState;
   readonly commandId: string;
   readonly authorUserId: string;
   readonly authorName: string;

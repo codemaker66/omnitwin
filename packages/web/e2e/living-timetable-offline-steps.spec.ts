@@ -136,10 +136,12 @@ test.describe("A request step pressed with no connection", () => {
     await expect(requestsRegion(page).getByText("Waiting to send: I’ll do it")).toHaveCount(0);
     await expect(requestsRegion(page).getByRole("listitem").first().locator(".vv-request-who")).toContainText("Elaine");
 
-    // Every send of it was the same press: the same step under the same key.
+    // Every send of it was the same press: the same step under the same key;
+    // the replays also say the state it was pressed against.
     const sent = house.steps;
     expect(sent.length).toBeGreaterThanOrEqual(2);
-    expect(sent.every((step) => JSON.stringify(step.body) === JSON.stringify({ to: "accepted" }))).toBe(true);
+    expect(sent[0]?.body).toEqual({ to: "accepted" });
+    for (const replay of sent.slice(1)) expect(replay.body).toEqual({ to: "accepted", expectedState: "sent" });
     const key = sent[0]?.key ?? null;
     expect(key).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u);
     expect(sent.every((step) => step.key === key)).toBe(true);
