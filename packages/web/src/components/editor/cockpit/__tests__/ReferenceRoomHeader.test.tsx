@@ -5,6 +5,7 @@ import { getVenue, type VenueDetail } from "../../../../api/spaces.js";
 import { useEditorStore, type EditorSaveConflict } from "../../../../stores/editor-store.js";
 import { useAuthStore } from "../../../../stores/auth-store.js";
 import { useLayoutTimelinePreviewStore } from "../../../../stores/layout-timeline-preview-store.js";
+import { useChromePresenceStore } from "../../../../stores/chrome-presence-store.js";
 import { ReferenceRoomHeader } from "../ReferenceRoomHeader.js";
 
 vi.mock("../../../../api/spaces.js", async (importOriginal) => ({
@@ -63,7 +64,13 @@ afterEach(() => {
   cleanup();
   useEditorStore.setState({ saveToServer: originalSave, reloadAfterConflict: originalReload, saveConflict: null });
   useLayoutTimelinePreviewStore.getState().clear();
+  useChromePresenceStore.getState().resetCleared();
 });
+
+/** The venue's crest: since T-680 its own button (the switch for the tools), beside the name that goes home. */
+function crest(): HTMLElement {
+  return screen.getByRole("button", { name: /the tools$/u });
+}
 
 const CHANGED_ELSEWHERE: EditorSaveConflict = {
   expectedRevision: 1, currentRevision: 2, message: "Changed",
@@ -92,7 +99,7 @@ describe("ReferenceRoomHeader", () => {
     expect(venueRequest).toHaveBeenCalledWith(tradesHall.id);
     expect(venueRequest).not.toHaveBeenCalledWith(cityRooms.id);
     expect(identity.textContent).toContain("Grand Hall");
-    expect(identity.querySelector("img")?.getAttribute("src")).toBe("/images/venues/trades-hall-glasgow-crest-200.webp");
+    expect(crest().querySelector("img")?.getAttribute("src")).toBe("/images/venues/trades-hall-glasgow-crest-200.webp");
     expect(screen.queryByText("VENVIEWER")).toBeNull();
   });
 
@@ -100,8 +107,8 @@ describe("ReferenceRoomHeader", () => {
     venueRequest.mockResolvedValue(cityRooms);
     useEditorStore.setState({ venueId: cityRooms.id });
     showHeader();
-    const identity = await screen.findByRole("link", { name: "City Rooms diary" });
-    expect(identity.querySelector("img")?.getAttribute("src")).toBe(cityRooms.logoUrl);
+    await screen.findByRole("link", { name: "City Rooms diary" });
+    expect(crest().querySelector("img")?.getAttribute("src")).toBe(cityRooms.logoUrl);
     act(() => { useAuthStore.setState({ isAuthenticated: false }); });
     expect(screen.getByRole("link", { name: "City Rooms home" }).getAttribute("href")).toBe("/");
   });
@@ -117,8 +124,8 @@ describe("ReferenceRoomHeader", () => {
     await act(async () => { second.resolve(cityRooms); await second.promise; });
     expect(screen.getByRole("link", { name: "City Rooms diary" })).toBeTruthy();
     await act(async () => { first.resolve(tradesHall); await first.promise; });
-    const identity = screen.getByRole("link", { name: "City Rooms diary" });
-    expect(identity.querySelector("img")?.getAttribute("src")).toBe(cityRooms.logoUrl);
+    expect(screen.getByRole("link", { name: "City Rooms diary" })).toBeTruthy();
+    expect(crest().querySelector("img")?.getAttribute("src")).toBe(cityRooms.logoUrl);
     expect(screen.queryByRole("link", { name: "Trades Hall of Glasgow diary" })).toBeNull();
   });
 
@@ -129,12 +136,12 @@ describe("ReferenceRoomHeader", () => {
     showHeader();
     await screen.findByRole("link", { name: "Trades Hall of Glasgow diary" });
     act(() => { useEditorStore.setState({ venueId: cityRooms.id }); });
-    const pending = screen.getByRole("link", { name: "Venue planner diary" });
-    expect(pending.querySelector("img")).toBeNull();
+    expect(screen.getByRole("link", { name: "Venue planner diary" })).toBeTruthy();
+    expect(crest().querySelector("img")).toBeNull();
     expect(screen.queryByRole("link", { name: "Trades Hall of Glasgow diary" })).toBeNull();
     await act(async () => { second.reject(new Error("Venue lookup failed")); await second.promise.catch(() => undefined); });
     const unavailable = screen.getByRole("link", { name: "Venue unavailable diary" });
-    expect(unavailable.querySelector("img")).toBeNull();
+    expect(crest().querySelector("img")).toBeNull();
     expect(unavailable.querySelector("[data-activity-indicator]")).toBeNull();
   });
 
@@ -142,9 +149,9 @@ describe("ReferenceRoomHeader", () => {
     venueRequest.mockResolvedValue({ ...cityRooms, logoUrl: null });
     useEditorStore.setState({ venueId: cityRooms.id });
     showHeader();
-    const identity = await screen.findByRole("link", { name: "City Rooms diary" });
-    expect(identity.querySelector("img")).toBeNull();
-    expect(identity.querySelector("svg")).not.toBeNull();
+    await screen.findByRole("link", { name: "City Rooms diary" });
+    expect(crest().querySelector("img")).toBeNull();
+    expect(crest().querySelector("svg")).not.toBeNull();
   });
 
   it("falls back to a neutral mark if the selected venue's logo fails to load", async () => {
@@ -152,13 +159,35 @@ describe("ReferenceRoomHeader", () => {
     useEditorStore.setState({ venueId: cityRooms.id });
     showHeader();
     const identity = await screen.findByRole("link", { name: "City Rooms diary" });
-    const logo = identity.querySelector("img");
+    const logo = crest().querySelector("img");
     expect(logo).not.toBeNull();
     if (logo === null) throw new Error("Expected the venue logo before simulating a failed image load");
     fireEvent.error(logo);
-    expect(identity.querySelector("img")).toBeNull();
-    expect(identity.querySelector("svg")).not.toBeNull();
+    expect(crest().querySelector("img")).toBeNull();
+    expect(crest().querySelector("svg")).not.toBeNull();
     expect(identity.textContent).toContain("City Rooms");
+  });
+
+  // Blake, 28 Oct 2026: "Crest hides; name goes home" (T-680).
+  it("the crest hides and shows the tools, and the name still goes home", async () => {
+    venueRequest.mockResolvedValue(cityRooms);
+    useEditorStore.setState({ venueId: cityRooms.id });
+    showHeader();
+    const home = await screen.findByRole("link", { name: "City Rooms diary" });
+    expect(home.getAttribute("href")).toBe("/diary");
+    expect(home.querySelector("img")).toBeNull();
+
+    const hide = screen.getByRole("button", { name: "Hide the tools" });
+    expect(hide.getAttribute("aria-keyshortcuts")).toBe("\\");
+    expect(hide.getAttribute("data-label")).toBe("Hide the tools · \\");
+    fireEvent.click(hide);
+    expect(useChromePresenceStore.getState().cleared).toBe(true);
+
+    const show = screen.getByRole("button", { name: "Show the tools" });
+    expect(show.getAttribute("data-label")).toBe("Show the tools · \\");
+    fireEvent.click(show);
+    expect(useChromePresenceStore.getState().cleared).toBe(false);
+    expect(screen.getByRole("button", { name: "Hide the tools" })).toBeTruthy();
   });
 
   it("checks the live preview lock even before React replaces the prior click handler", () => {

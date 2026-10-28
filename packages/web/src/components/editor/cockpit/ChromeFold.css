@@ -1,0 +1,629 @@
+/* The planner's chrome folds away (T-680; ChromeFold.tsx).
+
+   Every rule reads the state ChromeFold mirrors onto <html>:
+     data-planner-fold-{left|right|top|bottom} = "folded" | "unfolding"
+     data-planner-chrome = "cleared" | "restoring"
+     data-planner-chrome-motion = "instant" (the keyboard did it)
+   so units rendered deep inside App, or outside the cockpit, fold without
+   their own components changing. Motion lives only in those states: at rest
+   every unit keeps exactly the CSS it had. A unit leaves toward its own edge
+   (12 px, 0.96 from that edge, fading) and cannot be reached once it has
+   gone; it stays mounted. Transform and opacity only, no blur, no sound. */
+
+:root {
+  --planner-chrome-out: var(--house-motion-reveal, 180ms);
+  --planner-chrome-in: var(--house-motion-deliberate, 240ms);
+  --planner-chrome-ease: var(--house-ease-out, cubic-bezier(0.23, 1, 0.32, 1));
+}
+
+/* ---- The crest: the switch, and the one mark left on a cleared screen ---- */
+
+.reference-identity {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+
+.reference-identity .reference-wordmark {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.reference-crest {
+  position: relative;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  min-width: 36px;
+  min-height: 40px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  transition: scale var(--house-motion-press, 120ms) var(--planner-chrome-ease);
+}
+
+.reference-crest img {
+  display: block;
+  object-fit: contain;
+}
+
+.reference-crest:active {
+  scale: 0.97;
+}
+
+/* Its name, beside it, when the hand or the keyboard reaches it. */
+.reference-crest::after {
+  content: attr(data-label);
+  position: absolute;
+  left: calc(100% + 8px);
+  top: 50%;
+  translate: 0 -50%;
+  padding: 5px 9px;
+  border: 1px solid var(--cockpit-hairline);
+  border-radius: 6px;
+  background: var(--house-bg-2);
+  color: var(--house-text-1);
+  font: 500 11px/1.3 Inter, system-ui, sans-serif;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--house-motion-hover, 120ms) var(--planner-chrome-ease);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .reference-crest:hover::after {
+    opacity: 1;
+    transition-delay: 400ms;
+  }
+}
+
+.reference-crest:focus-visible::after {
+  opacity: 1;
+}
+
+/* ---- Spines: a folded unit, at its own edge ---- */
+
+.chrome-spine {
+  position: absolute;
+  z-index: 28;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  padding: 12px 0;
+  border: 1px solid var(--cockpit-hairline);
+  border-radius: 7px;
+  background: var(--cockpit-smoke);
+  box-shadow: 0 12px 38px rgba(0, 0, 0, 0.16);
+  color: var(--house-text-2);
+  font: 500 11px/1.2 Inter, system-ui, sans-serif;
+  cursor: pointer;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity var(--planner-chrome-out) var(--planner-chrome-ease),
+    translate var(--planner-chrome-out) var(--planner-chrome-ease),
+    color var(--house-motion-hover, 120ms) var(--planner-chrome-ease),
+    visibility 0s linear var(--planner-chrome-out);
+}
+
+.chrome-spine--left {
+  left: 12px;
+  top: 14px;
+  width: 40px;
+  translate: -6px 0;
+}
+
+.chrome-spine--right {
+  right: 14px;
+  top: 14px;
+  width: 40px;
+  translate: 6px 0;
+}
+
+.chrome-spine--top,
+.chrome-spine--bottom {
+  left: 50%;
+  width: 56px;
+  height: 30px;
+  padding: 0;
+  justify-content: center;
+  border-radius: 999px;
+}
+
+.chrome-spine--top {
+  top: 21px;
+  translate: -50% -6px;
+}
+
+.chrome-spine--bottom {
+  bottom: 14px;
+  translate: -50% 6px;
+}
+
+.chrome-spine__label {
+  writing-mode: vertical-rl;
+  color: var(--house-text-1);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* The left spine reads up, as a spine on the left of a shelf does. */
+.chrome-spine--left .chrome-spine__label,
+.chrome-spine--left .chrome-spine__trouble {
+  rotate: 180deg;
+}
+
+.chrome-spine__count {
+  color: var(--house-accent-copper-bright);
+  font-variant-numeric: tabular-nums;
+}
+
+.chrome-spine__detail,
+.chrome-spine__trouble {
+  writing-mode: vertical-rl;
+  max-block-size: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chrome-spine__detail {
+  color: var(--house-text-2);
+}
+
+.chrome-spine__trouble {
+  color: var(--house-status-amber);
+}
+
+.chrome-glyph {
+  display: block;
+  flex-shrink: 0;
+}
+
+.chrome-glyph path {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .chrome-spine:hover {
+    color: var(--house-accent-copper-bright);
+  }
+}
+
+.chrome-spine:focus-visible,
+.chrome-fold-mark:focus-visible,
+.reference-crest:focus-visible,
+.chrome-phone-seal:focus-visible {
+  outline: var(--vv-focus-ring);
+  outline-offset: var(--vv-focus-ring-offset);
+}
+
+/* A folded unit's spine arrives as the unit leaves. */
+html[data-planner-fold-left="folded"]:not([data-planner-chrome="cleared"]) .chrome-spine--left,
+html[data-planner-fold-right="folded"]:not([data-planner-chrome="cleared"]) .chrome-spine--right,
+html[data-planner-fold-top="folded"]:not([data-planner-chrome="cleared"]) .chrome-spine--top,
+html[data-planner-fold-bottom="folded"]:not([data-planner-chrome="cleared"]) .chrome-spine--bottom {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transition:
+    opacity var(--planner-chrome-in) var(--planner-chrome-ease),
+    translate var(--planner-chrome-in) var(--planner-chrome-ease),
+    color var(--house-motion-hover, 120ms) var(--planner-chrome-ease),
+    visibility 0s linear 0s;
+}
+
+html[data-planner-fold-left="folded"]:not([data-planner-chrome="cleared"]) .chrome-spine--left,
+html[data-planner-fold-right="folded"]:not([data-planner-chrome="cleared"]) .chrome-spine--right {
+  translate: 0 0;
+}
+
+html[data-planner-fold-top="folded"]:not([data-planner-chrome="cleared"]) .chrome-spine--top,
+html[data-planner-fold-bottom="folded"]:not([data-planner-chrome="cleared"]) .chrome-spine--bottom {
+  translate: -50% 0;
+}
+
+/* The tool bar belongs to the Design lens alone, and so does its spine. */
+.cockpit-stage:not([data-cockpit-mode="design"]) :is(.chrome-spine--top, .chrome-fold-mark--top) {
+  display: none;
+}
+
+/* ---- Fold marks: shown when the hand reaches for a unit ---- */
+
+.chrome-fold-mark {
+  position: absolute;
+  z-index: 29;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--house-text-2);
+  cursor: pointer;
+  /* Invisible at rest but still in the tab order: focus shows it. */
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity var(--house-motion-hover, 120ms) var(--planner-chrome-ease) 160ms,
+    color var(--house-motion-hover, 120ms) var(--planner-chrome-ease);
+}
+
+/* Inside the left dock, at the foot of the lens rail. */
+.reference-left-dock > .chrome-fold-mark--left {
+  left: 7px;
+  bottom: 10px;
+  width: 40px;
+  height: 36px;
+  border-radius: 5px;
+}
+
+/* The right dock's outer top corner. */
+.chrome-fold-mark--right {
+  top: 23px;
+  right: 23px;
+  width: 36px;
+  height: 36px;
+  border-radius: 5px;
+}
+
+/* Small tabs on the tool bar's lower edge and the bottom bar's upper edge. */
+.chrome-fold-mark--top,
+.chrome-fold-mark--bottom {
+  left: 50%;
+  translate: -50% 0;
+  width: 44px;
+  height: 22px;
+  border: 1px solid var(--cockpit-hairline);
+  background: var(--cockpit-smoke);
+}
+
+.chrome-fold-mark--top {
+  top: 66px;
+  border-top: 0;
+  border-radius: 0 0 8px 8px;
+}
+
+.chrome-fold-mark--bottom {
+  bottom: 188px;
+  border-bottom: 0;
+  border-radius: 8px 8px 0 0;
+}
+
+.reference-viewer:has(> .cockpit-bottom:not(.is-collapsed)) .chrome-fold-mark--bottom {
+  bottom: 410px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .reference-left-dock:hover > .chrome-fold-mark--left,
+  html:has(.reference-viewer > :is(.reference-inspector-dock, .lens-panel, .cockpit-truth, .cockpit-panel:not(.cockpit-preview-lock)):hover) .chrome-fold-mark--right,
+  html:has(:is(.reference-viewer .planner-tool-pill, .reference-more-tools):hover) .chrome-fold-mark--top,
+  html:has(:is(.reference-viewer .planner-command-deck, .reference-layer-controls, .reference-viewer > .cockpit-bottom):hover) .chrome-fold-mark--bottom,
+  .chrome-fold-mark:hover {
+    opacity: 1;
+    pointer-events: auto;
+    transition-delay: 0s;
+  }
+
+  .chrome-fold-mark:hover {
+    color: var(--house-accent-copper-bright);
+  }
+}
+
+.chrome-fold-mark:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Without hover (a touch screen on the desktop cockpit) the marks are always there. */
+@media (hover: none) {
+  .chrome-fold-mark {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+/* A folded or cleared unit's mark has gone with it. */
+html[data-planner-fold-right="folded"] .chrome-fold-mark--right,
+html[data-planner-fold-top="folded"] .chrome-fold-mark--top,
+html[data-planner-fold-bottom="folded"] .chrome-fold-mark--bottom,
+html[data-planner-chrome="cleared"] .chrome-fold-mark {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* ---- Folding the four units ---- */
+
+html[data-planner-fold-left="folded"] .reference-left-dock,
+html[data-planner-fold-right="folded"] :is(.reference-viewer > :is(.reference-inspector-dock, .lens-panel, .cockpit-truth, .cockpit-panel:not(.cockpit-preview-lock)), .reference-view-switch, .reference-handoff-action, .reference-event-details),
+html[data-planner-fold-top="folded"] :is(.reference-viewer .planner-tool-pill, .reference-more-tools),
+html[data-planner-fold-bottom="folded"] :is(.reference-viewer > .cockpit-bottom, .reference-viewer .planner-command-deck.is-reference-compact, .reference-layer-controls),
+html[data-planner-chrome="cleared"] :is(.reference-viewer > :is(.reference-inspector-dock, .lens-panel, .cockpit-truth, .cockpit-panel:not(.cockpit-preview-lock)), .reference-view-switch, .reference-handoff-action, .reference-event-details, .reference-viewer .planner-tool-pill, .reference-more-tools, .reference-viewer > .cockpit-bottom, .reference-viewer .planner-command-deck.is-reference-compact, .reference-layer-controls, .reference-viewer .reference-when-ribbon, .vv-floating-widget, [data-chrome-surface]) {
+  opacity: 0;
+  scale: 0.96;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity var(--planner-chrome-out) var(--planner-chrome-ease),
+    translate var(--planner-chrome-out) var(--planner-chrome-ease),
+    scale var(--planner-chrome-out) var(--planner-chrome-ease),
+    visibility 0s linear var(--planner-chrome-out);
+}
+
+/* Each toward its own edge. Centred units (translateX(-50%) in their own
+   CSS) scale about their left edge, which is their visual centre, and move
+   with `translate`, which never overwrites that centring. */
+html[data-planner-fold-left="folded"] .reference-left-dock {
+  translate: -12px 0;
+  transform-origin: left center;
+}
+
+html[data-planner-fold-right="folded"] :is(.reference-viewer > :is(.reference-inspector-dock, .lens-panel, .cockpit-truth, .cockpit-panel:not(.cockpit-preview-lock)), .reference-view-switch, .reference-handoff-action, .reference-event-details),
+html[data-planner-chrome="cleared"] :is(.reference-viewer > :is(.reference-inspector-dock, .lens-panel, .cockpit-truth, .cockpit-panel:not(.cockpit-preview-lock)), .reference-view-switch, .reference-handoff-action, .reference-event-details) {
+  translate: 12px 0;
+  transform-origin: right center;
+}
+
+html[data-planner-fold-top="folded"] :is(.reference-viewer .planner-tool-pill, .reference-more-tools),
+html[data-planner-chrome="cleared"] :is(.reference-viewer .planner-tool-pill, .reference-more-tools) {
+  translate: 0 -12px;
+  transform-origin: left top;
+}
+
+html[data-planner-fold-bottom="folded"] :is(.reference-viewer .planner-command-deck.is-reference-compact, .reference-layer-controls),
+html[data-planner-chrome="cleared"] :is(.reference-viewer .planner-command-deck.is-reference-compact, .reference-layer-controls) {
+  translate: 0 12px;
+  transform-origin: left bottom;
+}
+
+html[data-planner-fold-bottom="folded"] .reference-viewer > .cockpit-bottom,
+html[data-planner-chrome="cleared"] .reference-viewer > .cockpit-bottom {
+  translate: 0 12px;
+  transform-origin: center bottom;
+}
+
+/* Coming back: the same path in reverse, a little slower (240 ms in, 180 out). */
+html[data-planner-fold-left="unfolding"] .reference-left-dock,
+html[data-planner-fold-right="unfolding"] :is(.reference-viewer > :is(.reference-inspector-dock, .lens-panel, .cockpit-truth, .cockpit-panel:not(.cockpit-preview-lock)), .reference-view-switch, .reference-handoff-action, .reference-event-details),
+html[data-planner-fold-top="unfolding"] :is(.reference-viewer .planner-tool-pill, .reference-more-tools),
+html[data-planner-fold-bottom="unfolding"] :is(.reference-viewer > .cockpit-bottom, .reference-viewer .planner-command-deck.is-reference-compact, .reference-layer-controls),
+html[data-planner-chrome="restoring"] :is(.reference-left-dock, .reference-viewer > :is(.reference-inspector-dock, .lens-panel, .cockpit-truth, .cockpit-panel:not(.cockpit-preview-lock)), .reference-view-switch, .reference-handoff-action, .reference-event-details, .reference-viewer .planner-tool-pill, .reference-more-tools, .reference-viewer > .cockpit-bottom, .reference-viewer .planner-command-deck.is-reference-compact, .reference-layer-controls, .reference-viewer .reference-when-ribbon, .vv-floating-widget, [data-chrome-surface]) {
+  transition:
+    opacity var(--planner-chrome-in) var(--planner-chrome-ease),
+    translate var(--planner-chrome-in) var(--planner-chrome-ease),
+    scale var(--planner-chrome-in) var(--planner-chrome-ease),
+    background-color var(--planner-chrome-in) var(--planner-chrome-ease),
+    border-color var(--planner-chrome-in) var(--planner-chrome-ease),
+    box-shadow var(--planner-chrome-in) var(--planner-chrome-ease),
+    visibility 0s linear 0s;
+}
+
+html[data-planner-fold-left="unfolding"] .reference-left-dock {
+  transform-origin: left center;
+}
+
+html[data-planner-fold-right="unfolding"] :is(.reference-viewer > :is(.reference-inspector-dock, .lens-panel, .cockpit-truth, .cockpit-panel:not(.cockpit-preview-lock)), .reference-view-switch, .reference-handoff-action, .reference-event-details) {
+  transform-origin: right center;
+}
+
+html[data-planner-fold-top="unfolding"] :is(.reference-viewer .planner-tool-pill, .reference-more-tools) {
+  transform-origin: left top;
+}
+
+html[data-planner-fold-bottom="unfolding"] :is(.reference-viewer .planner-command-deck.is-reference-compact, .reference-layer-controls) {
+  transform-origin: left bottom;
+}
+
+/* Whatever sits beside a folded left dock moves in beside its spine. */
+html[data-planner-fold-left="folded"] .reference-viewer [data-testid="furniture-panel"] {
+  left: 66px !important;
+}
+
+html[data-planner-fold-left="folded"] .reference-viewer .reference-when-ribbon,
+html[data-planner-fold-left="folded"] .reference-viewer .layout-timeline-preview-caption {
+  left: 66px;
+  inset-inline-start: 66px;
+}
+
+/* Live co-editing presence stays on screen (it is the truth about who else is
+   here); it moves in beside a folded or cleared right dock. */
+html[data-planner-fold-right="folded"] .layout-live-layer:not(.is-mobile) {
+  right: 66px;
+}
+
+html[data-planner-chrome="cleared"] .layout-live-layer:not(.is-mobile) {
+  right: 14px;
+}
+
+/* ---- Clear-all: the hall alone, and the crest ---- */
+
+/* The left dock stays exactly where it is; its plate and everything in it
+   fade, and the crest alone stays, perfectly still. */
+html[data-planner-chrome="cleared"] .reference-left-dock {
+  translate: none;
+  scale: none;
+  opacity: 1;
+  border-color: transparent;
+  background-color: transparent;
+  box-shadow: none;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    background-color var(--planner-chrome-out) var(--planner-chrome-ease),
+    border-color var(--planner-chrome-out) var(--planner-chrome-ease),
+    box-shadow var(--planner-chrome-out) var(--planner-chrome-ease),
+    visibility 0s linear var(--planner-chrome-out);
+}
+
+html[data-planner-chrome="cleared"] .reference-left-dock > :not(.reference-left-content),
+html[data-planner-chrome="cleared"] .reference-left-content > :not(.reference-room-header),
+html[data-planner-chrome="cleared"] .reference-room-header > :not(.reference-identity),
+html[data-planner-chrome="cleared"] .reference-identity > :not(.reference-crest) {
+  opacity: 0;
+  transition: opacity var(--planner-chrome-out) var(--planner-chrome-ease);
+}
+
+html[data-planner-chrome="cleared"] .reference-room-header {
+  border-bottom-color: transparent;
+  transition: border-color var(--planner-chrome-out) var(--planner-chrome-ease);
+}
+
+html[data-planner-chrome="cleared"] .reference-crest {
+  visibility: visible;
+  pointer-events: auto;
+}
+
+html[data-planner-chrome="restoring"] .reference-left-dock > :not(.reference-left-content),
+html[data-planner-chrome="restoring"] .reference-left-content > :not(.reference-room-header),
+html[data-planner-chrome="restoring"] .reference-room-header > :not(.reference-identity),
+html[data-planner-chrome="restoring"] .reference-identity > :not(.reference-crest) {
+  transition: opacity var(--planner-chrome-in) var(--planner-chrome-ease);
+}
+
+html[data-planner-chrome="restoring"] .reference-room-header {
+  transition: border-color var(--planner-chrome-in) var(--planner-chrome-ease);
+}
+
+/* Every spine goes too: the crest is the one way back. */
+html[data-planner-chrome="cleared"] .chrome-spine {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* Phones: the top bar, the dock and the sheets go; the phone seal stays. */
+html[data-planner-chrome="cleared"] :is([data-testid="mobile-planner-topbar"], .mobile-planner-dock, .mobile-planner-utilities, .cockpit-shell.is-mobile > .cockpit-bottom, .lens-sheet-layer) {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity var(--planner-chrome-out) var(--planner-chrome-ease),
+    visibility 0s linear var(--planner-chrome-out);
+}
+
+html[data-planner-chrome="restoring"] :is([data-testid="mobile-planner-topbar"], .mobile-planner-dock, .mobile-planner-utilities, .cockpit-shell.is-mobile > .cockpit-bottom, .lens-sheet-layer) {
+  transition:
+    opacity var(--planner-chrome-in) var(--planner-chrome-ease),
+    visibility 0s linear 0s;
+}
+
+.chrome-phone-seal {
+  position: fixed;
+  z-index: 80;
+  left: max(12px, env(safe-area-inset-left));
+  top: calc(env(safe-area-inset-top) + 10px);
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--cockpit-hairline);
+  border-radius: 999px;
+  background: var(--cockpit-smoke);
+  color: var(--house-text-1);
+  cursor: pointer;
+}
+
+.chrome-phone-seal img {
+  display: block;
+  object-fit: contain;
+}
+
+/* The note, the first few times, and save trouble: both beside the crest. */
+.chrome-clear-hint,
+.chrome-save-word {
+  position: absolute;
+  z-index: 29;
+  left: 124px;
+  margin: 0;
+  max-width: min(360px, calc(100vw - 148px));
+  padding: 6px 11px;
+  border: 1px solid var(--cockpit-hairline);
+  border-radius: 6px;
+  background: var(--house-bg-2);
+  font: 500 11px/1.4 Inter, system-ui, sans-serif;
+  letter-spacing: 0.02em;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity var(--planner-chrome-out) var(--planner-chrome-ease),
+    visibility 0s linear var(--planner-chrome-out);
+}
+
+.chrome-clear-hint {
+  top: 36px;
+  color: var(--house-text-1);
+}
+
+.chrome-save-word {
+  top: 70px;
+  color: var(--house-status-amber);
+}
+
+.cockpit-shell.is-mobile :is(.chrome-clear-hint, .chrome-save-word) {
+  position: fixed;
+  left: max(64px, calc(env(safe-area-inset-left) + 64px));
+  max-width: calc(100vw - 80px);
+}
+
+.cockpit-shell.is-mobile .chrome-clear-hint {
+  top: calc(env(safe-area-inset-top) + 16px);
+}
+
+.cockpit-shell.is-mobile .chrome-save-word {
+  top: calc(env(safe-area-inset-top) + 52px);
+}
+
+.chrome-clear-hint[data-shown="true"],
+html[data-planner-chrome="cleared"] .chrome-save-word[data-trouble="true"] {
+  opacity: 1;
+  visibility: visible;
+  transition:
+    opacity var(--planner-chrome-in) var(--planner-chrome-ease),
+    visibility 0s linear 0s;
+}
+
+/* ---- The keyboard is instant; reduced motion keeps only the fade ---- */
+
+html[data-planner-chrome-motion="instant"] :is(.chrome-spine, .chrome-fold-mark, .chrome-clear-hint, .chrome-save-word),
+html[data-planner-chrome-motion="instant"][data-planner-fold-left] .reference-left-dock,
+html[data-planner-chrome-motion="instant"][data-planner-fold-right] :is(.reference-viewer > :is(.reference-inspector-dock, .lens-panel, .cockpit-truth, .cockpit-panel), .reference-view-switch, .reference-handoff-action, .reference-event-details),
+html[data-planner-chrome-motion="instant"][data-planner-fold-top] :is(.reference-viewer .planner-tool-pill, .reference-more-tools),
+html[data-planner-chrome-motion="instant"][data-planner-fold-bottom] :is(.reference-viewer > .cockpit-bottom, .reference-viewer .planner-command-deck.is-reference-compact, .reference-layer-controls),
+html[data-planner-chrome-motion="instant"][data-planner-chrome] :is(.reference-left-dock, .reference-left-dock *, .reference-viewer > :is(.reference-inspector-dock, .lens-panel, .cockpit-truth, .cockpit-panel, .cockpit-bottom, .reference-when-ribbon), .reference-view-switch, .reference-handoff-action, .reference-event-details, .reference-viewer .planner-tool-pill, .reference-more-tools, .reference-viewer .planner-command-deck.is-reference-compact, .reference-layer-controls, .vv-floating-widget, [data-chrome-surface], [data-testid="mobile-planner-topbar"], .mobile-planner-dock, .mobile-planner-utilities, .lens-sheet-layer) {
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-planner-fold-left="folded"] .reference-left-dock,
+  html[data-planner-fold-right="folded"] :is(.reference-viewer > :is(.reference-inspector-dock, .lens-panel, .cockpit-truth, .cockpit-panel:not(.cockpit-preview-lock)), .reference-view-switch, .reference-handoff-action, .reference-event-details),
+  html[data-planner-fold-top="folded"] :is(.reference-viewer .planner-tool-pill, .reference-more-tools),
+  html[data-planner-fold-bottom="folded"] :is(.reference-viewer > .cockpit-bottom, .reference-viewer .planner-command-deck.is-reference-compact, .reference-layer-controls),
+  html[data-planner-chrome="cleared"] :is(.reference-viewer > :is(.reference-inspector-dock, .lens-panel, .cockpit-truth, .cockpit-panel, .cockpit-bottom), .reference-view-switch, .reference-handoff-action, .reference-event-details, .reference-viewer .planner-tool-pill, .reference-more-tools, .reference-viewer .planner-command-deck.is-reference-compact, .reference-layer-controls),
+  .chrome-spine {
+    translate: none;
+    scale: none;
+  }
+
+  .chrome-spine--top,
+  .chrome-spine--bottom {
+    translate: -50% 0;
+  }
+}
