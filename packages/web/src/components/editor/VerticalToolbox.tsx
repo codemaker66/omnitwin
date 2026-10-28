@@ -910,22 +910,23 @@ function ToolBtn({
         {children}
         {subLabel !== undefined && (
           <span data-testid={captionTestId} style={{
-            // Subtle, professional caption — uppercase Inter at the 11px
-            // floor, weight 600, with generous tracking. Active button flips
-            // to dark text on the gold gradient; inactive uses a low-contrast
-            // neutral so the icon stays the dominant visual element.
+            // Subtle, professional caption — Inter at the 11px floor, weight
+            // 600, in title case as the deck's are: uppercase at 11px ran
+            // "FURNITURE" to 64.6px in a 56px button, where "Furniture" is
+            // 50.7px. Active button flips to dark text on the gold gradient;
+            // inactive uses a low-contrast neutral so the icon stays the
+            // dominant visual element.
             display: "block",
             maxWidth: "100%",
             fontSize: 11,
             fontWeight: 600,
-            letterSpacing: compact ? 0.2 : subLabel.length >= 8 ? 0.25 : 0.6,
+            letterSpacing: 0.2,
             lineHeight: 1,
             color: active
               ? "rgba(14,14,14,0.78)"
               : disabled
                 ? "rgba(255,255,255,0.18)"
                 : "rgba(255,255,255,0.42)",
-            textTransform: "uppercase",
             whiteSpace: "nowrap",
             fontFamily: "'Inter', system-ui, sans-serif",
             userSelect: "none",
