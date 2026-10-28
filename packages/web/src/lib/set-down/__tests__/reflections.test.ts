@@ -3,6 +3,7 @@ import type { RoomGeometry } from "../../../data/room-geometries.js";
 import { ROOM_ACOUSTICS, UNCALIBRATED, type RoomAcoustics } from "../rooms.js";
 import {
   earlyReflections,
+  lateralAzimuth,
   reflectionRoomFor,
   wallReflections,
   type ReflectionRoom,
@@ -126,6 +127,90 @@ describe("earlyReflections in a 10 x 6 x 3 m box", () => {
       expect(Number.isFinite(r.delaySeconds)).toBe(true);
       expect(Number.isFinite(r.azimuthRad)).toBe(true);
       for (const g of r.gain) expect(Number.isFinite(g)).toBe(true);
+    }
+  });
+});
+
+describe("lateralAzimuth", () => {
+  const right: Vec3 = { x: 1, y: 0, z: 0 };
+
+  it("reads straight ahead as 0, the right as +90° and the left as -90°", () => {
+    expect(lateralAzimuth({ x: 0, y: 0, z: -3 }, right)).toBeCloseTo(0, 12);
+    expect(lateralAzimuth({ x: 2, y: 0, z: 0 }, right)).toBeCloseTo(Math.PI / 2, 12);
+    expect(lateralAzimuth({ x: -2, y: 0, z: 0 }, right)).toBeCloseTo(-Math.PI / 2, 12);
+  });
+
+  it("reads behind beyond ±90°, mirrored about the ear's axis", () => {
+    expect(Math.abs(lateralAzimuth({ x: 0, y: 0, z: 3 }, right))).toBeCloseTo(Math.PI, 12);
+    const behindRight = lateralAzimuth({ x: 1, y: 0, z: 1 }, right);
+    expect(behindRight).toBeCloseTo((3 * Math.PI) / 4, 12);
+    expect(lateralAzimuth({ x: -1, y: 0, z: 1 }, right)).toBeCloseTo((-3 * Math.PI) / 4, 12);
+  });
+
+  it("keeps sin(azimuth) the unit direction's part along the right, whatever the height or scale", () => {
+    const direction: Vec3 = { x: 2, y: -1.5, z: -6 };
+    const lateral = 2 / Math.hypot(2, 1.5, 6);
+    expect(Math.sin(lateralAzimuth(direction, { x: 4, y: 0, z: 0 }))).toBeCloseTo(lateral, 12);
+  });
+
+  it("stays finite for a zero direction or a zero right", () => {
+    expect(lateralAzimuth({ x: 0, y: 0, z: 0 }, right)).toBe(0);
+    expect(Number.isFinite(lateralAzimuth({ x: 1, y: 2, z: 3 }, { x: 0, y: 0, z: 0 }))).toBe(true);
+  });
+});
+
+describe("earlyReflections' azimuths", () => {
+  it("pans a front wall's reflection by its true lateral cosine, and a back wall's behind", () => {
+    // Ahead of an ear whose right is +x is -z. The z = -3 wall's image is at
+    // (1, 0, -6), the z = +3 wall's at (1, 0, 6): both 2 m right of the ear
+    // over a 6.5 m path, so each has a lateral cosine of 2 / 6.5 (about 18°).
+    const reflections = earlyReflections(room(BOX), SOURCE, EAR);
+    const imageDelay = (distance({ x: 1, y: 0, z: -6 }, EAR.position) - distance(SOURCE, EAR.position)) / SPEED_OF_SOUND;
+    const sideWalls = reflections.filter((r) => r.order === 1 && Math.abs(r.delaySeconds - imageDelay) < 1e-9);
+    expect(sideWalls).toHaveLength(2);
+    const front = sideWalls.find((r) => Math.cos(r.azimuthRad) > 0);
+    const back = sideWalls.find((r) => Math.cos(r.azimuthRad) < 0);
+    expect(Math.abs(Math.sin(front?.azimuthRad ?? Number.NaN))).toBeCloseTo(2 / 6.5, 12);
+    expect(Math.abs(Math.sin(back?.azimuthRad ?? Number.NaN))).toBeCloseTo(2 / 6.5, 12);
+    expect(front?.azimuthRad).toBeCloseTo(Math.asin(2 / 6.5), 12);
+  });
+});
+
+describe("earlyReflections that cannot happen", () => {
+  it("drops every image for an ear above the ceiling", () => {
+    // The floor and ceiling need both ends between them; every second bounce
+    // needs both inside the room; and each wall's bounce would land on its
+    // plane above the ceiling. None of them is reshaped into a copy at zero
+    // delay or unit gain: there is nothing left.
+    const ear = { position: { x: 0, y: 10, z: 0 }, right: { x: 1, y: 0, z: 0 } } as const;
+    const source: Vec3 = { x: 1, y: 0.5, z: 0.5 };
+    expect(wallReflections(BOX.wallPolygon, source, ear.position).length).toBeGreaterThan(0);
+    expect(earlyReflections(room(BOX), source, ear)).toEqual([]);
+  });
+
+  it("keeps every image for an ear just under the ceiling", () => {
+    const ear = { position: { x: 0, y: 2.95, z: 0 }, right: { x: 1, y: 0, z: 0 } } as const;
+    const reflections = earlyReflections(room(BOX), { x: 1, y: 0.5, z: 0.5 }, ear);
+    expect(reflections.filter((r) => r.order === 1)).toHaveLength(6);
+    expect(reflections.filter((r) => r.order === 2)).toHaveLength(12);
+    for (const r of reflections) {
+      expect(r.delaySeconds).toBeGreaterThan(0);
+      for (const g of r.gain) expect(g).toBeLessThan(1);
+    }
+  });
+
+  it("drops the wall between and every second bounce for a source outside the outline", () => {
+    const source: Vec3 = { x: 8, y: 0.5, z: 0 };
+    const reflections = earlyReflections(room(BOX), source, EAR);
+    expect(reflections.filter((r) => r.order === 2)).toHaveLength(0);
+    // The x = +5 wall (edge 1) stands between the source and the ear.
+    expect(wallReflections(BOX.wallPolygon, source, EAR.position).map((w) => w.edge)).not.toContain(1);
+    for (const r of reflections) {
+      expect(r.delaySeconds).toBeGreaterThanOrEqual(0);
+      for (const g of r.gain) {
+        expect(g).toBeGreaterThan(0);
+        expect(g).toBeLessThan(1);
+      }
     }
   });
 });

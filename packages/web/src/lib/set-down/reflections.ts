@@ -160,41 +160,71 @@ function isRectangle(polygon: Polygon): boolean {
   return true;
 }
 
-/** The ear's unit right, and the direction it treats as ahead: the direct sound's, less its sideways part. */
-function earFrame(ear: Ear, source: Vec3): { readonly right: Vec3; readonly ahead: Vec3 } {
-  const rightLength = length(ear.right);
-  const right = rightLength > EPSILON ? scale(ear.right, 1 / rightLength) : { x: 1, y: 0, z: 0 };
-  const direct = sub(source, ear.position);
-  let ahead = sub(direct, scale(right, dot(direct, right)));
-  if (length(ahead) < EPSILON) {
-    // The source is straight to one side, or at the ear: ahead is level and square to the right.
-    ahead = { x: right.z, y: 0, z: -right.x };
-    if (length(ahead) < EPSILON) ahead = { x: 0, y: 0, z: -1 };
+/** Whether `p` lies inside a convex outline, or on its edge. */
+function insideConvex(polygon: Polygon, p: Vec3): boolean {
+  let cx = 0, cz = 0;
+  for (const [x, z] of polygon) {
+    cx += x;
+    cz += z;
   }
-  return { right, ahead: scale(ahead, 1 / length(ahead)) };
+  const centre = { x: cx / polygon.length, y: 0, z: cz / polygon.length };
+  for (let i = 0; i < polygon.length; i += 1) {
+    const line = edgeLine(polygon, i);
+    if (line === null) return false;
+    if (sideOf(line, p) * sideOf(line, centre) < 0) return false;
+  }
+  return true;
+}
+
+/**
+ * The lateral angle of `direction` as heard by an ear facing level and square
+ * to `right` (ahead is up × right): sin(azimuth) is exactly the unit
+ * direction's part along the unit right, positive to the right. A direction
+ * behind the ear reads beyond ±90°, mirrored about the ear's axis. A zero
+ * right is taken as +x, and a zero direction reads 0.
+ */
+export function lateralAzimuth(direction: Vec3, right: Vec3): number {
+  const rightLength = length(right);
+  const r = rightLength > EPSILON ? scale(right, 1 / rightLength) : { x: 1, y: 0, z: 0 };
+  const directionLength = length(direction);
+  if (directionLength <= EPSILON) return 0;
+  const d = scale(direction, 1 / directionLength);
+  // Rounding can carry the cosine a hair past 1.
+  const side = Math.min(1, Math.max(-1, dot(d, r)));
+  const lateral = Math.asin(side);
+  let ahead: Vec3 = { x: r.z, y: 0, z: -r.x };
+  if (length(ahead) <= EPSILON) ahead = { x: 0, y: 0, z: -1 };
+  if (dot(d, ahead) >= 0) return lateral;
+  return side >= 0 ? Math.PI - lateral : -Math.PI - lateral;
 }
 
 /**
  * The first and second reflections of `source` as heard at `ear`. Gains are
  * the path ratio (direct ÷ reflected length), times √(1 − α) per bounce in each
  * band, times the air's loss over the extra path. Azimuth is the image's
- * direction from the ear: atan2 of its part along the ear's right against its
- * part along the direct sound's direction.
+ * `lateralAzimuth` from the ear.
+ *
+ * An image counts only where its bounce is real: a wall's when the source and
+ * the ear are on the same side of it and the bounce lands between floor and
+ * ceiling, the floor's and ceiling's when both are
+ * between the two, and a second bounce's when both are inside the room. Any
+ * other image is dropped, never reshaped.
  */
 export function earlyReflections(room: ReflectionRoom, source: Vec3, ear: Ear): readonly Reflection[] {
   if (!isFiniteVec(source) || !isFiniteVec(ear.position) || !isFiniteVec(ear.right)) return [];
   const polygon = room.geometry.wallPolygon;
   const height = room.geometry.ceilingHeight;
   const direct = length(sub(source, ear.position));
-  const frame = earFrame(ear, source);
   const reflections: Reflection[] = [];
 
   const add = (image: Vec3 | null, bounces: readonly SurfaceMaterialId[], order: 1 | 2): void => {
     if (image === null) return;
     const towards = sub(image, ear.position);
     const path = length(towards);
-    const extra = Math.max(0, path - direct);
-    const ratio = path > EPSILON ? Math.min(1, direct / path) : 0;
+    // An image at the ear itself has no direction to arrive from.
+    if (path <= EPSILON) return;
+    const extra = path - direct;
+    const ratio = direct / path;
     const gain = bandMap(AIR_ATTENUATION_PER_M, (m, band) => {
       let reflectance = 1;
       for (const material of bounces) {
@@ -205,16 +235,24 @@ export function earlyReflections(room: ReflectionRoom, source: Vec3, ear: Ear): 
     reflections.push({
       delaySeconds: extra / SPEED_OF_SOUND_M_PER_S,
       gain,
-      azimuthRad: Math.atan2(dot(towards, frame.right), dot(towards, frame.ahead)),
+      azimuthRad: lateralAzimuth(towards, ear.right),
       order,
     });
   };
 
-  for (const bounce of wallReflections(polygon, source, ear.position)) add(bounce.image, [room.wall], 1);
-  add(mirrorInHeight(source, 0), [room.floor], 1);
-  add(mirrorInHeight(source, height), [room.ceiling], 1);
+  const betweenFloorAndCeiling = (p: Vec3): boolean => p.y >= 0 && p.y <= height;
+  const heightsValid = betweenFloorAndCeiling(source) && betweenFloorAndCeiling(ear.position);
 
-  if (isRectangle(polygon)) {
+  for (const bounce of wallReflections(polygon, source, ear.position)) {
+    // A bounce above the ceiling or below the floor is off the wall.
+    if (betweenFloorAndCeiling(bounce.point)) add(bounce.image, [room.wall], 1);
+  }
+  if (heightsValid) {
+    add(mirrorInHeight(source, 0), [room.floor], 1);
+    add(mirrorInHeight(source, height), [room.ceiling], 1);
+  }
+
+  if (isRectangle(polygon) && heightsValid && insideConvex(polygon, source) && insideConvex(polygon, ear.position)) {
     for (let i = 0; i < 4; i += 1) {
       const image = mirrorInEdge(source, polygon, i);
       if (image === null) continue;
