@@ -2131,7 +2131,9 @@ test.describe("SS++ button and action inventory", () => {
 test.describe("SS++ representative button behavior", () => {
   test("planner cockpit controls update visible state", async ({ page }) => {
     await mockPlannerRoutes(page);
-    await page.goto(`/plan/${CONFIG_ID}`, { waitUntil: "domcontentloaded" });
+    // The cockpit's controls are under test, Flow among them, not who may open
+    // which lens: with lensesByRole on, an anonymous visitor sees four lenses.
+    await page.goto(`/plan/${CONFIG_ID}?pf=-lensesByRole`, { waitUntil: "domcontentloaded" });
     await page.waitForSelector("[data-testid='cockpit-shell']", { timeout: 20_000 });
 
     // The Grand Hall is drawn as the surveyed room, with its own views and light.

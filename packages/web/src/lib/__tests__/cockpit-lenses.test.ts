@@ -48,7 +48,8 @@ const VIEWERS: readonly { readonly name: string; readonly viewer: LensViewer; re
   { name: "an unknown role", viewer: signedIn("unknown"), audience: "client-side" },
   { name: "an anonymous visitor to a shared link", viewer: ANONYMOUS, audience: "client-side" },
   { name: "an identity still loading", viewer: LOADING, audience: "client-side" },
-  { name: "a staff identity being re-checked", viewer: CHECKING_STAFF, audience: "client-side" },
+  // A re-check keeps a known identity's lenses, so an open lens never jumps to Design mid-session.
+  { name: "a staff identity being re-checked", viewer: CHECKING_STAFF, audience: "venue-team" },
 ];
 
 const KEYS: readonly { readonly name: string; readonly keys: LensKeys }[] = [

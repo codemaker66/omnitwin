@@ -95,9 +95,14 @@ const DIVIDED_RAIL = rail(true, [
   { label: VENUE_TOOLS_LABEL, lenses: lensesOf(VENUE_TOOL_LENSES) },
 ]);
 
-/** Whom the rail is for, from the auth store's state. */
+/**
+ * Whom the rail is for, from the auth store's state. An identity not yet known
+ * gets the client-side rail; a signed-in one being re-checked (the store keeps
+ * its user while `isLoading`) keeps its own, so an open lens never jumps to
+ * Design mid-session. A failed check clears the user, and the rail follows.
+ */
 export function lensAudienceOf(viewer: LensViewer): LensAudience {
-  if (viewer.isLoading || !viewer.isAuthenticated || viewer.user === null) return "client-side";
+  if (!viewer.isAuthenticated || viewer.user === null) return "client-side";
   if (viewer.user.platformRole === "admin") return "venue-team";
   if (viewer.user.role === "hallkeeper") return "hallkeeper";
   return hasRole(VENUE_MEMBER_ROLES, viewer.user.role) ? "venue-team" : "client-side";

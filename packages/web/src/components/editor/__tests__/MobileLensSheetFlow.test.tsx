@@ -10,6 +10,8 @@ import { useSelectionStore } from "../../../stores/selection-store.js";
 import { useCatalogueStore } from "../../../stores/catalogue-store.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
 import { useLayoutTimelinePreviewStore } from "../../../stores/layout-timeline-preview-store.js";
+import { useAuthStore } from "../../../stores/auth-store.js";
+import { setPlannerFeaturesForTesting } from "../../../lib/planner-features.js";
 
 // The planner's first ten seconds on a phone: More → a lens → the lens is on
 // screen. Before the sheet, choosing a lens set it and showed nothing.
@@ -60,6 +62,11 @@ function Planner(): ReactElement {
   return <MemoryRouter><VerticalToolbox /><LensSheet /></MemoryRouter>;
 }
 
+/** The lens buttons a group in the More sheet offers, in order. */
+function lensesIn(group: string): string[] {
+  return within(screen.getByRole("group", { name: group })).getAllByRole("button").map((button) => button.textContent);
+}
+
 beforeEach(() => {
   media.narrow = true;
   media.coarse = false;
@@ -77,8 +84,38 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  setPlannerFeaturesForTesting(null);
   useCockpitStore.getState().reset();
   useEditorStore.getState().reset();
+});
+
+describe("the More sheet offers this viewer's lenses (Blake's decision 5)", () => {
+  beforeEach(() => {
+    useAuthStore.setState({ isLoading: false, isAuthenticated: false, user: null });
+  });
+
+  it("lists all eleven, as today, with both keys off", () => {
+    render(<Planner />);
+    fireEvent.click(screen.getByRole("button", { name: "More" }));
+    expect(lensesIn("Planner lenses")).toHaveLength(11);
+    expect(screen.queryByRole("group", { name: "Venue tools" })).toBeNull();
+  });
+
+  it("offers an anonymous visitor only the client four under lensesByRole", () => {
+    setPlannerFeaturesForTesting({ lensesByRole: true });
+    render(<Planner />);
+    fireEvent.click(screen.getByRole("button", { name: "More" }));
+    expect(lensesIn("Planner lenses")).toEqual(["Design", "Guests", "Costs", "Share"]);
+  });
+
+  it("puts the technical seven under a titled Venue tools group under lensesDivider", () => {
+    setPlannerFeaturesForTesting({ lensesDivider: true });
+    render(<Planner />);
+    fireEvent.click(screen.getByRole("button", { name: "More" }));
+    expect(lensesIn("Planner lenses")).toEqual(["Design", "Guests", "Costs", "Share"]);
+    expect(lensesIn("Venue tools")).toEqual(["Flow", "Evidence", "Lighting", "Power", "Rigging", "AV", "Ops"]);
+    expect(within(screen.getByTestId("mobile-more-sheet")).getByText("Venue tools")).toBeTruthy();
+  });
 });
 
 describe("a lens chosen from More on a phone or tablet", () => {
