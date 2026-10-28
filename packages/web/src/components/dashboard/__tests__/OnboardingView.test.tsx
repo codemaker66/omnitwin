@@ -378,6 +378,15 @@ describe("OnboardingView", () => {
     expect(claims.test(container.textContent ?? "")).toBe(false);
   });
 
+  it("names managed access a record in the new workspace form too, never a control on sign-in (admin-venues-6)", async () => {
+    mocks.getOnboardingSummary.mockResolvedValue(emptySummary());
+    const { container } = render(<OnboardingView />);
+    fireEvent.click(await screen.findByText("Team, billing and setup options"));
+    expect(screen.getByLabelText("Managed access agreed (recorded only)")).toBeTruthy();
+    expect(screen.getByText("Billing and setup review are records for the setup team. Neither of them stops or allows anyone's sign-in.")).toBeTruthy();
+    expect(/enforc/iu.test(container.textContent ?? "")).toBe(false);
+  });
+
   it("keeps a failed cancellation visible and does not remove the member locally", async () => {
     mocks.getOnboardingSummary.mockResolvedValue(populatedSummary());
     mocks.revokeWorkspaceInvitation.mockRejectedValue(new Error("Invitation changed. Refresh before cancelling."));
