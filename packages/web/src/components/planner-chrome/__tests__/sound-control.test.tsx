@@ -54,7 +54,7 @@ function openPanel(): HTMLElement {
 describe("the speaker", () => {
   it("names the set in use and its keys, and says it opens a panel", () => {
     render(<SoundControl />);
-    const key = screen.getByRole("button", { name: "Sound: off, Shift M" });
+    const key = screen.getByRole("button", { name: "Sound: quiet, Shift M" });
     expect(key.getAttribute("aria-keyshortcuts")).toBe("Shift+M");
     expect(key.getAttribute("aria-haspopup")).toBe("dialog");
     expect(key.getAttribute("aria-expanded")).toBe("false");
@@ -69,17 +69,17 @@ describe("the speaker", () => {
     const group = within(panel).getByRole("radiogroup", { name: "Sound" });
     const options = within(group).getAllByRole("radio").map((radio) => radio.textContent);
     expect(options).toEqual(["Off", "Quiet", "Full"]);
-    expect(document.activeElement).toBe(within(group).getByRole("radio", { name: "Off" }));
-    expect(within(panel).getByText(SOUND_MODE_LINES.off)).toBeTruthy();
+    expect(document.activeElement).toBe(within(group).getByRole("radio", { name: "Quiet" }));
+    expect(within(panel).getByText(SOUND_MODE_LINES.quiet)).toBeTruthy();
   });
 
   it("keeps a chosen set, names it on the speaker and arms the context, without a sound", () => {
     render(<SoundControl />);
     const panel = openPanel();
-    fireEvent.click(within(panel).getByRole("radio", { name: "Quiet" }));
-    expect(localStorage.getItem(PLANNER_SOUND_STORAGE_KEY)).toBe("quiet");
-    expect(speaker().getAttribute("aria-label")).toBe("Sound: quiet, Shift M");
-    expect(within(panel).getByText(SOUND_MODE_LINES.quiet)).toBeTruthy();
+    fireEvent.click(within(panel).getByRole("radio", { name: "Full" }));
+    expect(localStorage.getItem(PLANNER_SOUND_STORAGE_KEY)).toBe("full");
+    expect(speaker().getAttribute("aria-label")).toBe("Sound: full, Shift M");
+    expect(within(panel).getByText(SOUND_MODE_LINES.full)).toBeTruthy();
     expect(made, "choosing a set is a deliberate gesture: the context is made then").toBe(1);
     fireEvent.click(within(panel).getByRole("radio", { name: "Off" }));
     expect(getPlannerSoundSettings().mode).toBe("off");
@@ -166,10 +166,11 @@ describe("Shift M", () => {
     expect(made - before, "turning sound on from the keyboard arms it").toBe(1);
   });
 
-  it("turns a new device's sound on to Quiet", () => {
+  it("starts a new device on Quiet (Blake's D1), and Shift M turns it off", () => {
     render(<SoundControl />);
-    fireEvent.keyDown(document.body, { key: "M", shiftKey: true });
     expect(getPlannerSoundSettings().mode).toBe("quiet");
+    fireEvent.keyDown(document.body, { key: "M", shiftKey: true });
+    expect(getPlannerSoundSettings().mode).toBe("off");
   });
 
   it("leaves typing, other chords and held keys alone", () => {
@@ -178,7 +179,7 @@ describe("Shift M", () => {
     fireEvent.keyDown(document.body, { key: "M", shiftKey: true, ctrlKey: true });
     fireEvent.keyDown(document.body, { key: "M", shiftKey: true, repeat: true });
     fireEvent.keyDown(document.body, { key: "m" });
-    expect(getPlannerSoundSettings().mode).toBe("off");
+    expect(getPlannerSoundSettings().mode).toBe("quiet");
   });
 
   it("reads only Shift with M, outside text", () => {
@@ -187,10 +188,10 @@ describe("Shift M", () => {
     fireEvent.keyDown(document.body, { key: "M", shiftKey: true, altKey: true });
     fireEvent.keyDown(document.body, { key: "M", shiftKey: true, metaKey: true });
     fireEvent.keyDown(screen.getByRole("textbox", { name: "Note" }), { key: "M", shiftKey: true });
-    expect(mode()).toBe("off");
+    expect(mode()).toBe("quiet");
     fireEvent.keyDown(document.body, { key: "m", shiftKey: true });
-    expect(mode(), "the layout's M, in either case (Caps Lock)").toBe("quiet");
+    expect(mode(), "the layout's M, in either case (Caps Lock)").toBe("off");
     fireEvent.keyDown(screen.getByRole("slider", { name: "Level" }), { key: "M", shiftKey: true });
-    expect(mode(), "a slider types nothing").toBe("off");
+    expect(mode(), "a slider types nothing").toBe("quiet");
   });
 });
