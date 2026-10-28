@@ -477,7 +477,7 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   await server.register(rotaRoutes, { db, prefix: "/venues/:venueId/rota" });
   // The venue team: venue administrators invite their own staff (Plan 19 L1).
   await server.register(venueTeamRoutes, { db, prefix: "/venues/:venueId/team" });
-  await server.register(referenceLoadoutRoutes, { db, prefix: "/venues/:venueId/spaces/:spaceId/loadouts" });
+  await server.register(referenceLoadoutRoutes, { db, env, prefix: "/venues/:venueId/spaces/:spaceId/loadouts" });
   await server.register(referencePhotoRoutes, { db, prefix: "/loadouts/:loadoutId/photos" });
   await server.register(publicConfigRoutes, { db, prefix: "/public" });
   // A visitor's view-only links (fix-first item 11): the organiser makes and

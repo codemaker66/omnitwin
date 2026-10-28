@@ -4,6 +4,7 @@ import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import * as schema from "../db/schema.js";
+import { validateEnv } from "../env.js";
 import { referenceLoadoutRoutes } from "../routes/reference-loadouts.js";
 
 // ---------------------------------------------------------------------------
@@ -11,7 +12,10 @@ import { referenceLoadoutRoutes } from "../routes/reference-loadouts.js";
 // count and cover photo are correlated subqueries; an unqualified "id" inside
 // them resolves to the subquery's own tables (reference_photos, files), which
 // made every list request fail with "column reference id is ambiguous" in
-// production (Sentry VENVIEWER-API-1) and counted the wrong rows.
+// production (Sentry VENVIEWER-API-1) and counted the wrong rows. The list is
+// read by the venue's staff, and counts only photos uploaded into the
+// loadout's own scope (T-668; reference-loadouts-private-postgres.test.ts
+// covers the refusals and the signing).
 // ---------------------------------------------------------------------------
 
 const target = process.env["VENVIEWER_PLATFORM_TEST_DATABASE_URL"];
@@ -24,6 +28,19 @@ if (target !== undefined) {
 }
 
 const OUTLINE = [{ x: -10, y: -5 }, { x: 10, y: -5 }, { x: 10, y: 5 }, { x: -10, y: 5 }];
+// The private-upload connection the routes sign with; nothing is fetched.
+const ENV = validateEnv({
+  DATABASE_URL: "postgresql://unused/unused",
+  R2_ACCOUNT_ID: "publicaccount",
+  R2_ACCESS_KEY_ID: "PUBLICACCESSKEY",
+  R2_SECRET_ACCESS_KEY: "public-secret",
+  R2_BUCKET_NAME: "omnitwin-uploads-test",
+  R2_PUBLIC_URL: "https://pub-public-test.r2.dev",
+  PRIVATE_UPLOADS_R2_ACCOUNT_ID: "privateaccount",
+  PRIVATE_UPLOADS_R2_ACCESS_KEY_ID: "PRIVATEACCESSKEY",
+  PRIVATE_UPLOADS_R2_SECRET_ACCESS_KEY: "private-secret",
+  PRIVATE_UPLOADS_R2_BUCKET: "omnitwin-private-uploads-test",
+});
 
 interface ListedLoadout { readonly name: string; readonly photoCount: number; readonly coverFileKey: string | null }
 
@@ -38,7 +55,7 @@ describe.skipIf(target === undefined)("reference loadouts list through the real 
     expect((await pool.query<{ name: string }>("SELECT current_database() AS name")).rows[0]?.name).toBe("venviewer_platform_test");
     db = drizzle(pool, { schema });
     server = Fastify();
-    await server.register(referenceLoadoutRoutes, { db, prefix: "/venues/:venueId/spaces/:spaceId/loadouts" });
+    await server.register(referenceLoadoutRoutes, { db, env: ENV, prefix: "/venues/:venueId/spaces/:spaceId/loadouts" });
     await server.ready();
   });
 
@@ -61,10 +78,10 @@ describe.skipIf(target === undefined)("reference loadouts list through the real 
     return { venueId, spaceId, otherSpaceId, userId };
   }
 
-  async function addPhoto(loadoutId: string, userId: string, sortOrder: number): Promise<string> {
-    const fileKey = `reference-photos/${randomUUID()}.jpg`;
+  async function addPhoto(venueId: string, loadoutId: string, userId: string, sortOrder: number): Promise<string> {
+    const fileKey = `private/venues/${venueId}/loadouts/${loadoutId}/${randomUUID()}.jpg`;
     const [file] = await db.insert(schema.files).values({
-      fileKey, filename: "setup.jpg", contentType: "image/jpeg", context: "reference_loadout", contextId: loadoutId, uploadedBy: userId,
+      fileKey, filename: "setup.jpg", contentType: "image/jpeg", context: "loadout", contextId: loadoutId, uploadedBy: userId,
     }).returning({ id: schema.files.id });
     if (file === undefined) throw new Error("File fixture was not inserted");
     await db.insert(schema.referencePhotos).values({ loadoutId, fileId: file.id, sortOrder });
@@ -82,11 +99,12 @@ describe.skipIf(target === undefined)("reference loadouts list through the real 
     const elsewhere = loadout("Other room", 2, otherSpaceId);
     const removed = loadout("Removed", 3, spaceId, new Date());
     await db.insert(schema.referenceLoadouts).values([dinner, theatre, elsewhere, removed]);
-    await addPhoto(dinner.id, userId, 1);
-    const cover = await addPhoto(dinner.id, userId, 0);
-    await addPhoto(elsewhere.id, userId, 0);
+    await addPhoto(venueId, dinner.id, userId, 1);
+    const cover = await addPhoto(venueId, dinner.id, userId, 0);
+    await addPhoto(venueId, elsewhere.id, userId, 0);
 
-    const response = await server.inject({ method: "GET", url: `/venues/${venueId}/spaces/${spaceId}/loadouts` });
+    const staff = { authorization: `Bearer ${JSON.stringify({ id: userId, email: `${userId}@loadouts.invalid`, role: "staff", venueId })}` };
+    const response = await server.inject({ method: "GET", url: `/venues/${venueId}/spaces/${spaceId}/loadouts`, headers: staff });
 
     expect(response.statusCode).toBe(200);
     const listed = response.json<{ data: ListedLoadout[] }>().data

@@ -6,7 +6,7 @@ import { UserRoleSchema } from "@omnitwin/types";
 // Zod-validated environment variables — fail fast on startup if missing
 //
 // Production-required variables (including Clerk credentials and the private
-// reviewed-runtime storage connection)
+// reviewed-runtime and private-upload storage connections)
 // are .optional() at the schema level so dev/test environments without
 // Clerk configured can still boot. The cross-field check below enforces
 // them ONLY when NODE_ENV === "production". This is the "fail fast in
@@ -54,6 +54,15 @@ const EnvSchema = z.object({
   RUNTIME_PROFILE_R2_ACCESS_KEY_ID: z.string().min(1).optional(),
   RUNTIME_PROFILE_R2_SECRET_ACCESS_KEY: z.string().min(1).optional(),
   RUNTIME_PROFILE_R2_PRIVATE_BUCKET: z.string().regex(/^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/u).optional(),
+  // Private uploads (venue files, spaces, loadouts, enquiry attachments, the
+  // asset catalogue). The R2_* bucket above is served to anyone through its
+  // r2.dev URL, so private keys must never land in it. This bucket has no
+  // public URL and no custom domain: its objects are readable only through a
+  // signed URL, and its credentials must be scoped to this one bucket.
+  PRIVATE_UPLOADS_R2_ACCOUNT_ID: z.string().min(1).optional(),
+  PRIVATE_UPLOADS_R2_ACCESS_KEY_ID: z.string().min(1).optional(),
+  PRIVATE_UPLOADS_R2_SECRET_ACCESS_KEY: z.string().min(1).optional(),
+  PRIVATE_UPLOADS_R2_BUCKET: z.string().regex(/^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/u).optional(),
   // Reconstruction Foundry — candidates MUST remain in a private bucket;
   // verified releases are copied to a distinct, immutable public bucket.
   FOUNDRY_R2_ACCOUNT_ID: z.string().min(1).optional(),
@@ -181,6 +190,20 @@ const EnvSchema = z.object({
         });
       }
     }
+    for (const field of [
+      "PRIVATE_UPLOADS_R2_ACCOUNT_ID",
+      "PRIVATE_UPLOADS_R2_ACCESS_KEY_ID",
+      "PRIVATE_UPLOADS_R2_SECRET_ACCESS_KEY",
+      "PRIVATE_UPLOADS_R2_BUCKET",
+    ] as const) {
+      if (env[field] === undefined) {
+        ctx.addIssue({
+          code: "custom",
+          path: [field],
+          message: `${field} is required in production (private uploads must never share the publicly served bucket)`,
+        });
+      }
+    }
   }
 
   if (env.PUBLIC_API_ORIGIN !== undefined) {
@@ -241,6 +264,52 @@ const EnvSchema = z.object({
       code: "custom",
       path: ["RUNTIME_PROFILE_R2_PRIVATE_BUCKET"],
       message: "Reviewed runtime profiles require a dedicated private bucket distinct from the legacy upload and Foundry buckets",
+    });
+  }
+
+  const privateUploadsR2Fields = [
+    env.PRIVATE_UPLOADS_R2_ACCOUNT_ID,
+    env.PRIVATE_UPLOADS_R2_ACCESS_KEY_ID,
+    env.PRIVATE_UPLOADS_R2_SECRET_ACCESS_KEY,
+    env.PRIVATE_UPLOADS_R2_BUCKET,
+  ];
+  const privateUploadsR2Set = privateUploadsR2Fields.filter((field) => field !== undefined).length;
+  if (privateUploadsR2Set > 0 && privateUploadsR2Set < privateUploadsR2Fields.length) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["PRIVATE_UPLOADS_R2_BUCKET"],
+      message: "Private-upload R2 configuration is incomplete — set PRIVATE_UPLOADS_R2_ACCOUNT_ID, PRIVATE_UPLOADS_R2_ACCESS_KEY_ID, PRIVATE_UPLOADS_R2_SECRET_ACCESS_KEY, and PRIVATE_UPLOADS_R2_BUCKET together or none",
+    });
+  }
+  if (
+    env.PRIVATE_UPLOADS_R2_BUCKET !== undefined &&
+    [
+      env.R2_BUCKET_NAME,
+      env.RUNTIME_PROFILE_R2_PRIVATE_BUCKET,
+      env.FOUNDRY_R2_CANDIDATE_BUCKET,
+      env.FOUNDRY_R2_RELEASE_BUCKET,
+    ].includes(env.PRIVATE_UPLOADS_R2_BUCKET)
+  ) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["PRIVATE_UPLOADS_R2_BUCKET"],
+      message: "Private uploads require a dedicated private bucket distinct from the public upload, runtime-profile and Foundry buckets",
+    });
+  }
+  // The other R2 tokens also live in developer .env files and tile-publishing
+  // tools; reusing any of them here would let that token read customer files.
+  if (
+    env.PRIVATE_UPLOADS_R2_ACCESS_KEY_ID !== undefined &&
+    [
+      env.R2_ACCESS_KEY_ID,
+      env.RUNTIME_PROFILE_R2_ACCESS_KEY_ID,
+      env.FOUNDRY_R2_ACCESS_KEY_ID,
+    ].includes(env.PRIVATE_UPLOADS_R2_ACCESS_KEY_ID)
+  ) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["PRIVATE_UPLOADS_R2_ACCESS_KEY_ID"],
+      message: "Private uploads require their own R2 token, scoped to the private bucket, not another bucket's token",
     });
   }
 

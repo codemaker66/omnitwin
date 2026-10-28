@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import type { Loadout, LoadoutDetail as LoadoutDetailData, LoadoutPhoto } from "../../../api/loadouts.js";
+import type { Loadout, LoadoutDetail as LoadoutDetailData, LoadoutDetailPhoto, LoadoutPhoto } from "../../../api/loadouts.js";
 import type { Space } from "../../../api/spaces.js";
 import { LoadoutDetail } from "../LoadoutDetail.js";
 import { LoadoutsView } from "../LoadoutsView.js";
@@ -113,11 +113,18 @@ function photoFixture(overrides: Partial<LoadoutPhoto> = {}): LoadoutPhoto {
     fileId: "00000000-0000-4000-8000-000000008005",
     caption: "Main entrance",
     sortOrder: 0,
-    fileKey: "loadouts/main.jpg",
+    fileKey: "private/venues/v/loadouts/l/main.jpg",
     filename: "main.jpg",
     contentType: "image/jpeg",
     ...overrides,
   };
+}
+
+const SIGNED_READ_URL =
+  "https://account.r2.cloudflarestorage.com/private-uploads/private/venues/v/loadouts/l/main.jpg?X-Amz-Signature=test";
+
+function detailPhotoFixture(overrides: Partial<LoadoutDetailPhoto> = {}): LoadoutDetailPhoto {
+  return { ...photoFixture(), readUrl: SIGNED_READ_URL, ...overrides };
 }
 
 function detailFixture(overrides: Partial<LoadoutDetailData> = {}): LoadoutDetailData {
@@ -129,7 +136,7 @@ function detailFixture(overrides: Partial<LoadoutDetailData> = {}): LoadoutDetai
     description: "Reference pack",
     createdAt: NOW,
     updatedAt: NOW,
-    photos: [photoFixture()],
+    photos: [detailPhotoFixture()],
     ...overrides,
   };
 }
@@ -328,6 +335,20 @@ describe("LoadoutDetail keeps what is typed and says what a delete does", () => 
     expect(mocks.updatePhoto).not.toHaveBeenCalled();
     fireEvent.click(save);
     await waitFor(() => { expect(mocks.updatePhoto).toHaveBeenCalledTimes(1); });
+  });
+
+  it("previews a photo through the API's signed URL", async () => {
+    renderDetail();
+    const preview = await screen.findByRole("img", { name: "Main entrance" });
+    expect(preview.getAttribute("src")).toBe(SIGNED_READ_URL);
+  });
+
+  it("shows the filename when the API gives no signed URL", async () => {
+    mocks.getLoadout.mockResolvedValue(detailFixture({ photos: [detailPhotoFixture({ readUrl: null })] }));
+    renderDetail();
+    await screen.findByRole("button", { name: "Main entrance" });
+    expect(screen.queryByRole("img")).toBeNull();
+    expect(screen.getAllByText("main.jpg").length).toBeGreaterThan(0);
   });
 
   it("says a deleted loadout's photos are kept, not that it cannot be undone", async () => {
