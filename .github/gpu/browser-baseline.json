@@ -770,6 +770,20 @@
       ],
       "expectedStatus": "passed",
       "limits": "This is reviewed inventory admission, not execution evidence. This case was absent from sourceRunId, sourceReports and the earlier admissions; it switches the touch arbiter on with ?pf= and stubs the API before transport, so it proves the gestures in Chromium's emulated touch, not on a real phone's touch screen or GPU; every current case still requires execution in the hosted browser gate. The listing covers this one spec file, so a re-listing reproduces this identity, not this hash."
+    },
+    {
+      "date": "2026-10-26",
+      "reason": "The Grand Assembly on for everyone (Blake, 26 Oct 2026: 'On for everyone now'): the case f1c17e56d03862f173b0-b202453e704508f538aa ('without the flag the layout simply opens') is restated as 'with no flag a layout plays the first time it opens, the Skip hurries it to its end, and it then opens as placed', because without the flag a layout now plays the first time it opens on a device. The case opens the same stubbed saved layout with no flag, presses the visible Skip once so the show plays on at speed to its end, records every state the control shows and requires that it came to rest without starting again, reloads, and holds the layout as placed.",
+      "sourceCommit": "6b4e6f786cd6ecadffb2d596ddc26cab80b0135f",
+      "sourceFile": "packages/web/e2e/grand-assembly.spec.ts",
+      "sourceFileGitBlobSha256": "c0a90a772437b2b6955c0ddd8e1775e07569ee2dd4b11e390c2f1431400fcf56",
+      "inventoryCommand": "pnpm --filter @omnitwin/web exec playwright test e2e/grand-assembly.spec.ts --list --project=chromium --update-snapshots=none --reporter=json",
+      "inventorySha256": "f05f735a152e0f31f67ce028fc10dc8630b997ced3e183584039d98d1900c033",
+      "caseIds": [
+        "f1c17e56d03862f173b0-bf9fe7baa65eb50ddff8"
+      ],
+      "expectedStatus": "passed",
+      "limits": "This is reviewed inventory admission, not execution evidence. This case replaces the retired identity f1c17e56d03862f173b0-b202453e704508f538aa one for one, so the totals (405 cases, 54 skips, four expected failures) are unchanged; it was absent from sourceRunId, sourceReports and the earlier admissions, and every current case still requires execution in the hosted browser gate. It proves the default, the Skip hurrying the show to its end and the per-device first-open rule in hosted Chromium, not the show's look or its frame time on a real phone; the Skip's second press and presses as the show comes to rest are stepped frame by frame in the unit suite (GrandAssembly.test.tsx). The listing covers this one spec file, so a re-listing reproduces this identity, not this hash."
     }
   ],
   "cases": [
@@ -5078,9 +5092,9 @@
       "expectedStatus": "passed"
     },
     {
-      "id": "f1c17e56d03862f173b0-b202453e704508f538aa",
+      "id": "f1c17e56d03862f173b0-bf9fe7baa65eb50ddff8",
       "file": "grand-assembly.spec.ts",
-      "title": "without the flag the layout simply opens",
+      "title": "with no flag a layout plays the first time it opens, the Skip hurries it to its end, and it then opens as placed",
       "suitePath": [
         "grand-assembly.spec.ts",
         "Grand Assembly behind ?assembly=accio"
