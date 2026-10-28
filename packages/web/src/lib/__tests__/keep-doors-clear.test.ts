@@ -106,16 +106,16 @@ describe("pieces already in front of a door", () => {
   });
 
   it("says which table stands in front of which door", () => {
-    expect(doorBlockedLine(doorBlockers(round(0, 3), GRAND_HALL_DOOR_CLEAR_SPACES)))
+    expect(doorBlockedLine(doorBlockers(round(0, 3), GRAND_HALL_DOOR_CLEAR_SPACES), GRAND_HALL_DOOR_CLEAR_SPACES))
       .toBe("A round table stands in front of the main door.");
-    expect(doorBlockedLine(doorBlockers(round(0, 3, "Table 4"), GRAND_HALL_DOOR_CLEAR_SPACES)))
+    expect(doorBlockedLine(doorBlockers(round(0, 3, "Table 4"), GRAND_HALL_DOOR_CLEAR_SPACES), GRAND_HALL_DOOR_CLEAR_SPACES))
       .toBe("Table 4 stands in front of the main door.");
   });
 
   it("names both of two, and counts the rest past the first", () => {
-    expect(doorBlockedLine(doorBlockers([...round(0, 3), chairAtEndDoor], GRAND_HALL_DOOR_CLEAR_SPACES)))
+    expect(doorBlockedLine(doorBlockers([...round(0, 3), chairAtEndDoor], GRAND_HALL_DOOR_CLEAR_SPACES), GRAND_HALL_DOOR_CLEAR_SPACES))
       .toBe("A chair stands in front of the end door, and a round table in front of the main door.");
-    expect(doorBlockedLine(doorBlockers([...round(0, 3), chairAtEndDoor, chairAtFireExit], GRAND_HALL_DOOR_CLEAR_SPACES)))
+    expect(doorBlockedLine(doorBlockers([...round(0, 3), chairAtEndDoor, chairAtFireExit], GRAND_HALL_DOOR_CLEAR_SPACES), GRAND_HALL_DOOR_CLEAR_SPACES))
       .toBe("A chair stands in front of the end door, and 2 more in front of the main door and the fire exit.");
   });
 });

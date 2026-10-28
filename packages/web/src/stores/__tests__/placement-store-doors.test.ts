@@ -3,7 +3,7 @@ import { usePlacementStore } from "../placement-store.js";
 import { usePlacementNoticeStore } from "../placement-notice-store.js";
 import { subscribeDoorSlides, useDoorClearSpaceStore, type DoorSlideEvent } from "../door-clear-space-store.js";
 import { useRoomDimensionsStore } from "../room-dimensions-store.js";
-import { resetPlacedIdCounter, type PlacedItem } from "../../lib/placement.js";
+import { computeSurfaceHeight, createPlacedItem, resetPlacedIdCounter, type PlacedItem } from "../../lib/placement.js";
 import { getCatalogueItemBySlug } from "../../lib/catalogue.js";
 import { createTableGroup } from "../../lib/table-group.js";
 import { GRAND_HALL_DOOR_CLEAR_SPACES } from "../../lib/door-clear-spaces.js";
@@ -49,6 +49,23 @@ afterEach(() => {
   unsubscribe();
   useDoorClearSpaceStore.getState().setRoomSpaces(null);
   usePlacementNoticeStore.getState().dismiss();
+});
+
+describe("a set slid clear of a door", () => {
+  it("keeps a piece standing on its set's riser, settled on the riser where it lands", () => {
+    const deckItem = getCatalogueItemBySlug("staging-deck-6x4");
+    const lecternItem = getCatalogueItemBySlug("lectern");
+    if (deckItem === undefined || lecternItem === undefined) throw new Error("no deck or lectern");
+    // In the main door's space (from z 3.795), the lectern on the deck.
+    const deck = createPlacedItem(deckItem.id, 0, 4.2, 0, null, 0);
+    const onDeck = computeSurfaceHeight(0, 4.2, lecternItem, [deck], new Set());
+    expect(onDeck).toBeGreaterThan(0);
+    usePlacementStore.getState().placeSetup([deck, createPlacedItem(lecternItem.id, 0, 4.2, 0, null, onDeck)]);
+    expect(slides).toHaveLength(1);
+    expect(blocked()).toBe(0);
+    expect(pieceOf(lecternItem.id).y).toBeCloseTo(onDeck, 9);
+    expect(pieceOf(deckItem.id).y).toBe(0);
+  });
 });
 
 describe("automatic layouts keep the doors clear", () => {

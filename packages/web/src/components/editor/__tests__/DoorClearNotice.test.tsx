@@ -19,7 +19,10 @@ import { doorBlockers } from "../../../lib/keep-doors-clear.js";
 // names the table and the door, with one tap to move it clear.
 // ---------------------------------------------------------------------------
 
-const ROUND = getCatalogueItemBySlug("round-table-6ft-white")?.id ?? "missing-round";
+const ROUND_ITEM = getCatalogueItemBySlug("round-table-6ft-white");
+// A missing round must fail the file, not make "every door is clear" pass on an unknown id.
+if (ROUND_ITEM === undefined) throw new Error("The planner's white 6 ft round is missing from the catalogue");
+const ROUND = ROUND_ITEM.id;
 
 /**
  * The Grand Assembly's 180-seat demo dinner as it stood on 28 Oct 2026

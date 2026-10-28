@@ -216,18 +216,21 @@ const DOOR_CHECK_MARGIN_M = 0.25;
  * rule judges a laid floor (keep-doors-clear placedFootprint, door-clear-spaces
  * footprintInKeepOut), so Fill never sets a group the door notice would then
  * name, nor leaves out one whose chairs miss the door. A group whose bounds
- * stay well clear of every space is clear without being built.
+ * stay well clear of every space is clear without being built. The seats are
+ * `chairSlug`, the event's unless named (as createTableGroup sets them).
  */
-function groupClearOfDoors(
+export function groupClearOfDoors(
   table: CatalogueItem,
   seats: number,
   bounds: { readonly width: number; readonly depth: number },
   doorSpaces: readonly LayoutRect[],
-): (spot: BanquetTablePlacement) => boolean {
+  chairSlug?: string,
+): (spot: { readonly xM: number; readonly zM: number; readonly rotationY: number }) => boolean {
   return (spot) => {
     const near: LayoutRect = { cx: spot.xM, cz: spot.zM, width: bounds.width + 2 * DOOR_CHECK_MARGIN_M, depth: bounds.depth + 2 * DOOR_CHECK_MARGIN_M };
     if (!doorSpaces.some((space) => rectsOverlap(near, space))) return true;
-    return createTableGroup(table.id, toRenderSpace(spot.xM), toRenderSpace(spot.zM), spot.rotationY, seats).every((piece) => {
+    const pieces = createTableGroup(table.id, toRenderSpace(spot.xM), toRenderSpace(spot.zM), spot.rotationY, seats, 0, undefined, "around", chairSlug);
+    return pieces.every((piece) => {
       const footprint = placedFootprint(piece);
       return footprint === null || !doorSpaces.some((space) => footprintInKeepOut(footprint, space));
     });

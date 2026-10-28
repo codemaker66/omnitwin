@@ -13,8 +13,8 @@ import {
   tableGroupSeatCapacity,
   tableOwnChairs,
 } from "./table-group.js";
-import { BANQUET_CHAIR_CLEARANCE_M } from "./auto-fill.js";
-import { rectsOverlap, type LayoutRect } from "./auto-layout.js";
+import { BANQUET_CHAIR_CLEARANCE_M, groupClearOfDoors } from "./auto-fill.js";
+import type { LayoutRect } from "./auto-layout.js";
 import { countLabel } from "./count-label.js";
 
 // ---------------------------------------------------------------------------
@@ -177,11 +177,13 @@ function freeTableSpots(input: SeatShortfallInput, table: CatalogueItem, seats: 
   }
   candidates.sort((a, b) => (Math.hypot(a.x, a.z) - Math.hypot(b.x, b.z)) || (a.z - b.z) || (a.x - b.x));
 
-  // A group's bounds hold its chairs' footprints: bounds clear of a door's
-  // clear space keep every chair out of it (the doors' own rule, auto-fill).
-  const inDoorSpace = (spot: Spot): boolean => (input.doorSpaces ?? []).some(
-    (space) => rectsOverlap({ cx: spot.x, cz: spot.z, width: 2 * hw, depth: 2 * hd }, space),
-  );
+  // Judged as Fill and the door notice judge it: each piece of the new group,
+  // table and chairs (auto-fill groupClearOfDoors), never the group's bounds.
+  const doorSpaces = input.doorSpaces ?? [];
+  const clearOfDoors = doorSpaces.length === 0
+    ? null
+    : groupClearOfDoors(table, seats, { width: 2 * hw, depth: 2 * hd }, doorSpaces, input.chairSlug);
+  const inDoorSpace = (spot: Spot): boolean => clearOfDoors !== null && !clearOfDoors({ xM: spot.x, zM: spot.z, rotationY: 0 });
 
   const spots: Spot[] = [];
   for (const candidate of candidates) {

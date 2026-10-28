@@ -308,7 +308,9 @@ export function slideClearOfDoors(input: DoorSlideInput): DoorSlide {
       && rect.maxZ > bounds.minZ - OTHERS_REACH_M && rect.minZ < bounds.maxZ + OTHERS_REACH_M;
   });
   const [inX, inZ] = doors[0]?.inward ?? [0, 0];
-  const offsets = [...(input.stepM === null ? edgeOffsets(input, others, bounds) : stepOffsets(input, input.stepM))]
+  // A step that is not a positive distance snaps nowhere (and would never end the grid's search).
+  const step = input.stepM !== null && Number.isFinite(input.stepM) && input.stepM > 0 ? input.stepM : null;
+  const offsets = [...(step === null ? edgeOffsets(input, others, bounds) : stepOffsets(input, step))]
     .sort((a, b) => (a.distance - b.distance) || ((b.dx * inX + b.dz * inZ) - (a.dx * inX + a.dz * inZ)) || (a.dz - b.dz) || (a.dx - b.dx));
 
   const halfW = input.roomWidthM / 2 + 1e-9;

@@ -11,6 +11,7 @@ import {
   snapToWallEdge,
   getPlacementViolations,
   withTableNumbers,
+  settleMovedOnSurfaces,
   GRID_SPACING_M,
 } from "../lib/placement.js";
 import { plannerFeatureEnabled } from "../lib/planner-features.js";
@@ -91,14 +92,10 @@ function clearOfDoors(
   if (slide.kind !== "slide") return { pieces, slide: null };
   const dx = toRenderSpace(slide.dx);
   const dz = toRenderSpace(slide.dz);
-  return {
-    pieces: pieces.map((piece) => {
-      const x = piece.x + dx;
-      const z = piece.z + dz;
-      return { ...piece, x, z, y: candidateSurfaceHeight(piece.catalogueItemId, x, z, placedItems, new Set()) };
-    }),
-    slide: { dx, dz, doors: slide.doors },
-  };
+  // Settled where they land, lowest first: on what stays, or on another of the pieces (a table on its
+  // set's stage), never on itself.
+  const moved = pieces.map((piece) => ({ ...piece, x: piece.x + dx, z: piece.z + dz }));
+  return { pieces: settleMovedOnSurfaces(moved, placedItems), slide: { dx, dz, doors: slide.doors } };
 }
 
 /** The piece a set keeps on the grid as it slides clear of a door: its first dining table, else its first piece. */
