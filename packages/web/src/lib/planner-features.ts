@@ -15,7 +15,7 @@
 interface PlannerFeatureSpec {
   /** The lane that builds it and decides when it is green. */
   readonly lane: "E" | "P";
-  /** The quality-of-life item it delivers (design/qol-pass.md). */
+  /** The quality-of-life item it delivers: Q-NN in design/qol-pass.md, or CB-NN in planner-qol's craft backlog. */
   readonly item: string;
   /** Whether everyone has it. */
   readonly on: boolean;
@@ -56,6 +56,12 @@ export const PLANNER_FEATURE_SPECS = {
   tableSets: { lane: "E", item: "Q-08b", on: false },
   /** A card dropped on a selection replaces it. */
   replace: { lane: "E", item: "Q-16", on: false },
+  /**
+   * A plain click passes through a wall to the floor, so a deselect never takes
+   * a wall down; Alt-click hides one (decision 4). Off, any click that meets a
+   * wall first hides it.
+   */
+  wallClickAlt: { lane: "E", item: "CB-40", on: false },
 } as const satisfies Readonly<Record<string, PlannerFeatureSpec>>;
 
 export type PlannerFeature = keyof typeof PLANNER_FEATURE_SPECS;

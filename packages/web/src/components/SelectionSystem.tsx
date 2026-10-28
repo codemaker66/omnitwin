@@ -191,6 +191,18 @@ function findWallKey(obj: Object3D): WallKey | null {
   return null;
 }
 
+/**
+ * The wall a click or tap that met `wallKey` first takes down, if any. With
+ * `wallClickAlt` (decision 4) only an Alt-click does: a plain click passes
+ * through to the floor as a click on empty floor, so a deselect near a wall
+ * never takes it down, and the camera hides walls in the way. A finger has no
+ * Alt, so a tap never does.
+ */
+function wallToHide(wallKey: WallKey | null, altKey: boolean): WallKey | null {
+  if (wallKey === null) return null;
+  return altKey || !plannerFeatureEnabled("wallClickAlt") ? wallKey : null;
+}
+
 export function findFurnitureItemId(obj: Object3D): string | null {
   let current: Object3D | null = obj;
   while (current !== null) {
@@ -580,8 +592,9 @@ export function SelectionSystem(): null {
           placeInHandAt(outcome.x, outcome.y);
         } else {
           const found = interactionTargetAt(outcome.x, outcome.y);
+          const wall = wallToHide(found.wallKey, false);
           if (found.itemId !== null) useSelectionStore.getState().select(found.itemId);
-          else if (found.wallKey !== null) useVisibilityStore.getState().toggleWall(found.wallKey);
+          else if (wall !== null) useVisibilityStore.getState().toggleWall(wall);
           else useSelectionStore.getState().clearSelection();
         }
       } else if (outcome.kind === "place") {
@@ -742,7 +755,8 @@ export function SelectionSystem(): null {
       // Raycast to find if we clicked on a placed furniture item
       const found = interactionTargetAt(event.clientX, event.clientY);
       dragItemId.current = found.itemId;
-      wallClickKey.current = found.wallKey;
+      // A plain press on a wall is a press on the floor under it when Alt-click hides walls.
+      wallClickKey.current = wallToHide(found.wallKey, event.altKey);
       dragGrabOffset.current = { x: 0, z: 0 };
       if (found.itemId !== null) {
         // Track accepted INSERT IDs from the press, including the interval
@@ -1092,10 +1106,11 @@ export function SelectionSystem(): null {
         if (touchGesture.current !== "tap") return;
         touchGesture.current = null;
         const found = interactionTargetAt(event.clientX, event.clientY);
+        const wall = wallToHide(found.wallKey, event.altKey);
         if (found.itemId !== null) {
           useSelectionStore.getState().select(found.itemId);
-        } else if (found.wallKey !== null) {
-          useVisibilityStore.getState().toggleWall(found.wallKey);
+        } else if (wall !== null) {
+          useVisibilityStore.getState().toggleWall(wall);
         } else {
           useSelectionStore.getState().clearSelection();
         }

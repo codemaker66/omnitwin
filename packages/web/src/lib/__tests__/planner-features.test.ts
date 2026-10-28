@@ -31,7 +31,7 @@ describe("planner features: everyone's switches", () => {
     expect(Object.keys(PLANNER_FEATURE_SPECS)).toEqual(expect.arrayContaining([
       "touchArbiter", "leanMotionPipeline", "seatsOnTheCard",
       "setupCards", "truthfulGhost", "tableNumbers", "editingKeys", "fillKeepOuts", "liveAisles",
-      "storeCounts", "putBack", "lineUp", "moveVerb", "tableSets", "replace",
+      "storeCounts", "putBack", "lineUp", "moveVerb", "tableSets", "replace", "wallClickAlt",
     ]));
   });
 
@@ -43,7 +43,7 @@ describe("planner features: everyone's switches", () => {
   it("names a lane and a quality-of-life item for every key", () => {
     for (const spec of Object.values(PLANNER_FEATURE_SPECS)) {
       expect(["E", "P"]).toContain(spec.lane);
-      expect(spec.item).toMatch(/^Q-\d{2}[ab]?$/u);
+      expect(spec.item).toMatch(/^(?:Q-\d{2}[ab]?|CB-\d{2})$/u);
     }
   });
 });
