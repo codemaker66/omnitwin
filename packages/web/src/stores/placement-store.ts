@@ -22,6 +22,7 @@ import {
   planBanquetFill,
   planRoomFill,
   planTheatreFill,
+  plannerChairSupply,
   refillPieces,
   type BanquetFillPlan,
   type RoomExit,
@@ -867,14 +868,18 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     if (chairItem === undefined || chairItem.category !== "chair") return null;
 
     const dims = useRoomDimensionsStore.getState().dimensions;
-    // Room dimensions are render-space; the plan works in metres.
-    const plan = planTheatreFill(chairItem, targetGuests, toRealWorld(dims.width), toRealWorld(dims.length), { doorSpaces: roomDoorKeepOuts() });
+    // Room dimensions are render-space; the plan works in metres. The rows start with this chair and
+    // go on in the hall's order as each kind runs out (Blake, 28 Oct 2026), as the prompt previewed.
+    const plan = planTheatreFill(chairItem, targetGuests, toRealWorld(dims.width), toRealWorld(dims.length), {
+      doorSpaces: roomDoorKeepOuts(),
+      chairSupply: plannerChairSupply(chairItem.slug),
+    });
     if (plan === null) return null;
 
     // Each planned seat (metres, room-centred, facing the stage) → a floor-level
-    // chair in render space. No groups — theatre chairs stand alone.
+    // chair of its row's kind in render space. No groups — theatre chairs stand alone.
     const placedItems = plan.seats.map((s) =>
-      createPlacedItem(chairItemId, toRenderSpace(s.xM), toRenderSpace(s.zM), s.rotationY, null, 0),
+      createPlacedItem(s.chairItemId, toRenderSpace(s.xM), toRenderSpace(s.zM), s.rotationY, null, 0),
     );
     const retainedApplicators = get().placedItems.filter(
       (item) => !isSceneFurniturePlacement(item),

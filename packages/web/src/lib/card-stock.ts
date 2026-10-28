@@ -207,6 +207,35 @@ export function currentStoreStock(): UsableStock | null {
   return stockSource();
 }
 
+/**
+ * Trades Hall's chairs as its equipment list of 5 September 2026 records them
+ * (packages/api import-venue-stock maps that list onto the catalogue): the four
+ * kinds Blake gave the planner (28 Oct 2026: "only use the chairs i gave you
+ * inventory for"). Fill reads them where the store's own figures are not
+ * known, a guest's planner or before the cards register stock, so it never
+ * sets more of a kind than the hall owns. They are never shown.
+ */
+const RECORDED_CHAIR_STOCK: Readonly<Record<string, number>> = {
+  "chiavari-chair": 200,
+  "pink-chair": 120,
+  "gallery-chair-red-gold": 107,
+  "checked-banquet-chair": 106,
+};
+
+/**
+ * How many of a chair the hall has for Fill, by its stock identity (so the
+ * Turini counts as the pink chair): the store's usable stock where it is
+ * known, else the recorded figure; null where neither knows, which sets no
+ * limit.
+ */
+export function chairsInStore(chairItemId: string, stock: UsableStock | null = currentStoreStock()): number | null {
+  const identity = stockIdentity(chairItemId);
+  const usable = stock?.get(identity);
+  if (usable !== undefined) return usable;
+  const slug = getCatalogueItem(identity)?.slug;
+  return slug === undefined ? null : RECORDED_CHAIR_STOCK[slug] ?? null;
+}
+
 /** The refusal's words, in the planner's name for the piece: "Velvet Banquet Chair: 40 in store, this needs 48". */
 export function storeShortfallWords(shortfall: StoreShortfall): string {
   const name = getCatalogueItem(shortfall.catalogueItemId)?.name ?? "This piece";
