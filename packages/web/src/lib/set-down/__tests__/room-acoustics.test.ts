@@ -11,7 +11,8 @@ import {
   roomAcousticsFor,
   roomState,
 } from "../room-acoustics.js";
-import { ROOM_ACOUSTICS, ROOM_PLANS, domeGeometry, type RoomAcoustics, type RoomSlug } from "../rooms.js";
+import { ROOM_ACOUSTICS, ROOM_PLANS, UNCALIBRATED, domeGeometry, type RoomAcoustics, type RoomSlug } from "../rooms.js";
+import { CALIBRATION_RANGE, fittedCalibration } from "./tracer-results.js";
 
 const NO_CONTENTS: BandValues = [0, 0, 0, 0, 0, 0, 0];
 const BANDS = [0, 1, 2, 3, 4, 5, 6] as const;
@@ -37,6 +38,15 @@ function timesWith(room: RoomAcoustics, items: readonly PlacedItem[]): BandValue
 /** The mean of the 500 Hz and 1 kHz times. */
 function midBand(rt: BandValues): number {
   return (rt[2] + rt[3]) / 2;
+}
+
+/** Each factor is finite and inside the tracer fit's clamp. */
+function expectCalibrationInRange(calibration: BandValues): void {
+  for (const factor of calibration) {
+    expect(Number.isFinite(factor)).toBe(true);
+    expect(factor).toBeGreaterThanOrEqual(CALIBRATION_RANGE.min);
+    expect(factor).toBeLessThanOrEqual(CALIBRATION_RANGE.max);
+  }
 }
 
 describe("Trades Hall rooms", () => {
@@ -83,12 +93,13 @@ describe("Trades Hall rooms", () => {
     expect(rt[3]).toBeLessThan(4.1);
   });
 
-  it("keeps every room's surfaces and calibration well formed", () => {
+  it("keeps every room's surfaces and calibration well formed, the calibration as fitted to the ray tracer", () => {
     for (const slug of ROOM_SLUGS) {
       const room = ROOM_ACOUSTICS[slug];
       expect(room.slug).toBe(slug);
       expect(room.volumeM3).toBeGreaterThan(0);
-      expect(room.calibration).toEqual([1, 1, 1, 1, 1, 1, 1]);
+      expectCalibrationInRange(room.calibration);
+      expect(room.calibration).toEqual(fittedCalibration(slug));
       expect(room.source.length).toBeGreaterThan(0);
       for (const surface of room.surfaces) {
         expect(Number.isFinite(surface.areaM2)).toBe(true);
@@ -101,12 +112,21 @@ describe("Trades Hall rooms", () => {
     }
   });
 
-  it("makes each gallery's empty mid band under 1.0 s and under a third of the Grand Hall's", () => {
-    const hall = midBand(reverberationTimes(GRAND_HALL, NO_CONTENTS));
+  it("makes each gallery's empty mid band under 1.0 s and under a third of the Grand Hall's, as surveyed", () => {
+    // A check of the gallery materials (R13), so it reads the survey's Eyring
+    // times, before the tracer's calibration (ruling R33).
+    const surveyed = (room: RoomAcoustics): RoomAcoustics => ({ ...room, calibration: UNCALIBRATED });
+    const hall = midBand(reverberationTimes(surveyed(GRAND_HALL), NO_CONTENTS));
     for (const slug of ["north-gallery", "south-gallery"] as const) {
-      const gallery = midBand(reverberationTimes(ROOM_ACOUSTICS[slug], NO_CONTENTS));
+      const gallery = midBand(reverberationTimes(surveyed(ROOM_ACOUSTICS[slug]), NO_CONTENTS));
       expect(gallery).toBeLessThan(1.0);
       expect(gallery).toBeLessThan(hall / 3);
+    }
+  });
+
+  it("keeps each gallery's calibrated empty mid band under 1.0 s", () => {
+    for (const slug of ["north-gallery", "south-gallery"] as const) {
+      expect(midBand(reverberationTimes(ROOM_ACOUSTICS[slug], NO_CONTENTS))).toBeLessThan(1.0);
     }
   });
 
@@ -281,7 +301,9 @@ describe("room state", () => {
   it("gives a null space a finite default 10 x 8 x 4 m room", () => {
     const room = roomAcousticsFor(null);
     expect(room.volumeM3).toBeCloseTo(320, 9);
-    expect(room.calibration).toEqual([1, 1, 1, 1, 1, 1, 1]);
+    // A default box has no traced result to fit, so it keeps Eyring as calculated.
+    expectCalibrationInRange(room.calibration);
+    expect(room.calibration).toEqual(UNCALIBRATED);
     const state = roomState(room, []);
     for (const t of state.rt) {
       expect(Number.isFinite(t)).toBe(true);
