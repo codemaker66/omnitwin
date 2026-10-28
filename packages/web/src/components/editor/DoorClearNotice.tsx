@@ -59,6 +59,8 @@ export function DoorClearNotice({ mobile = false, zoned = false }: { readonly mo
       role="status"
       aria-live="polite"
       data-testid="door-clear-notice-region"
+      // Folds with the planner's chrome when it is cleared (T-680), and returns on restore; the floor's gold glow stays.
+      data-chrome-surface=""
     >
       {shown && (
         <div className="door-clear-notice__card" data-testid="door-clear-notice">

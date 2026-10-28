@@ -65,6 +65,11 @@ afterEach(() => {
 });
 
 describe("the notice on a layout with a table in front of a door", () => {
+  it("is one of the chrome's surfaces, which fold away together when the chrome is cleared (T-680)", () => {
+    render(<DoorClearNotice />);
+    expect(screen.getByTestId("door-clear-notice-region").hasAttribute("data-chrome-surface")).toBe(true);
+  });
+
   it("says nothing while every door is clear", () => {
     usePlacementStore.setState({ placedItems: [...createTableGroup(ROUND, 0, -1, 0, 10)] });
     render(<DoorClearNotice />);
