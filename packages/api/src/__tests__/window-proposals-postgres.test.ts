@@ -112,8 +112,8 @@ describe.skipIf(target === undefined)("window proposals on migrated PostgreSQL",
     return { venueId, roomId, otherRoomId, eventId, configurationId, ...people };
   }
 
-  const propose = (f: Fixture, actor: MutationActor & { readonly name: string }, from: string, to: string, key = randomUUID(), spaceId?: string) =>
-    proposeWindowCore(db, actor, f.eventId, { spaceId: spaceId ?? f.roomId, startsAt: at(from), endsAt: at(to), idempotencyKey: key });
+  const propose = (f: Fixture, actor: MutationActor & { readonly name: string }, from: string, to: string, key = randomUUID(), spaceId?: string, day = DAY) =>
+    proposeWindowCore(db, actor, f.eventId, { spaceId: spaceId ?? f.roomId, startsAt: at(from, day), endsAt: at(to, day), idempotencyKey: key });
 
   async function stored(bookingId: string) {
     const [row] = await db.select().from(schema.bookings).where(eq(schema.bookings.id, bookingId));
@@ -149,6 +149,28 @@ describe.skipIf(target === undefined)("window proposals on migrated PostgreSQL",
     const holds = await db.select({ id: schema.bookings.id }).from(schema.bookings)
       .where(and(eq(schema.bookings.eventId, f.eventId), eq(schema.bookings.createdBy, f.client.id)));
     expect(holds).toHaveLength(1);
+  });
+
+  it("keeps the decision date on a move while it still comes before the window, and sets a new one when it would not (supplier-requests-6)", async () => {
+    const f = await fixture();
+    const first = granted(await propose(f, f.client, "18:00", "23:00"));
+    const proposed = await stored(first.slot.bookingId);
+    if (proposed.decisionAt === null) throw new Error("expected a decision date");
+
+    // Later: the date already chosen still comes first, and stays.
+    granted(await propose(f, f.client, "19:00", "23:30", randomUUID()));
+    const later = await stored(first.slot.bookingId);
+    expect(later.decisionAt).toEqual(proposed.decisionAt);
+    expect(later.nextActionDueAt).toEqual(proposed.nextActionDueAt);
+
+    // Sooner than that date: a new date before the window, a day before doors.
+    const soonDay = new Date(Date.now() + 3 * 86_400_000).toISOString().slice(0, 10);
+    granted(await propose(f, f.client, "18:00", "23:00", randomUUID(), undefined, soonDay));
+    const sooner = await stored(first.slot.bookingId);
+    const soonStart = Date.parse(at("18:00", soonDay));
+    expect(proposed.decisionAt.getTime()).toBeGreaterThan(soonStart);
+    expect(sooner.decisionAt?.getTime()).toBe(soonStart - 86_400_000);
+    expect(sooner.nextActionDueAt).toEqual(sooner.decisionAt);
   });
 
   it("admits a planner by their own link and the office at its venue; refuses manager, sales and hallkeeper", async () => {

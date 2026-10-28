@@ -169,8 +169,16 @@ export async function proposeWindowCore(
     if (mine !== undefined) {
       const unchanged = mine.spaceId === space.id && mine.startsAt.getTime() === startsAt.getTime() && mine.endsAt.getTime() === endsAt.getTime();
       const rank = unchanged ? mine.rank : await nextRank(tx, space.id, startsAt, endsAt, mine.id);
+      // The decision date stays while it still comes before the window; a
+      // move to a sooner window that it would fall after gets a new one, and
+      // the next action's date with it.
+      const decisionKept = mine.decisionAt !== null && mine.decisionAt.getTime() < startsAt.getTime();
+      const decisionAt = decisionKept && mine.decisionAt !== null ? mine.decisionAt : decisionDateFor(startsAt, now);
+      const nextActionDueAt = decisionKept && mine.nextActionDueAt !== null && mine.nextActionDueAt.getTime() < startsAt.getTime()
+        ? mine.nextActionDueAt
+        : decisionAt;
       [row] = await tx.update(bookings)
-        .set({ spaceId: space.id, startsAt, endsAt, rank, updatedAt: now })
+        .set({ spaceId: space.id, startsAt, endsAt, rank, decisionAt, nextActionDueAt, updatedAt: now })
         .where(and(eq(bookings.id, mine.id), eq(bookings.kind, "hold"), eq(bookings.status, "active")))
         .returning();
       if (row === undefined) return deny(409, "WINDOW_DECIDED", "The office has confirmed this time; ask them to move it.");

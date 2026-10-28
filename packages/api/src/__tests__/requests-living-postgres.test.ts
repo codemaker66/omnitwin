@@ -18,11 +18,15 @@ import {
   createRequestCore,
   listRequestHandlers,
   listRequestsForClientEvent,
+  requestEscalationEmailKey,
+  runRequestEscalationPass,
+  selectDueRequestEscalations,
   transitionRequestCore,
   type RequestActor,
   type RequestDeny,
 } from "../services/requests.js";
 import { loadClientEventSchedule } from "../services/client-event-schedule.js";
+import { planNextWake } from "../services/escalation-scheduler.js";
 
 // Goal 19 S1 — the widened request on real rows: the client asks on their own
 // slot and gets a client-facing thread; the floor's ask gets a staff-private
@@ -303,6 +307,54 @@ describe.skipIf(target === undefined)("the widened request on migrated PostgreSQ
     expect(snapshot.messages.map((message) => message.body)).toEqual(expect.arrayContaining([
       "Done another way: Benches instead.", "Reopened by Morag: Benches are too low.", "Fiona has this.",
     ]));
+  });
+
+  it("re-arms a reopened request's escalation: a new window from the reopen, the old escalation spent, its own email (supplier-requests-2)", async () => {
+    const resendKey = process.env["RESEND_API_KEY"];
+    delete process.env["RESEND_API_KEY"];
+    try {
+      const f = await fixture();
+      await db.insert(schema.venueSettings).values({ venueId: f.venueId, requestEscalationSeconds: 180, escalationSoonSeconds: 120 });
+      const made = granted(await createClientRequestCore(db, f.client, f.eventId, chairs(f)));
+      const id = made.request.id;
+      // It escalated once while nobody had it, then was taken and finished.
+      const earlier = new Date("2026-01-20T12:00:00.000Z");
+      await db.update(schema.requests).set({ escalatedAt: earlier, escalationEmailedAt: earlier }).where(eq(schema.requests.id, id));
+      granted(await transitionRequestCore(db, f.hallkeeper, id, { to: "accepted" }));
+      granted(await transitionRequestCore(db, f.hallkeeper, id, { to: "resolved", outcome: "done" }));
+
+      const reopened = granted(await transitionRequestCore(db, f.client, id, { to: "reopened", note: "Still short of two." })).request;
+      expect(reopened.escalatedAt).toBeNull();
+      expect(Date.parse(reopened.escalationDueAt ?? "") - Date.parse(reopened.reopenedAt ?? "")).toBe(120_000);
+      const [row] = await db.select().from(schema.requests).where(eq(schema.requests.id, id));
+      expect(row?.escalationEmailedAt).toBeNull();
+
+      // The sweep plans a wake for it. (Moved to an instant no other row can
+      // precede, so the house-wide plan can only be this request's.)
+      const ancient = new Date("2000-01-01T00:00:00.000Z");
+      await db.update(schema.requests).set({ escalationDueAt: ancient }).where(eq(schema.requests.id, id));
+      expect(await planNextWake(db, Date.now())).toBe(ancient.getTime());
+
+      // Past its window, at a midday outside quiet hours: it escalates as
+      // nobody's, with an email of its own beside the first escalation's.
+      const noon = new Date("2026-01-21T12:00:00.000Z");
+      await db.update(schema.requests).set({ escalationDueAt: new Date(noon.getTime() - 1000) }).where(eq(schema.requests.id, id));
+      const escalated = (await runRequestEscalationPass(db, { now: noon })).filter((item) => item.request.id === id);
+      expect(escalated.map((item) => [item.reason, item.emailedAdmins])).toEqual([["unowned", 1]]);
+      const keys = await pool.query<{ idempotency_key: string }>("SELECT idempotency_key FROM email_sends WHERE idempotency_key LIKE $1", [`request-escalation:${id}:%`]);
+      expect(keys.rows.map((key) => key.idempotency_key)).toEqual([requestEscalationEmailKey(id, noon, f.admin.id)]);
+      const [inbox] = await db.select({ body: schema.eventPlanNotifications.body }).from(schema.eventPlanNotifications)
+        .where(eq(schema.eventPlanNotifications.recipientUserId, f.admin.id));
+      expect(inbox?.body).toBe("Morag's request was reopened and nobody has picked it up yet.");
+
+      // Taken after the reopen: nothing more is due for it.
+      granted(await transitionRequestCore(db, f.staff, id, { to: "accepted" }));
+      const [taken] = await db.select().from(schema.requests).where(eq(schema.requests.id, id));
+      if (taken === undefined) throw new Error("expected the request");
+      expect(selectDueRequestEscalations([{ ...taken, escalatedAt: null }], new Date(noon.getTime() + 60_000))).toEqual([]);
+    } finally {
+      if (resendKey !== undefined) process.env["RESEND_API_KEY"] = resendKey;
+    }
   });
 
   it("lets a hallkeeper read the client's request thread but not the client's booking thread", async () => {
