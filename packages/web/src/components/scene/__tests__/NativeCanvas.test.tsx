@@ -33,6 +33,9 @@ const profiling = vi.hoisted(() => ({
   sampleDrawn: vi.fn(), drawn: vi.fn(() => Promise.resolve(45)),
   capturePending: vi.fn((_scene: object, _renderer: object) => false),
 }));
+const reports = vi.hoisted(() => ({ reportFailure: vi.fn() }));
+vi.mock("../../../observability/failure-reports.js", () => reports);
+
 vi.mock("../../../lib/perf-runtime.js", () => ({
   shouldProfileFrames: profiling.enabled, beginGpuProfile: profiling.begin,
   endGpuProfile: profiling.end, recordRenderedFrame: profiling.record,
@@ -564,6 +567,17 @@ describe("NativeCanvas", () => {
   });
 
   describe("when the browser takes the graphics device away", () => {
+    it("tells Sentry the device was lost, once, with the view and the loss's own words (observability/failure-reports.ts)", async () => {
+      reports.reportFailure.mockClear();
+      render(<NativeCanvas frameloop="demand"><MountProbe mounts={{ count: 0 }} /></NativeCanvas>);
+      const lost = await start(0);
+      automaticFrame();
+      act(() => { lost.onDeviceLost({ api: "WebGPU", message: "Device lost" }); });
+      expect(reports.reportFailure).toHaveBeenCalledTimes(1);
+      expect(reports.reportFailure).toHaveBeenCalledWith("device-lost", expect.objectContaining({ surface: "walk", detail: "Device lost" }));
+      await flush();
+    });
+
     it("puts a fresh renderer on the same canvas and keeps the scene, its state and onCreated untouched", async () => {
       const onCreated = vi.fn();
       const mounts = { count: 0 };
