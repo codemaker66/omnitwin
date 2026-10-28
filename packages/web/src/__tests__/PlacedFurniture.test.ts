@@ -108,11 +108,13 @@ describe("PlacedFurniture (#15) — memoization tripwire", () => {
     expect(codeOnly).not.toContain("placed.clothed && catalogueItem.category === \"table\"");
   });
 
-  it("does not animate persisted clothed tables on initial scene load", async () => {
+  it("drapes only the cloths newlyClothedIds names, starting from no previous layout", async () => {
     const { codeOnly } = await readSource(SRC);
-    expect(codeOnly).toContain("useRef<ReadonlyMap<string, string> | null>(null)");
-    expect(codeOnly).toContain("prev !== null && prev.get(item.id) !== key");
-    expect(codeOnly).toContain("if (prev !== null && newlyClothed !== null)");
+    // Wiring only: which ids drape (first load, save, undo, layout switch) is
+    // executed in lib/__tests__/newly-clothed.test.ts.
+    expect(codeOnly).toContain("useRef<readonly PlacedItem[] | null>(null)");
+    expect(codeOnly).toContain("newlyClothedIds(prevItemsRef.current, placedItems)");
+    expect(codeOnly).toContain("prevItemsRef.current = placedItems");
   });
 
   it("keeps compact/motion annotation budgeting separate from model and dressing fidelity", async () => {

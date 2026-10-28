@@ -48,6 +48,7 @@ import {
   hasPlacementViolation,
 } from "../lib/placement.js";
 import type { PlacedItem } from "../lib/placement.js";
+import { newlyClothedIds } from "../lib/newly-clothed.js";
 import {
   TABLE_CLOTH_COLORS,
   isSceneFurniturePlacement,
@@ -825,39 +826,20 @@ export function PlacedFurniture(): React.ReactElement {
 
   // Track which items are currently animating their cloth unfurl
   const [animatingIds, setAnimatingIds] = useState<ReadonlySet<string>>(new Set());
-  const prevClothedRef = useRef<ReadonlyMap<string, string> | null>(null);
+  const prevItemsRef = useRef<readonly PlacedItem[] | null>(null);
 
-  // Detect newly clothed items to trigger animation.
-  // Avoids allocating intermediate Sets on every render — only builds new
-  // Sets when an item actually becomes clothed for the first time.
+  // A cloth drapes only when someone puts it on a piece already in the
+  // layout (newlyClothedIds): never on the first render, nor for the ids a
+  // save re-keys, an undo restores or a newly loaded layout brings.
   useEffect(() => {
-    const prev = prevClothedRef.current;
-    let newlyClothed: string[] | null = null;
-    const nextClothed = new Map<string, string>();
-
-    for (const item of placedItems) {
-      if (!isSceneFurniturePlacement(item)) continue;
-      const catalogueItem = getCatalogueItem(item.catalogueItemId);
-      if (catalogueItem === undefined) continue;
-      const appliedStyle = appliedTableLinenStyle(catalogueItem, item);
-      if (appliedStyle !== null) {
-        const key = appliedStyle;
-        nextClothed.set(item.id, key);
-        if (prev !== null && prev.get(item.id) !== key) {
-          (newlyClothed ??= []).push(item.id);
-        }
-      }
-    }
-
-    prevClothedRef.current = nextClothed;
-
-    if (prev !== null && newlyClothed !== null) {
-      setAnimatingIds((cur) => {
-        const next = new Set(cur);
-        for (const id of newlyClothed) next.add(id);
-        return next;
-      });
-    }
+    const newlyClothed = newlyClothedIds(prevItemsRef.current, placedItems);
+    prevItemsRef.current = placedItems;
+    if (newlyClothed.length === 0) return;
+    setAnimatingIds((cur) => {
+      const next = new Set(cur);
+      for (const id of newlyClothed) next.add(id);
+      return next;
+    });
   }, [placedItems]);
 
   const handleAnimationComplete = useCallback((id: string) => {
