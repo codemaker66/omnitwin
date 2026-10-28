@@ -19,6 +19,7 @@ import { useAutoFillRequestStore } from "../../../stores/auto-fill-request-store
 import { PlannerCommandDeck } from "../PlannerCommandDeck.js";
 import { GRAND_HALL_ARRIVAL } from "../../../lib/planner-room-arrival.js";
 import { sampleCameraTour } from "../../../lib/camera-tour.js";
+import { setPlannerFeaturesForTesting } from "../../../lib/planner-features.js";
 
 function resetPlannerStores(): void {
   useEditorStore.getState().reset();
@@ -174,7 +175,9 @@ describe("PlannerCommandDeck", () => {
     useCockpitStore.getState().setPlannedGuestCount(24);
 
     render(<PlannerCommandDeck />);
-    expect(screen.getByTestId("planner-command-action-auto-fill").textContent).toMatch(/Auto-fill 24/);
+    const layOut = screen.getByTestId("planner-command-action-auto-fill");
+    expect(layOut.textContent).toBe("Lay out");
+    expect(layOut.getAttribute("aria-label")).toBe("Lay out tables and seats for 24 guests");
     fireEvent.click(screen.getByTestId("planner-command-action-auto-fill"));
 
     expect(usePlacementStore.getState().placedItems).toHaveLength(0);
@@ -189,9 +192,39 @@ describe("PlannerCommandDeck", () => {
     render(<PlannerCommandDeck />);
 
     expect(screen.queryByTestId("planner-command-action-auto-fill")).toBeNull();
+    expect(screen.queryByTestId("planner-command-action-lay-out")).toBeNull();
   });
 
-  it("starts a cinematic showcase tour from the command deck", () => {
+  it("offers Lay out on a laid floor once Fill over the layout is on, and asks the Guests lens (Q-10)", () => {
+    setPlannerFeaturesForTesting({ fillKeepOuts: true });
+    try {
+      const table = getCatalogueItemBySlug("round-table-6ft");
+      if (table === undefined) throw new Error("no round");
+      usePlacementStore.setState({ placedItems: [createPlacedItem(table.id, 0, 0, 0, null, 0)] });
+
+      render(<PlannerCommandDeck />);
+      expect(screen.queryByTestId("planner-command-action-auto-fill")).toBeNull();
+      fireEvent.click(screen.getByTestId("planner-command-action-lay-out"));
+
+      expect(usePlacementStore.getState().placedItems).toHaveLength(1);
+      expect(useCockpitStore.getState().activeMode).toBe("guests");
+      expect(useAutoFillRequestStore.getState().requested).toBe("dinner-rounds");
+    } finally {
+      setPlannerFeaturesForTesting(null);
+    }
+  });
+
+  it("names its commands in the venue's words: Lay out, Draw and Present (F-15)", () => {
+    render(<PlannerCommandDeck />);
+    const deck = screen.getByTestId("planner-command-deck");
+    expect(screen.getByRole("button", { name: "Lay out tables and seats for your guests" }).textContent).toBe("Lay out");
+    expect(screen.getByRole("button", { name: "Draw on the floor" }).textContent).toBe("Draw");
+    expect(screen.getByTestId("planner-command-action-showcase").textContent).toBe("Present");
+    const words = [deck.textContent ?? "", ...[...deck.querySelectorAll("[aria-label],[title]")].flatMap((node) => [node.getAttribute("aria-label") ?? "", node.getAttribute("title") ?? ""])].join(" ");
+    expect(words).not.toMatch(/auto-fill|laser|showcase|cinematic/iu);
+  });
+
+  it("starts the Present tour from the command deck", () => {
     useRoomDimensionsStore.setState({ dimensions: { width: 42, length: 21, height: 7 } });
 
     render(<PlannerCommandDeck />);
@@ -222,7 +255,11 @@ describe("PlannerCommandDeck", () => {
     useBookmarkStore.getState().clearTour();
     useCockpitStore.setState({ sceneSource: { ...source, captureSource: "package" } });
     view.rerender(<PlannerCommandDeck />);
-    expect(screen.getByTestId<HTMLButtonElement>("planner-command-action-showcase").disabled).toBe(true);
+    const present = screen.getByTestId<HTMLButtonElement>("planner-command-action-showcase");
+    expect(present.disabled).toBe(true);
+    // A disabled control says why, in its name and its tooltip (spec 13 rule 6).
+    expect(present.getAttribute("aria-label")).toBe("Present is not ready for this view of the room yet");
+    expect(present.getAttribute("title")).toBe("Present is not ready for this view of the room yet");
     fireEvent.click(screen.getByTestId("planner-command-action-showcase"));
     expect(useBookmarkStore.getState().tour).toBeNull();
     useCockpitStore.setState({ sceneSource: { ...source, configId: "another" } });

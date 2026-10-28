@@ -102,6 +102,11 @@ export function isFloorShade(id: CraftedMaterialId): boolean {
   return id === "contact";
 }
 
+/** The same, by a material's palette name, which survives the instancing harvest. */
+export function isFloorShadeMaterial(material: Material): boolean {
+  return material.name === "crafted:contact";
+}
+
 /**
  * The shade under a foot (crafted-shadow.ts contactSpots): an unlit dark
  * spot blended over the floor, drawn after it and never into the depth.

@@ -1,6 +1,6 @@
 import { z } from "zod";
-import type { EventInstructions, GuestEnquiry } from "@omnitwin/types";
-import { ApiError, api } from "./client.js";
+import { ConfigurationReviewStatusSchema, type EventInstructions, type GuestEnquiry } from "@omnitwin/types";
+import { api } from "./client.js";
 
 // ---------------------------------------------------------------------------
 // Response schemas — Zod validation at the API boundary
@@ -86,9 +86,25 @@ const ConfigurationResponseSchema = z.object({
   // field, Zod's default object mode strips metadata entirely and the
   // Event Details panel loads blank on every reopen.
   metadata: z.unknown().optional(),
+  // The review workflow's state (authenticated reads return the whole row).
+  // A value this client does not know reads as absent rather than failing
+  // the layout's load: the editor only needs to know when edits are refused.
+  reviewStatus: ConfigurationReviewStatusSchema.optional().catch(undefined),
+  // One of the venue's sample layouts (the row's is_template). Optional, and
+  // anything but a boolean reads as absent: a label never fails a load.
+  isTemplate: z.boolean().optional().catch(undefined),
 });
 
 export type Configuration = z.infer<typeof ConfigurationResponseSchema>;
+
+// A new public plan comes back with the secret that lets this browser, and
+// only this browser, claim it into an account later (migration 0102). An API
+// from before 0102 sends none, and the plan then stays a public draft.
+const CreatedPublicConfigurationSchema = ConfigurationResponseSchema.extend({
+  claimSecret: z.string().min(16).optional(),
+});
+
+export type CreatedPublicConfiguration = z.infer<typeof CreatedPublicConfigurationSchema>;
 
 const PlacedObjectArraySchema = z.array(PlacedObjectResponseSchema);
 
@@ -124,12 +140,6 @@ export interface BatchObjectInput {
   readonly metadata?: ObjectMetadata | null;
 }
 
-export interface RevisionConflict {
-  readonly expectedRevision: number;
-  readonly currentRevision: number;
-  readonly message: string;
-}
-
 /** Re-export the canonical guest enquiry input type from @omnitwin/types. */
 export type GuestEnquiryInput = GuestEnquiry;
 
@@ -137,8 +147,8 @@ export type GuestEnquiryInput = GuestEnquiry;
 // Public endpoints (no auth)
 // ---------------------------------------------------------------------------
 
-export async function createPublicConfig(spaceId: string, name?: string): Promise<Configuration> {
-  return api.post("/public/configurations", { spaceId, name }, true, ConfigurationResponseSchema);
+export async function createPublicConfig(spaceId: string, name?: string): Promise<CreatedPublicConfiguration> {
+  return api.post("/public/configurations", { spaceId, name }, true, CreatedPublicConfigurationSchema);
 }
 
 export async function publicBatchSave(
@@ -190,8 +200,10 @@ export async function getConfigSummaries(configIds: readonly string[]): Promise<
   return api.get(`/configurations/summaries?ids=${ids}`, z.array(ConfigurationSummarySchema));
 }
 
-export async function claimConfig(configId: string): Promise<Configuration> {
-  return api.post(`/configurations/${configId}/claim`, undefined, undefined, ConfigurationResponseSchema);
+/** Claims a public plan into the signed-in account with the secret its
+ *  creating browser was given; lib/planner-claim.ts is the caller. */
+export async function claimConfig(configId: string, claimSecret: string): Promise<Configuration> {
+  return api.post(`/configurations/${configId}/claim`, { claimSecret }, undefined, ConfigurationResponseSchema);
 }
 
 export async function authBatchSave(
@@ -205,23 +217,6 @@ export async function authBatchSave(
     undefined,
     BatchSaveResponseSchema,
   );
-}
-
-const RevisionConflictDetailsSchema = z.object({
-  expectedRevision: z.number().int().min(1),
-  currentRevision: z.number().int().min(1),
-});
-
-export function parseRevisionConflict(err: unknown): RevisionConflict | null {
-  if (!(err instanceof ApiError)) return null;
-  if (err.status !== 409 || err.code !== "REVISION_CONFLICT") return null;
-  const parsed = RevisionConflictDetailsSchema.safeParse(err.details);
-  if (!parsed.success) return null;
-  return {
-    expectedRevision: parsed.data.expectedRevision,
-    currentRevision: parsed.data.currentRevision,
-    message: err.message,
-  };
 }
 
 // ---------------------------------------------------------------------------

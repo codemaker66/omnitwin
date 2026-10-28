@@ -28,6 +28,19 @@ export function isPlannerChair(slug: string): boolean {
   return PLANNER_CHAIRS.has(slug);
 }
 
+/**
+ * Chairs the venue records under another identity than the one the planner
+ * sets: the venue's pink chair is the Burgess Turini 18/3 (Blake, 26 Oct
+ * 2026), as its stock already counts (lib/card-stock).
+ */
+const SAME_CHAIR_AS: Readonly<Record<string, string>> = { "pink-chair": UNASKED_PLANNER_CHAIR_SLUG };
+
+/** The planner chair this chair is, under either identity; null for a chair the planner never sets (a highchair, a legacy chair). */
+export function plannerChairFor(slug: string): string | null {
+  const same = SAME_CHAIR_AS[slug] ?? slug;
+  return isPlannerChair(same) ? same : null;
+}
+
 /** The chair a new seat gets: the event's, once the planner knows the event. */
 export function plannerChairSlug(kind: PlannerEventKind | null = usePlannerEventStore.getState().eventKind): string {
   return kind === null ? UNASKED_PLANNER_CHAIR_SLUG : PLANNER_CHAIR_BY_EVENT[kind];

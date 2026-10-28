@@ -23,10 +23,11 @@ import { ROTATION_SNAP_RAD } from "../selection.js";
 const CENTRE = { x: 2, z: 3 };
 
 describe("PLANNER_TOOLS", () => {
-  it("offers exactly the five hands, Select first", () => {
+  it("offers exactly the four hands, Select first, and no Scale (spec D10)", () => {
     expect(PLANNER_TOOLS.map((t) => t.id)).toEqual([
-      "select", "move", "rotate", "scale", "measure",
+      "select", "move", "rotate", "measure",
     ]);
+    expect(PLANNER_TOOLS.some((t) => /scale/iu.test(`${t.label} ${t.hint}`))).toBe(false);
   });
 });
 

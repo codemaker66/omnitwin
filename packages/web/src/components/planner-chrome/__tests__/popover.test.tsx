@@ -64,6 +64,29 @@ describe("Popover", () => {
     expect(panel.className).toContain("pc-popover--end");
   });
 
+  it("opens off a marked anchor that holds the bar (the slate with its plane), not the bar alone", () => {
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      if (this.hasAttribute("data-pc-popover-anchor")) return rect(20, 20, 340, 164);
+      return this.classList.contains("pc-lacquer") ? rect(20, 20, 340, 96) : rect(0, 0, 0, 0);
+    });
+    function Anchored(): ReactElement {
+      const popover = usePopoverState();
+      return (
+        <>
+          <section data-pc-popover-anchor>
+            <div className="pc-lacquer"><Key ref={popover.triggerRef} label="Title" expanded={popover.open} {...popover.triggerProps} onPress={popover.toggle} /></div>
+          </section>
+          <Popover state={popover} label="Menu" align="start"><button type="button">First</button></Popover>
+        </>
+      );
+    }
+    render(<Anchored />);
+    fireEvent.click(screen.getByRole("button", { name: "Title" }));
+    const panel = screen.getByRole("dialog", { name: "Menu" });
+    expect(panel.style.getPropertyValue("--pc-popover-top")).toBe(`${String(184 + POPOVER_GAP_PX)}px`);
+    expect(panel.style.getPropertyValue("--pc-popover-left")).toBe("20px");
+  });
+
   it("opens upward from a bar at the foot, from its left edge", () => {
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
       return this.classList.contains("pc-lacquer") ? rect(400, 920, 800, 56) : rect(0, 0, 0, 0);

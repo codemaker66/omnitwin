@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
-import { Box3, type BufferGeometry, Layers, type Material, Mesh, type Object3D, Texture } from "three";
-import { afterEach, describe, expect, it } from "vitest";
+import { Box3, type BufferGeometry, Layers, type Material, Mesh, type Object3D, Texture, Vector3 } from "three";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { CANONICAL_ASSETS, type CanonicalAsset } from "@omnitwin/types";
 import {
   CRAFTED_FURNITURE_SLUGS,
@@ -17,9 +17,11 @@ import { aoBox, aoRod, occlude } from "../crafted-ao.js";
 import { craftedDetail, setCraftedDetailLevel } from "../crafted-detail.js";
 import { lathe, roundedBox } from "../crafted-geometry.js";
 import { craftedMaterial } from "../crafted-materials.js";
+import { instantiateCraftedModel, mergeCraftedParts } from "../crafted-model.js";
 import { clearCraftedGeometryCache, createCraftedFurniture } from "../crafted-registry.js";
 import { casterGeometry } from "../crafted-shadow.js";
 import { damaskFigure, damaskFigureField } from "../crafted-textures.js";
+import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 
 function assetFor(slug: string): CanonicalAsset {
   const asset = CANONICAL_ASSETS.find((candidate) => candidate.slug === slug);
@@ -95,6 +97,112 @@ function triangleBudget(slug: CraftedFurnitureSlug): number {
 /** What a piece may cast the sun's shadow with: a few hundred triangles a chair, a few thousand a draped table. */
 function casterBudget(slug: CraftedFurnitureSlug): number {
   return CHAIRS.has(slug) ? 600 : 3_000;
+}
+
+/** Within this of the floor a vertex stands on it, metres. */
+const FLOOR_TOUCH = 0.004;
+/** Up to this high a seen vertex belongs to what stands on the floor beneath it, metres. */
+const LOW_BAND = 0.02;
+/** Vertices this close together stand as one, metres. */
+const TOUCH_LINK = 0.03;
+/** What stands no wider than this is a foot, a pad or a castor; wider is a hem, a plinth, a base or a panel. */
+const FOOT_EXTENT = 0.16;
+
+interface FloorTouch {
+  readonly x: number;
+  readonly z: number;
+  /** Its larger side across the floor. */
+  readonly extent: number;
+}
+
+/**
+ * The feet a piece stands on. Its seen surface up to LOW_BAND high (its
+ * triangles' edges, sampled every centimetre so a long low face is not just
+ * its corners), joined when within TOUCH_LINK (a grid of TOUCH_LINK cells
+ * finds the neighbours), makes what stands low; each group reaching within
+ * FLOOR_TOUCH of the floor stands on it. A group no wider than FOOT_EXTENT,
+ * and not under a wider one, is a foot: where it touches the floor is returned.
+ */
+function standingFeet(meshes: readonly Mesh[]): FloorTouch[] {
+  const points: Vector3[] = [];
+  for (const mesh of meshes) {
+    if (isCaster(mesh) || mesh.name.endsWith(":contact")) continue;
+    mesh.updateWorldMatrix(true, false);
+    const position = mesh.geometry.getAttribute("position");
+    const corner = (i: number): Vector3 => new Vector3().fromBufferAttribute(position, i).applyMatrix4(mesh.matrixWorld);
+    const index = mesh.geometry.index;
+    const triangles = (index?.count ?? position.count) / 3;
+    for (let t = 0; t < triangles; t += 1) {
+      const [a, b, c] = [0, 1, 2].map((k) => corner(index === null ? t * 3 + k : index.getX(t * 3 + k)));
+      if (a === undefined || b === undefined || c === undefined || Math.min(a.y, b.y, c.y) > LOW_BAND) continue;
+      for (const [from, to] of [[a, b], [b, c], [c, a]] as const) {
+        const steps = Math.max(1, Math.ceil(from.distanceTo(to) / 0.01));
+        for (let s = 0; s <= steps; s += 1) {
+          const point = from.clone().lerp(to, s / steps);
+          if (point.y <= LOW_BAND) points.push(point);
+        }
+      }
+    }
+  }
+  const parent = points.map((_, i) => i);
+  const root = (i: number): number => {
+    let at = i;
+    while ((parent[at] ?? at) !== at) at = parent[at] ?? at;
+    return at;
+  };
+  const cells = new Map<string, number[]>();
+  const cellOf = (point: Vector3, dx = 0, dz = 0): string => `${String(Math.floor(point.x / TOUCH_LINK) + dx)},${String(Math.floor(point.z / TOUCH_LINK) + dz)}`;
+  points.forEach((point, i) => {
+    for (let dx = -1; dx <= 1; dx += 1) {
+      for (let dz = -1; dz <= 1; dz += 1) {
+        for (const j of cells.get(cellOf(point, dx, dz)) ?? []) {
+          const other = points[j];
+          if (other !== undefined && Math.hypot(other.x - point.x, other.z - point.z) <= TOUCH_LINK) parent[root(i)] = root(j);
+        }
+      }
+    }
+    const key = cellOf(point);
+    const cell = cells.get(key);
+    if (cell === undefined) cells.set(key, [i]);
+    else cell.push(i);
+  });
+  const groups = new Map<number, Vector3[]>();
+  points.forEach((point, i) => {
+    const key = root(i);
+    const group = groups.get(key);
+    if (group === undefined) groups.set(key, [point]);
+    else group.push(point);
+  });
+  const extent = (box: Box3): number => Math.max(box.max.x - box.min.x, box.max.z - box.min.z);
+  const standing = [...groups.values()]
+    .map((group) => ({ all: new Box3().setFromPoints(group), touching: group.filter((point) => point.y <= FLOOR_TOUCH) }))
+    .filter((group) => group.touching.length > 0);
+  const wide = standing.filter((group) => extent(group.all) > FOOT_EXTENT).map((group) => group.all);
+  return standing
+    .filter((group) => extent(group.all) <= FOOT_EXTENT)
+    .map((group) => new Box3().setFromPoints(group.touching))
+    .filter((box) => {
+      const x = (box.min.x + box.max.x) / 2;
+      const z = (box.min.z + box.max.z) / 2;
+      return !wide.some((under) => x >= under.min.x && x <= under.max.x && z >= under.min.z && z <= under.max.z);
+    })
+    .map((box) => ({ x: (box.min.x + box.max.x) / 2, z: (box.min.z + box.max.z) / 2, extent: extent(box) }));
+}
+
+/** The spots of shade a piece leaves on the floor: each a quad of four corners, centred on its foot. */
+function contactSpotsOf(meshes: readonly Mesh[]): { readonly x: number; readonly z: number; readonly radius: number }[] {
+  const spots: { x: number; z: number; radius: number }[] = [];
+  for (const mesh of meshes) {
+    if (!mesh.name.endsWith(":contact")) continue;
+    mesh.updateWorldMatrix(true, false);
+    const position = mesh.geometry.getAttribute("position");
+    for (let corner = 0; corner + 3 < position.count; corner += 4) {
+      const quad = [0, 1, 2, 3].map((k) => new Vector3().fromBufferAttribute(position, corner + k).applyMatrix4(mesh.matrixWorld));
+      const box = new Box3().setFromPoints(quad);
+      spots.push({ x: (box.min.x + box.max.x) / 2, z: (box.min.z + box.max.z) / 2, radius: (box.max.x - box.min.x) / 2 });
+    }
+  }
+  return spots;
 }
 
 afterEach(() => {
@@ -326,6 +434,22 @@ describe("crafted shadows", () => {
     }
   });
 
+  // A foot, a pad or a castor needs its own spot of shade, which the footprint
+  // shadow every placed piece gets (FurnitureContactShadows) is too broad to
+  // give; a hem, a plinth or a panel is what that footprint shadow grounds.
+  it.each(CRAFTED_FURNITURE_SLUGS)("grounds every foot %s stands on with a spot of shade round it", (slug) => {
+    const model = build(slug);
+    try {
+      const meshes = meshesOf(model.object);
+      const spots = contactSpotsOf(meshes);
+      const bare = standingFeet(meshes)
+        .filter((foot) => !spots.some((spot) => Math.hypot(spot.x - foot.x, spot.z - foot.z) + foot.extent / 2 <= spot.radius));
+      expect(bare.map((touch) => `${touch.extent.toFixed(3)} m at (${touch.x.toFixed(3)}, ${touch.z.toFixed(3)})`)).toEqual([]);
+    } finally {
+      model.dispose();
+    }
+  });
+
   it("keeps a placement ghost out of the sun's map, and puts the placed piece back in", () => {
     const model = build("chiavari-chair");
     try {
@@ -346,12 +470,23 @@ describe("crafted shadows", () => {
     }
   });
 
+  it.each(CRAFTED_FURNITURE_SLUGS)("casts %s's sun shadow with a caster of its own", (slug) => {
+    const model = build(slug);
+    try {
+      expect(meshesOf(model.object).some(isCaster)).toBe(true);
+    } finally {
+      model.dispose();
+    }
+  });
+
   it("keeps a piece without a caster casting from what is seen", () => {
-    const model = build("trestle-6ft");
+    const parts = mergeCraftedParts([{ material: "plastic-white", geometry: roundedBox([0.5, 0.5, 0.5], 0.01, [0, 0.25, 0]) }]);
+    const model = instantiateCraftedModel("no-caster", parts);
     try {
       for (const mesh of meshesOf(model.object)) expect(mesh.castShadow, mesh.name).toBe(true);
     } finally {
       model.dispose();
+      for (const geometry of parts.values()) geometry.dispose();
     }
   });
 
@@ -422,6 +557,39 @@ describe("crafted occlusion", () => {
 });
 
 describe("crafted detail", () => {
+  it.each([
+    ["Google SwiftShader", "lean"],
+    ["ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)", "lean"],
+    ["llvmpipe (LLVM 17.0.6, 256 bits)", "lean"],
+    ["ANGLE (NVIDIA, NVIDIA GeForce RTX 4090 Direct3D11 vs_5_0 ps_5_0, D3D11)", "full"],
+  ] as const)("reads the browser's rasteriser once: %s draws %s", async (gpu, level) => {
+    const lost = vi.fn();
+    const probe = {
+      getExtension: (name: string) => (name === "WEBGL_debug_renderer_info" ? { UNMASKED_RENDERER_WEBGL: 0x9246 } : name === "WEBGL_lose_context" ? { loseContext: lost } : null),
+      getParameter: (parameter: number) => (parameter === 0x9246 ? gpu : null),
+    };
+    const create = document.createElement.bind(document);
+    // Only its presence is read: WebGL 2 exists in this browser.
+    vi.stubGlobal("WebGL2RenderingContext", {});
+    const spy = vi.spyOn(document, "createElement").mockImplementation((tag: string, options?: ElementCreationOptions) => {
+      const element = create(tag, options);
+      if (tag === "canvas") Object.defineProperty(element, "getContext", { value: () => probe });
+      return element;
+    });
+    try {
+      vi.resetModules();
+      const fresh = await import("../crafted-detail.js");
+      expect(fresh.craftedDetail().level).toBe(level);
+      // The probe's context is released at once, and asked only once a page.
+      expect(lost).toHaveBeenCalledTimes(1);
+      fresh.craftedDetail();
+      expect(lost).toHaveBeenCalledTimes(1);
+    } finally {
+      spy.mockRestore();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("draws a phone's chairs leaner, with the same footprint and a caster still", () => {
     const measure = (level: "full" | "lean"): { seen: number; caster: number; width: number } => {
       setCraftedDetailLevel(level);
@@ -453,6 +621,38 @@ describe("crafted detail", () => {
     expect(materialAppearanceSignature(craftedMaterial("gilt"))).toBe(gilt);
     expect(materialAppearanceSignature(craftedMaterial("pad-ivory"))).not.toBe(gilt);
     expect(materialAppearanceSignature(craftedMaterial("shadow-caster"))).not.toBe(gilt);
+  });
+});
+
+describe("crafted geometry", () => {
+  it.each([
+    [[0.6, 0.9, 0.4], 0.01, 2],
+    [[1.6, 0.03, 0.6], 0.008, 1],
+  ] as const)("rounds a %j box exactly as three's RoundedBoxGeometry does, without its non-indexed copy", (size, radius, segments) => {
+    const ours = roundedBox([size[0], size[1], size[2]], radius, [0.3, 0.2, -0.1], { segments });
+    const three = new RoundedBoxGeometry(size[0], size[1], size[2], segments, radius);
+    three.translate(0.3, 0.2, -0.1);
+    try {
+      const index = ours.index;
+      if (index === null) throw new Error("expected an indexed box");
+      const position = ours.getAttribute("position");
+      const normal = ours.getAttribute("normal");
+      const theirPosition = three.getAttribute("position");
+      const theirNormal = three.getAttribute("normal");
+      // The same triangles, in the same order: three's copy is the grid's own index, unrolled.
+      expect(index.count).toBe(theirPosition.count);
+      let worst = 0;
+      for (let corner = 0; corner < index.count; corner += 1) {
+        const vertex = index.getX(corner);
+        worst = Math.max(worst,
+          Math.abs(position.getX(vertex) - theirPosition.getX(corner)), Math.abs(position.getY(vertex) - theirPosition.getY(corner)), Math.abs(position.getZ(vertex) - theirPosition.getZ(corner)),
+          Math.abs(normal.getX(vertex) - theirNormal.getX(corner)), Math.abs(normal.getY(vertex) - theirNormal.getY(corner)), Math.abs(normal.getZ(vertex) - theirNormal.getZ(corner)));
+      }
+      expect(worst).toBeLessThan(1e-6);
+    } finally {
+      ours.dispose();
+      three.dispose();
+    }
   });
 });
 

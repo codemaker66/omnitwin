@@ -4,6 +4,7 @@ import { eq, and, isNull, inArray, sql } from "drizzle-orm";
 import { buildLayoutPathKey } from "@omnitwin/types";
 import {
   configurations,
+  configurationClaimSecrets,
   configurationLayoutRevisions,
   layoutAliases,
   placedObjects,
@@ -14,6 +15,7 @@ import type { Database } from "../db/client.js";
 import { syncPlacedObjectBatch } from "../lib/placed-object-batch.js";
 import { emit } from "../observability/event-bus.js";
 import { generateUniqueShortCode } from "../services/shortcode.js";
+import { generateClaimSecret, hashClaimSecret } from "../services/configuration-claim-secrets.js";
 import {
   validatePlacementsInPolygon,
   loadSpacePolygon,
@@ -21,6 +23,7 @@ import {
 } from "../lib/placement-validation.js";
 import {
   configurationRevisionEtag,
+  loadRevisionChange,
   revisionConflictBody,
 } from "../lib/configuration-revision.js";
 import {
@@ -113,16 +116,28 @@ export async function publicConfigRoutes(
       return hit !== undefined;
     });
 
-    const [config] = await db.insert(configurations).values({
-      spaceId: parsed.data.spaceId,
-      venueId: space.venueId,
-      userId: null,
-      name: parsed.data.name,
-      layoutStyle: "custom",
-      isPublicPreview: true,
-      visibility: "public",
-      shortCode,
-    }).returning();
+    // The plan and its claim secret are written together: the secret goes to
+    // this browser alone, and is what lets it claim the plan into an account
+    // later (migration 0102). Only its hash is stored.
+    const claimSecret = generateClaimSecret();
+    const config = await db.transaction(async (tx) => {
+      const [inserted] = await tx.insert(configurations).values({
+        spaceId: parsed.data.spaceId,
+        venueId: space.venueId,
+        userId: null,
+        name: parsed.data.name,
+        layoutStyle: "custom",
+        isPublicPreview: true,
+        visibility: "public",
+        shortCode,
+      }).returning();
+      if (inserted === undefined) return undefined;
+      await tx.insert(configurationClaimSecrets).values({
+        configurationId: inserted.id,
+        secretHash: hashClaimSecret(claimSecret),
+      });
+      return inserted;
+    });
 
     if (config === undefined) {
       return reply.status(500).send({ error: "Insert returned no row", code: "INSERT_FAILED" });
@@ -155,7 +170,7 @@ export async function publicConfigRoutes(
     }
 
     reply.header("ETag", configurationRevisionEtag(config.revision));
-    return reply.status(201).send({ data: config });
+    return reply.status(201).send({ data: { ...config, claimSecret } });
   });
 
   // POST /public/configurations/:configId/objects/batch — save objects to preview config
@@ -188,8 +203,11 @@ export async function publicConfigRoutes(
     }
 
     if (config.revision !== parsed.data.expectedRevision) {
+      // When, never who: an anonymous caller is not told who edited.
+      const change = await loadRevisionChange(db, params.data.configId, config.revision,
+        { discloseActor: false, callerUserId: null, log: request.log });
       reply.header("ETag", configurationRevisionEtag(config.revision));
-      return reply.status(409).send(revisionConflictBody(parsed.data.expectedRevision, config.revision));
+      return reply.status(409).send(revisionConflictBody(parsed.data.expectedRevision, config.revision, change));
     }
 
     // Verify all referenced assetDefinitionIds exist before touching the DB.
@@ -283,9 +301,11 @@ export async function publicConfigRoutes(
     });
 
     if (saveResult.status === "conflict") {
+      const change = await loadRevisionChange(db, configId, saveResult.currentRevision,
+        { discloseActor: false, callerUserId: null, log: request.log });
       reply.header("ETag", configurationRevisionEtag(saveResult.currentRevision));
       return reply.status(409).send(
-        revisionConflictBody(parsed.data.expectedRevision, saveResult.currentRevision),
+        revisionConflictBody(parsed.data.expectedRevision, saveResult.currentRevision, change),
       );
     }
 

@@ -96,10 +96,26 @@ crafted pieces, so the planner downloads no furniture GLB.
 - **Contact.** Each foot leaves a soft spot of shade on the boards (the
   `contact` part, unlit, blended, never cast), which no shadow map is fine
   enough to draw: every leg reads as standing on the floor in any light, under
-  the sun's normal offset as under the chandeliers, which cast no shadows.
+  the sun's normal offset as under the chandeliers, which cast no shadows. It
+  shares its piece's instance transforms, so while a reveal (the Grand
+  Assembly) moves or hides a batch's pieces, that batch's shade is not drawn
+  and `FurnitureContactShadows` grounds them as the reveal presents them. A
+  test holds every piece to it: what a piece shows within 2 cm of the floor
+  (its triangles' edges, sampled), in groups, is a foot when no wider than
+  16 cm and not under a wider group, and every foot stands inside a spot. A
+  hem, a plinth, a base or a panel is wider, and the footprint shadow every
+  placed piece gets grounds it. That test added the rounds' feet (the bare
+  round's, and the black cloth's, which clears the floor), the television's
+  castors and the microphones. The same pass brought the television's
+  uprights up onto their rails (only the castors touch the floor) and the
+  projector's feet up into its body, which they stopped 4 mm short of.
 - **Detail.** A phone draws each piece with fewer segments round its turned and
   bent parts and fewer cloth samples (`crafted-detail.ts`): same footprint,
-  same caster, same materials. The level is fixed for the page.
+  same caster, same materials. So does a software rasteriser (SwiftShader,
+  llvmpipe), read once from a released probe WebGL context the hall's way
+  (`classifyDevice` "poster"): every triangle costs its CPU in every pass. On
+  SwiftShader the Grand Assembly's show then plays in 34.6 s against master's
+  40.2 s (45.0 s at full detail). The level is fixed for the page.
 - **Ownership.** Each size of each piece is built once and its geometry shared
   by every copy (`crafted-registry.ts`, a cache of at most 48 sizes); another
   copy takes under 1 ms, which matters to the chair brush's preview and the
@@ -111,7 +127,7 @@ crafted pieces, so the planner downloads no furniture GLB.
   per page and shared, never disposed.
 - **Shading.** Materials draw front faces only. The open cloth sheets (linen,
   damask, the black cloth, spandex, the stage skirt) cast from both faces
-  wherever what is seen casts (a piece without a caster), as the drape
+  wherever what is seen casts (a piece built without a caster: no catalogue piece is), as the drape
   casters do, or a skirt's shadow breaks into strips. Lathe profiles may be
   written either way up.
 - **Metric UVs.** UVs are in metres and each map's repeat is its real tile size,
