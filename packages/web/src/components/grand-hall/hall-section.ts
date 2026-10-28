@@ -551,17 +551,36 @@ function sectionLineColour(preset: SectionPreset, height: Node<"float">): Node<"
  * as stones at Blake's distance and on a phone, where the joints have faded.
  * Each course (every MASONRY.course of height) lays its joints over the one
  * below's, so the cut at another height cuts other stones.
+ *
+ * `upright` (null where every face is a top): true on a face of the cut that
+ * stands upright (a wall's end above a lower neighbour's cut, a step in its
+ * outer face), which shows the same masonry in elevation. The courses show as
+ * beds of mortar every MASONRY.course, each course's stones the very stones
+ * its top would cut at that height, so a wall's end and its top meet at the
+ * same joints; its grain runs with the height too, where the top's, taken
+ * across the level cut alone, would streak straight down the face. One
+ * evaluation serves both, the flag choosing per face, so the body's shader
+ * costs what it did with flat ends.
  */
-function masonrySection(preset: SectionPreset, u: Node<"float">, across: Node<"float">, toOuter: Node<"float"> | null, height: Node<"float">): Node<"vec3"> {
+function masonrySection(
+  preset: SectionPreset, u: Node<"float">, across: Node<"float">, toOuter: Node<"float"> | null, height: Node<"float">,
+  upright: Node<"bool"> | null = null,
+): Node<"vec3"> {
   const m = MASONRY;
-  const course = floor(max(height, float(0)).div(m.course));
+  const level = max(height, float(0));
+  const course = floor(level.div(m.course));
   const inLeaf = toOuter === null ? bool(false) : toOuter.lessThan(m.leaf);
   // Rows across the wall: the core's rubble courses; the outer leaf is one row.
   const depth = max(across, float(0));
   // The courses wander: every MASONRY.wander of wall they shift across it by
   // up to 40% of a row, as rubble's beds do, so they never read as paving.
+  // Each course also lies a random part of a row across from the one below,
+  // so in elevation (a wall's end) the joints between its rows break bond
+  // from course to course rather than standing in columns; a top cuts one
+  // course, which the shift moves across the wall as a whole.
   const stretch = floor(max(u, float(0)).div(m.wander));
-  const rowAt = depth.add(hash(stretch.add(course.mul(37)).add(60001)).mul(m.row * 0.4)).div(m.row);
+  const bond = hash(course.mul(53).add(62003)).mul(m.row);
+  const rowAt = depth.add(hash(stretch.add(course.mul(37)).add(60001)).mul(m.row * 0.4)).add(bond).div(m.row);
   const row = inLeaf.select(float(99), floor(rowAt));
   const rowJoint = inLeaf.select(toOuter === null ? float(1) : float(m.leaf).sub(toOuter), fract(rowAt).min(float(1).sub(fract(rowAt))).mul(m.row));
   // Across each stone, 0 on its side toward the room to 1 on its far side.
@@ -579,9 +598,14 @@ function masonrySection(preset: SectionPreset, u: Node<"float">, across: Node<"f
   const start = block.add(jitter(block));
   const end = block.add(1).add(jitter(block.add(1)));
   const blockJoint = min(along.sub(start), end.sub(along)).mul(length);
-  const joint = min(rowJoint, blockJoint);
+  // In elevation, the bed between this course and the next, above and below.
+  const inCourse = fract(level.div(m.course));
+  const bedJoint = inCourse.min(float(1).sub(inCourse)).mul(m.course);
+  const levelJoint = min(rowJoint, blockJoint);
+  const joint = upright === null ? levelJoint : upright.select(min(levelJoint, bedJoint), levelJoint);
   // A pixel's span in metres, from the continuous coordinates (never through fract's jumps).
-  const pixel = max(fwidth(u), fwidth(depth)).max(float(1e-5));
+  const span = max(fwidth(u), fwidth(depth));
+  const pixel = (upright === null ? span : upright.select(max(span, fwidth(level)), span)).max(float(1e-5));
   const half = m.joint / 2;
   const coverage = float(1).sub(smoothstep(pixel.mul(-0.5).add(half), pixel.mul(0.5).add(half), joint));
   const visible = float(1).sub(smoothstep(m.joint * 0.75, m.joint * 1.5, pixel));
@@ -599,7 +623,12 @@ function masonrySection(preset: SectionPreset, u: Node<"float">, across: Node<"f
     .sub(smoothstep(0.6, 1, acrossStone).mul(m.edgeLight.shade));
   // Fine grain within each stone, in world space so it never swims as the cut moves.
   const p = positionWorld;
-  const grain = p.x.mul(53).add(p.z.mul(9).sin().mul(3)).sin().mul(p.z.mul(47).add(p.x.mul(7).sin().mul(2)).sin()).mul(0.03).add(1);
+  const levelGrain = p.x.mul(53).add(p.z.mul(9).sin().mul(3)).sin().mul(p.z.mul(47).add(p.x.mul(7).sin().mul(2)).sin()).mul(0.03).add(1);
+  const grain = upright === null ? levelGrain : upright.select(
+    p.x.add(p.z).mul(53).add(p.y.mul(31)).add(p.y.mul(9).sin().mul(3)).sin()
+      .mul(p.y.mul(47).sub(p.x.add(p.z).mul(19)).add(p.x.sub(p.z).mul(7).sin().mul(2)).sin()).mul(0.03).add(1),
+    levelGrain,
+  );
   const mortar = linear(preset.core).mul(0.74);
   return mix(stone.mul(grain).mul(pillow).mul(edge), mortar, coverage.mul(visible));
 }
@@ -616,14 +645,17 @@ function masonrySection(preset: SectionPreset, u: Node<"float">, across: Node<"f
  * edge and the outer face's (`toOuter`, the body only) catching the light.
  * Atelier also draws a gilt line on the room edge (cutGilt), straight along
  * the plane. Lit by `lighting`, `fromPlane` metres behind the wall's plane.
+ * `upright`: true on a face that stands upright, which shows the same section
+ * in elevation (masonrySection), its room line running down its room edge.
  */
 function cutTopColour(
   preset: SectionPreset, lighting: Lighting, height: Node<"float">,
   fromPlane: Node<"float">, line: Node<"float">, u: Node<"float">, toOuter: Node<"float"> | null,
+  upright: Node<"bool"> | null = null,
 ): Node<"vec3"> {
   let core: Node<"vec3">;
   if (preset.masonry) {
-    core = masonrySection(preset, u, line, toOuter, height);
+    core = masonrySection(preset, u, line, toOuter, height, upright);
   } else {
     // A faint grain in the stone, in world space so it never swims as the cut moves.
     const p = positionWorld;
@@ -869,7 +901,20 @@ export function createWallBodyMaterial(
   // attic panelling, set back), the top in front of it is air: it goes, and
   // the room line and the gilt start at the relief's surface.
   const line = fromRoom.add(min(proud, float(0)));
-  const cap = cutTopColour(preset, lighting, height, fromRoom, line, wallU(tag.x, positionWorld), toOuter);
+  // Upright faces of the cut take no sun (they face sideways). On Ashlar they
+  // are the masonry the tops cut, seen in elevation: a wall standing higher
+  // than its cut neighbour shows its end as a section of the same plaster,
+  // rubble and dressed leaf as its top, where one flat core colour read as a
+  // brown board stood against the room (Blake, 28 October). They share the
+  // tops' one evaluation of the cut, lit at UPRIGHT_SHARE of its light, their
+  // room line running down their room edge. The other presets' tops are one
+  // colour, and so are their ends.
+  const uprightLight: Lighting = (albedo, fromPlane) => albedo.mul(cutTopLight(mood, false, fromPlane)).mul(UPRIGHT_SHARE);
+  const elevation = preset.masonry ? finish.greaterThan(BODY_FINISH.section - 0.5).and(finish.lessThan(BODY_FINISH.section + 0.5)) : null;
+  const cutLighting: Lighting = elevation === null ? lighting
+    : (albedo, fromPlane) => elevation.select(uprightLight(albedo, fromPlane), lighting(albedo, fromPlane));
+  const cutLine = elevation === null ? line : elevation.select(fromRoom, line);
+  const cap = cutTopColour(preset, cutLighting, height, fromRoom, cutLine, wallU(tag.x, positionWorld), toOuter, elevation);
   // A corner block's top: no room edge, an arris along both outer edges.
   const p = positionWorld;
   const grain = p.x.mul(41).add(p.z.mul(7).sin().mul(3)).sin().mul(p.z.mul(37).add(p.x.mul(5).sin().mul(2)).sin()).mul(0.035);
@@ -891,11 +936,9 @@ export function createWallBodyMaterial(
   }
   const windowLining = card ? cardOf(linear(preset.windowLining))
     : linear(preset.windowLining).mul(room.add(mood.daylight.rgb.mul(mood.daylightIntensity).mul(REVEAL_SKY_VIEW)));
-  // Upright faces of the cut take the core's colour without the grain (it
-  // would streak down them), and no sun (they face sideways).
   const upright = card
     ? cardOf(linear(preset.core)).add(linear(preset.core).mul(roomGlow).mul(capGlowNode(fromRoom)).mul(UPRIGHT_SHARE))
-    : linear(preset.core).mul(cutTopLight(mood, false, fromRoom)).mul(UPRIGHT_SHARE);
+    : elevation === null ? uprightLight(linear(preset.core), fromRoom) : cap;
   const pick = (code: number) => finish.greaterThan(code - 0.5).and(finish.lessThan(code + 0.5));
   material.maskNode = positionWorld.y.lessThanEqual(cut.add(0.002)).and(isTop.and(line.lessThan(-1e-4)).not());
   material.colorNode = pick(BODY_FINISH.outer).select(outer,
