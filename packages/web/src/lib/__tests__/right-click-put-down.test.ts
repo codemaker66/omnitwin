@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { listenForRightClickPutDown } from "../right-click-put-down.js";
+import { RIGHT_RELEASE_MENU_MS, listenForRightClickPutDown } from "../right-click-put-down.js";
 
 // ---------------------------------------------------------------------------
 // A right-click puts the piece in hand down; a right-drag, the camera's orbit,
@@ -9,13 +9,15 @@ import { listenForRightClickPutDown } from "../right-click-put-down.js";
 // ---------------------------------------------------------------------------
 
 let held = true;
+let clock = 0;
 const putDown = vi.fn(() => { held = false; });
 let stop: () => void = () => undefined;
 
 beforeEach(() => {
   held = true;
+  clock = 0;
   putDown.mockClear();
-  stop = listenForRightClickPutDown(window, { holding: () => held, putDown });
+  stop = listenForRightClickPutDown(window, { holding: () => held, putDown, now: () => clock });
 });
 
 afterEach(() => {
@@ -32,10 +34,6 @@ function menu(): boolean {
   const event = new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2 });
   window.dispatchEvent(event);
   return event.defaultPrevented;
-}
-
-function menuKey(): void {
-  window.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "ContextMenu", code: "ContextMenu" }));
 }
 
 describe("a right-click puts the piece in hand down", () => {
@@ -92,19 +90,27 @@ describe("a right-drag orbits and keeps the piece in hand", () => {
 
 describe("the keyboard's menu puts the piece down", () => {
   it("with no right press behind it (the Menu key, Shift+F10)", () => {
-    menuKey();
     expect(menu()).toBe(true);
     expect(putDown).toHaveBeenCalledTimes(1);
   });
 
-  it("right after a right-drag whose menu came at the press", () => {
+  it("after a right-drag whose menu came at the press, once the release is long gone", () => {
     pointer("pointerdown", 100, 100);
     menu();
     pointer("pointermove", 160, 100);
     pointer("pointerup", 200, 100);
-    menuKey();
+    clock += RIGHT_RELEASE_MENU_MS + 1;
     expect(menu()).toBe(true);
     expect(putDown).toHaveBeenCalledTimes(1);
+  });
+
+  it("but a menu straight after a drag's release is the drag's own (Windows)", () => {
+    pointer("pointerdown", 100, 100);
+    pointer("pointermove", 160, 100);
+    pointer("pointerup", 200, 100);
+    clock += 8;
+    expect(menu()).toBe(true);
+    expect(putDown).not.toHaveBeenCalled();
   });
 });
 
@@ -114,7 +120,7 @@ describe("with nothing in hand", () => {
     pointer("pointerdown", 100, 100);
     pointer("pointerup", 100, 100);
     expect(menu()).toBe(false);
-    menuKey();
+    clock += 1_000;
     expect(menu()).toBe(false);
     expect(putDown).not.toHaveBeenCalled();
   });
