@@ -19,7 +19,7 @@ import { atVerdict, createGhostWorld, judgeGhost, refusalChip, type GhostState, 
 import { settleOnSurfaces, type PlacedItem } from "./placement.js";
 import { capReachedFor } from "./placement-cap.js";
 import { plannerFeatureEnabled } from "./planner-features.js";
-import { describeCard, judgesCard, placesAsCard, seatsInHand, stampSetup, type CardParams } from "./setup-cards.js";
+import { describeCard, ghostSetInHand, judgesCard, placesAsCard, seatsInHand, stampSetup, type CardParams } from "./setup-cards.js";
 import { useGhostVerdictStore } from "../stores/ghost-verdict-store.js";
 import { useRoomDimensionsStore } from "../stores/room-dimensions-store.js";
 import { tableClothStyleForCatalogueItem, tableDressingTargetIds, tableSettingForCatalogueItem } from "./table-dressing.js";
@@ -183,19 +183,26 @@ export function placePieceInHand(invalidate: () => void, options: PlaceInHandOpt
     return ids;
   }
 
+  // The old way, judged as its ghost was behind truthfulGhost alone: refused there, nothing is set down.
+  const at = oldWayAt(catState.cardParams, catState.selectedItemId, { x, z, y }, placeState.ghostRotation);
+  if (at === null) {
+    invalidate();
+    return [];
+  }
+
   if (item.tableShape !== null && isDiningTableItem(item)) {
     const seats = catState.cardParams === null ? null : seatsInHand(catState.cardParams);
     if (plannerFeatureEnabled("seatsOnTheCard") && seats !== null) {
       // The seats ride on the card: the table and its chairs in one step, no dialog.
-      if (seats > 0) placeState.placeTableGroup(catState.selectedItemId, x, z, placeState.ghostRotation, seats);
-      else placeState.placeItem(catState.selectedItemId, x, z, placeState.ghostRotation);
+      if (seats > 0) placeState.placeTableGroup(catState.selectedItemId, at.x, at.z, placeState.ghostRotation, seats);
+      else placeState.placeItem(catState.selectedItemId, at.x, at.z, placeState.ghostRotation);
       invalidate();
       return [];
     }
     useChairDialogStore.getState().showDialog({
       catalogueItemId: catState.selectedItemId,
-      x,
-      z,
+      x: at.x,
+      z: at.z,
       rotationY: placeState.ghostRotation,
       tableShape: item.tableShape,
     });
@@ -205,9 +212,32 @@ export function placePieceInHand(invalidate: () => void, options: PlaceInHandOpt
     return [];
   }
 
-  placeState.placeItem(catState.selectedItemId, x, z, placeState.ghostRotation);
+  placeState.placeItem(catState.selectedItemId, at.x, at.z, placeState.ghostRotation);
   invalidate();
   return [];
+}
+
+/**
+ * Where the old way sets the piece in hand down. Behind truthfulGhost alone
+ * its ghost is judged (setup-cards ghostSetInHand), so here too: where the
+ * ghost stood it, pushed clear as the ghost was, or null where the ghost
+ * showed it refused, said in the ghost's own words. Otherwise the ghost's pose.
+ */
+function oldWayAt(
+  params: CardParams | null,
+  itemId: string,
+  origin: CardOrigin,
+  rotationY: number,
+): { readonly x: number; readonly z: number } | null {
+  const set = params === null ? null : ghostSetInHand(params);
+  if (set === null) return { x: origin.x, z: origin.z };
+  const judged = judgeCardAt(set, origin, rotationY, roomWorld(), useGhostVerdictStore.getState().verdict?.state);
+  if (judged.verdict.state === "refused") {
+    postPlacementNotice(refusalChip(judged.verdict.obstacle));
+    return null;
+  }
+  const piece = judged.pieces.find((placed) => placed.catalogueItemId === itemId) ?? judged.pieces[0];
+  return piece === undefined ? { x: origin.x, z: origin.z } : { x: piece.x, z: piece.z };
 }
 
 /**

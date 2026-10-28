@@ -8,6 +8,7 @@ import {
   cardParamsFor,
   cardParamsRequest,
   describeCard,
+  ghostSetInHand,
   isSetupCardId,
   pieceCardId,
   pieceCardSlug,
@@ -152,5 +153,37 @@ describe("every card", () => {
       const params = paramsFor(id);
       expect(paramsFor(id, cardParamsRequest(params))).toEqual(params);
     }
+  });
+});
+
+describe("the set the ghost shows (ghostSetInHand)", () => {
+  const round = (): CardParams => paramsFor(pieceCardId("round-table-6ft"));
+
+  it("is the old green and red ghost's, null, with truthfulGhost off and no card dock", () => {
+    setPlannerFeaturesForTesting({ truthfulGhost: false, setupCards: false });
+    expect(ghostSetInHand(round())).toBeNull();
+    // A set card is always set down, and shown, as a card.
+    const roundOf = paramsFor("round");
+    expect(ghostSetInHand(roundOf)).toBe(roundOf);
+  });
+
+  it("shows a dining table alone behind truthfulGhost alone, as the old way sets it down before its chair dialog", () => {
+    setPlannerFeaturesForTesting({ truthfulGhost: true, setupCards: false, seatsOnTheCard: false });
+    const params = round();
+    expect(seatsInHand(params)).toBeGreaterThan(0);
+    const shown = ghostSetInHand(params);
+    expect(shown).not.toBeNull();
+    if (shown === null) return;
+    expect(seatsInHand(shown)).toBe(0);
+    // The same object every frame, so the ghost never rebuilds for nothing.
+    expect(ghostSetInHand(params)).toBe(shown);
+  });
+
+  it("shows the table with its seats where the old way sets them down with it, and the card's own set on the card path", () => {
+    setPlannerFeaturesForTesting({ truthfulGhost: true, setupCards: false, seatsOnTheCard: true });
+    const params = round();
+    expect(ghostSetInHand(params)).toBe(params);
+    setPlannerFeaturesForTesting({ truthfulGhost: true, setupCards: true, seatsOnTheCard: true });
+    expect(ghostSetInHand(params)).toBe(params);
   });
 });
