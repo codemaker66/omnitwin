@@ -103,7 +103,7 @@ const approvedSheetAdditions = [
   'd04ac5b0eb52f15c1dda-3381bf636d92993e3b62',
 ];
 test('the approved-sheet inventory admission adds exactly three ordinary Hallkeeper cases', () => {
-  assert.equal(baseline.inventoryAdmissions.length, 49);
+  assert.equal(baseline.inventoryAdmissions.length, 50);
   assert.deepEqual(baseline.inventoryAdmissions[0].caseIds, [...approvedSheetAdditions].sort());
   for (const id of approvedSheetAdditions) {
     const row = baseline.cases.find((entry) => entry.id === id);
@@ -1216,6 +1216,12 @@ rejected('the restated walk Escape case cannot quietly become a pass', (input) =
 rejected('the retired walk Escape identity cannot come back', (input) => {
   specs(input.inventory).find((row) => row.id === walkEscapeRestatement.current).id = walkEscapeRestatement.retired;
 }, /missing or extra/);
+// The Grand Assembly on for everyone (26 Oct): "without the flag the layout
+// simply opens" is restated as the first-open, Skip and seen case, one for one.
+const grandAssemblyRestatement = {
+  retired: 'f1c17e56d03862f173b0-b202453e704508f538aa',
+  current: 'f1c17e56d03862f173b0-bf9fe7baa65eb50ddff8',
+};
 // The Grand Assembly behind ?assembly=accio (PR #172): three ordinary cases
 // prove the flag, the hold, the hand-back and that nothing is written.
 const grandAssemblyCases = [
@@ -1232,7 +1238,8 @@ test('the Grand Assembly admission adds three ordinary cases', () => {
   assert.match(admission.inventorySha256, /^[0-9a-f]{64}$/u);
   assert.equal(admission.expectedStatus, 'passed');
   assert.deepEqual(admission.caseIds, grandAssemblyCases);
-  for (const id of grandAssemblyCases) {
+  // The third case was restated on 26 Oct (below); its admission's identities stay as admitted.
+  for (const id of grandAssemblyCases.map((admitted) => (admitted === grandAssemblyRestatement.retired ? grandAssemblyRestatement.current : admitted))) {
     const row = baseline.cases.find((entry) => entry.id === id);
     assert.equal(row?.file, 'grand-assembly.spec.ts');
     assert.deepEqual(row?.suitePath, ['grand-assembly.spec.ts', 'Grand Assembly behind ?assembly=accio']);
@@ -1270,6 +1277,24 @@ rejected('the touch arbiter case cannot quietly become a skip', (input) => {
   spec.tests[0].results[0].status = 'skipped';
   spec.tests[0].status = 'skipped';
 }, /policy changed/);
+test('the Grand Assembly restatement replaces its third case one for one', () => {
+  const admission = baseline.inventoryAdmissions[48];
+  assert.equal(admission.date, '2026-10-26');
+  assert.equal(admission.sourceFile, 'packages/web/e2e/grand-assembly.spec.ts');
+  assert.match(admission.sourceCommit, /^[0-9a-f]{40}$/u);
+  assert.match(admission.sourceFileGitBlobSha256, /^[0-9a-f]{64}$/u);
+  assert.match(admission.inventorySha256, /^[0-9a-f]{64}$/u);
+  assert.equal(admission.expectedStatus, 'passed');
+  assert.deepEqual(admission.caseIds, [grandAssemblyRestatement.current]);
+  assert.equal(baseline.cases.some((entry) => entry.id === grandAssemblyRestatement.retired), false);
+  const row = baseline.cases.find((entry) => entry.id === grandAssemblyRestatement.current);
+  assert.equal(row?.title, 'with no flag a layout plays the first time it opens, the Skip hurries it to its end, and it then opens as placed');
+  assert.equal(row?.expectedStatus, 'passed');
+  assert.equal(baseline.cases.length, BROWSER_POLICY.total);
+});
+rejected('the retired Grand Assembly "without the flag" identity cannot come back', (input) => {
+  specs(input.inventory).find((row) => row.id === grandAssemblyRestatement.current).id = grandAssemblyRestatement.retired;
+}, /missing or extra/);
 // Planner work survives leaving the page or the layout (PR #279, cloud lane C,
 // QoL D-01 and D-X3): six ordinary cases against an in-memory layout server.
 const leavingCases = [
@@ -1281,7 +1306,7 @@ const leavingCases = [
   '0d8ceb1ff5fdd4fd6824-d29889765ea86557db4d',
 ];
 test('the planner-leaving admission adds six ordinary cases', () => {
-  const admission = baseline.inventoryAdmissions[48];
+  const admission = baseline.inventoryAdmissions[49];
   assert.equal(admission.date, '2026-10-27');
   assert.equal(admission.sourceFile, 'packages/web/e2e/planner-work-survives.spec.ts');
   assert.match(admission.sourceCommit, /^[0-9a-f]{40}$/u);

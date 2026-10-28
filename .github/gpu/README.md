@@ -155,7 +155,11 @@ with a round in hand turns the view and places nothing, a quick tap places one,
 a hold, a slide and a lift place it with the camera still, a still finger on a
 placed round lifts and carries it, and two fingers walk and zoom
 (`planner-touch-arbiter.spec.ts`); this changes the inventory from 404 to 405
-and the CPU partition from 399 to 400. The next, on 27 October 2026, adds six
+and the CPU partition from 399 to 400. Also on 26 October the Assembly went on
+for everyone (Blake), so its third case is restated one for one: with no flag a
+layout plays the first time it opens, the visible Skip hurries it to its end,
+and after a reload it opens as placed. The totals are unchanged.
+The next, on 27 October 2026, adds six
 ordinary cases for planner work that outlives the page or the layout (PR #279,
 cloud lane C, QoL D-01 and D-X3), against an in-memory layout server two browser
 contexts share: in both chromes a move reaches the server as soon as the page is

@@ -6,6 +6,7 @@ import type { PlacedObject, BatchObjectInput } from "../api/configurations.js";
 import * as configApi from "../api/configurations.js";
 import { parseRevisionConflict, type RevisionConflict } from "../api/configuration-conflict.js";
 import { ApiError } from "../api/client.js";
+import { reportFailure } from "../observability/failure-reports.js";
 import * as spacesApi from "../api/spaces.js";
 import {
   discardPlannerDraft,
@@ -1842,6 +1843,8 @@ async function saveDocument(
     const message = err instanceof Error ? err.message : "Save failed";
     // Log the failing payload so we can see which field the server rejects.
     // Safe to log — no PII in the placed-object batch.
+    // The status only: the server's message may quote the layout's own words.
+    reportFailure("save-failed", { status: err instanceof ApiError && err.status > 0 ? err.status : "network" });
     // eslint-disable-next-line no-console
     console.error("[editor-store] save failed:", message, { objects });
     // Set saveError (NOT error) — leaving `error: null` keeps EditorPage's
