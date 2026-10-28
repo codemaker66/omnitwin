@@ -3,7 +3,7 @@ import { useAuthStore } from "./stores/auth-store.js";
 import { createBrowserRouter, Navigate, Outlet, useLocation, useMatches, type RouteObject } from "react-router-dom";
 import { hasLikelyClerkSession } from "./lib/clerk-session-hint.js";
 import {
-  CLIENT_SIDE_ROLES, COMMERCIAL_ROLES, DIARY_ROLES, hasRole, VENUE_DAY_ROLES, VENUE_ROOM_ROLES, WORKSPACE_ROLES,
+  CLIENT_SIDE_ROLES, COMMERCIAL_ROLES, hasRole, opensDiary, VENUE_DAY_ROLES, VENUE_ROOM_ROLES, WORKSPACE_ROLES,
 } from "./lib/role-capabilities.js";
 import { CLIENT_HOME_ROUTE } from "./lib/role-routing.js";
 import { ProtectedRoute } from "./components/auth/ProtectedRoute.js";
@@ -536,7 +536,7 @@ export const router = createBrowserRouter([
       // The Diary Board (T-493): staff/admin move bookings; hallkeeper reads.
       // The API enforces the same write split server-side.
       staffPage("/diary", DiaryBoardPage,
-        <ProtectedRoute allowedRoles={DIARY_ROLES}><DiaryBoardPage /></ProtectedRoute>),
+        <ProtectedRoute admits={opensDiary}><DiaryBoardPage /></ProtectedRoute>),
       staffPage("/dashboard", DashboardPage,
         <ProtectedRoute allowedRoles={WORKSPACE_ROLES}><DashboardPage /></ProtectedRoute>),
       staffPage("/ops/handoff/:handoffPackId", OpsHandoffPage,
