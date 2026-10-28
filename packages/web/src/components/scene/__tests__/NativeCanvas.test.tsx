@@ -36,6 +36,9 @@ const profiling = vi.hoisted(() => ({
   sampleDrawn: vi.fn(), drawn: vi.fn(() => Promise.resolve(45)),
   capturePending: vi.fn((_scene: object, _renderer: object) => false),
 }));
+const reports = vi.hoisted(() => ({ reportFailure: vi.fn() }));
+vi.mock("../../../observability/failure-reports.js", () => reports);
+
 vi.mock("../../../lib/perf-runtime.js", () => ({
   shouldProfileFrames: profiling.enabled, beginGpuProfile: profiling.begin,
   endGpuProfile: profiling.end, recordRenderedFrame: profiling.record,
@@ -581,6 +584,17 @@ describe("NativeCanvas", () => {
   });
 
   describe("when the browser takes the graphics device away", () => {
+    it("tells Sentry the device was lost, once, with the view and the loss's own words (observability/failure-reports.ts)", async () => {
+      reports.reportFailure.mockClear();
+      render(<NativeCanvas frameloop="demand"><MountProbe mounts={{ count: 0 }} /></NativeCanvas>);
+      const lost = await start(0);
+      automaticFrame();
+      act(() => { lost.onDeviceLost({ api: "WebGPU", message: "Device lost" }); });
+      expect(reports.reportFailure).toHaveBeenCalledTimes(1);
+      expect(reports.reportFailure).toHaveBeenCalledWith("device-lost", expect.objectContaining({ surface: "walk", detail: "Device lost" }));
+      await flush();
+    });
+
     it("puts a fresh renderer on the same canvas and keeps the scene, its state and onCreated untouched", async () => {
       const onCreated = vi.fn();
       const mounts = { count: 0 };
@@ -1260,18 +1274,22 @@ describe("NativeCanvas while the scene's pipelines compile ahead (lib/native-pre
     expect(fiber.invalidate, "the view draws what the job prepared").toHaveBeenCalled();
   });
 
-  it("fails open: a job that never settles lets the frames go at its limit, with a warning", async () => {
+  it("fails open: a job that never settles lets the frames go at its limit, with a warning, and tells Sentry once (observability/failure-reports.ts)", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    reports.reportFailure.mockClear();
     try {
       render(<NativeCanvas frameloop="demand"><MountProbe mounts={{ count: 0 }} /></NativeCanvas>);
       const instance = await start(0);
       act(() => { void requestNativePrecompile(instance, () => new Promise<void>(() => undefined)); });
       expect(frameloopShown()).toBe("never");
+      expect(reports.reportFailure, "nothing is reported while the job is within its limit").not.toHaveBeenCalled();
       await act(async () => { vi.advanceTimersByTime(PRECOMPILE_JOB_LIMIT_MS); await Promise.resolve(); });
       await flush();
       expect(frameloopShown(), "the view draws on, compiling as it goes").toBe("demand");
       expect(warn).toHaveBeenCalled();
+      expect(reports.reportFailure).toHaveBeenCalledTimes(1);
+      expect(reports.reportFailure).toHaveBeenCalledWith("precompile-timeout", expect.objectContaining({ surface: "walk" }));
     } finally {
       warn.mockRestore();
       vi.useRealTimers();
