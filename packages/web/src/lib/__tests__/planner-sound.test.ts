@@ -6,7 +6,14 @@ import {
   varyRecipe,
   type PlannerSoundId,
 } from "../planner-sound-recipes.js";
-import { energyShareAbove, peakDbfs, renderPlannerSound, soundingLengthMs } from "../planner-sound-render.js";
+import {
+  energyShareAbove,
+  fft,
+  peakDbfs,
+  renderPlannerSound,
+  seededRandom,
+  soundingLengthMs,
+} from "../planner-sound-render.js";
 import {
   PLANNER_LIMITER,
   PLANNER_SOUND_DEFAULT_LEVEL,
@@ -32,6 +39,55 @@ import {
 // the 45 ms gap, eight a second, a burst of three), and the engine on a
 // stand-in context: what it starts, the mute's 30 ms fade, Lay out's cascade.
 // ---------------------------------------------------------------------------
+
+/** The transform as it was before its twiddle factors were cached, working each one out in its butterfly. */
+function uncachedFft(re: Float64Array, im: Float64Array): void {
+  const n = re.length;
+  for (let i = 1, j = 0; i < n; i += 1) {
+    let bit = n >> 1;
+    for (; j & bit; bit >>= 1) j ^= bit;
+    j ^= bit;
+    if (i < j) {
+      const tr = re[i] ?? 0; re[i] = re[j] ?? 0; re[j] = tr;
+      const ti = im[i] ?? 0; im[i] = im[j] ?? 0; im[j] = ti;
+    }
+  }
+  for (let size = 2; size <= n; size <<= 1) {
+    const step = (-2 * Math.PI) / size;
+    for (let start = 0; start < n; start += size) {
+      for (let k = 0; k < size / 2; k += 1) {
+        const wr = Math.cos(step * k), wi = Math.sin(step * k);
+        const a = start + k, b = a + size / 2;
+        const xr = (re[b] ?? 0) * wr - (im[b] ?? 0) * wi;
+        const xi = (re[b] ?? 0) * wi + (im[b] ?? 0) * wr;
+        re[b] = (re[a] ?? 0) - xr; im[b] = (im[a] ?? 0) - xi;
+        re[a] = (re[a] ?? 0) + xr; im[a] = (im[a] ?? 0) + xi;
+      }
+    }
+  }
+}
+
+describe("the fft", () => {
+  it.each([8, 1024, 2048])("equals the uncached formula bit for bit at %i points, first call and cached", (n) => {
+    const random = seededRandom(n);
+    const inputRe = Float64Array.from({ length: n }, () => 2 * random() - 1);
+    const inputIm = Float64Array.from({ length: n }, () => 2 * random() - 1);
+    const expectedRe = Float64Array.from(inputRe);
+    const expectedIm = Float64Array.from(inputIm);
+    uncachedFft(expectedRe, expectedIm);
+    // Twice: the first call may build the table, the second reads it from the cache.
+    for (let pass = 0; pass < 2; pass += 1) {
+      const re = Float64Array.from(inputRe);
+      const im = Float64Array.from(inputIm);
+      fft(re, im);
+      let differing = 0;
+      for (let i = 0; i < n; i += 1) {
+        if (!Object.is(re[i], expectedRe[i]) || !Object.is(im[i], expectedIm[i])) differing += 1;
+      }
+      expect(differing).toBe(0);
+    }
+  });
+});
 
 describe("each planner sound, rendered", () => {
   it.each(PLANNER_SOUND_IDS)("%s peaks at its level, lasts its length and says nothing above 5 kHz", (id) => {

@@ -231,9 +231,49 @@ export function soundingLengthMs(samples: Float32Array, sampleRate = 48000, floo
   return 0;
 }
 
+/** One transform size's twiddle factors, for every butterfly size up to it. */
+interface Twiddles {
+  readonly cos: Float64Array;
+  readonly sin: Float64Array;
+}
+
+/**
+ * Sizes up to this keep their table (at most 1 MB). A larger transform, such
+ * as `energyShareAbove` over a whole render, builds its table for the call:
+ * still one cos and sin per factor rather than one per butterfly.
+ */
+const TWIDDLE_CACHE_MAX = 1 << 16;
+const twiddleCache = new Map<number, Twiddles>();
+
+/**
+ * The factors for a transform of `n` points: for each butterfly size s, from
+ * 2 to n, the s/2 values cos(step·k) and sin(step·k) with step = −2π/s, at
+ * offset s/2 − 1. They are worked out by exactly the expressions the
+ * butterflies once used, so the transform's results are unchanged to the bit.
+ */
+function twiddlesFor(n: number): Twiddles {
+  const cached = twiddleCache.get(n);
+  if (cached !== undefined) return cached;
+  const total = Math.max(0, n - 1);
+  const cos = new Float64Array(total);
+  const sin = new Float64Array(total);
+  for (let size = 2; size <= n; size <<= 1) {
+    const step = (-2 * Math.PI) / size;
+    const offset = size / 2 - 1;
+    for (let k = 0; k < size / 2; k += 1) {
+      cos[offset + k] = Math.cos(step * k);
+      sin[offset + k] = Math.sin(step * k);
+    }
+  }
+  const twiddles: Twiddles = { cos, sin };
+  if (n <= TWIDDLE_CACHE_MAX) twiddleCache.set(n, twiddles);
+  return twiddles;
+}
+
 /** In-place radix-2 FFT over a power-of-two length. */
 export function fft(re: Float64Array, im: Float64Array): void {
   const n = re.length;
+  const twiddles = twiddlesFor(n);
   for (let i = 1, j = 0; i < n; i += 1) {
     let bit = n >> 1;
     for (; j & bit; bit >>= 1) j ^= bit;
@@ -244,10 +284,10 @@ export function fft(re: Float64Array, im: Float64Array): void {
     }
   }
   for (let size = 2; size <= n; size <<= 1) {
-    const step = (-2 * Math.PI) / size;
+    const offset = size / 2 - 1;
     for (let start = 0; start < n; start += size) {
       for (let k = 0; k < size / 2; k += 1) {
-        const wr = Math.cos(step * k), wi = Math.sin(step * k);
+        const wr = twiddles.cos[offset + k] ?? 1, wi = twiddles.sin[offset + k] ?? 0;
         const a = start + k, b = a + size / 2;
         const xr = (re[b] ?? 0) * wr - (im[b] ?? 0) * wi;
         const xi = (re[b] ?? 0) * wi + (im[b] ?? 0) * wr;
