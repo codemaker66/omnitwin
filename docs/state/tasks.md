@@ -5,10 +5,11 @@
 
 Source of truth for active and proposed work. Each task has a T-NNN ID, title, status, impact (1-5), effort (days), dependencies (T-NNN list), source citation. Statuses: `not-started | in-progress | done | deferred | blocked | rejected`.
 
-Updated: 2026-10-26.
+Updated: 2026-10-27.
 
 ## Latest task notes
 
+- 2026-10-27 T-672 L6: AI drafting on for v1.0 with guardrails (cloud session; three pull requests, none merged here). codemaker66/omnitwin#275: prompt safety and release-audit ai-1, to land before switch-on. codemaker66/omnitwin#286: drafts never state a price, availability or capacity (the rule sent to the model, and every sentence checked after it, a bare answer with its claim; first-run reach on a set it never saw: 1 of 60 clean sentences taken out, 39 of 60 claims found), and the venue's AI use on its settings. codemaker66/omnitwin#287: goal 09 M1, the prepared decision with a booking time move first (migration 0105, deploy after #258 and #262). Each reviewed adversarially at max effort until the last round's findings were fixed. Switch-on variable names in #275 and the session log; Blake sets them. Open: a live Claude call, the solicitor's read of the privacy paragraph, a screen for prepared decisions, a sentence set written by venue staff. [Session log](../sessions/2026-10-27.md), [decisions note](../engineering/decisions.md); the AI drafts note, `docs/engineering/ai-drafts.md`, comes with #275 and #286.
 - 2026-10-26 T-675 started: every piece of furniture rebuilt for Trades Hall (branch `claude/furniture-rebuild-t675`): the venue's photographs put gold Chiavari chairs and ivory damask at every Grand Hall dinner; sun shadows by box and drape casters (4 % of master's triangles in the map, frame unchanged at 180 seats), contact shade and baked occlusion that ground the furniture even without the real sky (`?sky=1`, still under review). [26 October log](../sessions/2026-10-26.md).
 - 2026-10-26 T-673: a fourth flaky case fixed at its cause, test-only (branch `claude/twinpage-dollhouse-flake`): TwinPage.test.tsx's Dollhouse switch failed on 2 of 2 master runs. The click was not dropped; it was overwritten. The walk writes `?node=` from an effect that runs after the commit showing the stage, as a replace built from the mount-time address, so a switch made before it lands is replaced away. The test now waits for the walk's write before switching. The same stale-address write is a product bug (T-674). [26 October log](../sessions/2026-10-26.md).
 
