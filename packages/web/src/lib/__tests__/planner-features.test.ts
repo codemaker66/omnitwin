@@ -35,8 +35,9 @@ describe("planner features: everyone's switches", () => {
     ]));
   });
 
-  it("keeps every slice off until it is green", () => {
-    for (const enabled of Object.values(plannerFeatures())) expect(enabled).toBe(false);
+  it("has lane P's touch arbiter and lean motion pipeline on for everyone, and every other slice off until it is green", () => {
+    const on = new Set(["touchArbiter", "leanMotionPipeline"]);
+    for (const [key, enabled] of Object.entries(plannerFeatures())) expect(enabled, key).toBe(on.has(key));
   });
 
   it("names a lane and a quality-of-life item for every key", () => {
@@ -63,24 +64,30 @@ describe("planner features: the ?pf= list", () => {
   it("lays overrides over everyone's switches", () => {
     const features = resolvePlannerFeatures({ liveAisles: true });
     expect(features.liveAisles).toBe(true);
-    expect(features.touchArbiter).toBe(false);
+    expect(features.storeCounts).toBe(false);
   });
 });
 
 describe("planner features: this device", () => {
   it("turns a key on from the address and remembers it", () => {
-    visit("?pf=touchArbiter");
-    expect(plannerFeatureEnabled("touchArbiter")).toBe(true);
-    expect(window.localStorage.getItem(PLANNER_FEATURES_STORAGE_KEY)).toBe("touchArbiter");
+    visit("?pf=storeCounts");
+    expect(plannerFeatureEnabled("storeCounts")).toBe(true);
+    expect(window.localStorage.getItem(PLANNER_FEATURES_STORAGE_KEY)).toBe("storeCounts");
     visit("");
-    expect(plannerFeatureEnabled("touchArbiter")).toBe(true);
+    expect(plannerFeatureEnabled("storeCounts")).toBe(true);
   });
 
   it("forgets the remembered list on an empty ?pf=", () => {
-    window.localStorage.setItem(PLANNER_FEATURES_STORAGE_KEY, "touchArbiter");
+    window.localStorage.setItem(PLANNER_FEATURES_STORAGE_KEY, "storeCounts");
     visit("?pf=");
-    expect(plannerFeatureEnabled("touchArbiter")).toBe(false);
+    expect(plannerFeatureEnabled("storeCounts")).toBe(false);
     expect(window.localStorage.getItem(PLANNER_FEATURES_STORAGE_KEY)).toBeNull();
+  });
+
+  it("turns a key that is on for everyone off for this device with -name, the way back if a device shows a problem", () => {
+    visit("?pf=-touchArbiter");
+    expect(plannerFeatureEnabled("touchArbiter")).toBe(false);
+    expect(plannerFeatureEnabled("leanMotionPipeline")).toBe(true);
   });
 
   it("reads the address again when it changes", () => {
