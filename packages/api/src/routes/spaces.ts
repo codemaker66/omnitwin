@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { z } from "zod";
-import { eq, and, asc, gt, isNotNull, isNull, sql } from "drizzle-orm";
-import { type FloorPlanPoint, polygonBoundingBox } from "@omnitwin/types";
+import { eq, and, asc, gt, isNotNull, isNull, notInArray, sql } from "drizzle-orm";
+import { EVENT_ENDED_STATUSES, type FloorPlanPoint, polygonBoundingBox } from "@omnitwin/types";
 import { bookings, eventPhases, events, spaces, venues, referenceLoadouts } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { authenticate } from "../middleware/auth.js";
@@ -288,9 +288,12 @@ export async function spaceRoutes(
     }
 
     // Deleting a room takes it off the Diary, with every booking in it. A
-    // room still booked ahead is refused, and says what holds it; the check
-    // and the delete share one transaction, under the room's row lock, which
-    // also waits out a booking being written into it at this moment.
+    // room still booked ahead is refused, and says what holds it: what the
+    // Diary shows there, so a booking that left the Diary or a phase of an
+    // event that ended holds nothing. The check and the delete share one
+    // transaction under the room's row lock, and every write that puts a
+    // booking or a phase into a room takes the room first (lockLiveRoom), so
+    // one written at this moment is either counted here or refused there.
     const outcome = await db.transaction(async (tx) => {
       const [space] = await tx.select({ id: spaces.id, name: spaces.name }).from(spaces)
         .where(and(eq(spaces.id, params.data.id), eq(spaces.venueId, params.data.venueId), isNull(spaces.deletedAt)))
@@ -303,7 +306,8 @@ export async function spaceRoutes(
       const [phased] = await tx.select({ count: sql<number>`count(*)::int` }).from(eventPhases)
         .innerJoin(events, eq(events.id, eventPhases.eventId))
         .where(and(
-          eq(eventPhases.spaceId, space.id), isNull(events.deletedAt), isNotNull(eventPhases.startsAt),
+          eq(eventPhases.spaceId, space.id), isNull(events.deletedAt), notInArray(events.status, [...EVENT_ENDED_STATUSES]),
+          isNotNull(eventPhases.startsAt),
           sql`${eventPhases.startsAt} + make_interval(mins => ${eventPhases.durationMinutes}) > ${now}`,
         ));
       const counts = { bookings: booked?.count ?? 0, phases: phased?.count ?? 0 };
