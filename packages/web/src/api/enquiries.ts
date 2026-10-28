@@ -1,4 +1,11 @@
 import { z } from "zod";
+import {
+  ReplyAlarmSchema,
+  RecordFirstResponseResultSchema,
+  type RecordFirstResponseInput,
+  type RecordFirstResponseResult,
+  type ReplyAlarm,
+} from "@omnitwin/types";
 import { api } from "./client.js";
 
 // ---------------------------------------------------------------------------
@@ -33,6 +40,12 @@ const EnquirySchema = z.object({
   /** False when the guest named no room: spaceId is then only where the
    *  enquiry is filed, never what they asked for. */
   roomChosen: z.boolean().optional(),
+  /** The earliest reply Venviewer knows of (migration 0100): when, by whom,
+   *  how. Sent to the venue's team only, so absent for anyone else, and
+   *  optional while an API before 0100 may still be answering. */
+  firstResponseAt: z.string().nullable().optional(),
+  firstResponseBy: z.string().nullable().optional(),
+  firstResponseChannel: z.string().nullable().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
@@ -160,6 +173,19 @@ export async function getEnquiry(id: string, signal?: AbortSignal): Promise<Enqu
  *  before a colleague's decision never decides the enquiry again. */
 export async function transitionEnquiry(id: string, status: string, note?: string, from?: string): Promise<Enquiry> {
   return api.post(`/enquiries/${id}/transition`, { status, note, from }, undefined, EnquirySchema);
+}
+
+/** Report a reply made outside Venviewer (a call, the venue's own mailbox, a
+ *  meeting). The enquiry keeps the earliest reply it knows of, so a report no
+ *  earlier than the one recorded answers with that one and changed false. */
+export async function recordFirstResponse(id: string, input: RecordFirstResponseInput): Promise<RecordFirstResponseResult> {
+  return api.post(`/enquiries/${id}/first-response`, input, undefined, RecordFirstResponseResultSchema);
+}
+
+/** The reply-time alarm: the venue's booking enquiries waiting past the
+ *  threshold for a first reply. Read by the venue's commercial team only. */
+export async function getReplyAlarm(signal?: AbortSignal): Promise<ReplyAlarm> {
+  return api.get("/enquiries/reply-alarm", ReplyAlarmSchema, signal);
 }
 
 export async function getEnquiryHistory(

@@ -185,6 +185,19 @@ export function canDraftWithAI(user: { readonly role: string; readonly venueId: 
   return user.platformRole === "admin" || hasRole(VENUE_MEMBER_ROLES, user.role);
 }
 
+/**
+ * The venue whose enquiries this person records replies to and reads the
+ * reply-time alarm for: their own, when they are on its commercial team;
+ * null for anyone else. Mirrors `isVenueCommercialMember` (`utils/query.ts`),
+ * which `POST /enquiries/:id/first-response` and `GET /enquiries/reply-alarm`
+ * both read: the reply time is the team's own measure, so the floor, a
+ * customer and a platform admin acting for no venue are refused.
+ */
+export function replyVenueOf(user: { readonly role: string; readonly venueId: string | null } | null): string | null {
+  if (user === null || user.venueId === null) return null;
+  return hasRole(COMMERCIAL_ROLES, user.role) ? user.venueId : null;
+}
+
 // ---------------------------------------------------------------------------
 // The staff rota (T-637 slice B). A block of its own, with its own drift test
 // (__tests__/rota-capabilities.test.ts), because the rota answers three ways

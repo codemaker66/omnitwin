@@ -1,13 +1,18 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { eq, and, desc, inArray, isNull, sql } from "drizzle-orm";
+import { eq, and, desc, inArray, isNull, notInArray, or, sql } from "drizzle-orm";
 import {
   ENQUIRY_FUNNEL_FIELDS,
+  ENQUIRY_REPLY_ALARM_DEFAULT_HOURS,
+  ENQUIRY_REPLY_ALARM_LIST_LIMIT,
+  ENQUIRY_REPLY_AWAITING_STATES,
   FIRST_RESPONSE_BACKDATING_ROLES,
   FIRST_RESPONSE_FUTURE_SKEW_MS,
   FIRST_RESPONSE_REPORT_WINDOW_DAYS,
+  NON_BOOKING_ENQUIRY_TYPES,
   RecordFirstResponseSchema,
   type RecordFirstResponseResult,
+  type ReplyAlarm,
 } from "@omnitwin/types";
 import { enquiries, enquiryStatusHistory, configurations, generalAuditLog, pricingRules, spaces, users, venues } from "../db/schema.js";
 import type { Database } from "../db/client.js";
@@ -554,6 +559,54 @@ export async function enquiryRoutes(
         recordedAt: stamped.stamp.recordedAt.toISOString(),
       },
       changed: stamped.changed,
+    };
+    return { data };
+  });
+
+  // GET /enquiries/reply-alarm — the reply-time alarm (run-first item 3): the
+  // booking enquiries of the caller's venue still waiting for a first reply
+  // ENQUIRY_REPLY_ALARM_DEFAULT_HOURS after they were sent, the longest
+  // waiting first, and when the next one will join them, so the desk asks
+  // again then rather than polling. Read by the team that records replies
+  // (the venue's commercial members); seed fixtures and requests, which are
+  // marked done rather than answered, are left out.
+  server.get("/reply-alarm", { preHandler: [authenticate] }, async (request, reply) => {
+    const venueId = request.user.venueId;
+    if (venueId === null || !isVenueCommercialMember(request.user, venueId)) {
+      return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
+    }
+    const thresholdHours = ENQUIRY_REPLY_ALARM_DEFAULT_HOURS;
+    // The enquiry reached the venue when it was sent (as the report route reads
+    // it). Spelled out with qualified names: in a select list Drizzle writes a
+    // column bare, and a bare "id" inside the subquery would be the history's.
+    const arrivedAt = sql`coalesce((SELECT min(h.created_at) FROM enquiry_status_history h
+      WHERE h.enquiry_id = "enquiries"."id" AND h.to_status = 'submitted'), "enquiries"."created_at")`
+      .mapWith(enquiries.createdAt);
+    const cutoff = sql`now() - make_interval(hours => ${thresholdHours})`;
+    const waiting = and(
+      eq(enquiries.venueId, venueId),
+      inArray(enquiries.state, [...ENQUIRY_REPLY_AWAITING_STATES]),
+      isNull(enquiries.firstResponseAt),
+      isNull(enquiries.fixtureSource),
+      or(isNull(enquiries.eventType), notInArray(sql`btrim(${enquiries.eventType})`, [...NON_BOOKING_ENQUIRY_TYPES])),
+    );
+
+    const overdue = await db.select({ id: enquiries.id, arrivedAt, total: sql<number>`count(*) OVER ()`.mapWith(Number) })
+      .from(enquiries)
+      .where(and(waiting, sql`${arrivedAt} <= ${cutoff}`))
+      .orderBy(arrivedAt, enquiries.id)
+      .limit(ENQUIRY_REPLY_ALARM_LIST_LIMIT);
+    const [next] = await db.select({ arrivedAt })
+      .from(enquiries)
+      .where(and(waiting, sql`${arrivedAt} > ${cutoff}`))
+      .orderBy(arrivedAt)
+      .limit(1);
+
+    const data: ReplyAlarm = {
+      thresholdHours,
+      overdue: overdue[0]?.total ?? 0,
+      enquiries: overdue.map((row) => ({ id: row.id, arrivedAt: row.arrivedAt.toISOString() })),
+      nextDueAt: next === undefined ? null : new Date(next.arrivedAt.getTime() + thresholdHours * 3_600_000).toISOString(),
     };
     return { data };
   });

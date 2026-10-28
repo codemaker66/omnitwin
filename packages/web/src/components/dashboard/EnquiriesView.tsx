@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactElement } from "react";
+import type { RecordFirstResponseResult } from "@omnitwin/types";
 import * as enquiriesApi from "../../api/enquiries.js";
 import type {
   Enquiry, EnquiryListOrder, EnquiryListQuery, EnquiryStageCounts, StatusHistoryEntry,
@@ -15,7 +16,7 @@ import {
 } from "./enquiry-list-paging.js";
 import { EnquiryStages } from "./enquiries/EnquiryStages.js";
 import { EnquiryLedger, enquiryName, type LedgerStamp } from "./enquiries/EnquiryLedger.js";
-import { EnquiryPanel, type ConfirmTarget, type PanelDiary, type TransitionTarget } from "./enquiries/EnquiryPanel.js";
+import { EnquiryPanel, type ConfirmTarget, type PanelDiary, type PanelReply, type TransitionTarget } from "./enquiries/EnquiryPanel.js";
 import { EnquiryOverview } from "./enquiries/EnquiryOverview.js";
 import { approveUnread, enquiryStanding } from "./enquiries/enquiry-standing.js";
 import { useEnquiryDay } from "./enquiries/use-enquiry-day.js";
@@ -25,6 +26,8 @@ import { dayAnswer } from "../../pages/diary/lib/day-answer.js";
 import { canHoldDateFor, diaryHoldHref, holdRefusal } from "../../pages/diary/lib/enquiry-link.js";
 import { deskGreeting, deskSummary, requestKind, stageLabel, type DeskFilter } from "./enquiries/enquiry-desk-format.js";
 import { pendingFocusReady, type PendingFocus } from "./enquiries/desk-focus.js";
+import { replyAlarmSummary } from "./enquiries/reply-format.js";
+import { useReplyAlarm } from "./enquiries/use-reply-alarm.js";
 import "./enquiries/EnquiriesDesk.css";
 
 // ---------------------------------------------------------------------------
@@ -163,6 +166,11 @@ interface EnquiriesViewProps {
    *  the default, reads none, for the reason canCreateOpportunity defaults
    *  to false. */
   readonly diaryVenueId?: string | null;
+  /** The venue whose enquiries this actor records replies to and reads the
+   *  reply-time alarm for (replyVenueOf): the venue's commercial team only.
+   *  Null, the default, offers neither, for the reason canCreateOpportunity
+   *  defaults to false. */
+  readonly replyVenueId?: string | null;
 }
 
 export function EnquiriesView({
@@ -173,6 +181,7 @@ export function EnquiriesView({
   canDraftWithAI = false,
   canHoldDate = false,
   diaryVenueId = null,
+  replyVenueId = null,
 }: EnquiriesViewProps = {}): ReactElement {
   const wide = useMediaQuery(WIDE_DESK);
   const titleId = useId();
@@ -214,6 +223,11 @@ export function EnquiriesView({
   const pendingFocusRef = useRef<PendingFocus | null>(initialSelectedId === null ? null : { kind: "panel", id: initialSelectedId });
   const addToast = useToastStore((s) => s.addToast);
   const userName = useAuthStore((s) => s.user?.name ?? null);
+  const viewerId = useAuthStore((s) => s.user?.id ?? null);
+  // The reply-time alarm, read again after every change made here.
+  const [alarmVersion, setAlarmVersion] = useState(0);
+  const replyAlarm = useReplyAlarm(replyVenueId, alarmVersion);
+  const [openingFlagged, setOpeningFlagged] = useState(false);
 
   useEffect(() => { selectedIdRef.current = selectedId; }, [selectedId]);
 
@@ -534,6 +548,7 @@ export function EnquiriesView({
         : { ...previous, value: countsAfterMove(previous.value, enquiry.id, from, updated.state) });
       setCountsVersion((version) => version + 1);
       setHistoryVersion((version) => version + 1);
+      setAlarmVersion((version) => version + 1);
       setStamp((previous) => ({ id: updated.id, key: (previous?.key ?? 0) + 1 }));
       setMoved((count) => count + 1);
       if (stillOpen()) {
@@ -567,6 +582,36 @@ export function EnquiriesView({
       if (!stillOpen()) addToast(`${enquiryName(enquiry)}’s status could not be changed`, "error");
     } finally {
       setSaving(null);
+    }
+  };
+
+  // A reply recorded here: the enquiry holds the reply that stands (this one,
+  // or an earlier one it already had), and the alarm is read again.
+  const applyReply = (result: RecordFirstResponseResult): void => {
+    const reply = {
+      firstResponseAt: result.firstResponse.at,
+      firstResponseBy: result.firstResponse.byUserId,
+      firstResponseChannel: result.firstResponse.channel,
+    };
+    setList((previous) => ({ ...previous, rows: previous.rows.map((row) => row.id === result.enquiryId ? { ...row, ...reply } : row) }));
+    setOpenedEnquiry((opened) => opened !== null && opened.id === result.enquiryId ? { ...opened, ...reply } : opened);
+    setAlarmVersion((version) => version + 1);
+  };
+
+  // The alarm's longest-waiting enquiry, opened whether or not the list holds it.
+  const openFlagged = async (id: string): Promise<void> => {
+    const listed = list.rows.find((row) => row.id === id);
+    if (listed !== undefined) {
+      open(listed);
+      return;
+    }
+    setOpeningFlagged(true);
+    try {
+      open(await enquiriesApi.getEnquiry(id));
+    } catch {
+      addToast("Failed to load enquiry", "error");
+    } finally {
+      setOpeningFlagged(false);
     }
   };
 
@@ -656,6 +701,21 @@ export function EnquiriesView({
     longestWaitingCreatedAt: counts.value?.longestWaiting?.createdAt ?? null,
     nowMs,
   });
+  const alarm = replyAlarm.alarm;
+  const longestFlagged = alarm?.enquiries[0] ?? null;
+  const alarmSummary = alarm === null ? null : replyAlarmSummary({
+    overdue: alarm.overdue,
+    thresholdHours: alarm.thresholdHours,
+    longestArrivedAtMs: longestFlagged === null ? null : Date.parse(longestFlagged.arrivedAt),
+    nowMs,
+  });
+  const panelReply = (enquiry: Enquiry): PanelReply | null => replyVenueId === null || enquiry.venueId !== replyVenueId ? null : {
+    canRecord: true,
+    overdueSinceMs: replyAlarm.overdueSince.get(enquiry.id) ?? null,
+    thresholdHours: alarm?.thresholdHours ?? null,
+    viewerId,
+    onRecorded: applyReply,
+  };
   const [emptyHeading, emptyDetail] = EMPTY_WORDS[list.filter];
   const greeting = deskGreeting(nowMs, userName);
 
@@ -677,6 +737,19 @@ export function EnquiriesView({
                 {summary.map((part, index) => typeof part === "string" ? part
                   : <strong key={index} data-tone={part.tone}>{part.strong}</strong>)}
               </p>
+            )}
+            {alarmSummary !== null && longestFlagged !== null && (
+              <div className="enq-summary__alarm" data-testid="reply-alarm">
+                <p>
+                  {alarmSummary.map((part, index) => typeof part === "string" ? part
+                    : <strong key={index} data-tone={part.tone}>{part.strong}</strong>)}
+                </p>
+                <button type="button" className="enq-button" onClick={() => { void openFlagged(longestFlagged.id); }}
+                  disabled={openingFlagged} aria-busy={openingFlagged}>
+                  {openingFlagged && <ActivityIndicator size={16} />}
+                  Open the longest unanswered
+                </button>
+              </div>
             )}
             {summary === null && counts.status === "loading" && <ActivityStatus>Counting enquiries…</ActivityStatus>}
             {summary === null && counts.status === "error" && (
@@ -716,6 +789,7 @@ export function EnquiriesView({
             room={roomOf}
             complete={list.status === "ready" && !moreAvailable}
             stamp={stamp}
+            overdueSince={replyAlarm.overdueSince}
             onOpen={open}
           />
 
@@ -755,6 +829,7 @@ export function EnquiriesView({
           opportunityFailure={opportunityFailure !== null && opportunityFailure.enquiryId === selected.id ? opportunityFailure.message : null}
           diary={panelDiary}
           canDraftWithAI={canDraftWithAI}
+          reply={panelReply(selected)}
           navigation={{
             layout: wide ? "wide" : "single",
             backLabel,

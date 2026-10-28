@@ -77,6 +77,33 @@ sent from the venue's own mailbox counts only once someone reports it, so until
 replying from the desk is the habit, the stamp is an upper bound on the true reply
 time. The baseline plan's reconciliation step measures that gap.
 
+**Recording a reply from the desk.** The Enquiries desk's panel has a *First reply*
+section for the venue's commercial team (`replyVenueOf` in
+`lib/role-capabilities.ts`, mirroring `isVenueCommercialMember`): it says when and
+how the venue first replied, and *Record a reply* posts to the route above with the
+channel chosen (never assumed) and either no time ("Just now") or a venue-local
+wall time ("Earlier"). A report later than the reply held is answered with the
+reply that stands, and the panel says an earlier reply stands. Who replied is the
+person recording it; naming a colleague is the API's (`respondedBy`), not yet the
+desk's. Nothing is sent to the client.
+
+**The reply-time alarm.** `GET /enquiries/reply-alarm` answers the caller's venue's
+booking enquiries still in `submitted` or `under_review` with no first reply
+`ENQUIRY_REPLY_ALARM_DEFAULT_HOURS` (24) wall-clock hours after they arrived (their
+first move to `submitted`, else creation), the longest-waiting first (at most
+`ENQUIRY_REPLY_ALARM_LIST_LIMIT`, with the full count), and `nextDueAt`, when the
+next waiting one will pass the mark. Requests (access, Venviewer) and seed
+fixtures are left out; only the venue's commercial team may read it (the floor, a
+customer, a platform admin acting for no venue: 403). The desk shows one line under
+its summary with *Open the longest unanswered*, a *No reply* mark on each flagged
+row, and the alarm in the panel's *First reply*. It reads the alarm when it opens,
+after any change made on it, and at `nextDueAt`; never on a timer of its own, so a
+desk left open does not keep the database awake. The venue's operating settings
+hold no reply threshold yet, so 24 hours is a named default for every venue; it
+counts nights and weekends, since business hours need the venue's staffed hours.
+The filter is served by `enquiries_venue_state_idx` (venue, state), so the alarm
+needs no index of its own.
+
 **Visits, not requests.** An opening at least 30 minutes after the last is a new
 visit (`PROPOSAL_VIEW_VISIT_GAP_MINUTES`), so the page's own refetches and a
 reader's reloads count once, and concurrent openings count once. A link opened
@@ -212,7 +239,10 @@ venue and computes both. Days to a decision on a hold read `booking_status_histo
   interleaving in both orders, the audit's displaced reply, decisions and sent
   proposals as replies (an operator's naming nobody), the customer's view without
   the funnel fields, visit counting (concurrent openings, unknown links), engagement
-  (one subject, composite keys, cascade, retention), attribution (hostile referrers,
+  (one subject, composite keys, cascade, retention), the reply-time alarm (who is
+  flagged and who is not, arrival from submission, a recorded reply or decision
+  clearing it, its readers and refusals), a replayed report answered with the same
+  reply, attribution (hostile referrers,
   the shape check, forgiving input) and the switch, viewings (booked once, refused
   for drafts and requests, never a commitment) and lost reasons.
 - `packages/api/src/__tests__/enquiry-funnel-migration-postgres.test.ts`
@@ -228,8 +258,9 @@ venue and computes both. Days to a decision on a hold read `booking_status_histo
 
 ## Not here yet
 
-- The Enquiries desk control to report a reply, and the reply-time alarm (run-first
-  item 3), which read these columns; the alarm adds the index its query needs.
+- A reply threshold in the venue's operating settings (the alarm uses the 24-hour
+  default until one exists), naming a colleague as the one who replied from the
+  desk, and an alarm in business hours once the venue's staffed hours are recorded.
 - The page that sends attribution and the 30-second walk, with the privacy notice,
   the objection switch and `ENQUIRY_FUNNEL_BROWSER_SIGNALS=on` (above).
 - A funnel read-out (the measures above as one venue-scoped endpoint), once the

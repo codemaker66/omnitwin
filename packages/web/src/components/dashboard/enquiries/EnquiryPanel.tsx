@@ -2,11 +2,13 @@ import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactEleme
 import { occasionLabel } from "@omnitwin/types";
 import { Link } from "react-router-dom";
 import { ArrowLeft, ArrowUpRight, ChevronDown, ChevronUp, X } from "lucide-react";
+import type { RecordFirstResponseResult } from "@omnitwin/types";
 import type { Enquiry, StatusHistoryEntry } from "../../../api/enquiries.js";
 import { ActivityIndicator, ActivityStatus } from "../../shared/Activity.js";
 import { AIDraftPanel } from "../../ai/AIDraftPanel.js";
 import { useAIDraftsAvailable } from "../../../hooks/use-ai-drafts-available.js";
 import { StageChip } from "./EnquiryStages.js";
+import { EnquiryReply } from "./EnquiryReply.js";
 import { EnquiryNameText, enquiryName } from "./EnquiryLedger.js";
 import type { RoomPhoto } from "./enquiry-room-photo.js";
 import type { EnquiryStanding } from "./enquiry-standing.js";
@@ -65,6 +67,17 @@ export interface PanelDiary {
   readonly onRetry: () => void;
 }
 
+/** The enquiry's first reply, for a reader of its venue's reply time. */
+export interface PanelReply {
+  /** Whether this person records replies for this enquiry's venue. */
+  readonly canRecord: boolean;
+  /** When the enquiry arrived, if the reply-time alarm flags it. */
+  readonly overdueSinceMs: number | null;
+  readonly thresholdHours: number | null;
+  readonly viewerId: string | null;
+  readonly onRecorded: (result: RecordFirstResponseResult) => void;
+}
+
 export interface PanelNavigation {
   readonly layout: "wide" | "single";
   /** "Back to enquiries", or "Back to profile" when a profile opened it. */
@@ -97,6 +110,9 @@ interface EnquiryPanelProps {
   /** Only the venue's own team is offered an AI summary: the general AI
    *  drafts are charged to the venue and refuse anyone else (T-656). */
   readonly canDraftWithAI: boolean;
+  /** When and how the venue first replied; null for a reader who does not
+   *  see the venue's reply time (the API sends it to the venue's team only). */
+  readonly reply: PanelReply | null;
   readonly navigation: PanelNavigation;
   readonly headingRef: RefObject<HTMLHeadingElement>;
   readonly onRequest: (to: TransitionTarget, withNote: boolean) => void;
@@ -183,6 +199,12 @@ export function EnquiryPanel(props: EnquiryPanelProps): ReactElement {
             <RequestNextStep enquiry={enquiry} kind={request} transition={transition} onRequest={props.onRequest} />
           )}
         </section>
+
+        {request === null && props.reply !== null && enquiry.state !== "draft" && (
+          <EnquiryReply enquiry={enquiry} canRecord={props.reply.canRecord} overdueSinceMs={props.reply.overdueSinceMs}
+            thresholdHours={props.reply.thresholdHours} viewerId={props.reply.viewerId} nowMs={nowMs}
+            onRecorded={props.reply.onRecorded} />
+        )}
 
         {request === null && props.diary !== null && <EnquiryDiary diary={props.diary} />}
 

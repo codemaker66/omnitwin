@@ -23,6 +23,7 @@ import {
   canDraftWithAI,
   diaryVenueOf,
   hasRole,
+  replyVenueOf,
 } from "../role-capabilities.js";
 import { NAV_ITEMS, canShowNavItem } from "../../components/dashboard/DashboardLayout.js";
 import { canOpenDashboardView, dashboardViewFromSearchValue } from "../../pages/DashboardPage.js";
@@ -389,5 +390,26 @@ describe("who is offered the general AI draft panel", () => {
     expect(canDraftWithAI({ role: "planner", venueId: "venue-1", platformRole: "admin" })).toBe(true);
     expect(canDraftWithAI({ ...placed, role: "planner", platformRole: "operator" })).toBe(false);
     expect(canDraftWithAI(null)).toBe(false);
+  });
+});
+
+// POST /enquiries/:id/first-response and GET /enquiries/reply-alarm read
+// isVenueCommercialMember: admin, manager, staff or sales, at their own venue,
+// whatever their platform role. The desk offers "Record a reply" and reads the
+// alarm for exactly those people, so neither is a refusal.
+describe("who records replies and reads the reply-time alarm", () => {
+  it("is the venue's commercial team at its own venue", () => {
+    for (const role of USER_ROLES) {
+      const commercial = ["admin", "manager", "staff", "sales"].includes(role);
+      expect(replyVenueOf({ role, venueId: "venue-1" }), role).toBe(commercial ? "venue-1" : null);
+    }
+    expect(COMMERCIAL_ROLES).toEqual(["admin", "manager", "staff", "sales"]);
+  });
+
+  it("is nobody without a venue, a platform admin acting for none included", () => {
+    expect(replyVenueOf({ role: "staff", venueId: null })).toBeNull();
+    expect(replyVenueOf({ role: "admin", venueId: null })).toBeNull();
+    expect(replyVenueOf({ role: "hallkeeper", venueId: "venue-1" })).toBeNull();
+    expect(replyVenueOf(null)).toBeNull();
   });
 });

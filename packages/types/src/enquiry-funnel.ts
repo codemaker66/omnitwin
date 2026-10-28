@@ -107,6 +107,43 @@ export const RecordFirstResponseResultSchema = z.object({
 export type RecordFirstResponseResult = z.infer<typeof RecordFirstResponseResultSchema>;
 
 // ---------------------------------------------------------------------------
+// The reply-time alarm (run-first item 3)
+//
+// A booking enquiry still waiting for its first reply this long after it was
+// sent is flagged on the Enquiries desk. The venue's operating settings hold
+// no reply threshold yet, so every venue uses this default until one is added
+// there. It counts wall-clock hours, weekends and nights included: business
+// hours need the venue's staffed hours, which Venviewer does not hold yet.
+// ---------------------------------------------------------------------------
+
+export const ENQUIRY_REPLY_ALARM_DEFAULT_HOURS = 24;
+/** The longest-waiting enquiries the alarm names; the count covers them all. */
+export const ENQUIRY_REPLY_ALARM_LIST_LIMIT = 50;
+/** The stages in which an enquiry still waits on the venue: a decision is
+ *  itself a reply, and a withdrawn or archived one waits on nobody. */
+export const ENQUIRY_REPLY_AWAITING_STATES = ["submitted", "under_review"] as const;
+
+export const ReplyAlarmEnquirySchema = z.object({
+  id: z.uuid(),
+  /** When it was sent: its first move to submitted, or when it was made. */
+  arrivedAt: IsoInstantSchema,
+});
+export type ReplyAlarmEnquiry = z.infer<typeof ReplyAlarmEnquirySchema>;
+
+export const ReplyAlarmSchema = z.object({
+  thresholdHours: z.number().int().positive(),
+  /** Every booking enquiry of the venue past the threshold with no reply. */
+  overdue: z.number().int().nonnegative(),
+  /** The longest-waiting first, at most ENQUIRY_REPLY_ALARM_LIST_LIMIT. */
+  enquiries: z.array(ReplyAlarmEnquirySchema),
+  /** When the next enquiry still inside the threshold passes it, if none of
+   *  them is answered first; null when none is waiting. A reader asks again
+   *  then instead of polling. */
+  nextDueAt: IsoInstantSchema.nullable(),
+});
+export type ReplyAlarm = z.infer<typeof ReplyAlarmSchema>;
+
+// ---------------------------------------------------------------------------
 // Where an enquiry came from
 //
 // enquiries.source is the touchpoint the enquiry arrived by (the website's
