@@ -19,6 +19,7 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.05);
   pointer-events: auto;
   overflow: hidden;
+  transition: opacity 120ms var(--house-ease-out);
 }
 
 .vv-floating-widget--fixed {
@@ -47,6 +48,11 @@
   border-bottom-color: transparent;
 }
 
+.vv-floating-widget.is-auto-compact {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
 .vv-floating-widget.is-auto-compact .vv-floating-widget__bar {
   background:
     linear-gradient(135deg, rgba(19, 32, 34, 0.72), rgba(255, 255, 255, 0.025));
@@ -59,6 +65,9 @@
   border-radius: 6px;
   color: #d7c6a5;
   font: inherit;
+  transition:
+    color 120ms var(--house-ease-out),
+    background-color 120ms var(--house-ease-out);
 }
 
 .vv-floating-widget__handle {
@@ -91,9 +100,16 @@
   cursor: pointer;
 }
 
-.vv-floating-widget__handle:hover,
+/* Hover is a colour change only; the ring belongs to keyboard focus. */
+@media (hover: hover) and (pointer: fine) {
+  .vv-floating-widget__handle:hover,
+  .vv-floating-widget__icon-button:hover {
+    color: #dca475;
+    background: rgba(201, 138, 91, 0.13);
+  }
+}
+
 .vv-floating-widget__handle:focus-visible,
-.vv-floating-widget__icon-button:hover,
 .vv-floating-widget__icon-button:focus-visible {
   color: #dca475;
   background: rgba(201, 138, 91, 0.13);
@@ -119,7 +135,9 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .vv-floating-widget {
+  .vv-floating-widget,
+  .vv-floating-widget__handle,
+  .vv-floating-widget__icon-button {
     transition: none;
   }
 }
