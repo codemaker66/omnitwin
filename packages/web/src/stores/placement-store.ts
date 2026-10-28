@@ -51,7 +51,7 @@ import { doorKeepOuts, keptClearLine, type DoorClearSpace } from "../lib/door-cl
 import { doorsBlockedBy } from "../lib/keep-doors-clear.js";
 import type { LayoutRect } from "../lib/auto-layout.js";
 import { useDoorClearSpaceStore } from "./door-clear-space-store.js";
-import { countLabel } from "../lib/count-label.js";
+import { piecesLabel } from "../lib/pieces-label.js";
 
 // ---------------------------------------------------------------------------
 // Placement store — manages placed furniture and ghost state. Undo/redo for
@@ -248,7 +248,7 @@ function capPassedBy(before: readonly PlacedItem[], after: readonly PlacedItem[]
 /**
  * Furniture the person removed (Delete, the caption's Remove), as distinct
  * from a layout replaced, restored or undone: the removed ids and what they
- * were in a receipt's words (removedLabel), for planner-qol's receipt host:
+ * were in a receipt's words (lib/pieces-label), for planner-qol's receipt host:
  * "Removed Table 3 and 10 chairs · Undo".
  */
 type FurnitureRemovedListener = (ids: readonly string[], label: string) => void;
@@ -259,33 +259,6 @@ const furnitureRemovedListeners = new Set<FurnitureRemovedListener>();
 export function subscribeFurnitureRemoved(listener: FurnitureRemovedListener): () => void {
   furnitureRemovedListeners.add(listener);
   return () => { furnitureRemovedListeners.delete(listener); };
-}
-
-/**
- * What a removal took, as a receipt says it: a lone named table by its name
- * and the rest counted ("Table 3 and 10 chairs", "2 round tables and 20
- * chairs"), a lone piece by its own name ("6ft Trestle Table").
- */
-export function removedLabel(pieces: readonly PlacedItem[]): string {
-  const tables: { readonly piece: PlacedItem; readonly round: boolean }[] = [];
-  let chairs = 0;
-  const others: string[] = [];
-  for (const piece of pieces) {
-    const item = isSceneFurniturePlacement(piece) ? getCatalogueItem(piece.catalogueItemId) : undefined;
-    if (item === undefined) continue;
-    if (item.category === "table") tables.push({ piece, round: item.tableShape === "round" });
-    else if (item.category === "chair") chairs += 1;
-    else others.push(item.name);
-  }
-  const parts: string[] = [];
-  const named = tables.length === 1 ? tables[0]?.piece.label?.trim() : undefined;
-  if (named !== undefined && named !== "") parts.push(named);
-  else if (tables.length > 0) parts.push(countLabel(tables.length, tables.every((table) => table.round) ? "round table" : "table"));
-  if (chairs > 0) parts.push(countLabel(chairs, "chair"));
-  if (others.length === 1 && parts.length === 0) parts.push(others[0] ?? "");
-  else if (others.length > 0) parts.push(countLabel(others.length, "other piece"));
-  const last = parts.pop();
-  return last === undefined ? "" : parts.length === 0 ? last : `${parts.join(", ")} and ${last}`;
 }
 
 /** How far past a just-placed piece's footprint the pointer must go before the hand's ghost returns, metres. */
@@ -329,7 +302,7 @@ function ghostStandsAside(x: number, z: number, placedItems: readonly PlacedItem
 function announceRemoved(removed: readonly PlacedItem[]): void {
   if (removed.length === 0 || furnitureRemovedListeners.size === 0) return;
   const ids = removed.map((piece) => piece.id);
-  const label = removedLabel(removed);
+  const label = piecesLabel(removed);
   for (const listener of furnitureRemovedListeners) listener(ids, label);
 }
 

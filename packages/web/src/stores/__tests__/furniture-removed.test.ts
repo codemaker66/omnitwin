@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { removedLabel, subscribeFurnitureRemoved, usePlacementStore } from "../placement-store.js";
+import { subscribeFurnitureRemoved, usePlacementStore } from "../placement-store.js";
+import { piecesLabel } from "../../lib/pieces-label.js";
 import { getCatalogueItemBySlug } from "../../lib/catalogue.js";
 import { createPlacedItem, resetPlacedIdCounter } from "../../lib/placement.js";
 import { createTableGroup } from "../../lib/table-group.js";
@@ -62,16 +63,16 @@ describe("a removal is announced in a receipt's words", () => {
   });
 });
 
-describe("removedLabel", () => {
+describe("piecesLabel (lib/pieces-label), the receipt's words", () => {
   it("counts unnamed tables by their shape and the chairs with them", () => {
     const two = [...createTableGroup(ROUND, 0, 0, 0, 10), ...createTableGroup(ROUND, 4, 0, 0, 10)];
-    expect(removedLabel(two)).toBe("2 round tables and 20 chairs");
+    expect(piecesLabel(two)).toBe("2 round tables and 20 chairs");
   });
 
   it("names a lone piece by its own name, and counts pieces beside furniture", () => {
     const stage = getCatalogueItemBySlug("platform");
     if (stage === undefined) throw new Error("No platform in the catalogue");
-    expect(removedLabel([createPlacedItem(stage.id, 0, 0, 0)])).toBe(stage.name);
-    expect(removedLabel([...tableThree(), createPlacedItem(stage.id, 6, 0, 0)])).toBe("Table 3, 10 chairs and 1 other piece");
+    expect(piecesLabel([createPlacedItem(stage.id, 0, 0, 0)])).toBe(stage.name);
+    expect(piecesLabel([...tableThree(), createPlacedItem(stage.id, 6, 0, 0)])).toBe("Table 3, 10 chairs and 1 other piece");
   });
 });
