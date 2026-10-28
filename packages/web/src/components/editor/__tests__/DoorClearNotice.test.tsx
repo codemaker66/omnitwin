@@ -9,7 +9,7 @@ import { useCatalogueStore } from "../../../stores/catalogue-store.js";
 import { useAssemblyRecallStore } from "../../../floor/assembly/recall.js";
 import { getCatalogueItemBySlug } from "../../../lib/catalogue.js";
 import { createTableGroup } from "../../../lib/table-group.js";
-import { grandHallDinner180 } from "../../../floor/assembly/fixture.js";
+import type { PlacedItem } from "../../../lib/placement.js";
 import { GRAND_HALL_DOOR_CLEAR_SPACES } from "../../../lib/door-clear-spaces.js";
 import { doorBlockers } from "../../../lib/keep-doors-clear.js";
 
@@ -20,6 +20,26 @@ import { doorBlockers } from "../../../lib/keep-doors-clear.js";
 // ---------------------------------------------------------------------------
 
 const ROUND = getCatalogueItemBySlug("round-table-6ft-white")?.id ?? "missing-round";
+
+/**
+ * The Grand Assembly's 180-seat demo dinner as it stood on 28 Oct 2026
+ * (floor/assembly/fixture.ts dinnerTablePositions): 18 rounds of ten, metres.
+ * Frozen here, so rebuilding that dinner clear of the doors (L3) leaves this
+ * test's saved-before-the-rule layout as it was.
+ */
+const DINNER_28_OCT: readonly { readonly table: number; readonly x: number; readonly z: number }[] = [
+  { table: 1, x: -8.6, z: 0 }, { table: 2, x: -5.3, z: 0 }, { table: 3, x: -8.6, z: -3.4 },
+  { table: 4, x: -8.6, z: 3.4 }, { table: 5, x: -5.3, z: -3.4 }, { table: 6, x: -5.3, z: 3.4 },
+  { table: 7, x: -2, z: 0 }, { table: 8, x: -2, z: -3.4 }, { table: 9, x: -2, z: 3.4 },
+  { table: 10, x: 2, z: 0 }, { table: 11, x: 2, z: -3.4 }, { table: 12, x: 2, z: 3.4 },
+  { table: 13, x: 5.3, z: 0 }, { table: 14, x: 5.3, z: -3.4 }, { table: 15, x: 5.3, z: 3.4 },
+  { table: 16, x: 8.6, z: 0 }, { table: 17, x: 8.6, z: -3.4 }, { table: 18, x: 8.6, z: 3.4 },
+];
+
+function dinner28Oct(): PlacedItem[] {
+  return DINNER_28_OCT.flatMap(({ table, x, z }) => createTableGroup(ROUND, x, z, 0, 10)
+    .map((piece) => (piece.catalogueItemId === ROUND ? { ...piece, label: `Table ${String(table)}` } : piece)));
+}
 
 function blockers(): number {
   return doorBlockers(usePlacementStore.getState().placedItems, GRAND_HALL_DOOR_CLEAR_SPACES).length;
@@ -79,7 +99,7 @@ describe("the notice on a layout with a table in front of a door", () => {
     // 0.28 m apart. Table 18 stands in front of the end door, Tables 9 and 12
     // either side of the main door, Table 4 in front of the fireplace door and
     // Table 3 in front of the fire exit; none has free floor to go to.
-    usePlacementStore.setState({ placedItems: grandHallDinner180() });
+    usePlacementStore.setState({ placedItems: dinner28Oct() });
     render(<DoorClearNotice />);
     expect(screen.getByTestId("door-clear-notice-line").textContent)
       .toBe("Table 18 stands in front of the end door, and 4 more in front of the main door, the fireplace door and the fire exit.");

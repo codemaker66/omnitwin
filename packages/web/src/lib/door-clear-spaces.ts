@@ -162,6 +162,16 @@ export function footprintInSpace(footprint: Footprint, space: DoorClearSpace): b
   return rectsOverlap(footprintRect(footprint), space.rect);
 }
 
+/** Whether a footprint stands in a space given as a keep-out (doorKeepOuts), by footprintInSpace's own rule. */
+export function footprintInKeepOut(footprint: Footprint, keepOut: LayoutRect): boolean {
+  return rectsOverlap(footprintRect(footprint), {
+    minX: keepOut.cx - keepOut.width / 2,
+    maxX: keepOut.cx + keepOut.width / 2,
+    minZ: keepOut.cz - keepOut.depth / 2,
+    maxZ: keepOut.cz + keepOut.depth / 2,
+  });
+}
+
 /** The spaces any of `footprints` stands in, in the room's order. */
 export function spacesEntered(footprints: readonly Footprint[], spaces: readonly DoorClearSpace[]): readonly DoorClearSpace[] {
   return spaces.filter((space) => footprints.some((footprint) => footprintInSpace(footprint, space)));

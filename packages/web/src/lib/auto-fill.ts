@@ -29,6 +29,8 @@ import {
   tableGroupPlanningRadius,
 } from "./table-group.js";
 import { DEFAULT_PLANNER_ROUND_TABLE_SLUG, plannerChairFor, plannerChairSlug } from "./furniture-defaults.js";
+import { footprintInKeepOut } from "./door-clear-spaces.js";
+import { placedFootprint } from "./keep-doors-clear.js";
 import { isDiningTableItem } from "./furniture-semantics.js";
 import { countLabel } from "./count-label.js";
 import type { PublishedCapacityAnswer, PublishedFormat } from "./planner-truth.js";
@@ -166,25 +168,24 @@ export function planBanquetFill(
   if (seats === 0) return null;
   const occupied = tableGroupPlanningFootprint(table, seats);
   const round = table.tableShape === "round";
+  const radiusM = round ? tableGroupPlanningRadius(table, seats) : undefined;
   const target = requested(guests);
-  const layout = (keepOuts: readonly LayoutRect[]): ReturnType<typeof planBanquetLayout> => planBanquetLayout({
+  const layout = (admit: ((spot: BanquetTablePlacement) => boolean) | undefined): ReturnType<typeof planBanquetLayout> => planBanquetLayout({
     roomWidthM,
     roomLengthM,
     // Spacing runs between the backs of the chairs, tucked in.
     tableWidthM: occupied.width,
     tableDepthM: occupied.depth,
-    tableRadiusM: round ? tableGroupPlanningRadius(table, seats) : undefined,
+    tableRadiusM: radiusM,
     seatsPerTable: seats,
     aisleM: BANQUET_CHAIR_CLEARANCE_M,
     wallClearanceM: BANQUET_CHAIR_CLEARANCE_M,
     targetGuests: target ?? undefined,
-    // A group's square bounds hold its chairs' footprints, so a group clear of
-    // a door's space has every chair clear of it too.
-    keepOuts,
+    admit,
   });
-  const plan = layout(doorSpaces);
-  if (plan.tables.length === 0) return null;
   const doorsKeptClear = doorSpaces.length > 0;
+  const plan = layout(doorsKeptClear ? groupClearOfDoors(table, seats, groupBounds(occupied, radiusM), doorSpaces) : undefined);
+  if (plan.tables.length === 0) return null;
   return {
     style: "dinner-rounds",
     tableItemId: table.id,
@@ -197,15 +198,47 @@ export function planBanquetFill(
     roomForSeats: plan.capacityTables * seats,
     meetsTarget: plan.meetsTarget,
     doorsKeptClear,
-    roomForSeatsIgnoringDoors: (doorsKeptClear ? layout([]) : plan).capacityTables * seats,
+    roomForSeatsIgnoringDoors: (doorsKeptClear ? layout(undefined) : plan).capacityTables * seats,
   };
 }
 
-/** Whether a seat of `chair` at `seat` stands in any of `spaces` (the planner's footprint rule; meeting an edge does not). */
+/** A group's bounds on the floor, metres: a round's square round its ring of chairs, a rectangle's own. */
+function groupBounds(occupied: { readonly width: number; readonly depth: number }, radiusM: number | undefined): { readonly width: number; readonly depth: number } {
+  return radiusM === undefined ? occupied : { width: Math.max(occupied.width, 2 * radiusM), depth: Math.max(occupied.depth, 2 * radiusM) };
+}
+
+/** How far past a group's bounds a chair's footprint may reach (its rotated box at the ring), metres. */
+const DOOR_CHECK_MARGIN_M = 0.25;
+
+/**
+ * Whether a group of `table` set for `seats` may stand at a spot with every
+ * door space clear: judged piece by piece, table and each chair, as the door
+ * rule judges a laid floor (keep-doors-clear placedFootprint, door-clear-spaces
+ * footprintInKeepOut), so Fill never sets a group the door notice would then
+ * name, nor leaves out one whose chairs miss the door. A group whose bounds
+ * stay well clear of every space is clear without being built.
+ */
+function groupClearOfDoors(
+  table: CatalogueItem,
+  seats: number,
+  bounds: { readonly width: number; readonly depth: number },
+  doorSpaces: readonly LayoutRect[],
+): (spot: BanquetTablePlacement) => boolean {
+  return (spot) => {
+    const near: LayoutRect = { cx: spot.xM, cz: spot.zM, width: bounds.width + 2 * DOOR_CHECK_MARGIN_M, depth: bounds.depth + 2 * DOOR_CHECK_MARGIN_M };
+    if (!doorSpaces.some((space) => rectsOverlap(near, space))) return true;
+    return createTableGroup(table.id, toRenderSpace(spot.xM), toRenderSpace(spot.zM), spot.rotationY, seats).every((piece) => {
+      const footprint = placedFootprint(piece);
+      return footprint === null || !doorSpaces.some((space) => footprintInKeepOut(footprint, space));
+    });
+  };
+}
+
+/** Whether a seat of `chair` at `seat` stands in any of `spaces`, by the door rule's own test (footprintInKeepOut). */
 function seatInSpaces(chair: CatalogueItem, seat: TheatreSeatPlacement, spaces: readonly LayoutRect[]): boolean {
   const { halfW, halfD } = computeRotatedFootprint(chair, seat.rotationY);
-  const footprint: LayoutRect = { cx: seat.xM, cz: seat.zM, width: 2 * toRealWorld(halfW), depth: 2 * toRealWorld(halfD) };
-  return spaces.some((space) => rectsOverlap(footprint, space));
+  const footprint = { x: seat.xM, z: seat.zM, halfW: toRealWorld(halfW), halfD: toRealWorld(halfD) };
+  return spaces.some((space) => footprintInKeepOut(footprint, space));
 }
 
 /**
@@ -481,9 +514,10 @@ function packRegion(
   radiusM: number,
   occupied: { readonly width: number; readonly depth: number },
   accept: (tables: readonly BanquetTablePlacement[]) => boolean,
+  admit?: (spot: BanquetTablePlacement) => boolean,
 ): readonly BanquetTablePlacement[] {
-  const shift = (tables: readonly BanquetTablePlacement[]): readonly BanquetTablePlacement[] =>
-    tables.map((table) => ({ ...table, xM: table.xM + region.cx, zM: table.zM + region.cz }));
+  const toRoom = (table: BanquetTablePlacement): BanquetTablePlacement => ({ ...table, xM: table.xM + region.cx, zM: table.zM + region.cz });
+  const shift = (tables: readonly BanquetTablePlacement[]): readonly BanquetTablePlacement[] => tables.map(toRoom);
   const plan = planBanquetLayout({
     roomWidthM: region.width,
     roomLengthM: region.depth,
@@ -494,6 +528,7 @@ function packRegion(
     aisleM: input.rule.betweenTablesM,
     wallClearanceM: walls,
     keepOuts: (input.keepOuts ?? []).map((rect) => ({ ...rect, cx: rect.cx - region.cx, cz: rect.cz - region.cz })),
+    admit: admit === undefined ? undefined : (spot) => admit(toRoom(spot)),
     accept: (tables) => accept(shift(tables)),
   });
   return shift(plan.tables);
@@ -517,9 +552,9 @@ export function planGangwayFill(input: GangwayFillInput): GangwayFillPlan | null
   const longAxis = roomWidthM >= roomLengthM ? "x" : "z";
   const band = (side: RoomSide, layout: GangwayLayout): number => (layout.sides[side] ? rule.gangwayM : rule.wallBandM);
 
-  /** The way of setting the gangways that holds the most tables with no table in `keepOuts`. */
-  const search = (keepOuts: readonly LayoutRect[]): { readonly layout: GangwayLayout; readonly tables: readonly BanquetTablePlacement[] } | null => {
-    const packing: GangwayFillInput = { ...input, seatsPerTable: seats, keepOuts };
+  /** The way of setting the gangways that holds the most tables, each one `admit` lets stand. */
+  const search = (admit: ((spot: BanquetTablePlacement) => boolean) | undefined): { readonly layout: GangwayLayout; readonly tables: readonly BanquetTablePlacement[] } | null => {
+    const packing: GangwayFillInput = { ...input, seatsPerTable: seats };
     let found: { readonly layout: GangwayLayout; readonly tables: readonly BanquetTablePlacement[] } | null = null;
     for (const layout of gangwayLayouts()) {
       if (!gangwaysServeExits(layout, input.exits, longAxis)) continue;
@@ -528,34 +563,34 @@ export function planGangwayFill(input: GangwayFillInput): GangwayFillPlan | null
       const walls: WallClearances = { xMin: band("xMin", layout), xMax: band("xMax", layout), zMin: band("zMin", layout), zMax: band("zMax", layout) };
       let tables: readonly BanquetTablePlacement[];
       if (!layout.spine) {
-        tables = packRegion(packing, { cx: 0, cz: 0, width: roomWidthM, depth: roomLengthM }, walls, radiusM, occupied, reach);
+        tables = packRegion(packing, { cx: 0, cz: 0, width: roomWidthM, depth: roomLengthM }, walls, radiusM, occupied, reach, admit);
       } else if (longAxis === "x") {
         // Two halves either side of a spine running along X; each keeps its own wall's band and nothing at the spine.
         const half = (roomLengthM - rule.gangwayM) / 2;
         const offset = (rule.gangwayM + half) / 2;
         tables = [
-          ...packRegion(packing, { cx: 0, cz: -offset, width: roomWidthM, depth: half }, { ...walls, zMax: 0 }, radiusM, occupied, reach),
-          ...packRegion(packing, { cx: 0, cz: offset, width: roomWidthM, depth: half }, { ...walls, zMin: 0 }, radiusM, occupied, reach),
+          ...packRegion(packing, { cx: 0, cz: -offset, width: roomWidthM, depth: half }, { ...walls, zMax: 0 }, radiusM, occupied, reach, admit),
+          ...packRegion(packing, { cx: 0, cz: offset, width: roomWidthM, depth: half }, { ...walls, zMin: 0 }, radiusM, occupied, reach, admit),
         ];
       } else {
         const half = (roomWidthM - rule.gangwayM) / 2;
         const offset = (rule.gangwayM + half) / 2;
         tables = [
-          ...packRegion(packing, { cx: -offset, cz: 0, width: half, depth: roomLengthM }, { ...walls, xMax: 0 }, radiusM, occupied, reach),
-          ...packRegion(packing, { cx: offset, cz: 0, width: half, depth: roomLengthM }, { ...walls, xMin: 0 }, radiusM, occupied, reach),
+          ...packRegion(packing, { cx: -offset, cz: 0, width: half, depth: roomLengthM }, { ...walls, xMax: 0 }, radiusM, occupied, reach, admit),
+          ...packRegion(packing, { cx: offset, cz: 0, width: half, depth: roomLengthM }, { ...walls, xMin: 0 }, radiusM, occupied, reach, admit),
         ];
       }
       if (found === null || tables.length > found.tables.length) found = { layout, tables };
     }
     return found;
   };
-  const keepOuts = input.keepOuts ?? [];
   const doorSpaces = input.doorSpaces ?? [];
   const doorsKeptClear = doorSpaces.length > 0;
-  const best = search(doorsKeptClear ? [...keepOuts, ...doorSpaces] : keepOuts);
+  const bounds = groupBounds(occupied, table.tableShape === "round" ? radiusM : undefined);
+  const best = search(doorsKeptClear ? groupClearOfDoors(table, seats, bounds, doorSpaces) : undefined);
   if (best === null || best.tables.length === 0) return null;
   // The figure the line sets beside it: the same search with the doors left out.
-  const ignoringDoors = doorsKeptClear ? search(keepOuts) : best;
+  const ignoringDoors = doorsKeptClear ? search(undefined) : best;
 
   const target = requested(input.guests);
   const wanted = target === null ? best.tables.length : Math.min(best.tables.length, Math.ceil(target / seats));
@@ -599,15 +634,27 @@ export interface DesignatedGangways {
 
 const designatedCache = new Map<string, DesignatedGangways | null>();
 
-/** The designated gangways of a room (metres), or null when no layout of the planner's rounds fits it. */
-export function designatedGangways(roomWidthM: number, roomLengthM: number, exits: readonly RoomExit[] | null, rule: AisleRule = FILL_AISLE_RULE): DesignatedGangways | null {
-  const key = [roomWidthM, roomLengthM, rule.gangwayM, rule.betweenTablesM, rule.wallBandM, exits?.map((exit) => exit.side).sort().join(",") ?? "unknown"].join("|");
+/**
+ * The designated gangways of a room (metres), or null when no layout of the
+ * planner's rounds fits it. With the room's door clear spaces (`doorSpaces`),
+ * the design Fill makes keeping them clear, which can set the gangways
+ * differently.
+ */
+export function designatedGangways(
+  roomWidthM: number,
+  roomLengthM: number,
+  exits: readonly RoomExit[] | null,
+  rule: AisleRule = FILL_AISLE_RULE,
+  doorSpaces: readonly LayoutRect[] = [],
+): DesignatedGangways | null {
+  const doors = doorSpaces.map((space) => [space.cx, space.cz, space.width, space.depth].join(",")).join(";");
+  const key = [roomWidthM, roomLengthM, rule.gangwayM, rule.betweenTablesM, rule.wallBandM, exits?.map((exit) => exit.side).sort().join(",") ?? "unknown", doors].join("|");
   const cached = designatedCache.get(key);
   if (cached !== undefined || designatedCache.has(key)) return cached ?? null;
   const table = getCatalogueItemBySlug(DEFAULT_PLANNER_ROUND_TABLE_SLUG);
   const plan = table === undefined
     ? null
-    : planGangwayFill({ table, seatsPerTable: banquetSeatsPerTable(table), guests: 0, roomWidthM, roomLengthM, exits, rule });
+    : planGangwayFill({ table, seatsPerTable: banquetSeatsPerTable(table), guests: 0, roomWidthM, roomLengthM, exits, rule, doorSpaces });
   const longAxis = roomWidthM >= roomLengthM ? "x" : "z";
   const result = plan === null ? null : {
     layout: plan.layout,
@@ -734,13 +781,18 @@ export function gangwayReview(
   placedItems: readonly PlacedItem[],
   room: SpaceDimensions,
   exits: readonly RoomExit[] | null,
-  options: { readonly rule?: AisleRule; readonly wallNames?: Readonly<Record<RoomSide, string>> } = {},
+  options: {
+    readonly rule?: AisleRule;
+    readonly wallNames?: Readonly<Record<RoomSide, string>>;
+    /** The room's door clear spaces, as Fill keeps them, so the review judges Fill's own gangways. */
+    readonly doorSpaces?: readonly LayoutRect[];
+  } = {},
 ): readonly GangwayReviewItem[] {
   const rule = options.rule ?? FILL_AISLE_RULE;
   const names = options.wallNames ?? PLAIN_WALL_NAMES;
   const widthM = toRealWorld(room.width);
   const lengthM = toRealWorld(room.length);
-  const designated = designatedGangways(widthM, lengthM, exits, rule);
+  const designated = designatedGangways(widthM, lengthM, exits, rule, options.doorSpaces);
   if (designated === null) return [];
   const world = createGhostWorld(placedItems, room);
   const unitOf = (placed: PlacedItem): string => placed.setId ?? placed.groupId ?? placed.id;
