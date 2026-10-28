@@ -34,7 +34,18 @@ function ids(): string {
   return `rec-${String(counter)}`;
 }
 
-/** A round whose outermost chair stands `gap` metres from the window wall: a pinch when the gap is under 1.1 m. */
+/**
+ * A round whose outermost chair stands `gap` metres from the fireplace wall: a pinch when the gap is under
+ * 1.1 m. The fireplace end is one of the Grand Hall's designated gangways with its doors kept clear (with the
+ * door wall and a middle spine; the window wall is not), and the round stands off the spine.
+ */
+function offFireplaceWall(gap: number): readonly PlacedItem[] {
+  const params = cardParamsFor("round");
+  if (params === null) throw new Error("no round");
+  return stampSetup(params, { x: -HALL.width / 2 + gap + CHAIR_REACH, z: -2.6 }, 0, ids).map((piece) => ({ ...piece, groupId: "group-fireplace" }));
+}
+
+/** A round whose outermost chair stands `gap` metres from the window wall, where Fill lays no gangway once the doors are kept clear. */
 function offWindowWall(gap: number): readonly PlacedItem[] {
   const params = cardParamsFor("round");
   if (params === null) throw new Error("no round");
@@ -68,7 +79,7 @@ beforeEach(() => {
   resetGangwayReviewRecordForTesting();
   useRoomDimensionsStore.setState({ dimensions: HALL });
   useEditorStore.setState({ configId: "cfg-1", isPublicPreview: false, space: GRAND_HALL_SPACE });
-  usePlacementStore.setState({ placedItems: [...offWindowWall(0.8)] });
+  usePlacementStore.setState({ placedItems: [...offFireplaceWall(0.8)] });
 });
 
 afterEach(() => {
@@ -80,8 +91,8 @@ describe("the review a layout holds", () => {
   it("names the pinch as the hall's staff do, open", () => {
     const review = layoutGangwayReview(usePlacementStore.getState().placedItems, HALL, "grand-hall", null);
     expect(review.items).toHaveLength(1);
-    expect(review.items[0]).toMatchObject({ gangway: "the window wall", status: "open" });
-    expect(review.items[0]?.sides).toContain("the window wall");
+    expect(review.items[0]).toMatchObject({ gangway: "the fireplace wall", status: "open" });
+    expect(review.items[0]?.sides).toContain("the fireplace wall");
   });
 
   it("keeps the venue's decision on the same pinch, and reopens it once the pinch narrows past the tolerance", () => {
@@ -89,7 +100,7 @@ describe("the review a layout holds", () => {
     if (open === undefined) throw new Error("no pinch");
     const decided: GangwayReview = { items: [{ ...open, status: "approved", reviewer: "Hallkeeper", decidedAt: "2026-10-26T09:00:00.000Z" }] };
     expect(layoutGangwayReview(usePlacementStore.getState().placedItems, HALL, "grand-hall", decided).items[0]?.status).toBe("approved");
-    const narrower = offWindowWall(0.7).map((piece, i) => ({ ...piece, id: usePlacementStore.getState().placedItems[i]?.id ?? piece.id }));
+    const narrower = offFireplaceWall(0.7).map((piece, i) => ({ ...piece, id: usePlacementStore.getState().placedItems[i]?.id ?? piece.id }));
     expect(layoutGangwayReview(narrower, HALL, "grand-hall", decided).items[0]?.status).toBe("open");
   });
 
@@ -116,7 +127,7 @@ describe("recording it with the layout", () => {
     if (open === undefined) throw new Error("no pinch");
     const api = fakeApi({ gangwayReview: { items: [{ ...open, status: "denied", reviewer: "Duty manager", decidedAt: "2026-10-26T09:00:00.000Z" }] } });
     // A second pinch elsewhere joins the review; the venue's decision on the first stays.
-    usePlacementStore.setState({ placedItems: [...usePlacementStore.getState().placedItems, ...offWindowWall(0.8).map((piece) => ({ ...piece, x: piece.x + 7, groupId: "group-two" }))] });
+    usePlacementStore.setState({ placedItems: [...usePlacementStore.getState().placedItems, ...offFireplaceWall(0.8).map((piece) => ({ ...piece, z: piece.z + 4.8, groupId: "group-two" }))] });
     await recordGangwayReview(api);
     const written = api.writes[0]?.review?.items ?? [];
     expect(written.find((item) => item.id === open.id)?.status).toBe("denied");
@@ -163,5 +174,15 @@ describe("recording it with the layout", () => {
     await vi.advanceTimersByTimeAsync(GANGWAY_RECORD_DELAY_MS);
     expect(flush).toHaveBeenCalledTimes(1);
     expect(api.reads()).toBe(1);
+  });
+});
+
+describe("the review judges the gangways Fill lays, its doors kept clear", () => {
+  it("finds no pinch where Fill lays no gangway once the Grand Hall's doors are kept clear", () => {
+    // With the doors kept clear Fill's gangways run along the fireplace and door walls and down the middle
+    // (auto-fill-doors), not along the windows: a round 0.8 m off the window wall pinches no gangway it lays.
+    expect(layoutGangwayReview(offWindowWall(0.8), HALL, "grand-hall", null).items).toEqual([]);
+    // The fireplace end is one of its gangways, so the same round there is a pinch.
+    expect(layoutGangwayReview(offFireplaceWall(0.8), HALL, "grand-hall", null).items).toHaveLength(1);
   });
 });

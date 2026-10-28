@@ -1,6 +1,7 @@
 import { GangwayReviewSchema, withGangwayDecisions, type GangwayReview, type GangwayReviewItem, type SpaceDimensions } from "@omnitwin/types";
 import { getConfig, patchConfigMetadata, type ConfigMetadataInput } from "../api/configurations.js";
 import { gangwayReview, roomExits, roomWallNames } from "./auto-fill.js";
+import { doorKeepOuts, roomDoorClearSpaces } from "./door-clear-spaces.js";
 import type { PlacedItem } from "./placement.js";
 import { useEditorStore } from "../stores/editor-store.js";
 import { usePlacementStore } from "../stores/placement-store.js";
@@ -27,10 +28,18 @@ import { useRoomDimensionsStore } from "../stores/room-dimensions-store.js";
 /** How long the pinches must stay still before the review is written, ms: a drag writes once, after it ends. */
 export const GANGWAY_RECORD_DELAY_MS = 3000;
 
-/** The room's pinches as derived now, open, its walls named as its staff name them. */
+/**
+ * The room's pinches as derived now, open, its walls named as its staff name
+ * them, judging the gangways Fill lays: clear of the room's doors where they
+ * are recorded (lib/door-clear-spaces), wherever the review is read.
+ */
 function derivedItems(placedItems: readonly PlacedItem[], room: SpaceDimensions, roomSlug: string | null): readonly GangwayReviewItem[] {
   const wallNames = roomWallNames(roomSlug);
-  return gangwayReview(placedItems, room, roomExits(roomSlug), wallNames === undefined ? {} : { wallNames });
+  const doors = roomDoorClearSpaces(roomSlug);
+  return gangwayReview(placedItems, room, roomExits(roomSlug), {
+    ...(wallNames === undefined ? {} : { wallNames }),
+    ...(doors === null ? {} : { doorSpaces: doorKeepOuts(doors) }),
+  });
 }
 
 /** The review a layout holds: the items as derived now, each stored decision laid back over its item while it holds. */
