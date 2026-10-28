@@ -49,6 +49,13 @@ describe("planner features: everyone's switches", () => {
       expect(item).toMatch(lane === "planner-qol" ? /^(?:PQ-\d{1,2}|D\d)$/u : /^(?:Q-\d{2}[ab]?|D\d)$/u);
     }
   });
+
+  it("has planner-qol's keys for Blake's decisions 3 to 5, every one off until he answers", () => {
+    for (const key of ["clothDrape", "clothDrapeOnly", "lensesByRole", "lensesDivider", "wallsQuick"] as const) {
+      expect(PLANNER_FEATURE_SPECS[key].lane, key).toBe("planner-qol");
+      expect(plannerFeatures()[key], key).toBe(false);
+    }
+  });
 });
 
 describe("planner features: the ?pf= list", () => {
