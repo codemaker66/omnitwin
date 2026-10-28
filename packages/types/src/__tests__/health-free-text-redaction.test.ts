@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   REDACTED_HEALTH_TEXT,
   redactHealthFreeText,
+  redactAllergyNote,
   redactHealthFreeTextInString,
 } from "../event-requirements.js";
 
@@ -91,5 +92,40 @@ describe("redactHealthFreeTextInString", () => {
   it("returns text without the key unchanged", () => {
     const text = "Vegetarian 12, gluten free 3";
     expect(redactHealthFreeTextInString(text)).toBe(text);
+  });
+});
+
+
+// ---------------------------------------------------------------------------
+// The guests' allergy note never enters the log (release audit
+// people-privacy-3): blanked and marked, with everything else as given.
+// ---------------------------------------------------------------------------
+describe("redactAllergyNote", () => {
+  const dietary = (otherAllergies: unknown) => ({ vegetarian: 4, vegan: 1, otherAllergies });
+
+  it("blanks the note, marks the removal and keeps the counts and every other field", () => {
+    const value = { instructions: { dietary: dietary("Seat 12: coeliac"), accessNotes: "Side door" }, label: "Details" };
+    expect(redactAllergyNote(value)).toEqual({
+      instructions: { dietary: { vegetarian: 4, vegan: 1, otherAllergies: "", otherAllergiesRedacted: true }, accessNotes: "Side door" },
+      label: "Details",
+    });
+    // The caller's object is left as it was.
+    expect(value.instructions.dietary.otherAllergies).toBe("Seat 12: coeliac");
+  });
+
+  it("treats any value but a missing, null or empty one as a note, as the nightly pass does", () => {
+    expect(redactAllergyNote({ instructions: { dietary: dietary(42) } })).toEqual({
+      instructions: { dietary: { vegetarian: 4, vegan: 1, otherAllergies: "", otherAllergiesRedacted: true } },
+    });
+    for (const note of ["", null, undefined]) {
+      const value = { instructions: { dietary: dietary(note) } };
+      expect(redactAllergyNote(value)).toBe(value);
+    }
+  });
+
+  it("returns anything without the note's path as it is", () => {
+    for (const value of [null, "text", 3, [1], { label: "Place" }, { instructions: "x" }, { instructions: { dietary: [] } }]) {
+      expect(redactAllergyNote(value)).toBe(value);
+    }
   });
 });
