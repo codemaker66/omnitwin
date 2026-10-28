@@ -28,8 +28,12 @@ import {
 import { isFreestandingFloorEquipmentItem, isPassiveFreestandingAvFloorItem } from "./furniture-semantics.js";
 import { isSceneFurniturePlacement } from "./table-dressing.js";
 
-/** Height above the floor (render units) at which the overlay line is drawn. */
-export const CIRCULATION_OVERLAY_Y = 0.09;
+/**
+ * Height above the floor (render units) at which the overlay line is drawn:
+ * on the floor, just above the door marks (DoorClearSpaceLayer, 0.006), so a
+ * table or a chair in front of it hides it as the floor itself is hidden.
+ */
+export const CIRCULATION_OVERLAY_Y = 0.012;
 
 /**
  * Extract planning-relevant circulation footprints in metres. Tables and
