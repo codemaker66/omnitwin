@@ -772,10 +772,10 @@ function mouldingShadow(height: Node<"float">, edges: readonly number[]): Node<"
  * into, as photographed and relit for the mood like the spaces beyond the
  * doors: on the door wall's corridor side an aubergine dado under a gilt band
  * and a pale wall above, on its Saloon side the Saloon's mahogany panelling
- * (the room's painted grain carrying the photographed colour), beyond the end
- * and fireplace walls the corridor's wall.
+ * (the room's painted grain, `grain`, carrying the photographed colour),
+ * beyond the end and fireplace walls the corridor's wall.
  */
-function interiorFaceColour(mood: HallMoodUniforms, street: Node<"vec3">, textures: HallTextures | null, toTop: Node<"float">): Node<"vec3"> {
+function interiorFaceColour(mood: HallMoodUniforms, street: Node<"vec3">, grain: Node<"float">, toTop: Node<"float">): Node<"vec3"> {
   const n = bodyNormal();
   const p = positionWorld;
   const f = INTERIOR_FACES;
@@ -793,7 +793,6 @@ function interiorFaceColour(mood: HallMoodUniforms, street: Node<"vec3">, textur
   const skirting = height.lessThan(f.skirting);
   const dado = skirting.select(srgb255(f.corridorDado).mul(0.72), srgb255(f.corridorDado));
   const corridor = height.lessThan(f.dadoTop).select(dado, band.select(gilt, srgb255(f.corridorWall)));
-  const grain = textures === null ? float(1) : mahoganyGrain(textures, vec2(p.x.add(p.z), p.y).mul(1.6));
   const panelling = srgb255(f.saloonPanelling).mul(grain);
   // Beyond the end and fireplace walls nobody surveyed: their faces are the
   // corridor's wall as art direction, and lie in shade, so a face the full
@@ -872,9 +871,13 @@ export function createWallBodyMaterial(
   const y = positionLocal.y;
   const hiddenLintel = role.greaterThan(BODY_ROLE.lintel - 0.5).and(role.lessThan(BODY_ROLE.lintel + 0.5)).and(released);
   const hiddenJamb = role.greaterThan(BODY_ROLE.lintelJamb - 0.5).and(role.lessThan(BODY_ROLE.lintelJamb + 0.5)).and(released.not());
-  const hiddenCap = role.greaterThan(BODY_ROLE.capOnly - 0.5).and(cut.greaterThanEqual(y.sub(1e-4)));
-  const hidden = hiddenLintel.or(hiddenJamb).or(hiddenCap);
-  const clamped = vec3(positionLocal.x, max(min(y, cut), shape.x), positionLocal.z);
+  const hiddenCap = role.greaterThan(BODY_ROLE.capOnly - 0.5).and(role.lessThan(BODY_ROLE.capOnly + 0.5)).and(cut.greaterThanEqual(y.sub(1e-4)));
+  // A bay's board stands at its window's head, the cut that clears the bay,
+  // and lies at its own height (`base`) while the cut is under that head.
+  const isBoard = role.greaterThan(BODY_ROLE.bayBoard - 0.5);
+  const hiddenBoard = isBoard.and(cut.greaterThanEqual(y.sub(1e-4)));
+  const hidden = hiddenLintel.or(hiddenJamb).or(hiddenCap).or(hiddenBoard);
+  const clamped = vec3(positionLocal.x, isBoard.select(shape.x, max(min(y, cut), shape.x)), positionLocal.z);
   // A collapsed vertex goes to one point far below the floor, so its faces have no area.
   material.positionNode = hidden.select(vec3(0, -50, 0), clamped);
   const isTop = tag.w.greaterThan(BODY_FINISH.cap - 0.5).and(tag.w.lessThan(BODY_FINISH.cap + 0.5));
@@ -889,7 +892,11 @@ export function createWallBodyMaterial(
   // How far under its wall's cut a face lies (the room's light catches the faces' tops: faceShading).
   const toTop = cut.sub(height);
   const street = linear(preset.outer).mul(outside).mul(faceShading(height, toTop));
-  const outer = card ? cardOf(linear(preset.outer)) : preset.interiorFaces ? interiorFaceColour(mood, street, extras.textures ?? null, toTop) : street;
+  // The room's painted mahogany grain, read once a fragment: the Saloon's
+  // panelling on Ashlar's interior faces and the windows' bays both take it.
+  const textures = extras.textures ?? null;
+  const mahogany = textures === null ? float(1) : mahoganyGrain(textures, vec2(positionWorld.x.add(positionWorld.z), height).mul(1.6));
+  const outer = card ? cardOf(linear(preset.outer)) : preset.interiorFaces ? interiorFaceColour(mood, street, mahogany, toTop) : street;
   // The cut (cutTopColour). Where the relief stands proud at the cut, the
   // room's edge, and the gilt line on it, lie out at its surface on the cap
   // (createSectionCapMaterial); a wall that is not cut ends at its plane.
@@ -936,6 +943,10 @@ export function createWallBodyMaterial(
   }
   const windowLining = card ? cardOf(linear(preset.windowLining))
     : linear(preset.windowLining).mul(room.add(mood.daylight.rgb.mul(mood.daylightIntensity).mul(REVEAL_SKY_VIEW)));
+  // A window's bay as the cut clears it (hall-wall-body.ts BAY_SLOTS): the
+  // mahogany its reveals are panelled in, the doorways' plain lining carrying
+  // the room's grain.
+  const bayLining = card ? cardOf(linear(preset.doorLining)) : linear(preset.doorLining).mul(mahogany).mul(room);
   const upright = card
     ? cardOf(linear(preset.core)).add(linear(preset.core).mul(roomGlow).mul(capGlowNode(fromRoom)).mul(UPRIGHT_SHARE))
     : elevation === null ? uprightLight(linear(preset.core), fromRoom) : cap;
@@ -945,7 +956,8 @@ export function createWallBodyMaterial(
     pick(BODY_FINISH.cap).select(cap,
       pick(BODY_FINISH.doorLining).select(doorLining,
         pick(BODY_FINISH.windowLining).select(windowLining,
-          pick(BODY_FINISH.cornerCap).select(cornerCap, upright)))));
+          pick(BODY_FINISH.cornerCap).select(cornerCap,
+            pick(BODY_FINISH.bayLining).select(bayLining, upright))))));
   material.name = "grand-hall-wall-body";
   return material;
 }
