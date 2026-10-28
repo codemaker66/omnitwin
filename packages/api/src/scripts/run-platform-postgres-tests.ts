@@ -37,6 +37,8 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   // A signed-in person's new plan: refused unclaimed, theirs once claimed (batch C).
   "src/__tests__/claim-new-draft-postgres.test.ts",
   "src/__tests__/role-vocabulary-postgres.test.ts",
+  // An open socket acts with its person's current role: /ws/configurations saves and /ws/diary commands.
+  "src/__tests__/socket-identity-postgres.test.ts",
   "src/__tests__/public-mcp-postgres.test.ts",
   "src/__tests__/sheet-paper-check-postgres.test.ts",
   "src/__tests__/ai-usage-postgres.test.ts",
