@@ -27,8 +27,12 @@ export interface Mode {
   /**
    * Struck by a unit impulse, the mode's velocity, and so the sound it
    * radiates, rings as gain x cos(2 pi f t), decaying: every mode of a struck
-   * body starts moving at once, in phase near the struck point, which is the
-   * click of the impact.
+   * body starts moving at once, which is the click of the impact. Every mode
+   * is given the same sign here. The physical choice would be a fixed sign
+   * for each mode, the sign of its shape where it is struck and towards the
+   * listener, seeded by the part; all-positive stays for now, because with
+   * scattered signs the floor's onset cancelled and the catalogue's loudness
+   * window widened to 10 dB (Task 6's probes).
    */
   readonly gain: number;
 }
@@ -319,6 +323,34 @@ const SURFACE_MODULUS_PA: Readonly<Record<SurfaceKind, number>> = {
 /** Whether a cap strikes as a hard elastic contact (Hertz), rather than a spring or a pad. */
 export function isHardCap(cap: FootCap): cap is HardCap {
   return cap === "glide" || cap === "steel" || cap === "panel-edge";
+}
+
+/**
+ * The small local mass at a hard cap that knocks in each micro-collision, kg
+ * (EST, ruling R34): a glide's or steel foot's cap and the end of its leg, or
+ * the corner of a panel or plinth, which its plate's own motion (about
+ * 0.8 mm for a deck) lifts and drops again far beyond its static Hertz
+ * deflection (about 0.07 mm). R34 proposed 0.03 kg and 0.08 kg; at those a
+ * Chiavari's first 50 ms on oak held as little as 0.75 % of its energy above
+ * 2 kHz, a deck's 0.5 % and a dance-floor panel's 0.27 %, short of the 2 %
+ * the click needs (seeds 1-10), so they are tuned down to where the clicks
+ * hold: 0.015 kg for a leg's cap and 0.02 kg for a panel's corner. At
+ * 0.01 kg a glide's knock after a late landing reads more often as a contact
+ * of its own, past the 35 ms the feet land over.
+ */
+export const KNOCK_MASS_KG: Readonly<Record<HardCap, number>> = {
+  glide: 0.015,
+  steel: 0.015,
+  "panel-edge": 0.02,
+};
+
+/**
+ * How long one micro-collision's knock presses, in seconds: Hertz at the
+ * cap's small local mass, about 0.35 ms for a glide on oak at 1 m/s. A soft
+ * cap (rubber, felt, a castor's tyre) does not knock: null.
+ */
+export function knockSeconds(cap: FootCap, surface: SurfaceResponse, speed: number): number | null {
+  return isHardCap(cap) ? contactSeconds(cap, surface, KNOCK_MASS_KG[cap], speed) : null;
 }
 
 const MIN_MASS_KG = 0.01;

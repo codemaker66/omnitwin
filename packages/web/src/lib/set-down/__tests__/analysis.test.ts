@@ -3,6 +3,7 @@ import { seededRandom } from "../../planner-sound-render.js";
 import { OCTAVE_BANDS_HZ, bandMap, type BandValues } from "../bands.js";
 import {
   bandEnergy,
+  brightnessHz,
   kWeightedLoudness,
   octaveBandpass,
   octaveBandpassSteep,
@@ -125,6 +126,49 @@ describe("spectralCentroidHz", () => {
 
   it("is 0 for silence", () => {
     expect(spectralCentroidHz(new Float32Array(1024), RATE)).toBe(0);
+  });
+});
+
+describe("brightnessHz", () => {
+  /** A struck mode: a sine at `hz` decaying 60 dB over `t60` seconds, from its loudest at the start. */
+  function struck(hz: number, t60: number, seconds = 0.5): Float32Array {
+    const out = new Float32Array(Math.round(seconds * RATE));
+    for (let i = 0; i < out.length; i += 1) out[i] = Math.cos((2 * Math.PI * hz * i) / RATE) * 10 ** ((-3 * i) / (t60 * RATE));
+    return out;
+  }
+
+  it("puts a decaying 1 kHz mode's brightness at 1 kHz", () => {
+    expect(Math.abs(brightnessHz(struck(1000, 0.2), RATE) - 1000)).toBeLessThan(25);
+  });
+
+  it("weighs sounds that share no bin by their energy: the mix's brightness is the energy-weighted mean of theirs", () => {
+    // Two steady tones, each a whole number of cycles in a power-of-two buffer, so each fills one bin and
+    // nothing of the one leaks into the other (decaying modes overlap in their skirts, which adds a cross term).
+    const n = 16384;
+    const tone = (bin: number, amplitude: number): Float32Array => Float32Array.from({ length: n }, (_, i) => amplitude * Math.sin((2 * Math.PI * bin * i) / n));
+    const lowHz = (68 * RATE) / n;
+    const highHz = (1024 * RATE) / n;
+    const low = tone(68, 1);
+    const high = tone(1024, 0.3);
+    const both = Float32Array.from(low, (sample, i) => sample + (high[i] ?? 0));
+    expect(Math.abs(brightnessHz(low, RATE) - lowHz) / lowHz).toBeLessThan(1e-4);
+    expect(Math.abs(brightnessHz(high, RATE) - highHz) / highHz).toBeLessThan(1e-4);
+    const lowEnergy = energy(low);
+    const highEnergy = energy(high);
+    const expected = (lowHz * lowEnergy + highHz * highEnergy) / (lowEnergy + highEnergy);
+    expect(Math.abs(brightnessHz(both, RATE) - expected) / expected).toBeLessThan(1e-4);
+  });
+
+  it("reads the landing itself, where a window over the whole buffer reads only the slow tail", () => {
+    // A short bright strike at the start and a long dark ring: the Hann window over the buffer all but hides the strike.
+    const ring = struck(150, 1.5, 1);
+    const strike = struck(4000, 0.01, 1);
+    const both = Float32Array.from(ring, (sample, i) => 0.3 * sample + (strike[i] ?? 0));
+    expect(brightnessHz(both, RATE)).toBeGreaterThan(spectralCentroidHz(both, RATE) * 1.5);
+  });
+
+  it("is 0 for silence", () => {
+    expect(brightnessHz(new Float32Array(1024), RATE)).toBe(0);
   });
 });
 

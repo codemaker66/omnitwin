@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { RoomGeometry } from "../../../data/room-geometries.js";
+import { roomGeometries, type RoomGeometry } from "../../../data/room-geometries.js";
+import { SURFACE_ABSORPTION } from "../acoustic-data.js";
 import { ROOM_ACOUSTICS, UNCALIBRATED, type RoomAcoustics } from "../rooms.js";
 import {
   earlyReflections,
@@ -220,13 +221,14 @@ describe("earlyReflections in an L-shaped room", () => {
   const ear = { position: { x: -3, y: 1.5, z: 2 }, right: { x: 1, y: 0, z: 0 } } as const;
   const edges = L_SHAPE.wallPolygon.length;
 
-  it("keeps only walls whose reflection point lies on the wall", () => {
+  it("keeps only walls whose reflection point lies on the wall, each with its floor partner", () => {
     const reflections = earlyReflections(room(L_SHAPE), source, ear);
     const firstOrder = reflections.filter((r) => r.order === 1);
     expect(firstOrder.length).toBeLessThanOrEqual(edges + 2);
     // The two inner edges of the L face away from the pair.
     expect(firstOrder).toHaveLength(6);
-    expect(reflections.filter((r) => r.order === 2)).toHaveLength(0);
+    // Outside a rectangle the only second bounces are the four real walls' floor partners.
+    expect(reflections.filter((r) => r.order === 2)).toHaveLength(4);
   });
 
   it("puts every wall reflection point on its own edge", () => {
@@ -244,6 +246,34 @@ describe("earlyReflections in an L-shaped room", () => {
       expect(off).toBeLessThan(1e-9);
       expect(point.y).toBeGreaterThan(0);
       expect(point.y).toBeLessThan(L_SHAPE.ceilingHeight);
+    }
+  });
+});
+
+describe("earlyReflections in the Reception Room, from a piece on the floor", () => {
+  it("gives every wall bounce a floor partner at the same delay, weaker by the floor's reflectance", () => {
+    const geometry = roomGeometries["Reception Room"];
+    expect(geometry).toBeDefined();
+    if (geometry === undefined) return;
+    const reception = reflectionRoomFor(ROOM_ACOUSTICS["reception-room"], geometry);
+    const source: Vec3 = { x: 1, y: 0, z: -3 };
+    const ear = { position: { x: -2, y: 1.6, z: -1 }, right: { x: 1, y: 0, z: 0 } } as const;
+    const reflections = earlyReflections(reception, source, ear);
+    const walls = wallReflections(geometry.wallPolygon, source, ear.position).filter((w) => w.point.y >= 0 && w.point.y <= geometry.ceilingHeight);
+    expect(walls.length).toBeGreaterThan(2);
+    const direct = distance(source, ear.position);
+    const reflectance = SURFACE_ABSORPTION[reception.floor].map((a) => Math.sqrt(1 - a));
+    for (const wall of walls) {
+      const delay = (distance(wall.image, ear.position) - direct) / SPEED_OF_SOUND;
+      const first = reflections.find((r) => r.order === 1 && Math.abs(r.delaySeconds - delay) < 1e-12);
+      const partner = reflections.find((r) => r.order === 2 && Math.abs(r.delaySeconds - delay) < 1e-12);
+      expect(first).toBeDefined();
+      expect(partner).toBeDefined();
+      if (first === undefined || partner === undefined) continue;
+      first.gain.forEach((gain, band) => {
+        expect(partner.gain[band]).toBeCloseTo(gain * (reflectance[band] ?? 1), 9);
+      });
+      expect(partner.azimuthRad).toBeCloseTo(first.azimuthRad, 9);
     }
   });
 });

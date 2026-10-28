@@ -1,17 +1,16 @@
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import { CRAFTED_FURNITURE_SLUGS } from "../../../components/meshes/crafted/crafted-slugs.js";
 import { computeBoundingBox, roomGeometries } from "../../../data/room-geometries.js";
 import { PLANNER_TOUCH_DB } from "../../planner-sound-recipes.js";
-import { fft, seededRandom } from "../../planner-sound-render.js";
-import { bandEnergy, kWeightedLoudness, octaveBandpassSteep, onsetTimesMs, schroederT20 } from "../analysis.js";
+import { seededRandom } from "../../planner-sound-render.js";
+import { bandEnergy, brightnessHz, octaveBandpassSteep, onsetTimesMs, schroederT20 } from "../analysis.js";
 import { bodyFor, type BodyPart, type PartKind } from "../bodies.js";
-import { LOSS, contactSeconds, partModes, surfaceModes } from "../modes.js";
+import { LOSS, contactSeconds, knockSeconds, partModes, surfaceModes } from "../modes.js";
 import { earlyReflections, reflectionRoomFor, type Reflection } from "../reflections.js";
-import { SET_DOWN_TOUCH_DB, renderSetDown, type SetDownInput, type SetDownRender } from "../render.js";
+import { SET_DOWN_TOUCH_DB, SET_DOWN_TOUCH_LOUDNESS_DB, renderSetDown, type SetDownInput, type SetDownRender } from "../render.js";
 import { ROOM_ACOUSTICS } from "../rooms.js";
 import { SURFACES, floorKindForRoom, surfaceResponse, type SurfaceKind } from "../surfaces.js";
-
-const SR = 48000;
+import { SR, clickShare, energy, inputFor, loudness, setDown } from "./set-down-kit.js";
 
 /** Every surface a piece can stand on (ruling R7), each resolved for the Grand Hall. */
 const SURFACE_KINDS: readonly SurfaceKind[] = [
@@ -27,39 +26,7 @@ const SURFACE_KINDS: readonly SurfaceKind[] = [
 const COMMON_PIECES = ["chiavari-chair", "banquet-chair", "round-table-6ft-white", "trestle-6ft", "poseur-table"] as const;
 
 const SEEDS = [1, 2, 3, 4, 5] as const;
-
-interface Options {
-  readonly room?: string;
-  readonly seed?: number;
-  readonly speed?: number;
-  readonly kind?: SetDownInput["kind"];
-  readonly clothed?: boolean;
-  readonly gain?: number;
-  readonly azimuthRad?: number;
-  readonly reflections?: readonly Reflection[];
-  readonly scale?: number;
-}
-
-/** The input for `slug` set down with every foot on `surface` (resolved for `room`), dry, centred and at full level. */
-function inputFor(slug: string, surface: SurfaceKind, options: Options = {}): SetDownInput {
-  const body = bodyFor(slug, options.scale);
-  const response = surfaceResponse(surface, options.room ?? "grand-hall");
-  return {
-    body,
-    surfaces: body.feet.map(() => response),
-    speed: options.speed ?? 1,
-    kind: options.kind ?? "drop",
-    clothed: options.clothed ?? false,
-    direct: { gain: options.gain ?? 1, azimuthRad: options.azimuthRad ?? 0 },
-    reflections: options.reflections ?? [],
-    seed: options.seed ?? 1,
-    sampleRate: SR,
-  };
-}
-
-function setDown(slug: string, surface: SurfaceKind, options: Options = {}): SetDownRender {
-  return renderSetDown(inputFor(slug, surface, options));
-}
+const TEN_SEEDS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const;
 
 function peakOf(render: SetDownRender): number {
   let peak = 0;
@@ -67,12 +34,6 @@ function peakOf(render: SetDownRender): number {
     for (const sample of channel) peak = Math.max(peak, Math.abs(sample));
   }
   return 20 * Math.log10(peak);
-}
-
-function energy(samples: Float32Array): number {
-  let sum = 0;
-  for (const sample of samples) sum += sample * sample;
-  return sum;
 }
 
 /**
@@ -84,45 +45,8 @@ function expectSounding(render: SetDownRender): void {
   expect(peakOf(render)).toBeGreaterThan(-40);
 }
 
-/**
- * The power-weighted mean frequency of the whole render, unwindowed: the
- * spectral centroid of a sound that starts at its loudest and dies away by
- * its own end, so it needs no window. spectralCentroidHz reads through a Hann
- * window over the whole buffer, which weights its middle, where only the
- * slowest tail is left, and suppresses the landing itself.
- */
-function brightnessHz(samples: Float32Array): number {
-  let n = 1;
-  while (n < samples.length) n <<= 1;
-  const re = new Float64Array(n);
-  const im = new Float64Array(n);
-  re.set(samples);
-  fft(re, im);
-  let weighted = 0;
-  let total = 0;
-  for (let k = 1; k <= n / 2; k += 1) {
-    const power = (re[k] ?? 0) ** 2 + (im[k] ?? 0) ** 2;
-    weighted += (power * k * SR) / n;
-    total += power;
-  }
-  return total > 0 ? weighted / total : 0;
-}
-
 function lowShare(samples: Float32Array): number {
   return bandEnergy(samples, SR, 60, 200) / energy(samples);
-}
-
-/** Loudness is always read over the same first 400 ms (BS.1770's momentary block), so renders compare like with like. */
-const LOUDNESS_WINDOW = Math.round(0.4 * SR);
-
-function windowed(samples: Float32Array): Float32Array {
-  const out = new Float32Array(LOUDNESS_WINDOW);
-  out.set(samples.subarray(0, Math.min(samples.length, LOUDNESS_WINDOW)));
-  return out;
-}
-
-function loudness(render: SetDownRender): number {
-  return kWeightedLoudness(windowed(render.left), windowed(render.right), SR);
 }
 
 function spread(values: readonly number[]): number {
@@ -250,6 +174,13 @@ describe("contact times", () => {
       }
     }
   });
+
+  it("knocks a glide on oak at 1 m/s for under half a millisecond, and a soft cap not at all (ruling R34)", () => {
+    expect(knockSeconds("glide", oak, 1)).toBeLessThan(0.0005);
+    expect(knockSeconds("steel", oak, 1)).toBeLessThan(0.0005);
+    expect(knockSeconds("panel-edge", oak, 1)).toBeLessThan(0.001);
+    for (const cap of ["rubber", "felt", "castor"] as const) expect(knockSeconds(cap, oak, 1)).toBeNull();
+  });
 });
 
 describe("every crafted piece on every surface", () => {
@@ -271,6 +202,7 @@ describe("every crafted piece on every surface", () => {
       expect(clipped, `${slug} on ${kind}`).toBe(false);
       expect(render.peakDb, `${slug} on ${kind}`).toBeGreaterThanOrEqual(-32);
       expect(render.peakDb, `${slug} on ${kind}`).toBeLessThanOrEqual(-16);
+      // Centred with no reflections, both channels are the mono source the peak is read from.
       expect(render.peakDb).toBeCloseTo(peakOf(render), 4);
       const above = bandEnergy(render.left, SR, 14000, SR / 2) / energy(render.left);
       expect(above, `${slug} on ${kind}`).toBeLessThan(0.005);
@@ -286,12 +218,23 @@ describe("what each surface does to a Chiavari", () => {
     const carpet = setDown("chiavari-chair", "carpet", { seed });
     expectSounding(oak);
     expectSounding(carpet);
-    const oakCentroid = brightnessHz(oak.left);
+    const oakCentroid = brightnessHz(oak.left, SR);
     expect(oakCentroid).toBeGreaterThan(0);
-    expect(brightnessHz(carpet.left)).toBeLessThan(0.5 * oakCentroid);
+    expect(brightnessHz(carpet.left, SR)).toBeLessThan(0.5 * oakCentroid);
     const carpetT20 = schroederT20(carpet.left, SR);
     expect(carpetT20).toBeGreaterThan(0);
     expect(carpetT20).toBeLessThan(schroederT20(oak.left, SR));
+  });
+
+  it.each(TEN_SEEDS)("clicks on oak, 2-25 % of its first 50 ms above 2 kHz, and barely at all on carpet (seed %i, ruling R34)", (seed) => {
+    const oak = setDown("chiavari-chair", "oak-boards-joists", { seed });
+    const carpet = setDown("chiavari-chair", "carpet", { seed });
+    expectSounding(oak);
+    expectSounding(carpet);
+    const click = clickShare(oak.left, 50, 2000);
+    expect(click).toBeGreaterThanOrEqual(0.02);
+    expect(click).toBeLessThanOrEqual(0.25);
+    expect(clickShare(carpet.left, 50, 2000)).toBeLessThanOrEqual(click / 10);
   });
 
   it.each(SEEDS)("booms more from a stage deck than from the floor, 60-200 Hz (seed %i)", (seed) => {
@@ -311,7 +254,7 @@ describe("what each surface does to a Chiavari", () => {
     expect(lowShare(reception.left)).toBeLessThan(0.7 * lowShare(hall.left));
   });
 
-  it.each([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])("lands its feet as two to four contacts over 5-35 ms (seed %i)", (seed) => {
+  it.each(TEN_SEEDS)("lands its feet as two to four contacts over 5-35 ms (seed %i)", (seed) => {
     const render = setDown("chiavari-chair", "oak-boards-joists", { seed });
     expectSounding(render);
     const onsets = onsetTimesMs(render.left, SR);
@@ -333,13 +276,24 @@ describe("what each piece is made of", () => {
     expect(chairT20).toBeGreaterThan(0);
     expect(schroederT20(octaveBandpassSteep(stand.left, 1000, SR), SR)).toBeGreaterThan(2 * chairT20);
   });
+
+  it.each(TEN_SEEDS)("knocks a staging deck's and a dance-floor panel's corners on oak too (seed %i, ruling R34)", (seed) => {
+    for (const slug of ["staging-deck-6x4", "dancefloor-panel"]) {
+      const render = setDown(slug, "oak-boards-joists", { seed });
+      expectSounding(render);
+      expect(clickShare(render.left, 50, 2000), slug).toBeGreaterThanOrEqual(0.02);
+    }
+  });
 });
 
 describe("levels", () => {
   const oakLoudness = new Map<string, number>();
-  for (const slug of CRAFTED_FURNITURE_SLUGS) oakLoudness.set(slug, loudness(setDown(slug, "oak-boards-joists")));
+  beforeAll(() => {
+    for (const slug of CRAFTED_FURNITURE_SLUGS) oakLoudness.set(slug, loudness(setDown(slug, "oak-boards-joists")));
+  }, 120_000);
 
   it("keeps every crafted piece on oak boards within 8 dB of K-weighted loudness", () => {
+    expect(oakLoudness.size).toBe(CRAFTED_FURNITURE_SLUGS.length);
     expect(spread([...oakLoudness.values()])).toBeLessThanOrEqual(8);
   });
 
@@ -353,20 +307,37 @@ describe("levels", () => {
     ["mic-stand", "carpet"],
     ["laptop", "table-top"],
   ];
+  const plays = new Map<string, readonly number[]>();
+  beforeAll(() => {
+    for (const [slug, kind] of PLAYS) plays.set(`${slug} ${kind}`, Array.from({ length: 200 }, (_, i) => loudness(setDown(slug, kind, { seed: 1000 + i }))));
+  }, 300_000);
 
-  it.each(PLAYS)("plays %s on %s within 3 dB of itself across 20 seeds", (slug, kind) => {
-    const values = Array.from({ length: 20 }, (_, i) => loudness(setDown(slug, kind, { seed: 100 + i })));
+  it.each(PLAYS)("plays %s on %s within 3 dB of itself across 200 seeds (ruling R36)", (slug, kind) => {
+    const values = plays.get(`${slug} ${kind}`) ?? [];
+    expect(values.length).toBe(200);
     expect(spread(values)).toBeLessThanOrEqual(3);
   });
 
-  it("anchors a Chiavari dropped on oak at 1 m/s to the touch level on every play", () => {
+  it("sets a Chiavari dropped on oak at 1 m/s to the anchor's loudness on every play, its median peak at the touch level (ruling R36)", () => {
     // The play's +-15 % spread of the speed shapes its contacts, not its level.
-    for (const seed of SEEDS) expect(setDown("chiavari-chair", "oak-boards-joists", { seed }).peakDb).toBeCloseTo(SET_DOWN_TOUCH_DB, 3);
+    const peaks = Array.from({ length: 21 }, (_, i) => {
+      const render = setDown("chiavari-chair", "oak-boards-joists", { seed: 1 + i });
+      expect(loudness(render)).toBeCloseTo(SET_DOWN_TOUCH_LOUDNESS_DB, 2);
+      return render.peakDb;
+    });
+    expect(Math.abs(median(peaks) - SET_DOWN_TOUCH_DB)).toBeLessThan(0.5);
   });
 
-  it("follows mass and speed, compressed, and holds the peak to -32..-16 dBFS", () => {
-    expect(setDown("staging-deck-6x4", "oak-boards-joists").peakDb).toBeCloseTo(SET_DOWN_TOUCH_DB + 3 * Math.log10(45 / 4), 3);
-    expect(setDown("chiavari-chair", "oak-boards-joists", { speed: 2 }).peakDb).toBeCloseTo(SET_DOWN_TOUCH_DB + 10 * Math.log10(2), 3);
+  it("follows mass and speed in loudness, compressed, and holds the peak to -32..-16 dBFS", () => {
+    const chair = setDown("chiavari-chair", "oak-boards-joists");
+    const round = setDown("round-table-6ft-white", "oak-boards-joists");
+    const faster = setDown("chiavari-chair", "oak-boards-joists", { speed: 2 });
+    for (const render of [chair, round, faster]) {
+      expect(render.peakDb).toBeGreaterThan(-32);
+      expect(render.peakDb).toBeLessThan(-16);
+    }
+    expect(loudness(round) - loudness(chair)).toBeCloseTo(3 * Math.log10(30 / 4), 2);
+    expect(loudness(faster) - loudness(chair)).toBeCloseTo(10 * Math.log10(2), 2);
     expect(setDown("bar-counter", "oak-boards-joists", { speed: 3 }).peakDb).toBeCloseTo(-16, 3);
     expect(setDown("lapel-microphone", "oak-boards-joists", { speed: 0.1 }).peakDb).toBeCloseTo(-32, 3);
   });
@@ -375,8 +346,27 @@ describe("levels", () => {
     const drop = setDown("chiavari-chair", "oak-boards-joists");
     const settle = setDown("chiavari-chair", "oak-boards-joists", { kind: "settle" });
     expectSounding(settle);
-    expect(settle.peakDb - drop.peakDb).toBeCloseTo(10 * Math.log10(0.25), 3);
-    expect(brightnessHz(settle.left)).toBeLessThan(brightnessHz(drop.left));
+    expect(loudness(settle) - loudness(drop)).toBeCloseTo(10 * Math.log10(0.25), 2);
+    expect(brightnessHz(settle.left, SR)).toBeLessThan(brightnessHz(drop.left, SR));
+  });
+});
+
+describe("when it is heard", () => {
+  it("marks the first moment within 20 dB of the peak: at once on oak, well after first contact on carpet (ruling R37)", () => {
+    for (const seed of SEEDS) {
+      const oak = setDown("chiavari-chair", "oak-boards-joists", { seed });
+      const carpet = setDown("chiavari-chair", "carpet", { seed });
+      expect(oak.onsetSeconds).toBeGreaterThanOrEqual(0);
+      expect(oak.onsetSeconds).toBeLessThan(0.003);
+      // Carpet's first 45 ms pulse is nearly silent: it is first heard well after its first contact.
+      expect(carpet.onsetSeconds).toBeGreaterThan(oak.onsetSeconds + 0.008);
+      expect(carpet.onsetSeconds).toBeLessThan(0.08);
+      // It is the first sample of the source reaching a tenth of its peak.
+      const at = Math.round(carpet.onsetSeconds * SR);
+      const peak = 10 ** (carpet.peakDb / 20);
+      expect(Math.abs(carpet.left[at] ?? 0)).toBeGreaterThanOrEqual(0.1 * peak * (1 - 1e-6));
+      for (let i = 0; i < at; i += 1) expect(Math.abs(carpet.left[i] ?? 0)).toBeLessThan(0.1 * peak);
+    }
   });
 });
 
@@ -421,6 +411,9 @@ describe("the space", () => {
     }
     const right = setDown("chiavari-chair", "oak-boards-joists", { azimuthRad: Math.PI / 2 });
     expect(energy(right.left)).toBeLessThan(1e-9 * energy(right.right));
+    // The peak is the mono source's, whatever the pan: hard right puts one channel 3 dB above it.
+    expect(right.peakDb).toBeCloseTo(setDown("chiavari-chair", "oak-boards-joists").peakDb, 3);
+    expect(peakOf(right) - right.peakDb).toBeCloseTo(10 * Math.log10(2), 2);
   });
 
   it("scales the whole sound by the direct gain", () => {
@@ -429,13 +422,23 @@ describe("the space", () => {
     expect(half.peakDb - full.peakDb).toBeCloseTo(20 * Math.log10(0.5), 4);
   });
 
-  it("folds a reflection under 1 ms into the direct level, with no comb (ruling R16)", () => {
-    const dry = setDown("chiavari-chair", "oak-boards-joists");
-    const floor: Reflection = { delaySeconds: 0.0004, gain: [0.6, 0.6, 0.5, 0.5, 0.45, 0.4, 0.4], azimuthRad: 0, order: 1 };
-    const folded = setDown("chiavari-chair", "oak-boards-joists", { reflections: [floor] });
-    expect(folded.left.length).toBe(dry.left.length);
-    for (let i = 0; i < dry.left.length; i += 97) {
-      expect(folded.left[i] ?? 0).toBeCloseTo(1.5 * (dry.left[i] ?? 0), 6);
+  it("folds a reflection under 1 ms into the direct sound, which is still set to the level rule, and lowers the rest by 1 / (1 + g) (ruling R35)", () => {
+    const g = 0.5;
+    const floor: Reflection = { delaySeconds: 0.0004, gain: [0.6, 0.6, 0.5, g, 0.45, 0.4, 0.4], azimuthRad: 0, order: 1 };
+    const wall: Reflection = { delaySeconds: 0.03, gain: [0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4], azimuthRad: Math.PI / 2, order: 1 };
+    const open = setDown("chiavari-chair", "oak-boards-joists", { reflections: [wall] });
+    const folded = setDown("chiavari-chair", "oak-boards-joists", { reflections: [floor, wall] });
+    // The wall is hard right, so the left channel is the direct sound alone: the same with the fold as without.
+    expect(folded.peakDb).toBeCloseTo(open.peakDb, 3);
+    expect(20 * Math.log10(Math.max(...folded.left.map(Math.abs)))).toBeCloseTo(folded.peakDb, 3);
+    expect(folded.left.length).toBe(open.left.length);
+    for (let i = 0; i < folded.left.length; i += 97) expect(folded.left[i] ?? 0).toBeCloseTo(open.left[i] ?? 0, 7);
+    // What the wall adds to the right channel falls by 1 / (1 + g).
+    const start = Math.round(0.03 * SR);
+    for (let i = start; i < folded.right.length; i += 89) {
+      const openWall = (open.right[i] ?? 0) - (open.left[i] ?? 0);
+      const foldedWall = (folded.right[i] ?? 0) - (folded.left[i] ?? 0);
+      expect(foldedWall).toBeCloseTo(openWall / (1 + g), 7);
     }
   });
 
@@ -457,7 +460,27 @@ describe("the space", () => {
     // A flat reflection at 0.5 to the right is the dry centre channel at 0.5 x root 2.
     expect(energy(added(withFlat, "right")) / energy(dry.left)).toBeCloseTo(0.5, 2);
     // Losing the top at 4 kHz darkens the copy.
-    expect(brightnessHz(added(withDull, "right"))).toBeLessThan(brightnessHz(added(withFlat, "right")));
+    expect(brightnessHz(added(withDull, "right"), SR)).toBeLessThan(brightnessHz(added(withFlat, "right"), SR));
+  });
+
+  it("drops a reflection more than a second late, rather than making the render that long", () => {
+    const dry = setDown("chiavari-chair", "oak-boards-joists");
+    const late: Reflection = { delaySeconds: 5, gain: [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5], azimuthRad: 0, order: 2 };
+    const absurd: Reflection = { ...late, delaySeconds: 1e9 };
+    const render = setDown("chiavari-chair", "oak-boards-joists", { reflections: [late, absurd] });
+    expect(render.left.length).toBe(dry.left.length);
+    expect(render.left).toEqual(dry.left);
+  });
+});
+
+describe("surfaces under the feet", () => {
+  it("treats two copies of one surface as one surface, whatever their identity (ruling R37)", () => {
+    const shared = inputFor("chiavari-chair", "dance-floor", { room: "saloon" });
+    const response = surfaceResponse("dance-floor", "saloon");
+    const copies: SetDownInput = { ...shared, surfaces: shared.surfaces.map(() => ({ ...response })) };
+    const a = renderSetDown(shared);
+    const b = renderSetDown(copies);
+    expect(b.left).toEqual(a.left);
   });
 });
 
@@ -483,6 +506,7 @@ describe("pieces with no crafted body", () => {
     const render = renderSetDown(odd);
     expectSounding(render);
     for (const sample of render.left) expect(Number.isFinite(sample)).toBe(true);
+    expect(Number.isFinite(render.onsetSeconds)).toBe(true);
   });
 });
 

@@ -6,7 +6,8 @@
 // each wall edge of the room's outline (kept only where the bounce lands on
 // that edge), the floor and the ceiling. In a rectangular room the second
 // order adds floor and ceiling with each wall, and each pair of opposite
-// walls. Each reflection's delay and gain are relative to the direct sound,
+// walls; in any other outline each real wall bounce gains its floor partner
+// (wall and floor). Each reflection's delay and gain are relative to the direct sound,
 // so the renderer mixes them in behind it.
 // ---------------------------------------------------------------------------
 
@@ -207,8 +208,11 @@ export function lateralAzimuth(direction: Vec3, right: Vec3): number {
  * An image counts only where its bounce is real: a wall's when the source and
  * the ear are on the same side of it and the bounce lands between floor and
  * ceiling, the floor's and ceiling's when both are
- * between the two, and a second bounce's when both are inside the room. Any
- * other image is dropped, never reshaped.
+ * between the two, and a rectangle's second bounces when both are inside the
+ * room. Outside a rectangle, each real wall bounce has its floor partner (wall
+ * and floor) when both are between floor and ceiling: for a source on the
+ * floor it arrives with its wall bounce. Any other image is dropped, never
+ * reshaped.
  */
 export function earlyReflections(room: ReflectionRoom, source: Vec3, ear: Ear): readonly Reflection[] {
   if (!isFiniteVec(source) || !isFiniteVec(ear.position) || !isFiniteVec(ear.right)) return [];
@@ -242,17 +246,23 @@ export function earlyReflections(room: ReflectionRoom, source: Vec3, ear: Ear): 
 
   const betweenFloorAndCeiling = (p: Vec3): boolean => p.y >= 0 && p.y <= height;
   const heightsValid = betweenFloorAndCeiling(source) && betweenFloorAndCeiling(ear.position);
+  const rectangle = isRectangle(polygon);
 
   for (const bounce of wallReflections(polygon, source, ear.position)) {
     // A bounce above the ceiling or below the floor is off the wall.
-    if (betweenFloorAndCeiling(bounce.point)) add(bounce.image, [room.wall], 1);
+    if (!betweenFloorAndCeiling(bounce.point)) continue;
+    add(bounce.image, [room.wall], 1);
+    // Every wall bounce also comes back by way of the floor. A rectangle's second order below pairs each wall
+    // with the floor already; any other outline pairs each real wall bounce here, so its walls keep their level
+    // against a source standing on the floor (whose own floor image joins the direct sound).
+    if (!rectangle && heightsValid) add(mirrorInHeight(bounce.image, 0), [room.wall, room.floor], 2);
   }
   if (heightsValid) {
     add(mirrorInHeight(source, 0), [room.floor], 1);
     add(mirrorInHeight(source, height), [room.ceiling], 1);
   }
 
-  if (isRectangle(polygon) && heightsValid && insideConvex(polygon, source) && insideConvex(polygon, ear.position)) {
+  if (rectangle && heightsValid && insideConvex(polygon, source) && insideConvex(polygon, ear.position)) {
     for (let i = 0; i < 4; i += 1) {
       const image = mirrorInEdge(source, polygon, i);
       if (image === null) continue;

@@ -162,6 +162,25 @@ export function spectralCentroidHz(samples: Float32Array, sampleRate: number): n
   return total > 0 ? weighted / total : 0;
 }
 
+/**
+ * The power-weighted mean frequency of the whole render, in Hz (0 for
+ * silence), read unwindowed: the spectral centroid of a sound that starts at
+ * its loudest and dies away by its own end, so it needs no window.
+ * spectralCentroidHz's Hann window over the whole buffer weights its middle,
+ * where only the slowest tail is left, and all but hides the landing itself.
+ */
+export function brightnessHz(samples: Float32Array, sampleRate: number): number {
+  if (samples.length < 2) return 0;
+  const { power, n } = powerSpectrum(samples, false);
+  let weighted = 0, total = 0;
+  for (let k = 1; k <= n / 2; k += 1) {
+    const p = power[k] ?? 0;
+    weighted += p * ((k * sampleRate) / n);
+    total += p;
+  }
+  return total > 0 ? weighted / total : 0;
+}
+
 /** The envelope is the peak of each millisecond. */
 const ONSET_BLOCK_MS = 1;
 /** A block starts a sound when it is this far above the average of the blocks before it. */
@@ -240,7 +259,7 @@ function kHighPass(sampleRate: number): Biquad {
   return { b0: 1, b1: -2, b2: 1, a1: (2 * (k * k - 1)) / a0, a2: (1 - k / q + k * k) / a0 };
 }
 
-function runBiquad(input: Float64Array, c: Biquad): Float64Array {
+function runBiquad(input: ArrayLike<number>, c: Biquad): Float64Array {
   const out = new Float64Array(input.length);
   let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
   for (let i = 0; i < input.length; i += 1) {
@@ -252,12 +271,15 @@ function runBiquad(input: Float64Array, c: Biquad): Float64Array {
   return out;
 }
 
-function kWeight(channel: Float32Array, sampleRate: number): Float64Array {
-  return runBiquad(runBiquad(Float64Array.from(channel), kShelf(sampleRate)), kHighPass(sampleRate));
+/** A channel through the two BS.1770 K-weighting stages, in double precision. */
+export function kWeighted(channel: ArrayLike<number>, sampleRate: number): Float64Array {
+  return runBiquad(runBiquad(channel, kShelf(sampleRate)), kHighPass(sampleRate));
 }
 
+const kWeight = kWeighted;
+
 /** Samples whose K-weighted power (both channels summed) is below -70 dB do not count. */
-const LOUDNESS_GATE = 1e-7;
+export const LOUDNESS_GATE = 1e-7;
 /** What a render with nothing above the gate reads as. */
 const SILENT_DB = -120;
 

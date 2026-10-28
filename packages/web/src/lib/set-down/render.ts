@@ -23,17 +23,32 @@
 import { PLANNER_TOUCH_DB } from "../planner-sound-recipes.js";
 import { biquadCoefficients, dbToGain, gainToDb, seededRandom } from "../planner-sound-render.js";
 import type { BodyPart, Foot, PartKind, SetDownBody } from "./bodies.js";
-import { contactSeconds, decaySeconds, isHardCap, modeEnergy, partModes, surfaceModes } from "./modes.js";
+import { contactSeconds, decaySeconds, knockSeconds, modeEnergy, partModes, surfaceModes } from "./modes.js";
+import { LOUDNESS_GATE, kWeighted } from "./analysis.js";
 import type { Reflection } from "./reflections.js";
 import { SURFACES, type SurfaceKind, type SurfaceResponse } from "./surfaces.js";
 import type { Stereo } from "./tail.js";
 
 /**
  * The peak, in dBFS, of a Chiavari dropped on the Grand Hall's oak at 1 m/s,
- * heard centred at full direct gain: the palette's touch level, so a palette
- * rebalance moves the set-downs with it.
+ * heard centred at full direct gain (the median over plays): the palette's
+ * touch level, so a palette rebalance moves the set-downs with it.
  */
 export const SET_DOWN_TOUCH_DB = PLANNER_TOUCH_DB;
+
+/** How far the anchor's K-weighted loudness sits below its peak (measured: the median of 21 plays). */
+const ANCHOR_LOUDNESS_BELOW_PEAK_DB = -14.07;
+
+/**
+ * The K-weighted loudness of that anchor when it peaks at SET_DOWN_TOUCH_DB:
+ * kWeightedLoudness of the centred render's first 400 ms, the median over
+ * 21 plays (measured on this renderer; a test holds the anchor's median peak
+ * to the touch level, so a change to the model that moves it is caught).
+ * Every set-down is set to this loudness plus the level rule's offset (ruling
+ * R36): set by peak, a sharp knock that topped one play and not the next
+ * moved a piece's loudness by 3.4-6.8 dB over 200 plays.
+ */
+export const SET_DOWN_TOUCH_LOUDNESS_DB = SET_DOWN_TOUCH_DB + ANCHOR_LOUDNESS_BELOW_PEAK_DB;
 
 export interface SetDownInput {
   readonly body: SetDownBody;
@@ -54,11 +69,48 @@ export interface SetDownInput {
 }
 
 export interface SetDownRender extends Stereo {
-  /** The render's true peak over both channels, dBFS. */
+  /**
+   * The peak of the pre-pan mono source, dBFS: the direct sound, with any
+   * reflection under 1 ms folded in, before it is panned. Centred at full
+   * direct gain it lies in -32..-16 dBFS (a quiet play is turned up to -32,
+   * a loud one limited to -16), and it scales with the direct gain. The pan
+   * is equal-power, so loudness is the same at every angle, and a hard pan
+   * may put one channel up to 3 dB above this; later reflections may add to
+   * either channel.
+   */
   readonly peakDb: number;
+  /**
+   * Seconds from the first contact to the first moment the source reaches
+   * within 20 dB of its peak: at once for a hard landing, at the bottoming out
+   * on carpet. A scheduler lands this moment on the frame the piece is seen
+   * to land.
+   */
+  readonly onsetSeconds: number;
 }
 
 // --- Level ---------------------------------------------------------------------
+
+/** Loudness is read over the first 400 ms, BS.1770's momentary block, as the tests read it. */
+const LOUDNESS_WINDOW_S = 0.4;
+/**
+ * A play the loudness rule would take past -16 dBFS is held there by a
+ * look-ahead peak limiter, as broadcast holds R128 loudness under a peak
+ * ceiling: the knock that tops a play carries almost none of its energy, so
+ * holding it down leaves the play at its loudness (ruling R36's peak window).
+ * It takes up to this much off a peak; past that, the whole play is turned
+ * down. Over 200 plays a staging deck on oak moved 3.4 dB with 6 dB of it,
+ * 2.1 dB with 9 dB and 0.6 dB with 12 dB.
+ */
+const LIMIT_MAX_DB = 12;
+/** The limiter's look-ahead and recovery, each. */
+const LIMIT_WINDOW_S = 0.001;
+/** The limiter aims this fraction under the ceiling, so its running average's rounding never lifts a held peak past it. */
+const LIMIT_HEADROOM = 1 - 1e-9;
+/** The limited play's loudness is solved again this many times at most, until it moves less than LIMIT_SETTLE. */
+const LIMIT_STEPS = 2;
+const LIMIT_SETTLE = 1e-3;
+/** K-weighting a change rings on this long after it: the 38 Hz stage's tail is under 1e-10 by then. */
+const K_TAIL_S = 0.1;
 
 const PEAK_FLOOR_DB = -32;
 const PEAK_CEILING_DB = -16;
@@ -93,21 +145,17 @@ const REST_SHARE_SPREAD = 0.1;
 const MICRO_COUNT = [2, 5] as const;
 const MICRO_WINDOW_S = 0.015;
 /**
- * A hard cap on a leg chatters as it settles, like a ball coming to rest: the
- * first rebound strikes 1.5-6 ms after the landing's contact ends, and each
- * gap after it is 50-75 % of the one before (EST), so the burst closes up
- * within the 15 ms and its strongest knocks sit under the landing itself.
+ * A hard contact on a hard surface chatters as it settles, like a ball coming
+ * to rest: the first rebound strikes 1.5-6 ms after the landing's contact
+ * ends, and each gap after it is 50-75 % of the one before (EST), so the
+ * burst closes up within the 15 ms and its strongest knocks sit under the
+ * landing itself. Each knock is Hertz at the cap's small local mass
+ * (knockSeconds), the click the spec puts in the burst.
  */
 const MICRO_FIRST_GAP_S = [0.0015, 0.006] as const;
 const MICRO_GAP_SHRINK = [0.5, 0.75] as const;
 /** Each micro-collision carries 6-12 dB less momentum than the one before, the first than its foot's landing (impulses, as FoleyAutomatic's are). */
 const MICRO_FALL_DB = [6, 12] as const;
-/**
- * A micro-collision is the leg's own small mass chattering on its cap: Hertz
- * at this fraction of the foot's mass (EST), 40 % of the landing's contact,
- * so each is a sharp knock of under a millisecond for a chair.
- */
-const MICRO_MASS_FRACTION = 0.1;
 /** Under every foot the pile is as deep, so the feet bottom out this long after landing, give or take BOTTOM_JITTER_S each. */
 const BOTTOM_DELAY_S = [0.03, 0.04] as const;
 const BOTTOM_JITTER_S = 0.001;
@@ -128,6 +176,7 @@ const RATTLE_COUNT = [2, 4] as const;
 const RATTLE_WINDOW_S = 0.06;
 const RATTLE_AFTER_S = 0.004;
 const RATTLE_HZ = [1200, 3000] as const;
+/** A rattle's knock in a joint carries this much of the feet's peak landing force, so it rings the frame 18 dB under the landing's drive. */
 const RATTLE_DB = -18;
 const RATTLE_TICK_S = 0.004;
 const RATTLE_Q = 3;
@@ -208,6 +257,10 @@ const BODY_FADE_S = 0.05;
 const LIFE_FLOOR_DB = 70;
 /** A reflection this close behind the direct sound is the floor under a source standing on it: its level joins the direct (ruling R16). */
 const FOLD_BELOW_S = 0.001;
+/** A reflection later than this is no early reflection: it is dropped (the tail is the room's). */
+const LATEST_REFLECTION_S = 1;
+/** The onset is the first sample of the source within 20 dB of its peak. */
+const ONSET_FROM_PEAK = 0.1;
 /** The lowest 4 kHz / 1 kHz ratio a one-pole low-pass is asked to hold (its slope gives no less than about 0.25 over two octaves). */
 const MIN_REFLECTION_RATIO = 0.3;
 const SHELF_HZ = 4000;
@@ -297,6 +350,8 @@ interface Pulse {
   readonly start: number;
   readonly duration: number;
   readonly impulse: number;
+  /** A foot's own landing, rather than its chatter, its bottoming out or a castor's roll. */
+  readonly landing: boolean;
 }
 
 interface Group {
@@ -304,17 +359,24 @@ interface Group {
   readonly feet: number;
 }
 
+/** What makes two surfaces the same surface: their kind and the floor heard beneath them, never which object carries them. */
+function surfaceKey(surface: SurfaceResponse): string {
+  const beneath = surface.beneath;
+  return beneath === null ? surface.kind : [surface.kind, beneath.lowHz, beneath.highHz, beneath.count, beneath.eta, beneath.gainDb].join("|");
+}
+
 /** The feet grouped by the surface under them: each surface rings only from its own feet. */
 function groupFeet(feet: readonly Foot[], surfaces: readonly SurfaceResponse[]): { readonly groups: Group[]; readonly of: number[] } {
-  const index = new Map<SurfaceResponse, number>();
+  const index = new Map<string, number>();
   const counts: number[] = [];
   const list: SurfaceResponse[] = [];
   const of = feet.map((_, i) => {
     const surface = surfaces[i] ?? surfaces[0] ?? FALLBACK_SURFACE;
-    let g = index.get(surface);
+    const key = surfaceKey(surface);
+    let g = index.get(key);
     if (g === undefined) {
       g = list.length;
-      index.set(surface, g);
+      index.set(key, g);
       list.push(surface);
       counts.push(0);
     }
@@ -322,15 +384,6 @@ function groupFeet(feet: readonly Foot[], surfaces: readonly SurfaceResponse[]):
     return g;
   });
   return { groups: list.map((surface, g) => ({ surface, feet: counts[g] ?? 0 })), of };
-}
-
-/**
- * Whether a cap chatters on landing: a hard cap on a leg (a glide, a steel
- * foot). A panel's edge or a plinth has no leg to chatter, and a piece that
- * heavy does not rebound at a set-down's speed.
- */
-function chatters(cap: Foot["cap"]): boolean {
-  return isHardCap(cap) && cap !== "panel-edge";
 }
 
 /** Every force pulse of the landing: the feet, their chatter, carpet's bottoming out and the castors' roll. */
@@ -352,7 +405,7 @@ function landingPulses(
     const mass = landing.share * piece.massKg;
     const impulse = mass * speed;
     const duration = contactSeconds(foot.cap, surface, mass, speed);
-    pulses.push({ group, start: landing.time, duration, impulse });
+    pulses.push({ group, start: landing.time, duration, impulse, landing: true });
     if (surface.kind === "carpet") {
       // The pile gives way and the foot bottoms out onto the floor beneath, through what is left of the pile.
       const through = Math.PI * Math.sqrt(mass / PILE_STIFFNESS_N_PER_M);
@@ -361,16 +414,18 @@ function landingPulses(
         start: landing.time + bottomDelay + BOTTOM_JITTER_S * (2 * random() - 1),
         duration: Math.max(through, contactSeconds(foot.cap, OAK, mass, speed * BOTTOM_SPEED)),
         impulse: impulse * dbToGain(BOTTOM_DB),
+        landing: false,
       });
-    } else if (kind === "drop" && chatters(foot.cap)) {
+    } else if (kind === "drop") {
+      const knock = knockSeconds(foot.cap, surface, speed);
+      if (knock === null) continue;
       const count = MICRO_COUNT[0] + Math.floor(random() * (MICRO_COUNT[1] - MICRO_COUNT[0] + 1));
-      const micro = contactSeconds(foot.cap, surface, mass * MICRO_MASS_FRACTION, speed);
       let momentum = impulse * Math.min(1, surface.hardness);
       let gap = lerp(MICRO_FIRST_GAP_S, random());
       let start = landing.time + duration + gap;
       for (let k = 0; k < count && start <= landing.time + MICRO_WINDOW_S; k += 1) {
         momentum *= dbToGain(-lerp(MICRO_FALL_DB, random()));
-        pulses.push({ group, start, duration: micro, impulse: momentum });
+        pulses.push({ group, start, duration: knock, impulse: momentum, landing: false });
         gap *= lerp(MICRO_GAP_SHRINK, random());
         start += gap;
       }
@@ -388,6 +443,7 @@ function landingPulses(
           start: start + bump * ROLL_GAP_S,
           duration: contactSeconds("castor", group.surface, footMass, speed),
           impulse: footMass * speed * weight * dbToGain(db),
+          landing: false,
         });
       });
     });
@@ -395,8 +451,12 @@ function landingPulses(
   return pulses;
 }
 
-/** Folding legs knocking in their joints after the landing: short noise ticks at 1.2-3 kHz, written into `force`. */
-function addRattle(force: Float64Array, landings: readonly Landing[], sampleRate: number, random: () => number): void {
+/**
+ * Folding legs knocking in their joints after the landing: short noise ticks
+ * at 1.2-3 kHz, each peaking at `peak`, written into `force`, which rings the
+ * frames.
+ */
+function addRattle(force: Float64Array, landings: readonly Landing[], peak: number, sampleRate: number, random: () => number): void {
   const last = Math.max(...landings.map((landing) => landing.time));
   const count = RATTLE_COUNT[0] + Math.floor(random() * (RATTLE_COUNT[1] - RATTLE_COUNT[0] + 1));
   const earliest = last + RATTLE_AFTER_S;
@@ -408,10 +468,9 @@ function addRattle(force: Float64Array, landings: readonly Landing[], sampleRate
     const start = Math.round((earliest + random() * Math.max(0, RATTLE_WINDOW_S - earliest)) * sampleRate);
     for (let i = 0; i < length; i += 1) tick[i] = 2 * random() - 1;
     filterInPlace(tick, length, biquadCoefficients("bandpass", lerp(RATTLE_HZ, random()), RATTLE_Q, sampleRate));
-    for (let i = 0; i < length && start + i < force.length - DRIVE_TAIL; i += 1) {
-      const envelope = i < attack ? i / attack : Math.exp(-(i - attack) / fall);
-      force[start + i] = (force[start + i] ?? 0) + (tick[i] ?? 0) * envelope;
-    }
+    for (let i = 0; i < length; i += 1) tick[i] = (tick[i] ?? 0) * (i < attack ? i / attack : Math.exp(-(i - attack) / fall));
+    scalePeakTo(tick, length, peak);
+    for (let i = 0; i < length && start + i < force.length - DRIVE_TAIL; i += 1) force[start + i] = (force[start + i] ?? 0) + (tick[i] ?? 0);
   }
 }
 
@@ -463,31 +522,54 @@ function highpassCoefficients(hz: number, q: number, sampleRate: number): Biquad
 /**
  * The first-order high shelf of the ceiling: unity below, SHELF_DB above, its
  * transition centred on SHELF_HZ: H(s) = (G s + root G) / (s + root G) at
- * unit corner, through the bilinear transform warped to the corner.
+ * unit corner, through the bilinear transform warped to the corner. As a
+ * biquad with no second-order terms.
  */
-function shelfInPlace(x: Float64Array, length: number, sampleRate: number): void {
+function shelfCoefficients(sampleRate: number): Biquad {
   const g = dbToGain(SHELF_DB);
   const root = Math.sqrt(g);
   const c = 1 / Math.tan((Math.PI * Math.min(SHELF_HZ, sampleRate * 0.45)) / sampleRate);
   const a0 = root + c;
-  const b0 = (root + g * c) / a0;
-  const b1 = (root - g * c) / a0;
-  const a1 = (root - c) / a0;
-  let x1 = 0, y1 = 0;
-  for (let i = 0; i < length; i += 1) {
-    const x0 = x[i] ?? 0;
-    const y0 = b0 * x0 + b1 * x1 - a1 * y1;
-    x1 = x0; y1 = y0;
-    x[i] = y0;
-  }
+  return { b0: (root + g * c) / a0, b1: (root - g * c) / a0, b2: 0, a1: (root - c) / a0, a2: 0 };
 }
 
 /** The Qs of an even-order Butterworth low-pass's biquads. */
 const CEILING_QS: readonly number[] = Array.from({ length: CEILING_ORDER / 2 }, (_, k) => 1 / (2 * Math.sin(((2 * k + 1) * Math.PI) / (2 * CEILING_ORDER))));
 
+const ceilings = new Map<number, readonly Biquad[]>();
+
+/** The ceiling's stages at a sample rate: the shelf, then the 12-pole low-pass. */
+function ceilingStages(sampleRate: number): readonly Biquad[] {
+  const cached = ceilings.get(sampleRate);
+  if (cached !== undefined) return cached;
+  const stages = [shelfCoefficients(sampleRate), ...CEILING_QS.map((q) => biquadCoefficients("lowpass", CEILING_HZ, q, sampleRate))];
+  ceilings.set(sampleRate, stages);
+  return stages;
+}
+
+/** The ceiling run over a broadband sound: the struck spot's knock, the puff, the hem. */
 function ceilingInPlace(x: Float64Array, length: number, sampleRate: number): void {
-  shelfInPlace(x, length, sampleRate);
-  for (const q of CEILING_QS) filterInPlace(x, length, biquadCoefficients("lowpass", CEILING_HZ, q, sampleRate));
+  for (const stage of ceilingStages(sampleRate)) filterInPlace(x, length, stage);
+}
+
+/** A biquad's magnitude at angular frequency `w`. */
+function biquadMagnitude(c: Biquad, w: number): number {
+  const cos1 = Math.cos(w), sin1 = Math.sin(w), cos2 = Math.cos(2 * w), sin2 = Math.sin(2 * w);
+  const numerator = Math.hypot(c.b0 + c.b1 * cos1 + c.b2 * cos2, c.b1 * sin1 + c.b2 * sin2);
+  const denominator = Math.hypot(1 + c.a1 * cos1 + c.a2 * cos2, c.a1 * sin1 + c.a2 * sin2);
+  return denominator > 0 ? numerator / denominator : 0;
+}
+
+/**
+ * The ceiling's gain at `hz`. A mode is a single frequency, so passing it
+ * through the ceiling is scaling it by this: each mode takes it in its gain,
+ * and only the broadband sounds run the filters.
+ */
+function ceilingGain(hz: number, sampleRate: number): number {
+  const w = (2 * Math.PI * hz) / sampleRate;
+  let gain = 1;
+  for (const stage of ceilingStages(sampleRate)) gain *= biquadMagnitude(stage, w);
+  return gain;
 }
 
 function peakOf(x: Float64Array, length: number): number {
@@ -504,7 +586,7 @@ function scalePeakTo(x: Float64Array, length: number, peak: number): void {
 
 // --- Modes ------------------------------------------------------------------------------
 
-type Layer = "body" | "heave" | "rattle";
+type Layer = "body" | "heave";
 
 interface Voice {
   readonly hz: number;
@@ -513,7 +595,7 @@ interface Voice {
   /** The force driving it: the sum of each source scaled by its weight. */
   readonly sources: readonly Float64Array[];
   readonly weights: readonly number[];
-  /** Where it sounds: the body, the floor's heave (never reflected), or the rattle (set to its own level). */
+  /** Where it sounds: the body, or the floor's heave (never reflected). */
   readonly layer: Layer;
 }
 
@@ -555,11 +637,13 @@ function driveVoice(voice: Voice, out: Float64Array, drive: number, scratch: Flo
   const r = Math.exp(-LN_1000 / (voice.t60 * sampleRate));
   const a1 = 2 * r * Math.cos(w);
   const a2 = -r * r;
-  const b = voice.gain / 2;
+  let b = voice.gain / 2;
   let force: Float64Array;
   const only = voice.sources[0];
-  if (voice.sources.length === 1 && only !== undefined && voice.weights[0] === 1) {
+  if (voice.sources.length === 1 && only !== undefined) {
+    // One source: its weight joins the input gain, and the source drives the voice as it stands.
     force = only;
+    b *= voice.weights[0] ?? 1;
   } else {
     scratch.fill(0, 0, drive);
     voice.sources.forEach((source, k) => {
@@ -616,7 +700,7 @@ interface Layered {
 function ringVoices(voices: readonly Voice[], layers: Readonly<Record<Layer, Layered>>, drive: number, sampleRate: number): void {
   const scratch = new Float64Array(drive);
   const rungs = voices.map((voice) => driveVoice(voice, layers[voice.layer].out, drive, scratch, sampleRate));
-  const loudest: Record<Layer, number> = { body: 0, heave: 0, rattle: 0 };
+  const loudest: Record<Layer, number> = { body: 0, heave: 0 };
   rungs.forEach((rung, v) => {
     const layer = voices[v]?.layer ?? "body";
     loudest[layer] = Math.max(loudest[layer], rung.amplitude);
@@ -636,9 +720,8 @@ function ringVoices(voices: readonly Voice[], layers: Readonly<Record<Layer, Lay
 
 // --- Air ------------------------------------------------------------------------------------
 
-/** Adds `sound` (scaled to `peak`) into `out` from `start`, returning where it ends. */
-function mixIn(out: Float64Array, sound: Float64Array, start: number, peak: number): number {
-  scalePeakTo(sound, sound.length, peak);
+/** Adds `sound` into `out` from `start`, returning where it ends. */
+function mixIn(out: Float64Array, sound: Float64Array, start: number): number {
   for (let i = 0; i < sound.length && start + i < out.length; i += 1) out[start + i] = (out[start + i] ?? 0) + (sound[i] ?? 0);
   return Math.min(out.length, start + sound.length);
 }
@@ -728,9 +811,130 @@ function onePoleGain(pole: number, hz: number, sampleRate: number): number {
 
 // --- The render ---------------------------------------------------------------------------------
 
-/** The level a set-down peaks at: the touch level, plus 3 log10(m / 4 kg) and 10 log10(v / 1 m/s), held to -32..-16 dBFS. */
-function targetPeakDb(massKg: number, speed: number): number {
-  return clamp(SET_DOWN_TOUCH_DB + 3 * Math.log10(massKg / REFERENCE_MASS_KG) + 10 * Math.log10(speed), PEAK_FLOOR_DB, PEAK_CEILING_DB);
+/** The loudness a set-down is set to: the anchor's, plus 3 log10(m / 4 kg) and 10 log10(v / 1 m/s). */
+function targetLoudnessDb(massKg: number, speed: number): number {
+  return SET_DOWN_TOUCH_LOUDNESS_DB + 3 * Math.log10(massKg / REFERENCE_MASS_KG) + 10 * Math.log10(speed);
+}
+
+/** kWeightedLoudness of a centred render whose two channels are `k`, the K-weighted source, times `scale`. */
+function centredLoudness(k: Float64Array, scale: number): number {
+  const power = 2 * scale * scale;
+  let sum = 0;
+  let counted = 0;
+  for (let n = 0; n < k.length; n += 1) {
+    const p = power * (k[n] ?? 0) ** 2;
+    if (p < LOUDNESS_GATE) continue;
+    sum += p;
+    counted += 1;
+  }
+  return counted > 0 ? 10 * Math.log10(sum / counted) : -120;
+}
+
+/**
+ * The scale that sets the source to `targetDb` of K-weighted loudness. The
+ * gate is absolute, so the reading is solved at the scale it is read at, from
+ * `guess`, in a few steps.
+ */
+function loudnessScale(k: Float64Array, targetDb: number, guess: number): number {
+  let scale = guess;
+  for (let step = 0; step < 6; step += 1) {
+    const off = targetDb - centredLoudness(k, scale);
+    if (!Number.isFinite(off) || Math.abs(off) < 1e-4) break;
+    scale *= dbToGain(clamp(off, -40, 40));
+  }
+  return scale;
+}
+
+/**
+ * The gain that holds `source` to `threshold` (or null if no sample passes
+ * it): what each sample needs, held at its least over the next `window`
+ * samples and averaged over the last `window`. Every sample's gain is then at
+ * most what it needs, so none passes the threshold, the loudest sample meets
+ * it exactly, and the gain moves over the window rather than at once.
+ */
+function limiterGain(source: Float64Array, length: number, threshold: number, window: number): Float64Array | null {
+  let first = -1;
+  let last = -1;
+  for (let n = 0; n < length; n += 1) {
+    if (Math.abs(source[n] ?? 0) <= threshold) continue;
+    if (first < 0) first = n;
+    last = n;
+  }
+  if (first < 0) return null;
+  const gain = new Float64Array(length).fill(1);
+  // The hold is below 1 only for windows that reach a sample over: those starting at from..last.
+  const from = Math.max(0, first - window + 1);
+  const end = Math.min(length, last + window);
+  const need = new Float64Array(end - from);
+  for (let n = from; n < end; n += 1) {
+    const a = Math.abs(source[n] ?? 0);
+    need[n - from] = a > threshold ? threshold / a : 1;
+  }
+  const span = last - from + 1;
+  const held = new Float64Array(span);
+  const queue = new Int32Array(end - from);
+  let head = 0;
+  let tail = 0;
+  // The least need over [m, m + window - 1], from the right, with a queue of rising needs.
+  for (let i = end - from - 1; i >= 0; i -= 1) {
+    const value = need[i] ?? 1;
+    while (tail > head && (need[queue[tail - 1] ?? 0] ?? 1) >= value) tail -= 1;
+    queue[tail] = i;
+    tail += 1;
+    while ((queue[head] ?? 0) > i + window - 1) head += 1;
+    if (i < span) held[i] = need[queue[head] ?? i] ?? 1;
+  }
+  let sum = window;
+  for (let i = 0; i < end - from; i += 1) {
+    sum += (i < span ? (held[i] ?? 1) : 1) - (i >= window && i - window < span ? (held[i - window] ?? 1) : 1);
+    gain[from + i] = sum / window;
+  }
+  return gain;
+}
+
+/** The K-weighted `head` times `gain`, from `k` (the K-weighted head): only where the gain moves, and its ring after, is filtered again. */
+function kWeightedHeld(head: Float64Array, k: Float64Array, gain: Float64Array, sampleRate: number): Float64Array {
+  let from = 0;
+  while (from < head.length && gain[from] === 1) from += 1;
+  let to = head.length;
+  while (to > from && gain[to - 1] === 1) to -= 1;
+  const out = k.slice();
+  if (from >= to) return out;
+  // K-weighting is linear and causal: the held head's is the head's plus that of what the hold took away.
+  const end = Math.min(head.length, to + Math.round(K_TAIL_S * sampleRate));
+  const taken = new Float64Array(end - from);
+  for (let n = from; n < to; n += 1) taken[n - from] = (head[n] ?? 0) * ((gain[n] ?? 1) - 1);
+  const change = kWeighted(taken, sampleRate);
+  for (let n = from; n < end; n += 1) out[n] = (out[n] ?? 0) + (change[n - from] ?? 0);
+  return out;
+}
+
+/**
+ * The scale that sets the source (`head`, its first 400 ms, and `source`, all
+ * of it) to `targetDb` of K-weighted loudness with its peak held to
+ * -32..-16 dBFS, and the limiter gain that holds it there (null if none). A
+ * quiet play is turned up to -32; a loud one is limited to -16 by up to
+ * LIMIT_MAX_DB and turned down past that, its loudness solved again through
+ * the limiter until it holds.
+ */
+function levelFor(head: Float64Array, source: Float64Array, length: number, sourcePeak: number, targetDb: number, sampleRate: number): { readonly scale: number; readonly gain: Float64Array | null } {
+  const ceiling = dbToGain(PEAK_CEILING_DB);
+  const most = (ceiling * dbToGain(LIMIT_MAX_DB)) / sourcePeak;
+  const k = kWeighted(head, sampleRate);
+  let scale = loudnessScale(k, targetDb, dbToGain(SET_DOWN_TOUCH_DB) / sourcePeak);
+  if (scale * sourcePeak < dbToGain(PEAK_FLOOR_DB)) return { scale: dbToGain(PEAK_FLOOR_DB) / sourcePeak, gain: null };
+  if (scale * sourcePeak <= ceiling) return { scale, gain: null };
+  const window = Math.max(1, Math.round(LIMIT_WINDOW_S * sampleRate));
+  scale = Math.min(scale, most);
+  for (let step = 0; step < LIMIT_STEPS; step += 1) {
+    const gain = limiterGain(source, head.length, (ceiling * LIMIT_HEADROOM) / scale, window);
+    if (gain === null) break;
+    const next = Math.min(most, loudnessScale(kWeightedHeld(head, k, gain, sampleRate), targetDb, scale));
+    const settled = Math.abs(next / scale - 1) < LIMIT_SETTLE;
+    scale = next;
+    if (settled) break;
+  }
+  return { scale, gain: limiterGain(source, length, (ceiling * LIMIT_HEADROOM) / scale, window) };
 }
 
 /**
@@ -739,13 +943,16 @@ function targetPeakDb(massKg: number, speed: number): number {
  * and when, each mode +-1.5 % in frequency and +-2 dB in gain). Nothing in it
  * throws, and every body, even an empty one, is heard.
  *
- * Centred at full direct gain with no reflections, the render peaks at
- * SET_DOWN_TOUCH_DB + 3 log10(m / 4) + 10 log10(v), held to -32..-16 dBFS,
- * where v is the set-down's own speed (a quarter of it for a settle): the
- * play's +-15 % spread shapes its contacts, not its level.
- * The direct gain scales it, a reflection under 1 ms (the floor beneath a
- * piece standing on it) adds its 1 kHz gain to the direct level, and the pan
- * keeps the power the same at every angle.
+ * At full direct gain the source is set to SET_DOWN_TOUCH_LOUDNESS_DB
+ * + 3 log10(m / 4) + 10 log10(v) of K-weighted loudness (ruling R36), where v
+ * is the set-down's own speed (a quarter of it for a settle): the play's
+ * +-15 % spread shapes its contacts, not its level. Its peak is then held to
+ * -32..-16 dBFS: a quiet play is turned up, and a loud one is held by a
+ * look-ahead limiter (by up to LIMIT_MAX_DB, then turned down). A reflection under 1 ms (the floor beneath a piece standing
+ * on it) folds into the direct sound, which is still the one set to that
+ * level (ruling R35), and later reflections keep their gains against the dry
+ * sound. The direct gain scales everything, and the pan keeps the power the
+ * same at every angle.
  */
 export function renderSetDown(input: SetDownInput): SetDownRender {
   const sampleRate = saneRate(input.sampleRate);
@@ -769,10 +976,17 @@ export function renderSetDown(input: SetDownInput): SetDownRender {
     const force = forces[pulse.group];
     if (force !== undefined) addPulse(force, pulse, sampleRate);
   }
-  const rattle = piece.body.legRattle ? new Float64Array(drive) : null;
-  if (rattle !== null) addRattle(rattle, landings, sampleRate, random);
+  let rattle: Float64Array | null = null;
+  if (piece.body.legRattle) {
+    // A knock in a joint carries RATTLE_DB of the feet's mean peak landing force (in the drive's own units).
+    const mains = pulses.filter((pulse) => pulse.landing);
+    const peakForce = mains.reduce((sum, pulse) => sum + (2 * pulse.impulse) / Math.max(2, Math.round(pulse.duration * sampleRate)), 0) / Math.max(1, mains.length);
+    rattle = new Float64Array(drive);
+    addRattle(rattle, landings, peakForce * dbToGain(RATTLE_DB), sampleRate, random);
+  }
 
-  // The voices: the piece's parts, driven by every foot (and its frames by the rattle), and each surface's modes, driven by its own feet.
+  // The voices: the piece's parts, driven by every foot (and its frames by the rattle too), and each surface's
+  // modes, driven by its own feet. Each mode takes the ceiling's gain at its frequency.
   const nyquistGuard = sampleRate * 0.45;
   const voices: Voice[] = [];
   const frames = piece.parts.some((part) => FRAME_KINDS.has(part.kind));
@@ -784,8 +998,9 @@ export function renderSetDown(input: SetDownInput): SetDownRender {
       if (mode.hz >= nyquistGuard) continue;
       const t60 = contactEta > 0 ? 1 / (1 / mode.t60 + 1 / decaySeconds(mode.hz, contactEta)) : mode.t60;
       const weights = groups.map((group) => cutAt(mode.hz, group.surface.highCutHz));
-      voices.push({ hz: mode.hz, t60, gain: mode.gain, sources: forces, weights, layer: "body" });
-      if (rattled) voices.push({ hz: mode.hz, t60, gain: mode.gain, sources: [rattle], weights: [1], layer: "rattle" });
+      const sources = rattled && rattle !== null ? [...forces, rattle] : forces;
+      if (sources !== forces) weights.push(1);
+      voices.push({ hz: mode.hz, t60, gain: mode.gain * ceilingGain(mode.hz, sampleRate), sources, weights, layer: "body" });
     }
   }
   const footMass = piece.massKg / piece.feet.length;
@@ -802,7 +1017,7 @@ export function renderSetDown(input: SetDownInput): SetDownRender {
       voices.push({
         hz: mode.hz,
         t60: covering > 0 ? 1 / (1 / mode.t60 + 1 / decaySeconds(mode.hz, covering)) : mode.t60,
-        gain: mode.gain * surfaceLevel,
+        gain: mode.gain * surfaceLevel * ceilingGain(mode.hz, sampleRate),
         sources: [force],
         weights: [cutAt(mode.hz, group.surface.highCutHz)],
         layer: mode.hz < HEAVE_BELOW_HZ ? "heave" : "body",
@@ -814,68 +1029,95 @@ export function renderSetDown(input: SetDownInput): SetDownRender {
   const layers: Record<Layer, Layered> = {
     body: { out: new Float64Array(bodyLength), end: drive, cut: false },
     heave: { out: new Float64Array(voices.some((v) => v.layer === "heave") ? Math.max(drive, Math.round(HEAVE_MAX_S * sampleRate)) : 0), end: 0, cut: false },
-    rattle: { out: new Float64Array(rattle !== null ? bodyLength : 0), end: rattle !== null ? drive : 0, cut: false },
   };
   ringVoices(voices, layers, drive, sampleRate);
   const { body, heave } = layers;
+  if (body.cut) fadeOut(body.out, body.end, Math.round(BODY_FADE_S * sampleRate));
+  // The heave is one swell under the landing: its buffer ends at HEAVE_MAX_S (or with the drive, if that is
+  // later), and it fades out over the last HEAVE_FADE_S of it.
+  if (heave.out.length > 0) {
+    heave.end = heave.out.length;
+    fadeOut(heave.out, heave.end, Math.round(HEAVE_FADE_S * sampleRate));
+  }
 
-  // The struck spot's own sound, straight from each surface's force.
+  // The struck spot's own sound, straight from each surface's force: broadband, so it runs the ceiling itself.
   const settleSamples = Math.round(0.01 * sampleRate);
+  const spot = new Float64Array(Math.min(body.out.length, drive + settleSamples));
   groups.forEach((group, g) => {
     const force = forces[g];
     const bank = group.surface.boards ?? group.surface.beneath;
     const band = bank === null ? 150 : bank.highHz - bank.lowHz;
     const k = clamp(group.surface.hardness, 0, 1) * Math.sqrt(struck / (2 * band)) * sampleRate;
     if (force === undefined || k <= 0) return;
-    const direct = new Float64Array(Math.min(body.out.length, drive + settleSamples));
+    const direct = new Float64Array(spot.length);
     direct.set(force.subarray(0, Math.min(force.length, direct.length)));
     const from = group.surface.boards?.lowHz ?? group.surface.beneath?.lowHz ?? DIRECT_FALLBACK_HZ;
     filterInPlace(direct, direct.length, highpassCoefficients(from, Math.SQRT1_2, sampleRate));
-    for (let n = 0; n < direct.length; n += 1) body.out[n] = (body.out[n] ?? 0) + k * (direct[n] ?? 0);
-    body.end = Math.max(body.end, direct.length);
+    for (let n = 0; n < direct.length; n += 1) spot[n] = (spot[n] ?? 0) + k * (direct[n] ?? 0);
   });
-  if (body.cut) fadeOut(body.out, body.end, Math.round(BODY_FADE_S * sampleRate));
-  // The heave is one slow swell: it always fades out by HEAVE_MAX_S.
-  if (heave.end > 0) {
-    heave.end = heave.out.length;
-    fadeOut(heave.out, heave.end, Math.round(HEAVE_FADE_S * sampleRate));
-  }
+  ceilingInPlace(spot, spot.length, sampleRate);
+  for (let n = 0; n < spot.length; n += 1) body.out[n] = (body.out[n] ?? 0) + (spot[n] ?? 0);
+  body.end = Math.max(body.end, spot.length);
 
-  // The rattle, the seat's puff and the cloth's hem, each set against the landing's own peak.
-  const modalPeak = peakOf(body.out, body.end);
-  const rattleLayer = layers.rattle;
-  if (rattleLayer.end > 0) {
-    if (rattleLayer.cut) fadeOut(rattleLayer.out, rattleLayer.end, Math.round(BODY_FADE_S * sampleRate));
-    const rattlePeak = peakOf(rattleLayer.out, rattleLayer.end);
-    const scale = rattlePeak > 0 ? (modalPeak * dbToGain(RATTLE_DB)) / rattlePeak : 0;
-    for (let n = 0; n < rattleLayer.end; n += 1) body.out[n] = (body.out[n] ?? 0) + scale * (rattleLayer.out[n] ?? 0);
-    body.end = Math.max(body.end, rattleLayer.end);
-  }
+  // The seat's puff and the cloth's hem, each set against the landing's own peak, through the ceiling.
+  const landingPeak = peakOf(body.out, body.end);
   const lastLanding = Math.max(...landings.map((landing) => landing.time));
-  if (piece.body.seatPuff) body.end = Math.max(body.end, mixIn(body.out, puff(sampleRate, random), Math.round(lastLanding * sampleRate), modalPeak * dbToGain(PUFF_DB)));
-  if (input.clothed) body.end = Math.max(body.end, mixIn(body.out, hem(sampleRate, random), 0, modalPeak * dbToGain(HEM_DB)));
+  const air: { readonly sound: Float64Array; readonly start: number; readonly peak: number }[] = [];
+  if (piece.body.seatPuff) air.push({ sound: puff(sampleRate, random), start: Math.round(lastLanding * sampleRate), peak: landingPeak * dbToGain(PUFF_DB) });
+  if (input.clothed) air.push({ sound: hem(sampleRate, random), start: 0, peak: landingPeak * dbToGain(HEM_DB) });
+  for (const { sound, start, peak } of air) {
+    scalePeakTo(sound, sound.length, peak);
+    ceilingInPlace(sound, sound.length, sampleRate);
+    body.end = Math.max(body.end, mixIn(body.out, sound, start));
+  }
 
-  ceilingInPlace(body.out, body.end, sampleRate);
-
-  // The level: the dry sound and the heave together peak at the target.
-  const dry = body.out;
-  const swell = heave.out;
-  const sourceEnd = Math.max(body.end, heave.end);
-  let sourcePeak = 0;
-  for (let n = 0; n < sourceEnd; n += 1) sourcePeak = Math.max(sourcePeak, Math.abs((dry[n] ?? 0) + (swell[n] ?? 0)));
-  const level = sourcePeak > 0 ? dbToGain(targetPeakDb(piece.massKg, nominal)) / sourcePeak : 0;
-
-  // The space: the direct sound (with any reflection under 1 ms folded in) and each later reflection.
+  // The space: any reflection under 1 ms folds into the direct sound; later ones (up to a second) follow it.
   const directGain = Number.isFinite(input.direct.gain) ? Math.max(0, input.direct.gain) : 1;
   let folded = 1;
   const later: Reflection[] = [];
   for (const reflection of input.reflections) {
     const delay = reflection.delaySeconds;
     const gain = reflection.gain[3];
-    if (!Number.isFinite(delay) || delay < 0 || !Number.isFinite(gain) || gain <= 0) continue;
+    if (!Number.isFinite(delay) || delay < 0 || delay > LATEST_REFLECTION_S || !Number.isFinite(gain) || gain <= 0) continue;
     if (delay < FOLD_BELOW_S) folded += gain;
     else later.push(reflection);
   }
+
+  // The level: the source (the dry sound and the heave) with the floor's fold is set to the target loudness,
+  // so the direct sound heard is the level rule's and every later reflection keeps its ratio to the dry sound.
+  const dry = body.out;
+  const swell = heave.out;
+  const sourceEnd = Math.max(body.end, heave.end);
+  let sourcePeak = 0;
+  for (let n = 0; n < sourceEnd; n += 1) sourcePeak = Math.max(sourcePeak, Math.abs((dry[n] ?? 0) + (swell[n] ?? 0)));
+  const source = new Float64Array(sourceEnd);
+  for (let n = 0; n < sourceEnd; n += 1) source[n] = (dry[n] ?? 0) + (swell[n] ?? 0);
+  const head = source.subarray(0, Math.min(sourceEnd, Math.round(LOUDNESS_WINDOW_S * sampleRate)));
+  let level = 0;
+  if (sourcePeak > 0) {
+    const set = levelFor(head, source, sourceEnd, sourcePeak, targetLoudnessDb(piece.massKg, nominal), sampleRate);
+    level = set.scale / folded;
+    // The limiter holds the whole source, so the reflections (copies of the dry sound) are held with it.
+    const gain = set.gain;
+    if (gain !== null) {
+      sourcePeak = 0;
+      for (let n = 0; n < sourceEnd; n += 1) {
+        const g = gain[n] ?? 1;
+        if (g === 1) continue;
+        if (n < dry.length) dry[n] = (dry[n] ?? 0) * g;
+        if (n < swell.length) swell[n] = (swell[n] ?? 0) * g;
+      }
+      for (let n = 0; n < sourceEnd; n += 1) sourcePeak = Math.max(sourcePeak, Math.abs((dry[n] ?? 0) + (swell[n] ?? 0)));
+    }
+  }
+  let onset = 0;
+  for (let n = 0; n < sourceEnd; n += 1) {
+    if (Math.abs((dry[n] ?? 0) + (swell[n] ?? 0)) >= ONSET_FROM_PEAK * sourcePeak) {
+      onset = n;
+      break;
+    }
+  }
+
   // Reflections copy the dry sound only while it is within LIFE_FLOOR_DB of its peak.
   let audible = 0;
   const audibleFloor = sourcePeak * dbToGain(-LIFE_FLOOR_DB);
@@ -924,7 +1166,5 @@ export function renderSetDown(input: SetDownInput): SetDownRender {
     }
   }
 
-  let peak = 0;
-  for (let n = 0; n < length; n += 1) peak = Math.max(peak, Math.abs(left[n] ?? 0), Math.abs(right[n] ?? 0));
-  return { left, right, sampleRate, peakDb: gainToDb(peak) };
+  return { left, right, sampleRate, peakDb: gainToDb(direct * sourcePeak), onsetSeconds: onset / sampleRate };
 }
