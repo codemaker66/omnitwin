@@ -29,6 +29,8 @@
 
 import { chromium, devices } from "@playwright/test";
 import { writeFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
 function arg(name, fallback) {
   const index = process.argv.indexOf(`--${name}`);
@@ -104,7 +106,7 @@ async function main() {
   await context.route("**/public/enquiries", async (route) => {
     if (route.request().method() !== "POST") return route.fallback();
     sent.push(route.request().postDataJSON());
-    await new Promise((resolve) => { setTimeout(resolve, API_MS); });
+    await new Promise((done) => { setTimeout(done, API_MS); });
     return route.fulfill({ status: 201, json: { data: { enquiryId: "00000000-0000-4000-8000-000000000001", message: "Enquiry received" } } });
   });
 
@@ -180,7 +182,9 @@ async function main() {
   process.exit(result.verdict === "FAILS" ? 1 : 0);
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+// Run directly, on any platform: a Windows path or one with a space is not a
+// bare file:// join.
+if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   main().catch((error) => {
     console.error(error);
     process.exit(1);

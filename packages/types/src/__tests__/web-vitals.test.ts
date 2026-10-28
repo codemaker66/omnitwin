@@ -48,7 +48,9 @@ describe("a web vitals report", () => {
   it("refuses anything beyond the four vitals, a second of one, an impossible value or another field", () => {
     const refused = [
       { ...report, metrics: [] },
+      // Five is past the four; two of one vital within four is the uniqueness rule's.
       { ...report, metrics: [...report.metrics, report.metrics[0]] },
+      { ...report, metrics: [report.metrics[0], report.metrics[0]] },
       { ...report, metrics: [{ ...report.metrics[0], name: "FID" }] },
       { ...report, metrics: [{ ...report.metrics[0], value: -1 }] },
       { ...report, metrics: [{ ...report.metrics[0], value: 700_000 }] },

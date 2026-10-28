@@ -12,7 +12,8 @@ recorded field vitals before this.
 
 ## What is sent, and what never is
 
-A sampled page load reports once, when the page is hidden, to `POST /public/web-vitals`:
+A sampled page load reports the vitals of the page it landed on to
+`POST /public/web-vitals`, in one request when the page is first hidden:
 
 ```json
 { "v": 1, "page": "/proposal-share/:token", "device": "phone",
@@ -25,17 +26,36 @@ A sampled page load reports once, when the page is hidden, to `POST /public/web-
   allows only lowercase words, `:params` and `*`, with no digits, and is checked in the
   browser, by the API's schema and by a database check. A pattern that fails reads
   as `/*`.
-- **The device class** comes from the viewport width and pointer: phone below 768 px,
-  tablet up to 1,366 px with a coarse pointer, desktop otherwise.
+- **The landing page only.** The vitals stop at the visitor's first move to another
+  route in the app (a room card from `/` to the walk), so the walk's interactions
+  are never credited to the front door; only the landing page's TTFB may still
+  arrive. A redirect before the visitor touches anything (`/hallkeeper` to
+  `/hallkeeper/today`) reports under its target. The route and every move are
+  recorded from boot (`landing-route.ts`), before the reporter's chunk arrives.
+- **Each measurement once.** The library reports CLS and INP again whenever a page
+  is shown and hidden again; the reporter sends each of its metric ids once, so one
+  page load is one row per vital and a tab-switcher is not weighed twice in the p75.
+  A page restored from the back/forward cache is measured again, as a new load.
+- **The device class** is the hardware, not the window: touch-first
+  (`pointer: coarse`) is a phone when the screen's shorter side is under 600 CSS px
+  and a tablet otherwise, however it is held or split; mouse-first is a desktop,
+  however narrow its window.
 - **The four vitals** are measured by Google's `web-vitals` library (6.2.3): LCP,
-  INP, CLS and TTFB, each with its rating and how the page was reached. The library's
-  metric id and performance entries are dropped.
+  INP, CLS and TTFB, each with its rating and how the page was reached. LCP, INP and
+  CLS are taken at every change, so the values held are current when the visitor
+  moves on. The library's metric id (used only to send each once) and its
+  performance entries never leave the browser.
 - **How it is sent:** `fetch` with `keepalive`, `credentials: "omit"` and a
   `text/plain` body, so it needs no preflight and carries no cookie or token.
 - **What is stored:** the API stores one row per vital: page, device, metric, value,
   rating, navigation type and the time received. It stores no address, user agent,
   identifier or session, and nothing is stored on the device.
   Rows go after `WEB_VITAL_RETENTION_DAYS` (90) in the nightly cleanup.
+- **What the server sees:** like any request, the report reaches the API from the
+  visitor's internet address. The route writes no access line (`logLevel: "warn"`,
+  as `POST /public/quiz-runs`), so the address is used by the rate limiter in memory
+  and kept nowhere; an error on the route still logs. The hosting platform's own
+  edge logs are outside the app; the solicitor should confirm the notice covers them.
 
 ## Two switches, both off today
 
@@ -55,8 +75,16 @@ without consent only with clear information and a simple, free way to object. Bl
 decision of 19 October 2026 for the enquiry funnel's browser signals applies here
 too: keep nothing until the privacy page describes it.
 
+**The way to object is not built yet.** Global Privacy Control and Do Not Track are
+honoured, but Safari, and so every browser on an iPhone, sends neither, so most phone
+visitors would have no way to object. Before switching on, the privacy page needs one
+that works everywhere, for example a "Don't measure my visits" control whose stored
+choice `shouldReportWebVitals` checks. That is for the solicitor and Blake to settle;
+it is not in this change.
+
 **To switch on**, in one release:
-1. publish the privacy page's line (draft below, through the solicitor);
+1. publish the privacy page's line (draft below, through the solicitor) with a way to
+   object that works on an iPhone (above);
 2. set `WEB_VITALS_COLLECTION=on` on the API;
 3. build the web with a sample rate. At the pilot's traffic, 1 gives a usable p75
    within weeks; lower it as traffic grows.
@@ -66,14 +94,19 @@ Draft for the privacy page (for the solicitor and Blake; not live):
 > **How fast our pages are.** When you open one of our pages, your browser may measure
 > how quickly it loaded and responded (four timings) and send them to us with the kind
 > of page (for example "a proposal") and whether it was opened on a phone, tablet or
-> computer. It does not send the address you opened, anything you typed, or anything
-> that identifies you or your device, and nothing is stored on your device for it. We
-> use these timings only to make the site faster and delete them after 90 days. If your
-> browser sends Global Privacy Control or Do Not Track, nothing is measured or sent.
+> computer. It does not send the address of the page you opened, anything you typed,
+> or any identifier, and nothing is stored on your device for it. Like any request,
+> it reaches us from your internet address; we do not keep that with the timings or
+> log it. We use these timings only to make the site faster and delete them after 90
+> days. If your browser sends Global Privacy Control or Do Not Track, nothing is
+> measured or sent. [The way to object on any browser goes here.]
 
 **Limits.** Anyone can post a report, so the limiter bounds an address to 60 a minute
-and the p75 is read as a measure, not a guarantee. Soft navigations inside the app
-are not measured; each figure belongs to the page a load landed on.
+and a daily ceiling (`WEB_VITALS_DAILY_REPORT_CEILING`, 5,000 reports from everyone,
+per server, reset at midnight UTC) bounds the table; the p75 is read as a measure, not
+a guarantee. Pages reached by moving inside the app are not measured; each figure
+belongs to the page a load landed on. The limiter keys IPv6 per address, as the whole
+API does; keying it by /64 is an app-wide change, not this one's.
 
 ## Reading p75
 

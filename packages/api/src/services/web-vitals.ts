@@ -26,6 +26,39 @@ export function webVitalsCollectionEnabled(env: NodeJS.ProcessEnv = process.env)
   return env["WEB_VITALS_COLLECTION"] === "on";
 }
 
+/**
+ * The most reports the server keeps in a day (UTC), from every source
+ * together. Anyone can post a report, and the per-address limit alone would
+ * let a handful of addresses fill the table for the 90 days it is kept. Set
+ * well above what sampling one venue's pages should need; when it is reached
+ * the rest of the day's reports are refused, and the sample rate is the lever.
+ */
+export const WEB_VITALS_DAILY_REPORT_CEILING = 5_000;
+
+export interface DailyCeiling {
+  /** Counts one more report today; false once the day's ceiling is reached. */
+  readonly admit: () => boolean;
+}
+
+/** One server's count of the day's reports; it starts again at midnight UTC
+ *  (and on a restart, which only ever lets fewer through in a day than two). */
+export function createDailyCeiling(limit: number, now: () => number = Date.now): DailyCeiling {
+  let day = Number.NaN;
+  let count = 0;
+  return {
+    admit: () => {
+      const today = Math.floor(now() / 86_400_000);
+      if (today !== day) {
+        day = today;
+        count = 0;
+      }
+      if (count >= limit) return false;
+      count += 1;
+      return true;
+    },
+  };
+}
+
 /** One row per vital of a report. Returns how many were kept. */
 export async function recordWebVitals(db: Database, report: WebVitalsReport): Promise<number> {
   const rows = await db.insert(webVitalSamples)

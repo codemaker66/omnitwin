@@ -1,4 +1,4 @@
-import type { FastifyInstance } from "fastify";
+import Fastify, { type FastifyInstance, type LightMyRequestResponse } from "fastify";
 import { resolve } from "node:path";
 import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
@@ -8,7 +8,8 @@ import { WEB_VITAL_RETENTION_DAYS } from "@omnitwin/types";
 import * as schema from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { validateEnv } from "../env.js";
-import { removeExpiredWebVitalSamples, webVitalsP75 } from "../services/web-vitals.js";
+import { createDailyCeiling, removeExpiredWebVitalSamples, webVitalsP75 } from "../services/web-vitals.js";
+import { publicWebVitalsRoutes } from "../routes/public-web-vitals.js";
 import { formatP75Line } from "../scripts/web-vitals-report.js";
 
 // ---------------------------------------------------------------------------
@@ -17,7 +18,8 @@ import { formatP75Line } from "../scripts/web-vitals-report.js";
 // a device class and four numbers, kept as four rows and nothing else; an
 // address, a token or any other field is refused and nothing is kept; the
 // database refuses a page that is not a pattern; the limiter bounds an
-// address; samples go after 90 days; p75 is read by device and by page.
+// address and a daily ceiling everyone; no access line carries the address;
+// samples go after 90 days; p75 is read by device and by page.
 //
 // Opt-in, disposable loopback PostgreSQL only; never reads DATABASE_URL/.env:
 //   VENVIEWER_WEB_VITALS_TEST_DATABASE_URL=postgresql://postgres@127.0.0.1:<port>/venviewer_web_vitals_test
@@ -73,7 +75,7 @@ describe.skipIf(testUrl === undefined)("field web vitals on the whole API (migra
   let address = 0;
 
   /** As navigator.sendBeacon sends a string: text/plain, from its own address. */
-  function beacon(body: string, from?: string): ReturnType<FastifyInstance["inject"]> {
+  function beacon(body: string, from?: string): Promise<LightMyRequestResponse> {
     address += 1;
     return server.inject({
       method: "POST", url: "/public/web-vitals",
@@ -194,6 +196,56 @@ describe.skipIf(testUrl === undefined)("field web vitals on the whole API (migra
     }
     expect(statuses.slice(0, 60).every((status) => status === 204)).toBe(true);
     expect(statuses.slice(60)).toEqual([429, 429]);
+  });
+
+  it("keeps no more than the day's ceiling from everyone together, and starts again the next day", async () => {
+    process.env["WEB_VITALS_COLLECTION"] = "on";
+    const capped = Fastify();
+    await capped.register(publicWebVitalsRoutes, { prefix: "/public", db, dailyReportCeiling: 2 });
+    const post = (from: string): Promise<LightMyRequestResponse> => capped.inject({
+      method: "POST", url: "/public/web-vitals", headers: { "content-type": "text/plain;charset=UTF-8" },
+      payload: JSON.stringify({ ...REPORT, metrics: [REPORT.metrics[0]] }), remoteAddress: from,
+    });
+    try {
+      // A body that is not a report is refused before it counts against the day.
+      expect((await capped.inject({
+        method: "POST", url: "/public/web-vitals", headers: { "content-type": "text/plain;charset=UTF-8" },
+        payload: "{not json", remoteAddress: "10.5.0.9",
+      })).statusCode).toBe(400);
+      // Three addresses, each well inside its own limit.
+      const statuses = [(await post("10.5.0.1")).statusCode, (await post("10.5.0.2")).statusCode];
+      const third = await post("10.5.0.3");
+      expect([...statuses, third.statusCode]).toEqual([204, 204, 429]);
+      expect(third.json()).toMatchObject({ code: "WEB_VITALS_DAILY_CEILING" });
+      expect(await rows()).toHaveLength(2);
+    } finally {
+      await capped.close();
+    }
+    let clock = Date.UTC(2026, 9, 28, 23, 59);
+    const ceiling = createDailyCeiling(1, () => clock);
+    expect([ceiling.admit(), ceiling.admit()]).toEqual([true, false]);
+    clock = Date.UTC(2026, 9, 29, 0, 1);
+    expect(ceiling.admit()).toBe(true);
+  });
+
+  it("writes no access line, which would carry the visitor's address", async () => {
+    process.env["WEB_VITALS_COLLECTION"] = "on";
+    const lines: string[] = [];
+    const logged = Fastify({ logger: { level: "info", stream: { write: (line: string) => { lines.push(line); } } } });
+    await logged.register(publicWebVitalsRoutes, { prefix: "/public", db });
+    logged.get("/control", () => ({ ok: true }));
+    try {
+      expect((await logged.inject({
+        method: "POST", url: "/public/web-vitals", headers: { "content-type": "text/plain;charset=UTF-8" },
+        payload: JSON.stringify(REPORT), remoteAddress: "10.4.4.4",
+      })).statusCode).toBe(204);
+      expect(lines.filter((line) => line.includes("10.4.4.4"))).toEqual([]);
+      // The same server logs an ordinary route's address, so the capture works.
+      await logged.inject({ method: "GET", url: "/control", remoteAddress: "10.3.3.3" });
+      expect(lines.some((line) => line.includes("10.3.3.3"))).toBe(true);
+    } finally {
+      await logged.close();
+    }
   });
 
   it("removes samples past their retention and keeps the rest", async () => {

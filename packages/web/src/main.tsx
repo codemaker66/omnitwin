@@ -8,6 +8,7 @@ import { useAuthStore, type AuthUser } from "./stores/auth-store.js";
 import { setTokenGetter } from "./api/auth-bridge.js";
 import { AppErrorBoundary } from "./error-boundary.js";
 import { initBrowserSentry } from "./observability/sentry.js";
+import { recordLandingRoute } from "./observability/landing-route.js";
 import { webVitalsSampleRate } from "./observability/web-vitals-rate.js";
 import { isE2EAuthBypassEnabled } from "./lib/e2e-auth-bypass.js";
 import { registerPushWorker } from "./lib/push-worker.js";
@@ -91,10 +92,14 @@ createRoot(rootElement).render(
 void initBrowserSentry();
 
 // Field web vitals (goal 07): only a build that samples page loads loads the
-// reporter at all, and it measures the route this page load landed on.
+// reporter at all, and it measures the route this page load landed on. A
+// chunk that fails to load (offline, a deploy in between, a blocker) costs
+// only the measurement.
 if (webVitalsSampleRate(import.meta.env) > 0) {
-  const routePaths = router.state.matches.map((match) => match.route.path);
-  void import("./observability/web-vitals.js").then(({ startWebVitals }) => startWebVitals({ env: import.meta.env, routePaths }));
+  const landing = recordLandingRoute(router);
+  void import("./observability/web-vitals.js")
+    .then(({ startWebVitals }) => startWebVitals({ env: import.meta.env, landing }))
+    .catch(() => { landing.stop(); });
 }
 
 // The push worker (goal 19 S7): registered after the root is up, harmless
