@@ -426,7 +426,8 @@ export function ChairCountDialog({
               aria-label="Seats"
               aria-invalid={warning ? true : undefined}
               onChange={(e) => {
-                const text = e.target.value;
+                // No table seats a thousand: three characters keep the field and the button that names it readable.
+                const text = e.target.value.slice(0, 3);
                 setDraft(text);
                 const seats = seatsFromDraft(text, minChairs, maxChairs);
                 if (seats !== null) { setCount(seats); setWarning(false); }

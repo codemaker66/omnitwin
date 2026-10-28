@@ -139,6 +139,10 @@ describe("ChairCountDialog's typed count", () => {
   it("says what a round takes, and places nothing, for a count it cannot take", () => {
     const onConfirm = vi.fn<(count: number) => void>();
     render(<ChairCountDialog request={round()} onConfirm={onConfirm} onCancel={vi.fn()} />);
+    // An absurd count is held to three characters, so the button that names it stays readable.
+    fireEvent.change(seats(), { target: { value: "123456789" } });
+    expect(seats().value).toBe("123");
+    expect(screen.getByTestId("chair-count-confirm").textContent).toBe("Place with 123 seats");
     fireEvent.change(seats(), { target: { value: "20" } });
     // The button names the 20 it was asked for, never a count it would not place.
     expect(screen.getByTestId("chair-count-confirm").textContent).toBe("Place with 20 seats");
