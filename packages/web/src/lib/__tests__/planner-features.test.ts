@@ -42,8 +42,11 @@ describe("planner features: everyone's switches", () => {
 
   it("names a lane and a quality-of-life item for every key", () => {
     for (const spec of Object.values(PLANNER_FEATURE_SPECS)) {
-      expect(["E", "P"]).toContain(spec.lane);
-      expect(spec.item).toMatch(/^Q-\d{2}[ab]?$/u);
+      // Read as the spec's field types, so a lane no key uses yet still compares.
+      const { lane, item }: { readonly lane: string; readonly item: string } = spec;
+      expect(["E", "P", "planner-qol"]).toContain(lane);
+      // planner-qol's items are its own (PQ-N); a Blake decision is an item too (D-N).
+      expect(item).toMatch(lane === "planner-qol" ? /^(?:PQ-\d{1,2}|D\d)$/u : /^(?:Q-\d{2}[ab]?|D\d)$/u);
     }
   });
 });

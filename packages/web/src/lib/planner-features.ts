@@ -14,8 +14,11 @@
 
 interface PlannerFeatureSpec {
   /** The lane that builds it and decides when it is green. */
-  readonly lane: "E" | "P";
-  /** The quality-of-life item it delivers (design/qol-pass.md). */
+  readonly lane: "E" | "P" | "planner-qol";
+  /**
+   * The quality-of-life item it delivers: Q-NN in design/qol-pass.md, PQ-N in
+   * planner-qol's own list, or D-N for one of Blake's decisions.
+   */
   readonly item: string;
   /** Whether everyone has it. */
   readonly on: boolean;
