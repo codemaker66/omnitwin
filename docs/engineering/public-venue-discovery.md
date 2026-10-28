@@ -251,7 +251,8 @@ Open Graph tags are unchanged.
    **`https://api.venviewer.com/mcp`**. Leave any OAuth client fields empty:
    the server is public and needs no sign-in.
 3. Enable it in a conversation from the tools menu and ask, for example,
-   "Is the Grand Hall free on Saturdays in June 2027?".
+   "What does the Grand Hall's diary hold for Saturdays in June 2027, and how do I
+   enquire?". It never answers that a date is free: only the venue team confirms one.
 
 Any client that speaks remote Streamable HTTP MCP uses the same URL.
 
