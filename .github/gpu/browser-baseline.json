@@ -770,6 +770,21 @@
       ],
       "expectedStatus": "passed",
       "limits": "This is reviewed inventory admission, not execution evidence. This case was absent from sourceRunId, sourceReports and the earlier admissions; it switches the touch arbiter on with ?pf= and stubs the API before transport, so it proves the gestures in Chromium's emulated touch, not on a real phone's touch screen or GPU; every current case still requires execution in the hosted browser gate. The listing covers this one spec file, so a re-listing reproduces this identity, not this hash."
+    },
+    {
+      "date": "2026-10-28",
+      "reason": "A request step pressed with no connection (L9, goal 05 and goal 19's offline queue), route-mocked: the hallkeeper presses I’ll do it on the slot's card while the step cannot reach the house; the card says it is waiting to send and still says nobody owns it; the press survives a reload in the browser's own store and goes when the connection is back, every send the same step under the same key; and when someone else took it first the slot says so by name, the press is put away and is never sent again, with every label readable at 12 px and 4.5:1.",
+      "sourceCommit": "fa2deba8bf2da17176f666b650cf8719acc88b7b",
+      "sourceFile": "packages/web/e2e/living-timetable-offline-steps.spec.ts",
+      "sourceFileGitBlobSha256": "7bd8d338f6b2234b1046c53048a1e88d4ab6f2075581365718edba43158c911f",
+      "inventoryCommand": "pnpm --filter @omnitwin/web exec playwright test e2e/living-timetable-offline-steps.spec.ts --list --project=chromium --update-snapshots=none --reporter=json",
+      "inventorySha256": "c5a82a4a3ab2ed44388dcd2205a5269f607c45367134ce75b7e9bb50f71bfae3",
+      "caseIds": [
+        "3458cb52a1c58b716d7b-1e0c8e8cfb6cf207394e",
+        "3458cb52a1c58b716d7b-2353530f81e2ff804d8a"
+      ],
+      "expectedStatus": "passed",
+      "limits": "This is reviewed inventory admission, not execution evidence. These two cases were absent from sourceRunId, sourceReports and the earlier admissions; they intercept the API before transport and drop the press as a lost signal, so they prove the slab's waiting state, the reload over real IndexedDB, the one key per press and the honest refusal, not the ledger, which requests-offline-replay-postgres.test.ts proves against PostgreSQL; every current case still requires execution in the hosted browser gate. The listing covers this one spec file, so a re-listing reproduces these identities, not this hash."
     }
   ],
   "cases": [
@@ -5095,6 +5110,28 @@
       "suitePath": [
         "planner-touch-arbiter.spec.ts",
         "the touch arbiter on a phone"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "3458cb52a1c58b716d7b-1e0c8e8cfb6cf207394e",
+      "file": "living-timetable-offline-steps.spec.ts",
+      "title": "waits to send, survives a reload, and goes as the same press when the connection is back",
+      "suitePath": [
+        "living-timetable-offline-steps.spec.ts",
+        "A request step pressed with no connection"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "3458cb52a1c58b716d7b-2353530f81e2ff804d8a",
+      "file": "living-timetable-offline-steps.spec.ts",
+      "title": "says by name that someone else took it first, and puts the press away",
+      "suitePath": [
+        "living-timetable-offline-steps.spec.ts",
+        "A request step pressed with no connection"
       ],
       "project": "chromium",
       "expectedStatus": "passed"

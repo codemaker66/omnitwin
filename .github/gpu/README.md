@@ -1,7 +1,7 @@
 # Browser release verification
 
-The reviewed browser inventory has 405 cases. Four hosted CPU shards execute
-400 cases; the five Twin performance cases execute on the existing RTX 4090
+The reviewed browser inventory has 407 cases. Four hosted CPU shards execute
+402 cases; the five Twin performance cases execute on the existing RTX 4090
 through WSL D3D12. The final hosted job reconciles every case against the
 reviewed inventory, including the original skips and expected failures.
 
@@ -155,7 +155,14 @@ with a round in hand turns the view and places nothing, a quick tap places one,
 a hold, a slide and a lift place it with the camera still, a still finger on a
 placed round lifts and carries it, and two fingers walk and zoom
 (`planner-touch-arbiter.spec.ts`); this changes the inventory from 404 to 405
-and the CPU partition from 399 to 400.
+and the CPU partition from 399 to 400. The next, on 28 October 2026, adds two ordinary
+cases for a request step pressed with no connection (L9): the slot's card says
+the press is waiting to send and still says nobody owns it, the press survives
+a reload in the browser's own store and goes as the same step under the same
+key when the connection is back, and when someone else took it first the slot
+says so by name and the press is put away
+(`living-timetable-offline-steps.spec.ts`); this changes the inventory from
+405 to 407 and the CPU partition from 400 to 402.
 
 The 30 September admission follows Blake's replacement of the Craft quiz with
 The Amissing Book (T-641). The old quiz's 26 threshold, questionnaire and result
