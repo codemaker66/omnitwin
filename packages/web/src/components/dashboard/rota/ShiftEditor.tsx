@@ -313,7 +313,7 @@ export function ShiftEditor({
       {/* What the shift needs comes first: it is why the panel was opened. */}
       {canManage && shift !== null && shift.issues.length > 0 && (
         <section className="rota-issues" aria-label="Warnings">
-          <h3>{shift.issues.some((issue) => issue.severity === "block") ? "Before this can be published" : "Warnings"}</h3>
+          <h3>{!shift.issues.some((issue) => issue.severity === "block") ? "Warnings" : shift.status === "draft" ? "Before this can be published" : "Before this shift is worked"}</h3>
           {dirty && shift.status !== "cancelled" && <p className="rota-field__hint">These are for the shift as saved. Save to check your changes.</p>}
           <ul>
             {shift.issues.map((issue) => (

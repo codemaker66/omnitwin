@@ -495,6 +495,99 @@ describe.skipIf(testUrl === undefined)("the staff rota on isolated PostgreSQL", 
       expect(RotaPublishResultSchema.parse(published.data)).toEqual({ published: 1, told: 0, notTold: 1 });
     });
 
+    /** A shift published for the Saturday, on nobody or on `staffMemberId`. */
+    async function publishedShift(staffMemberId: string | null): Promise<string> {
+      const made = await addShift({ staffMemberId, startsAt: at(SATURDAY, "09:00"), endsAt: at(SATURDAY, "13:00") });
+      const id = made.shift?.id ?? "";
+      expect((await call("POST", `/venues/${VENUE}/rota/publish`, { weekStart: WEEK, shifts: [{ id, revision: 1 }] })).statusCode).toBe(200);
+      await pool.query("DELETE FROM event_plan_notifications");
+      return id;
+    }
+
+    it("will not fill a published open shift with someone who has no right-to-work check, nor tell them of it", async () => {
+      // Priya has an account, so she would be told at once.
+      await pool.query("UPDATE staff_members SET right_to_work_checked_on = NULL WHERE id = $1", [SALES_PERSON]);
+      const id = await publishedShift(null);
+      const before = await shiftRow(id);
+
+      const refused = await call("PATCH", `/venues/${VENUE}/rota/shifts/${id}`, { staffMemberId: SALES_PERSON, expectedRevision: 2 });
+      expect(refused.statusCode).toBe(422);
+      expect(refused.code).toBe("ROTA_BLOCKED");
+      expect(refused.error).toBe("Priya Raman has no right-to-work check recorded, so cannot be put on a published shift until one is. Nothing has changed.");
+      expect(refused.details).toEqual({ blocks: [expect.objectContaining({ code: "right_to_work_missing", severity: "block" })] });
+      expect(await shiftRow(id)).toEqual(before);
+      expect((await pool.query("SELECT 1 FROM event_plan_notifications")).rowCount).toBe(0);
+      expect((await pool.query("SELECT 1 FROM rota_shift_changes WHERE kind = 'changed'")).rowCount).toBe(0);
+      // Nor someone without an account.
+      expect((await call("PATCH", `/venues/${VENUE}/rota/shifts/${id}`, { staffMemberId: CALLUM, expectedRevision: 2 })).code).toBe("ROTA_BLOCKED");
+
+      // Once the check is recorded, the same change goes through and she is told.
+      expect((await call("PATCH", `/venues/${VENUE}/rota/people/${SALES_PERSON}`, { rightToWorkCheckedOn: "2026-09-01", expectedRevision: 1 })).statusCode).toBe(200);
+      expect((await call("PATCH", `/venues/${VENUE}/rota/shifts/${id}`, { staffMemberId: SALES_PERSON, expectedRevision: 2 })).statusCode).toBe(200);
+      const { rows } = await pool.query("SELECT recipient_user_id, title FROM event_plan_notifications");
+      expect(rows).toEqual([{ recipient_user_id: USERS.sales, title: "You have a new shift on Saturday" }]);
+    });
+
+    it("will not swap someone with a check for someone without one on a published shift", async () => {
+      await pool.query("UPDATE staff_members SET right_to_work_checked_on = NULL WHERE id = $1", [SALES_PERSON]);
+      const id = await publishedShift(MORAG);
+      const swapped = await call("PATCH", `/venues/${VENUE}/rota/shifts/${id}`, { staffMemberId: SALES_PERSON, expectedRevision: 2 });
+      expect(swapped.statusCode).toBe(422);
+      expect(swapped.code).toBe("ROTA_BLOCKED");
+      const row = await shiftRow(id);
+      expect([row["staff_member_id"], row["revision"]]).toEqual([MORAG, 2]);
+      expect((await pool.query("SELECT 1 FROM event_plan_notifications")).rowCount).toBe(0);
+      // A draft may still be planned with them; it is held at publishing.
+      const draft = await addShift({ startsAt: at(FRIDAY, "09:00"), endsAt: at(FRIDAY, "13:00") });
+      expect((await call("PATCH", `/venues/${VENUE}/rota/shifts/${draft.shift?.id ?? ""}`, { staffMemberId: SALES_PERSON, expectedRevision: 1 })).statusCode).toBe(200);
+    });
+
+    it("refuses the newcomer whose check is cleared while the shift is being changed", async () => {
+      const id = await publishedShift(null);
+      // Another manager clears Priya's check and has not yet committed.
+      const clearing = await pool.connect();
+      let committed = false;
+      try {
+        await clearing.query("BEGIN");
+        await clearing.query("UPDATE staff_members SET right_to_work_checked_on = NULL WHERE id = $1", [SALES_PERSON]);
+        const pending = call("PATCH", `/venues/${VENUE}/rota/shifts/${id}`, { staffMemberId: SALES_PERSON, expectedRevision: 2 });
+        // The change has read her check as recorded and now waits on her row.
+        for (let tries = 0; ; tries += 1) {
+          const { rowCount } = await pool.query(
+            "SELECT 1 FROM pg_stat_activity WHERE application_name = $1 AND wait_event_type = 'Lock' AND query ILIKE '%staff_members%for share%'",
+            [fixtureSchema]);
+          if (rowCount !== null && rowCount > 0) break;
+          if (tries > 200) throw new Error("the shift change never waited on the person");
+          await new Promise((done) => setTimeout(done, 10));
+        }
+        await clearing.query("COMMIT");
+        committed = true;
+        const refused = await pending;
+        expect(refused.statusCode).toBe(422);
+        expect(refused.code).toBe("ROTA_BLOCKED");
+      } finally {
+        if (!committed) await clearing.query("ROLLBACK");
+        clearing.release();
+      }
+      expect((await shiftRow(id))["staff_member_id"]).toBeNull();
+      expect((await pool.query("SELECT 1 FROM event_plan_notifications")).rowCount).toBe(0);
+    });
+
+    it("says a published shift's missing check once it has been cleared, and still lets the shift be moved", async () => {
+      const id = await publishedShift(MORAG);
+      expect((await call("PATCH", `/venues/${VENUE}/rota/people/${MORAG}`, { rightToWorkCheckedOn: null, expectedRevision: 1 })).statusCode).toBe(200);
+      const shown = (await week()).body?.shifts.find((shift) => shift.id === id);
+      expect(shown?.status).toBe("published");
+      expect(shown?.issues.map((issue) => [issue.code, issue.severity, issue.message])).toEqual([[
+        "right_to_work_missing", "block",
+        "Morag Sinclair has no right-to-work check recorded. This shift is already published: record the check before Morag Sinclair works it, or give it to someone else.",
+      ]]);
+      // The block cannot be kept with a reason; the check has to be recorded.
+      expect((await call("POST", `/venues/${VENUE}/rota/shifts/${id}/keep`, { code: "right_to_work_missing", reason: "Later", expectedRevision: 2 })).statusCode).toBe(400);
+      // Her own shift is not refused: the rule is for someone new on it.
+      expect((await call("PATCH", `/venues/${VENUE}/rota/shifts/${id}`, { startsAt: at(SATURDAY, "10:00"), expectedRevision: 2 })).statusCode).toBe(200);
+    });
+
     it("reads the week and its times on the venue's own clock", async () => {
       await pool.query("UPDATE venues SET timezone = 'America/New_York' WHERE id = $1", [VENUE]);
       const { body } = await week();
