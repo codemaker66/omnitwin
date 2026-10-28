@@ -30,25 +30,29 @@ import { isSceneFurniturePlacement } from "./table-dressing.js";
 export type UsableStock = ReadonlyMap<string, number>;
 
 /**
- * Clothed tables and the bare table the store counts them as: a cloth is
- * dressing, not a table. Nothing else is pooled. A wooden-top trestle is not
- * assumed to be a 6 ft trestle, because a guessed pooled count is what the
- * stock import refuses to make (api/src/scripts/import-venue-stock.ts).
+ * Pieces the store counts under another catalogue entry. Clothed tables count
+ * as their bare table: a cloth is dressing, not a table. The Burgess Turini
+ * 18/3 the planner sets counts as the venue's pink chair, the same chair
+ * (Blake, 26 Oct 2026), whose record the stock import writes. Nothing else is
+ * pooled. A wooden-top trestle is not assumed to be a 6 ft trestle, because a
+ * guessed pooled count is what the stock import refuses to make
+ * (api/src/scripts/import-venue-stock.ts).
  */
-const CLOTHED_TABLES: ReadonlyMap<string, string> = new Map([
+const COUNTED_AS: ReadonlyMap<string, string> = new Map([
   ["round-table-6ft-white", "round-table-6ft"],
   ["round-table-6ft-black", "round-table-6ft"],
   ["trestle-6ft-white", "trestle-6ft"],
   ["trestle-6ft-black", "trestle-6ft"],
   ["trestle-4ft-white", "trestle-4ft"],
   ["trestle-4ft-black", "trestle-4ft"],
+  ["burgess-turini-18-3", "pink-chair"],
 ]);
 
-/** The catalogue id the store counts a piece under: a clothed table's bare table, else the piece itself. */
+/** The catalogue id the store counts a piece under: a clothed table's bare table, the Turini's pink chair, else the piece itself. */
 export function stockIdentity(catalogueItemId: string): string {
   const slug = getCatalogueItem(catalogueItemId)?.slug;
-  const bare = slug === undefined ? undefined : CLOTHED_TABLES.get(slug);
-  return (bare === undefined ? undefined : getCatalogueItemBySlug(bare)?.id) ?? catalogueItemId;
+  const countedAs = slug === undefined ? undefined : COUNTED_AS.get(slug);
+  return (countedAs === undefined ? undefined : getCatalogueItemBySlug(countedAs)?.id) ?? catalogueItemId;
 }
 
 /**
@@ -162,14 +166,45 @@ export function storeShortfall(stock: UsableStock | null, placedItems: readonly 
   if (stock === null) return null;
   const changedIds = new Set(change.add.map((piece) => piece.id));
   const kept = placedItems.filter((piece) => change.removeIds?.has(piece.id) !== true && !changedIds.has(piece.id));
-  const before = placedCounts(placedItems);
-  for (const [identity, count] of placedCounts([...kept, ...change.add])) {
+  return storeShortfallBetween(stock, placedItems, [...kept, ...change.add]);
+}
+
+/**
+ * The first piece taking the layout from `before` to `after` would take past
+ * its usable stock, or null: storeShortfall for a change given as the whole
+ * layout after it (a store action's write).
+ */
+export function storeShortfallBetween(stock: UsableStock | null, before: readonly PlacedItem[], after: readonly PlacedItem[]): StoreShortfall | null {
+  if (stock === null) return null;
+  const was = placedCounts(before);
+  for (const [identity, count] of placedCounts(after)) {
     const usable = stock.get(identity);
-    if (usable !== undefined && count > usable && count > (before.get(identity) ?? 0)) {
+    if (usable !== undefined && count > usable && count > (was.get(identity) ?? 0)) {
       return { catalogueItemId: identity, usable, needed: count };
     }
   }
   return null;
+}
+
+let stockSource: () => UsableStock | null = () => null;
+
+/**
+ * Where every adding commit reads the store's stock (B2, hard): the cards
+ * store registers its reading as it loads stock for staff (lane C), so the
+ * placement store refuses any write past it, whichever control made it.
+ * Unknown until a reading is registered, and unknown never refuses. Returns
+ * the way to take the reading away again.
+ */
+export function registerStoreStock(read: () => UsableStock | null): () => void {
+  stockSource = read;
+  return () => {
+    if (stockSource === read) stockSource = () => null;
+  };
+}
+
+/** The store's usable stock as the planner knows it now, or null when unknown (a guest, or not yet loaded). */
+export function currentStoreStock(): UsableStock | null {
+  return stockSource();
 }
 
 /** The refusal's words, in the planner's name for the piece: "Velvet Banquet Chair: 40 in store, this needs 48". */
