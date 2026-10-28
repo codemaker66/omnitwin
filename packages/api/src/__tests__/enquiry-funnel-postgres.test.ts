@@ -7,6 +7,7 @@ import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   ENQUIRY_REPLY_ALARM_DEFAULT_HOURS,
+  ENQUIRY_REPLY_ALARM_FROM,
   PROPOSAL_VERSION_PAYLOAD_SCHEMA_VERSION,
   TRADES_HALL_ENQUIRY_VENUE_SLUG,
   VENUE_ACCESS_ENQUIRY_TYPE,
@@ -257,7 +258,9 @@ describe.skipIf(testUrl === undefined)("the enquiry funnel on migrated PostgreSQ
     ]);
 
     server = Fastify();
-    await server.register(enquiryRoutes, { db, prefix: "/enquiries" });
+    // The alarm's default start (ENQUIRY_REPLY_ALARM_FROM) is a fixed date;
+    // here it starts long ago, and one case below moves it.
+    await server.register(enquiryRoutes, { db, prefix: "/enquiries", replyAlarmFrom: "2000-01-01T00:00:00.000Z" });
     await server.register(publicEnquiryRoutes, { db, prefix: "/public" });
     await server.register(proposalRoutes, { db, prefix: "/proposals" });
     await server.register(proposalShareRoutes, { db, prefix: "/proposal-share" });
@@ -569,7 +572,7 @@ describe.skipIf(testUrl === undefined)("the enquiry funnel on migrated PostgreSQ
     const alarmOf = (headers: Record<string, string>): Promise<Reply> => call("GET", "/enquiries/reply-alarm", headers);
     const asAlarm = (role: keyof typeof alarmPeople): Record<string, string> => as(role, alarmVenue, alarmPeople[role]);
 
-    it("flags the venue's booking enquiries waiting past 24 hours for a first reply, the longest-waiting first", async () => {
+    it("flags the venue's booking enquiries waiting past 24 hours for a first reply, the most recently flagged first", async () => {
       const at = { venueId: alarmVenue, spaceId: alarmRoom };
       const longest = await newEnquiry({ ...at, state: "under_review", createdAt: hoursAgo(50) });
       const overdue = await newEnquiry({ ...at, createdAt: hoursAgo(30) });
@@ -602,17 +605,23 @@ describe.skipIf(testUrl === undefined)("the enquiry funnel on migrated PostgreSQ
            FROM enquiries e WHERE id = $1`, [id]);
         return (rows[0]?.at ?? new Date(Number.NaN)).toISOString();
       };
+      const data = res.body["data"] as { asOf: string };
       expect(res.body["data"]).toEqual({
         thresholdHours: ENQUIRY_REPLY_ALARM_DEFAULT_HOURS,
+        asOf: data.asOf,
         overdue: 3,
+        longest: { id: longest, arrivedAt: await arrived(longest) },
+        // As the desk lists them: the most recently flagged first.
         enquiries: [
-          { id: longest, arrivedAt: await arrived(longest) },
-          { id: overdue, arrivedAt: await arrived(overdue) },
           { id: wedding, arrivedAt: await arrived(wedding) },
+          { id: overdue, arrivedAt: await arrived(overdue) },
+          { id: longest, arrivedAt: await arrived(longest) },
         ],
         // The next to pass 24 hours is the one sent 3 hours ago, not the one made 2 hours ago.
         nextDueAt: new Date(sentAt.getTime() + ENQUIRY_REPLY_ALARM_DEFAULT_HOURS * 3_600_000).toISOString(),
       });
+      // The server's clock, read with the alarm.
+      expect(Math.abs(Date.parse(data.asOf) - Date.now())).toBeLessThan(60_000);
       // Waiting, but inside the 24 hours, or answered: not flagged.
       const flagged = (res.body["data"] as { enquiries: { id: string }[] }).enquiries.map((e) => e.id);
       for (const id of [fresh, sentLate, answered]) expect(flagged).not.toContain(id);
@@ -621,7 +630,29 @@ describe.skipIf(testUrl === undefined)("the enquiry funnel on migrated PostgreSQ
       expect((await report(asAlarm("staff"), overdue, { channel: "phone", respondedAt: hoursAgo(1).toISOString() })).status).toBe(200);
       expect((await call("POST", `/enquiries/${longest}/transition`, asAlarm("manager"), { status: "approved", from: "under_review" })).status).toBe(200);
       const after = await alarmOf(asAlarm("admin"));
-      expect(after.body["data"]).toMatchObject({ overdue: 1, enquiries: [{ id: wedding }] });
+      expect(after.body["data"]).toMatchObject({ overdue: 1, longest: { id: wedding }, enquiries: [{ id: wedding }] });
+    });
+
+    it("flags nothing that arrived before the desk could record a reply", async () => {
+      const at = { venueId: alarmVenue, spaceId: alarmRoom };
+      const before = await newEnquiry({ ...at, createdAt: hoursAgo(300) });
+      const after = await newEnquiry({ ...at, createdAt: hoursAgo(100) });
+      const from = hoursAgo(200).toISOString();
+      const started = Fastify();
+      await started.register(enquiryRoutes, { db, prefix: "/enquiries", replyAlarmFrom: from });
+      await started.ready();
+      try {
+        const res = await started.inject({ method: "GET", url: "/enquiries/reply-alarm", headers: asAlarm("sales") });
+        expect(res.statusCode).toBe(200);
+        const flagged = (JSON.parse(res.body) as { data: { enquiries: { id: string }[]; longest: { id: string } | null } }).data;
+        expect(flagged.enquiries.map((e) => e.id)).toContain(after);
+        expect(flagged.enquiries.map((e) => e.id)).not.toContain(before);
+        expect(flagged.longest?.id).toBe(after);
+      } finally {
+        await started.close();
+      }
+      // The default start is the release that brought the desk's reply control.
+      expect(ENQUIRY_REPLY_ALARM_FROM).toBe("2026-10-29T00:00:00.000Z");
     });
 
     it("is the same alarm for each of the venue's commercial team", async () => {
@@ -644,9 +675,11 @@ describe.skipIf(testUrl === undefined)("the enquiry funnel on migrated PostgreSQ
         as("planner", alarmVenue, randomUUID()),
         as("client", alarmVenue, randomUUID()),
         as("caterer", alarmVenue, randomUUID()),
-        // A Venviewer platform admin is not the venue's team, and a commercial
-        // role with no venue yet has no alarm to read.
+        // A Venviewer platform admin is not the venue's team, at no venue or
+        // holding a floor role at this one; and a commercial role with no
+        // venue yet has no alarm to read.
         as("admin", null, people.platformAdmin, "admin"),
+        as("hallkeeper", alarmVenue, randomUUID(), "admin"),
         as("staff", null, randomUUID()),
       ]) {
         expect((await alarmOf(headers)).status).toBe(403);

@@ -85,13 +85,28 @@ const VENUE: VenueDetail = {
 /** Client 3 arrived 30 hours ago, and Client 9 (not on the first page) 90. */
 const ALARM: ReplyAlarm = {
   thresholdHours: 24,
+  asOf: new Date(NOW).toISOString(),
   overdue: 2,
+  longest: { id: "enquiry-9", arrivedAt: new Date(NOW - 90 * HOUR).toISOString() },
   enquiries: [
-    { id: "enquiry-9", arrivedAt: new Date(NOW - 90 * HOUR).toISOString() },
     { id: "enquiry-3", arrivedAt: new Date(NOW - 30 * HOUR).toISOString() },
+    { id: "enquiry-9", arrivedAt: new Date(NOW - 90 * HOUR).toISOString() },
   ],
   nextDueAt: null,
 };
+
+interface Deferred<T> {
+  readonly promise: Promise<T>;
+  readonly resolve: (value: T) => void;
+  readonly reject: (reason: unknown) => void;
+}
+
+function deferred<T>(): Deferred<T> {
+  let resolvePromise: ((value: T) => void) | undefined;
+  let rejectPromise: ((reason: unknown) => void) | undefined;
+  const promise = new Promise<T>((resolve, reject) => { resolvePromise = resolve; rejectPromise = reject; });
+  return { promise, resolve: (value) => { resolvePromise?.(value); }, reject: (reason) => { rejectPromise?.(reason); } };
+}
 
 function recorded(id: string, overrides: Partial<RecordFirstResponseResult["firstResponse"]> = {}, changed = true): RecordFirstResponseResult {
   return {
@@ -163,8 +178,27 @@ describe("the reply-time alarm on the Enquiries desk", () => {
     // The longest-waiting is not on this page: it is read and opened.
     fireEvent.click(within(alarm).getByRole("button", { name: "Open the longest unanswered" }));
     const reply = await screen.findByRole("region", { name: "First reply" });
-    expect(mocks.getEnquiry).toHaveBeenCalledWith("enquiry-9");
+    expect(mocks.getEnquiry).toHaveBeenCalledWith("enquiry-9", expect.any(AbortSignal));
     expect(replyLine(reply)).toBe("No reply recorded after 3 days, past the 24-hour mark.");
+  });
+
+  it("lets a late answer to Open the longest unanswered never take the panel from what the person opened since", async () => {
+    const read = deferred<Enquiry>();
+    mocks.getEnquiry.mockImplementation((_id: string, signal?: AbortSignal) => {
+      signal?.addEventListener("abort", () => { read.reject(new DOMException("Aborted", "AbortError")); });
+      return read.promise;
+    });
+    render(<EnquiriesView replyVenueId="venue-1" />);
+    const alarm = await screen.findByTestId("reply-alarm");
+    fireEvent.click(within(alarm).getByRole("button", { name: "Open the longest unanswered" }));
+    expect(within(alarm).getByRole("button", { name: "Open the longest unanswered" }).getAttribute("aria-busy")).toBe("true");
+    fireEvent.click(row("Client 1"));
+    await screen.findByRole("heading", { name: "Client 1", level: 2 });
+    await act(async () => { read.resolve(enquiry(9)); await read.promise.catch(() => undefined); });
+    expect(screen.getByRole("heading", { name: "Client 1", level: 2 })).toBeDefined();
+    expect(screen.queryByRole("heading", { name: "Client 9", level: 2 })).toBeNull();
+    expect(mocks.addToast).not.toHaveBeenCalled();
+    expect(within(alarm).getByRole("button", { name: "Open the longest unanswered" }).getAttribute("aria-busy")).toBe("false");
   });
 
   it("says nothing, and reads no alarm, for someone who does not record replies", async () => {
@@ -210,7 +244,9 @@ describe("recording a reply made outside Venviewer", () => {
     expect(within(form).getByRole("alert").textContent).toBe("Choose how you replied.");
     expect(mocks.recordFirstResponse).not.toHaveBeenCalled();
 
-    mocks.getReplyAlarm.mockResolvedValue({ ...ALARM, overdue: 1, enquiries: [ALARM.enquiries[0]] });
+    // The alarm's re-read is held: the row's mark clears from the reply itself.
+    const reread = deferred<ReplyAlarm>();
+    mocks.getReplyAlarm.mockReturnValueOnce(reread.promise);
     fireEvent.click(within(form).getByRole("radio", { name: "Phone call" }));
     fireEvent.click(within(form).getByRole("button", { name: "Record reply" }));
 
@@ -220,8 +256,9 @@ describe("recording a reply made outside Venviewer", () => {
     expect(document.activeElement).toBe(within(reply).getByRole("heading", { name: "First reply" }));
     expect(within(reply).queryByRole("group", { name: "Record a reply" })).toBeNull();
     expect(within(reply).getByRole("button", { name: "Record an earlier reply" })).toBeDefined();
-    expect(within(row("Client 3")).queryByTestId("reply-alarm-mark")).toBeNull();
     await waitFor(() => { expect(mocks.getReplyAlarm).toHaveBeenCalledTimes(2); });
+    expect(within(row("Client 3")).queryByTestId("reply-alarm-mark")).toBeNull();
+    await act(async () => { reread.resolve({ ...ALARM, overdue: 1, enquiries: ALARM.enquiries.filter((flagged) => flagged.id !== "enquiry-3") }); await reread.promise; });
     expect((await screen.findByTestId("reply-alarm")).querySelector("p")?.textContent)
       .toBe("1 enquiry has waited more than 24 hours for a first reply.");
   });
@@ -256,18 +293,47 @@ describe("recording a reply made outside Venviewer", () => {
     expect(mocks.recordFirstResponse).not.toHaveBeenCalled();
   });
 
-  it("says an earlier reply stands when the one recorded is later", async () => {
+  it("asks only for an earlier time once a reply is recorded, and says when an earlier one already stands", async () => {
     const answered = enquiry(1, { firstResponseAt: "2026-09-24T09:05:00.000Z", firstResponseBy: "user-colleague", firstResponseChannel: "email" });
     mocks.listEnquiryPage.mockResolvedValue(page([answered]));
-    mocks.recordFirstResponse.mockResolvedValue(recorded("enquiry-1", { at: answered.firstResponseAt ?? "", byUserId: "user-colleague", channel: "email" }, false));
     render(<EnquiriesView replyVenueId="venue-1" />);
     const reply = await openClient(1);
     expect(within(reply).getByText("By email · Thu 24 Sep, 10:05")).toBeDefined();
     fireEvent.click(within(reply).getByRole("button", { name: "Record an earlier reply" }));
-    fireEvent.click(within(reply).getByRole("radio", { name: "Phone call" }));
-    fireEvent.click(within(reply).getByRole("button", { name: "Record reply" }));
+    const form = within(reply).getByRole("group", { name: "Record an earlier reply" });
+    // "Just now" can never be earlier than a reply already recorded.
+    expect(within(form).queryByRole("radio", { name: "Just now" })).toBeNull();
+    const time = within(form).getByLabelText<HTMLInputElement>("Day and time (venue time)");
+    expect(time.value).toBe("2026-09-24T10:05");
+    fireEvent.click(within(form).getByRole("radio", { name: "Phone call" }));
+    fireEvent.click(within(form).getByRole("button", { name: "Record reply" }));
+    expect(within(form).getByRole("alert").textContent).toBe("Choose a time earlier than the reply already recorded.");
+    expect(mocks.recordFirstResponse).not.toHaveBeenCalled();
+
+    // A colleague recorded an earlier one meanwhile: it stands, and is said.
+    mocks.recordFirstResponse.mockResolvedValue(recorded("enquiry-1", { at: "2026-09-24T08:40:00.000Z", byUserId: "user-colleague", channel: "in_person" }, false));
+    fireEvent.change(time, { target: { value: "2026-09-24T09:50" } });
+    fireEvent.click(within(form).getByRole("button", { name: "Record reply" }));
+    await waitFor(() => {
+      expect(mocks.recordFirstResponse).toHaveBeenCalledWith("enquiry-1", { channel: "phone", respondedAt: "2026-09-24T08:50:00.000Z" });
+    });
     expect(await within(reply).findByText("An earlier reply is already recorded, so it stands.")).toBeDefined();
-    expect(within(reply).getByText("By email · Thu 24 Sep, 10:05")).toBeDefined();
+    expect(within(reply).getByText("In person · Thu 24 Sep, 09:40")).toBeDefined();
+  });
+
+  it("says so when a reply on its way fails after the desk has moved on", async () => {
+    const saving = deferred<RecordFirstResponseResult>();
+    mocks.recordFirstResponse.mockReturnValue(saving.promise);
+    render(<EnquiriesView replyVenueId="venue-1" />);
+    const reply = await openClient(3);
+    fireEvent.click(within(reply).getByRole("button", { name: "Record a reply" }));
+    fireEvent.click(within(reply).getByRole("radio", { name: "Email" }));
+    fireEvent.click(within(reply).getByRole("button", { name: "Record reply" }));
+    // Moves on to another enquiry while it is recorded.
+    fireEvent.click(row("Client 1"));
+    await screen.findByRole("heading", { name: "Client 1", level: 2 });
+    await act(async () => { saving.reject(new ApiError(409, "The enquiry changed.", "ENQUIRY_CHANGED")); await saving.promise.catch(() => undefined); });
+    await waitFor(() => { expect(mocks.addToast).toHaveBeenCalledWith("The reply to Client 3 could not be recorded", "error"); });
   });
 
   it("gives the server's reason for a refusal, keeps the form, and Escape closes the form, not the enquiry", async () => {

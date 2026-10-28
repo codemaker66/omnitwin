@@ -82,27 +82,39 @@ section for the venue's commercial team (`replyVenueOf` in
 `lib/role-capabilities.ts`, mirroring `isVenueCommercialMember`): it says when and
 how the venue first replied, and *Record a reply* posts to the route above with the
 channel chosen (never assumed) and either no time ("Just now") or a venue-local
-wall time ("Earlier"). A report later than the reply held is answered with the
-reply that stands, and the panel says an earlier reply stands. Who replied is the
+wall time ("Earlier"); once a reply is recorded only an earlier time is offered,
+since a later one can never replace it. A report no earlier than the reply held is
+answered with the reply that stands, and the panel says so. A save that fails after
+the person has moved to another enquiry is said in a toast. Who replied is the
 person recording it; naming a colleague is the API's (`respondedBy`), not yet the
 desk's. Nothing is sent to the client.
 
 **The reply-time alarm.** `GET /enquiries/reply-alarm` answers the caller's venue's
 booking enquiries still in `submitted` or `under_review` with no first reply
 `ENQUIRY_REPLY_ALARM_DEFAULT_HOURS` (24) wall-clock hours after they arrived (their
-first move to `submitted`, else creation), the longest-waiting first (at most
-`ENQUIRY_REPLY_ALARM_LIST_LIMIT`, with the full count), and `nextDueAt`, when the
-next waiting one will pass the mark. Requests (access, Venviewer) and seed
-fixtures are left out; only the venue's commercial team may read it (the floor, a
-customer, a platform admin acting for no venue: 403). The desk shows one line under
-its summary with *Open the longest unanswered*, a *No reply* mark on each flagged
-row, and the alarm in the panel's *First reply*. It reads the alarm when it opens,
-after any change made on it, and at `nextDueAt`; never on a timer of its own, so a
-desk left open does not keep the database awake. The venue's operating settings
-hold no reply threshold yet, so 24 hours is a named default for every venue; it
-counts nights and weekends, since business hours need the venue's staffed hours.
-The filter is served by `enquiries_venue_state_idx` (venue, state), so the alarm
-needs no index of its own.
+first move to `submitted`, else creation): how many, the one waiting longest
+(`longest`), the most recently flagged first (at most `ENQUIRY_REPLY_ALARM_LIST_LIMIT`,
+200, as the desk lists them newest first), `nextDueAt` (when the next waiting one
+will pass the mark) and `asOf` (the database's clock), all read in one read-only
+transaction so they share one `now()`. Requests (access, Venviewer), seed fixtures
+and enquiries that arrived before `ENQUIRY_REPLY_ALARM_FROM` (29 October 2026, the
+release that let the desk record an outside reply) are left out: before it no
+outside reply could be recorded, and most such enquiries could no longer be cleared
+(a reply over a week old is the admin's or manager's to record); the desk still
+lists them by age. Only the venue's commercial team may read it (the floor, a
+customer, a platform admin acting for no venue or holding a floor role: 403).
+
+The desk shows one line under its summary with *Open the longest unanswered*, a
+*No reply* mark on each flagged row, and the alarm in the panel's *First reply*. It
+reads the alarm when it opens, after a decision, a recorded reply or a reload made
+on it, a beat after `nextDueAt` (timed from `asOf`, so a fast browser clock cannot
+make it loop), when the desk is looked at again more than five minutes after the
+last read, and at least every six hours; a failed read keeps the alarm last read and
+is tried again after five minutes. Never on a short timer, so a desk left open does
+not keep the database awake. The venue's operating settings hold no reply threshold
+yet, so 24 hours is a named default for every venue; it counts nights and weekends,
+since business hours need the venue's staffed hours. The filter is served by
+`enquiries_venue_state_idx` (venue, state), so the alarm needs no index of its own.
 
 **Visits, not requests.** An opening at least 30 minutes after the last is a new
 visit (`PROPOSAL_VIEW_VISIT_GAP_MINUTES`), so the page's own refetches and a

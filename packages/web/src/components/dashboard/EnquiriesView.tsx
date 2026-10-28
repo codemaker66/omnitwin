@@ -228,6 +228,10 @@ export function EnquiriesView({
   const [alarmVersion, setAlarmVersion] = useState(0);
   const replyAlarm = useReplyAlarm(replyVenueId, alarmVersion);
   const [openingFlagged, setOpeningFlagged] = useState(false);
+  // The read "Open the longest unanswered" waits on; opening anything else,
+  // or leaving the desk, cancels it, so a late answer never takes the panel.
+  const flaggedReadRef = useRef<AbortController | null>(null);
+  useEffect(() => () => { flaggedReadRef.current?.abort(); }, []);
 
   useEffect(() => { selectedIdRef.current = selectedId; }, [selectedId]);
 
@@ -327,7 +331,10 @@ export function EnquiriesView({
     if (listRanDry) showMore();
   }, [listRanDry, showMore]);
 
-  const reloadList = (): void => { setReloadCount((count) => count + 1); };
+  const reloadList = (): void => {
+    setReloadCount((count) => count + 1);
+    setAlarmVersion((version) => version + 1);
+  };
 
   // When pre-selected via initialSelectedId, fetch the enquiry directly so
   // the panel can render regardless of the active stage filter.
@@ -486,6 +493,7 @@ export function EnquiriesView({
   })();
 
   const open = (enquiry: Enquiry): void => {
+    flaggedReadRef.current?.abort();
     setOpenedIndex(list.rows.findIndex((row) => row.id === enquiry.id));
     setSelectedId(enquiry.id);
     setOpenedEnquiry(enquiry);
@@ -567,6 +575,7 @@ export function EnquiriesView({
           applyUpdated(current);
           setCountsVersion((version) => version + 1);
           setHistoryVersion((version) => version + 1);
+          setAlarmVersion((version) => version + 1);
           if (stillOpen()) {
             setConfirming(null);
             setFailure(error.code === "NOT_A_BOOKING"
@@ -605,13 +614,20 @@ export function EnquiriesView({
       open(listed);
       return;
     }
+    flaggedReadRef.current?.abort();
+    const controller = new AbortController();
+    flaggedReadRef.current = controller;
     setOpeningFlagged(true);
     try {
-      open(await enquiriesApi.getEnquiry(id));
+      const enquiry = await enquiriesApi.getEnquiry(id, controller.signal);
+      if (!controller.signal.aborted) open(enquiry);
     } catch {
-      addToast("Failed to load enquiry", "error");
+      if (!controller.signal.aborted) addToast("Failed to load enquiry", "error");
     } finally {
-      setOpeningFlagged(false);
+      if (flaggedReadRef.current === controller) {
+        flaggedReadRef.current = null;
+        setOpeningFlagged(false);
+      }
     }
   };
 
@@ -702,7 +718,7 @@ export function EnquiriesView({
     nowMs,
   });
   const alarm = replyAlarm.alarm;
-  const longestFlagged = alarm?.enquiries[0] ?? null;
+  const longestFlagged = alarm?.longest ?? null;
   const alarmSummary = alarm === null ? null : replyAlarmSummary({
     overdue: alarm.overdue,
     thresholdHours: alarm.thresholdHours,

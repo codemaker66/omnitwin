@@ -117,8 +117,16 @@ export type RecordFirstResponseResult = z.infer<typeof RecordFirstResponseResult
 // ---------------------------------------------------------------------------
 
 export const ENQUIRY_REPLY_ALARM_DEFAULT_HOURS = 24;
-/** The longest-waiting enquiries the alarm names; the count covers them all. */
-export const ENQUIRY_REPLY_ALARM_LIST_LIMIT = 50;
+/** The alarm flags enquiries that arrived from this instant: the day the
+ *  desk could first record a reply made outside Venviewer. Before it, a reply
+ *  by phone or from the venue's own mailbox could not be recorded, so "no
+ *  reply recorded" said nothing about an older enquiry, and most of them
+ *  could no longer be cleared (a reply more than a week old is the venue's
+ *  admin's or manager's to record). The desk still lists them by age. */
+export const ENQUIRY_REPLY_ALARM_FROM = "2026-10-29T00:00:00.000Z";
+/** How many flagged enquiries the alarm names, the most recently flagged
+ *  first, as the desk lists them; the count covers them all. */
+export const ENQUIRY_REPLY_ALARM_LIST_LIMIT = 200;
 /** The stages in which an enquiry still waits on the venue: a decision is
  *  itself a reply, and a withdrawn or archived one waits on nobody. */
 export const ENQUIRY_REPLY_AWAITING_STATES = ["submitted", "under_review"] as const;
@@ -132,13 +140,17 @@ export type ReplyAlarmEnquiry = z.infer<typeof ReplyAlarmEnquirySchema>;
 
 export const ReplyAlarmSchema = z.object({
   thresholdHours: z.number().int().positive(),
+  /** The server's clock when the alarm was read: a reader times its next
+   *  read from this, never from its own clock. */
+  asOf: IsoInstantSchema,
   /** Every booking enquiry of the venue past the threshold with no reply. */
   overdue: z.number().int().nonnegative(),
-  /** The longest-waiting first, at most ENQUIRY_REPLY_ALARM_LIST_LIMIT. */
+  /** The one that has waited longest; null when none is past the threshold. */
+  longest: ReplyAlarmEnquirySchema.nullable(),
+  /** The most recently flagged first, at most ENQUIRY_REPLY_ALARM_LIST_LIMIT. */
   enquiries: z.array(ReplyAlarmEnquirySchema),
   /** When the next enquiry still inside the threshold passes it, if none of
-   *  them is answered first; null when none is waiting. A reader asks again
-   *  then instead of polling. */
+   *  them is answered first; null when none is waiting. */
   nextDueAt: IsoInstantSchema.nullable(),
 });
 export type ReplyAlarm = z.infer<typeof ReplyAlarmSchema>;

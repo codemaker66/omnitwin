@@ -3,8 +3,10 @@ import type { RecordFirstResponseResult, ReportedResponseChannel } from "@omnitw
 import { recordFirstResponse, type Enquiry } from "../../../api/enquiries.js";
 import { ApiError } from "../../../api/client.js";
 import { ActivityIndicator } from "../../shared/Activity.js";
+import { useToastStore } from "../../../stores/toast-store.js";
 import { msToWallInput, wallInputToMs } from "../../../pages/diary/lib/board-time.js";
 import { REPLY_CHANNEL_CHOICES, replyRecordLine, waitedFor } from "./reply-format.js";
+import { enquiryName } from "./EnquiryLedger.js";
 
 // ---------------------------------------------------------------------------
 // First reply: when and how the venue first answered, and, for the venue's
@@ -88,23 +90,34 @@ export function EnquiryReply({ enquiry, canRecord, overdueSinceMs, thresholdHour
       {canRecord && !recording && !replied && (
         <p className="enq-next__hint">For a reply made outside Venviewer: a call, an email from your own mailbox, a meeting.</p>
       )}
-      {recording && <ReplyForm enquiry={enquiry} onDone={finish} />}
+      {recording && <ReplyForm enquiry={enquiry} recordedAt={repliedAt} onDone={finish} />}
     </section>
   );
 }
 
-function ReplyForm({ enquiry, onDone }: {
+function ReplyForm({ enquiry, recordedAt, onDone }: {
   readonly enquiry: Enquiry;
+  /** The reply already recorded, if any: only an earlier one can replace it,
+   *  so "Just now" is not offered and the time starts from it. */
+  readonly recordedAt: string | null;
   readonly onDone: (result: RecordFirstResponseResult | null) => void;
 }): ReactElement {
   const legendId = useId();
   const whenId = useId();
   const firstChoiceRef = useRef<HTMLInputElement>(null);
+  const addToast = useToastStore((state) => state.addToast);
+  const recordedMs = recordedAt === null ? null : Date.parse(recordedAt);
   const [channel, setChannel] = useState<ReportedResponseChannel | null>(null);
-  const [when, setWhen] = useState<"now" | "earlier">("now");
-  const [earlier, setEarlier] = useState(() => msToWallInput(Date.now()));
+  const [when, setWhen] = useState<"now" | "earlier">(recordedMs === null ? "now" : "earlier");
+  const [earlier, setEarlier] = useState(() => msToWallInput(recordedMs ?? Date.now()));
   const [saving, setSaving] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
+  // A save still on its way when the person moves on still says how it ended.
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
 
   useEffect(() => { firstChoiceRef.current?.focus(); }, []);
 
@@ -125,6 +138,10 @@ function ReplyForm({ enquiry, onDone }: {
         setFailure("A reply cannot be later than now.");
         return;
       }
+      if (recordedMs !== null && ms >= recordedMs) {
+        setFailure("Choose a time earlier than the reply already recorded.");
+        return;
+      }
       respondedAt = new Date(ms).toISOString();
     }
     setSaving(true);
@@ -133,6 +150,10 @@ function ReplyForm({ enquiry, onDone }: {
       const result = await recordFirstResponse(enquiry.id, respondedAt === undefined ? { channel } : { channel, respondedAt });
       onDone(result);
     } catch (error) {
+      if (!mounted.current) {
+        addToast(`The reply to ${enquiryName(enquiry)} could not be recorded`, "error");
+        return;
+      }
       setSaving(false);
       setFailure(error instanceof ApiError && SAID_AS_IS.has(error.code)
         ? error.message
@@ -149,7 +170,7 @@ function ReplyForm({ enquiry, onDone }: {
 
   return (
     <div className="enq-confirm enq-reply__form" role="group" aria-labelledby={legendId} onKeyDown={onKeyDown}>
-      <p className="enq-confirm__question" id={legendId}>Record a reply</p>
+      <p className="enq-confirm__question" id={legendId}>{recordedMs === null ? "Record a reply" : "Record an earlier reply"}</p>
       <p className="enq-confirm__consequence">Only your team sees this. Nothing is sent to the client.</p>
       <fieldset className="enq-reply__choices" disabled={saving}>
         <legend>How did you reply?</legend>
@@ -163,14 +184,18 @@ function ReplyForm({ enquiry, onDone }: {
       </fieldset>
       <fieldset className="enq-reply__choices" disabled={saving}>
         <legend>When?</legend>
-        <label className="enq-reply__choice">
-          <input type="radio" name={`${legendId}-when`} checked={when === "now"} onChange={() => { setWhen("now"); setFailure(null); }} />
-          <span>Just now</span>
-        </label>
-        <label className="enq-reply__choice">
-          <input type="radio" name={`${legendId}-when`} checked={when === "earlier"} onChange={() => { setWhen("earlier"); setFailure(null); }} />
-          <span>Earlier</span>
-        </label>
+        {recordedMs === null && (
+          <>
+            <label className="enq-reply__choice">
+              <input type="radio" name={`${legendId}-when`} checked={when === "now"} onChange={() => { setWhen("now"); setFailure(null); }} />
+              <span>Just now</span>
+            </label>
+            <label className="enq-reply__choice">
+              <input type="radio" name={`${legendId}-when`} checked={when === "earlier"} onChange={() => { setWhen("earlier"); setFailure(null); }} />
+              <span>Earlier</span>
+            </label>
+          </>
+        )}
         {when === "earlier" && (
           <label className="enq-reply__time" htmlFor={whenId}>
             <span>Day and time (venue time)</span>
