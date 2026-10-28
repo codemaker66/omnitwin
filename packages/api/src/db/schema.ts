@@ -6162,7 +6162,10 @@ export const foundryVerifiedCheckpoints = pgTable("foundry_verified_checkpoints"
 // ---------------------------------------------------------------------------
 // Action log — G4 Slice 3 (03 §2). The append-only audit trail behind the
 // planner's Action envelope (migration 0059). Append-only by code contract:
-// no update/delete surface exists anywhere. `id` is the CLIENT action uuid
+// no update/delete surface exists anywhere, with one exception that 0059's
+// comment predates: the allergy-note retention pass blanks guests' allergy
+// notes in payload and inverse (services/dietary-retention.ts,
+// people-privacy-3), leaving the row. `id` is the CLIENT action uuid
 // (no default) so ON CONFLICT (id) DO NOTHING makes batch retries idempotent;
 // `ordinal` is the server-assigned read order (client clocks never order the
 // trail). `recorded_ts` is the operator's clock, `received_at` the server's —
