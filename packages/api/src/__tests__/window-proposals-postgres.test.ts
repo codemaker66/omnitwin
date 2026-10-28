@@ -151,28 +151,6 @@ describe.skipIf(target === undefined)("window proposals on migrated PostgreSQL",
     expect(holds).toHaveLength(1);
   });
 
-  it("keeps the decision date on a move while it still comes before the window, and sets a new one when it would not (supplier-requests-6)", async () => {
-    const f = await fixture();
-    const first = granted(await propose(f, f.client, "18:00", "23:00"));
-    const proposed = await stored(first.slot.bookingId);
-    if (proposed.decisionAt === null) throw new Error("expected a decision date");
-
-    // Later: the date already chosen still comes first, and stays.
-    granted(await propose(f, f.client, "19:00", "23:30", randomUUID()));
-    const later = await stored(first.slot.bookingId);
-    expect(later.decisionAt).toEqual(proposed.decisionAt);
-    expect(later.nextActionDueAt).toEqual(proposed.nextActionDueAt);
-
-    // Sooner than that date: a new date before the window, a day before doors.
-    const soonDay = new Date(Date.now() + 3 * 86_400_000).toISOString().slice(0, 10);
-    granted(await propose(f, f.client, "18:00", "23:00", randomUUID(), undefined, soonDay));
-    const sooner = await stored(first.slot.bookingId);
-    const soonStart = Date.parse(at("18:00", soonDay));
-    expect(proposed.decisionAt.getTime()).toBeGreaterThan(soonStart);
-    expect(sooner.decisionAt?.getTime()).toBe(soonStart - 86_400_000);
-    expect(sooner.nextActionDueAt).toEqual(sooner.decisionAt);
-  });
-
   it("admits a planner by their own link and the office at its venue; refuses manager, sales and hallkeeper", async () => {
     const f = await fixture();
     granted(await propose(f, f.planner, "12:00", "16:00"));
@@ -212,5 +190,27 @@ describe.skipIf(target === undefined)("window proposals on migrated PostgreSQL",
     expect(refused(await proposeWindowCore(db, f.client, randomUUID(), {
       spaceId: f.roomId, startsAt: at("18:00"), endsAt: at("23:00"), idempotencyKey: randomUUID(),
     })).status).toBe(404);
+  });
+
+  it("keeps the decision date on a move while it still comes before the window, and sets a new one when it would not (supplier-requests-6)", async () => {
+    const f = await fixture();
+    const first = granted(await propose(f, f.client, "18:00", "23:00"));
+    const proposed = await stored(first.slot.bookingId);
+    if (proposed.decisionAt === null) throw new Error("expected a decision date");
+
+    // Later: the date already chosen still comes first, and stays.
+    granted(await propose(f, f.client, "19:00", "23:30", randomUUID()));
+    const later = await stored(first.slot.bookingId);
+    expect(later.decisionAt).toEqual(proposed.decisionAt);
+    expect(later.nextActionDueAt).toEqual(proposed.nextActionDueAt);
+
+    // Sooner than that date: a new date before the window, a day before doors.
+    const soonDay = new Date(Date.now() + 3 * 86_400_000).toISOString().slice(0, 10);
+    granted(await propose(f, f.client, "18:00", "23:00", randomUUID(), undefined, soonDay));
+    const sooner = await stored(first.slot.bookingId);
+    const soonStart = Date.parse(at("18:00", soonDay));
+    expect(proposed.decisionAt.getTime()).toBeGreaterThan(soonStart);
+    expect(sooner.decisionAt?.getTime()).toBe(soonStart - 86_400_000);
+    expect(sooner.nextActionDueAt).toEqual(sooner.decisionAt);
   });
 });
