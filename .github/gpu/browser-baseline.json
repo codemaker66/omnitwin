@@ -774,11 +774,11 @@
     {
       "date": "2026-10-28",
       "reason": "A request step pressed with no connection (L9, goal 05 and goal 19's offline queue), route-mocked: the hallkeeper presses I’ll do it on the slot's card while the step cannot reach the house; the card says it is waiting to send and still says nobody owns it; the press survives a reload in the browser's own store and goes when the connection is back, every send the same step under the same key; and when someone else took it first the slot says so by name, the press is put away and is never sent again, with every label readable at 12 px and 4.5:1.",
-      "sourceCommit": "fa2deba8bf2da17176f666b650cf8719acc88b7b",
+      "sourceCommit": "2258b1518f667e3fa0ee321f42c8f081db0e36b7",
       "sourceFile": "packages/web/e2e/living-timetable-offline-steps.spec.ts",
-      "sourceFileGitBlobSha256": "7bd8d338f6b2234b1046c53048a1e88d4ab6f2075581365718edba43158c911f",
+      "sourceFileGitBlobSha256": "ac73103a9ca161404d74e63b2206fe6d6c3cafb010e60e9c9bf41cff9c329361",
       "inventoryCommand": "pnpm --filter @omnitwin/web exec playwright test e2e/living-timetable-offline-steps.spec.ts --list --project=chromium --update-snapshots=none --reporter=json",
-      "inventorySha256": "c5a82a4a3ab2ed44388dcd2205a5269f607c45367134ce75b7e9bb50f71bfae3",
+      "inventorySha256": "ce5e01429e3615f47d54c0759cc81a7dcc4074d6f2035c70b9b3957711aa1c44",
       "caseIds": [
         "3458cb52a1c58b716d7b-1e0c8e8cfb6cf207394e",
         "3458cb52a1c58b716d7b-2353530f81e2ff804d8a"
