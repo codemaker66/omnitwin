@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ESCAPE_ORDER,
+  closeOpenLayers,
   hasPlannerKeyListener,
   lastInputWasKeys,
   registerEscapeLayer,
@@ -336,5 +337,50 @@ describe("the keymap", () => {
     expect(hasPlannerKeyListener()).toBe(true);
     stop();
     expect(hasPlannerKeyListener()).toBe(false);
+  });
+});
+
+// T-680: chrome the person cleared away comes back on the last rung, so every
+// layer they can see (a dialog, an operation, a popover, a panel, the
+// selection) steps back first.
+describe("the chrome rung", () => {
+  it("is the last rung of the ladder", () => {
+    expect(ESCAPE_ORDER[ESCAPE_ORDER.length - 1]).toBe("chrome");
+  });
+
+  it("chrome steps back only after selection", () => {
+    const steps: string[] = [];
+    const open = new Set(["selection", "chrome"]);
+    // Registered first, so the order is the kind's, not the registration's.
+    layer("chrome", () => open.has("chrome"), () => { steps.push("chrome"); open.delete("chrome"); });
+    layer("selection", () => open.has("selection"), () => { steps.push("selection"); open.delete("selection"); });
+
+    press("Escape");
+    expect(steps).toEqual(["selection"]);
+    press("Escape");
+    expect(steps).toEqual(["selection", "chrome"]);
+  });
+
+  it("closeOpenLayers closes popovers and panels only", () => {
+    const closed: string[] = [];
+    for (const kind of ["modal", "operation", "popover", "panel", "selection", "chrome"] as const) {
+      layer(kind, () => !closed.includes(kind), () => { closed.push(kind); });
+    }
+
+    expect(closeOpenLayers(["popover", "panel"])).toBe(2);
+    expect(closed).toEqual(["popover", "panel"]);
+    expect(closeOpenLayers(["popover", "panel"])).toBe(0);
+  });
+
+  it("closeOpenLayers gives no focus back", () => {
+    const trigger = document.createElement("button");
+    const field = document.createElement("input");
+    document.body.append(trigger, field);
+    field.focus();
+    layer("panel", () => true, () => undefined, () => trigger);
+
+    closeOpenLayers(["panel"]);
+
+    expect(document.activeElement).toBe(field);
   });
 });

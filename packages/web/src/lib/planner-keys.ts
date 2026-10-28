@@ -17,8 +17,9 @@ import { isLayoutTimelineMutationLocked } from "./layout-timeline-preview-lock.j
 // Escape walks one stack of layers in a fixed order: a dialog that holds the
 // keyboard, then the operation in progress (placing, measuring, drawing, a
 // held hour, a typed value, Present), then the open popover, then the open
-// panel (focus goes back to the key that opened it), then the selection. One
-// press steps back exactly one layer. Esc never leaves Walk or the planner.
+// panel (focus goes back to the key that opened it), then the selection, and
+// last the chrome the person cleared away (T-680). One press steps back
+// exactly one layer. Esc never leaves Walk or the planner.
 //
 // The listener sits in the bubble phase and leaves any press a focused widget
 // has already claimed (a slider's arrows, a field's own Enter), and it only
@@ -31,9 +32,9 @@ import { isLayoutTimelineMutationLocked } from "./layout-timeline-preview-lock.j
  * goes first and alone (WCAG 1.4.13: it can be dismissed without moving the
  * pointer or focus, and that press does nothing else).
  */
-export type EscapeLayerKind = "tooltip" | "modal" | "operation" | "popover" | "panel" | "selection";
+export type EscapeLayerKind = "tooltip" | "modal" | "operation" | "popover" | "panel" | "selection" | "chrome";
 
-export const ESCAPE_ORDER: readonly EscapeLayerKind[] = ["tooltip", "modal", "operation", "popover", "panel", "selection"];
+export const ESCAPE_ORDER: readonly EscapeLayerKind[] = ["tooltip", "modal", "operation", "popover", "panel", "selection", "chrome"];
 
 export interface EscapeLayer {
   readonly kind: EscapeLayerKind;
@@ -227,6 +228,18 @@ function stepBack(event: KeyboardEvent): void {
   top.value.escape();
   const trigger = top.value.returnFocusTo?.() ?? null;
   if (trigger?.isConnected === true) trigger.focus({ preventScroll: true });
+}
+
+/**
+ * Steps back every open layer of these kinds, once each, in the ladder's order,
+ * and says how many it closed. Folding chrome away calls it for popovers and
+ * panels, so nothing stays open where the person can no longer see it. It
+ * gives no focus back: the person is acting somewhere else.
+ */
+export function closeOpenLayers(kinds: readonly EscapeLayerKind[]): number {
+  const closing = openLayers().filter((entry) => kinds.includes(entry.value.kind));
+  for (const entry of closing) entry.value.escape();
+  return closing.length;
 }
 
 function runShortcut(event: KeyboardEvent): void {
