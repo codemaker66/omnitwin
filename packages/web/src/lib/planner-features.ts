@@ -15,7 +15,7 @@
 interface PlannerFeatureSpec {
   /** The lane that builds it and decides when it is green. */
   readonly lane: "E" | "P";
-  /** The quality-of-life item it delivers: Q-NN in design/qol-pass.md, or CB-NN in planner-qol's craft backlog. */
+  /** The quality-of-life item it delivers (design/qol-pass.md). */
   readonly item: string;
   /** Whether everyone has it. */
   readonly on: boolean;
@@ -48,6 +48,12 @@ export const PLANNER_FEATURE_SPECS = {
   storeCounts: { lane: "E", item: "Q-14", on: false },
   /** A piece released on the rail goes back in store. */
   putBack: { lane: "E", item: "Q-15", on: false },
+  /**
+   * A plain click passes through a wall to the floor, so a deselect never takes
+   * a wall down; Alt-click hides one (decision 4). Off, any click that meets a
+   * wall first hides it.
+   */
+  wallClickAlt: { lane: "E", item: "D4", on: false },
   /** Line up puts several pieces' centres on one line. */
   lineUp: { lane: "E", item: "Q-18", on: false },
   /** Move on the caption, then a tap on the destination. */
@@ -56,12 +62,6 @@ export const PLANNER_FEATURE_SPECS = {
   tableSets: { lane: "E", item: "Q-08b", on: false },
   /** A card dropped on a selection replaces it. */
   replace: { lane: "E", item: "Q-16", on: false },
-  /**
-   * A plain click passes through a wall to the floor, so a deselect never takes
-   * a wall down; Alt-click hides one (decision 4). Off, any click that meets a
-   * wall first hides it.
-   */
-  wallClickAlt: { lane: "E", item: "CB-40", on: false },
 } as const satisfies Readonly<Record<string, PlannerFeatureSpec>>;
 
 export type PlannerFeature = keyof typeof PLANNER_FEATURE_SPECS;
