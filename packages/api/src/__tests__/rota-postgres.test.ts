@@ -573,6 +573,38 @@ describe.skipIf(testUrl === undefined)("the staff rota on isolated PostgreSQL", 
       expect((await pool.query("SELECT 1 FROM event_plan_notifications")).rowCount).toBe(0);
     });
 
+    it("will not publish over a check cleared while the week is being published, nor tell the person", async () => {
+      const made = await addShift({ staffMemberId: SALES_PERSON, startsAt: at(SATURDAY, "09:00"), endsAt: at(SATURDAY, "13:00") });
+      const id = made.shift?.id ?? "";
+      // Another manager clears Priya's check and has not yet committed.
+      const clearing = await pool.connect();
+      let committed = false;
+      try {
+        await clearing.query("BEGIN");
+        await clearing.query("UPDATE staff_members SET right_to_work_checked_on = NULL WHERE id = $1", [SALES_PERSON]);
+        const pending = call("POST", `/venues/${VENUE}/rota/publish`, { weekStart: WEEK, shifts: [{ id, revision: 1 }] });
+        // The publish holds the week's shifts and now waits on her row.
+        for (let tries = 0; ; tries += 1) {
+          const { rowCount } = await pool.query(
+            "SELECT 1 FROM pg_stat_activity WHERE application_name = $1 AND wait_event_type = 'Lock' AND query ILIKE '%staff_members%for share%'",
+            [fixtureSchema]);
+          if (rowCount !== null && rowCount > 0) break;
+          if (tries > 200) throw new Error("the publish never waited on the person");
+          await new Promise((done) => setTimeout(done, 10));
+        }
+        await clearing.query("COMMIT");
+        committed = true;
+        const refused = await pending;
+        expect(refused.statusCode).toBe(422);
+        expect(refused.code).toBe("ROTA_BLOCKED");
+      } finally {
+        if (!committed) await clearing.query("ROLLBACK");
+        clearing.release();
+      }
+      expect((await shiftRow(id))["status"]).toBe("draft");
+      expect((await pool.query("SELECT 1 FROM event_plan_notifications")).rowCount).toBe(0);
+    });
+
     it("says a published shift's missing check once it has been cleared, and still lets the shift be moved", async () => {
       const id = await publishedShift(MORAG);
       expect((await call("PATCH", `/venues/${VENUE}/rota/people/${MORAG}`, { rightToWorkCheckedOn: null, expectedRevision: 1 })).statusCode).toBe(200);

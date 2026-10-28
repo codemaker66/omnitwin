@@ -931,8 +931,12 @@ export async function publishRotaWeek(
     if (stale.length > 0) return { kind: "stale", shiftIds: stale };
 
     const personIds = [...new Set(rows.flatMap((row) => row.staffMemberId === null ? [] : [row.staffMemberId]))];
+    // FOR SHARE, as a shift edit reads its newcomer: a right-to-work check
+    // cleared while this publishes waits for it, and nobody is published
+    // over a check that has gone (admin-venues-1).
     const people = personIds.length === 0 ? [] : await tx.select().from(staffMembers)
-      .where(and(eq(staffMembers.venueId, venueId), inArray(staffMembers.id, personIds)));
+      .where(and(eq(staffMembers.venueId, venueId), inArray(staffMembers.id, personIds)))
+      .for("share");
     const findings = await findingsFor(tx, venueId, timeZone, people, { fromMs, toMs });
     const blocks = rows.flatMap((row) => rotaPublishBlocks(findings.get(row.id) ?? [])
       .map((finding) => ({ shiftId: row.id, message: finding.message })));
