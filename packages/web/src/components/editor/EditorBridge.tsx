@@ -137,6 +137,8 @@ function itemsMatch(a: readonly PlacedItem[], b: readonly EditorObject[]): boole
 /** One scene item against one editor object, across every mutable field. */
 function itemMatchesObject(pa: PlacedItem, eb: EditorObject): boolean {
   if (pa.id !== eb.id) return false;
+  // A piece can become another in place (Fill sets a reused chair as the event's chair), and must reach the save.
+  if (pa.catalogueItemId !== eb.assetDefinitionId) return false;
   if (pa.x !== eb.positionX || pa.y !== eb.positionY || pa.z !== eb.positionZ) return false;
   if (pa.rotationY !== eb.rotationY) return false;
   // scale round-trips (see editorToPlacedItem). Omitting it here would let a

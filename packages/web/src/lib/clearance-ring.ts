@@ -45,6 +45,7 @@ import {
   type Vec2,
 } from "./circulation.js";
 import { placedCirculationFootprints } from "./circulation-scene.js";
+import type { LayoutRect } from "./auto-layout.js";
 import { getCatalogueItem } from "./catalogue.js";
 import { isDiningTableItem } from "./furniture-semantics.js";
 import { createGhostWorld, obstacleName } from "./ghost-truth.js";
@@ -196,6 +197,8 @@ export interface LiveAisleOptions {
   readonly rule?: AisleRule;
   /** Who reads the gangway flag (lib/auto-fill gangwayFlag): a guest's words say the venue sees it with the layout. */
   readonly reader?: GangwayFlagReader;
+  /** The room's door clear spaces, as Fill keeps them, so the gangways are Fill's own. */
+  readonly doorSpaces?: readonly LayoutRect[];
 }
 
 function aisleMetres(gapM: number): string {
@@ -237,7 +240,7 @@ export function liveAisles(
   if (mine.length === 0) return [];
   const widthM = room.width / RENDER_SCALE;
   const lengthM = room.length / RENDER_SCALE;
-  const designated = designatedGangways(widthM, lengthM, options.exits ?? null, rule);
+  const designated = designatedGangways(widthM, lengthM, options.exits ?? null, rule, options.doorSpaces);
   const world = createGhostWorld(placedItems, room);
   const lines: AisleLine[] = [];
 

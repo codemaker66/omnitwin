@@ -1,6 +1,7 @@
-import { and, inArray, isNotNull, sql, type SQL } from "drizzle-orm";
+import { and, inArray, isNotNull, or, sql, type SQL } from "drizzle-orm";
 import { DIETARY_NOTE_RETENTION } from "@omnitwin/types";
 import {
+  actionLog,
   configurationSheetSnapshots,
   configurations,
   enquiries,
@@ -9,6 +10,7 @@ import {
 } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { sqlStateOf } from "./dietary-memory.js";
+import { NO_PIECE_NOTES, pieceNotesHeld, removeLapsedPieceNotes, type PieceNoteCounts } from "./piece-note-retention.js";
 
 // ---------------------------------------------------------------------------
 // Retention for guests' allergy notes (fix-first item 18).
@@ -22,8 +24,14 @@ import { sqlStateOf } from "./dietary-memory.js";
 // answer questions just after it, and not after that.
 //
 // The rule:
-//   - a layout linked to an event: the note is removed
-//     DIETARY_NOTE_DAYS_AFTER_EVENT days after the latest linked event ends;
+//   - a layout with a dated event: the note is removed
+//     DIETARY_NOTE_DAYS_AFTER_EVENT days after the latest one ends. The date
+//     is the later of the events the layout is linked to (or their live
+//     bookings) and the live bookings made from the enquiries filed with it.
+//     A client's own layout is never linked to an event (the link would give
+//     the client the event's schedule), so without the bookings the very
+//     layouts that show the consent wording kept the note for 24 months
+//     (release audit people-privacy-1);
 //   - a layout with no dated event: the note is removed
 //     DIETARY_NOTE_DAYS_WITHOUT_EVENT days after the layout last changed, the
 //     same 24 months the privacy policy gives an enquiry that did not become
@@ -32,10 +40,18 @@ import { sqlStateOf } from "./dietary-memory.js";
 //     preferred date still ahead or within the after-event period.
 // Only the free-text note goes. The counts per diet are not about anyone in
 // particular and stay with the layout and its sheets. A planner's note on a
-// single piece (placed_objects.metadata.notes, copied into the sheet's rows
-// and, since T-669, onto its plan) is not covered: it is an operational note
-// that can still mention an allergy ("Table 5: nut allergy"), and whether such
-// notes count as health text is an open decision, not a rule this job applies.
+// single piece ("Table 5: nut allergy") goes on the same date, from every
+// copy of it (services/piece-note-retention.ts, Blake's decision of
+// 19 October 2026).
+//
+// The action log (action_log) is append-only, with this one exception. An
+// Event details save logged the note in its payload and inverse, so the log
+// kept it with no end date (people-privacy-3). The planner and the log's
+// write route now log it blanked (redactAllergyNote in @omnitwin/types), and
+// this pass blanks it the same way in any row written before that, whatever
+// the layout's dates, because the audit trail never needs it. Only the text
+// goes: the row, its intent and the counts stay, and otherAllergiesRedacted:
+// true beside the blanked note records that something was removed.
 //
 // It runs every night in the scheduled cleanup (.github/workflows/cleanup.yml,
 // scripts/run-cleanup.ts), because the privacy policy and the planner promise
@@ -57,6 +73,7 @@ export const DIETARY_NOTE_DAYS_WITHOUT_EVENT = DIETARY_NOTE_RETENTION.daysWithou
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const NOTE_PATH = "{instructions,dietary,otherAllergies}";
+const REDACTED_MARK_PATH = "{instructions,dietary,otherAllergiesRedacted}";
 
 export interface DietaryRetentionOptions {
   readonly now?: Date;
@@ -70,23 +87,62 @@ export interface DietaryRetentionResult {
   readonly layouts: number;
   /** Event sheets whose copy was (or would be) removed. */
   readonly sheets: number;
+  /** Action log entries whose copy was (or would be) removed. */
+  readonly actionLog: number;
+  /** Planners' notes on single pieces, by where they were copied. */
+  readonly pieceNotes: PieceNoteCounts;
 }
 
-function hasNote(column: typeof configurations.metadata | typeof configurationSheetSnapshots.payload): SQL {
+type NoteColumn =
+  | typeof configurations.metadata
+  | typeof configurationSheetSnapshots.payload
+  | typeof actionLog.payload
+  | typeof actionLog.inverse;
+
+function hasNote(column: NoteColumn): SQL {
   return sql`coalesce(${column} #>> ${NOTE_PATH}, '') <> ''`;
 }
 
-/** The layouts whose note has outlived its purpose at `now`. */
+/** A logged payload or inverse with its note blanked and the removal
+ *  recorded, or as it is when it holds none (a null inverse included). */
+function redactedEntry(column: typeof actionLog.payload | typeof actionLog.inverse): SQL {
+  return sql`case when ${hasNote(column)}
+    then jsonb_set(jsonb_set(${column}, ${NOTE_PATH}, '""'::jsonb), ${REDACTED_MARK_PATH}, 'true'::jsonb)
+    else ${column} end`;
+}
+
+/** The layouts whose notes have outlived their purpose at `now` and that
+ *  still hold one: the allergy note, or a piece's note in any of its copies. */
 async function lapsedLayoutIds(db: Database, now: Date): Promise<readonly string[]> {
   const afterEvent = new Date(now.getTime() - DIETARY_NOTE_DAYS_AFTER_EVENT * DAY_MS);
   const withoutEvent = new Date(now.getTime() - DIETARY_NOTE_DAYS_WITHOUT_EVENT * DAY_MS);
-  const latestEventEnd = sql`(
-    select max(coalesce(${events.endsAt}, ${events.startsAt}))
+  // The latest event the layout is for: the events it is linked to (each at
+  // the later of its own end and its live bookings', in case its dates lag a
+  // move), and the live bookings made from the enquiries filed with it, at
+  // the later of the booking's end and its event's. greatest() and max()
+  // skip the missing ones. Tables inside these subqueries are aliased, so
+  // each column binds to the table meant, not the nearest with that name.
+  const linkedEventEnd = sql`(
+    select max(greatest(
+      coalesce(${events.endsAt}, ${events.startsAt}),
+      (select max(live."ends_at") from "bookings" as live
+        where live."event_id" = ${events.id} and live."deleted_at" is null
+          and live."status" = 'active' and live."kind" in ('hold', 'ink'))
+    ))
     from ${eventConfigurationLinks}
     join ${events} on ${events.id} = ${eventConfigurationLinks.eventId}
     where ${eventConfigurationLinks.configurationId} = ${configurations.id}
       and ${events.deletedAt} is null
   )`;
+  const enquiryBookingEnd = sql`(
+    select max(greatest(booked."ends_at", coalesce(bound."ends_at", bound."starts_at")))
+    from "enquiries" as asked
+    join "bookings" as booked on booked."enquiry_id" = asked."id"
+      and booked."deleted_at" is null and booked."status" = 'active' and booked."kind" in ('hold', 'ink')
+    left join "events" as bound on bound."id" = booked."event_id" and bound."deleted_at" is null
+    where asked."configuration_id" = ${configurations.id}
+  )`;
+  const latestEventEnd = sql`greatest(${linkedEventEnd}, ${enquiryBookingEnd})`;
   // An enquiry filed with this layout whose preferred date is still ahead, or
   // within the after-event period, means the layout is being planned for a
   // day that has not yet happened (a layout reused for next year's dinner,
@@ -114,6 +170,7 @@ async function lapsedLayoutIds(db: Database, now: Date): Promise<readonly string
           where ${configurationSheetSnapshots.configurationId} = ${configurations.id}
             and ${hasNote(configurationSheetSnapshots.payload)}
         )
+        or ${pieceNotesHeld(configurations.id)}
       )`,
     ));
   return rows.map((row) => row.id);
@@ -147,31 +204,40 @@ async function removeLapsed(db: Database, options: DietaryRetentionOptions): Pro
   const now = options.now ?? new Date();
   const dryRun = options.dryRun ?? false;
   const ids = await lapsedLayoutIds(db, now);
-  if (ids.length === 0) return { dryRun, layouts: 0, sheets: 0 };
-
-  const sheetNotes = and(inArray(configurationSheetSnapshots.configurationId, [...ids]), hasNote(configurationSheetSnapshots.payload));
+  const lapsed = ids.length === 0 ? null : {
+    layouts: and(inArray(configurations.id, [...ids]), isNotNull(configurations.metadata), hasNote(configurations.metadata)),
+    sheets: and(inArray(configurationSheetSnapshots.configurationId, [...ids]), hasNote(configurationSheetSnapshots.payload)),
+  };
+  // Every logged copy, whatever its layout's dates.
+  const logged = or(hasNote(actionLog.payload), hasNote(actionLog.inverse));
+  const pieceNotes = ids.length === 0 ? NO_PIECE_NOTES : await removeLapsedPieceNotes(db, ids, dryRun);
 
   if (dryRun) {
-    const layouts = await db.select({ id: configurations.id }).from(configurations)
-      .where(and(inArray(configurations.id, [...ids]), hasNote(configurations.metadata)));
-    const sheets = await db.select({ id: configurationSheetSnapshots.id }).from(configurationSheetSnapshots).where(sheetNotes);
-    return { dryRun, layouts: layouts.length, sheets: sheets.length };
+    const layouts = lapsed === null ? [] : await db.select({ id: configurations.id }).from(configurations).where(lapsed.layouts);
+    const sheets = lapsed === null ? [] : await db.select({ id: configurationSheetSnapshots.id }).from(configurationSheetSnapshots).where(lapsed.sheets);
+    const entries = await db.select({ id: actionLog.id }).from(actionLog).where(logged);
+    return { dryRun, layouts: layouts.length, sheets: sheets.length, actionLog: entries.length, pieceNotes };
   }
 
-  const clearedLayouts = await db.update(configurations)
+  const clearedLayouts = lapsed === null ? [] : await db.update(configurations)
     .set({ metadata: sql`jsonb_set(${configurations.metadata}, ${NOTE_PATH}, '""'::jsonb)` })
-    .where(and(inArray(configurations.id, [...ids]), isNotNull(configurations.metadata), hasNote(configurations.metadata)))
+    .where(lapsed.layouts)
     .returning({ id: configurations.id });
 
-  const clearedSheets = await db.update(configurationSheetSnapshots)
+  const clearedSheets = lapsed === null ? [] : await db.update(configurationSheetSnapshots)
     .set({
       payload: sql`jsonb_set(${configurationSheetSnapshots.payload}, ${NOTE_PATH}, '""'::jsonb)`,
       // A legacy row's public PDF address goes with the note; the sheet
       // renders again, without it, when someone signed in next opens it.
       pdfUrl: null,
     })
-    .where(sheetNotes)
+    .where(lapsed.sheets)
     .returning({ id: configurationSheetSnapshots.id });
 
-  return { dryRun, layouts: clearedLayouts.length, sheets: clearedSheets.length };
+  const clearedEntries = await db.update(actionLog)
+    .set({ payload: redactedEntry(actionLog.payload), inverse: redactedEntry(actionLog.inverse) })
+    .where(logged)
+    .returning({ id: actionLog.id });
+
+  return { dryRun, layouts: clearedLayouts.length, sheets: clearedSheets.length, actionLog: clearedEntries.length, pieceNotes };
 }

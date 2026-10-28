@@ -13,10 +13,12 @@ import {
   type GhostVerdict,
   type GhostWorld,
 } from "../lib/ghost-truth.js";
+import { plannerChairSlug } from "../lib/furniture-defaults.js";
 import { judgeCardAt, settledStamp } from "../lib/place-in-hand.js";
 import type { PlacedItem } from "../lib/placement.js";
 import { describeCard, judgesCard, seatsInHand, stampSetup, type CardParams } from "../lib/setup-cards.js";
 import { useGhostVerdictStore } from "../stores/ghost-verdict-store.js";
+import { usePlannerEventStore } from "../stores/planner-event-store.js";
 import { usePlacementStore } from "../stores/placement-store.js";
 import { useRoomDimensionsStore } from "../stores/room-dimensions-store.js";
 import { ConstraintViolationSkin } from "./ConstraintViolationSkin.js";
@@ -173,7 +175,9 @@ export function GhostSet({ params, warming, fromCardDrag, groupRef }: GhostSetPr
   }, []);
   useEffect(() => () => { hairline.dispose(); }, [hairline]);
   // The set about its own origin, turned as the piece in hand is turned: the commit's stamp, less its place.
-  const local = useMemo(() => stampSetup(params, { x: 0, z: 0 }, ghostRotation, ghostIds()), [params, ghostRotation]);
+  // Its seats are the event's chair, as the commit's will be.
+  const chairSlug = usePlannerEventStore((state) => plannerChairSlug(state.eventKind));
+  const local = useMemo(() => stampSetup(params, { x: 0, z: 0 }, ghostRotation, ghostIds(), chairSlug), [params, ghostRotation, chairSlug]);
   const pieces = useMemo(() => local.flatMap((piece) => {
     const item = getCatalogueItem(piece.catalogueItemId);
     return item === undefined ? [] : [{ piece, item }];
@@ -188,13 +192,13 @@ export function GhostSet({ params, warming, fromCardDrag, groupRef }: GhostSetPr
   const world = useRef<{ placedItems: readonly PlacedItem[] | null; room: SpaceDimensions | null; world: GhostWorld | null }>({ placedItems: null, room: null, world: null });
   const pending = useRef<SetPose | null>(null);
 
-  // A new card starts with no history.
+  // A new card starts with no history; so does a new chair, when the event changes with the card in hand.
   useEffect(() => {
     judged.current = { key: "", verdict: null };
     setView({ state: "fits", tag: ghostTag(params, null), chip: null, blockingIds: [] });
     invalidate();
     return () => { useGhostVerdictStore.getState().setVerdict(null); };
-  }, [params, invalidate]);
+  }, [params, chairSlug, invalidate]);
 
   // The chip waits 80 ms of continuous refusal, so a sweep across a table never flashes it; new
   // words within the same refusal change it in place.

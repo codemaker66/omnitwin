@@ -1,7 +1,7 @@
 import { toRenderSpace, toRealWorld, GRAND_HALL_RENDER_DIMENSIONS } from "../constants/scale.js";
 import type { LayoutSnapshotAssetDefinition, SpaceDimensions } from "@omnitwin/types";
 import { getCatalogueItem, getCatalogueItemBySlug } from "./catalogue.js";
-import { DEFAULT_PLANNER_CHAIR_SLUG } from "./furniture-defaults.js";
+import { plannerChairSlug } from "./furniture-defaults.js";
 import type { CatalogueItem } from "./catalogue.js";
 import { normalizeFurnitureScale } from "./furniture-scale.js";
 import {
@@ -235,7 +235,7 @@ export function snapToWallEdge(
   rotationY: number,
   roomDims: SpaceDimensions = GRAND_HALL_RENDER_DIMENSIONS,
   scale?: number,
-  chairFootprint: Pick<CatalogueItem, "width" | "depth"> | undefined = getCatalogueItemBySlug(DEFAULT_PLANNER_CHAIR_SLUG),
+  chairFootprint: Pick<CatalogueItem, "width" | "depth"> | undefined = getCatalogueItemBySlug(plannerChairSlug()),
 ): { readonly x: number; readonly z: number } {
   const halfRoomW = roomDims.width / 2;
   const halfRoomL = roomDims.length / 2;

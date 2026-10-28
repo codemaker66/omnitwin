@@ -19,7 +19,7 @@ import {
 } from "../../../api/rota.js";
 import { ActivityIndicator } from "../../shared/Activity.js";
 import {
-  draftFromShift, draftInstants, nameList, noticeSentence, prefillShift, shiftTimes, suggestedBreak,
+  draftFromShift, draftInstants, draftMinutes, nameList, noticeSentence, prefillShift, shiftTimes, suggestedBreak,
   type DayFunctions, type FunctionLine, type ShiftDraft,
 } from "./rota-format.js";
 
@@ -43,17 +43,6 @@ function warningCode(issue: RotaIssue): RotaWarningCode | null {
 
 function sameDraft(left: ShiftDraft, right: ShiftDraft): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
-}
-
-function workMinutes(draft: ShiftDraft): number | null {
-  const match = (clock: string): number | null => {
-    const found = /^(\d{2}):(\d{2})$/u.exec(clock);
-    return found === null ? null : Number(found[1]) * 60 + Number(found[2]);
-  };
-  const start = match(draft.start);
-  const end = match(draft.end);
-  if (start === null || end === null) return null;
-  return (end <= start ? end + 1440 : end) - start;
 }
 
 /**
@@ -123,7 +112,7 @@ export function ShiftEditor({
   const person: StaffRecord | undefined = draft.staffMemberId === null ? undefined : records.get(draft.staffMemberId);
   const originalPerson = shift?.staffMemberId === null || shift === null ? undefined : records.get(shift.staffMemberId);
   const under18 = person !== undefined && rotaIsUnder18On(person.turns18On, draft.date);
-  const minutes = workMinutes(draft);
+  const minutes = draftMinutes(draft, tz);
   const instants = draftInstants(draft, tz);
   const breakValid = minutes !== null && draft.breakMinutes >= 0 && draft.breakMinutes < minutes;
   const dirty = shift === null || !sameDraft(draft, initial);
@@ -163,9 +152,9 @@ export function ShiftEditor({
   const changeTimes = (change: Partial<Pick<ShiftDraft, "start" | "end">>): void => {
     setTimesTouched(true);
     const next = { ...draft, ...change };
-    const worked = workMinutes(next);
+    const worked = draftMinutes(next, tz);
     // Keep the break the law asks for in step while nobody has chosen one.
-    const breakMinutes = worked !== null && draft.breakMinutes === suggestedBreak(workMinutes(draft) ?? 0, under18)
+    const breakMinutes = worked !== null && draft.breakMinutes === suggestedBreak(draftMinutes(draft, tz) ?? 0, under18)
       ? suggestedBreak(worked, under18) : draft.breakMinutes;
     update({ ...change, breakMinutes });
   };

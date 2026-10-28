@@ -7,7 +7,7 @@ import type { PlacedItem } from "./placement.js";
 import { normalizeFurnitureScale } from "./furniture-scale.js";
 import { isDiningTableItem } from "./furniture-semantics.js";
 import { isSceneFurniturePlacement } from "./table-dressing.js";
-import { DEFAULT_PLANNER_CHAIR_SLUG } from "./furniture-defaults.js";
+import { plannerChairFor, plannerChairSlug } from "./furniture-defaults.js";
 
 // ---------------------------------------------------------------------------
 // Table group — geometry-driven seating arrangement
@@ -63,7 +63,7 @@ function rectSeatCapacity(table: CatalogueItem, chair: ChairFootprint, scale: nu
  */
 export function seatCapacity(table: CatalogueItem, scale?: number, chairFootprint?: ChairFootprint): number {
   if (!isDiningTableItem(table) || table.tableShape === null) return 0;
-  const chair = chairFootprint ?? getCatalogueItemBySlug(DEFAULT_PLANNER_CHAIR_SLUG);
+  const chair = chairFootprint ?? getCatalogueItemBySlug(plannerChairSlug());
   if (chair === undefined) return 0;
   const resolvedScale = normalizeFurnitureScale(scale);
   return table.tableShape === "round"
@@ -72,7 +72,9 @@ export function seatCapacity(table: CatalogueItem, scale?: number, chairFootprin
 }
 
 // ---------------------------------------------------------------------------
-// Chair position computation (pure)
+// Chair position computation: pure but for the chair, which defaults to the
+// event's (plannerChairSlug reads the planner-event store), so a memo that
+// calls these without naming the chair must depend on the event.
 // ---------------------------------------------------------------------------
 
 export interface ChairPlacement {
@@ -105,7 +107,7 @@ export function computeChairPositions(
 ): readonly ChairPlacement[] {
   if (chairCount <= 0) return [];
 
-  const chairItem = chairFootprint ?? getCatalogueItemBySlug(DEFAULT_PLANNER_CHAIR_SLUG);
+  const chairItem = chairFootprint ?? getCatalogueItemBySlug(plannerChairSlug());
   if (chairItem === undefined) return [];
 
   // Never place more chairs than physically fit — clamp rather than overlap.
@@ -236,6 +238,7 @@ function computeRectChairPositions(
  * All items share the same groupId.
  *
  * @param y - Vertical position (e.g. on top of a platform). Default 0.
+ * @param chairSlug - The chair each seat gets; the event's (plannerChairSlug) unless named.
  * @returns Array of PlacedItems (table first, then chairs).
  */
 export function createTableGroup(
@@ -247,6 +250,7 @@ export function createTableGroup(
   y: number = 0,
   newId: () => string = generatePlacedId,
   chairSide: "around" | "back" = "around",
+  chairSlug: string = plannerChairSlug(),
 ): readonly PlacedItem[] {
   const tableItem = getCatalogueItem(catalogueItemId);
   if (
@@ -254,16 +258,17 @@ export function createTableGroup(
     || !isDiningTableItem(tableItem)
     || tableItem.tableShape === null
   ) return [];
-  const chairItem = getCatalogueItemBySlug(DEFAULT_PLANNER_CHAIR_SLUG);
+  const chairItem = getCatalogueItemBySlug(chairSlug);
   if (chairItem === undefined) return [];
 
   const groupId = newId(); // Reuse ID generator for group IDs
 
   const table = createPlacedItem(catalogueItemId, tableX, tableZ, tableRotationY, groupId, y, newId());
 
+  // The chairs are spaced by the chair they are, not by whichever the event would set.
   const chairPositions = chairSide === "back"
-    ? computeSideChairPositions(tableX, tableZ, tableItem, tableRotationY, chairCount)
-    : computeChairPositions(tableX, tableZ, tableItem, tableRotationY, chairCount);
+    ? computeSideChairPositions(tableX, tableZ, tableItem, tableRotationY, chairCount, undefined, chairItem)
+    : computeChairPositions(tableX, tableZ, tableItem, tableRotationY, chairCount, undefined, chairItem);
   const chairs = chairPositions.map((pos) =>
     createPlacedItem(chairItem.id, pos.x, pos.z, pos.rotationY, groupId, y, newId()),
   );
@@ -283,9 +288,10 @@ export function computeSideChairPositions(
   tableRotY: number,
   chairCount: number,
   tableScale?: number,
+  chairFootprint?: ChairFootprint,
 ): readonly ChairPlacement[] {
   if (!isDiningTableItem(tableItem) || tableItem.tableShape !== "rectangular" || chairCount <= 0) return [];
-  const chair = getCatalogueItemBySlug(DEFAULT_PLANNER_CHAIR_SLUG);
+  const chair = chairFootprint ?? getCatalogueItemBySlug(plannerChairSlug());
   if (chair === undefined) return [];
   const scale = normalizeFurnitureScale(tableScale);
   const perSide = Math.max(0, Math.floor((tableItem.width * scale) / seatPitch(chair)));
@@ -330,11 +336,11 @@ export function rearrangeTableGroup(
     || !isDiningTableItem(tableItem)
     || tableItem.tableShape === null
   ) return [...placedItems];
-  const chairItem = getCatalogueItemBySlug(DEFAULT_PLANNER_CHAIR_SLUG);
+  const chairItem = getCatalogueItemBySlug(newSeatChairSlug(table, placedItems));
   if (chairItem === undefined) return [...placedItems];
 
   const groupId = table.groupId;
-  // The default applies only to new slots. Existing slots retain their exact
+  // New slots take the table's own chair. Existing slots retain their exact
   // asset identity, including groups mixing legacy, imported and scaled chairs.
   // Only this table's own chairs are re-rung: a group made with Group can hold
   // other tables and their chairs, and any other piece, which all stay.
@@ -347,7 +353,7 @@ export function rearrangeTableGroup(
   // Compute new chair positions without creating a fresh groupId; a top
   // table's trestle keeps its chairs along its back.
   const chairPositions = tableChairSide(table, placedItems) === "back"
-    ? computeSideChairPositions(table.x, table.z, tableItem, table.rotationY, newChairCount, table.scale)
+    ? computeSideChairPositions(table.x, table.z, tableItem, table.rotationY, newChairCount, table.scale, footprint)
     : computeChairPositions(
       table.x,
       table.z,
@@ -436,16 +442,45 @@ export function ungroupedKeepingTables(
   });
 }
 
-/** Conservative dimensions of saved chairs, including the default only for new slots. */
+/**
+ * The chair a new seat at this table gets. A table keeps its own chairs: a new
+ * seat is the planner's chair most of its seats already are (the first seen,
+ * on a tie), so a seat added to a Turini round at a wedding is a Turini, and
+ * so is one added to a round of the venue's pink chairs (plannerChairFor). A
+ * table with none of the planner's chairs (no chairs, or only legacy and
+ * imported ones, which are kept but never copied) takes the event's
+ * (plannerChairSlug).
+ */
+export function newSeatChairSlug(table: PlacedItem, placedItems: readonly PlacedItem[]): string {
+  const counts = new Map<string, number>();
+  // Its own chairs (tableOwnChairs), not its group's: a group made with Group can hold another table's.
+  for (const seat of tableOwnChairs(table, placedItems)) {
+    const slug = getCatalogueItem(seat.catalogueItemId)?.slug;
+    const chair = slug === undefined ? null : plannerChairFor(slug);
+    if (chair === null) continue;
+    counts.set(chair, (counts.get(chair) ?? 0) + 1);
+  }
+  let chosen: string | null = null;
+  let most = 0;
+  for (const [slug, count] of counts) {
+    if (count > most) {
+      chosen = slug;
+      most = count;
+    }
+  }
+  return chosen ?? plannerChairSlug();
+}
+
+/** Conservative dimensions of saved chairs, including the chair new slots get (newSeatChairSlug). */
 export function tableGroupChairFootprint(
   table: PlacedItem,
   placedItems: readonly PlacedItem[],
   includeNewChairs: boolean,
 ): ChairFootprint {
-  const defaultChair = getCatalogueItemBySlug(DEFAULT_PLANNER_CHAIR_SLUG);
+  const newChair = includeNewChairs ? getCatalogueItemBySlug(newSeatChairSlug(table, placedItems)) : undefined;
   const footprint = {
-    width: includeNewChairs ? defaultChair?.width ?? 0 : 0,
-    depth: includeNewChairs ? defaultChair?.depth ?? 0 : 0,
+    width: newChair?.width ?? 0,
+    depth: newChair?.depth ?? 0,
   };
   for (const placed of tableOwnChairs(table, placedItems)) {
     const catalogue = getCatalogueItem(placed.catalogueItemId);
@@ -477,12 +512,12 @@ export function tableChairSide(table: PlacedItem, placedItems: readonly PlacedIt
   return chairs > 0 ? "back" : "around";
 }
 
-/** Editing retains existing assets; an increased count must also fit new Turini chairs. */
+/** Editing retains existing assets; an increased count must also fit the chairs new seats get (newSeatChairSlug). */
 export function tableGroupSeatCapacity(table: PlacedItem, placedItems: readonly PlacedItem[]): number {
   const catalogue = getCatalogueItem(table.catalogueItemId);
   if (catalogue === undefined) return 0;
   if (tableChairSide(table, placedItems) === "back") {
-    return computeSideChairPositions(0, 0, catalogue, 0, Number.MAX_SAFE_INTEGER, table.scale).length;
+    return computeSideChairPositions(0, 0, catalogue, 0, Number.MAX_SAFE_INTEGER, table.scale, tableGroupChairFootprint(table, placedItems, true)).length;
   }
   const existingCount = tableOwnChairs(table, placedItems).length;
   const existingCapacity = seatCapacity(catalogue, table.scale, tableGroupChairFootprint(table, placedItems, false));
@@ -491,12 +526,12 @@ export function tableGroupSeatCapacity(table: PlacedItem, placedItems: readonly 
 }
 
 /** Complete occupied envelope in metres, so layout aisles run between chair backs. */
-export function tableGroupPlanningFootprint(table: CatalogueItem, chairCount: number): ChairFootprint {
+export function tableGroupPlanningFootprint(table: CatalogueItem, chairCount: number, chairSlug: string = plannerChairSlug()): ChairFootprint {
   let halfWidth = toRenderSpace(table.width) / 2;
   let halfDepth = toRenderSpace(table.depth) / 2;
-  const chair = getCatalogueItemBySlug(DEFAULT_PLANNER_CHAIR_SLUG);
+  const chair = getCatalogueItemBySlug(chairSlug);
   if (chair !== undefined) {
-    for (const position of computeChairPositions(0, 0, table, 0, chairCount)) {
+    for (const position of computeChairPositions(0, 0, table, 0, chairCount, undefined, chair)) {
       const extent = computeRotatedFootprint(chair, position.rotationY);
       halfWidth = Math.max(halfWidth, Math.abs(position.x) + extent.halfW);
       halfDepth = Math.max(halfDepth, Math.abs(position.z) + extent.halfD);
@@ -512,9 +547,9 @@ export function tableGroupPlanningFootprint(table: CatalogueItem, chairCount: nu
  * and its corners half a chair-width either side. Layout spacing between
  * rounds is measured between these circles.
  */
-export function tableGroupPlanningRadius(table: CatalogueItem, chairCount: number): number {
+export function tableGroupPlanningRadius(table: CatalogueItem, chairCount: number, chairSlug: string = plannerChairSlug()): number {
   const tableRadius = table.width / 2;
-  const chair = getCatalogueItemBySlug(DEFAULT_PLANNER_CHAIR_SLUG);
+  const chair = getCatalogueItemBySlug(chairSlug);
   if (chair === undefined || table.tableShape !== "round" || chairCount <= 0) return tableRadius;
   return Math.max(tableRadius, Math.hypot(tableRadius + CHAIR_GAP_M + chair.depth, chair.width / 2));
 }
@@ -522,10 +557,11 @@ export function tableGroupPlanningRadius(table: CatalogueItem, chairCount: numbe
 /**
  * The seats a dining table is set for at a banquet: `seatsFor`'s default
  * (seat truth, card-dock spec §17.2), never more than fit around it. A table
- * seat truth does not know is set for as many as fit.
+ * seat truth does not know is set for as many as fit. Fit is judged with the
+ * chair named, or the event's.
  */
-export function banquetSeatsPerTable(table: CatalogueItem): number {
-  const fit = seatCapacity(table);
+export function banquetSeatsPerTable(table: CatalogueItem, chairSlug?: string): number {
+  const fit = seatCapacity(table, undefined, chairSlug === undefined ? undefined : getCatalogueItemBySlug(chairSlug));
   if (fit === 0) return 0;
   return Math.max(1, Math.min(fit, seatsFor(table)?.default ?? fit));
 }

@@ -46,12 +46,29 @@ import {
   isTableDressingApplicator,
 } from "../lib/table-dressing.js";
 import { isLayoutTimelineMutationLocked } from "../lib/layout-timeline-preview-lock.js";
+import { doorKeepOuts, keptClearLine, type DoorClearSpace } from "../lib/door-clear-spaces.js";
+import { doorsBlockedBy } from "../lib/keep-doors-clear.js";
+import type { LayoutRect } from "../lib/auto-layout.js";
+import { useDoorClearSpaceStore } from "./door-clear-space-store.js";
 
 // ---------------------------------------------------------------------------
 // Placement store — manages placed furniture and ghost state. Undo/redo for
 // placement changes lives on the editor-store history timeline; EditorBridge
 // mirrors placedItems into editor objects (and back on undo).
+//
+// Doors (Blake, 28 Oct 2026, revising 27 Oct's "Keep them clear
+// automatically": "keep firedoors clean. let people place tables within the
+// red zone but have a warning on it (an aesthetic warning of some kind, not
+// something annoying or makes it look bad)"): the automatic layouts (Fill,
+// the seat shortfall, the chair brush) keep the open room's door clear
+// spaces; a piece placed by hand stands where it was put, and the floor and
+// DoorClearNotice say quietly that it is in front of a door.
 // ---------------------------------------------------------------------------
+
+/** The open room's door clear spaces as the layout engines' keep-outs; none when its doors are not recorded. */
+function roomDoorKeepOuts(): readonly LayoutRect[] {
+  return doorKeepOuts(useDoorClearSpaceStore.getState().spaces);
+}
 
 function candidateSurfaceHeight(
   catalogueItemId: string,
@@ -342,11 +359,23 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
       );
       return createPlacedItem(catalogueItemId, point.x, point.z, point.rotationY, null, surfaceY);
     });
-    if (newItems.length === 0) return [];
-    const next = [...state.placedItems, ...newItems];
+    // A row brushed across a doorway leaves the door's clear space empty.
+    const spaces = useDoorClearSpaceStore.getState().spaces;
+    const doorsKept = new Set<DoorClearSpace>();
+    const clearItems = newItems.filter((item) => {
+      const doors = doorsBlockedBy(item, spaces);
+      for (const door of doors) doorsKept.add(door);
+      return doors.length === 0;
+    });
+    if (clearItems.length === 0) {
+      if (doorsKept.size > 0) postPlacementNotice(keptClearLine(spaces.filter((space) => doorsKept.has(space))));
+      return [];
+    }
+    const next = [...state.placedItems, ...clearItems];
     if (refusedByStore(state.placedItems, next)) return [];
     set({ placedItems: next });
-    const ids = newItems.map((item) => item.id);
+    if (doorsKept.size > 0) postPlacementNotice(keptClearLine(spaces.filter((space) => doorsKept.has(space))));
+    const ids = clearItems.map((item) => item.id);
     announcePlaced(ids);
     return ids;
   },
@@ -775,6 +804,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     // Fill over the layout (Q-10): only round groups of this kind are set anew, at the gangways' design;
     // every other piece stays exactly where it is, ids and all, and keeps the aisle rule round it.
     if (plannerFeatureEnabled("fillKeepOuts")) {
+      const doorSpaces = roomDoorKeepOuts();
       const fill = planRoomFill({
         table: tableItem,
         seatsPerTable: chairsPerTable,
@@ -783,9 +813,12 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
         roomLengthM: toRealWorld(dims.length),
         exits,
         rule: FILL_AISLE_RULE,
+        // The same doors the prompt's preview kept clear (AutoFillPrompt), so what it said is what lands.
+        doorSpaces,
       }, state.placedItems);
       if (fill === null) return null;
-      const refilled = refillPieces(state.placedItems, fill.refillIds, fill.plan);
+      // A kept chair the planner never sets takes the plan's chair where it would reach a door.
+      const refilled = refillPieces(state.placedItems, fill.refillIds, fill.plan, undefined, { doorSpaces });
       if (refilled.length === 0) return null;
       const kept = state.placedItems.filter((item) => !fill.refillIds.has(item.id));
       // The new tables take the lowest numbers the kept ones leave free (Q-46).
@@ -800,7 +833,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     }
     // Room dimensions are render-space; the plan works in metres. Spacing runs
     // between the backs of the chairs (lib/auto-fill).
-    const plan = planBanquetFill(tableItem, targetGuests, chairsPerTable, toRealWorld(dims.width), toRealWorld(dims.length));
+    const plan = planBanquetFill(tableItem, targetGuests, chairsPerTable, toRealWorld(dims.width), toRealWorld(dims.length), { doorSpaces: roomDoorKeepOuts() });
     if (plan === null) return null;
 
     // Map each planned table (metres, room-centred) back to render space and
@@ -835,7 +868,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
 
     const dims = useRoomDimensionsStore.getState().dimensions;
     // Room dimensions are render-space; the plan works in metres.
-    const plan = planTheatreFill(chairItem, targetGuests, toRealWorld(dims.width), toRealWorld(dims.length));
+    const plan = planTheatreFill(chairItem, targetGuests, toRealWorld(dims.width), toRealWorld(dims.length), { doorSpaces: roomDoorKeepOuts() });
     if (plan === null) return null;
 
     // Each planned seat (metres, room-centred, facing the stage) → a floor-level
@@ -860,6 +893,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
       guests,
       roomWidthM: toRealWorld(dims.width),
       roomLengthM: toRealWorld(dims.length),
+      doorSpaces: roomDoorKeepOuts(),
     });
     if (fix === null) return null;
     // One write, so the editor history records one step and one undo takes it back.
