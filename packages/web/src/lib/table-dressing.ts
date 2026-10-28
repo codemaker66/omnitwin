@@ -10,6 +10,9 @@ export const TABLE_CLOTH_COLORS: Record<TableClothStyle, string> = {
   white: "#f4efe6",
 };
 
+/** A settled cloth's opacity: the static TableClothMesh's, and where every arriving cloth (drape or spiral) ends. */
+export const TABLE_CLOTH_OPACITY = 0.78;
+
 const TABLE_DRESSING_APPLICATOR_SLUGS: ReadonlySet<string> = new Set([
   "black-table-cloth",
   "white-table-cloth",

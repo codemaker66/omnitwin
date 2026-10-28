@@ -1,4 +1,4 @@
-import { useRef, useMemo, useEffect } from "react";
+import { useRef, useMemo, useEffect, useLayoutEffect, useState } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import {
   BufferGeometry,
@@ -16,10 +16,37 @@ import {
   computeRectClothGeometry,
   CLOTH_COLOR,
 } from "../../lib/cloth-geometry.js";
+import {
+  CLOTH_DRAPE_LIFT,
+  claimClothDrapeSlot,
+  clothAnimationFor,
+  clothDrapeDelaySeconds,
+  clothDrapePose,
+  createClothDrapePose,
+  type ClothAnimation,
+  type ClothDrapePose,
+} from "../../lib/cloth-drape.js";
+import { plannerFeatureEnabled } from "../../lib/planner-features.js";
+import { prefersReducedMotion } from "../../lib/reduced-motion.js";
+import { TABLE_CLOTH_OPACITY } from "../../lib/table-dressing.js";
+import { currentFurniturePresentation } from "../../floor/presentation-channel.js";
+import { useBookmarkStore } from "../../stores/bookmark-store.js";
 import { noClipPlanes } from "../SectionPlane.js";
 
 // ---------------------------------------------------------------------------
-// AnimatedTableCloth — cinematic cloth placement animation
+// AnimatedTableCloth — how a newly clothed table's cloth goes on
+// ---------------------------------------------------------------------------
+//
+// Chosen once, as the cloth goes on (lib/cloth-drape.ts, Blake's decision 3):
+//
+//   - both keys off: the spiral below, as it has always been;
+//   - `clothDrape`: the 450 ms drape, except while Present or the showcase is
+//     playing, which keep the spiral;
+//   - `clothDrapeOnly`: the drape everywhere; it wins over `clothDrape`;
+//   - under either key, reduced motion: the cloth is there at once.
+//
+// ---------------------------------------------------------------------------
+// The spiral — cinematic cloth placement animation
 // ---------------------------------------------------------------------------
 //
 // Five overlapping phases create a Hollywood-quality magical effect:
@@ -159,7 +186,7 @@ export function computeSpiralRotation(t: number): number {
  */
 export function computeOpacity(t: number): number {
   const fadeT = phaseT(t, 0, 0.15);
-  return 0.78 * easeInCubic(fadeT);
+  return TABLE_CLOTH_OPACITY * easeInCubic(fadeT);
 }
 
 /**
@@ -254,7 +281,7 @@ export function applyWaveRipple(
 }
 
 // ---------------------------------------------------------------------------
-// Component
+// Components
 // ---------------------------------------------------------------------------
 
 interface AnimatedTableClothProps {
@@ -265,12 +292,152 @@ interface AnimatedTableClothProps {
 }
 
 /**
+ * Whether the room is being presented as a cloth goes on. Two signals, both
+ * the ones the scene itself obeys: the bookmark store's `tour`, the showcase
+ * tour that the planner's Present plays (CameraRig hands it the camera while
+ * it is set and it is cleared at its end or on Escape), and the furniture
+ * presentation channel, which is set exactly while a reveal (the Grand
+ * Assembly, which Present replays) draws the furniture. The showcase pages
+ * draw no placed furniture, so the address would never tell.
+ */
+function roomPresenting(): boolean {
+  return useBookmarkStore.getState().tour !== null || currentFurniturePresentation() !== null;
+}
+
+function chooseClothAnimation(): ClothAnimation {
+  return clothAnimationFor({
+    clothDrape: plannerFeatureEnabled("clothDrape"),
+    clothDrapeOnly: plannerFeatureEnabled("clothDrapeOnly"),
+    presenting: roomPresenting(),
+    reducedMotion: prefersReducedMotion(),
+  });
+}
+
+/**
+ * A newly clothed table's cloth going on. The animation is chosen once, as
+ * it goes on, so a key, a show or the device's motion setting changing
+ * part-way never swaps one animation for another mid-flight.
+ */
+export function AnimatedTableCloth(props: AnimatedTableClothProps): React.ReactElement {
+  const [animation] = useState(chooseClothAnimation);
+  if (animation === "spiral") return <SpiralTableCloth {...props} />;
+  return <DrapeTableCloth {...props} still={animation === "still"} />;
+}
+
+/** Where a drape is drawn before its first frame. One identity each, so a re-render never re-applies them. */
+const DRAPE_START: [number, number, number] = [0, CLOTH_DRAPE_LIFT, 0];
+const DRAPE_AT_REST: [number, number, number] = [0, 0, 0];
+
+/** The cloth as it rests, built exactly as TableClothMesh builds it. */
+function restingClothGeometry(round: boolean, width: number, depth: number, height: number): BufferGeometry {
+  const result = round
+    ? computeRoundClothGeometry(toRenderSpace(width) / 2, height)
+    : computeRectClothGeometry(toRenderSpace(width), toRenderSpace(depth), height);
+  const geometry = new BufferGeometry();
+  geometry.setAttribute("position", new Float32BufferAttribute(result.positions, 3));
+  geometry.setAttribute("normal", new Float32BufferAttribute(result.normals, 3));
+  geometry.setAttribute("uv", new Float32BufferAttribute(result.uvs, 2));
+  geometry.setIndex(new Uint32BufferAttribute(result.indices, 1));
+  return geometry;
+}
+
+interface DrapeClock {
+  /** The frame clock when the cloth went on, seconds, or null before its first frame. */
+  startedAt: number | null;
+  /** Its wait for its place in a ripple, seconds. */
+  delay: number;
+  completed: boolean;
+  readonly pose: ClothDrapePose;
+}
+
+interface DrapeTableClothProps extends AnimatedTableClothProps {
+  /** Reduced motion: at rest from the first frame, done at once. */
+  readonly still: boolean;
+}
+
+/**
+ * The drape (lib/cloth-drape.ts): the resting cloth itself, 8 cm up and
+ * unseen, coming down on a critically damped spring as it fades in. Only its
+ * height and opacity change, so a frame allocates nothing and rebuilds no
+ * geometry; it asks for frames only until it rests. Its last frame is the
+ * static cloth's (same geometry, material and place), so the hand-off moves
+ * nothing.
+ */
+function DrapeTableCloth({
+  tableItem,
+  colorOverride,
+  onComplete,
+  still,
+}: DrapeTableClothProps): React.ReactElement {
+  const groupRef = useRef<Group | null>(null);
+  const materialRef = useRef<MeshStandardMaterial | null>(null);
+  const clock = useRef<DrapeClock>({ startedAt: null, delay: 0, completed: false, pose: createClothDrapePose() });
+  const round = tableItem.tableShape === "round";
+  const geometry = useMemo(
+    () => restingClothGeometry(round, tableItem.width, tableItem.depth, tableItem.height),
+    [round, tableItem.width, tableItem.depth, tableItem.height],
+  );
+
+  useEffect(() => () => { geometry.dispose(); }, [geometry]);
+
+  // Its place in the ripple, taken as it mounts: every cloth of one commit
+  // (a dress-all, a laid-out room) mounts in the same synchronous pass.
+  useLayoutEffect(() => {
+    if (!still) clock.current.delay = clothDrapeDelaySeconds(claimClothDrapeSlot());
+  }, [still]);
+
+  // Reduced motion: drawn at rest from the start, so it is done before any frame.
+  useEffect(() => {
+    const drape = clock.current;
+    if (!still || drape.completed) return;
+    drape.completed = true;
+    onComplete?.();
+  }, [still, onComplete]);
+
+  useFrame((state) => {
+    const drape = clock.current;
+    if (drape.completed) return;
+    const now = state.clock.elapsedTime;
+    drape.startedAt ??= now;
+    const pose = clothDrapePose(drape.pose, now - drape.startedAt, drape.delay, still);
+    const group = groupRef.current;
+    if (group !== null) group.position.y = pose.lift;
+    const material = materialRef.current;
+    if (material !== null) material.opacity = TABLE_CLOTH_OPACITY * pose.opacity;
+    if (pose.done) {
+      drape.completed = true;
+      onComplete?.();
+    } else {
+      state.invalidate();
+    }
+  });
+
+  return (
+    <group ref={groupRef} name="table-cloth-drape" position={still ? DRAPE_AT_REST : DRAPE_START}>
+      <mesh geometry={geometry}>
+        <meshStandardMaterial
+          ref={materialRef}
+          color={colorOverride ?? CLOTH_COLOR}
+          roughness={0.88}
+          metalness={0.02}
+          side={DoubleSide}
+          transparent
+          opacity={still ? TABLE_CLOTH_OPACITY : 0}
+          depthWrite={false}
+          clippingPlanes={noClipPlanes}
+        />
+      </mesh>
+    </group>
+  );
+}
+
+/**
  * Cinematic cloth placement animation — five overlapping phases create
  * a magical, Hollywood-quality effect: summoning from nothing, rising
  * with anticipation, spiralling down like a feather, draping with
  * rippling fabric waves, and settling with graceful finality.
  */
-export function AnimatedTableCloth({
+function SpiralTableCloth({
   tableItem,
   colorOverride,
   onComplete,
@@ -399,7 +566,7 @@ export function AnimatedTableCloth({
   });
 
   return (
-    <group ref={groupRef}>
+    <group ref={groupRef} name="table-cloth-spiral">
       <mesh geometry={initialGeom} ref={meshRef}>
         <meshStandardMaterial
           ref={matRef}
