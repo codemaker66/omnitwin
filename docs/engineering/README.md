@@ -121,6 +121,7 @@ on future experiments.
 | An organiser's plan without an account (the plan PDF; the read-only link awaiting a migration) | [Visitor plan hand-off](visitor-plan-handoff.md) |
 | Claude provider, typed event briefs or their eval | [AI event briefs](ai-event-briefs.md) |
 | What AI calls cost, the usage ledger, a venue's AI allowance, who may spend it | [AI usage and billing](ai-usage-and-billing.md) |
+| A prepared decision, who approves it, stale approval, the decision history (goal 09) | [Prepared decisions](decisions.md) |
 | Martyn's Law or other legal prompts | [No-claims rule and sources](martyns-law-readiness.md) |
 | Splat renderer choice/lifecycle | [Native Three.js splats](native-splats.md) |
 | Venue weather (sky) feed, Met Office sources | [Venue sky](venue-sky.md) |

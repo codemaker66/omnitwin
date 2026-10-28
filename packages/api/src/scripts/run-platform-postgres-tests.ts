@@ -38,6 +38,8 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/public-mcp-postgres.test.ts",
   "src/__tests__/sheet-paper-check-postgres.test.ts",
   "src/__tests__/ai-usage-postgres.test.ts",
+  // Prepared decisions (goal 09 M1, migration 0105): scope, stale approval, duplicate execution, partial failure, the review's cases.
+  "src/__tests__/decisions-postgres.test.ts",
   // The People Book (migration 0098): the operator's read-only check of the backfill.
   "src/__tests__/check-people-book-postgres.test.ts",
   // Possible duplicates, and the marks that keep two people apart through merges.

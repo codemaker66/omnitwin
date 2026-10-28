@@ -279,7 +279,7 @@ export async function loadAccessibleBooking(
 }
 
 /** Merged-row hold hygiene: a live hold must carry all four hygiene fields. */
-function holdHygieneIssues(next: {
+export function holdHygieneIssues(next: {
   kind: string;
   status: string;
   decisionAt: Date | null;

@@ -200,6 +200,35 @@ export interface BookingMove {
 }
 
 /**
+ * Whether movePhasesWithBooking moves this phase with the booking, read
+ * without a write: a phase of the booking's event in the booking's room,
+ * starting from a day before the booking until it ends, and not inside another
+ * live booking of the same event in that room. Kept in step with the SQL
+ * below; decisions-postgres.test.ts compares the two on a moved booking.
+ */
+export function phaseMovesWithBooking(
+  phase: { readonly eventId: string; readonly spaceId: string | null; readonly startsAt: Date | null },
+  move: {
+    readonly bookingId: string;
+    readonly eventId: string;
+    readonly from: { readonly spaceId: string; readonly startsAt: Date; readonly endsAt: Date };
+  },
+  liveBookings: readonly {
+    readonly id: string;
+    readonly eventId: string | null;
+    readonly spaceId: string;
+    readonly startsAt: Date;
+    readonly endsAt: Date;
+  }[],
+): boolean {
+  if (phase.eventId !== move.eventId || phase.spaceId !== move.from.spaceId || phase.startsAt === null) return false;
+  const at = phase.startsAt.getTime();
+  if (at < move.from.startsAt.getTime() - BOOKING_DAY_LEAD_MS || at >= move.from.endsAt.getTime()) return false;
+  return !liveBookings.some((other) => other.id !== move.bookingId && other.eventId === move.eventId
+    && other.spaceId === move.from.spaceId && at >= other.startsAt.getTime() && at < other.endsAt.getTime());
+}
+
+/**
  * The event's timed phases follow a booking that moves (release audit
  * events-diary-3): every phase of the event in the booking's room on the
  * booking's day shifts by the same amount and goes to its new room, so the

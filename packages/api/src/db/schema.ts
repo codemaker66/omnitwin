@@ -27,6 +27,11 @@ import {
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import type {
+  DecisionActionClass,
+  DecisionBody,
+  DecisionEventKind,
+  DecisionReceipt,
+  DecisionStatus,
   AIUsageAttempt,
   AIUsageFeature,
   AIUsageOutcome,
@@ -6742,4 +6747,54 @@ export const venueEngagementEvents = pgTable("venue_engagement_events", {
   index("venue_engagement_events_enquiry_idx").on(table.enquiryId).where(sql`${table.enquiryId} IS NOT NULL`),
   index("venue_engagement_events_proposal_idx").on(table.proposalId, table.kind, table.recordedAt).where(sql`${table.proposalId} IS NOT NULL`),
   index("venue_engagement_events_space_idx").on(table.spaceId).where(sql`${table.spaceId} IS NOT NULL`),
+]);
+
+// Goal 09 M1, migration 0105: prepared decisions and their history. What a
+// decision was prepared as (`body`) never changes; where it stands changes
+// once, from prepared, with its receipt (decisions_guard_update). The history
+// is append-only. services/decisions.ts is the only writer.
+export const decisions = pgTable("decisions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  venueId: uuid("venue_id").notNull().references(() => venues.id, { onDelete: "restrict" }),
+  actionClass: varchar("action_class", { length: 40 }).$type<DecisionActionClass>().notNull(),
+  status: varchar("status", { length: 20 }).$type<DecisionStatus>().notNull().default("prepared"),
+  subjectKind: varchar("subject_kind", { length: 20 }).$type<"booking">().notNull(),
+  subjectId: uuid("subject_id").notNull(),
+  body: jsonb("body").$type<DecisionBody>().notNull(),
+  /** Why, in the asker's words: erasable, the only column that may change after a decision is decided. */
+  reason: text("reason"),
+  preparedBy: uuid("prepared_by").notNull().references(() => users.id, { onDelete: "restrict" }),
+  preparedAt: timestamp("prepared_at", { withTimezone: true }).defaultNow().notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  supersedes: uuid("supersedes").references((): AnyPgColumn => decisions.id, { onDelete: "restrict" }),
+  supersededBy: uuid("superseded_by").references((): AnyPgColumn => decisions.id, { onDelete: "restrict" }),
+  receipt: jsonb("receipt").$type<DecisionReceipt>(),
+  decidedAt: timestamp("decided_at", { withTimezone: true }),
+}, (table) => [
+  index("decisions_venue_status_prepared_idx").on(table.venueId, table.status, table.preparedAt.desc()),
+  index("decisions_subject_idx").on(table.subjectKind, table.subjectId),
+  check("decisions_action_class", sql`${table.actionClass} IN ('booking_time_move', 'guest_count_change', 'stock_shortage', 'service_request')`),
+  check("decisions_status", sql`${table.status} IN ('prepared', 'executed', 'declined', 'failed', 'superseded', 'withdrawn')`),
+  check("decisions_subject_kind", sql`${table.subjectKind} IN ('booking')`),
+  check("decisions_body_object", sql`jsonb_typeof(${table.body}) = 'object'`),
+  check("decisions_reason", sql`${table.reason} IS NULL OR char_length(${table.reason}) BETWEEN 1 AND 500`),
+  check("decisions_window", sql`${table.expiresAt} > ${table.preparedAt}`),
+  check("decisions_receipt", sql`(${table.status} IN ('executed', 'declined', 'failed')) = (${table.receipt} IS NOT NULL AND jsonb_typeof(${table.receipt}) = 'object')`),
+  check("decisions_decided_at", sql`(${table.status} = 'prepared') = (${table.decidedAt} IS NULL)`),
+  check("decisions_superseded", sql`(${table.status} = 'superseded') = (${table.supersededBy} IS NOT NULL)`),
+  check("decisions_not_self", sql`${table.supersedes} IS DISTINCT FROM ${table.id} AND ${table.supersededBy} IS DISTINCT FROM ${table.id}`),
+]);
+
+export const decisionEvents = pgTable("decision_events", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  decisionId: uuid("decision_id").notNull().references(() => decisions.id, { onDelete: "restrict" }),
+  venueId: uuid("venue_id").notNull().references(() => venues.id, { onDelete: "restrict" }),
+  kind: varchar("kind", { length: 20 }).$type<DecisionEventKind>().notNull(),
+  actorUserId: uuid("actor_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  detail: jsonb("detail").$type<Record<string, string | number | boolean | null>>().notNull().default(sql`'{}'::jsonb`),
+  createdAt: timestamp("created_at", { withTimezone: true }).default(sql`clock_timestamp()`).notNull(),
+}, (table) => [
+  index("decision_events_decision_created_idx").on(table.decisionId, table.createdAt),
+  check("decision_events_kind", sql`${table.kind} IN ('prepared', 'executed', 'declined', 'failed', 'stale', 'withdrawn', 'execution_error')`),
+  check("decision_events_detail", sql`jsonb_typeof(${table.detail}) = 'object'`),
 ]);
