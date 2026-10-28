@@ -10,8 +10,12 @@ export const TABLE_CLOTH_COLORS: Record<TableClothStyle, string> = {
   white: "#f4efe6",
 };
 
-/** A settled cloth's opacity: the static TableClothMesh's, and where every arriving cloth (drape or spiral) ends. */
-export const TABLE_CLOTH_OPACITY = 0.78;
+/**
+ * A settled cloth's opacity: the static TableClothMesh's, and where every
+ * arriving cloth (drape or spiral) ends. Opaque: at 0.78 a clothed round's
+ * dark top read through as a muddy grey (planner-qol's D1 frames, 28 Oct).
+ */
+export const TABLE_CLOTH_OPACITY = 1;
 
 const TABLE_DRESSING_APPLICATOR_SLUGS: ReadonlySet<string> = new Set([
   "black-table-cloth",

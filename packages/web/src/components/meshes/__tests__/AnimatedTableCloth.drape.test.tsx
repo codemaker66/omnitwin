@@ -352,3 +352,30 @@ describe("AnimatedTableCloth: the drape", () => {
     for (const onComplete of first) expect(onComplete).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("a settled cloth is opaque; only an arriving one is see-through", () => {
+  it("draws TableClothMesh opaque, writing depth, at its default", () => {
+    const material = clothMesh(mount(<TableClothMesh tableItem={round} colorOverride={LINEN} />).scene).material;
+    expect(material.opacity).toBe(1);
+    expect(material.transparent).toBe(false);
+    expect(material.depthWrite).toBe(true);
+  });
+
+  it("draws TableClothMesh see-through, writing no depth, below 1", () => {
+    const material = clothMesh(mount(<TableClothMesh tableItem={round} opacity={0.5} colorOverride={LINEN} />).scene).material;
+    expect(material.transparent).toBe(true);
+    expect(material.depthWrite).toBe(false);
+  });
+
+  it("draws a drape see-through while it fades in, and opaque once it lands", () => {
+    withKeys({ clothDrape: true });
+    const root = mount(cloth(vi.fn()));
+    frameAt(100);
+    frameAt(100.06);
+    const material = clothMesh(only(root, "table-cloth-drape")).material;
+    expect(material.opacity).toBeLessThan(1);
+    expect([material.transparent, material.depthWrite]).toEqual([true, false]);
+    frameAt(100.5);
+    expect([material.opacity, material.transparent, material.depthWrite]).toEqual([1, false, true]);
+  });
+});

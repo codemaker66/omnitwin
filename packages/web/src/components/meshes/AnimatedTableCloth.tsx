@@ -29,6 +29,7 @@ import {
 import { plannerFeatureEnabled } from "../../lib/planner-features.js";
 import { prefersReducedMotion } from "../../lib/reduced-motion.js";
 import { TABLE_CLOTH_OPACITY } from "../../lib/table-dressing.js";
+import { clothSeeThrough, setClothOpacity } from "./cloth-material.js";
 import { currentFurniturePresentation } from "../../floor/presentation-channel.js";
 import { useBookmarkStore } from "../../stores/bookmark-store.js";
 import { noClipPlanes } from "../SectionPlane.js";
@@ -403,7 +404,7 @@ function DrapeTableCloth({
     const group = groupRef.current;
     if (group !== null) group.position.y = pose.lift;
     const material = materialRef.current;
-    if (material !== null) material.opacity = TABLE_CLOTH_OPACITY * pose.opacity;
+    if (material !== null) setClothOpacity(material, TABLE_CLOTH_OPACITY * pose.opacity);
     if (pose.done) {
       drape.completed = true;
       onComplete?.();
@@ -412,6 +413,7 @@ function DrapeTableCloth({
     }
   });
 
+  const firstOpacity = still ? TABLE_CLOTH_OPACITY : 0;
   return (
     <group ref={groupRef} name="table-cloth-drape" position={still ? DRAPE_AT_REST : DRAPE_START}>
       <mesh geometry={geometry}>
@@ -421,9 +423,9 @@ function DrapeTableCloth({
           roughness={0.88}
           metalness={0.02}
           side={DoubleSide}
-          transparent
-          opacity={still ? TABLE_CLOTH_OPACITY : 0}
-          depthWrite={false}
+          transparent={clothSeeThrough(firstOpacity)}
+          opacity={firstOpacity}
+          depthWrite={!clothSeeThrough(firstOpacity)}
           clippingPlanes={noClipPlanes}
         />
       </mesh>
@@ -522,10 +524,10 @@ function SpiralTableCloth({
       group.scale.setScalar(scale);
     }
 
-    // --- Apply material opacity ---
+    // --- Apply material opacity: see-through while it fades in, opaque once it lands ---
     const mat = matRef.current;
     if (mat !== null) {
-      mat.opacity = opacity;
+      setClothOpacity(mat, opacity);
     }
 
     // --- Recompute geometry with current drape progress ---
@@ -576,6 +578,7 @@ function SpiralTableCloth({
           side={DoubleSide}
           transparent
           opacity={0}
+          depthWrite={false}
           clippingPlanes={noClipPlanes}
         />
       </mesh>
