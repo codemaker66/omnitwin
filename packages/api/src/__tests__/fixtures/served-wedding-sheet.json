@@ -1,0 +1,3488 @@
+{
+ "about": "GET /hallkeeper/:configId/v2 for the demo wedding fixture approved as v3, and what v4 changes. Kept by packages/api/src/__tests__/sheet-release-identity.test.ts; rendered by packages/web/src/pages/__tests__/HallkeeperPage.release.test.tsx.",
+ "v3": {
+  "data": {
+   "config": {
+    "id": "6d1f8a52-3c1b-4f6e-9b1a-0a4c2b7e9d10",
+    "name": "Mackenzie–Ross wedding breakfast",
+    "guestCount": 120,
+    "layoutStyle": "dinner-rounds"
+   },
+   "venue": {
+    "name": "Trades Hall Glasgow",
+    "address": "85 Glassford Street, Glasgow G1 1UH",
+    "logoUrl": null,
+    "timezone": "Europe/London"
+   },
+   "space": {
+    "name": "Grand Hall",
+    "widthM": 21,
+    "lengthM": 10.5,
+    "heightM": 7
+   },
+   "timing": {
+    "eventStart": "2026-10-24T13:30:00.000Z",
+    "setupBy": "2026-10-24T12:30:00.000Z",
+    "bufferMinutes": 60
+   },
+   "instructions": {
+    "specialInstructions": "Ceremony is in the Saloon at 13:00; guests come through to the Grand Hall at 14:30 for the wedding breakfast.\nPetals only on the stairs, no confetti indoors. The bride's grandmother uses a wheelchair: table 3, aisle side, step-free route from the lift.",
+    "dayOfContact": {
+     "name": "Kirsty Mackenzie",
+     "role": "Bride's sister",
+     "phone": "07700 900412",
+     "email": ""
+    },
+    "phaseDeadlines": [
+     {
+      "phase": "structure",
+      "deadline": "2026-10-24T09:00:00.000Z",
+      "reason": "Band loads in at 10:15"
+     },
+     {
+      "phase": "furniture",
+      "deadline": "2026-10-24T10:00:00.000Z",
+      "reason": ""
+     },
+     {
+      "phase": "dress",
+      "deadline": "2026-10-24T11:00:00.000Z",
+      "reason": "Florist from 11:30"
+     },
+     {
+      "phase": "technical",
+      "deadline": "2026-10-24T11:30:00.000Z",
+      "reason": "Slideshow check with the best man"
+     },
+     {
+      "phase": "final",
+      "deadline": "2026-10-24T12:30:00.000Z",
+      "reason": ""
+     }
+    ],
+    "accessNotes": "Suppliers use the service door. Vehicles unload for 15 minutes, then move on. Band's van leaves before 12:00.",
+    "accessibility": {
+     "hearingLoopRequired": true,
+     "hearingLoopZone": "Centre",
+     "wheelchairSpaces": 1,
+     "stepFreeRouteRequired": true,
+     "signLanguageInterpreter": false,
+     "largePrintProgrammes": 4,
+     "notes": "Large-print orders of service go on table 3."
+    },
+    "dietary": {
+     "vegetarian": 14,
+     "vegan": 4,
+     "glutenFree": 6,
+     "nutFree": 2,
+     "halal": 3,
+     "kosher": 0,
+     "otherAllergies": "Table 5, seat 4: severe peanut allergy, carries an adrenaline pen. Table 9: two guests coeliac."
+    },
+    "doorSchedule": {
+     "entries": [
+      {
+       "label": "Glassford Street main door",
+       "events": [
+        {
+         "at": "2026-10-24T11:30:00.000Z",
+         "kind": "open",
+         "note": "Guests arrive for the ceremony"
+        },
+        {
+         "at": "2026-10-24T23:30:00.000Z",
+         "kind": "lock",
+         "note": "After the last guests leave"
+        }
+       ]
+      },
+      {
+       "label": "Service door",
+       "events": [
+        {
+         "at": "2026-10-24T08:00:00.000Z",
+         "kind": "open",
+         "note": "Suppliers and band load-in"
+        },
+        {
+         "at": "2026-10-24T17:00:00.000Z",
+         "kind": "lock",
+         "note": ""
+        }
+       ]
+      }
+     ]
+    },
+    "protectedPremises": {
+     "responsiblePerson": "Venue general manager",
+     "dutyLead": {
+      "name": "Callum Reid",
+      "role": "Duty manager"
+     },
+     "procedures": {
+      "evacuation": {
+       "briefed": true
+      },
+      "invacuation": {
+       "briefed": true
+      },
+      "lockdown": {
+       "briefed": false,
+       "note": "Briefing at 11:30 covers it"
+      },
+      "communication": {
+       "briefed": true
+      }
+     },
+     "briefingAt": "2026-10-24T10:30:00.000Z",
+     "doorSupervision": {
+      "arranged": true,
+      "note": "Two door staff from 18:00"
+     }
+    }
+   },
+   "phases": [
+    {
+     "phase": "structure",
+     "zones": [
+      {
+       "zone": "East wall",
+       "rows": [
+        {
+         "key": "structure|East wall|6ft × 4ft Staging Deck|0",
+         "name": "6ft × 4ft Staging Deck",
+         "category": "stage",
+         "qty": 3,
+         "afterDepth": 0,
+         "isAccessory": false,
+         "notes": "",
+         "positions": [
+          {
+           "objectId": "00000000-0000-4000-8000-0000000000b5",
+           "x": 9.85,
+           "z": -1.83,
+           "rotationY": 1.5707963267948966
+          },
+          {
+           "objectId": "00000000-0000-4000-8000-0000000000b6",
+           "x": 9.85,
+           "z": 0,
+           "rotationY": 1.5707963267948966
+          },
+          {
+           "objectId": "00000000-0000-4000-8000-0000000000b7",
+           "x": 9.85,
+           "z": 1.83,
+           "rotationY": 1.5707963267948966
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "zone": "Perimeter",
+       "rows": [
+        {
+         "key": "structure|Perimeter|Parquet Dance Floor Panel|0",
+         "name": "Parquet Dance Floor Panel",
+         "category": "stage",
+         "qty": 30,
+         "afterDepth": 0,
+         "isAccessory": false,
+         "notes": "",
+         "positions": [
+          {
+           "objectId": "00000000-0000-4000-8000-000000000097",
+           "x": 4.6,
+           "z": -1.4,
+           "rotationY": 0
+          },
+          {
+           "objectId": "00000000-0000-4000-8000-000000000098",
+           "x": 4.6,
+           "z": -0.4899999999999999,
+           "rotationY": 0
+          },
+          {
+           "objectId": "00000000-0000-4000-8000-000000000099",
+           "x": 4.6,
+           "z": 0.42000000000000015,
+           "rotationY": 0
+          },
+          {
+           "objectId": "00000000-0000-4000-8000-00000000009a",
+           "x": 4.6,
+           "z": 1.33,
+           "rotationY": 0
+          },
+          {
+           "objectId": "00000000-0000-4000-8000-00000000009b",
+           "x": 4.6,
+           "z": 2.24,
+           "rotationY": 0
+          },
+          {
+           "objectId": "00000000-0000-4000-8000-00000000009c",
+           "x": 5.51,
+           "z": -1.4,
+           "rotationY": 0
+          },
+          {
+           "objectId": "00000000-0000-4000-8000-00000000009d",
+           "x": 5.51,
+           "z": -0.4899999999999999,
+           "rotationY": 0
+          },
+          {
+           "objectId": "00000000-0000-4000-8000-00000000009e",
+           "x": 5.51,
+           "z": 0.42000000000000015,
+           "rotationY": 0
+          },
+          {
+           "objectId": "00000000-0000-4000-8000-00000000009f",
+           "x": 5.51,
+           "z": 1.33,
+           "rotationY": 0
+          },
+          {
+           "objectId": "00000000-0000-4000-8000-0000000000a0",
+           "x": 5.51,
+           "z": 2.24,
+           "rotationY": 0
+          },
+          {
+           "objectId": "00000000-0000-4000-8000-0000000000a1",
+           "x": 6.42,
+           "z": -1.4,
+           "rotationY": 0
+          },
+          {
+           "objectId": "00000000-0000-4000-8000-0000000000a2",
+           "x": 6.42,
+           "z": -0.4899999999999999,
+           "rotationY": 0
+          },
+          {
+           "objectId": "00000000-0000-4000-8000-0000000000a3",
+           "x": 6.42,
+           "z": 0.42000000000000015,
+           "rotationY": 0
+          },
+          {
+           "objectId": "00000000-0000-4000-8000-0000000000a4",
+           "x": 6.42,
+           "z": 1.33,
+           "rotationY": 0
+          },
+          {
+           "objectId": "00000000-0000-4000-8000-0000000000a5",
+           "x": 6.42,
+           "z": 2.24,
+           "rotationY": 0
+          },
+          {
+           "objectId": "00000000-0000-4000-8000-0000000000a6",
+           "x": 7.33,
+           "z": -1.4,
+           "rotationY": 0
+          },
+          {
+           "objectId": "00000000-0000-4000-8000-0000000000a7",
+           "x": 7.33,
+           "z": -0.4899999999999999,
+           "rotationY": 0
+          },
+          {
+           "objectId": "00000000-0000-4000-8000-0000000000a8",
+           "x": 7.33,
+           "z": 0.42000000000000015,
+           "rotationY": 0
+          },
+          {
+           "objectId": "00000000-0000-4000-8000-0000000000a9",
+           "x": 7.33,
+           "z": 1.33,
+           "rotationY": 0
+          },
+          {
+           "objectId": "00000000-0000-4000-8000-0000000000aa",
+           "x": 7.33,
+           "z": 2.24,
+           "rotationY": 0
+          },
+          {
+           "objectId": "00000000-0000-4000-8000-0000000000ab",
+           "x": 8.24,
+           "z": -1.4,
+           "rotationY": 0
+          },
+          {
+           "objectId": "00000000-0000-4000-8000-0000000000ac",
+           "x": 8.24,
+           "z": -0.4899999999999999,
+           "rotationY": 0
+          },
+          {
+           "objectId": "00000000-0000-4000-8000-0000000000ad",
+           "x": 8.24,
+           "z": 0.42000000000000015,
+           "rotationY": 0
+          },
+          {
+           "objectId": "00000000-0000-4000-8000-0000000000ae",
+           "x": 8.24,
+           "z": 1.33,
+           "rotationY": 0
+          },
+          {
+           "objectId": "00000000-0000-4000-8000-0000000000af",
+           "x": 8.24,
+           "z": 2.24,
+           "rotationY": 0
+          },
+          {
+           "objectId": "00000000-0000-4000-8000-0000000000b0",
+           "x": 9.149999999999999,
+           "z": -1.4,
+           "rotationY": 0
+          },
+          {
+           "objectId": "00000000-0000-4000-8000-0000000000b1",
+           "x": 9.149999999999999,
+           "z": -0.4899999999999999,
+           "rotationY": 0
+          },
+          {
+           "objectId": "00000000-0000-4000-8000-0000000000b2",
+           "x": 9.149999999999999,
+           "z": 0.42000000000000015,
+           "rotationY": 0
+          },
+          {
+           "objectId": "00000000-0000-4000-8000-0000000000b3",
+           "x": 9.149999999999999,
+           "z": 1.33,
+           "rotationY": 0
+          },
+          {
+           "objectId": "00000000-0000-4000-8000-0000000000b4",
+           "x": 9.149999999999999,
+           "z": 2.24,
+           "rotationY": 0
+          }
+         ],
+         "labels": [
+          "Laid as one floor, 6 × 5 panels, 5.46 × 4.55 m"
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "phase": "furniture",
+     "zones": [
+      {
+       "zone": "Entrance",
+       "rows": [
+        {
+         "key": "furniture|Entrance|6ft Round Table with 10 chairs|0",
+         "name": "6ft Round Table with 10 chairs",
+         "category": "table",
+         "qty": 1,
+         "afterDepth": 0,
+         "isAccessory": false,
+         "notes": "Table 5: severe peanut allergy at seat 4, catering has the card",
+         "positions": [
+          {
+           "objectId": "00000000-0000-4000-8000-000000000042",
+           "x": -8.2,
+           "z": 0.9,
+           "rotationY": 0
+          }
+         ],
+         "labels": [
+          "Table 5"
+         ]
+        }
+       ]
+      },
+      {
+       "zone": "North wall",
+       "rows": [
+        {
+         "key": "furniture|North wall|Cake Cutting Table|0",
+         "name": "Cake Cutting Table",
+         "category": "table",
+         "qty": 1,
+         "afterDepth": 0,
+         "isAccessory": false,
+         "notes": "Needs a socket within 2 m for the cake lights",
+         "positions": [
+          {
+           "objectId": "00000000-0000-4000-8000-0000000000bf",
+           "x": 4.4,
+           "z": -4.2,
+           "rotationY": 0
+          }
+         ]
+        },
+        {
+         "key": "furniture|North wall|Lectern|0",
+         "name": "Lectern",
+         "category": "lectern",
+         "qty": 1,
+         "afterDepth": 0,
+         "isAccessory": false,
+         "notes": "",
+         "positions": [
+          {
+           "objectId": "00000000-0000-4000-8000-0000000000c0",
+           "x": 3,
+           "z": -4.4,
+           "rotationY": 0
+          }
+         ]
+        },
+        {
+         "key": "furniture|North wall|Trestle Table (White Cloth) with 3 chairs|0",
+         "name": "Trestle Table (White Cloth) with 3 chairs",
+         "category": "table",
+         "qty": 2,
+         "afterDepth": 0,
+         "isAccessory": false,
+         "notes": "",
+         "positions": [
+          {
+           "objectId": "00000000-0000-4000-8000-000000000002",
+           "x": -1.85,
+           "z": -4.2,
+           "rotationY": 0
+          },
+          {
+           "objectId": "00000000-0000-4000-8000-00000000000d",
+           "x": 1.85,
+           "z": -4.2,
+           "rotationY": 0
+          }
+         ]
+        },
+        {
+         "key": "furniture|North wall|Trestle Table (White Cloth) with 4 chairs|0",
+         "name": "Trestle Table (White Cloth) with 4 chairs",
+         "category": "table",
+         "qty": 1,
+         "afterDepth": 0,
+         "isAccessory": false,
+         "notes": "Bride and groom centre; florist brings the top-table arrangement at 11:30",
+         "positions": [
+          {
+           "objectId": "00000000-0000-4000-8000-000000000007",
+           "x": 0,
+           "z": -4.2,
+           "rotationY": 0
+          }
+         ],
+         "labels": [
+          "Top table"
+         ]
+        }
+       ]
+      },
+      {
+       "zone": "West wall",
+       "rows": [
+        {
+         "key": "furniture|West wall|6ft Round Table with 10 chairs|0",
+         "name": "6ft Round Table with 10 chairs",
+         "category": "table",
+         "qty": 1,
+         "afterDepth": 0,
+         "isAccessory": false,
+         "notes": "",
+         "positions": [
+          {
+           "objectId": "00000000-0000-4000-8000-000000000012",
+           "x": -8.2,
+           "z": -1.9,
+           "rotationY": 0
+          }
+         ],
+         "labels": [
+          "Table 1"
+         ]
+        }
+       ]
+      },
+      {
+       "zone": "East wall",
+       "rows": [
+        {
+         "key": "furniture|East wall|Poseur Table|0",
+         "name": "Poseur Table",
+         "category": "table",
+         "qty": 1,
+         "afterDepth": 0,
+         "isAccessory": false,
+         "notes": "",
+         "positions": [
+          {
+           "objectId": "00000000-0000-4000-8000-0000000000be",
+           "x": 8.2,
+           "z": 3,
+           "rotationY": 0
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "zone": "South wall",
+       "rows": [
+        {
+         "key": "furniture|South wall|6ft Round Table with 10 chairs|0",
+         "name": "6ft Round Table with 10 chairs",
+         "category": "table",
+         "qty": 3,
+         "afterDepth": 0,
+         "isAccessory": false,
+         "notes": "",
+         "positions": [
+          {
+           "objectId": "00000000-0000-4000-8000-000000000072",
+           "x": -5,
+           "z": 3.7,
+           "rotationY": 0
+          },
+          {
+           "objectId": "00000000-0000-4000-8000-00000000007e",
+           "x": -1.8,
+           "z": 3.7,
+           "rotationY": 0
+          },
+          {
+           "objectId": "00000000-0000-4000-8000-00000000008a",
+           "x": 1.4,
+           "z": 3.7,
+           "rotationY": 0
+          }
+         ],
+         "labels": [
+          "Table 9",
+          "Table 10",
+          "Table 11"
+         ]
+        },
+        {
+         "key": "furniture|South wall|Poseur Table|0",
+         "name": "Poseur Table",
+         "category": "table",
+         "qty": 2,
+         "afterDepth": 0,
+         "isAccessory": false,
+         "notes": "",
+         "positions": [
+          {
+           "objectId": "00000000-0000-4000-8000-0000000000bc",
+           "x": 3,
+           "z": 4.2,
+           "rotationY": 0
+          },
+          {
+           "objectId": "00000000-0000-4000-8000-0000000000bd",
+           "x": 8.2,
+           "z": 4.2,
+           "rotationY": 0
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "zone": "Centre",
+       "rows": [
+        {
+         "key": "furniture|Centre|6ft Round Table with 10 chairs|0",
+         "name": "6ft Round Table with 10 chairs",
+         "category": "table",
+         "qty": 6,
+         "afterDepth": 0,
+         "isAccessory": false,
+         "notes": "Table 3: wheelchair user, leave the aisle-side place without a chair",
+         "positions": [
+          {
+           "objectId": "00000000-0000-4000-8000-00000000001e",
+           "x": -5,
+           "z": -1.9,
+           "rotationY": 0
+          },
+          {
+           "objectId": "00000000-0000-4000-8000-00000000002a",
+           "x": -1.8,
+           "z": -1.9,
+           "rotationY": 0
+          },
+          {
+           "objectId": "00000000-0000-4000-8000-000000000036",
+           "x": 1.4,
+           "z": -1.9,
+           "rotationY": 0
+          },
+          {
+           "objectId": "00000000-0000-4000-8000-00000000004e",
+           "x": -5,
+           "z": 0.9,
+           "rotationY": 0
+          },
+          {
+           "objectId": "00000000-0000-4000-8000-00000000005a",
+           "x": -1.8,
+           "z": 0.9,
+           "rotationY": 0
+          },
+          {
+           "objectId": "00000000-0000-4000-8000-000000000066",
+           "x": 1.4,
+           "z": 0.9,
+           "rotationY": 0
+          }
+         ],
+         "labels": [
+          "Table 2",
+          "Table 3",
+          "Table 4",
+          "Table 6",
+          "Table 7",
+          "Table 8"
+         ]
+        },
+        {
+         "key": "furniture|Centre|White Highchair|0",
+         "name": "White Highchair",
+         "category": "chair",
+         "qty": 1,
+         "afterDepth": 0,
+         "isAccessory": false,
+         "notes": "Highchair for table 6",
+         "positions": [
+          {
+           "objectId": "00000000-0000-4000-8000-000000000095",
+           "x": -3.7,
+           "z": 1.95,
+           "rotationY": 0
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "phase": "dress",
+     "zones": [
+      {
+       "zone": "Entrance",
+       "rows": [
+        {
+         "key": "dress|Entrance|Black Round Table Linen|0",
+         "name": "Black Round Table Linen",
+         "category": "decor",
+         "qty": 1,
+         "afterDepth": 0,
+         "isAccessory": true,
+         "notes": "Table 5: severe peanut allergy at seat 4, catering has the card",
+         "positions": []
+        }
+       ]
+      },
+      {
+       "zone": "West wall",
+       "rows": [
+        {
+         "key": "dress|West wall|Black Round Table Linen|0",
+         "name": "Black Round Table Linen",
+         "category": "decor",
+         "qty": 1,
+         "afterDepth": 0,
+         "isAccessory": true,
+         "notes": "",
+         "positions": []
+        }
+       ]
+      },
+      {
+       "zone": "East wall",
+       "rows": [
+        {
+         "key": "dress|East wall|Black Poseur Table Linen|0",
+         "name": "Black Poseur Table Linen",
+         "category": "decor",
+         "qty": 1,
+         "afterDepth": 0,
+         "isAccessory": true,
+         "notes": "",
+         "positions": []
+        }
+       ]
+      },
+      {
+       "zone": "South wall",
+       "rows": [
+        {
+         "key": "dress|South wall|Black Poseur Table Linen|0",
+         "name": "Black Poseur Table Linen",
+         "category": "decor",
+         "qty": 2,
+         "afterDepth": 0,
+         "isAccessory": true,
+         "notes": "",
+         "positions": []
+        },
+        {
+         "key": "dress|South wall|Black Round Table Linen|0",
+         "name": "Black Round Table Linen",
+         "category": "decor",
+         "qty": 3,
+         "afterDepth": 0,
+         "isAccessory": true,
+         "notes": "",
+         "positions": []
+        }
+       ]
+      },
+      {
+       "zone": "Centre",
+       "rows": [
+        {
+         "key": "dress|Centre|Black Round Table Linen|0",
+         "name": "Black Round Table Linen",
+         "category": "decor",
+         "qty": 6,
+         "afterDepth": 0,
+         "isAccessory": true,
+         "notes": "Table 3: wheelchair user, leave the aisle-side place without a chair",
+         "positions": []
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "phase": "technical",
+     "zones": [
+      {
+       "zone": "North wall",
+       "rows": [
+        {
+         "key": "technical|North wall|Handheld Microphone|0",
+         "name": "Handheld Microphone",
+         "category": "av",
+         "qty": 1,
+         "afterDepth": 0,
+         "isAccessory": false,
+         "notes": "",
+         "positions": [
+          {
+           "objectId": "00000000-0000-4000-8000-0000000000c1",
+           "x": 3,
+           "z": -4.4,
+           "rotationY": 0
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "zone": "West wall",
+       "rows": [
+        {
+         "key": "technical|West wall|Projector Screen|0",
+         "name": "Projector Screen",
+         "category": "av",
+         "qty": 1,
+         "afterDepth": 0,
+         "isAccessory": false,
+         "notes": "",
+         "positions": [
+          {
+           "objectId": "00000000-0000-4000-8000-0000000000c2",
+           "x": -10.1,
+           "z": -0.5,
+           "rotationY": 1.5707963267948966
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "zone": "East wall",
+       "rows": [
+        {
+         "key": "technical|East wall|Mic Stand|0",
+         "name": "Mic Stand",
+         "category": "av",
+         "qty": 2,
+         "afterDepth": 0,
+         "isAccessory": false,
+         "notes": "",
+         "positions": [
+          {
+           "objectId": "00000000-0000-4000-8000-0000000000b8",
+           "x": 9.4,
+           "z": -0.9,
+           "rotationY": 0
+          },
+          {
+           "objectId": "00000000-0000-4000-8000-0000000000b9",
+           "x": 9.4,
+           "z": 0.9,
+           "rotationY": 0
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "zone": "Centre",
+       "rows": [
+        {
+         "key": "technical|Centre|Laser Projector|0",
+         "name": "Laser Projector",
+         "category": "av",
+         "qty": 1,
+         "afterDepth": 0,
+         "isAccessory": false,
+         "notes": "Slideshow during the meal; laptop comes with the best man",
+         "positions": [
+          {
+           "objectId": "00000000-0000-4000-8000-0000000000c3",
+           "x": -3.4,
+           "z": -0.5,
+           "rotationY": 0
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "phase": "final",
+     "zones": [
+      {
+       "zone": "South wall",
+       "rows": [
+        {
+         "key": "final|South wall|Bar|0",
+         "name": "Bar",
+         "category": "other",
+         "qty": 2,
+         "afterDepth": 0,
+         "isAccessory": false,
+         "notes": "Cash bar from 21:00",
+         "positions": [
+          {
+           "objectId": "00000000-0000-4000-8000-0000000000ba",
+           "x": 4.6,
+           "z": 4.85,
+           "rotationY": 0
+          },
+          {
+           "objectId": "00000000-0000-4000-8000-0000000000bb",
+           "x": 6.25,
+           "z": 4.85,
+           "rotationY": 0
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "totals": {
+    "entries": [
+     {
+      "name": "6ft × 4ft Staging Deck",
+      "category": "stage",
+      "qty": 3
+     },
+     {
+      "name": "6ft Round Table with 10 chairs",
+      "category": "table",
+      "qty": 11
+     },
+     {
+      "name": "Bar",
+      "category": "other",
+      "qty": 2
+     },
+     {
+      "name": "Black Poseur Table Linen",
+      "category": "decor",
+      "qty": 3
+     },
+     {
+      "name": "Black Round Table Linen",
+      "category": "decor",
+      "qty": 11
+     },
+     {
+      "name": "Cake Cutting Table",
+      "category": "table",
+      "qty": 1
+     },
+     {
+      "name": "Handheld Microphone",
+      "category": "av",
+      "qty": 1
+     },
+     {
+      "name": "Laser Projector",
+      "category": "av",
+      "qty": 1
+     },
+     {
+      "name": "Lectern",
+      "category": "lectern",
+      "qty": 1
+     },
+     {
+      "name": "Mic Stand",
+      "category": "av",
+      "qty": 2
+     },
+     {
+      "name": "Parquet Dance Floor Panel",
+      "category": "stage",
+      "qty": 30
+     },
+     {
+      "name": "Poseur Table",
+      "category": "table",
+      "qty": 3
+     },
+     {
+      "name": "Projector Screen",
+      "category": "av",
+      "qty": 1
+     },
+     {
+      "name": "Trestle Table (White Cloth) with 3 chairs",
+      "category": "table",
+      "qty": 2
+     },
+     {
+      "name": "Trestle Table (White Cloth) with 4 chairs",
+      "category": "table",
+      "qty": 1
+     },
+     {
+      "name": "White Highchair",
+      "category": "chair",
+      "qty": 1
+     }
+    ],
+    "totalRows": 24,
+    "totalItems": 74
+   },
+   "floorPlan": {
+    "coordinateSpace": "real_m_v1",
+    "outline": [
+     {
+      "x": -10.5,
+      "z": -5.25
+     },
+     {
+      "x": 10.5,
+      "z": -5.25
+     },
+     {
+      "x": 10.5,
+      "z": 5.25
+     },
+     {
+      "x": -10.5,
+      "z": 5.25
+     }
+    ],
+    "objects": [
+     {
+      "objectId": "00000000-0000-4000-8000-000000000002",
+      "assetDefinitionId": "b5ff8bd6-2cf9-574e-8102-256b7442313f",
+      "name": "Trestle Table (White Cloth)",
+      "category": "table",
+      "x": -1.85,
+      "z": -4.2,
+      "rotationY": 0,
+      "scale": 1,
+      "widthM": 1.83,
+      "depthM": 0.76,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000003",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -2.45,
+      "z": -4.85,
+      "rotationY": 0,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000004",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -1.85,
+      "z": -4.85,
+      "rotationY": 0,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000005",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -1.2500000000000002,
+      "z": -4.85,
+      "rotationY": 0,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000007",
+      "assetDefinitionId": "b5ff8bd6-2cf9-574e-8102-256b7442313f",
+      "name": "Trestle Table (White Cloth)",
+      "category": "table",
+      "x": 0,
+      "z": -4.2,
+      "rotationY": 0,
+      "scale": 1,
+      "widthM": 1.83,
+      "depthM": 0.76,
+      "collisionType": "box",
+      "label": "Top table",
+      "note": "Bride and groom centre; florist brings the top-table arrangement at 11:30"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000008",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -0.6,
+      "z": -4.85,
+      "rotationY": 0,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000009",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -0.2,
+      "z": -4.85,
+      "rotationY": 0,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-00000000000a",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": 0.19999999999999996,
+      "z": -4.85,
+      "rotationY": 0,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-00000000000b",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": 0.6,
+      "z": -4.85,
+      "rotationY": 0,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-00000000000d",
+      "assetDefinitionId": "b5ff8bd6-2cf9-574e-8102-256b7442313f",
+      "name": "Trestle Table (White Cloth)",
+      "category": "table",
+      "x": 1.85,
+      "z": -4.2,
+      "rotationY": 0,
+      "scale": 1,
+      "widthM": 1.83,
+      "depthM": 0.76,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-00000000000e",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": 1.25,
+      "z": -4.85,
+      "rotationY": 0,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-00000000000f",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": 1.85,
+      "z": -4.85,
+      "rotationY": 0,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000010",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": 2.45,
+      "z": -4.85,
+      "rotationY": 0,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000012",
+      "assetDefinitionId": "a1ef4d89-7786-5878-bee1-87b3fac28200",
+      "name": "6ft Round Table",
+      "category": "table",
+      "x": -8.2,
+      "z": -1.9,
+      "rotationY": 0,
+      "scale": 1,
+      "widthM": 1.83,
+      "depthM": 1.83,
+      "collisionType": "cylinder",
+      "label": "Table 1"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000013",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -6.9799999999999995,
+      "z": -1.9,
+      "rotationY": -1.5707963267948966,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000014",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -7.212999266862563,
+      "z": -1.1829019922031827,
+      "rotationY": -2.199114857512855,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000015",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -7.822999266862563,
+      "z": -0.7397110501199127,
+      "rotationY": -2.827433388230814,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000016",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -8.577000733137435,
+      "z": -0.7397110501199124,
+      "rotationY": -3.4557519189487724,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000017",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -9.187000733137435,
+      "z": -1.1829019922031825,
+      "rotationY": -4.084070449666731,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000018",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -9.42,
+      "z": -1.8999999999999997,
+      "rotationY": -4.71238898038469,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000019",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -9.187000733137435,
+      "z": -2.617098007796817,
+      "rotationY": -5.340707511102648,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-00000000001a",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -8.577000733137435,
+      "z": -3.0602889498800874,
+      "rotationY": -5.969026041820607,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-00000000001b",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -7.822999266862563,
+      "z": -3.0602889498800874,
+      "rotationY": -6.5973445725385655,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-00000000001c",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -7.212999266862564,
+      "z": -2.6170980077968173,
+      "rotationY": -7.225663103256524,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-00000000001e",
+      "assetDefinitionId": "a1ef4d89-7786-5878-bee1-87b3fac28200",
+      "name": "6ft Round Table",
+      "category": "table",
+      "x": -5,
+      "z": -1.9,
+      "rotationY": 0,
+      "scale": 1,
+      "widthM": 1.83,
+      "depthM": 1.83,
+      "collisionType": "cylinder",
+      "label": "Table 2"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-00000000001f",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -3.7800000000000002,
+      "z": -1.9,
+      "rotationY": -1.5707963267948966,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000020",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -4.012999266862564,
+      "z": -1.1829019922031827,
+      "rotationY": -2.199114857512855,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000021",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -4.622999266862564,
+      "z": -0.7397110501199127,
+      "rotationY": -2.827433388230814,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000022",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -5.377000733137436,
+      "z": -0.7397110501199124,
+      "rotationY": -3.4557519189487724,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000023",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -5.987000733137435,
+      "z": -1.1829019922031825,
+      "rotationY": -4.084070449666731,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000024",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -6.22,
+      "z": -1.8999999999999997,
+      "rotationY": -4.71238898038469,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000025",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -5.987000733137436,
+      "z": -2.617098007796817,
+      "rotationY": -5.340707511102648,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000026",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -5.377000733137436,
+      "z": -3.0602889498800874,
+      "rotationY": -5.969026041820607,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000027",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -4.622999266862564,
+      "z": -3.0602889498800874,
+      "rotationY": -6.5973445725385655,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000028",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -4.012999266862565,
+      "z": -2.6170980077968173,
+      "rotationY": -7.225663103256524,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-00000000002a",
+      "assetDefinitionId": "a1ef4d89-7786-5878-bee1-87b3fac28200",
+      "name": "6ft Round Table",
+      "category": "table",
+      "x": -1.8,
+      "z": -1.9,
+      "rotationY": 0,
+      "scale": 1,
+      "widthM": 1.83,
+      "depthM": 1.83,
+      "collisionType": "cylinder",
+      "label": "Table 3",
+      "note": "Table 3: wheelchair user, leave the aisle-side place without a chair"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-00000000002b",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -0.5800000000000001,
+      "z": -1.9,
+      "rotationY": -1.5707963267948966,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-00000000002c",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -0.8129992668625642,
+      "z": -1.1829019922031827,
+      "rotationY": -2.199114857512855,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-00000000002d",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -1.4229992668625642,
+      "z": -0.7397110501199127,
+      "rotationY": -2.827433388230814,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-00000000002e",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -2.1770007331374357,
+      "z": -0.7397110501199124,
+      "rotationY": -3.4557519189487724,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-00000000002f",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -2.787000733137436,
+      "z": -1.1829019922031825,
+      "rotationY": -4.084070449666731,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000030",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -3.02,
+      "z": -1.8999999999999997,
+      "rotationY": -4.71238898038469,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000031",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -2.787000733137436,
+      "z": -2.617098007796817,
+      "rotationY": -5.340707511102648,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000032",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -2.177000733137436,
+      "z": -3.0602889498800874,
+      "rotationY": -5.969026041820607,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000033",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -1.4229992668625644,
+      "z": -3.0602889498800874,
+      "rotationY": -6.5973445725385655,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000034",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -0.8129992668625643,
+      "z": -2.6170980077968173,
+      "rotationY": -7.225663103256524,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000036",
+      "assetDefinitionId": "a1ef4d89-7786-5878-bee1-87b3fac28200",
+      "name": "6ft Round Table",
+      "category": "table",
+      "x": 1.4,
+      "z": -1.9,
+      "rotationY": 0,
+      "scale": 1,
+      "widthM": 1.83,
+      "depthM": 1.83,
+      "collisionType": "cylinder",
+      "label": "Table 4"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000037",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": 2.62,
+      "z": -1.9,
+      "rotationY": -1.5707963267948966,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000038",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": 2.3870007331374357,
+      "z": -1.1829019922031827,
+      "rotationY": -2.199114857512855,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000039",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": 1.7770007331374358,
+      "z": -0.7397110501199127,
+      "rotationY": -2.827433388230814,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-00000000003a",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": 1.022999266862564,
+      "z": -0.7397110501199124,
+      "rotationY": -3.4557519189487724,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-00000000003b",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": 0.41299926686256416,
+      "z": -1.1829019922031825,
+      "rotationY": -4.084070449666731,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-00000000003c",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": 0.17999999999999994,
+      "z": -1.8999999999999997,
+      "rotationY": -4.71238898038469,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-00000000003d",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": 0.41299926686256405,
+      "z": -2.617098007796817,
+      "rotationY": -5.340707511102648,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-00000000003e",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": 1.0229992668625638,
+      "z": -3.0602889498800874,
+      "rotationY": -5.969026041820607,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-00000000003f",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": 1.7770007331374356,
+      "z": -3.0602889498800874,
+      "rotationY": -6.5973445725385655,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000040",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": 2.3870007331374357,
+      "z": -2.6170980077968173,
+      "rotationY": -7.225663103256524,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000042",
+      "assetDefinitionId": "a1ef4d89-7786-5878-bee1-87b3fac28200",
+      "name": "6ft Round Table",
+      "category": "table",
+      "x": -8.2,
+      "z": 0.9,
+      "rotationY": 0,
+      "scale": 1,
+      "widthM": 1.83,
+      "depthM": 1.83,
+      "collisionType": "cylinder",
+      "label": "Table 5",
+      "note": "Table 5: severe peanut allergy at seat 4, catering has the card"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000043",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -6.9799999999999995,
+      "z": 0.9,
+      "rotationY": -1.5707963267948966,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000044",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -7.212999266862563,
+      "z": 1.6170980077968173,
+      "rotationY": -2.199114857512855,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000045",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -7.822999266862563,
+      "z": 2.0602889498800874,
+      "rotationY": -2.827433388230814,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000046",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -8.577000733137435,
+      "z": 2.0602889498800874,
+      "rotationY": -3.4557519189487724,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000047",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -9.187000733137435,
+      "z": 1.6170980077968173,
+      "rotationY": -4.084070449666731,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000048",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -9.42,
+      "z": 0.9000000000000001,
+      "rotationY": -4.71238898038469,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000049",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -9.187000733137435,
+      "z": 0.18290199220318293,
+      "rotationY": -5.340707511102648,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-00000000004a",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -8.577000733137435,
+      "z": -0.2602889498800872,
+      "rotationY": -5.969026041820607,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-00000000004b",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -7.822999266862563,
+      "z": -0.26028894988008744,
+      "rotationY": -6.5973445725385655,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-00000000004c",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -7.212999266862564,
+      "z": 0.1829019922031826,
+      "rotationY": -7.225663103256524,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-00000000004e",
+      "assetDefinitionId": "a1ef4d89-7786-5878-bee1-87b3fac28200",
+      "name": "6ft Round Table",
+      "category": "table",
+      "x": -5,
+      "z": 0.9,
+      "rotationY": 0,
+      "scale": 1,
+      "widthM": 1.83,
+      "depthM": 1.83,
+      "collisionType": "cylinder",
+      "label": "Table 6"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-00000000004f",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -3.7800000000000002,
+      "z": 0.9,
+      "rotationY": -1.5707963267948966,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000050",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -4.012999266862564,
+      "z": 1.6170980077968173,
+      "rotationY": -2.199114857512855,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000051",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -4.622999266862564,
+      "z": 2.0602889498800874,
+      "rotationY": -2.827433388230814,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000052",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -5.377000733137436,
+      "z": 2.0602889498800874,
+      "rotationY": -3.4557519189487724,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000053",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -5.987000733137435,
+      "z": 1.6170980077968173,
+      "rotationY": -4.084070449666731,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000054",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -6.22,
+      "z": 0.9000000000000001,
+      "rotationY": -4.71238898038469,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000055",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -5.987000733137436,
+      "z": 0.18290199220318293,
+      "rotationY": -5.340707511102648,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000056",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -5.377000733137436,
+      "z": -0.2602889498800872,
+      "rotationY": -5.969026041820607,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000057",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -4.622999266862564,
+      "z": -0.26028894988008744,
+      "rotationY": -6.5973445725385655,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000058",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -4.012999266862565,
+      "z": 0.1829019922031826,
+      "rotationY": -7.225663103256524,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-00000000005a",
+      "assetDefinitionId": "a1ef4d89-7786-5878-bee1-87b3fac28200",
+      "name": "6ft Round Table",
+      "category": "table",
+      "x": -1.8,
+      "z": 0.9,
+      "rotationY": 0,
+      "scale": 1,
+      "widthM": 1.83,
+      "depthM": 1.83,
+      "collisionType": "cylinder",
+      "label": "Table 7"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-00000000005b",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -0.5800000000000001,
+      "z": 0.9,
+      "rotationY": -1.5707963267948966,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-00000000005c",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -0.8129992668625642,
+      "z": 1.6170980077968173,
+      "rotationY": -2.199114857512855,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-00000000005d",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -1.4229992668625642,
+      "z": 2.0602889498800874,
+      "rotationY": -2.827433388230814,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-00000000005e",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -2.1770007331374357,
+      "z": 2.0602889498800874,
+      "rotationY": -3.4557519189487724,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-00000000005f",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -2.787000733137436,
+      "z": 1.6170980077968173,
+      "rotationY": -4.084070449666731,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000060",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -3.02,
+      "z": 0.9000000000000001,
+      "rotationY": -4.71238898038469,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000061",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -2.787000733137436,
+      "z": 0.18290199220318293,
+      "rotationY": -5.340707511102648,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000062",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -2.177000733137436,
+      "z": -0.2602889498800872,
+      "rotationY": -5.969026041820607,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000063",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -1.4229992668625644,
+      "z": -0.26028894988008744,
+      "rotationY": -6.5973445725385655,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000064",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -0.8129992668625643,
+      "z": 0.1829019922031826,
+      "rotationY": -7.225663103256524,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000066",
+      "assetDefinitionId": "a1ef4d89-7786-5878-bee1-87b3fac28200",
+      "name": "6ft Round Table",
+      "category": "table",
+      "x": 1.4,
+      "z": 0.9,
+      "rotationY": 0,
+      "scale": 1,
+      "widthM": 1.83,
+      "depthM": 1.83,
+      "collisionType": "cylinder",
+      "label": "Table 8"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000067",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": 2.62,
+      "z": 0.9,
+      "rotationY": -1.5707963267948966,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000068",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": 2.3870007331374357,
+      "z": 1.6170980077968173,
+      "rotationY": -2.199114857512855,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000069",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": 1.7770007331374358,
+      "z": 2.0602889498800874,
+      "rotationY": -2.827433388230814,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-00000000006a",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": 1.022999266862564,
+      "z": 2.0602889498800874,
+      "rotationY": -3.4557519189487724,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-00000000006b",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": 0.41299926686256416,
+      "z": 1.6170980077968173,
+      "rotationY": -4.084070449666731,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-00000000006c",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": 0.17999999999999994,
+      "z": 0.9000000000000001,
+      "rotationY": -4.71238898038469,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-00000000006d",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": 0.41299926686256405,
+      "z": 0.18290199220318293,
+      "rotationY": -5.340707511102648,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-00000000006e",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": 1.0229992668625638,
+      "z": -0.2602889498800872,
+      "rotationY": -5.969026041820607,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-00000000006f",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": 1.7770007331374356,
+      "z": -0.26028894988008744,
+      "rotationY": -6.5973445725385655,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000070",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": 2.3870007331374357,
+      "z": 0.1829019922031826,
+      "rotationY": -7.225663103256524,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000072",
+      "assetDefinitionId": "a1ef4d89-7786-5878-bee1-87b3fac28200",
+      "name": "6ft Round Table",
+      "category": "table",
+      "x": -5,
+      "z": 3.7,
+      "rotationY": 0,
+      "scale": 1,
+      "widthM": 1.83,
+      "depthM": 1.83,
+      "collisionType": "cylinder",
+      "label": "Table 9"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000073",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -3.7800000000000002,
+      "z": 3.7,
+      "rotationY": -1.5707963267948966,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000074",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -4.012999266862564,
+      "z": 4.417098007796818,
+      "rotationY": -2.199114857512855,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000075",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -4.622999266862564,
+      "z": 4.860288949880087,
+      "rotationY": -2.827433388230814,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000076",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -5.377000733137436,
+      "z": 4.860288949880088,
+      "rotationY": -3.4557519189487724,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000077",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -5.987000733137435,
+      "z": 4.417098007796818,
+      "rotationY": -4.084070449666731,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000078",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -6.22,
+      "z": 3.7,
+      "rotationY": -4.71238898038469,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000079",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -5.987000733137436,
+      "z": 2.982901992203183,
+      "rotationY": -5.340707511102648,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-00000000007a",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -5.377000733137436,
+      "z": 2.539711050119913,
+      "rotationY": -5.969026041820607,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-00000000007b",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -4.622999266862564,
+      "z": 2.5397110501199127,
+      "rotationY": -6.5973445725385655,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-00000000007c",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -4.012999266862565,
+      "z": 2.9829019922031828,
+      "rotationY": -7.225663103256524,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-00000000007e",
+      "assetDefinitionId": "a1ef4d89-7786-5878-bee1-87b3fac28200",
+      "name": "6ft Round Table",
+      "category": "table",
+      "x": -1.8,
+      "z": 3.7,
+      "rotationY": 0,
+      "scale": 1,
+      "widthM": 1.83,
+      "depthM": 1.83,
+      "collisionType": "cylinder",
+      "label": "Table 10"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-00000000007f",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -0.5800000000000001,
+      "z": 3.7,
+      "rotationY": -1.5707963267948966,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000080",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -0.8129992668625642,
+      "z": 4.417098007796818,
+      "rotationY": -2.199114857512855,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000081",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -1.4229992668625642,
+      "z": 4.860288949880087,
+      "rotationY": -2.827433388230814,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000082",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -2.1770007331374357,
+      "z": 4.860288949880088,
+      "rotationY": -3.4557519189487724,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000083",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -2.787000733137436,
+      "z": 4.417098007796818,
+      "rotationY": -4.084070449666731,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000084",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -3.02,
+      "z": 3.7,
+      "rotationY": -4.71238898038469,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000085",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -2.787000733137436,
+      "z": 2.982901992203183,
+      "rotationY": -5.340707511102648,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000086",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -2.177000733137436,
+      "z": 2.539711050119913,
+      "rotationY": -5.969026041820607,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000087",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -1.4229992668625644,
+      "z": 2.5397110501199127,
+      "rotationY": -6.5973445725385655,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000088",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": -0.8129992668625643,
+      "z": 2.9829019922031828,
+      "rotationY": -7.225663103256524,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-00000000008a",
+      "assetDefinitionId": "a1ef4d89-7786-5878-bee1-87b3fac28200",
+      "name": "6ft Round Table",
+      "category": "table",
+      "x": 1.4,
+      "z": 3.7,
+      "rotationY": 0,
+      "scale": 1,
+      "widthM": 1.83,
+      "depthM": 1.83,
+      "collisionType": "cylinder",
+      "label": "Table 11"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-00000000008b",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": 2.62,
+      "z": 3.7,
+      "rotationY": -1.5707963267948966,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-00000000008c",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": 2.3870007331374357,
+      "z": 4.417098007796818,
+      "rotationY": -2.199114857512855,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-00000000008d",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": 1.7770007331374358,
+      "z": 4.860288949880087,
+      "rotationY": -2.827433388230814,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-00000000008e",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": 1.022999266862564,
+      "z": 4.860288949880088,
+      "rotationY": -3.4557519189487724,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-00000000008f",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": 0.41299926686256416,
+      "z": 4.417098007796818,
+      "rotationY": -4.084070449666731,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000090",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": 0.17999999999999994,
+      "z": 3.7,
+      "rotationY": -4.71238898038469,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000091",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": 0.41299926686256405,
+      "z": 2.982901992203183,
+      "rotationY": -5.340707511102648,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000092",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": 1.0229992668625638,
+      "z": 2.539711050119913,
+      "rotationY": -5.969026041820607,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000093",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": 1.7770007331374356,
+      "z": 2.5397110501199127,
+      "rotationY": -6.5973445725385655,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000094",
+      "assetDefinitionId": "ea8b110e-b4a6-5185-8ee3-932d77508721",
+      "name": "Chiavari Wedding Chair",
+      "category": "chair",
+      "x": 2.3870007331374357,
+      "z": 2.9829019922031828,
+      "rotationY": -7.225663103256524,
+      "scale": 1,
+      "widthM": 0.41,
+      "depthM": 0.41,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000095",
+      "assetDefinitionId": "67974103-36a8-59df-8102-13fdee55d97e",
+      "name": "White Highchair",
+      "category": "chair",
+      "x": -3.7,
+      "z": 1.95,
+      "rotationY": 0,
+      "scale": 1,
+      "widthM": 0.5,
+      "depthM": 0.55,
+      "collisionType": "box",
+      "note": "Highchair for table 6"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000097",
+      "assetDefinitionId": "b05eaa9b-c25e-52ef-9d59-c2913c23f9b8",
+      "name": "Parquet Dance Floor Panel",
+      "category": "stage",
+      "x": 4.6,
+      "z": -1.4,
+      "rotationY": 0,
+      "scale": 1,
+      "widthM": 0.91,
+      "depthM": 0.91,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000098",
+      "assetDefinitionId": "b05eaa9b-c25e-52ef-9d59-c2913c23f9b8",
+      "name": "Parquet Dance Floor Panel",
+      "category": "stage",
+      "x": 4.6,
+      "z": -0.4899999999999999,
+      "rotationY": 0,
+      "scale": 1,
+      "widthM": 0.91,
+      "depthM": 0.91,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-000000000099",
+      "assetDefinitionId": "b05eaa9b-c25e-52ef-9d59-c2913c23f9b8",
+      "name": "Parquet Dance Floor Panel",
+      "category": "stage",
+      "x": 4.6,
+      "z": 0.42000000000000015,
+      "rotationY": 0,
+      "scale": 1,
+      "widthM": 0.91,
+      "depthM": 0.91,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-00000000009a",
+      "assetDefinitionId": "b05eaa9b-c25e-52ef-9d59-c2913c23f9b8",
+      "name": "Parquet Dance Floor Panel",
+      "category": "stage",
+      "x": 4.6,
+      "z": 1.33,
+      "rotationY": 0,
+      "scale": 1,
+      "widthM": 0.91,
+      "depthM": 0.91,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-00000000009b",
+      "assetDefinitionId": "b05eaa9b-c25e-52ef-9d59-c2913c23f9b8",
+      "name": "Parquet Dance Floor Panel",
+      "category": "stage",
+      "x": 4.6,
+      "z": 2.24,
+      "rotationY": 0,
+      "scale": 1,
+      "widthM": 0.91,
+      "depthM": 0.91,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-00000000009c",
+      "assetDefinitionId": "b05eaa9b-c25e-52ef-9d59-c2913c23f9b8",
+      "name": "Parquet Dance Floor Panel",
+      "category": "stage",
+      "x": 5.51,
+      "z": -1.4,
+      "rotationY": 0,
+      "scale": 1,
+      "widthM": 0.91,
+      "depthM": 0.91,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-00000000009d",
+      "assetDefinitionId": "b05eaa9b-c25e-52ef-9d59-c2913c23f9b8",
+      "name": "Parquet Dance Floor Panel",
+      "category": "stage",
+      "x": 5.51,
+      "z": -0.4899999999999999,
+      "rotationY": 0,
+      "scale": 1,
+      "widthM": 0.91,
+      "depthM": 0.91,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-00000000009e",
+      "assetDefinitionId": "b05eaa9b-c25e-52ef-9d59-c2913c23f9b8",
+      "name": "Parquet Dance Floor Panel",
+      "category": "stage",
+      "x": 5.51,
+      "z": 0.42000000000000015,
+      "rotationY": 0,
+      "scale": 1,
+      "widthM": 0.91,
+      "depthM": 0.91,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-00000000009f",
+      "assetDefinitionId": "b05eaa9b-c25e-52ef-9d59-c2913c23f9b8",
+      "name": "Parquet Dance Floor Panel",
+      "category": "stage",
+      "x": 5.51,
+      "z": 1.33,
+      "rotationY": 0,
+      "scale": 1,
+      "widthM": 0.91,
+      "depthM": 0.91,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-0000000000a0",
+      "assetDefinitionId": "b05eaa9b-c25e-52ef-9d59-c2913c23f9b8",
+      "name": "Parquet Dance Floor Panel",
+      "category": "stage",
+      "x": 5.51,
+      "z": 2.24,
+      "rotationY": 0,
+      "scale": 1,
+      "widthM": 0.91,
+      "depthM": 0.91,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-0000000000a1",
+      "assetDefinitionId": "b05eaa9b-c25e-52ef-9d59-c2913c23f9b8",
+      "name": "Parquet Dance Floor Panel",
+      "category": "stage",
+      "x": 6.42,
+      "z": -1.4,
+      "rotationY": 0,
+      "scale": 1,
+      "widthM": 0.91,
+      "depthM": 0.91,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-0000000000a2",
+      "assetDefinitionId": "b05eaa9b-c25e-52ef-9d59-c2913c23f9b8",
+      "name": "Parquet Dance Floor Panel",
+      "category": "stage",
+      "x": 6.42,
+      "z": -0.4899999999999999,
+      "rotationY": 0,
+      "scale": 1,
+      "widthM": 0.91,
+      "depthM": 0.91,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-0000000000a3",
+      "assetDefinitionId": "b05eaa9b-c25e-52ef-9d59-c2913c23f9b8",
+      "name": "Parquet Dance Floor Panel",
+      "category": "stage",
+      "x": 6.42,
+      "z": 0.42000000000000015,
+      "rotationY": 0,
+      "scale": 1,
+      "widthM": 0.91,
+      "depthM": 0.91,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-0000000000a4",
+      "assetDefinitionId": "b05eaa9b-c25e-52ef-9d59-c2913c23f9b8",
+      "name": "Parquet Dance Floor Panel",
+      "category": "stage",
+      "x": 6.42,
+      "z": 1.33,
+      "rotationY": 0,
+      "scale": 1,
+      "widthM": 0.91,
+      "depthM": 0.91,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-0000000000a5",
+      "assetDefinitionId": "b05eaa9b-c25e-52ef-9d59-c2913c23f9b8",
+      "name": "Parquet Dance Floor Panel",
+      "category": "stage",
+      "x": 6.42,
+      "z": 2.24,
+      "rotationY": 0,
+      "scale": 1,
+      "widthM": 0.91,
+      "depthM": 0.91,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-0000000000a6",
+      "assetDefinitionId": "b05eaa9b-c25e-52ef-9d59-c2913c23f9b8",
+      "name": "Parquet Dance Floor Panel",
+      "category": "stage",
+      "x": 7.33,
+      "z": -1.4,
+      "rotationY": 0,
+      "scale": 1,
+      "widthM": 0.91,
+      "depthM": 0.91,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-0000000000a7",
+      "assetDefinitionId": "b05eaa9b-c25e-52ef-9d59-c2913c23f9b8",
+      "name": "Parquet Dance Floor Panel",
+      "category": "stage",
+      "x": 7.33,
+      "z": -0.4899999999999999,
+      "rotationY": 0,
+      "scale": 1,
+      "widthM": 0.91,
+      "depthM": 0.91,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-0000000000a8",
+      "assetDefinitionId": "b05eaa9b-c25e-52ef-9d59-c2913c23f9b8",
+      "name": "Parquet Dance Floor Panel",
+      "category": "stage",
+      "x": 7.33,
+      "z": 0.42000000000000015,
+      "rotationY": 0,
+      "scale": 1,
+      "widthM": 0.91,
+      "depthM": 0.91,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-0000000000a9",
+      "assetDefinitionId": "b05eaa9b-c25e-52ef-9d59-c2913c23f9b8",
+      "name": "Parquet Dance Floor Panel",
+      "category": "stage",
+      "x": 7.33,
+      "z": 1.33,
+      "rotationY": 0,
+      "scale": 1,
+      "widthM": 0.91,
+      "depthM": 0.91,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-0000000000aa",
+      "assetDefinitionId": "b05eaa9b-c25e-52ef-9d59-c2913c23f9b8",
+      "name": "Parquet Dance Floor Panel",
+      "category": "stage",
+      "x": 7.33,
+      "z": 2.24,
+      "rotationY": 0,
+      "scale": 1,
+      "widthM": 0.91,
+      "depthM": 0.91,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-0000000000ab",
+      "assetDefinitionId": "b05eaa9b-c25e-52ef-9d59-c2913c23f9b8",
+      "name": "Parquet Dance Floor Panel",
+      "category": "stage",
+      "x": 8.24,
+      "z": -1.4,
+      "rotationY": 0,
+      "scale": 1,
+      "widthM": 0.91,
+      "depthM": 0.91,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-0000000000ac",
+      "assetDefinitionId": "b05eaa9b-c25e-52ef-9d59-c2913c23f9b8",
+      "name": "Parquet Dance Floor Panel",
+      "category": "stage",
+      "x": 8.24,
+      "z": -0.4899999999999999,
+      "rotationY": 0,
+      "scale": 1,
+      "widthM": 0.91,
+      "depthM": 0.91,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-0000000000ad",
+      "assetDefinitionId": "b05eaa9b-c25e-52ef-9d59-c2913c23f9b8",
+      "name": "Parquet Dance Floor Panel",
+      "category": "stage",
+      "x": 8.24,
+      "z": 0.42000000000000015,
+      "rotationY": 0,
+      "scale": 1,
+      "widthM": 0.91,
+      "depthM": 0.91,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-0000000000ae",
+      "assetDefinitionId": "b05eaa9b-c25e-52ef-9d59-c2913c23f9b8",
+      "name": "Parquet Dance Floor Panel",
+      "category": "stage",
+      "x": 8.24,
+      "z": 1.33,
+      "rotationY": 0,
+      "scale": 1,
+      "widthM": 0.91,
+      "depthM": 0.91,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-0000000000af",
+      "assetDefinitionId": "b05eaa9b-c25e-52ef-9d59-c2913c23f9b8",
+      "name": "Parquet Dance Floor Panel",
+      "category": "stage",
+      "x": 8.24,
+      "z": 2.24,
+      "rotationY": 0,
+      "scale": 1,
+      "widthM": 0.91,
+      "depthM": 0.91,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-0000000000b0",
+      "assetDefinitionId": "b05eaa9b-c25e-52ef-9d59-c2913c23f9b8",
+      "name": "Parquet Dance Floor Panel",
+      "category": "stage",
+      "x": 9.149999999999999,
+      "z": -1.4,
+      "rotationY": 0,
+      "scale": 1,
+      "widthM": 0.91,
+      "depthM": 0.91,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-0000000000b1",
+      "assetDefinitionId": "b05eaa9b-c25e-52ef-9d59-c2913c23f9b8",
+      "name": "Parquet Dance Floor Panel",
+      "category": "stage",
+      "x": 9.149999999999999,
+      "z": -0.4899999999999999,
+      "rotationY": 0,
+      "scale": 1,
+      "widthM": 0.91,
+      "depthM": 0.91,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-0000000000b2",
+      "assetDefinitionId": "b05eaa9b-c25e-52ef-9d59-c2913c23f9b8",
+      "name": "Parquet Dance Floor Panel",
+      "category": "stage",
+      "x": 9.149999999999999,
+      "z": 0.42000000000000015,
+      "rotationY": 0,
+      "scale": 1,
+      "widthM": 0.91,
+      "depthM": 0.91,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-0000000000b3",
+      "assetDefinitionId": "b05eaa9b-c25e-52ef-9d59-c2913c23f9b8",
+      "name": "Parquet Dance Floor Panel",
+      "category": "stage",
+      "x": 9.149999999999999,
+      "z": 1.33,
+      "rotationY": 0,
+      "scale": 1,
+      "widthM": 0.91,
+      "depthM": 0.91,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-0000000000b4",
+      "assetDefinitionId": "b05eaa9b-c25e-52ef-9d59-c2913c23f9b8",
+      "name": "Parquet Dance Floor Panel",
+      "category": "stage",
+      "x": 9.149999999999999,
+      "z": 2.24,
+      "rotationY": 0,
+      "scale": 1,
+      "widthM": 0.91,
+      "depthM": 0.91,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-0000000000b5",
+      "assetDefinitionId": "11d806d6-ac85-5519-b25f-78e86b9141ce",
+      "name": "6ft × 4ft Staging Deck",
+      "category": "stage",
+      "x": 9.85,
+      "z": -1.83,
+      "rotationY": 1.5707963267948966,
+      "scale": 1,
+      "widthM": 1.83,
+      "depthM": 1.22,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-0000000000b6",
+      "assetDefinitionId": "11d806d6-ac85-5519-b25f-78e86b9141ce",
+      "name": "6ft × 4ft Staging Deck",
+      "category": "stage",
+      "x": 9.85,
+      "z": 0,
+      "rotationY": 1.5707963267948966,
+      "scale": 1,
+      "widthM": 1.83,
+      "depthM": 1.22,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-0000000000b7",
+      "assetDefinitionId": "11d806d6-ac85-5519-b25f-78e86b9141ce",
+      "name": "6ft × 4ft Staging Deck",
+      "category": "stage",
+      "x": 9.85,
+      "z": 1.83,
+      "rotationY": 1.5707963267948966,
+      "scale": 1,
+      "widthM": 1.83,
+      "depthM": 1.22,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-0000000000b8",
+      "assetDefinitionId": "06ecec63-7d51-559c-be69-0058c4dad11f",
+      "name": "Mic Stand",
+      "category": "av",
+      "x": 9.4,
+      "z": -0.9,
+      "rotationY": 0,
+      "scale": 1,
+      "widthM": 0.5,
+      "depthM": 0.5,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-0000000000b9",
+      "assetDefinitionId": "06ecec63-7d51-559c-be69-0058c4dad11f",
+      "name": "Mic Stand",
+      "category": "av",
+      "x": 9.4,
+      "z": 0.9,
+      "rotationY": 0,
+      "scale": 1,
+      "widthM": 0.5,
+      "depthM": 0.5,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-0000000000ba",
+      "assetDefinitionId": "e10816ab-5ae2-5925-914d-7ad60d33530f",
+      "name": "Bar",
+      "category": "other",
+      "x": 4.6,
+      "z": 4.85,
+      "rotationY": 0,
+      "scale": 1,
+      "widthM": 1.6,
+      "depthM": 0.61,
+      "collisionType": "box",
+      "note": "Cash bar from 21:00"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-0000000000bb",
+      "assetDefinitionId": "e10816ab-5ae2-5925-914d-7ad60d33530f",
+      "name": "Bar",
+      "category": "other",
+      "x": 6.25,
+      "z": 4.85,
+      "rotationY": 0,
+      "scale": 1,
+      "widthM": 1.6,
+      "depthM": 0.61,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-0000000000bc",
+      "assetDefinitionId": "19d030aa-bc18-5665-8561-1e26e0679fe3",
+      "name": "Poseur Table",
+      "category": "table",
+      "x": 3,
+      "z": 4.2,
+      "rotationY": 0,
+      "scale": 1,
+      "widthM": 0.6,
+      "depthM": 0.6,
+      "collisionType": "cylinder"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-0000000000bd",
+      "assetDefinitionId": "19d030aa-bc18-5665-8561-1e26e0679fe3",
+      "name": "Poseur Table",
+      "category": "table",
+      "x": 8.2,
+      "z": 4.2,
+      "rotationY": 0,
+      "scale": 1,
+      "widthM": 0.6,
+      "depthM": 0.6,
+      "collisionType": "cylinder"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-0000000000be",
+      "assetDefinitionId": "19d030aa-bc18-5665-8561-1e26e0679fe3",
+      "name": "Poseur Table",
+      "category": "table",
+      "x": 8.2,
+      "z": 3,
+      "rotationY": 0,
+      "scale": 1,
+      "widthM": 0.6,
+      "depthM": 0.6,
+      "collisionType": "cylinder"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-0000000000bf",
+      "assetDefinitionId": "6f56f59e-b35d-5ed3-af15-c99790cf4cd0",
+      "name": "Cake Cutting Table",
+      "category": "table",
+      "x": 4.4,
+      "z": -4.2,
+      "rotationY": 0,
+      "scale": 1,
+      "widthM": 1.1,
+      "depthM": 1.1,
+      "collisionType": "cylinder",
+      "note": "Needs a socket within 2 m for the cake lights"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-0000000000c0",
+      "assetDefinitionId": "dfcdcdec-a772-5703-bdaa-af4d44d1e0f9",
+      "name": "Lectern",
+      "category": "lectern",
+      "x": 3,
+      "z": -4.4,
+      "rotationY": 0,
+      "scale": 1,
+      "widthM": 0.6,
+      "depthM": 0.5,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-0000000000c1",
+      "assetDefinitionId": "c37b53d1-ab5c-5ae4-8ed5-50c069ef593f",
+      "name": "Handheld Microphone",
+      "category": "av",
+      "x": 3,
+      "z": -4.4,
+      "rotationY": 0,
+      "scale": 1,
+      "widthM": 0.05,
+      "depthM": 0.05,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-0000000000c2",
+      "assetDefinitionId": "26e25cd4-ae3e-537d-9ac0-66021f925cdd",
+      "name": "Projector Screen",
+      "category": "av",
+      "x": -10.1,
+      "z": -0.5,
+      "rotationY": 1.5707963267948966,
+      "scale": 1,
+      "widthM": 2.5,
+      "depthM": 0.6,
+      "collisionType": "box"
+     },
+     {
+      "objectId": "00000000-0000-4000-8000-0000000000c3",
+      "assetDefinitionId": "6907e1d9-33d6-5910-b55f-78a77727d6b0",
+      "name": "Laser Projector",
+      "category": "av",
+      "x": -3.4,
+      "z": -0.5,
+      "rotationY": 0,
+      "scale": 1,
+      "widthM": 0.55,
+      "depthM": 0.35,
+      "collisionType": "box",
+      "note": "Slideshow during the meal; laptop comes with the best man"
+     }
+    ]
+   },
+   "diagramUrl": null,
+   "webViewUrl": "https://venviewer.com/hallkeeper/6d1f8a52-3c1b-4f6e-9b1a-0a4c2b7e9d10",
+   "generatedAt": "2026-10-24T06:42:00.000Z",
+   "approval": {
+    "version": 3,
+    "approvedAt": "2026-10-22T15:12:00.000Z",
+    "approverName": "Fiona Grant"
+   },
+   "paperCheck": {
+    "url": "https://venviewer.com/sheet-check?s=3c0a1e52-6b7d-4f80-9a1b-2c3d4e5f6a73&v=3&h=3e1f0a2b4c5d6e7f",
+    "qr": {
+     "size": 41,
+     "rows": [
+      "11111110010101011111110110001001001111111",
+      "10000010010110010100010001111110101000001",
+      "10111010100011101111111110111001001011101",
+      "10111010111100111000110001111110101011101",
+      "10111010110100001111011110000001001011101",
+      "10000010101111010010100000111100101000001",
+      "11111110101010101010101010101010101111111",
+      "00000000100011111010111000110011000000000",
+      "10111110000111000101001111110100101111100",
+      "10100000010101101011110100101111111110101",
+      "01100011000010100000101010011000110110010",
+      "11110000111000001011010100110001100011000",
+      "11001011000110111100101111101111010001100",
+      "10111101101101001110010000000001101111111",
+      "10111110010001101010101111111110010111010",
+      "11011000101010000010010100011000101111010",
+      "01110011110010011110001101011100010100110",
+      "00010101110111011001001110100011101111111",
+      "00101110001110011010101001111000010011010",
+      "10100100000001000001000100011001001010010",
+      "11011111000101100010011010010100100001100",
+      "00000001010011001001000110001011111110011",
+      "00110010000100000000001011110000110011000",
+      "11010101001010110000111110110001111011001",
+      "11100010111100101100101011110101010100101",
+      "11111100000100100011110110001011011011011",
+      "01001011100011011100100010110110110110000",
+      "00111001101001011011110110101001111011001",
+      "00101010001110110111000001010101100001110",
+      "11000001011111101100111010101011011110001",
+      "10011011000101010001001001110000011011110",
+      "10001101010111000001110010001011011001010",
+      "10011111000100110111100001110110111110111",
+      "00000000101110001101011111001001100010101",
+      "11111110000111010100110001110001101011000",
+      "10000010101010101110111011011010100011000",
+      "10111010111111101001010000111110111110100",
+      "10111010100011111111101110000101010101000",
+      "10111010111000101000111000111101111110100",
+      "10000010011111100011111000100011111010010",
+      "11111110100111011110000001111100001111100"
+     ]
+    }
+   }
+  }
+ },
+ "v4": {
+  "approval": {
+   "version": 4,
+   "approvedAt": "2026-10-24T08:15:00.000Z",
+   "approverName": "Callum Reid"
+  },
+  "paperCheck": {
+   "url": "https://venviewer.com/sheet-check?s=4d1b2f63-7c8e-4a91-8b2c-3d4e5f6a7b84&v=4&h=4f2a1b3c5d6e7f80",
+   "qr": {
+    "size": 41,
+    "rows": [
+     "11111110000000101111110111001001001111111",
+     "10000010010001101100010010010000001000001",
+     "10111010110010001111111000001010101011101",
+     "10111010111010100000110001011110101011101",
+     "10111010111110101111011110100001001011101",
+     "10000010101011001010100000110100101000001",
+     "11111110101010101010101010101010101111111",
+     "00000000100011110010111000100011000000000",
+     "10111110000111000101001111110100101111100",
+     "11000001110100101011110100101111111110101",
+     "10000011101010100000101011011000110000010",
+     "01011001001000001011011100010001111011011",
+     "00111011000111111100101111101111010001100",
+     "10001101011001000110010000000001101111111",
+     "10101110010010110010101110010000110111010",
+     "11001000111110010010010100101010101111000",
+     "01110011111011110110001101011100010100110",
+     "00011101111010110001001110100011101111111",
+     "10101010011011101010001010010100110011010",
+     "00101000001100111000100010001011001010010",
+     "00000111011110010010011110010100100001100",
+     "11100000010011110001000110001011111110011",
+     "10001010000100011000101001111000110110100",
+     "01111001001010111000111110110001101011001",
+     "01001111111000111100101011110101010100101",
+     "01100100110100100011110110001011011011011",
+     "00010111111010011010100011110000110000000",
+     "11101100110001011001111110001011101011010",
+     "01011011101101111111000001010101100001100",
+     "10000000111110110100111010101011011110001",
+     "10101011001100011001001001111000111011110",
+     "10101101001101000001110010101001011001000",
+     "10111110000000101111100001110110111110111",
+     "00000000111001011101011111001001100010101",
+     "11111110011010011100110011111001101010000",
+     "10000010101110111110111111011000100011000",
+     "10111010101011010001010000111110111110100",
+     "10111010101011001111101110000101010100000",
+     "10111010111000100000011010110101111111000",
+     "10000010011111100010011100111011111010010",
+     "11111110100011001111000001111100001111100"
+    ]
+   }
+  },
+  "generatedAt": "2026-10-24T08:20:00.000Z"
+ }
+}
