@@ -14,11 +14,13 @@
 // ---------------------------------------------------------------------------
 
 import { getCatalogueItem } from "./catalogue.js";
-import type { PlacedItem } from "./placement.js";
+import { createGroupMemberIdsLookup, type PlacedItem } from "./placement.js";
 import { RENDER_SCALE } from "../constants/scale.js";
 import {
   computeCirculation,
   bandForGap,
+  convexHull,
+  footprintCorners,
   footprintOfPlacement,
   type CirculationBand,
   type CirculationGap,
@@ -37,22 +39,45 @@ export const CIRCULATION_OVERLAY_Y = 0.012;
 
 /**
  * Extract planning-relevant circulation footprints in metres. Tables and
- * passive freestanding AV floor equipment count; chairs and tabletop AV do
- * not, avoiding intentionally tiny intra-group and on-table gaps. Render-space
- * x/z divide back to metres; catalogue width/depth are already metres.
+ * passive freestanding AV floor equipment count; tabletop AV does not. A
+ * table's chairs count with it: a table with its set and group (a round with
+ * its chairs, a long table's trestles with theirs) is one footprint outlined
+ * by the convex hull of every piece in it, so a gap is measured chair back to
+ * chair back, the floor a guest walks, never table edge to table edge. Where
+ * the hull runs straight between two neighbouring chairs it reads a little
+ * narrower than the chairs themselves: on the safe side for a walkway. Chairs
+ * with no table (theatre rows) do not count, avoiding their intentionally tiny
+ * gaps. Render-space x/z divide back to metres; catalogue width/depth are
+ * already metres.
  */
 export function placedCirculationFootprints(
   placedItems: readonly PlacedItem[],
 ): FurnitureFootprint[] {
+  const membersOf = createGroupMemberIdsLookup(placedItems);
+  const byId = new Map(placedItems.map((placed) => [placed.id, placed]));
+  const counted = new Set<string>();
   const footprints: FurnitureFootprint[] = [];
   for (const placed of placedItems) {
-    if (!isSceneFurniturePlacement(placed)) continue;
+    if (counted.has(placed.id) || !isSceneFurniturePlacement(placed)) continue;
     const item = getCatalogueItem(placed.catalogueItemId);
-    if (
-      item === undefined
-      || (item.category !== "table" && !isPassiveFreestandingAvFloorItem(item) && !isFreestandingFloorEquipmentItem(item))
-    ) continue;
-    footprints.push(footprintOfPlacement(placed, item, RENDER_SCALE));
+    if (item === undefined) continue;
+    if (item.category === "table") {
+      const unit: FurnitureFootprint[] = [];
+      for (const id of membersOf(placed.id)) {
+        const member = byId.get(id);
+        const memberItem = member === undefined ? undefined : getCatalogueItem(member.catalogueItemId);
+        if (member === undefined || memberItem === undefined || !isSceneFurniturePlacement(member)) continue;
+        if (memberItem.category !== "table" && memberItem.category !== "chair") continue;
+        counted.add(member.id);
+        unit.push(footprintOfPlacement(member, memberItem, RENDER_SCALE));
+      }
+      const own = footprintOfPlacement(placed, item, RENDER_SCALE);
+      footprints.push(unit.length <= 1 ? own : { ...own, outline: convexHull(unit.flatMap((piece) => footprintCorners(piece))) });
+      continue;
+    }
+    if (isPassiveFreestandingAvFloorItem(item) || isFreestandingFloorEquipmentItem(item)) {
+      footprints.push(footprintOfPlacement(placed, item, RENDER_SCALE));
+    }
   }
   return footprints;
 }
