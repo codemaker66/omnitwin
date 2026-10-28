@@ -13,8 +13,9 @@
 
 import { biquadCoefficients, seededRandom } from "../planner-sound-render.js";
 import { OCTAVE_Q } from "./analysis.js";
-import { OCTAVE_BANDS_HZ, type BandValues } from "./bands.js";
+import { OCTAVE_BANDS_HZ, bandMap, type BandValues } from "./bands.js";
 import type { RoomAcoustics } from "./rooms.js";
+import { bandLeakage, synthesisTimes } from "./tail-correction.js";
 
 /** Two channels of samples at one rate. */
 export interface Stereo {
@@ -36,6 +37,10 @@ const LENGTH_PER_RT = 1.2;
 /** Each band's noise stops this many times its own time after the onset, below -75 dB. */
 const BAND_LENGTH_PER_RT = 1.25;
 const FADE_IN_S = 0.01;
+/** The window each band's running power is measured over, to hold it steady. */
+const POWER_WINDOW_S = 0.02;
+/** The running power is never taken below this, so the division stays finite. */
+const MIN_POWER = 1e-30;
 /** The tail's two channels together stay within 2 MB. */
 const MAX_BYTES = 2_000_000;
 /** A band time below this (or not a number) is treated as this, so the decay stays finite. */
@@ -63,12 +68,20 @@ function safeTime(t: number): number {
  * carried across steps (each stage's output held at float precision, as that
  * function's in-place filtering does), so the band is the same as filtering
  * it all at once. It stops 1.25 times its own time after the onset.
+ *
+ * Band-limited noise swells and fades at random over tens of milliseconds,
+ * and those swells scatter a band's decay by several percent from one seed to
+ * the next. So each band is held at its expected power (`expectedPower`, the
+ * mean square of the filtered noise): it is divided by its running power over
+ * the last 20 ms and scaled back to that mean. The fine grain of the noise
+ * stays; the band keeps the share of energy white noise would give it.
  */
 function* bandSteps(
   channel: Float32Array,
   start: number,
   centreHz: number,
   rt: number,
+  expectedPower: number,
   random: () => number,
   sampleRate: number,
 ): Generator<number, void> {
@@ -77,9 +90,11 @@ function* bandSteps(
   const c = biquadCoefficients("bandpass", centreHz, OCTAVE_Q, sampleRate);
   const decayStep = Math.exp(-DECAY_PER_RT / (rt * sampleRate));
   const fadeSamples = Math.max(1, Math.round(FADE_IN_S * sampleRate));
+  const powerPole = Math.exp(-1 / (POWER_WINDOW_S * sampleRate));
   let ax1 = 0, ax2 = 0, ay1 = 0, ay2 = 0;
   let bx1 = 0, bx2 = 0, by1 = 0, by2 = 0;
   let envelope = 1;
+  let power = expectedPower;
   for (let from = 0; from < length; from += TAIL_STEP_SAMPLES) {
     const to = Math.min(length, from + TAIL_STEP_SAMPLES);
     for (let i = from; i < to; i += 1) {
@@ -89,8 +104,11 @@ function* bandSteps(
       const u = Math.fround(ya);
       const yb = c.b0 * u + c.b1 * bx1 + c.b2 * bx2 - c.a1 * by1 - c.a2 * by2;
       bx2 = bx1; bx1 = u; by2 = by1; by1 = yb;
+      const band = Math.fround(yb);
+      power = powerPole * power + (1 - powerPole) * band * band;
+      const steady = band * Math.sqrt(expectedPower / Math.max(power, MIN_POWER));
       const fade = i < fadeSamples ? 0.5 - 0.5 * Math.cos((Math.PI * i) / fadeSamples) : 1;
-      channel[start + i] = (channel[start + i] ?? 0) + Math.fround(yb) * envelope * fade;
+      channel[start + i] = (channel[start + i] ?? 0) + steady * envelope * fade;
       envelope *= decayStep;
     }
     yield to - from;
@@ -126,21 +144,27 @@ export function* tailSlices(
   options: { sampleRate: number; seed: number; onsetSeconds: number },
 ): Iterator<number, Stereo> {
   const { sampleRate } = options;
-  const times = rt.map(safeTime);
+  const targets = bandMap(rt, safeTime);
   const onset = Number.isFinite(options.onsetSeconds) ? Math.max(0, options.onsetSeconds) : 0;
   const maxSamples = Math.floor(MAX_BYTES / (2 * Float32Array.BYTES_PER_ELEMENT));
-  const length = Math.min(maxSamples, Math.floor((onset + LENGTH_PER_RT * Math.max(...times)) * sampleRate));
+  const length = Math.min(maxSamples, Math.floor((onset + LENGTH_PER_RT * Math.max(...targets)) * sampleRate));
   // The first sample at or after the onset, so everything before it is silent.
   const start = Math.ceil(onset * sampleRate);
   const left = new Float32Array(length);
   const right = new Float32Array(length);
   const randomLeft = seededRandom(options.seed);
   const randomRight = seededRandom((options.seed + RIGHT_SEED_OFFSET) >>> 0);
+  // The first step processes no samples: it corrects the band times for the
+  // leak between bands, so each band measures its target.
+  const times = synthesisTimes(targets, sampleRate);
+  const { bandPower } = bandLeakage(sampleRate);
+  yield 0;
   for (let band = 0; band < OCTAVE_BANDS_HZ.length; band += 1) {
     const hz = OCTAVE_BANDS_HZ[band] ?? 1000;
     const time = times[band] ?? MIN_RT_S;
-    yield* bandSteps(left, start, hz, time, randomLeft, sampleRate);
-    yield* bandSteps(right, start, hz, time, randomRight, sampleRate);
+    const power = bandPower[band] ?? 0;
+    yield* bandSteps(left, start, hz, time, power, randomLeft, sampleRate);
+    yield* bandSteps(right, start, hz, time, power, randomRight, sampleRate);
   }
   yield* normaliseSteps(left);
   yield* normaliseSteps(right);

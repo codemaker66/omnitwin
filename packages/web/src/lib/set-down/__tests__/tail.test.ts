@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { octaveBandpass, schroederT20 } from "../analysis.js";
 import { OCTAVE_BANDS_HZ, type BandValues } from "../bands.js";
+import { contentsAbsorption, reverberationTimes } from "../room-acoustics.js";
 import { ROOM_ACOUSTICS, UNCALIBRATED, type RoomAcoustics } from "../rooms.js";
 import { TAIL_STEP_SAMPLES, renderRoomTail, tailOnsetSeconds, tailSlices, type Stereo } from "../tail.js";
+import { bandLeakage, modelledT20, synthesisTimes } from "../tail-correction.js";
 
 const RATE = 48000;
 const RT: BandValues = [1.8, 2.2, 2.6, 2.9, 2.7, 2.0, 1.2];
@@ -49,18 +51,42 @@ function room(volumeM3: number, areaM2: number): RoomAcoustics {
   };
 }
 
+/** Each band's T20 error (measured ÷ target − 1) for seeds 1–10, both channels. */
+const seedErrors: readonly (readonly number[])[] = (() => {
+  const errors: number[][] = OCTAVE_BANDS_HZ.map(() => []);
+  for (let seed = 1; seed <= 10; seed += 1) {
+    const rendered = renderRoomTail(RT, { ...OPTIONS, seed });
+    for (const channel of [rendered.left, rendered.right]) {
+      OCTAVE_BANDS_HZ.forEach((hz, band) => {
+        const filtered = octaveBandpass(channel, hz, RATE);
+        // A silent band would read 0 and hide a fault in the decay.
+        expect(energy(filtered)).toBeGreaterThan(1e-4);
+        errors[band]?.push(schroederT20(filtered, RATE) / (RT[band] ?? 1) - 1);
+      });
+    }
+  }
+  return errors;
+})();
+
 describe("renderRoomTail", () => {
-  it.each(OCTAVE_BANDS_HZ.slice(1, 6).map((hz, k) => [hz, k + 1] as const))(
-    "rings for its target time at %i Hz, within 10 %%",
-    (hz, band) => {
-      const filtered = octaveBandpass(tail.left, hz, RATE);
-      expect(energy(filtered)).toBeGreaterThan(1e-4);
-      const target = RT[band] ?? 0;
-      const measured = schroederT20(filtered, RATE);
-      expect(measured).toBeGreaterThan(target * 0.9);
-      expect(measured).toBeLessThan(target * 1.1);
+  it.each(OCTAVE_BANDS_HZ.slice(1, 6).map((hz, k) => ({ hz, band: k + 1 })))(
+    "rings for its target time at $hz Hz within ten percent, for 10 seeds in both channels",
+    ({ band }) => {
+      const errors = seedErrors[band] ?? [];
+      expect(errors).toHaveLength(20);
+      for (const error of errors) {
+        expect(error).toBeGreaterThan(-0.1);
+        expect(error).toBeLessThan(0.1);
+      }
     },
   );
+
+  it("rings for its target time at 8 kHz within 15 % on average over the 10 seeds", () => {
+    const errors = seedErrors[6] ?? [];
+    expect(errors).toHaveLength(20);
+    const mean = errors.reduce((a, b) => a + b, 0) / errors.length;
+    expect(Math.abs(mean)).toBeLessThan(0.15);
+  });
 
   it("decorrelates the two channels", () => {
     expect(Math.abs(correlation(tail.left, tail.right))).toBeLessThan(0.2);
@@ -122,15 +148,18 @@ describe("tailSlices", () => {
     }
     const sliced: Stereo = step.value;
     expect(steps.length).toBeGreaterThanOrEqual(7);
-    for (const samples of steps) {
+    // The first step only corrects the band times; every other one does samples.
+    expect(steps[0]).toBe(0);
+    for (const samples of steps.slice(1)) {
       expect(samples).toBeGreaterThan(0);
       expect(samples).toBeLessThanOrEqual(TAIL_STEP_SAMPLES);
     }
     expect(TAIL_STEP_SAMPLES).toBe(8192);
-    // Each band's noise runs to 1.25 x its own time after the onset (or the
-    // buffer's end), in both channels; then each channel is measured and scaled.
+    // Each band's noise runs to 1.25 x its own synthesis time after the onset
+    // (or the buffer's end), in both channels; then each channel is measured
+    // and scaled.
     const start = Math.ceil(OPTIONS.onsetSeconds * RATE);
-    const bandSamples = RT.reduce(
+    const bandSamples = synthesisTimes(RT, RATE).reduce(
       (sum, t) => sum + Math.min(tail.left.length - start, Math.ceil(1.25 * t * RATE)),
       0,
     );
@@ -142,6 +171,34 @@ describe("tailSlices", () => {
       if (sliced.left[i] !== tail.left[i] || sliced.right[i] !== tail.right[i]) mismatches += 1;
     }
     expect(mismatches).toBe(0);
+  });
+});
+
+describe("synthesisTimes", () => {
+  it("leaves a room that rings the same in every band as it is", () => {
+    const flat: BandValues = [2, 2, 2, 2, 2, 2, 2];
+    for (const time of synthesisTimes(flat, RATE)) expect(time).toBeCloseTo(2, 2);
+  });
+
+  it("shortens a band whose neighbour rings longer, within 0.8-1.25 of its target", () => {
+    const times = synthesisTimes(RT, RATE);
+    // 4 kHz (2.0 s) sits beside 2 kHz (2.7 s), so it is made shorter to measure 2.0 s.
+    expect(times[5]).toBeLessThan(RT[5]);
+    for (const acoustics of Object.values(ROOM_ACOUSTICS)) {
+      const target = reverberationTimes(acoustics, contentsAbsorption([]));
+      synthesisTimes(target, RATE).forEach((time, band) => {
+        expect(time).toBeGreaterThanOrEqual(0.8 * (target[band] ?? 0) - 1e-12);
+        expect(time).toBeLessThanOrEqual(1.25 * (target[band] ?? 0) + 1e-12);
+      });
+    }
+  });
+
+  it("models each band's T20 from the leak between bands", () => {
+    const { weights } = bandLeakage(RATE);
+    // Measured offline: the uncorrected tail reads +6 % at 4 kHz and +21 % at 8 kHz.
+    expect(modelledT20(weights[5] ?? [], RT) / RT[5]).toBeGreaterThan(1.04);
+    expect(modelledT20(weights[6] ?? [], RT) / RT[6]).toBeGreaterThan(1.15);
+    expect(modelledT20(weights[3] ?? [], [2, 2, 2, 2, 2, 2, 2])).toBeCloseTo(2, 2);
   });
 });
 
