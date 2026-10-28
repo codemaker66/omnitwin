@@ -56,6 +56,8 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/public-enquiry-venue-slug-postgres.test.ts",
   // The reference loadouts list: photo count and cover subqueries name their loadout (VENVIEWER-API-1).
   "src/__tests__/reference-loadouts-postgres.test.ts",
+  // The chair sizes migration (0103): rewrites only from 0074's sizes, stops named, never blocks a layout save.
+  "src/__tests__/chair-sizes-migration-postgres.test.ts",
 ] as const;
 
 /**
