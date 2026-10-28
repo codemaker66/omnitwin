@@ -75,7 +75,7 @@ export function dinnerTableId(number: number): string {
   return `ga-table-${twoDigits(number)}`;
 }
 
-/** The saved layout: each table followed by its ten chairs, Table 1 first. Its
+/** The saved layout: each table followed by its twelve chairs, Table 1 first. Its
  *  chair is fixed, not the event's, so every run loads the identical layout. */
 export function grandHallDinner180(): PlacedItem[] {
   const table = getCatalogueItemBySlug(DEFAULT_PLANNER_ROUND_TABLE_SLUG);
