@@ -67,7 +67,7 @@ export interface ConversationDeny {
 type ThreadRow = typeof threads.$inferSelect;
 type MessageRow = typeof messages.$inferSelect;
 /** The surface both a Database and a transaction expose. */
-type Conn = Pick<Database, "select" | "insert" | "update">;
+type Conn = Pick<Database, "select" | "insert" | "update" | "execute">;
 
 const CLIENT_LINK_TYPES = ["source_configuration", "variant_configuration", "approved_snapshot_source"] as const;
 const SYSTEM_AUTHOR_NAME = "Venviewer";
@@ -352,13 +352,31 @@ interface MessageSeed {
   readonly idempotencyKey: string | null;
 }
 
+/** The key that orders one venue's messages: see appendMessage. */
+export function conversationCursorLockKey(venueId: string): string {
+  return `conversation-cursor:${venueId}`;
+}
+
 /** Insert one message and move the thread's counters, or read back the
- *  message the same key already made. */
+ *  message the same key already made. Every caller is inside a transaction.
+ *
+ *  A message's cursor comes from a sequence, and a sequence hands out numbers
+ *  in the order they are asked for, not the order they commit. Two sends in
+ *  one venue could commit out of cursor order: a read between the commits
+ *  saw the higher cursor and handed it out, and every read on from there
+ *  (`after=<cursor>`) never fetched the lower one. So a venue's messages are
+ *  written one at a time, from taking the cursor until commit, under a
+ *  transaction-scoped lock: the messages any read can see are then always
+ *  every one of the venue's messages up to some cursor, and no cursor a read
+ *  hands out (a snapshot's, a replay's, a caught-up frame's) is passed by a
+ *  message that commits later. Messages come at the pace people type; the
+ *  wait is the length of one send's transaction. */
 async function appendMessage(
   conn: Conn,
   thread: Pick<ThreadRow, "id" | "venueId">,
   seed: MessageSeed,
 ): Promise<{ replay: boolean; row: MessageRow }> {
+  await conn.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${conversationCursorLockKey(thread.venueId)}, 0))`);
   const now = new Date();
   const inserted = await conn
     .insert(messages)
@@ -382,7 +400,7 @@ async function appendMessage(
       .set({
         messageCount: sql`${threads.messageCount} + 1`,
         lastMessageAt: now,
-        lastCursor: fresh.cursor,
+        lastCursor: sql`GREATEST(${threads.lastCursor}, ${fresh.cursor})`,
         updatedAt: now,
       })
       .where(eq(threads.id, thread.id));

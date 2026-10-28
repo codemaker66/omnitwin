@@ -14,6 +14,7 @@ import {
   listThreadsCore,
   markReceiptCore,
   openThreadCore,
+  postSystemMessage,
   sendClientMessageCore,
   sendMessageCore,
   type ConversationActor,
@@ -353,6 +354,58 @@ describe.skipIf(target === undefined)("conversations on migrated PostgreSQL", ()
     const later = granted(await clientConversationSnapshot(db, f.client, f.eventId, snapshot.cursor));
     expect(later.messages).toEqual([]);
     expect(later.cursor).toBe(snapshot.cursor);
+  });
+
+  it("never hands out a cursor that a message committing later can pass, across the event's threads (supplier-requests-5)", async () => {
+    const f = await fixture();
+    const booking = granted(await openThreadCore(db, f.staff, f.venueId, { audience: "client-facing", subject: "booking", bookingId: f.bookingId })).thread;
+    granted(await sendMessageCore(db, f.staff, booking.id, send("We have you from ten")));
+    granted(await sendClientMessageCore(db, f.client, f.eventId, send("Could we come at nine?")));
+    const start = granted(await clientConversationSnapshot(db, f.client, f.eventId, 0));
+    expect(start.messages).toHaveLength(2);
+
+    // A: a step recorded on the booking's thread takes its cursor and has not
+    // yet committed (a request's transaction, say).
+    let release = (): void => undefined;
+    const gate = new Promise<void>((done) => { release = done; });
+    let takenCursor = (_cursor: number): void => undefined;
+    const taken = new Promise<number>((done) => { takenCursor = done; });
+    const held = db.transaction(async (tx) => {
+      const step = await postSystemMessage(tx, booking.id, "Fiona has this");
+      takenCursor(step?.cursor ?? -1);
+      await gate;
+    });
+    const c1 = await taken;
+    expect(c1).toBeGreaterThan(start.cursor);
+
+    // B: the office answers on the event's own thread meanwhile.
+    let bSettled = false;
+    const answered = sendClientMessageCore(db, f.staff, f.eventId, send("Nine is fine.")).finally(() => { bSettled = true; });
+    // Either B waits for A (the fix), or B has committed with a cursor past A's.
+    for (let tries = 0; !bSettled; tries += 1) {
+      const { rowCount } = await pool.query(
+        "SELECT 1 FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock' AND wait_event = 'advisory'");
+      if (rowCount !== null && rowCount > 0) break;
+      if (tries > 500) throw new Error("the second send neither waited nor finished");
+      await new Promise((done) => setTimeout(done, 10));
+    }
+
+    // While A is open, no read hands out a cursor at or past A's.
+    const meanwhile = granted(await clientConversationSnapshot(db, f.client, f.eventId, start.cursor));
+    expect(meanwhile.cursor).toBeLessThan(c1);
+
+    release();
+    await held;
+    const b = granted(await answered);
+    expect(b.message.cursor).toBeGreaterThan(c1);
+
+    // Reading on from what was handed out finds both, in the order they committed.
+    const after = granted(await clientConversationSnapshot(db, f.client, f.eventId, meanwhile.cursor));
+    expect(after.messages.map((message) => [message.body, message.cursor])).toEqual([
+      ["Fiona has this", c1], ["Nine is fine.", b.message.cursor],
+    ]);
+    const [thread] = await db.select({ lastCursor: schema.threads.lastCursor }).from(schema.threads).where(eq(schema.threads.id, booking.id));
+    expect(thread?.lastCursor).toBe(c1);
   });
 
   it("keeps a staff-private thread out of the client's snapshot entirely", async () => {
