@@ -261,6 +261,30 @@ export function judgesCard(params: CardParams): boolean {
   return params.card !== "piece" || plannerFeatureEnabled("truthfulGhost");
 }
 
+/** Each piece card's piece-alone form, kept so the ghost is handed the same object on every frame. */
+const pieceAlone = new WeakMap<CardParams, CardParams>();
+
+/**
+ * The set the ghost shows and the click judges (the truthful ghost, Q-05), or
+ * null where the old green and red ghost stands: a card set down as a card,
+ * its own set (placesAsCard); otherwise, behind truthfulGhost alone, the piece
+ * as the old way sets it down, so the ghost tells the truth whatever else is
+ * switched on. The old way sets a dining table's seats down with it once they
+ * ride on the card (seatsOnTheCard); otherwise its chairs come from its dialog
+ * after the drop, so its ghost is the table alone.
+ */
+export function ghostSetInHand(params: CardParams): CardParams | null {
+  if (placesAsCard(params)) return params;
+  if (params.card !== "piece" || !plannerFeatureEnabled("truthfulGhost")) return null;
+  if (params.seats === null || plannerFeatureEnabled("seatsOnTheCard")) return params;
+  let alone = pieceAlone.get(params);
+  if (alone === undefined) {
+    alone = { ...params, seats: null };
+    pieceAlone.set(params, alone);
+  }
+  return alone;
+}
+
 /** Card copy: metres to one place, "4.6"; whole figures plainly, "2". */
 function cardMetres(metres: number): string {
   const tenths = Math.round(metres * 10) / 10;

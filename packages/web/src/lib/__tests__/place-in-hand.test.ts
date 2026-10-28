@@ -10,6 +10,8 @@ import { seatsInHand } from "../setup-cards.js";
 import { useCatalogueStore } from "../../stores/catalogue-store.js";
 import { useChairDialogStore } from "../../stores/chair-dialog-store.js";
 import { usePlacementStore } from "../../stores/placement-store.js";
+import { usePlacementNoticeStore } from "../../stores/placement-notice-store.js";
+import { createTableGroup } from "../table-group.js";
 
 const round = getCatalogueItemBySlug("round-table-6ft");
 const chair = getCatalogueItemBySlug("banquet-chair");
@@ -61,6 +63,32 @@ describe("placePieceInHand", () => {
     placePieceInHand(vi.fn());
     expect(usePlacementStore.getState().placedItems).toHaveLength(0);
     expect(useChairDialogStore.getState().pending?.catalogueItemId).toBe(round.id);
+  });
+
+  it("refuses, behind truthfulGhost alone, a round its ghost showed refused: nothing placed, no dialog, the ghost's words", () => {
+    setPlannerFeaturesForTesting({ truthfulGhost: true, setupCards: false, seatsOnTheCard: false });
+    if (round === undefined) throw new Error("No round table in the catalogue");
+    const standing = createTableGroup(round.id, 0, 0, 0, 10);
+    usePlacementStore.setState({ placedItems: standing });
+    usePlacementNoticeStore.getState().dismiss();
+    inHandAt(round.id, 0.4, 0);
+    placePieceInHand(vi.fn());
+    expect(usePlacementStore.getState().placedItems).toBe(standing);
+    expect(useChairDialogStore.getState().pending).toBeNull();
+    expect(usePlacementNoticeStore.getState().notice?.text).toMatch(/^Won't fit · would overlap/u);
+  });
+
+  it("asks, behind truthfulGhost alone, for a round's seats where its ghost stood on free floor", () => {
+    setPlannerFeaturesForTesting({ truthfulGhost: true, setupCards: false, seatsOnTheCard: false });
+    if (round === undefined) throw new Error("No round table in the catalogue");
+    inHandAt(round.id, 3, 2);
+    const ghost = usePlacementStore.getState().ghostPosition;
+    placePieceInHand(vi.fn());
+    expect(usePlacementStore.getState().placedItems).toHaveLength(0);
+    const pending = useChairDialogStore.getState().pending;
+    expect(pending?.catalogueItemId).toBe(round.id);
+    expect(pending?.x).toBe(ghost?.[0]);
+    expect(pending?.z).toBe(ghost?.[2]);
   });
 
   it("sets an ordinary piece down where its ghost stands and keeps it in hand", () => {
