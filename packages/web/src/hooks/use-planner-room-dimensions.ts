@@ -6,11 +6,17 @@ import { useSectionStore } from "../stores/section-store.js";
 import { useBookmarkStore } from "../stores/bookmark-store.js";
 import { useEditorStore } from "../stores/editor-store.js";
 import { useRoomDimensionsStore } from "../stores/room-dimensions-store.js";
+import { useDoorClearSpaceStore } from "../stores/door-clear-space-store.js";
+import { useModelledGrandHall } from "../components/grand-hall/hall-space.js";
+import { roomDoorClearSpaces } from "../lib/door-clear-spaces.js";
 
 // ---------------------------------------------------------------------------
 // The planner's room size, shared by today's editor (App) and the new
 // chrome's room stage (T-671). Both read the loaded space, render at its
-// size, and tell the section, bookmark and room-size stores.
+// size, and tell the section, bookmark and room-size stores, and the door
+// store which doors keep a clear space: the Grand Hall's surveyed doors when
+// the room is drawn as the Grand Hall (the same test as its model), none in
+// a room whose doors are not recorded.
 // ---------------------------------------------------------------------------
 
 // The Grand Hall until a space is loaded (runs once, at module load).
@@ -51,6 +57,11 @@ export function usePlannerRoomDimensions(): SpaceDimensions {
     useBookmarkStore.getState().initialize({ width, length, height });
     useRoomDimensionsStore.getState().setDimensions({ width, length, height });
   }, [width, length, height]);
+
+  const grandHall = useModelledGrandHall();
+  useEffect(() => {
+    useDoorClearSpaceStore.getState().setRoomSpaces(roomDoorClearSpaces(grandHall ? "grand-hall" : null));
+  }, [grandHall]);
 
   return dimensions;
 }

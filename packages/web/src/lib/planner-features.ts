@@ -32,7 +32,11 @@ export const PLANNER_FEATURE_SPECS = {
    * cards on screen the seats could not be chosen before a table is placed.
    */
   seatsOnTheCard: { lane: "P", item: "Q-07", on: false },
-  /** Round of N and Dance floor set down as one step, and as v1's first list rows. */
+  /**
+   * v1's list leads with the set cards, and a piece card is set down as a
+   * card (its seats on it, no dialog). A set card armed anywhere is always
+   * set down whole (setup-cards placesAsCard).
+   */
   setupCards: { lane: "E", item: "Q-08a", on: false },
   /** The ghost is the whole set, refused before the drop with its reason, pushed clear by up to 0.15 m. */
   truthfulGhost: { lane: "E", item: "Q-05", on: false },

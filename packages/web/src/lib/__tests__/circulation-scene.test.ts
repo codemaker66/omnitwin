@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { getCatalogueItemBySlug } from "../catalogue.js";
 import { createPlacedItem } from "../placement.js";
 import { RENDER_SCALE } from "../../constants/scale.js";
-import { computeCirculation, type CirculationReport, type FurnitureFootprint } from "../circulation.js";
+import { computeCirculation, footprintCorners, type CirculationReport, type FurnitureFootprint } from "../circulation.js";
 import {
   placedCirculationFootprints,
   placedItemsCirculation,
@@ -34,9 +34,30 @@ describe("placedCirculationFootprints", () => {
     expect(footprints[0]).toMatchObject({
       id: equipment.id, label: item.name,
       cx: 2 / RENDER_SCALE, cz: -3 / RENDER_SCALE,
-      width: item.width * 1.5, depth: item.depth * 1.5, rotation: Math.PI / 4,
+      // A footprint turns the opposite way to three.js's rotationY.
+      width: item.width * 1.5, depth: item.depth * 1.5, rotation: -Math.PI / 4,
     });
     expect(placedItemsCirculation([equipment, table]).pairCount).toBe(1);
+  });
+
+  it("outlines a turned piece where the scene draws it", () => {
+    const trestle = getCatalogueItemBySlug("trestle-6ft");
+    if (trestle === undefined) throw new Error("Missing trestle fixture");
+    const turn = Math.PI / 6;
+    const [footprint] = placedCirculationFootprints([createPlacedItem(trestle.id, 1, 2, turn)]);
+    if (footprint === undefined) throw new Error("No footprint");
+    // Three.js turns a local point (x, z) about Y to (x cos + z sin, −x sin + z cos).
+    const hw = trestle.width / 2;
+    const hd = trestle.depth / 2;
+    const scene = [[-hw, -hd], [hw, -hd], [hw, hd], [-hw, hd]].map(([lx = 0, lz = 0]) => ({
+      x: 1 / RENDER_SCALE + lx * Math.cos(turn) + lz * Math.sin(turn),
+      z: 2 / RENDER_SCALE - lx * Math.sin(turn) + lz * Math.cos(turn),
+    }));
+    const corners = footprintCorners(footprint);
+    for (const [i, corner] of corners.entries()) {
+      expect(corner.x).toBeCloseTo(scene[i]?.x ?? Number.NaN, 9);
+      expect(corner.z).toBeCloseTo(scene[i]?.z ?? Number.NaN, 9);
+    }
   });
 
   it("keeps planning floor obstacles and converts render units back to metres", () => {
