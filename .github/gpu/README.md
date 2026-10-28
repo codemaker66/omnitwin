@@ -155,12 +155,15 @@ with a round in hand turns the view and places nothing, a quick tap places one,
 a hold, a slide and a lift place it with the camera still, a still finger on a
 placed round lifts and carries it, and two fingers walk and zoom
 (`planner-touch-arbiter.spec.ts`); this changes the inventory from 404 to 405
-and the CPU partition from 399 to 400. The next, on 28 October 2026, adds two ordinary
-cases for a request step pressed with no connection (L9): the slot's card says
-the press is waiting to send and still says nobody owns it, the press survives
-a reload in the browser's own store and goes as the same step under the same
-key when the connection is back, and when someone else took it first the slot
-says so by name and the press is put away
+and the CPU partition from 399 to 400. Also on 26 October the Assembly went on
+for everyone (Blake), so its third case is restated one for one: with no flag a
+layout plays the first time it opens, the visible Skip hurries it to its end,
+and after a reload it opens as placed. The totals are unchanged. The next, on
+28 October 2026, adds two ordinary cases for a request step pressed with no
+connection (L9): the slot's card says the press is waiting to send and still
+says nobody owns it, the press survives a reload in the browser's own store and
+goes as the same step under the same key when the connection is back, and when
+someone else took it first the slot says so by name and the press is put away
 (`living-timetable-offline-steps.spec.ts`); this changes the inventory from
 405 to 407 and the CPU partition from 400 to 402.
 

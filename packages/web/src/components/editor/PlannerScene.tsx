@@ -86,12 +86,12 @@ import { HallContext } from "../grand-hall/HallContext.js";
 import { HallOpeningHour } from "../grand-hall/HallOpeningHour.js";
 import { useHallViewStore } from "../../stores/hall-view-store.js";
 import { useModelledGrandHall } from "../grand-hall/hall-space.js";
-import { assemblyRequested } from "../../floor/assembly/flag.js";
-import { useAssemblyRecall } from "../../floor/assembly/recall.js";
+import { assemblyMode } from "../../floor/assembly/flag.js";
+import { hasSeenLayout, useAssemblyRecall } from "../../floor/assembly/recall.js";
 import { AssemblyReplay } from "../../floor/assembly/AssemblyReplay.js";
 
-// The Grand Assembly (goal 03, S6), behind `?assembly=accio` (floor/assembly/flag.ts):
-// loaded only where a device asks for it, and fetched as soon as it does.
+// The Grand Assembly (goal 03, S6; floor/assembly/flag.ts): loaded only where it
+// may play, and fetched as soon as it may.
 const loadGrandAssembly = () => import("../../floor/assembly/GrandAssembly.js");
 const GrandAssembly = lazy(loadGrandAssembly);
 
@@ -271,9 +271,12 @@ export function PlannerScene(): ReactElement {
   const dimensions = useRoomDimensions();
   const configId = useEditorStore((s) => s.configId);
   const arrivalKey = plannerArrivalKey(configId, space?.id ?? null);
-  // Where this device asks for the Grand Assembly (`?assembly=accio`), a saved
-  // layout's arrival is the Assembly in the drawn hall, not a walk in the capture.
-  const assemblyAsked = useMemo(() => typeof window !== "undefined" && assemblyRequested(window.location.search) !== null, []);
+  // The Grand Assembly plays a saved layout the first time it opens on a device
+  // (flag.ts: `?assembly=accio` every time, `?assembly=off` never).
+  const assemblyPlayMode = useMemo(() => (typeof window === "undefined" ? "off" : assemblyMode(window.location.search)), []);
+  const assemblyAsked = assemblyPlayMode !== "off";
+  const layoutLoading = useEditorStore((s) => s.isLoading);
+  const layoutFurnished = useEditorStore((s) => s.objects.length > 0);
   const viewportWidth = usePlannerViewportWidth();
   const nativeDpr = useSyncExternalStore(subscribeNativePlannerPixelRatio, readNativePlannerPixelRatio, serverPlannerPixelRatio);
   // One render profile per page (phone, tablet, desktop or office); phones and
@@ -379,10 +382,16 @@ export function PlannerScene(): ReactElement {
   }, [arrivalKey]);
 
   useEffect(() => {
-    if (timelinePreviewActive) return;
-    if (!plannerArrivalPolicy.claim(arrivalKey, !assemblyAsked && roomSlug === "grand-hall" && hasAsset && walkData !== null)) return;
+    if (timelinePreviewActive || layoutLoading) return;
+    // Where the Grand Assembly plays this opening (a furnished layout this device has not seen), the arrival is
+    // the Assembly in the drawn hall, not a walk in the capture: decided now, so nothing walks after the show.
+    if (assemblyAsked && layoutFurnished && configId !== null && (assemblyPlayMode === "always" || !hasSeenLayout(configId))) {
+      plannerArrivalPolicy.choose(arrivalKey);
+      return;
+    }
+    if (!plannerArrivalPolicy.claim(arrivalKey, roomSlug === "grand-hall" && hasAsset && walkData !== null)) return;
     useCockpitStore.setState({ layerMode: "splat", walkMode: true });
-  }, [arrivalKey, assemblyAsked, hasAsset, roomSlug, timelinePreviewActive, walkData]);
+  }, [arrivalKey, assemblyAsked, assemblyPlayMode, configId, hasAsset, layoutFurnished, layoutLoading, roomSlug, timelinePreviewActive, walkData]);
   // If the room changes to one with no walk data, the mode cannot stand.
   useEffect(() => {
     if (walkMode && walkData === null) useCockpitStore.getState().setWalkMode(false);
@@ -480,27 +489,27 @@ export function PlannerScene(): ReactElement {
   const hallSkyAsked = useMemo(() => typeof window !== "undefined" && hallSkyRequested(window.location.search), []);
   const skyLit = hallSkyAsked && hallDrawn && !timelinePreviewActive;
   // The Grand Assembly: a saved layout that opens assembles itself in the drawn
-  // hall where this device asks for it (`?assembly=accio`). While it plays it
-  // holds the camera through CameraRig's `suspended`.
+  // hall. While it plays it holds the camera through CameraRig's `suspended`.
   // (The drawn hall is never shown under the timeline's frozen preview.)
   const assemblyStage = assemblyAsked && hallDrawn && !walkMode;
   const [assemblyCamera, setAssemblyCamera] = useState(false);
-  // The Assembly's code is fetched the moment this device asks for it, so it is
-  // there by the time the hall is drawn.
+  // A room known not to be the drawn Grand Hall lets a held layout go at once.
+  const assemblyElsewhere = space !== null && !realHall;
+  // The Assembly's code is fetched as soon as it may play here (the Grand Hall,
+  // or a room not yet known), so it is there by the time the hall is drawn.
+  const assemblyMayPlay = assemblyAsked && !assemblyElsewhere;
   const [assemblyCodeReady, setAssemblyCodeReady] = useState(false);
   useEffect(() => {
-    if (!assemblyAsked) return undefined;
+    if (!assemblyMayPlay) return undefined;
     let current = true;
     void loadGrandAssembly().then(() => { if (current) setAssemblyCodeReady(true); }, () => undefined);
     return () => { current = false; };
-  }, [assemblyAsked]);
-  // A room known not to be the drawn Grand Hall lets a held layout go at once.
+  }, [assemblyMayPlay]);
   // While the room is still unknown, or the hall is drawn but the Assembly's code
   // is still arriving (a phone's cold first load), a held layout waits for it.
-  const assemblyElsewhere = space !== null && !realHall;
-  const assemblyComing = assemblyAsked && !walkMode && !assemblyElsewhere
+  const assemblyComing = assemblyMayPlay && !walkMode
     && (space === null || (hallDrawn && !assemblyCodeReady));
-  useAssemblyRecall(assemblyAsked, assemblyStage, assemblyElsewhere, assemblyComing);
+  useAssemblyRecall(assemblyAsked, assemblyStage, assemblyElsewhere, assemblyComing, assemblyPlayMode === "always");
   const hallSetting = useMemo(() => (typeof window === "undefined" ? "none" : hallSettingRequested(window.location.search)), []);
   // A capture that fails behind the drawn hall changes nothing on screen: the
   // camera and a walk of the drawn hall carry on.
