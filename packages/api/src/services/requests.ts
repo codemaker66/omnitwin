@@ -917,10 +917,21 @@ interface EscalationEmailTarget {
   readonly roomName: string | null;
   readonly admins: readonly DutyAdmin[];
   readonly reason: EscalationReason;
+  /** When this escalation claimed the request (its escalated_at). */
+  readonly escalatedAt: Date;
 }
 
-/** The escalation email to each duty admin, one message per person however
- *  many times any pass runs (the key is the request and the person). */
+/** The email key for one escalation of a request to one person. A request
+ *  can escalate more than once (unowned, then to a relief who never takes
+ *  it), so the claim instant is part of the key: each escalation is emailed
+ *  once, however many times any pass runs, and a later one is not lost to
+ *  an earlier one's key. */
+export function requestEscalationEmailKey(requestId: string, escalatedAt: Date, adminId: string): string {
+  return `request-escalation:${requestId}:${String(escalatedAt.getTime())}:${adminId}`;
+}
+
+/** The escalation email to each duty admin, one message per person per
+ *  escalation however many times any pass runs. */
 async function sendEscalationEmails(
   db: Database,
   target: EscalationEmailTarget,
@@ -945,7 +956,7 @@ async function sendEscalationEmails(
     });
     const sent = await send({ to: admin.email, subject, html }, {
       db,
-      idempotencyKey: `request-escalation:${target.row.id}:${admin.id}`,
+      idempotencyKey: requestEscalationEmailKey(target.row.id, target.escalatedAt, admin.id),
       logger: deps.logger,
     });
     if (sent) emailedAdmins += 1;
@@ -994,6 +1005,7 @@ export async function runRequestEscalationPass(
       .returning();
     const row = claimed[0];
     if (row === undefined) continue;
+    const escalatedAt = row.escalatedAt ?? now;
 
     const reason: EscalationReason = row.state === "handed-over" ? "handover" : "unowned";
     const roomName = await roomNameFor(db, row.roomId);
@@ -1027,7 +1039,7 @@ export async function runRequestEscalationPass(
     const emailDeferred = quiet !== null && withinQuietHours(now.getTime(), quiet);
     let emailedAdmins = 0;
     if (!emailDeferred) {
-      emailedAdmins = await sendEscalationEmails(db, { row, roomName, admins, reason }, now, deps, send);
+      emailedAdmins = await sendEscalationEmails(db, { row, roomName, admins, reason, escalatedAt }, now, deps, send);
       if (emailedAdmins === admins.length) {
         await db.update(requests).set({ escalationEmailedAt: now }).where(eq(requests.id, row.id));
       }
@@ -1081,6 +1093,8 @@ export async function runEscalationEmailPass(
   const sent: EscalationEmailSent[] = [];
   const settingsByVenue = new Map<string, Awaited<ReturnType<typeof readOperatingSettings>>>();
   for (const row of waiting) {
+    const escalatedAt = row.escalatedAt;
+    if (escalatedAt === null) continue;
     let settings = settingsByVenue.get(row.venueId);
     if (settings === undefined) {
       settings = await readOperatingSettings(db, row.venueId);
@@ -1095,7 +1109,7 @@ export async function runEscalationEmailPass(
     const roomName = await roomNameFor(db, row.roomId);
     const admins = await dutyAdminsFor(db, row.venueId, settings);
     const reason: EscalationReason = row.state === "handed-over" ? "handover" : "unowned";
-    const emailedAdmins = await sendEscalationEmails(db, { row, roomName, admins, reason }, now, deps, send);
+    const emailedAdmins = await sendEscalationEmails(db, { row, roomName, admins, reason, escalatedAt }, now, deps, send);
     if (emailedAdmins === admins.length) {
       await db.update(requests).set({ escalationEmailedAt: now }).where(and(eq(requests.id, row.id), isNull(requests.escalationEmailedAt)));
     }

@@ -45,21 +45,28 @@ export async function pushForRequestLanded(
   }, deps);
 }
 
+/** An escalation tells its duty admins once per escalation: a request can
+ *  escalate unowned and later again, handed to a relief who never took it,
+ *  so the claim instant is part of the key. A handover names the relief. */
 export async function pushForRequestEscalated(
   db: Database,
   request: VenueRequest,
   recipientUserIds: readonly string[],
   deps: PushDeps = {},
 ): Promise<readonly PushSendRecord[]> {
+  const claimedAt = request.escalatedAt === null ? "unclaimed" : String(Date.parse(request.escalatedAt));
+  const body = request.state === "handed-over"
+    ? `${request.ownerName ?? "A colleague"} handed this to ${request.handoverToName ?? "a colleague"}, who has not taken it yet, ${roomWords(request)}.`
+    : `Nobody has this, ${roomWords(request)}.`;
   return sendPush(db, {
     venueId: request.venueId,
     userIds: recipientUserIds,
     event: "request.escalated",
     title: `Still waiting: ${summariseRequest({ kind: request.kind, quantity: request.quantity, roomName: request.roomName })}`,
-    body: `Nobody has this, ${roomWords(request)}.`,
+    body,
     url: DAY_BOARD_PATH,
     tag: `request:${request.id}`,
-    idempotencyKeyBase: `push:request.escalated:${request.id}`,
+    idempotencyKeyBase: `push:request.escalated:${request.id}:${claimedAt}`,
   }, deps);
 }
 
@@ -97,6 +104,25 @@ export async function pushForReply(
     // never shows them (D11), whoever is signed in on it.
     skipDeviceKinds: ["wall"],
   }, deps);
+}
+
+/** A message that has just committed (never a replay) on a request's thread
+ *  tells the person who raised the request. Every door a message comes in by
+ *  calls this: the REST routes and the socket's command path. */
+export function tellOfMessage(
+  db: Database,
+  thread: { readonly requestId: string | null },
+  message: { readonly id: string; readonly authorUserId: string | null; readonly authorName: string; readonly body: string },
+  logger: FastifyBaseLogger | undefined,
+): void {
+  if (thread.requestId === null) return;
+  tell(pushForReply(db, {
+    requestId: thread.requestId,
+    messageId: message.id,
+    authorUserId: message.authorUserId,
+    authorName: message.authorName,
+    body: message.body,
+  }, { logger }), logger, "request.replied");
 }
 
 /** Fire-and-forget at a call site: a push never fails what caused it. */
