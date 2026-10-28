@@ -36,6 +36,8 @@ import {
 } from "../../lib/furniture-semantics.js";
 import { sceneFurniturePlacements } from "../../lib/table-dressing.js";
 import { countLabel } from "../../lib/count-label.js";
+import { canLayOut } from "../../lib/auto-fill.js";
+import { plannerFeatureEnabled } from "../../lib/planner-features.js";
 
 interface CommandAction {
   readonly id: string;
@@ -403,10 +405,24 @@ export const PlannerCommandDeck = memo(function PlannerCommandDeck({ compact = f
       },
     ];
 
-    // Offer a banquet fill only on a blank floor, so it can never overwrite
-    // work in progress. It asks "How many guests?" first, in the Guests lens,
-    // beside the venue's published figure, and says what it will place before
-    // it places it (redteam fix-first 15). Undo-safe; tune from there.
+    // Offer a banquet fill on a blank floor; with Fill over the layout (Q-10),
+    // on any floor as "Lay out", since it re-plans the rounds and keeps
+    // everything else (canLayOut). It asks "How many guests?" first, in the
+    // Guests lens, beside the venue's published figure, and says what it will
+    // place before it places it (redteam fix-first 15). Undo-safe.
+    const layOutOver = placedItems.length > 0 && canLayOut("dinner-rounds", false, plannerFeatureEnabled("fillKeepOuts"));
+    if (layOutOver) {
+      emptyActions.splice(1, 0, {
+        id: "lay-out",
+        label: "Lay out",
+        ariaLabel: "Lay out banquet rounds, keeping everything else on the floor",
+        icon: <LayoutGrid size={16} aria-hidden="true" />,
+        onClick: () => {
+          useAutoFillRequestStore.getState().request("dinner-rounds");
+          useCockpitStore.getState().setMode("guests");
+        },
+      });
+    }
     if (placedItems.length === 0) {
       const forGuests = plannedGuestCount !== null && plannedGuestCount > 0 ? plannedGuestCount : 0;
       emptyActions.splice(1, 0, {
@@ -430,6 +446,8 @@ export const PlannerCommandDeck = memo(function PlannerCommandDeck({ compact = f
           ? (plannedGuestCount !== null && plannedGuestCount > 0
             ? `Lay out for ${countLabel(plannedGuestCount, "guest")}, or add furniture.`
             : "Lay out for your guests, or add furniture.")
+          : layOutOver
+          ? "Lay out the rounds again, add furniture or draw setup notes."
           : "Add furniture or draw setup notes.",
         metric: placedItems.length === 0
           ? "No furniture placed"
