@@ -7,8 +7,12 @@ import {
   EMPTY_ROOM,
   HOLD_CAP_MS,
   HOLD_LIMIT_MS,
+  hasSeenLayout,
+  markLayoutSeen,
   requestAssemblyReplay,
   resetAssemblyRecallForTests,
+  skipAssemblyToEnd,
+  speedUpAssembly,
   takeHold,
   useAssemblyRecall,
   useAssemblyRecallStore,
@@ -31,7 +35,7 @@ function request(): ReturnType<typeof useAssemblyRecallStore.getState>["request"
 
 beforeEach(() => {
   resetAssemblyRecallForTests();
-  useEditorStore.setState({ configId: null, objects: [], isLoading: false, error: null });
+  useEditorStore.setState({ configId: null, objects: [], isLoading: false, isDirty: false, error: null });
 });
 
 afterEach(() => {
@@ -142,6 +146,63 @@ describe("Layout Recall: a saved layout that opens assembles itself", () => {
     act(() => { vi.advanceTimersByTime(2); });
     expect(currentFurniturePresentation()).toBeNull();
     expect(request()).toBeNull();
+  });
+
+  it("opens a layout this device has already seen as placed (the first-open rule)", () => {
+    markLayoutSeen("config-seen");
+    renderHook(() => { useAssemblyRecall(true, true, false); });
+    openLayout("config-seen");
+    expect(request()).toBeNull();
+    expect(currentFurniturePresentation()).toBeNull();
+  });
+
+  it("plays a seen layout again where the device plays on every open (?assembly=accio)", () => {
+    markLayoutSeen("config-seen");
+    renderHook(() => { useAssemblyRecall(true, true, false, false, true); });
+    openLayout("config-seen");
+    expect(request()).toMatchObject({ configId: "config-seen", reason: "open" });
+    expect(currentFurniturePresentation()).toBe(EMPTY_ROOM);
+  });
+
+  it("replays a seen layout when asked (Present, or the control at rest)", () => {
+    markLayoutSeen("config-a");
+    useEditorStore.setState({ configId: "config-a" });
+    requestAssemblyReplay();
+    expect(request()).toMatchObject({ configId: "config-a", reason: "replay" });
+  });
+
+  it("counts a layout this device furnished and saved as seen", () => {
+    act(() => { useEditorStore.setState({ configId: "config-mine", objects, isLoading: false, isDirty: true }); });
+    expect(hasSeenLayout("config-mine")).toBe(false);
+    act(() => { useEditorStore.setState({ isDirty: false }); });
+    expect(hasSeenLayout("config-mine")).toBe(true);
+  });
+
+  it("does not count a layout that merely loaded after another was edited", () => {
+    act(() => { useEditorStore.setState({ configId: "config-a", objects, isLoading: false, isDirty: true }); });
+    act(() => { useEditorStore.setState({ configId: "config-b", objects, isLoading: false, isDirty: false }); });
+    expect(hasSeenLayout("config-b")).toBe(false);
+  });
+
+  it("remembers the latest 200 layouts and shrugs off a damaged list", () => {
+    for (let i = 0; i < 205; i += 1) markLayoutSeen(`config-${String(i)}`);
+    expect(hasSeenLayout("config-0")).toBe(false);
+    expect(hasSeenLayout("config-204")).toBe(true);
+    window.localStorage.setItem("venviewer.assembly.seen", "{not json");
+    expect(hasSeenLayout("config-204")).toBe(false);
+    markLayoutSeen("config-1");
+    expect(hasSeenLayout("config-1")).toBe(true);
+  });
+
+  it("speeds the show up only while it plays, and sends it to its end on the second press", () => {
+    speedUpAssembly();
+    expect(useAssemblyRecallStore.getState().fast).toBe(false);
+    act(() => { useAssemblyRecallStore.setState({ active: true }); });
+    speedUpAssembly();
+    expect(useAssemblyRecallStore.getState().fast).toBe(true);
+    const before = useAssemblyRecallStore.getState().skipNonce;
+    skipAssemblyToEnd();
+    expect(useAssemblyRecallStore.getState().skipNonce).toBe(before + 1);
   });
 
   it("replays the open layout on request", () => {

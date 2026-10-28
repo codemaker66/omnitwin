@@ -162,6 +162,8 @@ export interface RenderDeviceContext {
   readonly leanMotion?: boolean;
   /** Whether the graphics are integrated or WebGL2 (lib/gpu-class.ts): a desktop then starts on the office profile. */
   readonly weakGpu?: boolean;
+  /** Whether the planner draws through WebGL2, without WebGPU (lib/gpu-class.ts): a phone or tablet then starts without bloom. */
+  readonly webgl2?: boolean;
 }
 
 /** The phone profile as it was before bloom paused in motion: the way back. */
@@ -176,8 +178,24 @@ export function selectRenderProfile(device: RenderDeviceContext): RenderProfile 
   const named = device.override !== null && isProfileName(device.override) ? device.override
     : !device.coarsePointer ? (device.weakGpu === true ? "office" : "desktop")
     : device.shortSide < 600 ? "phone" : "tablet";
-  if (named === "phone" && device.leanMotion !== true) return PHONE_WITH_BLOOM_IN_MOTION;
-  return RENDER_PROFILES[named];
+  const profile = named === "phone" && device.leanMotion !== true ? PHONE_WITH_BLOOM_IN_MOTION : RENDER_PROFILES[named];
+  // A phone or tablet without WebGPU (an iPhone before iOS 26, an older
+  // Android GPU) draws through WebGL2, where bloom's mip chain is a dozen more
+  // passes on a GPU the profile was never measured on (F-10): it starts without.
+  return device.coarsePointer && device.webgl2 === true ? withoutBloom(profile) : profile;
+}
+
+/** One profile without bloom per profile, so its identity holds and its pipeline is built once. */
+const bloomless = new WeakMap<RenderProfile, RenderProfile>();
+
+function withoutBloom(profile: RenderProfile): RenderProfile {
+  if (profile.bloom === null) return profile;
+  let lean = bloomless.get(profile);
+  if (lean === undefined) {
+    lean = { ...profile, bloom: null };
+    bloomless.set(profile, lean);
+  }
+  return lean;
 }
 
 /**
@@ -281,11 +299,13 @@ export function governedRender(profile: RenderProfile, baseRatio: number, given:
 export function readRenderDeviceContext(development: boolean): RenderDeviceContext {
   if (typeof window === "undefined") return { coarsePointer: false, shortSide: 1080, override: null };
   const override = development ? new URLSearchParams(window.location.search).get("render") : null;
+  const gpu = gpuReading();
   return {
     coarsePointer: window.matchMedia("(pointer: coarse)").matches,
     shortSide: Math.min(window.screen.width, window.screen.height),
     override,
     leanMotion: plannerFeatureEnabled("leanMotionPipeline"),
-    weakGpu: isWeakDesktopGpu(gpuReading()),
+    weakGpu: isWeakDesktopGpu(gpu),
+    webgl2: gpu.api === "webgl2",
   };
 }

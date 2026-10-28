@@ -111,6 +111,20 @@ describe("selectRenderProfile", () => {
     expect(selectRenderProfile({ coarsePointer: false, shortSide: 1080, override: "office" }).name).toBe("office");
   });
 
+  it("starts a phone or tablet drawn through WebGL2 without bloom, and keeps the profile's identity", () => {
+    const phone = selectRenderProfile({ coarsePointer: true, shortSide: 393, override: null, webgl2: true, leanMotion: true });
+    expect(phone.name).toBe("phone");
+    expect(phone.bloom).toBeNull();
+    expect(phone.sceneSamples).toBe(RENDER_PROFILES.phone.sceneSamples);
+    expect(selectRenderProfile({ coarsePointer: true, shortSide: 393, override: null, webgl2: true, leanMotion: true })).toBe(phone);
+    expect(selectRenderProfile({ coarsePointer: true, shortSide: 820, override: null, webgl2: true }).bloom).toBeNull();
+    expect(selectRenderProfile({ coarsePointer: true, shortSide: 393, override: null, webgl2: false, leanMotion: true })).toBe(RENDER_PROFILES.phone);
+    // A desktop on WebGL2 is the office profile's, bloom and all.
+    const office = selectRenderProfile({ coarsePointer: false, shortSide: 1080, override: null, webgl2: true, weakGpu: true });
+    expect(office.name).toBe("office");
+    expect(office.bloom).not.toBeNull();
+  });
+
   it("tells phones from tablets by the screen's shorter side", () => {
     expect(selectRenderProfile({ coarsePointer: true, shortSide: 393, override: null }).name).toBe("phone");
     expect(selectRenderProfile({ coarsePointer: true, shortSide: 820, override: null }).name).toBe("tablet");
@@ -154,6 +168,18 @@ describe("readRenderDeviceContext", () => {
       expect(1536 * 864 * ratio * ratio).toBeLessThanOrEqual((profile.pixelBudget ?? 0) + 1);
     } finally {
       Reflect.deleteProperty(navigator, "gpu");
+    }
+  });
+
+  it("reads WebGL2 where the browser has no WebGPU (an iPhone before iOS 26)", () => {
+    const global = globalThis as { WebGL2RenderingContext?: unknown };
+    const had = "WebGL2RenderingContext" in global;
+    if (!had) global.WebGL2RenderingContext = function WebGL2RenderingContext(): void { /* present is all the probe asks */ };
+    try {
+      void probeGpu();
+      expect(readRenderDeviceContext(false).webgl2).toBe(true);
+    } finally {
+      if (!had) Reflect.deleteProperty(global, "WebGL2RenderingContext");
     }
   });
 
