@@ -64,7 +64,7 @@ function Planner(): ReactElement {
 
 /** The lens buttons a group in the More sheet offers, in order. */
 function lensesIn(group: string): string[] {
-  return within(screen.getByRole("group", { name: group })).getAllByRole("button").map((button) => button.textContent);
+  return within(screen.getByRole("group", { name: group })).getAllByRole("button").map((button) => button.textContent ?? "");
 }
 
 beforeEach(() => {
