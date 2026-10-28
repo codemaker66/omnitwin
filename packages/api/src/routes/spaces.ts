@@ -1,12 +1,18 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply } from "fastify";
 import { z } from "zod";
-import { eq, and, isNull, sql } from "drizzle-orm";
+import { eq, and, asc, gt, isNotNull, isNull, sql } from "drizzle-orm";
 import { type FloorPlanPoint, polygonBoundingBox } from "@omnitwin/types";
-import { spaces, venues, referenceLoadouts } from "../db/schema.js";
+import { bookings, eventPhases, events, spaces, venues, referenceLoadouts } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { authenticate } from "../middleware/auth.js";
+import { PG_UNIQUE_VIOLATION, pgErrorCode } from "../services/booking-mutations.js";
 import { canAdministerVenue } from "../utils/query.js";
 import { PUBLIC_SPACE_COLUMNS } from "./venues.js";
+
+/** A venue's rooms in one order everywhere they are listed: the order the
+ *  venue set, then by name, then by id, so two rooms with the same sort
+ *  order never swap between reads (the planner opens the first). */
+export const ROOM_ORDER = [asc(spaces.sortOrder), asc(spaces.name), asc(spaces.id)] as const;
 
 // ---------------------------------------------------------------------------
 // Zod schemas
@@ -103,7 +109,7 @@ export async function spaceRoutes(
     const rows = await db.select(PUBLIC_SPACE_COLUMNS)
       .from(spaces)
       .where(and(eq(spaces.venueId, params.data.venueId), isNull(spaces.deletedAt)))
-      .orderBy(spaces.sortOrder);
+      .orderBy(...ROOM_ORDER);
 
     return { data: rows };
   });
@@ -182,21 +188,41 @@ export async function spaceRoutes(
       return reply.status(404).send({ error: "Venue not found", code: "NOT_FOUND" });
     }
 
-    const [space] = await db.insert(spaces).values({
-      venueId: params.data.venueId,
-      name: parsed.data.name,
-      slug: parsed.data.slug,
-      description: parsed.data.description,
-      widthM: String(shape.widthM),
-      lengthM: String(shape.lengthM),
-      heightM: String(parsed.data.heightM),
-      floorPlanOutline: shape.outline,
-      meshUrl: parsed.data.meshUrl ?? null,
-      thumbnailUrl: parsed.data.thumbnailUrl ?? null,
-      sortOrder: parsed.data.sortOrder,
-    }).returning();
+    // A room's address (its slug) is the venue's for good: a deleted room
+    // keeps its own, so it can be restored with its layouts and bookings.
+    const slugTaken = async (): Promise<FastifyReply> => {
+      const [holder] = await db.select({ id: spaces.id, name: spaces.name, deletedAt: spaces.deletedAt }).from(spaces)
+        .where(and(eq(spaces.venueId, params.data.venueId), eq(spaces.slug, parsed.data.slug)))
+        .limit(1);
+      return holder?.deletedAt !== null && holder?.deletedAt !== undefined
+        ? reply.status(409).send({
+          error: `"${holder.name}" was deleted and still has this room's address. Restore it, or give the new room another name.`,
+          code: "SLUG_EXISTS",
+          details: { deletedSpaceId: holder.id, deletedSpaceName: holder.name },
+        })
+        : reply.status(409).send({ error: "This venue already has a room with this address. Give the new room another name.", code: "SLUG_EXISTS" });
+    };
 
-    return reply.status(201).send({ data: space });
+    try {
+      const [space] = await db.insert(spaces).values({
+        venueId: params.data.venueId,
+        name: parsed.data.name,
+        slug: parsed.data.slug,
+        description: parsed.data.description,
+        widthM: String(shape.widthM),
+        lengthM: String(shape.lengthM),
+        heightM: String(parsed.data.heightM),
+        floorPlanOutline: shape.outline,
+        meshUrl: parsed.data.meshUrl ?? null,
+        thumbnailUrl: parsed.data.thumbnailUrl ?? null,
+        sortOrder: parsed.data.sortOrder,
+      }).returning();
+      return reply.status(201).send({ data: space });
+    } catch (error) {
+      // The only unique key a new room can collide on is (venue, slug).
+      if (pgErrorCode(error) === PG_UNIQUE_VIOLATION) return slugTaken();
+      throw error;
+    }
   });
 
   // PATCH /venues/:venueId/spaces/:id — admin or hallkeeper of that venue
@@ -261,18 +287,64 @@ export async function spaceRoutes(
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 
-    // Verify space belongs to the URL venue
-    const [space] = await db.select().from(spaces)
-      .where(and(eq(spaces.id, params.data.id), eq(spaces.venueId, params.data.venueId), isNull(spaces.deletedAt)))
-      .limit(1);
-    if (space === undefined) {
-      return reply.status(404).send({ error: "Space not found", code: "NOT_FOUND" });
+    // Deleting a room takes it off the Diary, with every booking in it. A
+    // room still booked ahead is refused, and says what holds it; the check
+    // and the delete share one transaction, under the room's row lock, which
+    // also waits out a booking being written into it at this moment.
+    const outcome = await db.transaction(async (tx) => {
+      const [space] = await tx.select({ id: spaces.id, name: spaces.name }).from(spaces)
+        .where(and(eq(spaces.id, params.data.id), eq(spaces.venueId, params.data.venueId), isNull(spaces.deletedAt)))
+        .limit(1)
+        .for("update");
+      if (space === undefined) return { kind: "not_found" as const };
+      const now = new Date();
+      const [booked] = await tx.select({ count: sql<number>`count(*)::int` }).from(bookings)
+        .where(and(eq(bookings.spaceId, space.id), eq(bookings.status, "active"), isNull(bookings.deletedAt), gt(bookings.endsAt, now)));
+      const [phased] = await tx.select({ count: sql<number>`count(*)::int` }).from(eventPhases)
+        .innerJoin(events, eq(events.id, eventPhases.eventId))
+        .where(and(
+          eq(eventPhases.spaceId, space.id), isNull(events.deletedAt), isNotNull(eventPhases.startsAt),
+          sql`${eventPhases.startsAt} + make_interval(mins => ${eventPhases.durationMinutes}) > ${now}`,
+        ));
+      const counts = { bookings: booked?.count ?? 0, phases: phased?.count ?? 0 };
+      if (counts.bookings > 0 || counts.phases > 0) return { kind: "booked" as const, name: space.name, ...counts };
+      await tx.update(spaces).set({ deletedAt: now, updatedAt: now }).where(eq(spaces.id, space.id));
+      return { kind: "deleted" as const };
+    });
+
+    if (outcome.kind === "not_found") return reply.status(404).send({ error: "Space not found", code: "NOT_FOUND" });
+    if (outcome.kind === "booked") {
+      const held = [
+        outcome.bookings > 0 ? (outcome.bookings === 1 ? "1 booking" : `${String(outcome.bookings)} bookings`) : null,
+        outcome.phases > 0 ? (outcome.phases === 1 ? "1 event phase" : `${String(outcome.phases)} event phases`) : null,
+      ].filter((part): part is string => part !== null).join(" and ");
+      return reply.status(409).send({
+        error: `${outcome.name} has ${held} still to come. Release or move them on the Diary before deleting the room.`,
+        code: "ROOM_HAS_BOOKINGS",
+        details: { bookings: outcome.bookings, phases: outcome.phases },
+      });
     }
-
-    await db.update(spaces)
-      .set({ deletedAt: new Date(), updatedAt: new Date() })
-      .where(eq(spaces.id, params.data.id));
-
     return reply.status(204).send();
+  });
+
+  // POST /venues/:venueId/spaces/:id/restore — the venue's administrators.
+  // A deleted room comes back as it was, with its layouts, loadouts and the
+  // bookings it had; its address was never given to another room.
+  server.post("/:id/restore", { preHandler: [authenticate] }, async (request, reply) => {
+    const params = SpaceIdParam.safeParse(request.params);
+    if (!params.success) {
+      return reply.status(400).send({ error: "Invalid params", code: "VALIDATION_ERROR" });
+    }
+    if (!canAdministerVenue(request.user, params.data.venueId)) {
+      return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
+    }
+    const [restored] = await db.update(spaces)
+      .set({ deletedAt: null, updatedAt: new Date() })
+      .where(and(eq(spaces.id, params.data.id), eq(spaces.venueId, params.data.venueId), isNotNull(spaces.deletedAt)))
+      .returning(PUBLIC_SPACE_COLUMNS);
+    if (restored === undefined) {
+      return reply.status(404).send({ error: "No deleted room with that id at this venue", code: "NOT_FOUND" });
+    }
+    return { data: restored };
   });
 }
