@@ -614,21 +614,21 @@ export async function clientConversationSnapshot(
   const event = await clientEvent(db, actor, eventId);
   if ("ok" in event) return event;
 
-  const threadRows = await db
+  // The messages and the threads they are on are read in one statement
+  // (supplier-requests-5): read apart, a thread opened between the two reads
+  // could hold a message the cursor handed out had already passed.
+  const eventThreads = and(eq(threads.venueId, event.venueId), eq(threads.eventId, eventId), eq(threads.audience, "client-facing"));
+  const rows = await db
     .select()
-    .from(threads)
-    .where(and(eq(threads.venueId, event.venueId), eq(threads.eventId, eventId), eq(threads.audience, "client-facing")))
-    .orderBy(asc(threads.createdAt))
-    .limit(100);
-  const ids = threadRows.map((row) => row.id);
-  const rows = ids.length === 0
-    ? []
-    : await db
-      .select()
-      .from(messages)
-      .where(and(inArray(messages.threadId, ids), gt(messages.cursor, after)))
-      .orderBy(asc(messages.cursor))
-      .limit(SNAPSHOT_LIMIT);
+    .from(messages)
+    .where(and(inArray(messages.threadId, db.select({ id: threads.id }).from(threads).where(eventThreads)), gt(messages.cursor, after)))
+    .orderBy(asc(messages.cursor))
+    .limit(SNAPSHOT_LIMIT);
+  const listed = await db.select().from(threads).where(eventThreads).orderBy(asc(threads.createdAt)).limit(100);
+  // Past the first hundred threads, a message still comes with its thread.
+  const listedIds = new Set(listed.map((row) => row.id));
+  const unlisted = [...new Set(rows.map((row) => row.threadId))].filter((id) => !listedIds.has(id));
+  const threadRows = unlisted.length === 0 ? listed : [...listed, ...await db.select().from(threads).where(inArray(threads.id, unlisted))];
   const page = await presentMessages(db, actor, rows);
   const last = rows[rows.length - 1];
   return {
