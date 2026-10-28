@@ -1,4 +1,4 @@
-import { applyFilter, fft } from "../planner-sound-render.js";
+import { applyFilter, biquadCoefficients, fft } from "../planner-sound-render.js";
 
 // ---------------------------------------------------------------------------
 // Measuring a render (T-677).
@@ -10,7 +10,7 @@ import { applyFilter, fft } from "../planner-sound-render.js";
 // ---------------------------------------------------------------------------
 
 /** The Q of the octave band-pass: two cascaded stages of 1.414 span about an octave. */
-export const OCTAVE_Q = 1.414;
+const OCTAVE_Q = 1.414;
 
 /** Smallest power of two that holds `length` samples. */
 function powerOfTwoAtLeast(length: number): number {
@@ -26,6 +26,53 @@ export function octaveBandpass(samples: Float32Array, centreHz: number, sampleRa
   applyFilter(out, stage, sampleRate);
   applyFilter(out, stage, sampleRate);
   return out;
+}
+
+/** The order of each edge of the steep octave band-pass. */
+const STEEP_ORDER = 24;
+
+/** The Q of each biquad of an even-order Butterworth filter, from its pole angles. */
+function butterworthQs(order: number): readonly number[] {
+  return Array.from({ length: order / 2 }, (_, k) => 1 / (2 * Math.sin(((2 * k + 1) * Math.PI) / (2 * order))));
+}
+
+/** An RBJ high-pass biquad at `hz` (Web Audio's "highpass"), normalised by a0. */
+function highpassCoefficients(hz: number, q: number, sampleRate: number) {
+  const w0 = (2 * Math.PI * hz) / sampleRate;
+  const cos = Math.cos(w0);
+  const alpha = Math.sin(w0) / (2 * q);
+  const a0 = 1 + alpha;
+  return { b0: (1 + cos) / 2 / a0, b1: -(1 + cos) / a0, b2: (1 + cos) / 2 / a0, a1: (-2 * cos) / a0, a2: (1 - alpha) / a0 };
+}
+
+/** Runs one biquad over `x` in place, in double precision. */
+function runBiquadInPlace(
+  x: Float64Array,
+  c: { readonly b0: number; readonly b1: number; readonly b2: number; readonly a1: number; readonly a2: number },
+): void {
+  let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+  for (let i = 0; i < x.length; i += 1) {
+    const x0 = x[i] ?? 0;
+    const y0 = c.b0 * x0 + c.b1 * x1 + c.b2 * x2 - c.a1 * y1 - c.a2 * y2;
+    x2 = x1; x1 = x0; y2 = y1; y1 = y0;
+    x[i] = y0;
+  }
+}
+
+/**
+ * The part of `samples` within the octave about `centreHz`, cut far more
+ * steeply than `octaveBandpass`: a 24th-order Butterworth high-pass at the
+ * octave's lower edge (centre ÷ √2) and a 24th-order low-pass at its upper
+ * edge (centre × √2), each a cascade of biquads, run in double precision on a
+ * copy. Each edge is 3 dB down; half an octave beyond it the cut is about
+ * 72 dB. It reads a band's decay without its neighbours' decays leaking in.
+ */
+export function octaveBandpassSteep(samples: Float32Array, centreHz: number, sampleRate: number): Float32Array {
+  const x = Float64Array.from(samples);
+  const qs = butterworthQs(STEEP_ORDER);
+  for (const q of qs) runBiquadInPlace(x, highpassCoefficients(centreHz / Math.SQRT2, q, sampleRate));
+  for (const q of qs) runBiquadInPlace(x, biquadCoefficients("lowpass", centreHz * Math.SQRT2, q, sampleRate));
+  return Float32Array.from(x);
 }
 
 /**

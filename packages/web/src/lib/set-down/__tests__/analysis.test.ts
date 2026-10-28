@@ -5,6 +5,7 @@ import {
   bandEnergy,
   kWeightedLoudness,
   octaveBandpass,
+  octaveBandpassSteep,
   onsetTimesMs,
   schroederT20,
   spectralCentroidHz,
@@ -65,6 +66,44 @@ describe("octaveBandpass", () => {
     const tone = sine(1000, 0.05);
     const copy = Float32Array.from(tone);
     octaveBandpass(tone, 1000, RATE);
+    expect(tone).toEqual(copy);
+  });
+});
+
+describe("octaveBandpassSteep", () => {
+  /** The share of a steady tone's energy the filter keeps, after its first quarter second has settled. */
+  function kept(hz: number, centreHz: number): number {
+    const tone = sine(hz, 1);
+    const settled = (x: Float32Array): Float32Array => x.subarray(Math.round(0.25 * RATE));
+    return energy(settled(octaveBandpassSteep(tone, centreHz, RATE))) / energy(settled(tone));
+  }
+
+  it.each(OCTAVE_BANDS_HZ.map((hz) => ({ hz })))("passes its own centre whole and cuts an octave off by 60 dB: $hz Hz", ({ hz }) => {
+    expect(kept(hz, hz)).toBeGreaterThan(0.95);
+    expect(kept(hz, hz)).toBeLessThan(1.05);
+    if (hz > 125) expect(kept(hz / 2, hz)).toBeLessThan(1e-6);
+    if (hz < 8000) expect(kept(hz * 2, hz)).toBeLessThan(1e-6);
+  });
+
+  it("is 3 dB down at the octave's edges", () => {
+    expect(kept(1000 * Math.SQRT2, 1000)).toBeGreaterThan(0.4);
+    expect(kept(1000 * Math.SQRT2, 1000)).toBeLessThan(0.6);
+    expect(kept(1000 / Math.SQRT2, 1000)).toBeGreaterThan(0.4);
+    expect(kept(1000 / Math.SQRT2, 1000)).toBeLessThan(0.6);
+  });
+
+  it("cuts far more steeply than octaveBandpass a quarter octave beyond the edge", () => {
+    const beyond = 1000 * Math.SQRT2 * 2 ** 0.25;
+    const tone = sine(beyond, 1);
+    const gentle = energy(octaveBandpass(tone, 1000, RATE).subarray(RATE / 4)) / energy(tone.subarray(RATE / 4));
+    expect(kept(beyond, 1000)).toBeLessThan(0.01);
+    expect(kept(beyond, 1000)).toBeLessThan(gentle / 10);
+  });
+
+  it("leaves its input untouched", () => {
+    const tone = sine(1000, 0.05);
+    const copy = Float32Array.from(tone);
+    octaveBandpassSteep(tone, 1000, RATE);
     expect(tone).toEqual(copy);
   });
 });
