@@ -190,6 +190,10 @@ export class NativeSplatScene {
     if (this.timer !== null) clearTimeout(this.timer);
     this.timer = null;
     this.clearSnapshots();
+    // The sources stay held for the next renderer, which must draw each of
+    // them again before it counts as drawn: the view's arrival counts afresh
+    // for a replacement renderer (hooks/use-chunk-arrivals.ts).
+    for (const source of this.sources.values()) source.renderedOnce = false;
     this.cpuSortPool?.dispose();
     this.cpuSortPool = null;
     // Safe here, not earlier: every snapshot sampling this shared mask was just cleared above, and StrictMode's immediate re-attach already had its chance to return early before this point runs.
