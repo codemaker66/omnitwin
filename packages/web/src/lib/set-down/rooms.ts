@@ -62,19 +62,22 @@ export const UNCALIBRATED: BandValues = [1, 1, 1, 1, 1, 1, 1];
  * per band, the tracer's empty T20 over Eyring's empty time, clamped to
  * 0.7-1.3 and rounded to 3 decimals. From tools/set-down-acoustics/results.json,
  * traced on 28 Oct 2026 with seeds 1 and 2 (200,000 rays a band; 2,000,000 in
- * the galleries, which share one trace). The galleries' 1-8 kHz bands sit at
- * the clamp: their tracer reads 1.35-1.57 x Eyring there, an upper bound for
- * an unsurveyed attic section (README.md, "Difference explained"). After any
- * change to a room's surfaces, export, retrace and refit; room-acoustics.test.ts
- * fails until these match the fit.
+ * the galleries, which share one trace). The 125 Hz factor is 1 wherever the
+ * room's Schroeder frequency is above that octave's lower edge, where rays say
+ * nothing about a modal response (ruling R39): every room but the Grand Hall.
+ * The galleries' 1-8 kHz bands sit at the clamp: their tracer reads 1.35-1.57 x
+ * Eyring there, an upper bound for an unsurveyed attic section (README.md,
+ * "Difference explained"). After any change to a room's surfaces, export,
+ * retrace and refit; the tests fail until rooms.json, results.json and these
+ * agree.
  */
 const TRACER_CALIBRATION: Readonly<Record<RoomSlug, BandValues>> = {
   "grand-hall": [1.041, 1.03, 1.02, 1.009, 1.007, 1.008, 1.006],
-  saloon: [1.031, 1.023, 1.019, 1.012, 1.008, 1.008, 1.004],
-  "robert-adam-room": [1.117, 1.076, 1.07, 1.05, 1.044, 1.041, 1.031],
-  "reception-room": [1.04, 1.007, 0.996, 0.99, 0.987, 0.987, 0.983],
-  "north-gallery": [1.097, 1.068, 1.198, 1.3, 1.3, 1.3, 1.3],
-  "south-gallery": [1.097, 1.068, 1.198, 1.3, 1.3, 1.3, 1.3],
+  saloon: [1, 1.023, 1.019, 1.012, 1.008, 1.008, 1.004],
+  "robert-adam-room": [1, 1.076, 1.07, 1.05, 1.044, 1.041, 1.031],
+  "reception-room": [1, 1.007, 0.996, 0.99, 0.987, 0.987, 0.983],
+  "north-gallery": [1, 1.068, 1.198, 1.3, 1.3, 1.3, 1.3],
+  "south-gallery": [1, 1.068, 1.198, 1.3, 1.3, 1.3, 1.3],
 };
 
 /**

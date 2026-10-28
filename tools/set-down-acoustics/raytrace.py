@@ -8,10 +8,11 @@ It traces each Trades Hall room as a prism of the model's volume and surfaces
 fully dressed, and fits T20 to each band's Schroeder curve. It proves itself on
 textbook cases first (--selftest), on every run.
 
-    python raytrace.py --selftest
+    python raytrace.py --selftest [rooms.json]
     python raytrace.py rooms.json results.json [--pause-while FILE]
+    python raytrace.py --stamp COMMIT rooms.json results.json
 
-numpy only. Run it with `python`, not `python -I`: numpy lives in the user
+numpy only (and git, for --stamp). Run it with `python`, not `python -I`: numpy lives in the user
 site-packages. See README.md for the model, its simplifications and the
 figures of the last run.
 """
@@ -19,9 +20,11 @@ figures of the last run.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import os
+import subprocess
 import sys
 import time
 from dataclasses import dataclass, field
@@ -56,8 +59,15 @@ CALIBRATION_MIN, CALIBRATION_MAX = 0.7, 1.3
 MIN_FIT_R2 = 0.95
 DOME_AREA_TOLERANCE = 0.03
 BANDS_HZ = (125, 250, 500, 1000, 2000, 4000, 8000)
-CHECKED = range(1, 6)  # 250 Hz to 4 kHz
+CHECKED = range(1, 7)  # 250 Hz to 8 kHz (ruling R40)
 DRESSINGS = ("empty", "half", "dressed")
+# Ruling R39: geometrical acoustics has no standing below a room's Schroeder
+# frequency, 2000 sqrt(T / V), so the 125 Hz factor is 1 where that frequency
+# (from the empty trace's 125 Hz T) is above the octave's lower edge.
+SCHROEDER_K = 2000.0
+LOW_OCTAVE_EDGE_HZ = 125.0 / math.sqrt(2.0)  # 88.4 Hz
+# Kuttruff's correction to Eyring for the spread of free paths (self-test check 1).
+KUTTRUFF_TOLERANCE = 0.02
 LEAK_TOLERANCE_M = 1e-7
 
 # Prism parts. The walls are one part: their materials are mixed by area.
@@ -115,6 +125,7 @@ class Geometry:
     height: float
     length: float
     cap: Cap | None = None
+    ear_height: float = EAR_HEIGHT_M  # the source's and the receiver's height
 
     @property
     def size(self) -> np.ndarray:
@@ -126,11 +137,11 @@ class Geometry:
 
     @property
     def source(self) -> np.ndarray:
-        return np.array([0.3 * self.width, EAR_HEIGHT_M, 0.25 * self.length])
+        return np.array([0.3 * self.width, self.ear_height, 0.25 * self.length])
 
     @property
     def receiver(self) -> np.ndarray:
-        return np.array([0.5 * self.width, EAR_HEIGHT_M, 0.5 * self.length])
+        return np.array([0.5 * self.width, self.ear_height, 0.5 * self.length])
 
     def part_areas(self) -> np.ndarray:
         floor = self.width * self.length
@@ -401,39 +412,80 @@ def window_energies(hist: np.ndarray, start_s: float = 0.05, width_s: float = 0.
     return hist[first : first + count * step].reshape(count, step).sum(axis=1)
 
 
-def selftest() -> bool:
+def lambertian_cube_path_variance(chords: int = 1000000, seed: int = 7) -> tuple[float, float]:
+    """The mean free path (in edge lengths) and its relative variance gamma^2 in a unit cube with Lambertian walls.
+
+    Sampled directly and independently of the tracer: chords from uniform
+    points on the six faces, leaving cosine-weighted about the inward normal,
+    to the first face they reach. The mean must come out at 4V/S = 2/3.
+    """
+    rng = np.random.default_rng(seed)
+    rows = np.arange(chords)
+    face = rng.integers(0, 6, chords)
+    axis, side = face // 2, face % 2
+    others = np.array([[1, 2], [0, 2], [0, 1]])[axis]
+    start = np.zeros((chords, 3))
+    start[rows, others[:, 0]] = rng.random(chords)
+    start[rows, others[:, 1]] = rng.random(chords)
+    start[rows, axis] = side
+    u = rng.random(chords)
+    phi = 2.0 * math.pi * rng.random(chords)
+    direction = np.zeros((chords, 3))
+    direction[rows, axis] = np.where(side == 0, 1.0, -1.0) * np.sqrt(1.0 - u)
+    direction[rows, others[:, 0]] = np.sqrt(u) * np.cos(phi)
+    direction[rows, others[:, 1]] = np.sqrt(u) * np.sin(phi)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        reach = np.where(direction > 0.0, (1.0 - start) / direction, np.where(direction < 0.0, -start / direction, np.inf))
+    reach[rows, axis] = 1.0 / np.abs(direction[rows, axis])  # the starting face's own axis: the opposite face
+    path = reach.min(axis=1)
+    return float(path.mean()), float(path.var() / path.mean() ** 2)
+
+
+def kuttruff(volume: float, area: float, alpha: float, gamma2: float) -> float:
+    """Eyring corrected for the spread of free paths: 0.161 V / (-S ln(1 - a) (1 + gamma^2 ln(1 - a) / 2))."""
+    log = math.log(1.0 - alpha)
+    return 0.161 * volume / (-area * log * (1.0 + gamma2 * log / 2.0))
+
+
+def selftest(m8k: float) -> bool:
+    """The tracer against textbook answers. m8k is the exported 8 kHz air attenuation (1/m)."""
     print("Self-test (each check must pass before any room is traced)")
     passed = True
 
     def report(ok: bool, text: str) -> None:
         nonlocal passed
         passed &= ok
-        print(f"  {'PASS' if ok else 'FAIL'} {text}")
+        print(f"  {'PASS' if ok else 'FAIL'} {text}", flush=True)
 
     cube = Geometry(10.0, 10.0, 10.0)
     no_air = np.zeros(1)
+    mean_path, gamma2 = lambertian_cube_path_variance()
 
-    # 1. A uniform, fully diffuse cube against Eyring.
+    # 1. A uniform, fully diffuse cube against Eyring, and against Eyring
+    #    corrected for the cube's spread of free paths (Kuttruff).
     hist, stats = trace(cube, np.full((4, 1), 0.2), np.ones(4), no_air, SELFTEST_RAYS, 1)
     t, r2 = t20(hist[0])
     expected = eyring(cube.volume, 600.0, 0.2)
+    corrected = kuttruff(cube.volume, 600.0, 0.2, gamma2)
     error = t / expected - 1.0
+    error_k = t / corrected - 1.0
     report(
-        abs(error) <= 0.05 and r2 >= 0.99,
+        abs(error) <= 0.05 and r2 >= 0.99 and abs(error_k) <= KUTTRUFF_TOLERANCE,
         f"1. uniform diffuse cube (10 m, alpha 0.2, s 1, no air, {SELFTEST_RAYS} rays): "
-        f"T20 {t:.4f} s against Eyring {expected:.4f} s ({100 * error:+.2f} %, limit 5 %), r2 {r2:.5f} (limit 0.99) "
+        f"T20 {t:.4f} s against Eyring {expected:.4f} s ({100 * error:+.2f} %, limit 5 %), r2 {r2:.5f} (limit 0.99); "
+        f"against Kuttruff's corrected Eyring {corrected:.4f} s ({100 * error_k:+.2f} %, limit 2 %), with the cube's "
+        f"gamma^2 {gamma2:.4f} from 1,000,000 Lambertian chords (their mean {mean_path:.4f} of an edge, 4V/S 0.6667) "
         f"[{stats.seconds:.1f} s]",
     )
 
     # 2. Air only: the decay is exp(-m c t), so T = ln(1e6) / (c m).
-    m8k = 2.42e-2
     hist, stats = trace(cube, np.zeros((4, 1)), np.full(4, SCATTER), np.array([m8k]), SELFTEST_RAYS, 1)
     t, r2 = t20(hist[0])
     expected = 13.82 / (C * m8k)
     error = t / expected - 1.0
     report(
         abs(error) <= 0.03,
-        f"2. air only (10 m cube, alpha 0, s {SCATTER}, m {m8k} 1/m, {SELFTEST_RAYS} rays): "
+        f"2. air only (10 m cube, alpha 0, s {SCATTER}, m {m8k} 1/m, rooms.json's 8 kHz, {SELFTEST_RAYS} rays): "
         f"T20 {t:.4f} s against 13.82/(c m) {expected:.4f} s ({100 * error:+.2f} %, limit 3 %), r2 {r2:.5f} "
         f"[{stats.seconds:.1f} s]",
     )
@@ -470,6 +522,42 @@ def selftest() -> bool:
         f"(limit 5 %); mean {100 * level:+.2f} % from N c dt / V (limit 2 %); path in the dome "
         f"{100 * share:.3f} % against its {100 * expected_share:.3f} % of the volume ({100 * share_error:+.2f} %, "
         f"limit 2 %); no ray left the room [{stats.seconds:.1f} s]",
+    )
+
+    # 5. Checks 1 and 2 again in one two-band trace, as the rooms run: one ray
+    #    path carrying both bands' energies, each band with its own losses.
+    alpha2 = np.zeros((4, 2))
+    alpha2[:, 0] = 0.2
+    hist, stats = trace(cube, alpha2, np.ones(4), np.array([0.0, m8k]), SELFTEST_RAYS, 1)
+    (t_a, r2_a), (t_b, _) = t20(hist[0]), t20(hist[1])
+    error_a = t_a / eyring(cube.volume, 600.0, 0.2) - 1.0
+    error_ak = t_a / corrected - 1.0
+    error_b = t_b / (13.82 / (C * m8k)) - 1.0
+    report(
+        abs(error_a) <= 0.05 and abs(error_ak) <= KUTTRUFF_TOLERANCE and r2_a >= 0.99 and abs(error_b) <= 0.03,
+        f"5. checks 1 and 2 in one two-band trace (s 1, {SELFTEST_RAYS} rays): band A T20 {t_a:.4f} s "
+        f"({100 * error_a:+.2f} % from Eyring, {100 * error_ak:+.2f} % from Kuttruff, r2 {r2_a:.5f}); band B T20 "
+        f"{t_b:.4f} s ({100 * error_b:+.2f} % from 13.82/(c m)) [{stats.seconds:.1f} s]",
+    )
+
+    # 6. Symmetry: absorption on the floor only, then on the ceiling only, with
+    #    the source and receiver at mid-height, are mirror images and must decay alike.
+    mirror = Geometry(10.0, 10.0, 10.0, ear_height=5.0)
+    symmetry_rays = 400000
+    fits = []
+    for part, seed in ((FLOOR, 1), (CEILING, 2)):
+        alpha1 = np.zeros((4, 1))
+        alpha1[part] = 0.5
+        hist, stats = trace(mirror, alpha1, np.full(4, SCATTER), no_air, symmetry_rays, seed)
+        fits.append((t20(hist[0])[0], float(hist[0].sum()), stats.seconds))
+    (t_floor, e_floor, s_floor), (t_ceiling, e_ceiling, s_ceiling) = fits
+    t_gap = abs(t_ceiling / t_floor - 1.0)
+    e_gap = abs(e_ceiling / e_floor - 1.0)
+    report(
+        t_gap <= 0.03 and e_gap <= 0.04,
+        f"6. symmetry (10 m cube, source and receiver at 5 m, alpha 0.5 on one face, s {SCATTER}, {symmetry_rays} rays): "
+        f"floor-only T20 {t_floor:.4f} s, ceiling-only {t_ceiling:.4f} s ({100 * t_gap:.2f} % apart, limit 3 %); "
+        f"received energy {100 * e_gap:.2f} % apart (limit 4 %) [{s_floor + s_ceiling:.1f} s]",
     )
     return passed
 
@@ -536,9 +624,22 @@ def round_half_up(value: float, places: int) -> float:
     return math.floor(value * scale + 0.5) / scale
 
 
-def calibration_factor(traced: float, model: float, r2: float) -> float:
-    """tracer / Eyring, clamped to 0.7-1.3 and rounded half up to 3 places (as Math.round does); 1 if r2 < 0.95."""
+def schroeder_frequency(t125: float, volume_m3: float) -> float:
+    """2000 sqrt(T / V), Hz: below it a room's response is modal, beyond geometrical acoustics."""
+    return SCHROEDER_K * math.sqrt(t125 / volume_m3)
+
+
+def calibration_factor(traced: float, model: float, r2: float, band: int, empty_t125: float, volume_m3: float) -> float:
+    """tracer / Eyring, clamped to 0.7-1.3 and rounded half up to 3 places (as Math.round does).
+
+    It is 1 where the fit's r2 is under 0.95, and at 125 Hz where the room's
+    Schroeder frequency (from its empty 125 Hz T) is above the octave's lower
+    edge (ruling R39). The same rule is fittedCalibration's in
+    packages/web/src/lib/set-down/__tests__/tracer-results.ts.
+    """
     if not r2 >= MIN_FIT_R2:
+        return 1.0
+    if band == 0 and schroeder_frequency(empty_t125, volume_m3) > LOW_OCTAVE_EDGE_HZ:
         return 1.0
     return round_half_up(min(CALIBRATION_MAX, max(CALIBRATION_MIN, traced / model)), 3)
 
@@ -586,20 +687,30 @@ def trace_one_room(slug: str, room: dict, air: np.ndarray, rays: int) -> tuple[d
 
     for dressing in ("empty", "dressed"):
         spread = seed_spread(traced[(1, dressing)], traced[(2, dressing)])
-        if spread > SEED_TOLERANCE:
-            print(f"  seeds disagree on {dressing} by {100 * spread:.2f} %: rerunning both once", flush=True)
+        agree = spread <= SEED_TOLERANCE
+        print(f"  seeds 1 and 2, {dressing}: largest spread 250 Hz-8 kHz {100 * spread:.2f} % (limit 3 %) "
+              f"{'PASS' if agree else 'FAIL'}", flush=True)
+        if not agree:
+            # The silent-corruption rule: rerun both seeds once and compare the rerun with the first run.
+            # The seeds are fixed, so a sound computation repeats itself to the bit: any difference is
+            # corruption, and an identical rerun means the disagreement is the trace's own spread. Either
+            # way the disagreement stands; nothing is averaged away.
             for seed in SEEDS:
                 times, fits, _ = trace_room(geo, room, dressing, air, seed, rays)
-                traced[(seed, dressing)], r2[(seed, dressing)] = times, fits
-            spread = seed_spread(traced[(1, dressing)], traced[(2, dressing)])
-        agree = spread <= SEED_TOLERANCE
+                if (times, fits) != (traced[(seed, dressing)], r2[(seed, dressing)]):
+                    print(f"  FAIL seed {seed} {dressing}: the rerun differs from the first run (silent corruption): "
+                          f"{fmt(times)} against {fmt(traced[(seed, dressing)])}")
+                else:
+                    print(f"  seed {seed} {dressing}: the rerun repeats the first run to the bit; "
+                          f"the disagreement is the trace's spread")
         ok &= agree
-        print(f"  seeds 1 and 2, {dressing}: largest spread 250 Hz-4 kHz {100 * spread:.2f} % (limit 3 %) "
-              f"{'PASS' if agree else 'FAIL'}")
 
     eyring_times = room["eyringUncalibrated"]
-    calibration = [calibration_factor(traced[(1, "empty")][b], eyring_times["empty"][b], r2[(1, "empty")][b])
-                   for b in range(len(BANDS_HZ))]
+    t125, volume = traced[(1, "empty")][0], room["volumeM3"]
+    calibration = [calibration_factor(traced[(1, "empty")][b], eyring_times["empty"][b], r2[(1, "empty")][b],
+                                      b, t125, volume) for b in range(len(BANDS_HZ))]
+    print(f"  Schroeder frequency {schroeder_frequency(t125, volume):.1f} Hz (125 Hz factor 1 above "
+          f"{LOW_OCTAVE_EDGE_HZ:.1f} Hz)")
     print(f"  calibration (tracer empty / Eyring empty) {fmt(calibration)}")
     for dressing in DRESSINGS:
         ratio = [traced[(1, dressing)][b] / eyring_times[dressing][b] for b in range(len(BANDS_HZ))]
@@ -608,12 +719,12 @@ def trace_one_room(slug: str, room: dict, air: np.ndarray, rays: int) -> tuple[d
         worst = max(abs(errors[b]) for b in CHECKED)
         beyond = [BANDS_HZ[b] for b in CHECKED if ratio[b] > CALIBRATION_MAX]
         print(f"  {dressing:7s} Eyring {fmt(eyring_times[dressing])} | model {fmt(model)} | tracer/Eyring {fmt(ratio)}")
-        print(f"          model/tracer-1 {' '.join(f'{100 * e:+6.1f}%' for e in errors)}  worst 250-4k {100 * worst:.1f} %"
+        print(f"          model/tracer-1 {' '.join(f'{100 * e:+6.1f}%' for e in errors)}  worst 250-8k {100 * worst:.1f} %"
               f"{'' if worst <= MODEL_TOLERANCE else '  OVER 15 %'}"
               f"{f'; tracer/Eyring over 1.3 at {beyond} Hz' if beyond else ''}")
     dressed_factor = [
         calibration_factor(traced[(1, "dressed")][b], eyring_times["dressed"][b] * calibration[b],
-                           r2[(1, "dressed")][b]) for b in range(len(BANDS_HZ))]
+                           r2[(1, "dressed")][b], b, t125, volume) for b in range(len(BANDS_HZ))]
     print(f"  a second, dressed factor (tracer dressed / calibrated Eyring dressed) would be {fmt(dressed_factor)}")
 
     values = [v for key in traced for v in traced[key]] + [v for key in r2 for v in r2[key]]
@@ -633,9 +744,74 @@ def trace_one_room(slug: str, room: dict, air: np.ndarray, rays: int) -> tuple[d
     return result, ok
 
 
+def rooms_sha256(content: bytes) -> str:
+    """sha256 of rooms.json with CRLF line ends read as LF, so a Windows checkout hashes as the committed file does."""
+    return hashlib.sha256(content.replace(b"\r\n", b"\n")).hexdigest()
+
+
+def trace_metadata(rooms_content: bytes) -> dict:
+    """What results.json records of the run that wrote it (ruling R38)."""
+    return {"roomsSha256": rooms_sha256(rooms_content), "batch": BATCH, "numpy": np.__version__}
+
+
+def read_rooms(rooms_path: str) -> tuple[bytes, dict]:
+    with open(rooms_path, "rb") as handle:
+        content = handle.read()
+    return content, json.loads(content.decode("utf-8"))
+
+
+def write_results(results_path: str, results: dict) -> None:
+    with open(results_path, "w", encoding="utf-8", newline="\n") as handle:
+        json.dump(results, handle, indent=2)
+        handle.write("\n")
+
+
+def git_blob(path: str, commit: str) -> bytes | None:
+    """The file at `path` as `commit` holds it, or None if git cannot show it."""
+    folder, name = os.path.split(os.path.abspath(path))
+    shown = subprocess.run(["git", "show", f"{commit}:./{name}"], cwd=folder, capture_output=True, check=False)
+    return shown.stdout if shown.returncode == 0 else None
+
+
+def stamp(commit: str, rooms_path: str, results_path: str) -> bool:
+    """Adds the trace metadata to a results.json written before the tracer recorded it, and nothing else.
+
+    A one-off step (ruling R38). It refuses unless rooms.json is the file the
+    trace read, which `commit` (the commit that holds the trace) records, and
+    unless results.json is that commit's trace, so the hash it writes is the
+    hash of the rooms that were traced.
+    """
+    rooms_content, _ = read_rooms(rooms_path)
+    committed_rooms = git_blob(rooms_path, commit)
+    # The commit's trace is the results.json beside its rooms.json, wherever the file to stamp lives.
+    committed_results = git_blob(os.path.join(os.path.dirname(os.path.abspath(rooms_path)), "results.json"), commit)
+    if committed_rooms is None or committed_results is None:
+        print(f"--stamp refused: git cannot show rooms.json and results.json at {commit}")
+        return False
+    if rooms_sha256(committed_rooms) != rooms_sha256(rooms_content):
+        print(f"--stamp refused: rooms.json differs from {commit}'s, the file the trace read")
+        return False
+    with open(results_path, encoding="utf-8") as handle:
+        results = json.load(handle)
+    traced = {key: value for key, value in results.items() if key != "trace"}
+    if traced != json.loads(committed_results.decode("utf-8")):
+        print(f"--stamp refused: results.json's traces differ from {commit}'s")
+        return False
+    metadata = {
+        **trace_metadata(rooms_content),
+        "stamped": f"added after the trace by raytrace.py --stamp {commit}: rooms.json and the traces matched "
+                   f"{commit}'s, and the trace ran with this BATCH and numpy",
+    }
+    if "trace" in results and results["trace"] != metadata:
+        print("--stamp refused: results.json already records different trace metadata")
+        return False
+    write_results(results_path, {"trace": metadata, **traced})
+    print(f"stamped {results_path}: rooms.json sha256 {metadata['roomsSha256']}, batch {BATCH}, numpy {np.__version__}")
+    return True
+
+
 def run_rooms(rooms_path: str, results_path: str) -> bool:
-    with open(rooms_path, encoding="utf-8") as handle:
-        exported = json.load(handle)
+    rooms_content, exported = read_rooms(rooms_path)
     air = np.array(exported["airAttenuationPerM"])
     if list(exported["bandsHz"]) != list(BANDS_HZ):
         raise ValueError("rooms.json bands differ from the tracer's")
@@ -657,9 +833,7 @@ def run_rooms(rooms_path: str, results_path: str) -> bool:
         ok &= room_ok
 
     if ok:
-        with open(results_path, "w", encoding="utf-8", newline="\n") as handle:
-            json.dump(results, handle, indent=2)
-            handle.write("\n")
+        write_results(results_path, {"trace": trace_metadata(rooms_content), **results})
         print(f"\nwrote {results_path}")
     else:
         print("\na check failed: results.json not written")
@@ -672,13 +846,23 @@ def main() -> int:
     parser.add_argument("rooms", nargs="?", help="rooms.json from the exporter")
     parser.add_argument("results", nargs="?", help="results.json to write")
     parser.add_argument("--pause-while", metavar="FILE", help="wait between batches while FILE exists")
+    parser.add_argument("--stamp", metavar="COMMIT", help="only add the trace metadata to results.json (see README)")
     args = parser.parse_args()
+    if args.stamp is not None:
+        if args.rooms is None or args.results is None:
+            parser.error("--stamp needs rooms.json and results.json")
+        return 0 if stamp(args.stamp, args.rooms, args.results) else 1
     if not args.selftest and (args.rooms is None or args.results is None):
         parser.error("give rooms.json and results.json, or --selftest")
     global PAUSE_FILE
     PAUSE_FILE = args.pause_while
+    # The self-test's air-only check uses the exported 8 kHz attenuation.
+    rooms_path = args.rooms or os.path.join(os.path.dirname(os.path.abspath(__file__)), "rooms.json")
+    _, exported = read_rooms(rooms_path)
+    if list(exported["bandsHz"]) != list(BANDS_HZ):
+        raise ValueError("rooms.json bands differ from the tracer's")
     started = time.perf_counter()
-    if not selftest():
+    if not selftest(float(exported["airAttenuationPerM"][BANDS_HZ.index(8000)])):
         print("self-test FAILED")
         return 1
     if args.selftest:

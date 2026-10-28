@@ -1,4 +1,10 @@
 {
+  "trace": {
+    "roomsSha256": "a07ed610e0de125fe3736c108c6313210a0d916bac66f6f010e0a6546c99d057",
+    "batch": 50000,
+    "numpy": "2.4.2",
+    "stamped": "added after the trace by raytrace.py --stamp f8e30804: rooms.json and the traces matched f8e30804's, and the trace ran with this BATCH and numpy"
+  },
   "grand-hall": {
     "empty": [
       1.6385,

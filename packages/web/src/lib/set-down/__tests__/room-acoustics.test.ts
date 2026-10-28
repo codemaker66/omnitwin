@@ -40,6 +40,11 @@ function midBand(rt: BandValues): number {
   return (rt[2] + rt[3]) / 2;
 }
 
+/** The room as surveyed: Eyring as calculated, without the tracer's calibration. */
+function surveyed(room: RoomAcoustics): RoomAcoustics {
+  return { ...room, calibration: UNCALIBRATED };
+}
+
 /** Each factor is finite and inside the tracer fit's clamp. */
 function expectCalibrationInRange(calibration: BandValues): void {
   for (const factor of calibration) {
@@ -76,15 +81,18 @@ describe("Trades Hall rooms", () => {
     expect(dome.map((surface) => surface.areaM2)).toEqual([fine.surfaceM2]);
   });
 
-  it("puts the empty Grand Hall, curtains included, between 2.0 and 2.6 s at 1 kHz", () => {
-    const rt = reverberationTimes(GRAND_HALL, NO_CONTENTS);
+  // The next two check the survey and its EST curtains against the research's
+  // Eyring estimate (grand_hall_estimate.py), so they read Eyring as
+  // calculated, before the tracer's calibration (rulings R33 and R40).
+  it("puts the empty Grand Hall, curtains included, between 2.0 and 2.6 s at 1 kHz, as surveyed", () => {
+    const rt = reverberationTimes(surveyed(GRAND_HALL), NO_CONTENTS);
     expect(rt[3]).toBeGreaterThan(2.0);
     expect(rt[3]).toBeLessThan(2.6);
   });
 
-  it("puts the Grand Hall without its curtains between 3.4 and 4.1 s at 1 kHz", () => {
+  it("puts the Grand Hall without its curtains between 3.4 and 4.1 s at 1 kHz, as surveyed", () => {
     const bare: RoomAcoustics = {
-      ...GRAND_HALL,
+      ...surveyed(GRAND_HALL),
       surfaces: GRAND_HALL.surfaces.filter((surface) => surface.material !== "velour-drape"),
     };
     expect(bare.surfaces.length).toBeLessThan(GRAND_HALL.surfaces.length);
@@ -115,7 +123,6 @@ describe("Trades Hall rooms", () => {
   it("makes each gallery's empty mid band under 1.0 s and under a third of the Grand Hall's, as surveyed", () => {
     // A check of the gallery materials (R13), so it reads the survey's Eyring
     // times, before the tracer's calibration (ruling R33).
-    const surveyed = (room: RoomAcoustics): RoomAcoustics => ({ ...room, calibration: UNCALIBRATED });
     const hall = midBand(reverberationTimes(surveyed(GRAND_HALL), NO_CONTENTS));
     for (const slug of ["north-gallery", "south-gallery"] as const) {
       const gallery = midBand(reverberationTimes(surveyed(ROOM_ACOUSTICS[slug]), NO_CONTENTS));
