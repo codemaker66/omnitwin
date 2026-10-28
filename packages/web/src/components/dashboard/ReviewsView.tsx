@@ -119,7 +119,9 @@ export function ReviewsView({ reviewId = null, onReviewShown }: ReviewsViewProps
   const [filter, setFilter] = useState<ReviewFilter>("all");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [openedIndex, setOpenedIndex] = useState(-1);
-  const [context, setContext] = useState<{ readonly id: string | null } & ReviewContextState>({ id: null, status: "loading", value: null, message: null });
+  // The open review's gates and timeline, and the read (contextVersion) they
+  // are from.
+  const [context, setContext] = useState<{ readonly id: string | null; readonly version: number } & ReviewContextState>({ id: null, version: 0, status: "loading", value: null, message: null });
   const [contextVersion, setContextVersion] = useState(0);
   const [snapshot, setSnapshot] = useState<{ readonly id: string | null; readonly state: SnapshotState }>({ id: null, state: { status: "loading" } });
   const [snapshotVersion, setSnapshotVersion] = useState(0);
@@ -226,13 +228,14 @@ export function ReviewsView({ reviewId = null, onReviewShown }: ReviewsViewProps
   useEffect(() => {
     if (selectedId === null) return;
     let current = true;
+    const version = contextVersion;
     setContext((previous) => previous.id === selectedId
-      ? { ...previous, status: "loading", message: null }
-      : { id: selectedId, status: "loading", value: null, message: null });
+      ? { ...previous, version, status: "loading", message: null }
+      : { id: selectedId, version, status: "loading", value: null, message: null });
     void Promise.all([getReviewHistory(selectedId), getAvailableTransitions(selectedId)])
       .then(([history, gates]) => {
         if (!current) return;
-        setContext({ id: selectedId, status: "ready", message: null, value: {
+        setContext({ id: selectedId, version, status: "ready", message: null, value: {
           currentStatus: gates.currentStatus,
           availableTransitions: gates.availableTransitions,
           demoEligible: gates.internalDemoReviewEligible,
@@ -249,7 +252,7 @@ export function ReviewsView({ reviewId = null, onReviewShown }: ReviewsViewProps
       })
       .catch((error: unknown) => {
         if (!current) return;
-        setContext({ id: selectedId, status: "error", value: null,
+        setContext({ id: selectedId, version, status: "error", value: null,
           message: error instanceof Error ? error.message : null });
       });
     return () => { current = false; };
@@ -561,8 +564,12 @@ export function ReviewsView({ reviewId = null, onReviewShown }: ReviewsViewProps
     onClose: close,
     onStep: step,
   };
-  const panelContext: ReviewContextState = selected !== undefined && context.id === selected.id
-    ? context : { status: "loading", value: null, message: null };
+  // A read asked for is on its way in the very render that asks for it, so the
+  // steps wait from then, not from the render after; the last reading stays on
+  // screen until the new one lands.
+  const panelContext: ReviewContextState = selected === undefined || context.id !== selected.id
+    ? { status: "loading", value: null, message: null }
+    : context.version === contextVersion ? context : { status: "loading", value: context.value, message: null };
 
   return (
     <div ref={deskRef} className={`enq-desk rev-desk${wide ? "" : " enq-desk--single"}`} data-register="ivory" onKeyDown={onDeskKeyDown}>
