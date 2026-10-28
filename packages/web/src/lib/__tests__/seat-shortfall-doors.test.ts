@@ -67,3 +67,26 @@ describe("seat shortfall keeps the doors clear", () => {
     expect(seatShortfallDetail(offer)).toBe("The tables are full, and there is no room for another at this spacing with the doors kept clear.");
   });
 });
+
+describe("adding chairs at a table beside a door", () => {
+  // A round of six whose fireplace-side chairs stand 5 cm clear of the fire
+  // exit's space (to x −9.0675): rung for ten, two of them would reach into it
+  // (the correctness review of 28 Oct 2026).
+  const round6 = createTableGroup(ROUND, -7.575, -3.235, 0, 6);
+  const fix = (doors: boolean): readonly PlacedItem[] => {
+    const applied = applySeatShortfallFix({ ...input(round6, doors), guests: 10 });
+    if (applied === null) throw new Error("no fix");
+    return applied.placedItems;
+  };
+
+  it("would ring chairs into the fire exit's space without the rule", () => {
+    expect(round6.some(inDoorSpace)).toBe(false);
+    expect(fix(false).some(inDoorSpace)).toBe(true);
+  });
+
+  it("adds no chair in front of a door, and seats the guests another way", () => {
+    const after = fix(true);
+    expect(after.some(inDoorSpace)).toBe(false);
+    expect(after.filter((piece) => getCatalogueItem(piece.catalogueItemId)?.category === "chair").length).toBeGreaterThanOrEqual(10);
+  });
+});

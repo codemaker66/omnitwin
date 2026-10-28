@@ -7,11 +7,11 @@ import { toRenderSpace, toRealWorld } from "../../constants/scale.js";
 import { getCatalogueItem } from "../../lib/catalogue.js";
 import { isDiningTableItem } from "../../lib/furniture-semantics.js";
 import { computeRotatedFootprint } from "../../lib/placement.js";
-import { banquetSeatsPerTable, tableGroupPlanningRadius } from "../../lib/table-group.js";
+import { banquetSeatsPerTable, createTableGroup } from "../../lib/table-group.js";
 import { isTableDressingApplicator } from "../../lib/table-dressing.js";
 import { prefersReducedMotion } from "../../lib/reduced-motion.js";
 import { spacesEntered, type DoorClearSpace, type Footprint } from "../../lib/door-clear-spaces.js";
-import { doorFloorStrengths, doorsBlockedByAny } from "../../lib/keep-doors-clear.js";
+import { doorFloorStrengths, doorsBlockedByAny, placedFootprint } from "../../lib/keep-doors-clear.js";
 import { useCatalogueStore } from "../../stores/catalogue-store.js";
 import { useDoorClearSpaceStore } from "../../stores/door-clear-space-store.js";
 import { usePlacementStore } from "../../stores/placement-store.js";
@@ -183,18 +183,23 @@ function DoorClearSpaceMark({ space, target }: { readonly space: DoorClearSpace;
   );
 }
 
-/** The ghost's footprint in metres: a dining round as the set it places, any other piece as itself. */
-function ghostFootprint(itemId: string, position: readonly [number, number, number], rotationY: number): Footprint | null {
+/**
+ * The ghost as the store will set it down, metres: a dining table with the
+ * chairs it places round it, any other piece as itself, each piece judged as
+ * the door rule judges a placed one (placedFootprint), so the floor lights a
+ * space exactly when setting the ghost down would slide it.
+ */
+function ghostFootprints(itemId: string, position: readonly [number, number, number], rotationY: number): readonly Footprint[] {
   const item = getCatalogueItem(itemId);
-  if (item === undefined || isTableDressingApplicator(itemId)) return null;
-  const x = toRealWorld(position[0]);
-  const z = toRealWorld(position[2]);
-  if (isDiningTableItem(item) && item.tableShape === "round") {
-    const radius = tableGroupPlanningRadius(item, banquetSeatsPerTable(item));
-    return { x, z, halfW: radius, halfD: radius };
+  if (item === undefined || isTableDressingApplicator(itemId)) return [];
+  if (isDiningTableItem(item)) {
+    // A throwaway id: the pointer must not spend the planner's piece ids.
+    return createTableGroup(itemId, position[0], position[2], rotationY, banquetSeatsPerTable(item), 0, () => "door-ghost")
+      .map((piece) => placedFootprint(piece))
+      .filter((footprint): footprint is Footprint => footprint !== null);
   }
   const { halfW, halfD } = computeRotatedFootprint(item, rotationY);
-  return { x, z, halfW: toRealWorld(halfW), halfD: toRealWorld(halfD) };
+  return [{ x: toRealWorld(position[0]), z: toRealWorld(position[2]), halfW: toRealWorld(halfW), halfD: toRealWorld(halfD) }];
 }
 
 export function DoorClearSpaceLayer(): ReactElement | null {
@@ -210,8 +215,8 @@ export function DoorClearSpaceLayer(): ReactElement | null {
   // The placed pieces' doors apart from the ghost's, so a moving ghost does not rescan the layout.
   const byPieces = useMemo(() => doorsBlockedByAny(placedItems, spaces), [placedItems, spaces]);
   const strengths = useMemo(() => {
-    const ghost = placing && ghostPosition !== null ? ghostFootprint(inHand, ghostPosition, ghostRotation) : null;
-    const byGhost = ghost === null ? [] : spacesEntered([ghost], spaces);
+    const ghost = placing && ghostPosition !== null ? ghostFootprints(inHand, ghostPosition, ghostRotation) : [];
+    const byGhost = spacesEntered(ghost, spaces);
     const entered = spaces.filter((space) => byPieces.includes(space) || byGhost.includes(space));
     return doorFloorStrengths({ spaces, placing, carrying, entered });
   }, [spaces, placing, carrying, inHand, byPieces, ghostPosition, ghostRotation]);

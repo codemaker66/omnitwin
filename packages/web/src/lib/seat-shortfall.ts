@@ -14,7 +14,9 @@ import {
   tableOwnChairs,
 } from "./table-group.js";
 import { BANQUET_CHAIR_CLEARANCE_M, groupClearOfDoors } from "./auto-fill.js";
-import type { LayoutRect } from "./auto-layout.js";
+import { rectsOverlap, type LayoutRect } from "./auto-layout.js";
+import { footprintInKeepOut } from "./door-clear-spaces.js";
+import { placedFootprint } from "./keep-doors-clear.js";
 import { countLabel } from "./count-label.js";
 
 // ---------------------------------------------------------------------------
@@ -78,7 +80,7 @@ interface SeatedTable {
   readonly limit: number;
 }
 
-function seatedTables(placedItems: readonly PlacedItem[]): SeatedTable[] {
+function seatedTables(placedItems: readonly PlacedItem[], doorSpaces: readonly LayoutRect[]): SeatedTable[] {
   const tables: SeatedTable[] = [];
   for (const placed of placedItems) {
     if (!isSceneFurniturePlacement(placed)) continue;
@@ -87,9 +89,54 @@ function seatedTables(placedItems: readonly PlacedItem[]): SeatedTable[] {
     // Its own chairs: a group made with Group can hold other tables and theirs.
     const chairs = tableOwnChairs(placed, placedItems).length;
     const limit = Math.min(banquetSeatsPerTable(item), tableGroupSeatCapacity(placed, placedItems));
-    tables.push({ placed, item, chairs, limit });
+    tables.push({ placed, item, chairs, limit: doorLimit(placed, item, chairs, limit, placedItems, doorSpaces) });
   }
   return tables;
+}
+
+/** How far a table's chairs reach past its own footprint, metres: a chair's depth and the tuck. */
+const CHAIR_REACH_M = 1;
+
+/**
+ * The most chairs a table may be set for with no piece of its group in a
+ * door's clear space, judged as the door notice judges it (placedFootprint,
+ * footprintInKeepOut): each count from the chairs it has, up to `limit`, is
+ * rung round it in turn, and the first that would reach a door stops there,
+ * since the chairs can be added one at a time. A table far from every door
+ * keeps its limit unbuilt.
+ */
+function doorLimit(
+  placed: PlacedItem,
+  item: CatalogueItem,
+  chairs: number,
+  limit: number,
+  placedItems: readonly PlacedItem[],
+  doorSpaces: readonly LayoutRect[],
+): number {
+  if (doorSpaces.length === 0 || limit <= chairs) return limit;
+  const own = computeRotatedFootprint(item, placed.rotationY, placed.scale);
+  const near: LayoutRect = {
+    cx: toRealWorld(placed.x),
+    cz: toRealWorld(placed.z),
+    width: 2 * (toRealWorld(own.halfW) + CHAIR_REACH_M),
+    depth: 2 * (toRealWorld(own.halfD) + CHAIR_REACH_M),
+  };
+  if (!doorSpaces.some((space) => rectsOverlap(near, space))) return limit;
+  // A table placed on its own is rung as the fix rings it, in a group of its own.
+  const items = placed.groupId === null
+    ? placedItems.map((piece) => (piece.id === placed.id ? { ...piece, groupId: `${placed.id}-door-check` } : piece))
+    : placedItems;
+  for (let count = chairs + 1; count <= limit; count += 1) {
+    const rung = rearrangeTableGroup(placed.id, count, items);
+    const table = rung.find((piece) => piece.id === placed.id);
+    if (table === undefined) return chairs;
+    const entering = [table, ...tableOwnChairs(table, rung)].some((piece) => {
+      const footprint = placedFootprint(piece);
+      return footprint !== null && doorSpaces.some((space) => footprintInKeepOut(footprint, space));
+    });
+    if (entering) return count - 1;
+  }
+  return limit;
 }
 
 /** Spread `count` chairs over the tables, one at a time to the table with the
@@ -214,7 +261,7 @@ interface Planned {
 function planShortfall(input: SeatShortfallInput): Planned | null {
   const need = shortfallOf(input);
   if (need === null) return null;
-  const tables = seatedTables(input.placedItems);
+  const tables = seatedTables(input.placedItems, input.doorSpaces ?? []);
   // A layout with no dining table on the floor (rows of chairs, a standing
   // reception) gets no table fix here.
   if (tables.length === 0) return null;

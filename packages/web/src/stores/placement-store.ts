@@ -756,9 +756,9 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
       counted.push(piece.catalogueItemId);
     }
     // As they stand: a card's set comes settled where it was judged (lib/place-in-hand), a copy at its original's heights;
-    // set down in front of a door, the set moves to the nearest clear spot together.
+    // set down in front of a door, the set moves together the least way clear (never to the grid: it was not snapped).
     const anchor = slideAnchor(pieces);
-    const kept = anchor === undefined ? { pieces, slide: null } : clearOfDoors(pieces, anchor, state.placedItems, state.snapEnabled);
+    const kept = anchor === undefined ? { pieces, slide: null } : clearOfDoors(pieces, anchor, state.placedItems, false);
     const numbered = numberNew(state.placedItems, kept.pieces);
     const next = [...state.placedItems, ...numbered];
     if (refusedByStore(state.placedItems, next)) return [];
@@ -777,18 +777,27 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     const changes = new Map(add.filter((piece) => keptIds.has(piece.id)).map((piece) => [piece.id, piece]));
     const joining = add.filter((piece) => !keptIds.has(piece.id));
     const edit = kept.map((piece) => changes.get(piece.id) ?? piece);
-    // What the edit moves or adds, set down in front of a door, slides on to the nearest clear spot
-    // together, as a drag does; what it changes in place (Replace) stays where it stands.
+    // What the edit moves or adds, set down in front of a door, slides on the least way clear, as a drag
+    // does, with the rest of each table group or set it belongs to: a Replace that rings a round anew
+    // round a table that stays slides the round, never its chairs off it. An edit that moves nothing
+    // (a Replace like for like) stays where it stands.
     const before = new Map(state.placedItems.map((piece) => [piece.id, piece]));
     const moved = (piece: PlacedItem): boolean => {
       const was = before.get(piece.id);
       return was === undefined || was.x !== piece.x || was.z !== piece.z;
     };
-    const moving = [...edit.filter((piece) => changes.has(piece.id) && moved(piece)), ...joining];
+    const shifted = new Set([...edit.filter((piece) => changes.has(piece.id) && moved(piece)), ...joining].map((piece) => piece.id));
+    const units = new Set([...edit, ...joining]
+      .filter((piece) => shifted.has(piece.id))
+      .flatMap((piece) => [piece.groupId, piece.setId ?? null].filter((key): key is string => key !== null)));
+    const inUnit = (piece: PlacedItem): boolean => shifted.has(piece.id)
+      || (piece.groupId !== null && units.has(piece.groupId))
+      || (piece.setId !== undefined && units.has(piece.setId));
+    const moving = [...edit.filter(inUnit), ...joining];
     const anchor = slideAnchor(moving);
     // Measured against what stays, so no moving piece settles on itself.
     const staying = edit.filter((piece) => !moving.includes(piece));
-    const clear = anchor === undefined ? { pieces: moving, slide: null } : clearOfDoors(moving, anchor, staying, state.snapEnabled);
+    const clear = anchor === undefined ? { pieces: moving, slide: null } : clearOfDoors(moving, anchor, staying, false);
     const slid = new Map(clear.pieces.map((piece) => [piece.id, piece]));
     const changed = edit.map((piece) => slid.get(piece.id) ?? piece);
     const joined = joining.map((piece) => slid.get(piece.id) ?? piece);
@@ -873,6 +882,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     // Fill over the layout (Q-10): only round groups of this kind are set anew, at the gangways' design;
     // every other piece stays exactly where it is, ids and all, and keeps the aisle rule round it.
     if (plannerFeatureEnabled("fillKeepOuts")) {
+      const doorSpaces = roomDoorKeepOuts();
       const fill = planRoomFill({
         table: tableItem,
         seatsPerTable: chairsPerTable,
@@ -882,10 +892,11 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
         exits,
         rule: FILL_AISLE_RULE,
         // The same doors the prompt's preview kept clear (AutoFillPrompt), so what it said is what lands.
-        doorSpaces: roomDoorKeepOuts(),
+        doorSpaces,
       }, state.placedItems);
       if (fill === null) return null;
-      const refilled = refillPieces(state.placedItems, fill.refillIds, fill.plan);
+      // A kept chair the planner never sets takes the plan's chair where it would reach a door.
+      const refilled = refillPieces(state.placedItems, fill.refillIds, fill.plan, undefined, { doorSpaces });
       if (refilled.length === 0) return null;
       const kept = state.placedItems.filter((item) => !fill.refillIds.has(item.id));
       // The new tables take the lowest numbers the kept ones leave free (Q-46).

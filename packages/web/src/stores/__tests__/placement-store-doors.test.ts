@@ -5,7 +5,7 @@ import { subscribeDoorSlides, useDoorClearSpaceStore, type DoorSlideEvent } from
 import { useRoomDimensionsStore } from "../room-dimensions-store.js";
 import { computeSurfaceHeight, createPlacedItem, resetPlacedIdCounter, type PlacedItem } from "../../lib/placement.js";
 import { getCatalogueItemBySlug } from "../../lib/catalogue.js";
-import { createTableGroup } from "../../lib/table-group.js";
+import { createTableGroup, rearrangeTableGroup } from "../../lib/table-group.js";
 import { GRAND_HALL_DOOR_CLEAR_SPACES } from "../../lib/door-clear-spaces.js";
 import { doorBlockers } from "../../lib/keep-doors-clear.js";
 
@@ -65,6 +65,29 @@ describe("a set slid clear of a door", () => {
     expect(blocked()).toBe(0);
     expect(pieceOf(lecternItem.id).y).toBeCloseTo(onDeck, 9);
     expect(pieceOf(deckItem.id).y).toBe(0);
+  });
+
+  it("slides a round an edit rings anew with its table, never its chairs off it", () => {
+    // A round of six 5 cm clear of the fire exit's space; rung for ten, two chairs reach into it.
+    usePlacementStore.getState().placeSetup(createTableGroup(ROUND, -7.575, -3.235, 0, 6));
+    expect(blocked()).toBe(0);
+    const placed = usePlacementStore.getState().placedItems;
+    const table = pieceOf(ROUND);
+    const rung = rearrangeTableGroup(table.id, 10, placed);
+    const offsets = (items: readonly PlacedItem[]): readonly string[] => {
+      const t = items.find((piece) => piece.id === table.id);
+      if (t === undefined) throw new Error("no table");
+      return items.filter((piece) => piece.groupId === table.groupId && piece.id !== table.id)
+        .map((piece) => `${(piece.x - t.x).toFixed(4)},${(piece.z - t.z).toFixed(4)}`).sort();
+    };
+    const rungIds = new Set(rung.map((piece) => piece.id));
+    usePlacementStore.getState().applyEdit({
+      removeIds: new Set(placed.filter((piece) => !rungIds.has(piece.id)).map((piece) => piece.id)),
+      add: rung.filter((piece) => piece.groupId === table.groupId),
+    });
+    expect(blocked()).toBe(0);
+    expect(slides).toHaveLength(1);
+    expect(offsets(usePlacementStore.getState().placedItems)).toEqual(offsets(rung));
   });
 });
 

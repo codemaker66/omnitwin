@@ -108,10 +108,16 @@ describe("moving a saved layout's pieces clear of the doors", () => {
     const plan = planAutoFill("dinner-rounds", 0, 21, 10.5);
     if (plan === null || plan.style !== "dinner-rounds") throw new Error("no fill");
     usePlacementStore.setState({ placedItems: plan.tables.flatMap((table) => createTableGroup(ROUND, table.xM, table.zM, 0, 10)) });
+    const was = new Map(placed().map((piece) => [piece.id, `${String(piece.x)},${String(piece.z)}`]));
     const before = doorBlockers(placed(), GRAND_HALL_DOOR_CLEAR_SPACES).length;
     const moved = moveDoorBlockersClear();
     expect(before).toBe(4);
-    expect(doorBlockers(placed(), GRAND_HALL_DOOR_CLEAR_SPACES)).toHaveLength(before - moved);
+    // Some had nowhere free to go: those stay exactly where they stood, and are still named.
+    expect(moved).toBeLessThan(before);
+    const stayed = doorBlockers(placed(), GRAND_HALL_DOOR_CLEAR_SPACES);
+    expect(stayed).toHaveLength(before - moved);
+    const now = new Map(placed().map((piece) => [piece.id, `${String(piece.x)},${String(piece.z)}`]));
+    for (const id of stayed.flatMap((blocker) => blocker.ids)) expect(now.get(id)).toBe(was.get(id));
     expect(anyOverlap(placed())).toBe(false);
   });
 });

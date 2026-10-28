@@ -3,15 +3,21 @@ import {
   FILL_AISLE_RULE,
   autoFillBasis,
   designatedGangways,
+  fillRefillIds,
   grandHallExits,
+  groupClearOfDoors,
   planAutoFill,
   planBanquetFill,
   planGangwayFill,
+  refillPieces,
   roomAtSpacingLine,
   type AutoFillPlan,
+  type BanquetFillPlan,
   type GangwayFillPlan,
   type PublishedFigure,
 } from "../auto-fill.js";
+import { plannerChairFor } from "../furniture-defaults.js";
+import type { PlacedItem } from "../placement.js";
 import { getCatalogueItem, getCatalogueItemBySlug } from "../catalogue.js";
 import { computeRotatedFootprint } from "../placement.js";
 import { createTableGroup, tableGroupPlanningRadius } from "../table-group.js";
@@ -176,6 +182,43 @@ describe("a round is judged by its pieces, as the door notice judges it", () => 
     const front: LayoutRect = { cx: far.x + far.halfW + 0.45, cz: far.z, width: 1, depth: 0.4 };
     expect(entered(front)).toBe(true);
     expect(planBanquetFill(ROUND, 0, 10, side, side, { doorSpaces: [front] })).toBeNull();
+  });
+});
+
+describe("Fill over a laid floor keeps a kept chair out of the doors", () => {
+  afterEach(() => { usePlannerEventStore.getState().setEventKind(null); });
+
+  it("sets the plan's chair where a kept chair of the venue's own choosing would reach a door", () => {
+    usePlannerEventStore.getState().setEventKind("wedding");
+    const round = getCatalogueItemBySlug("round-table-6ft-white");
+    const checked = getCatalogueItemBySlug("checked-banquet-chair");
+    if (round === undefined || checked === undefined) throw new Error("no round or checked chair");
+    // A chair the planner never sets keeps what it is, and is deeper than the wedding's Chiavari.
+    expect(plannerChairFor(checked.slug)).toBeNull();
+    const mainIndex = GRAND_HALL_DOOR_CLEAR_SPACES.findIndex((space) => space.id === "door-main");
+    const main = DOORS[mainIndex];
+    if (main === undefined) throw new Error("no main door");
+    // The spot straight in front of the main door nearest it at which the plan's round (Chiavari) keeps it clear.
+    const radius = tableGroupPlanningRadius(round, 10);
+    const clear = groupClearOfDoors(round, 10, { width: 2 * radius, depth: 2 * radius }, [main]);
+    let zM = main.cz - main.depth / 2 - radius - 1;
+    while (clear({ xM: main.cx, zM: zM + 0.001, rotationY: 0 })) zM += 0.001;
+    const plan: BanquetFillPlan = {
+      style: "dinner-rounds", tableItemId: round.id, round: true, tables: [{ xM: main.cx, zM, rotationY: 0 }],
+      seatsPerTable: 10, tableCount: 1, chairs: 10, guests: null, roomForSeats: 10, meetsTarget: true,
+      doorsKeptClear: true, roomForSeatsIgnoringDoors: 10,
+    };
+    const laid = createTableGroup(round.id, 0, -2, 0, 10, 0, undefined, "around", checked.slug);
+    const ids = fillRefillIds(laid, round);
+    const inMain = (pieces: readonly PlacedItem[]): boolean => pieces.some((piece) => {
+      const footprint = placedFootprint(piece);
+      return footprint !== null && footprintInKeepOut(footprint, main);
+    });
+    expect(inMain(refillPieces(laid, ids, plan))).toBe(true);
+    const kept = refillPieces(laid, ids, plan, undefined, { doorSpaces: DOORS });
+    expect(inMain(kept)).toBe(false);
+    // Only those that would reach the door change; the rest stay the venue's chair.
+    expect(kept.filter((piece) => piece.catalogueItemId === checked.id).length).toBeGreaterThan(0);
   });
 });
 

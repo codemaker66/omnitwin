@@ -1027,16 +1027,24 @@ function atStandardSize(piece: PlacedItem): PlacedItem {
  * its record but becomes the chair its place was planned for (a Turini kept
  * at a wedding's Chiavari spacing would sit into its table). A chair the
  * planner never sets (a highchair, a legacy chair) was somebody's choice and
- * keeps what it is. A reused round, table and chairs, is set at the standard
- * size the plan's spacing assumed (C-X6). Render-space, ready for the
- * placement store.
+ * keeps what it is, unless it would stand in a door's clear space the plan
+ * kept (`options.doorSpaces`) with the plan's own chair: there it becomes the
+ * plan's chair, so the doors stay as clear as the button said. A reused
+ * round, table and chairs, is set at the standard size the plan's spacing
+ * assumed (C-X6). Render-space, ready for the placement store.
  */
 export function refillPieces(
   placedItems: readonly PlacedItem[],
   refillIds: ReadonlySet<string>,
   plan: BanquetFillPlan,
   newId: () => string = generatePlacedId,
+  options: FillOptions = {},
 ): readonly PlacedItem[] {
+  const doorSpaces = options.doorSpaces ?? [];
+  const inDoorSpace = (piece: PlacedItem): boolean => {
+    const footprint = placedFootprint(piece);
+    return footprint !== null && doorSpaces.some((space) => footprintInKeepOut(footprint, space));
+  };
   const { refilled, oldTables } = refilledRounds(placedItems, refillIds);
   const pieces: PlacedItem[] = [];
   plan.tables.forEach((spot, i) => {
@@ -1057,8 +1065,9 @@ export function refillPieces(
         return;
       }
       const reusedSlug = getCatalogueItem(reuse.catalogueItemId)?.slug;
-      const converts = reusedSlug !== undefined && plannerChairFor(reusedSlug) !== null;
-      pieces.push({ ...atStandardSize(reuse), ...(converts ? { catalogueItemId: chair.catalogueItemId } : {}), x: chair.x, z: chair.z, y: chair.y, rotationY: chair.rotationY });
+      const placedAt = { ...atStandardSize(reuse), x: chair.x, z: chair.z, y: chair.y, rotationY: chair.rotationY };
+      const converts = (reusedSlug !== undefined && plannerChairFor(reusedSlug) !== null) || inDoorSpace(placedAt);
+      pieces.push(converts ? { ...placedAt, catalogueItemId: chair.catalogueItemId } : placedAt);
     });
   });
   return pieces;
