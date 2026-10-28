@@ -8,6 +8,7 @@ import { useAuthStore } from "../../stores/auth-store.js";
 import { useToastStore } from "../../stores/toast-store.js";
 import { useFocusTrap } from "../../lib/use-focus-trap.js";
 import { ActivityIndicator, ActivityStatus } from "../shared/Activity.js";
+import { useLatestRequest } from "../../hooks/use-latest-request.js";
 
 // ---------------------------------------------------------------------------
 // LoadoutsView — space selector + loadout grid + create
@@ -133,8 +134,11 @@ export function LoadoutsView(): React.ReactElement {
 
   useEffect(() => { loadSpaces(); }, [loadSpaces]);
 
-  // Load loadouts for selected space
-  const loadSelectedLoadouts = useCallback((): void => {
+  // Load loadouts for selected space. Only the latest read may answer: a
+  // slow read for the room just left never fills the room now shown.
+  const loadoutsRequest = useLatestRequest();
+  const loadSelectedLoadouts = useCallback((announceFailure = true): void => {
+    const owns = loadoutsRequest.begin();
     if (selectedSpaceId === null || venueId === "") {
       setLoadouts([]);
       setLoadoutsState("idle");
@@ -146,16 +150,18 @@ export function LoadoutsView(): React.ReactElement {
     setLoadouts([]);
     void loadoutsApi.listLoadouts(venueId, selectedSpaceId)
       .then((items) => {
+        if (!owns()) return;
         setLoadouts([...items]);
         setLoadoutsState("loaded");
       })
       .catch((error: unknown) => {
+        if (!owns()) return;
         setLoadouts([]);
         setLoadoutsState("error");
         setLoadoutsError(error instanceof Error ? error.message : "Loadouts are unavailable.");
-        addToast("Failed to load loadouts", "error");
+        if (announceFailure) addToast("Failed to load loadouts", "error");
       });
-  }, [selectedSpaceId, venueId, addToast]);
+  }, [selectedSpaceId, venueId, addToast, loadoutsRequest]);
 
   useEffect(() => { loadSelectedLoadouts(); }, [loadSelectedLoadouts]);
 
@@ -165,20 +171,21 @@ export function LoadoutsView(): React.ReactElement {
     setCreateError(null);
     try {
       await loadoutsApi.createLoadout(venueId, selectedSpaceId, createName.trim(), createDesc.trim() !== "" ? createDesc.trim() : undefined);
-      addToast("Loadout created", "success");
-      setShowCreate(false);
-      setCreateName("");
-      setCreateDesc("");
-      // Refresh
-      const updated = await loadoutsApi.listLoadouts(venueId, selectedSpaceId);
-      setLoadouts(updated);
-      setLoadoutsState("loaded");
     } catch (error: unknown) {
       setCreateError(error instanceof Error ? error.message : "Could not create this loadout.");
       addToast("Failed to create loadout", "error");
+      return;
     } finally {
       setCreateBusy(false);
     }
+    // It is made. The list is read again after, outside the create: a read
+    // that fails says so on the list (with its Retry), never that the
+    // create failed.
+    addToast("Loadout created", "success");
+    setShowCreate(false);
+    setCreateName("");
+    setCreateDesc("");
+    loadSelectedLoadouts(false);
   };
 
   if (selectedLoadoutId !== null && selectedSpaceId !== null) {
@@ -257,7 +264,7 @@ export function LoadoutsView(): React.ReactElement {
       {loadoutsState === "error" && (
         <div role="alert" data-testid="loadouts-list-error" style={alertStyle}>
           <div style={{ marginBottom: 10 }}>Could not load reference loadouts: {loadoutsError}</div>
-          <button type="button" style={secondaryBtnStyle} onClick={loadSelectedLoadouts}>
+          <button type="button" style={secondaryBtnStyle} onClick={() => { loadSelectedLoadouts(); }}>
             Retry loadouts
           </button>
         </div>

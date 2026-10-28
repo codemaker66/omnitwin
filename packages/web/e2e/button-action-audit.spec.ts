@@ -108,7 +108,8 @@ interface DashboardMockState {
 interface DashboardMockOptions {
   readonly onboardingPopulated?: boolean;
   readonly failProjectGateOnce?: boolean;
-  readonly failAnalyticsOnce?: boolean;
+  // Every analytics read fails until the test routes a recovered API.
+  readonly failAnalytics?: boolean;
   readonly failPipelineOnce?: boolean;
   readonly failOpportunityDetailOnce?: boolean;
   readonly failProposalHistoryOnce?: boolean;
@@ -1006,7 +1007,7 @@ async function mockDashboardRoutes(page: Page, options: DashboardMockOptions = {
     ? onboardingPopulatedSummaryFixture()
     : onboardingSummaryFixture();
   let failProjectGateOnce = options.failProjectGateOnce === true;
-  let remainingAnalyticsFailures = options.failAnalyticsOnce === true ? 2 : 0;
+  const failAnalytics = options.failAnalytics === true;
   let remainingPipelineFailures = options.failPipelineOnce === true ? 2 : 0;
   let failOpportunityDetailOnce = options.failOpportunityDetailOnce === true;
   // The deal's stage as the API holds it: a move is kept, so a re-read after
@@ -1310,8 +1311,7 @@ async function mockDashboardRoutes(page: Page, options: DashboardMockOptions = {
     void route.fulfill({ json: { data: [notificationFixture()] } });
   });
   await page.route(`${API}/analytics/venue-dashboard**`, (route) => {
-    if (remainingAnalyticsFailures > 0) {
-      remainingAnalyticsFailures -= 1;
+    if (failAnalytics) {
       void route.fulfill({ status: 500, json: { error: "button audit analytics failure" } });
       return;
     }
@@ -2439,12 +2439,17 @@ test.describe("SS++ deep modal, drawer, role, disabled, and error states", () =>
 
   test("executive analytics failure exposes a branded retry path", async ({ page }) => {
     await seedAuthenticatedUser(page, "manager");
-    await mockDashboardRoutes(page, { failAnalyticsOnce: true });
+    await mockDashboardRoutes(page, { failAnalytics: true });
 
     await page.goto("/dashboard?view=analytics");
     await page.waitForSelector("#dashboard-main", { timeout: 15_000 });
     await expect(page.getByRole("heading", { name: "Analytics unavailable" })).toBeVisible();
     await expect(page.getByRole("alert")).toContainText("button audit analytics failure");
+    // The API recovers before the retry, however many reads the first load
+    // sent (StrictMode mounts the view twice, and it cancels the first read).
+    await page.route(`${API}/analytics/venue-dashboard**`, (route) => {
+      void route.fulfill({ json: { data: revenueAnalyticsFixture() } });
+    });
     await page.getByRole("button", { name: "Retry analytics" }).click();
     await expect(page.getByRole("heading", { name: "Executive analytics" })).toBeVisible();
   });
