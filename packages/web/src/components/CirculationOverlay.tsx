@@ -138,7 +138,7 @@ function CirculationSegment({
             <div
               style={{
                 ...basePill,
-                fontSize: primary ? 11 : 10,
+                fontSize: 11,
                 padding: primary ? "3px 9px" : "2px 7px",
                 opacity: primary ? 1 : 0.82,
               }}

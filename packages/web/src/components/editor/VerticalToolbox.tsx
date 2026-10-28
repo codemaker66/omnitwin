@@ -910,13 +910,13 @@ function ToolBtn({
         {children}
         {subLabel !== undefined && (
           <span data-testid={captionTestId} style={{
-            // Subtle, professional caption — uppercase Inter at 9px with
-            // generous tracking. Active button flips to dark text on the
-            // gold gradient; inactive uses a low-contrast neutral so the
-            // icon stays the dominant visual element.
+            // Subtle, professional caption — uppercase Inter at the 11px
+            // floor, weight 600, with generous tracking. Active button flips
+            // to dark text on the gold gradient; inactive uses a low-contrast
+            // neutral so the icon stays the dominant visual element.
             display: "block",
             maxWidth: "100%",
-            fontSize: compact ? 8 : subLabel.length >= 8 ? 8.5 : 9,
+            fontSize: 11,
             fontWeight: 600,
             letterSpacing: compact ? 0.2 : subLabel.length >= 8 ? 0.25 : 0.6,
             lineHeight: 1,
