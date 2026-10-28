@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ConfigurationReviewStatusSchema, type EventInstructions, type GuestEnquiry } from "@omnitwin/types";
+import { ConfigurationReviewStatusSchema, type EventInstructions, type GuestEnquiry, type PlannerEventKindSchema } from "@omnitwin/types";
 import { api } from "./client.js";
 
 // ---------------------------------------------------------------------------
@@ -229,6 +229,8 @@ export async function authBatchSave(
 
 export interface ConfigMetadataInput {
   readonly instructions?: EventInstructions | null;
+  /** The kind of event the layout is for, as the planner asks it on first open; null when skipped (lib/event-kind-record). */
+  readonly eventKind?: z.infer<typeof PlannerEventKindSchema> | null;
 }
 
 const PatchConfigResponseSchema = z.object({ id: z.string() }).loose();

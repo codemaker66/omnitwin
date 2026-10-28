@@ -9,6 +9,7 @@ import { isLayoutTimelineMutationLocked } from "../../../lib/layout-timeline-pre
 import { usePlannerVenueIdentity } from "../../../hooks/use-planner-venue-identity.js";
 import { canReadInternalEventData, customerEventPath, isCustomerRole } from "../../../lib/event-access.js";
 import { useOnlineStatus } from "../../../hooks/use-online-status.js";
+import { EventKindName } from "../../planner-chrome/EventKindPicker.js";
 
 interface HeaderSaveState {
   readonly configId: string | null;
@@ -75,6 +76,7 @@ export function ReferenceRoomHeader(): ReactElement {
         {saving ? <ActivityIndicator size={18} /> : offlineUnsaved ? <CloudOff size={16} aria-hidden /> : !dirty && saveError === null && saveConflict === null ? <Check size={16} aria-hidden /> : <Save size={16} aria-hidden />}
       </button>
       <span className="reference-save-status" role="status">{saveLabel}</span>
+      <EventKindName />
     </header>
   );
 }

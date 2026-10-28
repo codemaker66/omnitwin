@@ -60,11 +60,11 @@ function rejected(title, mutate, pattern) {
   test(title, () => { const input = fixture(); mutate(input); assert.throws(() => reconcileBrowser(input), pattern); });
 }
 
-test('full405 union requires400 CPU and all5 GPU with original54 skips and4 executed expected failures', () => {
+test('full408 union requires403 CPU and all5 GPU with original54 skips and4 executed expected failures', () => {
   const result = reconcileBrowser(fixture());
   assert.equal(result.verdict, 'complete-browser-gate-passed');
   assert.deepEqual(result.gpuScope, { required: true, cases: 5, executed: 5 });
-  assert.deepEqual(result.totals, { inventory: 405, cpu: 400, gpu: 5, ordinaryPasses: 347,
+  assert.deepEqual(result.totals, { inventory: 408, cpu: 403, gpu: 5, ordinaryPasses: 350,
     expectedFailures: 4, originalSkips: 54, failed: 0, flaky: 0, retries: 0,
     missing: 0, duplicated: 0, interrupted: 0, unrun: 0 });
 });
@@ -74,9 +74,9 @@ test('outside the GPU scope the complete CPU partition passes and the five GPU c
   const result = reconcileBrowser({ ...input, gpuReport: null, gpuRequired: false });
   assert.equal(result.verdict, 'cpu-browser-gate-passed-gpu-not-in-scope');
   assert.deepEqual(result.gpuScope, { required: false, cases: 5, executed: 0 });
-  assert.equal(result.totals.cpu, 400);
+  assert.equal(result.totals.cpu, 403);
   assert.equal(result.totals.gpu, 0);
-  assert.equal(result.totals.ordinaryPasses, 342);
+  assert.equal(result.totals.ordinaryPasses, 345);
   assert.match(result.limits.at(-1), /not in scope, not passed/);
 });
 rejected('outside the GPU scope a missing CPU case still fails', (input) => {
@@ -103,7 +103,7 @@ const approvedSheetAdditions = [
   'd04ac5b0eb52f15c1dda-3381bf636d92993e3b62',
 ];
 test('the approved-sheet inventory admission adds exactly three ordinary Hallkeeper cases', () => {
-  assert.equal(baseline.inventoryAdmissions.length, 48);
+  assert.equal(baseline.inventoryAdmissions.length, 49);
   assert.deepEqual(baseline.inventoryAdmissions[0].caseIds, [...approvedSheetAdditions].sort());
   for (const id of approvedSheetAdditions) {
     const row = baseline.cases.find((entry) => entry.id === id);
@@ -1266,6 +1266,40 @@ test('the touch arbiter admission adds one ordinary phone-gesture case', () => {
 });
 rejected('the touch arbiter case cannot quietly become a skip', (input) => {
   const spec = input.cpuShards.flatMap((shard) => specs(shard.results)).find((row) => row.id === touchArbiterCase);
+  spec.tests[0].expectedStatus = 'skipped';
+  spec.tests[0].results[0].status = 'skipped';
+  spec.tests[0].status = 'skipped';
+}, /policy changed/);
+// The planner's first-open event question (PR #253, T-674): three ordinary cases
+// prove the question, its number key, Lay out's starting shape, the kept answer
+// and the panel in hand after the Grand Hall's welcome.
+const eventQuestionCases = [
+  '6b097722dcdc7ba760e2-11eb910a698057511a96',
+  '6b097722dcdc7ba760e2-61a5258d9539abd77b65',
+  '6b097722dcdc7ba760e2-cea9c94e4fcf1d1566ad',
+];
+test('the event question admission adds three ordinary cases', () => {
+  const admission = baseline.inventoryAdmissions[48];
+  assert.equal(admission.date, '2026-10-26');
+  assert.equal(admission.sourceFile, 'packages/web/e2e/plan-event-kind.spec.ts');
+  assert.match(admission.sourceCommit, /^[0-9a-f]{40}$/u);
+  assert.match(admission.sourceFileGitBlobSha256, /^[0-9a-f]{64}$/u);
+  assert.match(admission.inventorySha256, /^[0-9a-f]{64}$/u);
+  assert.equal(admission.expectedStatus, 'passed');
+  assert.deepEqual(admission.caseIds, eventQuestionCases);
+  for (const id of eventQuestionCases) {
+    const row = baseline.cases.find((entry) => entry.id === id);
+    assert.equal(row?.file, 'plan-event-kind.spec.ts');
+    assert.deepEqual(row?.suitePath, ['plan-event-kind.spec.ts', 'the first-open event question']);
+    assert.equal(row?.expectedStatus, 'passed');
+  }
+  assert.equal(baseline.cases.filter((entry) => entry.file === 'plan-event-kind.spec.ts').length, 3);
+  assert.equal(baseline.cases.filter((entry) => entry.expectedStatus === 'passed').length,
+    BROWSER_POLICY.total - BROWSER_POLICY.skipped - BROWSER_POLICY.expectedFailures);
+  assert.equal(baseline.cases.length, BROWSER_POLICY.total);
+});
+rejected('an event question case cannot quietly become a skip', (input) => {
+  const spec = input.cpuShards.flatMap((shard) => specs(shard.results)).find((row) => row.id === eventQuestionCases[1]);
   spec.tests[0].expectedStatus = 'skipped';
   spec.tests[0].results[0].status = 'skipped';
   spec.tests[0].status = 'skipped';

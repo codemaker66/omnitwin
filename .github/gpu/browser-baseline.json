@@ -770,6 +770,22 @@
       ],
       "expectedStatus": "passed",
       "limits": "This is reviewed inventory admission, not execution evidence. This case was absent from sourceRunId, sourceReports and the earlier admissions; it switches the touch arbiter on with ?pf= and stubs the API before transport, so it proves the gestures in Chromium's emulated touch, not on a real phone's touch screen or GPU; every current case still requires execution in the hosted browser gate. The listing covers this one spec file, so a re-listing reproduces this identity, not this hash."
+    },
+    {
+      "date": "2026-10-26",
+      "reason": "The planner's first-open event question (PR #253, T-674, Blake 26 October 2026): three ordinary cases open a new, empty guest layout on a booted planner with the backend stubbed. On the uncaptured room, with ?event-question=on the layout asks 'What are you planning?' with the Wedding panel in hand; the 2 key answers a corporate event, the receipt says what it set up, and Lay out then asks for theatre rows; a wedding picked with a click is kept on the device, so a reload opens the layout without asking and names its event beside the room's name. On the Grand Hall, whose welcome stands over the question while the captured hall's requests are held, 'Open planner' hands the question back with the first panel in hand and showing it, and 2 answers. The rest of the suite runs on a device told not to ask, through the default storageState in playwright.config.ts, so no other identity or status changes.",
+      "sourceCommit": "601d581e7db710f84815a0dbd87e2b01bbce9ff3",
+      "sourceFile": "packages/web/e2e/plan-event-kind.spec.ts",
+      "sourceFileGitBlobSha256": "37337d01c7c7c10a7513b30e156eaf81965c853dc4b9d98f9628024c0fcdd3b7",
+      "inventoryCommand": "pnpm --filter @omnitwin/web exec playwright test e2e/plan-event-kind.spec.ts --list --project=chromium --update-snapshots=none --reporter=json",
+      "inventorySha256": "1ffe5fa2c5d6669927b207b1eb99c90eccc2aa646d8ffd1590330724321f3402",
+      "caseIds": [
+        "6b097722dcdc7ba760e2-11eb910a698057511a96",
+        "6b097722dcdc7ba760e2-61a5258d9539abd77b65",
+        "6b097722dcdc7ba760e2-cea9c94e4fcf1d1566ad"
+      ],
+      "expectedStatus": "passed",
+      "limits": "This is reviewed inventory admission, not execution evidence. These three cases were absent from sourceRunId, sourceReports and the earlier admissions; they stub the API before transport and run in hosted Chromium, so they prove the question, its number key, Lay out's starting shape, a guest's answer kept on the device and the panel in hand after the Grand Hall's welcome, not a signed-in layout's metadata write, a real phone, the captured hall or the look; every current case still requires execution in the hosted browser gate. The listing covers this one spec file, so a re-listing reproduces these identities, not this hash."
     }
   ],
   "cases": [
@@ -5095,6 +5111,39 @@
       "suitePath": [
         "planner-touch-arbiter.spec.ts",
         "the touch arbiter on a phone"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "6b097722dcdc7ba760e2-cea9c94e4fcf1d1566ad",
+      "file": "plan-event-kind.spec.ts",
+      "title": "a new layout asks what the event is, and a corporate event lays out rows of seats",
+      "suitePath": [
+        "plan-event-kind.spec.ts",
+        "the first-open event question"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "6b097722dcdc7ba760e2-11eb910a698057511a96",
+      "file": "plan-event-kind.spec.ts",
+      "title": "the answer is kept, so the layout opens again without asking and names its event",
+      "suitePath": [
+        "plan-event-kind.spec.ts",
+        "the first-open event question"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "6b097722dcdc7ba760e2-61a5258d9539abd77b65",
+      "file": "plan-event-kind.spec.ts",
+      "title": "after the Grand Hall's welcome, the first panel is in hand and the keys answer",
+      "suitePath": [
+        "plan-event-kind.spec.ts",
+        "the first-open event question"
       ],
       "project": "chromium",
       "expectedStatus": "passed"

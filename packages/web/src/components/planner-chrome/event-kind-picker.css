@@ -1,0 +1,442 @@
+/* ---------------------------------------------------------------------------
+ * The event-kind picker (T-674): "What are you planning?" over the room.
+ *
+ * A native modal <dialog> in the top layer, as the arrival's welcome is. Its
+ * veil is the room scrim (no blur); the panels are the chrome's lacquer, their
+ * drawings copper ink (EventKindInk). The panels' mass moves on springs that
+ * EventKindPicker writes as custom properties: --ekp-ink (the drawing, 0 to
+ * 1), --ekp-lift (in hand: focused, which the keys move and a mouse carries), --ekp-pick (chosen) and --ekp-away
+ * (another was chosen). The sheet's fade and rise are CSS on the motion tokens.
+ * ------------------------------------------------------------------------- */
+
+.ekp {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: clamp(16px, 4vh, 48px) 16px;
+  border: 0;
+  background: transparent;
+  color: var(--house-text-1);
+  font-family: var(--house-sans);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.ekp[open] {
+  display: grid;
+  place-items: center;
+  opacity: 1;
+  transition: opacity var(--house-motion-deliberate) ease-out;
+}
+
+/* Deep enough that the planner's own controls fall away and only the room's warmth carries through. */
+.ekp::backdrop {
+  background: rgb(var(--house-scrim-room) / 0.92);
+  transition: opacity var(--house-motion-deliberate) ease-out;
+}
+
+/* After a pick the panels move first (the springs), then the question fades from the room: 240 ms + 180 ms = EVENT_KIND_LEAVE_MS. */
+.ekp.is-leaving,
+.ekp.is-leaving::backdrop {
+  opacity: 0;
+  transition-duration: 180ms;
+  transition-delay: 240ms;
+}
+
+@starting-style {
+  .ekp[open],
+  .ekp[open]::backdrop {
+    opacity: 0;
+  }
+}
+
+.ekp-sheet {
+  display: grid;
+  justify-items: center;
+  gap: clamp(16px, 3vh, 30px);
+  width: min(100%, 1000px);
+}
+
+.ekp-heading {
+  margin: 0;
+  color: var(--house-text-0);
+  font: 300 48px / 1.05 var(--house-serif);
+  letter-spacing: -0.02em;
+  text-align: center;
+  text-wrap: balance;
+  transition: translate var(--house-motion-deliberate) ease-out;
+}
+
+.ekp-sub {
+  margin: -6px 0 0;
+  color: var(--house-text-2);
+  font: 400 16px / 1.45 var(--house-sans);
+  text-align: center;
+  text-wrap: balance;
+}
+
+@starting-style {
+  .ekp[open] .ekp-heading {
+    translate: 0 10px;
+  }
+}
+
+.ekp-panels {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: clamp(14px, 2vw, 26px);
+  width: min(100%, 940px);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ekp-slot {
+  display: grid;
+}
+
+.ekp-panel {
+  --ekp-ink: 0;
+  --ekp-lift: 0;
+  --ekp-pick: 0;
+  --ekp-away: 0;
+  position: relative;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  max-height: 52vh;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--house-accent-copper-bright) calc(var(--ekp-lift) * 60% + var(--ekp-pick) * 40%), var(--house-hairline-hover));
+  border-radius: var(--house-radius-surface);
+  /* Lacquer, a forest bloom behind the drawing, and copper light rising from the foot as a hand comes to it. */
+  background:
+    radial-gradient(120% 55% at 50% 100%, color-mix(in srgb, var(--house-accent-copper-deep) calc(22% + var(--ekp-lift) * 18% + var(--ekp-pick) * 18%), transparent), transparent 72%),
+    radial-gradient(110% 70% at 50% 30%, color-mix(in srgb, var(--house-forest) calc(55% + var(--ekp-lift) * 25%), transparent), transparent 72%),
+    linear-gradient(180deg, var(--house-lacquer-top), var(--house-lacquer-bottom));
+  box-shadow:
+    var(--house-shadow-e2),
+    inset 0 1px 0 color-mix(in srgb, var(--house-accent-copper-bright) calc(12% + var(--ekp-lift) * 30%), transparent);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  opacity: calc(1 - var(--ekp-away));
+  transform:
+    translateY(calc(var(--ekp-lift) * -8px + var(--ekp-away) * 22px))
+    scale(calc(1 + var(--ekp-lift) * 0.02 + var(--ekp-pick) * 0.035));
+  -webkit-tap-highlight-color: transparent;
+}
+
+.ekp-panel:focus-visible {
+  outline: var(--vv-focus-ring);
+  outline-offset: 4px;
+}
+
+.ekp-panel:disabled {
+  cursor: default;
+}
+
+.ekp-art {
+  display: grid;
+  place-items: center;
+  min-height: 0;
+  padding: 9% 8% 0;
+}
+
+.ekp-ink {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.ekp-ink path {
+  fill: none;
+  stroke: var(--house-accent-copper-bright);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 1 1;
+  /* Each stroke draws in its own turn: it starts when --ekp-ink reaches 0.44 × its order and is whole by 1. */
+  stroke-dashoffset: calc(1 - clamp(0, var(--ekp-ink) * 1.8 - var(--i) * 0.8, 1));
+  opacity: calc(0.8 + var(--ekp-lift) * 0.2);
+}
+
+.ekp-ink path.is-faint {
+  opacity: calc(0.34 + var(--ekp-lift) * 0.16);
+}
+
+/* The ink's own light: the same stroke, wide and faint, beneath it (no filter: the shell forbids them). */
+.ekp-ink path.ekp-glow {
+  stroke-width: 6;
+  opacity: calc(0.1 + var(--ekp-lift) * 0.1 + var(--ekp-pick) * 0.12);
+}
+
+.ekp-ink path.ekp-glow.is-faint {
+  opacity: calc(0.04 + var(--ekp-lift) * 0.05);
+}
+
+/* Each stroke's turn in the drawing (EventKindInk's orderClass), in twentieths. */
+.ekp-ink .ekp-o0 { --i: 0; }
+.ekp-ink .ekp-o1 { --i: 0.05; }
+.ekp-ink .ekp-o2 { --i: 0.1; }
+.ekp-ink .ekp-o3 { --i: 0.15; }
+.ekp-ink .ekp-o4 { --i: 0.2; }
+.ekp-ink .ekp-o5 { --i: 0.25; }
+.ekp-ink .ekp-o6 { --i: 0.3; }
+.ekp-ink .ekp-o7 { --i: 0.35; }
+.ekp-ink .ekp-o8 { --i: 0.4; }
+.ekp-ink .ekp-o9 { --i: 0.45; }
+.ekp-ink .ekp-o10 { --i: 0.5; }
+.ekp-ink .ekp-o11 { --i: 0.55; }
+.ekp-ink .ekp-o12 { --i: 0.6; }
+.ekp-ink .ekp-o13 { --i: 0.65; }
+.ekp-ink .ekp-o14 { --i: 0.7; }
+.ekp-ink .ekp-o15 { --i: 0.75; }
+.ekp-ink .ekp-o16 { --i: 0.8; }
+.ekp-ink .ekp-o17 { --i: 0.85; }
+.ekp-ink .ekp-o18 { --i: 0.9; }
+.ekp-ink .ekp-o19 { --i: 0.95; }
+.ekp-ink .ekp-o20 { --i: 1; }
+
+.ekp-words {
+  display: grid;
+  gap: 6px;
+  padding: 0 22px 22px;
+}
+
+.ekp-title {
+  color: var(--house-text-0);
+  font: 400 28px / 1.1 var(--house-serif);
+  letter-spacing: -0.01em;
+}
+
+.ekp-line {
+  color: var(--house-text-2);
+  font: 400 14px / 1.4 var(--house-sans);
+}
+
+/* The panel's key, shown only to a pointer that has come to it (keys never sit on controls at rest). */
+.ekp-key {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  min-width: 22px;
+  padding: 3px 6px;
+  border: 1px solid var(--house-hairline-hover);
+  border-radius: var(--house-radius-key);
+  color: var(--house-text-2);
+  font: 500 12px / 1 var(--house-sans);
+  text-align: center;
+  font-variant-numeric: lining-nums tabular-nums;
+  opacity: var(--ekp-lift);
+}
+
+.ekp-current {
+  position: absolute;
+  top: 16px;
+  left: 18px;
+  color: var(--house-accent-copper-bright);
+  font: 600 11px / 1.25 var(--house-sans);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.ekp-skip {
+  min-height: 44px;
+  padding: 10px 18px;
+  border: 0;
+  border-radius: var(--house-radius-key);
+  background: none;
+  color: var(--house-text-2);
+  font: 400 16px / 1.2 var(--house-sans);
+  text-decoration: underline;
+  text-decoration-color: var(--house-hairline-hover);
+  text-underline-offset: 5px;
+  cursor: pointer;
+}
+
+.ekp-skip:hover {
+  color: var(--house-text-1);
+  text-decoration-color: currentColor;
+}
+
+.ekp-skip:focus-visible {
+  outline: var(--vv-focus-ring);
+  outline-offset: var(--vv-focus-ring-offset);
+}
+
+@media (hover: none) {
+  .ekp-key {
+    display: none;
+  }
+}
+
+/* Short laptop screens: the whole question still fits without scrolling. */
+@media (min-width: 768px) and (max-height: 760px) {
+  .ekp-panel {
+    max-height: 47vh;
+  }
+}
+
+/* Phones: three wide panels, stacked, the drawing to the right of the words, over a veil the top card cannot show through. */
+@media (max-width: 767px) {
+  .ekp {
+    padding: max(20px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
+  }
+
+  /* A phone shows little of the room behind; the question takes the whole screen, as a profile picker does. */
+  .ekp::backdrop {
+    background: rgb(var(--house-scrim-room) / 1);
+  }
+
+  .ekp[open] {
+    place-items: start center;
+  }
+
+  .ekp-heading {
+    font-size: 28px;
+  }
+
+  .ekp-sub {
+    font-size: 14px;
+  }
+
+  .ekp-title {
+    font-size: 20px;
+  }
+
+  .ekp-panels {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .ekp-panel {
+    grid-template-rows: none;
+    grid-template-columns: minmax(0, 1fr) 42%;
+    aspect-ratio: auto;
+    min-height: 128px;
+    max-height: none;
+  }
+
+  .ekp-art {
+    order: 2;
+    padding: 10px 14px 10px 0;
+  }
+
+  .ekp-words {
+    align-self: center;
+    padding: 18px 8px 18px 18px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ekp-panel {
+    transform: none;
+  }
+
+  .ekp-heading {
+    transition: none;
+  }
+}
+
+/* -- The event beside the room's name (EventKindName) --------------------- */
+.ekp-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: var(--house-accent-copper-bright);
+  font: 500 11px / 1.3 var(--house-sans);
+  letter-spacing: 0.03em;
+  cursor: pointer;
+}
+
+.ekp-name:hover span {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.ekp-name:focus-visible {
+  outline: var(--vv-focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--house-radius-key);
+}
+
+.reference-room-header .ekp-name {
+  grid-column: 1 / -1;
+  justify-self: start;
+  margin-top: 2px;
+}
+
+@media (pointer: coarse) {
+  .ekp-name {
+    min-height: 32px;
+  }
+}
+
+/* -- The receipt after a pick ---------------------------------------------- */
+/* At the top, below the tool pill: the deck at the bottom is where the next tap (Lay out) goes, so nothing covers it. */
+.ekp-receipt {
+  position: fixed;
+  left: 50%;
+  top: calc(env(safe-area-inset-top) + 84px);
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  max-width: calc(100vw - 32px);
+  padding: 8px 8px 8px 16px;
+  border: 1px solid var(--house-hairline-hover);
+  border-radius: var(--house-radius-surface);
+  /* The lacquer over the room's own near-black, so nothing it covers (the phone's provenance strip) reads through. */
+  background: linear-gradient(180deg, var(--house-lacquer-top), var(--house-lacquer-bottom)), rgb(var(--house-scrim-room));
+  box-shadow: var(--house-shadow-e2);
+  color: var(--house-text-1);
+  font: 400 14px / 1.4 var(--house-sans);
+  translate: -50% 0;
+  transition: opacity var(--house-motion-deliberate) ease-out, translate var(--house-motion-deliberate) ease-out;
+}
+
+@starting-style {
+  .ekp-receipt {
+    opacity: 0;
+    translate: -50% -8px;
+  }
+}
+
+.ekp-receipt-change {
+  flex: none;
+  min-height: 36px;
+  padding: 6px 12px;
+  border: 1px solid color-mix(in srgb, var(--house-accent-copper-bright) 55%, transparent);
+  border-radius: var(--house-radius-key);
+  background: none;
+  color: var(--house-accent-copper-bright);
+  font: 500 14px / 1 var(--house-sans);
+  cursor: pointer;
+}
+
+.ekp-receipt-change:focus-visible {
+  outline: var(--vv-focus-ring);
+  outline-offset: var(--vv-focus-ring-offset);
+}
+
+@media (max-width: 767px) {
+  .ekp-receipt {
+    top: calc(env(safe-area-inset-top) + 104px);
+    width: calc(100vw - 32px);
+  }
+
+  .ekp-receipt-change {
+    min-height: 44px;
+  }
+}

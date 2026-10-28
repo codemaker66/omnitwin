@@ -1,7 +1,7 @@
 # Browser release verification
 
-The reviewed browser inventory has 405 cases. Four hosted CPU shards execute
-400 cases; the five Twin performance cases execute on the existing RTX 4090
+The reviewed browser inventory has 408 cases. Four hosted CPU shards execute
+403 cases; the five Twin performance cases execute on the existing RTX 4090
 through WSL D3D12. The final hosted job reconciles every case against the
 reviewed inventory, including the original skips and expected failures.
 
@@ -155,7 +155,17 @@ with a round in hand turns the view and places nothing, a quick tap places one,
 a hold, a slide and a lift place it with the camera still, a still finger on a
 placed round lifts and carries it, and two fingers walk and zoom
 (`planner-touch-arbiter.spec.ts`); this changes the inventory from 404 to 405
-and the CPU partition from 399 to 400.
+and the CPU partition from 399 to 400. The next, on 26 October 2026, adds three
+ordinary cases for the planner's first-open event question (PR #253, T-674): a
+new, empty layout on a booted planner with the API stubbed asks what the event
+is, the 2 key answers a corporate event and Lay out then starts from theatre
+rows, a wedding picked with a click is kept on the device, so a reload opens
+the layout without asking and names its event, and on the Grand Hall the
+welcome hands the question back with the first panel in hand and showing it
+(`plan-event-kind.spec.ts`). The rest of the suite runs on a device told not to
+ask, through the default `storageState` in `playwright.config.ts`, so no other
+identity or status changes; this changes the inventory from 405 to 408 and the
+CPU partition from 400 to 403.
 
 The 30 September admission follows Blake's replacement of the Craft quiz with
 The Amissing Book (T-641). The old quiz's 26 threshold, questionnaire and result
