@@ -96,6 +96,34 @@ describe("guest-flow replay API", () => {
     expect(res.statusCode).toBe(400);
   });
 
+  it("refuses geometry over the budget with one issue, before zod walks the points", async () => {
+    const points = Array.from({ length: 1000 }, (_, i) => ({ x: i % 7, y: Math.floor(i / 7) }));
+    const obstacles = Array.from({ length: 21 }, (_, i) => ({ id: `obstacle-${i}`, label: "Obstacle", polygon: points }));
+    const res = await server.inject({
+      method: "POST",
+      url: "/guest-flow/scenarios",
+      headers: { authorization: `Bearer ${staffToken()}` },
+      payload: { name: "Too much geometry", input: { ...INPUT, obstacles } },
+    });
+    expect(res.statusCode).toBe(400);
+    const body = res.json() as { code: string; details: Array<{ path: string[] }> };
+    expect(body.code).toBe("VALIDATION_ERROR");
+    expect(body.details).toHaveLength(1);
+    expect(body.details[0]?.path).toEqual(["input"]);
+  });
+
+  it("reports at most twenty issues for a body zod does walk", async () => {
+    const badPoints = Array.from({ length: 1000 }, () => ({ x: "east", y: "north" }));
+    const res = await server.inject({
+      method: "POST",
+      url: "/guest-flow/scenarios",
+      headers: { authorization: `Bearer ${staffToken()}` },
+      payload: { name: "Bad points", input: { ...INPUT, roomPolygon: badPoints } },
+    });
+    expect(res.statusCode).toBe(400);
+    expect((res.json() as { details: unknown[] }).details).toHaveLength(20);
+  });
+
   it("rejects planner access and staff replay requests without venue scope", async () => {
     const planner = await server.inject({
       method: "POST",

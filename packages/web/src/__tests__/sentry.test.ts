@@ -155,11 +155,12 @@ describe("browser Sentry breadcrumbs and search terms", () => {
     expect(withoutIds("/supplier-share/short")).toBe("/supplier-share/:id");
     expect(withoutIds("/dashboard/clients")).toBe("/dashboard/clients");
     expect(withoutIds("/plan")).toBe("/plan");
+    // Through the whole scrubber the capability pass then marks those segments as tokens.
     expect(kept({ category: "fetch", data: { url: "https://api.example.test/public/configurations/abc123?revision=4" } }).data?.["url"])
-      .toBe("https://api.example.test/public/configurations/:id?[redacted]");
+      .toBe("https://api.example.test/public/configurations/:token?[redacted]");
     expect(kept({ category: "navigation", data: { from: "/plan/abc123", to: "/plan-view/Zq3kP9vR2mW7xY1tB8nC4dF" } }).data)
-      .toEqual({ from: "/plan/:id", to: "/plan-view/:id" });
-    expect(scrubSentryEvent({ request: { url: "https://venviewer.com/plan/abc123?x=1" } }).request).toEqual({ url: "https://venviewer.com/plan/:id" });
+      .toEqual({ from: "/plan/:token", to: "/plan-view/:token" });
+    expect(scrubSentryEvent({ request: { url: "https://venviewer.com/plan/abc123?x=1" } }).request).toEqual({ url: "https://venviewer.com/plan/:token" });
   });
 });
 
@@ -197,7 +198,7 @@ describe("browser Sentry and capability urls (share tokens, guest layout ids)", 
       message: `POST https://api.venviewer.com/proposal-share/${TOKEN}/approve?x=1`,
       data: { method: "POST", url: `https://api.venviewer.com/proposal-share/${TOKEN}/approve?x=1`, status_code: 500 },
     };
-    const scrubbed = scrubSentryBreadcrumb(fetch);
+    const scrubbed = kept(fetch);
     expect(scrubbed.data?.["url"]).toBe("https://api.venviewer.com/proposal-share/:token/approve?[redacted]");
     // The message keeps its query as the SDK wrote it; the token goes.
     expect(scrubbed.message).toBe("POST https://api.venviewer.com/proposal-share/:token/approve?x=1");
@@ -207,22 +208,23 @@ describe("browser Sentry and capability urls (share tokens, guest layout ids)", 
 
   it("templates a view-only plan's PDF download", () => {
     const xhr: Breadcrumb = { category: "xhr", data: { url: `https://api.venviewer.com/public/plan-views/${TOKEN}/plan.pdf` } };
-    expect(scrubSentryBreadcrumb(xhr).data?.["url"]).toBe("https://api.venviewer.com/public/plan-views/:token/plan.pdf");
+    expect(kept(xhr).data?.["url"]).toBe("https://api.venviewer.com/public/plan-views/:token/plan.pdf");
   });
 
   it("templates both ends of a navigation breadcrumb", () => {
     const navigation: Breadcrumb = { category: "navigation", data: { from: `/proposal-share/${TOKEN}`, to: `/plan/${TOKEN}` } };
-    expect(scrubSentryBreadcrumb(navigation).data).toEqual({ from: "/proposal-share/:token", to: "/plan/:token" });
+    expect(kept(navigation).data).toEqual({ from: "/proposal-share/:token", to: "/plan/:token" });
   });
 
   it("templates a url in a breadcrumb that carries only a message", () => {
-    const logged: Breadcrumb = { category: "console", message: `could not load /supplier-share/${TOKEN}` };
-    expect(scrubSentryBreadcrumb(logged).message).toBe("could not load /supplier-share/:token");
+    // Console breadcrumbs are dropped whole; the SDK's own event breadcrumb carries only a message.
+    const logged: Breadcrumb = { category: "sentry.event", message: `could not load /supplier-share/${TOKEN}` };
+    expect(kept(logged).message).toBe("could not load /supplier-share/:token");
   });
 
   it("leaves the venue's own pages alone", () => {
     const navigation: Breadcrumb = { category: "navigation", data: { from: "/dashboard/proposals", to: "/dashboard?view=enquiries" } };
-    expect(scrubSentryBreadcrumb(navigation).data).toEqual({ from: "/dashboard/proposals", to: "/dashboard?[redacted]" });
+    expect(kept(navigation).data).toEqual({ from: "/dashboard/proposals", to: "/dashboard?[redacted]" });
     expect(scrubSentryEvent({ request: { url: "https://venviewer.com/dashboard/proposals" } }).request?.url)
       .toBe("https://venviewer.com/dashboard/proposals");
   });
