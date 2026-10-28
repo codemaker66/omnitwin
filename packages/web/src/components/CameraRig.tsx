@@ -610,11 +610,15 @@ export function CameraRig({ dimensions, smoothControls = true, suspended = false
     };
   }, [camera, gl]);
 
-  // A wheel, or a camera drag (the middle or right button, a finger), during a
-  // plain view glide takes the camera where it is: nobody waits with a hand on
-  // the mouse. A tour, a flight into a saved viewpoint and a suspended rig keep
-  // it. Heard on the window's capture, so the controls are on again before the
-  // same wheel or press reaches them.
+  // A wheel, or any press on the room (a button or a finger), during a plain
+  // view glide stops it where it is and hands the camera over: nobody waits
+  // with a hand on the mouse, and a click lands on what was aimed at, never on
+  // something still gliding past. It must happen at the press: OrbitControls
+  // only follows a gesture it saw begin, so a takeover delayed to a drag's
+  // first move or a second finger would lose the drag or read a pinch as a
+  // turn. A tour, a flight into a saved viewpoint and a suspended rig keep the
+  // camera. Heard on the window's capture, so the controls are on again before
+  // the same wheel or press reaches them.
   useEffect(() => {
     const canvas = gl.domElement;
     function takeOver(event: Event): void {
@@ -625,16 +629,11 @@ export function CameraRig({ dimensions, smoothControls = true, suspended = false
       if (controlsRef.current !== null) controlsRef.current.enabled = true;
       invalidateWheelRef.current();
     }
-    function onPointerDown(event: PointerEvent): void {
-      // The left button selects and places: it leaves a glide to finish.
-      if (event.pointerType === "mouse" && event.button === 0) return;
-      takeOver(event);
-    }
     window.addEventListener("wheel", takeOver, { capture: true, passive: true });
-    window.addEventListener("pointerdown", onPointerDown, { capture: true });
+    window.addEventListener("pointerdown", takeOver, { capture: true });
     return () => {
       window.removeEventListener("wheel", takeOver, { capture: true });
-      window.removeEventListener("pointerdown", onPointerDown, { capture: true });
+      window.removeEventListener("pointerdown", takeOver, { capture: true });
     };
   }, [gl]);
 

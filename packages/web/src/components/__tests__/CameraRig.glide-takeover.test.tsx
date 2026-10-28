@@ -1,6 +1,6 @@
 import { act, cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { PerspectiveCamera } from "three";
+import { PerspectiveCamera, Vector3 } from "three";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import type { RootState } from "@react-three/fiber";
 import { useBookmarkStore } from "../../stores/bookmark-store.js";
@@ -176,29 +176,42 @@ describe("a view glide hands the camera to whoever reaches for it", () => {
     expect(camera.position.y).toBeLessThan(28);
   });
 
-  it("stops at a right or middle press, with the controls already on for that same press", () => {
-    for (const button of [2, 1]) {
+  it("stops at any press, left, middle or right, with the controls already on for that same press", () => {
+    // The left button too: a click lands on what was aimed at, never on something still gliding past.
+    for (const button of [0, 1, 2]) {
       mount();
       startGlide(ABOVE);
-      expect(pressAndRead({ pointerType: "mouse", button, buttons: button === 2 ? 2 : 4 }), `button ${String(button)}`).toBe(true);
+      expect(pressAndRead({ pointerType: "mouse", button, buttons: [1, 4, 2][button] ?? 1 }), `button ${String(button)}`).toBe(true);
       expect(useBookmarkStore.getState().transition).toBeNull();
       cleanup();
       harness.frames.clear();
     }
   });
 
-  it("stops at a finger", () => {
+  it("stops at a finger, at the touch itself (OrbitControls follows only a gesture it saw begin)", () => {
     mount();
     startGlide(ABOVE);
     expect(pressAndRead({ pointerType: "touch", button: 0, buttons: 1 })).toBe(true);
     expect(useBookmarkStore.getState().transition).toBeNull();
   });
 
-  it("goes on at a left-button press, which selects and places", () => {
+  it("does not swing the view at a takeover: the direction and target are the glide's own", () => {
     mount();
     startGlide(ABOVE);
-    expect(pressAndRead({ pointerType: "mouse", button: 0, buttons: 1 })).toBe(false);
-    expect(useBookmarkStore.getState().transition).not.toBeNull();
+    const camera = harness.camera;
+    if (camera === null) throw new Error("Missing camera");
+    const looking = camera.getWorldDirection(new Vector3());
+    const target = controls().target.clone();
+    pressAndRead({ pointerType: "mouse", button: 0, buttons: 1 });
+    // The next update the controls make (the one that would swing to a stale target).
+    act(() => { controls().update(); });
+    expect(camera.getWorldDirection(new Vector3()).angleTo(looking)).toBeLessThan(1e-3);
+    expect(controls().target.distanceTo(target)).toBeLessThan(1e-6);
+
+    // A wheel's zoom then dollies along that same line of sight.
+    act(() => { canvas().dispatchEvent(new WheelEvent("wheel", { bubbles: true, cancelable: true, deltaY: -120 })); });
+    framesUntilRest(400);
+    expect(camera.getWorldDirection(new Vector3()).angleTo(looking)).toBeLessThan(1e-3);
   });
 
   it("goes on at a wheel aimed anywhere but the room", () => {
