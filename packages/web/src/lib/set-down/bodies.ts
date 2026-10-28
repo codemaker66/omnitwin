@@ -115,6 +115,25 @@ const HIGHCHAIR_PARTS = [part("beech-frame", 0.55, 0.026, 0.85), part("ply-top",
 /** The folding steel frame under a banqueting round or trestle. */
 const folding = (share: number): BodyPart => part("steel-tube-frame", 0.7, 0.025, share);
 
+/**
+ * The folding frame hidden under a clothed round, from clothedRoundParts
+ * (crafted-tables.ts:103): feet at [0.55 r x 1.04, 0.4 r x 1.1] for a table of
+ * radius r. Only the black 6 ft round draws their shade; the others are hidden.
+ */
+const clothedRoundFeet = (radiusM: number): Foot[] => corners("rubber", radiusM * 0.55 * 1.04, radiusM * 0.4 * 1.1);
+
+/**
+ * A covered poseur stands on four folding legs under its stretch cover, whose
+ * pockets sit at footReach = 0.98 r on the diagonals (crafted-poseur.ts:43) for
+ * a top of radius r. The pockets carry no contact shade on master.
+ */
+const coveredPoseurFeet = (radiusM: number): Foot[] => {
+  const reach = radiusM * 0.98 * Math.SQRT1_2;
+  return corners("rubber", reach, reach);
+};
+
+const COVERED_POSEUR_PARTS = [part("mdf-top", 0.6, 0.025, 0.6), folding(0.4)] as const;
+
 // ---------------------------------------------------------------------------
 // The pieces
 // ---------------------------------------------------------------------------
@@ -128,13 +147,13 @@ export const SET_DOWN_BODIES: Readonly<Record<CraftedFurnitureSlug, SetDownBody>
   "pink-chair": body("pink-chair", "chair", 6, on("glide", [-0.2035, -0.2115], [0.2035, -0.2115], [-0.2115, 0.2115], [0.2115, 0.2115]), BANQUET_CHAIR_PARTS, { seatPuff: true }),
   "banquet-chair": body("banquet-chair", "chair", 6, on("glide", [-0.2035, -0.2115], [0.2035, -0.2115], [-0.2115, 0.2115], [0.2115, 0.2115]), BANQUET_CHAIR_PARTS, { seatPuff: true }),
 
-  // Banqueting rounds: a flat top on a folding steel frame with rubber feet. The white cloth hides
-  // the frame, which is the bare round's (crafted-tables.ts bareRoundParts), so it takes its feet.
-  "round-table-6ft-white": body("round-table-6ft-white", "round-table", 30, corners("rubber", 0.5519, 0.4227), [part("mdf-top", 1.83, 0.025, 0.7), folding(0.3)], { legRattle: true }),
+  // Banqueting rounds: a flat top on a folding steel frame with rubber feet. The clothed rounds hide
+  // the frame clothedRoundParts draws; the bare round's is its own (bareRoundParts).
+  "round-table-6ft-white": body("round-table-6ft-white", "round-table", 30, clothedRoundFeet(1.83 / 2), [part("mdf-top", 1.83, 0.025, 0.7), folding(0.3)], { legRattle: true }),
   "round-table-6ft-black": body("round-table-6ft-black", "round-table", 30, corners("rubber", 0.5234, 0.4026), [part("mdf-top", 1.83, 0.025, 0.7), folding(0.3)], { legRattle: true }),
   "round-table-6ft": body("round-table-6ft", "round-table", 30, corners("rubber", 0.5519, 0.4227), [part("ply-top", 1.83, 0.018, 0.7), folding(0.3)], { legRattle: true }),
-  // The 3.6 ft cake table: the bare round's frame at its radius.
-  "cake-cutting-table": body("cake-cutting-table", "round-table", 18, corners("rubber", 0.3318, 0.2541), [part("mdf-top", 1.1, 0.025, 0.7), folding(0.3)], { legRattle: true }),
+  // The cake table is a clothed round at 1.1 m: the same hidden frame at its radius.
+  "cake-cutting-table": body("cake-cutting-table", "round-table", 18, clothedRoundFeet(1.1 / 2), [part("mdf-top", 1.1, 0.025, 0.7), folding(0.3)], { legRattle: true }),
 
   // Trestles: the hinged steel legs dog-leg outward to a rubber foot (crafted-tables.ts trestleLegs).
   // Under a floor-length cloth the legs are the same.
@@ -153,9 +172,10 @@ export const SET_DOWN_BODIES: Readonly<Record<CraftedFurnitureSlug, SetDownBody>
   "round-cafe-table-white": body("round-cafe-table-white", "round-table", 10, corners("glide", 0.2121, 0.2121), [part("mdf-top", 0.9, 0.02, 0.6), part("cast-base", 0.5, 0.03, 0.4)]),
   "square-cafe-table-white": body("square-cafe-table-white", "rect-table", 10, corners("glide", 0.2227, 0.2227), [part("mdf-top", 1.05, 0.02, 0.6), part("cast-base", 0.5, 0.03, 0.4)]),
 
-  // Poseurs: one weighted round chrome foot, 0.216 m in radius (barePoseurParts), set down on four points of its rim.
-  "poseur-table-white": body("poseur-table-white", "poseur", 13, corners("steel", 0.1527, 0.1527), [part("mdf-top", 0.6, 0.025, 0.5), part("cast-base", 0.7, 0.03, 0.5)]),
-  "poseur-table-black": body("poseur-table-black", "poseur", 13, corners("steel", 0.1527, 0.1527), [part("mdf-top", 0.6, 0.025, 0.5), part("cast-base", 0.7, 0.03, 0.5)]),
+  // The covered poseurs stand on four folding legs under the stretch cover (poseurParts). The bare
+  // poseur has one weighted round chrome foot, 0.216 m in radius (barePoseurParts), set down on four points of its rim.
+  "poseur-table-white": body("poseur-table-white", "poseur", 13, coveredPoseurFeet(0.3), COVERED_POSEUR_PARTS, { legRattle: true }),
+  "poseur-table-black": body("poseur-table-black", "poseur", 13, coveredPoseurFeet(0.3), COVERED_POSEUR_PARTS, { legRattle: true }),
   "poseur-table": body("poseur-table", "poseur", 13, corners("steel", 0.1527, 0.1527), [part("mdf-top", 0.6, 0.025, 0.5), part("cast-base", 0.7, 0.03, 0.5)]),
 
   // Cabinets. The bar stands on a plinth: its corners, 5 cm in from the plinth's edge.
