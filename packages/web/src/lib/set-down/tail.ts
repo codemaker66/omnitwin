@@ -6,10 +6,13 @@
 // A ConvolverNode plays it as the room's echo, so it is rendered once per room
 // state and normalised to unit energy; the send gain sets how loud it is.
 // The two channels are independent noise, so the echo is wide.
+//
+// It is rendered in small steps so it can be driven in idle slices: no step
+// touches more than TAIL_STEP_SAMPLES samples of one channel.
 // ---------------------------------------------------------------------------
 
-import { seededRandom } from "../planner-sound-render.js";
-import { octaveBandpass } from "./analysis.js";
+import { biquadCoefficients, seededRandom } from "../planner-sound-render.js";
+import { OCTAVE_Q } from "./analysis.js";
 import { OCTAVE_BANDS_HZ, type BandValues } from "./bands.js";
 import type { RoomAcoustics } from "./rooms.js";
 
@@ -20,13 +23,18 @@ export interface Stereo {
   readonly sampleRate: number;
 }
 
+/** The most samples of one channel any step of `tailSlices` processes (about 4 ms on a mid-range phone). */
+export const TAIL_STEP_SAMPLES = 8192;
+
 const SPEED_OF_SOUND_M_PER_S = 343;
 const ONSET_MIN_S = 0.012;
 const ONSET_MAX_S = 0.08;
 /** ln(1000): a decay of 60 dB in amplitude over the reverberation time. */
 const DECAY_PER_RT = 6.91;
-/** The tail runs this many times its longest reverberation time, to -72 dB, so T20 is never truncated. */
+/** The buffer runs this many times the longest reverberation time, to -72 dB, so T20 is never truncated. */
 const LENGTH_PER_RT = 1.2;
+/** Each band's noise stops this many times its own time after the onset, below -75 dB. */
+const BAND_LENGTH_PER_RT = 1.25;
 const FADE_IN_S = 0.01;
 /** The tail's two channels together stay within 2 MB. */
 const MAX_BYTES = 2_000_000;
@@ -49,45 +57,69 @@ function safeTime(t: number): number {
 }
 
 /**
- * Adds one band of decaying noise from `random` into `channel`, starting at
- * `start`. The band stops at 1.2 times its own time (-72 dB), so a short band
- * costs less to render than the longest.
+ * Adds one band of decaying noise from `random` into `channel` from `start`,
+ * a step at a time, yielding the samples each step processed. The noise runs
+ * through the same two band-pass stages as `octaveBandpass`, with their state
+ * carried across steps (each stage's output held at float precision, as that
+ * function's in-place filtering does), so the band is the same as filtering
+ * it all at once. It stops 1.25 times its own time after the onset.
  */
-function addBand(
+function* bandSteps(
   channel: Float32Array,
   start: number,
   centreHz: number,
   rt: number,
   random: () => number,
   sampleRate: number,
-): void {
-  const length = Math.min(channel.length - start, Math.ceil(LENGTH_PER_RT * rt * sampleRate));
+): Generator<number, void> {
+  const length = Math.min(channel.length - start, Math.ceil(BAND_LENGTH_PER_RT * rt * sampleRate));
   if (length <= 0) return;
-  const noise = new Float32Array(length);
-  for (let i = 0; i < length; i += 1) noise[i] = 2 * random() - 1;
-  const band = octaveBandpass(noise, centreHz, sampleRate);
-  const step = Math.exp(-DECAY_PER_RT / (rt * sampleRate));
+  const c = biquadCoefficients("bandpass", centreHz, OCTAVE_Q, sampleRate);
+  const decayStep = Math.exp(-DECAY_PER_RT / (rt * sampleRate));
   const fadeSamples = Math.max(1, Math.round(FADE_IN_S * sampleRate));
+  let ax1 = 0, ax2 = 0, ay1 = 0, ay2 = 0;
+  let bx1 = 0, bx2 = 0, by1 = 0, by2 = 0;
   let envelope = 1;
-  for (let i = 0; i < length; i += 1) {
-    const fade = i < fadeSamples ? 0.5 - 0.5 * Math.cos((Math.PI * i) / fadeSamples) : 1;
-    channel[start + i] = (channel[start + i] ?? 0) + (band[i] ?? 0) * envelope * fade;
-    envelope *= step;
+  for (let from = 0; from < length; from += TAIL_STEP_SAMPLES) {
+    const to = Math.min(length, from + TAIL_STEP_SAMPLES);
+    for (let i = from; i < to; i += 1) {
+      const x = Math.fround(2 * random() - 1);
+      const ya = c.b0 * x + c.b1 * ax1 + c.b2 * ax2 - c.a1 * ay1 - c.a2 * ay2;
+      ax2 = ax1; ax1 = x; ay2 = ay1; ay1 = ya;
+      const u = Math.fround(ya);
+      const yb = c.b0 * u + c.b1 * bx1 + c.b2 * bx2 - c.a1 * by1 - c.a2 * by2;
+      bx2 = bx1; bx1 = u; by2 = by1; by1 = yb;
+      const fade = i < fadeSamples ? 0.5 - 0.5 * Math.cos((Math.PI * i) / fadeSamples) : 1;
+      channel[start + i] = (channel[start + i] ?? 0) + Math.fround(yb) * envelope * fade;
+      envelope *= decayStep;
+    }
+    yield to - from;
   }
 }
 
-function normalise(channel: Float32Array): void {
+/** Scales `channel` to unit energy, a step at a time: one pass to measure, one to scale. */
+function* normaliseSteps(channel: Float32Array): Generator<number, void> {
   let energy = 0;
-  for (let i = 0; i < channel.length; i += 1) energy += (channel[i] ?? 0) ** 2;
+  for (let from = 0; from < channel.length; from += TAIL_STEP_SAMPLES) {
+    const to = Math.min(channel.length, from + TAIL_STEP_SAMPLES);
+    for (let i = from; i < to; i += 1) energy += (channel[i] ?? 0) ** 2;
+    yield to - from;
+  }
   if (energy <= 0) return;
   const scale = 1 / Math.sqrt(energy);
-  for (let i = 0; i < channel.length; i += 1) channel[i] = (channel[i] ?? 0) * scale;
+  for (let from = 0; from < channel.length; from += TAIL_STEP_SAMPLES) {
+    const to = Math.min(channel.length, from + TAIL_STEP_SAMPLES);
+    for (let i = from; i < to; i += 1) channel[i] = (channel[i] ?? 0) * scale;
+    yield to - from;
+  }
 }
 
 /**
- * Renders the tail one band at a time, so it can be driven in idle slices.
- * Each step renders one band of both channels and yields the fraction done
- * (1/7 … 7/7); the step after the last normalises and returns the tail.
+ * Renders the tail in steps, so it can be driven in idle slices. Each step
+ * works on at most TAIL_STEP_SAMPLES samples of one band in one channel (or,
+ * at the end, of one channel's normalising) and yields how many it processed.
+ * The number of steps grows with the tail's length. The last call returns
+ * the finished tail, identical to `renderRoomTail`'s for the same options.
  */
 export function* tailSlices(
   rt: BandValues,
@@ -107,12 +139,11 @@ export function* tailSlices(
   for (let band = 0; band < OCTAVE_BANDS_HZ.length; band += 1) {
     const hz = OCTAVE_BANDS_HZ[band] ?? 1000;
     const time = times[band] ?? MIN_RT_S;
-    addBand(left, start, hz, time, randomLeft, sampleRate);
-    addBand(right, start, hz, time, randomRight, sampleRate);
-    yield (band + 1) / OCTAVE_BANDS_HZ.length;
+    yield* bandSteps(left, start, hz, time, randomLeft, sampleRate);
+    yield* bandSteps(right, start, hz, time, randomRight, sampleRate);
   }
-  normalise(left);
-  normalise(right);
+  yield* normaliseSteps(left);
+  yield* normaliseSteps(right);
   return { left, right, sampleRate };
 }
 

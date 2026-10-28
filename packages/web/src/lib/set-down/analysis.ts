@@ -10,7 +10,7 @@ import { applyFilter, fft } from "../planner-sound-render.js";
 // ---------------------------------------------------------------------------
 
 /** The Q of the octave band-pass: two cascaded stages of 1.414 span about an octave. */
-const OCTAVE_Q = 1.414;
+export const OCTAVE_Q = 1.414;
 
 /** Smallest power of two that holds `length` samples. */
 function powerOfTwoAtLeast(length: number): number {

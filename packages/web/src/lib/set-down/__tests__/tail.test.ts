@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { octaveBandpass, schroederT20 } from "../analysis.js";
 import { OCTAVE_BANDS_HZ, type BandValues } from "../bands.js";
 import { ROOM_ACOUSTICS, UNCALIBRATED, type RoomAcoustics } from "../rooms.js";
-import { renderRoomTail, tailOnsetSeconds, tailSlices, type Stereo } from "../tail.js";
+import { TAIL_STEP_SAMPLES, renderRoomTail, tailOnsetSeconds, tailSlices, type Stereo } from "../tail.js";
 
 const RATE = 48000;
 const RT: BandValues = [1.8, 2.2, 2.6, 2.9, 2.7, 2.0, 1.2];
@@ -112,16 +112,29 @@ describe("renderRoomTail", () => {
 });
 
 describe("tailSlices", () => {
-  it("yields once per band and returns the same tail as renderRoomTail", () => {
+  it("works in bounded steps and returns the same tail as renderRoomTail", () => {
     const slices = tailSlices(RT, { ...OPTIONS });
-    let yields = 0;
+    const steps: number[] = [];
     let step = slices.next();
     while (step.done !== true) {
-      yields += 1;
+      steps.push(step.value);
       step = slices.next();
     }
     const sliced: Stereo = step.value;
-    expect(yields).toBe(7);
+    expect(steps.length).toBeGreaterThanOrEqual(7);
+    for (const samples of steps) {
+      expect(samples).toBeGreaterThan(0);
+      expect(samples).toBeLessThanOrEqual(TAIL_STEP_SAMPLES);
+    }
+    expect(TAIL_STEP_SAMPLES).toBe(8192);
+    // Each band's noise runs to 1.25 x its own time after the onset (or the
+    // buffer's end), in both channels; then each channel is measured and scaled.
+    const start = Math.ceil(OPTIONS.onsetSeconds * RATE);
+    const bandSamples = RT.reduce(
+      (sum, t) => sum + Math.min(tail.left.length - start, Math.ceil(1.25 * t * RATE)),
+      0,
+    );
+    expect(steps.reduce((a, b) => a + b, 0)).toBe(2 * bandSamples + 4 * tail.left.length);
     expect(sliced.sampleRate).toBe(RATE);
     expect(sliced.left.length).toBe(tail.left.length);
     let mismatches = 0;
