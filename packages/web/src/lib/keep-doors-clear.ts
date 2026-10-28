@@ -68,8 +68,8 @@ export function doorsBlockedByAny(placedItems: readonly PlacedItem[], spaces: re
 
 /** How strongly the floor shows every door's space while a piece is placed or carried. */
 export const DOOR_FLOOR_FAINT = 0.45;
-/** How strongly it shows a space something already stands in, beside the notice that names it. */
-export const DOOR_FLOOR_BLOCKED = 0.6;
+/** How strongly it shows a space something stands in, glowing gold beside the notice that names it: fully, so the warning reads from the planner's camera. */
+export const DOOR_FLOOR_BLOCKED = 1;
 
 export interface DoorFloorState {
   readonly spaces: readonly DoorClearSpace[];

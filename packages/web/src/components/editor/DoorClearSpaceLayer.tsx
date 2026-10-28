@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, type ReactElement } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import { BufferGeometry, Color, DoubleSide, Float32BufferAttribute, NormalBlending, type Group } from "three";
 import { MeshBasicNodeMaterial } from "three/webgpu";
-import { attribute, float, fract, mix, smoothstep, uniform, uv, vec3 } from "three/tsl";
+import { attribute, float, fract, mix, mrt, output, smoothstep, uniform, uv, vec3, vec4 } from "three/tsl";
 import { toRenderSpace, toRealWorld } from "../../constants/scale.js";
 import { getCatalogueItem } from "../../lib/catalogue.js";
 import { isDiningTableItem } from "../../lib/furniture-semantics.js";
@@ -123,6 +123,16 @@ function edgeGeometry(space: DoorClearSpace): BufferGeometry {
 const EDGE_INK = new Color(EDGE_COLOUR);
 const GLOW = new Color(GLOW_COLOUR);
 
+/**
+ * The marks are light laid on the floor, not surfaces: they leave the floor's
+ * own normal and motion in the pipeline's targets (alpha 0, as the hall's
+ * panes do, hall-glazing.ts). Written there at full weight, the edge's clear
+ * gaps were read as a strip above the floor and darkened by the occlusion.
+ */
+function floorLightOutput(): ReturnType<typeof mrt> {
+  return mrt({ output, normal: vec4(0, 0, 0, 0), velocity: vec4(0, 0, 0, 0) });
+}
+
 /** One step of a mark's ease toward `target`: quicker arriving than leaving; at once under reduced motion. */
 function eased(from: number, target: number, delta: number): number {
   if (prefersReducedMotion() || from === target) return target;
@@ -147,6 +157,7 @@ function DoorClearSpaceMark({ space, target, glowing }: { readonly space: DoorCl
     material.polygonOffset = true;
     material.polygonOffsetFactor = -2;
     material.polygonOffsetUnits = -4;
+    material.mrtNode = floorLightOutput();
     return material;
   }, [strength, glow]);
   const edge = useMemo(() => edgeGeometry(space), [space]);
@@ -163,6 +174,7 @@ function DoorClearSpaceMark({ space, target, glowing }: { readonly space: DoorCl
     material.polygonOffset = true;
     material.polygonOffsetFactor = -3;
     material.polygonOffsetUnits = -6;
+    material.mrtNode = floorLightOutput();
     return material;
   }, [strength, glow]);
 
