@@ -140,6 +140,8 @@ describe("ChairCountDialog's typed count", () => {
     const onConfirm = vi.fn<(count: number) => void>();
     render(<ChairCountDialog request={round()} onConfirm={onConfirm} onCancel={vi.fn()} />);
     fireEvent.change(seats(), { target: { value: "20" } });
+    // The button names the 20 it was asked for, never a count it would not place.
+    expect(screen.getByTestId("chair-count-confirm").textContent).toBe("Place with 20 seats");
     fireEvent.keyDown(seats(), { code: "Enter", key: "Enter" });
     fireEvent.click(screen.getByTestId("chair-count-confirm"));
     expect(onConfirm).not.toHaveBeenCalled();

@@ -305,7 +305,10 @@ export function ChairCountDialog({
   const round = request.tableShape === "round";
   const shapeLabel = round ? "Round Table" : "Rectangular Table";
   const editing = existingTable !== undefined;
-  const shown = seatsFromDraft(draft, minChairs, maxChairs) ?? count;
+  // The place button names the whole number in the field, one the table cannot take included, so the press that
+  // refuses it reads as the check it is rather than a promise broken; with no number typed it names the last count.
+  const typedSeats = /^\d+$/.test(draft.trim()) ? Number(draft.trim()) : null;
+  const shown = seatsFromDraft(draft, minChairs, maxChairs) ?? (typedSeats !== null && typedSeats > 0 ? typedSeats : count);
   const placeLabel = editing
     ? (shown === 0 ? "No seats" : `Set ${String(shown)} ${plural(shown, "seat", "seats")}`)
     : (shown === 0 ? "Place the table only" : `Place with ${String(shown)} ${plural(shown, "seat", "seats")}`);
