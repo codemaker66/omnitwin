@@ -17,6 +17,7 @@
 //   5. Engagement events older than ENGAGEMENT_RETENTION_MONTHS (migration
 //      0100): the enquiry funnel keeps them no longer than the privacy page
 //      keeps an enquiry, whether or not their enquiry or proposal remains.
+//   6. Field web vitals older than WEB_VITAL_RETENTION_DAYS (goal 07).
 //
 // Both note passes run on the schedule, not only when someone calls
 // POST /admin/cleanup, because the product promises them. Their errors carry
@@ -34,6 +35,7 @@ import { cleanupPreviewConfigurations, cleanupOrphanedFiles } from "../services/
 import { removeUnusedRememberedNotes } from "../services/dietary-memory.js";
 import { removeLapsedDietaryNotes } from "../services/dietary-retention.js";
 import { removeExpiredEngagementEvents } from "../services/enquiry-funnel.js";
+import { removeExpiredWebVitalSamples } from "../services/web-vitals.js";
 
 export interface ScheduledCleanupResult {
   readonly deletedConfigs: number;
@@ -43,6 +45,7 @@ export interface ScheduledCleanupResult {
   readonly lapsedNoteSheets: number;
   readonly rememberedNotesRemoved: number;
   readonly engagementEventsRemoved: number;
+  readonly webVitalSamplesRemoved: number;
 }
 
 /** Every scheduled pass, in order. Each log line carries counts only. */
@@ -65,6 +68,9 @@ export async function runScheduledCleanup(
   const engagementEventsRemoved = await removeExpiredEngagementEvents(db);
   log(`[cleanup] Removed ${String(engagementEventsRemoved)} engagement event(s) past their retention period`);
 
+  const webVitalSamplesRemoved = await removeExpiredWebVitalSamples(db);
+  log(`[cleanup] Removed ${String(webVitalSamplesRemoved)} web vital sample(s) past their retention period`);
+
   return {
     deletedConfigs,
     deletedFiles,
@@ -72,6 +78,7 @@ export async function runScheduledCleanup(
     lapsedNoteSheets: lapsed.sheets,
     rememberedNotesRemoved: remembered.removed,
     engagementEventsRemoved,
+    webVitalSamplesRemoved,
   };
 }
 

@@ -8,6 +8,7 @@ import { useAuthStore, type AuthUser } from "./stores/auth-store.js";
 import { setTokenGetter } from "./api/auth-bridge.js";
 import { AppErrorBoundary } from "./error-boundary.js";
 import { initBrowserSentry } from "./observability/sentry.js";
+import { webVitalsSampleRate } from "./observability/web-vitals-rate.js";
 import { isE2EAuthBypassEnabled } from "./lib/e2e-auth-bypass.js";
 import { registerPushWorker } from "./lib/push-worker.js";
 import { appendFontBuildStyle, fontBuildFor } from "./lib/self-hosted-fonts.js";
@@ -88,6 +89,13 @@ createRoot(rootElement).render(
 // after React owns the root so a slow import can never hold the first screen
 // blank. The error boundary shares the same idempotent initializer.
 void initBrowserSentry();
+
+// Field web vitals (goal 07): only a build that samples page loads loads the
+// reporter at all, and it measures the route this page load landed on.
+if (webVitalsSampleRate(import.meta.env) > 0) {
+  const routePaths = router.state.matches.map((match) => match.route.path);
+  void import("./observability/web-vitals.js").then(({ startWebVitals }) => startWebVitals({ env: import.meta.env, routePaths }));
+}
 
 // The push worker (goal 19 S7): registered after the root is up, harmless
 // where the browser has no push. It caches nothing and answers no fetch.

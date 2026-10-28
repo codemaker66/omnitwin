@@ -345,6 +345,16 @@ jobs:
           --command="CREATE DATABASE venviewer_progress_test"
           --command="CREATE DATABASE venviewer_venue_team_test"
 
+      - name: Create dedicated web vitals test database
+        # web-vitals-postgres builds the whole API on its own migrated
+        # database and skips without its URL.
+        env:
+          PGPASSWORD: postgres
+        run: >-
+          psql --host=127.0.0.1 --port=55476 --username=postgres --dbname=postgres
+          --no-psqlrc --set=ON_ERROR_STOP=1
+          --command="CREATE DATABASE venviewer_web_vitals_test"
+
       - name: Test (Vitest)
         # Use the same execution policy locally and in CI: serial workspaces
         # avoid contention between heavy suites, while --no-bail ensures a
@@ -363,6 +373,7 @@ jobs:
           VENVIEWER_ENQUIRY_FUNNEL_MIGRATION_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:55476/venviewer_enquiry_funnel_migration_test
           VENVIEWER_PROGRESS_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:55476/venviewer_progress_test
           VENVIEWER_VENUE_TEAM_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:55476/venviewer_venue_team_test
+          VENVIEWER_WEB_VITALS_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:55476/venviewer_web_vitals_test
         run: pnpm test
 
   e2e:
