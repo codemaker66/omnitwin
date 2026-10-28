@@ -919,6 +919,45 @@ describe("EventDayOpsPage", () => {
     expect(document.activeElement).toBe(screen.getByRole("button", { name: "Try again" }));
   });
 
+  // L9: the queue also holds the Day Board's facts and request steps; this
+  // page replays only its own, and never sends a request step as an issue.
+  it("leaves the Day Board's request steps and facts in the queue for that screen", async () => {
+    mockGetEventDayOpsBoard.mockResolvedValue(boardFixture());
+    mockCreateEventDayIssue.mockResolvedValue(undefined);
+    const issue = {
+      kind: "issue_create" as const, queueKey: "issue:issue-a", eventId: "event-1", queuedAt: "2026-10-29T18:39:00.000Z",
+      input: { title: "Lift unavailable", detail: "Use the north stair.", severity: "urgent" as const },
+    };
+    mockListPendingEventDayOps.mockResolvedValue([
+      {
+        kind: "request_step", queueKey: "request:00000000-0000-4000-8000-00000000e001",
+        venueId: "00000000-0000-4000-8000-00000000a001", requestId: "00000000-0000-4000-8000-00000000d001",
+        bookingId: null, summary: "Chairs × 10", transition: { to: "accepted" },
+        commandId: "00000000-0000-4000-8000-00000000e001", authorUserId: "00000000-0000-4000-8000-0000000000ff",
+        authorName: "Elaine", queuedAt: "2026-10-29T18:38:00.000Z",
+      },
+      {
+        kind: "observation_record", queueKey: "observation:00000000-0000-4000-8000-00000000c001",
+        venueId: "00000000-0000-4000-8000-00000000a001", queuedAt: "2026-10-29T18:38:30.000Z",
+        input: {
+          bookingId: "00000000-0000-4000-8000-00000000b001", kind: "doors-open",
+          observedAt: "2026-10-29T18:38:30.000Z", idempotencyKey: "00000000-0000-4000-8000-00000000c001",
+        },
+      },
+      issue,
+    ]);
+    renderPage();
+    await screen.findByRole("heading", { level: 1, name: "Blake event day" });
+    act(() => { window.dispatchEvent(new Event("online")); });
+
+    // The issue is last in the queue: once it is acked, every op before it was met.
+    await waitFor(() => { expect(mockAckEventDayOp).toHaveBeenCalledWith("issue:issue-a"); });
+    expect(mockCreateEventDayIssue).toHaveBeenCalledTimes(1);
+    expect(mockCreateEventDayIssue).toHaveBeenCalledWith("event-1", issue.input);
+    expect(mockAckEventDayOp).toHaveBeenCalledTimes(1);
+    expect(mockUpdateOpsTaskStatus).not.toHaveBeenCalled();
+  });
+
   it("keeps the board a later read drew when the first load fails late", async () => {
     let failFirst: ((reason: Error) => void) | undefined;
     let boardReads = 0;

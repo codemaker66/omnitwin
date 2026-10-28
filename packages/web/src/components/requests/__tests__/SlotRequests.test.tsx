@@ -1,7 +1,15 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { CreateVenueRequest, VenueRequest } from "@omnitwin/types";
+import type { CreateVenueRequest, RequestTransition, VenueRequest } from "@omnitwin/types";
+import { ApiError } from "../../../api/client.js";
+import {
+  enqueueEventDayRequestStep,
+  listPendingEventDayOps,
+  type EventDayOpOutcome,
+  type QueuedEventDayOp,
+  type RequestStepInput,
+} from "../../../lib/event-day-offline-queue.js";
 import { useAuthStore, type AuthUser } from "../../../stores/auth-store.js";
 import { RequestsProvider } from "../RequestsProvider.js";
 import { SlotRequests } from "../SlotRequests.js";
@@ -41,6 +49,22 @@ vi.mock("../../../api/conversations.js", () => ({
   sendMessage: mocks.sendMessage,
   markReceipt: mocks.markReceipt,
 }));
+// L9: the real offline queue (its ordering, keys and acks), over an
+// in-memory store that each case starts empty.
+const queueSeam = vi.hoisted(() => ({ reset: (): void => undefined }));
+vi.mock("../../../lib/event-day-offline-queue.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../../lib/event-day-offline-queue.js")>();
+  const cache = await import("../../../lib/idb-cache.js");
+  const fresh = () => actual.createEventDayQueue(cache.withBackend<QueuedEventDayOp>(cache.memoryBackend()));
+  let queue = fresh();
+  queueSeam.reset = () => { queue = fresh(); };
+  return {
+    ...actual,
+    enqueueEventDayRequestStep: (step: RequestStepInput) => queue.enqueueRequestStep(step),
+    listPendingEventDayOps: () => queue.list(),
+    drainEventDayOps: (perform: (op: QueuedEventDayOp) => Promise<EventDayOpOutcome>) => queue.drain(perform),
+  };
+});
 vi.mock("../../../lib/requests-live.js", async () => {
   const actual = await vi.importActual<typeof import("../../../lib/requests-live.js")>("../../../lib/requests-live.js");
   // The conversation hook reads the cursor from the same module: keep the
@@ -147,6 +171,7 @@ function sentKey(call: number): string {
 beforeEach(() => {
   // Reset, not clear: an answer queued for one case must never reach the next.
   vi.resetAllMocks();
+  queueSeam.reset();
   mocks.list.mockResolvedValue([]);
   mocks.subscribe.mockReturnValue(() => undefined);
   mocks.handlers.mockResolvedValue([]);
@@ -182,7 +207,7 @@ describe("handing over and finishing another way", () => {
 
     fireEvent.change(picker, { target: { value: FIONA.id } });
     fireEvent.click(within(hall).getByRole("button", { name: "Hand it over" }));
-    await waitFor(() => { expect(mocks.move).toHaveBeenCalledWith(owned.id, { to: "handed-over", toUserId: FIONA.id }); });
+    await waitFor(() => { expect(mocks.move).toHaveBeenCalledWith(owned.id, { to: "handed-over", toUserId: FIONA.id }, expect.any(String)); });
     expect(await within(hall).findByText("Elaine is handing this to Fiona.")).toBeTruthy();
   });
 
@@ -203,7 +228,7 @@ describe("handing over and finishing another way", () => {
     fireEvent.change(within(hall).getByLabelText("What was done instead"), { target: { value: "Benches instead." } });
     fireEvent.click(finish);
     await waitFor(() => {
-      expect(mocks.move).toHaveBeenCalledWith(owned.id, { to: "resolved", outcome: "substituted", note: "Benches instead." });
+      expect(mocks.move).toHaveBeenCalledWith(owned.id, { to: "resolved", outcome: "substituted", note: "Benches instead." }, expect.any(String));
     });
   });
 
@@ -336,7 +361,7 @@ describe("moving a request on the slab", () => {
     const first = venueRequest({ id: "00000000-0000-4000-8000-0000000000e1", bookingId: GRAND_HALL.bookingId, kind: "refreshments" });
     const second = venueRequest({ id: "00000000-0000-4000-8000-0000000000e2", bookingId: GRAND_HALL.bookingId, kind: "cleaning", createdAt: "2026-09-26T09:30:00.000Z" });
     mocks.list.mockResolvedValue([first, second]);
-    mocks.move.mockRejectedValueOnce(new Error("Somebody has already taken this one."));
+    mocks.move.mockRejectedValueOnce(new ApiError(409, "Somebody has already taken this one.", "REQUEST_TAKEN"));
     renderBoard();
 
     const hall = await screen.findByRole("region", { name: "Requests for Grand Hall" });
@@ -351,5 +376,247 @@ describe("moving a request on the slab", () => {
     expect(within(cleaning).getByRole("alert").textContent).toBe("Somebody has already taken this one.");
     expect(within(refreshments).queryByRole("alert")).toBeNull();
     expect(within(region(SALOON)).queryByRole("alert")).toBeNull();
+  });
+});
+
+// L9: request steps through the event-day offline queue. A step pressed with
+// no connection waits under the key it was pressed with, said beside its card
+// and never shown as done; the queue replays it, in the order pressed, when
+// the browser or the socket comes back; and whatever the replay could not do
+// is said on the slot, in plain words.
+describe("steps pressed with no connection", () => {
+  const OFFLINE = (): ApiError => new ApiError(0, "Network error — check your connection", "NETWORK_ERROR");
+  const chairs = (overrides: Partial<VenueRequest> = {}): VenueRequest => venueRequest({
+    id: "00000000-0000-4000-8000-0000000000c1", bookingId: GRAND_HALL.bookingId, kind: "chairs", quantity: 10, ...overrides,
+  });
+
+  function keyOf(call: number): string {
+    const key = mocks.move.mock.calls[call]?.[2] as string | undefined;
+    if (key === undefined) throw new Error(`No step was sent on call ${String(call)}`);
+    return key;
+  }
+
+  function stepOf(call: number): RequestTransition | undefined {
+    return mocks.move.mock.calls[call]?.[1] as RequestTransition | undefined;
+  }
+
+  /** What the replay could not do: a card of its own, read politely. */
+  async function noticeIn(place: HTMLElement): Promise<HTMLElement> {
+    const words = await within(place).findByText(/was not sent\./u);
+    const card = words.closest("li");
+    if (card === null) throw new Error("A notice is a card of its own");
+    expect(card.getAttribute("role")).toBe("status");
+    return card;
+  }
+
+  function noticesIn(place: HTMLElement): readonly HTMLElement[] {
+    return within(place).queryAllByText(/was not sent\./u);
+  }
+
+  async function backOnline(): Promise<void> {
+    await act(async () => { window.dispatchEvent(new Event("online")); await Promise.resolve(); });
+  }
+
+  it("keeps a step that could not be sent, under its own key, and sends that same press once the connection is back", async () => {
+    const request = chairs();
+    mocks.list.mockResolvedValue([request]);
+    mocks.move.mockRejectedValueOnce(OFFLINE());
+    renderBoard();
+
+    const hall = await screen.findByRole("region", { name: "Requests for Grand Hall" });
+    fireEvent.click(await within(hall).findByRole("button", { name: "Seen" }));
+
+    expect(await within(hall).findByText("Waiting to send: Seen")).toBeTruthy();
+    // Not shown as done, because it is not: the card still says what the server says.
+    expect(within(hall).queryByText(/· Seen/u)).toBeNull();
+    expect(within(hall).queryByRole("alert")).toBeNull();
+    const pressed = keyOf(0);
+    expect(pressed).toMatch(/^[0-9a-f-]{36}$/u);
+    const waiting = await listPendingEventDayOps();
+    expect(waiting).toHaveLength(1);
+    expect(waiting[0]).toMatchObject({
+      kind: "request_step", requestId: request.id, commandId: pressed, transition: { to: "acknowledged" },
+      authorUserId: hallkeeper.id, authorName: "Elaine", summary: "Chairs × 10", bookingId: GRAND_HALL.bookingId,
+    });
+
+    const seen = { ...request, state: "acknowledged" as const, acknowledgedAt: "2026-09-26T10:02:00.000Z" };
+    mocks.move.mockResolvedValueOnce(seen);
+    mocks.list.mockResolvedValue([seen]);
+    await backOnline();
+
+    await waitFor(() => { expect(mocks.move).toHaveBeenCalledTimes(2); });
+    // The replay is the same press: the same request, step and key.
+    expect(mocks.move.mock.calls[1]?.[0]).toBe(request.id);
+    expect(stepOf(1)).toEqual({ to: "acknowledged" });
+    expect(keyOf(1)).toBe(pressed);
+    await waitFor(() => { expect(within(hall).queryByText("Waiting to send: Seen")).toBeNull(); });
+    expect(await listPendingEventDayOps()).toEqual([]);
+    expect(noticesIn(hall)).toHaveLength(0);
+  });
+
+  it("offers the next step after one still waiting, and replays them in the order they were pressed", async () => {
+    const request = chairs();
+    mocks.list.mockResolvedValue([request]);
+    mocks.move.mockRejectedValue(OFFLINE());
+    renderBoard();
+
+    const hall = await screen.findByRole("region", { name: "Requests for Grand Hall" });
+    fireEvent.click(await within(hall).findByRole("button", { name: "Seen" }));
+    await within(hall).findByText("Waiting to send: Seen");
+    // "Seen" is pressed already; the slab offers what comes after it.
+    expect(within(hall).queryByRole("button", { name: "Seen" })).toBeNull();
+    fireEvent.click(within(hall).getByRole("button", { name: "I’ll do it" }));
+    expect(await within(hall).findByText("Waiting to send: Seen · I’ll do it")).toBeTruthy();
+    // Still the server's word on the card: nobody owns it yet.
+    expect(within(hall).queryByText(/· Elaine$/u)).toBeNull();
+
+    const sentBeforeReconnect = mocks.move.mock.calls.length;
+    const accepted = { ...request, state: "accepted" as const, ownerUserId: hallkeeper.id, ownerName: "Elaine" };
+    mocks.move.mockReset();
+    mocks.move
+      .mockResolvedValueOnce({ ...request, state: "acknowledged" as const })
+      .mockResolvedValueOnce(accepted);
+    mocks.list.mockResolvedValue([accepted]);
+    await backOnline();
+
+    await waitFor(() => { expect(mocks.move).toHaveBeenCalledTimes(2); });
+    expect([stepOf(0), stepOf(1)]).toEqual([{ to: "acknowledged" }, { to: "accepted" }]);
+    expect(keyOf(0)).not.toBe(keyOf(1));
+    expect(sentBeforeReconnect).toBeGreaterThanOrEqual(1);
+    await waitFor(() => { expect(within(hall).queryByText(/Waiting to send/u)).toBeNull(); });
+    expect(await listPendingEventDayOps()).toEqual([]);
+  });
+
+  it("sends a step the server already had as the same key again, and shows it once", async () => {
+    // The first send reached the server; its answer was lost on the way back.
+    const request = chairs();
+    mocks.list.mockResolvedValue([request]);
+    mocks.move.mockRejectedValueOnce(OFFLINE());
+    renderBoard();
+    const hall = await screen.findByRole("region", { name: "Requests for Grand Hall" });
+    fireEvent.click(await within(hall).findByRole("button", { name: "I’ll do it" }));
+    await within(hall).findByText("Waiting to send: I’ll do it");
+
+    // The server answers the replay from its ledger: the step it already took.
+    const accepted = { ...request, state: "accepted" as const, ownerUserId: hallkeeper.id, ownerName: "Elaine" };
+    mocks.move.mockResolvedValueOnce(accepted);
+    mocks.list.mockResolvedValue([accepted]);
+    await backOnline();
+    await waitFor(() => { expect(mocks.move).toHaveBeenCalledTimes(2); });
+    expect(keyOf(1)).toBe(keyOf(0));
+
+    // A second reconnect finds nothing waiting and sends nothing.
+    await backOnline();
+    await waitFor(() => { expect(within(hall).queryByText(/Waiting to send/u)).toBeNull(); });
+    expect(mocks.move).toHaveBeenCalledTimes(2);
+    expect(await listPendingEventDayOps()).toEqual([]);
+  });
+
+  it("says on the slot, by name, that someone else took it first, and puts the step away", async () => {
+    const request = chairs();
+    mocks.list.mockResolvedValue([request]);
+    mocks.move.mockRejectedValueOnce(OFFLINE());
+    renderBoard();
+    const hall = await screen.findByRole("region", { name: "Requests for Grand Hall" });
+    fireEvent.click(await within(hall).findByRole("button", { name: "I’ll do it" }));
+    await within(hall).findByText("Waiting to send: I’ll do it");
+
+    const graham = { ...request, state: "accepted" as const, ownerUserId: GRAHAM.id, ownerName: "Graham" };
+    mocks.move.mockRejectedValueOnce(new ApiError(409, "Graham has this.", "REQUEST_TAKEN"));
+    mocks.list.mockResolvedValue([graham]);
+    const listedBefore = mocks.list.mock.calls.length;
+    await backOnline();
+
+    const notice = await noticeIn(hall);
+    expect(notice.textContent).toContain("Your “I’ll do it” on Chairs × 10 was not sent. Graham has this.");
+    // The server's word is read again: the card names the owner, and nothing waits.
+    await waitFor(() => { expect(mocks.list.mock.calls.length).toBeGreaterThan(listedBefore); });
+    expect(await within(hall).findByText(/Graham/u, { selector: ".vv-request-who" })).toBeTruthy();
+    expect(within(hall).queryByText(/Waiting to send/u)).toBeNull();
+    expect(await listPendingEventDayOps()).toEqual([]);
+    // Said on its own slot only, and put away when read.
+    expect(noticesIn(region(SALOON))).toHaveLength(0);
+    fireEvent.click(within(notice).getByRole("button", { name: "OK" }));
+    expect(noticesIn(hall)).toHaveLength(0);
+  });
+
+  it("refuses for good a step whose sender may no longer act on the venue's requests, and says so", async () => {
+    const request = chairs();
+    mocks.list.mockResolvedValue([request]);
+    mocks.move.mockRejectedValueOnce(OFFLINE());
+    renderBoard();
+    const hall = await screen.findByRole("region", { name: "Requests for Grand Hall" });
+    fireEvent.click(await within(hall).findByRole("button", { name: "Seen" }));
+    await within(hall).findByText("Waiting to send: Seen");
+
+    mocks.move.mockRejectedValueOnce(new ApiError(403, "Forbidden", "FORBIDDEN"));
+    await backOnline();
+
+    const notice = await noticeIn(hall);
+    expect(notice.textContent).toContain("Your “Seen” on Chairs × 10 was not sent. This account can no longer act on this venue’s requests.");
+    expect(await listPendingEventDayOps()).toEqual([]);
+    // Refused for good: another reconnect sends nothing.
+    await backOnline();
+    expect(mocks.move).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps a step waiting while the session must be renewed, and stops there so the order holds", async () => {
+    const request = chairs();
+    mocks.list.mockResolvedValue([request]);
+    mocks.move.mockRejectedValue(OFFLINE());
+    renderBoard();
+    const hall = await screen.findByRole("region", { name: "Requests for Grand Hall" });
+    fireEvent.click(await within(hall).findByRole("button", { name: "Seen" }));
+    await within(hall).findByText("Waiting to send: Seen");
+    fireEvent.click(within(hall).getByRole("button", { name: "I’ll do it" }));
+    await within(hall).findByText("Waiting to send: Seen · I’ll do it");
+
+    mocks.move.mockReset();
+    mocks.move.mockRejectedValue(new ApiError(401, "Session expired — please sign in again", "UNAUTHORIZED"));
+    await backOnline();
+    await waitFor(() => { expect(mocks.move).toHaveBeenCalledTimes(1); });
+    // The first stopped the replay; the second was never sent ahead of it.
+    expect(stepOf(0)).toEqual({ to: "acknowledged" });
+    expect(within(hall).getByText("Waiting to send: Seen · I’ll do it")).toBeTruthy();
+    expect(noticesIn(hall)).toHaveLength(0);
+    expect(await listPendingEventDayOps()).toHaveLength(2);
+  });
+
+  it("never sends a colleague's waiting step in the name of whoever is signed in now", async () => {
+    const request = chairs();
+    mocks.list.mockResolvedValue([request]);
+    await enqueueEventDayRequestStep({
+      venueId: VENUE, requestId: request.id, bookingId: GRAND_HALL.bookingId, summary: "Chairs × 10",
+      transition: { to: "accepted" }, commandId: "00000000-0000-4000-8000-0000000000d9",
+      authorUserId: GRAHAM.id, authorName: "Graham",
+    });
+    renderBoard();
+
+    const hall = await screen.findByRole("region", { name: "Requests for Grand Hall" });
+    expect(await within(hall).findByText("Waiting for Graham to sign in on this device: I’ll do it")).toBeTruthy();
+    await backOnline();
+    expect(mocks.move).not.toHaveBeenCalled();
+    expect(await listPendingEventDayOps()).toHaveLength(1);
+    // Elaine is offered her own steps from the server's state, not Graham's,
+    // and her own press goes at once: his waiting step holds nothing back.
+    mocks.move.mockResolvedValueOnce({ ...request, state: "acknowledged" as const });
+    fireEvent.click(within(hall).getByRole("button", { name: "Seen" }));
+    await waitFor(() => { expect(mocks.move).toHaveBeenCalledTimes(1); });
+    expect(stepOf(0)).toEqual({ to: "acknowledged" });
+    const left = await listPendingEventDayOps();
+    expect(left).toHaveLength(1);
+    expect(left[0]).toMatchObject({ authorUserId: GRAHAM.id, transition: { to: "accepted" } });
+  });
+
+  it("says a refusal that is not about the connection on the card at once, and keeps nothing", async () => {
+    const request = chairs();
+    mocks.list.mockResolvedValue([request]);
+    mocks.move.mockRejectedValueOnce(new ApiError(409, "Graham has this.", "REQUEST_TAKEN"));
+    renderBoard();
+    const hall = await screen.findByRole("region", { name: "Requests for Grand Hall" });
+    fireEvent.click(await within(hall).findByRole("button", { name: "I’ll do it" }));
+    expect((await within(hall).findByRole("alert")).textContent).toBe("Graham has this.");
+    expect(within(hall).queryByText(/Waiting to send/u)).toBeNull();
+    expect(await listPendingEventDayOps()).toEqual([]);
   });
 });

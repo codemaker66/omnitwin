@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { memoryBackend, withBackend } from "../idb-cache.js";
-import { createEventDayQueue, type QueuedEventDayOp } from "../event-day-offline-queue.js";
+import { createEventDayQueue, type QueuedEventDayOp, type RequestStepInput } from "../event-day-offline-queue.js";
 
 function queue() {
   return createEventDayQueue(withBackend<QueuedEventDayOp>(memoryBackend()));
@@ -95,6 +95,58 @@ describe("event-day offline queue", () => {
     expect(acked.map((op) => op.queueKey)).toEqual([`observation:${KEY_A}`, `observation:${KEY_B}`]);
     const left = await q.list();
     expect(left.map((op) => op.kind)).toEqual(["task_status"]);
+  });
+
+  // L9 — steps on a floor request through the queue: every press is kept,
+  // each under the key it was pressed with, in the order pressed, with who
+  // pressed it; the Day Board's provider replays them and leaves the rest.
+  const REQUEST = "00000000-0000-4000-8000-00000000d001";
+  const SEEN = "00000000-0000-4000-8000-00000000e001";
+  const TAKE = "00000000-0000-4000-8000-00000000e002";
+  const step = (commandId: string, transition: RequestStepInput["transition"]): RequestStepInput => ({
+    venueId: VENUE, requestId: REQUEST, bookingId: BOOKING, summary: "Chairs × 10", transition, commandId,
+    authorUserId: "00000000-0000-4000-8000-0000000000ff", authorName: "Elaine",
+  });
+
+  it("keeps every step on a request, each under its own key, in the order pressed", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-29T18:40:00.000Z"));
+    const q = queue();
+    await q.enqueueRequestStep(step(SEEN, { to: "acknowledged" }));
+    vi.setSystemTime(new Date("2026-10-29T18:40:05.000Z"));
+    await q.enqueueRequestStep(step(TAKE, { to: "accepted" }));
+    // The same press stored again is one op, and keeps its first place.
+    vi.setSystemTime(new Date("2026-10-29T18:41:00.000Z"));
+    await q.enqueueRequestStep(step(SEEN, { to: "acknowledged" }));
+
+    const pending = await q.list();
+    expect(pending.map((op) => op.queueKey)).toEqual([`request:${SEEN}`, `request:${TAKE}`]);
+    expect(pending[0]).toMatchObject({
+      kind: "request_step", requestId: REQUEST, commandId: SEEN, transition: { to: "acknowledged" },
+      authorName: "Elaine", queuedAt: "2026-10-29T18:40:00.000Z",
+    });
+  });
+
+  it("replays steps in order, drops one the server refused, and keeps the rest for their drainer", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-29T18:40:00.000Z"));
+    const q = queue();
+    await q.enqueueRequestStep(step(SEEN, { to: "acknowledged" }));
+    vi.setSystemTime(new Date("2026-10-29T18:40:05.000Z"));
+    await q.enqueueObservationRecord(VENUE, DOORS_OPEN);
+    vi.setSystemTime(new Date("2026-10-29T18:40:10.000Z"));
+    await q.enqueueRequestStep(step(TAKE, { to: "accepted" }));
+
+    const sent: string[] = [];
+    const acked = await q.drain((op) => {
+      if (op.kind !== "request_step") return Promise.resolve("left" as const);
+      sent.push(op.commandId);
+      // Someone else took it first: refused for good, so it leaves the queue.
+      return Promise.resolve(op.commandId === TAKE ? ("refused" as const) : ("applied" as const));
+    });
+    expect(sent).toEqual([SEEN, TAKE]);
+    expect(acked.map((op) => op.queueKey)).toEqual([`request:${SEEN}`, `request:${TAKE}`]);
+    expect((await q.list()).map((op) => op.kind)).toEqual(["observation_record"]);
   });
 
   it("keeps last task status intent per task", async () => {

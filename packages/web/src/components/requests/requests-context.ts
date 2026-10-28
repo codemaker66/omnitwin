@@ -1,5 +1,12 @@
 import { createContext, useContext } from "react";
-import type { RequestKind, RequestTransition, RequestUrgency, VenueHandler, VenueRequest } from "@omnitwin/types";
+import type {
+  RequestKind,
+  RequestOutcome,
+  RequestTransition,
+  RequestUrgency,
+  VenueHandler,
+  VenueRequest,
+} from "@omnitwin/types";
 import type { SlotRequestsProps } from "../../pages/hallkeeper/lib/slot-requests-contract.js";
 
 // ---------------------------------------------------------------------------
@@ -28,6 +35,54 @@ export interface AskForSomething {
 export type SlotRequestFailure =
   | { readonly on: "request"; readonly requestId: string; readonly message: string }
   | { readonly on: "ask"; readonly idempotencyKey: string; readonly message: string };
+
+/** L9: a step pressed on this device that waits in the offline queue. It is
+ *  not the server's yet, so it never changes what the card says the request
+ *  is; it is said beside it, in the words of the button that was pressed. */
+export interface WaitingStep {
+  readonly commandId: string;
+  readonly transition: RequestTransition;
+  readonly authorUserId: string;
+  readonly authorName: string;
+}
+
+/** L9: what a replay of the queue could not do, said on the slot it was
+ *  about until the person reading it puts it away. */
+export interface ReplayNotice {
+  readonly id: string;
+  readonly bookingId: string;
+  readonly requestId: string;
+  readonly message: string;
+}
+
+const OUTCOME_WORDS: Readonly<Record<RequestOutcome, string>> = {
+  done: "Done",
+  not_possible: "Could not",
+  no_longer_needed: "Not needed",
+  substituted: "Done another way",
+};
+
+/** A step in the words of the slab button that makes it. */
+export function stepWords(transition: RequestTransition): string {
+  switch (transition.to) {
+    case "acknowledged":
+      return "Seen";
+    case "accepted":
+      return "I’ll do it";
+    case "underway":
+      return "On it";
+    case "handed-over":
+      return "Hand over";
+    case "resolved":
+      return OUTCOME_WORDS[transition.outcome];
+    case "reopened":
+      return "Reopen";
+    default: {
+      const exhausted: never = transition;
+      throw new Error(`Unhandled step ${String(exhausted)}`);
+    }
+  }
+}
 
 /** The same guard the mission record uses: a phone on a page served without
  *  a secure context has no randomUUID, and a request pressed there still
@@ -68,11 +123,19 @@ export interface SlotRequestsApi {
   /** The people a request can be handed to (goal 19 S4), read once per board
    *  and kept; a failed read rejects, so the picker can say so and ask again. */
   readonly handlers: () => Promise<readonly VenueHandler[]>;
+  /** L9: this device's steps on one request still waiting in the offline
+   *  queue, in the order they were pressed. */
+  readonly waitingSteps: (requestId: string) => readonly WaitingStep[];
+  /** L9: what the queue's replay could not do on this slot's requests. */
+  readonly replayNotices: (bookingId: string) => readonly ReplayNotice[];
+  readonly dismissNotice: (noticeId: string) => void;
 }
 
 const EMPTY: readonly VenueRequest[] = [];
 const NO_HANDLERS: readonly VenueHandler[] = [];
 const NONE_ASKING: ReadonlySet<string> = new Set<string>();
+const NO_STEPS: readonly WaitingStep[] = [];
+const NO_NOTICES: readonly ReplayNotice[] = [];
 
 /** What a slab sees when no provider is mounted: nothing, calmly. */
 export const SLOT_REQUESTS_UNAVAILABLE: SlotRequestsApi = {
@@ -87,6 +150,9 @@ export const SLOT_REQUESTS_UNAVAILABLE: SlotRequestsApi = {
   askingKeys: NONE_ASKING,
   failure: null,
   handlers: () => Promise.resolve(NO_HANDLERS),
+  waitingSteps: () => NO_STEPS,
+  replayNotices: () => NO_NOTICES,
+  dismissNotice: () => { /* no provider mounted — nothing was said */ },
 };
 
 export const SlotRequestsContext = createContext<SlotRequestsApi>(SLOT_REQUESTS_UNAVAILABLE);

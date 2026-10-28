@@ -10,6 +10,9 @@ import {
   RequestTransitionSchema,
   VenueHandlerSchema,
   VenueRequestSchema,
+  type ConversationCommand,
+  type ConversationCommandAck,
+  type RequestTransition,
   type VenueRequest,
 } from "@omnitwin/types";
 import { requestStatusHistory } from "../db/schema.js";
@@ -18,6 +21,7 @@ import { authenticate, isPlatformAdmin } from "../middleware/auth.js";
 import { emit } from "../observability/event-bus.js";
 import { canHandleRequests, canManageVenue } from "../utils/query.js";
 import { pushForRequestEscalated, pushForRequestLanded, tell } from "../services/push-triggers.js";
+import { executeConversationCommand } from "../services/conversation-commands.js";
 import {
   handoverShiftCore,
   createRequestCore,
@@ -106,6 +110,90 @@ function publishRequestChange(
     severity: changed.urgency === "now" ? "urgent" : "attention",
     at,
   });
+}
+
+// --- Keyed steps (L9: the offline queue's replay) ----------------------------
+// A step pressed with no connection is replayed later with the key it was
+// pressed with. Through the ledger, a step the server already took (its
+// answer lost on the way back) replays its first outcome rather than meeting
+// the ladder again, and a step someone else's move overtook is refused once
+// and refused the same way on every resend. The ledger re-checks that the
+// person sending it may still see the recorded venue, and the core checks
+// they may still handle the floor, so a queued press from someone whose
+// access has gone is refused, never applied in their old name.
+
+/** The command a step is on the conversation ledger. */
+function stepCommand(requestId: string, commandId: string, transition: RequestTransition): ConversationCommand {
+  switch (transition.to) {
+    case "acknowledged":
+      return { kind: "request.acknowledge", commandId, requestId, payload: {} };
+    case "accepted":
+      return { kind: "request.accept", commandId, requestId, payload: {} };
+    case "underway":
+      return { kind: "request.underway", commandId, requestId, payload: {} };
+    case "handed-over":
+      return { kind: "request.handover", commandId, requestId, payload: { toUserId: transition.toUserId } };
+    case "resolved":
+      return { kind: "request.resolve", commandId, requestId, payload: { outcome: transition.outcome, note: transition.note } };
+    case "reopened":
+      return { kind: "request.reopen", commandId, requestId, payload: { note: transition.note } };
+    default: {
+      const exhausted: never = transition;
+      throw new Error(`Unhandled transition ${String(exhausted)}`);
+    }
+  }
+}
+
+/** A replayed refusal carries its code but not its words: say them again
+ *  from the request as it stands, naming who has it where that is the point. */
+function refusalWords(ack: ConversationCommandAck): { readonly error: string; readonly ownerName?: string } {
+  const ownerName = ack.ownerName ?? ack.request?.ownerName ?? undefined;
+  const named = ownerName === undefined ? {} : { ownerName };
+  if (ack.error !== undefined) return { error: ack.error, ...named };
+  switch (ack.code) {
+    case "REQUEST_TAKEN":
+    case "NOT_OWNER":
+      return { error: `${ownerName ?? "Somebody else"} has this.`, ...named };
+    case "REQUEST_STATE_CONFLICT":
+      return { error: "That was not the next step for this request when it arrived.", ...named };
+    case "FORBIDDEN":
+      return { error: "Forbidden" };
+    case "NOT_FOUND":
+      return { error: "Request not found" };
+    default:
+      return { error: "This step was refused when it first arrived.", ...named };
+  }
+}
+
+async function runKeyedStep(
+  db: Database,
+  request: FastifyRequest,
+  reply: FastifyReply,
+  command: ConversationCommand,
+): Promise<FastifyReply> {
+  // The ledger records the actor's venue scope, as the socket's door does.
+  const actorVenueId = request.user.venueId;
+  if (actorVenueId === null) {
+    return reply.status(400).send({
+      error: "Keyed request steps require a venue-scoped session",
+      code: "IDEMPOTENCY_REQUIRES_VENUE",
+    });
+  }
+  const execution = await executeConversationCommand(db, actorOf(request), actorVenueId, command);
+  const { ack } = execution;
+  if (execution.changed !== null && execution.changed.kind === "request.updated") {
+    // Committed now → announced; a replay announces nothing.
+    publishRequestChange(request, "request.updated", execution.changed.request, []);
+  }
+  reply.header("idempotency-replay", String(ack.replay));
+  if (ack.outcome === "rejected") {
+    return reply.status(ack.status).send({ code: ack.code ?? "REJECTED", ...refusalWords(ack) });
+  }
+  if (ack.request === undefined) {
+    // Recorded as applied, but the row is gone: nothing is invented.
+    return reply.status(404).send({ error: "Request not found", code: "NOT_FOUND" });
+  }
+  return reply.status(200).send({ data: VenueRequestSchema.parse(ack.request) });
 }
 
 // ---------------------------------------------------------------------------
@@ -263,6 +351,19 @@ export async function requestRoutes(
     if (!params.success) return validationError(reply, params.error.issues);
     const parsed = RequestTransitionSchema.safeParse(request.body);
     if (!parsed.success) return validationError(reply, parsed.error.issues);
+
+    // A keyed step (a press that may be sent again: the slab's, and the
+    // offline queue's replay of it) runs through the conversation command
+    // path, so it shares the socket's diary_commands ledger. Keyless steps
+    // take the path they always took.
+    const header = request.headers["idempotency-key"];
+    if (header !== undefined) {
+      const key = IdempotencyKeyHeader.safeParse(header);
+      if (!key.success) {
+        return validationError(reply, [{ path: ["idempotency-key"], message: "Idempotency-Key must be a uuid" }]);
+      }
+      return runKeyedStep(db, request, reply, stepCommand(params.data.id, key.data, parsed.data));
+    }
 
     const result = await transitionRequestCore(db, actorOf(request), params.data.id, parsed.data);
     if (isDeny(result)) return sendDeny(reply, result);
