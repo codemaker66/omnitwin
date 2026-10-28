@@ -17,16 +17,19 @@ import { useDoorClearSpaceStore } from "../../stores/door-clear-space-store.js";
 import { usePlacementStore } from "../../stores/placement-store.js";
 
 // ---------------------------------------------------------------------------
-// DoorClearSpaceLayer — the doors' clear spaces on the floor (Blake, 27 Oct
-// 2026: "Keep them clear automatically (Recommended)").
+// DoorClearSpaceLayer — the doors' clear spaces on the floor. Blake, 28 Oct
+// 2026: "let people place tables within the red zone but have a warning on it
+// (an aesthetic warning of some kind, not something annoying or makes it look
+// bad)".
 //
 // While a piece is placed or carried, the floor in front of each door shows
 // faintly: a pool of warm light from the threshold, fading into the room, and
-// a fine dashed edge where the clear space ends, as a plan marks a door's
-// clearance. The space the piece is entering shows fully. Otherwise the floor
-// is left alone, but for a space something already stands in, beside the
-// notice that names it (DoorClearNotice). Fades are short eases; under reduced
-// motion a mark simply is at its strength.
+// a dashed brass edge where the clear space ends, as a plan marks a door's
+// clearance. The warning is the light itself: a space a piece stands in, or
+// the ghost is entering, glows a soft warm gold, beside the notice that names
+// it (DoorClearNotice), and stays so while the piece stands there. Nothing
+// pulses or turns red. Fades are short eases; under reduced motion a mark
+// simply is as it should be.
 // ---------------------------------------------------------------------------
 
 /** Height above the floor the marks lie at, metres: above the ink and grid (InkArchitectureLayer). */
@@ -35,6 +38,10 @@ const MARK_Y = 0.006;
 const POOL_COLOUR = vec3(0.957, 0.918, 0.847);
 /** The edge: the hall's brass, a touch lighter so it reads on the timber. */
 const EDGE_COLOUR = "#cfae72";
+/** A space something stands in: warm gold, as lamplight through the doorway, never alarm red. */
+const GLOW_COLOUR = "#e2b35e";
+/** How much more of the pool shows while it glows. */
+const GLOW_LIFT = 0.35;
 /** The pool's opacity at full strength: at the threshold, and where the space meets the room. */
 const POOL_AT_DOOR = 0.48;
 const POOL_AT_EDGE = 0.12;
@@ -112,31 +119,41 @@ function edgeGeometry(space: DoorClearSpace): BufferGeometry {
   return geometry;
 }
 
-/** The edge's brass, as the drawn line had it. */
+/** The edge's brass, as the drawn line had it, and the gold a space something stands in glows. */
 const EDGE_INK = new Color(EDGE_COLOUR);
+const GLOW = new Color(GLOW_COLOUR);
 
-function DoorClearSpaceMark({ space, target }: { readonly space: DoorClearSpace; readonly target: number }): ReactElement {
+/** One step of a mark's ease toward `target`: quicker arriving than leaving; at once under reduced motion. */
+function eased(from: number, target: number, delta: number): number {
+  if (prefersReducedMotion() || from === target) return target;
+  const next = target + (from - target) * Math.exp(-Math.min(delta, 0.1) / (target > from ? FADE_IN_S : FADE_OUT_S));
+  return Math.abs(next - target) < 0.005 ? target : next;
+}
+
+function DoorClearSpaceMark({ space, target, glowing }: { readonly space: DoorClearSpace; readonly target: number; readonly glowing: boolean }): ReactElement {
   const invalidate = useThree((state) => state.invalidate);
   const group = useRef<Group>(null);
   const shown = useRef(0);
+  const glowShown = useRef(0);
   const strength = useMemo(() => uniform(0), []);
+  const glow = useMemo(() => uniform(0), []);
   const pool = useMemo(() => poolGeometry(space), [space]);
   const poolMaterial = useMemo(() => {
     const material = new MeshBasicNodeMaterial({ transparent: true, depthWrite: false, blending: NormalBlending, side: DoubleSide });
-    material.colorNode = POOL_COLOUR;
+    material.colorNode = mix(POOL_COLOUR, vec3(GLOW.r, GLOW.g, GLOW.b), glow);
     const across = uv().x;
     const sides = smoothstep(float(0), float(0.1), across).mul(smoothstep(float(0), float(0.1), float(1).sub(across)));
-    material.opacityNode = mix(float(POOL_AT_DOOR), float(POOL_AT_EDGE), uv().y).mul(sides).mul(strength);
+    material.opacityNode = mix(float(POOL_AT_DOOR), float(POOL_AT_EDGE), uv().y).mul(sides).mul(strength).mul(float(1).add(glow.mul(GLOW_LIFT)));
     material.polygonOffset = true;
     material.polygonOffsetFactor = -2;
     material.polygonOffsetUnits = -4;
     return material;
-  }, [strength]);
+  }, [strength, glow]);
   const edge = useMemo(() => edgeGeometry(space), [space]);
-  // The edge's ink: the brass, its dashes cut along the ribbon with soft ends, at the mark's strength.
+  // The edge's ink: the brass (gold while the space glows), its dashes cut along the ribbon with soft ends, at the mark's strength.
   const edgeInk = useMemo(() => {
     const material = new MeshBasicNodeMaterial({ transparent: true, depthWrite: false, blending: NormalBlending, side: DoubleSide });
-    material.colorNode = vec3(EDGE_INK.r, EDGE_INK.g, EDGE_INK.b);
+    material.colorNode = mix(vec3(EDGE_INK.r, EDGE_INK.g, EDGE_INK.b), vec3(GLOW.r, GLOW.g, GLOW.b), glow);
     const dash = toRenderSpace(EDGE_DASH_M);
     const period = toRenderSpace(EDGE_DASH_M + EDGE_GAP_M);
     const soft = toRenderSpace(EDGE_DASH_SOFT_M);
@@ -147,7 +164,7 @@ function DoorClearSpaceMark({ space, target }: { readonly space: DoorClearSpace;
     material.polygonOffsetFactor = -3;
     material.polygonOffsetUnits = -6;
     return material;
-  }, [strength]);
+  }, [strength, glow]);
 
   // Each resource is released with its own memo, so a new space never disposes a material still in use.
   useEffect(() => () => { pool.dispose(); }, [pool]);
@@ -155,24 +172,24 @@ function DoorClearSpaceMark({ space, target }: { readonly space: DoorClearSpace;
   useEffect(() => () => { edge.dispose(); }, [edge]);
   useEffect(() => () => { edgeInk.dispose(); }, [edgeInk]);
 
-  // A new strength wakes the demand frame loop; the frame eases toward it.
-  useEffect(() => { invalidate(); }, [target, invalidate]);
+  // A new strength or glow wakes the demand frame loop; the frame eases toward it.
+  const glowTarget = glowing ? 1 : 0;
+  useEffect(() => { invalidate(); }, [target, glowTarget, invalidate]);
 
   useFrame((_state, delta) => {
-    const from = shown.current;
-    let next = target;
-    if (!prefersReducedMotion() && from !== target) {
-      const eased = target + (from - target) * Math.exp(-Math.min(delta, 0.1) / (target > from ? FADE_IN_S : FADE_OUT_S));
-      next = Math.abs(eased - target) < 0.005 ? target : eased;
-    }
+    const next = eased(shown.current, target, delta);
+    const nextGlow = eased(glowShown.current, glowTarget, delta);
     shown.current = next;
+    glowShown.current = nextGlow;
     strength.value = next;
+    glow.value = nextGlow;
     const node = group.current;
     if (node !== null) {
       node.visible = next > 0;
       node.userData["strength"] = next;
+      node.userData["glow"] = nextGlow;
     }
-    if (next !== target) invalidate();
+    if (next !== target || nextGlow !== glowTarget) invalidate();
   });
 
   return (
@@ -214,17 +231,20 @@ export function DoorClearSpaceLayer(): ReactElement | null {
   const placing = inHand !== null && !isTableDressingApplicator(inHand);
   // The placed pieces' doors apart from the ghost's, so a moving ghost does not rescan the layout.
   const byPieces = useMemo(() => doorsBlockedByAny(placedItems, spaces), [placedItems, spaces]);
-  const strengths = useMemo(() => {
+  // The spaces a placed piece stands in, or the ghost is entering: these glow.
+  const entered = useMemo(() => {
     const ghost = placing && ghostPosition !== null ? ghostFootprints(inHand, ghostPosition, ghostRotation) : [];
     const byGhost = spacesEntered(ghost, spaces);
-    const entered = spaces.filter((space) => byPieces.includes(space) || byGhost.includes(space));
-    return doorFloorStrengths({ spaces, placing, carrying, entered });
-  }, [spaces, placing, carrying, inHand, byPieces, ghostPosition, ghostRotation]);
+    return spaces.filter((space) => byPieces.includes(space) || byGhost.includes(space));
+  }, [spaces, placing, inHand, byPieces, ghostPosition, ghostRotation]);
+  const strengths = useMemo(() => doorFloorStrengths({ spaces, placing, carrying, entered }), [spaces, placing, carrying, entered]);
 
   if (spaces.length === 0) return null;
   return (
     <group name="door-clear-spaces">
-      {spaces.map((space) => <DoorClearSpaceMark key={space.id} space={space} target={strengths.get(space.id) ?? 0} />)}
+      {spaces.map((space) => (
+        <DoorClearSpaceMark key={space.id} space={space} target={strengths.get(space.id) ?? 0} glowing={entered.includes(space)} />
+      ))}
     </group>
   );
 }

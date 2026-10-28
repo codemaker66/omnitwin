@@ -9,7 +9,7 @@ import { createTableGroup } from "../table-group.js";
 import { planAutoFill } from "../auto-fill.js";
 import { GRAND_HALL_DOOR_CLEAR_SPACES } from "../door-clear-spaces.js";
 import { doorBlockers, placedFootprint } from "../keep-doors-clear.js";
-import { moveDoorBlockersClear, slideDropClearOfDoors } from "../door-clear-actions.js";
+import { moveDoorBlockersClear } from "../door-clear-actions.js";
 
 // The Grand Hall, 21 × 10.5 m, with its four doors' clear spaces (the main
 // door's x −1.02 to 1.03 from z 3.795 to the wall).
@@ -24,12 +24,6 @@ const CHAIR = id("burgess-turini-18-3");
 
 function placed(): readonly PlacedItem[] {
   return usePlacementStore.getState().placedItems;
-}
-
-function tableAt(x: number, z: number): PlacedItem {
-  const table = placed().find((piece) => piece.catalogueItemId === ROUND && Math.abs(piece.x - x) < 1e-6 && Math.abs(piece.z - z) < 1e-6);
-  if (table === undefined) throw new Error(`no round at (${String(x)}, ${String(z)})`);
-  return table;
 }
 
 /** Whether any two pieces of different groups overlap, by the planner's footprints. */
@@ -58,36 +52,6 @@ afterEach(() => {
   unsubscribe();
   useDoorClearSpaceStore.getState().setRoomSpaces(null);
   usePlacementNoticeStore.getState().dismiss();
-});
-
-describe("a drag let go in front of a door", () => {
-  it("slides the table and its chairs back to the nearest clear grid point, and names the door", () => {
-    // At (0, 3) the chairs facing the main door reach z 4.5; at (0, 2) they stop at 3.545.
-    const group = createTableGroup(ROUND, 0, 3, 0, 10);
-    usePlacementStore.setState({ placedItems: group });
-    const table = group.find((piece) => piece.catalogueItemId === ROUND);
-    expect(slideDropClearOfDoors(new Set(group.map((piece) => piece.id)), table?.id ?? null)).toBe(true);
-    expect(tableAt(0, 2).groupId).toBe(table?.groupId);
-    expect(doorBlockers(placed(), GRAND_HALL_DOOR_CLEAR_SPACES)).toEqual([]);
-    expect(slides.map((slide) => [slide.ids.length, slide.dx, slide.dz])).toEqual([[11, 0, -1]]);
-    expect(usePlacementNoticeStore.getState().notice?.text).toBe("Kept the main door clear.");
-  });
-
-  it("leaves a drop clear of every door where it is", () => {
-    const group = createTableGroup(ROUND, 0, 0, 0, 10);
-    usePlacementStore.setState({ placedItems: group });
-    expect(slideDropClearOfDoors(new Set(group.map((piece) => piece.id)), null)).toBe(false);
-    expect(slides).toEqual([]);
-    expect(usePlacementNoticeStore.getState().notice).toBeNull();
-  });
-
-  it("does nothing in a room whose doors are not recorded", () => {
-    useDoorClearSpaceStore.getState().setRoomSpaces(null);
-    const group = createTableGroup(ROUND, 0, 3, 0, 10);
-    usePlacementStore.setState({ placedItems: group });
-    expect(slideDropClearOfDoors(new Set(group.map((piece) => piece.id)), null)).toBe(false);
-    expect(placed()).toEqual(group);
-  });
 });
 
 describe("moving a saved layout's pieces clear of the doors", () => {

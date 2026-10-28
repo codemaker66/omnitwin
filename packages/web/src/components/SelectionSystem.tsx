@@ -44,7 +44,6 @@ import { plannerChromeRequested } from "../lib/planner-chrome-flag.js";
 import { plannerFeatureEnabled } from "../lib/planner-features.js";
 import { judgesCard } from "../lib/setup-cards.js";
 import { placePieceInHand } from "../lib/place-in-hand.js";
-import { slideDropClearOfDoors } from "../lib/door-clear-actions.js";
 import { useDoorClearSpaceStore } from "../stores/door-clear-space-store.js";
 import { placementFloorPoint } from "../lib/planner-interaction-floor.js";
 import {
@@ -455,9 +454,6 @@ export function SelectionSystem(): null {
             invalidateRef.current();
           }
         }
-        // Let go in front of a door, the pieces slide on to the nearest clear
-        // spot (Blake's door rule; FurnitureMotion draws the slide).
-        if (slideDropClearOfDoors(lastMovingIds.current, dragItemId.current)) invalidateRef.current();
         // Let go: the pieces swing upright and set their weight down. A hand
         // that rested let the loop sleep, so the release must wake it.
         if (!prefersReducedMotion() && lastMovingIds.current.size > 0) {

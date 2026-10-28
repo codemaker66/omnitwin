@@ -38,6 +38,12 @@ function strength(id: string): number | null {
   return found === undefined || !found.visible ? null : (found.userData["strength"] as number);
 }
 
+/** How far a mark has warmed to gold, 0 to 1, or null when it is not drawn. */
+function glow(id: string): number | null {
+  const found = mark(id);
+  return found === undefined ? null : (found.userData["glow"] as number);
+}
+
 beforeEach(() => {
   useDoorClearSpaceStore.getState().setRoomSpaces(GRAND_HALL_DOOR_CLEAR_SPACES);
   useDoorClearSpaceStore.getState().setCarrying(false);
@@ -84,6 +90,29 @@ describe("DoorClearSpaceLayer", () => {
     mounted = mountInStubRoot(<DoorClearSpaceLayer />);
     frame();
     expect([strength("door-main"), strength("door-end")]).toEqual([DOOR_FLOOR_BLOCKED, null]);
+  });
+
+  // Blake, 28 Oct 2026: "let people place tables within the red zone but have a warning on it (an aesthetic
+  // warning of some kind, not something annoying or makes it look bad)". The warning is the light: warm gold.
+  it("glows gold where a piece stands, and nowhere else", () => {
+    usePlacementStore.setState({ placedItems: [...createTableGroup(ROUND, 0, 3, 0, 10)] });
+    mounted = mountInStubRoot(<DoorClearSpaceLayer />);
+    frame();
+    expect(glow("door-main")).toBe(1);
+    expect(glow("door-end")).toBe(0);
+    act(() => { usePlacementStore.setState({ placedItems: [...createTableGroup(ROUND, 0, 0, 0, 10)] }); });
+    frame();
+    expect(glow("door-main")).toBe(0);
+  });
+
+  it("glows gold where the ghost is entering, before anything is set down", () => {
+    mounted = mountInStubRoot(<DoorClearSpaceLayer />);
+    act(() => {
+      useCatalogueStore.getState().selectItem(ROUND);
+      usePlacementStore.setState({ ghostPosition: [0, 0, 3.5] });
+    });
+    frame();
+    expect(GRAND_HALL_DOOR_CLEAR_SPACES.map((space) => glow(space.id))).toEqual([0, 1, 0, 0]);
   });
 
   it("draws nothing in a room whose doors are not recorded", () => {

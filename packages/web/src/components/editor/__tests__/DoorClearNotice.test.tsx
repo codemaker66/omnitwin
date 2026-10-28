@@ -76,7 +76,7 @@ describe("the notice on a layout with a table in front of a door", () => {
       piece.catalogueItemId === ROUND ? { ...piece, label: "Table 4" } : piece
     )) });
     render(<DoorClearNotice />);
-    expect(screen.getByTestId("door-clear-notice-line").textContent).toBe("Table 4 stands in front of the main door.");
+    expect(screen.getByTestId("door-clear-notice-line").textContent).toBe("Table 4 is in front of the main door.");
     fireEvent.click(screen.getByRole("button", { name: "Move it clear" }));
     expect(blockers()).toBe(0);
     expect(screen.queryByTestId("door-clear-notice")).toBeNull();
@@ -105,7 +105,7 @@ describe("the notice on a layout with a table in front of a door", () => {
     usePlacementStore.setState({ placedItems: dinner28Oct() });
     render(<DoorClearNotice />);
     expect(screen.getByTestId("door-clear-notice-line").textContent)
-      .toBe("Table 18 stands in front of the end door, and 4 more in front of the main door, the fireplace door and the fire exit.");
+      .toBe("Table 18 is in front of the end door, and 4 more in front of the main door, the fireplace door and the fire exit.");
     fireEvent.click(screen.getByRole("button", { name: "Move them clear" }));
     expect(blockers()).toBe(5);
     expect(screen.getByTestId("door-clear-notice-stuck").textContent)

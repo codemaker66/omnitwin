@@ -3,9 +3,9 @@ import { usePlacementStore } from "../placement-store.js";
 import { usePlacementNoticeStore } from "../placement-notice-store.js";
 import { subscribeDoorSlides, useDoorClearSpaceStore, type DoorSlideEvent } from "../door-clear-space-store.js";
 import { useRoomDimensionsStore } from "../room-dimensions-store.js";
-import { computeSurfaceHeight, createPlacedItem, resetPlacedIdCounter, type PlacedItem } from "../../lib/placement.js";
+import { resetPlacedIdCounter, type PlacedItem } from "../../lib/placement.js";
 import { getCatalogueItemBySlug } from "../../lib/catalogue.js";
-import { createTableGroup, rearrangeTableGroup } from "../../lib/table-group.js";
+import { createTableGroup } from "../../lib/table-group.js";
 import { GRAND_HALL_DOOR_CLEAR_SPACES } from "../../lib/door-clear-spaces.js";
 import { doorBlockers } from "../../lib/keep-doors-clear.js";
 
@@ -51,43 +51,44 @@ afterEach(() => {
   usePlacementNoticeStore.getState().dismiss();
 });
 
-describe("a set slid clear of a door", () => {
-  it("keeps a piece standing on its set's riser, settled on the riser where it lands", () => {
-    const deckItem = getCatalogueItemBySlug("staging-deck-6x4");
-    const lecternItem = getCatalogueItemBySlug("lectern");
-    if (deckItem === undefined || lecternItem === undefined) throw new Error("no deck or lectern");
-    // In the main door's space (from z 3.795), the lectern on the deck.
-    const deck = createPlacedItem(deckItem.id, 0, 4.2, 0, null, 0);
-    const onDeck = computeSurfaceHeight(0, 4.2, lecternItem, [deck], new Set());
-    expect(onDeck).toBeGreaterThan(0);
-    usePlacementStore.getState().placeSetup([deck, createPlacedItem(lecternItem.id, 0, 4.2, 0, null, onDeck)]);
-    expect(slides).toHaveLength(1);
-    expect(blocked()).toBe(0);
-    expect(pieceOf(lecternItem.id).y).toBeCloseTo(onDeck, 9);
-    expect(pieceOf(deckItem.id).y).toBe(0);
+// Blake, 28 Oct 2026: "keep firedoors clean. let people place tables within the
+// red zone but have a warning on it (an aesthetic warning of some kind, not
+// something annoying or makes it look bad)". What a person places stays where
+// it was put; the floor and DoorClearNotice name the door, and nothing slides.
+describe("a piece placed by hand in front of a door stays where it was put", () => {
+  function doorsNamed(): readonly (readonly string[])[] {
+    return doorBlockers(usePlacementStore.getState().placedItems, GRAND_HALL_DOOR_CLEAR_SPACES).map((blocker) => blocker.doors.map((door) => door.id));
+  }
+
+  it("leaves a round set down at the main door there", () => {
+    // (0, 3.4) snaps to (0, 3), then flush to the door wall at z 3.691.
+    usePlacementStore.getState().placeTableGroup(ROUND, 0, 3.4, 0, 10);
+    expect(pieceOf(ROUND).z).toBeCloseTo(3.691, 3);
+    expect(doorsNamed()).toEqual([["door-main"]]);
+    expect(slides).toEqual([]);
+    expect(usePlacementNoticeStore.getState().notice).toBeNull();
   });
 
-  it("slides a round an edit rings anew with its table, never its chairs off it", () => {
-    // A round of six 5 cm clear of the fire exit's space; rung for ten, two chairs reach into it.
-    usePlacementStore.getState().placeSetup(createTableGroup(ROUND, -7.575, -3.235, 0, 6));
-    expect(blocked()).toBe(0);
-    const placed = usePlacementStore.getState().placedItems;
-    const table = pieceOf(ROUND);
-    const rung = rearrangeTableGroup(table.id, 10, placed);
-    const offsets = (items: readonly PlacedItem[]): readonly string[] => {
-      const t = items.find((piece) => piece.id === table.id);
-      if (t === undefined) throw new Error("no table");
-      return items.filter((piece) => piece.groupId === table.groupId && piece.id !== table.id)
-        .map((piece) => `${(piece.x - t.x).toFixed(4)},${(piece.z - t.z).toFixed(4)}`).sort();
-    };
-    const rungIds = new Set(rung.map((piece) => piece.id));
-    usePlacementStore.getState().applyEdit({
-      removeIds: new Set(placed.filter((piece) => !rungIds.has(piece.id)).map((piece) => piece.id)),
-      add: rung.filter((piece) => piece.groupId === table.groupId),
-    });
-    expect(blocked()).toBe(0);
-    expect(slides).toHaveLength(1);
-    expect(offsets(usePlacementStore.getState().placedItems)).toEqual(offsets(rung));
+  it("leaves a lone chair at the end door there", () => {
+    usePlacementStore.getState().placeItem(CHAIR, 8, 4.8, 0);
+    expect(doorsNamed()).toEqual([["door-end"]]);
+    expect(slides).toEqual([]);
+  });
+
+  it("leaves a card's set where it was set down", () => {
+    usePlacementStore.getState().placeSetup(createTableGroup(ROUND, 0, 3.5, 0, 10));
+    expect(pieceOf(ROUND).z).toBe(3.5);
+    expect(doorsNamed()).toEqual([["door-main"]]);
+    expect(slides).toEqual([]);
+  });
+
+  it("leaves an edit's pieces where it put them", () => {
+    usePlacementStore.getState().placeSetup(createTableGroup(ROUND, 0, 0, 0, 10));
+    const moved = usePlacementStore.getState().placedItems.map((piece) => ({ ...piece, z: piece.z + 3.5 }));
+    usePlacementStore.getState().applyEdit({ add: moved });
+    expect(pieceOf(ROUND).z).toBe(3.5);
+    expect(doorsNamed()).toEqual([["door-main"]]);
+    expect(slides).toEqual([]);
   });
 });
 
@@ -118,42 +119,11 @@ describe("automatic layouts keep the doors clear", () => {
   });
 });
 
-describe("a piece set down in front of a door slides clear", () => {
-  it("takes a round set down at the main door back to the nearest clear grid point, and names the door", () => {
-    // (0, 3.4) snaps to (0, 3), then flush to the door wall at z 3.691: its
-    // chairs reach the wall. At (0, 2) they stop at z 3.545.
-    usePlacementStore.getState().placeTableGroup(ROUND, 0, 3.4, 0, 10);
-    const table = pieceOf(ROUND);
-    expect([table.x, table.z]).toEqual([expect.closeTo(0, 9), expect.closeTo(2, 9)]);
-    expect(blocked()).toBe(0);
-    expect(usePlacementNoticeStore.getState().notice?.text).toBe("Kept the main door clear.");
-    expect(slides).toHaveLength(1);
-    expect(slides[0]?.ids).toHaveLength(11);
-    expect(slides[0]?.dz).toBeCloseTo(-1.691, 3);
-  });
-
-  it("moves a lone chair at the end door to the nearest clear grid point", () => {
-    // (8.0, 4.8) snaps to (8, 5), flush to the wall at z 4.96, inside the end
-    // door's space. Straight back to (8, 4) is still inside it, and (7, 5)
-    // would cross the wall: (7, 4) is the nearest grid point clear.
-    usePlacementStore.getState().placeItem(CHAIR, 8, 4.8, 0);
-    const chair = pieceOf(CHAIR);
-    expect([chair.x, chair.z]).toEqual([expect.closeTo(7, 9), expect.closeTo(4, 9)]);
-    expect(usePlacementNoticeStore.getState().notice?.text).toBe("Kept the end door clear.");
-  });
-
+describe("the chair brush, laying a row itself, keeps the doors clear", () => {
   it("leaves the brushed chairs out of a door's space", () => {
     const ids = usePlacementStore.getState().placeChairBrush(CHAIR, -3, 4, 3, 4, 0);
     expect(ids.length).toBeGreaterThan(0);
     expect(blocked()).toBe(0);
     expect(usePlacementNoticeStore.getState().notice?.text).toBe("Kept the main door clear.");
-  });
-
-  it("sets a piece down where it was asked in a room whose doors are not recorded", () => {
-    useDoorClearSpaceStore.getState().setRoomSpaces(null);
-    usePlacementStore.getState().placeTableGroup(ROUND, 0, 3.4, 0, 10);
-    expect(pieceOf(ROUND).z).toBeCloseTo(3.691, 3);
-    expect(slides).toHaveLength(0);
-    expect(usePlacementNoticeStore.getState().notice).toBeNull();
   });
 });

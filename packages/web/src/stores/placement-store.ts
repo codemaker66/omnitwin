@@ -11,8 +11,6 @@ import {
   snapToWallEdge,
   getPlacementViolations,
   withTableNumbers,
-  settleMovedOnSurfaces,
-  GRID_SPACING_M,
 } from "../lib/placement.js";
 import { plannerFeatureEnabled } from "../lib/planner-features.js";
 import { DANCE_FLOOR_PANELS, cardIsWholeSet, placesAsCard, resizeDanceFloor, type ResizeAnchor } from "../lib/setup-cards.js";
@@ -49,65 +47,27 @@ import {
 } from "../lib/table-dressing.js";
 import { isLayoutTimelineMutationLocked } from "../lib/layout-timeline-preview-lock.js";
 import { doorKeepOuts, keptClearLine, type DoorClearSpace } from "../lib/door-clear-spaces.js";
-import { doorSlideForPieces, doorsBlockedBy } from "../lib/keep-doors-clear.js";
+import { doorsBlockedBy } from "../lib/keep-doors-clear.js";
 import type { LayoutRect } from "../lib/auto-layout.js";
-import { announceDoorSlide, useDoorClearSpaceStore } from "./door-clear-space-store.js";
+import { useDoorClearSpaceStore } from "./door-clear-space-store.js";
 
 // ---------------------------------------------------------------------------
 // Placement store — manages placed furniture and ghost state. Undo/redo for
 // placement changes lives on the editor-store history timeline; EditorBridge
 // mirrors placedItems into editor objects (and back on undo).
 //
-// Doors (Blake, 27 Oct 2026: "Keep them clear automatically"): the automatic
-// layouts keep the open room's door clear spaces, and a piece set down in
-// one moves to the nearest clear spot, with one line naming the door.
+// Doors (Blake, 28 Oct 2026, revising 27 Oct's "Keep them clear
+// automatically": "keep firedoors clean. let people place tables within the
+// red zone but have a warning on it (an aesthetic warning of some kind, not
+// something annoying or makes it look bad)"): the automatic layouts (Fill,
+// the seat shortfall, the chair brush) keep the open room's door clear
+// spaces; a piece placed by hand stands where it was put, and the floor and
+// DoorClearNotice say quietly that it is in front of a door.
 // ---------------------------------------------------------------------------
 
 /** The open room's door clear spaces as the layout engines' keep-outs; none when its doors are not recorded. */
 function roomDoorKeepOuts(): readonly LayoutRect[] {
   return doorKeepOuts(useDoorClearSpaceStore.getState().spaces);
-}
-
-/**
- * New pieces as they will stand: moved together to the nearest spot clear of
- * the open room's doors (lib/keep-doors-clear) when any stands in front of
- * one, with `held` on a grid point when snapping; otherwise as they are.
- */
-function clearOfDoors(
-  pieces: readonly PlacedItem[],
-  held: PlacedItem,
-  placedItems: readonly PlacedItem[],
-  snap: boolean,
-): { readonly pieces: readonly PlacedItem[]; readonly slide: { readonly dx: number; readonly dz: number; readonly doors: readonly DoorClearSpace[] } | null } {
-  const spaces = useDoorClearSpaceStore.getState().spaces;
-  if (spaces.length === 0) return { pieces, slide: null };
-  const dims = useRoomDimensionsStore.getState().dimensions;
-  const slide = doorSlideForPieces(
-    pieces,
-    [...placedItems, ...pieces],
-    { spaces, roomWidthM: toRealWorld(dims.width), roomLengthM: toRealWorld(dims.length) },
-    snap ? GRID_SPACING_M : null,
-    { anchor: { x: toRealWorld(held.x), z: toRealWorld(held.z) } },
-  );
-  if (slide.kind !== "slide") return { pieces, slide: null };
-  const dx = toRenderSpace(slide.dx);
-  const dz = toRenderSpace(slide.dz);
-  // Settled where they land, lowest first: on what stays, or on another of the pieces (a table on its
-  // set's stage), never on itself.
-  const moved = pieces.map((piece) => ({ ...piece, x: piece.x + dx, z: piece.z + dz }));
-  return { pieces: settleMovedOnSurfaces(moved, placedItems), slide: { dx, dz, doors: slide.doors } };
-}
-
-/** The piece a set keeps on the grid as it slides clear of a door: its first dining table, else its first piece. */
-function slideAnchor(pieces: readonly PlacedItem[]): PlacedItem | undefined {
-  return diningTablesAmong(pieces)[0] ?? pieces[0];
-}
-
-/** After writing: the pieces slide out from where they were set down, and one line names the doors. */
-function announceKeptClear(ids: readonly string[], slide: { readonly dx: number; readonly dz: number; readonly doors: readonly DoorClearSpace[] } | null): void {
-  if (slide === null) return;
-  announceDoorSlide({ ids, dx: slide.dx, dz: slide.dz });
-  postPlacementNotice(keptClearLine(slide.doors));
 }
 
 function candidateSurfaceHeight(
@@ -356,16 +316,12 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
       state.placedItems,
       new Set(),
     );
-    const created = createPlacedItem(catalogueItemId, finalX, finalZ, rotationY, null, surfaceY);
-    // Set down in front of a door, it moves to the nearest clear spot first, so it is numbered where it lands.
-    const kept = clearOfDoors([created], created, state.placedItems, state.snapEnabled);
-    const [item] = numberNew(state.placedItems, kept.pieces);
+    const [item] = numberNew(state.placedItems, [createPlacedItem(catalogueItemId, finalX, finalZ, rotationY, null, surfaceY)]);
     if (item === undefined) return;
     const next = [...state.placedItems, item];
     if (refusedByStore(state.placedItems, next)) return;
     set({ placedItems: next });
     announcePlaced([item.id]);
-    announceKeptClear([item.id], kept.slide);
   },
 
   placeChairBrush: (
@@ -730,16 +686,11 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
       );
       return chairY !== item.y ? { ...item, y: chairY } : item;
     });
-    // Set down in front of a door, the table and its chairs move to the nearest clear spot together.
-    const table = adjusted.find((item) => item.catalogueItemId === catalogueItemId);
-    const kept = table === undefined ? { pieces: adjusted, slide: null } : clearOfDoors(adjusted, table, state.placedItems, state.snapEnabled);
-    const numbered = numberNew(state.placedItems, kept.pieces);
+    const numbered = numberNew(state.placedItems, adjusted);
     const next = [...state.placedItems, ...numbered];
     if (refusedByStore(state.placedItems, next)) return;
     set({ placedItems: next });
-    const ids = numbered.map((item) => item.id);
-    announcePlaced(ids);
-    announceKeptClear(ids, kept.slide);
+    announcePlaced(numbered.map((item) => item.id));
   },
 
   placeSetup: (pieces: readonly PlacedItem[]) => {
@@ -755,17 +706,13 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
       }
       counted.push(piece.catalogueItemId);
     }
-    // As they stand: a card's set comes settled where it was judged (lib/place-in-hand), a copy at its original's heights;
-    // set down in front of a door, the set moves together the least way clear (never to the grid: it was not snapped).
-    const anchor = slideAnchor(pieces);
-    const kept = anchor === undefined ? { pieces, slide: null } : clearOfDoors(pieces, anchor, state.placedItems, false);
-    const numbered = numberNew(state.placedItems, kept.pieces);
+    // As they stand: a card's set comes settled where it was judged (lib/place-in-hand), a copy at its original's heights.
+    const numbered = numberNew(state.placedItems, pieces);
     const next = [...state.placedItems, ...numbered];
     if (refusedByStore(state.placedItems, next)) return [];
     set({ placedItems: next });
     const ids = numbered.map((piece) => piece.id);
     announcePlaced(ids);
-    announceKeptClear(ids, kept.slide);
     return ids;
   },
 
@@ -776,42 +723,17 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     const keptIds = new Set(kept.map((piece) => piece.id));
     const changes = new Map(add.filter((piece) => keptIds.has(piece.id)).map((piece) => [piece.id, piece]));
     const joining = add.filter((piece) => !keptIds.has(piece.id));
-    const edit = kept.map((piece) => changes.get(piece.id) ?? piece);
-    // What the edit moves or adds, set down in front of a door, slides on the least way clear, as a drag
-    // does, with the rest of each table group or set it belongs to: a Replace that rings a round anew
-    // round a table that stays slides the round, never its chairs off it. An edit that moves nothing
-    // (a Replace like for like) stays where it stands.
-    const before = new Map(state.placedItems.map((piece) => [piece.id, piece]));
-    const moved = (piece: PlacedItem): boolean => {
-      const was = before.get(piece.id);
-      return was === undefined || was.x !== piece.x || was.z !== piece.z;
-    };
-    const shifted = new Set([...edit.filter((piece) => changes.has(piece.id) && moved(piece)), ...joining].map((piece) => piece.id));
-    const units = new Set([...edit, ...joining]
-      .filter((piece) => shifted.has(piece.id))
-      .flatMap((piece) => [piece.groupId, piece.setId ?? null].filter((key): key is string => key !== null)));
-    const inUnit = (piece: PlacedItem): boolean => shifted.has(piece.id)
-      || (piece.groupId !== null && units.has(piece.groupId))
-      || (piece.setId !== undefined && units.has(piece.setId));
-    const moving = [...edit.filter(inUnit), ...joining];
-    const anchor = slideAnchor(moving);
-    // Measured against what stays, so no moving piece settles on itself.
-    const staying = edit.filter((piece) => !moving.includes(piece));
-    const clear = anchor === undefined ? { pieces: moving, slide: null } : clearOfDoors(moving, anchor, staying, false);
-    const slid = new Map(clear.pieces.map((piece) => [piece.id, piece]));
-    const changed = edit.map((piece) => slid.get(piece.id) ?? piece);
-    const joined = joining.map((piece) => slid.get(piece.id) ?? piece);
-    const atCap = capPassedBy(state.placedItems, [...changed, ...joined]);
+    const changed = kept.map((piece) => changes.get(piece.id) ?? piece);
+    const atCap = capPassedBy(state.placedItems, [...changed, ...joining]);
     if (atCap !== null) {
       postPlacementNotice(atCap);
       return [];
     }
-    if (refusedByStore(state.placedItems, [...changed, ...joined])) return [];
+    if (refusedByStore(state.placedItems, [...changed, ...joining])) return [];
     const edited = numberEdited(changed, new Set(changes.keys()));
-    const numbered = numberNew(edited, joined);
+    const numbered = numberNew(edited, joining);
     set({ placedItems: [...edited, ...numbered] });
     announcePlaced(numbered.map((piece) => piece.id));
-    announceKeptClear(moving.map((piece) => piece.id), clear.slide);
     return [...changes.keys(), ...numbered.map((piece) => piece.id)];
   },
 

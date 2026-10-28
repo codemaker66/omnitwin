@@ -9,48 +9,20 @@ import { postPlacementNotice } from "../stores/placement-notice-store.js";
 import { announceDoorSlide, useDoorClearSpaceStore } from "../stores/door-clear-space-store.js";
 
 // ---------------------------------------------------------------------------
-// The door rule's two hand-driven moves (Blake, 27 Oct 2026: "Keep them clear
-// automatically (Recommended)"):
-//
-//   - the end of a drag, mouse or finger alike (SelectionSystem settleDrop):
-//     pieces let go in front of a door slide to the nearest clear spot, from
-//     where they were let go, inside the drag's own undo step;
-//   - "Move it clear" on a saved layout's notice (DoorClearNotice): a layout
-//     made before the rule is never moved unasked, but one tap moves each
-//     table with its chairs to free floor, as one undo step.
+// The door rule's one hand-driven move. Blake, 28 Oct 2026: "let people place
+// tables within the red zone but have a warning on it (an aesthetic warning of
+// some kind, not something annoying or makes it look bad)". A piece placed or
+// let go in front of a door stays where it was put; the floor and
+// DoorClearNotice say so quietly, and the notice's "Move it clear" moves each
+// table with its chairs to free floor, as one undo step.
 // ---------------------------------------------------------------------------
 
-/** How far "Move it clear" may carry a saved layout's piece to free floor, metres. */
+/** How far "Move it clear" may carry a piece to free floor, metres. */
 export const MOVE_CLEAR_REACH_M = 4;
 
 function openRoom(spaces: readonly DoorClearSpace[]): DoorRoom {
   const dims = useRoomDimensionsStore.getState().dimensions;
   return { spaces, roomWidthM: toRealWorld(dims.width), roomLengthM: toRealWorld(dims.length) };
-}
-
-/**
- * Pieces just let go (`ids`, as the drag moved them) that stand in front of a
- * door move together to the nearest clear spot, the held piece (`heldId`) on
- * a grid point when snapping, and slide there; one line names the door.
- * Returns whether they moved.
- */
-export function slideDropClearOfDoors(ids: ReadonlySet<string>, heldId: string | null): boolean {
-  const spaces = useDoorClearSpaceStore.getState().spaces;
-  if (spaces.length === 0 || ids.size === 0) return false;
-  const placement = usePlacementStore.getState();
-  const moving = placement.placedItems.filter((piece) => ids.has(piece.id));
-  const held = moving.find((piece) => piece.id === heldId) ?? moving[0];
-  if (held === undefined) return false;
-  const slide = doorSlideForPieces(moving, placement.placedItems, openRoom(spaces), placement.snapEnabled ? GRID_SPACING_M : null, {
-    anchor: { x: toRealWorld(held.x), z: toRealWorld(held.z) },
-  });
-  if (slide.kind !== "slide") return false;
-  const dx = toRenderSpace(slide.dx);
-  const dz = toRenderSpace(slide.dz);
-  placement.moveItemsByDelta(ids, dx, dz);
-  announceDoorSlide({ ids: [...ids], dx, dz });
-  postPlacementNotice(keptClearLine(slide.doors));
-  return true;
 }
 
 /**

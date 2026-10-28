@@ -36,7 +36,6 @@ let canvas: HTMLCanvasElement;
 let camera: PerspectiveCamera;
 let invalidate: Mock<() => void>;
 let tableId = "";
-let groupIds: readonly string[] = [];
 let now = 0;
 let slides: DoorSlideEvent[] = [];
 let unsubscribe: () => void = () => undefined;
@@ -85,7 +84,6 @@ beforeEach(() => {
   const primary = group.find((item) => item.catalogueItemId === table.id);
   if (primary === undefined) throw new Error("Missing primary table");
   tableId = primary.id;
-  groupIds = group.map((item) => item.id);
   usePlacementStore.setState({ placedItems: group, snapEnabled: true, ghostPosition: null });
   const root = new Group();
   root.name = "placed-furniture";
@@ -141,21 +139,24 @@ function table(): { readonly x: number; readonly z: number } {
   return { x: placed.x, z: placed.z };
 }
 
+// Blake, 28 Oct 2026: "let people place tables within the red zone but have a
+// warning on it". A drop in front of a door stays where it was put; the floor
+// and DoorClearNotice say so, and nothing slides or pops up.
 describe("a round let go in front of the main door", () => {
-  it("slides back clear when a mouse drops it, and names the door", () => {
+  it("stays where a mouse lets it go, with no slide and no line", () => {
     render(<SelectionSystem />);
     event("pointerDown", "mouse", screenOf(4, 0), 1_000);
     event("pointerMove", "mouse", screenOf(2, 1.5), 1_016);
     expect(useDoorClearSpaceStore.getState().carrying).toBe(true);
     event("pointerMove", "mouse", screenOf(0, 3.1), 1_032);
     event("pointerUp", "mouse", screenOf(0, 3.1), 1_100);
-    expect([table().x, table().z]).toEqual([expect.closeTo(0, 6), expect.closeTo(2, 6)]);
-    expect(slides.map((slide) => [slide.ids.length, slide.dx, slide.dz])).toEqual([[groupIds.length, 0, -1]]);
-    expect(usePlacementNoticeStore.getState().notice?.text).toBe("Kept the main door clear.");
+    expect([table().x, table().z]).toEqual([expect.closeTo(0, 6), expect.closeTo(3, 6)]);
+    expect(slides).toEqual([]);
+    expect(usePlacementNoticeStore.getState().notice).toBeNull();
     expect(useDoorClearSpaceStore.getState().carrying).toBe(false);
   });
 
-  it("slides back clear when a lifted finger sets it down", () => {
+  it("stays where a lifted finger sets it down", () => {
     render(<SelectionSystem />);
     const raise = ghostRaisePx(852);
     event("pointerDown", "touch", screenOf(4, 0), 1_000);
@@ -166,8 +167,8 @@ describe("a round let go in front of the main door", () => {
     const over = screenOf(0, 3.1);
     event("pointerMove", "touch", { x: over.x, y: over.y + raise }, 1_400);
     event("pointerUp", "touch", { x: over.x, y: over.y + raise }, 1_500);
-    expect([table().x, table().z]).toEqual([expect.closeTo(0, 6), expect.closeTo(2, 6)]);
-    expect(usePlacementNoticeStore.getState().notice?.text).toBe("Kept the main door clear.");
+    expect([table().x, table().z]).toEqual([expect.closeTo(0, 6), expect.closeTo(3, 6)]);
+    expect(slides).toEqual([]);
     expect(useDoorClearSpaceStore.getState().carrying).toBe(false);
   });
 

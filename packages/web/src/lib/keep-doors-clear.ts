@@ -182,14 +182,14 @@ function capitalised(words: string): string {
 }
 
 /**
- * What blocks the doors, said plainly: "Table 4 stands in front of the main
+ * What blocks the doors, said plainly: "Table 4 is in front of the main
  * door." A second is named too; past that the rest are counted, their doors
  * in the room's order (`spaces`). Empty when nothing does.
  */
 export function doorBlockedLine(blockers: readonly DoorBlocker[], spaces: readonly DoorClearSpace[]): string {
   const [first, second, ...rest] = blockers;
   if (first === undefined) return "";
-  const opening = `${capitalised(first.name)} stands in front of ${doorNameList(first.doors)}`;
+  const opening = `${capitalised(first.name)} is in front of ${doorNameList(first.doors)}`;
   if (second === undefined) return `${opening}.`;
   if (rest.length === 0) return `${opening}, and ${second.name} in front of ${doorNameList(second.doors)}.`;
   const others = [second, ...rest];
