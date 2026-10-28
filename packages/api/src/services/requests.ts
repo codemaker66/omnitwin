@@ -516,11 +516,14 @@ export async function transitionRequestCore(
     return deny(409, "REQUEST_TAKEN", `${row.ownerName} has this.`, row.ownerName);
   }
 
-  // A step pressed against a state the request has since left (the offline
-  // queue's replay, L9) is refused, never applied to a request its sender
-  // did not see: a "Done" pressed with no signal must not close work a
-  // colleague took up in the meantime.
-  if (transition.expectedState !== undefined && row.state !== transition.expectedState) {
+  // A step pressed against a state the request has since left, or against
+  // an owner it no longer has (the offline queue's replay, L9), is refused,
+  // never applied to a request its sender did not see: a "Done" pressed with
+  // no signal must not close work a colleague took up in the meantime, even
+  // when the colleague's request reads "accepted" just as the sender's did.
+  const movedOn = transition.expectedState !== undefined && row.state !== transition.expectedState;
+  const changedHands = transition.expectedOwnerUserId !== undefined && row.ownerUserId !== transition.expectedOwnerUserId;
+  if (movedOn || changedHands) {
     const holder = hasOwner(row) && row.ownerUserId !== actor.id ? row.ownerName : null;
     return holder === null
       ? deny(409, "REQUEST_STATE_CONFLICT", "This request moved on before this step arrived.")

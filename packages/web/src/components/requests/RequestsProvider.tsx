@@ -128,6 +128,7 @@ function refusalWords(op: QueuedRequestStep, cause: unknown): string {
 function readableStep(op: QueuedRequestStep): boolean {
   return RequestTransitionSchema.safeParse(op.transition).success
     && RequestStateSchema.safeParse(op.expectedState).success
+    && (op.expectedOwnerUserId === null || typeof op.expectedOwnerUserId === "string")
     && typeof op.summary === "string";
 }
 
@@ -312,7 +313,8 @@ export function RequestsProvider({ children }: { readonly children: ReactNode })
         say(op, `Your “${stepWords(op.transition)}” on ${op.summary} was not sent: the step before it was not.`);
         return Promise.resolve("refused" as const);
       }
-      return moveVenueRequest(op.requestId, { ...op.transition, expectedState: op.expectedState }, op.commandId)
+      const expected = { expectedState: op.expectedState, expectedOwnerUserId: op.expectedOwnerUserId };
+      return moveVenueRequest(op.requestId, { ...op.transition, ...expected }, op.commandId)
         .then((moved) => {
           answered = true;
           merge(moved);
@@ -429,15 +431,17 @@ export function RequestsProvider({ children }: { readonly children: ReactNode })
   // Keep a press for later, under the key it was pressed with (L9).
   const keep = useCallback((request: VenueRequest, transition: RequestTransition, commandId: string): Promise<void> => {
     if (venueId === null || userId === null) return Promise.reject(new Error("No venue to keep this for."));
+    const projected = projectRequest(request, waiting.get(request.id) ?? [], userId);
     return enqueueEventDayRequestStep({
       venueId,
       requestId: request.id,
       bookingId: request.bookingId,
       summary: summariseRequest({ kind: request.kind, quantity: request.quantity }),
       transition,
-      // What this person saw when they pressed: the server's state with their
-      // own waiting steps landed on it.
-      expectedState: projectRequest(request, waiting.get(request.id) ?? [], userId).state,
+      // What this person saw when they pressed: the server's state and owner
+      // with their own waiting steps landed on it.
+      expectedState: projected.state,
+      expectedOwnerUserId: projected.ownerUserId,
       commandId,
       authorUserId: userId,
       authorName: userName ?? "A colleague",

@@ -219,16 +219,18 @@ const NoPayload = z.object({}).strict();
 export const ConversationCommandSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("message.send"), commandId: UUID, threadId: UUID, payload: SendMessageSchema }),
   z.object({ kind: z.literal("request.create"), commandId: UUID, payload: CreateVenueRequestSchema }),
-  // A request step may carry the state it was pressed against (L9): one
-  // replayed from the offline queue is refused once the request has moved on.
-  z.object({ kind: z.literal("request.acknowledge"), commandId: UUID, requestId: UUID, expectedState: RequestStateSchema.optional(), payload: NoPayload }),
-  z.object({ kind: z.literal("request.accept"), commandId: UUID, requestId: UUID, expectedState: RequestStateSchema.optional(), payload: NoPayload }),
-  z.object({ kind: z.literal("request.underway"), commandId: UUID, requestId: UUID, expectedState: RequestStateSchema.optional(), payload: NoPayload }),
+  // A request step may carry the state and the owner it was pressed against
+  // (L9): one replayed from the offline queue is refused once the request
+  // has moved on or changed hands.
+  z.object({ kind: z.literal("request.acknowledge"), commandId: UUID, requestId: UUID, expectedState: RequestStateSchema.optional(), expectedOwnerUserId: UUID.nullable().optional(), payload: NoPayload }),
+  z.object({ kind: z.literal("request.accept"), commandId: UUID, requestId: UUID, expectedState: RequestStateSchema.optional(), expectedOwnerUserId: UUID.nullable().optional(), payload: NoPayload }),
+  z.object({ kind: z.literal("request.underway"), commandId: UUID, requestId: UUID, expectedState: RequestStateSchema.optional(), expectedOwnerUserId: UUID.nullable().optional(), payload: NoPayload }),
   z.object({
     kind: z.literal("request.handover"),
     commandId: UUID,
     requestId: UUID,
     expectedState: RequestStateSchema.optional(),
+    expectedOwnerUserId: UUID.nullable().optional(),
     payload: z.object({ toUserId: UUID }).strict(),
   }),
   z.object({
@@ -236,6 +238,7 @@ export const ConversationCommandSchema = z.discriminatedUnion("kind", [
     commandId: UUID,
     requestId: UUID,
     expectedState: RequestStateSchema.optional(),
+    expectedOwnerUserId: UUID.nullable().optional(),
     payload: z.object({ outcome: RequestOutcomeSchema, note: z.string().trim().min(1).max(500).nullish() }).strict(),
   }),
   z.object({
@@ -243,6 +246,7 @@ export const ConversationCommandSchema = z.discriminatedUnion("kind", [
     commandId: UUID,
     requestId: UUID,
     expectedState: RequestStateSchema.optional(),
+    expectedOwnerUserId: UUID.nullable().optional(),
     payload: z.object({ note: z.string().trim().min(1).max(500).nullish() }).strict(),
   }),
   // Goal 19 S5: a fact about the room, on the same ledger, so a tap that left

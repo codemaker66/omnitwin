@@ -58,22 +58,25 @@ export interface ReplayNotice {
 }
 
 /** Where a request stands once this person's waiting steps land: the state
- *  the next press is pressed against, and whether they will own it. Only for
- *  what to offer and what a kept press expects; the card says what the
- *  server says. */
+ *  and owner the next press is pressed against, and whether they will own
+ *  it. Only for what to offer and what a kept press expects; the card says
+ *  what the server says. The owner moves as the server moves it: taking a
+ *  request makes it yours, finishing an unowned one does too, and a reopen
+ *  leaves it nobody's. */
 export function projectRequest(
   request: Pick<VenueRequest, "state" | "ownerUserId">,
   steps: readonly WaitingStep[],
   meId: string | null,
-): { readonly state: RequestState; readonly mine: boolean } {
+): { readonly state: RequestState; readonly ownerUserId: string | null; readonly mine: boolean } {
   let state = request.state;
-  let mine = request.ownerUserId !== null && request.ownerUserId === meId;
+  let ownerUserId = request.ownerUserId;
   for (const step of steps) {
     if (step.authorUserId !== meId || !nextRequestState(state, step.transition.to).ok) continue;
     state = step.transition.to;
-    if (state === "accepted") mine = true;
+    if (state === "accepted" || (state === "resolved" && ownerUserId === null)) ownerUserId = meId;
+    if (state === "reopened") ownerUserId = null;
   }
-  return { state, mine };
+  return { state, ownerUserId, mine: ownerUserId !== null && ownerUserId === meId };
 }
 
 const OUTCOME_WORDS: Readonly<Record<RequestOutcome, string>> = {

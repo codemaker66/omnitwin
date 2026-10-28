@@ -932,7 +932,7 @@ describe("EventDayOpsPage", () => {
       {
         kind: "request_step", queueKey: "request:00000000-0000-4000-8000-00000000e001",
         venueId: "00000000-0000-4000-8000-00000000a001", requestId: "00000000-0000-4000-8000-00000000d001",
-        bookingId: null, summary: "Chairs × 10", transition: { to: "accepted" },
+        bookingId: null, summary: "Chairs × 10", transition: { to: "accepted" }, expectedState: "sent", expectedOwnerUserId: null,
         commandId: "00000000-0000-4000-8000-00000000e001", authorUserId: "00000000-0000-4000-8000-0000000000ff",
         authorName: "Elaine", queuedAt: "2026-10-29T18:38:00.000Z",
       },

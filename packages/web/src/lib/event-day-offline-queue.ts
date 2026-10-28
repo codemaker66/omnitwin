@@ -62,6 +62,10 @@ export interface QueuedRequestStep {
   /** The state the request was in, as this person saw it, when the step was
    *  pressed: the replay is refused if the request has moved on since. */
   readonly expectedState: RequestState;
+  /** Whose the request was, as this person saw it, when the step was
+   *  pressed (null for nobody's): the replay is refused if it has changed
+   *  hands since, which its state alone cannot show. */
+  readonly expectedOwnerUserId: string | null;
   readonly commandId: string;
   readonly authorUserId: string;
   readonly authorName: string;
@@ -123,6 +127,22 @@ export function createEventDayQueue(handle: CacheHandle<QueuedEventDayOp>) {
     await handle.delete(queueKey);
   }
 
+  /** A request step replays after every step pressed before it on this
+   *  device: its stamp is never behind the latest kept one, even under a
+   *  clock that stood still or stepped back between the presses. */
+  async function nextRequestStepStamp(): Promise<string> {
+    const latest = (await list())
+      .filter((op) => op.kind === "request_step")
+      .map((op) => Date.parse(op.queuedAt))
+      .filter((stamp) => Number.isFinite(stamp))
+      .reduce((max, stamp) => Math.max(max, stamp), Number.NEGATIVE_INFINITY);
+    return new Date(Math.max(Date.now(), latest + 1)).toISOString();
+  }
+
+  // Request steps are written one at a time, so two presses stored at once
+  // still take their stamps in the order they were pressed.
+  let requestStepWrites: Promise<void> = Promise.resolve();
+
   return {
     async enqueueTaskStatus(opsTaskId: string, input: UpdateOpsTaskStatusInput): Promise<void> {
       const key = taskKey(opsTaskId);
@@ -170,14 +190,18 @@ export function createEventDayQueue(handle: CacheHandle<QueuedEventDayOp>) {
     /** A step on a floor request (L9), keyed by its own commandId: the same
      *  press stored twice is one op and keeps its first place in the order. */
     async enqueueRequestStep(step: RequestStepInput): Promise<void> {
-      const key = requestStepKey(step.commandId);
-      const existing = await handle.get(key);
-      await handle.put(key, {
-        ...step,
-        kind: "request_step",
-        queueKey: key,
-        queuedAt: existing?.value.queuedAt ?? new Date().toISOString(),
+      const write = requestStepWrites.then(async () => {
+        const key = requestStepKey(step.commandId);
+        const existing = await handle.get(key);
+        await handle.put(key, {
+          ...step,
+          kind: "request_step",
+          queueKey: key,
+          queuedAt: existing?.value.queuedAt ?? await nextRequestStepStamp(),
+        });
       });
+      requestStepWrites = write.catch(() => undefined);
+      await write;
     },
 
     list,

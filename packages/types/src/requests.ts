@@ -289,21 +289,26 @@ export type ClientCreateRequest = z.infer<typeof ClientCreateRequestSchema>;
  *  replayed later carries it, and is refused if the request has moved on
  *  since, so a "Done" pressed in a cellar never closes a colleague's work. */
 const ExpectedState = RequestStateSchema.optional();
+/** Whose the request was when the step was pressed (L9), null for nobody's.
+ *  The state's name alone cannot tell Elaine's "accepted" from Graham's, so
+ *  a replayed step names the owner it was pressed against too. */
+const ExpectedOwner = UUID.nullable().optional();
 
 /** Strict on purpose: a body carrying `audienceRoles` is a 400, not a silent
  *  no-op — the audience is decided once and the caller should hear that. */
 export const RequestTransitionSchema = z.discriminatedUnion("to", [
-  z.object({ to: z.literal("acknowledged"), expectedState: ExpectedState }).strict(),
-  z.object({ to: z.literal("accepted"), expectedState: ExpectedState }).strict(),
-  z.object({ to: z.literal("underway"), expectedState: ExpectedState }).strict(),
-  z.object({ to: z.literal("handed-over"), toUserId: UUID, expectedState: ExpectedState }).strict(),
+  z.object({ to: z.literal("acknowledged"), expectedState: ExpectedState, expectedOwnerUserId: ExpectedOwner }).strict(),
+  z.object({ to: z.literal("accepted"), expectedState: ExpectedState, expectedOwnerUserId: ExpectedOwner }).strict(),
+  z.object({ to: z.literal("underway"), expectedState: ExpectedState, expectedOwnerUserId: ExpectedOwner }).strict(),
+  z.object({ to: z.literal("handed-over"), toUserId: UUID, expectedState: ExpectedState, expectedOwnerUserId: ExpectedOwner }).strict(),
   z.object({
     to: z.literal("resolved"),
     outcome: RequestOutcomeSchema,
     note: Detail.nullish(),
     expectedState: ExpectedState,
+    expectedOwnerUserId: ExpectedOwner,
   }).strict(),
-  z.object({ to: z.literal("reopened"), note: Detail.nullish(), expectedState: ExpectedState }).strict(),
+  z.object({ to: z.literal("reopened"), note: Detail.nullish(), expectedState: ExpectedState, expectedOwnerUserId: ExpectedOwner }).strict(),
 ]);
 export type RequestTransition = z.infer<typeof RequestTransitionSchema>;
 

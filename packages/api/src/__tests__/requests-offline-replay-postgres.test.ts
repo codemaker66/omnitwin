@@ -71,6 +71,7 @@ describe.skipIf(target === undefined)("offline request steps replayed on migrate
     readonly requestId: string;
     readonly elaine: string;
     readonly graham: string;
+    readonly fiona: string;
     readonly outsider: string;
   }
 
@@ -109,7 +110,7 @@ describe.skipIf(target === undefined)("offline request steps replayed on migrate
     if (!("request" in made)) throw new Error("expected a request");
     return {
       venueId, otherVenueId, requestId: made.request.id,
-      elaine: people.elaine.id, graham: people.graham.id, outsider: people.outsider.id,
+      elaine: people.elaine.id, graham: people.graham.id, fiona: people.fiona.id, outsider: people.outsider.id,
     };
   }
 
@@ -330,6 +331,67 @@ describe.skipIf(target === undefined)("offline request steps replayed on migrate
     expect(resent.statusCode).toBe(409);
     expect(resent.headers["idempotency-replay"]).toBe("true");
     expect((await row(f.requestId)).state).toBe("underway");
+  });
+
+  it("refuses a kept Done pressed on the sender's own accept once a colleague has the request, in whatever replay it arrives", async () => {
+    const f = await fixture();
+    // Graham takes it while Elaine's "I'll do it" and "Done" wait in her phone.
+    expect((await step(f.graham, f.requestId, { to: "accepted" }, randomUUID())).statusCode).toBe(200);
+    const taken = await step(f.elaine, f.requestId, { to: "accepted", expectedState: "sent", expectedOwnerUserId: null }, randomUUID());
+    expect(taken.json<{ code: string }>().code).toBe("REQUEST_TAKEN");
+
+    // The Done arrives later, pressed on her accept: the state still reads
+    // "accepted", but it is Graham's, not hers.
+    const doneKey = randomUUID();
+    const done = await step(f.elaine, f.requestId, {
+      to: "resolved", outcome: "done", expectedState: "accepted", expectedOwnerUserId: f.elaine,
+    }, doneKey);
+    expect(done.statusCode).toBe(409);
+    expect(done.json<{ code: string; error: string; ownerName: string }>()).toMatchObject({
+      code: "REQUEST_STATE_CONFLICT", error: "Graham has this now.", ownerName: "Graham",
+    });
+    const current = await row(f.requestId);
+    expect([current.state, current.ownerUserId, current.outcome]).toEqual(["accepted", f.graham, null]);
+    const resent = await step(f.elaine, f.requestId, {
+      to: "resolved", outcome: "done", expectedState: "accepted", expectedOwnerUserId: f.elaine,
+    }, doneKey);
+    expect(resent.statusCode).toBe(409);
+    expect(resent.headers["idempotency-replay"]).toBe("true");
+    expect((await row(f.requestId)).state).toBe("accepted");
+  });
+
+  it("refuses a kept Could not once the request changed hands through a handover, though its state reads the same", async () => {
+    const f = await fixture();
+    expect((await step(f.elaine, f.requestId, { to: "accepted" }, randomUUID())).statusCode).toBe(200);
+    // Elaine presses "Could not" with no signal. Meanwhile the office hands
+    // the request to Graham, and he takes it.
+    expect((await step(f.fiona, f.requestId, { to: "handed-over", toUserId: f.graham }, randomUUID())).statusCode).toBe(200);
+    expect((await step(f.graham, f.requestId, { to: "accepted" }, randomUUID())).statusCode).toBe(200);
+    const before = (await history(f.requestId)).length;
+
+    const late = await step(f.elaine, f.requestId, {
+      to: "resolved", outcome: "not_possible", expectedState: "accepted", expectedOwnerUserId: f.elaine,
+    }, randomUUID());
+    expect(late.statusCode).toBe(409);
+    expect(late.json<{ code: string; error: string }>()).toMatchObject({ code: "REQUEST_STATE_CONFLICT", error: "Graham has this now." });
+    const current = await row(f.requestId);
+    expect([current.state, current.ownerUserId, current.outcome]).toEqual(["accepted", f.graham, null]);
+    expect(await history(f.requestId)).toHaveLength(before);
+  });
+
+  it("applies a kept chain whose every step was pressed against the state and owner the one before it left", async () => {
+    const f = await fixture();
+    const sent = [
+      await step(f.elaine, f.requestId, { to: "acknowledged", expectedState: "sent", expectedOwnerUserId: null }, randomUUID()),
+      await step(f.elaine, f.requestId, { to: "accepted", expectedState: "acknowledged", expectedOwnerUserId: null }, randomUUID()),
+      await step(f.elaine, f.requestId, { to: "underway", expectedState: "accepted", expectedOwnerUserId: f.elaine }, randomUUID()),
+      await step(f.elaine, f.requestId, {
+        to: "resolved", outcome: "done", expectedState: "underway", expectedOwnerUserId: f.elaine,
+      }, randomUUID()),
+    ];
+    expect(sent.map((answer) => answer.statusCode)).toEqual([200, 200, 200, 200]);
+    const current = await row(f.requestId);
+    expect([current.state, current.ownerUserId, current.outcome]).toEqual(["resolved", f.elaine, "done"]);
   });
 
   it("applies a queued chain whose every step was pressed against the state the one before it left", async () => {

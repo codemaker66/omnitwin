@@ -104,7 +104,7 @@ describe("event-day offline queue", () => {
   const SEEN = "00000000-0000-4000-8000-00000000e001";
   const TAKE = "00000000-0000-4000-8000-00000000e002";
   const step = (commandId: string, transition: RequestStepInput["transition"]): RequestStepInput => ({
-    venueId: VENUE, requestId: REQUEST, bookingId: BOOKING, summary: "Chairs × 10", transition, expectedState: "sent", commandId,
+    venueId: VENUE, requestId: REQUEST, bookingId: BOOKING, summary: "Chairs × 10", transition, expectedState: "sent", expectedOwnerUserId: null, commandId,
     authorUserId: "00000000-0000-4000-8000-0000000000ff", authorName: "Elaine",
   });
 
@@ -125,6 +125,32 @@ describe("event-day offline queue", () => {
       kind: "request_step", requestId: REQUEST, commandId: SEEN, transition: { to: "acknowledged" },
       authorName: "Elaine", queuedAt: "2026-10-29T18:40:00.000Z",
     });
+  });
+
+  it("keeps the order pressed when the clock stands still, steps back, or the page reloads", async () => {
+    const DONE = "00000000-0000-4000-8000-00000000e003";
+    const NOT_NEEDED = "00000000-0000-4000-8000-00000000e004";
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-29T18:40:00.000Z"));
+    const backend = withBackend<QueuedEventDayOp>(memoryBackend());
+    const q = createEventDayQueue(backend);
+    // Two presses stored at once, under a clock that does not move.
+    await Promise.all([
+      q.enqueueRequestStep(step(SEEN, { to: "acknowledged" })),
+      q.enqueueRequestStep(step(TAKE, { to: "accepted" })),
+    ]);
+    // The clock steps back before the next press.
+    vi.setSystemTime(new Date("2026-10-29T18:39:00.000Z"));
+    await q.enqueueRequestStep(step(DONE, { to: "resolved", outcome: "done" }));
+    // The page reloads: a new queue over the same store, the clock still back.
+    const reloaded = createEventDayQueue(backend);
+    await reloaded.enqueueRequestStep(step(NOT_NEEDED, { to: "resolved", outcome: "no_longer_needed" }));
+
+    const pending = await reloaded.list();
+    expect(pending.map((op) => op.queueKey)).toEqual([SEEN, TAKE, DONE, NOT_NEEDED].map((id) => `request:${id}`));
+    const stamps = pending.map((op) => op.queuedAt);
+    expect(new Set(stamps).size).toBe(4);
+    expect(stamps[0]).toBe("2026-10-29T18:40:00.000Z");
   });
 
   it("replays steps in order, drops one the server refused, and keeps the rest for their drainer", async () => {

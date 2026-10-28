@@ -122,10 +122,14 @@ function publishRequestChange(
 // they may still handle the floor, so a queued press from someone whose
 // access has gone is refused, never applied in their old name.
 
-/** The command a step is on the conversation ledger, with the state it was
- *  pressed against when the press says (a replay from the offline queue). */
+/** The command a step is on the conversation ledger, with the state and
+ *  owner it was pressed against when the press says (a replay from the
+ *  offline queue). */
 function stepCommand(requestId: string, commandId: string, transition: RequestTransition): ConversationCommand {
-  const expected = transition.expectedState === undefined ? {} : { expectedState: transition.expectedState };
+  const expected = {
+    ...(transition.expectedState === undefined ? {} : { expectedState: transition.expectedState }),
+    ...(transition.expectedOwnerUserId === undefined ? {} : { expectedOwnerUserId: transition.expectedOwnerUserId }),
+  };
   switch (transition.to) {
     case "acknowledged":
       return { kind: "request.acknowledge", commandId, requestId, ...expected, payload: {} };

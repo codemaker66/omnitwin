@@ -237,9 +237,13 @@ function isRequestStep(command: ConversationCommand): command is RequestStepComm
   return "requestId" in command;
 }
 
-/** The step a request command takes, with the state it was pressed against. */
+/** The step a request command takes, with the state and owner it was
+ *  pressed against. */
 function transitionOf(command: RequestStepCommand): RequestTransition {
-  const expected = command.expectedState === undefined ? {} : { expectedState: command.expectedState };
+  const expected = {
+    ...(command.expectedState === undefined ? {} : { expectedState: command.expectedState }),
+    ...(command.expectedOwnerUserId === undefined ? {} : { expectedOwnerUserId: command.expectedOwnerUserId }),
+  };
   switch (command.kind) {
     case "request.acknowledge": return { to: "acknowledged", ...expected };
     case "request.accept": return { to: "accepted", ...expected };
