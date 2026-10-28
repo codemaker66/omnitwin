@@ -123,7 +123,8 @@ function CreateWorkspace({ summary, onCreated, onBusy, onCancel }: {
         <label className="onboarding-field"><span>Entitlement reference</span><input value={form.entitlementRef} onChange={(event) => { setField("entitlementRef", event.target.value); }} /></label>
         <label className="onboarding-field"><span>Provider evidence reference</span><input value={form.evidenceRef} onChange={(event) => { setField("evidenceRef", event.target.value); }} /></label>
         <div className="onboarding-fields"><label className="onboarding-checkbox"><input type="checkbox" checked={providerVerified} onChange={(event) => { setProviderVerified(event.target.checked); if (!event.target.checked) setAccessEnforced(false); }} />Provider verified</label>
-          <label className="onboarding-checkbox"><input type="checkbox" checked={accessEnforced} disabled={!providerVerified} onChange={(event) => { setAccessEnforced(event.target.checked); }} />Enforce managed access</label></div>
+          <label className="onboarding-checkbox"><input type="checkbox" checked={accessEnforced} disabled={!providerVerified} onChange={(event) => { setAccessEnforced(event.target.checked); }} />Managed access agreed (recorded only)</label></div>
+        <p className="onboarding-note">Billing and setup review are records for the setup team. Neither of them stops or allows anyone's sign-in.</p>
         {!verifiedValid && <p className="onboarding-error" role="alert">Provider verification requires a billing provider and a customer, entitlement or evidence reference.</p>}
       </div></details>
     </fieldset>{error !== null && <p className="onboarding-error" role="alert">{error}</p>}
@@ -192,7 +193,7 @@ function WorkspaceAccess({ workspace, summary, onChanged, onBusy }: {
       <fieldset disabled={busy !== null} className="onboarding-fieldset onboarding-fields">
         <label className="onboarding-field"><span>Email address</span><input id="client-access-email" type="email" required value={email} readOnly={editing !== null} onChange={(event) => { setEmail(event.target.value); }} /></label>
         <RoleSelect value={role} onChange={setRole} /><p className="onboarding-note">{roleHelp}</p>
-        {editing !== null && <p className="onboarding-note">Saving renews pending or expired invitations and applies the selected role on their next verified sign-in.</p>}
+        {editing !== null && <p className="onboarding-note">Saving renews pending or expired invitations and applies the selected role on their next verified sign-in. A venue administrator keeps administration: it cannot be lowered here.</p>}
         <button type="submit" className="onboarding-button" disabled={email.trim() === ""} aria-busy={busy === "grant"}>
           {busy === "grant" ? <ActivityIndicator size={18} /> : <UserPlus size={18} aria-hidden="true" />}{busy === "grant" ? "Saving access…" : editing === null ? "Grant venue access" : "Save venue access"}</button>
         {editing !== null && <button type="button" className="onboarding-button onboarding-button--text" onClick={() => { setEditing(null); setEmail(""); setRole("admin"); }}>Cancel editing</button>}

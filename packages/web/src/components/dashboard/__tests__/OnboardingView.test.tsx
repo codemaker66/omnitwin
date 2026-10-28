@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { ApiError } from "../../../api/client.js";
 import { OnboardingView } from "../OnboardingView.js";
 import type { OnboardingSummary } from "@omnitwin/types";
 
@@ -257,7 +258,7 @@ describe("OnboardingView", () => {
     fireEvent.change(screen.getByLabelText("Evidence note for Trades Hall rollout"), {
       target: { value: "Owner accepted and staff invite list reviewed." },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Save project gate for Trades Hall rollout" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save setup review for Trades Hall rollout" }));
 
     await waitFor(() => {
       expect(mocks.updateOnboardingProject).toHaveBeenCalledWith(
@@ -280,8 +281,8 @@ describe("OnboardingView", () => {
     fireEvent.change(screen.getByLabelText("Provider evidence reference for Trades Hall rollout"), {
       target: { value: "invoice-2026-001" },
     });
-    fireEvent.click(screen.getByLabelText("Enforce managed access for Trades Hall rollout"));
-    fireEvent.click(screen.getByRole("button", { name: "Save provider gate for Trades Hall rollout" }));
+    fireEvent.click(screen.getByLabelText("Managed access agreed for Trades Hall rollout, recorded only"));
+    fireEvent.click(screen.getByRole("button", { name: "Save billing verification for Trades Hall rollout" }));
 
     await waitFor(() => {
       expect(mocks.verifyWorkspaceEntitlement).toHaveBeenCalledWith(
@@ -309,7 +310,7 @@ describe("OnboardingView", () => {
     });
 
     expect(screen.getByText("Verified provider state requires a real provider plus at least one evidence reference.")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Save provider gate for Trades Hall rollout" })).toHaveProperty("disabled", true);
+    expect(screen.getByRole("button", { name: "Save billing verification for Trades Hall rollout" })).toHaveProperty("disabled", true);
   });
 
   it("links an existing venue and grants its first administrator without creating another venue", async () => {
@@ -346,6 +347,35 @@ describe("OnboardingView", () => {
     await waitFor(() => { expect(mocks.inviteWorkspaceMembers).toHaveBeenCalledWith("00000000-0000-4000-8000-000000000002", {
       staffInvites: [{ email: "owner@tradeshall.co.uk", name: null, workspaceRole: "admin", venueRole: "admin" }],
     }); });
+  });
+
+  it("says so, and keeps the form, when a connected administrator cannot be given a lower role (admin-venues-2)", async () => {
+    mocks.getOnboardingSummary.mockResolvedValue(populatedSummary());
+    const refusal = "This person is a venue administrator, and Manage access cannot lower an administrator's access. Nothing has changed.";
+    mocks.inviteWorkspaceMembers.mockRejectedValue(new ApiError(409, refusal, "ADMIN_DOWNGRADE_UNSUPPORTED"));
+    render(<OnboardingView />);
+    fireEvent.click(await screen.findByRole("button", { name: "Manage access for owner@tradeshall.co.uk" }));
+    expect(screen.getByText(/A venue administrator keeps administration: it cannot be lowered here\./u)).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Venue role"), { target: { value: "staff" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save venue access" }));
+    expect((await screen.findByRole("alert")).textContent).toBe(refusal);
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(screen.getByRole("button", { name: "Save venue access" })).toBeTruthy();
+  });
+
+  it("names the setup review and billing as records, never as controls on sign-in (admin-venues-6)", async () => {
+    mocks.getOnboardingSummary.mockResolvedValue(populatedSummary());
+    const { container } = render(<OnboardingView />);
+    await screen.findByText("People & access");
+    fireEvent.click(screen.getByText("Setup review and billing"));
+    expect(screen.getByText("These are records for the setup team. A review or a billing state does not stop or allow anyone's sign-in.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Save setup review for Trades Hall rollout" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Save billing verification for Trades Hall rollout" })).toBeTruthy();
+    // No visible words or accessible name claims that anything is enforced or gated.
+    const names = [...container.querySelectorAll("[aria-label]")].map((element) => element.getAttribute("aria-label") ?? "");
+    const claims = /enforc|gate\b/iu;
+    expect(names.filter((name) => claims.test(name))).toEqual([]);
+    expect(claims.test(container.textContent ?? "")).toBe(false);
   });
 
   it("keeps a failed cancellation visible and does not remove the member locally", async () => {
