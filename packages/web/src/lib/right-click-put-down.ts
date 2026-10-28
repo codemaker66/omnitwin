@@ -1,8 +1,8 @@
 import { DRAG_THRESHOLD_PX, screenDistance } from "./selection.js";
 
 // ---------------------------------------------------------------------------
-// A right-click puts the piece in hand down; a right-drag is the camera's
-// orbit and keeps it in hand.
+// A right-click puts the piece in hand down; a right-drag (the camera's orbit,
+// or the look-drag in Human POV) keeps it in hand.
 //
 // A drag sends a contextmenu too: Windows at its release, macOS and Linux at
 // its press. So the menu decides nothing for the mouse: the release does, and
@@ -10,9 +10,11 @@ import { DRAG_THRESHOLD_PX, screenDistance } from "./selection.js";
 // right press behind it, or long after the last release (the Menu key,
 // Shift+F10), puts the piece down, the keyboard's way out alongside Esc.
 //
-// It listens on the window's bubble phase, after the canvas's own handlers:
-// the selection system's right-click viewpoint stands aside while a piece is
-// in hand, so the piece must still be in hand when the canvas hears the release.
+// It listens in the window's capture phase, so a gesture the canvas keeps to
+// itself is still seen: Human POV's look-drag, whose pointer events CameraRig
+// stops from propagating. A click's put-down waits for the next task, so the
+// canvas's own handlers run first with the piece still in hand (the selection
+// system's right-click viewpoint stands aside while a piece is held).
 // ---------------------------------------------------------------------------
 
 /**
@@ -41,14 +43,24 @@ export interface RightClickPutDown {
   readonly putDown: () => void;
   /** The clock, milliseconds; performance.now() unless a test steps it. */
   readonly now?: () => number;
+  /** Runs `task` after the current event's handlers; the next task unless a test runs it itself. */
+  readonly defer?: (task: () => void) => void;
 }
+
+const CAPTURE = { capture: true } as const;
 
 /** Listens on `target` for the right button's put-down; returns the way to stop. */
 export function listenForRightClickPutDown(
   target: Window,
-  { holding, putDown, now = () => performance.now() }: RightClickPutDown,
+  { holding, putDown, now = () => performance.now(), defer }: RightClickPutDown,
 ): () => void {
   let press: RightPress | null = null;
+  let stopped = false;
+  const timers = new Set<number>();
+  const later = defer ?? ((task: () => void): void => {
+    const timer = target.setTimeout(() => { timers.delete(timer); task(); }, 0);
+    timers.add(timer);
+  });
 
   function onPointerDown(event: PointerEvent): void {
     press = event.button === 2
@@ -63,10 +75,14 @@ export function listenForRightClickPutDown(
     if (event.button !== 2 || press === null || press.releasedAt !== null || event.pointerId !== press.pointerId) return;
     press.releasedAt = now();
     const click = !press.moved && screenDistance(press.x, press.y, event.clientX, event.clientY) <= DRAG_THRESHOLD_PX;
-    if (click && holding()) putDown();
+    if (click) later(() => { if (!stopped && holding()) putDown(); });
   }
   function onPointerCancel(event: PointerEvent): void {
     if (press !== null && event.pointerId === press.pointerId) press = null;
+  }
+  function onBlur(): void {
+    // A release outside the window never arrives.
+    press = null;
   }
   function onContextMenu(event: MouseEvent): void {
     // A release long gone leaves the menu to the keyboard.
@@ -82,16 +98,21 @@ export function listenForRightClickPutDown(
     putDown();
   }
 
-  target.addEventListener("pointerdown", onPointerDown);
-  target.addEventListener("pointermove", onPointerMove);
-  target.addEventListener("pointerup", onPointerUp);
-  target.addEventListener("pointercancel", onPointerCancel);
-  target.addEventListener("contextmenu", onContextMenu);
+  target.addEventListener("pointerdown", onPointerDown, CAPTURE);
+  target.addEventListener("pointermove", onPointerMove, CAPTURE);
+  target.addEventListener("pointerup", onPointerUp, CAPTURE);
+  target.addEventListener("pointercancel", onPointerCancel, CAPTURE);
+  target.addEventListener("contextmenu", onContextMenu, CAPTURE);
+  target.addEventListener("blur", onBlur);
   return () => {
-    target.removeEventListener("pointerdown", onPointerDown);
-    target.removeEventListener("pointermove", onPointerMove);
-    target.removeEventListener("pointerup", onPointerUp);
-    target.removeEventListener("pointercancel", onPointerCancel);
-    target.removeEventListener("contextmenu", onContextMenu);
+    stopped = true;
+    for (const timer of timers) target.clearTimeout(timer);
+    timers.clear();
+    target.removeEventListener("pointerdown", onPointerDown, CAPTURE);
+    target.removeEventListener("pointermove", onPointerMove, CAPTURE);
+    target.removeEventListener("pointerup", onPointerUp, CAPTURE);
+    target.removeEventListener("pointercancel", onPointerCancel, CAPTURE);
+    target.removeEventListener("contextmenu", onContextMenu, CAPTURE);
+    target.removeEventListener("blur", onBlur);
   };
 }

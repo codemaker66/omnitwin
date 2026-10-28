@@ -2,54 +2,76 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RIGHT_RELEASE_MENU_MS, listenForRightClickPutDown } from "../right-click-put-down.js";
 
 // ---------------------------------------------------------------------------
-// A right-click puts the piece in hand down; a right-drag, the camera's orbit,
-// keeps it in hand, whichever order the drag's contextmenu comes in (Windows
-// after the release, macOS and Linux at the press). The keyboard's menu (the
-// Menu key, Shift+F10) puts it down, alongside Esc.
+// A right-click puts the piece in hand down; a right-drag, the camera's orbit
+// or Human POV's look, keeps it in hand, whichever order the drag's
+// contextmenu comes in (Windows after the release, macOS and Linux at the
+// press). The keyboard's menu (the Menu key, Shift+F10) puts it down.
 // ---------------------------------------------------------------------------
 
 let held = true;
 let clock = 0;
+const later: (() => void)[] = [];
 const putDown = vi.fn(() => { held = false; });
 let stop: () => void = () => undefined;
+let canvas: HTMLCanvasElement;
 
 beforeEach(() => {
   held = true;
   clock = 0;
+  later.length = 0;
   putDown.mockClear();
-  stop = listenForRightClickPutDown(window, { holding: () => held, putDown, now: () => clock });
+  canvas = document.createElement("canvas");
+  document.body.appendChild(canvas);
+  stop = listenForRightClickPutDown(window, { holding: () => held, putDown, now: () => clock, defer: (task) => { later.push(task); } });
 });
 
 afterEach(() => {
   stop();
+  canvas.remove();
 });
 
-function pointer(type: "pointerdown" | "pointermove" | "pointerup", x: number, y: number): void {
+/** Runs what waits for the next task: a click's put-down. */
+function nextTask(): void {
+  for (const task of later.splice(0)) task();
+}
+
+function pointer(type: "pointerdown" | "pointermove" | "pointerup", x: number, y: number, on: EventTarget = canvas): void {
   const button = type === "pointermove" ? -1 : 2;
-  window.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, pointerId: 1, button, buttons: type === "pointerup" ? 0 : 2, clientX: x, clientY: y }));
+  on.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, pointerId: 1, button, buttons: type === "pointerup" ? 0 : 2, clientX: x, clientY: y }));
 }
 
 /** A contextmenu: whether the browser's own menu was kept away. */
-function menu(): boolean {
+function menu(on: EventTarget = canvas): boolean {
   const event = new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2 });
-  window.dispatchEvent(event);
+  on.dispatchEvent(event);
   return event.defaultPrevented;
 }
 
 describe("a right-click puts the piece in hand down", () => {
-  it("at the release, with its menu after it kept away (Windows)", () => {
+  it("after the release, with its menu after it kept away (Windows)", () => {
     pointer("pointerdown", 100, 100);
     pointer("pointerup", 101, 101);
-    expect(putDown).toHaveBeenCalledTimes(1);
     expect(menu()).toBe(true);
+    nextTask();
     expect(putDown).toHaveBeenCalledTimes(1);
   });
 
-  it("at the release, with its menu at the press kept away (macOS and Linux)", () => {
+  it("after the release, with its menu at the press kept away (macOS and Linux)", () => {
     pointer("pointerdown", 100, 100);
     expect(menu()).toBe(true);
-    expect(putDown).not.toHaveBeenCalled();
     pointer("pointerup", 100, 100);
+    nextTask();
+    expect(putDown).toHaveBeenCalledTimes(1);
+  });
+
+  it("only once the canvas has heard the release, with the piece still in hand", () => {
+    let heldWhenCanvasHeard: boolean | null = null;
+    canvas.addEventListener("pointerup", () => { heldWhenCanvasHeard = held; });
+    pointer("pointerdown", 100, 100);
+    pointer("pointerup", 100, 100);
+    expect(heldWhenCanvasHeard).toBe(true);
+    expect(putDown).not.toHaveBeenCalled();
+    nextTask();
     expect(putDown).toHaveBeenCalledTimes(1);
   });
 
@@ -57,16 +79,18 @@ describe("a right-click puts the piece in hand down", () => {
     pointer("pointerdown", 100, 100);
     pointer("pointermove", 103, 103);
     pointer("pointerup", 104, 102);
+    nextTask();
     expect(putDown).toHaveBeenCalledTimes(1);
   });
 });
 
-describe("a right-drag orbits and keeps the piece in hand", () => {
+describe("a right-drag keeps the piece in hand", () => {
   it("with its menu after the release (Windows)", () => {
     pointer("pointerdown", 100, 100);
     pointer("pointermove", 140, 104);
     pointer("pointerup", 240, 110);
     expect(menu()).toBe(true);
+    nextTask();
     expect(putDown).not.toHaveBeenCalled();
     expect(held).toBe(true);
   });
@@ -76,6 +100,7 @@ describe("a right-drag orbits and keeps the piece in hand", () => {
     expect(menu()).toBe(true);
     pointer("pointermove", 140, 104);
     pointer("pointerup", 240, 110);
+    nextTask();
     expect(putDown).not.toHaveBeenCalled();
   });
 
@@ -84,13 +109,32 @@ describe("a right-drag orbits and keeps the piece in hand", () => {
     pointer("pointermove", 160, 100);
     pointer("pointerup", 100, 100);
     expect(menu()).toBe(true);
+    nextTask();
     expect(putDown).not.toHaveBeenCalled();
+  });
+
+  it("in Human POV, whose look-drag the canvas keeps from propagating", () => {
+    for (const type of ["pointerdown", "pointermove", "pointerup"] as const) {
+      canvas.addEventListener(type, (event) => { event.stopPropagation(); });
+    }
+    pointer("pointerdown", 100, 100);
+    expect(menu()).toBe(true);
+    pointer("pointermove", 180, 100);
+    pointer("pointerup", 220, 100);
+    expect(menu()).toBe(true);
+    nextTask();
+    expect(putDown).not.toHaveBeenCalled();
+    // A plain right-click there still puts it down.
+    pointer("pointerdown", 100, 100);
+    pointer("pointerup", 100, 100);
+    nextTask();
+    expect(putDown).toHaveBeenCalledTimes(1);
   });
 });
 
 describe("the keyboard's menu puts the piece down", () => {
   it("with no right press behind it (the Menu key, Shift+F10)", () => {
-    expect(menu()).toBe(true);
+    expect(menu(window)).toBe(true);
     expect(putDown).toHaveBeenCalledTimes(1);
   });
 
@@ -100,7 +144,7 @@ describe("the keyboard's menu puts the piece down", () => {
     pointer("pointermove", 160, 100);
     pointer("pointerup", 200, 100);
     clock += RIGHT_RELEASE_MENU_MS + 1;
-    expect(menu()).toBe(true);
+    expect(menu(window)).toBe(true);
     expect(putDown).toHaveBeenCalledTimes(1);
   });
 
@@ -112,6 +156,13 @@ describe("the keyboard's menu puts the piece down", () => {
     expect(menu()).toBe(true);
     expect(putDown).not.toHaveBeenCalled();
   });
+
+  it("after a press whose release went outside the window (blur forgets it)", () => {
+    pointer("pointerdown", 100, 100);
+    window.dispatchEvent(new Event("blur"));
+    expect(menu(window)).toBe(true);
+    expect(putDown).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("with nothing in hand", () => {
@@ -120,17 +171,22 @@ describe("with nothing in hand", () => {
     pointer("pointerdown", 100, 100);
     pointer("pointerup", 100, 100);
     expect(menu()).toBe(false);
+    nextTask();
     clock += 1_000;
-    expect(menu()).toBe(false);
+    expect(menu(window)).toBe(false);
     expect(putDown).not.toHaveBeenCalled();
   });
 });
 
 describe("stopping", () => {
-  it("hears nothing once stopped", () => {
-    stop();
+  it("hears nothing once stopped, and a click waiting on its task puts nothing down", () => {
     pointer("pointerdown", 100, 100);
     pointer("pointerup", 100, 100);
+    stop();
+    nextTask();
+    pointer("pointerdown", 100, 100);
+    pointer("pointerup", 100, 100);
+    nextTask();
     expect(menu()).toBe(false);
     expect(putDown).not.toHaveBeenCalled();
   });
