@@ -2612,3 +2612,6 @@ export * from "./gangway-review.js";
 // The venue team (Plan 19 L1): venue admins invite their own staff; Blake
 // decided on 24 October 2026 that venue administrators invite any role.
 export * from "./venue-team.js";
+// A crowded Trades Hall day (Plan 19 L9): one deterministic Saturday in all
+// six published rooms, for tests and local demos; invented people only.
+export * from "./crowded-day.js";
