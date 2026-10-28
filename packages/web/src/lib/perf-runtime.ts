@@ -268,6 +268,14 @@ function jsHeapMb(): number | null {
   return typeof used === "number" && Number.isFinite(used) ? used / 1_048_576 : null;
 }
 
+/** The page's `?splatBundle=` cut name when it is shaped like one. Read
+ * from the address, not the allowlist, which would load bundle data on every page. */
+function reportedSplatBundle(): string | null {
+  if (typeof window === "undefined") return null;
+  const value = new URLSearchParams(window.location.search).get("splatBundle");
+  return value !== null && /^[a-z0-9][a-z0-9.-]{0,31}$/u.test(value) ? value : null;
+}
+
 /** Portable, versioned clipboard payload with units and collection limits. */
 export function profilerClipboardReport(): string {
   const state = usePerfStore.getState();
@@ -291,7 +299,9 @@ export function profilerClipboardReport(): string {
     },
     metrics: state.metrics,
     governor: { given: useRenderGovernorStore.getState().given, measured: useRenderGovernorStore.getState().measured },
+    page: { splatBundle: reportedSplatBundle() },
     definitions: {
+      splatBundle: "The device-day cut the page address names (?splatBundle=), so cuts of equal splat count but different SH degree are told apart; null when none or malformed. The planner draws it only when it is allowlisted for the open room",
       governor: "Quality the planner gave up on this device to hold its frame rate (lib/render-governor.ts), in the order given: ambientOcclusion, resolution (0.25 of pixel ratio each), bloom; effects apply once the view is still; empty when nothing was given up. measured.cpuShare is the main thread's frame work over the last window's frame time: about 0.5 or more when the CPU holds frames up (passes are given up), low when the GPU does (pixels are)",
       fps: "Successful main render submissions per wall-clock second, including idle time; not compositor presentation FPS",
       frameTimeMs: "Mean complete interval ending in the window between actual main render submissions; may start before window boundary; long stalls retained",

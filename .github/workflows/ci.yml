@@ -502,8 +502,11 @@ jobs:
     # what it measures: the renderer, the tour, the benchmark and the toolchain
     # that serves them. .github/gpu/gpu-scope.mjs holds the rules; a change it
     # cannot compare with a base commit is always in scope.
+    # Ten minutes, not five: the full-history checkout alone ran past five on
+    # busy runners (#178's run 40347200904, master's run 40723003312 attempt 2),
+    # and a cancelled scope job skips the GPU run, so the release gate refuses.
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     permissions:
       contents: read
     outputs:
