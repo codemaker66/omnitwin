@@ -15,6 +15,7 @@ import { lazyWithPreload, type Preloadable } from "./lib/lazy-with-preload.js";
 import { fontBuildFor, fontStylesheetHrefs, type FontStylesheets } from "./lib/self-hosted-fonts.js";
 import { SplatsWorkInProgressPage } from "./pages/SplatsWorkInProgressPage.js";
 import { AmissingBookRedirect } from "./pages/AmissingBookRedirect.js";
+import { installStaleChunkReload, underRouteErrorBoundary } from "./route-error-boundary.js";
 import cockpitFontsHref from "./styles/fonts/cockpit.css?url";
 import cockpitFontsFirefoxWindowsHref from "./styles/fonts/cockpit.firefox-windows.css?url";
 
@@ -393,7 +394,13 @@ function OnboardRedirect(): ReactElement {
   return <Navigate to={`/register${location.search}`} replace />;
 }
 
-export const router = createBrowserRouter([
+// A stale chunk's preload failing after a deploy reloads the page once
+// (route-error-boundary.tsx); the route boundary below takes the rest.
+if (typeof window !== "undefined") installStaleChunkReload(window);
+
+// Every route under one root whose error boundary shows the recovery screen
+// and reports to Sentry, instead of React Router's raw error page.
+export const router = createBrowserRouter(underRouteErrorBoundary([
   {
     path: "/work-in-progress",
     element: <SplatsWorkInProgressPage />,
@@ -783,4 +790,4 @@ export const router = createBrowserRouter([
     path: "*",
     element: withSuspense(<NotFoundPage />),
   },
-]);
+]));
