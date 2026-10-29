@@ -213,7 +213,11 @@ export function comparablePersistedMetadata(value: unknown): ComparablePersisted
     if (key === "groupId") {
       if (entry !== null && typeof entry !== "string") return null;
       groupId = entry;
-    } else if (key !== "eventArchitectCandidateId") {
+    } else if (key !== "eventArchitectCandidateId" && key !== "notes") {
+      // A planner's note on a piece is health information on the allergy
+      // note's retention date (services/piece-note-retention.ts). A canonical
+      // snapshot's digest is checked on every read, so a note could never be
+      // blanked out of one: it is not captured, and not compared.
       retained[key] = entry;
     }
   }

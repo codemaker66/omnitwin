@@ -1,9 +1,15 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import type { FastifyInstance } from "fastify";
-import type { AIGenerationAdapter } from "../services/ai-assistant.js";
-import { generateAIDraft } from "../services/ai-assistant.js";
+import Fastify, { type FastifyInstance } from "fastify";
+import { drizzle } from "drizzle-orm/neon-serverless";
+import * as schema from "../db/schema.js";
+import type { Env } from "../env.js";
+import { aiAssistantRoutes } from "../routes/ai-assistant.js";
+import type { AIGenerationAdapter, AIGenerationInput } from "../services/ai-assistant.js";
+import { buildAIDraftInstructions, contextKeyWords, generateAIDraft, isWithheldContextKey, scrubDraftContext } from "../services/ai-assistant.js";
+import { AIDraftNotProducedError } from "../services/anthropic-draft-adapter.js";
+import { scrubContactDetails } from "../services/proposal-message-draft.js";
 
 process.env["DATABASE_URL"] = "postgresql://mock:mock@localhost/mock";
 process.env["JWT_SECRET"] = "test-jwt-secret-that-is-at-least-32-characters-long";
@@ -66,8 +72,8 @@ describe("AI assistant routes", () => {
       url: "/ai/drafts",
       headers: { authorization: `Bearer ${staffToken()}` },
       payload: {
-        useCase: "enquiry_summary",
-        context: { enquiryId: "demo", guestCount: 90 },
+        useCase: "truth_mode_explanation",
+        context: { targetId: "demo", guestCount: 90 },
       },
     });
     expect(res.statusCode).toBe(503);
@@ -116,5 +122,225 @@ describe("AI assistant draft generation", () => {
     expect(draft.provenance).toBe("ai_generated");
     expect(draft.evidenceStatus).toBe("unverified");
     expect(draft.sendState).toBe("draft_only");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Release audit ai-1 (27 October 2026): a general draft's context is built by
+// the screen, so the server takes contact details, names and ids out of it
+// before any provider reads it. The enquiry summary sent the enquirer's name,
+// email address and message word for word.
+// ---------------------------------------------------------------------------
+
+describe("what a general draft may send a provider (ai-1)", () => {
+  const WORDS = "Jane Doe, jane@example.com, call me on 07700 900123; my father is a wheelchair user and two guests are coeliac";
+
+  async function capturing(): Promise<{ readonly app: FastifyInstance; readonly seen: AIGenerationInput[] }> {
+    const seen: AIGenerationInput[] = [];
+    const adapter: AIGenerationAdapter = {
+      status: { configured: true, provider: "capture", model: "capture-model", disabledReason: null },
+      generateText(input) {
+        seen.push(input);
+        return Promise.resolve("A dinner for about ninety guests.");
+      },
+    };
+    const app = Fastify();
+    await app.register(aiAssistantRoutes, { env: {} as Env, db: drizzle.mock({ schema }), adapter, prefix: "/ai" });
+    await app.ready();
+    return { app, seen };
+  }
+
+  const asStaff = { authorization: `Bearer ${staffToken()}` };
+
+  it.each([
+    ["enquiry_summary", "POST /enquiries/:id/summary-draft"],
+    ["proposal_draft", "POST /proposals/:id/message-draft"],
+  ])("refuses a %s, which is built on the server from the venue's own record, asking the provider nothing", async (useCase, route) => {
+    const { app, seen } = await capturing();
+    try {
+      const res = await app.inject({
+        method: "POST", url: "/ai/drafts", headers: asStaff,
+        payload: { useCase, context: { enquiryId: "8d6c1a52-0000-4000-8000-000000000001", name: "Jane Doe", email: "jane@example.com", message: WORDS } },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json()).toEqual({ error: `This draft is built from the venue's own record by ${route}`, code: "DRAFT_HAS_ITS_OWN_ROUTE" });
+      expect(seen).toEqual([]);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("drops contact, person and id keys at any depth and scrubs every string and the tone before the provider reads them", async () => {
+    const { app, seen } = await capturing();
+    try {
+      const res = await app.inject({
+        method: "POST", url: "/ai/drafts", headers: asStaff,
+        payload: {
+          useCase: "beo_supplier_instruction_draft",
+          requestedTone: "Plain, for Jane at jane@example.com or 07700 900123",
+          context: {
+            handoffPackId: "8d6c1a52-0000-4000-8000-000000000001",
+            guestEmail: "jane@example.com",
+            organiser: { displayName: "Jane Doe" },
+            clientName: "Jane Doe",
+            summary: WORDS,
+            pickList: [{ name: "Round table 5ft", quantity: 12 }],
+            room: { name: "Grand Hall" },
+            supplierInstructions: ["Ring the florist on 0141 552 1234 after six"],
+          },
+        },
+      });
+      expect(res.statusCode).toBe(200);
+      const [input] = seen;
+      if (input === undefined) throw new Error("expected the provider to be asked");
+      expect(input.context).toEqual({
+        summary: "Jane Doe, (email address), call me on (phone number); my father is a wheelchair user and two guests are coeliac",
+        pickList: [{ name: "Round table 5ft", quantity: 12 }],
+        room: { name: "Grand Hall" },
+        supplierInstructions: ["Ring the florist on (phone number) after six"],
+      });
+      for (const sent of [JSON.stringify(input.context), input.prompt, input.instructions]) {
+        expect(sent).not.toMatch(/jane@example\.com|07700|900123|0141 552 1234|8d6c1a52|displayName|clientName/u);
+      }
+      expect(input.instructions).toContain("Tone: Plain, for Jane at (email address) or (phone number).");
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("refuses a context too large to send, before anything reads it", async () => {
+    const { app, seen } = await capturing();
+    try {
+      const res = await app.inject({
+        method: "POST", url: "/ai/drafts", headers: asStaff,
+        payload: { useCase: "truth_mode_explanation", context: { note: "x".repeat(16_001) } },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json()).toMatchObject({ code: "VALIDATION_ERROR" });
+      expect(seen).toEqual([]);
+    } finally {
+      await app.close();
+    }
+  });
+
+  // Release review, 27 October 2026: the email pattern was tried at every
+  // letter of a run with no space, so 40,000 such letters took two seconds
+  // and the time grew with the square. Anchored at a word's start, it is one try.
+  it("scrubs long runs of text with no space in time that grows with the text, not its square", () => {
+    const started = performance.now();
+    for (const text of ["x".repeat(200_000), `a@${"b".repeat(200_000)}`, "a.".repeat(100_000), "1-".repeat(100_000)]) {
+      scrubContactDetails(text);
+    }
+    // Unanchored, the first alone took well over a minute.
+    expect(performance.now() - started).toBeLessThan(2_000);
+  });
+
+  it("reads a key word by word: contact details, a person and ids go, a room's or an item's name stays", () => {
+    expect(contextKeyWords("guestFullName")).toEqual(["guest", "full", "name"]);
+    expect(contextKeyWords("handoff_pack_id")).toEqual(["handoff", "pack", "id"]);
+    expect(contextKeyWords("COVIDNote")).toEqual(["covid", "note"]);
+    for (const key of ["email", "guestEmail", "contact_email", "e-mail", "phone", "guestPhone", "tel", "contactNumber", "mobile", "mobileNumber",
+      "address", "venueAddress", "postcode", "instagram", "guest", "client", "organiser", "contact", "bookerName", "displayName", "guestFullName",
+      "firstName", "clientName", "id", "enquiryId", "enquiry-id", "handoffPackId", "targetId", "venue_id", "ids", "bookingIds", "uuid", "ref", "reference"]) {
+      expect(isWithheldContextKey(key), key).toBe(true);
+    }
+    for (const key of ["paid", "valid", "COVID", "PAID", "name", "roomName", "itemName", "pickList", "pickListItems", "mobileBar", "microphones",
+      "eventType", "estimatedGuests", "message", "selectedTarget", "summary", "humanReviewRequired", "supplierInstructions"]) {
+      expect(isWithheldContextKey(key), key).toBe(false);
+    }
+    expect(scrubDraftContext({ count: 3, flag: true, none: null, list: [1, "a@b.co"] })).toEqual({ count: 3, flag: true, none: null, list: [1, "(email address)"] });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Plan 19, L6: a draft never states a price, availability or capacity. The
+// rules say so, and every draft is checked after the model wrote it.
+// ---------------------------------------------------------------------------
+
+describe("what a draft may not say (L6)", () => {
+  function answering(text: string): AIGenerationAdapter {
+    return {
+      status: { configured: true, provider: "mock", model: "mock-draft", disabledReason: null },
+      generateText() {
+        return Promise.resolve(text);
+      },
+    };
+  }
+  const ATTRIBUTION = { venueId: VENUE_ID, userId: USER_ID };
+
+  it.each(["proposal_draft", "enquiry_summary", "beo_supplier_instruction_draft", "truth_mode_explanation"] as const)(
+    "tells the model, for %s, that only the team confirms a price, availability or capacity",
+    (useCase) => {
+      const rules = buildAIDraftInstructions({ useCase, context: {} });
+      expect(rules).toContain("Never write an amount of money of any kind, the client's own budget included");
+      expect(rules).toContain("This holds even when repeating what the client asked or wrote, in a question, or in quotation marks.");
+      expect(rules).toContain("never say whether a date, a time or a room is available, free, held, booked or confirmed");
+      expect(rules).toContain("never say how many people a room seats, holds or can take, or whether a group fits");
+      expect(rules).toContain("write only that the events team will confirm the details, without naming the figure, the date's availability or the room's size");
+    },
+  );
+
+  it("takes out each sentence that states one, says which kinds, and keeps the rest", async () => {
+    const draft = await generateAIDraft(answering([
+      "Dear Elaine,",
+      "",
+      "Thank you for thinking of the Grand Hall. Good news: 17 September 2027 is free! The hall seats up to 200 and dinner is £65 per head.",
+      "",
+      "The team will confirm the figures with you.",
+      "",
+      "The Events Team",
+    ].join("\n")), { useCase: "proposal_draft", context: { clientName: "Elaine" } }, ATTRIBUTION, new Date("2026-10-27T12:00:00.000Z"));
+    expect(draft.body).toBe("Dear Elaine,\n\nThank you for thinking of the Grand Hall.\n\nThe team will confirm the figures with you.\n\nThe Events Team");
+    expect(draft.withheldCommitments).toEqual(["price", "availability", "capacity"]);
+    expect(draft.body).not.toMatch(/£|free|seats/u);
+  });
+
+  it("records nothing withheld from a draft that states none", async () => {
+    const draft = await generateAIDraft(answering("Dear Elaine, thank you for your enquiry about your 150 guests."),
+      { useCase: "proposal_draft", context: {} }, ATTRIBUTION);
+    expect(draft.withheldCommitments).toBeUndefined();
+    expect(draft.body).toBe("Dear Elaine, thank you for your enquiry about your 150 guests.");
+  });
+
+  it("gives no draft when every sentence states one, or a greeting and a sign-off are all that is left", async () => {
+    await expect(generateAIDraft(answering("The date is free. The room seats 200. It costs £900."),
+      { useCase: "enquiry_summary", context: {} }, ATTRIBUTION)).rejects.toBeInstanceOf(AIDraftNotProducedError);
+    await expect(generateAIDraft(answering("Dear Elaine,\n\nThe Grand Hall is free on the 17th.\n\nWith best wishes,\nThe Events Team"),
+      { useCase: "proposal_draft", context: {} }, ATTRIBUTION)).rejects.toBeInstanceOf(AIDraftNotProducedError);
+  });
+
+  // Release review, 27 October 2026: the first splitter lost every word before
+  // a full stop inside a sentence ("6.30pm"), on every draft.
+  it("keeps a clean draft whole, times, quotes and the client's guest numbers included", async () => {
+    const words = [
+      "Dear Elaine,",
+      "",
+      "Thank you for your note. Drinks would be from 6.30pm and dinner at 7.30pm, as you described, for your 150 guests.",
+      'You wrote "we\'d love something relaxed and warm." You mentioned a budget, and the team will talk it through with you.',
+      "Our events team will confirm availability and prices when they reply.",
+      "",
+      "The Events Team",
+    ].join("\n");
+    const draft = await generateAIDraft(answering(words), { useCase: "proposal_draft", context: {} }, ATTRIBUTION);
+    expect(draft.body).toBe(words);
+    expect(draft.withheldCommitments).toBeUndefined();
+  });
+
+  // Release review (three rounds): every exemption let claims through in the
+  // way a model writes them when it answers. Nothing excuses a claim's shape:
+  // the client's budget, a question repeated or a deferral that names the date
+  // goes too, and a deferral as the rules ask for it stays.
+  it("takes out a claim stated in answer to the client, the client's figure and a deferral that names the date, and keeps the rest", async () => {
+    const draft = await generateAIDraft(answering([
+      "Dear Elaine,",
+      "",
+      "Thank you for sharing your budget of £10,000. As you asked, room hire is £4,500. You asked whether the Saloon is free on the 14th. It is.",
+      "Our events team will confirm whether the Saloon is free on the 14th. Our events team will confirm the details with you, and we look forward to helping you plan the day.",
+      "",
+      "The Events Team",
+    ].join("\n")), { useCase: "proposal_draft", context: {} }, ATTRIBUTION);
+    // The bare answer goes with the claim it answered (release review, fourth round).
+    expect(draft.body).toBe("Dear Elaine,\n\nOur events team will confirm the details with you, and we look forward to helping you plan the day.\n\nThe Events Team");
+    expect(draft.withheldCommitments).toEqual(["price", "availability"]);
   });
 });
