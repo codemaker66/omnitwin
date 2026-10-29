@@ -2633,3 +2633,6 @@ export * from "./crowded-day.js";
 export * from "./deposits.js";
 export * from "./contracts.js";
 export * from "./reference-loadouts.js";
+// A crowded Trades Hall day (Plan 19 L9): one deterministic Saturday in all
+// six published rooms, for tests and local demos; invented people only.
+export * from "./crowded-day.js";
