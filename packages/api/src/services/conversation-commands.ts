@@ -1,4 +1,5 @@
 import { and, eq } from "drizzle-orm";
+import type { FastifyBaseLogger } from "fastify";
 import type {
   ConversationCommand,
   ConversationCommandAck,
@@ -27,7 +28,7 @@ import {
   type RequestDeny,
 } from "./requests.js";
 import { readObservationByKey, recordObservationCore, type ObservationDeny } from "./observations.js";
-import { pushForReply, pushForRequestLanded, tell } from "./push-triggers.js";
+import { pushForRequestLanded, tell, tellOfMessage } from "./push-triggers.js";
 import { pokeEscalationScheduler } from "./escalation-wake.js";
 
 // ---------------------------------------------------------------------------
@@ -413,6 +414,7 @@ export async function executeConversationCommand(
   connectionVenueId: string,
   command: ConversationCommand,
   now: () => number = () => Date.now(),
+  logger?: FastifyBaseLogger,
 ): Promise<ConversationCommandExecution> {
   if (isRequestStep(command)) return executeRequestStep(db, actor, connectionVenueId, command, now);
 
@@ -440,15 +442,9 @@ export async function executeConversationCommand(
   // Committed and recorded: tell the devices that asked (S7). Never a
   // replay, never the author of their own words, never a failure here.
   if (outcome.changed?.kind === "request.created") {
-    tell(pushForRequestLanded(db, outcome.changed.request), undefined, "request.landed");
-  } else if (outcome.changed?.kind === "message.sent" && outcome.changed.thread.requestId !== null) {
-    tell(pushForReply(db, {
-      requestId: outcome.changed.thread.requestId,
-      messageId: outcome.changed.message.id,
-      authorUserId: outcome.changed.message.authorUserId,
-      authorName: outcome.changed.message.authorName,
-      body: outcome.changed.message.body,
-    }), undefined, "request.replied");
+    tell(pushForRequestLanded(db, outcome.changed.request, { logger }), logger, "request.landed");
+  } else if (outcome.changed?.kind === "message.sent") {
+    tellOfMessage(db, outcome.changed.thread, outcome.changed.message, logger);
   }
   return {
     ack: {

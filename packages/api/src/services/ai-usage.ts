@@ -144,8 +144,16 @@ interface AttemptTokens {
 
 const MILLION = 1_000_000n;
 
+/** A model's name without a dated snapshot's suffix: "claude-opus-5-5-20261001"
+ *  is "claude-opus-5-5". The draft's model check and the pricing read the same
+ *  name, so a dated answer is neither refused as another model nor charged the
+ *  table's highest rates. */
+export function undatedModel(model: string): string {
+  return model.replace(/-\d{8}$/u, "");
+}
+
 function ratesFor(prices: PriceTable, attempt: AttemptTokens): { readonly rates: TokenRates; readonly priced: AIUsageAttempt["priced"] } {
-  const price = prices.models[attempt.model];
+  const price = prices.models[attempt.model] ?? prices.models[undatedModel(attempt.model)];
   if (price === undefined) return { rates: ceilingRates(prices), priced: "ceiling" };
   const prompt = attempt.inputTokens + attempt.cacheCreationInputTokens + attempt.cacheReadInputTokens;
   if (price.longPrompt !== undefined && prompt > price.longPrompt.overTokens) return { rates: price.longPrompt.rates, priced: "table" };

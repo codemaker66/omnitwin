@@ -1184,13 +1184,13 @@ export {
   AIDraftSendStateSchema,
   AIDraftContextSchema,
   CreateAIDraftRequestSchema,
+  MAX_AI_DRAFT_CONTEXT_CHARACTERS,
   AIAssistantStatusSchema,
   AIDraftSchema,
   ProposalMessageDraftSchema,
   findUnsafeAIDraftClaims,
   sanitizeAIDraftText,
   aiDraftDigest,
-  createReviewGatedAIDraft,
   type AIDraftUseCase,
   type AIDraftProvenance,
   type AIDraftEvidenceStatus,
@@ -1201,6 +1201,13 @@ export {
   type AIDraft,
   type ProposalMessageDraft,
 } from "./ai-assistant.js";
+
+export {
+  AI_DRAFT_COMMITMENT_KINDS,
+  AIDraftCommitmentKindSchema,
+  type AIDraftCommitmentKind,
+} from "./ai-draft-commitment-kinds.js";
+// The filter and createReviewGatedAIDraft: @omnitwin/types/ai-draft-review.
 
 export {
   COMMERCIAL_SPINE_SCHEMA_VERSION,

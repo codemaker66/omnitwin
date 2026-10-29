@@ -237,7 +237,9 @@ describe("the AI draft routes with the Anthropic provider", () => {
     authorization: `Bearer ${JSON.stringify({ id: ATTRIBUTION.userId, email: `${role}@test.invalid`, role, venueId })}`,
   });
   const staff = person("staff", ATTRIBUTION.venueId);
-  const DRAFT = { useCase: "enquiry_summary", context: { guestCount: 90 } };
+  // A general draft: the enquiry summary and the proposal's message are built
+  // on the server by their own routes and refused here (ai-1).
+  const DRAFT = { useCase: "beo_supplier_instruction_draft", context: { guestCount: 90 } };
 
   it("reports the provider and model, never the key", async () => {
     const app = await serve(provider());
@@ -269,7 +271,7 @@ describe("the AI draft routes with the Anthropic provider", () => {
     expect(res.statusCode).toBe(200);
     expect(res.json()).toMatchObject({ data: { body: "Ninety guests, dinner on rounds.", humanReviewRequired: true, sendState: "draft_only" } });
     expect(usage.entries).toEqual([expect.objectContaining({
-      venueId: ATTRIBUTION.venueId, userId: ATTRIBUTION.userId, feature: "enquiry_summary", outcome: "ok",
+      venueId: ATTRIBUTION.venueId, userId: ATTRIBUTION.userId, feature: "beo_supplier_instruction_draft", outcome: "ok",
       model: "claude-opus-5-5", requestId: "req_test_1", inputTokens: 12, outputTokens: 34, costMicroUsd: 12 * 4 + 34 * 20,
     })]);
   });
@@ -279,7 +281,7 @@ describe("the AI draft routes with the Anthropic provider", () => {
     const app = await serve(provider({ body: message([text("Ninety guests.")]) }), usage);
     const res = await app.inject({ method: "POST", url: "/ai/drafts", headers: person(role, ATTRIBUTION.venueId), payload: DRAFT });
     expect(res.statusCode).toBe(200);
-    expect(usage.entries).toEqual([expect.objectContaining({ venueId: ATTRIBUTION.venueId, feature: "enquiry_summary", outcome: "ok" })]);
+    expect(usage.entries).toEqual([expect.objectContaining({ venueId: ATTRIBUTION.venueId, feature: "beo_supplier_instruction_draft", outcome: "ok" })]);
   });
 
   it("answers 429 AI_BUDGET_REACHED, sending nothing, once the venue's allowance for the month is used", async () => {
