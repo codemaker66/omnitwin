@@ -39,6 +39,7 @@ import {
   venues,
 } from "../db/schema.js";
 import type { Database } from "../db/client.js";
+import { outerColumn } from "../utils/outer-column.js";
 import { authenticate, isPlatformAdmin } from "../middleware/auth.js";
 import { paginate } from "../utils/pagination.js";
 import { canManageCommercial, isVenueCommercialMember, roleReadsInternalEvents } from "../utils/query.js";
@@ -136,14 +137,14 @@ function selectDeskProposals(db: Pick<ProposalTransaction, "select">) {
   const latestQuote = (field: "totalMinor" | "currency") => sql`(
     SELECT ${proposalVersions.payload} -> 'quote' ->> ${field}
     FROM ${proposalVersions}
-    WHERE ${proposalVersions.proposalId} = ${proposals.id}
-      AND ${proposalVersions.version} = CASE WHEN ${proposals.status} IN ('draft', 'changes_requested')
-        THEN ${proposals.currentVersion} ELSE COALESCE(${proposals.sentVersion}, ${proposals.currentVersion}) END)`;
+    WHERE ${proposalVersions.proposalId} = ${outerColumn(proposals.id)}
+      AND ${proposalVersions.version} = CASE WHEN ${outerColumn(proposals.status)} IN ('draft', 'changes_requested')
+        THEN ${outerColumn(proposals.currentVersion)} ELSE COALESCE(${outerColumn(proposals.sentVersion)}, ${outerColumn(proposals.currentVersion)}) END)`;
   // The latest send: its stamp, or a move to "sent" recorded after it (a send
   // before sends were each stamped kept the first one's).
-  const lastSentAt = sql`GREATEST(${proposals.sentAt}, (
+  const lastSentAt = sql`GREATEST(${outerColumn(proposals.sentAt)}, (
     SELECT max(${proposalStatusHistory.createdAt}) FROM ${proposalStatusHistory}
-    WHERE ${proposalStatusHistory.proposalId} = ${proposals.id} AND ${proposalStatusHistory.toStatus} = 'sent'))`;
+    WHERE ${proposalStatusHistory.proposalId} = ${outerColumn(proposals.id)} AND ${proposalStatusHistory.toStatus} = 'sent'))`;
   // Whether its links agree as the link planner reads them: no deal, or its
   // deal live here with no enquiry but the deal's own. A layout change the
   // desk offers is then one the planner takes.
@@ -155,9 +156,9 @@ function selectDeskProposals(db: Pick<ProposalTransaction, "select">) {
     SELECT ${field === "id" ? configurations.id : spaces.name} FROM ${configurations}
     INNER JOIN ${spaces} ON ${spaces.id} = ${configurations.spaceId}
     WHERE ${configurations.id} = ${layoutId}
-      AND ${configurations.venueId} = ${proposals.venueId}
+      AND ${configurations.venueId} = ${outerColumn(proposals.venueId)}
       AND ${configurations.deletedAt} IS NULL
-      AND ${spaces.venueId} = ${proposals.venueId}
+      AND ${spaces.venueId} = ${outerColumn(proposals.venueId)}
       AND ${spaces.deletedAt} IS NULL)`;
   return db.select({
     ...getTableColumns(proposals),
@@ -184,17 +185,17 @@ function selectDeskProposals(db: Pick<ProposalTransaction, "select">) {
     linkOpenedAt: sql<string | null>`(
       SELECT to_char(max(${proposalShareTokens.lastViewedAt}) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
       FROM ${proposalShareTokens}
-      WHERE ${proposalShareTokens.proposalId} = ${proposals.id}
+      WHERE ${proposalShareTokens.proposalId} = ${outerColumn(proposals.id)}
         AND ${proposalShareTokens.lastViewedAt} >= ${lastSentAt})`,
     lastSentAt: sql<string | null>`to_char(${lastSentAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`,
     // Whether any of its links is the kind that records being opened; one sent
     // only with the older share code has none.
-    hasLink: sql<boolean>`EXISTS (SELECT 1 FROM ${proposalShareTokens} WHERE ${proposalShareTokens.proposalId} = ${proposals.id})`,
+    hasLink: sql<boolean>`EXISTS (SELECT 1 FROM ${proposalShareTokens} WHERE ${proposalShareTokens.proposalId} = ${outerColumn(proposals.id)})`,
     // Whether the client's link still opens, as presentedStatus decides it.
-    linkOpen: sql<boolean>`(${proposals.status} IN ('sent', 'changes_requested', 'accepted', 'declined', 'expired')
-      OR (${proposals.status} = 'archived' AND COALESCE((
+    linkOpen: sql<boolean>`(${outerColumn(proposals.status)} IN ('sent', 'changes_requested', 'accepted', 'declined', 'expired')
+      OR (${outerColumn(proposals.status)} = 'archived' AND COALESCE((
         SELECT ${proposalStatusHistory.fromStatus} FROM ${proposalStatusHistory}
-        WHERE ${proposalStatusHistory.proposalId} = ${proposals.id} AND ${proposalStatusHistory.toStatus} = 'archived'
+        WHERE ${proposalStatusHistory.proposalId} = ${outerColumn(proposals.id)} AND ${proposalStatusHistory.toStatus} = 'archived'
         ORDER BY ${proposalStatusHistory.createdAt} DESC LIMIT 1) = 'accepted', false)))`,
   })
     .from(proposals)
