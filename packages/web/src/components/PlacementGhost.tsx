@@ -40,7 +40,7 @@ import { placementFloorPoint } from "../lib/planner-interaction-floor.js";
 import { capReachedLine } from "../lib/placement-cap.js";
 import { placePieceInHand } from "../lib/place-in-hand.js";
 import { intersectSelectable } from "../lib/raycast-gate.js";
-import { cardIsWholeSet, cardParamsRequest, drawnDanceFloor, judgesCard, placesAsCard, type CardParams } from "../lib/setup-cards.js";
+import { cardIsWholeSet, cardParamsRequest, drawnDanceFloor, ghostSetInHand, judgesCard, placesAsCard, type CardParams } from "../lib/setup-cards.js";
 import { ghostRaisePx } from "../lib/touch-arbiter.js";
 import { onMainDraw } from "../lib/main-draw-clock.js";
 import { findFurnitureItemId } from "./SelectionSystem.js";
@@ -642,9 +642,11 @@ export function PlacementGhost(): React.ReactElement | null {
 
   // --- The truthful ghost: the card's whole set, judged with every body (Q-05) ---
   const brushing = catalogueItem.category === "chair" && chairBrushPreview.length > 1;
-  // A card set down as a card shows that set, whichever chrome armed it (setup-cards placesAsCard), judged as the commit is (judgesCard).
-  if (cardParams !== null && !brushing && placesAsCard(cardParams)) {
-    return <GhostSet params={cardParams} warming={warming} fromCardDrag={fromCardDrag} groupRef={ghostSetRef} />;
+  // A card set down as a card shows that set, whichever chrome armed it, and behind truthfulGhost alone a
+  // piece shows itself as the old way sets it down (setup-cards ghostSetInHand), judged as the commit is.
+  const handSet = cardParams !== null && !brushing ? ghostSetInHand(cardParams) : null;
+  if (handSet !== null) {
+    return <GhostSet params={handSet} warming={warming} fromCardDrag={fromCardDrag} groupRef={ghostSetRef} />;
   }
 
   // --- Normal furniture ghost ---

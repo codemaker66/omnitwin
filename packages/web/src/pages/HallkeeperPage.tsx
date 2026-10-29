@@ -35,6 +35,8 @@ import { InteractiveFloorPlan } from "../components/hallkeeper/InteractiveFloorP
 import { HallkeeperStatusBanner } from "../components/hallkeeper/HallkeeperStatusBanner.js";
 import { HallkeeperWorkspace } from "../components/hallkeeper/HallkeeperWorkspace.js";
 import { ProtectedPremisesBlock } from "../components/hallkeeper/ProtectedPremisesBlock.js";
+import { SheetStandingMark, describeSheetStanding } from "../components/hallkeeper/SheetStandingMark.js";
+import { useSheetStanding } from "../components/hallkeeper/useSheetStanding.js";
 import { PaperCopyStamp, paperCopyLine, usePrintedAt } from "../components/hallkeeper/PaperCopyStamp.js";
 import { formatSheetTimes } from "../components/hallkeeper/sheet-facts.js";
 import { ActivityIndicator, ActivityStatus } from "../components/shared/Activity.js";
@@ -591,6 +593,9 @@ export function HallkeeperPage(): React.ReactElement {
   const counts = useMemo(() => computeCounts(data, checks), [data, checks]);
   // The printed copy states its own printed minute ("…, printed 17 Oct 06:02").
   const printedAt = usePrintedAt();
+  // Whether this screen is still the version in force, asked again while it stays open (goal 05).
+  const standingResult = useSheetStanding(data?.paperCheck);
+  const standing = describeSheetStanding(standingResult, data?.approval?.version ?? null);
 
   if (loading) {
     return <main className="hk-page hk-sheet-state" aria-label="Hallkeeper sheet loading">
@@ -630,6 +635,7 @@ export function HallkeeperPage(): React.ReactElement {
       checksReadOnly={checksReadOnly}
       downloadBusy={downloadBusy} onDownload={handleDownload} onPrint={handlePrint}
       notices={<>
+        {standing !== null && <SheetStandingMark standing={standing} onOpen={loadData} />}
         {pendingCount > 0 && <OfflinePendingBadge count={pendingCount} />}
         {configId !== undefined && (progressWrites.get(configId) ?? 0) > 0 && <ActivityStatus>Saving shared checks…</ActivityStatus>}
         {configId !== undefined && syncingConfigs.has(configId) && <ActivityStatus>Syncing saved checks…</ActivityStatus>}
@@ -654,6 +660,7 @@ export function HallkeeperPage(): React.ReactElement {
     <div className="hk-print-only" aria-hidden="true">
       <h1>{data.space.name}</h1><h2>{data.config.name}</h2><p>{data.venue.name} · {formatDims(data.space)} · {data.config.guestCount} guests · {formatLayoutStyle(data.config.layoutStyle)}</p>
       <p className="hk-print-version">{paperCopyLine(data, printedAt)}</p>
+      {standing !== null && <SheetStandingMark standing={standing} />}
       {data.timing !== null && <p>{formatSheetTimes(data.timing, data.venue.timezone)}</p>}
       <HallkeeperStatusBanner key={data.config.id} configId={data.config.id} timeZone={data.venue.timezone} />
       {approval !== null && <ApprovalStampBanner approval={approval} timezone={data.venue.timezone} />}

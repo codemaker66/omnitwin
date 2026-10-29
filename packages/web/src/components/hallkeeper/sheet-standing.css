@@ -1,0 +1,55 @@
+/* A sheet that is no longer the version in force says so above its work
+ * (SheetStandingMark.tsx). The band is the review band's brick tone; the
+ * print carries it in ink alone, so it reads the same from a mono printer. */
+
+.hkf-provenance .hk-standing {
+  width: 100%;
+  margin: 0;
+  align-items: center;
+}
+
+.hk-standing__open {
+  margin-left: auto;
+  min-height: 44px;
+  padding: 8px 16px;
+  border: 1px solid var(--house-brick-dot);
+  border-radius: 8px;
+  background: #fffdf6;
+  color: var(--house-brick-strong);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.hk-standing__open:active {
+  transform: translateY(1px);
+}
+
+.hk-print-only .hk-standing {
+  margin: 2mm 0 4mm;
+}
+
+@media print {
+  .hk-print-only .hk-standing {
+    border: 0.6mm solid #000;
+    border-left-width: 2.4mm;
+    background: none;
+    color: #000;
+    font-size: 12pt;
+    break-inside: avoid;
+  }
+  .hk-print-only .hk-standing strong {
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+  .hk-standing__open {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hk-standing__open:active {
+    transform: none;
+  }
+}
