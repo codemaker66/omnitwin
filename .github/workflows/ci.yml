@@ -326,8 +326,8 @@ jobs:
         # hallkeeper-timing-postgres, requests-postgres,
         # protected-premises-postgres, forward-book-postgres,
         # supplier-records-kept-postgres, enquiry-funnel-postgres and
-        # enquiry-funnel-migration-postgres, hallkeeper-progress-postgres and
-        # venue-team-postgres skip without their URLs; each
+        # enquiry-funnel-migration-postgres, hallkeeper-progress-postgres,
+        # venue-team-postgres and the L5 payments suites skip without their URLs; each
         # migrates its own database and names it in its guard. The 0100
         # migration test empties its database first, so it is never shared.
         env:
@@ -344,6 +344,7 @@ jobs:
           --command="CREATE DATABASE venviewer_enquiry_funnel_migration_test"
           --command="CREATE DATABASE venviewer_progress_test"
           --command="CREATE DATABASE venviewer_venue_team_test"
+          --command="CREATE DATABASE venviewer_payments_test"
 
       - name: Create dedicated pricing guard test database
         # pricing-public-read-postgres builds the whole API on its own
@@ -373,6 +374,8 @@ jobs:
           VENVIEWER_ENQUIRY_FUNNEL_MIGRATION_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:55476/venviewer_enquiry_funnel_migration_test
           VENVIEWER_PROGRESS_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:55476/venviewer_progress_test
           VENVIEWER_VENUE_TEAM_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:55476/venviewer_venue_team_test
+          # Plan 19 L5: deposits and contract signatures (helpers/payments-db.ts).
+          VENVIEWER_PAYMENTS_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:55476/venviewer_payments_test
           VENVIEWER_PRICING_GUARD_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:55476/venviewer_pricing_guard_test
         run: pnpm test
 
@@ -513,17 +516,31 @@ jobs:
     # what it measures: the renderer, the tour, the benchmark and the toolchain
     # that serves them. .github/gpu/gpu-scope.mjs holds the rules; a change it
     # cannot compare with a base commit is always in scope.
+    # The comparison reads two snapshots, never history (cat-file, diff and show
+    # between base and head), so the job fetches the head and the base commit
+    # alone. A full-history checkout ran past five and then ten minutes on busy
+    # runners (#178's run 40347200904; master's 40723003312 attempt 2 and
+    # 40750668695), and a cancelled scope job skips the GPU run, so the release
+    # gate refuses. A base that cannot be fetched leaves the change in scope.
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     permissions:
       contents: read
     outputs:
       required: ${{ steps.scope.outputs.required }}
     steps:
-      - name: Checkout with the history the comparison needs
+      - name: Checkout the head commit
         uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
+
+      - name: Fetch the base commit the comparison needs
+        env:
+          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if printf '%s' "$BASE_SHA" | grep -Eq '^[0-9a-f]{40}$' && [ "$BASE_SHA" != 0000000000000000000000000000000000000000 ]; then
+            git fetch --no-tags --depth=1 origin "$BASE_SHA" || echo "Base $BASE_SHA could not be fetched; the change stays in GPU scope."
+          else
+            echo "No base commit to compare; the change stays in GPU scope."
+          fi
 
       - name: Setup Node.js
         uses: actions/setup-node@v5

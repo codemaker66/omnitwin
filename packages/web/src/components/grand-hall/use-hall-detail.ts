@@ -14,6 +14,7 @@
 
 import { useEffect, useMemo } from "react";
 import { DETAIL_ATLAS_TEXEL_MM, DetailWake, HallDetailLayer, type HallDetailOptions } from "./hall-detail.js";
+import { onGpuMemoryPressure } from "../../lib/gpu-memory-pressure.js";
 
 export interface HallDetailHandle {
   readonly layer: HallDetailLayer;
@@ -45,14 +46,18 @@ export function useHallDetail(slots: number, quality: number, invalidate: () => 
     const { layer, wake } = handle;
     layer.onChange = () => { invalidate(); };
     layer.start();
+    // A device out of memory takes the tiles' array back: the walls keep their
+    // photographs (lib/gpu-memory-pressure.ts).
+    const stopPressure = renderer === null ? null : onGpuMemoryPressure(renderer, () => { layer.releaseAll(); });
     if (import.meta.env.DEV) window.__venHallDetail = layer;
     return () => {
+      stopPressure?.();
       layer.onChange = null;
       wake.cancel();
       layer.dispose();
       if (import.meta.env.DEV && window.__venHallDetail === layer) delete window.__venHallDetail;
     };
-  }, [handle, invalidate]);
+  }, [handle, invalidate, renderer]);
 
   return handle;
 }

@@ -14,8 +14,35 @@ interface NativeRenderScope {
 }
 const renderScopes = new WeakMap<object, NativeRenderScope>();
 
+interface ComposedView {
+  readonly scene: Object3D;
+  readonly camera: Camera;
+}
+const composedViews = new WeakMap<object, ComposedView>();
+
+/**
+ * Runs a registered composer's main frame (its scene pass, its post passes and
+ * the pass to the canvas) as the main view of `scene` seen by `camera`. The
+ * composer draws the canvas with a quad, so the scene is drawn only nested,
+ * into the scene pass; that nested draw of this scene and camera is the
+ * frame's main draw (isNativeCanvasRender). Without this a capture drawn
+ * under the planner's post-processing never counted as drawn.
+ */
+export function withNativeComposedFrame(renderer: object, scene: Object3D, camera: Camera, compose: () => void): void {
+  const previous = composedViews.get(renderer);
+  composedViews.set(renderer, { scene, camera });
+  try {
+    compose();
+  } finally {
+    if (previous === undefined) composedViews.delete(renderer);
+    else composedViews.set(renderer, previous);
+  }
+}
+
 /** Record the caller's target before Three selects its internal output target.
- * Nested renders restore their parent's scope; compilation has no render scope. */
+ * Nested renders restore their parent's scope; compilation has no render scope.
+ * Inside a composed frame (withNativeComposedFrame) the nested draw of its own
+ * scene and camera is the main draw. */
 export function withNativeRenderScope(
   renderer: Pick<WebGPURenderer, "getRenderTarget">,
   scene: Object3D,
@@ -23,7 +50,11 @@ export function withNativeRenderScope(
   draw: () => void,
 ): void {
   const previous = renderScopes.get(renderer);
-  const scope: NativeRenderScope = { scene, camera, canvas: previous === undefined && renderer.getRenderTarget() === null, completions: [] };
+  const composed = composedViews.get(renderer);
+  const canvas = previous === undefined
+    ? renderer.getRenderTarget() === null
+    : composed !== undefined && composed.scene === scene && composed.camera === camera;
+  const scope: NativeRenderScope = { scene, camera, canvas, completions: [] };
   renderScopes.set(renderer, scope);
   try {
     draw();
