@@ -334,7 +334,7 @@ const reviewInputFields = {
   qaReportDigest: ReconstructionReleaseSha256Schema,
   decision: z.enum(["approved", "rejected"]),
   targetExposure: z.enum(["expert_review", "public"]),
-  visualEvidence: z.array(ReconstructionVisualEvidenceSchema).min(1),
+  visualEvidence: z.array(ReconstructionVisualEvidenceSchema).min(1).max(200),
   transformArtifactRef: ReconstructionReleaseArtifactRefSchema.nullable(),
   sceneAuthorityMapRef: ReconstructionReleaseArtifactRefSchema.nullable(),
   note: z.string().trim().min(20).max(2000),

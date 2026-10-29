@@ -58,7 +58,7 @@ describe("FloatingWidgetFrame", () => {
     expect(body?.hasAttribute("hidden")).toBe(false);
   });
 
-  it("auto-compacts without overwriting the saved minimized preference", () => {
+  it("auto-compact dims the frame but keeps the body mounted and visible", () => {
     const { container, rerender } = render(
       <FloatingWidgetFrame
         id="auto-compact-overlay"
@@ -74,10 +74,16 @@ describe("FloatingWidgetFrame", () => {
     const root = container.querySelector<HTMLElement>("[data-floating-widget-id='auto-compact-overlay']");
     const body = container.querySelector<HTMLElement>(".vv-floating-widget__body");
 
+    // The camera is moving: the panel holds its size and only dims, so
+    // nothing folds up mid-orbit and pops back on settle (CB-11).
     expect(root?.getAttribute("data-auto-compact")).toBe("true");
     expect(root?.getAttribute("data-minimized")).toBe("false");
-    expect(body?.hasAttribute("hidden")).toBe(true);
-    expect(screen.getByText("Grade B")).toBeTruthy();
+    expect(root?.classList.contains("is-auto-compact")).toBe(true);
+    expect(root?.classList.contains("is-minimized")).toBe(false);
+    expect(body?.hasAttribute("hidden")).toBe(false);
+    expect(screen.getByText("Panel content")).toBeTruthy();
+    expect(screen.queryByText("Grade B")).toBeNull();
+    expect(screen.getByRole("button", { name: "Minimize Layout intelligence" }).getAttribute("aria-expanded")).toBe("true");
 
     rerender(
       <FloatingWidgetFrame
@@ -94,6 +100,33 @@ describe("FloatingWidgetFrame", () => {
     expect(root?.getAttribute("data-auto-compact")).toBe("false");
     expect(root?.getAttribute("data-minimized")).toBe("false");
     expect(body?.hasAttribute("hidden")).toBe(false);
+    expect(root?.classList.contains("is-auto-compact")).toBe(false);
+  });
+
+  it("still hides the body on a real minimise while the camera moves", () => {
+    const { container } = render(
+      <FloatingWidgetFrame
+        id="auto-compact-minimize-overlay"
+        title="Draw"
+        compactLabel="Draw"
+        autoCompact
+        defaultPlacement={{ type: "anchor", anchor: "top-left", offsetX: 16, offsetY: 20 }}
+      >
+        <p>Drawing tools</p>
+      </FloatingWidgetFrame>,
+    );
+
+    const root = container.querySelector<HTMLElement>("[data-floating-widget-id='auto-compact-minimize-overlay']");
+    const body = container.querySelector<HTMLElement>(".vv-floating-widget__body");
+    expect(body?.hasAttribute("hidden")).toBe(false);
+
+    fireEvent.click(screen.getByRole("button", { name: "Minimize Draw" }));
+
+    expect(root?.getAttribute("data-minimized")).toBe("true");
+    expect(root?.classList.contains("is-minimized")).toBe(true);
+    expect(root?.classList.contains("is-auto-compact")).toBe(false);
+    expect(body?.hasAttribute("hidden")).toBe(true);
+    expect(screen.getByRole("button", { name: "Expand Draw" }).getAttribute("aria-expanded")).toBe("false");
   });
 
   it("supports keyboard repositioning and stores the preferred position", async () => {

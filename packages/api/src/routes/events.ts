@@ -44,6 +44,7 @@ import { authenticate } from "../middleware/auth.js";
 import { canAccessInternalEvent, canAccessResource, canManageVenue, canWriteEvents, isEventWriteRole } from "../utils/query.js";
 import { recordEventPlanChange } from "../services/event-plan-lifecycle.js";
 import { updateEventCore } from "../services/event-mutations.js";
+import { lockLiveRoom } from "../services/room-liveness.js";
 
 type EventRow = typeof events.$inferSelect;
 type EventPhaseRow = typeof eventPhases.$inferSelect;
@@ -493,24 +494,32 @@ export async function eventRoutes(server: FastifyInstance, opts: { db: Database 
       .orderBy(desc(eventPhases.sortOrder))
       .limit(1);
 
-    const [phase] = await db.insert(eventPhases).values({
-      eventId: eventRow.id,
-      spaceId: parsed.data.spaceId ?? null,
-      templateKey: parsed.data.templateKey ?? null,
-      name: parsed.data.name,
-      sortOrder: (lastPhase?.sortOrder ?? -1) + 1,
-      startsAt: dateOrNull(parsed.data.startsAt),
-      durationMinutes: parsed.data.durationMinutes,
-      guestCount: parsed.data.guestCount ?? null,
-      opsTasksCount: parsed.data.opsTasksCount,
-      reviewGatesCount: parsed.data.reviewGatesCount,
-      densityStatus: "not_checked",
-      densityLabel: "Density not checked",
-      staffConflictsStatus: "not_checked",
-      staffConflictsLabel: "Staff conflicts not checked",
-      notes: parsed.data.notes ?? null,
-    }).returning();
+    // A phase given a room holds it until the phase is written, so a room
+    // being deleted never takes it (admin-venues-3).
+    const roomId = parsed.data.spaceId ?? null;
+    const phase = await db.transaction(async (tx) => {
+      if (roomId !== null && !(await lockLiveRoom(tx, eventRow.venueId, roomId))) return "room_deleted" as const;
+      const [row] = await tx.insert(eventPhases).values({
+        eventId: eventRow.id,
+        spaceId: parsed.data.spaceId ?? null,
+        templateKey: parsed.data.templateKey ?? null,
+        name: parsed.data.name,
+        sortOrder: (lastPhase?.sortOrder ?? -1) + 1,
+        startsAt: dateOrNull(parsed.data.startsAt),
+        durationMinutes: parsed.data.durationMinutes,
+        guestCount: parsed.data.guestCount ?? null,
+        opsTasksCount: parsed.data.opsTasksCount,
+        reviewGatesCount: parsed.data.reviewGatesCount,
+        densityStatus: "not_checked",
+        densityLabel: "Density not checked",
+        staffConflictsStatus: "not_checked",
+        staffConflictsLabel: "Staff conflicts not checked",
+        notes: parsed.data.notes ?? null,
+      }).returning();
+      return row;
+    });
 
+    if (phase === "room_deleted") return eventPhaseSpaceMismatch(reply);
     if (phase === undefined) {
       return reply.status(500).send({ error: "Failed to create event phase", code: "EVENT_PHASE_CREATE_FAILED" });
     }
@@ -709,6 +718,12 @@ export async function eventPhaseRoutes(server: FastifyInstance, opts: { db: Data
       await tx.select({ id: events.id }).from(events).where(eq(events.id, joined.event.id)).limit(1).for("no key update");
       const [current] = await tx.select().from(eventPhases).where(eq(eventPhases.id, params.data.id)).limit(1);
       if (current === undefined) return undefined;
+      // A phase moved into a room, or in time, holds the room it lands in
+      // until this commits, so a room being deleted never takes it
+      // (admin-venues-3).
+      const roomId = parsed.data.spaceId === undefined ? current.spaceId : parsed.data.spaceId;
+      const placed = parsed.data.spaceId !== undefined || parsed.data.startsAt !== undefined || parsed.data.durationMinutes !== undefined;
+      if (roomId !== null && placed && !(await lockLiveRoom(tx, joined.event.venueId, roomId))) return "room_deleted" as const;
       const [written] = await tx.update(eventPhases).set({
         spaceId: parsed.data.spaceId === undefined ? current.spaceId : parsed.data.spaceId,
         name: parsed.data.name ?? current.name,
@@ -727,6 +742,7 @@ export async function eventPhaseRoutes(server: FastifyInstance, opts: { db: Data
       return written;
     });
 
+    if (updated === "room_deleted") return eventPhaseSpaceMismatch(reply);
     if (updated === undefined) {
       return reply.status(500).send({ error: "Failed to update event phase", code: "EVENT_PHASE_UPDATE_FAILED" });
     }

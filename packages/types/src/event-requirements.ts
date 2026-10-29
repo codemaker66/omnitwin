@@ -267,6 +267,32 @@ export function redactHealthFreeText(value: unknown): unknown {
   return redactValue(value, new WeakMap());
 }
 
+/**
+ * An action's payload or inverse as the action log keeps it (release audit
+ * people-privacy-3): the guests' allergy note at
+ * instructions.dietary.otherAllergies blanked, with otherAllergiesRedacted:
+ * true beside it, and everything else as given. Blank rather than
+ * REDACTED_HEALTH_TEXT, so a logged entry can never write a placeholder into
+ * a layout's note. Any value but a missing, null or empty one is a note, the
+ * test the API's nightly pass applies to rows stored before. The layout keeps
+ * its note until its retention date. Never mutates its input.
+ */
+export function redactAllergyNote(value: unknown): unknown {
+  if (!isJsonObject(value)) return value;
+  const instructions = value["instructions"];
+  if (!isJsonObject(instructions)) return value;
+  const dietary = instructions["dietary"];
+  if (!isJsonObject(dietary)) return value;
+  const note = dietary["otherAllergies"];
+  if (note === undefined || note === null || note === "") return value;
+  return { ...value, instructions: { ...instructions, dietary: { ...dietary, otherAllergies: "", otherAllergiesRedacted: true } } };
+}
+
+/** A JSON object: a plain record, never an array. */
+function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value) && isPlainRecord(value);
+}
+
 export function hasDietaryContent(d: DietarySummary): boolean {
   if (dietaryTotal(d) > 0) return true;
   if (d.otherAllergies.trim().length > 0) return true;

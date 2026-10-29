@@ -60,6 +60,9 @@ export interface LayoutLiveConnection {
   readonly configId: string;
   readonly socket: LayoutLiveSocket;
   readonly user: LayoutLiveUser;
+  /** The Clerk account the socket signed in with (null in test mode); the
+   *  access re-check holds it to the users row. Never sent in a frame. */
+  readonly clerkId: string | null;
   readonly joinedAtMs: number;
   view: LiveView | null;
   lastSeenMs: number;
@@ -84,13 +87,14 @@ export class LayoutLiveHub {
     this.#newId = newId;
   }
 
-  join(configId: string, socket: LayoutLiveSocket, user: LayoutLiveUser): LayoutLiveConnection {
+  join(configId: string, socket: LayoutLiveSocket, user: LayoutLiveUser, clerkId: string | null = null): LayoutLiveConnection {
     const nowMs = this.#clock();
     const connection: LayoutLiveConnection = {
       connectionId: this.#newId(),
       configId,
       socket,
       user,
+      clerkId,
       joinedAtMs: nowMs,
       view: null,
       lastSeenMs: nowMs,
