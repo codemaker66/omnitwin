@@ -17,6 +17,7 @@ import {
   defaultSupplierPassExpiry,
   latestSupplierPassExpiry,
   supplierCoordinationPayloadDigest,
+  STAFF_AUDIENCE_ROLES,
   SUPPLIER_PASS_MAX_DAYS_AFTER_EVENT,
   type SupplierAcknowledgement,
   type SupplierCoordinationPack,
@@ -60,13 +61,15 @@ import {
 } from "../services/supplier-passes.js";
 
 /**
- * Who hears a supplier's response: the people running the day, as for an
- * event-day issue (services/event-day-ops.ts). Before this a clarification
- * request was stored on the pack and reached nobody. The notification
- * carries the supplier's own words and opens the event board, whose
- * Supplier passes section shows who has opened and read each pass.
+ * Who hears a supplier's response: the venue's whole team, the office that
+ * issues passes (administrators and managers) as well as the people running
+ * the day. The inbox is addressed by role, so a pass made by an
+ * administrator or manager whose response went only to staff and hallkeepers
+ * never reached the person who sent it. The notification carries the
+ * supplier's own words and opens the event board, whose Supplier passes
+ * section shows who has opened and read each pass.
  */
-export const SUPPLIER_RESPONSE_AUDIENCE: readonly EventPlanAudienceRole[] = ["staff", "hallkeeper"];
+export const SUPPLIER_RESPONSE_AUDIENCE: readonly EventPlanAudienceRole[] = STAFF_AUDIENCE_ROLES;
 
 const IdParam = z.object({ id: z.uuid() });
 const EventParam = z.object({ eventId: z.uuid() });

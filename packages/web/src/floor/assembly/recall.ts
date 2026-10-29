@@ -9,12 +9,15 @@
 // seen before it is summoned. The Assembly (GrandAssembly.tsx) takes the hold
 // over once the drawn Grand Hall is there to play in. If the room turns out
 // to be another one, or nothing takes the hold over in time, the furniture is
-// let go as placed: a hold can never hide a layout for good.
+// let go as placed: a hold can never hide a layout for good. A replay
+// (Present) is asked for only while the Assembly is on its stage, at rest,
+// over a furnished floor: nothing else would take it up.
 // ---------------------------------------------------------------------------
 
 import { useEffect } from "react";
 import { create } from "zustand";
 import { useEditorStore } from "../../stores/editor-store.js";
+import { usePlacementStore } from "../../stores/placement-store.js";
 import {
   currentFurniturePresentation,
   publishFurniturePresentation,
@@ -37,12 +40,14 @@ interface RecallState {
   readonly fast: boolean;
   /** Bumped to send the show straight to its end (the Skip's second press). */
   readonly skipNonce: number;
-  /** When the Assembly last gave the room back (`performance.now()`): the control settles at rest from here. */
+  /** When the Assembly last gave the room back (`performance.now()`): the Skip settles from here. */
   readonly restedAt: number;
+  /** Whether the Assembly is on its stage (mounted over the drawn hall), so a replay asked for now is taken up. */
+  readonly onStage: boolean;
 }
 
 export const useAssemblyRecallStore = create<RecallState>()(() => ({
-  request: null, active: false, fast: false, skipNonce: 0, restedAt: Number.NEGATIVE_INFINITY,
+  request: null, active: false, fast: false, skipNonce: 0, restedAt: Number.NEGATIVE_INFINITY, onStage: false,
 }));
 
 /** Layouts this device has watched assemble, or furnished itself: the first-open rule passes them by. */
@@ -180,10 +185,26 @@ useEditorStore.subscribe((state, previous) => {
   else unannounced = opened;
 });
 
-/** Ask for the Assembly again over the layout that is open (the replay control). */
-export function requestAssemblyReplay(): void {
+/**
+ * How long a press is still the show's once the Assembly gives the room back, ms: a hurried show can end under a
+ * press already on its way. The Skip stays this long, fading (AssemblyReplay.tsx), and no replay is asked for
+ * within it: asking for one takes a person longer than this to read and decide.
+ */
+export const REPLAY_SETTLE_MS = 600;
+
+/**
+ * Ask for the Assembly again over the layout that is open (Present). Only the Assembly on its stage takes a
+ * request up, so it is asked for only while the Assembly is there and at rest (a request mid-show starts the show
+ * over, and one within REPLAY_SETTLE_MS of its end came with a press meant for the show) and the floor has
+ * furniture (an empty floor would hold the room for a show with nothing in it). Returns whether it asked.
+ */
+export function requestAssemblyReplay(): boolean {
+  const { onStage, active, request, restedAt } = useAssemblyRecallStore.getState();
+  if (!onStage || active || request !== null || performance.now() - restedAt < REPLAY_SETTLE_MS) return false;
+  if (usePlacementStore.getState().placedItems.length === 0) return false;
   nonce += 1;
   useAssemblyRecallStore.setState({ request: { nonce, configId: useEditorStore.getState().configId, reason: "replay" } });
+  return true;
 }
 
 /** The Skip, first press: the show plays on, at speed. */
@@ -194,6 +215,17 @@ export function speedUpAssembly(): void {
 /** The Skip, second press: the show goes straight to its end. */
 export function skipAssemblyToEnd(): void {
   useAssemblyRecallStore.setState((state) => ({ skipNonce: state.skipNonce + 1 }));
+}
+
+/**
+ * A press on the Skip, or on Present while the show plays: the first plays it on at speed, a second goes straight
+ * to the end. It reads what the Assembly is doing now, not what the last frame drew: the show can end in between.
+ */
+export function hurryAssembly(): void {
+  const { active, fast } = useAssemblyRecallStore.getState();
+  if (!active) return;
+  if (fast) skipAssemblyToEnd();
+  else speedUpAssembly();
 }
 
 /** The Assembly has taken up (or turned down) this request. */
@@ -256,5 +288,7 @@ export function resetAssemblyRecallForTests(): void {
   nonce = 0;
   try { window.localStorage.removeItem(SEEN_KEY); } catch { /* none to forget */ }
   publishFurniturePresentation(null);
-  useAssemblyRecallStore.setState({ request: null, active: false, fast: false, skipNonce: 0, restedAt: Number.NEGATIVE_INFINITY });
+  useAssemblyRecallStore.setState({
+    request: null, active: false, fast: false, skipNonce: 0, restedAt: Number.NEGATIVE_INFINITY, onStage: false,
+  });
 }

@@ -1,13 +1,16 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useEditorStore } from "../../../stores/editor-store.js";
+import { usePlacementStore } from "../../../stores/placement-store.js";
 import { placedItemToEditor } from "../../../components/editor/EditorBridge.js";
 import { currentFurniturePresentation } from "../../presentation-channel.js";
 import {
   EMPTY_ROOM,
   HOLD_CAP_MS,
   HOLD_LIMIT_MS,
+  REPLAY_SETTLE_MS,
   hasSeenLayout,
+  hurryAssembly,
   markLayoutSeen,
   requestAssemblyReplay,
   resetAssemblyRecallForTests,
@@ -40,8 +43,16 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.restoreAllMocks();
   resetAssemblyRecallForTests();
+  usePlacementStore.setState({ placedItems: [] });
 });
+
+/** The Assembly on its stage over furniture, as GrandAssembly's mount leaves it: a replay asked for now is taken up. */
+function onStageOverFurniture(): void {
+  usePlacementStore.setState({ placedItems: grandHallDinner180().slice(0, 11) });
+  act(() => { useAssemblyRecallStore.setState({ onStage: true }); });
+}
 
 describe("Layout Recall: a saved layout that opens assembles itself", () => {
   it("changes nothing where the device has not asked for the Assembly", () => {
@@ -164,10 +175,11 @@ describe("Layout Recall: a saved layout that opens assembles itself", () => {
     expect(currentFurniturePresentation()).toBe(EMPTY_ROOM);
   });
 
-  it("replays a seen layout when asked (Present, or the control at rest)", () => {
+  it("replays a seen layout when Present asks", () => {
     markLayoutSeen("config-a");
     useEditorStore.setState({ configId: "config-a" });
-    requestAssemblyReplay();
+    onStageOverFurniture();
+    expect(requestAssemblyReplay()).toBe(true);
     expect(request()).toMatchObject({ configId: "config-a", reason: "replay" });
   });
 
@@ -207,8 +219,52 @@ describe("Layout Recall: a saved layout that opens assembles itself", () => {
 
   it("replays the open layout on request", () => {
     useEditorStore.setState({ configId: "config-a" });
-    requestAssemblyReplay();
+    onStageOverFurniture();
+    expect(requestAssemblyReplay()).toBe(true);
     expect(request()).toMatchObject({ configId: "config-a", reason: "replay" });
+  });
+
+  it("asks for a replay only where the Assembly can take it up: on its stage, at rest, over furniture", () => {
+    useEditorStore.setState({ configId: "config-a" });
+    usePlacementStore.setState({ placedItems: grandHallDinner180().slice(0, 11) });
+    // Nothing on its stage: a request would sit until the Assembly next mounted, and play then.
+    expect(requestAssemblyReplay()).toBe(false);
+    act(() => { useAssemblyRecallStore.setState({ onStage: true, active: true }); });
+    // Mid-show: a request would start the show over.
+    expect(requestAssemblyReplay()).toBe(false);
+    act(() => { useAssemblyRecallStore.setState({ active: false, request: { nonce: 99, configId: "config-a", reason: "open" } }); });
+    // An opening not yet taken up stays the one the Assembly plays (and marks seen).
+    expect(requestAssemblyReplay()).toBe(false);
+    expect(request()).toMatchObject({ nonce: 99, reason: "open" });
+    act(() => { useAssemblyRecallStore.setState({ request: null }); });
+    usePlacementStore.setState({ placedItems: [] });
+    // An empty floor: the hold would wait for furniture that is not coming.
+    expect(requestAssemblyReplay()).toBe(false);
+    expect(request()).toBeNull();
+    expect(currentFurniturePresentation()).toBeNull();
+  });
+
+  it("asks for no replay in the moment the show gives the room back: that press was meant for the show", () => {
+    useEditorStore.setState({ configId: "config-a" });
+    onStageOverFurniture();
+    const now = vi.spyOn(performance, "now").mockReturnValue(10_000);
+    act(() => { useAssemblyRecallStore.setState({ restedAt: 10_000 - REPLAY_SETTLE_MS + 1 }); });
+    expect(requestAssemblyReplay()).toBe(false);
+    expect(request()).toBeNull();
+    now.mockReturnValue(10_001);
+    expect(requestAssemblyReplay()).toBe(true);
+    expect(request()).toMatchObject({ reason: "replay" });
+  });
+
+  it("hurries the show only while it plays: at speed on the first press, to its end on the second", () => {
+    const before = useAssemblyRecallStore.getState().skipNonce;
+    hurryAssembly();
+    expect(useAssemblyRecallStore.getState()).toMatchObject({ fast: false, skipNonce: before });
+    act(() => { useAssemblyRecallStore.setState({ active: true }); });
+    hurryAssembly();
+    expect(useAssemblyRecallStore.getState()).toMatchObject({ fast: true, skipNonce: before });
+    hurryAssembly();
+    expect(useAssemblyRecallStore.getState().skipNonce).toBe(before + 1);
   });
 
   it("lets the furniture go when the planner closes", () => {

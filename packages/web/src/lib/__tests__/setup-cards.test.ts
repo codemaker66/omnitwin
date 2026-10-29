@@ -1,8 +1,10 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { setupCardLook, setupCardPreviewUrl } from "../crafted-furniture.js";
+import { SETUP_PREVIEW_VERSION, setupCardLook, setupCardPreviewUrl } from "../crafted-furniture.js";
+import { PLANNER_CHAIR_SLUGS } from "../furniture-defaults.js";
 import { setPlannerFeaturesForTesting } from "../planner-features.js";
+import { usePlannerEventStore, type PlannerEventKind } from "../../stores/planner-event-store.js";
 import {
   CARD_COLOURWAYS,
   SETUP_CARD_IDS,
@@ -12,6 +14,7 @@ import {
   cardParamsFor,
   cardParamsRequest,
   describeCard,
+  ghostSetInHand,
   isSetupCardId,
   pieceCardId,
   pieceCardSlug,
@@ -23,7 +26,10 @@ import {
 
 afterEach(() => {
   setPlannerFeaturesForTesting(null);
+  usePlannerEventStore.getState().setEventKind(null);
 });
+
+const publicDir = resolve(import.meta.dirname, "../../../public");
 
 function paramsFor(...args: Parameters<typeof cardParamsFor>): CardParams {
   const params = cardParamsFor(...args);
@@ -167,43 +173,101 @@ describe("every card", () => {
 });
 
 describe("setup card pictures", () => {
-  const pictures = setupCardLooks().map((look) => ({ look: `${look.card}/${setupCardLook(look) ?? ""}`, url: setupCardPreviewUrl(look) }));
+  // Each look on each chair the planner sets; a look that seats no one (the floor) is one picture.
+  const pictures = [...new Map(setupCardLooks().flatMap((look) => PLANNER_CHAIR_SLUGS.map((chair) => {
+    const url = setupCardPreviewUrl(look, chair);
+    return [url, { look: `${look.card}/${setupCardLook(look, chair) ?? ""}`, url }] as const;
+  }))).values()];
 
-  it("has one picture per look, and none for a piece card", () => {
-    expect(new Set(pictures.map(({ url }) => url)).size).toBe(pictures.length);
-    expect(pictures).toHaveLength(20);
+  it("has one picture per look and chair, and none for a piece card", () => {
+    expect(PLANNER_CHAIR_SLUGS).toEqual(["burgess-turini-18-3", "chiavari-chair"]);
+    expect(pictures).toHaveLength(19 * 2 + 1);
     expect(setupCardPreviewUrl(paramsFor(pieceCardId("trestle-6ft")))).toBeNull();
   });
 
+  it("ships no picture that no look shows", () => {
+    const shown = new Set(pictures.map(({ url }) => url));
+    for (const card of SETUP_CARD_IDS) {
+      const folder = `/models/furniture/setup-${card}/${SETUP_PREVIEW_VERSION}`;
+      for (const file of readdirSync(resolve(publicDir, `.${folder}`))) expect(shown.has(`${folder}/${file}`), `${folder}/${file}`).toBe(true);
+    }
+  });
+
+  it("shows no picture of a chair it was never drawn with, rather than a missing one", () => {
+    expect(setupCardPreviewUrl(paramsFor("round"), "checked-banquet-chair")).toBeNull();
+    setPlannerFeaturesForTesting({ tableSets: true });
+    expect(setupCardPreviewUrl(paramsFor("long-table", { trestles: 2 }), "gallery-chair-red-gold")).toBeNull();
+    expect(setupCardPreviewUrl(paramsFor("dance-floor"), "checked-banquet-chair")).toBe(`/models/furniture/setup-dance-floor/${SETUP_PREVIEW_VERSION}/floor.webp`);
+  });
+
   it.each(pictures)("ships $look as an 800 × 800 WebP", ({ url }) => {
-    expect(url).toMatch(/^\/models\/furniture\/setup-[a-z-]+\/setup-v1\/[a-z-]+\.webp$/u);
-    const bytes = readFileSync(resolve(import.meta.dirname, "../../../public", `.${url ?? ""}`));
+    expect(url).toMatch(/^\/models\/furniture\/setup-[a-z-]+\/setup-v2\/[a-z-]+\.webp$/u);
+    const bytes = readFileSync(resolve(publicDir, `.${url ?? ""}`));
     expect(bytes.toString("ascii", 0, 4)).toBe("RIFF");
     expect(bytes.toString("ascii", 8, 16)).toBe("WEBPVP8X");
     expect(bytes.readUIntLE(24, 3) + 1).toBe(800);
     expect(bytes.readUIntLE(27, 3) + 1).toBe(800);
   });
 
-  it("pictures what every card sets down, whatever its parameters, with or without table sets", () => {
+  it("pictures what every card sets down, whatever its parameters and the event, with or without table sets", () => {
     const shipped = new Set(pictures.map(({ url }) => url));
-    for (const tableSets of [false, true]) {
-      setPlannerFeaturesForTesting({ tableSets });
-      for (const card of SETUP_CARD_IDS) {
-        const colourways = card === "dance-floor" ? [undefined] : CARD_COLOURWAYS[card];
-        for (const colourway of colourways) {
-          for (let count = 1; count <= 12; count += 1) {
-            const params = paramsFor(card, { colourway, seats: count + 4, trestles: count, cols: count, rows: count });
-            expect(shipped.has(setupCardPreviewUrl(params)), `${card} ${JSON.stringify(params)}`).toBe(true);
+    const events: readonly (PlannerEventKind | null)[] = [null, "wedding", "corporate", "other"];
+    for (const event of events) {
+      usePlannerEventStore.getState().setEventKind(event);
+      for (const tableSets of [false, true]) {
+        setPlannerFeaturesForTesting({ tableSets });
+        for (const card of SETUP_CARD_IDS) {
+          const colourways = card === "dance-floor" ? [undefined] : CARD_COLOURWAYS[card];
+          for (const colourway of colourways) {
+            for (let count = 1; count <= 12; count += 1) {
+              const params = paramsFor(card, { colourway, seats: count + 4, trestles: count, cols: count, rows: count });
+              expect(shipped.has(setupCardPreviewUrl(params)), `${String(event)} ${card} ${JSON.stringify(params)}`).toBe(true);
+            }
           }
         }
       }
     }
   });
 
-  it("shows a set only when the card sets one down", () => {
-    expect(setupCardLook(paramsFor("long-table", { colourway: "wood" }))).toBe("wood-one");
+  it("shows a set only when the card sets one down, on the event's chair", () => {
+    expect(setupCardLook(paramsFor("long-table", { colourway: "wood" }))).toBe("wood-one-turini");
     setPlannerFeaturesForTesting({ tableSets: true });
-    expect(setupCardLook(paramsFor("long-table", { colourway: "wood", trestles: 2 }))).toBe("wood-set");
-    expect(setupCardLook(paramsFor("top-table"))).toBe("white-set");
+    expect(setupCardLook(paramsFor("long-table", { colourway: "wood", trestles: 2 }))).toBe("wood-set-turini");
+    usePlannerEventStore.getState().setEventKind("wedding");
+    expect(setupCardLook(paramsFor("top-table"))).toBe("white-set-chiavari");
+    expect(setupCardLook(paramsFor("round"))).toBe("white-chiavari");
+    expect(setupCardLook(paramsFor("dance-floor"))).toBe("floor");
+  });
+});
+
+describe("the set the ghost shows (ghostSetInHand)", () => {
+  const round = (): CardParams => paramsFor(pieceCardId("round-table-6ft"));
+
+  it("is the old green and red ghost's, null, with truthfulGhost off and no card dock", () => {
+    setPlannerFeaturesForTesting({ truthfulGhost: false, setupCards: false });
+    expect(ghostSetInHand(round())).toBeNull();
+    // A set card is always set down, and shown, as a card.
+    const roundOf = paramsFor("round");
+    expect(ghostSetInHand(roundOf)).toBe(roundOf);
+  });
+
+  it("shows a dining table alone behind truthfulGhost alone, as the old way sets it down before its chair dialog", () => {
+    setPlannerFeaturesForTesting({ truthfulGhost: true, setupCards: false, seatsOnTheCard: false });
+    const params = round();
+    expect(seatsInHand(params)).toBeGreaterThan(0);
+    const shown = ghostSetInHand(params);
+    expect(shown).not.toBeNull();
+    if (shown === null) return;
+    expect(seatsInHand(shown)).toBe(0);
+    // The same object every frame, so the ghost never rebuilds for nothing.
+    expect(ghostSetInHand(params)).toBe(shown);
+  });
+
+  it("shows the table with its seats where the old way sets them down with it, and the card's own set on the card path", () => {
+    setPlannerFeaturesForTesting({ truthfulGhost: true, setupCards: false, seatsOnTheCard: true });
+    const params = round();
+    expect(ghostSetInHand(params)).toBe(params);
+    setPlannerFeaturesForTesting({ truthfulGhost: true, setupCards: true, seatsOnTheCard: true });
+    expect(ghostSetInHand(params)).toBe(params);
   });
 });

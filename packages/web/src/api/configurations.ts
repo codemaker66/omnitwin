@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ConfigurationReviewStatusSchema, type EventInstructions, type GuestEnquiry } from "@omnitwin/types";
+import { ConfigurationReviewStatusSchema, type EventInstructions, type GangwayReview, type GuestEnquiry } from "@omnitwin/types";
 import { api } from "./client.js";
 
 // ---------------------------------------------------------------------------
@@ -239,6 +239,8 @@ export async function authBatchSave(
 
 export interface ConfigMetadataInput {
   readonly instructions?: EventInstructions | null;
+  /** The layout's gangway review, as lib/gangway-review-record writes it. */
+  readonly gangwayReview?: GangwayReview | null;
 }
 
 const PatchConfigResponseSchema = z.object({ id: z.string() }).loose();

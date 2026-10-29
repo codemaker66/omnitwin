@@ -11,6 +11,7 @@ import {
   snapToWallEdge,
   getPlacementViolations,
   withTableNumbers,
+  computeRotatedFootprint,
 } from "../lib/placement.js";
 import { plannerFeatureEnabled } from "../lib/planner-features.js";
 import { DANCE_FLOOR_PANELS, cardIsWholeSet, placesAsCard, resizeDanceFloor, type ResizeAnchor } from "../lib/setup-cards.js";
@@ -51,6 +52,7 @@ import { doorKeepOuts, keptClearLine, type DoorClearSpace } from "../lib/door-cl
 import { doorsBlockedBy } from "../lib/keep-doors-clear.js";
 import type { LayoutRect } from "../lib/auto-layout.js";
 import { useDoorClearSpaceStore } from "./door-clear-space-store.js";
+import { piecesLabel } from "../lib/pieces-label.js";
 
 // ---------------------------------------------------------------------------
 // Placement store — manages placed furniture and ghost state. Undo/redo for
@@ -245,6 +247,67 @@ function capPassedBy(before: readonly PlacedItem[], after: readonly PlacedItem[]
 }
 
 /**
+ * Furniture the person removed (Delete, the caption's Remove), as distinct
+ * from a layout replaced, restored or undone: the removed ids and what they
+ * were in a receipt's words (lib/pieces-label), for planner-qol's receipt host:
+ * "Removed Table 3 and 10 chairs · Undo".
+ */
+type FurnitureRemovedListener = (ids: readonly string[], label: string) => void;
+
+const furnitureRemovedListeners = new Set<FurnitureRemovedListener>();
+
+/** Hear each removal's ids and words. Returns the unsubscribe. */
+export function subscribeFurnitureRemoved(listener: FurnitureRemovedListener): () => void {
+  furnitureRemovedListeners.add(listener);
+  return () => { furnitureRemovedListeners.delete(listener); };
+}
+
+/** How far past a just-placed piece's footprint the pointer must go before the hand's ghost returns, metres. */
+export const JUST_PLACED_MARGIN_M = 0.2;
+
+/**
+ * The floor the hand just set pieces down on, render units, and those pieces
+ * (planner-qol's craft backlog, items 1 and 2): the ghost stands aside there
+ * until the pointer leaves it, so a success is never followed by a red ghost
+ * on the piece just placed, and a double-click never sets a second piece down
+ * on the first. Each piece's rotated footprint, grown by JUST_PLACED_MARGIN_M,
+ * so a row of chairs still places chair by chair.
+ */
+let justPlaced: {
+  readonly ids: ReadonlySet<string>;
+  readonly rects: readonly { readonly minX: number; readonly maxX: number; readonly minZ: number; readonly maxZ: number }[];
+} | null = null;
+
+/** The ghost stands aside from `pieces` until the pointer leaves their floor (updateGhost). */
+export function markJustPlaced(pieces: readonly PlacedItem[]): void {
+  const margin = toRenderSpace(JUST_PLACED_MARGIN_M);
+  const rects = [];
+  for (const piece of pieces) {
+    const item = isSceneFurniturePlacement(piece) ? getCatalogueItem(piece.catalogueItemId) : undefined;
+    if (item === undefined) continue;
+    const { halfW, halfD } = computeRotatedFootprint(item, piece.rotationY, piece.scale);
+    rects.push({ minX: piece.x - halfW - margin, maxX: piece.x + halfW + margin, minZ: piece.z - halfD - margin, maxZ: piece.z + halfD + margin });
+  }
+  justPlaced = rects.length === 0 ? null : { ids: new Set(pieces.map((piece) => piece.id)), rects };
+}
+
+/** Whether the pointer at (x, z), render units, is still on the floor just set; once it leaves, or the pieces are gone, the ghost is back for good. */
+function ghostStandsAside(x: number, z: number, placedItems: readonly PlacedItem[]): boolean {
+  if (justPlaced === null) return false;
+  const { ids, rects } = justPlaced;
+  if (placedItems.some((piece) => ids.has(piece.id)) && rects.some((rect) => x >= rect.minX && x <= rect.maxX && z >= rect.minZ && z <= rect.maxZ)) return true;
+  justPlaced = null;
+  return false;
+}
+
+function announceRemoved(removed: readonly PlacedItem[]): void {
+  if (removed.length === 0 || furnitureRemovedListeners.size === 0) return;
+  const ids = removed.map((piece) => piece.id);
+  const label = piecesLabel(removed);
+  for (const listener of furnitureRemovedListeners) listener(ids, label);
+}
+
+/**
  * Blake's B2, hard: whether writing `after` over `before` would take a piece
  * past the store's stock (lib/card-stock currentStoreStock, registered for
  * staff); when it would, the refusal is posted in the store's words and the
@@ -385,6 +448,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     if (isLayoutTimelineMutationLocked()) return;
     const state = get();
     set({ placedItems: state.placedItems.filter((item) => item.id !== id) });
+    announceRemoved(state.placedItems.filter((item) => item.id === id));
   },
 
   removeItems: (ids: ReadonlySet<string>) => {
@@ -393,6 +457,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     const state = get();
     const allIds = expandIdsToGroupMembers(ids, state.placedItems);
     set({ placedItems: state.placedItems.filter((item) => !allIds.has(item.id)) });
+    announceRemoved(state.placedItems.filter((item) => allIds.has(item.id)));
   },
 
   moveItem: (id: string, x: number, z: number) => {
@@ -484,6 +549,11 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
   updateGhost: (x: number, z: number, catalogueItemId: string) => {
     if (isLayoutTimelineMutationLocked()) return;
     const state = get();
+    // Over the piece just set down, no ghost: no red on a success, and nothing for a second click to set down.
+    if (ghostStandsAside(x, z, state.placedItems)) {
+      if (state.ghostPosition !== null) set({ ghostPosition: null, ghostValid: false, ghostInvalidReason: null });
+      return;
+    }
     const rot = state.ghostRotation;
     const gridPos = state.snapEnabled ? snapPositionToGrid(x, z) : [x, 0, z] as const;
     const catalogueItem = getCatalogueItem(catalogueItemId);

@@ -92,6 +92,9 @@ type RequestRow = typeof requests.$inferSelect;
 type AudienceRole = typeof eventPlanNotifications.$inferInsert["audienceRole"];
 /** The surface both a Database and a transaction expose. */
 type Conn = Pick<Database, "select" | "insert" | "update">;
+/** A database, or a transaction a caller already holds (L9: the command
+ *  ledger takes a request step and records it in one transaction). */
+export type RequestStepConn = Database | Parameters<Parameters<Database["transaction"]>[0]>[0];
 
 function deny(status: number, code: string, error: string, ownerName?: string): RequestDeny {
   return ownerName === undefined ? { ok: false, status, code, error } : { ok: false, status, code, error, ownerName };
@@ -506,7 +509,7 @@ function hasOwner(row: Pick<RequestRow, "state" | "ownerUserId" | "ownerName">):
 }
 
 export async function transitionRequestCore(
-  db: Database,
+  db: RequestStepConn,
   actor: RequestActor,
   requestId: string,
   transition: RequestTransition,
@@ -527,6 +530,20 @@ export async function transitionRequestCore(
   // name, whether it arrives a second or a minute after the first.
   if (transition.to === "accepted" && hasOwner(row) && row.ownerUserId !== actor.id) {
     return deny(409, "REQUEST_TAKEN", `${row.ownerName} has this.`, row.ownerName);
+  }
+
+  // A step pressed against a state the request has since left, or against
+  // an owner it no longer has (the offline queue's replay, L9), is refused,
+  // never applied to a request its sender did not see: a "Done" pressed with
+  // no signal must not close work a colleague took up in the meantime, even
+  // when the colleague's request reads "accepted" just as the sender's did.
+  const movedOn = transition.expectedState !== undefined && row.state !== transition.expectedState;
+  const changedHands = transition.expectedOwnerUserId !== undefined && row.ownerUserId !== transition.expectedOwnerUserId;
+  if (movedOn || changedHands) {
+    const holder = hasOwner(row) && row.ownerUserId !== actor.id ? row.ownerName : null;
+    return holder === null
+      ? deny(409, "REQUEST_STATE_CONFLICT", "This request moved on before this step arrived.")
+      : deny(409, "REQUEST_STATE_CONFLICT", `${holder} has this now.`, holder);
   }
 
   const check = nextRequestState(row.state, transition.to);
@@ -609,8 +626,15 @@ export async function transitionRequestCore(
         patch.ownerName = actor.name;
       }
       break;
-    case "reopened":
-      // The outcome is history now; the request needs an owner again.
+    case "reopened": {
+      // The outcome is history now; the request needs an owner again, and
+      // nobody has it, so it escalates like a new one if nobody takes it:
+      // the venue's window for its urgency, from now. An earlier escalation
+      // is spent, as on a handover; the email key is per escalation.
+      const settings = await readOperatingSettings(db, row.venueId);
+      patch.escalationDueAt = settings === null ? null : new Date(now.getTime() + escalationWindowSeconds(settings, row.urgency) * 1000);
+      patch.escalatedAt = null;
+      patch.escalationEmailedAt = null;
       patch.reopenedAt = now;
       patch.outcome = null;
       patch.outcomeNote = null;
@@ -623,6 +647,7 @@ export async function transitionRequestCore(
       patch.handoverToName = null;
       patch.handoverDueAt = null;
       break;
+    }
     default: {
       const exhausted: never = transition;
       throw new Error(`Unhandled transition ${String(exhausted)}`);
@@ -672,8 +697,8 @@ export async function transitionRequestCore(
     );
   }
 
-  // A handover sets a relief deadline to wake for (S7).
-  if (transition.to === "handed-over") pokeEscalationScheduler();
+  // A handover sets a relief deadline to wake for (S7), a reopen a window.
+  if (transition.to === "handed-over" || transition.to === "reopened") pokeEscalationScheduler();
   const roomName = await roomNameFor(db, updated.roomId);
   return { ok: true, request: serializeRequest(updated, roomName), fromState: row.state };
 }
@@ -865,17 +890,25 @@ export interface EscalationCandidate {
   readonly handoverDueAt: Date | null;
 }
 
+/** The states nobody has picked up: SENT, and REOPENED after it was
+ *  finished (its owner is cleared). Each escalates at its own window. */
+export const UNOWNED_ESCALATING_STATES = ["sent", "reopened"] as const satisfies readonly RequestState[];
+
+function isUnownedEscalating(state: RequestState): boolean {
+  return UNOWNED_ESCALATING_STATES.some((unowned) => unowned === state);
+}
+
 /** Which candidates are due at `now`, never one escalated already: still
- *  only SENT (nobody has even said they have seen it) and past its own
- *  urgency's window, or HANDED OVER to a relief who has not taken it by the
- *  venue's relief window. */
+ *  only SENT or REOPENED (nobody has even said they have seen it) and past
+ *  its own urgency's window, or HANDED OVER to a relief who has not taken it
+ *  by the venue's relief window. */
 export function selectDueRequestEscalations<T extends EscalationCandidate>(
   candidates: readonly T[],
   now: Date,
 ): readonly T[] {
   const nowMs = now.getTime();
   return candidates.filter((candidate) => candidate.escalatedAt === null && (
-    (candidate.state === "sent" && candidate.escalationDueAt !== null && candidate.escalationDueAt.getTime() <= nowMs)
+    (isUnownedEscalating(candidate.state) && candidate.escalationDueAt !== null && candidate.escalationDueAt.getTime() <= nowMs)
     || (candidate.state === "handed-over" && candidate.handoverDueAt !== null && candidate.handoverDueAt.getTime() <= nowMs)
   ));
 }
@@ -939,10 +972,21 @@ interface EscalationEmailTarget {
   readonly roomName: string | null;
   readonly admins: readonly DutyAdmin[];
   readonly reason: EscalationReason;
+  /** When this escalation claimed the request (its escalated_at). */
+  readonly escalatedAt: Date;
 }
 
-/** The escalation email to each duty admin, one message per person however
- *  many times any pass runs (the key is the request and the person). */
+/** The email key for one escalation of a request to one person. A request
+ *  can escalate more than once (unowned, then to a relief who never takes
+ *  it), so the claim instant is part of the key: each escalation is emailed
+ *  once, however many times any pass runs, and a later one is not lost to
+ *  an earlier one's key. */
+export function requestEscalationEmailKey(requestId: string, escalatedAt: Date, adminId: string): string {
+  return `request-escalation:${requestId}:${String(escalatedAt.getTime())}:${adminId}`;
+}
+
+/** The escalation email to each duty admin, one message per person per
+ *  escalation however many times any pass runs. */
 async function sendEscalationEmails(
   db: Database,
   target: EscalationEmailTarget,
@@ -967,7 +1011,7 @@ async function sendEscalationEmails(
     });
     const sent = await send({ to: admin.email, subject, html }, {
       db,
-      idempotencyKey: `request-escalation:${target.row.id}:${admin.id}`,
+      idempotencyKey: requestEscalationEmailKey(target.row.id, target.escalatedAt, admin.id),
       logger: deps.logger,
     });
     if (sent) emailedAdmins += 1;
@@ -996,7 +1040,7 @@ export async function runRequestEscalationPass(
     .where(and(
       isNull(requests.escalatedAt),
       or(
-        and(eq(requests.state, "sent"), isNotNull(requests.escalationDueAt), lte(requests.escalationDueAt, now)),
+        and(inArray(requests.state, [...UNOWNED_ESCALATING_STATES]), isNotNull(requests.escalationDueAt), lte(requests.escalationDueAt, now)),
         and(eq(requests.state, "handed-over"), isNotNull(requests.handoverDueAt), lte(requests.handoverDueAt, now)),
       ),
     ))
@@ -1016,6 +1060,7 @@ export async function runRequestEscalationPass(
       .returning();
     const row = claimed[0];
     if (row === undefined) continue;
+    const escalatedAt = row.escalatedAt ?? now;
 
     const reason: EscalationReason = row.state === "handed-over" ? "handover" : "unowned";
     const roomName = await roomNameFor(db, row.roomId);
@@ -1029,7 +1074,9 @@ export async function runRequestEscalationPass(
     const title = `Still waiting: ${summariseRequest({ kind: row.kind, quantity: row.quantity, roomName })}`;
     const body = reason === "handover"
       ? `${row.ownerName ?? "A colleague"} handed this to ${row.handoverToName ?? "a colleague"}, who has not taken it yet.`
-      : `${row.requestedByName} asked for this ${describeRequestUrgency(row.urgency).toLowerCase()} and nobody has picked it up yet.`;
+      : row.state === "reopened"
+        ? `${row.requestedByName}'s request was reopened and nobody has picked it up yet.`
+        : `${row.requestedByName} asked for this ${describeRequestUrgency(row.urgency).toLowerCase()} and nobody has picked it up yet.`;
     const notificationIds = await insertNotifications(db, admins.map((admin) => ({
       venueId: row.venueId,
       eventId: row.eventId,
@@ -1049,7 +1096,7 @@ export async function runRequestEscalationPass(
     const emailDeferred = quiet !== null && withinQuietHours(now.getTime(), quiet);
     let emailedAdmins = 0;
     if (!emailDeferred) {
-      emailedAdmins = await sendEscalationEmails(db, { row, roomName, admins, reason }, now, deps, send);
+      emailedAdmins = await sendEscalationEmails(db, { row, roomName, admins, reason, escalatedAt }, now, deps, send);
       if (emailedAdmins === admins.length) {
         await db.update(requests).set({ escalationEmailedAt: now }).where(eq(requests.id, row.id));
       }
@@ -1096,13 +1143,15 @@ export async function runEscalationEmailPass(
     .where(and(
       isNotNull(requests.escalatedAt),
       isNull(requests.escalationEmailedAt),
-      inArray(requests.state, ["sent", "handed-over"]),
+      inArray(requests.state, [...UNOWNED_ESCALATING_STATES, "handed-over"]),
     ))
     .limit(100);
 
   const sent: EscalationEmailSent[] = [];
   const settingsByVenue = new Map<string, Awaited<ReturnType<typeof readOperatingSettings>>>();
   for (const row of waiting) {
+    const escalatedAt = row.escalatedAt;
+    if (escalatedAt === null) continue;
     let settings = settingsByVenue.get(row.venueId);
     if (settings === undefined) {
       settings = await readOperatingSettings(db, row.venueId);
@@ -1117,7 +1166,7 @@ export async function runEscalationEmailPass(
     const roomName = await roomNameFor(db, row.roomId);
     const admins = await dutyAdminsFor(db, row.venueId, settings);
     const reason: EscalationReason = row.state === "handed-over" ? "handover" : "unowned";
-    const emailedAdmins = await sendEscalationEmails(db, { row, roomName, admins, reason }, now, deps, send);
+    const emailedAdmins = await sendEscalationEmails(db, { row, roomName, admins, reason, escalatedAt }, now, deps, send);
     if (emailedAdmins === admins.length) {
       await db.update(requests).set({ escalationEmailedAt: now }).where(and(eq(requests.id, row.id), isNull(requests.escalationEmailedAt)));
     }

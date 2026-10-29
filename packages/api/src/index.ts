@@ -31,6 +31,7 @@ import { turnaroundRuleRoutes } from "./routes/turnaround-rules.js";
 import { forwardBookRoutes } from "./routes/forward-book.js";
 import { proposalTemplateRoutes } from "./routes/proposal-templates.js";
 import { proposalMessageDraftRoutes } from "./routes/proposal-message-draft.js";
+import { enquirySummaryDraftRoutes } from "./routes/enquiry-summary-draft.js";
 import { rotaRoutes } from "./routes/rota.js";
 import { venueTeamRoutes } from "./routes/venue-team.js";
 import { referenceLoadoutRoutes } from "./routes/reference-loadouts.js";
@@ -582,6 +583,7 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   await server.register(aiAssistantRoutes, { env, db, aiUsage, prefix: "/ai" });
   await server.register(proposalRoutes, { db, prefix: "/proposals" });
   await server.register(proposalMessageDraftRoutes, { db, env, aiUsage, prefix: "/proposals" });
+  await server.register(enquirySummaryDraftRoutes, { db, env, aiUsage, prefix: "/enquiries" });
   await server.register(quoteRoutes, { db, prefix: "/quotes" });
   await server.register(proposalShareRoutes, { db, prefix: "/proposal-share" });
   // Deposits on an accepted proposal (Plan 19 L5), Stripe test mode only.

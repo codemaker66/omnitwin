@@ -38,6 +38,7 @@ interface EditorStateLike {
   updateObject(id: string, patch: { positionX: number }): void;
 }
 interface EditorModule { readonly useEditorStore: StoreApi<EditorStateLike> }
+interface BridgeModule { setAutoSaveDelayOverride(delayMs: number | null): void }
 
 const PLANNER: SeedUser = {
   id: "00000000-0000-4000-8000-000000007001",
@@ -103,16 +104,22 @@ for (const chrome of ["v1", "v2"] as const) {
     const context = await signedInContext(browser, server);
     const page = await context.newPage();
     await openLayout(page, GRAND_HALL_LAYOUT, chrome);
+    // The autosave's own 3 s timer is pushed ten minutes out, so a save that
+    // arrives can only have been sent by the page hiding. Timing it against the
+    // wall clock instead failed on a loaded runner (29 Oct, flake-runs.md).
+    await page.evaluate(async () => {
+      const bridge = await import("/src/components/editor/EditorBridge.tsx") as BridgeModule;
+      bridge.setAutoSaveDelayOverride(600_000);
+    });
     await moveTable(page, 7.25);
-    const movedAt = Date.now();
+    expect(server.saves.filter((save) => save.configId === GRAND_HALL_LAYOUT)).toHaveLength(0);
 
     // The tab goes to the background (a phone switching apps, a hidden window).
     await page.evaluate(() => {
       Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "hidden" });
       document.dispatchEvent(new Event("visibilitychange"));
     });
-    await expect.poll(() => storedTableX(server), { timeout: 2_500 }).toBe("7.250");
-    expect(Date.now() - movedAt).toBeLessThan(3_000);
+    await expect.poll(() => storedTableX(server), { timeout: 10_000 }).toBe("7.250");
     expect(server.saves.filter((save) => save.configId === GRAND_HALL_LAYOUT)).toHaveLength(1);
     await context.close();
   });

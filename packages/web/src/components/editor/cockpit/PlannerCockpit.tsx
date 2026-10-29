@@ -12,6 +12,7 @@ import { useCockpitStore } from "../../../stores/cockpit-store.js";
 import { useAuthStore } from "../../../stores/auth-store.js";
 import { canReadInternalEventData } from "../../../lib/event-access.js";
 import { CLIENT_SIDE_ROLES, hasRole } from "../../../lib/role-capabilities.js";
+import { useOfferViewerLenses, useShownLens } from "../../../lib/use-lens-rail.js";
 import { useLayoutTimelinePreviewStore } from "../../../stores/layout-timeline-preview-store.js";
 import { SceneOutliner } from "./SceneOutliner.js";
 import { ReferenceRoomHeader } from "./ReferenceRoomHeader.js";
@@ -35,7 +36,10 @@ export function PlannerCockpit({ mobile = false, hasLinkedEvent = false }: { rea
   // The client's side gets its own ribbon (goal 19 S6): the room's day,
   // anonymised, and the door to propose a time.
   const clientSide = !canViewBookingTime && !auth.isLoading && auth.isAuthenticated && hasRole(CLIENT_SIDE_ROLES, auth.user?.role);
-  const activeMode = useCockpitStore((s) => s.activeMode);
+  // Decision 5: the store learns which lenses this viewer may open, and the
+  // stage names the lens it shows (Design for one the viewer is not offered).
+  useOfferViewerLenses();
+  const activeMode = useShownLens();
   const resolvePhase = useCockpitStore((s) => s.roomResolve.phase);
   const timelinePreviewActive = useLayoutTimelinePreviewStore((state) => state.mode !== "inactive");
   const timelinePreviewMode = useLayoutTimelinePreviewStore((state) => state.mode);
