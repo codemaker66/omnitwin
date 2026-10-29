@@ -19,17 +19,20 @@ import { CAPACITY_GUIDANCE_DISCLOSURE } from "../../lib/proposal-capacity-note.j
 // Design spec: docs/superpowers/specs/2026-07-01-landing-rite-redesign-design.md
 // -----------------------------------------------------------------------------
 
-/** The hall's founding year — the anchor for every age claim on the page. */
-const HALL_FOUNDED_YEAR = 1791;
+/** The year the hall was first used, the anchor for every "lit" claim: Robert
+ *  Adam's design is of 1791, and the hall was first used in September 1794, on
+ *  Deacons' Choosing Day (TheGlasgowStory; the venue's own leaflet, "Opened in
+ *  1794"). Counting from 1791 claimed three years the hall did not stand lit. */
+const HALL_FIRST_USED_YEAR = 1794;
 /** Derived from the calendar so the figure never rots — the old hard-coded
  *  "230" had silently dated the copy to 2021. */
-export const HALL_LIT_YEARS = new Date().getFullYear() - HALL_FOUNDED_YEAR;
+export const HALL_LIT_YEARS = new Date().getFullYear() - HALL_FIRST_USED_YEAR;
 
 /** Applied client-side when the rite mounts (/landing). The static tags in
  *  index.html carry the homepage's SPOTLIGHT_META_* copy — scrapers read
  *  those; this pair only retitles the tab once the rite hydrates. */
 export const RITE_META_TITLE =
-  "Trades Hall Glasgow — a hall lit since 1791";
+  "Trades Hall Glasgow — a hall lit since 1794";
 export const RITE_META_DESC =
   "Enter the Grand Hall of Trades Hall Glasgow — four principal rooms within Robert Adam's hall, held in candlelight. Then arrange the room for your own evening.";
 

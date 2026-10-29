@@ -158,6 +158,10 @@ describe("public MCP endpoint, in-memory store", () => {
       expect(mcp.getInstructions()).toContain(`Every other room answers ${PUBLIC_ROOM_ASK_THE_TEAM}`);
       expect(availability?.inputSchema.required).toEqual(["from", "to"]);
       expect(mcp.getInstructions()).toContain("Nothing here can send an enquiry, hold a date or make a booking");
+      // The venue's own agreement to this listing is not recorded, so nothing
+      // served claims it (trust check, 28 October 2026).
+      expect(mcp.getInstructions()).not.toMatch(/agree/iu);
+      expect(mcp.getServerVersion()?.description ?? "").not.toMatch(/agree/iu);
     });
 
     it("describes the venue with published capacities only", async () => {

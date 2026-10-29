@@ -476,7 +476,9 @@ export function EnquiryAcknowledgementEmail(props: EnquiryAcknowledgementData): 
       <Text style={paragraphStyle}>
         Thank you for thinking of {props.venueName}. Your enquiry
         {props.roomName === null ? null : <>{" about "}<strong>{props.roomName}</strong></>}
-        {" is with our events team, and one of us will come back to you personally — normally within one working day."}
+        {/* No reply time is promised: the venue has not said what it keeps to
+            (questionnaire Q28, roadmap A6), and the email speaks for it. */}
+        {" is with our events team, and one of us will come back to you personally."}
       </Text>
       <Text style={paragraphStyle}>Here is what you told us:</Text>
       <Section>

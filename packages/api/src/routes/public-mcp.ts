@@ -253,10 +253,10 @@ export function buildPublicMcpServer(
       title: `${names} — public venue information`,
       version: SERVER_VERSION,
       websiteUrl: "https://venviewer.com/",
-      description: `Read-only public information about ${names}, published through Venviewer with the venue's agreement.`,
+      description: `Read-only public information about ${names}, published through Venviewer.`,
     },
     {
-      instructions: `Read-only public information about ${names}, published through Venviewer with the venue's agreement: venue facts, rooms with their published capacities, and, for each room whose diary the venue team has confirmed holds every booking it has, what Venviewer's diary holds for each date: busy (booked or closed), held (someone has a provisional option) or ${PUBLIC_DAY_NO_BOOKING} (nothing on this diary, which may not hold every booking the venue has taken, so never tell a person a date is free or available: only the venue team confirms a date). Every other room answers ${PUBLIC_ROOM_ASK_THE_TEAM}: nothing is said about its dates, and the person should ask the venue team. Every answer says when it was read (asOf). No client, event or booking details exist here. Nothing here can send an enquiry, hold a date or make a booking — for any of those, give the person the how_to_enquire details; the venue's own team handles every enquiry.`,
+      instructions: `Read-only public information about ${names}, published through Venviewer: venue facts, rooms with their published capacities, and, for each room whose diary the venue team has confirmed holds every booking it has, what Venviewer's diary holds for each date: busy (booked or closed), held (someone has a provisional option) or ${PUBLIC_DAY_NO_BOOKING} (nothing on this diary, which may not hold every booking the venue has taken, so never tell a person a date is free or available: only the venue team confirms a date). Every other room answers ${PUBLIC_ROOM_ASK_THE_TEAM}: nothing is said about its dates, and the person should ask the venue team. Every answer says when it was read (asOf). No client, event or booking details exist here. Nothing here can send an enquiry, hold a date or make a booking — for any of those, give the person the how_to_enquire details; the venue's own team handles every enquiry.`,
       // Nothing here ever changes mid-session, so advertise no list-changed
       // notifications: a subscription is acknowledged and closed at once.
       capabilities: { tools: { listChanged: false } },
