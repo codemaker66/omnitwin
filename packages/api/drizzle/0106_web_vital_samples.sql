@@ -1,8 +1,8 @@
 -- Field web vitals (goal 07; the cloud office-desk session, 28 October 2026).
--- 0106 is PROVISIONAL: 0103 and 0104 are taken and 0105 onward is reserved for
--- another lane (0105_decisions in #287). The release queue confirms the number
--- at the merge slot: renumber the tag AND the journal `when` so the migrator
--- orders it after everything merged first.
+-- 0106 is PROVISIONAL: master holds 0103 to 0105 (journal idx 100 to 102), and
+-- #287's 0105_decisions must take a new number too. The release queue confirms
+-- the number at the merge slot: renumber the tag, its journal idx AND `when` so
+-- the migrator orders it after everything merged first.
 --
 -- Goal 07 judges the front of house on Core Web Vitals at the 75th percentile
 -- on production, by device class, and nothing recorded them. A sampled page
