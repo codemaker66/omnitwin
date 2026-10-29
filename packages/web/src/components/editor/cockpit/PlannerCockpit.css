@@ -52,6 +52,13 @@
   color: inherit;
 }
 
+/* Text selected in the cockpit's own fields must show, so a person can see
+   that typing will replace it (the Lay out count opens selected). */
+.cockpit-shell :is(input, textarea, [contenteditable="true"])::selection {
+  background: color-mix(in srgb, var(--house-accent-copper) 42%, transparent);
+  color: var(--house-text-0);
+}
+
 /* The room is the light source: the stage spans the ENTIRE grid and every
    chrome region floats over it as a smoked card, inset so the captured room
    stays visible at all four screen edges (02 §5 — the scene is never
