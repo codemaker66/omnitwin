@@ -690,6 +690,11 @@
   border-radius: 5px;
   flex-shrink: 0;
 }
+/* Read, not ticked: a client's view of the crew's checklist stays at full
+   contrast (a disabled row fades to half), and only the pointer says so. */
+.hkf-check-task[aria-readonly="true"] {
+  cursor: default;
+}
 .hkf-check-task[aria-checked="true"] .hkf-checkbox {
   background: #68825e;
   color: white;

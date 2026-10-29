@@ -36,6 +36,7 @@ export function OnboardingSetupControls({ workspace, project, entitlement, onCha
     finally { lock.current = false; setBusy(null); onBusy(false); }
   };
   return <details className="onboarding-details"><summary>Setup review and billing</summary>
+    <p className="onboarding-note">These are records for the setup team. A review or a billing state does not stop or allow anyone's sign-in.</p>
     <fieldset disabled={busy !== null} className="onboarding-fieldset"><div className="onboarding-create-grid">
       <div className="onboarding-fields"><h3>Setup review</h3>{projectDraft === undefined ? <p>No setup review is recorded.</p> : <>
         <label className="onboarding-field"><span>Project status</span><select aria-label={`Project status for ${workspace.name}`} value={projectDraft.status} onChange={(event) => {
@@ -46,7 +47,7 @@ export function OnboardingSetupControls({ workspace, project, entitlement, onCha
         }}>{OPERATOR_REVIEW_STATES.map((value) => <option key={value} value={value}>{labelize(value)}</option>)}</select></label>
         <label className="onboarding-field"><span>Current step</span><input aria-label={`Current step for ${workspace.name}`} value={projectDraft.currentStep} onChange={(event) => { setProjectDraft({ ...projectDraft, currentStep: event.target.value }); }} /></label>
         <label className="onboarding-field"><span>Evidence note</span><textarea aria-label={`Evidence note for ${workspace.name}`} value={projectDraft.evidenceNote ?? ""} onChange={(event) => { setProjectDraft({ ...projectDraft, evidenceNote: event.target.value }); }} /></label>
-        <button type="button" className="onboarding-button onboarding-button--secondary" disabled={projectDraft.currentStep.trim() === ""} aria-busy={busy === "project"} aria-label={`Save project gate for ${workspace.name}`} onClick={() => { void save("project"); }}>
+        <button type="button" className="onboarding-button onboarding-button--secondary" disabled={projectDraft.currentStep.trim() === ""} aria-busy={busy === "project"} aria-label={`Save setup review for ${workspace.name}`} onClick={() => { void save("project"); }}>
           {busy === "project" && <ActivityIndicator size={18} />}{busy === "project" ? "Saving review…" : "Save setup review"}</button>
       </>}</div>
       <div className="onboarding-fields"><h3>Provider verification</h3>{billingDraft === undefined ? <p>No billing arrangement is recorded.</p> : <>
@@ -60,9 +61,9 @@ export function OnboardingSetupControls({ workspace, project, entitlement, onCha
         <label className="onboarding-field"><span>Customer reference</span><input aria-label={`Customer reference for ${workspace.name}`} value={billingDraft.providerCustomerRef ?? ""} onChange={(event) => { setBillingDraft({ ...billingDraft, providerCustomerRef: event.target.value }); }} /></label>
         <label className="onboarding-field"><span>Entitlement reference</span><input aria-label={`Entitlement reference for ${workspace.name}`} value={billingDraft.providerEntitlementRef ?? ""} onChange={(event) => { setBillingDraft({ ...billingDraft, providerEntitlementRef: event.target.value }); }} /></label>
         <label className="onboarding-field"><span>Provider evidence reference</span><input aria-label={`Provider evidence reference for ${workspace.name}`} value={billingDraft.providerEvidenceRef ?? ""} onChange={(event) => { setBillingDraft({ ...billingDraft, providerEvidenceRef: event.target.value }); }} /></label>
-        <label className="onboarding-checkbox"><input type="checkbox" aria-label={`Enforce managed access for ${workspace.name}`} checked={billingDraft.accessEnforced} disabled={billingDraft.providerVerificationStatus !== "provider_verified"} onChange={(event) => { setBillingDraft({ ...billingDraft, accessEnforced: event.target.checked }); }} />Enforce managed access</label>
+        <label className="onboarding-checkbox"><input type="checkbox" aria-label={`Managed access agreed for ${workspace.name}, recorded only`} checked={billingDraft.accessEnforced} disabled={billingDraft.providerVerificationStatus !== "provider_verified"} onChange={(event) => { setBillingDraft({ ...billingDraft, accessEnforced: event.target.checked }); }} />Managed access agreed (recorded only)</label>
         {!providerValid && <p className="onboarding-error">Verified provider state requires a real provider plus at least one evidence reference.</p>}
-        <button type="button" className="onboarding-button onboarding-button--secondary" disabled={!providerValid} aria-busy={busy === "billing"} aria-label={`Save provider gate for ${workspace.name}`} onClick={() => { void save("billing"); }}>
+        <button type="button" className="onboarding-button onboarding-button--secondary" disabled={!providerValid} aria-busy={busy === "billing"} aria-label={`Save billing verification for ${workspace.name}`} onClick={() => { void save("billing"); }}>
           {busy === "billing" && <ActivityIndicator size={18} />}{busy === "billing" ? "Saving verification…" : "Save billing verification"}</button>
       </>}</div>
     </div></fieldset>{error !== null && <p className="onboarding-error" role="alert">{error}</p>}{notice !== null && <p role="status" className="onboarding-success">{notice}</p>}

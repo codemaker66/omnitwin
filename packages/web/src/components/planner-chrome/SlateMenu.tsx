@@ -1,4 +1,4 @@
-import { type ReactElement } from "react";
+import { type MouseEvent, type ReactElement } from "react";
 import { Link } from "react-router-dom";
 import { CalendarDays, Check, FileText, Grid2x2, House } from "lucide-react";
 import {
@@ -63,6 +63,9 @@ export interface SlateMenuProps {
   /** This layout's name, or null before there is one. */
   readonly layoutName: string | null;
   readonly otherLayouts: readonly SlateMenuLayout[];
+  /** Opens another layout once this one's work has had its chance to save
+   *  (QoL D-X3); without it, the links navigate at once. */
+  readonly onOpenLayout?: (layout: SlateMenuLayout) => void;
   /** Staff only: the event's acts in this room. */
   readonly acts: readonly EventAct[];
   /** Whether this person may set an act's layout (event writers; hallkeepers only read). */
@@ -80,9 +83,14 @@ export interface SlateMenuProps {
   readonly onWalls: (full: boolean) => void;
 }
 
+/** A plain click: one that opens the link here, not in a new tab or window. */
+function opensHere(event: MouseEvent<HTMLAnchorElement>): boolean {
+  return event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
+}
+
 export function SlateMenu({
-  state, rooms, currentRoomSlug, onRoom, layoutName, otherLayouts, acts, actsSettable, onUseForAct, actBusy, actWaitsOn,
-  actProblem, eventHref, diaryHref, wallsFull, onWalls,
+  state, rooms, currentRoomSlug, onRoom, layoutName, otherLayouts, onOpenLayout, acts, actsSettable, onUseForAct, actBusy,
+  actWaitsOn, actProblem, eventHref, diaryHref, wallsFull, onWalls,
 }: SlateMenuProps): ReactElement | null {
   const showLayouts = layoutName !== null || otherLayouts.length > 0 || acts.length > 0;
   return (
@@ -128,7 +136,16 @@ export function SlateMenu({
             ) : null}
             {otherLayouts.map((layout) => (
               <li key={layout.id}>
-                <Link className="pc-slate-menu__layout" to={layout.href}>
+                <Link
+                  className="pc-slate-menu__layout"
+                  to={layout.href}
+                  onClick={(event) => {
+                    if (onOpenLayout === undefined || !opensHere(event)) return;
+                    event.preventDefault();
+                    state.close(false);
+                    onOpenLayout(layout);
+                  }}
+                >
                   <Grid2x2 className="pc-icon" aria-hidden="true" />
                   <span className="pc-slate-menu__layout-words">
                     <span className="pc-slate-menu__layout-name">{layout.name}</span>

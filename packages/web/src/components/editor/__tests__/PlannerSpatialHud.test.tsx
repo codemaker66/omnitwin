@@ -65,8 +65,10 @@ describe("PlannerSpatialHud", () => {
 
     expect(root?.getAttribute("data-auto-compact")).toBe("true");
     expect(root?.getAttribute("data-minimized")).toBe("false");
-    expect(body?.hasAttribute("hidden")).toBe(true);
-    expect(screen.getByText("Grade D")).toBeDefined();
+    // The panel holds its size and dims instead of folding up (CB-11).
+    expect(root?.classList.contains("is-auto-compact")).toBe(true);
+    expect(body?.hasAttribute("hidden")).toBe(false);
+    expect(screen.getByTestId("planner-layout-grade")).toBeDefined();
   });
 
   it("summarizes the current layout with real counts", () => {

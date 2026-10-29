@@ -106,6 +106,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   vi.restoreAllMocks();
   expect(unexpectedErrors).toEqual([]);
   resetAssemblyRecallForTests();
@@ -141,7 +142,8 @@ describe("the Grand Assembly's Skip, through the director", () => {
     expect(r3f.camera?.position.toArray()).toEqual(last?.position);
   });
 
-  it("ends the show on a press that lands as it comes to rest, and never starts it again (CI, 26 Oct 2026)", () => {
+  it("ends the show on a press that lands as it comes to rest; a late press is swallowed, then the Skip is gone (CI, 26 Oct 2026)", () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     startShow();
     press(control());
     playToRest();
@@ -150,15 +152,15 @@ describe("the Grand Assembly's Skip, through the director", () => {
     expect(control().textContent).toBe("Skip to the end");
     press(control());
     expect(useAssemblyRecallStore.getState()).toMatchObject({ active: false, request: null });
-    expect(control().textContent).toBe("Replay the assembly");
-    // A press a moment later was aimed at the Skip too.
+    // It stays a moment, fading, with the words it had.
+    expect(control().textContent).toBe("Skip to the end");
+    expect(control().getAttribute("data-settling")).toBe("true");
+    // A press a moment later was aimed at the Skip too: it lands there, and nothing starts.
     press(control());
     expect(useAssemblyRecallStore.getState()).toMatchObject({ active: false, request: null });
-    // Settled at rest, the control replays the show.
-    r3f.now += REPLAY_SETTLE_MS;
-    press(control());
-    expect(useAssemblyRecallStore.getState().request).toMatchObject({ reason: "replay" });
-    expect(useAssemblyRecallStore.getState().active).toBe(true);
+    // Then the Skip is gone: Present replays the show.
+    act(() => { vi.advanceTimersByTime(REPLAY_SETTLE_MS); });
+    expect(screen.queryByRole("button")).toBeNull();
   });
 
   it("brings the planner back at once on the Skip's first press once the show is over, by pointer or by key", () => {
@@ -177,7 +179,8 @@ describe("the Grand Assembly's Skip, through the director", () => {
     expect(useAssemblyRecallStore.getState()).toMatchObject({ active: false, fast: false, request: null });
   });
 
-  it("does not replay from a press that lands just after the show has come to rest on its own", () => {
+  it("swallows a press that lands just after the show has come to rest on its own, then the Skip is gone", () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     startShow();
     press(control());
     playToRest();
@@ -186,6 +189,48 @@ describe("the Grand Assembly's Skip, through the director", () => {
     expect(useAssemblyRecallStore.getState().active).toBe(false);
     press(control());
     expect(useAssemblyRecallStore.getState()).toMatchObject({ active: false, request: null });
+    act(() => { vi.advanceTimersByTime(REPLAY_SETTLE_MS); });
+    expect(screen.queryByRole("button")).toBeNull();
+  });
+
+  it("lets a press on Present as the show ends bring the planner back, and never start the show again with it", () => {
+    let asked: boolean | null = null;
+    render(<>
+      <GrandAssembly onCamera={() => undefined} />
+      <AssemblyReplay />
+      <button type="button" onClick={() => { asked = requestAssemblyReplay(); }}>Present</button>
+    </>);
+    act(() => { requestAssemblyReplay(); });
+    for (let i = 0; i < 6; i += 1) frame(0.1);
+    playToRest();
+    // The held ending: a press on Present, outside the room, brings the planner back on its way down...
+    expect(useAssemblyRecallStore.getState().active).toBe(true);
+    press(screen.getByRole("button", { name: "Present" }));
+    // ...and its click, a moment later, asks for nothing.
+    expect(asked).toBe(false);
+    expect(useAssemblyRecallStore.getState()).toMatchObject({ active: false, request: null });
+    // Once that moment has passed, Present replays the show.
+    r3f.now += REPLAY_SETTLE_MS;
+    press(screen.getByRole("button", { name: "Present" }));
+    expect(asked).toBe(true);
+    expect(useAssemblyRecallStore.getState().request).toMatchObject({ reason: "replay" });
+  });
+
+  it("is on its stage only while it is mounted: a replay asked for then plays, and none is asked for once it has gone", () => {
+    const view = render(<><GrandAssembly onCamera={() => undefined} /><AssemblyReplay /></>);
+    expect(useAssemblyRecallStore.getState().onStage).toBe(true);
+    let asked = false;
+    act(() => { asked = requestAssemblyReplay(); });
+    expect(asked).toBe(true);
+    for (let i = 0; i < 6; i += 1) frame(0.1);
+    expect(useAssemblyRecallStore.getState()).toMatchObject({ active: true, request: null });
+    // Mid-show a second request would start the show over: none is asked for.
+    expect(requestAssemblyReplay()).toBe(false);
+    view.unmount();
+    expect(useAssemblyRecallStore.getState()).toMatchObject({ onStage: false, active: false });
+    expect(requestAssemblyReplay()).toBe(false);
+    expect(useAssemblyRecallStore.getState().request).toBeNull();
+    expect(currentFurniturePresentation()).toBeNull();
   });
 
   it("takes a press on the room as the Skip and keeps it from the planner; in the held ending it brings the planner back", () => {

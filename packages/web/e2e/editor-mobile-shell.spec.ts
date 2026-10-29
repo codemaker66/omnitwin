@@ -420,8 +420,8 @@ test.describe("Small phone canvas placement", () => {
     await testInfo.attach("small-phone-before-touch", { body: await page.screenshot(), contentType: "image/png" });
     await page.touchscreen.tap(point.x, point.y);
     const chairs = page.getByRole("dialog");
-    await expect(chairs.getByRole("button", { name: "Table Only", exact: true })).toBeVisible();
-    await chairs.getByRole("button", { name: "Table Only", exact: true }).tap();
+    await expect(chairs.getByRole("button", { name: "Table only", exact: true })).toBeVisible();
+    await chairs.getByRole("button", { name: "Table only", exact: true }).tap();
     await expect(chairs).toBeHidden();
     await page.getByRole("button", { name: "Send to Events Team" }).tap();
     await expect.poll(() => savedObjects.length).toBe(2);

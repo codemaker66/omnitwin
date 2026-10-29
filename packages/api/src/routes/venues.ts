@@ -1,6 +1,6 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply } from "fastify";
 import { z } from "zod";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import { UpdateVenueOperatingSettingsSchema } from "@omnitwin/types";
 import { venues, spaces } from "../db/schema.js";
 import type { Database } from "../db/client.js";
@@ -8,6 +8,7 @@ import { authenticate, authorizePlatformAdmin, isPlatformAdmin } from "../middle
 import { PaginationQuerySchema, paginate } from "../utils/pagination.js";
 import { canAdministerVenue, canManageVenue } from "../utils/query.js";
 import { readOperatingSettings, writeOperatingSettings } from "../services/venue-operating-settings.js";
+import { PG_UNIQUE_VIOLATION, pgErrorCode } from "../services/booking-mutations.js";
 
 // ---------------------------------------------------------------------------
 // Zod schemas
@@ -125,9 +126,11 @@ export async function venueRoutes(
       return reply.status(404).send({ error: "Venue not found", code: "NOT_FOUND" });
     }
 
+    // The rooms in the venue's own order: the planner opens the first.
     const venueSpaces = await db.select(PUBLIC_SPACE_COLUMNS)
       .from(spaces)
-      .where(and(eq(spaces.venueId, venue.id), isNull(spaces.deletedAt)));
+      .where(and(eq(spaces.venueId, venue.id), isNull(spaces.deletedAt)))
+      .orderBy(asc(spaces.sortOrder), asc(spaces.name), asc(spaces.id));
 
     return { data: { ...venue, spaces: venueSpaces } };
   });
@@ -139,20 +142,26 @@ export async function venueRoutes(
       return reply.status(400).send({ error: "Validation failed", code: "VALIDATION_ERROR", details: parsed.error.issues });
     }
 
-    const existing = await db.select({ id: venues.id }).from(venues).where(and(eq(venues.slug, parsed.data.slug), isNull(venues.deletedAt))).limit(1);
-    if (existing.length > 0) {
-      return reply.status(409).send({ error: "Slug already exists", code: "SLUG_EXISTS" });
+    // The slug is unique across every venue, deleted ones included: a deleted
+    // venue keeps its slug. The insert's unique key is the guard; the check
+    // first only answers the common case without a failed insert.
+    const slugExists = (): FastifyReply => reply.status(409).send({ error: "Slug already exists", code: "SLUG_EXISTS" });
+    const existing = await db.select({ id: venues.id }).from(venues).where(eq(venues.slug, parsed.data.slug)).limit(1);
+    if (existing.length > 0) return slugExists();
+
+    try {
+      const [venue] = await db.insert(venues).values({
+        name: parsed.data.name,
+        slug: parsed.data.slug,
+        address: parsed.data.address,
+        logoUrl: parsed.data.logoUrl ?? null,
+        brandColour: parsed.data.brandColour ?? null,
+      }).returning();
+      return reply.status(201).send({ data: venue });
+    } catch (error) {
+      if (pgErrorCode(error) === PG_UNIQUE_VIOLATION) return slugExists();
+      throw error;
     }
-
-    const [venue] = await db.insert(venues).values({
-      name: parsed.data.name,
-      slug: parsed.data.slug,
-      address: parsed.data.address,
-      logoUrl: parsed.data.logoUrl ?? null,
-      brandColour: parsed.data.brandColour ?? null,
-    }).returning();
-
-    return reply.status(201).send({ data: venue });
   });
 
   // PATCH /venues/:id — admin or hallkeeper of that venue

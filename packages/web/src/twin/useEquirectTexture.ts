@@ -1,10 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { LinearFilter, RepeatWrapping, SRGBColorSpace, Texture } from "three";
-import {
-  TWIN_EQUIRECT_LODS,
-  twinEquirectPath,
-  type TwinEquirectLod,
-} from "@omnitwin/types";
+import type { TwinEquirectLod } from "@omnitwin/types";
+import { TWIN_EQUIRECT_LODS, twinEquirectPath } from "@omnitwin/types/twin";
 import { isTextureResident, type ResidencyRenderer } from "./texture-residency.js";
 
 // -----------------------------------------------------------------------------
