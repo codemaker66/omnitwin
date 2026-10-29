@@ -89,6 +89,8 @@ export interface BanquetLayoutOptions {
   readonly maxTables?: number;
   /** Regions no table may overlap (stage, dance floor, dome), metres room-centred. */
   readonly keepOuts?: readonly LayoutRect[];
+  /** Whether a table may stand at its spot, asked of each one the keep-outs leave (a rule judged by its pieces, such as the doors'). */
+  readonly admit?: (table: BanquetTablePlacement) => boolean;
   /** A rule of the caller's every arrangement must pass (after keep-outs), or it is not used. */
   readonly accept?: (tables: readonly BanquetTablePlacement[]) => boolean;
 }
@@ -289,9 +291,10 @@ export function planBanquetLayout(options: BanquetLayoutOptions): BanquetLayoutP
   }
 
   const keepOuts = options.keepOuts ?? [];
+  const admit = options.admit;
   const clear = (t: BanquetTablePlacement): boolean => {
     const footprint: LayoutRect = { cx: t.xM, cz: t.zM, width: sizeX, depth: sizeZ };
-    return !keepOuts.some((k) => rectsOverlap(footprint, k));
+    return !keepOuts.some((k) => rectsOverlap(footprint, k)) && (admit === undefined || admit(t));
   };
   const accept = options.accept;
   /** An arrangement as it would be placed: keep-outs cleared, or nothing if the caller refuses it. */

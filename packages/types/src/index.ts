@@ -930,6 +930,7 @@ export {
   UserIdSchema,
   USER_ROLES,
   UserRoleSchema,
+  VENUE_ADMINISTRATION_ROLES,
   PLATFORM_ROLES,
   PlatformRoleSchema,
   EmailSchema,
@@ -1451,6 +1452,10 @@ export * from "./sheet-paper-check.js";
 // setup steps, plan markers, keep-in-view facts), shared by paper and screen.
 export * from "./sheet-brief.js";
 
+// Share tokens and guest layout ids templated out of error reports, spans and
+// request logs, in the browser and the API alike.
+export * from "./capability-paths.js";
+
 export {
   DayOfContactSchema,
   PhaseDeadlineSchema,
@@ -1537,6 +1542,7 @@ export {
   REDACTED_HEALTH_TEXT,
   redactHealthFreeText,
   redactHealthFreeTextInString,
+  redactAllergyNote,
   emptyDoorSchedule,
   hasDoorScheduleContent,
   type AccessibilityRequirements,
@@ -2612,3 +2618,8 @@ export * from "./gangway-review.js";
 // The venue team (Plan 19 L1): venue admins invite their own staff; Blake
 // decided on 24 October 2026 that venue administrators invite any role.
 export * from "./venue-team.js";
+// Plan 19 L5 (goal 06 S6): deposits through Stripe Checkout in test mode, and
+// the contract's simple electronic signature with its audit record.
+export * from "./deposits.js";
+export * from "./contracts.js";
+export * from "./reference-loadouts.js";

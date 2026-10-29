@@ -1,21 +1,29 @@
 // ---------------------------------------------------------------------------
-// A 180-seat dinner in the Grand Hall, laid out deterministically.
+// A 180-seat dinner in the Grand Hall, laid out deterministically, with every
+// door's clear space kept empty.
 //
-// Eighteen 6 ft rounds of ten (the planner's default white-linen round and
+// Fifteen 6 ft rounds of twelve (the planner's default white-linen round and
 // Turini banquet chair, chairs on the planner's own ring from
-// computeChairPositions), three rows of six on the hall's measured frame
-// (hall-spec.ts: x along the length from the fireplace, z across from the
-// windows to the doors, origin at the centre of the floor).
+// computeChairPositions) on the hall's measured frame (hall-spec.ts: x along
+// the length from the fireplace, z across from the windows to the doors,
+// origin at the centre of the floor). 180 is the venue's published dinner
+// capacity for the Grand Hall (trades-hall-venue-truth). Ten a round is the
+// usual and stays the planner's default; twelve is the most a 6 ft round takes
+// (Blake, 28 Oct 2026: "we can sit 12 a table, but 10 is the average").
 //
-// The hall is at capacity with 180 in rounds of ten: each round with its
-// chairs needs a 3.09 m circle, so only a 6 x 3 grid fits the 21.14 x 10.59 m
-// floor. The grid leaves a 0.91 m aisle from the main door (under the clock,
-// x = 0) to the centre window, 0.42 m between the outer chairs and the end
-// walls and 0.35 m to the long walls; chair backs between neighbouring rounds
-// are 0.21 m (across the length) and 0.31 m (across the width) apart, the
-// 11-foot-centre standard of a full banqueting hall. There is no room for a
-// separate long top table as well, so Table 1, the round on the centre line in
-// front of the fireplace, is the top table and the composition's anchor.
+// Each round with its chairs needs a 3.09 m circle. Eighteen rounds of ten fill
+// the 21.14 x 10.59 m floor only by standing in front of all four doors, and
+// every door keeps 1.5 m of clear floor in front of it, its width and 0.3 m
+// past each side (Blake, 27-28 Oct: "keep firedoors clean"). So three rows:
+// - six across the middle, Table 1 among them on the centre line in front of
+//   the fireplace: the top table and the composition's anchor;
+// - five along the windows, the corner by the fire exit left open;
+// - four on the door side, two between the fireplace and main doors and two
+//   between the main and end doors, each at least 0.29 m from a clear space.
+// The rows leave a 0.91 m aisle from the main door (under the clock, x = 0) to
+// the centre window, 0.42 m between the outer chairs and the end walls and
+// 0.35 m to the long walls; chair backs between neighbouring rounds are at
+// least 0.21 m apart, the 11-foot-centre standard of a full banqueting hall.
 //
 // Ids, groups and labels are fixed strings, so every run (the Grand Assembly
 // studies, the 180-seat frame-cost runs) loads the identical layout.
@@ -26,13 +34,15 @@ import { getCatalogueItemBySlug } from "../../lib/catalogue.js";
 import { computeChairPositions } from "../../lib/table-group.js";
 import { DEFAULT_PLANNER_ROUND_TABLE_SLUG, UNASKED_PLANNER_CHAIR_SLUG } from "../../lib/furniture-defaults.js";
 
-/** Table centres across the hall's length (x), fireplace end first. */
-export const DINNER_COLUMNS_X = [-8.6, -5.3, -2.0, 2.0, 5.3, 8.6] as const;
-/** Table centres across its width (z), window side first. */
-export const DINNER_ROWS_Z = [-3.4, 0, 3.4] as const;
+/** The rows across the hall's width (z), window side first, each with its table centres along the length (x), fireplace end first. */
+export const DINNER_ROWS: readonly { readonly z: number; readonly x: readonly number[] }[] = [
+  { z: -3.4, x: [-5.3, -2.0, 2.0, 5.3, 8.6] },
+  { z: 0, x: [-8.6, -5.3, -2.0, 2.0, 5.3, 8.6] },
+  { z: 3.4, x: [-6.2, -2.85, 2.85, 6.2] },
+];
 /** Table 1: the top round, on the centre line in front of the fireplace. */
 export const DINNER_ANCHOR = { x: -8.6, z: 0 } as const;
-export const DINNER_SEATS_PER_TABLE = 10;
+export const DINNER_SEATS_PER_TABLE = 12;
 
 export interface DinnerTablePosition {
   readonly number: number;
@@ -41,15 +51,15 @@ export interface DinnerTablePosition {
 }
 
 /**
- * The eighteen table positions, numbered as a venue numbers them: Table 1 at
+ * The fifteen table positions, numbered as a venue numbers them: Table 1 at
  * the top, then outward from it (nearest first; ties window side first, then
  * fireplace side first).
  */
 export function dinnerTablePositions(): readonly DinnerTablePosition[] {
   const cells: { x: number; z: number; distance: number }[] = [];
-  for (const x of DINNER_COLUMNS_X) {
-    for (const z of DINNER_ROWS_Z) {
-      cells.push({ x, z, distance: Math.hypot(x - DINNER_ANCHOR.x, z - DINNER_ANCHOR.z) });
+  for (const row of DINNER_ROWS) {
+    for (const x of row.x) {
+      cells.push({ x, z: row.z, distance: Math.hypot(x - DINNER_ANCHOR.x, row.z - DINNER_ANCHOR.z) });
     }
   }
   cells.sort((a, b) => a.distance - b.distance || a.z - b.z || a.x - b.x);
@@ -65,7 +75,7 @@ export function dinnerTableId(number: number): string {
   return `ga-table-${twoDigits(number)}`;
 }
 
-/** The saved layout: each table followed by its ten chairs, Table 1 first. Its
+/** The saved layout: each table followed by its twelve chairs, Table 1 first. Its
  *  chair is fixed, not the event's, so every run loads the identical layout. */
 export function grandHallDinner180(): PlacedItem[] {
   const table = getCatalogueItemBySlug(DEFAULT_PLANNER_ROUND_TABLE_SLUG);

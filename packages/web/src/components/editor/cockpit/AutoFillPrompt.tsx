@@ -2,6 +2,8 @@ import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type React
 import { ActivityStatus } from "../../shared/Activity.js";
 import { usePlacementStore } from "../../../stores/placement-store.js";
 import { useRoomDimensionsStore } from "../../../stores/room-dimensions-store.js";
+import { useDoorClearSpaceStore } from "../../../stores/door-clear-space-store.js";
+import { doorKeepOuts } from "../../../lib/door-clear-spaces.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
 import { usePlannerEventStore } from "../../../stores/planner-event-store.js";
 import { useEditorStore } from "../../../stores/editor-store.js";
@@ -68,6 +70,8 @@ export function AutoFillPrompt({ style, published, onPlaced, onCancel }: AutoFil
   const dimensions = useRoomDimensionsStore((state) => state.dimensions);
   // Rows are set with the event's chair, so the figure follows the event.
   const eventChair = usePlannerEventStore((state) => plannerChairSlug(state.eventKind));
+  // The open room's doors, as the placement store keeps them: what the button says is what lands.
+  const doorSpaces = useDoorClearSpaceStore((state) => state.spaces);
   const [draft, setDraft] = useState(() => (plannedGuestCount === null ? "" : String(plannedGuestCount)));
   const inputRef = useRef<HTMLInputElement>(null);
   const baseId = useId();
@@ -95,14 +99,15 @@ export function AutoFillPrompt({ style, published, onPlaced, onCancel }: AutoFil
     if (guests === null) return null;
     const widthM = dimensions.width / RENDER_SCALE;
     const lengthM = dimensions.length / RENDER_SCALE;
+    const keepOuts = doorKeepOuts(doorSpaces);
     const table = getCatalogueItemBySlug(DEFAULT_PLANNER_ROUND_TABLE_SLUG);
     if (fillsOver && placedItems !== null && table !== undefined) {
-      const fill = planRoomFill({ table, seatsPerTable: banquetSeatsPerTable(table), guests, roomWidthM: widthM, roomLengthM: lengthM, exits, rule: FILL_AISLE_RULE }, placedItems);
+      const fill = planRoomFill({ table, seatsPerTable: banquetSeatsPerTable(table), guests, roomWidthM: widthM, roomLengthM: lengthM, exits, rule: FILL_AISLE_RULE, doorSpaces: keepOuts }, placedItems);
       return fill === null ? null : { plan: fill.plan, fill };
     }
-    const planned = planAutoFill(style, guests, widthM, lengthM, eventChair);
+    const planned = planAutoFill(style, guests, widthM, lengthM, eventChair, { doorSpaces: keepOuts });
     return planned === null ? null : { plan: planned, fill: null };
-  }, [guests, style, dimensions, fillsOver, placedItems, exits, eventChair]);
+  }, [guests, style, dimensions, fillsOver, placedItems, exits, eventChair, doorSpaces]);
   const plan = preview?.plan ?? null;
   // What a fill over a laid floor does to the rounds already there, said before it is pressed (planner-qol C-02).
   const consequence = useMemo(() => {

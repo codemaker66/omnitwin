@@ -1,7 +1,8 @@
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type ReactElement } from "react";
 import type { TurnaroundRuleSetting, TurnaroundRulesResponse } from "@omnitwin/types";
 import {
-  createTurnaroundRule, listTurnaroundRules, retireTurnaroundRule, ruleFromRefusal, updateTurnaroundRule,
+  CHANGEOVER_SETTERS, createTurnaroundRule, isPermissionRefusal, listTurnaroundRules, retireTurnaroundRule, ruleFromRefusal,
+  updateTurnaroundRule,
 } from "../../../api/turnaround-rules.js";
 import { ActivityIndicator, ActivityStatus } from "../../shared/Activity.js";
 import {
@@ -44,7 +45,10 @@ type FocusTarget =
   | { readonly kind: "row"; readonly ruleId: string; readonly action: "change" | "remove" }
   | { readonly kind: "add" };
 
-export function ChangeoverSettings({ venueId }: { readonly venueId: string }): ReactElement {
+/** Everyone who reads the Diary may read the times; only the venue's
+ *  administrators (`canAdministerVenue`) are offered the controls that change
+ *  them, so nobody presses a button the API refuses. */
+export function ChangeoverSettings({ venueId, canEdit }: { readonly venueId: string; readonly canEdit: boolean }): ReactElement {
   const titleId = useId();
   const formId = useId();
   const [load, setLoad] = useState<LoadState>({ status: "loading" });
@@ -118,7 +122,7 @@ export function ChangeoverSettings({ venueId }: { readonly venueId: string }): R
         setEditing(null);
         setNotice({ id: rule.id, text: `Someone changed this a moment ago. It now says ${changeoverDuration(current.minutes)}.` });
       } else {
-        setNotice({ id: rule.id, text: "The time could not be saved. Try again." });
+        setNotice({ id: rule.id, text: isPermissionRefusal(error) ? `${CHANGEOVER_SETTERS} Nothing has changed.` : "The time could not be saved. Try again." });
       }
     } finally {
       setBusy(null);
@@ -136,9 +140,9 @@ export function ChangeoverSettings({ venueId }: { readonly venueId: string }): R
       focusNext.current = neighbour === undefined ? { kind: "add" } : { kind: "row", ruleId: neighbour.id, action: "change" };
       replaceRules((rules) => rules.filter((candidate) => candidate.id !== rule.id));
       setRemoving(null);
-    } catch {
+    } catch (error) {
       focusNext.current = { kind: "row", ruleId: rule.id, action: "remove" };
-      setNotice({ id: rule.id, text: "The time could not be removed. Try again." });
+      setNotice({ id: rule.id, text: isPermissionRefusal(error) ? `${CHANGEOVER_SETTERS} Nothing has changed.` : "The time could not be removed. Try again." });
     } finally {
       setBusy(null);
     }
@@ -171,7 +175,7 @@ export function ChangeoverSettings({ venueId }: { readonly venueId: string }): R
         replaceRules((rules) => rules.some((rule) => rule.id === existing.id) ? [...rules] : [...rules, existing]);
         setAddNotice(`${roomLabel(existing.spaceId, roomNames)} already has a time for ${eventTypeLabel(existing.eventType).toLowerCase()}. It is listed above.`);
       } else {
-        setAddNotice("The time could not be added. Try again.");
+        setAddNotice(isPermissionRefusal(error) ? `${CHANGEOVER_SETTERS} Nothing was added.` : "The time could not be added. Try again.");
       }
     } finally {
       setBusy(null);
@@ -183,6 +187,7 @@ export function ChangeoverSettings({ venueId }: { readonly venueId: string }): R
       <header className="changeovers__head">
         <h3 id={titleId}>Changeovers</h3>
         <p>How long a room needs between two functions. The Diary warns when a gap is shorter.</p>
+        {!canEdit && <p className="changeovers__hint">{CHANGEOVER_SETTERS}</p>}
       </header>
 
       {load.status === "loading" && <ActivityStatus>Loading changeover times…</ActivityStatus>}
@@ -220,7 +225,7 @@ export function ChangeoverSettings({ venueId }: { readonly venueId: string }): R
                       <span className="vv-sr-only">{changeoverDurationWords(rule.minutes)}</span>
                     </p>
                     <p className="changeovers__confirmation">{confirmationWords(rule)}</p>
-                    {draftEdit === null && removing !== rule.id && (
+                    {canEdit && draftEdit === null && removing !== rule.id && (
                       <div className="changeovers__actions">
                         {rule.confirmedAt === null && (
                           <button type="button" className="changeovers__primary" disabled={busy !== null} aria-busy={saving}
@@ -298,7 +303,7 @@ export function ChangeoverSettings({ venueId }: { readonly venueId: string }): R
             </ul>
           )}
 
-          <form className="changeovers__add" aria-labelledby={`${formId}-title`} noValidate onSubmit={(event) => { void add(event); }}>
+          {canEdit && <form className="changeovers__add" aria-labelledby={`${formId}-title`} noValidate onSubmit={(event) => { void add(event); }}>
             <h4 id={`${formId}-title`}>Add a changeover time</h4>
             <div className="changeovers__fields">
               <label>
@@ -337,7 +342,7 @@ export function ChangeoverSettings({ venueId }: { readonly venueId: string }): R
               </p>
             )}
             {addNotice !== null && <p className="changeovers__hint" role="status">{addNotice}</p>}
-          </form>
+          </form>}
         </>
       )}
     </section>
