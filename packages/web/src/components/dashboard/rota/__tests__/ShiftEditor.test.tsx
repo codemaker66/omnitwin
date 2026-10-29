@@ -98,6 +98,21 @@ describe("ShiftEditor", () => {
     expect(mocks.keep).toHaveBeenCalledWith(VENUE, MORAG_SATURDAY, "short_rest", "Morag asked to finish Friday's bar; Monday off instead");
   });
 
+  it("heads a published shift's missing check as what is needed before it is worked, with nothing to keep", () => {
+    const missing = {
+      code: "right_to_work_missing" as const, severity: "block" as const, kept: null, short: "No right-to-work check",
+      message: "Morag Sinclair has no right-to-work check recorded. This shift is already published: record the check before Morag Sinclair works it, or give it to someone else.",
+    };
+    const panel = renderEditor(published({ issues: [missing] }));
+    const issues = within(panel).getByRole("region", { name: "Warnings" });
+    expect(within(issues).getByRole("heading", { name: "Before this shift is worked" })).toBeDefined();
+    expect(within(issues).getByText(missing.message)).toBeDefined();
+    expect(within(issues).queryByRole("button", { name: "Keep as it is…" })).toBeNull();
+    cleanup();
+    const draftPanel = renderEditor(shift({ id: MORAG_SATURDAY.id, staffMemberId: CALLUM, issues: [{ ...missing, message: "Callum Reid has no right-to-work check recorded, so this shift cannot be published until one is." }] }));
+    expect(within(draftPanel).getByRole("heading", { name: "Before this can be published" })).toBeDefined();
+  });
+
   it("puts focus back on Keep as it is when the reason is put away", () => {
     const panel = renderEditor(MORAG_SATURDAY);
     fireEvent.click(within(panel).getByRole("button", { name: "Keep as it is…" }));
