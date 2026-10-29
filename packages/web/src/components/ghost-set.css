@@ -1,0 +1,28 @@
+/* The truthful ghost's words (GhostSet.tsx, card-dock spec §7.2–7.3): its tag
+ * above the set and, once a refusal has held 80 ms, the chip and its second
+ * line beneath the tag. Each is the chrome's MarkLabel (planner-chrome/
+ * Surfaces.tsx), centred on the point drei's Html anchors above the set; these
+ * variables only stack them, a pill's height apart. */
+.ghost-set {
+  position: relative;
+}
+
+/* The stack grows upward from the set, so no word ever covers the set or the
+ * piece in its way: the tag nearest the set, the chip's second line above it,
+ * the reason on top. */
+.ghost-set__tag {
+  --pc-mark-y: -14px;
+}
+
+.ghost-set__chip {
+  --pc-mark-y: -72px;
+}
+
+.ghost-set__subline {
+  --pc-mark-y: -43px;
+}
+
+/* The second line says what letting go does, quieter than the reason. */
+.ghost-set .ghost-set__subline-mark {
+  color: var(--house-forest-ink-3);
+}

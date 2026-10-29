@@ -930,6 +930,7 @@ export {
   UserIdSchema,
   USER_ROLES,
   UserRoleSchema,
+  VENUE_ADMINISTRATION_ROLES,
   PLATFORM_ROLES,
   PlatformRoleSchema,
   EmailSchema,
@@ -1537,6 +1538,7 @@ export {
   REDACTED_HEALTH_TEXT,
   redactHealthFreeText,
   redactHealthFreeTextInString,
+  redactAllergyNote,
   emptyDoorSchedule,
   hasDoorScheduleContent,
   type AccessibilityRequirements,
@@ -2612,6 +2614,7 @@ export * from "./gangway-review.js";
 // The venue team (Plan 19 L1): venue admins invite their own staff; Blake
 // decided on 24 October 2026 that venue administrators invite any role.
 export * from "./venue-team.js";
+export * from "./reference-loadouts.js";
 // A crowded Trades Hall day (Plan 19 L9): one deterministic Saturday in all
 // six published rooms, for tests and local demos; invented people only.
 export * from "./crowded-day.js";

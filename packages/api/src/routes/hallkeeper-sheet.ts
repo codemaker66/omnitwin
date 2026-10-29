@@ -11,7 +11,7 @@ import { assembleSheetDataV2, ApprovedSnapshotUnavailableError, linkedEventIds }
 import { generateSheetPdfV2 } from "../services/hallkeeper-pdf-v2.js";
 import { authenticate } from "../middleware/auth.js";
 import type { JwtUser } from "../middleware/auth.js";
-import { canAccessResource } from "../utils/query.js";
+import { canAccessResource, canManageVenue } from "../utils/query.js";
 import { resolveProgressMutation, checkedStateAfter, progressEventFor } from "../lib/hallkeeper-progress.js";
 import { summarizeSheet } from "../lib/hallkeeper-summary.js";
 import { buildSheetPaperCheck } from "../services/sheet-paper-check.js";
@@ -32,6 +32,10 @@ import { buildSheetPaperCheck } from "../services/sheet-paper-check.js";
 //   - Venue staff / hallkeepers for the config's venue
 //   - Admin
 // Anonymous access is blocked — punch list #4.
+//
+// The setup checklist (PATCH /progress) is the venue crew's record of its
+// own work, read on the Day Board: the layout's owner reads it, and only the
+// venue's floor (or a platform admin) ticks it (release audit tenancy-f-2).
 //
 // Paper that knows its version: both the JSON and the PDF carry a paper
 // check (services/sheet-paper-check.ts) — the link the printout's QR code
@@ -129,10 +133,17 @@ function progressScope(configId: string, eventId: string | null) {
   );
 }
 
+/**
+ * "read": the layout's owner or the venue's floor. "tick": the venue's floor
+ * only. A customer who owns the layout reads its checklist but never writes
+ * it: their tick would read on the Day Board as the crew's work, and their
+ * untick would erase it.
+ */
 async function requireConfigAccess(
   db: Database,
   configId: string,
   user: JwtUser,
+  access: "read" | "tick" = "read",
 ): Promise<
   | { ok: true }
   | { ok: false; status: 404 | 403; error: string; code: string }
@@ -141,7 +152,10 @@ async function requireConfigAccess(
   if (pivot === null) {
     return { ok: false, status: 404, error: "Configuration not found", code: "NOT_FOUND" };
   }
-  if (!canAccessResource(user, pivot.ownerId, pivot.venueId)) {
+  const allowed = access === "tick"
+    ? canManageVenue(user, pivot.venueId)
+    : canAccessResource(user, pivot.ownerId, pivot.venueId);
+  if (!allowed) {
     return { ok: false, status: 403, error: "Insufficient permissions", code: "FORBIDDEN" };
   }
   return { ok: true };
@@ -338,6 +352,7 @@ export async function hallkeeperSheetRoutes(
   });
 
   // PATCH /hallkeeper/:configId/progress — set or toggle a row's check state
+  // (the venue's floor only; see requireConfigAccess)
   server.patch("/:configId/progress", { preHandler: [authenticate] }, async (request, reply) => {
     const params = ConfigIdParam.safeParse(request.params);
     if (!params.success) {
@@ -349,7 +364,7 @@ export async function hallkeeperSheetRoutes(
       return reply.status(400).send({ error: "Invalid body", code: "VALIDATION_ERROR", details: body.error.issues });
     }
 
-    const gate = await requireConfigAccess(db, params.data.configId, request.user);
+    const gate = await requireConfigAccess(db, params.data.configId, request.user, "tick");
     if (!gate.ok) {
       return reply.status(gate.status).send({ error: gate.error, code: gate.code });
     }

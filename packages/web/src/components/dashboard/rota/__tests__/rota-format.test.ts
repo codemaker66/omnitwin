@@ -21,6 +21,7 @@ import {
   personFacts,
   personMeta,
   prefillShift,
+  draftMinutes,
   publishPlan,
   rotaWeekTitle,
   shiftName,
@@ -225,6 +226,16 @@ describe("a new shift, and the instants it stands for", () => {
   it("covers a function from an hour before it to its end, past midnight, in its room", () => {
     const draft = prefillShift({ record: record({ skills: ["av"] }), date: "2026-10-10", functions: [wedding], timeZone: TZ });
     expect(draft).toMatchObject({ role: "av", start: "11:00", end: "00:30", breakMinutes: 20, functionId: wedding.id, eventId: EVENT, spaceId: HALL });
+  });
+
+  it("asks for the break the real length needs on the night the clocks go back (dash-ops-3)", () => {
+    // 20:00 to 02:00 by the clock on 24 October 2026 is seven hours worked.
+    const late = { ...wedding, startsAt: "2026-10-24T20:00:00.000Z", endsAt: "2026-10-25T02:00:00.000Z" };
+    expect(prefillShift({ record: record(), date: "2026-10-24", functions: [late], timeZone: TZ })).toMatchObject({ start: "20:00", end: "02:00", breakMinutes: 20 });
+    expect(draftMinutes({ date: "2026-10-24", start: "20:00", end: "02:00" }, TZ)).toBe(7 * 60);
+    expect(draftMinutes({ date: "2027-03-27", start: "20:00", end: "03:00" }, TZ)).toBe(6 * 60);
+    expect(draftMinutes({ date: "2026-10-10", start: "09:00", end: "17:00" }, TZ)).toBe(8 * 60);
+    expect(draftMinutes({ date: "2026-10-10", start: "", end: "17:00" }, TZ)).toBeNull();
   });
 
   it("suggests at most sixteen hours however long the function runs", () => {
