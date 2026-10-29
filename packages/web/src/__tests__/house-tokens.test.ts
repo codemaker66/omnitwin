@@ -578,6 +578,10 @@ const REGISTER_EXEMPT: readonly RegExp[] = [
   /MeasurementTool\.tsx/,
   /CockpitSceneOverlays\.tsx/,
   /LayoutPlanThumbnail\.tsx/,
+  // The door rule's marks, light laid on the floor beside the placement ghost:
+  // the brass edge and the warm gold a door's space glows when something
+  // stands in it, the gold Blake chose on frames of the drawn hall (28 Oct 2026).
+  /DoorClearSpaceLayer\.tsx/,
   // T-629 split the ornament description out of GrandHallOrnaments.tsx into
   // data; the same gilt, avodire and oak, so the same rule.
   /grand-hall-ornament-parts\.ts/,

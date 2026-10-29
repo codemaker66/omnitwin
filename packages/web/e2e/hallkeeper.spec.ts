@@ -136,6 +136,25 @@ async function seedAuthenticatedPlanner(page: Page): Promise<void> {
   });
 }
 
+/** The venue's own hallkeeper: the person whose ticks the checklist records.
+ *  A layout's planner reads the checklist and ticks nothing (release audit
+ *  tenancy-f-2); the phone cases below read it as the planner. */
+async function seedAuthenticatedHallkeeper(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    Object.defineProperty(window, "__OMNITWIN_E2E__", { value: true, writable: false });
+    Object.defineProperty(window, "__OMNITWIN_SEED_USER__", {
+      value: {
+        id: "e2e-user-hallkeeper",
+        email: "hallkeeper@e2e.test",
+        role: "hallkeeper",
+        venueId: "00000000-0000-4000-8000-0000000000e2",
+        name: "E2E Hallkeeper",
+      },
+      writable: false,
+    });
+  });
+}
+
 async function seedUnauthenticatedE2E(page: Page): Promise<void> {
   await page.addInitScript(() => {
     Object.defineProperty(window, "__OMNITWIN_E2E__", { value: true, writable: false });
@@ -149,7 +168,7 @@ async function seedUnauthenticatedE2E(page: Page): Promise<void> {
 
 test.describe("Hallkeeper Page", () => {
   test.beforeEach(async ({ page }) => {
-    await seedAuthenticatedPlanner(page);
+    await seedAuthenticatedHallkeeper(page);
     await mockSheetData(page);
     await page.goto(`/hallkeeper/${CONFIG_ID}`);
     await expect(page.getByRole("main", { name: "Hallkeeper sheet for Annual Gala at Trades Hall Glasgow" }))

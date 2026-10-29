@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { ReferenceLoadoutRowSchema } from "@omnitwin/types";
 import * as schema from "../db/schema.js";
 import { referenceLoadoutRoutes } from "../routes/reference-loadouts.js";
 
@@ -14,6 +15,8 @@ import { referenceLoadoutRoutes } from "../routes/reference-loadouts.js";
 // production (Sentry VENVIEWER-API-1) and counted the wrong rows.
 // ---------------------------------------------------------------------------
 
+// The create and rename below authenticate with the test-mode bearer.
+process.env["NODE_ENV"] = "test";
 const target = process.env["VENVIEWER_PLATFORM_TEST_DATABASE_URL"];
 if (target !== undefined) {
   const parsed = new URL(target);
@@ -70,6 +73,19 @@ describe.skipIf(target === undefined)("reference loadouts list through the real 
     await db.insert(schema.referencePhotos).values({ loadoutId, fileId: file.id, sortOrder });
     return fileKey;
   }
+
+  it("answers a create and a rename with the row the web's own schema reads (dash-ops-4)", async () => {
+    const { venueId, spaceId, userId } = await seedRoom();
+    const headers = { authorization: `Bearer ${JSON.stringify({ id: userId, email: `${userId}@loadouts.invalid`, name: "Fixture", role: "staff", venueId })}` };
+    const created = await server.inject({ method: "POST", url: `/venues/${venueId}/spaces/${spaceId}/loadouts`, headers, payload: { name: "Wedding reset" } });
+    expect(created.statusCode, created.body).toBe(201);
+    const row = ReferenceLoadoutRowSchema.parse(created.json<{ data: unknown }>().data);
+    expect(row).toMatchObject({ spaceId, venueId, name: "Wedding reset", description: null });
+
+    const renamed = await server.inject({ method: "PATCH", url: `/venues/${venueId}/spaces/${spaceId}/loadouts/${row.id}`, headers, payload: { name: "Dinner reset" } });
+    expect(renamed.statusCode, renamed.body).toBe(200);
+    expect(ReferenceLoadoutRowSchema.parse(renamed.json<{ data: unknown }>().data)).toMatchObject({ id: row.id, name: "Dinner reset" });
+  });
 
   it("lists each loadout in the room with its own photo count and first photo as cover", async () => {
     const { venueId, spaceId, otherSpaceId, userId } = await seedRoom();
