@@ -7,7 +7,11 @@ import { useAuthStore } from "../../../../stores/auth-store.js";
 // so the test stays a structural shell test (no WebGL). The top bar reads
 // router + store context of its own, so mock it too for this shell test.
 vi.mock("../../../../App.js", () => ({ App: () => <div data-testid="mock-editor-3d" /> }));
-vi.mock("../ReferenceRoomHeader.js", () => ({ ReferenceRoomHeader: () => <header data-testid="reference-room-header-mock" /> }));
+// The header's save line (headerSaveLabel) stays real: the chrome's save word speaks it.
+vi.mock("../ReferenceRoomHeader.js", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../ReferenceRoomHeader.js")>(),
+  ReferenceRoomHeader: () => <header data-testid="reference-room-header-mock" />,
+}));
 vi.mock("../CockpitRightDock.js", () => ({ CockpitRightDock: () => <aside data-testid="cockpit-dock-mock" /> }));
 vi.mock("../CockpitBottom.js", () => ({ CockpitBottom: () => <footer data-testid="cockpit-bottom-mock" /> }));
 // The phone lens sheet has its own suite (LensSheet.test.tsx); here only where

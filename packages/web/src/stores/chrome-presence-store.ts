@@ -20,6 +20,9 @@ export const CHROME_FOLDS_STORAGE_KEY = "venviewer.planner-chrome-folds";
 /** How many times a device is told how to bring cleared chrome back. */
 export const CLEAR_HINT_LIMIT = 3;
 
+/** How long chrome takes to arrive or leave (--house-motion-deliberate, the longer of the two). */
+export const CHROME_SETTLE_MS = 240;
+
 /** The attribute on <html> that says how one unit stands ("folded", or "unfolding" for one settle). */
 export function chromeFoldAttribute(unit: ChromeFoldUnit): string {
   return `data-planner-fold-${unit}`;

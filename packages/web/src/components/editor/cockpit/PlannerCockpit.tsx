@@ -98,8 +98,10 @@ export function PlannerCockpit({ mobile = false, hasLinkedEvent = false }: { rea
         {mobile || timelinePreviewActive ? null : <ToolPill />}
         {mobile || timelinePreviewActive ? null : <ChromeFoldControls unit="top" />}
         {mobile || timelinePreviewActive ? null : <CanvasLayerControls embedded />}
-        {mobile || timelinePreviewActive ? null : <ChromeFoldControls unit="bottom" />}
       </main>
+      {/* Above the stage, as the side ones are: the room timeline's bar is
+          drawn over the stage and would bury the bottom mark's lower edge. */}
+      {mobile || timelinePreviewActive ? null : <ChromeFoldControls key="bottom-fold" unit="bottom" />}
       {mobile ? null : timelinePreviewActive ? (
         <aside
           key="preview-lock"
@@ -122,7 +124,7 @@ export function PlannerCockpit({ mobile = false, hasLinkedEvent = false }: { rea
       {mobile ? <LensSheet key="lens-sheet" /> : null}
       {mobile ? <PhoneChromeSeal key="phone-seal" /> : null}
       <ChromeClearHint key="clear-hint" />
-      <ChromeSaveWord key="save-word" />
+      <ChromeSaveWord key="save-word" mobile={mobile} />
     </div>
   );
 }

@@ -11,6 +11,7 @@ import { usePlannerVenueIdentity } from "../../../hooks/use-planner-venue-identi
 import {
   CHROME_CLEARED_ATTRIBUTE,
   CHROME_FOLD_UNITS,
+  CHROME_SETTLE_MS,
   chromeFoldAttribute,
   useChromePresenceStore,
   type ChromeFoldUnit,
@@ -18,6 +19,7 @@ import {
 } from "../../../stores/chrome-presence-store.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
 import { useEditorStore } from "../../../stores/editor-store.js";
+import { useLayoutTimelinePreviewStore } from "../../../stores/layout-timeline-preview-store.js";
 import { usePlacementStore } from "../../../stores/placement-store.js";
 import { useSelectionStore } from "../../../stores/selection-store.js";
 import { useToolStore } from "../../../stores/tool-store.js";
@@ -44,14 +46,17 @@ import "./ChromeFold.css";
 // frozen-preview camera measures the docks.
 // ---------------------------------------------------------------------------
 
-/** An animated unfold or restore keeps its transition this long (--house-motion-deliberate). */
-export const CHROME_SETTLE_MS = 240;
+/** An animated unfold or restore keeps its transition this long. */
+export { CHROME_SETTLE_MS };
 
 /** How long the clear-all note stays on screen. */
 export const CLEAR_HINT_MS = 4000;
 
 /** What the clear-all note says, the first few times on a device. */
 export const CLEAR_HINT_TEXT = "The tools are hidden · press \\ or the crest to bring them back";
+
+/** The same, spoken: a screen reader at its usual punctuation level says nothing for a bare \. */
+export const CLEAR_HINT_VOICE = "The tools are hidden. Press backslash or the crest to bring them back.";
 
 /** Each unit's name, as its spine and fold mark say it (the right one follows the lens). */
 export const CHROME_UNIT_NAMES: Readonly<Record<ChromeFoldUnit, string>> = {
@@ -69,9 +74,9 @@ function isOnScreen(element: Element): boolean {
   return element.isConnected && getComputedStyle(element).visibility !== "hidden";
 }
 
-/** Where focus goes when the chrome it was on has gone, first that can be seen. */
+/** Where focus goes when the chrome it was on has gone: the first that can be seen and takes it. */
 const FOCUS_WHEN_CLEARED = [CREST, ".chrome-phone-seal"] as const;
-const FOCUS_WHEN_RESTORED = ["#chrome-spine-left", '[data-testid="mobile-planner-topbar"] button', CREST] as const;
+const FOCUS_WHEN_RESTORED = ["#chrome-spine-left", '[data-testid="mobile-planner-topbar"] button:not(:disabled)', CREST] as const;
 
 /**
  * Keyboard focus never stays on chrome that has just gone (WCAG 2.4.3). If
@@ -86,12 +91,24 @@ export function settleChromeFocus(doc: Document, before: Element | null, cleared
   if (active !== null && active !== doc.body && onScreen(active)) return;
   for (const selector of cleared ? FOCUS_WHEN_CLEARED : FOCUS_WHEN_RESTORED) {
     const next = doc.querySelector<HTMLElement>(selector);
-    if (next !== null && onScreen(next)) {
-      if (next.matches(CREST)) focusCrestQuietly(next);
-      else next.focus({ preventScroll: true });
-      return;
-    }
+    if (next === null || !onScreen(next)) continue;
+    if (next.matches(CREST)) focusCrestQuietly(next);
+    else next.focus({ preventScroll: true });
+    if (doc.activeElement === next) return;
   }
+}
+
+/**
+ * When a phase preview ends, the remembered folds come back over its exit
+ * and the right-hand column: focus left on a control inside them moves to
+ * that unit's spine, which returns with the folds.
+ */
+export function settleFocusAfterPreview(doc: Document): void {
+  const active = doc.activeElement;
+  if (active === null) return;
+  const { folded } = useChromePresenceStore.getState();
+  if (folded.bottom && active.closest(".reference-viewer > .cockpit-bottom") !== null) focusSoon(spineId("bottom"));
+  else if (folded.right && active.closest(".reference-view-switch, .reference-handoff-action, .reference-event-details") !== null) focusSoon(spineId("right"));
 }
 
 /**
@@ -104,6 +121,7 @@ export function mirrorChromePresence(root: HTMLElement): () => void {
   const doc = root.ownerDocument;
   const settling = new Map<string, number>();
   let focusFrame: number | null = null;
+  let focusLater: number | undefined;
   const write = (name: string, value: string | null): void => {
     const timer = settling.get(name);
     if (timer !== undefined) window.clearTimeout(timer);
@@ -132,25 +150,40 @@ export function mirrorChromePresence(root: HTMLElement): () => void {
     else if (previous === null || previous.cleared) write(CHROME_CLEARED_ATTRIBUTE, null);
   };
   apply(useChromePresenceStore.getState(), null);
-  // The first frame shows remembered folds as they are, not folding.
+  // The first frame shows remembered folds as they are, not folding; motion
+  // comes back on the next unless the person has changed something since.
+  // (The store's own `instant` is no guide here: the cockpit last left it
+  // set, and React's development mount leaves and comes back at once.)
+  let changed = false;
   const firstFrame = window.requestAnimationFrame(() => {
-    if (!useChromePresenceStore.getState().instant) root.removeAttribute(MOTION);
+    if (!changed) root.removeAttribute(MOTION);
   });
   const unsubscribe = useChromePresenceStore.subscribe((state, previous) => {
+    changed = true;
     const before = doc.activeElement;
     apply(state, previous);
     if (state.cleared === previous.cleared) return;
     if (focusFrame !== null) window.cancelAnimationFrame(focusFrame);
+    window.clearTimeout(focusLater);
     // A frame on, once React has drawn the change: a phone's seal comes and goes with it.
     focusFrame = window.requestAnimationFrame(() => {
       focusFrame = null;
       settleChromeFocus(doc, before, state.cleared);
     });
+    // The pointer's change hides chrome only once its fade has run. A browser
+    // that leaves focus on what has then gone has it moved too; focus that has
+    // moved on, or fallen to the page, is the person's and stays.
+    if (!state.instant) {
+      focusLater = window.setTimeout(() => {
+        if (before !== null && doc.activeElement === before && !isOnScreen(before)) settleChromeFocus(doc, before, state.cleared);
+      }, CHROME_SETTLE_MS);
+    }
   });
   return () => {
     unsubscribe();
     window.cancelAnimationFrame(firstFrame);
     if (focusFrame !== null) window.cancelAnimationFrame(focusFrame);
+    window.clearTimeout(focusLater);
     for (const timer of settling.values()) window.clearTimeout(timer);
     for (const unit of CHROME_FOLD_UNITS) root.removeAttribute(chromeFoldAttribute(unit));
     root.removeAttribute(CHROME_CLEARED_ATTRIBUTE);
@@ -180,6 +213,9 @@ export function useChromePresence(): void {
   usePlannerKeyBindings(CHROME_KEYS);
   useEscapeLayer("chrome", { open: cleared, onEscape: () => { useChromePresenceStore.getState().restoreAll(); } });
   useLayoutEffect(() => mirrorChromePresence(document.documentElement), []);
+  useEffect(() => useLayoutTimelinePreviewStore.subscribe((state, previous) => {
+    if (state.mode === "inactive" && previous.mode !== "inactive") settleFocusAfterPreview(document);
+  }), []);
 }
 
 /** What a unit is called right now: the right dock is whichever lens is open. */
@@ -259,14 +295,19 @@ export function chromeSaveTrouble(state: SaveState): string | null {
   return trouble ? headerSaveLabel(state) : null;
 }
 
-function useChromeSaveTrouble(): string | null {
+/** Where saving stands, as the room header reads it. */
+function useSaveState(): SaveState {
   const configId = useEditorStore((state) => state.configId);
   const saving = useEditorStore((state) => state.isSaving);
   const dirty = useEditorStore((state) => state.isDirty);
   const saveError = useEditorStore((state) => state.saveError);
   const conflicted = useEditorStore((state) => state.saveConflict !== null);
   const online = useOnlineStatus();
-  return chromeSaveTrouble({ configId, saving, dirty, saveError, conflicted, online });
+  return { configId, saving, dirty, saveError, conflicted, online };
+}
+
+function useChromeSaveTrouble(): string | null {
+  return chromeSaveTrouble(useSaveState());
 }
 
 function LeftSpineWords(): ReactElement {
@@ -394,27 +435,42 @@ export function ChromeClearHint(): ReactElement {
   }, [pending]);
   return (
     <p className="chrome-clear-hint" data-shown={pending ? "true" : "false"} style={besideTheCrest(anchor, 0)}>
-      <span className="chrome-sr-only" role="status">{pending ? CLEAR_HINT_TEXT : ""}</span>
+      <span className="chrome-sr-only" role="status">{pending ? CLEAR_HINT_VOICE : ""}</span>
       <span aria-hidden="true">{CLEAR_HINT_TEXT}</span>
     </p>
   );
 }
 
+interface HeaderAway {
+  readonly away: boolean;
+  /** The line the header had said when it went; null once it has changed since. */
+  readonly said: string | null;
+}
+
 /**
- * Save trouble, which the header says until the chrome hides it: spoken
- * whenever the header is folded or cleared away, and shown beside the crest
- * while cleared (a folded left dock's spine shows it there).
+ * The room header's voice while the header is away. The header speaks its
+ * own save line; folded or cleared away, that live region goes with it, so
+ * this one speaks every change from the moment it went, and nothing the
+ * header had already said (once is enough). On a phone the top bar keeps its
+ * own voice, so this speaks only while the chrome is cleared. The ink shows
+ * save trouble beside the crest while cleared; a folded left dock's spine
+ * shows it there.
  */
-export function ChromeSaveWord(): ReactElement {
-  const trouble = useChromeSaveTrouble();
+export function ChromeSaveWord({ mobile = false }: { readonly mobile?: boolean }): ReactElement {
+  const save = useSaveState();
+  const trouble = chromeSaveTrouble(save);
+  const line = headerSaveLabel(save);
   const cleared = useChromePresenceStore((state) => state.cleared);
-  const headerHidden = useChromePresenceStore((state) => state.cleared || state.folded.left);
+  const away = useChromePresenceStore((state) => state.cleared || (!mobile && state.folded.left));
   const noteShowing = useChromePresenceStore((state) => state.hintPending);
+  const [since, setSince] = useState<HeaderAway>({ away, said: line });
+  if (since.away !== away) setSince({ away, said: line });
+  else if (since.said !== null && line !== since.said) setSince({ away, said: null });
   const shown = cleared && trouble !== null;
   const anchor = useCrestAnchor(shown);
   return (
     <p className="chrome-save-word" data-shown={shown ? "true" : "false"} style={besideTheCrest(anchor, noteShowing ? NOTE_LINE : 0)}>
-      <span className="chrome-sr-only" role="status">{headerHidden ? trouble ?? "" : ""}</span>
+      <span className="chrome-sr-only" role="status">{away && since.said === null ? line : ""}</span>
       <span aria-hidden="true">{trouble ?? ""}</span>
     </p>
   );

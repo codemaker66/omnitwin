@@ -43,7 +43,7 @@ import {
 
 import { annotationSafeArea, placeSceneAnnotations, rectanglesOverlap, type AnnotationMeasure, type AnnotationRect } from "../../lib/cockpit-scene-annotation-layout.js";
 import { useEscapeLayer } from "../../lib/planner-keys.js";
-import { CHROME_PRESENCE_ATTRIBUTES } from "../../stores/chrome-presence-store.js";
+import { CHROME_PRESENCE_ATTRIBUTES, CHROME_SETTLE_MS } from "../../stores/chrome-presence-store.js";
 import "./CockpitSceneAnnotations.css";
 
 // ---------------------------------------------------------------------------
@@ -461,7 +461,14 @@ function SceneAnnotations({ annotations }: { readonly annotations: readonly Scen
     observeBounds();
     // Portalled dialogs and translated docks can change without resizing.
     // Ignore our own layout writes, which otherwise create a perpetual loop.
+    let chromeSettled: number | undefined;
     const membership = new MutationObserver((records) => {
+      // A dock folded or cleared by the pointer goes only once its fade has
+      // run (T-680): measure again then, so the cards use the space it frees.
+      if (records.some((record) => record.target === canvas.ownerDocument.documentElement)) {
+        window.clearTimeout(chromeSettled);
+        chromeSettled = window.setTimeout(markDirty, CHROME_SETTLE_MS + 20);
+      }
       const relevant = records.some((record) => {
         if (rootRef.current?.contains(record.target) === true) return false;
         if (record.type === "childList") return true;
@@ -483,6 +490,7 @@ function SceneAnnotations({ annotations }: { readonly annotations: readonly Scen
     return () => {
       observer?.disconnect();
       membership.disconnect();
+      window.clearTimeout(chromeSettled);
       window.removeEventListener("resize", markDirty);
       window.removeEventListener("scroll", markDirty, true);
     };

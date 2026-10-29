@@ -383,4 +383,23 @@ describe("the chrome rung", () => {
 
     expect(document.activeElement).toBe(field);
   });
+
+  // Review finding, 28 Oct: a popover inside a unit folded by the keyboard
+  // stayed open, hidden, and took the person's next Esc.
+  it("passes by a layer whose element is hidden, and reaches it again once it shows", () => {
+    const steps: string[] = [];
+    const bar = document.createElement("div");
+    document.body.append(bar);
+    track(registerEscapeLayer({ kind: "popover", isOpen: () => true, escape: () => { steps.push("popover"); }, element: () => bar }));
+    layer("selection", () => true, () => { steps.push("selection"); });
+
+    bar.style.visibility = "hidden";
+    press("Escape");
+    expect(steps).toEqual(["selection"]);
+    expect(closeOpenLayers(["popover"])).toBe(0);
+
+    bar.style.visibility = "visible";
+    press("Escape");
+    expect(steps).toEqual(["selection", "popover"]);
+  });
 });

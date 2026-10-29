@@ -38,7 +38,10 @@
 
 /* ---- The crest: the switch, and the one mark left on a cleared screen ---- */
 
+/* The crest's row holds its name (below), so the name hangs from the row's
+   foot, under the link home however the venue's name wraps. */
 .reference-identity {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 9px;
@@ -51,7 +54,6 @@
 }
 
 .reference-crest {
-  position: relative;
   flex-shrink: 0;
   display: grid;
   place-items: center;
@@ -64,7 +66,6 @@
   background: transparent;
   color: inherit;
   cursor: pointer;
-  transition: scale var(--house-motion-press, 120ms) var(--planner-chrome-ease);
 }
 
 .reference-crest img {
@@ -72,13 +73,19 @@
   object-fit: contain;
 }
 
-.reference-crest:active {
+/* The press scales the seal itself: a scaled button would carry its name with it. */
+.reference-crest > :is(img, svg) {
+  transition: scale var(--house-motion-press, 120ms) var(--planner-chrome-ease);
+}
+
+.reference-crest:active > :is(img, svg) {
   scale: 0.97;
 }
 
-/* Its name, under it, while the hand rests on it or the keyboard is on it
-   (CrestLabel.tsx). A clear band joins the two, so the hand can move onto
-   the name; Esc puts it away. It covers only the line about saving. */
+/* Its name, under the row, while the hand rests on the crest or the keyboard
+   is on it (CrestLabel.tsx); Esc puts it away. It lies only over the line
+   about saving. The way down to it is no wider than the crest, so it never
+   lies over the link home, and the hand can still move onto the name. */
 .reference-crest__label {
   position: absolute;
   z-index: 1;
@@ -88,6 +95,15 @@
   opacity: 0;
   pointer-events: none;
   transition: opacity var(--house-motion-hover, 120ms) var(--planner-chrome-ease);
+}
+
+.reference-crest__label::before {
+  content: "";
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  width: 36px;
+  height: 48px;
 }
 
 .reference-crest__label[data-shown="true"] {
@@ -297,9 +313,13 @@ html[data-planner-fold-bottom="folded"]:not([data-planner-chrome="cleared"]) .ch
   /* Invisible at rest but still in the tab order: focus shows it. */
   opacity: 0;
   pointer-events: none;
+  /* A hand that leaves the unit at an angle still reaches the mark: it takes
+     a press for a moment after the unit is left, as long as it is still seen. */
   transition:
     opacity var(--house-motion-hover, 120ms) var(--planner-chrome-ease) 160ms,
-    color var(--house-motion-hover, 120ms) var(--planner-chrome-ease);
+    color var(--house-motion-hover, 120ms) var(--planner-chrome-ease),
+    pointer-events 0s linear 280ms;
+  transition-behavior: allow-discrete;
 }
 
 /* The left dock's inner edge, level with the crest's row: the dock starts
@@ -348,16 +368,18 @@ html[data-planner-fold-bottom="folded"]:not([data-planner-chrome="cleared"]) .ch
   bottom: 306px;
 }
 
-@media (pointer: coarse) {
-  .chrome-fold-mark--left {
-    left: calc(var(--reference-left) - 4px);
-    width: 28px;
-    height: 48px;
-  }
-
+/* Under 750 px the tool bar's row runs under the docks: the side marks wait below it. */
+@media (max-width: 749px) {
+  .chrome-fold-mark--left,
   .chrome-fold-mark--right {
-    right: calc(var(--reference-right) - 2px);
-    width: 28px;
+    top: 70px;
+  }
+}
+
+@media (pointer: coarse) {
+  /* Taller only: wider would reach the header's save button or co-editing presence. */
+  .chrome-fold-mark--left,
+  .chrome-fold-mark--right {
     height: 48px;
   }
 
@@ -548,8 +570,9 @@ html[data-planner-fold-left="folded"] .reference-viewer .layout-timeline-preview
 }
 
 /* Live co-editing presence stays on screen (it is the truth about who else is
-   here); it moves in beside a folded or cleared right dock. */
-html[data-planner-fold-right="folded"] .layout-live-layer:not(.is-mobile) {
+   here); it moves in beside a folded or cleared right dock, but not over the
+   preview lock, which takes the dock's place during a phase preview. */
+html[data-planner-fold-right="folded"]:where(:not(:has(.reference-viewer[data-layout-timeline-preview="true"]))) .layout-live-layer:not(.is-mobile) {
   right: 66px;
 }
 

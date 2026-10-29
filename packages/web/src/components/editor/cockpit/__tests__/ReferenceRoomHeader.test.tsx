@@ -8,6 +8,7 @@ import { useLayoutTimelinePreviewStore } from "../../../../stores/layout-timelin
 import { useChromePresenceStore } from "../../../../stores/chrome-presence-store.js";
 import { ReferenceRoomHeader } from "../ReferenceRoomHeader.js";
 import { CREST_LABEL_DELAY_MS, focusCrestQuietly } from "../CrestLabel.js";
+import { useChromePresence } from "../ChromeFold.js";
 
 vi.mock("../../../../api/spaces.js", async (importOriginal) => ({
   ...await importOriginal<typeof import("../../../../api/spaces.js")>(),
@@ -81,6 +82,16 @@ const CHANGED_ELSEWHERE: EditorSaveConflict = {
 
 function showHeader(): void {
   render(<MemoryRouter><ReferenceRoomHeader /></MemoryRouter>);
+}
+
+/** The cockpit's side of the chrome: its Esc rung brings cleared tools back. */
+function Presence(): null {
+  useChromePresence();
+  return null;
+}
+
+function showHeaderInCockpit(): void {
+  render(<MemoryRouter><Presence /><ReferenceRoomHeader /></MemoryRouter>);
 }
 
 describe("ReferenceRoomHeader", () => {
@@ -197,7 +208,7 @@ describe("ReferenceRoomHeader", () => {
   // without moving either and without touching the tools.
   it("names the crest when a hand rests on it, and Esc puts the name away alone", () => {
     vi.useFakeTimers();
-    showHeader();
+    showHeaderInCockpit();
     const button = crest();
     const label = button.querySelector(".reference-crest__label");
     expect(label?.getAttribute("aria-hidden")).toBe("true");
@@ -206,6 +217,8 @@ describe("ReferenceRoomHeader", () => {
     expect(label?.getAttribute("data-shown")).toBe("false");
     fireEvent.pointerLeave(button, { pointerType: "touch" });
 
+    // The tools are cleared first, so an Esc that also brought them back would show.
+    act(() => { useChromePresenceStore.setState({ cleared: true, hintPending: false }); });
     fireEvent.pointerEnter(button, { pointerType: "mouse" });
     act(() => { vi.advanceTimersByTime(CREST_LABEL_DELAY_MS - 10); });
     expect(label?.getAttribute("data-shown")).toBe("false");
@@ -214,6 +227,8 @@ describe("ReferenceRoomHeader", () => {
 
     act(() => { window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })); });
     expect(label?.getAttribute("data-shown")).toBe("false");
+    expect(useChromePresenceStore.getState().cleared).toBe(true);
+    act(() => { window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })); });
     expect(useChromePresenceStore.getState().cleared).toBe(false);
 
     // Put away, it stays away until the hand leaves; the next rest shows it again.
@@ -235,6 +250,22 @@ describe("ReferenceRoomHeader", () => {
     act(() => { button.blur(); });
     act(() => { button.focus(); });
     expect(label?.getAttribute("data-shown")).toBe("true");
+  });
+
+  // Review finding, 28 Oct: a crest pressed from the keyboard kept its name,
+  // so the next Esc only put the name away.
+  it("puts the name away once the crest is pressed, so the next Esc restores", () => {
+    showHeaderInCockpit();
+    const button = crest();
+    const label = button.querySelector(".reference-crest__label");
+    act(() => { button.focus(); });
+    expect(label?.getAttribute("data-shown")).toBe("true");
+    act(() => { useChromePresenceStore.setState({ hintsShown: 3 }); });
+    fireEvent.click(button);
+    expect(useChromePresenceStore.getState().cleared).toBe(true);
+    expect(label?.getAttribute("data-shown")).toBe("false");
+    act(() => { window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })); });
+    expect(useChromePresenceStore.getState().cleared).toBe(false);
   });
 
   it("lets the first-use note speak instead of the crest's name", () => {

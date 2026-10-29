@@ -184,6 +184,30 @@ describe("the fold's CSS after review", () => {
     expect(css).toMatch(/\.reference-crest__label\[data-shown="true"\]\s*\{\s*opacity:\s*1;\s*pointer-events:\s*auto;/u);
   });
 
+  // Fix-verification round, 29 Oct.
+  it("hangs the crest's name from its row, so its way down never lies over the link home", () => {
+    expect(css.match(/\n\.reference-identity \{[^}]*\}/u)?.[0]).toMatch(/position:\s*relative/u);
+    const crestRule = css.match(/\n\.reference-crest \{[^}]*\}/u)?.[0] ?? "";
+    expect(crestRule).toMatch(/cursor:\s*pointer/u);
+    expect(crestRule).not.toMatch(/position:|scale|transition/u);
+    expect(css).toMatch(/\.reference-crest:active > :is\(img, svg\) \{\s*scale:\s*0\.97;/u);
+    expect(css).toMatch(/\.reference-crest__label::before \{[^}]*width:\s*36px;/u);
+  });
+
+  it("keeps a mark pressable a moment after the hand leaves its unit, at an angle", () => {
+    const base = css.match(/\n\.chrome-fold-mark \{[^}]*\}/u)?.[0] ?? "";
+    expect(base).toMatch(/pointer-events 0s linear 280ms/u);
+    expect(base).toMatch(/transition-behavior:\s*allow-discrete/u);
+  });
+
+  it("drops the side marks below the tool bar's row under 750 px", () => {
+    expect(css).toMatch(/@media \(max-width: 749px\) \{\s*\.chrome-fold-mark--left,\s*\.chrome-fold-mark--right \{\s*top:\s*70px;/u);
+  });
+
+  it("keeps co-editing presence off the preview lock", () => {
+    expect(css).toMatch(/html\[data-planner-fold-right="folded"\]:where\(:not\(:has\(\.reference-viewer\[data-layout-timeline-preview="true"\]\)\)\) \.layout-live-layer/u);
+  });
+
   it("keeps the note's and the save word's voices in the accessibility tree", () => {
     // Only the ink fades: neither ever goes visibility: hidden.
     for (const body of [...rulesFor(".chrome-clear-hint"), ...rulesFor(".chrome-save-word")]) {

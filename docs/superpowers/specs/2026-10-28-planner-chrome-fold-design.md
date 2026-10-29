@@ -148,10 +148,14 @@ interface ChromePresence {
     round, 28 Oct). The first placing, at the outer top corner, put the right mark over the Details panel's
     "Clear furniture selection" x and the left one over the lowest lens buttons, and left a gap the hand fell
     through above the bottom bar. So:
-    - the side docks' marks straddle their inner edges, level with their headings (24 × 40 px; 28 × 48 on coarse
-      pointers), and co-editing presence begins where the right one ends;
+    - the side docks' marks straddle their inner edges, level with their headings (24 × 40 px; 24 × 48 on coarse
+      pointers), and co-editing presence begins where the right one ends. Under 750 px the tool bar's row runs
+      under the docks, so there they sit below it (70 px down);
     - the tool bar's mark hangs from the top of the screen onto the bar's upper edge;
-    - the bottom bar's hangs under the deck, 4 px onto its lower edge.
+    - the bottom bar's hangs under the deck, 4 px onto its lower edge. It is drawn above the stage, as the side
+      marks are, so the room timeline's bar never buries its lower edge.
+  - A mark takes a press for 280 ms after its unit is left, so a hand that leaves the unit at an angle still
+    reaches it.
   - It is a `<button aria-expanded="true">` named "Fold On the floor" and so on.
   - Under `(hover: hover) and (pointer: fine)` it shows only while the unit is hovered or contains keyboard focus.
     It stays in the tab order, and focus makes it visible.
@@ -159,11 +163,18 @@ interface ChromePresence {
 - **Focus.** After a fold, focus goes to the spine. After an unfold, focus goes to that unit's fold mark, so the
   same key reverses it. Focus never stays on chrome that has just gone (WCAG 2.4.3):
   - clearing moves it to the crest (a phone's seal);
-  - bringing the tools back while the left unit is folded moves it to the left spine (a phone's top bar);
+  - bringing the tools back while the left unit is folded moves it to the left spine (a phone's top bar, its
+    first button that takes focus);
+  - after a pointer's change, a browser that leaves focus on what has then faded away has it moved too;
+  - a phase preview ending inside a folded unit (its timeline or the right-hand column) moves it to that unit's
+    spine;
   - focus the chrome moves to the crest arrives without the crest's name, so the next Esc restores at once.
 - **A fold closes nothing.** A menu inside the unit goes and comes back with it. The catalogue beside the left dock
   and a note in the room are not the unit's to close (review round: folding Details used to close the catalogue
   and drop the tool to Select). Only clear-all closes popovers and panels first.
+  - Esc never closes something nobody can see. An Escape layer may name its element (`planner-keys.ts`), and
+    while that is hidden the ladder passes it by. The hour popover in the bottom bar does, so after a keyboard
+    fold it neither takes the next Esc nor goes; it comes back with the bar.
 - **What a spine says.** Its name is short ("Show On the floor"). The tool bar's spine also names the tool in hand,
   in its name and on its face ("Show the tool bar · Measure"). What else a spine shows (the count, save trouble,
   the selected piece) is its description, so a screen reader hears it too.
@@ -185,8 +196,11 @@ interface ChromePresence {
   - Both are at least 36 px (44 px on coarse pointers), with an accessible name and the one focus ring.
   - Its label shows under it when a mouse rests on it for 400 ms or keyboard focus reaches it. The label is a real
     element inside the crest, so the hand can move onto it without it going, and it sits on the Escape ladder's
-    tooltip rung, so Esc puts it away without moving either (WCAG 1.4.13; review round). It covers only the line
-    about saving, never the link home.
+    tooltip rung, so Esc puts it away without moving either (WCAG 1.4.13; review round).
+    - It hangs from the foot of the crest's row, not the crest's, so it lies only over the line about saving,
+      never over the link home however the venue's name wraps. The way down to it is no wider than the crest.
+    - Pressing the crest answers it: the label stays away until the hand and the keyboard have both left, so the
+      next Esc brings the tools back.
 - **Toggles:**
   - `\`, a binding at `KEY_PRIORITY.planner`. It never fires while typing in a field or while a dialog holds the
     keyboard. It also answers `\` typed with AltGr (German, French, Spanish and Nordic keyboards, which the
@@ -228,13 +242,16 @@ interface ChromePresence {
   - It sits just right of the crest, on its centre line, measured, because the crest moves with the venue's name
     and the rail's width. The crest's own name waits while the note speaks, so the two never overlap.
   - Its `role="status"` region is in the accessibility tree before its words arrive, with only the ink fading, so
-    the words are spoken. A region that appears already holding its text often is not.
+    the words are spoken. A region that appears already holding its text often is not. The spoken line says
+    "backslash": at its usual punctuation level a screen reader says nothing for a bare "\".
 - **Save truth.** While cleared, or while the left unit is folded, any not-saved, failed, offline or
   changed-elsewhere state appears as a status word beside the seal or on the left spine. It uses the header's own
   words and status ink. While saved, nothing extra shows.
   - The header's live region goes with a folded or cleared dock. So a second, always-present status region speaks
-    the trouble whenever the header is folded or cleared away, and the left spine carries it as its description
-    (review round).
+    for the header while it is away: every change to its save line from the moment it went (recovery too), and
+    nothing it had already said, so nothing is heard twice. On a phone the top bar keeps its own voice, so this
+    one speaks only while the chrome is cleared. The left spine carries the trouble as its description (review
+    rounds, 28 and 29 Oct).
 - **Leaving the cockpit** (2D, another page) resets `cleared`. Folds stay.
 
 ### Motion
@@ -244,6 +261,10 @@ interface ChromePresence {
 - **Unfold** is the reverse: the unit in 240 ms, the spine out 180 ms.
 - **Clear-all from the crest or a menu** uses the same pairs, with no stagger.
 - **Keyboard-initiated** changes are instant: `\`, Esc, and Enter or Space on a spine, mark or crest.
+- **Arriving.** The cockpit's first frame shows remembered folds as they are, without motion. Motion returns on the
+  next frame unless the person has changed something since. It never waits on what a cockpit that went before
+  left behind (a probe on 29 Oct found motion stuck off after the cockpit came back, taking the marks' fade and
+  grace with it).
 - **Centred units** (the deck and view controls) are centred with `transform: translateX(-50%)`. The motion uses the
   individual `translate` and `scale` properties, so the centring is never overwritten. Coming back, from an unfold
   or a restore, each unit keeps the corner it left from, so the centred ones never slide sideways as they grow.

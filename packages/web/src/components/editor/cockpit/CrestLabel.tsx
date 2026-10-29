@@ -52,6 +52,15 @@ export function useCrestLabel(): { readonly shown: boolean; readonly handlers: C
   const [focused, setFocused] = useState(false);
   const [dismissed, setDismissed] = useState(false);
   const noteShowing = useChromePresenceStore((state) => state.hintPending);
+  // Pressed (or \ while the hand or the keyboard is on it), the crest has
+  // answered its name: it stays away until both have left, so the next Esc
+  // brings the tools back instead of putting a name away.
+  const cleared = useChromePresenceStore((state) => state.cleared);
+  const [answered, setAnswered] = useState(cleared);
+  if (answered !== cleared) {
+    setAnswered(cleared);
+    if (pointerIn || focused) setDismissed(true);
+  }
   useEffect(() => {
     if (!pointerIn) return undefined;
     const timer = window.setTimeout(() => { setRested(true); }, CREST_LABEL_DELAY_MS);

@@ -19,7 +19,8 @@ import { isLayoutTimelineMutationLocked } from "./layout-timeline-preview-lock.j
 // held hour, a typed value, Present), then the open popover, then the open
 // panel (focus goes back to the key that opened it), then the selection, and
 // last the chrome the person cleared away (T-680). One press steps back
-// exactly one layer. Esc never leaves Walk or the planner.
+// exactly one layer, and never one nobody can see: a layer inside chrome
+// folded away is passed by. Esc never leaves Walk or the planner.
 //
 // The listener sits in the bubble phase and leaves any press a focused widget
 // has already claimed (a slider's arrows, a field's own Enter), and it only
@@ -44,6 +45,11 @@ export interface EscapeLayer {
   readonly escape: () => void;
   /** The key that opened it, which takes focus back once it has closed. */
   readonly returnFocusTo?: () => HTMLElement | null;
+  /**
+   * Where it is on screen. While that is hidden (inside chrome the person has
+   * folded away, T-680) Esc passes it by, and it comes back with its unit.
+   */
+  readonly element?: () => Element | null;
 }
 
 /**
@@ -204,9 +210,15 @@ function byPrecedence<T>(rank: (value: T) => number): (a: Registered<T>, b: Regi
   return (a, b) => rank(a.value) - rank(b.value) || b.seq - a.seq;
 }
 
+/** Whether a layer can be seen: Esc never closes something nobody can see. */
+function layerOnScreen(layer: EscapeLayer): boolean {
+  const element = layer.element?.() ?? null;
+  return element === null || typeof getComputedStyle === "undefined" || getComputedStyle(element).visibility !== "hidden";
+}
+
 function openLayers(): Registered<EscapeLayer>[] {
   return [...layers]
-    .filter((entry) => entry.value.isOpen())
+    .filter((entry) => entry.value.isOpen() && layerOnScreen(entry.value))
     .sort(byPrecedence((layer) => ESCAPE_ORDER.indexOf(layer.kind)));
 }
 
@@ -348,6 +360,8 @@ export interface EscapeLayerOptions {
   readonly onEscape: () => void;
   /** The key that opened it. */
   readonly returnFocusTo?: RefObject<HTMLElement | null> | (() => HTMLElement | null);
+  /** Where it is on screen; while that is hidden, Esc passes it by. */
+  readonly element?: RefObject<Element | null> | (() => Element | null);
 }
 
 /** Holds a layer in the Escape stack while the component is mounted. */
@@ -368,6 +382,11 @@ export function useEscapeLayer(kind: EscapeLayerKind, options: EscapeLayerOption
       escape: () => { latest.current.onEscape(); },
       returnFocusTo: () => {
         const target = latest.current.returnFocusTo;
+        if (target === undefined) return null;
+        return typeof target === "function" ? target() : target.current;
+      },
+      element: () => {
+        const target = latest.current.element;
         if (target === undefined) return null;
         return typeof target === "function" ? target() : target.current;
       },

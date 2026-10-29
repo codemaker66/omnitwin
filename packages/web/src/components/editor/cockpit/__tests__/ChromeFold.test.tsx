@@ -9,6 +9,7 @@ import {
   CHROME_SETTLE_MS,
   CLEAR_HINT_MS,
   CLEAR_HINT_TEXT,
+  CLEAR_HINT_VOICE,
   ChromeClearHint,
   ChromeFoldControls,
   ChromeFoldMark,
@@ -17,6 +18,7 @@ import {
   PhoneChromeSeal,
   chromeSaveTrouble,
   settleChromeFocus,
+  settleFocusAfterPreview,
   useChromePresence,
 } from "../ChromeFold.js";
 
@@ -113,6 +115,19 @@ describe("the page-wide side", () => {
     expect(root.hasAttribute("data-planner-chrome-motion")).toBe(false);
   });
 
+  // Found by the glide probe, 29 Oct: the cockpit leaves the store `instant`
+  // as it goes (and React's development mount goes and comes back at once),
+  // so motion stayed off, and with it the marks' fade and their moment of grace.
+  it("brings motion back on the first frame after a cockpit that went before", async () => {
+    const first = render(<Presence />);
+    first.unmount();
+    expect(useChromePresenceStore.getState().instant).toBe(true);
+    render(<Presence />);
+    expect(root.getAttribute("data-planner-chrome-motion")).toBe("instant");
+    await act(async () => { await nextFrame(); });
+    expect(root.hasAttribute("data-planner-chrome-motion")).toBe(false);
+  });
+
   it("backslash clears and restores", () => {
     render(<Presence />);
     act(() => { press("\\"); });
@@ -199,6 +214,41 @@ describe("the page-wide side", () => {
     settleChromeFocus(document, document.body, true, onScreen);
     expect(document.activeElement).toBe(document.body);
   });
+
+  // Review finding, 28 Oct: a phone's first top-bar button can be disabled
+  // (during a preview), and focus() on it does nothing; the next one takes it.
+  it("passes over a control that will not take focus", () => {
+    render(
+      <>
+        <div data-testid="mobile-planner-topbar">
+          <button type="button" disabled>2D</button>
+          <button type="button">More</button>
+        </div>
+        <button type="button" className="chrome-phone-seal">Seal</button>
+      </>,
+    );
+    const seal = screen.getByRole("button", { name: "Seal" });
+    seal.focus();
+    // Restored: the seal has gone.
+    settleChromeFocus(document, seal, false, (element) => element !== seal);
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "More" }));
+  });
+
+  // Review finding, 28 Oct: ending a preview from the timeline bar while the
+  // bottom unit is folded left focus on a control the fold then hid.
+  it("moves focus to the spine when a preview ends inside a folded unit", async () => {
+    useChromePresenceStore.setState({ folded: { ...ALL_OPEN, bottom: true } });
+    render(
+      <div className="reference-viewer">
+        <footer className="cockpit-bottom"><button type="button">Collapse timeline</button></footer>
+        <ChromeSpine unit="bottom" />
+      </div>,
+    );
+    screen.getByRole("button", { name: "Collapse timeline" }).focus();
+    settleFocusAfterPreview(document);
+    await act(async () => { await nextFrame(); });
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: /^Show the bottom bar/u }));
+  });
 });
 
 describe("spines, marks and the crest's companions", () => {
@@ -264,24 +314,54 @@ describe("spines, marks and the crest's companions", () => {
     expect(trouble?.textContent).toBe("Retry save");
   });
 
-  // Review finding, 28 Oct: the header's live region goes with a folded or
-  // cleared dock, so this one speaks the save truth instead. It is in the
-  // accessibility tree from the start, so what arrives in it is announced.
-  it("speaks save trouble whenever the header is folded or cleared away, and shows it while cleared", () => {
+  // Review findings, 28 Oct: the header's live region goes with a folded or
+  // cleared dock, so this one speaks for it: every change from the moment it
+  // went, never what the header had already said (that would be said twice),
+  // and on a phone only while cleared (its top bar has a voice of its own).
+  it("speaks the header's save line while the header is away, from the next change on", () => {
     render(<ChromeSaveWord />);
     const voice = screen.getByRole("status");
     const word = voice.closest(".chrome-save-word");
     expect(voice.textContent).toBe("");
     act(() => { useEditorStore.setState({ saveError: "Network error" }); });
     expect(voice.textContent).toBe("");
+
+    // Folded with trouble the header has already said: nothing more is said.
     act(() => { useChromePresenceStore.getState().fold("left"); });
-    expect(voice.textContent).toBe("Retry save");
+    expect(voice.textContent).toBe("");
     expect(word?.getAttribute("data-shown")).toBe("false");
+
+    // Then every change is said, recovery too.
+    act(() => { useEditorStore.setState({ isSaving: true }); });
+    expect(voice.textContent).toBe("Saving…");
+    act(() => { useEditorStore.setState({ isSaving: false, saveError: null, isDirty: false }); });
+    expect(voice.textContent).toBe("Layout saved");
+    act(() => { useEditorStore.setState({ saveError: "Network error" }); });
+    expect(voice.textContent).toBe("Retry save");
+
+    // The ink shows only trouble, and only while cleared.
     act(() => { useChromePresenceStore.getState().clearAll(); });
     expect(word?.getAttribute("data-shown")).toBe("true");
     act(() => { useEditorStore.setState({ saveError: null }); });
-    expect(voice.textContent).toBe("");
     expect(word?.getAttribute("data-shown")).toBe("false");
+
+    // Back in the header, the header speaks again.
+    act(() => {
+      useChromePresenceStore.getState().restoreAll();
+      useChromePresenceStore.getState().unfold("left");
+    });
+    expect(voice.textContent).toBe("");
+  });
+
+  it("leaves a phone's top bar to speak while only a remembered left fold is in place", () => {
+    useChromePresenceStore.setState({ folded: { ...ALL_OPEN, left: true } });
+    render(<ChromeSaveWord mobile />);
+    const voice = screen.getByRole("status");
+    act(() => { useEditorStore.setState({ saveError: "Network error" }); });
+    expect(voice.textContent).toBe("");
+    act(() => { useChromePresenceStore.getState().clearAll(); });
+    act(() => { useEditorStore.setState({ saveError: null, isDirty: false }); });
+    expect(voice.textContent).toBe("Layout saved");
   });
 
   it("chromeSaveTrouble keeps quiet unless saving is in trouble", () => {
@@ -312,8 +392,11 @@ describe("spines, marks and the crest's companions", () => {
 
     useChromePresenceStore.setState({ hintsShown: 0 });
     act(() => { useChromePresenceStore.getState().clearAll(); });
-    expect(voice.textContent).toBe(CLEAR_HINT_TEXT);
+    // The eye reads the \; the voice says the key's name, which a screen reader would otherwise drop.
+    expect(hint?.textContent).toContain(CLEAR_HINT_TEXT);
     expect(CLEAR_HINT_TEXT).toBe("The tools are hidden · press \\ or the crest to bring them back");
+    expect(voice.textContent).toBe(CLEAR_HINT_VOICE);
+    expect(CLEAR_HINT_VOICE).toBe("The tools are hidden. Press backslash or the crest to bring them back.");
     act(() => { vi.advanceTimersByTime(CLEAR_HINT_MS); });
     expect(hint?.getAttribute("data-shown")).toBe("false");
     expect(voice.textContent).toBe("");
