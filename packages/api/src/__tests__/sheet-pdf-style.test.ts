@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import PDFDocument from "pdfkit";
 import { registerSheetFonts } from "../services/sheet-pdf/fonts.js";
-import { TYPE, textWidth, wrapLines } from "../services/sheet-pdf/style.js";
+import { TYPE, drawLine, textWidth, wrapLines } from "../services/sheet-pdf/style.js";
+import { pdfPages } from "./helpers/pdf-text.js";
 
 // The sheet wraps its own text, so a planner's pasted link or a paragraph of
 // Chinese (no spaces) must break between characters quickly, keep every
@@ -38,5 +39,22 @@ describe("wrapLines on text without spaces", () => {
     expect(lines.join("")).toBe(text);
     for (const line of lines) expect(line).not.toMatch(/^[\uDC00-\uDFFF]|[\uD800-\uDBFF]$/u);
     d.end();
+  });
+});
+
+describe("characters no House face sets", () => {
+  it("prints each missing-glyph box as wide as it was measured, so the line ends where it was laid out", async () => {
+    const d = doc();
+    const chunks: Buffer[] = [];
+    const done = new Promise<Buffer>((resolve) => {
+      d.on("data", (chunk: Buffer) => { chunks.push(chunk); });
+      d.on("end", () => { resolve(Buffer.concat(chunks)); });
+    });
+    const text = "山田家 🎂 Table 4";
+    const measured = textWidth(d, TYPE.body, text);
+    drawLine(d, TYPE.body, text, 40, 100);
+    d.end();
+    const line = pdfPages(await done)[0]?.[0];
+    expect(line?.x2 ?? 0).toBeCloseTo(40 + measured, 1);
   });
 });

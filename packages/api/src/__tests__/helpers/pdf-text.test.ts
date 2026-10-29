@@ -1,7 +1,8 @@
+import { deflateSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 import PDFDocument from "pdfkit";
 import { registerSheetFonts } from "../../services/sheet-pdf/fonts.js";
-import { pdfImageCount, pdfPageSizes, pdfPages, pdfText } from "./pdf-text.js";
+import { pdfImageCount, pdfPageSizes, pdfPages, pdfRules, pdfText } from "./pdf-text.js";
 
 // The sheet embeds subset TrueType fonts, so its content streams hold glyph
 // codes, not characters. The helper maps them back through each font's
@@ -65,5 +66,35 @@ describe("pdf text helper", () => {
   it("counts embedded images", async () => {
     const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/RZkAAAAASUVORK5CYII=", "base64");
     expect(pdfImageCount(await render((doc) => { doc.image(png, 10, 10, { width: 20 }); }))).toBe(1);
+  });
+
+  it("reads a compressed stream whose last byte is a carriage return", () => {
+    // About one compressed stream in 256 ends in 0x0D; a reader that finds the
+    // stream's end by "\r?\nendstream" drops that byte and cannot inflate it.
+    let content = "";
+    for (let n = 0; ; n++) {
+      content = `40 100 m\n555.28 100 l\nS\n% ${String(n)}`;
+      if (deflateSync(content).at(-1) === 0x0d) break;
+    }
+    const data = deflateSync(content);
+    const head = "%PDF-1.3\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Contents 4 0 R /Resources << >> >>\nendobj\n";
+    const stream = `4 0 obj\n<< /Length ${String(data.length)} /Filter /FlateDecode >>\nstream\n`;
+    const buf = Buffer.concat([Buffer.from(head + stream, "latin1"), data, Buffer.from("\nendstream\nendobj\n%%EOF\n", "latin1")]);
+    expect(pdfRules(buf)).toEqual([[{ x: 40, x2: 555.28, y: 100 }]]);
+  });
+
+  it("finds each page's horizontal rules where they land, and nothing else", async () => {
+    const buf = await render((doc) => {
+      doc.save().moveTo(40, 120).lineTo(555.28, 120).lineWidth(0.6).stroke().restore();
+      doc.save().moveTo(300, 50).lineTo(300, 90).stroke().restore();
+      doc.save().rect(100, 300, 50, 20).stroke().restore();
+      doc.save().moveTo(60, 400).lineTo(160, 400).lineTo(160, 450).stroke().restore();
+      doc.addPage({ size: "A4", margin: 0 });
+      doc.save().moveTo(40, 32).lineTo(555.28, 32).stroke().restore();
+    });
+    const pages = pdfRules(buf);
+    expect(pages).toHaveLength(2);
+    expect(pages[0]).toEqual([{ x: 40, x2: 555.28, y: expect.closeTo(841.89 - 120, 2) as number }]);
+    expect(pages[1]).toEqual([{ x: 40, x2: 555.28, y: expect.closeTo(841.89 - 32, 2) as number }]);
   });
 });

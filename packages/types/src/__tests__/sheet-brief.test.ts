@@ -125,6 +125,18 @@ describe("sheetStoreList", () => {
     const store = sheetStoreList(sheet({ totals: { entries: [{ name: "Lectern", category: "lectern", qty: 1 }], totalRows: 1, totalItems: 1 } }));
     expect(store).toEqual([{ title: "Sound and vision", items: [{ name: "Lectern", qty: 1 }] }]);
   });
+
+  it("still brings the chairs set at tables when a sheet was frozen without a plan", () => {
+    const store = sheetStoreList(sheet({ totals: { entries: [
+      { name: "6ft Round Table with 10 chairs", category: "table", qty: 11 },
+      { name: "Trestle Table with 4 chairs", category: "table", qty: 3 },
+      { name: "Chiavari Wedding Chair", category: "chair", qty: 6 },
+    ], totalRows: 3, totalItems: 20 } }));
+    expect(store).toEqual([
+      { title: "Tables", items: [{ name: "6ft Round Table", qty: 11 }, { name: "Trestle Table", qty: 3 }] },
+      { title: "Chairs", items: [{ name: "Chairs for the tables", qty: 122 }, { name: "Chiavari Wedding Chair", qty: 6 }] },
+    ]);
+  });
 });
 
 describe("sheetSetupSteps", () => {
@@ -208,6 +220,26 @@ describe("sheetNoteMarkers", () => {
 
   it("is empty without a plan", () => {
     expect(sheetNoteMarkers(sheet()).size).toBe(0);
+  });
+
+  it("keeps a note whole when the planner wrote the separator into it, so its marker still matches", () => {
+    const whole = "Bride and groom centre · florist brings the arrangement at 11:30";
+    const noted = sheet({
+      floorPlan: {
+        coordinateSpace: "real_m_v1", outline: [{ x: -5, z: -5 }, { x: 5, z: -5 }, { x: 5, z: 5 }],
+        objects: [
+          plannedObject(1, "Trestle Table", "table", 0, -3, { note: whole }),
+          plannedObject(2, "Cake Table", "table", 2, 0, { note: "Needs a socket" }),
+        ],
+      },
+      phases: [{ phase: "furniture", zones: [{ zone: "North wall", rows: [
+        row({ name: "Trestle Table", qty: 1, notes: `Needs a socket · ${whole} · Bring the spare cloth` }),
+      ] }] }],
+    });
+    const markers = sheetNoteMarkers(noted);
+    const notes = sheetSetupSteps(noted)[0]?.items[0]?.notes ?? [];
+    expect(notes).toEqual(["Needs a socket", whole, "Bring the spare cloth"]);
+    expect(notes.map((note) => markers.get(note) ?? null)).toEqual([2, 1, null]);
   });
 });
 

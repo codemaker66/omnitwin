@@ -99,11 +99,17 @@ const STORE_GROUP: Readonly<Record<string, string>> = {
 };
 const STORE_ORDER = ["Tables", "Chairs", "Staging and floor", "Linen and dressing", "Sound and vision", OTHER_GROUP];
 
+/** The generator's name for a table with the chairs seated at it. */
+const WITH_CHAIRS = /^(.*) with (\d+) chairs?$/u;
+/** Chairs a sheet frozen without a plan knows only by count. */
+const SEATED_CHAIRS = "Chairs for the tables";
+
 /**
  * What to bring from the store: every placed piece counted from the frozen
  * plan (grouped chairs included) plus the accessories the manifest implies,
  * whose quantities the generator has already multiplied per parent. A sheet
- * frozen without a plan falls back to the manifest's own totals.
+ * frozen without a plan falls back to the manifest's own totals, where the
+ * chairs at a table live in the table's name ("… with 10 chairs").
  */
 export function sheetStoreList(sheet: HallkeeperSheetV2): StoreGroup[] {
   const groups = new Map<string, Map<string, number>>();
@@ -120,7 +126,12 @@ export function sheetStoreList(sheet: HallkeeperSheetV2): StoreGroup[] {
       if (row.isAccessory) add(row.category, row.name, row.qty);
     }
   } else {
-    for (const entry of sheet.totals.entries) add(entry.category, entry.name, entry.qty);
+    for (const entry of sheet.totals.entries) {
+      const seated = WITH_CHAIRS.exec(entry.name);
+      if (seated?.[1] === undefined || seated[2] === undefined) { add(entry.category, entry.name, entry.qty); continue; }
+      add(entry.category, seated[1], entry.qty);
+      add("chair", SEATED_CHAIRS, entry.qty * Number(seated[2]));
+    }
   }
   return STORE_ORDER.flatMap((title) => {
     const items = groups.get(title);
@@ -182,8 +193,28 @@ export interface SetupStep {
   readonly items: readonly SetupItem[];
 }
 
-const WITH_CHAIRS = /^(.*) with (\d+) chairs?$/u;
 const NOTE_SEPARATOR = " · ";
+
+interface WholeNote {
+  readonly note: string;
+  readonly pieces: readonly string[];
+}
+
+/**
+ * A row's notes, one per piece of advice. The generator joins notes with
+ * " · ", which a planner may also type inside one note; a note the plan holds
+ * whole stays in one piece, so its plan marker still matches.
+ */
+function splitNotes(text: string, whole: readonly WholeNote[]): string[] {
+  const parts = text.split(NOTE_SEPARATOR).map((part) => part.trim());
+  const notes: string[] = [];
+  for (let i = 0; i < parts.length;) {
+    const match = whole.find(({ pieces }) => pieces.every((piece, offset) => parts[i + offset] === piece));
+    notes.push(match?.note ?? parts[i] ?? "");
+    i += match?.pieces.length ?? 1;
+  }
+  return notes;
+}
 
 interface ItemDraft {
   name: string;
@@ -209,6 +240,11 @@ export function sheetSetupSteps(sheet: HallkeeperSheetV2): SetupStep[] {
   const timeZone = sheet.venue.timezone;
   const eventDay = sheet.timing === null ? null : venueDay(sheet.timing.eventStart, timeZone);
   const seenNotes = new Set<string>();
+  // Plan notes that contain the separator themselves, the longest first.
+  const whole: WholeNote[] = [...new Set((sheet.floorPlan?.objects ?? []).flatMap((object) => (object.note === undefined ? [] : [object.note])))]
+    .filter((note) => note.includes(NOTE_SEPARATOR))
+    .map((note) => ({ note, pieces: note.split(NOTE_SEPARATOR).map((piece) => piece.trim()) }))
+    .sort((a, b) => b.pieces.length - a.pieces.length);
   return sheet.phases.filter((phase) => phase.zones.some((zone) => zone.rows.length > 0)).map((phase) => {
     const drafts = new Map<string, ItemDraft>();
     for (const zone of phase.zones) for (const row of zone.rows) {
@@ -226,7 +262,7 @@ export function sheetSetupSteps(sheet: HallkeeperSheetV2): SetupStep[] {
         draft.someBare = true;
       }
       draft.where.set(zone.zone, (draft.where.get(zone.zone) ?? 0) + row.qty);
-      for (const note of row.notes.split(NOTE_SEPARATOR).map((part) => part.trim())) {
+      for (const note of splitNotes(row.notes, whole)) {
         if (note.length === 0 || seenNotes.has(note)) continue;
         seenNotes.add(note);
         draft.notes.push(note);

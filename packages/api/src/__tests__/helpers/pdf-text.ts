@@ -53,10 +53,17 @@ function objectsOf(buf: Buffer): Map<string, string> {
   return new Map([...source.matchAll(/(\d+) 0 obj([\s\S]*?)endobj/gu)].map((match) => [match[1] ?? "", match[2] ?? ""]));
 }
 
+/**
+ * A stream's bytes: exactly its /Length after the "stream" line. Its end is
+ * never found by "\r?\nendstream", which eats a final 0x0D byte of the data.
+ */
 function streamOf(body: string): string {
-  const raw = /stream\r?\n([\s\S]*?)\r?\nendstream/u.exec(body)?.[1];
-  if (raw === undefined) throw new Error("PDF object has no stream");
-  const bytes = Buffer.from(raw, "latin1");
+  const start = /stream\r?\n/u.exec(body);
+  if (start === null) throw new Error("PDF object has no stream");
+  const from = start.index + start[0].length;
+  const length = /\/Length (\d+)(?! \d+ R)/u.exec(body.slice(0, start.index))?.[1];
+  if (length === undefined) throw new Error("PDF stream has no direct /Length");
+  const bytes = Buffer.from(body.slice(from, from + Number(length)), "latin1");
   return (/\/FlateDecode/u.test(body) ? inflateSync(bytes) : bytes).toString("latin1");
 }
 
@@ -176,6 +183,42 @@ export function pdfPages(buf: Buffer): PdfLine[][] {
       }
     }
     return lines;
+  });
+}
+
+export interface PdfRule {
+  /** Left and right ends, PDF points from the page's left. */
+  readonly x: number;
+  readonly x2: number;
+  /** Height, PDF points from the page's bottom (as a text line's baseline). */
+  readonly y: number;
+}
+
+const STRAIGHT_STROKE = /(?<![\w/])([qQ])(?![\w])|(-?[\d.]+) (-?[\d.]+) (-?[\d.]+) (-?[\d.]+) (-?[\d.]+) (-?[\d.]+) cm|(-?[\d.]+) (-?[\d.]+) m\s+(-?[\d.]+) (-?[\d.]+) l\s+(?!-?[\d.]+ -?[\d.]+ l)/gu;
+
+/**
+ * Every horizontal line drawn as one segment, page by page: the sheet's
+ * rules. A segment that carries on into another (a shape's edge) is not one.
+ */
+export function pdfRules(buf: Buffer): PdfRule[][] {
+  const objects = objectsOf(buf);
+  return pageIds(objects).map((id) => {
+    const content = streamOf(objects.get(refOf(objects.get(id) ?? "", "Contents") ?? "") ?? "");
+    const rules: PdfRule[] = [];
+    let ctm: Matrix = IDENTITY;
+    const saved: Matrix[] = [];
+    for (const op of content.matchAll(STRAIGHT_STROKE)) {
+      if (op[1] === "q") { saved.push(ctm); continue; }
+      if (op[1] === "Q") { ctm = saved.pop() ?? IDENTITY; continue; }
+      if (op[2] !== undefined) {
+        ctm = concat([Number(op[2]), Number(op[3]), Number(op[4]), Number(op[5]), Number(op[6]), Number(op[7])], ctm);
+        continue;
+      }
+      const [x1, y1] = apply(ctm, Number(op[8]), Number(op[9]));
+      const [x2, y2] = apply(ctm, Number(op[10]), Number(op[11]));
+      if (Math.abs(y1 - y2) < 0.01) rules.push({ x: Math.min(x1, x2), x2: Math.max(x1, x2), y: y1 });
+    }
+    return rules;
   });
 }
 

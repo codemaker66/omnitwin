@@ -1,10 +1,15 @@
 import { describe, it, expect } from "vitest";
+import PDFDocument from "pdfkit";
 import type { EventInstructions, HallkeeperSheetV2 } from "@omnitwin/types";
 import { generateSheetPdfV2, sheetCopyLine, sheetQrTarget } from "../services/hallkeeper-pdf-v2.js";
+import { brief, martynsLaw, room } from "../services/sheet-pdf/blocks.js";
+import { Flow, PAGE_OPTIONS } from "../services/sheet-pdf/flow.js";
+import { registerSheetFonts } from "../services/sheet-pdf/fonts.js";
+import { PAGE } from "../services/sheet-pdf/style.js";
 import { buildSheetPaperCheck } from "../services/sheet-paper-check.js";
 import { renderMetrics, __resetMetricsForTests } from "../observability/metrics.js";
 import { boardMeetingSheet, emptyDraftSheet, longTextSheet, weddingSheet } from "./fixtures/hallkeeper-sheet-fixtures.js";
-import { pdfImageCount, pdfPages, pdfText, type PdfLine } from "./helpers/pdf-text.js";
+import { pdfImageCount, pdfPages, pdfRules, pdfText, type PdfLine } from "./helpers/pdf-text.js";
 
 // ---------------------------------------------------------------------------
 // The hallkeeper sheet PDF, "the brief, then the room" (design:
@@ -63,6 +68,19 @@ function expectInsideMargins(pages: readonly (readonly PdfLine[])[]): void {
       expect(Math.max(line.y, line.y2), where).toBeLessThan(PAGE_H - MARGIN + 6);
     }
   }
+}
+
+/** A sheet whose Martyn's Law record has every field at its maximum: taller than a page. */
+function maxedMartynsSheet(): HallkeeperSheetV2 {
+  const fill = (max: number): string => "Door team briefed at the side entrance before guests arrive. ".repeat(40).slice(0, max).trim();
+  return { ...BASE_SHEET, instructions: { ...EMPTY_INSTRUCTIONS, protectedPremises: {
+    responsiblePerson: fill(200),
+    dutyLead: { name: fill(120), role: fill(120) },
+    procedures: { evacuation: { briefed: true, note: fill(300) }, invacuation: { briefed: false, note: fill(300) }, lockdown: { briefed: true, note: fill(300) }, communication: { briefed: true, note: fill(300) } },
+    briefingAt: "2026-06-15T16:30:00.000Z",
+    doorSupervision: { arranged: true, note: fill(300) },
+    notes: `${fill(1450)} Last words here.`,
+  } } };
 }
 
 /** The wedding with `count` seats carrying a planner's note each. */
@@ -154,13 +172,72 @@ describe("the four fixtures, laid out", () => {
     expectInsideMargins(pages);
     const text = textOf(pages.flat());
     const ins = sheet.instructions;
-    for (const field of [ins?.specialInstructions, ins?.accessNotes, ins?.dietary?.otherAllergies, ins?.accessibility?.notes]) {
+    const fields = [
+      ins?.specialInstructions, ins?.accessNotes, ins?.dietary?.otherAllergies, ins?.accessibility?.notes,
+      ...(ins?.phaseDeadlines ?? []).map((deadline) => deadline.reason),
+      ...(ins?.doorSchedule?.entries ?? []).flatMap((entry) => entry.events.map((event) => event.note)),
+      ...(sheet.floorPlan?.objects ?? []).flatMap((object) => (object.note === undefined ? [] : [object.note])),
+    ];
+    expect(fields.length).toBeGreaterThan(10);
+    for (const field of fields) {
       const tail = (field ?? "").slice(-40).replace(/\s+/gu, " ").trim();
       expect(tail.length).toBeGreaterThan(0);
       expect(text).toContain(tail);
     }
     expect(text).toContain("alexandria.montgomery-fitzwilliam@example.co.uk");
   });
+});
+
+describe("section rules", () => {
+  /** A block drawn from every starting height on a page, each on a fresh page of one document. */
+  async function sweep(draw: (flow: Flow) => void): Promise<Buffer> {
+    const doc = new PDFDocument({ ...PAGE_OPTIONS, bufferPages: true });
+    registerSheetFonts(doc);
+    const chunks: Buffer[] = [];
+    const done = new Promise<Buffer>((resolve, reject) => {
+      doc.on("data", (chunk: Buffer) => { chunks.push(chunk); });
+      doc.on("end", () => { resolve(Buffer.concat(chunks)); });
+      doc.on("error", reject);
+    });
+    const flow = new Flow(doc);
+    for (let y = PAGE.margin; y <= PAGE.contentBottom; y += 9) {
+      flow.newPage();
+      flow.y = y;
+      draw(flow);
+    }
+    doc.end();
+    return done;
+  }
+
+  /** A rule across the page heads what follows it: never above the top margin, never alone at a foot. */
+  function expectRulesHeadText(buf: Buffer): void {
+    const text = pdfPages(buf);
+    for (const [index, rules] of pdfRules(buf).entries()) {
+      for (const rule of rules.filter((candidate) => candidate.x <= MARGIN + 0.5 && candidate.x2 >= PAGE_W - MARGIN - 0.5)) {
+        const where = `page ${String(index + 1)}, rule ${rule.y.toFixed(1)} pt up`;
+        expect(rule.y, where).toBeLessThanOrEqual(PAGE_H - MARGIN);
+        expect(text[index]?.some((line) => line.y < rule.y) ?? false, where).toBe(true);
+      }
+    }
+  }
+
+  it("heads the planner's notes when they run full width", async () => {
+    const base = weddingSheet();
+    const notes = "Keep the north aisle clear for the photographer between courses and check the candles before service. ".repeat(30).trim();
+    const sheet = { ...base, instructions: { ...(base.instructions ?? EMPTY_INSTRUCTIONS), specialInstructions: notes } };
+    expectRulesHeadText(await sweep((flow) => { brief(flow, sheet); }));
+  }, 60_000);
+
+  it("heads the room", async () => {
+    const sheet = weddingSheet();
+    expectRulesHeadText(await sweep((flow) => { room(flow, sheet); }));
+  }, 60_000);
+
+  it("heads Martyn's Law, whether it fits a page or runs on", async () => {
+    const sheet = weddingSheet();
+    expectRulesHeadText(await sweep((flow) => { martynsLaw(flow, sheet); }));
+    expectRulesHeadText(await sweep((flow) => { martynsLaw(flow, maxedMartynsSheet()); }));
+  }, 60_000);
 });
 
 describe("inputs that bite", () => {
@@ -260,16 +337,7 @@ describe("inputs that bite", () => {
   });
 
   it("keeps Martyn's Law on the page when every field is at its maximum", async () => {
-    const fill = (max: number): string => "Door team briefed at the side entrance before guests arrive. ".repeat(40).slice(0, max).trim();
-    const sheet: HallkeeperSheetV2 = { ...BASE_SHEET, instructions: { ...EMPTY_INSTRUCTIONS, protectedPremises: {
-      responsiblePerson: fill(200),
-      dutyLead: { name: fill(120), role: fill(120) },
-      procedures: { evacuation: { briefed: true, note: fill(300) }, invacuation: { briefed: false, note: fill(300) }, lockdown: { briefed: true, note: fill(300) }, communication: { briefed: true, note: fill(300) } },
-      briefingAt: "2026-06-15T16:30:00.000Z",
-      doorSupervision: { arranged: true, note: fill(300) },
-      notes: `${fill(1450)} Last words here.`,
-    } } };
-    const pages = pdfPages(await generateSheetPdfV2(sheet));
+    const pages = pdfPages(await generateSheetPdfV2(maxedMartynsSheet()));
     expectInsideMargins(pages);
     expect(textOf(pages.flat())).toContain("Last words here.");
   });
@@ -296,6 +364,24 @@ describe("inputs that bite", () => {
   it("sets a Greek title in Inter", async () => {
     const page = pdfPages(await generateSheetPdfV2({ ...BASE_SHEET, config: { ...BASE_SHEET.config, name: "Γάμος Παπαδόπουλου" } }))[0] ?? [];
     expect(page.find((line) => line.text.includes("Παπαδόπουλου"))?.font).toMatch(/InterSheet/u);
+  });
+
+  it("sets a Chinese or Japanese title without breaking the page", async () => {
+    const sheet = await withPaperCheck({ ...weddingSheet(), config: { ...weddingSheet().config, name: "山田家・佐藤家 結婚披露宴 王家與李家婚宴" } }, true);
+    const pages = pdfPages(await generateSheetPdfV2(sheet));
+    expectInsideMargins(pages);
+    expectFooterOnEveryPage(pages, sheetCopyLine(sheet));
+    expect(textOf(pages[0] ?? [])).toContain("READY BY");
+  });
+
+  it("keeps a long venue name to its line, clear of the code", async () => {
+    const base = weddingSheet();
+    const name = "The Incorporation of the Trades House of Glasgow, its Merchants and Craftsmen, at the Hall on Glassford Street";
+    const page = pdfPages(await generateSheetPdfV2(await withPaperCheck({ ...base, venue: { ...base.venue, name } }, true)))[0] ?? [];
+    const overline = page.filter((line) => line.text.startsWith("HALLKEEPER SHEET"));
+    expect(overline).toHaveLength(1);
+    expect(overline[0]?.text.endsWith("…")).toBe(true);
+    expect(overline[0]?.x2 ?? Infinity).toBeLessThanOrEqual(PAGE_W - MARGIN - 62 - 18 + 0.5);
   });
 });
 

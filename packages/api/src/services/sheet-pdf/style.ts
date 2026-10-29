@@ -99,9 +99,42 @@ function printed(style: TextStyle, text: string): string {
   return style.upper === true ? text.toLocaleUpperCase("en-GB") : text;
 }
 
+/** The part of pdfkit's EmbeddedFont that holds the widths it writes to /W. */
+interface EmbeddedWidths {
+  readonly widths: number[];
+  readonly scale: number;
+  readonly font: { getGlyph(id: number): { readonly advanceWidth: number } };
+}
+
+function isEmbeddedWidths(value: unknown): value is EmbeddedWidths {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Partial<Record<keyof EmbeddedWidths, unknown>>;
+  const font = candidate.font as { getGlyph?: unknown } | null | undefined;
+  return Array.isArray(candidate.widths) && typeof candidate.scale === "number" && typeof font?.getGlyph === "function";
+}
+
+const scaledMissingGlyph = new WeakSet();
+
+/**
+ * pdfkit 0.18 seeds the missing-glyph width unscaled (EmbeddedFont's
+ * constructor: `this.widths = [this.font.getGlyph(0).advanceWidth]`, where
+ * every other glyph is `advanceWidth * this.scale`). A viewer then advances
+ * each missing-glyph box twice as far as the text was measured, so a CJK name
+ * or an emoji in a note runs over the next column or off the page. Scale it
+ * once per font, as pdfkit scales the rest.
+ */
+function scaleMissingGlyph(doc: Doc): void {
+  // pdfkit keeps the selected font on a private field; read it as unknown.
+  const font: unknown = Reflect.get(doc, "_font");
+  if (!isEmbeddedWidths(font) || scaledMissingGlyph.has(font)) return;
+  font.widths[0] = font.font.getGlyph(0).advanceWidth * font.scale;
+  scaledMissingGlyph.add(font);
+}
+
 /** Select the face (falling back to Inter for scripts Newsreader lacks), size and colour. */
 function apply(doc: Doc, style: TextStyle, text: string): void {
   doc.font(faceFor(text, style.face)).fontSize(style.size).fillColor(style.color);
+  scaleMissingGlyph(doc);
 }
 
 function options(style: TextStyle, extra: PDFKit.Mixins.TextOptions = {}): PDFKit.Mixins.TextOptions {
