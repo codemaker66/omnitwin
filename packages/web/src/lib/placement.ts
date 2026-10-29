@@ -1,7 +1,7 @@
 import { toRenderSpace, toRealWorld, GRAND_HALL_RENDER_DIMENSIONS } from "../constants/scale.js";
 import type { LayoutSnapshotAssetDefinition, SpaceDimensions } from "@omnitwin/types";
 import { getCatalogueItem, getCatalogueItemBySlug } from "./catalogue.js";
-import { DEFAULT_PLANNER_CHAIR_SLUG } from "./furniture-defaults.js";
+import { plannerChairSlug } from "./furniture-defaults.js";
 import type { CatalogueItem } from "./catalogue.js";
 import { normalizeFurnitureScale } from "./furniture-scale.js";
 import {
@@ -235,7 +235,7 @@ export function snapToWallEdge(
   rotationY: number,
   roomDims: SpaceDimensions = GRAND_HALL_RENDER_DIMENSIONS,
   scale?: number,
-  chairFootprint: Pick<CatalogueItem, "width" | "depth"> | undefined = getCatalogueItemBySlug(DEFAULT_PLANNER_CHAIR_SLUG),
+  chairFootprint: Pick<CatalogueItem, "width" | "depth"> | undefined = getCatalogueItemBySlug(plannerChairSlug()),
 ): { readonly x: number; readonly z: number } {
   const halfRoomW = roomDims.width / 2;
   const halfRoomL = roomDims.length / 2;
@@ -811,6 +811,60 @@ export function nextTableLabels(placedItems: readonly PlacedItem[], count: numbe
 /** The lowest free "Table N" label. */
 export function nextTableLabel(placedItems: readonly PlacedItem[]): string {
   return nextTableLabels(placedItems, 1)[0] ?? "Table 1";
+}
+
+/**
+ * Each piece settled on the surface under its own centre (a stage, a riser,
+ * the floor), as the placement store settles a piece it places. A set is
+ * settled before it is judged, so its bodies are judged at the heights it
+ * will stand at.
+ */
+export function settleOnSurfaces(pieces: readonly PlacedItem[], placedItems: readonly PlacedItem[]): readonly PlacedItem[] {
+  return pieces.map((piece) => {
+    const item = getCatalogueItem(piece.catalogueItemId);
+    const y = item === undefined ? piece.y : computeSurfaceHeight(piece.x, piece.z, item, placedItems, new Set());
+    return y === piece.y ? piece : { ...piece, y };
+  });
+}
+
+/**
+ * Pieces that move, or are copied, together (a Move, a Line up, a Replace, a
+ * duplicate) each settled on the surface under it once they stand: on the
+ * stationary pieces, or on another of the moving pieces, never on itself.
+ * The lowest settle first, so a lectern moved with its riser stands on the
+ * riser where it lands, and a set moved off a dance floor comes down to the
+ * floor. The pieces in their order.
+ */
+export function settleMovedOnSurfaces(moving: readonly PlacedItem[], stationary: readonly PlacedItem[]): readonly PlacedItem[] {
+  const settled = new Map<string, PlacedItem>();
+  for (const piece of [...moving].sort((a, b) => a.y - b.y)) {
+    const item = getCatalogueItem(piece.catalogueItemId);
+    const under = [...stationary, ...settled.values()];
+    const y = item === undefined ? piece.y : computeSurfaceHeight(piece.x, piece.z, item, under, new Set([piece.id]));
+    settled.set(piece.id, y === piece.y ? piece : { ...piece, y });
+  }
+  return moving.map((piece) => settled.get(piece.id) ?? piece);
+}
+
+/**
+ * The pieces with every unlabelled dining table among them numbered, in
+ * order, with the lowest numbers free among `placedItems` and the pieces
+ * themselves. A table someone named keeps its name; the same array comes
+ * back when there is nothing to number.
+ */
+export function withTableNumbers(placedItems: readonly PlacedItem[], pieces: readonly PlacedItem[]): readonly PlacedItem[] {
+  const unlabelled = pieces.filter((piece) => {
+    if ((piece.label ?? "").trim() !== "") return false;
+    const item = getCatalogueItem(piece.catalogueItemId);
+    return item !== undefined && isDiningTableItem(item);
+  });
+  if (unlabelled.length === 0) return pieces;
+  const labels = nextTableLabels([...placedItems, ...pieces], unlabelled.length);
+  const byId = new Map(unlabelled.map((piece, i) => [piece.id, labels[i]]));
+  return pieces.map((piece) => {
+    const label = byId.get(piece.id);
+    return label === undefined ? piece : { ...piece, label };
+  });
 }
 
 /**
