@@ -1452,6 +1452,10 @@ export * from "./sheet-paper-check.js";
 // setup steps, plan markers, keep-in-view facts), shared by paper and screen.
 export * from "./sheet-brief.js";
 
+// Share tokens and guest layout ids templated out of error reports, spans and
+// request logs, in the browser and the API alike.
+export * from "./capability-paths.js";
+
 export {
   DayOfContactSchema,
   PhaseDeadlineSchema,
