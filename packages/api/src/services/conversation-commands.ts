@@ -308,8 +308,10 @@ async function executeRequestStep(
     const ownerName = run.deny.ownerName;
     return { ack: rejected(command, run.deny.status, run.deny.code, run.deny.error, nowMs, false, ownerName), changed: null };
   }
-  // Committed: a handover's relief deadline is now there for the scheduler.
-  if (command.kind === "request.handover") pokeEscalationScheduler();
+  // Committed: whatever the step set (a handover's relief deadline, a reopen's
+  // window) can now be read by the scheduler, which plans on a connection of
+  // its own. The core's wake ran inside this transaction, before the commit.
+  pokeEscalationScheduler();
   return {
     ack: {
       type: "conversation.ack",
