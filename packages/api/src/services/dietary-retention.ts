@@ -123,13 +123,11 @@ async function lapsedLayoutIds(db: Database, now: Date): Promise<readonly string
   // the later of the booking's end and its event's. greatest() and max()
   // skip the missing ones. Tables inside these subqueries are aliased, so
   // each column binds to the table meant, not the nearest with that name.
+  const liveBookingEnd = sql`(select max(live."ends_at") from "bookings" as live
+    where live."event_id" = ${outerColumn(events.id)} and live."deleted_at" is null
+      and live."status" = 'active' and live."kind" in ('hold', 'ink'))`;
   const linkedEventEnd = sql`(
-    select max(greatest(
-      coalesce(${events.endsAt}, ${events.startsAt}),
-      (select max(live."ends_at") from "bookings" as live
-        where live."event_id" = ${events.id} and live."deleted_at" is null
-          and live."status" = 'active' and live."kind" in ('hold', 'ink'))
-    ))
+    select max(greatest(coalesce(${events.endsAt}, ${events.startsAt}), ${liveBookingEnd}))
     from ${eventConfigurationLinks}
     join ${events} on ${events.id} = ${eventConfigurationLinks.eventId}
     where ${eventConfigurationLinks.configurationId} = ${outerColumn(configurations.id)}
@@ -141,7 +139,7 @@ async function lapsedLayoutIds(db: Database, now: Date): Promise<readonly string
     join "bookings" as booked on booked."enquiry_id" = asked."id"
       and booked."deleted_at" is null and booked."status" = 'active' and booked."kind" in ('hold', 'ink')
     left join "events" as bound on bound."id" = booked."event_id" and bound."deleted_at" is null
-    where asked."configuration_id" = ${configurations.id}
+    where asked."configuration_id" = ${outerColumn(configurations.id)}
   )`;
   const latestEventEnd = sql`greatest(${linkedEventEnd}, ${enquiryBookingEnd})`;
   // An enquiry filed with this layout whose preferred date is still ahead, or
