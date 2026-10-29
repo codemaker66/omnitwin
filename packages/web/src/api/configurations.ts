@@ -151,16 +151,24 @@ export async function createPublicConfig(spaceId: string, name?: string): Promis
   return api.post("/public/configurations", { spaceId, name }, true, CreatedPublicConfigurationSchema);
 }
 
+/** How a batch save travels: `keepalive` lets one sent as the page hides or
+ *  closes finish after the page has gone, when its body is small enough. */
+export interface BatchSaveTransport {
+  readonly keepalive?: boolean;
+}
+
 export async function publicBatchSave(
   configId: string,
   objects: readonly BatchObjectInput[],
   expectedRevision: number,
+  transport?: BatchSaveTransport,
 ): Promise<BatchSaveResponse> {
   return api.post(
     `/public/configurations/${configId}/objects/batch`,
     { expectedRevision, objects },
     true,
     BatchSaveResponseSchema,
+    transport?.keepalive === true ? { keepalive: true } : undefined,
   );
 }
 
@@ -210,12 +218,14 @@ export async function authBatchSave(
   configId: string,
   objects: readonly BatchObjectInput[],
   expectedRevision: number,
+  transport?: BatchSaveTransport,
 ): Promise<BatchSaveResponse> {
   return api.post(
     `/configurations/${configId}/objects/batch`,
     { expectedRevision, objects },
     undefined,
     BatchSaveResponseSchema,
+    transport?.keepalive === true ? { keepalive: true } : undefined,
   );
 }
 

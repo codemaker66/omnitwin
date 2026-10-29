@@ -28,7 +28,8 @@ import {
   tableGroupPlanningFootprint,
   tableGroupPlanningRadius,
 } from "./table-group.js";
-import { DEFAULT_PLANNER_ROUND_TABLE_SLUG, plannerChairFor, plannerChairSlug } from "./furniture-defaults.js";
+import { DEFAULT_PLANNER_ROUND_TABLE_SLUG, plannerChairFor, plannerChairOrder, plannerChairSlug } from "./furniture-defaults.js";
+import { chairsInStore, currentStoreStock, type UsableStock } from "./card-stock.js";
 import { footprintInKeepOut } from "./door-clear-spaces.js";
 import { placedFootprint } from "./keep-doors-clear.js";
 import { isDiningTableItem } from "./furniture-semantics.js";
@@ -122,11 +123,17 @@ export interface BanquetFillPlan {
   readonly roomForSeatsIgnoringDoors: number;
 }
 
+/** A theatre seat and the chair it is set with. */
+export interface TheatreFillSeat extends TheatreSeatPlacement {
+  readonly chairItemId: string;
+}
+
 /** Rows of chairs facing a stage at one end, planned in metres. */
 export interface TheatreFillPlan {
   readonly style: "theatre";
+  /** The front rows' chair. */
   readonly chairItemId: string;
-  readonly seats: readonly TheatreSeatPlacement[];
+  readonly seats: readonly TheatreFillSeat[];
   readonly chairs: number;
   readonly rows: number;
   readonly guests: number | null;
@@ -134,14 +141,90 @@ export interface TheatreFillPlan {
   readonly meetsTarget: boolean;
   readonly doorsKeptClear: boolean;
   readonly roomForSeatsIgnoringDoors: number;
+  /** The chairs set, front rows first, with how many of each. */
+  readonly chairKinds: readonly { readonly chairItemId: string; readonly seats: number }[];
+  /** Whether rows the room had space for were left unset because the hall's chairs ran out. */
+  readonly chairsRanOut: boolean;
 }
 
 export type AutoFillPlan = BanquetFillPlan | TheatreFillPlan;
 
-/** What a fill keeps clear beyond its own spacing. */
+/** A chair Fill may set, and how many of it the hall has; null sets no limit. */
+export interface ChairSupply {
+  readonly item: CatalogueItem;
+  readonly inStore: number | null;
+}
+
+/** What a fill keeps clear beyond its own spacing, and the chairs it may set. */
 export interface FillOptions {
   /** The room's door clear spaces (lib/door-clear-spaces doorKeepOuts); none when its doors are not recorded. */
   readonly doorSpaces?: readonly LayoutRect[];
+  /**
+   * The chairs a theatre fill sets, in the order the hall uses them, with how
+   * many it has of each (plannerChairSupply). Absent, every row is the chair
+   * asked for, with no limit.
+   */
+  readonly chairSupply?: readonly ChairSupply[];
+}
+
+/**
+ * The chairs Fill sets, in order, with how many the hall has of each (Blake,
+ * 28 Oct 2026: "only use the chairs i gave you inventory for", and the Grand
+ * Hall's order, pink, then checked, then red with gold legs): the event's chair
+ * first, then the hall's order, each counted from the store where its figures
+ * are known, else from the hall's recorded chairs (card-stock chairsInStore).
+ */
+export function plannerChairSupply(
+  eventChairSlug: string = plannerChairSlug(),
+  stock: UsableStock | null = currentStoreStock(),
+): readonly ChairSupply[] {
+  const supply: ChairSupply[] = [];
+  for (const slug of plannerChairOrder(eventChairSlug)) {
+    const item = getCatalogueItemBySlug(slug);
+    if (item !== undefined && item.category === "chair") supply.push({ item, inStore: chairsInStore(item.id, stock) });
+  }
+  return supply;
+}
+
+/**
+ * Sets each row, front first, in one kind of chair: the first in the supply's
+ * order with a whole row left, so no row mixes chairs and the front rows take
+ * the event's. Stops at `target` seats, or where no kind has a row left (the
+ * hall's chairs ran out).
+ */
+function seatRowsFromSupply(
+  rows: readonly (readonly TheatreSeatPlacement[])[],
+  supply: readonly ChairSupply[],
+  target: number | null,
+): { readonly seats: TheatreFillSeat[]; readonly rows: number; readonly ranOut: boolean } {
+  const left = supply.map((chair) => chair.inStore);
+  const seats: TheatreFillSeat[] = [];
+  let used = 0;
+  for (const row of rows) {
+    if (target !== null && seats.length >= target) break;
+    const kind = left.findIndex((count) => count === null || count >= row.length);
+    const chair = supply[kind];
+    if (chair === undefined) return { seats, rows: used, ranOut: true };
+    const count = left[kind];
+    if (count !== null && count !== undefined) left[kind] = count - row.length;
+    for (const seat of row) seats.push({ ...seat, chairItemId: chair.item.id });
+    used += 1;
+  }
+  return { seats, rows: used, ranOut: false };
+}
+
+/** How many seats each chair took, in the order first set. */
+function chairKindsOf(seats: readonly TheatreFillSeat[]): readonly { readonly chairItemId: string; readonly seats: number }[] {
+  const counts = new Map<string, number>();
+  for (const seat of seats) counts.set(seat.chairItemId, (counts.get(seat.chairItemId) ?? 0) + 1);
+  return [...counts].map(([chairItemId, count]) => ({ chairItemId, seats: count }));
+}
+
+/** A planned layout's seats as rows, front first (planTheatreLayout lays them out a row at a time). */
+function rowsOf(seats: readonly TheatreSeatPlacement[], seatsPerRow: number): TheatreSeatPlacement[][] {
+  const rows: TheatreSeatPlacement[][] = [];
+  for (let start = 0; start < seats.length; start += Math.max(1, seatsPerRow)) rows.push(seats.slice(start, start + seatsPerRow));
+  return rows;
 }
 
 function requested(guests: number): number | null {
@@ -245,9 +328,11 @@ function seatInSpaces(chair: CatalogueItem, seat: TheatreSeatPlacement, spaces: 
 }
 
 /**
- * Plan theatre rows of `chair` for `guests` (0 fills the room). A seat in a
- * door's clear space (`options.doorSpaces`) is left out, and rows are taken
- * whole from the front until the guests are seated.
+ * Plan theatre rows for `guests` (0 fills the room): of `chair`, or of the
+ * chairs in `options.chairSupply`, each row one kind in the hall's order, as
+ * many as the hall has. A seat in a door's clear space (`options.doorSpaces`)
+ * for any of those chairs is left out, and rows are taken whole from the front
+ * until the guests are seated or the chairs run out.
  */
 export function planTheatreFill(
   chair: CatalogueItem,
@@ -258,57 +343,56 @@ export function planTheatreFill(
 ): TheatreFillPlan | null {
   const doorSpaces = options.doorSpaces ?? [];
   if (chair.category !== "chair") return null;
+  const supply = options.chairSupply ?? [{ item: chair, inStore: null }];
   const target = requested(guests);
   if (doorSpaces.length === 0) {
     const plan = planTheatreLayout(roomWidthM, roomLengthM, { targetGuests: target ?? undefined });
-    if (plan.seats.length === 0) return null;
+    const set = seatRowsFromSupply(rowsOf(plan.seats, plan.seatsPerRow), supply, null);
+    if (set.seats.length === 0) return null;
     const room = target === null ? plan : planTheatreLayout(roomWidthM, roomLengthM);
     return {
       style: "theatre",
-      chairItemId: chair.id,
-      seats: plan.seats,
-      chairs: plan.seatCount,
-      rows: plan.rows,
+      chairItemId: set.seats[0]?.chairItemId ?? chair.id,
+      seats: set.seats,
+      chairs: set.seats.length,
+      rows: set.rows,
       guests: target,
       roomForSeats: room.seatCount,
-      meetsTarget: target === null || plan.seatCount >= target,
+      meetsTarget: target === null || set.seats.length >= target,
       doorsKeptClear: false,
       roomForSeatsIgnoringDoors: room.seatCount,
+      chairKinds: chairKindsOf(set.seats),
+      chairsRanOut: set.ranOut,
     };
   }
-  // The room's rows, front first (planTheatreLayout lays them out a row at a time).
   const room = planTheatreLayout(roomWidthM, roomLengthM);
-  const rows: TheatreSeatPlacement[][] = [];
-  for (let start = 0; start < room.seats.length; start += Math.max(1, room.seatsPerRow)) {
-    const row = room.seats.slice(start, start + room.seatsPerRow).filter((seat) => !seatInSpaces(chair, seat, doorSpaces));
-    if (row.length > 0) rows.push(row);
-  }
-  const seats: TheatreSeatPlacement[] = [];
-  let used = 0;
-  for (const row of rows) {
-    if (target !== null && seats.length >= target) break;
-    seats.push(...row);
-    used += 1;
-  }
-  if (seats.length === 0) return null;
+  const rows = rowsOf(room.seats, room.seatsPerRow)
+    .map((row) => row.filter((seat) => !supply.some((kind) => seatInSpaces(kind.item, seat, doorSpaces))))
+    .filter((row) => row.length > 0);
+  const set = seatRowsFromSupply(rows, supply, target);
+  if (set.seats.length === 0) return null;
   return {
     style: "theatre",
-    chairItemId: chair.id,
-    seats,
-    chairs: seats.length,
-    rows: used,
+    chairItemId: set.seats[0]?.chairItemId ?? chair.id,
+    seats: set.seats,
+    chairs: set.seats.length,
+    rows: set.rows,
     guests: target,
     roomForSeats: rows.reduce((sum, row) => sum + row.length, 0),
-    meetsTarget: target === null || seats.length >= target,
+    meetsTarget: target === null || set.seats.length >= target,
     doorsKeptClear: true,
     roomForSeatsIgnoringDoors: room.seatCount,
+    chairKinds: chairKindsOf(set.seats),
+    chairsRanOut: set.ranOut,
   };
 }
 
 /** The fill a style places with the planner's own furniture: 6 ft rounds set
  *  for the catalogue's recorded seats (each seat the event's chair, through the
- *  table group), or rows of `rowChairSlug`, the event's chair unless named;
- *  either clear of the room's doors (`options.doorSpaces`). */
+ *  table group), or rows of `rowChairSlug`, the event's chair unless named,
+ *  then the hall's other chairs in its order as each runs out (plannerChairSupply,
+ *  unless `options.chairSupply` names them); either clear of the room's doors
+ *  (`options.doorSpaces`). */
 export function planAutoFill(
   style: AutoFillStyle,
   guests: number,
@@ -323,7 +407,8 @@ export function planAutoFill(
     return planBanquetFill(table, guests, banquetSeatsPerTable(table), roomWidthM, roomLengthM, options);
   }
   const chair = getCatalogueItemBySlug(rowChairSlug);
-  return chair === undefined ? null : planTheatreFill(chair, guests, roomWidthM, roomLengthM, options);
+  if (chair === undefined) return null;
+  return planTheatreFill(chair, guests, roomWidthM, roomLengthM, { ...options, chairSupply: options.chairSupply ?? plannerChairSupply(rowChairSlug) });
 }
 
 // ---------------------------------------------------------------------------
@@ -1291,12 +1376,38 @@ function reseatedParts(reseated: FillConsequence["reseated"]): readonly string[]
   return parts;
 }
 
+/** The hall's chairs as its staff name them (Blake, 26-28 Oct 2026). */
+const CHAIR_WORDS: Readonly<Record<string, string>> = {
+  "chiavari-chair": "the Chiavari",
+  "burgess-turini-18-3": "the pink chair",
+  "checked-banquet-chair": "the checked chair",
+  "gallery-chair-red-gold": "the red chair with gold legs",
+};
+
+/**
+ * The rows' chairs when they are more than one kind, front rows first, and
+ * whether the hall's chairs ran out: " The front rows take the pink chair,
+ * then the checked chair, as the hall's own chairs run." Never a count:
+ * stock figures are for staff.
+ */
+function theatreChairWords(plan: TheatreFillPlan): string {
+  const ranOut = plan.chairsRanOut ? " The hall's chairs ran out before the room did." : "";
+  if (plan.chairKinds.length < 2) return ranOut;
+  const names = plan.chairKinds.map(({ chairItemId }) => {
+    const item = getCatalogueItem(chairItemId);
+    return (item === undefined ? undefined : CHAIR_WORDS[item.slug]) ?? item?.name ?? "another chair";
+  });
+  const [front, ...rest] = names;
+  return ` The front rows take ${front ?? "the event's chair"}, then ${rest.join(", then ")}, as the hall's own chairs run.${ranOut}`;
+}
+
 /** The spacing the fill used, in the trade's words, and the doors when it kept them clear. */
 export function autoFillBasis(plan: AutoFillPlan): string {
   if (plan.style === "theatre") {
     const rows = `Rows ${metres(THEATRE_SPACING.rowPitchM)} apart, a ${metres(THEATRE_SPACING.aisleM)} centre aisle`;
     const front = `${metres(THEATRE_SPACING.stageDepthM)} clear at the front`;
-    return plan.doorsKeptClear ? `${rows}, ${front} and the doors kept clear.` : `${rows} and ${front}.`;
+    const spacing = plan.doorsKeptClear ? `${rows}, ${front} and the doors kept clear.` : `${rows} and ${front}.`;
+    return `${spacing}${theatreChairWords(plan)}`;
   }
   const kind = plan.round ? "Rounds" : "Tables";
   // The door space is the venue's own figure, not the guidance's, so it follows the attribution.
