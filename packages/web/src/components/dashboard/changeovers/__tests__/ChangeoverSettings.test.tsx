@@ -70,8 +70,28 @@ beforeEach(() => {
 afterEach(() => { cleanup(); });
 
 describe("ChangeoverSettings", () => {
+  it("shows the times to someone who may not change them, with no control to press, and says who sets them (dash-ops-2)", async () => {
+    render(<ChangeoverSettings venueId={VENUE} canEdit={false} />);
+    expect(await screen.findAllByText("Grand Hall", { selector: ".changeovers__room" })).toHaveLength(2);
+    expect(screen.getByText("The venue's administrators, managers and office staff set changeover times.")).toBeDefined();
+    expect(screen.queryAllByRole("button")).toEqual([]);
+    expect(screen.queryByRole("form")).toBeNull();
+    expect(screen.queryByText("Add a changeover time")).toBeNull();
+    expect(mocks.update).not.toHaveBeenCalled();
+    expect(mocks.create).not.toHaveBeenCalled();
+    expect(mocks.retire).not.toHaveBeenCalled();
+  });
+
+  it("says who sets the times, not \"Try again\", when the API refuses the change (dash-ops-2)", async () => {
+    mocks.update.mockRejectedValue(new ApiError(403, "Insufficient permissions", "FORBIDDEN"));
+    render(<ChangeoverSettings venueId={VENUE} canEdit />);
+    fireEvent.click(await screen.findByRole("button", { name: "Keep 1 hour 30 minutes for All rooms, any event" }));
+    expect(await screen.findByText("The venue's administrators, managers and office staff set changeover times. Nothing has changed.")).toBeDefined();
+    expect(screen.queryByText(/Try again/u)).toBeNull();
+  });
+
   it("lists each room's time in plain words, and says which are not confirmed", async () => {
-    render(<ChangeoverSettings venueId={VENUE} />);
+    render(<ChangeoverSettings venueId={VENUE} canEdit />);
     expect(await screen.findAllByText("Grand Hall", { selector: ".changeovers__room" })).toHaveLength(2);
     expect(mocks.list).toHaveBeenCalledWith(VENUE, expect.any(AbortSignal));
     expect(within(row("All rooms", "Any event")).getByText("1 h 30")).toBeDefined();
@@ -85,7 +105,7 @@ describe("ChangeoverSettings", () => {
   it("keeps a demo value as it is with one press, and records who set it", async () => {
     mocks.update.mockResolvedValue({ ...ALL, confirmedAt: "2026-09-26T20:00:00.000Z", updatedByName: "Elaine MacGregor",
       updatedAt: "2026-09-26T20:00:00.000Z" });
-    render(<ChangeoverSettings venueId={VENUE} />);
+    render(<ChangeoverSettings venueId={VENUE} canEdit />);
     fireEvent.click(await screen.findByRole("button", { name: "Keep 1 hour 30 minutes for All rooms, any event" }));
     await waitFor(() => { expect(mocks.update).toHaveBeenCalledWith(VENUE, ALL, 90); });
     expect(await within(row("All rooms", "Any event")).findByText("Set by Elaine MacGregor, 26 Sep 2026")).toBeDefined();
@@ -95,7 +115,7 @@ describe("ChangeoverSettings", () => {
     const current = { ...HALL_RULE, minutes: 150, confirmedAt: "2026-09-26T19:59:00.000Z", updatedByName: "Morag Sinclair",
       updatedAt: "2026-09-26T19:59:00.000Z" };
     mocks.update.mockRejectedValue(new ApiError(409, "Someone changed this", "RULE_CHANGED", current));
-    render(<ChangeoverSettings venueId={VENUE} />);
+    render(<ChangeoverSettings venueId={VENUE} canEdit />);
     fireEvent.click(await screen.findByRole("button", { name: "Change the time for Grand Hall, any event" }));
     const minutes = screen.getByRole("spinbutton", { name: "Minutes for Grand Hall, any event" });
     fireEvent.change(minutes, { target: { value: "105" } });
@@ -107,7 +127,7 @@ describe("ChangeoverSettings", () => {
   });
 
   it("will not save minutes outside a day", async () => {
-    render(<ChangeoverSettings venueId={VENUE} />);
+    render(<ChangeoverSettings venueId={VENUE} canEdit />);
     fireEvent.click(await screen.findByRole("button", { name: "Change the time for Grand Hall, any event" }));
     fireEvent.change(screen.getByRole("spinbutton", { name: "Minutes for Grand Hall, any event" }), { target: { value: "1500" } });
     expect(screen.getByText("Enter 0 to 1,440 minutes")).toBeDefined();
@@ -116,7 +136,7 @@ describe("ChangeoverSettings", () => {
 
   it("says what the Diary falls back to before removing a time", async () => {
     mocks.retire.mockResolvedValue(undefined);
-    render(<ChangeoverSettings venueId={VENUE} />);
+    render(<ChangeoverSettings venueId={VENUE} canEdit />);
     fireEvent.click(await screen.findByRole("button", { name: "Remove the time for Grand Hall, wedding" }));
     const confirm = screen.getByRole("group", { name: "Remove the time for Grand Hall, wedding?" });
     expect(within(confirm).getByText("Grand Hall will use the time for Grand Hall: 2 h.")).toBeDefined();
@@ -127,7 +147,7 @@ describe("ChangeoverSettings", () => {
 
   it("opens the add form on the first room without a time, never offers one that has one, and adds in its place", async () => {
     mocks.create.mockResolvedValue(rule("00000000-0000-4000-8000-00000000a004", SALOON, null, 45, { confirmedAt: "2026-09-26T20:00:00.000Z", updatedByName: "Elaine MacGregor" }));
-    render(<ChangeoverSettings venueId={VENUE} />);
+    render(<ChangeoverSettings venueId={VENUE} canEdit />);
     await screen.findAllByText("Grand Hall", { selector: ".changeovers__room" });
     const addForm = screen.getByRole("form", { name: "Add a changeover time" });
     const room = within(addForm).getByRole("combobox", { name: "Room" });
@@ -154,7 +174,7 @@ describe("ChangeoverSettings", () => {
     mocks.update.mockResolvedValue({ ...HALL_RULE, minutes: 105, confirmedAt: "2026-09-26T20:00:00.000Z", updatedByName: "Elaine MacGregor",
       updatedAt: "2026-09-26T20:00:00.000Z" });
     mocks.retire.mockResolvedValue(undefined);
-    render(<ChangeoverSettings venueId={VENUE} />);
+    render(<ChangeoverSettings venueId={VENUE} canEdit />);
     fireEvent.click(await screen.findByRole("button", { name: "Change the time for Grand Hall, any event" }));
     expect(document.activeElement).toBe(screen.getByRole("spinbutton", { name: "Minutes for Grand Hall, any event" }));
     fireEvent.keyDown(document.activeElement as Element, { key: "Escape" });
@@ -175,17 +195,17 @@ describe("ChangeoverSettings", () => {
   });
 
   it("starts afresh for another venue, never showing one venue's times under another", async () => {
-    const { rerender } = render(<ChangeoverSettings venueId={VENUE} />);
+    const { rerender } = render(<ChangeoverSettings venueId={VENUE} canEdit />);
     await screen.findAllByText("Grand Hall", { selector: ".changeovers__room" });
     mocks.list.mockReturnValueOnce(new Promise(() => undefined));
-    rerender(<ChangeoverSettings venueId="00000000-0000-4000-8000-000000000200" />);
+    rerender(<ChangeoverSettings venueId="00000000-0000-4000-8000-000000000200" canEdit />);
     expect(screen.queryAllByText("Grand Hall", { selector: ".changeovers__room" })).toHaveLength(0);
     expect(screen.getByText("Loading changeover times…")).toBeDefined();
   });
 
   it("says when the times cannot be loaded, and loads them again on request", async () => {
     mocks.list.mockRejectedValueOnce(new Error("Unavailable"));
-    render(<ChangeoverSettings venueId={VENUE} />);
+    render(<ChangeoverSettings venueId={VENUE} canEdit />);
     expect((await screen.findByRole("alert")).textContent).toBe("Changeover times could not be loaded.");
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
     expect(await screen.findAllByText("Grand Hall", { selector: ".changeovers__room" })).toHaveLength(2);
