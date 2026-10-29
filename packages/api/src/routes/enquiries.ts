@@ -1,13 +1,19 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { eq, and, desc, inArray, isNull, sql } from "drizzle-orm";
+import { eq, and, desc, inArray, isNull, notInArray, or, sql } from "drizzle-orm";
 import {
   ENQUIRY_FUNNEL_FIELDS,
+  ENQUIRY_REPLY_ALARM_DEFAULT_HOURS,
+  ENQUIRY_REPLY_ALARM_FROM,
+  ENQUIRY_REPLY_ALARM_LIST_LIMIT,
+  ENQUIRY_REPLY_AWAITING_STATES,
   FIRST_RESPONSE_BACKDATING_ROLES,
   FIRST_RESPONSE_FUTURE_SKEW_MS,
   FIRST_RESPONSE_REPORT_WINDOW_DAYS,
+  NON_BOOKING_ENQUIRY_TYPES,
   RecordFirstResponseSchema,
   type RecordFirstResponseResult,
+  type ReplyAlarm,
 } from "@omnitwin/types";
 import { enquiries, enquiryStatusHistory, configurations, generalAuditLog, pricingRules, spaces, users, venues } from "../db/schema.js";
 import type { Database } from "../db/client.js";
@@ -124,9 +130,15 @@ const DAY_MS = 86_400_000;
 
 export async function enquiryRoutes(
   server: FastifyInstance,
-  opts: { db: Database },
+  opts: {
+    db: Database;
+    /** The first arrival the reply-time alarm flags; tests move it, since the
+     *  default (ENQUIRY_REPLY_ALARM_FROM) is a fixed date. */
+    replyAlarmFrom?: string;
+  },
 ): Promise<void> {
   const { db } = opts;
+  const replyAlarmFrom = opts.replyAlarmFrom ?? ENQUIRY_REPLY_ALARM_FROM;
 
   // GET /enquiries — authenticated, role-filtered, paginated
   server.get("/", { preHandler: [authenticate] }, async (request, reply) => {
@@ -555,6 +567,68 @@ export async function enquiryRoutes(
       },
       changed: stamped.changed,
     };
+    return { data };
+  });
+
+  // GET /enquiries/reply-alarm — the reply-time alarm (run-first item 3): the
+  // booking enquiries of the caller's venue still waiting for a first reply
+  // ENQUIRY_REPLY_ALARM_DEFAULT_HOURS after they were sent: how many, the one
+  // waiting longest, the most recently flagged (as the desk lists them), and
+  // when the next one will join them, so the desk asks again then rather than
+  // polling. Read by the team that records replies (the venue's commercial
+  // members). Seed fixtures, requests (marked done rather than answered) and
+  // enquiries that arrived before ENQUIRY_REPLY_ALARM_FROM are left out.
+  server.get("/reply-alarm", { preHandler: [authenticate] }, async (request, reply) => {
+    const venueId = request.user.venueId;
+    if (venueId === null || !isVenueCommercialMember(request.user, venueId)) {
+      return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
+    }
+    const thresholdHours = ENQUIRY_REPLY_ALARM_DEFAULT_HOURS;
+    // The enquiry reached the venue when it was sent (as the report route reads
+    // it). Spelled out with qualified names: in a select list Drizzle writes a
+    // column bare, and a bare "id" inside the subquery would be the history's.
+    const arrivedAt = sql`coalesce((SELECT min(h.created_at) FROM enquiry_status_history h
+      WHERE h.enquiry_id = "enquiries"."id" AND h.to_status = 'submitted'), "enquiries"."created_at")`
+      .mapWith(enquiries.createdAt);
+    const cutoff = sql`now() - make_interval(hours => ${thresholdHours})`;
+    const waiting = and(
+      eq(enquiries.venueId, venueId),
+      inArray(enquiries.state, [...ENQUIRY_REPLY_AWAITING_STATES]),
+      isNull(enquiries.firstResponseAt),
+      isNull(enquiries.fixtureSource),
+      or(isNull(enquiries.eventType), notInArray(sql`btrim(${enquiries.eventType})`, [...NON_BOOKING_ENQUIRY_TYPES])),
+      sql`${arrivedAt} >= ${replyAlarmFrom}::timestamptz`,
+    );
+    const overdue = and(waiting, sql`${arrivedAt} <= ${cutoff}`);
+
+    // One read-only transaction, so every statement reads the same now().
+    const data = await db.transaction(async (tx): Promise<ReplyAlarm> => {
+      const [clock] = await tx.select({ now: sql`now()`.mapWith(enquiries.createdAt) }).from(sql`(SELECT 1) AS clock`);
+      const flagged = await tx.select({ id: enquiries.id, arrivedAt, total: sql<number>`count(*) OVER ()`.mapWith(Number) })
+        .from(enquiries)
+        .where(overdue)
+        .orderBy(desc(arrivedAt), desc(enquiries.id))
+        .limit(ENQUIRY_REPLY_ALARM_LIST_LIMIT);
+      const [longest] = await tx.select({ id: enquiries.id, arrivedAt })
+        .from(enquiries)
+        .where(overdue)
+        .orderBy(arrivedAt, enquiries.id)
+        .limit(1);
+      const [next] = await tx.select({ arrivedAt })
+        .from(enquiries)
+        .where(and(waiting, sql`${arrivedAt} > ${cutoff}`))
+        .orderBy(arrivedAt)
+        .limit(1);
+      if (clock === undefined) throw new Error("now() returned no row");
+      return {
+        thresholdHours,
+        asOf: clock.now.toISOString(),
+        overdue: flagged[0]?.total ?? 0,
+        longest: longest === undefined ? null : { id: longest.id, arrivedAt: longest.arrivedAt.toISOString() },
+        enquiries: flagged.map((row) => ({ id: row.id, arrivedAt: row.arrivedAt.toISOString() })),
+        nextDueAt: next === undefined ? null : new Date(next.arrivedAt.getTime() + thresholdHours * 3_600_000).toISOString(),
+      };
+    }, { accessMode: "read only" });
     return { data };
   });
 

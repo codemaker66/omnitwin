@@ -8,6 +8,7 @@ import {
   eventDateParts, eventLead, groupByReceived, guestsPhrase, messageExcerpt, relativeAge, requestKind, requestWords,
   stageLabel, stageTone, venueYear,
 } from "./enquiry-desk-format.js";
+import { waitedFor } from "./reply-format.js";
 
 // ---------------------------------------------------------------------------
 // The ledger: enquiries grouped by when they arrived, each row led by the
@@ -30,6 +31,8 @@ interface EnquiryLedgerProps {
   /** Every enquiry the filter holds is listed, so each group's count is whole. */
   readonly complete: boolean;
   readonly stamp: LedgerStamp | null;
+  /** When each enquiry the reply-time alarm flags arrived, by id. */
+  readonly overdueSince?: ReadonlyMap<string, number>;
   readonly onOpen: (enquiry: Enquiry) => void;
 }
 
@@ -69,7 +72,7 @@ export function enquiryDetails(enquiry: Enquiry, roomName: string | null | undef
   return details;
 }
 
-export function EnquiryLedger({ rows, selectedId, nowMs, room, complete, stamp, onOpen }: EnquiryLedgerProps): ReactElement {
+export function EnquiryLedger({ rows, selectedId, nowMs, room, complete, stamp, overdueSince, onOpen }: EnquiryLedgerProps): ReactElement {
   const ledgerRef = useRef<HTMLDivElement>(null);
   const headingIds = useId();
   const [focusId, setFocusId] = useState<string | null>(null);
@@ -112,6 +115,7 @@ export function EnquiryLedger({ rows, selectedId, nowMs, room, complete, stamp, 
                   year={year}
                   roomName={room(enquiry)?.name ?? null}
                   stampKey={stamp !== null && stamp.id === enquiry.id ? stamp.key : null}
+                  overdueSinceMs={overdueSince?.get(enquiry.id) ?? null}
                   onOpen={onOpen}
                   onFocus={setFocusId}
                 />
@@ -132,11 +136,13 @@ interface LedgerRowProps {
   readonly year: number;
   readonly roomName: string | null;
   readonly stampKey: number | null;
+  /** When it arrived, if it has waited past the reply-time alarm's mark. */
+  readonly overdueSinceMs: number | null;
   readonly onOpen: (enquiry: Enquiry) => void;
   readonly onFocus: (id: string) => void;
 }
 
-function LedgerRow({ enquiry, selected, tabbable, nowMs, year, roomName, stampKey, onOpen, onFocus }: LedgerRowProps): ReactElement {
+function LedgerRow({ enquiry, selected, tabbable, nowMs, year, roomName, stampKey, overdueSinceMs, onOpen, onFocus }: LedgerRowProps): ReactElement {
   const request = requestKind(enquiry.eventType);
   const date = eventDateParts(enquiry.preferredDate);
   const passed = eventLead(enquiry.preferredDate, nowMs) === "date has passed";
@@ -144,6 +150,9 @@ function LedgerRow({ enquiry, selected, tabbable, nowMs, year, roomName, stampKe
   const details = enquiryDetails(enquiry, roomName);
   const quote = messageExcerpt(enquiry.message);
   const age = relativeAge(enquiry.createdAt, nowMs);
+  // The alarm's own record, read with the list: a reply recorded here since
+  // clears the mark at once.
+  const waiting = overdueSinceMs !== null && (enquiry.firstResponseAt ?? null) === null ? waitedFor(overdueSinceMs, nowMs) : null;
   const label = [
     name,
     stageLabel(enquiry.state, request !== null),
@@ -151,6 +160,7 @@ function LedgerRow({ enquiry, selected, tabbable, nowMs, year, roomName, stampKe
       : date === null ? "event date to be confirmed" : `event ${date.full}${passed ? ", date has passed" : ""}`,
     ...details,
     age === null ? null : `received ${age}`,
+    waiting === null ? null : `no reply after ${waiting}`,
   ].filter((part): part is string => part !== null).join(", ");
 
   return (
@@ -191,6 +201,7 @@ function LedgerRow({ enquiry, selected, tabbable, nowMs, year, roomName, stampKe
       <span className="enq-row__side" aria-hidden="true">
         <StageChip key={stampKey ?? "still"} state={enquiry.state} stamped={stampKey !== null} request={request !== null} />
         {age !== null && <span className="enq-row__age">{age}</span>}
+        {waiting !== null && <span className="enq-row__alarm" data-testid="reply-alarm-mark">No reply · {waiting}</span>}
       </span>
     </button>
   );

@@ -6,8 +6,12 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
+  ENQUIRY_REPLY_ALARM_DEFAULT_HOURS,
+  ENQUIRY_REPLY_ALARM_FROM,
   PROPOSAL_VERSION_PAYLOAD_SCHEMA_VERSION,
   TRADES_HALL_ENQUIRY_VENUE_SLUG,
+  VENUE_ACCESS_ENQUIRY_TYPE,
+  VENVIEWER_PRICING_ENQUIRY_TYPE,
   proposalVersionPayloadDigest,
   type ProposalVersionPayload,
 } from "@omnitwin/types";
@@ -257,7 +261,9 @@ describe.skipIf(testUrl === undefined)("the enquiry funnel on migrated PostgreSQ
     ]);
 
     server = Fastify();
-    await server.register(enquiryRoutes, { db, prefix: "/enquiries" });
+    // The alarm's default start (ENQUIRY_REPLY_ALARM_FROM) is a fixed date;
+    // here it starts long ago, and one case below moves it.
+    await server.register(enquiryRoutes, { db, prefix: "/enquiries", replyAlarmFrom: "2000-01-01T00:00:00.000Z" });
     await server.register(publicEnquiryRoutes, { db, prefix: "/public" });
     await server.register(proposalRoutes, { db, prefix: "/proposals" });
     await server.register(proposalShareRoutes, { db, prefix: "/proposal-share" });
@@ -521,6 +527,169 @@ describe.skipIf(testUrl === undefined)("the enquiry funnel on migrated PostgreSQ
     expect(earlierFirst.first_response_at?.getTime()).toBe(early.getTime());
     expect(earlierFirst).toMatchObject({ first_response_channel: "email", first_response_by: people.staff });
   }, 60_000);
+
+  it("answers a report sent twice (a double press, a retry) with the same reply, and changes nothing the second time", async () => {
+    const arrived = new Date(Date.now() - 3 * 3_600_000);
+    const enquiryId = await newEnquiry({ createdAt: arrived });
+    const body = { channel: "phone", respondedAt: new Date(arrived.getTime() + 40 * 60_000).toISOString() };
+    const first = await report(asStaff(), enquiryId, body);
+    const stamped = await stampOf(enquiryId);
+    const again = await report(asStaff(), enquiryId, body);
+    expect(first.body["data"]).toMatchObject({ changed: true, firstResponse: { at: body.respondedAt, channel: "phone", byUserId: people.staff } });
+    expect(again.status).toBe(200);
+    expect(again.body["data"]).toEqual({ ...(first.body["data"] as Record<string, unknown>), changed: false });
+    expect(await stampOf(enquiryId)).toEqual(stamped);
+    const audit = await pool.query<{ changed: boolean }>(
+      `SELECT (metadata->>'changed')::boolean AS changed FROM general_audit_log
+       WHERE target_id = $1 AND action = 'enquiry.first_response_reported' ORDER BY created_at`,
+      [enquiryId],
+    );
+    expect(audit.rows.map((row) => row.changed)).toEqual([true, false]);
+  });
+
+  // -------------------------------------------------------------------------
+  // The reply-time alarm (run-first item 3)
+  // -------------------------------------------------------------------------
+
+  describe("the reply-time alarm", () => {
+    // A venue of its own, so the cases above (each an unanswered enquiry of
+    // `venue`) do not count here.
+    const alarmVenue = randomUUID();
+    const alarmRoom = randomUUID();
+    const alarmPeople = { admin: randomUUID(), manager: randomUUID(), staff: randomUUID(), sales: randomUUID() } as const;
+    const hoursAgo = (hours: number): Date => new Date(Date.now() - hours * 3_600_000);
+
+    beforeAll(async () => {
+      await db.insert(schema.venues).values({
+        id: alarmVenue, name: "TEST ONLY reply alarm", slug: `funnel-alarm-${run}`, address: "Disposable fixture", timezone: "Europe/London",
+      });
+      await db.insert(schema.spaces).values({
+        id: alarmRoom, venueId: alarmVenue, name: "Alarm Hall", slug: "alarm-hall", sortOrder: 0, widthM: "10.00", lengthM: "10.00", heightM: "4.00",
+        floorPlanOutline: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }],
+      });
+      await db.insert(schema.users).values(Object.entries(alarmPeople).map(([role, id]) => ({
+        id, venueId: alarmVenue, role, platformRole: "none", name: `${role} alarm ${run}`, email: `${role}-alarm-${id.slice(0, 8)}@example.test`,
+      })));
+    });
+
+    const alarmOf = (headers: Record<string, string>): Promise<Reply> => call("GET", "/enquiries/reply-alarm", headers);
+    const asAlarm = (role: keyof typeof alarmPeople): Record<string, string> => as(role, alarmVenue, alarmPeople[role]);
+
+    it("flags the venue's booking enquiries waiting past 24 hours for a first reply, the most recently flagged first", async () => {
+      const at = { venueId: alarmVenue, spaceId: alarmRoom };
+      const longest = await newEnquiry({ ...at, state: "under_review", createdAt: hoursAgo(50) });
+      const overdue = await newEnquiry({ ...at, createdAt: hoursAgo(30) });
+      const fresh = await newEnquiry({ ...at, createdAt: hoursAgo(2) });
+      // Drafted 60 hours ago, sent 3 hours ago: it has waited 3 hours.
+      const sentAt = hoursAgo(3);
+      const sentLate = await newEnquiry({ ...at, state: "submitted", createdAt: hoursAgo(60), sentAt });
+      const answered = await newEnquiry({ ...at, createdAt: hoursAgo(40) });
+      expect((await report(asAlarm("sales"), answered, { channel: "email" })).status).toBe(200);
+      // Not waiting on the venue: decided, withdrawn, never sent, a request, a seed fixture.
+      await newEnquiry({ ...at, state: "approved", createdAt: hoursAgo(40) });
+      await newEnquiry({ ...at, state: "rejected", createdAt: hoursAgo(40) });
+      await newEnquiry({ ...at, state: "withdrawn", createdAt: hoursAgo(40) });
+      await newEnquiry({ ...at, state: "draft", createdAt: hoursAgo(40) });
+      await newEnquiry({ ...at, state: "archived", createdAt: hoursAgo(40) });
+      await newEnquiry({ ...at, createdAt: hoursAgo(40), eventType: VENUE_ACCESS_ENQUIRY_TYPE });
+      await newEnquiry({ ...at, createdAt: hoursAgo(40), eventType: ` ${VENVIEWER_PRICING_ENQUIRY_TYPE} ` });
+      const seeded = await newEnquiry({ ...at, createdAt: hoursAgo(40) });
+      await pool.query("UPDATE enquiries SET fixture_source = 'seed' WHERE id = $1", [seeded]);
+      // A booking enquiry of a named occasion is a booking all the same.
+      const wedding = await newEnquiry({ ...at, createdAt: hoursAgo(26), eventType: "wedding" });
+      // Another venue's, long overdue.
+      await newEnquiry({ venueId: otherVenue, spaceId: theirHall, createdAt: hoursAgo(80) });
+
+      const res = await alarmOf(asAlarm("staff"));
+      expect(res.status).toBe(200);
+      const arrived = async (id: string): Promise<string> => {
+        const { rows } = await pool.query<{ at: Date }>(
+          `SELECT coalesce((SELECT min(created_at) FROM enquiry_status_history WHERE enquiry_id = e.id AND to_status = 'submitted'), e.created_at) AS at
+           FROM enquiries e WHERE id = $1`, [id]);
+        return (rows[0]?.at ?? new Date(Number.NaN)).toISOString();
+      };
+      const data = res.body["data"] as { asOf: string };
+      expect(res.body["data"]).toEqual({
+        thresholdHours: ENQUIRY_REPLY_ALARM_DEFAULT_HOURS,
+        asOf: data.asOf,
+        overdue: 3,
+        longest: { id: longest, arrivedAt: await arrived(longest) },
+        // As the desk lists them: the most recently flagged first.
+        enquiries: [
+          { id: wedding, arrivedAt: await arrived(wedding) },
+          { id: overdue, arrivedAt: await arrived(overdue) },
+          { id: longest, arrivedAt: await arrived(longest) },
+        ],
+        // The next to pass 24 hours is the one sent 3 hours ago, not the one made 2 hours ago.
+        nextDueAt: new Date(sentAt.getTime() + ENQUIRY_REPLY_ALARM_DEFAULT_HOURS * 3_600_000).toISOString(),
+      });
+      // The server's clock, read with the alarm.
+      expect(Math.abs(Date.parse(data.asOf) - Date.now())).toBeLessThan(60_000);
+      // Waiting, but inside the 24 hours, or answered: not flagged.
+      const flagged = (res.body["data"] as { enquiries: { id: string }[] }).enquiries.map((e) => e.id);
+      for (const id of [fresh, sentLate, answered]) expect(flagged).not.toContain(id);
+
+      // A reply recorded from the desk takes it off the alarm at once; a decision does too.
+      expect((await report(asAlarm("staff"), overdue, { channel: "phone", respondedAt: hoursAgo(1).toISOString() })).status).toBe(200);
+      expect((await call("POST", `/enquiries/${longest}/transition`, asAlarm("manager"), { status: "approved", from: "under_review" })).status).toBe(200);
+      const after = await alarmOf(asAlarm("admin"));
+      expect(after.body["data"]).toMatchObject({ overdue: 1, longest: { id: wedding }, enquiries: [{ id: wedding }] });
+    });
+
+    it("flags nothing that arrived before the desk could record a reply", async () => {
+      const at = { venueId: alarmVenue, spaceId: alarmRoom };
+      const before = await newEnquiry({ ...at, createdAt: hoursAgo(300) });
+      const after = await newEnquiry({ ...at, createdAt: hoursAgo(100) });
+      const from = hoursAgo(200).toISOString();
+      const started = Fastify();
+      await started.register(enquiryRoutes, { db, prefix: "/enquiries", replyAlarmFrom: from });
+      await started.ready();
+      try {
+        const res = await started.inject({ method: "GET", url: "/enquiries/reply-alarm", headers: asAlarm("sales") });
+        expect(res.statusCode).toBe(200);
+        const flagged = (JSON.parse(res.body) as { data: { enquiries: { id: string }[]; longest: { id: string } | null } }).data;
+        expect(flagged.enquiries.map((e) => e.id)).toContain(after);
+        expect(flagged.enquiries.map((e) => e.id)).not.toContain(before);
+        expect(flagged.longest?.id).toBe(after);
+      } finally {
+        await started.close();
+      }
+      // The default start is the release that brought the desk's reply control.
+      expect(ENQUIRY_REPLY_ALARM_FROM).toBe("2026-10-29T00:00:00.000Z");
+    });
+
+    it("is the same alarm for each of the venue's commercial team", async () => {
+      const reads = await Promise.all((["admin", "manager", "staff", "sales"] as const).map((role) => alarmOf(asAlarm(role))));
+      expect(reads.map((res) => res.status)).toEqual([200, 200, 200, 200]);
+      const [first, ...rest] = reads.map((res) => res.body["data"]);
+      for (const data of rest) expect(data).toEqual(first);
+    });
+
+    it("keeps to the caller's own venue and refuses everyone who does not record replies", async () => {
+      // Another venue's manager reads their own venue's alarm, never this one's.
+      const theirs = await alarmOf(as("manager", otherVenue, people.otherManager));
+      expect(theirs.status).toBe(200);
+      const ids = (theirs.body["data"] as { enquiries: { id: string }[] }).enquiries.map((e) => e.id);
+      const { rows } = await pool.query<{ venue_id: string }>("SELECT DISTINCT venue_id FROM enquiries WHERE id = ANY($1::uuid[])", [ids]);
+      expect(rows.map((row) => row.venue_id)).toEqual([otherVenue]);
+
+      for (const headers of [
+        as("hallkeeper", alarmVenue, randomUUID()),
+        as("planner", alarmVenue, randomUUID()),
+        as("client", alarmVenue, randomUUID()),
+        as("caterer", alarmVenue, randomUUID()),
+        // A Venviewer platform admin is not the venue's team, at no venue or
+        // holding a floor role at this one; and a commercial role with no
+        // venue yet has no alarm to read.
+        as("admin", null, people.platformAdmin, "admin"),
+        as("hallkeeper", alarmVenue, randomUUID(), "admin"),
+        as("staff", null, randomUUID()),
+      ]) {
+        expect((await alarmOf(headers)).status).toBe(403);
+      }
+      expect((await server.inject({ method: "GET", url: "/enquiries/reply-alarm" })).statusCode).toBe(401);
+    });
+  });
 
   it("never lets the database hold a partial or impossible reply", async () => {
     const enquiryId = await newEnquiry();
