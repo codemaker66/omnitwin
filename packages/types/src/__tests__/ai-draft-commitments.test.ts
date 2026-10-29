@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  canonicalDraftText,
   draftLeftAfterWithholding,
   findDraftCommitments,
   sentencesOf,
@@ -23,6 +24,19 @@ import { BLIND_SETS } from "./ai-draft-blind-sets.js";
 //   BLIND: five sets, each written by a separate agent that never saw the
 //     patterns, and each run once before it was seen; ai-draft-blind-sets.ts
 //     records those first runs, which are the measure of text not seen.
+//   RED TEAM (28 October 2026, after the review found claims in plain words,
+//     split across lines and hidden by characters that show nothing): two
+//     rounds written by the agent fixing the patterns, so not blind. The
+//     patterns before the fix found 16 of the first round's 63 claims; the
+//     second round, written after the first fix, had 37 of 58 claims found
+//     and 2 of 35 clean sentences taken out on its first run. Both now pass;
+//     the most telling are below.
+//   RED TEAM 3 (29 October 2026): an independent agent that tried to break
+//     the second fix, so it saw the patterns. They found 16 of its 110 claims
+//     and took out 12 of its 50 clean sentences; all 110 are found and none
+//     of the 50 taken out now. The fixer's own 55 variants of those claims,
+//     written before the fix, are found but for one, and its 93 near misses
+//     are left alone. The most telling of each are below.
 //
 // None was written by venue staff. They show what the patterns do and do not
 // do, not how often real drafts trip them; the live evaluation records that.
@@ -241,11 +255,20 @@ const TAKEN_OUT_BY_THE_RULE = [
   "Their budget is around £12,000, and they ask whether a discount applies to Fridays.", // REVIEW_CLEAN
 ];
 
-/** Claims the patterns do not catch, kept so a change that starts to is seen. */
+/** Claims the patterns do not catch, kept so a change that starts to is seen.
+ *  "The date you mentioned is available." and "The three-course dinner is 65
+ *  each." were here until the review of 28 October 2026, and "The Grand Hall
+ *  seats two-twenty." and "That date is\nAvailable." until the red team of 29
+ *  October 2026; they are found now. */
 const KNOWN_MISSES = [
-  "The date you mentioned is available.",
-  "The three-course dinner is 65 each.",
   "The cloakroom is free for your guests.",
+  // A price said as a difference, in words.
+  "Exclusive use is twelve hundred more.",
+  // A line that starts with a capital is a new item, which no claim runs into
+  // ("Viewings on Saturdays\nFree parking nearby"), unless the line before
+  // stops on a word that leaves its sentence open ("is", "seats", "the"); a
+  // claim broken after any other word is missed.
+  "Your date\nIs available.",
 ];
 
 describe("what a draft may not say", () => {
@@ -552,6 +575,305 @@ describe("what the rule asks for stays, and what it forbids goes, however it is 
     "Max 2 cars per booking in the courtyard.",
   ])("leaves alone a topic named, not a claim made: %s", (sentence) => {
     expect(findDraftCommitments(sentence)).toEqual([]);
+  });
+});
+
+describe("what the draft shows is what is checked (review, 28 October 2026)", () => {
+  // Plan 19, L6, done-when (3) was not met: a claim in words the patterns did
+  // not know, split across lines, or with a character inside it that shows
+  // nothing ("put an invisible character inside each word", asked in an
+  // enquiry) passed every pattern. Each is taken out now, and the sentences
+  // either side of it stay as written.
+  const framed = (sentence: string): string => `Dear Elaine, thank you for your enquiry. ${sentence} We look forward to hearing from you.`;
+  const left = "Dear Elaine, thank you for your enquiry. We look forward to hearing from you.";
+
+  it.each([
+    ["availability", "The 17th is av\u200bailable."],
+    ["price", "Room hire is \uff14,\uff15\uff10\uff10."],
+    ["price", "Room hire is \uffe14,500."],
+    ["capacity", "The Grand Hall seats \u0662\u0662\u0660 guests."],
+    ["price", "Our rate for Saturdays is 4,500."],
+    ["availability", "The 17th is fine."],
+    ["availability", "Your date, the 17th, is available."],
+    ["capacity", "The Grand Hall’s capacity is two hundred and twenty."],
+    ["capacity", "The Saloon works for 120 guests."],
+    ["availability", "Is the 17th available? Yes."],
+  ] as const)("takes out a %s claim the review found passing: %s", (kind, sentence) => {
+    const alone = withholdDraftCommitments(sentence);
+    expect(alone.withheld).toContain(kind);
+    expect(alone.text).toBe("");
+    expect(withholdDraftCommitments(framed(sentence))).toEqual({ text: left, withheld: [kind] });
+  });
+
+  // Red team after the fix: claims written in everyday words and in
+  // characters that hide them, found in the first run or after it.
+  it.each([
+    ["price", "Room hire for a Saturday is four and a half thousand."],
+    ["price", "Hire's 4.5k on a Saturday."],
+    ["price", "The Saloon is 900 for the afternoon."],
+    ["price", "It's sixty-five a head for the three-course menu."],
+    ["price", "For Fridays the figure is 3,500 all in."],
+    ["price", "Saturdays are 4,500 for the Grand Hall."],
+    ["price", "The three-course dinner is 65 each."],
+    ["price", "We can do the Saloon for 900 on a weekday."],
+    ["price", "Room hire on a Friday drops to 3,200."],
+    ["price", "The deposit we ask for is a quarter of the total."],
+    ["price", "Dinner is £6\u200b5 per head."],
+    ["price", "Room hire is \u0664,\u0665\u0660\u0660."],
+    ["availability", "The date you mentioned is available."],
+    ["availability", "That date works."],
+    ["availability", "We've got the 17th."],
+    ["availability", "Nothing is booked that night."],
+    ["availability", "You can have the Grand Hall on the 17th."],
+    ["availability", "Saturday 17 June would be possible."],
+    ["availability", "We could offer you the 17th."],
+    ["availability", "We can host you on the 17th."],
+    ["availability", "The diary shows the 17th as free."],
+    ["availability", "The 17th hasn't been snapped up yet."],
+    ["availability", "The hall is \u0430v\u0430il\u0430ble on the 17th."],
+    ["availability", "The 17th is avail\u2060able."],
+    ["availability", "The 1\uff17th is free."],
+    ["capacity", "180 for dinner, 250 standing."],
+    ["capacity", "It'll take 220 at a push."],
+    ["capacity", "The most we can seat in the Saloon is 90."],
+    ["capacity", "220 is the limit for the Grand Hall."],
+    ["capacity", "The hall sits 200 comfortably."],
+    ["capacity", "Capacity's 220 seated."],
+    ["capacity", "There's space for a couple of hundred."],
+    ["capacity", "Your 150 guests won't be a problem."],
+    ["capacity", "Seating up to 220, the Grand Hall is our largest room."],
+    ["capacity", "The Grand Hall se\u00adats 220."],
+    ["capacity", "The hall seats \u0968\u0968\u0966."],
+  ] as const)("finds a %s claim the red team wrote: %s", (kind, sentence) => {
+    expect(findDraftCommitments(sentence).map((claim) => claim.kind)).toContain(kind);
+  });
+
+  // The new forms' near misses, and what HEAD took out wrongly ("a Grand Hall
+  // wedding" was the price "a grand"), found on the repository's own prose.
+  it.each([
+    "We would love to host your wedding.",
+    "Our team will confirm availability and pricing.",
+    "Happy to talk through options on a call.",
+    "Could you tell us your preferred date and numbers?",
+    "That's fine, we can talk about it when you visit.",
+    "It's fine to bring your own cake.",
+    "It may be possible to arrange a visit next week.",
+    "Let us know if the date works for you and the team will check it.",
+    "A call on Thursday would work well.",
+    "We have the 17th noted as your preferred date.",
+    "We have hosted over a thousand weddings in our history.",
+    "We'd love to host a Grand Hall wedding.",
+    "Arrival is 1900 for 1930.",
+    "The rate at which guests arrive will shape the drinks service.",
+    "Our menus suit most dietary needs.",
+    "This works for us: we will send the floor plans tomorrow.",
+    "Built 17 October, the layout is ready for your visit.",
+    "The timeline has a fine 14:10 marker.",
+    "Lane 9's 0077 and the rota's 0078 each took a number.",
+    "Viewings on Saturdays\nFree parking nearby",
+    "Our wedding coordinator\nwill be in touch.",
+    "Room hire\nand catering are quoted separately.",
+  ])("leaves alone what only looks like a claim: %s", (sentence) => {
+    expect(findDraftCommitments(sentence)).toEqual([]);
+  });
+
+  it("takes out a claim broken across lines from every line it touches, and leaves a list's items alone", () => {
+    expect(withholdDraftCommitments("Dear Elaine,\n\nThe Grand Hall holds\nup to 220.\n\nThe Events Team"))
+      .toEqual({ text: "Dear Elaine,\n\nThe Events Team", withheld: ["capacity"] });
+    expect(withholdDraftCommitments("That date is\navailable. Do let us know.")).toEqual({ text: "Do let us know.", withheld: ["availability"] });
+    const paragraphs = withholdDraftCommitments("The Grand Hall is\n\nfree on the 17th.\n\nWith best wishes,\nThe Events Team");
+    expect(paragraphs.withheld).toEqual(["availability"]);
+    expect(paragraphs.text).not.toMatch(/free|17th/u);
+    const list = "Viewings on Saturdays\nFree parking nearby";
+    expect(withholdDraftCommitments(list)).toEqual({ text: list, withheld: [] });
+  });
+
+  it("reads the characters as they show, and gives back that reading", () => {
+    expect(canonicalDraftText("The 17th is av\u200bailable.")).toBe("The 17th is available.");
+    expect(canonicalDraftText("Room hire is \uff14,\uff15\uff10\uff10 or \uffe14,500.")).toBe("Room hire is 4,500 or £4,500.");
+    expect(canonicalDraftText("Seats \u0662\u0662\u0660, \u06f2\u06f2\u06f0 or \u0968\u0968\u0966.")).toBe("Seats 220, 220 or 220.");
+    expect(canonicalDraftText("se\u00adats, \u0430v\u0430il\u0430ble, a\u0332v")).toBe("seats, available, av");
+    // Another script, accents, line endings and tabs are kept, and reading again changes nothing.
+    for (const text of ["\u0414\u043e\u0440\u043e\u0433\u0430\u044f \u0415\u043b\u0435\u043d\u0430", "Café cr\u00e8me", "Dear Elaine,\r\n\r\nThanks.\tTab."]) {
+      expect(canonicalDraftText(text)).toBe(text);
+    }
+    for (const text of ["\u0430\ufe0fb \n\u0661\u0301b", "a\u0335\u0301 \u0430\u0345", "\u2028x\u0085y\u200d"]) {
+      expect(canonicalDraftText(canonicalDraftText(text))).toBe(canonicalDraftText(text));
+    }
+    expect(withholdDraftCommitments("Thank you\u200b for your note.")).toEqual({ text: "Thank you for your note.", withheld: [] });
+  });
+
+  // Review: 200,000 newlines took 70 s, because every pattern ran on every
+  // line. Each pattern now reads the text once, without ignoring case.
+  it("reads 200,000 characters of adversarial runs in time that grows with them", () => {
+    const fill = (unit: string): string => unit.repeat(Math.ceil(200_000 / unit.length)).slice(0, 200_000);
+    const started = performance.now();
+    // "\u0661 " reads as "1 1 1" held as two-byte text, which the patterns compiled
+    // too large made slow (red team, 29 October 2026: 4 s alone).
+    for (const unit of ["1,", "is ", "\n", "the\ndate\nis\n", "a\u200b", "the date, x, is ", "\uff11,", "\u0661 "]) {
+      withholdDraftCommitments(fill(unit));
+    }
+    // A letter after a run of newlines: a pattern that took any whitespace
+    // after a line's start read the rest of the run from every line (red team,
+    // 29 October 2026: 20,000 characters took 1 s, so 200,000 would take 100 s).
+    withholdDraftCommitments(`x${"\n".repeat(199_998)}x`);
+    withholdDraftCommitments(`x${"\n\t".repeat(99_999)}x`);
+    expect(performance.now() - started).toBeLessThan(3_000);
+  });
+});
+
+describe("red team 3 (29 October 2026): the forms the second fix did not know", () => {
+  // Hundreds and thousands in words, per-head forms, figures as subjects and
+  // labels, markdown, look-alike letters in any word, and claims written as
+  // a note, a question or an answer.
+  it.each([
+    ["price", "Room hire is four thousand five hundred."],
+    ["price", "Hire of the Grand Hall is forty-five hundred."],
+    ["price", "Dinner is fifty five a head."],
+    ["price", "Menus start at 65 pph."],
+    ["price", "Our menus are 65 p.p."],
+    ["price", "The wedding breakfast is 72/head."],
+    ["price", "Canapes are 12 apiece."],
+    ["price", "The drinks package works out at 30 a pop."],
+    ["price", "Room hire is \u20a44,500."],
+    ["price", "Room hire is £  4,500."],
+    ["price", "Our Saturday rate is 4\u2009500."],
+    ["price", "Our Saturday rate is 4,5OO."],
+    ["price", "It's 4,500 to hire the hall."],
+    ["price", "Expect to pay about 4,500."],
+    ["price", "Budget around 4,500 for the room."],
+    ["price", "Hire runs to 4,500 on a Saturday."],
+    ["price", "We ask 4,500 for Saturdays."],
+    ["price", "4,500 gets you the Grand Hall for the evening."],
+    ["price", "The Grand Hall goes for 4,500 on Saturdays."],
+    ["price", "The hire is somewhere between four and five thousand."],
+    ["price", "Room hire 4,500, deposit 1,000."],
+    ["price", "| Room hire | 4,500 |"],
+    ["price", "- **Room hire:** 4,500"],
+    ["price", "A Saturday in the Grand Hall is 4,500 sterling."],
+    ["price", "The Saloon is a shade under 1,000 for the afternoon."],
+    ["price", "We'd need 500 down to secure it."],
+    ["price", "The Grand Hall is 4,500 to 5,000 depending on the date."],
+    ["price", "Prices begin at 3,950."],
+    ["price", "Weekday hire comes in under 3,000."],
+    ["price", "Room hire is four point five thousand."],
+    ["availability", "Our diary is empty on the 17th."],
+    ["availability", "The 17th looks good."],
+    ["availability", "The hall is vacant on the 17th."],
+    ["availability", "We've got space on the 17th."],
+    ["availability", "There's space in the Grand Hall on the 17th."],
+    ["availability", "Happy to say the 17th is a go."],
+    ["availability", "Saturday 17 June - no bookings yet."],
+    ["availability", "Nobody's booked the 17th."],
+    ["availability", "We're not booked on the 17th."],
+    ["availability", "The Grand Hall is not in use that evening."],
+    ["availability", "There are no events in the Grand Hall on the 17th."],
+    ["availability", "We could definitely make the 17th work."],
+    ["availability", "The 17th? Free as a bird."],
+    ["availability", "You asked about the 17th. Good news: we can do it."],
+    ["availability", "About the 17th \u2014 yes, it's yours."],
+    ["availability", "- **Saturday 17 June:** available"],
+    ["availability", "| 17 June | Available |"],
+    ["availability", "17/06 - available"],
+    ["availability", "Saturday 17 June \u2705"],
+    ["availability", "The 17th is \u041e\u041a."],
+    ["availability", "The 17th is availa\u042cle."],
+    ["availability", "The 17th is \u043e\u0440\u0435\u0578."],
+    ["availability", "The 17th is ava\u0131lable."],
+    ["availability", "THE 17TH IS AVA\u0130LABLE."],
+    ["availability", "The 17th is \u1d00\u1d20\u1d00\u026a\u029f\u1d00\u0299\u029f\u1d07."],
+    ["availability", "The 17th is avail-\nable."],
+    ["availability", "The 17th is\nAvailable."],
+    ["availability", "The 17th is \u201cavailable\u201d."],
+    ["availability", "The 17th remains open to you."],
+    ["availability", "Your date is still on the table."],
+    ["availability", "Saturday is a yes from us."],
+    ["availability", "Count on the 17th."],
+    ["availability", "Nothing clashes with the 17th."],
+    ["availability", "There's no one in the Grand Hall on the 17th."],
+    ["availability", "We can fit you in that Saturday."],
+    ["capacity", "Thank you for asking.\nSeats 220 for dinner."],
+    ["capacity", "The Grand Hall seats\nTwo hundred and twenty."],
+    ["capacity", "The Grand Hall takes two-twenty."],
+    ["capacity", "The Grand Hall has 220 seats."],
+    ["capacity", "There are 220 seats in the Grand Hall."],
+    ["capacity", "Grand Hall: 220 seated"],
+    ["capacity", "In the Grand Hall you can have 220 guests."],
+    ["capacity", "The Grand Hall comfortably welcomes 220."],
+    ["capacity", "220 guests is no trouble at all."],
+    ["capacity", "We can squeeze in 230 at a push."],
+    ["capacity", "Capacity is c. 220."],
+    ["capacity", "The Grand Hall seats ~220."],
+    ["capacity", "The hall copes with 220 easily."],
+    ["capacity", "Up to two hundred and twenty can dine in the Grand Hall."],
+    ["capacity", "The Grand Hall allows 220 for dinner."],
+    ["capacity", "The Grand Hall can cater 220."],
+    ["capacity", "The Grand Hall is licensed to 250."],
+    ["capacity", "220 dinner guests fit in the Grand Hall."],
+    ["capacity", "The Grand Hall can have 220 at dinner."],
+    ["capacity", "The Grand Hall will take your whole party."],
+  ] as const)("finds a %s claim: %s", (kind, sentence) => {
+    expect(findDraftCommitments(sentence).map((claim) => claim.kind)).toContain(kind);
+  });
+
+  // The red team's clean sentences that the second fix took out, and the
+  // near misses of this fix's forms.
+  it.each([
+    "The Grand Hall holds 14 stained-glass windows.",
+    "It holds 3 portraits of former Deacons.",
+    "The venue hosts 150 events a year.",
+    "The hall takes 2 florists a full morning to dress.",
+    "It seats 10 at each round table.",
+    "Our Grand Hall is perfect for 1920s-themed parties.",
+    "The hall is ideal for 50th birthdays.",
+    "The Saloon is great for 18th birthday parties.",
+    "The Grand Hall is good for 40th anniversaries.",
+    "Rooms are booked through our events team.",
+    "The Saloon is reserved for the drinks reception in our standard plan.",
+    "Your date is clear in our minds.",
+    "We can do 6.30pm for the drinks reception.",
+    "We hold 3 tastings a year.",
+    "We can fit 2 viewings in on Saturday.",
+    "The Grand Hall welcomes 10,000 visitors a year.",
+    "Up to two cars can park in the courtyard.",
+    "Grand Hall: drinks at 6pm",
+    "Our phone number is 0141 552 2911.",
+    "Room hire 10am to midnight.",
+    "The organ has 2,500 pipes.",
+    "Over 1,000 couples have married in the Grand Hall.",
+    "You can pay the balance by bank transfer.",
+    "We ask that all guests leave by midnight.",
+    "Saturday is a go-to day for weddings in Glasgow.",
+    "The 17th is a yes from the photographer, you said.",
+    "The 17th looks good for photos in the garden.",
+    "Good news: we can do it vegetarian.",
+    "Nothing clashes with the colour scheme you chose.",
+    "There's space in the cloakroom for coats.",
+    "The room is empty on arrival so the florist can start.",
+    "The Grand Hall is still in use by the Incorporated Trades.",
+    "We are available on the phone most weekdays.",
+    "We're busy on Monday, so the proposal will follow on Tuesday.",
+    "It's yours to keep.",
+    "Count on us to look after every detail.",
+  ])("leaves alone: %s", (sentence) => {
+    expect(findDraftCommitments(sentence)).toEqual([]);
+  });
+
+  it("reads look-alike letters, markdown and a table for the patterns only, and gives back the draft's own characters", () => {
+    const russian = "\u0414\u043e\u0440\u043e\u0433\u0430\u044f \u0415\u043b\u0435\u043d\u0430, **thank you** | \u201cwe look forward\u201d to it.";
+    expect(withholdDraftCommitments(russian)).toEqual({ text: russian, withheld: [] });
+    expect(findDraftCommitments("The 17th is \u041e\u041a.")).toEqual([{ kind: "availability", phrase: "The 17th is \u041e\u041a" }]);
+    expect(findDraftCommitments("The 17th is avail-\nable.")).toEqual([{ kind: "availability", phrase: "The 17th is avail-\nable" }]);
+    expect(withholdDraftCommitments("Dear Elaine,\n\n| Room hire | 4,500 |\n| Guests | 150 |\n\nThe Events Team"))
+      .toEqual({ text: "Dear Elaine,\n\n| Guests | 150 |\n\nThe Events Team", withheld: ["price"] });
+  });
+
+  // A claim found from the stop before it took the sentence before it out too.
+  it("takes out a claim that starts a sentence or a line, and not the sentence before it", () => {
+    expect(withholdDraftCommitments("Thank you for your note. Complimentary parking is yours on the day."))
+      .toEqual({ text: "Thank you for your note.", withheld: ["price"] });
+    expect(withholdDraftCommitments("Thank you for asking.\nSeats 220 for dinner."))
+      .toEqual({ text: "Thank you for asking.", withheld: ["capacity"] });
   });
 });
 

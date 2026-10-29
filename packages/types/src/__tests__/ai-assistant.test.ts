@@ -88,4 +88,52 @@ describe("ai assistant draft contracts", () => {
     expect(draft.safeLanguageApplied).toBe(true);
     expect(findDraftCommitments(draft.body)).toEqual([]);
   });
+
+  // Review, 28 October 2026: a character that shows nothing hid a claim from
+  // every pattern. The draft holds the words as they show, so what the booker
+  // and the client read is what was checked, for claims and unsafe wording alike.
+  it("checks and keeps the words as they show", () => {
+    const draft = createReviewGatedAIDraft({
+      useCase: "proposal_draft",
+      title: "Proposal draft",
+      body: "Dear Elaine, the 17th is av\u200bailable. Best wishes, The Events Team, Trades Hall Glasgow",
+      context: {},
+      generatedAt: NOW,
+    });
+    expect(draft.withheldCommitments).toEqual(["availability"]);
+    expect(draft.body).not.toContain("\u200b");
+    expect(draft.body).toBe("Best wishes, The Events Team, Trades Hall Glasgow");
+    const hidden = createReviewGatedAIDraft({
+      useCase: "proposal_draft",
+      title: "Proposal draft",
+      body: "This layout is certified\u200b safe. Our events team will confirm the details.",
+      context: {},
+      generatedAt: NOW,
+    });
+    expect(hidden.blockedUnsafeClaims).toEqual(["certified safe"]);
+    expect(hidden.body).not.toContain("\u200b");
+    expect(hidden.body).not.toContain("certified safe");
+  });
+
+  // Red team, 29 October 2026: this draft came back whole, three unchecked
+  // claims ready for the booker's Use button.
+  it("takes out a price, a date and a size written in words the second fix did not know", () => {
+    const draft = createReviewGatedAIDraft({
+      useCase: "proposal_draft",
+      title: "Proposal draft",
+      body: [
+        "Dear Elaine,",
+        "",
+        "Thank you for your enquiry about Saturday 17 June. Good news: Saturday 17 June looks good, and the Grand Hall welcomes 220 guests. Hire of the Grand Hall is forty-five hundred, and dinner is fifty five a head.",
+        "",
+        "With best wishes,",
+        "The Events Team, Trades Hall Glasgow",
+      ].join("\n"),
+      context: {},
+      generatedAt: NOW,
+    });
+    expect(draft.withheldCommitments).toEqual(["price", "availability", "capacity"]);
+    expect(draft.body).toBe("Dear Elaine,\n\nThank you for your enquiry about Saturday 17 June.\n\nWith best wishes,\nThe Events Team, Trades Hall Glasgow");
+    expect(findDraftCommitments(draft.body)).toEqual([]);
+  });
 });

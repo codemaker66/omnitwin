@@ -11,7 +11,7 @@ import {
   SafePlanningWordingSchema,
   UNSAFE_PUBLIC_CLAIM_PHRASES,
 } from "./evidence-runtime.js";
-import { AIDraftCommitmentKindSchema, withholdDraftCommitments } from "./ai-draft-commitments.js";
+import { AIDraftCommitmentKindSchema, canonicalDraftText, withholdDraftCommitments } from "./ai-draft-commitments.js";
 
 // ---------------------------------------------------------------------------
 // AI Assistant Foundation v0
@@ -164,7 +164,10 @@ export function aiDraftDigest(input: {
  * again where a draft is read: the web and the API deploy apart, and a page
  * open since an earlier build would otherwise refuse drafts that a later
  * check passed. Taking out reads the words last, so what it passes is what
- * the draft says.
+ * the draft says. The words are made canonical first (canonicalDraftText: no
+ * character that shows nothing, plain digits and signs), and the draft holds
+ * the canonical words, so what the booker and the client read is what was
+ * checked, for unsafe wording and for claims alike.
  */
 export function createReviewGatedAIDraft(input: {
   readonly useCase: AIDraftUseCase;
@@ -174,7 +177,7 @@ export function createReviewGatedAIDraft(input: {
   readonly generatedAt: string;
 }): AIDraft {
   const title = safePlanningLanguage(input.title);
-  const sanitized = sanitizeAIDraftText(input.body);
+  const sanitized = sanitizeAIDraftText(canonicalDraftText(input.body));
   const withheld = withholdDraftCommitments(sanitized.text);
   return AIDraftSchema.parse({
     schemaVersion: AI_ASSISTANT_SCHEMA_VERSION,
