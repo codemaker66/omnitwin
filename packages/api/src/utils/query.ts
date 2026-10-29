@@ -130,6 +130,7 @@ const VENUE_TEAM_INVITER_ROLE_SET: ReadonlySet<string> = new Set(VENUE_TEAM_INVI
 
 /** Reading what the venue's AI use has cost (T-656): money, so its managers and admins. */
 const AI_USAGE_READ_ROLES: ReadonlySet<string> = new Set(["admin", "manager"]);
+const PEOPLE_ERASER_ROLES: ReadonlySet<string> = new Set(["admin", "manager"]);
 
 function holdsVenueRole(
   user: Pick<JwtUser, "role" | "venueId" | "platformRole">,
@@ -234,6 +235,15 @@ export function canReadAIUsage(
   venueId: string,
 ): boolean {
   return holdsVenueRole(user, venueId, AI_USAGE_READ_ROLES);
+}
+
+/** Erasing a person from the People Book (people-privacy-5): the venue's
+ *  administrators and managers, the people who answer for its records. */
+export function canErasePeople(
+  user: Pick<JwtUser, "role" | "venueId" | "platformRole">,
+  venueId: string,
+): boolean {
+  return holdsVenueRole(user, venueId, PEOPLE_ERASER_ROLES);
 }
 
 /** Reading venue inventory levels. Never a price. */
