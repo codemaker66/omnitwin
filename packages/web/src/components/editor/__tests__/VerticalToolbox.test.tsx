@@ -91,16 +91,19 @@ describe("VerticalToolbox undo buttons", () => {
     expect(screen.queryByTestId("planner-onboarding-widget")).toBeNull();
   });
 
-  it("renders the laser diagram controls as a movable and minimizable widget", async () => {
+  it("renders the draw controls as a movable and minimizable widget, in the planner's word for them", async () => {
     renderToolbox();
 
-    fireEvent.click(screen.getByRole("button", { name: "Laser Diagram" }));
+    fireEvent.click(screen.getByRole("button", { name: "Draw" }));
 
     const panel = await screen.findByTestId("markup-panel");
     expect(panel.getAttribute("data-floating-widget-id")).toBe("planner-markup-panel");
     expect(panel.textContent).toContain("Draw notes");
-    expect(screen.getByRole("button", { name: "Move Laser diagram" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Minimize Laser diagram" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Move Draw tools" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Minimize Draw tools" })).toBeTruthy();
+    // QoL F-15: "Laser" is the retired name; nothing a person reads or hears says it.
+    const heard = [...document.body.querySelectorAll("*")].flatMap((node) => ["aria-label", "title"].map((name) => node.getAttribute(name) ?? ""));
+    expect([document.body.textContent ?? "", ...heard].join("\n")).not.toMatch(/laser/iu);
   });
 
   it("renders camera views as a movable widget and still requests bookmark navigation", async () => {
@@ -275,10 +278,10 @@ describe("VerticalToolbox Delete and the V shortcut", () => {
     expect(screen.getByRole("button", { name: /^Add Furniture/u }).getAttribute("aria-pressed")).not.toBe("true");
 
     fireEvent.keyDown(window, { code: "KeyD", key: "d" });
-    expect(screen.getByRole("button", { name: /^Laser Diagram/u }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: /^Draw\b/u }).getAttribute("aria-pressed")).toBe("true");
     act(() => { useMarkupStore.getState().setActive(false); });
-    expect(screen.getByRole("button", { name: /^Laser Diagram/u }).getAttribute("aria-pressed")).not.toBe("true");
+    expect(screen.getByRole("button", { name: /^Draw\b/u }).getAttribute("aria-pressed")).not.toBe("true");
     fireEvent.keyDown(window, { code: "KeyD", key: "d" });
-    expect(screen.getByRole("button", { name: /^Laser Diagram/u }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: /^Draw\b/u }).getAttribute("aria-pressed")).toBe("true");
   });
 });

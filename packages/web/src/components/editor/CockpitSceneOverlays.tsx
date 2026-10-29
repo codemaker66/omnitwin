@@ -560,8 +560,8 @@ function SceneAnnotations({ annotations }: { readonly annotations: readonly Scen
       <svg className="scene-annotations__leaders" width={size.width} height={size.height} aria-hidden="true">
         {annotations.map((annotation) => <line key={annotation.id} stroke={annotation.color} ref={(element) => { if (element === null) lines.current.delete(annotation.id); else lines.current.set(annotation.id, element); }} />)}
       </svg>
-      <div ref={viewportRef} className="scene-annotations__viewport" role="region" aria-label="Scene planning annotations" tabIndex={0}>
-        <p className="scene-annotations__list-label">{annotations.length} planning annotations · scroll for all</p>
+      <div ref={viewportRef} className="scene-annotations__viewport" role="region" aria-label="Planning notes in the room" tabIndex={0}>
+        <p className="scene-annotations__list-label">{annotations.length === 1 ? "1 planning note" : `${String(annotations.length)} planning notes`} · scroll for all</p>
         <div ref={cardsRef} className="scene-annotations__cards">
           {annotations.map((annotation) => <div key={annotation.id} className="scene-annotations__card" style={{ "--annotation-color": annotation.color } as CSSProperties}
             ref={(element) => { if (element === null) cards.current.delete(annotation.id); else cards.current.set(annotation.id, element); dirty.current = true; }}>
