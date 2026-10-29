@@ -159,6 +159,11 @@ and the CPU partition from 399 to 400. Also on 26 October the Assembly went on
 for everyone (Blake), so its third case is restated one for one: with no flag a
 layout plays the first time it opens, the visible Skip hurries it to its end,
 and after a reload it opens as placed. The totals are unchanged.
+The next, on 29 October 2026, adds eight ordinary cases for Plan 19 L5's
+deposits and contract signature (PR #284): three in `proposal-contract.spec.ts`,
+four in `proposal-deposit.spec.ts` and one in `proposals-desk.spec.ts`, against
+route-mocked API responses with Stripe's page stubbed; this changes the
+inventory from 405 to 413 and the CPU partition from 400 to 408.
 
 The 30 September admission follows Blake's replacement of the Craft quiz with
 The Amissing Book (T-641). The old quiz's 26 threshold, questionnaire and result
