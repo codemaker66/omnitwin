@@ -435,15 +435,17 @@ export function checkRotaWorkingTime(input: RotaCheckInput): ReadonlyMap<string,
       }
     }
 
-    // The right to work, before anything is published.
+    // The right to work, before anything is published. A published shift can
+    // lose its check (the date was cleared after publishing), and it is said
+    // there too, so it is not hidden once the shift is out.
     if (person.rightToWorkCheckedOn === null) {
-      if (shift.status === "draft") {
-        add(shift.id, {
-          code: "right_to_work_missing", severity: "block",
-          message: `${name} has no right-to-work check recorded, so this shift cannot be published until one is.`,
-          short: "No right-to-work check",
-        });
-      }
+      add(shift.id, {
+        code: "right_to_work_missing", severity: "block",
+        message: shift.status === "draft"
+          ? `${name} has no right-to-work check recorded, so this shift cannot be published until one is.`
+          : `${name} has no right-to-work check recorded. This shift is already published: record the check before ${name} works it, or give it to someone else.`,
+        short: "No right-to-work check",
+      });
     } else if (person.rightToWorkExpiresOn !== null && current.date > person.rightToWorkExpiresOn) {
       add(shift.id, {
         code: "right_to_work_expired", severity: "warning",
@@ -570,10 +572,26 @@ export function checkRotaWorkingTime(input: RotaCheckInput): ReadonlyMap<string,
 /**
  * The findings that stop a shift being saved at all: an under-18 between
  * midnight and 04:00. The right-to-work block stops publishing only, so a
- * week can be planned while the check is arranged.
+ * week can be planned while the check is arranged; putting someone without
+ * one on a shift that is already published is refused separately
+ * (`rotaRightToWorkRefusal`).
  */
 export function rotaSaveBlocks(findings: readonly RotaFinding[]): readonly RotaFinding[] {
   return findings.filter((finding) => finding.code === "young_small_hours");
+}
+
+/**
+ * The refusal for putting someone with no right-to-work check on a shift that
+ * is already published: the person would be told of the shift at once, and a
+ * published shift never passes the publish block again.
+ */
+export function rotaRightToWorkRefusal(person: Pick<RotaCheckPerson, "displayName" | "rightToWorkCheckedOn">): RotaFinding | null {
+  if (person.rightToWorkCheckedOn !== null) return null;
+  return {
+    code: "right_to_work_missing", severity: "block",
+    message: `${person.displayName} has no right-to-work check recorded, so cannot be put on a published shift until one is. Nothing has changed.`,
+    short: "No right-to-work check",
+  };
 }
 
 /** The findings that stop a shift being published. */

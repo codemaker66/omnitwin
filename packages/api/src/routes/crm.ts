@@ -15,6 +15,7 @@ import {
   opportunityStatusHistory,
 } from "../db/schema.js";
 import type { Database } from "../db/client.js";
+import { outerColumn } from "../utils/outer-column.js";
 import { authenticate, isPlatformAdmin, type JwtUser } from "../middleware/auth.js";
 import { canManageCommercial } from "../utils/query.js";
 import { OPEN_PIPELINE_STAGES, PIPELINE_VALUE_CURRENCY, loadPipelineValueMinor } from "../services/commercial-pipeline.js";
@@ -311,7 +312,7 @@ export async function crmRoutes(
     const tasks = await db.select({
       ...getTableColumns(followUpTasks),
       // The deal each is for, so a follow-up can be read on its own.
-      opportunityTitle: sql<string | null>`(SELECT ${opportunities.title} FROM ${opportunities} WHERE ${opportunities.id} = ${followUpTasks.opportunityId})`,
+      opportunityTitle: sql<string | null>`(SELECT o.title FROM opportunities o WHERE o.id = ${outerColumn(followUpTasks.opportunityId)})`,
     })
       .from(followUpTasks)
       .where(taskWhere)

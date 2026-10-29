@@ -1,5 +1,7 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { resetAssemblyRecallForTests, useAssemblyRecallStore } from "../../../floor/assembly/recall.js";
+import { grandHallDinner180 } from "../../../floor/assembly/fixture.js";
 import { getCatalogueItemBySlug } from "../../../lib/catalogue.js";
 import { createPlacedItem } from "../../../lib/placement.js";
 import { useRoomDimensionsStore } from "../../../stores/room-dimensions-store.js";
@@ -19,8 +21,10 @@ import { useAutoFillRequestStore } from "../../../stores/auto-fill-request-store
 import { PlannerCommandDeck } from "../PlannerCommandDeck.js";
 import { GRAND_HALL_ARRIVAL } from "../../../lib/planner-room-arrival.js";
 import { sampleCameraTour } from "../../../lib/camera-tour.js";
+import { setPlannerFeaturesForTesting } from "../../../lib/planner-features.js";
 
 function resetPlannerStores(): void {
+  resetAssemblyRecallForTests();
   useEditorStore.getState().reset();
   useCockpitStore.getState().reset();
   useAutoFillRequestStore.setState({ requested: null });
@@ -191,6 +195,26 @@ describe("PlannerCommandDeck", () => {
     render(<PlannerCommandDeck />);
 
     expect(screen.queryByTestId("planner-command-action-auto-fill")).toBeNull();
+    expect(screen.queryByTestId("planner-command-action-lay-out")).toBeNull();
+  });
+
+  it("offers Lay out on a laid floor once Fill over the layout is on, and asks the Guests lens (Q-10)", () => {
+    setPlannerFeaturesForTesting({ fillKeepOuts: true });
+    try {
+      const table = getCatalogueItemBySlug("round-table-6ft");
+      if (table === undefined) throw new Error("no round");
+      usePlacementStore.setState({ placedItems: [createPlacedItem(table.id, 0, 0, 0, null, 0)] });
+
+      render(<PlannerCommandDeck />);
+      expect(screen.queryByTestId("planner-command-action-auto-fill")).toBeNull();
+      fireEvent.click(screen.getByTestId("planner-command-action-lay-out"));
+
+      expect(usePlacementStore.getState().placedItems).toHaveLength(1);
+      expect(useCockpitStore.getState().activeMode).toBe("guests");
+      expect(useAutoFillRequestStore.getState().requested).toBe("dinner-rounds");
+    } finally {
+      setPlannerFeaturesForTesting(null);
+    }
   });
 
   it("names its commands in the venue's words: Lay out, Draw and Present (F-15)", () => {
@@ -244,6 +268,53 @@ describe("PlannerCommandDeck", () => {
     useCockpitStore.setState({ sceneSource: { ...source, configId: "another" } });
     view.rerender(<PlannerCommandDeck />);
     expect(screen.getByTestId<HTMLButtonElement>("planner-command-action-showcase").disabled).toBe(true);
+  });
+
+  describe("over the drawn Grand Hall, where the Assembly is on its stage (no capture, so no tour)", () => {
+    beforeEach(() => {
+      useEditorStore.setState({ configId: "demo", space: {
+        id: "hall", venueId: "venue", name: "Grand Hall", slug: "grand-hall",
+        widthM: "21", lengthM: "10.5", heightM: "7", floorPlanOutline: [],
+      } });
+      act(() => { useAssemblyRecallStore.setState({ onStage: true }); });
+    });
+
+    it("replays the Grand Assembly from Present with a layout on the floor (Blake, 26 Oct 2026)", () => {
+      usePlacementStore.setState({ placedItems: grandHallDinner180().slice(0, 11) });
+      render(<PlannerCommandDeck />);
+      const present = screen.getByTestId<HTMLButtonElement>("planner-command-action-showcase");
+      expect(present.disabled).toBe(false);
+      expect(present.getAttribute("aria-label")).toBe("Present: watch the room set itself");
+      fireEvent.click(present, { detail: 1 });
+      expect(useAssemblyRecallStore.getState().request).toMatchObject({ configId: "demo", reason: "replay" });
+      expect(useBookmarkStore.getState().tour).toBeNull();
+    });
+
+    it("says why Present waits over an empty floor, in its name and its tooltip", () => {
+      render(<PlannerCommandDeck />);
+      const present = screen.getByTestId<HTMLButtonElement>("planner-command-action-showcase");
+      expect(present.disabled).toBe(true);
+      expect(present.getAttribute("aria-label")).toBe("Present plays your layout: lay out or add furniture first");
+      expect(present.getAttribute("title")).toBe("Present plays your layout: lay out or add furniture first");
+    });
+
+    it("never asks again while the show plays: a press from the keys hurries it, as the Skip does", () => {
+      usePlacementStore.setState({ placedItems: grandHallDinner180().slice(0, 11) });
+      act(() => { useAssemblyRecallStore.setState({ active: true }); });
+      render(<PlannerCommandDeck />);
+      const present = (): HTMLElement => screen.getByTestId("planner-command-action-showcase");
+      expect(present().getAttribute("aria-label")).toBe("Present is playing: press to hurry it");
+      const before = useAssemblyRecallStore.getState().skipNonce;
+      // A pointer's press was the Skip already (GrandAssembly's window listener): the click adds nothing.
+      fireEvent.click(present(), { detail: 1 });
+      expect(useAssemblyRecallStore.getState()).toMatchObject({ fast: false, skipNonce: before, request: null });
+      // Enter or Space: a click with no pointer behind it.
+      fireEvent.click(present(), { detail: 0 });
+      expect(useAssemblyRecallStore.getState().fast).toBe(true);
+      expect(present().getAttribute("aria-label")).toBe("Present is hurrying: press to go to the end");
+      fireEvent.click(present(), { detail: 0 });
+      expect(useAssemblyRecallStore.getState()).toMatchObject({ skipNonce: before + 1, request: null });
+    });
   });
 
   it("offers undo and redo in the browse state, disabled with no history", () => {

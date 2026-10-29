@@ -3,13 +3,20 @@ import { createPortal } from "react-dom";
 import { useFocusTrap } from "../lib/use-focus-trap.js";
 import { useEscapeLayer, usePlannerKeyBindings, type KeyChord } from "../lib/planner-keys.js";
 import { chairCountRange, seatCapacity, tableGroupSeatCapacity } from "../lib/table-group.js";
+import { stockIdentity } from "../lib/card-stock.js";
 import { getCatalogueItem } from "../lib/catalogue.js";
+import { prefersReducedMotion } from "../lib/reduced-motion.js";
 import type { PlacedItem } from "../lib/placement.js";
 import { useChairDialogStore } from "../stores/chair-dialog-store.js";
 import { usePlacementStore } from "../stores/placement-store.js";
 
 // ---------------------------------------------------------------------------
-// ChairCountDialog — luxury modal for seating arrangement
+// ChairCountDialog — how many seats a table takes, asked as it is placed or
+// re-seated. A layout asks it once per table, so it is quick to answer: it
+// fades in over 120 ms, starts from the count last placed at that table, and
+// takes a typed count as a draft (read on Enter or blur, never clamped per
+// keystroke). Placing closes it at once, because the room's set-down is the
+// answer; cancelling fades it out over 90 ms.
 // ---------------------------------------------------------------------------
 
 export interface ChairCountRequest {
@@ -27,6 +34,9 @@ interface ChairCountDialogProps {
   readonly onConfirm: (count: number) => void;
   readonly onCancel: () => void;
 }
+
+/** A cancelled question fades this long before it is gone; an answered one goes at once. */
+export const CHAIR_DIALOG_CANCEL_FADE_MS = 90;
 
 /** These keys with any modifier held, as the dialog has always taken them. */
 function anyModifier(codes: readonly string[]): KeyChord[] {
@@ -66,7 +76,7 @@ function useRepeatButton(
 }
 
 // Inject styles once
-const STYLE_ID = "omni-chair-dialog-v2";
+const STYLE_ID = "omni-chair-dialog-v3";
 if (typeof document !== "undefined" && document.getElementById(STYLE_ID) === null) {
   const s = document.createElement("style");
   s.id = STYLE_ID;
@@ -75,35 +85,21 @@ if (typeof document !== "undefined" && document.getElementById(STYLE_ID) === nul
     input.omni-chair-input::-webkit-inner-spin-button {
       -webkit-appearance: none; margin: 0;
     }
-    @keyframes omni-v2-overlay { 0% { opacity: 0; } 100% { opacity: 1; } }
-    @keyframes omni-v2-panel {
-      0% { opacity: 0; transform: scale(0.88) translateY(24px); filter: blur(8px); }
-      100% { opacity: 1; transform: scale(1) translateY(0); filter: blur(0); }
+    /* The house ring, drawn inside: the stepper clips anything outside the count. */
+    input.omni-chair-input:focus-visible {
+      outline: var(--vv-focus-ring);
+      outline-offset: calc(-2px - var(--vv-focus-ring-offset));
     }
-    @keyframes omni-v2-pop {
-      0% { transform: scale(1); }
-      25% { transform: scale(1.18); }
-      100% { transform: scale(1); }
+    input.omni-chair-input::selection {
+      background: color-mix(in srgb, var(--house-accent-copper) 42%, transparent);
+      color: #fff;
     }
-    @keyframes omni-v2-glow {
-      0%, 100% { box-shadow: 0 6px 32px rgba(201, 138, 91,0.25), inset 0 1px 0 rgba(255,255,255,0.15); }
-      50% { box-shadow: 0 8px 48px rgba(201, 138, 91,0.4), inset 0 1px 0 rgba(255,255,255,0.2); }
-    }
-    @keyframes omni-v2-line {
-      0% { transform: scaleX(0); opacity: 0; }
-      100% { transform: scaleX(1); opacity: 1; }
-    }
+    @keyframes omni-v3-in { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes omni-v3-out { from { opacity: 1; } to { opacity: 0; } }
     @media (prefers-reduced-motion: reduce) {
       .omni-chair-modal, .omni-chair-modal * {
         animation: none !important;
         transition: none !important;
-      }
-      @keyframes omni-v2-panel {
-        0% { opacity: 0; }
-        100% { opacity: 1; }
-      }
-      @keyframes omni-v2-pop {
-        0%, 100% { transform: scale(1); }
       }
     }
     .omni-v2-stepper-btn:hover:not(:disabled) {
@@ -140,6 +136,26 @@ const GOLD = "#c98a5b";
 const GOLD_LIGHT = "#dca475";
 const GOLD_DARK = "#7e4620";
 
+/** The count last placed at each table this visit, by its bare table (a clothed round remembers with a plain one). */
+const rememberedSeats = new Map<string, number>();
+
+/** Forgets every remembered count (tests). */
+export function forgetRememberedSeatsForTests(): void {
+  rememberedSeats.clear();
+}
+
+/** A typed count the table takes: whole digits within [min, max], else null. */
+function seatsFromDraft(draft: string, min: number, max: number): number | null {
+  const text = draft.trim();
+  if (!/^\d+$/.test(text)) return null;
+  const seats = Number(text);
+  return seats >= min && seats <= max ? seats : null;
+}
+
+function plural(count: number, one: string, many: string): string {
+  return count === 1 ? one : many;
+}
+
 /** Chairs already at a placed table: the count its stepper starts from. */
 function chairsAtTable(table: PlacedItem, placedItems: readonly PlacedItem[]): number {
   if (table.groupId === null) return 0;
@@ -153,10 +169,20 @@ export function ChairCountDialog({
   onConfirm,
   onCancel,
 }: ChairCountDialogProps): React.ReactElement | null {
+  const [draft, setDraft] = useState("10");
   const [count, setCount] = useState(10);
-  const [animKey, setAnimKey] = useState(0);
+  const [warning, setWarning] = useState(false);
+  const [leaving, setLeaving] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
-  const trapRef = useFocusTrap<HTMLDivElement>(request !== null);
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  const countRef = useRef(count);
+  countRef.current = count;
+  const leaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onCancelRef = useRef(onCancel);
+  onCancelRef.current = onCancel;
+  const asking = request !== null && !leaving;
+  const trapRef = useFocusTrap<HTMLDivElement>(asking);
 
   // The stepper runs over seat truth's range (seatsFor), held to what
   // physically fits around this specific table, so the count the planner
@@ -177,37 +203,81 @@ export function ChairCountDialog({
   const current = existingTable === undefined ? 0 : Math.min(physicalMax, chairsAtTable(existingTable, placedItems));
   const minChairs = current > 0 ? Math.min(range.min, current) : range.min;
   const maxChairs = Math.max(range.max, current);
-  const startCount = current > 0 ? current : range.initial;
+  // A new table starts from the count last placed at its kind of table, where it still fits.
+  const remembered = request === null ? undefined : rememberedSeats.get(stockIdentity(request.catalogueItemId));
+  const startCount = current > 0
+    ? current
+    : remembered === undefined ? range.initial : Math.max(minChairs, Math.min(remembered, maxChairs));
 
   useEffect(() => {
-    if (request !== null) {
-      setCount(startCount);
-      setAnimKey((k) => k + 1);
-      setTimeout(() => { inputRef.current?.select(); }, 80);
-    }
+    if (request === null) return undefined;
+    setCount(startCount);
+    setDraft(String(startCount));
+    setWarning(false);
+    // Selected, so the first key typed replaces it.
+    const timer = setTimeout(() => { inputRef.current?.select(); }, 80);
+    return () => { clearTimeout(timer); };
   }, [startCount, request]);
 
-  const decrement = useCallback(() => {
-    setCount((c) => { const n = Math.max(c - 1, minChairs); if (n !== c) setAnimKey((k) => k + 1); return n; });
-  }, [minChairs]);
-  const increment = useCallback(() => {
-    setCount((c) => { const n = Math.min(c + 1, maxChairs); if (n !== c) setAnimKey((k) => k + 1); return n; });
-  }, [maxChairs]);
+  // Unmounted mid-fade, the cancel still happens.
+  useEffect(() => () => {
+    if (leaveTimer.current === null) return;
+    clearTimeout(leaveTimer.current);
+    leaveTimer.current = null;
+    onCancelRef.current();
+  }, []);
+
+  /** Steps from what is typed (held to the range) or else from the last good count. */
+  const step = useCallback((by: number) => {
+    const typed = draftRef.current.trim();
+    const from = /^\d+$/.test(typed) ? Math.max(minChairs, Math.min(Number(typed), maxChairs)) : countRef.current;
+    const next = Math.max(minChairs, Math.min(from + by, maxChairs));
+    setCount(next);
+    setDraft(String(next));
+    setWarning(false);
+  }, [minChairs, maxChairs]);
+  const decrement = useCallback(() => { step(-1); }, [step]);
+  const increment = useCallback(() => { step(1); }, [step]);
 
   const minusRepeat = useRepeatButton(decrement);
   const plusRepeat = useRepeatButton(increment);
 
-  // The dialog holds the keyboard while it is open: Escape cancels it, and
-  // only its own keys below answer (the planner's shortcuts wait).
-  const asking = request !== null;
-  useEscapeLayer("modal", { open: asking, onEscape: onCancel });
+  const place = useCallback((seats: number) => {
+    if (request === null || leaveTimer.current !== null) return;
+    if (seats > 0) rememberedSeats.set(stockIdentity(request.catalogueItemId), seats);
+    onConfirm(seats);
+  }, [request, onConfirm]);
+
+  /** Enter or the place button: places the typed count, or says what the table takes and places nothing. */
+  const commit = useCallback(() => {
+    const seats = seatsFromDraft(draftRef.current, minChairs, maxChairs);
+    if (seats !== null) { place(seats); return; }
+    setWarning(true);
+    inputRef.current?.focus();
+    inputRef.current?.select();
+  }, [minChairs, maxChairs, place]);
+
+  const cancel = useCallback(() => {
+    if (leaveTimer.current !== null) return;
+    if (prefersReducedMotion()) { onCancelRef.current(); return; }
+    setLeaving(true);
+    leaveTimer.current = setTimeout(() => {
+      leaveTimer.current = null;
+      setLeaving(false);
+      onCancelRef.current();
+    }, CHAIR_DIALOG_CANCEL_FADE_MS);
+  }, []);
+
+  // The dialog holds the keyboard while it is open, its fade included: Escape
+  // cancels it, and only its own keys below answer (the planner's shortcuts wait).
+  useEscapeLayer("modal", { open: request !== null, onEscape: cancel });
   usePlannerKeyBindings([
-    // Enter places the chairs, from the count too. Enter on a focused button
+    // Enter places the seats, from the count too. Enter on a focused button
     // presses that button (Cancel, Table only or a stepper): the keyboard
     // owner leaves it to the button.
     {
       keys: anyModifier(["Enter", "NumpadEnter"]),
-      run: () => { onConfirm(count); },
+      run: commit,
       when: () => asking,
       inFields: true,
       duringModal: true,
@@ -216,14 +286,14 @@ export function ChairCountDialog({
     // field's own, which steps it natively.
     {
       keys: anyModifier(["ArrowUp", "ArrowRight"]),
-      run: () => { setCount((c) => Math.min(c + 1, maxChairs)); setAnimKey((k) => k + 1); },
+      run: increment,
       when: () => asking,
       repeat: true,
       duringModal: true,
     },
     {
       keys: anyModifier(["ArrowDown", "ArrowLeft"]),
-      run: () => { setCount((c) => Math.max(c - 1, minChairs)); setAnimKey((k) => k + 1); },
+      run: decrement,
       when: () => asking,
       repeat: true,
       duringModal: true,
@@ -232,23 +302,39 @@ export function ChairCountDialog({
 
   if (request === null) return null;
 
-  const shapeLabel = request.tableShape === "round" ? "Round Table" : "Rectangular Table";
+  const round = request.tableShape === "round";
+  const shapeLabel = round ? "Round Table" : "Rectangular Table";
+  const editing = existingTable !== undefined;
+  // The place button names the whole number in the field, one the table cannot take included, so the press that
+  // refuses it reads as the check it is rather than a promise broken; with no number typed it names the last count.
+  const typedSeats = /^\d+$/.test(draft.trim()) ? Number(draft.trim()) : null;
+  const shown = seatsFromDraft(draft, minChairs, maxChairs) ?? (typedSeats !== null && typedSeats > 0 ? typedSeats : count);
+  const placeLabel = editing
+    ? (shown === 0 ? "No seats" : `Set ${String(shown)} ${plural(shown, "seat", "seats")}`)
+    : (shown === 0 ? "Place the table only" : `Place with ${String(shown)} ${plural(shown, "seat", "seats")}`);
+  const rangeHint = maxChairs > 0 ? `${String(minChairs)} – ${String(maxChairs)} seats` : "No seats fit at this scale";
+  const takes = minChairs === maxChairs ? String(minChairs) : `${String(minChairs)} to ${String(maxChairs)}`;
+  const rangeWarning = maxChairs === 0 ? "No seats fit at this scale" : `${round ? "Rounds take" : "This table takes"} ${takes}`;
 
   // Escape the transformed planner stage so scene controls cannot cover the modal.
   return createPortal(
     <div
       data-testid="chair-count-dialog"
+      data-leaving={leaving ? "true" : undefined}
       className="omni-chair-modal"
       style={{
         position: "fixed", inset: 0,
         display: "flex", alignItems: "center", justifyContent: "center",
-        zIndex: 1000, pointerEvents: "auto", padding: 16, boxSizing: "border-box",
+        zIndex: 1000, pointerEvents: leaving ? "none" : "auto", padding: 16, boxSizing: "border-box",
         background: "rgba(0, 0, 0, 0.55)",
-        animation: "omni-v2-overlay 0.4s ease-out",
+        animation: leaving
+          ? `omni-v3-out ${String(CHAIR_DIALOG_CANCEL_FADE_MS)}ms ease-in forwards`
+          : "omni-v3-in 120ms ease-out",
       }}
-      onClick={onCancel}
+      onClick={cancel}
       role="dialog"
       aria-modal="true"
+      aria-hidden={leaving ? true : undefined}
       aria-labelledby="chair-dialog-title"
     >
       {/* Panel */}
@@ -266,16 +352,14 @@ export function ChairCountDialog({
           width: "min(508px, 100%)", minWidth: 0, boxSizing: "border-box",
           maxHeight: "100%", overflowY: "auto",
           border: "1px solid rgba(201, 138, 91, 0.15)",
-          animation: "omni-v2-panel 0.3s cubic-bezier(0.16, 1, 0.3, 1)",
         }}
         onClick={(e) => { e.stopPropagation(); }}
       >
-        {/* Gold accent line — animated width */}
+        {/* Gold accent line */}
         <div style={{
           height: 2, borderRadius: 1,
           background: `linear-gradient(90deg, transparent, ${GOLD}, transparent)`,
           marginBottom: -20,
-          animation: "omni-v2-line 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards",
           width: 64,
         }} />
 
@@ -292,7 +376,7 @@ export function ChairCountDialog({
             color: "#f5f5f5",
             fontFamily: "'Playfair Display', serif",
           }}>
-            Seating Arrangement
+            {round ? "Seats at this round" : "Seats at this table"}
           </div>
         </div>
 
@@ -312,46 +396,52 @@ export function ChairCountDialog({
               width: 72, height: 76, border: "none",
               borderRight: "1px solid rgba(201, 138, 91, 0.12)",
               background: "transparent",
-              color: count <= minChairs ? "#333" : GOLD_LIGHT,
-              fontSize: 28, fontWeight: 400, cursor: count <= minChairs ? "default" : "pointer",
+              color: shown <= minChairs ? "var(--house-text-3)" : GOLD_LIGHT,
+              fontSize: 28, fontWeight: 400, cursor: shown <= minChairs ? "default" : "pointer",
               display: "flex", alignItems: "center", justifyContent: "center",
               userSelect: "none",
               transition: "background 0.2s cubic-bezier(0.16, 1, 0.3, 1), color 0.2s cubic-bezier(0.16, 1, 0.3, 1), transform 0.2s cubic-bezier(0.16, 1, 0.3, 1)",
             }}
-            onClick={(e) => { e.preventDefault(); }}
+            // A pointer steps on press (and repeats while held); Enter or Space steps on the click they make.
+            onClick={(e) => { if (e.detail === 0) decrement(); }}
             onPointerDown={minusRepeat.onPointerDown}
             onPointerUp={minusRepeat.onPointerUp}
             onPointerLeave={minusRepeat.onPointerLeave}
-            disabled={count <= minChairs}
-            aria-label="Decrease chair count"
+            disabled={shown <= minChairs}
+            aria-label="Fewer seats"
           >
             −
           </button>
 
-          {/* Count display */}
+          {/* Count */}
           <div style={{ position: "relative" }}>
             <input
-              key={animKey}
               ref={inputRef}
               className="omni-chair-input"
               type="number"
+              inputMode="numeric"
               min={minChairs}
               max={maxChairs}
-              value={count}
-              aria-label="Chair count"
+              value={draft}
+              aria-label="Seats"
+              aria-invalid={warning ? true : undefined}
               onChange={(e) => {
-                const raw = e.target.value;
-                if (raw === "") { setCount(minChairs); return; }
-                const parsed = parseInt(raw, 10);
-                if (!Number.isNaN(parsed)) setCount(Math.max(minChairs, Math.min(parsed, maxChairs)));
+                // No table seats a thousand: three characters keep the field and the button that names it readable.
+                const text = e.target.value.slice(0, 3);
+                setDraft(text);
+                const seats = seatsFromDraft(text, minChairs, maxChairs);
+                if (seats !== null) { setCount(seats); setWarning(false); }
               }}
-              onBlur={() => { setCount((c) => Math.max(minChairs, Math.min(c, maxChairs))); }}
+              onBlur={() => {
+                // Left empty, it shows the count it had; left out of range, it says so and keeps what was typed.
+                if (draftRef.current.trim() === "") { setDraft(String(countRef.current)); return; }
+                if (seatsFromDraft(draftRef.current, minChairs, maxChairs) === null) setWarning(true);
+              }}
               style={{
                 width: 110, height: 76, border: "none",
                 background: "rgba(255,255,255,0.02)",
                 color: "#fff", fontSize: 40, fontWeight: 700,
                 textAlign: "center", fontVariantNumeric: "tabular-nums",
-                outline: "none",
                 appearance: "textfield", MozAppearance: "textfield", WebkitAppearance: "none",
                 padding: 0, fontFamily: "'Inter', system-ui, sans-serif",
               }}
@@ -366,30 +456,39 @@ export function ChairCountDialog({
               width: 72, height: 76, border: "none",
               borderLeft: "1px solid rgba(201, 138, 91, 0.12)",
               background: "transparent",
-              color: count >= maxChairs ? "#333" : GOLD_LIGHT,
-              fontSize: 28, fontWeight: 400, cursor: count >= maxChairs ? "default" : "pointer",
+              color: shown >= maxChairs ? "var(--house-text-3)" : GOLD_LIGHT,
+              fontSize: 28, fontWeight: 400, cursor: shown >= maxChairs ? "default" : "pointer",
               display: "flex", alignItems: "center", justifyContent: "center",
               userSelect: "none",
               transition: "background 0.2s cubic-bezier(0.16, 1, 0.3, 1), color 0.2s cubic-bezier(0.16, 1, 0.3, 1), transform 0.2s cubic-bezier(0.16, 1, 0.3, 1)",
             }}
-            onClick={(e) => { e.preventDefault(); }}
+            onClick={(e) => { if (e.detail === 0) increment(); }}
             onPointerDown={plusRepeat.onPointerDown}
             onPointerUp={plusRepeat.onPointerUp}
             onPointerLeave={plusRepeat.onPointerLeave}
-            disabled={count >= maxChairs}
-            aria-label="Increase chair count"
+            disabled={shown >= maxChairs}
+            aria-label="More seats"
           >
             +
           </button>
         </div>
 
-        {/* Range hint */}
-        <div style={{
-          fontSize: 13, color: "#555", marginTop: -20,
-          letterSpacing: 0.8, fontWeight: 400,
-        }}>
-          {maxChairs > 0 ? `${String(minChairs)} – ${String(maxChairs)} chairs` : "No chairs fit at this scale"}
-        </div>
+        {/* What the table takes: a quiet hint, or why a typed count cannot be placed */}
+        {warning ? (
+          <div role="alert" style={{
+            fontSize: 13, color: "var(--house-accent-copper-bright)", marginTop: -20,
+            letterSpacing: 0.8, fontWeight: 500,
+          }}>
+            {rangeWarning}
+          </div>
+        ) : (
+          <div style={{
+            fontSize: 13, color: "var(--house-text-2)", marginTop: -20,
+            letterSpacing: 0.8, fontWeight: 400,
+          }}>
+            {rangeHint}
+          </div>
+        )}
 
         {/* Primary CTA */}
         <button
@@ -405,9 +504,9 @@ export function ChairCountDialog({
             transition: "transform 160ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s cubic-bezier(0.16, 1, 0.3, 1)",
             boxShadow: "0 6px 32px rgba(201, 138, 91,0.3), inset 0 1px 0 rgba(255,255,255,0.15)",
           }}
-          onClick={() => { onConfirm(count); }}
+          onClick={commit}
         >
-          {count === 0 ? "Place Table Only" : `Place ${String(count)} ${count === 1 ? "Chair" : "Chairs"}`}
+          {placeLabel}
         </button>
 
         {/* Secondary row */}
@@ -422,9 +521,9 @@ export function ChairCountDialog({
               fontSize: 14, fontWeight: 500, cursor: "pointer",
               letterSpacing: 0.3, transition: "background 0.25s ease, border-color 0.25s ease, color 0.25s ease",
             }}
-            onClick={() => { onConfirm(0); }}
+            onClick={() => { place(0); }}
           >
-            Table Only
+            Table only
           </button>
           <button
             type="button"
@@ -437,7 +536,7 @@ export function ChairCountDialog({
               fontSize: 14, fontWeight: 500, cursor: "pointer",
               letterSpacing: 0.3, transition: "color 0.25s ease, border-color 0.25s ease",
             }}
-            onClick={onCancel}
+            onClick={cancel}
           >
             Cancel
           </button>

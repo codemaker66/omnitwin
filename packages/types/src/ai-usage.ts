@@ -27,6 +27,11 @@ export const AI_USAGE_OUTCOMES = ["ok", "refusal", "max_tokens", "error", "budge
 export const AIUsageOutcomeSchema = z.enum(AI_USAGE_OUTCOMES);
 export type AIUsageOutcome = z.infer<typeof AIUsageOutcomeSchema>;
 
+/** Who reads what the venue's AI use has cost (T-656): money, so its admins and
+ *  managers, at their own venue. The API's canReadAIUsage and the settings
+ *  screen read this one list. */
+export const AI_USAGE_READ_ROLES = ["admin", "manager"] as const;
+
 /** The code an AI request is answered with once the venue's allowance for the month is used. */
 export const AI_BUDGET_REACHED = "AI_BUDGET_REACHED";
 

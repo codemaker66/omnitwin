@@ -7,16 +7,21 @@ once it has landed, the candles light table by table, and the camera cranes
 gently down to a framing of the whole set room. Blake chose Accio (pure, no
 gold plan) from three studies on 24 October 2026.
 
-## Behind a flag
+## When it plays
 
-Off unless a device asks for it (`flag.ts`, the `hall-sky-access` pattern):
+On for everyone (Blake, 26 October 2026): "Plays the first time a layout
+opens with a visible skip which speeds it up. There is a present button which
+plays it also if we want to see it again." (`flag.ts`, remembered per device in
+`localStorage` `venviewer.assembly`):
 
-- `?assembly=accio` turns it on and remembers it on this device
-  (`localStorage` `venviewer.assembly`); `?assembly=off` turns it off.
-- With the flag off nothing changes: PlannerScene mounts no Assembly, the
-  arrival is unchanged, and only a few small modules load.
-- With the flag on, a saved layout's arrival in the Grand Hall is the
-  Assembly in the drawn hall (not a walk in the capture).
+- **By default** a saved layout plays the first time it opens on a device. A
+  layout this device has watched assemble, or furnished and saved itself, opens
+  as placed (`recall.ts`, `venviewer.assembly.seen`, the latest 200 layouts).
+- `?assembly=accio` plays it on every open here (demos and walks);
+  `?assembly=off` turns it off here; `?assembly=on` returns to the default.
+- Where it plays, a saved layout's arrival in the Grand Hall is the Assembly in
+  the drawn hall, not a walk in the capture. A new or already-seen layout
+  keeps the capture walk.
 
 ## How it works
 
@@ -34,9 +39,11 @@ Off unless a device asks for it (`flag.ts`, the `hall-sky-access` pattern):
   Publishing `null` redraws store truth byte for byte.
 - `recall.ts`: when a saved layout finishes loading (or is already open when
   the planner mounts), it holds the room empty at once, so nothing is seen
-  before it is summoned. The hold lapses after 8 s if no Assembly takes it
-  over, and is let go at once in a room known not to be the drawn hall.
-- `GrandAssembly.tsx` (lazy, flag only), the director:
+  before it is summoned. While the room is still unknown, or the hall is drawn
+  but the Assembly's code is still arriving, the hold waits (45 s at most);
+  then the Assembly has 8 s to take it over. It is let go at once in a room
+  known not to be the drawn hall.
+- `GrandAssembly.tsx` (lazy, fetched where it may play), the director:
   - **Hold:** keeps the room empty at the opening view while the hall's
     surfaces arrive.
   - **Play:** each frame it publishes the show, moves the groups, raises the
@@ -71,19 +78,44 @@ Off unless a device asks for it (`flag.ts`, the `hall-sky-access` pattern):
 
 ## Skip, cancel, reduced motion
 
-- **Skip:** Escape (an `operation` layer in the planner's Escape order), a
-  click or a tap snaps every piece to its saved transform, with the camera at
-  the final framing. A press on the room is swallowed so it doesn't also
-  select.
+- **Skip:** the visible Skip, a click or a tap plays the show on at four times
+  its speed; a second press goes straight to the end. Escape (an `operation`
+  layer in the planner's Escape order) goes straight to the end at once:
+  every piece snaps to its saved transform, with the camera at the final
+  framing. A press on the room is swallowed so it doesn't also select.
+- **Presses as it ends:** the Skip answers its own presses, by pointer or by
+  key, in the held ending too, and hurrying a show that has already played to
+  its end brings the planner back at once; a press on the room then does the
+  same. Once the room is given back the Skip stays for 600 ms
+  (`REPLAY_SETTLE_MS`), fading out, and lets presses go: a hurried show can
+  end under a press already on its way to the Skip, which would otherwise land
+  on the room and select or deselect. Then it is gone, and focus that was on
+  it goes back where it came from.
+- **Clock:** the show advances by each frame's time, at most 0.25 s a frame,
+  so a slow renderer still plays it in about its own time.
 - **Cancel:** any real change to the layout (`sameLayout`), another layout
   opening, walking, the timeline preview or leaving the planner returns the
   true state at once and leaves the camera where it is.
 - **Reduced motion:** the layout is simply there.
 
-## Replay
+## Replay: Present
 
-`AssemblyReplay.tsx`: "Replay the assembly", bottom left over the hall,
-shown only with the flag on. It steps aside while the Assembly plays.
+Present replays the Assembly (Blake: "There is a present button which plays
+it also if we want to see it again"; `components/editor/planner-present.ts`):
+the command deck's Present on a desktop, the last row of the Grand Hall's
+View sheet on a phone or tablet. It asks through `requestAssemblyReplay()`,
+which refuses unless the Assembly is on its stage (`onStage`, set while
+`GrandAssembly` is mounted), at rest, over a furnished floor: a request with
+nothing to take it up, or over an empty floor, would hold the room for a show
+that never comes. It refuses, too, within `REPLAY_SETTLE_MS` of the room
+being given back: a press on Present in the show's held ending brings the
+planner back on its way down, and its click must not start the show again. Elsewhere, such as a device-day cut drawn in Capture,
+Present plays the room's showcase tour where one exists; otherwise, and under
+reduced motion, it says why it can't. While the show plays, Present's press
+from the keys hurries it as the Skip does.
+
+`AssemblyReplay.tsx`, bottom left over the hall (above the dock on a phone),
+is the Skip only: "Skip", then "Skip to the end", gone at rest.
 
 ## Proof
 
@@ -99,11 +131,26 @@ shown only with the flag on. It steps aside while the Assembly plays.
   - nothing across the lens or set down across its table;
   - the final framing inside the orbit's limits with no chandelier mid-frame;
   - skip, cancel and reduced motion;
-  - the flag;
-  - recall, including a layout open before the planner's code loaded;
+  - the flag's three modes, and the Skip's states: playing, hurried, fading
+    as the room is given back, then gone;
+  - the Skip through the director, stepped frame by frame
+    (`GrandAssembly.test.tsx`): four times the pace, the second press on the
+    final framing, a press as the show comes to rest by pointer or by key, a
+    late press swallowed and the Skip then gone, the Assembly on its stage
+    only while mounted, and presses on the room;
+  - Present (`components/editor/__tests__/planner-present.test.ts`, the deck's
+    and the View sheet's tests): the Assembly over a furnished drawn hall, the
+    tour elsewhere, the reasons, reduced motion, a stale press, and the keys
+    hurrying a show under way;
+  - recall, including a layout open before the planner's code loaded, the
+    first-open rule and the seen list;
   - the channel's byte-exact restore through the real instanced layer and shadows.
 - **e2e:** `e2e/grand-assembly.spec.ts` on the real `/plan` route: it plays,
-  rests, hands the camera back and writes nothing; Escape; flag off.
+  rests, hands the camera back and writes nothing; Escape; with no flag it
+  plays the first time, the Skip hurries it to its end (every state the
+  control shows is recorded and read afterwards, so a slow renderer's timing
+  cannot decide it) and is then gone, it opens as placed with nothing played,
+  and Present replays it.
 - **Capture (development only):** `capture-bridge.ts` installs
   `window.__assembly` on the planner lab, driven by
   `scripts/assembly-capture.mjs` (clip, look, measure) with the frame loop

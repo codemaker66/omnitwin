@@ -18,16 +18,15 @@ import {
   useVisibilityStore,
   getSurfaceOpacity,
   WALL_BUILD_THRESHOLD,
-  WALL_CLICK_ANIMATION_DURATION_SECONDS,
   type WallKey,
 } from "../stores/visibility-store.js";
+import { stepWallClickTimeline, wallClickBrickMotion, wallClickSeconds } from "../lib/surface-visibility-group.js";
 import { useXrayStore } from "../stores/xray-store.js";
 import { applyXrayOpacity } from "../lib/xray.js";
 import {
   BLOCK_DEPTH,
   BLOCK_HEIGHT,
   BLOCK_WIDTH,
-  SCATTER_DISTANCE,
   computeBrickLayout,
   computeBrickProgress,
   easeHeavyLanding,
@@ -179,16 +178,10 @@ export function BrickWall({
       needsMatrixUpdate.current = true;
     }
 
-    // Advance animation toward target (only moves when locked / click-driven)
-    const speed = 1 / WALL_CLICK_ANIMATION_DURATION_SECONDS;
-    const clampedDelta = Math.min(delta, 0.1);
-    const step = speed * clampedDelta;
-
-    const prev = animProgress.current;
-    if (animTarget.current > prev) {
-      animProgress.current = Math.min(animTarget.current, prev + step);
-    } else if (animTarget.current < prev) {
-      animProgress.current = Math.max(animTarget.current, prev - step);
+    // Advance animation toward target (only moves when locked / click-driven);
+    // the clock (5 s, or 450 ms with wallsQuick) is read only while it runs.
+    if (animProgress.current !== animTarget.current) {
+      animProgress.current = stepWallClickTimeline(animProgress.current, animTarget.current, delta, wallClickSeconds());
     }
 
     // Unlock wall once rebuild animation completes so camera auto resumes
@@ -226,14 +219,15 @@ export function BrickWall({
     // Fade material for bricks at the transition edge.
     material.opacity = Math.min(1, progress * 3);
 
+    const motion = wallClickBrickMotion();
     for (let i = 0; i < bricks.length; i++) {
       const brick = bricks[i];
       if (brick === undefined) continue;
-      const localProgress = easeHeavyLanding(computeBrickProgress(progress, brick.stagger));
+      const localProgress = easeHeavyLanding(computeBrickProgress(progress, brick.stagger, motion.staggerSpan));
 
       // scatter: 1 = fully away, 0 = at rest, slightly negative = bounce overshoot
       const scatter = 1 - localProgress;
-      const scatterDist = scatter * SCATTER_DISTANCE;
+      const scatterDist = scatter * motion.scatterDistance;
 
       _pos.set(
         brick.restX + brick.scatterDirX * scatterDist,

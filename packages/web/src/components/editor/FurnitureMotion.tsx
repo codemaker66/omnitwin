@@ -3,6 +3,7 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { Matrix4, type Object3D } from "three";
 import {
   DROP_HEIGHT,
+  beginFurnitureSettle,
   clearAllFurnitureSettles,
   composeFurnitureMotion,
   dropInFurniture,
@@ -16,6 +17,7 @@ import {
 } from "../../lib/furniture-motion.js";
 import { getCatalogueItem } from "../../lib/catalogue.js";
 import { subscribeFurniturePlaced, usePlacementStore } from "../../stores/placement-store.js";
+import { subscribeDoorSlides } from "../../stores/door-clear-space-store.js";
 import { prefersReducedMotion } from "../../lib/reduced-motion.js";
 
 const motion = new Matrix4();
@@ -90,6 +92,14 @@ export function FurnitureMotion(): null {
     });
     const delays = landingDelays(pieces);
     for (const id of ids) dropInFurniture(id, DROP_HEIGHT, delays.get(id) ?? 0);
+    invalidate();
+  }), [invalidate]);
+
+  // Pieces moved clear of a door are drawn from where they were set down and
+  // slide on the grid settle's spring to where they now stand.
+  useEffect(() => subscribeDoorSlides(({ ids, dx, dz }) => {
+    if (prefersReducedMotion()) return;
+    for (const id of ids) beginFurnitureSettle(id, -dx, -dz);
     invalidate();
   }), [invalidate]);
 

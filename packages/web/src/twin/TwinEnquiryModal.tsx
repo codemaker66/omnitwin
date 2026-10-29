@@ -7,7 +7,7 @@ import {
   type KeyboardEvent,
   type ReactElement,
 } from "react";
-import { TRADES_HALL_ENQUIRY_VENUE_SLUG } from "@omnitwin/types";
+import { TRADES_HALL_ENQUIRY_VENUE_SLUG } from "@omnitwin/types/enquiry";
 import { ActivityIndicator } from "../components/shared/Activity.js";
 import { submitGuestEnquiry } from "../api/configurations.js";
 import { useFocusTrap } from "../lib/use-focus-trap.js";
