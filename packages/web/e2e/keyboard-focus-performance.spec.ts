@@ -1522,7 +1522,7 @@ test("onboarding admin action forms keep focus visible across seeded operator co
   await recordKeyboardBudget(page, problems, "onboarding-operator-form-keyboard-traversal", "desktop", async () => {
     await pressTabsAcrossPage(page, "onboarding operator", 12);
     await page.getByLabel("Current step for Trades Hall deployment").fill("Coordinate production readiness review.");
-    await page.getByLabel("Save project gate for Trades Hall deployment").click();
+    await page.getByLabel("Save setup review for Trades Hall deployment").click();
     await expect(page.getByText("Setup review saved.", { exact: true })).toBeVisible();
   });
 });

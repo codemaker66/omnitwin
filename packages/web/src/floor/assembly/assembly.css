@@ -1,6 +1,8 @@
-/* The Grand Assembly's replay control (AssemblyReplay.tsx): a quiet pill over
-   the drawn hall, clear of the planner's toolbox, that steps aside while the
-   Assembly plays. House BOH tokens; presses press down, nothing swells. */
+/* The Grand Assembly's control (AssemblyReplay.tsx): a quiet pill over the
+   drawn hall, clear of the planner's toolbox. While the Assembly plays it is
+   the Skip; as the show ends it fades out, still taking presses, and at rest
+   it is gone (Present replays the show). House BOH tokens; presses press down,
+   nothing swells. */
 
 .planner-scene-canvas-host:has(> .assembly-replay) {
   position: relative;
@@ -45,13 +47,23 @@
   outline-offset: 3px;
 }
 
-.assembly-replay[data-playing="true"] {
+/* Sped up: the copper edge says the show is hurrying to its end. */
+.assembly-replay[data-fast="true"] {
+  border-color: rgba(220, 164, 117, 0.6);
+}
+
+/* The show is over: the Skip fades out across REPLAY_SETTLE_MS (AssemblyReplay.tsx), quick at first so the room
+   reads as given back, and keeps taking presses as it goes, so one already on its way lands here and not on the
+   room. */
+.assembly-replay[data-settling="true"] {
   opacity: 0;
-  pointer-events: none;
+  cursor: default;
+  transition: opacity 600ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .assembly-replay {
+  .assembly-replay,
+  .assembly-replay[data-settling="true"] {
     transition: none;
   }
 }

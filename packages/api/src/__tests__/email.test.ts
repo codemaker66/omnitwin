@@ -1,6 +1,9 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import Fastify from "fastify";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { apiLoggerOptions } from "../observability/health-redaction.js";
+import type { EmailLogger } from "../services/email.js";
 import {
   newEnquiryNotification,
   enquiryApproved,
@@ -587,7 +590,7 @@ describe("sendEmail — structured logging shape", () => {
     __resetResendClientForTests();
   });
 
-  it("every log record includes event, idempotencyKey, and recipient", async () => {
+  it("every log record includes event and idempotencyKey, never the recipient", async () => {
     resendSendMock.mockResolvedValueOnce({ data: { id: "msg-1" }, error: null });
     const db = makeFakeDb();
     const logger = makeCaptureLogger();
@@ -601,7 +604,8 @@ describe("sendEmail — structured logging shape", () => {
     for (const entry of logger.logs) {
       expect(entry.obj).toHaveProperty("event");
       expect(entry.obj).toHaveProperty("idempotencyKey", "k-log-shape");
-      expect(entry.obj).toHaveProperty("recipient", "carol@example.com");
+      expect(entry.obj).not.toHaveProperty("recipient");
+      expect(JSON.stringify(entry)).not.toContain("carol@example.com");
     }
   });
 
@@ -615,5 +619,126 @@ describe("sendEmail — structured logging shape", () => {
     expect(sent).toBeDefined();
     expect(sent?.level).toBe("info");
     expect(sent?.obj["providerMessageId"]).toBe("msg-xyz");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The recipient's address never reaches the API's logs. Every path through
+// sendEmail runs against the API's own production logger configuration
+// (serializers and hooks), writing to a captured stream; the finished lines
+// must not hold the address, its local part or its domain. The address is the
+// audit row's (`email_sends.recipient`), keyed by the idempotencyKey a log
+// line does carry.
+// ---------------------------------------------------------------------------
+
+describe("sendEmail — the recipient's address stays out of the API log", () => {
+  const ADDRESS = "carol.hartley@hartley-family.example";
+  const payload = { to: ADDRESS, subject: "Your enquiry", html: "<p>Hello</p>" };
+  const noWait = (): Promise<void> => Promise.resolve();
+
+  function apiLogger(): { lines: string[]; log: EmailLogger; close: () => Promise<void> } {
+    const options = apiLoggerOptions("production");
+    if (options === false) throw new Error("production logs");
+    const lines: string[] = [];
+    const server = Fastify({ logger: { ...options, stream: { write: (line: string) => { lines.push(line); } } } });
+    return { lines, log: server.log, close: () => server.close() };
+  }
+
+  function expectNoAddress(lines: readonly string[]): void {
+    const text = lines.join("");
+    expect(text).not.toContain(ADDRESS);
+    expect(text).not.toContain("carol.hartley");
+    expect(text).not.toContain("hartley-family");
+    for (const line of lines) expect(JSON.parse(line)).not.toHaveProperty("recipient");
+  }
+
+  function eventsOf(lines: readonly string[]): string[] {
+    return lines.map((line) => String((JSON.parse(line) as { event?: unknown }).event));
+  }
+
+  beforeEach(() => {
+    resendSendMock.mockReset();
+    delete process.env["EMAIL_FROM"];
+    __resetResendClientForTests();
+  });
+
+  afterEach(() => {
+    delete process.env["RESEND_API_KEY"];
+    __resetResendClientForTests();
+  });
+
+  it("with no provider configured (dev mode)", async () => {
+    delete process.env["RESEND_API_KEY"];
+    const logger = apiLogger();
+    expect(await sendEmail(payload, { db: makeFakeDb() as never, idempotencyKey: "enquiry-acknowledged:e1", logger: logger.log })).toBe(true);
+    await logger.close();
+
+    expect(eventsOf(logger.lines)).toEqual(["email.dev_mode_skip"]);
+    expectNoAddress(logger.lines);
+  });
+
+  it("on a send, from the platform's default sender, and on its replay", async () => {
+    process.env["RESEND_API_KEY"] = "re_test_key";
+    resendSendMock.mockResolvedValueOnce({ data: { id: "msg-1" }, error: null });
+    const db = makeFakeDb();
+    const logger = apiLogger();
+    const options = { db: db as never, idempotencyKey: "enquiry-acknowledged:e2", logger: logger.log };
+    expect(await sendEmail(payload, options)).toBe(true);
+    expect(await sendEmail(payload, options)).toBe(true);
+    await logger.close();
+
+    expect(eventsOf(logger.lines)).toEqual(["email.default_sender", "email.sent", "email.dedup_skip"]);
+    expectNoAddress(logger.lines);
+    // The audit row still says who it went to.
+    expect(db.rows[0]?.recipient).toBe(ADDRESS);
+  });
+
+  it("when the provider refuses the address and quotes it, and on the replay that follows", async () => {
+    process.env["RESEND_API_KEY"] = "re_test_key";
+    resendSendMock
+      .mockResolvedValueOnce({ error: { statusCode: 422, message: `Invalid \`to\` field: ${ADDRESS} is not deliverable` } })
+      .mockResolvedValueOnce({ data: { id: "msg-2" }, error: null });
+    const db = makeFakeDb();
+    const logger = apiLogger();
+    const options = { db: db as never, idempotencyKey: "hold-reminder:b1:2026-10-03:t-3", logger: logger.log, sleep: noWait };
+    expect(await sendEmail(payload, options)).toBe(false);
+    expect(await sendEmail(payload, options)).toBe(true);
+    await logger.close();
+
+    expect(eventsOf(logger.lines)).toEqual([
+      "email.default_sender", "email.send_attempt_failed", "email.send_failed",
+      "email.retry_after_failure", "email.default_sender", "email.sent",
+    ]);
+    expectNoAddress(logger.lines);
+    expect(logger.lines.join("")).toContain("[email address] is not deliverable");
+  });
+
+  it("when the network fails on every attempt with the address in the error", async () => {
+    process.env["RESEND_API_KEY"] = "re_test_key";
+    process.env["EMAIL_FROM"] = "Trades Hall Glasgow <events@venue.example>";
+    resendSendMock.mockRejectedValue(new Error(`socket hang up while sending to ${ADDRESS}`));
+    const logger = apiLogger();
+    expect(await sendEmail(payload, { db: makeFakeDb() as never, idempotencyKey: "venue-team-invitation:i1", logger: logger.log, sleep: noWait })).toBe(false);
+    await logger.close();
+
+    expect(eventsOf(logger.lines)).toEqual([...Array<string>(5).fill("email.send_exception"), "email.send_failed"]);
+    expectNoAddress(logger.lines);
+  });
+
+  it("when the audit row cannot be written and the database quotes its parameters", async () => {
+    process.env["RESEND_API_KEY"] = "re_test_key";
+    const failingDb = {
+      insert: () => ({
+        values: () => Promise.reject(new Error(
+          `Failed query: insert into "email_sends" ("idempotency_key", "recipient") values ($1, $2)\nparams: k,${ADDRESS}`,
+        )),
+      }),
+    };
+    const logger = apiLogger();
+    expect(await sendEmail(payload, { db: failingDb as never, idempotencyKey: "request-escalation:r1:a1", logger: logger.log })).toBe(false);
+    await logger.close();
+
+    expect(eventsOf(logger.lines)).toEqual(["email.audit_insert_failed"]);
+    expectNoAddress(logger.lines);
   });
 });

@@ -183,6 +183,13 @@ async function expectNoHorizontalOverflow(page: Page): Promise<void> {
   expect(hasOverflow).toBe(false);
 }
 
+// These cases open a furnished Grand Hall layout to test the shell at rest. The Grand Assembly plays a layout the
+// first time it opens on a device, with the chrome stepped back (grand-assembly.spec.ts); it is turned off on this
+// one (flag.ts).
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => { window.localStorage.setItem("venviewer.assembly", "off"); });
+});
+
 test.describe("3D planner mobile shell", () => {
   for (const viewport of PHONE_VIEWPORTS) {
     test(`${viewport.name} uses touch-native chrome without clipped controls`, async ({ page }, testInfo) => {
@@ -413,8 +420,8 @@ test.describe("Small phone canvas placement", () => {
     await testInfo.attach("small-phone-before-touch", { body: await page.screenshot(), contentType: "image/png" });
     await page.touchscreen.tap(point.x, point.y);
     const chairs = page.getByRole("dialog");
-    await expect(chairs.getByRole("button", { name: "Table Only", exact: true })).toBeVisible();
-    await chairs.getByRole("button", { name: "Table Only", exact: true }).tap();
+    await expect(chairs.getByRole("button", { name: "Table only", exact: true })).toBeVisible();
+    await chairs.getByRole("button", { name: "Table only", exact: true }).tap();
     await expect(chairs).toBeHidden();
     await page.getByRole("button", { name: "Send to Events Team" }).tap();
     await expect.poll(() => savedObjects.length).toBe(2);

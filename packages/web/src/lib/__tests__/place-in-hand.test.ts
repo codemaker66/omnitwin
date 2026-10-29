@@ -10,6 +10,8 @@ import { seatsInHand } from "../setup-cards.js";
 import { useCatalogueStore } from "../../stores/catalogue-store.js";
 import { useChairDialogStore } from "../../stores/chair-dialog-store.js";
 import { usePlacementStore } from "../../stores/placement-store.js";
+import { usePlacementNoticeStore } from "../../stores/placement-notice-store.js";
+import { createTableGroup } from "../table-group.js";
 
 const round = getCatalogueItemBySlug("round-table-6ft");
 const chair = getCatalogueItemBySlug("banquet-chair");
@@ -61,6 +63,78 @@ describe("placePieceInHand", () => {
     placePieceInHand(vi.fn());
     expect(usePlacementStore.getState().placedItems).toHaveLength(0);
     expect(useChairDialogStore.getState().pending?.catalogueItemId).toBe(round.id);
+  });
+
+  it("refuses, behind truthfulGhost alone, a round its ghost showed refused: nothing placed, no dialog, the ghost's words", () => {
+    setPlannerFeaturesForTesting({ truthfulGhost: true, setupCards: false, seatsOnTheCard: false });
+    if (round === undefined) throw new Error("No round table in the catalogue");
+    const standing = createTableGroup(round.id, 0, 0, 0, 10);
+    usePlacementStore.setState({ placedItems: standing });
+    usePlacementNoticeStore.getState().dismiss();
+    inHandAt(round.id, 0.4, 0);
+    placePieceInHand(vi.fn());
+    expect(usePlacementStore.getState().placedItems).toBe(standing);
+    expect(useChairDialogStore.getState().pending).toBeNull();
+    expect(usePlacementNoticeStore.getState().notice?.text).toMatch(/^Won't fit · would overlap/u);
+  });
+
+  it("asks, behind truthfulGhost alone, for a round's seats where its ghost stood on free floor", () => {
+    setPlannerFeaturesForTesting({ truthfulGhost: true, setupCards: false, seatsOnTheCard: false });
+    if (round === undefined) throw new Error("No round table in the catalogue");
+    inHandAt(round.id, 3, 2);
+    const ghost = usePlacementStore.getState().ghostPosition;
+    placePieceInHand(vi.fn());
+    expect(usePlacementStore.getState().placedItems).toHaveLength(0);
+    const pending = useChairDialogStore.getState().pending;
+    expect(pending?.catalogueItemId).toBe(round.id);
+    expect(pending?.x).toBe(ghost?.[0]);
+    expect(pending?.z).toBe(ghost?.[2]);
+  });
+
+  it("refuses where the green and red ghost is red, with its reason, and sets nothing down", () => {
+    setPlannerFeaturesForTesting({ truthfulGhost: false });
+    if (round === undefined) throw new Error("No round table in the catalogue");
+    const standing = createTableGroup(round.id, 0, 0, 0, 10);
+    usePlacementStore.setState({ placedItems: standing, snapEnabled: false });
+    usePlacementNoticeStore.getState().dismiss();
+    inHandAt(round.id, 0.3, 0);
+    expect(usePlacementStore.getState().ghostValid).toBe(false);
+    const reason = usePlacementStore.getState().ghostInvalidReason;
+    placePieceInHand(vi.fn());
+    expect(usePlacementStore.getState().placedItems).toBe(standing);
+    expect(useChairDialogStore.getState().pending).toBeNull();
+    expect(usePlacementNoticeStore.getState().notice?.text).toBe(reason ?? "Won't fit here");
+  });
+
+  it("stands the ghost aside from the piece just set down: no red on it, and a second click sets nothing down", () => {
+    const poseur = getCatalogueItemBySlug("poseur-table");
+    if (poseur === undefined) throw new Error("No poseur table in the catalogue");
+    usePlacementStore.setState({ snapEnabled: false });
+    inHandAt(poseur.id, 3, 3);
+    placePieceInHand(vi.fn());
+    expect(usePlacementStore.getState().placedItems).toHaveLength(1);
+    expect(usePlacementStore.getState().ghostPosition).toBeNull();
+    // The double-click's second click, where the first set it down.
+    placePieceInHand(vi.fn());
+    usePlacementStore.getState().updateGhost(3.05, 3, poseur.id);
+    placePieceInHand(vi.fn());
+    expect(usePlacementStore.getState().placedItems).toHaveLength(1);
+    expect(usePlacementStore.getState().ghostPosition).toBeNull();
+    // Off its floor, the ghost is back for good, even when it returns.
+    usePlacementStore.getState().updateGhost(6, 3, poseur.id);
+    expect(usePlacementStore.getState().ghostPosition).not.toBeNull();
+    usePlacementStore.getState().updateGhost(3.05, 3, poseur.id);
+    expect(usePlacementStore.getState().ghostPosition).not.toBeNull();
+  });
+
+  it("still sets a row of chairs down chair by chair, 0.5 m apart", () => {
+    if (chair === undefined) throw new Error("No banquet chair in the catalogue");
+    usePlacementStore.setState({ snapEnabled: false });
+    for (const x of [0, 0.5, 1, 1.5]) {
+      inHandAt(chair.id, x, 0);
+      placePieceInHand(vi.fn());
+    }
+    expect(usePlacementStore.getState().placedItems).toHaveLength(4);
   });
 
   it("sets an ordinary piece down where its ghost stands and keeps it in hand", () => {

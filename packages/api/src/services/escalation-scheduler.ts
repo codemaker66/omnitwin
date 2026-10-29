@@ -4,7 +4,7 @@ import { requests } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { quietHoursEndAfter } from "./escalation-clock.js";
 import { readOperatingSettings } from "./venue-operating-settings.js";
-import { runEscalationEmailPass, runRequestEscalationPass, type EscalatedRequest } from "./requests.js";
+import { UNOWNED_ESCALATING_STATES, runEscalationEmailPass, runRequestEscalationPass, type EscalatedRequest } from "./requests.js";
 
 // ---------------------------------------------------------------------------
 // When the escalation sweep runs (goal 19 S7; the 18 October outage).
@@ -47,13 +47,13 @@ export function sleepFor(wakeMs: number | null, nowMs: number): number | null {
 }
 
 /** The next instant anything is due, read from the database. Null when
- *  nothing is: no sent request with a window, no handover with a relief
+ *  nothing is: no sent or reopened request with a window, no handover with a relief
  *  deadline, no email waiting out quiet hours. */
 export async function planNextWake(db: Database, nowMs: number): Promise<number | null> {
   const [nextWindow] = await db
     .select({ at: requests.escalationDueAt })
     .from(requests)
-    .where(and(eq(requests.state, "sent"), isNull(requests.escalatedAt), isNotNull(requests.escalationDueAt)))
+    .where(and(inArray(requests.state, [...UNOWNED_ESCALATING_STATES]), isNull(requests.escalatedAt), isNotNull(requests.escalationDueAt)))
     .orderBy(asc(requests.escalationDueAt))
     .limit(1);
   const [nextRelief] = await db
@@ -65,7 +65,7 @@ export async function planNextWake(db: Database, nowMs: number): Promise<number 
   const waiting = await db
     .selectDistinct({ venueId: requests.venueId })
     .from(requests)
-    .where(and(isNotNull(requests.escalatedAt), isNull(requests.escalationEmailedAt), inArray(requests.state, ["sent", "handed-over"])));
+    .where(and(isNotNull(requests.escalatedAt), isNull(requests.escalationEmailedAt), inArray(requests.state, [...UNOWNED_ESCALATING_STATES, "handed-over"])));
 
   const emailWakes: (number | null)[] = [];
   for (const { venueId } of waiting) {

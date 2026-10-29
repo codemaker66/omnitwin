@@ -35,14 +35,25 @@ describe("planner features: everyone's switches", () => {
     ]));
   });
 
-  it("keeps every slice off until it is green", () => {
-    for (const enabled of Object.values(plannerFeatures())) expect(enabled).toBe(false);
+  it("has lane P's touch arbiter and lean motion pipeline on for everyone, and every other slice off until it is green", () => {
+    const on = new Set(["touchArbiter", "leanMotionPipeline"]);
+    for (const [key, enabled] of Object.entries(plannerFeatures())) expect(enabled, key).toBe(on.has(key));
   });
 
   it("names a lane and a quality-of-life item for every key", () => {
     for (const spec of Object.values(PLANNER_FEATURE_SPECS)) {
-      expect(["E", "P"]).toContain(spec.lane);
-      expect(spec.item).toMatch(/^Q-\d{2}[ab]?$/u);
+      // Read as the spec's field types, so a lane no key uses yet still compares.
+      const { lane, item }: { readonly lane: string; readonly item: string } = spec;
+      expect(["E", "P", "planner-qol"]).toContain(lane);
+      // planner-qol's items are its own (PQ-N); a Blake decision is an item too (D-N).
+      expect(item).toMatch(lane === "planner-qol" ? /^(?:PQ-\d{1,2}|D\d)$/u : /^(?:Q-\d{2}[ab]?|D\d)$/u);
+    }
+  });
+
+  it("has planner-qol's keys for Blake's decisions 3 to 5, every one off until he answers", () => {
+    for (const key of ["clothDrape", "clothDrapeOnly", "lensesByRole", "lensesDivider", "wallsQuick"] as const) {
+      expect(PLANNER_FEATURE_SPECS[key].lane, key).toBe("planner-qol");
+      expect(plannerFeatures()[key], key).toBe(false);
     }
   });
 });
@@ -63,24 +74,30 @@ describe("planner features: the ?pf= list", () => {
   it("lays overrides over everyone's switches", () => {
     const features = resolvePlannerFeatures({ liveAisles: true });
     expect(features.liveAisles).toBe(true);
-    expect(features.touchArbiter).toBe(false);
+    expect(features.storeCounts).toBe(false);
   });
 });
 
 describe("planner features: this device", () => {
   it("turns a key on from the address and remembers it", () => {
-    visit("?pf=touchArbiter");
-    expect(plannerFeatureEnabled("touchArbiter")).toBe(true);
-    expect(window.localStorage.getItem(PLANNER_FEATURES_STORAGE_KEY)).toBe("touchArbiter");
+    visit("?pf=storeCounts");
+    expect(plannerFeatureEnabled("storeCounts")).toBe(true);
+    expect(window.localStorage.getItem(PLANNER_FEATURES_STORAGE_KEY)).toBe("storeCounts");
     visit("");
-    expect(plannerFeatureEnabled("touchArbiter")).toBe(true);
+    expect(plannerFeatureEnabled("storeCounts")).toBe(true);
   });
 
   it("forgets the remembered list on an empty ?pf=", () => {
-    window.localStorage.setItem(PLANNER_FEATURES_STORAGE_KEY, "touchArbiter");
+    window.localStorage.setItem(PLANNER_FEATURES_STORAGE_KEY, "storeCounts");
     visit("?pf=");
-    expect(plannerFeatureEnabled("touchArbiter")).toBe(false);
+    expect(plannerFeatureEnabled("storeCounts")).toBe(false);
     expect(window.localStorage.getItem(PLANNER_FEATURES_STORAGE_KEY)).toBeNull();
+  });
+
+  it("turns a key that is on for everyone off for this device with -name, the way back if a device shows a problem", () => {
+    visit("?pf=-touchArbiter");
+    expect(plannerFeatureEnabled("touchArbiter")).toBe(false);
+    expect(plannerFeatureEnabled("leanMotionPipeline")).toBe(true);
   });
 
   it("reads the address again when it changes", () => {

@@ -1,10 +1,12 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type PointerEvent, type ReactElement } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type PointerEvent, type ReactElement } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import { NativeCanvas as Canvas } from "../scene/NativeCanvas.js";
 import { CaptureToneMapping } from "../scene/CaptureToneMapping.js";
 import { PlannerRenderPipeline } from "../scene/PlannerRenderPipeline.js";
-import { nativeFrameComposer } from "../../lib/native-frame-composer.js";
+import { nativeFrameComposer, nativeFramePrecompile } from "../../lib/native-frame-composer.js";
+import { requestNativePrecompile } from "../../lib/native-precompile.js";
 import { governedRender, profilePixelRatio, readRenderDeviceContext, selectRenderProfile } from "../../lib/render-quality.js";
+import { gpuProbeSettled, probeGpu, subscribeGpuProbe } from "../../lib/gpu-class.js";
 import { RenderGovernor } from "../scene/RenderGovernor.js";
 import { useRenderGovernorStore } from "../../stores/render-governor-store.js";
 import type { SpaceDimensions } from "@omnitwin/types";
@@ -13,6 +15,7 @@ import { PlannerCanvasBoundary } from "../PlannerCanvasBoundary.js";
 import { CameraRig } from "../CameraRig.js";
 import { InteriorCamera } from "../rooms/InteriorCamera.js";
 import { roomSplatBundle, walkPoseForBundle } from "../../data/room-splat-bundles.js";
+import { deviceDayGovernorOff } from "../../data/device-day-splat-bundles.js";
 import { prefersReducedMotion } from "../../lib/reduced-motion.js";
 import { GrandHallRoom } from "../GrandHallRoom.js";
 import { RoomLighting } from "../RoomLighting.js";
@@ -43,6 +46,7 @@ import { MarqueeSelect } from "../MarqueeSelect.js";
 import { SnapGuides } from "../SnapGuides.js";
 import { CirculationOverlay } from "../CirculationOverlay.js";
 import { ClearanceRings } from "./ClearanceRings.js";
+import { DoorClearSpaceLayer } from "./DoorClearSpaceLayer.js";
 import { FurnitureMotion } from "./FurnitureMotion.js";
 import { MarkupLayer } from "../MarkupLayer.js";
 import { SceneProvider } from "../SceneProvider.js";
@@ -85,12 +89,12 @@ import { HallContext } from "../grand-hall/HallContext.js";
 import { HallOpeningHour } from "../grand-hall/HallOpeningHour.js";
 import { useHallViewStore } from "../../stores/hall-view-store.js";
 import { useModelledGrandHall } from "../grand-hall/hall-space.js";
-import { assemblyRequested } from "../../floor/assembly/flag.js";
-import { useAssemblyRecall } from "../../floor/assembly/recall.js";
+import { assemblyMode } from "../../floor/assembly/flag.js";
+import { hasSeenLayout, useAssemblyRecall } from "../../floor/assembly/recall.js";
 import { AssemblyReplay } from "../../floor/assembly/AssemblyReplay.js";
 
-// The Grand Assembly (goal 03, S6), behind `?assembly=accio` (floor/assembly/flag.ts):
-// loaded only where a device asks for it, and fetched as soon as it does.
+// The Grand Assembly (goal 03, S6; floor/assembly/flag.ts): loaded only where it
+// may play, and fetched as soon as it may.
 const loadGrandAssembly = () => import("../../floor/assembly/GrandAssembly.js");
 const GrandAssembly = lazy(loadGrandAssembly);
 
@@ -98,6 +102,12 @@ const GrandAssembly = lazy(loadGrandAssembly);
  * Computes render dimensions from room geometry polygon data.
  * Falls back to Grand Hall dimensions if no space is loaded.
  */
+// Which graphics draw the planner decides a desktop's profile (lib/gpu-class.ts).
+// Asked as the planner's code arrives, so the answer is usually in while the
+// layout and the room are still loading; the canvas waits for it (400 ms at
+// most), as a profile changed after the first frame would compile it twice.
+void probeGpu();
+
 const COMPACT_PLANNER_MAX_VIEWPORT_WIDTH = 1099;
 const CAMERA_INTERACTION_SETTLE_MS = 420;
 
@@ -177,6 +187,7 @@ function PlannerMotionOverlayLayers(): ReactElement | null {
       <SnapGuides />
       <CirculationOverlay />
       <ClearanceRings />
+      <DoorClearSpaceLayer />
       <MarqueeSelect />
       <MarkupLayer />
       <DiagramLabels />
@@ -199,6 +210,15 @@ function PlannerScenePrecompiler({
   const generation = useRef(0);
 
   useEffect(() => { invalidate(); }, [camera, gl, invalidate, scene, signature]);
+  // Under a composer the scene draws into its pass's own targets: the
+  // composer compiles them, queued ahead of the frames that would draw them
+  // (lib/native-precompile.ts, F-01). A frame-loop compile below would come
+  // on the very frame that draws, synchronously, too late. The composer is
+  // read when the job runs: one replaced while it waited compiles its own.
+  useLayoutEffect(() => {
+    if (nativeFramePrecompile(gl) === null) return;
+    void requestNativePrecompile(gl, (signal) => nativeFramePrecompile(gl)?.(signal) ?? Promise.resolve());
+  }, [camera, gl, scene, signature]);
   useEffect(() => () => {
     generation.current++;
     previous.current = null;
@@ -264,22 +284,28 @@ export function PlannerScene(): ReactElement {
   const dimensions = useRoomDimensions();
   const configId = useEditorStore((s) => s.configId);
   const arrivalKey = plannerArrivalKey(configId, space?.id ?? null);
-  // Where this device asks for the Grand Assembly (`?assembly=accio`), a saved
-  // layout's arrival is the Assembly in the drawn hall, not a walk in the capture.
-  const assemblyAsked = useMemo(() => typeof window !== "undefined" && assemblyRequested(window.location.search) !== null, []);
+  // The Grand Assembly plays a saved layout the first time it opens on a device
+  // (flag.ts: `?assembly=accio` every time, `?assembly=off` never).
+  const assemblyPlayMode = useMemo(() => (typeof window === "undefined" ? "off" : assemblyMode(window.location.search)), []);
+  const assemblyAsked = assemblyPlayMode !== "off";
+  const layoutLoading = useEditorStore((s) => s.isLoading);
+  const layoutFurnished = useEditorStore((s) => s.objects.length > 0);
   const viewportWidth = usePlannerViewportWidth();
   const nativeDpr = useSyncExternalStore(subscribeNativePlannerPixelRatio, readNativePlannerPixelRatio, serverPlannerPixelRatio);
-  // One render profile per page (phone, tablet or desktop); phones and tablets
-  // draw within a pixel budget instead of their full native density.
-  const renderProfile = useMemo(() => selectRenderProfile(readRenderDeviceContext(import.meta.env.DEV)), []);
+  // One render profile per page (phone, tablet, desktop or office); phones and
+  // tablets draw within a pixel budget instead of their full native density.
+  // Chosen once the graphics probe has answered, before the canvas exists.
+  const gpuKnown = useSyncExternalStore(subscribeGpuProbe, gpuProbeSettled, () => true);
+  const renderProfile = useMemo(() => selectRenderProfile(readRenderDeviceContext(import.meta.env.DEV)), [gpuKnown]);
   const profileDpr = profilePixelRatio(renderProfile, nativeDpr, viewportWidth, typeof window === "undefined" ? 900 : window.innerHeight);
   // A device that cannot hold its frame rate gives up quality, a rung at a
   // time, cheapest to lose first (lib/render-governor.ts); `?governor=off`
-  // measures without it in development.
+  // measures without it in development, and with a device-day cut anywhere.
   const governorGiven = useRenderGovernorStore((s) => s.given);
   const governed = useMemo(() => governedRender(renderProfile, profileDpr, governorGiven), [renderProfile, profileDpr, governorGiven]);
   const governorEnabled = renderProfile.name !== "off"
-    && !(import.meta.env.DEV && typeof window !== "undefined" && new URLSearchParams(window.location.search).get("governor") === "off");
+    && !(import.meta.env.DEV && typeof window !== "undefined" && new URLSearchParams(window.location.search).get("governor") === "off")
+    && !deviceDayGovernorOff();
   const canvasDpr = governed.pixelRatio;
   const canvasGl = useMemo(plannerCanvasGlOptions, []);
   const smoothCameraControls = shouldUseSmoothPlannerControls(viewportWidth);
@@ -370,10 +396,16 @@ export function PlannerScene(): ReactElement {
   }, [arrivalKey]);
 
   useEffect(() => {
-    if (timelinePreviewActive) return;
-    if (!plannerArrivalPolicy.claim(arrivalKey, !assemblyAsked && roomSlug === "grand-hall" && hasAsset && walkData !== null)) return;
+    if (timelinePreviewActive || layoutLoading) return;
+    // Where the Grand Assembly plays this opening (a furnished layout this device has not seen), the arrival is
+    // the Assembly in the drawn hall, not a walk in the capture: decided now, so nothing walks after the show.
+    if (assemblyAsked && layoutFurnished && configId !== null && (assemblyPlayMode === "always" || !hasSeenLayout(configId))) {
+      plannerArrivalPolicy.choose(arrivalKey);
+      return;
+    }
+    if (!plannerArrivalPolicy.claim(arrivalKey, roomSlug === "grand-hall" && hasAsset && walkData !== null)) return;
     useCockpitStore.setState({ layerMode: "splat", walkMode: true });
-  }, [arrivalKey, assemblyAsked, hasAsset, roomSlug, timelinePreviewActive, walkData]);
+  }, [arrivalKey, assemblyAsked, assemblyPlayMode, configId, hasAsset, layoutFurnished, layoutLoading, roomSlug, timelinePreviewActive, walkData]);
   // If the room changes to one with no walk data, the mode cannot stand.
   useEffect(() => {
     if (walkMode && walkData === null) useCockpitStore.getState().setWalkMode(false);
@@ -471,27 +503,27 @@ export function PlannerScene(): ReactElement {
   const hallSkyAsked = useMemo(() => typeof window !== "undefined" && hallSkyRequested(window.location.search), []);
   const skyLit = hallSkyAsked && hallDrawn && !timelinePreviewActive;
   // The Grand Assembly: a saved layout that opens assembles itself in the drawn
-  // hall where this device asks for it (`?assembly=accio`). While it plays it
-  // holds the camera through CameraRig's `suspended`.
+  // hall. While it plays it holds the camera through CameraRig's `suspended`.
   // (The drawn hall is never shown under the timeline's frozen preview.)
   const assemblyStage = assemblyAsked && hallDrawn && !walkMode;
   const [assemblyCamera, setAssemblyCamera] = useState(false);
-  // The Assembly's code is fetched the moment this device asks for it, so it is
-  // there by the time the hall is drawn.
+  // A room known not to be the drawn Grand Hall lets a held layout go at once.
+  const assemblyElsewhere = space !== null && !realHall;
+  // The Assembly's code is fetched as soon as it may play here (the Grand Hall,
+  // or a room not yet known), so it is there by the time the hall is drawn.
+  const assemblyMayPlay = assemblyAsked && !assemblyElsewhere;
   const [assemblyCodeReady, setAssemblyCodeReady] = useState(false);
   useEffect(() => {
-    if (!assemblyAsked) return undefined;
+    if (!assemblyMayPlay) return undefined;
     let current = true;
     void loadGrandAssembly().then(() => { if (current) setAssemblyCodeReady(true); }, () => undefined);
     return () => { current = false; };
-  }, [assemblyAsked]);
-  // A room known not to be the drawn Grand Hall lets a held layout go at once.
+  }, [assemblyMayPlay]);
   // While the room is still unknown, or the hall is drawn but the Assembly's code
   // is still arriving (a phone's cold first load), a held layout waits for it.
-  const assemblyElsewhere = space !== null && !realHall;
-  const assemblyComing = assemblyAsked && !walkMode && !assemblyElsewhere
+  const assemblyComing = assemblyMayPlay && !walkMode
     && (space === null || (hallDrawn && !assemblyCodeReady));
-  useAssemblyRecall(assemblyAsked, assemblyStage, assemblyElsewhere, assemblyComing);
+  useAssemblyRecall(assemblyAsked, assemblyStage, assemblyElsewhere, assemblyComing, assemblyPlayMode === "always");
   const hallSetting = useMemo(() => (typeof window === "undefined" ? "none" : hallSettingRequested(window.location.search)), []);
   // A capture that fails behind the drawn hall changes nothing on screen: the
   // camera and a walk of the drawn hall carry on.
@@ -572,6 +604,16 @@ export function PlannerScene(): ReactElement {
     clearCameraInteractionTimer();
     useCockpitStore.getState().setCameraInteractionActive(false);
   }, [clearCameraInteractionTimer]);
+
+  // Until the graphics probe answers (lib/gpu-class.ts): the host and the arrival, no canvas yet.
+  if (!gpuKnown) {
+    return (
+      <PlannerCanvasBoundary>
+        <div className="planner-scene-canvas-host" />
+        {showArrival && <PlannerArrival onEnter={enterRoom} />}
+      </PlannerCanvasBoundary>
+    );
+  }
 
   return (
     <PlannerCanvasBoundary>
