@@ -37,6 +37,17 @@
 .reference-viewer .cockpit-rail__button svg { width: 17px; height: 17px; stroke-width: 1.45; }
 .reference-viewer .cockpit-rail__button.is-active { color: #dca475; background: rgba(201, 138, 91, .1); }
 .reference-viewer .cockpit-rail__button:hover { color: #f2d79f; background: rgba(255, 255, 255, .04); }
+/* Decision 5: a named rail. The longest name, "Evidence", is 48.4 px in Inter
+   500 at 11 px (wght-instanced advances; "Lighting" 42.4, "Rigging" 39.7), so
+   the column widens to 64 px at every width and each button to 56 px: one line
+   with ~4 px either side, never clipped, never wrapping into the next button.
+   The room header and outliner give up the 10 px (19 px under 1200 px). */
+.reference-left-dock:has(> .cockpit-rail.is-named) { grid-template-columns: 64px minmax(0, 1fr); }
+.reference-viewer .cockpit-rail.is-named .cockpit-rail__button { width: 56px; gap: 3px; padding: 4px 0; }
+.reference-viewer .cockpit-rail.is-named .cockpit-rail__button span {
+  display: block; max-width: 100%;
+  font: 500 11px/1.2 "Inter", system-ui, sans-serif; letter-spacing: 0; text-transform: none; white-space: nowrap;
+}
 .reference-room-header {
   display: grid; grid-template-columns: minmax(0, 1fr) 26px; align-items: center;
   gap: 9px 5px; padding: 18px 12px 13px; border-bottom: 1px solid rgba(224, 211, 188, .09);
@@ -166,5 +177,7 @@ body:has(.reference-viewer > .cockpit-bottom:not(.is-collapsed)) .reference-even
 @media (max-height: 760px) {
   .reference-viewer .cockpit-rail__list { gap: 2px; }
   .reference-viewer .cockpit-rail__button { min-height: 36px; }
+  .reference-viewer .cockpit-rail.is-named .cockpit-rail__button { padding-block: 2px; }
+  .reference-viewer .cockpit-rail__divider { margin-top: 2px; padding-top: 6px; }
   .reference-viewer .reference-room-header { padding-top: 12px; padding-bottom: 10px; }
 }

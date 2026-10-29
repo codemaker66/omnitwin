@@ -1,4 +1,10 @@
-import { FORWARD_BOOK_RECORD_ROLES, PRICING_WRITE_ROLES as PRICE_SETTER_ROLES, VENUE_TEAM_INVITER_ROLES } from "@omnitwin/types";
+import {
+  AI_USAGE_READ_ROLES as AI_USAGE_READERS,
+  FORWARD_BOOK_RECORD_ROLES,
+  PRICING_WRITE_ROLES as PRICE_SETTER_ROLES,
+  VENUE_ADMINISTRATION_ROLES,
+  VENUE_TEAM_INVITER_ROLES,
+} from "@omnitwin/types";
 import { isPlatformAdmin, type JwtUser } from "../middleware/auth.js";
 
 // ---------------------------------------------------------------------------
@@ -106,7 +112,7 @@ export function canWriteEvents(
 
 /** Editing the venue record and its spaces. Prices are narrower: see
  *  PRICING_WRITE_ROLES. */
-const VENUE_ADMINISTRATION_ROLES: ReadonlySet<string> = new Set(["admin", "manager", "staff"]);
+const VENUE_ADMINISTRATION_ROLE_SET: ReadonlySet<string> = new Set(VENUE_ADMINISTRATION_ROLES);
 
 /**
  * Who may set a price: create, change, delete or restore a pricing rule.
@@ -129,7 +135,7 @@ const INVENTORY_WRITE_ROLES: ReadonlySet<string> = new Set(["admin", "manager"])
 const VENUE_TEAM_INVITER_ROLE_SET: ReadonlySet<string> = new Set(VENUE_TEAM_INVITER_ROLES);
 
 /** Reading what the venue's AI use has cost (T-656): money, so its managers and admins. */
-const AI_USAGE_READ_ROLES: ReadonlySet<string> = new Set(["admin", "manager"]);
+const AI_USAGE_READ_ROLES: ReadonlySet<string> = new Set<string>(AI_USAGE_READERS);
 
 function holdsVenueRole(
   user: Pick<JwtUser, "role" | "venueId" | "platformRole">,
@@ -150,7 +156,7 @@ export function canAdministerVenue(
   user: Pick<JwtUser, "role" | "venueId" | "platformRole">,
   venueId: string,
 ): boolean {
-  return holdsVenueRole(user, venueId, VENUE_ADMINISTRATION_ROLES);
+  return holdsVenueRole(user, venueId, VENUE_ADMINISTRATION_ROLE_SET);
 }
 
 /** Setting a price at this venue (PRICING_WRITE_ROLES). Reading one is the
@@ -226,6 +232,18 @@ export function canManageVenueTeam(
   venueId: string,
 ): boolean {
   return holdsVenueRole(user, venueId, VENUE_TEAM_INVITER_ROLE_SET);
+}
+
+/**
+ * The venue a general AI draft is charged to (T-656): the asker's own, where
+ * they work on its floor or its commercial team; null for anyone else (an
+ * account with no venue, a client, a planner, an event-scoped caterer), who
+ * cannot spend a venue's allowance.
+ */
+export function aiDraftVenue(user: Pick<JwtUser, "role" | "venueId" | "platformRole">): string | null {
+  const venueId = user.venueId;
+  if (venueId === null) return null;
+  return canManageVenue(user, venueId) || canManageCommercial(user, venueId) ? venueId : null;
 }
 
 /** Reading the venue's AI usage and spend (T-656): its managers and admins. */

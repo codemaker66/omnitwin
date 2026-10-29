@@ -2,9 +2,9 @@ import type { FastifyInstance } from "fastify";
 import { eq } from "drizzle-orm";
 import { Webhook } from "svix";
 import { z } from "zod";
-import { users } from "../db/schema.js";
+import { generalAuditLog, users } from "../db/schema.js";
 import type { Database } from "../db/client.js";
-import { getUserByClerkId, normalizeAuthEmail } from "../middleware/auth.js";
+import { CLERK_ACCOUNT_DELETED, clerkAccountDeleted, getUserByClerkId, lockClerkAccount, normalizeAuthEmail } from "../middleware/auth.js";
 import { evictClerkEmailCacheEntry } from "../middleware/clerk-email.js";
 
 const ClerkEmailAddressSchema = z.object({
@@ -162,7 +162,7 @@ export async function processClerkWebhookEvent(
   return { status: "processed", clerkId: event.data.id };
 }
 
-function databasePersistence(db: Database): ClerkWebhookPersistence {
+export function databasePersistence(db: Database): ClerkWebhookPersistence {
   return {
     resolveCreatedUser: async (clerkId, email) => {
       const user = await getUserByClerkId(db, clerkId, email);
@@ -175,7 +175,15 @@ function databasePersistence(db: Database): ClerkWebhookPersistence {
       await db.update(users).set(values).where(eq(users.clerkId, clerkId));
     },
     unlinkUser: async (clerkId, updatedAt) => {
-      await db.update(users).set({ clerkId: null, updatedAt }).where(eq(users.clerkId, clerkId));
+      // One transaction: the row is never unlinked without the record that
+      // keeps the deleted account from linking it again (auth.ts).
+      await db.transaction(async (tx) => {
+        await lockClerkAccount(tx, clerkId);
+        await tx.update(users).set({ clerkId: null, updatedAt }).where(eq(users.clerkId, clerkId));
+        if (await clerkAccountDeleted(tx, clerkId)) return;
+        await tx.insert(generalAuditLog).values({ ...CLERK_ACCOUNT_DELETED, actorUserId: null, targetId: clerkId,
+          summary: "Clerk deleted this account; its user was unlinked and cannot be linked to it again.", metadata: null });
+      });
     },
   };
 }

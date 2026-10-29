@@ -8,10 +8,29 @@ import { useMarkupStore } from "../stores/markup-store.js";
 import { useLayoutTimelinePreviewStore } from "../stores/layout-timeline-preview-store.js";
 import { useCockpitStore } from "../stores/cockpit-store.js";
 import { postPlacementNotice } from "../stores/placement-notice-store.js";
+import { useRoomDimensionsStore } from "../stores/room-dimensions-store.js";
 import { toRenderSpace } from "../constants/scale.js";
 import { getCatalogueItem } from "./catalogue.js";
 import { isDiningTableItem } from "./furniture-semantics.js";
+import { createGhostWorld, type GhostWorld } from "./ghost-truth.js";
 import { expandIdsToGroupMembers, type PlacedItem } from "./placement.js";
+import {
+  allPieceIds,
+  copyPieces,
+  piecesOfKindIds,
+  planDuplicate,
+  planLineUp,
+  planMove,
+  planPaste,
+  type EditPlan,
+  type FloorOffset,
+  type MovePlan,
+  type PlannerClipboard,
+} from "./placement-edit.js";
+import { plannerFeatureEnabled } from "./planner-features.js";
+import { withNoteSeeds } from "./note-seeds.js";
+import { planReplace, type ReplaceOptions, type ReplacePlan, type ReplaceResult } from "./replace.js";
+import type { CardParams } from "./setup-cards.js";
 import { ROTATION_SNAP_RAD, snapRotation } from "./selection.js";
 import { isSceneFurniturePlacement } from "./table-dressing.js";
 import { diningTablesAmong, tableGroupSeatCapacity, tableOwnChairs, ungroupedKeepingTables } from "./table-group.js";
@@ -298,6 +317,213 @@ export function ungroupSelection(): boolean {
   return true;
 }
 
+// ---------------------------------------------------------------------------
+// Duplicate, copy, paste and select all (card-dock Q-11, spec §18; behind
+// editingKeys), each one undo step. The copies take new group, set and
+// table ids (lib/placement-edit.ts) and are selected, so a second Ctrl D
+// copies the copies one more pitch along.
+// ---------------------------------------------------------------------------
+
+/** Where pieces were copied: the layout, its room and its venue (QoL B-X10). */
+interface CopiedFrom {
+  readonly configId: string | null;
+  readonly spaceId: string | null;
+  readonly roomName: string | null;
+  readonly venueId: string | null;
+}
+
+/** A paste into another venue's layout is refused with this. */
+export const PASTE_OTHER_VENUE = "Copied in another venue · paste it there";
+
+/** Where the last Ctrl D put its copies, in which layout: a repeat in the same layout goes the same way. */
+let lastDuplicate: { readonly offset: FloorOffset; readonly configId: string | null } | null = null;
+/** What Ctrl C holds this session, and where it was copied. */
+let clipboard: { readonly copied: PlannerClipboard; readonly from: CopiedFrom } | null = null;
+
+/** The open layout, its room and its venue. */
+function hereNow(): CopiedFrom {
+  const { configId, space } = useEditorStore.getState();
+  return { configId, spaceId: space?.id ?? null, roomName: space?.name ?? null, venueId: space?.venueId ?? null };
+}
+
+/** "3 tables", "1 table", "4 pieces": what a paste set down, by its tables where it has any. */
+function pastedWords(items: readonly PlacedItem[]): string {
+  const tables = items.filter((item) => {
+    const catalogue = getCatalogueItem(item.catalogueItemId);
+    return catalogue !== undefined && isDiningTableItem(catalogue);
+  }).length;
+  const [count, noun] = tables > 0 ? [tables, "table"] : [items.length, "piece"];
+  return `${String(count)} ${noun}${count === 1 ? "" : "s"}`;
+}
+
+/** Forgets the session's last duplicate offset and clipboard. */
+export function resetEditingMemoryForTesting(): void {
+  lastDuplicate = null;
+  clipboard = null;
+}
+
+function editingKeys(): boolean {
+  return plannerFeatureEnabled("editingKeys");
+}
+
+function editWorld(): GhostWorld {
+  return createGhostWorld(usePlacementStore.getState().placedItems, useRoomDimensionsStore.getState().dimensions);
+}
+
+/** Sets a plan's copies down as one undo step and selects them; a refusal says why where a placement notice would. */
+function landEdit(plan: EditPlan): FloorOffset | null {
+  if (!plan.ok) {
+    postPlacementNotice(plan.reason);
+    return null;
+  }
+  // The copies come settled where they land (lib/placement-edit): a copy on a dance floor stands on it.
+  let placed: readonly string[] = [];
+  asOneUndoStep(() => { placed = usePlacementStore.getState().placeSetup(plan.items); });
+  if (placed.length === 0) return null;
+  useSelectionStore.getState().selectMultiple(placed);
+  return plan.offset;
+}
+
+/** Ctrl D: the selection, made whole, one pitch away (the last offset this session first). */
+export function duplicateSelection(): boolean {
+  const ids = selectedIds();
+  if (ids.size === 0) return false;
+  const { configId } = hereNow();
+  // The last offset is the open layout's only: another layout starts afresh.
+  const last = lastDuplicate !== null && lastDuplicate.configId === configId ? lastDuplicate.offset : null;
+  const offset = landEdit(planDuplicate(ids, editWorld(), last));
+  if (offset === null) return false;
+  lastDuplicate = { offset, configId };
+  return true;
+}
+
+/** Ctrl C: the selection, made whole, onto the session's clipboard. */
+export function copySelection(): boolean {
+  const copied = copyPieces(selectedIds(), usePlacementStore.getState().placedItems);
+  if (copied === null) return false;
+  clipboard = { copied, from: hereNow() };
+  return true;
+}
+
+/**
+ * Ctrl V: the clipboard set down centred on the floor point under the
+ * pointer. Copied in another room, the receipt says where from ("Pasted 3
+ * tables from the Grand Hall"); copied in another venue, it is refused.
+ */
+export function pasteAt(at: { readonly x: number; readonly z: number } | null): boolean {
+  if (clipboard === null || at === null) return false;
+  const here = hereNow();
+  const { copied, from } = clipboard;
+  if (from.venueId !== null && here.venueId !== null && from.venueId !== here.venueId) {
+    postPlacementNotice(PASTE_OTHER_VENUE);
+    return true;
+  }
+  const plan = planPaste(copied, at, editWorld());
+  if (landEdit(plan) === null || !plan.ok) return false;
+  // A receipt one Undo takes back: v2's receipt host offers Undo beside it.
+  if (from.spaceId !== here.spaceId && from.roomName !== null) postPlacementNotice(`Pasted ${pastedWords(plan.items)} from the ${from.roomName}`, { undo: true });
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// Line up, Move and Replace (spec §8.2, §18; Q-16, Q-18, law 11), the
+// commands the caption's verbs and any key call alike: the plan
+// (lib/placement-edit, lib/replace; every piece settled where it stands),
+// set down as one undo step (placement-store applyEdit), the result
+// selected. A refusal says why where a placement notice would.
+// ---------------------------------------------------------------------------
+
+/** Sets a plan's pieces down as one undo step, `removeIds` gone, and selects what changed or joined. */
+function landChange(removeIds: ReadonlySet<string>, add: readonly PlacedItem[]): boolean {
+  let changed: readonly string[] = [];
+  asOneUndoStep(() => { changed = usePlacementStore.getState().applyEdit({ removeIds, add }); });
+  if (changed.length === 0) return false;
+  useSelectionStore.getState().selectMultiple([...changed]);
+  return true;
+}
+
+function landMove(plan: MovePlan): boolean {
+  if (!plan.ok) {
+    postPlacementNotice(plan.reason);
+    return false;
+  }
+  return landChange(new Set(), plan.items);
+}
+
+/** Line up: the selected tables' centres onto one line along the axis they spread along most. */
+export function lineUpSelection(): boolean {
+  const ids = selectedIds();
+  if (ids.size === 0) return false;
+  return landMove(planLineUp(ids, editWorld()));
+}
+
+/** Move, then tap the destination: the selection, made whole, centred on the floor point `at`, pushed clear by up to 0.15 m. */
+export function moveSelectionTo(at: { readonly x: number; readonly z: number }): boolean {
+  const ids = selectedIds();
+  if (ids.size === 0) return false;
+  return landMove(planMove(ids, at, editWorld()));
+}
+
+/** A placed piece's note as the editor holds it, trimmed; "" for none. */
+function noteOf(pieceId: string): string {
+  return (useEditorStore.getState().objects.find((object) => object.id === pieceId)?.notes ?? "").trim();
+}
+
+/**
+ * The whole note each table a Replace carries notes to will hold: its own
+ * first, then each moved note under its old table's name ("Table 3: …").
+ */
+function carriedNotes(plan: ReplacePlan): ReadonlyMap<string, string> {
+  const notes = new Map<string, string>();
+  for (const { fromId, toId, prefix } of plan.notes) {
+    const moved = noteOf(fromId);
+    if (moved === "" || fromId === toId) continue;
+    const before = notes.get(toId) ?? noteOf(toId);
+    notes.set(toId, before === "" ? `${prefix}${moved}` : `${before}\n${prefix}${moved}`);
+  }
+  return notes;
+}
+
+/**
+ * Replace: the selection with what `params` describes (lib/replace), as one
+ * undo step, each old table's note carried to the new table nearest it in
+ * that same step (lib/note-seeds). The plan comes back either way, for its
+ * receipt; refused, nothing changes. `hasNote` defaults to the editor's notes.
+ */
+export function replaceSelection(params: CardParams, options: Pick<ReplaceOptions, "hasNote" | "store"> = {}): ReplaceResult {
+  const hasNote = options.hasNote ?? ((pieceId: string) => noteOf(pieceId) !== "");
+  const result = planReplace(selectedIds(), params, editWorld(), { ...options, hasNote });
+  if (!result.ok) {
+    postPlacementNotice(result.reason);
+    return result;
+  }
+  const { plan } = result;
+  withNoteSeeds(carriedNotes(plan), () => { landChange(plan.removeIds, plan.add); });
+  return result;
+}
+
+/** Whether the page has text selected, which Ctrl C copies before any piece. */
+function pageTextSelected(): boolean {
+  const selection = typeof window === "undefined" ? null : window.getSelection();
+  return selection !== null && !selection.isCollapsed && selection.toString().trim() !== "";
+}
+
+/** Ctrl A: every piece in the room. */
+export function selectAllPieces(): boolean {
+  const ids = allPieceIds(usePlacementStore.getState().placedItems);
+  if (ids.length === 0) return false;
+  useSelectionStore.getState().selectMultiple(ids);
+  return true;
+}
+
+/** Ctrl Shift A: every piece of the selected pieces' kinds. */
+export function selectAllOfKind(): boolean {
+  const ids = piecesOfKindIds(usePlacementStore.getState().placedItems, selectedIds());
+  if (ids.length === 0) return false;
+  useSelectionStore.getState().selectMultiple(ids);
+  return true;
+}
+
 /** Puts down the piece in hand without placing it. */
 export function putDownPieceInHand(): void {
   useCatalogueStore.getState().clearSelection();
@@ -315,6 +541,8 @@ export interface SceneKeyDeps {
   readonly cancelGesture: () => void;
   /** The floor direction that runs up the screen, from the camera. */
   readonly screenUp: () => FloorDirection;
+  /** The floor point under the pointer, render-space, for a paste; null off the floor. */
+  readonly pointerFloor?: () => { readonly x: number; readonly z: number } | null;
 }
 
 /** Asks for a frame after an edit, or declines the key when there was nothing to edit. */
@@ -373,6 +601,30 @@ export function selectionKeyBindings(deps: SceneKeyDeps): KeyBinding[] {
     {
       keys: letter("g"), priority: KEY_PRIORITY.planner,
       run: () => { usePlacementStore.getState().toggleSnap(); },
+    },
+    {
+      // Taken even when refused (the notice says why), so the browser never bookmarks the page instead.
+      keys: letter("d", { mod: true }), priority, when: () => editingKeys() && hasSelection() && !placing(), mutates: true,
+      run: () => {
+        deps.cancelGesture();
+        if (duplicateSelection()) deps.invalidate();
+      },
+    },
+    {
+      keys: letter("c", { mod: true }), priority, when: () => editingKeys() && hasSelection() && !pageTextSelected(),
+      run: () => (copySelection() ? undefined : false),
+    },
+    {
+      keys: letter("v", { mod: true }), priority, when: () => editingKeys() && !placing(), mutates: true,
+      run: () => afterEdit(deps, pasteAt(deps.pointerFloor?.() ?? null)),
+    },
+    {
+      keys: letter("a", { mod: true }), priority, when: () => editingKeys() && !placing(),
+      run: () => afterEdit(deps, selectAllPieces()),
+    },
+    {
+      keys: shiftedLetter("a", { mod: true }), priority, when: () => editingKeys() && hasSelection() && !placing(),
+      run: () => afterEdit(deps, selectAllOfKind()),
     },
   ];
 }

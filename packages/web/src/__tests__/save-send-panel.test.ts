@@ -317,12 +317,15 @@ describe("Router", () => {
     readonly path?: string;
   }
 
+  // Every route in the table, nested ones included: the routes sit under the
+  // root route that carries the route error boundary.
   function routeEntries(value: unknown): readonly TestRoute[] {
     if (!Array.isArray(value)) return [];
-    return value.flatMap((entry) => {
+    return value.flatMap((entry): TestRoute[] => {
       if (entry === null || typeof entry !== "object") return [];
       const pathValue = (entry as { path?: unknown }).path;
-      return [{ path: typeof pathValue === "string" ? pathValue : undefined }];
+      const children = routeEntries((entry as { children?: unknown }).children);
+      return [{ path: typeof pathValue === "string" ? pathValue : undefined }, ...children];
     });
   }
 
@@ -387,9 +390,12 @@ describe("GuestEnquiryModal retail polish — source-grep", () => {
     return { raw, codeOnly };
   }
 
-  it("copies planner links and resolves legacy catalogue slugs in the success summary", async () => {
+  it("shares a view-only link, never the planner address, and resolves legacy catalogue slugs in the success summary", async () => {
+    // planner-qol E-10: /plan/<id> is an anonymous plan's edit capability, so
+    // the success screen copies a view-only link made by the shared hook.
     const { codeOnly } = await readSource("src/components/editor/GuestEnquiryModal.tsx");
-    expect(codeOnly).toContain("/plan/${configId}");
+    expect(codeOnly).toContain("useVisitorPlanLinks(configId)");
+    expect(codeOnly).not.toContain("/plan/${configId}");
     expect(codeOnly).toContain("c.slug === item.catalogueItemId");
     expect(codeOnly).not.toContain("/editor/${configId}");
   });

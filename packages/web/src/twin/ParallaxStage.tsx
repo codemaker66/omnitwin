@@ -15,7 +15,8 @@ import {
   type Object3D,
   type Texture,
 } from "three";
-import { TWIN_EQUIRECT_LODS, type TwinEquirectLod, type TwinScanNode } from "@omnitwin/types";
+import type { TwinEquirectLod, TwinScanNode } from "@omnitwin/types";
+import { TWIN_EQUIRECT_LODS } from "@omnitwin/types/twin";
 import {
   E57_TO_THREE_QUAT,
   EQUIRECT_U_FLIP,

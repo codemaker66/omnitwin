@@ -102,6 +102,8 @@ export async function adminRoutes(
         rememberedNotes,
         message: `Cleaned up ${String(deletedConfigs)} stale preview configuration(s) and ${String(deletedFiles)} orphaned file(s); `
           + `removed the allergy note from ${String(dietaryNotes.layouts)} layout(s) and ${String(dietaryNotes.sheets)} event sheet(s)`
+          + ` past their retention, and from ${String(dietaryNotes.actionLog)} logged change(s)`
+          + `; removed the notes on single pieces from ${String(dietaryNotes.pieceNotes.layouts)} layout(s)`
           + `; removed ${String(rememberedNotes.removed)} remembered note(s) unused for the agreed period`,
       },
     };
