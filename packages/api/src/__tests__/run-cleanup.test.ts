@@ -50,7 +50,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   previewMock.mockResolvedValue(2);
   orphanMock.mockResolvedValue(1);
-  lapsedMock.mockResolvedValue({ dryRun: false, layouts: 4, sheets: 5 });
+  lapsedMock.mockResolvedValue({ dryRun: false, layouts: 4, sheets: 5, actionLog: 6,
+    pieceNotes: { layouts: 2, pieces: 7, revisions: 3, sheets: 1, actionLog: 4, opsTasks: 2 } });
   rememberedMock.mockResolvedValue({ dryRun: false, removed: 3 });
   engagementMock.mockResolvedValue(4);
   vitalsMock.mockResolvedValue(6);
@@ -72,6 +73,8 @@ describe("runScheduledCleanup", () => {
       deletedFiles: 1,
       lapsedNoteLayouts: 4,
       lapsedNoteSheets: 5,
+      loggedNotesRemoved: 6,
+      lapsedPieceNoteLayouts: 2,
       rememberedNotesRemoved: 3,
       engagementEventsRemoved: 4,
       webVitalSamplesRemoved: 6,
@@ -87,7 +90,8 @@ describe("runScheduledCleanup", () => {
     expect(lines).toEqual([
       "[cleanup] Deleted 2 stale preview configuration(s)",
       "[cleanup] Deleted 1 orphaned file(s)",
-      "[cleanup] Removed the allergy note from 4 layout(s) and 5 event sheet(s) past their retention",
+      "[cleanup] Removed the allergy note from 4 layout(s) and 5 event sheet(s) past their retention, and from 6 logged change(s)",
+      "[cleanup] Removed the notes on single pieces from 2 layout(s) past their retention",
       "[cleanup] Removed 3 remembered allergy note(s) unused for the agreed period",
       "[cleanup] Removed 4 engagement event(s) past their retention period",
       "[cleanup] Removed 6 web vital sample(s) past their retention period",
