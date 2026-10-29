@@ -17,6 +17,11 @@
       "types": "./dist/ai-draft-review.d.ts",
       "import": "./dist/ai-draft-review.js",
       "default": "./dist/ai-draft-review.js"
+    },
+    "./*": {
+      "types": "./dist/*.d.ts",
+      "import": "./dist/*.js",
+      "default": "./dist/*.js"
     }
   },
   "files": [

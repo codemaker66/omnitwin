@@ -15,7 +15,8 @@
 // checks it alongside these sets rather than finding it inside them.
 // ---------------------------------------------------------------------------
 
-import { VENUE_ADMINISTRATION_ROLES, VENUE_TEAM_INVITER_ROLES } from "@omnitwin/types";
+import { VENUE_ADMINISTRATION_ROLES } from "@omnitwin/types/user";
+import { VENUE_TEAM_INVITER_ROLES } from "@omnitwin/types/venue-team";
 
 /** Mirrors `canManageVenue` — the base "works this venue's floor" capability. */
 export const VENUE_FLOOR_ROLES = ["admin", "manager", "staff", "hallkeeper"] as const;
