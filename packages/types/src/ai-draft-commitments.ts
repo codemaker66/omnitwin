@@ -1,4 +1,6 @@
-import { z } from "zod";
+import { AI_DRAFT_COMMITMENT_KINDS, type AIDraftCommitmentKind } from "./ai-draft-commitment-kinds.js";
+
+export type { AIDraftCommitmentKind } from "./ai-draft-commitment-kinds.js";
 
 // ---------------------------------------------------------------------------
 // What an AI draft may not say (Plan 19, L6, 27 October 2026): a price, whether
@@ -51,10 +53,6 @@ import { z } from "zod";
 // measured on are in __tests__/ai-draft-commitments.test.ts and
 // __tests__/ai-draft-blind-sets.ts.
 // ---------------------------------------------------------------------------
-
-export const AI_DRAFT_COMMITMENT_KINDS = ["price", "availability", "capacity"] as const;
-export const AIDraftCommitmentKindSchema = z.enum(AI_DRAFT_COMMITMENT_KINDS);
-export type AIDraftCommitmentKind = z.infer<typeof AIDraftCommitmentKindSchema>;
 
 export interface AIDraftCommitment {
   readonly kind: AIDraftCommitmentKind;

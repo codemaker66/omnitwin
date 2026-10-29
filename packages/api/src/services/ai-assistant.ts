@@ -2,15 +2,14 @@ import { z, ZodError } from "zod";
 import {
   AIAssistantStatusSchema,
   CreateAIDraftRequestSchema,
-  createReviewGatedAIDraft,
   stableCanonicalJson,
-  draftLeftAfterWithholding,
   type AIAssistantStatus,
   type AIDraft,
   type AIDraftUseCase,
   type CanonicalJsonValue,
   type CreateAIDraftRequest,
 } from "@omnitwin/types";
+import { createReviewGatedAIDraft, draftLeftAfterWithholding } from "@omnitwin/types/ai-draft-review";
 import type { Env } from "../env.js";
 import { AIDraftNotProducedError, ANTHROPIC_PROVIDER, AnthropicAIGenerationAdapter } from "./anthropic-draft-adapter.js";
 import { scrubContactDetails } from "./proposal-message-draft.js";
