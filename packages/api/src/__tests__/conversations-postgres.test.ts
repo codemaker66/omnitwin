@@ -8,13 +8,14 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { LAYOUT_STYLES } from "@omnitwin/types";
 import * as schema from "../db/schema.js";
 import {
-  postSystemMessage,
   clientConversationSnapshot,
   clientHoldsEventLink,
+  conversationCursorLockKey,
   listMessagesCore,
   listThreadsCore,
   markReceiptCore,
   openThreadCore,
+  postSystemMessage,
   sendClientMessageCore,
   sendMessageCore,
   type ConversationActor,
@@ -230,21 +231,21 @@ describe.skipIf(target === undefined)("conversations on migrated PostgreSQL", ()
   it("takes one thread's cursors in the order its messages commit, so reading on never skips one", async () => {
     const f = await fixture();
     const thread = granted(await openThreadCore(db, f.staff, f.venueId, { audience: "staff-private", subject: "booking", bookingId: f.bookingId })).thread;
-    // An earlier send holds the thread on its own connection while a later
-    // one arrives; the earlier one's message is written after the later one
-    // has started, and commits first.
+    // An earlier send holds the venue's message lock on its own connection
+    // while a later one arrives; the earlier one's message is written after
+    // the later one has started, and commits first.
     const earlier = await pool.connect();
     try {
       await earlier.query("BEGIN");
-      await earlier.query("SELECT id FROM threads WHERE id = $1 FOR UPDATE", [thread.id]);
+      await earlier.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [conversationCursorLockKey(f.venueId)]);
       const later = sendMessageCore(db, f.hallkeeper, thread.id, send("Chairs out by five."));
-      // The later send waits for the thread.
+      // The later send waits for the venue's message lock.
       for (let tries = 0; ; tries += 1) {
         const waiting = await pool.query<{ waiting: string }>(
           "SELECT count(*) AS waiting FROM pg_stat_activity WHERE datname = current_database() AND application_name = current_setting('application_name') AND wait_event_type = 'Lock'",
         );
         if (Number(waiting.rows[0]?.waiting ?? 0) > 0) break;
-        if (tries > 200) throw new Error("the later send never waited for the thread");
+        if (tries > 200) throw new Error("the later send never waited for the venue's message lock");
         await new Promise((resolve) => { setTimeout(resolve, 10); });
       }
       const first = await postSystemMessage(drizzle(earlier, { schema }), thread.id, "Doors at six.");
@@ -391,6 +392,148 @@ describe.skipIf(target === undefined)("conversations on migrated PostgreSQL", ()
     const later = granted(await clientConversationSnapshot(db, f.client, f.eventId, snapshot.cursor));
     expect(later.messages).toEqual([]);
     expect(later.cursor).toBe(snapshot.cursor);
+  });
+
+  /** Sessions of this test's own pool waiting on one of these lock kinds:
+   *  other suites on the same database never count. */
+  async function ownLockWaits(kinds: readonly string[]): Promise<number> {
+    const { rows } = await pool.query<{ n: number }>(
+      "SELECT count(*)::int AS n FROM pg_stat_activity WHERE application_name = current_setting('application_name') AND wait_event_type = 'Lock' AND wait_event = ANY($1::text[])",
+      [[...kinds]]);
+    return rows[0]?.n ?? 0;
+  }
+
+  it("never hands out a cursor that a message committing later can pass, across the event's threads (supplier-requests-5)", async () => {
+    const f = await fixture();
+    const booking = granted(await openThreadCore(db, f.staff, f.venueId, { audience: "client-facing", subject: "booking", bookingId: f.bookingId })).thread;
+    granted(await sendMessageCore(db, f.staff, booking.id, send("We have you from ten")));
+    granted(await sendClientMessageCore(db, f.client, f.eventId, send("Could we come at nine?")));
+    const start = granted(await clientConversationSnapshot(db, f.client, f.eventId, 0));
+    expect(start.messages).toHaveLength(2);
+
+    // A: a step recorded on the booking's thread takes its cursor and has not
+    // yet committed (a request's transaction, say).
+    let release = (): void => undefined;
+    const gate = new Promise<void>((done) => { release = done; });
+    let takenCursor = (_cursor: number): void => undefined;
+    const taken = new Promise<number>((done) => { takenCursor = done; });
+    const held = db.transaction(async (tx) => {
+      const step = await postSystemMessage(tx, booking.id, "Fiona has this");
+      takenCursor(step?.cursor ?? -1);
+      await gate;
+    });
+    const c1 = await taken;
+    expect(c1).toBeGreaterThan(start.cursor);
+
+    // B: the office answers on the event's own thread meanwhile.
+    let bSettled = false;
+    const answered = sendClientMessageCore(db, f.staff, f.eventId, send("Nine is fine.")).finally(() => { bSettled = true; });
+    // Either B waits for A (the fix), or B has committed with a cursor past A's.
+    for (let tries = 0; !bSettled && (await ownLockWaits(["advisory"])) === 0; tries += 1) {
+      if (tries > 500) throw new Error("the second send neither waited nor finished");
+      await new Promise((done) => setTimeout(done, 10));
+    }
+
+    // While A is open, no read hands out a cursor at or past A's.
+    const meanwhile = granted(await clientConversationSnapshot(db, f.client, f.eventId, start.cursor));
+    expect(meanwhile.cursor).toBeLessThan(c1);
+
+    release();
+    await held;
+    const b = granted(await answered);
+    expect(b.message.cursor).toBeGreaterThan(c1);
+
+    // Reading on from what was handed out finds both, in the order they committed.
+    const after = granted(await clientConversationSnapshot(db, f.client, f.eventId, meanwhile.cursor));
+    expect(after.messages.map((message) => [message.body, message.cursor])).toEqual([
+      ["Fiona has this", c1], ["Nine is fine.", b.message.cursor],
+    ]);
+    const [thread] = await db.select({ lastCursor: schema.threads.lastCursor }).from(schema.threads).where(eq(schema.threads.id, booking.id));
+    expect(thread?.lastCursor).toBe(c1);
+  });
+
+  it("never lets a later commit pass a message that has drawn its cursor and stalled (supplier-requests-5)", async () => {
+    const f = await fixture();
+    const booking = granted(await openThreadCore(db, f.staff, f.venueId, { audience: "client-facing", subject: "booking", bookingId: f.bookingId })).thread;
+    granted(await sendClientMessageCore(db, f.client, f.eventId, send("Could we come at nine?")));
+    const start = granted(await clientConversationSnapshot(db, f.client, f.eventId, 0));
+
+    // A's insert draws its cursor and then waits at its foreign-key check on
+    // the thread's row, which a second connection holds. Only a lock taken
+    // before the cursor is drawn makes the office's answer wait behind it.
+    const holder = await pool.connect();
+    let released = false;
+    try {
+      await holder.query("BEGIN");
+      await holder.query("SELECT id FROM threads WHERE id = $1 FOR UPDATE", [booking.id]);
+      const a = db.transaction(async (tx) => postSystemMessage(tx, booking.id, "Fiona has this"));
+      for (let tries = 0; (await ownLockWaits(["transactionid", "tuple"])) === 0; tries += 1) {
+        if (tries > 300) throw new Error("the first message never stalled");
+        await new Promise((done) => setTimeout(done, 10));
+      }
+      let bSettled = false;
+      const b = sendClientMessageCore(db, f.staff, f.eventId, send("Nine is fine.")).finally(() => { bSettled = true; });
+      for (let tries = 0; !bSettled && (await ownLockWaits(["advisory"])) === 0; tries += 1) {
+        if (tries > 300) throw new Error("the second send neither waited nor finished");
+        await new Promise((done) => setTimeout(done, 10));
+      }
+      const meanwhile = granted(await clientConversationSnapshot(db, f.client, f.eventId, start.cursor));
+      await holder.query("ROLLBACK");
+      released = true;
+      await a;
+      granted(await b);
+      const after = granted(await clientConversationSnapshot(db, f.client, f.eventId, meanwhile.cursor));
+      expect([...meanwhile.messages, ...after.messages].map((message) => message.body).sort()).toEqual(["Fiona has this", "Nine is fine."]);
+    } finally {
+      if (!released) await holder.query("ROLLBACK").catch(() => undefined);
+      holder.release();
+    }
+  });
+
+  /** `db`, with `between` run once the first read of the threads table has
+   *  answered and before the snapshot's next statement: the gap between two
+   *  of its reads, held open. */
+  function pausedAfterThreadsRead(base: typeof db, between: () => Promise<void>): typeof db {
+    let paused = false;
+    return new Proxy(base, {
+      get(target, prop, receiver) {
+        const value: unknown = Reflect.get(target, prop, receiver);
+        if (typeof value !== "function") return value;
+        const method = (value as (...args: unknown[]) => unknown).bind(target);
+        if (prop !== "select") return method;
+        return (...args: unknown[]) => {
+          const builder = method(...args) as { from: (table: unknown, ...rest: unknown[]) => unknown };
+          const from = builder.from.bind(builder);
+          builder.from = (table: unknown, ...rest: unknown[]) => {
+            const query = from(table, ...rest) as { then: (ok: (rows: unknown) => unknown, bad: (error: unknown) => unknown) => Promise<unknown> };
+            if (table !== schema.threads) return query;
+            const answer = query.then.bind(query);
+            query.then = (ok, bad) => answer(async (rows) => {
+              if (!paused) { paused = true; await between(); }
+              return rows;
+            }, (error) => { throw error; }).then(ok, bad);
+            return query;
+          };
+          return builder;
+        };
+      },
+    });
+  }
+
+  it("never loses a message on a thread opened while the client's snapshot is being read (supplier-requests-5)", async () => {
+    const f = await fixture();
+    granted(await sendClientMessageCore(db, f.client, f.eventId, send("Could we come at nine?")));
+    const start = granted(await clientConversationSnapshot(db, f.client, f.eventId, 0));
+    // The office opens the booking's client-facing thread and writes in it,
+    // then answers on the event's own thread: three commits, in that order.
+    const between = async (): Promise<void> => {
+      const opened = granted(await openThreadCore(db, f.staff, f.venueId, { audience: "client-facing", subject: "booking", bookingId: f.bookingId })).thread;
+      granted(await sendMessageCore(db, f.staff, opened.id, send("We have you from ten")));
+      granted(await sendClientMessageCore(db, f.staff, f.eventId, send("Nine is fine.")));
+    };
+    const first = granted(await clientConversationSnapshot(pausedAfterThreadsRead(db, between), f.client, f.eventId, start.cursor));
+    const next = granted(await clientConversationSnapshot(db, f.client, f.eventId, first.cursor));
+    expect([...first.messages, ...next.messages].map((message) => message.body).sort()).toEqual(["Nine is fine.", "We have you from ten"]);
   });
 
   it("keeps a staff-private thread out of the client's snapshot entirely", async () => {

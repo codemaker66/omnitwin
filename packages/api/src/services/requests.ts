@@ -834,6 +834,12 @@ export async function readRequest(
     .limit(1);
   if (row === undefined) return NOT_FOUND;
   if (!canSeeRequest(actor, row.request)) return FORBIDDEN;
+  // A client reads their own requests only while their link to the event is
+  // live, as for every other step they take on it (transitionRequestCore).
+  if (isClientSideRole(actor.role) && !isPlatformAdmin(actor)
+    && (row.request.eventId === null || !(await clientHoldsEventLink(db, actor.id, row.request.eventId)))) {
+    return FORBIDDEN;
+  }
   return serializeRequest(row.request, row.roomName);
 }
 
