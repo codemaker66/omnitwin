@@ -276,7 +276,8 @@ describe("a card set down as a card, whichever chrome armed it (Q-07, Q-13)", ()
     if (round === undefined) throw new Error("no round");
     setPlannerFeaturesForTesting({ setupCards: true });
     useCatalogueStore.getState().selectItem(round.id);
-    usePlacementStore.setState({ ghostPosition: [0, 0, 0] });
+    // A ghost on empty floor, as updateGhost judges it: green, so the old way asks for its seats.
+    usePlacementStore.setState({ ghostPosition: [0, 0, 0], ghostValid: true });
     placePieceInHand(() => undefined);
     expect(placed()).toHaveLength(0);
     expect(useChairDialogStore.getState().pending).toMatchObject({ catalogueItemId: round.id });
@@ -292,7 +293,8 @@ describe("a card set down as a card, whichever chrome armed it (Q-07, Q-13)", ()
     const round = getCatalogueItemBySlug("round-table-6ft-white");
     if (round === undefined) throw new Error("no round");
     useCatalogueStore.getState().selectItem(round.id);
-    usePlacementStore.setState({ ghostPosition: [0, 0, 0] });
+    // A ghost on empty floor, as updateGhost judges it: green, so the old way asks for its seats.
+    usePlacementStore.setState({ ghostPosition: [0, 0, 0], ghostValid: true });
     placePieceInHand(() => undefined);
     expect(placed()).toHaveLength(0);
     expect(useChairDialogStore.getState().pending).toMatchObject({ catalogueItemId: round.id });

@@ -127,6 +127,8 @@ describe("the truthful ghost's set", () => {
     const chip = screen.getByRole("alert");
     expect(chip.textContent).toMatch(/^Won't fit · would overlap the round/u);
     expect(chip.textContent).toContain("Move it clear to set it down");
+    // The chip says it won't fit; the tag above the set only names it, so the refusal is said once.
+    expect(words().querySelector(".ghost-set__tag")?.textContent).toBe("Round of 10 · +10 seats");
     expect(container.querySelector("[name='ghost-blocking-outlines']")).not.toBeNull();
   });
 
