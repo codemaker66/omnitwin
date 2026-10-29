@@ -22,10 +22,10 @@ import { RetainedTextureCache, canvasFontGeneration } from "../lib/retained-text
 import { getCatalogueItem } from "../lib/catalogue.js";
 import type { CatalogueItem } from "../lib/catalogue.js";
 import { normalizeFurnitureScale } from "../lib/furniture-scale.js";
+import { countLabel } from "../lib/count-label.js";
 import {
   appliedTableLinenStyle,
   isDiningTableItem,
-  isPoseurTableItem,
 } from "../lib/furniture-semantics.js";
 import { toRenderSpace } from "../constants/scale.js";
 import { FurnitureProxy } from "./FurnitureProxy.js";
@@ -49,6 +49,7 @@ import {
   hasPlacementViolation,
 } from "../lib/placement.js";
 import type { PlacedItem } from "../lib/placement.js";
+import { newlyClothedIds } from "../lib/newly-clothed.js";
 import {
   TABLE_CLOTH_COLORS,
   isSceneFurniturePlacement,
@@ -265,150 +266,151 @@ function fitCanvasText(
 
 interface NameplateTextureOptions {
   readonly cameraEnabled: boolean;
+  /** Chairs grouped with the plate's table; a plate without one names only its label. */
   readonly groupedSeatCount?: number;
 }
 
+/** No plate is wider than this, in metres, so it never covers the layout it names. */
+export const NAMEPLATE_MAX_WIDTH_M = 2.4;
+/** A plate's lower edge stands this far above the top of its piece, in metres. */
+export const NAMEPLATE_CLEARANCE_M = 0.9;
+/** The widest plate's texture; narrower plates keep its pixels per metre. */
+const NAMEPLATE_CANVAS_MAX_WIDTH = 1024;
+const NAMEPLATE_CANVAS_HEIGHT = 176;
+const NAMEPLATE_PADDING_PX = 60;
+const NAMEPLATE_TEXT_PX = 96;
+const NAMEPLATE_MIN_TEXT_PX = 64;
+const NAMEPLATE_TEXT_WEIGHT = 760;
+
 /**
  * Nameplates unmount and return with camera gestures and the compact overlay
- * budget. Sharing each 1600×880 texture (about 7.5 MB on the GPU with its
- * mipmaps) by its pixel inputs, and keeping it briefly after the last plate
- * unmounts, stops every return from redrawing and re-uploading it. The idle
- * window covers a gesture and its settle; the cap bounds what waits unused.
+ * budget. Sharing each texture (at most 1024×176, about 0.7 MB on the GPU) by
+ * its pixel inputs, and keeping it briefly after the last plate unmounts,
+ * stops every return from redrawing and re-uploading it. The idle window
+ * covers a gesture and its settle; the cap bounds what waits unused.
  */
 export const nameplateTextures = new RetainedTextureCache<CanvasTexture>({
   idleMs: 5_000,
   maxIdle: 64,
 });
 
+function nameplateLabel(label: string): string {
+  return label.trim().slice(0, 80);
+}
+
+function nameplateSeatSuffix(groupedSeatCount: number | undefined): string {
+  return groupedSeatCount !== undefined && groupedSeatCount > 0
+    ? ` · ${countLabel(groupedSeatCount, "seat")}`
+    : "";
+}
+
+/** The plate's one line: "Table 4 · 10 seats", or the label alone without grouped seats. */
+export function nameplateText(label: string, groupedSeatCount?: number): string {
+  return `${nameplateLabel(label)}${nameplateSeatSuffix(groupedSeatCount)}`;
+}
+
 /** Every input createNameplateTexture reads, plus the fonts its text is drawn in. */
 export function nameplateTextureKey(
   label: string,
-  item: CatalogueItem,
   options: NameplateTextureOptions,
 ): string {
   return JSON.stringify([
-    label,
-    item.id,
-    item.slug,
-    item.category,
-    item.name,
-    item.tableShape,
-    options.cameraEnabled,
+    nameplateLabel(label),
     options.groupedSeatCount ?? null,
+    options.cameraEnabled,
     canvasFontGeneration(),
   ]);
 }
 
+/**
+ * The plate in metres, [width, height]: the texture's aspect, with the widest
+ * texture at NAMEPLATE_MAX_WIDTH_M, so every plate shares one text size.
+ */
+export function nameplatePlaneSize(
+  canvasWidth: number,
+  canvasHeight: number,
+): readonly [number, number] {
+  if (canvasWidth <= 0) return [0, 0];
+  const width = Math.min(
+    NAMEPLATE_MAX_WIDTH_M,
+    (canvasWidth / NAMEPLATE_CANVAS_MAX_WIDTH) * NAMEPLATE_MAX_WIDTH_M,
+  );
+  return [width, (width * canvasHeight) / canvasWidth];
+}
+
+/** The line that fits: a label too long even at the smallest size shortens, its seat count kept. */
+function fittedNameplateLine(
+  ctx: CanvasRenderingContext2D,
+  label: string,
+  groupedSeatCount: number | undefined,
+  maxWidth: number,
+): string {
+  const full = nameplateText(label, groupedSeatCount);
+  if (ctx.measureText(full).width <= maxWidth) return full;
+  const display = nameplateLabel(label);
+  const suffix = nameplateSeatSuffix(groupedSeatCount);
+  for (let end = display.length - 1; end > 0; end -= 1) {
+    const line = `${display.slice(0, end).trimEnd()}…${suffix}`;
+    if (ctx.measureText(line).width <= maxWidth) return line;
+  }
+  return `…${suffix}`;
+}
+
 function createNameplateTexture(
   label: string,
-  item: CatalogueItem,
   options: NameplateTextureOptions,
 ): CanvasTexture | null {
   if (typeof document === "undefined") return null;
   const canvas = document.createElement("canvas");
-  canvas.width = 1600;
-  canvas.height = 880;
+  canvas.width = NAMEPLATE_CANVAS_MAX_WIDTH;
+  canvas.height = NAMEPLATE_CANVAS_HEIGHT;
   const ctx = canvas.getContext("2d");
   if (ctx === null) return null;
 
-  const isTable = item.category === "table";
-  const eyebrow = isTable ? "TABLE" : item.category === "chair" ? "SEAT" : "ITEM";
-  const display = label.trim().slice(0, 80);
-  const detailLines = nameplateDetailLines(item, options);
+  const maxLineWidth = NAMEPLATE_CANVAS_MAX_WIDTH - NAMEPLATE_PADDING_PX * 2;
+  const textPx = fitCanvasText(
+    ctx,
+    nameplateText(label, options.groupedSeatCount),
+    maxLineWidth,
+    NAMEPLATE_TEXT_PX,
+    NAMEPLATE_MIN_TEXT_PX,
+    NAMEPLATE_TEXT_WEIGHT,
+  );
+  const line = fittedNameplateLine(ctx, label, options.groupedSeatCount, maxLineWidth);
+  // The plate hugs its line, no narrower than a pill. Resizing the canvas
+  // resets the context, so the font is set again before drawing.
+  canvas.width = Math.ceil(Math.min(
+    NAMEPLATE_CANVAS_MAX_WIDTH,
+    Math.max(NAMEPLATE_CANVAS_HEIGHT * 2, ctx.measureText(line).width + NAMEPLATE_PADDING_PX * 2),
+  ));
+  const { width, height } = canvas;
+  // The rim sits at the canvas edge, so the plane's lower edge is the plate's.
+  const inset = 3;
+  const radius = (height - inset * 2) / 2;
 
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.shadowColor = "rgba(0, 0, 0, 0.52)";
-  ctx.shadowBlur = 42;
-  ctx.shadowOffsetY = 24;
-
-  const bg = ctx.createLinearGradient(46, 52, 1518, 782);
-  bg.addColorStop(0, "rgba(10, 10, 9, 0.99)");
-  bg.addColorStop(0.52, "rgba(24, 21, 17, 0.975)");
-  bg.addColorStop(1, "rgba(8, 8, 7, 0.99)");
+  ctx.clearRect(0, 0, width, height);
+  const bg = ctx.createLinearGradient(0, 0, width, height);
+  bg.addColorStop(0, "rgba(10, 10, 9, 0.97)");
+  bg.addColorStop(0.52, "rgba(24, 21, 17, 0.95)");
+  bg.addColorStop(1, "rgba(8, 8, 7, 0.97)");
   ctx.fillStyle = bg;
-  roundedRect(ctx, 46, 52, 1508, 724, 76);
-  ctx.fill();
-  ctx.shadowColor = "transparent";
-  ctx.shadowBlur = 0;
-  ctx.shadowOffsetY = 0;
-
-  const sheen = ctx.createLinearGradient(46, 52, 1518, 776);
-  sheen.addColorStop(0, "rgba(255, 234, 160, 0.16)");
-  sheen.addColorStop(0.42, "rgba(255, 255, 255, 0.015)");
-  sheen.addColorStop(0.78, "rgba(219, 173, 65, 0.14)");
-  sheen.addColorStop(1, "rgba(255, 240, 184, 0.1)");
-  ctx.fillStyle = sheen;
-  roundedRect(ctx, 78, 84, 1444, 660, 58);
+  roundedRect(ctx, inset, inset, width - inset * 2, height - inset * 2, radius);
   ctx.fill();
 
-  const gradient = ctx.createLinearGradient(42, 46, 1494, 402);
-  gradient.addColorStop(0, "rgba(255, 229, 142, 1)");
-  gradient.addColorStop(0.32, "rgba(151, 105, 30, 0.72)");
-  gradient.addColorStop(0.68, "rgba(235, 192, 80, 0.88)");
-  gradient.addColorStop(1, "rgba(255, 226, 134, 1)");
-  ctx.strokeStyle = gradient;
-  ctx.lineWidth = 10;
-  roundedRect(ctx, 46, 52, 1508, 724, 76);
-  ctx.stroke();
-
-  ctx.fillStyle = options.cameraEnabled ? "rgba(76, 205, 255, 0.22)" : "rgba(232, 189, 78, 0.18)";
-  roundedRect(ctx, 102, 126, 96, 410, 42);
-  ctx.fill();
-  ctx.strokeStyle = options.cameraEnabled ? "rgba(111, 221, 255, 0.86)" : "rgba(232, 189, 78, 0.76)";
+  const rim = ctx.createLinearGradient(0, 0, width, height);
+  rim.addColorStop(0, options.cameraEnabled ? "rgba(151, 230, 255, 0.96)" : "rgba(255, 229, 142, 1)");
+  rim.addColorStop(0.5, options.cameraEnabled ? "rgba(76, 205, 255, 0.62)" : "rgba(151, 105, 30, 0.72)");
+  rim.addColorStop(1, options.cameraEnabled ? "rgba(151, 230, 255, 0.96)" : "rgba(255, 226, 134, 1)");
+  ctx.strokeStyle = rim;
   ctx.lineWidth = 5;
-  roundedRect(ctx, 102, 126, 96, 410, 42);
+  roundedRect(ctx, inset, inset, width - inset * 2, height - inset * 2, radius);
   ctx.stroke();
-  ctx.fillStyle = options.cameraEnabled ? "rgba(151, 230, 255, 0.96)" : "rgba(247, 206, 103, 0.95)";
-  ctx.beginPath();
-  ctx.arc(150, 190, 18, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillRect(142, 244, 16, 210);
 
-  ctx.fillStyle = "rgba(232, 189, 78, 0.96)";
-  ctx.font = "900 58px Inter, Arial, sans-serif";
-  ctx.letterSpacing = "9px";
-  ctx.fillText(eyebrow, 246, 170);
-
+  ctx.font = `${String(NAMEPLATE_TEXT_WEIGHT)} ${String(textPx)}px Inter, Arial, sans-serif`;
   ctx.fillStyle = "#fff3d2";
-  fitCanvasText(ctx, display, 1178, item.category === "chair" ? 178 : 188, 92);
-  ctx.shadowColor = "rgba(0, 0, 0, 0.8)";
-  ctx.shadowBlur = 18;
-  ctx.shadowOffsetY = 9;
-  ctx.fillText(display, 244, 344);
-  ctx.shadowColor = "transparent";
-  ctx.shadowBlur = 0;
-  ctx.shadowOffsetY = 0;
-
-  ctx.strokeStyle = "rgba(255, 225, 140, 0.28)";
-  ctx.lineWidth = 3;
-  ctx.beginPath();
-  ctx.moveTo(244, 398);
-  ctx.lineTo(1424, 398);
-  ctx.stroke();
-
-  ctx.font = "760 48px Inter, Arial, sans-serif";
-  ctx.fillStyle = "rgba(255, 249, 229, 0.92)";
-  for (let i = 0; i < detailLines.length; i += 1) {
-    const y = 474 + i * 82;
-    ctx.fillStyle = i === 0 ? "rgba(255, 249, 229, 0.96)" : "rgba(226, 218, 199, 0.88)";
-    ctx.beginPath();
-    ctx.arc(260, y - 15, 9, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillText(detailLines[i] ?? "", 292, y);
-  }
-
-  if (options.cameraEnabled) {
-    ctx.fillStyle = "rgba(77, 205, 255, 0.14)";
-    roundedRect(ctx, 1058, 612, 366, 76, 32);
-    ctx.fill();
-    ctx.strokeStyle = "rgba(117, 224, 255, 0.62)";
-    ctx.lineWidth = 3;
-    roundedRect(ctx, 1058, 612, 366, 76, 32);
-    ctx.stroke();
-    ctx.fillStyle = "rgba(189, 241, 255, 0.96)";
-    ctx.font = "850 34px Inter, Arial, sans-serif";
-    ctx.fillText("CAMERA POV SAVED", 1092, 660);
-  }
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(line, width / 2, height / 2);
 
   const texture = new CanvasTexture(canvas);
   texture.colorSpace = SRGBColorSpace;
@@ -416,37 +418,6 @@ function createNameplateTexture(
   texture.magFilter = LinearFilter;
   texture.needsUpdate = true;
   return texture;
-}
-
-function nameplateDetailLines(item: CatalogueItem, options: NameplateTextureOptions): readonly string[] {
-  const lines: string[] = [];
-  if (item.category === "table") {
-    if (isPoseurTableItem(item)) {
-      lines.push("Standing table");
-    } else if (options.groupedSeatCount !== undefined && options.groupedSeatCount > 0) {
-      lines.push(`${String(options.groupedSeatCount)} grouped seats`);
-    } else if (item.tableShape === "round") {
-      lines.push("Round table");
-    } else {
-      lines.push("Table placement");
-    }
-    lines.push("Planner label");
-  } else if (item.category === "chair") {
-    lines.push(item.name);
-    lines.push("Seat assignment");
-  } else {
-    lines.push(item.name);
-    lines.push("Planner object");
-  }
-
-  if (options.cameraEnabled) lines.push("Camera point of view active");
-  return lines.slice(0, 3);
-}
-
-function rotateOffset(dx: number, dz: number, rotationY: number): readonly [number, number] {
-  const cos = Math.cos(rotationY);
-  const sin = Math.sin(rotationY);
-  return [dx * cos + dz * sin, -dx * sin + dz * cos];
 }
 
 function roundedRect(
@@ -470,6 +441,45 @@ function roundedRect(
   ctx.closePath();
 }
 
+/**
+ * The selected piece that carries the one selection nameplate, or null.
+ *
+ * The selection store holds a plain set, with no primary or last-selected
+ * member, so the rule reads the selection's shape. It must be one unit: a
+ * single piece, or pieces that all share one group (the outliner selects a
+ * table with its seats). The plate goes on that unit's one table, or else
+ * on its one piece that is not a chair. Chairs never carry it, and separate
+ * pieces (Shift-clicks, a marquee over several tables) name nothing, because
+ * nothing says which of them is meant.
+ */
+export function primaryNameplateId(
+  selectedIds: ReadonlySet<string>,
+  placedItems: readonly PlacedItem[],
+): string | null {
+  if (selectedIds.size === 0) return null;
+  let unitGroupId: string | null | undefined;
+  let table: string | null = null;
+  let tables = 0;
+  let piece: string | null = null;
+  let pieces = 0;
+  for (const placed of placedItems) {
+    if (!selectedIds.has(placed.id) || !isSceneFurniturePlacement(placed)) continue;
+    if (unitGroupId === undefined) unitGroupId = placed.groupId;
+    else if (placed.groupId === null || placed.groupId !== unitGroupId) return null;
+    const category = getCatalogueItem(placed.catalogueItemId)?.category;
+    if (category === undefined || category === "chair") continue;
+    if (category === "table") {
+      table = placed.id;
+      tables += 1;
+    } else {
+      piece = placed.id;
+      pieces += 1;
+    }
+  }
+  if (tables === 1) return table;
+  return tables === 0 && pieces === 1 ? piece : null;
+}
+
 function FurnitureNamePlate({
   label,
   item,
@@ -489,10 +499,15 @@ function FurnitureNamePlate({
 }): React.ReactElement | null {
   const groupRef = useRef<Group>(null);
   const { camera } = useThree();
+  // Only a table counts seats: a chair's grouped count is its neighbours.
+  const textureOptions: NameplateTextureOptions = {
+    cameraEnabled,
+    groupedSeatCount: item.category === "table" ? groupedSeatCount : undefined,
+  };
   const texture = useRetainedTexture(
     nameplateTextures,
-    nameplateTextureKey(label, item, { cameraEnabled, groupedSeatCount }),
-    () => createNameplateTexture(label, item, { cameraEnabled, groupedSeatCount }),
+    nameplateTextureKey(label, textureOptions),
+    () => createNameplateTexture(label, textureOptions),
   );
 
   useFrame(() => {
@@ -503,48 +518,24 @@ function FurnitureNamePlate({
 
   if (texture === null) return null;
 
-  const width = item.category === "table"
-    ? Math.max(7.2, toRenderSpace(item.width) * 3.2)
-    : Math.max(4.8, toRenderSpace(item.width) * 6.6);
-  const height = item.category === "table"
-    ? Math.max(3.9, toRenderSpace(item.depth) * 1.48)
-    : 2.7;
-  const yOffset = furnitureNamePlateYOffset(item, scale);
-  const tableOffset = Math.max(2.35, toRenderSpace(item.width) * 0.72);
-  const chairOffset = Math.max(0.96, toRenderSpace(item.depth) * 1.6);
-  const [offsetX, offsetZ] = item.category === "table"
-    ? rotateOffset(tableOffset, -tableOffset * 0.32, rotationY)
-    : rotateOffset(0, -chairOffset, rotationY);
+  const [width, height] = nameplatePlaneSize(texture.image.width, texture.image.height);
 
+  // The group turns to the camera about the plate's lower edge, which stays
+  // NAMEPLATE_CLEARANCE_M above the piece however far the plate tilts.
   return (
     <group
       ref={groupRef}
       name="item-nameplate"
-      position={[position[0] + offsetX, position[1] + yOffset, position[2] + offsetZ]}
+      position={[position[0], position[1] + furnitureNamePlateYOffset(item, scale), position[2]]}
       rotation={[0, rotationY, 0]}
     >
-      <mesh renderOrder={cameraEnabled ? 21 : 20}>
+      <mesh position={[0, height / 2, 0]} renderOrder={cameraEnabled ? 21 : 20}>
         <planeGeometry args={[width, height]} />
         <meshBasicMaterial
           map={texture}
           side={DoubleSide}
           transparent
           opacity={cameraEnabled ? 1 : 0.96}
-          depthTest={false}
-          depthWrite={false}
-          clippingPlanes={sectionClipPlanes}
-        />
-      </mesh>
-      <mesh
-        name="item-nameplate-anchor-dot"
-        position={[-width * 0.48, -height * 0.44, 0.02]}
-        renderOrder={cameraEnabled ? 22 : 21}
-      >
-        <circleGeometry args={[0.13, 32]} />
-        <meshBasicMaterial
-          color={cameraEnabled ? "#8ee8ff" : "#f0ca66"}
-          transparent
-          opacity={0.92}
           depthTest={false}
           depthWrite={false}
           clippingPlanes={sectionClipPlanes}
@@ -591,12 +582,12 @@ function CameraReferenceGlow({
   );
 }
 
+/** Height of a plate's lower edge above the piece's base: its scaled top plus the clearance. */
 export function furnitureNamePlateYOffset(
-  item: Pick<CatalogueItem, "category" | "height">,
+  item: Pick<CatalogueItem, "height">,
   scale?: number,
 ): number {
-  const annotationClearance = item.category === "chair" ? 1.25 : 1.35;
-  return item.height * normalizeFurnitureScale(scale) + annotationClearance;
+  return item.height * normalizeFurnitureScale(scale) + NAMEPLATE_CLEARANCE_M;
 }
 
 export function cameraReferenceGlowRadius(
@@ -633,7 +624,7 @@ interface PlacedFurnitureItemProps {
    * renders only an invisible pick proxy (so selection/drag stay unchanged).
    */
   readonly renderModel: boolean;
-  /** Large camera-facing nameplates are useful on desktop but costly when every mobile item has a label. */
+  /** Whether this piece shows its camera-facing nameplate: the primary selection's, or a camera reference's. */
   readonly renderNamePlate: boolean;
   readonly generatedInspectionActive: boolean;
   readonly generatedExplodeProgress: number;
@@ -798,6 +789,7 @@ export function PlacedFurniture(): React.ReactElement {
   const timelinePreviewMode = useLayoutTimelinePreviewStore((state) => state.mode);
   const placedItems = usePlacementStore((s) => s.placedItems);
   const selectedIds = useSelectionStore((s) => s.selectedIds);
+  const marqueeActive = useSelectionStore((s) => s.marqueeActive);
   const bookmarks = useBookmarkStore((s) => s.bookmarks);
   const activeReferenceId = useBookmarkStore((s) => s.activeReferenceId);
   const roomDims = useRoomDimensionsStore((s) => s.dimensions);
@@ -835,39 +827,20 @@ export function PlacedFurniture(): React.ReactElement {
 
   // Track which items are currently animating their cloth unfurl
   const [animatingIds, setAnimatingIds] = useState<ReadonlySet<string>>(new Set());
-  const prevClothedRef = useRef<ReadonlyMap<string, string> | null>(null);
+  const prevItemsRef = useRef<readonly PlacedItem[] | null>(null);
 
-  // Detect newly clothed items to trigger animation.
-  // Avoids allocating intermediate Sets on every render — only builds new
-  // Sets when an item actually becomes clothed for the first time.
+  // A cloth drapes only when someone puts it on a piece already in the
+  // layout (newlyClothedIds): never on the first render, nor for the ids a
+  // save re-keys, an undo restores or a newly loaded layout brings.
   useEffect(() => {
-    const prev = prevClothedRef.current;
-    let newlyClothed: string[] | null = null;
-    const nextClothed = new Map<string, string>();
-
-    for (const item of placedItems) {
-      if (!isSceneFurniturePlacement(item)) continue;
-      const catalogueItem = getCatalogueItem(item.catalogueItemId);
-      if (catalogueItem === undefined) continue;
-      const appliedStyle = appliedTableLinenStyle(catalogueItem, item);
-      if (appliedStyle !== null) {
-        const key = appliedStyle;
-        nextClothed.set(item.id, key);
-        if (prev !== null && prev.get(item.id) !== key) {
-          (newlyClothed ??= []).push(item.id);
-        }
-      }
-    }
-
-    prevClothedRef.current = nextClothed;
-
-    if (prev !== null && newlyClothed !== null) {
-      setAnimatingIds((cur) => {
-        const next = new Set(cur);
-        for (const id of newlyClothed) next.add(id);
-        return next;
-      });
-    }
+    const newlyClothed = newlyClothedIds(prevItemsRef.current, placedItems);
+    prevItemsRef.current = placedItems;
+    if (newlyClothed.length === 0) return;
+    setAnimatingIds((cur) => {
+      const next = new Set(cur);
+      for (const id of newlyClothed) next.add(id);
+      return next;
+    });
   }, [placedItems]);
 
   const handleAnimationComplete = useCallback((id: string) => {
@@ -889,13 +862,21 @@ export function PlacedFurniture(): React.ReactElement {
     }
     return ids;
   }, [bookmarks]);
-  // Nameplates are for the item in hand: at their size, a plate over every
-  // labelled table covers the very layout it describes. The layers list
-  // names every table.
+  // One plate, for the piece in hand (primaryNameplateId), and none while a
+  // marquee sweeps: a plate over every labelled table covers the very layout
+  // it describes, and the layers list names every table. A camera reference
+  // keeps its plate whenever the camera rests.
+  const primaryNameplateItemId = useMemo(
+    () => primaryNameplateId(selectedIds, placedItems),
+    [placedItems, selectedIds],
+  );
   const canRenderNameplate = useCallback((placedId: string): boolean => (
     !cameraInteractionActive
-    && (selectedIds.has(placedId) || cameraReferenceItemIds.has(placedId))
-  ), [cameraInteractionActive, cameraReferenceItemIds, selectedIds]);
+    && (
+      cameraReferenceItemIds.has(placedId)
+      || (!marqueeActive && placedId === primaryNameplateItemId)
+    )
+  ), [cameraInteractionActive, cameraReferenceItemIds, marqueeActive, primaryNameplateItemId]);
 
   const activeReferenceItemId = useMemo(() => {
     if (activeReferenceId === null) return null;

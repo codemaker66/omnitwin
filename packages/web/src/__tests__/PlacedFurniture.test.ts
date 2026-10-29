@@ -82,15 +82,14 @@ describe("PlacedFurniture (#15) — memoization tripwire", () => {
     expect(codeOnly).toContain("cameraEnabled={hasCameraReference}");
   });
 
-  it("renders labels as large camera-facing nameplates instead of tiny object strips", async () => {
+  it("raises one camera-facing plate, for the primary selection and never during a marquee", async () => {
     const { codeOnly } = await readSource(SRC);
     expect(codeOnly).toContain("groupRef.current.lookAt(camera.position)");
-    expect(codeOnly).toContain("Math.max(7.2");
-    expect(codeOnly).toContain("Math.max(4.8");
-    expect(codeOnly).toContain("rotateOffset(tableOffset");
-    expect(codeOnly).toContain("grouped seats");
-    expect(codeOnly).toContain("Camera point of view active");
-    expect(codeOnly).toContain("item-nameplate-anchor-dot");
+    // Wiring only: the rule is executed in placed-furniture-lean-rules.test.ts
+    // and the rendered plates in PlacedFurniture.nameplates.test.tsx.
+    expect(codeOnly).toMatch(/primaryNameplateId\(\s*selectedIds,\s*placedItems\s*\)/);
+    expect(codeOnly).toContain("useSelectionStore((s) => s.marqueeActive)");
+    expect(codeOnly).toContain("nameplatePlaneSize(texture.image.width, texture.image.height)");
   });
 
   it("renders table dressing layers over placed tables", async () => {
@@ -109,11 +108,13 @@ describe("PlacedFurniture (#15) — memoization tripwire", () => {
     expect(codeOnly).not.toContain("placed.clothed && catalogueItem.category === \"table\"");
   });
 
-  it("does not animate persisted clothed tables on initial scene load", async () => {
+  it("drapes only the cloths newlyClothedIds names, starting from no previous layout", async () => {
     const { codeOnly } = await readSource(SRC);
-    expect(codeOnly).toContain("useRef<ReadonlyMap<string, string> | null>(null)");
-    expect(codeOnly).toContain("prev !== null && prev.get(item.id) !== key");
-    expect(codeOnly).toContain("if (prev !== null && newlyClothed !== null)");
+    // Wiring only: which ids drape (first load, save, undo, layout switch) is
+    // executed in lib/__tests__/newly-clothed.test.ts.
+    expect(codeOnly).toContain("useRef<readonly PlacedItem[] | null>(null)");
+    expect(codeOnly).toContain("newlyClothedIds(prevItemsRef.current, placedItems)");
+    expect(codeOnly).toContain("prevItemsRef.current = placedItems");
   });
 
   it("keeps compact/motion annotation budgeting separate from model and dressing fidelity", async () => {
