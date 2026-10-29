@@ -11,7 +11,7 @@ adversarial review the same day.
 | Piece | Code |
 | --- | --- |
 | Shared contracts | `packages/types/src/deposits.ts`, `contracts.ts` |
-| Tables | `packages/api/drizzle/0103_deposits_and_signatures.sql`, `db/schema.ts` (`proposalDepositRequests`, `depositPayments`, `proposalContractVersions`, `proposalContractSignatures`); `stripe_events` (0018) is the webhook's idempotency log |
+| Tables | `packages/api/drizzle/0104_deposits_and_signatures.sql`, `db/schema.ts` (`proposalDepositRequests`, `depositPayments`, `proposalContractVersions`, `proposalContractSignatures`); `stripe_events` (0018) is the webhook's idempotency log |
 | Stripe boundary | `services/payments/deposit-gateway.ts` (the only code holding the key; stripe-node pinned), `stripe-mode.ts` |
 | Webhook | `routes/stripe-webhook.ts` → `services/payments/deposit-events.ts` (parse, fold) → `deposit-ledger.ts` (once, under lock) |
 | Deposit routes | `routes/deposits.ts`, `services/deposits.ts` |

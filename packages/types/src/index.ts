@@ -930,6 +930,7 @@ export {
   UserIdSchema,
   USER_ROLES,
   UserRoleSchema,
+  VENUE_ADMINISTRATION_ROLES,
   PLATFORM_ROLES,
   PlatformRoleSchema,
   EmailSchema,
@@ -1537,6 +1538,7 @@ export {
   REDACTED_HEALTH_TEXT,
   redactHealthFreeText,
   redactHealthFreeTextInString,
+  redactAllergyNote,
   emptyDoorSchedule,
   hasDoorScheduleContent,
   type AccessibilityRequirements,
@@ -2616,3 +2618,4 @@ export * from "./venue-team.js";
 // the contract's simple electronic signature with its audit record.
 export * from "./deposits.js";
 export * from "./contracts.js";
+export * from "./reference-loadouts.js";
