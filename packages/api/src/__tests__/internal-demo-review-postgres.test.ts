@@ -124,6 +124,29 @@ describe.skipIf(target === undefined)("supported internal review routes on dispo
     expect(email).not.toHaveBeenCalled();
   });
 
+  it("freezes the layout's gangway review into the submitted snapshot, as the venue's reviewer reads it (QoL E-03)", async () => {
+    const f = await fixture();
+    const pinch = {
+      id: "gangway:zMin:group-1+wall:zMin",
+      widthM: 0.95,
+      guidance: { thresholdM: 1.1, source: "Scottish Government, Practical fire safety guidance for existing non-residential premises, ch. 7" },
+      gangway: "the window wall",
+      location: { kind: "segment", from: { x: -1, z: -5 }, to: { x: 1, z: -5 } },
+      pieceIds: ["p-1"],
+      sides: ["the window wall", "Table 4's chairs"],
+      status: "open",
+    };
+    await db.update(schema.configurations).set({ metadata: { gangwayReview: { items: [pinch] } } })
+      .where(eq(schema.configurations.id, f.configId));
+    expect((await post(f, "submit", { notifyTeam: false })).statusCode).toBe(200);
+    // A later change to the live layout's review leaves what was submitted as it was.
+    await db.update(schema.configurations).set({ metadata: { gangwayReview: { items: [] } } })
+      .where(eq(schema.configurations.id, f.configId));
+    const [snapshot] = (await state(f)).snapshots;
+    const frozen = snapshot?.payload as { readonly gangwayReview?: { readonly items: readonly unknown[] } | null } | undefined;
+    expect(frozen?.gangwayReview?.items).toEqual([pinch]);
+  });
+
   /** The fixture's layout, owned instead by someone on another venue's team.
    *  Anyone may plan in a venue's room, so another venue's team can. */
   async function ownedElsewhere(f: Fixture, role: string): Promise<Fixture> {
