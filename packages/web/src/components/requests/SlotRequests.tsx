@@ -22,7 +22,7 @@ import {
 import { useAuthStore } from "../../stores/auth-store.js";
 import { SlotConversation } from "../conversations/SlotConversation.js";
 import { ActivityIndicator, ActivityStatus } from "../shared/Activity.js";
-import { mintRequestKey, useSlotRequests } from "./requests-context.js";
+import { mintRequestKey, projectRequest, stepWords, useSlotRequests, type WaitingStep } from "./requests-context.js";
 import "./slot-requests.css";
 
 // ---------------------------------------------------------------------------
@@ -93,6 +93,20 @@ function howLongAgo(iso: string, nowMs: number): string {
   return hours === 1 ? "an hour ago" : `${String(hours)} hours ago`;
 }
 
+/** "Waiting to send: Seen · I’ll do it", and a colleague's steps by name. */
+function waitingLines(steps: readonly WaitingStep[], meId: string | null): readonly string[] {
+  const mine = steps.filter((step) => step.authorUserId === meId).map((step) => stepWords(step.transition));
+  const byOthers = new Map<string, string[]>();
+  for (const step of steps) {
+    if (step.authorUserId === meId) continue;
+    byOthers.set(step.authorName, [...(byOthers.get(step.authorName) ?? []), stepWords(step.transition)]);
+  }
+  return [
+    ...(mine.length === 0 ? [] : [`Waiting to send: ${mine.join(" · ")}`]),
+    ...[...byOthers].map(([name, words]) => `Waiting for ${name} to sign in on this device: ${words.join(" · ")}`),
+  ];
+}
+
 function whatWasAsked(request: VenueRequest): string {
   return request.quantity === null
     ? describeRequestKind(request.kind)
@@ -103,23 +117,26 @@ function RequestCard({ request, nowMs }: {
   readonly request: VenueRequest;
   readonly nowMs: number;
 }): ReactElement {
-  const { move, busyId, failure, handlers } = useSlotRequests();
+  const { move, busyId, failure, handlers, waitingSteps } = useSlotRequests();
   const me = useAuthStore((state) => state.user);
   const meId = me?.id ?? null;
   const senior = me !== null && (OFFICE_ROLES.includes(me.role) || me.platformRole === "admin");
-  const mine = request.ownerUserId !== null && request.ownerUserId === meId;
-  const handedToMe = request.state === "handed-over" && request.handoverToUserId !== null && request.handoverToUserId === meId;
+  const waiting = waitingSteps(request.id);
+  // L9: the next press follows the presses still waiting to send.
+  const next = projectRequest(request, waiting, meId);
+  const mine = next.mine;
+  const handedToMe = next.state === "handed-over" && request.handoverToUserId !== null && request.handoverToUserId === meId;
   const busy = busyId === request.id;
   // Only this request's own failure is said on its card.
   const failed = failure?.on === "request" && failure.requestId === request.id ? failure.message : null;
-  const canAcknowledge = nextRequestState(request.state, "acknowledged").ok;
+  const canAcknowledge = nextRequestState(next.state, "acknowledged").ok;
   // A handover in flight is for the person it was handed to; the ladder
   // decides the rest here, and the server decides it again.
-  const canAccept = nextRequestState(request.state, "accepted").ok
-    && (request.state !== "handed-over" || handedToMe || me?.platformRole === "admin");
-  const canStart = nextRequestState(request.state, "underway").ok && (mine || senior);
-  const canHandOver = nextRequestState(request.state, "handed-over").ok && (mine || senior);
-  const canFinish = nextRequestState(request.state, "resolved").ok;
+  const canAccept = nextRequestState(next.state, "accepted").ok
+    && (next.state !== "handed-over" || handedToMe || me?.platformRole === "admin");
+  const canStart = nextRequestState(next.state, "underway").ok && (mine || senior);
+  const canHandOver = nextRequestState(next.state, "handed-over").ok && (mine || senior);
+  const canFinish = nextRequestState(next.state, "resolved").ok;
   const [finishing, setFinishing] = useState(false);
   const [substituting, setSubstituting] = useState(false);
   const [note, setNote] = useState("");
@@ -161,6 +178,7 @@ function RequestCard({ request, nowMs }: {
         </p>
       )}
       {request.detail === null ? null : <p className="vv-request-detail">{request.detail}</p>}
+      {waitingLines(waiting, meId).map((line) => <p key={line} className="vv-request-waiting">{line}</p>)}
 
       <div className="vv-request-actions">
         {busy ? (
@@ -386,10 +404,11 @@ function Composer({ slot, onClose }: {
  * reserved mount point; props only, and it never calls back into the board.
  */
 export function SlotRequests(props: SlotRequestsProps): ReactElement | null {
-  const { requestsFor, status, nowMs, retry } = useSlotRequests();
+  const { requestsFor, status, nowMs, retry, replayNotices, dismissNotice } = useSlotRequests();
   const [composing, setComposing] = useState(false);
   const [retrying, setRetrying] = useState(false);
   const requests = requestsFor(props.bookingId);
+  const notices = replayNotices(props.bookingId);
 
   const signal = useMemo(
     () => deriveSlotRequestSignal(requests.map(toBoardRequest), nowMs),
@@ -398,7 +417,7 @@ export function SlotRequests(props: SlotRequestsProps): ReactElement | null {
 
   // Nothing to say yet and nothing being written: the region stays empty, so
   // the board shows no chrome for a feature the slot is not using.
-  if (status === "loading" && requests.length === 0 && !composing) return null;
+  if (status === "loading" && requests.length === 0 && notices.length === 0 && !composing) return null;
 
   return (
     <section className="vv-requests" aria-label={`Requests for ${props.roomName}`}>
@@ -436,6 +455,19 @@ export function SlotRequests(props: SlotRequestsProps): ReactElement | null {
           />
           {signal.label}
         </p>
+      )}
+
+      {/* L9: what the offline queue's replay could not do here, said until
+          it is put away; the request it was about may have left the slab. */}
+      {notices.length > 0 && (
+        <ul className="vv-request-notices">
+          {notices.map((notice) => (
+            <li key={notice.id} className="vv-request-notice" role="status">
+              <p>{notice.message}</p>
+              <button type="button" className="vv-request-action" onClick={() => { dismissNotice(notice.id); }}>OK</button>
+            </li>
+          ))}
+        </ul>
       )}
 
       {requests.length > 0 && (

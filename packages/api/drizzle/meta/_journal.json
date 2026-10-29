@@ -701,6 +701,20 @@
       "when": 1792540800000,
       "tag": "0102_configuration_claim_secrets",
       "breakpoints": true
+    },
+    {
+      "idx": 100,
+      "version": "7",
+      "when": 1793048400000,
+      "tag": "0103_researched_chair_sizes",
+      "breakpoints": true
+    },
+    {
+      "idx": 101,
+      "version": "7",
+      "when": 1793052000000,
+      "tag": "0104_deposits_and_signatures",
+      "breakpoints": true
     }
   ]
 }

@@ -21,6 +21,7 @@ import { useAutoFillRequestStore } from "../../../stores/auto-fill-request-store
 import { PlannerCommandDeck } from "../PlannerCommandDeck.js";
 import { GRAND_HALL_ARRIVAL } from "../../../lib/planner-room-arrival.js";
 import { sampleCameraTour } from "../../../lib/camera-tour.js";
+import { setPlannerFeaturesForTesting } from "../../../lib/planner-features.js";
 
 function resetPlannerStores(): void {
   resetAssemblyRecallForTests();
@@ -194,6 +195,26 @@ describe("PlannerCommandDeck", () => {
     render(<PlannerCommandDeck />);
 
     expect(screen.queryByTestId("planner-command-action-auto-fill")).toBeNull();
+    expect(screen.queryByTestId("planner-command-action-lay-out")).toBeNull();
+  });
+
+  it("offers Lay out on a laid floor once Fill over the layout is on, and asks the Guests lens (Q-10)", () => {
+    setPlannerFeaturesForTesting({ fillKeepOuts: true });
+    try {
+      const table = getCatalogueItemBySlug("round-table-6ft");
+      if (table === undefined) throw new Error("no round");
+      usePlacementStore.setState({ placedItems: [createPlacedItem(table.id, 0, 0, 0, null, 0)] });
+
+      render(<PlannerCommandDeck />);
+      expect(screen.queryByTestId("planner-command-action-auto-fill")).toBeNull();
+      fireEvent.click(screen.getByTestId("planner-command-action-lay-out"));
+
+      expect(usePlacementStore.getState().placedItems).toHaveLength(1);
+      expect(useCockpitStore.getState().activeMode).toBe("guests");
+      expect(useAutoFillRequestStore.getState().requested).toBe("dinner-rounds");
+    } finally {
+      setPlannerFeaturesForTesting(null);
+    }
   });
 
   it("names its commands in the venue's words: Lay out, Draw and Present (F-15)", () => {

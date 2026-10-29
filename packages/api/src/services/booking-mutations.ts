@@ -26,6 +26,7 @@ import {
 } from "./hold-hygiene.js";
 import { jointlyPromoted, writePromotionNotices, type HoldExit, type PromotionNotice } from "./hold-promotion.js";
 import { bindBookingToEvent, movePhasesWithBooking, syncEventStatus, syncEventStatuses, type BindTarget } from "./event-binding.js";
+import { lockLiveRoom } from "./room-liveness.js";
 
 // ---------------------------------------------------------------------------
 // Booking mutation cores (T-537; Canon §9) — extracted VERBATIM from the
@@ -155,6 +156,22 @@ export const OWNER_VENUE_MISMATCH: BookingMutationDeny = {
   status: 400,
   code: "OWNER_VENUE_MISMATCH",
   error: "Choose an owner who works at this venue.",
+};
+
+/** The room named is not a live room of this venue (a deleted one included). */
+const SPACE_VENUE_MISMATCH: BookingMutationDeny = {
+  ok: false,
+  status: 400,
+  code: "SPACE_VENUE_MISMATCH",
+  error: "The space does not belong to this venue",
+};
+
+/** The booking's own room was deleted: it takes nothing more still to come. */
+const ROOM_DELETED: BookingMutationDeny = {
+  ok: false,
+  status: 409,
+  code: "ROOM_DELETED",
+  error: "This booking's room has been deleted. Bring the room back from Admin first, or move the booking to another room.",
 };
 
 const INK_SLOT_TAKEN: BookingMutationDeny = {
@@ -312,14 +329,7 @@ export async function createBookingCore(
     .from(spaces)
     .where(and(eq(spaces.id, input.spaceId), isNull(spaces.deletedAt)))
     .limit(1);
-  if (space === undefined || space.venueId !== input.venueId) {
-    return {
-      ok: false,
-      status: 400,
-      code: "SPACE_VENUE_MISMATCH",
-      error: "The space does not belong to this venue",
-    };
-  }
+  if (space === undefined || space.venueId !== input.venueId) return SPACE_VENUE_MISMATCH;
 
   if (input.ownerUserId !== undefined && !(await ownerWorksAtVenue(conn, input.ownerUserId, input.venueId))) {
     return OWNER_VENUE_MISMATCH;
@@ -338,6 +348,9 @@ export async function createBookingCore(
     // Nested under a command's transaction this is a savepoint, so a refused
     // insert never poisons the caller's transaction.
     return await conn.transaction(async (tx): Promise<BookingMutationResult> => {
+      // The room as it stands now, held until this commits (admin-venues-3):
+      // a delete that took it first has won, and one after counts this.
+      if (!(await lockLiveRoom(tx, input.venueId, input.spaceId))) return SPACE_VENUE_MISMATCH;
       let eventId: string | null = null;
       if (target !== null) {
         const bound = await bindBookingToEvent(tx, {
@@ -480,22 +493,16 @@ async function updateBookingLocked(
     return OWNER_VENUE_MISMATCH;
   }
 
-  // Cross-lane move (the Board): the target room must belong to the same
-  // venue — the composite bookings_space_venue_fk backs this at the DB.
-  if (patch.spaceId !== undefined && patch.spaceId !== row.spaceId) {
-    const [space] = await conn
-      .select({ id: spaces.id, venueId: spaces.venueId })
-      .from(spaces)
-      .where(and(eq(spaces.id, patch.spaceId), isNull(spaces.deletedAt)))
-      .limit(1);
-    if (space === undefined || space.venueId !== row.venueId) {
-      return {
-        ok: false,
-        status: 400,
-        code: "SPACE_VENUE_MISMATCH",
-        error: "The space does not belong to this venue",
-      };
-    }
+  // Cross-lane move (the Board): the target room must be a live room of the
+  // same venue — the composite bookings_space_venue_fk backs the venue at the
+  // DB. A move or a change of times holds the room it lands in until this
+  // commits, so a room being deleted never takes a booking still to come
+  // (admin-venues-3).
+  const moved = patch.spaceId !== undefined && patch.spaceId !== row.spaceId;
+  const retimed = (patch.startsAt !== undefined && new Date(patch.startsAt).getTime() !== row.startsAt.getTime())
+    || (patch.endsAt !== undefined && new Date(patch.endsAt).getTime() !== row.endsAt.getTime());
+  if ((moved || retimed) && !(await lockLiveRoom(conn, row.venueId, patch.spaceId ?? row.spaceId))) {
+    return moved ? SPACE_VENUE_MISMATCH : ROOM_DELETED;
   }
 
   const next = {
@@ -700,6 +707,13 @@ export async function transitionBookingCore(
         return "stale" as const;
       }
 
+      // A called-off booking put back (the admin's override) takes its room
+      // as it stands now, as a new booking does (admin-venues-3).
+      if (row.status !== "active" && columns.status === "active"
+        && !(await lockLiveRoom(tx, current.venueId, current.spaceId))) {
+        return "room_deleted" as const;
+      }
+
       // Merged again from the row as it stands now: an edit that landed
       // meanwhile is kept, and a hold it would leave without its hygiene
       // is reported as a change rather than written.
@@ -834,6 +848,7 @@ export async function transitionBookingCore(
     });
 
     if (outcome === "stale") return BOOKING_STATE_CHANGED;
+    if (outcome === "room_deleted") return ROOM_DELETED;
     return {
       ok: true,
       status: 200,
