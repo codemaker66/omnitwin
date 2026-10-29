@@ -39,6 +39,12 @@ export interface FurnitureFootprint {
    * from Z). Build footprints of placed pieces with footprintOfPlacement.
    */
   readonly rotation: number;
+  /**
+   * The footprint's own convex outline, world-space metres, in place of its
+   * box: a table with its chairs, so a gap is measured chair back to chair
+   * back, where guests walk (circulation-scene).
+   */
+  readonly outline?: readonly Vec2[];
 }
 
 /**
@@ -120,8 +126,9 @@ export interface CirculationReport {
 // Geometry primitives — exact for convex polygons.
 // ---------------------------------------------------------------------------
 
-/** The four corners of a footprint's oriented box, world-space, metres. */
+/** A footprint's convex outline, world-space, metres: its own, else the four corners of its oriented box. */
 export function footprintCorners(f: FurnitureFootprint): readonly Vec2[] {
+  if (f.outline !== undefined) return f.outline;
   const hw = f.width / 2;
   const hd = f.depth / 2;
   const cos = Math.cos(f.rotation);
@@ -165,6 +172,28 @@ export function polygonCentroid(poly: readonly Vec2[]): Vec2 {
   }
   const n = poly.length === 0 ? 1 : poly.length;
   return { x: sx / n, z: sz / n };
+}
+
+/** The convex hull of points, metres, as a convex polygon (Andrew's monotone chain); collinear points dropped. */
+export function convexHull(points: readonly Vec2[]): readonly Vec2[] {
+  const sorted = [...points].sort((a, b) => a.x - b.x || a.z - b.z);
+  if (sorted.length <= 2) return sorted;
+  const cross = (o: Vec2, a: Vec2, b: Vec2): number => (a.x - o.x) * (b.z - o.z) - (a.z - o.z) * (b.x - o.x);
+  const chain = (ordered: readonly Vec2[]): Vec2[] => {
+    const out: Vec2[] = [];
+    for (const p of ordered) {
+      while (out.length >= 2) {
+        const last = out[out.length - 1];
+        const before = out[out.length - 2];
+        if (last === undefined || before === undefined || cross(before, last, p) > 0) break;
+        out.pop();
+      }
+      out.push(p);
+    }
+    out.pop();
+    return out;
+  };
+  return [...chain(sorted), ...chain([...sorted].reverse())];
 }
 
 /**

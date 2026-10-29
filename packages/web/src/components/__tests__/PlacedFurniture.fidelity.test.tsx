@@ -177,8 +177,10 @@ describe("saved furniture fidelity", () => {
     expect(screen.queryByText("1.2 m clearance")).toBeNull();
     const reasons = screen.getAllByTestId("clearance-ring-reason");
     expect(reasons).toHaveLength(1);
-    expect(reasons[0]?.textContent).toContain("0.60 m");
-    expect(reasons[0]?.textContent).toContain("0.90 m single-file");
+    // The cloths are 0.6 m apart, but the walkway is measured from the group's chair backs (28 Oct 2026):
+    // 0.29 m, which no one can pass.
+    expect(reasons[0]?.textContent).toContain("0.29 m");
+    expect(reasons[0]?.textContent).toContain("effectively impassable (needs 0.90 m)");
     expect(container.querySelectorAll('[name="clearance-rings"] lineSegments')).toHaveLength(1);
   });
 

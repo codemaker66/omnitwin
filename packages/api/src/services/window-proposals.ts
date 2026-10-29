@@ -6,6 +6,7 @@ import { canProposeWindow, isClientSideRole } from "../utils/query.js";
 import { canWriteBookings, ownerWorksAtVenue, PG_UNIQUE_VIOLATION } from "./booking-mutations.js";
 import { clientHoldsEventLink } from "./conversations.js";
 import { movePhasesWithBooking, syncEventStatus } from "./event-binding.js";
+import { lockLiveRoom } from "./room-liveness.js";
 
 // ---------------------------------------------------------------------------
 // Proposing a window (goal 19 S6; D1, D2, D5).
@@ -168,6 +169,9 @@ export async function proposeWindowCore(
   }
 
   return db.transaction(async (tx): Promise<ProposalOk | ProposalDeny> => {
+    // The room as it stands now, held until this commits, so a room being
+    // deleted never takes the proposal (admin-venues-3).
+    if (!(await lockLiveRoom(tx, eventRow.venueId, space.id))) return deny(400, "SPACE_VENUE_MISMATCH", "That room is not at this venue.");
     let row: BookingRow | undefined;
     let changeKind: ProposalOk["changeKind"];
     if (mine !== undefined) {

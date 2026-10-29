@@ -19,6 +19,8 @@ import { PriceList } from "./PriceList.js";
 import type { PriceListEvent, PriceListOffer } from "./price-list-format.js";
 import { getProposalEvent } from "../../../api/proposal-templates.js";
 import { AIMessageDraft } from "./AIMessageDraft.js";
+import { DepositPanel } from "./DepositPanel.js";
+import { ContractPanel } from "./ContractPanel.js";
 import { TemplatePicker, focusIsFree } from "./TemplatePicker.js";
 import { TemplateSave } from "./TemplateSave.js";
 import { applyTemplate, hasWords, type AppliedTemplate, type ApplyMode, type TemplateEvent } from "./template-format.js";
@@ -311,6 +313,9 @@ export function ProposalPanel(props: ProposalPanelProps): ReactElement {
         )}
 
         <NextStep {...props} templateWork={templateWork} />
+        {/* Once accepted, the contract and the deposit (Plan 19 L5). */}
+        {proposal.status === "accepted" && <ContractPanel key={`contract-${proposal.id}`} proposal={proposal} />}
+        {proposal.status === "accepted" && <DepositPanel key={proposal.id} proposal={proposal} />}
         {start === "closed" ? <KeptDraft {...props} holder={null} /> : <Composer {...props} start={start} report={report} onGoing={onFormGoing} onTemplateWork={setTemplateWork} />}
         <LatestQuote {...props} />
         <Conversation {...props} />

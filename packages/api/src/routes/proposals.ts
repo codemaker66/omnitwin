@@ -287,7 +287,7 @@ function toStaffCommentView(row: {
 
 type ProposalRow = typeof proposals.$inferSelect;
 
-interface ProposalEventContext {
+export interface ProposalEventContext {
   readonly eventId: string;
   readonly venueId: string;
   readonly handoffPackId: string | null;
@@ -295,7 +295,7 @@ interface ProposalEventContext {
 
 
 
-async function loadProposalEventContext(db: Database, proposal: ProposalRow): Promise<ProposalEventContext | null> {
+export async function loadProposalEventContext(db: Database, proposal: ProposalRow): Promise<ProposalEventContext | null> {
   if (proposal.configurationId === null) return null;
 
   const [linkedEvent] = await db
@@ -1625,7 +1625,7 @@ async function presentedStatus(db: Database, proposal: ProposalRecord): Promise<
   return last?.from === "accepted" ? "accepted" : null;
 }
 
-async function resolveProposalShareToken(
+export async function resolveProposalShareToken(
   db: Database,
   token: string,
 ): Promise<{ shareToken: ShareTokenRecord; proposal: ProposalRecord; presented: string } | null> {
@@ -1648,7 +1648,7 @@ async function resolveProposalShareToken(
 /** The version a client's link shows: the one last sent. A version saved
  *  since is the team's draft until it is sent. A proposal answered before
  *  any version was saved was shown none. */
-function sentVersionOf(proposal: Pick<ProposalRecord, "sentVersion" | "currentVersion" | "status">): number | null {
+export function sentVersionOf(proposal: Pick<ProposalRecord, "sentVersion" | "currentVersion" | "status">): number | null {
   if (proposal.sentVersion !== null) return proposal.sentVersion;
   return proposal.status === "sent" && proposal.currentVersion >= 1 ? proposal.currentVersion : null;
 }
