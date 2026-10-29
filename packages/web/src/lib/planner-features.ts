@@ -55,6 +55,12 @@ export const PLANNER_FEATURE_SPECS = {
   storeCounts: { lane: "E", item: "Q-14", on: false },
   /** A piece released on the rail goes back in store. */
   putBack: { lane: "E", item: "Q-15", on: false },
+  /**
+   * A plain click passes through a wall to the floor, so a deselect never takes
+   * a wall down; Alt-click hides one (decision 4). Off, any click that meets a
+   * wall first hides it.
+   */
+  wallClickAlt: { lane: "E", item: "D4", on: false },
   /** Line up puts several pieces' centres on one line. */
   lineUp: { lane: "E", item: "Q-18", on: false },
   /** Move on the caption, then a tap on the destination. */
