@@ -2130,6 +2130,9 @@ test.describe("SS++ button and action inventory", () => {
 
 test.describe("SS++ representative button behavior", () => {
   test("planner cockpit controls update visible state", async ({ page }) => {
+    // The shell alone may take 20 s on a busy CPU runner, so 30 s left the seven
+    // controls after it ~10 s: runs took 14 s on a quiet runner and timed out at 30 s on a busy one.
+    test.setTimeout(45_000);
     await mockPlannerRoutes(page);
     await page.goto(`/plan/${CONFIG_ID}`, { waitUntil: "domcontentloaded" });
     await page.waitForSelector("[data-testid='cockpit-shell']", { timeout: 20_000 });
