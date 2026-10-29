@@ -1,7 +1,7 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { setupCardLook, setupCardPreviewUrl } from "../crafted-furniture.js";
+import { SETUP_PREVIEW_VERSION, setupCardLook, setupCardPreviewUrl } from "../crafted-furniture.js";
 import { PLANNER_CHAIR_SLUGS } from "../furniture-defaults.js";
 import { setPlannerFeaturesForTesting } from "../planner-features.js";
 import { usePlannerEventStore, type PlannerEventKind } from "../../stores/planner-event-store.js";
@@ -27,6 +27,8 @@ afterEach(() => {
   setPlannerFeaturesForTesting(null);
   usePlannerEventStore.getState().setEventKind(null);
 });
+
+const publicDir = resolve(import.meta.dirname, "../../../public");
 
 function paramsFor(...args: Parameters<typeof cardParamsFor>): CardParams {
   const params = cardParamsFor(...args);
@@ -182,9 +184,24 @@ describe("setup card pictures", () => {
     expect(setupCardPreviewUrl(paramsFor(pieceCardId("trestle-6ft")))).toBeNull();
   });
 
+  it("ships no picture that no look shows", () => {
+    const shown = new Set(pictures.map(({ url }) => url));
+    for (const card of SETUP_CARD_IDS) {
+      const folder = `/models/furniture/setup-${card}/${SETUP_PREVIEW_VERSION}`;
+      for (const file of readdirSync(resolve(publicDir, `.${folder}`))) expect(shown.has(`${folder}/${file}`), `${folder}/${file}`).toBe(true);
+    }
+  });
+
+  it("shows no picture of a chair it was never drawn with, rather than a missing one", () => {
+    expect(setupCardPreviewUrl(paramsFor("round"), "checked-banquet-chair")).toBeNull();
+    setPlannerFeaturesForTesting({ tableSets: true });
+    expect(setupCardPreviewUrl(paramsFor("long-table", { trestles: 2 }), "gallery-chair-red-gold")).toBeNull();
+    expect(setupCardPreviewUrl(paramsFor("dance-floor"), "checked-banquet-chair")).toBe(`/models/furniture/setup-dance-floor/${SETUP_PREVIEW_VERSION}/floor.webp`);
+  });
+
   it.each(pictures)("ships $look as an 800 × 800 WebP", ({ url }) => {
     expect(url).toMatch(/^\/models\/furniture\/setup-[a-z-]+\/setup-v2\/[a-z-]+\.webp$/u);
-    const bytes = readFileSync(resolve(import.meta.dirname, "../../../public", `.${url ?? ""}`));
+    const bytes = readFileSync(resolve(publicDir, `.${url ?? ""}`));
     expect(bytes.toString("ascii", 0, 4)).toBe("RIFF");
     expect(bytes.toString("ascii", 8, 16)).toBe("WEBPVP8X");
     expect(bytes.readUIntLE(24, 3) + 1).toBe(800);
