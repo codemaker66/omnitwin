@@ -1,10 +1,20 @@
 import { useEffect, useRef } from "react";
-import { captureEditorSession, isCurrentEditorSession, useEditorStore, setEditorAutosaveRequester, type EditorObject, type EditorSession } from "../../stores/editor-store.js";
+import {
+  captureEditorSession,
+  isCurrentEditorSession,
+  keepUnsavedWorkOnDevice,
+  setEditorAutosaveRequester,
+  useEditorStore,
+  type EditorObject,
+  type EditorSession,
+} from "../../stores/editor-store.js";
+import type { BatchSaveTransport } from "../../api/configurations.js";
 import { usePlacementStore } from "../../stores/placement-store.js";
 import { useSelectionStore } from "../../stores/selection-store.js";
 import { useAuthStore } from "../../stores/auth-store.js";
 import type { PlacedItem } from "../../lib/placement.js";
 import { normalizeFurnitureScale } from "../../lib/furniture-scale.js";
+import { seededNote } from "../../lib/note-seeds.js";
 import { useLayoutLiveStore } from "../../stores/layout-live-store.js";
 import { composeWithOverlay, isRemotePlacementKey, type RemoteOverlay } from "../../lib/layout-live/live-document.js";
 
@@ -113,7 +123,8 @@ export function placedItemToEditor(item: PlacedItem, existing: EditorObject | un
     chairStyle: item.chairStyle ?? null,
     centerpiece: item.centerpiece ?? null,
     groupId: item.groupId,
-    notes: existing?.notes ?? "",
+    // A note an edit hands the piece in this write (Replace, lib/note-seeds), so piece and note are one undo step.
+    notes: seededNote(item.id) ?? existing?.notes ?? "",
   };
   const label = (item.label ?? "").trim();
   return label.length > 0 ? { ...base, label } : base;
@@ -134,6 +145,8 @@ function itemsMatch(a: readonly PlacedItem[], b: readonly EditorObject[]): boole
 /** One scene item against one editor object, across every mutable field. */
 function itemMatchesObject(pa: PlacedItem, eb: EditorObject): boolean {
   if (pa.id !== eb.id) return false;
+  // A piece can become another in place (Fill sets a reused chair as the event's chair), and must reach the save.
+  if (pa.catalogueItemId !== eb.assetDefinitionId) return false;
   if (pa.x !== eb.positionX || pa.y !== eb.positionY || pa.z !== eb.positionZ) return false;
   if (pa.rotationY !== eb.rotationY) return false;
   // scale round-trips (see editorToPlacedItem). Omitting it here would let a
@@ -253,6 +266,9 @@ export function EditorBridge(): null {
   // Back online with unsaved work: send it without waiting for a gesture.
   useEffect(() => watchReconnectAutosave(() => isAuthenticated.current), []);
 
+  // The page hiding, closing or being left (QoL D-01): send what is unsaved.
+  useEffect(() => watchPlannerPageLeave(), []);
+
   // Track whether we're currently pushing from editor→placement to avoid feedback loops
   const syncing = useRef(false);
 
@@ -321,14 +337,12 @@ export function EditorBridge(): null {
     return unsub;
   }, []);
 
-  // --- Cleanup: cancel pending auto-save on unmount to prevent timer leaks (F26) ---
+  // --- The planner's route unmounts: the waiting autosave goes now ---
+  // Cancelling it here (F26, a timer leak) dropped the last 3 s of edits
+  // whenever the person left the planner (QoL D-01, editor-save-2). Flushing
+  // clears the timer and sends what it was waiting to send.
   useEffect(() => {
-    return () => {
-      if (bridgeSaveTimer !== null) {
-        clearTimeout(bridgeSaveTimer);
-        bridgeSaveTimer = null;
-      }
-    };
+    return () => { void flushAutoSave(); };
   }, []);
 
   return null;
@@ -423,6 +437,48 @@ async function settleInFlightSave(session: EditorSession): Promise<void> {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Leaving the page (QoL D-01, release audit editor-save-2). Hiding is the last
+// moment a page can count on (a phone switching apps, a tab closing): its
+// unsaved work goes then, as a keepalive request when small enough to outlive
+// the page, and again as the page goes if nothing sent it. A request a closing
+// tab cancels is not lost work: the device keeps the copy (and its next open
+// restores it, or finds the server already has it, D-X2). The browser is asked
+// to hold the page only for unsaved work this device does not keep.
+// ---------------------------------------------------------------------------
+
+/** Send the open layout's unsaved work as the page goes out of sight or away. */
+function saveAsPageLeaves(): void {
+  keepUnsavedWorkOnDevice();
+  const state = useEditorStore.getState();
+  if (!state.isDirty || state.configId === null || !state.isOnline) return;
+  void flushAutoSave({ keepalive: true });
+}
+
+/** Unsaved work that would be gone with the page: not kept on this device. */
+export function leaveLosesWork(state: Pick<ReturnType<typeof useEditorStore.getState>, "configId" | "isDirty" | "keptOnDevice">): boolean {
+  return state.configId !== null && state.isDirty && !state.keptOnDevice;
+}
+
+/** Listen for the page hiding, closing and unloading. Returns the unsubscribe. */
+export function watchPlannerPageLeave(): () => void {
+  const onVisibility = (): void => {
+    if (document.visibilityState === "hidden") saveAsPageLeaves();
+  };
+  const onPageHide = (): void => { saveAsPageLeaves(); };
+  const onBeforeUnload = (event: BeforeUnloadEvent): void => {
+    if (leaveLosesWork(useEditorStore.getState())) event.preventDefault();
+  };
+  document.addEventListener("visibilitychange", onVisibility);
+  window.addEventListener("pagehide", onPageHide);
+  window.addEventListener("beforeunload", onBeforeUnload);
+  return () => {
+    document.removeEventListener("visibilitychange", onVisibility);
+    window.removeEventListener("pagehide", onPageHide);
+    window.removeEventListener("beforeunload", onBeforeUnload);
+  };
+}
+
 /**
  * Cancel the pending auto-save debounce timer and immediately flush any
  * dirty state to the server. Punch list #32: called by SaveSendPanel before
@@ -438,7 +494,7 @@ async function settleInFlightSave(session: EditorSession): Promise<void> {
  * objects had never been pushed — reporting success over a stale layout is an
  * unfounded claim, not merely a bug.
  */
-export async function flushAutoSave(): Promise<boolean> {
+export async function flushAutoSave(transport?: BatchSaveTransport): Promise<boolean> {
   if (bridgeSaveTimer !== null) {
     clearTimeout(bridgeSaveTimer);
     bridgeSaveTimer = null;
@@ -448,7 +504,10 @@ export async function flushAutoSave(): Promise<boolean> {
   if (!isCurrentEditorSession(session)) return false;
   const state = useEditorStore.getState();
   if (state.isDirty && state.configId !== null) {
-    const saved = await state.saveToServer(useAuthStore.getState().isAuthenticated);
+    const authenticated = useAuthStore.getState().isAuthenticated;
+    const saved = transport === undefined
+      ? await state.saveToServer(authenticated)
+      : await state.saveToServer(authenticated, transport);
     return saved && isCurrentEditorSession(session);
   }
   return true;

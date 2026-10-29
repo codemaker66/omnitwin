@@ -770,6 +770,86 @@
       ],
       "expectedStatus": "passed",
       "limits": "This is reviewed inventory admission, not execution evidence. This case was absent from sourceRunId, sourceReports and the earlier admissions; it switches the touch arbiter on with ?pf= and stubs the API before transport, so it proves the gestures in Chromium's emulated touch, not on a real phone's touch screen or GPU; every current case still requires execution in the hosted browser gate. The listing covers this one spec file, so a re-listing reproduces this identity, not this hash."
+    },
+    {
+      "date": "2026-10-26",
+      "reason": "The Grand Assembly on for everyone (Blake, 26 Oct 2026: 'On for everyone now'): the case f1c17e56d03862f173b0-b202453e704508f538aa ('without the flag the layout simply opens') is restated as 'with no flag a layout plays the first time it opens, the Skip hurries it to its end, and it then opens as placed', because without the flag a layout now plays the first time it opens on a device. The case opens the same stubbed saved layout with no flag, presses the visible Skip once so the show plays on at speed to its end, records every state the control shows and requires that it came to rest without starting again, reloads, and holds the layout as placed.",
+      "sourceCommit": "6b4e6f786cd6ecadffb2d596ddc26cab80b0135f",
+      "sourceFile": "packages/web/e2e/grand-assembly.spec.ts",
+      "sourceFileGitBlobSha256": "c0a90a772437b2b6955c0ddd8e1775e07569ee2dd4b11e390c2f1431400fcf56",
+      "inventoryCommand": "pnpm --filter @omnitwin/web exec playwright test e2e/grand-assembly.spec.ts --list --project=chromium --update-snapshots=none --reporter=json",
+      "inventorySha256": "f05f735a152e0f31f67ce028fc10dc8630b997ced3e183584039d98d1900c033",
+      "caseIds": [
+        "f1c17e56d03862f173b0-bf9fe7baa65eb50ddff8"
+      ],
+      "expectedStatus": "passed",
+      "limits": "This is reviewed inventory admission, not execution evidence. This case replaces the retired identity f1c17e56d03862f173b0-b202453e704508f538aa one for one, so the totals (405 cases, 54 skips, four expected failures) are unchanged; it was absent from sourceRunId, sourceReports and the earlier admissions, and every current case still requires execution in the hosted browser gate. It proves the default, the Skip hurrying the show to its end and the per-device first-open rule in hosted Chromium, not the show's look or its frame time on a real phone; the Skip's second press and presses as the show comes to rest are stepped frame by frame in the unit suite (GrandAssembly.test.tsx). The listing covers this one spec file, so a re-listing reproduces this identity, not this hash."
+    },
+    {
+      "date": "2026-10-27",
+      "reason": "Planner work survives leaving the page or the layout (PR #279, cloud lane C, QoL D-01 and D-X3): six ordinary cases boot the signed-in planner against an in-memory layout server that two browser contexts share. In today's chrome and the new one, a move reaches the server as soon as the page is hidden, inside the 3 s autosave, with one save; a move cut off by closing the tab comes back on this device with a receipt and then saves. In the new chrome, a move made just before switching to the Saloon reaches the server first and a second browser sees it; and a switch whose save cannot arrive still opens the Saloon and says the move is kept on this device, and reopening sends it.",
+      "sourceCommit": "aaa8a8522359d65988c4538d3f92f4fe2aa9685c",
+      "sourceFile": "packages/web/e2e/planner-work-survives.spec.ts",
+      "sourceFileGitBlobSha256": "fc82fb4083e21f66b859db60c30681b07845cc1cdc335ea4416d27603353053b",
+      "inventoryCommand": "pnpm --filter @omnitwin/web exec playwright test e2e/planner-work-survives.spec.ts --list --project=chromium --update-snapshots=none --reporter=json",
+      "inventorySha256": "0a8b61faa80744f81d7f179c559a319ed2c6ac86d2331d5b12f62c3705e19edf",
+      "caseIds": [
+        "0d8ceb1ff5fdd4fd6824-118c52bf2ca6c356c4dc",
+        "0d8ceb1ff5fdd4fd6824-9cf16d6e3498bd10148d",
+        "0d8ceb1ff5fdd4fd6824-a91b2017b2398cbd1e22",
+        "0d8ceb1ff5fdd4fd6824-aa359cd59c632e7de56e",
+        "0d8ceb1ff5fdd4fd6824-c44d41d0c204ebfd45e8",
+        "0d8ceb1ff5fdd4fd6824-d29889765ea86557db4d"
+      ],
+      "expectedStatus": "passed",
+      "limits": "This is reviewed inventory admission, not execution evidence. These cases were absent from sourceRunId, sourceReports and the earlier admissions; they stub the API with an in-memory server and run against the Vite dev server, where StrictMode's double effects can hide a missing save (the production order is pinned by a unit test without StrictMode), and a keepalive save that lands after a tab has gone is not observable from Playwright; every current case still requires execution in the hosted browser gate. The listing covers this one spec file, so a re-listing reproduces these identities, not this hash."
+    },
+    {
+      "date": "2026-10-29",
+      "reason": "Plan 19 L5 (PR #284, carrying #269 #273 #283): the client's contract, three ordinary cases against route-mocked API responses (house pattern): the document generated from the accepted proposal read and signed with a typed name and the ticked statement; a contract the venue changed while the page was open refused, the new one shown and the typed name kept; readable and signable on a phone with nothing scrolling sideways.",
+      "sourceCommit": "ca4131fe990648a987d54c1cc6de5104a0911819",
+      "sourceFile": "packages/web/e2e/proposal-contract.spec.ts",
+      "sourceFileGitBlobSha256": "3c119eef51b262a1edd92be607a20b6497f29864917c3a186980bcc6a36121f5",
+      "inventoryCommand": "gh run download 40801039570 -n browser-release-gate-40801039570-1 (full-inventory.json: the complete chromium inventory CI listed for PR #284 at ca4131fe, merge 44a0cffff35c9b03cb8a629e08955927a0e1a958)",
+      "inventorySha256": "dd905b61ee3bef6778f68ba02c2b61929a5a3445ce06c63d18921aa4313a5ba3",
+      "caseIds": [
+        "7464f673d45a424e32b1-1582916390638dc3050a",
+        "7464f673d45a424e32b1-273cc36760e173754902",
+        "7464f673d45a424e32b1-b55d4287696ba1559753"
+      ],
+      "expectedStatus": "passed",
+      "limits": "This is reviewed inventory admission, not execution evidence. These cases were absent from the reviewed baseline and the earlier admissions; CI run 40801039570 listed them in its complete inventory (413 cases) and its CPU job passed with them. They stub the API and Stripe's page in the browser (route-mocked, house pattern), so they prove the pages' behaviour in hosted Chromium, not a Stripe call, a webhook or a signature stored on a real database (those are in the API's Postgres suites). The hash covers the whole listing, so a per-file re-listing reproduces these identities, not this hash."
+    },
+    {
+      "date": "2026-10-29",
+      "reason": "Plan 19 L5 (PR #284): the client's deposit, four ordinary cases against route-mocked API responses: what is asked and from which accepted version, the test-mode line, Pay opening Stripe's own page (stubbed; nothing leaves the browser); the deposit shown paid once Stripe has confirmed it, with no Pay; a declined card said in Stripe's words with a retry; the deposit readable on a phone.",
+      "sourceCommit": "ca4131fe990648a987d54c1cc6de5104a0911819",
+      "sourceFile": "packages/web/e2e/proposal-deposit.spec.ts",
+      "sourceFileGitBlobSha256": "49de6108b5e62a8a8e052b40c39e196e95cd9bc73fc0741a8dd24947203e56fb",
+      "inventoryCommand": "gh run download 40801039570 -n browser-release-gate-40801039570-1 (full-inventory.json: the complete chromium inventory CI listed for PR #284 at ca4131fe, merge 44a0cffff35c9b03cb8a629e08955927a0e1a958)",
+      "inventorySha256": "dd905b61ee3bef6778f68ba02c2b61929a5a3445ce06c63d18921aa4313a5ba3",
+      "caseIds": [
+        "cb8c5693a9e4a0a7646c-a579e8d4bce43d37f5b5",
+        "cb8c5693a9e4a0a7646c-b020c5bd67914b048882",
+        "cb8c5693a9e4a0a7646c-e9881ce283c19bfebc1d",
+        "cb8c5693a9e4a0a7646c-f73ce78162c3eb88ae0a"
+      ],
+      "expectedStatus": "passed",
+      "limits": "This is reviewed inventory admission, not execution evidence. These cases were absent from the reviewed baseline and the earlier admissions; CI run 40801039570 listed them in its complete inventory (413 cases) and its CPU job passed with them. They stub the API and Stripe's page in the browser (route-mocked, house pattern), so they prove the pages' behaviour in hosted Chromium, not a Stripe call, a webhook or a signature stored on a real database (those are in the API's Postgres suites). The hash covers the whole listing, so a per-file re-listing reproduces these identities, not this hash."
+    },
+    {
+      "date": "2026-10-29",
+      "reason": "Plan 19 L5 (PR #284): one ordinary case on the Proposals desk: on an accepted proposal the booker asks for a deposit from the accepted quote, sees it waiting, and withdraws it.",
+      "sourceCommit": "ca4131fe990648a987d54c1cc6de5104a0911819",
+      "sourceFile": "packages/web/e2e/proposals-desk.spec.ts",
+      "sourceFileGitBlobSha256": "e8aa15e8c73c6fa7d7a1fda1b3ea3bc38b3d466ed856430f42690a5e771788dc",
+      "inventoryCommand": "gh run download 40801039570 -n browser-release-gate-40801039570-1 (full-inventory.json: the complete chromium inventory CI listed for PR #284 at ca4131fe, merge 44a0cffff35c9b03cb8a629e08955927a0e1a958)",
+      "inventorySha256": "dd905b61ee3bef6778f68ba02c2b61929a5a3445ce06c63d18921aa4313a5ba3",
+      "caseIds": [
+        "3d60696039542bd5f8df-510b318343bad76b3bf4"
+      ],
+      "expectedStatus": "passed",
+      "limits": "This is reviewed inventory admission, not execution evidence. These cases were absent from the reviewed baseline and the earlier admissions; CI run 40801039570 listed them in its complete inventory (413 cases) and its CPU job passed with them. They stub the API and Stripe's page in the browser (route-mocked, house pattern), so they prove the pages' behaviour in hosted Chromium, not a Stripe call, a webhook or a signature stored on a real database (those are in the API's Postgres suites). The hash covers the whole listing, so a per-file re-listing reproduces these identities, not this hash."
     }
   ],
   "cases": [
@@ -5078,9 +5158,9 @@
       "expectedStatus": "passed"
     },
     {
-      "id": "f1c17e56d03862f173b0-b202453e704508f538aa",
+      "id": "f1c17e56d03862f173b0-bf9fe7baa65eb50ddff8",
       "file": "grand-assembly.spec.ts",
-      "title": "without the flag the layout simply opens",
+      "title": "with no flag a layout plays the first time it opens, the Skip hurries it to its end, and it then opens as placed",
       "suitePath": [
         "grand-assembly.spec.ts",
         "Grand Assembly behind ?assembly=accio"
@@ -5095,6 +5175,154 @@
       "suitePath": [
         "planner-touch-arbiter.spec.ts",
         "the touch arbiter on a phone"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "0d8ceb1ff5fdd4fd6824-a91b2017b2398cbd1e22",
+      "file": "planner-work-survives.spec.ts",
+      "title": "v1: a move reaches the server as soon as the page is hidden, not 3 s later",
+      "suitePath": [
+        "planner-work-survives.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "0d8ceb1ff5fdd4fd6824-c44d41d0c204ebfd45e8",
+      "file": "planner-work-survives.spec.ts",
+      "title": "v1: a move cut off by closing the tab comes back on this device, with a receipt, and saves",
+      "suitePath": [
+        "planner-work-survives.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "0d8ceb1ff5fdd4fd6824-aa359cd59c632e7de56e",
+      "file": "planner-work-survives.spec.ts",
+      "title": "v2: a move reaches the server as soon as the page is hidden, not 3 s later",
+      "suitePath": [
+        "planner-work-survives.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "0d8ceb1ff5fdd4fd6824-9cf16d6e3498bd10148d",
+      "file": "planner-work-survives.spec.ts",
+      "title": "v2: a move cut off by closing the tab comes back on this device, with a receipt, and saves",
+      "suitePath": [
+        "planner-work-survives.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "0d8ceb1ff5fdd4fd6824-118c52bf2ca6c356c4dc",
+      "file": "planner-work-survives.spec.ts",
+      "title": "v2: a move made just before switching to the Saloon reaches the server and another browser",
+      "suitePath": [
+        "planner-work-survives.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "0d8ceb1ff5fdd4fd6824-d29889765ea86557db4d",
+      "file": "planner-work-survives.spec.ts",
+      "title": "v2: a switch the save cannot make in time still opens the Saloon, and says the move is kept here",
+      "suitePath": [
+        "planner-work-survives.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "7464f673d45a424e32b1-b55d4287696ba1559753",
+      "file": "proposal-contract.spec.ts",
+      "title": "is read and signed with a typed name and the ticked statement",
+      "suitePath": [
+        "proposal-contract.spec.ts",
+        "the contract on an accepted proposal"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "7464f673d45a424e32b1-273cc36760e173754902",
+      "file": "proposal-contract.spec.ts",
+      "title": "refuses a contract the venue changed while the page was open, shows the new one, and keeps the name",
+      "suitePath": [
+        "proposal-contract.spec.ts",
+        "the contract on an accepted proposal"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "7464f673d45a424e32b1-1582916390638dc3050a",
+      "file": "proposal-contract.spec.ts",
+      "title": "is readable and signable on a phone, with nothing scrolling sideways",
+      "suitePath": [
+        "proposal-contract.spec.ts",
+        "the contract on an accepted proposal"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "cb8c5693a9e4a0a7646c-f73ce78162c3eb88ae0a",
+      "file": "proposal-deposit.spec.ts",
+      "title": "asks from the accepted version, says it is a test, and Pay opens Stripe's page",
+      "suitePath": [
+        "proposal-deposit.spec.ts",
+        "the deposit on an accepted proposal"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "cb8c5693a9e4a0a7646c-a579e8d4bce43d37f5b5",
+      "file": "proposal-deposit.spec.ts",
+      "title": "shows the deposit paid once Stripe has confirmed it, with no Pay",
+      "suitePath": [
+        "proposal-deposit.spec.ts",
+        "the deposit on an accepted proposal"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "cb8c5693a9e4a0a7646c-e9881ce283c19bfebc1d",
+      "file": "proposal-deposit.spec.ts",
+      "title": "says a declined card in Stripe's words and lets the client try again",
+      "suitePath": [
+        "proposal-deposit.spec.ts",
+        "the deposit on an accepted proposal"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "cb8c5693a9e4a0a7646c-b020c5bd67914b048882",
+      "file": "proposal-deposit.spec.ts",
+      "title": "keeps the deposit readable on a phone",
+      "suitePath": [
+        "proposal-deposit.spec.ts",
+        "the deposit on an accepted proposal"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "3d60696039542bd5f8df-510b318343bad76b3bf4",
+      "file": "proposals-desk.spec.ts",
+      "title": "on an accepted proposal the booker asks for a deposit from the accepted quote, sees it waiting, and withdraws it (Plan 19 L5)",
+      "suitePath": [
+        "proposals-desk.spec.ts",
+        "Proposals desk"
       ],
       "project": "chromium",
       "expectedStatus": "passed"

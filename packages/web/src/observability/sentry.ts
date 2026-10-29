@@ -1,6 +1,6 @@
 import type { ErrorInfo } from "react";
 import type { Breadcrumb, ErrorEvent, Event } from "@sentry/react";
-import { redactHealthFreeText } from "@omnitwin/types";
+import { redactHealthFreeText, templateCapabilityPathsDeep } from "@omnitwin/types";
 
 type SentryReactModule = typeof import("./sentry-sdk.js");
 
@@ -61,7 +61,7 @@ function safeEventUrl(url: string | undefined): string | undefined {
 
   try {
     const parsed = new URL(trimmed, "https://venviewer.local");
-    const pathOnly = parsed.pathname;
+    const pathOnly = withoutIds(parsed.pathname);
     if (parsed.origin === "https://venviewer.local" && trimmed.startsWith("/")) {
       return pathOnly;
     }
@@ -87,8 +87,11 @@ export function scrubSentryEvent(event: Event): Event {
 
   // A guest's allergy note typed into the planner can surface in an error
   // message or a breadcrumb; it never leaves the browser (fix-first item 18).
+  // Nor does a share token or a guest layout's id, wherever the event quotes
+  // the page or a request: whoever reads the event could open the proposal,
+  // approve it or overwrite the layout (@omnitwin/types capability-paths).
   // The event is plain data, so the scrubbed copy keeps its shape.
-  return redactHealthFreeText(scrubbed) as Event;
+  return templateCapabilityPathsDeep(redactHealthFreeText(scrubbed) as Event);
 }
 
 export function scrubSentryErrorEvent(event: ErrorEvent): ErrorEvent {
@@ -117,6 +120,31 @@ export function withoutQuery(url: string): string {
   return url;
 }
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
+/** A long opaque segment: a share or claim token. */
+const TOKEN = /^[A-Za-z0-9_-]{20,}$/u;
+/** Segments whose next one opens something to whoever holds it: an unclaimed guest layout's id, a shared plan's or a supplier's token. */
+const OPENS_NEXT: ReadonlySet<string> = new Set(["plan", "plan-view", "supplier-share", "configurations"]);
+
+/**
+ * A url with each id or token in its path replaced by `:id`. A guest layout's
+ * id is all it takes to open or overwrite it (the public configuration
+ * routes), and a shared plan's token is its whole lock, so neither leaves
+ * the browser. The query and fragment are left for withoutQuery.
+ */
+export function withoutIds(url: string): string {
+  const cut = url.search(/[?#]/u);
+  const path = cut === -1 ? url : url.slice(0, cut);
+  const segments = path.split("/");
+  const masked = segments.map((segment, index) => {
+    const previous = index > 0 ? segments[index - 1] : undefined;
+    if (segment === "") return segment;
+    if (UUID.test(segment) || TOKEN.test(segment) || (previous !== undefined && OPENS_NEXT.has(previous))) return ":id";
+    return segment;
+  });
+  return masked.join("/") + (cut === -1 ? "" : url.slice(cut));
+}
+
 /** The breadcrumb data keys that hold a url: fetch and xhr write `url`,
  *  navigation writes `from` and `to`. */
 const BREADCRUMB_URL_KEYS: readonly string[] = ["url", "from", "to"];
@@ -124,17 +152,21 @@ const BREADCRUMB_URL_KEYS: readonly string[] = ["url", "from", "to"];
 /**
  * `beforeBreadcrumb`: the browser SDK's fetch and xhr breadcrumbs keep the
  * whole request url in `data.url`, and navigation breadcrumbs the page urls
- * in `data.from` and `data.to`. Each loses its query and fragment.
+ * in `data.from` and `data.to`. Each loses its query, fragment and ids. Console
+ * breadcrumbs are dropped: what the app logs can quote a layout's own words
+ * (a failed save logs the server's message and the pieces it carried).
  */
-export function scrubSentryBreadcrumb(breadcrumb: Breadcrumb): Breadcrumb {
+export function scrubSentryBreadcrumb(breadcrumb: Breadcrumb): Breadcrumb | null {
+  if (breadcrumb.category === "console") return null;
   const data: Record<string, unknown> | undefined = breadcrumb.data;
-  if (data === undefined) return breadcrumb;
+  if (data === undefined) return templateCapabilityPathsDeep(breadcrumb);
   const scrubbed: Record<string, unknown> = { ...data };
   for (const key of BREADCRUMB_URL_KEYS) {
     const value = scrubbed[key];
-    if (typeof value === "string") scrubbed[key] = withoutQuery(value);
+    if (typeof value === "string") scrubbed[key] = withoutIds(withoutQuery(value));
   }
-  return { ...breadcrumb, data: scrubbed };
+  // Share tokens and guest layout ids, in the urls and the message.
+  return templateCapabilityPathsDeep({ ...breadcrumb, data: scrubbed });
 }
 
 async function startBrowserSentry(config: BrowserSentryConfig): Promise<void> {
@@ -183,5 +215,24 @@ export async function captureBoundaryError(error: Error, info: ErrorInfo): Promi
       scope.setContext("react", { componentStack });
     }
     Sentry.captureException(error);
+  });
+}
+
+/**
+ * A warning with tags only (the event scrubber drops `extra`): for failures the
+ * page lives through, such as a lost graphics device or a failed save
+ * (failure-reports.ts). Does nothing without a DSN.
+ */
+export async function captureWarning(message: string, tags: Readonly<Record<string, string>>): Promise<void> {
+  if (readBrowserSentryConfig(import.meta.env) === null || disabledAfterError) return;
+
+  await initBrowserSentry();
+  if (!initialized) return;
+
+  const Sentry = await loadSentryModule();
+  Sentry.withScope((scope) => {
+    scope.setLevel("warning");
+    for (const [name, value] of Object.entries(tags)) scope.setTag(name, value);
+    Sentry.captureMessage(message);
   });
 }

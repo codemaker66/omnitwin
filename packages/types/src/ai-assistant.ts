@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  boundedJsonObjectSchema,
   CanonicalJsonValueSchema,
   sha256Hex,
   stableCanonicalJson,
@@ -50,9 +51,12 @@ export type AIDraftSendState = z.infer<typeof AIDraftSendStateSchema>;
 export const AIDraftContextSchema = z.record(z.string(), CanonicalJsonValueSchema);
 export type AIDraftContext = z.infer<typeof AIDraftContextSchema>;
 
+/** The most an AI draft request's context may hold, as JSON. */
+export const AI_DRAFT_CONTEXT_MAX_BYTES = 32 * 1024;
+
 export const CreateAIDraftRequestSchema = z.object({
   useCase: AIDraftUseCaseSchema,
-  context: AIDraftContextSchema,
+  context: boundedJsonObjectSchema(AI_DRAFT_CONTEXT_MAX_BYTES),
   requestedTone: SafePlanningWordingSchema.optional(),
 }).strict();
 export type CreateAIDraftRequest = z.infer<typeof CreateAIDraftRequestSchema>;

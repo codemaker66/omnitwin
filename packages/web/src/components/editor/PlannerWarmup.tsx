@@ -23,6 +23,7 @@ import { nativeFrameComposer, type NativeFrameComposer } from "../../lib/native-
 import { retainCompiledPipelines } from "../../lib/pipeline-retention.js";
 import { SELECTION_COLOR } from "../../lib/selection.js";
 import { sectionClipPlanes } from "../SectionPlane.js";
+import { circulationDotMaterial, circulationLineMaterial } from "../CirculationOverlay.js";
 
 /** Frames the copies are drawn, enough for the pipeline's passes to draw them. */
 export const PLANNER_WARMUP_FRAMES = 4;
@@ -70,6 +71,11 @@ export function PlannerWarmup(): ReactElement {
   const drawnBy = useRef<NativeFrameComposer | null | undefined>(undefined);
   const texture = useMemo(namePlateTexture, []);
   useEffect(() => () => { texture.dispose(); }, [texture]);
+  // The circulation overlay's node materials from its own factories: their
+  // depth, blending and pass outputs are the pipeline's, so a copy built any
+  // other way could compile a different one.
+  const circulation = useMemo(() => ({ line: circulationLineMaterial(RING_GREEN, true), dot: circulationDotMaterial(RING_GREEN) }), []);
+  useEffect(() => () => { circulation.line.dispose(); circulation.dot.dispose(); }, [circulation]);
   useFrame(() => {
     // Shaders compile per render target: when the post-processing pipeline
     // takes over the main view, or is rebuilt, draw the copies through it.
@@ -123,7 +129,7 @@ export function PlannerWarmup(): ReactElement {
         <circleGeometry args={[1, 8]} />
         <meshBasicMaterial color={SELECTION_COLOR} transparent opacity={0.75} side={DoubleSide} depthWrite={false} />
       </mesh>
-      {/* As CirculationOverlay and SnapGuides draw a dashed line, and the overlay its end dots. */}
+      {/* As SnapGuides draws a dashed line. */}
       <lineSegments {...copy}>
         <bufferGeometry>
           <bufferAttribute attach="attributes-position" args={[DASH_POSITIONS, 3]} />
@@ -131,9 +137,15 @@ export function PlannerWarmup(): ReactElement {
         </bufferGeometry>
         <lineDashedMaterial color={RING_GREEN} dashSize={0.35} gapSize={0.22} depthTest={false} transparent opacity={0.95} />
       </lineSegments>
-      <mesh {...copy}>
-        <sphereGeometry args={[1, 8, 6]} />
-        <meshBasicMaterial color={RING_GREEN} depthTest={false} transparent opacity={0.95} />
+      {/* As CirculationOverlay lays a clearance line and its end dots on the floor, in its own materials. */}
+      <lineSegments {...copy} material={circulation.line}>
+        <bufferGeometry>
+          <bufferAttribute attach="attributes-position" args={[DASH_POSITIONS, 3]} />
+          <bufferAttribute attach="attributes-lineDistance" args={[DASH_DISTANCES, 1]} />
+        </bufferGeometry>
+      </lineSegments>
+      <mesh {...copy} material={circulation.dot}>
+        <sphereGeometry args={[1, 12, 8]} />
       </mesh>
     </group>
   );

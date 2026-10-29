@@ -6,6 +6,7 @@ import { canProposeWindow, isClientSideRole } from "../utils/query.js";
 import { canWriteBookings, ownerWorksAtVenue, PG_UNIQUE_VIOLATION } from "./booking-mutations.js";
 import { clientHoldsEventLink } from "./conversations.js";
 import { movePhasesWithBooking, syncEventStatus } from "./event-binding.js";
+import { lockLiveRoom } from "./room-liveness.js";
 
 // ---------------------------------------------------------------------------
 // Proposing a window (goal 19 S6; D1, D2, D5).
@@ -107,12 +108,13 @@ function decisionDateFor(startsAt: Date, now: Date): Date {
   return new Date(Math.min(latest, Math.max(now.getTime() + HOUR_MS, preferred)));
 }
 
-async function readSlot(conn: Conn, bookingId: string): Promise<ClientEventScheduleSlot | null> {
+/** A recorded proposal's booking as its slot, with the event it is on. */
+async function readSlot(conn: Conn, bookingId: string): Promise<{ readonly eventId: string | null; readonly slot: ClientEventScheduleSlot } | null> {
   const [found] = await conn.select({ booking: bookings, spaceId: spaces.id, spaceName: spaces.name }).from(bookings)
     .innerJoin(spaces, eq(spaces.id, bookings.spaceId))
     .where(and(eq(bookings.id, bookingId), isNull(bookings.deletedAt))).limit(1);
   if (found === undefined) return null;
-  return slotOf(found.booking, { id: found.spaceId, name: found.spaceName });
+  return { eventId: found.booking.eventId, slot: slotOf(found.booking, { id: found.spaceId, name: found.spaceName }) };
 }
 
 export async function proposeWindowCore(
@@ -132,10 +134,12 @@ export async function proposeWindowCore(
     return deny(403, "FORBIDDEN", "This event is not linked to your account.");
   }
 
-  // The ledger first: a replayed gesture answers what it answered before.
+  // The ledger first: a replayed gesture answers what it answered before, on
+  // the event it was made on. Access was checked for this event only, so a key
+  // used on another event is refused, not answered with that event's booking.
   const [recorded] = await db.select().from(diaryCommands).where(eq(diaryCommands.commandId, input.idempotencyKey)).limit(1);
   if (recorded !== undefined) {
-    if (recorded.userId !== actor.id || recorded.kind !== COMMAND_KIND) {
+    if (recorded.userId !== actor.id || recorded.kind !== COMMAND_KIND || recorded.venueId !== eventRow.venueId) {
       return deny(409, "IDEMPOTENCY_KEY_REUSED", "That key was already used for something else.");
     }
     if (recorded.outcome !== "applied" || recorded.bookingId === null) {
@@ -143,7 +147,8 @@ export async function proposeWindowCore(
     }
     const replayed = await readSlot(db, recorded.bookingId);
     if (replayed === null) return deny(404, "BOOKING_NOT_FOUND", "That proposal no longer exists.");
-    return { ok: true, status: 200, replay: true, venueId: eventRow.venueId, changeKind: "booking.updated", slot: replayed };
+    if (replayed.eventId !== eventId) return deny(409, "IDEMPOTENCY_KEY_REUSED", "That key was already used for something else.");
+    return { ok: true, status: 200, replay: true, venueId: eventRow.venueId, changeKind: "booking.updated", slot: replayed.slot };
   }
 
   const startsAt = new Date(input.startsAt);
@@ -164,6 +169,9 @@ export async function proposeWindowCore(
   }
 
   return db.transaction(async (tx): Promise<ProposalOk | ProposalDeny> => {
+    // The room as it stands now, held until this commits, so a room being
+    // deleted never takes the proposal (admin-venues-3).
+    if (!(await lockLiveRoom(tx, eventRow.venueId, space.id))) return deny(400, "SPACE_VENUE_MISMATCH", "That room is not at this venue.");
     let row: BookingRow | undefined;
     let changeKind: ProposalOk["changeKind"];
     if (mine !== undefined) {
