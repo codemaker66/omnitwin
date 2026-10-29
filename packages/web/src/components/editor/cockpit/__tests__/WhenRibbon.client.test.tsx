@@ -114,7 +114,8 @@ describe("the client's When ribbon", () => {
     expect(eventId).toBe(EVENT);
     expect(input).toMatchObject({ spaceId: ROOM, startsAt: iso(SIX + 15 * MIN), endsAt: iso(SIX + 315 * MIN) });
     expect(input.idempotencyKey).toMatch(/^[0-9a-f-]{36}$/u);
-    expect((await screen.findByRole("status")).textContent).toContain("Proposed 18:15 – 23:15");
+    // The status line says "Saving event times…" first, then what was done.
+    await waitFor(() => { expect(screen.getByRole("status").textContent).toContain("Proposed 18:15 – 23:15"); });
   });
 
   it("rests on the draft when nothing is proposed yet, and a typed time echoes what it assumed", async () => {

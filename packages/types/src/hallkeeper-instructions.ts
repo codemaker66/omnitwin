@@ -9,6 +9,7 @@ import {
   ProtectedPremisesSchema,
   hasProtectedPremisesContent,
 } from "./protected-premises.js";
+import { GangwayReviewSchema } from "./gangway-review.js";
 
 // ---------------------------------------------------------------------------
 // Hallkeeper Instructions — the human layer
@@ -138,6 +139,12 @@ export type EventInstructions = z.infer<typeof EventInstructionsSchema>;
 
 export const ConfigurationMetadataSchema = z.object({
   instructions: EventInstructionsSchema.optional(),
+  /**
+   * The layout's gangway review (Blake's B5; QoL E-03): every pinch under the
+   * guidance as the planner derives it, with the venue's decisions on them,
+   * written by the planner with the layout (packages/web lib/gangway-review-record).
+   */
+  gangwayReview: GangwayReviewSchema.optional(),
 }).loose();
 export type ConfigurationMetadata = z.infer<typeof ConfigurationMetadataSchema>;
 

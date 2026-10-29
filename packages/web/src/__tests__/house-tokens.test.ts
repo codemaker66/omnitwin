@@ -419,6 +419,23 @@ describe("house-tokens.css — zero-visual-regression aliases", () => {
     expect(cockpitCss).toContain("var(--house-bg-0");
     expect(cockpitCss).toContain("var(--house-text-1");
   });
+
+  it("shows text selected in the cockpit's own fields in copper (CB-01)", async () => {
+    const cockpitCss = (await readFile(
+      resolve("src/components/editor/cockpit/PlannerCockpit.css"),
+      "utf-8",
+    )).replaceAll("\r\n", "\n");
+    // The shell-wide `::selection { background: transparent }` stays for the
+    // chrome's labels; fields override it so a person sees what typing replaces.
+    const rule = /\.cockpit-shell :is\(input, textarea, \[contenteditable="true"\]\)::selection\s*\{([^}]*)\}/.exec(cockpitCss);
+    expect(rule, "cockpit field ::selection rule").not.toBeNull();
+    const body = rule?.[1] ?? "";
+    expect(body).toContain("background: color-mix(in srgb, var(--house-accent-copper) 42%, transparent);");
+    expect(body).toContain("color: var(--house-text-0);");
+    const tokens = await readFile(resolve(HOUSE_CSS), "utf-8");
+    expect(tokens).toMatch(/--house-accent-copper\s*:/);
+    expect(tokens).toMatch(/--house-text-0\s*:/);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -561,6 +578,10 @@ const REGISTER_EXEMPT: readonly RegExp[] = [
   /MeasurementTool\.tsx/,
   /CockpitSceneOverlays\.tsx/,
   /LayoutPlanThumbnail\.tsx/,
+  // The door rule's marks, light laid on the floor beside the placement ghost:
+  // the brass edge and the warm gold a door's space glows when something
+  // stands in it, the gold Blake chose on frames of the drawn hall (28 Oct 2026).
+  /DoorClearSpaceLayer\.tsx/,
   // T-629 split the ornament description out of GrandHallOrnaments.tsx into
   // data; the same gilt, avodire and oak, so the same rule.
   /grand-hall-ornament-parts\.ts/,

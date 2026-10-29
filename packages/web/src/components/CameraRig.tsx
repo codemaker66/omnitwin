@@ -610,6 +610,33 @@ export function CameraRig({ dimensions, smoothControls = true, suspended = false
     };
   }, [camera, gl]);
 
+  // A wheel, or any press on the room (a button or a finger), during a plain
+  // view glide stops it where it is and hands the camera over: nobody waits
+  // with a hand on the mouse, and a click lands on what was aimed at, never on
+  // something still gliding past. It must happen at the press: OrbitControls
+  // only follows a gesture it saw begin, so a takeover delayed to a drag's
+  // first move or a second finger would lose the drag or read a pinch as a
+  // turn. A tour, a flight into a saved viewpoint and a suspended rig keep the
+  // camera. Heard on the window's capture, so the controls are on again before
+  // the same wheel or press reaches them.
+  useEffect(() => {
+    const canvas = gl.domElement;
+    function takeOver(event: Event): void {
+      if (event.target !== canvas) return;
+      const store = useBookmarkStore.getState();
+      if (suspendedRef.current || store.transition === null || store.tour !== null || store.activeReferenceId !== null) return;
+      store.clearTransition();
+      if (controlsRef.current !== null) controlsRef.current.enabled = true;
+      invalidateWheelRef.current();
+    }
+    window.addEventListener("wheel", takeOver, { capture: true, passive: true });
+    window.addEventListener("pointerdown", takeOver, { capture: true });
+    return () => {
+      window.removeEventListener("wheel", takeOver, { capture: true });
+      window.removeEventListener("pointerdown", takeOver, { capture: true });
+    };
+  }, [gl]);
+
   // OrbitControls' zoom is the two-finger pinch's dolly, on only while a finger
   // is down; every wheel and trackpad has the inertial zoom above (on a
   // touch-first device both used to zoom one wheel turn).

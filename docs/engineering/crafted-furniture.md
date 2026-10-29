@@ -41,8 +41,10 @@ models never change the catalogue themselves.
 | Surfaces: tubes, lathes, cloth, skirts, cushions | `crafted-geometry.ts` |
 | Baked occlusion | `crafted-ao.ts` |
 | Sun shadow casters, the feet's floor shade | `crafted-shadow.ts` |
+| Each round table's own turn | `crafted-turn.ts` |
 | Phone and desktop detail | `crafted-detail.ts` |
-| Palette (node materials) and code-painted maps | `crafted-materials.ts`, `crafted-textures.ts` |
+| Palette (node materials) | `crafted-materials.ts` |
+| Code-painted maps: the recipes, the shared maps, the worker that paints them | `crafted-texture-recipes.ts`, `crafted-textures.ts`, `crafted-texture.worker.ts` |
 | Merge by material, appearance, disposal | `crafted-model.ts`, `CraftedFurniture.tsx` |
 | Side-by-side lab and preview studio (dev only) | `packages/web/src/pages/FurnitureLabPage.tsx`, `/dev/furniture` |
 | Frames in the real sky's light, frame times | `packages/web/scripts/furniture-light-frames.mjs` on `/dev/planner-lab` |
@@ -101,7 +103,8 @@ crafted pieces, so the planner downloads no furniture GLB.
   Assembly) moves or hides a batch's pieces, that batch's shade is not drawn
   and `FurnitureContactShadows` grounds them as the reveal presents them. A
   test holds every piece to it: what a piece shows within 2 cm of the floor
-  (its triangles' edges, sampled), in groups, is a foot when no wider than
+  (its triangles' edges, sampled), in groups, is a foot when it reaches within
+  5 mm of the floor (a covered poseur's pockets hang 4 mm up) and is no wider than
   16 cm and not under a wider group, and every foot stands inside a spot. A
   hem, a plinth, a base or a panel is wider, and the footprint shadow every
   placed piece gets grounds it. That test added the rounds' feet (the bare
@@ -109,6 +112,19 @@ crafted pieces, so the planner downloads no furniture GLB.
   castors and the microphones. The same pass brought the television's
   uprights up onto their rails (only the castors touch the floor) and the
   projector's feet up into its body, which they stopped 4 mm short of.
+- **Turn.** A crafted round table (the rounds, the cake table, the café table,
+  the poseurs) in a group is drawn turned about its centre by an angle of its
+  own (`crafted-turn.ts`), so eighteen rounds in one cloth do not hang the same
+  folds or show the damask's figure at one bearing. The angle comes from the
+  group's id (a round and its chairs), which is made in the browser and saved
+  in the piece's metadata as it is; a piece's own id is no seed, because the
+  first save replaces a new piece's `local-` id with the server's and the cloth
+  would turn then. The angle holds through a save, a reload, a move and a
+  chair recount; a copy takes a new group, and so a new angle. The instanced
+  batches (and with them the casters and the feet's shade), the selected
+  model, an applied cloth, the timeline preview and a reveal's flight all draw
+  at that turn; the chairs, the place settings, the pick box and the saved
+  rotation keep the planner's. A round on its own keeps the planner's turn.
 - **Detail.** A phone draws each piece with fewer segments round its turned and
   bent parts and fewer cloth samples (`crafted-detail.ts`): same footprint,
   same caster, same materials. So does a software rasteriser (SwiftShader,
@@ -141,12 +157,32 @@ crafted pieces, so the planner downloads no furniture GLB.
   profile), with half the triangles seen in the phone profile and 4 % of them in the
   sun's map (`scripts/furniture-light-frames.mjs --frames 240`; `--refit 1` redraws
   the map every frame).
-- **Painted maps.** Each map is painted on the CPU the first time a material
-  needs it and kept for the page. The damask's figure is mirrored and on a half
-  drop, so a quarter of its tile is evaluated and copied (exactly, tested), its
-  shapes skipped where a pixel is clear of them, and its colour and roughness
-  maps share the one figure; the parquet's two maps share theirs. First use on a
-  desktop: the damask 82 ms, the parquet 101 ms, any other map under 30 ms.
+- **Painted maps.** The recipes (`crafted-texture-recipes.ts`) are pure, and a
+  worker paints them (`crafted-texture.worker.ts`), so the page's main thread
+  does not: making all fifteen maps takes it 8–13 ms on a desktop (35–62 ms at
+  a 4× CPU throttle) where painting them in place took 272–357 ms (1.2–1.7 s),
+  over three runs; furnishing 160 seats it spends 7 ms in the recipes, not 98. The
+  maps the pieces built in one pass ask for go to the worker first, then every
+  other map over 64 px, ahead of need; the felt and the feet's shade are
+  painted where they are asked for.
+  Each map is made at once at its full size and format, at rest (a normal map
+  level, any other at its mean in linear light, which the tests hold it to),
+  and filled when its pixels arrive, about 0.3 s later on a desktop: the same
+  GPU texture uploaded again, and a frame asked of every canvas showing a
+  crafted piece (`onCraftedTexturePainted`, which `CraftedFurniture` watches
+  with its canvas's `invalidate`, counted once a canvas), because the planner
+  draws on demand. The worker closes once every map is in. Where module
+  workers do not run, or the worker cannot start, has not answered within
+  10 s (its script stalled on a poor connection), fails or sends a wrong
+  answer, a map is painted where it is asked for, as before, and one no piece
+  has asked for waits until one does, so a failure costs the main thread no
+  more than master's painting did. All fifteen maps are byte-identical
+  to the in-place painting, and so are all 44 previews drawn either way. The
+  damask's figure is mirrored and on a half drop, so a quarter of its tile is
+  evaluated and copied (exactly, tested), its shapes skipped where a pixel is
+  clear of them, and its colour and roughness maps share the one figure; the
+  parquet's two maps share theirs. Painting on a desktop: the damask 82 ms, the
+  parquet 101 ms, any other map under 30 ms.
 
 ## Previews
 
@@ -161,6 +197,8 @@ pnpm --filter @omnitwin/web dev   # in one shell
 PREVIEW_GPU=1 node packages/web/scripts/render-crafted-previews.mjs http://localhost:5173 [slug ...]
 ```
 
+The studio calls a piece ready four frames after the last map is painted
+(`craftedTexturesPending`), so no preview catches a map at rest.
 `PREVIEW_GPU=1` draws on the GPU through WebGPU, the planner's own renderer, in
 a second or two a piece (take the shared GPU lock first on a shared machine);
 without it SwiftShader draws on the CPU, which takes minutes. `CHROMIUM_PATH`

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { emptyEventInstructions } from "@omnitwin/types";
+import { emptyDietarySummary, emptyEventInstructions } from "@omnitwin/types";
 import { EventDetailsPanel } from "../EventDetailsPanel.js";
 import { useEditorStore } from "../../../stores/editor-store.js";
 import { useActionLogStore } from "../../../stores/action-log-store.js";
@@ -179,5 +179,31 @@ describe("event details keep unsaved edits", () => {
     fireEvent.change(await screen.findByDisplayValue("Old text"), { target: { value: "New text" } });
     fireEvent.click(screen.getAllByRole("button", { name: "Close" })[0] ?? document.body);
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});
+
+// Release audit people-privacy-3: the guests' allergy note went into the
+// log's payload and inverse, and from there into the audit trail for good.
+// The layout's PATCH carries it; the log records only that it changed.
+describe("event details log no allergy note", () => {
+  it("saves the new note but logs neither it nor the one it replaced", async () => {
+    getConfigMock.mockResolvedValue({
+      metadata: {
+        instructions: { ...emptyEventInstructions(), dietary: { ...emptyDietarySummary(), vegan: 2, otherAllergies: "OLD-SHELLFISH seat 4" } },
+      },
+    });
+    render(<EventDetailsPanel open onClose={() => undefined} />);
+    fireEvent.change(await screen.findByDisplayValue("OLD-SHELLFISH seat 4"), { target: { value: "NEW-COELIAC seat 12" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => { expect(loggedIntents()).toEqual(["event.details.update"]); });
+    const patched = (patchMock.mock.calls[0] as unknown[] | undefined)?.[1] as { instructions: { dietary: { otherAllergies: string } } };
+    expect(patched.instructions.dietary.otherAllergies).toBe("NEW-COELIAC seat 12");
+    const logged = JSON.stringify(useActionLogStore.getState().entries);
+    expect(logged).not.toContain("SHELLFISH");
+    expect(logged).not.toContain("COELIAC");
+    const entry = useActionLogStore.getState().entries[0];
+    const dietary = (entry?.payload as { instructions: { dietary: Record<string, unknown> } }).instructions.dietary;
+    expect(dietary).toMatchObject({ vegan: 2, otherAllergies: "", otherAllergiesRedacted: true });
   });
 });

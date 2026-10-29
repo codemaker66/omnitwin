@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { probeGpu, resetGpuProbeForTests } from "../gpu-class.js";
 import { setPlannerFeaturesForTesting } from "../planner-features.js";
-import { governedRender, nextQualityRung, profilePixelRatio, readRenderDeviceContext, rebuildsPipeline, RENDER_PROFILES, selectRenderProfile, type QualityRung, type RenderProfile } from "../render-quality.js";
+import { governedRender, memoryQualityRung, nextQualityRung, profilePixelRatio, readRenderDeviceContext, rebuildsPipeline, RENDER_PROFILES, selectRenderProfile, type QualityRung, type RenderProfile } from "../render-quality.js";
 
 /** Every rung a profile gives up, in order, when each step is held up by `held`. */
 function ladder(profile: RenderProfile, baseRatio: number, held: "cpu" | "gpu"): QualityRung[] {
@@ -228,5 +228,27 @@ describe("RENDER_PROFILES", () => {
     for (const profile of Object.values(RENDER_PROFILES)) {
       if (profile.antiAlias !== "temporal") expect(profile.convergenceFrames).toBe(0);
     }
+  });
+});
+
+describe("memoryQualityRung", () => {
+  const freed = (profile: RenderProfile, baseRatio: number): QualityRung[] => {
+    const given: QualityRung[] = [];
+    for (let rung = memoryQualityRung(profile, baseRatio, given); rung !== null; rung = memoryQualityRung(profile, baseRatio, given)) given.push(rung);
+    return given;
+  };
+
+  it("frees a desktop's resolution to its floor first, then occlusion's target, then bloom's chain", () => {
+    expect(freed(RENDER_PROFILES.desktop, 1.5)).toEqual(["resolution", "resolution", "resolution", "ambientOcclusion", "bloom"]);
+  });
+
+  it("gives up a phone's bloom once its resolution is at 1, though it pauses there in motion", () => {
+    expect(RENDER_PROFILES.phone.bloomInMotion).toBe(false);
+    expect(freed(RENDER_PROFILES.phone, 2)).toEqual(["resolution", "resolution", "resolution", "resolution", "bloom"]);
+  });
+
+  it("leaves what the frame governor has already given up", () => {
+    expect(memoryQualityRung(RENDER_PROFILES.desktop, 0.75, ["ambientOcclusion"])).toBe("bloom");
+    expect(memoryQualityRung(RENDER_PROFILES.desktop, 0.75, ["ambientOcclusion", "bloom"])).toBeNull();
   });
 });

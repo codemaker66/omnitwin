@@ -652,7 +652,8 @@ export const CalendarQuerySchema = z
     venueId: z.uuid(),
     from: IsoInstantSchema,
     to: IsoInstantSchema,
-    spaceIds: z.array(z.uuid()).min(1).optional(),
+    // A venue's rooms; far above any venue's count, it only refuses abuse.
+    spaceIds: z.array(z.uuid()).min(1).max(200).optional(),
   })
   .superRefine((value, ctx) => {
     const fromMs = Date.parse(value.from);

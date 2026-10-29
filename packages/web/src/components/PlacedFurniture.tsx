@@ -30,6 +30,7 @@ import {
 import { toRenderSpace } from "../constants/scale.js";
 import { FurnitureProxy } from "./FurnitureProxy.js";
 import { InstancedFurnitureLayer } from "./editor/InstancedFurnitureLayer.js";
+import { drawnRotationY } from "./meshes/crafted/crafted-turn.js";
 import { FurnitureSelectionOutlines } from "./editor/FurnitureSelectionOutlines.js";
 import { TableClothMesh } from "./meshes/TableClothMesh.js";
 import { AnimatedTableCloth } from "./meshes/AnimatedTableCloth.js";
@@ -681,7 +682,7 @@ const PlacedFurnitureItem = memo(function PlacedFurnitureItem({
         <FurnitureProxy
           item={catalogueItem}
           position={[placed.x, placed.y, placed.z]}
-          rotationY={placed.rotationY}
+          rotationY={drawnRotationY(placed)}
           scale={presentationScale}
           name={`furniture-${placed.id}-mesh`}
           generatedExplodeProgress={generatedInspectionActive ? generatedExplodeProgress : 0}
@@ -718,11 +719,11 @@ const PlacedFurnitureItem = memo(function PlacedFurnitureItem({
         />
       )}
 
-      {/* Animated unfurl for newly clothed tables */}
+      {/* Animated unfurl for newly clothed tables, turned as the table is drawn (crafted-turn) */}
       {appliedClothStyle !== null && isAnimating && (
         <group
           position={[placed.x, placed.y, placed.z]}
-          rotation={[0, placed.rotationY, 0]}
+          rotation={[0, drawnRotationY(placed), 0]}
           scale={presentationScale}
         >
           <AnimatedTableCloth
@@ -737,7 +738,7 @@ const PlacedFurnitureItem = memo(function PlacedFurnitureItem({
       {appliedClothStyle !== null && !isAnimating && (
         <group
           position={[placed.x, placed.y, placed.z]}
-          rotation={[0, placed.rotationY, 0]}
+          rotation={[0, drawnRotationY(placed), 0]}
           scale={presentationScale}
         >
           <TableClothMesh tableItem={catalogueItem} colorOverride={clothColor} />

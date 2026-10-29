@@ -15,6 +15,8 @@ const migrationsFolder = join(apiRoot, "drizzle");
 export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/api-hot-paths-postgres.test.ts",
   "src/__tests__/client-search-postgres.test.ts",
+  // Per-row subqueries name the outer row by its table (utils/outer-column.ts).
+  "src/__tests__/correlated-subqueries-postgres.test.ts",
   "src/__tests__/booking-mutations-postgres.test.ts",
   // A Diary move reaches its event: dates, phases, sheet times and retention (release audit batch A).
   "src/__tests__/diary-move-reaches-event-postgres.test.ts",
@@ -32,9 +34,13 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/proposal-links-postgres.test.ts",
   "src/__tests__/proposal-next-version-postgres.test.ts",
   "src/__tests__/placed-object-batch-postgres.test.ts",
+  // The review loop: a layout sent back, declined or withdrawn goes to the venue again; a stale move writes nothing.
+  "src/__tests__/configuration-review-loop-postgres.test.ts",
   // A signed-in person's new plan: refused unclaimed, theirs once claimed (batch C).
   "src/__tests__/claim-new-draft-postgres.test.ts",
   "src/__tests__/role-vocabulary-postgres.test.ts",
+  // An open socket acts with its person's current role: /ws/configurations saves and /ws/diary commands.
+  "src/__tests__/socket-identity-postgres.test.ts",
   "src/__tests__/public-mcp-postgres.test.ts",
   "src/__tests__/sheet-paper-check-postgres.test.ts",
   "src/__tests__/ai-usage-postgres.test.ts",
@@ -56,6 +62,10 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/public-enquiry-venue-slug-postgres.test.ts",
   // The reference loadouts list: photo count and cover subqueries name their loadout (VENVIEWER-API-1).
   "src/__tests__/reference-loadouts-postgres.test.ts",
+  // The chair sizes migration (0103): rewrites only from 0074's sizes, stops named, never blocks a layout save.
+  "src/__tests__/chair-sizes-migration-postgres.test.ts",
+  // Migration 0105: product writes share the foundry's global lock; the kill switch still excludes them (T-677).
+  "src/__tests__/foundry-product-lock-postgres.test.ts",
 ] as const;
 
 /**
