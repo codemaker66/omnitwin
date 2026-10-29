@@ -1,4 +1,4 @@
-import type { DepositPaymentView, DepositRequestView } from "@omnitwin/types";
+import { DEPOSIT_HOLDING_STATES, type DepositPaymentView, type DepositRequestView } from "@omnitwin/types";
 import { formatMinorAsCurrency } from "../../../lib/money-input.js";
 import { venueMoment } from "../enquiries/enquiry-desk-format.js";
 
@@ -72,7 +72,11 @@ export function depositStateWords(request: DepositRequestView): string {
   }
 }
 
-/** Whether a request can still be withdrawn: nothing paid or on its way. */
+/**
+ * Whether a request can still be withdrawn, by the API's own rule: in force,
+ * and no attempt holding money. A refunded or mismatched attempt does not hold
+ * the request, so the venue can withdraw it and ask again.
+ */
 export function depositWithdrawable(request: DepositRequestView): boolean {
-  return request.state === "requested";
+  return request.cancelledAt === null && !request.payments.some((payment) => DEPOSIT_HOLDING_STATES.includes(payment.state));
 }

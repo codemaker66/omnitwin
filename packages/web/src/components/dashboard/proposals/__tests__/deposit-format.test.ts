@@ -54,10 +54,14 @@ describe("the deposit on the desk, in the booker's words", () => {
       .toBe("Stripe reported £1.00 against the £625.00 asked for. Check the payment in Stripe before relying on it.");
   });
 
-  it("can be withdrawn only while nothing is paid or on its way", () => {
+  it("can be withdrawn while no attempt holds money, as the API decides", () => {
     expect(depositWithdrawable(REQUEST)).toBe(true);
-    for (const state of ["paid", "processing", "refunded", "partially_refunded", "mismatch", "cancelled"] as const) {
-      expect(depositWithdrawable({ ...REQUEST, state })).toBe(false);
+    for (const state of ["open", "declined", "expired", "refunded", "mismatch"] as const) {
+      expect(depositWithdrawable({ ...REQUEST, payments: [attempt({ state })] })).toBe(true);
     }
+    for (const state of ["processing", "paid", "partially_refunded"] as const) {
+      expect(depositWithdrawable({ ...REQUEST, payments: [attempt({ state })] })).toBe(false);
+    }
+    expect(depositWithdrawable({ ...REQUEST, state: "cancelled", cancelledAt: "2026-10-27T12:00:00.000Z" })).toBe(false);
   });
 });

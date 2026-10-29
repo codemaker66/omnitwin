@@ -21,11 +21,15 @@ type Load =
   | { readonly kind: "error" }
   | { readonly kind: "ready"; readonly view: StaffContractView };
 
-/** "Signed by Ada Client (ada@example.com), Tue 27 Oct, 14:05." or "Not signed yet." */
+/**
+ * "Signed as Ada Client through the link sent to ada@example.com, Tue 27 Oct, 14:05."
+ * or "Not signed yet." The name is what the signer typed; the email is where the
+ * link went, not a checked identity, so the words keep the two apart.
+ */
 export function contractSignatureWords(version: StaffContractVersion): string {
   const signature = version.signature;
   if (signature === null) return "Not signed yet. The client signs it on their link.";
-  return `Signed by ${signature.signerName} (${signature.signerEmail}), ${venueMoment(signature.signedAt) ?? signature.signedAt}.`;
+  return `Signed as ${signature.signerName} through the link sent to ${signature.signerEmail}, ${venueMoment(signature.signedAt) ?? signature.signedAt}.`;
 }
 
 export function ContractPanel({ proposal }: { readonly proposal: DeskProposal }): ReactElement {

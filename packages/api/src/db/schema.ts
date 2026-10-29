@@ -2744,7 +2744,7 @@ export const packageSelections = pgTable("package_selections", {
 ]);
 
 // ---------------------------------------------------------------------------
-// 23c-ii. Deposits and the contract's signature (Plan 19 L5; migration 0103).
+// 23c-ii. Deposits and the contract's signature (Plan 19 L5; migration 0104).
 //
 // A deposit request is figured from the accepted proposal version, named by
 // number and content hash; each Stripe Checkout Session opened for it is a

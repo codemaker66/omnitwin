@@ -1,9 +1,8 @@
 -- ---------------------------------------------------------------------------
--- 0103 — deposits through Stripe in test mode, and the contract's electronic
--- signature (Plan 19 L5; goal 06 S6). 0103 is the next number after master's
--- 0102 when this was written; the release queue confirms the number at the
--- merge slot (renumber the tag AND the journal `when` so the migrator orders
--- it after everything merged first).
+-- 0104 — deposits through Stripe in test mode, and the contract's electronic
+-- signature (Plan 19 L5; goal 06 S6). Written as 0103; master took 0103
+-- (researched_chair_sizes) first, so on 29 Oct it became 0104 with a journal
+-- `when` just after master's 0103 and before the open PRs' later migrations.
 --
 -- Four tables, each inside the venue's tenancy by composite keys that pin a
 -- row to the venue of the proposal it belongs to:

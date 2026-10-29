@@ -414,7 +414,7 @@ const PRIVACY: LegalDocument = {
             {
               term: "Stripe",
               detail:
-                "Payment processing for deposits, when the venue asks for one. You pay on Stripe's own page; Stripe receives your card or bank details, the amount, and the email address the venue holds for you (for Stripe's receipt), and tells us whether the payment succeeded. For its own fraud prevention and legal duties Stripe also acts on its own account, under its own privacy policy.",
+                "Payment processing for deposits, when the venue asks for one. You pay on Stripe's own page; Stripe receives your card or bank details, the amount, the title of the proposal the deposit is for (often your event's name), our references for it, and the email address the venue holds for you (for Stripe's receipt), and tells us whether the payment succeeded. For its own fraud prevention and legal duties Stripe also acts on its own account, under its own privacy policy.",
             },
           ],
         },

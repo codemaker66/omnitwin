@@ -56,7 +56,7 @@ describe("the contract on the desk", () => {
   it("shows who signed which version and when, with the record, and says a change is signed afresh", async () => {
     mockGet.mockResolvedValue(view([SIGNED]));
     render(<ContractPanel proposal={PROPOSAL} />);
-    expect((await screen.findByTestId("contract-signature")).textContent).toMatch(/^Signed by Ada Client \(ada@example\.test\), /u);
+    expect((await screen.findByTestId("contract-signature")).textContent).toMatch(/^Signed as Ada Client through the link sent to ada@example\.test, /u);
     const record = screen.getByTestId("signature-record");
     expect(record.textContent).toContain("c".repeat(64));
     expect(record.textContent).toContain(CONTRACT_CONSENT_STATEMENT);
@@ -79,7 +79,7 @@ describe("the contract on the desk", () => {
   it("still shows a signed version and its record when a new one cannot be prepared", async () => {
     mockGet.mockResolvedValue(view([SIGNED], { clientEmail: null }));
     render(<ContractPanel proposal={PROPOSAL} />);
-    expect((await screen.findByTestId("contract-signature")).textContent).toMatch(/^Signed by Ada Client/u);
+    expect((await screen.findByTestId("contract-signature")).textContent).toMatch(/^Signed as Ada Client/u);
     expect(screen.getByTestId("signature-record")).toBeTruthy();
     expect(screen.getByTestId("contract-blocked").textContent).toContain("Add the client's email");
     expect(screen.queryByTestId("contract-change")).toBeNull();
