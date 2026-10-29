@@ -41,6 +41,7 @@ models never change the catalogue themselves.
 | Surfaces: tubes, lathes, cloth, skirts, cushions | `crafted-geometry.ts` |
 | Baked occlusion | `crafted-ao.ts` |
 | Sun shadow casters, the feet's floor shade | `crafted-shadow.ts` |
+| Each round table's own turn | `crafted-turn.ts` |
 | Phone and desktop detail | `crafted-detail.ts` |
 | Palette (node materials) and code-painted maps | `crafted-materials.ts`, `crafted-textures.ts` |
 | Merge by material, appearance, disposal | `crafted-model.ts`, `CraftedFurniture.tsx` |
@@ -110,6 +111,19 @@ crafted pieces, so the planner downloads no furniture GLB.
   castors and the microphones. The same pass brought the television's
   uprights up onto their rails (only the castors touch the floor) and the
   projector's feet up into its body, which they stopped 4 mm short of.
+- **Turn.** A crafted round table (the rounds, the cake table, the café table,
+  the poseurs) in a group is drawn turned about its centre by an angle of its
+  own (`crafted-turn.ts`), so eighteen rounds in one cloth do not hang the same
+  folds or show the damask's figure at one bearing. The angle comes from the
+  group's id (a round and its chairs), which is made in the browser and saved
+  in the piece's metadata as it is; a piece's own id is no seed, because the
+  first save replaces a new piece's `local-` id with the server's and the cloth
+  would turn then. The angle holds through a save, a reload, a move and a
+  chair recount; a copy takes a new group, and so a new angle. The instanced
+  batches (and with them the casters and the feet's shade), the selected
+  model, an applied cloth, the timeline preview and a reveal's flight all draw
+  at that turn; the chairs, the place settings, the pick box and the saved
+  rotation keep the planner's. A round on its own keeps the planner's turn.
 - **Detail.** A phone draws each piece with fewer segments round its turned and
   bent parts and fewer cloth samples (`crafted-detail.ts`): same footprint,
   same caster, same materials. So does a software rasteriser (SwiftShader,
