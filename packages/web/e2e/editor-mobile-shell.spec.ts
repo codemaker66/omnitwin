@@ -183,6 +183,13 @@ async function expectNoHorizontalOverflow(page: Page): Promise<void> {
   expect(hasOverflow).toBe(false);
 }
 
+// These cases open a furnished Grand Hall layout to test the shell at rest. The Grand Assembly plays a layout the
+// first time it opens on a device, with the chrome stepped back (grand-assembly.spec.ts); it is turned off on this
+// one (flag.ts).
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => { window.localStorage.setItem("venviewer.assembly", "off"); });
+});
+
 test.describe("3D planner mobile shell", () => {
   for (const viewport of PHONE_VIEWPORTS) {
     test(`${viewport.name} uses touch-native chrome without clipped controls`, async ({ page }, testInfo) => {

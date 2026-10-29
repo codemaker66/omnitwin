@@ -1,8 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { getCatalogueItemBySlug } from "../catalogue.js";
 import { createPlacedItem } from "../placement.js";
+import { createTableGroup } from "../table-group.js";
 import { RENDER_SCALE } from "../../constants/scale.js";
-import { computeCirculation, type CirculationReport, type FurnitureFootprint } from "../circulation.js";
+import { computeCirculation, convexPolygonDistance, footprintCorners, footprintOfPlacement, type CirculationReport, type FurnitureFootprint } from "../circulation.js";
 import {
   placedCirculationFootprints,
   placedItemsCirculation,
@@ -34,9 +35,30 @@ describe("placedCirculationFootprints", () => {
     expect(footprints[0]).toMatchObject({
       id: equipment.id, label: item.name,
       cx: 2 / RENDER_SCALE, cz: -3 / RENDER_SCALE,
-      width: item.width * 1.5, depth: item.depth * 1.5, rotation: Math.PI / 4,
+      // A footprint turns the opposite way to three.js's rotationY.
+      width: item.width * 1.5, depth: item.depth * 1.5, rotation: -Math.PI / 4,
     });
     expect(placedItemsCirculation([equipment, table]).pairCount).toBe(1);
+  });
+
+  it("outlines a turned piece where the scene draws it", () => {
+    const trestle = getCatalogueItemBySlug("trestle-6ft");
+    if (trestle === undefined) throw new Error("Missing trestle fixture");
+    const turn = Math.PI / 6;
+    const [footprint] = placedCirculationFootprints([createPlacedItem(trestle.id, 1, 2, turn)]);
+    if (footprint === undefined) throw new Error("No footprint");
+    // Three.js turns a local point (x, z) about Y to (x cos + z sin, −x sin + z cos).
+    const hw = trestle.width / 2;
+    const hd = trestle.depth / 2;
+    const scene = [[-hw, -hd], [hw, -hd], [hw, hd], [-hw, hd]].map(([lx = 0, lz = 0]) => ({
+      x: 1 / RENDER_SCALE + lx * Math.cos(turn) + lz * Math.sin(turn),
+      z: 2 / RENDER_SCALE - lx * Math.sin(turn) + lz * Math.cos(turn),
+    }));
+    const corners = footprintCorners(footprint);
+    for (const [i, corner] of corners.entries()) {
+      expect(corner.x).toBeCloseTo(scene[i]?.x ?? Number.NaN, 9);
+      expect(corner.z).toBeCloseTo(scene[i]?.z ?? Number.NaN, 9);
+    }
   });
 
   it("keeps planning floor obstacles and converts render units back to metres", () => {
@@ -110,6 +132,45 @@ describe("placedCirculationFootprints", () => {
 });
 
 describe("placedItemsCirculation", () => {
+  it("measures rounds with their chairs chair back to chair back, the floor a guest walks, not table edge to table edge", () => {
+    if (roundTable === undefined) throw new Error("fixture round table missing");
+    // Two rounds of ten, 3.6 m centre to centre: 1.77 m between the cloths, but
+    // far less between the chair backs (the L3 lead's D1 frames, 28 Oct 2026).
+    const left = createTableGroup(roundTable.id, 0, 0, 0, 10);
+    const right = createTableGroup(roundTable.id, 3.6, 0, 0, 10);
+    const tablesAlone = placedItemsCirculation([...left, ...right].filter((piece) => piece.catalogueItemId === roundTable.id));
+    expect(tablesAlone.tightestGapM).toBeCloseTo(3.6 - roundTable.width, 6);
+    expect(tablesAlone.band === "comfortable" || tablesAlone.band === "generous").toBe(true);
+
+    const seated = placedItemsCirculation([...left, ...right]);
+    expect(seated.pairCount).toBe(1);
+    // Bounded by the chairs themselves: never further than the nearest chair pair across the two
+    // rounds, and short of it by at most each ring's sagitta, where the outline runs straight
+    // between two neighbouring chairs (R(1 - cos(pi/10)) for a ring of ten): on the safe side.
+    const chairsOf = (group: readonly typeof left[number][]) => group
+      .filter((piece) => piece.catalogueItemId !== roundTable.id)
+      .map((piece) => {
+        const item = getCatalogueItemBySlug(piece.catalogueItemId) ?? chair;
+        if (item === undefined) throw new Error("fixture chair missing");
+        return footprintCorners(footprintOfPlacement(piece, item, RENDER_SCALE));
+      });
+    const nearestChairs = Math.min(...chairsOf(left).flatMap((a) => chairsOf(right).map((b) => convexPolygonDistance(a, b))));
+    const gap = seated.tightestGapM ?? Number.NaN;
+    const ringRadius = Math.max(...chairsOf(left).flat().map((corner) => Math.hypot(corner.x, corner.z)));
+    const sagitta = ringRadius * (1 - Math.cos(Math.PI / 10));
+    expect(gap).toBeLessThanOrEqual(nearestChairs + 1e-9);
+    expect(gap).toBeGreaterThanOrEqual(nearestChairs - 2 * sagitta - 1e-9);
+    expect(gap).toBeLessThan(tablesAlone.tightestGapM ?? 0);
+    expect(seated.band === "tight" || seated.band === "blocked").toBe(true);
+  });
+
+  it("counts a round's own chairs as its outline, never as an aisle against it", () => {
+    if (roundTable === undefined) throw new Error("fixture round table missing");
+    const report = placedItemsCirculation(createTableGroup(roundTable.id, 0, 0, 0, 10));
+    expect(report.pairCount).toBe(0);
+    expect(placedCirculationFootprints(createTableGroup(roundTable.id, 0, 0, 0, 10))).toHaveLength(1);
+  });
+
   it("reports a non-open band once two tables share the floor", () => {
     if (roundTable === undefined) throw new Error("fixture round table missing");
     const report = placedItemsCirculation([

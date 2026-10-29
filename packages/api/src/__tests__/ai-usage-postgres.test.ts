@@ -36,7 +36,8 @@ import { migrationText, tagEndingWith } from "./migration-text.js";
 //   - A call through the Anthropic adapter (the real SDK, only its HTTP
 //     boundary replaced) is one row: the venue, the person, the feature, the
 //     model that served it, its request id, its tokens and its exact cost in
-//     micro-dollars, for an answer, a refusal rescued by the fallback, a
+//     micro-dollars, for an answer, a draft the fallback wrote after a
+//     refusal (refused in turn: a draft is the asked model's or none), a
 //     refusal, a cut-off and a failure; and one structured log line with no
 //     words, person or key in it.
 //   - A provider that reports no usage (the bespoke HTTP gateway, here with
@@ -254,7 +255,8 @@ describe.skipIf(target === undefined)("AI usage ledger and allowance on migrated
       const brief = { useCase: "event_brief", system: EVENT_BRIEF_SYSTEM_PROMPT, prompt: "Dinner for 80.", schema: EVENT_BRIEF_ANSWER_SCHEMA, cacheSystem: true } as const;
 
       await expect(adapter.generateText(draft, attribution)).resolves.toBe("Dear Morgan, thank you.");
-      await expect(adapter.generateText(draft, attribution)).resolves.toBe("Dear Morgan.");
+      // Written by Opus 4.8 after Opus 5.5 declined: no draft, recorded as the asked model's refusal.
+      await expect(adapter.generateText(draft, attribution)).rejects.toThrow("Another model than the one asked answered");
       await expect(adapter.generateText(draft, attribution)).rejects.toThrow("declined");
       await expect(adapter.generateStructured(brief, attribution)).rejects.toThrow("cut off");
       await expect(adapter.generateStructured(brief, attribution)).rejects.toBeInstanceOf(Anthropic.APIError);
@@ -266,7 +268,7 @@ describe.skipIf(target === undefined)("AI usage ledger and allowance on migrated
           // 1,200 at $4, 1,000 written at $5, 2,000 read at $0.20 and 800 out at $20.
           ["proposal_draft", "ok", "claude-opus-5-5", "req_t656_1", 1_200, 800, 1_000, 2_000, String(4_800 + 5_000 + 400 + 16_000)],
           // Declined by Opus 5.5 (535 at $4), served by Opus 4.8 (412 at $5, 264 at $25).
-          ["proposal_draft", "ok", "claude-opus-4-8", "req_t656_2", 947, 264, 0, 0, String(2_140 + 2_060 + 6_600)],
+          ["proposal_draft", "refusal", "claude-opus-4-8", "req_t656_2", 947, 264, 0, 0, String(2_140 + 2_060 + 6_600)],
           // A biology refusal before any output is billed: 300 at $4.
           ["proposal_draft", "refusal", "claude-opus-5-5", "req_t656_3", 300, 0, 0, 0, String(1_200)],
           // Cut off: 2,000 at $4, 1,100 read at $0.20 and 16,000 out at $20.
