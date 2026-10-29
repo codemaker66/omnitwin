@@ -441,7 +441,7 @@ describe("AdminPanel says what a delete does, and gives a way back", () => {
     await waitFor(() => {
       expect(mocks.addToast).toHaveBeenCalledWith("Pricing rule \"Grand Hall Half Day\" is back", "success");
     });
-    expect(screen.queryByRole("button", { name: "Undo: bring back Grand Hall Half Day" })).toBeNull();
+    await waitFor(() => { expect(screen.queryByRole("button", { name: "Undo: bring back Grand Hall Half Day" })).toBeNull(); });
   });
 
   it("keeps the way back when Undo fails, and says the rule is still deleted", async () => {
@@ -629,8 +629,11 @@ describe("AdminPanel pricing rule windows", () => {
         appliesUntil: "18:00",
       });
     });
-    expect(screen.queryByRole("dialog", { name: "Edit Pricing Rule" })).toBeNull();
-    expect(mocks.listPricingRules).toHaveBeenCalledTimes(2);
+    // The dialog closes, and the rules are read again, once the save answers.
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: "Edit Pricing Rule" })).toBeNull();
+      expect(mocks.listPricingRules).toHaveBeenCalledTimes(2);
+    });
   });
 
   it("holds Save Changes until something is changed, and a stray click closes only an untouched edit", async () => {

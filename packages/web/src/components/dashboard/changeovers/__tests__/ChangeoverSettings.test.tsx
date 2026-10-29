@@ -162,12 +162,14 @@ describe("ChangeoverSettings", () => {
     fireEvent.change(within(addForm).getByRole("spinbutton", { name: "Minutes" }), { target: { value: "45" } });
     fireEvent.click(within(addForm).getByRole("button", { name: "Add" }));
     await waitFor(() => { expect(mocks.create).toHaveBeenCalledWith(VENUE, { spaceId: SALOON, eventType: null, minutes: 45 }); });
-    expect(await within(row("Saloon", "Any event")).findByText("45 min")).toBeDefined();
+    // The new row is drawn once the save answers.
+    const added = await waitFor(() => row("Saloon", "Any event"));
+    expect(await within(added).findByText("45 min")).toBeDefined();
     // Listed after the Grand Hall's times, in the venue's room order.
     const rooms = [...document.querySelectorAll(".changeovers__room")].map((node) => node.textContent);
     expect(rooms).toEqual(["All rooms", "Grand Hall", "Grand Hall", "Saloon"]);
     // Every room now has a time, so the form goes back to all rooms.
-    expect(within(addForm).getByRole("combobox", { name: "Room" })).toHaveProperty("value", "");
+    await waitFor(() => { expect(within(addForm).getByRole("combobox", { name: "Room" })).toHaveProperty("value", ""); });
   });
 
   it("keeps keyboard focus with the reader: back to Change after an edit, on to the next row after a removal", async () => {
