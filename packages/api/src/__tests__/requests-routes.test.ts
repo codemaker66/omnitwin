@@ -169,6 +169,39 @@ describe("requests API — the door", () => {
     expect(res.statusCode).toBe(400);
   });
 
+  // L9: the offline queue replays a step with the key it was pressed with.
+  it("refuses a keyed step whose key is not a uuid", async () => {
+    const res = await server.inject({
+      method: "PATCH",
+      url: `/requests/${REQUEST_ID}`,
+      headers: { ...auth(), "idempotency-key": "not-a-uuid" },
+      payload: { to: "acknowledged" },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json<{ readonly code: string }>().code).toBe("VALIDATION_ERROR");
+  });
+
+  it("refuses a keyed step from a session with no venue before any database work", async () => {
+    const res = await server.inject({
+      method: "PATCH",
+      url: `/requests/${REQUEST_ID}`,
+      headers: { ...auth("hallkeeper", null), "idempotency-key": KEY },
+      payload: { to: "acknowledged" },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json<{ readonly code: string }>().code).toBe("IDEMPOTENCY_REQUIRES_VENUE");
+  });
+
+  it("refuses an unsigned keyed step", async () => {
+    const res = await server.inject({
+      method: "PATCH",
+      url: `/requests/${REQUEST_ID}`,
+      headers: { "idempotency-key": KEY },
+      payload: { to: "accepted" },
+    });
+    expect(res.statusCode).toBe(401);
+  });
+
   it("refuses a list query it does not understand", async () => {
     const res = await server.inject({
       method: "GET",

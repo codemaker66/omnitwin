@@ -1,7 +1,7 @@
 # Browser release verification
 
-The reviewed browser inventory has 405 cases. Four hosted CPU shards execute
-400 cases; the five Twin performance cases execute on the existing RTX 4090
+The reviewed browser inventory has 421 cases. Four hosted CPU shards execute
+416 cases; the five Twin performance cases execute on the existing RTX 4090
 through WSL D3D12. The final hosted job reconciles every case against the
 reviewed inventory, including the original skips and expected failures.
 
@@ -174,6 +174,14 @@ deposits and contract signature (PR #284): three in `proposal-contract.spec.ts`,
 four in `proposal-deposit.spec.ts` and one in `proposals-desk.spec.ts`, against
 route-mocked API responses with Stripe's page stubbed; this changes the
 inventory from 411 to 419 and the CPU partition from 406 to 414.
+The next, also on 29 October 2026 and recorded on 28 October, adds two ordinary
+cases for a request step pressed with no connection (L9, PR #296): the slot's
+card says the press is waiting to send and still says nobody owns it, the press
+survives a reload in the browser's own store and goes as the same step under the
+same key when the connection is back, and when someone else took it first the
+slot says so by name and the press is put away
+(`living-timetable-offline-steps.spec.ts`); this changes the inventory from 419
+to 421 and the CPU partition from 414 to 416.
 
 The 30 September admission follows Blake's replacement of the Craft quiz with
 The Amissing Book (T-641). The old quiz's 26 threshold, questionnaire and result

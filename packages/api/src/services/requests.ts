@@ -92,6 +92,9 @@ type RequestRow = typeof requests.$inferSelect;
 type AudienceRole = typeof eventPlanNotifications.$inferInsert["audienceRole"];
 /** The surface both a Database and a transaction expose. */
 type Conn = Pick<Database, "select" | "insert" | "update">;
+/** A database, or a transaction a caller already holds (L9: the command
+ *  ledger takes a request step and records it in one transaction). */
+export type RequestStepConn = Database | Parameters<Parameters<Database["transaction"]>[0]>[0];
 
 function deny(status: number, code: string, error: string, ownerName?: string): RequestDeny {
   return ownerName === undefined ? { ok: false, status, code, error } : { ok: false, status, code, error, ownerName };
@@ -506,7 +509,7 @@ function hasOwner(row: Pick<RequestRow, "state" | "ownerUserId" | "ownerName">):
 }
 
 export async function transitionRequestCore(
-  db: Database,
+  db: RequestStepConn,
   actor: RequestActor,
   requestId: string,
   transition: RequestTransition,
@@ -527,6 +530,20 @@ export async function transitionRequestCore(
   // name, whether it arrives a second or a minute after the first.
   if (transition.to === "accepted" && hasOwner(row) && row.ownerUserId !== actor.id) {
     return deny(409, "REQUEST_TAKEN", `${row.ownerName} has this.`, row.ownerName);
+  }
+
+  // A step pressed against a state the request has since left, or against
+  // an owner it no longer has (the offline queue's replay, L9), is refused,
+  // never applied to a request its sender did not see: a "Done" pressed with
+  // no signal must not close work a colleague took up in the meantime, even
+  // when the colleague's request reads "accepted" just as the sender's did.
+  const movedOn = transition.expectedState !== undefined && row.state !== transition.expectedState;
+  const changedHands = transition.expectedOwnerUserId !== undefined && row.ownerUserId !== transition.expectedOwnerUserId;
+  if (movedOn || changedHands) {
+    const holder = hasOwner(row) && row.ownerUserId !== actor.id ? row.ownerName : null;
+    return holder === null
+      ? deny(409, "REQUEST_STATE_CONFLICT", "This request moved on before this step arrived.")
+      : deny(409, "REQUEST_STATE_CONFLICT", `${holder} has this now.`, holder);
   }
 
   const check = nextRequestState(row.state, transition.to);
