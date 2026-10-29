@@ -152,7 +152,7 @@ crafted pieces, so the planner downloads no furniture GLB.
 
 The catalogue keeps the supplied `meshUrl` and `thumbnailUrl`: the database seeds
 `asset_definitions` from it and rejects changes to either. The web maps crafted
-slugs to their own previews in `public/models/furniture/<slug>/crafted-v3/` (800 px
+slugs to their own previews in `public/models/furniture/<slug>/crafted-v4/` (800 px
 square, for the dashboard's 360 px featured picture), which the catalogue picker
 and the dashboard inventory show.
 
