@@ -20,7 +20,7 @@ import { forgetPushAlertsThen } from "../../lib/push-alerts.js";
 import { getDefaultRoute } from "../../lib/role-routing.js";
 import {
   ANALYTICS_ROLES, awaitsVenue, CLIENT_SEARCH_ROLES, COMMERCIAL_ROLES, CRM_PIPELINE_ROLES,
-  DIARY_ROLES, diaryVenueOf, EVENT_SCOPED_ROLES, hasRole, INVENTORY_WRITE_ROLES, PLANNER_ROLES,
+  diaryVenueOf, EVENT_SCOPED_ROLES, hasRole, INVENTORY_WRITE_ROLES, opensDiary, PLANNER_ROLES,
   PRICING_READ_ROLES, REVIEW_QUEUE_ROLES, ROTA_TAB_ROLES, TEAM_TAB_ROLES, VENUE_DAY_ROLES, WORKSPACE_ROLES,
 } from "../../lib/role-capabilities.js";
 import "./DashboardLayout.css";
@@ -478,7 +478,7 @@ function DashboardLayoutShell({ activeView, onViewChange, mainLabel, surface, fi
   // /hallkeeper have different gates, and a single canSchedule offered the
   // Hallkeeper link to sales, which /hallkeeper/today then refused.
   const canPlan = platformRole === "admin" || hasRole(PLANNER_ROLES, user?.role);
-  const canOpenDiary = platformRole === "admin" || hasRole(DIARY_ROLES, user?.role);
+  const canOpenDiary = opensDiary(user);
   const canOpenHallkeeperDay = platformRole === "admin" || hasRole(VENUE_DAY_ROLES, user?.role);
   // Venue stock is written by venue administration only, and the platform
   // admin's own tools never grant it (pinned by DashboardLayout.test.tsx).
