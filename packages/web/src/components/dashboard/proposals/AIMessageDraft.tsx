@@ -5,6 +5,7 @@ import { ApiError } from "../../../api/client.js";
 import { draftProposalMessage } from "../../../api/ai-assistant.js";
 import { markAIDraftsUnavailable, useAIDraftsAvailable } from "../../../hooks/use-ai-drafts-available.js";
 import { ActivityIndicator } from "../../shared/Activity.js";
+import { withheldWords } from "../../../lib/ai-draft-words.js";
 
 // ---------------------------------------------------------------------------
 // Draft the message with AI (roadmap X1, "Use in proposal"), under the
@@ -148,6 +149,8 @@ export function AIMessageDraft({ proposalId, canUse, onUse, onShown }: AIMessage
   const draft = ready?.draft ?? null;
   const tooLong = draft !== null && draft.body.length > MAX_CLIENT_MESSAGE_LENGTH;
   const claim = draft === null ? null : findUnsupportedProposalClaim(draft.body);
+  // A price, availability or capacity the AI stated was taken out on the server (L6).
+  const withheld = draft === null ? null : withheldWords(draft.withheldCommitments);
   return (
     <div className="pr-ai" ref={cardRef} data-testid="ai-draft">
       <p className="vv-sr-only" role="status" data-testid="ai-draft-said">{said}</p>
@@ -193,6 +196,7 @@ export function AIMessageDraft({ proposalId, canUse, onUse, onShown }: AIMessage
           <p className="pr-ai__about" data-testid="ai-draft-from">{drewOnWords(ready.drewOn)}</p>
           <textarea className="pr-ai__body" aria-label="AI draft of the message" data-testid="ai-draft-body" rows={6} readOnly value={draft.body} />
           {draft.safeLanguageApplied && <p className="pr-ai__about">Unsupported certainty was taken out of it.</p>}
+          {withheld !== null && <p className="pr-ai__about" data-testid="ai-draft-withheld">{withheld}</p>}
           {claim !== null && (
             <p className="pr-ai__about" data-testid="ai-draft-claim">
               It includes "{claim}", which a proposal may not say. Change it before saving.

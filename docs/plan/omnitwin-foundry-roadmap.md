@@ -46,7 +46,7 @@ The original `T-506A`–`T-506M` labels were roadmap work-package keys, not task
 - freeze the authenticated runner/verifier receipt and every closed privileged mutation, claim, redemption, containment and custody API;
 - make containment source-scoped and reverse-closed and separate custody authority from dispatch/pricing authority;
 - add focused semantic, catalog, Drizzle, concurrency and adversarial evidence for the exact disabled 0058 bytes;
-- read that evidence with 0104 applied (T-677): it replaces 0058's `fdv1_root_trigger` and `fdv1_public_guard` so the 18 product tables, and the guard's security event recorded inside a product write, take the global lock shared; the foundry's tables and functions keep it exclusive;
+- read that evidence with 0105 applied (T-677): it replaces 0058's `fdv1_root_trigger` and `fdv1_public_guard` so the 18 product tables, and the guard's security event recorded inside a product write, take the global lock shared; the foundry's tables and functions keep it exclusive;
 - keep 0058 disabled and 0059 prohibited; perform no activation, provider call, production apply, credential use, spend, signing or promotion.
 
 ### Pilot evidence

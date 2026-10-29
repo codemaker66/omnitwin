@@ -1,4 +1,4 @@
-import { Suspense, lazy, useState, useCallback, useRef, useEffect, useLayoutEffect, useId, type ReactNode } from "react";
+import { Fragment, Suspense, lazy, useState, useCallback, useRef, useEffect, useLayoutEffect, useId, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { ActivityIndicator, ActivityStatus } from "../shared/Activity.js";
 import { useNavigate } from "react-router-dom";
@@ -26,7 +26,7 @@ import { useCockpitStore } from "../../stores/cockpit-store.js";
 import type { PlannerTool } from "../../lib/planner-tools.js";
 import { useEscapeLayer } from "../../lib/planner-keys.js";
 import { putDownPieceInHand } from "../../lib/planner-keymap.js";
-import { COCKPIT_MODES } from "../../lib/cockpit-modes.js";
+import { useLensRail, useShownLens } from "../../lib/use-lens-rail.js";
 import { ReferenceSceneSettings } from "./cockpit/ReferenceSceneSettings.js";
 import { HallViewSheetControls } from "./cockpit/CanvasLayerControls.js";
 import { useModelledGrandHall } from "../grand-hall/hall-space.js";
@@ -1334,7 +1334,8 @@ function MobilePlannerDock({
   onRotateSelected,
   onDeleteSelected,
 }: MobilePlannerDockProps): React.ReactElement {
-  const activeLens = useCockpitStore((state) => state.activeMode);
+  const lensRail = useLensRail();
+  const shownLens = useShownLens();
   const moreButtonRef = useRef<HTMLButtonElement>(null);
   const moreSheetId = useId();
   const dismissMore = (): void => {
@@ -1389,19 +1390,25 @@ function MobilePlannerDock({
         <div id={moreSheetId} data-testid="mobile-more-sheet" role="region" aria-label="More planner tools"
           style={{ ...mobileSheetStyle, display: "grid", gap: 8 }}>
           <div style={mobileSheetTitleStyle}>Planner lenses</div>
-          <div className="mobile-planner-lenses" role="group" aria-label="Planner lenses">
-            {COCKPIT_MODES.map((lens) => (
-              <button key={lens.id} type="button" className="mobile-planner-lenses__button"
-                aria-pressed={activeLens === lens.id}
-                onClick={() => {
-                  useCockpitStore.getState().setMode(lens.id);
-                  dismissMore();
-                }}>
-                <span>{lens.label}</span>
-                {activeLens === lens.id && <Check size={18} aria-hidden="true" />}
-              </button>
-            ))}
-          </div>
+          {/* This viewer's lenses (lib/cockpit-lenses.ts): a titled section is the "Venue tools" group. */}
+          {lensRail.sections.map((section) => (
+            <Fragment key={section.label ?? "lenses"}>
+              {section.label !== null && <div style={mobileSheetTitleStyle}>{section.label}</div>}
+              <div className="mobile-planner-lenses" role="group" aria-label={section.label ?? "Planner lenses"}>
+                {section.lenses.map((lens) => (
+                  <button key={lens.id} type="button" className="mobile-planner-lenses__button"
+                    aria-pressed={shownLens === lens.id}
+                    onClick={() => {
+                      useCockpitStore.getState().setMode(lens.id);
+                      dismissMore();
+                    }}>
+                    <span>{lens.label}</span>
+                    {shownLens === lens.id && <Check size={18} aria-hidden="true" />}
+                  </button>
+                ))}
+              </div>
+            </Fragment>
+          ))}
           <div style={mobileSheetTitleStyle}>Tools</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
             <MobileDockButton label="Snap" active={snapEnabled} onClick={onSnap} icon={<Grid3X3 size={20} />} />

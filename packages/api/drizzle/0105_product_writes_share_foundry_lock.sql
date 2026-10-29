@@ -1,5 +1,5 @@
 -- Product writes share the foundry's global lock (T-677, 27 October 2026).
--- 0104, after #258's 0103 (the release queue's numbering, 27 October); the
+-- 0105, after #284's 0104 and #258's 0103 (the release queue's numbering, 29 October); the
 -- queue confirms the number at the merge slot (renumber the tag AND the journal
 -- `when`).
 --

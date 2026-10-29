@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { probeGpu, resetGpuProbeForTests } from "../gpu-class.js";
 import { setPlannerFeaturesForTesting } from "../planner-features.js";
-import { governedRender, nextQualityRung, profilePixelRatio, readRenderDeviceContext, rebuildsPipeline, RENDER_PROFILES, selectRenderProfile, type QualityRung, type RenderProfile } from "../render-quality.js";
+import { governedRender, memoryQualityRung, nextQualityRung, profilePixelRatio, readRenderDeviceContext, rebuildsPipeline, RENDER_PROFILES, selectRenderProfile, type QualityRung, type RenderProfile } from "../render-quality.js";
 
 /** Every rung a profile gives up, in order, when each step is held up by `held`. */
 function ladder(profile: RenderProfile, baseRatio: number, held: "cpu" | "gpu"): QualityRung[] {
@@ -111,6 +111,20 @@ describe("selectRenderProfile", () => {
     expect(selectRenderProfile({ coarsePointer: false, shortSide: 1080, override: "office" }).name).toBe("office");
   });
 
+  it("starts a phone or tablet drawn through WebGL2 without bloom, and keeps the profile's identity", () => {
+    const phone = selectRenderProfile({ coarsePointer: true, shortSide: 393, override: null, webgl2: true, leanMotion: true });
+    expect(phone.name).toBe("phone");
+    expect(phone.bloom).toBeNull();
+    expect(phone.sceneSamples).toBe(RENDER_PROFILES.phone.sceneSamples);
+    expect(selectRenderProfile({ coarsePointer: true, shortSide: 393, override: null, webgl2: true, leanMotion: true })).toBe(phone);
+    expect(selectRenderProfile({ coarsePointer: true, shortSide: 820, override: null, webgl2: true }).bloom).toBeNull();
+    expect(selectRenderProfile({ coarsePointer: true, shortSide: 393, override: null, webgl2: false, leanMotion: true })).toBe(RENDER_PROFILES.phone);
+    // A desktop on WebGL2 is the office profile's, bloom and all.
+    const office = selectRenderProfile({ coarsePointer: false, shortSide: 1080, override: null, webgl2: true, weakGpu: true });
+    expect(office.name).toBe("office");
+    expect(office.bloom).not.toBeNull();
+  });
+
   it("tells phones from tablets by the screen's shorter side", () => {
     expect(selectRenderProfile({ coarsePointer: true, shortSide: 393, override: null }).name).toBe("phone");
     expect(selectRenderProfile({ coarsePointer: true, shortSide: 820, override: null }).name).toBe("tablet");
@@ -154,6 +168,18 @@ describe("readRenderDeviceContext", () => {
       expect(1536 * 864 * ratio * ratio).toBeLessThanOrEqual((profile.pixelBudget ?? 0) + 1);
     } finally {
       Reflect.deleteProperty(navigator, "gpu");
+    }
+  });
+
+  it("reads WebGL2 where the browser has no WebGPU (an iPhone before iOS 26)", () => {
+    const global = globalThis as { WebGL2RenderingContext?: unknown };
+    const had = "WebGL2RenderingContext" in global;
+    if (!had) global.WebGL2RenderingContext = function WebGL2RenderingContext(): void { /* present is all the probe asks */ };
+    try {
+      void probeGpu();
+      expect(readRenderDeviceContext(false).webgl2).toBe(true);
+    } finally {
+      if (!had) Reflect.deleteProperty(global, "WebGL2RenderingContext");
     }
   });
 
@@ -202,5 +228,27 @@ describe("RENDER_PROFILES", () => {
     for (const profile of Object.values(RENDER_PROFILES)) {
       if (profile.antiAlias !== "temporal") expect(profile.convergenceFrames).toBe(0);
     }
+  });
+});
+
+describe("memoryQualityRung", () => {
+  const freed = (profile: RenderProfile, baseRatio: number): QualityRung[] => {
+    const given: QualityRung[] = [];
+    for (let rung = memoryQualityRung(profile, baseRatio, given); rung !== null; rung = memoryQualityRung(profile, baseRatio, given)) given.push(rung);
+    return given;
+  };
+
+  it("frees a desktop's resolution to its floor first, then occlusion's target, then bloom's chain", () => {
+    expect(freed(RENDER_PROFILES.desktop, 1.5)).toEqual(["resolution", "resolution", "resolution", "ambientOcclusion", "bloom"]);
+  });
+
+  it("gives up a phone's bloom once its resolution is at 1, though it pauses there in motion", () => {
+    expect(RENDER_PROFILES.phone.bloomInMotion).toBe(false);
+    expect(freed(RENDER_PROFILES.phone, 2)).toEqual(["resolution", "resolution", "resolution", "resolution", "bloom"]);
+  });
+
+  it("leaves what the frame governor has already given up", () => {
+    expect(memoryQualityRung(RENDER_PROFILES.desktop, 0.75, ["ambientOcclusion"])).toBe("bloom");
+    expect(memoryQualityRung(RENDER_PROFILES.desktop, 0.75, ["ambientOcclusion", "bloom"])).toBeNull();
   });
 });

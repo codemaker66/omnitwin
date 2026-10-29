@@ -33,6 +33,9 @@ export interface HallkeeperWorkspaceProps {
   readonly highlightedRowKey: string | null;
   readonly onHighlight: (key: string | null) => void;
   readonly disabled: boolean;
+  /** The checklist is the venue crew's record (release audit tenancy-f-2):
+   *  the layout's customer sees what is ticked and ticks nothing. */
+  readonly checksReadOnly?: boolean;
   readonly notices: ReactNode;
   readonly details: ReactNode;
   readonly downloadBusy: boolean;
@@ -41,7 +44,7 @@ export interface HallkeeperWorkspaceProps {
 }
 
 /** View selection is navigation only; operational states always come from their owning API. */
-export function HallkeeperWorkspace({ data, checks, onToggle, highlightedRowKey, onHighlight, disabled, notices, details, downloadBusy, onDownload, onPrint }: HallkeeperWorkspaceProps): React.ReactElement {
+export function HallkeeperWorkspace({ data, checks, onToggle, highlightedRowKey, onHighlight, disabled, checksReadOnly = false, notices, details, downloadBusy, onDownload, onPrint }: HallkeeperWorkspaceProps): React.ReactElement {
   const [params] = useSearchParams();
   const result = useHallkeeperContext(data.config.id, params.get("eventId"));
   const context = result.context;
@@ -149,11 +152,11 @@ export function HallkeeperWorkspace({ data, checks, onToggle, highlightedRowKey,
               <div className="hkf-category"><label>Setup category<select value={category} onChange={(event) => { const selected = data.phases.find((entry) => entry.phase === event.target.value); if (selected !== undefined) setCategory(selected.phase); setStage("setup"); setPage(0); }}>{data.phases.map((entry) => <option key={entry.phase} value={entry.phase}>{PHASE_METADATA[entry.phase].label}</option>)}</select></label><label className="hkf-remaining"><input type="checkbox" checked={remaining} onChange={(event) => { setRemaining(event.target.checked); setPage(0); }} /> Remaining</label></div>
               <input className="hkf-search" type="search" aria-label="Find a setup item" placeholder="Find an item or zone…" value={search} onChange={(event) => { setSearch(event.target.value); setPage(0); }} />
               <div className="hkf-task-list">{visibleRows.map((row) => <div key={row.key} className={`hkf-task ${highlightedRowKey === row.key ? "hkf-highlighted" : ""}`}>
-                <button type="button" role="checkbox" aria-checked={checks[row.key] === true} aria-disabled={disabled} disabled={disabled} data-row-key={row.key} className="hkf-check-task" onClick={() => { onToggle(row.key); }}><span className="hkf-checkbox">{checks[row.key] === true && <Check size={15} />}</span><span><strong>{row.name}</strong><small>{row.zone}{(row.labels ?? []).length > 0 ? ` · ${formatTableLabels(row.labels ?? [])}` : ""}{row.afterDepth > 0 ? " · after preceding items" : ""}</small>{row.notes.length > 0 && <small>{row.notes}</small>}</span><b>×{row.qty}</b></button>
+                <button type="button" role="checkbox" aria-checked={checks[row.key] === true} aria-disabled={disabled} aria-readonly={checksReadOnly || undefined} disabled={disabled} data-row-key={row.key} className="hkf-check-task" onClick={() => { if (!checksReadOnly) onToggle(row.key); }}><span className="hkf-checkbox">{checks[row.key] === true && <Check size={15} />}</span><span><strong>{row.name}</strong><small>{row.zone}{(row.labels ?? []).length > 0 ? ` · ${formatTableLabels(row.labels ?? [])}` : ""}{row.afterDepth > 0 ? " · after preceding items" : ""}</small>{row.notes.length > 0 && <small>{row.notes}</small>}</span><b>×{row.qty}</b></button>
                 {(row.positions.length) > 0 && <button className="hkf-locate" type="button" aria-label={`Locate ${row.name} on floor plan`} onClick={() => { showOnPlan(row.key); }}><MapPin size={16} /></button>}
               </div>)}{visibleRows.length === 0 && <div className="hkf-empty"><Check size={24} /><h3>{rows.length === 0 && remaining ? "Nothing remaining in this view" : "No setup items in this view"}</h3><p>{allRows.length === 0 ? "The planner has not placed any items in this layout." : "Choose another category or adjust the filter."}</p></div>}</div>
               <div className="hkf-pagination"><span>{rows.length === 0 ? "0 items" : `${String(currentPage * 5 + 1)}–${String(Math.min((currentPage + 1) * 5, rows.length))} of ${String(rows.length)} checks`}</span><button type="button" aria-label="Previous setup items" disabled={currentPage === 0} onClick={() => { setPage(currentPage - 1); }}><ArrowLeft size={16} /></button><button type="button" aria-label="Next setup items" disabled={(currentPage + 1) * 5 >= rows.length} onClick={() => { setPage(currentPage + 1); }}><ArrowRight size={16} /></button></div>
-              <p className="hkf-footnote">{disabled ? "Shared checks unavailable. Reload checks before making changes." : done === allRows.length && allRows.length > 0 ? "Every setup row is checked. Room release remains a separate decision." : "Checks record setup work. Approval and room release remain separate."}</p>
+              <p className="hkf-footnote">{disabled ? "Shared checks unavailable. Reload checks before making changes." : checksReadOnly ? "The venue's team ticks these as they set the room." : done === allRows.length && allRows.length > 0 ? "Every setup row is checked. Room release remains a separate decision." : "Checks record setup work. Approval and room release remain separate."}</p>
             </> : <><div className="hkf-panel-heading"><div><span className="hkf-overline">{STAGES.find((item) => item.id === stage)?.caption}</span><h2>{STAGES.find((item) => item.id === stage)?.name}</h2></div></div><div className="hkf-stage-content">
               {stage === "prepare" && <>{details}<TaskList context={context} availability={result.status} kinds={["supplier"]} /></>}
               {stage === "checks" && <><p className="hkf-summary"><strong>{disabled ? "—" : done} / {allRows.length}</strong> setup rows checked</p><p>Review the room’s checks before inviting guests in.</p><TaskList context={context} availability={result.status} kinds={["review_gate"]} /></>}
