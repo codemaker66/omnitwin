@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { useShallow } from "zustand/react/shallow";
 import { Check, ChevronDown } from "lucide-react";
 import type { PublishedRoomSlug } from "@omnitwin/types";
-import { slateSaveState, type SlateSaveMark, type SlateSaveState } from "../../lib/editor-save-status.js";
+import { slateAside, slateSaveState, type SlateAside, type SlateSaveMark, type SlateSaveState } from "../../lib/editor-save-status.js";
 import { customerEventPath } from "../../lib/event-access.js";
 import { lastInputWasKeys, letter, usePlannerKeyBindings } from "../../lib/planner-keys.js";
 import { actsInRoom, planeFacts, slateEyebrow, venueDay, type PlaneFacts } from "../../lib/slate-facts.js";
@@ -11,7 +11,8 @@ import { useFreezePhaseLayoutSnapshot } from "../../hooks/use-freeze-phase-layou
 import { usePlannerVenueIdentity } from "../../hooks/use-planner-venue-identity.js";
 import { useAuthStore } from "../../stores/auth-store.js";
 import { useCockpitStore } from "../../stores/cockpit-store.js";
-import { useEditorStore } from "../../stores/editor-store.js";
+import { saveBeforeLayoutChange, useEditorStore } from "../../stores/editor-store.js";
+import { roomSwitchState } from "../../lib/planner-room-switch.js";
 import { useLayoutTimelinePreviewStore } from "../../stores/layout-timeline-preview-store.js";
 import { usePlacementStore } from "../../stores/placement-store.js";
 import { setWallsFull, useVisibilityStore } from "../../stores/visibility-store.js";
@@ -41,7 +42,7 @@ const LazyClerkRouteProvider = lazy(() => import("../auth/ClerkRouteProvider.js"
 // layout. Status is always words; dots, the tick and colour repeat them.
 // ---------------------------------------------------------------------------
 
-export type SlateActionId = "try-again" | "show-theirs" | "keep-mine" | "sign-in";
+export type SlateActionId = "try-again" | "show-theirs" | "keep-mine" | "sign-in" | "leave-anyway";
 
 /** What each way forward is doing while it runs: the words the other keys wait on. */
 const BUSY_WORDS: Readonly<Record<SlateActionId, string>> = {
@@ -49,6 +50,7 @@ const BUSY_WORDS: Readonly<Record<SlateActionId, string>> = {
   "show-theirs": "Opening the other version",
   "keep-mine": "Keeping your version",
   "sign-in": "Signing in",
+  "leave-anyway": "Opening",
 };
 
 const DOT_TONE: Readonly<Partial<Record<SlateSaveMark, StatusDotTone>>> = {
@@ -69,6 +71,8 @@ export interface SlateCardProps {
   readonly hold: string | null;
   readonly sample: boolean;
   readonly save: SlateSaveState;
+  /** A held switch, a layout left behind or the restore receipt; null for none. */
+  readonly aside?: SlateAside | null;
   /** The figures, or null where the slate drops the plane (Walk). */
   readonly plane: PlaneFacts | null;
   readonly menuOpen: boolean;
@@ -156,10 +160,16 @@ function Plane({ facts }: { readonly facts: PlaneFacts }): ReactElement {
 }
 
 export function SlateCard({
-  crest, eyebrow, title, hold, sample, save, plane, menuOpen, menuId, titleRef, onMenu, onAction, busy,
+  crest, eyebrow, title, hold, sample, save, aside = null, plane, menuOpen, menuId, titleRef, onMenu, onAction, busy,
 }: SlateCardProps): ReactElement {
-  const { notice, lineAction } = save;
-  const urgent = save.kind === "not-saved" || save.kind === "changed-elsewhere";
+  const { lineAction } = save;
+  // An urgent aside (a held switch) answers what the person just asked for, so
+  // it comes first; a quiet one waits for the save state's own notice to clear.
+  const notice = aside !== null && (aside.urgent || save.notice === null)
+    ? { heading: aside.heading, body: aside.body ?? undefined, actions: aside.actions, urgent: aside.urgent }
+    : save.notice === null
+      ? null
+      : { ...save.notice, urgent: save.kind === "not-saved" || save.kind === "changed-elsewhere" };
   return (
     <section className="pc-slate" aria-label={title} data-save={save.kind} data-plane={plane === null ? "none" : "joined"} data-pc-popover-anchor>
       <div className="pc-lacquer pc-slate__plate">
@@ -200,7 +210,7 @@ export function SlateCard({
           className="pc-slate__notice"
           lead={notice.heading}
           body={notice.body}
-          urgency={urgent ? "alert" : "status"}
+          urgency={notice.urgent ? "alert" : "status"}
           actions={notice.actions.length > 0 ? notice.actions.map((action, index) => (
             <ActionKey key={action.id} id={action.id} label={action.label} primary={index === 0} busy={busy} onAction={onAction} />
           )) : undefined}
@@ -246,6 +256,8 @@ export function Slate(): ReactElement {
     saveConflict: state.saveConflict,
     lockReason: state.lockReason,
     lastSavedAt: state.lastSavedAt,
+    restoredFromDevice: state.restoredFromDevice,
+    leftBehind: state.leftBehind,
   })));
   const user = useAuthStore((state) => state.user);
   const venue = usePlannerVenueIdentity(venueId);
@@ -263,6 +275,10 @@ export function Slate(): ReactElement {
   const [actsSet, setActsSet] = useState<Readonly<Record<string, true>>>({});
   const [actProblem, setActProblem] = useState<string | null>(null);
   const [answer, setAnswer] = useState({ words: "", count: 0 });
+  // A room or layout switch waiting on this layout's save (QoL D-X3), and one
+  // held because its changes could be neither saved nor kept on this device.
+  const [leaving, setLeaving] = useState(false);
+  const [held, setHeld] = useState<{ readonly destination: string; readonly go: () => void } | null>(null);
 
   const { saveConflict: conflict } = facts;
   const save = slateSaveState({
@@ -284,6 +300,19 @@ export function Slate(): ReactElement {
     lockReason: facts.lockReason,
     lastSavedAt: facts.lastSavedAt,
     timeZone: event?.timeZone ?? undefined,
+  });
+  const aside = slateAside({
+    held: held?.destination ?? null,
+    leftBehind: facts.leftBehind,
+    restored: facts.restoredFromDevice === null ? null : {
+      restored: facts.restoredFromDevice,
+      isSaving: facts.isSaving,
+      isDirty: facts.isDirty,
+      isOnline: facts.isOnline,
+      keptOnDevice: facts.keptOnDevice,
+      lastSavedAt: facts.lastSavedAt,
+      timeZone: event?.timeZone ?? undefined,
+    },
   });
 
   const roomName = space?.name ?? "The room";
@@ -311,22 +340,63 @@ export function Slate(): ReactElement {
     },
   }]);
 
+  /**
+   * Open another room or layout in this page once this layout's unsaved work
+   * has had up to 2 s to save (QoL D-X3); the line says "Saving" meanwhile.
+   * Work that stays on this device goes with a note the next layout shows.
+   * Work this device cannot keep holds the switch, with the choice to wait
+   * for it or to go without it.
+   */
+  const leaveFor = (destination: string, go: () => void): void => {
+    if (leaving) return;
+    setHeld(null);
+    setLeaving(true);
+    void saveBeforeLayoutChange().then((outcome) => {
+      setLeaving(false);
+      if (outcome === "not-kept") setHeld({ destination, go });
+      else go();
+    });
+  };
+
   const onAction = (id: SlateActionId): void => {
     if (id === "sign-in") {
       setSigningIn(true);
       return;
     }
+    if (id === "leave-anyway") {
+      const going = held;
+      setHeld(null);
+      going?.go();
+      return;
+    }
     const editor = useEditorStore.getState();
+    const waiting = id === "try-again" ? held : null;
     setBusy(id);
     const running = id === "try-again" ? editor.saveToServer(signedIn)
       : id === "keep-mine" ? editor.keepMine(signedIn)
         : editor.showTheirVersion(signedIn);
-    void running.finally(() => { setBusy(null); });
+    void running
+      .then((done) => {
+        // The held switch goes as soon as its changes are saved.
+        if (waiting !== null && done === true && !useEditorStore.getState().isDirty) {
+          setHeld(null);
+          waiting.go();
+        }
+      })
+      .finally(() => { setBusy(null); });
   };
 
   const onRoom = (slug: PublishedRoomSlug): void => {
     menu.close(false);
-    void navigate(plannerHref("/plan", searchParams, { space: slug }));
+    const name = slateMenuRooms().find((room) => room.slug === slug)?.name ?? "that room";
+    const leavingLayout = facts.configId;
+    leaveFor(`the ${name}`, () => {
+      void navigate(plannerHref("/plan", searchParams, { space: slug }), leavingLayout === null ? undefined : { state: roomSwitchState(leavingLayout) });
+    });
+  };
+
+  const onOpenLayout = (layout: { readonly name: string; readonly href: string }): void => {
+    leaveFor(layout.name, () => { void navigate(layout.href); });
   };
 
   const onUseForAct = (phaseId: string): void => {
@@ -359,6 +429,7 @@ export function Slate(): ReactElement {
         hold={staff ? hold : null}
         sample={isTemplate}
         save={save}
+        aside={aside}
         plane={plane}
         menuOpen={menu.open}
         menuId={menu.panelId}
@@ -378,6 +449,7 @@ export function Slate(): ReactElement {
         otherLayouts={(event?.layouts ?? [])
           .filter((layout) => layout.id !== facts.configId)
           .map((layout) => ({ ...layout, href: plannerHref(`/plan/${layout.id}`, searchParams) }))}
+        onOpenLayout={onOpenLayout}
         acts={acts}
         actsSettable={canFreezePhaseLayoutForVenue(user, venueId)}
         onUseForAct={onUseForAct}

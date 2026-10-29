@@ -3,6 +3,8 @@ import { Bot, ShieldCheck } from "lucide-react";
 import { ActivityIndicator } from "../shared/Activity.js";
 import type { AIDraft, AIDraftUseCase, CanonicalJsonValue } from "@omnitwin/types";
 import { createAIDraft, getAIAssistantStatus } from "../../api/ai-assistant.js";
+import { ApiError } from "../../api/client.js";
+import { withheldWords } from "../../lib/ai-draft-words.js";
 import "./AIDraftPanel.css";
 
 type StatusState =
@@ -16,12 +18,36 @@ type DraftState =
   | { readonly kind: "ready"; readonly draft: AIDraft }
   | { readonly kind: "error"; readonly message: string };
 
-interface AIDraftPanelProps {
+// A draft is asked for one of two ways: with the context this screen holds,
+// sent to POST /ai/drafts (which takes contact details, names and ids out of
+// it before a provider reads it), or by a request whose context the server
+// builds from its own record, as an enquiry's summary is (release audit ai-1).
+type DraftSource =
+  | { readonly context: Record<string, CanonicalJsonValue>; readonly requestedTone?: string; readonly request?: never }
+  | { readonly request: () => Promise<AIDraft>; readonly context?: never; readonly requestedTone?: never };
+
+type AIDraftPanelProps = DraftSource & {
   readonly title: string;
   readonly useCase: AIDraftUseCase;
-  readonly context: Record<string, CanonicalJsonValue>;
-  readonly requestedTone?: string;
   readonly actionLabel?: string;
+};
+
+/** Why no draft came, in the panel's words. A server-built draft can be
+ *  refused for what it would be drawn from; a draft can fail to be written
+ *  (the AI did not answer, or its words could not be shown once a price,
+ *  availability or capacity was taken out); anything else is the AI being
+ *  unavailable. The work carries on by hand. */
+function failureWords(error: unknown): string {
+  if (error instanceof ApiError && error.status === 422 && error.code === "NOTHING_TO_DRAFT_FROM") {
+    return "There is nothing to draft from yet: no event details or words from the guest. Continue with manual review.";
+  }
+  if (error instanceof ApiError && error.status === 404) {
+    return "A draft is made only for the venue you work at. Continue with manual review.";
+  }
+  if (error instanceof ApiError && error.status === 502) {
+    return "The draft could not be written. Continue with manual review.";
+  }
+  return "AI draft generation is unavailable. Continue with manual review.";
 }
 
 export function AIDraftPanel({
@@ -29,6 +55,7 @@ export function AIDraftPanel({
   useCase,
   context,
   requestedTone,
+  request,
   actionLabel = "Generate draft",
 }: AIDraftPanelProps): ReactElement | null {
   const [status, setStatus] = useState<StatusState>({ kind: "loading" });
@@ -58,15 +85,13 @@ export function AIDraftPanel({
   const handleGenerate = useCallback(() => {
     if (status.kind !== "ready" || !status.configured) return;
     setDraftState({ kind: "loading" });
-    createAIDraft({ useCase, context, requestedTone })
+    const asked = request !== undefined ? request() : createAIDraft({ useCase, context, requestedTone });
+    asked
       .then((draft) => { setDraftState({ kind: "ready", draft }); })
-      .catch(() => {
-        setDraftState({
-          kind: "error",
-          message: "AI draft generation is unavailable. Continue with manual review.",
-        });
+      .catch((error: unknown) => {
+        setDraftState({ kind: "error", message: failureWords(error) });
       });
-  }, [context, requestedTone, status, useCase]);
+  }, [context, request, requestedTone, status, useCase]);
 
   // No provider, no panel. An always-disabled "Generate draft" button was a
   // dead end on every surface that mounts this, so the panel only exists once
@@ -76,6 +101,7 @@ export function AIDraftPanel({
   if (status.kind !== "ready" || !status.configured) return null;
 
   const disabled = draftState.kind === "loading";
+  const withheld = draftState.kind === "ready" ? withheldWords(draftState.draft.withheldCommitments) : null;
 
   return (
     <section className="ai-draft-panel" aria-label={`${title} AI draft panel`}>
@@ -120,6 +146,11 @@ export function AIDraftPanel({
           {draftState.draft.safeLanguageApplied && (
             <p className="ai-draft-panel__note">
               Unsupported certainty was removed.
+            </p>
+          )}
+          {withheld !== null && (
+            <p className="ai-draft-panel__note" data-testid="ai-draft-withheld">
+              {withheld}
             </p>
           )}
         </div>

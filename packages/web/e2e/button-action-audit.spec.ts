@@ -108,7 +108,8 @@ interface DashboardMockState {
 interface DashboardMockOptions {
   readonly onboardingPopulated?: boolean;
   readonly failProjectGateOnce?: boolean;
-  readonly failAnalyticsOnce?: boolean;
+  // Every analytics read fails until the test routes a recovered API.
+  readonly failAnalytics?: boolean;
   readonly failPipelineOnce?: boolean;
   readonly failOpportunityDetailOnce?: boolean;
   readonly failProposalHistoryOnce?: boolean;
@@ -1006,7 +1007,7 @@ async function mockDashboardRoutes(page: Page, options: DashboardMockOptions = {
     ? onboardingPopulatedSummaryFixture()
     : onboardingSummaryFixture();
   let failProjectGateOnce = options.failProjectGateOnce === true;
-  let remainingAnalyticsFailures = options.failAnalyticsOnce === true ? 2 : 0;
+  const failAnalytics = options.failAnalytics === true;
   let remainingPipelineFailures = options.failPipelineOnce === true ? 2 : 0;
   let failOpportunityDetailOnce = options.failOpportunityDetailOnce === true;
   // The deal's stage as the API holds it: a move is kept, so a re-read after
@@ -1310,8 +1311,7 @@ async function mockDashboardRoutes(page: Page, options: DashboardMockOptions = {
     void route.fulfill({ json: { data: [notificationFixture()] } });
   });
   await page.route(`${API}/analytics/venue-dashboard**`, (route) => {
-    if (remainingAnalyticsFailures > 0) {
-      remainingAnalyticsFailures -= 1;
+    if (failAnalytics) {
       void route.fulfill({ status: 500, json: { error: "button audit analytics failure" } });
       return;
     }
@@ -2285,7 +2285,9 @@ test.describe("SS++ representative button behavior", () => {
   });
 
   test("hallkeeper controls update progress, locate rows, download, and print", async ({ page }) => {
-    await seedAuthenticatedUser(page, "planner");
+    // The venue's hallkeeper: a layout's planner reads the checklist and ticks
+    // nothing (release audit tenancy-f-2, e2e/hallkeeper.spec.ts).
+    await seedAuthenticatedUser(page, "hallkeeper");
     const mock = await mockHallkeeperRoutes(page);
     let printCalled = false;
     await page.addInitScript(() => {
@@ -2441,12 +2443,17 @@ test.describe("SS++ deep modal, drawer, role, disabled, and error states", () =>
 
   test("executive analytics failure exposes a branded retry path", async ({ page }) => {
     await seedAuthenticatedUser(page, "manager");
-    await mockDashboardRoutes(page, { failAnalyticsOnce: true });
+    await mockDashboardRoutes(page, { failAnalytics: true });
 
     await page.goto("/dashboard?view=analytics");
     await page.waitForSelector("#dashboard-main", { timeout: 15_000 });
     await expect(page.getByRole("heading", { name: "Analytics unavailable" })).toBeVisible();
     await expect(page.getByRole("alert")).toContainText("button audit analytics failure");
+    // The API recovers before the retry, however many reads the first load
+    // sent (StrictMode mounts the view twice, and it cancels the first read).
+    await page.route(`${API}/analytics/venue-dashboard**`, (route) => {
+      void route.fulfill({ json: { data: revenueAnalyticsFixture() } });
+    });
     await page.getByRole("button", { name: "Retry analytics" }).click();
     await expect(page.getByRole("heading", { name: "Executive analytics" })).toBeVisible();
   });
@@ -3098,15 +3105,15 @@ test.describe("SS++ deep modal, drawer, role, disabled, and error states", () =>
     await page.getByLabel("Operator review for Trades Hall deployment").selectOption("approved");
     await page.getByLabel("Current step for Trades Hall deployment").fill("Ready for staff handoff.");
     await page.getByLabel("Evidence note for Trades Hall deployment").fill("Owner accepted and staff invite list reviewed.");
-    await page.getByRole("button", { name: "Save project gate for Trades Hall deployment" }).click();
+    await page.getByRole("button", { name: "Save setup review for Trades Hall deployment" }).click();
     await expect.poll(() => mock.savedProjectGates).toContain("ready|approved|Ready for staff handoff.");
     await expect(page.getByText("Setup review saved.", { exact: true })).toBeVisible();
 
     await page.getByLabel("Billing provider for Trades Hall deployment").selectOption("manual_invoice");
     await page.getByLabel("Provider status for Trades Hall deployment").selectOption("provider_verified");
     await page.getByLabel("Provider evidence reference for Trades Hall deployment").fill("invoice-2026-001");
-    await page.getByLabel("Enforce managed access for Trades Hall deployment").check();
-    await page.getByRole("button", { name: "Save provider gate for Trades Hall deployment" }).click();
+    await page.getByLabel("Managed access agreed for Trades Hall deployment, recorded only").check();
+    await page.getByRole("button", { name: "Save billing verification for Trades Hall deployment" }).click();
     await expect.poll(() => mock.savedProviderGates).toContain("manual_invoice|provider_verified|true");
     await expect(page.getByText("Billing verification saved.", { exact: true })).toBeVisible();
   });
@@ -3122,7 +3129,7 @@ test.describe("SS++ deep modal, drawer, role, disabled, and error states", () =>
     await expect(page.getByRole("heading", { name: "People & access" })).toBeVisible();
 
     await page.getByText("Setup review and billing", { exact: true }).click();
-    const saveProjectGate = page.getByRole("button", { name: "Save project gate for Trades Hall deployment" });
+    const saveProjectGate = page.getByRole("button", { name: "Save setup review for Trades Hall deployment" });
     await saveProjectGate.click();
     await expect(page.getByRole("alert")).toContainText("button audit project gate failure");
     await expect(saveProjectGate).toBeEnabled();

@@ -1,12 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { CubeTexture, SRGBColorSpace } from "three";
-import {
-  TWIN_FACES,
-  TWIN_LODS,
-  twinTilePath,
-  type TwinFace,
-  type TwinLod,
-} from "@omnitwin/types";
+import type { TwinFace, TwinLod } from "@omnitwin/types";
+import { TWIN_FACES, TWIN_LODS, twinTilePath } from "@omnitwin/types/twin";
 import { FACE_TO_CUBE } from "./twin-basis.js";
 
 // -----------------------------------------------------------------------------

@@ -218,12 +218,48 @@ describe("LoadoutsView", () => {
     expect(await screen.findByRole("button", { name: "Open reference loadout Dinner reset reference" })).toBeTruthy();
   });
 
+  it("says a loadout that was made is made, once, even when the list then cannot be read (dash-ops-4)", async () => {
+    mocks.listLoadouts
+      .mockResolvedValueOnce([loadoutFixture()])
+      .mockRejectedValueOnce(new Error("loadouts offline"));
+    render(<LoadoutsView />);
+    fireEvent.click(await screen.findByRole("button", { name: "New loadout" }));
+    fireEvent.change(screen.getByLabelText("Name *"), { target: { value: "Wedding reset" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create" }));
+
+    expect((await screen.findByTestId("loadouts-list-error")).textContent).toContain("loadouts offline");
+    expect(mocks.createLoadout).toHaveBeenCalledTimes(1);
+    expect(mocks.addToast.mock.calls).toEqual([["Loadout created", "success"]]);
+    expect(screen.queryByRole("dialog", { name: "New reference loadout" })).toBeNull();
+  });
+
+  it("never shows a room the loadouts of the room left before they arrived (dash-ops-4)", async () => {
+    const SALOON = "00000000-0000-4000-8000-000000008020";
+    mocks.listSpaces.mockResolvedValue([spaceFixture(), spaceFixture({ id: SALOON, name: "Saloon", slug: "saloon" })]);
+    let answerFirst = (_items: readonly Loadout[]): void => undefined;
+    mocks.listLoadouts.mockImplementation((_venue: string, spaceId: string) => spaceId === SPACE_ID
+      ? new Promise<readonly Loadout[]>((resolve) => { answerFirst = resolve; })
+      : Promise.resolve([loadoutFixture({ id: "00000000-0000-4000-8000-000000008021", name: "Saloon drinks" })]));
+    render(<LoadoutsView />);
+    fireEvent.click(await screen.findByRole("button", { name: "Saloon" }));
+    expect(await screen.findByRole("button", { name: "Open reference loadout Saloon drinks" })).toBeTruthy();
+
+    // The first room's slow answer arrives late, and is not shown.
+    answerFirst([loadoutFixture()]);
+    await new Promise((done) => setTimeout(done, 20));
+    expect(screen.queryByRole("button", { name: "Open reference loadout Dinner reset reference" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Open reference loadout Saloon drinks" })).toBeTruthy();
+  });
+
   it("keeps create-loadout failures inside the modal", async () => {
     mocks.createLoadout.mockRejectedValueOnce(new Error("create rejected"));
 
     render(<LoadoutsView />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "New loadout" }));
+    // The button is drawn at once and works once a room is chosen.
+    const newLoadout = await screen.findByRole("button", { name: "New loadout" });
+    await waitFor(() => { expect(newLoadout).toHaveProperty("disabled", false); });
+    fireEvent.click(newLoadout);
     fireEvent.change(screen.getByLabelText("Name *"), { target: { value: "Wedding reset" } });
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
 
@@ -276,7 +312,8 @@ describe("LoadoutDetail", () => {
     await waitFor(() => {
       expect(mocks.updatePhoto).toHaveBeenCalledWith(LOADOUT_ID, PHOTO_ID, { caption: "Keep main route clear" });
     });
-    const error = screen.getByTestId("loadout-action-error");
+    // Said once the refusal has been drawn.
+    const error = await screen.findByTestId("loadout-action-error");
     expect(error.textContent).toContain("caption write rejected");
   });
 });

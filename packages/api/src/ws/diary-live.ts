@@ -23,6 +23,12 @@ import { EscalationScheduler } from "../services/escalation-scheduler.js";
 import { installEscalationScheduler } from "../services/escalation-wake.js";
 import { pushForRequestEscalated, tell } from "../services/push-triggers.js";
 import { AuthMessage, resolveWsUser } from "./auto-save.js";
+import {
+  currentAuthority,
+  readCurrentSocketUser,
+  readCurrentSocketUsers,
+  type CurrentSocketUser,
+} from "./socket-identity.js";
 
 // ---------------------------------------------------------------------------
 // The Diary live channel (T-497; Canon §9/§15; goal 19 S2).
@@ -72,6 +78,14 @@ import { AuthMessage, resolveWsUser } from "./auto-save.js";
 
 const HEARTBEAT_INTERVAL_MS = 20_000; // Canon §15: app-level keepalive ~20s
 const STALE_AFTER_MS = 65_000; // three missed beats and the connection is gone
+/** The longest one connection lives (release audit events-diary-5). Its
+ *  person's role, venue and Clerk link are read again on every command and
+ *  every heartbeat; the cap also bounds a Clerk session ended without any
+ *  change to the database, by making the screen sign in again. Long enough
+ *  that a wall display reconnects about twice a day, not mid-shift: every
+ *  reconnect briefly drops the person from presence and fails any command
+ *  then in flight. */
+export const MAX_CONNECTION_AGE_MS = 12 * 60 * 60 * 1000;
 /** How often the request escalation sweep looks for an unanswered "now".
  *  Short against the shortest sensible venue window, cheap because the query
  *  is a partial index on exactly those rows. */
@@ -106,6 +120,10 @@ export const DIARY_LIVE_DEVICES = ["wall", "phone", "desk"] as const;
 export interface DiaryLiveConnection {
   readonly socket: DiaryLiveSocket;
   readonly user: DiaryLiveUser;
+  /** The Clerk account it signed in with (null for a test-mode token): kept
+   *  here, never on `user`, which is sent in presence frames. */
+  readonly clerkId: string | null;
+  readonly connectedAtMs: number;
   /** False for a connection that only listens: every floor page keeps one
    *  open for requests and the unread count. It hears the frames its role
    *  may hear, but its person is not on the Diary, so it is not presence. */
@@ -118,6 +136,7 @@ export interface DiaryLiveJoinOptions {
   /** Defaults to true: the Diary and the Day Board are where people are. */
   readonly present?: boolean;
   readonly device?: DiaryLiveDevice;
+  readonly clerkId?: string | null;
 }
 
 /** A person in the presence list, with every kind of screen they are on.
@@ -149,6 +168,8 @@ export class DiaryLiveHub {
     const connection: DiaryLiveConnection = {
       socket,
       user,
+      clerkId: options.clerkId ?? null,
+      connectedAtMs: nowMs,
       present: options.present ?? true,
       device: options.device ?? null,
       lastSeenMs: nowMs,
@@ -261,12 +282,13 @@ export class DiaryLiveHub {
     }
   }
 
-  /** Close and remove connections silent for longer than the threshold. */
-  sweepStale(nowMs: number, staleAfterMs: number): number {
+  /** Close and remove connections silent for longer than the threshold,
+   *  and any older than `maxAgeMs` however busy (the screen signs in again). */
+  sweepStale(nowMs: number, staleAfterMs: number, maxAgeMs: number = Number.POSITIVE_INFINITY): number {
     let swept = 0;
     for (const [venueId, set] of this.#byVenue) {
       for (const connection of [...set]) {
-        if (nowMs - connection.lastSeenMs <= staleAfterMs) continue;
+        if (nowMs - connection.lastSeenMs <= staleAfterMs && nowMs - connection.connectedAtMs <= maxAgeMs) continue;
         try {
           connection.socket.close();
         } catch {
@@ -277,6 +299,23 @@ export class DiaryLiveHub {
       }
     }
     return swept;
+  }
+
+  /** Every connection with its venue, for the heartbeat's re-check. */
+  entries(): readonly { readonly venueId: string; readonly connection: DiaryLiveConnection }[] {
+    return [...this.#byVenue].flatMap(([venueId, set]) => [...set].map((connection) => ({ venueId, connection })));
+  }
+
+  /** Tell a connection it may no longer watch, close it and remove it. */
+  revoke(venueId: string, connection: DiaryLiveConnection): void {
+    if (this.#byVenue.get(venueId)?.has(connection) !== true) return;
+    this.#send([connection], { type: "error", code: "FORBIDDEN", message: "Your access to this venue's diary has changed" });
+    try {
+      connection.socket.close();
+    } catch {
+      // Already gone.
+    }
+    this.leave(venueId, connection);
   }
 
   /** Heartbeat ping to every connection (clients answer with any message). */
@@ -552,6 +591,51 @@ function announceConversationChange(log: FastifyBaseLogger, actorUserId: string,
   });
 }
 
+/**
+ * Whether the person behind a Diary connection may still act there as they
+ * connected (release audit events-diary-5): the Clerk account they signed in
+ * with is still theirs, their role still reads the diary, and their role,
+ * venue and platform role are the ones they connected with. Any change ends
+ * the connection; the screen reconnects and signs in with what holds now.
+ */
+export function diaryAuthorityHolds(
+  current: CurrentSocketUser | null,
+  venueId: string,
+  user: Pick<DiaryLiveUser, "role" | "platformRole">,
+): boolean {
+  if (current === null) return false;
+  if (!DIARY_READ_ROLES.has(current.role) && current.platformRole !== "admin") return false;
+  return current.venueId === venueId && current.role === user.role && current.platformRole === (user.platformRole ?? "none");
+}
+
+/**
+ * The heartbeat's re-check: every connection against the users table, in one
+ * query. Only the connections read are judged, so one that joins meanwhile is
+ * never revoked for being absent from the read. A database error rejects (the
+ * caller logs and retries next beat) rather than revoking everyone on a blip.
+ */
+export async function recheckDiaryConnections(db: Pick<Database, "select">, hub: DiaryLiveHub): Promise<number> {
+  const entries = hub.entries();
+  if (entries.length === 0) return 0;
+  const rows = await readCurrentSocketUsers(db, entries.map(({ connection }) => connection.user.userId));
+  let revoked = 0;
+  for (const { venueId, connection } of entries) {
+    const current = currentAuthority(rows.get(connection.user.userId), { userId: connection.user.userId, clerkId: connection.clerkId });
+    if (diaryAuthorityHolds(current, venueId, connection.user)) continue;
+    hub.revoke(venueId, connection);
+    revoked += 1;
+  }
+  return revoked;
+}
+
+/** The person behind one connection, read again before a command. */
+async function connectionAuthorityHolds(db: Database, venueId: string, connection: DiaryLiveConnection): Promise<boolean> {
+  const current = await readCurrentSocketUser(db, { userId: connection.user.userId, clerkId: connection.clerkId }, { lock: false });
+  return diaryAuthorityHolds(current, venueId, connection.user);
+}
+
+const ACCESS_CHANGED = "Your access to this venue's diary has changed. Sign in again.";
+
 export async function registerDiaryLive(server: FastifyInstance, db: Database): Promise<void> {
   const hub = new DiaryLiveHub();
 
@@ -565,9 +649,17 @@ export async function registerDiaryLive(server: FastifyInstance, db: Database): 
   const unsubscribeRequestFrames = subscribeRequestFrames(hub);
   const unsubscribeConversationFrames = subscribeConversationFrames(hub, server.log);
 
+  let rechecking = false;
   const heartbeat = setInterval(() => {
     hub.pingAll();
-    hub.sweepStale(Date.now(), STALE_AFTER_MS);
+    hub.sweepStale(Date.now(), STALE_AFTER_MS, MAX_CONNECTION_AGE_MS);
+    // An offboarded, moved or demoted person's open screen stops hearing the
+    // venue within one beat (events-diary-5).
+    if (rechecking) return;
+    rechecking = true;
+    void recheckDiaryConnections(db, hub)
+      .catch((err: unknown) => { server.log.warn({ err }, "diary-live access re-check failed; retried next beat"); })
+      .finally(() => { rechecking = false; });
   }, HEARTBEAT_INTERVAL_MS);
   // Never hold the process open on its own (house convention — see the
   // shutdown grace timer in index.ts).
@@ -698,9 +790,11 @@ export async function registerDiaryLive(server: FastifyInstance, db: Database): 
             };
             // The device (S7) rides along when the client names one; an
             // older client's frame is read exactly as before.
-            const joinOptions: DiaryLiveJoinOptions = auth.data.device === undefined
+            const presenceOptions: DiaryLiveJoinOptions = auth.data.device === undefined
               ? { present: auth.data.presence !== false }
               : { present: auth.data.presence !== false, device: auth.data.device };
+            // The Clerk account it signed in with, for every later re-check.
+            const joinOptions: DiaryLiveJoinOptions = { ...presenceOptions, clerkId: user.clerkId ?? null };
             connection = hub.join(venueId, socket, liveUser, Date.now(), joinOptions);
             server.log.info(
               { event: "diary-live.connections", venueId, connections: hub.connectionCount(venueId) },
@@ -737,6 +831,7 @@ export async function registerDiaryLive(server: FastifyInstance, db: Database): 
 
       const commandActor = actor;
       const commandVenueId = venueId;
+      const commandConnection = connection;
       const commandUser = connection.user;
       if (commandActor === null || commandVenueId === null) return;
 
@@ -746,11 +841,20 @@ export async function registerDiaryLive(server: FastifyInstance, db: Database): 
         const { command } = message.data;
         void (async () => {
           try {
+            // The person as the database holds them now (events-diary-5).
+            if (!await connectionAuthorityHolds(db, commandVenueId, commandConnection)) {
+              send({ type: "conversation.ack", commandId: command.commandId, outcome: "rejected", replay: false,
+                status: 403, code: "FORBIDDEN", error: ACCESS_CHANGED });
+              hub.revoke(commandVenueId, commandConnection);
+              return;
+            }
             const execution = await executeConversationCommand(
               db,
               { ...commandActor, name: commandUser.name },
               commandVenueId,
               command,
+              undefined,
+              server.log,
             );
             send(execution.ack);
             if (execution.changed !== null) {
@@ -777,6 +881,13 @@ export async function registerDiaryLive(server: FastifyInstance, db: Database): 
       const { command } = message.data;
       void (async () => {
         try {
+          // The person as the database holds them now (events-diary-5).
+          if (!await connectionAuthorityHolds(db, commandVenueId, commandConnection)) {
+            send({ type: "diary.ack", commandId: command.commandId, outcome: "rejected", replay: false,
+              status: 403, code: "FORBIDDEN", error: ACCESS_CHANGED });
+            hub.revoke(commandVenueId, commandConnection);
+            return;
+          }
           const execution = await executeDiaryCommand(
             db,
             commandActor,
@@ -786,10 +897,11 @@ export async function registerDiaryLive(server: FastifyInstance, db: Database): 
           );
           send(execution.ack);
           // Commit → broadcast, on the SAME bus path REST mutations use, so
-          // every venue connection (sender included) sees one event stream.
+          // every venue connection (sender included) sees one event stream:
+          // the booking's venue's, which a platform admin's is not always.
           if (execution.changed !== null) {
             emit(server.log, "diary.changed", {
-              venueId: commandVenueId,
+              venueId: execution.changed.venueId,
               kind: execution.changed.kind,
               bookingId: execution.changed.bookingId,
               actorUserId: commandActor.id,
