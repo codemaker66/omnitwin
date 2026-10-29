@@ -195,8 +195,8 @@ describe("timeline preview action isolation", () => {
     expect(screen.getByRole("button", { name: "Review saved plan: Withdrawn" })).toBeTruthy();
     expect(screen.queryByText(/notifications were suppressed/u)).toBeNull();
     panel.unmount();
-    // The actual withdrawal route closes the review. A later draft is loaded
-    // separately; do not invent a withdrawn-to-draft API transition here.
+    // A later mount reads the layout's state from the server again (a draft
+    // here); a withdrawn one is sent again from where it is (the next test).
     mocks.submitForReview.mockResolvedValueOnce({ reviewStatus: "submitted", notificationPolicy: "team_requested" });
     render(<SubmitForReviewPanel />);
     fireEvent.click(await screen.findByRole("button", { name: /^Review saved plan:/u }));
@@ -204,6 +204,29 @@ describe("timeline preview action isolation", () => {
     await screen.findByRole("button", { name: "Withdraw" });
     expect(mocks.submitForReview).toHaveBeenLastCalledWith(CONFIG_ID, undefined, true);
     expect(screen.queryByText(/notifications were suppressed/u)).toBeNull();
+  });
+
+  it("offers a withdrawn layout to the venue again, and sends it", async () => {
+    mocks.getAvailableTransitions.mockResolvedValue({ currentStatus: "submitted", availableTransitions: ["withdrawn"] });
+    render(<SubmitForReviewPanel />);
+    fireEvent.click(await screen.findByRole("button", { name: /^Review saved plan:/u }));
+    fireEvent.click(screen.getByRole("button", { name: "Withdraw" }));
+    expect(await screen.findByRole("button", { name: "Review saved plan: Withdrawn" })).toBeTruthy();
+    // Withdrawn, the layout is the planner's to edit and to send again.
+    expect(useEditorStore.getState().reviewStatus).toBe("withdrawn");
+    expect(screen.queryByRole("button", { name: "Withdraw" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Submit for Approval" }));
+    expect(await screen.findByRole("button", { name: "Review saved plan: Awaiting Review" })).toBeTruthy();
+    expect(mocks.submitForReview).toHaveBeenCalledTimes(1);
+    expect(mocks.submitForReview).toHaveBeenCalledWith(CONFIG_ID);
+  });
+
+  it.each(["changes_requested", "rejected", "withdrawn"] as const)("offers Submit for Approval on a layout opened %s", async (currentStatus) => {
+    mocks.getAvailableTransitions.mockResolvedValue({ currentStatus, availableTransitions: ["submitted"] });
+    render(<SubmitForReviewPanel />);
+    fireEvent.click(await screen.findByRole("button", { name: /^Review saved plan:/u }));
+    expect(screen.getByRole("button", { name: "Submit for Approval" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Withdraw" })).toBeNull();
   });
 
   it("does not apply an older withdrawal after navigating A to B to A", async () => {
