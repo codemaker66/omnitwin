@@ -256,7 +256,10 @@ describe("LoadoutsView", () => {
 
     render(<LoadoutsView />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "New loadout" }));
+    // The button is drawn at once and works once a room is chosen.
+    const newLoadout = await screen.findByRole("button", { name: "New loadout" });
+    await waitFor(() => { expect(newLoadout).toHaveProperty("disabled", false); });
+    fireEvent.click(newLoadout);
     fireEvent.change(screen.getByLabelText("Name *"), { target: { value: "Wedding reset" } });
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
 
@@ -309,7 +312,8 @@ describe("LoadoutDetail", () => {
     await waitFor(() => {
       expect(mocks.updatePhoto).toHaveBeenCalledWith(LOADOUT_ID, PHOTO_ID, { caption: "Keep main route clear" });
     });
-    const error = screen.getByTestId("loadout-action-error");
+    // Said once the refusal has been drawn.
+    const error = await screen.findByTestId("loadout-action-error");
     expect(error.textContent).toContain("caption write rejected");
   });
 });

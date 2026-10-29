@@ -1,6 +1,6 @@
 import type { ErrorInfo } from "react";
 import type { Breadcrumb, ErrorEvent, Event } from "@sentry/react";
-import { redactHealthFreeText } from "@omnitwin/types";
+import { redactHealthFreeText, templateCapabilityPathsDeep } from "@omnitwin/types";
 
 type SentryReactModule = typeof import("./sentry-sdk.js");
 
@@ -87,8 +87,11 @@ export function scrubSentryEvent(event: Event): Event {
 
   // A guest's allergy note typed into the planner can surface in an error
   // message or a breadcrumb; it never leaves the browser (fix-first item 18).
+  // Nor does a share token or a guest layout's id, wherever the event quotes
+  // the page or a request: whoever reads the event could open the proposal,
+  // approve it or overwrite the layout (@omnitwin/types capability-paths).
   // The event is plain data, so the scrubbed copy keeps its shape.
-  return redactHealthFreeText(scrubbed) as Event;
+  return templateCapabilityPathsDeep(redactHealthFreeText(scrubbed) as Event);
 }
 
 export function scrubSentryErrorEvent(event: ErrorEvent): ErrorEvent {
@@ -156,13 +159,14 @@ const BREADCRUMB_URL_KEYS: readonly string[] = ["url", "from", "to"];
 export function scrubSentryBreadcrumb(breadcrumb: Breadcrumb): Breadcrumb | null {
   if (breadcrumb.category === "console") return null;
   const data: Record<string, unknown> | undefined = breadcrumb.data;
-  if (data === undefined) return breadcrumb;
+  if (data === undefined) return templateCapabilityPathsDeep(breadcrumb);
   const scrubbed: Record<string, unknown> = { ...data };
   for (const key of BREADCRUMB_URL_KEYS) {
     const value = scrubbed[key];
     if (typeof value === "string") scrubbed[key] = withoutIds(withoutQuery(value));
   }
-  return { ...breadcrumb, data: scrubbed };
+  // Share tokens and guest layout ids, in the urls and the message.
+  return templateCapabilityPathsDeep({ ...breadcrumb, data: scrubbed });
 }
 
 async function startBrowserSentry(config: BrowserSentryConfig): Promise<void> {

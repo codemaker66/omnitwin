@@ -23,6 +23,7 @@ import {
 import {
   bookings,
   eventPlanNotifications,
+  events,
   requestStatusHistory,
   requests,
   spaces,
@@ -385,12 +386,27 @@ export async function createRequestCore(
   const bookingId = input.bookingId ?? null;
   if (bookingId !== null) {
     const [booking] = await db
-      .select({ id: bookings.id })
+      .select({ id: bookings.id, eventId: bookings.eventId })
       .from(bookings)
       .where(and(eq(bookings.id, bookingId), eq(bookings.venueId, venueId)))
       .limit(1);
     if (booking === undefined) {
       return deny(400, "BOOKING_NOT_IN_VENUE", "That booking is not in this venue's diary.");
+    }
+    if (input.eventId !== undefined && input.eventId !== null && booking.eventId !== input.eventId) {
+      return deny(400, "BOOKING_NOT_ON_EVENT", "That booking is not part of that event.");
+    }
+  }
+
+  const eventId = input.eventId ?? null;
+  if (eventId !== null) {
+    const [event] = await db
+      .select({ id: events.id })
+      .from(events)
+      .where(and(eq(events.id, eventId), eq(events.venueId, venueId), isNull(events.deletedAt)))
+      .limit(1);
+    if (event === undefined) {
+      return deny(400, "EVENT_NOT_IN_VENUE", "That event is not one of this venue's events.");
     }
   }
 
@@ -399,7 +415,7 @@ export async function createRequestCore(
     roomId: room.id,
     roomName: room.name,
     bookingId,
-    eventId: input.eventId ?? null,
+    eventId,
     kind: input.kind,
     quantity: input.quantity ?? null,
     urgency: input.urgency,
@@ -818,6 +834,12 @@ export async function readRequest(
     .limit(1);
   if (row === undefined) return NOT_FOUND;
   if (!canSeeRequest(actor, row.request)) return FORBIDDEN;
+  // A client reads their own requests only while their link to the event is
+  // live, as for every other step they take on it (transitionRequestCore).
+  if (isClientSideRole(actor.role) && !isPlatformAdmin(actor)
+    && (row.request.eventId === null || !(await clientHoldsEventLink(db, actor.id, row.request.eventId)))) {
+    return FORBIDDEN;
+  }
   return serializeRequest(row.request, row.roomName);
 }
 

@@ -15,6 +15,7 @@ import { lazyWithPreload, type Preloadable } from "./lib/lazy-with-preload.js";
 import { fontBuildFor, fontStylesheetHrefs, type FontStylesheets } from "./lib/self-hosted-fonts.js";
 import { SplatsWorkInProgressPage } from "./pages/SplatsWorkInProgressPage.js";
 import { AmissingBookRedirect } from "./pages/AmissingBookRedirect.js";
+import { installStaleChunkReload, underRouteErrorBoundary } from "./route-error-boundary.js";
 import cockpitFontsHref from "./styles/fonts/cockpit.css?url";
 import cockpitFontsFirefoxWindowsHref from "./styles/fonts/cockpit.firefox-windows.css?url";
 
@@ -142,6 +143,9 @@ const CaptureIntakePage = lazyWithPreload(() =>
 );
 const ProposalPage = lazy(() =>
   cockpitImport(() => import("./pages/ProposalPage.js").then((m) => ({ default: m.ProposalPage }))),
+);
+const DepositReturnPage = lazy(() =>
+  cockpitImport(() => import("./pages/DepositReturnPage.js").then((m) => ({ default: m.DepositReturnPage }))),
 );
 const ProposalPreviewPage = lazyWithPreload(() =>
   cockpitImport(() => import("./pages/ProposalPreviewPage.js").then((m) => ({ default: m.ProposalPreviewPage }))),
@@ -393,7 +397,13 @@ function OnboardRedirect(): ReactElement {
   return <Navigate to={`/register${location.search}`} replace />;
 }
 
-export const router = createBrowserRouter([
+// A stale chunk's preload failing after a deploy reloads the page once
+// (route-error-boundary.tsx); the route boundary below takes the rest.
+if (typeof window !== "undefined") installStaleChunkReload(window);
+
+// Every route under one root whose error boundary shows the recovery screen
+// and reports to Sentry, instead of React Router's raw error page.
+export const router = createBrowserRouter(underRouteErrorBoundary([
   {
     path: "/work-in-progress",
     element: <SplatsWorkInProgressPage />,
@@ -707,6 +717,12 @@ export const router = createBrowserRouter([
     element: withSuspense(<ProposalPage />),
   },
   {
+    // Back from Stripe's payment page (Plan 19 L5). Public, and carries no
+    // share token: the tab that left kept it and returns to the proposal.
+    path: "/deposit-return",
+    element: withSuspense(<DepositReturnPage />),
+  },
+  {
     // Preview as the client (roadmap X1): the venue's commercial team reads a
     // proposal's latest version as its client would, without the staff
     // header, and the API never counts it as the link being opened.
@@ -783,4 +799,4 @@ export const router = createBrowserRouter([
     path: "*",
     element: withSuspense(<NotFoundPage />),
   },
-]);
+]));

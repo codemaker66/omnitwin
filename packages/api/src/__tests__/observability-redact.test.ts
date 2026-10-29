@@ -533,6 +533,38 @@ describe("scrubTransaction", () => {
     expect(serialised).not.toContain("0141");
   });
 
+  it("drops the request body, the caller's address and credentials, and the query in url.path", () => {
+    const out = scrubTransaction({
+      type: "transaction",
+      request: {
+        url: "https://api.example.test/public/enquiries",
+        method: "POST",
+        data: JSON.stringify({ email: EMAIL, otherAllergies: "peanut" }),
+        headers: { "X-Forwarded-For": "203.0.113.77, 10.0.0.1", "x-real-ip": "203.0.113.77", authorization: "Bearer fictional", "user-agent": "test" },
+      },
+      contexts: {
+        trace: {
+          trace_id: "00000000000000000000000000000001",
+          span_id: "0000000000000001",
+          data: { "http.client_ip": "203.0.113.77", "client.address": "203.0.113.77", "http.method": "POST" },
+        },
+      },
+      spans: [{
+        trace_id: "00000000000000000000000000000001",
+        span_id: "0000000000000002",
+        start_timestamp: 1,
+        data: { "url.path": `/people/search?q=${EMAIL}`, "network.peer.address": "203.0.113.77" },
+      }],
+    });
+    expect(out.request?.data).toBeUndefined();
+    expect(out.request?.headers).toEqual({ "user-agent": "test" });
+    expect(out.contexts?.trace?.data).toEqual({ "http.method": "POST" });
+    expect(out.spans?.[0]?.data).toEqual({ "url.path": "/people/search?[redacted]" });
+    const serialised = JSON.stringify(out);
+    expect(serialised).not.toContain("203.0.113.77");
+    expect(serialised).not.toContain("peanut");
+  });
+
   it("ignores URL attributes that are not strings and a transaction with no spans or contexts", () => {
     const out = scrubTransaction({
       type: "transaction",

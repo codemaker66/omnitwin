@@ -12,15 +12,24 @@ vi.mock("@react-three/drei", () => ({
 vi.mock("@react-three/fiber", () => ({
   useThree: <T,>(selector: (state: { readonly size: { readonly width: number; readonly height: number } }) => T): T =>
     selector({ size: { width: 1440, height: 900 } }),
+  useFrame: () => undefined,
 }));
 
+import { OrthographicCamera, PerspectiveCamera, Vector3 } from "three";
 import { getCatalogueItemBySlug } from "../../lib/catalogue.js";
 import { createPlacedItem } from "../../lib/placement.js";
 import { usePlacementStore } from "../../stores/placement-store.js";
+import { useSelectionStore } from "../../stores/selection-store.js";
+import { useCatalogueStore } from "../../stores/catalogue-store.js";
+import { useDoorClearSpaceStore } from "../../stores/door-clear-space-store.js";
+import { useAssemblyRecallStore } from "../../floor/assembly/recall.js";
 import {
   CirculationOverlay,
   MAX_RENDERED_CIRCULATION_SEGMENTS,
+  circulationDotMaterial,
+  circulationLineMaterial,
   shouldRenderCirculationOverlay,
+  worldPerPixel,
 } from "../CirculationOverlay.js";
 
 function resetStore(): void {
@@ -32,14 +41,124 @@ function resetStore(): void {
     ghostInvalidReason: null,
     snapEnabled: true,
   });
+  useSelectionStore.getState().clearSelection();
+  useCatalogueStore.getState().clearSelection();
+  useDoorClearSpaceStore.getState().setCarrying(false);
+  useAssemblyRecallStore.setState({ active: false });
 }
 
-describe("CirculationOverlay", () => {
+function catalogueId(slug: string): string {
+  const item = getCatalogueItemBySlug(slug);
+  if (item === undefined) throw new Error(`fixture ${slug} missing`);
+  return item.id;
+}
+
+/** Two rounds 1 m apart, centre to centre: a pinch the overlay always draws. */
+function twoRoundsInAPinch(): void {
+  const round = catalogueId("round-table-6ft");
+  usePlacementStore.setState({ placedItems: [createPlacedItem(round, 0, 0, 0), createPlacedItem(round, 2, 0, 0)] });
+}
+
+function shown(): boolean {
+  return screen.queryByLabelText(/Tightest furniture clearance/) !== null;
+}
+
+describe("CirculationOverlay: when it shows", () => {
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+  const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+  beforeEach(() => {
+    resetStore();
+    twoRoundsInAPinch();
+  });
+  afterEach(() => {
+    cleanup();
+    resetStore();
+    warn.mockClear();
+    error.mockClear();
+  });
+
+  it("draws nothing on a layout at rest", () => {
+    render(<CirculationOverlay />);
+    expect(shown()).toBe(false);
+  });
+
+  it("draws while a piece is selected, carried or in hand", () => {
+    const [first] = usePlacementStore.getState().placedItems;
+    if (first === undefined) throw new Error("fixture layout missing");
+    useSelectionStore.getState().select(first.id);
+    const { unmount } = render(<CirculationOverlay />);
+    expect(shown(), "selected").toBe(true);
+    unmount();
+
+    useSelectionStore.getState().clearSelection();
+    useDoorClearSpaceStore.getState().setCarrying(true);
+    const carried = render(<CirculationOverlay />);
+    expect(shown(), "carried").toBe(true);
+    carried.unmount();
+
+    useDoorClearSpaceStore.getState().setCarrying(false);
+    useCatalogueStore.getState().selectItem(catalogueId("round-table-6ft"));
+    render(<CirculationOverlay />);
+    expect(shown(), "in hand").toBe(true);
+  });
+
+  it("draws nothing while a cloth dresses the tables, which moves no furniture", () => {
+    useCatalogueStore.getState().selectItem(catalogueId("white-table-cloth"));
+    render(<CirculationOverlay />);
+    expect(shown()).toBe(false);
+  });
+
+  it("draws nothing while the hall assembles, even over a selection", () => {
+    const [first] = usePlacementStore.getState().placedItems;
+    if (first === undefined) throw new Error("fixture layout missing");
+    useSelectionStore.getState().select(first.id);
+    useAssemblyRecallStore.setState({ active: true });
+    render(<CirculationOverlay />);
+    expect(shown()).toBe(false);
+  });
+});
+
+describe("CirculationOverlay: light on the floor", () => {
+  it("lays its lines and dots on the floor, depth-tested and leaving the floor's normal to the occlusion", () => {
+    const line = circulationLineMaterial("#c8553d", true);
+    const dot = circulationDotMaterial("#c8553d");
+    for (const material of [line, dot]) {
+      expect(material.depthTest).toBe(true);
+      expect(material.depthWrite).toBe(false);
+      expect(material.transparent).toBe(true);
+      expect(material.mrtNode).not.toBeNull();
+    }
+    line.dispose();
+    dot.dispose();
+  });
+
+  it("sizes a dot in pixels: a perspective camera by the dot's depth, an orthographic one by its frustum", () => {
+    const perspective = new PerspectiveCamera(50, 1, 0.1, 100);
+    perspective.position.set(0, 10, 0);
+    perspective.lookAt(0, 0, 0);
+    perspective.updateMatrixWorld();
+    const atTen = worldPerPixel(perspective, 900, new Vector3(0, 0, 0));
+    expect(atTen).toBeCloseTo((2 * 10 * Math.tan((50 * Math.PI) / 360)) / 900, 9);
+    // Twice as deep, twice the world size for the same pixels.
+    expect(worldPerPixel(perspective, 900, new Vector3(0, -10, 0))).toBeCloseTo(2 * atTen, 9);
+
+    const orthographic = new OrthographicCamera(-8, 8, 6, -6, 0.1, 100);
+    orthographic.zoom = 2;
+    expect(worldPerPixel(orthographic, 600, new Vector3(3, 0, 1))).toBeCloseTo(12 / (2 * 600), 9);
+  });
+});
+
+describe("CirculationOverlay while the layout is being edited", () => {
   // Silence the expected React "unknown prop" warnings for the three intrinsics.
   const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
   const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
-  beforeEach(resetStore);
+  beforeEach(() => {
+    resetStore();
+    // Any selection is an edit; the overlay draws the whole layout's clearances, whichever is selected.
+    useSelectionStore.getState().select("a-selected-piece");
+  });
   afterEach(() => {
     cleanup();
     resetStore();
