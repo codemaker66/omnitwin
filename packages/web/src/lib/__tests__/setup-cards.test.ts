@@ -1,6 +1,12 @@
+import { readdirSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { SETUP_PREVIEW_VERSION, setupCardLook, setupCardPreviewUrl } from "../crafted-furniture.js";
+import { PLANNER_CHAIR_SLUGS } from "../furniture-defaults.js";
 import { setPlannerFeaturesForTesting } from "../planner-features.js";
+import { usePlannerEventStore, type PlannerEventKind } from "../../stores/planner-event-store.js";
 import {
+  CARD_COLOURWAYS,
   SETUP_CARD_IDS,
   cardIdOf,
   cardMainItem,
@@ -12,13 +18,17 @@ import {
   pieceCardId,
   pieceCardSlug,
   seatsInHand,
+  setupCardLooks,
   stepCardParams,
   type CardParams,
 } from "../setup-cards.js";
 
 afterEach(() => {
   setPlannerFeaturesForTesting(null);
+  usePlannerEventStore.getState().setEventKind(null);
 });
+
+const publicDir = resolve(import.meta.dirname, "../../../public");
 
 function paramsFor(...args: Parameters<typeof cardParamsFor>): CardParams {
   const params = cardParamsFor(...args);
@@ -48,7 +58,7 @@ describe("Round of N", () => {
     const params = paramsFor("round");
     expect(params).toEqual({ card: "round", seats: 10, colourway: "white" });
     expect(cardMainSlug(params)).toBe("round-table-6ft-white");
-    expect(describeCard(params)).toEqual({ name: "Round of 10", size: "1.83 m round", seats: 10 });
+    expect(describeCard(params)).toEqual({ name: "Round of 10", size: "1.8 m round", seats: 10 });
   });
 
   it("keeps its seats between eight and twelve", () => {
@@ -152,5 +162,79 @@ describe("every card", () => {
       const params = paramsFor(id);
       expect(paramsFor(id, cardParamsRequest(params))).toEqual(params);
     }
+  });
+
+  it("sizes the round as its piece card does", () => {
+    const round = describeCard(paramsFor("round")).size;
+    expect(round).toBe("1.8 m round");
+    expect(describeCard(paramsFor(pieceCardId("round-table-6ft-white"))).size).toBe(round);
+  });
+});
+
+describe("setup card pictures", () => {
+  // Each look on each chair the planner sets; a look that seats no one (the floor) is one picture.
+  const pictures = [...new Map(setupCardLooks().flatMap((look) => PLANNER_CHAIR_SLUGS.map((chair) => {
+    const url = setupCardPreviewUrl(look, chair);
+    return [url, { look: `${look.card}/${setupCardLook(look, chair) ?? ""}`, url }] as const;
+  }))).values()];
+
+  it("has one picture per look and chair, and none for a piece card", () => {
+    expect(PLANNER_CHAIR_SLUGS).toEqual(["burgess-turini-18-3", "chiavari-chair"]);
+    expect(pictures).toHaveLength(19 * 2 + 1);
+    expect(setupCardPreviewUrl(paramsFor(pieceCardId("trestle-6ft")))).toBeNull();
+  });
+
+  it("ships no picture that no look shows", () => {
+    const shown = new Set(pictures.map(({ url }) => url));
+    for (const card of SETUP_CARD_IDS) {
+      const folder = `/models/furniture/setup-${card}/${SETUP_PREVIEW_VERSION}`;
+      for (const file of readdirSync(resolve(publicDir, `.${folder}`))) expect(shown.has(`${folder}/${file}`), `${folder}/${file}`).toBe(true);
+    }
+  });
+
+  it("shows no picture of a chair it was never drawn with, rather than a missing one", () => {
+    expect(setupCardPreviewUrl(paramsFor("round"), "checked-banquet-chair")).toBeNull();
+    setPlannerFeaturesForTesting({ tableSets: true });
+    expect(setupCardPreviewUrl(paramsFor("long-table", { trestles: 2 }), "gallery-chair-red-gold")).toBeNull();
+    expect(setupCardPreviewUrl(paramsFor("dance-floor"), "checked-banquet-chair")).toBe(`/models/furniture/setup-dance-floor/${SETUP_PREVIEW_VERSION}/floor.webp`);
+  });
+
+  it.each(pictures)("ships $look as an 800 × 800 WebP", ({ url }) => {
+    expect(url).toMatch(/^\/models\/furniture\/setup-[a-z-]+\/setup-v2\/[a-z-]+\.webp$/u);
+    const bytes = readFileSync(resolve(publicDir, `.${url ?? ""}`));
+    expect(bytes.toString("ascii", 0, 4)).toBe("RIFF");
+    expect(bytes.toString("ascii", 8, 16)).toBe("WEBPVP8X");
+    expect(bytes.readUIntLE(24, 3) + 1).toBe(800);
+    expect(bytes.readUIntLE(27, 3) + 1).toBe(800);
+  });
+
+  it("pictures what every card sets down, whatever its parameters and the event, with or without table sets", () => {
+    const shipped = new Set(pictures.map(({ url }) => url));
+    const events: readonly (PlannerEventKind | null)[] = [null, "wedding", "corporate", "other"];
+    for (const event of events) {
+      usePlannerEventStore.getState().setEventKind(event);
+      for (const tableSets of [false, true]) {
+        setPlannerFeaturesForTesting({ tableSets });
+        for (const card of SETUP_CARD_IDS) {
+          const colourways = card === "dance-floor" ? [undefined] : CARD_COLOURWAYS[card];
+          for (const colourway of colourways) {
+            for (let count = 1; count <= 12; count += 1) {
+              const params = paramsFor(card, { colourway, seats: count + 4, trestles: count, cols: count, rows: count });
+              expect(shipped.has(setupCardPreviewUrl(params)), `${String(event)} ${card} ${JSON.stringify(params)}`).toBe(true);
+            }
+          }
+        }
+      }
+    }
+  });
+
+  it("shows a set only when the card sets one down, on the event's chair", () => {
+    expect(setupCardLook(paramsFor("long-table", { colourway: "wood" }))).toBe("wood-one-turini");
+    setPlannerFeaturesForTesting({ tableSets: true });
+    expect(setupCardLook(paramsFor("long-table", { colourway: "wood", trestles: 2 }))).toBe("wood-set-turini");
+    usePlannerEventStore.getState().setEventKind("wedding");
+    expect(setupCardLook(paramsFor("top-table"))).toBe("white-set-chiavari");
+    expect(setupCardLook(paramsFor("round"))).toBe("white-chiavari");
+    expect(setupCardLook(paramsFor("dance-floor"))).toBe("floor");
   });
 });

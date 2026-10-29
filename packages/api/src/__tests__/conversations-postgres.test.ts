@@ -10,6 +10,7 @@ import * as schema from "../db/schema.js";
 import {
   clientConversationSnapshot,
   clientHoldsEventLink,
+  conversationCursorLockKey,
   listMessagesCore,
   listThreadsCore,
   markReceiptCore,
@@ -225,6 +226,43 @@ describe.skipIf(target === undefined)("conversations on migrated PostgreSQL", ()
     const [counted] = await db.select().from(schema.threads).where(eq(schema.threads.id, thread.id));
     expect(counted?.messageCount).toBe(2);
     expect(counted?.lastCursor).toBe(Math.max(...rows.map((row) => row.cursor)));
+  });
+
+  it("takes one thread's cursors in the order its messages commit, so reading on never skips one", async () => {
+    const f = await fixture();
+    const thread = granted(await openThreadCore(db, f.staff, f.venueId, { audience: "staff-private", subject: "booking", bookingId: f.bookingId })).thread;
+    // An earlier send holds the venue's message lock on its own connection
+    // while a later one arrives; the earlier one's message is written after
+    // the later one has started, and commits first.
+    const earlier = await pool.connect();
+    try {
+      await earlier.query("BEGIN");
+      await earlier.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [conversationCursorLockKey(f.venueId)]);
+      const later = sendMessageCore(db, f.hallkeeper, thread.id, send("Chairs out by five."));
+      // The later send waits for the venue's message lock.
+      for (let tries = 0; ; tries += 1) {
+        const waiting = await pool.query<{ waiting: string }>(
+          "SELECT count(*) AS waiting FROM pg_stat_activity WHERE datname = current_database() AND application_name = current_setting('application_name') AND wait_event_type = 'Lock'",
+        );
+        if (Number(waiting.rows[0]?.waiting ?? 0) > 0) break;
+        if (tries > 200) throw new Error("the later send never waited for the venue's message lock");
+        await new Promise((resolve) => { setTimeout(resolve, 10); });
+      }
+      const first = await postSystemMessage(drizzle(earlier, { schema }), thread.id, "Doors at six.");
+      await earlier.query("COMMIT");
+      const second = granted(await later).message;
+      if (first === null) throw new Error("the earlier message was not written");
+      // Commit order and cursor order agree: whoever read after the first
+      // commit and reads on from its cursor still gets the second message.
+      expect(second.cursor).toBeGreaterThan(first.cursor);
+      const onwards = granted(await listMessagesCore(db, f.admin, thread.id, { after: first.cursor, limit: 50 }));
+      expect(onwards.messages.map((message) => message.body)).toEqual(["Chairs out by five."]);
+      const [counted] = await db.select().from(schema.threads).where(eq(schema.threads.id, thread.id));
+      expect(counted?.lastCursor).toBe(second.cursor);
+    } finally {
+      await earlier.query("ROLLBACK").catch(() => undefined);
+      earlier.release();
+    }
   });
 
   it("hands back only what is newer than the cursor, in order", async () => {

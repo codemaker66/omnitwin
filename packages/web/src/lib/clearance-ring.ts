@@ -31,6 +31,7 @@ import {
   spineSide,
   underGuidance,
   type AisleRule,
+  type GangwayFlagReader,
   type RoomExit,
   type RoomSide,
 } from "./auto-fill.js";
@@ -72,9 +73,10 @@ export interface ClearanceRingModel {
   readonly reason: string | null;
 }
 
-/** Radius of the circle that fully contains an oriented footprint. */
+/** Radius of the circle about its centre that fully contains a footprint: its outline's (a table with its chairs), else its box's. */
 export function footprintHalfDiagonalM(f: FurnitureFootprint): number {
-  return Math.hypot(f.width, f.depth) / 2;
+  if (f.outline === undefined) return Math.hypot(f.width, f.depth) / 2;
+  return Math.max(0, ...f.outline.map((corner) => Math.hypot(corner.x - f.cx, corner.z - f.cz)));
 }
 
 function reasonForGap(gapM: number, neighbourLabel: string, band: CirculationBand): string | null {
@@ -93,8 +95,9 @@ function reasonForGap(gapM: number, neighbourLabel: string, band: CirculationBan
  * Clearance rings for the currently selected dining tables.
  *
  * Judged live from the same footprint extraction the circulation HUD uses
- * (tables + passive freestanding AV; chairs deliberately excluded so a
- * table's own seating never reads as an obstruction). Pass = the nearest
+ * (tables with their own chairs, measured chair back to chair back, and
+ * passive freestanding AV; a table's own seating is part of its outline, so
+ * it never reads as an obstruction). Pass = the nearest
  * neighbour keeps at least the single-file walkway; fail carries the named
  * neighbour and the rule it breaks.
  */
@@ -194,6 +197,8 @@ export interface LiveAisleOptions {
   readonly count?: number;
   readonly wallNames?: Readonly<Record<RoomSide, string>>;
   readonly rule?: AisleRule;
+  /** Who reads the gangway flag (lib/auto-fill gangwayFlag): a guest's words say the venue sees it with the layout. */
+  readonly reader?: GangwayFlagReader;
   /** The room's door clear spaces, as Fill keeps them, so the gangways are Fill's own. */
   readonly doorSpaces?: readonly LayoutRect[];
 }
@@ -203,8 +208,8 @@ function aisleMetres(gapM: number): string {
 }
 
 /** A gap's tone and words: the gangway rule on a designated gangway, the planner's bands elsewhere. */
-function aisleWords(gapM: number, band: CirculationBand, onGangway: boolean, rule: AisleRule): { readonly tone: AisleTone; readonly words: string } {
-  if (onGangway && underGuidance(gapM, rule)) return { tone: "amber", words: gangwayFlag(gapM, rule) };
+function aisleWords(gapM: number, band: CirculationBand, onGangway: boolean, rule: AisleRule, reader: GangwayFlagReader): { readonly tone: AisleTone; readonly words: string } {
+  if (onGangway && underGuidance(gapM, rule)) return { tone: "amber", words: gangwayFlag(gapM, rule, reader) };
   if (onGangway || band === "generous" || band === "comfortable" || band === "open") return { tone: "sage", words: aisleMetres(gapM) };
   return { tone: "amber", words: `${aisleMetres(gapM)} · ${band === "tight" ? "tight" : "no way through"}` };
 }
@@ -230,6 +235,7 @@ export function liveAisles(
   options: LiveAisleOptions = {},
 ): readonly AisleLine[] {
   const rule = options.rule ?? FILL_AISLE_RULE;
+  const reader = options.reader ?? "signed-in";
   const names = options.wallNames ?? { xMin: "the wall", xMax: "the wall", zMin: "the wall", zMax: "the wall" };
   const ownIds = new Set([...set.map((piece) => piece.id), ...(options.excludeIds ?? [])]);
   const mine = cornersOf(set);
@@ -262,7 +268,7 @@ export function liveAisles(
     if (best === null) continue;
     const onGangway = spine !== null && setSide !== spineSide(unit.flatMap((other) => other.corners), spine);
     const band = bandForGap(best.distance);
-    lines.push({ from: best.from, to: best.to, gapM: best.distance, band, ...aisleWords(best.distance, band, onGangway, rule), neighbour: obstacleName(best.piece.id, world).label, onGangway });
+    lines.push({ from: best.from, to: best.to, gapM: best.distance, band, ...aisleWords(best.distance, band, onGangway, rule, reader), neighbour: obstacleName(best.piece.id, world).label, onGangway });
   }
 
   // The walls: the set's nearest corner to each.
@@ -283,7 +289,7 @@ export function liveAisles(
     if (best === null) continue;
     const onGangway = designated?.layout.sides[wall.side] === true;
     const band = bandForGap(best.distance);
-    lines.push({ from: best.corner, to: wall.foot(best.corner), gapM: best.distance, band, ...aisleWords(best.distance, band, onGangway, rule), neighbour: names[wall.side], onGangway });
+    lines.push({ from: best.corner, to: wall.foot(best.corner), gapM: best.distance, band, ...aisleWords(best.distance, band, onGangway, rule, reader), neighbour: names[wall.side], onGangway });
   }
 
   return lines.sort((a, b) => a.gapM - b.gapM).slice(0, options.count ?? LIVE_AISLE_COUNT);

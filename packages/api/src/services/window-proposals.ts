@@ -108,12 +108,13 @@ function decisionDateFor(startsAt: Date, now: Date): Date {
   return new Date(Math.min(latest, Math.max(now.getTime() + HOUR_MS, preferred)));
 }
 
-async function readSlot(conn: Conn, bookingId: string): Promise<ClientEventScheduleSlot | null> {
+/** A recorded proposal's booking as its slot, with the event it is on. */
+async function readSlot(conn: Conn, bookingId: string): Promise<{ readonly eventId: string | null; readonly slot: ClientEventScheduleSlot } | null> {
   const [found] = await conn.select({ booking: bookings, spaceId: spaces.id, spaceName: spaces.name }).from(bookings)
     .innerJoin(spaces, eq(spaces.id, bookings.spaceId))
     .where(and(eq(bookings.id, bookingId), isNull(bookings.deletedAt))).limit(1);
   if (found === undefined) return null;
-  return slotOf(found.booking, { id: found.spaceId, name: found.spaceName });
+  return { eventId: found.booking.eventId, slot: slotOf(found.booking, { id: found.spaceId, name: found.spaceName }) };
 }
 
 export async function proposeWindowCore(
@@ -133,10 +134,12 @@ export async function proposeWindowCore(
     return deny(403, "FORBIDDEN", "This event is not linked to your account.");
   }
 
-  // The ledger first: a replayed gesture answers what it answered before.
+  // The ledger first: a replayed gesture answers what it answered before, on
+  // the event it was made on. Access was checked for this event only, so a key
+  // used on another event is refused, not answered with that event's booking.
   const [recorded] = await db.select().from(diaryCommands).where(eq(diaryCommands.commandId, input.idempotencyKey)).limit(1);
   if (recorded !== undefined) {
-    if (recorded.userId !== actor.id || recorded.kind !== COMMAND_KIND) {
+    if (recorded.userId !== actor.id || recorded.kind !== COMMAND_KIND || recorded.venueId !== eventRow.venueId) {
       return deny(409, "IDEMPOTENCY_KEY_REUSED", "That key was already used for something else.");
     }
     if (recorded.outcome !== "applied" || recorded.bookingId === null) {
@@ -144,7 +147,8 @@ export async function proposeWindowCore(
     }
     const replayed = await readSlot(db, recorded.bookingId);
     if (replayed === null) return deny(404, "BOOKING_NOT_FOUND", "That proposal no longer exists.");
-    return { ok: true, status: 200, replay: true, venueId: eventRow.venueId, changeKind: "booking.updated", slot: replayed };
+    if (replayed.eventId !== eventId) return deny(409, "IDEMPOTENCY_KEY_REUSED", "That key was already used for something else.");
+    return { ok: true, status: 200, replay: true, venueId: eventRow.venueId, changeKind: "booking.updated", slot: replayed.slot };
   }
 
   const startsAt = new Date(input.startsAt);
@@ -173,8 +177,16 @@ export async function proposeWindowCore(
     if (mine !== undefined) {
       const unchanged = mine.spaceId === space.id && mine.startsAt.getTime() === startsAt.getTime() && mine.endsAt.getTime() === endsAt.getTime();
       const rank = unchanged ? mine.rank : await nextRank(tx, space.id, startsAt, endsAt, mine.id);
+      // The decision date stays while it still comes before the window; a
+      // move to a sooner window that it would fall after gets a new one, and
+      // the next action's date with it.
+      const decisionKept = mine.decisionAt !== null && mine.decisionAt.getTime() < startsAt.getTime();
+      const decisionAt = decisionKept && mine.decisionAt !== null ? mine.decisionAt : decisionDateFor(startsAt, now);
+      const nextActionDueAt = decisionKept && mine.nextActionDueAt !== null && mine.nextActionDueAt.getTime() < startsAt.getTime()
+        ? mine.nextActionDueAt
+        : decisionAt;
       [row] = await tx.update(bookings)
-        .set({ spaceId: space.id, startsAt, endsAt, rank, updatedAt: now })
+        .set({ spaceId: space.id, startsAt, endsAt, rank, decisionAt, nextActionDueAt, updatedAt: now })
         .where(and(eq(bookings.id, mine.id), eq(bookings.kind, "hold"), eq(bookings.status, "active")))
         .returning();
       if (row === undefined) return deny(409, "WINDOW_DECIDED", "The office has confirmed this time; ask them to move it.");

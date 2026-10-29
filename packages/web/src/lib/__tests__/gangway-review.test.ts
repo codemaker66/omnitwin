@@ -160,10 +160,14 @@ describe("a middle gangway", () => {
 
 describe("the guidance in words", () => {
   it("flags a narrow gangway plainly, and never rounds one up to the guidance", () => {
-    expect(gangwayFlag(0.95)).toBe("Gangway 0.95 m · under the 1.1 m guidance · the venue will review");
-    expect(gangwayFlag(1.096)).toBe("Gangway 1.09 m · under the 1.1 m guidance · the venue will review");
+    expect(gangwayFlag(0.95)).toBe("Gangway 0.95 m · under the 1.1 m guidance · goes to the venue with this layout");
+    expect(gangwayFlag(1.096)).toBe("Gangway 1.09 m · under the 1.1 m guidance · goes to the venue with this layout");
     expect(underGuidance(1.1)).toBe(false);
     expect(underGuidance(1.0999)).toBe(true);
+  });
+
+  it("tells a guest, whose preview stores nothing, that the venue sees it with the layout", () => {
+    expect(gangwayFlag(0.95, FILL_AISLE_RULE, "guest")).toBe("Gangway 0.95 m · under the 1.1 m guidance · the venue sees this with your layout");
   });
 });
 

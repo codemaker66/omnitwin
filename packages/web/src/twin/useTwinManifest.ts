@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { TwinManifestSchema, type TwinManifest } from "@omnitwin/types";
+import type { TwinManifest } from "@omnitwin/types";
+import { TwinManifestSchema } from "@omnitwin/types/twin";
 
 // -----------------------------------------------------------------------------
 // useTwinManifest — loads and validates the twin/0 bundle manifest for a venue.

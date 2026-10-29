@@ -121,6 +121,7 @@ on future experiments.
 | Visible composition or interaction | [Product experience](../../.claude/conventions/product-experience.md) |
 | What AI assistants and search engines may read (`/mcp`, schema.org) | [Public venue discovery](public-venue-discovery.md) |
 | An organiser's plan without an account (the plan PDF; the read-only link awaiting a migration) | [Visitor plan hand-off](visitor-plan-handoff.md) |
+| What an AI draft sends a provider, the model rule, what a draft may say | [AI drafts](ai-drafts.md) |
 | Claude provider, typed event briefs or their eval | [AI event briefs](ai-event-briefs.md) |
 | What AI calls cost, the usage ledger, a venue's AI allowance, who may spend it | [AI usage and billing](ai-usage-and-billing.md) |
 | Martyn's Law or other legal prompts | [No-claims rule and sources](martyns-law-readiness.md) |
@@ -137,6 +138,8 @@ on future experiments.
 | XGRIDS level counts/budgets | [LOD level copies](../../.claude/gotchas/xgrids-lcc2-lod-levels-are-copies.md) |
 | V8 memory or test contention | [Windows/V8 notes](../../.claude/gotchas/windows-v8-heap.md) |
 | Zod input/output inference | [Passthrough inference](../../.claude/gotchas/zod-passthrough-inference.md) |
+| Raw SQL subqueries inside a Drizzle select | [Bare columns belong to the subquery](../../.claude/gotchas/drizzle-single-table-subquery-columns.md) |
+| Writing URL search params from hooks or loops | [setSearchParams builds on its render](../../.claude/gotchas/react-router-search-param-writes.md) |
 | Zod defaults and patches, refined objects, request arrays, test UUIDs, issue codes | [zod 4 semantics](../../.claude/gotchas/zod4-semantics.md) |
 | Docker build arguments | [ARG scope](../../.claude/gotchas/dockerfile-arg-scope.md) |
 | Deploying the API or adding a migration | [Deploy ordering](deploy-ordering.md) |

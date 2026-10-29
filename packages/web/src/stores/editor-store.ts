@@ -898,8 +898,11 @@ function againstNewerVersion(
 function lockReasonFor(state: EditorState): EditorLockReason | null {
   if (isLayoutTimelineMutationLocked()) return "phase-preview";
   if (state.reviewLockRefused) return "in-review";
-  // The server lets admins edit in every state (require-editable-config).
-  if (useAuthStore.getState().user?.role === "admin") return null;
+  // The server lets the layout's own venue admin, and a platform admin, edit
+  // in every state (canOverrideReviewLock in require-editable-config); another
+  // venue's admin who owns the layout waits for its review like any planner.
+  const user = useAuthStore.getState().user;
+  if (user?.platformRole === "admin" || (user?.role === "admin" && user.venueId !== null && user.venueId === state.venueId)) return null;
   return state.reviewStatus === "submitted" || state.reviewStatus === "under_review" ? "in-review" : null;
 }
 
