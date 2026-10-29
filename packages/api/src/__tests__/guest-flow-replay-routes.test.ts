@@ -98,7 +98,7 @@ describe("guest-flow replay API", () => {
 
   it("refuses geometry over the budget with one issue, before zod walks the points", async () => {
     const points = Array.from({ length: 1000 }, (_, i) => ({ x: i % 7, y: Math.floor(i / 7) }));
-    const obstacles = Array.from({ length: 21 }, (_, i) => ({ id: `obstacle-${i}`, label: "Obstacle", polygon: points }));
+    const obstacles = Array.from({ length: 21 }, (_, i) => ({ id: `obstacle-${String(i)}`, label: "Obstacle", polygon: points }));
     const res = await server.inject({
       method: "POST",
       url: "/guest-flow/scenarios",
@@ -106,7 +106,7 @@ describe("guest-flow replay API", () => {
       payload: { name: "Too much geometry", input: { ...INPUT, obstacles } },
     });
     expect(res.statusCode).toBe(400);
-    const body = res.json() as { code: string; details: Array<{ path: string[] }> };
+    const body = res.json<{ code: string; details: Array<{ path: string[] }> }>();
     expect(body.code).toBe("VALIDATION_ERROR");
     expect(body.details).toHaveLength(1);
     expect(body.details[0]?.path).toEqual(["input"]);
@@ -121,7 +121,7 @@ describe("guest-flow replay API", () => {
       payload: { name: "Bad points", input: { ...INPUT, roomPolygon: badPoints } },
     });
     expect(res.statusCode).toBe(400);
-    expect((res.json() as { details: unknown[] }).details).toHaveLength(20);
+    expect(res.json<{ details: unknown[] }>().details).toHaveLength(20);
   });
 
   it("rejects planner access and staff replay requests without venue scope", async () => {

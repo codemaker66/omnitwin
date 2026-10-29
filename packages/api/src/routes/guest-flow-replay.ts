@@ -329,7 +329,7 @@ export async function guestFlowReplayRoutes(
       return reply.status(400).send({
         error: "Validation failed",
         code: "VALIDATION_ERROR",
-        details: [{ code: "too_big", path: ["input"], message: `A scenario carries at most ${GUEST_FLOW_SCENARIO_POINT_BUDGET} points of geometry` }],
+        details: [{ code: "too_big", path: ["input"], message: `A scenario carries at most ${GUEST_FLOW_SCENARIO_POINT_BUDGET.toLocaleString("en-GB")} points of geometry` }],
       });
     }
     const parsed = CreateGuestFlowReplayScenarioSchema.safeParse(request.body);
