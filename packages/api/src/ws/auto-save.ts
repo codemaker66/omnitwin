@@ -20,6 +20,7 @@ import {
 import type { Database } from "../db/client.js";
 import { clerkTokenVerificationOptions, getUserByClerkId } from "../middleware/auth.js";
 import { resolveVerifiedClerkEmailWithFallback } from "../middleware/clerk-email.js";
+import { canOverrideReviewLock } from "../middleware/require-editable-config.js";
 import { emit, subscribe } from "../observability/event-bus.js";
 import { LayoutLiveHub, type LayoutLiveConnection } from "./layout-live.js";
 import { currentAuthority, readCurrentSocketUser, readCurrentSocketUsers } from "./socket-identity.js";
@@ -112,8 +113,9 @@ function canManageConfiguration(user: WsUser, config: AutoSaveConfiguration): bo
   return hasVenueRole && user.userVenueId !== null && config.venueId === user.userVenueId;
 }
 
-function canBypassReviewLock(user: WsUser): boolean {
-  return user.platformRole === "admin" || user.userRole === "admin";
+/** The layout's own venue admin, or a platform admin, as on the REST lock. */
+function canBypassReviewLock(user: WsUser, venueId: string): boolean {
+  return canOverrideReviewLock({ role: user.userRole, venueId: user.userVenueId, platformRole: user.platformRole }, venueId);
 }
 
 export function assessAutoSaveConfiguration(
@@ -124,7 +126,7 @@ export function assessAutoSaveConfiguration(
   if (!canManageConfiguration(user, config)) return { status: "forbidden" };
 
   const reviewStatus = ConfigurationReviewStatusSchema.safeParse(config.reviewStatus);
-  if (!canBypassReviewLock(user) && (!reviewStatus.success || !isPlannerEditable(reviewStatus.data))) {
+  if (!canBypassReviewLock(user, config.venueId) && (!reviewStatus.success || !isPlannerEditable(reviewStatus.data))) {
     return { status: "locked", reviewStatus: config.reviewStatus };
   }
 
@@ -329,7 +331,7 @@ export async function persistAutoSaveSnapshot(
       isNull(configurations.deletedAt),
       configAccessCondition(user),
     ];
-    if (!canBypassReviewLock(user)) {
+    if (!canBypassReviewLock(user, initial.venueId)) {
       conditions.push(inArray(configurations.reviewStatus, EDITABLE_REVIEW_STATUSES));
     }
 

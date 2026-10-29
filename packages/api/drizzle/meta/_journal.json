@@ -712,6 +712,13 @@
     {
       "idx": 101,
       "version": "7",
+      "when": 1793052000000,
+      "tag": "0104_deposits_and_signatures",
+      "breakpoints": true
+    },
+    {
+      "idx": 102,
+      "version": "7",
       "when": 1793149200000,
       "tag": "0106_web_vital_samples",
       "breakpoints": true

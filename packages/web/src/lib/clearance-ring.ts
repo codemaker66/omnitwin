@@ -72,9 +72,10 @@ export interface ClearanceRingModel {
   readonly reason: string | null;
 }
 
-/** Radius of the circle that fully contains an oriented footprint. */
+/** Radius of the circle about its centre that fully contains a footprint: its outline's (a table with its chairs), else its box's. */
 export function footprintHalfDiagonalM(f: FurnitureFootprint): number {
-  return Math.hypot(f.width, f.depth) / 2;
+  if (f.outline === undefined) return Math.hypot(f.width, f.depth) / 2;
+  return Math.max(0, ...f.outline.map((corner) => Math.hypot(corner.x - f.cx, corner.z - f.cz)));
 }
 
 function reasonForGap(gapM: number, neighbourLabel: string, band: CirculationBand): string | null {
@@ -93,8 +94,9 @@ function reasonForGap(gapM: number, neighbourLabel: string, band: CirculationBan
  * Clearance rings for the currently selected dining tables.
  *
  * Judged live from the same footprint extraction the circulation HUD uses
- * (tables + passive freestanding AV; chairs deliberately excluded so a
- * table's own seating never reads as an obstruction). Pass = the nearest
+ * (tables with their own chairs, measured chair back to chair back, and
+ * passive freestanding AV; a table's own seating is part of its outline, so
+ * it never reads as an obstruction). Pass = the nearest
  * neighbour keeps at least the single-file walkway; fail carries the named
  * neighbour and the rule it breaks.
  */

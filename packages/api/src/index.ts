@@ -50,6 +50,10 @@ import { dietaryMemoryRoutes } from "./routes/dietary-memory.js";
 import { authRoutes } from "./routes/auth.js";
 import { adminRoutes } from "./routes/admin.js";
 import { webhookRoutes } from "./routes/webhooks.js";
+import { stripeWebhookRoutes } from "./routes/stripe-webhook.js";
+import { proposalDepositRoutes, proposalShareDepositRoutes } from "./routes/deposits.js";
+import { proposalContractRoutes, proposalShareContractRoutes } from "./routes/contracts.js";
+import { depositPaymentsFrom } from "./services/payments/deposit-gateway.js";
 import { hallkeeperSheetRoutes } from "./routes/hallkeeper-sheet.js";
 import { configurationReviewRoutes } from "./routes/configuration-reviews.js";
 import { adminAssetRoutes, assetRoutes } from "./routes/assets.js";
@@ -516,6 +520,12 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
     prefix: "/admin/reconstruction-foundry/derivative-rights",
   });
   await server.register(webhookRoutes, { db, prefix: "/webhooks" });
+  // Deposits (Plan 19 L5): off without the Stripe variables; refused, with a
+  // logged reason, for any key that is not a test key (env.ts refuses it at
+  // startup first).
+  const depositPayments = depositPaymentsFrom(env);
+  if (depositPayments.status === "refused") server.log.error({ event: "stripe.payments_refused", reason: depositPayments.reason }, "Deposits are refused");
+  await server.register(stripeWebhookRoutes, { db, payments: depositPayments, prefix: "/webhooks" });
   await server.register(hallkeeperSheetRoutes, { db, prefix: "/hallkeeper" });
   await server.register(configurationReviewRoutes, { db, prefix: "/configurations" });
   await server.register(assetRoutes, { db, env, prefix: "/assets" });
@@ -574,6 +584,12 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   await server.register(proposalMessageDraftRoutes, { db, env, aiUsage, prefix: "/proposals" });
   await server.register(quoteRoutes, { db, prefix: "/quotes" });
   await server.register(proposalShareRoutes, { db, prefix: "/proposal-share" });
+  // Deposits on an accepted proposal (Plan 19 L5), Stripe test mode only.
+  await server.register(proposalDepositRoutes, { db, payments: depositPayments, prefix: "/proposals" });
+  await server.register(proposalShareDepositRoutes, { db, payments: depositPayments, prefix: "/proposal-share" });
+  // The contract and its simple electronic signature (Plan 19 L5).
+  await server.register(proposalContractRoutes, { db, prefix: "/proposals" });
+  await server.register(proposalShareContractRoutes, { db, prefix: "/proposal-share" });
   await server.register(supplierShareRoutes, { db, prefix: "/supplier-share" });
   await server.register(publicProposalRoutes, { db, prefix: "/public" });
 

@@ -234,6 +234,17 @@ describe("auto-save authorization and concurrency", () => {
     }, { ...config, reviewStatus: "approved" }, 4)).toEqual({ status: "ok" });
   });
 
+  it("holds a locked layout against another venue's admin who owns it, and lets its own venue's admin through", async () => {
+    const { assessAutoSaveConfiguration } = await import("../ws/auto-save.js");
+    const elsewhere = { ...owner, userRole: "admin", userVenueId: "00000000-0000-4000-8000-000000000044" };
+    expect(assessAutoSaveConfiguration(elsewhere, { ...config, reviewStatus: "approved" }, 4)).toEqual({
+      status: "locked",
+      reviewStatus: "approved",
+    });
+    const venueAdmin = { userId: "00000000-0000-4000-8000-000000000066", userRole: "admin", platformRole: "none" as const, userVenueId: config.venueId };
+    expect(assessAutoSaveConfiguration(venueAdmin, { ...config, reviewStatus: "approved" }, 4)).toEqual({ status: "ok" });
+  });
+
   it("rejects planner writes while review evidence is locked", async () => {
     const { assessAutoSaveConfiguration } = await import("../ws/auto-save.js");
     expect(assessAutoSaveConfiguration(owner, { ...config, reviewStatus: "submitted" }, 4)).toEqual({
