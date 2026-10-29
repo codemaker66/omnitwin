@@ -169,6 +169,11 @@ Saloon reaches the server and a second browser, and a switch whose save cannot
 arrive still opens the Saloon and says the move is kept here
 (`planner-work-survives.spec.ts`); this changes the inventory from 405 to 411
 and the CPU partition from 400 to 406.
+The next, on 29 October 2026, adds eight ordinary cases for Plan 19 L5's
+deposits and contract signature (PR #284): three in `proposal-contract.spec.ts`,
+four in `proposal-deposit.spec.ts` and one in `proposals-desk.spec.ts`, against
+route-mocked API responses with Stripe's page stubbed; this changes the
+inventory from 411 to 419 and the CPU partition from 406 to 414.
 
 The 30 September admission follows Blake's replacement of the Craft quiz with
 The Amissing Book (T-641). The old quiz's 26 threshold, questionnaire and result
