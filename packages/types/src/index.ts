@@ -1191,7 +1191,6 @@ export {
   findUnsafeAIDraftClaims,
   sanitizeAIDraftText,
   aiDraftDigest,
-  createReviewGatedAIDraft,
   type AIDraftUseCase,
   type AIDraftProvenance,
   type AIDraftEvidenceStatus,
@@ -1206,15 +1205,9 @@ export {
 export {
   AI_DRAFT_COMMITMENT_KINDS,
   AIDraftCommitmentKindSchema,
-  canonicalDraftText,
-  draftLeftAfterWithholding,
-  findDraftCommitments,
-  MIN_WORDS_LEFT_AFTER_WITHHOLDING,
-  sentencesOf,
-  withholdDraftCommitments,
-  type AIDraftCommitment,
   type AIDraftCommitmentKind,
-} from "./ai-draft-commitments.js";
+} from "./ai-draft-commitment-kinds.js";
+// The filter and createReviewGatedAIDraft: @omnitwin/types/ai-draft-review.
 
 export {
   COMMERCIAL_SPINE_SCHEMA_VERSION,

@@ -12,6 +12,11 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
+    },
+    "./ai-draft-review": {
+      "types": "./dist/ai-draft-review.d.ts",
+      "import": "./dist/ai-draft-review.js",
+      "default": "./dist/ai-draft-review.js"
     }
   },
   "files": [

@@ -2,11 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   AIAssistantStatusSchema,
   CreateAIDraftRequestSchema,
-  createReviewGatedAIDraft,
   findUnsafeAIDraftClaims,
   sanitizeAIDraftText,
 } from "../ai-assistant.js";
 import { findDraftCommitments } from "../ai-draft-commitments.js";
+import { createReviewGatedAIDraft } from "../ai-draft-review.js";
 
 const NOW = "2026-06-12T12:00:00.000Z";
 
