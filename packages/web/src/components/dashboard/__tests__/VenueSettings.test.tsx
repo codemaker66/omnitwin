@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { Venue, VenueDetail } from "../../../api/spaces.js";
+import { ApiError } from "../../../api/client.js";
 import { VenueSettings } from "../VenueSettings.js";
 
 const VENUE_ID = "00000000-0000-4000-8000-000000005001";
@@ -28,7 +29,8 @@ vi.mock("../../../api/spaces.js", () => ({
 
 // The Changeovers section below the form has its own tests
 // (changeovers/__tests__); here it only needs a venue with no rules.
-vi.mock("../../../api/turnaround-rules.js", () => ({
+vi.mock("../../../api/turnaround-rules.js", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../../../api/turnaround-rules.js")>(),
   listTurnaroundRules: vi.fn().mockResolvedValue({ rules: [], rooms: [], eventTypes: [] }),
   createTurnaroundRule: vi.fn(),
   updateTurnaroundRule: vi.fn(),
@@ -164,6 +166,39 @@ describe("VenueSettings", () => {
     expect(screen.getByText(/full link, starting https/u)).toBeTruthy();
     expect(screen.getByRole("button", { name: "Save changes" }).hasAttribute("disabled")).toBe(true);
     expect(mocks.updateVenue).not.toHaveBeenCalled();
+  });
+
+  it.each(["hallkeeper", "sales"])("shows a %s the venue's details with nothing to change, and says who sets them (dash-ops-2)", async (role) => {
+    mocks.authState.user = { ...mocks.authState.user, role };
+    render(<VenueSettings />);
+    expect(await screen.findByRole("heading", { name: "Venue settings" })).toBeTruthy();
+    expect(screen.getByText("The venue's administrators, managers and office staff set these details.")).toBeTruthy();
+    expect(screen.getByText("Trades Hall Glasgow", { selector: "dd" })).toBeTruthy();
+    expect(screen.queryByRole("textbox")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
+    expect(screen.queryByText("Saved")).toBeNull();
+    expect(await screen.findByText("The venue's administrators, managers and office staff set changeover times.")).toBeTruthy();
+    expect(screen.queryByText("Add a changeover time")).toBeNull();
+    expect(mocks.updateVenue).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { label: "staff", user: { role: "staff", platformRole: "none" } },
+    { label: "a platform administrator", user: { role: "planner", platformRole: "admin" } },
+  ])("offers $label the venue's details to change", async ({ user }) => {
+    mocks.authState.user = { ...mocks.authState.user, ...user };
+    render(<VenueSettings />);
+    expect(await screen.findByLabelText("Venue name")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Save changes" })).toBeTruthy();
+    expect(await screen.findByText("Add a changeover time")).toBeTruthy();
+  });
+
+  it("says who sets the details, not a bare failure, when the API refuses the save (dash-ops-2)", async () => {
+    mocks.updateVenue.mockRejectedValue(new ApiError(403, "Insufficient permissions", "FORBIDDEN"));
+    render(<VenueSettings />);
+    fireEvent.change(await screen.findByLabelText("Venue name"), { target: { value: "Trades Hall" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    expect((await screen.findByRole("alert")).textContent).toBe("The venue's administrators, managers and office staff set these details. Nothing has changed.");
   });
 
   it("surfaces load failures with a retry action", async () => {

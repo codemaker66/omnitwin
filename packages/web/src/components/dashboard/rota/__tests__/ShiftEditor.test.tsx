@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RotaShift } from "@omnitwin/types";
 import { ApiError } from "../../../../api/client.js";
 import { ShiftEditor, type PanelMessage } from "../ShiftEditor.js";
+import type { ShiftDraft } from "../rota-format.js";
 import { CALLUM, MORAG, MORAG_SATURDAY, VENUE, record, rotaWeek, shift } from "./rota-fixtures.js";
 
 // ---------------------------------------------------------------------------
@@ -43,6 +44,37 @@ function published(fields: Partial<RotaShift> = {}): RotaShift {
 
 beforeEach(() => { vi.clearAllMocks(); });
 afterEach(() => { cleanup(); });
+
+/** A new shift's editor on the venue's clock (Europe/London), drafted as given. */
+function renderNew(draft: Partial<ShiftDraft> & Pick<ShiftDraft, "date" | "start" | "end">): HTMLElement {
+  const newDraft: ShiftDraft = { staffMemberId: null, role: "setup", breakMinutes: 0, functionId: null, eventId: null, spaceId: null, note: "", ...draft };
+  render(
+    <ShiftEditor venueId={VENUE} week={rotaWeek()} functions={null} shift={null} newDraft={newDraft}
+      canManage message={null} onSaved={onSaved} onRemoved={onRemoved} onClose={onClose} />,
+  );
+  return screen.getByRole("region", { name: /shift/iu });
+}
+
+describe("ShiftEditor on the nights the clocks change (dash-ops-3)", () => {
+  it("counts the hour the clocks go back: 20:00 to 01:30 on 24 October is six and a half hours, with a break", () => {
+    const panel = renderNew({ date: "2026-10-24", start: "20:00", end: "01:30" });
+    expect(within(panel).getByText("6 hours 30 minutes, ending the next day.")).toBeDefined();
+    expect(within(panel).getByText("A shift this long needs a break of 20 minutes.")).toBeDefined();
+    fireEvent.change(within(panel).getByLabelText("Ends"), { target: { value: "02:00" } });
+    expect(within(panel).getByText("7 hours, ending the next day.")).toBeDefined();
+  });
+
+  it("counts a shift that starts after midnight on the 25th by the clock as it runs", () => {
+    const panel = renderNew({ date: "2026-10-25", start: "00:00", end: "06:00" });
+    expect(within(panel).getByText("7 hours.")).toBeDefined();
+  });
+
+  it("drops the hour the clocks go forward: 20:00 to 03:00 on 27 March 2027 is six hours, and needs no break", () => {
+    const panel = renderNew({ date: "2027-03-27", start: "20:00", end: "03:00" });
+    expect(within(panel).getByText("6 hours, ending the next day.")).toBeDefined();
+    expect(within(panel).queryByText(/needs a break/u)).toBeNull();
+  });
+});
 
 describe("ShiftEditor", () => {
   it("puts the shift's warnings first, and keeps one with the reason given", async () => {
