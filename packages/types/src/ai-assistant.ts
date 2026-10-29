@@ -12,6 +12,7 @@ import {
   SafePlanningWordingSchema,
   UNSAFE_PUBLIC_CLAIM_PHRASES,
 } from "./evidence-runtime.js";
+import { AIDraftCommitmentKindSchema, canonicalDraftText, withholdDraftCommitments } from "./ai-draft-commitments.js";
 
 // ---------------------------------------------------------------------------
 // AI Assistant Foundation v0
@@ -51,12 +52,22 @@ export type AIDraftSendState = z.infer<typeof AIDraftSendStateSchema>;
 export const AIDraftContextSchema = z.record(z.string(), CanonicalJsonValueSchema);
 export type AIDraftContext = z.infer<typeof AIDraftContextSchema>;
 
-/** The most an AI draft request's context may hold, as JSON. */
+/** The most a draft's context may hold, as canonical JSON. The largest the
+ *  server builds (a proposal's message: the client's words and latest
+ *  message, 2,000 characters each, with the event's facts) is under 5,000;
+ *  this bounds what a screen can send to be scrubbed and sent on. */
+export const MAX_AI_DRAFT_CONTEXT_CHARACTERS = 16_000;
+
+/** The most an AI draft request's context may hold, as JSON, checked before
+ *  the parse walks it (#278). */
 export const AI_DRAFT_CONTEXT_MAX_BYTES = 32 * 1024;
 
 export const CreateAIDraftRequestSchema = z.object({
   useCase: AIDraftUseCaseSchema,
-  context: boundedJsonObjectSchema(AI_DRAFT_CONTEXT_MAX_BYTES),
+  context: boundedJsonObjectSchema(AI_DRAFT_CONTEXT_MAX_BYTES).refine(
+    (context) => stableCanonicalJson(context).length <= MAX_AI_DRAFT_CONTEXT_CHARACTERS,
+    { message: `A draft's context may hold at most ${String(MAX_AI_DRAFT_CONTEXT_CHARACTERS)} characters.` },
+  ),
   requestedTone: SafePlanningWordingSchema.optional(),
 }).strict();
 export type CreateAIDraftRequest = z.infer<typeof CreateAIDraftRequestSchema>;
@@ -83,6 +94,10 @@ export const AIDraftSchema = z.object({
     }
   }),
   blockedUnsafeClaims: z.array(z.enum(UNSAFE_PUBLIC_CLAIM_PHRASES)).max(20),
+  /** The kinds of claim taken out of the model's words: a sentence stating a
+   *  price, availability or capacity. Present only when something was, so a
+   *  web build from before it still reads every draft that took nothing out. */
+  withheldCommitments: z.array(AIDraftCommitmentKindSchema).min(1).max(3).optional(),
   safeLanguageApplied: z.boolean(),
   humanReviewRequired: z.literal(true),
   provenance: z.literal("ai_generated"),
@@ -144,6 +159,21 @@ export function aiDraftDigest(input: {
   return sha256Hex(`${AI_DRAFT_DIGEST_DOMAIN_PREFIX}${stableCanonicalJson(input)}`);
 }
 
+/**
+ * The model's words as a draft people review: unsupported certainty replaced,
+ * every sentence stating a price, availability or capacity taken out, and the
+ * draft marked AI-written, unverified and never sent. Throws (the body is
+ * empty) when nothing is left once the claims are out.
+ *
+ * The claims are taken out here, where every draft is made, and not checked
+ * again where a draft is read: the web and the API deploy apart, and a page
+ * open since an earlier build would otherwise refuse drafts that a later
+ * check passed. Taking out reads the words last, so what it passes is what
+ * the draft says. The words are made canonical first (canonicalDraftText: no
+ * character that shows nothing, plain digits and signs), and the draft holds
+ * the canonical words, so what the booker and the client read is what was
+ * checked, for unsafe wording and for claims alike.
+ */
 export function createReviewGatedAIDraft(input: {
   readonly useCase: AIDraftUseCase;
   readonly title: string;
@@ -152,13 +182,15 @@ export function createReviewGatedAIDraft(input: {
   readonly generatedAt: string;
 }): AIDraft {
   const title = safePlanningLanguage(input.title);
-  const sanitized = sanitizeAIDraftText(input.body);
+  const sanitized = sanitizeAIDraftText(canonicalDraftText(input.body));
+  const withheld = withholdDraftCommitments(sanitized.text);
   return AIDraftSchema.parse({
     schemaVersion: AI_ASSISTANT_SCHEMA_VERSION,
     useCase: input.useCase,
     title,
-    body: sanitized.text,
+    body: withheld.text,
     blockedUnsafeClaims: sanitized.blockedUnsafeClaims,
+    ...(withheld.withheld.length > 0 ? { withheldCommitments: [...withheld.withheld] } : {}),
     safeLanguageApplied: sanitized.safeLanguageApplied || title !== input.title,
     humanReviewRequired: true,
     provenance: "ai_generated",
@@ -168,7 +200,7 @@ export function createReviewGatedAIDraft(input: {
     digest: aiDraftDigest({
       useCase: input.useCase,
       title,
-      body: sanitized.text,
+      body: withheld.text,
       context: input.context,
       generatedAt: input.generatedAt,
     }),

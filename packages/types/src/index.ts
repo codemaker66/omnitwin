@@ -1184,6 +1184,7 @@ export {
   AIDraftSendStateSchema,
   AIDraftContextSchema,
   CreateAIDraftRequestSchema,
+  MAX_AI_DRAFT_CONTEXT_CHARACTERS,
   AIAssistantStatusSchema,
   AIDraftSchema,
   ProposalMessageDraftSchema,
@@ -1201,6 +1202,19 @@ export {
   type AIDraft,
   type ProposalMessageDraft,
 } from "./ai-assistant.js";
+
+export {
+  AI_DRAFT_COMMITMENT_KINDS,
+  AIDraftCommitmentKindSchema,
+  canonicalDraftText,
+  draftLeftAfterWithholding,
+  findDraftCommitments,
+  MIN_WORDS_LEFT_AFTER_WITHHOLDING,
+  sentencesOf,
+  withholdDraftCommitments,
+  type AIDraftCommitment,
+  type AIDraftCommitmentKind,
+} from "./ai-draft-commitments.js";
 
 export {
   COMMERCIAL_SPINE_SCHEMA_VERSION,

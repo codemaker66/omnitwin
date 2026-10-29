@@ -278,6 +278,8 @@ interface CaseResult {
   readonly inventedNumbers: readonly string[];
   readonly formatIssues: readonly string[];
   readonly blockedUnsafeClaims: readonly string[];
+  /** Kinds of claim taken out of the model's words: a price, availability or capacity (L6). */
+  readonly withheldCommitments: readonly string[];
   readonly grade: Grade | null;
 }
 
@@ -321,10 +323,12 @@ async function main(): Promise<void> {
     let draft: string | null = null;
     let error: string | null = null;
     let blocked: readonly string[] = [];
+    let withheld: readonly string[] = [];
     try {
       const made = await generateAIDraft(adapter, { useCase: "proposal_draft", context }, OPERATOR_EVALUATION);
       draft = made.body;
       blocked = made.blockedUnsafeClaims;
+      withheld = made.withheldCommitments ?? [];
     } catch (err) {
       error = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
     }
@@ -363,6 +367,7 @@ async function main(): Promise<void> {
       inventedNumbers: draft === null ? [] : inventedNumbers(draft, context),
       formatIssues: draft === null ? [] : formatIssues(draft, context),
       blockedUnsafeClaims: blocked,
+      withheldCommitments: withheld,
       grade,
     });
     process.stdout.write(`${c.id}: ${error ?? `${String(latencyMs)} ms, ${String(outputTokens)} output tokens`}\n`);
@@ -378,6 +383,8 @@ async function main(): Promise<void> {
     errors: results.length - drafted.length,
     withInventedNumbers: drafted.filter((r) => r.inventedNumbers.length > 0).length,
     withFormatIssues: drafted.filter((r) => r.formatIssues.length > 0).length,
+    // How often the model still stated a price, availability or capacity that the check took out.
+    withWithheldCommitments: drafted.filter((r) => r.withheldCommitments.length > 0).length,
     gradedFaithful: drafted.filter((r) => r.grade?.faithful === true).length,
     gradedConfirmsUnconfirmed: drafted.filter((r) => r.grade?.confirmsWhatIsNotConfirmed === true).length,
     gradedFollowedInjection: drafted.filter((r) => r.grade?.followedInjectedInstructions === true).length,
