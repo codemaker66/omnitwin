@@ -2,6 +2,7 @@ import { SectionSlider } from "./components/SectionSlider.js";
 import { MeasurementOverlay } from "./components/MeasurementOverlay.js";
 import { PlacementHint } from "./components/PlacementHint.js";
 import { PlacementNotice } from "./components/editor/PlacementNotice.js";
+import { DoorClearNotice } from "./components/editor/DoorClearNotice.js";
 import { MarkupPersistence } from "./components/MarkupPersistence.js";
 import { ChairCountDialog } from "./components/ChairCountDialog.js";
 import { CameraReferenceComposer, CameraReferenceHeightSwitch } from "./components/CameraReferenceComposer.js";
@@ -72,6 +73,7 @@ export function App({ compactDesktop = false }: { readonly compactDesktop?: bool
       {!timelinePreviewActive && <MeasurementOverlay />}
       {!timelinePreviewActive && <PlacementHint />}
       {!timelinePreviewActive && <PlacementNotice mobile={mobileChrome} />}
+      {!timelinePreviewActive && <DoorClearNotice mobile={mobileChrome} />}
       {!timelinePreviewActive && <CameraReferenceComposer />}
       {!timelinePreviewActive && <CameraReferenceHeightSwitch />}
 

@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useState, type ReactElement } from "re
 import { FORWARD_BOOK_RECORD_ROLES } from "@omnitwin/types";
 import * as spacesApi from "../../api/spaces.js";
 import type { VenueDetail } from "../../api/spaces.js";
-import { diaryVenueOf, hasRole } from "../../lib/role-capabilities.js";
+import { ApiError } from "../../api/client.js";
+import { administersVenue, diaryVenueOf, hasRole } from "../../lib/role-capabilities.js";
 import { useAuthStore } from "../../stores/auth-store.js";
 import { useToastStore } from "../../stores/toast-store.js";
 import { ActivityIndicator } from "../shared/Activity.js";
@@ -14,6 +15,8 @@ import "./VenueSettings.css";
 type LoadState = "loading" | "loaded" | "error";
 
 const DEFAULT_BRAND_COLOUR = "#c98a5b";
+/** Who sets the venue's details, said to everyone else (canAdministerVenue). */
+const VENUE_DETAILS_SETTERS = "The venue's administrators, managers and office staff set these details.";
 const HEX_COLOUR_PATTERN = /^#[0-9a-fA-F]{6}$/u;
 
 function optionalText(value: string): string | null {
@@ -54,6 +57,9 @@ export function VenueSettings(): ReactElement {
   // own admin or manager (canRecordForwardBook).
   const readsDiary = user !== null && diaryVenueOf(user) !== null;
   const recordsForwardBook = user !== null && user.venueId === venueId && hasRole(FORWARD_BOOK_RECORD_ROLES, user.role);
+  // The venue's record and its changeover times: changed only by the venue's
+  // administrators (the API's canAdministerVenue), read by everyone else here.
+  const editsVenue = administersVenue(user, venueId);
   const addToast = useToastStore((state) => state.addToast);
 
   const [venue, setVenue] = useState<VenueDetail | null>(null);
@@ -158,7 +164,9 @@ export function VenueSettings(): ReactElement {
       });
       addToast("Venue settings saved", "success");
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : "Venue settings could not be saved.";
+      const message = error instanceof ApiError && error.status === 403
+        ? `${VENUE_DETAILS_SETTERS} Nothing has changed.`
+        : error instanceof Error ? error.message : "Venue settings could not be saved.";
       setSaveError(message);
       addToast("Failed to save venue settings", "error");
     } finally {
@@ -209,12 +217,37 @@ export function VenueSettings(): ReactElement {
             <h2 id="venue-settings-title">Venue settings</h2>
             <p>The name and address people see across Venviewer.</p>
           </div>
-          <p className="venue-settings__status" data-state={isDirty ? "dirty" : "clean"} role="status" aria-live="polite">
-            {isDirty ? "Unsaved changes" : "Saved"}
-          </p>
+          {editsVenue && (
+            <p className="venue-settings__status" data-state={isDirty ? "dirty" : "clean"} role="status" aria-live="polite">
+              {isDirty ? "Unsaved changes" : "Saved"}
+            </p>
+          )}
         </header>
 
         <div className="venue-settings__grid">
+          {!editsVenue ? (
+            <div className="venue-settings__form">
+              <p>{VENUE_DETAILS_SETTERS}</p>
+              <dl className="venue-settings__meta">
+                <div>
+                  <dt>Venue name</dt>
+                  <dd>{venue.name}</dd>
+                </div>
+                <div>
+                  <dt>Address</dt>
+                  <dd>{venue.address}</dd>
+                </div>
+                <div>
+                  <dt>Brand colour</dt>
+                  <dd>{venue.brandColour ?? "Not set"}</dd>
+                </div>
+                <div>
+                  <dt>Logo link</dt>
+                  <dd>{venue.logoUrl ?? "Not set"}</dd>
+                </div>
+              </dl>
+            </div>
+          ) : (
           <form
             className="venue-settings__form"
             onSubmit={(event) => {
@@ -310,6 +343,7 @@ export function VenueSettings(): ReactElement {
               </button>
             </div>
           </form>
+          )}
 
           <aside className="venue-settings__preview" aria-label="Preview">
             <div className="venue-settings__card">
@@ -339,7 +373,7 @@ export function VenueSettings(): ReactElement {
         </div>
       </div>
 
-      <ChangeoverSettings venueId={venueId} />
+      <ChangeoverSettings venueId={venueId} canEdit={editsVenue} />
       {readsDiary && <ForwardBookSettings venueId={venueId} canRecord={recordsForwardBook} />}
     </section>
   );

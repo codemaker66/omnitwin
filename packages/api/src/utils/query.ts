@@ -1,4 +1,4 @@
-import { FORWARD_BOOK_RECORD_ROLES, PRICING_WRITE_ROLES as PRICE_SETTER_ROLES, VENUE_TEAM_INVITER_ROLES } from "@omnitwin/types";
+import { FORWARD_BOOK_RECORD_ROLES, PRICING_WRITE_ROLES as PRICE_SETTER_ROLES, VENUE_ADMINISTRATION_ROLES, VENUE_TEAM_INVITER_ROLES } from "@omnitwin/types";
 import { isPlatformAdmin, type JwtUser } from "../middleware/auth.js";
 
 // ---------------------------------------------------------------------------
@@ -106,7 +106,7 @@ export function canWriteEvents(
 
 /** Editing the venue record and its spaces. Prices are narrower: see
  *  PRICING_WRITE_ROLES. */
-const VENUE_ADMINISTRATION_ROLES: ReadonlySet<string> = new Set(["admin", "manager", "staff"]);
+const VENUE_ADMINISTRATION_ROLE_SET: ReadonlySet<string> = new Set(VENUE_ADMINISTRATION_ROLES);
 
 /**
  * Who may set a price: create, change, delete or restore a pricing rule.
@@ -150,7 +150,7 @@ export function canAdministerVenue(
   user: Pick<JwtUser, "role" | "venueId" | "platformRole">,
   venueId: string,
 ): boolean {
-  return holdsVenueRole(user, venueId, VENUE_ADMINISTRATION_ROLES);
+  return holdsVenueRole(user, venueId, VENUE_ADMINISTRATION_ROLE_SET);
 }
 
 /** Setting a price at this venue (PRICING_WRITE_ROLES). Reading one is the

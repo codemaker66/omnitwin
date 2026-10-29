@@ -185,15 +185,18 @@ describe.skipIf(testUrl === undefined)("the enquiry funnel on migrated PostgreSQ
     readonly venueId?: string;
     readonly enquiryId?: string | null;
     readonly opportunityId?: string | null;
+    readonly configurationId?: string | null;
     readonly sent?: boolean;
+    /** A status after a send ("changes_requested"), in place of `sent`. */
+    readonly status?: "changes_requested";
   } = {}): Promise<{ readonly id: string; readonly token: string; readonly tokenId: string }> {
     const id = randomUUID();
-    const sent = options.sent ?? true;
+    const sent = options.status !== undefined || (options.sent ?? true);
     await pool.query(
-      `INSERT INTO proposals (id, venue_id, enquiry_id, opportunity_id, title, status, current_version, sent_at, sent_version, created_by)
-       VALUES ($1, $2, $3, $4, 'Crawford wedding proposal', $5, 1, $6, $7, $8)`,
-      [id, options.venueId ?? venue, options.enquiryId ?? null, options.opportunityId ?? null,
-        sent ? "sent" : "draft", sent ? new Date() : null, sent ? 1 : null, people.staff],
+      `INSERT INTO proposals (id, venue_id, enquiry_id, opportunity_id, configuration_id, title, status, current_version, sent_at, sent_version, created_by)
+       VALUES ($1, $2, $3, $4, $5, 'Crawford wedding proposal', $6, 1, $7, $8, $9)`,
+      [id, options.venueId ?? venue, options.enquiryId ?? null, options.opportunityId ?? null, options.configurationId ?? null,
+        options.status ?? (sent ? "sent" : "draft"), sent ? new Date() : null, sent ? 1 : null, people.staff],
     );
     await pool.query(
       "INSERT INTO proposal_versions (proposal_id, version, payload, coordinate_space, source_hash) VALUES ($1, 1, $2, 'real_m_v1', $3)",
@@ -612,6 +615,48 @@ describe.skipIf(testUrl === undefined)("the enquiry funnel on migrated PostgreSQ
     const stray = await newProposal({ enquiryId: theirs, sent: false });
     expect((await call("POST", `/proposals/${stray.id}/transition`, asStaff(), { status: "sent" })).status).toBe(200);
     expect((await stampOf(theirs)).first_response_at).toBeNull();
+  });
+
+  // Release audit proposals-1: the Proposals desk sends by client link, and
+  // that send recorded no first reply and told no change feed.
+  it("records a proposal sent by its client link as the first reply, a changes-requested send too, never another venue's", async () => {
+    const carried = await newEnquiry();
+    const draft = await newProposal({ enquiryId: carried, sent: false });
+    expect((await call("POST", `/proposals/${draft.id}/share-token`, asStaff(), {})).status).toBe(201);
+    expect(await stampOf(carried)).toMatchObject({ first_response_channel: "proposal", first_response_by: people.staff });
+
+    // The client asked for changes; the new version goes back by a new link.
+    const returned = await newEnquiry();
+    const changes = await newProposal({ enquiryId: returned, status: "changes_requested" });
+    expect((await call("POST", `/proposals/${changes.id}/share-token`, asSales(), {})).status).toBe(201);
+    expect(await stampOf(returned)).toMatchObject({ first_response_channel: "proposal", first_response_by: people.sales });
+
+    // A proposal of this venue pointing at another venue's enquiry replies to nobody.
+    const theirs = await newEnquiry({ venueId: otherVenue, spaceId: theirHall });
+    const stray = await newProposal({ enquiryId: theirs, sent: false });
+    expect((await call("POST", `/proposals/${stray.id}/share-token`, asStaff(), {})).status).toBe(201);
+    expect((await stampOf(theirs)).first_response_at).toBeNull();
+  });
+
+  it("tells the event's change feed of a send by link, as of a send by status", async () => {
+    const configurationId = randomUUID(), eventId = randomUUID();
+    await pool.query(
+      `INSERT INTO configurations (id, venue_id, space_id, name, slug, layout_style)
+       VALUES ($1, $2, $3, 'Crawford wedding layout', 'crawford', 'custom')`,
+      [configurationId, venue, hall],
+    );
+    await pool.query("INSERT INTO events (id, venue_id, created_by, name) VALUES ($1, $2, $3, 'Crawford wedding')",
+      [eventId, venue, people.staff]);
+    await pool.query(
+      "INSERT INTO event_configuration_links (event_id, configuration_id, link_type) VALUES ($1, $2, 'variant_configuration')",
+      [eventId, configurationId],
+    );
+    const proposal = await newProposal({ configurationId, sent: false });
+    expect((await call("POST", `/proposals/${proposal.id}/share-token`, asStaff(), {})).status).toBe(201);
+    const { rows } = await pool.query<{ source_kind: string; proposal_id: string | null; summary: string }>(
+      "SELECT source_kind, proposal_id, summary FROM event_plan_changes WHERE event_id = $1", [eventId],
+    );
+    expect(rows).toEqual([{ source_kind: "proposal", proposal_id: proposal.id, summary: "Crawford wedding proposal moved from draft to sent." }]);
   });
 
   // -------------------------------------------------------------------------

@@ -18,6 +18,7 @@ import {
   type RecordMergeSnapshot,
 } from "@omnitwin/types";
 import type { Database } from "../db/client.js";
+import { outerColumn } from "../utils/outer-column.js";
 import { accountMemberships, clientAccounts, contactPoints, contacts, enquiries, opportunities, recordMerges } from "../db/schema.js";
 import {
   adoptLegacyMirror,
@@ -680,7 +681,7 @@ async function laterMergeOfSurvivor(tx: PeopleTx, merge: ReadableMerge): Promise
       or(eq(recordMerges.survivorId, merge.survivorId), eq(recordMerges.mergedId, merge.survivorId)),
       isNull(recordMerges.undoneAt),
       ne(recordMerges.id, merge.id),
-      sql`${recordMerges.mergedAt} > (SELECT m.merged_at FROM record_merges m WHERE m.id = ${merge.id})`,
+      sql`${outerColumn(recordMerges.mergedAt)} > (SELECT m.merged_at FROM record_merges m WHERE m.id = ${merge.id})`,
     ))
     .orderBy(desc(recordMerges.mergedAt), desc(recordMerges.id))
     .limit(1);

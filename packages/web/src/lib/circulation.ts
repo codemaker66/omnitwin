@@ -15,6 +15,8 @@
 // vocabulary.
 // ---------------------------------------------------------------------------
 
+import { normalizeFurnitureScale } from "./furniture-scale.js";
+
 /** A point on the floor plane, metres. `x` is world-X, `z` is world-Z. */
 export interface Vec2 {
   readonly x: number;
@@ -31,8 +33,41 @@ export interface FurnitureFootprint {
   /** Size before rotation, metres (width = X, depth = Z). */
   readonly width: number;
   readonly depth: number;
-  /** Rotation about the vertical axis, radians. */
+  /**
+   * Rotation about the vertical axis, radians, turning X toward Z: the
+   * NEGATIVE of a placed piece's three.js `rotationY` (which turns X away
+   * from Z). Build footprints of placed pieces with footprintOfPlacement.
+   */
   readonly rotation: number;
+  /**
+   * The footprint's own convex outline, world-space metres, in place of its
+   * box: a table with its chairs, so a gap is measured chair back to chair
+   * back, where guests walk (circulation-scene).
+   */
+  readonly outline?: readonly Vec2[];
+}
+
+/**
+ * A placed piece's footprint, metres: its centre, scaled size and turn, in
+ * footprintCorners' convention. Three.js turns X toward −Z for a positive
+ * `rotationY`; footprints turn the other way, so the turn is negated here and
+ * only here.
+ */
+export function footprintOfPlacement(
+  placed: { readonly id: string; readonly x: number; readonly z: number; readonly rotationY: number; readonly scale?: number },
+  item: { readonly name: string; readonly width: number; readonly depth: number },
+  renderScale: number,
+): FurnitureFootprint {
+  const scale = normalizeFurnitureScale(placed.scale);
+  return {
+    id: placed.id,
+    label: item.name,
+    cx: placed.x / renderScale,
+    cz: placed.z / renderScale,
+    width: item.width * scale,
+    depth: item.depth * scale,
+    rotation: -placed.rotationY,
+  };
 }
 
 // Planning-grade walkway guidance (metres). Common event-planning rules of
@@ -91,8 +126,9 @@ export interface CirculationReport {
 // Geometry primitives — exact for convex polygons.
 // ---------------------------------------------------------------------------
 
-/** The four corners of a footprint's oriented box, world-space, metres. */
+/** A footprint's convex outline, world-space, metres: its own, else the four corners of its oriented box. */
 export function footprintCorners(f: FurnitureFootprint): readonly Vec2[] {
+  if (f.outline !== undefined) return f.outline;
   const hw = f.width / 2;
   const hd = f.depth / 2;
   const cos = Math.cos(f.rotation);
@@ -136,6 +172,28 @@ export function polygonCentroid(poly: readonly Vec2[]): Vec2 {
   }
   const n = poly.length === 0 ? 1 : poly.length;
   return { x: sx / n, z: sz / n };
+}
+
+/** The convex hull of points, metres, as a convex polygon (Andrew's monotone chain); collinear points dropped. */
+export function convexHull(points: readonly Vec2[]): readonly Vec2[] {
+  const sorted = [...points].sort((a, b) => a.x - b.x || a.z - b.z);
+  if (sorted.length <= 2) return sorted;
+  const cross = (o: Vec2, a: Vec2, b: Vec2): number => (a.x - o.x) * (b.z - o.z) - (a.z - o.z) * (b.x - o.x);
+  const chain = (ordered: readonly Vec2[]): Vec2[] => {
+    const out: Vec2[] = [];
+    for (const p of ordered) {
+      while (out.length >= 2) {
+        const last = out[out.length - 1];
+        const before = out[out.length - 2];
+        if (last === undefined || before === undefined || cross(before, last, p) > 0) break;
+        out.pop();
+      }
+      out.push(p);
+    }
+    out.pop();
+    return out;
+  };
+  return [...chain(sorted), ...chain([...sorted].reverse())];
 }
 
 /**

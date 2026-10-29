@@ -2,6 +2,7 @@ import { seatBaseSlug, seatsFor } from "@omnitwin/types";
 import { toRenderSpace } from "../constants/scale.js";
 import { getCatalogueItemBySlug, type CatalogueItem } from "./catalogue.js";
 import { isDiningTableItem } from "./furniture-semantics.js";
+import { plannerChairSlug } from "./furniture-defaults.js";
 import { createPlacedItem, generatePlacedId, type PlacedItem } from "./placement.js";
 import { plannerFeatureEnabled } from "./planner-features.js";
 import { createTableGroup } from "./table-group.js";
@@ -94,14 +95,19 @@ export const DANCE_FLOOR_PANELS = { default: 5, min: 2, max: 12 } as const;
 /** Chairs a 6 ft trestle takes in a run: Top table seats one side, Long table both (spec §6). */
 export const SEATS_PER_TRESTLE = { "top-table": 3, "long-table": 6 } as const;
 
+/** Trestles in a Top or Long table set once they are built as sets (`tableSets`, Q-08b). */
+export const TRESTLE_SETS = {
+  "top-table": { default: 4, min: 2, max: 6 },
+  "long-table": { default: 4, min: 2, max: 10 },
+} as const;
+
 /**
  * Trestles in a run. Until Top table and Long table are built as sets
  * (`tableSets`, Q-08b), each card sets down one trestle through
  * `placeTableGroup` (spec §5).
  */
 export function trestleRange(card: "top-table" | "long-table"): { readonly default: number; readonly min: number; readonly max: number } {
-  if (!plannerFeatureEnabled("tableSets")) return { default: 1, min: 1, max: 1 };
-  return card === "top-table" ? { default: 4, min: 2, max: 6 } : { default: 4, min: 2, max: 10 };
+  return plannerFeatureEnabled("tableSets") ? TRESTLE_SETS[card] : { default: 1, min: 1, max: 1 };
 }
 
 export function isSetupCardId(id: string): id is SetupCardId {
@@ -226,6 +232,40 @@ export function seatsInHand(params: CardParams): number {
   }
 }
 
+/**
+ * Whether a card sets down a whole set rather than one piece alone: every
+ * card but a piece with no seats. A set takes the grid only as it follows the
+ * pointer; one piece also takes the single piece's edge, wall and line snaps.
+ */
+export function cardIsWholeSet(params: CardParams): boolean {
+  return params.card !== "piece" || seatsInHand(params) > 0;
+}
+
+/**
+ * Whether the card in hand is set down as a card, its whole stamp in one
+ * step with no chair dialog: a set card (Round, Top table, Long table, Dance
+ * floor) always, from v2's rail as from v1's list (Q-07, Q-13); a piece card
+ * once the card dock is on (setupCards), a dining table's only once its
+ * seats ride on the card (seatsOnTheCard), else the old way, through the
+ * chair dialog. The ghost, the snaps and the commit all ask this.
+ */
+export function placesAsCard(params: CardParams): boolean {
+  if (params.card !== "piece") return true;
+  if (!plannerFeatureEnabled("setupCards")) return false;
+  // A dining table from v1's list keeps its chair dialog until its seats ride on the card (Q-07, Q-12).
+  return params.seats === null || plannerFeatureEnabled("seatsOnTheCard");
+}
+
+/**
+ * Whether the card in hand is judged with every body, before the drop and
+ * at the commit (the truthful ghost, Q-05): a set card always, as the card
+ * dock's own, from v2's rail as from v1's list; a piece card behind
+ * truthfulGhost.
+ */
+export function judgesCard(params: CardParams): boolean {
+  return params.card !== "piece" || plannerFeatureEnabled("truthfulGhost");
+}
+
 /** Card copy: metres to one place, "4.6"; whole figures plainly, "2". */
 function cardMetres(metres: number): string {
   const tenths = Math.round(metres * 10) / 10;
@@ -242,9 +282,11 @@ function pieceSize(item: CatalogueItem): string {
 export function describeCard(params: CardParams): CardFace {
   const seats = seatsInHand(params);
   switch (params.card) {
-    case "round":
-      // The 6 ft round is known by its 1.83 m, so it keeps two places.
-      return { name: `Round of ${String(params.seats)}`, size: "1.83 m round", seats };
+    case "round": {
+      // Sized as its piece card is ("1.8 m round"), so the two never disagree on the rail.
+      const item = cardMainItem(params);
+      return { name: `Round of ${String(params.seats)}`, size: item === undefined ? "" : pieceSize(item), seats };
+    }
     case "dance-floor": {
       const panel = getCatalogueItemBySlug(DANCE_FLOOR_PANEL_SLUG)?.width ?? 0.91;
       const width = cardMetres(params.cols * panel);
@@ -261,6 +303,21 @@ export function describeCard(params: CardParams): CardFace {
       return { name: item?.name ?? params.slug, size: item === undefined ? "" : pieceSize(item), seats };
     }
   }
+}
+
+/**
+ * Every look a setup card can show, one picture each (Q-21): a round in each
+ * colourway; Top and Long table in each colourway as one trestle and as a set;
+ * the dance floor. The counts (seats, trestles in a set, panels) are the
+ * card's text, never its picture.
+ */
+export function setupCardLooks(): readonly CardParams[] {
+  const seats = seatsFor({ slug: "round-table-6ft" })?.default ?? 10;
+  const rounds = CARD_COLOURWAYS.round.map((colourway): CardParams => ({ card: "round", seats, colourway }));
+  const runs = (["top-table", "long-table"] as const).flatMap((card) => CARD_COLOURWAYS[card].flatMap((colourway) =>
+    [1, TRESTLE_SETS[card].default].map((trestles): CardParams => ({ card, trestles, colourway }))));
+  const floor: CardParams = { card: "dance-floor", cols: DANCE_FLOOR_PANELS.default, rows: DANCE_FLOOR_PANELS.default };
+  return [...rounds, ...runs, floor];
 }
 
 // ---------------------------------------------------------------------------
@@ -295,10 +352,10 @@ function unturned(dx: number, dz: number, rotationY: number): { readonly x: numb
   return { x: dx * cos - dz * sin, z: dx * sin + dz * cos };
 }
 
-function stampPiece(item: CatalogueItem, seats: number | null, origin: StampOrigin, rotationY: number, newId: () => string): readonly PlacedItem[] {
+function stampPiece(item: CatalogueItem, seats: number | null, origin: StampOrigin, rotationY: number, newId: () => string, chairSlug: string): readonly PlacedItem[] {
   const y = origin.y ?? 0;
   if (seats !== null && seats > 0 && isDiningTableItem(item)) {
-    return createTableGroup(item.id, origin.x, origin.z, rotationY, seats, y, newId);
+    return createTableGroup(item.id, origin.x, origin.z, rotationY, seats, y, newId, "around", chairSlug);
   }
   return [createPlacedItem(item.id, origin.x, origin.z, rotationY, null, y, newId())];
 }
@@ -318,7 +375,7 @@ function stampDanceFloor(params: DanceFloorCardParams, origin: StampOrigin, rota
   return panels;
 }
 
-function stampTrestleRun(params: TrestleRunCardParams, origin: StampOrigin, rotationY: number, newId: () => string): readonly PlacedItem[] {
+function stampTrestleRun(params: TrestleRunCardParams, origin: StampOrigin, rotationY: number, newId: () => string, chairSlug: string): readonly PlacedItem[] {
   const trestle = cardMainItem(params);
   if (trestle === undefined) return [];
   const length = toRenderSpace(trestle.width);
@@ -336,6 +393,7 @@ function stampTrestleRun(params: TrestleRunCardParams, origin: StampOrigin, rota
       origin.y ?? 0,
       newId,
       side,
+      chairSlug,
     );
     pieces.push(...(setId === undefined ? group : group.map((piece) => ({ ...piece, setId }))));
   }
@@ -344,23 +402,25 @@ function stampTrestleRun(params: TrestleRunCardParams, origin: StampOrigin, rota
 
 /**
  * The pieces this card sets down at this pose (spec §6). `newId` lets the
- * ghost keep the same ids frame to frame; the commit takes fresh ones.
+ * ghost keep the same ids frame to frame; the commit takes fresh ones. Seats
+ * get the event's chair (plannerChairSlug) unless `chairSlug` names one.
  */
 export function stampSetup(
   params: CardParams,
   origin: StampOrigin,
   rotationY: number,
   newId: () => string = generatePlacedId,
+  chairSlug: string = plannerChairSlug(),
 ): readonly PlacedItem[] {
   switch (params.card) {
     case "round":
     case "piece": {
       const item = cardMainItem(params);
-      return item === undefined ? [] : stampPiece(item, params.seats, origin, rotationY, newId);
+      return item === undefined ? [] : stampPiece(item, params.seats, origin, rotationY, newId, chairSlug);
     }
     case "dance-floor": return stampDanceFloor(params, origin, rotationY, newId);
     case "top-table":
-    case "long-table": return stampTrestleRun(params, origin, rotationY, newId);
+    case "long-table": return stampTrestleRun(params, origin, rotationY, newId, chairSlug);
   }
 }
 
@@ -478,6 +538,37 @@ export function resizeDanceFloor(
     const base = spare.shift() ?? { ...read.first, id: newId() };
     return { ...base, x: read.first.x + offset.x, z: read.first.z + offset.z, y: grid.y, rotationY: grid.rotationY, groupId: read.first.groupId };
   });
+}
+
+/** A dance floor drawn by press-drag: its panels a side and its centre, render-space. */
+export interface DrawnDanceFloor {
+  readonly cols: number;
+  readonly rows: number;
+  readonly x: number;
+  readonly z: number;
+}
+
+/**
+ * A dance floor drawn by press-drag (Q-08a): whole panels from the press to
+ * the pointer, 2 to 12 a side, its near corner held at the press, turned as
+ * the piece in hand is turned. Null until the drag is half a panel long, so
+ * a click is still a click.
+ */
+export function drawnDanceFloor(
+  start: { readonly x: number; readonly z: number },
+  end: { readonly x: number; readonly z: number },
+  rotationY: number,
+): DrawnDanceFloor | null {
+  const panel = getCatalogueItemBySlug(DANCE_FLOOR_PANEL_SLUG);
+  if (panel === undefined) return null;
+  const size = toRenderSpace(panel.width);
+  const local = unturned(end.x - start.x, end.z - start.z, rotationY);
+  if (Math.max(Math.abs(local.x), Math.abs(local.z)) < size / 2) return null;
+  const cols = clamp(Math.abs(local.x) / size, DANCE_FLOOR_PANELS);
+  const rows = clamp(Math.abs(local.z) / size, DANCE_FLOOR_PANELS);
+  const towards = (value: number): number => (value < 0 ? -1 : 1);
+  const centre = turned((towards(local.x) * cols * size) / 2, (towards(local.z) * rows * size) / 2, rotationY);
+  return { cols, rows, x: start.x + centre.x, z: start.z + centre.z };
 }
 
 /**
