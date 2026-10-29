@@ -55,41 +55,45 @@ export class AppErrorBoundary extends Component<{ children: ReactNode }, ErrorBo
   }
 
   override render(): ReactNode {
-    if (this.state.hasError) {
-      const kind = classifyError(this.state.error);
-      const heading = kind === "network" ? "Couldn't reach the server" : "Something went wrong";
-      const body = kind === "network"
-        ? "Check your internet connection, then try again."
-        : (this.state.error?.message ?? "An unexpected error occurred.");
-      const cta = kind === "network" ? "Try again" : "Reload Page";
-      return (
-        <div
-          role="alert"
-          data-testid={`error-boundary-${kind}`}
-          style={{
-            minHeight: "100vh", display: "flex", flexDirection: "column",
-            alignItems: "center", justifyContent: "center", gap: 16,
-            fontFamily: "'Inter', system-ui, sans-serif", color: "#333", background: "#f5f5f0",
-          }}
-        >
-          <h1 style={{ fontSize: 24, fontWeight: 700, margin: 0 }}>{heading}</h1>
-          <p style={{ fontSize: 14, color: "#666", maxWidth: 400, textAlign: "center" }}>
-            {body}
-          </p>
-          <button
-            type="button"
-            onClick={() => { window.location.reload(); }}
-            style={{
-              padding: "10px 24px", fontSize: 14, fontWeight: 600,
-              background: "#1a1a2e", color: "#fff", border: "none",
-              borderRadius: 8, cursor: "pointer",
-            }}
-          >
-            {cta}
-          </button>
-        </div>
-      );
-    }
+    if (this.state.hasError) return <RecoveryScreen error={this.state.error} />;
     return this.props.children;
   }
+}
+
+/** The recovery screen, shared with the route error boundary
+ *  (route-error-boundary.tsx) so every failure reads the same. */
+export function RecoveryScreen({ error }: { readonly error: Error | null }): ReactNode {
+  const kind = classifyError(error);
+  const heading = kind === "network" ? "Couldn't reach the server" : "Something went wrong";
+  const body = kind === "network"
+    ? "Check your internet connection, then try again."
+    : (error?.message ?? "An unexpected error occurred.");
+  const cta = kind === "network" ? "Try again" : "Reload Page";
+  return (
+    <div
+      role="alert"
+      data-testid={`error-boundary-${kind}`}
+      style={{
+        minHeight: "100vh", display: "flex", flexDirection: "column",
+        alignItems: "center", justifyContent: "center", gap: 16,
+        fontFamily: "'Inter', system-ui, sans-serif", color: "#333", background: "#f5f5f0",
+      }}
+    >
+      <h1 style={{ fontSize: 24, fontWeight: 700, margin: 0 }}>{heading}</h1>
+      <p style={{ fontSize: 14, color: "#666", maxWidth: 400, textAlign: "center" }}>
+        {body}
+      </p>
+      <button
+        type="button"
+        onClick={() => { window.location.reload(); }}
+        style={{
+          padding: "10px 24px", fontSize: 14, fontWeight: 600,
+          background: "#1a1a2e", color: "#fff", border: "none",
+          borderRadius: 8, cursor: "pointer",
+        }}
+      >
+        {cta}
+      </button>
+    </div>
+  );
 }

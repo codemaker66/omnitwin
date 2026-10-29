@@ -75,9 +75,11 @@ describe.skipIf(testUrl === undefined)("view-only links on isolated PostgreSQL",
   let db: Database;
   let server: FastifyInstance;
   const fixtureSchema = `plan_view_${randomUUID().replaceAll("-", "")}`;
+  // Every table the routes and the preview sweep read (the sweep spares a plan
+  // with a handoff pack, so it reads handoff_packs too).
   const tables: PgTable[] = [
     schema.venues, schema.spaces, schema.assetDefinitions, schema.configurations, schema.placedObjects,
-    schema.enquiries,
+    schema.enquiries, schema.handoffPacks,
   ];
 
   beforeAll(async () => {

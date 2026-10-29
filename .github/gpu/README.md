@@ -1,7 +1,7 @@
 # Browser release verification
 
-The reviewed browser inventory has 407 cases. Four hosted CPU shards execute
-402 cases; the five Twin performance cases execute on the existing RTX 4090
+The reviewed browser inventory has 421 cases. Four hosted CPU shards execute
+416 cases; the five Twin performance cases execute on the existing RTX 4090
 through WSL D3D12. The final hosted job reconciles every case against the
 reviewed inventory, including the original skips and expected failures.
 
@@ -158,14 +158,30 @@ placed round lifts and carries it, and two fingers walk and zoom
 and the CPU partition from 399 to 400. Also on 26 October the Assembly went on
 for everyone (Blake), so its third case is restated one for one: with no flag a
 layout plays the first time it opens, the visible Skip hurries it to its end,
-and after a reload it opens as placed. The totals are unchanged. The next, on
-28 October 2026, adds two ordinary cases for a request step pressed with no
-connection (L9): the slot's card says the press is waiting to send and still
-says nobody owns it, the press survives a reload in the browser's own store and
-goes as the same step under the same key when the connection is back, and when
-someone else took it first the slot says so by name and the press is put away
-(`living-timetable-offline-steps.spec.ts`); this changes the inventory from
-405 to 407 and the CPU partition from 400 to 402.
+and after a reload it opens as placed. The totals are unchanged.
+The next, on 27 October 2026, adds six
+ordinary cases for planner work that outlives the page or the layout (PR #279,
+cloud lane C, QoL D-01 and D-X3), against an in-memory layout server two browser
+contexts share: in both chromes a move reaches the server as soon as the page is
+hidden and a move cut off by closing the tab comes back on this device with a
+receipt, then saves; in the new chrome a move made just before switching to the
+Saloon reaches the server and a second browser, and a switch whose save cannot
+arrive still opens the Saloon and says the move is kept here
+(`planner-work-survives.spec.ts`); this changes the inventory from 405 to 411
+and the CPU partition from 400 to 406.
+The next, on 29 October 2026, adds eight ordinary cases for Plan 19 L5's
+deposits and contract signature (PR #284): three in `proposal-contract.spec.ts`,
+four in `proposal-deposit.spec.ts` and one in `proposals-desk.spec.ts`, against
+route-mocked API responses with Stripe's page stubbed; this changes the
+inventory from 411 to 419 and the CPU partition from 406 to 414.
+The next, also on 29 October 2026 and recorded on 28 October, adds two ordinary
+cases for a request step pressed with no connection (L9, PR #296): the slot's
+card says the press is waiting to send and still says nobody owns it, the press
+survives a reload in the browser's own store and goes as the same step under the
+same key when the connection is back, and when someone else took it first the
+slot says so by name and the press is put away
+(`living-timetable-offline-steps.spec.ts`); this changes the inventory from 419
+to 421 and the CPU partition from 414 to 416.
 
 The 30 September admission follows Blake's replacement of the Craft quiz with
 The Amissing Book (T-641). The old quiz's 26 threshold, questionnaire and result
