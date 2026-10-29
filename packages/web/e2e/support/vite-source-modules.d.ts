@@ -3,3 +3,5 @@
 // and the app share state). TypeScript cannot resolve those URLs; each spec
 // narrows the import to the small typed surface it uses.
 declare module "/src/stores/*";
+// The editor bridge, for its autosave delay override (planner-work-survives).
+declare module "/src/components/editor/EditorBridge.tsx";
