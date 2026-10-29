@@ -35,6 +35,7 @@ import { isDiningTableItem } from "../../lib/furniture-semantics.js";
 import { normalizeFurnitureScale } from "../../lib/furniture-scale.js";
 import { toRenderSpace } from "../../constants/scale.js";
 import { eventLight } from "../../lib/event-light.js";
+import { composeFurnitureMotion, furnitureMotionPose, subscribeFurnitureSettleFrames } from "../../lib/furniture-motion.js";
 import type { PlacedItem } from "../../lib/placement.js";
 import {
   HIDDEN_MATRIX,
@@ -62,6 +63,8 @@ interface CandleTable {
   /** The table's placed-item id. */
   readonly id: string;
   readonly x: number;
+  /** Height of the table's base above the floor, metres: where its motion pivots. */
+  readonly y: number;
   readonly z: number;
   /** Height of the table's top above the floor, metres. */
   readonly top: number;
@@ -80,6 +83,7 @@ export function candleTables(items: readonly PlacedItem[]): CandleTable[] {
     tables.push({
       id: placed.id,
       x: placed.x,
+      y: placed.y,
       z: placed.z,
       top: placed.y + toRenderSpace(item.height) * scale,
       rotationY: placed.rotationY,
@@ -235,7 +239,15 @@ function writePart(mesh: InstancedMesh, index: number, placed: Matrix4, shown: P
 const placedCandles = new Matrix4();
 const placedLinen = new Matrix4();
 const placedFloor = new Matrix4();
+const carried = new Matrix4();
+const glide = new Matrix4();
 
+/**
+ * Every table's candles and their light, as placed or as a reveal presents
+ * them. A table in motion (lib/furniture-motion.ts) carries its candles and
+ * the glow on its linen as the table itself is drawn; the pool on the floor
+ * glides with it and stays on the floor.
+ */
 function fillCandles(meshes: CandleMeshes, tables: readonly CandleTable[], frame: PresentationFrame | null): void {
   const count = Math.min(tables.length, meshes.candles.instanceMatrix.count);
   for (let index = 0; index < count; index++) {
@@ -258,6 +270,13 @@ function fillCandles(meshes: CandleMeshes, tables: readonly CandleTable[], frame
     const pool = Math.max(FLOOR_POOL_RADIUS, table.reach * 2.2) * 2;
     size.set(pool, 1, pool);
     placedFloor.compose(position, rotation, size);
+    const pose = shown === null ? furnitureMotionPose(table.id) : null;
+    if (pose !== null) {
+      composeFurnitureMotion(pose, table.x, table.y, table.z, carried);
+      placedCandles.premultiply(carried);
+      placedLinen.premultiply(carried);
+      placedFloor.premultiply(glide.makeTranslation(pose.x, 0, pose.z));
+    }
     writePart(meshes.candles, index, placedCandles, shown, "candles");
     writePart(meshes.flames, index, placedCandles, shown, "flames");
     writePart(meshes.linen, index, placedLinen, shown, "linen");
@@ -288,6 +307,12 @@ export function TableCandles(): ReactElement {
   // A reveal's frames, published before the frame renders (the publisher invalidates).
   useEffect(() => subscribeFurniturePresentation((frame) => {
     fillCandles(meshes, latest.current, frame);
+  }), [meshes]);
+
+  // Motion frames, likewise: candles ride their table as it drops in and
+  // settles, and the frame after the last motion writes them as placed.
+  useEffect(() => subscribeFurnitureSettleFrames(() => {
+    fillCandles(meshes, latest.current, currentFurniturePresentation());
   }), [meshes]);
 
   // Unlit candles are not drawn at all, except vanishingly small (and at

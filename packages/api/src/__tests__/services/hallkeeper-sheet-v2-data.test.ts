@@ -4,8 +4,36 @@ import {
   buildSheetApproval,
   deriveSheetTiming,
   resolveApprovedSnapshotPayload,
+  resolveGangwayReview,
   parseStoredSnapshotPayload,
 } from "../../services/hallkeeper-sheet-v2-data.js";
+
+/** One pinch under the guidance, decided, as the planner stores it (QoL E-03). */
+const DECIDED_PINCH = {
+  id: "gangway:zMin:group-1+wall:zMin",
+  widthM: 0.95,
+  guidance: { thresholdM: 1.1, source: "Scottish Government, Practical fire safety guidance for existing non-residential premises, ch. 7" },
+  gangway: "the window wall",
+  location: { kind: "segment", from: { x: -1, z: -5.25 }, to: { x: 1, z: -5.25 } },
+  pieceIds: ["p-1"],
+  sides: ["the window wall", "Table 4's chairs"],
+  status: "approved",
+  reviewer: "Hallkeeper",
+  decidedAt: "2026-10-26T09:00:00.000Z",
+} as const;
+
+describe("resolveGangwayReview", () => {
+  it("carries the layout's stored review onto the sheet", () => {
+    expect(resolveGangwayReview({ instructions: {}, gangwayReview: { items: [DECIDED_PINCH] } })).toEqual({ items: [DECIDED_PINCH] });
+  });
+
+  it("is null for a layout with no review, an empty one, or one that does not read as one", () => {
+    expect(resolveGangwayReview(null)).toBeNull();
+    expect(resolveGangwayReview({ instructions: {} })).toBeNull();
+    expect(resolveGangwayReview({ gangwayReview: { items: [] } })).toBeNull();
+    expect(resolveGangwayReview({ gangwayReview: { items: [{ ...DECIDED_PINCH, status: "maybe" }] } })).toBeNull();
+  });
+});
 import { LEGACY_RENDER_COORDINATE_SPACE, REAL_METRE_COORDINATE_SPACE } from "../../db/coordinate-space.js";
 
 // ---------------------------------------------------------------------------

@@ -68,7 +68,7 @@ export const RuntimeQaCheckSchema = z
     checkKey: RuntimeQaCheckKeySchema,
     status: RuntimeQaCheckStatusSchema,
     summary: SafePlanningWordingSchema,
-    evidenceRefs: z.array(RuntimeQaEvidenceRefSchema).default([]),
+    evidenceRefs: z.array(RuntimeQaEvidenceRefSchema).max(200).default([]),
   })
   .strict()
   .superRefine((check, ctx) => {
@@ -174,7 +174,7 @@ export const RuntimeQaSparkLoadSchema = z
     visualChunkCount: z.number().int().nonnegative(),
     excludedChunkCount: z.number().int().nonnegative(),
     loadedSplats: z.number().int().positive().nullable(),
-    evidenceRefs: z.array(RuntimeQaEvidenceRefSchema).default([]),
+    evidenceRefs: z.array(RuntimeQaEvidenceRefSchema).max(200).default([]),
   })
   .strict()
   .superRefine((load, ctx) => {
@@ -209,7 +209,7 @@ export const RuntimeQaPublicExposureSchema = z
   .object({
     decision: RuntimeQaPublicExposureDecisionSchema,
     reason: SafePlanningWordingSchema,
-    requiredBeforeApproval: z.array(SafePlanningWordingSchema).min(1),
+    requiredBeforeApproval: z.array(SafePlanningWordingSchema).min(1).max(100),
   })
   .strict();
 
@@ -228,8 +228,9 @@ export const RuntimeQaRecordV0Schema = z
     sparkLoad: RuntimeQaSparkLoadSchema,
     viewTransform: RuntimeQaViewTransformSchema,
     cameraProfile: RuntimeQaCameraProfileSchema,
-    checks: z.array(RuntimeQaCheckSchema).min(RUNTIME_QA_CHECK_KEYS.length),
-    limitations: z.array(SafePlanningWordingSchema).min(1),
+    // Ceilings far above a real record's lists (a request bound, not a rule).
+    checks: z.array(RuntimeQaCheckSchema).min(RUNTIME_QA_CHECK_KEYS.length).max(200),
+    limitations: z.array(SafePlanningWordingSchema).min(1).max(100),
     publicExposure: RuntimeQaPublicExposureSchema,
   })
   .strict()

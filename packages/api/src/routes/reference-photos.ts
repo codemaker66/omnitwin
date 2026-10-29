@@ -29,7 +29,9 @@ const UpdatePhotoBody = z.object({
 );
 
 const ReorderBody = z.object({
-  photoIds: z.array(z.uuid()).min(1),
+  // A loadout's photos; far above any loadout's count, it refuses a body
+  // built to make the parser work (one issue per element when unbounded).
+  photoIds: z.array(z.uuid()).min(1).max(500),
 }).refine(
   (data) => new Set(data.photoIds).size === data.photoIds.length,
   { message: "photoIds must not contain duplicates" },

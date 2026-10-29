@@ -1,6 +1,7 @@
-/* The Grand Assembly's replay control (AssemblyReplay.tsx): a quiet pill over
-   the drawn hall, clear of the planner's toolbox, that steps aside while the
-   Assembly plays. House BOH tokens; presses press down, nothing swells. */
+/* The Grand Assembly's control (AssemblyReplay.tsx): a quiet pill over the
+   drawn hall, clear of the planner's toolbox. While the Assembly plays it is
+   the Skip; at rest it replays. House BOH tokens; presses press down, nothing
+   swells. */
 
 .planner-scene-canvas-host:has(> .assembly-replay) {
   position: relative;
@@ -45,9 +46,9 @@
   outline-offset: 3px;
 }
 
-.assembly-replay[data-playing="true"] {
-  opacity: 0;
-  pointer-events: none;
+/* Sped up: the copper edge says the show is hurrying to its end. */
+.assembly-replay[data-fast="true"] {
+  border-color: rgba(220, 164, 117, 0.6);
 }
 
 @media (prefers-reduced-motion: reduce) {
