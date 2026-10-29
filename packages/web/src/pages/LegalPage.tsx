@@ -86,8 +86,9 @@ const ORIGINAL_EDITION = { text: LAST_UPDATED, iso: "2026-08-15" } as const;
  *  retention rule (fix-first item 18) and, the same day, the choice to have
  *  it remembered ("ask once, then remember"); on 26 October, when it said
  *  how long deleted data stays in the database's backups (T-068); and on 27
- *  October, when it named Stripe for deposits and said what a contract's
- *  signature record keeps (Plan 19 L5). */
+ *  October, when it named Anthropic, which writes the events team's AI
+ *  drafts (release audit ai-1), before AI drafting is switched on, and Stripe
+ *  for deposits, and said what a contract's signature record keeps (Plan 19 L5). */
 const PRIVACY_UPDATED = { text: "27 October 2026", iso: "2026-10-27" } as const;
 
 /** The allergy note's keeping period, from the one definition the API's
@@ -410,6 +411,14 @@ const PRIVACY: LegalDocument = {
               term: "Cloudflare R2",
               detail:
                 "Object storage for the venue's imagery and for the 3D capture of its rooms.",
+            },
+            // What is sent is read from the code that builds it:
+            // services/enquiry-summary-draft.ts, proposal-message-draft.ts
+            // and event-brief-draft.ts (the planner's brief reader, T-650).
+            {
+              term: "Anthropic",
+              detail:
+                "AI help for the venue's events team, used only when a member of the team asks for it: a summary of your enquiry, the wording of a message to you about a proposal, or reading a description of your event that the team has typed into the planner. Anthropic's Claude is sent what that piece of work needs: the details of your event (such as the occasion, date, guest count and room), where your enquiry stands and the day it arrived, and the words of your enquiry and of your messages about the proposal, or the team's own description of your event. Email addresses and phone numbers it can recognise in those words are taken out first; anything else written there, such as a name, is sent as written. A message to you is also sent your name, so that it can address you. The email address and phone number you gave in the enquiry form's own fields are not sent. A member of the events team reads everything it writes and decides what to use; nothing it writes is sent to you without a person choosing to send it.",
             },
             {
               term: "Stripe",

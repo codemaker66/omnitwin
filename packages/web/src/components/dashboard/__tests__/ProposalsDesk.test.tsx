@@ -4879,6 +4879,14 @@ describe("Draft the message with AI", () => {
       .toBe("It includes \"photoreal digital twin\", which a proposal may not say. Change it before saving.");
     expect(within(block).getByText("Unsupported certainty was taken out of it.")).toBeDefined();
     expect(within(block).getByTestId("ai-draft-use")).toBeDefined();
+    expect(within(block).queryByTestId("ai-draft-withheld")).toBeNull();
+    fireEvent.click(within(block).getByTestId("ai-draft-away"));
+
+    // Plan 19, L6: what the server took out of the model's words is said, calmly.
+    block = await drafted(element, draft({ withheldCommitments: ["price", "availability"] }));
+    expect(within(block).getByTestId("ai-draft-withheld").textContent)
+      .toBe("Wording that seemed to give a price or say whether a date or room is free was taken out, as only the team confirms these.");
+    expect(within(block).getByTestId("ai-draft-use")).toBeDefined();
   });
 
   it("holds Use while a save is on its way, and puts nothing in", async () => {

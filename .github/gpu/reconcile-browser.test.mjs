@@ -64,7 +64,7 @@ test('full411 union requires406 CPU and all5 GPU with original54 skips and4 exec
   const result = reconcileBrowser(fixture());
   assert.equal(result.verdict, 'complete-browser-gate-passed');
   assert.deepEqual(result.gpuScope, { required: true, cases: 5, executed: 5 });
-  assert.deepEqual(result.totals, { inventory: 419, cpu: 414, gpu: 5, ordinaryPasses: 361,
+  assert.deepEqual(result.totals, { inventory: 421, cpu: 416, gpu: 5, ordinaryPasses: 363,
     expectedFailures: 4, originalSkips: 54, failed: 0, flaky: 0, retries: 0,
     missing: 0, duplicated: 0, interrupted: 0, unrun: 0 });
 });
@@ -74,9 +74,9 @@ test('outside the GPU scope the complete CPU partition passes and the five GPU c
   const result = reconcileBrowser({ ...input, gpuReport: null, gpuRequired: false });
   assert.equal(result.verdict, 'cpu-browser-gate-passed-gpu-not-in-scope');
   assert.deepEqual(result.gpuScope, { required: false, cases: 5, executed: 0 });
-  assert.equal(result.totals.cpu, 414);
+  assert.equal(result.totals.cpu, 416);
   assert.equal(result.totals.gpu, 0);
-  assert.equal(result.totals.ordinaryPasses, 356);
+  assert.equal(result.totals.ordinaryPasses, 358);
   assert.match(result.limits.at(-1), /not in scope, not passed/);
 });
 rejected('outside the GPU scope a missing CPU case still fails', (input) => {
@@ -103,7 +103,7 @@ const approvedSheetAdditions = [
   'd04ac5b0eb52f15c1dda-3381bf636d92993e3b62',
 ];
 test('the approved-sheet inventory admission adds exactly three ordinary Hallkeeper cases', () => {
-  assert.equal(baseline.inventoryAdmissions.length, 53);
+  assert.equal(baseline.inventoryAdmissions.length, 54);
   assert.deepEqual(baseline.inventoryAdmissions[0].caseIds, [...approvedSheetAdditions].sort());
   for (const id of approvedSheetAdditions) {
     const row = baseline.cases.find((entry) => entry.id === id);
@@ -1375,4 +1375,31 @@ l5Admissions.forEach(([file, ids], offset) => {
       spec.tests[0].status = 'skipped';
     }, /policy changed/);
   }
+});
+// A request step pressed with no connection (L9): two ordinary cases prove the
+// slab's waiting state, the reload over real IndexedDB, one key per press and
+// the honest refusal when someone else took it first.
+const offlineStepCases = [
+  '3458cb52a1c58b716d7b-1e0c8e8cfb6cf207394e',
+  '3458cb52a1c58b716d7b-2353530f81e2ff804d8a',
+];
+test('the offline request step admission adds two ordinary cases', () => {
+  const admission = baseline.inventoryAdmissions[53];
+  assert.equal(admission.date, '2026-10-28');
+  assert.equal(admission.sourceFile, 'packages/web/e2e/living-timetable-offline-steps.spec.ts');
+  assert.match(admission.sourceCommit, /^[0-9a-f]{40}$/u);
+  assert.match(admission.sourceFileGitBlobSha256, /^[0-9a-f]{64}$/u);
+  assert.match(admission.inventorySha256, /^[0-9a-f]{64}$/u);
+  assert.equal(admission.expectedStatus, 'passed');
+  assert.deepEqual(admission.caseIds, offlineStepCases);
+  for (const id of offlineStepCases) {
+    const row = baseline.cases.find((entry) => entry.id === id);
+    assert.equal(row?.file, 'living-timetable-offline-steps.spec.ts');
+    assert.deepEqual(row?.suitePath, ['living-timetable-offline-steps.spec.ts', 'A request step pressed with no connection']);
+    assert.equal(row?.expectedStatus, 'passed');
+  }
+  assert.equal(baseline.cases.filter((entry) => entry.file === 'living-timetable-offline-steps.spec.ts').length, 2);
+  assert.equal(baseline.cases.filter((entry) => entry.expectedStatus === 'passed').length,
+    BROWSER_POLICY.total - BROWSER_POLICY.skipped - BROWSER_POLICY.expectedFailures);
+  assert.equal(baseline.cases.length, BROWSER_POLICY.total);
 });

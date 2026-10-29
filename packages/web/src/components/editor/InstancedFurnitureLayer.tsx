@@ -19,6 +19,7 @@ import {
 } from "../FurnitureProxy.js";
 import { GltfFurnitureTemplateContext } from "../meshes/GltfFurnitureTemplateContext.js";
 import { isFloorShadeMaterial } from "../meshes/crafted/crafted-materials.js";
+import { drawnRotationY } from "../meshes/crafted/crafted-turn.js";
 import { isImportedFurnitureMaterial } from "../../lib/gltf-furniture-instance.js";
 import { furnitureMaterialParts } from "../../lib/gltf-furniture-parts.js";
 import { composeFurnitureMotion, furnitureMotionPose, subscribeFurnitureSettleFrames, type FurnitureMotionPose } from "../../lib/furniture-motion.js";
@@ -253,7 +254,7 @@ export interface EditableInstancePool {
   readonly capacity: number;
   readonly meshes: readonly InstancedMesh[];
   readonly matrices: InstancedBufferAttribute;
-  /** The placed transform last composed into each slot: x, y, z, rotationY, scale. */
+  /** The placed transform last composed into each slot: x, y, z, the drawn rotation (crafted-turn), scale. */
   readonly written: Float64Array;
   /** Items drawn at their live grid-settle offset, like their item groups. */
   readonly settling: Set<string>;
@@ -334,8 +335,9 @@ function composeEditableSlot(
   scale: number,
   pose: FurnitureMotionPose | null,
 ): void {
+  const rotationY = drawnRotationY(item);
   editableInstanceTransform.position.set(item.x, item.y, item.z);
-  editableInstanceTransform.rotation.set(0, item.rotationY, 0);
+  editableInstanceTransform.rotation.set(0, rotationY, 0);
   editableInstanceTransform.scale.setScalar(scale);
   editableInstanceTransform.updateMatrix();
   if (pose !== null) {
@@ -352,7 +354,7 @@ function composeEditableSlot(
   pool.written[written] = item.x;
   pool.written[written + 1] = item.y;
   pool.written[written + 2] = item.z;
-  pool.written[written + 3] = item.rotationY;
+  pool.written[written + 3] = rotationY;
   pool.written[written + 4] = scale;
 }
 
@@ -386,7 +388,7 @@ export function writeEditableInstancePool(
       written[slot] === item.x
       && written[slot + 1] === item.y
       && written[slot + 2] === item.z
-      && written[slot + 3] === item.rotationY
+      && written[slot + 3] === drawnRotationY(item)
       && written[slot + 4] === scale
     ) {
       continue;
@@ -488,7 +490,7 @@ export function drawEditablePresentation(
         HIDDEN_MATRIX.toArray(pool.matrices.array, index * 16);
       } else {
         editableInstanceTransform.position.set(item.x, item.y, item.z);
-        editableInstanceTransform.rotation.set(0, item.rotationY, 0);
+        editableInstanceTransform.rotation.set(0, drawnRotationY(item), 0);
         editableInstanceTransform.scale.setScalar(editableInstanceScale(item, itemScale));
         editableInstanceTransform.updateMatrix();
         presentedPlaced.multiplyMatrices(shown.delta, editableInstanceTransform.matrix).toArray(pool.matrices.array, index * 16);
@@ -599,7 +601,7 @@ function DirectInstanceBatch({
       const item = items[index];
       if (item === undefined) continue;
       matrixSource.position.set(item.x, item.y, item.z);
-      matrixSource.rotation.set(0, item.rotationY, 0);
+      matrixSource.rotation.set(0, drawnRotationY(item), 0);
       matrixSource.scale.setScalar(
         normalizedFurniturePresentationScale(item.scale) * itemScale,
       );

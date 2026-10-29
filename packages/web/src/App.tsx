@@ -11,9 +11,8 @@ import { PlannerSpatialHud } from "./components/editor/PlannerSpatialHud.js";
 import { VerticalToolbox } from "./components/editor/VerticalToolbox.js";
 import { PlannerScene } from "./components/editor/PlannerScene.js";
 import { GeneratedFurnitureProxyBadge } from "./components/editor/cockpit/FurnitureInspectionDock.js";
-import { usePlacementStore } from "./stores/placement-store.js";
 import { useChairDialogStore } from "./stores/chair-dialog-store.js";
-import { useCatalogueStore } from "./stores/catalogue-store.js";
+import { answerChairQuestion, cancelChairQuestion } from "./lib/chair-question.js";
 import { useLayoutTimelinePreviewStore } from "./stores/layout-timeline-preview-store.js";
 import { useIsCoarsePointer, useIsNarrowViewport } from "./hooks/use-media-query.js";
 import { usePlannerRoomDimensions } from "./hooks/use-planner-room-dimensions.js";
@@ -79,38 +78,8 @@ export function App({ compactDesktop = false }: { readonly compactDesktop?: bool
 
       {!timelinePreviewActive && <ChairCountDialog
         request={chairRequest}
-        onConfirm={(count) => {
-          const editId = useChairDialogStore.getState().editTableId;
-          if (editId !== null) {
-            usePlacementStore.getState().rearrangeGroup(editId, count);
-          } else if (chairRequest !== null) {
-            if (count > 0) {
-              usePlacementStore.getState().placeTableGroup(
-                chairRequest.catalogueItemId,
-                chairRequest.x,
-                chairRequest.z,
-                chairRequest.rotationY,
-                count,
-              );
-            } else {
-              usePlacementStore.getState().placeItem(
-                chairRequest.catalogueItemId,
-                chairRequest.x,
-                chairRequest.z,
-                chairRequest.rotationY,
-              );
-            }
-          }
-          const itemId = chairRequest?.catalogueItemId ?? null;
-          useChairDialogStore.getState().clearDialog();
-          // Re-select the same catalogue item so user can place another immediately
-          if (itemId !== null) {
-            useCatalogueStore.getState().selectItem(itemId);
-          }
-        }}
-        onCancel={() => {
-          useChairDialogStore.getState().clearDialog();
-        }}
+        onConfirm={answerChairQuestion}
+        onCancel={cancelChairQuestion}
       />}
     </div>
   );

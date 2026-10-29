@@ -12,6 +12,7 @@ import {
   SafePlanningWordingSchema,
   UNSAFE_PUBLIC_CLAIM_PHRASES,
 } from "./evidence-runtime.js";
+import { AIDraftCommitmentKindSchema } from "./ai-draft-commitment-kinds.js";
 
 // ---------------------------------------------------------------------------
 // AI Assistant Foundation v0
@@ -51,12 +52,22 @@ export type AIDraftSendState = z.infer<typeof AIDraftSendStateSchema>;
 export const AIDraftContextSchema = z.record(z.string(), CanonicalJsonValueSchema);
 export type AIDraftContext = z.infer<typeof AIDraftContextSchema>;
 
-/** The most an AI draft request's context may hold, as JSON. */
+/** The most a draft's context may hold, as canonical JSON. The largest the
+ *  server builds (a proposal's message: the client's words and latest
+ *  message, 2,000 characters each, with the event's facts) is under 5,000;
+ *  this bounds what a screen can send to be scrubbed and sent on. */
+export const MAX_AI_DRAFT_CONTEXT_CHARACTERS = 16_000;
+
+/** The most an AI draft request's context may hold, as JSON, checked before
+ *  the parse walks it (#278). */
 export const AI_DRAFT_CONTEXT_MAX_BYTES = 32 * 1024;
 
 export const CreateAIDraftRequestSchema = z.object({
   useCase: AIDraftUseCaseSchema,
-  context: boundedJsonObjectSchema(AI_DRAFT_CONTEXT_MAX_BYTES),
+  context: boundedJsonObjectSchema(AI_DRAFT_CONTEXT_MAX_BYTES).refine(
+    (context) => stableCanonicalJson(context).length <= MAX_AI_DRAFT_CONTEXT_CHARACTERS,
+    { message: `A draft's context may hold at most ${String(MAX_AI_DRAFT_CONTEXT_CHARACTERS)} characters.` },
+  ),
   requestedTone: SafePlanningWordingSchema.optional(),
 }).strict();
 export type CreateAIDraftRequest = z.infer<typeof CreateAIDraftRequestSchema>;
@@ -83,6 +94,10 @@ export const AIDraftSchema = z.object({
     }
   }),
   blockedUnsafeClaims: z.array(z.enum(UNSAFE_PUBLIC_CLAIM_PHRASES)).max(20),
+  /** The kinds of claim taken out of the model's words: a sentence stating a
+   *  price, availability or capacity. Present only when something was, so a
+   *  web build from before it still reads every draft that took nothing out. */
+  withheldCommitments: z.array(AIDraftCommitmentKindSchema).min(1).max(3).optional(),
   safeLanguageApplied: z.boolean(),
   humanReviewRequired: z.literal(true),
   provenance: z.literal("ai_generated"),
@@ -144,33 +159,3 @@ export function aiDraftDigest(input: {
   return sha256Hex(`${AI_DRAFT_DIGEST_DOMAIN_PREFIX}${stableCanonicalJson(input)}`);
 }
 
-export function createReviewGatedAIDraft(input: {
-  readonly useCase: AIDraftUseCase;
-  readonly title: string;
-  readonly body: string;
-  readonly context: Record<string, CanonicalJsonValue>;
-  readonly generatedAt: string;
-}): AIDraft {
-  const title = safePlanningLanguage(input.title);
-  const sanitized = sanitizeAIDraftText(input.body);
-  return AIDraftSchema.parse({
-    schemaVersion: AI_ASSISTANT_SCHEMA_VERSION,
-    useCase: input.useCase,
-    title,
-    body: sanitized.text,
-    blockedUnsafeClaims: sanitized.blockedUnsafeClaims,
-    safeLanguageApplied: sanitized.safeLanguageApplied || title !== input.title,
-    humanReviewRequired: true,
-    provenance: "ai_generated",
-    evidenceStatus: "unverified",
-    sendState: "draft_only",
-    generatedAt: input.generatedAt,
-    digest: aiDraftDigest({
-      useCase: input.useCase,
-      title,
-      body: sanitized.text,
-      context: input.context,
-      generatedAt: input.generatedAt,
-    }),
-  });
-}
