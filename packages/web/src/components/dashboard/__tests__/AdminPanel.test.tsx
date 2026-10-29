@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { PricingRule } from "../../../api/pricing.js";
 import type { CreateSpaceInput, Space, Venue, VenueDetail } from "../../../api/spaces.js";
+import { ApiError } from "../../../api/client.js";
 import { AdminPanel } from "../AdminPanel.js";
 
 const VENUE_ID = "00000000-0000-4000-8000-000000006001";
@@ -15,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   createSpace: vi.fn(),
   updateSpace: vi.fn(),
   deleteSpace: vi.fn(),
+  restoreSpace: vi.fn(),
   deleteVenue: vi.fn(),
   listPricingRules: vi.fn(),
   createPricingRule: vi.fn(),
@@ -24,13 +26,15 @@ const mocks = vi.hoisted(() => ({
   addToast: vi.fn(),
 }));
 
-vi.mock("../../../api/spaces.js", () => ({
+vi.mock("../../../api/spaces.js", async (importOriginal) => ({
+  deletedRoomHoldingSlug: (await importOriginal<typeof import("../../../api/spaces.js")>()).deletedRoomHoldingSlug,
   listVenues: mocks.listVenues,
   getVenue: mocks.getVenue,
   createVenue: mocks.createVenue,
   createSpace: mocks.createSpace,
   updateSpace: mocks.updateSpace,
   deleteSpace: mocks.deleteSpace,
+  restoreSpace: mocks.restoreSpace,
   deleteVenue: mocks.deleteVenue,
 }));
 
@@ -117,6 +121,7 @@ beforeEach(() => {
   mocks.createSpace.mockReset();
   mocks.updateSpace.mockReset();
   mocks.deleteSpace.mockReset();
+  mocks.restoreSpace.mockReset();
   mocks.deleteVenue.mockReset();
   mocks.listPricingRules.mockReset();
   mocks.createPricingRule.mockReset();
@@ -377,9 +382,49 @@ describe("AdminPanel says what a delete does, and gives a way back", () => {
     fireEvent.click(screen.getByRole("button", { name: "Delete space Grand Hall" }));
     const dialog = screen.getByRole("dialog", { name: "Delete Space" });
     expect(dialog.textContent).toContain(
-      "Delete \"Grand Hall\"? It stops showing in Venviewer. Its saved layouts and loadouts are kept, not erased.",
+      "Delete \"Grand Hall\"? It stops showing in Venviewer, and its past bookings leave the Diary with it. Its saved layouts and loadouts are kept, not erased, and it can be brought back. A space with bookings still to come cannot be deleted.",
     );
     expect(dialog.textContent).not.toContain("will be removed");
+  });
+
+  it("offers a deleted space back, and Undo restores it (admin-venues-3)", async () => {
+    mocks.restoreSpace.mockResolvedValue(spaceFixture());
+    await renderOpenedVenue();
+    fireEvent.click(screen.getByRole("button", { name: "Delete space Grand Hall" }));
+    fireEvent.click(within(screen.getByRole("dialog", { name: "Delete Space" })).getByRole("button", { name: "Delete" }));
+    const undo = await screen.findByRole("button", { name: "Undo: bring back Grand Hall" });
+    expect(undo.closest("[role='status']")?.textContent).toContain("Deleted \u201cGrand Hall\u201d.");
+    fireEvent.click(undo);
+    await waitFor(() => { expect(mocks.restoreSpace).toHaveBeenCalledWith(VENUE_ID, SPACE_ID); });
+    await waitFor(() => { expect(mocks.addToast).toHaveBeenCalledWith("\"Grand Hall\" is back", "success"); });
+  });
+
+  it("says what still holds a space that is booked ahead, and offers nothing to undo (admin-venues-3)", async () => {
+    mocks.deleteSpace.mockRejectedValue(new ApiError(409, "Grand Hall has 2 bookings still to come. Release or move them on the Diary before deleting the room.", "ROOM_HAS_BOOKINGS", { bookings: 2, phases: 0 }));
+    await renderOpenedVenue();
+    fireEvent.click(screen.getByRole("button", { name: "Delete space Grand Hall" }));
+    fireEvent.click(within(screen.getByRole("dialog", { name: "Delete Space" })).getByRole("button", { name: "Delete" }));
+    await waitFor(() => {
+      expect(mocks.addToast).toHaveBeenCalledWith("Grand Hall has 2 bookings still to come. Release or move them on the Diary before deleting the room.", "error");
+    });
+    expect(screen.queryByRole("button", { name: "Undo: bring back Grand Hall" })).toBeNull();
+  });
+
+  it("offers to bring back the deleted space a new one's name belongs to, keeping the form until it does (admin-venues-3)", async () => {
+    const DELETED = "00000000-0000-4000-8000-000000006099";
+    mocks.createSpace.mockRejectedValue(new ApiError(409, "\"Reception Room\" was deleted and still has this room's address. Restore it, or give the new room another name.", "SLUG_EXISTS", { deletedSpaceId: DELETED, deletedSpaceName: "Reception Room" }));
+    mocks.restoreSpace.mockResolvedValue(spaceFixture({ id: DELETED, name: "Reception Room" }));
+    await renderOpenedVenue();
+    fireEvent.click(screen.getByRole("button", { name: "New Space" }));
+    fireEvent.change(screen.getByLabelText("Space Name"), { target: { value: "Reception Room" } });
+    fireEvent.change(screen.getByLabelText("Height (m)"), { target: { value: "4.2" } });
+    fireEvent.click(screen.getByRole("button", { name: "Reset to rectangle" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create Space" }));
+    const bringBack = await screen.findByRole("button", { name: "Bring back Reception Room" });
+    expect(screen.getByRole("dialog", { name: "New Space" })).toBeTruthy();
+    fireEvent.click(bringBack);
+    await waitFor(() => { expect(mocks.restoreSpace).toHaveBeenCalledWith(VENUE_ID, DELETED); });
+    await waitFor(() => { expect(screen.queryByRole("dialog", { name: "New Space" })).toBeNull(); });
   });
 
   it("offers a deleted pricing rule back, and Undo restores it", async () => {

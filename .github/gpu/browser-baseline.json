@@ -786,6 +786,25 @@
       "limits": "This is reviewed inventory admission, not execution evidence. This case replaces the retired identity f1c17e56d03862f173b0-b202453e704508f538aa one for one, so the totals (405 cases, 54 skips, four expected failures) are unchanged; it was absent from sourceRunId, sourceReports and the earlier admissions, and every current case still requires execution in the hosted browser gate. It proves the default, the Skip hurrying the show to its end and the per-device first-open rule in hosted Chromium, not the show's look or its frame time on a real phone; the Skip's second press and presses as the show comes to rest are stepped frame by frame in the unit suite (GrandAssembly.test.tsx). The listing covers this one spec file, so a re-listing reproduces this identity, not this hash."
     },
     {
+      "date": "2026-10-27",
+      "reason": "Planner work survives leaving the page or the layout (PR #279, cloud lane C, QoL D-01 and D-X3): six ordinary cases boot the signed-in planner against an in-memory layout server that two browser contexts share. In today's chrome and the new one, a move reaches the server as soon as the page is hidden, inside the 3 s autosave, with one save; a move cut off by closing the tab comes back on this device with a receipt and then saves. In the new chrome, a move made just before switching to the Saloon reaches the server first and a second browser sees it; and a switch whose save cannot arrive still opens the Saloon and says the move is kept on this device, and reopening sends it.",
+      "sourceCommit": "aaa8a8522359d65988c4538d3f92f4fe2aa9685c",
+      "sourceFile": "packages/web/e2e/planner-work-survives.spec.ts",
+      "sourceFileGitBlobSha256": "fc82fb4083e21f66b859db60c30681b07845cc1cdc335ea4416d27603353053b",
+      "inventoryCommand": "pnpm --filter @omnitwin/web exec playwright test e2e/planner-work-survives.spec.ts --list --project=chromium --update-snapshots=none --reporter=json",
+      "inventorySha256": "0a8b61faa80744f81d7f179c559a319ed2c6ac86d2331d5b12f62c3705e19edf",
+      "caseIds": [
+        "0d8ceb1ff5fdd4fd6824-118c52bf2ca6c356c4dc",
+        "0d8ceb1ff5fdd4fd6824-9cf16d6e3498bd10148d",
+        "0d8ceb1ff5fdd4fd6824-a91b2017b2398cbd1e22",
+        "0d8ceb1ff5fdd4fd6824-aa359cd59c632e7de56e",
+        "0d8ceb1ff5fdd4fd6824-c44d41d0c204ebfd45e8",
+        "0d8ceb1ff5fdd4fd6824-d29889765ea86557db4d"
+      ],
+      "expectedStatus": "passed",
+      "limits": "This is reviewed inventory admission, not execution evidence. These cases were absent from sourceRunId, sourceReports and the earlier admissions; they stub the API with an in-memory server and run against the Vite dev server, where StrictMode's double effects can hide a missing save (the production order is pinned by a unit test without StrictMode), and a keepalive save that lands after a tab has gone is not observable from Playwright; every current case still requires execution in the hosted browser gate. The listing covers this one spec file, so a re-listing reproduces these identities, not this hash."
+    },
+    {
       "date": "2026-10-29",
       "reason": "Plan 19 L5 (PR #284, carrying #269 #273 #283): the client's contract, three ordinary cases against route-mocked API responses (house pattern): the document generated from the accepted proposal read and signed with a typed name and the ticked statement; a contract the venue changed while the page was open refused, the new one shown and the typed name kept; readable and signable on a phone with nothing scrolling sideways.",
       "sourceCommit": "ca4131fe990648a987d54c1cc6de5104a0911819",
@@ -5156,6 +5175,66 @@
       "suitePath": [
         "planner-touch-arbiter.spec.ts",
         "the touch arbiter on a phone"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "0d8ceb1ff5fdd4fd6824-a91b2017b2398cbd1e22",
+      "file": "planner-work-survives.spec.ts",
+      "title": "v1: a move reaches the server as soon as the page is hidden, not 3 s later",
+      "suitePath": [
+        "planner-work-survives.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "0d8ceb1ff5fdd4fd6824-c44d41d0c204ebfd45e8",
+      "file": "planner-work-survives.spec.ts",
+      "title": "v1: a move cut off by closing the tab comes back on this device, with a receipt, and saves",
+      "suitePath": [
+        "planner-work-survives.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "0d8ceb1ff5fdd4fd6824-aa359cd59c632e7de56e",
+      "file": "planner-work-survives.spec.ts",
+      "title": "v2: a move reaches the server as soon as the page is hidden, not 3 s later",
+      "suitePath": [
+        "planner-work-survives.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "0d8ceb1ff5fdd4fd6824-9cf16d6e3498bd10148d",
+      "file": "planner-work-survives.spec.ts",
+      "title": "v2: a move cut off by closing the tab comes back on this device, with a receipt, and saves",
+      "suitePath": [
+        "planner-work-survives.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "0d8ceb1ff5fdd4fd6824-118c52bf2ca6c356c4dc",
+      "file": "planner-work-survives.spec.ts",
+      "title": "v2: a move made just before switching to the Saloon reaches the server and another browser",
+      "suitePath": [
+        "planner-work-survives.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "0d8ceb1ff5fdd4fd6824-d29889765ea86557db4d",
+      "file": "planner-work-survives.spec.ts",
+      "title": "v2: a switch the save cannot make in time still opens the Saloon, and says the move is kept here",
+      "suitePath": [
+        "planner-work-survives.spec.ts"
       ],
       "project": "chromium",
       "expectedStatus": "passed"
