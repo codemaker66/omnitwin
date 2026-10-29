@@ -191,10 +191,11 @@ describe("Fill over a laid floor keeps a kept chair out of the doors", () => {
   it("sets the plan's chair where a kept chair of the venue's own choosing would reach a door", () => {
     usePlannerEventStore.getState().setEventKind("wedding");
     const round = getCatalogueItemBySlug("round-table-6ft-white");
-    const checked = getCatalogueItemBySlug("checked-banquet-chair");
-    if (round === undefined || checked === undefined) throw new Error("no round or checked chair");
+    // The generic banquet chair: the planner never sets it (the checked chair is in the hall's chair order since 28 Oct).
+    const foreign = getCatalogueItemBySlug("banquet-chair");
+    if (round === undefined || foreign === undefined) throw new Error("no round or banquet chair");
     // A chair the planner never sets keeps what it is, and is deeper than the wedding's Chiavari.
-    expect(plannerChairFor(checked.slug)).toBeNull();
+    expect(plannerChairFor(foreign.slug)).toBeNull();
     const mainIndex = GRAND_HALL_DOOR_CLEAR_SPACES.findIndex((space) => space.id === "door-main");
     const main = DOORS[mainIndex];
     if (main === undefined) throw new Error("no main door");
@@ -208,7 +209,7 @@ describe("Fill over a laid floor keeps a kept chair out of the doors", () => {
       seatsPerTable: 10, tableCount: 1, chairs: 10, guests: null, roomForSeats: 10, meetsTarget: true,
       doorsKeptClear: true, roomForSeatsIgnoringDoors: 10,
     };
-    const laid = createTableGroup(round.id, 0, -2, 0, 10, 0, undefined, "around", checked.slug);
+    const laid = createTableGroup(round.id, 0, -2, 0, 10, 0, undefined, "around", foreign.slug);
     const ids = fillRefillIds(laid, round);
     const inMain = (pieces: readonly PlacedItem[]): boolean => pieces.some((piece) => {
       const footprint = placedFootprint(piece);
@@ -218,7 +219,7 @@ describe("Fill over a laid floor keeps a kept chair out of the doors", () => {
     const kept = refillPieces(laid, ids, plan, undefined, { doorSpaces: DOORS });
     expect(inMain(kept)).toBe(false);
     // Only those that would reach the door change; the rest stay the venue's chair.
-    expect(kept.filter((piece) => piece.catalogueItemId === checked.id).length).toBeGreaterThan(0);
+    expect(kept.filter((piece) => piece.catalogueItemId === foreign.id).length).toBeGreaterThan(0);
   });
 });
 

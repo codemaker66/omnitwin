@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { ChevronDown } from "lucide-react";
 import "./SubmitForReviewPanel.css";
-import type { ConfigurationReviewStatus } from "@omnitwin/types";
+import { isPlannerEditable, type ConfigurationReviewStatus } from "@omnitwin/types";
 import { ActivityIndicator } from "../shared/Activity.js";
 import { captureEditorSession, isCurrentEditorSession } from "../../stores/editor-store.js";
 import { useEditorStore } from "../../stores/editor-store.js";
@@ -26,13 +26,16 @@ import {
 // button that always opened the enquiry modal), this panel reacts to the
 // configuration's current `review_status` and shows:
 //
-//   draft / changes_requested / rejected     → "Submit for Approval"
+//   draft / changes_requested / rejected /
+//   withdrawn                                 → "Submit for Approval" (the
+//                                               layout is the planner's to
+//                                               edit and send again)
 //   submitted / under_review                  → locked banner + "Withdraw"
 //   approved                                  → "Approved" read-only pill
 //                                               (edits below still go through —
 //                                               snapshot is frozen, editor
 //                                               shows divergence banner)
-//   withdrawn / archived                      → minimal closed pill
+//   archived                                  → minimal closed pill
 //
 // Pre-submit validation guards:
 //   1. At least one placed object
@@ -99,20 +102,6 @@ function pillStyle(visual: StatusVisual): React.CSSProperties {
     borderColor: visual.borderColor,
   };
 }
-
-// ---------------------------------------------------------------------------
-// Planner-editable classification — mirrors isPlannerEditable in types
-// package. Duplicated as a literal for synchronous UI rendering; the
-// import-based helper would work too but this keeps the component
-// SSR-friendly and avoids an extra re-render round trip.
-// ---------------------------------------------------------------------------
-
-const PLANNER_EDITABLE: ReadonlySet<ConfigurationReviewStatus> =
-  new Set<ConfigurationReviewStatus>([
-    "draft",
-    "changes_requested",
-    "rejected",
-  ]);
 
 export const TIMELINE_PREVIEW_REVIEW_MESSAGE =
   "Exit the room timeline preview before changing this saved plan's review status.";
@@ -273,7 +262,10 @@ export function SubmitForReviewPanel(): React.ReactElement | null {
 
   const eligibleHere = demoEligible && eligibilityConfigId === configId;
   const visual = STATUS_VISUALS[reviewStatus];
-  const isEditable = PLANNER_EDITABLE.has(reviewStatus);
+  // The review lock's own rule: wherever the planner may edit, they may send
+  // the layout (again) for approval. A copy of the list here once left a
+  // withdrawn layout with neither edits nor a way to send it back.
+  const isEditable = isPlannerEditable(reviewStatus);
   const isLocked = reviewStatus === "submitted" || reviewStatus === "under_review";
 
   // -------------------------------------------------------------------------

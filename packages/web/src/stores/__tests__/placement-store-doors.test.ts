@@ -105,6 +105,22 @@ describe("automatic layouts keep the doors clear", () => {
     expect(blocked()).toBe(0);
   });
 
+  it("sets theatre rows past one kind's stock in the hall's chairs, front rows the event's, each within what the hall owns", () => {
+    // Blake, 28 Oct 2026: "for the grand hall we normally use the pink chair, then the checked chair, then the red with gold legs chair."
+    const plan = usePlacementStore.getState().autoArrangeTheatre(CHAIR, 250);
+    expect(plan?.meetsTarget).toBe(true);
+    const placed = usePlacementStore.getState().placedItems;
+    expect(placed).toHaveLength(plan?.chairs ?? -1);
+    const counts = new Map<string, number>();
+    for (const piece of placed) counts.set(piece.catalogueItemId, (counts.get(piece.catalogueItemId) ?? 0) + 1);
+    const owned = new Map([[CHAIR, 120], [id("checked-banquet-chair"), 106], [id("gallery-chair-red-gold"), 107]]);
+    expect([...counts.keys()].every((chairId) => owned.has(chairId))).toBe(true);
+    for (const [chairId, count] of counts) expect(count).toBeLessThanOrEqual(owned.get(chairId) ?? 0);
+    expect(counts.size).toBeGreaterThan(1);
+    expect(placed[0]?.catalogueItemId).toBe(CHAIR);
+    expect(blocked()).toBe(0);
+  });
+
   it("adds the tables a guest count is short of clear of the doors", () => {
     usePlacementStore.setState({ placedItems: [...createTableGroup(ROUND, 0, -0.75, 0, 10)] });
     const fix = usePlacementStore.getState().fillSeatShortfall(20);

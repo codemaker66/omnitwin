@@ -340,6 +340,42 @@ describe("calculatePrice — windows", () => {
     expect(result.total).toBe(1500 + 120);
   });
 
+  // Release audit dash-ops-1: windowed rules are alternatives only within one
+  // room and one way of charging, so a narrower per-head or per-hour window
+  // no longer drops the room hire from the estimate.
+  it("a drinks package at £10 a head from 19:00 to 21:00 is charged as well as the evening's hire", () => {
+    const drinks = makeRule({ name: "Grand Hall — Drinks reception (19:00–21:00)", type: "per_head", amount: 10, spaceId: SPACE_ID, appliesFrom: "19:00", appliesUntil: "21:00" });
+    const result = estimate("19:00", "21:00", [...grandHall, drinks]);
+    expect(result.lineItems.map((item) => item.ruleName)).toEqual([
+      "Grand Hall — Evening Event (19:00–00:30)", "Grand Hall — Drinks reception (19:00–21:00)",
+    ]);
+    expect(result.total).toBe(1500 + 800);
+  });
+
+  it("a lunch at £10 a head inside the full day is charged as well as the full day", () => {
+    const lunch = makeRule({ name: "Grand Hall — Lunch (12:00–14:00)", type: "per_head", amount: 10, spaceId: SPACE_ID, appliesFrom: "12:00", appliesUntil: "14:00" });
+    const result = estimate("12:00", "14:00", [...grandHall, lunch]);
+    // The half days do not hold 12:00–14:00, so the full day is the hire.
+    expect(result.lineItems.map((item) => item.ruleName)).toEqual([
+      "Grand Hall — Full Day (09:00–17:30)", "Grand Hall — Lunch (12:00–14:00)",
+    ]);
+    expect(result.total).toBe(900 + 800);
+  });
+
+  it("a per-hour attendant from 19:00 to 21:00 is charged as well as the evening's hire", () => {
+    const attendant = makeRule({ name: "Grand Hall — Cloakroom attendant (19:00–21:00)", type: "per_hour", amount: 25, spaceId: SPACE_ID, appliesFrom: "19:00", appliesUntil: "21:00" });
+    expect(estimate("19:00", "21:00", [...grandHall, attendant]).total).toBe(1500 + 50);
+  });
+
+  it("two per-head packages of one room are still alternatives: the narrower applies", () => {
+    const dinner = makeRule({ name: "Grand Hall — Dinner (18:00–23:00)", type: "per_head", amount: 50, spaceId: SPACE_ID, appliesFrom: "18:00", appliesUntil: "23:00" });
+    const drinks = makeRule({ name: "Grand Hall — Drinks reception (19:00–21:00)", type: "per_head", amount: 10, spaceId: SPACE_ID, appliesFrom: "19:00", appliesUntil: "21:00" });
+    const result = estimate("19:00", "21:00", [...grandHall, dinner, drinks]);
+    expect(result.lineItems.map((item) => item.ruleName)).toEqual([
+      "Grand Hall — Evening Event (19:00–00:30)", "Grand Hall — Drinks reception (19:00–21:00)",
+    ]);
+  });
+
   it("two rules of one room with the same narrowest window both apply: they are not alternatives", () => {
     const cleaning = makeRule({ name: "Grand Hall — Evening clean (19:00–00:30)", type: "flat_rate", amount: 80, spaceId: SPACE_ID, appliesFrom: "19:00", appliesUntil: "00:30" });
     expect(estimate("19:00", "23:00", [...grandHall, cleaning]).total).toBe(1580);

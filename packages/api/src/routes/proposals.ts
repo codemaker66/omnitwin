@@ -62,6 +62,7 @@ import {
   recordProposalEngagement,
   stampFirstResponse,
 } from "../services/enquiry-funnel.js";
+import type { JwtUser } from "../middleware/auth.js";
 
 // ---------------------------------------------------------------------------
 // Proposal routes — T-427 phase 2.
@@ -285,7 +286,7 @@ function toStaffCommentView(row: {
 
 type ProposalRow = typeof proposals.$inferSelect;
 
-interface ProposalEventContext {
+export interface ProposalEventContext {
   readonly eventId: string;
   readonly venueId: string;
   readonly handoffPackId: string | null;
@@ -293,7 +294,7 @@ interface ProposalEventContext {
 
 
 
-async function loadProposalEventContext(db: Database, proposal: ProposalRow): Promise<ProposalEventContext | null> {
+export async function loadProposalEventContext(db: Database, proposal: ProposalRow): Promise<ProposalEventContext | null> {
   if (proposal.configurationId === null) return null;
 
   const [linkedEvent] = await db
@@ -760,22 +761,25 @@ export async function proposalRoutes(
       return reply.status(400).send({ error: "Invalid ID", code: "VALIDATION_ERROR" });
     }
 
-    const [proposal] = await db.select().from(proposals)
-      .where(and(eq(proposals.id, params.data.id), isNull(proposals.deletedAt)))
-      .limit(1);
-    if (proposal === undefined) {
-      return reply.status(404).send({ error: "Proposal not found", code: "NOT_FOUND" });
-    }
-    if (!canManageCommercial(request.user, proposal.venueId)) {
-      return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
-    }
-    if (proposal.status === "accepted" && !isPlatformAdmin(request.user)) {
+    // The lock and the delete are one transaction on the held row (release
+    // audit proposals-2): an accepted proposal archived first is still the
+    // commercial record its acceptance made, and a client accepting while
+    // this runs either lands first (and locks it) or waits for the delete.
+    const outcome = await db.transaction(async (tx) => {
+      const proposal = await holdProposal(tx, params.data.id);
+      if (proposal === undefined) return "not_found" as const;
+      if (!canManageCommercial(request.user, proposal.venueId)) return "forbidden" as const;
+      if (!isPlatformAdmin(request.user) && await everAccepted(tx, proposal)) return "locked" as const;
+      await tx.update(proposals)
+        .set({ deletedAt: new Date(), updatedAt: new Date() })
+        .where(and(eq(proposals.id, proposal.id), isNull(proposals.deletedAt)));
+      return "deleted" as const;
+    });
+    if (outcome === "not_found") return reply.status(404).send({ error: "Proposal not found", code: "NOT_FOUND" });
+    if (outcome === "forbidden") return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
+    if (outcome === "locked") {
       return reply.status(422).send({ error: "Accepted proposals are a commercial record and cannot be deleted", code: "PROPOSAL_ACCEPTED_LOCKED" });
     }
-
-    await db.update(proposals)
-      .set({ deletedAt: new Date(), updatedAt: new Date() })
-      .where(eq(proposals.id, params.data.id));
 
     return reply.status(204).send();
   });
@@ -869,21 +873,7 @@ export async function proposalRoutes(
         changedBy: request.user.id,
         note: parsed.data.note ?? null,
       });
-      // A proposal sent is a reply Venviewer itself sends: the first reply to
-      // the enquiry it answers, unless an earlier one is recorded (0100).
-      if (parsed.data.status === "sent") {
-        const enquiryId = await enquiryAnsweredByProposal(tx, row);
-        if (enquiryId !== null) {
-          await stampFirstResponse(tx, {
-            enquiryId,
-            venueId: row.venueId,
-            at: "now",
-            // A Venviewer operator who sends it for the venue is not its team.
-            byUserId: isVenueCommercialMember(request.user, row.venueId) ? request.user.id : null,
-            channel: "proposal",
-          });
-        }
-      }
+      if (parsed.data.status === "sent") await stampSendAsFirstReply(tx, row, request.user);
       // Answered as its row on the desk now reads, read with the move: the
       // figure that stands and whether the client's link opens change with it.
       const [withFacts] = await selectDeskProposals(tx).where(eq(proposals.id, params.data.id)).limit(1);
@@ -1129,6 +1119,9 @@ export async function proposalRoutes(
           note: "Client share link generated",
         });
       }
+      // The desk sends by link: a send here is the same reply /transition
+      // records (proposals-1).
+      if (updateData["sentAt"] !== undefined) await stampSendAsFirstReply(tx, updated, request.user);
 
       // Answered as its row on the desk now reads, the send included.
       const [withFacts] = await selectDeskProposals(tx).where(eq(proposals.id, proposal.id)).limit(1);
@@ -1138,6 +1131,19 @@ export async function proposalRoutes(
     if (result === "version") return reply.status(409).send(VERSION_CHANGED);
     if (result.proposal.status !== proposal.status) {
       await moveDealFor(db, result.proposal, result.proposal.status, request.user.id, request.log);
+      // The change feed hears of a send by link as of one by /transition.
+      await recordProposalLifecycleChange(db, result.proposal, {
+        actorUserId: request.user.id,
+        actorRole: toEventPlanAudienceRole(request.user.role),
+        actorLabel: request.user.email,
+        sourceKind: "proposal",
+        sourceId: result.proposal.id,
+        title: "Proposal status changed",
+        summary: `${result.proposal.title} moved from ${proposal.status} to ${result.proposal.status}.`,
+        affectedSurfaces: ["proposal"],
+        includeHallkeeperWhenHandoffExists: false,
+        logger: request.log,
+      });
     }
 
     return reply.status(201).send({
@@ -1505,6 +1511,36 @@ type ProposalRecord = typeof proposals.$inferSelect;
 type ProposalTransaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 
 /**
+ * A proposal sent is a reply Venviewer itself sends: the first reply to the
+ * enquiry it answers, unless an earlier one is recorded (migration 0100). Run
+ * inside the send's own transaction, by /transition and by a client link that
+ * sends it (release audit proposals-1). Another venue's enquiry is never
+ * stamped (stampFirstResponse keeps to the proposal's venue).
+ */
+async function stampSendAsFirstReply(tx: ProposalTransaction, proposal: ProposalRecord, user: JwtUser): Promise<void> {
+  const enquiryId = await enquiryAnsweredByProposal(tx, proposal);
+  if (enquiryId === null) return;
+  await stampFirstResponse(tx, {
+    enquiryId,
+    venueId: proposal.venueId,
+    at: "now",
+    // A Venviewer operator who sends it for the venue is not its team.
+    byUserId: isVenueCommercialMember(user, proposal.venueId) ? user.id : null,
+    channel: "proposal",
+  });
+}
+
+/** Whether a proposal is, or ever was, accepted: archiving keeps the record
+ *  an acceptance made, so the delete lock follows it (proposals-2). */
+async function everAccepted(tx: ProposalTransaction, proposal: ProposalRecord): Promise<boolean> {
+  if (proposal.status === "accepted") return true;
+  const [accepted] = await tx.select({ id: proposalStatusHistory.id }).from(proposalStatusHistory)
+    .where(and(eq(proposalStatusHistory.proposalId, proposal.id), eq(proposalStatusHistory.toStatus, "accepted")))
+    .limit(1);
+  return accepted !== undefined;
+}
+
+/**
  * The proposal's row, held until the transaction ends. Every move of a
  * proposal's status takes it first and compares it with the status the
  * request read, so an answer or a move that committed in between is never
@@ -1588,7 +1624,7 @@ async function presentedStatus(db: Database, proposal: ProposalRecord): Promise<
   return last?.from === "accepted" ? "accepted" : null;
 }
 
-async function resolveProposalShareToken(
+export async function resolveProposalShareToken(
   db: Database,
   token: string,
 ): Promise<{ shareToken: ShareTokenRecord; proposal: ProposalRecord; presented: string } | null> {
@@ -1611,7 +1647,7 @@ async function resolveProposalShareToken(
 /** The version a client's link shows: the one last sent. A version saved
  *  since is the team's draft until it is sent. A proposal answered before
  *  any version was saved was shown none. */
-function sentVersionOf(proposal: Pick<ProposalRecord, "sentVersion" | "currentVersion" | "status">): number | null {
+export function sentVersionOf(proposal: Pick<ProposalRecord, "sentVersion" | "currentVersion" | "status">): number | null {
   if (proposal.sentVersion !== null) return proposal.sentVersion;
   return proposal.status === "sent" && proposal.currentVersion >= 1 ? proposal.currentVersion : null;
 }
