@@ -61,7 +61,7 @@ export const PRICING_READ_ROLES = COMMERCIAL_ROLES;
  * @omnitwin/types so the two cannot drift. Everyone else on the desk is told
  * who can.
  */
-export { PRICING_WRITE_ROLES } from "@omnitwin/types";
+export { PRICING_WRITE_ROLES } from "@omnitwin/types/pricing-desk";
 
 /**
  * The Analytics tab. What it opens is `ExecutiveAnalyticsView`, whose only
