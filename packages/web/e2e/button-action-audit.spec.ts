@@ -2283,7 +2283,9 @@ test.describe("SS++ representative button behavior", () => {
   });
 
   test("hallkeeper controls update progress, locate rows, download, and print", async ({ page }) => {
-    await seedAuthenticatedUser(page, "planner");
+    // The venue's hallkeeper: a layout's planner reads the checklist and ticks
+    // nothing (release audit tenancy-f-2, e2e/hallkeeper.spec.ts).
+    await seedAuthenticatedUser(page, "hallkeeper");
     const mock = await mockHallkeeperRoutes(page);
     let printCalled = false;
     await page.addInitScript(() => {

@@ -288,6 +288,36 @@ async function assembleStoredReplay(
   });
 }
 
+/** Points of geometry one scenario may carry: far above a whole Grand Hall, far below what zod would walk in a 2 MB body. */
+export const GUEST_FLOW_SCENARIO_POINT_BUDGET = 20_000;
+
+/** The 400 reply's issue list stops here; the first issues say what is wrong. */
+const MAX_REPORTED_ISSUES = 20;
+
+function arrayLength(value: unknown): number {
+  return Array.isArray(value) ? value.length : 0;
+}
+
+function fieldOf(value: unknown, key: string): unknown {
+  return typeof value === "object" && value !== null ? (value as Record<string, unknown>)[key] : undefined;
+}
+
+/**
+ * Counts a create body's points before validation. Every list has its own
+ * ceiling, but 500 obstacles of 1,000 points and 100 lanes of 1,000 points
+ * still pass them, and zod then reports an issue per bad point (about
+ * 600,000 for 1.2 MB). Counting first refuses that body with one issue.
+ */
+function scenarioPointCount(body: unknown): number {
+  const input = fieldOf(body, "input");
+  let points = arrayLength(fieldOf(input, "roomPolygon"));
+  const obstacles = fieldOf(input, "obstacles");
+  if (Array.isArray(obstacles)) for (const obstacle of obstacles) points += arrayLength(fieldOf(obstacle, "polygon"));
+  const lanes = fieldOf(input, "staffLanes");
+  if (Array.isArray(lanes)) for (const lane of lanes) points += arrayLength(fieldOf(lane, "line"));
+  return points;
+}
+
 export async function guestFlowReplayRoutes(
   server: FastifyInstance,
   opts: { db: Database },
@@ -295,9 +325,16 @@ export async function guestFlowReplayRoutes(
   const { db } = opts;
 
   server.post("/scenarios", { preHandler: [authenticate] }, async (request, reply) => {
+    if (scenarioPointCount(request.body) > GUEST_FLOW_SCENARIO_POINT_BUDGET) {
+      return reply.status(400).send({
+        error: "Validation failed",
+        code: "VALIDATION_ERROR",
+        details: [{ code: "too_big", path: ["input"], message: `A scenario carries at most ${GUEST_FLOW_SCENARIO_POINT_BUDGET.toLocaleString("en-GB")} points of geometry` }],
+      });
+    }
     const parsed = CreateGuestFlowReplayScenarioSchema.safeParse(request.body);
     if (!parsed.success) {
-      return reply.status(400).send({ error: "Validation failed", code: "VALIDATION_ERROR", details: parsed.error.issues });
+      return reply.status(400).send({ error: "Validation failed", code: "VALIDATION_ERROR", details: parsed.error.issues.slice(0, MAX_REPORTED_ISSUES) });
     }
 
     const configurationId = parsed.data.configurationId ?? parsed.data.input.layout.configurationId;

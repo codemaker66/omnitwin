@@ -32,9 +32,13 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/proposal-links-postgres.test.ts",
   "src/__tests__/proposal-next-version-postgres.test.ts",
   "src/__tests__/placed-object-batch-postgres.test.ts",
+  // The review loop: a layout sent back, declined or withdrawn goes to the venue again; a stale move writes nothing.
+  "src/__tests__/configuration-review-loop-postgres.test.ts",
   // A signed-in person's new plan: refused unclaimed, theirs once claimed (batch C).
   "src/__tests__/claim-new-draft-postgres.test.ts",
   "src/__tests__/role-vocabulary-postgres.test.ts",
+  // An open socket acts with its person's current role: /ws/configurations saves and /ws/diary commands.
+  "src/__tests__/socket-identity-postgres.test.ts",
   "src/__tests__/public-mcp-postgres.test.ts",
   "src/__tests__/sheet-paper-check-postgres.test.ts",
   "src/__tests__/ai-usage-postgres.test.ts",

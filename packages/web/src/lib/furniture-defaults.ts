@@ -18,11 +18,28 @@ export const PLANNER_CHAIR_BY_EVENT: Readonly<Record<PlannerEventKind, string>> 
 /** The chair before the planner has asked what the event is: the one it always set. */
 export const UNASKED_PLANNER_CHAIR_SLUG = "burgess-turini-18-3";
 
-const PLANNER_CHAIRS: ReadonlySet<string> = new Set([UNASKED_PLANNER_CHAIR_SLUG, ...Object.values(PLANNER_CHAIR_BY_EVENT)]);
+/**
+ * The Grand Hall's chairs in the order its staff set them when one kind will
+ * not seat everyone (Blake, 28 Oct 2026: "So for the grand hall we normally
+ * use the pink chair, then the checked chair, then the red with gold legs
+ * chair."): the pink chair, which the planner sets as the Burgess Turini, the
+ * checked banquet chair, then the red gallery chair with gold legs.
+ */
+export const GRAND_HALL_CHAIR_ORDER: readonly string[] = [UNASKED_PLANNER_CHAIR_SLUG, "checked-banquet-chair", "gallery-chair-red-gold"];
 
-/** Whether the planner sets this chair by itself for some event (legacy and imported chairs are kept, never copied). */
+const PLANNER_CHAIRS: ReadonlySet<string> = new Set([UNASKED_PLANNER_CHAIR_SLUG, ...Object.values(PLANNER_CHAIR_BY_EVENT), ...GRAND_HALL_CHAIR_ORDER]);
+
+/** Whether the planner sets this chair by itself, for some event or in the hall's chair order (legacy and imported chairs are kept, never copied). */
 export function isPlannerChair(slug: string): boolean {
   return PLANNER_CHAIRS.has(slug);
+}
+
+/**
+ * The chairs Fill sets, in order, when one kind will not seat everyone: the
+ * event's chair first (Chiavari at a wedding), then the Grand Hall's order.
+ */
+export function plannerChairOrder(eventChairSlug: string = plannerChairSlug()): readonly string[] {
+  return [eventChairSlug, ...GRAND_HALL_CHAIR_ORDER.filter((slug) => slug !== eventChairSlug)];
 }
 
 /**

@@ -275,6 +275,127 @@ export function slateSaveState(input: SlateSaveInput): SlateSaveState {
 }
 
 // ---------------------------------------------------------------------------
+// Work that outlives the page or the layout it was made in (QoL D-01, D-X3):
+// the receipt for work restored from this device, the note left when another
+// layout opened before the last changes arrived, and what a switch says when
+// it waits for changes that are neither saved nor kept.
+// ---------------------------------------------------------------------------
+
+export interface RestoreReceiptInput {
+  readonly restored: { readonly changes: number; readonly editedAt: Date };
+  readonly isSaving: boolean;
+  readonly isDirty: boolean;
+  readonly isOnline: boolean;
+  readonly keptOnDevice: boolean;
+  readonly lastSavedAt: Date | null;
+  /** Today, for naming the day the changes were made; the clock's now by default. */
+  readonly now?: Date;
+  /** The venue's IANA zone for the times the receipt names. */
+  readonly timeZone?: string;
+}
+
+export interface RestoreReceipt {
+  /** "Restored 3 changes you made at 21:41 on this device". */
+  readonly lead: string;
+  /** "Saving", "Saved 21:42", "Offline · kept on this device". */
+  readonly status: string;
+  /** The restored work is on its way: the house indicator runs beside it. */
+  readonly working: boolean;
+}
+
+function venueDayKey(at: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat("en-GB", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(at);
+}
+
+/** "at 21:41", "yesterday at 21:41" or "on Sat 24 Oct at 21:41", in the venue's zone. */
+function whenMade(at: Date, now: Date, timeZone: string): string {
+  const clock = `at ${clockTime(at, timeZone)}`;
+  if (venueDayKey(at, timeZone) === venueDayKey(now, timeZone)) return clock;
+  const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  if (venueDayKey(at, timeZone) === venueDayKey(yesterday, timeZone)) return `yesterday ${clock}`;
+  const day = new Intl.DateTimeFormat("en-GB", { timeZone, weekday: "short", day: "numeric", month: "short" }).format(at);
+  return `on ${day.replace(",", "")} ${clock}`;
+}
+
+/** The receipt for work this device kept, restored as the layout opened. */
+export function restoreReceipt(input: RestoreReceiptInput): RestoreReceipt {
+  const timeZone = input.timeZone ?? DEFAULT_VENUE_TIME_ZONE;
+  const lead = `Restored ${changesWord(input.restored.changes)} you made ${whenMade(input.restored.editedAt, input.now ?? new Date(), timeZone)} on this device`;
+  if (input.isSaving || (input.isDirty && input.isOnline)) return { lead, status: "Saving", working: true };
+  if (input.isDirty) return { lead, status: `Offline · ${keptWhere(input.keptOnDevice)}`, working: false };
+  return {
+    lead,
+    status: input.lastSavedAt === null ? "Saved" : `Saved ${clockTime(input.lastSavedAt, timeZone)}`,
+    working: false,
+  };
+}
+
+export interface LeftBehindInput {
+  readonly roomName: string | null;
+  readonly kept: boolean;
+  readonly savesOnReturn: boolean;
+}
+
+/** The note left when another layout opened before this one's changes arrived. */
+export function leftBehindWords(input: LeftBehindInput): string {
+  const room = input.roomName?.trim().replace(/^the\s+/iu, "") ?? "";
+  const layout = room.length === 0 ? "that layout" : `the ${room} layout`;
+  if (!input.kept) return `Your changes to ${layout} did not reach Venviewer, and this browser could not keep them.`;
+  return input.savesOnReturn
+    ? `Your changes to ${layout} are kept on this device and save when you open it again.`
+    : `Your changes to ${layout} are kept on this device.`;
+}
+
+/** A room or layout switch waiting for changes this device cannot keep. */
+export interface HeldLayoutChange {
+  readonly heading: string;
+  readonly body: string;
+  readonly actions: readonly SlateAction<"try-again" | "leave-anyway">[];
+}
+
+/** `destination` as said in a sentence: "the Saloon", "Drinks reception". */
+export function heldLayoutChange(destination: string): HeldLayoutChange {
+  return {
+    heading: "Your changes to this layout have not reached Venviewer yet.",
+    body: `This browser cannot keep them on this device, so ${destination} waits until they are saved.`,
+    actions: [{ id: "try-again", label: "Try again" }, { id: "leave-anyway", label: `Open ${destination} without them` }],
+  };
+}
+
+/** A notice the slate gives beside its save state: a switch held for unsaved
+ *  work, the note about a layout left behind, or the restore receipt. */
+export interface SlateAside {
+  readonly heading: string;
+  readonly body: string | null;
+  readonly actions: readonly SlateAction<"try-again" | "leave-anyway">[];
+  /** Needs the person now (a held switch, lost work): an alert, ahead of the save state's notice. */
+  readonly urgent: boolean;
+}
+
+export interface SlateAsideInput {
+  /** Where a held switch was going ("the Saloon"), or null. */
+  readonly held: string | null;
+  readonly leftBehind: LeftBehindInput | null;
+  readonly restored: RestoreReceiptInput | null;
+}
+
+/** First match wins: the held switch, the note about a layout left behind, the receipt. */
+export function slateAside(input: SlateAsideInput): SlateAside | null {
+  if (input.held !== null) {
+    const held = heldLayoutChange(input.held);
+    return { heading: held.heading, body: held.body, actions: held.actions, urgent: true };
+  }
+  if (input.leftBehind !== null) {
+    return { heading: leftBehindWords(input.leftBehind), body: null, actions: [], urgent: !input.leftBehind.kept };
+  }
+  if (input.restored !== null) {
+    const receipt = restoreReceipt(input.restored);
+    return { heading: receipt.lead, body: receipt.status, actions: [], urgent: false };
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 // Someone else's change, as a clause: "moved Tables 3 and 4 and added a
 // lectern". Labelled pieces are named by their labels, numbered labels of one
 // kind gathered ("Tables 3 and 4"); the rest are counted by noun ("2 tables
