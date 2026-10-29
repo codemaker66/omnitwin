@@ -850,6 +850,21 @@
       ],
       "expectedStatus": "passed",
       "limits": "This is reviewed inventory admission, not execution evidence. These cases were absent from the reviewed baseline and the earlier admissions; CI run 40801039570 listed them in its complete inventory (413 cases) and its CPU job passed with them. They stub the API and Stripe's page in the browser (route-mocked, house pattern), so they prove the pages' behaviour in hosted Chromium, not a Stripe call, a webhook or a signature stored on a real database (those are in the API's Postgres suites). The hash covers the whole listing, so a per-file re-listing reproduces these identities, not this hash."
+    },
+    {
+      "date": "2026-10-28",
+      "reason": "A request step pressed with no connection (L9, goal 05 and goal 19's offline queue), route-mocked: the hallkeeper presses I’ll do it on the slot's card while the step cannot reach the house; the card says it is waiting to send and still says nobody owns it; the press survives a reload in the browser's own store and goes when the connection is back, every send the same step under the same key; and when someone else took it first the slot says so by name, the press is put away and is never sent again, with every label readable at 12 px and 4.5:1.",
+      "sourceCommit": "2258b1518f667e3fa0ee321f42c8f081db0e36b7",
+      "sourceFile": "packages/web/e2e/living-timetable-offline-steps.spec.ts",
+      "sourceFileGitBlobSha256": "ac73103a9ca161404d74e63b2206fe6d6c3cafb010e60e9c9bf41cff9c329361",
+      "inventoryCommand": "pnpm --filter @omnitwin/web exec playwright test e2e/living-timetable-offline-steps.spec.ts --list --project=chromium --update-snapshots=none --reporter=json",
+      "inventorySha256": "ce5e01429e3615f47d54c0759cc81a7dcc4074d6f2035c70b9b3957711aa1c44",
+      "caseIds": [
+        "3458cb52a1c58b716d7b-1e0c8e8cfb6cf207394e",
+        "3458cb52a1c58b716d7b-2353530f81e2ff804d8a"
+      ],
+      "expectedStatus": "passed",
+      "limits": "This is reviewed inventory admission, not execution evidence. These two cases were absent from sourceRunId, sourceReports and the earlier admissions; they intercept the API before transport and drop the press as a lost signal, so they prove the slab's waiting state, the reload over real IndexedDB, the one key per press and the honest refusal, not the ledger, which requests-offline-replay-postgres.test.ts proves against PostgreSQL; every current case still requires execution in the hosted browser gate. The listing covers this one spec file, so a re-listing reproduces these identities, not this hash."
     }
   ],
   "cases": [
@@ -5323,6 +5338,28 @@
       "suitePath": [
         "proposals-desk.spec.ts",
         "Proposals desk"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "3458cb52a1c58b716d7b-1e0c8e8cfb6cf207394e",
+      "file": "living-timetable-offline-steps.spec.ts",
+      "title": "waits to send, survives a reload, and goes as the same press when the connection is back",
+      "suitePath": [
+        "living-timetable-offline-steps.spec.ts",
+        "A request step pressed with no connection"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "3458cb52a1c58b716d7b-2353530f81e2ff804d8a",
+      "file": "living-timetable-offline-steps.spec.ts",
+      "title": "says by name that someone else took it first, and puts the press away",
+      "suitePath": [
+        "living-timetable-offline-steps.spec.ts",
+        "A request step pressed with no connection"
       ],
       "project": "chromium",
       "expectedStatus": "passed"
