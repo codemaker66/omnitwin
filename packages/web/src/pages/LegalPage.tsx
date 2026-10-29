@@ -19,7 +19,7 @@
 // ---------------------------------------------------------------------------
 
 import { useEffect, type ReactElement } from "react";
-import { DIETARY_MEMORY_CONSENT, DIETARY_MEMORY_MONTHS_UNUSED, DIETARY_NOTE_RETENTION } from "@omnitwin/types";
+import { CONTRACT_CONSENT_STATEMENT, DIETARY_MEMORY_CONSENT, DIETARY_MEMORY_MONTHS_UNUSED, DIETARY_NOTE_RETENTION } from "@omnitwin/types";
 import { REMEMBERED_NOTES_PATH } from "../lib/dietary-memory.js";
 import { ROUTE_DOCUMENTS } from "../lib/route-documents.js";
 import "./LegalPage.css";
@@ -87,7 +87,8 @@ const ORIGINAL_EDITION = { text: LAST_UPDATED, iso: "2026-08-15" } as const;
  *  it remembered ("ask once, then remember"); on 26 October, when it said
  *  how long deleted data stays in the database's backups (T-068); and on 27
  *  October, when it named Anthropic, which writes the events team's AI
- *  drafts (release audit ai-1), before AI drafting is switched on. */
+ *  drafts (release audit ai-1), before AI drafting is switched on, and Stripe
+ *  for deposits, and said what a contract's signature record keeps (Plan 19 L5). */
 const PRIVACY_UPDATED = { text: "27 October 2026", iso: "2026-10-27" } as const;
 
 /** The allergy note's keeping period, from the one definition the API's
@@ -255,6 +256,18 @@ const PRIVACY: LegalDocument = {
                 + `Beside the note, the person planning the event is asked "${REMEMBER_QUESTION}" The box starts unticked. Left unticked, the note stays with that event only. Ticked, we also keep a copy with that person's account, shown to them alone, and fill it in on their next layout with us; we record who ticked the box, when, and the words beside it. They can see and remove that copy at any time.`,
             },
             {
+              term: "Your signature on a contract",
+              detail:
+                "Once you have accepted a proposal, the venue may ask you to sign its contract on your proposal link. You sign by typing your name and ticking the statement \"" + CONTRACT_CONSENT_STATEMENT + "\" "
+                + "We keep a record of that signature: the name you typed; the email address of the client the venue addressed the proposal to, which the contract itself names; the date and time; a fingerprint (a SHA-256 hash) of the exact version of the contract you signed; the statement you agreed to, word for word; the description your browser gives of itself (its user-agent string); and which of the proposal's links you signed through, by its first characters. "
+                + "We do not keep your network (IP) address with it. The record cannot be changed after you sign. If the contract changes, you are asked to sign the new version, and your earlier signature stays with the version you signed.",
+            },
+            {
+              term: "Deposit payments",
+              detail:
+                "If the venue asks for a deposit, you pay it on Stripe's own payment page, not on ours. Your card or bank details go to Stripe and never reach us. From Stripe we keep the amount, Stripe's reference for the payment, and what Stripe reports: paid, still settling, declined (with Stripe's own words for why), refunded, or not the amount asked for. While the venue uses Stripe's test mode, no real money is taken.",
+            },
+            {
               term: "Venue staff accounts",
               detail:
                 "People who work for the venue have accounts on the planning tools. For them we hold a name, an email address and a role. This part of the policy is about them, not about you as a visitor.",
@@ -288,6 +301,11 @@ const PRIVACY: LegalDocument = {
               term: "Keeping a record of enquiries and contacts",
               detail:
                 "Article 6(1)(f), legitimate interests: running an events business properly, giving consistent answers, and being able to show what was said and when. We have weighed this against your interests; the information involved is ordinary business contact information, and you can object at any time.",
+            },
+            {
+              term: "Contracts, signatures and deposits",
+              detail:
+                "Article 6(1)(b): entering into and performing the contract for your event. Keeping the signature record and the payment records afterwards is Article 6(1)(c), the venue's legal obligation to keep accounting records, and Article 6(1)(f), our legitimate interest in being able to show what was agreed, by whom and when.",
             },
             {
               term: "Keeping the service secure and working",
@@ -402,6 +420,11 @@ const PRIVACY: LegalDocument = {
               detail:
                 "AI help for the venue's events team, used only when a member of the team asks for it: a summary of your enquiry, the wording of a message to you about a proposal, or reading a description of your event that the team has typed into the planner. Anthropic's Claude is sent what that piece of work needs: the details of your event (such as the occasion, date, guest count and room), where your enquiry stands and the day it arrived, and the words of your enquiry and of your messages about the proposal, or the team's own description of your event. Email addresses and phone numbers it can recognise in those words are taken out first; anything else written there, such as a name, is sent as written. A message to you is also sent your name, so that it can address you. The email address and phone number you gave in the enquiry form's own fields are not sent. A member of the events team reads everything it writes and decides what to use; nothing it writes is sent to you without a person choosing to send it.",
             },
+            {
+              term: "Stripe",
+              detail:
+                "Payment processing for deposits, when the venue asks for one. You pay on Stripe's own page; Stripe receives your card or bank details, the amount, the title of the proposal the deposit is for (often your event's name), our references for it, and the email address the venue holds for you (for Stripe's receipt), and tells us whether the payment succeeded. For its own fraud prevention and legal duties Stripe also acts on its own account, under its own privacy policy.",
+            },
           ],
         },
         {
@@ -455,6 +478,11 @@ const PRIVACY: LegalDocument = {
               term: "An allergy note you asked us to remember",
               detail:
                 `Kept with your account until you remove it, which you can do at any time. If ${String(DIETARY_MEMORY_MONTHS_UNUSED)} months pass without it being saved with a layout, we remove it. Once it is removed, we keep only the record that you agreed, when, the words you agreed to, and when it ended, without the note itself.`,
+            },
+            {
+              term: "Signed contracts and deposit records",
+              detail:
+                "Kept with the booking's records: for the life of the booking and for six years after the end of the financial year in which the event took place, the same period as a booking, because they are the record of what was agreed and paid. A contract you did not sign is kept on the same rule.",
             },
             {
               term: "Logs and error diagnostics",

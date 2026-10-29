@@ -337,8 +337,12 @@ describe("booking mutation cores — source contract (extracted T-537, invariant
   it("validates a cross-lane move's target space against the venue (the Board)", async () => {
     const source = await readFile(resolve("src/services/booking-mutations.ts"), "utf-8");
     expect(source).toContain("patch.spaceId !== undefined");
-    expect(source).toContain("eq(spaces.id, patch.spaceId)");
+    // The target is read live at the booking's venue, under the room's lock
+    // (admin-venues-3); room-delete-writers-postgres proves the behaviour.
+    expect(source).toContain("lockLiveRoom(conn, row.venueId, patch.spaceId ?? row.spaceId)");
     expect(source).toContain("spaceId: patch.spaceId ?? row.spaceId");
+    const liveness = await readFile(resolve("src/services/room-liveness.ts"), "utf-8");
+    expect(liveness).toContain("eq(spaces.id, spaceId), eq(spaces.venueId, venueId), isNull(spaces.deletedAt)");
   });
 
   it("scopes diary writes to the roles that ink the diary while reads keep the shared venue policy", async () => {

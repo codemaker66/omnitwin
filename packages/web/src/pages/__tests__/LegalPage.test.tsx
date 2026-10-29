@@ -41,6 +41,7 @@ const SUB_PROCESSORS = [
   "Sentry",
   "Cloudflare R2",
   "Anthropic",
+  "Stripe",
 ] as const;
 
 function textOf(type: (typeof TYPES)[number]): string {

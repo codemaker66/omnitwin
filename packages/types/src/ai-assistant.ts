@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  boundedJsonObjectSchema,
   CanonicalJsonValueSchema,
   sha256Hex,
   stableCanonicalJson,
@@ -57,9 +58,13 @@ export type AIDraftContext = z.infer<typeof AIDraftContextSchema>;
  *  this bounds what a screen can send to be scrubbed and sent on. */
 export const MAX_AI_DRAFT_CONTEXT_CHARACTERS = 16_000;
 
+/** The most an AI draft request's context may hold, as JSON, checked before
+ *  the parse walks it (#278). */
+export const AI_DRAFT_CONTEXT_MAX_BYTES = 32 * 1024;
+
 export const CreateAIDraftRequestSchema = z.object({
   useCase: AIDraftUseCaseSchema,
-  context: AIDraftContextSchema.refine(
+  context: boundedJsonObjectSchema(AI_DRAFT_CONTEXT_MAX_BYTES).refine(
     (context) => stableCanonicalJson(context).length <= MAX_AI_DRAFT_CONTEXT_CHARACTERS,
     { message: `A draft's context may hold at most ${String(MAX_AI_DRAFT_CONTEXT_CHARACTERS)} characters.` },
   ),
