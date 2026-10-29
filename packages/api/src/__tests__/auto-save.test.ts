@@ -253,6 +253,11 @@ describe("auto-save authorization and concurrency", () => {
     });
   });
 
+  it.each(["changes_requested", "rejected", "withdrawn"])("lets the planner save a layout that is %s, theirs to send again", async (reviewStatus) => {
+    const { assessAutoSaveConfiguration } = await import("../ws/auto-save.js");
+    expect(assessAutoSaveConfiguration(owner, { ...config, reviewStatus }, 4)).toEqual({ status: "ok" });
+  });
+
   it("rejects a stale revision with the current revision", async () => {
     const { assessAutoSaveConfiguration } = await import("../ws/auto-save.js");
     expect(assessAutoSaveConfiguration(owner, config, 3)).toEqual({

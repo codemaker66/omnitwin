@@ -1,6 +1,7 @@
 import { writeFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { Matrix4, PerspectiveCamera, Vector3 } from "three";
+import { TRADES_HALL_ROOM_CAPACITIES } from "@omnitwin/types";
 import type { PlacedItem } from "../../../lib/placement.js";
 import { HALL_CHANDELIERS, HALL_HALF_LENGTH, HALL_HALF_WIDTH } from "../../../components/grand-hall/hall-spec.js";
 import { MAX_POLAR_ANGLE, computeDistanceLimits } from "../../../lib/camera-rig.js";
@@ -221,11 +222,13 @@ function collisions(seed: number): string[] {
 }
 
 describe("the 180-seat Grand Hall dinner", () => {
-  it("is 18 rounds of 10 with stable ids, Table 1 at the fireplace end", () => {
+  it("is 15 rounds of 12 with stable ids, Table 1 at the fireplace end", () => {
     const tables = pieces.filter((piece) => piece.role === "table");
     const chairs = pieces.filter((piece) => piece.role === "chair");
-    expect(tables).toHaveLength(18);
-    expect(chairs).toHaveLength(18 * DINNER_SEATS_PER_TABLE);
+    expect(tables).toHaveLength(15);
+    expect(chairs).toHaveLength(15 * DINNER_SEATS_PER_TABLE);
+    // The venue's published dinner capacity for the hall, seated in full.
+    expect(chairs).toHaveLength(TRADES_HALL_ROOM_CAPACITIES["grand-hall"].dinner);
     const first = layout[0];
     expect(first?.id).toBe(dinnerTableId(1));
     expect(first?.label).toBe("Table 1");
@@ -238,10 +241,10 @@ describe("the 180-seat Grand Hall dinner", () => {
   });
 
   it("diffs the empty room to every piece arriving, and a layout to itself as unchanged", () => {
-    expect(pieces).toHaveLength(198);
+    expect(pieces).toHaveLength(195);
     const same = diffLayouts(layout, layout, describePiece);
     expect(same.arriving).toHaveLength(0);
-    expect(same.unchanged).toHaveLength(198);
+    expect(same.unchanged).toHaveLength(195);
     const moved = layout.map((item, index) => (index === 3 ? { ...item, x: item.x + 0.1 } : item));
     expect(diffLayouts(layout, moved, describePiece).moving).toEqual([layout[3]?.id]);
   });
@@ -522,7 +525,8 @@ describe("Accio, second pass", () => {
           return Math.abs(seen.x) < 1 && Math.abs(seen.y) < 1;
         }).map((piece) => piece.id);
         expect(framed).toContain(dinnerTableId(1));
-        expect(framed.length).toBeGreaterThanOrEqual(16);
+        const rounds = pieces.filter((piece) => piece.role === "table").length;
+        expect(framed.length).toBeGreaterThanOrEqual(rounds - 2);
       }
     }
   });

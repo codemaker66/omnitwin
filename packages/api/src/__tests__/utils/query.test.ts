@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { USER_ROLES, VENUE_ADMINISTRATION_ROLES } from "@omnitwin/types";
 import {
   canAccessInternalEvent,
   canAccessResource,
@@ -461,5 +462,15 @@ describe("canRecordForwardBook", () => {
     expect(canRecordForwardBook(makeUser({ role: "admin", venueId: null }), VENUE_A)).toBe(false);
     expect(canRecordForwardBook(makeUser({ role: "staff", platformRole: "admin", venueId: VENUE_A }), VENUE_A)).toBe(false);
     expect(canRecordForwardBook(makeUser({ role: "admin", platformRole: "admin", venueId: VENUE_B }), VENUE_A)).toBe(false);
+  });
+});
+
+describe("canAdministerVenue reads the one list the web reads (dash-ops-2)", () => {
+  it("admits exactly VENUE_ADMINISTRATION_ROLES at the venue, and a platform admin anywhere", () => {
+    for (const role of USER_ROLES) {
+      expect(canAdministerVenue(makeUser({ role, venueId: VENUE_A }), VENUE_A), role)
+        .toBe(VENUE_ADMINISTRATION_ROLES.some((allowed) => allowed === role));
+    }
+    expect(canAdministerVenue(makeUser({ role: "planner", platformRole: "admin", venueId: VENUE_B }), VENUE_A)).toBe(true);
   });
 });

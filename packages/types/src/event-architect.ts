@@ -57,7 +57,7 @@ export const EventArchitectBriefSchema = z.object({
   startTime: z.string().trim().min(1).max(40).nullable(),
   endTime: z.string().trim().min(1).max(40).nullable(),
   serviceModel: EventArchitectServiceModelSchema,
-  accessibilityRequirements: z.array(EventArchitectAccessibilityRequirementSchema),
+  accessibilityRequirements: z.array(EventArchitectAccessibilityRequirementSchema).max(10),
   planningPrompt: z.string().trim().max(2000).nullable(),
 }).strict();
 export type EventArchitectBrief = z.infer<typeof EventArchitectBriefSchema>;

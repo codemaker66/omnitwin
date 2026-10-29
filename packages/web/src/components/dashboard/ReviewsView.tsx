@@ -55,9 +55,10 @@ const PENDING: ReadonlySet<ConfigurationReviewStatus> = new Set<ConfigurationRev
 ]);
 
 // The API's 409 codes for a review that moved on before a decision reached
-// it: someone else decided, or the planner withdrew it.
+// it: someone else decided, the planner withdrew it or sent a new version,
+// or a decision made at the same moment rolled this one back (RETRY).
 const REVIEW_MOVED_CODES: ReadonlySet<string> = new Set([
-  "INVALID_TRANSITION", "SNAPSHOT_CONFLICT", "SNAPSHOT_ALREADY_APPROVED",
+  "INVALID_TRANSITION", "SNAPSHOT_CONFLICT", "SNAPSHOT_ALREADY_APPROVED", "RETRY",
 ]);
 
 function reviewMovedOn(error: unknown): boolean {
@@ -266,11 +267,15 @@ export function ReviewsView({ reviewId = null, onReviewShown }: ReviewsViewProps
     // Only a change of stage asks; the context it compares with is read here.
   }, [selectedStatus]);
 
-  // The plan as it was submitted, read once per review opened.
+  // The plan as it was submitted, read once per review opened. Read again,
+  // the plan on screen stays until the new one arrives, and a decision made
+  // meanwhile names it: the API refuses it if a newer one was submitted.
   useEffect(() => {
     if (selectedId === null) return;
     let current = true;
-    setSnapshot({ id: selectedId, state: { status: "loading" } });
+    setSnapshot((previous) => previous.id === selectedId && previous.state.status === "ready"
+      ? previous
+      : { id: selectedId, state: { status: "loading" } });
     void getLatestSnapshot(selectedId)
       .then((envelope) => {
         if (!current) return;
@@ -413,13 +418,17 @@ export function ReviewsView({ reviewId = null, onReviewShown }: ReviewsViewProps
   const explainDepartureRef = useRef(explainDeparture);
   useEffect(() => { explainDepartureRef.current = explainDeparture; });
 
-  const reportMovedOn = async (entry: PendingReviewEntry): Promise<void> => {
+  const reportMovedOn = async (entry: PendingReviewEntry, sameMoment: boolean): Promise<void> => {
     try {
       const now = await getAvailableTransitions(entry.id);
+      // The plan is read again too: the version judged may have been replaced.
+      if (selectedIdRef.current === entry.id) setSnapshotVersion((version) => version + 1);
       if (now.currentStatus === entry.reviewStatus) {
         if (selectedIdRef.current === entry.id) {
           setConfirming(null);
-          setMovedNotice({ id: entry.id, message: "This review changed while it was open here, so your decision was not recorded. It has been read again; look it over before deciding." });
+          setMovedNotice({ id: entry.id, message: sameMoment
+            ? "Another change reached this review at the same moment, so your decision was not recorded. The review itself has not moved; you can make it again."
+            : "This review changed while it was open here, so your decision was not recorded. It has been read again; look it over before deciding." });
           setContextVersion((version) => version + 1);
         }
         return;
@@ -443,6 +452,8 @@ export function ReviewsView({ reviewId = null, onReviewShown }: ReviewsViewProps
     setMovedNotice(null);
     setAnnouncement(null);
     const hasPlanner = entry.userId !== null;
+    // The version on screen: the API refuses the decision if a newer one was submitted.
+    const judged = snapshot.id === entry.id && snapshot.state.status === "ready" ? snapshot.state.snapshot.id : undefined;
     try {
       let next: ConfigurationReviewStatus;
       let outcome: string;
@@ -453,17 +464,17 @@ export function ReviewsView({ reviewId = null, onReviewShown }: ReviewsViewProps
           break;
         case "approved": {
           const demoEligible = context.id === entry.id && context.value?.demoEligible === true;
-          const result = demoEligible ? await approveLayout(entry.id, undefined, input.notifyTeam) : await approveLayout(entry.id);
+          const result = await approveLayout(entry.id, undefined, demoEligible ? input.notifyTeam : undefined, judged);
           next = result.reviewStatus;
           outcome = approvalOutcome(result.notificationPolicy, hasPlanner);
           break;
         }
         case "changes_requested":
-          next = await requestChanges(entry.id, input.note);
+          next = await requestChanges(entry.id, input.note, judged);
           outcome = hasPlanner ? "Changes asked for. The planner is being emailed your note." : "Changes asked for. There is no planner account to email.";
           break;
         case "rejected":
-          next = await rejectLayout(entry.id, input.note);
+          next = await rejectLayout(entry.id, input.note, judged);
           outcome = hasPlanner ? "Rejected. The planner is being emailed your note." : "Rejected. There is no planner account to email.";
           break;
         case "withdrawn":
@@ -480,7 +491,7 @@ export function ReviewsView({ reviewId = null, onReviewShown }: ReviewsViewProps
       }
     } catch (error: unknown) {
       if (reviewMovedOn(error)) {
-        await reportMovedOn(entry);
+        await reportMovedOn(entry, error instanceof ApiError && error.code === "RETRY");
       } else if (selectedIdRef.current === entry.id) {
         setFailure({ id: entry.id, message: FAILURE_WORDS[move] });
       } else {

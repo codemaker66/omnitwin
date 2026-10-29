@@ -52,6 +52,8 @@ function isReviewState(s: string): s is ConfigurationReviewState {
 //
 // Planner path:
 //   - submit own draft (draft → submitted)
+//   - submit again after changes_requested, rejected or their own
+//     withdraw (→ submitted), with the edits made since
 //   - re-open after changes_requested or rejected (→ draft)
 //   - withdraw their own submission (submitted/under_review/
 //     changes_requested → withdrawn)
@@ -90,6 +92,9 @@ const SUBMITTER_ROLES: readonly TransitionRole[] = ["client", "planner", ...VENU
 const TRANSITIONS: Record<string, readonly TransitionRole[]> = {
   // Planner submit path
   "draft→submitted": SUBMITTER_ROLES,
+  "changes_requested→submitted": SUBMITTER_ROLES,
+  "rejected→submitted": SUBMITTER_ROLES,
+  "withdrawn→submitted": SUBMITTER_ROLES,
   "changes_requested→draft": SUBMITTER_ROLES,
   "rejected→draft": SUBMITTER_ROLES,
 
