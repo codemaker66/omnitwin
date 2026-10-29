@@ -853,6 +853,8 @@ export async function registerDiaryLive(server: FastifyInstance, db: Database): 
               { ...commandActor, name: commandUser.name },
               commandVenueId,
               command,
+              undefined,
+              server.log,
             );
             send(execution.ack);
             if (execution.changed !== null) {
