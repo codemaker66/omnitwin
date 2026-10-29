@@ -18,6 +18,11 @@
 // whenever it already holds the tables asked for (17 Oct 2026: a 220-guest
 // banquet in the Grand Hall placed 8 tables; see placement-store).
 //
+// Each wall may keep its own band (a gangway along one wall, the planner's
+// spacing along another), and a caller may refuse arrangements by a rule of
+// its own (`accept`: every table within reach of a gangway): every candidate
+// arrangement, each line count included, is offered to it.
+//
 // Everything here works in METRES on a room-centred origin (the planner scene
 // centres the room at 0,0). Multiply X/Z by RENDER_SCALE to land in the scene.
 //
@@ -48,6 +53,15 @@ export interface BanquetTablePlacement {
  *  (along Z) each offset by half a step from the last. */
 export type BanquetPattern = "grid" | "staggered-rows" | "staggered-columns";
 
+/** The clear band kept between the outermost tables and each wall, metres:
+ *  the low and high X walls, and the low and high Z walls. */
+export interface WallClearances {
+  readonly xMin: number;
+  readonly xMax: number;
+  readonly zMin: number;
+  readonly zMax: number;
+}
+
 export interface BanquetLayoutOptions {
   /** Interior room width (X) and length (Z), metres. */
   readonly roomWidthM: number;
@@ -66,14 +80,19 @@ export interface BanquetLayoutOptions {
   /** Target clear walkway between neighbouring tables, metres. Default: the
    *  comfortable two-way aisle from CIRCULATION_AISLE. */
   readonly aisleM?: number;
-  /** Clear band kept between the outermost tables and the walls, metres. */
-  readonly wallClearanceM?: number;
+  /** Clear band kept between the outermost tables and the walls, metres: one
+   *  figure for every wall, or one per wall. */
+  readonly wallClearanceM?: number | WallClearances;
   /** Stop adding tables once planned seats reach this many guests. */
   readonly targetGuests?: number;
   /** Hard cap on table count regardless of room size / target. */
   readonly maxTables?: number;
   /** Regions no table may overlap (stage, dance floor, dome), metres room-centred. */
   readonly keepOuts?: readonly LayoutRect[];
+  /** Whether a table may stand at its spot, asked of each one the keep-outs leave (a rule judged by its pieces, such as the doors'). */
+  readonly admit?: (table: BanquetTablePlacement) => boolean;
+  /** A rule of the caller's every arrangement must pass (after keep-outs), or it is not used. */
+  readonly accept?: (tables: readonly BanquetTablePlacement[]) => boolean;
 }
 
 export interface BanquetLayoutPlan {
@@ -83,9 +102,11 @@ export interface BanquetLayoutPlan {
   /** Grid dimensions the room can hold (before target/keep-out trimming). */
   readonly cols: number;
   readonly rows: number;
-  /** The aisle and clearance actually applied (after defaulting), metres. */
+  /** The aisle and clearance actually applied (after defaulting), metres;
+   *  `wallClearanceM` is the narrowest of the walls' bands. */
   readonly aisleM: number;
   readonly wallClearanceM: number;
+  readonly wallClearances: WallClearances;
   /** Per-table grid cell footprint (table + one aisle), metres. */
   readonly cellWidthM: number;
   readonly cellDepthM: number;
@@ -111,6 +132,12 @@ export function rectsOverlap(a: LayoutRect, b: LayoutRect): boolean {
     Math.abs(a.cx - b.cx) * 2 < a.width + b.width &&
     Math.abs(a.cz - b.cz) * 2 < a.depth + b.depth
   );
+}
+
+function wallClearancesOf(clearance: number | WallClearances | undefined): WallClearances {
+  if (typeof clearance === "object") return clearance;
+  const band = clearance ?? DEFAULT_WALL_CLEARANCE_M;
+  return { xMin: band, xMax: band, zMin: band, zMax: band };
 }
 
 /**
@@ -145,18 +172,18 @@ function spreadCenters(count: number, spanM: number): number[] {
 interface Point { readonly along: number; readonly across: number }
 
 /**
- * The best staggered arrangement of circles whose centres must stay `d` apart,
+ * Every staggered arrangement of circles whose centres must stay `d` apart,
  * in a box of centre spans `spanAlong` × `spanAcross`: lines run along
  * `along`, stacked across `across`, each line offset half a step from the
  * last. Two shapes are tried for every line count: alternating long and short
  * lines (k, k−1, …), and equal lines shifted by half a step (k, k, …). Lines
  * are spread to fill the span; a wider step only widens every gap, so
- * spreading keeps the clearance. Returns the arrangement with the most tables.
+ * spreading keeps the clearance. In order of line count, alternating first.
  */
-function bestStagger(spanAlong: number, spanAcross: number, d: number): Point[] {
+function staggerArrangements(spanAlong: number, spanAcross: number, d: number): Point[][] {
   if (spanAlong < -EPS || spanAcross <= EPS || d <= 0) return [];
   const along = Math.max(0, spanAlong);
-  let best: Point[] = [];
+  const found: Point[][] = [];
   // Lines two apart are 2q from each other, so q ≥ d/2.
   const maxLines = Math.floor((2 * spanAcross) / d + EPS) + 1;
   for (let lines = 2; lines <= maxLines; lines += 1) {
@@ -176,7 +203,7 @@ function bestStagger(spanAlong: number, spanAcross: number, d: number): Point[] 
       acrossCentres.forEach((acrossM, index) => {
         for (const alongM of index % 2 === 0 ? longCentres : shortCentres) points.push({ along: alongM, across: acrossM });
       });
-      if (points.length > best.length) best = points;
+      found.push(points);
     }
 
     // Shifted: k on every line, alternate lines half a step along.
@@ -189,9 +216,16 @@ function bestStagger(spanAlong: number, spanAcross: number, d: number): Point[] 
       acrossCentres.forEach((acrossM, index) => {
         for (const alongM of index % 2 === 0 ? first : second) points.push({ along: alongM, across: acrossM });
       });
-      if (points.length > best.length) best = points;
+      found.push(points);
     }
   }
+  return found;
+}
+
+/** The candidate holding the most tables (the first, on a tie). */
+function most(candidates: readonly (readonly BanquetTablePlacement[])[]): readonly BanquetTablePlacement[] {
+  let best: readonly BanquetTablePlacement[] = [];
+  for (const candidate of candidates) if (candidate.length > best.length) best = candidate;
   return best;
 }
 
@@ -211,7 +245,8 @@ function centreOutCompare(a: BanquetTablePlacement, b: BanquetTablePlacement): n
  */
 export function planBanquetLayout(options: BanquetLayoutOptions): BanquetLayoutPlan {
   const aisleM = options.aisleM ?? CIRCULATION_AISLE.comfortableM;
-  const wallClearanceM = options.wallClearanceM ?? DEFAULT_WALL_CLEARANCE_M;
+  const walls = wallClearancesOf(options.wallClearanceM);
+  const wallClearanceM = Math.min(walls.xMin, walls.xMax, walls.zMin, walls.zMax);
   const seatsPerTable = Math.max(0, Math.floor(options.seatsPerTable));
   const radiusM = options.tableRadiusM !== undefined && options.tableRadiusM > 0 ? options.tableRadiusM : null;
 
@@ -219,8 +254,11 @@ export function planBanquetLayout(options: BanquetLayoutOptions): BanquetLayoutP
   const sizeX = radiusM === null ? options.tableWidthM : Math.max(options.tableWidthM, 2 * radiusM);
   const sizeZ = radiusM === null ? options.tableDepthM : Math.max(options.tableDepthM, 2 * radiusM);
 
-  const usableWidthM = Math.max(0, options.roomWidthM - 2 * wallClearanceM);
-  const usableDepthM = Math.max(0, options.roomLengthM - 2 * wallClearanceM);
+  const usableWidthM = Math.max(0, options.roomWidthM - walls.xMin - walls.xMax);
+  const usableDepthM = Math.max(0, options.roomLengthM - walls.zMin - walls.zMax);
+  // The usable floor's centre: off the room's when the walls keep different bands.
+  const offsetX = (walls.xMin - walls.xMax) / 2;
+  const offsetZ = (walls.zMin - walls.zMax) / 2;
 
   const cols = axisCount(usableWidthM, sizeX, aisleM);
   const rows = axisCount(usableDepthM, sizeZ, aisleM);
@@ -233,6 +271,7 @@ export function planBanquetLayout(options: BanquetLayoutOptions): BanquetLayoutP
     rows,
     aisleM,
     wallClearanceM,
+    wallClearances: walls,
     cellWidthM,
     cellDepthM,
     usableWidthM,
@@ -252,31 +291,49 @@ export function planBanquetLayout(options: BanquetLayoutOptions): BanquetLayoutP
   }
 
   const keepOuts = options.keepOuts ?? [];
+  const admit = options.admit;
   const clear = (t: BanquetTablePlacement): boolean => {
     const footprint: LayoutRect = { cx: t.xM, cz: t.zM, width: sizeX, depth: sizeZ };
-    return !keepOuts.some((k) => rectsOverlap(footprint, k));
+    return !keepOuts.some((k) => rectsOverlap(footprint, k)) && (admit === undefined || admit(t));
+  };
+  const accept = options.accept;
+  /** An arrangement as it would be placed: keep-outs cleared, or nothing if the caller refuses it. */
+  const usable = (tables: readonly BanquetTablePlacement[]): readonly BanquetTablePlacement[] => {
+    const kept = tables.filter(clear);
+    return accept === undefined || accept(kept) ? kept : [];
   };
 
-  const xs = axisCenters(cols, sizeX, aisleM);
-  const zs = axisCenters(rows, sizeZ, aisleM);
-  const grid: BanquetTablePlacement[] = [];
-  for (const zM of zs) for (const xM of xs) grid.push({ xM, zM, rotationY: 0 });
-
-  const gridTables = grid.filter(clear);
+  // The full grid first; with fewer rows or columns after it, for a caller's rule to choose from.
+  const gridOf = (colCount: number, rowCount: number): BanquetTablePlacement[] => {
+    const xs = axisCenters(colCount, sizeX, aisleM);
+    const zs = axisCenters(rowCount, sizeZ, aisleM);
+    const placed: BanquetTablePlacement[] = [];
+    for (const zM of zs) for (const xM of xs) placed.push({ xM: xM + offsetX, zM: zM + offsetZ, rotationY: 0 });
+    return placed;
+  };
+  const gridCandidates = [gridOf(cols, rows)];
+  if (accept !== undefined) {
+    for (let r = rows - 1; r >= 1; r -= 1) gridCandidates.push(gridOf(cols, r));
+    for (let c = cols - 1; c >= 1; c -= 1) gridCandidates.push(gridOf(c, rows));
+  }
   const arrangements: { readonly pattern: BanquetPattern; readonly tables: readonly BanquetTablePlacement[] }[] = [
-    { pattern: "grid", tables: gridTables },
+    { pattern: "grid", tables: most(gridCandidates.map(usable)) },
   ];
   if (radiusM !== null) {
     const d = 2 * radiusM + aisleM;
-    const spanX = options.roomWidthM - 2 * (wallClearanceM + radiusM);
-    const spanZ = options.roomLengthM - 2 * (wallClearanceM + radiusM);
+    const spanX = usableWidthM - 2 * radiusM;
+    const spanZ = usableDepthM - 2 * radiusM;
     arrangements.push({
       pattern: "staggered-rows",
-      tables: bestStagger(spanX, spanZ, d).map((p) => ({ xM: p.along, zM: p.across, rotationY: 0 })).filter(clear),
+      tables: most(staggerArrangements(spanX, spanZ, d).map((points) => usable(
+        points.map((p) => ({ xM: p.along + offsetX, zM: p.across + offsetZ, rotationY: 0 })),
+      ))),
     });
     arrangements.push({
       pattern: "staggered-columns",
-      tables: bestStagger(spanZ, spanX, d).map((p) => ({ xM: p.across, zM: p.along, rotationY: 0 })).filter(clear),
+      tables: most(staggerArrangements(spanZ, spanX, d).map((points) => usable(
+        points.map((p) => ({ xM: p.across + offsetX, zM: p.along + offsetZ, rotationY: 0 })),
+      ))),
     });
   }
 
@@ -290,11 +347,8 @@ export function planBanquetLayout(options: BanquetLayoutOptions): BanquetLayoutP
 
   // The straight grid when it already holds what is wanted; otherwise the
   // arrangement that holds the most (the grid first on a tie).
-  let chosen: { readonly pattern: BanquetPattern; readonly tables: readonly BanquetTablePlacement[] } = {
-    pattern: "grid",
-    tables: gridTables,
-  };
-  let capacityTables = gridTables.length;
+  let chosen = arrangements[0] ?? { pattern: "grid" as const, tables: [] };
+  let capacityTables = chosen.tables.length;
   for (const candidate of arrangements) {
     capacityTables = Math.max(capacityTables, candidate.tables.length);
     if (chosen.tables.length < wanted && candidate.tables.length > chosen.tables.length) chosen = candidate;

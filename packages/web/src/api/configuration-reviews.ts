@@ -152,9 +152,11 @@ const HeartbeatResponseSchema = z.object({
 // ---------------------------------------------------------------------------
 
 /**
- * Submit a configuration for review. Idempotent: if the layout is
- * identical to the latest snapshot, `created` returns false and the
- * existing snapshot is echoed back without a state transition.
+ * Submit a configuration for review. From a draft identical to the latest
+ * snapshot, `created` returns false and the existing snapshot is echoed
+ * back without a state transition. A layout the venue sent back, or its
+ * planner withdrew, always goes back to the venue: `created` says whether
+ * that made a new version.
  */
 export async function submitForReview(
   configId: string,
@@ -187,13 +189,17 @@ export async function startReview(configId: string): Promise<ConfigurationReview
   return res.reviewStatus;
 }
 
+/** A decision names the version it was judged on (`snapshotId`): the API
+ *  refuses it with 409 SNAPSHOT_CONFLICT once a newer one was submitted. */
 export async function approveLayout(
   configId: string,
   note?: string,
   notifyTeam?: boolean,
+  snapshotId?: string,
 ): Promise<{ notificationPolicy?: ReviewNotificationPolicy; reviewStatus: "approved"; snapshot: SnapshotEnvelope }> {
   const body = { ...(note !== undefined && note.trim().length > 0 ? { note: note.trim() } : {}),
-    ...(notifyTeam !== undefined ? { notifyTeam } : {}) };
+    ...(notifyTeam !== undefined ? { notifyTeam } : {}),
+    ...(snapshotId !== undefined ? { snapshotId } : {}) };
   const res = await api.post(
     `/configurations/${configId}/review/approve`,
     body,
@@ -206,6 +212,7 @@ export async function approveLayout(
 export async function rejectLayout(
   configId: string,
   note: string,
+  snapshotId?: string,
 ): Promise<ConfigurationReviewStatus> {
   const trimmed = note.trim();
   if (trimmed.length === 0) {
@@ -213,7 +220,7 @@ export async function rejectLayout(
   }
   const res = await api.post(
     `/configurations/${configId}/review/reject`,
-    { note: trimmed },
+    { note: trimmed, ...(snapshotId !== undefined ? { snapshotId } : {}) },
     undefined,
     GenericStatusResponseSchema,
   );
@@ -223,6 +230,7 @@ export async function rejectLayout(
 export async function requestChanges(
   configId: string,
   note: string,
+  snapshotId?: string,
 ): Promise<ConfigurationReviewStatus> {
   const trimmed = note.trim();
   if (trimmed.length === 0) {
@@ -230,7 +238,7 @@ export async function requestChanges(
   }
   const res = await api.post(
     `/configurations/${configId}/review/request-changes`,
-    { note: trimmed },
+    { note: trimmed, ...(snapshotId !== undefined ? { snapshotId } : {}) },
     undefined,
     GenericStatusResponseSchema,
   );
