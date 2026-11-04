@@ -95,6 +95,15 @@ export async function prepareWorkspaceInvitation(
   if (membership?.status === "suspended") {
     throw new OnboardingConflict("This workspace membership is suspended. Review the suspension before granting access.", "MEMBERSHIP_SUSPENDED");
   }
+  // An administrator's account keeps administration: a lower role chosen
+  // here was turned back into administrator and reported as saved. Say so
+  // instead, and change nothing.
+  if (user?.role === "admin" && draft.venueRole !== "admin") {
+    throw new OnboardingConflict(
+      "This person is a venue administrator, and Manage access cannot lower an administrator's access. Nothing has changed.",
+      "ADMIN_DOWNGRADE_UNSUPPORTED",
+    );
+  }
   const venueRole = user?.role === "admin" ? "admin" : draft.venueRole;
   const workspaceRole = membership?.role === "owner" ? "owner" : draft.workspaceRole;
   if (membership?.status === "active" && membership.venueRole === venueRole &&

@@ -1,11 +1,13 @@
 import { act, cleanup, fireEvent, render } from "@testing-library/react";
-import { BoxGeometry, DoubleSide, Group, Mesh, MeshBasicMaterial, PerspectiveCamera, PlaneGeometry, Raycaster, Scene } from "three";
+import { BoxGeometry, DoubleSide, Group, Mesh, MeshBasicMaterial, PerspectiveCamera, PlaneGeometry, Raycaster, Scene, Vector3 } from "three";
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import { SelectionSystem } from "../SelectionSystem.js";
 import { getCatalogueItemBySlug } from "../../lib/catalogue.js";
 import { createTableGroup } from "../../lib/table-group.js";
 import { PLANNER_INTERACTION_FLOOR_NAME, placementFloorPoint } from "../../lib/planner-interaction-floor.js";
 import { setPlannerFeaturesForTesting } from "../../lib/planner-features.js";
+import { PLANNER_CHROME_STORAGE_KEY } from "../../lib/planner-chrome-flag.js";
+import { useChairDialogStore } from "../../stores/chair-dialog-store.js";
 import { GHOST_RAISE_PX, LIFT_HOLD_MS, PLACE_HOLD_MS } from "../../lib/touch-arbiter.js";
 import { useCatalogueStore } from "../../stores/catalogue-store.js";
 import { useCockpitStore } from "../../stores/cockpit-store.js";
@@ -312,3 +314,28 @@ describe("the touch arbiter", () => {
     expect(placedPoseurs()).toHaveLength(0);
   });
 });
+
+describe("a double-click on a placed table (QoL B-01)", () => {
+  /** The client point over the round at x 4: where a double-click lands on it. */
+  function overTheRound(): { readonly clientX: number; readonly clientY: number } {
+    const at = new Vector3(4, 0.5, 0).project(camera);
+    return { clientX: ((at.x + 1) / 2) * 400, clientY: ((1 - at.y) / 2) * 400 };
+  }
+
+  it("selects the table in v2, which mounts no chair dialog, and opens the dialog in v1 as before", () => {
+    render(<SelectionSystem />);
+    try {
+      window.localStorage.setItem(PLANNER_CHROME_STORAGE_KEY, "v2");
+      act(() => { fireEvent.dblClick(canvas, { ...overTheRound(), button: 0 }); });
+      expect(useChairDialogStore.getState().pending).toBeNull();
+      expect(useSelectionStore.getState().selectedIds.has(tableId)).toBe(true);
+      window.localStorage.setItem(PLANNER_CHROME_STORAGE_KEY, "v1");
+      act(() => { fireEvent.dblClick(canvas, { ...overTheRound(), button: 0 }); });
+      expect(useChairDialogStore.getState().pending).toMatchObject({ tableShape: "round" });
+    } finally {
+      window.localStorage.removeItem(PLANNER_CHROME_STORAGE_KEY);
+      useChairDialogStore.getState().clearDialog();
+    }
+  });
+});
+

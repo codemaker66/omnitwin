@@ -19,6 +19,8 @@ import { PriceList } from "./PriceList.js";
 import type { PriceListEvent, PriceListOffer } from "./price-list-format.js";
 import { getProposalEvent } from "../../../api/proposal-templates.js";
 import { AIMessageDraft } from "./AIMessageDraft.js";
+import { DepositPanel } from "./DepositPanel.js";
+import { ContractPanel } from "./ContractPanel.js";
 import { TemplatePicker, focusIsFree } from "./TemplatePicker.js";
 import { TemplateSave } from "./TemplateSave.js";
 import { applyTemplate, hasWords, type AppliedTemplate, type ApplyMode, type TemplateEvent } from "./template-format.js";
@@ -200,10 +202,18 @@ export function ProposalPanel(props: ProposalPanelProps): ReactElement {
     formRef.current = form;
     memory?.remember(written);
   }, [memory]);
+  // The words of the latest version, open or closed: words it reads the same
+  // as (numbers as a version reads them, so "120.5" is £120.50) are not lost,
+  // so no copy of them is kept. A late save's answer can land between a
+  // composer appearing and it remembering its words, so memory may still hold
+  // words a version now holds.
+  const latestPayload = props.latest.value?.payload ?? null;
   useLayoutEffect(() => {
     // Until the version to start from is read, nothing has yet moved on.
     if (start === "reading") return;
     const why = putAsideWords(proposal.status, composable, typeof start === "number" ? start : proposal.currentVersion);
+    const lost = (draft: ComposerDraft | null): ComposerDraft | null =>
+      draft !== null && latestPayload !== null && draftChanges(latestPayload, draft).length === 0 ? null : draft;
     let kept = false;
     const form = formRef.current;
     if (form !== null && form.start !== start) {
@@ -211,15 +221,15 @@ export function ProposalPanel(props: ProposalPanelProps): ReactElement {
       const written = memory?.recall() ?? null;
       const own = written !== null && written.composer === form.composer ? written : null;
       if (own !== null) memory?.remember(null);
-      kept = onComposerGone(form.composer, own?.draft ?? null, why);
+      kept = onComposerGone(form.composer, lost(own?.draft ?? null), why);
     }
     const left = memory?.recall() ?? null;
     if (left !== null && left.start !== start) {
       memory?.remember(null);
-      kept = onComposerGone(left.composer, left.draft, why) || kept;
+      kept = onComposerGone(left.composer, lost(left.draft), why) || kept;
     }
     if (kept) focusKeptRef.current = true;
-  }, [start, composable, proposal.status, proposal.currentVersion, memory, onComposerGone]);
+  }, [start, latestPayload, composable, proposal.status, proposal.currentVersion, memory, onComposerGone]);
   // Focus that was in the composer is lost with it: it goes to the words
   // kept, or else to what the next composer starts from, or, with no
   // composer, to the proposal's name. Never from wherever it has gone since.
@@ -303,6 +313,9 @@ export function ProposalPanel(props: ProposalPanelProps): ReactElement {
         )}
 
         <NextStep {...props} templateWork={templateWork} />
+        {/* Once accepted, the contract and the deposit (Plan 19 L5). */}
+        {proposal.status === "accepted" && <ContractPanel key={`contract-${proposal.id}`} proposal={proposal} />}
+        {proposal.status === "accepted" && <DepositPanel key={proposal.id} proposal={proposal} />}
         {start === "closed" ? <KeptDraft {...props} holder={null} /> : <Composer {...props} start={start} report={report} onGoing={onFormGoing} onTemplateWork={setTemplateWork} />}
         <LatestQuote {...props} />
         <Conversation {...props} />

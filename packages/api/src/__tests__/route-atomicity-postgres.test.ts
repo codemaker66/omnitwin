@@ -59,6 +59,9 @@ describe.skipIf(testUrl === undefined)("route atomicity on isolated PostgreSQL",
         if (column.name === "id") defaultSql = " primary key default gen_random_uuid()";
         else if (column.name === "created_at" || column.name === "updated_at") defaultSql = " default now()";
         else if (column.name === "revision") defaultSql = " default 1";
+        // As the real column: a layout is a draft until a review begins, and
+        // the public writes read it to hold a plan in review.
+        else if (column.name === "review_status") defaultSql = " not null default 'draft'";
         return `"${column.name}" ${column.getSQLType()}${defaultSql}`;
       });
       await pool.query(`CREATE TABLE "${config.name}" (${columns.join(", ")})`);

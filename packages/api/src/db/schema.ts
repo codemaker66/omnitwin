@@ -2744,6 +2744,110 @@ export const packageSelections = pgTable("package_selections", {
 ]);
 
 // ---------------------------------------------------------------------------
+// 23c-ii. Deposits and the contract's signature (Plan 19 L5; migration 0104).
+//
+// A deposit request is figured from the accepted proposal version, named by
+// number and content hash; each Stripe Checkout Session opened for it is a
+// deposit_payments row holding the facts Stripe reported, from which its
+// state is derived (@omnitwin/types deposits.ts). `livemode` is CHECKed false:
+// this lane takes no real money. Contract versions and signatures are
+// immutable (a trigger refuses UPDATE, DELETE and TRUNCATE); actors in them
+// are ids without keys and labels, so no account change rewrites them. The
+// CHECK constraints live in the migration.
+// ---------------------------------------------------------------------------
+
+export const proposalDepositRequests = pgTable("proposal_deposit_requests", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  venueId: uuid("venue_id").notNull().references(() => venues.id),
+  proposalId: uuid("proposal_id").notNull(),
+  eventId: uuid("event_id"),
+  proposalVersion: integer("proposal_version").notNull(),
+  proposalVersionHash: varchar("proposal_version_hash", { length: 64 }).notNull(),
+  basis: varchar("basis", { length: 10 }).$type<"amount" | "percent">().notNull(),
+  percentBasisPoints: integer("percent_basis_points"),
+  quoteTotalMinor: integer("quote_total_minor").notNull(),
+  amountMinor: integer("amount_minor").notNull(),
+  currency: varchar("currency", { length: 3 }).notNull(),
+  requestedBy: uuid("requested_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+  cancelledBy: uuid("cancelled_by").references(() => users.id, { onDelete: "set null" }),
+}, (table) => [
+  foreignKey({ columns: [table.proposalId, table.venueId], foreignColumns: [proposals.id, proposals.venueId], name: "proposal_deposit_requests_proposal_venue_fk" }),
+  foreignKey({ columns: [table.eventId, table.venueId], foreignColumns: [events.id, events.venueId], name: "proposal_deposit_requests_event_venue_fk" }),
+  unique("proposal_deposit_requests_id_venue_unique").on(table.id, table.venueId),
+  uniqueIndex("proposal_deposit_requests_one_in_force").on(table.proposalId).where(sql`${table.cancelledAt} IS NULL`),
+  index("proposal_deposit_requests_proposal_idx").on(table.proposalId, table.createdAt),
+]);
+
+export const depositPayments = pgTable("deposit_payments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  venueId: uuid("venue_id").notNull(),
+  depositRequestId: uuid("deposit_request_id").notNull(),
+  stripeCheckoutSessionId: text("stripe_checkout_session_id").notNull(),
+  stripePaymentIntentId: text("stripe_payment_intent_id"),
+  checkoutUrl: text("checkout_url").notNull(),
+  sessionExpiresAt: timestamp("session_expires_at", { withTimezone: true }).notNull(),
+  livemode: boolean("livemode").notNull().default(false),
+  amountMinor: integer("amount_minor").notNull(),
+  currency: varchar("currency", { length: 3 }).notNull(),
+  amountReceivedMinor: integer("amount_received_minor"),
+  currencyReceived: varchar("currency_received", { length: 3 }),
+  amountRefundedMinor: integer("amount_refunded_minor").notNull().default(0),
+  paidAt: timestamp("paid_at", { withTimezone: true }),
+  processingAt: timestamp("processing_at", { withTimezone: true }),
+  declinedAt: timestamp("declined_at", { withTimezone: true }),
+  failureMessage: varchar("failure_message", { length: 500 }),
+  failedAt: timestamp("failed_at", { withTimezone: true }),
+  expiredAt: timestamp("expired_at", { withTimezone: true }),
+  lastEventAt: timestamp("last_event_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({ columns: [table.depositRequestId, table.venueId], foreignColumns: [proposalDepositRequests.id, proposalDepositRequests.venueId], name: "deposit_payments_request_venue_fk" }),
+  unique("deposit_payments_session_unique").on(table.stripeCheckoutSessionId),
+  unique("deposit_payments_payment_intent_unique").on(table.stripePaymentIntentId),
+  index("deposit_payments_request_idx").on(table.depositRequestId, table.createdAt),
+]);
+
+export const proposalContractVersions = pgTable("proposal_contract_versions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  venueId: uuid("venue_id").notNull().references(() => venues.id),
+  proposalId: uuid("proposal_id").notNull(),
+  version: integer("version").notNull(),
+  proposalVersion: integer("proposal_version").notNull(),
+  proposalVersionHash: varchar("proposal_version_hash", { length: 64 }).notNull(),
+  document: jsonb("document").$type<unknown>().notNull(),
+  documentHash: varchar("document_hash", { length: 64 }).notNull(),
+  createdBy: uuid("created_by"),
+  createdByLabel: varchar("created_by_label", { length: 255 }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({ columns: [table.proposalId, table.venueId], foreignColumns: [proposals.id, proposals.venueId], name: "proposal_contract_versions_proposal_venue_fk" }),
+  unique("proposal_contract_versions_proposal_version_unique").on(table.proposalId, table.version),
+  unique("proposal_contract_versions_id_hash_unique").on(table.id, table.documentHash),
+  unique("proposal_contract_versions_id_venue_unique").on(table.id, table.venueId),
+]);
+
+export const proposalContractSignatures = pgTable("proposal_contract_signatures", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  venueId: uuid("venue_id").notNull(),
+  contractVersionId: uuid("contract_version_id").notNull(),
+  documentHash: varchar("document_hash", { length: 64 }).notNull(),
+  signerName: varchar("signer_name", { length: 200 }).notNull(),
+  signerEmail: varchar("signer_email", { length: 255 }).notNull(),
+  consentStatement: text("consent_statement").notNull(),
+  userAgent: varchar("user_agent", { length: 512 }),
+  shareTokenId: uuid("share_token_id"),
+  shareTokenPrefix: varchar("share_token_prefix", { length: 16 }),
+  signedAt: timestamp("signed_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({ columns: [table.contractVersionId, table.documentHash], foreignColumns: [proposalContractVersions.id, proposalContractVersions.documentHash], name: "proposal_contract_signatures_version_hash_fk" }),
+  foreignKey({ columns: [table.contractVersionId, table.venueId], foreignColumns: [proposalContractVersions.id, proposalContractVersions.venueId], name: "proposal_contract_signatures_version_venue_fk" }),
+  unique("proposal_contract_signatures_one_per_version").on(table.contractVersionId),
+]);
+
+// ---------------------------------------------------------------------------
 // 23d. event-plan lifecycle — cross-role change feed and notifications.
 //
 // These rows connect client proposal activity, planner edits, ops handoff
@@ -6162,7 +6266,10 @@ export const foundryVerifiedCheckpoints = pgTable("foundry_verified_checkpoints"
 // ---------------------------------------------------------------------------
 // Action log — G4 Slice 3 (03 §2). The append-only audit trail behind the
 // planner's Action envelope (migration 0059). Append-only by code contract:
-// no update/delete surface exists anywhere. `id` is the CLIENT action uuid
+// no update/delete surface exists anywhere, with one exception that 0059's
+// comment predates: the allergy-note retention pass blanks guests' allergy
+// notes in payload and inverse (services/dietary-retention.ts,
+// people-privacy-3), leaving the row. `id` is the CLIENT action uuid
 // (no default) so ON CONFLICT (id) DO NOTHING makes batch retries idempotent;
 // `ordinal` is the server-assigned read order (client clocks never order the
 // trail). `recorded_ts` is the operator's clock, `received_at` the server's —

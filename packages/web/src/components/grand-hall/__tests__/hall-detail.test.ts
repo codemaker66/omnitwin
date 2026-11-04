@@ -382,6 +382,32 @@ describe("the detail layer", () => {
     expect(h.layer.fadeOf(ahead)).toBeCloseTo(6 / 13, 6);
   });
 
+  it("lets every tile and the slots' array go when the device runs out of memory, and fetches no more", async () => {
+    const h = harness(16, full);
+    frameAt(h, BOARDS);
+    await settle();
+    for (let i = 0; i < 4; i++) frameAt(h, BOARDS);
+    expect(resident(h.layer).length).toBeGreaterThan(0);
+    let changed = 0;
+    h.layer.onChange = () => { changed += 1; };
+
+    h.layer.releaseAll();
+    const index = DETAIL_INDEX_WIDTH * DETAIL_INDEX_HEIGHT * 4;
+    expect(h.layer.allocated).toBe(false);
+    expect(h.layer.stats().gpuBytes).toBeLessThan(index + 16);
+    expect(resident(h.layer)).toEqual([]);
+    expect(Array.from(h.layer.index.image.data ?? []).some((value) => value !== 0), "no tile is sampled").toBe(false);
+    expect(h.layer.enabled).toBe(false);
+    expect(changed, "a frame is asked for to show the walls without it").toBe(1);
+
+    const fetched = h.fetched.length;
+    frameAt(h, BOARDS, { advance: 5000 });
+    await settle();
+    frameAt(h, BOARDS);
+    expect(h.fetched.length).toBe(fetched);
+    expect(h.layer.allocated).toBe(false);
+  });
+
   it("writes slot + 1 and the fade into the index texture", async () => {
     const h = harness(64, full);
     frameAt(h, BOARDS);

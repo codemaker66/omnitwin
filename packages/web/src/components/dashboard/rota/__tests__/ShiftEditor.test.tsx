@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RotaShift } from "@omnitwin/types";
 import { ApiError } from "../../../../api/client.js";
 import { ShiftEditor, type PanelMessage } from "../ShiftEditor.js";
+import type { ShiftDraft } from "../rota-format.js";
 import { CALLUM, MORAG, MORAG_SATURDAY, VENUE, record, rotaWeek, shift } from "./rota-fixtures.js";
 
 // ---------------------------------------------------------------------------
@@ -44,6 +45,37 @@ function published(fields: Partial<RotaShift> = {}): RotaShift {
 beforeEach(() => { vi.clearAllMocks(); });
 afterEach(() => { cleanup(); });
 
+/** A new shift's editor on the venue's clock (Europe/London), drafted as given. */
+function renderNew(draft: Partial<ShiftDraft> & Pick<ShiftDraft, "date" | "start" | "end">): HTMLElement {
+  const newDraft: ShiftDraft = { staffMemberId: null, role: "setup", breakMinutes: 0, functionId: null, eventId: null, spaceId: null, note: "", ...draft };
+  render(
+    <ShiftEditor venueId={VENUE} week={rotaWeek()} functions={null} shift={null} newDraft={newDraft}
+      canManage message={null} onSaved={onSaved} onRemoved={onRemoved} onClose={onClose} />,
+  );
+  return screen.getByRole("region", { name: /shift/iu });
+}
+
+describe("ShiftEditor on the nights the clocks change (dash-ops-3)", () => {
+  it("counts the hour the clocks go back: 20:00 to 01:30 on 24 October is six and a half hours, with a break", () => {
+    const panel = renderNew({ date: "2026-10-24", start: "20:00", end: "01:30" });
+    expect(within(panel).getByText("6 hours 30 minutes, ending the next day.")).toBeDefined();
+    expect(within(panel).getByText("A shift this long needs a break of 20 minutes.")).toBeDefined();
+    fireEvent.change(within(panel).getByLabelText("Ends"), { target: { value: "02:00" } });
+    expect(within(panel).getByText("7 hours, ending the next day.")).toBeDefined();
+  });
+
+  it("counts a shift that starts after midnight on the 25th by the clock as it runs", () => {
+    const panel = renderNew({ date: "2026-10-25", start: "00:00", end: "06:00" });
+    expect(within(panel).getByText("7 hours.")).toBeDefined();
+  });
+
+  it("drops the hour the clocks go forward: 20:00 to 03:00 on 27 March 2027 is six hours, and needs no break", () => {
+    const panel = renderNew({ date: "2027-03-27", start: "20:00", end: "03:00" });
+    expect(within(panel).getByText("6 hours, ending the next day.")).toBeDefined();
+    expect(within(panel).queryByText(/needs a break/u)).toBeNull();
+  });
+});
+
 describe("ShiftEditor", () => {
   it("puts the shift's warnings first, and keeps one with the reason given", async () => {
     const kept = { ...MORAG_SATURDAY, revision: 2 };
@@ -64,6 +96,21 @@ describe("ShiftEditor", () => {
     fireEvent.click(keepButton);
     await waitFor(() => { expect(onSaved).toHaveBeenCalledWith(kept, { tone: "settled", text: "Kept, with your reason." }); });
     expect(mocks.keep).toHaveBeenCalledWith(VENUE, MORAG_SATURDAY, "short_rest", "Morag asked to finish Friday's bar; Monday off instead");
+  });
+
+  it("heads a published shift's missing check as what is needed before it is worked, with nothing to keep", () => {
+    const missing = {
+      code: "right_to_work_missing" as const, severity: "block" as const, kept: null, short: "No right-to-work check",
+      message: "Morag Sinclair has no right-to-work check recorded. This shift is already published: record the check before Morag Sinclair works it, or give it to someone else.",
+    };
+    const panel = renderEditor(published({ issues: [missing] }));
+    const issues = within(panel).getByRole("region", { name: "Warnings" });
+    expect(within(issues).getByRole("heading", { name: "Before this shift is worked" })).toBeDefined();
+    expect(within(issues).getByText(missing.message)).toBeDefined();
+    expect(within(issues).queryByRole("button", { name: "Keep as it is…" })).toBeNull();
+    cleanup();
+    const draftPanel = renderEditor(shift({ id: MORAG_SATURDAY.id, staffMemberId: CALLUM, issues: [{ ...missing, message: "Callum Reid has no right-to-work check recorded, so this shift cannot be published until one is." }] }));
+    expect(within(draftPanel).getByRole("heading", { name: "Before this can be published" })).toBeDefined();
   });
 
   it("puts focus back on Keep as it is when the reason is put away", () => {

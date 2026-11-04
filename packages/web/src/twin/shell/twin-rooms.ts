@@ -1,11 +1,5 @@
-import {
-  TRADES_HALL_ROOM_CAPACITIES,
-  TRADES_HALL_ROOM_DIMENSIONS,
-  VENUE_TRUTH_PROVENANCE,
-  type PublishedRoomSlug,
-  type RoomCapacity,
-  type RoomDimensions,
-} from "@omnitwin/types";
+import type { PublishedRoomSlug, RoomCapacity, RoomDimensions } from "@omnitwin/types";
+import { TRADES_HALL_ROOM_CAPACITIES, TRADES_HALL_ROOM_DIMENSIONS, VENUE_TRUTH_PROVENANCE } from "@omnitwin/types/trades-hall-venue-truth";
 
 // -----------------------------------------------------------------------------
 // twin-rooms — the room-identity oracle for the walkthrough HUD.

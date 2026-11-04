@@ -6,7 +6,7 @@ import type {
   Timing,
   SetupPhase,
 } from "@omnitwin/types";
-import { hasInstructionContent } from "@omnitwin/types";
+import { GangwayReviewSchema, hasInstructionContent, type GangwayReview } from "@omnitwin/types";
 import {
   configurations, placedObjects, assetDefinitions, assetAccessories,
   spaces, venues, configurationSheetSnapshots, users,
@@ -228,6 +228,7 @@ export async function assembleSheetDataV2(
     venueId: config.venueId,
   }, requestedEventId);
   const instructions = resolveInstructions(config.metadata);
+  const gangwayReview = resolveGangwayReview(config.metadata);
 
   const livePayload: HallkeeperSheetV2 = {
     config: {
@@ -250,6 +251,7 @@ export async function assembleSheetDataV2(
     },
     timing,
     instructions,
+    gangwayReview,
     phases: manifest.phases,
     totals: manifest.totals,
     diagramUrl: config.thumbnailUrl,
@@ -370,6 +372,17 @@ function resolveInstructions(raw: unknown): EventInstructions | null {
   const instructions = metadata?.instructions;
   if (instructions === undefined || !hasInstructionContent(instructions)) return null;
   return instructions;
+}
+
+/**
+ * The layout's gangway review (configurations.metadata.gangwayReview, as the
+ * planner writes it), for the sheet and its frozen snapshots: null when the
+ * layout has none, no pinch in it, or a value that does not read as one.
+ */
+export function resolveGangwayReview(raw: unknown): GangwayReview | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const parsed = GangwayReviewSchema.safeParse((raw as Record<string, unknown>)["gangwayReview"]);
+  return parsed.success && parsed.data.items.length > 0 ? parsed.data : null;
 }
 
 /** Build a legacy stamp when its approving account can still be resolved. */

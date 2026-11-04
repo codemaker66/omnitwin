@@ -8,6 +8,8 @@ const mocks = vi.hoisted(() => ({
   flushAutoSave: vi.fn<() => Promise<boolean>>(),
   captureOrthographic: vi.fn<() => Promise<string | null>>(),
   updatePublicThumbnail: vi.fn<() => Promise<void>>(),
+  getConfig: vi.fn<() => Promise<{ readonly metadata: unknown }>>(),
+  patchConfigMetadata: vi.fn<() => Promise<unknown>>(),
   getAvailableTransitions: vi.fn(),
   submitForReview: vi.fn(),
   withdrawReview: vi.fn(),
@@ -23,6 +25,8 @@ vi.mock("../lib/ortho-capture.js", () => ({
 
 vi.mock("../api/configurations.js", () => ({
   updatePublicThumbnail: mocks.updatePublicThumbnail,
+  getConfig: mocks.getConfig,
+  patchConfigMetadata: mocks.patchConfigMetadata,
 }));
 
 vi.mock("../api/configuration-reviews.js", () => ({
@@ -111,6 +115,8 @@ beforeEach(() => {
     isPublicPreview: false,
   });
   mocks.flushAutoSave.mockResolvedValue(true);
+  mocks.getConfig.mockResolvedValue({ metadata: null });
+  mocks.patchConfigMetadata.mockResolvedValue({ id: CONFIG_ID });
   mocks.captureOrthographic.mockResolvedValue("data:image/png;base64,preview");
   mocks.updatePublicThumbnail.mockResolvedValue();
   mocks.getAvailableTransitions.mockResolvedValue({
@@ -195,8 +201,8 @@ describe("timeline preview action isolation", () => {
     expect(screen.getByRole("button", { name: "Review saved plan: Withdrawn" })).toBeTruthy();
     expect(screen.queryByText(/notifications were suppressed/u)).toBeNull();
     panel.unmount();
-    // The actual withdrawal route closes the review. A later draft is loaded
-    // separately; do not invent a withdrawn-to-draft API transition here.
+    // A later mount reads the layout's state from the server again (a draft
+    // here); a withdrawn one is sent again from where it is (the next test).
     mocks.submitForReview.mockResolvedValueOnce({ reviewStatus: "submitted", notificationPolicy: "team_requested" });
     render(<SubmitForReviewPanel />);
     fireEvent.click(await screen.findByRole("button", { name: /^Review saved plan:/u }));
@@ -204,6 +210,29 @@ describe("timeline preview action isolation", () => {
     await screen.findByRole("button", { name: "Withdraw" });
     expect(mocks.submitForReview).toHaveBeenLastCalledWith(CONFIG_ID, undefined, true);
     expect(screen.queryByText(/notifications were suppressed/u)).toBeNull();
+  });
+
+  it("offers a withdrawn layout to the venue again, and sends it", async () => {
+    mocks.getAvailableTransitions.mockResolvedValue({ currentStatus: "submitted", availableTransitions: ["withdrawn"] });
+    render(<SubmitForReviewPanel />);
+    fireEvent.click(await screen.findByRole("button", { name: /^Review saved plan:/u }));
+    fireEvent.click(screen.getByRole("button", { name: "Withdraw" }));
+    expect(await screen.findByRole("button", { name: "Review saved plan: Withdrawn" })).toBeTruthy();
+    // Withdrawn, the layout is the planner's to edit and to send again.
+    expect(useEditorStore.getState().reviewStatus).toBe("withdrawn");
+    expect(screen.queryByRole("button", { name: "Withdraw" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Submit for Approval" }));
+    expect(await screen.findByRole("button", { name: "Review saved plan: Awaiting Review" })).toBeTruthy();
+    expect(mocks.submitForReview).toHaveBeenCalledTimes(1);
+    expect(mocks.submitForReview).toHaveBeenCalledWith(CONFIG_ID);
+  });
+
+  it.each(["changes_requested", "rejected", "withdrawn"] as const)("offers Submit for Approval on a layout opened %s", async (currentStatus) => {
+    mocks.getAvailableTransitions.mockResolvedValue({ currentStatus, availableTransitions: ["submitted"] });
+    render(<SubmitForReviewPanel />);
+    fireEvent.click(await screen.findByRole("button", { name: /^Review saved plan:/u }));
+    expect(screen.getByRole("button", { name: "Submit for Approval" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Withdraw" })).toBeNull();
   });
 
   it("does not apply an older withdrawal after navigating A to B to A", async () => {
@@ -227,6 +256,12 @@ describe("timeline preview action isolation", () => {
     expect(screen.getByRole("button", { name: "Submit for Approval" })).toHaveProperty("disabled", false);
     expect(screen.queryByRole("alert")).toBeNull();
     expect(screen.queryByRole("button", { name: "Review saved plan: Withdrawn" })).toBeNull();
+  });
+
+  it("does not submit a layout whose gangway review could not be saved with it", async () => {
+    mocks.getConfig.mockRejectedValueOnce(new Error("network down"));
+    await expect(submitConfigurationForReview(CONFIG_ID, false)).rejects.toThrow(/gangway review failed/u);
+    expect(mocks.submitForReview).not.toHaveBeenCalled();
   });
 
   it("does not submit into a replacement editing session after saving", async () => {

@@ -1,5 +1,5 @@
 import {
-  Component, useCallback, useEffect, useRef, useState,
+  Component, useCallback, useEffect, useLayoutEffect, useRef, useState,
   type ReactElement, type ReactNode,
 } from "react";
 import { Canvas, useFrame, type CanvasProps, type RootState } from "@react-three/fiber";
@@ -11,10 +11,11 @@ import { reportFailure } from "../../observability/failure-reports.js";
 import { installNativeMaterialClipping } from "../../lib/native-material-clipping.js";
 import {
   applyNativeRendererSettings, detachNativeWebGLBackend, isNativeWebGLBackend, readNativeRendererSettings,
-  registerNativeSceneRenderer, releaseLostWebGLRenderer, replaceStoreRenderer, withNativeRenderScope,
+  registerNativeSceneRenderer, releaseLostWebGLRenderer, replaceStoreRenderer, withNativeComposedFrame, withNativeRenderScope,
   type NativeRendererSettings,
 } from "../../lib/native-renderer.js";
 import { createNativeFramePacer, type NativeFramePacer } from "../../lib/native-frame-pacer.js";
+import { isGpuOutOfMemory, reportGpuMemoryPressure } from "../../lib/gpu-memory-pressure.js";
 import { noteMainDraw } from "../../lib/main-draw-clock.js";
 import { nativeFrameComposer } from "../../lib/native-frame-composer.js";
 import { createNativeGpuWorkTicket } from "../../lib/native-gpu-completion.js";
@@ -32,6 +33,7 @@ import {
 } from "../../lib/native-renderer-recovery.js";
 import { readGraphicsResetDrill, startGraphicsResetDrill } from "../../lib/graphics-reset-drill.js";
 import { createNativeGpuErrorWatch, type NativeGpuErrorWatch } from "../../lib/native-gpu-error-watch.js";
+import { clearNativePrecompiles, nativePrecompilePending, runNativePrecompiles, subscribeNativePrecompile } from "../../lib/native-precompile.js";
 export { isNativeRenderer } from "../../lib/native-renderer.js";
 
 export interface NativeCanvasOptions {
@@ -431,6 +433,10 @@ export function NativeCanvas({
     const watch = createNativeGpuErrorWatch({
       onBroken: breakOnGpuErrors,
       redraw: () => { root.current?.invalidate(); },
+      // A view holding its frames for a precompile draws nothing, so nothing
+      // can get through: the grace waits, as for a hidden page.
+      isHidden: () => document.visibilityState === "hidden"
+        || (renderer.current !== null && nativePrecompilePending(renderer.current)),
     });
     gpuErrors.current = watch;
     return () => {
@@ -597,6 +603,9 @@ export function NativeCanvas({
         return;
       }
       const message = describeGpuError(event);
+      // A device out of memory frees some at once (a quality rung, the hall's
+      // wall detail: lib/gpu-memory-pressure.ts) rather than wait to be judged.
+      if (isGpuOutOfMemory(event)) reportGpuMemoryPressure(native);
       if (gpuErrors.current?.error(message) === true) {
         reportFailure("gpu-error", { surface: surfaceRef.current, backend: rendererBackend(native), detail: message });
         // eslint-disable-next-line no-console
@@ -817,9 +826,10 @@ export function NativeCanvas({
     owner.pacer.request(() => {
       const startedAt = performance.now();
       // A registered pipeline draws the whole frame (its own scene passes and
-      // the final output) through the same render wrapper.
+      // the final output) through the same render wrapper; its scene pass is
+      // this frame's main draw of the scene (withNativeComposedFrame).
       const composer = nativeFrameComposer(native);
-      if (composer !== null) composer();
+      if (composer !== null) withNativeComposedFrame(native, state.scene, state.camera, composer);
       else native.render(state.scene, state.camera);
       // The render wrapper reports main-frame errors through fail() and returns.
       // Never fence that failed draw or a renderer replaced during a callback.
@@ -876,6 +886,58 @@ export function NativeCanvas({
   }, [status]);
 
   const recovering = recoveryPhase.kind !== "running" && recoveryPhase.kind !== "failed";
+
+  // Pipelines compiled ahead of their first draw (lib/native-precompile.ts):
+  // the frame loop holds while they build, as each job sets the renderer's
+  // target and MRT for its whole run. The scene queues its jobs from effects
+  // in R3F's own root, whose commit does not wait for this one: the hold is
+  // set on R3F's live store as the queue fills, and the jobs start at once.
+  // The frame loop below reads the queue too, so no render between undoes it.
+  const [, setPrecompileTurn] = useState(0);
+  useLayoutEffect(() => {
+    const native = renderer.current;
+    const state = root.current;
+    if (status !== "ready" || native === null || state === null) return undefined;
+    let held = false;
+    const update = (): void => {
+      const pending = nativePrecompilePending(native);
+      if (pending && !held) {
+        held = true;
+        const live = state.get();
+        live.setFrameloop("never");
+        // A frame owed from before the hold would still draw under R3F 8's
+        // "never" (it renders while frames are owed): none is owed now.
+        live.internal.frames = 0;
+        void runNativePrecompiles(native, {
+          onTimeout: () => {
+            // eslint-disable-next-line no-console
+            console.warn("VenViewer: compiling the view's pipelines ahead took too long; it draws on and compiles as it goes.");
+            reportFailure("precompile-timeout", { surface: surfaceRef.current, backend: rendererBackend(native) });
+          },
+          // What the aborted job started is built now; a still view draws to show it.
+          onLateSettle: () => { state.get().invalidate(); },
+        });
+      } else if (!pending) {
+        held = false;
+      }
+      // Re-render: the Canvas takes its frame loop back once the queue is empty.
+      if (mounted.current) setPrecompileTurn((turn) => turn + 1);
+    };
+    update();
+    const stop = subscribeNativePrecompile(native, update);
+    return () => {
+      stop();
+      clearNativePrecompiles(native);
+    };
+  }, [status, attempt, recovering]);
+  const precompiling = renderer.current !== null && nativePrecompilePending(renderer.current);
+  const wasPrecompiling = useRef(false);
+  useLayoutEffect(() => {
+    // The Canvas below has set its frame loop by now (a child's layout effect
+    // runs first): once a hold ends, draw what its jobs prepared.
+    if (wasPrecompiling.current && !precompiling) root.current?.get().invalidate();
+    wasPrecompiling.current = precompiling;
+  }, [precompiling]);
   const copy = SURFACE_COPY[surface];
   const continueIn2d = copy.offers2d ? plannerWork?.continueIn2d ?? null : null;
   // A view that never drew has no scene ground to stand in for.
@@ -892,7 +954,7 @@ export function NativeCanvas({
             {...props}
             gl={createRenderer}
             onCreated={startRenderer}
-            frameloop={status === "ready" && !recovering ? frameloop : "never"}
+            frameloop={status === "ready" && !recovering && !precompiling ? frameloop : "never"}
             style={{ width: "100%", height: "100%" }}
           >
             {status === "ready" ? <>{children}<NativeAutomaticFrames renderFrame={renderAutomaticFrame} /></> : null}

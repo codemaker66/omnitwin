@@ -10,6 +10,8 @@ import { canReadInternalEventData } from "../../../lib/event-access.js";
 import { floorCategoryLabel, floorNames, floorSummaryLine, inFloorNameOrder, withFloorNames } from "../../../lib/floor-names.js";
 import { gaussianSplatsAvailable } from "../../../lib/splat-access.js";
 import { CAPTURED_LAYER_FALLBACK_STATUS } from "../../../lib/runtime-package-resolution.js";
+import { currentSearch, deviceDayBundleForRoom } from "../../../data/device-day-splat-bundles.js";
+import { useEditorStore } from "../../../stores/editor-store.js";
 import { getGroupMemberIds, type PlacedItem } from "../../../lib/placement.js";
 import { dispatchPlannerToolbarCommand } from "../../../lib/planner-toolbar-events.js";
 import { referenceEntryMatches, referenceSceneEntries, referenceSceneSummary, type ReferenceSceneEntry } from "../../../lib/reference-scene-model.js";
@@ -60,9 +62,10 @@ function outlinerSignature(items: readonly PlacedItem[]): readonly (string | nul
   return items.flatMap((item) => [item.id, item.catalogueItemId, item.label ?? null, item.groupId]);
 }
 
-/** What the capture row says, and to whom: staff only (spec 4.3, F-46). */
-function captureNote(runtime: string): string {
-  return gaussianSplatsAvailable() ? runtime : "Photographed room · coming soon";
+/** What the capture row says, and to whom: staff only (spec 4.3, F-46). A
+ * device-day timing cut is drawn past the hold, so its own label shows. */
+function captureNote(runtime: string, deviceDayCut: boolean): string {
+  return gaussianSplatsAvailable() || deviceDayCut ? runtime : "Photographed room · coming soon";
 }
 
 export function SceneOutliner({ className = "" }: { readonly className?: string }): ReactElement {
@@ -76,6 +79,8 @@ export function SceneOutliner({ className = "" }: { readonly className?: string 
   const previewMessage = useLayoutTimelinePreviewStore((state) => state.unavailableMessage);
   const runtime = useCockpitStore((state) => state.runtimeAssetStatus);
   const staff = useAuthStore((state) => canReadInternalEventData(state));
+  const spaceSlug = useEditorStore((state) => state.space?.slug ?? null);
+  const deviceDayCut = deviceDayBundleForRoom(currentSearch(), spaceSlug) !== null;
   const [search, setSearch] = useState("");
   const locked = previewMode !== "inactive";
   const listed = locked ? previewItems : items;
@@ -94,9 +99,9 @@ export function SceneOutliner({ className = "" }: { readonly className?: string 
         {/* Staff always; anyone else only while a captured layer is actually mounted (its evidence label,
             e.g. "staged from source — not yet registered", replaces the no-capture fallback in the store), so
             the honest status reaches the person looking at it and a procedural room shows no capture row. */}
-        {(locked || staff || (gaussianSplatsAvailable() && runtime !== CAPTURED_LAYER_FALLBACK_STATUS)) && <details className="reference-tree-category reference-architecture" open>
+        {(locked || staff || ((gaussianSplatsAvailable() || deviceDayCut) && runtime !== CAPTURED_LAYER_FALLBACK_STATUS)) && <details className="reference-tree-category reference-architecture" open>
           <summary><ChevronDown size={13} /><Building2 size={14} /><span>The room</span></summary>
-          <div className="reference-capture-label"><span>{locked ? previewRuntime === null ? "Room preview unavailable" : "Frozen room outline" : "Room capture"}</span><small>{locked ? previewRuntime === null ? previewMessage ?? "No frozen room snapshot" : "Historical layout preview" : captureNote(runtime)}</small></div>
+          <div className="reference-capture-label"><span>{locked ? previewRuntime === null ? "Room preview unavailable" : "Frozen room outline" : "Room capture"}</span><small>{locked ? previewRuntime === null ? previewMessage ?? "No frozen room snapshot" : "Historical layout preview" : captureNote(runtime, deviceDayCut)}</small></div>
         </details>}
         <div className="reference-section-caption">{locked ? "Phase furniture · read only" : "Furniture"}</div>
         {categories.map((category) => {

@@ -6,7 +6,13 @@ import { canJoinLayoutLive } from "@omnitwin/types";
 import { placedObjects, configurations, configurationLayoutRevisions } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { authenticate, type JwtUser } from "../middleware/auth.js";
-import { requireEditableConfig } from "../middleware/require-editable-config.js";
+import {
+  configLockedBody,
+  editableAtWrite,
+  holdEditable,
+  lockHolds,
+  requireEditableConfig,
+} from "../middleware/require-editable-config.js";
 import { syncPlacedObjectBatch } from "../lib/placed-object-batch.js";
 import { canAccessResource } from "../utils/query.js";
 import { emit } from "../observability/event-bus.js";
@@ -20,6 +26,7 @@ import {
   loadRevisionChange,
   revisionConflictBody,
 } from "../lib/configuration-revision.js";
+import { lockConflictOf, RETRY_ANSWER } from "../utils/sql-state.js";
 
 // ---------------------------------------------------------------------------
 // Zod schemas
@@ -184,22 +191,29 @@ export async function placedObjectRoutes(
       return reply.status(422).send(placementOutOfBoundsBody(invalid));
     }
 
-    const [obj] = await db.insert(placedObjects).values({
-      configurationId: params.data.configId,
-      assetDefinitionId: parsed.data.assetDefinitionId,
-      positionX: String(parsed.data.positionX),
-      positionY: String(parsed.data.positionY),
-      positionZ: String(parsed.data.positionZ),
-      rotationX: String(parsed.data.rotationX),
-      rotationY: String(parsed.data.rotationY),
-      rotationZ: String(parsed.data.rotationZ),
-      scale: String(parsed.data.scale),
-      sortOrder: parsed.data.sortOrder,
-      metadata: parsed.data.metadata ?? null,
-      coordinateWriteToken: randomUUID(),
-    }).returning();
+    const created = await db.transaction(async (tx) => {
+      const lock = await holdEditable(tx, params.data.configId, request.user);
+      if (lock.status !== "editable") return lock;
+      const [obj] = await tx.insert(placedObjects).values({
+        configurationId: params.data.configId,
+        assetDefinitionId: parsed.data.assetDefinitionId,
+        positionX: String(parsed.data.positionX),
+        positionY: String(parsed.data.positionY),
+        positionZ: String(parsed.data.positionZ),
+        rotationX: String(parsed.data.rotationX),
+        rotationY: String(parsed.data.rotationY),
+        rotationZ: String(parsed.data.rotationZ),
+        scale: String(parsed.data.scale),
+        sortOrder: parsed.data.sortOrder,
+        metadata: parsed.data.metadata ?? null,
+        coordinateWriteToken: randomUUID(),
+      }).returning();
+      return { status: "created" as const, obj };
+    });
+    if (created.status === "not_found") return reply.status(404).send({ error: "Configuration not found", code: "NOT_FOUND" });
+    if (created.status === "locked") return reply.status(409).send(configLockedBody(created.reviewStatus));
 
-    return reply.status(201).send({ data: obj });
+    return reply.status(201).send({ data: created.obj });
   });
 
   // PATCH /configurations/:configId/objects/:id — owner of config
@@ -259,12 +273,19 @@ export async function placedObjectRoutes(
     if (parsed.data.sortOrder !== undefined) updateData["sortOrder"] = parsed.data.sortOrder;
     if (parsed.data.metadata !== undefined) updateData["metadata"] = parsed.data.metadata;
 
-    const [updated] = await db.update(placedObjects)
-      .set(updateData)
-      .where(eq(placedObjects.id, params.data.id))
-      .returning();
+    const written = await db.transaction(async (tx) => {
+      const lock = await holdEditable(tx, params.data.configId, request.user);
+      if (lock.status !== "editable") return lock;
+      const [updated] = await tx.update(placedObjects)
+        .set(updateData)
+        .where(eq(placedObjects.id, params.data.id))
+        .returning();
+      return { status: "updated" as const, updated };
+    });
+    if (written.status === "not_found") return reply.status(404).send({ error: "Configuration not found", code: "NOT_FOUND" });
+    if (written.status === "locked") return reply.status(409).send(configLockedBody(written.reviewStatus));
 
-    return { data: updated };
+    return { data: written.updated };
   });
 
   // DELETE /configurations/:configId/objects/:id — owner, hard delete
@@ -288,7 +309,14 @@ export async function placedObjectRoutes(
       return reply.status(404).send({ error: "Placed object not found", code: "NOT_FOUND" });
     }
 
-    await db.delete(placedObjects).where(eq(placedObjects.id, params.data.id));
+    const removed = await db.transaction(async (tx) => {
+      const lock = await holdEditable(tx, params.data.configId, request.user);
+      if (lock.status !== "editable") return lock;
+      await tx.delete(placedObjects).where(eq(placedObjects.id, params.data.id));
+      return { status: "deleted" as const };
+    });
+    if (removed.status === "not_found") return reply.status(404).send({ error: "Configuration not found", code: "NOT_FOUND" });
+    if (removed.status === "locked") return reply.status(409).send(configLockedBody(removed.reviewStatus));
 
     return reply.status(204).send();
   });
@@ -349,14 +377,20 @@ export async function placedObjectRoutes(
           eq(configurations.id, configId),
           eq(configurations.revision, parsed.data.expectedRevision),
           isNull(configurations.deletedAt),
+          editableAtWrite(request.user, result.config.venueId),
         ))
         .returning({ revision: configurations.revision });
 
       if (advanced === undefined) {
-        const [current] = await tx.select({ revision: configurations.revision })
+        const [current] = await tx.select({ revision: configurations.revision, reviewStatus: configurations.reviewStatus })
           .from(configurations)
           .where(and(eq(configurations.id, configId), isNull(configurations.deletedAt)))
           .limit(1);
+        // A review begun since the check holds the layout: that, not a newer
+        // version, is why nothing was saved.
+        if (current !== undefined && lockHolds(request.user, result.config.venueId, current.reviewStatus)) {
+          return { status: "locked" as const, reviewStatus: current.reviewStatus };
+        }
         return {
           status: "conflict" as const,
           currentRevision: current?.revision ?? result.config.revision,
@@ -381,8 +415,20 @@ export async function placedObjectRoutes(
         objects: txResults,
         revision: advanced.revision,
       };
+    }).catch((error: unknown) => {
+      // A deadlock or serialisation failure rolled the whole save back. A
+      // submit locks the layout's row before migration 0058's global lock,
+      // which this save takes first, so the two can deadlock.
+      const pgCode = lockConflictOf(error);
+      if (pgCode === null) throw error;
+      request.log.warn({ event: "placed_objects.batch.retry", configId, pgCode }, "layout save met a lock conflict");
+      return { status: "retry" as const };
     });
 
+    if (saveResult.status === "retry") return reply.status(409).send(RETRY_ANSWER);
+    if (saveResult.status === "locked") {
+      return reply.status(409).send(configLockedBody(saveResult.reviewStatus));
+    }
     if (saveResult.status === "conflict") {
       const change = await loadRevisionChange(db, configId, saveResult.currentRevision,
         { ...revisionDisclosure(request.user, result.config), log: request.log });

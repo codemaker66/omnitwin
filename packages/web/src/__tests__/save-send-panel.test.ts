@@ -317,12 +317,15 @@ describe("Router", () => {
     readonly path?: string;
   }
 
+  // Every route in the table, nested ones included: the routes sit under the
+  // root route that carries the route error boundary.
   function routeEntries(value: unknown): readonly TestRoute[] {
     if (!Array.isArray(value)) return [];
-    return value.flatMap((entry) => {
+    return value.flatMap((entry): TestRoute[] => {
       if (entry === null || typeof entry !== "object") return [];
       const pathValue = (entry as { path?: unknown }).path;
-      return [{ path: typeof pathValue === "string" ? pathValue : undefined }];
+      const children = routeEntries((entry as { children?: unknown }).children);
+      return [{ path: typeof pathValue === "string" ? pathValue : undefined }, ...children];
     });
   }
 

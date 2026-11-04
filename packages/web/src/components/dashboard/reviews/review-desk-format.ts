@@ -174,6 +174,9 @@ export function timelineSentence(entry: ReviewHistoryEntry): string {
   const by = entry.changedByName;
   switch (entry.toStatus) {
     case "submitted":
+      // From anywhere but a draft, the planner is answering the venue (or
+      // their own withdraw) with the plan again.
+      if (entry.fromStatus !== "draft") return by === null ? "Submitted again for review." : `${by} submitted it again for review.`;
       return by === null ? "Submitted for review." : `${by} submitted it for review.`;
     case "under_review":
       return by === null ? "The review was started." : `${by} started the review.`;

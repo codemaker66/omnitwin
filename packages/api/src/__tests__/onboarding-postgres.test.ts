@@ -418,6 +418,31 @@ describe.skipIf(databaseUrl === undefined)("managed onboarding on isolated Postg
     expect((await pool.query("SELECT id FROM workspace_memberships")).rowCount).toBe(1);
   });
 
+  it("refuses to lower a connected venue administrator's access, and changes nothing (admin-venues-2)", async () => {
+    const created = await createWorkspace();
+    const admin = await getUserByClerkId(db, CLERK_ID, EMAIL);
+    expect(admin).toMatchObject({ role: "admin", venueId: VENUE });
+    const before = await pool.query("SELECT role, venue_role, status, invitation_id, user_id FROM workspace_memberships ORDER BY id");
+    const invitations = await pool.query("SELECT id, role, status FROM user_invitations ORDER BY id");
+
+    for (const venueRole of ["staff", "hallkeeper"] as const) {
+      const lowered = await server.inject({ method: "POST", url: `/onboarding/workspaces/${created.workspace.id}/invitations`, headers: headers(),
+        payload: { staffInvites: [{ email: EMAIL, workspaceRole: venueRole, venueRole }] } });
+      expect(lowered.statusCode, lowered.body).toBe(409);
+      expect(lowered.json()).toEqual({
+        error: "This person is a venue administrator, and Manage access cannot lower an administrator's access. Nothing has changed.",
+        code: "ADMIN_DOWNGRADE_UNSUPPORTED",
+      });
+    }
+    expect((await pool.query("SELECT role, venue_role, status, invitation_id, user_id FROM workspace_memberships ORDER BY id")).rows).toEqual(before.rows);
+    expect((await pool.query("SELECT id, role, status FROM user_invitations ORDER BY id")).rows).toEqual(invitations.rows);
+    expect(await getUserByClerkId(db, CLERK_ID, EMAIL)).toEqual(admin);
+    // Saving the administrator as an administrator still renews nothing and answers as before.
+    const same = await server.inject({ method: "POST", url: `/onboarding/workspaces/${created.workspace.id}/invitations`, headers: headers(),
+      payload: { staffInvites: [{ email: EMAIL, workspaceRole: "admin", venueRole: "admin" }] } });
+    expect(same.statusCode, same.body).toBe(201);
+  });
+
   it("cancels a pending invitation without creating account access", async () => {
     const created = await createWorkspace();
     const response = await server.inject({ method: "DELETE",

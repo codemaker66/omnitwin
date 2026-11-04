@@ -1,5 +1,14 @@
 import { createContext, useContext } from "react";
-import type { RequestKind, RequestTransition, RequestUrgency, VenueHandler, VenueRequest } from "@omnitwin/types";
+import {
+  nextRequestState,
+  type RequestKind,
+  type RequestOutcome,
+  type RequestState,
+  type RequestTransition,
+  type RequestUrgency,
+  type VenueHandler,
+  type VenueRequest,
+} from "@omnitwin/types";
 import type { SlotRequestsProps } from "../../pages/hallkeeper/lib/slot-requests-contract.js";
 
 // ---------------------------------------------------------------------------
@@ -29,17 +38,87 @@ export type SlotRequestFailure =
   | { readonly on: "request"; readonly requestId: string; readonly message: string }
   | { readonly on: "ask"; readonly idempotencyKey: string; readonly message: string };
 
-/** The same guard the mission record uses: a phone on a page served without
- *  a secure context has no randomUUID, and a request pressed there still
- *  needs a key the server can dedupe on. */
-export function mintRequestKey(): string {
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-    return crypto.randomUUID();
+/** L9: a step pressed on this device that waits in the offline queue. It is
+ *  not the server's yet, so it never changes what the card says the request
+ *  is; it is said beside it, in the words of the button that was pressed. */
+export interface WaitingStep {
+  readonly commandId: string;
+  readonly transition: RequestTransition;
+  readonly authorUserId: string;
+  readonly authorName: string;
+}
+
+/** L9: what a replay of the queue could not do, said on the slot it was
+ *  about until the person reading it puts it away. */
+export interface ReplayNotice {
+  readonly id: string;
+  readonly bookingId: string;
+  readonly requestId: string;
+  readonly message: string;
+}
+
+/** Where a request stands once this person's waiting steps land: the state
+ *  and owner the next press is pressed against, and whether they will own
+ *  it. Only for what to offer and what a kept press expects; the card says
+ *  what the server says. The owner moves as the server moves it: taking a
+ *  request makes it yours, finishing an unowned one does too, and a reopen
+ *  leaves it nobody's. */
+export function projectRequest(
+  request: Pick<VenueRequest, "state" | "ownerUserId">,
+  steps: readonly WaitingStep[],
+  meId: string | null,
+): { readonly state: RequestState; readonly ownerUserId: string | null; readonly mine: boolean } {
+  let state = request.state;
+  let ownerUserId = request.ownerUserId;
+  for (const step of steps) {
+    if (step.authorUserId !== meId || !nextRequestState(state, step.transition.to).ok) continue;
+    state = step.transition.to;
+    if (state === "accepted" || (state === "resolved" && ownerUserId === null)) ownerUserId = meId;
+    if (state === "reopened") ownerUserId = null;
   }
-  const tail = `${Date.now().toString(16)}${Math.floor(Math.random() * 0xffff_ffff).toString(16)}`
-    .padEnd(12, "0")
-    .slice(0, 12);
-  return `00000000-0000-4000-8000-${tail}`;
+  return { state, ownerUserId, mine: ownerUserId !== null && ownerUserId === meId };
+}
+
+const OUTCOME_WORDS: Readonly<Record<RequestOutcome, string>> = {
+  done: "Done",
+  not_possible: "Could not",
+  no_longer_needed: "Not needed",
+  substituted: "Done another way",
+};
+
+/** A step in the words of the slab button that makes it. */
+export function stepWords(transition: RequestTransition): string {
+  switch (transition.to) {
+    case "acknowledged":
+      return "Seen";
+    case "accepted":
+      return "I’ll do it";
+    case "underway":
+      return "On it";
+    case "handed-over":
+      return "Hand over";
+    case "resolved":
+      return OUTCOME_WORDS[transition.outcome];
+    case "reopened":
+      return "Reopen";
+    default: {
+      const exhausted: never = transition;
+      throw new Error(`Unhandled step ${String(exhausted)}`);
+    }
+  }
+}
+
+/** A v4 UUID for a press. A phone on a page served without a secure context
+ *  has no randomUUID, but it has getRandomValues, so the key is as random
+ *  there as anywhere: it lands in a ledger shared by the whole house. */
+export function mintRequestKey(): string {
+  if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  bytes[6] = ((bytes[6] ?? 0) & 0x0f) | 0x40;
+  bytes[8] = ((bytes[8] ?? 0) & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
 export interface SlotRequestsApi {
@@ -68,11 +147,19 @@ export interface SlotRequestsApi {
   /** The people a request can be handed to (goal 19 S4), read once per board
    *  and kept; a failed read rejects, so the picker can say so and ask again. */
   readonly handlers: () => Promise<readonly VenueHandler[]>;
+  /** L9: this device's steps on one request still waiting in the offline
+   *  queue, in the order they were pressed. */
+  readonly waitingSteps: (requestId: string) => readonly WaitingStep[];
+  /** L9: what the queue's replay could not do on this slot's requests. */
+  readonly replayNotices: (bookingId: string) => readonly ReplayNotice[];
+  readonly dismissNotice: (noticeId: string) => void;
 }
 
 const EMPTY: readonly VenueRequest[] = [];
 const NO_HANDLERS: readonly VenueHandler[] = [];
 const NONE_ASKING: ReadonlySet<string> = new Set<string>();
+const NO_STEPS: readonly WaitingStep[] = [];
+const NO_NOTICES: readonly ReplayNotice[] = [];
 
 /** What a slab sees when no provider is mounted: nothing, calmly. */
 export const SLOT_REQUESTS_UNAVAILABLE: SlotRequestsApi = {
@@ -87,6 +174,9 @@ export const SLOT_REQUESTS_UNAVAILABLE: SlotRequestsApi = {
   askingKeys: NONE_ASKING,
   failure: null,
   handlers: () => Promise.resolve(NO_HANDLERS),
+  waitingSteps: () => NO_STEPS,
+  replayNotices: () => NO_NOTICES,
+  dismissNotice: () => { /* no provider mounted — nothing was said */ },
 };
 
 export const SlotRequestsContext = createContext<SlotRequestsApi>(SLOT_REQUESTS_UNAVAILABLE);
