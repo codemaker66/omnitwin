@@ -52,6 +52,8 @@ Usage
 Requires numpy and scipy.
 """
 # The docstring above is copied into the published JSON as "method"; keep it in step with the code.
+# --front-cut bakes the same against merchant-city-v3 (FRONT_METHOD below is appended to that table's method):
+#   python bake_street_light.py <out-dir> --front-cut --work <v3 _work.npz> --dsm-dir <dir> --model-dir <v3 dir> --check
 import argparse
 import hashlib
 import json
@@ -98,6 +100,8 @@ EXPECTED_CUT = {24094, 24096, 45116, 45117, 45127}
 # The bracket whose drawn wall is too low to carry it (the model's bands drew its building 3 m tall).
 EXPECTED_LOW_WALL = {8463}
 FACADE_PHOTO_LAMP = 24094
+# Both hold against merchant-city-v3 too (--front-cut): 24094 is placed on the modelled front and stays cut; 24096,
+# on the straightened front north of the hall, still hangs on a wall the clamp cuts at the hall's floor.
 
 MAGIC = b"VVSL"
 VERSION = 2
@@ -106,6 +110,31 @@ HEADER = struct.Struct("<4sIIffffffffffI")   # magic, version, size, warp, exten
 SWITCH_RANGE = (P["switch_centre_deg"] - P["switch_spread_deg"], P["switch_centre_deg"] + P["switch_spread_deg"])
 LIGHT_FILE = "street-light-v2.bin"
 LAMPS_FILE = "street-lamps-v2.json"
+
+# --front-cut: the same bake against merchant-city-v3, the city with Trades Hall's street front emptied for the
+# planner's own modelled front (build_context.py --front-cut; hall-exterior-spec.ts). That front is anchored to the
+# room, not to the city, so the lamps on it are placed on it, in the planner's frame: x = FRONT_AXIS_X - u along the
+# front, z = the window wall's outer face (-6.245) - proud. The front draws no lanterns of its own: the lamp table
+# draws their fittings and lights their pools.
+FRONT_MODEL_NAME = "merchant-city-v3"
+FRONT_LIGHT_FILE = "street-light-v3.bin"
+FRONT_LAMPS_FILE = "street-lamps-v3.json"
+FRONT_AXIS_X = -0.025
+# The two door lanterns: the survey's u = +-2.461 and 2.904-3.494 m above the pavement (DOOR_LANTERNS), hung 0.35 m
+# proud of the modelled temple front's podium face (z -7.265): centres at x -2.486 (north) and +2.436 (south),
+# z -7.615. They throw straight out from the front (-z).
+FRONT_DOOR_LANTERNS = dict(axis_x=FRONT_AXIS_X, podium_face_z=-7.265, proud_m=0.35)
+# Trades Hall's own street lamp moves with the front: its head keeps its place along the front (u 7.985, from the
+# v2 bake's head, x -8.001 in the frame where the city's front put u = 0 at x -0.016) and its 1.09 m out from the
+# face it hangs on, now the north pavilion's (z -6.245 - 0.118 = -6.363). The council's point for it is
+# (-7.747, -6.508). It stays "cut" as before: its fitting is not drawn.
+FRONT_BRACKETS = {24094: dict(u=7.985, face_z=-6.363, out_m=1.09)}
+FRONT_METHOD = """\
+--front-cut (street-light-v3.bin, street-lamps-v3.json): the same bake against merchant-city-v3, whose street front
+before Trades Hall is bare ground (the planner's own modelled front stands there, anchored to the room): the two
+door lanterns hang 0.35 m proud of that front's podium face (FRONT_DOOR_LANTERNS) and Trades Hall's own lamp, 24094,
+keeps its place along the front 1.09 m out from the north pavilion's face (FRONT_BRACKETS), each throwing straight
+out from the front; the ground in front of the hall is open street in the bands, so the light maps see across it"""
 
 
 def parse_args():
@@ -118,18 +147,31 @@ def parse_args():
     ap.add_argument("--facade", type=Path, help="facade.json: checks DOOR_LANTERNS against the survey")
     ap.add_argument("--pub", type=Path, help="a local Pub_Lighting_Columns response (never committed)")
     ap.add_argument("--check", action="store_true")
+    ap.add_argument("--front-cut", action="store_true",
+                    help="bake against merchant-city-v3 (build_context.py --front-cut) into street-light-v3.bin / street-lamps-v3.json")
     return ap.parse_args()
 
 
-def sha256(path):
-    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+# Which bake: v2 (the default) or --front-cut (v3). Set once in main().
+VARIANT = dict(front=False, model=MODEL_NAME, light=LIGHT_FILE, lamps=LAMPS_FILE)
+
+
+def set_variant(front):
+    VARIANT.update(front=front, model=FRONT_MODEL_NAME if front else MODEL_NAME,
+                   light=FRONT_LIGHT_FILE if front else LIGHT_FILE, lamps=FRONT_LAMPS_FILE if front else LAMPS_FILE)
+
+
+def sha256(path, text=False):
+    """A file's SHA-256; a text file's with its line ends as Git stores them (LF), so a Windows checkout agrees."""
+    data = Path(path).read_bytes()
+    return hashlib.sha256(data.replace(b"\r\n", b"\n") if text else data).hexdigest()
 
 
 # ---------------------------------------------------------------- the model
 class Model:
     def __init__(self, model_dir, work_path):
-        self.meta = json.loads((model_dir / f"{MODEL_NAME}.json").read_text(encoding="utf-8"))
-        blob = (model_dir / f"{MODEL_NAME}.bin").read_bytes()
+        self.meta = json.loads((model_dir / f"{VARIANT['model']}.json").read_text(encoding="utf-8"))
+        blob = (model_dir / f"{VARIANT['model']}.bin").read_bytes()
         assert blob[:4] == b"VVCX"
         _, nv, ni = struct.unpack("<III", blob[4:16])
         verts = np.frombuffer(blob, "<i2", nv * 3, 16).reshape(-1, 3).astype(np.float64) / 100
@@ -154,6 +196,10 @@ class Model:
         self.lab = work["lab"]
         self.res = 0.5
         self.k = self.band.shape[0] // 2
+        # The crop's cell corners stand off the centre by the registration's sub-cell remainder (build_context.py
+        # OFF_E, OFF_N; exactly 0 for a centre on a cell corner, as v2's and v3's are).
+        self.off_e = float(work["DE"][0, 0]) + (self.k - 0.5) * self.res
+        self.off_n = float(work["DN"][0, 0]) + (self.k - 0.5) * self.res
         # check the raster's frame against the model's
         px, pz = work["PX"], work["PZ"]
         for (i, j) in ((10, 20), (500, 700), (1000, 33)):
@@ -192,12 +238,13 @@ class Model:
 
     def cell(self, x, z):
         de, dn = self.to_local(x, z)
-        return int(math.floor(dn / self.res + self.k)), int(math.floor(de / self.res + self.k))
+        return (int(math.floor((dn - self.off_n) / self.res + self.k)),
+                int(math.floor((de - self.off_e) / self.res + self.k)))
 
     def cells(self, x, z):
         de, dn = self.to_local(x, z)
-        i = np.clip(np.floor(dn / self.res + self.k).astype(np.int64), 0, self.band.shape[0] - 1)
-        j = np.clip(np.floor(de / self.res + self.k).astype(np.int64), 0, self.band.shape[1] - 1)
+        i = np.clip(np.floor((dn - self.off_n) / self.res + self.k).astype(np.int64), 0, self.band.shape[0] - 1)
+        j = np.clip(np.floor((de - self.off_e) / self.res + self.k).astype(np.int64), 0, self.band.shape[1] - 1)
         return i, j
 
     def _walls(self):
@@ -342,6 +389,35 @@ def y_byte(y):
     return np.clip(1 + np.round((np.asarray(y, dtype=np.float64) - lo) / (hi - lo) * 254), 1, 255).astype(np.uint8)
 
 
+def front_door_lanterns(model):
+    """v3: the door lanterns on the planner's modelled front, anchored to the room (FRONT_DOOR_LANTERNS)"""
+    d, f = DOOR_LANTERNS, FRONT_DOOR_LANTERNS
+    out = []
+    for name, u, key in (("door-north", d["u"], 1), ("door-south", -d["u"], 2)):
+        x = f["axis_x"] - u
+        z = f["podium_face_z"] - f["proud_m"]
+        y = (d["z_bottom"] + d["z_top"]) / 2 + model.ground_y
+        byte = switch_byte(1_000_000 + key)
+        out.append(dict(key=-key, id=f"trades-hall:{name}", objectid=None, source="facade-survey", kind="door",
+                        head=[x, y, z], foot_y=model.ground_y, heading=[0.0, -1.0], reach=f["proud_m"], fitting="drawn",
+                        height_source="facade-photo", switch_byte=byte, switch_altitude=switch_altitude(byte),
+                        snap_shift=0.0, flags=[]))
+    return out
+
+
+def front_bracket(model, oid, x0, z0, merged):
+    """v3: a bracket on the planner's modelled front (FRONT_BRACKETS), its wall's fitting cut as before"""
+    b = FRONT_BRACKETS[oid]
+    head = [FRONT_AXIS_X - b["u"], model.ground_y + P["bracket_height_m"], b["face_z"] - b["out_m"]]
+    byte = switch_byte(oid)
+    shift = math.hypot(head[0] - x0, head[2] - z0)
+    return dict(key=oid, id=f"gcc:{oid}", objectid=oid, source="gcc-ogl", kind="bracket", head=head,
+                foot_y=model.ground_y, heading=[0.0, -1.0], reach=b["out_m"], fitting="cut",
+                height_source="facade-photo" if oid == FACADE_PHOTO_LAMP else "default", switch_byte=byte,
+                switch_altitude=switch_altitude(byte), snap_shift=round(shift, 2), flags=["on the modelled front"],
+                merged=merged.get(oid, []), cell=model.cell(head[0], head[2]))
+
+
 def door_lanterns(model):
     d = DOOR_LANTERNS
     o, ua, da = (np.array(d[k]) for k in ("facade_origin_local", "u_axis_local", "d_axis_local"))
@@ -385,6 +461,9 @@ def build_lamps(model, lamps_doc, dsm_dir):
     lamps = []
     columns = {}
     for oid, x, z in kept:
+        if VARIANT["front"] and oid in FRONT_BRACKETS:
+            lamps.append(front_bracket(model, oid, x, z, merged))
+            continue
         i, j = model.cell(x, z)
         ground_here = float(model.local_ground[i, j])
         facade = walls & (model.seg_lo <= ground_here + P["wall_foot_slack_m"])
@@ -461,7 +540,7 @@ def build_lamps(model, lamps_doc, dsm_dir):
         lamp["head"][1] = lamp["foot_y"] + height
         i, j = lamp["cell"]
         lamp["fitting"] = "cut" if model.clampzone[i, j] and lamp["head"][1] > model.par["clamp_y"] else "drawn"
-    lamps += door_lanterns(model)
+    lamps += front_door_lanterns(model) if VARIANT["front"] else door_lanterns(model)
     for lamp in lamps:
         lamp["head"] = [round(v, 3) for v in lamp["head"]]
         lamp["heading"] = [round(v, 4) for v in lamp["heading"]]
@@ -629,7 +708,7 @@ def published_lamp(lamp):
 def write(out_dir, args, model, lamps, counts, maps):
     out_dir.mkdir(parents=True, exist_ok=True)
     blob = header(len(lamps)) + maps["pool"].tobytes() + maps["head"].tobytes()
-    (out_dir / LIGHT_FILE).write_bytes(blob)
+    (out_dir / VARIANT["light"]).write_bytes(blob)
     lamps_doc = json.loads(args.lamps.read_text(encoding="utf-8"))
     kinds = {k: sum(1 for l in lamps if l["kind"] == k) for k in ("bracket", "column", "door")}
     doc = {
@@ -643,9 +722,9 @@ def write(out_dir, args, model, lamps, counts, maps):
                      "throws derived here from the LiDAR model and our own facade survey. No attribute of the "
                      "council's Pub_Lighting_Columns layer is used."),
         },
-        "frame": "the planner hall frame of merchant-city-v2.json (metres, y up)",
+        "frame": f"the planner hall frame of {VARIANT['model']}.json (metres, y up)",
         "encoding": {
-            "file": LIGHT_FILE,
+            "file": VARIANT["light"],
             "header": ("56 bytes little-endian: 'VVSL', uint32 version=2, uint32 size, float32 warp_m, float32 extent_m, "
                        "float32 pool range (m), float32 head range (m), float32 y min, float32 y max, "
                        "float32 switch min (deg), float32 switch max (deg), float32 door pool scale, "
@@ -666,16 +745,18 @@ def write(out_dir, args, model, lamps, counts, maps):
                 "A": "that head's y: 1 + (y - min) / (max - min) x 254; 0 = no head within range",
             },
         },
-        "method": __doc__.strip(),
+        "method": __doc__.strip() + ("\n" + FRONT_METHOD if VARIANT["front"] else ""),
         "parameters": P,
         "excluded": {str(k): v for k, v in EXCLUDED.items()},
         "inputs": {
-            "lamps": {"file": args.lamps.name, "sha256": sha256(args.lamps), "source": lamps_doc["source"]["query"],
+            "lamps": {"file": args.lamps.name, "sha256": sha256(args.lamps, text=True), "source": lamps_doc["source"]["query"],
                       "retrieved": lamps_doc["source"]["retrieved"]},
-            "model": {"file": f"{MODEL_NAME}.bin", "sha256": sha256(args.model_dir / f"{MODEL_NAME}.bin")},
+            "model": {"file": f"{VARIANT['model']}.bin", "sha256": sha256(args.model_dir / f"{VARIANT['model']}.bin")},
             "work": {"file": "_work.npz", "sha256": sha256(args.work)},
             "dsm": {"file": "heights_50cm.f32", "sha256": sha256(args.dsm_dir / "heights_50cm.f32")},
             "door_lanterns": DOOR_LANTERNS,
+            **({"front": {"axis_x": FRONT_AXIS_X, "door_lanterns": FRONT_DOOR_LANTERNS,
+                          "brackets": {str(k): v for k, v in FRONT_BRACKETS.items()}}} if VARIANT["front"] else {}),
         },
         "counts": {
             "lamps": len(lamps), **kinds,
@@ -690,7 +771,7 @@ def write(out_dir, args, model, lamps, counts, maps):
         },
         "lamps": [published_lamp(l) for l in lamps],
     }
-    (out_dir / LAMPS_FILE).write_bytes((json.dumps(doc, indent=1) + "\n").encode("utf-8"))
+    (out_dir / VARIANT["lamps"]).write_bytes((json.dumps(doc, indent=1) + "\n").encode("utf-8"))
 
 
 # ---------------------------------------------------------------- checks
@@ -759,19 +840,35 @@ def model_checks(model, lamps, maps, pub_path):
     expect(cut == EXPECTED_CUT, f"the site's cut takes {sorted(cut)}")
     low = {l["objectid"] for l in lamps if l["fitting"] == "low-wall"}
     expect(low == EXPECTED_LOW_WALL, f"the walls too low to carry a lantern carry {sorted(low)}")
+    if VARIANT["front"]:
+        doors = {l["id"]: l for l in lamps if l["kind"] == "door"}
+        for name, x in (("trades-hall:door-north", -2.486), ("trades-hall:door-south", 2.436)):
+            h = doors[name]["head"]
+            expect(abs(h[0] - x) < 5e-4 and abs(h[1] + 0.591) < 5e-4 and abs(h[2] + 7.615) < 5e-4 and doors[name]["heading"] == [0.0, -1.0],
+                   f"{name} hangs on the modelled front at {h}, throwing straight out")
+        own = next(l for l in lamps if l["objectid"] == FACADE_PHOTO_LAMP)
+        expect(own["fitting"] == "cut" and abs(own["head"][2] - (-6.363 - 1.09)) < 5e-4 and abs(own["head"][0] - (FRONT_AXIS_X - 7.985)) < 5e-4,
+               f"{FACADE_PHOTO_LAMP} hangs 1.09 m out from the north pavilion's face at {own['head']}, cut")
     across = next(l for l in lamps if l["objectid"] == 24095)
     expect(across["fitting"] == "drawn", "24095, across Glassford Street, stands whole")
     hung = [l["head"][1] - l["foot_y"] for l in lamps if l["fitting"] == "drawn" and l["kind"] != "door"]
     expect(min(hung) >= P["lantern_min_m"] - 1e-6, f"every drawn street lantern hangs at least {min(hung):.2f} m up")
     tall = model.building_walls()
     worst = 0.0
+    on_front = 0.0
     for l in lamps:
         if l["kind"] != "bracket":
             continue
         plate = np.array([l["head"][0], l["head"][2]]) - np.array(l["heading"]) * l["reach"]
+        if VARIANT["front"] and l["objectid"] in FRONT_BRACKETS:
+            # on the planner's modelled front, not on the city's walls: the face it names
+            on_front = max(on_front, abs(plate[1] - FRONT_BRACKETS[l["objectid"]]["face_z"]))
+            continue
         d, _, _ = model.nearest_wall(plate[0], plate[1], tall)
         worst = max(worst, d)
     expect(worst <= 0.1, f"every bracket's wall plate sits on a model wall (worst {worst:.3f} m)")
+    if VARIANT["front"]:
+        expect(on_front <= 1e-3, f"the front's brackets' plates sit on its faces (worst {on_front:.4f} m)")
     worst = 0.0
     for l in lamps:
         if l["kind"] != "column":
@@ -833,6 +930,7 @@ def run(args, out_dir):
 
 def main():
     args = parse_args()
+    set_variant(args.front_cut)
     if args.facade is not None:
         fac = json.loads(args.facade.read_text(encoding="utf-8"))
         door = next(b for b in fac["bays"] if b.get("id") == "temple-front")["door"]["lamps"]
@@ -851,7 +949,7 @@ def main():
     if args.check:
         with tempfile.TemporaryDirectory() as tmp:
             run(args, Path(tmp))
-            for name in (LIGHT_FILE, LAMPS_FILE):
+            for name in (VARIANT["light"], VARIANT["lamps"]):
                 same = (Path(tmp) / name).read_bytes() == (args.out_dir / name).read_bytes()
                 expect(same, f"{name} rebuilds byte for byte")
         try:

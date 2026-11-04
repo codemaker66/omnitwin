@@ -14,22 +14,32 @@
 // nothing recompiles; if either file fails, the city shows without its lamps.
 // The lit openings across Glassford Street (hall-facade-lights.ts) load
 // beside them, and either can fail without the other.
+//
+// With the modelled front asked for (`?facade=1`, hall-facade-access.ts) the
+// city comes from the model whose Trades Hall front is cut away, with the
+// lamps baked against it, and the measured front (HallExterior, whose code is
+// fetched only then) stands in its place, in the city's light and lamps and
+// casting into its shadow map.
 // ---------------------------------------------------------------------------
 
-import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
+import { Suspense, lazy, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import type { BufferGeometry, Texture } from "three";
 import { useHallFinish } from "./hall-finish.js";
 import { HALL_SUN_CASTER_LAYER, createSunCaster, requestHallSunRedraw, type ShadowBox } from "./hall-sun.js";
-import { CONTEXT_MODEL_URL, createContextCasterMaterial, createContextMaterial, parseContextModel } from "./hall-context.js";
+import { CONTEXT_MODEL_FRONT_URL, CONTEXT_MODEL_URL, createContextCasterMaterial, createContextMaterial, parseContextModel } from "./hall-context.js";
+import { hallFacadeRequested } from "../../lib/hall-facade-access.js";
 import { hallSkyState, hallSkyUniforms } from "./hall-sky-runtime.js";
 import {
-  STREET_LAMPS_URL, STREET_LIGHT_URL, applyStreetLightField, createStreetLightMaps, createStreetLightTextures, parseStreetLamps,
-  parseStreetLight, resetStreetLightField, type StreetLamp,
+  STREET_LAMPS_FRONT_URL, STREET_LAMPS_URL, STREET_LIGHT_FRONT_URL, STREET_LIGHT_URL, applyStreetLightField, createStreetLightMaps,
+  createStreetLightTextures, parseStreetLamps, parseStreetLight, resetStreetLightField, type StreetLamp,
 } from "./hall-street-light.js";
 import { HallStreetLights } from "./HallStreetLights.js";
-import { FACADE_LIGHTS_URL, parseFacadeLights, type FacadeLight } from "./hall-facade-lights.js";
+import { FACADE_LIGHTS_FRONT_URL, FACADE_LIGHTS_URL, parseFacadeLights, type FacadeLight } from "./hall-facade-lights.js";
 import { HallFacadeLights } from "./HallFacadeLights.js";
+
+/** The measured front's code, fetched only when the front is asked for. */
+const HallExterior = lazy(() => import("./HallExterior.js").then((module) => ({ default: module.HallExterior })));
 
 async function fetchOk(url: string): Promise<Response> {
   const response = await fetch(url);
@@ -66,11 +76,13 @@ export function HallContext(): ReactElement | null {
   const aimed = useRef<[number, number, number] | null>(null);
   const [lamps, setLamps] = useState<readonly StreetLamp[] | null>(null);
   const [facades, setFacades] = useState<readonly FacadeLight[] | null>(null);
+  // Asked once per mount, as the sky is: the URL, else this device's last choice.
+  const front = useMemo(() => typeof window !== "undefined" && hallFacadeRequested(window.location.search), []);
 
   useEffect(() => {
     let live = true;
     let loaded: BufferGeometry | null = null;
-    fetchOk(CONTEXT_MODEL_URL)
+    fetchOk(front ? CONTEXT_MODEL_FRONT_URL : CONTEXT_MODEL_URL)
       .then((response) => response.arrayBuffer())
       .then((buffer) => {
         if (!live) return;
@@ -84,14 +96,17 @@ export function HallContext(): ReactElement | null {
       live = false;
       loaded?.dispose();
     };
-  }, [sun]);
+  }, [front, sun]);
 
   // The street lamps, beside the model and independent of it.
   useEffect(() => {
     let live = true;
     const placeholders: readonly [Texture, Texture] = [lightMaps.pool.value, lightMaps.head.value];
     let loaded: { pool: Texture; head: Texture } | null = null;
-    Promise.all([fetchOk(STREET_LIGHT_URL).then((response) => response.arrayBuffer()), fetchJson(STREET_LAMPS_URL)])
+    Promise.all([
+      fetchOk(front ? STREET_LIGHT_FRONT_URL : STREET_LIGHT_URL).then((response) => response.arrayBuffer()),
+      fetchJson(front ? STREET_LAMPS_FRONT_URL : STREET_LAMPS_URL),
+    ])
       .then(([buffer, json]) => {
         if (!live) return;
         const field = parseStreetLight(buffer);
@@ -113,12 +128,12 @@ export function HallContext(): ReactElement | null {
       loaded?.pool.dispose();
       loaded?.head.dispose();
     };
-  }, [invalidate, lightMaps]);
+  }, [front, invalidate, lightMaps]);
 
   // The lit openings across the street, beside the lamps and independent of them.
   useEffect(() => {
     let live = true;
-    fetchJson(FACADE_LIGHTS_URL)
+    fetchJson(front ? FACADE_LIGHTS_FRONT_URL : FACADE_LIGHTS_URL)
       .then((json) => {
         if (!live) return;
         setFacades(parseFacadeLights(json));
@@ -130,7 +145,7 @@ export function HallContext(): ReactElement | null {
     return () => {
       live = false;
     };
-  }, [invalidate]);
+  }, [front, invalidate]);
 
   useEffect(() => {
     const placeholders: readonly Texture[] = [lightMaps.pool.value, lightMaps.head.value];
@@ -174,6 +189,11 @@ export function HallContext(): ReactElement | null {
       <mesh geometry={geometry} material={caster} layers={HALL_SUN_CASTER_LAYER} castShadow frustumCulled={false} raycast={() => undefined} />
       {lamps !== null && <HallStreetLights lamps={lamps} sun={sun} />}
       {facades !== null && <HallFacadeLights lights={facades} />}
+      {front && (
+        <Suspense fallback={null}>
+          <HallExterior sun={sun} lightMaps={lightMaps} />
+        </Suspense>
+      )}
     </group>
   );
 }

@@ -59,6 +59,16 @@ DEFAULT_SURVEY = HERE / "facade-survey.json"
 DEFAULT_MODEL_DIR = REPO / "packages/web/public/rooms/grand-hall/context-2020-lidar"
 MODEL_NAME = "merchant-city-v2"
 OUT_FILE = "facade-lights-v1.json"
+# --front-cut: the same bake on merchant-city-v3 (build_context.py --front-cut), written as facade-lights-v2.json.
+# v3 changes the city only round Trades Hall's own front, not the walls across the street, so this bake places every
+# opening where v1 does; --same-as facade-lights-v1.json asserts it (everything but the model it names), and then v1
+# serves both models and no v2 file is published.
+FRONT_MODEL_NAME = "merchant-city-v3"
+FRONT_OUT_FILE = "facade-lights-v2.json"
+FRONT_NOTE = ("--front-cut: the same bake on merchant-city-v3, whose walls across Glassford Street and along Garth "
+              "Street are v2's")
+# What --same-as compares: the placement, not the record of which model it was placed on.
+PLACEMENT_KEYS = ("schema", "title", "licence", "parameters", "counts", "dropped", "blind", "clipped", "lights")
 
 P = dict(
     probe_m=4.0, depth_tolerance_m=1.0, spread_m=0.45, offset_m=0.03, facing_cos=0.7071, facing_share=0.66, near_m=12.0,
@@ -75,7 +85,15 @@ def parse_args():
     ap.add_argument("--survey", type=Path, default=DEFAULT_SURVEY)
     ap.add_argument("--model-dir", type=Path, default=DEFAULT_MODEL_DIR)
     ap.add_argument("--check", action="store_true")
+    ap.add_argument("--front-cut", action="store_true",
+                    help="bake on merchant-city-v3 (build_context.py --front-cut) into facade-lights-v2.json")
+    ap.add_argument("--same-as", type=Path,
+                    help="a published facade-lights file: assert this bake places exactly what it places")
     return ap.parse_args()
+
+
+# Which bake: v1 on merchant-city-v2 (the default) or --front-cut on merchant-city-v3. Set once in main().
+VARIANT = dict(front=False, model=MODEL_NAME, out=OUT_FILE)
 
 
 def sha256(path, text=False):
@@ -90,13 +108,13 @@ def unit_hash(text):
 
 
 def load_model(model_dir):
-    blob = (Path(model_dir) / f"{MODEL_NAME}.bin").read_bytes()
+    blob = (Path(model_dir) / f"{VARIANT['model']}.bin").read_bytes()
     if blob[:4] != b"VVCX":
         raise SystemExit("not a city model")
     _, nv, ni = struct.unpack("<III", blob[4:16])
     verts = np.frombuffer(blob, "<i2", nv * 3, 16).reshape(-1, 3).astype(np.float64) / 100
     idx = np.frombuffer(blob, "<u4", ni, 16 + nv * 6).reshape(-1, 3).astype(np.int64)
-    meta = json.loads((Path(model_dir) / f"{MODEL_NAME}.json").read_text(encoding="utf-8"))
+    meta = json.loads((Path(model_dir) / f"{VARIANT['model']}.json").read_text(encoding="utf-8"))
     return verts[idx], meta
 
 
@@ -264,13 +282,13 @@ def write(out_dir, survey_path, model_dir):
     out = {
         "schema": "venviewer.facade-lights.v1",
         "title": "Lit windows, shopfronts and signs across Glassford Street and along Garth Street, on the city model, for the Grand Hall at night",
-        "frame": "the planner hall frame of merchant-city-v2.json (metres, y up)",
+        "frame": f"the planner hall frame of {VARIANT['model']}.json (metres, y up)",
         "licence": survey["licence"],
-        "method": __doc__.strip(),
+        "method": __doc__.strip() + ("\n" + FRONT_NOTE if VARIANT["front"] else ""),
         "parameters": P,
         "inputs": {
             "survey": {"file": Path(survey_path).name, "sha256": sha256(survey_path, text=True)},
-            "model": {"file": f"{MODEL_NAME}.bin", "sha256": sha256(Path(model_dir) / f"{MODEL_NAME}.bin")},
+            "model": {"file": f"{VARIANT['model']}.bin", "sha256": sha256(Path(model_dir) / f"{VARIANT['model']}.bin")},
         },
         "counts": {**counts, "lights": len(lights), "dropped": len(dropped), "blind": len(blind), "clipped": len(clipped)},
         "dropped": dropped,
@@ -280,12 +298,14 @@ def write(out_dir, survey_path, model_dir):
     }
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    (out_dir / OUT_FILE).write_text(json.dumps(out, indent=1, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
+    (out_dir / VARIANT["out"]).write_text(json.dumps(out, indent=1, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
     return out
 
 
 def main():
     args = parse_args()
+    if args.front_cut:
+        VARIANT.update(front=True, model=FRONT_MODEL_NAME, out=FRONT_OUT_FILE)
     out = write(args.out_dir, args.survey, args.model_dir)
     print(json.dumps(out["counts"]), file=sys.stderr)
     for d in out["dropped"]:
@@ -293,9 +313,16 @@ def main():
     if args.check:
         with tempfile.TemporaryDirectory() as tmp:
             write(tmp, args.survey, args.model_dir)
-            if (Path(tmp) / OUT_FILE).read_bytes() != (Path(args.out_dir) / OUT_FILE).read_bytes():
+            if (Path(tmp) / VARIANT["out"]).read_bytes() != (Path(args.out_dir) / VARIANT["out"]).read_bytes():
                 raise SystemExit("the bake is not byte-identical run to run")
         print("check: byte-identical", file=sys.stderr)
+    if args.same_as is not None:
+        other = json.loads(args.same_as.read_text(encoding="utf-8"))
+        differ = [k for k in PLACEMENT_KEYS if out.get(k) != other.get(k)]
+        if differ:
+            raise SystemExit(f"the bake places differently from {args.same_as.name}: {', '.join(differ)}")
+        print(f"same-as: every placement agrees with {args.same_as.name} ({len(out['lights'])} lights, "
+              f"{len(out['dropped'])} dropped, {len(out['clipped'])} clipped)", file=sys.stderr)
 
 
 if __name__ == "__main__":
