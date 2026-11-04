@@ -218,6 +218,17 @@ export function useChromePresence(): void {
   }), []);
 }
 
+/**
+ * The chrome's page-wide side as a leaf of its own, so a clear or a restore
+ * draws this alone and never the cockpit around it, nor the hall inside that
+ * (performance review, 4 Nov). Mount it last in the cockpit's shell: its
+ * effects then run after every other part of the cockpit has mounted.
+ */
+export function ChromePresence(): null {
+  useChromePresence();
+  return null;
+}
+
 /** What a unit is called right now: the right dock is whichever lens is open. */
 function useUnitName(unit: ChromeFoldUnit): string {
   // The lens the cockpit shows, which is Design for one this viewer is not offered.

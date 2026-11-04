@@ -16,7 +16,7 @@ import { useOfferViewerLenses, useShownLens } from "../../../lib/use-lens-rail.j
 import { useLayoutTimelinePreviewStore } from "../../../stores/layout-timeline-preview-store.js";
 import { SceneOutliner } from "./SceneOutliner.js";
 import { ReferenceRoomHeader } from "./ReferenceRoomHeader.js";
-import { ChromeClearHint, ChromeFoldControls, ChromeFoldMark, ChromeSaveWord, ChromeSpine, PhoneChromeSeal, useChromePresence } from "./ChromeFold.js";
+import { ChromeClearHint, ChromeFoldControls, ChromeFoldMark, ChromePresence, ChromeSaveWord, ChromeSpine, PhoneChromeSeal } from "./ChromeFold.js";
 import "./PlannerCockpit.css";
 import "./ReferenceViewer.css";
 
@@ -45,8 +45,6 @@ export function PlannerCockpit({ mobile = false, hasLinkedEvent = false }: { rea
   const timelinePreviewActive = useLayoutTimelinePreviewStore((state) => state.mode !== "inactive");
   const timelinePreviewMode = useLayoutTimelinePreviewStore((state) => state.mode);
   const timelineUnavailableMessage = useLayoutTimelinePreviewStore((state) => state.unavailableMessage);
-  // T-680: every panel folds to a spine, and \ or the crest clears them all.
-  useChromePresence();
   return (
     <div
       className={`cockpit-shell${mobile ? " is-mobile" : " reference-viewer"}`}
@@ -125,6 +123,9 @@ export function PlannerCockpit({ mobile = false, hasLinkedEvent = false }: { rea
       {mobile ? <PhoneChromeSeal key="phone-seal" /> : null}
       <ChromeClearHint key="clear-hint" />
       <ChromeSaveWord key="save-word" mobile={mobile} />
+      {/* T-680: every panel folds to a spine, and \ or the crest clears them
+          all. Last, and a leaf, so clearing never draws the cockpit again. */}
+      <ChromePresence key="chrome-presence" />
     </div>
   );
 }

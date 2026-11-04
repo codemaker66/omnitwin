@@ -2,11 +2,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { useCockpitStore } from "../../../../stores/cockpit-store.js";
 import { useAuthStore } from "../../../../stores/auth-store.js";
+import { useChromePresenceStore } from "../../../../stores/chrome-presence-store.js";
 
 // The cockpit hosts the full editor (App) in its stage; mock it to a stand-in
 // so the test stays a structural shell test (no WebGL). The top bar reads
 // router + store context of its own, so mock it too for this shell test.
-vi.mock("../../../../App.js", () => ({ App: () => <div data-testid="mock-editor-3d" /> }));
+// Counted, so a test can say when the cockpit draws its hall again.
+const editorDrawn = vi.hoisted(() => ({ count: 0 }));
+vi.mock("../../../../App.js", () => ({ App: () => { editorDrawn.count += 1; return <div data-testid="mock-editor-3d" />; } }));
 // The header's save line (headerSaveLabel) stays real: the chrome's save word speaks it.
 vi.mock("../ReferenceRoomHeader.js", async (importOriginal) => ({
   ...await importOriginal<typeof import("../ReferenceRoomHeader.js")>(),
@@ -192,5 +195,18 @@ describe("PlannerCockpit", () => {
     expect(caption.getAttribute("data-visible")).toBe("true");
     expect(caption.getAttribute("aria-live")).toBe("polite");
     expect(caption.querySelector("svg")).toBeNull();
+  });
+
+  // T-680 performance review, 4 Nov: the cockpit itself listened for
+  // clear-all, so every clear and restore drew the whole cockpit again, the
+  // hall's editor with it (65-103 ms of script a change against 12 idle).
+  it("clears and restores the tools without drawing the cockpit or its hall again", () => {
+    render(<PlannerCockpit />);
+    const drawn = editorDrawn.count;
+    act(() => { useChromePresenceStore.getState().clearAll(); });
+    expect(document.documentElement.getAttribute("data-planner-chrome")).toBe("cleared");
+    act(() => { useChromePresenceStore.getState().restoreAll(); });
+    expect(useChromePresenceStore.getState().cleared).toBe(false);
+    expect(editorDrawn.count).toBe(drawn);
   });
 });
