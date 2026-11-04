@@ -32,8 +32,8 @@ import type { Database } from "../db/client.js";
 
 /**
  * A layout's sheet is retired only in a state the review machine never
- * leaves (archived after the event, or withdrawn). A rejected layout can
- * return to draft, so it is "not approved", never "closed".
+ * leaves (archived after the event). A rejected or withdrawn layout can be
+ * revised and submitted again, so it is "not approved", never "closed".
  */
 function isRetiredReviewStatus(reviewStatus: string): boolean {
   const parsed = ConfigurationReviewStatusSchema.safeParse(reviewStatus);

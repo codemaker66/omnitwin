@@ -207,7 +207,9 @@ describe("event routes", () => {
       source.indexOf('server.post("/:id/scenarios"'),
     );
     expect(createPhase.indexOf("eventVenueContainsSpace"))
-      .toBeLessThan(createPhase.indexOf("db.insert(eventPhases)"));
+      .toBeLessThan(createPhase.indexOf("lockLiveRoom(tx, eventRow.venueId, roomId)"));
+    expect(createPhase.indexOf("lockLiveRoom(tx, eventRow.venueId, roomId)"))
+      .toBeLessThan(createPhase.indexOf("tx.insert(eventPhases)"));
   });
 });
 

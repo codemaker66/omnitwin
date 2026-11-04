@@ -40,8 +40,11 @@ import {
 import { prefersReducedMotion } from "../lib/reduced-motion.js";
 import { normalizeFurnitureScale } from "../lib/furniture-scale.js";
 import { intersectSelectable } from "../lib/raycast-gate.js";
+import { plannerChromeRequested } from "../lib/planner-chrome-flag.js";
 import { plannerFeatureEnabled } from "../lib/planner-features.js";
+import { judgesCard } from "../lib/setup-cards.js";
 import { placePieceInHand } from "../lib/place-in-hand.js";
+import { useDoorClearSpaceStore } from "../stores/door-clear-space-store.js";
 import { placementFloorPoint } from "../lib/planner-interaction-floor.js";
 import {
   FingerTrail,
@@ -191,6 +194,18 @@ function findWallKey(obj: Object3D): WallKey | null {
   return null;
 }
 
+/**
+ * The wall a click or tap that met `wallKey` first takes down, if any. With
+ * `wallClickAlt` (decision 4) only an Alt-click does: a plain click passes
+ * through to the floor as a click on empty floor, so a deselect near a wall
+ * never takes it down, and the camera hides walls in the way. A finger has no
+ * Alt, so a tap never does.
+ */
+function wallToHide(wallKey: WallKey | null, altKey: boolean): WallKey | null {
+  if (wallKey === null) return null;
+  return altKey || !plannerFeatureEnabled("wallClickAlt") ? wallKey : null;
+}
+
 export function findFurnitureItemId(obj: Object3D): string | null {
   let current: Object3D | null = obj;
   while (current !== null) {
@@ -292,10 +307,30 @@ export function SelectionSystem(): null {
   // keyboard owner, and Esc for a drag or a box in progress. Esc stops a drag
   // where it is (one undo step, as a cancelled pointer always has); the next
   // press clears the selection (lib/planner-keymap.ts).
+  // The pointer's last place over the canvas, so Ctrl V pastes under it (Q-11).
+  const lastPointer = useRef<{ readonly x: number; readonly y: number } | null>(null);
+  useEffect(() => {
+    const canvasEl = gl.domElement;
+    const remember = (event: PointerEvent): void => { lastPointer.current = { x: event.clientX, y: event.clientY }; };
+    // Off the canvas, there is no place under the pointer to paste at.
+    const forget = (): void => { lastPointer.current = null; };
+    canvasEl.addEventListener("pointermove", remember, { passive: true });
+    canvasEl.addEventListener("pointerleave", forget);
+    return () => {
+      canvasEl.removeEventListener("pointermove", remember);
+      canvasEl.removeEventListener("pointerleave", forget);
+    };
+  }, [gl]);
   usePlannerKeyBindings(selectionKeyBindings({
     invalidate: () => { invalidateRef.current(); },
     cancelGesture: () => { cancelPointerGesture.current(); },
     screenUp: () => screenUpOnFloor(camera),
+    pointerFloor: () => {
+      const at = lastPointer.current;
+      // A panel since opened over the place the pointer rests is not the floor.
+      if (at === null || document.elementFromPoint(at.x, at.y) !== gl.domElement) return null;
+      return placementFloorPoint(scene, camera, raycaster, gl.domElement.getBoundingClientRect(), at.x, at.y);
+    },
   }));
   useEscapeLayer("operation", {
     open: () => isDragging.current || isMarquee.current,
@@ -368,6 +403,7 @@ export function SelectionSystem(): null {
       if (touchGesture.current !== null) touchGesture.current = "camera";
       useToolStore.getState().setLiveValue(null);
       useSelectionStore.getState().setActiveGuides([]);
+      useDoorClearSpaceStore.getState().setCarrying(false);
     }
     cancelPointerGesture.current = closePointerGesture;
 
@@ -529,6 +565,7 @@ export function SelectionSystem(): null {
         // The browser may have taken the touch already; the window still hears it.
       }
       isDragging.current = true;
+      useDoorClearSpaceStore.getState().setCarrying(true);
       if (!useSelectionStore.getState().selectedIds.has(itemId)) useSelectionStore.getState().select(itemId);
       haptic(10);
       // It rises above the finger at once, so the finger never hides it.
@@ -562,12 +599,12 @@ export function SelectionSystem(): null {
     }
 
     /** Sets the piece in hand down under (`x`, `y`): its ghost goes there first, as a click's does. */
-    function placeInHandAt(x: number, y: number): void {
+    function placeInHandAt(x: number, y: number, pieceUnderPointer: string | null = null): void {
       const itemId = useCatalogueStore.getState().selectedItemId;
       const hit = itemId === null ? null : placementFloorPoint(scene, camera, raycaster, canvasEl.getBoundingClientRect(), x, y);
       if (itemId !== null && hit !== null) {
         usePlacementStore.getState().updateGhost(hit.x, hit.z, itemId);
-        placePieceInHand(() => { invalidateRef.current(); });
+        placePieceInHand(() => { invalidateRef.current(); }, { pieceUnderPointer });
       }
       // A finger leaves no hover: the ghost goes once the piece is down.
       usePlacementStore.getState().clearGhost();
@@ -577,11 +614,14 @@ export function SelectionSystem(): null {
     function settleTouch(outcome: TouchOutcome, ended: TouchMode): void {
       if (outcome.kind === "tap") {
         if (outcome.armed) {
-          placeInHandAt(outcome.x, outcome.y);
+          // On a placed piece where the card's set could not stand, the tap picks the piece instead (Q-05; lib/place-in-hand).
+          const card = useCatalogueStore.getState().cardParams;
+          placeInHandAt(outcome.x, outcome.y, card !== null && judgesCard(card) ? interactionTargetAt(outcome.x, outcome.y).itemId : null);
         } else {
           const found = interactionTargetAt(outcome.x, outcome.y);
+          const wall = wallToHide(found.wallKey, false);
           if (found.itemId !== null) useSelectionStore.getState().select(found.itemId);
-          else if (found.wallKey !== null) useVisibilityStore.getState().toggleWall(found.wallKey);
+          else if (wall !== null) useVisibilityStore.getState().toggleWall(wall);
           else useSelectionStore.getState().clearSelection();
         }
       } else if (outcome.kind === "place") {
@@ -742,7 +782,8 @@ export function SelectionSystem(): null {
       // Raycast to find if we clicked on a placed furniture item
       const found = interactionTargetAt(event.clientX, event.clientY);
       dragItemId.current = found.itemId;
-      wallClickKey.current = found.wallKey;
+      // A plain press on a wall is a press on the floor under it when Alt-click hides walls.
+      wallClickKey.current = wallToHide(found.wallKey, event.altKey);
       dragGrabOffset.current = { x: 0, z: 0 };
       if (found.itemId !== null) {
         // Track accepted INSERT IDs from the press, including the interval
@@ -910,6 +951,7 @@ export function SelectionSystem(): null {
           if (!useSelectionStore.getState().selectedIds.has(dragItemId.current)) {
             useSelectionStore.getState().select(dragItemId.current);
           }
+          if (gestureKind.current === "move") useDoorClearSpaceStore.getState().setCarrying(true);
           // Rotate/Scale sweep from each item's value at drag start.
           if (gestureKind.current !== "move") {
             const placedItems = usePlacementStore.getState().placedItems;
@@ -1092,10 +1134,11 @@ export function SelectionSystem(): null {
         if (touchGesture.current !== "tap") return;
         touchGesture.current = null;
         const found = interactionTargetAt(event.clientX, event.clientY);
+        const wall = wallToHide(found.wallKey, event.altKey);
         if (found.itemId !== null) {
           useSelectionStore.getState().select(found.itemId);
-        } else if (found.wallKey !== null) {
-          useVisibilityStore.getState().toggleWall(found.wallKey);
+        } else if (wall !== null) {
+          useVisibilityStore.getState().toggleWall(wall);
         } else {
           useSelectionStore.getState().clearSelection();
         }
@@ -1190,7 +1233,11 @@ export function SelectionSystem(): null {
       const catItem = getCatalogueItem(item.catalogueItemId);
       if (catItem === undefined) return;
 
-      if (isDiningTableItem(catItem) && catItem.tableShape !== null) {
+      if (isDiningTableItem(catItem) && catItem.tableShape !== null && plannerChromeRequested(window.location.search) === "v2") {
+        // v2 mounts no chair dialog: the table is selected, and its caption holds its seats (QoL B-01).
+        useSelectionStore.getState().select(placedId);
+        invalidateRef.current();
+      } else if (isDiningTableItem(catItem) && catItem.tableShape !== null) {
         // Double-click on table in a group → edit chair count
         useChairDialogStore.getState().showDialog({
           catalogueItemId: item.catalogueItemId,

@@ -538,6 +538,14 @@
       "destination": "/index.html"
     },
     {
+      "source": "/deposit-return",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/deposit-return/",
+      "destination": "/index.html"
+    },
+    {
       "source": "/proposal-preview/:proposalId",
       "destination": "/index.html"
     },

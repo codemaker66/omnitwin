@@ -391,7 +391,7 @@ describe("view only", () => {
     expect(store().lockReason).toBeNull();
   });
 
-  it("is view-only, in review, when the layout opens submitted or under review, except for an admin", async () => {
+  it("is view-only, in review, when the layout opens submitted or under review, except for its venue's admin or a platform admin", async () => {
     vi.mocked(configApi.getConfig).mockResolvedValue(serverConfig(2, BASE_WIRE, { reviewStatus: "under_review" }));
     await store().loadConfiguration(CONFIG, true);
     expect(store().reviewStatus).toBe("under_review");
@@ -399,7 +399,14 @@ describe("view only", () => {
     store().setReviewStatus(CONFIG, "changes_requested");
     expect(store().lockReason).toBeNull();
 
-    useAuthStore.getState().setUser({ ...ME, role: "admin" });
+    useAuthStore.getState().setUser({ ...ME, role: "admin", venueId: VENUE });
+    store().setReviewStatus(CONFIG, "submitted");
+    expect(store().lockReason).toBeNull();
+    // Another venue's admin who owns the layout is held, as the server holds them.
+    useAuthStore.getState().setUser({ ...ME, role: "admin", venueId: "another-venue" });
+    store().setReviewStatus(CONFIG, "under_review");
+    expect(store().lockReason).toBe("in-review");
+    useAuthStore.getState().setUser({ ...ME, role: "staff", platformRole: "admin", venueId: null });
     store().setReviewStatus(CONFIG, "submitted");
     expect(store().lockReason).toBeNull();
   });

@@ -25,9 +25,12 @@ import { scrubErrorMessage } from "../observability/redact.js";
 //      permanent and fail immediately — no point retrying a bad address.
 //
 //   3. Structured logging. Every attempt, success, failure, and dedup
-//      emits a record with {event, idempotencyKey, recipient, ...}. The
-//      logger is injected — routes pass `request.log` (Fastify pino) so
-//      the request id is in every line; tests inject a capture.
+//      emits a record with {event, idempotencyKey, ...}. The logger is
+//      injected — routes pass `request.log` (Fastify pino) so the request
+//      id is in every line; tests inject a capture. No record names the
+//      recipient: an address in the logs is personal data copied to every
+//      log reader and drain. The `email_sends` row keyed by the same
+//      idempotencyKey holds it for whoever may read the database.
 //
 //   4. Audit trail. The `email_sends` row is updated with final status
 //      ("sent" / "failed" / "dev_mode"), the provider message id, and
@@ -174,9 +177,12 @@ function isTransientError(err: unknown): boolean {
 
 // Read for the log and for `email_sends.last_error`. A drizzle failure's
 // message carries the query parameters (the recipient, the subject), so every
-// message goes through `scrubErrorMessage`.
+// message goes through `scrubErrorMessage`; a provider's refusal can quote the
+// address it refused, so any address left is replaced too.
+const EMAIL_ADDRESS = /[^\s@<>()[\]"',;:]+@[^\s@<>()[\]"',;:]+\.[^\s@<>()[\]"',;:]+/gu;
+
 function errorMessage(err: unknown): string {
-  return scrubErrorMessage(rawErrorMessage(err));
+  return scrubErrorMessage(rawErrorMessage(err)).replace(EMAIL_ADDRESS, "[email address]");
 }
 
 function rawErrorMessage(err: unknown): string {
@@ -234,7 +240,6 @@ export async function sendEmail(
       logger.error({
         event: "email.audit_insert_failed",
         idempotencyKey,
-        recipient: payload.to,
         error: errorMessage(err),
       }, "email.audit_insert_failed");
       return false;
@@ -252,7 +257,6 @@ export async function sendEmail(
       logger.error({
         event: "email.audit_insert_failed",
         idempotencyKey,
-        recipient: payload.to,
         error: errorMessage(reclaimError),
       }, "email.audit_insert_failed");
       return false;
@@ -261,14 +265,12 @@ export async function sendEmail(
       logger.info({
         event: "email.dedup_skip",
         idempotencyKey,
-        recipient: payload.to,
       }, "email.dedup_skip");
       return true;
     }
     logger.info({
       event: "email.retry_after_failure",
       idempotencyKey,
-      recipient: payload.to,
     }, "email.retry_after_failure");
   }
 
@@ -284,7 +286,6 @@ export async function sendEmail(
     logger.warn({
       event: "email.default_sender",
       idempotencyKey,
-      recipient: payload.to,
       from: emailFrom,
     }, "email.default_sender");
   }
@@ -292,7 +293,6 @@ export async function sendEmail(
     logger.warn({
       event: "email.dev_mode_skip",
       idempotencyKey,
-      recipient: payload.to,
     }, "email.dev_mode_skip");
     await db.update(emailSends)
       .set({ status: "dev_mode", sentAt: new Date(), updatedAt: new Date() })
@@ -323,7 +323,6 @@ export async function sendEmail(
         logger.warn({
           event: "email.send_attempt_failed",
           idempotencyKey,
-          recipient: payload.to,
           attempt,
           transient,
           error: lastError,
@@ -333,7 +332,6 @@ export async function sendEmail(
           logger.error({
             event: "email.send_failed",
             idempotencyKey,
-            recipient: payload.to,
             attempt,
             error: lastError,
           }, "email.send_failed");
@@ -357,7 +355,6 @@ export async function sendEmail(
       logger.info({
         event: "email.sent",
         idempotencyKey,
-        recipient: payload.to,
         attempt,
         providerMessageId: messageId,
       }, "email.sent");
@@ -368,7 +365,6 @@ export async function sendEmail(
       logger.warn({
         event: "email.send_exception",
         idempotencyKey,
-        recipient: payload.to,
         attempt,
         transient,
         error: lastError,
@@ -378,7 +374,6 @@ export async function sendEmail(
         logger.error({
           event: "email.send_failed",
           idempotencyKey,
-          recipient: payload.to,
           attempt,
           error: lastError,
         }, "email.send_failed");

@@ -63,10 +63,10 @@ function inventory(items: VenueInventoryData["items"]): VenueInventoryData {
   return { items, availability: { status: "requires_assessment", reason: "TIME_WINDOW_REQUIRED" } };
 }
 
-// As the stock import writes it (api/src/scripts/import-venue-stock.ts): records on the bare tables.
+// As the stock import writes it (api/src/scripts/import-venue-stock.ts): records on the bare tables and the pink chair, which the planner sets as the Burgess Turini 18/3.
 const STOCK: UsableStock = usableStock(inventory([
   record("round-table-6ft", 30),
-  record("burgess-turini-18-3", 230, 6, 4),
+  record("pink-chair", 230, 6, 4),
   record("trestle-6ft", 30),
   record("dancefloor-panel", 36),
 ]));
@@ -83,12 +83,13 @@ describe("usable stock", () => {
     expect(stock.has(id("platform"))).toBe(false);
   });
 
-  it("counts a clothed table as the bare table the store holds, and pools nothing else", () => {
+  it("counts a clothed table as the bare table the store holds, the Turini as the venue's pink chair, and pools nothing else", () => {
     expect(stockIdentity(id("round-table-6ft-white"))).toBe(id("round-table-6ft"));
     expect(stockIdentity(id("round-table-6ft-black"))).toBe(id("round-table-6ft"));
     expect(stockIdentity(id("trestle-6ft-white"))).toBe(id("trestle-6ft"));
     expect(stockIdentity(id("trestle-6ft-wooden"))).toBe(id("trestle-6ft-wooden"));
-    expect(stockIdentity(id("burgess-turini-18-3"))).toBe(id("burgess-turini-18-3"));
+    expect(stockIdentity(id("burgess-turini-18-3"))).toBe(id("pink-chair"));
+    expect(stockIdentity(id("chiavari-chair"))).toBe(id("chiavari-chair"));
   });
 
   it("takes a bare table's own record, else the largest clothed record, never their sum", () => {
@@ -98,11 +99,19 @@ describe("usable stock", () => {
     const clothedOnly = usableStock(inventory([record("round-table-6ft-white", 12), record("round-table-6ft-black", 20)]));
     expect(clothedOnly.get(id("round-table-6ft"))).toBe(20);
   });
+
+  it("takes the pink chair's own record, else a record kept under the Turini, never their sum", () => {
+    const both = usableStock(inventory([record("pink-chair", 230), record("burgess-turini-18-3", 40)]));
+    expect(both.get(id("pink-chair"))).toBe(230);
+    expect(both.has(id("burgess-turini-18-3"))).toBe(false);
+    const turiniOnly = usableStock(inventory([record("burgess-turini-18-3", 40)]));
+    expect(turiniOnly.get(id("pink-chair"))).toBe(40);
+  });
 });
 
 describe("a card's store figure", () => {
   it("is the fewest whole cards any piece allows, beyond what the layout holds", () => {
-    expect(cardNeeds(params("round"))).toEqual(new Map([[id("round-table-6ft"), 1], [id("burgess-turini-18-3"), 10]]));
+    expect(cardNeeds(params("round"))).toEqual(new Map([[id("round-table-6ft"), 1], [id("pink-chair"), 10]]));
     expect(cardStoreFigure(params("round"), STOCK, new Map())).toBe(22);
     expect(cardStoreFigure(params("round"), STOCK, placedCounts([...stamp(params("round")), ...stamp(params("round"))]))).toBe(20);
   });
@@ -141,7 +150,7 @@ describe("the hard limit (B2)", () => {
   });
 
   it("holds the pieces with a record even when another piece of the card has none", () => {
-    const chairsOnly = usableStock(inventory([record("burgess-turini-18-3", 220)]));
+    const chairsOnly = usableStock(inventory([record("pink-chair", 220)]));
     const chairs = placedCounts(only("burgess-turini-18-3", 220));
     expect(cardStoreFigure(params("round"), chairsOnly, chairs)).toBeNull();
     expect(storeRefuses(params("round"), chairsOnly, chairs)).toBe(true);
@@ -150,13 +159,13 @@ describe("the hard limit (B2)", () => {
 
   it("refuses any change that takes a piece past its stock: 4 rounds of 10 into 2 long tables needs 48 chairs", () => {
     setPlannerFeaturesForTesting({ tableSets: true });
-    const forty = usableStock(inventory([record("round-table-6ft", 30), record("burgess-turini-18-3", 40), record("trestle-6ft", 30)]));
+    const forty = usableStock(inventory([record("round-table-6ft", 30), record("pink-chair", 40), record("trestle-6ft", 30)]));
     const rounds = [0, 4, 8, 12].flatMap((x) => stamp(params("round"), x));
     const longTables = [...stamp(params("long-table"), 0), ...stamp(params("long-table"), 10)];
     const change = { removeIds: new Set(rounds.map((piece) => piece.id)), add: longTables };
     const shortfall = storeShortfall(forty, rounds, change);
-    expect(shortfall).toEqual({ catalogueItemId: id("burgess-turini-18-3"), usable: 40, needed: 48 });
-    expect(shortfall === null ? "" : storeShortfallWords(shortfall)).toBe("Velvet Banquet Chair: 40 in store, this needs 48");
+    expect(shortfall).toEqual({ catalogueItemId: id("pink-chair"), usable: 40, needed: 48 });
+    expect(shortfall === null ? "" : storeShortfallWords(shortfall)).toBe("Pink Chair: 40 in store, this needs 48");
     // Two rounds of 12 in place of four rounds of 10 fit, as does a re-cloth that keeps every id.
     const twelves = [...stamp(params("round", { seats: 12 }), 0), ...stamp(params("round", { seats: 12 }), 4)];
     expect(storeShortfall(forty, rounds, { removeIds: change.removeIds, add: twelves })).toBeNull();
@@ -165,10 +174,10 @@ describe("the hard limit (B2)", () => {
   });
 
   it("lets a layout already over its stock change anything it does not add more of", () => {
-    const thirty = usableStock(inventory([record("burgess-turini-18-3", 30), record("dancefloor-panel", 36)]));
+    const thirty = usableStock(inventory([record("pink-chair", 30), record("dancefloor-panel", 36)]));
     const rounds = [0, 4, 8, 12].flatMap((x) => stamp(params("round"), x));
     expect(storeShortfall(thirty, rounds, { add: stamp(params("dance-floor"), 20) })).toBeNull();
-    expect(storeShortfall(thirty, rounds, { add: only("burgess-turini-18-3", 1) })).toEqual({ catalogueItemId: id("burgess-turini-18-3"), usable: 30, needed: 41 });
+    expect(storeShortfall(thirty, rounds, { add: only("burgess-turini-18-3", 1) })).toEqual({ catalogueItemId: id("pink-chair"), usable: 30, needed: 41 });
     expect(storeShortfall(null, rounds, { add: only("burgess-turini-18-3", 1) })).toBeNull();
   });
 });

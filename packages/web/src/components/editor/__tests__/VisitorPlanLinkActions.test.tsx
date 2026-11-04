@@ -52,6 +52,10 @@ function Harness({ configId = CONFIG_ID }: { readonly configId?: string | null }
 }
 
 beforeEach(() => {
+  // The day the link is made: a date shows its year only when it is not this
+  // year's, so the expiry reads "16 November" only while it is still 2026.
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date(MADE.createdAt));
   for (const mock of Object.values(mocks)) mock.mockReset();
   mocks.flush.mockResolvedValue(true);
   mocks.list.mockResolvedValue([]);
@@ -64,6 +68,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   Reflect.deleteProperty(navigator, "clipboard");
   setLayoutTimelineMutationLock(false);
   useEditorStore.getState().reset();

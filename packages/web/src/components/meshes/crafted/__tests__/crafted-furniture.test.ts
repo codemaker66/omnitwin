@@ -99,8 +99,12 @@ function casterBudget(slug: CraftedFurnitureSlug): number {
   return CHAIRS.has(slug) ? 600 : 3_000;
 }
 
-/** Within this of the floor a vertex stands on it, metres. */
-const FLOOR_TOUCH = 0.004;
+/**
+ * Within this of the floor a vertex stands on it, metres: above 4 mm, since a
+ * hem drawn 4 mm up (the covered poseur's pockets) stands on the floor and a
+ * float32 position reads a hair over what was drawn.
+ */
+const FLOOR_TOUCH = 0.005;
 /** Up to this high a seen vertex belongs to what stands on the floor beneath it, metres. */
 const LOW_BAND = 0.02;
 /** Vertices this close together stand as one, metres. */

@@ -15,14 +15,28 @@
 // checks it alongside these sets rather than finding it inside them.
 // ---------------------------------------------------------------------------
 
-import { VENUE_TEAM_INVITER_ROLES } from "@omnitwin/types";
+import { VENUE_ADMINISTRATION_ROLES } from "@omnitwin/types/user";
+import { VENUE_TEAM_INVITER_ROLES } from "@omnitwin/types/venue-team";
 
 /** Mirrors `canManageVenue` — the base "works this venue's floor" capability. */
 export const VENUE_FLOOR_ROLES = ["admin", "manager", "staff", "hallkeeper"] as const;
 
-/** Mirrors `canAdministerVenue` — the venue record and its spaces. Pricing-rule
- *  writes are narrower (`PRICING_WRITE_ROLES` below: admin and manager). */
-export const VENUE_ADMIN_ROLES = ["admin", "manager", "staff"] as const;
+/** Mirrors `canAdministerVenue` — the venue record, its spaces and its
+ *  changeover times — from the one list in @omnitwin/types the API reads.
+ *  Pricing-rule writes are narrower (`PRICING_WRITE_ROLES` below: admin and
+ *  manager). */
+export const VENUE_ADMIN_ROLES = VENUE_ADMINISTRATION_ROLES;
+
+/** `canAdministerVenue` itself: a venue administration role at this venue,
+ *  or a Venviewer platform administrator at any. */
+export function administersVenue(
+  user: { readonly role: string; readonly venueId: string | null; readonly platformRole: string } | null,
+  venueId: string | null,
+): boolean {
+  if (user === null || venueId === null) return false;
+  if (user.platformRole === "admin") return true;
+  return user.venueId === venueId && hasRole(VENUE_ADMIN_ROLES, user.role);
+}
 
 /**
  * Mirrors `canManageCommercial` — proposals, quotes, enquiries, revenue.
@@ -47,7 +61,7 @@ export const PRICING_READ_ROLES = COMMERCIAL_ROLES;
  * @omnitwin/types so the two cannot drift. Everyone else on the desk is told
  * who can.
  */
-export { PRICING_WRITE_ROLES } from "@omnitwin/types";
+export { PRICING_WRITE_ROLES } from "@omnitwin/types/pricing-desk";
 
 /**
  * The Analytics tab. What it opens is `ExecutiveAnalyticsView`, whose only

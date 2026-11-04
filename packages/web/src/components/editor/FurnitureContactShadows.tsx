@@ -30,6 +30,7 @@ import { getCatalogueItem, type CatalogueItem } from "../../lib/catalogue.js";
 import { normalizeFurnitureScale } from "../../lib/furniture-scale.js";
 import { toRenderSpace } from "../../constants/scale.js";
 import type { PlacedItem } from "../../lib/placement.js";
+import { furnitureMotionPose, subscribeFurnitureSettleFrames, type FurnitureMotionPose } from "../../lib/furniture-motion.js";
 import {
   HIDDEN_MATRIX,
   currentFurniturePresentation,
@@ -42,6 +43,38 @@ import {
 const SPREAD = 0.28;
 /** Height above the floor the shadows lie at, metres (with a depth bias). */
 const LIFT = 0.002;
+/** At this height and above, a piece in motion casts its lightest, widest shadow, metres. */
+const RAISED = 0.05;
+/** That shadow against one on the floor: lighter, and spread wider. */
+const RAISED_DARKNESS = 0.45;
+const RAISED_SPREAD = 1.25;
+
+/** The shadow of a piece in motion, against the shadow where it is placed. */
+export interface MovingShadow {
+  /** Offset from the placed position, metres. */
+  readonly dx: number;
+  readonly dz: number;
+  /** Darkness against the shadow on the floor, 0 to 1. */
+  readonly darkness: number;
+  /** Footprint scale. */
+  readonly spread: number;
+}
+
+/**
+ * Where and how a piece in motion (lib/furniture-motion.ts) casts its shadow:
+ * under where it is drawn, and the higher it is, the lighter and wider, as a
+ * real shadow softens once its object leaves the floor. A squash widens it
+ * with the base, as composeFurnitureMotion widens the piece.
+ */
+export function shadowUnderMotion(pose: FurnitureMotionPose): MovingShadow {
+  const raised = Math.min(1, Math.max(0, pose.lift / RAISED));
+  return {
+    dx: pose.x,
+    dz: pose.z,
+    darkness: 1 - (1 - RAISED_DARKNESS) * raised,
+    spread: (1 + (RAISED_SPREAD - 1) * raised) * (1 - pose.squash * 0.5),
+  };
+}
 
 export interface ContactShadowShape {
   /** Half extents of the footprint, metres. */
@@ -145,6 +178,8 @@ const UP = new Vector3(0, 1, 0);
  * While a reveal plays (floor/presentation-channel.ts) a piece's shadow lies
  * where the reveal draws it, as dark and as wide as it says; the store is
  * never written, and the frame after release writes every shadow as placed.
+ * Otherwise a piece in motion (lib/furniture-motion.ts) casts its shadow
+ * where the motion draws it (shadowUnderMotion).
  */
 function fillShadows(buffers: ShadowBuffers, items: readonly PlacedItem[], frame: PresentationFrame | null): number {
   let count = 0;
@@ -156,13 +191,15 @@ function fillShadows(buffers: ShadowBuffers, items: readonly PlacedItem[], frame
     if (shape === null) continue;
     const shown = frame === null ? null : presentedPiece(frame, placed.id);
     const presented = shown === null || shown === "hidden" ? null : shown;
-    const spread = presented?.shadowSpread ?? 1;
+    const pose = shown === null ? furnitureMotionPose(placed.id) : null;
+    const moving = pose === null ? null : shadowUnderMotion(pose);
+    const spread = presented?.shadowSpread ?? moving?.spread ?? 1;
     if (shown === "hidden" || (presented !== null && presented.shadow <= 0)) {
       buffers.mesh.setMatrixAt(count, HIDDEN_MATRIX);
       buffers.look.setXY(count, 0, 0);
     } else {
-      const darkness = Math.min(1, presented?.shadow ?? 1);
-      position.set(presented?.shadowX ?? placed.x, placed.y + LIFT, presented?.shadowZ ?? placed.z);
+      const darkness = Math.min(1, presented?.shadow ?? moving?.darkness ?? 1);
+      position.set(presented?.shadowX ?? placed.x + (moving?.dx ?? 0), placed.y + LIFT, presented?.shadowZ ?? placed.z + (moving?.dz ?? 0));
       rotation.setFromAxisAngle(UP, presented?.shadowYaw ?? placed.rotationY);
       size.set((shape.halfWidth * spread + SPREAD) * 2, 1, (shape.halfDepth * spread + SPREAD) * 2);
       matrix.compose(position, rotation, size);
@@ -214,6 +251,12 @@ export function FurnitureContactShadows(): ReactElement | null {
   // A reveal's frames, published before the frame renders (the publisher invalidates).
   useEffect(() => subscribeFurniturePresentation((frame) => {
     fillShadows(buffers, latest.current, frame);
+  }), [buffers]);
+
+  // Motion frames, likewise: a shadow follows its piece as it glides, lifts
+  // and lands, and the frame after the last motion writes every shadow as placed.
+  useEffect(() => subscribeFurnitureSettleFrames(() => {
+    fillShadows(buffers, latest.current, currentFurniturePresentation());
   }), [buffers]);
 
   return <primitive object={buffers.mesh} />;

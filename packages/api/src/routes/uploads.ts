@@ -257,14 +257,24 @@ export async function resolveUploadScope(
   return null;
 }
 
-async function verifyContextAccess(
+/**
+ * Which of a context's files this user may list: null for none, otherwise the
+ * uploader they are limited to (null uploader: every file). The venue lists
+ * everything. An enquiry's client reaches it as its customer and lists only
+ * the files they sent: the venue's own uploads to an enquiry are its working
+ * papers, and nothing yet marks one as shared with the client.
+ */
+async function resolveListAccess(
   db: Database,
   user: JwtUser,
   context: UploadContext,
   contextId: string,
-): Promise<boolean> {
+): Promise<{ readonly uploadedBy: string | null } | null> {
   const visibility: UploadVisibility = context === "public_marketing" ? "public" : "private";
-  return (await resolveUploadScope(db, user, context, contextId, visibility)) !== null;
+  const scope = await resolveUploadScope(db, user, context, contextId, visibility);
+  if (scope === null) return null;
+  const asCustomer = context === "enquiry" && scope.venueId !== null && !canManageVenue(user, scope.venueId);
+  return { uploadedBy: asCustomer ? user.id : null };
 }
 
 export function buildScopedFileKey(scope: UploadScope, contentType: AllowedContentType): string {
@@ -385,9 +395,9 @@ export async function uploadRoutes(
       return reply.status(400).send({ error: "Invalid params", code: "VALIDATION_ERROR" });
     }
 
-    // Verify user can access the referenced resource
-    const allowed = await verifyContextAccess(db, request.user, params.data.context, params.data.contextId);
-    if (!allowed) {
+    // Verify user can access the referenced resource, and which of its files
+    const access = await resolveListAccess(db, request.user, params.data.context, params.data.contextId);
+    if (access === null) {
       return reply.status(403).send({ error: "You do not have access to this resource", code: "FORBIDDEN" });
     }
 
@@ -396,6 +406,7 @@ export async function uploadRoutes(
       .where(and(
         eq(files.context, params.data.context),
         eq(files.contextId, params.data.contextId),
+        access.uploadedBy === null ? undefined : eq(files.uploadedBy, access.uploadedBy),
       ))
       .orderBy(files.uploadedAt);
 

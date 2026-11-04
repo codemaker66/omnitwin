@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { INVENTORY_ADJUSTER_ROLES, USER_ROLES, VENUE_TEAM_INVITER_ROLES } from "@omnitwin/types";
+import { INVENTORY_ADJUSTER_ROLES, USER_ROLES, VENUE_ADMINISTRATION_ROLES, VENUE_TEAM_INVITER_ROLES } from "@omnitwin/types";
 import {
   ANALYTICS_ROLES,
   CLIENT_SEARCH_ROLES,
@@ -18,7 +18,9 @@ import {
   VENUE_DAY_ROLES,
   VENUE_FLOOR_ROLES,
   VENUE_MEMBER_ROLES,
+  VENUE_ADMIN_ROLES,
   WORKSPACE_ROLES,
+  administersVenue,
   awaitsVenue,
   canDraftWithAI,
   diaryVenueOf,
@@ -267,6 +269,24 @@ describe("route gates and their landing surfaces agree", () => {
     ]) {
       expect(canReadInternalEventData(auth)).toBe(false);
     }
+  });
+});
+
+describe("venue administration (dash-ops-2)", () => {
+  it("is the API's one list, from @omnitwin/types: admin, manager and staff, never the hallkeeper or sales", () => {
+    expect(VENUE_ADMIN_ROLES).toBe(VENUE_ADMINISTRATION_ROLES);
+    expect([...VENUE_ADMIN_ROLES]).toEqual(["admin", "manager", "staff"]);
+  });
+
+  it("answers as canAdministerVenue does, a platform administrator at any venue included", () => {
+    for (const role of ALL_ROLES) {
+      const at = { role: role ?? "", venueId: "venue-1", platformRole: "none" };
+      expect(administersVenue(at, "venue-1"), `${String(role)} at its venue`).toBe(hasRole(VENUE_ADMINISTRATION_ROLES, role));
+      expect(administersVenue(at, "venue-2"), `${String(role)} elsewhere`).toBe(false);
+    }
+    expect(administersVenue({ role: "planner", venueId: null, platformRole: "admin" }, "venue-2")).toBe(true);
+    expect(administersVenue({ role: "admin", venueId: "venue-1", platformRole: "none" }, null)).toBe(false);
+    expect(administersVenue(null, "venue-1")).toBe(false);
   });
 });
 

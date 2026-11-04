@@ -140,7 +140,8 @@ describe("auto-fill words", () => {
     const theatre = planAutoFill("theatre", 220, HALL_W, HALL_L);
     if (theatre === null) throw new Error("no theatre plan");
     expect(autoFillActionLabel(theatre)).toBe("Place 224 chairs in 16 rows");
-    expect(autoFillBasis(theatre)).toBe("Rows 0.9 m apart, a 1.1 m centre aisle and 2.4 m clear at the front.");
+    // 16 rows of 14 in the hall's chairs as recorded: 8 rows of the pink chair (112 of 120), 7 of the checked (98 of 106), 1 of the red.
+    expect(autoFillBasis(theatre)).toBe("Rows 0.9 m apart, a 1.1 m centre aisle and 2.4 m clear at the front. The front rows take the pink chair, then the checked chair, then the red chair with gold legs, as the hall's own chairs run.");
   });
 
   it("names the published figure with who stated it", () => {
