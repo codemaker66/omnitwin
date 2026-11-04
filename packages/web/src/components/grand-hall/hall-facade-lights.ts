@@ -31,6 +31,14 @@ import { airAt, duskShare, lightOnlyOutput, streetLookUniforms } from "./hall-st
 
 export const FACADE_LIGHTS_URL = "/rooms/grand-hall/context-2020-lidar/facade-lights-v1.json?r=1";
 
+/**
+ * The lit openings on the city drawn round the measured front
+ * (merchant-city-v3): the same file. v3 changes the city only round Trades
+ * Hall's own front, and bake_facade_lights.py --front-cut --same-as
+ * facade-lights-v1.json places every opening on it exactly as v1 does.
+ */
+export const FACADE_LIGHTS_FRONT_URL = FACADE_LIGHTS_URL;
+
 /** Coordinates outside this box mean a malformed file, metres (as the city model's). */
 const COORDINATE_LIMIT = 320;
 
