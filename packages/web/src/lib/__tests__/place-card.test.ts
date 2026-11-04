@@ -146,7 +146,7 @@ describe("the truthful ghost at the commit (truthfulGhost)", () => {
   });
 
   it("without the switch, sets a piece card's stamp down as asked", () => {
-    setPlannerFeaturesForTesting({ setupCards: true });
+    setPlannerFeaturesForTesting({ setupCards: true, truthfulGhost: false });
     const poseur = params("piece:poseur-table");
     placeCardAt(poseur, { x: 0, z: 0 }, 0);
     placeCardAt(poseur, { x: 0, z: 0.1 }, 0);
