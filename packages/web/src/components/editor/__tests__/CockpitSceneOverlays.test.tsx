@@ -24,6 +24,7 @@ vi.mock("@react-three/drei", () => ({
 vi.mock("../../../hooks/use-cockpit-replay.js", () => ({ useCockpitReplay: vi.fn() }));
 
 const replayHook = vi.mocked(await import("../../../hooks/use-cockpit-replay.js"));
+const { CHROME_SETTLE_MS } = await import("../../../stores/chrome-presence-store.js");
 const { TRADES_HALL_GUEST_FLOW_REPLAY_INPUT } = await import("../../../lib/trades-hall-visual-demo-state.js");
 const { useCockpitStore } = await import("../../../stores/cockpit-store.js");
 const { CockpitSceneOverlays } = await import("../CockpitSceneOverlays.js");
@@ -397,6 +398,43 @@ describe("CockpitSceneOverlays", () => {
       if (match?.[1] === undefined) throw new Error("Missing annotation placement");
       expect(Number.parseFloat(match[1]) + 44).toBeLessThanOrEqual(932);
     }
+    unmount(); shell.remove(); canvasBox.mockRestore();
+  });
+
+  // T-680: a unit folded by the pointer frees its space only once its fade
+  // has run, and a fold changes no element's size, so only the chrome's own
+  // attribute on <html> can say to measure again then.
+  it("measures again once a folded unit's fade has run, so the cards use the space it frees", async () => {
+    const canvas = frameState.canvas;
+    if (canvas === null) throw new Error("Missing canvas");
+    const shell = document.createElement("div"); shell.className = "cockpit-shell";
+    const dock = document.createElement("footer"); dock.className = "cockpit-bottom client-event-dock";
+    dock.setAttribute("aria-label", "Your event schedule");
+    shell.append(canvas, dock); document.body.append(shell);
+    const canvasBox = vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 1366, 1000));
+    const dockBox = vi.spyOn(dock, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 80, 1366, 920));
+    useCockpitStore.getState().setMode("flow");
+    const { container, unmount } = render(<CockpitSceneOverlays renderGeometry={false} />);
+    const runFrame = (): void => {
+      const callback = frameState.callbacks.at(-1);
+      if (callback === undefined) throw new Error("Missing annotation frame");
+      callback();
+    };
+    act(runFrame);
+    const layer = container.querySelector<HTMLElement>(".scene-annotations");
+    expect(layer?.getAttribute("aria-hidden")).toBe("true");
+    // The fold starts: the unit is still there while its fade runs.
+    await act(async () => { document.documentElement.setAttribute("data-planner-fold-bottom", "folded"); await Promise.resolve(); });
+    act(runFrame);
+    expect(layer?.getAttribute("aria-hidden")).toBe("true");
+    // The fade ends with no resize and no mutation: only the settle measures again.
+    dockBox.mockReturnValue(new DOMRect(0, 940, 1366, 60));
+    act(runFrame);
+    expect(layer?.getAttribute("aria-hidden")).toBe("true");
+    await act(async () => { await new Promise((resolve) => { window.setTimeout(resolve, CHROME_SETTLE_MS + 40); }); });
+    act(runFrame);
+    expect(layer?.getAttribute("aria-hidden")).toBe("false");
+    document.documentElement.removeAttribute("data-planner-fold-bottom");
     unmount(); shell.remove(); canvasBox.mockRestore();
   });
 
