@@ -698,7 +698,8 @@ describe("the walls' bodies against the scanned relief", () => {
       expect(coplanarOverlaps([...fixed, ...shown, ...leaves]).slice(0, 5)).toEqual([]);
       expect(coplanarOverlaps([...unscanned, ...bars, ...shown]).slice(0, 5)).toEqual([]);
     }
-  });
+    // Six cuts over the whole relief: 34 s on CI's runner, where the 20 s default timed out.
+  }, 120_000);
 
   it("sets the thresholds above the floor's level, through each doorway's depth", () => {
     const sills = buildHallThresholdGeometry().geometries.get("floor");
