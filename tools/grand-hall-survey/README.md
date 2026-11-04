@@ -502,7 +502,7 @@ the script's default) the best similarity is 1.0015 with a shift under 1 px. The
 Chrome 156, the RTX 4090), the render's edges over the front lie a median 0.95 px from the photograph's (75% within
 1.9 px, 86% within 3 px; 37.1 px a metre at the links' face, so about 2.6 cm), and the skyline's lines sit within
 1-4 px (end bays' balustrade +1, links' +4, the rosette attic -1, the pavilions' parapets -3). The other way, the
-photograph's edges lie a median 2.9 px from the render's, since the stone's joints, the carving, the signs and the
+photograph's edges lie a median 3.3 px from the render's, since the stone's joints, the carving, the signs and the
 street have no edges in the model.
 
 Diagnostics, not part of the build: `context/probe.py <dsm>` shows that in the grid's documented

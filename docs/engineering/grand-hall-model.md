@@ -386,7 +386,8 @@ the clock. Presentation only: nothing is saved, and nothing is kept between visi
   streetward of the painted dome inside), photographs for heights and details, and the room for the hall's five
   windows (`HALL_OPENINGS`, so the front's openings and the room's glazing are one). 31,764 triangles (26,644 on a
   phone's finish), closed solids built a frame's spare time at a time after the city; its code is a lazy chunk
-  (28.7 kB, 10.9 kB gzipped) fetched only when the front is asked for. With it the city comes from
+  (28,839 B, 10,885 B gzipped) fetched only when the front is drawn. If the chunk will not load or the build
+  fails, the city fetches v2's model and lamps again, so the street keeps a front. With it the city comes from
   `merchant-city-v3.bin` (the old front cut away to bare pavement, the neighbours' street fronts straightened; the
   survey README's v3 paragraph) with its lamps baked against it (the two door lanterns on the modelled podium). The
   material discards everything above the window wall's eased cut (`hallFrontCut`, written by GrandHallModel's cut
@@ -398,9 +399,12 @@ the clock. Presentation only: nothing is saved, and nothing is kept between visi
   lamp (24094) where photograph A puts it. Its round pieces keep sharp corners (`MeshBuilder.lathe`'s crease).
   An uncut copy casts on the sun's shadow layer, so the columns, cornices and pediment shade the hall's windows. Against photograph A from its solved
   camera (`tools/grand-hall-survey/front`) the render's edges lie a median 0.95 px (about 2.6 cm) from the
-  photograph's, the skyline within 1-4 px. On the RTX 4090 (Chrome 156, WebGPU, 160 guests, off/on/on/off pages)
-  the front changed the mean frame time by -0.23 to +0.29 ms across two poses by day and night, within the spread
-  of repeated runs (up to 1.2 ms).
+  photograph's, the skyline within 1-4 px; the other way, the photograph's edges lie a median 3.28 px from the
+  render's (its joints, carving, signs and street have no edges in the model). On the RTX 4090 (Chrome 156,
+  WebGPU, 160 guests, off/on/on/off pages) the front changed the mean frame time by -0.04 to +0.20 ms across two
+  poses by day and night, within the spread of repeated runs (0.26-1.66 ms); measured while the sky's WebGPU
+  pipelines failed to compile under `?sky=1` (three r186 writes an empty WGSL struct), so to be measured again once
+  that is fixed. The city drawn round the front (`merchant-city-v3.bin` and its lamps) is 2,568 B smaller than v2's.
 - **The street at night** (`lib/sky/night-looks.ts`, `hall-street-light.ts`, `HallStreetLights.tsx`):
   after dusk the card turns a dark violet with its skyline brighter than its blocks, so every
   building stands as a silhouette and no lit window floats; Glasgow City Council's street lamps

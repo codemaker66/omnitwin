@@ -6,11 +6,12 @@
 // and cut wherever the cutaway cuts the window wall (hall-exterior-material.ts,
 // hall-exterior-cut.ts). The whole front also stands, uncut, as a caster on
 // the sun's shadow layer, so its columns, cornices and the pediment shade the
-// hall's windows and the street as the building does. If the build fails or
-// is cut short by leaving the page, the city stands without it.
+// hall's windows and the street as the building does. If the build fails it
+// says so (`onFailed`), and the city takes back its own front (HallContext);
+// cut short by leaving the page, it says nothing.
 // ---------------------------------------------------------------------------
 
-import { useEffect, useMemo, useState, type ReactElement } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { useThree } from "@react-three/fiber";
 import type { BufferGeometry } from "three";
 import { useHallFinish } from "./hall-finish.js";
@@ -26,10 +27,14 @@ export interface HallExteriorProps {
   readonly sun: HallSun;
   /** The city's street-light maps, whose lamps light the front after dusk. */
   readonly lightMaps: StreetLightMaps;
+  /** Called once if the front cannot be built (never when the build is cut short by leaving). */
+  readonly onFailed?: () => void;
 }
 
-export function HallExterior({ sun, lightMaps }: HallExteriorProps): ReactElement | null {
+export function HallExterior({ sun, lightMaps, onFailed }: HallExteriorProps): ReactElement | null {
   const invalidate = useThree((state) => state.invalidate);
+  const failed = useRef(onFailed);
+  failed.current = onFailed;
   const finish = useHallFinish();
   const preset = useMemo(() => parseSectionPreset(typeof window === "undefined" ? null : window.location.search), []);
   const [geometry, setGeometry] = useState<BufferGeometry | null>(null);
@@ -47,7 +52,9 @@ export function HallExterior({ sun, lightMaps }: HallExteriorProps): ReactElemen
         else front.geometry.dispose();
       })
       .catch(() => {
-        // Cut short by leaving the page, or failed: the city stands without its front.
+        // Cut short by leaving the page (no longer live): nothing to say. Still
+        // live, the build failed: the city takes back its own front.
+        if (live) failed.current?.();
       });
     return () => {
       live = false;
