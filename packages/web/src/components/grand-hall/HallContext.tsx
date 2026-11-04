@@ -15,8 +15,9 @@
 // The lit openings across Glassford Street (hall-facade-lights.ts) load
 // beside them, and either can fail without the other.
 //
-// With the modelled front asked for (`?facade=1`, hall-facade-access.ts) the
-// city comes from the model whose Trades Hall front is cut away, with the
+// With the modelled front (on unless this device chose `?facade=0`,
+// hall-facade-access.ts) the city comes from the model whose Trades Hall
+// front is cut away, with the
 // lamps baked against it, and the measured front (HallExterior, whose code is
 // fetched only then) stands in its place, in the city's light and lamps and
 // casting into its shadow map.

@@ -377,8 +377,8 @@ the clock. Presentation only: nothing is saved, and nothing is kept between visi
   |z| 5.95, 0.3 m inside the street wall. `?setting=none` leaves the hall under the sky alone, for
   measuring.
 - **The front** (`hall-exterior-spec.ts`, `hall-exterior.ts`, `hall-exterior-material.ts`,
-  `hall-exterior-cut.ts`, `HallExterior.tsx`; off unless `?facade=1`, remembered per device by
-  `lib/hall-facade-access.ts`, and only under the real sky, with the city): Trades Hall's Glassford Street front as
+  `hall-exterior-cut.ts`, `HallExterior.tsx`; under the real sky, with the city, unless a device chose
+  `?facade=0`, remembered by `lib/hall-facade-access.ts`; Blake's choice, 4 November): Trades Hall's Glassford Street front as
   solid masonry in place of the city's LiDAR trace of it, which stood 1.0-1.2 m out and stair-stepped (the DSM's
   shadow on a front facing away from the survey aircraft). Every number in the spec names its source: the E57 scan
   for the faces (links z -6.312, pavilions -6.607, the temple's podium -7.200), the venue's plan for the columns'

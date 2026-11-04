@@ -3,7 +3,7 @@ import path from "node:path";
 import { act } from "@testing-library/react";
 import { advance } from "@react-three/fiber";
 import { DirectionalLight, type LightShadow, type Object3D } from "three";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getCatalogueItemBySlug } from "../../../lib/catalogue.js";
 import { activeFurnitureSettleCount, dropInFurniture, publishFurnitureSettleFrame } from "../../../lib/furniture-motion.js";
 import { createPlacedItem } from "../../../lib/placement.js";
@@ -11,8 +11,8 @@ import { usePlacementStore } from "../../../stores/placement-store.js";
 import { mountInStubRoot, type StubRoot } from "../../__tests__/stub-r3f-root.js";
 import { FurnitureMotion } from "../../editor/FurnitureMotion.js";
 import { HallContext } from "../HallContext.js";
-import { CONTEXT_MODEL_URL } from "../hall-context.js";
-import { STREET_LAMPS_URL, STREET_LIGHT_URL } from "../hall-street-light.js";
+import { CONTEXT_MODEL_FRONT_URL, CONTEXT_MODEL_URL } from "../hall-context.js";
+import { STREET_LAMPS_FRONT_URL, STREET_LAMPS_URL, STREET_LIGHT_FRONT_URL, STREET_LIGHT_URL } from "../hall-street-light.js";
 import { HallSunLight, MOON_INTENSITY, MOTION_REDRAW_MS } from "../HallSunLight.js";
 import { hallSkyAt } from "../hall-sky.js";
 import { hallSkyState, hallSkyUniforms, publishHallSky } from "../hall-sky-runtime.js";
@@ -229,6 +229,25 @@ describe("the hall's sun and furniture in motion", () => {
 });
 
 describe("the city arriving round the hall", () => {
+  // The city as v2 draws it, on a device that turned the measured front off
+  // (`?facade=0`); the front's own city and lamps are the first test's.
+  beforeEach(() => { window.localStorage.setItem("venviewer.hall-facade", "0"); });
+  afterEach(() => { window.localStorage.removeItem("venviewer.hall-facade"); });
+
+  it("asks for the city drawn round the measured front, and its lamps, unless the device said no (Blake, 4 November 2026)", async () => {
+    window.localStorage.removeItem("venviewer.hall-facade");
+    const asked: string[] = [];
+    vi.stubGlobal("fetch", vi.fn((url: string) => {
+      asked.push(url);
+      return Promise.resolve({ ok: false, status: 404 });
+    }));
+    mounted = mountInStubRoot(<HallContext />);
+    await act(async () => { await new Promise((resolve) => { setTimeout(resolve, 0); }); });
+    expect(asked).toEqual(expect.arrayContaining([CONTEXT_MODEL_FRONT_URL, STREET_LIGHT_FRONT_URL, STREET_LAMPS_FRONT_URL]));
+    expect(asked).not.toContain(CONTEXT_MODEL_URL);
+    expect(asked).not.toContain(STREET_LIGHT_URL);
+  });
+
   it("redraws the hall's own map once the model stands in the scene", async () => {
     const buffer = cityModel();
     vi.stubGlobal("fetch", vi.fn(() => Promise.resolve({ ok: true, status: 200, arrayBuffer: () => Promise.resolve(buffer) })));

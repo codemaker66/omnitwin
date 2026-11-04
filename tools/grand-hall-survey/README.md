@@ -437,7 +437,7 @@ and raise the `?r=` revision in `CONTEXT_MODEL_URL` (`hall-context.ts`), for the
 `HALL_SURVEY_REVISION` above.
 
 **v3, the city round the measured front (`--front-cut`, 4 November 2026).** Where the planner draws Trades
-Hall's own Glassford Street front (`hall-exterior-spec.ts`, `?facade=1`), the city must not draw the DSM's: its
+Hall's own Glassford Street front (`hall-exterior-spec.ts`; off only where a device chose `?facade=0`), the city must not draw the DSM's: its
 traced front stands 1.0-1.2 m out from the scanned faces (the LiDAR shadow of a front facing away from the
 aircraft, filled), and its raster stair-steps stood in front of the modelled one. v3 is v2 in v2's frame and
 registration (the hall's E57 scan, matched to the DSM's edges of the walls across Glassford, Garth and Hutcheson
