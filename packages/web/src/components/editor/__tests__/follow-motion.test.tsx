@@ -17,6 +17,8 @@ import { FurnitureMotion } from "../FurnitureMotion.js";
 import { FurnitureContactShadows, shadowUnderMotion } from "../FurnitureContactShadows.js";
 import { TableCandles } from "../TableCandles.js";
 
+const TEST_DROP_HEIGHT = 0.14;
+
 function catalogueId(slug: string): string {
   const item = getCatalogueItemBySlug(slug);
   if (item === undefined) throw new Error(`Missing catalogue fixture ${slug}`);
@@ -106,7 +108,8 @@ describe("contact shadows of furniture in motion", () => {
     const placedWidth = slot0(shadows).width;
     expect(placedDarkness).toBeGreaterThan(0);
 
-    dropInFurniture(chair.id);
+    // From a height past the shadow's 5 cm saturation, whatever the default drop is.
+    dropInFurniture(chair.id, TEST_DROP_HEIGHT);
     frame();
     expect(furnitureMotionPose(chair.id)?.lift ?? 0).toBeGreaterThan(0.05);
     expect(look.getX(0)).toBeCloseTo(placedDarkness * 0.45, 5);
@@ -155,7 +158,8 @@ describe("candles on a table in motion", () => {
     const placedLinen = slot0(linen);
     const placedPool = slot0(pool);
 
-    dropInFurniture(table.id);
+    // From a height past the shadow's 5 cm saturation, whatever the default drop is.
+    dropInFurniture(table.id, TEST_DROP_HEIGHT);
     frame();
     const lift = furnitureMotionPose(table.id)?.lift ?? 0;
     expect(lift).toBeGreaterThan(0.05);

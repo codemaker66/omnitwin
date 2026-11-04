@@ -14,15 +14,20 @@ import { describe, expect, it } from "vitest";
 import {
   COMPACT_PLANNER_OVERLAY_MIN_VIEWPORT_WIDTH,
   MAX_LEAN_CONSTRAINT_VIOLATION_SKINS,
+  NAMEPLATE_CLEARANCE_M,
+  NAMEPLATE_MAX_WIDTH_M,
   cameraReferenceGlowRadius,
   furnitureNamePlateYOffset,
   leanSweepCandidates,
+  nameplatePlaneSize,
+  nameplateText,
   placementViolationIds,
+  primaryNameplateId,
   shouldRenderIndividualFurnitureModel,
   shouldLimitPlannerFurnitureOverlays,
   visibleConstraintViolationIds,
 } from "../PlacedFurniture.js";
-import { CATALOGUE_ITEMS } from "../../lib/catalogue.js";
+import { CATALOGUE_ITEMS, getCatalogueItemBySlug } from "../../lib/catalogue.js";
 import { createPlacedItem, type PlacedItem } from "../../lib/placement.js";
 import { GRAND_HALL_RENDER_DIMENSIONS } from "../../constants/scale.js";
 
@@ -62,10 +67,80 @@ describe("cameraReferenceGlowRadius", () => {
 });
 
 describe("furnitureNamePlateYOffset", () => {
-  it("anchors above the visible scaled top while keeping annotation clearance fixed", () => {
-    const table = { category: "table" as const, height: 0.75 };
-    expect(furnitureNamePlateYOffset(table, 2)).toBeCloseTo(2.85);
-    expect(furnitureNamePlateYOffset(table, 0)).toBeCloseTo(2.1);
+  it("puts the plate's lower edge 0.9 m above the visible scaled top", () => {
+    const table = { height: 0.75 };
+    expect(NAMEPLATE_CLEARANCE_M).toBe(0.9);
+    expect(furnitureNamePlateYOffset(table, 2)).toBeCloseTo(2.4);
+    expect(furnitureNamePlateYOffset(table, 0)).toBeCloseTo(1.65);
+  });
+});
+
+describe("nameplateText", () => {
+  it("reads the label, then the grouped seat count when there is one", () => {
+    expect(nameplateText("  Table 4 ", 10)).toBe("Table 4 · 10 seats");
+    expect(nameplateText("Table 4", 1)).toBe("Table 4 · 1 seat");
+    expect(nameplateText("Table 4", 0)).toBe("Table 4");
+    expect(nameplateText("Table 4")).toBe("Table 4");
+  });
+});
+
+describe("nameplatePlaneSize", () => {
+  it("keeps the texture's aspect and never exceeds 2.4 m", () => {
+    const [widest, widestHeight] = nameplatePlaneSize(1024, 176);
+    expect(widest).toBeCloseTo(NAMEPLATE_MAX_WIDTH_M);
+    expect(widest / widestHeight).toBeCloseTo(1024 / 176);
+    const [narrow, narrowHeight] = nameplatePlaneSize(512, 176);
+    expect(narrow).toBeCloseTo(1.2);
+    expect(narrowHeight).toBeCloseTo(widestHeight);
+    expect(nameplatePlaneSize(4096, 176)[0]).toBe(NAMEPLATE_MAX_WIDTH_M);
+    expect(nameplatePlaneSize(0, 176)).toEqual([0, 0]);
+  });
+});
+
+describe("primaryNameplateId", () => {
+  function piece(slug: string, id: string, groupId: string | null = null): PlacedItem {
+    const item = getCatalogueItemBySlug(slug);
+    if (item === undefined) throw new Error(`missing ${slug} fixture`);
+    return createPlacedItem(item.id, 0, 0, 0, groupId, 0, id);
+  }
+  const layout: readonly PlacedItem[] = [
+    piece("round-table-6ft", "t1", "g1"),
+    piece("banquet-chair", "c1", "g1"),
+    piece("banquet-chair", "c2", "g1"),
+    piece("round-table-6ft", "t2", "g2"),
+    piece("banquet-chair", "c3", "g2"),
+    piece("round-table-6ft", "t3"),
+    piece("lectern", "l1"),
+    piece("banquet-chair", "c4"),
+  ];
+  const primary = (...ids: string[]): string | null => primaryNameplateId(new Set(ids), layout);
+
+  it("names a single selected table, or the table of one selected group", () => {
+    expect(primary("t3")).toBe("t3");
+    expect(primary("t1", "c1", "c2")).toBe("t1");
+    expect(primary("t1", "c1")).toBe("t1");
+  });
+
+  it("names a single selected piece that is neither table nor chair", () => {
+    expect(primary("l1")).toBe("l1");
+  });
+
+  it("never names a chair", () => {
+    expect(primary("c4")).toBeNull();
+    expect(primary("c1", "c2")).toBeNull();
+  });
+
+  it("names nothing when the selection is more than one unit", () => {
+    expect(primary("t1", "t2")).toBeNull();
+    expect(primary("t1", "c1", "t2", "c3")).toBeNull();
+    expect(primary("t3", "l1")).toBeNull();
+    expect(primary("t1", "c4")).toBeNull();
+    expect(primary()).toBeNull();
+  });
+
+  it("names the one table of a group that also holds another piece", () => {
+    const withLectern = [...layout, piece("lectern", "l2", "g1")];
+    expect(primaryNameplateId(new Set(["t1", "c1", "l2"]), withLectern)).toBe("t1");
   });
 });
 

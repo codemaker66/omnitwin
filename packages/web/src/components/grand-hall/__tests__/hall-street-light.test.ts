@@ -1,12 +1,16 @@
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { InstancedBufferAttribute, Vector3 } from "three";
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 import { STREET_NIGHT_LOOKS } from "../../../lib/sky/night-looks.js";
+import { CONTEXT_MODEL_FRONT_URL } from "../hall-context.js";
+import { FRONT_AXIS_X, FRONT_BAYS, FRONT_FACE_Z, FRONT_PAVEMENT_Y, TEMPLE } from "../hall-exterior-spec.js";
 import {
-  BEAM, DUSK_SPAN, FITTING, LAMP_SWITCH, STREET_LAMPS_URL, STREET_LIGHT_URL, anyLampLit, applyStreetLook, buildBeamGeometry, buildFittingGeometry,
-  buildHaloGeometry, drawnLamps, duskShareAt, haloInstances, lampLight, parseStreetLamps, parseStreetLight, streetLookUniforms, triangleCount,
-  unwarpCoordinate, warpCoordinate, type StreetLamp, type StreetLightField,
+  BEAM, DUSK_SPAN, FITTING, LAMP_SWITCH, STREET_LAMPS_FRONT_URL, STREET_LAMPS_URL, STREET_LIGHT_FRONT_URL, STREET_LIGHT_URL, anyLampLit,
+  applyStreetLook, buildBeamGeometry, buildFittingGeometry, buildHaloGeometry, drawnLamps, duskShareAt, haloInstances, lampLight, parseStreetLamps,
+  parseStreetLight, streetLookUniforms, triangleCount, unwarpCoordinate, warpCoordinate, type StreetLamp, type StreetLightField,
 } from "../hall-street-light.js";
 
 interface PackOptions {
@@ -54,11 +58,12 @@ function table(lamps: readonly Record<string, unknown>[], counts: Partial<Record
   };
 }
 
-function published(): { field: StreetLightField; lamps: StreetLamp[] } {
-  const read = (url: string): Buffer => readFileSync(path.resolve("public", url.replace(/^\//u, "").replace(/\?.*$/u, "")));
-  const bytes = read(STREET_LIGHT_URL);
+const readPublic = (url: string): Buffer => readFileSync(path.resolve("public", url.replace(/^\//u, "").replace(/\?.*$/u, "")));
+
+function published(lightUrl = STREET_LIGHT_URL, lampsUrl = STREET_LAMPS_URL): { field: StreetLightField; lamps: StreetLamp[] } {
+  const bytes = readPublic(lightUrl);
   const field = parseStreetLight(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
-  const json: unknown = JSON.parse(read(STREET_LAMPS_URL).toString("utf8"));
+  const json: unknown = JSON.parse(readPublic(lampsUrl).toString("utf8"));
   return { field, lamps: parseStreetLamps(json, field) };
 }
 
@@ -236,32 +241,38 @@ describe("dusk on the card", () => {
   });
 });
 
+/**
+ * At each nearby street lamp's pool centre, a step out along its throw, the
+ * pool map names that lamp's pool, switch and foot, and the head map, read as
+ * the shader reads it, that lamp's head and switch.
+ */
+function expectMapsAgreeWithLamps(field: StreetLightField, lamps: readonly StreetLamp[]): void {
+  expect(field.size).toBe(512);
+  expect(lamps.length).toBe(field.lampCount);
+  expect(lamps.length).toBeGreaterThan(200);
+  const near = drawnLamps(lamps).filter((lamp) => lamp.kind !== "door" && Math.hypot(lamp.head[0], lamp.head[2]) < 60);
+  expect(near.length).toBeGreaterThan(8);
+  for (const lamp of near) {
+    const x = lamp.head[0] + lamp.heading[0] * 1.6;
+    const z = lamp.head[2] + lamp.heading[1] * 1.6;
+    const col = Math.min(field.size - 1, Math.floor(warpCoordinate(x, field) * field.size));
+    const row = Math.min(field.size - 1, Math.floor(warpCoordinate(z, field) * field.size));
+    const [r, g, b, a] = texelAt(field.poolTexels, field, col, row);
+    expect(r / 255 * field.poolRange, lamp.id).toBeLessThan(1);
+    expect(field.switchMin + g / 255 * (field.switchMax - field.switchMin), lamp.id).toBeCloseTo(lamp.switchAltitude, 3);
+    expect(Math.abs(field.yMin + (b - 1) / 254 * (field.yMax - field.yMin) - lamp.footY), lamp.id).toBeLessThan(0.07);
+    expect(a, lamp.id).toBe(255);
+    const head = shaderHead(field, x, z);
+    expect(Math.hypot(head.x - lamp.head[0], head.z - lamp.head[2]), lamp.id).toBeLessThan(0.2);
+    expect(Math.abs(head.y - lamp.head[1]), lamp.id).toBeLessThan(0.1);
+    expect(head.switchAltitude, lamp.id).toBeCloseTo(lamp.switchAltitude, 3);
+  }
+}
+
 describe("the published street lamps", () => {
   it("parse, and agree with the light maps baked beside them", () => {
     const { field, lamps } = published();
-    expect(field.size).toBe(512);
-    expect(lamps.length).toBe(field.lampCount);
-    expect(lamps.length).toBeGreaterThan(200);
-    // At each nearby street lamp's pool centre, a step out along its throw, the
-    // pool map names that lamp's pool, switch and foot, and the head map, read
-    // as the shader reads it, that lamp's head and switch.
-    const near = drawnLamps(lamps).filter((lamp) => lamp.kind !== "door" && Math.hypot(lamp.head[0], lamp.head[2]) < 60);
-    expect(near.length).toBeGreaterThan(8);
-    for (const lamp of near) {
-      const x = lamp.head[0] + lamp.heading[0] * 1.6;
-      const z = lamp.head[2] + lamp.heading[1] * 1.6;
-      const col = Math.min(field.size - 1, Math.floor(warpCoordinate(x, field) * field.size));
-      const row = Math.min(field.size - 1, Math.floor(warpCoordinate(z, field) * field.size));
-      const [r, g, b, a] = texelAt(field.poolTexels, field, col, row);
-      expect(r / 255 * field.poolRange, lamp.id).toBeLessThan(1);
-      expect(field.switchMin + g / 255 * (field.switchMax - field.switchMin), lamp.id).toBeCloseTo(lamp.switchAltitude, 3);
-      expect(Math.abs(field.yMin + (b - 1) / 254 * (field.yMax - field.yMin) - lamp.footY), lamp.id).toBeLessThan(0.07);
-      expect(a, lamp.id).toBe(255);
-      const head = shaderHead(field, x, z);
-      expect(Math.hypot(head.x - lamp.head[0], head.z - lamp.head[2]), lamp.id).toBeLessThan(0.2);
-      expect(Math.abs(head.y - lamp.head[1]), lamp.id).toBeLessThan(0.1);
-      expect(head.switchAltitude, lamp.id).toBeCloseTo(lamp.switchAltitude, 3);
-    }
+    expectMapsAgreeWithLamps(field, lamps);
   });
 
   it("take away exactly the fittings the hall's cut and a too-low wall cannot carry, and keep 24095 across Glassford Street", () => {
@@ -283,6 +294,55 @@ describe("the published street lamps", () => {
     }
     const altitudes = lamps.map((lamp) => lamp.switchAltitude);
     expect(Math.max(...altitudes) - Math.min(...altitudes)).toBeGreaterThan(1);
+  });
+});
+
+describe("the street lamps round the measured front (street-light-v3)", () => {
+  const { field, lamps } = published(STREET_LIGHT_FRONT_URL, STREET_LAMPS_FRONT_URL);
+
+  it("parse, and agree with the light maps baked beside them", () => {
+    expectMapsAgreeWithLamps(field, lamps);
+  });
+
+  it("were baked against the city drawn round the front", () => {
+    const table = z.object({ inputs: z.object({ model: z.object({ file: z.string(), sha256: z.string() }) }) })
+      .parse(JSON.parse(readPublic(STREET_LAMPS_FRONT_URL).toString("utf8")));
+    expect(table.inputs.model.file).toBe(path.basename(CONTEXT_MODEL_FRONT_URL.replace(/\?.*$/u, "")));
+    expect(table.inputs.model.sha256).toBe(createHash("sha256").update(readPublic(CONTEXT_MODEL_FRONT_URL)).digest("hex"));
+  });
+
+  it("take away the same fittings as v2, and keep 24095 across Glassford Street", () => {
+    const fitted = (fitting: string): number[] => lamps.filter((lamp) => lamp.fitting === fitting).map((lamp) => lamp.objectid ?? 0).sort((a, b) => a - b);
+    expect(fitted("cut")).toEqual([24094, 24096, 45116, 45117, 45127]);
+    expect(fitted("low-wall")).toEqual([8463]);
+    expect(lamps.find((lamp) => lamp.objectid === 24095)?.fitting).toBe("drawn");
+    expect(lamps.length).toBe(published().lamps.length);
+  });
+
+  it("hang Trades Hall's door lanterns and its own lamp on the modelled front, throwing straight out", () => {
+    const doors = lamps.filter((lamp) => lamp.kind === "door");
+    expect(doors.map((lamp) => lamp.id)).toEqual(["trades-hall:door-north", "trades-hall:door-south"]);
+    // The survey's u +-2.461 and 2.904-3.494 m over the pavement, 0.30 m proud of the modelled podium's face
+    // (hall-exterior-spec.ts, so a face that moves fails here until the bake follows); the front draws no
+    // lanterns, so the table draws them.
+    const podiumFace = FRONT_FACE_Z - TEMPLE.podiumProud;
+    for (const [lamp, u] of [[doors[0], 2.461], [doors[1], -2.461]] as const) {
+      expect(lamp?.head[0]).toBeCloseTo(FRONT_AXIS_X - u, 3);
+      expect(lamp?.head[1]).toBeCloseTo(FRONT_PAVEMENT_Y + (2.904 + 3.494) / 2, 3);
+      expect(lamp?.head[2]).toBeCloseTo(podiumFace - 0.3, 3);
+      expect(lamp?.heading).toEqual([0, -1]);
+      expect(lamp?.fitting).toBe("drawn");
+    }
+    // 24094 where photograph A shows it, from its solved camera: u 6.645 on the north pavilion, 9.46 m over the
+    // pavement, 0.35 m out from the pavilion's modelled face; its fitting cut, its light kept.
+    const pavilion = FRONT_BAYS.find((bay) => bay.id === "pavilion-north");
+    expect(pavilion !== undefined && pavilion.uMin < 6.645 && 6.645 < pavilion.uMax).toBe(true);
+    const own = lamps.find((lamp) => lamp.objectid === 24094);
+    expect(own?.head[0]).toBeCloseTo(FRONT_AXIS_X - 6.645, 3);
+    expect(own?.head[1]).toBeCloseTo(FRONT_PAVEMENT_Y + 9.46, 3);
+    expect(own?.head[2]).toBeCloseTo(FRONT_FACE_Z - (pavilion?.proud ?? Number.NaN) - 0.35, 3);
+    expect(own?.heading).toEqual([0, -1]);
+    expect(own?.fitting).toBe("cut");
   });
 });
 
