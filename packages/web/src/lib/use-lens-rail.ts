@@ -1,15 +1,18 @@
 import { useLayoutEffect } from "react";
 import { useAuthStore } from "../stores/auth-store.js";
 import { useCockpitStore } from "../stores/cockpit-store.js";
+import { useEditorStore } from "../stores/editor-store.js";
 import type { CockpitMode } from "./cockpit-modes.js";
 import { lensesFor, shownLens, type LensRail } from "./cockpit-lenses.js";
 import { plannerFeatures } from "./planner-features.js";
 
-/** The lens rail for whoever is viewing, as the auth store and the keys stand now. */
+/** The lens rail for whoever is viewing the open layout, as the stores and the keys stand now. */
 export function useLensRail(): LensRail {
   const keys = plannerFeatures();
+  const venueId = useEditorStore((editor) => editor.venueId);
+  const isPublicPreview = useEditorStore((editor) => editor.isPublicPreview);
   // Every rail is a constant, so the selector's answer is stable until it changes.
-  return useAuthStore((auth) => lensesFor(auth, keys));
+  return useAuthStore((auth) => lensesFor(auth, keys, { venueId, isPublicPreview }));
 }
 
 /** The lens the cockpit shows: the active one if this viewer's rail offers it, else Design. */
