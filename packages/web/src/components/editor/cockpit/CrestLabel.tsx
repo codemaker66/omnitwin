@@ -1,4 +1,4 @@
-import { useEffect, useState, type FocusEvent, type PointerEvent, type ReactElement } from "react";
+import { useEffect, useRef, useState, type FocusEvent, type PointerEvent, type ReactElement } from "react";
 import { useEscapeLayer } from "../../../lib/planner-keys.js";
 import { useChromePresenceStore } from "../../../stores/chrome-presence-store.js";
 
@@ -52,15 +52,20 @@ export function useCrestLabel(): { readonly shown: boolean; readonly handlers: C
   const [focused, setFocused] = useState(false);
   const [dismissed, setDismissed] = useState(false);
   const noteShowing = useChromePresenceStore((state) => state.hintPending);
+  // Where the hand and the keyboard are, as the events say. A press or a key
+  // can land before React has drawn the hand's arrival (an arrival is a
+  // continuous update, a press or a key a discrete one), so every decision
+  // below reads these, never the drawn state (4 Nov: frame 09 and its probe).
+  const hand = useRef(false);
+  const keys = useRef(false);
   // Pressed (or \ while the hand or the keyboard is on it), the crest has
   // answered its name: it stays away until both have left, so the next Esc
-  // brings the tools back instead of putting a name away.
-  const cleared = useChromePresenceStore((state) => state.cleared);
-  const [answered, setAnswered] = useState(cleared);
-  if (answered !== cleared) {
-    setAnswered(cleared);
-    if (pointerIn || focused) setDismissed(true);
-  }
+  // brings the tools back instead of putting a name away. It is decided as
+  // the tools go or come, not on the press: a press that took the name's hit
+  // area away would send its release, and so the click, past the crest.
+  useEffect(() => useChromePresenceStore.subscribe((state, previous) => {
+    if (state.cleared !== previous.cleared && (hand.current || keys.current)) setDismissed(true);
+  }), []);
   useEffect(() => {
     if (!pointerIn) return undefined;
     const timer = window.setTimeout(() => { setRested(true); }, CREST_LABEL_DELAY_MS);
@@ -74,16 +79,25 @@ export function useCrestLabel(): { readonly shown: boolean; readonly handlers: C
   return {
     shown,
     handlers: {
-      onPointerEnter: (event) => { if (event.pointerType === "mouse") setPointerIn(true); },
+      onPointerEnter: (event) => {
+        if (event.pointerType !== "mouse") return;
+        hand.current = true;
+        setPointerIn(true);
+      },
       // Put away with Esc, it stays away until the hand and the keyboard have both left.
       onPointerLeave: () => {
+        hand.current = false;
         setPointerIn(false);
-        if (!focused) setDismissed(false);
+        if (!keys.current) setDismissed(false);
       },
-      onFocus: (event) => { setFocused(!quietFocus && focusIsVisible(event.currentTarget)); },
+      onFocus: (event) => {
+        keys.current = !quietFocus && focusIsVisible(event.currentTarget);
+        setFocused(keys.current);
+      },
       onBlur: () => {
+        keys.current = false;
         setFocused(false);
-        if (!pointerIn) setDismissed(false);
+        if (!hand.current) setDismissed(false);
       },
     },
   };

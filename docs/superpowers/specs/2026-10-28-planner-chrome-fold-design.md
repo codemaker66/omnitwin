@@ -201,6 +201,14 @@ interface ChromePresence {
       never over the link home however the venue's name wraps. The way down to it is no wider than the crest.
     - Pressing the crest answers it: the label stays away until the hand and the keyboard have both left, so the
       next Esc brings the tools back.
+      - It is answered as the tools go or come, from where the events say the hand and the keyboard are. A press
+        or a key can land before React has drawn the hand's arrival (an arrival is a continuous update, a press
+        a discrete one): deciding from the drawn state brought the label back 400 ms after a quick press (4 Nov,
+        frame 09). Answering on pointerdown instead took the label's hit area away mid-press, so a press on its
+        words lost its click (4 Nov review). A press that toggles nothing, such as the context menu's, leaves it.
+      - Known limit: the way down to the label is the crest's own column. A hand that cuts across the venue's
+        name towards the label's far end leaves the crest and loses the label; a pointer grace area would keep
+        it.
 - **Toggles:**
   - `\`, a binding at `KEY_PRIORITY.planner`. It never fires while typing in a field or while a dialog holds the
     keyboard. It also answers `\` typed with AltGr (German, French, Spanish and Nordic keyboards, which the

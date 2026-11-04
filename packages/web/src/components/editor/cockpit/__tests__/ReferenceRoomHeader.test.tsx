@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { startTransition } from "react";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { getVenue, type VenueDetail } from "../../../../api/spaces.js";
@@ -266,6 +267,85 @@ describe("ReferenceRoomHeader", () => {
     expect(label?.getAttribute("data-shown")).toBe("false");
     act(() => { window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })); });
     expect(useChromePresenceStore.getState().cleared).toBe(false);
+  });
+
+  // 4 Nov (frame 09, then a probe of it in Chromium): a press in the frame the
+  // hand arrives in lands before React has drawn the hand (an arrival is a
+  // continuous update, a press a discrete one), so the name came back 400 ms
+  // later under the hand that had just pressed it, and the next Esc only put
+  // that name away. A transition stands in for the arrival's lower priority.
+  it("puts the name away for a press that lands before the hand's arrival is drawn", () => {
+    vi.useFakeTimers();
+    showHeaderInCockpit();
+    act(() => { useChromePresenceStore.setState({ hintsShown: 3 }); });
+    const button = crest();
+    const label = button.querySelector(".reference-crest__label");
+    act(() => {
+      startTransition(() => { fireEvent.pointerEnter(button, { pointerType: "mouse" }); });
+      fireEvent.pointerDown(button, { pointerType: "mouse" });
+      fireEvent.click(button);
+    });
+    expect(useChromePresenceStore.getState().cleared).toBe(true);
+    act(() => { vi.advanceTimersByTime(CREST_LABEL_DELAY_MS * 3); });
+    expect(label?.getAttribute("data-shown")).toBe("false");
+    act(() => { window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })); });
+    expect(useChromePresenceStore.getState().cleared).toBe(false);
+    // Once the hand has left, a rest names the crest again.
+    fireEvent.pointerLeave(button, { pointerType: "mouse" });
+    fireEvent.pointerEnter(button, { pointerType: "mouse" });
+    act(() => { vi.advanceTimersByTime(CREST_LABEL_DELAY_MS); });
+    expect(label?.getAttribute("data-shown")).toBe("true");
+  });
+
+  it("puts the name away for a \\ pressed before the hand's arrival is drawn", () => {
+    vi.useFakeTimers();
+    showHeaderInCockpit();
+    act(() => { useChromePresenceStore.setState({ hintsShown: 3 }); });
+    const button = crest();
+    const label = button.querySelector(".reference-crest__label");
+    act(() => {
+      startTransition(() => { fireEvent.pointerEnter(button, { pointerType: "mouse" }); });
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "\\", bubbles: true, cancelable: true }));
+    });
+    expect(useChromePresenceStore.getState().cleared).toBe(true);
+    act(() => { vi.advanceTimersByTime(CREST_LABEL_DELAY_MS * 3); });
+    expect(label?.getAttribute("data-shown")).toBe("false");
+  });
+
+  // Review, 4 Nov: answering the name on pointerdown took the name's hit area
+  // away before the release, so a press on its words never reached the crest.
+  // Only a press that toggles the tools answers the name.
+  it("keeps the name for a press that toggles nothing, such as the context menu's", () => {
+    vi.useFakeTimers();
+    showHeaderInCockpit();
+    const button = crest();
+    const label = button.querySelector(".reference-crest__label");
+    fireEvent.pointerEnter(button, { pointerType: "mouse" });
+    act(() => { vi.advanceTimersByTime(CREST_LABEL_DELAY_MS); });
+    expect(label?.getAttribute("data-shown")).toBe("true");
+    fireEvent.pointerDown(button, { pointerType: "mouse", button: 2 });
+    fireEvent.contextMenu(button);
+    expect(useChromePresenceStore.getState().cleared).toBe(false);
+    expect(label?.getAttribute("data-shown")).toBe("true");
+  });
+
+  it("names the crest at the next rest when hand and keyboard leave in one frame", () => {
+    vi.useFakeTimers();
+    showHeaderInCockpit();
+    const button = crest();
+    const label = button.querySelector(".reference-crest__label");
+    act(() => { button.focus(); });
+    fireEvent.pointerEnter(button, { pointerType: "mouse" });
+    expect(label?.getAttribute("data-shown")).toBe("true");
+    act(() => { window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })); });
+    expect(label?.getAttribute("data-shown")).toBe("false");
+    act(() => {
+      startTransition(() => { fireEvent.pointerLeave(button, { pointerType: "mouse" }); });
+      button.blur();
+    });
+    fireEvent.pointerEnter(button, { pointerType: "mouse" });
+    act(() => { vi.advanceTimersByTime(CREST_LABEL_DELAY_MS); });
+    expect(label?.getAttribute("data-shown")).toBe("true");
   });
 
   it("lets the first-use note speak instead of the crest's name", () => {
