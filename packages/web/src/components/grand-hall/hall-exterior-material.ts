@@ -15,8 +15,9 @@
 //
 // The cut: every fragment above the window wall's cut (hall-exterior-cut.ts)
 // is discarded, and the solids' inner faces, seen through the cut, draw flat
-// in the section's colour and lit from above as the cut's top, so the front
-// reads as masonry cut through, as the wall behind it does. Normals come from
+// in the section's colour and lit from above as the cut's top, by the sun
+// with no shadow as the hall's cut is, so the front reads as masonry cut
+// through, as the wall behind it does. Normals come from
 // the geometry's own attribute (it is built in world space), never
 // normalWorld, which the section's unlit materials keep out of the pass's
 // normal target (hall-section.ts).
@@ -32,6 +33,7 @@ import { hallFrontCut } from "./hall-exterior-cut.js";
 import type { SectionPresetName } from "./hall-section.js";
 import type { HallSun } from "./hall-sun.js";
 import { FRONT_PART, type FrontPartName } from "./hall-exterior.js";
+import { FRONT_LEVELS, FRONT_PAVEMENT_Y } from "./hall-exterior-spec.js";
 
 type Palette = Readonly<Record<FrontPartName, string>> & { readonly cut: string };
 
@@ -58,8 +60,10 @@ export const FRONT_PALETTES: Readonly<Record<SectionPresetName, Palette>> = {
   },
 };
 
-/** The front door's fanlight and the glazed doors lit from the stair hall after dusk (I). */
+/** The ground floor's glass after dusk, its doors' fanlights and glazed doors and its shopfronts, lit from within (I). */
 const DOORWAY_GLOW = 0.12;
+/** The ground floor's glass stops under the string course (planner y). */
+const GROUND_GLASS_TOP = FRONT_PAVEMENT_Y + FRONT_LEVELS.stringBottom;
 
 function linear(hex: string): Node<"vec3"> {
   const colour = new Color().setStyle(hex, SRGBColorSpace);
@@ -86,20 +90,20 @@ export function createFrontMaterial(sun: HallSun, maps: StreetLightMaps, preset:
   const material = new MeshBasicNodeMaterial({ side: DoubleSide, fog: false });
   material.colorNode = Fn(() => {
     const p = positionWorld;
-    If(p.y.greaterThan(hallFrontCut), () => {
-      Discard();
-    });
     const part = attribute<"float">("aPart", "float");
     // A face seen from inside its solid is the cut through it: flat section colour, lit as a top.
     const outside = frontFacing;
     const n = select(outside, normalize(attribute<"vec3">("normal", "vec3")), vec3(0, 1, 0)).toVar();
     const albedo = select(outside, partColour(part, palette), linear(palette.cut)).toVar();
-    const lit = albedo.mul(cardLight(n, sun.factor, float(0))).toVar();
+    // The cut takes the sun with no shadow, as the hall's own cut tops do
+    // (hall-section.ts cutTopLight): its faces lie inside the uncut caster.
+    const lit = albedo.mul(cardLight(n, select(outside, sun.factor, float(1)), float(0))).toVar();
     // Glass keeps a little of the sky in it by day.
     const glass = select(part.greaterThan(0.5).and(part.lessThan(1.5)).and(outside), float(1), float(0));
     lit.addAssign(mix(sky.horizonAway, sky.zenith, smoothstep(-0.2, 0.6, n.y)).mul(0.08).mul(glass).mul(float(1).sub(sky.night)));
-    // After dusk the doorways' glass glows from within.
-    lit.addAssign(vec3(1, 0.7, 0.42).mul(DOORWAY_GLOW).mul(glass).mul(sky.night).mul(smoothstep(-2.6, -3.4, p.y)));
+    // After dusk the ground floor's glass, under the string course, glows from within.
+    const groundFloor = float(1).sub(smoothstep(GROUND_GLASS_TOP - 0.3, GROUND_GLASS_TOP, p.y));
+    lit.addAssign(vec3(1, 0.7, 0.42).mul(DOORWAY_GLOW).mul(glass).mul(sky.night).mul(groundFloor));
     // And the street lamps light its walls, never its cut (lit as a top): a
     // branch on a uniform, as the city's, so the derivatives inside stay legal.
     If(sky.sunAltitude.lessThan(NIGHT_WORK_BELOW), () => {
@@ -107,7 +111,14 @@ export function createFrontMaterial(sun: HallSun, maps: StreetLightMaps, preset:
       lit.addAssign(albedo.mul(lamps.onWall).mul(float(1).sub(smoothstep(0.7, 0.9, n.y))));
     });
     const haze = cardHaze(p);
-    return vec4(mix(lit, haze.color, haze.amount).mul(nightDither()), 1);
+    const colour = vec4(mix(lit, haze.color, haze.amount).mul(nightDither()), 1).toVar();
+    // Above the window wall's cut nothing is drawn. Discarded last, once every
+    // derivative above is taken: under GLSL a fragment discarded earlier leaves
+    // its quad's derivatives undefined along the cut's edge.
+    If(p.y.greaterThan(hallFrontCut), () => {
+      Discard();
+    });
+    return colour;
   })();
   material.name = "grand-hall-front";
   return material;

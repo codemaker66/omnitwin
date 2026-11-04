@@ -26,7 +26,7 @@
    "A": "that head's y: 1 + (y - min) / (max - min) x 254; 0 = no head within range"
   }
  },
- "method": "Street lighting round the Grand Hall at night: the lamp table and the light texture for the city model.\n\nInputs\n  street-lamps-ogl-2026-10-18.json  Glasgow City Council's open lamp positions (fetch_street_lamps.py, OGL v3)\n  merchant-city-v2.bin / .json      the published city model (build_context.py): its frame, parameters, walls, caps\n  _work.npz                         the model's rasters (build_context.py --keep-work): bands and the site labels\n  heights_50cm.f32 + meta.json      the LiDAR grid the model was cut from (fetch_dsm.py), for column heights\n  Trades Hall's two door lanterns   the facade survey (photo 05), as the DOOR_LANTERNS constant below\n\nSteps\n  1. the council's points in the planner frame within the model's reach; points within 0.3 m merged; six points\n     in George Square's paving that are not lamp columns left out (EXCLUDED); the door lanterns added\n  2. bracket or column, from the model alone: a point standing in a building (a surface at least 2.2 m above the\n     ground round it) or within 2.5 m of a drawn building wall is a wall bracket, anything else a column\n  3. brackets snap to the nearest drawn building wall and move 0.85 m out along its normal (a 0.5 m bracket and\n     half a lantern); a column throws its light away from the nearest building\n  4. mounting heights: 8 m for brackets (Trades Hall's own lamp sits level with the first-floor window arches,\n     between the springing at 7.60 m and the crown at 9.03 m, in our facade photograph); a column's height is the\n     LiDAR spike over it where the DSM resolves one within an arm's reach (1.5 m) of its point (4-12.5 m), else\n     8 m (a spike further off is another object: a signal, a sign); a bracket stands at the foot of its drawn\n     wall, a column on the model's drawn ground\n  5. fittings the model cannot carry draw none and keep their light (\"fitting\"): \"cut\", a bracket whose drawn\n     wall is cut at the hall's floor by the site's clamp below its head, or a column inside the clamp with its\n     head above the cut (y = 0); \"low-wall\", a bracket on a wall the model's 3 m bands drew too low to hang it at\n     least 4 m over the street. A bracket on a wall drawn lower than its head moves onto the wall that carries on\n     up within 2.5 m behind a ledge, or else hangs 0.6 m under the drawn top (height_source \"model-wall\")\n  6. each lamp's switching altitude: -3.0 +- 0.6 degrees of sun, from a hash of its id, on the light maps'\n     8-bit lattice (-3.6 + 1.2 k / 255), so the maps and the table agree exactly\n  7. two light maps, each 512 x 512 RGBA8 over +-260 m, warped s = asinh(x / 60) / asinh(260 / 60) (about 0.5 m\n     a texel at the hall, 0.85 m at 80 m, 2.3 m at the edge). The pool map, read filtered:\n       R   the distance to the nearest visible pool, metres, 1.3x shorter along the street than across it, the\n           pool's centre 1.6 m out from the head along its throw; 0-24 m (door lanterns' pools scaled by 0.4)\n       G   that pool's lamp's switching altitude, -3.6..-2.4 degrees as 0..255\n       B   that lamp's foot (the ground its pool lies on), y -6..26 m as 1..255\n       A   its pool's strength, 0..1 (door lanterns 0.6)\n     every texel holding the nearest pool lamp's G B A, so filtering only ever blends real lamps. The head map,\n     read texel by texel:\n       R   the nearest visible head's switching altitude, as G above\n       G B that head from the texel's centre, x and z, +-16 m (0 beyond 16 m)\n       A   that head's height y, -6..26 m as 1..255; 0 where no head is within 16 m\n     A texel sees a lamp when the line from the lamp's head (launched from outside its own building) to the\n     texel's surface clears the model's bands; values carry 3 texels into building footprints so wall edges\n     sample the street's light\n  8. write street-light-v2.bin (header 'VVSL', then the pool map, then the head map) and street-lamps-v2.json\n\nUsage\n  python bake_street_light.py <out-dir> --work <_work.npz> --dsm-dir <dir> [--lamps ...] [--model-dir ...]\n         [--facade facade.json] [--pub pub-layer.json] [--check]\n  --check  rebuilds into a temporary folder, asserts byte-identical output and runs the bake checks\n  --pub    a local copy of the council's Pub_Lighting_Columns response (never committed): checks the\n           bracket/column classification against it (at least 95 % agreement)\nRequires numpy and scipy.\n--front-cut (street-light-v3.bin, street-lamps-v3.json): the same bake against merchant-city-v3, whose street front\nbefore Trades Hall is bare ground (the planner's own modelled front stands there, anchored to the room): the two\ndoor lanterns hang 0.35 m proud of that front's podium face (FRONT_DOOR_LANTERNS) and Trades Hall's own lamp, 24094,\nkeeps its place along the front 1.09 m out from the north pavilion's face (FRONT_BRACKETS), each throwing straight\nout from the front; the ground in front of the hall is open street in the bands, so the light maps see across it",
+ "method": "Street lighting round the Grand Hall at night: the lamp table and the light texture for the city model.\n\nInputs\n  street-lamps-ogl-2026-10-18.json  Glasgow City Council's open lamp positions (fetch_street_lamps.py, OGL v3)\n  merchant-city-v2.bin / .json      the published city model (build_context.py): its frame, parameters, walls, caps\n  _work.npz                         the model's rasters (build_context.py --keep-work): bands and the site labels\n  heights_50cm.f32 + meta.json      the LiDAR grid the model was cut from (fetch_dsm.py), for column heights\n  Trades Hall's two door lanterns   the facade survey (photo 05), as the DOOR_LANTERNS constant below\n\nSteps\n  1. the council's points in the planner frame within the model's reach; points within 0.3 m merged; six points\n     in George Square's paving that are not lamp columns left out (EXCLUDED); the door lanterns added\n  2. bracket or column, from the model alone: a point standing in a building (a surface at least 2.2 m above the\n     ground round it) or within 2.5 m of a drawn building wall is a wall bracket, anything else a column\n  3. brackets snap to the nearest drawn building wall and move 0.85 m out along its normal (a 0.5 m bracket and\n     half a lantern); a column throws its light away from the nearest building\n  4. mounting heights: 8 m for brackets (Trades Hall's own lamp sits level with the first-floor window arches,\n     between the springing at 7.60 m and the crown at 9.03 m, in our facade photograph); a column's height is the\n     LiDAR spike over it where the DSM resolves one within an arm's reach (1.5 m) of its point (4-12.5 m), else\n     8 m (a spike further off is another object: a signal, a sign); a bracket stands at the foot of its drawn\n     wall, a column on the model's drawn ground\n  5. fittings the model cannot carry draw none and keep their light (\"fitting\"): \"cut\", a bracket whose drawn\n     wall is cut at the hall's floor by the site's clamp below its head, or a column inside the clamp with its\n     head above the cut (y = 0); \"low-wall\", a bracket on a wall the model's 3 m bands drew too low to hang it at\n     least 4 m over the street. A bracket on a wall drawn lower than its head moves onto the wall that carries on\n     up within 2.5 m behind a ledge, or else hangs 0.6 m under the drawn top (height_source \"model-wall\")\n  6. each lamp's switching altitude: -3.0 +- 0.6 degrees of sun, from a hash of its id, on the light maps'\n     8-bit lattice (-3.6 + 1.2 k / 255), so the maps and the table agree exactly\n  7. two light maps, each 512 x 512 RGBA8 over +-260 m, warped s = asinh(x / 60) / asinh(260 / 60) (about 0.5 m\n     a texel at the hall, 0.85 m at 80 m, 2.3 m at the edge). The pool map, read filtered:\n       R   the distance to the nearest visible pool, metres, 1.3x shorter along the street than across it, the\n           pool's centre 1.6 m out from the head along its throw; 0-24 m (door lanterns' pools scaled by 0.4)\n       G   that pool's lamp's switching altitude, -3.6..-2.4 degrees as 0..255\n       B   that lamp's foot (the ground its pool lies on), y -6..26 m as 1..255\n       A   its pool's strength, 0..1 (door lanterns 0.6)\n     every texel holding the nearest pool lamp's G B A, so filtering only ever blends real lamps. The head map,\n     read texel by texel:\n       R   the nearest visible head's switching altitude, as G above\n       G B that head from the texel's centre, x and z, +-16 m (0 beyond 16 m)\n       A   that head's height y, -6..26 m as 1..255; 0 where no head is within 16 m\n     A texel sees a lamp when the line from the lamp's head (launched from outside its own building) to the\n     texel's surface clears the model's bands; values carry 3 texels into building footprints so wall edges\n     sample the street's light\n  8. write street-light-v2.bin (header 'VVSL', then the pool map, then the head map) and street-lamps-v2.json\n\nUsage\n  python bake_street_light.py <out-dir> --work <_work.npz> --dsm-dir <dir> [--lamps ...] [--model-dir ...]\n         [--facade facade.json] [--pub pub-layer.json] [--check]\n  --check  rebuilds into a temporary folder, asserts byte-identical output and runs the bake checks\n  --pub    a local copy of the council's Pub_Lighting_Columns response (never committed): checks the\n           bracket/column classification against it (at least 95 % agreement)\nRequires numpy and scipy.\n--front-cut (street-light-v3.bin, street-lamps-v3.json): the same bake against merchant-city-v3, whose street front\nbefore Trades Hall is bare ground (the planner's own modelled front stands there, anchored to the room): the two\ndoor lanterns hang 0.30 m proud of that front's podium face (FRONT_DOOR_LANTERNS) and Trades Hall's own lamp, 24094,\nhangs where photograph A shows it, 0.35 m out from the north pavilion's face (FRONT_BRACKETS), each throwing straight\nout from the front; the ground in front of the hall is open street in the bands, so the light maps see across it",
  "parameters": {
   "reach_m": 258.0,
   "dedupe_m": 0.3,
@@ -128,14 +128,15 @@
    "axis_x": -0.025,
    "door_lanterns": {
     "axis_x": -0.025,
-    "podium_face_z": -7.265,
-    "proud_m": 0.35
+    "podium_face_z": -7.2,
+    "proud_m": 0.3
    },
    "brackets": {
     "24094": {
-     "u": 7.985,
-     "face_z": -6.363,
-     "out_m": 1.09
+     "u": 6.645,
+     "height_m": 9.46,
+     "face_z": -6.607,
+     "out_m": 0.35
     }
    }
   }
@@ -247,8 +248,8 @@
     62667
    ]
   },
-  "texels_in_a_pool_12m": 79756,
-  "texels_with_a_head": 89147
+  "texels_in_a_pool_12m": 79755,
+  "texels_with_a_head": 89131
  },
  "lamps": [
   {
@@ -1391,20 +1392,20 @@
    "source": "gcc-ogl",
    "kind": "bracket",
    "head": [
-    -8.01,
-    4.21,
-    -7.453
+    -6.67,
+    5.67,
+    -6.957
    ],
    "foot_y": -3.79,
    "heading": [
     0.0,
     -1.0
    ],
-   "reach": 1.09,
+   "reach": 0.35,
    "fitting": "cut",
    "height_source": "facade-photo",
    "switch_altitude": -2.5035,
-   "snap_shift": 0.98
+   "snap_shift": 1.17
   },
   {
    "id": "gcc:24095",
@@ -5236,14 +5237,14 @@
    "head": [
     -2.486,
     -0.591,
-    -7.615
+    -7.5
    ],
    "foot_y": -3.79,
    "heading": [
     0.0,
     -1.0
    ],
-   "reach": 0.35,
+   "reach": 0.3,
    "fitting": "drawn",
    "height_source": "facade-photo",
    "switch_altitude": -2.8753,
@@ -5257,14 +5258,14 @@
    "head": [
     2.436,
     -0.591,
-    -7.615
+    -7.5
    ],
    "foot_y": -3.79,
    "heading": [
     0.0,
     -1.0
    ],
-   "reach": 0.35,
+   "reach": 0.3,
    "fitting": "drawn",
    "height_source": "facade-photo",
    "switch_altitude": -3.3318,

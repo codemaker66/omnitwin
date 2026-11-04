@@ -473,11 +473,14 @@ that every quad's distances to both models agree. Results on 4 November 2026: th
 (`merchant-city-v3.bin` `6e231837…`, 1,246,744 bytes, 69,264 vertices, 69,262 triangles; `.json` `bbaa0b05…`, LF);
 `check_render.py`: all 27,139 caps up, no zero-area triangles, no cracks, open edges only on the rim (454) and the
 site cut (8: the front cut's ground now meets the cut along its front and wings), 2 edges shared by more than two
-triangles, as v2; inside the front cut nothing above y -3.79. The lamp bake (`street-light-v3.bin` `821aae12…`,
-`street-lamps-v3.json` `a2b3694f…`) passes every check, with the same cut (24094, 24096, 45116, 45117, 45127) and
-low-wall (8463) lamps as v2. Its two door lanterns hang 0.35 m proud of the modelled podium face, at
-(-2.486, -0.591, -7.615) and (2.436, -0.591, -7.615), and 24094 keeps its place along the front 1.09 m out from the
-north pavilion's face, at (-8.010, 4.21, -7.453), still cut: the front draws no lanterns, so the table draws them.
+triangles, as v2; inside the front cut nothing above y -3.79. The lamp bake (`street-light-v3.bin` `55acaeea…`,
+`street-lamps-v3.json` `a9d6f94a…`, LF) passes every check, with the same cut (24094, 24096, 45116, 45117, 45127)
+and low-wall (8463) lamps as v2. Its two door lanterns hang 0.30 m proud of the modelled podium face (the scan's
+z -7.200), at (-2.486, -0.591, -7.500) and (2.436, -0.591, -7.500): the front draws no lanterns, so the table draws
+them. Trades Hall's own lamp, 24094, a small LED head on a short arm beside the north link's downpipe, hangs where
+photograph A puts it from its solved camera (`front/`, below): u 6.645 along the front, 9.46 m over the pavement,
+0.35 m out from the north pavilion's face, at (-6.670, 5.67, -6.957), still cut (the table's lantern is not this
+one, so only its light is drawn).
 24096, on the straightened front north of the hall, moved 0.42 m; 24091 moved 1.4 cm. With the modified scripts and no
 `--front-cut`, `merchant-city-v2.bin` and `street-light-v2.bin` rebuild byte for byte, `merchant-city-v2.json`
 (LF) and the v2 lamp table in content, and `facade-lights-v1.json` byte for byte (LF).

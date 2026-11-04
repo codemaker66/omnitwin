@@ -34,6 +34,13 @@ import {
 export const FRONT_PART = { stone: 0, glass: 1, paint: 2, timber: 3, copper: 4, lead: 5, metal: 6 } as const;
 export type FrontPartName = keyof typeof FRONT_PART;
 
+/**
+ * A lathe profile turning by more than this at a point is a corner there
+ * (radians): the drum's and the pipes' rims and a torus's foot (78-105°) stay
+ * sharp, and the profiles' coarse curves (a torus's 17-40° steps) stay round.
+ */
+const LATHE_CREASE = Math.PI / 3;
+
 /** The planner's position of a point on the front: `u` along it, `z` over the pavement, `proud` out from the wall. */
 export function frontPoint(u: number, z: number, proud: number): V3 {
   return [FRONT_AXIS_X - u, z + FRONT_PAVEMENT_Y, FRONT_FACE_Z - proud];
@@ -347,9 +354,13 @@ class FrontBuilder {
     this.facet(loop.map(([p, z]) => frontPoint(to, z, p)), triangles, frontDirection(1, 0, 0));
   }
 
-  /** A solid of revolution about a vertical axis at (u, proud): `profile` is (radius, z over the pavement), pole to pole. */
+  /**
+   * A solid of revolution about a vertical axis at (u, proud): `profile` is
+   * (radius, z over the pavement), pole to pole. Its corners stay sharp (a
+   * drum's rim, a shaft's foot) and its curves smooth (LATHE_CREASE).
+   */
   lathe(u: number, proud: number, profile: readonly V2[], segments: number): void {
-    this.mesh.lathe(frontPoint(u, 0, proud), profile, segments);
+    this.mesh.lathe(frontPoint(u, 0, proud), profile, segments, 1, 1, 0, LATHE_CREASE);
   }
 
   /** A short cylinder whose axis runs out from the wall (a volute's eye, a patera, a rosette). */

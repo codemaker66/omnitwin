@@ -100,7 +100,7 @@ EXPECTED_CUT = {24094, 24096, 45116, 45117, 45127}
 # The bracket whose drawn wall is too low to carry it (the model's bands drew its building 3 m tall).
 EXPECTED_LOW_WALL = {8463}
 FACADE_PHOTO_LAMP = 24094
-# Both hold against merchant-city-v3 too (--front-cut): 24094 is placed on the modelled front and stays cut; 24096,
+# Both hold against merchant-city-v3 too (--front-cut): 24094 is placed on the modelled front (FRONT_BRACKETS) and stays cut; 24096,
 # on the straightened front north of the hall, still hangs on a wall the clamp cuts at the hall's floor.
 
 MAGIC = b"VVSL"
@@ -120,20 +120,22 @@ FRONT_MODEL_NAME = "merchant-city-v3"
 FRONT_LIGHT_FILE = "street-light-v3.bin"
 FRONT_LAMPS_FILE = "street-lamps-v3.json"
 FRONT_AXIS_X = -0.025
-# The two door lanterns: the survey's u = +-2.461 and 2.904-3.494 m above the pavement (DOOR_LANTERNS), hung 0.35 m
-# proud of the modelled temple front's podium face (z -7.265): centres at x -2.486 (north) and +2.436 (south),
-# z -7.615. They throw straight out from the front (-z).
-FRONT_DOOR_LANTERNS = dict(axis_x=FRONT_AXIS_X, podium_face_z=-7.265, proud_m=0.35)
-# Trades Hall's own street lamp moves with the front: its head keeps its place along the front (u 7.985, from the
-# v2 bake's head, x -8.001 in the frame where the city's front put u = 0 at x -0.016) and its 1.09 m out from the
-# face it hangs on, now the north pavilion's (z -6.245 - 0.118 = -6.363). The council's point for it is
-# (-7.747, -6.508). It stays "cut" as before: its fitting is not drawn.
-FRONT_BRACKETS = {24094: dict(u=7.985, face_z=-6.363, out_m=1.09)}
+# The two door lanterns: the survey's u = +-2.461 and 2.904-3.494 m above the pavement, their centres 0.30 m proud
+# of the podium (DOOR_LANTERNS), on the modelled temple front's podium face (hall-exterior-spec.ts TEMPLE, the
+# scan's z -7.200): centres at x -2.486 (north) and +2.436 (south), z -7.500. They throw straight out (-z).
+FRONT_DOOR_LANTERNS = dict(axis_x=FRONT_AXIS_X, podium_face_z=-7.200, proud_m=DOOR_LANTERNS["proud_m"])
+# Trades Hall's own street lamp, 24094, as photograph A shows it from its solved camera (planner z -30.432,
+# tools/grand-hall-survey/front): a small LED head on a short arm on the north pavilion beside the downpipe at the
+# link's corner, its head at (953.3, 541.7) px, which puts it at u 6.645 along the front and 9.46 m over the
+# pavement, 0.35 m out from the pavilion's face (z -6.245 - 0.362 = -6.607; the arm's reach read off the photograph,
+# to about 0.2 m). The council's point for it is (-7.747, -6.508). Its fitting stays "cut": the lamp table's lantern
+# is not this one, so only its light is drawn.
+FRONT_BRACKETS = {24094: dict(u=6.645, height_m=9.46, face_z=-6.607, out_m=0.35)}
 FRONT_METHOD = """\
 --front-cut (street-light-v3.bin, street-lamps-v3.json): the same bake against merchant-city-v3, whose street front
 before Trades Hall is bare ground (the planner's own modelled front stands there, anchored to the room): the two
-door lanterns hang 0.35 m proud of that front's podium face (FRONT_DOOR_LANTERNS) and Trades Hall's own lamp, 24094,
-keeps its place along the front 1.09 m out from the north pavilion's face (FRONT_BRACKETS), each throwing straight
+door lanterns hang 0.30 m proud of that front's podium face (FRONT_DOOR_LANTERNS) and Trades Hall's own lamp, 24094,
+hangs where photograph A shows it, 0.35 m out from the north pavilion's face (FRONT_BRACKETS), each throwing straight
 out from the front; the ground in front of the hall is open street in the bands, so the light maps see across it"""
 
 
@@ -408,7 +410,7 @@ def front_door_lanterns(model):
 def front_bracket(model, oid, x0, z0, merged):
     """v3: a bracket on the planner's modelled front (FRONT_BRACKETS), its wall's fitting cut as before"""
     b = FRONT_BRACKETS[oid]
-    head = [FRONT_AXIS_X - b["u"], model.ground_y + P["bracket_height_m"], b["face_z"] - b["out_m"]]
+    head = [FRONT_AXIS_X - b["u"], model.ground_y + b.get("height_m", P["bracket_height_m"]), b["face_z"] - b["out_m"]]
     byte = switch_byte(oid)
     shift = math.hypot(head[0] - x0, head[2] - z0)
     return dict(key=oid, id=f"gcc:{oid}", objectid=oid, source="gcc-ogl", kind="bracket", head=head,
@@ -844,11 +846,12 @@ def model_checks(model, lamps, maps, pub_path):
         doors = {l["id"]: l for l in lamps if l["kind"] == "door"}
         for name, x in (("trades-hall:door-north", -2.486), ("trades-hall:door-south", 2.436)):
             h = doors[name]["head"]
-            expect(abs(h[0] - x) < 5e-4 and abs(h[1] + 0.591) < 5e-4 and abs(h[2] + 7.615) < 5e-4 and doors[name]["heading"] == [0.0, -1.0],
+            expect(abs(h[0] - x) < 5e-4 and abs(h[1] + 0.591) < 5e-4 and abs(h[2] + 7.500) < 5e-4 and doors[name]["heading"] == [0.0, -1.0],
                    f"{name} hangs on the modelled front at {h}, throwing straight out")
         own = next(l for l in lamps if l["objectid"] == FACADE_PHOTO_LAMP)
-        expect(own["fitting"] == "cut" and abs(own["head"][2] - (-6.363 - 1.09)) < 5e-4 and abs(own["head"][0] - (FRONT_AXIS_X - 7.985)) < 5e-4,
-               f"{FACADE_PHOTO_LAMP} hangs 1.09 m out from the north pavilion's face at {own['head']}, cut")
+        expect(own["fitting"] == "cut" and abs(own["head"][0] - (FRONT_AXIS_X - 6.645)) < 5e-4
+               and abs(own["head"][1] - (model.ground_y + 9.46)) < 5e-4 and abs(own["head"][2] - (-6.607 - 0.35)) < 5e-4,
+               f"{FACADE_PHOTO_LAMP} hangs 0.35 m out from the north pavilion's face at {own['head']}, cut")
     across = next(l for l in lamps if l["objectid"] == 24095)
     expect(across["fitting"] == "drawn", "24095, across Glassford Street, stands whole")
     hung = [l["head"][1] - l["foot_y"] for l in lamps if l["fitting"] == "drawn" and l["kind"] != "door"]

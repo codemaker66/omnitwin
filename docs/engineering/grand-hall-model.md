@@ -391,10 +391,12 @@ the clock. Presentation only: nothing is saved, and nothing is kept between visi
   survey README's v3 paragraph) with its lamps baked against it (the two door lanterns on the modelled podium). The
   material discards everything above the window wall's eased cut (`hallFrontCut`, written by GrandHallModel's cut
   loop for wall 0) and draws the solids' insides as the section, so above the cut the front reads as masonry cut
-  through, and in the overview the attics and the dome, which stands over the room, are cut away with the wall;
-  it takes the city's sun, sky and haze and, after dusk, the street lamps' scallops and the pools' wash
-  (`streetLampLight` in `hall-context.ts`, shared with the city's walls). An uncut copy casts on the sun's shadow
-  layer, so the columns, cornices and pediment shade the hall's windows. Against photograph A from its solved
+  through (lit by the sun with no shadow, as the hall's cut tops are: its faces lie inside the uncut caster), and
+  in the overview the attics and the dome, which stands over the room, are cut away with the wall; it takes the
+  city's sun, sky and haze and, after dusk, the street lamps' scallops and the pools' wash (`streetLampLight` in
+  `hall-context.ts`, shared with the city's walls), the door lanterns 0.30 m off the podium and Trades Hall's own
+  lamp (24094) where photograph A puts it. Its round pieces keep sharp corners (`MeshBuilder.lathe`'s crease).
+  An uncut copy casts on the sun's shadow layer, so the columns, cornices and pediment shade the hall's windows. Against photograph A from its solved
   camera (`tools/grand-hall-survey/front`) the render's edges lie a median 0.95 px (about 2.6 cm) from the
   photograph's, the skyline within 1-4 px. On the RTX 4090 (Chrome 156, WebGPU, 160 guests, off/on/on/off pages)
   the front changed the mean frame time by -0.23 to +0.29 ms across two poses by day and night, within the spread

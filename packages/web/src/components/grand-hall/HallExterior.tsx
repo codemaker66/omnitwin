@@ -35,33 +35,40 @@ export function HallExterior({ sun, lightMaps }: HallExteriorProps): ReactElemen
   const [geometry, setGeometry] = useState<BufferGeometry | null>(null);
   const material = useMemo(() => createFrontMaterial(sun, lightMaps, preset), [lightMaps, preset, sun]);
   const caster = useMemo(createFrontCasterMaterial, []);
+  // A phone's finish draws the round things with fewer segments. The build
+  // depends on that alone: a new renderer (a lost device, restored) keeps it.
+  const detail = finish.photoQuality < 1 ? FRONT_DETAIL_LIGHT : FRONT_DETAIL_FULL;
 
   useEffect(() => {
     let live = true;
-    let built: BufferGeometry | null = null;
-    // A phone's finish draws the round things with fewer segments.
-    const detail = finish.photoQuality < 1 ? FRONT_DETAIL_LIGHT : FRONT_DETAIL_FULL;
     runSliced(hallFrontSteps(detail), { live: () => live })
       .then((front) => {
-        if (!live) {
-          front.geometry.dispose();
-          return;
-        }
-        built = front.geometry;
-        setGeometry(front.geometry);
-        // Both maps that see the front redraw: the city's, and the hall's (its windows' shade).
-        sun.redraw();
-        requestHallSunRedraw();
-        invalidate();
+        if (live) setGeometry(front.geometry);
+        else front.geometry.dispose();
       })
       .catch(() => {
         // Cut short by leaving the page, or failed: the city stands without its front.
       });
     return () => {
       live = false;
-      built?.dispose();
     };
-  }, [finish, invalidate, sun]);
+  }, [detail]);
+
+  // Each built front is disposed once another replaces it or the front leaves.
+  useEffect(() => () => {
+    geometry?.dispose();
+  }, [geometry]);
+
+  // Once the front stands in the scene, both maps that see it redraw: the
+  // city's, and the hall's (its windows' shade). Asked before its meshes
+  // mounted, a frame that came first could draw them without it (as the
+  // city's own arrival, HallContext).
+  useEffect(() => {
+    if (geometry === null) return;
+    sun.redraw();
+    requestHallSunRedraw();
+    invalidate();
+  }, [geometry, invalidate, sun]);
 
   useEffect(() => () => {
     material.dispose();

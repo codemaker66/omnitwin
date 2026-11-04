@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { STREET_NIGHT_LOOKS } from "../../../lib/sky/night-looks.js";
 import { CONTEXT_MODEL_FRONT_URL } from "../hall-context.js";
+import { FRONT_AXIS_X, FRONT_BAYS, FRONT_FACE_Z, FRONT_PAVEMENT_Y, TEMPLE } from "../hall-exterior-spec.js";
 import {
   BEAM, DUSK_SPAN, FITTING, LAMP_SWITCH, STREET_LAMPS_FRONT_URL, STREET_LAMPS_URL, STREET_LIGHT_FRONT_URL, STREET_LIGHT_URL, anyLampLit,
   applyStreetLook, buildBeamGeometry, buildFittingGeometry, buildHaloGeometry, drawnLamps, duskShareAt, haloInstances, lampLight, parseStreetLamps,
@@ -321,20 +322,25 @@ describe("the street lamps round the measured front (street-light-v3)", () => {
   it("hang Trades Hall's door lanterns and its own lamp on the modelled front, throwing straight out", () => {
     const doors = lamps.filter((lamp) => lamp.kind === "door");
     expect(doors.map((lamp) => lamp.id)).toEqual(["trades-hall:door-north", "trades-hall:door-south"]);
-    // 0.35 m proud of the temple front's podium (z -7.265), either side of the building's axis (x -0.025), at
-    // the survey's 2.904-3.494 m above the pavement; the front draws no lanterns, so the table draws them.
-    for (const [lamp, x] of [[doors[0], -2.486], [doors[1], 2.436]] as const) {
-      expect(lamp?.head[0]).toBeCloseTo(x, 3);
-      expect(lamp?.head[1]).toBeCloseTo(-0.591, 3);
-      expect(lamp?.head[2]).toBeCloseTo(-7.615, 3);
+    // The survey's u +-2.461 and 2.904-3.494 m over the pavement, 0.30 m proud of the modelled podium's face
+    // (hall-exterior-spec.ts, so a face that moves fails here until the bake follows); the front draws no
+    // lanterns, so the table draws them.
+    const podiumFace = FRONT_FACE_Z - TEMPLE.podiumProud;
+    for (const [lamp, u] of [[doors[0], 2.461], [doors[1], -2.461]] as const) {
+      expect(lamp?.head[0]).toBeCloseTo(FRONT_AXIS_X - u, 3);
+      expect(lamp?.head[1]).toBeCloseTo(FRONT_PAVEMENT_Y + (2.904 + 3.494) / 2, 3);
+      expect(lamp?.head[2]).toBeCloseTo(podiumFace - 0.3, 3);
       expect(lamp?.heading).toEqual([0, -1]);
       expect(lamp?.fitting).toBe("drawn");
     }
-    // 24094 keeps its place along the front, 1.09 m out from the north pavilion's face (z -6.363), still cut.
+    // 24094 where photograph A shows it, from its solved camera: u 6.645 on the north pavilion, 9.46 m over the
+    // pavement, 0.35 m out from the pavilion's modelled face; its fitting cut, its light kept.
+    const pavilion = FRONT_BAYS.find((bay) => bay.id === "pavilion-north");
+    expect(pavilion !== undefined && pavilion.uMin < 6.645 && 6.645 < pavilion.uMax).toBe(true);
     const own = lamps.find((lamp) => lamp.objectid === 24094);
-    expect(own?.head[0]).toBeCloseTo(-8.01, 3);
-    expect(own?.head[1]).toBeCloseTo(4.21, 3);
-    expect(own?.head[2]).toBeCloseTo(-6.363 - 1.09, 3);
+    expect(own?.head[0]).toBeCloseTo(FRONT_AXIS_X - 6.645, 3);
+    expect(own?.head[1]).toBeCloseTo(FRONT_PAVEMENT_Y + 9.46, 3);
+    expect(own?.head[2]).toBeCloseTo(FRONT_FACE_Z - (pavilion?.proud ?? Number.NaN) - 0.35, 3);
     expect(own?.heading).toEqual([0, -1]);
     expect(own?.fitting).toBe("cut");
   });

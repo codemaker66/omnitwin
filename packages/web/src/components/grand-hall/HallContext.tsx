@@ -22,13 +22,14 @@
 // casting into its shadow map.
 // ---------------------------------------------------------------------------
 
-import { Suspense, lazy, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
+import { Suspense, lazy, useEffect, useMemo, useRef, useState, type ComponentType, type ReactElement } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import type { BufferGeometry, Texture } from "three";
 import { useHallFinish } from "./hall-finish.js";
 import { HALL_SUN_CASTER_LAYER, createSunCaster, requestHallSunRedraw, type ShadowBox } from "./hall-sun.js";
 import { CONTEXT_MODEL_FRONT_URL, CONTEXT_MODEL_URL, createContextCasterMaterial, createContextMaterial, parseContextModel } from "./hall-context.js";
 import { hallFacadeRequested } from "../../lib/hall-facade-access.js";
+import type { HallExteriorProps } from "./HallExterior.js";
 import { hallSkyState, hallSkyUniforms } from "./hall-sky-runtime.js";
 import {
   STREET_LAMPS_FRONT_URL, STREET_LAMPS_URL, STREET_LIGHT_FRONT_URL, STREET_LIGHT_URL, applyStreetLightField, createStreetLightMaps,
@@ -38,8 +39,15 @@ import { HallStreetLights } from "./HallStreetLights.js";
 import { FACADE_LIGHTS_FRONT_URL, FACADE_LIGHTS_URL, parseFacadeLights, type FacadeLight } from "./hall-facade-lights.js";
 import { HallFacadeLights } from "./HallFacadeLights.js";
 
-/** The measured front's code, fetched only when the front is asked for. */
-const HallExterior = lazy(() => import("./HallExterior.js").then((module) => ({ default: module.HallExterior })));
+/**
+ * The measured front's code, fetched only when the front is asked for. If it
+ * cannot be fetched (a stale deploy, the network), the city stands without
+ * its front rather than the planner losing its scene to the error.
+ */
+const HallExterior = lazy<ComponentType<HallExteriorProps>>(() => import("./HallExterior.js").then(
+  (module) => ({ default: module.HallExterior }),
+  () => ({ default: () => null }),
+));
 
 async function fetchOk(url: string): Promise<Response> {
   const response = await fetch(url);
