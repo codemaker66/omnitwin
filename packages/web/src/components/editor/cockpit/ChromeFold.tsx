@@ -17,7 +17,7 @@ import {
   type ChromeFoldUnit,
   type ChromePresenceState,
 } from "../../../stores/chrome-presence-store.js";
-import { useCockpitStore } from "../../../stores/cockpit-store.js";
+import { useShownLens } from "../../../lib/use-lens-rail.js";
 import { useEditorStore } from "../../../stores/editor-store.js";
 import { useLayoutTimelinePreviewStore } from "../../../stores/layout-timeline-preview-store.js";
 import { usePlacementStore } from "../../../stores/placement-store.js";
@@ -220,7 +220,8 @@ export function useChromePresence(): void {
 
 /** What a unit is called right now: the right dock is whichever lens is open. */
 function useUnitName(unit: ChromeFoldUnit): string {
-  const mode = useCockpitStore((state) => state.activeMode);
+  // The lens the cockpit shows, which is Design for one this viewer is not offered.
+  const mode = useShownLens();
   if (unit !== "right" || mode === "design") return CHROME_UNIT_NAMES[unit];
   return COCKPIT_MODES.find((entry) => entry.id === mode)?.label ?? CHROME_UNIT_NAMES.right;
 }
