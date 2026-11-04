@@ -2,8 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { DirectionalLight, Group, Mesh, PerspectiveCamera, Scene, type Camera, type Object3D } from "three";
 import { WebGPURenderer } from "three/webgpu";
 import {
-  clearNativePrecompiles, compileEach, compileWithin, drawAhead, nativePrecompilePending, requestNativePrecompile, runNativePrecompiles,
-  subscribeNativePrecompile, withoutShadowMapDraws,
+  clearNativePrecompiles, compileEach, compileWithin, drawAhead, nativePrecompilePending, nativePrecompileSettled, requestNativePrecompile,
+  runNativePrecompiles, subscribeNativePrecompile, withoutShadowMapDraws,
 } from "../native-precompile.js";
 
 function deferred(): { readonly promise: Promise<void>; readonly resolve: () => void } {
@@ -50,6 +50,25 @@ describe("the native precompile queue", () => {
     });
     await runNativePrecompiles(renderer);
     expect(order).toEqual(["first", "late"]);
+    expect(nativePrecompilePending(renderer)).toBe(false);
+  });
+
+  it("settles once the last job has run, for frames drawn by hand to wait on", async () => {
+    const renderer = {};
+    await nativePrecompileSettled(renderer);
+    const first = deferred();
+    void requestNativePrecompile(renderer, () => first.promise);
+    let settled = false;
+    const settling = nativePrecompileSettled(renderer).then(() => { settled = true; });
+    const running = runNativePrecompiles(renderer);
+    // A job queued while one runs keeps the hold: settling waits for both.
+    void requestNativePrecompile(renderer, () => Promise.resolve());
+    for (let tick = 0; tick < 5; tick++) await Promise.resolve();
+    expect(settled).toBe(false);
+    first.resolve();
+    await running;
+    await settling;
+    expect(settled).toBe(true);
     expect(nativePrecompilePending(renderer)).toBe(false);
   });
 

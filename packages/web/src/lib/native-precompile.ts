@@ -112,6 +112,24 @@ export function subscribeNativePrecompile(renderer: object, listener: () => void
   return () => { queue.listeners.delete(listener); };
 }
 
+/**
+ * Resolves once `renderer` has no job waiting or running, when its held frame
+ * loop draws again. A frame drawn by hand meanwhile (R3F's `advance` ignores
+ * the hold) draws with the job's target and MRT still set: a draw into another
+ * target builds its materials for the job's outputs, which that target does
+ * not name, and WebGPU refuses them.
+ */
+export function nativePrecompileSettled(renderer: object): Promise<void> {
+  if (!nativePrecompilePending(renderer)) return Promise.resolve();
+  return new Promise((resolve) => {
+    const stop = subscribeNativePrecompile(renderer, () => {
+      if (nativePrecompilePending(renderer)) return;
+      stop();
+      resolve();
+    });
+  });
+}
+
 export interface NativePrecompileRun {
   /** The longest one pass may hold the frames, ms, from its first job: every job queued meanwhile shares it. */
   readonly limitMs?: number;
