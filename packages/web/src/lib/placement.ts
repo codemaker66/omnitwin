@@ -437,6 +437,14 @@ export function placementBody(
 }
 
 /**
+ * How far one footprint must reach into another to overlap it, render units
+ * (1 mm): pieces laid flush, trestles end to end in separate groups, meet
+ * where a float's rounding can put them a hair inside each other, and that
+ * must not refuse them.
+ */
+export const PLACEMENT_TOUCH = 0.001;
+
+/**
  * The overlap rule of the placement violations: does candidate `a` overlap
  * placed item `b`? getPlacementViolations and the layout-wide sweep
  * (createPlacementOverlapIndex) both decide overlaps here and nowhere else.
@@ -448,9 +456,9 @@ export function placementBodiesOverlap(a: PlacementBody, b: PlacementBody): bool
   // Stage items (platforms) can touch/slightly overlap — negative padding
   // provides tolerance for floating point imprecision in edge snapping.
   const effectivePadding = a.stage && b.stage ? -0.05 : 0;
-  // Strict < means touching edges are allowed.
-  const overlapX = Math.abs(a.x - b.x) < (a.halfW + b.halfW + effectivePadding);
-  const overlapZ = Math.abs(a.z - b.z) < (a.halfD + b.halfD + effectivePadding);
+  // Touching edges are allowed, to within PLACEMENT_TOUCH, as items on a surface are.
+  const overlapX = Math.abs(a.x - b.x) < (a.halfW + b.halfW + effectivePadding - PLACEMENT_TOUCH);
+  const overlapZ = Math.abs(a.z - b.z) < (a.halfD + b.halfD + effectivePadding - PLACEMENT_TOUCH);
   return overlapX && overlapZ;
 }
 

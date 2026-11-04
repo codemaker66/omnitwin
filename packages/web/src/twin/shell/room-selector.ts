@@ -1,9 +1,6 @@
 import type { TwinScanNode } from "@omnitwin/types";
-import {
-  TRADES_HALL_ROOM_CAPACITIES,
-  TRADES_HALL_ROOM_DIMENSIONS,
-  type PublishedRoomSlug,
-} from "@omnitwin/types";
+import type { PublishedRoomSlug } from "@omnitwin/types";
+import { TRADES_HALL_ROOM_CAPACITIES, TRADES_HALL_ROOM_DIMENSIONS } from "@omnitwin/types/trades-hall-venue-truth";
 import { ROOM_DISPLAY_NAMES, VERIFIED_ROOM_NODES, lookUpRoom, metres } from "./twin-rooms.js";
 
 // -----------------------------------------------------------------------------

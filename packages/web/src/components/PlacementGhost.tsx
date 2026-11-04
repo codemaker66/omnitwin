@@ -40,7 +40,8 @@ import { placementFloorPoint } from "../lib/planner-interaction-floor.js";
 import { capReachedLine } from "../lib/placement-cap.js";
 import { placePieceInHand } from "../lib/place-in-hand.js";
 import { intersectSelectable } from "../lib/raycast-gate.js";
-import { cardIsWholeSet, cardParamsRequest, drawnDanceFloor, judgesCard, placesAsCard, type CardParams } from "../lib/setup-cards.js";
+import { cardIsWholeSet, cardParamsRequest, drawnDanceFloor, ghostSetInHand, judgesCard, placesAsCard, type CardParams } from "../lib/setup-cards.js";
+import { listenForRightClickPutDown } from "../lib/right-click-put-down.js";
 import { ghostRaisePx } from "../lib/touch-arbiter.js";
 import { onMainDraw } from "../lib/main-draw-clock.js";
 import { findFurnitureItemId } from "./SelectionSystem.js";
@@ -524,18 +525,13 @@ export function PlacementGhost(): React.ReactElement | null {
 
   // Q, E and R turn the piece in hand as they turn a selection, and win over
   // a selection held at the same time; Esc puts it down (the planner's tool
-  // keys, lib/planner-keymap.ts). A right-click also puts it down.
+  // keys, lib/planner-keymap.ts). A right-click also puts it down, and a
+  // right-drag, the camera's orbit, keeps it in hand (lib/right-click-put-down.ts).
   usePlannerKeyBindings(placingKeyBindings({ invalidate: () => { invalidateRef.current(); } }));
-  useEffect(() => {
-    function onContextMenu(event: MouseEvent): void {
-      if (useCatalogueStore.getState().selectedItemId !== null) {
-        event.preventDefault();
-        putDownPieceInHand();
-      }
-    }
-    window.addEventListener("contextmenu", onContextMenu);
-    return () => { window.removeEventListener("contextmenu", onContextMenu); };
-  }, []);
+  useEffect(() => listenForRightClickPutDown(window, {
+    holding: () => useCatalogueStore.getState().selectedItemId !== null,
+    putDown: putDownPieceInHand,
+  }), []);
 
   if (selectedItemId === null) return null;
 
@@ -642,9 +638,11 @@ export function PlacementGhost(): React.ReactElement | null {
 
   // --- The truthful ghost: the card's whole set, judged with every body (Q-05) ---
   const brushing = catalogueItem.category === "chair" && chairBrushPreview.length > 1;
-  // A card set down as a card shows that set, whichever chrome armed it (setup-cards placesAsCard), judged as the commit is (judgesCard).
-  if (cardParams !== null && !brushing && placesAsCard(cardParams)) {
-    return <GhostSet params={cardParams} warming={warming} fromCardDrag={fromCardDrag} groupRef={ghostSetRef} />;
+  // A card set down as a card shows that set, whichever chrome armed it, and behind truthfulGhost alone a
+  // piece shows itself as the old way sets it down (setup-cards ghostSetInHand), judged as the commit is.
+  const handSet = cardParams !== null && !brushing ? ghostSetInHand(cardParams) : null;
+  if (handSet !== null) {
+    return <GhostSet params={handSet} warming={warming} fromCardDrag={fromCardDrag} groupRef={ghostSetRef} />;
   }
 
   // --- Normal furniture ghost ---

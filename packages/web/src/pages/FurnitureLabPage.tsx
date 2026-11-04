@@ -13,12 +13,14 @@ import { FULL_HALL_FINISH } from "../components/grand-hall/hall-finish.js";
 import { CaptureToneMapping } from "../components/scene/CaptureToneMapping.js";
 import { FurnitureProxy, standaloneFurnitureMeshUrl } from "../components/FurnitureProxy.js";
 import { HALL_SUN_CASTER_LAYER } from "../components/grand-hall/hall-sun.js";
+import { craftedTexturesPending } from "../components/meshes/crafted/crafted-textures.js";
 import { GltfFurniture } from "../components/meshes/GltfFurniture.js";
 import { MeshErrorBoundary } from "../components/MeshErrorBoundary.js";
 import { isCraftedFurnitureSlug, setupCardLook, setupCardPreviewUrl } from "../lib/crafted-furniture.js";
 import { CATALOGUE_ITEMS, getCatalogueItem, getCatalogueItemBySlug, type CatalogueItem } from "../lib/catalogue.js";
 import type { PlacedItem } from "../lib/placement.js";
 import { footprintBounds } from "../lib/placement-edit.js";
+import { PLANNER_CHAIR_SLUGS } from "../lib/furniture-defaults.js";
 import { setupCardLooks, stampSetup, type CardParams } from "../lib/setup-cards.js";
 
 // Development fixture for the crafted furniture: every crafted piece beside
@@ -225,7 +227,11 @@ function previewPose(box: PreviewBox): LabPose {
   return { position: [position.x, position.y, position.z], target: [target.x, target.y, target.z], fov };
 }
 
-/** Marks the preview ready a few frames after mounting, once its environment is in. */
+/**
+ * Marks the preview ready once its environment is in and every crafted map is
+ * painted (crafted-textures.ts paints off the main thread): four frames drawn
+ * after the last map arrived, so its upload is in the picture.
+ */
 function PreviewReady(): null {
   const frames = useRef(0);
   const invalidate = useThree((state) => state.invalidate);
@@ -235,7 +241,7 @@ function PreviewReady(): null {
     return () => { delete window.__furniturePreview; };
   }, [invalidate]);
   useFrame(() => {
-    frames.current += 1;
+    frames.current = craftedTexturesPending() > 0 ? 0 : frames.current + 1;
     if (frames.current < 4) invalidate();
     else if (window.__furniturePreview?.ready !== true) window.__furniturePreview = { ready: true };
   });
@@ -288,15 +294,32 @@ function FurniturePreviewStudio({ item }: { readonly item: CatalogueItem }): Rea
 }
 
 /** A setup look's lab address, `<card>/<look>`: its picture's card folder and file name. */
-function setupLookKey(params: CardParams): string {
-  return `${params.card}/${setupCardLook(params) ?? ""}`;
+function setupLookKey(params: CardParams, chairSlug: string): string {
+  return `${params.card}/${setupCardLook(params, chairSlug) ?? ""}`;
+}
+
+/** A look as pictured: the card's parameters and the chair its seats are. */
+interface SetupPicture {
+  readonly params: CardParams;
+  readonly chairSlug: string;
+}
+
+/** Every picture a setup card can show: each look on each chair the planner sets (once, where it seats no one). */
+function setupPictures(): readonly SetupPicture[] {
+  const seen = new Set<string>();
+  return setupCardLooks().flatMap((params) => PLANNER_CHAIR_SLUGS.flatMap((chairSlug) => {
+    const key = setupLookKey(params, chairSlug);
+    if (seen.has(key)) return [];
+    seen.add(key);
+    return [{ params, chairSlug }];
+  }));
 }
 
 /** Every setup look and where its picture goes (`?setup-looks`), for the render script. */
 function SetupLookList(): ReactElement {
-  const looks = useMemo(() => setupCardLooks().flatMap((params) => {
-    const url = setupCardPreviewUrl(params);
-    return url === null ? [] : [{ key: setupLookKey(params), url }];
+  const looks = useMemo(() => setupPictures().flatMap(({ params, chairSlug }) => {
+    const url = setupCardPreviewUrl(params, chairSlug);
+    return url === null ? [] : [{ key: setupLookKey(params, chairSlug), url }];
   }), []);
   useEffect(() => {
     window.__setupLooks = looks;
@@ -329,16 +352,16 @@ function setupLookProblem(lookKey: string, params: CardParams | null, pieces: re
 
 /** A setup card's look (`?setup=<card>/<look>`; card-dock Q-21), or why it cannot be pictured. */
 function SetupLookStudio({ lookKey }: { readonly lookKey: string }): ReactElement {
-  const params = useMemo(() => setupCardLooks().find((look) => setupLookKey(look) === lookKey) ?? null, [lookKey]);
+  const picture = useMemo(() => setupPictures().find(({ params, chairSlug }) => setupLookKey(params, chairSlug) === lookKey) ?? null, [lookKey]);
   const pieces = useMemo(() => {
-    if (params === null) return [];
+    if (picture === null) return [];
     let next = 0;
-    return stampSetup(params, { x: 0, z: 0 }, 0, () => {
+    return stampSetup(picture.params, { x: 0, z: 0 }, 0, () => {
       next += 1;
       return `setup-${String(next)}`;
-    });
-  }, [params]);
-  const problem = useMemo(() => setupLookProblem(lookKey, params, pieces), [lookKey, params, pieces]);
+    }, picture.chairSlug);
+  }, [picture]);
+  const problem = useMemo(() => setupLookProblem(lookKey, picture?.params ?? null, pieces), [lookKey, picture, pieces]);
   useEffect(() => {
     if (problem === null) return undefined;
     window.__furniturePreview = { ready: false, error: problem };

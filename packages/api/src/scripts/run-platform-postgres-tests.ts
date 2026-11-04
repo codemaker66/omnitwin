@@ -64,6 +64,8 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/reference-loadouts-postgres.test.ts",
   // The chair sizes migration (0103): rewrites only from 0074's sizes, stops named, never blocks a layout save.
   "src/__tests__/chair-sizes-migration-postgres.test.ts",
+  // Migration 0105: product writes share the foundry's global lock; the kill switch still excludes them (T-677).
+  "src/__tests__/foundry-product-lock-postgres.test.ts",
 ] as const;
 
 /**

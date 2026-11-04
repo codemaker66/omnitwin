@@ -14,6 +14,7 @@ import { useSelectionStore } from "../../stores/selection-store.js";
 import { useAuthStore } from "../../stores/auth-store.js";
 import type { PlacedItem } from "../../lib/placement.js";
 import { normalizeFurnitureScale } from "../../lib/furniture-scale.js";
+import { scheduleGangwayReviewRecord } from "../../lib/gangway-review-record.js";
 import { seededNote } from "../../lib/note-seeds.js";
 import { useLayoutLiveStore } from "../../stores/layout-live-store.js";
 import { composeWithOverlay, isRemotePlacementKey, type RemoteOverlay } from "../../lib/layout-live/live-document.js";
@@ -315,6 +316,8 @@ export function EditorBridge(): null {
 
         // Schedule auto-save
         scheduleAutoSave(isAuthenticated.current);
+        // A signed-in layout's gangway review is kept with it once its pinches stay still (lib/gangway-review-record).
+        if (isAuthenticated.current) scheduleGangwayReviewRecord({ flush: flushAutoSave });
       }
 
       syncing.current = false;

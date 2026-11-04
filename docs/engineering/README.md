@@ -121,6 +121,7 @@ on future experiments.
 | Visible composition or interaction | [Product experience](../../.claude/conventions/product-experience.md) |
 | What AI assistants and search engines may read (`/mcp`, schema.org) | [Public venue discovery](public-venue-discovery.md) |
 | An organiser's plan without an account (the plan PDF; the read-only link awaiting a migration) | [Visitor plan hand-off](visitor-plan-handoff.md) |
+| What an AI draft sends a provider, the model rule, what a draft may say | [AI drafts](ai-drafts.md) |
 | Claude provider, typed event briefs or their eval | [AI event briefs](ai-event-briefs.md) |
 | What AI calls cost, the usage ledger, a venue's AI allowance, who may spend it | [AI usage and billing](ai-usage-and-billing.md) |
 | Martyn's Law or other legal prompts | [No-claims rule and sources](martyns-law-readiness.md) |

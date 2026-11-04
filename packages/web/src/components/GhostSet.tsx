@@ -203,6 +203,8 @@ export function GhostSet({ params, warming, fromCardDrag, groupRef }: GhostSetPr
   // The chip waits 80 ms of continuous refusal, so a sweep across a table never flashes it; new
   // words within the same refusal change it in place.
   const refusing = view.state === "refused";
+  /** The chip is up and says why the set won't fit. */
+  const chipSays = refusing && chipShown && view.chip !== null;
   useEffect(() => {
     setChipShown(false);
     setAnnounced(null);
@@ -327,9 +329,10 @@ export function GhostSet({ params, warming, fromCardDrag, groupRef }: GhostSetPr
           <Html position={[0, tagHeight, 0]} center zIndexRange={[30, 0]}>
             <div className="ghost-set" data-testid="ghost-set-words" data-state={view.state}>
               <div className="ghost-set__tag">
-                <MarkLabel tone={refusing ? "brick" : "copper"}>{view.tag}</MarkLabel>
+                {/* Once the chip says why it won't fit, the tag only names the set: the refusal is said once. */}
+                <MarkLabel tone={refusing ? "brick" : "copper"}>{chipSays ? ghostTag(params, null) : view.tag}</MarkLabel>
               </div>
-              {refusing && chipShown && view.chip !== null && (
+              {chipSays && (
                 <div className="ghost-set__chip" aria-hidden="true" data-testid="ghost-set-chip">
                   <MarkLabel tone="brick">{view.chip}</MarkLabel>
                   <div className="ghost-set__subline">

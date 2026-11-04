@@ -40,6 +40,7 @@ const SUB_PROCESSORS = [
   "Clerk",
   "Sentry",
   "Cloudflare R2",
+  "Anthropic",
   "Stripe",
 ] as const;
 
@@ -160,6 +161,24 @@ describe("the privacy policy", () => {
     for (const processor of SUB_PROCESSORS) {
       expect(text, `privacy policy does not name ${processor}`).toContain(processor);
     }
+  });
+
+  // Release audit ai-1: the events team's AI help sends an enquiry's words to
+  // Anthropic, so the policy names it, says what is sent and what is not (as
+  // the code that builds each request sends it), and that a person decides.
+  it("names Anthropic for AI help, what it is sent, what it is not, and that a person decides", () => {
+    render(<LegalPage type="privacy" />);
+    const section = document.getElementById("who-else");
+    const text = section?.textContent ?? "";
+    expect(text).toContain("Anthropic");
+    expect(text).toContain("used only when a member of the team asks for it");
+    // All three paths: the summary, the proposal's message and the planner's brief reader.
+    expect(text).toContain("a summary of your enquiry, the wording of a message to you about a proposal, or reading a description of your event");
+    expect(text).toContain("where your enquiry stands and the day it arrived");
+    expect(text).toContain("Email addresses and phone numbers it can recognise in those words are taken out first; anything else written there, such as a name, is sent as written.");
+    expect(text).toContain("A message to you is also sent your name, so that it can address you.");
+    expect(text).toContain("The email address and phone number you gave in the enquiry form's own fields are not sent.");
+    expect(text).toContain("nothing it writes is sent to you without a person choosing to send it");
   });
 
   it("lists every field the public enquiry endpoint accepts", () => {

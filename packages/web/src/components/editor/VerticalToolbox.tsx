@@ -1,4 +1,4 @@
-import { Suspense, lazy, useState, useCallback, useRef, useEffect, useLayoutEffect, useId, type ReactNode } from "react";
+import { Fragment, Suspense, lazy, useState, useCallback, useRef, useEffect, useLayoutEffect, useId, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { ActivityIndicator, ActivityStatus } from "../shared/Activity.js";
 import { useNavigate } from "react-router-dom";
@@ -26,7 +26,7 @@ import { useCockpitStore } from "../../stores/cockpit-store.js";
 import type { PlannerTool } from "../../lib/planner-tools.js";
 import { useEscapeLayer } from "../../lib/planner-keys.js";
 import { putDownPieceInHand } from "../../lib/planner-keymap.js";
-import { COCKPIT_MODES } from "../../lib/cockpit-modes.js";
+import { useLensRail, useShownLens } from "../../lib/use-lens-rail.js";
 import { ReferenceSceneSettings } from "./cockpit/ReferenceSceneSettings.js";
 import { HallViewSheetControls } from "./cockpit/CanvasLayerControls.js";
 import { useModelledGrandHall } from "../grand-hall/hall-space.js";
@@ -910,22 +910,23 @@ function ToolBtn({
         {children}
         {subLabel !== undefined && (
           <span data-testid={captionTestId} style={{
-            // Subtle, professional caption — uppercase Inter at 9px with
-            // generous tracking. Active button flips to dark text on the
-            // gold gradient; inactive uses a low-contrast neutral so the
-            // icon stays the dominant visual element.
+            // Subtle, professional caption — Inter at the 11px floor, weight
+            // 600, in title case as the deck's are: uppercase at 11px ran
+            // "FURNITURE" to 64.6px in a 56px button, where "Furniture" is
+            // 50.7px. Active button flips to dark text on the gold gradient;
+            // inactive uses a low-contrast neutral so the icon stays the
+            // dominant visual element.
             display: "block",
             maxWidth: "100%",
-            fontSize: compact ? 8 : subLabel.length >= 8 ? 8.5 : 9,
+            fontSize: 11,
             fontWeight: 600,
-            letterSpacing: compact ? 0.2 : subLabel.length >= 8 ? 0.25 : 0.6,
+            letterSpacing: 0.2,
             lineHeight: 1,
             color: active
               ? "rgba(14,14,14,0.78)"
               : disabled
                 ? "rgba(255,255,255,0.18)"
                 : "rgba(255,255,255,0.42)",
-            textTransform: "uppercase",
             whiteSpace: "nowrap",
             fontFamily: "'Inter', system-ui, sans-serif",
             userSelect: "none",
@@ -1334,7 +1335,8 @@ function MobilePlannerDock({
   onRotateSelected,
   onDeleteSelected,
 }: MobilePlannerDockProps): React.ReactElement {
-  const activeLens = useCockpitStore((state) => state.activeMode);
+  const lensRail = useLensRail();
+  const shownLens = useShownLens();
   const moreButtonRef = useRef<HTMLButtonElement>(null);
   const moreSheetId = useId();
   const dismissMore = (): void => {
@@ -1389,19 +1391,25 @@ function MobilePlannerDock({
         <div id={moreSheetId} data-testid="mobile-more-sheet" role="region" aria-label="More planner tools"
           style={{ ...mobileSheetStyle, display: "grid", gap: 8 }}>
           <div style={mobileSheetTitleStyle}>Planner lenses</div>
-          <div className="mobile-planner-lenses" role="group" aria-label="Planner lenses">
-            {COCKPIT_MODES.map((lens) => (
-              <button key={lens.id} type="button" className="mobile-planner-lenses__button"
-                aria-pressed={activeLens === lens.id}
-                onClick={() => {
-                  useCockpitStore.getState().setMode(lens.id);
-                  dismissMore();
-                }}>
-                <span>{lens.label}</span>
-                {activeLens === lens.id && <Check size={18} aria-hidden="true" />}
-              </button>
-            ))}
-          </div>
+          {/* This viewer's lenses (lib/cockpit-lenses.ts): a titled section is the "Venue tools" group. */}
+          {lensRail.sections.map((section) => (
+            <Fragment key={section.label ?? "lenses"}>
+              {section.label !== null && <div style={mobileSheetTitleStyle}>{section.label}</div>}
+              <div className="mobile-planner-lenses" role="group" aria-label={section.label ?? "Planner lenses"}>
+                {section.lenses.map((lens) => (
+                  <button key={lens.id} type="button" className="mobile-planner-lenses__button"
+                    aria-pressed={shownLens === lens.id}
+                    onClick={() => {
+                      useCockpitStore.getState().setMode(lens.id);
+                      dismissMore();
+                    }}>
+                    <span>{lens.label}</span>
+                    {shownLens === lens.id && <Check size={18} aria-hidden="true" />}
+                  </button>
+                ))}
+              </div>
+            </Fragment>
+          ))}
           <div style={mobileSheetTitleStyle}>Tools</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
             <MobileDockButton label="Snap" active={snapEnabled} onClick={onSnap} icon={<Grid3X3 size={20} />} />

@@ -445,7 +445,12 @@ export function GrandAssembly({ onCamera }: GrandAssemblyProps): ReactElement {
   const mounted = useRef(false);
   useEffect(() => {
     mounted.current = true;
-    return () => { mounted.current = false; };
+    // On its stage until it leaves: a replay asked for meanwhile (Present) is taken up here.
+    useAssemblyRecallStore.setState({ onStage: true });
+    return () => {
+      mounted.current = false;
+      useAssemblyRecallStore.setState({ onStage: false });
+    };
   }, []);
   useEffect(() => () => {
     const pending = useAssemblyRecallStore.getState().request;

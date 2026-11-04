@@ -715,6 +715,13 @@
       "when": 1793052000000,
       "tag": "0104_deposits_and_signatures",
       "breakpoints": true
+    },
+    {
+      "idx": 102,
+      "version": "7",
+      "when": 1793059200000,
+      "tag": "0105_product_writes_share_foundry_lock",
+      "breakpoints": true
     }
   ]
 }

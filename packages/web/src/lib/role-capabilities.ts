@@ -15,7 +15,8 @@
 // checks it alongside these sets rather than finding it inside them.
 // ---------------------------------------------------------------------------
 
-import { VENUE_ADMINISTRATION_ROLES, VENUE_TEAM_INVITER_ROLES } from "@omnitwin/types";
+import { VENUE_ADMINISTRATION_ROLES } from "@omnitwin/types/user";
+import { VENUE_TEAM_INVITER_ROLES } from "@omnitwin/types/venue-team";
 
 /** Mirrors `canManageVenue` — the base "works this venue's floor" capability. */
 export const VENUE_FLOOR_ROLES = ["admin", "manager", "staff", "hallkeeper"] as const;
@@ -60,7 +61,7 @@ export const PRICING_READ_ROLES = COMMERCIAL_ROLES;
  * @omnitwin/types so the two cannot drift. Everyone else on the desk is told
  * who can.
  */
-export { PRICING_WRITE_ROLES } from "@omnitwin/types";
+export { PRICING_WRITE_ROLES } from "@omnitwin/types/pricing-desk";
 
 /**
  * The Analytics tab. What it opens is `ExecutiveAnalyticsView`, whose only

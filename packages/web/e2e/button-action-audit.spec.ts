@@ -2130,8 +2130,13 @@ test.describe("SS++ button and action inventory", () => {
 
 test.describe("SS++ representative button behavior", () => {
   test("planner cockpit controls update visible state", async ({ page }) => {
+    // The shell alone may take 20 s on a busy CPU runner, so 30 s left the seven
+    // controls after it ~10 s: runs took 14 s on a quiet runner and timed out at 30 s on a busy one.
+    test.setTimeout(45_000);
     await mockPlannerRoutes(page);
-    await page.goto(`/plan/${CONFIG_ID}`, { waitUntil: "domcontentloaded" });
+    // The cockpit's controls are under test, Flow among them, not who may open
+    // which lens: with lensesByRole on, an anonymous visitor sees four lenses.
+    await page.goto(`/plan/${CONFIG_ID}?pf=-lensesByRole`, { waitUntil: "domcontentloaded" });
     await page.waitForSelector("[data-testid='cockpit-shell']", { timeout: 20_000 });
 
     // The Grand Hall is drawn as the surveyed room, with its own views and light.
@@ -3103,15 +3108,15 @@ test.describe("SS++ deep modal, drawer, role, disabled, and error states", () =>
     await page.getByLabel("Operator review for Trades Hall deployment").selectOption("approved");
     await page.getByLabel("Current step for Trades Hall deployment").fill("Ready for staff handoff.");
     await page.getByLabel("Evidence note for Trades Hall deployment").fill("Owner accepted and staff invite list reviewed.");
-    await page.getByRole("button", { name: "Save project gate for Trades Hall deployment" }).click();
+    await page.getByRole("button", { name: "Save setup review for Trades Hall deployment" }).click();
     await expect.poll(() => mock.savedProjectGates).toContain("ready|approved|Ready for staff handoff.");
     await expect(page.getByText("Setup review saved.", { exact: true })).toBeVisible();
 
     await page.getByLabel("Billing provider for Trades Hall deployment").selectOption("manual_invoice");
     await page.getByLabel("Provider status for Trades Hall deployment").selectOption("provider_verified");
     await page.getByLabel("Provider evidence reference for Trades Hall deployment").fill("invoice-2026-001");
-    await page.getByLabel("Enforce managed access for Trades Hall deployment").check();
-    await page.getByRole("button", { name: "Save provider gate for Trades Hall deployment" }).click();
+    await page.getByLabel("Managed access agreed for Trades Hall deployment, recorded only").check();
+    await page.getByRole("button", { name: "Save billing verification for Trades Hall deployment" }).click();
     await expect.poll(() => mock.savedProviderGates).toContain("manual_invoice|provider_verified|true");
     await expect(page.getByText("Billing verification saved.", { exact: true })).toBeVisible();
   });
@@ -3127,7 +3132,7 @@ test.describe("SS++ deep modal, drawer, role, disabled, and error states", () =>
     await expect(page.getByRole("heading", { name: "People & access" })).toBeVisible();
 
     await page.getByText("Setup review and billing", { exact: true }).click();
-    const saveProjectGate = page.getByRole("button", { name: "Save project gate for Trades Hall deployment" });
+    const saveProjectGate = page.getByRole("button", { name: "Save setup review for Trades Hall deployment" });
     await saveProjectGate.click();
     await expect(page.getByRole("alert")).toContainText("button audit project gate failure");
     await expect(saveProjectGate).toBeEnabled();

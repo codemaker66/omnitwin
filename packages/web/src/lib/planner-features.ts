@@ -14,8 +14,11 @@
 
 interface PlannerFeatureSpec {
   /** The lane that builds it and decides when it is green. */
-  readonly lane: "E" | "P";
-  /** The quality-of-life item it delivers (design/qol-pass.md). */
+  readonly lane: "E" | "P" | "planner-qol";
+  /**
+   * The quality-of-life item it delivers: Q-NN in design/qol-pass.md, PQ-N in
+   * planner-qol's own list, or D-N for one of Blake's decisions.
+   */
   readonly item: string;
   /** Whether everyone has it. */
   readonly on: boolean;
@@ -52,6 +55,12 @@ export const PLANNER_FEATURE_SPECS = {
   storeCounts: { lane: "E", item: "Q-14", on: false },
   /** A piece released on the rail goes back in store. */
   putBack: { lane: "E", item: "Q-15", on: false },
+  /**
+   * A plain click passes through a wall to the floor, so a deselect never takes
+   * a wall down; Alt-click hides one (decision 4). Off, any click that meets a
+   * wall first hides it.
+   */
+  wallClickAlt: { lane: "E", item: "D4", on: false },
   /** Line up puts several pieces' centres on one line. */
   lineUp: { lane: "E", item: "Q-18", on: false },
   /** Move on the caption, then a tap on the destination. */
@@ -60,6 +69,17 @@ export const PLANNER_FEATURE_SPECS = {
   tableSets: { lane: "E", item: "Q-08b", on: false },
   /** A card dropped on a selection replaces it. */
   replace: { lane: "E", item: "Q-16", on: false },
+  // planner-qol (Blake's decisions 3–5)
+  /** A cloth goes on in a 450 ms drape; Present and the showcase keep the 3.2 s spiral. */
+  clothDrape: { lane: "planner-qol", item: "PQ-7", on: false },
+  /** The 450 ms drape everywhere, Present and the showcase too: no spiral. Wins over clothDrape. */
+  clothDrapeOnly: { lane: "planner-qol", item: "PQ-7", on: false },
+  /** Each role sees its own lenses, named: clients and guests four, the hallkeeper four, the venue team all eleven. */
+  lensesByRole: { lane: "planner-qol", item: "PQ-11", on: false },
+  /** The technical lenses sit below a "Venue tools" divider, for whoever sees them. */
+  lensesDivider: { lane: "planner-qol", item: "PQ-11", on: false },
+  /** A wall's brick-down takes 450 ms, not 5 s, and under reduced motion the wall goes at once. */
+  wallsQuick: { lane: "planner-qol", item: "PQ-15", on: false },
 } as const satisfies Readonly<Record<string, PlannerFeatureSpec>>;
 
 export type PlannerFeature = keyof typeof PLANNER_FEATURE_SPECS;

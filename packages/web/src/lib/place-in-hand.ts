@@ -19,13 +19,14 @@ import { atVerdict, createGhostWorld, judgeGhost, refusalChip, type GhostState, 
 import { settleOnSurfaces, type PlacedItem } from "./placement.js";
 import { capReachedFor } from "./placement-cap.js";
 import { plannerFeatureEnabled } from "./planner-features.js";
-import { describeCard, judgesCard, placesAsCard, seatsInHand, stampSetup, type CardParams } from "./setup-cards.js";
+import { describeCard, ghostSetInHand, judgesCard, placesAsCard, seatsInHand, stampSetup, type CardParams } from "./setup-cards.js";
 import { useGhostVerdictStore } from "../stores/ghost-verdict-store.js";
 import { useRoomDimensionsStore } from "../stores/room-dimensions-store.js";
 import { tableClothStyleForCatalogueItem, tableDressingTargetIds, tableSettingForCatalogueItem } from "./table-dressing.js";
 import { useCatalogueStore } from "../stores/catalogue-store.js";
 import { useChairDialogStore } from "../stores/chair-dialog-store.js";
-import { usePlacementStore } from "../stores/placement-store.js";
+import { markJustPlaced, usePlacementStore } from "../stores/placement-store.js";
+import { playPlannerSound } from "./sound-registry.js";
 import { useSelectionStore } from "../stores/selection-store.js";
 import { postPlacementNotice } from "../stores/placement-notice-store.js";
 
@@ -170,9 +171,11 @@ export function placePieceInHand(invalidate: () => void, options: PlaceInHandOpt
     return [];
   }
 
+  const before = placeState.placedItems;
   if (card !== null) {
     const stock = options.stock === undefined ? currentStoreStock() : options.stock;
     const ids = placeCardAt(card, { x, z, y }, placeState.ghostRotation, { stock });
+    standAsideFrom(before);
     // The card goes down once the store has none left for another (B2): "None left in store · Round of 10".
     if (ids.length > 0 && storeRefuses(card, stock, placedCounts(usePlacementStore.getState().placedItems))) {
       useCatalogueStore.getState().disarm();
@@ -183,19 +186,27 @@ export function placePieceInHand(invalidate: () => void, options: PlaceInHandOpt
     return ids;
   }
 
+  // The old way, judged as its ghost was behind truthfulGhost alone: refused there, nothing is set down.
+  const at = oldWayAt(catState.cardParams, catState.selectedItemId, { x, z, y }, placeState.ghostRotation);
+  if (at === null) {
+    invalidate();
+    return [];
+  }
+
   if (item.tableShape !== null && isDiningTableItem(item)) {
     const seats = catState.cardParams === null ? null : seatsInHand(catState.cardParams);
     if (plannerFeatureEnabled("seatsOnTheCard") && seats !== null) {
       // The seats ride on the card: the table and its chairs in one step, no dialog.
-      if (seats > 0) placeState.placeTableGroup(catState.selectedItemId, x, z, placeState.ghostRotation, seats);
-      else placeState.placeItem(catState.selectedItemId, x, z, placeState.ghostRotation);
+      if (seats > 0) placeState.placeTableGroup(catState.selectedItemId, at.x, at.z, placeState.ghostRotation, seats);
+      else placeState.placeItem(catState.selectedItemId, at.x, at.z, placeState.ghostRotation);
+      standAsideFrom(before);
       invalidate();
       return [];
     }
     useChairDialogStore.getState().showDialog({
       catalogueItemId: catState.selectedItemId,
-      x,
-      z,
+      x: at.x,
+      z: at.z,
       rotationY: placeState.ghostRotation,
       tableShape: item.tableShape,
     });
@@ -205,9 +216,55 @@ export function placePieceInHand(invalidate: () => void, options: PlaceInHandOpt
     return [];
   }
 
-  placeState.placeItem(catState.selectedItemId, x, z, placeState.ghostRotation);
+  placeState.placeItem(catState.selectedItemId, at.x, at.z, placeState.ghostRotation);
+  standAsideFrom(before);
   invalidate();
   return [];
+}
+
+/**
+ * After the hand sets pieces down, its ghost stands aside from them until the
+ * pointer leaves their floor (placement-store markJustPlaced): no red ghost on
+ * a success, and nothing for a double-click's second click to set down.
+ */
+function standAsideFrom(before: readonly PlacedItem[]): void {
+  const had = new Set(before.map((piece) => piece.id));
+  const placed = usePlacementStore.getState().placedItems.filter((piece) => !had.has(piece.id));
+  if (placed.length === 0) return;
+  markJustPlaced(placed);
+  if (usePlacementStore.getState().ghostPosition !== null) {
+    usePlacementStore.setState({ ghostPosition: null, ghostValid: false, ghostInvalidReason: null });
+  }
+}
+
+/**
+ * Where the old way sets the piece in hand down. Behind truthfulGhost alone
+ * its ghost is judged (setup-cards ghostSetInHand), so here too: where the
+ * ghost stood it, pushed clear as the ghost was, or null where the ghost
+ * showed it refused, said in the ghost's own words. Otherwise the green and
+ * red ghost decides: red is a no, with its reason and the refusal's sound.
+ */
+function oldWayAt(
+  params: CardParams | null,
+  itemId: string,
+  origin: CardOrigin,
+  rotationY: number,
+): { readonly x: number; readonly z: number } | null {
+  const set = params === null ? null : ghostSetInHand(params);
+  if (set === null) {
+    const { ghostValid, ghostInvalidReason } = usePlacementStore.getState();
+    if (ghostValid) return { x: origin.x, z: origin.z };
+    postPlacementNotice(ghostInvalidReason ?? "Won't fit here");
+    playPlannerSound("planner-refuse");
+    return null;
+  }
+  const judged = judgeCardAt(set, origin, rotationY, roomWorld(), useGhostVerdictStore.getState().verdict?.state);
+  if (judged.verdict.state === "refused") {
+    postPlacementNotice(refusalChip(judged.verdict.obstacle));
+    return null;
+  }
+  const piece = judged.pieces.find((placed) => placed.catalogueItemId === itemId) ?? judged.pieces[0];
+  return piece === undefined ? { x: origin.x, z: origin.z } : { x: piece.x, z: piece.z };
 }
 
 /**

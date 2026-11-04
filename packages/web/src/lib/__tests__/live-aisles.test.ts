@@ -66,10 +66,13 @@ describe("live aisles in the planner's bands", () => {
       neighbour: "the window wall",
       onGangway: true,
       tone: "amber",
-      words: "Gangway 0.95 m · under the 1.1 m guidance · the venue will review",
+      words: "Gangway 0.95 m · under the 1.1 m guidance · goes to the venue with this layout",
     });
     const wide = liveAisles(round(0, -HALL.length / 2 + 1.2 + CHAIR_REACH), [], HALL, OPTIONS)[0];
     expect(wide).toMatchObject({ onGangway: true, tone: "sage", words: "1.2 m" });
+    // A guest's preview stores nothing; the venue sees the pinch when it opens the layout.
+    expect(liveAisles(ghost, [], HALL, { ...OPTIONS, reader: "guest" })[0]?.words)
+      .toBe("Gangway 0.95 m · under the 1.1 m guidance · the venue sees this with your layout");
   });
 
   it("flags a pinch across a middle gangway where the design has one", () => {
@@ -77,7 +80,7 @@ describe("live aisles in the planner's bands", () => {
     const ghost = round(-1, -(0.4 + CHAIR_REACH));
     const placed = round(-1, 0.4 + CHAIR_REACH);
     const [nearest] = liveAisles(ghost, placed, HALL, { ...OPTIONS, rule });
-    expect(nearest).toMatchObject({ onGangway: true, words: "Gangway 0.80 m · under the 1.2 m guidance · the venue will review" });
+    expect(nearest).toMatchObject({ onGangway: true, words: "Gangway 0.80 m · under the 1.2 m guidance · goes to the venue with this layout" });
   });
 
   it("flags a round pushed past the middle gangway's centre line, as the review does", () => {
@@ -87,7 +90,7 @@ describe("live aisles in the planner's bands", () => {
     const placed = round(-1, 1.25 + CHAIR_REACH);
     const [nearest] = liveAisles(ghost, placed, HALL, { ...OPTIONS, rule });
     expect(nearest?.gapM).toBeCloseTo(0.6, 6);
-    expect(nearest).toMatchObject({ onGangway: true, words: "Gangway 0.60 m · under the 1.2 m guidance · the venue will review" });
+    expect(nearest).toMatchObject({ onGangway: true, words: "Gangway 0.60 m · under the 1.2 m guidance · goes to the venue with this layout" });
     const review = gangwayReview([...ghost, ...placed], HALL, grandHallExits(), { wallNames: GRAND_HALL_WALL_NAMES, rule }).filter((item) => item.gangway === "the middle");
     expect(review.map((item) => item.widthM)).toEqual([nearest?.gapM]);
   });
@@ -100,7 +103,7 @@ describe("live aisles in the planner's bands", () => {
     const [listed] = gangwayReview([table], HALL, grandHallExits(), { wallNames: GRAND_HALL_WALL_NAMES });
     expect(doorWall?.gapM).toBeCloseTo(1.0, 9);
     expect(listed?.widthM).toBeCloseTo(doorWall?.gapM ?? Number.NaN, 9);
-    expect(doorWall?.words).toBe("Gangway 1.00 m · under the 1.1 m guidance · the venue will review");
+    expect(doorWall?.words).toBe("Gangway 1.00 m · under the 1.1 m guidance · goes to the venue with this layout");
   });
 
   it("measures to the three nearest only, nearest first", () => {

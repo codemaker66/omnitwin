@@ -1,6 +1,7 @@
 import type { ErrorInfo } from "react";
 import type { Breadcrumb, ErrorEvent, Event } from "@sentry/react";
-import { redactHealthFreeText, templateCapabilityPathsDeep } from "@omnitwin/types";
+import { templateCapabilityPathsDeep } from "@omnitwin/types/capability-paths";
+import { redactHealthFreeText } from "@omnitwin/types/event-requirements";
 
 type SentryReactModule = typeof import("./sentry-sdk.js");
 
