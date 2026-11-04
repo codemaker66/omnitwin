@@ -114,6 +114,14 @@ describe("what may be sent to move a request", () => {
     expect(RequestTransitionSchema.safeParse({ to: "resolved" }).success).toBe(false);
   });
 
+  it("carries the state and owner a kept step was pressed against, the owner a person or nobody", () => {
+    const kept = { to: "resolved", outcome: "done", expectedState: "accepted", expectedOwnerUserId: UUID };
+    expect(RequestTransitionSchema.safeParse(kept).success).toBe(true);
+    expect(RequestTransitionSchema.safeParse({ to: "accepted", expectedState: "sent", expectedOwnerUserId: null }).success).toBe(true);
+    expect(RequestTransitionSchema.safeParse({ to: "accepted", expectedOwnerUserId: "Elaine" }).success).toBe(false);
+    expect(RequestTransitionSchema.safeParse({ to: "accepted", expectedState: "lost" }).success).toBe(false);
+  });
+
   it("refuses to carry a time, a layout or an audience", () => {
     expect(RequestTransitionSchema.safeParse({ to: "accepted", startsAt: "2026-10-10T12:00:00Z" }).success).toBe(false);
     expect(RequestTransitionSchema.safeParse({ to: "accepted", audienceRoles: ["client"] }).success).toBe(false);

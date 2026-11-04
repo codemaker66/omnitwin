@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { CalendarBookingEntry } from "@omnitwin/types";
 import { getCatalogueItemBySlug } from "../catalogue.js";
 import { createTableGroup } from "../table-group.js";
-import { DEFAULT_PLANNER_CHAIR_SLUG } from "../furniture-defaults.js";
+import { plannerChairSlug } from "../furniture-defaults.js";
 import type { PlacedItem } from "../placement.js";
 import { actsInRoom, eventHoldWords, holdChipWords, planeFacts, slateEyebrow, venueDay } from "../slate-facts.js";
 
@@ -18,7 +18,7 @@ function tables(count: number, chairsEach: number): PlacedItem[] {
 }
 
 function rowOfChairs(count: number): PlacedItem[] {
-  const one = tables(1, 1).find((item) => getCatalogueItemBySlug(DEFAULT_PLANNER_CHAIR_SLUG)?.id === item.catalogueItemId);
+  const one = tables(1, 1).find((item) => getCatalogueItemBySlug(plannerChairSlug())?.id === item.catalogueItemId);
   if (one === undefined) throw new Error("no chair");
   return Array.from({ length: count }, (_, index) => ({ ...one, id: `chair-${String(index)}`, groupId: null, x: index * 0.6 }));
 }

@@ -5,6 +5,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { getTableConfig, type PgTable } from "drizzle-orm/pg-core";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import * as schema from "../db/schema.js";
+import { notificationRoutes } from "../routes/event-plan-lifecycle.js";
 import { supplierShareRoutes } from "../routes/supplier-coordination.js";
 
 // ---------------------------------------------------------------------------
@@ -19,6 +20,8 @@ import { supplierShareRoutes } from "../routes/supplier-coordination.js";
 // Opt-in, isolated PostgreSQL only. Never consults DATABASE_URL or .env.
 // ---------------------------------------------------------------------------
 
+// The inbox route below authenticates with the test-mode bearer.
+process.env["NODE_ENV"] = "test";
 const testUrl = process.env["VENVIEWER_ROUTE_TEST_DATABASE_URL"];
 if (testUrl !== undefined) {
   const parsed = new URL(testUrl);
@@ -55,6 +58,7 @@ describe.skipIf(testUrl === undefined)("supplier responses reach the venue on is
     schema.venues, schema.suppliers, schema.handoffPacks, schema.snapshotDiffs,
     schema.supplierCoordinationPacks, schema.supplierCoordinationPackItems, schema.supplierCoordinationShareTokens,
     schema.supplierAcknowledgements, schema.eventPlanNotifications, schema.generalAuditLog,
+    schema.events, schema.eventPlanNotificationReads,
   ];
 
   beforeAll(async () => {
@@ -76,6 +80,7 @@ describe.skipIf(testUrl === undefined)("supplier responses reach the venue on is
     const db = drizzle(pool, { schema });
     server = Fastify();
     await server.register(supplierShareRoutes, { db, prefix: "/supplier-share" });
+    await server.register(notificationRoutes, { db, prefix: "/notifications" });
     await server.ready();
   }, 120_000);
 
@@ -115,7 +120,15 @@ describe.skipIf(testUrl === undefined)("supplier responses reach the venue on is
     return result.rows;
   }
 
-  it("tells staff and hallkeepers when a supplier needs clarification, in the supplier's words", async () => {
+  /** The titles in one person's inbox, as GET /notifications lists them. */
+  async function inbox(role: string): Promise<readonly string[]> {
+    const user = { id: randomUUID(), email: `${role}@example.test`, name: `${role} user`, role, venueId: VENUE };
+    const res = await server.inject({ method: "GET", url: "/notifications", headers: { authorization: `Bearer ${JSON.stringify(user)}` } });
+    expect(res.statusCode, role).toBe(200);
+    return (JSON.parse(res.body) as { data: readonly { title: string }[] }).data.map((note) => note.title);
+  }
+
+  it("tells the whole venue team when a supplier needs clarification, in the supplier's words", async () => {
     const res = await server.inject({
       method: "POST", url: `/supplier-share/${TOKEN}/acknowledge`,
       payload: {
@@ -128,7 +141,8 @@ describe.skipIf(testUrl === undefined)("supplier responses reach the venue on is
     expect(res.statusCode).toBe(201);
 
     const rows = await notifications();
-    expect(rows.map((row) => row.audience_role)).toEqual(["hallkeeper", "staff"]);
+    // The office that issues passes as well as the people running the day.
+    expect(rows.map((row) => row.audience_role)).toEqual(["admin", "hallkeeper", "manager", "staff"]);
     for (const row of rows) {
       expect(row).toMatchObject({
         venue_id: VENUE, event_id: null, change_id: null,
@@ -137,6 +151,11 @@ describe.skipIf(testUrl === undefined)("supplier responses reach the venue on is
       // The name is whatever the holder of the link typed: reported as given.
       expect(row.body).toBe("Flowers for the Grand Hall dinner. Name given on the link: Sam, sam@example.test. \"Which door do we load through?\"");
     }
+    // Each of them finds it in their own inbox; a client does not.
+    for (const role of ["admin", "manager", "staff", "hallkeeper"]) {
+      expect(await inbox(role), role).toEqual(["Bloom & Co has a question"]);
+    }
+    expect(await inbox("client")).toEqual([]);
   });
 
   it("tells them quietly when a supplier acknowledges the handoff", async () => {
@@ -146,7 +165,7 @@ describe.skipIf(testUrl === undefined)("supplier responses reach the venue on is
     });
     expect(res.statusCode).toBe(201);
     const rows = await notifications();
-    expect(rows).toHaveLength(2);
+    expect(rows).toHaveLength(4);
     expect(rows.every((row) => row.title === "Bloom & Co has read their brief" && row.severity === "info")).toBe(true);
     expect(rows[0]?.body).toBe("Flowers for the Grand Hall dinner. Name given on the link: Sam. No note.");
   });

@@ -6,8 +6,16 @@ import {
   readBrowserSentryConfig,
   scrubSentryBreadcrumb,
   scrubSentryEvent,
+  withoutIds,
   withoutQuery,
 } from "../observability/sentry.js";
+
+/** A breadcrumb the scrubber keeps (fetch, xhr, navigation and clicks are kept; console ones are dropped). */
+function kept(breadcrumb: Breadcrumb): Breadcrumb {
+  const scrubbed = scrubSentryBreadcrumb(breadcrumb);
+  if (scrubbed === null) throw new Error("The breadcrumb was dropped");
+  return scrubbed;
+}
 
 describe("browser Sentry config", () => {
   it("is disabled when the browser DSN is absent", () => {
@@ -110,7 +118,7 @@ describe("browser Sentry breadcrumbs and search terms", () => {
   });
 
   it("does the same for an xhr breadcrumb", () => {
-    const scrubbed = scrubSentryBreadcrumb({
+    const scrubbed = kept({
       category: "xhr",
       type: "http",
       data: { method: "GET", url: "/clients/search?q=aileen%40example.test", status_code: 200 },
@@ -119,7 +127,7 @@ describe("browser Sentry breadcrumbs and search terms", () => {
   });
 
   it("keeps the query out of a navigation breadcrumb's from and to", () => {
-    const scrubbed = scrubSentryBreadcrumb({
+    const scrubbed = kept({
       category: "navigation",
       data: { from: "/dashboard?view=search&q=Aileen", to: "/clients?q=Aileen#top" },
     });
@@ -133,6 +141,26 @@ describe("browser Sentry breadcrumbs and search terms", () => {
     const original: Breadcrumb = { category: "fetch", data: { url: "/clients/search?q=Aileen" } };
     scrubSentryBreadcrumb(original);
     expect(original.data?.["url"]).toBe("/clients/search?q=Aileen");
+  });
+
+  it("drops console breadcrumbs, which can quote a layout's own words", () => {
+    expect(scrubSentryBreadcrumb({ category: "console", level: "error", message: "[editor-store] save failed: Smith wedding top table", data: { arguments: ["x"] } })).toBeNull();
+  });
+
+  it("keeps a guest layout's id and a shared plan's token out of every url", () => {
+    expect(withoutIds("/plan/7f1fb7a2-5210-57b1-9108-11255c059520")).toBe("/plan/:id");
+    expect(withoutIds("/plan/tour-config-0001?mode=walk")).toBe("/plan/:id?mode=walk");
+    expect(withoutIds("/plan-view/Zq3kP9vR2mW7xY1tB8nC4dF")).toBe("/plan-view/:id");
+    expect(withoutIds("https://api.example.test/public/configurations/abc123/objects/batch")).toBe("https://api.example.test/public/configurations/:id/objects/batch");
+    expect(withoutIds("/supplier-share/short")).toBe("/supplier-share/:id");
+    expect(withoutIds("/dashboard/clients")).toBe("/dashboard/clients");
+    expect(withoutIds("/plan")).toBe("/plan");
+    // Through the whole scrubber the capability pass then marks those segments as tokens.
+    expect(kept({ category: "fetch", data: { url: "https://api.example.test/public/configurations/abc123?revision=4" } }).data?.["url"])
+      .toBe("https://api.example.test/public/configurations/:token?[redacted]");
+    expect(kept({ category: "navigation", data: { from: "/plan/abc123", to: "/plan-view/Zq3kP9vR2mW7xY1tB8nC4dF" } }).data)
+      .toEqual({ from: "/plan/:token", to: "/plan-view/:token" });
+    expect(scrubSentryEvent({ request: { url: "https://venviewer.com/plan/abc123?x=1" } }).request).toEqual({ url: "https://venviewer.com/plan/:token" });
   });
 });
 
@@ -151,6 +179,76 @@ describe("browser Sentry event scrubber and guests' allergy notes", () => {
     expect(JSON.stringify(scrubbed)).not.toContain("sesame");
     expect(scrubbed.exception?.values?.[0]?.type).toBe("ApiError");
     expect(scrubbed.contexts?.["planner"]).toEqual({ dietary: { vegan: 2, otherAllergies: "[redacted]" } });
+  });
+});
+
+describe("browser Sentry and capability urls (share tokens, guest layout ids)", () => {
+  const TOKEN = "tok_SECRET123";
+
+  it.each([
+    ["proposal-share"], ["plan-view"], ["supplier-share"], ["proposal"], ["plan"],
+  ])("keeps the page's /%s/ token out of the event's request url", (prefix) => {
+    const scrubbed = scrubSentryEvent({ request: { url: `https://venviewer.com/${prefix}/${TOKEN}?from=email` } });
+    expect(scrubbed.request?.url).toBe(`https://venviewer.com/${prefix}/:token`);
+  });
+
+  it("templates a fetch breadcrumb's url and message", () => {
+    const fetch: Breadcrumb = {
+      category: "fetch",
+      message: `POST https://api.venviewer.com/proposal-share/${TOKEN}/approve?x=1`,
+      data: { method: "POST", url: `https://api.venviewer.com/proposal-share/${TOKEN}/approve?x=1`, status_code: 500 },
+    };
+    const scrubbed = kept(fetch);
+    expect(scrubbed.data?.["url"]).toBe("https://api.venviewer.com/proposal-share/:token/approve?[redacted]");
+    // The message keeps its query as the SDK wrote it; the token goes.
+    expect(scrubbed.message).toBe("POST https://api.venviewer.com/proposal-share/:token/approve?x=1");
+    expect(JSON.stringify(scrubbed)).not.toContain(TOKEN);
+    expect(scrubbed.data?.["status_code"]).toBe(500);
+  });
+
+  it("templates a view-only plan's PDF download", () => {
+    const xhr: Breadcrumb = { category: "xhr", data: { url: `https://api.venviewer.com/public/plan-views/${TOKEN}/plan.pdf` } };
+    expect(kept(xhr).data?.["url"]).toBe("https://api.venviewer.com/public/plan-views/:token/plan.pdf");
+  });
+
+  it("templates both ends of a navigation breadcrumb", () => {
+    const navigation: Breadcrumb = { category: "navigation", data: { from: `/proposal-share/${TOKEN}`, to: `/plan/${TOKEN}` } };
+    expect(kept(navigation).data).toEqual({ from: "/proposal-share/:token", to: "/plan/:token" });
+  });
+
+  it("templates a url in a breadcrumb that carries only a message", () => {
+    // Console breadcrumbs are dropped whole; the SDK's own event breadcrumb carries only a message.
+    const logged: Breadcrumb = { category: "sentry.event", message: `could not load /supplier-share/${TOKEN}` };
+    expect(kept(logged).message).toBe("could not load /supplier-share/:token");
+  });
+
+  it("leaves the venue's own pages alone", () => {
+    const navigation: Breadcrumb = { category: "navigation", data: { from: "/dashboard/proposals", to: "/dashboard?view=enquiries" } };
+    expect(kept(navigation).data).toEqual({ from: "/dashboard/proposals", to: "/dashboard?[redacted]" });
+    expect(scrubSentryEvent({ request: { url: "https://venviewer.com/dashboard/proposals" } }).request?.url)
+      .toBe("https://venviewer.com/dashboard/proposals");
+  });
+
+  it("never sends the raw token, wherever an event quotes it", () => {
+    const event: Event = {
+      request: { url: `https://venviewer.com/proposal-share/${TOKEN}` },
+      message: `Approve failed on /proposal-share/${TOKEN}`,
+      exception: { values: [{ type: "ApiError", value: `POST https://api.venviewer.com/proposal-share/${TOKEN}/approve answered 500` }] },
+      breadcrumbs: [
+        { category: "navigation", data: { from: "/", to: `/proposal-share/${TOKEN}` } },
+        { category: "fetch", data: { url: `https://api.venviewer.com/proposal-share/${TOKEN}`, status_code: 200 } },
+      ],
+      contexts: { page: { path: `/plan-view/${TOKEN}` } },
+      tags: { route: `/supplier-share/${TOKEN}` },
+    };
+
+    const scrubbed = scrubSentryEvent(event);
+
+    expect(JSON.stringify(scrubbed)).not.toContain(TOKEN);
+    expect(scrubbed.exception?.values?.[0]?.value).toBe("POST https://api.venviewer.com/proposal-share/:token/approve answered 500");
+    expect(scrubbed.breadcrumbs?.[1]?.data?.["status_code"]).toBe(200);
+    // The caller's event is not changed.
+    expect(event.request?.url).toBe(`https://venviewer.com/proposal-share/${TOKEN}`);
   });
 });
 

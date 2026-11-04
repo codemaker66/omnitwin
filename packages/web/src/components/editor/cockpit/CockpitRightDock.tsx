@@ -1,8 +1,8 @@
 import { type FC, type ReactElement } from "react";
 import { ActivityStatus } from "../../shared/Activity.js";
-import { useCockpitStore } from "../../../stores/cockpit-store.js";
 import { useLayoutTimelinePreviewStore } from "../../../stores/layout-timeline-preview-store.js";
 import type { CockpitMode } from "../../../lib/cockpit-modes.js";
+import { useShownLens } from "../../../lib/use-lens-rail.js";
 import { CockpitTruthRail } from "./CockpitTruthRail.js";
 import { FlowLensPanel } from "./FlowLensPanel.js";
 import { CostsLensPanel } from "./CostsLensPanel.js";
@@ -49,7 +49,10 @@ export function panelForMode(mode: CockpitMode): FC | null {
 }
 
 export function CockpitRightDock(): ReactElement {
-  const activeMode = useCockpitStore((state) => state.activeMode);
+  // The shown lens, not the stored one: a lens this viewer is not offered
+  // (decision 5) never mounts its panel, even for the one commit before the
+  // cockpit hands the store the viewer's lenses.
+  const activeMode = useShownLens();
   const generatedFurnitureSelection = useSelectedGeneratedFurniture();
   const previewMode = useLayoutTimelinePreviewStore((state) => state.mode);
   const previewLoading = useLayoutTimelinePreviewStore((state) => state.isLoading);

@@ -435,7 +435,8 @@ describe("WhenRibbon", () => {
     expect(transitionBookingMock).not.toHaveBeenCalled();
     fireEvent.click(screen.getByText("Confirm it"));
     await waitFor(() => { expect(transitionBookingMock).toHaveBeenCalledWith(SELF, "ink"); });
-    expect((await screen.findByRole("status")).textContent).toContain("Confirmed 13:00 – 15:00.");
+    // The status line says "Saving event times…" first, then what was done.
+    await waitFor(() => { expect(screen.getByRole("status").textContent).toContain("Confirmed 13:00 – 15:00."); });
   });
 
   it("goal 19 S6: the office sees the phase grips and their legend; a hallkeeper sees neither; a confirmed booking offers no confirm", async () => {

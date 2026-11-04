@@ -2237,11 +2237,14 @@ describe.runIf(RUN_ENABLED)("phase layout PostgreSQL rehearsal", () => {
       const freezePid = await waitForBlocked(/from\s+"configurations"[\s\S]*for share/iu, lockerPid);
       const moving = requiredServer().inject({ method: "PATCH", url: `/event-phases/${plan.phaseId}`, headers: authHeaders(), payload: { spaceId: siblingId } }).then((response) => response);
       pending.push(moving);
+      // The PATCH takes its event's lock before the phase's (T-672: a Diary
+      // move shifts phases under that lock), so it waits behind the freeze at
+      // whichever it reaches first.
       const blockedOrFinished = await Promise.race([
-        waitForBlocked(/update\s+"event_phases"/iu, freezePid).then(() => null),
+        waitForBlocked(/update\s+"event_phases"|from\s+"events"[\s\S]*for no key update/iu, freezePid).then(() => null),
         moving,
       ]);
-      expect(blockedOrFinished, "The real phase PATCH must wait for the freezing transaction's phase read lock").toBeNull();
+      expect(blockedOrFinished, "The real phase PATCH must wait for the freezing transaction's event and phase read locks").toBeNull();
       await locker.query("COMMIT"); released = true;
       const [frozenResponse, movedResponse] = await Promise.all([freezing, moving]);
       expect(frozenResponse.statusCode, frozenResponse.body).toBe(201);

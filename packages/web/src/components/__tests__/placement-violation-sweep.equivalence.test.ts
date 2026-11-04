@@ -15,6 +15,11 @@
 // through both, and the results must be identical: same ids in the same order,
 // same counts. Every seeded assertion names its seed; `seededLayout(seed)`
 // rebuilds the failing layout. Hand-built edge cases close the file.
+//
+// 28 Oct 2026: the overlap rule lets footprints meet to within PLACEMENT_TOUCH
+// (1 mm), so pieces laid flush, trestles end to end in separate groups, are not
+// refused for a float's rounding. The reference takes the same tolerance: it
+// stays the O(n²) form of today's rule.
 // ---------------------------------------------------------------------------
 
 import { describe, expect, it } from "vitest";
@@ -35,6 +40,7 @@ import {
   getPlacementViolations,
   hasPlacementViolation,
   isWithinRoomBounds,
+  PLACEMENT_TOUCH,
 } from "../../lib/placement.js";
 import type { PlacedItem, PlacementViolation } from "../../lib/placement.js";
 import {
@@ -110,8 +116,8 @@ function referenceGetPlacementViolations(
       other.rotationY,
       other.scale,
     );
-    const overlapX = Math.abs(x - other.x) < (aHalfW + bHalfW + effectivePadding);
-    const overlapZ = Math.abs(z - other.z) < (aHalfD + bHalfD + effectivePadding);
+    const overlapX = Math.abs(x - other.x) < (aHalfW + bHalfW + effectivePadding - PLACEMENT_TOUCH);
+    const overlapZ = Math.abs(z - other.z) < (aHalfD + bHalfD + effectivePadding - PLACEMENT_TOUCH);
 
     if (overlapX && overlapZ) {
       violations.push({
@@ -442,8 +448,8 @@ function seededLayout(seed: number): SeededLayout {
     const rotationY = rng() < 0.7 ? pick(rng, RIGHT_ANGLES) : randomRotation(rng);
     const a = computeRotatedFootprint(sourceItem, source.rotationY, source.scale);
     const b = computeRotatedFootprint(item, rotationY);
-    // Exactly touching (strict < keeps it legal), a hair apart, a hair over.
-    const nudge = pick(rng, [0, 0, 1e-12, -1e-12, 1e-9, -1e-9, -0.01]);
+    // Exactly touching, a hair apart, a hair over (legal, within PLACEMENT_TOUCH), just past the tolerance, well over.
+    const nudge = pick(rng, [0, 0, 1e-12, -1e-12, 1e-9, -1e-9, -0.002, -0.01]);
     const alongX = rng() < 0.5;
     const side = rng() < 0.5 ? 1 : -1;
     push(item, {
@@ -717,7 +723,10 @@ describe("placementViolationIds — edge cases", () => {
     for (const origin of [0, 0.25, 0.5, 0.75, -7.25]) {
       const items = [0, 1, 2, 3].map((index) => row(`m${String(index)}`, stand, origin + index * width, 0));
       expect(expectSameSweep(items).size).toBe(0);
-      const squeezed = items.map((placed, index) => ({ ...placed, x: placed.x - index * 1e-9 }));
+      // A float's rounding inside each other is still touching (PLACEMENT_TOUCH); 2 mm is an overlap.
+      const rounded = items.map((placed, index) => ({ ...placed, x: placed.x - index * 1e-9 }));
+      expect(expectSameSweep(rounded).size).toBe(0);
+      const squeezed = items.map((placed, index) => ({ ...placed, x: placed.x - index * 0.002 }));
       expect(expectSameSweep(squeezed).size).toBe(4);
     }
   });
