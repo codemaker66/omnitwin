@@ -134,6 +134,8 @@ describe("PlannerCockpit: a lens the viewer cannot see (lensesByRole)", () => {
 
 describe("PlannerCockpit with both keys off", () => {
   it("leaves every lens open to everyone, as today", () => {
+    // #329 turns lensesByRole on by default; this case is about it off.
+    setPlannerFeaturesForTesting({ lensesByRole: false, lensesDivider: false });
     signIn("client");
     useCockpitStore.setState({ activeMode: "rigging" });
     render(<PlannerCockpit />);
