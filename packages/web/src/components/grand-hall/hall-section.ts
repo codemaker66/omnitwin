@@ -40,7 +40,7 @@ import { MeshBasicNodeMaterial, MeshStandardNodeMaterial, type Node } from "thre
 import { attribute, bool, exp, float, floor, fract, fwidth, hash, max, min, mix, positionLocal, positionWorld, smoothstep, sqrt, texture, vec2, vec3 } from "three/tsl";
 import { MeshBuilder, type V3 } from "./mesh-builder.js";
 import { HALL_ELEVATION, HALL_HALF_LENGTH, HALL_HALF_WIDTH, HALL_OPENINGS, HALL_WALLS, HALL_WALL_THICKNESS, isWindow, type HallWall } from "./hall-spec.js";
-import { BODY_FINISH, BODY_ROLE, DOOR_SLOTS, LINTEL_RELEASE, WALL_BODY_TOP, bodyOutline, buildWallBody } from "./hall-wall-body.js";
+import { BODY_FINISH, BODY_ROLE, DOOR_SLOTS, LINTEL_RELEASE, WALL_BODY_TOP, bodyCasterGeometry, bodyOutline, buildWallBody, type BodyFinish } from "./hall-wall-body.js";
 import { bakedIrradiance, scanIrradiance, type HallSectionUniforms, type SliverColour } from "./hall-materials.js";
 import type { HallMoodUniforms } from "./hall-mood.js";
 import { hallSkyUniforms } from "./hall-sky-runtime.js";
@@ -552,19 +552,25 @@ function sectionLineColour(preset: SectionPreset, height: Node<"float">): Node<"
  * Each course (every MASONRY.course of height) lays its joints over the one
  * below's, so the cut at another height cuts other stones.
  *
- * `upright` (null where every face is a top): true on a face of the cut that
- * stands upright (a wall's end above a lower neighbour's cut, a step in its
- * outer face), which shows the same masonry in elevation. The courses show as
- * beds of mortar every MASONRY.course, each course's stones the very stones
- * its top would cut at that height, so a wall's end and its top meet at the
- * same joints; its grain runs with the height too, where the top's, taken
- * across the level cut alone, would streak straight down the face. One
- * evaluation serves both, the flag choosing per face, so the body's shader
- * costs what it did with flat ends.
+ * `elevation` (null where every face is a top) marks the faces of the cut
+ * that stand upright (a wall's end above a lower neighbour's cut, a step in
+ * its outer face), which show the same masonry in elevation: the courses as
+ * beds of mortar every MASONRY.course; the course the cut lies in as the
+ * very stones its top cuts, so a wall's end meets its top at the same joints
+ * (where the relief stands at or proud of the wall's plane at the cut: where
+ * it is set back, the top's rows start at the relief's surface and the end's
+ * at the plane); each course below a random part of a row across from that
+ * one, so the joints between the rows break bond from course to course
+ * rather than standing in columns; the grain running with the height, where
+ * the top's, taken across the level cut alone, would streak straight down
+ * the face. Every top keeps its masonry exactly as it was before the ends
+ * took it. One evaluation serves tops and ends, the flags choosing per face
+ * (both branches of each choice run); what that costs over the flat ends it
+ * replaced has not been measured.
  */
 function masonrySection(
   preset: SectionPreset, u: Node<"float">, across: Node<"float">, toOuter: Node<"float"> | null, height: Node<"float">,
-  upright: Node<"bool"> | null = null,
+  elevation: Elevation | null = null,
 ): Node<"vec3"> {
   const m = MASONRY;
   const level = max(height, float(0));
@@ -574,13 +580,18 @@ function masonrySection(
   const depth = max(across, float(0));
   // The courses wander: every MASONRY.wander of wall they shift across it by
   // up to 40% of a row, as rubble's beds do, so they never read as paving.
-  // Each course also lies a random part of a row across from the one below,
-  // so in elevation (a wall's end) the joints between its rows break bond
-  // from course to course rather than standing in columns; a top cuts one
-  // course, which the shift moves across the wall as a whole.
   const stretch = floor(max(u, float(0)).div(m.wander));
-  const bond = hash(course.mul(53).add(62003)).mul(m.row);
-  const rowAt = depth.add(hash(stretch.add(course.mul(37)).add(60001)).mul(m.row * 0.4)).add(bond).div(m.row);
+  const wander = hash(stretch.add(course.mul(37)).add(60001)).mul(m.row * 0.4);
+  // In elevation, each course also lies a random part of a row across from
+  // the course its wall's cut lies in, which keeps its own rows (the bond is
+  // nothing there, and on every top). Taken a whole row round, the shift is
+  // never negative, so the stones' seeds never are.
+  const bondOf = (c: Node<"float">): Node<"float"> => hash(c.mul(53).add(62003));
+  const shift = elevation === null ? wander : elevation.upright.select(
+    wander.add(fract(bondOf(course).sub(bondOf(floor(max(elevation.cut, float(0)).div(m.course)))).add(1)).mul(m.row)),
+    wander,
+  );
+  const rowAt = depth.add(shift).div(m.row);
   const row = inLeaf.select(float(99), floor(rowAt));
   const rowJoint = inLeaf.select(toOuter === null ? float(1) : float(m.leaf).sub(toOuter), fract(rowAt).min(float(1).sub(fract(rowAt))).mul(m.row));
   // Across each stone, 0 on its side toward the room to 1 on its far side.
@@ -599,13 +610,18 @@ function masonrySection(
   const end = block.add(1).add(jitter(block.add(1)));
   const blockJoint = min(along.sub(start), end.sub(along)).mul(length);
   // In elevation, the bed between this course and the next, above and below.
+  // On a face square to the wall (its end, where u never changes) a stone's
+  // end joint is one distance over the whole face of a row's stone in a
+  // course, which would turn it all to mortar or shade: there the stones
+  // part at their rows and beds alone.
   const inCourse = fract(level.div(m.course));
   const bedJoint = inCourse.min(float(1).sub(inCourse)).mul(m.course);
   const levelJoint = min(rowJoint, blockJoint);
-  const joint = upright === null ? levelJoint : upright.select(min(levelJoint, bedJoint), levelJoint);
+  const joint = elevation === null ? levelJoint
+    : elevation.upright.select(min(elevation.endOn.select(rowJoint, levelJoint), bedJoint), levelJoint);
   // A pixel's span in metres, from the continuous coordinates (never through fract's jumps).
   const span = max(fwidth(u), fwidth(depth));
-  const pixel = (upright === null ? span : upright.select(max(span, fwidth(level)), span)).max(float(1e-5));
+  const pixel = (elevation === null ? span : elevation.upright.select(max(span, fwidth(level)), span)).max(float(1e-5));
   const half = m.joint / 2;
   const coverage = float(1).sub(smoothstep(pixel.mul(-0.5).add(half), pixel.mul(0.5).add(half), joint));
   const visible = float(1).sub(smoothstep(m.joint * 0.75, m.joint * 1.5, pixel));
@@ -624,7 +640,7 @@ function masonrySection(
   // Fine grain within each stone, in world space so it never swims as the cut moves.
   const p = positionWorld;
   const levelGrain = p.x.mul(53).add(p.z.mul(9).sin().mul(3)).sin().mul(p.z.mul(47).add(p.x.mul(7).sin().mul(2)).sin()).mul(0.03).add(1);
-  const grain = upright === null ? levelGrain : upright.select(
+  const grain = elevation === null ? levelGrain : elevation.upright.select(
     p.x.add(p.z).mul(53).add(p.y.mul(31)).add(p.y.mul(9).sin().mul(3)).sin()
       .mul(p.y.mul(47).sub(p.x.add(p.z).mul(19)).add(p.x.sub(p.z).mul(7).sin().mul(2)).sin()).mul(0.03).add(1),
     levelGrain,
@@ -645,17 +661,17 @@ function masonrySection(
  * edge and the outer face's (`toOuter`, the body only) catching the light.
  * Atelier also draws a gilt line on the room edge (cutGilt), straight along
  * the plane. Lit by `lighting`, `fromPlane` metres behind the wall's plane.
- * `upright`: true on a face that stands upright, which shows the same section
- * in elevation (masonrySection), its room line running down its room edge.
+ * `elevation`: the faces that stand upright, which show the same section in
+ * elevation (masonrySection), their room line running down their room edge.
  */
 function cutTopColour(
   preset: SectionPreset, lighting: Lighting, height: Node<"float">,
   fromPlane: Node<"float">, line: Node<"float">, u: Node<"float">, toOuter: Node<"float"> | null,
-  upright: Node<"bool"> | null = null,
+  elevation: Elevation | null = null,
 ): Node<"vec3"> {
   let core: Node<"vec3">;
   if (preset.masonry) {
-    core = masonrySection(preset, u, line, toOuter, height, upright);
+    core = masonrySection(preset, u, line, toOuter, height, elevation);
   } else {
     // A faint grain in the stone, in world space so it never swims as the cut moves.
     const p = positionWorld;
@@ -681,6 +697,36 @@ function cutTopColour(
  * `fromPlane` metres behind its wall's plane (for the room's falloff).
  */
 type Lighting = (albedo: Node<"vec3">, fromPlane: Node<"float">) => Node<"vec3">;
+
+/** Which of the cut's faces stand upright, shown in elevation (masonrySection). */
+interface Elevation {
+  /** True on a face that stands upright. */
+  readonly upright: Node<"bool">;
+  /** True on an upright face square to its wall (an end, where u never changes across it). */
+  readonly endOn: Node<"bool">;
+  /** The fragment's wall's cut: the course it lies in keeps the top's rows. */
+  readonly cut: Node<"float">;
+}
+
+/**
+ * The finish whose faces a preset draws as its masonry in elevation
+ * (createWallBodyMaterial), or null where its ends are one colour like its
+ * tops. Every face of that finish stands upright (__tests__/hall-wall-body
+ * .test.ts), so no level face takes the elevation.
+ */
+export function elevationFinish(preset: SectionPreset): BodyFinish | null {
+  return preset.masonry ? BODY_FINISH.section : null;
+}
+
+/** How far a normal runs along wall `wall`'s tangent (HALL_WALLS order): 1 on a face square to the wall. */
+function alongWall(wall: Node<"float">, normal: Node<"vec3">): Node<"float"> {
+  const along = (index: number): Node<"float"> => {
+    const w = HALL_WALLS[index];
+    if (w === undefined) return float(0);
+    return normal.x.mul(w.tangent[0]).add(normal.z.mul(w.tangent[2])).abs();
+  };
+  return wall.lessThan(0.5).select(along(0), wall.lessThan(1.5).select(along(1), wall.lessThan(2.5).select(along(2), along(3))));
+}
 
 /** The room's light (cutTopLight), or the city's card light (hall-beyond.ts cardLit) on an up-facing top. */
 function topLighting(preset: SectionPreset, mood: HallMoodUniforms, sunlit: boolean, sun: HallSun | null): Lighting {
@@ -840,9 +886,10 @@ function liningPhoto(beyond: HallBeyondPhotos): { readonly colour: Node<"vec3">;
 /**
  * The bodies' material. Each vertex rises no higher than its wall's cut (the
  * lower of two walls' at a corner) and no lower than the floor of its piece
- * of walling; lintels, the piers' sides over doors and the tops of the
- * walling under openings come and go with the cut (hall-wall-body.ts,
- * bodyVertexHeight); what still stands above the cut is discarded.
+ * of walling; lintels, the piers' sides over doors, the tops of the walling
+ * under openings and a cleared window bay's linings, board and back come and
+ * go with the cut (hall-wall-body.ts, bodyVertexHeight; the back only while
+ * `sunlit` is false); what still stands above the cut is discarded.
  *
  * Light, baked into the colour from the mood: the cut by the room's ambient,
  * its chandeliers most at the room's side, the sky above the lifted ceiling
@@ -872,12 +919,14 @@ export function createWallBodyMaterial(
   const hiddenLintel = role.greaterThan(BODY_ROLE.lintel - 0.5).and(role.lessThan(BODY_ROLE.lintel + 0.5)).and(released);
   const hiddenJamb = role.greaterThan(BODY_ROLE.lintelJamb - 0.5).and(role.lessThan(BODY_ROLE.lintelJamb + 0.5)).and(released.not());
   const hiddenCap = role.greaterThan(BODY_ROLE.capOnly - 0.5).and(role.lessThan(BODY_ROLE.capOnly + 0.5)).and(cut.greaterThanEqual(y.sub(1e-4)));
-  // A bay's board stands at its window's head, the cut that clears the bay,
-  // and lies at its own height (`base`) while the cut is under that head.
-  const isBoard = role.greaterThan(BODY_ROLE.bayBoard - 0.5);
-  const hiddenBoard = isBoard.and(cut.greaterThanEqual(y.sub(1e-4)));
-  const hidden = hiddenLintel.or(hiddenJamb).or(hiddenCap).or(hiddenBoard);
-  const clamped = vec3(positionLocal.x, isBoard.select(shape.x, max(min(y, cut), shape.x)), positionLocal.z);
+  // A cleared bay's faces (BODY_ROLE.bay, bayBacking) exist only while the
+  // cut lies below the height their aShape.y carries (the window's head);
+  // the daylit back only without the real sky, which shows the modelled
+  // panes and the city through the glass instead.
+  const hiddenBay = role.greaterThan(BODY_ROLE.bay - 0.5).and(cut.greaterThanEqual(shape.y.sub(1e-4)));
+  const hiddenBacking = sunlit ? role.greaterThan(BODY_ROLE.bayBacking - 0.5) : bool(false);
+  const hidden = hiddenLintel.or(hiddenJamb).or(hiddenCap).or(hiddenBay).or(hiddenBacking);
+  const clamped = vec3(positionLocal.x, max(min(y, cut), shape.x), positionLocal.z);
   // A collapsed vertex goes to one point far below the floor, so its faces have no area.
   material.positionNode = hidden.select(vec3(0, -50, 0), clamped);
   const isTop = tag.w.greaterThan(BODY_FINISH.cap - 0.5).and(tag.w.lessThan(BODY_FINISH.cap + 0.5));
@@ -892,17 +941,24 @@ export function createWallBodyMaterial(
   // How far under its wall's cut a face lies (the room's light catches the faces' tops: faceShading).
   const toTop = cut.sub(height);
   const street = linear(preset.outer).mul(outside).mul(faceShading(height, toTop));
+  // Along the face's wall, from its origin.
+  const along = wallU(tag.x, positionWorld);
   // The room's painted mahogany grain, read once a fragment: the Saloon's
   // panelling on Ashlar's interior faces and the windows' bays both take it.
+  // Upright faces read it across and up them; a level one (a bay's board)
+  // along its wall and in depth, so its grain runs along the board.
   const textures = extras.textures ?? null;
-  const mahogany = textures === null ? float(1) : mahoganyGrain(textures, vec2(positionWorld.x.add(positionWorld.z), height).mul(1.6));
+  const grainAt = bodyNormal().y.greaterThan(0.5).select(vec2(along, wallBehind(tag.x, positionWorld)), vec2(positionWorld.x.add(positionWorld.z), height));
+  const mahogany = textures === null ? float(1) : mahoganyGrain(textures, grainAt.mul(1.6));
   const outer = card ? cardOf(linear(preset.outer)) : preset.interiorFaces ? interiorFaceColour(mood, street, mahogany, toTop) : street;
   // The cut (cutTopColour). Where the relief stands proud at the cut, the
   // room's edge, and the gilt line on it, lie out at its surface on the cap
   // (createSectionCapMaterial); a wall that is not cut ends at its plane.
+  // (A cleared bay's faces carry another height in aShape.y, BODY_ROLE; none
+  // of them takes the cut's colour.)
   const fromRoom = shape.y;
   const toOuter = shape.z;
-  const sliced = proudAt(profile, tag.x, wallU(tag.x, positionWorld));
+  const sliced = proudAt(profile, tag.x, along);
   const proud = cut.lessThan(WALL_BODY_TOP).and(sliced.greaterThan(NO_SECTION + 0.5)).select(sliced, float(0));
   // Where the relief lies behind the wall's plane at the cut (the frieze, the
   // attic panelling, set back), the top in front of it is air: it goes, and
@@ -917,11 +973,14 @@ export function createWallBodyMaterial(
   // room line running down their room edge. The other presets' tops are one
   // colour, and so are their ends.
   const uprightLight: Lighting = (albedo, fromPlane) => albedo.mul(cutTopLight(mood, false, fromPlane)).mul(UPRIGHT_SHARE);
-  const elevation = preset.masonry ? finish.greaterThan(BODY_FINISH.section - 0.5).and(finish.lessThan(BODY_FINISH.section + 0.5)) : null;
-  const cutLighting: Lighting = elevation === null ? lighting
-    : (albedo, fromPlane) => elevation.select(uprightLight(albedo, fromPlane), lighting(albedo, fromPlane));
-  const cutLine = elevation === null ? line : elevation.select(fromRoom, line);
-  const cap = cutTopColour(preset, cutLighting, height, fromRoom, cutLine, wallU(tag.x, positionWorld), toOuter, elevation);
+  const elevated = elevationFinish(preset);
+  const inElevation = elevated === null ? null : finish.greaterThan(elevated - 0.5).and(finish.lessThan(elevated + 0.5));
+  const elevation: Elevation | null = inElevation === null ? null
+    : { upright: inElevation, endOn: alongWall(tag.x, bodyNormal()).greaterThan(0.5), cut };
+  const cutLighting: Lighting = inElevation === null ? lighting
+    : (albedo, fromPlane) => inElevation.select(uprightLight(albedo, fromPlane), lighting(albedo, fromPlane));
+  const cutLine = inElevation === null ? line : inElevation.select(fromRoom, line);
+  const cap = cutTopColour(preset, cutLighting, height, fromRoom, cutLine, along, toOuter, elevation);
   // A corner block's top: no room edge, an arris along both outer edges.
   const p = positionWorld;
   const grain = p.x.mul(41).add(p.z.mul(7).sin().mul(3)).sin().mul(p.z.mul(37).add(p.x.mul(5).sin().mul(2)).sin()).mul(0.035);
@@ -943,13 +1002,17 @@ export function createWallBodyMaterial(
   }
   const windowLining = card ? cardOf(linear(preset.windowLining))
     : linear(preset.windowLining).mul(room.add(mood.daylight.rgb.mul(mood.daylightIntensity).mul(REVEAL_SKY_VIEW)));
-  // A window's bay as the cut clears it (hall-wall-body.ts BAY_SLOTS): the
+  // A window's bay as the cut clears it (hall-wall-body.ts buildBay): the
   // mahogany its reveals are panelled in, the doorways' plain lining carrying
-  // the room's grain.
+  // the room's grain; at its back, without the real sky, the window it looks
+  // out of, its lining's colour in the room's light and the whole of the
+  // day's (the reveals take half of it).
   const bayLining = card ? cardOf(linear(preset.doorLining)) : linear(preset.doorLining).mul(mahogany).mul(room);
+  const bayBacking = card ? cardOf(linear(preset.windowLining))
+    : linear(preset.windowLining).mul(room.add(mood.daylight.rgb.mul(mood.daylightIntensity)));
   const upright = card
     ? cardOf(linear(preset.core)).add(linear(preset.core).mul(roomGlow).mul(capGlowNode(fromRoom)).mul(UPRIGHT_SHARE))
-    : elevation === null ? uprightLight(linear(preset.core), fromRoom) : cap;
+    : inElevation === null ? uprightLight(linear(preset.core), fromRoom) : cap;
   const pick = (code: number) => finish.greaterThan(code - 0.5).and(finish.lessThan(code + 0.5));
   material.maskNode = positionWorld.y.lessThanEqual(cut.add(0.002)).and(isTop.and(line.lessThan(-1e-4)).not());
   material.colorNode = pick(BODY_FINISH.outer).select(outer,
@@ -957,7 +1020,8 @@ export function createWallBodyMaterial(
       pick(BODY_FINISH.doorLining).select(doorLining,
         pick(BODY_FINISH.windowLining).select(windowLining,
           pick(BODY_FINISH.cornerCap).select(cornerCap,
-            pick(BODY_FINISH.bayLining).select(bayLining, upright))))));
+            pick(BODY_FINISH.bayLining).select(bayLining,
+              pick(BODY_FINISH.bayBacking).select(bayBacking, upright)))))));
   material.name = "grand-hall-wall-body";
   return material;
 }
@@ -1033,6 +1097,8 @@ export function createSectionCapMaterial(
 export interface HallSection {
   /** Every wall's body, cut in the shader (hall-wall-body.ts). */
   readonly body: BufferGeometry;
+  /** The bodies as the sun's and moon's shadow map draws them: uncut, without the cleared bays' faces (bodyCasterGeometry). */
+  readonly bodyCasters: BufferGeometry;
   readonly plinth: BufferGeometry;
   /** The relief's section at each wall's cut, read by the cap and the body's light (hall-relief-section.ts). */
   readonly profile: HallSectionProfile;
@@ -1062,6 +1128,7 @@ export function createHallSection(section: HallSectionUniforms, mood: HallMoodUn
   const sunlit = options.sunlit ?? false;
   const sun = options.sun ?? null;
   const { geometry: body } = buildWallBody();
+  const bodyCasters = bodyCasterGeometry(body);
   const plinth = buildPlinthRing();
   const profile = new HallSectionProfile();
   const bodyMaterial = createWallBodyMaterial(section, mood, preset, profile.texture, sunlit, { sun, textures: options.textures ?? null, beyond: options.beyond ?? null });
@@ -1074,6 +1141,7 @@ export function createHallSection(section: HallSectionUniforms, mood: HallMoodUn
     : null;
   return {
     body,
+    bodyCasters,
     plinth,
     profile,
     materials: { body: bodyMaterial, plinth: plinthMaterial, cap: capMaterial },
@@ -1082,6 +1150,7 @@ export function createHallSection(section: HallSectionUniforms, mood: HallMoodUn
       coping?.geometry.dispose();
       coping?.material.dispose();
       body.dispose();
+      bodyCasters.dispose();
       plinth.dispose();
       profile.dispose();
       bodyMaterial.dispose();

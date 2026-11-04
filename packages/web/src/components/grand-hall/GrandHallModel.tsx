@@ -793,7 +793,7 @@ export function GrandHallModel({ mood, view, finish: finishOverride, overviewCha
       {resources.casters !== null && (
         <group name="grand-hall-sun-casters">
           {hallSunCasterParts({
-            room: geometry.geometries, walls: walls.geometries, doors: doors.geometries, body: resources.cutaway.body,
+            room: geometry.geometries, walls: walls.geometries, doors: doors.geometries, body: resources.cutaway.bodyCasters,
           }).map(({ key, geometry: part, glazed }, index) => (
             <mesh
               key={`caster-${String(index)}-${key}`}
