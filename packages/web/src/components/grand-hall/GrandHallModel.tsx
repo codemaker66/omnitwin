@@ -58,6 +58,7 @@ import { nativeFramePrecompile } from "../../lib/native-frame-composer.js";
 import { requestNativePrecompile } from "../../lib/native-precompile.js";
 import { HALL_CAPTURE_POINT, HallEnvironmentCapture } from "./hall-capture.js";
 import { createHallSection, parseSectionPreset, SECTION_PRESETS, sectionRoomLine, type HallSection, type SectionPreset } from "./hall-section.js";
+import { hallFrontCut } from "./hall-exterior-cut.js";
 import { sectionCapGeometry } from "./hall-relief-section.js";
 import { SlicedBuildCancelled } from "./hall-slices.js";
 import { WALL_BODY_TOP } from "./hall-wall-body.js";
@@ -732,6 +733,8 @@ export function GrandHallModel({ mood, view, finish: finishOverride, overviewCha
       if (Math.abs(next - target) >= 0.002) easing = true;
       cutState.current[index] = next;
       resources.section.set(index, next);
+      // The front outside the window wall (HALL_WALLS[0]) is cut with it (hall-exterior-cut.ts).
+      if (index === 0) hallFrontCut.value = next;
     });
     // The floor's reflections of the chandeliers soften while they are put
     // away (Plan, the overview from high up), easing as the cuts do.
