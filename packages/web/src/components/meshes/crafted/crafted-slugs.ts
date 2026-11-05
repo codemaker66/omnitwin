@@ -59,4 +59,4 @@ export type CraftedFurnitureSlug = (typeof CRAFTED_FURNITURE_SLUGS)[number];
  * folder are served immutable (vercel.json), so a redesign that changes how
  * a piece looks re-renders the previews into a new folder.
  */
-export const CRAFTED_PREVIEW_VERSION = "crafted-v3";
+export const CRAFTED_PREVIEW_VERSION = "crafted-v4";
