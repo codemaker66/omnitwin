@@ -54,7 +54,7 @@ const configSchema = z
     const seen = new Set<string>();
     for (const org of config.orgs) {
       if (seen.has(org.id)) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, message: `duplicate org id '${org.id}'`, path: ["orgs"] });
+        ctx.addIssue({ code: "custom", message: `duplicate org id '${org.id}'`, path: ["orgs"] });
       }
       seen.add(org.id);
     }

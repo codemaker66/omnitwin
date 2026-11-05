@@ -357,7 +357,7 @@ describe("system prompt", () => {
     "# OMNITWIN\nRead GOAL.md first.",
   );
 
-  it("puts the fixed rules ahead of CLAUDE.md and names the run's facts", () => {
+  it("puts the fixed rules ahead of the project rules and names the run's facts", () => {
     expect(prompt.indexOf("## Fixed rules")).toBeLessThan(prompt.indexOf("## Project instructions"));
     expect(prompt).toContain("credit/t-582");
     expect(prompt).toContain("0123456789ab");

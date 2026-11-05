@@ -38,7 +38,7 @@ async function makeSandbox(): Promise<Sandbox> {
   sh(seed, "init", "--quiet", "-b", "master");
   sh(seed, "config", "user.email", "runner-test@example.com");
   sh(seed, "config", "user.name", "Runner Test");
-  await writeFile(path.join(seed, "CLAUDE.md"), "# Test project\nAlways be careful.\n");
+  await writeFile(path.join(seed, "AGENTS.md"), "# Test project\nAlways be careful.\n");
   await writeFile(
     path.join(seed, "check.mjs"),
     'import { existsSync } from "node:fs";\nprocess.exit(existsSync("hello.txt") ? 0 : 1);\n',
@@ -156,6 +156,9 @@ describe("runNight end to end with a stand-in claude", () => {
     expect(alpha.commits).toHaveLength(1);
     expect(alpha.summary).toBe("Added one file.");
     expect(alpha.attempts[1]?.permissionDenials).toEqual(["Bash"]);
+    // The project rules come from AGENTS.md; on master CLAUDE.md is only an @AGENTS.md import.
+    const systemPrompt = await readFile(path.join(alpha.logDir, "alpha.system-prompt.md"), "utf8");
+    expect(systemPrompt).toContain("Always be careful.");
 
     // The env file is caught by the runner's own diff check, whatever the agent claims.
     expect(beta.violations.join(" ")).toContain(".env.local (environment file)");

@@ -10,11 +10,13 @@
   time, in that process's own environment only.
 
   Run it yourself in your own PowerShell window, from the repo root:
-    .\tools\credit-runner\setup-keys.ps1                    # Batch and Staging
-    .\tools\credit-runner\setup-keys.ps1 -Org production    # later, once claimed
+    .\tools\credit-runner\setup-keys.ps1              # Batch and Staging
+    .\tools\credit-runner\setup-keys.ps1 -Org batch   # one org
+
+  The Production org's credit serves live AI only, so it gets no runner key.
 #>
 param(
-  [ValidateSet('batch', 'staging', 'production')]
+  [ValidateSet('batch', 'staging')]
   [string[]] $Org = @('batch', 'staging')
 )
 $ErrorActionPreference = 'Stop'
@@ -47,7 +49,7 @@ function Lock-ToOwner([string] $Path, [string] $Rights) {
 New-Item -ItemType Directory -Force -Path $dir | Out-Null
 Lock-ToOwner $dir '(OI)(CI)F'
 
-$names = @{ batch = 'VenViewer Batch'; staging = 'VenViewer Staging'; production = 'VenViewer Production' }
+$names = @{ batch = 'VenViewer Batch'; staging = 'VenViewer Staging' }
 foreach ($name in $Org) {
   $label = $names[$name]
   $secure = Read-Host -AsSecureString "Paste the API key for $label (hidden; press Enter alone to skip)"

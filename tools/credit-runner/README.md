@@ -1,7 +1,8 @@
 # Credit runner
 
 Each Claude Max account comes with monthly API credit in a linked Console org
-(VenViewer Batch, VenViewer Staging, later VenViewer Production). The credit
+(VenViewer Batch and VenViewer Staging; VenViewer Production's credit serves live
+AI only and gets no runner key). The credit
 expires at the end of each grant and does not roll over. Interactive Claude Code,
 the desktop app and cloud sessions never draw on it; they always bill the Max
 plan. Headless `claude -p` with an org's API key does draw on it.
@@ -40,7 +41,7 @@ This is policy and environment, not a sandbox. The agent runs tests, so it can r
    .\tools\credit-runner\setup-keys.ps1
    ```
 
-   It writes `%USERPROFILE%\.venviewer-credits\batch.key` and `staging.key` and makes the folder readable by your account only. The runner refuses a key file that any account other than yours, SYSTEM or Administrators can open, including narrow grants such as a sandbox group inherited from a temp folder. When the Production org is claimed, run it again with `-Org production`.
+   It writes `%USERPROFILE%\.venviewer-credits\batch.key` and `staging.key` and makes the folder readable by your account only. The runner refuses a key file that any account other than yours, SYSTEM or Administrators can open, including narrow grants such as a sandbox group inherited from a temp folder.
 3. Check it with:
 
    ```powershell
@@ -63,8 +64,8 @@ scheduled task is set up yet.
 
 1. **Worktree.** Fetch `origin/master`, then create `E:\venviewer-runs\<task-id>` on a new branch `credit/<task-id>`.
 2. **Install.** Run `pnpm install --frozen-lockfile`, with no API key in the environment.
-3. **Agent.** Run headless Claude Code with the spec on stdin. The fixed rules and the repo's CLAUDE.md go in through `--append-system-prompt-file`. The run is capped by `--max-budget-usd` and the task's time limit.
-   - Credit that expires first is spent first: Batch, then Staging, then Production.
+3. **Agent.** Run headless Claude Code with the spec on stdin. The fixed rules and the repo's AGENTS.md go in through `--append-system-prompt-file`; `src/project-rules.ts` first removes AGENTS.md's interactive-only parts (the credentials pointer, deployment, the task list and session logs) and refuses to run if `deploy-secrets` would still reach the agent. The run is capped by `--max-budget-usd` and the task's time limit.
+   - Credit that expires first is spent first: Batch, then Staging.
    - When an org answers "credit balance too low", it is marked out of credit and the same session resumes on the next org, so no work is lost.
    - When no org has credit left, the night stops cleanly.
 4. **Inspection.** The runner inspects the branch itself: commits, changed files, uncommitted files, protected paths, and whether it reached origin.
@@ -147,9 +148,9 @@ pnpm --filter @omnitwin/credit-runner credit-runner clean <task-id>
 
 This removes `E:\venviewer-runs\<task-id>` and deletes `credit/<task-id>`. It refuses branches outside `credit/`. Make any review notes first, because the work is deleted with the branch.
 
-## Unattended overrides of CLAUDE.md
+## Unattended overrides of AGENTS.md
 
-Runs get CLAUDE.md, but these fixed rules win where the two disagree:
+Runs get AGENTS.md without its interactive-only parts (on master CLAUDE.md is only an `@AGENTS.md` import, which bare mode does not expand). These fixed rules win where the two disagree:
 
 - Do not read `docs/state/tasks.md` whole (about 500 KB); grep it for the T-number.
 - Do not edit `docs/state/tasks.md` or `docs/sessions/`, so overnight branches do not collide with the day's sessions. The morning report records status instead.

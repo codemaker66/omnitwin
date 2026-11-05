@@ -30,6 +30,7 @@ import {
   type Outcome,
 } from "./ledger.js";
 import { runProcess } from "./proc.js";
+import { nightRulesFromAgentsMd } from "./project-rules.js";
 import { buildSystemPrompt, buildUserPrompt, RESUME_PROMPT } from "./prompt.js";
 import { renderReport } from "./report.js";
 import { extractSummary } from "./stream.js";
@@ -537,9 +538,12 @@ async function runTask(run: TaskRun): Promise<LedgerEntry> {
 
   // 4. The agent. Credit that expires first pays first; when an org runs dry the
   //    same session resumes on the next org, so no work is lost.
-  const projectInstructions = await readFile(path.join(worktree, "CLAUDE.md"), "utf8").catch(() => null);
+  // A failure to derive the rules (nightRulesFromAgentsMd refusing text that
+  // names deploy-secrets) stops the task before any spend.
+  const agentsMd = await readFile(path.join(worktree, "AGENTS.md"), "utf8").catch(() => null);
+  const projectRules = agentsMd === null ? null : nightRulesFromAgentsMd(agentsMd);
   const systemPromptFile = logFile("system-prompt.md");
-  await writeFile(systemPromptFile, buildSystemPrompt({ task, branch, worktree, baseRef: task.base ?? config.baseRef, baseSha: record.baseSha }, projectInstructions), "utf8");
+  await writeFile(systemPromptFile, buildSystemPrompt({ task, branch, worktree, baseRef: task.base ?? config.baseRef, baseSha: record.baseSha }, projectRules), "utf8");
   const configDir = path.join(paths.claudeConfigRoot, task.id);
 
   const deadline = Date.now() + task.timeoutMinutes * 60_000;

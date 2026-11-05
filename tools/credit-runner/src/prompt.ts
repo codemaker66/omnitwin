@@ -10,10 +10,11 @@ export interface PromptContext {
 
 /**
  * Appended to Claude Code's own system prompt. `--bare` skips CLAUDE.md
- * discovery, so the repository's CLAUDE.md is passed in here explicitly, after
- * the fixed rules that win wherever the two disagree.
+ * discovery, and on master CLAUDE.md is only an `@AGENTS.md` import, so the
+ * project rules (AGENTS.md with its interactive-only parts removed, see
+ * project-rules.ts) are passed in here explicitly, after the fixed rules.
  */
-export function buildSystemPrompt(ctx: PromptContext, projectInstructions: string | null): string {
+export function buildSystemPrompt(ctx: PromptContext, projectRules: string | null): string {
   const { task } = ctx;
   const rules = [
     "Commit your work on this branch with clear messages (`git add <explicit paths>` then `git commit`), ending each message with the trailer line `Credit-Runner-Task: " +
@@ -42,15 +43,15 @@ export function buildSystemPrompt(ctx: PromptContext, projectInstructions: strin
       `- Budget: $${task.budgetUsd.toFixed(2)}; time limit ${String(task.timeoutMinutes)} minutes`,
       `- Acceptance command: \`${task.acceptance}\``,
     ].join("\n"),
-    ["## Fixed rules (these override everything else, including CLAUDE.md)", ...rules.map((rule, index) => `${String(index + 1)}. ${rule}`)].join("\n"),
+    ["## Fixed rules (these override everything else, including the project rules)", ...rules.map((rule, index) => `${String(index + 1)}. ${rule}`)].join("\n"),
   ];
-  if (projectInstructions !== null && projectInstructions.trim() !== "") {
+  if (projectRules !== null && projectRules.trim() !== "") {
     sections.push(
       [
         "## Project instructions",
-        "The repository's CLAUDE.md follows. Where it conflicts with the fixed rules above, the fixed rules win.",
+        "The repository's AGENTS.md follows, without the parts that only apply to interactive sessions. Where it conflicts with the fixed rules above, the fixed rules win.",
         "",
-        projectInstructions.trim(),
+        projectRules.trim(),
       ].join("\n"),
     );
   }
