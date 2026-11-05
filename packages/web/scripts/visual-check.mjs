@@ -320,8 +320,12 @@ try {
 
   // --- Floating tool widget: Draw tools must be movable/minimizable and never sit on cockpit chrome. ---
   try {
+    // At the default desktop size the toolbar sits behind "More planner tools"
+    // (compactDesktop), so open it first, as editor.spec.ts does.
+    const moreTools = page.getByRole("button", { name: "More planner tools" });
+    if (await moreTools.count() > 0 && await moreTools.getAttribute("aria-expanded") !== "true") await moreTools.click();
     // Exact: the command deck's "Draw on the floor" also contains "Draw".
-    await page.getByRole("button", { name: "Draw", exact: true }).click();
+    await page.getByTestId("planner-toolbar").getByRole("button", { name: "Draw", exact: true }).click();
     await page.getByTestId("markup-panel").waitFor({ timeout: 5000 });
     await page.waitForTimeout(600);
     await page.screenshot({ path: join(OUT, "planner-draw-widget.png") });

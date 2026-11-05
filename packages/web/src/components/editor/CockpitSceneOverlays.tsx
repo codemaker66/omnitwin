@@ -576,7 +576,7 @@ function SceneAnnotations({ annotations }: { readonly annotations: readonly Scen
             </button>
             {selected === annotation.id && <>
               <p id={`${annotationId}-${annotation.id}`} className="scene-annotations__detail">{annotation.detail}</p>
-              <button type="button" className="scene-annotations__dismiss" onClick={dismiss}>Dismiss annotation details</button>
+              <button type="button" className="scene-annotations__dismiss" onClick={dismiss}>Close note</button>
             </>}
           </div>)}
         </div>
