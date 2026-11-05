@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useState, type CSSProperties, type ReactElement } from "react";
 import { Building2 } from "lucide-react";
-import { KEY_PRIORITY, useEscapeLayer, usePlannerKeyBindings, type KeyBinding, type KeyChord } from "../../../lib/planner-keys.js";
+import { KEY_PRIORITY, setFocusFallback, useEscapeLayer, usePlannerKeyBindings, type KeyBinding, type KeyChord } from "../../../lib/planner-keys.js";
 import { COCKPIT_MODES } from "../../../lib/cockpit-modes.js";
 import { countLabel } from "../../../lib/count-label.js";
 import { floorNames } from "../../../lib/floor-names.js";
@@ -98,6 +98,50 @@ export function settleChromeFocus(doc: Document, before: Element | null, cleared
   }
 }
 
+/** After the panels' own exits (the furniture catalogue plays 300 ms before it unmounts) as well as the chrome's. */
+const FOCUS_FOLLOW_UP_MS = 320;
+
+/**
+ * Whether the focus `before` had is lost now: still there while it is hidden
+ * or gone, or fallen to the page from it, as when a closing panel unmounts or
+ * a browser lets focus go from a control its unit has hidden (the focus fixup
+ * rule). Focus the person has moved on, or a click that left it on the page
+ * while `before` is still in view, is theirs.
+ */
+function focusWasLost(doc: Document, before: Element | null): boolean {
+  if (before === null || before === doc.body) return false;
+  const active = doc.activeElement;
+  if (active === before) return !isOnScreen(before);
+  return (active === null || active === doc.body) && !isOnScreen(before);
+}
+
+/** Each unit's surfaces, as the fold's CSS hides them. */
+const UNIT_SURFACES: Readonly<Record<ChromeFoldUnit, string>> = {
+  left: ".reference-left-dock",
+  right: ".reference-viewer > :is(.reference-inspector-dock, .lens-panel, .cockpit-truth, .cockpit-panel:not(.cockpit-preview-lock)), .reference-view-switch, .reference-handoff-action, .reference-event-details",
+  top: ".reference-viewer .planner-tool-pill, .reference-more-tools, .reference-viewer .reference-extra-tools",
+  bottom: ".reference-viewer > .cockpit-bottom, .reference-viewer .planner-command-deck.is-reference-compact, .reference-layer-controls",
+};
+
+/**
+ * Where focus goes when a closing layer's opener is hidden (5 Nov review): a
+ * panel opened from a unit stays open when the unit folds, so its opener may
+ * have folded away with it. Focus goes to that unit's spine, or else the crest.
+ */
+export function focusPastFoldedOpener(trigger: HTMLElement): void {
+  const doc = trigger.ownerDocument;
+  const { folded } = useChromePresenceStore.getState();
+  for (const unit of CHROME_FOLD_UNITS) {
+    if (!folded[unit] || trigger.closest(UNIT_SURFACES[unit]) === null) continue;
+    const spine = doc.getElementById(spineId(unit));
+    if (spine === null || !isOnScreen(spine)) continue;
+    spine.focus({ preventScroll: true });
+    return;
+  }
+  const crest = doc.querySelector<HTMLElement>(CREST);
+  if (crest !== null && isOnScreen(crest)) focusCrestQuietly(crest);
+}
+
 /**
  * When a phase preview ends, the remembered folds come back over its exit
  * and the right-hand column: focus left on a control inside them moves to
@@ -170,14 +214,13 @@ export function mirrorChromePresence(root: HTMLElement): () => void {
       focusFrame = null;
       settleChromeFocus(doc, before, state.cleared);
     });
-    // The pointer's change hides chrome only once its fade has run. A browser
-    // that leaves focus on what has then gone has it moved too; focus that has
-    // moved on, or fallen to the page, is the person's and stays.
-    if (!state.instant) {
-      focusLater = window.setTimeout(() => {
-        if (before !== null && doc.activeElement === before && !isOnScreen(before)) settleChromeFocus(doc, before, state.cleared);
-      }, CHROME_SETTLE_MS);
-    }
+    // Then once more, after the pointer's fade and any panel's exit: a
+    // browser that leaves focus on what has then gone, or lets it fall to the
+    // page when a closing panel unmounts (a keyboard clear too, 5 Nov
+    // review), has it moved as well.
+    focusLater = window.setTimeout(() => {
+      if (focusWasLost(doc, before)) settleChromeFocus(doc, before, state.cleared);
+    }, FOCUS_FOLLOW_UP_MS);
   });
   return () => {
     unsubscribe();
@@ -213,6 +256,10 @@ export function useChromePresence(): void {
   usePlannerKeyBindings(CHROME_KEYS);
   useEscapeLayer("chrome", { open: cleared, onEscape: () => { useChromePresenceStore.getState().restoreAll(); } });
   useLayoutEffect(() => mirrorChromePresence(document.documentElement), []);
+  useEffect(() => {
+    setFocusFallback(focusPastFoldedOpener);
+    return () => { setFocusFallback(null); };
+  }, []);
   useEffect(() => useLayoutTimelinePreviewStore.subscribe((state, previous) => {
     if (state.mode === "inactive" && previous.mode !== "inactive") settleFocusAfterPreview(document);
   }), []);

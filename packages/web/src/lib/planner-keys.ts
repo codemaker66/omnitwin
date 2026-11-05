@@ -239,7 +239,22 @@ function stepBack(event: KeyboardEvent): void {
   event.preventDefault();
   top.value.escape();
   const trigger = top.value.returnFocusTo?.() ?? null;
-  if (trigger?.isConnected === true) trigger.focus({ preventScroll: true });
+  if (trigger?.isConnected !== true) return;
+  // A key folded away with its unit cannot take focus back (T-680, 5 Nov
+  // review); the fallback gives it somewhere the person can see.
+  if (typeof getComputedStyle !== "undefined" && getComputedStyle(trigger).visibility === "hidden") focusFallback?.(trigger);
+  else trigger.focus({ preventScroll: true });
+}
+
+let focusFallback: ((trigger: HTMLElement) => void) | null = null;
+
+/**
+ * Where focus goes when a layer closes and the key that opened it is hidden.
+ * The planner's chrome sets it while the cockpit is mounted (its folded
+ * unit's spine, or the crest); null takes it away.
+ */
+export function setFocusFallback(fallback: ((trigger: HTMLElement) => void) | null): void {
+  focusFallback = fallback;
 }
 
 /**

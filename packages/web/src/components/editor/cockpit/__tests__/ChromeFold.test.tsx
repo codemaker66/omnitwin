@@ -249,6 +249,96 @@ describe("the page-wide side", () => {
     await act(async () => { await nextFrame(); });
     expect(document.activeElement).toBe(screen.getByRole("button", { name: /^Show the bottom bar/u }));
   });
+
+  // Delta review, 5 Nov (A11Y-337-2): the furniture catalogue plays a 300 ms
+  // exit before it unmounts, so a clear from the keyboard (instant, with no
+  // later look) let focus fall to the page once the catalogue had gone.
+  it("sends focus to the crest once a panel that closed under a keyboard clear has gone", async () => {
+    render(
+      <>
+        <Presence />
+        <button type="button" data-planner-crest>Crest</button>
+      </>,
+    );
+    // The catalogue (outside React here, as a portalled panel is) plays its exit, then goes.
+    const catalogue = document.createElement("div");
+    const item = document.createElement("button");
+    item.type = "button";
+    item.textContent = "Round table";
+    catalogue.append(item);
+    document.body.append(catalogue);
+    let closing = false;
+    const unregister = registerEscapeLayer({
+      kind: "panel",
+      isOpen: () => !closing,
+      escape: () => { closing = true; window.setTimeout(() => { catalogue.remove(); }, 300); },
+    });
+    try {
+      item.focus();
+      act(() => { press("\\"); });
+      expect(useChromePresenceStore.getState().cleared).toBe(true);
+      await act(async () => { await nextFrame(); });
+      expect(document.activeElement).toBe(item);
+      await act(async () => { await wait(400); });
+      expect(document.activeElement).toBe(screen.getByRole("button", { name: "Crest" }));
+    } finally {
+      unregister();
+      catalogue.remove();
+    }
+  });
+
+  // A browser may drop focus to the page itself once a control's unit has
+  // hidden it (the focus fixup rule), leaving the control in place: lost too.
+  it("sends focus to the crest when the browser drops it from a control the clear hid", async () => {
+    render(
+      <>
+        <Presence />
+        <button type="button" data-planner-crest>Crest</button>
+        <button type="button">On the dock</button>
+      </>,
+    );
+    const onTheDock = screen.getByRole("button", { name: "On the dock" });
+    onTheDock.focus();
+    pointerFirst();
+    act(() => { useChromePresenceStore.getState().clearAll(); });
+    await act(async () => { await nextFrame(); });
+    expect(document.activeElement).toBe(onTheDock);
+    // The fade has run: the dock is hidden, and the browser has let its focus go.
+    onTheDock.style.visibility = "hidden";
+    onTheDock.blur();
+    await act(async () => { await wait(400); });
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Crest" }));
+  });
+
+  // Delta review, 5 Nov (A11Y-337-2): a panel opened from the bottom bar stays
+  // open when the bar folds (a fold closes nothing), and Esc in it gave focus
+  // back to an opener the fold had hidden, so focus fell to the page.
+  it("gives focus to a folded unit's spine when the opener a panel returns to has folded away", () => {
+    useChromePresenceStore.setState({ folded: { ...ALL_OPEN, bottom: true } });
+    render(
+      <div className="reference-viewer">
+        <Presence />
+        <div className="planner-command-deck is-reference-compact" style={{ visibility: "hidden" }}>
+          <button type="button">Furniture</button>
+        </div>
+        <div><button type="button">Round table</button></div>
+        <ChromeSpine unit="bottom" />
+      </div>,
+    );
+    // Folded away, the opener has no accessible name to find it by.
+    const opener = screen.getByText("Furniture");
+    const item = screen.getByRole("button", { name: "Round table" });
+    let open = true;
+    const unregister = registerEscapeLayer({ kind: "panel", isOpen: () => open, escape: () => { open = false; }, returnFocusTo: () => opener });
+    try {
+      item.focus();
+      act(() => { press("Escape", item); });
+      expect(open).toBe(false);
+      expect(document.activeElement).toBe(screen.getByRole("button", { name: /^Show the bottom bar/u }));
+    } finally {
+      unregister();
+    }
+  });
 });
 
 describe("spines, marks and the crest's companions", () => {
