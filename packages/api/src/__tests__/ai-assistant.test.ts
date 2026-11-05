@@ -288,9 +288,10 @@ describe("what a draft may not say (L6)", () => {
     expect(rules).toContain("Do not say that anyone has done anything the context does not record (passed on a request, made a note, prepared or updated something, spoken to someone)");
     expect(rules).toContain("do not offer anything the context does not offer (a visit, a viewing, a call, a meeting, a tasting)");
     expect(rules).toContain("beyond saying the events team will confirm the details, promise nothing");
-    expect(rules).toContain("The message goes with the proposal, so you may refer to the proposal itself.");
+    // A proposal reaches the client as a link: the draft may name it, never as attached.
+    expect(rules).toContain("The message is sent with a link to the proposal, so you may refer to the proposal, but never say it is attached or enclosed.");
     // An internal draft is not a message to a client, and is not told so.
-    expect(buildAIDraftInstructions({ useCase: "enquiry_summary", context: {} })).not.toContain("The message goes with the proposal");
+    expect(buildAIDraftInstructions({ useCase: "enquiry_summary", context: {} })).not.toContain("a link to the proposal");
   });
 
   it("takes out each sentence that states one, says which kinds, and keeps the rest", async () => {
