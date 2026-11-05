@@ -399,7 +399,18 @@ describe("timeline preview action isolation", () => {
       return Promise.resolve();
     });
     await expect(submitConfigurationForReview(CONFIG_ID, false)).rejects.toThrow(/open layout changed/u);
-    expect(mocks.reportFailure).not.toHaveBeenCalledWith("plan-image-failed", expect.anything());
+    expect(mocks.reportFailure).not.toHaveBeenCalled();
+    expect(mocks.submitForReview).not.toHaveBeenCalled();
+  });
+
+  it("review submit reports a plan the API refused as a timeline preview began, and stops", async () => {
+    useEditorStore.setState({ isPublicPreview: true, scene: new Scene(), space: GRAND_HALL });
+    mocks.updatePublicThumbnail.mockImplementationOnce(() => {
+      enterCrossPhasePreview();
+      return Promise.reject(new ApiError(400, "Must be a PNG or JPEG data URL whose bytes match its type", "VALIDATION_ERROR"));
+    });
+    await expect(submitConfigurationForReview(CONFIG_ID, false)).rejects.toThrow();
+    expect(mocks.reportFailure).toHaveBeenCalledWith("plan-image-failed", { stage: "upload", status: 400 });
     expect(mocks.submitForReview).not.toHaveBeenCalled();
   });
 

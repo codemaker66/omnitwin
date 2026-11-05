@@ -94,7 +94,11 @@ describe("native orthographic capture", () => {
 
   it("gives no image for a capture that drew nothing (every pixel the same)", async () => {
     const fixture = captureFixture();
-    fixture.renderer.readRenderTargetPixelsAsync.mockResolvedValue(new Uint8Array(264).fill(7));
+    // WebGPU rows sit 256 bytes apart: each 8-byte row of one colour, then zero padding the guard must not see.
+    const readback = new Uint8Array(264);
+    readback.fill(7, 0, 8);
+    readback.fill(7, 256, 264);
+    fixture.renderer.readRenderTargetPixelsAsync.mockResolvedValue(readback);
     expect(await captureOrthographic(fixture.scene, 20, 30, { width: 2, height: 2 })).toBeNull();
     expect(fixture.putImageData).not.toHaveBeenCalled();
     expect(fixture.encode).not.toHaveBeenCalled();

@@ -134,6 +134,15 @@ describe("a plan image that did not reach the layout", () => {
     expect(reports.reportFailure).toHaveBeenCalledWith("plan-image-failed", { stage: "upload", status: "network" });
   });
 
+  it("is reported as an unreadable reply when the API answered in a shape the client cannot read", async () => {
+    await open("A");
+    configApi.updatePublicThumbnail.mockRejectedValueOnce(
+      new ApiError(0, "Server returned an unexpected response shape for POST /public/configurations/A/thumbnail", "RESPONSE_VALIDATION_ERROR"),
+    );
+    expect(await prepareLayoutForGuestEnquiry("A")).toBe(true);
+    expect(reports.reportFailure).toHaveBeenCalledWith("plan-image-failed", { stage: "upload", status: "response-shape" });
+  });
+
   it("is reported when there was no image to attach, and nothing is uploaded", async () => {
     await open("A");
     captureApi.captureOrthographic.mockResolvedValueOnce(null);
@@ -142,10 +151,23 @@ describe("a plan image that did not reach the layout", () => {
     expect(reports.reportFailure).toHaveBeenCalledWith("plan-image-failed", { stage: "capture" });
   });
 
+  it("is reported even when the layout changed while the API refused it, and the send stops", async () => {
+    await open("A");
+    const upload = deferred<Awaited<ReturnType<typeof configApi.updatePublicThumbnail>>>();
+    const started = deferred<undefined>();
+    configApi.updatePublicThumbnail.mockImplementationOnce(() => { started.resolve(undefined); return upload.promise; });
+    const preparing = prepareLayoutForGuestEnquiry("A");
+    await started.promise;
+    await open("B");
+    upload.reject(new ApiError(400, "Must be a PNG or JPEG data URL whose bytes match its type", "VALIDATION_ERROR"));
+    expect(await preparing).toBe(false);
+    expect(reports.reportFailure).toHaveBeenCalledWith("plan-image-failed", { stage: "upload", status: 400 });
+  });
+
   it("is not reported when the plan arrives", async () => {
     await open("A");
     expect(await prepareLayoutForGuestEnquiry("A")).toBe(true);
     expect(configApi.updatePublicThumbnail).toHaveBeenCalledWith("A", "data:image/png;base64,layout-A");
-    expect(reports.reportFailure).not.toHaveBeenCalledWith("plan-image-failed", expect.anything());
+    expect(reports.reportFailure).not.toHaveBeenCalled();
   });
 });

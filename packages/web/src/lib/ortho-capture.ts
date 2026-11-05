@@ -3,8 +3,9 @@
 //
 // Creates a temporary orthographic camera directly above the room, renders
 // a single frame to an offscreen native render target, and returns a PNG or
-// JPEG data URL. Its plan thumbnail (PLAN_THUMBNAIL) is sent with a layout and
-// printed as the hallkeeper sheet's floor plan diagram.
+// JPEG data URL. Its plan thumbnail (PLAN_THUMBNAIL) is the picture kept with a
+// layout sent to the venue; the hallkeeper sheet prints it only for a layout
+// saved with no plan, and draws the saved plan otherwise (api sheet-pdf/blocks.ts).
 // ---------------------------------------------------------------------------
 
 import {
@@ -41,9 +42,9 @@ export interface CaptureOptions {
 export const THUMBNAIL_MAX_LENGTH = 270_000;
 
 /**
- * The plan sent with a layout (Send layout, Submit for review) and printed on
- * the hallkeeper sheet. JPEG: the Grand Hall's 800×533 plan is 685,350
- * characters as a PNG data URL, which the API refused, and 96,443 as this JPEG.
+ * The plan picture sent with a guest's layout (Send to Events Team). JPEG: the
+ * Grand Hall's 800×533 plan is 685,350 characters as a PNG data URL, which the
+ * API refused, and 96,443 as this JPEG.
  */
 export const PLAN_THUMBNAIL: CaptureOptions = {
   width: 800, height: 533, type: "image/jpeg", quality: 0.85, maxLength: THUMBNAIL_MAX_LENGTH,

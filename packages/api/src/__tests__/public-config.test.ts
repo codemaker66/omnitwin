@@ -354,15 +354,46 @@ describe("POST /public/configurations/:configId/thumbnail", () => {
     expect(res.statusCode).toBe(400);
   });
 
-  it("returns 400 when thumbnail exceeds size limit", async () => {
-    // 270,000-character limit (about 200 KB decoded). Generate a string over the limit.
-    const huge = "data:image/png;base64," + "A".repeat(280_000);
+  // A valid signature is not enough: nothing but the image may be stored under the cap.
+  it.each([
+    ["junk after the signature", "data:image/png;base64,iVBORw0KGgoAAAA!"],
+    ["a space inside", "data:image/png;base64,iVBORw0KGgoAA AA"],
+    ["URL-safe base64", "data:image/png;base64,iVBORw0KGgoAA-_"],
+    ["a length base64 cannot have", "data:image/png;base64,iVBORw0KGgoAAA"],
+    ["characters outside ASCII", "data:image/png;base64,iVBORw0KGgoAAAA\u{1F600}\u{1F600}"],
+  ])("returns 400 for a payload that is not plain base64 throughout (%s)", async (_kind, thumbnailUrl) => {
     const res = await server.inject({
       method: "POST",
       url: `/public/configurations/${CONFIG_ID}/thumbnail`,
-      payload: { thumbnailUrl: huge },
+      payload: { thumbnailUrl },
     });
     expect(res.statusCode).toBe(400);
+  });
+
+  /** A PNG data URL of `length` characters, plain base64 throughout: only the cap can refuse it. */
+  function pngOfLength(length: number): string {
+    const head = "data:image/png;base64,iVBORw0KGgoAAAA";
+    return head + "A".repeat(length - head.length);
+  }
+
+  it("returns 400 when thumbnail exceeds size limit", async () => {
+    // 270,000-character limit (about 200 KB decoded), refused by the cap alone.
+    const res = await server.inject({
+      method: "POST",
+      url: `/public/configurations/${CONFIG_ID}/thumbnail`,
+      payload: { thumbnailUrl: pngOfLength(270_002) },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json<{ details: readonly { code: string }[] }>().details.map((issue) => issue.code)).toEqual(["too_big"]);
+  });
+
+  it("passes validation just inside the size limit (fails at DB)", async () => {
+    const res = await server.inject({
+      method: "POST",
+      url: `/public/configurations/${CONFIG_ID}/thumbnail`,
+      payload: { thumbnailUrl: pngOfLength(269_998) },
+    });
+    expect(res.statusCode).not.toBe(400);
   });
 
   it("passes validation with a valid PNG data URL (fails at DB)", async () => {

@@ -33,20 +33,33 @@ export async function prepareLayoutForGuestEnquiry(configId: string): Promise<bo
     const dataUrl = await captureOrthographic(scene, roomWidthRender, roomLengthRender, PLAN_THUMBNAIL);
     if (dataUrl === null) {
       // No plan to attach (a blank draw, or none within the API's cap).
-      reportFailure("plan-image-failed", { stage: "capture" });
+      reportPlanImageFailure(null);
     } else {
       if (!canContinue()) return false;
       await updatePublicThumbnail(configId, dataUrl);
       if (!canContinue()) return false;
     }
   } catch (error) {
-    // The API refused the plan or never got it: Sentry hears the status, never the server's words.
-    if (error instanceof ApiError) {
-      reportFailure("plan-image-failed", { stage: "upload", status: error.status > 0 ? error.status : "network" });
-    }
+    // The API's answer stands whatever the editor did meanwhile, so it is reported first.
+    if (error instanceof ApiError) reportPlanImageFailure(error);
     // Best-effort: capture/upload failure must not block sending an enquiry.
     // A preview lock that appeared across an await is not a capture failure.
     if (!canContinue()) return false;
   }
   return canContinue();
+}
+
+/**
+ * Reports a plan picture that never reached the layout (once per page, tags
+ * only): `null` when there was none to send, or the upload's error. Sentry
+ * hears the API's status, never its words: "network" when it never answered,
+ * "response-shape" when its reply was unreadable (the picture may be stored).
+ */
+export function reportPlanImageFailure(upload: ApiError | null): void {
+  if (upload === null) {
+    reportFailure("plan-image-failed", { stage: "capture" });
+    return;
+  }
+  const status = upload.status > 0 ? upload.status : upload.code === "RESPONSE_VALIDATION_ERROR" ? "response-shape" : "network";
+  reportFailure("plan-image-failed", { stage: "upload", status });
 }

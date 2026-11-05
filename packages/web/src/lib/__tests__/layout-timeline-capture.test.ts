@@ -83,4 +83,27 @@ describe("timeline orthographic capture visibility", () => {
     capture.restore();
     expect(circulation.visible).toBe(true);
   });
+
+  it("keeps a blocked door's warning in the plan while the clearance lines leave it", () => {
+    // Blake, 5 Nov 2026: the warm-gold warning of a piece standing in a door's
+    // clear space stays in the plan. Its group (DoorClearSpaceLayer.tsx) is not
+    // the clearance lines' and the capture leaves it as it is.
+    const scene = new Scene();
+    const circulation = new Group();
+    circulation.name = CIRCULATION_OVERLAY_GROUP;
+    const doors = new Group();
+    doors.name = "door-clear-spaces";
+    const blocked = new Group();
+    blocked.name = "door-clear-space-north";
+    doors.add(blocked);
+    scene.add(circulation, doors);
+
+    const capture = prepareFurnitureForOrthographicCapture(scene);
+    expect(circulation.visible).toBe(false);
+    expect(doors.visible).toBe(true);
+    expect(blocked.visible).toBe(true);
+    capture.restore();
+    expect(circulation.visible).toBe(true);
+    expect(blocked.visible).toBe(true);
+  });
 });
