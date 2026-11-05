@@ -79,7 +79,7 @@ const ENQUIRY_LIST_ORDERS = ["updated_asc", "created_desc"] as const;
 
 const EnquiryStatesParam = z.string()
   .transform((value) => [...new Set(value.split(","))])
-  .pipe(z.array(z.enum(ENQUIRY_STATES)).min(1));
+  .pipe(z.array(z.enum(ENQUIRY_STATES)).min(1).max(ENQUIRY_STATES.length));
 
 const StatusFilterQuery = z.object({
   status: z.enum(ENQUIRY_STATES).optional(),

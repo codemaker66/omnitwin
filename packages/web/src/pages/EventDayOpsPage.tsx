@@ -376,9 +376,9 @@ export function EventDayOpsPage(): ReactElement {
 
   const refreshPendingCount = useCallback(() => {
     void listPendingEventDayOps()
-      // A fact about a room (goal 19 S5) is the Day Board's to send; it is
-      // not this page's pending change.
-      .then((ops) => { setPendingCount(ops.filter((op) => op.kind !== "observation_record").length); })
+      // A fact about a room (goal 19 S5) and a step on a floor request (L9)
+      // are the Day Board's to send; they are not this page's pending changes.
+      .then((ops) => { setPendingCount(ops.filter((op) => op.kind === "task_status" || op.kind === "issue_create").length); })
       .catch(() => { setPendingCount(0); });
   }, []);
 
@@ -450,9 +450,10 @@ export function EventDayOpsPage(): ReactElement {
     void (async () => {
       const queued = await listPendingEventDayOps();
       for (const op of queued) {
-        // A fact about a room (goal 19 S5) is the Day Board's to replay; it
-        // stays queued here, untouched, for that screen.
-        if (op.kind === "observation_record") continue;
+        // A fact about a room (goal 19 S5) and a step on a floor request (L9)
+        // are the Day Board's to replay; they stay queued here, untouched,
+        // for that screen.
+        if (op.kind !== "task_status" && op.kind !== "issue_create") continue;
         try {
           if (op.kind === "task_status") {
             await updateOpsTaskStatus(op.opsTaskId, op.input);

@@ -35,15 +35,27 @@ describe("planner features: everyone's switches", () => {
     ]));
   });
 
-  it("has lane P's touch arbiter and lean motion pipeline on for everyone, and every other slice off until it is green", () => {
-    const on = new Set(["touchArbiter", "leanMotionPipeline"]);
+  it("has lane P's touch arbiter and lean motion pipeline, and Blake's answered decisions, on for everyone, and every other slice off", () => {
+    // Blake, 4 Nov: decisions 2 (the faint, judged ghost), 4 (Alt-click hides a wall, in 450 ms) and 5 (lenses by role).
+    const on = new Set(["touchArbiter", "leanMotionPipeline", "truthfulGhost", "wallClickAlt", "wallsQuick", "lensesByRole"]);
     for (const [key, enabled] of Object.entries(plannerFeatures())) expect(enabled, key).toBe(on.has(key));
   });
 
   it("names a lane and a quality-of-life item for every key", () => {
     for (const spec of Object.values(PLANNER_FEATURE_SPECS)) {
-      expect(["E", "P"]).toContain(spec.lane);
-      expect(spec.item).toMatch(/^Q-\d{2}[ab]?$/u);
+      // Read as the spec's field types, so a lane no key uses yet still compares.
+      const { lane, item }: { readonly lane: string; readonly item: string } = spec;
+      expect(["E", "P", "planner-qol"]).toContain(lane);
+      // planner-qol's items are its own (PQ-N); a Blake decision is an item too (D-N).
+      expect(item).toMatch(lane === "planner-qol" ? /^(?:PQ-\d{1,2}|D\d)$/u : /^(?:Q-\d{2}[ab]?|D\d)$/u);
+    }
+  });
+
+  it("has planner-qol's keys for Blake's decisions 3 to 5: his chosen options on, the rest off", () => {
+    const chosen = new Set(["lensesByRole", "wallsQuick"]);
+    for (const key of ["clothDrape", "clothDrapeOnly", "lensesByRole", "lensesDivider", "wallsQuick"] as const) {
+      expect(PLANNER_FEATURE_SPECS[key].lane, key).toBe("planner-qol");
+      expect(plannerFeatures()[key], key).toBe(chosen.has(key));
     }
   });
 });

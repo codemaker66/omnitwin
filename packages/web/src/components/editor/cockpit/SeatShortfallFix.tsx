@@ -1,8 +1,12 @@
 import { useId, useMemo, useState, type ReactElement } from "react";
 import { usePlacementStore } from "../../../stores/placement-store.js";
 import { useRoomDimensionsStore } from "../../../stores/room-dimensions-store.js";
+import { useDoorClearSpaceStore } from "../../../stores/door-clear-space-store.js";
+import { doorKeepOuts } from "../../../lib/door-clear-spaces.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
+import { usePlannerEventStore } from "../../../stores/planner-event-store.js";
 import { RENDER_SCALE } from "../../../constants/scale.js";
+import { plannerChairSlug } from "../../../lib/furniture-defaults.js";
 import type { PlacedItem } from "../../../lib/placement.js";
 import { countLabel } from "../../../lib/count-label.js";
 import { publishedFigureLine, type PublishedFigure } from "../../../lib/auto-fill.js";
@@ -46,7 +50,11 @@ interface Done {
 export function SeatShortfallFix({ testId, statement = false, published = null, ask = null }: SeatShortfallFixProps): ReactElement {
   const placedItems = usePlacementStore((state) => state.placedItems);
   const dimensions = useRoomDimensionsStore((state) => state.dimensions);
+  // The open room's doors, as the placement store keeps them when it applies the fix.
+  const doorSpaces = useDoorClearSpaceStore((state) => state.spaces);
   const guests = useCockpitStore((state) => state.plannedGuestCount);
+  // New tables are set with the event's chair, so the free spots follow the event.
+  const eventChair = usePlannerEventStore((state) => plannerChairSlug(state.eventKind));
   const [done, setDone] = useState<Done | null>(null);
   const detailId = useId();
 
@@ -56,8 +64,10 @@ export function SeatShortfallFix({ testId, statement = false, published = null, 
       guests,
       roomWidthM: dimensions.width / RENDER_SCALE,
       roomLengthM: dimensions.length / RENDER_SCALE,
+      chairSlug: eventChair,
+      doorSpaces: doorKeepOuts(doorSpaces),
     }),
-    [placedItems, guests, dimensions],
+    [placedItems, guests, dimensions, eventChair, doorSpaces],
   );
   const label = offer === null ? null : seatShortfallActionLabel(offer);
   const doneLine = done !== null && done.after === placedItems ? done.line : "";

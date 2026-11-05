@@ -562,6 +562,31 @@ describe("GuestEnquirySchema", () => {
     expect(GuestEnquirySchema.safeParse({ ...validGuest, guestCount: 0 }).success).toBe(true);
   });
 
+  it("treats a blank or whitespace-only name as no name", () => {
+    for (const name of ["", "   ", "\t\n "]) {
+      const result = GuestEnquirySchema.safeParse({ ...validGuest, name });
+      expect(result.success, JSON.stringify(name)).toBe(true);
+      if (result.success) expect(result.data.name, JSON.stringify(name)).toBeUndefined();
+    }
+  });
+
+  it("leaves a missing name undefined", () => {
+    const result = GuestEnquirySchema.safeParse(validGuest);
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.name).toBeUndefined();
+  });
+
+  it("trims a real name and keeps it", () => {
+    const result = GuestEnquirySchema.safeParse({ ...validGuest, name: "  Ada Lovelace  " });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.name).toBe("Ada Lovelace");
+  });
+
+  it("accepts a 200-character name and refuses a 201-character one", () => {
+    expect(GuestEnquirySchema.safeParse({ ...validGuest, name: "a".repeat(200) }).success).toBe(true);
+    expect(GuestEnquirySchema.safeParse({ ...validGuest, name: "a".repeat(201) }).success).toBe(false);
+  });
+
   it("rejects phone exceeding 30 characters", () => {
     expect(GuestEnquirySchema.safeParse({ ...validGuest, phone: "1".repeat(31) }).success).toBe(false);
   });

@@ -46,6 +46,7 @@ import { MarqueeSelect } from "../MarqueeSelect.js";
 import { SnapGuides } from "../SnapGuides.js";
 import { CirculationOverlay } from "../CirculationOverlay.js";
 import { ClearanceRings } from "./ClearanceRings.js";
+import { DoorClearSpaceLayer } from "./DoorClearSpaceLayer.js";
 import { FurnitureMotion } from "./FurnitureMotion.js";
 import { MarkupLayer } from "../MarkupLayer.js";
 import { SceneProvider } from "../SceneProvider.js";
@@ -186,6 +187,7 @@ function PlannerMotionOverlayLayers(): ReactElement | null {
       <SnapGuides />
       <CirculationOverlay />
       <ClearanceRings />
+      <DoorClearSpaceLayer />
       <MarqueeSelect />
       <MarkupLayer />
       <DiagramLabels />

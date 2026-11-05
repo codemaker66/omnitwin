@@ -715,7 +715,10 @@ function RibbonBody({
   );
   // An hour held from the keyboard is an operation in progress: Escape puts
   // it back where it was before it steps back anything else.
+  // While the ribbon is hidden (the planner's chrome cleared, T-680), Esc
+  // passes the held hour by, and it is still held when the ribbon comes back.
   useEscapeLayer("operation", {
+    element: stripRef,
     open: keyboardDrag !== null && writable && day !== null && pending === null,
     onEscape: () => {
       setKeyboardDrag(null);
@@ -865,6 +868,7 @@ function RibbonBody({
   // So is a phase handle moved from the keyboard and not yet saved. A handle
   // held by the pointer is left to its pointer, which saves on release.
   useEscapeLayer("operation", {
+    element: stripRef,
     open: () => handleDraftRef.current !== null && handleSessionRef.current === null && writable && handles !== null && pending === null,
     onEscape: () => {
       setHandleDraftBoth(null);

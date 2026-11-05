@@ -109,9 +109,11 @@ function dayAndMonth(date: string): { readonly day: number; readonly month: numb
 
 /** On the event's date, each rate a rate for particular dates takes the
  *  place of (same room, time and charge), as the venue's estimate charges
- *  it (@omnitwin/types standingRates). None without a date. */
-function replacementsOn(rules: readonly PricingRule[], date: string | null): ReadonlyMap<PricingRule, PricingRule> {
-  if (date === null) return new Map();
+ *  it (@omnitwin/types standingRates). None without a date, or with a date
+ *  that is not a calendar day. Add from price list and proposal templates
+ *  both ask it, so a line is priced by the rate that stands either way. */
+export function replacementsOn(rules: readonly PricingRule[], date: string | null): ReadonlyMap<PricingRule, PricingRule> {
+  if (date === null || dayAndMonth(date) === null) return new Map();
   const fields = rules
     .filter((rule) => rule.isActive && pricedOn(rule, date))
     .map((rule) => ({
@@ -120,6 +122,13 @@ function replacementsOn(rules: readonly PricingRule[], date: string | null): Rea
     }));
   const replacements = rateReplacements(fields);
   return new Map([...replacements].map(([setAside, standing]) => [setAside.rule, standing.rule] as const));
+}
+
+/** "On 31 December 2026, “Grand Hall — Evening, Hogmanay” takes the place of
+ *  Grand Hall — Evening.": the rates set aside on the date, under the one
+ *  that stands, as the list says it. */
+export function takesThePlaceWords(date: string | null, standing: string, setAside: readonly string[]): string {
+  return `On ${venueLongDate(date) ?? date ?? "this date"}, “${standing}” takes the place of ${listNames(setAside)}.`;
 }
 
 /** Whether the entry is priced for the date, by its first and last day. */
@@ -345,7 +354,7 @@ export function priceListView(rules: readonly PricingRule[], rooms: readonly Spa
     said.push(`Not priced for ${venueLongDate(event.eventDate) ?? event.eventDate}: ${listNames(notOnDate)}.`);
   }
   for (const [standing, names] of setAside) {
-    said.push(`On ${venueLongDate(event.eventDate) ?? event.eventDate ?? "this date"}, “${standing}” takes the place of ${listNames(names)}.`);
+    said.push(takesThePlaceWords(event.eventDate, standing, names));
   }
   for (const why of ["guests", "currency", "no_price", "unreadable"] as const) {
     const names = leftOut.get(why);

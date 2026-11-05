@@ -174,9 +174,12 @@ describe("InventoryDemand", () => {
     fireEvent.change(screen.getByLabelText("Reason for reservation decision"), { target: { value: "Reviewed" } });
     fireEvent.click(screen.getByLabelText(/recorded times cover equipment setup through return/u));
     fireEvent.click(screen.getByRole("button", { name: "Approve reservation" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Close and check later" }));
-    expect(screen.queryByRole("dialog")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Check recorded result" }));
+    // Close stays disabled until the uncertain save has finished, and a click
+    // on a disabled button does nothing.
+    await waitFor(() => { expect(screen.getByRole("button", { name: "Close and check later" })).toHaveProperty("disabled", false); });
+    fireEvent.click(screen.getByRole("button", { name: "Close and check later" }));
+    await waitFor(() => { expect(screen.queryByRole("dialog")).toBeNull(); });
+    fireEvent.click(await screen.findByRole("button", { name: "Check recorded result" }));
     await screen.findByText("Reservation approved");
     expect(mocks.reserve.mock.calls[1]?.[1]).toEqual(mocks.reserve.mock.calls[0]?.[1]);
   });

@@ -33,7 +33,7 @@ function serialize(row: typeof venueSettings.$inferSelect): VenueOperatingSettin
   };
 }
 
-export async function readOperatingSettings(db: Database, venueId: string): Promise<VenueOperatingSettings | null> {
+export async function readOperatingSettings(db: Pick<Database, "select">, venueId: string): Promise<VenueOperatingSettings | null> {
   const [row] = await db.select().from(venueSettings).where(eq(venueSettings.venueId, venueId)).limit(1);
   return row === undefined ? null : serialize(row);
 }

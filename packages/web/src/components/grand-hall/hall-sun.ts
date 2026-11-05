@@ -69,7 +69,11 @@ export interface HallCasterSources {
   readonly walls: ReadonlyMap<string, BufferGeometry>;
   /** The doors' leaves, which cast shut: the cutaway is a way of looking, as everywhere else. */
   readonly doors: ReadonlyMap<string, BufferGeometry>;
-  /** The walls' bodies (hall-wall-body.ts), uncut: their full height, through their real thickness. */
+  /**
+   * The walls' bodies as they cast (hall-wall-body.ts bodyCasterGeometry):
+   * uncut, their full height, through their real thickness, without the
+   * cleared window bays' faces, which only a cut lays.
+   */
   readonly body: BufferGeometry;
 }
 

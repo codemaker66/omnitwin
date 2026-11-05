@@ -23,24 +23,41 @@ export interface SpringState {
 
 /**
  * Per-interaction tuning (feedback: spring-physics-not-tweens). The characters
- * are deliberate: a grid snap is a decisive click into place, a placement is
- * allowed one satisfying wobble, heavy stage equipment refuses to bounce.
+ * are deliberate: a grid snap is a decisive click into place, a placed piece
+ * sets down quickly with one small dip, heavy stage equipment refuses to bounce.
  */
 export const SPRING_PRESETS = {
-  /** Snap to grid — stiff, decisive. */
-  gridSettle: { stiffness: 210, damping: 20 },
+  /**
+   * Snap to grid, and a carried piece rising into the hand: a detent clicking
+   * home (ζ ≈ 0.94), within 1 mm of a 0.5 m snap in 0.43 s with no visible
+   * overshoot. Precise placement is critically damped (feedback: spring
+   * physics); 210/20 overshot a snap by 2.2 cm.
+   */
+  gridSettle: { stiffness: 700, damping: 50 },
   /** Playful placement bounce — wobbly, satisfying. */
   placementBounce: { stiffness: 180, damping: 12 },
   /** Camera movements — gentle, cinematic. */
   camera: { stiffness: 120, damping: 14 },
   /** Heavy stage equipment — weighty, deliberate, overdamped. */
   heavy: { stiffness: 280, damping: 120 },
-  /** A carried piece's lean and its rock as it settles: soft, two gentle swings (ζ ≈ 0.36). */
+  /** The Grand Assembly's lean as a summoned piece settles: soft, two gentle swings (ζ ≈ 0.36). */
   furnitureLean: { stiffness: 230, damping: 11 },
-  /** The squash as a piece sets its weight down: quick and springy (ζ ≈ 0.37). */
+  /** The Grand Assembly's squash as a summoned piece sets its weight down: quick and springy (ζ ≈ 0.37). */
   furnitureSquash: { stiffness: 520, damping: 17 },
-  /** A new piece coming down onto the floor: critically damped, no bounce through it. */
-  furnitureDrop: { stiffness: 160, damping: 25 },
+  /**
+   * A placed or let-go piece's lean standing upright again (ζ ≈ 0.69): one
+   * small swing through, at rest in under 0.6 s, never a rocking that
+   * shimmers on every drop (feedback: spring physics, precise placement).
+   */
+  furnitureLeanSettle: { stiffness: 230, damping: 21 },
+  /** The dip as a placed or let-go piece takes its weight (ζ ≈ 0.66): one quick ~1 % dip, at rest by 0.4 s. */
+  furnitureSettleSquash: { stiffness: 520, damping: 30 },
+  /**
+   * A piece set down onto the floor. It aims 3 cm below the floor and stops
+   * at contact (lib/furniture-motion.ts), so it arrives at speed: down from
+   * 5 cm in about 83 ms at about 0.65 m/s, not lowered like a crane (ζ ≈ 0.68).
+   */
+  furnitureSetDown: { stiffness: 420, damping: 28 },
   /**
    * A heavy door swinging open or shut on its closer: gentle, no slam and no
    * rebound (ζ ≈ 0.95), most of the way in under a second.

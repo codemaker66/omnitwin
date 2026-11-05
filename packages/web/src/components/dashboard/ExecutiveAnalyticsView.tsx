@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ComfortConstraintStatus, VenueDashboardAnalytics } from "@omnitwin/types";
 import { getVenueDashboardAnalytics } from "../../api/revenue-analytics.js";
 import { listVenues, type Venue } from "../../api/spaces.js";
+import { useLatestRequest } from "../../hooks/use-latest-request.js";
 import { useAuthStore } from "../../stores/auth-store.js";
 import { ActivityIndicator } from "../shared/Activity.js";
 
@@ -80,25 +81,39 @@ export function ExecutiveAnalyticsView(): React.ReactElement {
   const [venues, setVenues] = useState<readonly Venue[]>([]);
   const [selectedVenueId, setSelectedVenueId] = useState<string | null>(null);
 
+  // One read at a time: choosing another venue cancels the read for the one
+  // before, and only the latest read may answer, so one venue's figures are
+  // never shown under another's name.
+  const analyticsRequest = useLatestRequest();
+  const inFlight = useRef<AbortController | null>(null);
+  useEffect(() => () => { inFlight.current?.abort(); }, []);
   const load = useCallback((venueId?: string) => {
+    inFlight.current?.abort();
+    const controller = new AbortController();
+    inFlight.current = controller;
+    const owns = analyticsRequest.begin();
     setLoadState({ status: "loading" });
-    void getVenueDashboardAnalytics(venueId)
-      .then((data) => { setLoadState({ status: "loaded", data }); })
+    void getVenueDashboardAnalytics(venueId, controller.signal)
+      .then((data) => { if (owns()) setLoadState({ status: "loaded", data }); })
       .catch((error: unknown) => {
+        if (!owns()) return;
         setLoadState({
           status: "error",
           message: error instanceof Error ? error.message : "Analytics are unavailable.",
         });
       });
-  }, []);
+  }, [analyticsRequest]);
 
   // A venue user's scope comes from their own account, so load immediately.
   // A platform admin has to say which venue first.
   useEffect(() => {
     if (!isPlatformAdmin) { load(); return; }
     if (selectedVenueId !== null) { load(selectedVenueId); return; }
+    // Back to no venue: whatever was being read stops answering.
+    inFlight.current?.abort();
+    analyticsRequest.invalidate();
     setLoadState({ status: "choose-venue" });
-  }, [isPlatformAdmin, load, selectedVenueId]);
+  }, [isPlatformAdmin, load, selectedVenueId, analyticsRequest]);
 
   useEffect(() => {
     if (!isPlatformAdmin) return;

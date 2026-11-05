@@ -12,7 +12,11 @@
 //     deepest relief inside a window, the hole is the relief's own footprint
 //     there (OPENING_RELIEF, measured on walls-relief.bin): the scanned
 //     reveals and curtains line it, so the body puts no face there (two
-//     surfaces would fight for the same pixels). In a doorway the hole goes
+//     surfaces would fight for the same pixels). Only once the cut clears a
+//     window's bay (BAY_SLOTS) does the body line it: in mahogany a
+//     centimetre and a half further into the wall (BAY_LINING_SET), with a
+//     board over its floor and, without the real sky, the daylit window at
+//     its back; on a walk none of it exists. In a doorway the hole goes
 //     back to just behind its leaves' face (doorRevealDepth less
 //     DOOR_LINING_SET: the leaves are modelled, hall-doors.ts, and the drawn
 //     relief stops there, hall-walls.ts), DOOR_FRAME wider than the doorway
@@ -41,7 +45,7 @@
 
 import { BufferAttribute, BufferGeometry } from "three";
 import { sampleHallLight } from "./hall-lighting-model.js";
-import { glazingOutline, revealOuterDepth } from "./hall-glazing.js";
+import { glazingOutline, revealOuterDepth, sashExtent } from "./hall-glazing.js";
 import type { HallBuilders } from "./hall-builders.js";
 import type { V3 } from "./mesh-builder.js";
 import {
@@ -76,12 +80,27 @@ export const RELIEF_CLEARANCE = 0.02;
 /** The doorways' thresholds stand this far above the floor's level. */
 export const THRESHOLD_HEIGHT = 0.008;
 
-/** What a vertex does as the cut moves (bodyVertexHeight). */
-export const BODY_ROLE = { body: 0, lintel: 1, lintelJamb: 2, capOnly: 3 } as const;
+/**
+ * What a vertex does as the cut moves (bodyVertexHeight). `bay` and
+ * `bayBacking` are a cleared window bay's faces (its linings, board and
+ * backing, buildBay), which exist only while their wall's cut lies below the
+ * height their vertices carry in aShape.y, in place of the distance from the
+ * room's plane (no bay face takes its colour from that distance): the
+ * window's square head for most, the glazing's sill for the board's back
+ * behind the glass. Shown, they rise no higher than the cut and no lower than
+ * their floor (aShape.x), as the body does. `bayBacking`, the daylit window
+ * at a bay's back, exists only without the real sky.
+ */
+export const BODY_ROLE = { body: 0, lintel: 1, lintelJamb: 2, capOnly: 3, bay: 4, bayBacking: 5 } as const;
 export type BodyRole = (typeof BODY_ROLE)[keyof typeof BODY_ROLE];
 
+/** Whether a role is a cleared bay's (BODY_ROLE.bay, bayBacking). */
+export function isBayRole(role: number): boolean {
+  return role === BODY_ROLE.bay || role === BODY_ROLE.bayBacking;
+}
+
 /** Which finish a face takes (hall-section.ts colours them). */
-export const BODY_FINISH = { outer: 0, cap: 1, doorLining: 2, windowLining: 3, section: 4, cornerCap: 5 } as const;
+export const BODY_FINISH = { outer: 0, cap: 1, doorLining: 2, windowLining: 3, section: 4, cornerCap: 5, bayLining: 6, bayBacking: 7 } as const;
 export type BodyFinish = (typeof BODY_FINISH)[keyof typeof BODY_FINISH];
 
 /**
@@ -115,6 +134,47 @@ export const OPENING_RELIEF: readonly OpeningRelief[] = [
   { opening: "door-fireplace", left: 0, right: 0, head: 0, sill: 0, deepest: -0.0427 },
   { opening: "door-fire-exit", left: 0, right: 0, head: 0, sill: 0, deepest: -0.0228 },
 ];
+
+/**
+ * The top of each window's board, the polished mahogany board its seat
+ * carries, metres: where the scanned relief's up-facing faces inside the bay
+ * gather (area-weighted in 1 cm bins, the highest bin holding a quarter of
+ * the largest's area; measured on the shipped walls-relief.bin, 28 October
+ * 2026). __tests__/hall-wall-body.test.ts measures them again on the relief,
+ * within 5 mm, each under its bay's clearFrom.
+ */
+export const BAY_BOARDS: Readonly<Record<string, number>> = {
+  "arch-fireplace": 0.915,
+  "window-fireplace": 0.905,
+  "arch-centre": 0.965,
+  "window-end": 0.975,
+  "arch-end": 0.945,
+};
+
+/**
+ * A bay the cut clears (BAY_SLOTS) keeps its board whole: the relief goes
+ * from this far above the board's top or the window's sill, whichever is
+ * higher (bayClearFrom).
+ */
+export const BAY_BOARD_CLEARANCE = 0.02;
+
+/**
+ * Inside a bay's linings (BAY_LINING_SET beyond the relief's footprint), the
+ * relief from this far in front of the wall's plane back is the bay's: its
+ * curtains come forward to the plane at its mouth (2-5 cm behind it at the
+ * dado cut, on the shipped relief). The architrave in front of it, and the
+ * wall beyond the linings, stay.
+ */
+export const BAY_FRONT = -0.02;
+
+/** A cleared bay keeps the glass plane it was scanned at: the relief this far in front of its deepest stays. */
+export const BAY_GLASS_KEEP = 0.04;
+
+/**
+ * A cleared bay's linings stand this far into the wall beyond the relief's
+ * footprint, so they never fight the scanned reveals at its edge for pixels.
+ */
+export const BAY_LINING_SET = 0.015;
 
 export function openingRelief(id: string): OpeningRelief {
   const relief = OPENING_RELIEF.find((entry) => entry.opening === id);
@@ -300,22 +360,93 @@ export const DOOR_SLOTS: readonly DoorSlot[] = HALL_WALLS.flatMap((wall, index) 
     head: Math.max(...entry.footprint.upper.map((p) => p[1])),
   })));
 
+/**
+ * Each window's bay as the cut clears it (hall-materials.ts sectionMask).
+ * The scan resolved a bay's curtains, shutters and reveals as thin shells
+ * photographed from the room; cut through, their insides showed from above
+ * as torn grey and blue shards (Blake, 28 October). So while a window's wall
+ * is cut below its head, the relief in its bay goes from just above the
+ * board up: inside the bay's linings (BAY_LINING_SET beyond the relief's
+ * footprint), more than BAY_FRONT behind the plane and in front of the glass
+ * plane the scan saw (BAY_GLASS_KEEP), which stays, as do the board, the
+ * architrave and everything round the window. The bay is then a clean
+ * section: the body's mahogany linings, board and back (buildBay), the sash's
+ * painted surround, its bars and glass (hall-glazing.ts). In plan (x, z): the
+ * wall's origin, tangent and normal, so u is (p - origin) . tangent and the
+ * depth behind the plane -(p - origin) . normal.
+ */
+export interface BaySlot {
+  readonly opening: string;
+  readonly wall: number;
+  readonly origin: readonly [number, number];
+  readonly tangent: readonly [number, number];
+  readonly normal: readonly [number, number];
+  /** Out to the bay's linings, BAY_LINING_SET beyond the relief's footprint's jambs. */
+  readonly u0: number;
+  readonly u1: number;
+  /** The relief goes from this height up: BAY_BOARD_CLEARANCE above the board's top or the window's sill, whichever is higher. */
+  readonly clearFrom: number;
+  /** The bay clears while its wall's cut lies below this: the window's square head (an arch's springing). */
+  readonly head: number;
+  /** The relief behind the plane from BAY_FRONT to this depth goes; the glass plane behind it stays. */
+  readonly glass: number;
+}
+
+/**
+ * Where a cleared bay's relief goes from, and its modelled board lies:
+ * BAY_BOARD_CLEARANCE above the scanned board's top (BAY_BOARDS) or the
+ * window's sill, whichever is higher.
+ */
+export function bayClearFrom(opening: HallOpening): number {
+  const board = BAY_BOARDS[opening.id];
+  if (board === undefined) throw new Error(`No board measured for window ${opening.id}`);
+  return Math.max(opening.sill, board) + BAY_BOARD_CLEARANCE;
+}
+
+export const BAY_SLOTS: readonly BaySlot[] = HALL_WALLS.flatMap((wall, index) =>
+  bodyOpenings(wall).filter((entry) => entry.door === null).map((entry): BaySlot => {
+    return {
+      opening: entry.opening.id,
+      wall: index,
+      origin: [wall.origin[0], wall.origin[2]],
+      tangent: [wall.tangent[0], wall.tangent[2]],
+      normal: [wall.normal[0], wall.normal[2]],
+      u0: entry.footprint.u0 - BAY_LINING_SET,
+      u1: entry.footprint.u1 + BAY_LINING_SET,
+      clearFrom: bayClearFrom(entry.opening),
+      head: entry.opening.head,
+      glass: -openingRelief(entry.opening.id).deepest - BAY_GLASS_KEEP,
+    };
+  }));
+
 // ---------------------------------------------------------------------------
 // The shaders' rules, mirrored for tests
 // ---------------------------------------------------------------------------
 
 /**
- * Whether a relief fragment of wall `wall` at wall-local (u, y) shows, for
- * each wall's cut (HALL_WALLS order): below its wall's cut (the lower of its
- * and `neighbour`'s, for relief standing in a corner against that wall), and
- * not over a doorway once the lintel there has gone (sectionMask).
+ * Whether relief of wall `wall` at wall-local (u, y), `behind` metres behind
+ * its plane, lies in a bay the cut has cleared, its wall's own cut being
+ * `cut` (BAY_SLOTS).
  */
-export function reliefVisible(wall: number, neighbour: number, u: number, y: number, cuts: readonly number[]): boolean {
+export function inClearedBay(wall: number, u: number, y: number, behind: number, cut: number): boolean {
+  return BAY_SLOTS.some((slot) => slot.wall === wall && cut < slot.head && u > slot.u0 && u < slot.u1
+    && y > slot.clearFrom && behind > BAY_FRONT && behind < slot.glass);
+}
+
+/**
+ * Whether a relief fragment of wall `wall` at wall-local (u, y), `behind`
+ * metres behind its plane, shows for each wall's cut (HALL_WALLS order): below
+ * its wall's cut (the lower of its and `neighbour`'s, for relief standing in
+ * a corner against that wall), not over a doorway once the lintel there has
+ * gone, and not in a bay the cut has cleared (sectionMask).
+ */
+export function reliefVisible(wall: number, neighbour: number, u: number, y: number, cuts: readonly number[], behind = 0): boolean {
   const own = cuts[wall] ?? 1000;
   const cut = neighbour < 0 ? own : Math.min(own, cuts[neighbour] ?? 1000);
   if (y >= cut) return false;
   const overDoor = DOOR_SLOTS.some((slot) => slot.wall === wall && u > slot.u0 && u < slot.u1 && y > slot.head);
-  return !(overDoor && own < LINTEL_RELEASE);
+  if (overDoor && own < LINTEL_RELEASE) return false;
+  return !inClearedBay(wall, u, y, behind, own);
 }
 
 /**
@@ -325,14 +456,20 @@ export function reliefVisible(wall: number, neighbour: number, u: number, y: num
  * section's mask then discards). Lintels vanish once the cut is at or under
  * LINTEL_RELEASE; the pier's side over a door (lintelJamb) shows only then; a
  * cap-only face (the top of the walling under an opening, where the relief or
- * a reveal already stands) exists only while the cut lies below it.
- * Returns null where the vertex is collapsed away.
+ * a reveal already stands) exists only while the cut lies below it. A
+ * cleared bay's faces (BODY_ROLE.bay) exist only while the cut lies below
+ * `reveal`, the vertex's aShape.y (the window's head, BAY_SLOTS), and its
+ * daylit back (bayBacking) only without the real sky (`sky`). `reveal` means
+ * nothing for the other roles (aShape.y is their distance from the room's
+ * plane). Returns null where the vertex is collapsed away.
  */
-export function bodyVertexHeight(y: number, base: number, role: BodyRole, cut: number): number | null {
+export function bodyVertexHeight(y: number, base: number, role: BodyRole, cut: number, reveal: number, sky = false): number | null {
   const released = cut < LINTEL_RELEASE;
   if (role === BODY_ROLE.lintel && released) return null;
   if (role === BODY_ROLE.lintelJamb && !released) return null;
   if (role === BODY_ROLE.capOnly && cut >= y - 1e-4) return null;
+  if (role === BODY_ROLE.bayBacking && sky) return null;
+  if (isBayRole(role) && cut >= reveal - 1e-4) return null;
   return Math.max(Math.min(y, cut), base);
 }
 
@@ -383,6 +520,11 @@ interface FaceVertex {
   readonly base: number;
   readonly fromRoom: number;
   readonly toOuter: number;
+  /**
+   * A cleared bay's face (BODY_ROLE.bay, bayBacking): the cut below which it
+   * shows, stored in aShape.y in place of `fromRoom` (bodyVertexHeight).
+   */
+  readonly reveal?: number;
   /** Where its light is sampled (inside the room), and the normal it is sampled for. */
   readonly lightAt: V3;
   readonly lightNormal: V3;
@@ -464,7 +606,7 @@ function emitFace(acc: Accumulator, vertices: readonly FaceVertex[], facing: V3,
       acc.light.push(...NO_LIGHT);
     }
     acc.section.push(style.wallA, style.wallB, style.role, style.finish);
-    acc.shape.push(vertex.base, vertex.fromRoom, vertex.toOuter);
+    acc.shape.push(vertex.base, vertex.reveal ?? vertex.fromRoom, vertex.toOuter);
     return id;
   });
   const apexId = ids[0];
@@ -653,7 +795,10 @@ function buildWall(acc: Accumulator, wall: HallWall, wallIndex: number, plan: Wa
       }
       // Where the relief's footprint gives way to the opening behind it, the
       // walling round the smaller hole faces the room: in a doorway, a step
-      // of its lining, in front of the scanned reveal's last few millimetres.
+      // of its lining, in front of the scanned reveal's last few millimetres;
+      // in a window, the back of its bay round the masonry opening, which a
+      // cleared bay shows as its mahogany lining (behind the deepest relief,
+      // a walk never sees it).
       const next = column.layers[j + 1];
       if (next !== undefined && next.length > 0 && opening !== null && Math.abs(bottom - opening.frontDepth) < 1e-7) {
         const { front, back } = opening;
@@ -678,7 +823,7 @@ function buildWall(acc: Accumulator, wall: HallWall, wallIndex: number, plan: Wa
             vertex(ub, piece.lo[1], bottom, piece.base[1], thickness, wallLight(ub, piece.lo[1])),
             vertex(ub, piece.hi[1], bottom, piece.base[1], thickness, wallLight(ub, piece.hi[1])),
             vertex(ua, piece.hi[0], bottom, piece.base[0], thickness, wallLight(ua, piece.hi[0])),
-          ], inward, style(piece.lintel ? BODY_ROLE.lintel : BODY_ROLE.body, door ? BODY_FINISH.doorLining : BODY_FINISH.section), true);
+          ], inward, style(piece.lintel ? BODY_ROLE.lintel : BODY_ROLE.body, door ? BODY_FINISH.doorLining : BODY_FINISH.bayLining), true);
         }
       }
     });
@@ -739,6 +884,155 @@ function buildWall(acc: Accumulator, wall: HallWall, wallIndex: number, plan: Wa
       }
     }
   }
+
+  for (const entry of plan.openings) if (entry.door === null) buildBay(acc, wall, wallIndex, entry);
+}
+
+/**
+ * A window's bay as the cut clears it (BAY_SLOTS): faces that exist only
+ * while its wall's cut lies below the window's head (BODY_ROLE.bay), so a
+ * walk, with nothing cut, sees the photographed bay and nothing of these.
+ *
+ *   - Its linings, in the mahogany its reveals are panelled in, a little into
+ *     the wall beyond the relief's footprint (BAY_LINING_SET), from the
+ *     footprint's sill to the head and from the room's plane to the bay's
+ *     back (`frontDepth`), where a strip closes each corner to the walling
+ *     round the masonry opening (the window's step faces, buildWall).
+ *   - Its board, laid over everything the clearing leaves below it (the
+ *     seats, the curtains' hems, the columns' feet) at bayClearFrom, or at
+ *     the cut while that lies lower, never under the footprint's sill: from
+ *     the room's plane to the sash's room face (sashExtent) across the
+ *     masonry opening, so it never meets the glass or a rail's top, and to
+ *     the bay's back beside the opening. Across the opening the floor steps
+ *     down at the sash's room face to the glazing's sill (the step's faces
+ *     closing it), under the sash to the glass, where the outer reveal's sill
+ *     goes on at the same height; behind the glass too while the cut lies
+ *     under that sill, which cuts the reveal's sill away (that piece shows
+ *     only then, its aShape.y the sill). The strips over the corners never
+ *     lie lower than the board, where the walling's own top, cut, covers
+ *     them.
+ *   - Without the real sky (bayBacking), the daylit window over the masonry
+ *     opening at the bay's back, behind the deepest relief: where the scan
+ *     saw curtains or columns in front of the glass, the cleared bay would
+ *     otherwise open onto the void beyond the wall.
+ */
+function buildBay(acc: Accumulator, wall: HallWall, wallIndex: number, entry: BodyOpening): void {
+  const { front, back, frontDepth, opening } = entry;
+  const glazing = hallGlazing(opening.id);
+  if (glazing === undefined) throw new Error(`No glazing for window ${opening.id}`);
+  const sash = sashExtent(glazing);
+  const glass = glazing.glassDepth;
+  const head = opening.head;
+  const board = bayClearFrom(opening);
+  const u0 = front.u0 - BAY_LINING_SET;
+  const u1 = front.u1 + BAY_LINING_SET;
+  if (!(u0 < front.u0 && front.u0 <= back.u0 && back.u0 < sash.u0 && sash.u1 < back.u1 && back.u1 <= front.u1)
+    || !(sash.roomFace < 0 && glass < sash.roomFace && frontDepth < glass)) {
+    throw new Error(`Window ${opening.id}'s bay is out of order: its sash must stand inside its masonry opening, behind the plane and in front of the bay's back`);
+  }
+  const tangent: V3 = [wall.tangent[0], 0, wall.tangent[2]];
+  const backward: V3 = [-tangent[0], 0, -tangent[2]];
+  const inward: V3 = [wall.normal[0], 0, wall.normal[2]];
+  const sill = (u: number): number => chainAt(front.lower, u);
+  const top = (u: number): number => chainAt(front.upper, u);
+  const vertex = (u: number, v: number, d: number, base: number, reveal: number, level: boolean): FaceVertex => ({
+    p: wallPoint(wall, u, v, d), base, fromRoom: -d, toOuter: wallThicknessAt(wall.id, u) + d, reveal,
+    lightAt: roomPoint(wall, u, level ? CAP_LIGHT_HEIGHT : v), lightNormal: level ? UP : inward,
+  });
+  const style = (role: BodyRole, finish: BodyFinish): FaceStyle => ({ wallA: wallIndex, wallB: -1, role, finish });
+  const lining = style(BODY_ROLE.bay, BODY_FINISH.bayLining);
+
+  // The linings, facing into the bay.
+  for (const [u, facing] of [[u0, tangent], [u1, backward]] as const) {
+    const foot = sill(u);
+    emitFace(acc, [
+      vertex(u, foot, 0, foot, head, false),
+      vertex(u, foot, frontDepth, foot, head, false),
+      vertex(u, top(u), frontDepth, foot, head, false),
+      vertex(u, top(u), 0, foot, head, false),
+    ], facing, lining, true);
+  }
+  // The back corners, between each lining and the walling round the masonry opening.
+  for (const [ua, ub] of [[u0, front.u0], [front.u1, u1]] as const) {
+    emitFace(acc, [
+      vertex(ua, sill(ua), frontDepth, sill(ua), head, false),
+      vertex(ub, sill(ub), frontDepth, sill(ub), head, false),
+      vertex(ub, top(ub), frontDepth, sill(ub), head, false),
+      vertex(ua, top(ua), frontDepth, sill(ua), head, false),
+    ], inward, lining, true);
+  }
+  // The board, cell by cell over the stations along the wall and in depth,
+  // so neighbouring cells share their corners: each cell's height, its floor
+  // and the cut below which it shows. Across the masonry opening it ends at
+  // the sash's room face, and the floor steps down there to the glazing's
+  // sill, under the sash (whose members, cut, are open shells) and on to the
+  // glass, flush with the outer reveal's sill behind it.
+  interface Cell { readonly y: number; readonly floor: (u: number) => number; readonly reveal: number }
+  const onBoard: Cell = { y: board, floor: sill, reveal: head };
+  const corner: Cell = { y: board, floor: () => board, reveal: head };
+  const sashSill: Cell = { y: glazing.sill, floor: sill, reveal: head };
+  const behindGlass: Cell = { y: glazing.sill, floor: sill, reveal: glazing.sill };
+  const depths = [0, sash.roomFace, glass, frontDepth];
+  const columns: readonly (readonly [number, number, readonly Cell[]])[] = [
+    [u0, front.u0, [corner, corner, corner]],
+    [front.u0, back.u0, [onBoard, onBoard, onBoard]],
+    [back.u0, back.u1, [onBoard, sashSill, behindGlass]],
+    [back.u1, front.u1, [onBoard, onBoard, onBoard]],
+    [front.u1, u1, [corner, corner, corner]],
+  ];
+  for (const [ua, ub, cells] of columns) {
+    cells.forEach((cell, row) => {
+      const d0 = depths[row] ?? 0;
+      const d1 = depths[row + 1] ?? 0;
+      const at = (u: number, d: number): FaceVertex => vertex(u, cell.y, d, cell.floor(u), cell.reveal, true);
+      emitFace(acc, [at(ua, d0), at(ub, d0), at(ub, d1), at(ua, d1)], UP, style(BODY_ROLE.bay, BODY_FINISH.bayLining), true);
+    });
+  }
+  // The step down, so nothing under the board shows: its edge along the
+  // sash's room face, facing the glass, and either side of the opening its
+  // returns to the glass (behind the glass the outer reveal's jambs go on).
+  const riser = (ua: number, da: number, ub: number, db: number, facing: V3): void => {
+    emitFace(acc, [
+      vertex(ua, glazing.sill, da, glazing.sill, head, false),
+      vertex(ub, glazing.sill, db, glazing.sill, head, false),
+      vertex(ub, board, db, glazing.sill, head, false),
+      vertex(ua, board, da, glazing.sill, head, false),
+    ], facing, lining, true);
+  };
+  riser(back.u0, sash.roomFace, back.u1, sash.roomFace, [-inward[0], 0, -inward[2]]);
+  riser(back.u0, sash.roomFace, back.u0, glass, tangent);
+  riser(back.u1, sash.roomFace, back.u1, glass, backward);
+  // The daylit window at the bay's back: the masonry opening's outline.
+  const outline = glazingOutline(glazing);
+  emitFace(acc, outline.map(([u, v]) => vertex(u, v, frontDepth, glazing.sill, head, false)),
+    inward, style(BODY_ROLE.bayBacking, BODY_FINISH.bayBacking), true);
+}
+
+/**
+ * The bodies as the sun's and the moon's shadow map draws them (hall-sun.ts):
+ * uncut, their full height, without a cleared bay's faces (isBayRole), which
+ * only a cut lays; on a walk the visible pass collapses them, so their shadow
+ * would fall from nothing the walk shows. Positions and normals only, in the
+ * body's own vertex order.
+ */
+export function bodyCasterGeometry(body: BufferGeometry): BufferGeometry {
+  const tag = body.getAttribute("aSection");
+  const index = body.getIndex();
+  if (index === null) throw new Error("The walls' bodies are indexed");
+  const kept: number[] = [];
+  for (let k = 0; k + 2 < index.count; k += 3) {
+    const ids = [index.getX(k), index.getX(k + 1), index.getX(k + 2)];
+    if (ids.some((i) => isBayRole(Math.round(tag.getZ(i))))) continue;
+    kept.push(...ids);
+  }
+  const casters = new BufferGeometry();
+  casters.setAttribute("position", body.getAttribute("position").clone());
+  casters.setAttribute("normal", body.getAttribute("normal").clone());
+  casters.setIndex(kept);
+  casters.computeBoundingBox();
+  casters.computeBoundingSphere();
+  casters.name = "grand-hall-wall-body-casters";
+  return casters;
 }
 
 /**

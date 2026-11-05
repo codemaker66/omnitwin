@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { eq, and, gt, isNull } from "drizzle-orm";
-import { ActionLogBatchSchema } from "@omnitwin/types";
+import { ActionLogBatchSchema, redactAllergyNote } from "@omnitwin/types";
 import { actionLog, configurations } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { authenticate, type JwtUser } from "../middleware/auth.js";
@@ -24,6 +24,11 @@ import { canAccessResource } from "../utils/query.js";
 // here labels client-supplied actor/provenance as verified.
 //
 // Append-only by code contract: this file has no update or delete surface.
+// An allergy note never enters the log: an Event details save carried the
+// guests' note in its payload and inverse, and it is stored blanked
+// (people-privacy-3), whatever a planner bundle already in a browser sends.
+// The nightly retention pass, the log's one writer besides this route,
+// blanks any copy stored before this route did.
 // ---------------------------------------------------------------------------
 
 const ConfigIdParam = z.object({ configId: z.uuid() });
@@ -95,8 +100,8 @@ export async function actionLogRoutes(
       submittedBy: request.user.id,
       actor: entry.actor,
       intent: entry.intent,
-      payload: entry.payload,
-      inverse: entry.inverse,
+      payload: redactAllergyNote(entry.payload),
+      inverse: redactAllergyNote(entry.inverse),
       provenance: entry.provenance,
       recordedTs: new Date(entry.ts),
     }));

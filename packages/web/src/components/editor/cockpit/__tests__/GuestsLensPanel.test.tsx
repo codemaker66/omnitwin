@@ -16,6 +16,7 @@ const { useRoomDimensionsStore } = await import("../../../../stores/room-dimensi
 const { useCockpitStore } = await import("../../../../stores/cockpit-store.js");
 const { CATALOGUE_ITEMS } = await import("../../../../lib/catalogue.js");
 const fixtures = await import("./planner-truth-fixtures.js");
+const { setPlannerFeaturesForTesting } = await import("../../../../lib/planner-features.js");
 
 function find(predicate: (item: CatalogueItem) => boolean, label: string): CatalogueItem {
   const item = CATALOGUE_ITEMS.find(predicate);
@@ -46,7 +47,7 @@ beforeEach(() => {
   fixtures.openRoom(fixtures.plannerRoom());
 });
 
-afterEach(() => { cleanup(); fixtures.resetPlannerTruth(); });
+afterEach(() => { cleanup(); fixtures.resetPlannerTruth(); setPlannerFeaturesForTesting(null); });
 
 describe("GuestsLensPanel — the venue's published figures lead", () => {
   it("leads with the Grand Hall's published figures and who stated them", () => {
@@ -228,5 +229,24 @@ describe("GuestsLensPanel — seats and building the room", () => {
     expect(usePlacementStore.getState().placedItems).toEqual(leaked);
     expect(screen.getByTestId("guests-build-dinner-rounds")).toBeTruthy();
     expect(screen.queryByTestId("guests-build-blocked")).toBeNull();
+  });
+
+  it("offers banquet rounds over a laid floor with Fill over the layout, and Theatre only on a clear one (Q-10)", () => {
+    setPlannerFeaturesForTesting({ fillKeepOuts: true });
+    usePlacementStore.setState({ placedItems: withChairs(80) });
+    render(<GuestsLensPanel />);
+    expect(screen.getByTestId("guests-build-dinner-rounds")).toBeTruthy();
+    expect(screen.queryByTestId("guests-build-theatre")).toBeNull();
+    expect(screen.getByTestId("guests-build-over").textContent)
+      .toBe("Re-plans the rounds and keeps everything else. Theatre rows need a clear floor.");
+    expect(screen.queryByTestId("guests-build-blocked")).toBeNull();
+  });
+
+  it("keeps a laid floor closed to Lay out while Fill over the layout is off", () => {
+    setPlannerFeaturesForTesting({ fillKeepOuts: false });
+    usePlacementStore.setState({ placedItems: withChairs(80) });
+    render(<GuestsLensPanel />);
+    expect(screen.queryByTestId("guests-build-dinner-rounds")).toBeNull();
+    expect(screen.getByTestId("guests-build-blocked")).toBeTruthy();
   });
 });

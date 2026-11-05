@@ -210,6 +210,44 @@ describe("PATCH /configurations/:id", () => {
     expect(res.statusCode).toBe(400);
   });
 
+  /** One pinch the venue has reviewed, as the planner writes it with the layout. */
+  const reviewedPinch = {
+    id: "gangway:zMin:group-1+wall:zMin",
+    widthM: 0.95,
+    guidance: { thresholdM: 1.1, source: "Scottish Government, Practical fire safety guidance for existing non-residential premises, ch. 7" },
+    gangway: "the window wall",
+    location: { kind: "segment", from: { x: -1, z: -5.25 }, to: { x: 1, z: -5.25 } },
+    pieceIds: ["p-1"],
+    sides: ["the window wall", "Table 4's chairs"],
+    status: "approved",
+    reviewer: "Hallkeeper",
+    decidedAt: "2026-10-26T09:00:00.000Z",
+  } as const;
+
+  it("accepts a layout's gangway review with its metadata", async () => {
+    const res = await server.inject({
+      method: "PATCH",
+      url: "/configurations/00000000-0000-4000-8000-000000000001",
+      headers: { authorization: `Bearer ${adminToken()}` },
+      payload: { metadata: { gangwayReview: { items: [reviewedPinch] } } },
+    });
+    expect(res.statusCode).not.toBe(400);
+  });
+
+  it("rejects a malformed gangway review (an unknown status)", async () => {
+    const res = await server.inject({
+      method: "PATCH",
+      url: "/configurations/00000000-0000-4000-8000-000000000001",
+      headers: { authorization: `Bearer ${adminToken()}` },
+      payload: { metadata: { gangwayReview: { items: [{ ...reviewedPinch, status: "maybe" }] } } },
+    });
+    expect(res.statusCode).toBe(400);
+    // Refused for the status, not the id: the rest of the pinch is the one the test above accepts.
+    const body = res.json<{ code: string; details?: readonly { path: readonly (string | number)[] }[] }>();
+    expect(body.code).toBe("VALIDATION_ERROR");
+    expect(body.details?.map((issue) => issue.path.join("."))).toContain("metadata.gangwayReview.items.0.status");
+  });
+
   it("accepts null metadata to clear instructions", async () => {
     const res = await server.inject({
       method: "PATCH",
