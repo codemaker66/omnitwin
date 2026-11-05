@@ -23,6 +23,7 @@ import {
   type OrnamentMaterial,
 } from "../../lib/ornament-batching.js";
 import { GRAND_HALL_RENDER_DIMENSIONS } from "../../constants/scale.js";
+import { setPlannerFeaturesForTesting } from "../../lib/planner-features.js";
 import { useVisibilityStore } from "../../stores/visibility-store.js";
 import { useXrayStore } from "../../stores/xray-store.js";
 import { useSectionStore } from "../../stores/section-store.js";
@@ -75,6 +76,7 @@ afterEach(() => {
   useVisibilityStore.setState(initialVisibility, true);
   useXrayStore.setState(initialXray, true);
   useSectionStore.setState(initialSection, true);
+  setPlannerFeaturesForTesting(null);
 });
 
 // ---------------------------------------------------------------------------
@@ -580,11 +582,16 @@ describe("GrandHallOrnaments fades, clicked walls, x-ray and sections", () => {
     expect(drawnGlass()).toEqual(Array.from({ length: 3 }, () => [0.42, 0.38, 0.34, 0.34]).flat());
   });
 
-  it("animates a clicked-open wall frame for frame like the pre-merge ornaments", () => {
+  it.each([
+    { clock: "the 5 s brick-down", wallsQuick: false, delta: 0.05 },
+    { clock: "the 450 ms brick-down (wallsQuick)", wallsQuick: true, delta: 0.03 },
+  ])("animates a clicked-open wall frame for frame like the pre-merge ornaments, on $clock", ({ wallsQuick, delta }) => {
+    setPlannerFeaturesForTesting({ wallsQuick });
     const { legacy, current } = mountPair();
     act(() => { useVisibilityStore.getState().toggleWall("wall-front"); });
+    // Twelve frames stay inside either clock's brick-down: 0.6 s of 5 s, 0.36 s of 0.45 s.
     for (let step = 0; step < 12; step++) {
-      frames([legacy, current], 1, 0.05);
+      frames([legacy, current], 1, delta);
       expect(drawnRepresentation(current.scene, "opposite-long-wall-three-door-cluster")).toBe("per-mesh");
       expectSameDrawing(legacy, current);
     }

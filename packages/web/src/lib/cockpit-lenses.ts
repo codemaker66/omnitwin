@@ -1,7 +1,7 @@
 // ---------------------------------------------------------------------------
 // Which lenses each viewer of the planner sees (Blake's decision 5, CB-25).
 //
-// Two keys in planner-features.ts shape the rail, both off until Blake picks:
+// Two keys in planner-features.ts shape the rail:
 //
 //   lensesByRole   clients and guests (an anonymous visitor to a shared /plan
 //                  link, and anyone whose identity is still being checked)
@@ -15,6 +15,10 @@
 // With both on, the role filter runs first: the divider appears only where
 // venue tools remain, so the hallkeeper's own four stand undivided. With both
 // off the rail is today's: eleven unnamed icons in COCKPIT_MODES order.
+//
+// Ops is offered whole. Its setup plan and effort estimate are worked out in
+// the browser; only its compile asks the API, so OpsLensPanel gates that one
+// action (compilesHandoffPack in role-capabilities.ts) and says who compiles.
 //
 // Pure and React-free, like cockpit-modes.ts, so the store's guard and the
 // rail read one answer. Every rail is a constant, so a caller comparing rails

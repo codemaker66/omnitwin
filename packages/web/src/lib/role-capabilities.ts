@@ -199,6 +199,25 @@ export function canDraftWithAI(user: { readonly role: string; readonly venueId: 
   return user.platformRole === "admin" || hasRole(VENUE_MEMBER_ROLES, user.role);
 }
 
+/**
+ * Whether the Ops lens's compile (`POST /ops/handoff-packs/from-configuration/:id`)
+ * would be answered for this person on this layout. The route reads
+ * `canAccessResource`: the layout's owner, the venue floor at the layout's
+ * venue (`canManageVenue`, VENUE_FLOOR_ROLES) or a platform admin. A layout
+ * open through the authenticated load passed that same gate; a shared link's
+ * public preview names no owner, so there only the floor at its venue and a
+ * platform admin compile. Everyone else keeps the lens's setup plan, which the
+ * browser works out, and is told who compiles instead of meeting a 403.
+ */
+export function compilesHandoffPack(
+  user: { readonly role: string; readonly venueId: string | null; readonly platformRole: string } | null,
+  layout: { readonly venueId: string | null; readonly isPublicPreview: boolean },
+): boolean {
+  if (user === null) return false;
+  if (!layout.isPublicPreview || user.platformRole === "admin") return true;
+  return layout.venueId !== null && user.venueId === layout.venueId && hasRole(VENUE_FLOOR_ROLES, user.role);
+}
+
 // ---------------------------------------------------------------------------
 // The staff rota (T-637 slice B). A block of its own, with its own drift test
 // (__tests__/rota-capabilities.test.ts), because the rota answers three ways
