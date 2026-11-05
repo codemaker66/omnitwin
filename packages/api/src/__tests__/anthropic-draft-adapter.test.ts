@@ -2,7 +2,7 @@ import type Anthropic from "@anthropic-ai/sdk";
 import { APIError } from "@anthropic-ai/sdk";
 import { describe, expect, it, vi } from "vitest";
 import { validateEnv } from "../env.js";
-import { AIAccessPolicy, AIAssistantDisabledError, AIDraftsUnavailableError, isOutOfCredit } from "../services/ai-access.js";
+import { AIAccessPolicy, AIAssistantDisabledError, AIDraftsUnavailableError, isOutOfCredit, missingAccessLists } from "../services/ai-access.js";
 import {
   DisabledAIGenerationAdapter,
   HttpAIGenerationAdapter,
@@ -365,10 +365,35 @@ describe("which venues and drafts a provider will take (C1)", () => {
     expect(policy.refusal(null, "beo_supplier_instruction_draft")).toBeNull();
   });
 
-  it("switches nothing on were AI on with a list missing, though the environment refuses to start that way", () => {
-    const policy = AIAccessPolicy.fromEnv({ AI_ASSISTANT_ENABLED: "true", AI_ASSISTANT_VENUE_IDS: [ATTRIBUTION.venueId], AI_ASSISTANT_FEATURES: undefined });
-    expect(policy.refusal(ATTRIBUTION.venueId, "proposal_draft")).toBe("This AI draft is not switched on.");
-    expect(policy.refusal(ATTRIBUTION.venueId)).toBe("This AI draft is not switched on.");
+  it("fails closed with AI on and a list unset: no venue, no draft, saying why, and naming what is missing", () => {
+    const venuesOnly: Parameters<typeof missingAccessLists>[0] = { AI_ASSISTANT_ENABLED: "true", AI_ASSISTANT_VENUE_IDS: [ATTRIBUTION.venueId], AI_ASSISTANT_FEATURES: undefined };
+    const policy = AIAccessPolicy.fromEnv(venuesOnly);
+    const why = "AI drafts are on, but no venue or draft has been switched on yet.";
+    expect(policy.refusal(ATTRIBUTION.venueId, "proposal_draft")).toBe(why);
+    expect(policy.refusal(ATTRIBUTION.venueId)).toBe(why);
+    expect(policy.statusFor({ configured: true, provider: "anthropic", model: "claude-opus-5-5", disabledReason: null }, ATTRIBUTION.venueId, "proposal_draft"))
+      .toEqual({ configured: false, provider: null, model: null, disabledReason: why });
+    expect(missingAccessLists(venuesOnly)).toEqual(["AI_ASSISTANT_FEATURES"]);
+    expect(missingAccessLists({ AI_ASSISTANT_ENABLED: "true", AI_ASSISTANT_VENUE_IDS: undefined, AI_ASSISTANT_FEATURES: undefined }))
+      .toEqual(["AI_ASSISTANT_VENUE_IDS", "AI_ASSISTANT_FEATURES"]);
+    expect(missingAccessLists({ AI_ASSISTANT_ENABLED: "false", AI_ASSISTANT_VENUE_IDS: undefined, AI_ASSISTANT_FEATURES: undefined })).toEqual([]);
+  });
+
+  it("is what the environment builds with AI on and no lists: nothing reaches the provider", async () => {
+    const env = validateEnv({
+      ...BASE_ENV, AI_ASSISTANT_ENABLED: "true",
+      AI_ASSISTANT_PROVIDER: "gateway", AI_ASSISTANT_MODEL: "gateway-model",
+      AI_ASSISTANT_BASE_URL: "https://ai.example.test/draft", AI_ASSISTANT_API_KEY: "test-key-not-real",
+    });
+    const fetch = vi.fn<typeof globalThis.fetch>();
+    vi.stubGlobal("fetch", fetch);
+    try {
+      const adapter = createAIGenerationAdapterFromEnv(env, new TallyAIUsageMeter());
+      await expect(adapter.generateText(INPUT, ATTRIBUTION)).rejects.toBeInstanceOf(AIAssistantDisabledError);
+      expect(fetch).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("says AI is off in the status a venue sees for a draft it does not have, and leaves an off status alone", () => {

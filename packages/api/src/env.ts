@@ -112,10 +112,12 @@ const EnvSchema = z.object({
     .optional(),
   // C1, the Trades Hall pilot: which venues have AI drafts, and which drafts.
   // Comma-separated venue ids and draft names (proposal_draft,
-  // enquiry_summary, event_brief, ...). With AI_ASSISTANT_ENABLED=true both
-  // are required and the API will not start without them, so turning AI on
-  // can never give drafts to every venue (services/ai-access.ts). There is
-  // no "every venue" value.
+  // enquiry_summary, event_brief, ...). With AI_ASSISTANT_ENABLED=true and
+  // either list unset, AI is on for no venue and no draft: the API starts,
+  // warns at boot and says why in /ai/status (services/ai-access.ts), so a
+  // forgotten variable never blocks a deploy and turning AI on can never give
+  // drafts to every venue. A list that is set but malformed stops the boot.
+  // There is no "every venue" value.
   AI_ASSISTANT_VENUE_IDS: commaList(z.guid("AI_ASSISTANT_VENUE_IDS must hold venue ids separated by commas")
     .transform((id) => id.toLowerCase())).optional(),
   AI_ASSISTANT_FEATURES: commaList(AIUsageFeatureSchema).optional(),
@@ -407,8 +409,6 @@ const EnvSchema = z.object({
       missingAiFields.push("AI_ASSISTANT_BASE_URL");
     }
     if (env.AI_ASSISTANT_API_KEY === undefined) missingAiFields.push("AI_ASSISTANT_API_KEY");
-    if (env.AI_ASSISTANT_VENUE_IDS === undefined) missingAiFields.push("AI_ASSISTANT_VENUE_IDS");
-    if (env.AI_ASSISTANT_FEATURES === undefined) missingAiFields.push("AI_ASSISTANT_FEATURES");
     if (missingAiFields.length > 0) {
       ctx.addIssue({
         code: "custom",

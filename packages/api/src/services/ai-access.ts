@@ -9,13 +9,15 @@ import type { Env } from "../env.js";
 // AI_ASSISTANT_ENABLED is one switch for the whole platform. Switched on by
 // itself it would give drafts to every venue's staff and send every venue's
 // guests' words to the provider, though only one venue's controller has
-// agreed to that. So with AI on, the API refuses to start unless it is also
-// told which venues (AI_ASSISTANT_VENUE_IDS) and which drafts
-// (AI_ASSISTANT_FEATURES) are switched on, and every provider call is
-// checked against both before anything is reserved or sent. The check sits
-// in the providers themselves, so no route can reach a model around it; the
-// routes ask the same policy first only so a refused venue is told so
-// before any of its records are read.
+// agreed to that. So AI is on only for the venues (AI_ASSISTANT_VENUE_IDS)
+// and drafts (AI_ASSISTANT_FEATURES) the environment names, and every
+// provider call is checked against both before anything is reserved or sent.
+// With AI on and either list unset, it fails closed: on for no venue, said
+// at boot (missingAccessLists) and in every status. It does not stop the
+// boot, so a forgotten variable never blocks a deploy. The check sits in the
+// providers themselves, so no route can reach a model around it; the routes
+// ask the same policy first only so a refused venue is told so before any of
+// its records are read.
 //
 // With AI off, the policy restricts nothing: the environment's provider is
 // the disabled one, which sends nothing, and the only other providers are
@@ -71,19 +73,34 @@ export function isGatewayOutOfCredit(status: number): boolean {
 
 const VENUE_OFF = "AI drafts are not switched on for this venue.";
 const FEATURE_OFF = "This AI draft is not switched on.";
+const NO_LISTS = "AI drafts are on, but no venue or draft has been switched on yet.";
+
+type AccessEnv = Pick<Env, "AI_ASSISTANT_ENABLED" | "AI_ASSISTANT_VENUE_IDS" | "AI_ASSISTANT_FEATURES">;
+
+/** The allow lists AI needs and does not have: with AI on, the names of the
+ *  unset ones, for the boot warning; empty when AI is off or both are set. */
+export function missingAccessLists(env: AccessEnv): string[] {
+  if (env.AI_ASSISTANT_ENABLED !== "true") return [];
+  return [
+    ...(env.AI_ASSISTANT_VENUE_IDS === undefined ? ["AI_ASSISTANT_VENUE_IDS"] : []),
+    ...(env.AI_ASSISTANT_FEATURES === undefined ? ["AI_ASSISTANT_FEATURES"] : []),
+  ];
+}
 
 export class AIAccessPolicy {
   private constructor(
     /** Null: every venue (AI is off, so nothing reaches a provider anyway). */
     private readonly venues: ReadonlySet<string> | null,
     private readonly features: ReadonlySet<AIUsageFeature> | null,
+    /** Set when the policy refuses everything, and why. */
+    private readonly closed: string | null = null,
   ) {}
 
-  /** The environment's policy: the allow lists when AI is on, no restriction when it is off. */
-  static fromEnv(env: Pick<Env, "AI_ASSISTANT_ENABLED" | "AI_ASSISTANT_VENUE_IDS" | "AI_ASSISTANT_FEATURES">): AIAccessPolicy {
+  /** The environment's policy: the allow lists when AI is on (none at all,
+   *  failing closed, when either is unset), no restriction when it is off. */
+  static fromEnv(env: AccessEnv): AIAccessPolicy {
     if (env.AI_ASSISTANT_ENABLED !== "true") return AIAccessPolicy.unrestricted();
-    // The environment refuses to start without both lists; were one missing
-    // all the same, nothing would be switched on.
+    if (missingAccessLists(env).length > 0) return new AIAccessPolicy(new Set(), new Set(), NO_LISTS);
     return new AIAccessPolicy(
       new Set((env.AI_ASSISTANT_VENUE_IDS ?? []).map((id) => id.toLowerCase())),
       new Set(env.AI_ASSISTANT_FEATURES ?? []),
@@ -103,6 +120,7 @@ export class AIAccessPolicy {
   /** Why `venueId` may not have `feature`, or null when it may. With no
    *  feature named, whether the venue has any AI draft at all. */
   refusal(venueId: string | null, feature?: AIUsageFeature): string | null {
+    if (this.closed !== null) return this.closed;
     if (this.venues !== null && (venueId === null || !this.venues.has(venueId.toLowerCase()))) return VENUE_OFF;
     if (this.features === null) return null;
     if (feature === undefined) return this.features.size > 0 ? null : FEATURE_OFF;

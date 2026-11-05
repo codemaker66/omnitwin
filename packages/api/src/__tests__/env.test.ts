@@ -462,13 +462,10 @@ describe("which venues and drafts AI is switched on for (C1)", () => {
   };
   const VENUE = "00000000-0000-4000-8000-000000000C01";
 
-  it("REFUSES to start with AI on but no venue list or no draft list, so AI can never be on for every venue", () => {
-    expect(() => validateEnv({ ...on, AI_ASSISTANT_FEATURES: "proposal_draft" }))
-      .toThrow("missing required provider configuration: AI_ASSISTANT_VENUE_IDS");
-    expect(() => validateEnv({ ...on, AI_ASSISTANT_VENUE_IDS: VENUE }))
-      .toThrow("missing required provider configuration: AI_ASSISTANT_FEATURES");
-    expect(() => validateEnv(on))
-      .toThrow("missing required provider configuration: AI_ASSISTANT_VENUE_IDS, AI_ASSISTANT_FEATURES");
+  it("starts with AI on but a list unset, failing closed rather than blocking the deploy (services/ai-access.ts)", () => {
+    expect(validateEnv({ ...on, AI_ASSISTANT_FEATURES: "proposal_draft" }).AI_ASSISTANT_VENUE_IDS).toBeUndefined();
+    expect(validateEnv({ ...on, AI_ASSISTANT_VENUE_IDS: VENUE }).AI_ASSISTANT_FEATURES).toBeUndefined();
+    expect(() => validateEnv(on)).not.toThrow();
   });
 
   it("reads each list as comma-separated values, trimmed, ids in lower case, repeats dropped", () => {

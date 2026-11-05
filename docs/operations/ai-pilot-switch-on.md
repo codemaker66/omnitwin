@@ -17,28 +17,36 @@ the "AI drafts are unavailable" state. Code: `packages/api/src/services/ai-acces
 | `AI_ASSISTANT_FEATURES` | `proposal_draft,enquiry_summary,event_brief` | The three pilot drafts. `beo_supplier_instruction_draft`, `truth_mode_explanation`, `route_conflict_explanation` and `lead_qualification` stay off by being left out. |
 | `AI_VENUE_MONTHLY_BUDGET_USD` | `20` (proposed; Blake decides) | Unset, it is $50 per venue per UTC month. Keep it below the Console workspace limit ($30 proposed) so the app's own cap is reached first. |
 
-**The boot rule.** With `AI_ASSISTANT_ENABLED=true`, the API refuses to start
-unless `AI_ASSISTANT_PROVIDER`, `AI_ASSISTANT_MODEL`, `AI_ASSISTANT_API_KEY`,
-`AI_ASSISTANT_VENUE_IDS` and `AI_ASSISTANT_FEATURES` are all set (and
-`AI_ASSISTANT_BASE_URL` for a provider other than `anthropic`). A list that is
-empty, names something that is not a venue id, or names a draft that does not
-exist also stops it. Railway then keeps the previous container serving and marks
-the new deployment failed; every later API deploy fails the same way until the
-variables are fixed. So every change below is ordered to keep the API bootable
-at each step.
+**The boot rules.** With `AI_ASSISTANT_ENABLED=true`:
+
+- The API refuses to start unless `AI_ASSISTANT_PROVIDER`, `AI_ASSISTANT_MODEL`
+  and `AI_ASSISTANT_API_KEY` are set (and `AI_ASSISTANT_BASE_URL` for a provider
+  other than `anthropic`). A list that is *set* but empty, names something that
+  is not a venue id, or names a draft that does not exist also stops it.
+  Railway then keeps the previous container serving and marks the new
+  deployment failed; every later API deploy fails the same way until the
+  variable is fixed.
+- If `AI_ASSISTANT_VENUE_IDS` or `AI_ASSISTANT_FEATURES` is *unset*, the API
+  starts with AI failing closed: drafts are off for every venue. It logs a
+  warning at boot naming the missing variable, and `/ai/status` says "AI drafts
+  are on, but no venue or draft has been switched on yet."
+
+So every change below is ordered to keep the API bootable and the drafts as
+intended at each step.
 
 ## A. The deploy of this change, while production already has AI on
 
 As of 5 Nov 2026 09:22 production has `AI_ASSISTANT_ENABLED=true` with
 provider, model and key, and no allow list (Blake's decision, 5 Nov: keep it on).
-The code before this change ignores the two new variables; the code after it
-needs them. So:
+The code before this change ignores the two new variables. The code after it
+turns the drafts off for every venue until they are set. So:
 
 1. **Before the PR merges**, add to the `@omnitwin/api` service, production
    environment, in Railway: `AI_ASSISTANT_VENUE_IDS` and `AI_ASSISTANT_FEATURES`
    with the values above (and `AI_VENUE_MONTHLY_BUDGET_USD=20` if Blake agrees).
    Railway redeploys the running code with them; it ignores them. Check
-   `/health/ready` answers 200.
+   `/health/ready` answers 200. If this step is skipped, nothing breaks, but
+   Trades Hall's drafts go off at the merge until the lists are set.
 2. Merge the PR. Railway builds and deploys it on the master push.
 3. Check, in order:
    - `GET https://api.venviewer.com/health/ready` answers 200 and the Railway
@@ -49,7 +57,9 @@ needs them. So:
    - `GET /event-architect/brief-drafts/status?venueId=<Trades Hall id>` answers `configured: true`.
    - In the app: the BEO wording and Truth Mode draft panels no longer show.
 4. If step 3's first check fails, the deployment log names the variable; fix it
-   in Railway and redeploy. Do not revert the code to get round it.
+   in Railway and redeploy. Do not revert the code to get round it. If
+   `/ai/status` says no venue is switched on, the boot log's warning names the
+   unset list.
 
 ## B. Switching on from off (any later time)
 
