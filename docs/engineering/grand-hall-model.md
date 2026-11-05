@@ -386,8 +386,10 @@ the clock. Presentation only: nothing is saved, and nothing is kept between visi
   streetward of the painted dome inside), photographs for heights and details, and the room for the hall's five
   windows (`HALL_OPENINGS`, so the front's openings and the room's glazing are one). 31,764 triangles (26,644 on a
   phone's finish), closed solids built a frame's spare time at a time after the city; its code is a lazy chunk
-  (28,839 B, 10,885 B gzipped) fetched only when the front is drawn. If the chunk will not load or the build
-  fails, the city fetches v2's model and lamps again, so the street keeps a front. With it the city comes from
+  (28,839 B, 10,885 B gzipped, measured at #332's head) fetched only when the front is drawn. If the chunk will
+  not load (it rejects, or Vite's preload helper resolves it to nothing once the page has claimed its one
+  stale-chunk reload, `route-error-boundary.tsx`) or the build fails, the city fetches v2's model and lamps
+  again, so the street keeps a front. With it the city comes from
   `merchant-city-v3.bin` (the old front cut away to bare pavement, the neighbours' street fronts straightened; the
   survey README's v3 paragraph) with its lamps baked against it (the two door lanterns on the modelled podium). The
   material discards everything above the window wall's eased cut (`hallFrontCut`, written by GrandHallModel's cut

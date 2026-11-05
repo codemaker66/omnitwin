@@ -47,15 +47,22 @@ function FrontUnavailable({ onFailed }: HallExteriorProps): null {
   return null;
 }
 
+/** Where the front's code comes from: a seam for tests, its own chunk otherwise. */
+export const frontChunk = {
+  load(): Promise<typeof import("./HallExterior.js") | undefined> { return import("./HallExterior.js"); },
+};
+
 /**
  * The measured front's code, fetched only when the front is asked for. If it
  * cannot be fetched (a stale deploy, the network), the city takes back its
- * own front rather than the planner losing its scene to the error.
+ * own front rather than the planner losing its scene to the error. A build
+ * fetches it through Vite's preload helper, which resolves to nothing instead
+ * of rejecting once the page has claimed its one stale-chunk reload
+ * (route-error-boundary.tsx): that counts as a failure too.
  */
-const HallExterior = lazy<ComponentType<HallExteriorProps>>(() => import("./HallExterior.js").then(
-  (module) => ({ default: module.HallExterior }),
-  () => ({ default: FrontUnavailable }),
-));
+const HallExterior = lazy<ComponentType<HallExteriorProps>>(() => frontChunk.load()
+  .then((module) => ({ default: module?.HallExterior ?? FrontUnavailable }))
+  .catch(() => ({ default: FrontUnavailable })));
 
 async function fetchOk(url: string): Promise<Response> {
   const response = await fetch(url);
