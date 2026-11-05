@@ -3,6 +3,8 @@ import type { Object3D, Scene } from "three";
 export const SAVED_LAYOUT_FURNITURE_GROUP = "saved-layout-furniture";
 export const TIMELINE_PREVIEW_FURNITURE_GROUP = "layout-timeline-preview-furniture";
 export const TIMELINE_CAPTURE_FURNITURE_GROUP = "layout-timeline-capture-furniture";
+/** The planner's clearance lines (CirculationOverlay): editing guides, never part of a plan. */
+export const CIRCULATION_OVERLAY_GROUP = "circulation-overlay";
 
 export type TimelineCaptureFurnitureSource = "nearest-keyframe" | "saved-layout" | "unavailable";
 
@@ -70,6 +72,7 @@ export function prepareFurnitureForOrthographicCapture(scene: Scene): {
   applyVisibility(savedLayout, policy.savedLayoutVisible);
   applyVisibility(interpolatedPreview, policy.interpolatedPreviewVisible);
   applyVisibility(nearestKeyframe, policy.nearestKeyframeVisible);
+  applyVisibility(scene.getObjectByName(CIRCULATION_OVERLAY_GROUP), false);
 
   let restored = false;
   return {
