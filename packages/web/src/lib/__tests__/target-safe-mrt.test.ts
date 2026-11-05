@@ -1,5 +1,5 @@
 import { readdirSync, readFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { join, relative, resolve } from "node:path";
 import { RenderTarget } from "three";
 import { mrt, output, vec4 } from "three/tsl";
 import { NodeBuilder, WebGPURenderer, type MRTNode, type Renderer } from "three/webgpu";
@@ -9,10 +9,11 @@ import { lightOnlyOutput } from "../../components/grand-hall/hall-street-light.j
 import { TargetSafeMRTNode, outputsForTarget, targetSafeMrt } from "../target-safe-mrt.js";
 
 // three r186 writes only the outputs a draw's target names (MRTNode.setup). A
-// snapshot's target (one texture, no name) and PMREM's cube ("PMREM.cubeUv")
-// name none of a material's own outputs, so three wrote `struct OutputType { }`,
-// WebGPU refused the pipeline, and the plan sent with a layout came back blank
-// with the sky on (4 Nov 2026, D:/claude/webgpu-target-safe-mrt/snap).
+// snapshot's target (one texture, no name) names none of a material's own
+// outputs, so three wrote `struct OutputType { }`, WebGPU refused the pipeline,
+// and the plan sent with a layout came back blank with the sky on (4 Nov 2026,
+// D:/claude/webgpu-target-safe-mrt/snap). PMREM's cube ("PMREM.cubeUv") is such
+// a target too.
 
 /** r186's own node builder, drawing into whatever `renderer` targets. */
 class DrawBuilder extends NodeBuilder {
@@ -34,7 +35,9 @@ function membersDrawnInto(outputs: MRTNode, target: RenderTarget): number {
   const renderer = new WebGPURenderer();
   renderer.setRenderTarget(target);
   outputs.setup(new DrawBuilder(renderer));
-  return outputs.members.filter((member) => member !== undefined).length;
+  // No hole before the last attachment written: three's struct would read an undefined member.
+  expect(Object.keys(outputs.members)).toHaveLength(outputs.members.length);
+  return outputs.members.length;
 }
 
 const paneOutputs = () => ({ output, normal: vec4(0, 0, 0, 0), velocity: vec4(0, 0, 0, 0) });
@@ -46,7 +49,7 @@ describe("a material's own pass outputs", () => {
     expect(membersDrawnInto(mrt(paneOutputs()), targetNamed("PMREM.cubeUv"))).toBe(0);
   });
 
-  it("write their colour into a snapshot's target or the reflection cube", () => {
+  it("write their colour into a snapshot's target, or any such as PMREM's cube", () => {
     expect(membersDrawnInto(targetSafeMrt(paneOutputs()), targetNamed(""))).toBe(1);
     expect(membersDrawnInto(targetSafeMrt(paneOutputs()), targetNamed("PMREM.cubeUv"))).toBe(1);
   });
@@ -88,21 +91,27 @@ describe("a material's own pass outputs", () => {
   });
 
   it("are made target-safe wherever a material sets its own", () => {
-    // Every `material.mrtNode = f(...)` in the app calls a maker of target-safe outputs.
+    // Every `material.mrtNode = ...` in the app is a call to a maker of target-safe outputs, and only
+    // the scene pass, whose outputs name its own targets, makes plain ones (`mrt` or `new MRTNode`).
     const root = resolve(import.meta.dirname, "../..");
-    const makers = new Set<string>();
+    const assigned = new Set<string>();
+    const plain: string[] = [];
     const walk = (dir: string): void => {
       for (const entry of readdirSync(dir, { withFileTypes: true })) {
         const path = join(dir, entry.name);
         if (entry.isDirectory()) {
           if (entry.name !== "__tests__") walk(path);
         } else if (/\.tsx?$/.test(entry.name)) {
-          for (const match of readFileSync(path, "utf8").matchAll(/\.mrtNode\s*=\s*([A-Za-z_$][\w$]*)\s*\(/g)) makers.add(match[1]!);
+          const source = readFileSync(path, "utf8");
+          for (const match of source.matchAll(/\.mrtNode\s*=(?!=)\s*([^;]*)/g)) assigned.add(match[1]!.trim().replace(/\(.*$/s, "("));
+          const tsl = [...source.matchAll(/import\s*\{([^}]*)\}\s*from\s*"three\/tsl"/g)].some((match) => /\bmrt\b/.test(match[1]!));
+          if (tsl || /\bnew\s+MRTNode\s*\(/.test(source)) plain.push(relative(root, path).replaceAll("\\", "/"));
         }
       }
     };
     walk(root);
-    expect(makers.size).toBeGreaterThan(0);
-    expect([...makers].filter((maker) => !["targetSafeMrt", "floorLightOutput", "lightOnlyOutput"].includes(maker))).toEqual([]);
+    expect(assigned.size).toBeGreaterThan(0);
+    expect([...assigned].filter((maker) => !["targetSafeMrt(", "floorLightOutput(", "lightOnlyOutput("].includes(maker))).toEqual([]);
+    expect(plain).toEqual(["components/scene/PlannerRenderPipeline.tsx"]);
   });
 });

@@ -1,19 +1,20 @@
 // ---------------------------------------------------------------------------
 // A material's own pass outputs, drawn into any target
 //
-// three r186 writes only the outputs a draw's target names (MRTNode.setup),
-// and a material's own outputs (material.mrtNode) stand alone wherever the
-// renderer has none set. The scene pass names its targets (output, normal,
-// velocity: components/scene/PlannerRenderPipeline.tsx) and merges a
-// material's outputs into its own there, as before. A snapshot draws into a
-// target of its own whose one texture has no name (lib/ortho-capture.ts, the
-// plan sent with a layout; lib/native-current-view-capture.ts), and the
-// hall's reflection capture into PMREM's cube ("PMREM.cubeUv"): those
-// outputs kept none of their members, three wrote `struct OutputType { }`,
-// and WebGPU refused the pipeline, so with the sky on the plan came back
-// blank (4 Nov 2026). Drawn into a target that names none of them, these
-// outputs write their colour into its first texture, as a material without
-// outputs of its own would.
+// three r186 writes only the outputs a draw's target names (MRTNode.setup).
+// The scene pass names its own (output, plus normal and velocity as the
+// profile asks: components/scene/PlannerRenderPipeline.tsx) and, where it has
+// an MRT, merges a material's outputs into it, as before. Drawn where the
+// renderer has no MRT, a material's outputs (material.mrtNode) stand alone
+// (NodeMaterial.setup): the plan snapshot sent with a layout
+// (lib/ortho-capture.ts) and the current-view snapshot
+// (lib/native-current-view-capture.ts) draw into a target whose one texture
+// has no name, so the panes, the street's light and the floor marks kept
+// none of their members, three wrote `struct OutputType { }`, and WebGPU
+// refused the pipeline: with the sky on, the plan came back blank (4 Nov
+// 2026). Drawn into a target that names none of them, these outputs write
+// their colour into its first texture, as a material without outputs of its
+// own would. (The snapshots also draw with the renderer's MRT cleared.)
 // ---------------------------------------------------------------------------
 
 import { MRTNode, type Node, type NodeBuilder } from "three/webgpu";

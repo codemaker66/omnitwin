@@ -895,8 +895,7 @@ export function createFittingMaterial(sun: HallSun): MeshBasicNodeMaterial {
  * writes a normal facing the camera with no occlusion weight: the surface
  * behind it keeps its colour, without occlusion there and without noise.
  * `output` keeps the colour where the pass has no other targets, and in a
- * snapshot's target or the reflection cube (lib/target-safe-mrt.ts); velocity
- * is the light's own. Both discard the pixels they add nothing to, so they
+ * snapshot's target (lib/target-safe-mrt.ts); velocity is the light's own. Both discard the pixels they add nothing to, so they
  * overwrite the other targets only where they shine.
  */
 export function lightOnlyOutput() {

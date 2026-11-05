@@ -113,8 +113,8 @@ export function subscribeNativePrecompile(renderer: object, listener: () => void
 }
 
 /**
- * Resolves once `renderer` has no job waiting or running, when its held frame
- * loop draws again. A frame drawn by hand meanwhile (R3F's `advance` ignores
+ * Resolves once `renderer` has no job waiting or running: its target and MRT
+ * are its own again. A frame drawn by hand meanwhile (R3F's `advance` ignores
  * the hold) draws with the job's target and MRT still set: a draw into another
  * target builds its materials for the job's outputs, which that target does
  * not name, and WebGPU refuses them.

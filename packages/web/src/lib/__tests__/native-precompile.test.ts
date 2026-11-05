@@ -57,15 +57,21 @@ describe("the native precompile queue", () => {
     const renderer = {};
     await nativePrecompileSettled(renderer);
     const first = deferred();
+    const second = deferred();
     void requestNativePrecompile(renderer, () => first.promise);
     let settled = false;
     const settling = nativePrecompileSettled(renderer).then(() => { settled = true; });
     const running = runNativePrecompiles(renderer);
     // A job queued while one runs keeps the hold: settling waits for both.
-    void requestNativePrecompile(renderer, () => Promise.resolve());
-    for (let tick = 0; tick < 5; tick++) await Promise.resolve();
+    void requestNativePrecompile(renderer, () => second.promise);
+    const ticks = async (): Promise<void> => { for (let tick = 0; tick < 5; tick++) await Promise.resolve(); };
+    await ticks();
     expect(settled).toBe(false);
     first.resolve();
+    await ticks();
+    expect(nativePrecompilePending(renderer)).toBe(true);
+    expect(settled).toBe(false);
+    second.resolve();
     await running;
     await settling;
     expect(settled).toBe(true);

@@ -1,4 +1,5 @@
 import { Color, Group, RenderTarget, Scene } from "three";
+import { mrt, output as passOutput, vec4 } from "three/tsl";
 import { WebGPURenderer } from "three/webgpu";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { captureOrthographic, copyNativeCapturePixels } from "../ortho-capture.js";
@@ -79,6 +80,23 @@ describe("native orthographic capture", () => {
     expect(fixture.renderer.xr.enabled).toBe(true);
     expect(fixture.renderer.setRenderTarget).toHaveBeenLastCalledWith(fixture.previousTarget, 2, 1);
     expect(dispose).toHaveBeenCalledOnce();
+    fixture.unregister();
+  });
+
+  it.each([false, true])("draws without the outputs a precompile job holds, and hands them back (draw fails: %s)", async (fails) => {
+    // A job holds the scene pass's outputs while it compiles (lib/native-precompile.ts); the plan's
+    // target names none of them, and drawn with them every material wrote nothing (4 Nov 2026).
+    const fixture = captureFixture();
+    const held = mrt({ output: passOutput, normal: vec4(0, 0, 0, 1) });
+    fixture.renderer.setMRT(held);
+    fixture.renderer.render.mockImplementation(() => {
+      expect(fixture.renderer.getMRT()).toBeNull();
+      if (fails) throw new Error("GPU draw failed");
+    });
+    const capture = await captureOrthographic(fixture.scene, 20, 30, { width: 2, height: 2 });
+    expect(capture === null).toBe(fails);
+    expect(fixture.renderer.render).toHaveBeenCalledOnce();
+    expect(fixture.renderer.getMRT()).toBe(held);
     fixture.unregister();
   });
 
