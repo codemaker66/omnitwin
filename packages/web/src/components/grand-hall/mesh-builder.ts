@@ -336,41 +336,59 @@ export class MeshBuilder {
   /**
    * A surface of revolution about the Y axis through `centre`. `profile` is a
    * list of (radius, height) pairs, faced outward as it climbs: a profile
-   * drawn from the top down is turned round first. Smooth normals.
+   * drawn from the top down is turned round first. Smooth normals, except
+   * where the profile turns by more than `crease` radians: there the faces
+   * either side keep their own (a drum's rim, a shaft's foot), from two rings
+   * at the one point.
    */
-  lathe(centre: V3, profile: readonly V2[], segments: number, scaleX = 1, scaleZ = 1, phase = 0): void {
+  lathe(centre: V3, profile: readonly V2[], segments: number, scaleX = 1, scaleZ = 1, phase = 0, crease = Math.PI): void {
     const first = profile[0];
     const last = profile[profile.length - 1];
     const points = first !== undefined && last !== undefined && last[1] < first[1] ? [...profile].reverse() : profile;
-    const rings: number[][] = [];
+    // Each point's ring for the band under it and for the band over it: one ring, or two at a crease.
+    const under: number[][] = [];
+    const over: number[][] = [];
     // A ring on the axis is a pole: the half of each quad that meets it has no area.
     const poles: boolean[] = [];
-    for (let j = 0; j < points.length; j++) {
-      const point = points[j];
-      if (point === undefined) continue;
-      poles.push(point[0] === 0);
-      const prev = points[Math.max(0, j - 1)] ?? point;
-      const next = points[Math.min(points.length - 1, j + 1)] ?? point;
+    const ring = (point: V2, j: number, dr: number, dy: number): number[] => {
       // Profile tangent → outward normal in the (r, y) plane.
-      const dr = next[0] - prev[0];
-      const dy = next[1] - prev[1];
       const tangentLength = Math.hypot(dr, dy) || 1;
       const nr = dy / tangentLength;
       const ny = -dr / tangentLength;
-      const ring: number[] = [];
+      const vertices: number[] = [];
       for (let i = 0; i <= segments; i++) {
         const angle = phase + (i / segments) * Math.PI * 2;
         const cos = Math.cos(angle);
         const sin = Math.sin(angle);
         const position: V3 = [centre[0] + cos * point[0] * scaleX, centre[1] + point[1], centre[2] + sin * point[0] * scaleZ];
         const normal = normalize([cos * nr / Math.max(scaleX, 1e-6), ny, sin * nr / Math.max(scaleZ, 1e-6)]);
-        ring.push(this.vertex(position, normal, [i / segments, j / Math.max(1, points.length - 1)]));
+        vertices.push(this.vertex(position, normal, [i / segments, j / Math.max(1, points.length - 1)]));
       }
-      rings.push(ring);
+      return vertices;
+    };
+    for (let j = 0; j < points.length; j++) {
+      const point = points[j];
+      if (point === undefined) continue;
+      poles.push(point[0] === 0);
+      const prev = points[Math.max(0, j - 1)] ?? point;
+      const next = points[Math.min(points.length - 1, j + 1)] ?? point;
+      const inR = point[0] - prev[0];
+      const inY = point[1] - prev[1];
+      const outR = next[0] - point[0];
+      const outY = next[1] - point[1];
+      const turn = Math.abs(Math.atan2(inR * outY - inY * outR, inR * outR + inY * outY));
+      if (j > 0 && j < points.length - 1 && turn > crease) {
+        under.push(ring(point, j, inR, inY));
+        over.push(ring(point, j, outR, outY));
+      } else {
+        const shared = ring(point, j, next[0] - prev[0], next[1] - prev[1]);
+        under.push(shared);
+        over.push(shared);
+      }
     }
-    for (let j = 0; j < rings.length - 1; j++) {
-      const lower = rings[j];
-      const upper = rings[j + 1];
+    for (let j = 0; j < over.length - 1; j++) {
+      const lower = over[j];
+      const upper = under[j + 1];
       if (lower === undefined || upper === undefined) continue;
       for (let i = 0; i < segments; i++) {
         const a = lower[i];
