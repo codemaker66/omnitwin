@@ -165,16 +165,21 @@ interface ChromePresence {
   - clearing moves it to the crest (a phone's seal);
   - bringing the tools back while the left unit is folded moves it to the left spine (a phone's top bar, its
     first button that takes focus);
-  - after a pointer's change, a browser that leaves focus on what has then faded away has it moved too;
+  - once the chrome's fade and any closing panel's exit have run (320 ms; keyboard changes too), focus left on
+    what has gone, or fallen to the page from it (a panel unmounting, a browser's focus fixup), is moved too
+    (5 Nov review: the catalogue's 300 ms exit outlived a keyboard clear's one look);
   - a phase preview ending inside a folded unit (its timeline or the right-hand column) moves it to that unit's
     spine;
+  - Esc in a panel whose opener has folded away with its unit gives focus to that unit's spine, or else the crest
+    (`setFocusFallback` in `planner-keys.ts`; 5 Nov review);
   - focus the chrome moves to the crest arrives without the crest's name, so the next Esc restores at once.
 - **A fold closes nothing.** A menu inside the unit goes and comes back with it. The catalogue beside the left dock
   and a note in the room are not the unit's to close (review round: folding Details used to close the catalogue
   and drop the tool to Select). Only clear-all closes popovers and panels first.
   - Esc never closes something nobody can see. An Escape layer may name its element (`planner-keys.ts`), and
     while that is hidden the ladder passes it by. The hour popover in the bottom bar does, so after a keyboard
-    fold it neither takes the next Esc nor goes; it comes back with the bar.
+    fold it neither takes the next Esc nor goes; it comes back with the bar. The When ribbon's held hour and
+    phase handle do too, so after a clear-all they leave Esc to what can be seen (5 Nov review).
 - **What a spine says.** Its name is short ("Show On the floor"). The tool bar's spine also names the tool in hand,
   in its name and on its face ("Show the tool bar · Measure"). What else a spine shows (the count, save trouble,
   the selected piece) is its description, so a screen reader hears it too.
@@ -242,7 +247,9 @@ interface ChromePresence {
   - receipts, notices, errors and `Activity` states;
   - the Assembly's Skip while it plays;
   - the phase-preview lock;
-  - in-scene overlays: nameplates, guides, live co-editing presence and the door's floor glow.
+  - in-scene overlays: nameplates, guides, live co-editing presence and the door's floor glow;
+  - the door notice's voice: its card folds away with the chrome, and its status region keeps saying which table
+    is in front of which door (5 Nov review).
 - **Esc** restores the chrome as the last rung of the ladder.
 - **Restore** returns exactly the per-unit folds that were in place. Menus closed by clearing stay closed.
 - **Teaching.** The first three times on a device, a one-line note by the seal reads "The tools are hidden · press \
