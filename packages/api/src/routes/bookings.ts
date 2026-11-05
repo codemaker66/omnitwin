@@ -66,8 +66,8 @@ const ENQUIRY_BOOKINGS_LIMIT = 100;
 const MAX_BOOKING_TITLE_LENGTH = 200;
 
 /** Who a hold made from an enquiry is titled after: the enquiry's name, or
- *  its email when the name is blank. Public enquiries stored before blank
- *  names were refused at the form (GuestEnquirySchema) can hold "" here, and
+ *  its email when the name is blank. Public enquiries stored before
+ *  GuestEnquirySchema treated a blank name as no name can hold "" here, and
  *  an empty title fails every Diary read for the venue. */
 export function enquiryTitleName(enquiry: { readonly name: string; readonly email: string }): string {
   const name = enquiry.name.trim();
