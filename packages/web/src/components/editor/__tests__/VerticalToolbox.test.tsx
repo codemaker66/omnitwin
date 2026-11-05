@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as configurationApi from "../../../api/configurations.js";
@@ -11,6 +11,7 @@ import { useToolStore } from "../../../stores/tool-store.js";
 import { useMarkupStore } from "../../../stores/markup-store.js";
 import { usePlannerToolKeys } from "../../../lib/planner-keymap.js";
 import { setPlannerFeaturesForTesting } from "../../../lib/planner-features.js";
+import { registerEscapeLayer } from "../../../lib/planner-keys.js";
 
 /** The editor page's tool keys (A, D, M, V and the tools' Escapes), which reach the toolbox through the tool store. */
 function ToolKeys(): null {
@@ -284,14 +285,20 @@ describe("VerticalToolbox Delete and the V shortcut", () => {
   });
 });
 
+/** The words a screen reader gives a button as its description. */
+function descriptionOf(button: HTMLElement): string | null | undefined {
+  return document.getElementById(button.getAttribute("aria-describedby") ?? "")?.textContent;
+}
+
 describe("VerticalToolbox walls hint", () => {
   afterEach(() => { setPlannerFeaturesForTesting(null); });
 
   async function hoverWalls(hint: string): Promise<void> {
     renderToolbox();
     const walls = screen.getByRole("button", { name: "Show All Walls" });
+    expect(descriptionOf(walls)).toBe(hint);
     fireEvent.mouseEnter(walls.parentElement ?? walls);
-    expect(await screen.findByText(hint)).toBeTruthy();
+    expect((await screen.findByTestId("toolbox-tooltip")).textContent).toContain(hint);
   }
 
   it("says a click on a wall toggles it while any click hides one", async () => {
@@ -308,5 +315,49 @@ describe("VerticalToolbox walls hint", () => {
     setPlannerFeaturesForTesting({ wallClickAlt: true });
     vi.spyOn(navigator, "userAgent", "get").mockReturnValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 14_6) AppleWebKit/605.1.15 (KHTML, like Gecko)");
     await hoverWalls("Show all walls. Option-click a wall to hide it.");
+  });
+});
+
+describe("VerticalToolbox tool words, for the keyboard and a screen reader", () => {
+  const WALLS_HINT = "Show all walls. Click a wall to toggle it.";
+
+  beforeEach(() => { setPlannerFeaturesForTesting({ wallClickAlt: false }); });
+  afterEach(() => { setPlannerFeaturesForTesting(null); });
+
+  it("describes each tool by its card's words, with its shortcut when the card shows one", () => {
+    renderToolbox();
+    expect(descriptionOf(screen.getByRole("button", { name: "Undo" }))).toBe("Undo the last change. Shortcut: Ctrl+Z.");
+    expect(descriptionOf(screen.getByRole("button", { name: "Show All Walls" }))).toBe(WALLS_HINT);
+  });
+
+  it("shows the card at once when the keyboard brings focus, not for a click's focus, and hides it from a screen reader", () => {
+    renderToolbox();
+    const walls = screen.getByRole("button", { name: "Show All Walls" });
+    // A click's focus is not :focus-visible.
+    const byClick = vi.spyOn(walls, "matches").mockReturnValue(false);
+    act(() => { walls.focus(); });
+    expect(screen.queryByTestId("toolbox-tooltip")).toBeNull();
+    act(() => { walls.blur(); });
+    byClick.mockRestore();
+
+    act(() => { walls.focus(); });
+    const card = screen.getByTestId("toolbox-tooltip");
+    expect(card.textContent).toContain(WALLS_HINT);
+    expect(card.getAttribute("aria-hidden")).toBe("true");
+  });
+
+  it("goes on Escape, and that Escape does nothing else", async () => {
+    const cleared = vi.fn();
+    const release = registerEscapeLayer({ kind: "selection", isOpen: () => true, escape: cleared });
+    try {
+      renderToolbox();
+      act(() => { screen.getByRole("button", { name: "Show All Walls" }).focus(); });
+      expect(screen.getByTestId("toolbox-tooltip")).toBeTruthy();
+      fireEvent.keyDown(document.body, { key: "Escape" });
+      await waitFor(() => { expect(screen.queryByTestId("toolbox-tooltip")).toBeNull(); });
+      expect(cleared).not.toHaveBeenCalled();
+    } finally {
+      release();
+    }
   });
 });

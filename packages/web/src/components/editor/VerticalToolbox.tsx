@@ -53,6 +53,7 @@ import { FloatingWidgetFrame, type FloatingWidgetPlacement } from "../shared/Flo
 import { isLayoutTimelineMutationLocked } from "../../lib/layout-timeline-preview-lock.js";
 import { countLabel } from "../../lib/count-label.js";
 import { plannerFeatureEnabled } from "../../lib/planner-features.js";
+import { focusedByKeyboard } from "../../lib/focused-by-keyboard.js";
 
 const LazyAuthModal = lazy(() =>
   import("./AuthModal.js").then((m) => ({ default: m.AuthModal })),
@@ -884,11 +885,24 @@ function ToolBtn({
   const [exiting, setExiting] = useState(false);
   const enterTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const exitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The card's words, its shortcut with them, are the button's description for
+  // a screen reader, on touch too, where the card never shows.
+  const descriptionId = useId();
+  const spoken = shortcut !== undefined && showShortcut ? `${description} Shortcut: ${shortcut}.` : description;
 
-  const onEnter = (): void => {
+  const cancelExit = (): void => {
     if (exitTimer.current !== null) { clearTimeout(exitTimer.current); exitTimer.current = null; }
     setExiting(false);
+  };
+  const onEnter = (): void => {
+    cancelExit();
     enterTimer.current = setTimeout(() => { setShowTooltip(true); }, 200);
+  };
+  const onFocus = (event: React.FocusEvent<HTMLButtonElement>): void => {
+    // Keyboard focus shows the card at once; a click's focus does not.
+    if (!focusedByKeyboard(event.currentTarget)) return;
+    cancelExit();
+    setShowTooltip(true);
   };
   const dismiss = (): void => {
     if (enterTimer.current !== null) { clearTimeout(enterTimer.current); enterTimer.current = null; }
@@ -897,6 +911,9 @@ function ToolBtn({
     exitTimer.current = setTimeout(() => { setShowTooltip(false); setExiting(false); }, 250);
   };
   const onLeave = (): void => { dismiss(); };
+  // The card is the first layer of the planner's one Escape order: Escape takes
+  // it down and does nothing else (WCAG 1.4.13).
+  useEscapeLayer("tooltip", { open: showTooltip && !exiting, onEscape: dismiss });
   const handleClick = (): void => {
     dismiss();
     onClick();
@@ -915,8 +932,11 @@ function ToolBtn({
         type="button"
         aria-label={label}
         aria-pressed={pressed}
+        aria-describedby={descriptionId}
         style={btnStyle(active, disabled, compact)}
         onClick={handleClick}
+        onFocus={tooltipEnabled ? onFocus : undefined}
+        onBlur={tooltipEnabled ? onLeave : undefined}
         disabled={disabled}
       >
         {children}
@@ -948,8 +968,9 @@ function ToolBtn({
           </span>
         )}
       </button>
+      <span id={descriptionId} className="vv-sr-only">{spoken}</span>
       {showTooltip && !disabled && tooltipEnabled && (
-        <div style={{
+        <div data-testid="toolbox-tooltip" aria-hidden="true" style={{
           position: "absolute",
           left: 58,
           top: "50%",
