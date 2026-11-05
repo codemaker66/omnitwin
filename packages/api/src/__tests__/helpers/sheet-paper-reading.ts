@@ -1,4 +1,3 @@
-import { inflateSync } from "node:zlib";
 import {
   describeSheetCopy,
   parseSheetPaperLink,
@@ -9,7 +8,7 @@ import {
   type HallkeeperSheetV2,
   type SheetPaperCheckQuery,
 } from "@omnitwin/types";
-import { pdfPages } from "./pdf-text.js";
+import { pdfPages, pdfStreams } from "./pdf-text.js";
 
 // ---------------------------------------------------------------------------
 // Reading a printed hallkeeper sheet the way the person holding it does:
@@ -40,18 +39,11 @@ const RECT = /^(-?[\d.]+) (-?[\d.]+) (-?[\d.]+) (-?[\d.]+) re$/u;
  * next fill. Rows and columns count from the top-left finder pattern's
  * corner module, which is always dark, and the cell is the smallest step
  * between module columns, so nothing here depends on the renderer's quiet
- * zone or cell size. Null when the PDF draws no code.
+ * zone or cell size. Null when the PDF draws no code; a stream that will not
+ * read throws (pdfStreams), so a damaged file is never mistaken for "no code".
  */
 export function printedQr(pdf: Buffer): string[] | null {
-  const source = pdf.toString("latin1");
-  for (const match of source.matchAll(/<<([\s\S]*?)>>\s*stream\r?\n([\s\S]*?)\r?\nendstream/gu)) {
-    const raw = Buffer.from(match[2] ?? "", "latin1");
-    let content: string;
-    try {
-      content = (/\/FlateDecode/u.test(match[1] ?? "") ? inflateSync(raw) : raw).toString("latin1");
-    } catch {
-      continue;
-    }
+  for (const content of pdfStreams(pdf)) {
     const lines = content.split("\n").map((line) => line.trim());
     for (let i = 0; i < lines.length; i++) {
       const ground = RECT.exec(lines[i] ?? "");
