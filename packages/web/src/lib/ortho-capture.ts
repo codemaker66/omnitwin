@@ -104,6 +104,7 @@ export async function captureOrthographic(
     const previousTarget = renderer.getRenderTarget();
     const previousFace = renderer.getActiveCubeFace();
     const previousMip = renderer.getActiveMipmapLevel();
+    const previousOutputs = renderer.getMRT();
     const previousBackground = scene.background;
     const previousAutoClear = renderer.autoClear;
     const previousXr = renderer.xr.enabled;
@@ -117,9 +118,14 @@ export async function captureOrthographic(
       renderer.autoClear = true;
       renderer.xr.enabled = false;
       renderer.setRenderTarget(renderTarget);
+      // A precompile job may hold the scene pass's outputs on the renderer
+      // (lib/native-precompile.ts); this target names none of them, and drawn
+      // with them every material would write nothing (WebGPU refuses that).
+      renderer.setMRT(null);
       withNativeSplatCapture(scene, camera, () => { renderer.render(scene, camera); });
     } finally {
       renderer.setRenderTarget(previousTarget, previousFace, previousMip);
+      renderer.setMRT(previousOutputs);
       renderer.autoClear = previousAutoClear;
       renderer.xr.enabled = previousXr;
       scene.background = previousBackground;

@@ -17,8 +17,10 @@ import { isLayoutTimelineMutationLocked } from "./layout-timeline-preview-lock.j
 // Escape walks one stack of layers in a fixed order: a dialog that holds the
 // keyboard, then the operation in progress (placing, measuring, drawing, a
 // held hour, a typed value, Present), then the open popover, then the open
-// panel (focus goes back to the key that opened it), then the selection. One
-// press steps back exactly one layer. Esc never leaves Walk or the planner.
+// panel (focus goes back to the key that opened it), then the selection, and
+// last the chrome the person cleared away (T-680). One press steps back
+// exactly one layer, and never one nobody can see: a layer inside chrome
+// folded away is passed by. Esc never leaves Walk or the planner.
 //
 // The listener sits in the bubble phase and leaves any press a focused widget
 // has already claimed (a slider's arrows, a field's own Enter), and it only
@@ -31,9 +33,9 @@ import { isLayoutTimelineMutationLocked } from "./layout-timeline-preview-lock.j
  * goes first and alone (WCAG 1.4.13: it can be dismissed without moving the
  * pointer or focus, and that press does nothing else).
  */
-export type EscapeLayerKind = "tooltip" | "modal" | "operation" | "popover" | "panel" | "selection";
+export type EscapeLayerKind = "tooltip" | "modal" | "operation" | "popover" | "panel" | "selection" | "chrome";
 
-export const ESCAPE_ORDER: readonly EscapeLayerKind[] = ["tooltip", "modal", "operation", "popover", "panel", "selection"];
+export const ESCAPE_ORDER: readonly EscapeLayerKind[] = ["tooltip", "modal", "operation", "popover", "panel", "selection", "chrome"];
 
 export interface EscapeLayer {
   readonly kind: EscapeLayerKind;
@@ -43,6 +45,11 @@ export interface EscapeLayer {
   readonly escape: () => void;
   /** The key that opened it, which takes focus back once it has closed. */
   readonly returnFocusTo?: () => HTMLElement | null;
+  /**
+   * Where it is on screen. While that is hidden (inside chrome the person has
+   * folded away, T-680) Esc passes it by, and it comes back with its unit.
+   */
+  readonly element?: () => Element | null;
 }
 
 /**
@@ -203,9 +210,15 @@ function byPrecedence<T>(rank: (value: T) => number): (a: Registered<T>, b: Regi
   return (a, b) => rank(a.value) - rank(b.value) || b.seq - a.seq;
 }
 
+/** Whether a layer can be seen: Esc never closes something nobody can see. */
+function layerOnScreen(layer: EscapeLayer): boolean {
+  const element = layer.element?.() ?? null;
+  return element === null || typeof getComputedStyle === "undefined" || getComputedStyle(element).visibility !== "hidden";
+}
+
 function openLayers(): Registered<EscapeLayer>[] {
   return [...layers]
-    .filter((entry) => entry.value.isOpen())
+    .filter((entry) => entry.value.isOpen() && layerOnScreen(entry.value))
     .sort(byPrecedence((layer) => ESCAPE_ORDER.indexOf(layer.kind)));
 }
 
@@ -226,7 +239,34 @@ function stepBack(event: KeyboardEvent): void {
   event.preventDefault();
   top.value.escape();
   const trigger = top.value.returnFocusTo?.() ?? null;
-  if (trigger?.isConnected === true) trigger.focus({ preventScroll: true });
+  if (trigger?.isConnected !== true) return;
+  // A key folded away with its unit cannot take focus back (T-680, 5 Nov
+  // review); the fallback gives it somewhere the person can see.
+  if (typeof getComputedStyle !== "undefined" && getComputedStyle(trigger).visibility === "hidden") focusFallback?.(trigger);
+  else trigger.focus({ preventScroll: true });
+}
+
+let focusFallback: ((trigger: HTMLElement) => void) | null = null;
+
+/**
+ * Where focus goes when a layer closes and the key that opened it is hidden.
+ * The planner's chrome sets it while the cockpit is mounted (its folded
+ * unit's spine, or the crest); null takes it away.
+ */
+export function setFocusFallback(fallback: ((trigger: HTMLElement) => void) | null): void {
+  focusFallback = fallback;
+}
+
+/**
+ * Steps back every open layer of these kinds, once each, in the ladder's order,
+ * and says how many it closed. Clearing the chrome away calls it for popovers
+ * and panels, so nothing stays open where the person can no longer see it. It
+ * gives no focus back: the person is acting somewhere else.
+ */
+export function closeOpenLayers(kinds: readonly EscapeLayerKind[]): number {
+  const closing = openLayers().filter((entry) => kinds.includes(entry.value.kind));
+  for (const entry of closing) entry.value.escape();
+  return closing.length;
 }
 
 function runShortcut(event: KeyboardEvent): void {
@@ -335,6 +375,8 @@ export interface EscapeLayerOptions {
   readonly onEscape: () => void;
   /** The key that opened it. */
   readonly returnFocusTo?: RefObject<HTMLElement | null> | (() => HTMLElement | null);
+  /** Where it is on screen; while that is hidden, Esc passes it by. */
+  readonly element?: RefObject<Element | null> | (() => Element | null);
 }
 
 /** Holds a layer in the Escape stack while the component is mounted. */
@@ -355,6 +397,11 @@ export function useEscapeLayer(kind: EscapeLayerKind, options: EscapeLayerOption
       escape: () => { latest.current.onEscape(); },
       returnFocusTo: () => {
         const target = latest.current.returnFocusTo;
+        if (target === undefined) return null;
+        return typeof target === "function" ? target() : target.current;
+      },
+      element: () => {
+        const target = latest.current.element;
         if (target === undefined) return null;
         return typeof target === "function" ? target() : target.current;
       },
