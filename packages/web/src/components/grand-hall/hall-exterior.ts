@@ -899,16 +899,18 @@ export function* hallFrontSteps(detail: HallFrontDetail = FRONT_DETAIL_FULL): St
   }
   yield;
   front.as("stone");
-  front.box(-t.entablatureHalfWidth, t.entablatureHalfWidth, t.entablatureBottom, t.entablatureFriezeTop, 0, t.entablatureProud);
-  front.run(-t.entablatureHalfWidth - 0.05, t.entablatureHalfWidth + 0.05, corniceProfile(t.entablatureProud, t.entablatureFriezeTop, t.entablatureTop, t.pedimentCorniceProud - t.entablatureProud, 0));
+  // The entablature and pediment are a skin on the window wall's body, as every bay is (wallBack): their
+  // back on the wall's own plane fought its outer face where a cut shows the section.
+  front.box(-t.entablatureHalfWidth, t.entablatureHalfWidth, t.entablatureBottom, t.entablatureFriezeTop, SKIN_GAP, t.entablatureProud);
+  front.run(-t.entablatureHalfWidth - 0.05, t.entablatureHalfWidth + 0.05, corniceProfile(t.entablatureProud, t.entablatureFriezeTop, t.entablatureTop, t.pedimentCorniceProud - t.entablatureProud, SKIN_GAP));
   // The frieze's paterae over the outer columns (P).
   for (const u of [-t.columnU[3], t.columnU[3]]) front.disc(u, 10.502, t.entablatureProud, t.entablatureProud + 0.03, 0.18, 12);
   const ph = t.pedimentHalfWidth;
-  front.slab([[-ph + 0.3, t.entablatureTop], [ph - 0.3, t.entablatureTop], [0, t.pedimentApex - t.rakingCorniceDepth]], [], 0, t.entablatureProud - 0.04);
+  front.slab([[-ph + 0.3, t.entablatureTop], [ph - 0.3, t.entablatureTop], [0, t.pedimentApex - t.rakingCorniceDepth]], [], SKIN_GAP, t.entablatureProud - 0.04);
   front.slab(
     [[-ph, t.entablatureTop], [ph, t.entablatureTop], [0, t.pedimentApex]],
     [[[-ph + 0.42, t.entablatureTop + 0.001], [ph - 0.42, t.entablatureTop + 0.001], [0, t.pedimentApex - t.rakingCorniceDepth]]],
-    0, t.pedimentCorniceProud,
+    SKIN_GAP, t.pedimentCorniceProud,
   );
   front.box(-t.atticHalfWidth, t.atticHalfWidth, t.atticBottom, t.atticCorniceBottom, -0.2, 0.02);
   front.box(-t.atticHalfWidth - 0.04, t.atticHalfWidth + 0.04, t.atticBottom, t.atticBaseTop, -0.2, 0.08);
