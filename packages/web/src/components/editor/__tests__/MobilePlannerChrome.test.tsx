@@ -149,7 +149,9 @@ describe("mobile planner chrome", () => {
     fireEvent.change(note, { target: { value: "Keep the table draft" } });
     rerender(<Fixture view="2d" />);
     expect(container.querySelector("textarea")?.value).toBe("Keep the table draft");
-    act(() => { useCockpitStore.getState().setMode("flow"); });
+    // Guests, which every viewer is offered, so the lens really changes before the note is checked.
+    act(() => { useCockpitStore.getState().setMode("guests"); });
+    expect(useCockpitStore.getState().activeMode).toBe("guests");
     rerender(<Fixture />);
     expect(container.querySelector("textarea")?.value).toBe("Keep the table draft");
     act(() => { useLayoutTimelinePreviewStore.getState().showPending("Reading phase"); });
