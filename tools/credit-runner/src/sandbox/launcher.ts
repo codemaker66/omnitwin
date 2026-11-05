@@ -5,7 +5,7 @@ import type { SandboxApi } from "./api.js";
 import { sandboxSystemPrompt } from "./brief.js";
 import { appendCreditLine, checkSpend, readCreditLedger } from "./credit-ledger.js";
 import { reviewRun, type Review } from "./review.js";
-import { listCostUsd, runSession, type SessionRunResult } from "./session.js";
+import { listCostUsd, recollectSession, runSession, type SessionRunResult } from "./session.js";
 import { AGENT_MODEL, ensureSandbox } from "./setup.js";
 
 export interface LauncherConfig {
@@ -152,9 +152,38 @@ export async function runSandboxJob(options: JobOptions): Promise<JobRecord> {
     batchId: result.sessionId,
   });
 
+  return writeRecord(task, runDir, branch, options.baseSha, result, costUsd, costKnown);
+}
+
+async function writeRecord(
+  task: Task,
+  runDir: string,
+  branch: string,
+  baseSha: string,
+  result: SessionRunResult,
+  costUsd: number,
+  costKnown: boolean,
+): Promise<Extract<JobRecord, { kind: "ran" }>> {
   const review = await reviewRun(result);
-  const record = { kind: "ran", taskId: task.id, runDir, branch, baseSha: options.baseSha, costUsd, costKnown, result, review } as const;
+  const record = { kind: "ran", taskId: task.id, runDir, branch, baseSha, costUsd, costKnown, result, review } as const;
   await writeFile(path.join(runDir, "result.json"), `${JSON.stringify(record, null, 2)}\n`, "utf8");
   await writeFile(path.join(runDir, "review.md"), reviewMarkdown(task, record), "utf8");
   return record;
+}
+
+/**
+ * Rebuilds the record and review of a session that already ran, from its
+ * history and outputs. It starts nothing and writes no ledger line: the
+ * session was charged when it ran.
+ */
+export async function collectSandboxJob(options: {
+  readonly api: SandboxApi;
+  readonly task: Task;
+  readonly sessionId: string;
+  readonly runDir: string;
+  readonly baseSha: string;
+  readonly log?: (line: string) => void;
+}): Promise<Extract<JobRecord, { kind: "ran" }>> {
+  const result = await recollectSession(options.api, options.sessionId, options.runDir, options.log);
+  return writeRecord(options.task, options.runDir, `credit/${options.task.id}`, options.baseSha, result, result.listCostUsd ?? 0, result.listCostUsd !== null);
 }

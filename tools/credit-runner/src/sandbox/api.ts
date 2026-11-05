@@ -46,7 +46,22 @@ export interface SandboxApi {
   listEvents(sessionId: string): AsyncIterable<SessionEvent>;
   sendEvents(sessionId: string, events: BetaManagedAgentsEventParams[]): Promise<void>;
   listOutputFiles(sessionId: string): Promise<OutputFile[]>;
-  downloadFile(fileId: string): Promise<Buffer>;
+  /** Null for a file the API will not serve, such as an input mounted into the session. */
+  downloadFile(fileId: string): Promise<Buffer | null>;
+}
+
+/**
+ * The session's file list also holds its own copies of the uploaded inputs,
+ * which the API refuses with `file_not_downloadable` (seen on the A4 trial).
+ */
+function isNotDownloadable(error: unknown): boolean {
+  if (!(error instanceof Anthropic.BadRequestError)) return false;
+  const body: unknown = error.error;
+  if (typeof body !== "object" || body === null || !("error" in body)) return false;
+  const inner: unknown = body.error;
+  if (typeof inner !== "object" || inner === null || !("details" in inner)) return false;
+  const details: unknown = inner.details;
+  return typeof details === "object" && details !== null && "error_code" in details && details.error_code === "file_not_downloadable";
 }
 
 /**
@@ -90,8 +105,13 @@ export function sdkSandboxApi(apiKey: string, baseURL?: string): SandboxApi {
       return files;
     },
     async downloadFile(fileId) {
-      const response = await client.files.download(fileId);
-      return Buffer.from(await response.arrayBuffer());
+      try {
+        const response = await client.files.download(fileId);
+        return Buffer.from(await response.arrayBuffer());
+      } catch (error) {
+        if (isNotDownloadable(error)) return null;
+        throw error;
+      }
     },
   };
 }

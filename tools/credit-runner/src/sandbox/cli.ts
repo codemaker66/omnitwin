@@ -11,7 +11,7 @@ import { describeError, parseTask } from "../task.js";
 import { sdkSandboxApi } from "./api.js";
 import { sandboxSystemPrompt } from "./brief.js";
 import { readCreditLedger, spent } from "./credit-ledger.js";
-import { runSandboxJob } from "./launcher.js";
+import { collectSandboxJob, runSandboxJob } from "./launcher.js";
 import { ensureSandbox, readState } from "./setup.js";
 
 const PACKAGE_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -24,6 +24,8 @@ From the repo root:
   pnpm --filter @omnitwin/credit-runner sandbox status
   pnpm --filter @omnitwin/credit-runner sandbox setup
   pnpm --filter @omnitwin/credit-runner sandbox run <spec.md> --job <label> [--budget <usd>] [--timeout <min>] [--night-cap <usd>]
+  pnpm --filter @omnitwin/credit-runner sandbox collect <session-id> <spec.md> --run-dir <dir> --base <sha>
+      rebuilds a finished session's record and review from its history; starts and charges nothing
 
 Options:
   --job <label>      groups runs in the credit ledger, e.g. a4-trial or night-2026-11-06
@@ -73,12 +75,14 @@ async function main(argv: readonly string[]): Promise<number> {
       budget: { type: "string" },
       timeout: { type: "string" },
       "night-cap": { type: "string" },
+      "run-dir": { type: "string" },
+      base: { type: "string" },
       config: { type: "string" },
       help: { type: "boolean", short: "h" },
     },
   });
   const command = positionals[0];
-  if (values.help === true || command === undefined || !["status", "setup", "run"].includes(command)) {
+  if (values.help === true || command === undefined || !["status", "setup", "run", "collect"].includes(command)) {
     out(USAGE);
     return values.help === true ? 0 : 1;
   }
@@ -111,6 +115,20 @@ async function main(argv: readonly string[]): Promise<number> {
     const state = await ensureSandbox(api, stateFile, sandboxSystemPrompt(projectRules), out);
     out(`Ready: environment ${state.environmentId}, agent ${state.agentId} v${String(state.agentVersion)}.`);
     return 0;
+  }
+
+  if (command === "collect") {
+    const sessionId = positionals[1];
+    const spec = positionals[2];
+    const runDir = values["run-dir"];
+    const base = values.base;
+    if (sessionId === undefined || spec === undefined || runDir === undefined || base === undefined || !/^[0-9a-f]{40}$/u.test(base)) {
+      throw new Error("collect needs <session-id> <spec.md> --run-dir <dir> --base <40-hex sha>");
+    }
+    const task = parseTask(await readFile(spec, "utf8"), path.resolve(spec));
+    const record = await collectSandboxJob({ api, task, sessionId, runDir: path.resolve(runDir), baseSha: base, log: out });
+    out(`${record.review.verdict}: $${record.costUsd.toFixed(2)} (already in the ledger); review at ${path.join(record.runDir, "review.md")}`);
+    return record.review.verdict === "ready-for-review" ? 0 : 2;
   }
 
   const specFile = positionals[1];

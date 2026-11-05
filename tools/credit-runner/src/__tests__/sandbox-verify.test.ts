@@ -123,6 +123,16 @@ describe("sandbox verify.mjs", () => {
     expect(git(repo, "status", "--porcelain")).toBe("");
   });
 
+  it("does not count Node's compile cache in the working tree as uncommitted work", async () => {
+    const { repo, base, outputs } = await repoWith(BROKEN);
+    await commit(repo, { "lib.mjs": FIXED, "__tests__/lib.test.mjs": TEST });
+    await mkdir(path.join(repo, "node-compile-cache", "v22.22.0-x64"), { recursive: true });
+    await writeFile(path.join(repo, "node-compile-cache", "v22.22.0-x64", "entry"), "cache\n");
+    const { result } = await verify(repo, base, outputs);
+    expect(result.problems).toEqual([]);
+    expect(result.ok).toBe(true);
+  });
+
   it("names a commit without the task trailer and an uncommitted file", async () => {
     const { repo, base, outputs } = await repoWith(BROKEN);
     await commit(repo, { "lib.mjs": FIXED, "__tests__/lib.test.mjs": TEST }, "no trailer here");

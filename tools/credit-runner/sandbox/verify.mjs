@@ -23,6 +23,9 @@ import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 const TEST_FILE = /(^|\/)(__tests__\/|[^/]+\.(test|spec)\.[cm]?[jt]sx?$)/u;
+// Node in the sandbox image writes its compile cache into the working
+// directory (seen on the A4 trial); it is not the agent's work.
+const NOT_WORK = /^\?\? node-compile-cache\//u;
 const TAIL_CHARS = 3000;
 const OUTPUTS = process.env.VERIFY_OUTPUTS_DIR ?? "/mnt/session/outputs";
 
@@ -38,6 +41,13 @@ function git(...args) {
 
 function gitOk(...args) {
   return spawnSync("git", args, { cwd: repo, encoding: "utf8" }).status === 0;
+}
+
+/** Uncommitted changes and untracked files, apart from the compile cache. */
+function dirtyLines() {
+  return git("status", "--porcelain", "--untracked-files=all")
+    .split("\n")
+    .filter((line) => line !== "" && !NOT_WORK.test(line));
 }
 
 function run(command) {
@@ -65,9 +75,9 @@ const head = git("rev-parse", "HEAD");
 result.head = head;
 if (!gitOk("merge-base", "--is-ancestor", task.baseSha, head)) problems.push(`HEAD ${head} does not descend from the base ${task.baseSha}`);
 
-const dirty = git("status", "--porcelain", "--untracked-files=all");
-result.dirty = dirty === "" ? [] : dirty.split("\n");
-if (dirty !== "") problems.push("the working tree has uncommitted changes");
+const dirty = dirtyLines();
+result.dirty = dirty;
+if (dirty.length > 0) problems.push("the working tree has uncommitted changes");
 
 const log = git("log", "--format=%H%x1f%B%x1e", `${task.baseSha}..${head}`);
 const commits = log
@@ -96,7 +106,7 @@ result.tests = tests.map(({ file }) => file);
 result.sources = sources.map(({ file }) => file);
 if (tests.length === 0) problems.push("no test file changed, so nothing proves the change");
 
-if (dirty === "" && commits.length > 0) {
+if (dirty.length === 0 && commits.length > 0) {
   result.branch = run(task.acceptance);
   if (result.branch.exitCode !== 0) problems.push("the acceptance command fails on the branch");
 
@@ -124,7 +134,7 @@ if (dirty === "" && commits.length > 0) {
     if (result.base.exitCode === 0) problems.push("the acceptance command still passes without the fix, so the tests do not prove it");
   }
   restore(head);
-  if (git("rev-parse", "HEAD") !== head || git("status", "--porcelain", "--untracked-files=all") !== "") {
+  if (git("rev-parse", "HEAD") !== head || dirtyLines().length > 0) {
     problems.push("the repository could not be restored to the branch's commit");
   }
 }

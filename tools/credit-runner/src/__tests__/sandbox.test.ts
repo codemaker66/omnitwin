@@ -17,8 +17,8 @@ import { nightRulesFromAgentsMd } from "../project-rules.js";
 import type { AgentRef, EnvironmentRef, EventStream, OutputFile, SandboxApi, SessionEvent, SessionRef, SessionTotals } from "../sandbox/api.js";
 import { outcomeFor, sandboxSystemPrompt, VERIFY_COMMAND } from "../sandbox/brief.js";
 import { checkSpend, readCreditLedger } from "../sandbox/credit-ledger.js";
-import { runSandboxJob, type LauncherConfig } from "../sandbox/launcher.js";
-import { centsString, safeOutputName } from "../sandbox/session.js";
+import { collectSandboxJob, runSandboxJob, type LauncherConfig } from "../sandbox/launcher.js";
+import { centsString, invokesVerifier, safeOutputName } from "../sandbox/session.js";
 import { ensureSandbox } from "../sandbox/setup.js";
 import { parseTask } from "../task.js";
 
@@ -109,7 +109,9 @@ interface Connection {
   readonly dropAfter?: number;
 }
 
-const DEFAULT_FILES: Record<string, string> = {
+/** null: listed but refused, as the API refuses the session's copies of its inputs. */
+const DEFAULT_FILES: Record<string, string | null> = {
+  "verify.mjs": null,
   "patches/0001-Match-robots.patch": `From ${HEAD} Mon Sep 17 00:00:00 2001\nSubject: fix\n`,
   "diff.patch": "diff --git a/x b/x\n+fixed\n",
   "report.md": "## Summary\nFixed.\n",
@@ -128,7 +130,7 @@ class FakeApi implements SandboxApi {
 
   constructor(
     private readonly connections: readonly Connection[],
-    private readonly files: Record<string, string> = DEFAULT_FILES,
+    private readonly files: Record<string, string | null> = DEFAULT_FILES,
   ) {}
 
   createEnvironment = (): Promise<EnvironmentRef> => {
@@ -198,11 +200,11 @@ class FakeApi implements SandboxApi {
   };
   listOutputFiles = (): Promise<OutputFile[]> => {
     if (this.failOutputs) return Promise.reject(new Error("files API down"));
-    return Promise.resolve(Object.entries(this.files).map(([filename, text], index) => ({ id: `out_${String(index)}`, filename, sizeBytes: text.length })));
+    return Promise.resolve(Object.entries(this.files).map(([filename, text], index) => ({ id: `out_${String(index)}`, filename, sizeBytes: text?.length ?? 0 })));
   };
-  downloadFile = (id: string) => {
-    const index = Number(id.slice("out_".length));
-    return Promise.resolve(Buffer.from(Object.values(this.files)[index] ?? "", "utf8"));
+  downloadFile = (id: string): Promise<Buffer | null> => {
+    const text = Object.values(this.files)[Number(id.slice("out_".length))];
+    return Promise.resolve(text === null || text === undefined ? null : Buffer.from(text, "utf8"));
   };
 }
 
@@ -276,6 +278,33 @@ describe("sandbox launcher", () => {
     });
     expect(Object.keys(line).sort()).toEqual(["batchId", "costUsd", "inputTokens", "job", "lane", "model", "outputTokens", "requests", "ts"]);
     expect(await readFile(path.join(record.runDir, "review.md"), "utf8")).toContain("READY FOR REVIEW");
+    // The session's copy of an uploaded input is listed but cannot be downloaded: skipped, not fatal.
+    expect(record.result.skippedOutputs).toEqual(["verify.mjs"]);
+    expect(record.result.outputs.map((file) => path.basename(file))).toEqual(["patches__0001-Match-robots.patch", "diff.patch", "report.md"]);
+  });
+
+  it("counts the verifier when the agent runs it after a cd and prints its log in the same call, as in the A4 trial", async () => {
+    const config = await workspace();
+    const command = `cd /workspace/omnitwin; ${VERIFY_COMMAND} > /mnt/session/outputs/logs/verify.log 2>&1; echo rc=$?; grep VERIFY_RESULT /mnt/session/outputs/logs/verify.log`;
+    const record = await job(new FakeApi([{ history: [], stream: happyEvents(command) }]), config);
+    if (record.kind !== "ran") throw new Error(record.reason);
+    expect(record.result.verifyRuns).toBe(1);
+    expect(record.result.verify?.ok).toBe(true);
+    expect(invokesVerifier("cat /mnt/session/uploads/verify.mjs")).toBe(false);
+    expect(invokesVerifier("node /mnt/session/uploads/verify.mjs.bak")).toBe(false);
+  });
+
+  it("collects a finished session from its history without starting or charging anything", async () => {
+    const config = await workspace();
+    const events = happyEvents();
+    const api = new FakeApi([{ history: events, stream: [] }]);
+    const runDir = path.join(config.workRoot, "runs", "robots-wildcards", "recollected");
+    const record = await collectSandboxJob({ api, task, sessionId: "sesn_1", runDir, baseSha: BASE });
+    expect(api.sessions).toHaveLength(0);
+    expect(record.review.verdict).toBe("ready-for-review");
+    expect(record.result.requests).toBe(2);
+    expect(record.costUsd).toBeCloseTo(2.87);
+    expect((await readCreditLedger(config.ledgerFile)).lines).toHaveLength(0);
   });
 
   it("ignores a VERIFY_RESULT line printed by any other command", async () => {
