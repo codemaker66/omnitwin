@@ -280,6 +280,19 @@ describe("what a draft may not say (L6)", () => {
     },
   );
 
+  // The live evaluation of 5 November 2026 found drafts inventing an action
+  // ("we've passed your request to the team") or an offer ("you're very welcome
+  // to visit beforehand"), and a grader doubting the proposal the message goes with.
+  it("tells the proposal draft to invent no action or offer, and that the proposal itself exists", () => {
+    const rules = buildAIDraftInstructions({ useCase: "proposal_draft", context: {} });
+    expect(rules).toContain("Do not say that anyone has done anything the context does not record (passed on a request, made a note, prepared or updated something, spoken to someone)");
+    expect(rules).toContain("do not offer anything the context does not offer (a visit, a viewing, a call, a meeting, a tasting)");
+    expect(rules).toContain("beyond saying the events team will confirm the details, promise nothing");
+    expect(rules).toContain("The message goes with the proposal, so you may refer to the proposal itself.");
+    // An internal draft is not a message to a client, and is not told so.
+    expect(buildAIDraftInstructions({ useCase: "enquiry_summary", context: {} })).not.toContain("The message goes with the proposal");
+  });
+
   it("takes out each sentence that states one, says which kinds, and keeps the rest", async () => {
     const draft = await generateAIDraft(answering([
       "Dear Elaine,",

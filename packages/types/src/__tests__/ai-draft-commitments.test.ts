@@ -1031,3 +1031,42 @@ describe("taking the claims out of a draft", () => {
     expect(performance.now() - started).toBeLessThan(1_500);
   });
 });
+
+// The live A3 evaluation (5 November 2026) found the filter let a capacity
+// said with no number through: "There is plenty of room in the Saloon for your
+// dinner." These are that sentence and its near forms, the vague availability
+// forms the same review asked about (already found, kept so they stay found),
+// and the deferrals real drafts wrote around them, which must stay.
+describe("vague capacity and availability, said with no number (evaluation, 5 November 2026)", () => {
+  it.each([
+    ["capacity", "There is plenty of room in the Saloon for your dinner."],
+    ["capacity", "There's plenty of room in the Saloon."],
+    ["capacity", "The Saloon has plenty of space for everyone."],
+    ["capacity", "The room has lots of space for your guests."],
+    ["capacity", "There's ample room for dancing."],
+    ["capacity", "We can fit everyone in the Grand Hall."],
+    ["capacity", "We could easily fit everyone."],
+    ["capacity", "The Grand Hall will fit everybody."],
+    ["capacity", "We'll be able to accommodate everyone."],
+    ["capacity", "The Saloon can comfortably seat all of your guests."],
+    ["availability", "That date looks free."],
+    ["availability", "Your date looks open."],
+    ["availability", "The 17th looks clear in the diary."],
+    ["availability", "It looks like we're free that evening."],
+    ["availability", "The Grand Hall seems to be available on your date."],
+  ] as const)("finds a %s claim in: %s", (kind, sentence) => {
+    expect(findDraftCommitments(sentence).map((claim) => claim.kind)).toContain(kind);
+    expect(withholdDraftCommitments(`Thank you for your enquiry. ${sentence}`).withheld).toContain(kind);
+  });
+
+  it.each([
+    "Our events team will confirm availability for your date and whether the Grand Hall suits your guest numbers.",
+    "Our events team will confirm the details with you, including pricing, when they reply.",
+    "There's plenty of time to decide.",
+    "We can fit everyone's dietary needs into the menu.",
+    "We'll make sure everyone feels welcome on the day.",
+    "Please take all the time you need.",
+  ])("leaves alone: %s", (sentence) => {
+    expect(findDraftCommitments(sentence)).toEqual([]);
+  });
+});
