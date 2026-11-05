@@ -1,6 +1,9 @@
 import type { ReactNode } from "react";
+import { Scene } from "three";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { ApiError } from "../api/client.js";
+import type { Space } from "../api/spaces.js";
 import type { EditorObject } from "../stores/editor-store.js";
 import { CANONICAL_LAYOUT_SNAPSHOT_V0_FIXTURE } from "@omnitwin/types";
 
@@ -13,14 +16,20 @@ const mocks = vi.hoisted(() => ({
   getAvailableTransitions: vi.fn(),
   submitForReview: vi.fn(),
   withdrawReview: vi.fn(),
+  reportFailure: vi.fn(),
 }));
 
 vi.mock("../components/editor/EditorBridge.js", () => ({
   flushAutoSave: mocks.flushAutoSave,
 }));
 
+vi.mock("../observability/failure-reports.js", () => ({
+  reportFailure: mocks.reportFailure,
+}));
+
 vi.mock("../lib/ortho-capture.js", () => ({
   captureOrthographic: mocks.captureOrthographic,
+  PLAN_THUMBNAIL: { width: 800, height: 533 },
 }));
 
 vi.mock("../api/configurations.js", () => ({
@@ -62,6 +71,10 @@ const {
 } = await import("../components/editor/SubmitForReviewPanel.js");
 
 const CONFIG_ID = "11111111-1111-4111-8111-111111111111";
+const GRAND_HALL: Space = {
+  id: "space-grand-hall", venueId: "venue", name: "Grand Hall", slug: "grand-hall",
+  widthM: "21", lengthM: "10.5", heightM: "7", floorPlanOutline: [],
+};
 const object: EditorObject = {
   id: "object-1",
   assetDefinitionId: "asset-chair",
@@ -358,6 +371,46 @@ describe("timeline preview action isolation", () => {
     await expect(submitting).rejects.toThrow(/Exit the room timeline preview/u);
     expect(mocks.captureOrthographic).not.toHaveBeenCalled();
     expect(mocks.updatePublicThumbnail).not.toHaveBeenCalled();
+    expect(mocks.submitForReview).not.toHaveBeenCalled();
+  });
+
+  it("review submit reports a refused plan image by its status alone and still submits", async () => {
+    useEditorStore.setState({ isPublicPreview: true, scene: new Scene(), space: GRAND_HALL });
+    mocks.updatePublicThumbnail.mockRejectedValueOnce(
+      new ApiError(400, "Must be a PNG or JPEG data URL whose bytes match its type", "VALIDATION_ERROR"),
+    );
+    await expect(submitConfigurationForReview(CONFIG_ID, false)).resolves.toBe("submitted");
+    expect(mocks.updatePublicThumbnail).toHaveBeenCalledWith(CONFIG_ID, "data:image/png;base64,preview");
+    expect(mocks.reportFailure).toHaveBeenCalledWith("plan-image-failed", { stage: "upload", status: 400 });
+  });
+
+  it("review submit reports a plan it could not capture and uploads nothing", async () => {
+    useEditorStore.setState({ isPublicPreview: true, scene: new Scene(), space: GRAND_HALL });
+    mocks.captureOrthographic.mockResolvedValueOnce(null);
+    await expect(submitConfigurationForReview(CONFIG_ID, false)).resolves.toBe("submitted");
+    expect(mocks.updatePublicThumbnail).not.toHaveBeenCalled();
+    expect(mocks.reportFailure).toHaveBeenCalledWith("plan-image-failed", { stage: "capture" });
+  });
+
+  it("review submit does not report a layout change during the plan upload as a plan failure", async () => {
+    useEditorStore.setState({ isPublicPreview: true, scene: new Scene(), space: GRAND_HALL });
+    mocks.updatePublicThumbnail.mockImplementationOnce(() => {
+      useEditorStore.getState().reset();
+      return Promise.resolve();
+    });
+    await expect(submitConfigurationForReview(CONFIG_ID, false)).rejects.toThrow(/open layout changed/u);
+    expect(mocks.reportFailure).not.toHaveBeenCalled();
+    expect(mocks.submitForReview).not.toHaveBeenCalled();
+  });
+
+  it("review submit reports a plan the API refused as a timeline preview began, and stops", async () => {
+    useEditorStore.setState({ isPublicPreview: true, scene: new Scene(), space: GRAND_HALL });
+    mocks.updatePublicThumbnail.mockImplementationOnce(() => {
+      enterCrossPhasePreview();
+      return Promise.reject(new ApiError(400, "Must be a PNG or JPEG data URL whose bytes match its type", "VALIDATION_ERROR"));
+    });
+    await expect(submitConfigurationForReview(CONFIG_ID, false)).rejects.toThrow();
+    expect(mocks.reportFailure).toHaveBeenCalledWith("plan-image-failed", { stage: "upload", status: 400 });
     expect(mocks.submitForReview).not.toHaveBeenCalled();
   });
 

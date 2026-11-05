@@ -16,6 +16,7 @@ import { useOfferViewerLenses, useShownLens } from "../../../lib/use-lens-rail.j
 import { useLayoutTimelinePreviewStore } from "../../../stores/layout-timeline-preview-store.js";
 import { SceneOutliner } from "./SceneOutliner.js";
 import { ReferenceRoomHeader } from "./ReferenceRoomHeader.js";
+import { ChromeClearHint, ChromeFoldControls, ChromeFoldMark, ChromePresence, ChromeSaveWord, ChromeSpine, PhoneChromeSeal } from "./ChromeFold.js";
 import "./PlannerCockpit.css";
 import "./ReferenceViewer.css";
 
@@ -54,6 +55,10 @@ export function PlannerCockpit({ mobile = false, hasLinkedEvent = false }: { rea
         <CockpitNavRail />
         <div className="reference-left-content"><ReferenceRoomHeader /><SceneOutliner /></div>
       </div>}
+      {/* On the dock's edge, outside it: the dock clips, and its lens rail
+          runs to its foot. */}
+      {mobile ? null : <ChromeFoldMark key="left-fold-mark" unit="left" />}
+      {mobile ? null : <ChromeSpine key="left-spine" unit="left" />}
       {/* T-615: the stage is the planner's <main>, and the landmark belongs
           here rather than on the shell in EditorPage. A <main> wrapped around
           the whole shell strips the implicit `banner` role off
@@ -89,8 +94,12 @@ export function PlannerCockpit({ mobile = false, hasLinkedEvent = false }: { rea
           </p>
         )}
         {mobile || timelinePreviewActive ? null : <ToolPill />}
+        {mobile || timelinePreviewActive ? null : <ChromeFoldControls unit="top" />}
         {mobile || timelinePreviewActive ? null : <CanvasLayerControls embedded />}
       </main>
+      {/* Above the stage, as the side ones are: the room timeline's bar is
+          drawn over the stage and would bury the bottom mark's lower edge. */}
+      {mobile || timelinePreviewActive ? null : <ChromeFoldControls key="bottom-fold" unit="bottom" />}
       {mobile ? null : timelinePreviewActive ? (
         <aside
           key="preview-lock"
@@ -103,6 +112,7 @@ export function PlannerCockpit({ mobile = false, hasLinkedEvent = false }: { rea
           <p>Return to the saved plan to edit.</p>
         </aside>
       ) : <CockpitRightDock key="right-dock" />}
+      {mobile || timelinePreviewActive ? null : <ChromeFoldControls key="right-fold" unit="right" />}
       {/* The When ribbon (S2) shares the transport's clock and booking; it
           rests while a phase preview holds the stage. */}
       {mobile || timelinePreviewActive || !hasLinkedEvent || !(canViewBookingTime || clientSide) ? null : <details className="reference-when-ribbon"><summary>{clientSide ? "Your time" : "Booking time"}</summary><WhenRibbon /></details>}
@@ -110,6 +120,12 @@ export function PlannerCockpit({ mobile = false, hasLinkedEvent = false }: { rea
       {/* Phones and tablets have no right dock: a chosen lens rises as a
           bottom sheet instead (it portals itself above the planner chrome). */}
       {mobile ? <LensSheet key="lens-sheet" /> : null}
+      {mobile ? <PhoneChromeSeal key="phone-seal" /> : null}
+      <ChromeClearHint key="clear-hint" />
+      <ChromeSaveWord key="save-word" mobile={mobile} />
+      {/* T-680: every panel folds to a spine, and \ or the crest clears them
+          all. Last, and a leaf, so clearing never draws the cockpit again. */}
+      <ChromePresence key="chrome-presence" />
     </div>
   );
 }

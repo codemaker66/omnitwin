@@ -41,17 +41,27 @@ import {
 import { MeshBasicNodeMaterial, SpriteNodeMaterial, type Node, type TextureNode } from "three/webgpu";
 import {
   Discard, Fn, abs, attribute, cameraPosition, clamp, dot, exp, float, floor, fract, ivec2, length, log, max, mix, modelWorldMatrix,
-  mrt, normalWorld, normalize, output, positionLocal, positionWorld, pow, screenCoordinate, select, smoothstep, sqrt, step,
+  normalWorld, normalize, output, positionLocal, positionWorld, pow, screenCoordinate, select, smoothstep, sqrt, step,
   texture, textureLoad, uniform, uv, vec2, vec3, vec4, vertexStage,
 } from "three/tsl";
 import { activeStreetNightLook, type StreetNightLook } from "../../lib/sky/night-looks.js";
 import type { Rgb } from "../../lib/sky/sky-palette.js";
+import { targetSafeMrt } from "../../lib/target-safe-mrt.js";
 import { hallSkyUniforms as sky } from "./hall-sky-runtime.js";
 import { MeshBuilder, vec, type V3 } from "./mesh-builder.js";
 import type { HallSun } from "./hall-sun.js";
 
 export const STREET_LIGHT_URL = "/rooms/grand-hall/context-2020-lidar/street-light-v2.bin?r=1";
 export const STREET_LAMPS_URL = "/rooms/grand-hall/context-2020-lidar/street-lamps-v2.json?r=1";
+
+/**
+ * The same lamps baked against the city drawn round the measured front
+ * (merchant-city-v3, `CONTEXT_MODEL_FRONT_URL`; bake_street_light.py
+ * --front-cut): Trades Hall's two door lanterns and its own street lamp
+ * (24094) hang on the modelled front, which draws no lanterns of its own.
+ */
+export const STREET_LIGHT_FRONT_URL = "/rooms/grand-hall/context-2020-lidar/street-light-v3.bin?r=1";
+export const STREET_LAMPS_FRONT_URL = "/rooms/grand-hall/context-2020-lidar/street-lamps-v3.json?r=1";
 
 /** Coordinates outside this box mean a malformed file, metres (as the city model's). */
 const COORDINATE_LIMIT = 320;
@@ -884,12 +894,12 @@ export function createFittingMaterial(sun: HallSun): MeshBasicNodeMaterial {
  * upsampled, would draw a dark line round every cone and halo. So the light
  * writes a normal facing the camera with no occlusion weight: the surface
  * behind it keeps its colour, without occlusion there and without noise.
- * `output` keeps the colour where the pass has no other targets; velocity
- * is the light's own. Both discard the pixels they add nothing to, so they
+ * `output` keeps the colour where the pass has no other targets, and in a
+ * snapshot's target (lib/target-safe-mrt.ts); velocity is the light's own. Both discard the pixels they add nothing to, so they
  * overwrite the other targets only where they shine.
  */
 export function lightOnlyOutput() {
-  return mrt({ output, normal: vec4(0.5, 0.5, 1, 0) });
+  return targetSafeMrt({ output, normal: vec4(0.5, 0.5, 1, 0) });
 }
 
 /**

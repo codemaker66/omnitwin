@@ -458,3 +458,23 @@ describe("booking → event link (bookings.event_id, the bind)", () => {
     expect(source).toContain("eventId: row.eventId");
   });
 });
+
+describe("a hold's title from an enquiry with a blank name (blank-enquiry-name)", () => {
+  it("names the hold after the enquiry's email when its stored name is blank", async () => {
+    const { enquiryTitleName } = await import("../routes/bookings.js");
+    expect(enquiryTitleName({ name: "", email: "ada@example.com" })).toBe("ada@example.com");
+    expect(enquiryTitleName({ name: "   ", email: "ada@example.com" })).toBe("ada@example.com");
+    expect(enquiryTitleName({ name: " Ada Lovelace ", email: "ada@example.com" })).toBe("Ada Lovelace");
+  });
+
+  it("uses that name for both the conversion and the viewing titles, kept to 200 characters", async () => {
+    const source = await readFile(resolve("src/routes/bookings.ts"), "utf-8");
+    const conversion = source.slice(source.indexOf('server.post("/from-enquiry"'), source.indexOf('server.post("/viewings"'));
+    const viewing = source.slice(source.indexOf('server.post("/viewings"'));
+    expect(conversion).toContain("enquiryTitleName(enquiry)");
+    expect(conversion).toContain("fallbackTitle.slice(0, MAX_BOOKING_TITLE_LENGTH)");
+    expect(viewing).toContain("email: enquiries.email");
+    expect(viewing).toContain("enquiryTitleName(enquiry).slice(0, MAX_BOOKING_TITLE_LENGTH)");
+    expect(source).not.toContain("enquiry.name.slice(");
+  });
+});
