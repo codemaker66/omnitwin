@@ -146,6 +146,19 @@ describe("plannerRoutePreload", () => {
     delete bundle["assets/EditorPage-g.js"];
     expect(() => plannerRoutePreload(bundle, entry)).toThrow(/no chunk for \/src\/pages\/EditorPage\.tsx/u);
   });
+
+  // The real build: other pages import some of the planner's modules, so
+  // EditorPage.tsx is a module in a shared chunk with no facade of its own
+  // (the router's import reads its export, `.then((m) => m.Y)`).
+  it("finds the planner inside a shared chunk, as the real build has it", () => {
+    const { bundle, entry } = graph();
+    delete bundle["assets/EditorPage-g.js"];
+    const shared = chunk("assets/EditorPage-m.js", ["assets/react-vendor-a.js"], {
+      moduleIds: ["C:\\repo\\packages\\web\\src\\pages\\BlueprintParts.tsx", "C:\\repo\\packages\\web\\src\\pages\\EditorPage.tsx"],
+    });
+    bundle[shared.fileName] = shared;
+    expect(plannerRoutePreload(bundle, entry).modules).toEqual(["assets/EditorPage-m.js"]);
+  });
 });
 
 describe("plannerRoutePreloadScript", () => {

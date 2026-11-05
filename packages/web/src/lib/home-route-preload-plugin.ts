@@ -101,8 +101,12 @@ function routePreload(
 ): HomeRoutePreload {
   const chunks = new Map<string, Chunk>();
   for (const output of Object.values(bundle)) if (output.type === "chunk") chunks.set(output.fileName, output);
-  const route = [...chunks.values()].find((chunk) =>
-    chunk.facadeModuleId?.replace(/\\/gu, "/").endsWith(routeSource) === true);
+  const names = (id: string | null): boolean => id?.replace(/\\/gu, "/").endsWith(routeSource) === true;
+  // A page imported only lazily gets a chunk of its own (its facade). One that
+  // shares a chunk with modules other pages import (the planner does) is a
+  // module inside that chunk, and the router's import reads its export from it.
+  const route = [...chunks.values()].find((chunk) => names(chunk.facadeModuleId))
+    ?? [...chunks.values()].find((chunk) => chunk.moduleIds.some(names));
   if (route === undefined) {
     // A silent miss would ship a front door with no preload and no signal.
     throw new Error(`home-route-preload: no chunk for ${routeSource}; was the page renamed or inlined?`);
