@@ -1,10 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import type { Rollup } from "vite";
 import {
   HOME_ROUTE_PRELOAD_MARKER,
+  PLANNER_PATH_PATTERN,
   homeRoutePreload,
   homeRoutePreloadScript,
   injectHomeRoutePreload,
+  plannerRoutePreload,
+  plannerRoutePreloadScript,
 } from "../home-route-preload-plugin.js";
 
 // A chunk graph in miniature: the entry loads react-vendor; the home route adds
@@ -124,5 +127,81 @@ describe("homeRoutePreloadScript", () => {
 
   it("joins a base without a trailing slash", () => {
     expect(homeRoutePreloadScript({ modules: ["assets/a.js"], styles: [] }, "/app")).toContain('["/app/assets/a.js"]');
+  });
+});
+
+// T-685: the planner's chunks start with the entry's on a planner address, and
+// the front door's Plan links can fetch them for the next page.
+describe("plannerRoutePreload", () => {
+  it("lists the planner's closure less what the entry loads, tile manifest included", () => {
+    const { bundle, entry } = graph();
+    const manifest = chunk("assets/room-splat-bundles-j.js", [], { moduleIds: ["/repo/packages/web/src/data/room-splat-bundles.ts"] });
+    bundle[manifest.fileName] = manifest;
+    (bundle["assets/EditorPage-g.js"] as Rollup.OutputChunk).imports.push(manifest.fileName);
+    expect(plannerRoutePreload(bundle, entry).modules).toEqual(["assets/EditorPage-g.js", "assets/room-splat-bundles-j.js"]);
+  });
+
+  it("fails the build when the planner has no chunk, rather than shipping no preload", () => {
+    const { bundle, entry } = graph();
+    delete bundle["assets/EditorPage-g.js"];
+    expect(() => plannerRoutePreload(bundle, entry)).toThrow(/no chunk for \/src\/pages\/EditorPage\.tsx/u);
+  });
+});
+
+describe("plannerRoutePreloadScript", () => {
+  const planner = { modules: ["assets/EditorPage-g.js", "assets/three-k.js"], styles: ["assets/EditorPage-l.css"] };
+  const script = plannerRoutePreloadScript(planner, "/");
+
+  /** Runs the inline script as the browser does, at an address, and returns the links it added. */
+  function run(path: string): HTMLLinkElement[] {
+    window.history.replaceState({}, "", path);
+    document.head.innerHTML = "";
+    Reflect.deleteProperty(window, "__vvPlannerPrefetch");
+    // eslint-disable-next-line @typescript-eslint/no-implied-eval, no-new-func -- the inline script, as index.html runs it
+    new Function(script)();
+    return [...document.head.querySelectorAll("link")];
+  }
+
+  afterEach(() => {
+    window.history.replaceState({}, "", "/");
+    document.head.innerHTML = "";
+    Reflect.deleteProperty(window, "__vvPlannerPrefetch");
+  });
+
+  it.each(["/plan", "/plan/", "/plan/TH-4K2Q", "/plan/0b9a6a52-61f4-4a0e-9f0c-0d6a2f1c6e11", "/v/trades-hall-glasgow/plan"])(
+    "starts the planner's files on %s, at low priority behind the entry",
+    (path) => {
+      const links = run(path);
+      expect(links.map((link) => link.getAttribute("href"))).toEqual(["/assets/EditorPage-g.js", "/assets/three-k.js", "/assets/EditorPage-l.css"]);
+      for (const link of links) {
+        expect(["modulepreload", "preload"]).toContain(link.rel);
+        expect(link.getAttribute("fetchpriority")).toBe("low");
+        expect(link.getAttribute("crossorigin")).toBe("");
+      }
+      expect(links[2]?.getAttribute("as")).toBe("style");
+    },
+  );
+
+  it.each(["/", "/planner", "/plan/TH-4K2Q/extra", "/plan-view/abc", "/v/trades-hall-glasgow", "/room/grand-hall"])(
+    "fetches nothing on %s until someone reaches for a Plan link",
+    (path) => {
+      expect(run(path)).toHaveLength(0);
+      expect(new RegExp(PLANNER_PATH_PATTERN, "u").test(path)).toBe(false);
+    },
+  );
+
+  it("fetches the planner's files for the next page when the front door asks, once", () => {
+    run("/");
+    window.__vvPlannerPrefetch?.();
+    window.__vvPlannerPrefetch?.();
+    const links = [...document.head.querySelectorAll("link")];
+    expect(links.map((link) => link.rel)).toEqual(["prefetch", "prefetch", "prefetch"]);
+    expect(links.map((link) => link.getAttribute("href"))).toEqual(["/assets/EditorPage-g.js", "/assets/three-k.js", "/assets/EditorPage-l.css"]);
+  });
+
+  it("is written after the home route's script, at the same marker", () => {
+    const html = injectHomeRoutePreload(`<head>${HOME_ROUTE_PRELOAD_MARKER}</head>`, { modules: ["assets/a.js"], styles: [] }, "/", planner);
+    expect(html.indexOf('if (location.pathname === "/")')).toBeLessThan(html.indexOf("__vvPlannerPrefetch"));
+    expect(html.match(/<script>/gu)).toHaveLength(2);
   });
 });

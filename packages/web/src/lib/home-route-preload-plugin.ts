@@ -81,6 +81,24 @@ export function homeRoutePreload(
   entry: Chunk,
   routeSource: string = HOME_ROUTE_SOURCE,
 ): HomeRoutePreload {
+  return routePreload(bundle, entry, routeSource, true);
+}
+
+/** The planner page (/plan, /plan/:code, /v/:venueSlug/plan in router.tsx). */
+export const PLANNER_ROUTE_SOURCE = "/src/pages/EditorPage.tsx";
+
+/** The planner's chunks and stylesheets beyond the entry's. It may load what the
+ *  front door must not (the tile manifest), so it has no front-door guard. */
+export function plannerRoutePreload(bundle: Rollup.OutputBundle, entry: Chunk): HomeRoutePreload {
+  return routePreload(bundle, entry, PLANNER_ROUTE_SOURCE, false);
+}
+
+function routePreload(
+  bundle: Rollup.OutputBundle,
+  entry: Chunk,
+  routeSource: string,
+  frontDoor: boolean,
+): HomeRoutePreload {
   const chunks = new Map<string, Chunk>();
   for (const output of Object.values(bundle)) if (output.type === "chunk") chunks.set(output.fileName, output);
   const route = [...chunks.values()].find((chunk) =>
@@ -91,8 +109,10 @@ export function homeRoutePreload(
   }
   const loadedByEntry = closure(entry, chunks);
   const loadedByRoute = closure(route, chunks);
-  assertFrontDoorLight(loadedByEntry, "the entry");
-  assertFrontDoorLight(loadedByRoute, "the home route");
+  if (frontDoor) {
+    assertFrontDoorLight(loadedByEntry, "the entry");
+    assertFrontDoorLight(loadedByRoute, "the home route");
+  }
   const entryFiles = new Set(loadedByEntry.map((chunk) => chunk.fileName));
   const needed = loadedByRoute.filter((chunk) => !entryFiles.has(chunk.fileName));
   const entryStyles = new Set(loadedByEntry.flatMap((chunk) => [...(chunk.viteMetadata?.importedCss ?? [])]));
@@ -131,12 +151,57 @@ export function homeRoutePreloadScript(preload: HomeRoutePreload, base: string):
   ].join("\n");
 }
 
+/** The planner's addresses, as the inline script tests them. */
+export const PLANNER_PATH_PATTERN = "^\\/(?:plan(?:\\/[^/]+)?|v\\/[^/]+\\/plan)\\/?$";
+
+/**
+ * The planner's inline script (T-685, from X Engineering's rebuild of x.com).
+ *
+ * On a planner address its chunks start with the entry's instead of after the
+ * entry has run and the router has asked for the page, at low priority so the
+ * entry itself still arrives first. Everywhere else it only defines
+ * `__vvPlannerPrefetch`, which the front door's Plan links call when someone
+ * reaches for one (a resting pointer, focus or a press): the same files are
+ * then fetched for the next page, so the planner opens from the cache.
+ */
+export function plannerRoutePreloadScript(preload: HomeRoutePreload, base: string): string {
+  const prefix = base.endsWith("/") ? base : `${base}/`;
+  const links = (names: readonly string[]): string => JSON.stringify(names.map((name) => `${prefix}${name}`));
+  return [
+    "(function () {",
+    `  var modules = ${links(preload.modules)}, styles = ${links(preload.styles)}, prefetched = false;`,
+    "  function add(rel, href, as) {",
+    '    var link = document.createElement("link"); link.rel = rel; if (as) link.as = as;',
+    '    link.crossOrigin = ""; link.href = href; link.setAttribute("fetchpriority", "low");',
+    "    document.head.appendChild(link);",
+    "  }",
+    "  window.__vvPlannerPrefetch = function () {",
+    "    if (prefetched) return; prefetched = true;",
+    '    for (var i = 0; i < modules.length; i++) add("prefetch", modules[i]);',
+    '    for (var j = 0; j < styles.length; j++) add("prefetch", styles[j]);',
+    "  };",
+    `  if (!new RegExp(${JSON.stringify(PLANNER_PATH_PATTERN)}).test(location.pathname)) return;`,
+    '  var relList = document.createElement("link").relList;',
+    '  var modulepreload = !!(relList && relList.supports && relList.supports("modulepreload"));',
+    '  for (var k = 0; k < modules.length; k++) add(modulepreload ? "modulepreload" : "preload", modules[k], modulepreload ? "" : "script");',
+    '  for (var m = 0; m < styles.length; m++) add("preload", styles[m], "style");',
+    "})();",
+  ].join("\n");
+}
+
 /** Writes the script at the marker; a page without the marker is an error, not a silent skip. */
-export function injectHomeRoutePreload(html: string, preload: HomeRoutePreload, base: string): string {
+export function injectHomeRoutePreload(
+  html: string,
+  preload: HomeRoutePreload,
+  base: string,
+  planner?: HomeRoutePreload,
+): string {
   if (!html.includes(HOME_ROUTE_PRELOAD_MARKER)) {
     throw new Error(`home-route-preload: index.html has no ${HOME_ROUTE_PRELOAD_MARKER} to write the preload at`);
   }
-  return html.replace(HOME_ROUTE_PRELOAD_MARKER, `<script>\n${homeRoutePreloadScript(preload, base)}\n</script>`);
+  const plannerScript = planner === undefined ? "" : `\n<script>\n${plannerRoutePreloadScript(planner, base)}\n</script>`;
+  return html.replace(HOME_ROUTE_PRELOAD_MARKER, () =>
+    `<script>\n${homeRoutePreloadScript(preload, base)}\n</script>${plannerScript}`);
 }
 
 export function homeRoutePreloadPlugin(): Plugin {
@@ -151,7 +216,12 @@ export function homeRoutePreloadPlugin(): Plugin {
       order: "post",
       handler(html, context) {
         if (context.bundle === undefined || context.chunk === undefined) return html;
-        return injectHomeRoutePreload(html, homeRoutePreload(context.bundle, context.chunk), base);
+        return injectHomeRoutePreload(
+          html,
+          homeRoutePreload(context.bundle, context.chunk),
+          base,
+          plannerRoutePreload(context.bundle, context.chunk),
+        );
       },
     },
   };

@@ -108,6 +108,20 @@ describe("RoomsHomePage", () => {
     expect(css).toMatch(/\.fr-enquiry \{\s*content-visibility: auto;\s*contain-intrinsic-size: auto \d+px;\s*\}/u);
   });
 
+  // T-685: reaching for either Plan link fetches the planner's code for the next page.
+  it("fetches the planner's code when someone reaches for a Plan link", () => {
+    const prefetch = vi.fn();
+    Object.defineProperty(window, "__vvPlannerPrefetch", { configurable: true, value: prefetch });
+    try {
+      mount();
+      fireEvent.focus(within(screen.getByRole("navigation", { name: "Primary" })).getByRole("link", { name: "Plan an event" }));
+      fireEvent.pointerDown(within(screen.getByRole("region", { name: "Grand Hall" })).getByRole("link", { name: "Plan Grand Hall" }), { pointerType: "touch" });
+      expect(prefetch).toHaveBeenCalledTimes(2);
+    } finally {
+      Reflect.deleteProperty(window, "__vvPlannerPrefetch");
+    }
+  });
+
   it("offers furniture planning alongside the Grand Hall walkthrough", () => {
     mount();
     const hero = within(screen.getByRole("region", { name: "Grand Hall" }));
