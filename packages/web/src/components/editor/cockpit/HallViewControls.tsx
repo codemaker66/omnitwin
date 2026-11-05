@@ -203,7 +203,8 @@ function HallSunPopover(): ReactElement {
   // A popover in the planner's one Escape order: it closes before the
   // planner steps back anything else (the placing, the selection, the walk).
   // Focus inside the panel would fall to the page as it unmounts: hand it
-  // back to the button that opened it.
+  // back to the button that opened it. While the bottom bar it sits in is
+  // folded away (T-680), Esc passes it by, and it comes back with the bar.
   useEscapeLayer("popover", {
     open,
     onEscape: () => { setOpen(false); },
@@ -211,6 +212,7 @@ function HallSunPopover(): ReactElement {
       const focused = document.activeElement;
       return focused !== null && anchor.current?.contains(focused) === true ? trigger.current : null;
     },
+    element: anchor,
   });
   return (
     <div className="hall-sun-anchor" ref={anchor}>
