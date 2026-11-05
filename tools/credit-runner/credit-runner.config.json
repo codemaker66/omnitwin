@@ -1,0 +1,14 @@
+{
+  "nightlyCapUsd": 100,
+  "runsRoot": "E:\\venviewer-runs",
+  "outputRoot": "D:\\venviewer-runs",
+  "keyDir": "%USERPROFILE%\\.venviewer-credits",
+  "baseRef": "origin/master",
+  "branchPrefix": "credit/",
+  "claudeCommand": ["claude"],
+  "orgs": [
+    { "id": "batch", "name": "VenViewer Batch", "keyFile": "batch.key", "grantUsd": 200, "expires": "2026-11-10" },
+    { "id": "staging", "name": "VenViewer Staging", "keyFile": "staging.key", "grantUsd": 200, "expires": "2026-11-16" },
+    { "id": "production", "name": "VenViewer Production", "keyFile": "production.key" }
+  ]
+}
