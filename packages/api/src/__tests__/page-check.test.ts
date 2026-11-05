@@ -73,6 +73,118 @@ describe("robots.txt (RFC 9309)", () => {
   it("matches the product token whatever its case", () => {
     expect(robotsAllows("User-agent: venviewerpagecheck\nDisallow: /", PAGE_CHECK_PRODUCT_TOKEN, "/weddings/")).toBe(false);
   });
+
+  /** robotsAllows on one Disallow rule, with how long it took. */
+  function timedDisallow(pattern: string, path: string): { readonly allowed: boolean; readonly ms: number } {
+    const robots = `User-agent: *\nDisallow: ${pattern}`;
+    const started = performance.now();
+    const allowed = robotsAllows(robots, PAGE_CHECK_PRODUCT_TOKEN, path);
+    return { allowed, ms: performance.now() - started };
+  }
+
+  it("answers a rule full of stars at once, without backtracking", () => {
+    // A competitor's robots.txt can hold such a value. A backtracking regex
+    // takes combinatorial time on it when the path has no Z, stalling the
+    // event loop for every venue. Eight stars already take seconds there, so
+    // that case is checked first: it fails promptly instead of hanging on 32.
+    const short = timedDisallow(`/${"*".repeat(8)}Z`, "/wedding-packages/grand-central/2026-xyz");
+    expect(short.allowed).toBe(true);
+    expect(short.ms).toBeLessThan(50);
+
+    const path = "/wedding-packages/grand-central-hall/2026/summer-menus?page=2";
+    expect(path.length).toBeGreaterThanOrEqual(40);
+    expect(path).not.toContain("Z");
+    const long = timedDisallow(`/${"*".repeat(32)}Z`, path);
+    expect(long.allowed).toBe(true);
+    expect(long.ms).toBeLessThan(50);
+    // And the same rule still matches a path that has the Z.
+    expect(timedDisallow(`/${"*".repeat(32)}Z`, `${path}Z`).allowed).toBe(false);
+  });
+
+  it.each([
+    // * at the start, in the middle and at the end, matching any run including none
+    ["*/private", "/a/private", true],
+    ["*/private", "/a/public", false],
+    ["/a*c", "/abc", true],
+    ["/a*c", "/ac", true],
+    ["/a*c", "/ab", false],
+    ["/a*c", "/xabc", false],
+    ["/a*", "/a", true],
+    ["/a*", "/abc", true],
+    ["/a*", "/b", false],
+    // adjacent stars
+    ["/a**c", "/ac", true],
+    ["/a**c", "/a-b-c", true],
+    ["/a***", "/a", true],
+    ["/a**c", "/a", false],
+    // without the end anchor a prefix is enough
+    ["/rooms", "/rooms/suite", true],
+    ["/rooms", "/room", false],
+    // the end anchor, without stars
+    ["/a$", "/a", true],
+    ["/a$", "/ab", false],
+    ["/a$", "/a?x", false],
+    ["/$", "/", true],
+    ["/$", "/a", false],
+    // the end anchor, with stars
+    ["/*.pdf$", "/x.pdf", true],
+    ["/*.pdf$", "/x.pdf.pdf", true],
+    ["/*.pdf$", "/x.pdf?y", false],
+    ["/a*b$", "/ab", true],
+    ["/a*b$", "/abab", true],
+    ["/a*b$", "/aba", false],
+    ["/ab*b$", "/ab", false],
+    ["/ab*b$", "/abb", true],
+    ["/a*$", "/a", true],
+    ["/a*$", "/abc", true],
+    // a $ anywhere but the very end is an ordinary character
+    ["/a$b", "/a$b", true],
+    ["/a$b", "/a$bc", true],
+    ["/a$b", "/a", false],
+    ["/a$b", "/ab", false],
+    ["/a$$", "/a$", true],
+    ["/a$$", "/a$x", false],
+    ["/price$*/list", "/price$9/list", true],
+    // regex metacharacters are literals
+    ["/a.b", "/a.b", true],
+    ["/a.b", "/axb", false],
+    ["/.*", "/abc", false],
+    ["/.*", "/.abc", true],
+    ["/a?b", "/a?b", true],
+    ["/a?b", "/ab", false],
+    ["/a+", "/a+", true],
+    ["/a+", "/aa", false],
+    ["/(x)", "/(x)", true],
+    ["/(x)", "/x", false],
+    ["/[ab]", "/[ab]", true],
+    ["/[ab]", "/a", false],
+    ["/a|b", "/b", false],
+    ["/a|b", "/a|b", true],
+    ["/^a", "/^a", true],
+    ["/a{2}", "/aa", false],
+    ["/a{2}", "/a{2}", true],
+    ["/a\\d", "/a\\d", true],
+    ["/a\\d", "/a1", false],
+    // the query string is part of the path
+    ["/*?", "/weddings/?date=1", true],
+    ["/*?", "/weddings/", false],
+    ["/search?q=*&page=2", "/search?q=hall&page=2", true],
+    ["/search?q=*&page=2", "/search?q=hall", false],
+    ["/*?sort=$", "/list?sort=", true],
+    ["/*?sort=$", "/list?sort=asc", false],
+  ] as const)("Disallow: %s %s matches: %s", (pattern, path, matches) => {
+    expect(robotsAllows(`User-agent: *\nDisallow: ${pattern}`, PAGE_CHECK_PRODUCT_TOKEN, path)).toBe(!matches);
+  });
+
+  it("still lets the longest matching rule win, and Allow take a tie, with wildcards", () => {
+    const robots = "User-agent: *\nDisallow: /*.php\nAllow: /public/*";
+    expect(robotsAllows(robots, PAGE_CHECK_PRODUCT_TOKEN, "/public/x.php")).toBe(true);
+    expect(robotsAllows(robots, PAGE_CHECK_PRODUCT_TOKEN, "/x.php")).toBe(false);
+    expect(robotsAllows("User-agent: *\nAllow: /*.php\nDisallow: /public/*", PAGE_CHECK_PRODUCT_TOKEN, "/public/x.php")).toBe(false);
+    expect(robotsAllows("User-agent: *\nAllow: /a*c\nDisallow: /ab*", PAGE_CHECK_PRODUCT_TOKEN, "/abc")).toBe(true);
+    expect(robotsAllows("User-agent: *\nDisallow: /ab*\nAllow: /a*c", PAGE_CHECK_PRODUCT_TOKEN, "/abc")).toBe(true);
+    expect(robotsAllows("User-agent: *\nDisallow: /ab*\nAllow: /a*c", PAGE_CHECK_PRODUCT_TOKEN, "/abd")).toBe(false);
+  });
 });
 
 describe("the page's text and its hash", () => {
