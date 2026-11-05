@@ -6,7 +6,6 @@ import { COCKPIT_MODES } from "../../../../lib/cockpit-modes.js";
 import { setPlannerFeaturesForTesting, type PlannerFeatureOverrides } from "../../../../lib/planner-features.js";
 import { useAuthStore } from "../../../../stores/auth-store.js";
 import { useCockpitStore } from "../../../../stores/cockpit-store.js";
-import { useEditorStore } from "../../../../stores/editor-store.js";
 import { CockpitNavRail } from "../CockpitNavRail.js";
 
 // Blake's decision 5 on the rail itself: which lenses, in what order, named
@@ -61,25 +60,6 @@ describe("CockpitNavRail with both keys off", () => {
     expect(rail().classList.contains("is-named")).toBe(false);
     for (const button of within(rail()).getAllByRole("button")) expect(button.getAttribute("title")).toBe(button.getAttribute("aria-label"));
     expect(venueTools()).toBeNull();
-  });
-});
-
-describe("CockpitNavRail on a shared link's preview, with lensesByRole", () => {
-  // The rail reads the open layout from the editor store. Ops stays for the
-  // floor at the layout's venue and goes for its sales, whose compile the API
-  // refuses there (cockpit-lenses.ts).
-  afterEach(() => { useEditorStore.getState().reset(); });
-
-  it("keeps Ops for the venue's staff, takes it from its sales, and gives it back on their own layout", () => {
-    withKeys({ lensesByRole: true, lensesDivider: false });
-    act(() => { useEditorStore.setState({ venueId: "venue", isPublicPreview: true }); });
-    viewAs("staff");
-    render(<CockpitNavRail />);
-    expect(lensNames()).toEqual(ALL);
-    act(() => { viewAs("sales"); });
-    expect(lensNames()).toEqual(ALL.filter((name) => name !== "Ops"));
-    act(() => { useEditorStore.setState({ isPublicPreview: false }); });
-    expect(lensNames()).toEqual(ALL);
   });
 });
 

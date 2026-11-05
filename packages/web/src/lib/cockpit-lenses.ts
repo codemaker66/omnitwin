@@ -16,14 +16,9 @@
 // venue tools remain, so the hallkeeper's own four stand undivided. With both
 // off the rail is today's: eleven unnamed icons in COCKPIT_MODES order.
 //
-// Under lensesByRole the rail offers Ops only where its one request would be
-// answered. Compiling the handoff pack (POST /ops/handoff-packs/
-// from-configuration/:id) reads canAccessResource: the layout's owner, the
-// venue floor at the layout's venue (canManageVenue, VENUE_FLOOR_ROLES) or a
-// platform admin. A layout open through the authenticated load passed that
-// same gate; a shared link's public preview has no owner, so there only the
-// floor at its venue and a platform admin compile. Sales, another venue's
-// team and an account still waiting for its venue see the rest of their rail.
+// Ops is offered whole. Its setup plan and effort estimate are worked out in
+// the browser; only its compile asks the API, so OpsLensPanel gates that one
+// action (compilesHandoffPack in role-capabilities.ts) and says who compiles.
 //
 // Pure and React-free, like cockpit-modes.ts, so the store's guard and the
 // rail read one answer. Every rail is a constant, so a caller comparing rails
@@ -32,7 +27,7 @@
 // ---------------------------------------------------------------------------
 
 import { COCKPIT_MODES, type CockpitMode } from "./cockpit-modes.js";
-import { hasRole, VENUE_FLOOR_ROLES, VENUE_MEMBER_ROLES } from "./role-capabilities.js";
+import { hasRole, VENUE_MEMBER_ROLES } from "./role-capabilities.js";
 import type { PlannerFeatures } from "./planner-features.js";
 
 /** One lens as the rail draws it: its id and its name. */
@@ -52,14 +47,7 @@ export type LensAudience = "client-side" | "hallkeeper" | "venue-team";
 export interface LensViewer {
   readonly isLoading: boolean;
   readonly isAuthenticated: boolean;
-  readonly user: { readonly role: string; readonly platformRole: string; readonly venueId: string | null } | null;
-}
-
-/** The open layout, as far as Ops's compile gate reads it (see the header). */
-export interface LensLayout {
-  readonly venueId: string | null;
-  /** A shared link's preview, loaded through the public route: it has no owner. */
-  readonly isPublicPreview: boolean;
+  readonly user: { readonly role: string; readonly platformRole: string } | null;
 }
 
 export type LensKeys = Pick<PlannerFeatures, "lensesByRole" | "lensesDivider">;
@@ -111,17 +99,6 @@ const DIVIDED_RAIL = rail(true, [
   { label: VENUE_TOOLS_LABEL, lenses: lensesOf(VENUE_TOOL_LENSES) },
 ]);
 
-function withoutOps(lenses: readonly CockpitLens[]): readonly CockpitLens[] {
-  return lenses.filter((lens) => lens.id !== "ops");
-}
-/** The same three rails without Ops, for a viewer whose compile the API would refuse. */
-const NAMED_RAIL_WITHOUT_OPS = rail(true, [{ label: null, lenses: withoutOps(COCKPIT_MODES) }]);
-const HALLKEEPER_RAIL_WITHOUT_OPS = rail(true, [{ label: null, lenses: withoutOps(lensesOf(HALLKEEPER_LENSES)) }]);
-const DIVIDED_RAIL_WITHOUT_OPS = rail(true, [
-  { label: null, lenses: lensesOf(CLIENT_SIDE_LENSES) },
-  { label: VENUE_TOOLS_LABEL, lenses: withoutOps(lensesOf(VENUE_TOOL_LENSES)) },
-]);
-
 /**
  * Whom the rail is for, from the auth store's state. An identity not yet known
  * gets the client-side rail; a signed-in one being re-checked (the store keeps
@@ -135,24 +112,13 @@ export function lensAudienceOf(viewer: LensViewer): LensAudience {
   return hasRole(VENUE_MEMBER_ROLES, viewer.user.role) ? "venue-team" : "client-side";
 }
 
-/** Whether Ops's compile would be answered for this viewer on this layout (see the header). */
-function compilesOps(viewer: LensViewer, layout: LensLayout): boolean {
-  if (!layout.isPublicPreview) return true;
-  const user = viewer.user;
-  if (!viewer.isAuthenticated || user === null) return false;
-  if (user.platformRole === "admin") return true;
-  return layout.venueId !== null && user.venueId === layout.venueId && hasRole(VENUE_FLOOR_ROLES, user.role);
-}
-
-/** The rail this viewer sees on this layout under these keys. */
-export function lensesFor(viewer: LensViewer, keys: LensKeys, layout: LensLayout): LensRail {
-  if (!keys.lensesByRole) return keys.lensesDivider ? DIVIDED_RAIL : TODAY_RAIL;
+/** The rail this viewer sees under these keys. */
+export function lensesFor(viewer: LensViewer, keys: LensKeys): LensRail {
   const audience = lensAudienceOf(viewer);
-  if (audience === "client-side") return CLIENT_SIDE_RAIL;
-  const ops = compilesOps(viewer, layout);
-  if (audience === "hallkeeper") return ops ? HALLKEEPER_RAIL : HALLKEEPER_RAIL_WITHOUT_OPS;
-  if (keys.lensesDivider) return ops ? DIVIDED_RAIL : DIVIDED_RAIL_WITHOUT_OPS;
-  return ops ? NAMED_RAIL : NAMED_RAIL_WITHOUT_OPS;
+  if (keys.lensesByRole && audience === "client-side") return CLIENT_SIDE_RAIL;
+  if (keys.lensesByRole && audience === "hallkeeper") return HALLKEEPER_RAIL;
+  if (keys.lensesDivider) return DIVIDED_RAIL;
+  return keys.lensesByRole ? NAMED_RAIL : TODAY_RAIL;
 }
 
 /** The lens the cockpit shows: the active one if this rail offers it, else Design. */
