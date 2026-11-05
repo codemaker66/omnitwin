@@ -661,8 +661,14 @@ describe.skipIf(testUrl === undefined)("the enquiry funnel on migrated PostgreSQ
     it("is the same alarm for each of the venue's commercial team", async () => {
       const reads = await Promise.all((["admin", "manager", "staff", "sales"] as const).map((role) => alarmOf(asAlarm(role))));
       expect(reads.map((res) => res.status)).toEqual([200, 200, 200, 200]);
-      const [first, ...rest] = reads.map((res) => res.body["data"]);
-      for (const data of rest) expect(data).toEqual(first);
+      // asOf is when each read's transaction began, so concurrent reads may
+      // differ by a few milliseconds; everything else is the one alarm.
+      const [first, ...rest] = reads.map((res) => {
+        const { asOf, ...alarm } = res.body["data"] as Record<string, unknown>;
+        expect(Number.isNaN(Date.parse(String(asOf)))).toBe(false);
+        return alarm;
+      });
+      for (const alarm of rest) expect(alarm).toEqual(first);
     });
 
     it("keeps to the caller's own venue and refuses everyone who does not record replies", async () => {
