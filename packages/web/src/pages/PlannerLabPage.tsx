@@ -10,6 +10,7 @@ import { useCockpitStore } from "../stores/cockpit-store.js";
 import { useBookmarkStore } from "../stores/bookmark-store.js";
 import { nativeFrameComposer } from "../lib/native-frame-composer.js";
 import { getNativeRenderer } from "../lib/native-renderer.js";
+import { nativePrecompileSettled } from "../lib/native-precompile.js";
 import { getCatalogueItem, getCatalogueItemBySlug } from "../lib/catalogue.js";
 import { usePlannerToolKeys } from "../lib/planner-keymap.js";
 import { plannerChromeRequested } from "../lib/planner-chrome-flag.js";
@@ -106,7 +107,8 @@ declare global {
       ready: () => boolean;
       /**
        * Steps the planner's frame loop `frames` times at 60 fps, waiting for the
-       * GPU after each: frames advance even while the page is hidden.
+       * GPU after each: frames advance even while the page is hidden. Each waits
+       * first for any precompile hold to lift, as the view's own frames do.
        */
       advance: (frames?: number) => Promise<void>;
       /**
@@ -297,6 +299,11 @@ export function PlannerLabPage(): ReactElement {
       advance: async (frames = 30) => {
         const started = performance.now();
         for (let frame = 0; frame < frames; frame++) {
+          // R3F's advance draws through the view's precompile hold, with the
+          // job's target and MRT still set (lib/native-precompile.ts): driven
+          // so, 25 pipelines failed on WebGPU (4 Nov 2026).
+          const native = window.__venPerf === undefined ? null : getNativeRenderer(window.__venPerf.gl);
+          if (native !== null) await nativePrecompileSettled(native);
           // A demand loop draws only what was asked for: ask for every frame.
           invalidate();
           advanceFrame(started + frame * (1000 / 60));

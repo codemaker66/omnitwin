@@ -6,11 +6,13 @@ import { ActivityIndicator } from "../shared/Activity.js";
 import { captureEditorSession, isCurrentEditorSession } from "../../stores/editor-store.js";
 import { useEditorStore } from "../../stores/editor-store.js";
 import { useRoomDimensionsStore } from "../../stores/room-dimensions-store.js";
-import { captureOrthographic } from "../../lib/ortho-capture.js";
+import { PLAN_THUMBNAIL, captureOrthographic } from "../../lib/ortho-capture.js";
+import { ApiError } from "../../api/client.js";
 import { updatePublicThumbnail } from "../../api/configurations.js";
 import { isLayoutTimelineMutationLocked } from "../../lib/layout-timeline-preview-lock.js";
 import { useEscapeLayer } from "../../lib/planner-keys.js";
 import { flushAutoSave } from "./EditorBridge.js";
+import { reportPlanImageFailure } from "./send-layout-flow.js";
 import { recordGangwayReview } from "../../lib/gangway-review-record.js";
 import { useLayoutTimelinePreviewStore } from "../../stores/layout-timeline-preview-store.js";
 import {
@@ -153,7 +155,9 @@ async function submitReviewWithNotifications(configId: string, notifyTeam?: bool
     assertReviewMutationAllowed();
     if (scene !== null && space !== null && isPublicPreview) {
       const { width: w, length: l } = useRoomDimensionsStore.getState().dimensions;
-      const dataUrl = await captureOrthographic(scene, w, l, { width: 800, height: 533 });
+      const dataUrl = await captureOrthographic(scene, w, l, PLAN_THUMBNAIL);
+      // No plan to attach (a blank draw, or none within the API's cap).
+      if (dataUrl === null) reportPlanImageFailure(null);
       assertCurrent();
       if (dataUrl !== null) {
         await updatePublicThumbnail(configId, dataUrl);
@@ -161,6 +165,8 @@ async function submitReviewWithNotifications(configId: string, notifyTeam?: bool
       }
     }
   } catch (error) {
+    // The API's answer stands whatever the editor did meanwhile, so it is reported first.
+    if (error instanceof ApiError) reportPlanImageFailure(error);
     if (isLayoutTimelineMutationLocked()) throw error;
     // Capture/upload failure is non-blocking for the review submission.
   }
