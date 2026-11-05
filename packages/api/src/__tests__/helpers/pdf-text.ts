@@ -53,17 +53,38 @@ function objectsOf(buf: Buffer): Map<string, string> {
   return new Map([...source.matchAll(/(\d+) 0 obj([\s\S]*?)endobj/gu)].map((match) => [match[1] ?? "", match[2] ?? ""]));
 }
 
-// A stream is exactly its /Length bytes after "stream" and its line break.
-// Reading up to "endstream" instead takes a last byte of 0x0D for part of the
-// line break before it, and a compressed stream's last byte (the end of its
-// zlib checksum) is 0x0D about one time in 256, which truncates it.
-function streamOf(body: string): string {
-  const start = /stream\r?\n/u.exec(body);
-  const length = /\/Length (\d+)(?! \d+ R)/u.exec(body)?.[1];
-  if (start === null || length === undefined) throw new Error("PDF object has no stream");
+// A stream is exactly its /Length bytes after "stream" and its line break,
+// then "endstream". Reading up to "endstream" instead takes a last byte of 0x0D
+// for part of the line break before it, and a compressed stream's last byte
+// (the end of its zlib checksum) is 0x0D about one time in 256, which
+// truncates it. Every reader of these PDFs goes through pdfStream.
+const STREAM_START = />>\s*stream\r?\n/u;
+
+/**
+ * One object's stream, read by its /Length, with /FlateDecode undone, as
+ * latin1 text. Throws when the object has no stream, its /Length is missing or
+ * indirect, "endstream" does not follow those bytes, or they do not inflate:
+ * a test reading a damaged PDF fails instead of finding nothing in it.
+ */
+export function pdfStream(body: string): string {
+  const start = STREAM_START.exec(body);
+  if (start === null) throw new Error("PDF object has no stream");
+  const dict = body.slice(0, start.index);
+  // (?!\d) stops "/Length 12 0 R" from backtracking to read a length of 1.
+  const length = /\/Length (\d+)(?!\d)(?! \d+ R)/u.exec(dict)?.[1];
+  if (length === undefined) throw new Error("PDF stream has no direct /Length");
   const from = start.index + start[0].length;
-  const bytes = Buffer.from(body.slice(from, from + Number(length)), "latin1");
-  return (/\/FlateDecode/u.test(body) ? inflateSync(bytes) : bytes).toString("latin1");
+  const to = from + Number(length);
+  if (!/^(?:\r\n|\r|\n)?endstream/u.test(body.slice(to))) {
+    throw new Error(`PDF stream does not end after its /Length of ${length} bytes`);
+  }
+  const bytes = Buffer.from(body.slice(from, to), "latin1");
+  return (/\/FlateDecode/u.test(dict) ? inflateSync(bytes) : bytes).toString("latin1");
+}
+
+/** Every stream in the file, in object order, each read as pdfStream reads one. */
+export function pdfStreams(buf: Buffer): string[] {
+  return [...objectsOf(buf).values()].filter((body) => STREAM_START.test(body)).map(pdfStream);
 }
 
 function refOf(body: string, key: string): string | undefined {
@@ -126,7 +147,7 @@ function fontsOf(objects: ReadonlyMap<string, string>, resources: string): Map<s
     const base = /\/BaseFont \/(\S+)/u.exec(body)?.[1] ?? "";
     const toUnicode = refOf(body, "ToUnicode");
     const descendant = /\/DescendantFonts \[(\d+) 0 R\]/u.exec(body)?.[1];
-    const unicode = toUnicode === undefined ? new Map<number, string>() : parseToUnicode(streamOf(objects.get(toUnicode) ?? ""));
+    const unicode = toUnicode === undefined ? new Map<number, string>() : parseToUnicode(pdfStream(objects.get(toUnicode) ?? ""));
     const { widths, defaultWidth } = parseWidths(objects.get(descendant ?? "") ?? "");
     fonts.set(entry[1] ?? "", { base, unicode, widths, defaultWidth });
   }
@@ -147,7 +168,7 @@ export function pdfPages(buf: Buffer): PdfLine[][] {
     const resourcesRef = refOf(page, "Resources");
     const resources = resourcesRef === undefined ? page : objects.get(resourcesRef) ?? "";
     const fonts = fontsOf(objects, resources);
-    const content = streamOf(objects.get(refOf(page, "Contents") ?? "") ?? "");
+    const content = pdfStream(objects.get(refOf(page, "Contents") ?? "") ?? "");
     const lines: PdfLine[] = [];
     let ctm: Matrix = IDENTITY;
     const saved: Matrix[] = [];

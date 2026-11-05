@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import PDFDocument from "pdfkit";
 import { registerSheetFonts } from "../../services/sheet-pdf/fonts.js";
-import { pdfImageCount, pdfPageSizes, pdfPages, pdfText } from "./pdf-text.js";
+import { pdfPageTexts } from "../support/pdf-text.js";
+import { pdfImageCount, pdfPageSizes, pdfPages, pdfStream, pdfStreams, pdfText } from "./pdf-text.js";
+import { printedQr } from "./sheet-paper-reading.js";
 
 // The sheet embeds subset TrueType fonts, so its content streams hold glyph
 // codes, not characters. The helper maps them back through each font's
@@ -76,18 +78,42 @@ describe("pdf text helper", () => {
     const buf = await render((doc) => {
       doc.font("Inter-Regular").fontSize(11).text(text, 40, 100, { lineBreak: false });
     });
-    expect(contentStreamLastByte(buf)).toBe(0x0d);
+    const { begin, length } = contentStreamSpan(buf);
+    expect(buf.readUInt8(begin + length - 1)).toBe(0x0d);
     expect(pdfText(buf)).toBe(text);
+  });
+
+  it("reads a stream by a direct /Length only, and only when endstream follows it", () => {
+    const object = (dict: string, data: string): string => `\n<<\n${dict}\n>>\nstream\n${data}\nendstream\n`;
+    expect(pdfStream(object("/Length 4", "ab\r\r"))).toBe("ab\r\r");
+    // Refused, not read as a length of 1 by backing off from "12".
+    expect(() => pdfStream(object("/Length 12 0 R", "abcdefghijkl"))).toThrow(/no direct \/Length/u);
+    expect(() => pdfStream(object("/Length 3", "abcd"))).toThrow(/does not end after its \/Length of 3 bytes/u);
+  });
+
+  // A damaged stream must fail the test that reads it: a reader that skipped
+  // it would report the page as blank or the QR code as missing instead.
+  it("fails in every reader when a compressed stream will not inflate", async () => {
+    const buf = await render((doc) => {
+      doc.font("Inter-Regular").fontSize(11).text("Ready by 13:30", 40, 100, { lineBreak: false });
+    });
+    const { begin, length } = contentStreamSpan(buf);
+    const damaged = Buffer.from(buf);
+    const at = begin + Math.floor(length / 2);
+    damaged.writeUInt8(damaged.readUInt8(at) ^ 0xff, at);
+    expect(() => pdfText(damaged)).toThrow();
+    expect(() => pdfStreams(damaged)).toThrow();
+    expect(() => pdfPageTexts(damaged)).toThrow();
+    expect(() => printedQr(damaged)).toThrow();
   });
 });
 
-/** The last byte of the first page's content stream, read by its /Length. */
-function contentStreamLastByte(buf: Buffer): number {
+/** Where the first page's content stream sits in the file: its first byte and its /Length. */
+function contentStreamSpan(buf: Buffer): { readonly begin: number; readonly length: number } {
   const source = buf.toString("latin1");
   const contents = /\/Type \/Page\b[\s\S]*?\/Contents (\d+) 0 R/u.exec(source)?.[1] ?? "";
   const at = source.indexOf(`\n${contents} 0 obj\n`);
-  const body = source.slice(at, source.indexOf("\nendobj", at));
-  const length = Number(/\/Length (\d+)/u.exec(body)?.[1]);
-  const begin = body.indexOf("stream\n") + "stream\n".length;
-  return body.charCodeAt(begin + length - 1);
+  const length = Number(/\/Length (\d+)/u.exec(source.slice(at))?.[1]);
+  const begin = source.indexOf("stream\n", at) + "stream\n".length;
+  return { begin, length };
 }
