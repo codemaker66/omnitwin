@@ -254,6 +254,19 @@ describe("getPlacementViolations", () => {
     expect(stageViolations.some((violation) => violation.kind === "overlap")).toBe(false);
   });
 
+  it("lets trestles laid end to end in separate groups touch, to within a float's rounding, and still refuses a real overlap", () => {
+    const trestle = getCatalogueItemBySlug("trestle-6ft");
+    if (trestle === undefined) throw new Error("No 6 ft trestle in the catalogue");
+    const { halfW } = computeRotatedFootprint(trestle, 0);
+    const start = 0.1 + 0.2; // 0.30000000000000004: positions carry rounding, as snapped and stamped ones do
+    const placed: PlacedItem[] = [createPlacedItem("trestle-6ft", start, 0)];
+    const flush = start + 2 * halfW - 1e-12;
+    const overlaps = (x: number): boolean => getPlacementViolations(x, 0, trestle, 0, placed, new Set())
+      .some((violation) => violation.kind === "overlap");
+    expect(overlaps(flush)).toBe(false);
+    expect(overlaps(start + 2 * halfW - 0.002)).toBe(true);
+  });
+
   it("uses scaled existing and candidate Y intervals for overlap violations", () => {
     const scaledPlatform = { ...createPlacedItem("platform", 0, 0), scale: 2 };
     const insideScaledHeight = getPlacementViolations(

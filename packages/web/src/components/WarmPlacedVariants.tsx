@@ -28,7 +28,8 @@ import { createEditableInstancePool, disposeVariant, harvestVariant, instanceCap
 import { FurnitureProxy } from "./FurnitureProxy.js";
 import { GltfFurnitureTemplateContext } from "./meshes/GltfFurnitureTemplateContext.js";
 import { getCatalogueItem, getCatalogueItemBySlug, type CatalogueItem } from "../lib/catalogue.js";
-import { DEFAULT_PLANNER_CHAIR_SLUG } from "../lib/furniture-defaults.js";
+import { plannerChairSlug } from "../lib/furniture-defaults.js";
+import { usePlannerEventStore } from "../stores/planner-event-store.js";
 import { isDiningTableItem } from "../lib/furniture-semantics.js";
 import { onMainDraw } from "../lib/main-draw-clock.js";
 import { isTableDressingApplicator } from "../lib/table-dressing.js";
@@ -159,10 +160,10 @@ export function WarmPlacedVariants({ pools }: WarmPlacedVariantsProps): ReactEle
   );
 }
 
-/** What lands when `item` is set down: the piece, and a dining table's seats (lib/table-group.ts). */
-export function landsWith(item: CatalogueItem): readonly CatalogueItem[] {
+/** What lands when `item` is set down: the piece, and a dining table's seats, the event's chair (lib/table-group.ts, plannerChairSlug). */
+export function landsWith(item: CatalogueItem, chairSlug: string = plannerChairSlug()): readonly CatalogueItem[] {
   if (!isDiningTableItem(item)) return [item];
-  const chair = getCatalogueItemBySlug(DEFAULT_PLANNER_CHAIR_SLUG);
+  const chair = getCatalogueItemBySlug(chairSlug);
   return chair === undefined ? [item] : [item, chair];
 }
 
@@ -172,9 +173,9 @@ export function landsWith(item: CatalogueItem): readonly CatalogueItem[] {
  * time; a table's seats, up to MOST_LANDING). On an empty floor that is the first pool; near a
  * doubling it is the doubled one too, so the 33rd chair compiles nothing either.
  */
-export function poolsLanding(item: CatalogueItem, placedOfKind: (id: string) => number): readonly WarmPool[] {
+export function poolsLanding(item: CatalogueItem, placedOfKind: (id: string) => number, chairSlug: string = plannerChairSlug()): readonly WarmPool[] {
   const pools: WarmPool[] = [];
-  for (const piece of landsWith(item)) {
+  for (const piece of landsWith(item, chairSlug)) {
     const placed = placedOfKind(piece.id);
     const landing = piece.id === item.id ? 1 : MOST_LANDING;
     const capacities = new Set<number>();
@@ -191,14 +192,16 @@ export function poolsLanding(item: CatalogueItem, placedOfKind: (id: string) => 
  */
 export function WarmPieceInHand(): ReactElement | null {
   const selectedItemId = useCatalogueStore((state) => state.selectedItemId);
+  // A table lands with the event's chair, so a change of event warms the other chair.
+  const chairSlug = usePlannerEventStore((state) => plannerChairSlug(state.eventKind));
   const item = selectedItemId === null || isTableDressingApplicator(selectedItemId) ? undefined : getCatalogueItem(selectedItemId);
-  const kinds = item === undefined ? [] : landsWith(item).map((piece) => piece.id);
+  const kinds = item === undefined ? [] : landsWith(item, chairSlug).map((piece) => piece.id);
   // How many of each landing kind are placed, as one string: a drag that moves pieces re-renders nothing.
   const placed = usePlacementStore((state) => kinds
     .map((id) => String(state.placedItems.reduce((count, placedItem) => (placedItem.catalogueItemId === id ? count + 1 : count), 0)))
     .join("|"));
   if (item === undefined) return null;
   const counts = new Map(kinds.map((id, index) => [id, Number(placed.split("|")[index] ?? 0)]));
-  const pools = poolsLanding(item, (id) => counts.get(id) ?? 0);
+  const pools = poolsLanding(item, (id) => counts.get(id) ?? 0, chairSlug);
   return <WarmPlacedVariants key={item.id} pools={pools} />;
 }

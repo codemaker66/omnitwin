@@ -1,4 +1,10 @@
-import type { CreateEventDayIssueInput, RecordObservation, UpdateOpsTaskStatusInput } from "@omnitwin/types";
+import type {
+  CreateEventDayIssueInput,
+  RecordObservation,
+  RequestState,
+  RequestTransition,
+  UpdateOpsTaskStatusInput,
+} from "@omnitwin/types";
 import { openCache, type CacheHandle } from "./idb-cache.js";
 
 // ---------------------------------------------------------------------------
@@ -7,7 +13,8 @@ import { openCache, type CacheHandle } from "./idb-cache.js";
 // Mobile ops staff can lose WiFi during setup. This queue mirrors the
 // hallkeeper progress queue: failed status/issue writes are stored in IndexedDB
 // and replayed when the device is online again. Task status is last-write-wins
-// per task; issue creation keeps every queued issue.
+// per task; issue creation keeps every queued issue; a step on a floor request
+// keeps every press, in the order pressed, each under its own key.
 // ---------------------------------------------------------------------------
 
 export type QueuedEventDayOp =
@@ -34,12 +41,44 @@ export type QueuedEventDayOp =
     readonly venueId: string;
     readonly input: RecordObservation;
     readonly queuedAt: string;
-  };
+  }
+  | QueuedRequestStep;
+
+/** L9: a step on a floor request (Seen, I'll do it, Done …) pressed with no
+ *  connection. The commandId was minted at the press and travels as the
+ *  Idempotency-Key, so the replay is that press: one step on the server's
+ *  ledger however often it is sent. Who pressed it is kept, and the replay is
+ *  sent only while that person is the one signed in. */
+export interface QueuedRequestStep {
+  readonly kind: "request_step";
+  readonly queueKey: string;
+  readonly venueId: string;
+  readonly requestId: string;
+  /** The slot the request sits on, so what the replay could not do is said there. */
+  readonly bookingId: string | null;
+  /** What was asked ("Chairs × 10"), for those words. */
+  readonly summary: string;
+  readonly transition: RequestTransition;
+  /** The state the request was in, as this person saw it, when the step was
+   *  pressed: the replay is refused if the request has moved on since. */
+  readonly expectedState: RequestState;
+  /** Whose the request was, as this person saw it, when the step was
+   *  pressed (null for nobody's): the replay is refused if it has changed
+   *  hands since, which its state alone cannot show. */
+  readonly expectedOwnerUserId: string | null;
+  readonly commandId: string;
+  readonly authorUserId: string;
+  readonly authorName: string;
+  readonly queuedAt: string;
+}
+
+export type RequestStepInput = Omit<QueuedRequestStep, "kind" | "queueKey" | "queuedAt">;
 
 /** What the server said when a replayed op reached it; or "left", when the
  *  op is not this drainer's to send and stays queued for the screen that
- *  owns it (the Day Board drains facts about rooms, the event-day page the
- *  rest). */
+ *  owns it (the Day Board drains facts about rooms, its requests provider the
+ *  request steps, the event-day page the rest), or for the person who
+ *  pressed it to be signed in again. */
 export type EventDayOpOutcome = "applied" | "replayed" | "refused" | "left";
 
 const DB_NAME = "omnitwin-event-day";
@@ -55,6 +94,10 @@ function issueKey(clientOperationId: string): string {
 
 function observationKey(idempotencyKey: string): string {
   return `observation:${idempotencyKey}`;
+}
+
+function requestStepKey(commandId: string): string {
+  return `request:${commandId}`;
 }
 
 function makeClientOperationId(prefix: string): string {
@@ -83,6 +126,22 @@ export function createEventDayQueue(handle: CacheHandle<QueuedEventDayOp>) {
   async function ack(queueKey: string): Promise<void> {
     await handle.delete(queueKey);
   }
+
+  /** A request step replays after every step pressed before it on this
+   *  device: its stamp is never behind the latest kept one, even under a
+   *  clock that stood still or stepped back between the presses. */
+  async function nextRequestStepStamp(): Promise<string> {
+    const latest = (await list())
+      .filter((op) => op.kind === "request_step")
+      .map((op) => Date.parse(op.queuedAt))
+      .filter((stamp) => Number.isFinite(stamp))
+      .reduce((max, stamp) => Math.max(max, stamp), Number.NEGATIVE_INFINITY);
+    return new Date(Math.max(Date.now(), latest + 1)).toISOString();
+  }
+
+  // Request steps are written one at a time, so two presses stored at once
+  // still take their stamps in the order they were pressed.
+  let requestStepWrites: Promise<void> = Promise.resolve();
 
   return {
     async enqueueTaskStatus(opsTaskId: string, input: UpdateOpsTaskStatusInput): Promise<void> {
@@ -126,6 +185,23 @@ export function createEventDayQueue(handle: CacheHandle<QueuedEventDayOp>) {
         input,
         queuedAt: existing?.value.queuedAt ?? new Date().toISOString(),
       });
+    },
+
+    /** A step on a floor request (L9), keyed by its own commandId: the same
+     *  press stored twice is one op and keeps its first place in the order. */
+    async enqueueRequestStep(step: RequestStepInput): Promise<void> {
+      const write = requestStepWrites.then(async () => {
+        const key = requestStepKey(step.commandId);
+        const existing = await handle.get(key);
+        await handle.put(key, {
+          ...step,
+          kind: "request_step",
+          queueKey: key,
+          queuedAt: existing?.value.queuedAt ?? await nextRequestStepStamp(),
+        });
+      });
+      requestStepWrites = write.catch(() => undefined);
+      await write;
     },
 
     list,
@@ -173,6 +249,10 @@ export function enqueueEventDayIssueCreate(
 
 export function enqueueEventDayObservation(venueId: string, input: RecordObservation): Promise<void> {
   return defaultQueue.enqueueObservationRecord(venueId, input);
+}
+
+export function enqueueEventDayRequestStep(step: RequestStepInput): Promise<void> {
+  return defaultQueue.enqueueRequestStep(step);
 }
 
 export function listPendingEventDayOps(): Promise<readonly QueuedEventDayOp[]> {

@@ -35,9 +35,13 @@ import { InteractiveFloorPlan } from "../components/hallkeeper/InteractiveFloorP
 import { HallkeeperStatusBanner } from "../components/hallkeeper/HallkeeperStatusBanner.js";
 import { HallkeeperWorkspace } from "../components/hallkeeper/HallkeeperWorkspace.js";
 import { ProtectedPremisesBlock } from "../components/hallkeeper/ProtectedPremisesBlock.js";
+import { SheetStandingMark, describeSheetStanding } from "../components/hallkeeper/SheetStandingMark.js";
+import { useSheetStanding } from "../components/hallkeeper/useSheetStanding.js";
 import { PaperCopyStamp, paperCopyLine, usePrintedAt } from "../components/hallkeeper/PaperCopyStamp.js";
 import { formatSheetTimes } from "../components/hallkeeper/sheet-facts.js";
 import { ActivityIndicator, ActivityStatus } from "../components/shared/Activity.js";
+import { useAuthStore } from "../stores/auth-store.js";
+import { CLIENT_SIDE_ROLES, hasRole } from "../lib/role-capabilities.js";
 import "../styles/hallkeeper-register.css";
 import "./hallkeeper-sheet.css";
 
@@ -207,6 +211,11 @@ export function HallkeeperPage(): React.ReactElement {
   const checksRef = useRef<CheckMap>({});
   const operationVersions = useRef(new Map<string, number>());
   const [progressUnavailable, setProgressUnavailable] = useState(false);
+  // The checklist is the venue crew's record (release audit tenancy-f-2): a
+  // client or planner opening their own layout's sheet reads the ticks and
+  // makes none. The API refuses their writes either way.
+  const checksReadOnly = useAuthStore((state) =>
+    hasRole(CLIENT_SIDE_ROLES, state.user?.role) && state.user?.platformRole !== "admin");
   const [progressNotice, setProgressNotice] = useState<string | null>(null);
   const progressReloadRef = useRef(0);
   const [checksReloading, setChecksReloading] = useState(false);
@@ -347,7 +356,7 @@ export function HallkeeperPage(): React.ReactElement {
   //      enqueue path makes the tablet usable in the bad-network
   //      conditions where it matters most.
   const handleToggle = useCallback((rowKey: string) => {
-    if (configId === undefined || progressUnavailable) return;
+    if (configId === undefined || progressUnavailable || checksReadOnly) return;
     const wasChecked = checksRef.current[rowKey] === true;
     const operationKey = `${configId}|${writeEventId ?? ""}|${rowKey}`;
     const operationVersion = (operationVersions.current.get(operationKey) ?? 0) + 1;
@@ -408,7 +417,7 @@ export function HallkeeperPage(): React.ReactElement {
         rollback();
       }
     })().finally(finishWrite);
-  }, [configId, eventId, writeEventId, progressUnavailable, beginProgressWrite]);
+  }, [configId, eventId, writeEventId, progressUnavailable, checksReadOnly, beginProgressWrite]);
 
   // Serialize drains for each sheet while allowing a newly opened sheet
   // to sync even when the previous sheet still has a request in flight.
@@ -584,6 +593,9 @@ export function HallkeeperPage(): React.ReactElement {
   const counts = useMemo(() => computeCounts(data, checks), [data, checks]);
   // The printed copy states its own printed minute ("…, printed 17 Oct 06:02").
   const printedAt = usePrintedAt();
+  // Whether this screen is still the version in force, asked again while it stays open (goal 05).
+  const standingResult = useSheetStanding(data?.paperCheck);
+  const standing = describeSheetStanding(standingResult, data?.approval?.version ?? null);
 
   if (loading) {
     return <main className="hk-page hk-sheet-state" aria-label="Hallkeeper sheet loading">
@@ -620,8 +632,10 @@ export function HallkeeperPage(): React.ReactElement {
   return <main className="hk-page hk-focused-page" aria-label={`Hallkeeper sheet for ${data.config.name} at ${data.venue.name}`}>
     <HallkeeperWorkspace key={data.config.id} data={data} checks={checks} onToggle={handleToggle}
       highlightedRowKey={highlightedRowKey} onHighlight={setHighlightedRowKey} disabled={progressUnavailable}
+      checksReadOnly={checksReadOnly}
       downloadBusy={downloadBusy} onDownload={handleDownload} onPrint={handlePrint}
       notices={<>
+        {standing !== null && <SheetStandingMark standing={standing} onOpen={loadData} />}
         {pendingCount > 0 && <OfflinePendingBadge count={pendingCount} />}
         {configId !== undefined && (progressWrites.get(configId) ?? 0) > 0 && <ActivityStatus>Saving shared checks…</ActivityStatus>}
         {configId !== undefined && syncingConfigs.has(configId) && <ActivityStatus>Syncing saved checks…</ActivityStatus>}
@@ -646,13 +660,14 @@ export function HallkeeperPage(): React.ReactElement {
     <div className="hk-print-only" aria-hidden="true">
       <h1>{data.space.name}</h1><h2>{data.config.name}</h2><p>{data.venue.name} · {formatDims(data.space)} · {data.config.guestCount} guests · {formatLayoutStyle(data.config.layoutStyle)}</p>
       <p className="hk-print-version">{paperCopyLine(data, printedAt)}</p>
+      {standing !== null && <SheetStandingMark standing={standing} />}
       {data.timing !== null && <p>{formatSheetTimes(data.timing, data.venue.timezone)}</p>}
       <HallkeeperStatusBanner key={data.config.id} configId={data.config.id} timeZone={data.venue.timezone} />
       {approval !== null && <ApprovalStampBanner approval={approval} timezone={data.venue.timezone} />}
       <p>{progressUnavailable ? "Shared checks unavailable" : `${String(counts.checkedRows)} of ${String(counts.totalRows)} setup rows checked`}</p>
       <InteractiveFloorPlan floorPlan={data.floorPlan} room={data.space} phases={data.phases} highlightedRowKey={null} onMarkerClick={() => undefined} />
       {data.phases.map((phase) => <PhaseBlock key={phase.phase} phase={phase} checks={checks} onToggle={handleToggle}
-        highlightedRowKey={null} onHighlightRow={() => undefined} isCollapsed={false} onToggleCollapse={() => undefined} disabled={progressUnavailable} />)}
+        highlightedRowKey={null} onHighlightRow={() => undefined} isCollapsed={false} onToggleCollapse={() => undefined} disabled={progressUnavailable || checksReadOnly} />)}
       {instructions !== null && <InstructionsBanner instructions={instructions} timezone={data.venue.timezone} />}
       {instructions !== null && <AccessibilityCallouts callouts={buildAccessibilityCallouts(instructions.accessibility)} />}
       {instructions !== null && instructions.dietary !== null && hasDietaryContent(instructions.dietary) && <DietarySummaryBlock dietary={instructions.dietary} />}

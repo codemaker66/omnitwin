@@ -63,7 +63,7 @@ const CreateRuleBody = z.object({
   currency: z.string().length(3).default("GBP"),
   minHours: z.number().int().positive().nullable().optional(),
   minGuests: z.number().int().positive().nullable().optional(),
-  tiers: z.array(TierSchema).nullable().optional(),
+  tiers: z.array(TierSchema).max(50).nullable().optional(),
   dayOfWeekModifiers: z.record(z.string(), z.number().positive()).nullable().optional(),
   seasonalModifiers: z.record(z.string(), z.number().positive()).nullable().optional(),
   validFrom: CalendarDate.nullable().optional(),
