@@ -3,7 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import {
   ANALYTICS_ROLES, awaitsVenue, canDraftWithAI, CLIENT_SEARCH_ROLES, COMMERCIAL_ROLES, CRM_PIPELINE_ROLES,
   DIARY_WRITE_ROLES, diaryVenueOf, EVENT_SCOPED_ROLES, hasRole, INVENTORY_WRITE_ROLES, PRICING_READ_ROLES, REVIEW_QUEUE_ROLES,
-  ROTA_TAB_ROLES, TEAM_TAB_ROLES, WORKSPACE_ROLES,
+  replyVenueOf, ROTA_TAB_ROLES, TEAM_TAB_ROLES, WORKSPACE_ROLES,
 } from "../lib/role-capabilities.js";
 import { DashboardLayout, NAV_ITEMS, type DashboardView } from "../components/dashboard/DashboardLayout.js";
 import { VenueNotConnected } from "../components/dashboard/VenueNotConnected.js";
@@ -203,6 +203,7 @@ export function DashboardPage(): React.ReactElement {
   const diaryVenueId = useAuthStore((state) => diaryVenueOf(state.user));
   // The general AI drafts answer only the venue's own team (T-656).
   const canDraft = useAuthStore((state) => canDraftWithAI(state.user));
+  const replyVenueId = useAuthStore((state) => replyVenueOf(state.user));
   const requestedView = useMemo(
     () => dashboardViewFromSearchValue(searchParams.get("view")),
     [searchParams],
@@ -400,6 +401,8 @@ export function DashboardPage(): React.ReactElement {
             diaryVenueId={diaryVenueId}
             // POST /ai/drafts's own rule, so no one is offered a refusal.
             canDraftWithAI={canDraft}
+            // The first-response report's and the reply alarm's own rule.
+            replyVenueId={replyVenueId}
           />
         );
       case "pipeline":
