@@ -356,6 +356,37 @@ describe("WhenRibbon", () => {
     expect(moveBookingMock).not.toHaveBeenCalled();
   });
 
+  // Delta review, 5 Nov (C3): clearing the planner's chrome hides the ribbon,
+  // and an hour still held there from the keyboard took the next Esc, which
+  // then did nothing anyone could see. While the ribbon is hidden, Esc passes
+  // the held hour by, and it is still held when the ribbon comes back.
+  it("keyboard: a held hour on a hidden ribbon leaves the Esc to what can be seen", async () => {
+    getCalendarMock.mockResolvedValue(
+      calendarFixture([
+        booking(SELF, NOON, NOON + 120 * MIN, { eventId: EVENT, kind: "hold", state: "hold" }),
+      ]),
+    );
+    moveBookingMock.mockResolvedValue({});
+    renderRibbon();
+
+    const ingot = await screen.findByTestId("when-ribbon-ingot");
+    fireEvent.keyDown(ingot, { key: "ArrowRight" });
+    const strip = screen.getByTestId("when-ribbon-strip");
+    strip.style.visibility = "hidden";
+    const escape = new KeyboardEvent("keydown", { key: "Escape", code: "Escape", bubbles: true, cancelable: true });
+    act(() => { window.dispatchEvent(escape); });
+    expect(escape.defaultPrevented).toBe(false);
+
+    strip.style.visibility = "";
+    fireEvent.keyDown(ingot, { key: "Enter" });
+    await waitFor(() => {
+      expect(moveBookingMock).toHaveBeenCalledWith(SELF, {
+        startsAt: new Date(NOON + 15 * MIN).toISOString(),
+        endsAt: new Date(NOON + 135 * MIN).toISOString(),
+      });
+    });
+  });
+
   it("keyboard: an ink move demands the confirm step before any PATCH — ink resists", async () => {
     getCalendarMock.mockResolvedValue(
       calendarFixture([booking(SELF, NOON, NOON + 120 * MIN, { eventId: EVENT })]),
