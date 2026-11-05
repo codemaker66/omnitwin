@@ -62,16 +62,32 @@ const BatchBody = z.object({
   objects: z.array(BatchObjectItem).max(500),
 });
 
-// Punch list #24: accepts a data URL (PNG) as the thumbnail for a public
-// preview config. The .max() checks data URL string length (not decoded
-// payload bytes). Base64 inflates by ~33%, so 270KB string ≈ 200KB decoded PNG.
-// 800×533 captures are typically 30-50 KB. The long-term answer is R2
-// upload with a presigned URL; this is the pragmatic single-tenant path.
+// Punch list #24: accepts a data URL (PNG or JPEG) as the thumbnail for a
+// public preview config. The .max() checks the data URL's length, not its
+// decoded bytes: base64 inflates by ~33%, so 270,000 characters is about
+// 200 KB decoded. The Grand Hall's 800×533 plan is 514 KB as PNG (685,350
+// characters, refused here) and 72 KB as JPEG at 0.85 (96,443), so the planner
+// sends JPEG (web lib/ortho-capture.ts, PLAN_THUMBNAIL); the sheet PDF embeds
+// either (sheet-pdf/blocks.ts diagramBytes). The long-term answer is R2 upload
+// with a presigned URL; this is the pragmatic single-tenant path.
 const MAX_THUMBNAIL_STRING_LEN = 270_000;
+/** Each accepted thumbnail type, with the bytes its image must start with. */
+const THUMBNAIL_TYPES = [
+  { prefix: "data:image/png;base64,", signature: [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a] },
+  { prefix: "data:image/jpeg;base64,", signature: [0xff, 0xd8, 0xff] },
+] as const;
+/** A PNG or JPEG data URL whose bytes begin as its declared type's do, not only its label. */
+function isThumbnailDataUrl(value: string): boolean {
+  const type = THUMBNAIL_TYPES.find(({ prefix }) => value.startsWith(prefix));
+  if (type === undefined) return false;
+  // Twelve base64 characters decode to the first nine bytes, enough for either signature.
+  const head = Buffer.from(value.slice(type.prefix.length, type.prefix.length + 12), "base64");
+  return type.signature.every((byte, index) => head[index] === byte);
+}
 const ThumbnailBody = z.object({
   thumbnailUrl: z.string()
-    .startsWith("data:image/png;base64,", "Must be a PNG data URL")
-    .max(MAX_THUMBNAIL_STRING_LEN, "Thumbnail data URL too large (max ~200KB decoded PNG)"),
+    .max(MAX_THUMBNAIL_STRING_LEN, "Thumbnail data URL too large (max ~200KB decoded)")
+    .refine(isThumbnailDataUrl, "Must be a PNG or JPEG data URL whose bytes match its type"),
 });
 
 /** A guest plan the venue has taken into review holds still for its snapshot
@@ -351,13 +367,14 @@ export async function publicConfigRoutes(
   //
   // Punch list #24: the hallkeeper sheet PDF needs a floor plan image in
   // `configurations.thumbnailUrl`. The ortho capture happens in the browser
-  // (Three.js scene → PNG data URL). This endpoint stores the data URL in
-  // the thumbnailUrl column. Only works for unclaimed public preview configs
-  // — claimed configs use the authenticated PATCH /configurations/:id.
+  // (Three.js scene → JPEG data URL, PLAN_THUMBNAIL). This endpoint stores the
+  // data URL in the thumbnailUrl column. Only works for unclaimed public preview
+  // configs — claimed configs use the authenticated PATCH /configurations/:id.
   //
   // Security: no auth required (consistent with other public config endpoints).
-  // Scoped to isPublicPreview=true. Body is validated as a PNG data URL with
-  // a 200 KB size cap. Rate-limited to 20/hour to prevent abuse.
+  // Scoped to isPublicPreview=true. Body is validated as a PNG or JPEG data URL
+  // whose bytes match its type, within 270,000 characters (about 200 KB
+  // decoded). Rate-limited to 20/hour to prevent abuse.
   server.post("/configurations/:configId/thumbnail", {
     config: { rateLimit: { max: 20, timeWindow: "1 hour" } },
   }, async (request, reply) => {

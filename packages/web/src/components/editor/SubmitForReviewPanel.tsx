@@ -6,8 +6,10 @@ import { ActivityIndicator } from "../shared/Activity.js";
 import { captureEditorSession, isCurrentEditorSession } from "../../stores/editor-store.js";
 import { useEditorStore } from "../../stores/editor-store.js";
 import { useRoomDimensionsStore } from "../../stores/room-dimensions-store.js";
-import { captureOrthographic } from "../../lib/ortho-capture.js";
+import { PLAN_THUMBNAIL, captureOrthographic } from "../../lib/ortho-capture.js";
+import { ApiError } from "../../api/client.js";
 import { updatePublicThumbnail } from "../../api/configurations.js";
+import { reportFailure } from "../../observability/failure-reports.js";
 import { isLayoutTimelineMutationLocked } from "../../lib/layout-timeline-preview-lock.js";
 import { useEscapeLayer } from "../../lib/planner-keys.js";
 import { flushAutoSave } from "./EditorBridge.js";
@@ -153,7 +155,9 @@ async function submitReviewWithNotifications(configId: string, notifyTeam?: bool
     assertReviewMutationAllowed();
     if (scene !== null && space !== null && isPublicPreview) {
       const { width: w, length: l } = useRoomDimensionsStore.getState().dimensions;
-      const dataUrl = await captureOrthographic(scene, w, l, { width: 800, height: 533 });
+      const dataUrl = await captureOrthographic(scene, w, l, PLAN_THUMBNAIL);
+      // No plan to attach (a blank draw, or none within the API's cap).
+      if (dataUrl === null) reportFailure("plan-image-failed", { stage: "capture" });
       assertCurrent();
       if (dataUrl !== null) {
         await updatePublicThumbnail(configId, dataUrl);
@@ -161,6 +165,10 @@ async function submitReviewWithNotifications(configId: string, notifyTeam?: bool
       }
     }
   } catch (error) {
+    // The API refused the plan or never got it: Sentry hears the status, never the server's words.
+    if (error instanceof ApiError) {
+      reportFailure("plan-image-failed", { stage: "upload", status: error.status > 0 ? error.status : "network" });
+    }
     if (isLayoutTimelineMutationLocked()) throw error;
     // Capture/upload failure is non-blocking for the review submission.
   }

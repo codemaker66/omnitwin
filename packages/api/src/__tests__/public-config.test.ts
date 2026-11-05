@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import type { FastifyInstance } from "fastify";
 
@@ -286,7 +288,7 @@ describe("claim-config.ts source-of-truth (#14)", () => {
 // ---------------------------------------------------------------------------
 // POST /public/configurations/:configId/thumbnail — punch list #24
 //
-// Stores the orthographic capture (PNG data URL) in configurations.thumbnailUrl.
+// Stores the orthographic capture (PNG or JPEG data URL) in configurations.thumbnailUrl.
 // The hallkeeper sheet PDF reads this URL to insert the floor plan diagram.
 // Without it, the PDF shows a placeholder "Generate from the 3D editor..."
 // ---------------------------------------------------------------------------
@@ -330,17 +332,30 @@ describe("POST /public/configurations/:configId/thumbnail", () => {
     expect(res.statusCode).toBe(400);
   });
 
-  it("returns 400 for non-PNG data URL", async () => {
+  it.each([
+    ["PNG bytes labelled JPEG", "data:image/jpeg;base64,iVBORw0KGgo="],
+    ["JPEG bytes labelled PNG", "data:image/png;base64,/9j/4AAQ"],
+    ["text labelled PNG", "data:image/png;base64,YQ=="],
+  ])("returns 400 for a mislabelled payload (%s)", async (_kind, thumbnailUrl) => {
     const res = await server.inject({
       method: "POST",
       url: `/public/configurations/${CONFIG_ID}/thumbnail`,
-      payload: { thumbnailUrl: "data:image/jpeg;base64,/9j/4AAQ" },
+      payload: { thumbnailUrl },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("returns 400 for a data URL the sheet cannot embed (WebP)", async () => {
+    const res = await server.inject({
+      method: "POST",
+      url: `/public/configurations/${CONFIG_ID}/thumbnail`,
+      payload: { thumbnailUrl: "data:image/webp;base64,UklGRg==" },
     });
     expect(res.statusCode).toBe(400);
   });
 
   it("returns 400 when thumbnail exceeds size limit", async () => {
-    // 270 KB string limit (≈200 KB decoded PNG). Generate a string over the limit.
+    // 270,000-character limit (about 200 KB decoded). Generate a string over the limit.
     const huge = "data:image/png;base64," + "A".repeat(280_000);
     const res = await server.inject({
       method: "POST",
@@ -360,6 +375,31 @@ describe("POST /public/configurations/:configId/thumbnail", () => {
     expect(res.statusCode).not.toBe(400);
     expect(res.statusCode).not.toBe(401);
   });
+
+  it("passes validation with a JPEG data URL, the planner's plan thumbnail (fails at DB)", async () => {
+    const res = await server.inject({
+      method: "POST",
+      url: `/public/configurations/${CONFIG_ID}/thumbnail`,
+      payload: { thumbnailUrl: "data:image/jpeg;base64,/9j/4AAQ" },
+    });
+    expect(res.statusCode).not.toBe(400);
+    expect(res.statusCode).not.toBe(401);
+  });
+
+  it("takes the Grand Hall's own default plan capture, within the cap", async () => {
+    // The planner lab's Grand Hall (160 guests, sky off) as Send layout captures it:
+    // PLAN_THUMBNAIL, 800×533 JPEG at 0.85, encoded by Chrome (5 Nov 2026), 96,443
+    // characters. As PNG the same plan was 685,350 characters, and this route refused it.
+    const jpeg = readFileSync(resolve(import.meta.dirname, "fixtures/grand-hall-plan-thumbnail.jpg"));
+    const thumbnailUrl = `data:image/jpeg;base64,${jpeg.toString("base64")}`;
+    expect(thumbnailUrl.length).toBeLessThanOrEqual(270_000);
+    const res = await server.inject({
+      method: "POST",
+      url: `/public/configurations/${CONFIG_ID}/thumbnail`,
+      payload: { thumbnailUrl },
+    });
+    expect(res.statusCode).not.toBe(400);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -377,9 +417,12 @@ describe("public-configs.ts thumbnail security — source-grep (#24)", () => {
     return { raw, codeOnly };
   }
 
-  it("validates thumbnailUrl starts with PNG data URL prefix", async () => {
+  it("validates thumbnailUrl as a PNG or JPEG data URL by its decoded bytes", async () => {
+    // The refusals above are the guard; this keeps the check from being swapped for a label test.
     const { codeOnly } = await readSource();
-    expect(codeOnly).toContain('startsWith("data:image/png;base64,');
+    expect(codeOnly).toMatch(/\.refine\(isThumbnailDataUrl,/);
+    expect(codeOnly).toContain('prefix: "data:image/png;base64,", signature: [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]');
+    expect(codeOnly).toContain('prefix: "data:image/jpeg;base64,", signature: [0xff, 0xd8, 0xff]');
   });
 
   it("enforces a size cap on the thumbnail body", async () => {

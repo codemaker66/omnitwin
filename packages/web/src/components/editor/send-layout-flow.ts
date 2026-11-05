@@ -1,6 +1,8 @@
+import { ApiError } from "../../api/client.js";
 import { updatePublicThumbnail } from "../../api/configurations.js";
-import { captureOrthographic } from "../../lib/ortho-capture.js";
+import { PLAN_THUMBNAIL, captureOrthographic } from "../../lib/ortho-capture.js";
 import { isLayoutTimelineMutationLocked } from "../../lib/layout-timeline-preview-lock.js";
+import { reportFailure } from "../../observability/failure-reports.js";
 import { captureEditorSession, isCurrentEditorSession, useEditorStore } from "../../stores/editor-store.js";
 import { useRoomDimensionsStore } from "../../stores/room-dimensions-store.js";
 import { flushAutoSave } from "./EditorBridge.js";
@@ -28,16 +30,20 @@ export async function prepareLayoutForGuestEnquiry(configId: string): Promise<bo
     const { width: roomWidthRender, length: roomLengthRender } =
       useRoomDimensionsStore.getState().dimensions;
     if (!canContinue()) return false;
-    const dataUrl = await captureOrthographic(scene, roomWidthRender, roomLengthRender, {
-      width: 800,
-      height: 533,
-    });
-    if (dataUrl !== null) {
+    const dataUrl = await captureOrthographic(scene, roomWidthRender, roomLengthRender, PLAN_THUMBNAIL);
+    if (dataUrl === null) {
+      // No plan to attach (a blank draw, or none within the API's cap).
+      reportFailure("plan-image-failed", { stage: "capture" });
+    } else {
       if (!canContinue()) return false;
       await updatePublicThumbnail(configId, dataUrl);
       if (!canContinue()) return false;
     }
-  } catch {
+  } catch (error) {
+    // The API refused the plan or never got it: Sentry hears the status, never the server's words.
+    if (error instanceof ApiError) {
+      reportFailure("plan-image-failed", { stage: "upload", status: error.status > 0 ? error.status : "network" });
+    }
     // Best-effort: capture/upload failure must not block sending an enquiry.
     // A preview lock that appeared across an await is not a capture failure.
     if (!canContinue()) return false;

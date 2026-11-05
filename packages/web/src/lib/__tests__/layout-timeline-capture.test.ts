@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Group, Scene } from "three";
 import {
+  CIRCULATION_OVERLAY_GROUP,
   SAVED_LAYOUT_FURNITURE_GROUP,
   TIMELINE_CAPTURE_FURNITURE_GROUP,
   TIMELINE_PREVIEW_FURNITURE_GROUP,
@@ -69,5 +70,17 @@ describe("timeline orthographic capture visibility", () => {
     expect(saved.visible).toBe(true);
     capture.restore();
     expect(saved.visible).toBe(false);
+  });
+
+  it("leaves the clearance lines out of every plan and puts them back", () => {
+    const scene = new Scene();
+    const circulation = new Group();
+    circulation.name = CIRCULATION_OVERLAY_GROUP;
+    scene.add(circulation);
+
+    const capture = prepareFurnitureForOrthographicCapture(scene);
+    expect(circulation.visible).toBe(false);
+    capture.restore();
+    expect(circulation.visible).toBe(true);
   });
 });
