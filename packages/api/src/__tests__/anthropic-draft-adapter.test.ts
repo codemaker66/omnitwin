@@ -1,6 +1,8 @@
 import type Anthropic from "@anthropic-ai/sdk";
+import { APIError } from "@anthropic-ai/sdk";
 import { describe, expect, it, vi } from "vitest";
 import { validateEnv } from "../env.js";
+import { AIAccessPolicy, AIAssistantDisabledError, AIDraftsUnavailableError, isOutOfCredit } from "../services/ai-access.js";
 import {
   DisabledAIGenerationAdapter,
   HttpAIGenerationAdapter,
@@ -22,6 +24,8 @@ import {
 import { AIBudgetReachedError, TallyAIUsageMeter } from "../services/ai-usage.js";
 
 const ATTRIBUTION = { venueId: "00000000-0000-4000-8000-0000000065a1", userId: "00000000-0000-4000-8000-0000000065a2" };
+/** AI switched on for the attributed venue's proposal drafts and briefs only (C1). */
+const PILOT = { AI_ASSISTANT_VENUE_IDS: ATTRIBUTION.venueId, AI_ASSISTANT_FEATURES: "proposal_draft,event_brief" };
 
 const BASE_ENV = {
   DATABASE_URL: "postgresql://mock:mock@localhost/mock",
@@ -240,6 +244,7 @@ describe("Anthropic adapter", () => {
     const env = validateEnv({
       ...BASE_ENV,
       AI_ASSISTANT_ENABLED: "true",
+      ...PILOT,
       AI_ASSISTANT_PROVIDER: "anthropic",
       AI_ASSISTANT_MODEL: "claude-opus-5-5",
       AI_ASSISTANT_API_KEY: "test-key-not-real",
@@ -253,6 +258,7 @@ describe("Anthropic adapter", () => {
     const env = validateEnv({
       ...BASE_ENV,
       AI_ASSISTANT_ENABLED: "true",
+      ...PILOT,
       AI_ASSISTANT_PROVIDER: "anthropic",
       AI_ASSISTANT_MODEL: "claude-unpriced-9",
       AI_ASSISTANT_API_KEY: "test-key-not-real",
@@ -267,6 +273,7 @@ describe("Anthropic adapter", () => {
     const env = validateEnv({
       ...BASE_ENV,
       AI_ASSISTANT_ENABLED: "true",
+      ...PILOT,
       AI_ASSISTANT_PROVIDER: "gateway",
       AI_ASSISTANT_MODEL: "gateway-model",
       AI_ASSISTANT_BASE_URL: "https://ai.example.test/draft",
@@ -294,9 +301,124 @@ describe("Anthropic adapter", () => {
     expect(() => validateEnv({
       ...BASE_ENV,
       AI_ASSISTANT_ENABLED: "true",
+      ...PILOT,
       AI_ASSISTANT_PROVIDER: "other",
       AI_ASSISTANT_MODEL: "some-model",
       AI_ASSISTANT_API_KEY: "test-key-not-real",
     })).toThrow(/AI_ASSISTANT_BASE_URL/u);
+  });
+});
+
+/** The SDK's own error for an API answer, as the client raises it. */
+function apiError(status: number, type: string, text: string): APIError {
+  return APIError.generate(status, { type: "error", error: { type, message: text } }, undefined, new Headers());
+}
+
+const OUT_OF_CREDIT_400 = "Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.";
+const SPEND_LIMIT_400 = "You have reached your specified workspace API usage limits. You will regain access on 2026-12-01 at 00:00 UTC.";
+
+describe("which venues and drafts a provider will take (C1)", () => {
+  const OTHER_VENUE = "00000000-0000-4000-8000-0000000065ff";
+
+  it("refuses a venue or a draft that is not switched on, with nothing reserved, recorded or sent", async () => {
+    const usage = new TallyAIUsageMeter();
+    const send = vi.fn(() => Promise.resolve(message([text("Dear Morgan")])));
+    const adapter = new AnthropicAIGenerationAdapter({
+      model: "claude-opus-5-5", apiKey: "test-key-not-real", usage, send,
+      access: AIAccessPolicy.only([ATTRIBUTION.venueId], ["proposal_draft"]),
+    });
+    await expect(adapter.generateText(INPUT, { ...ATTRIBUTION, venueId: OTHER_VENUE }))
+      .rejects.toThrow(new AIAssistantDisabledError("AI drafts are not switched on for this venue."));
+    await expect(adapter.generateText({ ...INPUT, useCase: "beo_supplier_instruction_draft" }, ATTRIBUTION))
+      .rejects.toThrow(new AIAssistantDisabledError("This AI draft is not switched on."));
+    await expect(adapter.generateStructured({ useCase: "event_brief", system: "Read.", prompt: "Dinner.", schema: {}, cacheSystem: false }, ATTRIBUTION))
+      .rejects.toBeInstanceOf(AIAssistantDisabledError);
+    expect(send).not.toHaveBeenCalled();
+    expect(usage.entries).toEqual([]);
+    // The venue matches in any case, as an operator may paste an id.
+    await expect(adapter.generateText(INPUT, { ...ATTRIBUTION, venueId: ATTRIBUTION.venueId.toUpperCase() })).resolves.toBe("Dear Morgan");
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it("is what the environment builds: only the listed venue's listed drafts reach the provider", async () => {
+    const env = validateEnv({
+      ...BASE_ENV, AI_ASSISTANT_ENABLED: "true", ...PILOT,
+      AI_ASSISTANT_PROVIDER: "gateway", AI_ASSISTANT_MODEL: "gateway-model",
+      AI_ASSISTANT_BASE_URL: "https://ai.example.test/draft", AI_ASSISTANT_API_KEY: "test-key-not-real",
+    });
+    const fetch = vi.fn<typeof globalThis.fetch>(() => Promise.resolve(Response.json({ text: "Dear Morgan" })));
+    vi.stubGlobal("fetch", fetch);
+    try {
+      const adapter = createAIGenerationAdapterFromEnv(env, new TallyAIUsageMeter());
+      await expect(adapter.generateText(INPUT, { ...ATTRIBUTION, venueId: OTHER_VENUE })).rejects.toBeInstanceOf(AIAssistantDisabledError);
+      await expect(adapter.generateText({ ...INPUT, useCase: "enquiry_summary" }, ATTRIBUTION)).rejects.toBeInstanceOf(AIAssistantDisabledError);
+      expect(fetch).not.toHaveBeenCalled();
+      await expect(adapter.generateText(INPUT, ATTRIBUTION)).resolves.toBe("Dear Morgan");
+      expect(fetch).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("restricts nothing while AI is off, where the environment's provider sends nothing anyway", () => {
+    const policy = AIAccessPolicy.fromEnv({ AI_ASSISTANT_ENABLED: "false", AI_ASSISTANT_VENUE_IDS: undefined, AI_ASSISTANT_FEATURES: undefined });
+    expect(policy.refusal(null, "beo_supplier_instruction_draft")).toBeNull();
+  });
+
+  it("switches nothing on were AI on with a list missing, though the environment refuses to start that way", () => {
+    const policy = AIAccessPolicy.fromEnv({ AI_ASSISTANT_ENABLED: "true", AI_ASSISTANT_VENUE_IDS: [ATTRIBUTION.venueId], AI_ASSISTANT_FEATURES: undefined });
+    expect(policy.refusal(ATTRIBUTION.venueId, "proposal_draft")).toBe("This AI draft is not switched on.");
+    expect(policy.refusal(ATTRIBUTION.venueId)).toBe("This AI draft is not switched on.");
+  });
+
+  it("says AI is off in the status a venue sees for a draft it does not have, and leaves an off status alone", () => {
+    const policy = AIAccessPolicy.only([ATTRIBUTION.venueId], ["proposal_draft"]);
+    const on = { configured: true, provider: "anthropic", model: "claude-opus-5-5", disabledReason: null };
+    expect(policy.statusFor(on, ATTRIBUTION.venueId, "proposal_draft")).toEqual(on);
+    expect(policy.statusFor(on, ATTRIBUTION.venueId)).toEqual(on);
+    expect(policy.statusFor(on, null, "proposal_draft"))
+      .toEqual({ configured: false, provider: null, model: null, disabledReason: "AI drafts are not switched on for this venue." });
+    expect(policy.statusFor(on, ATTRIBUTION.venueId, "enquiry_summary"))
+      .toEqual({ configured: false, provider: null, model: null, disabledReason: "This AI draft is not switched on." });
+    const off = new DisabledAIGenerationAdapter().status;
+    expect(policy.statusFor(off, ATTRIBUTION.venueId, "proposal_draft")).toBe(off);
+  });
+});
+
+describe("a provider out of credit (C1)", () => {
+  it.each([
+    ["the credit balance is too low", apiError(400, "invalid_request_error", OUT_OF_CREDIT_400)],
+    ["a workspace spend limit is reached", apiError(400, "invalid_request_error", SPEND_LIMIT_400)],
+    ["billing refuses the call", apiError(402, "billing_error", "Payment required.")],
+  ])("is unavailable, not a failure, when %s, and the call is still recorded", async (_why, error) => {
+    expect(isOutOfCredit(error)).toBe(true);
+    const usage = new TallyAIUsageMeter();
+    const adapter = new AnthropicAIGenerationAdapter({
+      model: "claude-opus-5-5", apiKey: "test-key-not-real", usage, send: () => Promise.reject(error),
+    });
+    await expect(adapter.generateText(INPUT, ATTRIBUTION)).rejects.toBeInstanceOf(AIDraftsUnavailableError);
+    expect(usage.entries).toEqual([expect.objectContaining({ outcome: "error", costMicroUsd: 0 })]);
+  });
+
+  it.each([
+    ["any other bad request", apiError(400, "invalid_request_error", "messages: roles must alternate")],
+    ["a refused key", apiError(401, "authentication_error", "invalid x-api-key")],
+    ["a busy provider", apiError(529, "overloaded_error", "Overloaded")],
+    ["a plain failure", new Error("socket hang up")],
+  ])("keeps %s a failure of its own", async (_why, error) => {
+    expect(isOutOfCredit(error)).toBe(false);
+    const adapter = new AnthropicAIGenerationAdapter({
+      model: "claude-opus-5-5", apiKey: "test-key-not-real", usage: new TallyAIUsageMeter(), send: () => Promise.reject(error),
+    });
+    await expect(adapter.generateText(INPUT, ATTRIBUTION)).rejects.toBe(error);
+  });
+
+  it("is unavailable when the gateway answers 402, and a failure for any other status", async () => {
+    const gateway = (status: number): HttpAIGenerationAdapter => new HttpAIGenerationAdapter({
+      provider: "gateway", model: "gateway-model", baseUrl: "https://ai.example.test/draft", apiKey: "k",
+      usage: new TallyAIUsageMeter(), send: () => Promise.resolve(new Response("{}", { status })),
+    });
+    await expect(gateway(402).generateText(INPUT, ATTRIBUTION)).rejects.toBeInstanceOf(AIDraftsUnavailableError);
+    await expect(gateway(500).generateText(INPUT, ATTRIBUTION)).rejects.toThrow("AI adapter request failed with 500");
   });
 });
