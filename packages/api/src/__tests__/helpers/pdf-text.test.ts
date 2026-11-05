@@ -66,4 +66,28 @@ describe("pdf text helper", () => {
     const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/RZkAAAAASUVORK5CYII=", "base64");
     expect(pdfImageCount(await render((doc) => { doc.image(png, 10, 10, { width: 20 }); }))).toBe(1);
   });
+
+  // A compressed stream ends in its zlib checksum, whose last byte is as good as
+  // random, so some streams end in 0x0D. This line, set as below, gives the page
+  // such a content stream; the helper must read the stream's whole /Length, not
+  // take that byte for part of a line break.
+  it("reads a page whose compressed content stream ends in a carriage return byte", async () => {
+    const text = "Approved v3, issued 5 Nov 11:23 (83)";
+    const buf = await render((doc) => {
+      doc.font("Inter-Regular").fontSize(11).text(text, 40, 100, { lineBreak: false });
+    });
+    expect(contentStreamLastByte(buf)).toBe(0x0d);
+    expect(pdfText(buf)).toBe(text);
+  });
 });
+
+/** The last byte of the first page's content stream, read by its /Length. */
+function contentStreamLastByte(buf: Buffer): number {
+  const source = buf.toString("latin1");
+  const contents = /\/Type \/Page\b[\s\S]*?\/Contents (\d+) 0 R/u.exec(source)?.[1] ?? "";
+  const at = source.indexOf(`\n${contents} 0 obj\n`);
+  const body = source.slice(at, source.indexOf("\nendobj", at));
+  const length = Number(/\/Length (\d+)/u.exec(body)?.[1]);
+  const begin = body.indexOf("stream\n") + "stream\n".length;
+  return body.charCodeAt(begin + length - 1);
+}

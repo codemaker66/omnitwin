@@ -53,10 +53,16 @@ function objectsOf(buf: Buffer): Map<string, string> {
   return new Map([...source.matchAll(/(\d+) 0 obj([\s\S]*?)endobj/gu)].map((match) => [match[1] ?? "", match[2] ?? ""]));
 }
 
+// A stream is exactly its /Length bytes after "stream" and its line break.
+// Reading up to "endstream" instead takes a last byte of 0x0D for part of the
+// line break before it, and a compressed stream's last byte (the end of its
+// zlib checksum) is 0x0D about one time in 256, which truncates it.
 function streamOf(body: string): string {
-  const raw = /stream\r?\n([\s\S]*?)\r?\nendstream/u.exec(body)?.[1];
-  if (raw === undefined) throw new Error("PDF object has no stream");
-  const bytes = Buffer.from(raw, "latin1");
+  const start = /stream\r?\n/u.exec(body);
+  const length = /\/Length (\d+)(?! \d+ R)/u.exec(body)?.[1];
+  if (start === null || length === undefined) throw new Error("PDF object has no stream");
+  const from = start.index + start[0].length;
+  const bytes = Buffer.from(body.slice(from, from + Number(length)), "latin1");
   return (/\/FlateDecode/u.test(body) ? inflateSync(bytes) : bytes).toString("latin1");
 }
 
