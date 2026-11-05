@@ -47,8 +47,14 @@ export async function reviewRun(result: SessionRunResult): Promise<Review> {
   const reasons: string[] = [];
   const flags: string[] = [];
   const outputs = [...result.outputs].sort();
-  const patches = outputs.filter((file) => /^patches__.*\.patch$/u.test(path.basename(file)));
   const diffFile = outputs.find((file) => path.basename(file) === "diff.patch") ?? null;
+  // The Files API gives back bare names (`0001-fix-….patch`, not under
+  // `patches/`), so a format-patch file is known by its `From <sha>` line.
+  const patches: string[] = [];
+  for (const file of outputs) {
+    if (file === diffFile || !file.endsWith(".patch")) continue;
+    if (patchCommit(await readFile(file, "utf8")) !== null) patches.push(file);
+  }
 
   const verify = result.verify;
   if (verify === null) {

@@ -112,7 +112,8 @@ interface Connection {
 /** null: listed but refused, as the API refuses the session's copies of its inputs. */
 const DEFAULT_FILES: Record<string, string | null> = {
   "verify.mjs": null,
-  "patches/0001-Match-robots.patch": `From ${HEAD} Mon Sep 17 00:00:00 2001\nSubject: fix\n`,
+  // As the Files API names it: the bare file name, without the patches/ folder.
+  "0001-Match-robots.patch": `From ${HEAD} Mon Sep 17 00:00:00 2001\nSubject: fix\n`,
   "diff.patch": "diff --git a/x b/x\n+fixed\n",
   "report.md": "## Summary\nFixed.\n",
 };
@@ -280,7 +281,8 @@ describe("sandbox launcher", () => {
     expect(await readFile(path.join(record.runDir, "review.md"), "utf8")).toContain("READY FOR REVIEW");
     // The session's copy of an uploaded input is listed but cannot be downloaded: skipped, not fatal.
     expect(record.result.skippedOutputs).toEqual(["verify.mjs"]);
-    expect(record.result.outputs.map((file) => path.basename(file))).toEqual(["patches__0001-Match-robots.patch", "diff.patch", "report.md"]);
+    expect(record.result.outputs.map((file) => path.basename(file))).toEqual(["0001-Match-robots.patch", "diff.patch", "report.md"]);
+    expect(record.review.patches.map((file) => path.basename(file))).toEqual(["0001-Match-robots.patch"]);
   });
 
   it("counts the verifier when the agent runs it after a cd and prints its log in the same call, as in the A4 trial", async () => {
@@ -319,7 +321,7 @@ describe("sandbox launcher", () => {
 
   it("rejects a run whose last patch is not the commit the verifier checked", async () => {
     const config = await workspace();
-    const stale = { ...DEFAULT_FILES, "patches/0001-Match-robots.patch": `From ${"c".repeat(40)} Mon Sep 17 00:00:00 2001\n` };
+    const stale = { ...DEFAULT_FILES, "0001-Match-robots.patch": `From ${"c".repeat(40)} Mon Sep 17 00:00:00 2001\n` };
     const record = await job(new FakeApi([{ history: [], stream: happyEvents() }], stale), config);
     if (record.kind !== "ran") throw new Error(record.reason);
     expect(record.review.verdict).toBe("rejected");
