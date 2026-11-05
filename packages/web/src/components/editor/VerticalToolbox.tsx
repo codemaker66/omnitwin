@@ -859,12 +859,13 @@ interface ToolBtnProps {
 /**
  * The Walls button's hint, as a click on a wall behaves: with `wallClickAlt`
  * (decision 4) only an Alt-click hides one, Option-click on a Mac, whose
- * browser says "Macintosh"; without it any click does.
+ * browser says "Macintosh"; without it any click does. It follows the
+ * button's name, "Show All Walls", so it does not say it again.
  */
 function wallsHint(): string {
-  if (!plannerFeatureEnabled("wallClickAlt")) return "Show all walls. Click a wall to toggle it.";
+  if (!plannerFeatureEnabled("wallClickAlt")) return "Click a wall to toggle it.";
   const agent = typeof navigator === "undefined" ? "" : navigator.userAgent;
-  return `Show all walls. ${/Macintosh|Mac OS X/u.test(agent) ? "Option" : "Alt"}-click a wall to hide it.`;
+  return `${/Macintosh|Mac OS X/u.test(agent) ? "Option" : "Alt"}-click a wall to hide it.`;
 }
 
 function ToolBtn({
@@ -886,7 +887,8 @@ function ToolBtn({
   const enterTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const exitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // The card's words, its shortcut with them, are the button's description for
-  // a screen reader, on touch too, where the card never shows.
+  // a screen reader. Their span is hidden, so a reader's browse mode or swipe
+  // never lands on it: the words are said once, with the button.
   const descriptionId = useId();
   const spoken = shortcut !== undefined && showShortcut ? `${description} Shortcut: ${shortcut}.` : description;
 
@@ -968,7 +970,7 @@ function ToolBtn({
           </span>
         )}
       </button>
-      <span id={descriptionId} className="vv-sr-only">{spoken}</span>
+      <span id={descriptionId} hidden>{spoken}</span>
       {showTooltip && !disabled && tooltipEnabled && (
         <div data-testid="toolbox-tooltip" aria-hidden="true" style={{
           position: "absolute",
