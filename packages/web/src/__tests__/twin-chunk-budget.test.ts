@@ -43,6 +43,18 @@ function jsChunks(prefix: string): string[] {
 
 const hasTwinBuild = existsSync(ASSETS_DIR) && jsChunks("TwinPage").length > 0;
 
+// CI's Build job builds the bundle and then runs this file with
+// REQUIRE_WEB_DIST=1, so there a missing build fails instead of skipping the
+// budgets below (T-685: they had skipped in every CI run, since the Test job
+// never builds the web app).
+const REQUIRE_WEB_DIST = process.env["REQUIRE_WEB_DIST"] === "1";
+
+describe.runIf(REQUIRE_WEB_DIST)("the build these budgets check", () => {
+  it("is there, with its twin route chunk", () => {
+    expect(hasTwinBuild, `no TwinPage chunk in ${ASSETS_DIR}`).toBe(true);
+  });
+});
+
 describe("twin fixture bundle", () => {
   it("parse-validates against twin/0 with the walk graph the e2e relies on", () => {
     const manifest = TwinManifestSchema.parse(TWIN_FIXTURE_MANIFEST);

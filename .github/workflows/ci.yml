@@ -150,6 +150,14 @@ jobs:
           VITE_CLERK_PUBLISHABLE_KEY: pk_live_localbuildcheck
         run: pnpm build
 
+      - name: Check the built web bundle (chunk sizes, chunk membership, retired copy)
+        # These tests read packages/web/dist, which only this job builds, so in
+        # the Test job they skip. REQUIRE_WEB_DIST makes a missing build fail
+        # here instead (T-685).
+        env:
+          REQUIRE_WEB_DIST: "1"
+        run: pnpm --filter @omnitwin/web exec vitest run src/__tests__/twin-chunk-budget.test.ts src/__tests__/public-copy-sweep.test.ts
+
   native-image:
     name: API Native Image
     runs-on: ubuntu-latest
