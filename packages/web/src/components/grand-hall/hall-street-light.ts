@@ -53,6 +53,15 @@ import type { HallSun } from "./hall-sun.js";
 export const STREET_LIGHT_URL = "/rooms/grand-hall/context-2020-lidar/street-light-v2.bin?r=1";
 export const STREET_LAMPS_URL = "/rooms/grand-hall/context-2020-lidar/street-lamps-v2.json?r=1";
 
+/**
+ * The same lamps baked against the city drawn round the measured front
+ * (merchant-city-v3, `CONTEXT_MODEL_FRONT_URL`; bake_street_light.py
+ * --front-cut): Trades Hall's two door lanterns and its own street lamp
+ * (24094) hang on the modelled front, which draws no lanterns of its own.
+ */
+export const STREET_LIGHT_FRONT_URL = "/rooms/grand-hall/context-2020-lidar/street-light-v3.bin?r=1";
+export const STREET_LAMPS_FRONT_URL = "/rooms/grand-hall/context-2020-lidar/street-lamps-v3.json?r=1";
+
 /** Coordinates outside this box mean a malformed file, metres (as the city model's). */
 const COORDINATE_LIMIT = 320;
 

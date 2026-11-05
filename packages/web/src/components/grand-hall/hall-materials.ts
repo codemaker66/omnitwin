@@ -36,7 +36,7 @@ import { attribute, bool, cameraPosition, color, dot, float, luminance, max, min
 import type { HallMaterialKey } from "./hall-builders.js";
 import { HALL_GLAZING_PAINT, HALL_OPENINGS, HALL_WALLS, isWindow } from "./hall-spec.js";
 import { CARD, cardColour, cardLit } from "./hall-beyond.js";
-import { DOOR_SLOTS, LINTEL_RELEASE, WALL_BODY_TOP } from "./hall-wall-body.js";
+import { BAY_FRONT, BAY_SLOTS, DOOR_SLOTS, LINTEL_RELEASE, WALL_BODY_TOP } from "./hall-wall-body.js";
 import { cutEdge, GILT_COLOUR, type CutEdge } from "./hall-cut-lines.js";
 import type { HallSun } from "./hall-sun.js";
 import { hallSkyUniforms } from "./hall-sky-runtime.js";
@@ -93,7 +93,11 @@ export class HallSectionUniforms {
  * wall (`aWallB`, hall-walls.ts sharedNeighbour) takes the lower of the two
  * walls' cuts. Over each doorway, once its wall is cut low enough that the
  * body drops the lintel (LINTEL_RELEASE), the relief over the door goes too,
- * so the doorway reads from above as a gap through the whole wall.
+ * so the doorway reads from above as a gap through the whole wall. In a
+ * window's bay, while its wall is cut below the window's head, the walls'
+ * photographed relief goes from just above the board, in front of the glass
+ * plane (BAY_SLOTS): the curtains and reveals the scan saw as thin shells,
+ * which a cut showed as torn shards, give way to the body's linings.
  */
 function sectionCut(section: HallSectionUniforms): SectionCut {
   // Built once per set of cuts: the walls' mask and their cut's gilt edge
@@ -110,6 +114,8 @@ interface SectionCut {
   readonly cut: Node<"float">;
   /** Whether the fragment is drawn: under its cut, and not over a doorway whose lintel has gone. */
   readonly mask: Node<"bool">;
+  /** Whether it lies in a window's bay that the cut has cleared (only the walls' photographed relief goes there). */
+  readonly inClearedBay: Node<"bool">;
 }
 
 const sectionCuts = new WeakMap<HallSectionUniforms, SectionCut>();
@@ -132,11 +138,29 @@ function buildSectionCut(section: HallSectionUniforms): SectionCut {
     overDoor = overDoor.or(wall.greaterThan(slot.wall - 0.5).and(wall.lessThan(slot.wall + 0.5))
       .and(u.greaterThan(slot.u0)).and(u.lessThan(slot.u1)).and(p.y.greaterThan(slot.head)));
   }
-  return { cut, mask: p.y.lessThan(cut).and(overDoor.and(own.lessThan(LINTEL_RELEASE)).not()) };
+  // Each bay's wall-local u and depth behind the plane, worked out once a wall.
+  const frames = new Map<number, { readonly u: Node<"float">; readonly behind: Node<"float"> }>();
+  let inClearedBay: Node<"bool"> = bool(false);
+  for (const slot of BAY_SLOTS) {
+    let frame = frames.get(slot.wall);
+    if (frame === undefined) {
+      const dx = p.x.sub(slot.origin[0]);
+      const dz = p.z.sub(slot.origin[1]);
+      frame = { u: dx.mul(slot.tangent[0]).add(dz.mul(slot.tangent[1])), behind: dx.mul(slot.normal[0]).add(dz.mul(slot.normal[1])).negate() };
+      frames.set(slot.wall, frame);
+    }
+    const { u, behind } = frame;
+    inClearedBay = inClearedBay.or(wall.greaterThan(slot.wall - 0.5).and(wall.lessThan(slot.wall + 0.5)).and(own.lessThan(slot.head))
+      .and(u.greaterThan(slot.u0)).and(u.lessThan(slot.u1)).and(p.y.greaterThan(slot.clearFrom))
+      .and(behind.greaterThan(BAY_FRONT)).and(behind.lessThan(slot.glass)));
+  }
+  return { cut, mask: p.y.lessThan(cut).and(overDoor.and(own.lessThan(LINTEL_RELEASE)).not()), inClearedBay };
 }
 
-function sectionMask(section: HallSectionUniforms) {
-  return sectionCut(section).mask;
+/** The section's mask; `clearsBays` for the walls' photographed relief, which a cut window's bay clears. */
+function sectionMask(section: HallSectionUniforms, clearsBays = false): Node<"bool"> {
+  const { mask, inClearedBay } = sectionCut(section);
+  return clearsBays ? mask.and(inClearedBay.not()) : mask;
 }
 
 /** Indices in HALL_OPENINGS of the windows. */
@@ -526,7 +550,7 @@ export function createHallMaterials(
     const floorLight = sun === null ? bakedIrradiance(mood) : bakedIrradiance(mood).add(sunIrradiance(sun));
     const material = key === "floor" ? createOakFloorMaterial(floorLight, section.chandeliersAway) : createSurface(table[key], mood, photos, sun, surface);
     if (material instanceof MeshBasicNodeMaterial || material instanceof MeshStandardNodeMaterial) {
-      material.maskNode = sectionMask(section);
+      material.maskNode = sectionMask(section, key === "wallPhoto" || key === "wallPhotoGloss");
     }
     material.name = `grand-hall-${key}`;
     materials.set(key, material);

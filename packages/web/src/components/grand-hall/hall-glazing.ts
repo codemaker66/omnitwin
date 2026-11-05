@@ -192,6 +192,35 @@ function pierceRing(b: MeshBuilder, wall: HallWall, centre: Point, fan: HallFanl
 
 type Section = { readonly width: number; readonly depth: number };
 
+/**
+ * How far the stiles reach past the light's edge, metres: they frame the
+ * light standing a centimetre over the atlas's glass where it meets the frame.
+ */
+export const STILE_INSET = 0.01;
+
+/** A window's sash as it stands toward the room (sashExtent). */
+export interface SashExtent {
+  /** Along the wall, its stiles' outer sides. */
+  readonly u0: number;
+  readonly u1: number;
+  /**
+   * Its members' room face (negative, behind the wall's plane): every member
+   * stands from the glass toward the room, none deeper than the frame.
+   */
+  readonly roomFace: number;
+}
+
+/** Where a window's modelled sash stands: what the body's board stops at (hall-wall-body.ts). */
+export function sashExtent(glazing: HallGlazing): SashExtent {
+  const { bar, rail, frame, fanlight } = HALL_GLAZING_SECTION;
+  const depth = Math.max(bar.depth, rail.depth, frame.depth, fanlight.depth);
+  return {
+    u0: glazing.centre - HALL_LIGHT_HALF_WIDTH - STILE_INSET,
+    u1: glazing.centre + HALL_LIGHT_HALF_WIDTH + STILE_INSET,
+    roomFace: glazing.glassDepth + depth,
+  };
+}
+
 /** The members of one window. */
 function buildWindowBars(b: MeshBuilder, wall: HallWall, glazing: HallGlazing): void {
   const back = glazing.glassDepth;
@@ -199,9 +228,9 @@ function buildWindowBars(b: MeshBuilder, wall: HallWall, glazing: HallGlazing): 
   const left = glazing.centre - HALL_LIGHT_HALF_WIDTH;
   const right = glazing.centre + HALL_LIGHT_HALF_WIDTH;
   const { sill, top } = glazing;
-  // The stiles and the bottom rail frame the light; they stand a centimetre
-  // inside its edge, over the atlas's glass where it meets the frame.
-  const inset = 0.01;
+  // The stiles and the bottom rail frame the light, the stiles STILE_INSET
+  // past its edge (sashExtent).
+  const inset = STILE_INSET;
   const stileLeft = left + frame.width / 2 - inset;
   const stileRight = right - frame.width / 2 + inset;
   straightMember(b, wall, [stileLeft, sill], [stileLeft, top], frame.width, back, back + frame.depth);
