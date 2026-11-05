@@ -83,7 +83,7 @@ describe("the truthful ghost's set", () => {
   });
 
   it("judges a set card even without the truthful ghost: the card dock's own (QoL B-01)", () => {
-    setPlannerFeaturesForTesting(null);
+    setPlannerFeaturesForTesting({ truthfulGhost: false });
     usePlacementStore.setState({ placedItems: stampSetup(round(), { x: 0, z: 0 }, 0) });
     render(<GhostSet params={round()} warming={false} fromCardDrag={false} />);
     ghostAt(CHAIR_REACH);
@@ -91,7 +91,7 @@ describe("the truthful ghost's set", () => {
   });
 
   it("without the truthful ghost, shows a piece card's piece where it will be set down and claims nothing", () => {
-    setPlannerFeaturesForTesting({ setupCards: true });
+    setPlannerFeaturesForTesting({ setupCards: true, truthfulGhost: false });
     const poseur = cardParamsFor("piece:poseur-table");
     if (poseur === null) throw new Error("no poseur card");
     usePlacementStore.setState({ placedItems: stampSetup(poseur, { x: 0, z: 0 }, 0) });
