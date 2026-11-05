@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, it, expect } from "vitest";
 import type { EventInstructions, HallkeeperSheetV2 } from "@omnitwin/types";
 import { generateSheetPdfV2, sheetCopyLine, sheetQrTarget } from "../services/hallkeeper-pdf-v2.js";
@@ -195,6 +197,15 @@ describe("inputs that bite", () => {
     const png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/RZkAAAAASUVORK5CYII=";
     const buf = await generateSheetPdfV2({ ...weddingSheet(), floorPlan: null, diagramUrl: png });
     expect(pdfImageCount(buf)).toBe(1);
+    expect(pdfText(buf)).not.toContain("No plan was saved with this layout");
+  });
+
+  it("draws the planner's own JPEG picture for a layout saved with no plan", async () => {
+    // The Grand Hall as Send layout captures it (web PLAN_THUMBNAIL, an 800×533 JPEG; T-684).
+    const jpeg = readFileSync(resolve(import.meta.dirname, "fixtures/grand-hall-plan-thumbnail.jpg"));
+    const buf = await generateSheetPdfV2({ ...weddingSheet(), floorPlan: null, diagramUrl: `data:image/jpeg;base64,${jpeg.toString("base64")}` });
+    expect(pdfImageCount(buf)).toBe(1);
+    expect(buf.includes("/DCTDecode")).toBe(true);
     expect(pdfText(buf)).not.toContain("No plan was saved with this layout");
   });
 

@@ -264,7 +264,7 @@ describe.skipIf(testUrl === undefined)("view-only links on isolated PostgreSQL",
     // Every route that acts on a plan demands its id; the token is not one.
     const asPlanId: readonly { method: "GET" | "POST"; url: string; payload?: Record<string, unknown> }[] = [
       { method: "POST", url: `/public/configurations/${link.token}/objects/batch`, payload: { expectedRevision: 3, objects: [] } },
-      { method: "POST", url: `/public/configurations/${link.token}/thumbnail`, payload: { thumbnailUrl: "data:image/png;base64,AAAA" } },
+      { method: "POST", url: `/public/configurations/${link.token}/thumbnail`, payload: { thumbnailUrl: "data:image/png;base64,iVBORw0KGgo=" } },
       { method: "GET", url: `/public/configurations/${link.token}` },
       { method: "GET", url: `/public/configurations/${link.token}/plan.pdf` },
       { method: "POST", url: `/public/configurations/${link.token}/view-tokens` },

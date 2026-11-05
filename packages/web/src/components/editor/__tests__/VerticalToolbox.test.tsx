@@ -10,6 +10,7 @@ import { useBookmarkStore } from "../../../stores/bookmark-store.js";
 import { useToolStore } from "../../../stores/tool-store.js";
 import { useMarkupStore } from "../../../stores/markup-store.js";
 import { usePlannerToolKeys } from "../../../lib/planner-keymap.js";
+import { setPlannerFeaturesForTesting } from "../../../lib/planner-features.js";
 
 /** The editor page's tool keys (A, D, M, V and the tools' Escapes), which reach the toolbox through the tool store. */
 function ToolKeys(): null {
@@ -283,5 +284,32 @@ describe("VerticalToolbox Delete and the V shortcut", () => {
     expect(screen.getByRole("button", { name: /^Draw\b/u }).getAttribute("aria-pressed")).not.toBe("true");
     fireEvent.keyDown(window, { code: "KeyD", key: "d" });
     expect(screen.getByRole("button", { name: /^Draw\b/u }).getAttribute("aria-pressed")).toBe("true");
+  });
+});
+
+describe("VerticalToolbox walls hint", () => {
+  afterEach(() => { setPlannerFeaturesForTesting(null); });
+
+  async function hoverWalls(hint: string): Promise<void> {
+    renderToolbox();
+    const walls = screen.getByRole("button", { name: "Show All Walls" });
+    fireEvent.mouseEnter(walls.parentElement ?? walls);
+    expect(await screen.findByText(hint)).toBeTruthy();
+  }
+
+  it("says a click on a wall toggles it while any click hides one", async () => {
+    setPlannerFeaturesForTesting({ wallClickAlt: false });
+    await hoverWalls("Show all walls. Click a wall to toggle it.");
+  });
+
+  it("says Alt-click once only an Alt-click hides a wall (decision 4)", async () => {
+    setPlannerFeaturesForTesting({ wallClickAlt: true });
+    await hoverWalls("Show all walls. Alt-click a wall to hide it.");
+  });
+
+  it("says Option-click on a Mac", async () => {
+    setPlannerFeaturesForTesting({ wallClickAlt: true });
+    vi.spyOn(navigator, "userAgent", "get").mockReturnValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 14_6) AppleWebKit/605.1.15 (KHTML, like Gecko)");
+    await hoverWalls("Show all walls. Option-click a wall to hide it.");
   });
 });

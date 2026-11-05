@@ -52,6 +52,7 @@ import { isSceneFurniturePlacement } from "../../lib/table-dressing.js";
 import { FloatingWidgetFrame, type FloatingWidgetPlacement } from "../shared/FloatingWidgetFrame.js";
 import { isLayoutTimelineMutationLocked } from "../../lib/layout-timeline-preview-lock.js";
 import { countLabel } from "../../lib/count-label.js";
+import { plannerFeatureEnabled } from "../../lib/planner-features.js";
 
 const LazyAuthModal = lazy(() =>
   import("./AuthModal.js").then((m) => ({ default: m.AuthModal })),
@@ -852,6 +853,17 @@ interface ToolBtnProps {
   readonly tooltipEnabled?: boolean;
   readonly onClick: () => void;
   readonly children: React.ReactNode;
+}
+
+/**
+ * The Walls button's hint, as a click on a wall behaves: with `wallClickAlt`
+ * (decision 4) only an Alt-click hides one, Option-click on a Mac, whose
+ * browser says "Macintosh"; without it any click does.
+ */
+function wallsHint(): string {
+  if (!plannerFeatureEnabled("wallClickAlt")) return "Show all walls. Click a wall to toggle it.";
+  const agent = typeof navigator === "undefined" ? "" : navigator.userAgent;
+  return `Show all walls. ${/Macintosh|Mac OS X/u.test(agent) ? "Option" : "Alt"}-click a wall to hide it.`;
 }
 
 function ToolBtn({
@@ -2015,7 +2027,7 @@ export function VerticalToolbox({ compactDesktop = false }: { readonly compactDe
           <Grid3X3 size={ICON_SIZE} />
         </ToolBtn>
 
-        <ToolBtn active={allWallsUp} pressed={allWallsUp} compact={isNarrow} subLabel="Walls" label="Show All Walls" description={isTouch ? "Toggle room walls." : "Show all walls. Click a wall to toggle it."} tooltipEnabled={showDesktopHints} onClick={handleToggleAllWalls}>
+        <ToolBtn active={allWallsUp} pressed={allWallsUp} compact={isNarrow} subLabel="Walls" label="Show All Walls" description={isTouch ? "Toggle room walls." : wallsHint()} tooltipEnabled={showDesktopHints} onClick={handleToggleAllWalls}>
           <Eye size={ICON_SIZE} />
         </ToolBtn>
 

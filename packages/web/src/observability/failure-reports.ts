@@ -21,7 +21,13 @@ export type FailureKind =
   | "planner-canvas-fallback"
   | "save-failed"
   /** A pipeline precompile that held the frames to its limit (lib/native-precompile.ts): the view drew on without it. */
-  | "precompile-timeout";
+  | "precompile-timeout"
+  /**
+   * A plan picture that never reached a guest's layout as it was sent (reportPlanImageFailure in
+   * components/editor/send-layout-flow.ts): none was captured, the API refused it or never received it, or
+   * its reply could not be read. The send goes on without it. Tagged by stage, and an upload's status.
+   */
+  | "plan-image-failed";
 
 export type FailureTags = Readonly<Record<string, string | number | undefined>>;
 
