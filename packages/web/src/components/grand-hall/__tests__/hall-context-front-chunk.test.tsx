@@ -3,7 +3,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite
 import { mountInStubRoot, type StubRoot } from "../../__tests__/stub-r3f-root.js";
 import { CHUNK_RELOAD_GUARD_KEY, installStaleChunkReload, stalePage } from "../../../route-error-boundary.js";
 import { CONTEXT_MODEL_FRONT_URL, CONTEXT_MODEL_URL } from "../hall-context.js";
-import { FACADE_LIGHTS_FRONT_URL, FACADE_LIGHTS_URL } from "../hall-facade-lights.js";
+import { FACADE_LIGHTS_URL } from "../hall-facade-lights.js";
 import { STREET_LAMPS_FRONT_URL, STREET_LAMPS_URL, STREET_LIGHT_FRONT_URL, STREET_LIGHT_URL } from "../hall-street-light.js";
 import type { HallFinish } from "../hall-finish.js";
 
@@ -43,14 +43,13 @@ function cityModel(): ArrayBuffer {
 }
 
 /**
- * Each of the front's files, and the city's own that must follow it once the front is given up
- * (the lit openings are one file for both, so it is fetched again).
+ * Each of the front's files, and the city's own that must follow it once the front is given up (the
+ * lit openings are one file for both fronts, so they are fetched once and kept).
  */
 const FRONT_THEN_OWN = [
   [CONTEXT_MODEL_FRONT_URL, CONTEXT_MODEL_URL],
   [STREET_LIGHT_FRONT_URL, STREET_LIGHT_URL],
   [STREET_LAMPS_FRONT_URL, STREET_LAMPS_URL],
-  [FACADE_LIGHTS_FRONT_URL, FACADE_LIGHTS_URL],
 ] as const;
 
 const reload = vi.fn();
@@ -101,6 +100,7 @@ function expectTheCityTookItsOwnFrontBack(asked: readonly string[]): void {
     expect(asked.indexOf(front), front).toBeGreaterThanOrEqual(0);
     expect(asked.lastIndexOf(own), own).toBeGreaterThan(asked.indexOf(front));
   }
+  expect(asked.filter((url) => url === FACADE_LIGHTS_URL), "the lit openings, one file for both").toHaveLength(1);
   expect(mounted?.scene.getObjectByName("grand-hall-city")).toBeDefined();
 }
 
