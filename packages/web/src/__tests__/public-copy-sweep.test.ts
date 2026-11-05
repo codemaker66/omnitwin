@@ -81,6 +81,12 @@ const DIST_HANDOFF: readonly { readonly chunk: RegExp; readonly lane: string }[]
   { chunk: /^runtime-package-resolution-/u, lane: "Lane 4 — the planner's layers rail" },
   // "being prepared" — twin-copy.ts, the tour's unavailable line (GPU-scoped).
   { chunk: /^TwinPage-/u, lane: "Lane 3 / the 3D batch — the tour at /tour" },
+  // "being prepared" — SheetCheckPage.tsx's line for a printed sheet whose
+  // layout is not yet approved ("This room's layout is still being prepared.
+  // Ask the duty manager..."). It is the layout's real state for the hall team,
+  // not the tour's placeholder. First seen when CI began running this sweep on
+  // its own build (T-685, 5 November 2026).
+  { chunk: /^SheetCheckPage-/u, lane: "the hall team's paper check at /sheet-check" },
 ];
 
 /**
