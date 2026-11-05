@@ -301,7 +301,10 @@ describe("public copy sweep — the built bundle", () => {
     if (files.length === 0) {
       // Vitest runs before `vite build` in CI's unit job, so `dist/` is absent
       // there and this says so rather than reporting a pass it did not earn.
-      // Run `pnpm --filter @omnitwin/web build` first to exercise it.
+      // Run `pnpm --filter @omnitwin/web build` first to exercise it. CI's
+      // Build job runs this file after its build with REQUIRE_WEB_DIST=1, where
+      // an empty dist/ is a failure (T-685).
+      expect(process.env["REQUIRE_WEB_DIST"], "the Build job must sweep the bundle it built").not.toBe("1");
       expect(existsSync(path.resolve("dist"))).toBe(false);
       return;
     }
