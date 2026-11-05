@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
-import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { ROOM_CARD_SIZES, RoomsHomePage } from "../RoomsHomePage.js";
 import {
@@ -81,6 +81,31 @@ describe("RoomsHomePage", () => {
       expect(poster.getAttribute("srcset"), poster.getAttribute("alt") ?? "").toMatch(/\.webp 480w/u);
       expect(poster.getAttribute("sizes")).toBe(ROOM_CARD_SIZES);
     }
+  });
+
+  // T-685: on a phone every byte in flight shares the link with the hero, the
+  // page's largest paint, so the rail's posters (off-screen there) wait for it.
+  it.each(["load", "error"] as const)("holds the rail's photographs until the hero's %s", (outcome) => {
+    // A real browser's hero is still downloading when the page mounts.
+    const complete = vi.spyOn(HTMLImageElement.prototype, "complete", "get").mockReturnValue(false);
+    try {
+      mount();
+      const posters = (): Element[] => [...document.querySelectorAll("img.rooms__poster")];
+      expect(posters()).toHaveLength(0);
+      // The plates keep their place and ground meanwhile.
+      expect(screen.getAllByTestId(/^room-card-/u).length).toBeGreaterThan(0);
+      const hero = document.querySelector("img.rooms__heroPoster");
+      if (hero === null) throw new Error("Missing hero image");
+      fireEvent[outcome](hero);
+      expect(posters().length).toBeGreaterThan(0);
+    } finally {
+      complete.mockRestore();
+    }
+  });
+
+  it("lays the enquiry composer out only as it nears the screen, so its italic stays off the first load", () => {
+    const css = readFileSync("src/pages/fresh/fresh.css", "utf8");
+    expect(css).toMatch(/\.fr-enquiry \{\s*content-visibility: auto;\s*contain-intrinsic-size: auto \d+px;\s*\}/u);
   });
 
   it("offers furniture planning alongside the Grand Hall walkthrough", () => {
