@@ -117,7 +117,7 @@ describe("CockpitSceneOverlays", () => {
     expect(container.querySelector("mesh, lineSegments")).toBeNull();
     expect(marker.getAttribute("aria-expanded")).toBe("true");
     expect(useCockpitStore.getState().beam).toBe(beam);
-    expect(screen.getByRole("button", { name: "Dismiss annotation details" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Close note" })).toBeTruthy();
     rerender(<CockpitSceneOverlays renderGeometry />);
     expect(container.querySelector('[name="cockpit-heritage"]')).not.toBeNull();
     expect(marker.getAttribute("aria-expanded")).toBe("true");
@@ -154,7 +154,7 @@ describe("CockpitSceneOverlays", () => {
     expect(detail?.textContent).toBeTruthy();
     expect(beam?.label).toContain(detail?.textContent);
     expect(useCockpitStore.getState().walkMode).toBe(true);
-    expect(screen.getByRole("button", { name: "Dismiss annotation details" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Close note" })).toBeTruthy();
   });
 
   it("clears its focused annotation beam when the overlay owner unmounts", () => {
@@ -219,7 +219,7 @@ describe("CockpitSceneOverlays", () => {
     act(runFrame);
     expect(layer?.style.visibility).toBe("visible");
     expect(useCockpitStore.getState().beam).not.toBeNull();
-    expect(screen.getByRole("button", { name: "Dismiss annotation details" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Close note" })).toBeTruthy();
     unmount(); shell.remove(); canvasBox.mockRestore(); coverBox.mockRestore();
   });
 
@@ -249,7 +249,25 @@ describe("CockpitSceneOverlays", () => {
     useCockpitStore.getState().setMode("flow");
     render(<CockpitSceneOverlays />);
     expect(screen.getAllByRole("button", { name: /Distinct warning/ })).toHaveLength(12);
-    expect(screen.getByText("13 planning annotations · scroll for all")).toBeTruthy();
+    expect(screen.getByText("13 planning notes · scroll for all")).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Planning notes in the room" })).toBeTruthy();
+  });
+
+  it("counts one planning note as one, in the planner's words", () => {
+    // The Lighting lens shows its one placeholder note alone.
+    useCockpitStore.getState().setMode("lighting");
+    const { container } = render(<CockpitSceneOverlays />);
+    expect(screen.getByText("1 planning note · scroll for all")).toBeTruthy();
+    expect(container.textContent).not.toMatch(/annotation/iu);
+    // Opened, the note still speaks the planner's words, to the eye and to the ear.
+    const note = container.querySelector<HTMLButtonElement>(".scene-annotations__button");
+    if (note === null) throw new Error("Missing planning note");
+    fireEvent.click(note);
+    expect(screen.getByRole("button", { name: "Close note" })).toBeTruthy();
+    expect(container.textContent).not.toMatch(/annotation/iu);
+    const spoken = [...container.querySelectorAll("[aria-label], [title]")]
+      .map((element) => `${element.getAttribute("aria-label") ?? ""} ${element.getAttribute("title") ?? ""}`);
+    expect(spoken.join(" ")).not.toMatch(/annotation/iu);
   });
 
   it("defers to a portalled modal and restores the selected details after it closes", async () => {
@@ -276,7 +294,7 @@ describe("CockpitSceneOverlays", () => {
     act(runFrame);
     expect(layer?.hasAttribute("inert")).toBe(false);
     expect(layer?.getAttribute("aria-hidden")).toBe("false");
-    expect(screen.getByRole("button", { name: "Dismiss annotation details" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Close note" })).toBeTruthy();
   });
 
   it("measures and observes a sibling mobile header while excluding off-canvas widgets", () => {
