@@ -283,11 +283,40 @@ function parseRobots(text: string): RobotsGroup[] {
   return groups;
 }
 
+/**
+ * Whether a robots.txt rule value matches `path`. `*` matches any run of
+ * characters, including none; a `$` at the very end anchors the match to the
+ * end of the path (a `$` anywhere else is literal); every other character is
+ * literal; an unanchored pattern need only match a prefix of the path.
+ *
+ * The value comes from a robots.txt the check does not control, so this never
+ * builds a RegExp: `/************Z` would make a backtracking engine take
+ * exponential time and stall the event loop. Instead the literal pieces
+ * between stars are placed left to right, each at its earliest position after
+ * the previous one. The earliest placement always leaves the most room for
+ * the pieces after it, so a match exists exactly when this finds one; each
+ * search starts where the last piece ended, so the time is bounded by the
+ * pattern length times the path length.
+ */
 function patternMatches(pattern: string, path: string): boolean {
   const anchored = pattern.endsWith("$");
   const body = anchored ? pattern.slice(0, -1) : pattern;
-  const source = body.split("*").map((part) => part.replace(/[.+?^${}()|[\]\\]/gu, "\\$&")).join(".*");
-  return new RegExp(`^${source}${anchored ? "$" : ""}`, "u").test(path);
+  const pieces = body.split("*");
+  const first = pieces[0] ?? "";
+  if (pieces.length === 1) return anchored ? path === first : path.startsWith(first);
+  if (!path.startsWith(first)) return false;
+  let position = first.length;
+  for (let index = 1; index < pieces.length - 1; index += 1) {
+    const piece = pieces[index] ?? "";
+    const found = path.indexOf(piece, position);
+    if (found === -1) return false;
+    position = found + piece.length;
+  }
+  const last = pieces[pieces.length - 1] ?? "";
+  // Anchored: the last piece must end the path without overlapping the pieces
+  // already placed. Unanchored: it may sit anywhere after them.
+  if (anchored) return path.length - last.length >= position && path.endsWith(last);
+  return path.indexOf(last, position) !== -1;
 }
 
 /**
