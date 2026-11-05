@@ -71,6 +71,13 @@ const frontmatterSchema = z
       .optional(),
     allowed_tools: toolList.optional(),
     extra_allowed_tools: toolList.default([]),
+    /**
+     * Sandbox runs: a shell command that breaks the code under test. When a
+     * task only adds tests, the verifier applies it and the tests must fail.
+     */
+    mutation: z.string().min(1).optional(),
+    /** Sandbox runs: a cheap check, run right after checkout, that the cited code has not moved. */
+    precondition: z.string().min(1).optional(),
   })
   .strict();
 
@@ -89,6 +96,8 @@ export interface Task {
   readonly readOnly: boolean;
   readonly base: string | undefined;
   readonly allowedTools: readonly string[];
+  readonly mutation?: string | undefined;
+  readonly precondition?: string | undefined;
   readonly spec: string;
   readonly file: string;
 }
@@ -114,6 +123,8 @@ export function parseTask(text: string, file: string): Task {
     readOnly: fm.read_only,
     base: fm.base,
     allowedTools: [...new Set([...base, ...fm.extra_allowed_tools])],
+    mutation: fm.mutation,
+    precondition: fm.precondition,
     spec: body,
     file,
   };

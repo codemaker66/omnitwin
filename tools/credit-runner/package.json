@@ -9,7 +9,8 @@
     "typecheck": "tsc --noEmit",
     "night": "tsx src/cli.ts run",
     "status": "tsx src/cli.ts status",
-    "credit-runner": "tsx src/cli.ts"
+    "credit-runner": "tsx src/cli.ts",
+    "sandbox": "tsx src/sandbox/cli.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.131.0",
