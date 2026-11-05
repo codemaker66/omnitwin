@@ -6,6 +6,7 @@ import { getTableConfig, type PgTable } from "drizzle-orm/pg-core";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import * as schema from "../db/schema.js";
 import { claimConfigRoutes } from "../routes/claim-config.js";
+import { configurationRoutes } from "../routes/configurations.js";
 import { publicConfigRoutes } from "../routes/public-configs.js";
 import { quoteRoutes } from "../routes/quotes.js";
 import { proposalRoutes } from "../routes/proposals.js";
@@ -70,6 +71,7 @@ describe.skipIf(testUrl === undefined)("route atomicity on isolated PostgreSQL",
     const db = drizzle(pool, { schema });
     server = Fastify();
     await server.register(claimConfigRoutes, { db, prefix: "/configurations" });
+    await server.register(configurationRoutes, { db, prefix: "/configurations" });
     await server.register(publicConfigRoutes, { db, prefix: "/public" });
     await server.register(quoteRoutes, { db, prefix: "/quotes" });
     await server.register(proposalRoutes, { db, prefix: "/proposals" });
@@ -153,6 +155,30 @@ describe.skipIf(testUrl === undefined)("route atomicity on isolated PostgreSQL",
       const result = await pool.query<{ thumbnail_url: string | null }>("SELECT thumbnail_url FROM configurations WHERE id = $1", [CONFIG]);
       expect(result.rows[0]?.thumbnail_url).toBeNull();
     });
+  });
+
+  it("keeps both keys when two layout metadata saves of different keys land at once", async () => {
+    // Event details saving instructions while the planner records another
+    // key: each old handler read the same stored blob, and the later write
+    // dropped the other's key. The merge now happens in the UPDATE itself.
+    await pool.query(`UPDATE configurations SET review_status = 'draft', metadata = '{"instructions":{"specialInstructions":"Kept"}}'::jsonb WHERE id = $1`, [CONFIG]);
+    const save = (metadata: Record<string, unknown> | null) => server.inject({
+      method: "PATCH", url: `/configurations/${CONFIG}`, headers: headers(), payload: { metadata },
+    }).then((r) => r);
+    await withBlocker(async (client) => {
+      await client.query("SELECT id FROM configurations WHERE id = $1 FOR UPDATE", [CONFIG]);
+      const responses = Promise.all([save({ fixtureFirst: "one" }), save({ fixtureSecond: "two" })]);
+      await waitForBlockedQueries(2);
+      await client.query("COMMIT");
+      expect((await responses).map((r) => r.statusCode)).toEqual([200, 200]);
+    });
+    const stored = await pool.query<{ metadata: unknown }>("SELECT metadata FROM configurations WHERE id = $1", [CONFIG]);
+    expect(stored.rows[0]?.metadata).toEqual({ instructions: { specialInstructions: "Kept" }, fixtureFirst: "one", fixtureSecond: "two" });
+
+    // An explicit null still clears the column.
+    const cleared = await save(null);
+    expect(cleared.statusCode).toBe(200);
+    expect((await pool.query<{ metadata: unknown }>("SELECT metadata FROM configurations WHERE id = $1", [CONFIG])).rows[0]?.metadata).toBeNull();
   });
 
   function appendLine(amount: number): Promise<{ statusCode: number; body: string }> {
