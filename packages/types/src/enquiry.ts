@@ -182,7 +182,15 @@ export const GuestEnquirySchema = z
     venueSlug: z.string().trim().min(1).max(100).optional(),
     email: z.string().trim().check(z.email()).max(255),
     phone: z.string().trim().max(30).optional(),
-    name: z.string().trim().max(200).optional(),
+    /** A name that is empty once trimmed is no name: it parses to undefined,
+     *  so the enquiry falls back to the email and never stores "" as the name
+     *  a hold's title is later built from (booking titles need a character). */
+    name: z
+      .string()
+      .trim()
+      .max(200)
+      .transform((name) => (name === "" ? undefined : name))
+      .optional(),
     eventDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     eventType: z.string().trim().max(100).optional(),
     guestCount: z.number().int().nonnegative().max(MAX_GUEST_COUNT).optional(),

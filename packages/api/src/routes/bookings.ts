@@ -62,6 +62,18 @@ const EnquiryBookingsQuery = z.object({ enquiryId: z.uuid() }).strict();
 /** Far above the bookings any one enquiry holds; the list is never paged. */
 const ENQUIRY_BOOKINGS_LIMIT = 100;
 
+/** Booking titles are at most 200 characters and never empty (booking.ts). */
+const MAX_BOOKING_TITLE_LENGTH = 200;
+
+/** Who a hold made from an enquiry is titled after: the enquiry's name, or
+ *  its email when the name is blank. Public enquiries stored before
+ *  GuestEnquirySchema treated a blank name as no name can hold "" here, and
+ *  an empty title fails every Diary read for the venue. */
+export function enquiryTitleName(enquiry: { readonly name: string; readonly email: string }): string {
+  const name = enquiry.name.trim();
+  return name === "" ? enquiry.email.trim() : name;
+}
+
 function validationError(reply: FastifyReply, details: unknown): FastifyReply {
   return reply.status(400).send({
     error: "Validation failed",
@@ -365,8 +377,8 @@ export async function bookingRoutes(
     }
 
     const occasion = occasionLabel(enquiry.eventType);
-    const fallbackTitle = `${enquiry.name}${occasion === null ? "" : ` — ${occasion}`}`;
-    const title = input.title ?? fallbackTitle.slice(0, 200);
+    const fallbackTitle = `${enquiryTitleName(enquiry)}${occasion === null ? "" : ` — ${occasion}`}`;
+    const title = input.title ?? fallbackTitle.slice(0, MAX_BOOKING_TITLE_LENGTH);
     const eventType = input.eventType ?? enquiry.eventType;
     const startsAt = new Date(input.startsAt);
     const endsAt = new Date(input.endsAt);
@@ -464,6 +476,7 @@ export async function bookingRoutes(
         spaceId: enquiries.spaceId,
         roomChosen: enquiries.roomChosen,
         name: enquiries.name,
+        email: enquiries.email,
         state: enquiries.state,
         eventType: enquiries.eventType,
       })
@@ -521,7 +534,7 @@ export async function bookingRoutes(
             spaceId,
             kind: VIEWING_BOOKING_KIND,
             status: "active",
-            title: input.title ?? enquiry.name.slice(0, 200),
+            title: input.title ?? enquiryTitleName(enquiry).slice(0, MAX_BOOKING_TITLE_LENGTH),
             eventType: null,
             startsAt: new Date(input.startsAt),
             endsAt: new Date(input.endsAt),
