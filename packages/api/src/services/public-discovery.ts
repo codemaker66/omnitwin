@@ -59,7 +59,9 @@ import type { Database } from "../db/client.js";
 // ---------------------------------------------------------------------------
 
 /** The venues opted into public discovery, by DATABASE slug. Adding one is a
- *  reviewed code change: the venue must have agreed, as Trades Hall has. */
+ *  reviewed code change: the venue must have agreed. Trades Hall is here on
+ *  Blake's decision of 8 October 2026; the venue's own agreement is not
+ *  recorded, so nothing served claims it (trust check, 28 October 2026). */
 export const PUBLIC_DISCOVERY_VENUES: readonly PublicVenueProfile[] = [TRADES_HALL_PUBLIC_PROFILE];
 
 /** The longest range one availability request may cover. */
