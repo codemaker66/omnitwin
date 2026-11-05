@@ -139,7 +139,8 @@ describe("the truthful ghost at the commit (truthfulGhost)", () => {
     expect(usePlacementNoticeStore.getState().notice?.text).toMatch(/^Won't fit · would overlap the round/u);
   });
 
-  it("judges a set card whatever the switch says: the card dock's own (QoL B-01)", () => {
+  it.each([false, true])("judges a set card whatever the switch says (truthfulGhost %s): the card dock's own (QoL B-01)", (truthfulGhost) => {
+    setPlannerFeaturesForTesting({ truthfulGhost });
     placeCardAt(params("round"), { x: 0, z: 0 }, 0);
     expect(placeCardAt(params("round"), { x: 0, z: CHAIR_REACH }, 0)).toEqual([]);
     expect(tables()).toHaveLength(1);
