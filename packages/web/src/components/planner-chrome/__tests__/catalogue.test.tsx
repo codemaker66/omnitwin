@@ -1,3 +1,4 @@
+import { StrictMode } from "react";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { Catalogue, nothingFoundLine } from "../Catalogue.js";
@@ -133,6 +134,16 @@ describe("search", () => {
     expect(document.activeElement).toBe(search);
     fireEvent.keyDown(search, { key: "/", code: "Slash" });
     expect(useCardsStore.getState().catalogueOpen).toBe(true);
+  });
+
+  // React's development double run of effects (StrictMode, as main.tsx mounts
+  // the app) moved focus on to the first card, so what was typed after / went
+  // to the planner's keys (6 Nov, seen in the browser).
+  it("keeps the search's focus through a second run of its effects", () => {
+    render(<StrictMode><Catalogue /></StrictMode>);
+    fireEvent.keyDown(window, { key: "/", code: "Slash" });
+    const search = within(catalogue()).getByRole("searchbox", { name: "Search the catalogue" });
+    expect(document.activeElement).toBe(search);
   });
 });
 

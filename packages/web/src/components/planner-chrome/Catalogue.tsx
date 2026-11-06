@@ -267,6 +267,8 @@ function CatalogueSheet({ sheetRef, open, searchRef, wantsSearch, disabledReason
       searchRef.current?.focus();
       return;
     }
+    // A second run (React's development double run, or a remount) leaves a search that has focus with it.
+    if (document.activeElement === searchRef.current) return;
     const first = firstStop.current;
     if (lastInputWasKeys() && first !== null) cardsRef.current.get(first)?.focus();
   }, [searchRef, wantsSearch]);
