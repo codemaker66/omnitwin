@@ -8,6 +8,7 @@ import { ChromeShell } from "./ChromeShell.js";
 import { DockStack } from "./DockStack.js";
 import { Receipt } from "./Receipt.js";
 import { LayOutPanel } from "./LayOutPanel.js";
+import { useNothingOutOfSight } from "./nothing-out-of-sight.js";
 import { RoomStage } from "./RoomStage.js";
 import { Slate } from "./Slate.js";
 
@@ -25,6 +26,8 @@ import { Slate } from "./Slate.js";
 
 export function PlannerChromeV2(): ReactElement {
   useLayoutLiveRoom();
+  // A panel asked for while the tools are cleared brings them back with it (T-680).
+  useNothingOutOfSight();
   const right = usePlannerChromeStore((state) => state.right);
   return (
     <>

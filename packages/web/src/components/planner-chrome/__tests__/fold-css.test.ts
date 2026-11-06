@@ -121,17 +121,22 @@ describe("the new chrome's clear-all CSS", () => {
   it("is instant from the keyboard", () => {
     const instant = rules(fold).find((rule) => rule.selector.startsWith('html[data-planner-chrome-motion="instant"][data-planner-chrome]'));
     expect(instant?.body).toMatch(/transition:\s*none/u);
-    for (const part of [".pc-zone > *", ".pc-slate__plate", ".pc-slate > .pc-plane", "[data-chrome-surface]"]) {
+    for (const part of [".pc-zone > *", ".pc-slate__plate", ".pc-slate > .pc-plane", "[data-chrome-surface]", ".pc-crest-note"]) {
       expect(instant?.selector, part).toContain(part);
     }
   });
 
-  it("keeps a 120 ms fade and no movement under reduced motion", () => {
+  it("does not move under reduced motion (the house's own rule takes the fade away too)", () => {
     const reduced = /@media \(prefers-reduced-motion: reduce\)\s*\{([\s\S]*)\}\s*$/u.exec(code(fold))?.[1] ?? "";
-    expect(reduced).toMatch(/--pc-fold-out:\s*120ms/u);
-    expect(reduced).toMatch(/--pc-fold-in:\s*120ms/u);
     expect(reduced).toMatch(/translate:\s*none/u);
     expect(reduced).toMatch(/scale:\s*none/u);
+  });
+
+  it("lets the room take the pointer where the chrome has gone, and the crest, the notice and a receipt keep theirs", () => {
+    const off = rules(fold).find((rule) => rule.selector.startsWith('html[data-planner-chrome="cleared"]') && /pointer-events:\s*none/u.test(rule.body) && rule.selector.includes(".pc-slate,"));
+    expect(off?.selector).toContain(".pc-zone--above-dock > *");
+    const on = rules(fold).find((rule) => rule.selector.startsWith('html[data-planner-chrome="cleared"]') && /pointer-events:\s*auto/u.test(rule.body));
+    for (const part of [".pc-slate__crest-seat", ".pc-slate__notice", ".pc-receipt"]) expect(on?.selector, part).toContain(part);
   });
 
   it("gives the crest a 36 px press, 44 px for a finger, without moving the plate's words", () => {

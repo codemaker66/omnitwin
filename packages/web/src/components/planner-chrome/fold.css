@@ -174,18 +174,27 @@ html[data-planner-chrome="cleared"] .pc-slate__crest-seat {
   visibility: visible;
 }
 
-/* -- The keyboard is instant; reduced motion keeps only a short fade --------- */
+/* What has gone takes no pointer: the room under the slate's box and under
+   the line above the dock is the room again (pointer-events is inherited).
+   The crest, the slate's notice and a receipt's Undo still take theirs. */
+html[data-planner-chrome="cleared"] :is(.pc-slate, .pc-zone--above-dock > *) {
+  pointer-events: none;
+}
 
-html[data-planner-chrome-motion="instant"][data-planner-chrome] :is(.pc-zone > *, .pc-slate__plate, .pc-slate__plate > *, .pc-slate > .pc-plane, .pc-shell [data-chrome-surface]) {
+html[data-planner-chrome="cleared"] :is(.pc-slate__crest-seat, .pc-slate__notice, .pc-receipt) {
+  pointer-events: auto;
+}
+
+/* -- The keyboard is instant; reduced motion does not move ------------------ */
+
+html[data-planner-chrome-motion="instant"][data-planner-chrome] :is(.pc-zone > *, .pc-slate__plate, .pc-slate__plate > *, .pc-slate > .pc-plane, .pc-shell [data-chrome-surface], .pc-crest-note) {
   transition: none;
 }
 
+/* Reduced motion: nothing moves. The house's own reduced-motion rule
+   (global.css) also takes every transition away, so the fade is instant too,
+   as in today's planner; the spec's 120 ms fade is a follow-up for both. */
 @media (prefers-reduced-motion: reduce) {
-  .pc-shell {
-    --pc-fold-out: 120ms;
-    --pc-fold-in: 120ms;
-  }
-
   html[data-planner-chrome="cleared"] :is(.pc-zone--top-centre, .pc-zone--utilities, .pc-zone--left, .pc-zone--right, .pc-zone--dock, .pc-zone--next-step) > * {
     translate: none;
     scale: none;
