@@ -272,6 +272,47 @@
   margin-bottom: 0;
 }
 
+/* "Don't measure my visits" (T-685): the page's own quiet switch, in its ink
+   and green; pressed, it fills. */
+.lg-choice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+}
+.lg-choice-button {
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid var(--lg-green);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--lg-green);
+  font-family: var(--lg-ui);
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: background-color 160ms var(--lg-ease), color 160ms var(--lg-ease);
+}
+.lg-choice-button:hover {
+  background: var(--lg-green-soft);
+}
+.lg-choice-button[aria-pressed="true"] {
+  background: var(--lg-green);
+  color: var(--lg-paper);
+}
+.lg-choice-button:focus-visible {
+  outline: 2px solid var(--lg-green);
+  outline-offset: 3px;
+}
+.lg-choice-state {
+  font-family: var(--lg-ui);
+  font-size: 12px;
+  color: var(--lg-ink-2);
+}
+@media (prefers-reduced-motion: reduce) {
+  .lg-choice-button { transition: none; }
+}
+
 .lg-list {
   margin: 0 0 1.05em;
   padding-left: 1.15em;

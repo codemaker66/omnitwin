@@ -18,10 +18,11 @@
 //   - Every processor named below is one actually in use.
 // ---------------------------------------------------------------------------
 
-import { useEffect, type ReactElement } from "react";
+import { useEffect, useState, type ReactElement } from "react";
 import { CONTRACT_CONSENT_STATEMENT, DIETARY_MEMORY_CONSENT, DIETARY_MEMORY_MONTHS_UNUSED, DIETARY_NOTE_RETENTION } from "@omnitwin/types";
 import { REMEMBERED_NOTES_PATH } from "../lib/dietary-memory.js";
 import { ROUTE_DOCUMENTS } from "../lib/route-documents.js";
+import { measurementDeclined, setMeasurementDeclined } from "../observability/measurement-choice.js";
 import "./LegalPage.css";
 
 interface LegalPageProps {
@@ -49,7 +50,9 @@ type LegalBlock =
   | { readonly kind: "p"; readonly text: string }
   | { readonly kind: "list"; readonly items: readonly string[] }
   | { readonly kind: "defs"; readonly items: readonly LegalDefinition[] }
-  | { readonly kind: "links"; readonly items: readonly LegalLink[] };
+  | { readonly kind: "links"; readonly items: readonly LegalLink[] }
+  /** The "Don't measure my visits" switch the page-speed paragraph promises. */
+  | { readonly kind: "measurement-choice" };
 
 interface LegalSection {
   readonly id: string;
@@ -89,7 +92,8 @@ const ORIGINAL_EDITION = { text: LAST_UPDATED, iso: "2026-08-15" } as const;
  *  October, when it named Anthropic, which writes the events team's AI
  *  drafts (release audit ai-1), before AI drafting is switched on, and Stripe
  *  for deposits, and said what a contract's signature record keeps (Plan 19 L5). */
-const PRIVACY_UPDATED = { text: "27 October 2026", iso: "2026-10-27" } as const;
+// Re-date to the day this goes live: the page-speed paragraph waits for the solicitor (T-685).
+const PRIVACY_UPDATED = { text: "6 November 2026", iso: "2026-11-06" } as const;
 
 /** The allergy note's keeping period, from the one definition the API's
  *  retention pass and the planner also read. */
@@ -249,6 +253,20 @@ const PRIVACY: LegalDocument = {
               detail:
                 "When something goes wrong in the browser or on the server, our error-monitoring service records technical details about the failure. That can include the page you were on and the technical state of the application at the time.",
             },
+            {
+              term: "How fast our pages are",
+              detail:
+                "When you open one of our pages, your browser may measure how quickly it loaded and responded (four timings) and send them to us with the kind of page (for example \"a proposal\") and whether it was opened on a phone, tablet or computer. "
+                + "It does not send the address of the page you opened, anything you typed, or any identifier, and nothing is stored on your device for it. Like any request, it reaches us from your internet address; we do not keep that with the timings or log it. "
+                + "We use these timings only to make the site faster, and delete them after 90 days. "
+                + "If your browser sends Global Privacy Control or Do Not Track, nothing is measured or sent. On any browser you can also turn it off with the \"Don't measure my visits\" switch on this page; that choice is kept on your device so we can respect it.",
+            },
+          ],
+        },
+        { kind: "measurement-choice" },
+        {
+          kind: "defs",
+          items: [
             {
               term: "Dietary and allergy notes for an event",
               detail:
@@ -1029,8 +1047,30 @@ function storedTheme(): "dark" | "light" | undefined {
 // Rendering
 // ---------------------------------------------------------------------------
 
+/** "Don't measure my visits" (observability/measurement-choice.ts). */
+function MeasurementChoice(): ReactElement {
+  const [declined, setDeclined] = useState(measurementDeclined);
+  const toggle = (): void => {
+    const next = !declined;
+    setMeasurementDeclined(next);
+    setDeclined(next);
+  };
+  return (
+    <p className="lg-p lg-choice">
+      <button type="button" className="lg-choice-button" aria-pressed={declined} onClick={toggle}>
+        {"Don't measure my visits"}
+      </button>
+      <span className="lg-choice-state" role="status">
+        {declined ? "Your visits on this device are not measured." : "Your visits may be measured, as described above."}
+      </span>
+    </p>
+  );
+}
+
 function LegalBlockView({ block }: { readonly block: LegalBlock }): ReactElement {
   switch (block.kind) {
+    case "measurement-choice":
+      return <MeasurementChoice />;
     case "p":
       return <p className="lg-p">{block.text}</p>;
     case "list":

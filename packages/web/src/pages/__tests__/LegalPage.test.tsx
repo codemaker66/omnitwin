@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { measurementDeclined } from "../../observability/measurement-choice.js";
 import {
   DIETARY_MEMORY_CONSENT,
   DIETARY_MEMORY_MONTHS_UNUSED,
@@ -115,6 +116,24 @@ describe("every document", () => {
 });
 
 describe("the privacy policy", () => {
+  // T-685: before the page-speed timings may be switched on, the page says what
+  // they are and offers a way to object that works on every browser.
+  it("says what the page-speed timings are, and its switch turns them off on this device", () => {
+    render(<LegalPage type="privacy" />);
+    const page = document.body.textContent ?? "";
+    expect(page).toContain("How fast our pages are");
+    expect(page).toContain("delete them after 90 days");
+    expect(page).toContain("It does not send the address of the page you opened");
+    const button = screen.getByRole("button", { name: "Don't measure my visits" });
+    expect(button.getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(button);
+    expect(button.getAttribute("aria-pressed")).toBe("true");
+    expect(measurementDeclined()).toBe(true);
+    expect(screen.getByRole("status").textContent).toBe("Your visits on this device are not measured.");
+    fireEvent.click(button);
+    expect(measurementDeclined()).toBe(false);
+  });
+
   it("says what the dietary note is, who reads it, that logs leave it out, and how long it is kept", () => {
     const text = textOf("privacy");
     expect(text).toContain("Dietary and allergy notes for an event");
