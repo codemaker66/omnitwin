@@ -21,6 +21,7 @@ import { canFreezePhaseLayoutForVenue } from "../editor/cockpit/PhaseLayoutSnaps
 import { ActivityIndicator, ActivityStatus } from "../shared/Activity.js";
 import { CreamKey, QuietKey } from "./Keys.js";
 import { usePopoverState } from "./Popover.js";
+import { SlateCrest } from "./SlateCrest.js";
 import { SlateMenu, slateMenuRooms } from "./SlateMenu.js";
 import { useEventHold, useSlateAudience } from "./slate-data.js";
 import { Chip, Notice, StatusDot, type StatusDotTone } from "./Surfaces.js";
@@ -34,9 +35,10 @@ const LazyClerkRouteProvider = lazy(() => import("../auth/ClerkRouteProvider.js"
 // The slate — what this is, and whether it is saved (T-671 slice 7; spec 6.1,
 // frames 01, 17 and 19).
 //
-// A lacquer plate top left: the crest, the eyebrow (the day and the room), the
-// title as the key to the slate's menu, and one line: the hold, the save state
-// in plain words, "Sample" for a sample. Under it the copper plane carries the
+// A lacquer plate top left: the crest (which hides and shows the tools,
+// T-680), the eyebrow (the day and the room), the title as the key to the
+// slate's menu, and one line: the hold, the save state in plain words,
+// "Sample" for a sample. Under it the copper plane carries the
 // figures that decide: guests, seats against the room's published limit, and
 // tables. A notice under the plane says what is safe and the way forward when
 // a save did not arrive, the connection dropped or someone else changed the
@@ -62,7 +64,7 @@ const DOT_TONE: Readonly<Partial<Record<SlateSaveMark, StatusDotTone>>> = {
 };
 
 export interface SlateCardProps {
-  /** The venue's crest, or nothing. */
+  /** The crest: the switch that hides and shows the tools (SlateCrest, T-680), or nothing. */
   readonly crest: ReactNode;
   /** "Sat 28 Nov 2026 · Grand Hall". */
   readonly eyebrow: string;
@@ -174,7 +176,7 @@ export function SlateCard({
   return (
     <section className="pc-slate" aria-label={title} data-save={save.kind} data-plane={plane === null ? "none" : "joined"} data-pc-popover-anchor>
       <div className="pc-lacquer pc-slate__plate">
-        {crest !== null ? <span className="pc-slate__crest" aria-hidden="true">{crest}</span> : null}
+        {crest}
         <div className="pc-slate__words">
           <span className="pc-caps pc-slate__eyebrow">{eyebrow}</span>
           <button
@@ -420,9 +422,12 @@ export function Slate(): ReactElement {
     : conflict !== null ? "Choose a version first"
       : facts.isDirty || facts.isSaving ? "Saving this layout first"
         : null;
-  const crest = venue.logoUrl !== null && venue.logoUrl !== failedLogo
-    ? <img src={venue.logoUrl} alt="" onError={() => { setFailedLogo(venue.logoUrl); }} />
-    : null;
+  const crest = (
+    <SlateCrest
+      logoUrl={venue.logoUrl !== null && venue.logoUrl !== failedLogo ? venue.logoUrl : null}
+      onLogoError={() => { setFailedLogo(venue.logoUrl); }}
+    />
+  );
 
   return (
     <>

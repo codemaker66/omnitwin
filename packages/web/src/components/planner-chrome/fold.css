@@ -1,0 +1,193 @@
+/* ---------------------------------------------------------------------------
+ * THE NEW CHROME CLEARED AWAY (T-680 in the new chrome; T-671).
+ *
+ * Blake, 28 Oct 2026: "The UI elements, I want to be able to minimise them
+ * for cleaner design." \, the crest on the slate or Esc. ChromePresence
+ * mirrors the state onto <html>:
+ *   data-planner-chrome = "cleared" | "restoring" (one settle on the way back)
+ *   data-planner-chrome-motion = "instant" (the keyboard did it)
+ *
+ * Each zone's contents leave toward the zone's own edge (12 px, from 0.96 at
+ * that edge, fading: 180 ms out, 240 ms in) and cannot be reached once gone;
+ * they stay mounted, so nothing loses its place or its state. The slate
+ * stays where it is: its lacquer and its words fade, and the crest alone
+ * stays, perfectly still, the way back. What says what is safe stays: the
+ * slate's notice, a receipt, the door notice's voice. The caption lives in
+ * the room with the selection, which carries on, so it stays too. Motion
+ * only in those states; transform and opacity only; no blur; no sound.
+ * ------------------------------------------------------------------------- */
+
+.pc-shell {
+  --pc-fold-out: var(--house-motion-reveal, 180ms);
+  --pc-fold-in: var(--house-motion-deliberate, 240ms);
+  --pc-fold-ease: var(--house-ease-out);
+}
+
+/* -- The note beside the crest ---------------------------------------------- */
+
+/* The note, the first few times on a device: beside the crest, on its centre
+   line. Its voice stays in the accessibility tree, out of sight, so what
+   arrives in it is spoken; only the ink fades. */
+.pc-crest-note {
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  left: calc(100% + 10px);
+  margin: 0;
+  padding: 6px 12px;
+  border-radius: var(--house-radius-pill);
+  font: 400 12px/16px var(--house-sans);
+  white-space: nowrap;
+  translate: 0 -50%;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--pc-fold-out) var(--pc-fold-ease);
+}
+
+.pc-crest-note[data-shown="true"] {
+  opacity: 1;
+  transition: opacity var(--pc-fold-in) var(--pc-fold-ease);
+}
+
+/* -- The zones: each toward its own edge ------------------------------------ */
+
+html[data-planner-chrome="cleared"] :is(.pc-zone--top-centre, .pc-zone--utilities, .pc-zone--left, .pc-zone--right, .pc-zone--dock, .pc-zone--next-step) > * {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity var(--pc-fold-out) var(--pc-fold-ease),
+    translate var(--pc-fold-out) var(--pc-fold-ease),
+    scale var(--pc-fold-out) var(--pc-fold-ease),
+    visibility 0s linear var(--pc-fold-out);
+}
+
+html[data-planner-chrome="cleared"] :is(.pc-zone--top-centre, .pc-zone--utilities) > * {
+  translate: 0 -12px;
+  scale: 0.96;
+}
+
+html[data-planner-chrome="cleared"] .pc-zone--left > * {
+  translate: -12px 0;
+  scale: 0.96;
+}
+
+html[data-planner-chrome="cleared"] .pc-zone--right > * {
+  translate: 12px 0;
+  scale: 0.96;
+}
+
+html[data-planner-chrome="cleared"] :is(.pc-zone--dock, .pc-zone--next-step) > * {
+  translate: 0 12px;
+  scale: 0.96;
+}
+
+/* Out and back from the same edge, so nothing slides sideways as it grows. */
+html[data-planner-chrome] .pc-zone--top-centre > * { transform-origin: top center; }
+html[data-planner-chrome] .pc-zone--utilities > * { transform-origin: top right; }
+html[data-planner-chrome] .pc-zone--left > * { transform-origin: left center; }
+html[data-planner-chrome] .pc-zone--right > * { transform-origin: right center; }
+html[data-planner-chrome] .pc-zone--dock > * { transform-origin: bottom center; }
+html[data-planner-chrome] .pc-zone--next-step > * { transform-origin: bottom right; }
+
+/* Coming back: the same path in reverse, a little slower (240 ms in, 180 out). */
+html[data-planner-chrome="restoring"] :is(.pc-zone--top-centre, .pc-zone--utilities, .pc-zone--left, .pc-zone--right, .pc-zone--dock, .pc-zone--next-step) > * {
+  transition:
+    opacity var(--pc-fold-in) var(--pc-fold-ease),
+    translate var(--pc-fold-in) var(--pc-fold-ease),
+    scale var(--pc-fold-in) var(--pc-fold-ease),
+    visibility 0s linear 0s;
+}
+
+/* Above the dock: a receipt stays (it says what just happened, with Undo);
+   an opted-in surface, the door notice's card, fades, and its voice stays. */
+html[data-planner-chrome="cleared"] .pc-shell [data-chrome-surface] {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity var(--pc-fold-out) var(--pc-fold-ease),
+    visibility 0s linear var(--pc-fold-out);
+}
+
+html[data-planner-chrome="restoring"] .pc-shell [data-chrome-surface] {
+  transition:
+    opacity var(--pc-fold-in) var(--pc-fold-ease),
+    visibility 0s linear 0s;
+}
+
+/* -- The slate: its lacquer and words fade, the crest stays ------------------ */
+
+/* A gradient cannot move, so while the chrome is away or coming back the
+   plate draws its lacquer through one figure that can. At rest it is the
+   plate's own .pc-lacquer, to the pixel. */
+@property --pc-plate-presence {
+  syntax: "<percentage>";
+  inherits: false;
+  initial-value: 100%;
+}
+
+html[data-planner-chrome] .pc-slate__plate {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--house-lacquer-top) var(--pc-plate-presence), transparent),
+    color-mix(in srgb, var(--house-lacquer-bottom) var(--pc-plate-presence), transparent)
+  );
+  border-color: color-mix(in srgb, var(--house-hairline-hover) var(--pc-plate-presence), transparent);
+}
+
+html[data-planner-chrome="cleared"] .pc-slate__plate {
+  --pc-plate-presence: 0%;
+  box-shadow: none;
+  visibility: hidden;
+  transition:
+    --pc-plate-presence var(--pc-fold-out) var(--pc-fold-ease),
+    box-shadow var(--pc-fold-out) var(--pc-fold-ease),
+    visibility 0s linear var(--pc-fold-out);
+}
+
+html[data-planner-chrome="restoring"] .pc-slate__plate {
+  transition:
+    --pc-plate-presence var(--pc-fold-in) var(--pc-fold-ease),
+    box-shadow var(--pc-fold-in) var(--pc-fold-ease),
+    visibility 0s linear 0s;
+}
+
+html[data-planner-chrome="cleared"] .pc-slate__plate > :not(.pc-slate__crest-seat),
+html[data-planner-chrome="cleared"] .pc-slate > .pc-plane {
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity var(--pc-fold-out) var(--pc-fold-ease),
+    visibility 0s linear var(--pc-fold-out);
+}
+
+html[data-planner-chrome="restoring"] .pc-slate__plate > :not(.pc-slate__crest-seat),
+html[data-planner-chrome="restoring"] .pc-slate > .pc-plane {
+  transition:
+    opacity var(--pc-fold-in) var(--pc-fold-ease),
+    visibility 0s linear 0s;
+}
+
+/* The crest and its note stand on a plate that has gone. */
+html[data-planner-chrome="cleared"] .pc-slate__crest-seat {
+  visibility: visible;
+}
+
+/* -- The keyboard is instant; reduced motion keeps only a short fade --------- */
+
+html[data-planner-chrome-motion="instant"][data-planner-chrome] :is(.pc-zone > *, .pc-slate__plate, .pc-slate__plate > *, .pc-slate > .pc-plane, .pc-shell [data-chrome-surface]) {
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pc-shell {
+    --pc-fold-out: 120ms;
+    --pc-fold-in: 120ms;
+  }
+
+  html[data-planner-chrome="cleared"] :is(.pc-zone--top-centre, .pc-zone--utilities, .pc-zone--left, .pc-zone--right, .pc-zone--dock, .pc-zone--next-step) > * {
+    translate: none;
+    scale: none;
+  }
+}

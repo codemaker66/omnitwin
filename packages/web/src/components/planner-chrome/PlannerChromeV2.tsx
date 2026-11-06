@@ -2,6 +2,7 @@ import { type ReactElement } from "react";
 import { EditorBridge } from "../editor/EditorBridge.js";
 import { useLayoutLiveRoom } from "../editor/LayoutLiveLayer.js";
 import { DoorClearNotice } from "../editor/DoorClearNotice.js";
+import { ChromePresence } from "../editor/cockpit/ChromeFold.js";
 import { usePlannerChromeStore } from "../../stores/planner-chrome-store.js";
 import { ChromeShell } from "./ChromeShell.js";
 import { DockStack } from "./DockStack.js";
@@ -16,9 +17,10 @@ import { Slate } from "./Slate.js";
 //
 // The room, full bleed, under the zones the slices fill: so far the slate
 // (slice 7), the dock (8′), the rail (12′), the receipt and the door rule's
-// notice above the dock (spec §6.9; lane E, T-679). The layout keeps syncing,
-// saving and its live room exactly as before; none of today's other surfaces
-// mount.
+// notice above the dock (spec §6.9; lane E, T-679). \, the crest or Esc
+// clears them away and brings them back, as in today's planner (T-680). The
+// layout keeps syncing, saving and its live room exactly as before; none of
+// today's other surfaces mount.
 // ---------------------------------------------------------------------------
 
 export function PlannerChromeV2(): ReactElement {
@@ -42,6 +44,8 @@ export function PlannerChromeV2(): ReactElement {
         dock={<DockStack />}
         right={right === "lay-out" ? <LayOutPanel /> : null}
       />
+      {/* \, the crest and Esc clear the tools away and bring them back (T-680; fold.css). Last, so its effects run after the shell's. */}
+      <ChromePresence />
     </>
   );
 }

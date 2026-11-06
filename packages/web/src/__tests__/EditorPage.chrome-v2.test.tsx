@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -90,6 +90,31 @@ describe("EditorPage with the new chrome", () => {
     openPlanner("?chrome=v1");
     await waitFor(() => { expect(screen.getByTestId("planner-cockpit")).toBeTruthy(); });
     expect(screen.queryByTestId("planner-chrome-v2")).toBeNull();
+  });
+
+  it("clears the new chrome away with the slate's crest or \\, and brings it back, as today's planner does (T-680)", async () => {
+    openPlanner("?chrome=v2");
+    await waitFor(() => { expect(screen.getByTestId("planner-chrome-v2")).toBeTruthy(); }, { timeout: CHUNK_MS });
+    const root = document.documentElement;
+    const crest = (): HTMLElement => screen.getByRole("button", { name: /the tools$/u });
+    expect(crest().getAttribute("aria-label")).toBe("Hide the tools");
+
+    act(() => { fireEvent.click(crest()); });
+    expect(root.getAttribute("data-planner-chrome")).toBe("cleared");
+    expect(crest().getAttribute("aria-label")).toBe("Show the tools");
+
+    act(() => { window.dispatchEvent(new KeyboardEvent("keydown", { key: "\\", bubbles: true, cancelable: true })); });
+    expect(root.getAttribute("data-planner-chrome")).not.toBe("cleared");
+
+    act(() => { window.dispatchEvent(new KeyboardEvent("keydown", { key: "\\", bubbles: true, cancelable: true })); });
+    expect(root.getAttribute("data-planner-chrome")).toBe("cleared");
+    act(() => { window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })); });
+    expect(root.getAttribute("data-planner-chrome")).not.toBe("cleared");
+
+    // Leaving the planner takes every mark off the page and ends a clear-all.
+    act(() => { fireEvent.click(crest()); });
+    cleanup();
+    expect(root.hasAttribute("data-planner-chrome")).toBe(false);
   });
 
   it("is today's chrome without the flag", async () => {
