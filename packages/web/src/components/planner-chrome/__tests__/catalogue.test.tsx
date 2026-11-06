@@ -4,6 +4,7 @@ import { Catalogue, nothingFoundLine } from "../Catalogue.js";
 import { cardChoices, placedCount } from "../CatalogueCard.js";
 import { CARD_TABS, CATALOGUE_CARDS, searchCatalogue } from "../../../lib/card-defaults.js";
 import { cardNeeds } from "../../../lib/card-stock.js";
+import { SETUP_PREVIEW_VERSION } from "../../../lib/crafted-furniture.js";
 import { getCatalogueItemBySlug } from "../../../lib/catalogue.js";
 import { useEscapeLayer } from "../../../lib/planner-keys.js";
 import { cardMainItem, cardParamsFor, pieceCardId } from "../../../lib/setup-cards.js";
@@ -318,7 +319,7 @@ describe("the cards' pictures (Q-21)", () => {
     openCatalogue();
     render(<Catalogue />);
     const art = (prefix: string): string => cardButtons().find((face) => face.getAttribute("aria-label")?.startsWith(prefix) === true)?.querySelector("img")?.getAttribute("src") ?? "";
-    expect(art("Round of 10,")).toMatch(/^\/models\/furniture\/setup-round\/setup-v1\/(white|black|bare)\.webp$/u);
-    expect(art("Round 6 ft,")).not.toContain("/setup/");
+    expect(art("Round of 10,")).toMatch(new RegExp(`^/models/furniture/setup-round/${SETUP_PREVIEW_VERSION}/(white|black|bare)-(turini|chiavari)\\.webp$`, "u"));
+    expect(art("Round 6 ft,")).not.toContain("/setup-");
   });
 });

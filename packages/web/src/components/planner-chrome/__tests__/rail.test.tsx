@@ -1,8 +1,11 @@
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { Rail } from "../Rail.js";
 import { armOrCancel } from "../card-keys.js";
 import { cardNeeds, type UsableStock } from "../../../lib/card-stock.js";
+import { SETUP_PREVIEW_VERSION } from "../../../lib/crafted-furniture.js";
 import { cardParamsFor } from "../../../lib/setup-cards.js";
 import { useCardsStore } from "../../../stores/cards-store.js";
 import { useCatalogueStore } from "../../../stores/catalogue-store.js";
@@ -176,16 +179,22 @@ describe("the cards' pictures (Q-21)", () => {
   it("shows a setup card as its whole set, and a piece as itself", () => {
     render(<Rail />);
     const art = (name: RegExp): string => within(rail()).getByRole("button", { name }).querySelector("img")?.getAttribute("src") ?? "";
-    expect(art(/^Round of 10/u)).toMatch(/^\/models\/furniture\/setup-round\/setup-v1\/(white|black|bare)\.webp$/u);
-    expect(art(/^Dance floor/u)).toBe("/models/furniture/setup-dance-floor/setup-v1/floor.webp");
-    expect(art(/^Top table/u)).toMatch(/^\/models\/furniture\/setup-top-table\/setup-v1\/[a-z]+-(one|set)\.webp$/u);
-    expect(art(/^Stage/u)).not.toContain("/setup/");
+    const round = art(/^Round of 10/u);
+    expect(round).toMatch(new RegExp(`^/models/furniture/setup-round/${SETUP_PREVIEW_VERSION}/(white|black|bare)-(turini|chiavari)\\.webp$`, "u"));
+    expect(art(/^Dance floor/u)).toBe(`/models/furniture/setup-dance-floor/${SETUP_PREVIEW_VERSION}/floor.webp`);
+    const top = art(/^Top table/u);
+    expect(top).toMatch(new RegExp(`^/models/furniture/setup-top-table/${SETUP_PREVIEW_VERSION}/[a-z]+-(one|set)-(turini|chiavari)\\.webp$`, "u"));
+    expect(art(/^Stage/u)).not.toContain("/setup-");
+    // Every picture a card shows is one the release ships.
+    for (const src of [round, top]) expect(existsSync(resolve("public", `.${src}`)), src).toBe(true);
   });
 
   it("follows the look in hand: a black Round of 10 shows black", () => {
     render(<Rail />);
     act(() => { useCatalogueStore.getState().armCard("round", { colourway: "black" }); });
-    const src = within(rail()).getByRole("button", { name: /^Round of 10/u }).querySelector("img")?.getAttribute("src");
-    expect(src).toBe("/models/furniture/setup-round/setup-v1/black.webp");
+    const src = within(rail()).getByRole("button", { name: /^Round of 10/u }).querySelector("img")?.getAttribute("src") ?? "";
+    // The event's chair is the Turini unless it is a wedding (plannerChairSlug).
+    expect(src).toBe(`/models/furniture/setup-round/${SETUP_PREVIEW_VERSION}/black-turini.webp`);
+    expect(existsSync(resolve("public", `.${src}`))).toBe(true);
   });
 });

@@ -32,6 +32,9 @@ const { useEditorStore } = await import("../stores/editor-store.js");
 const { useCockpitStore } = await import("../stores/cockpit-store.js");
 const { PLANNER_CHROME_STORAGE_KEY } = await import("../lib/planner-chrome-flag.js");
 const originalLoadConfiguration = useEditorStore.getState().loadConfiguration;
+// The new chrome is a lazy chunk; its first import under a loaded suite runs
+// past waitFor's 1 s default (the dock, rail, catalogue and caption grew it).
+const CHUNK_MS = 10_000;
 
 function openPlanner(search = ""): void {
   render(
@@ -61,7 +64,7 @@ afterEach(() => {
 describe("EditorPage with the new chrome", () => {
   it("renders the room under the new chrome's zones, and none of today's surfaces", async () => {
     openPlanner("?chrome=v2");
-    await waitFor(() => { expect(screen.getByTestId("planner-chrome-v2")).toBeTruthy(); });
+    await waitFor(() => { expect(screen.getByTestId("planner-chrome-v2")).toBeTruthy(); }, { timeout: CHUNK_MS });
     expect(screen.getByTestId("mock-room-stage")).toBeTruthy();
     for (const zone of ["slate", "top-centre", "utilities", "left", "right", "above-dock", "dock", "next-step"]) {
       expect(document.querySelector(`[data-pc-zone="${zone}"]`), zone).not.toBeNull();
@@ -79,10 +82,10 @@ describe("EditorPage with the new chrome", () => {
 
   it("keeps the new chrome on this device until v1 is asked for", async () => {
     openPlanner("?chrome=v2");
-    await waitFor(() => { expect(screen.getByTestId("planner-chrome-v2")).toBeTruthy(); });
+    await waitFor(() => { expect(screen.getByTestId("planner-chrome-v2")).toBeTruthy(); }, { timeout: CHUNK_MS });
     cleanup();
     openPlanner();
-    await waitFor(() => { expect(screen.getByTestId("planner-chrome-v2")).toBeTruthy(); });
+    await waitFor(() => { expect(screen.getByTestId("planner-chrome-v2")).toBeTruthy(); }, { timeout: CHUNK_MS });
     cleanup();
     openPlanner("?chrome=v1");
     await waitFor(() => { expect(screen.getByTestId("planner-cockpit")).toBeTruthy(); });
