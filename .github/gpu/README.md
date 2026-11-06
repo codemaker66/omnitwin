@@ -182,6 +182,12 @@ goes as the same step under the same key when the connection is back, and when
 someone else took it first the slot says so by name and the press is put away
 (`living-timetable-offline-steps.spec.ts`); this changes the inventory from
 419 to 421 and the CPU partition from 414 to 416.
+The next, on 6 November 2026, adds one ordinary case for the new chrome cleared
+away (T-680 in T-671's chrome, behind `?chrome=v2`): `\` and the slate's crest
+hide every zone but the crest, which stays where it stood; one Esc brings the
+tools back; the room takes the pointer where the chrome has gone; and L and `/`
+open their panels with the tools back (`planner-chrome-v2-clear.spec.ts`); this
+changes the inventory from 421 to 422 and the CPU partition from 416 to 417.
 
 The 30 September admission follows Blake's replacement of the Craft quiz with
 The Amissing Book (T-641). The old quiz's 26 threshold, questionnaire and result

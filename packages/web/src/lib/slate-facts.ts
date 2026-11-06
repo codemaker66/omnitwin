@@ -28,6 +28,39 @@ const DAY = new Intl.DateTimeFormat("en-GB", {
   year: "numeric",
 });
 
+/** The seats meter's shape as fractions of its width (card-dock spec §9). */
+export interface MeterShape {
+  /** Seats placed. */
+  readonly fill: number;
+  /** The end of the seats in hand (equal to fill with nothing in hand). */
+  readonly handTo: number;
+  /** Where the part past the room's published seats begins, or null. */
+  readonly overFrom: number | null;
+  /** Everyone has a seat. */
+  readonly full: boolean;
+}
+
+/**
+ * The meter: seats over guests (with no event, the room's published seats),
+ * the bar scaled to whichever is larger once the seats in hand are counted.
+ */
+export function meterShape({ guests, seats, limit, inHand }: {
+  readonly guests: number | null;
+  readonly seats: number;
+  readonly limit: number | null;
+  readonly inHand: number;
+}): MeterShape {
+  const wanted = guests ?? limit ?? 0;
+  const scale = Math.max(wanted, seats + inHand, seats);
+  if (scale <= 0) return { fill: 0, handTo: 0, overFrom: null, full: false };
+  return {
+    fill: seats / scale,
+    handTo: (seats + inHand) / scale,
+    overFrom: limit !== null && seats + inHand > limit ? limit / scale : null,
+    full: wanted > 0 && seats >= wanted,
+  };
+}
+
 const ISO_DAY = new Map<string, Intl.DateTimeFormat>();
 
 /** The event's day as the Diary's address takes it ("2026-11-28"), in the venue's zone. */

@@ -29,19 +29,64 @@
   border-bottom-right-radius: 0;
 }
 
-.pc-slate__crest {
+/* The crest is the switch that hides and shows the tools (T-680; fold.css):
+   30 px of crest in a 36 px press (44 px for a finger), so the plate's
+   spacing is what it was. */
+.pc-slate__crest-seat {
+  position: relative;
   display: inline-flex;
   flex: none;
-  width: 30px;
-  height: 30px;
   margin-top: 2px;
+}
+
+.pc-slate__crest {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  margin: -3px;
+  padding: 3px;
+  border: 0;
+  border-radius: var(--house-radius-key);
+  background: transparent;
+  color: var(--house-forest-ink-2);
+  cursor: pointer;
 }
 
 .pc-slate__crest > img,
 .pc-slate__crest > svg {
-  width: 100%;
-  height: 100%;
+  width: 30px;
+  height: 30px;
   object-fit: contain;
+  transition: scale var(--house-motion-press) var(--house-ease-out);
+}
+
+.pc-slate__crest:hover {
+  color: var(--house-forest-ink-1);
+}
+
+/* The press scales the mark, not the button. */
+.pc-slate__crest:active > :is(img, svg) {
+  scale: 0.97;
+}
+
+@media (pointer: coarse) {
+  .pc-slate__crest {
+    width: 44px;
+    height: 44px;
+    margin: -7px;
+    padding: 7px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pc-slate__crest > :is(img, svg) {
+    transition: none;
+  }
+
+  .pc-slate__crest:active > :is(img, svg) {
+    scale: none;
+  }
 }
 
 .pc-slate__words {

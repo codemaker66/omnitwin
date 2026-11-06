@@ -1,0 +1,38 @@
+/*
+ * The receipt (T-671; approved spec §6.9): one lacquer line above the dock
+ * stack for 5 s. "Table 7 put back in store · Undo · Ctrl Z".
+ */
+
+.pc-receipt-region {
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.pc-receipt {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 4px 6px 4px 14px;
+  border-radius: var(--house-radius-pill);
+  box-shadow: var(--house-shadow-e1);
+  pointer-events: auto;
+}
+
+.pc-receipt__text {
+  color: var(--house-forest-ink-1);
+  font: 400 14px/20px var(--house-sans);
+  white-space: nowrap;
+}
+
+.pc-receipt__dot {
+  color: var(--house-forest-ink-3);
+}
+
+.pc-receipt__keys {
+  display: inline-flex;
+  gap: 2px;
+  padding-right: 8px;
+  color: var(--house-forest-ink-3);
+}
