@@ -75,9 +75,11 @@ describe.skipIf(testUrl === undefined)("view-only links on isolated PostgreSQL",
   let db: Database;
   let server: FastifyInstance;
   const fixtureSchema = `plan_view_${randomUUID().replaceAll("-", "")}`;
+  // Every table the routes and the preview sweep read (the sweep spares a plan
+  // with a handoff pack, so it reads handoff_packs too).
   const tables: PgTable[] = [
     schema.venues, schema.spaces, schema.assetDefinitions, schema.configurations, schema.placedObjects,
-    schema.enquiries,
+    schema.enquiries, schema.handoffPacks,
   ];
 
   beforeAll(async () => {
@@ -262,7 +264,7 @@ describe.skipIf(testUrl === undefined)("view-only links on isolated PostgreSQL",
     // Every route that acts on a plan demands its id; the token is not one.
     const asPlanId: readonly { method: "GET" | "POST"; url: string; payload?: Record<string, unknown> }[] = [
       { method: "POST", url: `/public/configurations/${link.token}/objects/batch`, payload: { expectedRevision: 3, objects: [] } },
-      { method: "POST", url: `/public/configurations/${link.token}/thumbnail`, payload: { thumbnailUrl: "data:image/png;base64,AAAA" } },
+      { method: "POST", url: `/public/configurations/${link.token}/thumbnail`, payload: { thumbnailUrl: "data:image/png;base64,iVBORw0KGgo=" } },
       { method: "GET", url: `/public/configurations/${link.token}` },
       { method: "GET", url: `/public/configurations/${link.token}/plan.pdf` },
       { method: "POST", url: `/public/configurations/${link.token}/view-tokens` },

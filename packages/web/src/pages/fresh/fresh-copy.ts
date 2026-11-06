@@ -65,7 +65,9 @@ export const FRESH_KICKER_ENQUIRE = "The first word";
 export const FRESH_KICKER_HERITAGE = "The story";
 export const FRESH_KICKER_CONTACT = "The people";
 
-export const FRESH_ROOMS_TITLE = "Six rooms, one house";
+// The rooms with published capacities, not every room in the house (the front
+// door shows eight): the title names no count it cannot stand behind.
+export const FRESH_ROOMS_TITLE = "Rooms of one house";
 export const FRESH_ROOMS_LEDE =
   "Venue-published capacities.";
 
@@ -253,7 +255,7 @@ export const FRESH_DOSSIER_DRAWN_NOTE = "drawn to count";
 
 export const FRESH_HERITAGE_TITLE = "The house of the trades";
 export const FRESH_HERITAGE_BODY =
-  "Designed by Robert Adam, Trades Hall has been home to Glasgow's fourteen incorporated crafts since 1791.";
+  "Designed by Robert Adam in 1791, Trades Hall has been home to Glasgow's fourteen incorporated crafts since it opened in 1794.";
 
 export const FRESH_CONTACT_TITLE = "Speak with the events team";
 export const FRESH_CONTACT_TEL_LABEL = "Telephone";

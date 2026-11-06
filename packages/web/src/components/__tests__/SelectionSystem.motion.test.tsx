@@ -118,18 +118,31 @@ function runUntilAtRest(): void {
 }
 
 describe("SelectionSystem's carry and release", () => {
-  it("wakes the sleeping frame loop when it lets go, so the set-down is drawn", () => {
+  it("wakes the frame loop when it lets go of a piece still in hand, so its set-down is drawn", () => {
     render(<SelectionSystem />);
     pointer("pointerDown", 200, 200, 1_000);
     pointer("pointerMove", 220, 198, 1_016);
     pointer("pointerMove", 226, 197, 1_032);
-    // The hand rests long enough for the lean to stand up and the loop to sleep.
-    runUntilAtRest();
+    // A beat in hand: lifted off the floor, and not yet set down by a resting hand.
+    for (let frame = 0; frame < 6; frame++) stepFurnitureSettles(1 / 60);
     invalidate.mockClear();
-    pointer("pointerUp", 226, 197, 3_000);
+    pointer("pointerUp", 226, 197, 1_140);
     expect(activeFurnitureSettleCount()).toBeGreaterThan(0);
     expect(invalidate).toHaveBeenCalled();
     expect(stepFurnitureSettles(1 / 60).length).toBeGreaterThan(0);
+    runUntilAtRest();
+  });
+
+  it("has nothing left to move on release once a hand held still has set the piece down", () => {
+    render(<SelectionSystem />);
+    pointer("pointerDown", 200, 200, 1_000);
+    pointer("pointerMove", 220, 198, 1_016);
+    pointer("pointerMove", 226, 197, 1_032);
+    // The hand rests: the lean stands up, the piece is set down where it is, and the loop sleeps.
+    runUntilAtRest();
+    pointer("pointerUp", 226, 197, 3_000);
+    // A careful let-go dips nothing, so nothing is left to draw.
+    expect(activeFurnitureSettleCount()).toBe(0);
   });
 
   it("starts no motion and asks for no frame on release under reduced motion", () => {

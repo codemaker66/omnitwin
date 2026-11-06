@@ -50,6 +50,7 @@ vi.mock("../../../api/crm.js", () => ({
 vi.mock("../../../api/ai-assistant.js", () => ({
   getAIAssistantStatus: (): Promise<AIAssistantStatus> =>
     Promise.resolve({ configured: false, provider: null, model: null, disabledReason: null }),
+  draftEnquirySummary: (): Promise<never> => Promise.reject(new Error("no provider is configured")),
 }));
 
 vi.mock("../../ai/AIDraftPanel.js", () => ({

@@ -6,6 +6,9 @@
 //   gpu-crash     Chrome's GPU process crashes (CDP Browser.crashGpuProcess),
 //                 the nearest thing to a real driver reset
 //   error-once    one uncaptured WebGPU validation error (a buffer with no usage)
+//   oom-once      one uncaptured GPUOutOfMemoryError, handed to the renderer's onError inside a
+//                 frame as three r186 forwards one (a real one cannot be made safely on a shared
+//                 GPU): the view frees memory (a quality rung, the hall's wall detail) and draws on
 //                 made inside the next frame: not a loss, the view keeps drawing
 //   errors        such an error inside every frame, on whichever renderer the view
 //                 has (development bridge): one fresh device, then the stopped
@@ -23,7 +26,7 @@
 // Needs a development server: it reads window.__venPerf.
 //   node scripts/graphics-reset.mjs --base http://127.0.0.1:5231 --out D:/claude/l3c-graphics-reset/run \
 //     [--surface planner|planner-walk|room-walk|tour] [--backend webgpu|webgl2|none]
-//     [--loss destroy|lose-restore|lose-never|gpu-crash|error-once|errors] [--device desktop|phone] [--entry saved|fresh]
+//     [--loss destroy|lose-restore|lose-never|gpu-crash|error-once|errors|oom-once] [--device desktop|phone] [--entry saved|fresh]
 //     [--layer as|capture|model]   (the planner's view: as it opens, the captured room's splats, or the drawn hall)
 //     [--dpr 1]   (the display's device pixel ratio, default the device's)
 //     [--profile] (a CPU profile from the loss until the view settles: what fills each long task)
@@ -279,6 +282,31 @@ async function triggerLoss(page, browser) {
     await cdp.send("Browser.crashGpuProcess");
     return;
   }
+  if (LOSS === "oom-once") {
+    await page.evaluate(() => {
+      const renderer = window.__venPerf?.gl;
+      if (renderer === undefined) throw new Error("No renderer to fail");
+      const render = renderer.render;
+      let once = true;
+      renderer.render = function (...args) {
+        if (once) {
+          once = false;
+          renderer.onError({ api: "WebGPU", type: "GPUOutOfMemoryError", message: "Injected: not enough memory for the allocation" });
+        }
+        return render.apply(this, args);
+      };
+    });
+    // The planner draws on demand: nudge the orbit for the frame that carries the error.
+    const box = await page.locator("canvas").first().boundingBox();
+    if (box !== null) {
+      const centre = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+      await page.mouse.move(centre.x, centre.y);
+      await page.mouse.down({ button: "right" });
+      await page.mouse.move(centre.x + 12, centre.y, { steps: 4 });
+      await page.mouse.up({ button: "right" });
+    }
+    return;
+  }
   if (LOSS === "error-once" || LOSS === "errors") {
     await page.evaluate((loss) => {
       // A broken scene fails inside its own frames, and a frame's submit is what
@@ -367,10 +395,24 @@ async function awaitRecovery(page, startedAt) {
     // Errors that never stop come back through one fresh device, then stop: wait for the card.
     if (sawLoss && !state.restoring && LOSS !== "errors") return { outcome: "restored", phases, ...state, cover };
     // One error is not a loss: the view keeps drawing, with no cover at all.
-    if (LOSS === "error-once" && !sawLoss && Date.now() - began > 6_000) return { outcome: "kept-drawing", phases, ...state, cover };
+    if ((LOSS === "error-once" || LOSS === "oom-once") && !sawLoss && Date.now() - began > 6_000) return { outcome: "kept-drawing", phases, ...state, cover };
     if (Date.now() > deadline) return { outcome: "timed-out", phases, ...state };
     await page.waitForTimeout(50);
   }
+}
+
+/** What the view has given up to free graphics memory (lib/gpu-memory-pressure.ts): the governor's rungs and the hall's wall detail. */
+async function memoryProbe(page) {
+  return page.evaluate(() => {
+    const detail = window.__venHallDetail;
+    const stats = detail?.stats();
+    return {
+      given: window.__renderGovernor?.given() ?? null,
+      detailAllocated: detail?.allocated ?? null,
+      detailGpuBytes: stats?.gpuBytes ?? null,
+      detailResidentTiles: stats?.residentTiles ?? null,
+    };
+  });
 }
 
 /**
@@ -585,6 +627,7 @@ try {
   const box = await canvas.boundingBox();
   if (box === null) throw new Error("No canvas");
   report.before = await snapshot(page);
+  report.memory = { before: await memoryProbe(page) };
   report.framesBefore = await gesture(page, box);
   await page.waitForTimeout(3_000);
   // The detail a view streams depends on where it rests: settle at this pose before the baseline.
@@ -668,6 +711,7 @@ try {
     };
   });
   // A view that came back must still be drawing once the rebuilt scene has settled.
+  if (report.memory !== undefined) report.memory.after = await memoryProbe(page);
   report.settled = await page.evaluate(() => ({
     phase: document.querySelector("[data-graphics-recovery]")?.getAttribute("data-graphics-recovery") ?? null,
     stopped: [...document.querySelectorAll('[role="alert"]')].some((node) => node.textContent?.includes("The 3D view stopped")),

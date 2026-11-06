@@ -34,6 +34,16 @@ export const UserRoleSchema = z.enum(USER_ROLES);
 
 export type UserRole = z.infer<typeof UserRoleSchema>;
 
+/**
+ * Who administers a venue: its record (name, address, brand) and its rooms,
+ * and the times the Diary keeps between functions. The API's
+ * `canAdministerVenue` reads this list, and so do the web's controls, so the
+ * two cannot drift: a hallkeeper runs the room and does not edit the venue's
+ * record, and sales does not either. A Venviewer platform administrator
+ * passes at every venue, on its own axis (PlatformRole below).
+ */
+export const VENUE_ADMINISTRATION_ROLES = ["admin", "manager", "staff"] as const satisfies readonly UserRole[];
+
 // ---------------------------------------------------------------------------
 // Platform Role — Venviewer operating-company authority
 //

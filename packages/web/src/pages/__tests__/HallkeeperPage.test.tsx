@@ -1,8 +1,9 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import { Link, MemoryRouter, Route, Routes } from "react-router-dom";
 import { HallkeeperSheetV2Schema, type HallkeeperSheetV2 } from "@omnitwin/types";
 import { HallkeeperPage } from "../HallkeeperPage.js";
+import { useAuthStore } from "../../stores/auth-store.js";
 import {
   ackProgress,
   listPendingProgress,
@@ -660,6 +661,61 @@ describe("HallkeeperPage carries the corridor's event", () => {
 // T-648: the Martyn's Law readiness section renders on every sheet, outside
 // the instructions gate. With nothing entered every line is a prompt ("Not
 // set" / "Not checked"); with entries it shows exactly what was entered.
+// Release audit tenancy-f-2: the checklist is the venue crew's record. The
+// layout's client sees what is ticked and ticks nothing; the API refuses
+// their writes too (hallkeeper-progress-postgres).
+describe("HallkeeperPage keeps the checklist with the venue's team", () => {
+  afterEach(() => { useAuthStore.setState({ user: null }); });
+
+  function signIn(role: string): void {
+    useAuthStore.setState({ user: { id: "00000000-0000-4000-8000-0000000000u1", email: "reader@example.test",
+      role, platformRole: "none", venueId: role === "client" || role === "planner" ? null : "00000000-0000-4000-8000-0000000000v1",
+      name: "Reader" } });
+  }
+
+  function serveTicked(): Mock<(input: string | URL | Request, init?: RequestInit) => Promise<Response>> {
+    const fetchMock = vi.fn((input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+      const url = requestUrl(input);
+      if (url.includes(`/${CONFIG_A}/v2`)) return Promise.resolve(jsonResponse(sheet(CONFIG_A, "Client's layout")));
+      if (url.includes(`/${CONFIG_A}/progress`)) {
+        return Promise.resolve(jsonResponse(init?.method === "PATCH"
+          ? { configId: CONFIG_A, eventId: null, rowKey: ROW_KEY, checked: false }
+          : { configId: CONFIG_A, eventId: null, linkedEvents: 0, checked: { [ROW_KEY]: checkedAt } }));
+      }
+      throw new Error(`Unexpected request: ${init?.method ?? "GET"} ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    return fetchMock;
+  }
+
+  it.each(["client", "planner"])("a %s reads the crew's ticks and cannot change them", async (role) => {
+    signIn(role);
+    const fetchMock = serveTicked();
+    mount();
+
+    const row = await screen.findByRole("checkbox", { name: /Round table/u, checked: true });
+    // Read-only, not disabled: it stays at full contrast and in the tab order.
+    expect(row.getAttribute("aria-readonly")).toBe("true");
+    expect(row).toHaveProperty("disabled", false);
+    fireEvent.click(row);
+    expect(screen.getByRole("checkbox", { name: /Round table/u, checked: true })).toBeDefined();
+    expect(screen.getByText("The venue's team ticks these as they set the room.")).toBeDefined();
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "PATCH")).toHaveLength(0);
+  });
+
+  it("the venue's hallkeeper still ticks", async () => {
+    signIn("hallkeeper");
+    const fetchMock = serveTicked();
+    mount();
+    const row = await screen.findByRole("checkbox", { name: /Round table/u, checked: true });
+    expect(row.getAttribute("aria-readonly")).toBeNull();
+    expect(screen.queryByText("The venue's team ticks these as they set the room.")).toBeNull();
+    fireEvent.click(row);
+    expect(await screen.findByRole("checkbox", { name: /Round table/u, checked: false })).toBeDefined();
+    await waitFor(() => { expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "PATCH")).toHaveLength(1); });
+  });
+});
+
 describe("HallkeeperPage Martyn's Law readiness", () => {
   function serve(data: HallkeeperSheetV2): void {
     vi.stubGlobal("fetch", vi.fn((input: string | URL | Request): Promise<Response> => {

@@ -184,7 +184,8 @@ jobs:
   browser:
     name: Public pages in a browser
     if: ${{ inputs.browser == 'true' }}
-    runs-on: ubuntu-latest
+    # Pinned with ci.yml's e2e: Playwright 1.59.1 cannot install Chromium on Ubuntu 26.04 (ubuntu-latest).
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
       - name: Checkout the commit

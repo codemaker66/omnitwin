@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { FloorPlanPointSchema, type FloorPlanPoint } from "@omnitwin/types";
-import { api } from "./client.js";
+import { ApiError, api } from "./client.js";
 
 // ---------------------------------------------------------------------------
 // Response schemas — Zod validation at the API boundary.
@@ -43,6 +43,8 @@ const SpaceSchema = z.object({
 });
 
 export type Space = z.infer<typeof SpaceSchema>;
+
+const DeletedRoomDetailsSchema = z.object({ deletedSpaceId: z.string().min(1), deletedSpaceName: z.string().min(1) });
 
 const VenueDetailSchema = VenueSchema.extend({
   spaces: z.array(SpaceSchema),
@@ -114,6 +116,19 @@ export async function updateSpace(venueId: string, spaceId: string, data: Update
 
 export async function deleteSpace(venueId: string, spaceId: string): Promise<void> {
   await api.delete(`/venues/${venueId}/spaces/${spaceId}`);
+}
+
+/** A deleted room back as it was, with its layouts, loadouts and bookings. */
+export async function restoreSpace(venueId: string, spaceId: string): Promise<Space> {
+  return api.post(`/venues/${venueId}/spaces/${spaceId}/restore`, {}, undefined, SpaceSchema);
+}
+
+/** The deleted room a new room's address belongs to, when the API names one
+ *  (409 SLUG_EXISTS); null for any other failure. */
+export function deletedRoomHoldingSlug(error: unknown): { readonly id: string; readonly name: string } | null {
+  if (!(error instanceof ApiError) || error.status !== 409 || error.code !== "SLUG_EXISTS") return null;
+  const parsed = DeletedRoomDetailsSchema.safeParse(error.details);
+  return parsed.success ? { id: parsed.data.deletedSpaceId, name: parsed.data.deletedSpaceName } : null;
 }
 
 export async function deleteVenue(venueId: string): Promise<void> {

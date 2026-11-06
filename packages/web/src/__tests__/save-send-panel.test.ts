@@ -241,7 +241,7 @@ describe("prepareLayoutForGuestEnquiry save gate", () => {
 // ---------------------------------------------------------------------------
 // Punch list #24 — ortho diagram capture wiring
 //
-// SaveSendPanel captures a top-down floor plan PNG from the Three.js scene
+// SaveSendPanel captures a top-down floor plan image from the Three.js scene
 // and uploads it to the config's thumbnailUrl before opening the enquiry
 // modal. This makes the hallkeeper sheet PDF show the actual floor plan
 // instead of the "Generate from the 3D editor" placeholder.
@@ -286,12 +286,12 @@ describe("SaveSendPanel ortho capture wiring (#24) — source-grep", () => {
     expect(codeOnly).toMatch(/\{\s*scene[\s\S]*?\}\s*=\s*useEditorStore\.getState\(\)/);
   });
 
-  it("calls captureOrthographic with reduced resolution for data URL size", async () => {
+  it("captures the plan thumbnail, sized and encoded for the API's cap", async () => {
     const { codeOnly } = await readSource("src/components/editor/send-layout-flow.ts");
-    // The capture must use 800x533 (not 2400x1600) so the PNG data URL
-    // fits within the 200 KB Postgres column budget.
-    expect(codeOnly).toMatch(/captureOrthographic\([\s\S]*?width:\s*800/);
-    expect(codeOnly).toMatch(/captureOrthographic\([\s\S]*?height:\s*533/);
+    // PLAN_THUMBNAIL (an 800×533 JPEG within the thumbnail route's 270,000-character
+    // cap, pinned in lib/__tests__/native-ortho-capture.test.ts), not the capture's
+    // 2400×1600 PNG default: as PNG the Grand Hall's plan was refused.
+    expect(codeOnly).toMatch(/captureOrthographic\([^)]*PLAN_THUMBNAIL\s*\)/);
   });
 
   it("calls updatePublicThumbnail with the captured data URL", async () => {
@@ -317,12 +317,15 @@ describe("Router", () => {
     readonly path?: string;
   }
 
+  // Every route in the table, nested ones included: the routes sit under the
+  // root route that carries the route error boundary.
   function routeEntries(value: unknown): readonly TestRoute[] {
     if (!Array.isArray(value)) return [];
-    return value.flatMap((entry) => {
+    return value.flatMap((entry): TestRoute[] => {
       if (entry === null || typeof entry !== "object") return [];
       const pathValue = (entry as { path?: unknown }).path;
-      return [{ path: typeof pathValue === "string" ? pathValue : undefined }];
+      const children = routeEntries((entry as { children?: unknown }).children);
+      return [{ path: typeof pathValue === "string" ? pathValue : undefined }, ...children];
     });
   }
 

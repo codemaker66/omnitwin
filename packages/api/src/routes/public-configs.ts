@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { eq, and, isNull, inArray, sql } from "drizzle-orm";
-import { buildLayoutPathKey } from "@omnitwin/types";
+import { buildLayoutPathKey, ConfigurationReviewStatusSchema, isPlannerEditable } from "@omnitwin/types";
 import {
   configurations,
   configurationClaimSecrets,
@@ -62,17 +62,47 @@ const BatchBody = z.object({
   objects: z.array(BatchObjectItem).max(500),
 });
 
-// Punch list #24: accepts a data URL (PNG) as the thumbnail for a public
-// preview config. The .max() checks data URL string length (not decoded
-// payload bytes). Base64 inflates by ~33%, so 270KB string ≈ 200KB decoded PNG.
-// 800×533 captures are typically 30-50 KB. The long-term answer is R2
-// upload with a presigned URL; this is the pragmatic single-tenant path.
+// Punch list #24: accepts a data URL (PNG or JPEG) as the thumbnail for a
+// public preview config. The .max() checks the data URL's length; every
+// character after the prefix must be plain base64, so 270,000 characters is
+// 270 KB stored and about 200 KB decoded. The Grand Hall's 800×533 plan is
+// 514 KB as PNG (685,350 characters, refused here) and 72 KB as JPEG at 0.85
+// (96,443), so the planner sends JPEG (web lib/ortho-capture.ts,
+// PLAN_THUMBNAIL); the sheet PDF embeds either (sheet-pdf/blocks.ts
+// diagramBytes). The long-term answer is R2 upload with a presigned URL; this
+// is the pragmatic single-tenant path.
 const MAX_THUMBNAIL_STRING_LEN = 270_000;
+/** Each accepted thumbnail type, with the bytes its image must start with. */
+const THUMBNAIL_TYPES = [
+  { prefix: "data:image/png;base64,", signature: [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a] },
+  { prefix: "data:image/jpeg;base64,", signature: [0xff, 0xd8, 0xff] },
+] as const;
+/** Padded base64 and nothing else, as canvas.toDataURL writes it (linear to test, even at the cap). */
+const BASE64 = /^[A-Za-z0-9+/]*={0,2}$/;
+/** A PNG or JPEG data URL, plain base64 throughout, whose bytes begin as its declared type's do. */
+function isThumbnailDataUrl(value: string): boolean {
+  const type = THUMBNAIL_TYPES.find(({ prefix }) => value.startsWith(prefix));
+  if (type === undefined) return false;
+  const body = value.slice(type.prefix.length);
+  if (body.length % 4 !== 0 || !BASE64.test(body)) return false;
+  // Twelve base64 characters decode to the first nine bytes, enough for either signature.
+  const head = Buffer.from(body.slice(0, 12), "base64");
+  return type.signature.every((byte, index) => head[index] === byte);
+}
 const ThumbnailBody = z.object({
   thumbnailUrl: z.string()
-    .startsWith("data:image/png;base64,", "Must be a PNG data URL")
-    .max(MAX_THUMBNAIL_STRING_LEN, "Thumbnail data URL too large (max ~200KB decoded PNG)"),
+    .max(MAX_THUMBNAIL_STRING_LEN, "Thumbnail data URL too large (max ~200KB decoded)")
+    .refine(isThumbnailDataUrl, "Must be a PNG or JPEG data URL whose bytes match its type"),
 });
+
+/** A guest plan the venue has taken into review holds still for its snapshot
+ *  until it is sent back, as a signed-in planner's does; a status this code
+ *  does not know holds it too. */
+function lockedFor(reviewStatus: string): { error: string; code: "CONFIG_LOCKED"; reviewStatus: string } | null {
+  const status = ConfigurationReviewStatusSchema.safeParse(reviewStatus);
+  if (status.success && isPlannerEditable(status.data)) return null;
+  return { error: "This plan is with the venue for review, so it cannot be changed now.", code: "CONFIG_LOCKED", reviewStatus };
+}
 
 // ---------------------------------------------------------------------------
 // Plugin — public (no auth) configuration endpoints
@@ -189,7 +219,7 @@ export async function publicConfigRoutes(
 
     // Only allow saving to public preview configs. Guest autosaves need the
     // revision and room only — never the stored thumbnail data URL.
-    const [config] = await db.select({ revision: configurations.revision, spaceId: configurations.spaceId })
+    const [config] = await db.select({ revision: configurations.revision, spaceId: configurations.spaceId, reviewStatus: configurations.reviewStatus })
       .from(configurations)
       .where(and(
         eq(configurations.id, params.data.configId),
@@ -201,6 +231,8 @@ export async function publicConfigRoutes(
     if (config === undefined) {
       return reply.status(404).send({ error: "Public preview configuration not found", code: "NOT_FOUND" });
     }
+    const locked = lockedFor(config.reviewStatus);
+    if (locked !== null) return reply.status(409).send(locked);
 
     if (config.revision !== parsed.data.expectedRevision) {
       // When, never who: an anonymous caller is not told who edited.
@@ -261,12 +293,14 @@ export async function publicConfigRoutes(
           eq(configurations.id, configId),
           eq(configurations.revision, parsed.data.expectedRevision),
           eq(configurations.isPublicPreview, true),
+          // Still in the editable state read above: a review begun since holds it.
+          eq(configurations.reviewStatus, config.reviewStatus),
           isNull(configurations.deletedAt),
         ))
         .returning({ revision: configurations.revision });
 
       if (advanced === undefined) {
-        const [current] = await tx.select({ revision: configurations.revision })
+        const [current] = await tx.select({ revision: configurations.revision, reviewStatus: configurations.reviewStatus })
           .from(configurations)
           .where(and(
             eq(configurations.id, configId),
@@ -274,6 +308,11 @@ export async function publicConfigRoutes(
             isNull(configurations.deletedAt),
           ))
           .limit(1);
+        // A review begun since the check holds the plan: that, not a newer
+        // version, is why nothing was saved.
+        if (current !== undefined && lockedFor(current.reviewStatus) !== null) {
+          return { status: "locked" as const, reviewStatus: current.reviewStatus };
+        }
         return {
           status: "conflict" as const,
           currentRevision: current?.revision ?? config.revision,
@@ -300,6 +339,9 @@ export async function publicConfigRoutes(
       };
     });
 
+    if (saveResult.status === "locked") {
+      return reply.status(409).send(lockedFor(saveResult.reviewStatus));
+    }
     if (saveResult.status === "conflict") {
       const change = await loadRevisionChange(db, configId, saveResult.currentRevision,
         { discloseActor: false, callerUserId: null, log: request.log });
@@ -328,15 +370,17 @@ export async function publicConfigRoutes(
   // supports `skipAuth` while `api.patch()` does not. Consistent with
   // the other public config endpoints which are all POST.
   //
-  // Punch list #24: the hallkeeper sheet PDF needs a floor plan image in
-  // `configurations.thumbnailUrl`. The ortho capture happens in the browser
-  // (Three.js scene → PNG data URL). This endpoint stores the data URL in
-  // the thumbnailUrl column. Only works for unclaimed public preview configs
-  // — claimed configs use the authenticated PATCH /configurations/:id.
+  // Punch list #24: the hallkeeper sheet PDF prints `configurations.thumbnailUrl`
+  // for a layout saved with no plan; with a plan it draws the plan itself
+  // (sheet-pdf/blocks.ts). The ortho capture happens in the browser
+  // (Three.js scene → JPEG data URL, PLAN_THUMBNAIL). This endpoint stores the
+  // data URL in the thumbnailUrl column. Only works for unclaimed public preview
+  // configs — claimed configs use the authenticated PATCH /configurations/:id.
   //
   // Security: no auth required (consistent with other public config endpoints).
-  // Scoped to isPublicPreview=true. Body is validated as a PNG data URL with
-  // a 200 KB size cap. Rate-limited to 20/hour to prevent abuse.
+  // Scoped to isPublicPreview=true. Body is validated as a PNG or JPEG data URL
+  // whose bytes match its type, within 270,000 characters (about 200 KB
+  // decoded). Rate-limited to 20/hour to prevent abuse.
   server.post("/configurations/:configId/thumbnail", {
     config: { rateLimit: { max: 20, timeWindow: "1 hour" } },
   }, async (request, reply) => {
@@ -351,7 +395,7 @@ export async function publicConfigRoutes(
     }
 
     // Only allow thumbnail updates on unclaimed public preview configs
-    const [config] = await db.select({ id: configurations.id })
+    const [config] = await db.select({ id: configurations.id, reviewStatus: configurations.reviewStatus })
       .from(configurations)
       .where(and(
         eq(configurations.id, params.data.configId),
@@ -363,6 +407,8 @@ export async function publicConfigRoutes(
     if (config === undefined) {
       return reply.status(404).send({ error: "Public preview configuration not found", code: "NOT_FOUND" });
     }
+    const locked = lockedFor(config.reviewStatus);
+    if (locked !== null) return reply.status(409).send(locked);
 
     const [updated] = await db.update(configurations)
       .set({ thumbnailUrl: parsed.data.thumbnailUrl, updatedAt: new Date() })
@@ -370,11 +416,18 @@ export async function publicConfigRoutes(
         eq(configurations.id, params.data.configId),
         eq(configurations.isPublicPreview, true),
         isNull(configurations.userId),
+        eq(configurations.reviewStatus, config.reviewStatus),
         isNull(configurations.deletedAt),
       ))
       .returning();
 
     if (updated === undefined) {
+      const [now] = await db.select({ reviewStatus: configurations.reviewStatus })
+        .from(configurations)
+        .where(and(eq(configurations.id, params.data.configId), eq(configurations.isPublicPreview, true), isNull(configurations.deletedAt)))
+        .limit(1);
+      const lockedNow = now === undefined ? null : lockedFor(now.reviewStatus);
+      if (lockedNow !== null) return reply.status(409).send(lockedNow);
       return reply.status(404).send({ error: "Public preview configuration not found", code: "NOT_FOUND" });
     }
     reply.header("ETag", configurationRevisionEtag(updated.revision));
