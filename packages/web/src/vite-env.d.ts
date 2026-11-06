@@ -29,6 +29,9 @@ interface ImportMetaEnv {
   readonly VITE_SENTRY_RELEASE?: string;
   /** Optional browser traces sample rate in the inclusive range 0..1. */
   readonly VITE_SENTRY_TRACES_SAMPLE_RATE?: string;
+  /** Share of page loads that report field web vitals, 0..1; unset or 0 is
+   *  off (observability/web-vitals.ts, docs/engineering/web-vitals.md). */
+  readonly VITE_WEB_VITALS_SAMPLE_RATE?: string;
 }
 
 interface ImportMeta {

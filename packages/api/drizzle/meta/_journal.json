@@ -722,6 +722,13 @@
       "when": 1793059200000,
       "tag": "0105_product_writes_share_foundry_lock",
       "breakpoints": true
+    },
+    {
+      "idx": 103,
+      "version": "7",
+      "when": 1793149200000,
+      "tag": "0106_web_vital_samples",
+      "breakpoints": true
     }
   ]
 }

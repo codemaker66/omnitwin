@@ -44,6 +44,7 @@ import { drizzleQuizRunStore, publicQuizRunRoutes } from "./routes/public-quiz-r
 import { publicSheetCheckRoutes } from "./routes/public-sheet-check.js";
 import { resolveSheetPaperCheck } from "./services/sheet-paper-check.js";
 import { publicMcpRoutes } from "./routes/public-mcp.js";
+import { publicWebVitalsRoutes } from "./routes/public-web-vitals.js";
 import { claimConfigRoutes } from "./routes/claim-config.js";
 import { clientRoutes } from "./routes/clients.js";
 import { dietaryMemoryRoutes } from "./routes/dietary-memory.js";
@@ -490,6 +491,7 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   await server.register(publicPlanViewRoutes, { db, prefix: "/public" });
   await server.register(layoutRoutes, { db, prefix: "/layouts" });
   await server.register(publicEnquiryRoutes, { db, prefix: "/public" });
+  await server.register(publicWebVitalsRoutes, { db, prefix: "/public" });
   await server.register(publicQuizRunRoutes, { store: drizzleQuizRunStore(db), prefix: "/public" });
   // One Living Record: a printed sheet's QR asks "is this copy current?" —
   // version state only, no sign-in, no content.
