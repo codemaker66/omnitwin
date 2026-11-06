@@ -121,6 +121,9 @@ test("the crest and \\ clear the new chrome to the hall, and \\, Esc or the cres
   // The room has drawn its first frame before any measure is taken.
   await page.waitForTimeout(1500);
   const crestAtRest = await boxOf(hide);
+  const slateAtRest = await boxOf(page.locator(".pc-slate"));
+  const doorCard = page.getByTestId("door-clear-notice");
+  const doorAtRest = await doorCard.isVisible() ? await boxOf(doorCard) : null;
   const atRest = await chromeShare(page);
   await frame(page, "01-at-rest");
 
@@ -137,6 +140,16 @@ test("the crest and \\ clear the new chrome to the hall, and \\, Esc or the cres
   await expect(show).toBeVisible();
   expect(await boxOf(show)).toEqual(crestAtRest);
   const cleared = await chromeShare(page);
+  // Where the chrome has gone the room takes the pointer: the slate's words, and the door's card.
+  const under = (x: number, y: number): Promise<string> => page.evaluate(([px, py]) => {
+    const hit = document.elementFromPoint(px ?? 0, py ?? 0);
+    return hit === null ? "nothing" : hit.closest(".pc-slate") !== null ? "slate" : hit.closest(".door-clear-notice") !== null ? "door notice" : hit.closest('[data-pc-zone]') !== null ? "zone" : "room";
+  }, [x, y]);
+  expect(await under(slateAtRest.x + slateAtRest.width * 0.7, slateAtRest.y + 40)).toBe("room");
+  expect(await under(slateAtRest.x + slateAtRest.width * 0.5, slateAtRest.y + slateAtRest.height - 20)).toBe("room");
+  if (doorAtRest !== null) expect(await under(doorAtRest.x + doorAtRest.width / 2, doorAtRest.y + doorAtRest.height / 2)).toBe("room");
+  // The crest still takes it.
+  expect(await under(crestAtRest.x + crestAtRest.width / 2, crestAtRest.y + crestAtRest.height / 2)).toBe("slate");
 
   // Esc brings them back, as the last rung of the planner's Escape ladder:
   // whatever is still under way goes first (on a loaded runner, the camera's
@@ -168,10 +181,44 @@ test("the crest and \\ clear the new chrome to the hall, and \\, Esc or the cres
   await page.keyboard.press("Backslash");
   await expect(html).not.toHaveAttribute("data-planner-chrome", "cleared");
   await expect(title).toBeVisible();
+
+  // The first Esc above stopped whatever was under way; now one Esc is enough, and no more.
+  await page.keyboard.press("Backslash");
+  await expect(html).toHaveAttribute("data-planner-chrome", "cleared");
+  await page.keyboard.press("Escape");
+  await expect(html).not.toHaveAttribute("data-planner-chrome", "cleared");
+  await expect(dock).toBeVisible();
+
+  // A panel asked for while cleared opens where it can be seen: L brings Lay out and the tools back together.
+  await page.keyboard.press("Backslash");
+  await expect(html).toHaveAttribute("data-planner-chrome", "cleared");
+  await page.keyboard.press("l");
+  await expect(html).not.toHaveAttribute("data-planner-chrome", "cleared");
+  const layOut = page.locator(".pc-zone--right > *").first();
+  await expect(layOut).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(layOut).toHaveCount(0);
+  await expect(html).not.toHaveAttribute("data-planner-chrome", "cleared");
+
+  // / opens the catalogue's search where it can be seen, and what is typed goes into it, not to the planner's keys.
+  await page.keyboard.press("Backslash");
+  await expect(html).toHaveAttribute("data-planner-chrome", "cleared");
+  await page.keyboard.press("/");
+  await expect(html).not.toHaveAttribute("data-planner-chrome", "cleared");
+  const search = page.getByRole("searchbox", { name: "Search the catalogue" });
+  await expect(search).toBeVisible();
+  await expect(search).toBeFocused();
+  await page.keyboard.type("round");
+  await expect(search).toHaveValue("round");
+  await expect(html).not.toHaveAttribute("data-planner-chrome", "cleared");
+  await expect.poll(async () => {
+    await page.keyboard.press("Escape");
+    return search.isVisible();
+  }, { timeout: 10_000 }).toBe(false);
   await page.waitForTimeout(400);
   await frame(page, "04-back");
 
-  console.log(`chrome share at rest ${(atRest * 100).toFixed(1)} %, cleared ${(cleared * 100).toFixed(2)} %`);
+  test.info().annotations.push({ type: "chrome share", description: `at rest ${(atRest * 100).toFixed(1)} %, cleared ${(cleared * 100).toFixed(2)} %` });
   // Cleared, only the crest and its note are left: well under 1 % of the screen.
   expect(cleared).toBeLessThan(0.01);
   expect(cleared).toBeLessThan(atRest);
