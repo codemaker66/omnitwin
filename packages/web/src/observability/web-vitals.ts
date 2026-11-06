@@ -10,6 +10,7 @@ import {
 } from "@omnitwin/types";
 import { API_URL } from "../config/env.js";
 import type { LandingRoute } from "./landing-route.js";
+import { measurementDeclined } from "./measurement-choice.js";
 import { webVitalsSampleRate, type WebVitalsEnv } from "./web-vitals-rate.js";
 
 // ---------------------------------------------------------------------------
@@ -36,6 +37,8 @@ export interface ReportingBrowser {
   readonly webdriver?: boolean;
   readonly doNotTrack?: string | null;
   readonly globalPrivacyControl?: boolean;
+  /** "Don't measure my visits", chosen on the privacy page and kept on this device. */
+  readonly measurementDeclined?: boolean;
 }
 
 /** Whether this page load reports: sampled in, not automated, not objected to. */
@@ -44,6 +47,8 @@ export function shouldReportWebVitals(rate: number, browser: ReportingBrowser, r
   // Playwright and other drivers measure the test machine, not a visitor.
   if (browser.webdriver === true) return false;
   if (browser.globalPrivacyControl === true || browser.doNotTrack === "1") return false;
+  // The way to object on any browser, Safari's included (measurement-choice.ts).
+  if (browser.measurementDeclined === true) return false;
   return random() < rate;
 }
 
@@ -171,7 +176,13 @@ export interface StartWebVitalsOptions {
 
 /** Starts measuring this page load if it reports at all. Returns whether it does. */
 export async function startWebVitals(options: StartWebVitalsOptions): Promise<boolean> {
-  const browser = navigator as Navigator & ReportingBrowser;
+  const signals = navigator as Navigator & ReportingBrowser;
+  const browser: ReportingBrowser = {
+    webdriver: signals.webdriver,
+    doNotTrack: signals.doNotTrack,
+    globalPrivacyControl: signals.globalPrivacyControl,
+    measurementDeclined: measurementDeclined(),
+  };
   if (!shouldReportWebVitals(webVitalsSampleRate(options.env), browser, options.random)) {
     options.landing.stop();
     return false;

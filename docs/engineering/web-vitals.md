@@ -75,21 +75,24 @@ without consent only with clear information and a simple, free way to object. Bl
 decision of 19 October 2026 for the enquiry funnel's browser signals applies here
 too: keep nothing until the privacy page describes it.
 
-**The way to object is not built yet.** Global Privacy Control and Do Not Track are
-honoured, but Safari, and so every browser on an iPhone, sends neither, so most phone
-visitors would have no way to object. Before switching on, the privacy page needs one
-that works everywhere, for example a "Don't measure my visits" control whose stored
-choice `shouldReportWebVitals` checks. That is for the solicitor and Blake to settle;
-it is not in this change.
+**The way to object** (T-685, 6 November 2026). Global Privacy Control and Do Not
+Track are honoured, but Safari, and so every browser on an iPhone, sends neither. The
+privacy page therefore carries a "Don't measure my visits" switch
+(`observability/measurement-choice.ts`, rendered in `LegalPage.tsx`). The choice is
+kept on the device under `venviewer.measurement.declined`, and for the visit alone
+where storage fails, and `shouldReportWebVitals` refuses while it is set. Blake chose
+the switch's place: on the privacy page, which every public page links to, not in
+every footer.
 
 **To switch on**, in one release:
-1. publish the privacy page's line (draft below, through the solicitor) with a way to
-   object that works on an iPhone (above);
+1. merge the privacy page's paragraph and switch (below) once the solicitor has
+   approved the wording, re-dating the policy that day;
 2. set `WEB_VITALS_COLLECTION=on` on the API;
 3. build the web with a sample rate. At the pilot's traffic, 1 gives a usable p75
    within weeks; lower it as traffic grows.
 
-Draft for the privacy page (for the solicitor and Blake; not live):
+The privacy page's paragraph (Blake approved this wording on 6 November 2026; it
+waits for the solicitor, and is not live):
 
 > **How fast our pages are.** When you open one of our pages, your browser may measure
 > how quickly it loaded and responded (four timings) and send them to us with the kind
@@ -97,9 +100,10 @@ Draft for the privacy page (for the solicitor and Blake; not live):
 > computer. It does not send the address of the page you opened, anything you typed,
 > or any identifier, and nothing is stored on your device for it. Like any request,
 > it reaches us from your internet address; we do not keep that with the timings or
-> log it. We use these timings only to make the site faster and delete them after 90
+> log it. We use these timings only to make the site faster, and delete them after 90
 > days. If your browser sends Global Privacy Control or Do Not Track, nothing is
-> measured or sent. [The way to object on any browser goes here.]
+> measured or sent. On any browser you can also turn it off with the "Don't measure my
+> visits" switch on this page; that choice is kept on your device so we can respect it.
 
 **Limits.** Anyone can post a report, so the limiter bounds an address to 60 a minute
 and a daily ceiling (`WEB_VITALS_DAILY_REPORT_CEILING`, 5,000 reports from everyone,
