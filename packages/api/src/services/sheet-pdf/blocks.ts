@@ -95,7 +95,7 @@ export function header(flow: Flow, sheet: HallkeeperSheetV2, marks: CopyMarks): 
   const textW = W - QR_SIZE - 18;
   const top = flow.y;
   const timeZone = sheet.venue.timezone;
-  drawLine(doc, TYPE.overline, `Hallkeeper sheet · ${sheet.venue.name}`, X, top);
+  drawLine(doc, TYPE.overline, oneLine(doc, TYPE.overline, `Hallkeeper sheet · ${sheet.venue.name}`, textW), X, top);
   let y = drawBlock(doc, TYPE.title, sheet.config.name, X, top + 11, textW);
   const when = sheet.timing === null ? "Date not set" : longDay(sheet.timing.eventStart, timeZone);
   y = drawBlock(doc, TYPE.lede, `${when} · ${sheet.space.name} · ${layoutWords(sheet.config.layoutStyle)}`, X, y + 3, textW);
@@ -399,13 +399,22 @@ export function brief(flow: Flow, sheet: HallkeeperSheetV2): void {
   if (!notesBeside) notesFlowing(flow, parts);
 }
 
+/**
+ * The rule over a section, drawn once the section has its room, so it never
+ * sits alone at the foot of a page, and never at a page's top, where the
+ * page edge already separates it.
+ */
+function ruleAbove(flow: Flow): void {
+  if (flow.y > flow.top) hairline(flow.doc, X, flow.y - 8, X + W);
+}
+
 /** The planner's notes full width, a paragraph free to cross pages. */
 function notesFlowing(flow: Flow, parts: BriefParts): void {
   const { doc } = flow;
   if (parts.notes.length === 0) return;
-  hairline(doc, X, flow.y - 8, X + W);
-  for (const [heading, text] of parts.notes) {
+  for (const [index, [heading, text]] of parts.notes.entries()) {
     flow.ensure(13 + lineHeight(doc, TYPE.paragraph) * Math.min(2, wrapLines(doc, TYPE.paragraph, text, W).length));
+    if (index === 0) ruleAbove(flow);
     drawLine(doc, TYPE.overline, heading, X, flow.y);
     flow.y += 13;
     flow.paragraph(TYPE.paragraph, text, X, W);
@@ -531,9 +540,11 @@ export function room(flow: Flow, sheet: HallkeeperSheetV2): void {
   const overhead = 14 + 6 + (legendFits ? legendH : LEGEND_MIN) + 16;
 
   let planH = fullH;
-  if (flow.room >= overhead + fullH) hairline(doc, X, flow.y - 8, X + W);
-  else if (plan !== null && diagram === null && flow.room - overhead >= 190) { planH = flow.room - overhead; hairline(doc, X, flow.y - 8, X + W); }
-  else flow.newPage();
+  if (flow.room < overhead + fullH) {
+    if (plan !== null && diagram === null && flow.room - overhead >= 190) planH = flow.room - overhead;
+    else flow.newPage();
+  }
+  ruleAbove(flow);
 
   drawLine(doc, TYPE.overline, `The room · ${sheet.space.name}`, X, flow.y);
   flow.y += 14;
@@ -772,7 +783,7 @@ export function martynsLaw(flow: Flow, sheet: HallkeeperSheetV2): void {
   const height = martynsLayout(doc, sheet, 0, false) + 8;
   if (height > flow.pageRoom) { martynsFlowing(flow, sheet); return; }
   flow.ensure(height);
-  hairline(doc, X, flow.y - 8, X + W);
+  ruleAbove(flow);
   flow.y = martynsLayout(doc, sheet, flow.y, true) + 10;
 }
 
@@ -786,7 +797,7 @@ function martynsFlowing(flow: Flow, sheet: HallkeeperSheetV2): void {
   const valueX = X + MARTYNS_LABEL_W;
   const valueW = W - MARTYNS_LABEL_W;
   flow.ensure(13 + lineHeight(doc, TYPE.bodyDim) * 2);
-  hairline(doc, X, flow.y - 8, X + W);
+  ruleAbove(flow);
   drawLine(doc, TYPE.overline, `${summary.heading} · prompts only`, X, flow.y);
   flow.y += 13;
   flow.paragraph(TYPE.bodyDim, summary.intro, X, W);
