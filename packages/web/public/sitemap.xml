@@ -3,9 +3,9 @@
   venviewer.com sitemap.
 
   Only canonical public pages appear here. Deliberate exclusions:
-  - /quiz renders the same page as /trades-house/discover-your-craft. The
-    descriptive path is canonical (it is the one the leaflet page links to);
-    /quiz stays live as the short shareable address but is not listed.
+  - /quiz and /trades-house/discover-your-craft both redirect to the Amissing
+    Book, which asks not to be indexed, so neither is listed: a sitemap entry
+    must be a page that is served, not redirected (route-inventory.test.ts).
   - /fresh, /editor, /landing, /welcome, /living-hall are homepage duplicates,
     and /legal/* duplicates /privacy, /terms and /accessibility. All are
     disallowed in robots.txt.
@@ -27,12 +27,6 @@
   <url>
     <loc>https://venviewer.com/platform</loc>
     <lastmod>2026-10-07</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://venviewer.com/trades-house/discover-your-craft</loc>
-    <lastmod>2026-08-15</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
