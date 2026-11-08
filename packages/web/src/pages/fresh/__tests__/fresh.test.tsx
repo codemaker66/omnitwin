@@ -188,6 +188,12 @@ describe("the enquiry composer", () => {
     // UK GDPR transparency: the privacy notice is reachable from the form.
     const privacy = document.querySelector('.fr-enq-privacy a[href="/privacy"]');
     expect(privacy).toBeTruthy();
+    // And the note agrees with it: an enquiry is kept as a record (the
+    // policy's "Keeping a record of enquiries and contacts"), so the note
+    // must not say the details are used for nothing else.
+    const note = document.querySelector(".fr-enq-privacy")?.textContent ?? "";
+    expect(note).toContain("so they can answer this enquiry, and are kept as a record of it.");
+    expect(note).not.toContain("not used for anything else");
   });
 
   it("links the legal pages from the footer", () => {
