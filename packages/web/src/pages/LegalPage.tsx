@@ -373,7 +373,8 @@ const PRIVACY: LegalDocument = {
             {
               // Self-hosted since 777e3985 (index.html, src/styles/fonts). The
               // two pages named here are standalone HTML in public/ that still
-              // link fonts.googleapis.com.
+              // link Google's hosted font stylesheet. (startup-guardrails.test.ts
+              // bans the hostname anywhere under src/, comments included.)
               term: "Web fonts",
               detail:
                 "The typefaces used by this site are served by the site itself, not by Google. Two standalone pages, The Amissing Book (/amissing-book/) and the visitor leaflet (/trades-house/leaflet, and its printable copy at /trades-house-media/leaflet.html), still load their typefaces from Google Fonts. Opening either page means Google receives the network address of the device making the request. No advertising or analytics identifier is involved, but the request does leave our own servers, and we would rather say so than imply those pages are self-contained.",
