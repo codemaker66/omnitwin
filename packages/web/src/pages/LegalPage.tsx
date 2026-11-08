@@ -376,7 +376,7 @@ const PRIVACY: LegalDocument = {
               // link fonts.googleapis.com.
               term: "Web fonts",
               detail:
-                "The typefaces used by this site are served by the site itself, not by Google. Two older standalone pages, The Amissing Book (/amissing-book/) and the visitor leaflet (/trades-house-media/leaflet.html), still load their typefaces from Google Fonts. Opening either page means Google receives the network address of the device making the request. No advertising or analytics identifier is involved, but the request does leave our own servers, and we would rather say so than imply those pages are self-contained.",
+                "The typefaces used by this site are served by the site itself, not by Google. Two standalone pages, The Amissing Book (/amissing-book/) and the visitor leaflet (/trades-house/leaflet, and its printable copy at /trades-house-media/leaflet.html), still load their typefaces from Google Fonts. Opening either page means Google receives the network address of the device making the request. No advertising or analytics identifier is involved, but the request does leave our own servers, and we would rather say so than imply those pages are self-contained.",
             },
           ],
         },
@@ -411,7 +411,7 @@ const PRIVACY: LegalDocument = {
             {
               term: "Resend",
               detail:
-                "Transactional email delivery. It carries the notification of your enquiry to the venue's events team, the acknowledgement of your enquiry that is sent to you, and the service's other emails about enquiries, layouts and accounts.",
+                "Transactional email delivery. It carries the notification of your enquiry to the venue's events team, the acknowledgement of your enquiry that is sent to you, and the service's other emails, such as replies to enquiries, layout reviews, date-hold reminders, escalated requests and team invitations.",
             },
             {
               term: "Clerk",
@@ -532,7 +532,7 @@ const PRIVACY: LegalDocument = {
           kind: "list",
           items: [
             "Everything you send travels over an encrypted connection (HTTPS).",
-            "Enquiry records are visible only to signed-in venue staff who hold the events role. They are not public, and they are not reachable without an account.",
+            "Enquiry records are visible only to signed-in members of the venue's team who work its enquiries, to a client who made the enquiry from their own account, and to the people at Venviewer who run the service. They are not public, and they are not reachable without an account.",
             "The public enquiry form is rate-limited to ten submissions an hour from one source, which limits both abuse and bulk harvesting.",
             "Database access is restricted to the application itself and to the people who maintain it.",
             "No system is perfectly secure. If we become aware of a breach of your personal information that is likely to put you at risk, we will tell you, and we will report it to the Information Commissioner's Office where the law requires.",
@@ -948,7 +948,7 @@ const ACCESSIBILITY: LegalDocument = {
             {
               term: "Hints in the planner's tools panel",
               detail:
-                "On a computer, the planner keeps some of its tools in a panel behind the \"More planner tools\" button. The hint that appears beside each tool in that panel is cut off at the panel's edge, so it cannot be read in full.",
+                "On a computer, the planner keeps some of its tools in a panel behind a button marked with three dots, named \"More planner tools\" for screen readers. The hint that appears beside each tool in that panel is cut off at the panel's edge, so it cannot be read in full.",
             },
             {
               term: "Untested areas",

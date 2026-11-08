@@ -203,6 +203,9 @@ describe("the privacy policy", () => {
     expect(cookies).toContain("The typefaces used by this site are served by the site itself, not by Google.");
     expect(cookies).toContain("/amissing-book/");
     expect(cookies).toContain("/trades-house-media/leaflet.html");
+    // Visitors reach the leaflet at /trades-house/leaflet, which frames the file above.
+    expect(cookies).toContain("the visitor leaflet (/trades-house/leaflet, and its printable copy at /trades-house-media/leaflet.html)");
+    expect(cookies).not.toContain("Two older standalone pages");
     expect(cookies).not.toContain("The typefaces used by this site are served by Google Fonts.");
   });
 
@@ -210,6 +213,16 @@ describe("the privacy policy", () => {
     render(<LegalPage type="privacy" />);
     const processors = document.getElementById("who-else")?.textContent ?? "";
     expect(processors).toContain("the acknowledgement of your enquiry that is sent to you");
+    // Examples, not a closed list: Resend also sends hold reminders and request escalations.
+    expect(processors).toContain("such as replies to enquiries, layout reviews, date-hold reminders, escalated requests and team invitations");
+  });
+
+  // Platform admins read every enquiry (routes/enquiries.ts), and a client reads an
+  // enquiry made from their own account (canAccessResource), so staff alone is false.
+  it("says who can see enquiry records, including the people who run the service", () => {
+    const text = textOf("privacy");
+    expect(text).toContain("to a client who made the enquiry from their own account, and to the people at Venviewer who run the service");
+    expect(text).not.toContain("visible only to signed-in venue staff who hold the events role");
   });
 
   it("lists every field the public enquiry endpoint accepts", () => {
@@ -321,6 +334,8 @@ describe("the accessibility statement", () => {
     expect(known).toContain("WCAG success criterion 2.1.4, Character Key Shortcuts");
     expect(known).toContain("Hints in the planner's tools panel");
     expect(known).toContain("is cut off at the panel's edge");
+    // On screen the button is a three-dot icon; its name is for screen readers.
+    expect(known).toContain("a button marked with three dots");
   });
 
   it("commits to a response time for access problems", () => {
