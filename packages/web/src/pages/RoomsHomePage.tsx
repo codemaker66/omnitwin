@@ -10,6 +10,7 @@ import { isRoomWalkable } from "../data/room-walk-exposure.js";
 import { footprint, stateLine } from "../lib/room-card-copy.js";
 import { gaussianSplatsAvailable } from "../lib/splat-access.js";
 import { useHashTarget } from "../lib/use-hash-target.js";
+import { usePlannerIntent } from "../lib/planner-intent.js";
 import {
   TRADES_HALL_ROOM_CAPACITIES,
   TRADES_HALL_WEDDING_PRICING,
@@ -228,6 +229,8 @@ export function RoomsHomePage(): ReactElement {
   const heroImage = useRef<HTMLImageElement>(null);
   const [heroSettled, setHeroSettled] = useState(false);
   const settleHero = useCallback(() => { setHeroSettled(true); }, []);
+  // Reaching for a Plan link fetches the planner's code for the next page.
+  const plannerIntent = usePlannerIntent();
   useEffect(() => {
     // A cached hero can finish before React listens for its load.
     if (heroImage.current?.complete === true) setHeroSettled(true);
@@ -277,7 +280,7 @@ export function RoomsHomePage(): ReactElement {
             three doors its readers cannot open. Log in takes staff to their
             workspace. */}
         <nav className="rooms__primaryNav" aria-label="Primary">
-          <a className="rooms__navPlan" href="/plan?space=grand-hall">{HOME_NAV_PLAN}</a>
+          <a className="rooms__navPlan" href="/plan?space=grand-hall" {...plannerIntent}>{HOME_NAV_PLAN}</a>
           <a href="#enquire">{HOME_NAV_ENQUIRE}</a>
           <Link className="rooms__navLogin" to="/login">{HOME_NAV_LOGIN}</Link>
         </nav>
@@ -311,7 +314,7 @@ export function RoomsHomePage(): ReactElement {
                 && <p className="rooms__measure rooms__measure--hero">{footprint(heroBundle)}</p>}
               <p className="rooms__heroLede">{HOME_HERO_LEDE}</p>
               <div className="rooms__heroActions">
-                <a className="rooms__enter rooms__enter--plan" href="/plan?space=grand-hall">{HOME_HERO_PLAN}</a>
+                <a className="rooms__enter rooms__enter--plan" href="/plan?space=grand-hall" {...plannerIntent}>{HOME_HERO_PLAN}</a>
                 {heroWalkable
                   && <Link className="rooms__enter" to={`/room/${HERO_ROOM}`}>{HOME_HERO_WALK}</Link>}
                 {!gaussianSplatsAvailable() && <Link className="rooms__enter" to="/tour">{HOME_HERO_TOUR}</Link>}
