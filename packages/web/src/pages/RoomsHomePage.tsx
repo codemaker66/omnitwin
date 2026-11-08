@@ -1,5 +1,5 @@
 import { roomPosterSources } from "../lib/room-posters.js";
-import { useCallback, useEffect, useMemo, useState, type ReactElement } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { Link } from "react-router-dom";
 import {
   roomCardFacts,
@@ -91,6 +91,8 @@ function displayName(slug: string): string {
 interface CardProps {
   readonly slug: string;
   readonly bundle: RoomCardFacts;
+  /** The hero photograph is still loading: the plate waits, on its own ground. */
+  readonly posterDeferred: boolean;
 }
 
 /**
@@ -102,7 +104,7 @@ interface CardProps {
  * which looks deliberate and needs no per-room bookkeeping: if the poster file
  * is missing the image simply fails and the type takes over.
  */
-function RoomCard({ slug, bundle }: CardProps): ReactElement {
+function RoomCard({ slug, bundle, posterDeferred }: CardProps): ReactElement {
   const still = roomPosterSources(slug);
   const [posterFailed, setPosterFailed] = useState(false);
   const onPosterError = useCallback(() => { setPosterFailed(true); }, []);
@@ -123,7 +125,7 @@ function RoomCard({ slug, bundle }: CardProps): ReactElement {
               </span>
             </span>
           )
-          : (
+          : posterDeferred ? null : (
             <img
               className="rooms__poster"
               src={still.src}
@@ -219,6 +221,18 @@ export function RoomsHomePage(): ReactElement {
   const rest = useMemo(() => slugs.filter((slug) => slug !== HERO_ROOM), [slugs]);
   const heroWalkable = isRoomWalkable(HERO_ROOM);
 
+  // The hero photograph is the page's largest paint, and on a phone's link
+  // every byte in flight shares the line with it (X Engineering found the same
+  // of scripts racing their stylesheet; T-685). The rail's posters are
+  // off-screen on a phone, so they wait until the hero has loaded or failed.
+  const heroImage = useRef<HTMLImageElement>(null);
+  const [heroSettled, setHeroSettled] = useState(false);
+  const settleHero = useCallback(() => { setHeroSettled(true); }, []);
+  useEffect(() => {
+    // A cached hero can finish before React listens for its load.
+    if (heroImage.current?.complete === true) setHeroSettled(true);
+  }, []);
+
   // #enquire arrives from the room walk, the not-found page, the legal pages
   // and the craft quiz. The browser gave up on it before this chunk existed,
   // so the page looks again.
@@ -275,7 +289,10 @@ export function RoomsHomePage(): ReactElement {
         <div className="rooms__stage">
           <section className="rooms__hero" aria-labelledby="rooms-hero-name">
             <img
+              ref={heroImage}
               className="rooms__heroPoster"
+              onLoad={settleHero}
+              onError={settleHero}
               src={heroStill.src}
               srcSet={heroStill.srcSet}
               sizes="100vw"
@@ -309,7 +326,7 @@ export function RoomsHomePage(): ReactElement {
             <div className="rooms__track">
               {rest.map((slug) => {
                 const bundle = roomCardFacts(slug);
-                return bundle === null ? null : <RoomCard key={slug} slug={slug} bundle={bundle} />;
+                return bundle === null ? null : <RoomCard key={slug} slug={slug} bundle={bundle} posterDeferred={!heroSettled} />;
               })}
             </div>
           </section>
