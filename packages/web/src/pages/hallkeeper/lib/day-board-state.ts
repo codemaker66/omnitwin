@@ -17,7 +17,7 @@ import {
   observationMeansInUse,
   observationMeansOver,
 } from "@omnitwin/types";
-import { VENUE_TIME_ZONE, formatWallTime } from "../../diary/lib/board-time.js";
+import { VENUE_TIME_ZONE, formatWallDay, formatWallTime, msToWallInput } from "../../diary/lib/board-time.js";
 import { bookingStateLabel } from "../../diary/lib/board-overview.js";
 
 // ---------------------------------------------------------------------------
@@ -146,7 +146,8 @@ export interface DayBoardSlot {
   readonly icon: DayBoardIcon;
   /** The verb the slot reads aloud: "Organisers · 48 min", "LIVE · 1 h 12 elapsed". */
   readonly countdown: string;
-  /** Wall-clock range, venue-local: "13:00 – 17:00". */
+  /** Wall-clock range, venue-local: "13:00 – 17:00"; a booking that runs
+   *  for days names them ("Thu 12 Nov, 10:00 – Mon 16 Nov, 17:00"). */
   readonly timeRange: string;
   readonly exception: DayBoardException | null;
   readonly exceptionDetail: string | null;
@@ -467,6 +468,49 @@ export function resolveTurnaroundMinutes(
   return best?.minutes ?? null;
 }
 
+/** A booking runs for days once it is longer than one: an exhibition, not a
+ *  dinner that carries on past midnight. */
+const MULTI_DAY_MS = 24 * 60 * MIN_MS;
+const DAY_MS = 24 * 60 * MIN_MS;
+
+/** Whether a booking from doors to end runs for days. */
+export function runsForDays(doorsAtMs: number, endsAtMs: number): boolean {
+  return endsAtMs - doorsAtMs > MULTI_DAY_MS;
+}
+
+/** The venue's calendar date of an instant, as YYYY-MM-DD. */
+function wallDate(ms: number, timeZone: string): string {
+  return msToWallInput(ms, timeZone).slice(0, 10);
+}
+
+/** Whole calendar days from one YYYY-MM-DD to another. */
+function daysBetween(from: string, to: string): number {
+  return Math.round((Date.parse(`${to}T12:00:00.000Z`) - Date.parse(`${from}T12:00:00.000Z`)) / DAY_MS);
+}
+
+/** Which day of a multi-day booking `nowMs` falls on, venue-local: "day 3
+ *  of 5". Null for a booking of a day or less. An end at midnight belongs to
+ *  the day before it. */
+export function runningDays(
+  doorsAtMs: number,
+  endsAtMs: number,
+  nowMs: number,
+  timeZone: string = VENUE_TIME_ZONE,
+): { readonly day: number; readonly of: number } | null {
+  if (!runsForDays(doorsAtMs, endsAtMs)) return null;
+  const first = wallDate(doorsAtMs, timeZone);
+  const of = daysBetween(first, wallDate(endsAtMs - 1, timeZone)) + 1;
+  const day = Math.min(of, Math.max(1, daysBetween(first, wallDate(nowMs, timeZone)) + 1));
+  return { day, of };
+}
+
+/** "13:00 – 17:00"; a booking that runs for days names them: "Thu 12 Nov,
+ *  10:00 – Mon 16 Nov, 17:00". */
+function slotTimeRange(startsAtMs: number, endsAtMs: number, timeZone: string): string {
+  if (!runsForDays(startsAtMs, endsAtMs)) return `${formatWallTime(startsAtMs, timeZone)} – ${formatWallTime(endsAtMs, timeZone)}`;
+  return `${formatWallDay(startsAtMs, timeZone)}, ${formatWallTime(startsAtMs, timeZone)} – ${formatWallDay(endsAtMs, timeZone)}, ${formatWallTime(endsAtMs, timeZone)}`;
+}
+
 interface TimedState {
   readonly state: DayBoardState;
   readonly stateLabel: string;
@@ -496,10 +540,14 @@ function deriveTimedState(segments: SlotSegments, nowMs: number, timeZone: strin
     };
   }
   if (nowMs >= doorsAtMs) {
+    // A booking that runs for days (an exhibition) is counted in its days:
+    // "52 h 20 elapsed" says nothing a hallkeeper can use.
+    const days = runningDays(doorsAtMs, endsAtMs, nowMs, timeZone);
     const elapsed = Math.floor((nowMs - doorsAtMs) / MIN_MS);
     return {
       state: "live", stateLabel: "Live", tone: "live", motion: "live-breath", icon: "radio",
-      countdown: `LIVE · ${formatMinutes(elapsed)} elapsed`, nextBoundaryMs: endsAtMs,
+      countdown: days === null ? `LIVE · ${formatMinutes(elapsed)} elapsed` : `LIVE · day ${String(days.day)} of ${String(days.of)}`,
+      nextBoundaryMs: endsAtMs,
     };
   }
   if (nowMs >= imminentAtMs) {
@@ -680,7 +728,7 @@ export function deriveDayBoard(
       const requestSignal = deriveSlotRequestSignal(slotRequests, nowMs);
       const attention = deriveSlotAttention(slotRequests, nowMs);
       const blocking = blockingByBooking.get(entry.id);
-      const timeRange = `${formatWallTime(startsAtMs, timeZone)} – ${formatWallTime(endsAtMs, timeZone)}`;
+      const timeRange = slotTimeRange(startsAtMs, endsAtMs, timeZone);
       const bookingLabel = entry.kind === "hold" || entry.kind === "viewing"
         ? bookingStateLabel(entry)
         : entry.kind === "internal_block" ? "House block" : "Confirmed booking";
@@ -717,7 +765,12 @@ export function deriveDayBoard(
         if (needed !== null && previousSeen !== null && previousSeen.kind !== "cleaned" && nowMs < startsAtMs) {
           const riskFromMs = Math.max(previousEnd, setupStartsAtMs - needed * MIN_MS);
           if (nowMs >= riskFromMs) {
-            changeover = `${previous.title} not yet cleared · ${formatMinutes(minutesUntil(setupStartsAtMs, nowMs))} until setup, ${formatMinutes(needed)} needed`;
+            // Once setup was due, "0 min until setup" says nothing: the
+            // words name when it was due and when the doors open.
+            const untilSetup = minutesUntil(setupStartsAtMs, nowMs);
+            changeover = untilSetup > 0
+              ? `${previous.title} not yet cleared · ${formatMinutes(untilSetup)} until setup, ${formatMinutes(needed)} needed`
+              : `${previous.title} not yet cleared · setup was due ${formatWallTime(setupStartsAtMs, timeZone)}, doors ${formatWallTime(startsAtMs, timeZone)}`;
           } else {
             changeoverFromMs = riskFromMs;
           }

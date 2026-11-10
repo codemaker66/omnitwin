@@ -1,5 +1,4 @@
 import {
-  Fragment,
   useCallback,
   useContext,
   useEffect,
@@ -11,33 +10,20 @@ import {
   type ReactElement,
 } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import {
-  AlertTriangle, ArrowLeft, ArrowRight, Bell, Check, Clock, DoorOpen, Link2, Radio, RotateCcw, UserCheck, Users, WifiOff, Wrench,
-} from "lucide-react";
-import {
-  describeObservationKind,
-  nextObservationKinds,
-  observationMeansOver,
-  occasionLabel,
-  type BookingKind,
-  type HallkeeperSheetSummary,
-  type ObservationKind,
-} from "@omnitwin/types";
-import { getSheetSummary } from "../../api/hallkeeper-summary.js";
+import { ArrowLeft, ArrowRight, Bell, Clock, WifiOff } from "lucide-react";
 import { useAuthStore } from "../../stores/auth-store.js";
 import { formatWallDay, formatWallTime, msToWallInput, shiftRange, wallInputToMs, type BoardRange } from "../diary/lib/board-time.js";
-import { ActivityIndicator, ActivityStatus } from "../../components/shared/Activity.js";
+import { ActivityStatus } from "../../components/shared/Activity.js";
 import { CALENDAR_REUSE_MS, useCalendar } from "../diary/hooks/useCalendar.js";
 import { useDiaryLive } from "../diary/hooks/useDiaryLive.js";
 import { DashboardLayout } from "../../components/dashboard/DashboardLayout.js";
 import { VenueNotConnected } from "../../components/dashboard/VenueNotConnected.js";
+import { deskGreeting } from "../../components/dashboard/enquiries/enquiry-desk-format.js";
 import { awaitsVenue } from "../../lib/role-capabilities.js";
 import { clockIsCorrected, correctedNowMs, subscribeClock } from "../../lib/clock-offset.js";
-import { resolveEventLinkedLayouts, type LinkedLayoutChoice } from "../../lib/event-linked-layouts.js";
-import { roomPhoto } from "../../components/dashboard/enquiries/enquiry-room-photo.js";
 import { useSlotRequests } from "../../components/requests/requests-context.js";
 import { listensForFloorRequests } from "../../lib/requests-live.js";
-import { isQueuedObservation, useSlotObservations, type RecordOutcome, type SlotObservationsApi } from "./lib/use-slot-observations.js";
+import { useSlotObservations } from "./lib/use-slot-observations.js";
 import { ChimeToggle } from "../../components/requests/ChimeToggle.js";
 import { ShiftHandover } from "../../components/requests/ShiftHandover.js";
 import { PushAlertsToggle } from "../../components/requests/PushAlertsToggle.js";
@@ -45,24 +31,35 @@ import {
   DAY_BOARD_LEGEND,
   DAY_BOARD_RING_LEGEND,
   deriveDayBoard,
-  formatMinutes,
-  type DayBoardIcon,
   type DayBoardLane,
-  type DayBoardSlot,
   type NextAction,
-  type SlotAttention,
   type UnownedRequest,
 } from "./lib/day-board-state.js";
+import { boardWindow, nowPlaque, rulerTicks } from "./lib/day-board-layout.js";
 import {
-  boardWindow, gapGeometry, gapWordsOffset, nowPlaque, rulerTicks, slabGeometry, type BoardWindow, type RulerTick, type Span,
-} from "./lib/day-board-layout.js";
-import { boardFreshness, useBoardClock, useBreathPhase, useConnectionState } from "./lib/use-board-clock.js";
-import { describeSlotSheet, sheetProgressLine, type SlotSheetState } from "./lib/day-board-sheet.js";
+  boardSummary,
+  planeStages,
+  roomDay,
+  roomInFocus,
+  showingLine,
+  type BoardFocus,
+  type SummaryPart,
+} from "./lib/day-board-rooms.js";
+import { boardFreshness, useBoardClock, useConnectionState } from "./lib/use-board-clock.js";
 import { useVenueClock } from "./lib/use-venue-timezone.js";
 import { deviceZone, zoneNote } from "../../components/hallkeeper/sheet-facts.js";
 import { boardDayAnchorMs, boardDayRange, useDayBoundaryHour } from "./lib/board-day.js";
 import { useWakeLock } from "./lib/use-wake-lock.js";
 import { driftOffset } from "./lib/burn-in-drift.js";
+import { RoomRow, Scale, StateIcon } from "./DayBoardRooms.js";
+import { SlotDetail } from "./DayBoardSlotDetail.js";
+import {
+  DayBoardSlotRequestsContext,
+  type SlotRequestsComponent,
+  type SlotRequestsProps,
+} from "./lib/slot-requests-contract.js";
+import "../../styles/hallkeeper-register.css";
+import "./day-board.css";
 
 /** When the display dies, the day prints (S8 item 13): the paper register's
  *  one print control and the line the printed page carries. */
@@ -78,31 +75,25 @@ interface DriftStyle extends CSSProperties {
   readonly "--lt-drift-x": string;
   readonly "--lt-drift-y": string;
 }
-import {
-  DayBoardSlotRequestsContext,
-  type SlotRequestsComponent,
-  type SlotRequestsProps,
-} from "./lib/slot-requests-contract.js";
-import "../../styles/hallkeeper-register.css";
-import "./day-board.css";
 
 // ---------------------------------------------------------------------------
-// The Day Board (goal 19 S3; D1, D3, D7, D9, D10, D11) — the hallkeeper's
-// live view of today. A pure projection of GET /calendar and the venue's
-// open requests through deriveDayBoard, on one corrected clock; live updates
-// arrive over /ws/diary (any committed change refetches: the snapshot
-// doctrine, never trusted deltas).
+// The Day Board (goal 19 S3; D1, D3, D9, D10, D11) — the hallkeeper's live
+// view of today, in the desks' register (Blake's concept C, 10 November
+// 2026). A pure projection of GET /calendar and the venue's open requests
+// through deriveDayBoard, on one corrected clock; live updates arrive over
+// /ws/diary (any committed change refetches: the snapshot doctrine, never
+// trusted deltas).
 //
-// The composition, from Blake's reference (D7): one ruler across the day
-// with a NOW plaque; a lane per room with its photograph; slabs placed by
-// time with setup, live and clear-down segments; dimensioned gaps between
-// them; the UNOWNED rail at the edge; this hallkeeper's next action in one
-// line at the top, always. A tap on a slab opens the slot: its sheet, its
-// event, its phases and its requests. The phone shows one lane at a time,
-// swiped between rooms, the day running down the screen, the next action
-// fixed above. The office and the phone wear the ivory register; the wall
-// (`?register=wall`) wears the dark one and shows room, title, state, time
-// and next action only (D11): nothing opens there.
+// The composition, from the desks: the ivory sheet on the sage ground with
+// the day's greeting, its title and one sentence of what matters; this
+// hallkeeper's next action, always; the copper plane of the day's counts,
+// each a filter on the rooms; then the rooms, one row each with its
+// photograph, its day in words and a bar of the whole day with the present
+// marked. The forest panel beside the sheet holds the requests nobody has,
+// or the slot a tap opened. Narrower screens put the requests above the
+// rooms and unfold an opened slot under its own room. The wall
+// (`?register=wall`) frames the rooms on forest, shows room, title, state,
+// time and next action only, and opens nothing (D11).
 //
 // Motion is the attention system (D3): a breath on the dot as the room's
 // moment approaches, the live breath as the room's heartbeat and the proof
@@ -130,8 +121,13 @@ const NO_DAYS: readonly BoardRange[] = [];
 /** The board before its day has landed: no lanes, one stable value. */
 const NO_LANES: readonly DayBoardLane[] = [];
 const DAY_MS = 86_400_000;
-/** The phone: one lane at a time (D7). */
-const PHONE_QUERY = "(max-width: 700px)";
+/** The phone: the rooms in one column, everything a thumb's width. */
+const PHONE_QUERY = "(max-width: 760px)";
+/** Wide enough for the sheet and the forest panel side by side, as the
+ *  Enquiries desk decides it. */
+const DESK_QUERY = "(min-width: 1180px)";
+/** How many requests the narrow screens list before "Show all". */
+const RAIL_PREVIEW = 4;
 
 /** A calendar day on either side of `date` (YYYY-MM-DD), as the same form. */
 function stepDay(date: string, days: number): string {
@@ -143,27 +139,15 @@ function typingInto(target: EventTarget | null): boolean {
   return target instanceof HTMLElement && (target.isContentEditable || ["INPUT", "SELECT", "TEXTAREA"].includes(target.tagName));
 }
 
-/** A fraction of the window as a CSS percentage, to two decimals. */
-function percent(fraction: number): string {
-  return `${String(Math.round(fraction * 10_000) / 100)}%`;
-}
-
-/** Where a span sits: along the lane on the sheet, down the lane on the phone. */
-function placement(span: Span, vertical: boolean): CSSProperties {
-  return vertical
-    ? { top: percent(span.left), height: percent(span.width) }
-    : { left: percent(span.left), width: percent(span.width) };
-}
-
-/** Whether the screen is a phone, by the one query the stylesheet uses. */
-function usePhoneLayout(): boolean {
+/** Whether the screen matches a media query, read live. */
+function useMatches(query: string): boolean {
   const subscribe = useCallback((listener: () => void): (() => void) => {
     if (typeof window.matchMedia !== "function") return () => undefined;
-    const media = window.matchMedia(PHONE_QUERY);
+    const media = window.matchMedia(query);
     media.addEventListener("change", listener);
     return () => { media.removeEventListener("change", listener); };
-  }, []);
-  const read = useCallback((): boolean => typeof window.matchMedia === "function" && window.matchMedia(PHONE_QUERY).matches, []);
+  }, [query]);
+  const read = useCallback((): boolean => typeof window.matchMedia === "function" && window.matchMedia(query).matches, [query]);
   return useSyncExternalStore(subscribe, read, () => false);
 }
 
@@ -173,25 +157,6 @@ function usePhoneLayout(): boolean {
 export { DayBoardSlotRequestsContext };
 export type { SlotRequestsComponent, SlotRequestsProps };
 
-const ICONS: Readonly<Record<DayBoardIcon, typeof Clock>> = {
-  clock: Clock,
-  wrench: Wrench,
-  users: Users,
-  "door-open": DoorOpen,
-  radio: Radio,
-  "rotate-ccw": RotateCcw,
-  check: Check,
-  "alert-triangle": AlertTriangle,
-  bell: Bell,
-  "user-check": UserCheck,
-  "wifi-off": WifiOff,
-};
-
-function StateIcon({ icon, size = 14 }: { readonly icon: DayBoardIcon; readonly size?: number }): ReactElement {
-  const Icon = ICONS[icon];
-  return <Icon size={size} aria-hidden="true" />;
-}
-
 const NEVER_CORRECTED = (): boolean => false;
 
 /** Whether the corrected clock disagrees with the device by a minute or more. */
@@ -199,471 +164,77 @@ function useClockCorrected(): boolean {
   return useSyncExternalStore(subscribeClock, clockIsCorrected, NEVER_CORRECTED);
 }
 
-interface SlotSheetResult {
-  readonly status: "loading" | "ready" | "error";
-  readonly state: SlotSheetState | null;
-  readonly error: string | null;
-}
-
-/**
- * Resolve the slot's setup-sheet door. One resolution per event+room; the
- * `isCurrent` guard is the same superseded-request discipline the planner
- * bootstrap uses, so a board that rolls over midnight (or a room filter
- * change) can never paint a stale room's layouts onto a slot.
- */
-function useSlotSheet(eventId: string | null, roomSlug: string, roomName: string, bookingKind: BookingKind): SlotSheetResult {
-  const [layouts, setLayouts] = useState<readonly LinkedLayoutChoice[] | null>(null);
-  const [unavailable, setUnavailable] = useState(0);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (eventId === null) {
-      setLayouts([]);
-      setUnavailable(0);
-      setError(null);
-      return;
-    }
-    let current = true;
-    setLayouts(null);
-    setError(null);
-    void resolveEventLinkedLayouts({ eventId, spaceSlug: roomSlug, isCurrent: () => current })
-      .then((resolved) => {
-        if (!current) return;
-        setLayouts(resolved.layouts);
-        setUnavailable(resolved.unavailableCount);
-      })
-      .catch(() => {
-        if (!current) return;
-        setError("The setup sheet link could not be checked.");
-      });
-    return () => { current = false; };
-  }, [eventId, roomSlug]);
-
-  if (error !== null) return { status: "error", state: null, error };
-  if (layouts === null) return { status: "loading", state: null, error: null };
-  return {
-    status: "ready",
-    state: describeSlotSheet({ eventId, bookingKind, roomName, layouts, unavailableCount: unavailable }),
-    error: null,
-  };
-}
-
-const SUMMARY_REFRESH_MS = 60_000;
-
-/**
- * A sheet's ready-by time and rows checked, read now and each minute while
- * the slot is open. A failed read keeps the last line it had; before any
- * read lands there is no line at all, rather than a guess.
- */
-function useSheetSummary(configId: string, eventId: string | null): HallkeeperSheetSummary | null {
-  const key = `${configId}:${eventId ?? ""}`;
-  const [summary, setSummary] = useState<{ readonly key: string; readonly value: HallkeeperSheetSummary } | null>(null);
-  useEffect(() => {
-    let reading: AbortController | null = null;
-    const read = (): void => {
-      if (typeof document !== "undefined" && document.hidden) return;
-      reading?.abort();
-      const current = new AbortController();
-      reading = current;
-      void getSheetSummary(configId, eventId, current.signal)
-        .then((value) => { if (!current.signal.aborted) setSummary({ key, value }); })
-        .catch(() => {
-          // Keep the last line; the next minute reads again.
-        });
-    };
-    read();
-    const timer = window.setInterval(read, SUMMARY_REFRESH_MS);
-    return () => {
-      window.clearInterval(timer);
-      reading?.abort();
-    };
-  }, [configId, eventId, key]);
-  return summary?.key === key ? summary.value : null;
-}
-
-/** Under the sheet's door: "Ready by 16:00 · 12 of 43 checked", with a thin
- *  bar that turns sage when every row is checked. */
-function SheetProgress({ configId, eventId, timeZone }: {
-  readonly configId: string;
-  readonly eventId: string | null;
-  readonly timeZone: string;
-}): ReactElement | null {
-  const summary = useSheetSummary(configId, eventId);
-  if (summary === null) return null;
-  const complete = summary.total > 0 && summary.checked === summary.total;
+/** A request's line on the rail; an urgent one says so in words, not only
+ *  in its colour. */
+function railWords(item: UnownedRequest): ReactElement {
   return (
-    <p className={`dayboard-slot-progress${complete ? " is-complete" : ""}`}>
-      <span className="dayboard-slot-progress-words">
-        {complete && <Check size={14} aria-hidden="true" />}
-        {sheetProgressLine(summary, timeZone)}
-      </span>
-      {summary.total > 0 && (
-        <span className="dayboard-slot-progress-bar" aria-hidden="true">
-          <span style={{ width: `${String(Math.round(summary.checked / summary.total * 100))}%` }} />
-        </span>
-      )}
-    </p>
-  );
-}
-
-function SlotSheetLink({ eventId, bookingKind, roomSlug, roomName, timeZone }: {
-  readonly eventId: string | null;
-  readonly bookingKind: BookingKind;
-  readonly roomSlug: string;
-  readonly roomName: string;
-  readonly timeZone: string;
-}): ReactElement {
-  const result = useSlotSheet(eventId, roomSlug, roomName, bookingKind);
-
-  if (result.status === "loading") {
-    return (
-      <div className="dayboard-slot-sheet">
-        <ActivityStatus>Finding this room’s setup sheet…</ActivityStatus>
-      </div>
-    );
-  }
-
-  if (result.status === "error" || result.state === null) {
-    return (
-      <div className="dayboard-slot-sheet">
-        <p className="dayboard-slot-sheet-note">{result.error ?? "The setup sheet link could not be checked."}</p>
-      </div>
-    );
-  }
-
-  const state = result.state;
-  return (
-    <div className="dayboard-slot-sheet">
-      {state.kind === "one" && (
-        <>
-          <Link className="dayboard-open-sheet" to={state.href}>
-            {state.label}<span className="dayboard-slot-sheet-layout">{state.layoutName}</span>
-          </Link>
-          <SheetProgress configId={state.configurationId} eventId={state.eventId} timeZone={timeZone} />
-        </>
-      )}
-      {state.kind === "many" && (
-        <>
-          <p className="dayboard-slot-sheet-note">{roomName} has more than one linked layout.</p>
-          <ul className="dayboard-sheet-choices">
-            {state.choices.map((choice) => (
-              <li key={choice.configurationId}>
-                <Link className="dayboard-open-sheet" to={choice.href}>{choice.name}</Link>
-                <SheetProgress configId={choice.configurationId} eventId={state.eventId} timeZone={timeZone} />
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
-      {(state.kind === "no-event" || state.kind === "no-layout") && (
-        <>
-          <p className="dayboard-slot-sheet-note">{state.message}</p>
-          {state.kind === "no-layout"
-            ? <Link className="dayboard-open-event" to={`/ops/events/${state.eventId}`}>{state.nextAction}</Link>
-            : <Link className="dayboard-open-event" to="/diary">{state.nextAction}</Link>}
-        </>
-      )}
-    </div>
-  );
-}
-
-/** The ring's words: who has it, or how many wait and for how long. */
-/** The state in a word or two, for a slab too narrow to carry its verb: the
- *  Hallkeeper Test reads state before name, so the title yields first. */
-function shortVerb(slot: DayBoardSlot): string {
-  switch (slot.state) {
-    case "exception": return slot.exception === "overrun" ? "Overrun" : "At risk";
-    case "live": return "Live";
-    case "imminent": return "Doors";
-    case "guests-due": return "Guests";
-    case "organisers-due": return "Setup";
-    case "clear-down": return "Clearing";
-    case "done": return "Ended";
-    // The slot's own venue-local range, "19:52 – 21:52": the start is enough.
-    case "scheduled": return slot.timeRange.split(" – ")[0] ?? slot.stateLabel;
-    default: {
-      const exhausted: never = slot.state;
-      return exhausted;
-    }
-  }
-}
-
-function ringWords(slot: DayBoardSlot, nowMs: number): string | null {
-  const ring = slot.attention;
-  if (ring === null) return null;
-  if (ring.level === "owned") return ring.ownerName === null ? "In hand" : `${ring.ownerName} has this`;
-  const waiting = ring.waitingSinceMs === null ? "" : ` · waiting ${formatMinutes((nowMs - ring.waitingSinceMs) / 60_000)}`;
-  const head = ring.unownedCount === 1 ? "1 request" : `${String(ring.unownedCount)} requests`;
-  return `${ring.level === "urgent" ? "URGENT · " : ""}${head} · nobody has this${waiting}`;
-}
-
-/** The copper ring on a slot with open requests. Its halo breathes while
- *  nobody owns the request and pulses while it is urgent; the words stay at
- *  full ink. Keyed by the parent to the newest request, so an arrival
- *  remounts it and its one stamp plays once, structurally. */
-function Ring({ ring, words, frozen }: {
-  readonly ring: SlotAttention;
-  readonly words: string;
-  readonly frozen: boolean;
-}): ReactElement {
-  const phase = useBreathPhase(`${ring.level}|${frozen ? "frozen" : "live"}`);
-  const Icon = ring.level === "owned" ? UserCheck : ring.level === "urgent" ? AlertTriangle : Bell;
-  return (
-    <span
-      className="dayboard-ring"
-      data-level={ring.level}
-      data-arrived={ring.arrived ? "true" : "false"}
-      style={{ "--lt-epoch-phase-ms": String(phase) } as CSSProperties}
-    >
-      <Icon size={13} aria-hidden="true" />
-      <span className="dayboard-ring-count">{String(ring.count)}</span>
-      <span className="dayboard-ring-words">{words}</span>
+    <span className="dayboard-rail-words">
+      {item.urgency === "now" && <><strong className="dayboard-rail-flag">Urgent</strong>{" "}</>}
+      <span>{item.line}</span>
     </span>
   );
 }
 
-/** One slab on a lane: the state's dot, icon and verb, the title, the
- *  segments along its edge, the ring. A button where a tap opens the slot;
- *  on the wall a plain group, because nothing opens there (D11). */
-function Slab({ slot, view, nowMs, selected, onOpen, wall, vertical, frozen }: {
-  readonly slot: DayBoardSlot;
-  readonly view: BoardWindow;
-  readonly nowMs: number;
-  readonly selected: boolean;
-  readonly onOpen: (bookingId: string) => void;
-  readonly wall: boolean;
-  readonly vertical: boolean;
-  readonly frozen: boolean;
-}): ReactElement {
-  const geometry = slabGeometry(slot, view);
-  const slabWidth = geometry.slab.width > 0 ? geometry.slab.width : 1;
-  // The breath samples its phase the moment it begins: a new motion, or a
-  // freeze lifting, starts a new animation and a new sample (D3 law 1).
-  const phase = useBreathPhase(`${slot.motion}|${frozen ? "frozen" : "live"}`);
-  const ring = slot.attention;
-  const words = ringWords(slot, nowMs);
-  const linked = slot.linkedRooms.length > 0 ? `also ${slot.linkedRooms.join(", ")}` : null;
-  // What the room was last seen doing (S5): a fact beside the schedule, in
-  // the margin and in the slab's name; not once the fact is a done or a
-  // cleaned, which the verb already says.
-  const seen = slot.observed !== null && !observationMeansOver(slot.observed.kind) ? slot.observed.line : null;
-  const label = `${slot.title}, ${slot.timeRange}, ${slot.countdown}${words === null ? "" : `, ${words}`}${seen === null ? "" : `, ${seen}`}`;
-  const segment = (span: Span): CSSProperties => (
-    vertical ? { height: percent(span.width / slabWidth) } : { width: percent(span.width / slabWidth) }
-  );
-  const shared = {
-    className: `dayboard-slab dayboard-tone-${slot.tone}${selected ? " is-selected" : ""}`,
-    "data-state": slot.state,
-    "data-tone": slot.tone,
-    "data-motion": slot.motion,
-    "data-attention": ring?.level ?? "none",
-    "data-booking": slot.bookingId,
-    style: { ...placement(geometry.slab, vertical), "--lt-epoch-phase-ms": String(phase) } as CSSProperties,
-  };
-  const face = (
-    <>
-      <span className="dayboard-segments" aria-hidden="true">
-        <span className="dayboard-segment dayboard-segment-setup" style={segment(geometry.setup)} />
-        <span className="dayboard-segment dayboard-segment-live" style={segment(geometry.live)} />
-        <span className="dayboard-segment dayboard-segment-clear" style={segment(geometry.clearDown)} />
-      </span>
-      <span className="dayboard-slab-face">
-        <span className="dayboard-verb">
-          <span className="dayboard-dot" aria-hidden="true" />
-          <StateIcon icon={slot.icon} size={wall ? 18 : 14} />
-          <span className="dayboard-verb-words">{slot.countdown}</span>
-          {/* A slab too narrow for the verb keeps its state in a word or two. */}
-          <span className="dayboard-verb-short">{shortVerb(slot)}</span>
-        </span>
-        <span className="dayboard-slab-title">{slot.title}</span>
-        <span className="dayboard-slab-time">
-          {slot.timeRange}
-          {slot.kind !== "ink" && <span className="dayboard-slab-kind"> · {slot.bookingLabel}</span>}
-          {linked !== null && <span className="dayboard-linked"><Link2 size={12} aria-hidden="true" />{linked}</span>}
-        </span>
-        {ring !== null && words !== null && (
-          <Ring key={slot.requestSignal?.newestId ?? "steady"} ring={ring} words={words} frozen={frozen} />
-        )}
-        {/* After the ring, so a short lane clips the fact and never the
-            attention channel. */}
-        {seen !== null && <span className="dayboard-slab-seen">{seen}</span>}
-      </span>
-    </>
-  );
-  if (wall) {
-    return <div {...shared} role="group" aria-label={label}>{face}</div>;
-  }
-  return (
-    <button {...shared} type="button" aria-pressed={selected} aria-label={label} onClick={() => { onOpen(slot.bookingId); }}>
-      {face}
-    </button>
-  );
-}
-
-/** The dimensioned gap between two slabs: "45 min", or "45 min · needs 1 h 30". */
-function Gap({ previous, slot, view, vertical, staggered }: {
-  readonly previous: DayBoardSlot | undefined;
-  readonly slot: DayBoardSlot;
-  readonly view: BoardWindow;
-  readonly vertical: boolean;
-  /** Every other gap in a lane, so two covered dimensions in a row never overlap. */
-  readonly staggered: boolean;
-}): ReactElement | null {
-  const geometry = gapGeometry(previous, slot, view);
-  const gap = slot.gapBefore;
-  if (previous === undefined || geometry === null || gap === null || geometry.width <= 0) return null;
-  const words = gap.short && gap.neededMinutes !== null
-    ? `${formatMinutes(gap.minutes)} · needs ${formatMinutes(gap.neededMinutes)}`
-    : formatMinutes(gap.minutes);
-  // The words sit in the open lane after the previous slab's clear-down; when
-  // the clear-down reaches this setup they sit over the slab instead.
-  const place = gapWordsOffset(previous, slot, view);
-  const wordsStyle: CSSProperties = vertical ? { top: percent(place.at) } : { left: percent(place.at) };
-  return (
-    <span
-      className={`dayboard-gap${gap.short ? " is-short" : ""}${place.covered ? " is-covered" : ""}${staggered ? " is-staggered" : ""}`}
-      style={placement(geometry, vertical)}
-      aria-hidden="true"
-    >
-      <span className="dayboard-gap-words" style={wordsStyle}>{words}</span>
-    </span>
-  );
-}
-
-/** The hour ticks and the NOW plaque, along the sheet or down a phone's lane. */
-function Ruler({ ticks, plaque, nowMs, timeZone, vertical }: {
-  readonly ticks: readonly RulerTick[];
-  readonly plaque: number | null;
-  readonly nowMs: number;
-  readonly timeZone: string;
-  readonly vertical: boolean;
-}): ReactElement {
-  const at = (x: number): CSSProperties => (vertical ? { top: percent(x) } : { left: percent(x) });
-  return (
-    <span className="dayboard-ruler-track">
-      {ticks.map((tick) => (
-        <span key={tick.ms} className={`dayboard-tick${tick.major ? " is-major" : ""}`} style={at(tick.x)}>
-          {tick.major && <span className="dayboard-tick-label">{tick.label}</span>}
-        </span>
-      ))}
-      {plaque !== null && (
-        <span className="dayboard-now" style={at(plaque)}>
-          <span className="dayboard-now-plaque">NOW<span className="dayboard-now-time">{formatWallTime(nowMs, timeZone)}</span></span>
-        </span>
-      )}
-    </span>
-  );
-}
-
-function Lane({ lane, view, ticks, nowMs, plaque, timeZone, venueSlug, selectedId, onOpen, wall, vertical, frozen }: {
-  readonly lane: DayBoardLane;
-  readonly view: BoardWindow;
-  readonly ticks: readonly RulerTick[];
-  readonly nowMs: number;
-  readonly plaque: number | null;
-  readonly timeZone: string;
-  readonly venueSlug: string | null;
-  readonly selectedId: string | null;
-  readonly onOpen: (bookingId: string) => void;
-  readonly wall: boolean;
-  readonly vertical: boolean;
-  readonly frozen: boolean;
-}): ReactElement {
-  const photo = venueSlug === null ? null : roomPhoto(venueSlug, lane.room.slug);
-  const count = lane.slots.length === 0
-    ? "Nothing scheduled."
-    : lane.slots.length === 1 ? "1 booking" : `${String(lane.slots.length)} bookings`;
-  return (
-    <section className="dayboard-lane" aria-label={lane.room.name} data-room={lane.room.id}>
-      <header className="dayboard-lane-head">
-        {photo !== null && (
-          <img
-            className="dayboard-lane-photo"
-            src={photo.src}
-            srcSet={photo.srcSet}
-            sizes="96px"
-            alt=""
-            loading="lazy"
-            decoding="async"
-            style={{ objectPosition: photo.objectPosition }}
-          />
-        )}
-        <div className="dayboard-lane-words">
-          <h2 className="dayboard-lane-title">{lane.room.name}</h2>
-          <p className="dayboard-lane-count">{count}</p>
-        </div>
-      </header>
-      <div className="dayboard-lane-body">
-        {vertical && (
-          <div className="dayboard-ruler dayboard-ruler-v" aria-hidden="true">
-            <Ruler ticks={ticks} plaque={plaque} nowMs={nowMs} timeZone={timeZone} vertical />
-          </div>
-        )}
-        <div className="dayboard-track">
-          {plaque !== null && <span className="dayboard-now-line" aria-hidden="true" style={vertical ? { top: percent(plaque) } : { left: percent(plaque) }} />}
-          {lane.slots.map((slot, index) => (
-            <Fragment key={slot.bookingId}>
-              <Gap previous={lane.slots[index - 1]} slot={slot} view={view} vertical={vertical} staggered={index % 2 === 0} />
-              <Slab
-                slot={slot}
-                view={view}
-                nowMs={nowMs}
-                selected={slot.bookingId === selectedId}
-                onOpen={onOpen}
-                wall={wall}
-                vertical={vertical}
-                frozen={frozen}
-              />
-            </Fragment>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-/** The UNOWNED rail: every open request nobody has, urgent first, oldest
- *  first within that. Today's, whichever day is on screen. */
-function Rail({ unowned, today, onOpen }: {
+/** The requests nobody has: urgent first, oldest first within that. Today's,
+ *  whichever day is on screen. A narrow screen lists the first few. */
+function Rail({ unowned, today, onOpen, wall, preview }: {
   readonly unowned: readonly UnownedRequest[];
   readonly today: boolean;
   readonly onOpen: (bookingId: string | null) => void;
+  readonly wall: boolean;
+  readonly preview: boolean;
 }): ReactElement {
+  const [all, setAll] = useState(false);
+  const shown = preview && !all ? unowned.slice(0, RAIL_PREVIEW) : unowned;
+  const urgent = unowned.filter((item) => item.urgency === "now").length;
   return (
     <aside className="dayboard-rail" aria-label="Unowned requests" data-count={unowned.length}>
-      <h2 className="dayboard-rail-title">Unowned</h2>
+      <p className="dayboard-rail-eyebrow">Requests nobody has</p>
+      <h2 className="dayboard-rail-title">
+        {unowned.length === 0 ? "Nobody is waiting." : `${String(unowned.length)} waiting`}
+        {urgent > 0 && <span className="dayboard-rail-urgent">{urgent === 1 ? "1 urgent" : `${String(urgent)} urgent`}</span>}
+      </h2>
       {!today && <p className="dayboard-rail-note">Today’s requests.</p>}
-      {unowned.length === 0
-        ? <p className="dayboard-rail-empty">Nobody is waiting.</p>
-        : (
-          <ul className="dayboard-rail-list">
-            {unowned.map((item) => (
-              <li key={item.id}>
-                <button
-                  type="button"
-                  className="dayboard-rail-item"
-                  data-urgency={item.urgency}
-                  disabled={item.bookingId === null}
-                  onClick={() => { onOpen(item.bookingId); }}
-                >
-                  <Bell size={13} aria-hidden="true" />
-                  <span>{item.line}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
+      {shown.length > 0 && (
+        <ul className="dayboard-rail-list">
+          {shown.map((item) => (
+            <li key={item.id}>
+              {wall
+                ? <span className="dayboard-rail-item" data-urgency={item.urgency}><Bell size={14} aria-hidden="true" />{railWords(item)}</span>
+                : (
+                  <button
+                    type="button"
+                    className="dayboard-rail-item"
+                    data-urgency={item.urgency}
+                    disabled={item.bookingId === null}
+                    onClick={() => { onOpen(item.bookingId); }}
+                  >
+                    <Bell size={14} aria-hidden="true" />
+                    {railWords(item)}
+                  </button>
+                )}
+            </li>
+          ))}
+        </ul>
+      )}
+      {preview && unowned.length > RAIL_PREVIEW && (
+        <button type="button" className="dayboard-rail-more" aria-expanded={all} onClick={() => { setAll((open) => !open); }}>
+          {all ? "Show fewer" : `Show all ${String(unowned.length)}`}
+        </button>
+      )}
     </aside>
   );
 }
 
 /** This hallkeeper's next action, one line at the top, always (D7). The
  *  visible line is not a live region, because its minutes tick; a hidden
- *  region says each NEW action once, assertively only when it is urgent. */
-function NextActionLine({ action, urgent, onOpen }: {
+ *  region says each NEW action once, assertively only when it is urgent.
+ *  On the wall it is words only: nothing opens there. */
+function NextActionLine({ action, urgent, onOpen, wall }: {
   readonly action: NextAction;
   readonly urgent: boolean;
   readonly onOpen: (bookingId: string | null) => void;
+  readonly wall: boolean;
 }): ReactElement {
   const identity = `${action.kind}:${action.requestId ?? action.bookingId ?? ""}`;
   const lineRef = useRef(action.line);
@@ -673,8 +244,8 @@ function NextActionLine({ action, urgent, onOpen }: {
   return (
     <>
       <p className={`dayboard-next dayboard-next-${action.kind}`} data-urgent={urgent ? "true" : "false"}>
-        {action.kind === "request" ? <Bell size={16} aria-hidden="true" /> : <Clock size={16} aria-hidden="true" />}
-        {action.bookingId === null
+        {action.kind === "request" ? <Bell size={18} aria-hidden="true" /> : <Clock size={18} aria-hidden="true" />}
+        {action.bookingId === null || wall
           ? <span className="dayboard-next-line">{action.line}</span>
           : <button type="button" className="dayboard-next-line" onClick={() => { onOpen(action.bookingId); }}>{action.line}</button>}
       </p>
@@ -683,135 +254,15 @@ function NextActionLine({ action, urgent, onOpen }: {
   );
 }
 
-/** What the hallkeeper is told after a tap: the fact and where it stands. */
-function seenStatus(kind: ObservationKind, outcome: RecordOutcome | "sending" | Error): string {
-  const what = describeObservationKind(kind);
-  if (outcome === "sending") return `${what} · sending…`;
-  if (outcome === "sent") return `${what} · recorded`;
-  if (outcome === "queued") return `${what} · queued, sends when the connection is back`;
-  return `Couldn’t record ${what.toLowerCase()}: ${outcome.message}`;
-}
-
-/** The open slot: its sheet, its event, its phases and its requests. */
-function SlotDetail({ slot, room, timeZone, slotRequests: SlotRequests, observations, onClose }: {
-  readonly slot: DayBoardSlot;
-  readonly room: { readonly id: string; readonly name: string; readonly slug: string };
-  readonly timeZone: string;
-  readonly slotRequests: SlotRequestsComponent | null;
-  /** Null where nothing may be recorded (the wall, a visitor). */
-  readonly observations: SlotObservationsApi | null;
-  readonly onClose: () => void;
-}): ReactElement {
-  const occasion = occasionLabel(slot.eventType);
-  // One tap at a time; the words say what happened to it (S5, D10).
-  const [busy, setBusy] = useState<ObservationKind | null>(null);
-  const [seenLine, setSeenLine] = useState<string | null>(null);
-  const actionsRef = useRef<HTMLDivElement>(null);
-  const seenRef = useRef<HTMLElement>(null);
-  const settledRef = useRef(false);
-  const tap = useCallback((kind: ObservationKind): void => {
-    if (observations === null || busy !== null) return;
-    setBusy(kind);
-    setSeenLine(seenStatus(kind, "sending"));
-    observations.record(slot.bookingId, kind)
-      .then((outcome) => { setSeenLine(seenStatus(kind, outcome)); })
-      .catch((err: unknown) => { setSeenLine(seenStatus(kind, err instanceof Error ? err : new Error("the server refused it"))); })
-      .finally(() => { settledRef.current = true; setBusy(null); });
-  }, [observations, slot.bookingId, busy]);
-  // The tapped button leaves with its fact; if that dropped the keyboard's
-  // place to the document, it is kept on the next fact to record, or on the
-  // section when there is none left. A place moved elsewhere meanwhile stays.
-  useEffect(() => {
-    if (busy !== null || !settledRef.current) return;
-    settledRef.current = false;
-    const active = document.activeElement;
-    if (active !== null && active !== document.body) return;
-    const next = actionsRef.current?.querySelector("button");
-    if (next instanceof HTMLButtonElement) next.focus();
-    else seenRef.current?.focus();
-  }, [busy]);
-  const nextKinds = nextObservationKinds(slot.observed?.kind ?? null);
-  const waitingHere = observations?.pendingByBooking.get(slot.bookingId) ?? 0;
-  // The latest fact stands as this device's own until the server lists it.
-  const latestWaiting = slot.observed !== null && observations !== null
-    && observations.observations.some((fact) => fact.bookingId === slot.bookingId && isQueuedObservation(fact) && Date.parse(fact.observedAt) === slot.observed?.atMs);
-  const latest: ReactElement | string = slot.observed !== null
-    ? `${slot.observed.line}${slot.observed.actorName === null ? "" : ` · ${slot.observed.actorName}`}${latestWaiting ? " · waiting to send" : ""}`
-    : observations?.status === "loading"
-      ? <ActivityStatus>Reading what the room was seen doing…</ActivityStatus>
-      : observations?.status === "failed"
-        ? "What the room was seen doing could not be read."
-        : "Nothing recorded for this room yet.";
+/** The sentence under the title, its counts in strong type. */
+function Summary({ parts }: { readonly parts: readonly SummaryPart[] }): ReactElement {
   return (
-    <section className={`dayboard-detail dayboard-tone-${slot.tone}`} aria-label={`${room.name}: ${slot.title}`} data-state={slot.state}>
-      <div className="dayboard-detail-head">
-        <div>
-          <p className="dayboard-detail-room">{room.name} · {slot.timeRange}</p>
-          <h3 className="dayboard-detail-title">{slot.title}</h3>
-          <p className="dayboard-slot-meta">
-            <span className="dayboard-slot-state"><StateIcon icon={slot.icon} size={12} /> {slot.stateLabel}</span>
-            {occasion !== null ? <span> · {occasion}</span> : null}
-            <span> · {slot.bookingLabel}{slot.guestCount !== null ? ` · ${String(slot.guestCount)} guests` : ""}</span>
-          </p>
-        </div>
-        <button type="button" className="dayboard-detail-close" onClick={onClose}>Close</button>
-      </div>
-      {/* What the room was seen doing (S5): the latest fact, and the next
-          facts a hallkeeper may record from here. Facts never move a time. */}
-      <section ref={seenRef} className="dayboard-seen" aria-label="What the room is doing" tabIndex={-1}>
-        <p className="dayboard-seen-latest">{latest}</p>
-        {observations !== null && nextKinds.length > 0 && (
-          <div ref={actionsRef} className="dayboard-seen-actions" role="group" aria-label="Record what the room is doing">
-            {nextKinds.map((kind) => (
-              <button
-                key={kind}
-                type="button"
-                className="dayboard-seen-button"
-                aria-busy={busy === kind}
-                disabled={busy !== null && busy !== kind}
-                onClick={() => { tap(kind); }}
-              >
-                {busy === kind && <ActivityIndicator size={14} />}
-                {describeObservationKind(kind)}
-              </button>
-            ))}
-          </div>
-        )}
-        {waitingHere > 0 && (
-          <p className="dayboard-seen-pending">
-            {waitingHere === 1 ? "One tap for this room waiting to send." : `${String(waitingHere)} taps for this room waiting to send.`}
-          </p>
-        )}
-        <p className="dayboard-seen-status" aria-live="polite">{seenLine ?? ""}</p>
-      </section>
-      {slot.phases.length > 0 && <ol className="dayboard-phases" aria-label="Planned event phases">
-        {slot.phases.map((phase, index) => <li key={phase.id} data-colour={index % 6}>
-          <strong>{phase.name}</strong><span>{formatWallTime(Date.parse(phase.startsAt), timeZone)} – {formatWallTime(Date.parse(phase.endsAt), timeZone)}</span>
-        </li>)}
-      </ol>}
-      <SlotSheetLink eventId={slot.eventId} bookingKind={slot.kind} roomSlug={room.slug} roomName={room.name} timeZone={timeZone} />
-      {slot.eventId !== null && <Link className="dayboard-open-event" to={`/ops/events/${slot.eventId}`}>Open event &amp; working documents →</Link>}
-      {/* Lane 9's mount point. Reserved region, props only; the board never
-          reads or writes request state. */}
-      <div className="dayboard-slot-requests" data-slot-requests={slot.bookingId}>
-        {SlotRequests !== null && (
-          <SlotRequests
-            bookingId={slot.bookingId}
-            eventId={slot.eventId}
-            roomId={room.id}
-            roomName={room.name}
-            startsAtMs={slot.startsAtMs}
-            endsAtMs={slot.endsAtMs}
-          />
-        )}
-      </div>
-      {slot.exceptionDetail !== null ? (
-        <p className="dayboard-slot-alert" role="alert">{slot.exceptionDetail}</p>
-      ) : null}
-      {slot.turnaroundWarning !== null ? (
-        <p className="dayboard-slot-warning">{slot.turnaroundWarning}</p>
-      ) : null}
-    </section>
+    <p className="dayboard-summary">
+      {/* A fixed sentence built afresh each render: its order is its identity. */}
+      {parts.map((part, index) => (typeof part === "string"
+        ? part
+        : <strong key={index} data-tone={part.tone}>{part.strong}</strong>))}
+    </p>
   );
 }
 
@@ -837,8 +288,11 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
   const slotRequestsComponent = slotRequests ?? contextSlotRequests;
   const [searchParams, setSearchParams] = useSearchParams();
   const wall = searchParams.get("register") === "wall";
-  const phone = usePhoneLayout();
-  const vertical = phone && !wall;
+  const phone = useMatches(PHONE_QUERY);
+  const wide = useMatches(DESK_QUERY);
+  // The forest panel stands beside the sheet on a wide desk; elsewhere the
+  // requests come before the rooms and an open slot unfolds under its room.
+  const beside = wide && !wall;
 
   // One corrected clock (D9), ticking at the next state boundary the board
   // derives from it; the boundary and the clock meet through state, so a
@@ -851,9 +305,18 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
   const corrected = useClockCorrected();
 
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
-  const [roomId, setRoomId] = useState("");
+  const [roomId, setRoomIdState] = useState("");
+  const [focus, setFocusState] = useState<BoardFocus>("all");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const browsingToday = selectedDate === null;
+  // A count on the plane and a room from the list are two ways to narrow the
+  // rooms; choosing one lets the other go, so the list never comes up empty
+  // for a reason the screen does not show.
+  const chooseRoom = useCallback((id: string): void => { setRoomIdState(id); setFocusState("all"); }, []);
+  const chooseFocus = useCallback((next: BoardFocus): void => {
+    setFocusState((current) => (current === next ? "all" : next));
+    setRoomIdState("");
+  }, []);
 
   // Today, venue-local, ending at the venue's own boundary hour (04:00 by
   // default; midnight for a venue without settings): an event running to
@@ -914,7 +377,7 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
 
   const lanes = board?.lanes ?? NO_LANES;
   const view = useMemo(() => boardWindow(range, lanes, nowMs, timeZone), [range, lanes, nowMs, timeZone]);
-  const ticks = useMemo(() => rulerTicks(view, timeZone, wall || vertical ? 1 : 2), [view, timeZone, wall, vertical]);
+  const ticks = useMemo(() => rulerTicks(view, timeZone, phone ? 4 : 2), [view, timeZone, phone]);
   const plaque = nowPlaque(nowMs, view);
 
   // Live, offline or stale (D10); and every breath stops the instant the
@@ -947,27 +410,10 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
     return () => { window.removeEventListener("keydown", onKey); };
   }, [moveDay]);
 
-  // On the phone the day runs down the screen: bring the present into view
-  // once per day shown, and never again, so a thumb's scroll is never fought.
-  const lanesRef = useRef<HTMLDivElement>(null);
-  const centredFor = useRef<number | null>(null);
-  useEffect(() => {
-    if (!vertical || board === null || plaque === null || centredFor.current === range.fromMs) return;
-    const line = lanesRef.current?.querySelector(".dayboard-now-line");
-    if (!(line instanceof HTMLElement) || typeof line.scrollIntoView !== "function") return;
-    centredFor.current = range.fromMs;
-    line.scrollIntoView({ block: "center" });
-  }, [vertical, board, plaque, range.fromMs]);
-  const showLane = useCallback((roomIdToShow: string): void => {
-    const lane = lanesRef.current?.querySelector(`[data-room="${roomIdToShow}"]`);
-    if (lane instanceof HTMLElement && typeof lane.scrollIntoView === "function") {
-      lane.scrollIntoView({ inline: "start", block: "nearest", behavior: "smooth" });
-    }
-  }, []);
-
   // An opened slot comes into view; a slot that left the day closes itself.
   // Nothing opens on the wall (D11).
   const detailRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const selected = useMemo(() => {
     if (wall || selectedId === null || board === null) return null;
     for (const lane of board.lanes) {
@@ -976,11 +422,19 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
     }
     return null;
   }, [wall, selectedId, board]);
+  // Beside the sheet the panel is always in view: it starts the slot from
+  // its top. Under its room the slot is brought into view once.
+  const openedId = selected?.slot.bookingId ?? null;
   useEffect(() => {
-    if (selected === null) return;
+    if (openedId === null) return;
+    if (beside) {
+      const body = panelRef.current;
+      if (body !== null && typeof body.scrollTo === "function") body.scrollTo({ top: 0 });
+      return;
+    }
     const panel = detailRef.current;
     if (panel !== null && typeof panel.scrollIntoView === "function") panel.scrollIntoView({ block: "nearest" });
-  }, [selected]);
+  }, [openedId, beside]);
   const openSlot = useCallback((bookingId: string | null): void => {
     if (wall) return;
     setSelectedId((current) => (bookingId === null ? current : bookingId === current ? null : bookingId));
@@ -994,13 +448,22 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
   }, [wall]);
 
   const zone = useMemo(() => zoneNote(timeZone, deviceZone()), [timeZone]);
+  const days = useMemo(() => lanes.map(roomDay), [lanes]);
   const busyLanes = lanes.filter((lane) => lane.slots.length > 0).length;
-  // A room with nothing on is one name in a line, not a lane to scroll past;
-  // a room chosen from the filter keeps its lane either way.
-  const shownLanes = lanes.filter((lane) => (roomId === "" ? lane.slots.length > 0 : lane.room.id === roomId));
-  const freeRooms = roomId === "" && busyLanes > 0 ? lanes.filter((lane) => lane.slots.length === 0).map((lane) => lane.room.name) : [];
+  // A room with nothing on is one name in a line, not a row to scroll past;
+  // a room chosen from the list keeps its row either way, and a count on
+  // the plane shows only the rooms it names.
+  const shownDays = days.filter((day) => (roomId === ""
+    ? day.slots.length > 0 && roomInFocus(day, focus)
+    : day.room.id === roomId));
+  const freeRooms = roomId === "" && focus === "all" && busyLanes > 0 ? lanes.filter((lane) => lane.slots.length === 0).map((lane) => lane.room.name) : [];
   const readAt = readAtCorrectedMs === null ? null : formatWallTime(readAtCorrectedMs, timeZone);
   const others = live.presence.filter((person) => person.userId !== user?.id).map((person) => person.name);
+  const stages = useMemo(() => planeStages(lanes), [lanes]);
+  const summary = useMemo(
+    () => (board === null ? null : boardSummary({ lanes: board.lanes, unowned: board.unowned, today: browsingToday, nowMs })),
+    [board, browsingToday, nowMs],
+  );
 
   // A venue's own account not connected to one yet is told so, as on every
   // dashboard view, rather than shown a day that can never fill.
@@ -1014,84 +477,97 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
 
   const nextAction = board !== null && browsingToday && board.nextAction.kind !== "quiet" ? board.nextAction : null;
   const nextIsUrgent = nextAction?.kind === "request" && board?.unowned[0]?.urgency === "now";
-  const body = (
-    <div
-      className="dayboard"
-      ref={boardRef}
-      style={driftStyle}
-      data-register={wall ? "wall" : "paper"}
-      data-layout={vertical ? "phone" : "sheet"}
-      data-frozen={frozen ? "true" : "false"}
-    >
-      {/* The stale band (D3, D10): the one thing that outranks every state.
-          Every breath on the board has already stopped (data-frozen). */}
-      {freshness.kind !== "live" && (
-        <div className="dayboard-stale" role="status">
-          <WifiOff size={16} aria-hidden="true" />
-          {freshness.kind === "offline"
-            ? <span>Offline since {formatWallTime(freshness.sinceMs, timeZone)} · reconnecting. Showing the day as last read; the words still stand.</span>
-            : <span>Showing the day as read at {formatWallTime(freshness.readAtMs, timeZone)}.</span>}
+  // The shown day by name, and the greeting by the clock: "Saturday 14
+  // November · Good afternoon, Elaine".
+  const dayName = deskGreeting(selectedMs, null, timeZone).date;
+  const greeting = deskGreeting(nowMs, user?.name ?? null, timeZone).greeting;
+  const detail = selected === null ? null : (
+    <div ref={detailRef} className="dayboard-detail-frame">
+      <SlotDetail
+        key={selected.slot.bookingId}
+        slot={selected.slot}
+        room={selected.room}
+        venueSlug={venue.slug}
+        timeZone={timeZone}
+        slotRequests={slotRequestsComponent}
+        observations={wall ? null : observationsApi}
+        onClose={() => { setSelectedId(null); }}
+        closeLabel={beside ? "Close, back to the requests" : "Close, back to the rooms"}
+      />
+    </div>
+  );
+  const rail = board === null ? null : (
+    <Rail unowned={board.unowned} today={browsingToday} onOpen={openRequest} wall={wall} preview={!beside && !wall} />
+  );
+
+  // Honest about how fresh the day is: the socket reconnects by itself, and
+  // Refresh reads the day now. With no venue there is no socket to
+  // reconnect, so nothing is said of one.
+  const statusLine = venueId === null ? null : (
+    <div className="dayboard-status" role="status">
+      <span className={`dayboard-live-dot${live.connected ? " is-connected" : ""}`} aria-hidden="true" />
+      {live.connected
+        ? <span>{readAt === null ? "Live" : `Live · updated ${readAt}`}</span>
+        : <>
+          <span>{readAt === null ? "Reconnecting…" : `Updated ${readAt} · reconnecting…`}</span>
           <button type="button" className="dayboard-refresh" onClick={refetch}>Refresh</button>
-        </div>
-      )}
+        </>}
+      {corrected && <span className="dayboard-corrected">Clock corrected</span>}
+      {others.length > 0 && <span className="dayboard-presence">Also watching: {others.join(", ")}</span>}
+    </div>
+  );
 
-      <header className="dayboard-header">
-        <div>
-          <h1 className="dayboard-title">The Day Board</h1>
-          <p className="dayboard-subtitle">{formatWallDay(selectedMs, timeZone)}{zone === null ? "" : ` · ${zone}`}</p>
-        </div>
-        {/* Honest about how fresh the day is: the socket reconnects by
-            itself, and Refresh reads the day now. With no venue there is
-            no socket to reconnect, so nothing is said of one. */}
-        {venueId !== null && (
-          <div className="dayboard-status" role="status">
-            <span className={`dayboard-live-dot${live.connected ? " is-connected" : ""}`} aria-hidden="true" />
-            {live.connected
-              ? <span>{readAt === null ? "Live" : `Live · updated ${readAt}`}</span>
-              : <>
-                <span>{readAt === null ? "Reconnecting…" : `Updated ${readAt} · reconnecting…`}</span>
-                <button type="button" className="dayboard-refresh" onClick={refetch}>Refresh</button>
-              </>}
-            {corrected && <span className="dayboard-corrected">Clock corrected</span>}
-            {others.length > 0 && <span className="dayboard-presence">Also watching: {others.join(", ")}</span>}
-          </div>
-        )}
-      </header>
+  // The stale band (D3, D10): the one thing that outranks every state.
+  // Every breath on the board has already stopped (data-frozen).
+  const staleBand = freshness.kind === "live" ? null : (
+    <div className="dayboard-stale" role="status">
+      <WifiOff size={16} aria-hidden="true" />
+      {freshness.kind === "offline"
+        ? <span>Offline since {formatWallTime(freshness.sinceMs, timeZone)} · reconnecting. Showing the day as last read; the words still stand.</span>
+        : <span>Showing the day as read at {formatWallTime(freshness.readAtMs, timeZone)}.</span>}
+      <button type="button" className="dayboard-refresh" onClick={refetch}>Refresh</button>
+    </div>
+  );
 
-      {nextAction !== null && <NextActionLine action={nextAction} urgent={nextIsUrgent} onOpen={openSlot} />}
+  // The day in counts on the copper plane. On paper each count is a filter
+  // on the rooms; on the wall nothing is pressed.
+  const plane = board === null || busyLanes === 0 ? null : (
+    <div className="dayboard-plane ws-plane" role="group" aria-label="The day in numbers">
+      {stages.map((stage) => {
+        const face = (
+          <>
+            <b data-focus={stage.focus} data-alert={stage.focus === "risk" && stage.count > 0 ? "true" : undefined}>{String(stage.count)}</b>
+            {" "}
+            <span><i className="dayboard-stage-dot" data-focus={stage.focus} aria-hidden="true" />{stage.label}</span>
+          </>
+        );
+        return wall
+          ? <span key={stage.focus} className="dayboard-stage" data-focus={stage.focus}>{face}</span>
+          : (
+            <button
+              key={stage.focus}
+              type="button"
+              className="dayboard-stage"
+              data-focus={stage.focus}
+              aria-pressed={stage.focus === "all" ? focus === "all" && roomId === "" : focus === stage.focus}
+              onClick={() => { chooseFocus(stage.focus); }}
+            >
+              {face}
+            </button>
+          );
+      })}
+    </div>
+  );
 
-      {/* Shown only on paper (S8 item 13): the printed day names itself. */}
-      {!wall && <p className="dayboard-print-note">{BOARD_PRINT_COPY.note} {formatWallDay(selectedMs, timeZone)}{readAt === null ? "" : ` ${BOARD_PRINT_COPY.readAt(readAt)}`}</p>}
-      {!wall && (
-        <div className="dayboard-controls">
-          <div
-            className="dayboard-days"
-            onPointerEnter={(event) => { if (event.pointerType !== "touch") wishToStep(); }}
-            onFocus={(event) => { if (keyboardFocus(event.target)) wishToStep(); }}
-          >
-            <button type="button" aria-label="Previous day" onClick={() => { moveDay(-1); }}><ArrowLeft size={18} aria-hidden="true" /></button>
-            <label className="dayboard-day-field">Day<input type="date" value={shownDate} onChange={(event) => { if (event.target.value !== "") setSelectedDate(event.target.value === today ? null : event.target.value); }} /></label>
-            <button type="button" aria-pressed={selectedDate === null} onClick={() => { setSelectedDate(null); }}>Today</button>
-            <button type="button" aria-label="Next day" onClick={() => { moveDay(1); }}><ArrowRight size={18} aria-hidden="true" /></button>
-          </div>
-          <label>Room<select value={roomId} onChange={(event) => { setRoomId(event.target.value); }}><option value="">All rooms</option>{lanes.map((lane) => <option key={lane.room.id} value={lane.room.id}>{lane.room.name}</option>)}</select></label>
-          <Link to="/diary">Open Diary</Link><Link to="/hallkeeper/rooms">Room plans</Link>
-          <button type="button" onClick={() => { setSearchParams({ register: "wall" }); }}>Wall display</button>
-          <button type="button" className="dayboard-print" onClick={() => { window.print(); }}>{selectedDate === null ? BOARD_PRINT_COPY.print : BOARD_PRINT_COPY.printDay}</button>
-          {/* Opt-in, per device (D3 "Sound"): the one control that makes a sound. */}
-          {venueId !== null && <ChimeToggle />}
-          {venueId !== null && <ShiftHandover venueId={venueId} meId={user?.id ?? null} />}
-          {venueId !== null && <PushAlertsToggle venueId={venueId} deviceKind={device} />}
-        </div>
-      )}
+  const notices = (
+    <>
       {venueId === null && <p className="dayboard-notice">No venue is linked to this account. Ask your venue administrator to connect your workspace.</p>}
       {venueId !== null && data === null && status === "loading" && <ActivityStatus variant="panel">Loading the day’s bookings…</ActivityStatus>}
       {venueId !== null && isRefreshing && <ActivityStatus>Refreshing the day’s bookings…</ActivityStatus>}
-
       {status === "error" ? (
         <div className="dayboard-notice" role="alert">
           <p>{error ?? "The board could not load."}</p>
-          <button type="button" className="diary-button" onClick={refetch}>
+          <button type="button" className="dayboard-button" onClick={refetch}>
             Try again
           </button>
         </div>
@@ -1100,114 +576,197 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
       {refreshFailedCorrectedMs !== null ? (
         <div className="dayboard-notice" role="status">
           <p>{dayRefreshFailed(formatWallTime(refreshFailedCorrectedMs, timeZone), readAt)}</p>
-          <button type="button" className="diary-button" onClick={refetch}>
+          <button type="button" className="dayboard-button" onClick={refetch}>
             Try again
           </button>
         </div>
       ) : null}
-
       {status !== "error" && board !== null && busyLanes === 0 && roomId === "" ? (
         <p className="dayboard-notice">{selectedDate === null ? "Nothing scheduled today." : "Nothing scheduled on this day."}</p>
       ) : null}
-
-      {/* Swipe between rooms on the phone; the tabs name where you are. */}
-      {vertical && shownLanes.length > 1 && (
-        <div className="dayboard-pager" aria-label="Rooms">
-          {shownLanes.map((lane) => (
-            <button key={lane.room.id} type="button" onClick={() => { showLane(lane.room.id); }}>{lane.room.name}</button>
-          ))}
-        </div>
-      )}
-
-      {board !== null && (
-        <div className={`dayboard-body${shownLanes.length === 0 ? " is-quiet" : ""}`}>
-          {shownLanes.length > 0 && (
-            <div className="dayboard-sheet">
-              <div className="dayboard-sheet-inner">
-                {!vertical && (
-                  <div className="dayboard-ruler" aria-hidden="true">
-                    <span className="dayboard-ruler-head" />
-                    <Ruler ticks={ticks} plaque={plaque} nowMs={nowMs} timeZone={timeZone} vertical={false} />
-                  </div>
-                )}
-                <div className="dayboard-lanes" ref={lanesRef}>
-                  {shownLanes.map((lane) => (
-                    <Lane
-                      key={lane.room.id}
-                      lane={lane}
-                      view={view}
-                      ticks={ticks}
-                      nowMs={nowMs}
-                      plaque={plaque}
-                      timeZone={timeZone}
-                      venueSlug={venue.slug}
-                      selectedId={selectedId}
-                      onOpen={openSlot}
-                      wall={wall}
-                      vertical={vertical}
-                      frozen={frozen}
-                    />
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-          <Rail unowned={board.unowned} today={browsingToday} onOpen={openRequest} />
-        </div>
-      )}
-      {freeRooms.length > 0 && <p className="dayboard-free">
-        <span>{selectedDate === null ? "Also free today:" : "Also free this day:"}</span> {freeRooms.join(", ")}.
-      </p>}
-
-      {selected !== null && (
-        <div ref={detailRef}>
-          <SlotDetail
-            key={selected.slot.bookingId}
-            slot={selected.slot}
-            room={selected.room}
-            timeZone={timeZone}
-            slotRequests={slotRequestsComponent}
-            observations={wall ? null : observationsApi}
-            onClose={() => { setSelectedId(null); }}
-          />
-        </div>
-      )}
-
-      {/* Built from the states the board draws, in the words a slot uses;
-          then the ring and the band, the second channel. */}
-      <footer className="dayboard-legend" aria-label="What the colours mean">
-        {DAY_BOARD_LEGEND.map((entry) => (
-          <span key={entry.tone} className={`dayboard-chip dayboard-chip-${entry.tone}`}>
-            <span className="dayboard-chip-dot" aria-hidden="true" />
-            <StateIcon icon={entry.icon} size={12} />
-            {entry.label}
-          </span>
-        ))}
-        {DAY_BOARD_RING_LEGEND.map((entry) => (
-          <span key={entry.key} className={`dayboard-chip dayboard-chip-ring dayboard-chip-ring-${entry.key}`}>
-            <StateIcon icon={entry.icon} size={12} />
-            {entry.label}
-          </span>
-        ))}
-      </footer>
-      {wall && (
-        <p className="dayboard-wall-foot">
-          <button type="button" className="dayboard-refresh" onClick={() => { setSearchParams({}); }}>Office view</button>
-        </p>
-      )}
-    </div>
+    </>
   );
 
-  // The wall is the whole screen: the shell draws no header, nav or account
-  // menu for a passer-by to touch (D11, S8), only the landmark around the board.
+  const rooms = board === null || shownDays.length === 0 ? null : (
+    <ol className="dayboard-rooms" data-count={shownDays.length > 6 ? "many" : "few"}>
+      {shownDays.map((day) => (
+        <RoomRow
+          key={day.room.id}
+          day={day}
+          view={view}
+          plaque={plaque}
+          nowMs={nowMs}
+          venueSlug={venue.slug}
+          selectedId={selectedId}
+          onOpen={openSlot}
+          wall={wall}
+          frozen={frozen}
+        >
+          {!beside && selected !== null && selected.room.id === day.room.id ? detail : null}
+        </RoomRow>
+      ))}
+    </ol>
+  );
+
+  // Built from the states the board draws, in the words a slot uses; then
+  // the ring and the band, the second channel.
+  const legend = (
+    <footer className="dayboard-legend" aria-label="What the colours mean">
+      {DAY_BOARD_LEGEND.map((entry) => (
+        <span key={entry.tone} className={`dayboard-chip dayboard-chip-${entry.tone}`}>
+          <span className="dayboard-chip-dot" aria-hidden="true" />
+          <StateIcon icon={entry.icon} size={12} />
+          {entry.label}
+        </span>
+      ))}
+      {DAY_BOARD_RING_LEGEND.map((entry) => (
+        <span key={entry.key} className={`dayboard-chip dayboard-chip-ring dayboard-chip-ring-${entry.key}`}>
+          <StateIcon icon={entry.icon} size={12} />
+          {entry.label}
+        </span>
+      ))}
+    </footer>
+  );
+
+  const freeLine = freeRooms.length > 0 ? (
+    <p className="dayboard-free">
+      <span>{selectedDate === null ? "Also free today:" : "Also free this day:"}</span> {freeRooms.join(", ")}.
+    </p>
+  ) : null;
+
   if (wall) {
+    // The wall is the whole screen: the shell draws no header, nav or account
+    // menu for a passer-by to touch (D11, S8), only the landmark around the
+    // board. The rooms sit on ivory in a forest frame.
     return (
       <DashboardLayout mainLabel="The Day Board, wall display" chrome="none">
-        <div className="dayboard-wall">{body}</div>
+        <div className="dayboard-wall" data-register="forest">
+          <div
+            className="dayboard"
+            ref={boardRef}
+            style={driftStyle}
+            data-register="wall"
+            data-layout="wall"
+            data-frozen={frozen ? "true" : "false"}
+          >
+            {staleBand}
+            <header className="dayboard-wall-head">
+              <div>
+                <p className="dayboard-greeting"><span className="dayboard-subtitle">{dayName}{zone === null ? "" : ` · ${zone}`}</span></p>
+                <h1 className="dayboard-title">The Day Board</h1>
+              </div>
+              <div className="dayboard-wall-clock">
+                <b>{formatWallTime(nowMs, timeZone)}</b>
+                <div className="dayboard-wall-status">
+                  {statusLine}
+                  <p className="dayboard-wall-foot">
+                    <button type="button" className="dayboard-refresh" onClick={() => { setSearchParams({}); }}>Office view</button>
+                  </p>
+                </div>
+              </div>
+            </header>
+            <div className="dayboard-wall-plane">
+              {plane}
+              {nextAction !== null && <NextActionLine action={nextAction} urgent={nextIsUrgent} onOpen={openSlot} wall />}
+            </div>
+            {notices}
+            {rooms}
+            {freeLine}
+            {legend}
+          </div>
+        </div>
       </DashboardLayout>
     );
   }
-  return <DashboardLayout mainLabel="The Day Board">{body}</DashboardLayout>;
+
+  const body = (
+    <div
+      className="dayboard"
+      ref={boardRef}
+      data-register="paper"
+      data-layout={beside ? "desk" : phone ? "phone" : "narrow"}
+      data-frozen={frozen ? "true" : "false"}
+    >
+      {staleBand}
+      <div className={`dayboard-desk${beside ? "" : " is-single"}`} data-register="ivory">
+        <section className="dayboard-sheet" aria-labelledby="dayboard-title">
+          <header className="dayboard-head">
+            <div className="dayboard-headline">
+              <p className="dayboard-greeting">
+                <span className="dayboard-subtitle">{dayName}{zone === null ? "" : ` · ${zone}`}</span>
+                <span aria-hidden="true">·</span>
+                <span>{greeting}</span>
+              </p>
+              {statusLine}
+            </div>
+            <div className="dayboard-titleline">
+              <h1 className="dayboard-title" id="dayboard-title">The Day Board</h1>
+              <div
+                className="dayboard-days"
+                onPointerEnter={(event) => { if (event.pointerType !== "touch") wishToStep(); }}
+                onFocus={(event) => { if (keyboardFocus(event.target)) wishToStep(); }}
+              >
+                <button type="button" aria-label="Previous day" onClick={() => { moveDay(-1); }}><ArrowLeft size={17} aria-hidden="true" /></button>
+                <button type="button" aria-pressed={selectedDate === null} onClick={() => { setSelectedDate(null); }}>Today</button>
+                <button type="button" aria-label="Next day" onClick={() => { moveDay(1); }}><ArrowRight size={17} aria-hidden="true" /></button>
+                <label className="dayboard-day-field">
+                  <span className="dayboard-sr">Day</span>
+                  <input type="date" value={shownDate} onChange={(event) => { if (event.target.value !== "") setSelectedDate(event.target.value === today ? null : event.target.value); }} />
+                </label>
+              </div>
+            </div>
+            {summary !== null && <Summary parts={summary} />}
+          </header>
+
+          {nextAction !== null && <NextActionLine action={nextAction} urgent={nextIsUrgent} onOpen={openSlot} wall={false} />}
+
+          {/* Shown only on paper (S8 item 13): the printed day names itself. */}
+          <p className="dayboard-print-note">{BOARD_PRINT_COPY.note} {formatWallDay(selectedMs, timeZone)}{readAt === null ? "" : ` ${BOARD_PRINT_COPY.readAt(readAt)}`}</p>
+
+          {plane}
+          {!beside && rail}
+
+          {notices}
+
+          {/* The rooms, what they show and the hours across them; a room
+              can be chosen on its own from the list beside. */}
+          <div className="dayboard-rooms-head">
+            <div className="dayboard-rooms-line">
+              {board !== null && busyLanes > 0 && (
+                <p className="dayboard-showing" aria-live="polite">{roomId === "" ? showingLine(shownDays.length, focus) : "One room, chosen from the list"}</p>
+              )}
+              <label className="dayboard-room-field">Room<select value={roomId} onChange={(event) => { chooseRoom(event.target.value); }}><option value="">All rooms</option>{lanes.map((lane) => <option key={lane.room.id} value={lane.room.id}>{lane.room.name}</option>)}</select></label>
+            </div>
+            {board !== null && shownDays.length > 0 && <Scale ticks={ticks} plaque={plaque} nowMs={nowMs} timeZone={timeZone} />}
+          </div>
+          {rooms}
+          {freeLine}
+
+          {/* What the board does besides showing the day: the Diary, the
+              room plans, the wall, paper, sound, the shift and alerts. */}
+          <div className="dayboard-tools">
+            <Link to="/diary">Open Diary</Link>
+            <Link to="/hallkeeper/rooms">Room plans</Link>
+            <button type="button" onClick={() => { setSearchParams({ register: "wall" }); }}>Wall display</button>
+            <button type="button" className="dayboard-print" onClick={() => { window.print(); }}>{selectedDate === null ? BOARD_PRINT_COPY.print : BOARD_PRINT_COPY.printDay}</button>
+            {/* Opt-in, per device (D3 "Sound"): the one control that makes a sound. */}
+            {venueId !== null && <ChimeToggle />}
+            {venueId !== null && <ShiftHandover venueId={venueId} meId={user?.id ?? null} />}
+            {venueId !== null && <PushAlertsToggle venueId={venueId} deviceKind={device} />}
+          </div>
+          {legend}
+        </section>
+
+        {beside && (
+          <div className="dayboard-panel" data-register="forest">
+            <div className="dayboard-panel-body" ref={panelRef}>{detail ?? rail}</div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
+  return <DashboardLayout mainLabel="The Day Board" surface="desk">{body}</DashboardLayout>;
 }
 
 export default DayBoardPage;

@@ -395,16 +395,21 @@ describe("DayBoardPage", () => {
     expect(container.querySelector(".dayboard-free")?.textContent).toBe("Also free today: Saloon.");
   });
 
-  it("lays the day on one ruler with a NOW plaque, and places each slab by its time", async () => {
+  it("lays the day on one ruler with a NOW plaque, and places each slot on its room's bar by its time", async () => {
     getCalendarMock.mockResolvedValue(calendarFixture([liveBooking()]));
     const { container } = render(<MemoryRouter initialEntries={["/hallkeeper/today"]}><DayBoardPage /></MemoryRouter>);
     await screen.findByText("Chamber dinner");
     expect(container.querySelector(".dayboard-now-plaque")?.textContent).toMatch(/^NOW\d\d:\d\d$/u);
     expect(container.querySelectorAll(".dayboard-tick-label").length).toBeGreaterThan(3);
-    const slab = container.querySelector<HTMLElement>(".dayboard-slab");
-    expect(slab?.style.left).toMatch(/%$/u);
-    expect(slab?.style.width).toMatch(/%$/u);
+    // The bar is a picture of the words above it, so it is not read aloud.
+    const bar = within(screen.getByRole("region", { name: "Grand Hall" })).getByText((_, element) => element?.classList.contains("dayboard-bar") === true);
+    expect(bar.getAttribute("aria-hidden")).toBe("true");
+    const segment = bar.querySelector<HTMLElement>(".dayboard-seg");
+    expect(segment?.style.left).toMatch(/%$/u);
+    expect(segment?.style.width).toMatch(/%$/u);
+    expect(bar.querySelector<HTMLElement>(".dayboard-bar-now")?.style.left).toMatch(/%$/u);
     // Every breathing slab declares the epoch phase it sampled when its breath began.
+    const slab = container.querySelector<HTMLElement>(".dayboard-slab");
     expect(slab?.style.getPropertyValue("--lt-epoch-phase-ms")).toMatch(/^\d+$/u);
   });
 
@@ -579,7 +584,10 @@ describe("DayBoardPage", () => {
     renderBoard();
     await openSlot("Chamber dinner");
     expect((await screen.findByText(/^Done \d{2}:\d{2} · Elaine$/u)).className).toBe("dayboard-seen-latest");
-    expect(screen.getAllByText(/^Done \d{2}:\d{2}$/u).map((element) => element.className)).toEqual(["dayboard-verb-words"]);
+    // On the room the verb says it once; no margin line repeats it.
+    const room = screen.getByRole("region", { name: "Grand Hall" });
+    expect(within(room).getAllByText(/^Done \d{2}:\d{2}$/u).map((element) => element.className)).toEqual(["dayboard-verb-words"]);
+    expect(room.querySelector(".dayboard-slab-seen")).toBeNull();
     // Nothing left to record but the clear-down.
     expect(within(screen.getByRole("group", { name: "Record what the room is doing" })).getAllByRole("button").map((button) => button.textContent))
       .toEqual(["Cleaned"]);
@@ -1273,13 +1281,13 @@ describe("DayBoardPage", () => {
       const settle = async (): Promise<void> => { for (let round = 0; round < 8; round += 1) await act(async () => { await Promise.resolve(); }); };
       await settle();
       // Yesterday's board, read to this morning's boundary, with the bar on it.
-      expect(screen.getByText(/^Tue 20 Jan/u)).toBeTruthy();
+      expect(screen.getByText(/^Tuesday 20 January/u)).toBeTruthy();
       expect(getCalendarMock.mock.calls.some(([, from, to]) => from === "2026-01-20T00:00:00.000Z" && to === "2026-01-21T04:00:00.000Z")).toBe(true);
       expect(screen.getByText("Late bar")).toBeTruthy();
       // The calendar day that has just begun is one step ahead, not the day on screen.
       fireEvent.click(screen.getByRole("button", { name: "Next day" }));
       await settle();
-      expect(screen.getByText(/^Wed 21 Jan/u)).toBeTruthy();
+      expect(screen.getByText(/^Wednesday 21 January/u)).toBeTruthy();
     } finally {
       vi.useRealTimers();
     }
@@ -1309,6 +1317,150 @@ describe("DayBoardPage", () => {
     expect(screen.getByRole("main", { name: "The Day Board, wall display" })).toBeTruthy();
     expect(document.querySelector("header.dashboard-layout-header")).toBeNull();
     expect(screen.queryByRole("link", { name: "Diary" })).toBeNull();
+  });
+
+  // --- The rooms, in the desks' register (concept C) ---------------------
+
+  /** A booking in a room at offsets from now, in minutes. */
+  function bookingAt(id: string, room: string, title: string, fromMin: number, toMin: number, overrides: Partial<CalendarResponse["entries"][number]> = {}): CalendarResponse["entries"][number] {
+    return {
+      ...liveBooking(), id, spaceId: room, title,
+      startsAt: new Date(Date.now() + fromMin * 60_000).toISOString(), endsAt: new Date(Date.now() + toMin * 60_000).toISOString(),
+      ...overrides,
+    } as CalendarResponse["entries"][number];
+  }
+
+  it("reads a room's day in words: what finished earlier, what it is doing, what is next and what comes after", async () => {
+    getCalendarMock.mockResolvedValue(calendarFixture([
+      bookingAt("00000000-0000-4000-8000-0000000000c1", GRAND_HALL, "Breakfast", -6 * 60, -5 * 60),
+      liveBooking(),
+      bookingAt("00000000-0000-4000-8000-0000000000c2", GRAND_HALL, "Ceilidh", 3 * 60, 5 * 60),
+      bookingAt("00000000-0000-4000-8000-0000000000c3", GRAND_HALL, "Late bar", 5 * 60 + 30, 7 * 60),
+    ]));
+    renderBoard();
+    const room = await screen.findByRole("region", { name: "Grand Hall" });
+    expect(within(room).getByText("4 bookings")).toBeTruthy();
+    const kinds = (title: string): string => within(room).getByRole("button", { name: new RegExp(`^${title},`, "u") }).className;
+    expect(kinds("Breakfast")).toContain("is-line");
+    expect(kinds("Chamber dinner")).toContain("is-lead");
+    expect(kinds("Ceilidh")).toContain("is-next");
+    expect(kinds("Late bar")).toContain("is-line");
+    expect(within(room).getAllByText(/^(Earlier|Next|Later)$/u).map((label) => label.textContent)).toEqual(["Earlier", "Next", "Later"]);
+    // Each slot is on the room's bar too, drawn and not read aloud.
+    expect(room.querySelectorAll(".dayboard-bar .dayboard-seg")).toHaveLength(4);
+  });
+
+  it("greets the hallkeeper by name over the day, and says what matters in one sentence", async () => {
+    getCalendarMock.mockResolvedValue(calendarFixture([liveBooking()]));
+    const request = venueRequest({ createdAt: new Date(Date.now() - 7 * 60_000).toISOString() });
+    render(
+      <MemoryRouter initialEntries={["/hallkeeper/today"]}>
+        <SlotRequestsContext.Provider value={{ ...SLOT_REQUESTS_UNAVAILABLE, status: "ready", requests: [request] }}>
+          <DayBoardPage />
+        </SlotRequestsContext.Provider>
+      </MemoryRouter>,
+    );
+    await screen.findByText("Chamber dinner");
+    expect(screen.getByText(/^Good (morning|afternoon|evening), Elaine$/u)).toBeTruthy();
+    const sentence = document.querySelector(".dayboard-summary");
+    expect(sentence?.textContent).toBe("One request has no one on it, waiting 7 min. One room is live.");
+    expect(sentence?.querySelector("strong[data-tone='copper']")?.textContent).toBe("One request");
+  });
+
+  it("counts the day on the copper plane, and a count shows only the rooms it names", async () => {
+    getCalendarMock.mockResolvedValue(calendarFixture([
+      liveBooking(),
+      bookingAt("00000000-0000-4000-8000-0000000000c4", SALOON, "Awards lunch", 4 * 60, 6 * 60),
+    ]));
+    renderBoard();
+    await screen.findByText("Chamber dinner");
+    const plane = screen.getByRole("group", { name: "The day in numbers" });
+    expect(within(plane).getAllByRole("button").map((stage) => stage.textContent)).toEqual([
+      "0 At risk", "0 Requests waiting", "1 Live", "0 Setting up", "1 Still to come", "2 Bookings",
+    ]);
+    expect(within(plane).getByRole("button", { name: "2 Bookings", pressed: true })).toBeTruthy();
+    expect(screen.getByText("Two rooms in use")).toBeTruthy();
+
+    fireEvent.click(within(plane).getByRole("button", { name: "1 Live" }));
+    expect(screen.getByRole("region", { name: "Grand Hall" })).toBeTruthy();
+    expect(screen.queryByRole("region", { name: "Saloon" })).toBeNull();
+    expect(screen.getByText("One room live")).toBeTruthy();
+    // The same count again lets the filter go.
+    fireEvent.click(within(plane).getByRole("button", { name: "1 Live", pressed: true }));
+    expect(screen.getByRole("region", { name: "Saloon" })).toBeTruthy();
+
+    // A room from the list and a count are two ways to narrow: one lets the other go.
+    fireEvent.click(within(plane).getByRole("button", { name: "1 Still to come" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Room" }), { target: { value: GRAND_HALL } });
+    expect(within(plane).getByRole("button", { name: "1 Still to come", pressed: false })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Grand Hall" })).toBeTruthy();
+    fireEvent.click(within(plane).getByRole("button", { name: "2 Bookings" }));
+    expect(screen.getByRole<HTMLSelectElement>("combobox", { name: "Room" }).value).toBe("");
+  });
+
+  it("lists the first few requests on a narrower screen, and the rest on a press", async () => {
+    getCalendarMock.mockResolvedValue(calendarFixture([liveBooking()]));
+    const requests = [1, 2, 3, 4, 5, 6].map((minutes) => venueRequest({
+      id: `00000000-0000-4000-8000-0000000000e${String(minutes)}`, createdAt: new Date(Date.now() - minutes * 60_000).toISOString(),
+    }));
+    render(
+      <MemoryRouter initialEntries={["/hallkeeper/today"]}>
+        <SlotRequestsContext.Provider value={{ ...SLOT_REQUESTS_UNAVAILABLE, status: "ready", requests }}>
+          <DayBoardPage />
+        </SlotRequestsContext.Provider>
+      </MemoryRouter>,
+    );
+    await screen.findByText("Chamber dinner");
+    const rail = screen.getByRole("complementary", { name: "Unowned requests" });
+    expect(within(rail).getByRole("heading", { name: "6 waiting" })).toBeTruthy();
+    expect(within(rail).getAllByRole("listitem")).toHaveLength(4);
+    fireEvent.click(within(rail).getByRole("button", { name: "Show all 6" }));
+    expect(within(rail).getAllByRole("listitem")).toHaveLength(6);
+  });
+
+  it("puts the requests in the forest panel beside the rooms on a wide desk, and an opened slot in their place", async () => {
+    const wide = vi.spyOn(window, "matchMedia").mockImplementation((query: string) => ({
+      matches: query === "(min-width: 1180px)", media: query, onchange: null,
+      addEventListener: () => undefined, removeEventListener: () => undefined,
+      addListener: () => undefined, removeListener: () => undefined, dispatchEvent: () => false,
+    }));
+    try {
+      getCalendarMock.mockResolvedValue(calendarFixture([liveBooking()]));
+      const request = venueRequest({ createdAt: new Date(Date.now() - 3 * 60_000).toISOString() });
+      const { container } = render(
+        <MemoryRouter initialEntries={["/hallkeeper/today"]}>
+          <SlotRequestsContext.Provider value={{ ...SLOT_REQUESTS_UNAVAILABLE, status: "ready", requests: [request] }}>
+            <DayBoardPage />
+          </SlotRequestsContext.Provider>
+        </MemoryRouter>,
+      );
+      await screen.findByText("Chamber dinner");
+      expect(container.querySelector(".dayboard")?.getAttribute("data-layout")).toBe("desk");
+      const panel = container.querySelector(".dayboard-panel");
+      expect(panel?.getAttribute("data-register")).toBe("forest");
+      expect(within(panel as HTMLElement).getByRole("complementary", { name: "Unowned requests" })).toBeTruthy();
+
+      await openSlot("Chamber dinner");
+      expect(within(panel as HTMLElement).getByRole("region", { name: "Grand Hall: Chamber dinner" })).toBeTruthy();
+      expect(screen.queryByRole("complementary", { name: "Unowned requests" })).toBeNull();
+      fireEvent.click(screen.getByRole("button", { name: "Close, back to the requests" }));
+      expect(within(panel as HTMLElement).getByRole("complementary", { name: "Unowned requests" })).toBeTruthy();
+    } finally {
+      wide.mockRestore();
+    }
+  });
+
+  it("unfolds an opened slot under its own room on a narrower screen", async () => {
+    getCalendarMock.mockResolvedValue(calendarFixture([
+      liveBooking(),
+      bookingAt("00000000-0000-4000-8000-0000000000c4", SALOON, "Awards lunch", 4 * 60, 6 * 60),
+    ]));
+    renderBoard();
+    await openSlot("Awards lunch");
+    const detail = screen.getByRole("region", { name: "Saloon: Awards lunch" });
+    expect(detail.closest(".dayboard-room-item")?.querySelector(".dayboard-room")?.getAttribute("aria-label")).toBe("Saloon");
+    fireEvent.click(within(detail).getByRole("button", { name: "Close, back to the rooms" }));
+    expect(screen.queryByRole("region", { name: "Saloon: Awards lunch" })).toBeNull();
   });
 
   it("the paper register's landmark is still named for the staff shell's header", async () => {
