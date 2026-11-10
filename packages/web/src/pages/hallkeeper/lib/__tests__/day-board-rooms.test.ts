@@ -65,6 +65,40 @@ describe("a room's day", () => {
     expect(day.tone).toBe("live");
   });
 
+  it("reddens a room's edge while anything ahead of it is at risk, not only what it shows first", () => {
+    const blocking = response([booking("a", -60, 60), booking("b", 3 * 60, 4 * 60), booking("c", 4 * 60 + 10, 5 * 60)]);
+    const board = deriveDayBoard({
+      ...blocking,
+      conflicts: { ...blocking.conflicts, conflicts: [{ id: "x", type: "insufficient_turnaround", severity: "blocking", spaceId: GRAND_HALL, entryIds: ["b", "c"], explanation: "10 minutes between events; this changeover needs 60." }] },
+    } as CalendarResponse, NOW, TZ);
+    const lane = board.lanes[0];
+    if (lane === undefined) throw new Error("no lane");
+    const day = roomDay(lane);
+    // The live dinner leads; the risk is under Next and Later.
+    expect(day.lead?.state).toBe("live");
+    expect(day.later.map((slot) => slot.state)).toEqual(["exception"]);
+    expect(day.tone).toBe("red");
+  });
+
+  it("names a function already under way beside the lead \"Also now\", not \"Next\"", () => {
+    const exhibition = { ...booking("x", -50 * 60, 52 * 60), title: "Exhibition" } as CalendarResponse["entries"][number];
+    const board = deriveDayBoard(response([exhibition, booking("t", -30, 60)]), NOW, TZ);
+    const lane = board.lanes[0];
+    if (lane === undefined) throw new Error("no lane");
+    const day = roomDay(lane);
+    expect(day.next?.bookingId).toBe("t");
+    expect(day.nextLabel).toBe("Also now");
+    expect(roomDay({ ...lane, slots: lane.slots.slice(0, 1) }).nextLabel).toBe("Next");
+  });
+
+  it("dimensions no turn-round between two bookings at once: a second option, a talk inside an exhibition", () => {
+    const board = deriveDayBoard(response([booking("first", 6 * 60, 10 * 60), booking("second", 6 * 60, 10 * 60)]), NOW, TZ);
+    expect(board.lanes[0]?.slots.map((slot) => slot.gapBefore)).toEqual([null, null]);
+    // Back to back is still a changeover, short of its rule.
+    const tight = deriveDayBoard(response([booking("a", 60, 120), booking("b", 120, 180)]), NOW, TZ);
+    expect(tight.lanes[0]?.slots[1]?.gapBefore).toEqual({ minutes: 0, neededMinutes: 60, short: true });
+  });
+
   it("fades a room whose day is done, and keeps a room with nothing on quiet", () => {
     const board = deriveDayBoard(response([booking("a", -6 * 60, -5 * 60)]), NOW, TZ);
     const [grandHall, saloon] = board.lanes.map(roomDay);
@@ -87,13 +121,20 @@ describe("the plane", () => {
     expect(board.lanes.map(roomDay).filter((day) => roomInFocus(day, "ahead")).map((day) => day.room.name)).toEqual(["Saloon"]);
   });
 
-  it("says what the list shows in words a person would", () => {
-    expect(showingLine(6, "all")).toBe("Six rooms in use");
-    expect(showingLine(1, "risk")).toBe("One room at risk");
-    expect(showingLine(0, "live")).toBe("No rooms live");
-    expect(showingLine(12, "waiting")).toBe("12 rooms with requests waiting");
+  it("says what the list shows by naming its rooms, never a second count beside the plane's", () => {
+    expect(showingLine(["Grand Hall", "Saloon", "Reception Room", "Robert Adam Room", "North Gallery", "South Gallery"], "all")).toBe("Six rooms in use");
+    expect(showingLine(["Grand Hall"], "risk")).toBe("At risk in Grand Hall");
+    expect(showingLine(["Saloon", "Robert Adam Room", "North Gallery"], "live")).toBe("Live now in Saloon, Robert Adam Room and North Gallery");
+    expect(showingLine(["A", "B", "C", "D"], "waiting")).toBe("Requests waiting in four rooms");
+    expect(showingLine([], "live")).toBe("Nothing is live");
     expect(countWord(10)).toBe("Ten");
     expect(countWord(11)).toBe("11");
+  });
+
+  it("counts every request nobody has today, as the list and the sentence do", () => {
+    const board = deriveDayBoard(response([booking("a", -60, 60)]), NOW, TZ, [request("r1", "a", 5)]);
+    expect(planeStages(board.lanes, 3).find((stage) => stage.focus === "waiting")?.count).toBe(3);
+    expect(planeStages(board.lanes).find((stage) => stage.focus === "waiting")?.count).toBe(1);
   });
 });
 
@@ -109,9 +150,14 @@ describe("the sentence under the title", () => {
   });
 
   it("names one request and how long it has waited, or that every request is in hand", () => {
-    expect(today([booking("a", -60, 60)], [request("r1", "a", 7)])).toBe("One request has no one on it, waiting 7 min. One room is live.");
+    expect(today([booking("a", -60, 60)], [request("r1", "a", 7)])).toBe("One request has no one on it, waiting 7 min. One function is live.");
     expect(today([booking("a", -60, 60)], [request("r1", "a", 7, "00000000-0000-4000-8000-0000000000ff")]))
-      .toBe("Every request is in hand. One room is live.");
+      .toBe("Every request is in hand. One function is live.");
+  });
+
+  it("counts functions, so one room live and getting ready for its next says both", () => {
+    // The lunch is live; the next function's organisers are due now, its setup an hour off.
+    expect(today([booking("a", -60, 30), booking("b", 60, 160)])).toBe("One function is live and one is getting ready.");
   });
 
   it("names a room running over, from what was seen in it", () => {
@@ -124,10 +170,20 @@ describe("the sentence under the title", () => {
     expect(today([booking("a", -6 * 60, -5 * 60)])).toBe("Every room is done for the day.");
   });
 
-  it("on another day says how much is booked", () => {
+  it("on another day says how much is booked, and what is at risk without calling it now", () => {
     const board = deriveDayBoard(response([booking("a", 4 * 60, 5 * 60), booking("b", 6 * 60, 7 * 60, { spaceId: SALOON }), booking("c", 8 * 60, 9 * 60)]), NOW, TZ);
     const parts = boardSummary({ lanes: board.lanes, unowned: board.unowned, today: false, nowMs: NOW });
     expect(summaryText(parts ?? [])).toBe("Three bookings across two rooms.");
+    const pairs = response([booking("a", 4 * 60, 5 * 60), booking("b", 5 * 60 + 5, 6 * 60), booking("c", 4 * 60, 5 * 60, { spaceId: SALOON }), booking("d", 5 * 60 + 5, 6 * 60, { spaceId: SALOON })]);
+    const atRisk = deriveDayBoard({
+      ...pairs,
+      conflicts: { ...pairs.conflicts, conflicts: [
+        { id: "x", type: "insufficient_turnaround", severity: "blocking", spaceId: GRAND_HALL, entryIds: ["a", "b"], explanation: "5 minutes; needs 60." },
+        { id: "y", type: "insufficient_turnaround", severity: "blocking", spaceId: SALOON, entryIds: ["c", "d"], explanation: "5 minutes; needs 60." },
+      ] },
+    } as CalendarResponse, NOW, TZ);
+    expect(summaryText(boardSummary({ lanes: atRisk.lanes, unowned: [], today: false, nowMs: NOW }) ?? []))
+      .toBe("Four bookings across two rooms. Two changeovers are at risk: Grand Hall and Saloon.");
   });
 });
 
@@ -138,6 +194,10 @@ describe("a booking that runs for days", () => {
     expect(runningDays(doors, end, Date.parse("2026-11-14T14:20:00.000Z"), TZ)).toEqual({ day: 3, of: 5 });
     expect(runningDays(doors, end, Date.parse("2026-11-16T09:00:00.000Z"), TZ)).toEqual({ day: 5, of: 5 });
     expect(runningDays(Date.parse("2026-11-14T18:30:00.000Z"), Date.parse("2026-11-15T00:30:00.000Z"), Date.parse("2026-11-15T00:10:00.000Z"), TZ)).toBeNull();
+    // Ten to ten across the October clock change (25 hours) reads as it does
+    // any other weekend (24 hours): two days either way.
+    expect(runningDays(Date.parse("2026-10-24T09:00:00.000Z"), Date.parse("2026-10-25T10:00:00.000Z"), Date.parse("2026-10-24T12:00:00.000Z"), TZ)).toEqual({ day: 1, of: 2 });
+    expect(runningDays(Date.parse("2026-10-17T09:00:00.000Z"), Date.parse("2026-10-18T09:00:00.000Z"), Date.parse("2026-10-17T12:00:00.000Z"), TZ)).toEqual({ day: 1, of: 2 });
   });
 
   it("widens the window only by its own moments on the day", () => {

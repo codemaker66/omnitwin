@@ -872,11 +872,11 @@
       "sourceBaseCommit": "f7b383c6628de40f5d0480a6d0233546fd685874",
       "sourceState": "Reviewed working-tree source based on sourceBaseCommit; sourceFileSha256 binds the actual E2E bytes. This admission does not claim the restated case already existed in that base commit.",
       "sourceFile": "packages/web/e2e/day-board.spec.ts",
-      "sourceFileSha256": "cceb5a12cfec6c9aa718e2f0cbc307d989e1cab560608fc9912bbc0f28140c62",
+      "sourceFileSha256": "1b7ad9a830b7db7f3feae081173f2909b5817209daa3e2ebc26a28e67d006ef7",
       "retiredSourceFile": "packages/web/e2e/day-board.spec.ts",
       "retiredSourceFileGitBlobSha256": "2e18eca9849c39f4c38d962bc4fa81294266bd8a07b78a218cf9d6553c657989",
       "inventoryCommand": "pnpm --filter @omnitwin/web exec playwright test --list --project=chromium --update-snapshots=none --reporter=json",
-      "inventorySha256": "7a007154e73219532d908242b9194bb990601046c146b71cd779cd6cd5c4e41d",
+      "inventorySha256": "a0cd21e967ace60211961daae04f0df5995fb04ef02280c668c5bfa39cb4bb13",
       "caseIds": [
         "1b07f1b6eeb3a7bdbe8c-63ca41fae157497f7f90"
       ],

@@ -28,11 +28,19 @@ export interface RoomDay {
   readonly lead: DayBoardSlot | null;
   /** The function after the lead. */
   readonly next: DayBoardSlot | null;
+  /** How the next is named: "Next", or "Also now" when it is already under
+   *  way beside the lead (a talk inside a running exhibition). */
+  readonly nextLabel: "Next" | "Also now";
   /** Everything after the next. */
   readonly later: readonly DayBoardSlot[];
-  /** The room's edge: red while a slot it shows is at risk, else its lead's
-   *  tone, faded once the room's day is done. */
+  /** The room's edge: red while anything still ahead of it is at risk, else
+   *  its lead's tone, faded once the room's day is done. */
   readonly tone: DayBoardTone;
+}
+
+/** Under way: past its doors and not finished. */
+function underWay(slot: DayBoardSlot): boolean {
+  return slot.state === "live" || slot.state === "clear-down" || slot.exception === "overrun";
 }
 
 export function roomDay(lane: DayBoardLane): RoomDay {
@@ -40,13 +48,14 @@ export function roomDay(lane: DayBoardLane): RoomDay {
   const ahead = lane.slots.filter((slot) => slot.state !== "done");
   const lead = ahead[0] ?? null;
   const next = ahead[1] ?? null;
-  const atRisk = lead?.state === "exception" || next?.state === "exception";
+  const atRisk = ahead.some((slot) => slot.state === "exception");
   return {
     room: lane.room,
     slots: lane.slots,
     earlier,
     lead,
     next,
+    nextLabel: next !== null && underWay(next) ? "Also now" : "Next",
     later: ahead.slice(2),
     tone: atRisk ? "red" : lead?.tone ?? (earlier.length > 0 ? "faded" : "quiet"),
   };
@@ -87,15 +96,17 @@ export interface PlaneStage {
   readonly count: number;
 }
 
-/** The plane's counts, in the order a day asks for attention. "Requests
- *  waiting" counts the requests nobody has on the day's own bookings, which
- *  is what the stage's filter shows. */
-export function planeStages(lanes: readonly DayBoardLane[]): readonly PlaneStage[] {
+/** The plane's counts of functions, in the order a day asks for attention.
+ *  "Requests waiting" counts the requests nobody has: today every one of
+ *  them, as the list beside the rooms and the sentence count them (`waiting`);
+ *  another day, those on its own bookings. Its filter shows the rooms they
+ *  are on. */
+export function planeStages(lanes: readonly DayBoardLane[], waiting?: number): readonly PlaneStage[] {
   const slots = lanes.flatMap((lane) => lane.slots);
   const count = (focus: BoardFocus): number => slots.filter((slot) => slotInFocus(slot, focus)).length;
   return [
     { focus: "risk", label: "At risk", count: count("risk") },
-    { focus: "waiting", label: "Requests waiting", count: slots.reduce((sum, slot) => sum + (slot.attention?.unownedCount ?? 0), 0) },
+    { focus: "waiting", label: "Requests waiting", count: waiting ?? slots.reduce((sum, slot) => sum + (slot.attention?.unownedCount ?? 0), 0) },
     { focus: "live", label: "Live", count: count("live") },
     { focus: "setup", label: "Setting up", count: count("setup") },
     { focus: "ahead", label: "Still to come", count: count("ahead") },
@@ -114,16 +125,25 @@ function plural(count: number, one: string, many: string): string {
   return count === 1 ? one : many;
 }
 
-/** What the list of rooms shows under the plane: "Six rooms in use". */
-export function showingLine(count: number, focus: BoardFocus): string {
-  const rooms = `${countWord(count)} ${plural(count, "room", "rooms")}`;
+/** "A, B and C". */
+function listed(names: readonly string[]): string {
+  if (names.length <= 1) return names[0] ?? "";
+  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1] ?? ""}`;
+}
+
+/** What the list of rooms shows under the plane. It names the rooms (the
+ *  plane counts functions, so a second count here would only disagree):
+ *  "Six rooms in use", "Live now in Saloon and North Gallery". */
+export function showingLine(rooms: readonly string[], focus: BoardFocus): string {
+  const where = rooms.length > 3 ? `${countWord(rooms.length).toLowerCase()} rooms` : listed(rooms);
+  const none = rooms.length === 0;
   switch (focus) {
-    case "all": return `${rooms} in use`;
-    case "risk": return `${rooms} at risk`;
-    case "waiting": return `${rooms} with requests waiting`;
-    case "live": return `${rooms} live`;
-    case "setup": return `${rooms} setting up`;
-    case "ahead": return `${rooms} with bookings still to come`;
+    case "all": return `${countWord(rooms.length)} ${plural(rooms.length, "room", "rooms")} in use`;
+    case "risk": return none ? "Nothing is at risk" : `At risk in ${where}`;
+    case "waiting": return none ? "No room has a request waiting" : `Requests waiting in ${where}`;
+    case "live": return none ? "Nothing is live" : `Live now in ${where}`;
+    case "setup": return none ? "Nothing is setting up" : `Setting up in ${where}`;
+    case "ahead": return none ? "Nothing still to come" : `Still to come in ${where}`;
     default: {
       const exhausted: never = focus;
       return exhausted;
@@ -138,18 +158,16 @@ export function showingLine(count: number, focus: BoardFocus): string {
 /** A run of the sentence; a strong run may carry the tone of what it names. */
 export type SummaryPart = string | { readonly strong: string; readonly tone?: "risk" | "copper" };
 
-/** "A, B and C". */
-function listed(names: readonly string[]): string {
-  if (names.length <= 1) return names[0] ?? "";
-  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1] ?? ""}`;
-}
-
-function riskParts(lanes: readonly DayBoardLane[]): readonly SummaryPart[] {
+function riskParts(lanes: readonly DayBoardLane[], today: boolean): readonly SummaryPart[] {
   const rooms = lanes.filter((lane) => lane.slots.some((slot) => slot.state === "exception"));
   const only = rooms[0];
   if (only === undefined) return [];
   if (rooms.length > 1) {
-    return [{ strong: `${countWord(rooms.length)} rooms`, tone: "risk" }, ` need you now: ${listed(rooms.map((lane) => lane.room.name))}.`];
+    const names = listed(rooms.map((lane) => lane.room.name));
+    // "Now" only of today: another day's changeover is at risk, not urgent.
+    return today
+      ? [{ strong: `${countWord(rooms.length)} rooms`, tone: "risk" }, ` need you now: ${names}.`]
+      : [{ strong: `${countWord(rooms.length)} changeovers`, tone: "risk" }, ` are at risk: ${names}.`];
   }
   const overrun = only.slots.some((slot) => slot.exception === "overrun");
   return overrun
@@ -173,15 +191,18 @@ function requestParts(lanes: readonly DayBoardLane[], unowned: readonly UnownedR
   ];
 }
 
+/** Functions, as the plane counts them: a room can hold a live function and
+ *  the next one getting ready, and both are said. */
 function activityParts(lanes: readonly DayBoardLane[]): readonly SummaryPart[] {
-  const live = lanes.filter((lane) => lane.slots.some((slot) => slot.state === "live")).length;
-  const ready = lanes.filter((lane) => lane.slots.some((slot) => GETTING_READY.has(slot.state))).length;
+  const slots = lanes.flatMap((lane) => lane.slots);
+  const live = slots.filter((slot) => slot.state === "live").length;
+  const ready = slots.filter((slot) => GETTING_READY.has(slot.state)).length;
   if (live > 0 && ready > 0) {
-    return [`${countWord(live)} ${plural(live, "room is", "rooms are")} live and ${countWord(ready).toLowerCase()} ${plural(ready, "is", "are")} getting ready.`];
+    return [`${countWord(live)} ${plural(live, "function is", "functions are")} live and ${countWord(ready).toLowerCase()} ${plural(ready, "is", "are")} getting ready.`];
   }
-  if (live > 0) return [`${countWord(live)} ${plural(live, "room is", "rooms are")} live.`];
-  if (ready > 0) return [`${countWord(ready)} ${plural(ready, "room is", "rooms are")} getting ready.`];
-  const ahead = lanes.reduce((sum, lane) => sum + lane.slots.filter((slot) => slot.state === "scheduled").length, 0);
+  if (live > 0) return [`${countWord(live)} ${plural(live, "function is", "functions are")} live.`];
+  if (ready > 0) return [`${countWord(ready)} ${plural(ready, "function is", "functions are")} getting ready.`];
+  const ahead = slots.filter((slot) => slot.state === "scheduled").length;
   if (ahead > 0) return [`${countWord(ahead)} ${plural(ahead, "booking is", "bookings are")} still to come.`];
   const clearing = lanes.filter((lane) => lane.slots.some((slot) => slot.state === "clear-down")).length;
   if (clearing > 0) return [`${countWord(clearing)} ${plural(clearing, "room is", "rooms are")} clearing down.`];
@@ -209,7 +230,7 @@ export function boardSummary(input: {
   const { lanes, unowned, today, nowMs } = input;
   const bookings = lanes.reduce((sum, lane) => sum + lane.slots.length, 0);
   if (bookings === 0) return null;
-  const risk = riskParts(lanes);
+  const risk = riskParts(lanes, today);
   if (!today) {
     const rooms = lanes.filter((lane) => lane.slots.length > 0).length;
     return sentences([

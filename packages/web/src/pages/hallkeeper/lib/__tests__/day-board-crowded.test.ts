@@ -178,11 +178,11 @@ describe("the rooms board on a crowded day, at its busiest moment (14:20)", () =
     expect(rooms.filter((day) => roomInFocus(day, "all"))).toHaveLength(6);
   });
 
-  it("says what matters in one sentence: the rooms at risk, the requests nobody has, the rooms live", () => {
+  it("says what matters in one sentence: the rooms at risk, the requests nobody has, the functions live", () => {
     const parts = boardSummary({ lanes: busiest.lanes, unowned: busiest.unowned, today: true, nowMs: day.busiestAtMs });
     expect(parts).not.toBeNull();
     expect(summaryText(parts ?? [])).toBe(
-      `Two rooms need you now: Grand Hall and South Gallery. ${String(busiest.unowned.length)} requests have no one on them; the longest has waited 1 h 50. Three rooms are live and one is getting ready.`,
+      `Two rooms need you now: Grand Hall and South Gallery. ${String(busiest.unowned.length)} requests have no one on them; the longest has waited 1 h 50. Three functions are live and one is getting ready.`,
     );
     expect(parts?.filter((part) => typeof part !== "string" && part.tone === "risk")).toEqual([{ strong: "Two rooms", tone: "risk" }]);
   });

@@ -469,7 +469,7 @@ button.dayboard-stage:hover { background: var(--house-plane-hover); }
   box-sizing: border-box;
   display: inline-flex;
   align-items: center;
-  min-height: 40px;
+  min-height: 44px;
   padding: 0 14px;
   border: 1px solid var(--house-edge);
   border-radius: 3px;
@@ -493,7 +493,7 @@ button.dayboard-stage:hover { background: var(--house-plane-hover); }
 
 .dayboard-room-field select {
   min-width: 11em;
-  min-height: 38px;
+  min-height: 44px;
   text-transform: none;
   letter-spacing: 0;
 }
@@ -638,6 +638,7 @@ button.dayboard-stage:hover { background: var(--house-plane-hover); }
   top: 0;
   left: 0;
   transform: translateX(-50%);
+  white-space: nowrap;
   padding: 2px 7px;
   border-radius: 2px;
   background: var(--house-copper-text);
@@ -648,6 +649,10 @@ button.dayboard-stage:hover { background: var(--house-plane-hover); }
   line-height: 14px;
   white-space: nowrap;
 }
+
+/* Near the ends the plaque leans inward, its line still on the present. */
+.dayboard-now[data-edge="end"] .dayboard-now-plaque { transform: translateX(calc(-100% + 8px)); }
+.dayboard-now[data-edge="start"] .dayboard-now-plaque { transform: translateX(-8px); }
 
 .dayboard-now-time {
   margin-left: 5px;
@@ -961,6 +966,17 @@ button.dayboard-slab:active { transform: translateY(1px); }
    and words say it. */
 .is-line[data-motion="none"] .dayboard-dot { display: none; }
 
+/* On a touch screen every slot is a finger's height (44 px), however few
+   its words. */
+@media (pointer: coarse) {
+  button.dayboard-slab.is-line,
+  button.dayboard-slab.is-next {
+    min-height: 44px;
+    align-content: center;
+    align-items: center;
+  }
+}
+
 /* --- the bar: the room's whole day, with the present marked ----------------- */
 
 .dayboard-bar {
@@ -1264,7 +1280,7 @@ button.dayboard-rail-item:disabled { cursor: default; }
 
 .dayboard-rail-more {
   justify-self: start;
-  min-height: 40px;
+  min-height: 44px;
   margin-top: 4px;
   padding: 0 14px;
   border: 1px solid var(--house-edge);
@@ -1384,7 +1400,7 @@ button.dayboard-rail-item:disabled { cursor: default; }
   flex: none;
   align-items: center;
   gap: 6px;
-  min-height: 40px;
+  min-height: 44px;
   padding: 0 14px 0 10px;
   border: 1px solid var(--house-forest-edge);
   border-radius: 999px;
@@ -1627,7 +1643,7 @@ button.dayboard-rail-item:disabled { cursor: default; }
 .dayboard-open-event {
   display: inline-flex;
   align-items: center;
-  min-height: 40px;
+  min-height: 44px;
   color: var(--house-forest-ink-1);
   font-size: 14.5px;
   font-weight: 500;
@@ -1780,6 +1796,14 @@ button.dayboard-rail-item:disabled { cursor: default; }
   .dayboard-day-field { flex: 1 0 100%; margin: 8px 0 0; }
   .dayboard-day-field input { width: 100%; }
   .dayboard-next-line { font-size: 17px; }
+  /* This hallkeeper's next action at the top, always (D7): it stays in
+     view while the rooms scroll under it. */
+  .dayboard[data-layout="phone"] .dayboard-next {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    box-shadow: 0 4px 14px #50422914;
+  }
   .dayboard-plane {
     grid-template-columns: repeat(3, minmax(0, 1fr));
     margin: 20px -18px 4px;
@@ -1991,12 +2015,16 @@ button.dayboard-rail-item:disabled { cursor: default; }
 .dayboard[data-register="wall"] .dayboard-chip { font-size: clamp(12px, 1.25vh, 14px); }
 
 /* A short screen keeps its height for the rooms' words. Every slot says its
-   state in words and an icon, so it spares the legend, the photographs and
-   the reason a changeover is at risk, which the office view and the phone
-   give in full. */
+   state in words and an icon, so it spares the legend, the photographs, the
+   reason a changeover is at risk and the ring on what comes next (the plane
+   counts every request and the next action names the first), all of which
+   the office view and the phone give in full. */
 @media (max-height: 820px) {
-  .dayboard[data-register="wall"] :is(.dayboard-legend, .dayboard-slab-why, .dayboard-room-photo) { display: none; }
+  .dayboard[data-register="wall"] :is(.dayboard-legend, .dayboard-slab-why, .dayboard-room-photo, .is-next .dayboard-ring) { display: none; }
   .dayboard[data-register="wall"] .dayboard-room { grid-template-columns: minmax(0, 1fr); }
+  /* Seven rooms or more on a short screen: each keeps what it is doing and
+     its day's bar; what comes next is a step away on the office view. */
+  .dayboard[data-register="wall"] .dayboard-rooms[data-count="many"] .dayboard-line.is-next { display: none; }
 }
 .dayboard[data-register="wall"] .dayboard-notice { margin: 0; }
 
@@ -2037,6 +2065,18 @@ button.dayboard-rail-item:disabled { cursor: default; }
     color: #000;
     background: #fff;
   }
+
+  /* The wall is held to one screen; paper takes as many pages as it needs. */
+  .dayboard-wall,
+  .dayboard[data-register="wall"],
+  .dayboard[data-register="wall"] .dayboard-rooms,
+  .dayboard[data-register="wall"] .dayboard-room-item {
+    display: block;
+    height: auto;
+    overflow: visible;
+  }
+
+  .dayboard-wall-plane { clip-path: none; background: #fff; }
 
   .dayboard-desk,
   .dayboard-sheet {

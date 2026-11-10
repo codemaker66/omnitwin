@@ -1363,7 +1363,7 @@ describe("DayBoardPage", () => {
     await screen.findByText("Chamber dinner");
     expect(screen.getByText(/^Good (morning|afternoon|evening), Elaine$/u)).toBeTruthy();
     const sentence = document.querySelector(".dayboard-summary");
-    expect(sentence?.textContent).toBe("One request has no one on it, waiting 7 min. One room is live.");
+    expect(sentence?.textContent).toBe("One request has no one on it, waiting 7 min. One function is live.");
     expect(sentence?.querySelector("strong[data-tone='copper']")?.textContent).toBe("One request");
   });
 
@@ -1375,26 +1375,27 @@ describe("DayBoardPage", () => {
     renderBoard();
     await screen.findByText("Chamber dinner");
     const plane = screen.getByRole("group", { name: "The day in numbers" });
-    expect(within(plane).getAllByRole("button").map((stage) => stage.textContent)).toEqual([
-      "0 At risk", "0 Requests waiting", "1 Live", "0 Setting up", "1 Still to come", "2 Bookings",
+    // Said as the desks say their stages.
+    expect(within(plane).getAllByRole("button").map((stage) => stage.getAttribute("aria-label"))).toEqual([
+      "At risk, 0", "Requests waiting, 0", "Live, 1", "Setting up, 0", "Still to come, 1", "Bookings, 2",
     ]);
-    expect(within(plane).getByRole("button", { name: "2 Bookings", pressed: true })).toBeTruthy();
+    expect(within(plane).getByRole("button", { name: "Bookings, 2", pressed: true })).toBeTruthy();
     expect(screen.getByText("Two rooms in use")).toBeTruthy();
 
-    fireEvent.click(within(plane).getByRole("button", { name: "1 Live" }));
+    fireEvent.click(within(plane).getByRole("button", { name: "Live, 1" }));
     expect(screen.getByRole("region", { name: "Grand Hall" })).toBeTruthy();
     expect(screen.queryByRole("region", { name: "Saloon" })).toBeNull();
-    expect(screen.getByText("One room live")).toBeTruthy();
+    expect(screen.getByText("Live now in Grand Hall")).toBeTruthy();
     // The same count again lets the filter go.
-    fireEvent.click(within(plane).getByRole("button", { name: "1 Live", pressed: true }));
+    fireEvent.click(within(plane).getByRole("button", { name: "Live, 1", pressed: true }));
     expect(screen.getByRole("region", { name: "Saloon" })).toBeTruthy();
 
     // A room from the list and a count are two ways to narrow: one lets the other go.
-    fireEvent.click(within(plane).getByRole("button", { name: "1 Still to come" }));
+    fireEvent.click(within(plane).getByRole("button", { name: "Still to come, 1" }));
     fireEvent.change(screen.getByRole("combobox", { name: "Room" }), { target: { value: GRAND_HALL } });
-    expect(within(plane).getByRole("button", { name: "1 Still to come", pressed: false })).toBeTruthy();
+    expect(within(plane).getByRole("button", { name: "Still to come, 1", pressed: false })).toBeTruthy();
     expect(screen.getByRole("region", { name: "Grand Hall" })).toBeTruthy();
-    fireEvent.click(within(plane).getByRole("button", { name: "2 Bookings" }));
+    fireEvent.click(within(plane).getByRole("button", { name: "Bookings, 2" }));
     expect(screen.getByRole<HTMLSelectElement>("combobox", { name: "Room" }).value).toBe("");
   });
 
@@ -1461,6 +1462,75 @@ describe("DayBoardPage", () => {
     expect(detail.closest(".dayboard-room-item")?.querySelector(".dayboard-room")?.getAttribute("aria-label")).toBe("Saloon");
     fireEvent.click(within(detail).getByRole("button", { name: "Close, back to the rooms" }));
     expect(screen.queryByRole("region", { name: "Saloon: Awards lunch" })).toBeNull();
+  });
+
+  it("keeps an opened slot's room on the board when a count would hide it, so a Done says it was recorded", async () => {
+    const booking = liveBooking();
+    const liveAt = new Date(Date.now() - 20 * 60_000).toISOString();
+    seen.list.mockResolvedValue([{
+      id: "00000000-0000-4000-8000-00000000f030", venueId: VENUE, bookingId: booking.id, spaceId: GRAND_HALL, kind: "live",
+      observedAt: liveAt, recordedAt: liveAt, actorUserId: null, actorName: "Elaine", actorRole: "hallkeeper", idempotencyKey: "00000000-0000-4000-8000-00000000f032",
+    }]);
+    seen.record.mockImplementation((venueId, input) => {
+      const tap = input as { bookingId: string; kind: string; observedAt: string; idempotencyKey: string };
+      return Promise.resolve({
+        id: "00000000-0000-4000-8000-00000000f031", venueId, bookingId: tap.bookingId, spaceId: GRAND_HALL, kind: tap.kind,
+        observedAt: tap.observedAt, recordedAt: tap.observedAt, actorUserId: null, actorName: "Elaine", actorRole: "hallkeeper", idempotencyKey: tap.idempotencyKey,
+      });
+    });
+    getCalendarMock.mockResolvedValue(calendarFixture([booking, bookingAt("00000000-0000-4000-8000-0000000000c4", SALOON, "Awards lunch", 4 * 60, 6 * 60)]));
+    renderBoard();
+    await screen.findByText("Chamber dinner");
+    const plane = screen.getByRole("group", { name: "The day in numbers" });
+    fireEvent.click(within(plane).getByRole("button", { name: "Live, 1" }));
+    await openSlot("Chamber dinner");
+    const group = screen.getByRole("group", { name: "Record what the room is doing" });
+    fireEvent.click(within(group).getByRole("button", { name: "Done" }));
+    // The dinner is done and no longer live, yet its room and slot stay.
+    expect(await screen.findByText("Done · recorded")).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Grand Hall: Chamber dinner" })).toBeTruthy();
+    expect(screen.getByText("Nothing is live")).toBeTruthy();
+
+    // The next action opens a room the count hides, and the slot shows.
+    fireEvent.click(screen.getByRole("button", { name: "Close, back to the rooms" }));
+    fireEvent.click(within(plane).getByRole("button", { name: "Still to come, 1" }));
+    expect(screen.queryByRole("region", { name: "Grand Hall" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /^Next: Saloon · Awards lunch/u }));
+    expect(screen.getByRole("region", { name: "Saloon: Awards lunch" })).toBeTruthy();
+  });
+
+  it("leans the NOW plaque inward at the evening's end, so it never runs past the sheet", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"], now: Date.parse("2026-01-21T22:45:00.000Z") });
+    try {
+      getCalendarMock.mockResolvedValue(calendarFixture([liveBooking()]));
+      const { container } = render(<MemoryRouter initialEntries={["/hallkeeper/today"]}><DayBoardPage /></MemoryRouter>);
+      for (let round = 0; round < 6; round += 1) await act(async () => { await Promise.resolve(); });
+      expect(container.querySelector(".dayboard-now")?.getAttribute("data-edge")).toBe("end");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps the keyboard on a slot that moves from Next to what the room is doing", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"], now: Date.now() });
+    try {
+      getCalendarMock.mockResolvedValue(calendarFixture([
+        bookingAt("00000000-0000-4000-8000-0000000000c5", GRAND_HALL, "Lunch", -60, 1),
+        bookingAt("00000000-0000-4000-8000-0000000000c6", GRAND_HALL, "Supper", 5 * 60, 7 * 60),
+      ]));
+      const { container } = render(<MemoryRouter initialEntries={["/hallkeeper/today"]}><DayBoardPage /></MemoryRouter>);
+      for (let round = 0; round < 6; round += 1) await act(async () => { await Promise.resolve(); });
+      const supper = screen.getByRole("button", { name: /^Supper,/u });
+      expect(supper.className).toContain("is-next");
+      act(() => { supper.focus(); });
+      // The lunch ends: the supper becomes what the room will do first.
+      await act(async () => { await vi.advanceTimersByTimeAsync(2 * 60_000); });
+      const moved = container.querySelector(".dayboard-slab[data-booking='00000000-0000-4000-8000-0000000000c6']");
+      expect(moved?.className).toContain("is-lead");
+      expect(document.activeElement).toBe(moved);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("the paper register's landmark is still named for the staff shell's header", async () => {

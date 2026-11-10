@@ -2,12 +2,14 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
   useSyncExternalStore,
   type CSSProperties,
   type ReactElement,
+  type RefObject,
 } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { ArrowLeft, ArrowRight, Bell, Clock, WifiOff } from "lucide-react";
@@ -158,6 +160,40 @@ export { DayBoardSlotRequestsContext };
 export type { SlotRequestsComponent, SlotRequestsProps };
 
 const NEVER_CORRECTED = (): boolean => false;
+/** A booking's id as the API gives it: safe inside an attribute selector. */
+const BOOKING_ID = /^[0-9a-f-]+$/iu;
+
+/**
+ * A slot that moves between its room's lines (the next function becoming
+ * what the room is doing) is drawn afresh in its new place, and a keyboard's
+ * place on it would fall to the page. It is put back. A move the person made
+ * fires focusout and lets the place go; a slot redrawn fires none.
+ */
+function useKeptSlabFocus(boardRef: RefObject<HTMLDivElement | null>): void {
+  const kept = useRef<string | null>(null);
+  useEffect(() => {
+    const board = boardRef.current;
+    if (board === null) return;
+    const onIn = (event: FocusEvent): void => {
+      const slab = event.target instanceof Element ? event.target.closest<HTMLElement>(".dayboard-slab[data-booking]") : null;
+      kept.current = slab?.dataset.booking ?? null;
+    };
+    const onOut = (): void => { kept.current = null; };
+    board.addEventListener("focusin", onIn);
+    board.addEventListener("focusout", onOut);
+    return () => {
+      board.removeEventListener("focusin", onIn);
+      board.removeEventListener("focusout", onOut);
+    };
+  }, [boardRef]);
+  useLayoutEffect(() => {
+    const booking = kept.current;
+    if (booking === null || !BOOKING_ID.test(booking)) return;
+    const active = document.activeElement;
+    if (active !== null && active !== document.body) return;
+    boardRef.current?.querySelector<HTMLElement>(`.dayboard-slab[data-booking="${booking}"]`)?.focus({ preventScroll: true });
+  });
+}
 
 /** Whether the corrected clock disagrees with the device by a minute or more. */
 function useClockCorrected(): boolean {
@@ -176,12 +212,14 @@ function railWords(item: UnownedRequest): ReactElement {
 }
 
 /** The requests nobody has: urgent first, oldest first within that. Today's,
- *  whichever day is on screen. A narrow screen lists the first few. */
-function Rail({ unowned, today, onOpen, wall, preview }: {
+ *  whichever day is on screen. A narrow screen lists the first few. The wall
+ *  shows none of it (concept C): its plane says how many wait, its next
+ *  action names the first, and each room's ring breathes until somebody
+ *  owns it. */
+function Rail({ unowned, today, onOpen, preview }: {
   readonly unowned: readonly UnownedRequest[];
   readonly today: boolean;
   readonly onOpen: (bookingId: string | null) => void;
-  readonly wall: boolean;
   readonly preview: boolean;
 }): ReactElement {
   const [all, setAll] = useState(false);
@@ -199,20 +237,16 @@ function Rail({ unowned, today, onOpen, wall, preview }: {
         <ul className="dayboard-rail-list">
           {shown.map((item) => (
             <li key={item.id}>
-              {wall
-                ? <span className="dayboard-rail-item" data-urgency={item.urgency}><Bell size={14} aria-hidden="true" />{railWords(item)}</span>
-                : (
-                  <button
-                    type="button"
-                    className="dayboard-rail-item"
-                    data-urgency={item.urgency}
-                    disabled={item.bookingId === null}
-                    onClick={() => { onOpen(item.bookingId); }}
-                  >
-                    <Bell size={14} aria-hidden="true" />
-                    {railWords(item)}
-                  </button>
-                )}
+              <button
+                type="button"
+                className="dayboard-rail-item"
+                data-urgency={item.urgency}
+                disabled={item.bookingId === null}
+                onClick={() => { onOpen(item.bookingId); }}
+              >
+                <Bell size={14} aria-hidden="true" />
+                {railWords(item)}
+              </button>
             </li>
           ))}
         </ul>
@@ -389,6 +423,7 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
   // ← Today → (roadmap N4): tomorrow's rooms are a key away, not a picker.
   // The keys are the board's while focus rests on it or on nothing.
   const boardRef = useRef<HTMLDivElement>(null);
+  useKeptSlabFocus(boardRef);
   const moveDay = useCallback((days: number): void => {
     wishToStep();
     const next = stepDay(shownDate, days);
@@ -452,14 +487,19 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
   const busyLanes = lanes.filter((lane) => lane.slots.length > 0).length;
   // A room with nothing on is one name in a line, not a row to scroll past;
   // a room chosen from the list keeps its row either way, and a count on
-  // the plane shows only the rooms it names.
-  const shownDays = days.filter((day) => (roomId === ""
+  // the plane shows only the rooms it names. The room of an open slot stays
+  // whatever the filter says, so the slot never closes under a hand that is
+  // using it (a Done that takes a function out of "Live").
+  const focusDays = days.filter((day) => (roomId === ""
     ? day.slots.length > 0 && roomInFocus(day, focus)
     : day.room.id === roomId));
+  const shownDays = days.filter((day) => focusDays.includes(day) || day.room.id === selected?.room.id);
   const freeRooms = roomId === "" && focus === "all" && busyLanes > 0 ? lanes.filter((lane) => lane.slots.length === 0).map((lane) => lane.room.name) : [];
   const readAt = readAtCorrectedMs === null ? null : formatWallTime(readAtCorrectedMs, timeZone);
   const others = live.presence.filter((person) => person.userId !== user?.id).map((person) => person.name);
-  const stages = useMemo(() => planeStages(lanes), [lanes]);
+  // Today the plane counts every request nobody has, as the list and the
+  // sentence do; another day, those on its own bookings.
+  const stages = useMemo(() => planeStages(lanes, browsingToday ? board?.unowned.length : undefined), [lanes, browsingToday, board]);
   const summary = useMemo(
     () => (board === null ? null : boardSummary({ lanes: board.lanes, unowned: board.unowned, today: browsingToday, nowMs })),
     [board, browsingToday, nowMs],
@@ -497,7 +537,7 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
     </div>
   );
   const rail = board === null ? null : (
-    <Rail unowned={board.unowned} today={browsingToday} onOpen={openRequest} wall={wall} preview={!beside && !wall} />
+    <Rail unowned={board.unowned} today={browsingToday} onOpen={openRequest} preview={!beside} />
   );
 
   // Honest about how fresh the day is: the socket reconnects by itself, and
@@ -534,21 +574,23 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
   const plane = board === null || busyLanes === 0 ? null : (
     <div className="dayboard-plane ws-plane" role="group" aria-label="The day in numbers">
       {stages.map((stage) => {
+        // Said as the desks say their stages: "At risk, 2".
+        const spoken = `${stage.label}, ${String(stage.count)}`;
         const face = (
           <>
-            <b data-focus={stage.focus} data-alert={stage.focus === "risk" && stage.count > 0 ? "true" : undefined}>{String(stage.count)}</b>
-            {" "}
-            <span><i className="dayboard-stage-dot" data-focus={stage.focus} aria-hidden="true" />{stage.label}</span>
+            <b data-focus={stage.focus} data-alert={stage.focus === "risk" && stage.count > 0 ? "true" : undefined} aria-hidden="true">{String(stage.count)}</b>
+            <span aria-hidden="true"><i className="dayboard-stage-dot" data-focus={stage.focus} />{stage.label}</span>
           </>
         );
         return wall
-          ? <span key={stage.focus} className="dayboard-stage" data-focus={stage.focus}>{face}</span>
+          ? <span key={stage.focus} className="dayboard-stage" data-focus={stage.focus} role="group" aria-label={spoken}>{face}</span>
           : (
             <button
               key={stage.focus}
               type="button"
               className="dayboard-stage"
               data-focus={stage.focus}
+              aria-label={spoken}
               aria-pressed={stage.focus === "all" ? focus === "all" && roomId === "" : focus === stage.focus}
               onClick={() => { chooseFocus(stage.focus); }}
             >
@@ -733,7 +775,7 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
           <div className="dayboard-rooms-head">
             <div className="dayboard-rooms-line">
               {board !== null && busyLanes > 0 && (
-                <p className="dayboard-showing" aria-live="polite">{roomId === "" ? showingLine(shownDays.length, focus) : "One room, chosen from the list"}</p>
+                <p className="dayboard-showing" aria-live="polite">{roomId === "" ? showingLine(focusDays.map((day) => day.room.name), focus) : "One room, chosen from the list"}</p>
               )}
               <label className="dayboard-room-field">Room<select value={roomId} onChange={(event) => { chooseRoom(event.target.value); }}><option value="">All rooms</option>{lanes.map((lane) => <option key={lane.room.id} value={lane.room.id}>{lane.room.name}</option>)}</select></label>
             </div>

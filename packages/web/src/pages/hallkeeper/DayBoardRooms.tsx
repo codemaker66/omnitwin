@@ -140,11 +140,12 @@ export function Slab({ slot, variant, nowMs, selected, onOpen, wall, frozen }: {
   const linked = slot.linkedRooms.length > 0 ? `also ${slot.linkedRooms.join(", ")}` : null;
   const why = slot.exceptionDetail ?? slot.turnaroundWarning;
   // The wall reads room, title, state and time (D11): no turn-round, no
-  // facts seen, no other rooms named, and the ring only on what is on now.
+  // facts seen, no other rooms named; the ring in its short words on what
+  // it shows, so a request nobody has still breathes there (D3).
   const gap = variant === "line" || wall ? null : turnRound(slot, nowMs);
   const shownSeen = wall ? null : seen;
   const shownWords = wall ? wallRingWords(slot, nowMs) : words;
-  const ringed = ring !== null && shownWords !== null && !(wall && variant !== "lead")
+  const ringed = ring !== null && shownWords !== null
     ? <Ring key={slot.requestSignal?.newestId ?? "steady"} ring={ring} words={shownWords} frozen={frozen} />
     : null;
   const shared = {
@@ -273,8 +274,10 @@ export function Scale({ ticks, plaque, nowMs, timeZone }: {
             {tick.major && <span className="dayboard-tick-label">{tick.label}</span>}
           </span>
         ))}
+        {/* Near either end the plaque leans inward, so it never runs past
+            the sheet (a phone in the evening, a morning at the start). */}
         {plaque !== null && (
-          <span className="dayboard-now" style={{ left: percent(plaque) }}>
+          <span className="dayboard-now" data-edge={plaque > 0.85 ? "end" : plaque < 0.15 ? "start" : "middle"} style={{ left: percent(plaque) }}>
             <span className="dayboard-now-plaque">NOW<span className="dayboard-now-time">{formatWallTime(nowMs, timeZone)}</span></span>
           </span>
         )}
@@ -341,25 +344,26 @@ export function RoomRow({ day, view, plaque, nowMs, venueSlug, selectedId, onOpe
             <h2 className="dayboard-room-name">{day.room.name}</h2>
             <p className="dayboard-room-count">{bookingCount(day.slots.length)}</p>
           </header>
+          {/* Divisions, not paragraphs: on the wall a slot is a group. */}
           {earlier.length > 0 && (
-            <p className="dayboard-line is-earlier">
+            <div className="dayboard-line is-earlier">
               <span className="dayboard-line-label">Earlier</span>
               <span className="dayboard-line-items">{earlier.map((slot) => slab(slot, "line"))}</span>
-            </p>
+            </div>
           )}
           {day.lead !== null && slab(day.lead, "lead")}
-          {day.lead === null && day.slots.length > 0 && <p className="dayboard-line is-free">Nothing more today.</p>}
+          {day.lead === null && day.slots.length > 0 && <p className="dayboard-line is-free">Done for the day.</p>}
           {day.next !== null && (
-            <p className="dayboard-line is-next">
-              <span className="dayboard-line-label">Next</span>
+            <div className="dayboard-line is-next">
+              <span className="dayboard-line-label">{day.nextLabel}</span>
               <span className="dayboard-line-items">{slab(day.next, "next")}</span>
-            </p>
+            </div>
           )}
           {later.length > 0 && (
-            <p className="dayboard-line is-later">
+            <div className="dayboard-line is-later">
               <span className="dayboard-line-label">Later</span>
               <span className="dayboard-line-items">{later.map((slot) => slab(slot, "line"))}</span>
-            </p>
+            </div>
           )}
           {day.slots.length > 0 && <DayBar day={day} view={view} plaque={plaque} selectedId={selectedId} />}
         </div>

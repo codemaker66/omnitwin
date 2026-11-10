@@ -197,7 +197,7 @@ test.describe("Day Board", () => {
     // One sentence of the day, the hours across the rooms with the present
     // on them, the turn-round before each function whose setup is still
     // ahead, and the next action the room nearest its moment.
-    await expect(page.locator(".dayboard-summary")).toHaveText("One room is live and two are getting ready.");
+    await expect(page.locator(".dayboard-summary")).toHaveText("One function is live and two are getting ready.");
     await expect(page.locator(".dayboard-now-plaque")).toHaveText("NOW13:00");
     await expect(page.locator(".dayboard-gap-words")).toHaveText(["Turn-round 1 h 35", "Turn-round 3 h 30"]);
     await expect(page.locator(".dayboard-next")).toHaveText("Grand Hall · Doors · 5 min");

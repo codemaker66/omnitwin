@@ -468,14 +468,16 @@ export function resolveTurnaroundMinutes(
   return best?.minutes ?? null;
 }
 
-/** A booking runs for days once it is longer than one: an exhibition, not a
- *  dinner that carries on past midnight. */
-const MULTI_DAY_MS = 24 * 60 * MIN_MS;
+/** A booking runs for days once it lasts most of one or more: an
+ *  exhibition, or ten o'clock to ten o'clock the next day whether the clocks
+ *  change between (23 or 25 hours) or not; never a dinner that carries on
+ *  past midnight. */
+const MULTI_DAY_MS = 20 * 60 * MIN_MS;
 const DAY_MS = 24 * 60 * MIN_MS;
 
 /** Whether a booking from doors to end runs for days. */
 export function runsForDays(doorsAtMs: number, endsAtMs: number): boolean {
-  return endsAtMs - doorsAtMs > MULTI_DAY_MS;
+  return endsAtMs - doorsAtMs >= MULTI_DAY_MS;
 }
 
 /** The venue's calendar date of an instant, as YYYY-MM-DD. */
@@ -500,6 +502,8 @@ export function runningDays(
   if (!runsForDays(doorsAtMs, endsAtMs)) return null;
   const first = wallDate(doorsAtMs, timeZone);
   const of = daysBetween(first, wallDate(endsAtMs - 1, timeZone)) + 1;
+  // A long booking inside one calendar day is counted in hours, not days.
+  if (of < 2) return null;
   const day = Math.min(of, Math.max(1, daysBetween(first, wallDate(nowMs, timeZone)) + 1));
   return { day, of };
 }
@@ -507,7 +511,8 @@ export function runningDays(
 /** "13:00 – 17:00"; a booking that runs for days names them: "Thu 12 Nov,
  *  10:00 – Mon 16 Nov, 17:00". */
 function slotTimeRange(startsAtMs: number, endsAtMs: number, timeZone: string): string {
-  if (!runsForDays(startsAtMs, endsAtMs)) return `${formatWallTime(startsAtMs, timeZone)} – ${formatWallTime(endsAtMs, timeZone)}`;
+  const days = runsForDays(startsAtMs, endsAtMs) && wallDate(startsAtMs, timeZone) !== wallDate(endsAtMs - 1, timeZone);
+  if (!days) return `${formatWallTime(startsAtMs, timeZone)} – ${formatWallTime(endsAtMs, timeZone)}`;
   return `${formatWallDay(startsAtMs, timeZone)}, ${formatWallTime(startsAtMs, timeZone)} – ${formatWallDay(endsAtMs, timeZone)}, ${formatWallTime(endsAtMs, timeZone)}`;
 }
 
@@ -749,7 +754,11 @@ export function deriveDayBoard(
       let gapBefore: LaneGap | null = null;
       let changeover: string | null = null;
       let changeoverFromMs: number | null = null;
-      if (previous !== undefined) {
+      // Two bookings at once in one room (a first and second option on the
+      // same evening; a talk inside a running exhibition) have no changeover
+      // between them: neither a turn-round to dimension nor a room to clear.
+      const concurrent = previous !== undefined && startsAtMs < Date.parse(previous.endsAt);
+      if (previous !== undefined && !concurrent) {
         const previousEnd = Date.parse(previous.endsAt);
         // After a viewing there is nothing to clear; before one, the room
         // still needs the previous function's changeover to be shown.
