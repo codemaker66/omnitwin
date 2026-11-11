@@ -36,6 +36,9 @@ export interface ObjectMetadata {
   readonly displayLabel?: string;
   /** Planner-authored note surfaced on the hallkeeper sheet. */
   readonly notes?: string;
+  /** Said by the API in place of `notes`, to a reader a guest plan's notes
+   *  are kept from: this piece holds one. Never sent back. */
+  readonly noteHeld?: boolean;
 }
 
 export const ObjectMetadataResponseSchema = z.object({
@@ -47,6 +50,8 @@ export const ObjectMetadataResponseSchema = z.object({
   groupId: z.string().nullable().optional(),
   displayLabel: z.string().optional(),
   notes: z.string().optional(),
+  // A mark, not the layout: anything but a boolean reads as absent.
+  noteHeld: z.boolean().optional().catch(undefined),
 }).nullable();
 
 const PlacedObjectResponseSchema = z.object({
@@ -94,6 +99,11 @@ const ConfigurationResponseSchema = z.object({
   // One of the venue's sample layouts (the row's is_template). Optional, and
   // anything but a boolean reads as absent: a label never fails a load.
   isTemplate: z.boolean().optional().catch(undefined),
+  // A guest plan's notes go only to the browser that made it, so the public
+  // read says which answer this is: true when the pieces carry their notes.
+  // Absent from an API before this, and from the signed-in routes; anything
+  // but true is "not said", never "included".
+  notesIncluded: z.boolean().optional().catch(undefined),
 });
 
 export type Configuration = z.infer<typeof ConfigurationResponseSchema>;
@@ -139,6 +149,10 @@ export interface BatchObjectInput {
   readonly scale: number;
   readonly sortOrder: number;
   readonly metadata?: ObjectMetadata | null;
+  /** The note this piece's note replaces, as the server last confirmed it to
+   *  this browser (lib/guest-plan-notes.ts). The public save reads it and
+   *  stores none of it. */
+  readonly replacesNote?: string;
 }
 
 /** Re-export the canonical guest enquiry input type from @omnitwin/types. */
@@ -158,12 +172,25 @@ export interface BatchSaveTransport {
   readonly keepalive?: boolean;
 }
 
+/** How a guest plan's save travels, and what it says of its notes. */
+export interface BatchSaveOptions extends BatchSaveTransport {
+  /** The document being saved was read with the plan's notes, so its notes
+   *  are the whole truth: the store says so only for a plan loaded from a
+   *  read that included them. The claim secret alone is not that word. */
+  readonly notesIncluded?: boolean;
+}
+
 /**
  * A guest plan's notes go only to the browser that made the plan (final
- * review, TENANCY-3): the API returns and accepts them when a request carries
- * the claim secret that browser was given. Every anonymous read and save
- * below presents it for a plan made here, and nothing for any other plan, so
- * a plan opened from a link shows its layout without its notes.
+ * review, TENANCY-3): the API returns them when a request carries the claim
+ * secret that browser was given. Every anonymous read and save below presents
+ * it for a plan made here, and nothing for any other plan, so a plan opened
+ * from a link shows its layout without its notes.
+ *
+ * The secret says which browser is asking, not what the copy being saved was
+ * read with (a page that read the plan without its notes keeps work on the
+ * device). So a save's notes are taken as the whole truth only when it also
+ * says so (BatchSaveOptions.notesIncluded).
  */
 function asMaker(configId: string): { planClaimSecret?: string } {
   const secret = trackedClaimSecret(configId);
@@ -174,14 +201,14 @@ export async function publicBatchSave(
   configId: string,
   objects: readonly BatchObjectInput[],
   expectedRevision: number,
-  transport?: BatchSaveTransport,
+  options?: BatchSaveOptions,
 ): Promise<BatchSaveResponse> {
   return api.post(
     `/public/configurations/${configId}/objects/batch`,
-    { expectedRevision, objects },
+    { expectedRevision, objects, ...(options?.notesIncluded === true ? { notesIncluded: true } : {}) },
     true,
     BatchSaveResponseSchema,
-    { ...(transport?.keepalive === true ? { keepalive: true } : {}), ...asMaker(configId) },
+    { ...(options?.keepalive === true ? { keepalive: true } : {}), ...asMaker(configId) },
   );
 }
 

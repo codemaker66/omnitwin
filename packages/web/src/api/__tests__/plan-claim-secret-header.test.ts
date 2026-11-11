@@ -95,3 +95,70 @@ describe("reading and saving a guest plan as the browser that made it", () => {
     expect(String(fetchMock.mock.calls.at(-1)?.[0])).not.toContain(SECRET);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Holding the secret says which browser is asking, not what the copy being
+// saved was read with (review of #375). So the read's own word travels with
+// the document: whether its notes are included, and which pieces hold a note
+// this reader is not shown. And a save says its notes are the whole truth only
+// when the store tells it the document was read with them.
+// ---------------------------------------------------------------------------
+
+/** The body of the last request, as sent. */
+function lastBody(): Record<string, unknown> {
+  const init: unknown = fetchMock.mock.calls.at(-1)?.[1];
+  const body = typeof init === "object" && init !== null ? (init as RequestInit).body : undefined;
+  if (typeof body !== "string") throw new Error("fetch was not called with a JSON body");
+  return JSON.parse(body) as Record<string, unknown>;
+}
+
+function stored(id: string, metadata: Record<string, unknown>): Record<string, unknown> {
+  return {
+    id, configurationId: FROM_A_LINK, assetDefinitionId: "a1ef4d89-7786-5878-bee1-87b3fac28200",
+    positionX: "1.000", positionY: "0.000", positionZ: "1.000",
+    rotationX: "0.00000", rotationY: "0.00000", rotationZ: "0.00000", scale: "1.000", sortOrder: 0, metadata,
+  };
+}
+
+describe("what a read and a save say about a guest plan's notes", () => {
+  it("keeps the read's word on whether its notes are included, and which pieces hold one", async () => {
+    fetchMock.mockResolvedValue(answer({
+      ...plan(FROM_A_LINK), notesIncluded: false,
+      objects: [stored("0a0a0a0a-0000-4000-8000-000000000001", { clothed: false, groupId: null, noteHeld: true })],
+    }));
+    const fromLink = await configurations.getPublicConfig(FROM_A_LINK);
+    expect(fromLink.notesIncluded).toBe(false);
+    expect(fromLink.objects?.[0]?.metadata?.noteHeld).toBe(true);
+
+    fetchMock.mockResolvedValue(answer({ ...plan(MADE_HERE), notesIncluded: true }));
+    expect((await configurations.getPublicConfig(MADE_HERE)).notesIncluded).toBe(true);
+
+    // An API from before this change says nothing: that is not "included".
+    fetchMock.mockResolvedValue(answer(plan(MADE_HERE)));
+    expect((await configurations.getPublicConfig(MADE_HERE)).notesIncluded).toBeUndefined();
+  });
+
+  it("declares a save's notes complete only when told the document was read with them", async () => {
+    fetchMock.mockResolvedValue(answer({ objects: [], revision: 3 }));
+    await configurations.publicBatchSave(MADE_HERE, [chair()], 2, { notesIncluded: true });
+    expect(lastBody()["notesIncluded"]).toBe(true);
+    await configurations.publicBatchSave(MADE_HERE, [chair()], 3, { keepalive: true, notesIncluded: true });
+    expect(lastBody()["notesIncluded"]).toBe(true);
+
+    // The secret alone is not that word: a plan made here, saved without it.
+    await configurations.publicBatchSave(MADE_HERE, [chair()], 4);
+    expect("notesIncluded" in lastBody()).toBe(false);
+    await configurations.publicBatchSave(MADE_HERE, [chair()], 5, { keepalive: true });
+    expect("notesIncluded" in lastBody()).toBe(false);
+    await configurations.publicBatchSave(MADE_HERE, [chair()], 6, { notesIncluded: false });
+    expect("notesIncluded" in lastBody()).toBe(false);
+  });
+
+  it("sends the note a piece's note replaces, beside the piece and outside what is stored of it", async () => {
+    fetchMock.mockResolvedValue(answer({ objects: [], revision: 3 }));
+    await configurations.publicBatchSave(FROM_A_LINK, [{ ...chair(), id: "0a0a0a0a-0000-4000-8000-000000000001", replacesNote: "Top tab" }], 2);
+    const sent = (lastBody()["objects"] as Record<string, unknown>[])[0];
+    expect(sent?.["replacesNote"]).toBe("Top tab");
+    expect(sent?.["metadata"]).toEqual({ clothed: false, groupId: null, notes: "Top table" });
+  });
+});

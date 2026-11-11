@@ -77,6 +77,10 @@ const AnonymousPlannerDraftSchema = z.object({
   writerPageId: z.string().min(1).max(100).optional(),
   /** Absent on drafts written before drafts carried their base. */
   base: DraftBaseSchema.optional(),
+  /** True when the page that kept this had read the plan with its notes (a
+   *  guest plan's notes go only to the browser that made it). Absent on a
+   *  draft from before drafts said so, which counts as "had not". */
+  notesIncluded: z.boolean().optional(),
   objects: z.array(EditorObjectDraftSchema).max(MAX_DRAFT_OBJECTS),
 });
 
@@ -97,6 +101,8 @@ export interface PersistAnonymousPlannerDraftInput {
   /** The page keeping it. With it, a page with nothing to keep never removes
    *  a draft another page wrote; without it, any draft under the key goes. */
   readonly writerPageId?: string;
+  /** The open plan was read with its notes (the editor's notesIncluded). */
+  readonly notesIncluded?: boolean;
 }
 
 export interface ReadPlannerDraftExpectation {
@@ -229,6 +235,7 @@ export function persistAnonymousPlannerDraft(
     ownerUserId: owner,
     ...(writer === undefined ? {} : { writerPageId: writer }),
     ...(base === undefined ? {} : { base }),
+    ...(input.notesIncluded === true ? { notesIncluded: true } : {}),
     objects: [...input.objects],
   };
 
@@ -315,4 +322,44 @@ export function plannerDraftBaseObjects(draft: AnonymousPlannerDraft): readonly 
     if (!kept.has(object.id)) rebuilt.push(object);
   }
   return rebuilt;
+}
+
+/**
+ * A draft kept by a page that had not read the plan's notes, for a plan now
+ * read with them. A guest plan's notes go only to the browser that made it,
+ * so such a page was shown every piece without its note and kept them that
+ * way. Restored as it is, the draft would say the person cleared each note.
+ *
+ * So wherever the draft's own base held no note for a piece and the server's
+ * copy holds one, the draft never read that note: its base takes it, and so
+ * does the piece unless the draft wrote a note of its own there. A note the
+ * draft's base did hold was read, and what the draft did with it (kept,
+ * changed or cleared) stands. A draft with no base says nothing of what it
+ * read, so it takes the server's note wherever it holds none.
+ *
+ * For a draft that does not say it was read with the notes
+ * (`notesIncluded`), against a read that included them.
+ */
+export function plannerDraftWithUnreadNotes(
+  draft: AnonymousPlannerDraft,
+  serverObjects: readonly EditorObject[],
+): AnonymousPlannerDraft {
+  const serverNotes = new Map<string, string>();
+  for (const object of serverObjects) {
+    if (object.notes.length > 0) serverNotes.set(object.id, object.notes);
+  }
+  if (serverNotes.size === 0) return draft;
+  const readAs = new Map((draft.base?.changed ?? []).map((object) => [object.id, object.notes]));
+  /** The note this piece never read, when its base held none. */
+  const unread = (id: string, baseNote: string): string | undefined => baseNote.length === 0 ? serverNotes.get(id) : undefined;
+  const objects = draft.objects.map((object) => {
+    const note = unread(object.id, readAs.get(object.id) ?? object.notes);
+    return note === undefined || object.notes.length > 0 ? object : { ...object, notes: note };
+  });
+  if (draft.base === undefined) return { ...draft, objects };
+  const changed = draft.base.changed.map((object) => {
+    const note = unread(object.id, object.notes);
+    return note === undefined ? object : { ...object, notes: note };
+  });
+  return { ...draft, objects, base: { ...draft.base, changed } };
 }

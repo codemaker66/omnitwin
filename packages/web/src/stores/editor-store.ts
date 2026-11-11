@@ -14,9 +14,11 @@ import {
   persistAnonymousPlannerDraft,
   plannerDraftBaseObjects,
   plannerDraftKeyFor,
+  plannerDraftWithUnreadNotes,
   readAnonymousPlannerDraft,
   type AnonymousPlannerDraft,
 } from "../lib/anonymous-planner-draft.js";
+import { namingReplacedNotes } from "../lib/guest-plan-notes.js";
 import { holdPlannerPageLock, isPlannerPageOpen, plannerPageId } from "../lib/planner-page-lock.js";
 import { signedOutOwnerFrom } from "../lib/planner-draft-storage.js";
 import { summariseLayoutChange, type LayoutChangeSummary } from "../lib/layout-change-summary.js";
@@ -94,6 +96,13 @@ export interface EditorObject {
    * when no note is attached.
    */
   readonly notes: string;
+  /**
+   * The server's word, in place of `notes`, that this piece holds a note this
+   * browser is not shown (a guest plan's notes go only to the browser that
+   * made it). Set from the server's copy and read from `baseObjects`
+   * (lib/guest-plan-notes.ts); never sent back.
+   */
+  readonly noteHeld?: boolean;
 }
 
 /**
@@ -138,6 +147,7 @@ export function placedObjectToEditor(p: PlacedObject): EditorObject {
         : null,
     groupId: typeof meta.groupId === "string" ? meta.groupId : null,
     notes: typeof meta.notes === "string" ? meta.notes : "",
+    ...(meta.noteHeld === true ? { noteHeld: true } : {}),
   };
   return displayLabel.length > 0
     ? { ...editorObject, label: displayLabel }
@@ -202,6 +212,14 @@ interface EditorState {
    *  until another load: surfaces stop showing a working state for it. */
   readonly spaceLoadFailed: boolean;
   readonly isPublicPreview: boolean;
+  /**
+   * The open plan was read with its notes: the public read said so (a guest
+   * plan's notes go only to the browser that made it), and any work restored
+   * from this device said so too. It is a fact about this document, not about
+   * the browser: only then does a save declare its notes complete, and it is
+   * kept with the copy on this device. False for every other read.
+   */
+  readonly notesIncluded: boolean;
   readonly objects: readonly EditorObject[];
   /**
    * The last document the server confirmed for this configuration (load,
@@ -736,6 +754,7 @@ const INITIAL_STATE: EditorState = {
   space: null,
   spaceLoadFailed: false,
   isPublicPreview: false,
+  notesIncluded: false,
   objects: [],
   baseObjects: [],
   selectedObjectId: null,
@@ -845,7 +864,7 @@ function draftOwner(): string | null {
 }
 
 const DRAFT_FIELDS = [
-  "configId", "spaceId", "venueId", "configRevision", "isPublicPreview", "objects", "baseObjects", "isDirty",
+  "configId", "spaceId", "venueId", "configRevision", "isPublicPreview", "notesIncluded", "objects", "baseObjects", "isDirty",
 ] as const satisfies readonly (keyof EditorState)[];
 
 function keepWorkOnDevice(state: EditorState): boolean {
@@ -861,6 +880,9 @@ function keepWorkOnDevice(state: EditorState): boolean {
     isDirty: state.isDirty,
     ownerUserId: draftOwner(),
     writerPageId: plannerPageId(),
+    // The copy says what it was read with, so restoring it elsewhere cannot
+    // pass a document read without the plan's notes off as the whole of them.
+    notesIncluded: state.notesIncluded,
   });
 }
 
@@ -1024,7 +1046,7 @@ export const useEditorStore = create<EditorStore>()(withSaveFacts((set, get) => 
       const stillUnsaved = get().configId === leaving && get().isDirty;
       const lostOnLeaving = outgoingOutcome === "not-kept" && stillUnsaved ? leftBehindFor(get(), false) : null;
       // Unsaved work this device kept (another open page's stays that page's).
-      const localDraft = await draftNotHeldElsewhere(draftForLoad(config, isAuthenticated));
+      const keptDraft = await draftNotHeldElsewhere(draftForLoad(config, isAuthenticated));
       if (request !== configurationLoadRequest) return;
       // A GET may have captured its row before a concurrent save was accepted.
       // Reloading cannot roll an acknowledged revision (or newer local edits)
@@ -1035,6 +1057,15 @@ export const useEditorStore = create<EditorStore>()(withSaveFacts((set, get) => 
         return;
       }
       const serverObjects = (config.objects ?? []).map(placedObjectToEditor);
+      // A guest plan's notes go only to the browser that made it, so this read
+      // says whether it carries them. Work kept by a page that read the plan
+      // without them holds every piece without its note: opened here with the
+      // notes, it takes the ones it never read from this copy, or restoring it
+      // would clear them all (review of #375).
+      const notesRead = config.notesIncluded === true;
+      const localDraft = keptDraft !== null && notesRead && keptDraft.notesIncluded !== true
+        ? plannerDraftWithUnreadNotes(keptDraft, serverObjects)
+        : keptDraft;
       // One edited from this revision restores as it is. One edited from any
       // other revision restores onto the base it was edited from, at that
       // revision, as a conflict the person settles before anything is saved:
@@ -1092,6 +1123,9 @@ export const useEditorStore = create<EditorStore>()(withSaveFacts((set, get) => 
         venueId: config.venueId,
         configRevision: loadConflict === null ? config.revision : loadConflict.expectedRevision,
         isPublicPreview: config.isPublicPreview,
+        // Restored work that does not say it was read with the notes is not
+        // the whole truth about them, whichever browser restores it.
+        notesIncluded: notesRead && (restoredDraft === null || restoredDraft.notesIncluded === true),
         objects,
         baseObjects: staleDraftBase ?? serverObjects,
         isDirty: restoredDraft !== null,
@@ -1185,6 +1219,8 @@ export const useEditorStore = create<EditorStore>()(withSaveFacts((set, get) => 
         venueId: config.venueId,
         configRevision: config.revision,
         isPublicPreview: true,
+        // A new plan holds no note, so its creating answer says they are all here.
+        notesIncluded: config.notesIncluded === true,
         objects: [],
         baseObjects: [],
         isDirty: false,
@@ -1690,11 +1726,19 @@ async function saveDocument(
   // pending conflict stays until this save lands: only then is it settled.
   set({ isSaving: true, saveError: null, saveErrorCode: null });
   try {
-    const batch = objects.map(editorToBatch);
+    // A guest plan's save names the note each changed note replaces, and says
+    // its notes are complete only when this document was read with them
+    // (lib/guest-plan-notes.ts; api/configurations.ts BatchSaveOptions).
+    const batch = useAuthPath
+      ? objects.map(editorToBatch)
+      : namingReplacedNotes(objects.map(editorToBatch), objects, get().baseObjects);
     const save = useAuthPath ? configApi.authBatchSave : configApi.publicBatchSave;
-    const saved = transport === undefined
+    const sending: configApi.BatchSaveOptions | undefined = !useAuthPath && get().notesIncluded
+      ? { ...transport, notesIncluded: true }
+      : transport;
+    const saved = sending === undefined
       ? await save(configId, batch, configRevision)
-      : await save(configId, batch, configRevision, transport);
+      : await save(configId, batch, configRevision, sending);
     // The server may have accepted the old document. It no longer owns this
     // editor, its revision/history/selection, or its caller's saved feedback.
     if (session !== configurationSession || get().configId !== configId) return false;
