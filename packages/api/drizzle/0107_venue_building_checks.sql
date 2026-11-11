@@ -1,6 +1,9 @@
 -- Opening and lock-up on the Day Board (T-693, 11 November 2026).
 -- 0107, after 0106 (supplier arrivals); the release queue confirms the
--- number at the merge slot (renumber the tag AND the journal `when`).
+-- number at the merge slot. A renumber changes this file's name, this line,
+-- and the journal entry's tag, idx and `when`. Its `when` must be strictly
+-- later than the entry before it: drizzle applies a migration only when its
+-- `when` is later than the last one applied, so an equal value is skipped.
 --
 -- The venue's own checks for opening the building and locking it up, in its
 -- own words, and each day's ticks. Venviewer writes none: a list it invented
@@ -10,8 +13,13 @@
 -- the unique index decides two taps at once. A tick records what someone
 -- says they did, never a compliance claim.
 --
--- New tables only: nothing existing is read, rewritten or locked.
+-- New tables only: nothing existing is read or rewritten. Creating their
+-- foreign keys briefly takes SHARE ROW EXCLUSIVE locks on venues and users,
+-- which block writes to them for that moment: a busy moment holds those
+-- writes for up to ten seconds, then fails the deploy rather than wait longer.
 
+SET LOCAL lock_timeout = '10s';
+--> statement-breakpoint
 CREATE TABLE venue_building_checks (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   venue_id uuid NOT NULL REFERENCES venues(id) ON DELETE CASCADE,

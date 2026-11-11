@@ -274,6 +274,23 @@ describe.skipIf(target === undefined)("supplier arrivals, on migrated PostgreSQL
     expect((await call(f, "hallkeeper", "POST", `/venues/${f.venueId}/supplier-arrivals/${offDiary?.id ?? ""}/arrived`)).status).toBe(404);
   });
 
+  it("leaves out the suppliers of a booking released, cancelled or lost", async () => {
+    const f = await fixture();
+    const tonight = await fixtureTonight(f);
+    const made = (await call(f, "admin", "POST", `/venues/${f.venueId}/supplier-arrivals`, arrival(f, {
+      bookingId: tonight.id, arrivesAt: new Date(tonight.startsAt.getTime() - HOUR).toISOString(), leavesBy: null,
+    }))).data as SupplierArrival;
+    const windowNow = `from=${encodeURIComponent(new Date(tonight.startsAt.getTime() - DAY).toISOString())}&to=${encodeURIComponent(new Date(tonight.startsAt.getTime() + DAY).toISOString())}`;
+    expect(((await call(f, "hallkeeper", "GET", `/venues/${f.venueId}/supplier-arrivals?${windowNow}`)).data as SupplierArrival[]).map((item) => item.id)).toEqual([made.id]);
+    await db.update(schema.bookings).set({ status: "cancelled" }).where(eq(schema.bookings.id, tonight.id));
+    // Nobody comes for it: the floor reads none, cannot mark one, and the office cannot add one.
+    expect((await call(f, "hallkeeper", "GET", `/venues/${f.venueId}/supplier-arrivals?${windowNow}`)).data).toEqual([]);
+    expect((await call(f, "hallkeeper", "POST", `/venues/${f.venueId}/supplier-arrivals/${made.id}/arrived`)).status).toBe(404);
+    expect((await call(f, "admin", "POST", `/venues/${f.venueId}/supplier-arrivals`, arrival(f, {
+      bookingId: tonight.id, arrivesAt: new Date(tonight.startsAt.getTime() - HOUR).toISOString(), leavesBy: null,
+    }))).status).toBe(404);
+  });
+
   it("lets a platform administrator read and plan a venue's suppliers", async () => {
     const f = await fixture();
     const id = randomUUID();

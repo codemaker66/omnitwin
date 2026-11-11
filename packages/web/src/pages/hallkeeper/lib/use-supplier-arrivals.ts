@@ -22,7 +22,8 @@ import {
 // is read again rather than painted, so it never puts the change back. A
 // change made from an old copy is refused ("stale") and the day is read
 // again. Why a change failed is kept against its arrival (or the booking's
-// add form), for the day it was made on.
+// add form), for the day it was made on. A look-back also reads the hours
+// before the day, for whoever is still marked in from then.
 // ---------------------------------------------------------------------------
 
 export const SUPPLIER_ARRIVALS_INTERVAL_MS = 60_000;
@@ -39,8 +40,11 @@ export interface SupplierArrivalsApi {
   readonly status: "idle" | "loading" | "ready" | "failed";
   /** A read of the day is on its way. */
   readonly reading: boolean;
+  /** The arrivals due on the day, earliest first. */
   readonly arrivals: readonly SupplierArrival[];
-  /** Each booking's arrivals, earliest first. */
+  /** Arrivals due in the look-back before the day, earliest first. */
+  readonly earlier: readonly SupplierArrival[];
+  /** Each booking's arrivals on the day, earliest first. */
   readonly byBooking: ReadonlyMap<string, readonly SupplierArrival[]>;
   /** Arrivals (and add forms, by `newArrivalKey`) with a tap or change on its way. */
   readonly busy: ReadonlySet<string>;
@@ -73,8 +77,11 @@ export function useSupplierArrivals(
   venueId: string | null,
   range: { readonly fromMs: number; readonly toMs: number },
   enabled: boolean,
+  /** How far before the day to read as well, for whoever is still marked in from then. */
+  lookBackMs = 0,
 ): SupplierArrivalsApi {
-  const key = venueId === null || !enabled ? "" : `${venueId}|${String(range.fromMs)}|${String(range.toMs)}`;
+  const readFromMs = range.fromMs - lookBackMs;
+  const key = venueId === null || !enabled ? "" : `${venueId}|${String(readFromMs)}|${String(range.toMs)}`;
   const [held, setHeld] = useState<{
     readonly key: string;
     readonly status: "loading" | "ready" | "failed";
@@ -93,7 +100,7 @@ export function useSupplierArrivals(
     const reading = new AbortController();
     const landedBefore = landed.current;
     setHeld((current) => (current?.key === key ? { ...current, reading: true } : { key, status: "loading", arrivals: NONE, reading: true }));
-    listSupplierArrivals(venueId, range.fromMs, range.toMs, reading.signal)
+    listSupplierArrivals(venueId, readFromMs, range.toMs, reading.signal)
       .then((arrivals) => {
         if (reading.signal.aborted) return;
         // A change landed while this read was out: it may predate the change.
@@ -105,7 +112,7 @@ export function useSupplierArrivals(
         setHeld((current) => (current?.key === key ? { ...current, status: "failed", reading: false } : { key, status: "failed", arrivals: NONE, reading: false }));
       });
     return () => { reading.abort(); };
-  }, [venueId, key, range.fromMs, range.toMs, attempt, refresh]);
+  }, [venueId, key, readFromMs, range.toMs, attempt, refresh]);
 
   // Every minute in view; at once when shown again or back online.
   useEffect(() => {
@@ -127,10 +134,10 @@ export function useSupplierArrivals(
       if (current?.key !== forKey) return current;
       const others = current.arrivals.filter((item) => item.id !== (arrival?.id ?? goneId));
       const dueMs = arrival === null ? Number.NaN : Date.parse(arrival.arrivesAt);
-      const onDay = arrival !== null && dueMs >= range.fromMs && dueMs < range.toMs;
-      return { ...current, arrivals: onDay ? [...others, arrival].sort(byStart) : others };
+      const read = arrival !== null && dueMs >= readFromMs && dueMs < range.toMs;
+      return { ...current, arrivals: read ? [...others, arrival].sort(byStart) : others };
     });
-  }, [range.fromMs, range.toMs]);
+  }, [readFromMs, range.toMs]);
 
   const run = useCallback(async (
     id: string,
@@ -177,7 +184,9 @@ export function useSupplierArrivals(
     run(arrival.id, "remove that", async () => { await removeSupplierArrival(place, arrival); return null; }, arrival.id), [run, place]);
 
   const mine = key !== "" && held?.key === key ? held : null;
-  const arrivals = mine?.arrivals ?? NONE;
+  const read = mine?.arrivals ?? NONE;
+  const arrivals = useMemo(() => read.filter((arrival) => Date.parse(arrival.arrivesAt) >= range.fromMs), [read, range.fromMs]);
+  const earlier = useMemo(() => read.filter((arrival) => Date.parse(arrival.arrivesAt) < range.fromMs), [read, range.fromMs]);
   const byBooking = useMemo(() => {
     const grouped = new Map<string, SupplierArrival[]>();
     for (const arrival of arrivals) grouped.set(arrival.bookingId, [...(grouped.get(arrival.bookingId) ?? []), arrival]);
@@ -187,6 +196,7 @@ export function useSupplierArrivals(
     status: key === "" ? "idle" : mine?.status ?? "loading",
     reading: mine?.reading ?? false,
     arrivals,
+    earlier,
     byBooking,
     busy,
     failures: failures.key === key ? failures.byId : NO_FAILURES,

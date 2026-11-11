@@ -35,7 +35,7 @@ const saved = (): Promise<ArrivalOutcome> => Promise.resolve("saved");
 
 function actions(overrides: Partial<SupplierArrivalsApi> = {}): SupplierArrivalsApi {
   return {
-    status: "ready", reading: false, arrivals: [], byBooking: new Map(), busy: new Set(), failures: new Map(), refresh: vi.fn(),
+    status: "ready", reading: false, arrivals: [], earlier: [], byBooking: new Map(), busy: new Set(), failures: new Map(), refresh: vi.fn(),
     step: vi.fn(saved), undo: vi.fn(saved), add: vi.fn(saved), change: vi.fn(saved), remove: vi.fn(saved), ...overrides,
   };
 }

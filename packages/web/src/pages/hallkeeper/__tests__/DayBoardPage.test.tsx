@@ -1846,12 +1846,13 @@ describe("DayBoardPage: what changed since the floor last looked", () => {
 });
 
 describe("DayBoardPage: the building", () => {
-  const at = (minutes: number): string => new Date(Date.now() + minutes * 60_000).toISOString();
   const ALARM = "00000000-0000-4000-8000-0000000006c1";
+  // The dinner by the venue's clock, so the case reads the same at any hour.
+  const tonight = (hours: number): string => new Date(Date.parse(dayRange(0).from) + hours * 3_600_000).toISOString();
 
   function day(): CalendarResponse["entries"] {
     return [
-      { ...liveBooking(), id: "00000000-0000-4000-8000-0000000000b8", title: "Dinner", eventId: "00000000-0000-4000-8000-0000000000e8", startsAt: at(60), endsAt: at(300) },
+      { ...liveBooking(), id: "00000000-0000-4000-8000-0000000000b8", title: "Dinner", eventId: "00000000-0000-4000-8000-0000000000e8", startsAt: tonight(18), endsAt: tonight(22) },
     ] as CalendarResponse["entries"];
   }
 
@@ -1861,7 +1862,7 @@ describe("DayBoardPage: the building", () => {
       day: shown, opening: [{ id: ALARM, kind: "opening", label: "Alarm unset", retired: false, mark: null }], lockup: [],
     }));
     checksApi.mark.mockImplementation(() => Promise.resolve({
-      id: ALARM, kind: "opening", label: "Alarm unset", retired: false, mark: { doneAt: at(0), doneByName: "Elaine" },
+      id: ALARM, kind: "opening", label: "Alarm unset", retired: false, mark: { doneAt: new Date().toISOString(), doneByUserId: null, doneByName: "Elaine" },
     }));
     renderBoard();
     const section = await screen.findByRole("region", { name: "The building" });
@@ -1869,10 +1870,11 @@ describe("DayBoardPage: the building", () => {
     fireEvent.click(within(section).getByText("The building"));
     fireEvent.click(within(section).getByRole("checkbox", { name: "Alarm unset" }));
     await waitFor(() => { expect(checksApi.mark).toHaveBeenCalled(); });
-    const [venueId, checkId, shownDay] = checksApi.mark.mock.calls[0] ?? [];
-    expect([venueId, checkId]).toEqual([VENUE, ALARM]);
-    expect(shownDay).toBe(checksApi.get.mock.calls[0]?.[1]);
+    // Ticked against the board's own day (the tests' venue keeps midnight).
+    expect(checksApi.mark.mock.calls[0]).toEqual([VENUE, ALARM, msToWallInput(Date.now(), "Europe/London").slice(0, 10)]);
     expect(await within(section).findByText(/^Elaine · \d{2}:\d{2}$/u)).toBeTruthy();
+    // Suppliers are read from a day and a half before the day too, for whoever is still in.
+    expect(arrivalsApi.list).toHaveBeenCalledWith(VENUE, Date.parse(dayRange(0).from) - 36 * 3_600_000, Date.parse(dayRange(0).to));
   });
 
   it("reads no checks on the wall, which ticks nothing", async () => {
@@ -1953,7 +1955,7 @@ describe("DayBoardPage: who comes to the building", () => {
     getCalendarMock.mockImplementation((_venueId, from) => Promise.resolve(from === tomorrow.from
       ? calendarFixture([{ ...liveBooking(), id: AWARDS, spaceId: SALOON, title: "Awards lunch", startsAt: new Date(noon).toISOString(), endsAt: new Date(noon + 3 * 3_600_000).toISOString() } as CalendarResponse["entries"][number]])
       : calendarFixture([liveBooking()])));
-    arrivalsApi.list.mockImplementation((_venueId, fromMs) => Promise.resolve(fromMs === Date.parse(tomorrow.from)
+    arrivalsApi.list.mockImplementation((_venueId, _fromMs, toMs) => Promise.resolve(toMs === Date.parse(tomorrow.to)
       ? [{ ...arrival(FLOWERS, "Thistle & Fern Flowers", 0), bookingId: AWARDS, arrivesAt: new Date(noon - 2 * 3_600_000).toISOString() }]
       : []));
     renderBoard();

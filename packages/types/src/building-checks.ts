@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { addRotaDays, rotaLocalDate, rotaMinuteOfDay } from "./staff-rota-checks.js";
 
 // ---------------------------------------------------------------------------
 // Opening and lock-up (T-693): the building's own checks, done each day.
@@ -9,10 +10,12 @@ import { z } from "zod";
 // invented would be a claim about a building it has not seen. The floor ticks
 // each check on the board's day, and the board says who did it and when; a
 // tick is a record of what someone says they did, never a compliance claim.
+// A night's lock-up may run past the board's boundary hour, so the board day
+// before stays open to ticks for a few hours after the board has rolled.
 // ---------------------------------------------------------------------------
 
 const IsoInstantSchema = z.iso.datetime({ offset: true });
-const CalendarDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/u, "Use a date such as 2026-11-14");
+const CalendarDateSchema = z.iso.date({ error: "Use a date such as 2026-11-14" });
 
 export const BUILDING_CHECK_KINDS = ["opening", "lockup"] as const;
 export const BuildingCheckKindSchema = z.enum(BUILDING_CHECK_KINDS);
@@ -24,6 +27,8 @@ export const BUILDING_CHECKS_MAX = 40;
 
 export const BuildingCheckMarkSchema = z.object({
   doneAt: IsoInstantSchema,
+  /** Who ticked it: only they, or the office, may take it back. Null once their account is gone. */
+  doneByUserId: z.uuid().nullable(),
   doneByName: z.string().min(1),
 }).strict();
 export type BuildingCheckMark = z.infer<typeof BuildingCheckMarkSchema>;
@@ -32,7 +37,7 @@ export const BuildingCheckSchema = z.object({
   id: z.uuid(),
   kind: BuildingCheckKindSchema,
   label: z.string().min(1).max(BUILDING_CHECK_LABEL_MAX),
-  /** Taken off the list since; still shown on a day it was ticked. */
+  /** Off the list by the day asked for; still shown on a day it was ticked. */
   retired: z.boolean(),
   /** The tick on the day asked for, or null. */
   mark: BuildingCheckMarkSchema.nullable(),
@@ -66,3 +71,22 @@ export const ReplaceBuildingChecksSchema = z.object({
 export type ReplaceBuildingChecks = z.input<typeof ReplaceBuildingChecksSchema>;
 
 export const BuildingCheckMarkBodySchema = z.object({ day: CalendarDateSchema }).strict();
+
+/** How long after the board rolls its night may still be ticked: a lock-up past the boundary hour, and the morning's look at it. */
+export const BUILDING_TICK_GRACE_MS = 8 * 3_600_000;
+
+/** The board day an instant falls on, on the venue's clock: before its boundary hour, the date before. */
+export function buildingBoardDay(ms: number, dayBoundaryHour: number, timeZone: string): string {
+  const date = rotaLocalDate(ms, timeZone);
+  return rotaMinuteOfDay(ms, timeZone) < dayBoundaryHour * 60 ? addRotaDays(date, -1) : date;
+}
+
+/**
+ * The board days a check may be ticked on, or a tick taken back, now: the
+ * venue's own, and the one before for the grace after the board rolls.
+ */
+export function buildingTickDays(nowMs: number, dayBoundaryHour: number, timeZone: string): readonly string[] {
+  const today = buildingBoardDay(nowMs, dayBoundaryHour, timeZone);
+  const night = buildingBoardDay(nowMs - BUILDING_TICK_GRACE_MS, dayBoundaryHour, timeZone);
+  return night === today ? [today] : [night, today];
+}

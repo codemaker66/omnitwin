@@ -31,6 +31,7 @@ import { crewBySlot, unstaffedTurnRounds, UNSTAFFED_HORIZON_MS } from "./lib/tur
 import { useRotaDay } from "./lib/use-rota-day.js";
 import { arrivalNotices, arrivalParts } from "./lib/supplier-notices.js";
 import { useSupplierArrivals } from "./lib/use-supplier-arrivals.js";
+import { SUPPLIER_ARRIVAL_STAY_MS, addRotaDays, buildingTickDays } from "@omnitwin/types";
 import { buildingDay } from "./lib/building-day.js";
 import { useBuildingChecks } from "./lib/use-building-checks.js";
 import { BuildingSection } from "./DayBoardBuilding.js";
@@ -459,7 +460,8 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
   );
   // Who comes to the building for each booking: the office plans them, the
   // floor marks the door. The wall shows no contacts, so it reads none.
-  const suppliers = useSupplierArrivals(venueId, range, venueId !== null && !wall);
+  // The look-back reads who was marked in before the day began and is not out yet.
+  const suppliers = useSupplierArrivals(venueId, range, venueId !== null && !wall, SUPPLIER_ARRIVAL_STAY_MS);
   const refreshSuppliers = suppliers.refresh;
   useEffect(() => { if (data !== null) refreshSuppliers(); }, [data, refreshSuppliers]);
   const plansSuppliers = !wall && administersVenue(user, venueId);
@@ -468,8 +470,19 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
   // The building: when it must be open, when it can be locked up, and the
   // venue's own checks for each, on the shown day. The wall ticks nothing.
   const checks = useBuildingChecks(venueId, shownDate, venueId !== null && !wall);
-  const boardArrivals = suppliers.arrivals;
-  const building = useMemo(() => buildingDay(lanes, boardArrivals, range), [lanes, boardArrivals, range]);
+  // Ticks are for the venue's own board day, and last night's for a few hours
+  // after the board rolls: a lock-up may run past the boundary hour. While
+  // last night may still be ticked, today's board reads its lock-up too.
+  const tickDays = buildingTickDays(nowMs, dayBoundaryHour, timeZone);
+  const onFloor = !wall && user !== null && venueId !== null && user.venueId === venueId && hasRole(VENUE_FLOOR_ROLES, user.role);
+  const lastNightDate = browsingToday && tickDays.length > 1 ? addRotaDays(today, -1) : "";
+  const lastNightChecks = useBuildingChecks(venueId, lastNightDate, venueId !== null && !wall && lastNightDate !== "");
+  const dayArrivals = suppliers.arrivals;
+  const earlierArrivals = suppliers.earlier;
+  const building = useMemo(
+    () => buildingDay(lanes, [...earlierArrivals, ...dayArrivals], { date: shownDate, dayBoundaryHour, timeZone }),
+    [lanes, earlierArrivals, dayArrivals, shownDate, dayBoundaryHour, timeZone],
+  );
   const changedBySlot = useMemo(() => new Map([...changesBySlot]
     .filter(([, changes]) => changes.length > 0)
     .map(([bookingId, changes]) => [bookingId, changes.length] as const)), [changesBySlot]);
@@ -932,7 +945,20 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
 
           {/* The building's day: open by, lock up after, and its own checks. */}
           {board !== null && (
-            <BuildingSection building={building} api={checks} boardDate={shownDate} timeZone={timeZone} canTick={marksDoor} canPlan={plansSuppliers} />
+            <BuildingSection
+              building={building}
+              api={checks}
+              lastNight={lastNightDate === "" ? null : { api: lastNightChecks, canTick: onFloor && tickDays.includes(lastNightDate) }}
+              boardDate={shownDate}
+              dayBoundaryHour={dayBoundaryHour}
+              timeZone={timeZone}
+              nowMs={nowMs}
+              userId={user?.id ?? null}
+              canTick={onFloor && tickDays.includes(shownDate)}
+              canPlan={plansSuppliers}
+              canMark={marksDoor}
+              suppliers={suppliers}
+            />
           )}
 
           {/* The rooms, what they show and the hours across them; a room

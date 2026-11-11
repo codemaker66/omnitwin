@@ -135,6 +135,23 @@ describe("useSupplierArrivals", () => {
     expect(result.current.arrivals[0]?.arrivedAt).toBeNull();
   });
 
+  it("reads a look-back before the day, kept apart from the day's own", async () => {
+    const lookBack = 36 * 3_600_000;
+    const overnight = arrival({ id: "00000000-0000-4000-8000-0000000005a9", supplierName: "Clyde Staging", arrivesAt: "2026-11-13T20:00:00.000Z", leavesBy: null,
+      arrivedAt: "2026-11-13T20:05:00.000Z", arrivedByName: "Ngozi" });
+    api.list.mockResolvedValue([overnight, arrival()]);
+    const { result } = renderHook(() => useSupplierArrivals(VENUE, SAT, true, lookBack));
+    await waitFor(() => { expect(result.current.status).toBe("ready"); });
+    expect(api.list).toHaveBeenCalledWith(VENUE, SAT.fromMs - lookBack, SAT.toMs);
+    expect(result.current.earlier.map((item) => item.supplierName)).toEqual(["Clyde Staging"]);
+    expect(result.current.arrivals.map((item) => item.supplierName)).toEqual(["The Kelvin Reelers"]);
+    expect(result.current.byBooking.get(BOOKING)?.map((item) => item.supplierName)).toEqual(["The Kelvin Reelers"]);
+    // Marked gone from the building's list, it stays read and leaves "still in".
+    api.step.mockResolvedValue({ ...overnight, leftAt: "2026-11-14T09:00:00.000Z", leftByName: "Jamie" });
+    await act(async () => { await result.current.step(overnight, "left"); });
+    expect(result.current.earlier[0]?.leftAt).toBe("2026-11-14T09:00:00.000Z");
+  });
+
   it("says a read is on its way, while what it last knew stands", async () => {
     api.list.mockRejectedValueOnce(new Error("offline"));
     const { result } = renderHook(() => useSupplierArrivals(VENUE, SAT, true));

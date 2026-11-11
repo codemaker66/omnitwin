@@ -1974,6 +1974,8 @@ button.dayboard-rail-item:disabled { cursor: default; }
 }
 
 .dayboard-checks-list input[type="checkbox"] {
+  /* A long check's words never squeeze its box on a phone. */
+  flex: none;
   width: 22px;
   height: 22px;
   margin: 0;
@@ -1989,15 +1991,19 @@ button.dayboard-rail-item:disabled { cursor: default; }
 }
 
 .dayboard-checks-none,
-.dayboard-checks-still-in,
+.dayboard-checks-note,
 .dayboard-checks-failed p {
   margin: 0 0 6px;
   color: var(--house-ink-2);
   font-size: 14.5px;
 }
 
-/* Someone still in at lock-up: said in copper words, never a tint. */
-.dayboard-checks-still-in { color: var(--house-copper-text); }
+/* Marked in and not out: its heading in copper words, never a tint. */
+.dayboard-still-in .dayboard-checks-title { color: var(--house-copper-text); }
+.dayboard-still-in .dayboard-checks-label { color: var(--house-ink-1); font-size: 15px; font-variant-numeric: tabular-nums; }
+
+/* Why a tick failed sits under its own check. */
+.dayboard-checks-list .dayboard-checks-problem { flex-basis: 100%; }
 
 .dayboard-checks-failed {
   display: flex;
