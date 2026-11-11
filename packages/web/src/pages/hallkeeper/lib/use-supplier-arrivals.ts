@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CreateSupplierArrival, SupplierArrival, SupplierArrivalStep, UpdateSupplierArrival } from "@omnitwin/types";
+import { ApiError } from "../../../api/client.js";
 import {
   createSupplierArrival,
   listSupplierArrivals,
   recordSupplierArrivalStep,
   removeSupplierArrival,
+  undoSupplierArrivalStep,
   updateSupplierArrival,
 } from "../../../api/supplier-arrivals.js";
 
@@ -15,32 +17,50 @@ import {
 // when it is shown again and when the device comes back online, so a tap at
 // one door reaches every screen within a minute. A failed read keeps what it
 // last knew. The office's changes and the floor's taps answer with the
-// arrival as it now stands, which replaces the board's copy at once; a
-// refusal (someone else changed it first) reads the day again and says so.
+// arrival as it now stands, which replaces the board's copy at once (or takes
+// it off a day it has moved off); a read that set out before a change landed
+// is read again rather than painted, so it never puts the change back. A
+// change made from an old copy is refused ("stale") and the day is read
+// again. Why a change failed is kept against its arrival (or the booking's
+// add form), for the day it was made on.
 // ---------------------------------------------------------------------------
 
 export const SUPPLIER_ARRIVALS_INTERVAL_MS = 60_000;
 
+/** What became of a change: made; refused, as someone changed it first; or not made. */
+export type ArrivalOutcome = "saved" | "stale" | "failed";
+
+/** The key a booking's add form keeps its busy state and failure under. */
+export function newArrivalKey(bookingId: string): string {
+  return `new:${bookingId}`;
+}
+
 export interface SupplierArrivalsApi {
   readonly status: "idle" | "loading" | "ready" | "failed";
+  /** A read of the day is on its way. */
+  readonly reading: boolean;
   readonly arrivals: readonly SupplierArrival[];
   /** Each booking's arrivals, earliest first. */
   readonly byBooking: ReadonlyMap<string, readonly SupplierArrival[]>;
-  /** Arrivals with a tap or change on its way. */
+  /** Arrivals (and add forms, by `newArrivalKey`) with a tap or change on its way. */
   readonly busy: ReadonlySet<string>;
-  /** Why the last change or tap could not be made, or null. */
-  readonly failure: string | null;
+  /** Why the last change to an arrival (or add form) could not be made, on this day. */
+  readonly failures: ReadonlyMap<string, string>;
   readonly refresh: () => void;
-  readonly step: (arrival: SupplierArrival, step: SupplierArrivalStep) => Promise<boolean>;
-  readonly add: (body: CreateSupplierArrival) => Promise<boolean>;
-  readonly change: (arrival: SupplierArrival, body: Omit<UpdateSupplierArrival, "expectedRevision">) => Promise<boolean>;
-  readonly remove: (arrival: SupplierArrival) => Promise<boolean>;
+  readonly step: (arrival: SupplierArrival, step: SupplierArrivalStep) => Promise<ArrivalOutcome>;
+  readonly undo: (arrival: SupplierArrival, step: SupplierArrivalStep) => Promise<ArrivalOutcome>;
+  readonly add: (body: CreateSupplierArrival) => Promise<ArrivalOutcome>;
+  /** A change, from the revision the form was opened on. */
+  readonly change: (arrival: SupplierArrival, openedRevision: number, body: Omit<UpdateSupplierArrival, "expectedRevision">) => Promise<ArrivalOutcome>;
+  readonly remove: (arrival: SupplierArrival) => Promise<ArrivalOutcome>;
 }
 
 const NONE: readonly SupplierArrival[] = [];
+const NO_FAILURES: ReadonlyMap<string, string> = new Map();
 
-/** The server's words, without a closing full stop the sentence adds back. */
+/** Why it failed, in the board's words, without a closing full stop the sentence adds back. */
 function reason(error: unknown): string {
+  if (error instanceof ApiError && error.code === "STALE_ARRIVAL") return "someone else changed it meanwhile, so it now shows as it stands";
   const words = error instanceof Error ? error.message.trim().replace(/[.\s]+$/u, "") : "";
   return words.length > 0 ? words : "the server refused it";
 }
@@ -55,24 +75,37 @@ export function useSupplierArrivals(
   enabled: boolean,
 ): SupplierArrivalsApi {
   const key = venueId === null || !enabled ? "" : `${venueId}|${String(range.fromMs)}|${String(range.toMs)}`;
-  const [held, setHeld] = useState<{ readonly key: string; readonly status: "loading" | "ready" | "failed"; readonly arrivals: readonly SupplierArrival[] } | null>(null);
+  const [held, setHeld] = useState<{
+    readonly key: string;
+    readonly status: "loading" | "ready" | "failed";
+    readonly arrivals: readonly SupplierArrival[];
+    readonly reading: boolean;
+  } | null>(null);
   const [busy, setBusy] = useState<ReadonlySet<string>>(new Set());
-  const [failure, setFailure] = useState<string | null>(null);
+  const [failures, setFailures] = useState<{ readonly key: string; readonly byId: ReadonlyMap<string, string> }>({ key: "", byId: NO_FAILURES });
   const [attempt, setAttempt] = useState(0);
   const refresh = useCallback(() => { setAttempt((count) => count + 1); }, []);
+  /** Counts the changes that have landed, so a read that set out before one is not painted. */
+  const landed = useRef(0);
 
   useEffect(() => {
     if (venueId === null || key === "") return;
     const reading = new AbortController();
-    setHeld((current) => (current?.key === key ? current : { key, status: "loading", arrivals: NONE }));
+    const landedBefore = landed.current;
+    setHeld((current) => (current?.key === key ? { ...current, reading: true } : { key, status: "loading", arrivals: NONE, reading: true }));
     listSupplierArrivals(venueId, range.fromMs, range.toMs, reading.signal)
-      .then((arrivals) => { if (!reading.signal.aborted) setHeld({ key, status: "ready", arrivals: [...arrivals].sort(byStart) }); })
+      .then((arrivals) => {
+        if (reading.signal.aborted) return;
+        // A change landed while this read was out: it may predate the change.
+        if (landed.current !== landedBefore) { refresh(); return; }
+        setHeld({ key, status: "ready", arrivals: [...arrivals].sort(byStart), reading: false });
+      })
       .catch(() => {
         if (reading.signal.aborted) return;
-        setHeld((current) => (current?.key === key ? { ...current, status: "failed" } : { key, status: "failed", arrivals: NONE }));
+        setHeld((current) => (current?.key === key ? { ...current, status: "failed", reading: false } : { key, status: "failed", arrivals: NONE, reading: false }));
       });
     return () => { reading.abort(); };
-  }, [venueId, key, range.fromMs, range.toMs, attempt]);
+  }, [venueId, key, range.fromMs, range.toMs, attempt, refresh]);
 
   // Every minute in view; at once when shown again or back online.
   useEffect(() => {
@@ -88,47 +121,80 @@ export function useSupplierArrivals(
     };
   }, [key, refresh]);
 
-  /** Put an arrival as it now stands into the day it belongs to. */
-  const settle = useCallback((forKey: string, arrival: SupplierArrival | null, removedId?: string) => {
+  /** Put an arrival as it now stands into the day, or off the day if it is not due on it. */
+  const settle = useCallback((forKey: string, arrival: SupplierArrival | null, goneId?: string) => {
     setHeld((current) => {
       if (current?.key !== forKey) return current;
-      const others = current.arrivals.filter((item) => item.id !== (arrival?.id ?? removedId));
-      return { ...current, arrivals: arrival === null ? others : [...others, arrival].sort(byStart) };
+      const others = current.arrivals.filter((item) => item.id !== (arrival?.id ?? goneId));
+      const dueMs = arrival === null ? Number.NaN : Date.parse(arrival.arrivesAt);
+      const onDay = arrival !== null && dueMs >= range.fromMs && dueMs < range.toMs;
+      return { ...current, arrivals: onDay ? [...others, arrival].sort(byStart) : others };
     });
-  }, []);
+  }, [range.fromMs, range.toMs]);
 
-  const run = useCallback(async (id: string, action: () => Promise<SupplierArrival | null>, removedId?: string): Promise<boolean> => {
-    if (venueId === null) return false;
+  const run = useCallback(async (
+    id: string,
+    verb: string,
+    action: () => Promise<SupplierArrival | null>,
+    goneId?: string,
+  ): Promise<ArrivalOutcome> => {
+    if (venueId === null) return "failed";
     const forKey = key;
+    const note = (words: string | null): void => {
+      setFailures((current) => {
+        const byId = new Map(current.key === forKey ? current.byId : NO_FAILURES);
+        if (words === null) byId.delete(id);
+        else byId.set(id, words);
+        return { key: forKey, byId };
+      });
+    };
     setBusy((current) => new Set([...current, id]));
-    setFailure(null);
+    note(null);
     try {
-      settle(forKey, await action(), removedId);
-      return true;
+      const now = await action();
+      landed.current += 1;
+      settle(forKey, now, goneId);
+      return "saved";
     } catch (error) {
-      setFailure(`Couldn’t save that: ${reason(error)}.`);
+      note(`Couldn’t ${verb}: ${reason(error)}.`);
       refresh();
-      return false;
+      return error instanceof ApiError && error.status === 409 ? "stale" : "failed";
     } finally {
       setBusy((current) => new Set([...current].filter((item) => item !== id)));
     }
   }, [venueId, key, settle, refresh]);
 
+  const place = venueId ?? "";
   const step = useCallback((arrival: SupplierArrival, which: SupplierArrivalStep) =>
-    run(arrival.id, () => recordSupplierArrivalStep(venueId ?? "", arrival.id, which)), [run, venueId]);
+    run(arrival.id, "mark that", () => recordSupplierArrivalStep(place, arrival.id, which)), [run, place]);
+  const undo = useCallback((arrival: SupplierArrival, which: SupplierArrivalStep) =>
+    run(arrival.id, "take that back", () => undoSupplierArrivalStep(place, arrival.id, which)), [run, place]);
   const add = useCallback((body: CreateSupplierArrival) =>
-    run("new", () => createSupplierArrival(venueId ?? "", body)), [run, venueId]);
-  const change = useCallback((arrival: SupplierArrival, body: Omit<UpdateSupplierArrival, "expectedRevision">) =>
-    run(arrival.id, () => updateSupplierArrival(venueId ?? "", arrival.id, { ...body, expectedRevision: arrival.revision })), [run, venueId]);
+    run(newArrivalKey(body.bookingId), "add that", () => createSupplierArrival(place, body)), [run, place]);
+  const change = useCallback((arrival: SupplierArrival, openedRevision: number, body: Omit<UpdateSupplierArrival, "expectedRevision">) =>
+    run(arrival.id, "save that", () => updateSupplierArrival(place, arrival.id, { ...body, expectedRevision: openedRevision })), [run, place]);
   const remove = useCallback((arrival: SupplierArrival) =>
-    run(arrival.id, async () => { await removeSupplierArrival(venueId ?? "", arrival); return null; }, arrival.id), [run, venueId]);
+    run(arrival.id, "remove that", async () => { await removeSupplierArrival(place, arrival); return null; }, arrival.id), [run, place]);
 
-  const arrivals = key !== "" && held?.key === key ? held.arrivals : NONE;
+  const mine = key !== "" && held?.key === key ? held : null;
+  const arrivals = mine?.arrivals ?? NONE;
   const byBooking = useMemo(() => {
     const grouped = new Map<string, SupplierArrival[]>();
     for (const arrival of arrivals) grouped.set(arrival.bookingId, [...(grouped.get(arrival.bookingId) ?? []), arrival]);
     return grouped;
   }, [arrivals]);
-  const status = key === "" ? "idle" : held?.key === key ? held.status : "loading";
-  return { status, arrivals, byBooking, busy, failure, refresh, step, add, change, remove };
+  return {
+    status: key === "" ? "idle" : mine?.status ?? "loading",
+    reading: mine?.reading ?? false,
+    arrivals,
+    byBooking,
+    busy,
+    failures: failures.key === key ? failures.byId : NO_FAILURES,
+    refresh,
+    step,
+    undo,
+    add,
+    change,
+    remove,
+  };
 }

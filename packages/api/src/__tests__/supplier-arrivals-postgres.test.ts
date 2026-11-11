@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { SupplierArrival } from "@omnitwin/types";
 import * as schema from "../db/schema.js";
 import { supplierArrivalRoutes } from "../routes/supplier-arrivals.js";
+import { updateBookingCore } from "../services/booking-mutations.js";
 import { insertBoundBookings } from "../services/event-binding.js";
 
 // ---------------------------------------------------------------------------
@@ -16,7 +17,10 @@ import { insertBoundBookings } from "../services/event-binding.js";
 //   - the floor cannot plan them, a change from an old copy is refused, and
 //     of two changes from one copy exactly one lands;
 //   - another venue reads, changes and marks nothing, and its booking cannot
-//     be named; an arrival far from its booking is refused.
+//     be named; an arrival far from its booking is refused, a collection the
+//     morning after is not;
+//   - a Diary move carries the arrivals not yet marked; a supplier marked in
+//     is not removed until the tap is taken back; a tap belongs to the day.
 // Never reads DATABASE_URL or an env file.
 // ---------------------------------------------------------------------------
 
@@ -132,17 +136,25 @@ describe.skipIf(target === undefined)("supplier arrivals, on migrated PostgreSQL
     const later = await call(f, "hallkeeper", "GET", `/venues/${f.venueId}/supplier-arrivals?${window(f, DAY, 2 * DAY)}`);
     expect(later.data).toEqual([]);
 
-    // Two phones at one door: the first tap wins, the second reads it back.
-    const first = await call(f, "hallkeeper", "POST", `/venues/${f.venueId}/supplier-arrivals/${saved.id}/arrived`);
-    const second = await call(f, "porter", "POST", `/venues/${f.venueId}/supplier-arrivals/${saved.id}/arrived`);
-    expect(first.status).toBe(200);
-    expect((first.data as SupplierArrival).arrivedByName).toBe("Jamie");
+    // At the door tonight, two phones at once: one fact, the same for both.
+    const tonight = await fixtureTonight(f);
+    const due = (await call(f, "admin", "POST", `/venues/${f.venueId}/supplier-arrivals`, arrival(f, {
+      bookingId: tonight.id, arrivesAt: new Date(tonight.startsAt.getTime() - HOUR).toISOString(), leavesBy: null,
+    }))).data as SupplierArrival;
+    const [first, second] = await Promise.all([
+      call(f, "hallkeeper", "POST", `/venues/${f.venueId}/supplier-arrivals/${due.id}/arrived`),
+      call(f, "porter", "POST", `/venues/${f.venueId}/supplier-arrivals/${due.id}/arrived`),
+    ]);
+    expect([first.status, second.status]).toEqual([200, 200]);
     expect(second.data).toEqual(first.data);
-    const gone = await call(f, "porter", "POST", `/venues/${f.venueId}/supplier-arrivals/${saved.id}/left`);
-    expect(gone.data).toMatchObject({ arrivedByName: "Jamie", leftByName: "Ngozi", revision: 1 });
+    expect(["Jamie", "Ngozi"]).toContain((first.data as SupplierArrival).arrivedByName);
+    const gone = await call(f, "porter", "POST", `/venues/${f.venueId}/supplier-arrivals/${due.id}/left`);
+    expect(gone.data).toMatchObject({ arrivedByName: (first.data as SupplierArrival).arrivedByName, leftByName: "Ngozi", revision: 1 });
 
     // Leaving without having been marked in marks the arrival too.
-    const band = await call(f, "admin", "POST", `/venues/${f.venueId}/supplier-arrivals`, arrival(f, { supplierName: "The Kelvin Reelers", leavesBy: null }));
+    const band = await call(f, "admin", "POST", `/venues/${f.venueId}/supplier-arrivals`, arrival(f, {
+      bookingId: tonight.id, supplierName: "The Kelvin Reelers", arrivesAt: new Date(tonight.startsAt.getTime() - HOUR).toISOString(), leavesBy: null,
+    }));
     const left = await call(f, "hallkeeper", "POST", `/venues/${f.venueId}/supplier-arrivals/${(band.data as SupplierArrival).id}/left`);
     expect(left.data).toMatchObject({ arrivedByName: "Jamie", leftByName: "Jamie" });
     expect((left.data as SupplierArrival).arrivedAt).toBe((left.data as SupplierArrival).leftAt);
@@ -187,9 +199,9 @@ describe.skipIf(target === undefined)("supplier arrivals, on migrated PostgreSQL
       leavesBy: new Date(f.start.getTime() - 7 * HOUR).toISOString(),
     }));
     expect([backwards.status, backwards.code]).toEqual([400, "VALIDATION_ERROR"]);
-    // A changed time is held to the booking too.
+    // A changed time is held to the booking too: a day after it ends at the latest.
     const moved = await call(f, "admin", "PATCH", `/venues/${f.venueId}/supplier-arrivals/${made.id}`, {
-      expectedRevision: 1, arrivesAt: new Date(f.start.getTime() + 7 * HOUR).toISOString(), leavesBy: null,
+      expectedRevision: 1, arrivesAt: new Date(f.start.getTime() + 31 * HOUR).toISOString(), leavesBy: null,
     });
     expect([moved.status, moved.code]).toEqual([400, "ARRIVAL_OUTSIDE_BOOKING"]);
     // Three days at a time, no more.
@@ -200,4 +212,102 @@ describe.skipIf(target === undefined)("supplier arrivals, on migrated PostgreSQL
     await db.update(schema.bookings).set({ deletedAt: new Date() }).where(eq(schema.bookings.id, f.dinner.id));
     expect((await call(f, "hallkeeper", "GET", `/venues/${f.venueId}/supplier-arrivals?${window(f)}`)).data).toEqual([]);
   });
+
+  it("lets a collection come the morning after, and keeps a door change to the door", async () => {
+    const f = await fixture();
+    const vases = await call(f, "admin", "POST", `/venues/${f.venueId}/supplier-arrivals`, arrival(f, {
+      supplierName: "Thistle & Fern Flowers (collection)", arrivesAt: new Date(f.start.getTime() + 16 * HOUR).toISOString(), leavesBy: null,
+    }));
+    expect(vases.status).toBe(201);
+    const late = await call(f, "admin", "POST", `/venues/${f.venueId}/supplier-arrivals`, arrival(f, {
+      arrivesAt: new Date(f.start.getTime() + 31 * HOUR).toISOString(), leavesBy: null,
+    }));
+    expect([late.status, late.code]).toEqual([400, "ARRIVAL_OUTSIDE_BOOKING"]);
+  });
+
+  it("moves the arrivals not yet marked with their booking when the Diary moves it", async () => {
+    const f = await fixture();
+    const due = (await call(f, "admin", "POST", `/venues/${f.venueId}/supplier-arrivals`, arrival(f))).data as SupplierArrival;
+    const inAlready = (await call(f, "admin", "POST", `/venues/${f.venueId}/supplier-arrivals`, arrival(f, { supplierName: "Already in" }))).data as SupplierArrival;
+    await db.update(schema.bookingSupplierArrivals).set({ arrivedAt: new Date(), arrivedByName: "Jamie" })
+      .where(eq(schema.bookingSupplierArrivals.id, inAlready.id));
+    const moved = await updateBookingCore(db, { id: f.people.admin, venueId: f.venueId, role: "admin", platformRole: "none" }, f.dinner.id, {
+      startsAt: new Date(f.start.getTime() - DAY).toISOString(), endsAt: new Date(f.start.getTime() - DAY + 6 * HOUR).toISOString(),
+    });
+    expect(moved.ok).toBe(true);
+    const [after] = await db.select().from(schema.bookingSupplierArrivals).where(eq(schema.bookingSupplierArrivals.id, due.id));
+    expect(after?.arrivesAt.toISOString()).toBe(new Date(Date.parse(due.arrivesAt) - DAY).toISOString());
+    expect(after?.leavesBy?.toISOString()).toBe(new Date(Date.parse(due.leavesBy ?? "") - DAY).toISOString());
+    expect(after?.revision).toBe(2);
+    const [kept] = await db.select().from(schema.bookingSupplierArrivals).where(eq(schema.bookingSupplierArrivals.id, inAlready.id));
+    expect(kept?.arrivesAt.toISOString()).toBe(inAlready.arrivesAt);
+    // The day before now reads the moved arrival, and a door change is not re-judged on its times.
+    const dayBefore = await call(f, "hallkeeper", "GET", `/venues/${f.venueId}/supplier-arrivals?${window(f, -2 * DAY, 0)}`);
+    expect((dayBefore.data as SupplierArrival[]).map((item) => item.id)).toContain(due.id);
+    expect((await call(f, "admin", "PATCH", `/venues/${f.venueId}/supplier-arrivals/${due.id}`, { expectedRevision: 2, entrance: "the kitchen lift" })).status).toBe(200);
+  });
+
+  it("keeps a supplier marked in until the tap is taken back, and holds a tap to the day", async () => {
+    const f = await fixture();
+    const tonight = await fixtureTonight(f);
+    const made = (await call(f, "admin", "POST", `/venues/${f.venueId}/supplier-arrivals`, arrival(f, {
+      bookingId: tonight.id, arrivesAt: new Date(tonight.startsAt.getTime() - HOUR).toISOString(), leavesBy: null,
+    }))).data as SupplierArrival;
+    await call(f, "hallkeeper", "POST", `/venues/${f.venueId}/supplier-arrivals/${made.id}/arrived`);
+    const refused = await call(f, "admin", "DELETE", `/venues/${f.venueId}/supplier-arrivals/${made.id}?expectedRevision=1`);
+    expect([refused.status, refused.code]).toEqual([409, "ARRIVAL_MARKED"]);
+    // Taken back on the board, it can be removed.
+    const undone = await call(f, "hallkeeper", "DELETE", `/venues/${f.venueId}/supplier-arrivals/${made.id}/arrived`);
+    expect(undone.data).toMatchObject({ arrivedAt: null, arrivedByName: null });
+    expect((await call(f, "admin", "DELETE", `/venues/${f.venueId}/supplier-arrivals/${made.id}?expectedRevision=1`)).status).toBe(204);
+
+    // Four days ahead is not today's door.
+    const ahead = (await call(f, "admin", "POST", `/venues/${f.venueId}/supplier-arrivals`, arrival(f))).data as SupplierArrival;
+    const early = await call(f, "hallkeeper", "POST", `/venues/${f.venueId}/supplier-arrivals/${ahead.id}/arrived`);
+    expect([early.status, early.code]).toEqual([400, "ARRIVAL_NOT_DUE"]);
+
+    // A booking taken off the Diary takes its door with it.
+    await db.update(schema.bookings).set({ deletedAt: new Date() }).where(eq(schema.bookings.id, tonight.id));
+    const offDiary = (await db.insert(schema.bookingSupplierArrivals).values({
+      venueId: f.venueId, bookingId: tonight.id, supplierName: "Orphan", arrivesAt: new Date(),
+    }).returning())[0];
+    expect((await call(f, "hallkeeper", "POST", `/venues/${f.venueId}/supplier-arrivals/${offDiary?.id ?? ""}/arrived`)).status).toBe(404);
+  });
+
+  it("lets a platform administrator read and plan a venue's suppliers", async () => {
+    const f = await fixture();
+    const id = randomUUID();
+    await db.insert(schema.users).values({ id, venueId: null, name: "Platform", email: `${id}@arrivals.invalid`, role: "admin", platformRole: "admin" });
+    const headers = { authorization: `Bearer ${JSON.stringify({ id, email: `${id}@arrivals.invalid`, name: "Platform", role: "admin", platformRole: "admin", venueId: null })}` };
+    const made = await server.inject({ method: "POST", url: `/venues/${f.venueId}/supplier-arrivals`, headers, payload: arrival(f) });
+    expect(made.statusCode).toBe(201);
+    const read = await server.inject({ method: "GET", url: `/venues/${f.venueId}/supplier-arrivals?${window(f)}`, headers });
+    expect(read.json<{ data: SupplierArrival[] }>().data.map((item) => item.supplierName)).toEqual(["Thistle & Fern Flowers"]);
+  });
+
+  it("records a long name at the door rather than refusing the tap", async () => {
+    const f = await fixture();
+    const tonight = await fixtureTonight(f);
+    const made = (await call(f, "admin", "POST", `/venues/${f.venueId}/supplier-arrivals`, arrival(f, {
+      bookingId: tonight.id, arrivesAt: new Date(tonight.startsAt.getTime() - HOUR).toISOString(), leavesBy: null,
+    }))).data as SupplierArrival;
+    const id = f.people.hallkeeper;
+    const response = await server.inject({
+      method: "POST", url: `/venues/${f.venueId}/supplier-arrivals/${made.id}/arrived`,
+      headers: { authorization: `Bearer ${JSON.stringify({ id, email: `${id}@arrivals.invalid`, name: "J".repeat(200), role: "hallkeeper", platformRole: "none", venueId: f.venueId })}` },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json<{ data: SupplierArrival }>().data.arrivedByName).toHaveLength(160);
+  });
+
+  /** A booking of the fixture's venue starting in two hours, so its door is today's. */
+  async function fixtureTonight(f: Fixture) {
+    const startsAt = new Date(Math.ceil((Date.now() + 2 * HOUR) / 60_000) * 60_000);
+    const [booking] = await insertBoundBookings(db, [{
+      venueId: f.venueId, spaceId: f.dinner.spaceId, kind: "ink", title: "TEST ONLY tonight", eventType: "dinner", createdBy: f.people.admin,
+      startsAt, endsAt: new Date(startsAt.getTime() + 4 * HOUR),
+    }]);
+    if (booking === undefined) throw new Error("booking not made");
+    return booking;
+  }
 });

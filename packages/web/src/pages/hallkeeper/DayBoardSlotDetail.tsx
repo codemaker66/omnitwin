@@ -289,7 +289,13 @@ export function SlotDetail({ slot, room, venueSlug, timeZone, slotRequests: Slot
   /** Who comes to the building for this booking; null on the wall. */
   readonly suppliers?: {
     readonly arrivals: readonly SupplierArrival[];
+    /** The board's day (YYYY-MM-DD) and the hour it runs to on the next date. */
+    readonly boardDate: string;
+    readonly dayBoundaryHour: number;
+    /** The board shows today. */
+    readonly today: boolean;
     readonly canPlan: boolean;
+    /** The floor marks the door, on today's board only. */
     readonly canMark: boolean;
     readonly actions: SupplierArrivalsApi;
   } | null;
@@ -395,12 +401,14 @@ export function SlotDetail({ slot, room, venueSlug, timeZone, slotRequests: Slot
         <SuppliersSection
           slot={slot}
           arrivals={suppliers.arrivals}
+          boardDate={suppliers.boardDate}
+          dayBoundaryHour={suppliers.dayBoundaryHour}
           timeZone={timeZone}
           nowMs={nowMs}
+          today={suppliers.today}
           canPlan={suppliers.canPlan}
           canMark={suppliers.canMark}
           actions={suppliers.actions}
-          unread={suppliers.actions.status === "failed"}
         />
       )}
       {/* What the room was seen doing (S5): the latest fact, and the next

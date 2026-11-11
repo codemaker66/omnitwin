@@ -42,3 +42,8 @@ export function removeSupplierArrival(venueId: string, arrival: Pick<SupplierArr
 export function recordSupplierArrivalStep(venueId: string, id: string, step: SupplierArrivalStep): Promise<SupplierArrival> {
   return api.post(`${arrivalsPath(venueId)}/${encodeURIComponent(id)}/${step}`, {}, undefined, SupplierArrivalSchema);
 }
+
+/** The floor takes a mistaken tap back. */
+export function undoSupplierArrivalStep(venueId: string, id: string, step: SupplierArrivalStep): Promise<SupplierArrival> {
+  return api.delete(`${arrivalsPath(venueId)}/${encodeURIComponent(id)}/${step}`, SupplierArrivalSchema);
+}

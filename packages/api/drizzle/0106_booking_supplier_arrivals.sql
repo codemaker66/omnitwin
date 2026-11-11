@@ -1,6 +1,9 @@
 -- Supplier arrivals on the Day Board (T-692, 11 November 2026).
--- 0106, after 0105; the release queue confirms the number at the merge slot
--- (renumber the tag AND the journal `when`).
+-- 0106, after 0105; the release queue confirms the number at the merge slot.
+-- A renumber changes this file's name, this line, and the journal entry's
+-- tag, idx and `when`. Its `when` must be strictly later than the entry
+-- before it: drizzle applies a migration only when its `when` is later than
+-- the last one applied, so an equal value is skipped.
 --
 -- Who comes to the building for a booking, when, and at which door: what a
 -- hallkeeper needs to receive a supplier at the right entrance and to know,
@@ -10,7 +13,9 @@
 -- edits. A supplier pass (0038) stays what the supplier is sent; this is the
 -- floor's record of the door.
 --
--- A new table only: nothing existing is read, rewritten or locked.
+-- A new table only: nothing existing is read or rewritten. Creating its
+-- foreign keys briefly takes SHARE ROW EXCLUSIVE locks on venues, bookings
+-- and users, which block writes to them for that moment.
 
 CREATE TABLE booking_supplier_arrivals (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

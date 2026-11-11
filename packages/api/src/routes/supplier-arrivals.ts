@@ -16,6 +16,7 @@ import {
   listArrivals,
   recordArrivalStep,
   removeArrival,
+  undoArrivalStep,
   updateArrival,
   type ArrivalDeny,
 } from "../services/supplier-arrivals.js";
@@ -30,6 +31,7 @@ import type { RequestActor } from "../services/requests.js";
 //   PATCH  /:id                  the office changes one, from the revision it saw
 //   DELETE /:id?expectedRevision the office removes one, likewise
 //   POST   /:id/arrived | /left  the floor records the door; first tap wins
+//   DELETE /:id/arrived | /left  the floor takes a mistaken tap back
 // ---------------------------------------------------------------------------
 
 const VenueParam = z.object({ venueId: z.uuid() });
@@ -105,6 +107,15 @@ export async function supplierArrivalRoutes(server: FastifyInstance, opts: { db:
     const params = StepParam.safeParse(request.params);
     if (!params.success) return validationError(reply, params.error.issues);
     const result = await recordArrivalStep(db, actorOf(request), params.data.venueId, params.data.id, params.data.step);
+    if (isArrivalDeny(result)) return sendDeny(reply, result);
+    return { data: SupplierArrivalSchema.parse(result) };
+  });
+
+  server.delete("/:venueId/supplier-arrivals/:id/:step", { preHandler: [authenticate] }, async (request, reply) => {
+    reply.header("Cache-Control", "private, no-store");
+    const params = StepParam.safeParse(request.params);
+    if (!params.success) return validationError(reply, params.error.issues);
+    const result = await undoArrivalStep(db, actorOf(request), params.data.venueId, params.data.id, params.data.step);
     if (isArrivalDeny(result)) return sendDeny(reply, result);
     return { data: SupplierArrivalSchema.parse(result) };
   });
