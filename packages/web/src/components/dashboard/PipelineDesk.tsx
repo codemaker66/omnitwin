@@ -63,6 +63,9 @@ type DetailState =
 type Failure = DealPanelProps["failure"];
 
 /** "Couldn't save" in words that say what is and is not true afterwards. */
+/** A move refused because the deal is no longer where this screen read it. */
+const MOVED_ON_CODES: readonly string[] = ["INVALID_TRANSITION", "OPPORTUNITY_STAGE_CHANGED"];
+
 const FAILURE_WORDS: Readonly<Record<NonNullable<Failure>["where"], string>> = {
   step: "That did not save. The deal has not moved.",
   value: "The value did not save. It is as it was.",
@@ -267,11 +270,14 @@ export function PipelineDesk({ opportunityId = null, onOpportunityShown, onOpenP
       afterChange(id);
       return true;
     } catch (error: unknown) {
-      const reason = error instanceof ApiError && error.code === "INVALID_TRANSITION"
+      // The deal moved on since this screen read it: a move it no longer
+      // allows, or a colleague's move that landed first.
+      const movedOn = error instanceof ApiError && MOVED_ON_CODES.includes(error.code);
+      const reason = movedOn
         ? "That move is not open from this stage any more. The deal has been read again."
         : FAILURE_WORDS[where];
       setFailure({ where, message: reason });
-      if (error instanceof ApiError && error.code === "INVALID_TRANSITION") afterChange(id);
+      if (movedOn) afterChange(id);
       return false;
     } finally {
       setSaving(null);
