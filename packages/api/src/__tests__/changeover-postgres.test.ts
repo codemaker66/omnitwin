@@ -48,7 +48,7 @@ describe.skipIf(target === undefined)("what moves at a changeover, on migrated P
 
   async function fixture() {
     const venueId = randomUUID(), otherVenueId = randomUUID(), hall = randomUUID(), saloon = randomUUID();
-    const round = randomUUID(), lectern = randomUUID();
+    const round = randomUUID(), lectern = randomUUID(), table = randomUUID(), seat = randomUUID();
     const hallkeeper = randomUUID(), elsewhere = randomUUID();
     await db.insert(schema.venues).values([
       { id: venueId, name: "TEST ONLY changeover venue", slug: venueId, address: "Disposable fixture" },
@@ -66,14 +66,17 @@ describe.skipIf(target === undefined)("what moves at a changeover, on migrated P
     await db.insert(schema.assetDefinitions).values([
       { id: round, name: "TEST ONLY stage deck", category: "stage", widthM: "1.2", depthM: "1.2", heightM: "0.75" },
       { id: lectern, name: "TEST ONLY lectern", category: "av", widthM: "0.6", depthM: "0.5", heightM: "1.2" },
+      { id: table, name: "TEST ONLY round", category: "table", widthM: "1.8", depthM: "1.8", heightM: "0.75" },
+      { id: seat, name: "TEST ONLY chair", category: "chair", widthM: "0.45", depthM: "0.45", heightM: "0.9" },
     ]);
-    async function layout(spaceId: string, name: string, pieces: readonly { asset: string; x: number; z: number }[]): Promise<string> {
+    async function layout(spaceId: string, name: string, pieces: readonly { asset: string; x: number; z: number; group?: string }[]): Promise<string> {
       const configId = randomUUID();
       await db.insert(schema.configurations).values({ id: configId, venueId, spaceId, userId: null, name, slug: configId, layoutStyle: "custom" });
       if (pieces.length > 0) {
         await db.insert(schema.placedObjects).values(pieces.map((piece, index) => ({
           id: randomUUID(), configurationId: configId, assetDefinitionId: piece.asset,
           positionX: String(piece.x), positionY: "0", positionZ: String(piece.z), sortOrder: index, coordinateWriteToken: randomUUID(),
+          ...(piece.group === undefined ? {} : { metadata: { groupId: piece.group } }),
         })));
       }
       return configId;
@@ -85,7 +88,16 @@ describe.skipIf(target === undefined)("what moves at a changeover, on migrated P
       { asset: round, x: 4, z: 4 }, { asset: round, x: 10, z: 8 }, { asset: lectern, x: 10, z: 16 },
     ]);
     const tasting = await layout(saloon, "TEST ONLY tasting", [{ asset: round, x: 4, z: 4 }]);
-    return { venueId, otherVenueId, hallkeeper, elsewhere, wedding, conference, tasting };
+    // Two rounds, each grouped with its chairs as the planner saves a table.
+    const seated = (each: number) => [5, 12].flatMap((x) => {
+      const group = randomUUID();
+      return [{ asset: table, x, z: 10, group }, ...Array.from({ length: each }, (_, c) => ({
+        asset: seat, x: x + 1.2 * Math.cos((2 * Math.PI * c) / each), z: 10 + 1.2 * Math.sin((2 * Math.PI * c) / each), group,
+      }))];
+    });
+    const fours = await layout(hall, "TEST ONLY rounds of four", seated(4));
+    const threes = await layout(hall, "TEST ONLY rounds of three", seated(3));
+    return { venueId, otherVenueId, hallkeeper, elsewhere, wedding, conference, tasting, fours, threes };
   }
 
   type Fixture = Awaited<ReturnType<typeof fixture>>;
@@ -118,6 +130,16 @@ describe.skipIf(target === undefined)("what moves at a changeover, on migrated P
     });
     // Counts and pieces only: none of a sheet's contacts, notes or times.
     expect(Object.keys(changeover).sort()).toEqual(["from", "items", "plan", "to"]);
+  });
+
+  it("counts the chairs set at tables, which the sheet folds into each table's row", async () => {
+    const f = await fixture();
+    const response = await ask(f, "hallkeeper", f.fours, f.threes);
+    expect(response.statusCode, response.body).toBe(200);
+    const changeover = response.json<{ data: Changeover }>().data;
+    expect(Object.fromEntries(changeover.items.map((item) => [item.name, [item.before, item.after]])))
+      .toEqual({ "TEST ONLY round": [2, 2], "TEST ONLY chair": [8, 6] });
+    expect(changeover.plan).toMatchObject({ toStore: [{ name: "TEST ONLY chair", count: 2 }], fromStore: [] });
   });
 
   it("refuses two rooms, one layout twice, and another venue's floor", async () => {

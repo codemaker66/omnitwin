@@ -21,8 +21,11 @@ export type ChangeoverZoneCount = z.infer<typeof ChangeoverZoneCountSchema>;
 
 /**
  * An item of either layout: how many the room holds when the earlier booking
- * ends (`before`) and how many the next booking needs (`after`). The overlap
- * stays; the rest goes back to store or comes from it.
+ * ends (`before`) and how many the next booking needs (`after`). Counted as
+ * the sheet's store list counts them: every piece on the plan, the chairs at
+ * tables included. For furniture the overlap stays and the rest goes back to
+ * store or comes from it; an accessory (a table's linen) is dressing each
+ * booking lays for itself, so the floor reads it as cleared and laid.
  */
 export const ChangeoverItemSchema = z.object({
   name: z.string().min(1).max(200),
@@ -75,6 +78,9 @@ const LayoutRefSchema = z.object({
   configId: z.uuid(),
   name: z.string().max(200),
   guests: z.number().int().nonnegative(),
+  /** False for a sheet frozen before plans were kept with it: its pieces
+   *  can be counted, but not paired with the other layout's by where they stand. */
+  hasPlan: z.boolean(),
 }).strict();
 
 export const ChangeoverSchema = z.object({

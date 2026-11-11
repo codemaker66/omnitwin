@@ -1667,7 +1667,7 @@ button.dayboard-rail-item:disabled { cursor: default; }
 .dayboard-changes-seen:focus { outline: none; }
 .dayboard-changes-seen:focus-visible { outline: 2px solid var(--house-cream); outline-offset: 4px; }
 
-/* What moves at a changeover: three short lists the crew works from. */
+/* What moves at a changeover: short lists the crew works from. */
 .dayboard-changeover-from {
   margin: 0 0 10px;
   font: 400 17px/1.35 var(--house-serif);
@@ -1707,6 +1707,12 @@ button.dayboard-rail-item:disabled { cursor: default; }
 .dayboard-changeover-plan {
   margin: 0;
   font-size: 14px;
+}
+
+.dayboard-changeover-failed {
+  display: grid;
+  justify-items: start;
+  gap: 10px;
 }
 
 /* --- the setup sheet, the event, the phases --------------------------------- */

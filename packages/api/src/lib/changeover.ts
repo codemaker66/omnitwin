@@ -1,7 +1,9 @@
 import {
   ChangeoverSchema,
   SETUP_PHASES,
+  WITH_CHAIRS,
   ZONES,
+  defaultPhaseForCategory,
   type Changeover,
   type ChangeoverFootprint,
   type ChangeoverItem,
@@ -13,18 +15,27 @@ import {
   type SetupPhase,
   type Zone,
 } from "@omnitwin/types";
+import { classifyZoneV2 } from "../services/spatial-classifier-v2.js";
 
 // ---------------------------------------------------------------------------
 // What moves at a changeover (pure): from the layout one booking leaves in a
 // room to the layout the next booking needs there.
 //
-// Items are compared by name and category, summed across phases and zones,
-// as the sheet's own store list counts them. Pieces on the two plans are
-// paired by where they stand, never by id or table name: the two layouts
-// belong to different events, and "Table 1" at the wedding is not "Table 1"
-// at the dinner. A piece that already stands where the next layout needs one
-// of its kind stays put; the rest of a kind pair nearest first, as moves; only
-// a change in how many of a kind the room holds goes to or comes from store.
+// Items are counted as the sheet's own store list counts them (sheetStoreList):
+// every piece on the plan, the chairs set at tables included, by name and
+// category, plus the dressing the manifest implies. The manifest alone would
+// not do: it folds a table's chairs into the table's row ("6ft Round Table
+// with 10 chairs"), so a dinner of 10-tops and one of 8-tops would share no
+// item at all. A sheet frozen without a plan is counted from its rows, each
+// table's chairs split back out; those chairs have no name of their own, so
+// then the chairs on both sides are compared as chairs.
+//
+// Pieces on the two plans are paired by where they stand, never by id or
+// table name: the two layouts belong to different events, and "Table 1" at
+// the wedding is not "Table 1" at the dinner. A piece that already stands
+// where the next layout needs one of its kind stays put; the rest of a kind
+// pair nearest first, as moves; only a change in how many of a kind the room
+// holds goes to or comes from store.
 // ---------------------------------------------------------------------------
 
 /** A piece that moves less than this, and turns less than MOVE_TURN_RAD,
@@ -53,30 +64,71 @@ function itemKey(name: string, category: string): string {
   return `${category.trim().toLowerCase()}\u0000${name.trim().toLowerCase()}`;
 }
 
-function tallyItems(sheet: HallkeeperSheetV2): Map<string, ItemTally> {
+/** Chairs compared as chairs, when a sheet without a plan cannot name them. */
+const CHAIRS = "Chairs";
+const CHAIR_CATEGORY = "chair";
+
+/** A sheet frozen without a plan, whose tables carry their chairs unnamed. */
+function hidesChairNames(sheet: HallkeeperSheetV2): boolean {
+  if ((sheet.floorPlan ?? null) !== null) return false;
+  return sheet.phases.some((phase) => phase.zones.some((zone) =>
+    zone.rows.some((row) => !row.isAccessory && WITH_CHAIRS.test(row.name))));
+}
+
+function tallyItems(sheet: HallkeeperSheetV2, chairsByName: boolean): Map<string, ItemTally> {
   const items = new Map<string, ItemTally>();
+  const add = (rawName: string, category: string, phase: SetupPhase, zone: Zone, qty: number, isAccessory: boolean): void => {
+    const name = !chairsByName && !isAccessory && category === CHAIR_CATEGORY ? CHAIRS : rawName;
+    const key = itemKey(name, category);
+    let tally = items.get(key);
+    if (tally === undefined) {
+      tally = { name, category, phase, isAccessory, total: 0, zones: new Map() };
+      items.set(key, tally);
+    }
+    if ((PHASE_ORDER.get(phase) ?? 0) < (PHASE_ORDER.get(tally.phase) ?? 0)) tally.phase = phase;
+    if (!isAccessory) tally.isAccessory = false;
+    tally.total += qty;
+    tally.zones.set(zone, (tally.zones.get(zone) ?? 0) + qty);
+  };
+
+  const plan = sheet.floorPlan ?? null;
+  // The phase each placed piece is set in, from the row that places it. A
+  // chair folded into its table's row is set with the furniture.
+  const phaseOf = new Map<string, SetupPhase>();
   for (const phase of sheet.phases) {
     for (const zone of phase.zones) {
       for (const row of zone.rows) {
-        const key = itemKey(row.name, row.category);
-        let tally = items.get(key);
-        if (tally === undefined) {
-          tally = { name: row.name, category: row.category, phase: phase.phase, isAccessory: row.isAccessory, total: 0, zones: new Map() };
-          items.set(key, tally);
+        if (row.isAccessory) {
+          add(row.name, row.category, phase.phase, zone.zone, row.qty, true);
+          continue;
         }
-        if ((PHASE_ORDER.get(phase.phase) ?? 0) < (PHASE_ORDER.get(tally.phase) ?? 0)) tally.phase = phase.phase;
-        if (!row.isAccessory) tally.isAccessory = false;
-        tally.total += row.qty;
-        tally.zones.set(zone.zone, (tally.zones.get(zone.zone) ?? 0) + row.qty);
+        if (plan !== null) {
+          for (const position of row.positions) phaseOf.set(position.objectId, phase.phase);
+          continue;
+        }
+        const seated = WITH_CHAIRS.exec(row.name);
+        const table = seated?.[1];
+        const each = seated?.[2];
+        if (table === undefined || each === undefined) {
+          add(row.name, row.category, phase.phase, zone.zone, row.qty, false);
+          continue;
+        }
+        add(table, row.category, phase.phase, zone.zone, row.qty, false);
+        add(CHAIRS, CHAIR_CATEGORY, defaultPhaseForCategory(CHAIR_CATEGORY), zone.zone, row.qty * Number(each), false);
       }
     }
+  }
+  for (const piece of plan?.objects ?? []) {
+    add(piece.name, piece.category, phaseOf.get(piece.objectId) ?? defaultPhaseForCategory(piece.category),
+      classifyZoneV2(piece.x, piece.z, sheet.space), 1, false);
   }
   return items;
 }
 
 function changeoverItems(before: HallkeeperSheetV2, after: HallkeeperSheetV2): ChangeoverItem[] {
-  const was = tallyItems(before);
-  const now = tallyItems(after);
+  const chairsByName = !hidesChairNames(before) && !hidesChairNames(after);
+  const was = tallyItems(before, chairsByName);
+  const now = tallyItems(after, chairsByName);
   const items: ChangeoverItem[] = [];
   for (const key of new Set([...was.keys(), ...now.keys()])) {
     const prior = was.get(key);
@@ -246,8 +298,8 @@ export function changeoverBetween(
   after: HallkeeperSheetV2,
 ): Changeover {
   return ChangeoverSchema.parse({
-    from: { configId: from.configId, name: before.config.name.slice(0, 200), guests: before.config.guestCount },
-    to: { configId: to.configId, name: after.config.name.slice(0, 200), guests: after.config.guestCount },
+    from: { configId: from.configId, name: before.config.name.slice(0, 200), guests: before.config.guestCount, hasPlan: (before.floorPlan ?? null) !== null },
+    to: { configId: to.configId, name: after.config.name.slice(0, 200), guests: after.config.guestCount, hasPlan: (after.floorPlan ?? null) !== null },
     items: changeoverItems(before, after),
     plan: changeoverPlan(before, after),
   });

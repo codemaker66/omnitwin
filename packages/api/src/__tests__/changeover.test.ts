@@ -9,6 +9,7 @@ import {
   type Zone,
 } from "@omnitwin/types";
 import { changeoverBetween } from "../lib/changeover.js";
+import { generateManifestV2, type AccessoryMap, type ManifestObjectV2 } from "../services/manifest-generator-v2.js";
 
 // ---------------------------------------------------------------------------
 // What moves at a changeover: the room goes from the layout one booking
@@ -100,7 +101,8 @@ describe("changeoverBetween: the items", () => {
     const rows = [{ name: "6ft Round Table with 10 chairs", qty: 18 }, { name: "White cloth", category: "linen", qty: 18, phase: "dress" as const, isAccessory: true }];
     const changeover = changeoverBetween(FROM, TO, sheet({ rows }), sheet({ rows }));
     expect(changeover.items.map((item) => [item.name, item.before, item.after, item.zones])).toEqual([
-      ["6ft Round Table with 10 chairs", 18, 18, []],
+      ["6ft Round Table", 18, 18, []],
+      ["Chairs", 180, 180, []],
       ["White cloth", 18, 18, []],
     ]);
   });
@@ -130,9 +132,108 @@ describe("changeoverBetween: the items", () => {
   it("names the layouts and their guests", () => {
     const changeover = changeoverBetween(FROM, TO, sheet({ name: "Wedding", guests: 180, rows: [] }), sheet({ name: "Conference", guests: 200, rows: [] }));
     expect([changeover.from, changeover.to]).toEqual([
-      { configId: FROM.configId, name: "Wedding", guests: 180 },
-      { configId: TO.configId, name: "Conference", guests: 200 },
+      { configId: FROM.configId, name: "Wedding", guests: 180, hasPlan: false },
+      { configId: TO.configId, name: "Conference", guests: 200, hasPlan: false },
     ]);
+    const planned = changeoverBetween(FROM, TO, sheet({ rows: [], plan: null }), sheet({ rows: [], plan: [round(0, 0)] }));
+    expect([planned.from.hasPlan, planned.to.hasPlan]).toEqual([false, true]);
+  });
+});
+
+// Layouts as the planner saves them: each round grouped with its chairs,
+// which the sheet's generator folds into the table's row ("6ft Round Table
+// with 10 chairs"), and the plan that keeps every piece.
+const ROOM = { widthM: 21, lengthM: 10.5 } as const;
+const LINEN: AccessoryMap = new Map([["6ft Round Table", [
+  { name: "Black Round Table Linen", category: "decor", quantityPerParent: 1, phase: "dress" as const, afterDepth: 0 },
+]]]);
+
+interface Saved { readonly objects: ManifestObjectV2[]; readonly plan: Piece[] }
+
+function place(saved: Saved, piece: Piece, groupId: string | null): void {
+  saved.plan.push(piece);
+  saved.objects.push({
+    id: piece.objectId, assetName: piece.name, assetCategory: piece.category,
+    positionX: piece.x, positionY: 0, positionZ: piece.z, rotationY: piece.rotationY, chairCount: 0, groupId,
+  });
+}
+
+function rounds(tables: number, chairsEach: number): Saved {
+  const saved: Saved = { objects: [], plan: [] };
+  for (let t = 0; t < tables; t += 1) {
+    const x = -7.5 + (t % 6) * 3;
+    const z = -3 + Math.floor(t / 6) * 3;
+    const groupId = nextId();
+    place(saved, round(x, z), groupId);
+    for (let c = 0; c < chairsEach; c += 1) {
+      const angle = (2 * Math.PI * c) / chairsEach;
+      place(saved, { ...chair(x + Math.cos(angle) * 1.2, z + Math.sin(angle) * 1.2), rotationY: angle }, groupId);
+    }
+  }
+  return saved;
+}
+
+function theatre(chairs: number): Saved {
+  const saved: Saved = { objects: [], plan: [] };
+  for (let i = 0; i < chairs; i += 1) place(saved, chair(-9 + (i % 20) * 0.9, -4 + Math.floor(i / 20) * 0.9), null);
+  return saved;
+}
+
+/** The sheet the floor reads for a saved layout; `withPlan: false` is one frozen before plans were kept. */
+function generated(saved: Saved, withPlan = true): HallkeeperSheetV2 {
+  const manifest = generateManifestV2(saved.objects, ROOM, LINEN);
+  return { ...sheet({ rows: [], plan: withPlan ? saved.plan : null }), phases: manifest.phases, totals: manifest.totals };
+}
+
+function counts(changeover: ReturnType<typeof changeoverBetween>): [string, number, number][] {
+  return changeover.items.map((item) => [item.name, item.before, item.after]);
+}
+
+describe("changeoverBetween: chairs set at tables", () => {
+  it("keeps every table when 10-tops become 8-tops on the same spots, and sends the spare chairs to store", () => {
+    const before = generated(rounds(18, 10));
+    const after = generated(rounds(18, 8));
+    // The sheet's own rows share no name: the chairs are folded into the tables.
+    const rowNames = (saved: HallkeeperSheetV2): string[] => saved.phases.flatMap((phase) => phase.zones.flatMap((zone) => zone.rows.map((row) => row.name)));
+    expect(new Set(rowNames(before))).toEqual(new Set(["6ft Round Table with 10 chairs", "Black Round Table Linen"]));
+    expect(new Set(rowNames(after))).toEqual(new Set(["6ft Round Table with 8 chairs", "Black Round Table Linen"]));
+    const changeover = changeoverBetween(FROM, TO, before, after);
+    expect(counts(changeover)).toEqual([
+      ["6ft Round Table", 18, 18],
+      ["Banquet chair", 180, 144],
+      ["Black Round Table Linen", 18, 18],
+    ]);
+    expect(changeover.plan?.toStore).toEqual([{ name: "Banquet chair", category: "chair", count: 36 }]);
+    expect(changeover.plan?.fromStore).toEqual([]);
+    const paired = (changeover.plan?.staysPut ?? 0) + (changeover.plan?.moved ?? []).reduce((sum, group) => sum + group.count, 0);
+    expect(paired).toBe(18 + 144);
+  });
+
+  it("strikes the tables for a theatre and brings only the chairs it lacks", () => {
+    const changeover = changeoverBetween(FROM, TO, generated(rounds(18, 10)), generated(theatre(200)));
+    expect(counts(changeover)).toEqual([
+      ["6ft Round Table", 18, 0],
+      ["Banquet chair", 180, 200],
+      ["Black Round Table Linen", 18, 0],
+    ]);
+    expect(changeover.plan?.toStore).toEqual([{ name: "6ft Round Table", category: "table", count: 18 }]);
+    expect(changeover.plan?.fromStore).toEqual([{ name: "Banquet chair", category: "chair", count: 20 }]);
+  });
+
+  it("splits a planless sheet's tables from their chairs, and then compares chairs as chairs", () => {
+    const changeover = changeoverBetween(FROM, TO, generated(rounds(18, 10), false), generated(theatre(200)));
+    expect(counts(changeover)).toEqual([
+      ["6ft Round Table", 18, 0],
+      ["Chairs", 180, 200],
+      ["Black Round Table Linen", 18, 0],
+    ]);
+    expect(changeover.plan).toBeNull();
+  });
+
+  it("counts a planned sheet's chairs where each one stands", () => {
+    const changeover = changeoverBetween(FROM, TO, generated(theatre(0)), generated(rounds(1, 10)));
+    const chairs = changeover.items.find((item) => item.name === "Banquet chair");
+    expect(chairs?.zones.reduce((sum, zone) => sum + zone.after, 0)).toBe(10);
   });
 });
 

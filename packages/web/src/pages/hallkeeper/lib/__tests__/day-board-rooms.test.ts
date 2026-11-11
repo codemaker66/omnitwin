@@ -99,6 +99,17 @@ describe("a room's day", () => {
     expect(tight.lanes[0]?.slots[1]?.gapBefore).toEqual({ minutes: 0, neededMinutes: 60, short: true });
   });
 
+  it("runs the turn-round after an exhibition from the exhibition, not a talk held inside it", () => {
+    const board = deriveDayBoard(response([
+      booking("exhibition", 60, 11 * 60), booking("talk", 3 * 60, 4 * 60), booking("dinner", 12 * 60, 14 * 60),
+    ]), NOW, TZ);
+    const [exhibition, talk, dinner] = board.lanes[0]?.slots ?? [];
+    expect([exhibition?.previousBookingId, talk?.previousBookingId, dinner?.previousBookingId]).toEqual([null, null, "exhibition"]);
+    expect(talk?.gapBefore).toBeNull();
+    // An hour from the exhibition's end, not eight from the talk's.
+    expect(dinner?.gapBefore).toEqual({ minutes: 60, neededMinutes: 60, short: false });
+  });
+
   it("fades a room whose day is done, and keeps a room with nothing on quiet", () => {
     const board = deriveDayBoard(response([booking("a", -6 * 60, -5 * 60)]), NOW, TZ);
     const [grandHall, saloon] = board.lanes.map(roomDay);

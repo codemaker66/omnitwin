@@ -6,7 +6,6 @@ import {
   nextObservationKinds,
   occasionLabel,
   isBookingMoveTitle,
-  type BookingKind,
   type EventAwaitingAcknowledgement,
   type HallkeeperSheetSummary,
   type ObservationKind,
@@ -17,7 +16,7 @@ import { ActivityIndicator, ActivityStatus } from "../../components/shared/Activ
 import { roomPhoto } from "../../components/dashboard/enquiries/enquiry-room-photo.js";
 import { isQueuedObservation, type RecordOutcome, type SlotObservationsApi } from "./lib/use-slot-observations.js";
 import { sheetProgressLine } from "./lib/day-board-sheet.js";
-import { useSlotSheet } from "./lib/use-slot-sheet.js";
+import { useSlotSheet, type SlotSheetResult } from "./lib/use-slot-sheet.js";
 import type { DayBoardSlot } from "./lib/day-board-state.js";
 import type { SlotRequestsComponent } from "./lib/slot-requests-contract.js";
 import { StateIcon } from "./DayBoardRooms.js";
@@ -91,15 +90,12 @@ function SheetProgress({ configId, eventId, timeZone }: {
   );
 }
 
-function SlotSheetLink({ eventId, bookingKind, roomSlug, roomName, timeZone }: {
-  readonly eventId: string | null;
-  readonly bookingKind: BookingKind;
-  readonly roomSlug: string;
+function SlotSheetLink({ result, roomName, timeZone }: {
+  /** The slot's layouts, read once by the panel. */
+  readonly result: SlotSheetResult;
   readonly roomName: string;
   readonly timeZone: string;
 }): ReactElement {
-  const result = useSlotSheet(eventId, roomSlug, roomName, bookingKind);
-
   if (result.status === "loading") {
     return (
       <div className="dayboard-slot-sheet">
@@ -112,6 +108,7 @@ function SlotSheetLink({ eventId, bookingKind, roomSlug, roomName, timeZone }: {
     return (
       <div className="dayboard-slot-sheet">
         <p className="dayboard-slot-sheet-note">{result.error ?? "The setup sheet link could not be checked."}</p>
+        <button type="button" className="dayboard-seen-button" onClick={result.retry}>Try again</button>
       </div>
     );
   }
@@ -279,10 +276,12 @@ export function SlotDetail({ slot, room, venueSlug, timeZone, slotRequests: Slot
   readonly acknowledgeFailure?: string | null;
   /** The last read of what changed failed. */
   readonly changesUnread?: boolean;
-  /** The booking before this one in the room, when it ends before this starts. */
+  /** The booking this one's turn-round runs from, when there is one. */
   readonly previous?: DayBoardSlot | null;
 }): ReactElement {
   const occasion = occasionLabel(slot.eventType);
+  // The slot's layouts, read once: the sheet link and the changeover share them.
+  const sheet = useSlotSheet(slot.eventId, room.slug, room.name, slot.kind);
   const photo = venueSlug === null ? null : roomPhoto(venueSlug, room.slug);
   // One tap at a time; the words say what happened to it (S5, D10).
   const [busy, setBusy] = useState<ObservationKind | null>(null);
@@ -375,7 +374,7 @@ export function SlotDetail({ slot, room, venueSlug, timeZone, slotRequests: Slot
         <p className="dayboard-changes-unread">What changed could not be read just now.</p>
       ) : null}
       {/* What moves from the booking before to this one, in this room. */}
-      {previous !== null && <ChangeoverSection previous={previous} slot={slot} room={room} />}
+      {previous !== null && <ChangeoverSection previous={previous} slot={slot} room={room} after={sheet} />}
       {/* What the room was seen doing (S5): the latest fact, and the next
           facts a hallkeeper may record from here. Facts never move a time. */}
       <section ref={seenRef} className="dayboard-seen dayboard-detail-section" aria-label="What the room is doing" tabIndex={-1}>
@@ -407,7 +406,7 @@ export function SlotDetail({ slot, room, venueSlug, timeZone, slotRequests: Slot
       </section>
       <div className="dayboard-detail-section">
         <h3 className="dayboard-detail-heading">Setup</h3>
-        <SlotSheetLink eventId={slot.eventId} bookingKind={slot.kind} roomSlug={room.slug} roomName={room.name} timeZone={timeZone} />
+        <SlotSheetLink result={sheet} roomName={room.name} timeZone={timeZone} />
         {slot.eventId !== null && <Link className="dayboard-open-event" to={`/ops/events/${slot.eventId}`}>Open event &amp; working documents →</Link>}
         {slot.phases.length > 0 && <ol className="dayboard-phases" aria-label="Planned event phases">
           {slot.phases.map((phase, index) => <li key={phase.id} data-colour={index % 6}>
