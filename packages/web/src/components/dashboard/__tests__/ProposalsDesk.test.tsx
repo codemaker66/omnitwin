@@ -320,6 +320,23 @@ describe("the ledger", () => {
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
     expect(await screen.findByTestId("proposal-row-p1")).toBeDefined();
   });
+
+  // Release audit dash-commercial-4: "now" was taken once, as the desk opened.
+  it("turns the day at the venue's midnight while open, so its ages and date stay true", async () => {
+    vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
+    // 23:58:30 in Glasgow on Tuesday 14 July 2026 (BST), 22:58 in UTC.
+    vi.setSystemTime("2026-07-14T22:58:30.000Z");
+    existing = [proposal({ id: "p2", title: "Draft lunch", currentVersion: 1, updatedAt: "2026-07-13T10:00:00.000Z" })];
+    render(<ProposalsDesk />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(row("p2").getAttribute("aria-label")).toContain("changed yesterday");
+    expect(screen.getByText("Tuesday 14 July")).toBeDefined();
+
+    // Two minutes on: 00:00:30 on Wednesday 15 July in Glasgow.
+    await act(async () => { await vi.advanceTimersByTimeAsync(120_000); });
+    expect(row("p2").getAttribute("aria-label")).toContain("changed 2 days ago");
+    expect(screen.getByText("Wednesday 15 July")).toBeDefined();
+  });
 });
 
 describe("paging", () => {
