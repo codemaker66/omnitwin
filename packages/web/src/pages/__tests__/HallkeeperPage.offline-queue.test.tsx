@@ -3,7 +3,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { Link, MemoryRouter, Route, Routes } from "react-router-dom";
 import { HallkeeperSheetV2Schema, type HallkeeperSheetV2 } from "@omnitwin/types";
 import { HallkeeperPage } from "../HallkeeperPage.js";
-import { ackProgress, enqueueProgress, listPendingProgress, QUEUE_RETRY_MS } from "../../lib/progress-sync-queue.js";
+import {
+  ackProgress,
+  enqueueProgress,
+  listPendingProgress,
+  QUEUE_RETRY_MS,
+  SHARED_CHECKS_REFRESH_MS,
+} from "../../lib/progress-sync-queue.js";
 
 // ---------------------------------------------------------------------------
 // The hallkeeper sheet's ticks, through its real offline queue.
@@ -25,6 +31,7 @@ vi.mock("../../components/hallkeeper/useHallkeeperContext.js", () => ({
 const CONFIG_A = "00000000-0000-4000-8000-00000000000a";
 const CONFIG_B = "00000000-0000-4000-8000-00000000000b";
 const ROW_KEY = "furniture|Centre|Round table|0";
+const OTHER_ROW_KEY = "furniture|Centre|Lectern|0";
 const ONE_PENDING = "1 offline edit pending sync";
 
 function sheet(configId: string, name: string): HallkeeperSheetV2 {
@@ -37,8 +44,11 @@ function sheet(configId: string, name: string): HallkeeperSheetV2 {
     phases: [{ phase: "furniture", zones: [{ zone: "Centre", rows: [{
       key: ROW_KEY, name: "Round table", category: "table", qty: 1,
       afterDepth: 0, isAccessory: false, notes: "",
+    }, {
+      key: OTHER_ROW_KEY, name: "Lectern", category: "other", qty: 1,
+      afterDepth: 0, isAccessory: false, notes: "",
     }] }] }],
-    totals: { entries: [], totalRows: 1, totalItems: 1 },
+    totals: { entries: [], totalRows: 2, totalItems: 2 },
     diagramUrl: null,
     floorPlan: null,
     webViewUrl: `https://example.test/hallkeeper/${configId}`,
@@ -140,6 +150,22 @@ function mount(): void {
 
 function row(checked: boolean): Promise<HTMLElement> {
   return screen.findByRole("checkbox", { name: /Round table/u, checked });
+}
+
+function lectern(checked: boolean): Promise<HTMLElement> {
+  return screen.findByRole("checkbox", { name: /Lectern/u, checked });
+}
+
+/** The API's answer to a read of the shared checks, made by hand. */
+function checksAnswer(checkedRows: readonly string[], scope: { eventId: string | null; linkedEvents: number } = { eventId: null, linkedEvents: 0 }): Response {
+  const checked: Record<string, string> = {};
+  for (const rowKey of checkedRows) checked[rowKey] = "2026-09-07T08:00:00.000Z";
+  return new Response(JSON.stringify({ data: { configId: CONFIG_A, ...scope, checked } }), { status: 200 });
+}
+
+/** The page is shown again: the phone is unlocked, or the tab comes to the front. */
+function showAgain(): void {
+  act(() => { document.dispatchEvent(new Event("visibilitychange")); });
 }
 
 /** Long enough for anything already set in motion to reach the server. */
@@ -341,5 +367,162 @@ describe("ticks that are waiting get sent", () => {
     await queueIsEmpty();
     expect(server.ticked(CONFIG_A)).toBe(true);
     expect(server.ticked(CONFIG_B)).toBe(false);
+  });
+});
+
+// Audit hallkeeper-web-7: the checks are shared, so an open sheet reads them
+// again (on a timer while in view, when shown again, when back online, after
+// a sync) and never lets a read undo what this hallkeeper has just done.
+describe("an open sheet keeps up with the shared checks", () => {
+  const printedCount = (): string => document.querySelector(".hk-print-only")?.textContent ?? "";
+
+  it("shows another hallkeeper's ticks within a minute, on screen and on the print copy", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const server = serve();
+    mount();
+    await row(false);
+    expect(printedCount()).toContain("0 of 2 setup rows checked");
+
+    server.set(CONFIG_A, ROW_KEY, true);
+    await act(async () => { await vi.advanceTimersByTimeAsync(SHARED_CHECKS_REFRESH_MS); });
+    await row(true);
+    expect(printedCount()).toContain("1 of 2 setup rows checked");
+
+    // And their untick.
+    server.set(CONFIG_A, ROW_KEY, false);
+    await act(async () => { await vi.advanceTimersByTimeAsync(SHARED_CHECKS_REFRESH_MS); });
+    await row(false);
+  });
+
+  it("reads again when the sheet is shown again and when the device comes back online", async () => {
+    const server = serve();
+    mount();
+    await row(false);
+
+    server.set(CONFIG_A, ROW_KEY, true);
+    showAgain();
+    await row(true);
+
+    server.set(CONFIG_A, OTHER_ROW_KEY, true);
+    act(() => { window.dispatchEvent(new Event("online")); });
+    await lectern(true);
+  });
+
+  it("does not read while the page is out of view, and catches up when it is shown again", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const server = serve();
+    mount();
+    await row(false);
+
+    const outOfView = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+    try {
+      const readsBefore = server.reads();
+      server.set(CONFIG_A, ROW_KEY, true);
+      await act(async () => { await vi.advanceTimersByTimeAsync(SHARED_CHECKS_REFRESH_MS * 2); });
+      expect(server.reads()).toBe(readsBefore);
+    } finally {
+      outOfView.mockRestore();
+    }
+    showAgain();
+    await row(true);
+  });
+
+  it("leaves a row the hallkeeper is saving as they left it, and still brings in the others", async () => {
+    const read = deferred<Answer>();
+    const write = deferred<Answer>();
+    let hold = false;
+    const server = serve({ onRead: () => (hold ? read.promise : "take"), onWrite: () => write.promise });
+    mount();
+    await row(false);
+
+    // A read is on its way when the hallkeeper ticks the round tables; their
+    // write has not landed when the server answers, and a colleague has
+    // ticked the lectern.
+    hold = true;
+    const readsBefore = server.reads();
+    showAgain();
+    await waitFor(() => { expect(server.reads()).toBeGreaterThan(readsBefore); });
+    fireEvent.click(await row(false));
+    server.set(CONFIG_A, OTHER_ROW_KEY, true);
+    hold = false;
+    await act(async () => { read.resolve("take"); await read.promise; });
+
+    await lectern(true);
+    expect((await row(true)).getAttribute("aria-checked")).toBe("true");
+    await act(async () => { write.resolve("take"); await write.promise; });
+    await waitFor(() => { expect(screen.queryByText("Saving shared checks…")).toBeNull(); });
+    expect((await row(true)).getAttribute("aria-checked")).toBe("true");
+  });
+
+  it("does not undo a tick with an answer the server gave before the tick reached it", async () => {
+    const lateAnswer = deferred<Answer>();
+    let hold = false;
+    const server = serve({ onRead: () => (hold ? lateAnswer.promise : "take") });
+    mount();
+    await row(false);
+
+    hold = true;
+    const readsBefore = server.reads();
+    showAgain();
+    await waitFor(() => { expect(server.reads()).toBeGreaterThan(readsBefore); });
+    fireEvent.click(await row(false));
+    await waitFor(() => { expect(server.ticked(CONFIG_A)).toBe(true); });
+    await waitFor(() => { expect(screen.queryByText("Saving shared checks…")).toBeNull(); });
+    hold = false;
+    // The answer was made before the tick arrived, and comes in after it.
+    await act(async () => { lateAnswer.resolve(checksAnswer([])); await lateAnswer.promise; });
+    await settle();
+    expect((await row(true)).getAttribute("aria-checked")).toBe("true");
+
+    // The next read agrees with the hallkeeper.
+    showAgain();
+    await settle();
+    expect((await row(true)).getAttribute("aria-checked")).toBe("true");
+  });
+});
+
+describe("ticks still waiting to be sent stand on the sheet", () => {
+  it("shows them when the sheet is opened again, and through a fresh read of the shared checks", async () => {
+    // Ticked on an earlier visit while the server was down; it still is.
+    await enqueueProgress(CONFIG_A, ROW_KEY, true, null);
+    const server = serve({ onWrite: () => unavailable() });
+    mount();
+    await row(true);
+    await screen.findByRole("status", { name: ONE_PENDING });
+    expect(server.ticked(CONFIG_A)).toBe(false);
+
+    const readsBefore = server.reads();
+    showAgain();
+    await waitFor(() => { expect(server.reads()).toBeGreaterThan(readsBefore); });
+    await settle();
+    expect((await row(true)).getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByRole("status", { name: ONE_PENDING })).toBeTruthy();
+  });
+
+  it("takes a tick the server refuses for good back off the sheet", async () => {
+    await enqueueProgress(CONFIG_A, ROW_KEY, true, null);
+    serve({ onWrite: () => new Response(null, { status: 403 }) });
+    mount();
+    await queueIsEmpty();
+    await row(false);
+    expect(screen.queryByRole("status", { name: ONE_PENDING })).toBeNull();
+  });
+
+  it("ignores an answer about another event's ticks: the sheet's own stay where its first read put them", async () => {
+    // The layout had no event when the sheet was opened. A booking is linked
+    // to it mid-setup, and the server now answers with that event's ticks.
+    let linked = false;
+    const server = serve({
+      onRead: () => (linked ? checksAnswer([ROW_KEY], { eventId: "00000000-0000-4000-8000-0000000000e1", linkedEvents: 1 }) : "take"),
+    });
+    mount();
+    await row(false);
+
+    linked = true;
+    const readsBefore = server.reads();
+    showAgain();
+    await waitFor(() => { expect(server.reads()).toBeGreaterThan(readsBefore); });
+    await settle();
+    expect((await row(false)).getAttribute("aria-checked")).toBe("false");
   });
 });

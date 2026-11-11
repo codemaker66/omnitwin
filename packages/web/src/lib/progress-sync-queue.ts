@@ -63,6 +63,13 @@ const STORE_NAME = "progress-queue";
  */
 export const QUEUE_RETRY_MS = 30_000;
 
+/**
+ * How often an open sheet reads the shared checks again while it is in view,
+ * so another hallkeeper's ticks arrive without a reload. The Day Board's line
+ * for the same sheet ("12 of 43 checked") is read on the same beat.
+ */
+export const SHARED_CHECKS_REFRESH_MS = 60_000;
+
 /** The IndexedDB key of a queued tick. A tick with no event keeps the key ops
  *  were stored under before ticks belonged to events, so an op already queued
  *  on a device still acks: this format is load-bearing, change it never. */
