@@ -440,12 +440,18 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
   const changesBySlot = useMemo(() => floorChangesBySlot(lanes, floor.byEvent), [lanes, floor.byEvent]);
   // Who is on setup for each turn-round, from the published rota: read with
   // the day, and again as the board refreshes, at most every five minutes.
-  const rota = useRotaDay(venueId, range, timeZone, venueId !== null);
+  // The wall shows no crew, so it reads no rota.
+  const rota = useRotaDay(venueId, range, timeZone, venueId !== null && !wall);
   const refreshRota = rota.refresh;
   useEffect(() => { if (data !== null) refreshRota(); }, [data, refreshRota]);
+  // Refresh reads the day now: the bookings, and the rota with them.
+  const refreshDay = useCallback(() => { refetch(); refreshRota(true); }, [refetch, refreshRota]);
   const rotaShifts = rota.shifts;
   const rotaPeople = rota.people;
-  const crew = useMemo(() => crewBySlot(lanes, { shifts: rotaShifts, people: rotaPeople }), [lanes, rotaShifts, rotaPeople]);
+  const crew = useMemo(
+    () => crewBySlot(lanes, { shifts: rotaShifts, people: rotaPeople }, range, nowMs),
+    [lanes, rotaShifts, rotaPeople, range, nowMs],
+  );
   const changedBySlot = useMemo(() => new Map([...changesBySlot]
     .filter(([, changes]) => changes.length > 0)
     .map(([bookingId, changes]) => [bookingId, changes.length] as const)), [changesBySlot]);
@@ -580,6 +586,10 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
     ? null
     : lanes.find((candidate) => candidate.room.id === selected.room.id)?.slots
       .find((candidate) => candidate.bookingId === previousId) ?? null;
+  // A crew kept from an earlier read says when it was read.
+  const crewNote = rota.status === "error" && rota.readAtMs !== null
+    ? `As read at ${formatWallTime(correctedNowMs(rota.readAtMs), timeZone)}; the rota could not be read since.`
+    : null;
   const selectedEventId = selected?.slot.eventId ?? null;
   const selectedEntry = selectedEventId === null ? undefined : floor.byEvent.get(selectedEventId);
   const selectedLast = selectedEntry?.lastAcknowledgement ?? null;
@@ -615,6 +625,7 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
         changesUnread={floor.failedSinceMs !== null}
         previous={previousSlot}
         crew={crew.get(selected.slot.bookingId) ?? null}
+        crewNote={crewNote}
       />
     </div>
   );
@@ -632,7 +643,7 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
         ? <span>{readAt === null ? "Live" : `Live · updated ${readAt}`}</span>
         : <>
           <span>{readAt === null ? "Reconnecting…" : `Updated ${readAt} · reconnecting…`}</span>
-          <button type="button" className="dayboard-refresh" onClick={refetch}>Refresh</button>
+          <button type="button" className="dayboard-refresh" onClick={refreshDay}>Refresh</button>
         </>}
       {corrected && <span className="dayboard-corrected">Clock corrected</span>}
       {others.length > 0 && <span className="dayboard-presence">Also watching: {others.join(", ")}</span>}
@@ -647,7 +658,7 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
       {freshness.kind === "offline"
         ? <span>Offline since {formatWallTime(freshness.sinceMs, timeZone)} · reconnecting. Showing the day as last read; the words still stand.</span>
         : <span>Showing the day as read at {formatWallTime(freshness.readAtMs, timeZone)}.</span>}
-      <button type="button" className="dayboard-refresh" onClick={refetch}>Refresh</button>
+      <button type="button" className="dayboard-refresh" onClick={refreshDay}>Refresh</button>
     </div>
   );
 
@@ -691,7 +702,7 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
       {status === "error" ? (
         <div className="dayboard-notice" role="alert">
           <p>{error ?? "The board could not load."}</p>
-          <button type="button" className="dayboard-button" onClick={refetch}>
+          <button type="button" className="dayboard-button" onClick={refreshDay}>
             Try again
           </button>
         </div>
@@ -700,7 +711,7 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
       {refreshFailedCorrectedMs !== null ? (
         <div className="dayboard-notice" role="status">
           <p>{dayRefreshFailed(formatWallTime(refreshFailedCorrectedMs, timeZone), readAt)}</p>
-          <button type="button" className="dayboard-button" onClick={refetch}>
+          <button type="button" className="dayboard-button" onClick={refreshDay}>
             Try again
           </button>
         </div>

@@ -98,7 +98,7 @@ vi.mock("../../../api/changeover.js", () => ({
 // no setup planned unless a case feeds one.
 const rotaMock = vi.hoisted(() => vi.fn<(venueId: string, start: string | null) => Promise<unknown>>());
 vi.mock("../../../api/rota.js", () => ({
-  getRotaWeek: (venueId: string, start: string | null) => rotaMock(venueId, start),
+  getRotaFloorWeek: (venueId: string, start: string | null) => rotaMock(venueId, start),
 }));
 // The board reads what its rooms were seen doing and listens for new facts
 // (goal 19 S5); this suite stubs both edges and feeds facts per case.
@@ -1851,6 +1851,37 @@ describe("DayBoardPage: who is on setup for a turn-round", () => {
     fireEvent.click(dinner);
     const section = await screen.findByRole("region", { name: "Changeover from Lunch" });
     expect(within(section).getByText("Nobody is on setup for this turn-round. One setup shift is still to fill.")).toBeTruthy();
+  });
+
+  it("puts the crew words in the slot's spoken name, as on its face", async () => {
+    getCalendarMock.mockResolvedValue(calendarFixture(day()));
+    rotaMock.mockImplementation((_venueId, start) => Promise.resolve(rotaWeek(start ?? "", [{ startsAt: at(-60), endsAt: at(90) }])));
+    renderBoard();
+    expect(await screen.findByRole("button", { name: /^Dinner,.*, Turn-round 4 h · 1 on setup/u })).toBeTruthy();
+  });
+
+  it("reads the rota again at once on Refresh, and says when the crew was read once the rota cannot be", async () => {
+    liveConnected.current = false;
+    getCalendarMock.mockResolvedValue(calendarFixture(day()));
+    rotaMock.mockImplementation((_venueId, start) => Promise.resolve(rotaWeek(start ?? "", [{ startsAt: at(-60), endsAt: at(90) }])));
+    renderBoard();
+    fireEvent.click(await screen.findByRole("button", { name: /^Dinner,.*1 on setup/u }));
+    const section = await screen.findByRole("region", { name: "Changeover from Lunch" });
+    expect(await within(section).findByText(/^On setup: Jamie \d{2}:\d{2}–\d{2}:\d{2}\.$/u)).toBeTruthy();
+    const reads = rotaMock.mock.calls.length;
+    rotaMock.mockImplementation(() => Promise.reject(new Error("offline")));
+    fireEvent.click(screen.getAllByRole("button", { name: "Refresh" })[0] as HTMLElement);
+    await waitFor(() => { expect(rotaMock.mock.calls.length).toBeGreaterThan(reads); });
+    expect(await within(section).findByText(/^On setup: Jamie .+ As read at \d{2}:\d{2}; the rota could not be read since\.$/u)).toBeTruthy();
+  });
+
+  it("reads no rota on the wall, which shows no crew", async () => {
+    getCalendarMock.mockResolvedValue(calendarFixture(day()));
+    rotaMock.mockImplementation((_venueId, start) => Promise.resolve(rotaWeek(start ?? "", [{ startsAt: at(-60), endsAt: at(90) }])));
+    render(<MemoryRouter initialEntries={["/hallkeeper/today?register=wall"]}><DayBoardPage /></MemoryRouter>);
+    expect(await screen.findByText("Dinner")).toBeTruthy();
+    expect(rotaMock).not.toHaveBeenCalled();
+    expect(document.body.textContent).not.toContain("on setup");
   });
 
   it("says nothing about crew when the rota plans no setup at all", async () => {

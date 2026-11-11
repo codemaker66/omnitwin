@@ -184,14 +184,20 @@ function joined(words: readonly string[]): string {
   return `${words.slice(0, -1).join(", ")} and ${words[words.length - 1] ?? ""}`;
 }
 
-/** Who is on setup for the turn-round, from the published rota. */
+/** Who is on setup for the turn-round, from the published rota: each
+ *  person's shifts as they are ("11:00–12:30 then 17:30–19:00"), and a
+ *  whole-house shift marked as such, since one person is not in every room. */
 export function crewLine(crew: TurnRoundCrew, timeZone: string): string {
   const time = (ms: number): string => formatWallTime(ms, timeZone);
   const open = crew.unfilled === 0 ? "" : crew.hands.length === 0
     ? ` ${crew.unfilled === 1 ? "One setup shift is" : `${String(crew.unfilled)} setup shifts are`} still to fill.`
     : ` ${crew.unfilled === 1 ? "One more shift is" : `${String(crew.unfilled)} more shifts are`} still to fill.`;
   if (crew.hands.length === 0) return `Nobody is on setup for this turn-round.${open}`;
-  return `On setup: ${joined(crew.hands.map((hand) => `${hand.name} ${time(hand.startsAtMs)}–${time(hand.endsAtMs)}`))}.${open}`;
+  const hand = (person: TurnRoundCrew["hands"][number]): string => {
+    const spans = person.spans.map((span) => `${time(span.startsAtMs)}–${time(span.endsAtMs)}`).join(" then ");
+    return `${person.name} ${spans}${person.wholeHouse ? " (whole house)" : ""}`;
+  };
+  return `On setup: ${joined(crew.hands.map(hand))}.${open}`;
 }
 
 /** Why one side has no single layout to compare, as a whole sentence. */
@@ -206,7 +212,7 @@ function noLayout(side: SlotSheetResult, title: string): string | null {
   }
 }
 
-export function ChangeoverSection({ previous, slot, room, after, crew = null, timeZone }: {
+export function ChangeoverSection({ previous, slot, room, after, crew = null, crewNote = null, timeZone }: {
   readonly previous: DayBoardSlot;
   readonly slot: DayBoardSlot;
   readonly room: { readonly slug: string; readonly name: string };
@@ -214,6 +220,8 @@ export function ChangeoverSection({ previous, slot, room, after, crew = null, ti
   readonly after: SlotSheetResult;
   /** Who is on setup for the turn-round, when the rota plans setup. */
   readonly crew?: TurnRoundCrew | null;
+  /** When the crew was read, if the rota could not be read since. */
+  readonly crewNote?: string | null;
   readonly timeZone: string;
 }): ReactElement {
   const before = useSlotSheet(previous.eventId, room.slug, room.name, previous.kind);
@@ -250,7 +258,7 @@ export function ChangeoverSection({ previous, slot, room, after, crew = null, ti
     <section className="dayboard-changeover dayboard-detail-section" aria-label={`Changeover from ${previous.title}`}>
       <h3 className="dayboard-detail-heading">Changeover</h3>
       <p className="dayboard-changeover-from">From {previous.title}</p>
-      {crew !== null && <p className="dayboard-changeover-crew">{crewLine(crew, timeZone)}</p>}
+      {crew !== null && <p className="dayboard-changeover-crew">{crewLine(crew, timeZone)}{crewNote === null ? "" : ` ${crewNote}`}</p>}
       {body}
     </section>
   );

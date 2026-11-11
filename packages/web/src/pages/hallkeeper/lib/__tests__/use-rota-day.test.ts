@@ -12,7 +12,7 @@ import { ROTA_REREAD_MS, useRotaDay } from "../use-rota-day.js";
 
 const getRotaWeekMock = vi.hoisted(() => vi.fn<(venueId: string, start: string | null, signal?: AbortSignal) => Promise<RotaWeek>>());
 vi.mock("../../../../api/rota.js", () => ({
-  getRotaWeek: (venueId: string, start: string | null, signal?: AbortSignal) => getRotaWeekMock(venueId, start, signal),
+  getRotaFloorWeek: (venueId: string, start: string | null, signal?: AbortSignal) => getRotaWeekMock(venueId, start, signal),
 }));
 
 const VENUE = "00000000-0000-4000-8000-000000000001";
@@ -65,6 +65,30 @@ describe("useRotaDay", () => {
     vi.setSystemTime(Date.parse("2026-11-14T10:00:00Z") + ROTA_REREAD_MS);
     act(() => { result.current.refresh(); });
     await waitFor(() => { expect(getRotaWeekMock).toHaveBeenCalledTimes(2); });
+  });
+
+  it("reads again by itself every five minutes, with nothing else on the board changing", async () => {
+    // waitFor polls on an interval, so this case flushes the reads itself.
+    vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] });
+    vi.setSystemTime(Date.parse("2026-11-14T10:00:00Z"));
+    getRotaWeekMock.mockImplementation((_venue, start) => Promise.resolve(week(start ?? "", [shift(A)])));
+    const { result } = renderHook(() => useRotaDay(VENUE, SATURDAY, TZ, true));
+    await act(async () => { await Promise.resolve(); });
+    expect(result.current.status).toBe("ready");
+    expect(getRotaWeekMock).toHaveBeenCalledTimes(1);
+    act(() => { vi.advanceTimersByTime(4 * 60_000); });
+    expect(getRotaWeekMock).toHaveBeenCalledTimes(1);
+    act(() => { vi.advanceTimersByTime(60_000); });
+    expect(getRotaWeekMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("reads at once when asked to, whenever it last read", async () => {
+    getRotaWeekMock.mockImplementation((_venue, start) => Promise.resolve(week(start ?? "", [shift(A)])));
+    const { result } = renderHook(() => useRotaDay(VENUE, SATURDAY, TZ, true));
+    await waitFor(() => { expect(result.current.status).toBe("ready"); });
+    act(() => { result.current.refresh(true); });
+    await waitFor(() => { expect(getRotaWeekMock).toHaveBeenCalledTimes(2); });
+    expect(result.current.readAtMs).not.toBeNull();
   });
 
   it("shows no crew to someone who may read only their own shifts", async () => {

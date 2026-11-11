@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import type { Changeover, ChangeoverItem } from "@omnitwin/types";
-import { ChangeoverList } from "../DayBoardChangeover.js";
+import { ChangeoverList, crewLine } from "../DayBoardChangeover.js";
 
 // ---------------------------------------------------------------------------
 // The move list a crew works a changeover from: what goes back to store,
@@ -93,5 +93,25 @@ describe("ChangeoverList", () => {
     expect(group("Bring from store")).toEqual(["2 × 6ft Round Table · Perimeter"]);
     expect(group("To another part of the room")).toEqual(["10 × 6ft Round Table · Perimeter"]);
     expect(screen.getByText("The sheet for Chamber conference has no plan, so moves within each part of the room aren’t shown.")).toBeTruthy();
+  });
+});
+
+describe("crewLine", () => {
+  const ms = (time: string): number => Date.parse(`2026-11-14T${time}:00.000Z`);
+  const span = (from: string, to: string) => ({ startsAtMs: ms(from), endsAtMs: ms(to) });
+  const crew = (hands: Parameters<typeof crewLine>[0]["hands"], unfilled = 0) => ({ hands, unfilled, startMs: ms("14:00"), endMs: ms("18:00") });
+
+  it("names each person with their shifts as they are, and marks a whole-house shift", () => {
+    expect(crewLine(crew([
+      { name: "Jamie", spans: [span("11:00", "12:30"), span("17:30", "19:00")], wholeHouse: false },
+      { name: "Morag", spans: [span("12:00", "20:00")], wholeHouse: true },
+    ], 1), "Europe/London")).toBe("On setup: Jamie 11:00–12:30 then 17:30–19:00 and Morag 12:00–20:00 (whole house). One more shift is still to fill.");
+  });
+
+  it("says plainly when nobody is on, and how many setup shifts are still to fill", () => {
+    expect(crewLine(crew([]), "Europe/London")).toBe("Nobody is on setup for this turn-round.");
+    expect(crewLine(crew([], 2), "Europe/London")).toBe("Nobody is on setup for this turn-round. 2 setup shifts are still to fill.");
+    expect(crewLine(crew([{ name: "Jamie", spans: [span("14:00", "18:00")], wholeHouse: false }], 3), "Europe/London"))
+      .toBe("On setup: Jamie 14:00–18:00. 3 more shifts are still to fill.");
   });
 });

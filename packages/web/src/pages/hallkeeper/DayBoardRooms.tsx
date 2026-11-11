@@ -143,13 +143,13 @@ export function Slab({ slot, variant, nowMs, selected, onOpen, wall, frozen, cha
   const words = ringWords(slot, nowMs);
   const seen = seenLine(slot);
   const changedWords = changed === 0 ? null : changed === 1 ? "a change to read" : `${String(changed)} changes to read`;
-  const label = `${slot.title}, ${slot.timeRange}, ${slot.countdown}${words === null ? "" : `, ${words}`}${changedWords === null ? "" : `, ${changedWords}`}${seen === null ? "" : `, ${seen}`}`;
-  const linked = slot.linkedRooms.length > 0 ? `also ${slot.linkedRooms.join(", ")}` : null;
-  const why = slot.exceptionDetail ?? slot.turnaroundWarning;
   // The wall reads room, title, state and time (D11): no turn-round, no
   // facts seen, no other rooms named; the ring in its short words on what
   // it shows, so a request nobody has still breathes there (D3).
   const gap = variant === "line" || wall ? null : turnRound(slot, nowMs, crew);
+  const label = `${slot.title}, ${slot.timeRange}, ${slot.countdown}${words === null ? "" : `, ${words}`}${changedWords === null ? "" : `, ${changedWords}`}${gap === null ? "" : `, ${gap}`}${seen === null ? "" : `, ${seen}`}`;
+  const linked = slot.linkedRooms.length > 0 ? `also ${slot.linkedRooms.join(", ")}` : null;
+  const why = slot.exceptionDetail ?? slot.turnaroundWarning;
   const shownSeen = wall ? null : seen;
   const shownWords = wall ? wallRingWords(slot, nowMs) : words;
   const ringed = ring !== null && shownWords !== null
