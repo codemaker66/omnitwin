@@ -8,6 +8,8 @@ import {
   itemKindForAsset,
 } from "../adapt.js";
 import type { EditorObject } from "../../../stores/editor-store.js";
+import { resolveRoomGeometry } from "../../../data/room-geometries.js";
+import { plannerRoomOf } from "../../room-floor.js";
 import { clampCenterToRoom } from "../reducer.js";
 import { computeStatusMetrics } from "../geometry.js";
 import { seatingCountsFromPlacedItems } from "../../seating-counts.js";
@@ -244,6 +246,54 @@ describe("adaptEditorStateToBlueprintScene — chair grouping", () => {
     expect(Object.keys(room).sort()).toEqual(["lengthM", "widthM"]);
     expect(editorPositionToBlueprintPoint(0, 0, room)).toEqual({ x: room.widthM / 2, y: room.lengthM / 2 });
     expect(blueprintPointToEditorPosition({ x: 0, y: 0 }, room)).toEqual({ positionX: -room.widthM / 2, positionZ: -room.lengthM / 2 });
+  });
+
+  // A room with no drawing of its own is drawn in 3D from its stored outline (data/room-geometries
+  // resolveRoomGeometry, which the room hook hands to lib/room-floor plannerRoomOf). Its plan is the
+  // bounds of the same walls, where they stand.
+  describe("the plan of a room drawn from its stored outline", () => {
+    const corners = (minX: number, minZ: number, maxX: number, maxZ: number): { readonly x: number; readonly y: number }[] =>
+      [{ x: minX, y: minZ }, { x: maxX, y: minZ }, { x: maxX, y: maxZ }, { x: minX, y: maxZ }];
+
+    it("stands where the walls do when the outline starts at a corner, not half a room away", () => {
+      if (ROUND_TABLE === undefined) throw new Error("round table asset must exist");
+      // 12 m by 8 m from (0, 0): the planner's 3D floor runs from x = 0 to 12 and z = 0 to 8.
+      const hired = { name: "Hired Hall", widthM: "12.00", lengthM: "8.00", heightM: "4.00", floorPlanOutline: corners(0, 0, 12, 8) };
+      const geometry = resolveRoomGeometry(hired);
+      if (geometry === null) throw new Error("no geometry");
+      const floor = plannerRoomOf(geometry.wallPolygon, geometry.ceilingHeight).floor;
+      const scene = adaptEditorStateToBlueprintScene({ space: hired, objects: [makeObj("round", ROUND_TABLE.id, 9, 6)], lastSavedAt: null });
+      expect(scene.room).toEqual({ widthM: 12, lengthM: 8, originM: { x: 0, z: 0 } });
+      expect(scene.room.originM).toEqual({ x: floor?.minX, z: floor?.minZ });
+      // A round at (9, 6) in the scene is 9 m across and 6 m down the plan; the centred box drew it at (15, 10), off a 12 m by 8 m plan.
+      const round = scene.items.find((item) => item.id === "round");
+      expect(round?.kind === "round-table" ? round.center : null).toEqual({ x: 9, y: 6 });
+      expect(blueprintPointToEditorPosition({ x: 9, y: 6 }, scene.room)).toEqual({ positionX: 9, positionZ: 6 });
+    });
+
+    it("is centred as before when the outline is the centred rectangle of the stored size", () => {
+      const side = { name: "Side Room", widthM: "8.00", lengthM: "4.00", floorPlanOutline: corners(-4, -2, 4, 2) };
+      const { room } = adaptEditorStateToBlueprintScene({ space: side, objects: [], lastSavedAt: null });
+      expect(room).toEqual({ widthM: 8, lengthM: 4 });
+      expect(editorPositionToBlueprintPoint(0, 0, room)).toEqual({ x: 4, y: 2 });
+    });
+
+    it("leaves a named room to its own drawing, whatever outline is stored for it", () => {
+      // Production stores the Robert Adam Room as a 9.7 m by 5.6 m rectangle; the planner draws its own walls, 11.4 m by 12.7 m.
+      const stored = { name: "Robert Adam Room", widthM: "9.70", lengthM: "5.60", floorPlanOutline: corners(-4.85, -2.8, 4.85, 2.8) };
+      const { room } = adaptEditorStateToBlueprintScene({ space: stored, objects: [], lastSavedAt: null });
+      expect(room.widthM).toBeCloseTo(11.4, 9);
+      expect(room.lengthM).toBeCloseTo(12.7, 9);
+      expect(room.originM).toEqual({ x: -5.7, z: -3.7 });
+      // And the Grand Hall, stored as 21 m by 10 m, keeps its drawn 21 m by 10.5 m, centred.
+      const hall = { name: "Grand Hall", widthM: "21.00", lengthM: "10.00", floorPlanOutline: corners(-10.5, -5, 10.5, 5) };
+      expect(adaptEditorStateToBlueprintScene({ space: hall, objects: [], lastSavedAt: null }).room).toEqual({ widthM: 21, lengthM: 10.5 });
+    });
+
+    it("falls back to the stored size, centred, with no outline to draw from", () => {
+      const { room } = adaptEditorStateToBlueprintScene({ space: { name: "Unknown Room", widthM: "7.50", lengthM: "3.20", floorPlanOutline: [] }, objects: [], lastSavedAt: null });
+      expect(room).toEqual({ widthM: 7.5, lengthM: 3.2 });
+    });
   });
 
   it("supplies an empty actual-chair list when the table has no group", () => {
