@@ -1,17 +1,20 @@
 import { randomUUID } from "node:crypto";
+import { resolve } from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import Fastify, { type FastifyInstance } from "fastify";
-import { Pool, neonConfig } from "@neondatabase/serverless";
-import { drizzle } from "drizzle-orm/neon-serverless";
+import { Pool as PgPool } from "pg";
+import { drizzle as nodeDrizzle } from "drizzle-orm/node-postgres";
+import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { VenueInventoryHistoryResponseSchema, VenueInventoryListResponseSchema, VenueInventoryWriteResponseSchema,
   type VenueInventoryWriteInput } from "@omnitwin/types";
 import * as schema from "../db/schema.js";
-import type { Database } from "../db/client.js";
+import { createDbConnection, type Database, type DatabaseConnection } from "../db/client.js";
 import { venueInventoryRoutes } from "../routes/venue-inventory.js";
 
-// Opt-in only: a real disposable LOCAL PostgreSQL database behind the repo's
-// Neon websocket bridge. Normal unit tests never touch a database.
+// Opt-in only: a real disposable LOCAL PostgreSQL database, which the suite
+// migrates and reaches through the API's own loopback client (db/client.ts).
+// Normal unit tests never touch a database.
 const databaseUrl = process.env["VENVIEWER_INVENTORY_TEST_DATABASE_URL"];
 const venueId = randomUUID();
 const otherVenueId = randomUUID();
@@ -19,7 +22,7 @@ const adminId = randomUUID();
 const secondAdminId = randomUUID();
 const assetIds: string[] = [];
 let assetId: string;
-let pool: Pool;
+let connection: DatabaseConnection | undefined;
 let db: Database;
 let server: FastifyInstance;
 let initialized = false;
@@ -49,12 +52,14 @@ describe.skipIf(databaseUrl === undefined)("venue inventory real PostgreSQL tran
     if (!["localhost", "127.0.0.1"].includes(url.hostname) || !url.pathname.startsWith("/venviewer_inventory_")) {
       throw new Error("Inventory integration tests require a dedicated local venviewer_inventory_ database");
     }
-    neonConfig.wsProxy = (host) => `${host}:54331/v1`;
-    neonConfig.useSecureWebSocket = false;
-    neonConfig.pipelineTLS = false;
-    neonConfig.pipelineConnect = false;
-    pool = new Pool({ connectionString: databaseUrl });
-    db = drizzle(pool, { schema });
+    const migrationPool = new PgPool({ connectionString: databaseUrl, max: 1 });
+    try {
+      await migrate(nodeDrizzle(migrationPool), { migrationsFolder: resolve(import.meta.dirname, "../../drizzle") });
+    } finally {
+      await migrationPool.end();
+    }
+    connection = createDbConnection(databaseUrl);
+    db = connection.db;
     server = Fastify({ logger: false });
     await server.register(venueInventoryRoutes, { db, prefix: "/venues" });
     await db.insert(schema.venues).values([
@@ -64,7 +69,7 @@ describe.skipIf(databaseUrl === undefined)("venue inventory real PostgreSQL tran
     await db.insert(schema.users).values([adminId, secondAdminId].map((id) => ({ id,
       email: `${id}@example.test`, name: "Inventory administrator", role: "admin", venueId })));
     initialized = true;
-  }, 30000);
+  }, 120000);
 
   beforeEach(async () => { assetId = await addAsset(); });
   afterAll(async () => {
@@ -76,7 +81,7 @@ describe.skipIf(databaseUrl === undefined)("venue inventory real PostgreSQL tran
       await db.delete(schema.venues).where(inArray(schema.venues.id, [venueId, otherVenueId]));
     }
     if (server !== undefined) await server.close();
-    if (pool !== undefined) await pool.end();
+    await connection?.close();
   });
 
   it("lists unrecorded stock as null, creates stock and returns server-owned audit history", async () => {
