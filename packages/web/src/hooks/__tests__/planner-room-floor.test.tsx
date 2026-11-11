@@ -1,3 +1,4 @@
+import { GangwayReviewItemSchema, gangwayLocationCentre, gangwayReviewId } from "@omnitwin/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, renderHook } from "@testing-library/react";
 import type { Space } from "../../api/spaces.js";
@@ -370,14 +371,150 @@ describe("the Robert Adam Room, filled", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// The gangway review goes to the venue with a layout. In these rooms a gangway
+// runs along the walls that are there: the curve, the stepped-in corners, the
+// piers between the alcoves, not the sides of a box drawn round them.
+// ---------------------------------------------------------------------------
+
+/** A room's walls in metres, as the review's figures are. */
+function wallsInMetres(name: string): Polygon {
+  const geometry = roomGeometries[name];
+  if (geometry === undefined) throw new Error(`no geometry for ${name}`);
+  return geometry.wallPolygon;
+}
+
+/**
+ * How far a round's rim stands from the nearest wall, worked out with nothing
+ * of the planner's: every wall walked a millimetre at a time.
+ */
+function rimToNearestWall(walls: Polygon, x: number, z: number, radius: number): number {
+  let nearest = Number.POSITIVE_INFINITY;
+  walls.forEach(([ax, az], i) => {
+    const [bx, bz] = walls[(i + 1) % walls.length] ?? [ax, az];
+    const steps = Math.max(1, Math.ceil(Math.hypot(bx - ax, bz - az) / 0.001));
+    for (let s = 0; s <= steps; s += 1) {
+      nearest = Math.min(nearest, Math.hypot(ax + ((bx - ax) * s) / steps - x, az + ((bz - az) * s) / steps - z));
+    }
+  });
+  return nearest - radius;
+}
+
+/** Whether a point is inside the walls, by how far the walls turn round it: a full turn inside, none outside. */
+function windsRound(walls: Polygon, x: number, z: number): boolean {
+  let turned = 0;
+  walls.forEach(([ax, az], i) => {
+    const [bx, bz] = walls[(i + 1) % walls.length] ?? [ax, az];
+    let step = Math.atan2(bz - z, bx - x) - Math.atan2(az - z, ax - x);
+    if (step > Math.PI) step -= 2 * Math.PI;
+    if (step < -Math.PI) step += 2 * Math.PI;
+    turned += step;
+  });
+  return Math.abs(turned) > Math.PI;
+}
+
+const ROUND_RADIUS_M = ROUND.width / 2;
+/** The review draws a round as 32 sides touching its rim, at most this far outside it (metres), and the slow way walks the walls a millimetre at a time. */
+const OUTLINE_SLACK_M = 0.006;
+
+describe.each(SHAPED_ROOMS)("the gangway review in the %s", (name) => {
+  it("lists a 6 ft round exactly where its rim is under 1.1 m from a wall, at the width to the nearest one", () => {
+    const dims = openRoom(name);
+    const walls = wallsInMetres(name);
+    const wrong: string[] = [];
+    let narrowed = 0;
+    let clear = 0;
+    for (const { x, z } of gridOver(walls, 0.37)) {
+      const gap = rimToNearestWall(walls, x, z, ROUND_RADIUS_M);
+      // The round stands inside the walls, and not within the outline's slack of the guidance itself.
+      if (!windsRound(walls, x, z) || gap < 0.01 || Math.abs(gap - 1.1) < 2 * OUTLINE_SLACK_M) continue;
+      const review = gangwayReview([createPlacedItem(ROUND.id, x, z)], dims, null);
+      const at = `(${x.toFixed(2)}, ${z.toFixed(2)})`;
+      if (gap >= 1.1) {
+        clear += 1;
+        if (review.length > 0) wrong.push(`${at} is ${gap.toFixed(3)} m from the nearest wall, listed at ${String(review[0]?.widthM.toFixed(3))} m`);
+        continue;
+      }
+      narrowed += 1;
+      const narrowest = review[0]?.widthM;
+      if (narrowest === undefined) wrong.push(`${at} is ${gap.toFixed(3)} m from the nearest wall, not listed`);
+      else if (Math.abs(narrowest - gap) > OUTLINE_SLACK_M) wrong.push(`${at} is ${gap.toFixed(3)} m from the nearest wall, listed at ${narrowest.toFixed(3)} m`);
+    }
+    expect(narrowed).toBeGreaterThan(100);
+    expect(clear).toBeGreaterThan(0);
+    expect({ wrong: wrong.length, first: wrong[0] ?? null }).toEqual({ wrong: 0, first: null });
+  });
+});
+
 describe("the gangway review in the Robert Adam Room", () => {
+  const walls = wallsInMetres("Robert Adam Room");
+
   it("measures a gangway from where the walls stand, not from the old box", () => {
     const dims = openRoom("Robert Adam Room");
-    // In the lower section, 1.5 m and more from every wall of the room's bounds. The old box's far wall ran through it.
-    expect(gangwayReview([createPlacedItem(ROUND.id, -2.9, 6.5)], dims, null)).toEqual([]);
+    // In the lower section, 1.28 m clear of the curved wall and of the east wall, and further from the rest. The old box's far wall ran through it.
+    expect(rimToNearestWall(walls, -2.3, 6.2, ROUND_RADIUS_M)).toBeGreaterThan(1.1);
+    expect(gangwayReview([createPlacedItem(ROUND.id, -2.3, 6.2)], dims, null)).toEqual([]);
     // Half a metre from the real north wall: under the 1.1 m guidance. The old box put that wall 2.65 m further off.
     const review = gangwayReview([createPlacedItem(ROUND.id, 0, -3.7 + 0.5 + ROUND.width / 2)], dims, null);
     expect(review.map((item) => item.gangway)).toEqual(["the wall"]);
     expect(review[0]?.widthM).toBeCloseTo(0.5, 2);
+  });
+
+  it.each([
+    ["0.713 m from the curved west wall", -2.9, 6.5, 0.713, "xMin"],
+    ["0.5 m from the curve's apex", -3.085, 6.2, 0.5, "xMin"],
+    ["0.5 m from the lower section's east wall", -1.515, 6.2, 0.5, "xMax"],
+    ["0.5 m from the upper section's south wall, east half", 2.5, 2.285, 0.5, "zMax"],
+    ["0.5 m from the south wall, which the box put 0.3 m further off", -2.85, 7.285, 0.5, "zMax"],
+    ["0.5 m from the north wall", 0, -2.285, 0.5, "zMin"],
+  ] as const)("lists a 6 ft round %s", (_where, x, z, gapM, side) => {
+    const dims = openRoom("Robert Adam Room");
+    // The figure in the case's name is the slow way's own.
+    expect(rimToNearestWall(walls, x, z, ROUND_RADIUS_M)).toBeCloseTo(gapM, 2);
+    const placed = createPlacedItem(ROUND.id, x, z);
+    const [item] = gangwayReview([placed], dims, null);
+    if (item === undefined) throw new Error(`a round ${gapM.toFixed(3)} m from a wall is not listed`);
+    expect(Math.abs(item.widthM - gapM)).toBeLessThan(OUTLINE_SLACK_M);
+    expect(item).toMatchObject({ gangway: "the wall", status: "open", pieceIds: [placed.id] });
+    expect(item.id).toBe(gangwayReviewId(side, [{ wall: side }, { unit: placed.id }]));
+    expect(GangwayReviewItemSchema.parse(item)).toEqual(item);
+  });
+
+  it("locates a pinch on the wall it is measured to", () => {
+    const dims = openRoom("Robert Adam Room");
+    const [item] = gangwayReview([createPlacedItem(ROUND.id, -1.515, 6.2)], dims, null);
+    if (item === undefined || item.location.kind !== "polygon") throw new Error("no stretch");
+    // The 1.1 m of gangway inside the lower section's east wall (x = −0.1), beside the round.
+    for (const point of item.location.points) {
+      expect(point.x).toBeGreaterThanOrEqual(-0.1 - 1.1 - 1e-9);
+      expect(point.x).toBeLessThanOrEqual(-0.1 + 1e-9);
+      expect(Math.abs(point.z - 6.2)).toBeLessThanOrEqual(ROUND_RADIUS_M + OUTLINE_SLACK_M);
+    }
+    const centre = gangwayLocationCentre(item.location);
+    expect(centre.x).toBeCloseTo(-0.65, 6);
+    expect(centre.z).toBeCloseTo(6.2, 6);
+  });
+
+  it("measures a trestle's edge to the wall beside it, corner or side", () => {
+    const dims = openRoom("Robert Adam Room");
+    const trestle = piece("trestle-6ft");
+    // Turned to run along the lower section's east wall, its long side 0.4 m off it.
+    const placed = createPlacedItem(trestle.id, -0.1 - 0.4 - trestle.depth / 2, 6.2, Math.PI / 2);
+    const [item, ...rest] = gangwayReview([placed], dims, null);
+    expect(rest).toEqual([]);
+    expect(item?.widthM).toBeCloseTo(0.4, 9);
+    expect(item?.id).toBe(gangwayReviewId("xMax", [{ wall: "xMax" }, { unit: placed.id }]));
+  });
+});
+
+describe("the gangway review in the Saloon", () => {
+  it("lists a round half a metre from the pier between the east alcoves, once", () => {
+    const dims = openRoom("Saloon");
+    expect(rimToNearestWall(wallsInMetres("Saloon"), 4.535, 0, ROUND_RADIUS_M)).toBeCloseTo(0.5, 2);
+    const placed = createPlacedItem(ROUND.id, 4.535, 0);
+    const review = gangwayReview([placed], dims, null);
+    // The pier's face and its two corners are one gangway, to the round's east.
+    expect(review.map((item) => item.id)).toEqual([gangwayReviewId("xMax", [{ wall: "xMax" }, { unit: placed.id }])]);
+    expect(review[0]?.widthM).toBeCloseTo(0.5, 6);
   });
 });
