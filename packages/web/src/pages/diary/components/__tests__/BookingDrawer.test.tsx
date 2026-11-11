@@ -769,6 +769,52 @@ describe("BookingDrawer — one booking asked for is one command (hallkeeper-web
   });
 });
 
+// a11y-9: a field's error used to appear in red with nothing said and focus
+// left on the button, so a screen reader heard a Save that did nothing. As
+// the team and proposal forms do, each error is said as it appears and
+// focus moves to the first field in error.
+describe("BookingDrawer — a field in error is said and focused (a11y-9)", () => {
+  const OWNER = "00000000-0000-4000-8000-0000000000aa";
+
+  function renderCreate(): HTMLElement {
+    render(
+      <BookingDrawer
+        mode={{ kind: "create", spaceId: GRAND_HALL, dayStartMs: Date.parse("2026-09-17T23:00:00.000Z"), ownerUserId: OWNER }}
+        rooms={ROOMS}
+        venueId={VENUE}
+        role="staff"
+        onClose={vi.fn<() => void>()}
+        onSaved={vi.fn<(message: string) => void>()}
+      />,
+    );
+    return screen.getByRole("dialog", { name: "New booking" });
+  }
+
+  it("says why the end cannot be saved and puts focus on it", async () => {
+    const drawer = renderCreate();
+    fireEvent.change(within(drawer).getByRole("combobox", { name: "Commitment" }), { target: { value: "prospect" } });
+    fireEvent.change(within(drawer).getByLabelText("Title"), { target: { value: "Fraser wedding" } });
+    const ends = within(drawer).getByLabelText<HTMLInputElement>(/^Ends/u);
+    fireEvent.change(ends, { target: { value: "2026-09-18T09:00" } });
+    fireEvent.click(within(drawer).getByRole("button", { name: "Add to the diary" }));
+
+    const alert = await within(drawer).findByRole("alert");
+    expect(alert.textContent).toBe("It must end after it starts.");
+    await waitFor(() => { expect(document.activeElement).toBe(ends); });
+    expect(ends.getAttribute("aria-invalid")).toBe("true");
+    expect(createBookingMock).not.toHaveBeenCalled();
+  });
+
+  it("puts focus on the first field in error, in the order the form reads", async () => {
+    const drawer = renderCreate();
+    fireEvent.change(within(drawer).getByLabelText("Title"), { target: { value: "Fraser wedding" } });
+    fireEvent.click(within(drawer).getByRole("button", { name: "Add to the diary" }));
+    // A new hold without its decision date, next action or its date.
+    await waitFor(() => { expect(within(drawer).getAllByRole("alert").length).toBeGreaterThanOrEqual(3); });
+    await waitFor(() => { expect(document.activeElement).toBe(within(drawer).getByLabelText(/^Decision date/u)); });
+  });
+});
+
 describe("BookingDrawer — viewings (migration 0100)", () => {
   const OWNER = "00000000-0000-4000-8000-0000000000aa";
   const ENQUIRY_ID = "00000000-0000-4000-8000-0000000000e9";

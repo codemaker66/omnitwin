@@ -208,6 +208,15 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
   // its outcome is unknown, so Save again on the same booking is the same
   // command (hallkeeper-web-8).
   const pendingCreateRef = useRef<{ readonly asked: string; readonly commandId: string } | null>(null);
+  // a11y-9: each refused save moves focus to the first field in error, as
+  // the team and proposal forms do; the count asks for it after the render
+  // that marks the fields.
+  const formRef = useRef<HTMLFormElement | null>(null);
+  const [errorFocus, setErrorFocus] = useState(0);
+  useEffect(() => {
+    if (errorFocus === 0) return;
+    formRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
+  }, [errorFocus]);
   const titleRef = useRef<HTMLInputElement | null>(null);
   const closeRef = useRef<HTMLButtonElement | null>(null);
   // Ending a booking's claim on its date is confirmed first (roadmap N3);
@@ -339,6 +348,9 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
     // An error keyed to a field with no inline slot (e.g. hidden hygiene
     // fields) must still be seen — a silent return is a dead submit button.
     setSubmitError(hiddenFieldError(errors, isHold));
+    // ...and heard: each inline error is an alert, and focus goes to the
+    // first field in error (a11y-9).
+    setErrorFocus((count) => count + 1);
   }
 
   function submit(): void {
@@ -548,7 +560,7 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
     const message = fieldErrors[key];
     if (message === undefined) return null;
     return (
-      <span className="diary-field-error" id={`diary-field-${key}-error`}>
+      <span className="diary-field-error" id={`diary-field-${key}-error`} role="alert">
         {message}
       </span>
     );
@@ -782,6 +794,7 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
       ) : null}
 
       <form
+        ref={formRef}
         className="diary-drawer-form"
         onSubmit={(event) => {
           event.preventDefault();
