@@ -100,6 +100,22 @@ function answers(...results: SheetPaperCheckResult[]): void {
   mock.mockResolvedValue(results[results.length - 1] ?? { state: "unknown" });
 }
 
+/** The device comes back online once the sheet is listening for it.
+ *
+ *  The sheet asks only on its interval, when shown again and on "online", never
+ *  at mount, and it starts listening in an effect that React may run after the
+ *  heading mount() waits for is already on screen. Under load an "online" sent
+ *  at once can arrive before that listener and be lost, so this sends it until
+ *  one lands. A send that lands asks at once, so the first one passes the wait,
+ *  and sends before it ask nothing, so no queued answer is spent early. */
+async function comeBackOnline(): Promise<void> {
+  const before = vi.mocked(checkSheetPaper).mock.calls.length;
+  await waitFor(() => {
+    window.dispatchEvent(new Event("online"));
+    expect(vi.mocked(checkSheetPaper).mock.calls.length).toBeGreaterThan(before);
+  });
+}
+
 const printCopy = (): HTMLElement => {
   const copy = document.querySelector<HTMLElement>(".hk-print-only");
   if (copy === null) throw new Error("No print copy");
@@ -217,7 +233,7 @@ describe("the phone says when it is no longer the version in force", () => {
     answers({ state: "superseded", currentVersion: 4 }, { state: "current", version: 4 });
     await mount();
     // Back in signal (or back to the tab), the sheet asks whether it is still in force.
-    act(() => { window.dispatchEvent(new Event("online")); });
+    await comeBackOnline();
     const mark = await screen.findByRole("alert", { name: "Superseded" });
     expect(mark.textContent).toContain("v4");
     expect(mark.textContent).toContain("v3");
@@ -251,7 +267,7 @@ describe("the phone says when it is no longer the version in force", () => {
     serveSheets(V3);
     vi.mocked(checkSheetPaper).mockResolvedValueOnce({ state: "superseded", currentVersion: 4 }).mockRejectedValue(new Error("offline"));
     await mount();
-    act(() => { window.dispatchEvent(new Event("online")); });
+    await comeBackOnline();
     await screen.findByRole("alert", { name: "Superseded" });
     await act(async () => { window.dispatchEvent(new Event("online")); await Promise.resolve(); });
     expect(vi.mocked(checkSheetPaper)).toHaveBeenCalledTimes(2);
@@ -263,7 +279,7 @@ describe("the phone says when it is no longer the version in force", () => {
     serveSheets(draft);
     answers({ state: "superseded", currentVersion: 1 });
     await mount();
-    act(() => { window.dispatchEvent(new Event("online")); });
+    await comeBackOnline();
     const mark = await screen.findByRole("alert", { name: "Not the approved sheet" });
     expect(mark.textContent).toContain("v1");
     expect(vi.mocked(checkSheetPaper)).toHaveBeenCalledWith({ c: V3.config.id }, expect.any(AbortSignal));

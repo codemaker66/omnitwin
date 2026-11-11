@@ -23,6 +23,7 @@ import {
   administersVenue,
   awaitsVenue,
   canDraftWithAI,
+  compilesHandoffPack,
   diaryVenueOf,
   hasRole,
 } from "../role-capabilities.js";
@@ -409,5 +410,44 @@ describe("who is offered the general AI draft panel", () => {
     expect(canDraftWithAI({ role: "planner", venueId: "venue-1", platformRole: "admin" })).toBe(true);
     expect(canDraftWithAI({ ...placed, role: "planner", platformRole: "operator" })).toBe(false);
     expect(canDraftWithAI(null)).toBe(false);
+  });
+});
+
+describe("who compiles the Ops lens's handoff pack", () => {
+  // POST /ops/handoff-packs/from-configuration/:id reads canAccessResource: the
+  // layout's owner, the venue floor at its venue (canManageVenue) or a platform
+  // admin. A shared link's public preview names no owner.
+  const SHARED_PREVIEW = { venueId: "venue-1", isPublicPreview: true } as const;
+
+  function person(role: string, platformRole = "none", venueId: string | null = "venue-1"): { readonly role: string; readonly platformRole: string; readonly venueId: string | null } {
+    return { role, platformRole, venueId };
+  }
+
+  it.each([
+    { name: "the venue's staff", user: person("staff"), compiles: true },
+    { name: "the venue's manager", user: person("manager"), compiles: true },
+    { name: "the venue's admin", user: person("admin"), compiles: true },
+    { name: "the venue's hallkeeper", user: person("hallkeeper"), compiles: true },
+    { name: "a platform admin with no venue", user: person("planner", "admin", null), compiles: true },
+    { name: "the venue's sales, who are off its floor", user: person("sales"), compiles: false },
+    { name: "another venue's staff", user: person("staff", "none", "venue-2"), compiles: false },
+    { name: "another venue's hallkeeper", user: person("hallkeeper", "none", "venue-2"), compiles: false },
+    { name: "staff still waiting for a venue", user: person("staff", "none", null), compiles: false },
+    { name: "a client", user: person("client", "none", null), compiles: false },
+  ])("on a shared link's preview, answers $name: $compiles", ({ user, compiles }) => {
+    expect(compilesHandoffPack(user, SHARED_PREVIEW)).toBe(compiles);
+  });
+
+  it("answers anyone signed in on a layout open through the authenticated load, which passed the compile's own gate", () => {
+    const own = { venueId: "venue-1", isPublicPreview: false } as const;
+    for (const user of [person("sales"), person("staff", "none", "venue-2"), person("hallkeeper", "none", null)]) {
+      expect(compilesHandoffPack(user, own)).toBe(true);
+    }
+  });
+
+  it("answers nobody signed out, and no venue's floor on a preview whose venue is unknown", () => {
+    expect(compilesHandoffPack(null, { venueId: "venue-1", isPublicPreview: false })).toBe(false);
+    expect(compilesHandoffPack(null, SHARED_PREVIEW)).toBe(false);
+    expect(compilesHandoffPack(person("staff"), { venueId: null, isPublicPreview: true })).toBe(false);
   });
 });

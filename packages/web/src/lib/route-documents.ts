@@ -12,21 +12,34 @@
 // Only pages a person can open without signing in, and that have one fixed
 // title, belong here. The route inventory test proves every path here is a
 // real route and that vercel.json serves each one its document.
+//
+// The links venue staff and guests send each other belong here too, one card
+// per kind under its router pattern (/proposal-share/:token). Link previews in
+// chat and mail read only this HTML, so before these cards a couple's proposal
+// unfurled as the front door's wedding card (5 November 2026, from X's note on
+// serving link-preview bots what they read). Such a card is unlisted: it says
+// what kind of page the link opens and never names the event, the person or
+// the token; it has no canonical address, because each link is its own page;
+// and it asks not to be indexed, as robots.txt already does for these paths.
 // ---------------------------------------------------------------------------
 
 export interface RouteDocument {
   /** The file the build writes, under route-documents/ in the output. */
   readonly name: string;
-  /** The request paths served this document; the first is canonical. */
+  /** The request paths served this document; the first is canonical unless the
+   *  document is unlisted. Unlisted paths are router patterns (/plan/:code). */
   readonly paths: readonly [string, ...string[]];
   readonly title: string;
   readonly description: string;
+  /** One card for many private links: no canonical address or og:url, and noindex. */
+  readonly unlisted?: true;
 }
 
 export const ROUTE_DOCUMENTS_DIRECTORY = "route-documents";
 export const SITE_ORIGIN = "https://venviewer.com";
 
 const LEGAL_OWNER = "The Trades House of Glasgow";
+const VENUE = "Trades Hall Glasgow";
 
 export const ROUTE_DOCUMENTS: readonly RouteDocument[] = [
   {
@@ -63,6 +76,41 @@ export const ROUTE_DOCUMENTS: readonly RouteDocument[] = [
     description:
       "Venviewer subscriptions are not yet public, and nothing can be bought here. To talk about Venviewer for your venue, write to blake@venviewer.com.",
   },
+  {
+    name: "proposal",
+    paths: ["/proposal-share/:token", "/proposal/:shareCode"],
+    title: `Your proposal from ${VENUE}`,
+    description: `A proposal for your event from the events team at ${VENUE}. Open the link to read it.`,
+    unlisted: true,
+  },
+  {
+    name: "supplier-pass",
+    paths: ["/supplier-share/:token"],
+    title: `Supplier pass — ${VENUE}`,
+    description: `The details of an event at ${VENUE} that the events team has shared with a supplier.`,
+    unlisted: true,
+  },
+  {
+    name: "plan-view",
+    paths: ["/plan-view/:token"],
+    title: `View-only plan — ${VENUE}`,
+    description: `A view-only plan of an event's room at ${VENUE}, shared by the person planning it.`,
+    unlisted: true,
+  },
+  {
+    name: "layout",
+    paths: ["/plan/:code"],
+    title: `An event layout — ${VENUE}`,
+    description: `A room layout made in the ${VENUE} planner. Open the link to see it in 3D.`,
+    unlisted: true,
+  },
+  {
+    name: "planner",
+    paths: ["/plan"],
+    title: `Plan your event — ${VENUE}`,
+    description: `Lay out your event in the rooms of ${VENUE} in 3D, then send the plan to the events team.`,
+    unlisted: true,
+  },
 ];
 
 /** The document for a route path, if it has one. */
@@ -93,22 +141,36 @@ function replaceOnce(html: string, pattern: RegExp, replacement: string, what: s
   return html.replace(pattern, () => replacement);
 }
 
+/** Removes the one line holding a match, or throws as replaceOnce does. */
+function removeLineOnce(html: string, pattern: RegExp, what: string): string {
+  return replaceOnce(html, new RegExp(`\\r?\\n[ \\t]*${pattern.source}`, pattern.flags), "", what);
+}
+
+const CANONICAL_LINK = /<link rel="canonical" href="[^"]*" \/>/u;
+const OG_URL = /<meta property="og:url" content="[^"]*" \/>/u;
+
 /** index.html as one route's document: its title, description, canonical
- *  address and the matching Open Graph tags. Everything else is unchanged. */
+ *  address and the matching Open Graph tags. An unlisted document drops the
+ *  canonical address and og:url (a scraper keeps the address it was given) and
+ *  adds noindex. Everything else is unchanged. */
 export function routeDocumentHtml(indexHtml: string, document: RouteDocument): string {
   const url = `${SITE_ORIGIN}${document.paths[0]}`;
   const title = escapeAttribute(document.title);
   const description = escapeAttribute(document.description);
+  const newline = indexHtml.includes("\r\n") ? "\r\n" : "\n";
+  const robots = document.unlisted === true ? `${newline}    <meta name="robots" content="noindex, nofollow" />` : "";
   let html = replaceOnce(indexHtml, /<title>[^<]*<\/title>/u, `<title>${escapeText(document.title)}</title>`, "<title>");
   html = replaceOnce(html, /<meta name="description" content="[^"]*" \/>/u,
-    `<meta name="description" content="${description}" />`, "description");
-  html = replaceOnce(html, /<link rel="canonical" href="[^"]*" \/>/u,
-    `<link rel="canonical" href="${escapeAttribute(url)}" />`, "canonical link");
+    `<meta name="description" content="${description}" />${robots}`, "description");
+  html = document.unlisted === true
+    ? removeLineOnce(html, CANONICAL_LINK, "canonical link")
+    : replaceOnce(html, CANONICAL_LINK, `<link rel="canonical" href="${escapeAttribute(url)}" />`, "canonical link");
   html = replaceOnce(html, /<meta property="og:title" content="[^"]*" \/>/u,
     `<meta property="og:title" content="${title}" />`, "og:title");
   html = replaceOnce(html, /<meta property="og:description" content="[^"]*" \/>/u,
     `<meta property="og:description" content="${description}" />`, "og:description");
-  html = replaceOnce(html, /<meta property="og:url" content="[^"]*" \/>/u,
-    `<meta property="og:url" content="${escapeAttribute(url)}" />`, "og:url");
+  html = document.unlisted === true
+    ? removeLineOnce(html, OG_URL, "og:url")
+    : replaceOnce(html, OG_URL, `<meta property="og:url" content="${escapeAttribute(url)}" />`, "og:url");
   return html;
 }
