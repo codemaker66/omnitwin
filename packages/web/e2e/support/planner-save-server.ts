@@ -114,6 +114,12 @@ function fixed(value: number, places: number): string {
   return value.toFixed(places);
 }
 
+/** The claim secret a new draft's creating browser is given, and presents
+ *  again (X-Plan-Claim-Secret) on its anonymous reads and saves of that draft. */
+function claimSecretFor(layoutId: string): string {
+  return `secret-${layoutId}-0123456789`;
+}
+
 /** One server shared by every context a spec opens. */
 export class PlannerSaveServer {
   private readonly layouts = new Map<string, StoredLayout>();
@@ -211,7 +217,8 @@ export class PlannerSaveServer {
       const id = this.mint("layout");
       const layout: StoredLayout = { id, spaceId, userId: null, name: "New Layout", isPublicPreview: true, revision: 1, updatedAt: new Date().toISOString(), objects: [] };
       this.layouts.set(id, layout);
-      return json(201, { data: { ...this.wire(layout), claimSecret: `secret-${id}-0123456789` } });
+      // A new plan holds no note, so its creating answer says they are all here.
+      return json(201, { data: { ...this.wire(layout), claimSecret: claimSecretFor(id), notesIncluded: true } });
     }
     const claim = /^\/configurations\/([^/]+)\/claim$/u.exec(path);
     if (method === "POST" && claim !== null) {
@@ -224,7 +231,15 @@ export class PlannerSaveServer {
     const read = /^\/(?:public\/)?configurations\/([^/]+)$/u.exec(path);
     if (method === "GET" && read !== null) {
       const layout = this.layouts.get(read[1] ?? "");
-      return layout === undefined ? json(404, { error: "No layout", code: "NOT_FOUND" }) : json(200, { data: this.wire(layout) });
+      if (layout === undefined) return json(404, { error: "No layout", code: "NOT_FOUND" });
+      if (!path.startsWith("/public/")) return json(200, { data: this.wire(layout) });
+      // The public read says whether it carries the plan's notes: it does only
+      // for the browser that presents the plan's claim secret. This server
+      // keeps a piece's note like any other detail and withholds none, so a
+      // spec that saves notes from two browsers must first give it the API's
+      // note rules (packages/api/src/routes/public-configs.ts).
+      const notesIncluded = request.headers()["x-plan-claim-secret"] === claimSecretFor(layout.id);
+      return json(200, { data: { ...this.wire(layout), notesIncluded } });
     }
     const save = /^\/(?:public\/)?configurations\/([^/]+)\/objects\/batch$/u.exec(path);
     if (method === "POST" && save !== null && this.dropSaves) return route.abort("connectionreset");
