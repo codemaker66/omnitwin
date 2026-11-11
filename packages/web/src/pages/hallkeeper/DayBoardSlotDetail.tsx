@@ -14,13 +14,14 @@ import {
 import { getSheetSummary } from "../../api/hallkeeper-summary.js";
 import { formatWallDay, formatWallTime } from "../diary/lib/board-time.js";
 import { ActivityIndicator, ActivityStatus } from "../../components/shared/Activity.js";
-import { resolveEventLinkedLayouts, type LinkedLayoutChoice } from "../../lib/event-linked-layouts.js";
 import { roomPhoto } from "../../components/dashboard/enquiries/enquiry-room-photo.js";
 import { isQueuedObservation, type RecordOutcome, type SlotObservationsApi } from "./lib/use-slot-observations.js";
-import { describeSlotSheet, sheetProgressLine, type SlotSheetState } from "./lib/day-board-sheet.js";
+import { sheetProgressLine } from "./lib/day-board-sheet.js";
+import { useSlotSheet } from "./lib/use-slot-sheet.js";
 import type { DayBoardSlot } from "./lib/day-board-state.js";
 import type { SlotRequestsComponent } from "./lib/slot-requests-contract.js";
 import { StateIcon } from "./DayBoardRooms.js";
+import { ChangeoverSection } from "./DayBoardChangeover.js";
 
 // ---------------------------------------------------------------------------
 // The open slot, on the forest decision panel the desks use: the room's
@@ -31,55 +32,6 @@ import { StateIcon } from "./DayBoardRooms.js";
 // event, its phases and the requests made against it. The requests surface is Lane 9's and was
 // drawn for paper, so it sits on an ivory slip laid on the forest.
 // ---------------------------------------------------------------------------
-
-interface SlotSheetResult {
-  readonly status: "loading" | "ready" | "error";
-  readonly state: SlotSheetState | null;
-  readonly error: string | null;
-}
-
-/**
- * Resolve the slot's setup-sheet door. One resolution per event+room; the
- * `isCurrent` guard is the same superseded-request discipline the planner
- * bootstrap uses, so a board that rolls over midnight (or a room filter
- * change) can never paint a stale room's layouts onto a slot.
- */
-function useSlotSheet(eventId: string | null, roomSlug: string, roomName: string, bookingKind: BookingKind): SlotSheetResult {
-  const [layouts, setLayouts] = useState<readonly LinkedLayoutChoice[] | null>(null);
-  const [unavailable, setUnavailable] = useState(0);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (eventId === null) {
-      setLayouts([]);
-      setUnavailable(0);
-      setError(null);
-      return;
-    }
-    let current = true;
-    setLayouts(null);
-    setError(null);
-    void resolveEventLinkedLayouts({ eventId, spaceSlug: roomSlug, isCurrent: () => current })
-      .then((resolved) => {
-        if (!current) return;
-        setLayouts(resolved.layouts);
-        setUnavailable(resolved.unavailableCount);
-      })
-      .catch(() => {
-        if (!current) return;
-        setError("The setup sheet link could not be checked.");
-      });
-    return () => { current = false; };
-  }, [eventId, roomSlug]);
-
-  if (error !== null) return { status: "error", state: null, error };
-  if (layouts === null) return { status: "loading", state: null, error: null };
-  return {
-    status: "ready",
-    state: describeSlotSheet({ eventId, bookingKind, roomName, layouts, unavailableCount: unavailable }),
-    error: null,
-  };
-}
 
 const SUMMARY_REFRESH_MS = 60_000;
 
@@ -307,7 +259,7 @@ function WhatChanged({ changes, timeZone, nowMs, onAcknowledge, sending, failure
 }
 
 /** The open slot: its sheet, its event, its phases and its requests. */
-export function SlotDetail({ slot, room, venueSlug, timeZone, slotRequests: SlotRequests, observations, onClose, closeLabel, changes = null, nowMs = Date.now(), onAcknowledge = null, acknowledging = false, acknowledgeFailure = null, changesUnread = false }: {
+export function SlotDetail({ slot, room, venueSlug, timeZone, slotRequests: SlotRequests, observations, onClose, closeLabel, changes = null, nowMs = Date.now(), onAcknowledge = null, acknowledging = false, acknowledgeFailure = null, changesUnread = false, previous = null }: {
   readonly slot: DayBoardSlot;
   readonly room: { readonly id: string; readonly name: string; readonly slug: string };
   readonly venueSlug: string | null;
@@ -327,6 +279,8 @@ export function SlotDetail({ slot, room, venueSlug, timeZone, slotRequests: Slot
   readonly acknowledgeFailure?: string | null;
   /** The last read of what changed failed. */
   readonly changesUnread?: boolean;
+  /** The booking before this one in the room, when it ends before this starts. */
+  readonly previous?: DayBoardSlot | null;
 }): ReactElement {
   const occasion = occasionLabel(slot.eventType);
   const photo = venueSlug === null ? null : roomPhoto(venueSlug, room.slug);
@@ -420,6 +374,8 @@ export function SlotDetail({ slot, room, venueSlug, timeZone, slotRequests: Slot
       ) : changesUnread && slot.eventId !== null ? (
         <p className="dayboard-changes-unread">What changed could not be read just now.</p>
       ) : null}
+      {/* What moves from the booking before to this one, in this room. */}
+      {previous !== null && <ChangeoverSection previous={previous} slot={slot} room={room} />}
       {/* What the room was seen doing (S5): the latest fact, and the next
           facts a hallkeeper may record from here. Facts never move a time. */}
       <section ref={seenRef} className="dayboard-seen dayboard-detail-section" aria-label="What the room is doing" tabIndex={-1}>

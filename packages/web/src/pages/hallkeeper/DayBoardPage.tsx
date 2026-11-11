@@ -555,6 +555,16 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
   // November · Good afternoon, Elaine".
   const dayName = deskGreeting(selectedMs, null, timeZone).date;
   const greeting = deskGreeting(nowMs, user?.name ?? null, timeZone).greeting;
+  // The booking before the open one in its room, when there is a turn-round
+  // between them: the changeover runs from its layout to this one's.
+  // (Plain arithmetic, not a hook: this sits after the board's early return.)
+  const previousLane = selected === null || selected.slot.gapBefore === null
+    ? undefined
+    : lanes.find((candidate) => candidate.room.id === selected.room.id);
+  const previousIndex = previousLane === undefined || selected === null
+    ? -1
+    : previousLane.slots.findIndex((candidate) => candidate.bookingId === selected.slot.bookingId);
+  const previousSlot = previousIndex > 0 ? previousLane?.slots[previousIndex - 1] ?? null : null;
   const selectedEventId = selected?.slot.eventId ?? null;
   const selectedEntry = selectedEventId === null ? undefined : floor.byEvent.get(selectedEventId);
   const selectedLast = selectedEntry?.lastAcknowledgement ?? null;
@@ -588,6 +598,7 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
         acknowledging={selectedEventId !== null && floor.sending.has(selectedEventId)}
         acknowledgeFailure={selectedEventId === null ? null : floor.failures.get(selectedEventId) ?? null}
         changesUnread={floor.failedSinceMs !== null}
+        previous={previousSlot}
       />
     </div>
   );

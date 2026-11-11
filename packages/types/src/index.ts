@@ -1462,6 +1462,9 @@ export {
 // and its QR answers only "current" or "superseded" (no sign-in, no content).
 export * from "./sheet-paper-check.js";
 
+// What moves at a changeover: from one booking's layout to the next one's in a room.
+export * from "./changeover.js";
+
 // The hallkeeper's brief derived from a sheet (day in order, store list,
 // setup steps, plan markers, keep-in-view facts), shared by paper and screen.
 export * from "./sheet-brief.js";

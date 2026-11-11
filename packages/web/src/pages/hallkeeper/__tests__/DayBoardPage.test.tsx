@@ -89,6 +89,11 @@ const floor = vi.hoisted(() => ({
 vi.mock("../../../api/plan-changes.js", () => ({
   getAwaitingAcknowledgement: (eventIds: readonly string[]) => floor.awaiting(eventIds),
 }));
+// What moves at a changeover, fed per case.
+const changeoverMock = vi.hoisted(() => vi.fn<(input: { from: string; to: string }) => Promise<unknown>>());
+vi.mock("../../../api/changeover.js", () => ({
+  getChangeover: (input: { from: string; to: string }) => changeoverMock(input),
+}));
 // The board reads what its rooms were seen doing and listens for new facts
 // (goal 19 S5); this suite stubs both edges and feeds facts per case.
 const seen = vi.hoisted(() => ({
@@ -261,6 +266,7 @@ beforeEach(() => {
   floor.awaiting.mockResolvedValue([]);
   floor.acknowledge.mockReset();
   floor.acknowledge.mockResolvedValue({});
+  changeoverMock.mockReset();
   resolveLayoutsMock.mockReset();
   // A summary that never arrives shows no line, which other cases expect.
   getSummaryMock.mockReset();
@@ -1781,5 +1787,74 @@ describe("DayBoardPage: what changed since the floor last looked", () => {
     fireEvent.click(await screen.findByRole("button", { name: /^Chamber dinner,/u }));
     expect(await screen.findByText(/^Changes seen by Jamie at the door, \d{2}:\d{2}\.$/u)).toBeTruthy();
     expect(screen.queryByText("Changed")).toBeNull();
+  });
+});
+
+describe("DayBoardPage: what moves at a changeover", () => {
+  const LUNCH_EVENT = "00000000-0000-4000-8000-0000000000e7";
+  const DINNER_EVENT = "00000000-0000-4000-8000-0000000000e8";
+  const LUNCH_LAYOUT = "00000000-0000-4000-8000-0000000000c7";
+  const DINNER_LAYOUT = "00000000-0000-4000-8000-0000000000c8";
+
+  function day(): CalendarResponse["entries"] {
+    const at = (minutes: number): string => new Date(Date.now() + minutes * 60_000).toISOString();
+    return [
+      { ...liveBooking(), id: "00000000-0000-4000-8000-0000000000b7", title: "Lunch", eventId: LUNCH_EVENT, startsAt: at(-240), endsAt: at(-180) },
+      { ...liveBooking(), id: "00000000-0000-4000-8000-0000000000b8", title: "Dinner", eventId: DINNER_EVENT, startsAt: at(60), endsAt: at(300) },
+    ] as CalendarResponse["entries"];
+  }
+
+  function layouts(byEvent: Record<string, readonly string[]>): void {
+    resolveLayoutsMock.mockImplementation((input: { eventId: string }) => Promise.resolve({
+      eventName: "", roomName: "Grand Hall", unavailableCount: 0,
+      layouts: (byEvent[input.eventId] ?? []).map((configurationId) => ({ configurationId, name: `Layout ${configurationId.slice(-2)}`, spaceName: "Grand Hall" })),
+    }));
+  }
+
+  it("lists what goes back to store, what comes from it and what stays, from the lunch's layout to the dinner's", async () => {
+    getCalendarMock.mockResolvedValue(calendarFixture(day()));
+    layouts({ [LUNCH_EVENT]: [LUNCH_LAYOUT], [DINNER_EVENT]: [DINNER_LAYOUT] });
+    changeoverMock.mockResolvedValue({
+      from: { configId: LUNCH_LAYOUT, name: "Lunch layout", guests: 60 },
+      to: { configId: DINNER_LAYOUT, name: "Dinner layout", guests: 120 },
+      items: [
+        { name: "Trestle", category: "table", phase: "furniture", isAccessory: false, before: 8, after: 0, zones: [] },
+        { name: "6ft Round Table", category: "table", phase: "furniture", isAccessory: false, before: 0, after: 12, zones: [{ zone: "Centre", before: 0, after: 12 }] },
+      ],
+      plan: null,
+    });
+    renderBoard();
+    fireEvent.click(await screen.findByRole("button", { name: /^Dinner,/u }));
+    const section = await screen.findByRole("region", { name: "Changeover from Lunch" });
+    expect(await within(section).findByText("8 × Trestle")).toBeTruthy();
+    expect(within(section).getByText("12 × 6ft Round Table")).toBeTruthy();
+    expect(changeoverMock).toHaveBeenCalledWith({ from: LUNCH_LAYOUT, to: DINNER_LAYOUT, fromEventId: LUNCH_EVENT, toEventId: DINNER_EVENT });
+  });
+
+  it("says nothing moves when the dinner keeps the lunch's layout, without asking", async () => {
+    getCalendarMock.mockResolvedValue(calendarFixture(day()));
+    layouts({ [LUNCH_EVENT]: [LUNCH_LAYOUT], [DINNER_EVENT]: [LUNCH_LAYOUT] });
+    renderBoard();
+    fireEvent.click(await screen.findByRole("button", { name: /^Dinner,/u }));
+    expect(await screen.findByText("The same layout as Lunch: nothing moves.")).toBeTruthy();
+    expect(changeoverMock).not.toHaveBeenCalled();
+  });
+
+  it("says plainly when the booking before has no layout for the room", async () => {
+    getCalendarMock.mockResolvedValue(calendarFixture(day()));
+    layouts({ [DINNER_EVENT]: [DINNER_LAYOUT] });
+    renderBoard();
+    fireEvent.click(await screen.findByRole("button", { name: /^Dinner,/u }));
+    expect(await screen.findByText("Lunch has no layout for this room yet. What moves can’t be worked out until it has one.")).toBeTruthy();
+    expect(changeoverMock).not.toHaveBeenCalled();
+  });
+
+  it("has no changeover for the first booking of the day in its room", async () => {
+    getCalendarMock.mockResolvedValue(calendarFixture(day()));
+    layouts({ [LUNCH_EVENT]: [LUNCH_LAYOUT], [DINNER_EVENT]: [DINNER_LAYOUT] });
+    renderBoard();
+    fireEvent.click(await screen.findByRole("button", { name: /^Lunch,/u }));
+    await screen.findByRole("region", { name: /Grand Hall: Lunch/u });
+    expect(screen.queryByRole("region", { name: /^Changeover/u })).toBeNull();
   });
 });
