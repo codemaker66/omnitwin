@@ -15,7 +15,12 @@ import type { Database } from "../db/client.js";
 import { syncPlacedObjectBatch, type PlacedObjectBatchItem } from "../lib/placed-object-batch.js";
 import { emit } from "../observability/event-bus.js";
 import { generateUniqueShortCode } from "../services/shortcode.js";
-import { claimSecretMatches, generateClaimSecret, hashClaimSecret } from "../services/configuration-claim-secrets.js";
+import {
+  PLAN_CLAIM_SECRET_HEADER,
+  claimSecretMatches,
+  generateClaimSecret,
+  hashClaimSecret,
+} from "../services/configuration-claim-secrets.js";
 import { GuestSaveBudget } from "../services/guest-save-budget.js";
 import {
   validatePlacementsInPolygon,
@@ -79,12 +84,10 @@ function saveBytes(request: FastifyRequest): number {
 // secret (made before migration 0102, or already claimed) has no such browser.
 // ---------------------------------------------------------------------------
 
-const CLAIM_SECRET_HEADER = "x-plan-claim-secret";
-
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 
 async function presentsClaimSecret(db: Database, configId: string, request: FastifyRequest): Promise<boolean> {
-  const presented = request.headers[CLAIM_SECRET_HEADER];
+  const presented = request.headers[PLAN_CLAIM_SECRET_HEADER];
   if (typeof presented !== "string" || presented.length < 16 || presented.length > 256) return false;
   const [secret] = await db.select({ secretHash: configurationClaimSecrets.secretHash })
     .from(configurationClaimSecrets)
