@@ -16,7 +16,7 @@ import {
   type CalendarQuery,
   type CalendarResponse,
 } from "@omnitwin/types";
-import { bookings, eventPhases, events, spaces, turnaroundRules, users } from "../db/schema.js";
+import { bookings, eventPhases, events, spaces, turnaroundRules, users, venues } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { authenticate } from "../middleware/auth.js";
 import { canReadDiary } from "../utils/query.js";
@@ -181,16 +181,22 @@ export async function calendarRoutes(
     const from = new Date(query.from);
     const to = new Date(query.to);
 
-    const venueSpaces = await db
-      .select({
-        id: spaces.id,
-        name: spaces.name,
-        slug: spaces.slug,
-        sortOrder: spaces.sortOrder,
-      })
-      .from(spaces)
-      .where(and(eq(spaces.venueId, query.venueId), isNull(spaces.deletedAt)))
-      .orderBy(asc(spaces.sortOrder), asc(spaces.name));
+    const [venueSpaces, [venue]] = await Promise.all([
+      db
+        .select({
+          id: spaces.id,
+          name: spaces.name,
+          slug: spaces.slug,
+          sortOrder: spaces.sortOrder,
+        })
+        .from(spaces)
+        .where(and(eq(spaces.venueId, query.venueId), isNull(spaces.deletedAt)))
+        .orderBy(asc(spaces.sortOrder), asc(spaces.name)),
+      // The venue's own days decide which of an event's bookings in a room
+      // are one stay there (services/calendar-conflicts.ts).
+      db.select({ timeZone: venues.timezone }).from(venues).where(eq(venues.id, query.venueId)).limit(1),
+    ]);
+    const timeZone = venue?.timeZone ?? "Europe/London";
 
     const knownSpaceIds = new Set(venueSpaces.map((space) => space.id));
     const requestedSpaceIds = query.spaceIds?.filter((id) => knownSpaceIds.has(id));
@@ -212,7 +218,7 @@ export async function calendarRoutes(
         range: { from: from.toISOString(), to: to.toISOString() },
         rooms: [],
         entries: [],
-        conflicts: detectCalendarConflicts({ bookings: [], phases: [], turnaroundRules: [] }),
+        conflicts: detectCalendarConflicts({ bookings: [], phases: [], turnaroundRules: [], timeZone }),
         decisionsDue: { holds: [], total: 0 },
       });
       return { data: emptyResponse };
@@ -440,6 +446,7 @@ export async function calendarRoutes(
       bookings: conflictBookings,
       phases: conflictPhases,
       turnaroundRules: ruleRows,
+      timeZone,
     });
 
     const response: CalendarResponse = CalendarResponseSchema.parse({

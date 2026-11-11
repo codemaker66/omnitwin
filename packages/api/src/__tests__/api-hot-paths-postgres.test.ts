@@ -830,6 +830,37 @@ describe.skipIf(target === undefined)("API hot paths through real routes and Pos
       expect(sends.rows[0]?.count).toBe(0);
     });
 
+    // T-695 api-diary-bookings-7: a two-day event's bookings in one room were
+    // one span, so another client's dinner between its days was never
+    // measured. The route passes the venue's own days to the engine.
+    it("measures the changeover before another client's dinner between a two-day event's days", async () => {
+      const a = await venue("two-day room");
+      const staff = await a.actor("staff");
+      const room = a.rooms[0] ?? "";
+      const ink = (title: string, startsAt: string, hours: number, eventId?: string): typeof schema.bookings.$inferInsert => ({
+        venueId: a.venueId, spaceId: room, kind: "ink", title, startsAt: new Date(startsAt),
+        endsAt: new Date(Date.parse(startsAt) + hours * HOUR), ...(eventId === undefined ? {} : { eventId }),
+      });
+      // Friday 17 and Saturday 18 September 2027, 09:00 to 17:00 BST; the dinner 19:00 to 23:00 BST on the Friday.
+      const [friday] = await insertBoundBookings(db, [ink("Conference, day one", "2027-09-17T08:00:00.000Z", 8)]);
+      if (friday?.eventId === null || friday?.eventId === undefined) throw new Error("The conference has no event");
+      const [, dinner] = await insertBoundBookings(db, [
+        ink("Conference, day two", "2027-09-18T08:00:00.000Z", 8, friday.eventId),
+        ink("Dinner", "2027-09-17T18:00:00.000Z", 4),
+      ]);
+      if (dinner === undefined) throw new Error("The dinner was not booked");
+      await db.insert(schema.turnaroundRules).values({ venueId: a.venueId, spaceId: null, eventType: null, name: "House changeover", minutes: 180 });
+
+      const response = await server.inject({
+        method: "GET", headers: bearer(staff),
+        url: `/calendar?venueId=${a.venueId}&from=2027-09-16T23:00:00.000Z&to=2027-09-19T23:00:00.000Z`,
+      });
+      expect(response.statusCode, response.body).toBe(200);
+      const report = response.json<{ data: { conflicts: { conflicts: { type: string; entryIds: string[] }[] } } }>().data.conflicts;
+      expect(report.conflicts.filter((conflict) => conflict.type === "insufficient_turnaround").map((conflict) => conflict.entryIds))
+        .toEqual([[friday.id, dinner.id]]);
+    });
+
     it("lets one replay retry a failed reminder send, dedupes the others, and never reclaims a sent one", async () => {
       // No provider in this gate: a reclaimed send ends as dev_mode, which is
       // how the test sees that the provider step was reached again.

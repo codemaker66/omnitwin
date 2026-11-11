@@ -1,5 +1,6 @@
 import {
   isLiveBooking,
+  rotaLocalDate,
   type BookingKind,
   type BookingLiveness,
   type CalendarConflict,
@@ -26,6 +27,9 @@ import {
 //
 // Time doctrine: all gap math runs on INSTANTS (epoch milliseconds), never on
 // wall-clock fields, so Europe/London DST transitions cannot corrupt results.
+// The one calendar question, which of an event's pieces in a room are one
+// occupancy, asks the venue's own day of an instant in its zone (passed in),
+// never an offset.
 // ---------------------------------------------------------------------------
 
 export interface ConflictBookingInput {
@@ -67,15 +71,32 @@ export interface DetectCalendarConflictsInput {
   readonly bookings: readonly ConflictBookingInput[];
   readonly phases: readonly ConflictPhaseInput[];
   readonly turnaroundRules: readonly ConflictTurnaroundRuleInput[];
+  /** The venue's IANA zone: an event holds a room on each venue day it uses it. */
+  readonly timeZone: string;
 }
 
-/** One contiguous claim on a space's time, after same-event merging. */
+/** One claim on a space's time: an event's confirmed bookings and phases on
+ *  one venue day, or running into one another, or one booking without an
+ *  event. */
 interface Occupancy {
-  id: string;
-  title: string;
-  eventType: string | null;
-  startMs: number;
-  endMs: number;
+  readonly id: string;
+  readonly title: string;
+  readonly eventType: string | null;
+  /** The event it belongs to; null for a booking without one. */
+  readonly eventId: string | null;
+  readonly startMs: number;
+  readonly endMs: number;
+}
+
+/** A booking or phase that makes up an occupancy. */
+interface OccupancyPiece {
+  readonly id: string;
+  readonly title: string;
+  readonly eventType: string | null;
+  readonly startMs: number;
+  readonly endMs: number;
+  /** A confirmed booking names its occupancy; a phase only where none does. */
+  readonly booking: boolean;
 }
 
 const MS_PER_MINUTE = 60_000;
@@ -158,59 +179,83 @@ export function resolveTurnaroundRule(
   return best;
 }
 
-/** Merge each event's booking + phases into one occupancy interval per space;
- *  bookings without an event (and orphan phases) stand alone. */
+/** One occupancy from its pieces: named by its last confirmed booking (or,
+ *  with none, its first phase), typed by its first booking with a type, then
+ *  its first phase with one. */
+function occupancyOf(eventId: string | null, pieces: readonly OccupancyPiece[]): Occupancy | null {
+  const bookingPieces = pieces.filter((piece) => piece.booking);
+  const phasePieces = pieces.filter((piece) => !piece.booking);
+  const named = bookingPieces[bookingPieces.length - 1] ?? phasePieces[0];
+  if (named === undefined) return null;
+  const typed = [...bookingPieces, ...phasePieces].find((piece) => piece.eventType !== null);
+  return {
+    id: named.id,
+    title: named.title,
+    eventType: typed?.eventType ?? null,
+    eventId,
+    startMs: Math.min(...pieces.map((piece) => piece.startMs)),
+    endMs: Math.max(...pieces.map((piece) => piece.endMs)),
+  };
+}
+
+/**
+ * Each event's confirmed bookings and phases in one space, as the room is
+ * held: pieces that overlap or touch, or fall on the same venue day, are one
+ * occupancy, so a set-up phase on the morning of an evening booking is that
+ * booking's. An event's pieces on another day are another occupancy, so a
+ * two-day event never swallows what sits between its days (T-695
+ * api-diary-bookings-7). Bookings without an event stand alone.
+ */
 function buildOccupancies(
   inks: ReadonlyArray<ConflictBookingInput & { readonly startMs: number; readonly endMs: number }>,
   phases: readonly ConflictPhaseInput[],
+  timeZone: string,
 ): Occupancy[] {
-  const byKey = new Map<string, Occupancy>();
-  const merge = (
-    key: string,
-    candidate: Occupancy,
-    preferIdentity: boolean,
-  ): void => {
-    const existing = byKey.get(key);
-    if (existing === undefined) {
-      byKey.set(key, { ...candidate });
-      return;
-    }
-    existing.startMs = Math.min(existing.startMs, candidate.startMs);
-    existing.endMs = Math.max(existing.endMs, candidate.endMs);
-    if (preferIdentity) {
-      existing.id = candidate.id;
-      existing.title = candidate.title;
-    }
-    existing.eventType ??= candidate.eventType;
+  const occupancies: Occupancy[] = [];
+  const byEvent = new Map<string, OccupancyPiece[]>();
+  const add = (eventId: string, piece: OccupancyPiece): void => {
+    const pieces = byEvent.get(eventId);
+    if (pieces === undefined) byEvent.set(eventId, [piece]);
+    else pieces.push(piece);
   };
   for (const ink of inks) {
-    const key = ink.eventId === null ? `booking:${ink.id}` : `event:${ink.eventId}`;
-    merge(
-      key,
-      {
-        id: ink.id,
-        title: ink.title,
-        eventType: ink.eventType,
-        startMs: ink.startMs,
-        endMs: ink.endMs,
-      },
-      true,
-    );
+    const piece: OccupancyPiece = {
+      id: ink.id, title: ink.title, eventType: ink.eventType, startMs: ink.startMs, endMs: ink.endMs, booking: true,
+    };
+    if (ink.eventId === null) {
+      const alone = occupancyOf(null, [piece]);
+      if (alone !== null) occupancies.push(alone);
+    } else {
+      add(ink.eventId, piece);
+    }
   }
   for (const row of phases) {
-    merge(
-      `event:${row.eventId}`,
-      {
-        id: row.id,
-        title: row.eventName,
-        eventType: row.eventType,
-        startMs: row.startsAt.getTime(),
-        endMs: row.endsAt.getTime(),
-      },
-      false,
-    );
+    add(row.eventId, {
+      id: row.id, title: row.eventName, eventType: row.eventType,
+      startMs: row.startsAt.getTime(), endMs: row.endsAt.getTime(), booking: false,
+    });
   }
-  return [...byKey.values()];
+  // The venue's calendar day of an instant; a span's day is that of its last
+  // occupied instant, as spans are half-open.
+  const venueDay = (ms: number): string => rotaLocalDate(ms, timeZone);
+  for (const [eventId, pieces] of byEvent) {
+    let run: OccupancyPiece[] = [];
+    let runEndMs = Number.NEGATIVE_INFINITY;
+    for (const piece of [...pieces].sort(chronological)) {
+      const joins = run.length > 0
+        && (piece.startMs <= runEndMs || venueDay(piece.startMs) === venueDay(runEndMs - 1));
+      if (!joins && run.length > 0) {
+        const held = occupancyOf(eventId, run);
+        if (held !== null) occupancies.push(held);
+        run = [];
+      }
+      runEndMs = run.length === 0 ? piece.endMs : Math.max(runEndMs, piece.endMs);
+      run.push(piece);
+    }
+    const held = occupancyOf(eventId, run);
+    if (held !== null) occupancies.push(held);
+  }
+  return occupancies;
 }
 
 /**
@@ -298,7 +343,7 @@ export function detectCalendarConflicts(input: DetectCalendarConflictsInput): Co
 
     // --- insufficient turnaround (warning) ----------------------------------
     const spacePhases = input.phases.filter((row) => row.spaceId === spaceId);
-    const occupancies = buildOccupancies(spaceInks, spacePhases).sort((a, b) =>
+    const occupancies = buildOccupancies(spaceInks, spacePhases, input.timeZone).sort((a, b) =>
       a.startMs !== b.startMs ? a.startMs - b.startMs : a.id < b.id ? -1 : 1,
     );
 
@@ -306,6 +351,8 @@ export function detectCalendarConflicts(input: DetectCalendarConflictsInput): Co
       const current = occupancies[i];
       const next = occupancies[i + 1];
       if (current === undefined || next === undefined) continue;
+      // An event's own days in the room are not a changeover: its set stays.
+      if (current.eventId !== null && current.eventId === next.eventId) continue;
       const gapMs = next.startMs - current.endMs;
       if (gapMs < 0) continue; // overlapping occupancies are the overlap checks' domain
       turnaroundPairCount += 1;

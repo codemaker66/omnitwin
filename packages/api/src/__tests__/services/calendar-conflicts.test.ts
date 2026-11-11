@@ -75,6 +75,7 @@ function detect(input: {
     bookings: input.bookings ?? [],
     phases: input.phases ?? [],
     turnaroundRules: input.turnaroundRules ?? [],
+    timeZone: "Europe/London",
   });
 }
 
@@ -412,6 +413,83 @@ describe("Europe/London DST boundaries", () => {
     const report = detect({ bookings: [a, b], turnaroundRules: [rule({ minutes: 150 })] });
     expect(report.conflicts.filter((c) => c.type === "insufficient_turnaround")).toEqual([]);
     expect(report.checks.turnaround.status).toBe("checked");
+  });
+});
+
+// T-695 api-diary-bookings-7. One event's confirmed bookings and phases in a
+// room were one span however far apart, so a two-day event swallowed what sat
+// between its days: the changeovers either side were never measured, and a
+// viewing in between was warned as overlapping. An event holds the room on
+// each venue day it uses it (Europe/London), and an event's own days are not
+// a changeover.
+describe("one event's days in a room", () => {
+  const at = (iso: string): Date => new Date(iso);
+
+  it("measures the changeovers either side of another event between a two-day event's days", () => {
+    const conferenceFriday = booking({ id: "conf-fri", title: "Conference", eventId: "event-conference",
+      startsAt: at("2026-09-18T08:00:00.000Z"), endsAt: at("2026-09-18T16:00:00.000Z") });
+    const conferenceSaturday = booking({ id: "conf-sat", title: "Conference", eventId: "event-conference",
+      startsAt: at("2026-09-19T08:00:00.000Z"), endsAt: at("2026-09-19T16:00:00.000Z") });
+    const dinner = booking({ id: "dinner", title: "Dinner", eventId: "event-dinner",
+      startsAt: at("2026-09-18T18:00:00.000Z"), endsAt: at("2026-09-18T22:00:00.000Z") });
+    const viewing = booking({ id: "viewing", kind: "viewing", title: "Show-round",
+      startsAt: at("2026-09-18T17:00:00.000Z"), endsAt: at("2026-09-18T17:30:00.000Z") });
+    const report = detect({
+      bookings: [conferenceFriday, conferenceSaturday, dinner, viewing],
+      turnaroundRules: [rule({ minutes: 180 })],
+    });
+    const turnarounds = report.conflicts.filter((c) => c.type === "insufficient_turnaround");
+    expect(turnarounds.map((c) => c.id)).toEqual(["insufficient_turnaround:conf-fri:dinner"]);
+    expect(turnarounds[0]?.explanation).toContain("Only 120 minutes");
+    expect(report.conflicts.filter((c) => c.type === "viewing_overlap")).toEqual([]);
+  });
+
+  it("does not count an event's own days as a changeover", () => {
+    const first = booking({ id: "day-1", eventId: "event-two-day",
+      startsAt: at("2026-09-18T17:00:00.000Z"), endsAt: at("2026-09-18T22:59:00.000Z") });
+    const second = booking({ id: "day-2", eventId: "event-two-day",
+      startsAt: at("2026-09-19T07:00:00.000Z"), endsAt: at("2026-09-19T16:00:00.000Z") });
+    const report = detect({ bookings: [first, second], turnaroundRules: [rule({ minutes: 600 })] });
+    expect(report.conflicts).toEqual([]);
+    expect(report.checks.turnaround.detail).toBe("No consecutive occupancy pairs in range needed a turnaround check.");
+  });
+
+  it("keeps an event's set-up on its own day with its booking, gap or not", () => {
+    const setup = phase({ id: "setup", eventId: "event-gala", eventName: "Gala",
+      startsAt: at("2026-09-18T10:00:00.000Z"), endsAt: at("2026-09-18T12:00:00.000Z") });
+    const gala = booking({ id: "gala", title: "Gala", eventId: "event-gala",
+      startsAt: at("2026-09-18T17:00:00.000Z"), endsAt: at("2026-09-18T22:00:00.000Z") });
+    const viewing = booking({ id: "viewing", kind: "viewing", title: "Show-round",
+      startsAt: at("2026-09-18T14:00:00.000Z"), endsAt: at("2026-09-18T14:30:00.000Z") });
+    const report = detect({ bookings: [gala, viewing], phases: [setup] });
+    // The room is set for the gala from its set-up, so the show-round meets it.
+    expect(report.conflicts.map((c) => c.id)).toEqual(["viewing_overlap:gala:viewing"]);
+  });
+
+  it("parts an event's days at the venue's midnight, on either side of the October clock change", () => {
+    // Clocks go back at 02:00 BST on Sunday 25 October 2026. A UTC day would
+    // join Saturday to the overnight set-up that starts at 00:30 BST on Sunday
+    // (23:30Z on Saturday); a fixed BST day would join Sunday's evening, which
+    // ends 23:30 GMT, to Monday's breakdown.
+    const saturday = booking({ id: "x-sat", title: "Two-day fair", eventId: "event-fair",
+      startsAt: at("2026-10-24T09:00:00.000Z"), endsAt: at("2026-10-24T15:00:00.000Z") });
+    const overnightSetUp = phase({ id: "x-overnight", eventId: "event-fair", eventName: "Two-day fair",
+      startsAt: at("2026-10-24T23:30:00.000Z"), endsAt: at("2026-10-25T06:00:00.000Z") });
+    const sunday = booking({ id: "x-sun", title: "Two-day fair", eventId: "event-fair",
+      startsAt: at("2026-10-25T10:00:00.000Z"), endsAt: at("2026-10-25T23:30:00.000Z") });
+    const breakdown = phase({ id: "x-breakdown", eventId: "event-fair", eventName: "Two-day fair",
+      startsAt: at("2026-10-26T09:00:00.000Z"), endsAt: at("2026-10-26T11:00:00.000Z") });
+    const dinner = booking({ id: "y-dinner", title: "Late dinner", eventId: "event-dinner",
+      startsAt: at("2026-10-24T17:00:00.000Z"), endsAt: at("2026-10-24T23:30:00.000Z") });
+    const viewing = booking({ id: "viewing", kind: "viewing", title: "Show-round",
+      startsAt: at("2026-10-26T08:00:00.000Z"), endsAt: at("2026-10-26T08:30:00.000Z") });
+    const report = detect({
+      bookings: [saturday, sunday, dinner, viewing],
+      phases: [overnightSetUp, breakdown],
+      turnaroundRules: [rule({ minutes: 60 })],
+    });
+    expect(report.conflicts.map((c) => c.id)).toEqual(["insufficient_turnaround:y-dinner:x-sun"]);
+    expect(report.conflicts[0]?.explanation).toContain("Only 0 minutes");
   });
 });
 
