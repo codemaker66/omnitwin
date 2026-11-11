@@ -1,0 +1,192 @@
+import Fastify, { type FastifyInstance } from "fastify";
+import { randomUUID } from "node:crypto";
+import { Pool } from "pg";
+import { drizzle } from "drizzle-orm/node-postgres";
+import { and, eq } from "drizzle-orm";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import type { Database } from "../db/client.js";
+import * as schema from "../db/schema.js";
+import { opsHandoffRoutes } from "../routes/ops-handoff.js";
+import { getEventDayOpsBoard, loadEventForOpsBoard, updateOpsTaskStatus } from "../services/event-day-ops.js";
+import { approveSnapshot, createSnapshot } from "../services/sheet-snapshot.js";
+import { latestEventHandoff, planChangedAfter } from "../services/supplier-passes.js";
+
+// ---------------------------------------------------------------------------
+// Compiling an event's handoff pack again (T-695 audit api-eventday-sheet-2).
+//
+// The Event Day board reads the event's newest pack and its tasks; a supplier
+// pass says "plan changed" when a pack newer than the one it was made from
+// exists. A second compile of the same approved plan for the same event made
+// a new pack every time: every task the floor had marked done read "To do"
+// again, and every supplier was told the plan had changed when it had not.
+// Two compiles at once could also collide on the pack's version number.
+//
+// Proved through the real route and services on the migrated disposable
+// platform database, because the guarantee is a row lock and what PostgreSQL
+// keeps. Opt-in only; never reads DATABASE_URL or .env.
+// ---------------------------------------------------------------------------
+
+const target = process.env["VENVIEWER_PLATFORM_TEST_DATABASE_URL"];
+if (target !== undefined) {
+  const url = new URL(target);
+  if (url.protocol !== "postgresql:" || url.hostname !== "127.0.0.1" || url.port !== "55477"
+    || url.pathname !== "/venviewer_platform_test" || url.search || url.hash) {
+    throw new Error("Handoff recompile tests require the explicitly owned disposable platform database");
+  }
+}
+
+const OUTLINE = [{ x: -6, y: -4 }, { x: 6, y: -4 }, { x: 6, y: 4 }, { x: -6, y: 4 }];
+
+interface PackBody { readonly data: { readonly pack: { readonly id: string; readonly compiledAt: string }; readonly roomFlipPlans: readonly unknown[] } }
+
+describe.skipIf(target === undefined)("compiling an event's handoff pack again, on disposable PostgreSQL", () => {
+  let pool: Pool;
+  let observer: Pool;
+  let db: Database;
+  let server: FastifyInstance;
+  const applicationName = `ops-recompile-${randomUUID()}`;
+
+  beforeAll(async () => {
+    if (target === undefined) throw new Error("Explicit target required");
+    pool = new Pool({ connectionString: target, application_name: applicationName, max: 6 });
+    observer = new Pool({ connectionString: target, application_name: `${applicationName}-observer`, max: 1 });
+    expect((await observer.query<{ database: string }>("SELECT current_database() AS database")).rows[0]?.database)
+      .toBe("venviewer_platform_test");
+    db = drizzle(pool, { schema });
+    server = Fastify();
+    await server.register(opsHandoffRoutes, { db, prefix: "/ops" });
+    await server.ready();
+  });
+  afterAll(async () => { await server?.close(); await pool?.end(); await observer?.end(); });
+
+  /** A venue's approved round table with two chairs, bound to one event. */
+  async function fixture() {
+    const venueId = randomUUID(); const roomId = randomUUID(); const userId = randomUUID();
+    const configId = randomUUID(); const eventId = randomUUID();
+    const tableAssetId = randomUUID(); const chairAssetId = randomUUID(); const tableId = randomUUID();
+    await db.insert(schema.venues).values({ id: venueId, name: "TEST ONLY recompile venue", slug: `recompile-${venueId}`, address: "Disposable fixture" });
+    await db.insert(schema.spaces).values({ id: roomId, venueId, name: "TEST ONLY hall", slug: `hall-${roomId}`, widthM: "12", lengthM: "8", heightM: "6", floorPlanOutline: OUTLINE });
+    await db.insert(schema.users).values({ id: userId, venueId, email: `${userId}@recompile.invalid`, name: "TEST ONLY manager", role: "admin" });
+    await db.insert(schema.configurations).values({ id: configId, venueId, spaceId: roomId, userId, name: "TEST ONLY dinner", layoutStyle: "custom", slug: `dinner-${configId}` });
+    await db.insert(schema.assetDefinitions).values([
+      { id: tableAssetId, name: "TEST ONLY round table", category: "table", widthM: "1.8", depthM: "1.8", heightM: "0.76", collisionType: "cylinder" },
+      { id: chairAssetId, name: "TEST ONLY chair", category: "chair", widthM: "0.45", depthM: "0.45", heightM: "0.9", collisionType: "box" },
+    ]);
+    await db.insert(schema.placedObjects).values([
+      { id: tableId, configurationId: configId, assetDefinitionId: tableAssetId, positionX: "1", positionY: "0", positionZ: "1", metadata: { groupId: tableId } },
+      { configurationId: configId, assetDefinitionId: chairAssetId, positionX: "1", positionY: "0", positionZ: "0", metadata: { groupId: tableId } },
+      { configurationId: configId, assetDefinitionId: chairAssetId, positionX: "1", positionY: "0", positionZ: "2", metadata: { groupId: tableId } },
+    ].map((object) => ({ ...object, coordinateSpace: "real_m_v1" as const, coordinateWriteToken: randomUUID() })));
+    await db.insert(schema.events).values({ id: eventId, venueId, createdBy: userId, name: "TEST ONLY dinner", startsAt: new Date("2026-12-04T18:00:00.000Z") });
+    await db.insert(schema.eventConfigurationLinks).values({ eventId, configurationId: configId, linkType: "source_configuration" });
+    const created = await createSnapshot(db, { configId, createdBy: userId, baseUrl: "http://localhost:3009" });
+    await approveSnapshot(db, created.snapshot.id, userId);
+    const headers = { authorization: `Bearer ${JSON.stringify({ id: userId, email: `${userId}@recompile.invalid`, role: "admin", platformRole: "none", venueId })}` };
+    const compile = () => server.inject({ method: "POST", url: `/ops/handoff-packs/from-configuration/${configId}`, headers, payload: { eventId } });
+    return { venueId, configId, eventId, userId, roomId, tableId, compile };
+  }
+
+  async function packsOf(configId: string): Promise<readonly { id: string }[]> {
+    return db.select({ id: schema.handoffPacks.id }).from(schema.handoffPacks).where(eq(schema.handoffPacks.configId, configId));
+  }
+
+  it("returns the event's pack again for the same approved plan, and the floor keeps what it has done", async () => {
+    const f = await fixture();
+    const first = await f.compile();
+    expect(first.statusCode, first.body).toBe(201);
+    const firstPack = first.json<PackBody>().data.pack;
+
+    // The floor marks one set-up task done on the Event Day board.
+    const [setupTask] = await db.select({ id: schema.opsTasks.id }).from(schema.opsTasks)
+      .where(and(eq(schema.opsTasks.handoffPackId, firstPack.id), eq(schema.opsTasks.kind, "setup")))
+      .limit(1);
+    if (setupTask === undefined) throw new Error("The pack has no set-up task");
+    await updateOpsTaskStatus(db, { opsTaskId: setupTask.id, status: "done", actorUserId: f.userId });
+
+    // A manager opens the layout to read the BEO and compiles again.
+    const second = await f.compile();
+    expect(second.statusCode, second.body).toBe(200);
+    expect(second.json<PackBody>().data.pack.id).toBe(firstPack.id);
+    expect(await packsOf(f.configId)).toHaveLength(1);
+
+    const event = await loadEventForOpsBoard(db, f.eventId);
+    if (event === null) throw new Error("Event fixture missing");
+    const board = await getEventDayOpsBoard(db, event);
+    expect(board.handoffPack?.pack.id).toBe(firstPack.id);
+    expect(board.setupProgress.doneTasks).toBe(1);
+
+    // A supplier pass made from the first pack is not told the plan changed.
+    const latest = await latestEventHandoff(db, f.eventId, f.venueId);
+    expect(planChangedAfter(new Date(firstPack.compiledAt), latest)).toBeNull();
+  });
+
+  it("makes one pack from two compiles at the same moment", async () => {
+    const f = await fixture();
+    const [snapshot] = await db.select({ id: schema.configurationSheetSnapshots.id }).from(schema.configurationSheetSnapshots)
+      .where(eq(schema.configurationSheetSnapshots.configurationId, f.configId));
+    if (snapshot === undefined) throw new Error("Snapshot fixture missing");
+    // Hold the approved snapshot's row so both compiles are in flight at once
+    // and must queue behind each other, rather than happening to run in turn.
+    const blocker = await observer.connect();
+    let compiles: Promise<Awaited<ReturnType<typeof f.compile>>>[] = [];
+    try {
+      await blocker.query("BEGIN");
+      await blocker.query("SELECT id FROM configuration_sheet_snapshots WHERE id = $1 FOR UPDATE", [snapshot.id]);
+      compiles = [f.compile(), f.compile()];
+      await expect.poll(async () => {
+        await blocker.query("SELECT pg_stat_clear_snapshot()");
+        const waiting = await blocker.query<{ waiting: number }>(
+          "SELECT count(*)::int AS waiting FROM pg_stat_activity WHERE application_name = $1 AND wait_event_type = 'Lock'",
+          [applicationName],
+        );
+        return waiting.rows[0]?.waiting;
+      }, { timeout: 10000 }).toBe(2);
+    } finally {
+      await blocker.query("ROLLBACK");
+      blocker.release();
+    }
+    const responses = await Promise.all(compiles);
+    expect(responses.map((response) => response.statusCode).sort()).toEqual([200, 201]);
+    const ids = new Set(responses.map((response) => response.json<PackBody>().data.pack.id));
+    expect(ids.size).toBe(1);
+    expect(await packsOf(f.configId)).toHaveLength(1);
+  });
+
+  it("makes a new pack from a newly approved plan, and its suppliers are told the plan changed", async () => {
+    const f = await fixture();
+    const first = await f.compile();
+    expect(first.statusCode, first.body).toBe(201);
+    const firstPack = first.json<PackBody>().data.pack;
+
+    await db.update(schema.placedObjects).set({ positionX: "2", coordinateWriteToken: randomUUID() })
+      .where(eq(schema.placedObjects.id, f.tableId));
+    const changed = await createSnapshot(db, { configId: f.configId, createdBy: f.userId, baseUrl: "http://localhost:3009" });
+    expect(changed.created).toBe(true);
+    await approveSnapshot(db, changed.snapshot.id, f.userId);
+
+    const second = await f.compile();
+    expect(second.statusCode, second.body).toBe(201);
+    expect(second.json<PackBody>().data.pack.id).not.toBe(firstPack.id);
+    expect(await packsOf(f.configId)).toHaveLength(2);
+    const latest = await latestEventHandoff(db, f.eventId, f.venueId);
+    expect(planChangedAfter(new Date(firstPack.compiledAt), latest)).not.toBeNull();
+  });
+
+  it("makes a new pack when the event's own plan changed, though the layout did not", async () => {
+    const f = await fixture();
+    const first = await f.compile();
+    expect(first.statusCode, first.body).toBe(201);
+    expect(first.json<PackBody>().data.roomFlipPlans).toHaveLength(0);
+
+    // A room flip added to the event's running order belongs in the pack.
+    await db.insert(schema.eventPhases).values([
+      { eventId: f.eventId, spaceId: f.roomId, name: "Ceremony", sortOrder: 0, durationMinutes: 60 },
+      { eventId: f.eventId, spaceId: f.roomId, name: "Room flip", templateKey: "room-flip", sortOrder: 1, durationMinutes: 45 },
+      { eventId: f.eventId, spaceId: f.roomId, name: "Dinner", sortOrder: 2, durationMinutes: 180 },
+    ]);
+    const second = await f.compile();
+    expect(second.statusCode, second.body).toBe(201);
+    expect(second.json<PackBody>().data.pack.id).not.toBe(first.json<PackBody>().data.pack.id);
+    expect(second.json<PackBody>().data.roomFlipPlans).toHaveLength(1);
+  });
+});

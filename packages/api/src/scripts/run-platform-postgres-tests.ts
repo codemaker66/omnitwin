@@ -68,6 +68,8 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/foundry-product-lock-postgres.test.ts",
   // The Grand Hall at its E57 interior and clear height (0106): one row, inert on replay, stops named, a chair against a long wall saves.
   "src/__tests__/grand-hall-e57-migration-postgres.test.ts",
+  // A second compile of the same plan returns the event's pack: the floor keeps its ticks, suppliers hear of no change.
+  "src/__tests__/ops-handoff-recompile-postgres.test.ts",
 ] as const;
 
 /**

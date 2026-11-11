@@ -1016,6 +1016,82 @@ export async function getOpsHandoffPackBundle(
   });
 }
 
+/** Statuses whose pack still stands for its configuration and event. */
+const STANDING_PACK_STATUSES: ReadonlySet<string> = new Set(["compiled", "exported"]);
+
+/**
+ * What a pack tells the floor and the suppliers, without its ids, times or
+ * task progress. A compile whose draft reads exactly as the newest pack does
+ * would say nothing new, so it returns that pack instead of making another
+ * one (T-695 api-eventday-sheet-2).
+ */
+interface HandoffContent {
+  readonly pack: readonly [string, string];
+  readonly tasks: readonly (readonly [string, string | null, string, string, number, string | null, string | null])[];
+  readonly pickList: readonly [string, readonly (readonly [string, string, number, string | null, string | null, string | null, number])[]];
+  readonly suppliers: readonly (readonly [string | null, string, string, string, string | null, string | null, number])[];
+  readonly loadIn: readonly (readonly [number, string, string, number])[];
+  readonly breakdown: readonly (readonly [number, string, string, number])[];
+  /** Sorted: a pack's room flips are written together and read back unordered. */
+  readonly roomFlips: readonly string[];
+  readonly beo: readonly [string, string];
+  readonly diff: readonly [string | null, string, number, number, number, string, readonly string[], readonly string[], readonly string[]];
+}
+
+function roomFlipKey(plan: DraftRoomFlipPlan | RoomFlipPlan): string {
+  return JSON.stringify([plan.phaseId, plan.fromPhaseLabel, plan.toPhaseLabel, plan.durationMinutes, plan.taskCount, plan.reviewGateCount, plan.notes]);
+}
+
+function draftContent(draft: DraftOpsHandoff): HandoffContent {
+  const diff = draft.snapshotDiff;
+  return {
+    pack: [draft.summary, draft.sourceLabel],
+    tasks: draft.opsTasks.map((task) => [task.kind, task.phaseId, task.title, task.detail, task.sortOrder, task.dueLabel, task.sourceRef] as const),
+    pickList: [draft.pickListTitle, draft.pickListItems.map((item) =>
+      [item.name, item.category, item.quantity, item.sourcePhase, item.sourceZone, item.notes, item.sortOrder] as const)],
+    suppliers: draft.supplierInstructions.map((item) =>
+      [item.supplierId, item.category, item.title, item.detail, item.arrivalWindow, item.sourceRef, item.sortOrder] as const),
+    loadIn: draft.loadInSequence.map((step) => [step.stepNumber, step.title, step.detail, step.sortOrder] as const),
+    breakdown: draft.breakdownSequence.map((step) => [step.stepNumber, step.title, step.detail, step.sortOrder] as const),
+    roomFlips: draft.roomFlipPlans.map(roomFlipKey).sort(),
+    beo: [draft.beoTitle, draft.beoBody],
+    diff: [diff.previousSnapshotHash, diff.currentSnapshotHash, diff.addedCount, diff.removedCount, diff.changedCount, diff.summary,
+      diff.payload.added, diff.payload.removed, diff.payload.changed],
+  };
+}
+
+function bundleContent(bundle: OpsHandoffPackBundle): HandoffContent {
+  const diff = bundle.snapshotDiff;
+  return {
+    pack: [bundle.pack.summary, bundle.pack.sourceLabel],
+    tasks: bundle.opsTasks.map((task) => [task.kind, task.phaseId, task.title, task.detail, task.sortOrder, task.dueLabel, task.sourceRef] as const),
+    pickList: [bundle.furniturePickList.title, bundle.pickListItems.map((item) =>
+      [item.name, item.category, item.quantity, item.sourcePhase, item.sourceZone, item.notes, item.sortOrder] as const)],
+    suppliers: bundle.supplierInstructions.map((item) =>
+      [item.supplierId, item.category, item.title, item.detail, item.arrivalWindow, item.sourceRef, item.sortOrder] as const),
+    loadIn: bundle.loadInSequence.map((step) => [step.stepNumber, step.title, step.detail, step.sortOrder] as const),
+    breakdown: bundle.breakdownSequence.map((step) => [step.stepNumber, step.title, step.detail, step.sortOrder] as const),
+    roomFlips: bundle.roomFlipPlans.map(roomFlipKey).sort(),
+    beo: [bundle.beoDocument.title, bundle.beoDocument.body],
+    diff: [diff.previousSnapshotHash, diff.currentSnapshotHash, diff.addedCount, diff.removedCount, diff.changedCount, diff.summary,
+      diff.payload.added, diff.payload.removed, diff.payload.changed],
+  };
+}
+
+export interface OpsHandoffCompileResult {
+  readonly bundle: OpsHandoffPackBundle;
+  /** False when the event's newest pack already said this and was returned. */
+  readonly created: boolean;
+}
+
+/**
+ * Compile the configuration's approved snapshot into the event's handoff
+ * pack. A compile of the same approved snapshot, for the same configuration
+ * and event, that would say exactly what the newest pack says returns that
+ * pack: its tasks keep what the floor has marked, and no supplier pass is
+ * told the plan changed. A new snapshot, or a change to the event's own plan
+ * (its room flips, its name), makes a new pack.
+ */
 export async function compileOpsHandoffPackFromConfiguration(
   db: Database,
   input: {
@@ -1024,7 +1100,7 @@ export async function compileOpsHandoffPackFromConfiguration(
     readonly clientNotes: string | null;
     readonly actorUserId: string | null;
   },
-): Promise<OpsHandoffPackBundle> {
+): Promise<OpsHandoffCompileResult> {
   const [config] = await db.select({
     id: configurations.id,
     venueId: configurations.venueId,
@@ -1053,7 +1129,37 @@ export async function compileOpsHandoffPackFromConfiguration(
     clientNotes: input.clientNotes,
   });
 
-  return db.transaction(async (tx) => {
+  return db.transaction(async (tx): Promise<OpsHandoffCompileResult> => {
+    // One compile of this approved snapshot at a time. The second waits here
+    // and then sees what the first wrote: the pack it may return, and the
+    // version it would otherwise take. NO KEY UPDATE, so rows that only
+    // reference the snapshot (a new pack among them) are not held up.
+    await tx.select({ id: configurationSheetSnapshots.id })
+      .from(configurationSheetSnapshots)
+      .where(eq(configurationSheetSnapshots.id, snapshot.id))
+      .for("no key update");
+
+    // The newest pack of this configuration for this event, as the Event Day
+    // board and the supplier passes read the event's newest pack.
+    const [newest] = await tx.select({
+      id: handoffPacks.id,
+      snapshotId: handoffPacks.snapshotId,
+      status: handoffPacks.status,
+    })
+      .from(handoffPacks)
+      .where(and(
+        eq(handoffPacks.configId, input.configId),
+        input.eventId === null ? isNull(handoffPacks.eventId) : eq(handoffPacks.eventId, input.eventId),
+      ))
+      .orderBy(desc(handoffPacks.compiledAt), desc(handoffPacks.id))
+      .limit(1);
+    if (newest !== undefined && newest.snapshotId === snapshot.id && STANDING_PACK_STATUSES.has(newest.status)) {
+      const existing = await getOpsHandoffPackBundle(tx, newest.id);
+      if (existing !== null && JSON.stringify(bundleContent(existing)) === JSON.stringify(draftContent(draft))) {
+        return { bundle: existing, created: false };
+      }
+    }
+
     const [latestPack] = await tx.select({ version: handoffPacks.version })
       .from(handoffPacks)
       .where(eq(handoffPacks.snapshotId, snapshot.id))
@@ -1197,6 +1303,6 @@ export async function compileOpsHandoffPackFromConfiguration(
 
     const bundle = await getOpsHandoffPackBundle(tx, pack.id);
     if (bundle === null) throw new Error("Handoff pack bundle could not be loaded after insertion.");
-    return bundle;
+    return { bundle, created: true };
   });
 }
