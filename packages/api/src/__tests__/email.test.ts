@@ -555,6 +555,69 @@ describe("sendEmail — retry behaviour", () => {
     expect(db.rows[0]?.lastError).toContain("ECONNRESET");
   });
 
+  // notify-jobs-3: the provider accepted the email; only recording it failed.
+  // A database error carries no HTTP status, so it used to be taken for a
+  // network failure of the provider and the email was sent again.
+  function failingWhenRecording(status: "sent" | "failed"): ReturnType<typeof makeFakeDb> {
+    const db = makeFakeDb();
+    const update = db.update;
+    db.update = (table: unknown) => {
+      const chain = update(table);
+      return {
+        set: (patch: Partial<FakeRow>) => {
+          if (patch.status !== status) return chain.set(patch);
+          const failing: FakeUpdate = {
+            then: (onFulfilled, onRejected) => Promise.reject(
+              Object.assign(new Error("Connection terminated unexpectedly"), { code: "08006" }),
+            ).then(onFulfilled, onRejected),
+            returning: () => Promise.resolve([]),
+          };
+          return { where: () => failing };
+        },
+      };
+    };
+    return db;
+  }
+
+  it("sends once when the provider accepts but recording it as sent fails", async () => {
+    resendSendMock.mockResolvedValue({ data: { id: "msg-delivered" }, error: null });
+    const db = failingWhenRecording("sent");
+    const logger = makeCaptureLogger();
+
+    const ok = await sendEmail(basePayload, {
+      db: db as never,
+      idempotencyKey: "enquiry-approved:db-blip",
+      logger,
+      sleep: () => Promise.resolve(),
+    });
+
+    expect(resendSendMock).toHaveBeenCalledTimes(1);
+    expect(ok).toBe(true);
+    // The row is left pending for someone to reconcile, never marked failed:
+    // a failed row is one a replay would send again.
+    expect(db.rows[0]?.status).toBe("pending");
+    const unrecorded = logger.logs.find((l) => l.obj["event"] === "email.sent_unrecorded");
+    expect(unrecorded?.level).toBe("error");
+    expect(unrecorded?.obj["providerMessageId"]).toBe("msg-delivered");
+  });
+
+  it("asks the provider once when it refuses and recording the refusal fails", async () => {
+    resendSendMock.mockResolvedValue({ error: { statusCode: 422, message: "Invalid recipient" } });
+    const db = failingWhenRecording("failed");
+    const logger = makeCaptureLogger();
+
+    const ok = await sendEmail(basePayload, {
+      db: db as never,
+      idempotencyKey: "enquiry-approved:refused-db-blip",
+      logger,
+      sleep: () => Promise.resolve(),
+    });
+
+    expect(ok).toBe(false);
+    expect(resendSendMock).toHaveBeenCalledTimes(1);
+    expect(logger.logs.some((l) => l.obj["event"] === "email.failure_unrecorded")).toBe(true);
+  });
+
   it("retries a 429 rate-limit (transient) but not a 401 (permanent)", async () => {
     resendSendMock.mockResolvedValueOnce({ error: { statusCode: 429, message: "rate limited" } });
     resendSendMock.mockResolvedValueOnce({ data: { id: "msg-rl" }, error: null });

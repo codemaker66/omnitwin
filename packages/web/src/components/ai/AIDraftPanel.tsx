@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type ReactElement } from "react";
 import { Bot, ShieldCheck } from "lucide-react";
 import { ActivityIndicator } from "../shared/Activity.js";
-import type { AIDraft, AIDraftUseCase, CanonicalJsonValue } from "@omnitwin/types";
+import { AI_DRAFTS_UNAVAILABLE, type AIDraft, type AIDraftUseCase, type CanonicalJsonValue } from "@omnitwin/types";
 import { createAIDraft, getAIAssistantStatus } from "../../api/ai-assistant.js";
 import { ApiError } from "../../api/client.js";
 import { withheldWords } from "../../lib/ai-draft-words.js";
@@ -47,6 +47,9 @@ function failureWords(error: unknown): string {
   if (error instanceof ApiError && error.status === 502) {
     return "The draft could not be written. Continue with manual review.";
   }
+  if (error instanceof ApiError && error.status === 503 && error.code === AI_DRAFTS_UNAVAILABLE) {
+    return "AI drafts are unavailable just now. Write this one by hand; drafts return on their own.";
+  }
   return "AI draft generation is unavailable. Continue with manual review.";
 }
 
@@ -63,7 +66,8 @@ export function AIDraftPanel({
 
   useEffect(() => {
     let cancelled = false;
-    getAIAssistantStatus()
+    // Each draft is switched on apart (C1): a panel for one that is not shows nothing.
+    getAIAssistantStatus(useCase)
       .then((result) => {
         if (cancelled) return;
         setStatus({
@@ -80,7 +84,7 @@ export function AIDraftPanel({
         }
       });
     return () => { cancelled = true; };
-  }, []);
+  }, [useCase]);
 
   const handleGenerate = useCallback(() => {
     if (status.kind !== "ready" || !status.configured) return;

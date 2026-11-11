@@ -4841,6 +4841,23 @@ describe("Draft the message with AI", () => {
     await waitFor(() => { expect(document.activeElement).toBe(gone); });
   });
 
+  it("tells the booker to write by hand, and takes every AI draft away for the visit, when the provider is out of credit (C1)", async () => {
+    mocks.draftProposalMessage.mockRejectedValueOnce(new ApiError(503, "AI drafts are unavailable just now.", "AI_DRAFTS_UNAVAILABLE"));
+    render(<ProposalsDesk />);
+    const element = await openProposal();
+    const panel = within(element);
+    fireEvent.change(await panel.findByTestId("composer-message"), { target: { value: "My own words." } });
+    fireEvent.click(panel.getByTestId("ai-draft-ask"));
+    const unavailable = await panel.findByTestId("ai-draft-unavailable");
+    expect(unavailable.textContent).toBe("AI drafts are unavailable just now. Write this message by hand; drafts return on their own. The message is unchanged.");
+    // No draft named: every AI draft goes for the visit, not only this one.
+    expect(mocks.markAIDraftsUnavailable).toHaveBeenCalledWith();
+    expect(panel.queryByTestId("ai-draft-ask")).toBeNull();
+    expect(panel.queryByTestId("ai-draft-retry")).toBeNull();
+    expect(messageOf(element)).toBe("My own words.");
+    await waitFor(() => { expect(document.activeElement).toBe(unavailable); });
+  });
+
   it("takes AI drafting away for the visit, as calmly, when the venue's AI allowance for the month is used", async () => {
     mocks.draftProposalMessage.mockRejectedValueOnce(new ApiError(429, "This venue's AI allowance for the month is used", "AI_BUDGET_REACHED"));
     render(<ProposalsDesk />);
