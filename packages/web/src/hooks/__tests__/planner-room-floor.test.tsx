@@ -277,7 +277,9 @@ describe("notches in the other rooms", () => {
 // ---------------------------------------------------------------------------
 // What the planner sets by itself: Banquet rounds, Theatre, the seat
 // shortfall. Each used to lay its grid across the old box, so in these rooms
-// tables and chairs landed through the walls and the save was refused whole.
+// tables and chairs landed through the walls. These hold every piece inside
+// the walls the planner draws. Whether the layout then saves is the API's
+// question, asked of the space's stored outline, and is not shown here.
 // ---------------------------------------------------------------------------
 
 /** Every placed piece any of whose footprint is outside the walls, by the slow way. */
