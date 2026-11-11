@@ -132,6 +132,42 @@ export function namingReplacedNotes(
 }
 
 // ---------------------------------------------------------------------------
+// A save the API refuses for a held note (409 NOTE_HELD): it would have
+// changed a note its sender had not shown it knows. The API does not say which
+// piece, so the planner works out what it can from its own document.
+// ---------------------------------------------------------------------------
+
+/** The API's code for a save refused because it would change a note its sender was not shown. */
+export const NOTE_HELD_CODE = "NOTE_HELD";
+
+/**
+ * The pieces on which the person's own words stand over a note this browser
+ * is not shown (work kept on the device from before the piece held one, or
+ * kept over a newer version that put one there). These are what a refused
+ * save tried to change, and the person can take their words off again.
+ */
+export function ownWordsOverHeldNotes(state: GuestPlanNoteFacts): readonly EditorObject[] {
+  const held = heldNoteIds(state);
+  return held.size === 0 ? [] : state.objects.filter((object) => held.has(object.id) && object.notes !== "");
+}
+
+/**
+ * The confirmed document with this browser's record of confirmed notes taken
+ * out: each piece that held one says only that it holds a note. For a save
+ * refused for a held note when no words of the person's stand over one. Then
+ * the record itself is out of date: "Keep mine" carries the notes confirmed
+ * at one revision onto a newer one, where someone else may have changed them,
+ * and a save that names a note wrongly is refused every time. Without the
+ * record the person's notes are shown as their own words again, a note they
+ * left alone is confirmed afresh by the next save, and one they clear saves.
+ * The same array when no note is recorded.
+ */
+export function forgettingConfirmedNotes(confirmed: readonly EditorObject[]): readonly EditorObject[] {
+  if (!confirmed.some((object) => object.notes !== "")) return confirmed;
+  return confirmed.map((object) => (object.notes === "" ? object : { ...object, notes: "", noteHeld: true }));
+}
+
+// ---------------------------------------------------------------------------
 // The open plan's held notes, for the scene's stores and commands. The editor
 // store owns the document and registers this reading; the placement store and
 // the planner's libraries ask here, so none of them loads the editor store to

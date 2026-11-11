@@ -3,7 +3,7 @@ import { ApiError } from "../../api/client.js";
 import type { BatchObjectInput, Configuration, ObjectMetadata, PlacedObject } from "../../api/configurations.js";
 import { editorToPlacedItem, placedItemToEditor } from "../../components/editor/EditorBridge.js";
 import { persistAnonymousPlannerDraft, readAnonymousPlannerDraft } from "../../lib/anonymous-planner-draft.js";
-import { noteHeldOn } from "../../lib/guest-plan-notes.js";
+import { noteHeldOn, ownWordsOverHeldNotes } from "../../lib/guest-plan-notes.js";
 import { useAuthStore } from "../auth-store.js";
 import { useEditorStore, type EditorObject } from "../editor-store.js";
 import { useSelectionStore } from "../selection-store.js";
@@ -433,5 +433,190 @@ describe("a browser that is not shown the plan's notes", () => {
     expect(noteHeldOn(store(), A)).toBe(false);
     store().setObjectNotes(A, "");
     expect(noteHeldOn(store(), A)).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A save refused for a held note (409 NOTE_HELD), and "Keep mine" (review of
+// #388). "Keep mine" carries the notes the server confirmed to this browser
+// onto the newer version it keeps its work over, so the person can go on with
+// theirs. The newer version may hold other words on such a piece (the maker
+// rewrote the note), and it hides them. Every save then named, or resent, a
+// note the piece no longer held, and each was refused whole: nothing the
+// person could do saved the layout again.
+//
+// The network here is the API's own rule for a browser it does not show the
+// notes to (packages/api routes/public-configs.ts in #389: settledNotes, and
+// withoutUnsentNotes for the answer), over the notes `stored` holds.
+// ---------------------------------------------------------------------------
+
+const NOTE_HELD_MESSAGE = "A note on this plan cannot be changed from here, and this save tried to change it. Reload the page, or clear the note you wrote on that piece.";
+
+interface PlanOnServer {
+  revision: number;
+  /** The note each piece holds. */
+  readonly notes: Map<string, string>;
+}
+
+function serveNotesAsTheApiDoes(server: PlanOnServer): void {
+  vi.mocked(configApi.publicBatchSave).mockImplementation((_id, batch, expectedRevision) => {
+    if (expectedRevision !== server.revision) {
+      return Promise.reject(new ApiError(409, "Layout changed on the server. Reload before saving again.", "REVISION_CONFLICT", {
+        expectedRevision, currentRevision: server.revision,
+      }));
+    }
+    const settled: { readonly id: string; readonly x: number; readonly sent: string | null; readonly note: string | null }[] = [];
+    for (const piece of batch) {
+      if (piece.id === undefined) throw new Error("these cases place no new piece");
+      const held = server.notes.get(piece.id) ?? null;
+      const sent = piece.metadata?.notes ?? null;
+      if (held === null || sent === held || piece.replacesNote === held) settled.push({ id: piece.id, x: piece.positionX, sent, note: sent });
+      else if (sent === null && piece.replacesNote === undefined) settled.push({ id: piece.id, x: piece.positionX, sent, note: held });
+      else return Promise.reject(new ApiError(409, NOTE_HELD_MESSAGE, "NOTE_HELD"));
+    }
+    server.revision += 1;
+    server.notes.clear();
+    for (const piece of settled) {
+      if (piece.note !== null) server.notes.set(piece.id, piece.note);
+    }
+    return Promise.resolve({
+      revision: server.revision,
+      // A note goes back only where this save itself sent that very note.
+      objects: settled.map((piece) => placed(piece.id, piece.note === null ? {} : piece.sent === piece.note ? { notes: piece.note } : { noteHeld: true }, piece.x)),
+    });
+  });
+}
+
+/** How many saves have been sent. */
+function savesSent(): number {
+  return vi.mocked(configApi.publicBatchSave).mock.calls.length;
+}
+
+describe("a save refused for a held note, after keeping this version over a newer one", () => {
+  const MINE = "TEST ONLY by the window";
+  const THEIRS = "TEST ONLY nut allergy, table by the door";
+
+  /**
+   * This browser, shown no notes, writes MINE on B and the server confirms it.
+   * The maker then rewrites B's note, and this browser's next save meets that
+   * newer version, which says only that B holds a note.
+   */
+  async function meetTheirRewrite(server: PlanOnServer, before: () => void): Promise<void> {
+    serveNotesAsTheApiDoes(server);
+    await open(plan([placed(A), placed(B)], false));
+    store().setObjectNotes(B, MINE);
+    expect(await store().saveToServer(false)).toBe(true);
+    expect(server.notes.get(B)).toBe(MINE);
+
+    server.notes.set(B, THEIRS);
+    server.revision += 1;
+    vi.mocked(configApi.getPublicConfig).mockResolvedValue({ ...plan([placed(A), placed(B, { noteHeld: true })], false), revision: server.revision });
+    before();
+    store().updateObject(A, { positionX: 3 });
+    expect(await store().saveToServer(false)).toBe(false);
+    expect(store().saveConflict?.currentRevision).toBe(server.revision);
+  }
+
+  it("saves once the person takes their words off the piece, as the refusal says", async () => {
+    const server: PlanOnServer = { revision: 4, notes: new Map() };
+    await meetTheirRewrite(server, () => undefined);
+
+    // Their version holds other words on B, so this one is refused, in the API's words.
+    expect(await store().keepMine(false)).toBe(false);
+    expect(store()).toMatchObject({ saveErrorCode: "NOTE_HELD", saveError: NOTE_HELD_MESSAGE });
+    expect(server.notes.get(B)).toBe(THEIRS);
+
+    store().setObjectNotes(B, "");
+    expect(await store().keepMine(false)).toBe(true);
+    expect(store()).toMatchObject({ saveError: null, saveConflict: null, isDirty: false, configRevision: server.revision });
+    // Their note is as they wrote it; the move this browser kept is saved.
+    expect(server.notes.get(B)).toBe(THEIRS);
+    expect(store().objects.find((object) => object.id === A)?.positionX).toBe(3);
+    expect(noteHeldOn(store(), B)).toBe(true);
+  });
+
+  it("shows the person their own words on that piece, the one piece the refusal can name", async () => {
+    const server: PlanOnServer = { revision: 4, notes: new Map() };
+    await meetTheirRewrite(server, () => undefined);
+
+    expect(await store().keepMine(false)).toBe(false);
+    expect(noteOn(B)).toBe(MINE);
+    expect(noteHeldOn(store(), B)).toBe(false);
+    expect(ownWordsOverHeldNotes(store()).map((object) => object.id)).toEqual([B]);
+
+    // A reload is no way back into the trap: the work kept on this device is
+    // restored onto the same truth, their words over a note the piece holds.
+    expect(draftOnDevice()?.base?.changed.find((object) => object.id === B)).toMatchObject({ notes: "", noteHeld: true });
+    store().reset();
+    await open({ ...plan([placed(A), placed(B, { noteHeld: true })], false), revision: server.revision });
+    expect(noteOn(B)).toBe(MINE);
+    expect(ownWordsOverHeldNotes(store()).map((object) => object.id)).toEqual([B]);
+    store().setObjectNotes(B, "");
+    expect(await store().saveToServer(false)).toBe(true);
+    expect(server.notes.get(B)).toBe(THEIRS);
+  });
+
+  it("saves at once when the person had already taken their note off: nothing is left for them to clear", async () => {
+    const server: PlanOnServer = { revision: 4, notes: new Map() };
+    await meetTheirRewrite(server, () => { store().setObjectNotes(B, ""); });
+    const sentBefore = savesSent();
+
+    expect(await store().keepMine(false)).toBe(true);
+    // One save named the note this browser last knew and was refused; the next sent the piece as one whose note it never saw.
+    expect(savesSent()).toBe(sentBefore + 2);
+    expect(sentPiece(sentBefore, B).replacesNote).toBe(MINE);
+    expect(sentPiece(sentBefore + 1, B).replacesNote).toBeUndefined();
+    expect(sentPiece(sentBefore + 1, B).metadata?.notes).toBeUndefined();
+    expect(store()).toMatchObject({ saveError: null, saveErrorCode: null, saveConflict: null, isDirty: false });
+    expect(server.notes.get(B)).toBe(THEIRS);
+    expect(noteHeldOn(store(), B)).toBe(true);
+  });
+
+  it("goes on with a note nobody else touched, in one save", async () => {
+    const server: PlanOnServer = { revision: 4, notes: new Map() };
+    serveNotesAsTheApiDoes(server);
+    await open(plan([placed(A), placed(B)], false));
+    store().setObjectNotes(B, MINE);
+    expect(await store().saveToServer(false)).toBe(true);
+
+    // The maker moves a chair: a newer version, B's note untouched.
+    server.revision += 1;
+    vi.mocked(configApi.getPublicConfig).mockResolvedValue({ ...plan([placed(A, {}, 2), placed(B, { noteHeld: true })], false), revision: server.revision });
+    store().setObjectNotes(B, `${MINE}, please`);
+    expect(await store().saveToServer(false)).toBe(false);
+    const sentBefore = savesSent();
+
+    expect(await store().keepMine(false)).toBe(true);
+    expect(savesSent()).toBe(sentBefore + 1);
+    expect(sentPiece(sentBefore, B)).toMatchObject({ replacesNote: MINE, metadata: { notes: `${MINE}, please` } });
+    expect(server.notes.get(B)).toBe(`${MINE}, please`);
+    expect(noteOn(B)).toBe(`${MINE}, please`);
+  });
+});
+
+describe("a save refused for a held note the person wrote over", () => {
+  it("keeps what this browser knows of its other notes, and does not send the save again", async () => {
+    // A holds a note this browser is not shown. Work kept here wrote on A; B's note is this browser's own.
+    const server: PlanOnServer = { revision: 4, notes: new Map([[A, ALLERGY]]) };
+    serveNotesAsTheApiDoes(server);
+    await open(plan([placed(A, { noteHeld: true }), placed(B)], false));
+    store().setObjectNotes(B, "TEST ONLY VIP ta");
+    expect(await store().saveToServer(false)).toBe(true);
+
+    store().setObjectNotes(A, "TEST ONLY typed over");
+    store().setObjectNotes(B, "TEST ONLY VIP table");
+    const sentBefore = savesSent();
+    expect(await store().saveToServer(false)).toBe(false);
+    expect(savesSent()).toBe(sentBefore + 1);
+    expect(store()).toMatchObject({ saveErrorCode: "NOTE_HELD", saveError: NOTE_HELD_MESSAGE, isDirty: true });
+    expect(ownWordsOverHeldNotes(store()).map((object) => object.id)).toEqual([A]);
+    expect(store().baseObjects.find((object) => object.id === B)?.notes).toBe("TEST ONLY VIP ta");
+
+    // Their words come off A; B's change still names the note it replaces.
+    store().setObjectNotes(A, "");
+    expect(await store().saveToServer(false)).toBe(true);
+    expect(sentPiece(sentBefore + 1, B)).toMatchObject({ replacesNote: "TEST ONLY VIP ta", metadata: { notes: "TEST ONLY VIP table" } });
+    expect(server.notes.get(A)).toBe(ALLERGY);
+    expect(server.notes.get(B)).toBe("TEST ONLY VIP table");
   });
 });

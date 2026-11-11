@@ -18,7 +18,16 @@ import {
   readAnonymousPlannerDraft,
   type AnonymousPlannerDraft,
 } from "../lib/anonymous-planner-draft.js";
-import { heldNoteIds, keepingConfirmedNotes, namingReplacedNotes, registerHeldNotes, signedInRoutesSuit } from "../lib/guest-plan-notes.js";
+import {
+  NOTE_HELD_CODE,
+  forgettingConfirmedNotes,
+  heldNoteIds,
+  keepingConfirmedNotes,
+  namingReplacedNotes,
+  ownWordsOverHeldNotes,
+  registerHeldNotes,
+  signedInRoutesSuit,
+} from "../lib/guest-plan-notes.js";
 import { holdPlannerPageLock, isPlannerPageOpen, plannerPageId } from "../lib/planner-page-lock.js";
 import { signedOutOwnerFrom } from "../lib/planner-draft-storage.js";
 import { summariseLayoutChange, type LayoutChangeSummary } from "../lib/layout-change-summary.js";
@@ -470,6 +479,8 @@ let liveHooks: EditorLiveHooks | null = null;
 let conflictPolicy: "report" | "rebase" = "report";
 /** Depth of the 409 rebase-and-retry in progress: one retry per save. */
 let rebaseRetryDepth = 0;
+/** Depth of the resend after a save refused for a held note: one per save. */
+let noteHeldRetryDepth = 0;
 /** Objects a later remote write owns; kept equal to base until re-edited. */
 const yieldedIds = new Set<string>();
 
@@ -1524,7 +1535,10 @@ export const useEditorStore = create<EditorStore>()(withSaveFacts((set, get) => 
         configRevision: conflict.currentRevision,
         // Their version read without the plan's notes hides the ones this
         // browser wrote: the notes confirmed here stay known, so the person
-        // can go on with theirs.
+        // can go on with theirs. They were confirmed at the older revision,
+        // and their version may hold other words on such a piece: the save
+        // is then refused for a held note, and saveDocument drops this record
+        // rather than name a wrong note for ever.
         baseObjects: keepingConfirmedNotes(theirs, current.baseObjects),
         objects: kept,
         history: remapHistoryIds(current.history, rekeyed),
@@ -1957,6 +1971,25 @@ async function saveDocument(
       // coming back online saves it. isOnline follows the browser's event.
       set({ isSaving: false, saveError: null, saveErrorCode: null });
       return false;
+    }
+    if (code === NOTE_HELD_CODE && noteHeldRetryDepth === 0 && ownWordsOverHeldNotes(get()).length === 0) {
+      // Refused for a held note, though no words of the person's stand over
+      // one: this browser's own record of the notes confirmed to it is out of
+      // date. "Keep mine" carries that record onto a newer version, where
+      // someone else may have rewritten a note, and a save that names a note
+      // wrongly is refused every time. The record goes and the save is sent
+      // once more (lib/guest-plan-notes forgettingConfirmedNotes); what is
+      // still refused then is the person's own words, shown on their piece.
+      const forgotten = forgettingConfirmedNotes(get().baseObjects);
+      if (forgotten !== get().baseObjects) {
+        set({ baseObjects: forgotten, isSaving: false });
+        noteHeldRetryDepth += 1;
+        try {
+          return await saveDocument(isAuthenticated, keeping, transport);
+        } finally {
+          noteHeldRetryDepth -= 1;
+        }
+      }
     }
     const message = err instanceof Error ? err.message : "Save failed";
     // Log the failing payload so we can see which field the server rejects.
