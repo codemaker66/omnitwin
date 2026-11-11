@@ -16,6 +16,12 @@ export interface Point {
 export interface RoomDimensions {
   readonly widthM: number;
   readonly lengthM: number;
+  /**
+   * Where the plan's top-left corner stands in the editor's scene, metres: the
+   * low X and low Z of the room's bounds. Absent, the room is centred on the
+   * scene's origin, its corner at (−widthM / 2, −lengthM / 2).
+   */
+  readonly originM?: { readonly x: number; readonly z: number };
   /** Label points drawn on the room perimeter (e.g. "WINDOWS"). */
   readonly labels?: readonly RoomLabel[];
   /** Door markers — small circles on the wall. */

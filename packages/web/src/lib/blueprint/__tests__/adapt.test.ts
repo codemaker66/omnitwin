@@ -8,6 +8,7 @@ import {
   itemKindForAsset,
 } from "../adapt.js";
 import type { EditorObject } from "../../../stores/editor-store.js";
+import { clampCenterToRoom } from "../reducer.js";
 import { computeStatusMetrics } from "../geometry.js";
 import { seatingCountsFromPlacedItems } from "../../seating-counts.js";
 import { createPlacedItem } from "../../placement.js";
@@ -180,6 +181,66 @@ describe("adaptEditorStateToBlueprintScene — chair grouping", () => {
     });
 
     expect(scene.room).toEqual({ widthM: 21, lengthM: 10.5 });
+  });
+
+  // The Robert Adam Room's walls run from z = −3.7 to z = +9.0 in the editor's scene: its plan is the
+  // bounds of those walls, where they stand, not a box of that size centred on the origin (audit editor-save-4).
+  describe("the Robert Adam Room's plan", () => {
+    const ROBERT_ADAM = { name: "Robert Adam Room", widthM: "9.70", lengthM: "5.60" } as const;
+    const sceneWith = (objects: readonly EditorObject[]): ReturnType<typeof adaptEditorStateToBlueprintScene> =>
+      adaptEditorStateToBlueprintScene({ space: ROBERT_ADAM, objects, lastSavedAt: null });
+
+    it("draws a round set against the north wall at the top of the plan, and one in the lower section on it", () => {
+      if (ROUND_TABLE === undefined) throw new Error("round table asset must exist");
+      const radius = ROUND_TABLE.widthM / 2;
+      const scene = sceneWith([
+        makeObj("north", ROUND_TABLE.id, 0, -3.7 + radius),
+        makeObj("lower", ROUND_TABLE.id, -2.9, 6.5),
+      ]);
+      expect(scene.room.widthM).toBeCloseTo(11.4, 9);
+      expect(scene.room.lengthM).toBeCloseTo(12.7, 9);
+      const centreOf = (id: string): { readonly x: number; readonly y: number } => {
+        const item = scene.items.find((i) => i.id === id);
+        if (item === undefined || item.kind !== "round-table") throw new Error(`no round ${id}`);
+        return item.center;
+      };
+      // Its rim on the plan's top edge, as it is on the wall.
+      expect(centreOf("north").x).toBeCloseTo(5.7, 9);
+      expect(centreOf("north").y).toBeCloseTo(radius, 9);
+      // 2.8 m from the west wall and 10.2 m down a 12.7 m plan; the old box drew it past the plan's foot.
+      expect(centreOf("lower").x).toBeCloseTo(2.8, 9);
+      expect(centreOf("lower").y).toBeCloseTo(10.2, 9);
+      expect(centreOf("lower").y + radius).toBeLessThanOrEqual(scene.room.lengthM);
+    });
+
+    it("gives a spot on the plan back to the scene where the walls stand", () => {
+      const { room } = sceneWith([]);
+      // The top of the plan is the north wall, its foot the south recess.
+      expect(blueprintPointToEditorPosition({ x: 5.7, y: 0 }, room).positionZ).toBeCloseTo(-3.7, 9);
+      expect(blueprintPointToEditorPosition({ x: 0, y: 12.7 }, room).positionX).toBeCloseTo(-5.7, 9);
+      expect(blueprintPointToEditorPosition({ x: 0, y: 12.7 }, room).positionZ).toBeCloseTo(9.0, 9);
+      for (const [x, z] of [[0, 0], [-2.9, 6.5], [5.1, -3.2], [-5.7, 9]] as const) {
+        const there = blueprintPointToEditorPosition(editorPositionToBlueprintPoint(x, z, room), room);
+        expect(there.positionX).toBeCloseTo(x, 9);
+        expect(there.positionZ).toBeCloseTo(z, 9);
+      }
+    });
+
+    it("holds a round dragged past the top of the plan inside the north wall, and lets one reach the lower section", () => {
+      const { room } = sceneWith([]);
+      // The plan's own clamp (the round's 0.9 m), then back to the scene.
+      const top = blueprintPointToEditorPosition(clampCenterToRoom({ x: 5.7, y: -5 }, room, "round-table"), room);
+      expect(top.positionZ).toBeCloseTo(-3.7 + 0.9, 9);
+      const foot = blueprintPointToEditorPosition(clampCenterToRoom({ x: 3, y: 50 }, room, "round-table"), room);
+      expect(foot.positionZ).toBeCloseTo(9.0 - 0.9, 9);
+    });
+  });
+
+  it.each(["Grand Hall", "Reception Room", "Saloon"])("keeps the %s's plan centred on the scene's origin, as its walls are", (name) => {
+    const { room } = adaptEditorStateToBlueprintScene({ space: { name, widthM: "1", lengthM: "1" }, objects: [], lastSavedAt: null });
+    expect(Object.keys(room).sort()).toEqual(["lengthM", "widthM"]);
+    expect(editorPositionToBlueprintPoint(0, 0, room)).toEqual({ x: room.widthM / 2, y: room.lengthM / 2 });
+    expect(blueprintPointToEditorPosition({ x: 0, y: 0 }, room)).toEqual({ positionX: -room.widthM / 2, positionZ: -room.lengthM / 2 });
   });
 
   it("supplies an empty actual-chair list when the table has no group", () => {
