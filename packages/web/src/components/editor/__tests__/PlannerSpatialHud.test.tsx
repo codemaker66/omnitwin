@@ -158,7 +158,7 @@ describe("PlannerSpatialHud", () => {
     expect(screen.getByTestId("planner-capacity-caption").textContent).toBe("Published 180 for dinner");
     expect(screen.getByTestId("planner-capacity-source").textContent).toBe("Published guide · Trades Hall · 9 Jul 2026");
     // The room is the Grand Hall as GRAND_HALL_RENDER_DIMENSIONS gives it, its
-    // scanned 21.14 × 10.59 m = 223.9 m², which at generic spacing (1.5 m² a
+    // scanned 21.135 × 10.59 m = 223.8 m², which at generic spacing (1.5 m² a
     // guest) would read 149; a visitor never sees it.
     const area = (GRAND_HALL_RENDER_DIMENSIONS.width / RENDER_SCALE) * (GRAND_HALL_RENDER_DIMENSIONS.length / RENDER_SCALE);
     const generic = Math.floor(area / 1.5);

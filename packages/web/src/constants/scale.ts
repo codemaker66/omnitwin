@@ -1,5 +1,5 @@
-import { TRADES_HALL_GRAND_HALL_DIMENSIONS } from "@omnitwin/types";
 import type { SpaceDimensions } from "@omnitwin/types";
+import { HALL_HEIGHT, HALL_LENGTH, HALL_WIDTH } from "../components/grand-hall/hall-spec.js";
 
 /**
  * Visual scale factor applied to room geometry for rendering. Now 1.0 — the
@@ -64,9 +64,13 @@ export function scaleForRendering(dimensions: SpaceDimensions): SpaceDimensions 
 /**
  * The Grand Hall in render space: the planner's room until a space loads, and
  * the default room of the placement, guideline and visibility helpers. It is
- * the hall's scanned 21.14 × 10.59 m with its clear 6.7 m to the coffered
- * ceiling (TRADES_HALL_GRAND_HALL_DIMENSIONS), rendered as measured at
- * RENDER_SCALE 1.
+ * the hall the planner draws and places in once the Grand Hall loads, the
+ * laser scan's 21.135 m along x by 10.59 m along z with its clear 6.7 m to the
+ * coffered ceiling (HALL_LENGTH, HALL_WIDTH and HALL_HEIGHT in
+ * components/grand-hall/hall-spec.ts, which data/room-geometries.ts draws), so
+ * nothing moves when a space arrives. The stored and published figure, 21.14 m
+ * (TRADES_HALL_GRAND_HALL_DIMENSIONS in @omnitwin/types), is that length
+ * rounded up to the centimetre and is not used here.
  */
 export const GRAND_HALL_RENDER_DIMENSIONS: SpaceDimensions =
-  scaleForRendering(TRADES_HALL_GRAND_HALL_DIMENSIONS);
+  scaleForRendering({ width: HALL_LENGTH, length: HALL_WIDTH, height: HALL_HEIGHT });

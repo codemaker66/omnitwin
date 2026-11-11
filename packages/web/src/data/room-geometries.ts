@@ -36,12 +36,17 @@ export interface RoomGeometry {
 //
 // A layout save refuses a piece centred outside the outline the API stores for
 // the room (lib/placement-validation.ts in the API), so that outline must
-// contain this one. Has a 7m diameter gilded dome in the ceiling centre.
+// contain this one. It does: production stores the hall as 21.14 × 10.59 m,
+// ±10.57 × ±5.295 m (migration 0106, packages/api/src/db/grand-hall-e57.ts).
 //
 // Its ceiling height is the scan's clear 6.7 m, floor to the underside of the
-// coffered ceiling (HALL_HEIGHT in hall-spec.ts); the dome rises above part of
-// the hall and is never the room's height. The section slider's top and the
-// bookmarks' framing read it through usePlannerRoomDimensions.
+// coffered ceiling (HALL_HEIGHT in hall-spec.ts). The gilded dome at the centre
+// of that ceiling springs from a ring 3.32 m in radius, about 6.64 m across
+// (HALL_DOME.footRadius in hall-spec.ts; the procedural RoomMesh draws it at
+// domeRadius 3.5 below); it rises above part of the hall and is never the
+// room's height. The section slider's top reads the height through
+// usePlannerRoomDimensions; the default bookmarks frame the width and length
+// only (computeDefaultBookmarks in lib/camera-animation.ts).
 // ---------------------------------------------------------------------------
 
 const GRAND_HALL_HW = 10.5675; // half the x extent = 21.135 m / 2

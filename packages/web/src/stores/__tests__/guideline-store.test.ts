@@ -85,19 +85,29 @@ describe("guideline-store", () => {
     });
 
     it("spans the room the planner has loaded, wall to wall", () => {
-      // The Grand Hall's scanned interior, as usePlannerRoomDimensions sets it.
-      useRoomDimensionsStore.getState().setDimensions({ width: 21.135, length: 10.59, height: 7 });
+      // The Grand Hall's scanned interior, as usePlannerRoomDimensions sets it
+      // (now also the default room), and the Saloon, which is not the default:
+      // a guideline that read the default would fail the second.
+      const rooms = [
+        { dims: { width: 21.135, length: 10.59, height: 6.7 }, halfX: 10.5675, halfZ: 5.295 },
+        { dims: { width: 12, length: 7, height: 5.4 }, halfX: 6, halfZ: 3.5 },
+      ];
       try {
-        useGuidelineStore.getState().activate();
-        useGuidelineStore.getState().placeGuideline(wallHit);
-        useGuidelineStore.getState().placeGuideline({ axis: "z", position: 0, wallCoord: -3 });
-        const [across, along] = useGuidelineStore.getState().guidelines;
-        expect(across?.start[0]).toBeCloseTo(-10.5675, 9);
-        expect(across?.end[0]).toBeCloseTo(10.5675, 9);
-        expect(across?.realDistance).toBeCloseTo(21.135, 9);
-        expect(along?.start[2]).toBeCloseTo(-5.295, 9);
-        expect(along?.end[2]).toBeCloseTo(5.295, 9);
-        expect(along?.realDistance).toBeCloseTo(10.59, 9);
+        for (const { dims, halfX, halfZ } of rooms) {
+          resetStore();
+          useRoomDimensionsStore.getState().setDimensions(dims);
+          useGuidelineStore.getState().activate();
+          // Points inside both rooms.
+          useGuidelineStore.getState().placeGuideline({ axis: "x", position: 0, wallCoord: 2 });
+          useGuidelineStore.getState().placeGuideline({ axis: "z", position: 0, wallCoord: -3 });
+          const [across, along] = useGuidelineStore.getState().guidelines;
+          expect(across?.start[0]).toBeCloseTo(-halfX, 9);
+          expect(across?.end[0]).toBeCloseTo(halfX, 9);
+          expect(across?.realDistance).toBeCloseTo(dims.width, 9);
+          expect(along?.start[2]).toBeCloseTo(-halfZ, 9);
+          expect(along?.end[2]).toBeCloseTo(halfZ, 9);
+          expect(along?.realDistance).toBeCloseTo(dims.length, 9);
+        }
       } finally {
         useRoomDimensionsStore.getState().setDimensions(GRAND_HALL_RENDER_DIMENSIONS);
       }
