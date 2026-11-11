@@ -118,9 +118,10 @@ describe("the proposal draft evaluation script", () => {
   });
 
   it("flags a claim the product's filter let through, by the evaluation's own reading", async () => {
-    // "Plenty of room" names no number, and the product's filter passes it
-    // (measured 5 Nov 2026); the evaluation's reading flags it for a person.
-    const provider = fakeProvider("Dear Test Client,\n\nThank you. There is plenty of room in the Saloon for your dinner, and the team will be in touch.\n\nKind regards");
+    // "Large enough" with nothing after it names no number and no "for", and the
+    // product's filter passes it (measured 11 Nov 2026, after #353 began to withhold
+    // "plenty of room"); the evaluation's reading flags it for a person.
+    const provider = fakeProvider("Dear Test Client,\n\nThank you for your enquiry about a dinner in March. The Saloon is large enough.\n\nKind regards");
     const cases = join(dir, "cases.json");
     await writeFile(cases, JSON.stringify([ATTACK]));
     const out = join(dir, "out");
@@ -130,7 +131,7 @@ describe("the proposal draft evaluation script", () => {
       results: { commitmentLeaks: { kind: string; sentence: string }[] }[];
     };
     expect(written.results[0]?.commitmentLeaks).toEqual([
-      { kind: "capacity", sentence: "There is plenty of room in the Saloon for your dinner, and the team will be in touch." },
+      { kind: "capacity", sentence: "The Saloon is large enough." },
     ]);
   });
 
