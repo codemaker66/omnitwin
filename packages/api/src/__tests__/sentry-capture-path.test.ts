@@ -1,12 +1,14 @@
-import { createServer, type Server } from "node:http";
+import { createServer, type IncomingHttpHeaders, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { Writable } from "node:stream";
+import { gunzipSync } from "node:zlib";
 import Fastify, { type FastifyInstance } from "fastify";
 import { z } from "zod";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { registerErrorNormalizer } from "../middleware/error-normalizer.js";
 import { apiLoggerOptions } from "../observability/health-redaction.js";
 import { buildSentryCapture, initSentry } from "../observability/sentry.js";
+import { PLAN_CLAIM_SECRET_HEADER } from "../services/configuration-claim-secrets.js";
 
 // ---------------------------------------------------------------------------
 // The API's errors reach Sentry once, through one path, and carry no visitor
@@ -24,15 +26,52 @@ const TOKEN = "tok_SECRET_share_0123456789";
 const VISITOR_IP = "203.0.113.77";
 const GUEST_EMAIL = "jane.guest@example.com";
 const NOTE = "Severe peanut allergy";
+/** A guest plan's claim secret, shaped as services/configuration-claim-secrets.ts
+ *  makes one (32 random bytes, base64url). The web app sends it in
+ *  X-Plan-Claim-Secret; whoever holds it can claim the plan and read its notes. */
+const CLAIM_SECRET = "Cq7e4lRQL_WFKznWkyQKOhXPwYZWA985lb-D9oHBSLg";
+/** A header no scrubber drops and no SDK word list masks. Where its value
+ *  shows up, a credential header's value would have shown up. */
+const CONTROL_HEADER = "x-venviewer-control";
+const CONTROL = "control-6Wq1Zr";
 
 interface SentEvent {
   readonly level?: string;
   readonly transaction?: string;
   readonly tags?: Record<string, string>;
-  readonly contexts?: Record<string, unknown>;
-  readonly request?: { readonly url?: string };
+  readonly contexts?: Record<string, unknown> & { readonly trace?: { readonly data?: Record<string, unknown> } };
+  readonly request?: { readonly url?: string; readonly headers?: Record<string, string>; readonly cookies?: Record<string, string> };
   readonly user?: { readonly ip_address?: string };
   readonly exception?: { readonly values?: readonly { readonly value?: string; readonly mechanism?: { readonly type?: string } }[] };
+}
+
+/** The span attribute the SDK writes for a request header
+ *  (@sentry/core 10.60 utils/request.js httpHeadersToSpanAttributes). */
+const headerAttribute = (header: string): string => `http.request.header.${header.replaceAll("-", "_")}`;
+
+/** Every place a value sits in the envelopes received so far, as a path such
+ *  as `envelope 3 line 2.request.cookies.__session`, so a failure names the
+ *  slot. Every line of every envelope is searched, whatever its item type. */
+function wherever(value: string, envelopes: readonly string[]): string[] {
+  const found: string[] = [];
+  const visit = (node: unknown, path: string): void => {
+    if (typeof node === "string") {
+      if (node.includes(value)) found.push(path);
+    } else if (Array.isArray(node)) {
+      node.forEach((child: unknown, index) => { visit(child, `${path}[${String(index)}]`); });
+    } else if (typeof node === "object" && node !== null) {
+      for (const [key, child] of Object.entries(node)) {
+        if (key.includes(value)) found.push(`${path} (key "${key}")`);
+        visit(child, `${path}.${key}`);
+      }
+    }
+  };
+  envelopes.forEach((envelope, envelopeIndex) => {
+    envelope.split("\n").filter((line) => line.trim() !== "").forEach((line, lineIndex) => {
+      visit(JSON.parse(line) as unknown, `envelope ${String(envelopeIndex)} line ${String(lineIndex)}`);
+    });
+  });
+  return found;
 }
 
 /** The items of one type in the envelopes received so far (an envelope is
@@ -54,6 +93,8 @@ const eventsIn = (envelopes: readonly string[]): { event: SentEvent; raw: string
 describe("the API's errors in Sentry", () => {
   const envelopes: string[] = [];
   const logLines: string[] = [];
+  /** The headers of every request the API received, as its routes see them. */
+  const received: IncomingHttpHeaders[] = [];
   let ingest: Server;
   let server: FastifyInstance;
   let base = "";
@@ -64,7 +105,10 @@ describe("the API's errors in Sentry", () => {
       const chunks: Buffer[] = [];
       request.on("data", (chunk: Buffer) => { chunks.push(chunk); });
       request.on("end", () => {
-        envelopes.push(Buffer.concat(chunks).toString("utf8"));
+        // The SDK's transport gzips an envelope over 32 KB (@sentry/node-core
+        // 10.60 transports/http.js); unread, it would hide what it carries.
+        const body = Buffer.concat(chunks);
+        envelopes.push((request.headers["content-encoding"] === "gzip" ? gunzipSync(body) : body).toString("utf8"));
         response.writeHead(200, { "content-type": "application/json" });
         response.end("{}");
       });
@@ -91,6 +135,7 @@ describe("the API's errors in Sentry", () => {
     const capture = await buildSentryCapture(env);
     expect(capture).toBeTypeOf("function");
     registerErrorNormalizer(server, { onServerError: capture });
+    server.addHook("onRequest", (request, _reply, done) => { received.push({ ...request.headers }); done(); });
 
     server.get("/boom", () => { throw new Error("the database fell over"); });
     server.get("/missing", () => { throw Object.assign(new Error("No such proposal"), { statusCode: 404 }); });
@@ -101,10 +146,17 @@ describe("the API's errors in Sentry", () => {
     base = `http://127.0.0.1:${String((server.server.address() as AddressInfo).port)}`;
   }, 60_000);
 
+  /** Calls the API as the web app does: every request carries the guest
+   *  plan's claim secret, and the control header beside it. */
   async function call(method: string, path: string, body?: unknown): Promise<number> {
     const response = await fetch(`${base}${path}`, {
       method,
-      headers: { "x-forwarded-for": VISITOR_IP, ...(body === undefined ? {} : { "content-type": "application/json" }) },
+      headers: {
+        "x-forwarded-for": VISITOR_IP,
+        "X-Plan-Claim-Secret": CLAIM_SECRET,
+        "X-Venviewer-Control": CONTROL,
+        ...(body === undefined ? {} : { "content-type": "application/json" }),
+      },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
     await response.arrayBuffer();
@@ -161,5 +213,33 @@ describe("the API's errors in Sentry", () => {
     const text = logLines.join("");
     expect(text).toContain("/proposal-share/:token/approve");
     expect(text).not.toContain(TOKEN);
+  });
+
+  it("sends a guest plan's claim secret nowhere: no event, transaction, span or log line holds it", () => {
+    const events = eventsIn(envelopes);
+    // The API's transactions, not the stand-in ingest's own (it is an http
+    // server in this process, so the SDK traces the envelopes it receives).
+    const transactions = itemsIn(envelopes, "transaction").filter(({ event }) => event.request?.url?.startsWith(base) === true);
+    // Every request carried the secret, and the API received it.
+    expect(received.length).toBeGreaterThanOrEqual(5);
+    for (const headers of received) expect(headers[PLAN_CLAIM_SECRET_HEADER]).toBe(CLAIM_SECRET);
+    // Not vacuous: the header beside it, which nothing scrubs, reached every
+    // slot the secret's header would: each event's and each transaction's
+    // request headers, and the header attribute on each transaction's trace.
+    expect(events.length).toBeGreaterThanOrEqual(2);
+    expect(transactions.length).toBeGreaterThanOrEqual(3);
+    const name = (event: SentEvent): string => event.transaction ?? event.exception?.values?.[0]?.value ?? "?";
+    expect([...events, ...transactions]
+      .filter(({ event }) => event.request?.headers?.[CONTROL_HEADER] !== CONTROL)
+      .map(({ event }) => `${name(event)}: ${JSON.stringify(event.request)}`)).toEqual([]);
+    expect(transactions
+      .filter(({ event }) => event.contexts?.trace?.data?.[headerAttribute(CONTROL_HEADER)] !== CONTROL)
+      .map(({ event }) => `${name(event)}: ${JSON.stringify(event.contexts?.trace?.data)}`)).toEqual([]);
+    // The secret itself: in no slot of any envelope, nor in their raw text,
+    // nor in the request log.
+    expect(wherever(CLAIM_SECRET, envelopes)).toEqual([]);
+    expect(envelopes.join("\n")).not.toContain(CLAIM_SECRET);
+    expect(logLines.join("")).toContain("/boom");
+    expect(logLines.join("")).not.toContain(CLAIM_SECRET);
   });
 });
