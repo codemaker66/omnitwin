@@ -2,6 +2,7 @@ import { seatBaseSlug } from "@omnitwin/types";
 import { getCatalogueItem, type CatalogueItem } from "./catalogue.js";
 import { isDiningTableItem } from "./furniture-semantics.js";
 import { createGhostWorld, judgeGhost, obstacleAt, refusalChip, type GhostObstacle, type GhostWorld } from "./ghost-truth.js";
+import { heldNotePieceName, heldNotePieceToName, nothingReplacedLine } from "./guest-plan-notes.js";
 import { footprintBounds, selectionUnits, wholeSelection } from "./placement-edit.js";
 import { generatePlacedId, settleMovedOnSurfaces, type PlacedItem } from "./placement.js";
 import {
@@ -41,7 +42,9 @@ import { rearrangeTableGroup } from "./table-group.js";
 //
 // Refused, with the reason, when the result would take a piece past the
 // store's stock (options.store, Blake's B2), or overlap anything not being
-// replaced, or itself. The caller commits it as one undo step.
+// replaced, or itself; and, before any of that, when the selection holds a
+// piece with a note this browser is not shown (options.holdsUnseenNote). The
+// caller commits it as one undo step.
 // ---------------------------------------------------------------------------
 
 export interface ReplaceNote {
@@ -76,6 +79,15 @@ export interface ReplaceOptions {
   readonly newId?: () => string;
   /** Whether a placed piece carries a note (the editor's), so notes are named only when there are any. */
   readonly hasNote?: (id: string) => boolean;
+  /**
+   * Whether a placed piece holds a note this browser is not shown
+   * (lib/guest-plan-notes currentHeldNoteIds). A selection with such a piece
+   * is not replaced: the note cannot be read, so it cannot be carried to a new
+   * table, and a piece that goes takes its note with it for good. A preview
+   * must be given the same answer as the command (planner-keymap
+   * replaceSelection), so that its refusal is the command's.
+   */
+  readonly holdsUnseenNote?: (id: string) => boolean;
   /**
    * The store's word on the change (lib/card-stock storeShortfall with its
    * words, for staff): why it would take a piece past stock, or null.
@@ -289,6 +301,9 @@ export function planReplace(selectedIds: ReadonlySet<string>, card: CardParams, 
   const selection = wholeSelection(selectedIds, world.placedItems);
   const cardItem = cardMainItem(card);
   if (selection.length === 0 || cardItem === undefined) return refused(null);
+  const holdsUnseenNote = options.holdsUnseenNote;
+  const heldNote = holdsUnseenNote === undefined ? undefined : heldNotePieceToName(selection.filter((piece) => holdsUnseenNote(piece.id)));
+  if (heldNote !== undefined) return { ok: false, obstacle: null, reason: nothingReplacedLine(heldNotePieceName(heldNote, selection)) };
   const units = unitsOf(selection);
   const sourceTables = units.flatMap((unit) => unit.tables);
   const allTables = units.every((unit) => unit.tables.length > 0);

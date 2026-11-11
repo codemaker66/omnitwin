@@ -31,6 +31,14 @@ import {
 } from "../lib/auto-fill.js";
 import { applySeatShortfallFix, type SeatShortfallFixResult } from "../lib/seat-shortfall.js";
 import { capReachedFor, capReachedLine } from "../lib/placement-cap.js";
+import {
+  HELD_NOTE_LINE,
+  currentHeldNoteIds,
+  heldNotePieceName,
+  heldNotePieceToName,
+  nothingFilledLine,
+  nothingReplacedLine,
+} from "../lib/guest-plan-notes.js";
 import { postPlacementNotice } from "./placement-notice-store.js";
 import { currentStoreStock, storeShortfallBetween, storeShortfallWords } from "../lib/card-stock.js";
 import { toRealWorld, toRenderSpace } from "../constants/scale.js";
@@ -317,6 +325,26 @@ function refusedByStore(before: readonly PlacedItem[], after: readonly PlacedIte
   const shortfall = storeShortfallBetween(currentStoreStock(), before, after);
   if (shortfall === null) return false;
   postPlacementNotice(storeShortfallWords(shortfall));
+  return true;
+}
+
+/**
+ * A piece holding a note this browser is not shown leaves the floor only when
+ * the person removes that piece themselves (removeItem, removeItems). Taken
+ * as the side effect of another change, its note would go with it unseen, and
+ * Undo cannot bring a note back (lib/guest-plan-notes). Whether writing
+ * `after` over `before` would drop such a piece: when it would, the reason is
+ * posted in `words`, given the piece's name, and the caller writes nothing.
+ * No piece is held in a plan read with its notes, in a layout that is not a
+ * guest plan, or from an API that marks none.
+ */
+function refusedForHeldNote(before: readonly PlacedItem[], after: readonly PlacedItem[], words: (name: string) => string): boolean {
+  const held = currentHeldNoteIds();
+  if (held.size === 0) return false;
+  const staying = new Set(after.map((piece) => piece.id));
+  const going = heldNotePieceToName(before.filter((piece) => held.has(piece.id) && !staying.has(piece.id)));
+  if (going === undefined) return false;
+  postPlacementNotice(words(heldNotePieceName(going, before)));
   return true;
 }
 
@@ -707,6 +735,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     if (isLayoutTimelineMutationLocked()) return;
     const state = get();
     if (state.placedItems.length === 0) return;
+    if (refusedForHeldNote(state.placedItems, [], () => HELD_NOTE_LINE)) return;
     set({ placedItems: [], ghostPosition: null, ghostValid: false, ghostInvalidReason: null });
   },
 
@@ -795,6 +824,8 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     const changes = new Map(add.filter((piece) => keptIds.has(piece.id)).map((piece) => [piece.id, piece]));
     const joining = add.filter((piece) => !keptIds.has(piece.id));
     const changed = kept.map((piece) => changes.get(piece.id) ?? piece);
+    // Replace is the one edit that takes pieces away, and its plan refuses a held note first (lib/replace).
+    if (refusedForHeldNote(state.placedItems, [...changed, ...joining], nothingReplacedLine)) return [];
     const atCap = capPassedBy(state.placedItems, [...changed, ...joining]);
     if (atCap !== null) {
       postPlacementNotice(atCap);
@@ -839,6 +870,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
       return false;
     }
     const next = [...state.placedItems.filter((piece) => piece.groupId !== groupId), ...resized];
+    if (refusedForHeldNote(state.placedItems, next, () => HELD_NOTE_LINE)) return false;
     if (refusedByStore(state.placedItems, next)) return false;
     set({ placedItems: next });
     announcePlaced(added.map((piece) => piece.id));
@@ -861,6 +893,8 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
       );
       return surfaceY !== item.y ? { ...item, y: surfaceY } : item;
     });
+    // Fewer seats takes the table's last chairs away.
+    if (refusedForHeldNote(state.placedItems, adjusted, () => HELD_NOTE_LINE)) return;
     if (refusedByStore(state.placedItems, adjusted)) return;
     set({ placedItems: numberEdited(adjusted, new Set([tableId])) });
   },
@@ -876,6 +910,8 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     // every other piece stays exactly where it is, ids and all, and keeps the aisle rule round it.
     if (plannerFeatureEnabled("fillKeepOuts")) {
       const doorSpaces = roomDoorKeepOuts();
+      // A round with a note this browser is not shown stays where it stands (planRoomFill), as the prompt's preview said.
+      const heldNotes = currentHeldNoteIds();
       const fill = planRoomFill({
         table: tableItem,
         seatsPerTable: chairsPerTable,
@@ -886,7 +922,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
         rule: FILL_AISLE_RULE,
         // The same doors the prompt's preview kept clear (AutoFillPrompt), so what it said is what lands.
         doorSpaces,
-      }, state.placedItems);
+      }, state.placedItems, (id) => heldNotes.has(id));
       if (fill === null) return null;
       // A kept chair the planner never sets takes the plan's chair where it would reach a door.
       const refilled = refillPieces(state.placedItems, fill.refillIds, fill.plan, undefined, { doorSpaces });
@@ -894,6 +930,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
       const kept = state.placedItems.filter((item) => !fill.refillIds.has(item.id));
       // The new tables take the lowest numbers the kept ones leave free (Q-46).
       const numbered = numberNew(kept, refilled);
+      if (refusedForHeldNote(state.placedItems, [...kept, ...numbered], nothingFilledLine)) return null;
       // The store's limit holds here too (B2): a fill that needs more than the store has sets down nothing.
       if (refusedByStore(state.placedItems, [...kept, ...numbered])) return null;
       set({ placedItems: [...kept, ...numbered] });
@@ -926,6 +963,8 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
       (item) => !isSceneFurniturePlacement(item),
     );
     const numbered = numberNew(retainedApplicators, placedItems);
+    // This fill clears the floor first. The planner offers it on an empty floor only (lib/auto-fill canLayOut); the rule holds here whoever calls.
+    if (refusedForHeldNote(state.placedItems, [...retainedApplicators, ...numbered], nothingFilledLine)) return null;
     if (refusedByStore(state.placedItems, [...retainedApplicators, ...numbered])) return null;
     set({ placedItems: [...retainedApplicators, ...numbered] });
     announcePlaced(numbered.map((item) => item.id));
@@ -954,6 +993,8 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     const retainedApplicators = get().placedItems.filter(
       (item) => !isSceneFurniturePlacement(item),
     );
+    // Theatre rows replace the whole floor (canLayOut offers them on an empty one): never a piece with a held note.
+    if (refusedForHeldNote(get().placedItems, [...retainedApplicators, ...placedItems], nothingFilledLine)) return null;
     if (refusedByStore(get().placedItems, [...retainedApplicators, ...placedItems])) return null;
     set({ placedItems: [...retainedApplicators, ...placedItems] });
     announcePlaced(placedItems.map((item) => item.id));

@@ -1,5 +1,6 @@
 import type { BatchObjectInput } from "../api/configurations.js";
 import type { EditorObject } from "../stores/editor-store.js";
+import { getCatalogueItem } from "./catalogue.js";
 
 // ---------------------------------------------------------------------------
 // A guest plan's notes, in a browser that is not shown them.
@@ -21,6 +22,13 @@ import type { EditorObject } from "../stores/editor-store.js";
 // the server's word, not the person's, and the scene rebuilds the working
 // objects as pieces move; and a note is known to this browser exactly when
 // the server has returned it here.
+//
+// A third thing follows (review of #388). A piece left out of a save is
+// removed, and its note with it, and Undo cannot bring that note back: it
+// returns the piece as a new one. So a piece holding a note the person cannot
+// see leaves the floor only when they remove that piece themselves. Replace
+// and the fills never take one as a side effect (currentHeldNoteIds, and the
+// lines at the foot of this file that say why nothing changed).
 // ---------------------------------------------------------------------------
 
 /** The parts of the editor's state these read. */
@@ -121,4 +129,85 @@ export function namingReplacedNotes(
     const was = object === undefined ? undefined : confirmed.get(object.id);
     return was === undefined || was === object?.notes ? piece : { ...piece, replacesNote: was };
   });
+}
+
+// ---------------------------------------------------------------------------
+// The open plan's held notes, for the scene's stores and commands. The editor
+// store owns the document and registers this reading; the placement store and
+// the planner's libraries ask here, so none of them loads the editor store to
+// find out (lib/card-stock's registerStoreStock is the same arrangement).
+// ---------------------------------------------------------------------------
+
+let heldNotesSource: () => ReadonlySet<string> = () => NONE;
+
+/** The editor store's reading of heldNoteIds for the open plan. */
+export function registerHeldNotes(read: () => ReadonlySet<string>): void {
+  heldNotesSource = read;
+}
+
+/** The pieces of the open plan holding a note this browser is not shown; none when no plan is open. */
+export function currentHeldNoteIds(): ReadonlySet<string> {
+  return heldNotesSource();
+}
+
+// ---------------------------------------------------------------------------
+// What the planner says of a held note. The words were decided by the release
+// lead on 11 November 2026, for the owner to look at; change them here only.
+// ---------------------------------------------------------------------------
+
+/** In place of the note field, and wherever a change stops short of a piece without a line of its own. */
+export const HELD_NOTE_LINE = "This piece has a note that cannot be shown or changed here.";
+
+interface NamedPiece {
+  readonly id: string;
+  readonly label?: string;
+  readonly catalogueItemId: string;
+  readonly groupId: string | null;
+}
+
+function ownName(piece: NamedPiece): string {
+  return (piece.label ?? "").trim();
+}
+
+function isTable(piece: NamedPiece): boolean {
+  const item = getCatalogueItem(piece.catalogueItemId);
+  return item !== undefined && item.tableShape !== null;
+}
+
+/**
+ * How these lines name a piece: by its own name ("Table 3"); a chair or other
+ * piece of a named table's group by that table's name, since that is what the
+ * person can find; otherwise by what it is ("a table", "a lectern").
+ */
+export function heldNotePieceName(piece: NamedPiece, pieces: readonly NamedPiece[]): string {
+  if (ownName(piece) !== "") return ownName(piece);
+  const tables = piece.groupId === null ? [] : pieces.filter((other) => other.groupId === piece.groupId && isTable(other) && ownName(other) !== "");
+  const [table] = tables;
+  if (tables.length === 1 && table !== undefined) return ownName(table);
+  const item = getCatalogueItem(piece.catalogueItemId);
+  const noun = item === undefined ? "piece" : item.tableShape !== null ? "table" : item.name.toLowerCase();
+  return `${/^[aeiou]/iu.test(noun) ? "an" : "a"} ${noun}`;
+}
+
+/**
+ * The piece these lines name among several holding a held note: one with a
+ * name of its own if there is one, else the first.
+ */
+export function heldNotePieceToName<T extends NamedPiece>(held: readonly T[]): T | undefined {
+  return held.find((piece) => ownName(piece) !== "") ?? held[0];
+}
+
+/** Replace's refusal: the selection holds such a piece, so nothing is replaced. */
+export function nothingReplacedLine(name: string): string {
+  return `Nothing was replaced: ${name} has a note that cannot be shown here.`;
+}
+
+/** A fill's refusal, when it would clear such a piece from the floor. */
+export function nothingFilledLine(name: string): string {
+  return `Nothing was filled: ${name} has a note that cannot be shown here.`;
+}
+
+/** Said after a fill that worked round such a piece and left it where it stood. */
+export function stayedForNoteLine(name: string): string {
+  return `${name.charAt(0).toUpperCase()}${name.slice(1)} stayed where it is, because it has a note that cannot be shown here.`;
 }

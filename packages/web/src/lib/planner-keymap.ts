@@ -28,6 +28,7 @@ import {
   type PlannerClipboard,
 } from "./placement-edit.js";
 import { plannerFeatureEnabled } from "./planner-features.js";
+import { currentHeldNoteIds } from "./guest-plan-notes.js";
 import { withNoteSeeds } from "./note-seeds.js";
 import { planReplace, type ReplaceOptions, type ReplacePlan, type ReplaceResult } from "./replace.js";
 import type { CardParams } from "./setup-cards.js";
@@ -489,10 +490,13 @@ function carriedNotes(plan: ReplacePlan): ReadonlyMap<string, string> {
  * undo step, each old table's note carried to the new table nearest it in
  * that same step (lib/note-seeds). The plan comes back either way, for its
  * receipt; refused, nothing changes. `hasNote` defaults to the editor's notes.
+ * A selection with a piece whose note this browser is not shown is always
+ * refused (lib/guest-plan-notes): that is the open plan's fact, not an option.
  */
 export function replaceSelection(params: CardParams, options: Pick<ReplaceOptions, "hasNote" | "store"> = {}): ReplaceResult {
   const hasNote = options.hasNote ?? ((pieceId: string) => noteOf(pieceId) !== "");
-  const result = planReplace(selectedIds(), params, editWorld(), { ...options, hasNote });
+  const held = currentHeldNoteIds();
+  const result = planReplace(selectedIds(), params, editWorld(), { ...options, hasNote, holdsUnseenNote: (pieceId) => held.has(pieceId) });
   if (!result.ok) {
     postPlacementNotice(result.reason);
     return result;

@@ -9,7 +9,7 @@ import { isLayoutTimelineMutationLocked } from "../../lib/layout-timeline-previe
 import { useLayoutTimelinePreviewStore } from "../../stores/layout-timeline-preview-store.js";
 import { getCatalogueItem } from "../../lib/catalogue.js";
 import { canApplyTableLinenToItem, isDiningTableItem } from "../../lib/furniture-semantics.js";
-import { heldNoteIds, noteHeldOn } from "../../lib/guest-plan-notes.js";
+import { HELD_NOTE_LINE, heldNoteIds, noteHeldOn } from "../../lib/guest-plan-notes.js";
 import { GOLD, BORDER, CARD_BG, TEXT_SEC, TEXT_MUT } from "../../constants/ui-palette.js";
 import { ActivityStatus } from "../shared/Activity.js";
 import { useOnlineStatus } from "../../hooks/use-online-status.js";
@@ -201,13 +201,11 @@ type NoteTarget =
 
 const NO_HELD_NOTES: ReadonlySet<string> = new Set<string>();
 
-/**
- * What stands in place of the note field on a piece whose note this browser
- * is not shown: a guest plan's notes go only to the browser that made the
- * plan, and every other one is told which pieces hold one. An empty field
- * there took the person's words and the save refused them.
- */
-const HELD_NOTE_LINE = "This piece has a note that cannot be shown or changed here.";
+// HELD_NOTE_LINE (lib/guest-plan-notes) stands in place of the note field on a
+// piece whose note this browser is not shown: a guest plan's notes go only to
+// the browser that made the plan, and every other one is told which pieces
+// hold one. An empty field there took the person's words and the save refused
+// them.
 
 /**
  * Which piece the note belongs to. The tables in the selection, or in the

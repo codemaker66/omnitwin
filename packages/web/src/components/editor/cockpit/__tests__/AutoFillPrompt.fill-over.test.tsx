@@ -8,8 +8,10 @@ import type { PublishedCapacityAnswer } from "../../../../lib/planner-truth.js";
 import { setPlannerFeaturesForTesting } from "../../../../lib/planner-features.js";
 import type { PlacedItem } from "../../../../lib/placement.js";
 import { cardParamsFor, stampSetup } from "../../../../lib/setup-cards.js";
+import { useEditorStore } from "../../../../stores/editor-store.js";
 import { usePlacementStore } from "../../../../stores/placement-store.js";
 import { useRoomDimensionsStore } from "../../../../stores/room-dimensions-store.js";
+import { placedItemToEditor } from "../../EditorBridge.js";
 import { AutoFillPrompt } from "../AutoFillPrompt.js";
 import { openRoom, plannerRoom } from "./planner-truth-fixtures.js";
 
@@ -26,6 +28,7 @@ function askFor(guests: number): void {
 beforeEach(() => {
   useRoomDimensionsStore.setState({ dimensions: GRAND_HALL_RENDER_DIMENSIONS });
   usePlacementStore.setState({ placedItems: [], ghostPosition: null });
+  useEditorStore.setState({ isPublicPreview: false, notesIncluded: false, baseObjects: [] });
   openRoom(plannerRoom("grand-hall", "Grand Hall"));
   setPlannerFeaturesForTesting({ fillKeepOuts: true });
 });
@@ -78,6 +81,34 @@ describe("Fill's prompt over a layout", () => {
     const names = usePlacementStore.getState().placedItems.map((piece) => piece.label ?? "").filter((name) => name !== "");
     expect([...names].sort()).toEqual(["Table 1", "Table 2", "Table 3"]);
     expect(onPlaced).toHaveBeenCalledWith(expect.objectContaining({ tableCount: 3 }), "Seated 30 at 3 tables: moved 3 rounds and took away 2.");
+  });
+
+  it("leaves a round whose note this browser is not shown where it stands, and tells the lens why", () => {
+    const laid = fiveRounds();
+    const table5 = laid.find((piece) => piece.label === "Table 5");
+    if (table5 === undefined) throw new Error("no Table 5");
+    usePlacementStore.setState({ placedItems: laid });
+    // A guest plan read without its notes: the server says Table 5 holds one.
+    useEditorStore.setState({
+      isPublicPreview: true,
+      notesIncluded: false,
+      baseObjects: laid.map((piece) => ({ ...placedItemToEditor(piece, undefined), ...(piece.id === table5.id ? { noteHeld: true } : {}) })),
+    });
+    const onPlaced = vi.fn();
+    render(<AutoFillPrompt style="dinner-rounds" published={PUBLISHED} onPlaced={onPlaced} onCancel={vi.fn()} />);
+    askFor(20);
+    // Two of the other four rounds seat the twenty; Table 5 is not the fill's to take away.
+    expect(screen.getByTestId("auto-fill-consequence").textContent).toBe("Moves 2 rounds and takes away 2.");
+    fireEvent.click(screen.getByTestId("auto-fill-place"));
+
+    const after = usePlacementStore.getState().placedItems;
+    expect(after.map((piece) => piece.label ?? "").filter((name) => name !== "").sort()).toEqual(["Table 1", "Table 2", "Table 5"]);
+    expect(after.find((piece) => piece.id === table5.id)).toMatchObject({ x: table5.x, z: table5.z, rotationY: table5.rotationY });
+    expect(after.filter((piece) => piece.groupId === table5.groupId)).toHaveLength(11);
+    expect(onPlaced).toHaveBeenCalledWith(
+      expect.objectContaining({ tableCount: 2 }),
+      "Seated 20 at 2 tables: moved 2 rounds and took away 2. Table 5 stayed where it is, because it has a note that cannot be shown here.",
+    );
   });
 });
 

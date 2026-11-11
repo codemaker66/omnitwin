@@ -7,6 +7,7 @@ import {
   FILL_AISLE_RULE,
   fillConsequence,
   fillConsequenceLine,
+  fillKeptForNotesLine,
   fillOverActionLabel,
   fillOverDoneLine,
   fillOverReceipt,
@@ -178,5 +179,69 @@ describe("Fill over a laid floor's button and receipt", () => {
     if (plan === null || plan.style !== "dinner-rounds") throw new Error("no plan");
     expect(usePlacementNoticeStore.getState().notice).toMatchObject({ text: fillOverReceipt(plan), undo: true });
     expect(fillOverReceipt(plan)).toBe("Laid out 8 tables");
+  });
+});
+
+// A guest plan's notes go only to the browser that made it; any other is told
+// which pieces hold one (lib/guest-plan-notes). A round the plan has no spot
+// for is taken away, so a round holding such a note is not Fill's to set anew.
+describe("a fill over rounds that hold a note this browser is not shown", () => {
+  function held(placed: readonly PlacedItem[], ...names: readonly string[]): (id: string) => boolean {
+    const ids = new Set(placed.filter((piece) => names.includes(piece.label ?? "")).map((piece) => piece.id));
+    return (id) => ids.has(id);
+  }
+
+  function planOver(placed: readonly PlacedItem[], guests: number, holdsUnseenNote: (id: string) => boolean): RoomFill {
+    if (round === undefined) throw new Error("no round");
+    const fill = planRoomFill({ table: round, seatsPerTable: 10, guests, roomWidthM: 21, roomLengthM: 10.5, exits: grandHallExits(), rule: FILL_AISLE_RULE }, placed, holdsUnseenNote);
+    if (fill === null) throw new Error("no fill");
+    return fill;
+  }
+
+  it("sets none of that round's pieces anew, and lays the rest clear of it", () => {
+    const placed = rounds(6);
+    const fill = planOver(placed, 30, held(placed, "Table 6"));
+    const table6 = placed.find((piece) => piece.label === "Table 6");
+    if (table6 === undefined) throw new Error("no Table 6");
+    const itsPieces = placed.filter((piece) => piece.groupId === table6.groupId);
+
+    expect(itsPieces).toHaveLength(11);
+    expect(itsPieces.some((piece) => fill.refillIds.has(piece.id))).toBe(false);
+    expect(fill.keptForNotes).toEqual(["Table 6"]);
+    // Without the mark the same fill takes Table 6 away: three spots, six rounds.
+    const unmarked = planFor(placed, 30);
+    expect(unmarked.refillIds.has(table6.id)).toBe(true);
+    expect(unmarked.keptForNotes).toEqual([]);
+    expect(fillConsequence(placed, unmarked.refillIds, unmarked.plan, noNotes)?.removed).toContain("Table 6");
+    expect(fillConsequence(placed, fill.refillIds, fill.plan, noNotes)?.removed).not.toContain("Table 6");
+
+    // No new round stands within the gangway of the one that stayed.
+    const laid = refillPieces(placed, fill.refillIds, fill.plan);
+    const tables = laid.filter((piece) => piece.catalogueItemId === table6.catalogueItemId);
+    expect(tables.length).toBe(fill.plan.tables.length);
+    expect(tables.every((table) => Math.hypot(table.x - table6.x, table.z - table6.z) > 2)).toBe(true);
+  });
+
+  it("keeps the round for a note held on one of its chairs", () => {
+    const placed = rounds(6);
+    const table6 = placed.find((piece) => piece.label === "Table 6");
+    const chair = placed.find((piece) => piece.groupId === table6?.groupId && piece.id !== table6?.id);
+    if (table6 === undefined || chair === undefined) throw new Error("no Table 6");
+    const fill = planOver(placed, 30, (id) => id === chair.id);
+    expect(fill.refillIds.has(table6.id)).toBe(false);
+    expect(fill.keptForNotes).toEqual(["Table 6"]);
+  });
+
+  it("says so for each round once laid, one sentence a name", () => {
+    expect(fillKeptForNotesLine([])).toBeNull();
+    expect(fillKeptForNotesLine(["Table 3"])).toBe("Table 3 stayed where it is, because it has a note that cannot be shown here.");
+    expect(fillKeptForNotesLine(["Table 3", "Table 5"])).toBe(
+      "Table 3 stayed where it is, because it has a note that cannot be shown here. Table 5 stayed where it is, because it has a note that cannot be shown here.",
+    );
+    // Rounds nobody named are told apart by nothing, so they are said once.
+    const placed = rounds(3).map((piece) => ({ ...piece, label: "" }));
+    const unnamed = planOver(placed, 10, () => true);
+    expect(unnamed.keptForNotes).toEqual(["a round", "a round", "a round"]);
+    expect(fillKeptForNotesLine(unnamed.keptForNotes)).toBe("A round stayed where it is, because it has a note that cannot be shown here.");
   });
 });

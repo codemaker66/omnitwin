@@ -18,7 +18,7 @@ import {
   readAnonymousPlannerDraft,
   type AnonymousPlannerDraft,
 } from "../lib/anonymous-planner-draft.js";
-import { keepingConfirmedNotes, namingReplacedNotes, signedInRoutesSuit } from "../lib/guest-plan-notes.js";
+import { heldNoteIds, keepingConfirmedNotes, namingReplacedNotes, registerHeldNotes, signedInRoutesSuit } from "../lib/guest-plan-notes.js";
 import { holdPlannerPageLock, isPlannerPageOpen, plannerPageId } from "../lib/planner-page-lock.js";
 import { signedOutOwnerFrom } from "../lib/planner-draft-storage.js";
 import { summariseLayoutChange, type LayoutChangeSummary } from "../lib/layout-change-summary.js";
@@ -2206,6 +2206,10 @@ export function onPlannerDraftStorageChange(event: Pick<StorageEvent, "key" | "n
 }
 
 if (typeof window !== "undefined") window.addEventListener("storage", onPlannerDraftStorageChange);
+
+// The scene's stores and commands ask which pieces hold a note this browser is
+// not shown without loading this store (lib/guest-plan-notes).
+registerHeldNotes(() => heldNoteIds(useEditorStore.getState()));
 
 // This page holds its lock for its lifetime, so another tab can tell its
 // in-progress drafts from those a closed page left behind.
