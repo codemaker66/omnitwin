@@ -431,6 +431,43 @@ function serializeSnapshotDiff(row: SnapshotDiffRow): SnapshotDiff {
   });
 }
 
+interface PieceCount {
+  readonly name: string;
+  readonly category: string;
+  readonly qty: number;
+}
+
+/**
+ * What the store sends out for a frozen plan (T-695 api-eventday-sheet-9):
+ * every placed piece counted by name and category from the frozen floor plan,
+ * a chair set at a table included although the manifest folds it into the
+ * table's row ("Round Table with 10 chairs"), plus the accessories the
+ * manifest implies, already multiplied per parent. A plan frozen without a
+ * floor plan has only the manifest's totals. The sheet's store list counts
+ * the same way (types sheet-brief.ts sheetStoreList), grouped for the store
+ * rather than by category.
+ */
+function placedCounts(payload: ConfigurationSheetSnapshot["payload"]): readonly PieceCount[] {
+  const plan = payload.floorPlan ?? null;
+  if (plan === null) return payload.totals.entries;
+  const counts = new Map<string, { readonly name: string; readonly category: string; qty: number }>();
+  const add = (name: string, category: string, qty: number): void => {
+    const key = itemKey({ name, category });
+    const existing = counts.get(key);
+    if (existing === undefined) counts.set(key, { name, category, qty });
+    else existing.qty += qty;
+  };
+  for (const object of plan.objects) add(object.name, object.category, 1);
+  for (const phase of payload.phases) {
+    for (const zone of phase.zones) {
+      for (const row of zone.rows) {
+        if (row.isAccessory) add(row.name, row.category, row.qty);
+      }
+    }
+  }
+  return [...counts.values()];
+}
+
 function compileSnapshotDiff(
   snapshot: ConfigurationSheetSnapshot,
   previousSnapshot: ConfigurationSheetSnapshot | null,
@@ -448,8 +485,14 @@ function compileSnapshotDiff(
     };
   }
 
-  const current = new Map(snapshot.payload.totals.entries.map((entry) => [itemKey(entry), entry]));
-  const previous = new Map(previousSnapshot.payload.totals.entries.map((entry) => [itemKey(entry), entry]));
+  // Like for like: placed pieces on both sides, or, when either plan was
+  // frozen before floor plans were kept, the manifest's totals on both, so a
+  // count of pieces is never reported as a change against a count of rows.
+  const piecesOnBoth = (snapshot.payload.floorPlan ?? null) !== null && (previousSnapshot.payload.floorPlan ?? null) !== null;
+  const counted = (frozen: ConfigurationSheetSnapshot): readonly PieceCount[] =>
+    piecesOnBoth ? placedCounts(frozen.payload) : frozen.payload.totals.entries;
+  const current = new Map(counted(snapshot).map((entry) => [itemKey(entry), entry]));
+  const previous = new Map(counted(previousSnapshot).map((entry) => [itemKey(entry), entry]));
   const added: string[] = [];
   const removed: string[] = [];
   const changed: string[] = [];
@@ -493,7 +536,7 @@ function compileSnapshotDiff(
 }
 
 function compilePickList(snapshot: ConfigurationSheetSnapshot): readonly DraftPickListItem[] {
-  return [...snapshot.payload.totals.entries]
+  return [...placedCounts(snapshot.payload)]
     .sort((a, b) => `${a.category}:${a.name}`.localeCompare(`${b.category}:${b.name}`))
     .map((entry, index) => ({
       name: safeOpsText(entry.name, 180),
@@ -543,7 +586,7 @@ function compileSetupTasks(snapshot: ConfigurationSheetSnapshot): readonly Draft
 }
 
 function compileBreakdownTasks(snapshot: ConfigurationSheetSnapshot): readonly DraftOpsTask[] {
-  return [...snapshot.payload.totals.entries]
+  return [...placedCounts(snapshot.payload)]
     .sort((a, b) => `${a.category}:${a.name}`.localeCompare(`${b.category}:${b.name}`))
     .map((entry, index) => ({
       groupKey: "breakdown",
@@ -710,6 +753,7 @@ function compileBeoBody(input: {
   readonly eventGraph: EventPhaseGraph | null;
   readonly clientNotes: string | null;
   readonly digest: string;
+  readonly pickList: readonly DraftPickListItem[];
   readonly setupTaskCount: number;
   readonly supplierInstructionCount: number;
 }): string {
@@ -731,7 +775,7 @@ function compileBeoBody(input: {
     `Venue: ${payload.venue.name}; room: ${payload.space.name}.`,
     `Guest count from approved snapshot: ${String(payload.config.guestCount)}.`,
     `Snapshot: v${String(input.snapshot.version)}; hash ${input.snapshot.sourceHash}.`,
-    `Pick list items: ${String(payload.totals.entries.length)}; total quantity ${String(payload.totals.totalItems)}.`,
+    `Pick list items: ${String(input.pickList.length)}; total quantity ${String(input.pickList.reduce((sum, item) => sum + item.quantity, 0))}.`,
     `Setup tasks: ${String(input.setupTaskCount)}; supplier notes: ${String(input.supplierInstructionCount)}.`,
     specialLine,
     notes,
@@ -808,6 +852,7 @@ export function compileOpsHandoffDraft(input: {
       eventGraph: input.eventGraph,
       clientNotes: input.clientNotes,
       digest,
+      pickList: pickListItems,
       setupTaskCount: setupTasks.length,
       supplierInstructionCount: supplierInstructions.length,
     }),

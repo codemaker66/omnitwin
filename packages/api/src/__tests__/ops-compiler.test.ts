@@ -8,6 +8,7 @@ import {
   eventArchitectOpsCompilationReviewGate,
   eventGraphBindsConfiguration,
 } from "../services/ops-compiler.js";
+import { generateManifestV2, type AccessoryRule, type ManifestObjectV2 } from "../services/manifest-generator-v2.js";
 
 process.env["DATABASE_URL"] = "postgresql://mock:mock@localhost/mock";
 process.env["JWT_SECRET"] = "test-jwt-secret-that-is-at-least-32-characters-long";
@@ -384,6 +385,98 @@ describe("ops compiler services", () => {
     expect(source).not.toMatch(/\bcertified safe\b/iu);
     expect(source).not.toMatch(/\bproduction ready\b/iu);
     expect(source).not.toMatch(/\blegally compliant\b/iu);
+  });
+
+  // T-695 api-eventday-sheet-9. A chair set at a table folds into the table's
+  // manifest row ("Round Table with 4 chairs"), so the manifest's totals have
+  // no line for it; the frozen floor plan still holds every piece. The pick
+  // list, its total, the breakdown and the BEO count what the store sends out.
+  describe("counts every placed piece, chairs set at tables included", () => {
+    const ROOM = { widthM: 21, lengthM: 10.5 };
+    const ASSET = {
+      table: "00000000-0000-4000-8000-000000000401",
+      chiavari: "00000000-0000-4000-8000-000000000402",
+      banquet: "00000000-0000-4000-8000-000000000403",
+    } as const;
+    const CLOTH: AccessoryRule = { name: "Ivory Tablecloth", category: "linen", quantityPerParent: 1, phase: "dress", afterDepth: 1 };
+
+    /** Two round tables of four chairs, as the planner groups them, plus
+     *  `looseChairs` chairs nobody grouped; frozen as an approval freezes them. */
+    function frozen(chair: "Chiavari Chair" | "Banquet Chair", looseChairs: number): ConfigurationSheetSnapshot {
+      const objects: ManifestObjectV2[] = [];
+      for (let table = 0; table < 2; table += 1) {
+        const tableId = `00000000-0000-4000-8000-0000000005${String(table)}0`;
+        const x = table * 5 - 2.5;
+        objects.push({ id: tableId, assetName: "Round Table", assetCategory: "table", positionX: x, positionY: 0, positionZ: 0, rotationY: 0, chairCount: 0, groupId: tableId });
+        for (let seat = 0; seat < 4; seat += 1) {
+          const angle = (seat * Math.PI) / 2;
+          objects.push({
+            id: `00000000-0000-4000-8000-0000000005${String(table)}${String(seat + 1)}`, assetName: chair, assetCategory: "chair",
+            positionX: x + Math.cos(angle), positionY: 0, positionZ: Math.sin(angle), rotationY: 0, chairCount: 0, groupId: tableId,
+          });
+        }
+      }
+      for (let seat = 0; seat < looseChairs; seat += 1) {
+        objects.push({ id: `00000000-0000-4000-8000-0000000006${String(seat).padStart(2, "0")}`, assetName: chair, assetCategory: "chair", positionX: seat, positionY: 0, positionZ: 4, rotationY: 0, chairCount: 0, groupId: null });
+      }
+      const manifest = generateManifestV2(objects, ROOM, new Map([["Round Table", [CLOTH]]]));
+      return snapshot({
+        payload: {
+          ...snapshot().payload,
+          phases: manifest.phases,
+          totals: manifest.totals,
+          floorPlan: {
+            coordinateSpace: "real_m_v1",
+            outline: [{ x: -10.5, z: -5.25 }, { x: 10.5, z: -5.25 }, { x: 10.5, z: 5.25 }, { x: -10.5, z: 5.25 }],
+            objects: objects.map((object) => ({
+              objectId: object.id,
+              assetDefinitionId: object.assetCategory === "table" ? ASSET.table : chair === "Chiavari Chair" ? ASSET.chiavari : ASSET.banquet,
+              name: object.assetName, category: object.assetCategory, x: object.positionX, z: object.positionZ,
+              rotationY: 0, scale: 1, widthM: object.assetCategory === "table" ? 1.8 : 0.45, depthM: object.assetCategory === "table" ? 1.8 : 0.45,
+              collisionType: object.assetCategory === "table" ? "cylinder" as const : "box" as const,
+            })),
+          },
+        },
+      });
+    }
+
+    it("lists the chairs on the pick list, and counts them in its total and the BEO", () => {
+      const draft = compileOpsHandoffDraft({ snapshot: frozen("Chiavari Chair", 2), previousSnapshot: null, eventGraph: null, clientNotes: null });
+      const lines = draft.pickListItems.map((item) => `${String(item.quantity)} x ${item.name} (${item.category})`);
+      expect(lines.sort()).toEqual(["10 x Chiavari Chair (chair)", "2 x Ivory Tablecloth (linen)", "2 x Round Table (table)"]);
+      expect(draft.pickListItems.reduce((sum, item) => sum + item.quantity, 0)).toBe(14);
+      expect(draft.beoBody).toContain("Pick list items: 3; total quantity 14.");
+      // Set-up still reads table by table, as the sheet does.
+      expect(draft.opsTasks.filter((task) => task.kind === "setup").map((task) => task.title)).toContain("Set 2 x Round Table with 4 chairs");
+    });
+
+    it("has the breakdown account for every chair", () => {
+      const draft = compileOpsHandoffDraft({ snapshot: frozen("Chiavari Chair", 2), previousSnapshot: null, eventGraph: null, clientNotes: null });
+      const breakdown = draft.opsTasks.filter((task) => task.kind === "breakdown").map((task) => task.detail);
+      expect(breakdown).toContain("Account for 10 x Chiavari Chair from the approved handoff pack.");
+      expect(breakdown).toContain("Account for 2 x Round Table from the approved handoff pack.");
+    });
+
+    it("shows a change of chair at the tables in the changes since the last handoff", () => {
+      const draft = compileOpsHandoffDraft({
+        snapshot: frozen("Chiavari Chair", 0),
+        previousSnapshot: { ...frozen("Banquet Chair", 0), id: PREVIOUS_SNAPSHOT_ID, version: 1, sourceHash: PREVIOUS_HASH },
+        eventGraph: null,
+        clientNotes: null,
+      });
+      expect(draft.snapshotDiff.payload).toEqual({ added: ["8 x Chiavari Chair"], removed: ["8 x Banquet Chair"], changed: [] });
+    });
+
+    it("compares a plan frozen before floor plans by its totals on both sides, never totals against pieces", () => {
+      const current = frozen("Chiavari Chair", 2);
+      const draft = compileOpsHandoffDraft({
+        snapshot: current,
+        previousSnapshot: { ...current, id: PREVIOUS_SNAPSHOT_ID, version: 1, sourceHash: PREVIOUS_HASH, payload: { ...current.payload, floorPlan: null } },
+        eventGraph: null,
+        clientNotes: null,
+      });
+      expect(draft.snapshotDiff.summary).toBe("No furniture count changes since the previous approved snapshot.");
+    });
   });
 
   it("does not mutate the hallkeeper sheet snapshot", () => {
