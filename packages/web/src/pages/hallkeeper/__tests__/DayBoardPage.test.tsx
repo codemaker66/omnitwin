@@ -246,6 +246,13 @@ function serveToday(fallback: CalendarResponse, queue: Promise<CalendarResponse>
     from === today.from ? queue.shift() ?? Promise.resolve(fallback) : Promise.resolve(calendarFixture([])));
 }
 
+/** Holds the clock at 14:00 today on the venue's clock, so a case that places
+ *  things around "now" never crosses midnight onto another board's day. */
+function atMidday(): void {
+  const today = msToWallInput(Date.now(), "Europe/London").slice(0, 10);
+  vi.useFakeTimers({ toFake: ["Date"], now: wallInputToMs(`${today}T14:00`, "Europe/London") ?? Date.now() });
+}
+
 function deferred<T>(): { readonly promise: Promise<T>; readonly resolve: (value: T) => void; readonly reject: (reason: Error) => void } {
   let resolve: (value: T) => void = () => undefined;
   let reject: (reason: Error) => void = () => undefined;
@@ -1602,6 +1609,10 @@ function calendarOf(entries: () => CalendarResponse["entries"]): void {
 }
 
 describe("DayBoardPage: what changed since the floor last looked", () => {
+  // An acknowledgement half an hour ago is yesterday's just after midnight.
+  beforeEach(atMidday);
+  afterEach(() => { vi.useRealTimers(); });
+
   it("marks the slot whose event has a change to read, and says so in the day's sentence", async () => {
     getCalendarMock.mockResolvedValue(calendarFixture([bookingWithEvent()]));
     floor.awaiting.mockResolvedValue([{ eventId: EVENT_ID, changes: [timesMoved(20)], lastAcknowledgement: null }]);
