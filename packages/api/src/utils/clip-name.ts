@@ -8,9 +8,9 @@
 //
 // Both limits count characters as Unicode code points: PostgreSQL's varchar
 // in a UTF8 database, and Zod 4's string max. So the clip counts code points,
-// not UTF-16 units, and it cuts between whole characters as a reader sees
-// them (a flag, a skin tone or a family is one). Nothing is left half
-// written, least of all half of a surrogate pair, which PostgreSQL would
+// not UTF-16 units. It cuts between whole characters as a reader sees them
+// (a flag, a skin tone or a family is one) and, where it cannot, between code
+// points: it never leaves half of a surrogate pair, which PostgreSQL would
 // keep as U+FFFD.
 // ---------------------------------------------------------------------------
 

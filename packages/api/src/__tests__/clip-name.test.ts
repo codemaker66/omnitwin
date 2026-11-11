@@ -19,7 +19,7 @@ const J = (count: number): string => "J".repeat(count);
 /** One character, two UTF-16 units. */
 const SCRIPT_J = "\u{1D4D9}";
 /** One character of five code points: man, joiner, woman, joiner, girl. */
-const FAMILY = "\u{1F468}‍\u{1F469}‍\u{1F467}";
+const FAMILY = "\u{1F468}\u200D\u{1F469}\u200D\u{1F467}";
 /** One character of two code points: the flag of the United Kingdom. */
 const FLAG = "\u{1F1EC}\u{1F1E7}";
 const characters = (text: string): number => Array.from(text).length;
@@ -47,13 +47,13 @@ describe("clipName", () => {
     expect(clipName(`${J(158)}${FAMILY}${J(40)}`)).toBe(J(158));
     expect(clipName(`${J(150)}${FAMILY}${J(45)}`)).toBe(`${J(150)}${FAMILY}${J(5)}`);
     expect(clipName(`${J(159)}${FLAG}${J(40)}`)).toBe(J(159));
-    expect(clipName(`${J(159)}é${J(40)}`)).toBe(J(159));
+    expect(clipName(`${J(159)}e\u0301${J(40)}`)).toBe(J(159));
   });
 
   it("keeps whole code points where characters cannot be told apart, or the first is already too long", () => {
-    expect(clipName(`${J(158)}${FAMILY}${J(40)}`, RECORD_NAME_MAX, null)).toBe(`${J(158)}\u{1F468}‍`);
+    expect(clipName(`${J(158)}${FAMILY}${J(40)}`, RECORD_NAME_MAX, null)).toBe(`${J(158)}\u{1F468}\u200D`);
     // One character of 200 code points: something is still kept, never nothing.
-    expect(clipName(`e${"́".repeat(199)}`)).toBe(`e${"́".repeat(159)}`);
+    expect(clipName(`e${"\u0301".repeat(199)}`)).toBe(`e${"\u0301".repeat(159)}`);
   });
 
   it("fits every floor column and wire schema that keeps a name", () => {
@@ -79,7 +79,7 @@ describe("clipName", () => {
     ];
     for (const field of wire) expect(field.maxLength).toBe(RECORD_NAME_MAX);
 
-    const names = [J(200), SCRIPT_J.repeat(200), `${J(159)}${SCRIPT_J.repeat(41)}`, `${J(158)}${FAMILY}${J(40)}`, `e${"́".repeat(199)}`];
+    const names = [J(200), SCRIPT_J.repeat(200), `${J(159)}${SCRIPT_J.repeat(41)}`, `${J(158)}${FAMILY}${J(40)}`, `e${"\u0301".repeat(199)}`];
     for (const name of names) {
       const kept = clipName(name);
       expect(characters(kept)).toBeLessThanOrEqual(RECORD_NAME_MAX);

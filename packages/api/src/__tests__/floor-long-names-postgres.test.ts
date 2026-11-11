@@ -109,7 +109,7 @@ describe.skipIf(target === undefined)("long names on the floor, on migrated Post
   /** JSON a header can carry: every code unit outside ASCII escaped, so a
    *  name beyond Latin-1 arrives whole through JSON.parse. */
   function headerJson(value: unknown): string {
-    return JSON.stringify(value).replace(/[\u0080-￿]/g, (unit) => `\\u${unit.charCodeAt(0).toString(16).padStart(4, "0")}`);
+    return JSON.stringify(value).replace(/[\u0080-\uffff]/g, (unit) => `\\u${unit.charCodeAt(0).toString(16).padStart(4, "0")}`);
   }
 
   /** The test-mode bearer: the name travels in it exactly as the account holds it. */
