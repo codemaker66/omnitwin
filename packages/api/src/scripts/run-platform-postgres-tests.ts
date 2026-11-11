@@ -70,6 +70,10 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/foundry-product-lock-postgres.test.ts",
   // The Grand Hall at its E57 interior and clear height (0106): one row, inert on replay, stops named, a chair against a long wall saves.
   "src/__tests__/grand-hall-e57-migration-postgres.test.ts",
+  // The Truth Mode summary answers a layout's owner and venue floor only, and counts only their layouts.
+  "src/__tests__/truth-mode-summary-tenancy-postgres.test.ts",
+  // A pricing rule's dates are real calendar dates a date column holds: an impossible one is a 400, not a 500.
+  "src/__tests__/pricing-rule-dates-postgres.test.ts",
 ] as const;
 
 /**
