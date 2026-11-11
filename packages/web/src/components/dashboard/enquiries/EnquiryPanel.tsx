@@ -7,6 +7,7 @@ import { ActivityIndicator, ActivityStatus } from "../../shared/Activity.js";
 import { AIDraftPanel } from "../../ai/AIDraftPanel.js";
 import { draftEnquirySummary } from "../../../api/ai-assistant.js";
 import { useAIDraftsAvailable } from "../../../hooks/use-ai-drafts-available.js";
+import { movesEnquiry } from "../../../lib/role-capabilities.js";
 import { useAuthStore } from "../../../stores/auth-store.js";
 import { StageChip } from "./EnquiryStages.js";
 import { EnquiryNameText, enquiryName } from "./EnquiryLedger.js";
@@ -120,6 +121,9 @@ export function EnquiryPanel(props: EnquiryPanelProps): ReactElement {
   const kindLabel = request !== null ? requestWords(request).label : occasionLabel(enquiry.eventType) ?? "Enquiry";
   const eyebrow = `${kindLabel}${received === null ? "" : ` · received ${received}`}`;
   const source = sourceWords(enquiry.source);
+  // Every move offered below is the venue's (review, decide, mark done,
+  // reopen): a customer reading their own enquiry is offered none of them.
+  const canMove = useAuthStore((state) => movesEnquiry(state.user, enquiry.venueId));
 
   const step = (event: KeyboardEvent<HTMLElement>): void => {
     if (event.altKey || event.ctrlKey || event.metaKey || isEditable(event.target)) return;
@@ -178,11 +182,11 @@ export function EnquiryPanel(props: EnquiryPanelProps): ReactElement {
               diarySays={transition.confirming === "approved" && props.diary !== null ? props.diary.approve : undefined}
               saving={transition.saving !== null} failure={transition.failure} onConfirm={props.onConfirm} onCancel={props.onCancel} />
           ) : request === null ? (
-            <NextStep enquiry={enquiry} transition={transition} canCreateOpportunity={props.canCreateOpportunity}
+            <NextStep enquiry={enquiry} transition={transition} canMove={canMove} canCreateOpportunity={props.canCreateOpportunity}
               creatingOpportunity={props.creatingOpportunity} opportunityFailure={props.opportunityFailure}
               onRequest={props.onRequest} onCreateOpportunity={props.onCreateOpportunity} />
           ) : (
-            <RequestNextStep enquiry={enquiry} kind={request} transition={transition} onRequest={props.onRequest} />
+            <RequestNextStep enquiry={enquiry} kind={request} transition={transition} canMove={canMove} onRequest={props.onRequest} />
           )}
         </section>
 
@@ -401,9 +405,11 @@ function StagePath({ state, request }: { readonly state: string; readonly reques
   );
 }
 
-function NextStep({ enquiry, transition, canCreateOpportunity, creatingOpportunity, opportunityFailure, onRequest, onCreateOpportunity }: {
+function NextStep({ enquiry, transition, canMove, canCreateOpportunity, creatingOpportunity, opportunityFailure, onRequest, onCreateOpportunity }: {
   readonly enquiry: Enquiry;
   readonly transition: PanelTransition;
+  /** Whether the reader makes the venue's moves (movesEnquiry). */
+  readonly canMove: boolean;
   readonly canCreateOpportunity: boolean;
   readonly creatingOpportunity: boolean;
   readonly opportunityFailure: string | null;
@@ -416,6 +422,7 @@ function NextStep({ enquiry, transition, canCreateOpportunity, creatingOpportuni
 
   switch (enquiry.state) {
     case "submitted":
+      if (!canMove) return <>{failure}</>;
       return (
         <>
           <div className="enq-actions">
@@ -434,6 +441,7 @@ function NextStep({ enquiry, transition, canCreateOpportunity, creatingOpportuni
         </>
       );
     case "under_review":
+      if (!canMove) return <>{failure}</>;
       return (
         <>
           <div className="enq-actions">
@@ -477,10 +485,12 @@ function NextStep({ enquiry, transition, canCreateOpportunity, creatingOpportuni
 }
 
 /** A request's next step: marked done without an email, or reopened. */
-function RequestNextStep({ enquiry, kind, transition, onRequest }: {
+function RequestNextStep({ enquiry, kind, transition, canMove, onRequest }: {
   readonly enquiry: Enquiry;
   readonly kind: RequestKind;
   readonly transition: PanelTransition;
+  /** Whether the reader makes the venue's moves (movesEnquiry). */
+  readonly canMove: boolean;
   readonly onRequest: (to: TransitionTarget, withNote: boolean) => void;
 }): ReactElement {
   const busy = transition.saving !== null;
@@ -490,6 +500,7 @@ function RequestNextStep({ enquiry, kind, transition, onRequest }: {
   switch (enquiry.state) {
     case "submitted":
     case "under_review":
+      if (!canMove) return <>{failure}</>;
       return (
         <>
           <div className="enq-actions">
@@ -508,6 +519,7 @@ function RequestNextStep({ enquiry, kind, transition, onRequest }: {
         </>
       );
     case "archived":
+      if (!canMove) return <>{failure}</>;
       return (
         <>
           <div className="enq-actions">
