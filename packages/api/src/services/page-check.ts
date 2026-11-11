@@ -262,7 +262,13 @@ function parseRobots(text: string): RobotsGroup[] {
   let current: RobotsGroup | null = null;
   let sawRule = false;
   for (const raw of text.split(/\r\n|\r|\n/u)) {
-    const line = raw.replace(/#.*$/u, "").trim();
+    // A comment runs from the first # to the end of the line. Found with
+    // indexOf, not /#.*$/: `.` stops at U+2028 and U+2029, `$` then fails, and
+    // the search began again at every later #, quadratic on one long line
+    // (128 KB of # took ninety seconds) from a site the check does not
+    // control. It also left such a comment in place, garbling its rule.
+    const comment = raw.indexOf("#");
+    const line = (comment === -1 ? raw : raw.slice(0, comment)).trim();
     const colon = line.indexOf(":");
     if (colon <= 0) continue;
     const key = line.slice(0, colon).trim().toLowerCase();

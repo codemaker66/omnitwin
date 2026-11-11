@@ -74,6 +74,36 @@ describe("robots.txt (RFC 9309)", () => {
     expect(robotsAllows("User-agent: venviewerpagecheck\nDisallow: /", PAGE_CHECK_PRODUCT_TOKEN, "/weddings/")).toBe(false);
   });
 
+  // Review of #380. A comment was cut with /#.*$/u. `.` stops at U+2028 and
+  // U+2029, `$` then fails, and the search began again at every later `#`:
+  // quadratic on one long line, read from the same site whose page is checked.
+  it.each([
+    ["a line of # ending in a line separator", "#", " "],
+    ["a line of # ending in a paragraph separator", "#", " "],
+    ["rules each followed by a comment, on one line", "Disallow: /a #", " "],
+  ] as const)("reads 2 MB of %s in linear time", (_shape, unit, tail) => {
+    const timed = (bytes: number): number => {
+      const robots = `User-agent: *\n${unit.repeat(Math.ceil(bytes / unit.length))}${tail}`;
+      const started = performance.now();
+      robotsAllows(robots, PAGE_CHECK_PRODUCT_TOKEN, "/weddings/");
+      return performance.now() - started;
+    };
+    // As for the page's text below: 128 KB first, so the old code fails
+    // promptly there instead of hanging on 2 MB.
+    expect(timed(128 * 1024)).toBeLessThan(100);
+    expect(timed(2 * 1024 * 1024)).toBeLessThan(1000);
+  });
+
+  it("takes a comment to the end of its line, whatever the comment holds", () => {
+    // Neither separator ends a robots.txt line (RFC 9309: CR and LF do). The
+    // old expression left such a comment in place, so the rule's path was
+    // garbled and the Disallow was not honoured.
+    const robots = "User-agent: *\nDisallow: /private/ # staff only really\nDisallow: /drafts/ # and these";
+    expect(robotsAllows(robots, PAGE_CHECK_PRODUCT_TOKEN, "/private/rota")).toBe(false);
+    expect(robotsAllows(robots, PAGE_CHECK_PRODUCT_TOKEN, "/drafts/menu")).toBe(false);
+    expect(robotsAllows(robots, PAGE_CHECK_PRODUCT_TOKEN, "/weddings/")).toBe(true);
+  });
+
   /** robotsAllows on one Disallow rule, with how long it took. */
   function timedDisallow(pattern: string, path: string): { readonly allowed: boolean; readonly ms: number } {
     const robots = `User-agent: *\nDisallow: ${pattern}`;
