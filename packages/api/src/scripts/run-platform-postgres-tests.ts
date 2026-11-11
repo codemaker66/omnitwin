@@ -25,6 +25,8 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/booking-event-bind-postgres.test.ts",
   "src/__tests__/enquiry-bookings-postgres.test.ts",
   "src/__tests__/event-mutations-postgres.test.ts",
+  // The event-day board: a change needing acknowledgement stays listed however many follow it.
+  "src/__tests__/event-day-awaiting-acknowledgement-postgres.test.ts",
   "src/__tests__/db-client-local.test.ts",
   "src/__tests__/sheet-snapshot-retention-postgres.test.ts",
   "src/__tests__/dietary-retention-postgres.test.ts",

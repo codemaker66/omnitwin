@@ -80,9 +80,10 @@ describe("every document", () => {
     render(<LegalPage type={type} />);
     const time = document.querySelector("time");
     // Each document carries its own date: the privacy policy and the
-    // accessibility statement changed in the v1.0 final review; the terms did not.
+    // accessibility statement changed in the v1.0 final review; the terms
+    // changed on 11 November, when the Grand Hall's dimensions became measured.
     const expected = type === "terms"
-      ? { iso: "2026-08-15", text: "15 August 2026" }
+      ? { iso: "2026-11-11", text: "11 November 2026" }
       : { iso: "2026-11-08", text: "8 November 2026" };
     expect(time?.getAttribute("datetime")).toBe(expected.iso);
     expect(time?.textContent).toBe(expected.text);
@@ -278,8 +279,28 @@ describe("the terms of service", () => {
 
   it("treats published capacities and rates as subject to confirmation", () => {
     const text = textOf("terms");
-    expect(text).toContain("the venue's own published figures");
+    expect(text).toContain(
+      "The room capacities and rates shown on this site are the venue's own published figures.",
+    );
     expect(text).toContain("subject to confirmation");
+  });
+
+  it("says the Grand Hall's dimensions were measured, not published by the venue", () => {
+    // Blake, 11 November 2026: "The measured 21.14 x 10.59 m". Every page that
+    // gives the Grand Hall's size gives the laser scan's, so the terms may not
+    // call every room dimension the venue's own published figure.
+    const text = textOf("terms");
+    expect(text).toContain(
+      "So are the room dimensions, except the Grand Hall's, which were measured from a laser scan of the hall.",
+    );
+    expect(text).not.toContain("capacities, dimensions and rates shown on this site are the venue's own published figures");
+  });
+
+  it("dates the version in force with the date the page shows", () => {
+    render(<LegalPage type="terms" />);
+    const shown = document.querySelector("time")?.textContent ?? "";
+    expect(shown).toBe("11 November 2026");
+    expect(document.getElementById("changes-to-terms")?.textContent).toContain(`dated ${shown}.`);
   });
 
   it("is governed by the law of Scotland", () => {
@@ -312,6 +333,10 @@ describe("the terms of service", () => {
 });
 
 describe("the accessibility statement", () => {
+  it("still says it was written on 15 August, whatever date the terms carry", () => {
+    expect(textOf("accessibility")).toContain("It was written on 15 August 2026 by the team that builds the site");
+  });
+
   it("makes no conformance claim, and says why", () => {
     const text = textOf("accessibility");
     expect(text).toContain("make no claim that the site conforms");
