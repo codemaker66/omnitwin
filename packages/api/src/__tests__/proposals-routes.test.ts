@@ -7,6 +7,7 @@ import {
   canTransitionProposal,
   canTransitionQuote,
   getAvailableProposalTransitions,
+  getAvailableQuoteTransitions,
   isStructuralProposalTransition,
   isStructuralQuoteTransition,
   proposalRolePolicyKeys,
@@ -135,6 +136,30 @@ describe("proposal state machine role policy", () => {
     expect(canTransitionQuote("issued", "accepted", "client")).toBe(true);
     expect(canTransitionQuote("issued", "superseded", "client")).toBe(false);
     expect(canTransitionQuote("accepted", "issued", "staff")).toBe(false);
+  });
+
+  // Audit pricing-money-5. The admin house override stops where a move can
+  // only fail in the database (leaving superseded keeps the successor link the
+  // quotes_superseded_coherent CHECK refuses) and, for a venue admin, where it
+  // would undo a client's acceptance. A platform admin's override on an
+  // accepted quote is Blake's open decision 4, so it stays as it was.
+  it("quote machine: no move leaves superseded, and a venue admin cannot undo an acceptance", () => {
+    for (const platformAdmin of [false, true]) {
+      for (const next of ["draft", "issued", "accepted", "declined", "expired"]) {
+        expect(canTransitionQuote("superseded", next, "admin", platformAdmin)).toBe(false);
+      }
+    }
+    for (const next of ["draft", "issued", "declined", "superseded", "expired"]) {
+      expect(canTransitionQuote("accepted", next, "admin", false)).toBe(false);
+      expect(canTransitionQuote("accepted", next, "admin", true)).toBe(true);
+    }
+    // The rest of the venue admin's override is unchanged pending the decision.
+    expect(canTransitionQuote("expired", "issued", "admin", false)).toBe(true);
+    expect(canTransitionQuote("draft", "issued", "admin", false)).toBe(true);
+    expect(canTransitionQuote("issued", "superseded", "admin", false)).toBe(true);
+    expect(getAvailableQuoteTransitions("accepted", "admin", false)).toEqual([]);
+    expect(getAvailableQuoteTransitions("superseded", "admin", true)).toEqual([]);
+    expect(getAvailableQuoteTransitions("issued", "staff", false)).toEqual(["accepted", "declined", "superseded", "expired"]);
   });
 });
 

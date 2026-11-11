@@ -505,7 +505,7 @@ export async function quoteRoutes(
     if (!canManageCommercial(request.user, quote.venueId)) {
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
-    if (!canTransitionQuote(quote.status, parsed.data.status, request.user.role)) {
+    if (!canTransitionQuote(quote.status, parsed.data.status, request.user.role, isPlatformAdmin(request.user))) {
       return reply.status(422).send({
         error: `Cannot transition from '${quote.status}' to '${parsed.data.status}' with role '${request.user.role}'`,
         code: "INVALID_TRANSITION",
