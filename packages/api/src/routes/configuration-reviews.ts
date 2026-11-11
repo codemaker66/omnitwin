@@ -14,7 +14,7 @@ import {
   CONFIGURATION_REVIEW_STATUSES,
   type ConfigurationReviewStatus,
 } from "@omnitwin/types";
-import { canTransition, isVenueReviewRole } from "../state-machines/config-review.js";
+import { canTransition, isVenueReviewRole, VENUE_REVIEW_ROLES } from "../state-machines/config-review.js";
 import { authenticate, isPlatformAdmin, type JwtUser } from "../middleware/auth.js";
 import { canAccessResource, canManageVenue } from "../utils/query.js";
 import { sendEmailAsync } from "../services/email.js";
@@ -174,7 +174,8 @@ interface ReviewEmailContext {
   readonly venueName: string;
   readonly spaceName: string;
   readonly planner: ReviewEmailRecipient | null;
-  readonly staff: readonly ReviewEmailRecipient[];
+  /** Everyone at the venue who can decide a review (VENUE_REVIEW_ROLES). */
+  readonly reviewers: readonly ReviewEmailRecipient[];
   readonly hallkeepers: readonly ReviewEmailRecipient[];
   readonly actor: ReviewEmailRecipient;
   /**
@@ -203,7 +204,7 @@ async function loadReviewEmailContext(
   actor: { id: string; email: string; role: string },
 ): Promise<ReviewEmailContext> {
   const [
-    venueRows, spaceRows, plannerRows, staffRows, hallkeeperRows, actorRows, enquiryRows,
+    venueRows, spaceRows, plannerRows, reviewerRows, hallkeeperRows, actorRows, enquiryRows,
   ] = await Promise.all([
     db.select({ name: venues.name }).from(venues).where(eq(venues.id, config.venueId)).limit(1),
     db.select({ name: spaces.name }).from(spaces).where(eq(spaces.id, config.spaceId)).limit(1),
@@ -211,9 +212,11 @@ async function loadReviewEmailContext(
       ? Promise.resolve([])
       : db.select({ id: users.id, email: users.email, name: users.name })
           .from(users).where(eq(users.id, config.userId)).limit(1),
+    // The same roles that may decide a review and browse its queue: read from
+    // the one definition, so a role is never given the job without the email.
     db.select({ id: users.id, email: users.email, name: users.name })
       .from(users)
-      .where(and(eq(users.venueId, config.venueId), eq(users.role, "staff"))),
+      .where(and(eq(users.venueId, config.venueId), inArray(users.role, [...VENUE_REVIEW_ROLES]))),
     db.select({ id: users.id, email: users.email, name: users.name })
       .from(users)
       .where(and(eq(users.venueId, config.venueId), eq(users.role, "hallkeeper"))),
@@ -240,7 +243,7 @@ async function loadReviewEmailContext(
         displayName: displayNameForUser(plannerRows[0]),
       };
 
-  const staff: ReviewEmailRecipient[] = staffRows.map((r) => ({
+  const reviewers: ReviewEmailRecipient[] = reviewerRows.map((r) => ({
     id: r.id,
     email: r.email,
     displayName: displayNameForUser(r),
@@ -265,7 +268,7 @@ async function loadReviewEmailContext(
   const eventDate = rawDate === null ? null : formatEventDate(rawDate);
 
   return {
-    venueName, spaceName, planner, staff, hallkeepers,
+    venueName, spaceName, planner, reviewers, hallkeepers,
     actor: actorRecipient, eventDate,
   };
 }
@@ -599,8 +602,9 @@ export async function configurationReviewRoutes(
 
     incrementCounter("configuration_review_transition_total", { from: config.reviewStatus, to: "submitted" });
 
-    // Notify venue staff — one email per staff member, idempotent per
-    // (submission, recipient) so a retried submit doesn't double-send. A
+    // Notify the venue: one email to each person who can decide the review
+    // (staff, managers and admins), idempotent per (submission, recipient)
+    // so a retried submit doesn't double-send. A
     // layout sent again unchanged keeps its snapshot, so the submission's
     // own time tells the second sending from the first.
     const baseFeUrl = frontendUrl ?? `${request.protocol}://${request.hostname}`;
@@ -612,7 +616,7 @@ export async function configurationReviewRoutes(
     // view vocabulary (DashboardPage reads it from the query string) and
     // `config=` selects the submission to open.
     const reviewUrl = `${baseFeUrl}/dashboard?view=reviews&config=${config.id}`;
-    for (const recipient of ctx.staff) {
+    for (const recipient of ctx.reviewers) {
       fireEmail(
         db,
         request.log,
