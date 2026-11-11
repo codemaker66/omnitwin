@@ -491,6 +491,33 @@ describe("DiaryBoardPage", () => {
     expect(screen.getByRole("button", { name: "Confirm it" })).toBeDefined();
   });
 
+  it("keeps a booking stored with no title on the board beside the rest, and the drawer puts it right (API-9)", async () => {
+    const UNTITLED = "00000000-0000-4000-8000-0000000000c9";
+    const base = fixture();
+    const first = base.entries[0];
+    if (first?.entryType !== "booking") throw new Error("fixture changed");
+    getCalendarMock.mockResolvedValue({
+      ...base,
+      entries: [...base.entries, {
+        ...first, id: UNTITLED, spaceId: SALOON, kind: "prospect", state: "prospect", title: "", eventType: null,
+        startsAt: "2026-09-16T17:00:00.000Z", endsAt: "2026-09-16T22:00:00.000Z",
+      }],
+    });
+    updateBookingMock.mockResolvedValue({ title: "Fraser enquiry" });
+    renderPage();
+    // The rest of the range is there, and so is the untitled booking, by
+    // what can be read of it.
+    expect(await screen.findByRole("button", { name: /MacLeod wedding — Provisional/ })).toBeDefined();
+    const untitled = await screen.findByRole("button", { name: /^\s*— Interest only, .*Saloon/u });
+    fireEvent.keyDown(untitled, { key: "Enter" });
+    const drawer = await screen.findByRole("dialog", { name: "Booking details" });
+    const title = within(drawer).getByLabelText("Title");
+    expect((title as HTMLInputElement).value).toBe("");
+    fireEvent.change(title, { target: { value: "Fraser enquiry" } });
+    fireEvent.click(within(drawer).getByRole("button", { name: "Save changes" }));
+    await waitFor(() => { expect(updateBookingMock.mock.calls[0]?.slice(0, 2)).toEqual([UNTITLED, { title: "Fraser enquiry" }]); });
+  });
+
   it("converts an open enquiry through the drawer (T-496)", async () => {
     convertEnquiryMock.mockResolvedValue({ title: "Fiona MacLeod — Wedding" });
     renderPage();
