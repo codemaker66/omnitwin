@@ -81,6 +81,41 @@
 .client-request-status { margin: 0; font-size: 13px; color: var(--event-ink, #173e33); }
 .client-request-detail { margin: 0; font-size: 13px; color: var(--event-muted, #52645b); line-height: 1.5; }
 
+/* What the house wrote back, under the ask it answers: the name, the venue's
+   own clock, then the words as they were typed. The copper rule marks an
+   answer; a long word wraps rather than pushing a phone wider. */
+.client-request-messages {
+  display: grid;
+  gap: 10px;
+  margin: 6px 0 0;
+  padding: 10px 0 2px;
+  border-top: 1px solid var(--event-line, #d7ded4);
+  list-style: none;
+}
+.client-request-message { display: grid; gap: 2px; padding-left: 10px; border-left: 2px solid #927058; }
+.client-request-message-who {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  margin: 0;
+  font-size: 12px;
+  color: var(--event-muted, #52645b);
+}
+.client-request-message-author { font-weight: 600; color: var(--event-ink, #173e33); }
+.client-request-message-when { font-variant-numeric: tabular-nums; }
+.client-request-message-body {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--event-ink, #173e33);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.client-request-others { margin: 24px 0 0; font: 600 13px/1.4 "Inter", system-ui, sans-serif; color: var(--event-muted, #52645b); }
+.client-request-others + .client-request-list { margin-top: 10px; }
+
 .client-request-announcer {
   position: absolute;
   width: 1px;
