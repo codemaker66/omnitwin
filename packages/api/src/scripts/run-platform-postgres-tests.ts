@@ -66,6 +66,8 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/chair-sizes-migration-postgres.test.ts",
   // Migration 0105: product writes share the foundry's global lock; the kill switch still excludes them (T-677).
   "src/__tests__/foundry-product-lock-postgres.test.ts",
+  // The Truth Mode summary answers a layout's owner and venue floor only, and counts only their layouts.
+  "src/__tests__/truth-mode-summary-tenancy-postgres.test.ts",
 ] as const;
 
 /**
