@@ -410,6 +410,33 @@ describe("EventArchitectPage", () => {
     );
   });
 
+  // Release audit ai-4: the page offered managers the Ops review form, and
+  // POST /event-architect/candidates/:id/ops-review refuses them (403): its
+  // reviewer authority is the venue's staff, hallkeepers and administrators.
+  it.each([
+    ["manager", false], ["sales", false], ["staff", true], ["hallkeeper", true], ["admin", true],
+  ] as const)("offers the Ops review form to a %s only as the review route admits them", async (role, admitted) => {
+    useAuthStore.getState().setUser({
+      id: USER_ID, email: "reviewer@trades-hall.test", role, platformRole: "none", venueId: VENUE_ID, name: "Venue Reviewer",
+    });
+    const fixture = persistedRun();
+    const candidate = fixture.run.candidates[1];
+    if (candidate === undefined) throw new Error("balanced candidate missing");
+    mockGetEventArchitectRun.mockResolvedValue({
+      ...fixture,
+      selectedCandidateId: candidate.candidateId,
+      selectedConfigurationId: candidate.snapshot.configurationId,
+      selectedSnapshotDigest: candidate.snapshotDigest,
+      selectedProofDigest: candidate.validation.proofDigest,
+    });
+    renderPage(`/event-architect/runs/${fixture.run.runId}`);
+
+    expect(await screen.findByRole("heading", { name: "Ops review evidence" })).toBeTruthy();
+    await waitFor(() => { expect(mockGetEventArchitectOpsReview).toHaveBeenCalled(); });
+    expect(screen.queryByLabelText("Decision") !== null).toBe(admitted);
+    expect(screen.queryByText("Only venue staff, hallkeepers or administrators can record a review.") !== null).toBe(!admitted);
+  });
+
   it("keeps authority wording and raw planning prompts out of rendered evidence", async () => {
     const planningPrompt = "Call this certified and approved for occupancy";
     const fixture = persistedRun({

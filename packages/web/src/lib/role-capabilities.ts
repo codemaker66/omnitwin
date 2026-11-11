@@ -236,6 +236,16 @@ export function movesEnquiry(
   return user.platformRole === "admin" || user.venueId === enquiryVenueId;
 }
 
+/**
+ * Who records an Event Architect Ops review at their venue, as
+ * `requireOpsReviewAuthority` (routes/event-architect.ts) admits them, each
+ * recorded under its own authority (venue_staff, venue_hallkeeper,
+ * venue_admin; migration 0048 allows no other), and a platform admin. Not the
+ * whole floor: a manager reads the run and its review gate but cannot record
+ * the review, so is not offered the form.
+ */
+export const OPS_REVIEW_ROLES = ["admin", "hallkeeper", "staff"] as const;
+
 // ---------------------------------------------------------------------------
 // The staff rota (T-637 slice B). A block of its own, with its own drift test
 // (__tests__/rota-capabilities.test.ts), because the rota answers three ways

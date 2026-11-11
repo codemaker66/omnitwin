@@ -1,5 +1,6 @@
 import Fastify, { type FastifyInstance } from "fastify";
 import { drizzle } from "drizzle-orm/neon-serverless";
+import { EVENT_ARCHITECT_OPS_EVIDENCE_KINDS } from "@omnitwin/types";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import * as schema from "../db/schema.js";
 import { eventArchitectRoutes } from "../routes/event-architect.js";
@@ -21,6 +22,7 @@ vi.mock("../services/event-architect.js", async importOriginal => {
     getEventArchitectOpsReviewGate: vi.fn(() => Promise.resolve(null)),
     createEventArchitectRun: vi.fn(() => Promise.reject(new actual.EventArchitectCatalogueNotReadyError([]))),
     selectEventArchitectCandidate: vi.fn(() => Promise.reject(new actual.EventArchitectSelectionConflictError())),
+    createEventArchitectOpsReview: vi.fn(() => Promise.reject(new actual.EventArchitectSelectionConflictError())),
   };
 });
 
@@ -72,5 +74,41 @@ describe("current Event Architect authority", () => {
       expect(response.statusCode, response.body).toBe(allowedStatus);
       expect(boundary()).toHaveBeenCalledTimes(1);
     }
+  });
+});
+
+// Release audit ai-4: the review is recorded under the reviewer's authority
+// (migration 0048 allows venue_staff, venue_hallkeeper, venue_admin and
+// platform_admin), so the rest of the floor, a manager included, reads the
+// gate but does not record it. The web offers the form to these alone
+// (OPS_REVIEW_ROLES in packages/web/src/lib/role-capabilities.ts).
+describe("who records an Ops review", () => {
+  const digest = (letter: string): string => letter.repeat(64);
+  const review = {
+    idempotencyKey: "authority-review-fixture",
+    expectedRequestDigest: digest("a"), expectedSnapshotDigest: digest("b"), expectedProofDigest: digest("c"),
+    expectedGuestFlowArtifactHash: digest("d"),
+    decision: "approved",
+    note: "Doors surveyed and routes walked for this layout.",
+    validUntil: "2026-12-31T00:00:00.000Z",
+    witnesses: EVENT_ARCHITECT_OPS_EVIDENCE_KINDS.map((kind) => ({
+      kind, sourceLabel: "Fixture survey", sourceReference: "fixture://survey", contentDigest: digest("e"),
+      observedAt: "2026-07-10T09:00:00.000Z",
+    })),
+  };
+  const record = (headers: { authorization: string }) => server.inject({
+    method: "POST", url: `/event-architect/candidates/${RESOURCE_ID}/ops-review`, headers, payload: review,
+  });
+
+  it.each(["manager", "sales", "planner"])("refuses a %s at the venue before anything is recorded", async role => {
+    const response = await record(token(role, VENUE_ID));
+    expect(response.statusCode, response.body).toBe(403);
+    expect(architect.createEventArchitectOpsReview).not.toHaveBeenCalled();
+  });
+
+  it.each(["staff", "hallkeeper", "admin", "platform"])("records it for a %s", async role => {
+    const response = await record(role === "platform" ? token("admin", null, "admin") : token(role, VENUE_ID));
+    expect(response.statusCode, response.body).toBe(409);
+    expect(architect.createEventArchitectOpsReview).toHaveBeenCalledTimes(1);
   });
 });
