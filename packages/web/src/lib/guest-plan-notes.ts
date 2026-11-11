@@ -233,6 +233,24 @@ export function heldNotePieceToName<T extends NamedPiece>(held: readonly T[]): T
   return held.find((piece) => ownName(piece) !== "") ?? held[0];
 }
 
+/**
+ * The piece a refused save can be said to be about: the one piece on which
+ * the person's own words stand over a held note, by name. Null when there is
+ * none, or more than one: the API does not say which piece it refused.
+ */
+export function pieceNamedForRefusedSave(state: GuestPlanNoteFacts): string | null {
+  const written = ownWordsOverHeldNotes(state);
+  const [only] = written;
+  if (written.length !== 1 || only === undefined) return null;
+  const asNamed = (object: EditorObject): NamedPiece => ({
+    id: object.id,
+    catalogueItemId: object.assetDefinitionId,
+    groupId: object.groupId,
+    ...(object.label === undefined ? {} : { label: object.label }),
+  });
+  return heldNotePieceName(asNamed(only), state.objects.map(asNamed));
+}
+
 /** Replace's refusal: the selection holds such a piece, so nothing is replaced. */
 export function nothingReplacedLine(name: string): string {
   return `Nothing was replaced: ${name} has a note that cannot be shown here.`;

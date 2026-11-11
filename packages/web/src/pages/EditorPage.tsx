@@ -6,6 +6,7 @@ import { useAuthStore } from "../stores/auth-store.js";
 import { useCockpitStore } from "../stores/cockpit-store.js";
 import { useLayoutTimelinePreviewStore } from "../stores/layout-timeline-preview-store.js";
 import { isLayoutTimelineMutationLocked } from "../lib/layout-timeline-preview-lock.js";
+import { NOTE_HELD_CODE, pieceNamedForRefusedSave } from "../lib/guest-plan-notes.js";
 import { SaveSendPanel } from "../components/editor/SaveSendPanel.js";
 import { MobilePlannerTopBar } from "../components/editor/MobilePlannerTopBar.js";
 import { EventLinkedPlannerBootstrap } from "../components/editor/EventLinkedPlannerBootstrap.js";
@@ -743,13 +744,21 @@ export function SaveErrorToast({
     void useEditorStore.getState().reloadAfterConflict(isAuthenticated);
   };
   const dismiss = (): void => { useEditorStore.getState().clearSaveError(); };
-  const body = conflict === null
+  // A save refused because it would change a note this browser is not shown
+  // (409 NOTE_HELD): the API's own words, as they come, before them the piece
+  // when the planner can tell which (lib/guest-plan-notes). Retrying sends the
+  // same save to the same refusal, so it is not offered.
+  const refusedForHeldNote = useEditorStore((s) => s.saveErrorCode === NOTE_HELD_CODE);
+  const refusedPiece = useEditorStore((s) => (s.saveErrorCode === NOTE_HELD_CODE ? pieceNamedForRefusedSave(s) : null));
+  const heldNoteRefusal = refusedPiece === null ? message : `${refusedPiece}: ${message}`;
+  const failure = conflict === null
     // Honest about where the changes are (T-635 N5, item 9): nothing keeps
     // them outside this tab, and the next attempt is Retry or the next change
     // (EditorBridge's autosave), not a timer. It used to say "Your layout is
     // safe; we'll try again."
     ? `Couldn't save — ${message}. Your changes are held in this tab until they save: press Retry, or your next change will try again.`
     : `Couldn't save — ${message} Server revision ${String(conflict.currentRevision)} is newer than this tab's revision ${String(conflict.expectedRevision)}.`;
+  const body = refusedForHeldNote ? heldNoteRefusal : failure;
   return (
     <div
       role="status"
@@ -771,7 +780,7 @@ export function SaveErrorToast({
     >
       <span style={{ color: "#e88", fontSize: 15 }}>⚠</span>
       <span style={{ flex: 1 }}>{body}</span>
-      {conflict === null ? (
+      {conflict === null && refusedForHeldNote ? null : conflict === null ? (
         <button
           type="button"
           onClick={retry}
