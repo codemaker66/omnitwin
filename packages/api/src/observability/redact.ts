@@ -210,36 +210,64 @@ export type ScrubbableTransaction = Parameters<NonNullable<NodeOptions["beforeSe
 const URL_ATTRIBUTE_KEYS: readonly string[] = ["url.full", "http.url", "http.target", "url.path"];
 
 /**
- * Request headers that are a credential: a sign-in, or a guest plan's claim
- * secret, whose holder can claim the plan and read its notes. A header that
- * comes to carry a credential is added here, and every scrubber drops it:
- * from an event's and a transaction's request headers, and the attribute the
- * SDK writes for it on the request's span.
+ * Headers that carry a credential, or something a reader of a report could
+ * use as one:
+ *   - `authorization`: the sign-in token, and the workflow and metrics tokens;
+ *   - `cookie`: the sign-in provider's `__session` cookie, and any other;
+ *   - the claim-secret header: a guest plan's claim secret, whose holder can
+ *     claim the plan and read its notes;
+ *   - `stripe-signature` (routes/stripe-webhook.ts) and `svix-signature`
+ *     (routes/webhooks.ts): a webhook's signature, which with the body would
+ *     replay the call; `webhook-signature` is the Standard Webhooks name for
+ *     the same, read by no route today;
+ *   - `mcp-session-id` (routes/public-mcp.ts, which also sends one back): its
+ *     holder spends that session's budget;
+ *   - `set-cookie`: a response header, listed so that its attribute is
+ *     dropped should the API ever set a cookie.
+ * A header that comes to carry a credential is added here, and every scrubber
+ * drops it: from an event's and a transaction's request headers, and the
+ * attributes the SDK writes for it on the request's span. A route reads its
+ * headers from the live request, never from an event, so none of this
+ * changes what a route sees.
  */
-export const CREDENTIAL_REQUEST_HEADERS: readonly string[] = ["authorization", "cookie", PLAN_CLAIM_SECRET_HEADER];
+export const CREDENTIAL_REQUEST_HEADERS: readonly string[] = [
+  "authorization", "cookie", PLAN_CLAIM_SECRET_HEADER,
+  "stripe-signature", "svix-signature", "webhook-signature",
+  "mcp-session-id", "set-cookie",
+];
 
-/** The span attribute the SDK writes for a request header (@sentry/core 10.60
- *  utils/request.js httpHeadersToSpanAttributes): the name in lower case,
- *  dashes as underscores. */
-function requestHeaderAttribute(header: string): string {
-  return `http.request.header.${header.toLowerCase().replaceAll("-", "_")}`;
+/** Request headers that carry a credential or the caller's address. */
+const DROPPED_REQUEST_HEADERS: readonly string[] = [
+  ...CREDENTIAL_REQUEST_HEADERS,
+  "x-forwarded-for", "x-real-ip", "forwarded", "cf-connecting-ip", "true-client-ip",
+];
+
+/** The span attributes the SDK can write for a header (@sentry/core 10.60
+ *  utils/request.js httpHeadersToSpanAttributes): `http.request.header.`, or
+ *  `http.response.header.` for a response header, then the name in lower
+ *  case with dashes as underscores. */
+function headerAttributes(header: string): readonly string[] {
+  const name = header.toLowerCase().replaceAll("-", "_");
+  return [`http.request.header.${name}`, `http.response.header.${name}`];
 }
 
-/** The attributes the SDK writes for the credential headers. */
-const CREDENTIAL_ATTRIBUTES: readonly string[] = CREDENTIAL_REQUEST_HEADERS.map(requestHeaderAttribute);
+/** The attributes of every dropped header. */
+const DROPPED_HEADER_ATTRIBUTES: readonly string[] = DROPPED_REQUEST_HEADERS.flatMap(headerAttributes);
 
 /**
- * Whether a span attribute carries a credential: a credential header's own
- * attribute, or one under it. The SDK writes a Cookie header as one attribute
- * per cookie, `http.request.header.cookie.<cookie name>`, and masks a value
- * only when the cookie's name is on its word list (`__session` is; most names
- * are not). The sign-in token's and the claim secret's attributes are masked
- * by 10.60 only because their names contain "auth" and "secret". All are
- * dropped here, in any casing, so none of that rests on the SDK's word list.
+ * Whether a span attribute belongs to a dropped header: the header's own
+ * attribute, or one under it. The SDK writes a Cookie or Set-Cookie header
+ * as one attribute per cookie, `http.request.header.cookie.<cookie name>`,
+ * and masks a value only when the name is on its word list (`__session` is;
+ * most names are not). It masks the sign-in token, the claim secret, the MCP
+ * session id and the address headers only because their names contain
+ * "auth", "secret", "session", "forwarded" or "-ip", and the webhook
+ * signatures not at all. All are dropped here, in any casing, so none of it
+ * rests on the SDK's word list.
  */
-function isCredentialAttribute(key: string): boolean {
+function isDroppedHeaderAttribute(key: string): boolean {
   const lower = key.toLowerCase();
-  return CREDENTIAL_ATTRIBUTES.some((attribute) => lower === attribute || lower.startsWith(`${attribute}.`));
+  return DROPPED_HEADER_ATTRIBUTES.some((attribute) => lower === attribute || lower.startsWith(`${attribute}.`));
 }
 
 /** Span / trace attribute keys that hold a bare query string, or the caller's
@@ -248,12 +276,6 @@ function isCredentialAttribute(key: string): boolean {
 const DROPPED_ATTRIBUTE_KEYS: readonly string[] = [
   "url.query", "http.query",
   "http.client_ip", "client.address", "net.peer.ip", "network.peer.address", "net.sock.peer.addr",
-];
-
-/** Request headers that carry a credential or the caller's address. */
-const DROPPED_REQUEST_HEADERS: readonly string[] = [
-  ...CREDENTIAL_REQUEST_HEADERS,
-  "x-forwarded-for", "x-real-ip", "forwarded", "cf-connecting-ip", "true-client-ip",
 ];
 
 /** The parts of an event's or a transaction's `request` that can hold a credential. */
@@ -289,7 +311,7 @@ function scrubAttributes(data: Record<string, unknown> | undefined): void {
   if (data === undefined) return;
   for (const key of Object.keys(data)) {
     // eslint-disable-next-line @typescript-eslint/no-dynamic-delete -- attribute bags are open-ended records
-    if (DROPPED_ATTRIBUTE_KEYS.includes(key) || isCredentialAttribute(key)) delete data[key];
+    if (DROPPED_ATTRIBUTE_KEYS.includes(key) || isDroppedHeaderAttribute(key)) delete data[key];
   }
   for (const key of URL_ATTRIBUTE_KEYS) {
     const value = data[key];

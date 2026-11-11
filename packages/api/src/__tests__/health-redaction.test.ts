@@ -104,4 +104,18 @@ describe("the API's Sentry beforeSend", () => {
     expect(JSON.stringify(scrubbed)).not.toContain(session);
     expect(JSON.stringify(scrubbed)).not.toContain("rt_synthetic_returning_visit");
   });
+
+  it.each([
+    ["Stripe-Signature", "t=1794355200,v1=5257a869e7ecebeda32affa62cdca3fa51cad7e77a0e56ff536d0ce8e108d8bd"],
+    ["Svix-Signature", "v1,g0hM9SsE+OTPJTGt/tmIKtSyZlE3uFJELVlNIOLJ1OE="],
+    ["Webhook-Signature", "v1,K5oZfzN95Z9UVu1EsfQmfVNQhnkZ2pj9o9NDN/H/pI4="],
+    ["Mcp-Session-Id", "3f1c9a52-7d4e-4b8a-9e61-0c2b5d8f7a14"],
+    ["Set-Cookie", "__session=synthetic-set-cookie-token; Path=/; HttpOnly"],
+  ])("drops %s, as it is sent and as Node names it", (header, value) => {
+    for (const name of [header, header.toLowerCase()]) {
+      const scrubbed = scrubApiSentryEvent({ request: { headers: { [name]: value, "user-agent": "test" } } });
+      expect(scrubbed.request.headers).toEqual({ "user-agent": "test" });
+      expect(JSON.stringify(scrubbed)).not.toContain(value);
+    }
+  });
 });

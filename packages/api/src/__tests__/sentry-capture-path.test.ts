@@ -40,20 +40,47 @@ const OTHER_COOKIE_VALUE = "rt_7hQ2mZx9KpL4wN8s";
 /** A session token as the web app sends it to the API, in Authorization:
  *  Bearer. Its own session and signature, so a failure says which slot. */
 const BEARER_TOKEN = "eyJhbGciOiJSUzI1NiIsImtpZCI6Imluc18ycENhbmFyeUtpZCJ9.eyJzaWQiOiJzZXNzXzJwQ2FuYXJ5QmVhcmVyIiwic3ViIjoidXNlcl8ycENhbmFyeVVzZXIiLCJleHAiOjE3OTQzNTUzMjB9.Ac1FimF80SQ8bAdy4T-g22SxmJtE75sB";
-/** Every credential a request below carries, by what it is. */
-const CREDENTIALS: Readonly<Record<string, string>> = {
+/** A Stripe webhook's signature (routes/stripe-webhook.ts reads it). */
+const STRIPE_SIGNATURE = "t=1794355200,v1=5257a869e7ecebeda32affa62cdca3fa51cad7e77a0e56ff536d0ce8e108d8bd";
+/** A Clerk webhook's svix signature (routes/webhooks.ts reads it). */
+const SVIX_SIGNATURE = "v1,g0hM9SsE+OTPJTGt/tmIKtSyZlE3uFJELVlNIOLJ1OE=";
+/** The same under the Standard Webhooks name, which no route reads today. */
+const WEBHOOK_SIGNATURE = "v1,K5oZfzN95Z9UVu1EsfQmfVNQhnkZ2pj9o9NDN/H/pI4=";
+/** A public MCP session id (routes/public-mcp.ts): whoever holds it spends
+ *  that session's budget. */
+const MCP_SESSION_ID = "3f1c9a52-7d4e-4b8a-9e61-0c2b5d8f7a14";
+/** A second address, in X-Real-IP: the SDK masks it only because the name
+ *  contains "-ip". */
+const SECOND_ADDRESS = "198.51.100.23";
+/** Every value a request below carries that must never leave the API, by
+ *  what it is: the credentials, and the second address. */
+const NEVER_SENT: Readonly<Record<string, string>> = {
   "the claim secret": CLAIM_SECRET,
   "the __session cookie": SESSION_COOKIE_TOKEN,
   [`the ${OTHER_COOKIE} cookie`]: OTHER_COOKIE_VALUE,
   "the bearer token": BEARER_TOKEN,
+  "the Stripe signature": STRIPE_SIGNATURE,
+  "the svix signature": SVIX_SIGNATURE,
+  "the webhook signature": WEBHOOK_SIGNATURE,
+  "the MCP session id": MCP_SESSION_ID,
+  "the X-Real-IP address": SECOND_ADDRESS,
 };
 /** A header no scrubber drops and no SDK word list masks. Where its value
  *  shows up, a credential header's value would have shown up. */
 const CONTROL_HEADER = "x-venviewer-control";
 const CONTROL = "control-6Wq1Zr";
-/** The attributes the SDK writes for a credential header, in any casing; for
- *  a cookie header, one per cookie: `http.request.header.cookie.<name>`. */
-const CREDENTIAL_ATTRIBUTE = /^http\.request\.header\.(cookie|authorization|x_plan_claim_secret)(\.|$)/iu;
+/** The attributes the SDK writes for a credential or address header, as a
+ *  request or a response header, in any casing; for a cookie header, one per
+ *  cookie: `http.request.header.cookie.<name>`. Written out here, not taken
+ *  from redact.ts. */
+const DROPPED_HEADER_ATTRIBUTE = new RegExp(
+  `^http\\.(request|response)\\.header\\.(${[
+    "authorization", "cookie", "set_cookie", "x_plan_claim_secret",
+    "stripe_signature", "svix_signature", "webhook_signature", "mcp_session_id",
+    "x_forwarded_for", "x_real_ip", "forwarded", "cf_connecting_ip", "true_client_ip",
+  ].join("|")})(\\.|$)`,
+  "iu",
+);
 
 interface SentEvent {
   readonly level?: string;
@@ -114,7 +141,9 @@ const eventsIn = (envelopes: readonly string[]): { event: SentEvent; raw: string
 describe("the API's errors in Sentry", () => {
   const envelopes: string[] = [];
   const logLines: string[] = [];
-  /** The headers of every request the API received, as its routes see them. */
+  /** The live header object of every request the API received: the very
+   *  object its routes read, kept (not copied) so the test can show that
+   *  scrubbing a report never changes what a route reads. */
   const received: IncomingHttpHeaders[] = [];
   let ingest: Server;
   let server: FastifyInstance;
@@ -156,7 +185,7 @@ describe("the API's errors in Sentry", () => {
     const capture = await buildSentryCapture(env);
     expect(capture).toBeTypeOf("function");
     registerErrorNormalizer(server, { onServerError: capture });
-    server.addHook("onRequest", (request, _reply, done) => { received.push({ ...request.headers }); done(); });
+    server.addHook("onRequest", (request, _reply, done) => { received.push(request.raw.headers); done(); });
 
     server.get("/boom", () => { throw new Error("the database fell over"); });
     server.get("/missing", () => { throw Object.assign(new Error("No such proposal"), { statusCode: 404 }); });
@@ -167,17 +196,23 @@ describe("the API's errors in Sentry", () => {
     base = `http://127.0.0.1:${String((server.server.address() as AddressInfo).port)}`;
   }, 60_000);
 
-  /** Calls the API as a signed-in browser could: every request carries a
-   *  bearer token, the session cookie and another cookie, the guest plan's
-   *  claim secret, and the control header beside them. */
+  /** Calls the API with every credential header it reads: a bearer token,
+   *  the session cookie and another cookie, the guest plan's claim secret,
+   *  the webhook signatures and an MCP session id; two address headers; and
+   *  the control header beside them. */
   async function call(method: string, path: string, body?: unknown): Promise<number> {
     const response = await fetch(`${base}${path}`, {
       method,
       headers: {
         "x-forwarded-for": VISITOR_IP,
+        "X-Real-IP": SECOND_ADDRESS,
         Authorization: `Bearer ${BEARER_TOKEN}`,
         Cookie: `__session=${SESSION_COOKIE_TOKEN}; ${OTHER_COOKIE}=${OTHER_COOKIE_VALUE}`,
         "X-Plan-Claim-Secret": CLAIM_SECRET,
+        "Stripe-Signature": STRIPE_SIGNATURE,
+        "Svix-Signature": SVIX_SIGNATURE,
+        "Webhook-Signature": WEBHOOK_SIGNATURE,
+        "Mcp-Session-Id": MCP_SESSION_ID,
         "X-Venviewer-Control": CONTROL,
         ...(body === undefined ? {} : { "content-type": "application/json" }),
       },
@@ -252,15 +287,20 @@ describe("the API's errors in Sentry", () => {
     expect(text).not.toContain(TOKEN);
   });
 
-  it("sends no credential anywhere: no sign-in token, cookie or claim secret in any event, transaction, span or log line", async () => {
+  it("sends no credential or address anywhere: no sign-in token, cookie, claim secret, webhook signature, MCP session id or forwarded address in any event, transaction, span or log line", async () => {
     // One more server error, its header names cased as a client may send
     // them and the cookies split over two lines (Node joins them with "; ").
     expect(await rawCall("/boom", [
       "x-forwarded-for", VISITOR_IP,
+      "X-REAL-IP", SECOND_ADDRESS,
       "AUTHORIZATION", `Bearer ${BEARER_TOKEN}`,
       "COOKIE", `__session=${SESSION_COOKIE_TOKEN}`,
       "cookie", `${OTHER_COOKIE}=${OTHER_COOKIE_VALUE}`,
       "X-PLAN-CLAIM-SECRET", CLAIM_SECRET,
+      "STRIPE-SIGNATURE", STRIPE_SIGNATURE,
+      "svix-signature", SVIX_SIGNATURE,
+      "WEBHOOK-SIGNATURE", WEBHOOK_SIGNATURE,
+      "MCP-SESSION-ID", MCP_SESSION_ID,
       "X-Venviewer-Control", CONTROL,
     ])).toBe(500);
     expect(await flush(5_000)).toBe(true);
@@ -269,12 +309,20 @@ describe("the API's errors in Sentry", () => {
     // The API's transactions, not the stand-in ingest's own (it is an http
     // server in this process, so the SDK traces the envelopes it receives).
     const transactions = itemsIn(envelopes, "transaction").filter(({ event }) => event.request?.url?.startsWith(base) === true);
-    // Every request carried every credential, and the API received them.
+    // Every request carried every header, the API received them, and they
+    // are still on the live header objects the routes read, after every
+    // report about those requests has been scrubbed and sent.
     expect(received.length).toBeGreaterThanOrEqual(6);
     for (const headers of received) {
       expect(headers[PLAN_CLAIM_SECRET_HEADER]).toBe(CLAIM_SECRET);
       expect(headers.authorization).toBe(`Bearer ${BEARER_TOKEN}`);
       expect(headers.cookie).toBe(`__session=${SESSION_COOKIE_TOKEN}; ${OTHER_COOKIE}=${OTHER_COOKIE_VALUE}`);
+      expect(headers["stripe-signature"]).toBe(STRIPE_SIGNATURE);
+      expect(headers["svix-signature"]).toBe(SVIX_SIGNATURE);
+      expect(headers["webhook-signature"]).toBe(WEBHOOK_SIGNATURE);
+      expect(headers["mcp-session-id"]).toBe(MCP_SESSION_ID);
+      expect(headers["x-forwarded-for"]).toBe(VISITOR_IP);
+      expect(headers["x-real-ip"]).toBe(SECOND_ADDRESS);
     }
     // Not vacuous: the header beside them, which nothing scrubs, reached every
     // slot a credential header would: each event's and each transaction's
@@ -289,18 +337,19 @@ describe("the API's errors in Sentry", () => {
       .filter(({ event }) => event.contexts?.trace?.data?.[headerAttribute(CONTROL_HEADER)] !== CONTROL)
       .map(({ event }) => `${name(event)}: ${JSON.stringify(event.contexts?.trace?.data)}`)).toEqual([]);
     // The slots that would hold them: no parsed cookies on any event or
-    // transaction, and no credential header's attribute on any trace or span.
+    // transaction, and no credential or address header's attribute on any
+    // trace or span, even one the SDK filled with "[Filtered]".
     // (Soft, so one run names every slot that leaks.)
     expect.soft([...events, ...transactions].filter(({ event }) => event.request?.cookies !== undefined)
       .map(({ event }) => `${name(event)}: ${JSON.stringify(event.request?.cookies)}`)).toEqual([]);
     const attributeKeys = transactions.flatMap(({ event }) => [event.contexts?.trace?.data, ...(event.spans ?? []).map((span) => span.data)])
       .flatMap((data) => Object.keys(data ?? {}));
-    expect.soft(attributeKeys.filter((key) => CREDENTIAL_ATTRIBUTE.test(key))).toEqual([]);
+    expect.soft([...new Set(attributeKeys.filter((key) => DROPPED_HEADER_ATTRIBUTE.test(key)))].sort()).toEqual([]);
     // The values: in no slot of any envelope, nor in their raw text, nor in
     // the request log.
     const log = logLines.join("");
     expect(log).toContain("/boom");
-    for (const [what, value] of Object.entries(CREDENTIALS)) {
+    for (const [what, value] of Object.entries(NEVER_SENT)) {
       expect.soft(wherever(value, envelopes), what).toEqual([]);
       expect.soft(envelopes.join("\n"), what).not.toContain(value);
       expect.soft(log, what).not.toContain(value);
