@@ -67,7 +67,9 @@ describe.skipIf(databaseUrl === undefined)("managers keep the inventory, on real
     if (databaseUrl === undefined) throw new Error("Local fixture database URL required");
     const url = new URL(databaseUrl);
     // Loopback and the dedicated name are the safety; any port (CI serves 55476).
-    if (url.hostname !== "127.0.0.1" || !url.pathname.startsWith("/venviewer_inventory_")) {
+    // No query string or fragment: a client takes ?host= over the address's own host.
+    if (!["postgres:", "postgresql:"].includes(url.protocol) || url.hostname !== "127.0.0.1"
+      || !url.pathname.startsWith("/venviewer_inventory_") || url.search !== "" || url.hash !== "") {
       throw new Error("Inventory manager tests require a disposable local venviewer_inventory_ database on 127.0.0.1");
     }
     const migrationPool = new PgPool({ connectionString: databaseUrl, max: 1 });

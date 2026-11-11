@@ -51,9 +51,12 @@ function isSafeDisposableDatabaseUrl(databaseUrl: string): boolean {
     const parsed = new URL(databaseUrl);
     const databaseName = parsed.pathname.slice(1);
     // Loopback and the dedicated name are the safety; any port (CI serves 55476).
-    return (parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1")
+    // No query string or fragment: a client takes ?host= over the address's own host.
+    return ["postgres:", "postgresql:"].includes(parsed.protocol)
+      && (parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1")
       && databaseName.startsWith(SAFE_DATABASE_PREFIX)
-      && /^[a-z0-9_]+$/u.test(databaseName);
+      && /^[a-z0-9_]+$/u.test(databaseName)
+      && parsed.search === "" && parsed.hash === "";
   } catch {
     return false;
   }

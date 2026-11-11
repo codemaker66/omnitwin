@@ -49,7 +49,9 @@ describe.skipIf(databaseUrl === undefined)("venue inventory real PostgreSQL tran
   beforeAll(async () => {
     if (databaseUrl === undefined) throw new Error("Local database URL required");
     const url = new URL(databaseUrl);
-    if (!["localhost", "127.0.0.1"].includes(url.hostname) || !url.pathname.startsWith("/venviewer_inventory_")) {
+    // No query string or fragment: a client takes ?host= over the address's own host.
+    if (!["postgres:", "postgresql:"].includes(url.protocol) || !["localhost", "127.0.0.1"].includes(url.hostname)
+      || !url.pathname.startsWith("/venviewer_inventory_") || url.search !== "" || url.hash !== "") {
       throw new Error("Inventory integration tests require a dedicated local venviewer_inventory_ database");
     }
     const migrationPool = new PgPool({ connectionString: databaseUrl, max: 1 });
