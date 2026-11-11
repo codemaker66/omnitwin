@@ -77,11 +77,16 @@ const VENUE_EMAIL = "info@tradeshallglasgow.co.uk";
 const VENUE_PHONE = "+44 141 552 2418";
 const VENUE_PHONE_HREF = "tel:+441415522418";
 
-/** The date the terms and the accessibility statement were written. It is the
- *  terms' date; the accessibility statement says it was written then, and
- *  carries its own date for when it last changed. */
-const LAST_UPDATED = "15 August 2026";
-const ORIGINAL_EDITION = { text: LAST_UPDATED, iso: "2026-08-15" } as const;
+/** The date the terms and the accessibility statement were written. The
+ *  accessibility statement says it was written then; each document carries
+ *  its own date for when it last changed. */
+const FIRST_WRITTEN = "15 August 2026";
+
+/** The terms' own date: it changed on 11 November, when the Grand Hall's
+ *  dimensions became the ones measured from its laser scan, so "Capacities,
+ *  dimensions and rates" stopped calling every room dimension the venue's own
+ *  published figure (Blake, 11 November 2026: "The measured 21.14 x 10.59 m"). */
+const TERMS_UPDATED = { text: "11 November 2026", iso: "2026-11-11" } as const;
 
 /** The accessibility statement's own date: it changed on 8 November, when it
  *  listed the planner's single-key shortcuts and the hints cut off in its
@@ -659,7 +664,7 @@ const TERMS: LegalDocument = {
   title: "Terms of Service",
   standfirst:
     "The terms on which you may use this site and the planning tools on it — what the service is, what it is not, and what happens when you send an enquiry.",
-  updated: ORIGINAL_EDITION,
+  updated: TERMS_UPDATED,
   sections: [
     {
       id: "these-terms",
@@ -717,7 +722,7 @@ const TERMS: LegalDocument = {
       blocks: [
         {
           kind: "p",
-          text: "The room capacities, dimensions and rates shown on this site are the venue's own published figures.",
+          text: "The room capacities and rates shown on this site are the venue's own published figures. So are the room dimensions, except the Grand Hall's, which were measured from a laser scan of the hall.",
         },
         {
           kind: "p",
@@ -835,7 +840,7 @@ const TERMS: LegalDocument = {
       blocks: [
         {
           kind: "p",
-          text: `We may change these terms. The version in force is the one on this page, dated ${LAST_UPDATED}. Continuing to use the site after a change means you accept the version then published.`,
+          text: `We may change these terms. The version in force is the one on this page, dated ${TERMS_UPDATED.text}. Continuing to use the site after a change means you accept the version then published.`,
         },
       ],
     },
@@ -880,7 +885,7 @@ const ACCESSIBILITY: LegalDocument = {
       blocks: [
         {
           kind: "p",
-          text: `This statement covers the public pages of the Trades House of Glasgow's Venviewer site: the room pages, the enquiry form, the virtual walkthrough and the planning tools reached from them. It was written on ${LAST_UPDATED} by the team that builds the site, and it reflects our own testing.`,
+          text: `This statement covers the public pages of the Trades House of Glasgow's Venviewer site: the room pages, the enquiry form, the virtual walkthrough and the planning tools reached from them. It was written on ${FIRST_WRITTEN} by the team that builds the site, and it reflects our own testing.`,
         },
       ],
     },
