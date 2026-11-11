@@ -103,8 +103,13 @@ function saveBytes(request: FastifyRequest): number {
 // restores it and saves. So a save's notes are taken as the whole truth only
 // when it presents the secret AND declares (`notesIncluded`) that the document
 // it saves was read with them. Every other save is settled note by note
-// (settledNotes below): it never clears a note it did not read, and it is
-// never answered 200 for a note that was not taken.
+// (settledNotes below): it never clears or changes the note of a piece it
+// sends without having read that note, and it is never answered 200 for a
+// note that was not taken.
+//
+// What this does not do: a piece left out of a save is removed, and its note
+// with it. Anyone holding the plan's id may remove a piece, as before; the
+// planner shows which pieces hold a note the person cannot see.
 // ---------------------------------------------------------------------------
 
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
@@ -192,8 +197,8 @@ interface SettledNotes {
  *     sent: changed or cleared. This is how a browser goes on writing,
  *     corrects or removes a note it wrote itself, which the planner's
  *     autosave often stores half-typed;
- *   - any other note on a piece that holds a different one is refused, by
- *     piece. Storing the old note and answering 200 threw the sender's words
+ *   - any other note on a piece that holds a different one refuses the whole
+ *     save. Storing the old note and answering 200 threw the sender's words
  *     away unseen.
  *
  * Must run inside the save's transaction, after the revision is advanced, so
@@ -250,25 +255,27 @@ function withoutUnsentNotes(
   });
 }
 
-/** The refusal of a save that would change a note its sender was not shown.
- *  Nothing of the save is stored. The planner shows `error` as it stands, a
- *  page loaded before it knew this code included. */
-function noteHeldBody(pieceIds: readonly string[]): {
-  error: string; code: "NOTE_HELD"; details: { pieceIds: readonly string[] };
-} {
-  return {
-    error: "A note on this plan cannot be changed from here, and this save tried to change it. Reload the page, or clear the note you wrote on that piece",
-    code: "NOTE_HELD",
-    details: { pieceIds },
-  };
-}
+/**
+ * The refusal of a save that would change a note its sender was not shown.
+ * Nothing of the save is stored. The planner shows `error` as it stands, a
+ * page loaded before it knew this code included.
+ *
+ * It does not say which piece. A refusal costs its sender nothing and leaves
+ * no trace, so naming the pieces would let one save try a guess at every held
+ * note at once and read off which were right. As it is, a guess is one save,
+ * within the route's limit, and a right one is written to the plan.
+ */
+const NOTE_HELD_REFUSAL = {
+  error: "A note on this plan cannot be changed from here, and this save tried to change it. Reload the page, or clear the note you wrote on that piece",
+  code: "NOTE_HELD",
+} as const;
 
 /** How a guest save ends. Only "saved" keeps anything it wrote. */
 type GuestSaveOutcome =
   | { readonly status: "saved"; readonly objects: readonly PlacedObjectRow[]; readonly revision: number }
   | { readonly status: "conflict"; readonly currentRevision: number }
   | { readonly status: "locked"; readonly reviewStatus: string }
-  | { readonly status: "note-held"; readonly pieceIds: readonly string[] };
+  | { readonly status: "note-held" };
 
 // Punch list #24: accepts a data URL (PNG or JPEG) as the thumbnail for a
 // public preview config. The .max() checks the data URL's length; every
@@ -555,7 +562,7 @@ export async function publicConfigRoutes(
       const settled: SettledNotes = notesAsSent
         ? { pieces: parsed.data.objects, refused: [] }
         : await settledNotes(tx, configId, parsed.data.objects);
-      if (settled.refused.length > 0) return refuse({ status: "note-held", pieceIds: settled.refused });
+      if (settled.refused.length > 0) return refuse({ status: "note-held" });
       txResults.push(...await syncPlacedObjectBatch(tx, configId, settled.pieces));
 
       await tx.insert(configurationLayoutRevisions).values({
@@ -580,7 +587,7 @@ export async function publicConfigRoutes(
       return reply.status(409).send(lockedFor(saveResult.reviewStatus));
     }
     if (saveResult.status === "note-held") {
-      return reply.status(409).send(noteHeldBody(saveResult.pieceIds));
+      return reply.status(409).send(NOTE_HELD_REFUSAL);
     }
     if (saveResult.status === "conflict") {
       const change = await loadRevisionChange(db, configId, saveResult.currentRevision,

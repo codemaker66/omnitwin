@@ -270,7 +270,7 @@ describe.skipIf(target === undefined)("who can find and read a guest's plan, thr
     expect(heldAt(reopened.objects)).toEqual([3, 4, 6]);
   });
 
-  it("refuses a save that would change a note its sender was not shown, and says which piece", async () => {
+  it("refuses a save that would change a note its sender was not shown, without saying which piece or anything of the note", async () => {
     const { plan, withNote, bare } = await planWithOneNote();
     const before = await asMade(plan);
 
@@ -279,8 +279,12 @@ describe.skipIf(target === undefined)("who can find and read a guest's plan, thr
     const friend = { ...plan };
     const refused = await send(friend, [piece(7, "TEST ONLY overwritten", withNote.id), piece(8, undefined, bare.id)]);
     expect(refused.statusCode, refused.body.slice(0, 300)).toBe(409);
-    expect(JSON.parse(refused.body)).toMatchObject({ code: "NOTE_HELD", details: { pieceIds: [withNote.id] } });
+    // The refusal is its code and its sentence. Naming the piece would let one
+    // save try a guess at every held note and read off which were right.
+    expect(Object.keys(JSON.parse(refused.body) as Record<string, unknown>).sort()).toEqual(["code", "error"]);
+    expect(JSON.parse(refused.body)).toMatchObject({ code: "NOTE_HELD" });
     expect(refused.body.includes(ALLERGY)).toBe(false);
+    expect(refused.body.includes(withNote.id)).toBe(false);
     expect(await asMade(plan)).toEqual(before);
 
     // The plan's revision did not move: the same save without that note lands.
@@ -313,7 +317,8 @@ describe.skipIf(target === undefined)("who can find and read a guest's plan, thr
 
     // Naming a note the piece does not hold shows nothing was read: refused.
     const guessed = await send(friend, [...others, { ...piece(4, "TEST ONLY guess", bare.id), replacesNote: "TEST ONLY not it" }]);
-    expect(JSON.parse(guessed.body)).toMatchObject({ code: "NOTE_HELD", details: { pieceIds: [bare.id] } });
+    expect(guessed.statusCode).toBe(409);
+    expect(JSON.parse(guessed.body)).toMatchObject({ code: "NOTE_HELD" });
 
     // And it can take its own note off again.
     const cleared = await save(friend, [...others, { ...piece(4, undefined, bare.id), replacesNote: "TEST ONLY VIP table by the door" }]);
@@ -352,7 +357,7 @@ describe.skipIf(target === undefined)("who can find and read a guest's plan, thr
     expect(notesByPosition((await asMade(plan)).objects)).toEqual({ 2: null });
   });
 
-  it("never stores the mark that a note is held, whoever sends it", async () => {
+  it("stores no held-note mark sent to the public save, and passes on none found on a row", async () => {
     const { plan, withNote, bare } = await planWithOneNote();
     const marked = { ...piece(4, undefined, bare.id), metadata: { clothed: false, groupId: null, noteHeld: true } };
     const saved = await save({ ...plan }, [piece(2, undefined, withNote.id), marked]);
