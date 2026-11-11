@@ -617,6 +617,9 @@ export async function configurationReviewRoutes(
     // `config=` selects the submission to open.
     const reviewUrl = `${baseFeUrl}/dashboard?view=reviews&config=${config.id}`;
     for (const recipient of ctx.reviewers) {
+      // Whoever submitted it is not told of their own submission: a venue
+      // admin or manager sending a layout in is now on this list too.
+      if (recipient.id === ctx.actor.id) continue;
       fireEmail(
         db,
         request.log,

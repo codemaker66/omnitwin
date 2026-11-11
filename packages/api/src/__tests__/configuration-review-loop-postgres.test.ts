@@ -244,6 +244,21 @@ describe.skipIf(target === undefined)("the layout review loop on migrated Postgr
     await expect.poll(told).toEqual([f.users.staff, manager, admin].sort());
   });
 
+  it("does not email a submission to the person at the venue who submitted it", async () => {
+    const f = await fixture();
+    const manager = randomUUID();
+    await db.insert(schema.users).values({ id: manager, venueId: f.venueId, name: "Manager", email: `${manager}@loop.invalid`, role: "manager" });
+
+    // The venue's staff member sends the planner's layout in on their behalf.
+    await expectReview(f, "staff", "submit");
+
+    const told = (): string[] => submittedEmailKeys().map((key) => key.split(":").at(-1) ?? "").sort();
+    await expect.poll(told).toEqual([manager]);
+    // Settled at one: the staff member who pressed submit hears nothing of it.
+    await new Promise((resolve) => { setTimeout(resolve, 150); });
+    expect(told()).toEqual([manager]);
+  });
+
   it("a draft identical to its latest version stays a draft, as before", async () => {
     const f = await fixture();
     await expectReview(f, "planner", "submit");
