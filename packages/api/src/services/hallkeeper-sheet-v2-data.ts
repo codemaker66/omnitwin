@@ -1,4 +1,4 @@
-import { eq, ne, and, gte, lte, isNull, isNotNull, inArray, desc, asc } from "drizzle-orm";
+import { eq, ne, and, gte, lte, isNull, isNotNull, inArray, desc, asc, sql } from "drizzle-orm";
 import type {
   EventInstructions,
   HallkeeperSheetV2,
@@ -10,7 +10,7 @@ import { GangwayReviewSchema, hasInstructionContent, type GangwayReview } from "
 import {
   configurations, placedObjects, assetDefinitions, assetAccessories,
   spaces, venues, configurationSheetSnapshots, users,
-  bookings, eventConfigurationLinks, eventPhases, layoutVariants, turnaroundRules,
+  bookings, eventConfigurationLinks, eventPhases, events, layoutVariants, phaseLayoutSnapshots, turnaroundRules,
 } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { REAL_METRE_COORDINATE_SPACE, type LayoutCoordinateSpace } from "../db/coordinate-space.js";
@@ -454,13 +454,40 @@ export function deriveSheetTiming(
 }
 
 /**
- * Every event this configuration is attached to: explicit event links and
- * non-archived layout variants. Both are event-owned references, so a
- * configuration that was never linked to an event yields no booking and
- * therefore no timing.
+ * Every event this configuration serves: explicit event links, non-archived
+ * layout variants, and events with a phase in this configuration's own room
+ * whose latest recorded layout is a frozen snapshot of this configuration.
+ * Freezing a layout onto a phase writes no link (routes/phase-layout-
+ * snapshots.ts), yet the Day Board offers the layout for that event by the
+ * same rule (web lib/event-linked-layouts.ts candidateConfigurations), so the
+ * sheet's times and its ticks must count that event as the layout's
+ * (T-695 api-eventday-sheet-6). All are event-owned references, so a
+ * configuration that serves no event yields no booking and therefore no
+ * timing.
  */
 export async function linkedEventIds(db: Database, configId: string): Promise<string[]> {
-  const [links, variants] = await Promise.all([
+  // Each phase's latest recorded layout, among the phases this configuration
+  // was ever frozen onto: an older frozen entry must not revive a phase that
+  // has since moved to another layout.
+  const latestPhaseLayout = db.selectDistinctOn([phaseLayoutSnapshots.eventPhaseId], {
+    eventPhaseId: phaseLayoutSnapshots.eventPhaseId,
+    configurationId: phaseLayoutSnapshots.configurationId,
+    status: phaseLayoutSnapshots.status,
+  })
+    .from(phaseLayoutSnapshots)
+    .where(inArray(
+      phaseLayoutSnapshots.eventPhaseId,
+      db.select({ eventPhaseId: phaseLayoutSnapshots.eventPhaseId })
+        .from(phaseLayoutSnapshots)
+        .where(eq(phaseLayoutSnapshots.configurationId, configId)),
+    ))
+    .orderBy(
+      phaseLayoutSnapshots.eventPhaseId,
+      desc(sql`coalesce(${phaseLayoutSnapshots.frozenAt}, ${phaseLayoutSnapshots.createdAt})`),
+      desc(phaseLayoutSnapshots.id),
+    )
+    .as("latest_phase_layout");
+  const [links, variants, frozenPlans] = await Promise.all([
     db.select({ eventId: eventConfigurationLinks.eventId })
       .from(eventConfigurationLinks)
       .where(eq(eventConfigurationLinks.configurationId, configId)),
@@ -470,8 +497,21 @@ export async function linkedEventIds(db: Database, configId: string): Promise<st
         eq(layoutVariants.configurationId, configId),
         ne(layoutVariants.status, "archived"),
       )),
+    db.select({ eventId: eventPhases.eventId })
+      .from(latestPhaseLayout)
+      .innerJoin(eventPhases, eq(eventPhases.id, latestPhaseLayout.eventPhaseId))
+      .innerJoin(configurations, eq(configurations.id, latestPhaseLayout.configurationId))
+      .innerJoin(events, eq(events.id, eventPhases.eventId))
+      .where(and(
+        eq(latestPhaseLayout.configurationId, configId),
+        eq(latestPhaseLayout.status, "frozen"),
+        // The phase's room is the layout's room, and the event its venue's.
+        eq(eventPhases.spaceId, configurations.spaceId),
+        eq(events.venueId, configurations.venueId),
+        isNull(events.deletedAt),
+      )),
   ]);
-  return [...new Set([...links, ...variants].map((row) => row.eventId))];
+  return [...new Set([...links, ...variants, ...frozenPlans].map((row) => row.eventId))];
 }
 
 /**

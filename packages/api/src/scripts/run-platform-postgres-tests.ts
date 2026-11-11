@@ -70,6 +70,8 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/grand-hall-e57-migration-postgres.test.ts",
   // A second compile of the same plan returns the event's pack: the floor keeps its ticks, suppliers hear of no change.
   "src/__tests__/ops-handoff-recompile-postgres.test.ts",
+  // A layout reached through a frozen phase plan: its event's ticks and times agree; an unrelated event gets neither.
+  "src/__tests__/hallkeeper-phase-plan-postgres.test.ts",
 ] as const;
 
 /**
