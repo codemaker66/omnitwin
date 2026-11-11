@@ -14,10 +14,12 @@ import type { DayBoardLane, DayBoardSlot } from "./day-board-state.js";
 // began and never becomes the next morning's. "Open by" is the first stretch
 // the day begins; "Lock up after" is the last one's end, when that comes by
 // the small hours after the day. A stretch already running as the day begins
-// (an exhibition, a setup through the night) holds the building from before,
-// and one that runs on past the night holds it after: each is named instead
-// of a time, and a booking running for days is said to have no daily hours on
-// the Diary rather than borrowing another booking's. A house block is a room
+// (a setup through the night) holds the building from before, and one that
+// runs on past the night holds it after: each is named instead of a time.
+// A booking running for days (an exhibition) has no daily hours on the
+// Diary: only its first setup and its last clear-down are known, and they
+// count; on each day it runs it is named, so the day's own times read as what
+// they are, the other bookings' needs, beside it. A house block is a room
 // taken out of use, not a reason to open the building, so it sets nothing.
 // ---------------------------------------------------------------------------
 
@@ -32,7 +34,7 @@ export interface BuildingMoment {
   readonly why: string;
 }
 
-/** A booking holding the building across the edge of the day. */
+/** A booking holding the building across the edge of the day, or running for days. */
 export interface BuildingHold {
   readonly title: string;
   readonly fromMs: number;
@@ -43,6 +45,12 @@ export interface BuildingHold {
   readonly days: boolean;
 }
 
+/** A booking running for days, and where this day falls in it. */
+export interface LongHold extends BuildingHold {
+  readonly startsToday: boolean;
+  readonly endsToday: boolean;
+}
+
 export interface BuildingDay {
   readonly openBy: BuildingMoment | null;
   readonly lockUpAfter: BuildingMoment | null;
@@ -50,6 +58,8 @@ export interface BuildingDay {
   readonly heldFrom: BuildingHold | null;
   /** Still in use after the night; then there is no "lock up after". */
   readonly heldUntil: BuildingHold | null;
+  /** Bookings running for days that run on this day, with no daily hours on the Diary. */
+  readonly longHolds: readonly LongHold[];
   /** Suppliers marked in and not out, earliest in first. */
   readonly stillIn: readonly SupplierArrival[];
 }
@@ -57,36 +67,45 @@ export interface BuildingDay {
 interface Need {
   readonly fromMs: number;
   readonly toMs: number;
-  /** Why the building opens for it, and why it can lock up after it. */
-  readonly opens: string;
-  readonly closes: string;
+  /** Why the building opens for it, and why it can lock up after it; null where it does neither. */
+  readonly opens: string | null;
+  readonly closes: string | null;
   readonly hold: BuildingHold;
 }
 
-function slotNeed(slot: DayBoardSlot): Need | null {
-  if (slot.kind === "internal_block" || slot.kind === "prospect") return null;
-  const provisional = slot.kind === "hold" ? " (provisional)" : "";
-  const setsUp = slot.setupStartsAtMs < slot.startsAtMs;
-  const toMs = Math.max(slot.endsAtMs, slot.segments.clearDownEndsAtMs);
+function holdOf(slot: DayBoardSlot): BuildingHold {
   return {
+    title: slot.title,
     fromMs: slot.setupStartsAtMs,
-    toMs,
-    opens: `${slot.title} ${setsUp ? "sets up" : "begins"}${provisional}`,
-    closes: `${slot.title} ${toMs > slot.endsAtMs ? "clears" : "ends"}${provisional}`,
-    hold: { title: slot.title, fromMs: slot.setupStartsAtMs, toMs, setsUp, days: slot.endsAtMs - slot.startsAtMs >= DAY_MS },
+    toMs: Math.max(slot.endsAtMs, slot.segments.clearDownEndsAtMs),
+    setsUp: slot.setupStartsAtMs < slot.startsAtMs,
+    days: slot.endsAtMs - slot.startsAtMs >= DAY_MS,
   };
+}
+
+/** A function's span; a booking running for days gives only its known edges. */
+function slotNeeds(slot: DayBoardSlot): readonly Need[] {
+  if (slot.kind === "internal_block" || slot.kind === "prospect") return [];
+  const provisional = slot.kind === "hold" ? " (provisional)" : "";
+  const hold = holdOf(slot);
+  const opens = `${slot.title} ${hold.setsUp ? "sets up" : "begins"}${provisional}`;
+  const closes = `${slot.title} ${hold.toMs > slot.endsAtMs ? "clears" : "ends"}${provisional}`;
+  if (!hold.days) return [{ fromMs: hold.fromMs, toMs: hold.toMs, opens, closes, hold }];
+  return [
+    { fromMs: hold.fromMs, toMs: hold.fromMs, opens, closes: null, hold },
+    { fromMs: hold.toMs, toMs: hold.toMs, opens: null, closes, hold },
+  ];
 }
 
 function arrivalNeed(arrival: SupplierArrival): Need {
   const fromMs = Date.parse(arrival.arrivesAt);
-  const toMs = arrival.leavesBy === null ? fromMs : Date.parse(arrival.leavesBy);
-  return {
-    fromMs,
-    toMs,
-    opens: `${arrival.supplierName} due`,
-    closes: `${arrival.supplierName} out`,
-    hold: { title: arrival.supplierName, fromMs, toMs, setsUp: false, days: false },
-  };
+  const opens = `${arrival.supplierName} due`;
+  // With no leaving time, nobody knows when they go: they open the building, never close it.
+  if (arrival.leavesBy === null) {
+    return { fromMs, toMs: fromMs, opens, closes: null, hold: { title: arrival.supplierName, fromMs, toMs: fromMs, setsUp: false, days: false } };
+  }
+  const toMs = Date.parse(arrival.leavesBy);
+  return { fromMs, toMs, opens, closes: `${arrival.supplierName} out`, hold: { title: arrival.supplierName, fromMs, toMs, setsUp: false, days: false } };
 }
 
 interface Stretch {
@@ -109,11 +128,28 @@ function stretchesOf(needs: readonly Need[]): Stretch[] {
   return stretches;
 }
 
-function earliest(needs: readonly Need[]): Need | undefined {
-  return needs.reduce<Need | undefined>((first, need) => (first === undefined || need.fromMs < first.fromMs ? need : first), undefined);
+/** The first need that opens the building. */
+function earliest(needs: readonly Need[]): (Need & { readonly opens: string }) | undefined {
+  let first: (Need & { readonly opens: string }) | undefined;
+  for (const need of needs) {
+    const opens = need.opens;
+    if (opens !== null && (first === undefined || need.fromMs < first.fromMs)) first = { ...need, opens };
+  }
+  return first;
 }
 
-function latest(needs: readonly Need[]): Need | undefined {
+/** The last need that closes it. */
+function latest(needs: readonly Need[]): (Need & { readonly closes: string }) | undefined {
+  let last: (Need & { readonly closes: string }) | undefined;
+  for (const need of needs) {
+    const closes = need.closes;
+    if (closes !== null && (last === undefined || need.toMs > last.toMs)) last = { ...need, closes };
+  }
+  return last;
+}
+
+/** The need that keeps a stretch going longest, whether or not it closes the building. */
+function longest(needs: readonly Need[]): Need | undefined {
   return needs.reduce<Need | undefined>((last, need) => (last === undefined || need.toMs > last.toMs ? need : last), undefined);
 }
 
@@ -141,27 +177,32 @@ export function buildingDay(
   const lastNightEndsMs = at(day.date, nightHour);
   const tonightEndsMs = at(nextDate(day.date, 1), nightHour);
 
-  const needs = [
-    ...lanes.flatMap((lane) => lane.slots.flatMap((slot) => slotNeed(slot) ?? [])),
-    ...arrivals.map(arrivalNeed),
-  ];
+  const slots = lanes.flatMap((lane) => lane.slots);
+  const needs = [...slots.flatMap(slotNeeds), ...arrivals.map(arrivalNeed)];
   const stretches = stretchesOf(needs);
   // A stretch running as the day begins, past last night's lock-up, holds the building from before.
   const carried = stretches.find((stretch) => stretch.fromMs < startMs && stretch.toMs > lastNightEndsMs);
   const own = stretches.filter((stretch) => stretch.fromMs >= startMs && stretch.fromMs < endMs);
-  const first = own[0];
-  const opener = carried === undefined && first !== undefined ? earliest(first.needs) : undefined;
-  const last = [...(carried === undefined ? [] : [carried]), ...own]
-    .reduce<Stretch | undefined>((end, stretch) => (end === undefined || stretch.toMs > end.toMs ? stretch : end), undefined);
-  const closer = last === undefined ? undefined : latest(last.needs);
+  const opener = carried === undefined ? earliest(own.flatMap((stretch) => stretch.needs)) : undefined;
+  const mine = [...(carried === undefined ? [] : [carried]), ...own];
+  const last = mine.reduce<Stretch | undefined>((end, stretch) => (end === undefined || stretch.toMs > end.toMs ? stretch : end), undefined);
   const runsOn = last !== undefined && last.toMs > tonightEndsMs;
-  const heldFrom = carried === undefined ? undefined : earliest(carried.needs);
+  const closer = latest(mine.flatMap((stretch) => stretch.needs));
+  const heldFrom = carried === undefined ? undefined : earliest(carried.needs) ?? carried.needs[0];
+  const heldUntil = runsOn ? longest(last.needs) : undefined;
+  // Bookings running for days that run during this board day.
+  const longHolds = slots
+    .filter((slot) => slot.kind !== "internal_block" && slot.kind !== "prospect")
+    .map(holdOf)
+    .filter((hold) => hold.days && hold.fromMs < endMs && hold.toMs > startMs)
+    .map((hold) => ({ ...hold, startsToday: hold.fromMs >= startMs, endsToday: hold.toMs <= tonightEndsMs }));
 
   return {
     openBy: opener === undefined ? null : { atMs: opener.fromMs, why: opener.opens },
     lockUpAfter: closer === undefined || runsOn ? null : { atMs: closer.toMs, why: closer.closes },
     heldFrom: heldFrom?.hold ?? null,
-    heldUntil: runsOn && closer !== undefined ? closer.hold : null,
+    heldUntil: heldUntil?.hold ?? null,
+    longHolds,
     stillIn: arrivals
       .filter((arrival) => arrival.arrivedAt !== null && arrival.leftAt === null)
       .sort((a, b) => Date.parse(a.arrivedAt ?? a.arrivesAt) - Date.parse(b.arrivedAt ?? b.arrivesAt)),

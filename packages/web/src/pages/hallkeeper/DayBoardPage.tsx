@@ -31,7 +31,7 @@ import { crewBySlot, unstaffedTurnRounds, UNSTAFFED_HORIZON_MS } from "./lib/tur
 import { useRotaDay } from "./lib/use-rota-day.js";
 import { arrivalNotices, arrivalParts } from "./lib/supplier-notices.js";
 import { useSupplierArrivals } from "./lib/use-supplier-arrivals.js";
-import { SUPPLIER_ARRIVAL_STAY_MS, addRotaDays, buildingTickDays } from "@omnitwin/types";
+import { SUPPLIER_ARRIVAL_STAY_MS, buildingTickDays } from "@omnitwin/types";
 import { buildingDay } from "./lib/building-day.js";
 import { useBuildingChecks } from "./lib/use-building-checks.js";
 import { BuildingSection } from "./DayBoardBuilding.js";
@@ -475,7 +475,7 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
   // last night may still be ticked, today's board reads its lock-up too.
   const tickDays = buildingTickDays(nowMs, dayBoundaryHour, timeZone);
   const onFloor = !wall && user !== null && venueId !== null && user.venueId === venueId && hasRole(VENUE_FLOOR_ROLES, user.role);
-  const lastNightDate = browsingToday && tickDays.length > 1 ? addRotaDays(today, -1) : "";
+  const lastNightDate = browsingToday && tickDays.length > 1 ? tickDays[0] ?? "" : "";
   const lastNightChecks = useBuildingChecks(venueId, lastNightDate, venueId !== null && !wall && lastNightDate !== "");
   const dayArrivals = suppliers.arrivals;
   const earlierArrivals = suppliers.earlier;

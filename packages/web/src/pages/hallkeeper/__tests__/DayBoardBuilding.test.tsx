@@ -40,6 +40,7 @@ const BUILDING: BuildingDay = {
   lockUpAfter: { atMs: ms("01:00", "15"), why: "Morrison–Adeyemi wedding clears" },
   heldFrom: null,
   heldUntil: null,
+  longHolds: [],
   stillIn: [],
 };
 
@@ -159,11 +160,17 @@ describe("BuildingSection", () => {
     expect(screen.queryByRole("region", { name: "The building" })).toBeNull();
   });
 
-  it("names a booking that holds the building across the day, instead of times it cannot know", () => {
-    const exhibition = { title: "Glasgow Trades in Print", fromMs: ms("09:00", "12"), toMs: ms("17:45", "16"), setsUp: true, days: true };
-    show({ building: { ...BUILDING, openBy: null, lockUpAfter: null, heldFrom: exhibition, heldUntil: exhibition } });
-    expect(screen.getByText("Glasgow Trades in Print runs all day · opening 1 of 2 · lock-up 0 of 2")).toBeTruthy();
+  it("names a booking running for days beside the day's own times, and its hours as not on the Diary", () => {
+    const exhibition = { title: "Glasgow Trades in Print", fromMs: ms("09:00", "12"), toMs: ms("17:45", "16"), setsUp: true, days: true, startsToday: false, endsToday: false };
+    show({ building: { ...BUILDING, longHolds: [exhibition] } });
+    expect(screen.getByText("Open by 07:00 · Lock up after 01:00, after midnight · Glasgow Trades in Print runs all day · opening 1 of 2 · lock-up 0 of 2")).toBeTruthy();
     expect(screen.getByText("Glasgow Trades in Print runs from Thu 12 Nov to Mon 16 Nov; its daily hours are not on the Diary.")).toBeTruthy();
+    cleanup();
+    show({ building: { ...BUILDING, openBy: null, lockUpAfter: null, longHolds: [{ ...exhibition, startsToday: true }] } });
+    expect(screen.getByText("Glasgow Trades in Print runs on to Mon 16 Nov · opening 1 of 2 · lock-up 0 of 2")).toBeTruthy();
+    cleanup();
+    show({ building: { ...BUILDING, openBy: null, longHolds: [{ ...exhibition, endsToday: true }] } });
+    expect(screen.getByText(/^Lock up after 01:00, after midnight · Glasgow Trades in Print ends today/u)).toBeTruthy();
     cleanup();
     const conference = { title: "Trades conference", fromMs: ms("22:00", "13"), toMs: ms("18:00"), setsUp: true, days: false };
     show({ building: { ...BUILDING, openBy: null, heldFrom: conference } });
@@ -210,6 +217,7 @@ describe("BuildingSection", () => {
   it("lets the office rename, move, take off and add checks, and saves the list from the one it opened", async () => {
     const { props, view } = show({ canPlan: true });
     fireEvent.click(screen.getByRole("button", { name: "Change the lock-up checks" }));
+    expect(document.activeElement).toBe(screen.getByRole("textbox", { name: "Lock-up checks, 1" }));
     // A colleague's list arrives while the editor is open: the save still names the list it opened on.
     const newer = api({ day: { ...DAY, lockup: [...DAY.lockup, check("7", "lockup", "Keys back in the safe")] }, replace: props.api.replace });
     view.rerender(<BuildingSection {...props} api={newer} />);

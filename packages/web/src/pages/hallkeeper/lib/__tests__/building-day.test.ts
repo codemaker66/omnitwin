@@ -49,7 +49,7 @@ describe("buildingDay", () => {
     ), [], SATURDAY);
     expect(day.openBy).toEqual({ atMs: ms("07:00"), why: "Merchants' Breakfast sets up" });
     expect(day.lockUpAfter).toEqual({ atMs: ms("01:30", "15"), why: "Wedding dinner clears" });
-    expect([day.heldFrom, day.heldUntil, day.stillIn]).toEqual([null, null, []]);
+    expect([day.heldFrom, day.heldUntil, day.stillIn, day.longHolds]).toEqual([null, null, [], []]);
   });
 
   it("opens for a supplier due before any setup, whatever booking they come for", () => {
@@ -88,28 +88,33 @@ describe("buildingDay", () => {
   });
 
   describe("a booking that runs for days", () => {
-    it("on its first day, opens for it and names it running on, not another booking's lock-up", () => {
+    it("on its first day, opens for its setup and is named as running on", () => {
       const day = buildingDay(lanes(EXHIBITION, slot("lunch", "Trades lunch", "11:30", "12:00", "14:00", "14:30", { setup: "12", end: "12" })), [],
         { ...SATURDAY, date: "2026-11-12" });
       expect(day.openBy).toEqual({ atMs: ms("09:00", "12"), why: "Glasgow Trades in Print sets up" });
-      expect(day.lockUpAfter).toBeNull();
-      expect(day.heldUntil).toMatchObject({ title: "Glasgow Trades in Print", days: true, toMs: ms("17:45", "16") });
+      // The lunch's own lock-up is still said; the exhibition's evening is its own.
+      expect(day.lockUpAfter).toEqual({ atMs: ms("14:30", "12"), why: "Trades lunch clears" });
+      expect(day.longHolds).toEqual([expect.objectContaining({ title: "Glasgow Trades in Print", startsToday: true, endsToday: false })]);
+      expect([day.heldFrom, day.heldUntil]).toEqual([null, null]);
     });
 
-    it("on a day in between, gives no times, only the booking holding the building", () => {
-      const day = buildingDay(lanes(EXHIBITION, slot("dinner", "Wedding dinner", "16:30", "18:30", "23:00", "23:30")), [], SATURDAY);
-      expect([day.openBy, day.lockUpAfter]).toEqual([null, null]);
-      expect(day.heldFrom).toMatchObject({ title: "Glasgow Trades in Print", days: true });
-      expect(day.heldUntil).toMatchObject({ title: "Glasgow Trades in Print", days: true });
+    it("on a day in between, names it and keeps the day's own times, not the exhibition's", () => {
+      const withDinner = buildingDay(lanes(EXHIBITION, slot("dinner", "Wedding dinner", "16:30", "18:30", "23:00", "23:30")), [], SATURDAY);
+      expect(withDinner.openBy).toEqual({ atMs: ms("16:30"), why: "Wedding dinner sets up" });
+      expect(withDinner.lockUpAfter).toEqual({ atMs: ms("23:30"), why: "Wedding dinner clears" });
+      expect(withDinner.longHolds).toEqual([expect.objectContaining({ title: "Glasgow Trades in Print", startsToday: false, endsToday: false })]);
+      // With nothing else on, there is nothing but the exhibition to say.
+      const alone = buildingDay(lanes(EXHIBITION), [], SATURDAY);
+      expect([alone.openBy, alone.lockUpAfter, alone.heldFrom, alone.heldUntil]).toEqual([null, null, null, null]);
+      expect(alone.longHolds).toHaveLength(1);
     });
 
     it("on its last day, locks up after it clears, not after an earlier breakfast", () => {
       const day = buildingDay(lanes(EXHIBITION, slot("breakfast", "Breakfast meeting", "07:30", "08:00", "10:00", "10:45", { setup: "16", end: "16" })), [],
         { ...SATURDAY, date: "2026-11-16" });
-      expect(day.openBy).toBeNull();
-      expect(day.heldFrom).toMatchObject({ title: "Glasgow Trades in Print", days: true });
+      expect(day.openBy).toEqual({ atMs: ms("07:30", "16"), why: "Breakfast meeting sets up" });
       expect(day.lockUpAfter).toEqual({ atMs: ms("17:45", "16"), why: "Glasgow Trades in Print clears" });
-      expect(day.heldUntil).toBeNull();
+      expect(day.longHolds).toEqual([expect.objectContaining({ endsToday: true })]);
     });
   });
 

@@ -9,7 +9,7 @@ import {
 } from "@omnitwin/types";
 import { ActivityIndicator, ActivityStatus } from "../../components/shared/Activity.js";
 import { formatInlineDay, formatWallTime, msToWallInput, wallInputToMs } from "../diary/lib/board-time.js";
-import type { BuildingDay, BuildingHold, BuildingMoment } from "./lib/building-day.js";
+import type { BuildingDay, BuildingHold, BuildingMoment, LongHold } from "./lib/building-day.js";
 import { listKey, type BuildingChecksApi } from "./lib/use-building-checks.js";
 import type { SupplierArrivalsApi } from "./lib/use-supplier-arrivals.js";
 
@@ -51,11 +51,21 @@ function momentTime(moment: BuildingMoment, boardDate: string, timeZone: string)
 }
 
 /** What holds the building across the day's edge, in a sentence. */
-function holdSentence(hold: BuildingHold, edge: "from" | "until", clock: Clock): string {
-  const day = (ms: number): string => formatInlineDay(ms, clock.nowMs, clock.timeZone);
-  if (hold.days) return `${hold.title} runs from ${day(hold.fromMs)} to ${day(hold.toMs)}; its daily hours are not on the Diary.`;
+function holdSentence(hold: BuildingHold, edge: "from" | "until"): string {
   const through = `${hold.title} ${hold.setsUp ? "sets up" : "runs"} through the night.`;
   return edge === "from" ? `Open since last night: ${through}` : `No lock-up tonight: ${through}`;
+}
+
+/** A booking running for days, in a sentence. */
+function longSentence(hold: LongHold, clock: Clock): string {
+  const day = (ms: number): string => formatInlineDay(ms, clock.nowMs, clock.timeZone);
+  return `${hold.title} runs from ${day(hold.fromMs)} to ${day(hold.toMs)}; its daily hours are not on the Diary.`;
+}
+
+/** The same, for the one-line summary. */
+function longWords(hold: LongHold, clock: Clock): string {
+  if (hold.startsToday) return `${hold.title} runs on to ${formatInlineDay(hold.toMs, clock.nowMs, clock.timeZone)}`;
+  return hold.endsToday ? `${hold.title} ends today` : `${hold.title} runs all day`;
 }
 
 /** The tick's time, and its day when that is not the list's own. */
@@ -84,8 +94,8 @@ function ListEditor({ kind, checks, busy, onSave, onCancel }: {
   const added = useRef(0);
   const listRef = useRef<HTMLOListElement>(null);
   const addRef = useRef<HTMLButtonElement>(null);
-  // Where the keyboard goes after a check is added or taken off.
-  const [focusRow, setFocusRow] = useState<number | null>(null);
+  // Where the keyboard goes: the first check as the editor opens, then after one is added or taken off.
+  const [focusRow, setFocusRow] = useState<number | null>(0);
   useEffect(() => {
     if (focusRow === null) return;
     const inputs = listRef.current?.querySelectorAll("input") ?? [];
@@ -299,36 +309,33 @@ export function BuildingSection({ building, api, lastNight = null, boardDate, da
   // Last night's lock-up stands here only while it is not done.
   const lastNightLockup = lastNightDay === null ? [] : onList(lastNightDay.lockup);
   const lastNightOpen = lastNightLockup.some((check) => check.mark === null);
-  const hasTimes = building.openBy !== null || building.lockUpAfter !== null || building.heldFrom !== null || building.heldUntil !== null;
+  const hasTimes = building.openBy !== null || building.lockUpAfter !== null || building.heldFrom !== null || building.heldUntil !== null
+    || building.longHolds.length > 0;
   const hasChecks = day !== null && (day.opening.length > 0 || day.lockup.length > 0);
   if (!hasTimes && !hasChecks && building.stillIn.length === 0 && api.status !== "failed" && !lastNightOpen && !canPlan) return null;
 
-  const day1 = (ms: number): string => formatInlineDay(ms, nowMs, timeZone);
-  const sameLongHold = building.heldFrom !== null && building.heldUntil !== null && building.heldFrom.days && building.heldUntil.days
-    && building.heldFrom.title === building.heldUntil.title;
   const openWords = building.openBy !== null
     ? `Open by ${momentTime(building.openBy, boardDate, timeZone)}`
-    : building.heldFrom === null ? null
-      : sameLongHold ? `${building.heldFrom.title} runs all day`
-        : building.heldFrom.days ? `${building.heldFrom.title} since ${day1(building.heldFrom.fromMs)}` : "Open since last night";
+    : building.heldFrom === null ? null : "Open since last night";
   const lockWords = building.lockUpAfter !== null
     ? `Lock up after ${momentTime(building.lockUpAfter, boardDate, timeZone)}`
-    : building.heldUntil === null || sameLongHold ? null
-      : building.heldUntil.days ? `${building.heldUntil.title} until ${day1(building.heldUntil.toMs)}` : "No lock-up tonight";
+    : building.heldUntil === null ? null : "No lock-up tonight";
   const counts = day === null ? [] : (["opening", "lockup"] as const)
     .map((kind) => ({ kind, current: onList(day[kind]) }))
     .filter((entry) => entry.current.length > 0)
     .map((entry) => `${KIND_WORDS[entry.kind].short} ${String(done(entry.current))} of ${String(entry.current.length)}`);
   const lastNightWords = lastNightOpen ? `last night’s lock-up ${String(done(lastNightLockup))} of ${String(lastNightLockup.length)}` : null;
   const stillInWords = building.stillIn.length === 0 ? null : `${String(building.stillIn.length)} marked in, not out`;
-  const line = [openWords, lockWords, lastNightWords, ...counts, stillInWords].filter((part): part is string => part !== null);
-  const holdLines = sameLongHold
-    ? [holdSentence(building.heldFrom, "from", clock)]
-    : [
-      ...(building.heldFrom === null ? [] : [holdSentence(building.heldFrom, "from", clock)]),
-      ...(building.heldUntil === null ? [] : [holdSentence(building.heldUntil, "until", clock)]),
-    ];
-  const lastNightTitle = lastNightDay === null ? "" : `Last night’s lock-up, ${day1(wallInputToMs(`${lastNightDay.day}T12:00`, timeZone) ?? nowMs)}`;
+  const line = [openWords, lockWords, ...building.longHolds.map((hold) => longWords(hold, clock)), lastNightWords, ...counts, stillInWords]
+    .filter((part): part is string => part !== null);
+  const holdLines = [
+    ...(building.heldFrom === null ? [] : [holdSentence(building.heldFrom, "from")]),
+    ...building.longHolds.map((hold) => longSentence(hold, clock)),
+    ...(building.heldUntil === null ? [] : [holdSentence(building.heldUntil, "until")]),
+  ];
+  const lastNightTitle = lastNightDay === null
+    ? ""
+    : `Last night’s lock-up, ${formatInlineDay(wallInputToMs(`${lastNightDay.day}T12:00`, timeZone) ?? nowMs, nowMs, timeZone)}`;
 
   return (
     <section className="dayboard-building" aria-label="The building">
