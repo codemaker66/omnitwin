@@ -861,6 +861,40 @@ describe.skipIf(target === undefined)("API hot paths through real routes and Pos
         .toEqual([[friday.id, dinner.id]]);
     });
 
+    // T-695 api-diary-bookings-5: the owner recorded on a hold may since have
+    // moved to another venue or stopped working the Diary. Such a hold is
+    // reported as nobody's, as the reminder's own rule says, never emailed.
+    it("tells no owner who has moved venue or role: those holds are reported as having no owner", async () => {
+      const a = await venue("reminder owners A");
+      const b = await venue("reminder owners B");
+      const now = Date.now();
+      const stays = await a.actor("staff");
+      const moved = await a.actor("sales");
+      const demoted = await a.actor("manager");
+      const hold = (ownerUserId: string, title: string, inDays: number): typeof schema.bookings.$inferInsert => ({
+        venueId: a.venueId, spaceId: a.rooms[0] ?? "", kind: "hold", title, rank: 1, ownerUserId,
+        decisionAt: new Date(now + 3 * DAY), startsAt: new Date(now + inDays * DAY), endsAt: new Date(now + inDays * DAY + 4 * HOUR),
+      });
+      const rows = await insertBoundBookings(db, [
+        hold(stays.id, "Owner still here", 10), hold(moved.id, "Owner moved venue", 11), hold(demoted.id, "Owner no longer on the Diary", 12),
+      ]);
+      await db.update(schema.users).set({ venueId: b.venueId }).where(eq(schema.users.id, moved.id));
+      await db.update(schema.users).set({ role: "client" }).where(eq(schema.users.id, demoted.id));
+
+      const sentTo: string[] = [];
+      const summary = await runHoldReminderPass({
+        db, dryRun: false, now: new Date(now + 60_000),
+        send: (payload) => { sentTo.push(payload.to); return Promise.resolve(true); },
+      });
+      const outcomes = Object.fromEntries(summary.reminders
+        .filter((row) => rows.some((booking) => booking.id === row.bookingId))
+        .map((row) => [row.holdTitle, row.outcome]));
+      expect(outcomes).toEqual({ "Owner still here": "sent", "Owner moved venue": "no_owner", "Owner no longer on the Diary": "no_owner" });
+      expect(sentTo).toContain(`${stays.id}@hot-paths.invalid`);
+      expect(sentTo).not.toContain(`${moved.id}@hot-paths.invalid`);
+      expect(sentTo).not.toContain(`${demoted.id}@hot-paths.invalid`);
+    });
+
     it("lets one replay retry a failed reminder send, dedupes the others, and never reclaims a sent one", async () => {
       // No provider in this gate: a reclaimed send ends as dev_mode, which is
       // how the test sees that the provider step was reached again.
