@@ -99,7 +99,11 @@ export interface PlacementState {
   /** Snap-to-grid enabled (default true). */
   readonly snapEnabled: boolean;
 
-  /** Place the currently selected catalogue item at the ghost position. */
+  /**
+   * Place the currently selected catalogue item at the ghost position. In a centred rectangle the
+   * spot is taken through the grid and the snaps again; on a room's own floor (lib/room-floor) the
+   * piece stands exactly where it is handed.
+   */
   readonly placeItem: (catalogueItemId: string, x: number, z: number, rotationY?: number) => void;
   /** Place a row or block of chairs from a drag brush. Returns newly placed IDs. */
   readonly placeChairBrush: (
@@ -142,8 +146,8 @@ export interface PlacementState {
   readonly toggleSnap: () => void;
   /** Clear all placed items. */
   readonly clearAll: () => void;
-  /** Place a table with auto-arranged chairs as a group. */
-  readonly placeTableGroup: (catalogueItemId: string, x: number, z: number, rotationY: number, chairCount: number) => void;
+  /** Place a table with auto-arranged chairs as a group, the table where placeItem would set it. */
+  readonly placeTableGroup:(catalogueItemId: string, x: number, z: number, rotationY: number, chairCount: number) => void;
   /**
    * Sets a card's stamped set down exactly as it stands (the ghost's
    * resolved pose; no snapping), as one undo step: every piece settled on
@@ -335,6 +339,21 @@ function numberEdited(items: readonly PlacedItem[], editedIds: ReadonlySet<strin
   return items.map((item) => byId.get(item.id) ?? item);
 }
 
+/**
+ * Whether placeItem and placeTableGroup set a piece down exactly where they are handed it.
+ *
+ * Both are handed the spot its ghost stood on (lib/place-in-hand, lib/chair-question), which
+ * updateGhost has already taken through the grid, the platform edges, the walls and the furniture
+ * lines. In a room that is the centred rectangle of its size they take it through those steps a
+ * second time, as they always have: the rectangle's wall rule gives the same answer twice. A room's
+ * own floor (lib/room-floor) does not, because a piece pulled against one wall then faces walls it
+ * did not face before, and the second pass set it down up to 1.44 m from its valid ghost, on a spot
+ * nothing had judged against the other furniture. There the piece stands where it is handed.
+ */
+function standsWhereHanded(): boolean {
+  return useRoomDimensionsStore.getState().dimensions.floor !== undefined;
+}
+
 export const usePlacementStore = create<PlacementState>()((set, get) => ({
   placedItems: [],
   ghostPosition: null,
@@ -356,12 +375,14 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
       postPlacementNotice(atCap);
       return;
     }
-    const pos = state.snapEnabled ? snapPositionToGrid(x, z) : [x, 0, z] as const;
+    // On a room's own floor the piece stands exactly where its ghost stood (standsWhereHanded).
+    const asHanded = standsWhereHanded();
+    const pos = state.snapEnabled && !asHanded ? snapPositionToGrid(x, z) : [x, 0, z] as const;
     // Apply platform edge snapping (fixes bug where placeItem lost edge snap)
     const catItem = getCatalogueItem(catalogueItemId);
     let finalX = pos[0];
     let finalZ = pos[2];
-    if (catItem !== undefined) {
+    if (catItem !== undefined && !asHanded) {
       const roomDims = useRoomDimensionsStore.getState().dimensions;
       const edgeSnap = snapToPlatformEdge(finalX, finalZ, catItem, rotationY, state.placedItems, new Set());
       finalX = edgeSnap.x;
@@ -719,12 +740,14 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
       postPlacementNotice(atCap);
       return;
     }
-    const pos = state.snapEnabled ? snapPositionToGrid(x, z) : [x, 0, z] as const;
+    // On a room's own floor the table stands exactly where its ghost stood (standsWhereHanded).
+    const asHanded = standsWhereHanded();
+    const pos = state.snapEnabled && !asHanded ? snapPositionToGrid(x, z) : [x, 0, z] as const;
     // Apply edge + wall snap (same as placeItem) so position matches the ghost
     const catItem = getCatalogueItem(catalogueItemId);
     let finalX = pos[0];
     let finalZ = pos[2];
-    if (catItem !== undefined) {
+    if (catItem !== undefined && !asHanded) {
       const roomDims = useRoomDimensionsStore.getState().dimensions;
       const edgeSnap = snapToPlatformEdge(finalX, finalZ, catItem, rotationY, state.placedItems, new Set());
       finalX = edgeSnap.x;
