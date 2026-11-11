@@ -388,7 +388,12 @@ export async function quoteRoutes(
       const existingLines = await tx.select().from(quoteLineItems)
         .where(eq(quoteLineItems.quoteId, quote.id))
         .orderBy(quoteLineItems.sortOrder);
+      // Held to the ceiling before the write, as POST /quotes is: a line past
+      // it can be past what the integer line_total_minor column holds, and
+      // the database would refuse the insert with a server error.
       const lineTotalMinor = multiplyMinor(parsed.data.unitAmountMinor, parsed.data.quantity);
+      const subtotalMinor = sumMinor([...existingLines.map((item) => item.lineTotalMinor), lineTotalMinor]);
+      if (subtotalMinor > MAX_MINOR_UNIT_AMOUNT) return "QUOTE_TOTAL_EXCEEDS_LIMIT" as const;
       const [lineItem] = await tx.insert(quoteLineItems).values({
         quoteId: quote.id,
         pricingRuleId: parsed.data.pricingRuleId ?? null,
@@ -401,19 +406,12 @@ export async function quoteRoutes(
       if (lineItem === undefined) throw new Error("quote line item insert returned no row");
 
       const lineItems = [...existingLines, lineItem];
-      const subtotalMinor = sumMinor(lineItems.map((item) => item.lineTotalMinor));
-      if (subtotalMinor > MAX_MINOR_UNIT_AMOUNT) {
-        throw new Error("QUOTE_TOTAL_EXCEEDS_LIMIT");
-      }
       const [updatedQuote] = await tx.update(quotes)
         .set({ subtotalMinor, totalMinor: subtotalMinor, updatedAt: new Date() })
         .where(eq(quotes.id, quote.id))
         .returning();
       if (updatedQuote === undefined) throw new Error("quote update returned no row");
       return { quote: updatedQuote, lineItems };
-    }).catch((err: unknown) => {
-      if (err instanceof Error && err.message === "QUOTE_TOTAL_EXCEEDS_LIMIT") return "QUOTE_TOTAL_EXCEEDS_LIMIT" as const;
-      throw err;
     });
 
     if (created === "QUOTE_TOTAL_EXCEEDS_LIMIT") {

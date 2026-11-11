@@ -394,6 +394,28 @@ describe.skipIf(target === undefined)("quote permissions through real routes and
     expect((await add(own.id)).statusCode).toBe(201);
   });
 
+  // A line's total and the quote's are both held to the quote ceiling before
+  // anything is written (audit pricing-money-7). 30,000,000 x 100 is
+  // 3,000,000,000, past what the integer line_total_minor column holds, so a
+  // check after the insert never ran: the database refused the row and the
+  // request ended in a server error.
+  it("refuses a line past the quote ceiling before writing it, and keeps the quote as it was", async () => {
+    const f = await fixture("sales");
+    const add = (quantity: number, unitAmountMinor: number) => server.inject({ method: "POST", url: `/quotes/${f.quote.id}/line-items`,
+      headers: f.headers, payload: { description: "TEST ONLY equipment", quantity, unitAmountMinor } });
+    for (const [quantity, unitAmountMinor] of [[100, 30_000_000], [10_000, 100_000_000], [1, 99_999_001]] as const) {
+      const refused = await add(quantity, unitAmountMinor);
+      expect(refused.statusCode, refused.body).toBe(422);
+      expect(refused.json<{ code: string }>().code).toBe("QUOTE_TOTAL_EXCEEDS_LIMIT");
+    }
+    expect(await stored(f)).toMatchObject({ quote: { subtotalMinor: 1000, totalMinor: 1000 }, lines: [expect.objectContaining({ lineTotalMinor: 1000 })] });
+    expect((await stored(f)).lines).toHaveLength(1);
+    // A line that brings the quote exactly to the ceiling is kept.
+    const atCeiling = await add(1, 99_999_000);
+    expect(atCeiling.statusCode, atCeiling.body).toBe(201);
+    expect((await stored(f)).quote).toMatchObject({ subtotalMinor: 100_000_000, totalMinor: 100_000_000 });
+  });
+
   it("retains issued-record protection for venue admins and the existing platform override", async () => {
     for (const platformRole of ["none", "admin"] as const) {
       const f = await fixture("admin", platformRole === "admin", platformRole);
