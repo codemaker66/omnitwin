@@ -130,10 +130,11 @@ function noteOf(metadata: unknown): string | null {
 }
 
 /** A piece as any holder of the plan's id reads it: where it stands and how it
- *  is dressed. Its note is left out, and a piece that holds one says so. */
+ *  is dressed. Its note is left out, and a piece that holds one says so. The
+ *  mark is only ever this route's word: one found on the row is not passed on. */
 function withoutNote<T extends { readonly metadata: unknown }>(piece: T): T {
-  if (!isRecord(piece.metadata) || !("notes" in piece.metadata)) return piece;
-  const kept = Object.fromEntries(Object.entries(piece.metadata).filter(([key]) => key !== "notes"));
+  if (!isRecord(piece.metadata) || !("notes" in piece.metadata || NOTE_HELD in piece.metadata)) return piece;
+  const kept = Object.fromEntries(Object.entries(piece.metadata).filter(([key]) => key !== "notes" && key !== NOTE_HELD));
   return { ...piece, metadata: noteOf(piece.metadata) === null ? kept : { ...kept, [NOTE_HELD]: true } };
 }
 

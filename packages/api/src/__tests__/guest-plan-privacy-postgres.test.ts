@@ -358,6 +358,12 @@ describe.skipIf(target === undefined)("who can find and read a guest's plan, thr
     const saved = await save({ ...plan }, [piece(2, undefined, withNote.id), marked]);
     expect(heldAt(saved.objects)).toEqual([2]);
     expect(heldAt((await asMade(plan)).objects)).toEqual([]);
+
+    // Nor is a mark that reached the row some other way (the signed-in save
+    // stores a piece's details as sent) passed on: only a piece that holds a
+    // note is said to hold one.
+    await pool.query(`UPDATE placed_objects SET metadata = metadata || '{"noteHeld": true}'::jsonb WHERE id = $1`, [bare.id]);
+    expect(heldAt((await read(plan.id)).plan.objects)).toEqual([2]);
   });
 
   it("keeps the notes of a plan that has no claim secret from every anonymous reader", async () => {
