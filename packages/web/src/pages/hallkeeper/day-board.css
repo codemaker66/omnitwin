@@ -1673,6 +1673,13 @@ button.dayboard-rail-item:disabled { cursor: default; }
   font: 400 17px/1.35 var(--house-serif);
 }
 
+.dayboard-changeover-crew {
+  margin: 0 0 12px;
+  color: var(--house-forest-ink-2);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
 .dayboard-changeover-lists {
   display: grid;
   gap: 14px;

@@ -94,6 +94,12 @@ const changeoverMock = vi.hoisted(() => vi.fn<(input: { from: string; to: string
 vi.mock("../../../api/changeover.js", () => ({
   getChangeover: (input: { from: string; to: string }) => changeoverMock(input),
 }));
+// Who is on setup for each turn-round, from the published rota: a week with
+// no setup planned unless a case feeds one.
+const rotaMock = vi.hoisted(() => vi.fn<(venueId: string, start: string | null) => Promise<unknown>>());
+vi.mock("../../../api/rota.js", () => ({
+  getRotaWeek: (venueId: string, start: string | null) => rotaMock(venueId, start),
+}));
 // The board reads what its rooms were seen doing and listens for new facts
 // (goal 19 S5); this suite stubs both edges and feeds facts per case.
 const seen = vi.hoisted(() => ({
@@ -135,6 +141,23 @@ function calendarFixture(entries: CalendarResponse["entries"]): CalendarResponse
         turnaround: { status: "checked", uncoveredPairCount: 0, detail: "All gaps covered." },
       },
     },
+  };
+}
+
+const JAMIE = "00000000-0000-4000-8000-0000000000f1";
+
+/** A published rota week: Jamie on the venue's team, and these shifts. */
+function rotaWeek(start: string, shifts: readonly Record<string, unknown>[]): unknown {
+  return {
+    venueId: VENUE, timeZone: "Europe/London", weekStart: start, from: new Date().toISOString(), to: new Date().toISOString(), access: "read",
+    people: [{ id: JAMIE, displayName: "Jamie", employmentType: "casual", skills: ["setup"], isActive: true, hasAccount: true }],
+    records: [], unavailability: [], rooms: [], accounts: [],
+    shifts: shifts.map((shift, index) => ({
+      id: `00000000-0000-4000-8000-00000000050${String(index)}`, venueId: VENUE, staffMemberId: JAMIE, role: "setup",
+      breakMinutes: 0, eventId: null, eventName: null, spaceId: GRAND_HALL, spaceName: "Grand Hall", note: null, status: "published",
+      revision: 1, publishedAt: null, cancelledAt: null, cancellationNoticeHours: null, updatedAt: new Date().toISOString(),
+      updatedByName: null, issues: [], ...shift,
+    })),
   };
 }
 
@@ -267,6 +290,8 @@ beforeEach(() => {
   floor.acknowledge.mockReset();
   floor.acknowledge.mockResolvedValue({});
   changeoverMock.mockReset();
+  rotaMock.mockReset();
+  rotaMock.mockImplementation((_venueId, start) => Promise.resolve(rotaWeek(start ?? "", [])));
   resolveLayoutsMock.mockReset();
   // A summary that never arrives shows no line, which other cases expect.
   getSummaryMock.mockReset();
@@ -1787,6 +1812,57 @@ describe("DayBoardPage: what changed since the floor last looked", () => {
     fireEvent.click(await screen.findByRole("button", { name: /^Chamber dinner,/u }));
     expect(await screen.findByText(/^Changes seen by Jamie at the door, \d{2}:\d{2}\.$/u)).toBeTruthy();
     expect(screen.queryByText("Changed")).toBeNull();
+  });
+});
+
+describe("DayBoardPage: who is on setup for a turn-round", () => {
+  const at = (minutes: number): string => new Date(Date.now() + minutes * 60_000).toISOString();
+
+  function day(): CalendarResponse["entries"] {
+    return [
+      { ...liveBooking(), id: "00000000-0000-4000-8000-0000000000b7", title: "Lunch", eventId: "00000000-0000-4000-8000-0000000000e7", startsAt: at(-240), endsAt: at(-180) },
+      { ...liveBooking(), id: "00000000-0000-4000-8000-0000000000b8", title: "Dinner", eventId: "00000000-0000-4000-8000-0000000000e8", startsAt: at(60), endsAt: at(300) },
+    ] as CalendarResponse["entries"];
+  }
+
+  it("names who is on setup on the dinner's turn-round, on its slot and in its panel", async () => {
+    getCalendarMock.mockResolvedValue(calendarFixture(day()));
+    rotaMock.mockImplementation((_venueId, start) => Promise.resolve(rotaWeek(start ?? "", [{ startsAt: at(-60), endsAt: at(90) }])));
+    renderBoard();
+    const dinner = await screen.findByRole("button", { name: /^Dinner,/u });
+    await waitFor(() => { expect(dinner.textContent).toContain("Turn-round 4 h · 1 on setup"); });
+    fireEvent.click(dinner);
+    const section = await screen.findByRole("region", { name: "Changeover from Lunch" });
+    expect(within(section).getByText(/^On setup: Jamie \d{2}:\d{2}–\d{2}:\d{2}\.$/u)).toBeTruthy();
+    expect(document.querySelector(".dayboard-summary")?.textContent ?? "").not.toContain("nobody on setup");
+  });
+
+  it("says plainly when the rota plans setup but puts nobody on the dinner's turn-round", async () => {
+    getCalendarMock.mockResolvedValue(calendarFixture(day()));
+    // Setup is planned this week, in another room only.
+    rotaMock.mockImplementation((_venueId, start) => Promise.resolve(rotaWeek(start ?? "", [
+      { spaceId: SALOON, spaceName: "Saloon", startsAt: at(-60), endsAt: at(90) },
+      { staffMemberId: null, startsAt: at(0), endsAt: at(60) },
+    ])));
+    renderBoard();
+    const dinner = await screen.findByRole("button", { name: /^Dinner,/u });
+    await waitFor(() => { expect(dinner.textContent).toContain("Turn-round 4 h · nobody on setup"); });
+    expect(document.querySelector(".dayboard-summary")?.textContent).toContain("Grand Hall’s turn-round has nobody on setup.");
+    fireEvent.click(dinner);
+    const section = await screen.findByRole("region", { name: "Changeover from Lunch" });
+    expect(within(section).getByText("Nobody is on setup for this turn-round. One setup shift is still to fill.")).toBeTruthy();
+  });
+
+  it("says nothing about crew when the rota plans no setup at all", async () => {
+    getCalendarMock.mockResolvedValue(calendarFixture(day()));
+    renderBoard();
+    const dinner = await screen.findByRole("button", { name: /^Dinner,/u });
+    await waitFor(() => { expect(rotaMock).toHaveBeenCalled(); });
+    expect(dinner.textContent).toContain("Turn-round 4 h");
+    expect(dinner.textContent).not.toContain("on setup");
+    fireEvent.click(dinner);
+    const section = await screen.findByRole("region", { name: "Changeover from Lunch" });
+    expect(within(section).queryByText(/on setup/u)).toBeNull();
   });
 });
 

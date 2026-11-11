@@ -8,6 +8,7 @@ import { roomPhoto } from "../../components/dashboard/enquiries/enquiry-room-pho
 import { formatMinutes, runsForDays, type DayBoardIcon, type DayBoardSlot, type SlotAttention } from "./lib/day-board-state.js";
 import { gapGeometry, slabGeometry, type BoardWindow, type RulerTick, type Span } from "./lib/day-board-layout.js";
 import type { RoomDay } from "./lib/day-board-rooms.js";
+import { crewWords, type TurnRoundCrew } from "./lib/turn-round-crew.js";
 import { useBreathPhase } from "./lib/use-board-clock.js";
 
 // ---------------------------------------------------------------------------
@@ -108,20 +109,21 @@ function slotFacts(slot: DayBoardSlot): string {
 }
 
 /** The turn-round before a slot whose setup is still ahead: the time the
- *  room has between functions, and what the rule needs when that is short.
- *  Once setup is due it has been spent; a changeover at risk says why in
- *  its own words. */
-function turnRound(slot: DayBoardSlot, nowMs: number): string | null {
+ *  room has between functions, what the rule needs when that is short, and
+ *  who is on setup for it when the rota plans setup. Once setup is due it
+ *  has been spent; a changeover at risk says why in its own words. */
+function turnRound(slot: DayBoardSlot, nowMs: number, crew: TurnRoundCrew | null): string | null {
   const gap = slot.gapBefore;
   if (gap === null || nowMs >= slot.setupStartsAtMs || slot.exception !== null) return null;
-  return gap.short && gap.neededMinutes !== null
+  const time = gap.short && gap.neededMinutes !== null
     ? `Turn-round ${formatMinutes(gap.minutes)} · needs ${formatMinutes(gap.neededMinutes)}`
     : `Turn-round ${formatMinutes(gap.minutes)}`;
+  return crew === null ? time : `${time} · ${crewWords(crew)}`;
 }
 
 /** One slot on its room: the state's dot, icon and verb, the title, and for
  *  the lead its facts, what was seen, why it is at risk and the ring. */
-export function Slab({ slot, variant, nowMs, selected, onOpen, wall, frozen, changed = 0 }: {
+export function Slab({ slot, variant, nowMs, selected, onOpen, wall, frozen, changed = 0, crew = null }: {
   readonly slot: DayBoardSlot;
   readonly variant: SlabVariant;
   readonly nowMs: number;
@@ -131,6 +133,8 @@ export function Slab({ slot, variant, nowMs, selected, onOpen, wall, frozen, cha
   readonly frozen: boolean;
   /** Changes on the slot's event nobody on the floor has acknowledged yet. */
   readonly changed?: number;
+  /** Who is on setup for the turn-round before it, when the rota plans setup. */
+  readonly crew?: TurnRoundCrew | null;
 }): ReactElement {
   // The breath samples its phase the moment it begins: a new motion, or a
   // freeze lifting, starts a new animation and a new sample (D3 law 1).
@@ -145,7 +149,7 @@ export function Slab({ slot, variant, nowMs, selected, onOpen, wall, frozen, cha
   // The wall reads room, title, state and time (D11): no turn-round, no
   // facts seen, no other rooms named; the ring in its short words on what
   // it shows, so a request nobody has still breathes there (D3).
-  const gap = variant === "line" || wall ? null : turnRound(slot, nowMs);
+  const gap = variant === "line" || wall ? null : turnRound(slot, nowMs, crew);
   const shownSeen = wall ? null : seen;
   const shownWords = wall ? wallRingWords(slot, nowMs) : words;
   const ringed = ring !== null && shownWords !== null
@@ -307,10 +311,12 @@ function bookingCount(count: number): string {
 
 /** One room: its photograph, its name and its day. `children` is the open
  *  slot, when it unfolds under its own room (the narrow desk and the phone). */
-export function RoomRow({ day, view, plaque, nowMs, venueSlug, selectedId, onOpen, wall, frozen, changed, children }: {
+export function RoomRow({ day, view, plaque, nowMs, venueSlug, selectedId, onOpen, wall, frozen, changed, crew, children }: {
   readonly day: RoomDay;
   /** Changes to read, by booking. */
   readonly changed?: ReadonlyMap<string, number>;
+  /** Who is on setup for each turn-round, by the booking it leads to. */
+  readonly crew?: ReadonlyMap<string, TurnRoundCrew>;
   readonly view: BoardWindow;
   readonly plaque: number | null;
   readonly nowMs: number;
@@ -333,6 +339,7 @@ export function RoomRow({ day, view, plaque, nowMs, venueSlug, selectedId, onOpe
       wall={wall}
       frozen={frozen}
       changed={changed?.get(slot.bookingId) ?? 0}
+      crew={crew?.get(slot.bookingId) ?? null}
     />
   );
   // The wall reads the room, what it is doing and what is next (D11).

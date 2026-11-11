@@ -19,6 +19,7 @@ import { sheetProgressLine } from "./lib/day-board-sheet.js";
 import { useSlotSheet, type SlotSheetResult } from "./lib/use-slot-sheet.js";
 import type { DayBoardSlot } from "./lib/day-board-state.js";
 import type { SlotRequestsComponent } from "./lib/slot-requests-contract.js";
+import type { TurnRoundCrew } from "./lib/turn-round-crew.js";
 import { StateIcon } from "./DayBoardRooms.js";
 import { ChangeoverSection } from "./DayBoardChangeover.js";
 
@@ -256,7 +257,7 @@ function WhatChanged({ changes, timeZone, nowMs, onAcknowledge, sending, failure
 }
 
 /** The open slot: its sheet, its event, its phases and its requests. */
-export function SlotDetail({ slot, room, venueSlug, timeZone, slotRequests: SlotRequests, observations, onClose, closeLabel, changes = null, nowMs = Date.now(), onAcknowledge = null, acknowledging = false, acknowledgeFailure = null, changesUnread = false, previous = null }: {
+export function SlotDetail({ slot, room, venueSlug, timeZone, slotRequests: SlotRequests, observations, onClose, closeLabel, changes = null, nowMs = Date.now(), onAcknowledge = null, acknowledging = false, acknowledgeFailure = null, changesUnread = false, previous = null, crew = null }: {
   readonly slot: DayBoardSlot;
   readonly room: { readonly id: string; readonly name: string; readonly slug: string };
   readonly venueSlug: string | null;
@@ -278,6 +279,8 @@ export function SlotDetail({ slot, room, venueSlug, timeZone, slotRequests: Slot
   readonly changesUnread?: boolean;
   /** The booking this one's turn-round runs from, when there is one. */
   readonly previous?: DayBoardSlot | null;
+  /** Who is on setup for that turn-round, when the rota plans setup. */
+  readonly crew?: TurnRoundCrew | null;
 }): ReactElement {
   const occasion = occasionLabel(slot.eventType);
   // The slot's layouts, read once: the sheet link and the changeover share them.
@@ -374,7 +377,7 @@ export function SlotDetail({ slot, room, venueSlug, timeZone, slotRequests: Slot
         <p className="dayboard-changes-unread">What changed could not be read just now.</p>
       ) : null}
       {/* What moves from the booking before to this one, in this room. */}
-      {previous !== null && <ChangeoverSection previous={previous} slot={slot} room={room} after={sheet} />}
+      {previous !== null && <ChangeoverSection previous={previous} slot={slot} room={room} after={sheet} crew={crew} timeZone={timeZone} />}
       {/* What the room was seen doing (S5): the latest fact, and the next
           facts a hallkeeper may record from here. Facts never move a time. */}
       <section ref={seenRef} className="dayboard-seen dayboard-detail-section" aria-label="What the room is doing" tabIndex={-1}>

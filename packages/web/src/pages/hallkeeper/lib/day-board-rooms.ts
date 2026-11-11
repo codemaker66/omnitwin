@@ -201,6 +201,15 @@ function changedParts(rooms: readonly string[]): readonly SummaryPart[] {
   return [{ strong: `${countWord(rooms.length)} rooms`, tone: "copper" }, ` have changes to read${names}.`];
 }
 
+/** Turn-rounds the rota plans setup around but puts nobody on: one by its
+ *  room, more counted with their rooms. */
+function crewParts(rooms: readonly string[]): readonly SummaryPart[] {
+  const only = rooms[0];
+  if (only === undefined) return [];
+  if (rooms.length === 1) return [{ strong: only, tone: "copper" }, "’s turn-round has nobody on setup."];
+  return [{ strong: `${countWord(rooms.length)} turn-rounds`, tone: "copper" }, ` have nobody on setup: ${listed([...new Set(rooms)])}.`];
+}
+
 /** Functions, as the plane counts them: a room can hold a live function and
  *  the next one getting ready, and both are said. */
 function activityParts(lanes: readonly DayBoardLane[]): readonly SummaryPart[] {
@@ -239,9 +248,12 @@ export function boardSummary(input: {
   readonly nowMs: number;
   /** Rooms with a change to read, in the board's order. */
   readonly changed?: readonly string[];
+  /** The room of each turn-round not yet over with nobody on setup, in the board's order. */
+  readonly unstaffed?: readonly string[];
 }): readonly SummaryPart[] | null {
   const { lanes, unowned, today, nowMs } = input;
   const changed = changedParts(input.changed ?? []);
+  const crew = crewParts(input.unstaffed ?? []);
   const bookings = lanes.reduce((sum, lane) => sum + lane.slots.length, 0);
   if (bookings === 0) return null;
   const risk = riskParts(lanes, today);
@@ -251,9 +263,10 @@ export function boardSummary(input: {
       [{ strong: `${countWord(bookings)} ${plural(bookings, "booking", "bookings")}` }, ` across ${countWord(rooms).toLowerCase()} ${plural(rooms, "room", "rooms")}.`],
       risk,
       changed,
+      crew,
     ]);
   }
-  const parts = sentences([risk, changed, requestParts(lanes, unowned, nowMs), activityParts(lanes)]);
+  const parts = sentences([risk, changed, crew, requestParts(lanes, unowned, nowMs), activityParts(lanes)]);
   return parts.length === 0 ? null : parts;
 }
 

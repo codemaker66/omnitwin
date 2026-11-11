@@ -2,7 +2,9 @@ import { useEffect, useState, type ReactElement } from "react";
 import { changeoverSplit, type Changeover, type ChangeoverItem, type ChangeoverPlanGroup } from "@omnitwin/types";
 import { getChangeover } from "../../api/changeover.js";
 import { ActivityStatus } from "../../components/shared/Activity.js";
+import { formatWallTime } from "../diary/lib/board-time.js";
 import type { DayBoardSlot } from "./lib/day-board-state.js";
+import type { TurnRoundCrew } from "./lib/turn-round-crew.js";
 import { useSlotSheet, type SlotSheetResult } from "./lib/use-slot-sheet.js";
 
 // ---------------------------------------------------------------------------
@@ -15,7 +17,8 @@ import { useSlotSheet, type SlotSheetResult } from "./lib/use-slot-sheet.js";
 //
 // Dressing (the tables' linen) belongs to its booking: what the room had is
 // cleared and what the next booking needs is laid, so a cloth is never
-// listed as staying for a different function.
+// listed as staying for a different function. Who is on setup for the
+// turn-round comes first, from the published rota (lib/turn-round-crew.ts).
 // ---------------------------------------------------------------------------
 
 type ChangeoverResult =
@@ -176,6 +179,21 @@ export function ChangeoverList({ changeover, fromTitle, toTitle }: {
   );
 }
 
+function joined(words: readonly string[]): string {
+  if (words.length <= 1) return words.join("");
+  return `${words.slice(0, -1).join(", ")} and ${words[words.length - 1] ?? ""}`;
+}
+
+/** Who is on setup for the turn-round, from the published rota. */
+export function crewLine(crew: TurnRoundCrew, timeZone: string): string {
+  const time = (ms: number): string => formatWallTime(ms, timeZone);
+  const open = crew.unfilled === 0 ? "" : crew.hands.length === 0
+    ? ` ${crew.unfilled === 1 ? "One setup shift is" : `${String(crew.unfilled)} setup shifts are`} still to fill.`
+    : ` ${crew.unfilled === 1 ? "One more shift is" : `${String(crew.unfilled)} more shifts are`} still to fill.`;
+  if (crew.hands.length === 0) return `Nobody is on setup for this turn-round.${open}`;
+  return `On setup: ${joined(crew.hands.map((hand) => `${hand.name} ${time(hand.startsAtMs)}–${time(hand.endsAtMs)}`))}.${open}`;
+}
+
 /** Why one side has no single layout to compare, as a whole sentence. */
 function noLayout(side: SlotSheetResult, title: string): string | null {
   const state = side.state;
@@ -188,12 +206,15 @@ function noLayout(side: SlotSheetResult, title: string): string | null {
   }
 }
 
-export function ChangeoverSection({ previous, slot, room, after }: {
+export function ChangeoverSection({ previous, slot, room, after, crew = null, timeZone }: {
   readonly previous: DayBoardSlot;
   readonly slot: DayBoardSlot;
   readonly room: { readonly slug: string; readonly name: string };
   /** The open slot's own layouts, which the panel reads once for its sheet link too. */
   readonly after: SlotSheetResult;
+  /** Who is on setup for the turn-round, when the rota plans setup. */
+  readonly crew?: TurnRoundCrew | null;
+  readonly timeZone: string;
 }): ReactElement {
   const before = useSlotSheet(previous.eventId, room.slug, room.name, previous.kind);
   const [attempt, setAttempt] = useState(0);
@@ -229,6 +250,7 @@ export function ChangeoverSection({ previous, slot, room, after }: {
     <section className="dayboard-changeover dayboard-detail-section" aria-label={`Changeover from ${previous.title}`}>
       <h3 className="dayboard-detail-heading">Changeover</h3>
       <p className="dayboard-changeover-from">From {previous.title}</p>
+      {crew !== null && <p className="dayboard-changeover-crew">{crewLine(crew, timeZone)}</p>}
       {body}
     </section>
   );

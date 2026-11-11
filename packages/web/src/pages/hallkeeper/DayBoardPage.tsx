@@ -27,6 +27,8 @@ import { useSlotRequests } from "../../components/requests/requests-context.js";
 import { listensForFloorRequests } from "../../lib/requests-live.js";
 import { useSlotObservations } from "./lib/use-slot-observations.js";
 import { floorChangesBySlot, useFloorChanges } from "./lib/use-floor-changes.js";
+import { crewBySlot, unstaffedTurnRounds, UNSTAFFED_HORIZON_MS } from "./lib/turn-round-crew.js";
+import { useRotaDay } from "./lib/use-rota-day.js";
 import { ChimeToggle } from "../../components/requests/ChimeToggle.js";
 import { ShiftHandover } from "../../components/requests/ShiftHandover.js";
 import { PushAlertsToggle } from "../../components/requests/PushAlertsToggle.js";
@@ -436,6 +438,14 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
     .filter(([eventId]) => !onBoard.has(eventId) && (floor.byEvent.get(eventId)?.changes.length ?? 0) > 0)
     .map(([eventId, title]) => ({ eventId, title, changes: floor.byEvent.get(eventId)?.changes ?? [] })), [dayEvents, onBoard, floor.byEvent]);
   const changesBySlot = useMemo(() => floorChangesBySlot(lanes, floor.byEvent), [lanes, floor.byEvent]);
+  // Who is on setup for each turn-round, from the published rota: read with
+  // the day, and again as the board refreshes, at most every five minutes.
+  const rota = useRotaDay(venueId, range, timeZone, venueId !== null);
+  const refreshRota = rota.refresh;
+  useEffect(() => { if (data !== null) refreshRota(); }, [data, refreshRota]);
+  const rotaShifts = rota.shifts;
+  const rotaPeople = rota.people;
+  const crew = useMemo(() => crewBySlot(lanes, { shifts: rotaShifts, people: rotaPeople }), [lanes, rotaShifts, rotaPeople]);
   const changedBySlot = useMemo(() => new Map([...changesBySlot]
     .filter(([, changes]) => changes.length > 0)
     .map(([bookingId, changes]) => [bookingId, changes.length] as const)), [changesBySlot]);
@@ -534,9 +544,15 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
   const changedRooms = useMemo(() => lanes
     .filter((lane) => lane.slots.some((slot) => slot.state !== "done" && changedBySlot.has(slot.bookingId)))
     .map((lane) => lane.room.name), [lanes, changedBySlot]);
+  // The turn-rounds the rota puts nobody on setup for: today, those under
+  // way or due within two hours; another day, all of them.
+  const unstaffed = useMemo(
+    () => unstaffedTurnRounds(lanes, crew, nowMs, browsingToday ? UNSTAFFED_HORIZON_MS : Number.POSITIVE_INFINITY),
+    [lanes, crew, nowMs, browsingToday],
+  );
   const summary = useMemo(
-    () => (board === null ? null : boardSummary({ lanes: board.lanes, unowned: board.unowned, today: browsingToday, nowMs, changed: changedRooms })),
-    [board, browsingToday, nowMs, changedRooms],
+    () => (board === null ? null : boardSummary({ lanes: board.lanes, unowned: board.unowned, today: browsingToday, nowMs, changed: changedRooms, unstaffed })),
+    [board, browsingToday, nowMs, changedRooms, unstaffed],
   );
 
   // A venue's own account not connected to one yet is told so, as on every
@@ -598,6 +614,7 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
         acknowledgeFailure={selectedEventId === null ? null : floor.failures.get(selectedEventId) ?? null}
         changesUnread={floor.failedSinceMs !== null}
         previous={previousSlot}
+        crew={crew.get(selected.slot.bookingId) ?? null}
       />
     </div>
   );
@@ -738,6 +755,7 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
           wall={wall}
           frozen={frozen}
           changed={changedBySlot}
+          crew={crew}
         >
           {!beside && selected !== null && selected.room.id === day.room.id ? detail : null}
         </RoomRow>
