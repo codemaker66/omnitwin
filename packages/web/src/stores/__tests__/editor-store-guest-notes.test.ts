@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { BatchObjectInput, Configuration, ObjectMetadata, PlacedObject } from "../../api/configurations.js";
+import { editorToPlacedItem, placedItemToEditor } from "../../components/editor/EditorBridge.js";
 import { persistAnonymousPlannerDraft, readAnonymousPlannerDraft } from "../../lib/anonymous-planner-draft.js";
 import { noteHeldOn } from "../../lib/guest-plan-notes.js";
 import { useEditorStore, type EditorObject } from "../editor-store.js";
@@ -273,6 +274,24 @@ describe("a browser that is not shown the plan's notes", () => {
 
     useEditorStore.setState({ isPublicPreview: false, notesIncluded: false });
     expect(noteHeldOn(store(), A)).toBe(false);
+  });
+
+  it("keeps the mark through the scene's rebuild of the pieces, so a move is recorded as that move alone", async () => {
+    await open(plan([placed(A, { noteHeld: true }), placed(B)], false));
+
+    // Whenever a piece changes, the scene bridge rebuilds every piece from
+    // what is drawn. The undo history compares every field, so a mark dropped
+    // there would be recorded as a change to a piece nobody touched.
+    store().replaceObjectsFromScene(store().objects.map((object) => placedItemToEditor(
+      { ...editorToPlacedItem(object), ...(object.id === B ? { x: 3 } : {}) },
+      object,
+    )));
+
+    expect(store().history.past.at(-1)?.updated.map((patch) => patch.id)).toEqual([B]);
+    expect(store().objects.find((object) => object.id === A)?.noteHeld).toBe(true);
+    // The copy kept on this device carries it too, so restored work is not
+    // recorded as taking the mark off either.
+    expect(draftOnDevice()?.objects.find((object) => object.id === A)?.noteHeld).toBe(true);
   });
 
   it("shows the person their own note on a piece the server says holds one, so they can take it off", async () => {

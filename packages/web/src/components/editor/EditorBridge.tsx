@@ -126,6 +126,10 @@ export function placedItemToEditor(item: PlacedItem, existing: EditorObject | un
     groupId: item.groupId,
     // A note an edit hands the piece in this write (Replace, lib/note-seeds), so piece and note are one undo step.
     notes: seededNote(item.id) ?? existing?.notes ?? "",
+    // The server's mark that the piece holds a note this browser is not shown
+    // is the piece's, not the scene's: it passes through unchanged, or the
+    // history would record every rebuild as taking it off.
+    ...(existing?.noteHeld === true ? { noteHeld: true } : {}),
   };
   const label = (item.label ?? "").trim();
   return label.length > 0 ? { ...base, label } : base;

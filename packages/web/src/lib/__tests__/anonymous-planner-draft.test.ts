@@ -343,11 +343,17 @@ describe("a draft and the plan's notes", () => {
   });
 
   it("takes each note it never read from the server's copy: the pieces it moved, the ones it left, and its own base", () => {
-    // Read without notes: A (moved since) and B (left alone) look bare.
-    keep([piece(A, "", 5), piece(B, "")], [piece(A, ""), piece(B, "")]);
+    // Read without notes: A (moved since) and B (left alone) came without
+    // theirs, each marked as holding one.
+    const marked = (object: EditorObject): EditorObject => ({ ...object, noteHeld: true });
+    keep([marked(piece(A, "", 5)), marked(piece(B, ""))], [marked(piece(A, "")), marked(piece(B, ""))]);
+    expect(kept().objects.map((object) => object.noteHeld)).toEqual([true, true]);
     const restored = plannerDraftWithUnreadNotes(kept(), [piece(A, HELD), piece(B, "TEST ONLY top table")]);
 
     expect(notesOf(restored.objects)).toEqual({ [A]: HELD, [B]: "TEST ONLY top table" });
+    // Shown their notes now, the pieces are no longer marked as holding one unseen.
+    expect(restored.objects.some((object) => "noteHeld" in object)).toBe(false);
+    expect((plannerDraftBaseObjects(restored) ?? []).some((object) => "noteHeld" in object)).toBe(false);
     // The move is still the draft's.
     expect(restored.objects.find((object) => object.id === A)?.positionX).toBe(5);
     // Its base holds the notes too, so the restore counts one moved piece, not two cleared notes.

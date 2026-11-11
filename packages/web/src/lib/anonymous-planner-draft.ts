@@ -53,6 +53,8 @@ const EditorObjectDraftSchema = z.object({
   groupId: z.string().nullable(),
   label: z.string().max(80).optional(),
   notes: z.string(),
+  // The server's mark that the piece holds a note this browser is not shown.
+  noteHeld: z.boolean().optional(),
 });
 
 /** The server document a draft was edited from, as what the draft changed. */
@@ -85,6 +87,7 @@ const AnonymousPlannerDraftSchema = z.object({
 });
 
 export type AnonymousPlannerDraft = z.infer<typeof AnonymousPlannerDraftSchema>;
+type DraftObject = AnonymousPlannerDraft["objects"][number];
 
 export interface PersistAnonymousPlannerDraftInput {
   readonly configId: string | null;
@@ -352,14 +355,19 @@ export function plannerDraftWithUnreadNotes(
   const readAs = new Map((draft.base?.changed ?? []).map((object) => [object.id, object.notes]));
   /** The note this piece never read, when its base held none. */
   const unread = (id: string, baseNote: string): string | undefined => baseNote.length === 0 ? serverNotes.get(id) : undefined;
+  /** The piece with the note it never read: shown it now, it is no longer marked as holding one unseen. */
+  const withNote = (object: DraftObject, note: string): DraftObject => {
+    const { noteHeld, ...shown } = object;
+    return noteHeld === undefined ? { ...object, notes: note } : { ...shown, notes: note };
+  };
   const objects = draft.objects.map((object) => {
     const note = unread(object.id, readAs.get(object.id) ?? object.notes);
-    return note === undefined || object.notes.length > 0 ? object : { ...object, notes: note };
+    return note === undefined || object.notes.length > 0 ? object : withNote(object, note);
   });
   if (draft.base === undefined) return { ...draft, objects };
   const changed = draft.base.changed.map((object) => {
     const note = unread(object.id, object.notes);
-    return note === undefined ? object : { ...object, notes: note };
+    return note === undefined ? object : withNote(object, note);
   });
   return { ...draft, objects, base: { ...draft.base, changed } };
 }
