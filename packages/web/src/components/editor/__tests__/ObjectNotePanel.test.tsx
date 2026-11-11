@@ -184,6 +184,65 @@ describe("docked ObjectNotePanel", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// A guest plan's notes go only to the browser that made the plan. Any other
+// browser is told which pieces hold one (the server's noteHeld, on the last
+// document it confirmed). Such a piece used to look bare: an empty field that
+// took the person's words and, at the next save, lost them (review of #375).
+// ---------------------------------------------------------------------------
+
+const HELD_NOTE_LINE = "This piece has a note that cannot be shown or changed here.";
+
+/** The open plan as a browser that is not shown its notes holds it, the first table holding one. */
+function openWithHeldNote(notesIncluded: boolean): void {
+  const objects = useEditorStore.getState().objects;
+  useEditorStore.setState({
+    isPublicPreview: true,
+    notesIncluded,
+    baseObjects: objects.map((object) => object.id === firstTable.id ? { ...object, noteHeld: true } : object),
+  });
+}
+
+describe("a piece whose note this browser is not shown", () => {
+  it("says the piece has a note, with nothing to type into and nothing to clear", () => {
+    openWithHeldNote(false);
+    const { container } = render(<DockFixture />);
+    expect(screen.getByTestId("object-note-held").textContent).toBe(HELD_NOTE_LINE);
+    expect(container.querySelector("textarea")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Clear note", hidden: true })).toBeNull();
+    expect(screen.queryByTestId("object-note-status")).toBeNull();
+
+    // A piece that holds none takes a note as ever.
+    act(() => { useSelectionStore.getState().select(secondTable.id); });
+    expect(screen.queryByTestId("object-note-held")).toBeNull();
+    fireEvent.change(field(container), { target: { value: "By the window" } });
+    fireEvent.blur(field(container));
+    expect(noteOf(secondTable.id)).toBe("By the window");
+  });
+
+  it("offers the note as ever in a plan read with its notes", () => {
+    openWithHeldNote(true);
+    const { container } = render(<DockFixture />);
+    expect(screen.queryByTestId("object-note-held")).toBeNull();
+    expect(field(container).value).toBe("");
+  });
+
+  it("shows the person a note of their own on such a piece, so they can take it off", () => {
+    // Work kept on this device wrote on a piece that has since come to hold a
+    // note: the save is refused until theirs comes off, so it must be in reach.
+    openWithHeldNote(false);
+    useEditorStore.setState({
+      objects: useEditorStore.getState().objects.map((object) => object.id === firstTable.id ? { ...object, notes: "Typed here" } : object),
+    });
+    const { container } = render(<DockFixture />);
+    expect(screen.queryByTestId("object-note-held")).toBeNull();
+    expect(field(container).value).toBe("Typed here");
+    fireEvent.click(screen.getByRole("button", { name: "Clear note", hidden: true }));
+    expect(noteOf(firstTable.id)).toBe("");
+    expect(screen.getByTestId("object-note-held").textContent).toBe(HELD_NOTE_LINE);
+  });
+});
+
 describe("noteTargetFor", () => {
   it("prefers the table already holding a note in a set sharing one group, and has no target with nothing selected", () => {
     const round = catalogueId("round-table-6ft");
@@ -191,5 +250,13 @@ describe("noteTargetFor", () => {
     const b = { ...placedItemToEditor(createPlacedItem(round, 2, 0), undefined), groupId: "set-1", notes: "Top table" };
     expect(noteTargetFor([a, b], new Set([a.id]))).toEqual({ kind: "piece", id: b.id });
     expect(noteTargetFor([a, b], new Set())).toBeNull();
+  });
+
+  it("prefers the table holding a note this browser is not shown, so a second note is not written beside it", () => {
+    const round = catalogueId("round-table-6ft");
+    const a = { ...placedItemToEditor(createPlacedItem(round, 0, 0), undefined), groupId: "set-1" };
+    const b = { ...placedItemToEditor(createPlacedItem(round, 2, 0), undefined), groupId: "set-1" };
+    expect(noteTargetFor([a, b], new Set([a.id]))).toEqual({ kind: "piece", id: a.id });
+    expect(noteTargetFor([a, b], new Set([a.id]), new Set([b.id]))).toEqual({ kind: "piece", id: b.id });
   });
 });
