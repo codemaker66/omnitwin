@@ -131,11 +131,11 @@ describe("proposal state machine role policy", () => {
   });
 
   it("quote machine: staff issue/supersede, clients accept/decline", () => {
-    expect(canTransitionQuote("draft", "issued", "staff")).toBe(true);
-    expect(canTransitionQuote("draft", "issued", "client")).toBe(false);
-    expect(canTransitionQuote("issued", "accepted", "client")).toBe(true);
-    expect(canTransitionQuote("issued", "superseded", "client")).toBe(false);
-    expect(canTransitionQuote("accepted", "issued", "staff")).toBe(false);
+    expect(canTransitionQuote("draft", "issued", "staff", false)).toBe(true);
+    expect(canTransitionQuote("draft", "issued", "client", false)).toBe(false);
+    expect(canTransitionQuote("issued", "accepted", "client", false)).toBe(true);
+    expect(canTransitionQuote("issued", "superseded", "client", false)).toBe(false);
+    expect(canTransitionQuote("accepted", "issued", "staff", false)).toBe(false);
   });
 
   // Audit pricing-money-5. The admin house override stops where a move can
