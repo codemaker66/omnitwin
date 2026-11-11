@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { AIAssistantStatusSchema, stableCanonicalJson, type AIAssistantStatus, type AIUsageFeature } from "@omnitwin/types";
+import { AIDraftsUnavailableError, isOutOfCredit, type AIAccessPolicy } from "./ai-access.js";
 import type {
   AIGenerationAdapter,
   AIGenerationInput,
@@ -208,6 +209,7 @@ export class AnthropicAIGenerationAdapter implements AIGenerationAdapter, AIStru
   private readonly send: AnthropicDraftSend;
   private readonly usage: AIUsageMeter;
   private readonly prices: PriceTable;
+  private readonly access: AIAccessPolicy | undefined;
 
   constructor(input: {
     readonly model: string;
@@ -217,6 +219,8 @@ export class AnthropicAIGenerationAdapter implements AIGenerationAdapter, AIStru
     readonly workspaceId?: string;
     /** Reserves each call against its venue's allowance and records what it cost (T-656). */
     readonly usage: AIUsageMeter;
+    /** Which venues and drafts are switched on (C1); every one unless given. */
+    readonly access?: AIAccessPolicy;
     /** The prices calls are recorded at; the current table unless a test names another. */
     readonly prices?: PriceTable;
     /** Replaces the network call, for tests. */
@@ -231,6 +235,7 @@ export class AnthropicAIGenerationAdapter implements AIGenerationAdapter, AIStru
     this.model = input.model;
     this.usage = input.usage;
     this.prices = input.prices ?? ANTHROPIC_PRICE_TABLE;
+    this.access = input.access;
     if (input.send !== undefined) {
       this.send = input.send;
     } else {
@@ -262,9 +267,12 @@ export class AnthropicAIGenerationAdapter implements AIGenerationAdapter, AIStru
   }
 
   /**
-   * One call, held to the venue's allowance and recorded: reserve (or be
-   * refused, with nothing sent), send, record what came back, then read it.
-   * Every failure keeps its own error; the record never replaces it.
+   * One call, held to the venue's allowance and recorded: refused with
+   * nothing reserved or sent where the venue or draft is not switched on
+   * (C1); reserve (or be refused, with nothing sent), send, record what came
+   * back, then read it. Every failure keeps its own error and the record
+   * never replaces it, but for the provider refusing for want of credit,
+   * which is said as AIDraftsUnavailableError.
    */
   private async metered<T>(
     request: AnthropicDraftRequest,
@@ -273,6 +281,7 @@ export class AnthropicAIGenerationAdapter implements AIGenerationAdapter, AIStru
     signal: AbortSignal | undefined,
     read: (message: Anthropic.Beta.BetaMessage) => T,
   ): Promise<T> {
+    this.access?.assertAllowed(attribution.venueId, feature);
     const hold = await this.usage.hold({
       venueId: attribution.venueId,
       userId: attribution.userId,
@@ -287,6 +296,7 @@ export class AnthropicAIGenerationAdapter implements AIGenerationAdapter, AIStru
       message = await this.send(request, { signal });
     } catch (error) {
       await hold.settle(failedCall(this.model, error));
+      if (isOutOfCredit(error)) throw new AIDraftsUnavailableError();
       throw error;
     }
     const used = meterAnthropicMessage(this.prices, this.model, message);

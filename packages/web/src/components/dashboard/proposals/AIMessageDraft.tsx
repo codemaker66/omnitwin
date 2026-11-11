@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState, type ReactElement } from "react";
 import { Sparkles } from "lucide-react";
-import { AI_BUDGET_REACHED, MAX_CLIENT_MESSAGE_LENGTH, findUnsupportedProposalClaim, type AIDraft, type ProposalMessageDraft } from "@omnitwin/types";
+import { AI_BUDGET_REACHED, AI_DRAFTS_UNAVAILABLE, MAX_CLIENT_MESSAGE_LENGTH, findUnsupportedProposalClaim, type AIDraft, type ProposalMessageDraft } from "@omnitwin/types";
 import { ApiError } from "../../../api/client.js";
 import { draftProposalMessage } from "../../../api/ai-assistant.js";
 import { markAIDraftsUnavailable, useAIDraftsAvailable } from "../../../hooks/use-ai-drafts-available.js";
@@ -28,7 +28,9 @@ type Step =
   | { readonly kind: "failed" }
   | { readonly kind: "refused" }
   | { readonly kind: "nothing" }
-  | { readonly kind: "gone" };
+  | { readonly kind: "gone" }
+  // The provider is out of credit until the next grant (C1): not a failure to retry.
+  | { readonly kind: "unavailable" };
 
 /** What a draft was written from, in words: only what the AI was given. */
 export function drewOnWords(drewOn: DrewOn): string {
@@ -64,7 +66,7 @@ interface AIMessageDraftProps {
 }
 
 export function AIMessageDraft({ proposalId, canUse, onUse, onShown }: AIMessageDraftProps): ReactElement | null {
-  const available = useAIDraftsAvailable();
+  const available = useAIDraftsAvailable("proposal_draft");
   const [step, setStep] = useState<Step>({ kind: "idle" });
   // Said to a screen reader: the draft on its way, or ready where focus could not go.
   const [said, setSaid] = useState("");
@@ -120,6 +122,14 @@ export function AIMessageDraft({ proposalId, canUse, onUse, onShown }: AIMessage
         if (error instanceof ApiError && ((error.status === 503 && error.code === "AI_ASSISTANT_DISABLED")
           || (error.status === 429 && error.code === AI_BUDGET_REACHED))) {
           setStep({ kind: "gone" });
+          markAIDraftsUnavailable("proposal_draft");
+          setFocusTo("said");
+          return;
+        }
+        // Out of credit until the next grant: every AI draft goes for the
+        // visit, and the booker is told to write this one by hand.
+        if (error instanceof ApiError && error.status === 503 && error.code === AI_DRAFTS_UNAVAILABLE) {
+          setStep({ kind: "unavailable" });
           markAIDraftsUnavailable();
           setFocusTo("said");
           return;
@@ -142,7 +152,7 @@ export function AIMessageDraft({ proposalId, canUse, onUse, onShown }: AIMessage
       });
   };
 
-  if (step.kind !== "gone" && available !== true) return null;
+  if (step.kind !== "gone" && step.kind !== "unavailable" && available !== true) return null;
 
   const drafting = step.kind === "drafting";
   const ready = step.kind === "ready" ? step : null;
@@ -157,6 +167,11 @@ export function AIMessageDraft({ proposalId, canUse, onUse, onShown }: AIMessage
       {step.kind === "gone" && (
         <p className="enq-next__hint" ref={saidRef} tabIndex={-1} data-testid="ai-draft-gone">
           AI drafts are not available now. The message is unchanged.
+        </p>
+      )}
+      {step.kind === "unavailable" && (
+        <p className="enq-next__hint" ref={saidRef} tabIndex={-1} data-testid="ai-draft-unavailable">
+          AI drafts are unavailable just now. Write this message by hand; drafts return on their own. The message is unchanged.
         </p>
       )}
       {step.kind === "refused" && (

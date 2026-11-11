@@ -151,6 +151,30 @@ month (on the database's clock), in US dollars.
 - `AI_ASSISTANT_ENABLED` is still the global switch. With AI off, nothing is
   reserved or recorded.
 
+### Which venues and drafts (C1, 5 November 2026)
+
+With AI on, a call is made only for a venue in `AI_ASSISTANT_VENUE_IDS` and a
+draft in `AI_ASSISTANT_FEATURES` (comma-separated; `services/ai-access.ts`).
+Both providers check this before anything is reserved, recorded or sent, and
+answer `AIAssistantDisabledError` (503 `AI_ASSISTANT_DISABLED`) otherwise.
+There is no "every venue" value. Two rules hold at boot:
+
+- **A list that is unset fails closed.** The API starts with AI on for no
+  venue and no draft. It logs a warning naming the unset variable, and every
+  status (`/ai/status`, `/event-architect/brief-drafts/status`) answers
+  `configured: false` with "AI drafts are on, but no venue or draft has been
+  switched on yet." A forgotten variable never blocks a deploy.
+- **A list that is set but malformed stops the boot**, like the allowance
+  above: an empty list, a value that is not a venue id, or an unknown draft
+  name. Such a value comes only from a deliberate variable change, and its
+  redeploy fails visibly at once while the old container keeps serving.
+
+When the provider refuses for want of credit (a 402 `billing_error`, or a 400
+saying the credit balance is too low or a spend limit is reached), the call is
+recorded as an error and the route answers 503 `AI_DRAFTS_UNAVAILABLE`; staff
+are told to write by hand until drafts return. The order to set the variables
+in is `docs/operations/ai-pilot-switch-on.md`.
+
 **Before every call,** the adapter reserves the call's worst-case cost.
 `PostgresAIUsageMeter.hold` does this in one transaction under
 `pg_advisory_xact_lock(hashtextextended('ai-usage:' || venue_id, 0))`:
