@@ -33,13 +33,25 @@ function openRoom(name: string, snapEnabled: boolean): Walls {
   return geometry.wallPolygon;
 }
 
+/** What the slow way has already said of a chair at a spot, room by room: the same spots come up brush after brush. */
+const judged = new WeakMap<Walls, Map<string, boolean>>();
+
 /**
- * Whether a chair at a spot, facing along z or turned a quarter, stands wholly inside the walls: the slow
- * way, its footprint taken in by `slack` (a hair by default, so a chair set exactly against a wall stands).
+ * Whether a chair at a spot stands wholly inside the walls: the slow way, its footprint taken in by
+ * `slack` (a hair by default, so a chair set exactly against a wall stands). A turned chair is judged
+ * as the planner judges any turned piece, by the upright box round it.
  */
 function stands(walls: Walls, x: number, z: number, turn: number, slack: number = HAIR): boolean {
-  const quarter = Math.abs(Math.sin(turn)) > 0.5;
-  return footprintInsideWalls(walls, x, z, (quarter ? CHAIR.depth : CHAIR.width) / 2, (quarter ? CHAIR.width : CHAIR.depth) / 2, slack);
+  const key = `${String(x)}|${String(z)}|${String(turn)}|${String(slack)}`;
+  const known = judged.get(walls) ?? new Map<string, boolean>();
+  judged.set(walls, known);
+  const before = known.get(key);
+  if (before !== undefined) return before;
+  const halfW = (CHAIR.width / 2) * Math.abs(Math.cos(turn)) + (CHAIR.depth / 2) * Math.abs(Math.sin(turn));
+  const halfD = (CHAIR.width / 2) * Math.abs(Math.sin(turn)) + (CHAIR.depth / 2) * Math.abs(Math.cos(turn));
+  const inside = footprintInsideWalls(walls, x, z, halfW, halfD, slack);
+  known.set(key, inside);
+  return inside;
 }
 
 const spot = (point: { readonly x: number; readonly z: number }): string => `${point.x.toFixed(3)}, ${point.z.toFixed(3)}`;
@@ -95,38 +107,37 @@ describe.each(SHAPED_ROOMS)("the chair brush in the %s", (name) => {
     let brushes = 0;
     let chairsSet = 0;
     let chairsLeftOut = 0;
-    for (const snapEnabled of [true, false]) {
-      for (const turn of [0, QUARTER]) {
-        const walls = openRoom(name, snapEnabled);
-        const xs = walls.map(([x]) => x);
-        const zs = walls.map(([, z]) => z);
-        const floorPoints: (readonly [number, number])[] = [];
-        for (let x = Math.min(...xs) + 0.35; x < Math.max(...xs); x += 2.3) {
-          for (let z = Math.min(...zs) + 0.45; z < Math.max(...zs); z += 1.9) {
-            if (insideWalls(walls, x, z)) floorPoints.push([x, z]);
-          }
+    // The grid on and off, the chairs facing along z, turned a quarter and, off the grid, turned 15°.
+    for (const [snapEnabled, turn] of [[true, 0], [true, QUARTER], [false, 0], [false, QUARTER], [false, Math.PI / 12]] as const) {
+      const walls = openRoom(name, snapEnabled);
+      const xs = walls.map(([x]) => x);
+      const zs = walls.map(([, z]) => z);
+      const floorPoints: (readonly [number, number])[] = [];
+      for (let x = Math.min(...xs) + 0.35; x < Math.max(...xs); x += 2.3) {
+        for (let z = Math.min(...zs) + 0.45; z < Math.max(...zs); z += 1.9) {
+          if (insideWalls(walls, x, z)) floorPoints.push([x, z]);
         }
-        for (const from of floorPoints) {
-          for (const to of floorPoints) {
-            const whole = wholeBrush(snapEnabled, from, to, turn);
-            if (whole.length <= 1) continue;
-            usePlacementStore.setState({ placedItems: [] });
-            const ids = usePlacementStore.getState().placeChairBrush(CHAIR.id, from[0], from[1], to[0], to[1], turn);
-            const placed = usePlacementStore.getState().placedItems;
-            brushes += 1;
-            chairsSet += placed.length;
-            chairsLeftOut += whole.length - placed.length;
-            const said = `${name}, grid ${snapEnabled ? "on" : "off"}, turn ${turn.toFixed(2)}, (${spot({ x: from[0], z: from[1] })}) to (${spot({ x: to[0], z: to[1] })})`;
-            if (ids.length !== placed.length) wrong.push(`${said}: reports ${String(ids.length)} chairs, set ${String(placed.length)}`);
-            const set = new Set(placed.map(spot));
-            // The brush's own chairs, in its own order.
-            if (placed.map(spot).join("; ") !== whole.map(spot).filter((one) => set.has(one)).join("; ")) wrong.push(`${said}: sets chairs that are not the brush's, or out of its order`);
-            const through = placed.filter((chair) => !stands(walls, chair.x, chair.z, turn)).map(spot);
-            // Within a hair of a wall the slow way cannot say: a chair left out is wrong only where it stands inside with a hair to spare.
-            const missed = whole.filter((point) => !set.has(spot(point)) && stands(walls, point.x, point.z, turn, -HAIR)).map(spot);
-            if (through.length > 0 || missed.length > 0) {
-              wrong.push(`${said}: ${String(through.length)} set through the walls (${through[0] ?? "none"}), ${String(missed.length)} left out though inside (${missed[0] ?? "none"})`);
-            }
+      }
+      for (const from of floorPoints) {
+        for (const to of floorPoints) {
+          const whole = wholeBrush(snapEnabled, from, to, turn);
+          if (whole.length <= 1) continue;
+          usePlacementStore.setState({ placedItems: [] });
+          const ids = usePlacementStore.getState().placeChairBrush(CHAIR.id, from[0], from[1], to[0], to[1], turn);
+          const placed = usePlacementStore.getState().placedItems;
+          brushes += 1;
+          chairsSet += placed.length;
+          chairsLeftOut += whole.length - placed.length;
+          const said = `${name}, grid ${snapEnabled ? "on" : "off"}, turn ${turn.toFixed(2)}, (${spot({ x: from[0], z: from[1] })}) to (${spot({ x: to[0], z: to[1] })})`;
+          if (ids.length !== placed.length) wrong.push(`${said}: reports ${String(ids.length)} chairs, set ${String(placed.length)}`);
+          const set = new Set(placed.map(spot));
+          // The brush's own chairs, in its own order.
+          if (placed.map(spot).join("; ") !== whole.map(spot).filter((one) => set.has(one)).join("; ")) wrong.push(`${said}: sets chairs that are not the brush's, or out of its order`);
+          const through = placed.filter((chair) => !stands(walls, chair.x, chair.z, turn)).map(spot);
+          // Within a hair of a wall the slow way cannot say: a chair left out is wrong only where it stands inside with a hair to spare.
+          const missed = whole.filter((point) => !set.has(spot(point)) && stands(walls, point.x, point.z, turn, -HAIR)).map(spot);
+          if (through.length > 0 || missed.length > 0) {
+            wrong.push(`${said}: ${String(through.length)} set through the walls (${through[0] ?? "none"}), ${String(missed.length)} left out though inside (${missed[0] ?? "none"})`);
           }
         }
       }
