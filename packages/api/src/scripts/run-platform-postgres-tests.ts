@@ -33,6 +33,8 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/proposal-permissions-postgres.test.ts",
   "src/__tests__/proposal-links-postgres.test.ts",
   "src/__tests__/proposal-next-version-postgres.test.ts",
+  // A long proposal thread reaches the desk with its newest messages (audit contract-n-4).
+  "src/__tests__/proposal-conversation-postgres.test.ts",
   "src/__tests__/placed-object-batch-postgres.test.ts",
   // The review loop: a layout sent back, declined or withdrawn goes to the venue again; a stale move writes nothing.
   "src/__tests__/configuration-review-loop-postgres.test.ts",
