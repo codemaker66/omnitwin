@@ -279,9 +279,13 @@ describe("HallkeeperPage request and offline queue isolation", () => {
     const checkbox = await screen.findByRole("checkbox", { name: /Round table/u });
     fireEvent.click(checkbox);
     fireEvent.click(checkbox);
-    await waitFor(() => { expect(writes).toBe(2); });
+    // One row's writes go out in turn (audit hallkeeper-web-1): the second
+    // tap is already being saved, and is sent once the first has its answer.
+    await waitFor(() => { expect(writes).toBe(1); });
     expect(screen.getByText("Saving shared checks…").closest("[role='status']")?.querySelector("[data-activity-indicator]")).not.toBeNull();
     await act(async () => { first.resolve(jsonResponse({})); await first.promise; });
+    expect(screen.getByText("Saving shared checks…")).toBeTruthy();
+    await waitFor(() => { expect(writes).toBe(2); });
     expect(screen.getByText("Saving shared checks…")).toBeTruthy();
     await act(async () => { second.resolve(new Response(null, { status: 403 })); await second.promise; });
     await waitFor(() => { expect(screen.queryByText("Saving shared checks…")).toBeNull(); });
@@ -701,6 +705,26 @@ describe("HallkeeperPage keeps the checklist with the venue's team", () => {
     expect(screen.getByRole("checkbox", { name: /Round table/u, checked: true })).toBeDefined();
     expect(screen.getByText("The venue's team ticks these as they set the room.")).toBeDefined();
     expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "PATCH")).toHaveLength(0);
+  });
+
+  // The queue is the device's. Sent in a client's name the venue team's
+  // waiting tick could only be refused, and a refused tick is dropped.
+  it("a client's sheet sends none of the venue team's waiting ticks, and drops none", async () => {
+    signIn("client");
+    vi.mocked(listPendingProgress).mockResolvedValue([
+      { configId: CONFIG_A, eventId: null, rowKey: ROW_KEY, desiredChecked: false, queuedAt: checkedAt },
+    ]);
+    const fetchMock = serveTicked();
+    mount();
+
+    await screen.findByRole("checkbox", { name: /Round table/u, checked: true });
+    await act(async () => { await new Promise((resolve) => { setTimeout(resolve, 40); }); });
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "PATCH")).toHaveLength(0);
+    expect(ackProgress).not.toHaveBeenCalled();
+    expect(screen.queryByRole("status", { name: "1 offline edit pending sync" })).toBeNull();
+    // Leave the sheet before this suite signs the reader out: a sheet still
+    // open with nobody signed in is no longer a client's.
+    cleanup();
   });
 
   it("the venue's hallkeeper still ticks", async () => {
