@@ -266,7 +266,7 @@ function withoutUnsentNotes(
  * within the route's limit, and a right one is written to the plan.
  */
 const NOTE_HELD_REFUSAL = {
-  error: "A note on this plan cannot be changed from here, and this save tried to change it. Reload the page, or clear the note you wrote on that piece",
+  error: "A note on this plan cannot be changed from here, and this save tried to change it. Reload the page, or clear the note you wrote on that piece.",
   code: "NOTE_HELD",
 } as const;
 
