@@ -41,6 +41,8 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/role-vocabulary-postgres.test.ts",
   // An open socket acts with its person's current role: /ws/configurations saves and /ws/diary commands.
   "src/__tests__/socket-identity-postgres.test.ts",
+  // A socket that never signs in is closed at a deadline, on both socket routes.
+  "src/__tests__/socket-sign-in-deadline-postgres.test.ts",
   "src/__tests__/public-mcp-postgres.test.ts",
   "src/__tests__/sheet-paper-check-postgres.test.ts",
   "src/__tests__/ai-usage-postgres.test.ts",
