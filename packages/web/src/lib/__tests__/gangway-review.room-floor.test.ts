@@ -273,7 +273,7 @@ describe("the gangway review's found faults in the Robert Adam Room", () => {
 });
 
 describe("where the gangway review draws a pinch that runs past several walls", () => {
-  it("draws a set of three trestles off the Saloon's east wall along all 5.49 m of it, alcove mouths and pier included", () => {
+  it("draws a set of three trestles off the Saloon's east wall on every stretch of it they narrow, end to end of its 5.49 m, and not across the alcoves' mouths", () => {
     const r = room("Saloon");
     // End to end along the east wall's line, x = 5.95, half a metre off it: past a stretch of wall, an alcove's mouth, the pier, the other mouth and the far stretch.
     const x = 5.95 - 0.5 - TRESTLE.depth / 2;
@@ -289,7 +289,21 @@ describe("where the gangway review draws a pinch that runs past several walls", 
     expect(Math.min(...zs)).toBeCloseTo(-1.5 * TRESTLE.width, 6);
     expect(Math.max(...zs)).toBeCloseTo(1.5 * TRESTLE.width, 6);
     expect(Math.min(...xs)).toBeCloseTo(5.95 - GUIDANCE, 6);
-    expect(Math.max(...xs)).toBeCloseTo(5.95, 6);
+    // The floor it claims reaches the wall's line, x = 5.95, and no further. (Its outline's greatest x was 5.95 while the
+    // location was the parts' hull, which claimed the mouths too. Between one part and the next the outline now follows
+    // the alcove's own walls there and back, out to x = 6.55, and claims no floor there: so the floor is asked, not the outline.)
+    // The three stretches the set narrows: the wall south of the first alcove from the set's end, the pier, and the wall north of the second.
+    const stretch = 1.5 * TRESTLE.width - 1.95;
+    expect(areaOf(floor)).toBeCloseTo((stretch + 0.3 + stretch) * GUIDANCE, 6);
+    expect(insideWalls(floor, 5.4, -2.3)).toBe(true);
+    expect(insideWalls(floor, 5.4, 0)).toBe(true);
+    expect(insideWalls(floor, 5.4, 2.3)).toBe(true);
+    // Not across the mouths, in front of them or inside the alcoves: there the wall is 0.6 m further back and the set is clear of it by the guidance.
+    for (const z of [-1.05, 1.05]) {
+      expect(insideWalls(floor, 5.4, z)).toBe(false);
+      expect(insideWalls(floor, 5.9, z)).toBe(false);
+      expect(insideWalls(floor, 6.25, z)).toBe(false);
+    }
     expect(judge(r, run, "the set")?.wrong).toEqual([]);
   });
 });

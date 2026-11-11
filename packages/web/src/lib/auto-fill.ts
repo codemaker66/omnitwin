@@ -5,7 +5,7 @@ import {
   type GangwayReviewItem,
   type GangwaySide,
 } from "@omnitwin/types";
-import { closestPointOnSegment, convexHull, convexPolygonClosestPoints, pointSegmentDistance } from "./circulation.js";
+import { closestPointOnSegment, convexPolygonClosestPoints, pointSegmentDistance } from "./circulation.js";
 import { createGhostWorld, obstacleName } from "./ghost-truth.js";
 import { toRealWorld, toRenderSpace } from "../constants/scale.js";
 import { getCatalogueItem, getCatalogueItemBySlug, type CatalogueItem } from "./catalogue.js";
@@ -978,6 +978,27 @@ interface Pinch {
 // once, under an id that changes at most once as its unit is carried straight
 // past the corner; a unit that reaches in front of both walls of a corner has
 // an item on each side, each the gangway of the wall on that side.
+//
+// Set against a wall (touching it, or through it) a piece is against it only
+// where it meets the wall between its ends (liesAgainst). A piece that lies
+// along one wall, and so reaches the end of the wall round the corner, has
+// reached that wall's end and no more. There is then no way between the piece
+// and the wall it lies along, so no way round the corner: the 0.00 m is that
+// wall's alone. The piece is not measured to the wall round the corner, whose
+// item is the gap from the unit's other pieces that stand in front of it, if
+// any do, and the corner is no second pinch. A piece that touches a corner
+// while lying against neither of its walls shuts the corner itself: 0.00 m
+// on the side the corner goes with. Where the piece lies against a wall in
+// line with one of the two, that is the one: a piece set along a wall across
+// a doorway, its end at the far jamb, lies against the wall this side of the
+// doorway, the wall beyond the doorway is in line with it, and the touch at
+// the jamb is listed with that wall's side, not as a gangway to the unit's
+// east or west.
+//
+// Where an item is drawn (gangwayFloor): the gangway floor inside each wall
+// it narrows, between the unit's ends along that wall, and at each corner
+// whose gap is its own, each kept to the room's floor. Not the floor between
+// them: the mouth of an alcove the unit does not narrow is not drawn.
 // ---------------------------------------------------------------------------
 
 /** A wall of a room's own floor, metres: one straight wall whole, its ends, the unit vector along it with its length, and the unit normal into the room. */
@@ -995,6 +1016,15 @@ const AGAINST_M = 1e-6;
 
 /** Under this two measures are one, metres: a sum's last bits never choose between them. */
 const SAME_M = 1e-9;
+
+/** How near a wall's end a touch is the corner's, metres: a piece that meets a wall only within a millimetre of its end has reached the corner, not come to lie against the wall. */
+const AT_END_M = 1e-3;
+
+/** The least floor a location is drawn on, square metres: a centimetre of wall, the guidance deep. */
+const LEAST_FLOOR_M2 = 0.01;
+
+/** The side of the square marked on the floor at a place whose own floor comes to less than that, metres. */
+const MARK_M = 0.3;
 
 /** Whether `next` begins where `wall` ends and runs the same way: two stretches of one straight wall. */
 function runsOn(wall: FloorWallM, next: FloorWallM): boolean {
@@ -1059,10 +1089,47 @@ interface MeasuredPiece {
   readonly disc: { readonly x: number; readonly z: number; readonly r: number } | null;
 }
 
+/** The point of a wall `along` metres from its first end. */
+function onWall(wall: FloorWallM, along: number): FloorPoint {
+  const [start] = wall.ends;
+  return { x: start.x + wall.alongX * along, z: start.z + wall.alongZ * along };
+}
+
+/** How far a piece stands from a straight stretch of wall, metres: 0 touching it or through it. */
+function pieceToStretch(piece: MeasuredPiece, from: FloorPoint, to: FloorPoint): number {
+  if (piece.disc !== null) return Math.max(0, pointSegmentDistance(piece.disc, from, to) - piece.disc.r);
+  return convexPolygonClosestPoints(piece.points, [from, to]).distance;
+}
+
 /** How far a piece stands from a wall, metres: 0 touching it or through it. */
 function pieceToWall(piece: MeasuredPiece, wall: FloorWallM): number {
-  if (piece.disc !== null) return Math.max(0, pointSegmentDistance(piece.disc, wall.ends[0], wall.ends[1]) - piece.disc.r);
-  return convexPolygonClosestPoints(piece.points, wall.ends).distance;
+  return pieceToStretch(piece, wall.ends[0], wall.ends[1]);
+}
+
+/**
+ * Whether a piece that touches a wall, or is through it, lies against it: it
+ * meets the wall somewhere between its ends, more than AT_END_M from both. One
+ * that meets it only at an end has reached the corner, which is the end of the
+ * wall round it too, and is not against this wall.
+ */
+function liesAgainst(piece: MeasuredPiece, wall: FloorWallM): boolean {
+  if (wall.lengthM <= 2 * AT_END_M) return false;
+  return pieceToStretch(piece, onWall(wall, AT_END_M), onWall(wall, wall.lengthM - AT_END_M)) <= AGAINST_M;
+}
+
+/** Whether a piece touches a wall within AT_END_M of an end of it: its last end, or its first. */
+function touchesEnd(piece: MeasuredPiece, wall: FloorWallM, end: "first" | "last"): boolean {
+  const reach = Math.min(AT_END_M, wall.lengthM);
+  const [from, to] = end === "last" ? [onWall(wall, wall.lengthM - reach), wall.ends[1]] : [wall.ends[0], onWall(wall, reach)];
+  return pieceToStretch(piece, from, to) <= AGAINST_M;
+}
+
+/** Whether two walls stand on one line and face the same way, as the walls either side of an alcove's mouth or a door recess do. */
+function inLine(wall: FloorWallM, other: FloorWallM): boolean {
+  const [start] = wall.ends;
+  const [at] = other.ends;
+  return wall.intoX * other.intoX + wall.intoZ * other.intoZ > 1 - SAME_M
+    && Math.abs((at.x - start.x) * wall.intoX + (at.z - start.z) * wall.intoZ) <= AGAINST_M;
 }
 
 /** The point of a piece's edge nearest a point on the floor outside it. */
@@ -1150,6 +1217,218 @@ function cornerGoesWithNext(pieces: readonly MeasuredPiece[], wall: FloorWallM, 
   return shortOfNext < shortOfWall;
 }
 
+/** One part of the floor a gangway is narrowed on: the gangway floor inside one wall, or at one corner. */
+export interface FloorPart {
+  readonly floor: readonly FloorPoint[];
+  /** The two places on the walls it runs between, in the order of the walls: the one place twice at a corner. */
+  readonly along: readonly [FloorPoint, FloorPoint];
+}
+
+/** Twice the floor a polygon winds round, signed: one sign each way round. */
+function twiceFloor(points: readonly FloorPoint[]): number {
+  let twice = 0;
+  points.forEach((from, i) => {
+    const to = points[(i + 1) % points.length] ?? from;
+    twice += from.x * to.z - to.x * from.z;
+  });
+  return twice;
+}
+
+/** A polygon's corners: its points without any that repeats the one before it or stands on the line between its neighbours. */
+function cornersOf(points: readonly FloorPoint[]): FloorPoint[] {
+  const kept = [...points];
+  let i = 0;
+  while (kept.length > 2 && i < kept.length) {
+    const before = kept[(i + kept.length - 1) % kept.length];
+    const point = kept[i];
+    const after = kept[(i + 1) % kept.length];
+    if (before === undefined || point === undefined || after === undefined) break;
+    const turn = (point.x - before.x) * (after.z - point.z) - (point.z - before.z) * (after.x - point.x);
+    if (Math.abs(turn) <= SAME_M) {
+      kept.splice(i, 1);
+      i = 0;
+    } else {
+      i += 1;
+    }
+  }
+  return kept;
+}
+
+/**
+ * The room's floor inside a convex part of floor: the room's outline cut by
+ * each edge of the part in turn (Sutherland and Hodgman's way), so what is
+ * left is inside both. Where that is more than one piece of floor they come
+ * back as one outline joined along the part's edge, there and back, which
+ * winds round no floor of its own.
+ */
+function roomWithin(outline: readonly FloorPoint[], part: readonly FloorPoint[]): FloorPoint[] {
+  const way = twiceFloor(part) >= 0 ? 1 : -1;
+  let kept = [...outline];
+  part.forEach((from, i) => {
+    const to = part[(i + 1) % part.length] ?? from;
+    // How far inside this edge a point is, by the edge's length: nothing on it, less than nothing beyond it.
+    const inside = (point: FloorPoint): number => way * ((to.x - from.x) * (point.z - from.z) - (to.z - from.z) * (point.x - from.x));
+    const cut: FloorPoint[] = [];
+    kept.forEach((point, k) => {
+      const before = kept[(k + kept.length - 1) % kept.length] ?? point;
+      const here = inside(point);
+      const there = inside(before);
+      if ((here >= -SAME_M) !== (there >= -SAME_M)) {
+        const crossing = there / (there - here);
+        cut.push({ x: before.x + (point.x - before.x) * crossing, z: before.z + (point.z - before.z) * crossing });
+      }
+      if (here >= -SAME_M) cut.push(point);
+    });
+    kept = cut;
+  });
+  return cornersOf(kept);
+}
+
+function onTheFloor(point: FloorPoint): boolean {
+  return Number.isFinite(point.x) && Number.isFinite(point.z);
+}
+
+/** A square of floor MARK_M across about a place, as much of it as is in the room: the mark of a pinch with no real floor of its own to draw. */
+function markAt(at: FloorPoint, outline: readonly FloorPoint[]): readonly FloorPoint[] {
+  const middle = onTheFloor(at) ? at : outline.find(onTheFloor) ?? { x: 0, z: 0 };
+  const half = MARK_M / 2;
+  const square = [
+    { x: middle.x - half, z: middle.z - half },
+    { x: middle.x + half, z: middle.z - half },
+    { x: middle.x + half, z: middle.z + half },
+    { x: middle.x - half, z: middle.z + half },
+  ];
+  const within = roomWithin(outline, square);
+  return Math.abs(twiceFloor(within)) >= 2 * LEAST_FLOOR_M2 ? within : square;
+}
+
+/**
+ * One part of a pinch's floor as it is drawn: as it stands where it lies
+ * wholly in the room, else what of it does (the gangway inside a wall is cut
+ * short where another wall stands less than the guidance in front of it);
+ * and where that is no real floor, under LEAST_FLOOR_M2, a mark at its place.
+ */
+function partOnFloor(part: FloorPart, outline: readonly FloorPoint[]): readonly FloorPoint[] {
+  const floor = part.floor.filter(onTheFloor);
+  if (floor.length >= 3) {
+    const within = roomWithin(outline, floor);
+    const kept = Math.abs(twiceFloor(within));
+    const whole = Math.abs(twiceFloor(floor));
+    if (kept >= 2 * LEAST_FLOOR_M2) return whole >= 2 * LEAST_FLOOR_M2 && kept >= whole - SAME_M ? floor : within;
+  }
+  const [from, to] = part.along;
+  return markAt({ x: (from.x + to.x) / 2, z: (from.z + to.z) / 2 }, outline);
+}
+
+/** Which corner of a polygon is nearest a place. */
+function nearestCorner(points: readonly FloorPoint[], place: FloorPoint): number {
+  let nearest = 0;
+  let least = Number.POSITIVE_INFINITY;
+  points.forEach((point, i) => {
+    const off = Math.hypot(point.x - place.x, point.z - place.z);
+    if (off < least) {
+      least = off;
+      nearest = i;
+    }
+  });
+  return nearest;
+}
+
+/**
+ * The room's corners passed going round its walls from one place on them to
+ * another, the way the outline runs. None where both stand on one wall in
+ * that order, or where either stands on no wall.
+ */
+function cornersBetween(from: FloorPoint, to: FloorPoint, outline: readonly FloorPoint[]): FloorPoint[] {
+  // Which wall of the outline a place stands on, and how far along it.
+  const whereOnWalls = (place: FloorPoint): { readonly wall: number; readonly along: number } | null => {
+    for (const [wall, start] of outline.entries()) {
+      const end = outline[(wall + 1) % outline.length] ?? start;
+      const on = closestPointOnSegment(place, start, end);
+      if (Math.hypot(on.x - place.x, on.z - place.z) <= AGAINST_M) return { wall, along: Math.hypot(on.x - start.x, on.z - start.z) };
+    }
+    return null;
+  };
+  const leaving = whereOnWalls(from);
+  const reaching = whereOnWalls(to);
+  if (leaving === null || reaching === null) return [];
+  if (leaving.wall === reaching.wall && reaching.along >= leaving.along - AGAINST_M) return [];
+  const passed: FloorPoint[] = [];
+  for (let wall = (leaving.wall + 1) % outline.length; passed.length < outline.length; wall = (wall + 1) % outline.length) {
+    const corner = outline[wall];
+    if (corner !== undefined) passed.push(corner);
+    if (wall === reaching.wall) break;
+  }
+  return passed;
+}
+
+/**
+ * The floor a pinch is drawn on, as one polygon the shared rule accepts
+ * (@omnitwin/types GangwayLocationSchema: three points or more), whatever its
+ * parts are: each part as partOnFloor draws it, so none is without real floor
+ * and none claims floor outside the room. One part is drawn as it is.
+ *
+ * Several, given in the order they come round the room, are drawn as one
+ * outline that claims the parts and no floor between them. It goes out by the
+ * room's side of each part in turn, from the place on the walls where the
+ * part begins to the place where it ends, then along the room's own walls to
+ * where the next begins; and it comes back along the walls all the way, the
+ * same line reversed. So between two parts the outline runs there and back
+ * along the walls and round no floor: the mouth of an alcove or a door recess
+ * that the unit does not narrow, and open floor far from any wall, are not
+ * claimed, and no line of it leaves the room.
+ */
+export function gangwayFloor(parts: readonly [FloorPart, ...FloorPart[]], outline: readonly FloorPoint[]): readonly FloorPoint[] {
+  const [only, ...others] = parts;
+  if (others.length === 0) return partOnFloor(only, outline);
+  const way = twiceFloor(outline) >= 0 ? 1 : -1;
+  const out: FloorPoint[] = [];
+  const back: FloorPoint[] = [];
+  let ended: FloorPoint | null = null;
+  for (const part of parts) {
+    const floor = partOnFloor(part, outline);
+    const count = floor.length;
+    const from = nearestCorner(floor, part.along[0]);
+    const to = nearestCorner(floor, part.along[1]);
+    // Round the part by the room's side of it, from where it begins on the walls to where it ends, which is
+    // against the way the room's outline runs. A part at one place, or one cut so that its two places are no
+    // longer neighbours, is gone all the way round from the first, the same way.
+    const neighbours = from !== to && ((from + 1) % count === to || (to + 1) % count === from);
+    const step = neighbours ? ((from + 1) % count === to ? -1 : 1) : twiceFloor(floor) * way > 0 ? -1 : 1;
+    const round: FloorPoint[] = [];
+    for (let k = 0; k < (neighbours ? count : count + 1); k += 1) {
+      const point = floor[(((from + step * k) % count) + count) % count];
+      if (point !== undefined) round.push(point);
+    }
+    const [first] = round;
+    const last = round[round.length - 1];
+    if (first === undefined || last === undefined) continue;
+    // From the end of the part before, along the walls to the beginning of this one; and the same on the way back.
+    const walls = ended === null ? [] : cornersBetween(ended, first, outline);
+    out.push(...walls, ...round);
+    back.unshift(last, first, ...[...walls].reverse());
+    ended = last;
+  }
+  // Back along the walls: each part's beginning again, then the walls to the end of the one before it. The outline closes on the first beginning.
+  const joined = [...out, ...back.slice(1, -1)];
+  const drawn = joined.filter((point, i) => {
+    const before = joined[i === 0 ? joined.length - 1 : i - 1];
+    return before === undefined || Math.hypot(point.x - before.x, point.z - before.z) > SAME_M;
+  });
+  // Parts of the gangway floor wind one way and add up. Were they handed over as anything else and came to no floor, the first is drawn alone.
+  return Math.abs(twiceFloor(drawn)) >= 2 * LEAST_FLOOR_M2 ? drawn : partOnFloor(only, outline);
+}
+
+/** One wall's gangway, or one corner's gap, as a unit narrows it: a part of the unit's pinch on that side. */
+interface WallPart extends FloorPart {
+  /** Where it comes round the room: its wall's place in the outline, a corner half a place after the wall it ends. */
+  readonly order: number;
+  readonly side: RoomSide;
+  readonly widthM: number;
+  readonly placed: PlacedItem;
+  readonly pieceIds: readonly string[];
+}
+
 /** A unit's gangway along the walls on one side of it, on a room's own floor. */
 interface WallPinch {
   readonly side: RoomSide;
@@ -1158,7 +1437,7 @@ interface WallPinch {
   readonly placed: PlacedItem;
   /** The unit's gap to the nearest of the walls and corners it is drawn at: the least from any of its pieces. */
   readonly widthM: number;
-  /** The gangway floor it narrows: inside every wall on that side the unit stands in front of under the guidance, and at every corner it is nearest there. */
+  /** The gangway floor it narrows (gangwayFloor): inside every wall on that side the unit stands in front of under the guidance, and at every corner it is nearest there. */
   readonly floor: readonly FloorPoint[];
   readonly pieceIds: readonly string[];
 }
@@ -1166,13 +1445,14 @@ interface WallPinch {
 /**
  * Where a layout narrows the gangways along the walls of a room's own floor
  * under the guidance. Unit by unit, each wall's gap is the least from any
- * piece of the unit to that wall, measured exactly. A wall some piece stands
- * in front of under the guidance is a gangway the unit narrows, on the side
- * its normal gives; a corner the unit is nearest with no piece in front of
- * either of its walls is one too, on the side of the wall the unit is nearer
- * to standing in front of (see above). For each unit and each side that
- * carries a gangway in the room's design (`layout`): the narrowest of them,
- * drawn across them all.
+ * piece of the unit to that wall, measured exactly, leaving out a piece that
+ * touches the wall only at its end (it has reached the corner, see above). A
+ * wall some piece stands in front of under the guidance, or lies against, is
+ * a gangway the unit narrows, on the side its normal gives; a corner the unit
+ * is nearest with no piece in front of either of its walls is one too, on the
+ * side of the wall the unit is nearer to standing in front of. For each unit
+ * and each side that carries a gangway in the room's design (`layout`): the
+ * narrowest of them, drawn on the floor of each (gangwayFloor).
  */
 function floorWallPinches(
   measured: readonly MeasuredPiece[],
@@ -1181,6 +1461,7 @@ function floorWallPinches(
   rule: AisleRule,
 ): readonly WallPinch[] {
   const walls = floorWallsM(floor);
+  const outline = floor.outline.map(([x, z]): FloorPoint => ({ x: toRealWorld(x), z: toRealWorld(z) }));
   const units = new Map<string, MeasuredPiece[]>();
   for (const piece of measured) {
     const known = units.get(piece.unit);
@@ -1194,26 +1475,36 @@ function floorWallPinches(
       const zs = piece.points.map((point) => point.z);
       return { minX: Math.min(...xs) - rule.gangwayM, maxX: Math.max(...xs) + rule.gangwayM, minZ: Math.min(...zs) - rule.gangwayM, maxZ: Math.max(...zs) + rule.gangwayM };
     });
-    // Each wall as the unit meets it: its gap, the piece nearest it, whether any piece stands in front of it, and the stretch its pieces narrow.
+    // Each wall as the unit meets it: how near the unit comes to it anywhere, and, from the pieces it is measured
+    // from, its gap, the piece nearest it, whether any stands in front of it or against it, and the stretch they narrow.
     const met = walls.map((wall) => {
       const [a, b] = wall.ends;
+      let nearM = Number.POSITIVE_INFINITY;
       let widthM = Number.POSITIVE_INFINITY;
       let placed: PlacedItem | null = null;
       let before = false;
       let from = wall.lengthM;
       let to = 0;
       const pieceIds: string[] = [];
+      const atEnds: MeasuredPiece[] = [];
       for (const [i, piece] of pieces.entries()) {
         const bounds = reach[i];
         // A wall wholly further than the guidance from the piece's bounds narrows nothing.
         if (bounds === undefined || Math.max(a.x, b.x) < bounds.minX || Math.min(a.x, b.x) > bounds.maxX || Math.max(a.z, b.z) < bounds.minZ || Math.min(a.z, b.z) > bounds.maxZ) continue;
         const distance = pieceToWall(piece, wall);
         if (!underGuidance(distance, rule)) continue;
+        nearM = Math.min(nearM, distance);
+        // Touching the wall or through it, the piece is against it where it meets it between its ends. Meeting it
+        // only at an end, it has reached the corner and no more: it is not measured to this wall (the corner, below).
+        const against = distance <= AGAINST_M && liesAgainst(piece, wall);
+        if (distance <= AGAINST_M && !against) {
+          atEnds.push(piece);
+          continue;
+        }
         // The first of pieces equally near names the unit, so a tie between a trestle's chairs never changes it.
         if (placed === null || distance < widthM - SAME_M) placed = piece.placed;
         widthM = Math.min(widthM, distance);
-        // Touching the wall or through it, the piece is against it.
-        if (distance <= AGAINST_M || standsBefore(piece, wall)) before = true;
+        if (against || standsBefore(piece, wall)) before = true;
         for (const point of piece.points) {
           const along = Math.min(wall.lengthM, Math.max(0, (point.x - a.x) * wall.alongX + (point.z - a.z) * wall.alongZ));
           from = Math.min(from, along);
@@ -1221,32 +1512,79 @@ function floorWallPinches(
         }
         pieceIds.push(piece.placed.id);
       }
-      return placed === null ? null : { widthM, placed, before, from, to, pieceIds };
+      return nearM === Number.POSITIVE_INFINITY ? null : { nearM, widthM, placed, before, from, to, pieceIds, atEnds };
     });
 
-    const parts: { readonly side: RoomSide; readonly widthM: number; readonly placed: PlacedItem; readonly floor: readonly FloorPoint[]; readonly pieceIds: readonly string[] }[] = [];
-    for (const [i, wall] of walls.entries()) {
+    // A wall some piece stands in front of, or against, is a gangway the unit narrows, along the stretch of it its pieces narrow.
+    const stretches = met.map((one): { from: number; to: number } => ({ from: one?.from ?? 0, to: one?.to ?? 0 }));
+    const wallParts = walls.map((wall, i): WallPart | null => {
       const here = met[i] ?? null;
-      if (here?.before === true) {
-        parts.push({ side: sideOfWay(wall.intoX, wall.intoZ), widthM: here.widthM, placed: here.placed, floor: wallStretch(wall, here.from, here.to, rule.gangwayM), pieceIds: here.pieceIds });
-      }
-      // The corner where this wall ends and the next begins.
+      if (here === null || !here.before || here.placed === null) return null;
+      return {
+        order: i,
+        side: sideOfWay(wall.intoX, wall.intoZ),
+        widthM: here.widthM,
+        placed: here.placed,
+        floor: wallStretch(wall, here.from, here.to, rule.gangwayM),
+        along: [onWall(wall, here.from), onWall(wall, here.to)],
+        pieceIds: here.pieceIds,
+      };
+    });
+    // The corner where each wall ends and the next begins.
+    const cornerParts = walls.map((): WallPart | null => null);
+    for (const [i, wall] of walls.entries()) {
       const nextIndex = (i + 1) % walls.length;
       const next = walls[nextIndex];
+      const here = met[i] ?? null;
       const there = met[nextIndex] ?? null;
       if (next === undefined || nextIndex === i || (here === null && there === null)) continue;
-      // The corner goes with one of its two walls; where the unit stands in front of that wall, the corner is part of the wall's gangway.
-      const withNext = cornerGoesWithNext(pieces, wall, next);
+      const corner = wall.ends[1];
+      // Pieces that touch one of the corner's walls only at this end have reached the corner. One that lies against
+      // the other wall is that wall's and no part of the corner; one that lies against neither touches the corner itself.
+      const reached = new Set<MeasuredPiece>([
+        ...(here?.atEnds ?? []).filter((piece) => touchesEnd(piece, wall, "last")),
+        ...(there?.atEnds ?? []).filter((piece) => touchesEnd(piece, next, "first")),
+      ]);
+      const touching = [...reached].filter((piece) => !liesAgainst(piece, wall) && !liesAgainst(piece, next));
+      // The corner goes with one of its two walls; where the unit stands in front of that wall, the corner is part of
+      // the wall's gangway. A piece that touches the corner while it lies against a wall in line with one of the two
+      // (set along a wall across a doorway, its end at the far jamb) shuts the corner on that wall's side: the touch
+      // is the end of where it lies along that line.
+      const liesInLineWith = (line: FloorWallM): boolean => touching.some((piece) => walls.some((another) => another !== line && inLine(line, another) && liesAgainst(piece, another)));
+      const inLineWithWall = liesInLineWith(wall);
+      const inLineWithNext = liesInLineWith(next);
+      const withNext = inLineWithWall === inLineWithNext ? cornerGoesWithNext(pieces, wall, next) : inLineWithNext;
+      const ownIndex = withNext ? nextIndex : i;
       const own = withNext ? there : here;
       const other = withNext ? here : there;
-      if (own?.before === true) continue;
-      const corner = wall.ends[1];
+      const taken = wallParts[ownIndex] ?? null;
+      if (taken !== null) {
+        // Part of that wall's gangway, which a piece touching the corner shuts there: its stretch then runs to the corner.
+        const [first] = touching;
+        const stretch = stretches[ownIndex];
+        if (first !== undefined && stretch !== undefined) {
+          const shut = withNext ? next : wall;
+          if (withNext) stretch.from = 0;
+          else stretch.to = shut.lengthM;
+          wallParts[ownIndex] = {
+            ...taken,
+            widthM: 0,
+            placed: taken.widthM > SAME_M ? first.placed : taken.placed,
+            floor: wallStretch(shut, stretch.from, stretch.to, rule.gangwayM),
+            along: [onWall(shut, stretch.from), onWall(shut, stretch.to)],
+            pieceIds: [...new Set([...taken.pieceIds, ...touching.map((piece) => piece.placed.id)])],
+          };
+        }
+        continue;
+      }
       let cornerM = Number.POSITIVE_INFINITY;
       let nearest: MeasuredPiece | null = null;
       const pieceIds: string[] = [];
       for (const piece of pieces) {
+        const touches = touching.includes(piece);
+        if (reached.has(piece) && !touches) continue;
         const nearestPoint = nearestOfPiece(piece, corner);
-        const distance = Math.hypot(nearestPoint.x - corner.x, nearestPoint.z - corner.z);
+        const distance = touches ? 0 : Math.hypot(nearestPoint.x - corner.x, nearestPoint.z - corner.z);
         if (!underGuidance(distance, rule)) continue;
         if (nearest === null || distance < cornerM - SAME_M) nearest = piece;
         cornerM = Math.min(cornerM, distance);
@@ -1255,12 +1593,14 @@ function floorWallPinches(
       if (nearest === null) continue;
       // A wall nearer the unit somewhere else (its far end, or from behind) is not nearest it at this corner. The
       // other wall is asked only where the unit does not stand in front of it: there it has its own item.
-      if (own !== null && own.widthM < cornerM - SAME_M) continue;
-      if (other !== null && !other.before && other.widthM < cornerM - SAME_M) continue;
+      if (own !== null && own.nearM < cornerM - SAME_M) continue;
+      if (other !== null && !other.before && other.nearM < cornerM - SAME_M) continue;
       const taking = withNext ? next : wall;
       const inside = (into: FloorWallM): FloorPoint => ({ x: corner.x + into.intoX * rule.gangwayM, z: corner.z + into.intoZ * rule.gangwayM });
-      parts.push({ side: sideOfWay(taking.intoX, taking.intoZ), widthM: cornerM, placed: nearest.placed, floor: [corner, inside(wall), inside(next)], pieceIds });
+      cornerParts[i] = { order: i + 0.5, side: sideOfWay(taking.intoX, taking.intoZ), widthM: cornerM, placed: nearest.placed, floor: [corner, inside(wall), inside(next)], along: [corner, corner], pieceIds };
     }
+    // In the order of the walls: each wall, then the corner at its end.
+    const parts = walls.flatMap((_, i) => [wallParts[i] ?? null, cornerParts[i] ?? null].filter((part): part is WallPart => part !== null));
 
     for (const side of ROOM_SIDES) {
       if (!layout.sides[side]) continue;
@@ -1269,13 +1609,16 @@ function floorWallPinches(
       if (first === undefined) continue;
       const narrowest = mine.reduce((best, part) => (part.widthM < best.widthM - SAME_M ? part : best), first);
       const narrowing = new Set(mine.flatMap((part) => part.pieceIds));
+      // Drawn as they come round the room, begun after the longest run of walls that holds none of them: each then follows the one before it.
+      const runBefore = (k: number): number => ((mine[k]?.order ?? 0) - (mine[(k + mine.length - 1) % mine.length]?.order ?? 0) + walls.length) % walls.length;
+      const begin = mine.reduce((longest, _, k) => (runBefore(k) > runBefore(longest) ? k : longest), 0);
+      const [start, ...rest] = [...mine.slice(begin), ...mine.slice(0, begin)];
       pinches.push({
         side,
         unit,
         placed: narrowest.placed,
         widthM: Math.min(...mine.map((part) => part.widthM)),
-        // One wall's stretch or one corner as it is; several, the floor across them all.
-        floor: mine.length === 1 ? first.floor : convexHull(mine.flatMap((part) => part.floor)),
+        floor: gangwayFloor([start ?? first, ...rest], outline),
         pieceIds: pieces.filter((piece) => narrowing.has(piece.placed.id)).map((piece) => piece.placed.id),
       });
     }
@@ -1299,9 +1642,11 @@ function floorWallPinches(
  * it stands (floorWallPinches). An item there is a unit's gangway on one side
  * of it: its width is the unit's gap, the least from any of its pieces, to
  * the nearest of the walls on that side it stands in front of and the corners
- * it is nearest there, and its location is the gangway floor across all of
- * them, so a set standing along a wall with alcoves in it is drawn along the
- * whole of it. A middle gangway is the design's, as in any room.
+ * it is nearest there, and its location is the gangway floor inside each of
+ * them, one polygon of real floor within the room (gangwayFloor): a set
+ * standing along a wall with alcoves in it is drawn on every stretch of the
+ * wall it narrows, and not across the alcoves' mouths. A middle gangway is
+ * the design's, as in any room.
  */
 export function gangwayReview(
   placedItems: readonly PlacedItem[],
