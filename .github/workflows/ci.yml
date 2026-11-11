@@ -460,17 +460,19 @@ jobs:
         # The system packages come from the runner's Ubuntu apt mirror. When
         # that mirror is unreachable (11 Nov 2026: "Temporary failure resolving
         # 'azure.archive.ubuntu.com'" for over an hour), --with-deps fails
-        # before a single test runs. After two tries this installs the browser
-        # alone, from Playwright's own download host, and relies on the system
-        # libraries the Ubuntu runner image already carries (it ships Google
-        # Chrome). If a library were missing, the browser would fail to start
-        # and every test would fail, so the fallback cannot turn into a pass.
+        # before a single test runs. Then this installs the browser alone, from
+        # Playwright's own download host, and relies on the system libraries
+        # the Ubuntu runner image already carries (it ships Google Chrome). If
+        # a library were missing, the browser would fail to start and every
+        # test would fail, so the fallback cannot turn into a pass.
+        #
+        # One capped try, not retries: the step normally takes 20-35 s, but
+        # against an unreachable mirror apt spends about 10 minutes per try
+        # waiting out each fetch, and two tries pushed shards past the job's
+        # 30-minute limit. 180 s is about five times the normal time.
         run: |
-          for attempt in 1 2; do
-            if pnpm --filter @omnitwin/web exec playwright install --with-deps chromium; then exit 0; fi
-            echo "::warning::playwright install --with-deps failed (try ${attempt} of 2); the Ubuntu apt mirror may be unreachable"
-            sleep 20
-          done
+          if timeout --kill-after=10 180 pnpm --filter @omnitwin/web exec playwright install --with-deps chromium; then exit 0; fi
+          echo "::warning::playwright install --with-deps failed or ran past 180 s; the Ubuntu apt mirror may be unreachable"
           echo "::warning::Installing Chromium without apt; relying on the runner image's own system libraries"
           pnpm --filter @omnitwin/web exec playwright install chromium
 
