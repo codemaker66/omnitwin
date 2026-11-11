@@ -161,9 +161,10 @@ describe("formatRoomDimensions", () => {
     expect(line).toContain(String(truth.heightM));
   });
 
-  it("renders the published note when the venue publishes one", () => {
+  it("renders the note when a room carries one", () => {
     const truth = publishedDimensions("grand-hall");
-    // The Grand Hall is the room carrying a qualifier today — its dome.
+    // The Grand Hall is the room carrying a qualifier today: what its height is
+    // measured to, with the dome rising above part of the hall.
     expect(truth.note).toBeDefined();
     const note = truth.note ?? "";
     expect(formatRoomDimensions("grand-hall")).toBe(

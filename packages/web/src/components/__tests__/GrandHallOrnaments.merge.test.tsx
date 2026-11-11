@@ -282,11 +282,17 @@ function declaredFor(declared: ReadonlyMap<Material, OrnamentMaterial>, mesh: Me
   return spec;
 }
 
-const hall = describeGrandHallOrnaments(
-  GRAND_HALL_RENDER_DIMENSIONS.width,
-  GRAND_HALL_RENDER_DIMENSIONS.length,
-  GRAND_HALL_RENDER_DIMENSIONS.height,
-);
+/**
+ * The hall both trees are compared in: the planner's floor on the 7 m wall the
+ * pre-merge JSX was written for. There the description must still draw
+ * exactly what the legacy tree drew, arched windows included, and the section
+ * heights below (6.8, 6.88, 7) straddle its ceiling-ornament cut. On a lower
+ * wall the description fits the window heads under the crown moulding
+ * (fitWindowHeight), which the fixed-height legacy windows never did.
+ */
+const ORACLE_HALL = { width: GRAND_HALL_RENDER_DIMENSIONS.width, length: GRAND_HALL_RENDER_DIMENSIONS.length, height: 7 } as const;
+
+const hall = describeGrandHallOrnaments(ORACLE_HALL.width, ORACLE_HALL.length, ORACLE_HALL.height);
 
 /**
  * The described draws of a surface name or "chandelier-fittings", by per-mesh
@@ -333,8 +339,8 @@ interface MountedPair {
 
 /** Legacy and current ornaments at rest: first frame warms the per-mesh trees, second shows stand-ins. */
 function mountPair(): MountedPair {
-  const legacy = mount(<LegacyGrandHallOrnaments />);
-  const current = mount(<GrandHallOrnaments />);
+  const legacy = mount(<LegacyGrandHallOrnaments {...ORACLE_HALL} />);
+  const current = mount(<GrandHallOrnaments {...ORACLE_HALL} />);
   const declared = declaredMaterials(legacy.scene);
   frames([legacy, current], 2);
   return { legacy, current, declared };
@@ -351,6 +357,25 @@ describe("GrandHallOrnaments merged stand-ins", () => {
       const legacyDraws = drawObjects(named(legacy.scene, surface));
       const currentDraws = perMeshDraws(current.scene, surface);
       expect(currentDraws.map(meshSignature), surface).toEqual(legacyDraws.map(meshSignature));
+    }
+  });
+
+  it("changes only the window wall at the planner's own ceiling height", () => {
+    // The default hall (GRAND_HALL_RENDER_DIMENSIONS, the scanned 6.7 m): every
+    // other surface is the pre-merge tree; the window heads are fitted.
+    const legacy = mount(<LegacyGrandHallOrnaments />);
+    const current = mount(<GrandHallOrnaments />);
+    frames([legacy, current], 2);
+    expect(GRAND_HALL_RENDER_DIMENSIONS.height).toBeLessThan(ORACLE_HALL.height);
+    for (const surface of SURFACES) {
+      const legacyDraws = drawObjects(named(legacy.scene, surface)).map(meshSignature);
+      const currentDraws = perMeshDraws(current.scene, surface).map(meshSignature);
+      if (surface === "window-wall-ornament-cluster") {
+        expect(currentDraws).toHaveLength(legacyDraws.length);
+        expect(currentDraws, surface).not.toEqual(legacyDraws);
+      } else {
+        expect(currentDraws, surface).toEqual(legacyDraws);
+      }
     }
   });
 

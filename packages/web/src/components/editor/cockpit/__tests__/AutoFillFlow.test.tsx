@@ -89,7 +89,8 @@ beforeEach(() => {
   usePlacementStore.setState({ placedItems: [] });
   useCockpitStore.getState().reset();
   useAutoFillRequestStore.setState({ requested: null });
-  // The Grand Hall's real floor: 21 × 10.5 m.
+  // A 21 × 10.5 m floor, the Grand Hall's old hand-drawn size, which the counts
+  // below are worked for (the planner now opens it at the scanned 21.135 × 10.59 m).
   useRoomDimensionsStore.getState().setDimensions({ width: 21, length: 10.5, height: 7 });
   fixtures.resetPlannerTruth();
   fixtures.openRoom(fixtures.plannerRoom());

@@ -89,7 +89,7 @@ export interface VerifiedRoom {
   readonly name: string;
   /** The venue-confirmed capacities, by reference — never a copy. */
   readonly capacities: RoomCapacity;
-  /** Published dimensions, or null for rooms the venue publishes none for. */
+  /** The room's dimensions (the Grand Hall's measured), or null for rooms the venue publishes none for. */
   readonly dimensions: RoomDimensions | null;
   /** Ready-to-render dimension line, or null when there is nothing to render. */
   readonly dimensionLine: string | null;
@@ -117,11 +117,12 @@ export function metres(value: number): string {
  * dimensions for it — the two galleries — in which case the caller renders
  * nothing at all rather than an empty field or an inferred figure.
  *
- * Renders the published qualifier when there is one — the Grand Hall's dome note
- * is the single most asked-about fact in the building, and dropping it halves
- * the room. The qualifier joins with an em dash HERE, in the string, so no
- * surface can render the figure and its note butted together; a caller that
- * concatenated them in JSX would print "7 ma further 7 m under the dome".
+ * Renders the qualifier when there is one — the Grand Hall's says its height is
+ * to the coffered ceiling, with the dome rising above part of the hall, and
+ * dropping it would let a visitor read the ceiling's figure as the dome's. The
+ * qualifier joins with an em dash HERE, in the string, so no surface can render
+ * the figure and its note butted together; a caller that concatenated them in
+ * JSX would print "6.7 mto the coffered ceiling".
  * See TRADES_HALL_ROOM_DIMENSIONS for the figures themselves.
  */
 export function formatRoomDimensions(slug: PublishedRoomSlug): string | null {
