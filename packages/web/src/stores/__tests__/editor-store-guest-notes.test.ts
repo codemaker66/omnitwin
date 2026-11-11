@@ -4,6 +4,7 @@ import type { BatchObjectInput, Configuration, ObjectMetadata, PlacedObject } fr
 import { editorToPlacedItem, placedItemToEditor } from "../../components/editor/EditorBridge.js";
 import { persistAnonymousPlannerDraft, readAnonymousPlannerDraft } from "../../lib/anonymous-planner-draft.js";
 import { noteHeldOn } from "../../lib/guest-plan-notes.js";
+import { useAuthStore } from "../auth-store.js";
 import { useEditorStore, type EditorObject } from "../editor-store.js";
 import { useSelectionStore } from "../selection-store.js";
 
@@ -116,6 +117,7 @@ beforeEach(() => {
   localStorage.clear();
   store().reset();
   useSelectionStore.getState().clearSelection();
+  useAuthStore.getState().setUser(null);
 });
 
 describe("the loaded plan keeps the read's word on its notes", () => {
@@ -176,6 +178,15 @@ describe("a guest plan read without its notes, in a browser that is signed in", 
   // read a guest plan through the public route like anyone with the link:
   // without its notes. The signed-in save stores a piece's details as sent,
   // so their first nudge of a chair would erase every note on the plan.
+  //
+  // The person here is one of the plan's own venue staff: the signed-in
+  // routes answer nobody else for a guest plan (editor-store-preview-routes).
+  beforeEach(() => {
+    useAuthStore.getState().setUser({
+      id: "user-staff", email: "staff@example.test", role: "staff", platformRole: "none", venueId: VENUE, name: "Staff",
+    });
+  });
+
   it("is never saved through the signed-in route, which would store its pieces without their notes", async () => {
     await open(plan([placed(A, { noteHeld: true }), placed(B)], false));
     store().updateObject(B, { positionX: 3 });

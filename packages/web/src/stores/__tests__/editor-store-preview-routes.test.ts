@@ -53,9 +53,15 @@ function store() {
   return useEditorStore.getState();
 }
 
-function openPreview(isPublicPreview = true): void {
+/**
+ * The open document. `notesIncluded` is how it was read: the signed-in read
+ * returns a guest plan's notes, the public read does not, and a guest plan
+ * read without them stays on the public routes whoever saves it
+ * (editor-store-guest-notes.test.ts).
+ */
+function openPreview(isPublicPreview = true, notesIncluded = false): void {
   useEditorStore.setState({
-    configId: CONFIG, spaceId: SPACE, venueId: VENUE, configRevision: 1, isPublicPreview,
+    configId: CONFIG, spaceId: SPACE, venueId: VENUE, configRevision: 1, isPublicPreview, notesIncluded,
     objects: [], baseObjects: [], isDirty: true, isSaving: false, saveError: null, saveConflict: null,
   });
 }
@@ -85,7 +91,8 @@ describe("saving a public preview while signed in", () => {
 
   it.each(["admin", "manager", "staff", "hallkeeper"])("keeps the signed-in route for the venue's own %s", async (role) => {
     useAuthStore.getState().setUser(person(role, VENUE));
-    openPreview();
+    // Read through the signed-in route, which answers them, so with its notes.
+    openPreview(true, true);
 
     expect(await store().saveToServer(true)).toBe(true);
 
@@ -95,7 +102,7 @@ describe("saving a public preview while signed in", () => {
 
   it("keeps the signed-in route for a platform admin", async () => {
     useAuthStore.getState().setUser(person("client", null, "admin"));
-    openPreview();
+    openPreview(true, true);
 
     expect(await store().saveToServer(true)).toBe(true);
 
