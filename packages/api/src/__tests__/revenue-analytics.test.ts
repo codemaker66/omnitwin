@@ -233,7 +233,8 @@ describe("revenue analytics services", () => {
       timeZone: LONDON,
       reviewBottlenecksBySpaceId: new Map(),
     });
-    // Four evenings, four venue days, of 20: 20%. UTC days counted seven.
+    // Four evenings, four venue days, of 20: 20%. UTC days with an inclusive
+    // end counted five (24 Oct, 31 Oct, 1, 2 and 3 Nov): 25%.
     expect(rows[0]?.bookedEvents).toBe(4);
     expect(rows[0]?.utilisationPercent).toBe(20);
   });
