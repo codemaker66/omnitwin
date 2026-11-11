@@ -46,9 +46,15 @@ describe.skipIf(target === undefined)("who can find and read a guest's plan, thr
   const venueId = randomUUID();
   const spaceId = randomUUID();
   const chairId = randomUUID();
+  const staffId = randomUUID();
 
-  async function newPlan(): Promise<Plan> {
-    const response = await server.inject({ method: "POST", url: "/public/configurations", payload: { spaceId } });
+  /** A new plan, made from `from` (the create route takes ten an hour from
+   *  one address, and this suite makes nine from the default one). */
+  async function newPlan(from?: string): Promise<Plan> {
+    const response = await server.inject({
+      method: "POST", url: "/public/configurations", payload: { spaceId },
+      ...(from === undefined ? {} : { remoteAddress: from }),
+    });
     expect(response.statusCode, response.body.slice(0, 300)).toBe(201);
     return response.json<{ data: Plan }>().data;
   }
@@ -68,6 +74,7 @@ describe.skipIf(target === undefined)("who can find and read a guest's plan, thr
     await db.insert(schema.spaces).values({ id: spaceId, venueId, name: "Room", slug: "room", widthM: "20", lengthM: "20", heightM: "4",
       floorPlanOutline: [{ x: 0, y: 0 }, { x: 20, y: 0 }, { x: 20, y: 20 }, { x: 0, y: 20 }] });
     await db.insert(schema.assetDefinitions).values({ id: chairId, name: "TEST ONLY guest privacy chair", category: "chair", widthM: "0.5", depthM: "0.5", heightM: "0.9" });
+    await db.insert(schema.users).values({ id: staffId, name: "TEST ONLY guest privacy staff", email: `${staffId}@guest-privacy.invalid`, role: "staff", venueId });
 
     process.env["DATABASE_URL"] = target;
     process.env["JWT_SECRET"] = "test-jwt-secret-that-is-at-least-32-characters-long";
@@ -231,8 +238,8 @@ describe.skipIf(target === undefined)("who can find and read a guest's plan, thr
   });
 
   /** A plan the maker has saved with a noted piece at 2 and a bare one at 4. */
-  async function planWithOneNote(): Promise<{ plan: Plan; withNote: StoredPiece; bare: StoredPiece }> {
-    const plan = await newPlan();
+  async function planWithOneNote(from?: string): Promise<{ plan: Plan; withNote: StoredPiece; bare: StoredPiece }> {
+    const plan = await newPlan(from);
     const made = await save(plan, [piece(2, ALLERGY), piece(4)], asMaker(plan));
     const withNote = made.objects.find((stored) => stored.metadata?.["notes"] === ALLERGY);
     const bare = made.objects.find((stored) => stored.metadata?.["notes"] === undefined);
@@ -383,4 +390,123 @@ describe.skipIf(target === undefined)("who can find and read a guest's plan, thr
     expect(seen.notesIncluded).toBe(false);
     expect(body.includes(ALLERGY)).toBe(false);
   });
+
+  // -------------------------------------------------------------------------
+  // What a save leaves out. A piece left out of a save is removed, and its
+  // note with it (lib/placed-object-batch.ts). A save not taken as the whole
+  // truth never read the plan's notes, so it may remove any piece except one
+  // that holds a note (the release lead's ruling R-D on #389). Each case
+  // makes its plan from its own address (see newPlan).
+  // -------------------------------------------------------------------------
+
+  const HELD_PIECE_OMITTED = "Nothing was saved: this save would remove a piece with a note that cannot be shown here. Reload the page to put it back.";
+
+  /** The plan's revision, and how many versions its history holds, as the database has them. */
+  async function history(planId: string): Promise<{ revision: number | undefined; versions: number }> {
+    const plan = await pool.query<{ revision: number }>("SELECT revision FROM configurations WHERE id = $1", [planId]);
+    const versions = await pool.query<{ n: string }>(
+      "SELECT count(*)::text AS n FROM configuration_layout_revisions WHERE configuration_id = $1", [planId]);
+    return { revision: plan.rows[0]?.revision, versions: Number(versions.rows[0]?.n) };
+  }
+
+  it("refuses, whole, a save without the plan's notes that leaves out a piece holding a note", async () => {
+    const { plan, withNote, bare } = await planWithOneNote("198.51.100.1");
+    const before = await asMade(plan);
+    const kept = await history(plan.id);
+
+    // A phone that opened the link keeps work without the noted piece (Keep
+    // mine over a newer version, an Undo, a page from before the planner
+    // knew which pieces hold a note) and saves it.
+    const friend = { ...plan };
+    const refused = await send(friend, [piece(4, undefined, bare.id)]);
+    // What was answered and what the plan still holds, in one assertion.
+    expect({ statusCode: refused.statusCode, kept: notesByPosition((await asMade(plan)).objects) })
+      .toEqual({ statusCode: 409, kept: { 2: ALLERGY, 4: null } });
+    // Its own code: the planner answers NOTE_HELD by forgetting its own words
+    // over held notes and sending again, which cannot put a piece back.
+    expect(JSON.parse(refused.body)).toEqual({ code: "HELD_PIECE_OMITTED", error: HELD_PIECE_OMITTED });
+    expect(refused.body.includes(withNote.id)).toBe(false);
+    // Nothing stored: no piece removed, no revision taken, no history row.
+    expect(await asMade(plan)).toEqual(before);
+    expect(await history(plan.id)).toEqual(kept);
+
+    // The maker's own browser, saving a copy it read without the notes, is
+    // held the same way; so is a save that says it read them, without the
+    // secret to show for it.
+    for (const as of [{ secret: plan.claimSecret }, { notesIncluded: true }]) {
+      const alsoRefused = await send(friend, [piece(4, undefined, bare.id)], as);
+      expect(alsoRefused.statusCode, alsoRefused.body.slice(0, 300)).toBe(409);
+      expect(JSON.parse(alsoRefused.body)).toEqual({ code: "HELD_PIECE_OMITTED", error: HELD_PIECE_OMITTED });
+    }
+    expect(await history(plan.id)).toEqual(kept);
+
+    // The same save, sending the held piece as it was shown, lands.
+    const moved = await save(friend, [piece(2, undefined, withNote.id), piece(6, undefined, bare.id)]);
+    expect(heldAt(moved.objects)).toEqual([2]);
+    expect(notesByPosition((await asMade(plan)).objects)).toEqual({ 2: ALLERGY, 6: null });
+  });
+
+  it("still lets a save without the plan's notes remove a piece that holds none", async () => {
+    const { plan, withNote } = await planWithOneNote("198.51.100.2");
+    const removed = await save({ ...plan }, [piece(2, undefined, withNote.id)]);
+    expect(heldAt(removed.objects)).toEqual([2]);
+    expect(notesByPosition((await asMade(plan)).objects)).toEqual({ 2: ALLERGY });
+  });
+
+  it("still lets the browser that made the plan, saving with its notes, remove a piece that holds one", async () => {
+    const { plan, bare } = await planWithOneNote("198.51.100.3");
+    await save(plan, [piece(4, undefined, bare.id)], asMaker(plan));
+    expect(notesByPosition((await asMade(plan)).objects)).toEqual({ 4: null });
+  });
+
+  it("still lets venue staff, signed in, remove a piece that holds a note", async () => {
+    const { plan, bare } = await planWithOneNote("198.51.100.4");
+    const staff = { id: staffId, email: `${staffId}@guest-privacy.invalid`, role: "staff", platformRole: "none", venueId };
+    const response = await server.inject({
+      method: "POST", url: `/configurations/${plan.id}/objects/batch`,
+      headers: { authorization: `Bearer ${JSON.stringify(staff)}` },
+      payload: { expectedRevision: plan.revision, objects: [piece(4, undefined, bare.id)] },
+    });
+    expect(response.statusCode, response.body.slice(0, 300)).toBe(200);
+    expect(notesByPosition((await asMade(plan)).objects)).toEqual({ 4: null });
+  });
+
+  it("looks for a held piece once the save holds the plan, so a note written while it waits is kept", async () => {
+    // A signed-in write holds the plan's row (as the staff piece routes do,
+    // FOR SHARE) and puts a note on the bare piece, while a friend's save
+    // that leaves that piece out waits behind it.
+    const { plan, withNote, bare } = await planWithOneNote("198.51.100.5");
+    const LATE = "TEST ONLY written while the save waited";
+    const holder = await pool.connect();
+    let open = false;
+    try {
+      await holder.query("BEGIN");
+      open = true;
+      await holder.query("SELECT id FROM configurations WHERE id = $1 FOR SHARE", [plan.id]);
+      await holder.query(
+        "UPDATE placed_objects SET metadata = coalesce(metadata, '{}'::jsonb) || jsonb_build_object('notes', $2::text) WHERE id = $1",
+        [bare.id, LATE]);
+      const holderPid = (await holder.query<{ pid: number }>("SELECT pg_backend_pid() AS pid")).rows[0]?.pid;
+
+      const pending = send({ ...plan }, [piece(2, undefined, withNote.id)]);
+      let waiting = false;
+      for (let attempt = 0; attempt < 500 && !waiting; attempt += 1) {
+        const blocked = await pool.query<{ n: string }>(
+          "SELECT count(*)::text AS n FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid))", [holderPid]);
+        waiting = Number(blocked.rows[0]?.n) > 0;
+        if (!waiting) await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      expect(waiting, "the save never waited behind the plan's row").toBe(true);
+      await holder.query("COMMIT");
+      open = false;
+
+      const answered = await pending;
+      expect({ statusCode: answered.statusCode, kept: notesByPosition((await asMade(plan)).objects) })
+        .toEqual({ statusCode: 409, kept: { 2: ALLERGY, 4: LATE } });
+      expect(JSON.parse(answered.body)).toEqual({ code: "HELD_PIECE_OMITTED", error: HELD_PIECE_OMITTED });
+    } finally {
+      if (open) await holder.query("ROLLBACK");
+      holder.release();
+    }
+  }, 60_000);
 });

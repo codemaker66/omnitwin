@@ -107,9 +107,13 @@ function saveBytes(request: FastifyRequest): number {
 // sends without having read that note, and it is never answered 200 for a
 // note that was not taken.
 //
-// What this does not do: a piece left out of a save is removed, and its note
-// with it. Anyone holding the plan's id may remove a piece, as before; the
-// planner shows which pieces hold a note the person cannot see.
+// A piece left out of a save is removed, and its note with it. Anyone holding
+// the plan's id may remove a piece, as before, except a piece that holds a
+// note: a save not taken as the whole truth never read that note, so one that
+// leaves such a piece out is refused whole (HELD_PIECE_OMITTED_REFUSAL). The
+// planner shows which pieces hold a note the person cannot see. The browser
+// that made the plan, saving a document read with its notes, and venue staff
+// signed in (routes/placed-objects.ts) remove any piece, as before.
 // ---------------------------------------------------------------------------
 
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
@@ -181,6 +185,8 @@ interface SettledNotes {
   readonly pieces: readonly PlacedObjectBatchItem[];
   /** The pieces whose note this save would have changed without having read it. */
   readonly refused: readonly string[];
+  /** The stored pieces holding a note that this save leaves out, and so would remove. */
+  readonly omitted: readonly string[];
 }
 
 /**
@@ -199,10 +205,15 @@ interface SettledNotes {
  *     autosave often stores half-typed;
  *   - any other note on a piece that holds a different one refuses the whole
  *     save. Storing the old note and answering 200 threw the sender's words
- *     away unseen.
+ *     away unseen;
+ *   - a stored piece that holds a note and is not in the save at all refuses
+ *     the whole save too: the batch removes every piece it leaves out, and
+ *     the note with it.
  *
  * Must run inside the save's transaction, after the revision is advanced, so
- * the notes read are the ones this save replaces.
+ * the notes read are the ones this save replaces: every route that writes a
+ * plan's pieces holds the plan's row first, so no note can land between this
+ * read and the batch.
  */
 async function settledNotes(
   tx: Transaction,
@@ -230,7 +241,9 @@ async function settledNotes(
     refused.push(piece.id);
     return piece;
   });
-  return { pieces, refused };
+  const sent = new Set(incoming.flatMap((piece) => (piece.id === undefined ? [] : [piece.id])));
+  const omitted = [...held.keys()].filter((id) => !sent.has(id));
+  return { pieces, refused, omitted };
 }
 
 /**
@@ -270,12 +283,30 @@ const NOTE_HELD_REFUSAL = {
   code: "NOTE_HELD",
 } as const;
 
+/**
+ * The refusal of a save, not taken as the whole truth, that leaves out a
+ * stored piece holding a note: the batch would remove the piece and the note
+ * its sender was never shown. Nothing of the save is stored.
+ *
+ * Its own code, never NOTE_HELD: the planner answers NOTE_HELD by forgetting
+ * its own words over held notes and sending again, which cannot put a piece
+ * back. Its advice to reload rests on the planner putting back, from the plan
+ * as read, any held piece its kept work lacks (the web half; release lead's
+ * ruling R-B). It names no piece and discloses nothing new: every read
+ * without the notes already marks which pieces hold one (`noteHeld`).
+ */
+const HELD_PIECE_OMITTED_REFUSAL = {
+  error: "Nothing was saved: this save would remove a piece with a note that cannot be shown here. Reload the page to put it back.",
+  code: "HELD_PIECE_OMITTED",
+} as const;
+
 /** How a guest save ends. Only "saved" keeps anything it wrote. */
 type GuestSaveOutcome =
   | { readonly status: "saved"; readonly objects: readonly PlacedObjectRow[]; readonly revision: number }
   | { readonly status: "conflict"; readonly currentRevision: number }
   | { readonly status: "locked"; readonly reviewStatus: string }
-  | { readonly status: "note-held" };
+  | { readonly status: "note-held" }
+  | { readonly status: "held-piece-omitted" };
 
 // Punch list #24: accepts a data URL (PNG or JPEG) as the thumbnail for a
 // public preview config. The .max() checks the data URL's length; every
@@ -519,8 +550,9 @@ export async function publicConfigRoutes(
     const notesAsSent = madeHere && parsed.data.notesIncluded === true;
 
     // Atomic batch: delete stale + update + insert in one transaction. A save
-    // refused for a held note has already advanced the revision by then, so
-    // its transaction is rolled back and keeps nothing.
+    // refused for a held note, or for a piece holding one that it leaves out,
+    // has already advanced the revision by then, so its transaction is rolled
+    // back and keeps nothing.
     const saveResult = await writeOrRefuse<GuestSaveOutcome>(db, async (tx, refuse) => {
       const txResults: PlacedObjectRow[] = [];
 
@@ -560,8 +592,11 @@ export async function publicConfigRoutes(
       }
 
       const settled: SettledNotes = notesAsSent
-        ? { pieces: parsed.data.objects, refused: [] }
+        ? { pieces: parsed.data.objects, refused: [], omitted: [] }
         : await settledNotes(tx, configId, parsed.data.objects);
+      // A save that would remove a held note is answered for that first: the
+      // planner's resend after NOTE_HELD would still leave the piece out.
+      if (settled.omitted.length > 0) return refuse({ status: "held-piece-omitted" });
       if (settled.refused.length > 0) return refuse({ status: "note-held" });
       txResults.push(...await syncPlacedObjectBatch(tx, configId, settled.pieces));
 
@@ -588,6 +623,9 @@ export async function publicConfigRoutes(
     }
     if (saveResult.status === "note-held") {
       return reply.status(409).send(NOTE_HELD_REFUSAL);
+    }
+    if (saveResult.status === "held-piece-omitted") {
+      return reply.status(409).send(HELD_PIECE_OMITTED_REFUSAL);
     }
     if (saveResult.status === "conflict") {
       const change = await loadRevisionChange(db, configId, saveResult.currentRevision,
