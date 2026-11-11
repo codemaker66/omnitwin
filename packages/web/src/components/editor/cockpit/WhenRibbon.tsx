@@ -292,7 +292,10 @@ function ClientWhenRibbon(): ReactElement | null {
     if (data === null || room === null) return null;
     const slot = data.slots.find((candidate) => candidate.space.id === room.id);
     if (slot === undefined) return null;
-    return { bookingId: slot.bookingId, kind: slot.kind, title: slot.title, startMs: Date.parse(slot.startsAt), endMs: Date.parse(slot.endsAt) };
+    // A booking stored with an empty title (before #350, API-9) is still this
+    // event's: the bar, its label and the confirm question name the event.
+    const title = slot.title === "" ? data.event.name : slot.title;
+    return { bookingId: slot.bookingId, kind: slot.kind, title, startMs: Date.parse(slot.startsAt), endMs: Date.parse(slot.endsAt) };
   }, [data, room]);
   const draft = useMemo(() => {
     if (data === null) return null;

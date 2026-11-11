@@ -98,6 +98,24 @@ describe("the client's When ribbon", () => {
     expect(getRoomDayMock).toHaveBeenCalledWith(EVENT, { spaceId: ROOM, day: "2030-05-09" }, expect.anything());
   });
 
+  it("names the client's own booking by its event when the booking was stored with an empty title (API-9)", async () => {
+    // A row from before #350 can carry "" as its title; the schedule and the
+    // room's day now read it as stored, and the bar still says whose it is.
+    const base = schedule({ kind: "hold" });
+    scheduleState.current = {
+      status: "loaded",
+      data: { ...base, event: { ...base.event, name: "Fraser dinner" }, slots: base.slots.map((slot) => ({ ...slot, title: "" })) },
+      refresh: vi.fn(),
+    };
+    const own = { kind: "yours" as const, bookingId: OWN, title: "", startsAt: iso(SIX), endsAt: iso(SIX + 300 * MIN) };
+    getRoomDayMock.mockImplementation((_event: string, query: { day: string }) =>
+      Promise.resolve(roomDay(query.day, query.day === "2030-05-10" ? [BUSY_MORNING, own] : [])));
+    renderRibbon();
+    const ingot = await screen.findByTestId("when-ribbon-ingot");
+    expect(ingot.getAttribute("aria-label")).toMatch(/^Fraser dinner, 18:00 – 23:00\. /u);
+    expect(ingot.querySelector(".when-ribbon__ingot-title")?.textContent).toBe("Fraser dinner");
+  });
+
   it("every proposal pauses for the question, then goes out as one keyed PUT", async () => {
     loaded({ kind: "hold" });
     proposeWindowMock.mockResolvedValue({});
