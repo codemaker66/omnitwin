@@ -26,6 +26,7 @@ import { clockIsCorrected, correctedNowMs, subscribeClock } from "../../lib/cloc
 import { useSlotRequests } from "../../components/requests/requests-context.js";
 import { listensForFloorRequests } from "../../lib/requests-live.js";
 import { useSlotObservations } from "./lib/use-slot-observations.js";
+import { floorChangesBySlot, useFloorChanges } from "./lib/use-floor-changes.js";
 import { ChimeToggle } from "../../components/requests/ChimeToggle.js";
 import { ShiftHandover } from "../../components/requests/ShiftHandover.js";
 import { PushAlertsToggle } from "../../components/requests/PushAlertsToggle.js";
@@ -410,6 +411,15 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
   useEffect(() => { setBoundaryMs(nextBoundaryMs); }, [nextBoundaryMs]);
 
   const lanes = board?.lanes ?? NO_LANES;
+  // What changed since the floor last looked, on the day's events: read by
+  // everyone who reads the board, acknowledged from the slot by the floor.
+  const eventIds = useMemo(() => lanes.flatMap((lane) => lane.slots.flatMap((slot) => (slot.eventId === null ? [] : [slot.eventId]))), [lanes]);
+  const floor = useFloorChanges(eventIds, venueId !== null);
+  const changesBySlot = useMemo(() => floorChangesBySlot(lanes, floor.byEvent), [lanes, floor.byEvent]);
+  const changedBySlot = useMemo(() => new Map([...changesBySlot]
+    .filter(([, changes]) => changes.length > 0)
+    .map(([bookingId, changes]) => [bookingId, changes.length] as const)), [changesBySlot]);
+  const acknowledgesChanges = !wall && user !== null && (user.role === "hallkeeper" || user.role === "staff" || user.role === "admin");
   const view = useMemo(() => boardWindow(range, lanes, nowMs, timeZone), [range, lanes, nowMs, timeZone]);
   const ticks = useMemo(() => rulerTicks(view, timeZone, phone ? 4 : 2), [view, timeZone, phone]);
   const plaque = nowPlaque(nowMs, view);
@@ -500,9 +510,13 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
   // Today the plane counts every request nobody has, as the list and the
   // sentence do; another day, those on its own bookings.
   const stages = useMemo(() => planeStages(lanes, browsingToday ? board?.unowned.length : undefined), [lanes, browsingToday, board]);
+  // The rooms with a change to read, in the board's order, once each.
+  const changedRooms = useMemo(() => lanes
+    .filter((lane) => lane.slots.some((slot) => slot.state !== "done" && changedBySlot.has(slot.bookingId)))
+    .map((lane) => lane.room.name), [lanes, changedBySlot]);
   const summary = useMemo(
-    () => (board === null ? null : boardSummary({ lanes: board.lanes, unowned: board.unowned, today: browsingToday, nowMs })),
-    [board, browsingToday, nowMs],
+    () => (board === null ? null : boardSummary({ lanes: board.lanes, unowned: board.unowned, today: browsingToday, nowMs, changed: changedRooms })),
+    [board, browsingToday, nowMs, changedRooms],
   );
 
   // A venue's own account not connected to one yet is told so, as on every
@@ -521,6 +535,11 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
   // November · Good afternoon, Elaine".
   const dayName = deskGreeting(selectedMs, null, timeZone).date;
   const greeting = deskGreeting(nowMs, user?.name ?? null, timeZone).greeting;
+  const selectedEventId = selected?.slot.eventId ?? null;
+  const selectedEntry = selectedEventId === null ? undefined : floor.byEvent.get(selectedEventId);
+  const selectedChanges = selected === null || selectedEntry === undefined
+    ? null
+    : { ...selectedEntry, changes: [...(changesBySlot.get(selected.slot.bookingId) ?? [])] };
   const detail = selected === null ? null : (
     <div ref={detailRef} className="dayboard-detail-frame">
       <SlotDetail
@@ -533,6 +552,13 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
         observations={wall ? null : observationsApi}
         onClose={() => { setSelectedId(null); }}
         closeLabel={beside ? "Close, back to the requests" : "Close, back to the rooms"}
+        changes={selectedChanges}
+        nowMs={nowMs}
+        onAcknowledge={selectedEventId === null || !acknowledgesChanges || selectedChanges === null
+          ? null
+          : () => { void floor.acknowledge(selectedEventId, selectedChanges.changes.map((change) => change.id)); }}
+        acknowledging={selectedEventId !== null && floor.sending.has(selectedEventId)}
+        acknowledgeFailure={selectedEventId === null ? null : floor.failures.get(selectedEventId) ?? null}
       />
     </div>
   );
@@ -643,6 +669,7 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
           onOpen={openSlot}
           wall={wall}
           frozen={frozen}
+          changed={changedBySlot}
         >
           {!beside && selected !== null && selected.room.id === day.room.id ? detail : null}
         </RoomRow>

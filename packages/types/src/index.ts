@@ -438,6 +438,8 @@ export {
   CreateHallkeeperAcknowledgementInputSchema,
   HallkeeperAcknowledgementSchema,
   RecordEventPlanChangeInputSchema,
+  AwaitingAcknowledgementQuerySchema,
+  EventAwaitingAcknowledgementSchema,
   type EventPlanChangeId,
   type EventPlanNotificationId,
   type HallkeeperAcknowledgementId,
@@ -457,6 +459,8 @@ export {
   type CreateHallkeeperAcknowledgementInput,
   type HallkeeperAcknowledgement,
   type RecordEventPlanChangeInput,
+  type AwaitingAcknowledgementQuery,
+  type EventAwaitingAcknowledgement,
 } from "./event-plan-lifecycle.js";
 
 // --- ASPIRATIONAL: Canonical Layout Snapshot v0 evidence subject ---

@@ -43,6 +43,8 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/socket-identity-postgres.test.ts",
   "src/__tests__/public-mcp-postgres.test.ts",
   "src/__tests__/sheet-paper-check-postgres.test.ts",
+  // What changed, for the floor: a Diary move enters the event's change feed, the Day Board reads it, the floor acknowledges it.
+  "src/__tests__/floor-changes-postgres.test.ts",
   "src/__tests__/ai-usage-postgres.test.ts",
   // The People Book (migration 0098): the operator's read-only check of the backfill.
   "src/__tests__/check-people-book-postgres.test.ts",

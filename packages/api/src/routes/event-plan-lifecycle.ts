@@ -1,9 +1,11 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { and, count, desc, eq, exists, isNotNull, isNull, or, type SQL } from "drizzle-orm";
+import { and, count, desc, eq, exists, getTableColumns, inArray, isNotNull, isNull, or, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import {
+  AwaitingAcknowledgementQuerySchema,
   ChangeFeedListQuerySchema,
   ChangeFeedItemSchema,
+  EventAwaitingAcknowledgementSchema,
   CreateHallkeeperAcknowledgementInputSchema,
   EventPlanAudienceRoleSchema,
   HallkeeperAcknowledgementSchema,
@@ -18,6 +20,7 @@ import {
   eventPlanNotificationReads,
   eventPlanNotifications,
   events,
+  users,
 } from "../db/schema.js";
 import { authenticate, isPlatformAdmin } from "../middleware/auth.js";
 import { canAccessInternalEvent } from "../utils/query.js";
@@ -222,6 +225,62 @@ export async function notificationRoutes(server: FastifyInstance, opts: { db: Da
 
 export async function eventPlanLifecycleRoutes(server: FastifyInstance, opts: { db: Database }): Promise<void> {
   const { db } = opts;
+
+  // The Day Board's one read of what waits for the floor (types:
+  // EventAwaitingAcknowledgementSchema): for each event asked about that the
+  // caller's venue holds, the changes that need a hallkeeper's acknowledgement
+  // and that nobody has acknowledged, newest first, and who last acknowledged
+  // anything there.
+  // The floor acknowledges as one, as the event-day board does: once anyone
+  // has, the change is in hand. Events of other venues are left out, not
+  // refused, so one board read never fails for a stale id.
+  server.get("/awaiting-acknowledgement", { preHandler: [authenticate] }, async (request, reply) => {
+    reply.header("Cache-Control", "private, no-store");
+    const query = AwaitingAcknowledgementQuerySchema.safeParse(request.query);
+    if (!query.success) return validationError(reply, query.error.issues);
+
+    const asked = [...new Set(query.data.eventIds)];
+    const eventRows = await db.select({ id: events.id, venueId: events.venueId })
+      .from(events)
+      .where(and(inArray(events.id, asked), isNull(events.deletedAt)));
+    const readable = eventRows.filter((row) => canAccessInternalEvent(request.user, row.venueId)).map((row) => row.id);
+    if (readable.length === 0) return { data: [] };
+
+    const pending = await db.select(getTableColumns(eventPlanChanges))
+      .from(eventPlanChanges)
+      .leftJoin(eventPlanChangeAcknowledgements, eq(eventPlanChangeAcknowledgements.changeId, eventPlanChanges.id))
+      .where(and(
+        inArray(eventPlanChanges.eventId, readable),
+        eq(eventPlanChanges.requiresHallkeeperAcknowledgement, true),
+        isNull(eventPlanChangeAcknowledgements.id),
+      ))
+      .orderBy(desc(eventPlanChanges.createdAt))
+      .limit(500);
+
+    const lastAcknowledgements = await db.selectDistinctOn([eventPlanChangeAcknowledgements.eventId], {
+      eventId: eventPlanChangeAcknowledgements.eventId,
+      at: eventPlanChangeAcknowledgements.createdAt,
+      name: users.name,
+      displayName: users.displayName,
+    })
+      .from(eventPlanChangeAcknowledgements)
+      .innerJoin(users, eq(users.id, eventPlanChangeAcknowledgements.acknowledgedBy))
+      .where(inArray(eventPlanChangeAcknowledgements.eventId, readable))
+      .orderBy(eventPlanChangeAcknowledgements.eventId, desc(eventPlanChangeAcknowledgements.createdAt));
+    const lastByEvent = new Map(lastAcknowledgements.map((row) => [row.eventId, row]));
+
+    return {
+      data: z.array(EventAwaitingAcknowledgementSchema).parse(readable.map((eventId) => {
+        const last = lastByEvent.get(eventId);
+        const by = last === undefined ? "" : (last.displayName ?? "").trim() || last.name.trim();
+        return {
+          eventId,
+          changes: pending.filter((change) => change.eventId === eventId).map(serializeEventPlanChange),
+          lastAcknowledgement: last === undefined || by === "" ? null : { at: last.at.toISOString(), by: by.slice(0, 200) },
+        };
+      })),
+    };
+  });
 
   server.get("/:eventId/change-feed", { preHandler: [authenticate] }, async (request, reply) => {
     const params = EventIdParam.safeParse(request.params);
