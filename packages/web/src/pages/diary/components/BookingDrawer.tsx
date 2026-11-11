@@ -171,6 +171,16 @@ function detailOrNull(value: string | null | undefined): string | null {
   return trimmed.length === 0 ? null : trimmed;
 }
 
+/** Whether the server answered a failed save with its own refusal: nothing
+ *  was written, so asking again is a new request. A failure it never
+ *  answered (the network, a 5xx, a reply this client could not read) may
+ *  have been written, so pressing Save again on the same booking keeps its
+ *  command id and the server's ledger replays the first write instead of
+ *  making a second hold (hallkeeper-web-8). */
+function refusedOutright(caught: unknown): boolean {
+  return caught instanceof ApiError && caught.status >= 400 && caught.status < 500;
+}
+
 function drawerTitle(mode: DrawerMode, kind: BookingKind): string {
   if (mode.kind === "edit") return BOARD_COPY.drawer.editTitle;
   if (mode.kind === "convert") return kind === "viewing" ? BOARD_COPY.drawer.viewingTitle : BOARD_COPY.drawer.convertTitle;
@@ -194,6 +204,10 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [stepError, setStepError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // The create this form last sent, as asked, and its command id: kept while
+  // its outcome is unknown, so Save again on the same booking is the same
+  // command (hallkeeper-web-8).
+  const pendingCreateRef = useRef<{ readonly asked: string; readonly commandId: string } | null>(null);
   const titleRef = useRef<HTMLInputElement | null>(null);
   const closeRef = useRef<HTMLButtonElement | null>(null);
   // Ending a booking's claim on its date is confirmed first (roadmap N3);
@@ -338,11 +352,19 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
       }
       setFieldErrors({});
       setBusy(true);
-      createBooking(result.payload)
+      const asked = JSON.stringify(result.payload);
+      const previous = pendingCreateRef.current;
+      const attempt = previous !== null && previous.asked === asked ? previous : { asked, commandId: crypto.randomUUID() };
+      pendingCreateRef.current = attempt;
+      createBooking(result.payload, attempt.commandId)
         .then((booking) => {
+          pendingCreateRef.current = null;
           onSaved(BOARD_COPY.drawer.created(booking.title));
         })
-        .catch(failure)
+        .catch((caught: unknown) => {
+          if (refusedOutright(caught)) pendingCreateRef.current = null;
+          failure(caught);
+        })
         .finally(() => {
           setBusy(false);
         });
