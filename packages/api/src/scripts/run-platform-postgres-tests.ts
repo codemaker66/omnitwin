@@ -40,6 +40,8 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/claim-new-draft-postgres.test.ts",
   // An anonymous save: what one piece, one save and one address may store.
   "src/__tests__/guest-save-limits-postgres.test.ts",
+  // ...and how often: the planner's own pace through the whole app's rate limiter.
+  "src/__tests__/guest-save-pace-postgres.test.ts",
   "src/__tests__/role-vocabulary-postgres.test.ts",
   // An open socket acts with its person's current role: /ws/configurations saves and /ws/diary commands.
   "src/__tests__/socket-identity-postgres.test.ts",

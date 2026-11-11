@@ -228,9 +228,16 @@ export async function publicConfigRoutes(
   });
 
   // POST /public/configurations/:configId/objects/batch — save objects to preview config
+  //
+  // The planner saves itself three seconds after every change: at most twenty
+  // saves a minute from one tab, and hundreds an hour from an engaged guest.
+  // Sixty a minute per address lets several people behind one connection (a
+  // home, an office, an open day) save at that pace, and an address that does
+  // exceed it saves again within the minute. What an address may store is
+  // bounded separately, in bytes, by the allowance charged below.
   server.post("/configurations/:configId/objects/batch", {
     bodyLimit: PUBLIC_BATCH_BODY_LIMIT_BYTES,
-    config: { rateLimit: { max: 60, timeWindow: "1 hour" } },
+    config: { rateLimit: { max: 60, timeWindow: "1 minute" } },
   }, async (request, reply) => {
     const params = ConfigIdParam.safeParse(request.params);
     if (!params.success) {
