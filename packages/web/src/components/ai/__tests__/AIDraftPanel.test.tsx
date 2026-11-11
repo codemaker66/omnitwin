@@ -99,6 +99,24 @@ describe("AIDraftPanel", () => {
     expect(screen.queryByRole("textbox")).toBeNull();
   });
 
+  // C1: each draft is switched on apart, so the panel asks about its own.
+  it("asks whether its own draft is switched on, and shows nothing for one that is not", async () => {
+    getAIAssistantStatusMock.mockResolvedValue({ configured: false, provider: null, model: null, disabledReason: "This AI draft is not switched on." });
+    const { container } = render(<AIDraftPanel title="BEO wording" useCase="beo_supplier_instruction_draft" context={{ guests: 90 }} />);
+    await waitFor(() => { expect(getAIAssistantStatusMock).toHaveBeenCalledWith("beo_supplier_instruction_draft"); });
+    expect(container.innerHTML).toBe("");
+  });
+
+  // C1: out of credit until the next grant is said as such, and the work goes on by hand.
+  it("tells staff to write by hand when the provider is out of credit (503 AI_DRAFTS_UNAVAILABLE)", async () => {
+    getAIAssistantStatusMock.mockResolvedValue(configuredStatus());
+    createAIDraftMock.mockRejectedValue(new ApiError(503, "AI drafts are unavailable just now.", "AI_DRAFTS_UNAVAILABLE"));
+    render(<AIDraftPanel title="Draft" useCase="enquiry_summary" context={{ guests: 90 }} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Generate draft" }));
+    expect((await screen.findByRole("alert")).textContent)
+      .toBe("AI drafts are unavailable just now. Write this one by hand; drafts return on their own.");
+  });
+
   // Release audit ai-1: a draft whose context the server builds from its own
   // record (an enquiry's summary) is asked for by that request alone; the
   // screen's context route is never called.
