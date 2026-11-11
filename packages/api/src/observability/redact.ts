@@ -209,25 +209,33 @@ export type ScrubbableTransaction = Parameters<NonNullable<NodeOptions["beforeSe
  *  Fastify span writes the request url, query included, to `url.path`. */
 const URL_ATTRIBUTE_KEYS: readonly string[] = ["url.full", "http.url", "http.target", "url.path"];
 
-/** Span / trace attribute keys that hold a bare query string, or the caller's
- *  address: node-core records the first X-Forwarded-For entry (behind Railway,
- *  the visitor's IP) as `http.client_ip` whatever `sendDefaultPii` says. The
- *  last is the attribute the SDK writes for the claim-secret request header
- *  (@sentry/core utils/request.js httpHeadersToSpanAttributes). 10.60 masks
- *  its value only because the header's name happens to contain "secret"; it
- *  is dropped here so that does not rest on the SDK's word list. */
-const DROPPED_ATTRIBUTE_KEYS: readonly string[] = [
-  "url.query", "http.query",
-  "http.client_ip", "client.address", "net.peer.ip", "network.peer.address", "net.sock.peer.addr",
-  `http.request.header.${PLAN_CLAIM_SECRET_HEADER.replaceAll("-", "_")}`,
-];
-
 /**
  * Request headers that are a credential: a sign-in, or a guest plan's claim
  * secret, whose holder can claim the plan and read its notes. A header that
- * comes to carry a credential is added here, and every scrubber drops it.
+ * comes to carry a credential is added here, and every scrubber drops it:
+ * from an event's and a transaction's request headers, and the attribute the
+ * SDK writes for it on the request's span.
  */
-const CREDENTIAL_REQUEST_HEADERS: readonly string[] = ["authorization", "cookie", PLAN_CLAIM_SECRET_HEADER];
+export const CREDENTIAL_REQUEST_HEADERS: readonly string[] = ["authorization", "cookie", PLAN_CLAIM_SECRET_HEADER];
+
+/** The span attribute the SDK writes for a request header (@sentry/core 10.60
+ *  utils/request.js httpHeadersToSpanAttributes): the name in lower case,
+ *  dashes as underscores. */
+function requestHeaderAttribute(header: string): string {
+  return `http.request.header.${header.toLowerCase().replaceAll("-", "_")}`;
+}
+
+/** Span / trace attribute keys that hold a bare query string, or the caller's
+ *  address: node-core records the first X-Forwarded-For entry (behind Railway,
+ *  the visitor's IP) as `http.client_ip` whatever `sendDefaultPii` says. Then
+ *  the attribute of each credential header: 10.60 masks those values only
+ *  because their names happen to contain "auth", "cookie" or "secret"; they
+ *  are dropped here so that does not rest on the SDK's word list. */
+const DROPPED_ATTRIBUTE_KEYS: readonly string[] = [
+  "url.query", "http.query",
+  "http.client_ip", "client.address", "net.peer.ip", "network.peer.address", "net.sock.peer.addr",
+  ...CREDENTIAL_REQUEST_HEADERS.map(requestHeaderAttribute),
+];
 
 /** Request headers that carry a credential or the caller's address. */
 const DROPPED_REQUEST_HEADERS: readonly string[] = [

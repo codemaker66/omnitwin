@@ -5,6 +5,7 @@ import type { Breadcrumb, ErrorEvent } from "@sentry/node";
 import { DrizzleQueryError } from "drizzle-orm";
 import { registerErrorNormalizer } from "../middleware/error-normalizer.js";
 import {
+  CREDENTIAL_REQUEST_HEADERS,
   REDACTED_PARAMS_MARKER,
   REDACTED_QUERY_MARKER,
   errorLogSerializer,
@@ -636,5 +637,47 @@ describe("a guest plan's claim secret", () => {
     expect(out.contexts?.trace?.data).toEqual({ "http.method": "POST" });
     expect(out.spans?.[0]?.data).toEqual({ "http.request.header.user_agent": "vitest" });
     expect(JSON.stringify(out)).not.toContain(CLAIM_SECRET);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// One list of credential headers. The SDK writes an attribute for every
+// request header on the request's span (@sentry/core 10.60 utils/request.js,
+// httpHeadersToSpanAttributes: `http.request.header.<name, dashes as
+// underscores>`), so each header in CREDENTIAL_REQUEST_HEADERS loses its
+// attribute as well as its place in the request headers, with nothing to add
+// by hand when a header joins the list.
+// ---------------------------------------------------------------------------
+
+/** The SDK's attribute key for a request header, written out independently of redact.ts. */
+const sdkHeaderAttribute = (header: string): string => `http.request.header.${header.replaceAll("-", "_")}`;
+
+function transactionWithHeaderAttributes(attributes: Record<string, string>): ScrubbableTransaction {
+  return {
+    type: "transaction",
+    contexts: { trace: { trace_id: "00000000000000000000000000000001", span_id: "0000000000000001", data: { ...attributes, "http.method": "GET" } } },
+    spans: [{ trace_id: "00000000000000000000000000000001", span_id: "0000000000000002", start_timestamp: 1, data: { ...attributes, "db.system": "postgresql" } }],
+  };
+}
+
+describe("the credential request headers' span attributes", () => {
+  it("names the sign-in header, the cookie header and the claim-secret header", () => {
+    expect([...CREDENTIAL_REQUEST_HEADERS].sort()).toEqual(["authorization", "cookie", "x-plan-claim-secret"]);
+  });
+
+  it("drops the attribute of every header in the list, on the trace and on every span", () => {
+    const attributes = Object.fromEntries(CREDENTIAL_REQUEST_HEADERS.map((header) => [sdkHeaderAttribute(header), `value-of-${header}`]));
+    const out = scrubTransaction(transactionWithHeaderAttributes({ ...attributes, "http.request.header.user_agent": "vitest" }));
+    expect(out.contexts?.trace?.data).toEqual({ "http.request.header.user_agent": "vitest", "http.method": "GET" });
+    expect(out.spans?.[0]?.data).toEqual({ "http.request.header.user_agent": "vitest", "db.system": "postgresql" });
+    expect(JSON.stringify(out)).not.toContain("value-of-");
+  });
+
+  it("drops the sign-in header's attribute, which only the SDK's own word list kept back before", () => {
+    // 10.60 writes "[Filtered]" because the name contains "auth"; a later
+    // version or a dataCollection setting could write the bearer token.
+    const out = scrubTransaction(transactionWithHeaderAttributes({ [sdkHeaderAttribute("authorization")]: "Bearer synthetic-session-token" }));
+    expect(out.contexts?.trace?.data).toEqual({ "http.method": "GET" });
+    expect(out.spans?.[0]?.data).toEqual({ "db.system": "postgresql" });
   });
 });
