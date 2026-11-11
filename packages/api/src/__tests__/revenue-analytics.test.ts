@@ -136,6 +136,25 @@ describe("revenue analytics services", () => {
     expect(dashboard.pipelineValueMinor).toBe(250_000_000);
   });
 
+  it("caps accepted per enquiry at 100 when accepted proposals outnumber enquiries", () => {
+    // Two deals from phone calls, both accepted, and one web enquiry: the
+    // share used to read 200 and fail PercentSchema, taking the dashboard down.
+    const pipeline = buildPipelineSummary({
+      pipelineValueMinor: 0,
+      enquiryCount: 1,
+      proposalStatusCounts: { accepted: 2 },
+    });
+    expect(pipeline.conversionPercent).toBe(100);
+    expect(pipeline.acceptedProposalCount).toBe(2);
+    expect(pipeline.enquiryCount).toBe(1);
+    const dashboard = buildVenueDashboardAnalytics({
+      generatedAt: NOW, pipeline, roomUtilisation: [], revenueScenarios: [], comfortConstraints: [],
+    });
+    expect(dashboard.enquiryConversionPercent).toBe(100);
+    expect(buildPipelineSummary({ pipelineValueMinor: 0, enquiryCount: 0, proposalStatusCounts: { accepted: 3 } })
+      .conversionPercent).toBe(0);
+  });
+
   it("measures room utilisation from confirmed bookings, not from quotes", () => {
     const windowStart = new Date("2026-07-01T00:00:00.000Z");
     const windowEnd = new Date("2026-07-11T00:00:00.000Z"); // 10-day window

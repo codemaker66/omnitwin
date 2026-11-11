@@ -47,6 +47,14 @@ export function summarizeRevenueScenarios(input: {
   });
 }
 
+/** `part` as a whole-number share of `whole`, held to 0–100. A share that is
+ *  not a share (more accepted proposals than enquiries, say) reads 100 rather
+ *  than failing PercentSchema and taking the whole dashboard down with it. */
+function boundedPercent(part: number, whole: number): number {
+  if (!(whole > 0) || !(part > 0)) return 0;
+  return Math.min(100, Math.round((part / whole) * 100));
+}
+
 /** Inputs are the venue's aggregates (open pipeline value, enquiry count,
  *  proposals per status), computed by the database rather than from every row. */
 export function buildPipelineSummary(input: {
@@ -59,9 +67,9 @@ export function buildPipelineSummary(input: {
 }): PipelineSummary {
   const proposalStatusCounts = { ...input.proposalStatusCounts };
   const acceptedProposalCount = proposalStatusCounts["accepted"] ?? 0;
-  const conversionPercent = input.enquiryCount > 0
-    ? Math.round((acceptedProposalCount / input.enquiryCount) * 100)
-    : 0;
+  // Proposals need no enquiry (a deal from a phone call has none), so accepted
+  // proposals can outnumber enquiries; the counts beside it stay exact.
+  const conversionPercent = boundedPercent(acceptedProposalCount, input.enquiryCount);
 
   return PipelineSummarySchema.parse({
     currency: "GBP",

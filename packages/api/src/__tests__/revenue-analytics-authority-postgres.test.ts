@@ -197,4 +197,24 @@ describe.skipIf(testUrl === undefined)("analytics authority on isolated PostgreS
     });
     expect(res.statusCode).toBe(403);
   });
+
+  // Proposals need no enquiry (deals from phone calls), so accepted proposals
+  // can outnumber enquiries. The share is capped rather than failing its own
+  // schema and taking the whole dashboard down with a 400.
+  it("keeps the dashboard up when accepted proposals outnumber enquiries", async () => {
+    await pool.query("INSERT INTO enquiries (venue_id, name, email) VALUES ($1, 'Web enquiry', 'web@example.test')", [VENUE]);
+    await pool.query(
+      "INSERT INTO proposals (venue_id, title, status) VALUES ($1, 'Phone deal one', 'accepted'), ($1, 'Phone deal two', 'accepted')",
+      [VENUE],
+    );
+
+    const pipeline = await server.inject({ method: "GET", url: PRICED_ROUTES[0], headers: headers("staff") });
+    expect(pipeline.statusCode, pipeline.body).toBe(200);
+    expect(pipeline.json<{ data: Record<string, unknown> }>().data).toMatchObject({
+      enquiryCount: 1, acceptedProposalCount: 2, conversionPercent: 100,
+    });
+    const dashboard = await server.inject({ method: "GET", url: PRICED_ROUTES[1], headers: headers("staff") });
+    expect(dashboard.statusCode, dashboard.body).toBe(200);
+    expect(dashboard.json<{ data: Record<string, unknown> }>().data).toMatchObject({ enquiryConversionPercent: 100 });
+  });
 });
