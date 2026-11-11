@@ -71,7 +71,7 @@ turns the drafts off for every venue until they are set. So:
 3. Set `AI_ASSISTANT_ENABLED=true` last.
 4. Check `/health/ready`, then the status checks in A.3.
 5. Change `/platform` copy only if the shipped copy no longer matches (it says
-   "In use at one venue · Staff-only and optional").
+   "Switched on at one venue · Staff-only and optional"; say "In use" only once a venue user's draft is recorded).
 
 ## C. Adding a venue or a draft
 
