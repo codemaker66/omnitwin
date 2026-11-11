@@ -1857,8 +1857,11 @@ describe("DayBoardPage: what changed since the floor last looked", () => {
 });
 
 describe("DayBoardPage: the building", () => {
+  // The dinner is this evening's: past by 23:00, when the wall would drop it.
+  beforeEach(atMidday);
+  afterEach(() => { vi.useRealTimers(); });
+
   const ALARM = "00000000-0000-4000-8000-0000000006c1";
-  // The dinner by the venue's clock, so the case reads the same at any hour.
   const tonight = (hours: number): string => new Date(Date.parse(dayRange(0).from) + hours * 3_600_000).toISOString();
 
   function day(): CalendarResponse["entries"] {
