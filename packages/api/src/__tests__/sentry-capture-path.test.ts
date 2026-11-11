@@ -1,4 +1,4 @@
-import { createServer, type IncomingHttpHeaders, type Server } from "node:http";
+import { createServer, request as httpRequest, type IncomingHttpHeaders, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { Writable } from "node:stream";
 import { gunzipSync } from "node:zlib";
@@ -12,7 +12,8 @@ import { PLAN_CLAIM_SECRET_HEADER } from "../services/configuration-claim-secret
 
 // ---------------------------------------------------------------------------
 // The API's errors reach Sentry once, through one path, and carry no visitor
-// IP or share token. The real SDK is initialised against a local stand-in for
+// IP, share token or credential (a sign-in token, a cookie, a guest plan's
+// claim secret). The real SDK is initialised against a local stand-in for
 // Sentry's ingest (an http server on loopback that keeps every envelope), so
 // what is asserted is what would leave the process, transactions included.
 // The server is wired as index.ts wires it (Sentry first, then Fastify with
@@ -30,10 +31,29 @@ const NOTE = "Severe peanut allergy";
  *  makes one (32 random bytes, base64url). The web app sends it in
  *  X-Plan-Claim-Secret; whoever holds it can claim the plan and read its notes. */
 const CLAIM_SECRET = "Cq7e4lRQL_WFKznWkyQKOhXPwYZWA985lb-D9oHBSLg";
+/** The sign-in provider's session token (a JWT) as the browser holds it, in
+ *  the `__session` cookie. */
+const SESSION_COOKIE_TOKEN = "eyJhbGciOiJSUzI1NiIsImtpZCI6Imluc18ycENhbmFyeUtpZCJ9.eyJzaWQiOiJzZXNzXzJwQ2FuYXJ5U2Vzc2lvbiIsInN1YiI6InVzZXJfMnBDYW5hcnlVc2VyIiwiZXhwIjoxNzk0MzU1MjYwfQ.Tbv0ZU_5wFRsLtfWhWSG750Jk5lvcsDu";
+/** A second cookie, whose name no SDK word list catches. */
+const OTHER_COOKIE = "vv_returning";
+const OTHER_COOKIE_VALUE = "rt_7hQ2mZx9KpL4wN8s";
+/** A session token as the web app sends it to the API, in Authorization:
+ *  Bearer. Its own session and signature, so a failure says which slot. */
+const BEARER_TOKEN = "eyJhbGciOiJSUzI1NiIsImtpZCI6Imluc18ycENhbmFyeUtpZCJ9.eyJzaWQiOiJzZXNzXzJwQ2FuYXJ5QmVhcmVyIiwic3ViIjoidXNlcl8ycENhbmFyeVVzZXIiLCJleHAiOjE3OTQzNTUzMjB9.Ac1FimF80SQ8bAdy4T-g22SxmJtE75sB";
+/** Every credential a request below carries, by what it is. */
+const CREDENTIALS: Readonly<Record<string, string>> = {
+  "the claim secret": CLAIM_SECRET,
+  "the __session cookie": SESSION_COOKIE_TOKEN,
+  [`the ${OTHER_COOKIE} cookie`]: OTHER_COOKIE_VALUE,
+  "the bearer token": BEARER_TOKEN,
+};
 /** A header no scrubber drops and no SDK word list masks. Where its value
  *  shows up, a credential header's value would have shown up. */
 const CONTROL_HEADER = "x-venviewer-control";
 const CONTROL = "control-6Wq1Zr";
+/** The attributes the SDK writes for a credential header, in any casing; for
+ *  a cookie header, one per cookie: `http.request.header.cookie.<name>`. */
+const CREDENTIAL_ATTRIBUTE = /^http\.request\.header\.(cookie|authorization|x_plan_claim_secret)(\.|$)/iu;
 
 interface SentEvent {
   readonly level?: string;
@@ -43,6 +63,7 @@ interface SentEvent {
   readonly request?: { readonly url?: string; readonly headers?: Record<string, string>; readonly cookies?: Record<string, string> };
   readonly user?: { readonly ip_address?: string };
   readonly exception?: { readonly values?: readonly { readonly value?: string; readonly mechanism?: { readonly type?: string } }[] };
+  readonly spans?: readonly { readonly data?: Record<string, unknown> }[];
 }
 
 /** The span attribute the SDK writes for a request header
@@ -146,13 +167,16 @@ describe("the API's errors in Sentry", () => {
     base = `http://127.0.0.1:${String((server.server.address() as AddressInfo).port)}`;
   }, 60_000);
 
-  /** Calls the API as the web app does: every request carries the guest
-   *  plan's claim secret, and the control header beside it. */
+  /** Calls the API as a signed-in browser could: every request carries a
+   *  bearer token, the session cookie and another cookie, the guest plan's
+   *  claim secret, and the control header beside them. */
   async function call(method: string, path: string, body?: unknown): Promise<number> {
     const response = await fetch(`${base}${path}`, {
       method,
       headers: {
         "x-forwarded-for": VISITOR_IP,
+        Authorization: `Bearer ${BEARER_TOKEN}`,
+        Cookie: `__session=${SESSION_COOKIE_TOKEN}; ${OTHER_COOKIE}=${OTHER_COOKIE_VALUE}`,
         "X-Plan-Claim-Secret": CLAIM_SECRET,
         "X-Venviewer-Control": CONTROL,
         ...(body === undefined ? {} : { "content-type": "application/json" }),
@@ -161,6 +185,19 @@ describe("the API's errors in Sentry", () => {
     });
     await response.arrayBuffer();
     return response.status;
+  }
+
+  /** A GET with its header lines exactly as given: names in any case, a
+   *  header repeated on several lines. */
+  function rawCall(path: string, headerLines: readonly string[]): Promise<number> {
+    return new Promise((resolve, reject) => {
+      const outgoing = httpRequest(`${base}${path}`, { method: "GET", headers: ["Host", base.slice("http://".length), ...headerLines] }, (response) => {
+        response.resume();
+        response.on("end", () => { resolve(response.statusCode ?? 0); });
+      });
+      outgoing.on("error", reject);
+      outgoing.end();
+    });
   }
 
   afterAll(async () => {
@@ -215,19 +252,35 @@ describe("the API's errors in Sentry", () => {
     expect(text).not.toContain(TOKEN);
   });
 
-  it("sends a guest plan's claim secret nowhere: no event, transaction, span or log line holds it", () => {
+  it("sends no credential anywhere: no sign-in token, cookie or claim secret in any event, transaction, span or log line", async () => {
+    // One more server error, its header names cased as a client may send
+    // them and the cookies split over two lines (Node joins them with "; ").
+    expect(await rawCall("/boom", [
+      "x-forwarded-for", VISITOR_IP,
+      "AUTHORIZATION", `Bearer ${BEARER_TOKEN}`,
+      "COOKIE", `__session=${SESSION_COOKIE_TOKEN}`,
+      "cookie", `${OTHER_COOKIE}=${OTHER_COOKIE_VALUE}`,
+      "X-PLAN-CLAIM-SECRET", CLAIM_SECRET,
+      "X-Venviewer-Control", CONTROL,
+    ])).toBe(500);
+    expect(await flush(5_000)).toBe(true);
+
     const events = eventsIn(envelopes);
     // The API's transactions, not the stand-in ingest's own (it is an http
     // server in this process, so the SDK traces the envelopes it receives).
     const transactions = itemsIn(envelopes, "transaction").filter(({ event }) => event.request?.url?.startsWith(base) === true);
-    // Every request carried the secret, and the API received it.
-    expect(received.length).toBeGreaterThanOrEqual(5);
-    for (const headers of received) expect(headers[PLAN_CLAIM_SECRET_HEADER]).toBe(CLAIM_SECRET);
-    // Not vacuous: the header beside it, which nothing scrubs, reached every
-    // slot the secret's header would: each event's and each transaction's
+    // Every request carried every credential, and the API received them.
+    expect(received.length).toBeGreaterThanOrEqual(6);
+    for (const headers of received) {
+      expect(headers[PLAN_CLAIM_SECRET_HEADER]).toBe(CLAIM_SECRET);
+      expect(headers.authorization).toBe(`Bearer ${BEARER_TOKEN}`);
+      expect(headers.cookie).toBe(`__session=${SESSION_COOKIE_TOKEN}; ${OTHER_COOKIE}=${OTHER_COOKIE_VALUE}`);
+    }
+    // Not vacuous: the header beside them, which nothing scrubs, reached every
+    // slot a credential header would: each event's and each transaction's
     // request headers, and the header attribute on each transaction's trace.
-    expect(events.length).toBeGreaterThanOrEqual(2);
-    expect(transactions.length).toBeGreaterThanOrEqual(3);
+    expect(events.length).toBeGreaterThanOrEqual(3);
+    expect(transactions.length).toBeGreaterThanOrEqual(4);
     const name = (event: SentEvent): string => event.transaction ?? event.exception?.values?.[0]?.value ?? "?";
     expect([...events, ...transactions]
       .filter(({ event }) => event.request?.headers?.[CONTROL_HEADER] !== CONTROL)
@@ -235,11 +288,22 @@ describe("the API's errors in Sentry", () => {
     expect(transactions
       .filter(({ event }) => event.contexts?.trace?.data?.[headerAttribute(CONTROL_HEADER)] !== CONTROL)
       .map(({ event }) => `${name(event)}: ${JSON.stringify(event.contexts?.trace?.data)}`)).toEqual([]);
-    // The secret itself: in no slot of any envelope, nor in their raw text,
-    // nor in the request log.
-    expect(wherever(CLAIM_SECRET, envelopes)).toEqual([]);
-    expect(envelopes.join("\n")).not.toContain(CLAIM_SECRET);
-    expect(logLines.join("")).toContain("/boom");
-    expect(logLines.join("")).not.toContain(CLAIM_SECRET);
+    // The slots that would hold them: no parsed cookies on any event or
+    // transaction, and no credential header's attribute on any trace or span.
+    // (Soft, so one run names every slot that leaks.)
+    expect.soft([...events, ...transactions].filter(({ event }) => event.request?.cookies !== undefined)
+      .map(({ event }) => `${name(event)}: ${JSON.stringify(event.request?.cookies)}`)).toEqual([]);
+    const attributeKeys = transactions.flatMap(({ event }) => [event.contexts?.trace?.data, ...(event.spans ?? []).map((span) => span.data)])
+      .flatMap((data) => Object.keys(data ?? {}));
+    expect.soft(attributeKeys.filter((key) => CREDENTIAL_ATTRIBUTE.test(key))).toEqual([]);
+    // The values: in no slot of any envelope, nor in their raw text, nor in
+    // the request log.
+    const log = logLines.join("");
+    expect(log).toContain("/boom");
+    for (const [what, value] of Object.entries(CREDENTIALS)) {
+      expect.soft(wherever(value, envelopes), what).toEqual([]);
+      expect.soft(envelopes.join("\n"), what).not.toContain(value);
+      expect.soft(log, what).not.toContain(value);
+    }
   });
 });

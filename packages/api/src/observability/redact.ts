@@ -225,16 +225,29 @@ function requestHeaderAttribute(header: string): string {
   return `http.request.header.${header.toLowerCase().replaceAll("-", "_")}`;
 }
 
+/** The attributes the SDK writes for the credential headers. */
+const CREDENTIAL_ATTRIBUTES: readonly string[] = CREDENTIAL_REQUEST_HEADERS.map(requestHeaderAttribute);
+
+/**
+ * Whether a span attribute carries a credential: a credential header's own
+ * attribute, or one under it. The SDK writes a Cookie header as one attribute
+ * per cookie, `http.request.header.cookie.<cookie name>`, and masks a value
+ * only when the cookie's name is on its word list (`__session` is; most names
+ * are not). The sign-in token's and the claim secret's attributes are masked
+ * by 10.60 only because their names contain "auth" and "secret". All are
+ * dropped here, in any casing, so none of that rests on the SDK's word list.
+ */
+function isCredentialAttribute(key: string): boolean {
+  const lower = key.toLowerCase();
+  return CREDENTIAL_ATTRIBUTES.some((attribute) => lower === attribute || lower.startsWith(`${attribute}.`));
+}
+
 /** Span / trace attribute keys that hold a bare query string, or the caller's
  *  address: node-core records the first X-Forwarded-For entry (behind Railway,
- *  the visitor's IP) as `http.client_ip` whatever `sendDefaultPii` says. Then
- *  the attribute of each credential header: 10.60 masks those values only
- *  because their names happen to contain "auth", "cookie" or "secret"; they
- *  are dropped here so that does not rest on the SDK's word list. */
+ *  the visitor's IP) as `http.client_ip` whatever `sendDefaultPii` says. */
 const DROPPED_ATTRIBUTE_KEYS: readonly string[] = [
   "url.query", "http.query",
   "http.client_ip", "client.address", "net.peer.ip", "network.peer.address", "net.sock.peer.addr",
-  ...CREDENTIAL_REQUEST_HEADERS.map(requestHeaderAttribute),
 ];
 
 /** Request headers that carry a credential or the caller's address. */
@@ -243,27 +256,40 @@ const DROPPED_REQUEST_HEADERS: readonly string[] = [
   "x-forwarded-for", "x-real-ip", "forwarded", "cf-connecting-ip", "true-client-ip",
 ];
 
-function dropRequestHeaders(
-  headers: Record<string, string> | undefined,
-  dropped: readonly string[] = DROPPED_REQUEST_HEADERS,
-): void {
+/** The parts of an event's or a transaction's `request` that can hold a credential. */
+export interface RequestCredentialFields {
+  headers?: Record<string, string>;
+  cookies?: Record<string, string>;
+}
+
+/**
+ * Removes the given headers from a `request`, however each is cased, and
+ * always its `cookies`: the SDK's RequestData integration parses the Cookie
+ * header into names and values there, on error events and transactions alike
+ * (@sentry/core 10.60 integrations/requestdata.js), so dropping the header
+ * alone would leave the sign-in provider's `__session` cookie in the event.
+ */
+function dropRequestCredentials(request: RequestCredentialFields, droppedHeaders: readonly string[]): void {
+  delete request.cookies;
+  const headers = request.headers;
   if (headers === undefined) return;
   for (const key of Object.keys(headers)) {
     // eslint-disable-next-line @typescript-eslint/no-dynamic-delete -- header bags are open-ended records
-    if (dropped.includes(key.toLowerCase())) delete headers[key];
+    if (droppedHeaders.includes(key.toLowerCase())) delete headers[key];
   }
 }
 
-/** Removes every credential from a request's headers, however each is cased. */
-export function dropCredentialHeaders(headers: Record<string, string> | undefined): void {
-  dropRequestHeaders(headers, CREDENTIAL_REQUEST_HEADERS);
+/** Removes every credential from a request: the credential headers, however
+ *  each is cased, and the cookies the SDK parsed from the Cookie header. */
+export function dropCredentials(request: RequestCredentialFields): void {
+  dropRequestCredentials(request, CREDENTIAL_REQUEST_HEADERS);
 }
 
 function scrubAttributes(data: Record<string, unknown> | undefined): void {
   if (data === undefined) return;
-  for (const key of DROPPED_ATTRIBUTE_KEYS) {
+  for (const key of Object.keys(data)) {
     // eslint-disable-next-line @typescript-eslint/no-dynamic-delete -- attribute bags are open-ended records
-    delete data[key];
+    if (DROPPED_ATTRIBUTE_KEYS.includes(key) || isCredentialAttribute(key)) delete data[key];
   }
   for (const key of URL_ATTRIBUTE_KEYS) {
     const value = data[key];
@@ -272,9 +298,10 @@ function scrubAttributes(data: Record<string, unknown> | undefined): void {
 }
 
 /**
- * `beforeSend`: strips request bodies, the query string, the credential and
- * address headers, and the query from `request.url`; redacts query
- * parameters from every exception value (the error and its linked causes).
+ * `beforeSend`: strips request bodies, the query string, the cookies, the
+ * credential and address headers, and the query from `request.url`; redacts
+ * query parameters from every exception value (the error and its linked
+ * causes).
  */
 export function scrubErrorEvent(event: ErrorEvent): ErrorEvent {
   for (const exception of event.exception?.values ?? []) {
@@ -288,7 +315,7 @@ export function scrubErrorEvent(event: ErrorEvent): ErrorEvent {
     if (event.request.url !== undefined) {
       event.request.url = withoutQuery(event.request.url);
     }
-    dropRequestHeaders(event.request.headers);
+    dropRequestCredentials(event.request, DROPPED_REQUEST_HEADERS);
   }
   return templateCapabilityPathsDeep(event);
 }
@@ -322,8 +349,9 @@ export function scrubBreadcrumb(breadcrumb: Breadcrumb): Breadcrumb {
 
 /**
  * `beforeSendTransaction`: strips the query from `request.url`, removes
- * `request.query_string`, and cleans the URL-bearing attributes on every
- * span and on the trace context.
+ * `request.query_string`, the body, the cookies and the credential and
+ * address headers, and cleans the URL-bearing, address and credential
+ * attributes on every span and on the trace context.
  */
 export function scrubTransaction(event: ScrubbableTransaction): ScrubbableTransaction {
   if (event.request !== undefined) {
@@ -335,7 +363,7 @@ export function scrubTransaction(event: ScrubbableTransaction): ScrubbableTransa
     // http integration's maxIncomingRequestBodySize, "medium" by default):
     // an enquiry's name, email, phone and allergy note.
     event.request.data = undefined;
-    dropRequestHeaders(event.request.headers);
+    dropRequestCredentials(event.request, DROPPED_REQUEST_HEADERS);
   }
   scrubAttributes(event.contexts?.trace?.data);
   for (const span of event.spans ?? []) {

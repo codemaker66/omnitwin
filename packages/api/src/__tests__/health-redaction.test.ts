@@ -90,4 +90,18 @@ describe("the API's Sentry beforeSend", () => {
       expect(scrubbed.request.headers).toEqual({ "user-agent": "test" });
     }
   });
+
+  it("drops the cookies: the ones the SDK parses into request.cookies and the Cookie header, the session cookie among them", () => {
+    const session = "eyJhbGciOiJSUzI1NiJ9.eyJzaWQiOiJzZXNzX3N5bnRoZXRpYyJ9.c3ludGhldGljLXNpZ25hdHVyZQ";
+    const scrubbed = scrubApiSentryEvent({
+      request: {
+        cookies: { __session: session, vv_returning: "rt_synthetic_returning_visit" },
+        headers: { Cookie: `__session=${session}; vv_returning=rt_synthetic_returning_visit`, "user-agent": "test" },
+      },
+    });
+    expect(scrubbed.request).not.toHaveProperty("cookies");
+    expect(scrubbed.request.headers).toEqual({ "user-agent": "test" });
+    expect(JSON.stringify(scrubbed)).not.toContain(session);
+    expect(JSON.stringify(scrubbed)).not.toContain("rt_synthetic_returning_visit");
+  });
 });

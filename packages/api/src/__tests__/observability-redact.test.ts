@@ -681,3 +681,92 @@ describe("the credential request headers' span attributes", () => {
     expect(out.spans?.[0]?.data).toEqual({ "db.system": "postgresql" });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Cookies. The sign-in provider keeps the browser's session token in the
+// `__session` cookie. Dropping the Cookie header is not enough: the SDK's
+// RequestData integration also parses it into `request.cookies` on error
+// events and transactions (@sentry/core 10.60 integrations/requestdata.js),
+// and its http instrumentation writes one span attribute per cookie,
+// `http.request.header.cookie.<name>`, masking the value only when the
+// cookie's name is on its word list (utils/request.js).
+// ---------------------------------------------------------------------------
+
+const SESSION_TOKEN = "eyJhbGciOiJSUzI1NiJ9.eyJzaWQiOiJzZXNzX3N5bnRoZXRpYyJ9.c3ludGhldGljLXNpZ25hdHVyZQ";
+const OTHER_COOKIE_VALUE = "rt_synthetic_returning_visit";
+const COOKIE_HEADER = `__session=${SESSION_TOKEN}; vv_returning=${OTHER_COOKIE_VALUE}`;
+
+describe("cookies", () => {
+  it("are dropped from an error event: the parsed cookies and the Cookie header, however it is cased", () => {
+    for (const name of ["cookie", "Cookie", "COOKIE"]) {
+      const out = scrubErrorEvent({
+        type: undefined,
+        request: {
+          url: "https://api.example.test/venues",
+          cookies: { __session: SESSION_TOKEN, vv_returning: OTHER_COOKIE_VALUE },
+          headers: { [name]: COOKIE_HEADER, "user-agent": "vitest" },
+        },
+      });
+      expect(out.request).not.toHaveProperty("cookies");
+      expect(out.request?.headers).toEqual({ "user-agent": "vitest" });
+      expect(out.request?.url).toBe("https://api.example.test/venues");
+      const text = JSON.stringify(out);
+      expect(text).not.toContain(SESSION_TOKEN);
+      expect(text).not.toContain(OTHER_COOKIE_VALUE);
+    }
+  });
+
+  it("are dropped from a transaction: the parsed cookies, the header, and each cookie's attribute on the trace and spans in any casing", () => {
+    const out = scrubTransaction({
+      type: "transaction",
+      request: {
+        url: "https://api.example.test/venues",
+        cookies: { __session: SESSION_TOKEN, vv_returning: OTHER_COOKIE_VALUE },
+        headers: { cookie: COOKIE_HEADER, "user-agent": "vitest" },
+      },
+      contexts: {
+        trace: {
+          trace_id: "00000000000000000000000000000001",
+          span_id: "0000000000000001",
+          data: {
+            // As 10.60 writes them: masked for a name on its word list, raw otherwise.
+            "http.request.header.cookie.__session": "[Filtered]",
+            "http.request.header.cookie.vv_returning": OTHER_COOKIE_VALUE,
+            "http.request.header.cookie": "[Filtered]",
+            "http.method": "GET",
+          },
+        },
+      },
+      spans: [{
+        trace_id: "00000000000000000000000000000001",
+        span_id: "0000000000000002",
+        start_timestamp: 1,
+        data: {
+          "HTTP.REQUEST.HEADER.COOKIE.VV_RETURNING": OTHER_COOKIE_VALUE,
+          "http.request.header.Cookie.__session": SESSION_TOKEN,
+          "http.request.header.user_agent": "vitest",
+        },
+      }],
+    });
+    expect(out.request).not.toHaveProperty("cookies");
+    expect(out.request?.headers).toEqual({ "user-agent": "vitest" });
+    expect(out.contexts?.trace?.data).toEqual({ "http.method": "GET" });
+    expect(out.spans?.[0]?.data).toEqual({ "http.request.header.user_agent": "vitest" });
+    const text = JSON.stringify(out);
+    expect(text).not.toContain(SESSION_TOKEN);
+    expect(text).not.toContain(OTHER_COOKIE_VALUE);
+  });
+
+  it("leaves another header whose name only begins like a credential header's", () => {
+    // A cookie's attribute sits under `cookie.`; `cookie_consent` is a header of its own.
+    const out = scrubTransaction(transactionWithHeaderAttributes({
+      "http.request.header.cookie_consent": "granted",
+      "http.request.header.authorization_hint": "none",
+    }));
+    expect(out.contexts?.trace?.data).toEqual({
+      "http.request.header.cookie_consent": "granted",
+      "http.request.header.authorization_hint": "none",
+      "http.method": "GET",
+    });
+  });
+});
