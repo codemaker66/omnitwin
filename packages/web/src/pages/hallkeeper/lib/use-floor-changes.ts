@@ -24,6 +24,8 @@ export interface FloorChangesApi {
   readonly status: "idle" | "loading" | "ready" | "failed";
   /** Each event's waiting changes and its last acknowledgement. */
   readonly byEvent: ReadonlyMap<string, EventAwaitingAcknowledgement>;
+  /** Since when the reads have failed (device clock), or null while they land. */
+  readonly failedSinceMs: number | null;
   /** Events whose acknowledgement is being sent. */
   readonly sending: ReadonlySet<string>;
   /** Why an acknowledgement could not be sent, by event. */
@@ -31,45 +33,73 @@ export interface FloorChangesApi {
   /** Acknowledge, for the floor, the given changes waiting on the event
    *  (every one of them when none are named). */
   readonly acknowledge: (eventId: string, changeIds?: readonly string[]) => Promise<void>;
+  /** Read again now: the day moved, or someone asked. */
+  readonly refresh: () => void;
 }
 
 const NOTHING: ReadonlyMap<string, EventAwaitingAcknowledgement> = new Map();
+
+function sameChanges(a: EventAwaitingAcknowledgement | undefined, b: EventAwaitingAcknowledgement | undefined): boolean {
+  const left = (a?.changes ?? []).map((change) => change.id).join(",");
+  const right = (b?.changes ?? []).map((change) => change.id).join(",");
+  return left === right;
+}
 
 export function useFloorChanges(eventIds: readonly string[], enabled: boolean): FloorChangesApi {
   const key = useMemo(() => [...new Set(eventIds)].sort().join(","), [eventIds]);
   const [byEvent, setByEvent] = useState<ReadonlyMap<string, EventAwaitingAcknowledgement>>(NOTHING);
   const [status, setStatus] = useState<FloorChangesApi["status"]>("idle");
+  const [failedSinceMs, setFailedSinceMs] = useState<number | null>(null);
   const [sending, setSending] = useState<ReadonlySet<string>>(new Set());
   const [failures, setFailures] = useState<ReadonlyMap<string, string>>(new Map());
   const generation = useRef(0);
   const keyRef = useRef(key);
   keyRef.current = key;
+  const byEventRef = useRef(byEvent);
+  byEventRef.current = byEvent;
 
   const read = useCallback(async (): Promise<void> => {
     const ids = keyRef.current === "" ? [] : keyRef.current.split(",");
+    // A newer read always wins: whatever a read set out with before it is old.
     const mine = ++generation.current;
     if (ids.length === 0) {
       setByEvent(NOTHING);
       setStatus("ready");
+      setFailedSinceMs(null);
       return;
     }
     setStatus((current) => (current === "ready" ? current : "loading"));
     try {
       const answer = await getAwaitingAcknowledgement(ids);
       if (mine !== generation.current) return;
-      setByEvent(new Map(answer.map((entry) => [entry.eventId, entry])));
+      const next = new Map(answer.map((entry) => [entry.eventId, entry]));
+      // A failure to send belongs to the changes it was about: once the
+      // floor's waiting changes are different, it no longer says anything.
+      const previous = byEventRef.current;
+      setFailures((current) => {
+        if (current.size === 0) return current;
+        const kept = new Map([...current].filter(([eventId]) => sameChanges(previous.get(eventId), next.get(eventId))
+          && (next.get(eventId)?.changes.length ?? 0) > 0));
+        return kept.size === current.size ? current : kept;
+      });
+      setByEvent(next);
       setStatus("ready");
+      setFailedSinceMs(null);
     } catch {
       if (mine !== generation.current) return;
       setStatus("failed");
+      setFailedSinceMs((current) => current ?? Date.now());
     }
   }, []);
+
+  const refresh = useCallback((): void => { void read(); }, [read]);
 
   useEffect(() => {
     if (!enabled) {
       generation.current += 1;
       setByEvent(NOTHING);
       setStatus("idle");
+      setFailedSinceMs(null);
       return;
     }
     void read();
@@ -89,7 +119,7 @@ export function useFloorChanges(eventIds: readonly string[], enabled: boolean): 
 
   const acknowledge = useCallback(async (eventId: string, changeIds?: readonly string[]): Promise<void> => {
     const named = changeIds === undefined ? null : new Set(changeIds);
-    const waiting = (byEvent.get(eventId)?.changes ?? []).filter((change) => named === null || named.has(change.id));
+    const waiting = (byEventRef.current.get(eventId)?.changes ?? []).filter((change) => named === null || named.has(change.id));
     if (waiting.length === 0) return;
     const sent = new Set(waiting.map((change) => change.id));
     setSending((current) => new Set(current).add(eventId));
@@ -105,8 +135,6 @@ export function useFloorChanges(eventIds: readonly string[], enabled: boolean): 
       for (const change of [...waiting].reverse()) {
         await acknowledgeEventPlanChange(eventId, { changeId: change.id });
       }
-      // Stop any read already under way from putting the changes back.
-      generation.current += 1;
       setByEvent((current) => {
         const entry = current.get(eventId);
         if (entry === undefined) return current;
@@ -114,10 +142,13 @@ export function useFloorChanges(eventIds: readonly string[], enabled: boolean): 
         next.set(eventId, {
           ...entry,
           changes: entry.changes.filter((change) => !sent.has(change.id)),
-          lastAcknowledgement: { at: new Date().toISOString(), by: "you" },
+          lastAcknowledgement: { at: new Date().toISOString(), by: "you", byUserId: null },
         });
         return next;
       });
+      // Then the floor's own answer, which also outdates any read already
+      // under way from before the acknowledgement.
+      void read();
     } catch (err) {
       setFailures((current) => new Map(current).set(eventId,
         err instanceof Error && err.message.trim() !== "" ? err.message : "the server did not take it"));
@@ -128,9 +159,9 @@ export function useFloorChanges(eventIds: readonly string[], enabled: boolean): 
         return next;
       });
     }
-  }, [byEvent]);
+  }, [read]);
 
-  return { status, byEvent, sending, failures, acknowledge };
+  return { status, byEvent, failedSinceMs, sending, failures, acknowledge, refresh };
 }
 
 /**

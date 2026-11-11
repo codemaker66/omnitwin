@@ -11,6 +11,7 @@ import { updateBookingCore, type MutationActor } from "../services/booking-mutat
 import { insertBoundBookings } from "../services/event-binding.js";
 import { updateEventCore } from "../services/event-mutations.js";
 import { wallRange } from "../services/booking-move-feed.js";
+import { proposeWindowCore } from "../services/window-proposals.js";
 
 // ---------------------------------------------------------------------------
 // What changed, for the floor, on the migrated disposable platform database:
@@ -144,6 +145,7 @@ describe.skipIf(target === undefined)("what changed, for the floor, on migrated 
     const [inHand] = await awaiting(f, "hallkeeper", [f.eventId]);
     expect(inHand?.changes).toEqual([]);
     expect(inHand?.lastAcknowledgement?.by).toBe("Jamie at the door");
+    expect(inHand?.lastAcknowledgement?.byUserId).toBe(f.hallkeeperId);
   });
 
   it("tells the floor when the room changes, and nothing for a booking already over", async () => {
@@ -161,6 +163,84 @@ describe.skipIf(target === undefined)("what changed, for the floor, on migrated 
     const corrected = await updateBookingCore(db, old.actor, old.ink.id, { endsAt: new Date(past.getTime() + 5 * HOUR).toISOString() });
     expect(corrected.ok).toBe(true);
     expect(await changesOf(old.eventId)).toEqual([]);
+  });
+
+  /** What waits for the floor on the event, and what the feed keeps as history. */
+  async function feedOf(eventId: string) {
+    const rows = await changesOf(eventId);
+    const acks = await db.select().from(schema.eventPlanChangeAcknowledgements).where(eq(schema.eventPlanChangeAcknowledgements.eventId, eventId));
+    const acked = new Set(acks.map((row) => row.changeId));
+    const sorted = [...rows].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+    return {
+      waiting: sorted.filter((row) => row.requiresHallkeeperAcknowledgement && !acked.has(row.id)),
+      history: sorted.filter((row) => !row.requiresHallkeeperAcknowledgement),
+      acknowledged: sorted.filter((row) => acked.has(row.id)),
+    };
+  }
+
+  it("folds moves nobody has read into one change from the place the floor knew, and an undone move into none", async () => {
+    const start = evening(5);
+    const f = await venue(start, new Date(start.getTime() + 5 * HOUR));
+    const place = (shiftHours: number) => ({
+      startsAt: new Date(start.getTime() + shiftHours * HOUR).toISOString(),
+      endsAt: new Date(start.getTime() + (5 + shiftHours) * HOUR).toISOString(),
+    });
+    const hours = (shiftHours: number): string => wallRange({
+      startsAt: new Date(start.getTime() + shiftHours * HOUR), endsAt: new Date(start.getTime() + (5 + shiftHours) * HOUR),
+    }, "Europe/London");
+
+    expect((await updateBookingCore(db, f.actor, f.ink.id, place(1))).ok).toBe(true);
+    expect((await updateBookingCore(db, f.actor, f.ink.id, place(2))).ok).toBe(true);
+    const twice = await feedOf(f.eventId);
+    expect(twice.waiting.map((row) => [row.title, row.beforeSummary, row.afterSummary, row.summary])).toEqual([
+      ["Times moved", `Grand Hall, ${hours(0)}`, `Grand Hall, ${hours(2)}`, `Grand Hall: now ${hours(2)}.`],
+    ]);
+    // The first move stays in the feed as history; its bells are gone.
+    expect(twice.history.map((row) => [row.summary, row.riskLevel])).toEqual([["Grand Hall: 1 h later.", "info"]]);
+    const bells = await db.select().from(schema.eventPlanNotifications).where(eq(schema.eventPlanNotifications.eventId, f.eventId));
+    expect(bells.every((bell) => bell.changeId === twice.waiting[0]?.id)).toBe(true);
+
+    // The Diary's Undo, all the way back: nothing for the floor to read.
+    expect((await updateBookingCore(db, f.actor, f.ink.id, place(0))).ok).toBe(true);
+    const undone = await feedOf(f.eventId);
+    expect(undone.waiting).toEqual([]);
+    expect(await awaiting(f, "hallkeeper", [f.eventId])).toEqual([{ eventId: f.eventId, changes: [], lastAcknowledgement: null }]);
+  });
+
+  it("never folds a new move into one the floor already has", async () => {
+    const start = evening(6);
+    const f = await venue(start, new Date(start.getTime() + 4 * HOUR));
+    await updateBookingCore(db, f.actor, f.ink.id, { startsAt: new Date(start.getTime() + HOUR).toISOString(), endsAt: new Date(start.getTime() + 5 * HOUR).toISOString() });
+    const [first] = (await feedOf(f.eventId)).waiting;
+    const ack = await server.inject({ method: "POST", url: `/events/${f.eventId}/change-acknowledgements`,
+      headers: headers(f, "hallkeeper"), payload: { changeId: first?.id } });
+    expect(ack.statusCode, ack.body).toBe(201);
+    await updateBookingCore(db, f.actor, f.ink.id, { startsAt: new Date(start.getTime() + 2 * HOUR).toISOString(), endsAt: new Date(start.getTime() + 6 * HOUR).toISOString() });
+    const feed = await feedOf(f.eventId);
+    expect(feed.acknowledged.map((row) => row.id)).toEqual([first?.id]);
+    // Was is the place the floor acknowledged, not the place before it.
+    expect(feed.waiting.map((row) => [row.summary, row.beforeSummary])).toEqual([
+      ["Grand Hall: 1 h later.", `Grand Hall, ${wallRange({ startsAt: new Date(start.getTime() + HOUR), endsAt: new Date(start.getTime() + 5 * HOUR) }, "Europe/London")}`],
+    ]);
+  });
+
+  it("tells the floor when a proposed window moves a hold, as a Diary move does", async () => {
+    const start = evening(9);
+    const f = await venue(start, new Date(start.getTime() + 4 * HOUR));
+    const [hold] = await insertBoundBookings(db, [{
+      venueId: f.venueId, spaceId: f.hallId, kind: "hold", title: "TEST ONLY proposed supper", createdBy: f.adminId,
+      startsAt: new Date(start.getTime() + DAY), endsAt: new Date(start.getTime() + DAY + 3 * HOUR),
+      decisionAt: new Date(start.getTime() - DAY), ownerUserId: f.adminId,
+    }]);
+    if (hold === undefined || hold.eventId === null) throw new Error("The hold was not bound to an event");
+    const moved = await proposeWindowCore(db, { id: f.adminId, name: "Elaine", role: "admin", venueId: f.venueId, platformRole: "none" }, hold.eventId, {
+      spaceId: f.hallId, startsAt: new Date(start.getTime() + DAY + HOUR).toISOString(),
+      endsAt: new Date(start.getTime() + DAY + 4 * HOUR).toISOString(), idempotencyKey: randomUUID(),
+    });
+    expect(moved.ok).toBe(true);
+    expect((await feedOf(hold.eventId)).waiting.map((row) => [row.title, row.summary, row.sourceId])).toEqual([
+      ["Times moved", "Grand Hall: 1 h later.", hold.id],
+    ]);
   });
 
   it("shows another venue's floor nothing, and answers a bad list plainly", async () => {

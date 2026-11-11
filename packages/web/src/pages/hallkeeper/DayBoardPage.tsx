@@ -413,8 +413,28 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
   const lanes = board?.lanes ?? NO_LANES;
   // What changed since the floor last looked, on the day's events: read by
   // everyone who reads the board, acknowledged from the slot by the floor.
-  const eventIds = useMemo(() => lanes.flatMap((lane) => lane.slots.flatMap((slot) => (slot.eventId === null ? [] : [slot.eventId]))), [lanes]);
+  // The events seen on this day, kept while the board is open, so a function
+  // moved off the day is still told here, not only where it went.
+  const seenEvents = useRef(new Map<string, Map<string, string>>());
+  const dayKey = data?.range.from ?? "";
+  const dayEvents = useMemo(() => {
+    const seen = seenEvents.current.get(dayKey) ?? new Map<string, string>();
+    for (const lane of lanes) {
+      for (const slot of lane.slots) if (slot.eventId !== null && !seen.has(slot.eventId)) seen.set(slot.eventId, slot.title);
+    }
+    seenEvents.current.set(dayKey, seen);
+    return new Map(seen);
+  }, [lanes, dayKey]);
+  const eventIds = useMemo(() => [...dayEvents.keys()], [dayEvents]);
   const floor = useFloorChanges(eventIds, venueId !== null);
+  // A move reaches the board through the live calendar; its change is read
+  // with it, not at the next minute.
+  const refreshFloor = floor.refresh;
+  useEffect(() => { if (data !== null) refreshFloor(); }, [data, refreshFloor]);
+  const onBoard = useMemo(() => new Set(lanes.flatMap((lane) => lane.slots.flatMap((slot) => (slot.eventId === null ? [] : [slot.eventId])))), [lanes]);
+  const movedOff = useMemo(() => [...dayEvents]
+    .filter(([eventId]) => !onBoard.has(eventId) && (floor.byEvent.get(eventId)?.changes.length ?? 0) > 0)
+    .map(([eventId, title]) => ({ eventId, title, changes: floor.byEvent.get(eventId)?.changes ?? [] })), [dayEvents, onBoard, floor.byEvent]);
   const changesBySlot = useMemo(() => floorChangesBySlot(lanes, floor.byEvent), [lanes, floor.byEvent]);
   const changedBySlot = useMemo(() => new Map([...changesBySlot]
     .filter(([, changes]) => changes.length > 0)
@@ -537,9 +557,17 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
   const greeting = deskGreeting(nowMs, user?.name ?? null, timeZone).greeting;
   const selectedEventId = selected?.slot.eventId ?? null;
   const selectedEntry = selectedEventId === null ? undefined : floor.byEvent.get(selectedEventId);
+  const selectedLast = selectedEntry?.lastAcknowledgement ?? null;
   const selectedChanges = selected === null || selectedEntry === undefined
     ? null
-    : { ...selectedEntry, changes: [...(changesBySlot.get(selected.slot.bookingId) ?? [])] };
+    : {
+      ...selectedEntry,
+      changes: [...(changesBySlot.get(selected.slot.bookingId) ?? [])],
+      // The viewer's own acknowledgement reads as theirs.
+      lastAcknowledgement: selectedLast !== null && user !== null && selectedLast.byUserId === user.id
+        ? { ...selectedLast, by: "you" }
+        : selectedLast,
+    };
   const detail = selected === null ? null : (
     <div ref={detailRef} className="dayboard-detail-frame">
       <SlotDetail
@@ -559,6 +587,7 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
           : () => { void floor.acknowledge(selectedEventId, selectedChanges.changes.map((change) => change.id)); }}
         acknowledging={selectedEventId !== null && floor.sending.has(selectedEventId)}
         acknowledgeFailure={selectedEventId === null ? null : floor.failures.get(selectedEventId) ?? null}
+        changesUnread={floor.failedSinceMs !== null}
       />
     </div>
   );
@@ -652,6 +681,35 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
       {status !== "error" && board !== null && busyLanes === 0 && roomId === "" ? (
         <p className="dayboard-notice">{selectedDate === null ? "Nothing scheduled today." : "Nothing scheduled on this day."}</p>
       ) : null}
+      {/* What changed could not be read: the marks stand as last read, and say so. */}
+      {floor.failedSinceMs !== null ? (
+        <div className="dayboard-notice" role="status">
+          <p>Couldn’t read what changed since {formatWallTime(correctedNowMs(floor.failedSinceMs), timeZone)}. The board tries again each minute; the marks are as last read.</p>
+          <button type="button" className="dayboard-button" onClick={floor.refresh}>Try again</button>
+        </div>
+      ) : null}
+      {/* A function moved off this day leaves the rooms; its change stays here
+          until the floor has it. */}
+      {movedOff.map((entry) => (
+        <div key={entry.eventId} className="dayboard-notice dayboard-moved-off" role="status">
+          {entry.changes.map((change) => (
+            <p key={change.id}>
+              <strong>{entry.title}</strong> · {change.title}: {change.afterSummary === null ? change.summary : `now ${change.afterSummary}`}
+            </p>
+          ))}
+          {acknowledgesChanges && (
+            <button
+              type="button"
+              className="dayboard-button"
+              aria-disabled={floor.sending.has(entry.eventId)}
+              onClick={() => { if (!floor.sending.has(entry.eventId)) void floor.acknowledge(entry.eventId); }}
+            >
+              Got it
+            </button>
+          )}
+          {floor.failures.has(entry.eventId) && <p>Couldn’t send that: {floor.failures.get(entry.eventId)}. Try again.</p>}
+        </div>
+      ))}
     </>
   );
 

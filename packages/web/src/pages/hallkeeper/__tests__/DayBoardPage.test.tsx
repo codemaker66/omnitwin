@@ -1571,6 +1571,30 @@ function timesMoved(minutesAgo: number, id = CHANGE_ID, sourceId = EVENT_ID): Re
   };
 }
 
+type Waiting = { readonly eventId: string; readonly changes: readonly Record<string, unknown>[]; readonly lastAcknowledgement: unknown };
+
+/** The API as the board meets it: it remembers what the floor acknowledged. */
+function serve(entries: readonly Waiting[]): void {
+  const acknowledged = new Set<string>();
+  floor.awaiting.mockImplementation(() => Promise.resolve(entries.map((entry) => ({
+    ...entry,
+    changes: entry.changes.filter((change) => !acknowledged.has(String(change["id"]))),
+    lastAcknowledgement: entry.changes.some((change) => acknowledged.has(String(change["id"])))
+      ? { at: new Date().toISOString(), by: "Elaine", byUserId: "00000000-0000-4000-8000-0000000000ff" }
+      : entry.lastAcknowledgement,
+  }))));
+  floor.acknowledge.mockImplementation((_eventId, input) => {
+    acknowledged.add(input.changeId);
+    return Promise.resolve({});
+  });
+}
+
+/** Each read of the calendar is a fresh answer, as it is over the network. */
+function calendarOf(entries: () => CalendarResponse["entries"]): void {
+  const first = calendarFixture(entries());
+  getCalendarMock.mockImplementation(() => Promise.resolve({ ...first, entries: entries() }));
+}
+
 describe("DayBoardPage: what changed since the floor last looked", () => {
   it("marks the slot whose event has a change to read, and says so in the day's sentence", async () => {
     getCalendarMock.mockResolvedValue(calendarFixture([bookingWithEvent()]));
@@ -1584,7 +1608,7 @@ describe("DayBoardPage: what changed since the floor last looked", () => {
 
   it("opens the change with Got it as the panel's one cream button, and puts it in hand for the floor", async () => {
     getCalendarMock.mockResolvedValue(calendarFixture([bookingWithEvent()]));
-    floor.awaiting.mockResolvedValue([{ eventId: EVENT_ID, changes: [timesMoved(20)], lastAcknowledgement: null }]);
+    serve([{ eventId: EVENT_ID, changes: [timesMoved(20)], lastAcknowledgement: null }]);
     renderBoard();
     fireEvent.click(await screen.findByRole("button", { name: /^Chamber dinner,.*a change to read/u }));
     const section = await screen.findByRole("region", { name: "What changed" });
@@ -1612,7 +1636,7 @@ describe("DayBoardPage: what changed since the floor last looked", () => {
   it("acknowledges several changes oldest first with one button", async () => {
     getCalendarMock.mockResolvedValue(calendarFixture([bookingWithEvent()]));
     const older = timesMoved(50, "00000000-0000-4000-8000-0000000000d2");
-    floor.awaiting.mockResolvedValue([{ eventId: EVENT_ID, changes: [timesMoved(5), older], lastAcknowledgement: null }]);
+    serve([{ eventId: EVENT_ID, changes: [timesMoved(5), older], lastAcknowledgement: null }]);
     renderBoard();
     fireEvent.click(await screen.findByRole("button", { name: /^Chamber dinner,.*2 changes to read/u }));
     fireEvent.click(await screen.findByRole("button", { name: "Got all 2" }));
@@ -1626,10 +1650,77 @@ describe("DayBoardPage: what changed since the floor last looked", () => {
     floor.acknowledge.mockRejectedValue(new Error("the connection dropped"));
     renderBoard();
     fireEvent.click(await screen.findByRole("button", { name: /^Chamber dinner,.*a change to read/u }));
+    const gotIt = await screen.findByRole("button", { name: "Got it" });
+    act(() => { gotIt.focus(); });
+    fireEvent.click(gotIt);
+    expect(await screen.findByText("Couldn’t send that: the connection dropped. Try again.")).toBeTruthy();
+    // Never disabled, so the keyboard's place stays on it through a failed send.
+    expect(screen.getByRole("button", { name: "Got it" }).hasAttribute("disabled")).toBe(false);
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Got it" }));
+    expect(screen.getByText("Changed")).toBeTruthy();
+  });
+
+  it("says when what changed could not be read, on the board and in the panel", async () => {
+    getCalendarMock.mockResolvedValue(calendarFixture([bookingWithEvent()]));
+    floor.awaiting.mockRejectedValue(new Error("502"));
+    renderBoard();
+    expect(await screen.findByText(/^Couldn’t read what changed since \d{2}:\d{2}\. The board tries again each minute; the marks are as last read\.$/u)).toBeTruthy();
+    fireEvent.click(await screen.findByRole("button", { name: /^Chamber dinner,/u }));
+    expect(await screen.findByText("What changed could not be read just now.")).toBeTruthy();
+    // Try again reads now.
+    floor.awaiting.mockResolvedValue([{ eventId: EVENT_ID, changes: [timesMoved(20)], lastAcknowledgement: null }]);
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(await screen.findByRole("region", { name: "What changed" })).toBeTruthy();
+    expect(screen.queryByText(/^Couldn’t read what changed/u)).toBeNull();
+  });
+
+  it("reads what changed again when the day moves, not a minute later", async () => {
+    calendarOf(() => [bookingWithEvent()]);
+    renderBoard();
+    await screen.findByText("Chamber dinner");
+    await waitFor(() => { expect(floor.awaiting).toHaveBeenCalled(); });
+    const before = floor.awaiting.mock.calls.length;
+    floor.awaiting.mockResolvedValue([{ eventId: EVENT_ID, changes: [timesMoved(1)], lastAcknowledgement: null }]);
+    act(() => { liveUpdate.current?.(); });
+    expect(await screen.findByRole("button", { name: /^Chamber dinner,.*a change to read/u })).toBeTruthy();
+    expect(floor.awaiting.mock.calls.length).toBeGreaterThan(before);
+  });
+
+  it("tells the day a function moved off it, until the floor has it", async () => {
+    let moved = false;
+    calendarOf(() => (moved ? [] : [bookingWithEvent()]));
+    renderBoard();
+    await screen.findByText("Chamber dinner");
+    // The dinner is moved to tomorrow: it leaves today's rooms, and its move waits.
+    moved = true;
+    serve([{ eventId: EVENT_ID, changes: [{ ...timesMoved(1), summary: "Grand Hall: 1 day later.",
+      beforeSummary: "Grand Hall, Sat 14 Nov, 18:00 – 23:00", afterSummary: "Grand Hall, Sun 15 Nov, 18:00 – 23:00" }], lastAcknowledgement: null }]);
+    act(() => { liveUpdate.current?.(); });
+    const notice = await screen.findByText((_, element) => element?.tagName === "P"
+      && element.textContent === "Chamber dinner · Times moved: now Grand Hall, Sun 15 Nov, 18:00 – 23:00");
+    expect(floor.awaiting).toHaveBeenLastCalledWith([EVENT_ID]);
+    const box = notice.closest(".dayboard-moved-off");
+    if (!(box instanceof HTMLElement)) throw new Error("expected the moved-off notice");
+    fireEvent.click(within(box).getByRole("button", { name: "Got it" }));
+    await waitFor(() => { expect(floor.acknowledge).toHaveBeenCalledWith(EVENT_ID, { changeId: CHANGE_ID }); });
+    await waitFor(() => { expect(document.querySelector(".dayboard-moved-off")).toBeNull(); });
+  });
+
+  it("reads again after Got it, and clears a failure once the waiting changes are different", async () => {
+    calendarOf(() => [bookingWithEvent()]);
+    floor.awaiting.mockResolvedValue([{ eventId: EVENT_ID, changes: [timesMoved(20)], lastAcknowledgement: null }]);
+    floor.acknowledge.mockRejectedValueOnce(new Error("the connection dropped"));
+    renderBoard();
+    fireEvent.click(await screen.findByRole("button", { name: /^Chamber dinner,.*a change to read/u }));
     fireEvent.click(await screen.findByRole("button", { name: "Got it" }));
     expect(await screen.findByText("Couldn’t send that: the connection dropped. Try again.")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Got it" })).toBeTruthy();
-    expect(screen.getByText("Changed")).toBeTruthy();
+    // A colleague has it on another device, and a new change arrives: the old failure says nothing about it.
+    serve([{ eventId: EVENT_ID, changes: [timesMoved(1, "00000000-0000-4000-8000-0000000000d9")], lastAcknowledgement: null }]);
+    act(() => { liveUpdate.current?.(); });
+    await waitFor(() => { expect(screen.queryByText(/^Couldn’t send that/u)).toBeNull(); });
+    const calls = floor.awaiting.mock.calls.length;
+    fireEvent.click(screen.getByRole("button", { name: "Got it" }));
+    await waitFor(() => { expect(floor.awaiting.mock.calls.length).toBeGreaterThan(calls); });
   });
 
   it("shows a manager the change to read with no button, as the API takes it only from the floor", async () => {
@@ -1649,15 +1740,16 @@ describe("DayBoardPage: what changed since the floor last looked", () => {
     floor.awaiting.mockResolvedValue([{ eventId: EVENT_ID, changes: [
       timesMoved(20),
       { ...timesMoved(10, "00000000-0000-4000-8000-0000000000d3"), title: "Event plan updated",
-        summary: "Chamber dinner: guests 80 to 96; notes changed.", beforeSummary: "80 guests", afterSummary: "96 guests",
-        affectedSurfaces: ["guest_count", "service_notes"] },
+        summary: "Chamber dinner: guests 80 to 96; hours now Sat 14 Nov, 19:00 – 23:00.", beforeSummary: "80 guests", afterSummary: "96 guests",
+        affectedSurfaces: ["guest_count", "timings"] },
     ], lastAcknowledgement: null }]);
     renderBoard();
     fireEvent.click(await screen.findByRole("button", { name: /^Chamber dinner,.*2 changes to read/u }));
     const section = await screen.findByRole("region", { name: "What changed" });
     expect(within(section).queryByText(/^Grand Hall: Sat 14 Nov/u)).toBeNull();
-    // An edit that touched the notes keeps its sentence: Was and Now cannot say it.
-    expect(within(section).getByText("Chamber dinner: guests 80 to 96; notes changed.")).toBeTruthy();
+    // An event edit keeps its sentence: an older row's Was and Now carry only
+    // the guests, so the hours would be lost without it.
+    expect(within(section).getByText("Chamber dinner: guests 80 to 96; hours now Sat 14 Nov, 19:00 – 23:00.")).toBeTruthy();
     expect(within(section).getByText("96 guests")).toBeTruthy();
   });
 
@@ -1667,7 +1759,7 @@ describe("DayBoardPage: what changed since the floor last looked", () => {
       bookingWithEvent(),
       { ...bookingWithEvent(), id: dinner, spaceId: SALOON, title: "Chamber dinner · Saloon" } as CalendarResponse["entries"][number],
     ]));
-    floor.awaiting.mockResolvedValue([{ eventId: EVENT_ID, changes: [
+    serve([{ eventId: EVENT_ID, changes: [
       timesMoved(20, "00000000-0000-4000-8000-0000000000d4", dinner),
       timesMoved(10, "00000000-0000-4000-8000-0000000000d5", EVENT_ID),
     ], lastAcknowledgement: null }]);
@@ -1684,7 +1776,7 @@ describe("DayBoardPage: what changed since the floor last looked", () => {
 
   it("says who has the changes once someone on the floor acknowledged them", async () => {
     getCalendarMock.mockResolvedValue(calendarFixture([bookingWithEvent()]));
-    floor.awaiting.mockResolvedValue([{ eventId: EVENT_ID, changes: [], lastAcknowledgement: { at: new Date(Date.now() - 30 * 60_000).toISOString(), by: "Jamie at the door" } }]);
+    floor.awaiting.mockResolvedValue([{ eventId: EVENT_ID, changes: [], lastAcknowledgement: { at: new Date(Date.now() - 30 * 60_000).toISOString(), by: "Jamie at the door", byUserId: "00000000-0000-4000-8000-0000000000aa" } }]);
     renderBoard();
     fireEvent.click(await screen.findByRole("button", { name: /^Chamber dinner,/u }));
     expect(await screen.findByText(/^Changes seen by Jamie at the door, \d{2}:\d{2}\.$/u)).toBeTruthy();

@@ -71,18 +71,33 @@ describe("describeBookingMove", () => {
 
 describe("how far the hours moved", () => {
   it("says it in the floor's units", () => {
-    expect(shiftAmount(30 * 60_000)).toBe("30 min");
-    expect(shiftAmount(60 * 60_000)).toBe("1 h");
-    expect(shiftAmount(90 * 60_000)).toBe("1 h 30");
-    expect(shiftAmount(-(24 * 60 + 60) * 60_000)).toBe("1 day 1 h");
-    expect(shiftAmount(20_000)).toBe("less than a minute");
+    expect(shiftAmount(30)).toBe("30 min");
+    expect(shiftAmount(60)).toBe("1 h");
+    expect(shiftAmount(90)).toBe("1 h 30");
+    expect(shiftAmount(-(24 * 60 + 60))).toBe("1 day 1 h");
+    expect(shiftAmount(0.3)).toBe("less than a minute");
   });
 
   it("says which end moved, and which way", () => {
     const at18 = { startsAt: at("2026-11-14T18:00:00Z"), endsAt: at("2026-11-14T23:00:00Z") };
-    expect(shiftWords(at18, { startsAt: at("2026-11-14T18:30:00Z"), endsAt: at("2026-11-14T23:30:00Z") })).toBe("30 min later");
-    expect(shiftWords(at18, { startsAt: at("2026-11-14T17:00:00Z"), endsAt: at("2026-11-14T23:00:00Z") })).toBe("starts 1 h earlier");
-    expect(shiftWords(at18, { startsAt: at("2026-11-14T18:00:00Z"), endsAt: at("2026-11-15T00:15:00Z") })).toBe("ends 1 h 15 later");
+    expect(shiftWords(at18, { startsAt: at("2026-11-14T18:30:00Z"), endsAt: at("2026-11-14T23:30:00Z") }, LONDON)).toBe("30 min later");
+    expect(shiftWords(at18, { startsAt: at("2026-11-14T17:00:00Z"), endsAt: at("2026-11-14T23:00:00Z") }, LONDON)).toBe("starts 1 h earlier");
+    expect(shiftWords(at18, { startsAt: at("2026-11-14T18:00:00Z"), endsAt: at("2026-11-15T00:15:00Z") }, LONDON)).toBe("ends 1 h 15 later");
+  });
+
+  it("counts on the venue's clock across the clocks changing", () => {
+    // Sat 24 Oct 18:00 BST to Sun 25 Oct 18:00 GMT: the same time on the wall, a day on.
+    expect(shiftWords(
+      { startsAt: at("2026-10-24T17:00:00Z"), endsAt: at("2026-10-24T22:00:00Z") },
+      { startsAt: at("2026-10-25T18:00:00Z"), endsAt: at("2026-10-25T23:00:00Z") }, LONDON)).toBe("1 day later");
+    // Sat 27 Mar 2027 18:00 GMT to Sun 28 Mar 18:00 BST.
+    expect(shiftWords(
+      { startsAt: at("2027-03-27T18:00:00Z"), endsAt: at("2027-03-27T23:00:00Z") },
+      { startsAt: at("2027-03-28T17:00:00Z"), endsAt: at("2027-03-28T22:00:00Z") }, LONDON)).toBe("1 day later");
+    // A week on, across 25 October.
+    expect(shiftWords(
+      { startsAt: at("2026-10-21T17:00:00Z"), endsAt: at("2026-10-21T22:00:00Z") },
+      { startsAt: at("2026-10-28T18:00:00Z"), endsAt: at("2026-10-28T23:00:00Z") }, LONDON)).toBe("7 days later");
   });
 });
 

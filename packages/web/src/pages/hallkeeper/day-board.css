@@ -1656,6 +1656,14 @@ button.dayboard-rail-item:disabled { cursor: default; }
   font-size: 13.5px;
 }
 
+.dayboard-changes-unread {
+  margin: 12px 0 0;
+  color: var(--house-forest-ink-2);
+  font-size: 13.5px;
+}
+
+.dayboard-changes-ack[aria-disabled="true"] { opacity: 0.55; cursor: default; }
+
 .dayboard-changes-seen:focus { outline: none; }
 .dayboard-changes-seen:focus-visible { outline: 2px solid var(--house-cream); outline-offset: 4px; }
 

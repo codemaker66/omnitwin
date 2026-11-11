@@ -260,6 +260,7 @@ export async function eventPlanLifecycleRoutes(server: FastifyInstance, opts: { 
     const lastAcknowledgements = await db.selectDistinctOn([eventPlanChangeAcknowledgements.eventId], {
       eventId: eventPlanChangeAcknowledgements.eventId,
       at: eventPlanChangeAcknowledgements.createdAt,
+      userId: eventPlanChangeAcknowledgements.acknowledgedBy,
       name: users.name,
       displayName: users.displayName,
     })
@@ -276,7 +277,7 @@ export async function eventPlanLifecycleRoutes(server: FastifyInstance, opts: { 
         return {
           eventId,
           changes: pending.filter((change) => change.eventId === eventId).map(serializeEventPlanChange),
-          lastAcknowledgement: last === undefined || by === "" ? null : { at: last.at.toISOString(), by: by.slice(0, 200) },
+          lastAcknowledgement: last === undefined || by === "" ? null : { at: last.at.toISOString(), by: by.slice(0, 200), byUserId: last.userId },
         };
       })),
     };

@@ -5,6 +5,7 @@ import {
   describeObservationKind,
   nextObservationKinds,
   occasionLabel,
+  isBookingMoveTitle,
   type BookingKind,
   type EventAwaitingAcknowledgement,
   type HallkeeperSheetSummary,
@@ -214,10 +215,6 @@ function changeWhen(atMs: number, nowMs: number, timeZone: string): string {
   return formatWallDay(atMs, timeZone) === formatWallDay(nowMs, timeZone) ? time : `${formatWallDay(atMs, timeZone)}, ${time}`;
 }
 
-/** What a change's Was and Now lines say in full: hours, rooms and guests. A
- *  change that touched anything else keeps its sentence above them. */
-const WAS_NOW_SURFACES: ReadonlySet<string> = new Set(["timings", "layout", "guest_count"]);
-
 /** Who last acknowledged a change here, while it is still today's news. */
 const SEEN_BY_FOR_MS = 12 * 60 * 60 * 1000;
 
@@ -226,8 +223,10 @@ const SEEN_BY_FOR_MS = 12 * 60 * 60 * 1000;
  * with its words before and after, and one "Got it" for all of them, which
  * puts them in hand for the whole floor.
  */
-function WhatChanged({ changes, timeZone, nowMs, onAcknowledge, sending, failure }: {
+function WhatChanged({ changes, timeZone, nowMs, onAcknowledge, sending, failure, unread }: {
   readonly changes: EventAwaitingAcknowledgement;
+  /** The last read of what changed failed: what shows is as last read. */
+  readonly unread: boolean;
   readonly timeZone: string;
   readonly nowMs: number;
   /** Null where nothing may be acknowledged (the wall, a role that only reads). */
@@ -247,9 +246,12 @@ function WhatChanged({ changes, timeZone, nowMs, onAcknowledge, sending, failure
     }
     wasSending.current = sending;
   }, [sending, waiting.length]);
+  const unreadLine = unread
+    ? <p className="dayboard-changes-unread">What changed could not be read just now; this is as last read.</p>
+    : null;
   if (waiting.length === 0) {
     const last = changes.lastAcknowledgement;
-    if (last === null || nowMs - Date.parse(last.at) > SEEN_BY_FOR_MS) return null;
+    if (last === null || nowMs - Date.parse(last.at) > SEEN_BY_FOR_MS) return unreadLine;
     return (
       <p ref={seenRef} className="dayboard-changes-seen" tabIndex={-1}>
         Changes seen by {last.by}, {changeWhen(Date.parse(last.at), nowMs, timeZone)}.
@@ -262,8 +264,10 @@ function WhatChanged({ changes, timeZone, nowMs, onAcknowledge, sending, failure
       <ol className="dayboard-changes-list">
         {waiting.map((change) => {
           const fromTo = change.beforeSummary !== null && change.afterSummary !== null && change.beforeSummary !== change.afterSummary;
-          // Said once: the sentence, unless the Was and Now lines say it all.
-          const saysMore = !fromTo || change.affectedSurfaces.some((surface) => !WAS_NOW_SURFACES.has(surface));
+          // Said once: a Diary move's Was and Now carry its room and exact
+          // hours, so its sentence would only repeat them. Every other change
+          // keeps its sentence, whatever its Was and Now happen to hold.
+          const saysMore = !fromTo || !isBookingMoveTitle(change.title);
           return (
             <li key={change.id} className="dayboard-change">
               <p className="dayboard-change-title">
@@ -281,12 +285,14 @@ function WhatChanged({ changes, timeZone, nowMs, onAcknowledge, sending, failure
         })}
       </ol>
       {onAcknowledge !== null && (
+        // Never disabled: a disabled button drops the keyboard's place to the
+        // page, and on a failed send nothing would bring it back.
         <button
           type="button"
           className="dayboard-seen-button is-primary dayboard-changes-ack"
           aria-busy={sending}
-          disabled={sending}
-          onClick={onAcknowledge}
+          aria-disabled={sending}
+          onClick={() => { if (!sending) onAcknowledge(); }}
         >
           {sending && <ActivityIndicator size={14} />}
           {waiting.length === 1 ? "Got it" : `Got all ${String(waiting.length)}`}
@@ -295,12 +301,13 @@ function WhatChanged({ changes, timeZone, nowMs, onAcknowledge, sending, failure
       <p className="dayboard-changes-status" aria-live="polite">
         {failure === null ? "" : `Couldn’t send that: ${failure}. Try again.`}
       </p>
+      {unreadLine}
     </section>
   );
 }
 
 /** The open slot: its sheet, its event, its phases and its requests. */
-export function SlotDetail({ slot, room, venueSlug, timeZone, slotRequests: SlotRequests, observations, onClose, closeLabel, changes = null, nowMs = Date.now(), onAcknowledge = null, acknowledging = false, acknowledgeFailure = null }: {
+export function SlotDetail({ slot, room, venueSlug, timeZone, slotRequests: SlotRequests, observations, onClose, closeLabel, changes = null, nowMs = Date.now(), onAcknowledge = null, acknowledging = false, acknowledgeFailure = null, changesUnread = false }: {
   readonly slot: DayBoardSlot;
   readonly room: { readonly id: string; readonly name: string; readonly slug: string };
   readonly venueSlug: string | null;
@@ -318,6 +325,8 @@ export function SlotDetail({ slot, room, venueSlug, timeZone, slotRequests: Slot
   readonly onAcknowledge?: (() => void) | null;
   readonly acknowledging?: boolean;
   readonly acknowledgeFailure?: string | null;
+  /** The last read of what changed failed. */
+  readonly changesUnread?: boolean;
 }): ReactElement {
   const occasion = occasionLabel(slot.eventType);
   const photo = venueSlug === null ? null : roomPhoto(venueSlug, room.slug);
@@ -398,7 +407,7 @@ export function SlotDetail({ slot, room, venueSlug, timeZone, slotRequests: Slot
       {slot.turnaroundWarning !== null ? (
         <p className="dayboard-slot-warning">{slot.turnaroundWarning}</p>
       ) : null}
-      {changes !== null && (
+      {changes !== null ? (
         <WhatChanged
           changes={changes}
           timeZone={timeZone}
@@ -406,8 +415,11 @@ export function SlotDetail({ slot, room, venueSlug, timeZone, slotRequests: Slot
           onAcknowledge={onAcknowledge}
           sending={acknowledging}
           failure={acknowledgeFailure}
+          unread={changesUnread}
         />
-      )}
+      ) : changesUnread && slot.eventId !== null ? (
+        <p className="dayboard-changes-unread">What changed could not be read just now.</p>
+      ) : null}
       {/* What the room was seen doing (S5): the latest fact, and the next
           facts a hallkeeper may record from here. Facts never move a time. */}
       <section ref={seenRef} className="dayboard-seen dayboard-detail-section" aria-label="What the room is doing" tabIndex={-1}>

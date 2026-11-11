@@ -214,6 +214,18 @@ export const AwaitingAcknowledgementQuerySchema = z.object({
 }).strict();
 export type AwaitingAcknowledgementQuery = z.infer<typeof AwaitingAcknowledgementQuerySchema>;
 
+/**
+ * The titles a booking moved in the Diary is recorded under
+ * (api services/booking-move-feed.ts). Its Was and Now carry the room and the
+ * exact hours, so the Day Board says the move with them alone.
+ */
+export const BOOKING_MOVE_TITLES = ["Times moved", "Room changed", "Room and times changed"] as const;
+export type BookingMoveTitle = (typeof BOOKING_MOVE_TITLES)[number];
+
+export function isBookingMoveTitle(title: string): title is BookingMoveTitle {
+  return (BOOKING_MOVE_TITLES as readonly string[]).includes(title);
+}
+
 export const EventAwaitingAcknowledgementSchema = z.object({
   eventId: EventIdSchema,
   /** Newest first. */
@@ -221,6 +233,8 @@ export const EventAwaitingAcknowledgementSchema = z.object({
   lastAcknowledgement: z.object({
     at: z.iso.datetime(),
     by: z.string().trim().min(1).max(200),
+    /** Who it was; null for this device's own acknowledgement before the server answers. */
+    byUserId: UserIdSchema.nullable(),
   }).strict().nullable(),
 }).strict();
 export type EventAwaitingAcknowledgement = z.infer<typeof EventAwaitingAcknowledgementSchema>;
