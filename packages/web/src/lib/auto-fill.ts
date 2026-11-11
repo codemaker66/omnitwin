@@ -966,14 +966,18 @@ interface Pinch {
 // to the wall, so the side is read from the wall's own normal, which does not
 // move as the unit is nudged. A wall the unit comes nearest only at its end
 // has no gangway of its own there: the gap is to the corner, which is the end
-// of the wall round it too. Where the unit stands in front of that wall the
-// corner is part of its gangway; where it stands in front of neither, the
-// corner itself is the pinch, on the side the way from the corner to the unit
-// as a whole runs from, which turns one way only as the unit passes. So the
-// Robert Adam Room's curve is a wall to the west of a table beside it, and
-// the pier between two Saloon alcoves, its face and both its corners, is one
-// wall to the east of a table in front of it; and one gap is listed once,
-// under an id that changes at most once as its unit passes a corner.
+// of the wall round it too. A corner goes with whichever of its two walls the
+// unit is nearer to standing in front of (cornerGoesWithNext): it is part of
+// that wall's gangway where a piece of the unit stands in front of the wall,
+// and a pinch of its own, on that wall's side, where none does. For a round
+// unit that is the side the way from the corner to it mostly runs, and the
+// corner is already with a wall when the unit comes to stand in front of it.
+// So the Robert Adam Room's curve is a wall to the west of a table beside it,
+// and the pier between two Saloon alcoves, its face and both its corners, is
+// one wall to the east of a table in front of it. A corner's gap is listed
+// once, under an id that changes at most once as its unit is carried straight
+// past the corner; a unit that reaches in front of both walls of a corner has
+// an item on each side, each the gangway of the wall on that side.
 // ---------------------------------------------------------------------------
 
 /** A wall of a room's own floor, metres: one straight wall whole, its ends, the unit vector along it with its length, and the unit normal into the room. */
@@ -1106,35 +1110,44 @@ function standsBefore(piece: MeasuredPiece, wall: FloorWallM): boolean {
   return Math.max(...face) > AGAINST_M && Math.min(...face) < wall.lengthM - AGAINST_M;
 }
 
-/** Whether a point is strictly inside a convex outline. */
-function insideOutline(points: readonly FloorPoint[], point: FloorPoint): boolean {
-  let turn = 0;
-  for (let i = 0; i < points.length; i += 1) {
-    const from = points[i];
-    const to = points[(i + 1) % points.length];
-    if (from === undefined || to === undefined) return false;
-    const cross = (to.x - from.x) * (point.z - from.z) - (to.z - from.z) * (point.x - from.x);
-    if (Math.abs(cross) <= SAME_M || (turn !== 0 && Math.sign(cross) !== turn)) return false;
-    turn = Math.sign(cross);
+/** How far along a line from `origin` a piece reaches, least and greatest: a round table as its disc. */
+function reachAlong(piece: MeasuredPiece, origin: FloorPoint, alongX: number, alongZ: number): { readonly least: number; readonly greatest: number } {
+  if (piece.disc !== null) {
+    const centre = (piece.disc.x - origin.x) * alongX + (piece.disc.z - origin.z) * alongZ;
+    return { least: centre - piece.disc.r, greatest: centre + piece.disc.r };
   }
-  return turn !== 0;
+  const alongs = piece.points.map((point) => (point.x - origin.x) * alongX + (point.z - origin.z) * alongZ);
+  return { least: Math.min(...alongs), greatest: Math.max(...alongs) };
 }
 
 /**
- * The way from a corner of the walls to a unit: to the nearest point of the
- * unit as a whole, the hull of its pieces' outlines (a lone piece is its own
- * hull, a round one its disc). A unit carried past a corner in a straight
- * line turns that way one way only, where the way to its nearest piece swings
- * back each time a nearer chair takes over. With the corner inside the hull
- * (between two chairs), the way to the nearest piece; touching it, the way
- * the corner's two walls face.
+ * Which of a corner's two walls the corner goes with for a unit: the one the
+ * unit is nearer to standing in front of, by how far the whole unit stops
+ * short of each along that wall (less than nothing where it reaches in front
+ * of the wall). True for `next`, the wall that begins at the corner; false
+ * for `wall`, which ends there.
+ *
+ * The corner's gap is listed on that wall's side: as part of the wall's own
+ * gangway where a piece of the unit stands in front of it, as a pinch of its
+ * own where none does. For a round unit that is the side the way from the
+ * corner to it mostly runs: south of a unit more to its north than to its
+ * west. Carried in a straight line the two shortfalls change evenly, so the
+ * corner changes wall at most once, and it is already with a wall when the
+ * unit comes to stand in front of that wall. Even shortfalls go to the wall
+ * on an x side.
  */
-function wayFromCorner(corner: FloorPoint, pieces: readonly MeasuredPiece[], nearest: MeasuredPiece, wall: FloorWallM, next: FloorWallM): FloorPoint {
-  const hull = pieces.length === 1 ? [] : convexHull(pieces.flatMap((piece) => piece.points));
-  for (const to of [hull.length >= 3 && !insideOutline(hull, corner) ? nearestOnOutline(hull, corner) : corner, nearestOfPiece(nearest, corner)]) {
-    if (Math.hypot(to.x - corner.x, to.z - corner.z) > AGAINST_M) return { x: to.x - corner.x, z: to.z - corner.z };
+function cornerGoesWithNext(pieces: readonly MeasuredPiece[], wall: FloorWallM, next: FloorWallM): boolean {
+  let shortOfWall = Number.POSITIVE_INFINITY;
+  let shortOfNext = Number.POSITIVE_INFINITY;
+  for (const piece of pieces) {
+    shortOfWall = Math.min(shortOfWall, reachAlong(piece, wall.ends[0], wall.alongX, wall.alongZ).least - wall.lengthM);
+    shortOfNext = Math.min(shortOfNext, -reachAlong(piece, next.ends[0], next.alongX, next.alongZ).greatest);
   }
-  return { x: wall.intoX + next.intoX, z: wall.intoZ + next.intoZ };
+  if (Math.abs(shortOfWall - shortOfNext) <= SAME_M) {
+    const ofNext = sideOfWay(next.intoX, next.intoZ);
+    return ofNext === "xMin" || ofNext === "xMax";
+  }
+  return shortOfNext < shortOfWall;
 }
 
 /** A unit's gangway along the walls on one side of it, on a room's own floor. */
@@ -1156,9 +1169,10 @@ interface WallPinch {
  * piece of the unit to that wall, measured exactly. A wall some piece stands
  * in front of under the guidance is a gangway the unit narrows, on the side
  * its normal gives; a corner the unit is nearest with no piece in front of
- * either of its walls is one too, on the side the way to the unit runs from
- * (see above). For each unit and each side that carries a gangway in the
- * room's design (`layout`): the narrowest of them, drawn across them all.
+ * either of its walls is one too, on the side of the wall the unit is nearer
+ * to standing in front of (see above). For each unit and each side that
+ * carries a gangway in the room's design (`layout`): the narrowest of them,
+ * drawn across them all.
  */
 function floorWallPinches(
   measured: readonly MeasuredPiece[],
@@ -1221,8 +1235,11 @@ function floorWallPinches(
       const next = walls[nextIndex];
       const there = met[nextIndex] ?? null;
       if (next === undefined || nextIndex === i || (here === null && there === null)) continue;
-      // In front of either wall, the corner is that wall's gangway.
-      if (here?.before === true || there?.before === true) continue;
+      // The corner goes with one of its two walls; where the unit stands in front of that wall, the corner is part of the wall's gangway.
+      const withNext = cornerGoesWithNext(pieces, wall, next);
+      const own = withNext ? there : here;
+      const other = withNext ? here : there;
+      if (own?.before === true) continue;
       const corner = wall.ends[1];
       let cornerM = Number.POSITIVE_INFINITY;
       let nearest: MeasuredPiece | null = null;
@@ -1236,11 +1253,13 @@ function floorWallPinches(
         pieceIds.push(piece.placed.id);
       }
       if (nearest === null) continue;
-      // A wall nearer the unit somewhere else (its far end, or from behind) is not nearest it at this corner.
-      if ((here !== null && here.widthM < cornerM - SAME_M) || (there !== null && there.widthM < cornerM - SAME_M)) continue;
-      const way = wayFromCorner(corner, pieces, nearest, wall, next);
+      // A wall nearer the unit somewhere else (its far end, or from behind) is not nearest it at this corner. The
+      // other wall is asked only where the unit does not stand in front of it: there it has its own item.
+      if (own !== null && own.widthM < cornerM - SAME_M) continue;
+      if (other !== null && !other.before && other.widthM < cornerM - SAME_M) continue;
+      const taking = withNext ? next : wall;
       const inside = (into: FloorWallM): FloorPoint => ({ x: corner.x + into.intoX * rule.gangwayM, z: corner.z + into.intoZ * rule.gangwayM });
-      parts.push({ side: sideOfWay(way.x, way.z), widthM: cornerM, placed: nearest.placed, floor: [corner, inside(wall), inside(next)], pieceIds });
+      parts.push({ side: sideOfWay(taking.intoX, taking.intoZ), widthM: cornerM, placed: nearest.placed, floor: [corner, inside(wall), inside(next)], pieceIds });
     }
 
     for (const side of ROOM_SIDES) {

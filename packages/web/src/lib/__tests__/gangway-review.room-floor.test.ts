@@ -387,9 +387,38 @@ describe("the gangway review of a unit carried a centimetre at a time", () => {
     expect(passed.widestStepM).toBeLessThanOrEqual(A_STEP);
   });
 
-  it("does not let the last bits of a sum choose the side of a corner a trestle turned 45° faces flat on", () => {
-    // Its long edge faces the step corner squarely on the slant, so the way from the corner runs exactly as much west as north: east of it throughout.
+  it("does not let the last bits of a sum choose the side of a corner a round is carried straight at", () => {
+    // Along the step corner's own diagonal the round stops as far short of one wall as of the other at every step: the corner is east of it throughout.
+    const passed = walk(room("Robert Adam Room"), loneRound, [-0.1 - 2.2, 3.7 - 2.2], [-0.1 - 0.75, 3.7 - 0.75]);
+    expect(sidesOnly(passed)).toEqual([" -> xMax"]);
+  });
+
+  it("renames the step corner's gap once for a trestle turned 45°, whose long edge faces the corner flat on the slant", () => {
     const turned = (x: number, z: number): readonly PlacedItem[] => [createPlacedItem(TRESTLE.id, x, z, Math.PI / 4, null, 0, "trestle-1")];
-    expect(sidesOnly(walk(room("Robert Adam Room"), turned, [-2.0, 2.7], [-0.9, 2.7]))).toEqual([" -> xMax"]);
+    expect(sidesOnly(walk(room("Robert Adam Room"), turned, [-2.0, 2.7], [-0.9, 2.7]))).toEqual([" -> xMax", "xMax -> zMax"]);
+  });
+
+  /** The sides listed, state by state along a walk: a state that comes back is an item taken away and put back. */
+  const statesOf = (passed: Walk): readonly string[] => {
+    const [first] = passed.changes;
+    return first === undefined ? [] : [first.replace(/^.*: /u, "").replace(/ -> .*$/u, ""), ...passed.changes.map((change) => change.replace(/^.* -> /u, ""))];
+  };
+
+  it("keeps a corner's gap on its side as a round with 8 chairs comes round the Reception Room's west shoulder to stand in front of it", () => {
+    // Carried on the slant towards the corner (−3.65, 1.0): the corner's gap is south of the unit before a chair stands in front of the shoulder's wall, and after.
+    const roundOfEight = (x: number, z: number): readonly PlacedItem[] => createTableGroup(ROUND.id, x, z, 0, 8);
+    const heading = [Math.cos(2.6), Math.sin(2.6)] as const;
+    const passed = walk(room("Reception Room"), roundOfEight, [-2.6776 - 0.2 * heading[0], -0.5476 - 0.2 * heading[1]], [-2.6776 + 0.07 * heading[0], -0.5476 + 0.07 * heading[1]]);
+    const states = statesOf(passed);
+    expect(new Set(states).size).toBe(states.length);
+  });
+
+  it("keeps a corner's gap on its side while a chair of a turned trestle stands in the mouth of a Saloon alcove", () => {
+    // The chair comes within the guidance of the alcove's side wall 3.5 cm before it is carried clear of the alcove: the gap to the mouth's corner is not renamed for those 3.5 cm.
+    const turned = (x: number, z: number): readonly PlacedItem[] => createTableGroup(TRESTLE.id, x, z, 1, 6);
+    const heading = [Math.cos(5.313), Math.sin(5.313)] as const;
+    const passed = walk(room("Saloon"), turned, [-4.906 - 0.12 * heading[0], -0.637 - 0.12 * heading[1]], [-4.906 + 0.08 * heading[0], -0.637 + 0.08 * heading[1]]);
+    const states = statesOf(passed);
+    expect(new Set(states).size).toBe(states.length);
   });
 });
