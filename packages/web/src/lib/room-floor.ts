@@ -14,12 +14,16 @@ import { computeBoundingBox, isPointInPolygon } from "../data/room-geometries.js
 // editor-save-4).
 //
 // This keeps furniture inside the walls the planner draws. It does not show
-// that a layout in these rooms then saves: the API refuses a whole batch when
-// any piece's centre is outside the space's STORED outline, and by the
-// repository's seed (packages/types space.ts) those are plain rectangles
-// centred on the origin, the Robert Adam Room's 9.7 m by 5.6 m, not these
-// walls. A piece inside the drawn walls can still be outside the stored
-// outline.
+// that a layout in these rooms then saves. The API refuses a save (422
+// PLACEMENT_OUT_OF_BOUNDS, packages/api/src/lib/placement-validation.ts) when
+// any piece's centre is outside the space's STORED outline, and the stored
+// outlines are not these walls: as read from production's public rooms
+// endpoint on 11 November 2026 each is a plain rectangle centred on the
+// origin (Grand Hall 21 m by 10 m, Saloon 12 by 7, Reception Room 13.4 by
+// 11.2, Robert Adam Room 9.7 by 5.6), as the seed writes them
+// (packages/api/src/db/seed.ts rectOutline). So a layout that uses a shaped
+// room's real floor is still refused, until the stored outlines are
+// reconciled with the drawn rooms: a change of data, and the owner's.
 //
 // So a room whose walls are NOT that centred rectangle carries its floor, the
 // wall polygon where the room is drawn, beside its dimensions, and whatever
