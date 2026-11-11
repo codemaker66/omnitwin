@@ -1,17 +1,19 @@
 -- The Grand Hall at Trades Hall Glasgow, stored at the panelled interior the
 -- hall's laser scan measures (11 November 2026). Blake: "Use the measurements
--- captured from the lidar /e57 data". 0108, after #364's 0106 and #365's 0107
--- (open when this was written); the release queue confirms the number at the
--- merge slot (renumber the tag AND the journal `when`).
+-- captured from the lidar /e57 data". 0106 at journal idx 103, as the release queue assigned on 11 November 2026;
+-- open PRs that also claim 0106 or 0107 (#309, #364, #365) renumber after this
+-- lands, each with a later journal `when`.
 --
--- Production stored the hall as 21.00 x 10.00 m. The planner draws it as the
--- Matterport E57 capture of 11 July 2026 measures it: 21.135 m along x by
+-- Production stored the hall as 21.00 x 10.00 m. The Matterport E57 capture of
+-- 11 July 2026 measures the panelled interior at 21.135 m along x by
 -- 10.59 m along z, to about 2 cm (packages/web/src/components/grand-hall/
 -- hall-spec.ts, HALL_LENGTH and HALL_WIDTH; tools/grand-hall-survey/README.md
 -- records the method). A layout save refuses any piece centred outside the
 -- stored outline (422 PLACEMENT_OUT_OF_BOUNDS, lib/placement-validation.ts),
--- so a chair the planner draws within 0.295 m of a long wall stopped the whole
--- plan saving.
+-- and the planner's placement check uses the hand-drawn 21 x 10.5 m polygon
+-- (packages/web/src/data/room-geometries.ts; only its 3D model is drawn at the
+-- E57 size), so a chair the planner allowed within 0.25 m of a long wall stopped
+-- the whole plan saving. This outline contains that polygon.
 --
 -- width_m and length_m are numeric(6,2) and are the outline's x and y extents
 -- (the invariant in db/schema.ts, established by 0007), so the hall's length
