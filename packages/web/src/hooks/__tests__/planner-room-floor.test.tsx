@@ -4,9 +4,10 @@ import { cleanup, renderHook } from "@testing-library/react";
 import type { Space } from "../../api/spaces.js";
 import { placementViolationIds } from "../../components/PlacedFurniture.js";
 import { toRealWorld, toRenderSpace } from "../../constants/scale.js";
-import { isPointInPolygon, roomGeometries } from "../../data/room-geometries.js";
+import { roomGeometries } from "../../data/room-geometries.js";
 import { gangwayReview, planAutoFill } from "../../lib/auto-fill.js";
 import { getCatalogueItem, getCatalogueItemBySlug, type CatalogueItem } from "../../lib/catalogue.js";
+import { footprintInsideWalls, insideWalls, rimToNearestWall, type Walls } from "../../lib/__tests__/walls-the-slow-way.js";
 import { createGhostWorld, judgeGhost } from "../../lib/ghost-truth.js";
 import { computeRotatedFootprint, createPlacedItem, isWithinRoomBounds, snapToWallEdge, type PlacedItem } from "../../lib/placement.js";
 import { setPlannerFeaturesForTesting } from "../../lib/planner-features.js";
@@ -32,7 +33,7 @@ vi.mock("../use-trades-hall-venue.js", () => ({ useTradesHallVenue: () => true }
 // stand to the room's own wall polygon (data/room-geometries).
 // ---------------------------------------------------------------------------
 
-type Polygon = readonly (readonly [number, number])[];
+type Polygon = Walls;
 
 const SHAPED_ROOMS = ["Robert Adam Room", "Reception Room", "Saloon"] as const;
 
@@ -65,26 +66,10 @@ function piece(slug: string): CatalogueItem {
   return found;
 }
 
-/**
- * Whether a footprint stands wholly inside the walls, worked out the slow
- * way: its centre is inside, every centimetre of its edge is inside, and no
- * corner of a wall pokes into it. `slack` shrinks the footprint (metres), so
- * a piece set exactly against a wall is not judged on the last bit of a sum.
- */
-function footprintInside(walls: Polygon, x: number, z: number, halfW: number, halfD: number, slack: number): boolean {
-  const hw = halfW - slack;
-  const hd = halfD - slack;
-  if (!isPointInPolygon(x, z, walls)) return false;
-  if (walls.some(([wx, wz]) => Math.abs(wx - x) < hw && Math.abs(wz - z) < hd)) return false;
-  const n = Math.max(2, Math.ceil((2 * Math.max(hw, hd)) / 0.01));
-  for (let i = 0; i <= n; i += 1) {
-    const dx = -hw + (2 * hw * i) / n;
-    const dz = -hd + (2 * hd * i) / n;
-    if (!isPointInPolygon(x + dx, z - hd, walls) || !isPointInPolygon(x + dx, z + hd, walls)) return false;
-    if (!isPointInPolygon(x - hw, z + dz, walls) || !isPointInPolygon(x + hw, z + dz, walls)) return false;
-  }
-  return true;
-}
+// Whether a footprint stands wholly inside the walls is worked out the slow
+// way, by lib/__tests__/walls-the-slow-way: none of it is the planner's own
+// geometry, so these cannot agree with the planner by sharing its mistakes.
+const footprintInside = footprintInsideWalls;
 
 /** A millimetre: nearer a wall than this, the slow way and the planner may differ by rounding alone. */
 const HAIR = 0.001;
@@ -140,7 +125,7 @@ describe.each(SHAPED_ROOMS)("where a piece may stand in the %s", (name) => {
     const { halfW, halfD } = computeRotatedFootprint(chair, 0);
     const wrong: string[] = [];
     for (const { x, z } of gridOver(walls, 0.23)) {
-      if (!isPointInPolygon(x, z, walls)) continue; // the pointer is always on the room's floor
+      if (!insideWalls(walls, x, z)) continue; // the pointer is always on the room's floor
       usePlacementStore.getState().updateGhost(x, z, chair.id);
       const { ghostPosition, ghostValid, ghostInvalidReason } = usePlacementStore.getState();
       if (ghostPosition === null) throw new Error("no ghost");
@@ -162,7 +147,7 @@ describe.each(SHAPED_ROOMS)("where a piece may stand in the %s", (name) => {
     const wrong: string[] = [];
     let pulled = 0;
     for (const { x, z } of gridOver(walls, 0.27)) {
-      if (!isPointInPolygon(x, z, walls)) continue;
+      if (!insideWalls(walls, x, z)) continue;
       const to = snapToWallEdge(x, z, item, rotationY, dims);
       if (to.x === x && to.z === z) continue;
       pulled += 1;
@@ -401,35 +386,6 @@ function wallsInMetres(name: string): Polygon {
   return geometry.wallPolygon;
 }
 
-/**
- * How far a round's rim stands from the nearest wall, worked out with nothing
- * of the planner's: every wall walked a millimetre at a time.
- */
-function rimToNearestWall(walls: Polygon, x: number, z: number, radius: number): number {
-  let nearest = Number.POSITIVE_INFINITY;
-  walls.forEach(([ax, az], i) => {
-    const [bx, bz] = walls[(i + 1) % walls.length] ?? [ax, az];
-    const steps = Math.max(1, Math.ceil(Math.hypot(bx - ax, bz - az) / 0.001));
-    for (let s = 0; s <= steps; s += 1) {
-      nearest = Math.min(nearest, Math.hypot(ax + ((bx - ax) * s) / steps - x, az + ((bz - az) * s) / steps - z));
-    }
-  });
-  return nearest - radius;
-}
-
-/** Whether a point is inside the walls, by how far the walls turn round it: a full turn inside, none outside. */
-function windsRound(walls: Polygon, x: number, z: number): boolean {
-  let turned = 0;
-  walls.forEach(([ax, az], i) => {
-    const [bx, bz] = walls[(i + 1) % walls.length] ?? [ax, az];
-    let step = Math.atan2(bz - z, bx - x) - Math.atan2(az - z, ax - x);
-    if (step > Math.PI) step -= 2 * Math.PI;
-    if (step < -Math.PI) step += 2 * Math.PI;
-    turned += step;
-  });
-  return Math.abs(turned) > Math.PI;
-}
-
 const ROUND_RADIUS_M = ROUND.width / 2;
 /** The review draws a round as 32 sides touching its rim, at most this far outside it (metres), and the slow way walks the walls a millimetre at a time. */
 const OUTLINE_SLACK_M = 0.006;
@@ -444,7 +400,7 @@ describe.each(SHAPED_ROOMS)("the gangway review in the %s", (name) => {
     for (const { x, z } of gridOver(walls, 0.37)) {
       const gap = rimToNearestWall(walls, x, z, ROUND_RADIUS_M);
       // The round stands inside the walls, and not within the outline's slack of the guidance itself.
-      if (!windsRound(walls, x, z) || gap < 0.01 || Math.abs(gap - 1.1) < 2 * OUTLINE_SLACK_M) continue;
+      if (!insideWalls(walls, x, z) || gap < 0.01 || Math.abs(gap - 1.1) < 2 * OUTLINE_SLACK_M) continue;
       const review = gangwayReview([createPlacedItem(ROUND.id, x, z)], dims, null);
       const at = `(${x.toFixed(2)}, ${z.toFixed(2)})`;
       if (gap >= 1.1) {

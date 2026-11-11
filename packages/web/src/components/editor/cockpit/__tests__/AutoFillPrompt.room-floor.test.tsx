@@ -3,12 +3,13 @@
 // and all of it lands inside the walls.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { GRAND_HALL_RENDER_DIMENSIONS } from "../../../../constants/scale.js";
+import { GRAND_HALL_RENDER_DIMENSIONS, toRenderSpace } from "../../../../constants/scale.js";
 import { roomGeometries } from "../../../../data/room-geometries.js";
+import { footprintInsideWalls, type Walls } from "../../../../lib/__tests__/walls-the-slow-way.js";
 import { getCatalogueItem } from "../../../../lib/catalogue.js";
 import { computeRotatedFootprint } from "../../../../lib/placement.js";
 import type { PublishedCapacityAnswer } from "../../../../lib/planner-truth.js";
-import { plannerRoomOf, rectWithinFloor } from "../../../../lib/room-floor.js";
+import { plannerRoomOf } from "../../../../lib/room-floor.js";
 import { useDoorClearSpaceStore } from "../../../../stores/door-clear-space-store.js";
 import { usePlacementStore } from "../../../../stores/placement-store.js";
 import { useRoomDimensionsStore } from "../../../../stores/room-dimensions-store.js";
@@ -25,15 +26,21 @@ function askFor(guests: number): void {
   fireEvent.change(screen.getByTestId("auto-fill-guests"), { target: { value: String(guests) } });
 }
 
-/** Placed pieces any of whose footprint is outside the room's walls. */
+/** The room's walls where the scene draws them. */
+const WALLS: Walls = robertAdam.wallPolygon.map(([x, z]) => [toRenderSpace(x), toRenderSpace(z)] as const);
+
+/**
+ * Placed pieces any of whose footprint is outside the room's walls, judged
+ * the slow way (lib/__tests__/walls-the-slow-way), not by the floor the fill
+ * itself asks. Each footprint a millimetre shy, so a piece set exactly against
+ * a wall is not judged on the last bit of a sum.
+ */
 function outsideTheWalls(): number {
-  const { floor } = ROOM;
-  if (floor === undefined) throw new Error("the Robert Adam Room has a floor of its own");
   return usePlacementStore.getState().placedItems.filter((piece) => {
     const item = getCatalogueItem(piece.catalogueItemId);
     if (item === undefined) return true;
     const { halfW, halfD } = computeRotatedFootprint(item, piece.rotationY, piece.scale);
-    return !rectWithinFloor(floor, piece.x, piece.z, halfW, halfD);
+    return !footprintInsideWalls(WALLS, piece.x, piece.z, halfW, halfD, 0.001);
   }).length;
 }
 

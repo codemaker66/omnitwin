@@ -25,6 +25,41 @@ import { useDoorClearSpaceStore } from "../../stores/door-clear-space-store.js";
 // stood on 11 Nov 2026 (origin/master 9fdb57a6), before the planner learned a
 // room's real outline (audit editor-save-4); the test beside this file holds
 // the Grand Hall, a rectangle centred on the origin, to exactly those figures.
+//
+// TO REGENERATE the fixture, only to record a change to the Grand Hall that is
+// meant, or to check the record. It is this file's own output: one line of
+// JSON and a newline.
+//   1. Stand on the commit whose decisions are to be the record. The record
+//      was taken at 2a56eba2, which is origin/master 9fdb57a6 with nothing
+//      added but this file, the test beside it and the fixture. To take it
+//      from older code, copy this file onto that checkout.
+//   2. Beside this file write grand-hall-baseline.write.test.ts:
+//        import { writeFileSync } from "node:fs";
+//        import { it } from "vitest";
+//        import { scaleForRendering } from "../../constants/scale.js";
+//        import { computeBoundingBox, roomGeometries } from "../../data/room-geometries.js";
+//        import { computeGrandHallBaseline } from "./grand-hall-baseline.js";
+//        it("writes the Grand Hall's record", () => {
+//          const hall = roomGeometries["Grand Hall"];
+//          if (hall === undefined) throw new Error("no Grand Hall");
+//          const box = computeBoundingBox(hall.wallPolygon);
+//          const dims = scaleForRendering({ width: box.width, length: box.depth, height: hall.ceilingHeight });
+//          writeFileSync("src/lib/__tests__/fixtures/grand-hall-placement-baseline.json", `${JSON.stringify(computeGrandHallBaseline(dims))}\n`);
+//        });
+//   3. From the repository root, on the Node that CI runs (22):
+//        pnpm --filter @omnitwin/web exec vitest run src/lib/__tests__/grand-hall-baseline.write.test.ts
+//   4. Delete that file. `git status` then says whether the record moved: on
+//      code that decides the same, the fixture comes out byte for byte.
+//
+// THE LAST BIT. The test compares every number exactly, and should: the claim
+// is "unchanged", not "close". Sums, products, quotients and square roots are
+// fixed by IEEE 754 on every machine. Math.sin, Math.cos and Math.hypot are
+// not fixed by the language. They come from V8's own maths library, and they
+// feed the turned footprints, the rings of chairs and the rounds' planning
+// radius. A Node upgrade that changed one of them would move last bits here
+// and fail the test with no change to the planner behind it. The answer then
+// is to regenerate on one commit under the old Node and the new and read the
+// difference, never to loosen the comparison.
 // ---------------------------------------------------------------------------
 
 function item(slug: string): CatalogueItem {
