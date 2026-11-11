@@ -1,8 +1,11 @@
 import { createHash, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import type { FastifyInstance } from "fastify";
 import { eq, sql } from "drizzle-orm";
-import { Client } from "pg";
+import { drizzle as nodeDrizzle } from "drizzle-orm/node-postgres";
+import { migrate } from "drizzle-orm/node-postgres/migrator";
+import { Client, Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
@@ -47,8 +50,8 @@ function isSafeDisposableDatabaseUrl(databaseUrl: string): boolean {
   try {
     const parsed = new URL(databaseUrl);
     const databaseName = parsed.pathname.slice(1);
+    // Loopback and the dedicated name are the safety; any port (CI serves 55476).
     return (parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1")
-      && (parsed.port === "54329" || parsed.port === "54339")
       && databaseName.startsWith(SAFE_DATABASE_PREFIX)
       && /^[a-z0-9_]+$/u.test(databaseName);
   } catch {
@@ -59,7 +62,7 @@ function isSafeDisposableDatabaseUrl(databaseUrl: string): boolean {
 if (RUN_ENABLED && !isSafeDisposableDatabaseUrl(TEST_DATABASE_URL)) {
   throw new Error(
     "VENVIEWER_PHASE_LAYOUT_TEST_DATABASE_URL must name a disposable local PostgreSQL database "
-      + `(localhost or 127.0.0.1, port 54329 or 54339, named ${SAFE_DATABASE_PREFIX}*).`,
+      + `(localhost or 127.0.0.1, named ${SAFE_DATABASE_PREFIX}*).`,
   );
 }
 
@@ -519,12 +522,20 @@ describe.runIf(RUN_ENABLED)("phase layout PostgreSQL rehearsal", () => {
     process.env["NODE_ENV"] = "test";
     // The server reads DATABASE_URL when it is built; give it the test URL.
     process.env["DATABASE_URL"] = TEST_DATABASE_URL;
+    // The suite migrates its own fresh database, as its siblings do; the
+    // lineage case below then reads the ledger the real chain wrote.
+    const migrationPool = new Pool({ connectionString: TEST_DATABASE_URL, max: 1 });
+    try {
+      await migrate(nodeDrizzle(migrationPool), { migrationsFolder: resolve(import.meta.dirname, "../../drizzle") });
+    } finally {
+      await migrationPool.end();
+    }
     database = createDb(TEST_DATABASE_URL);
     await seedFixture(database);
     const { buildServer } = await import("../index.js");
     buildServerForReload = buildServer;
     server = await buildServer();
-  }, 60_000);
+  }, 180_000);
 
   afterAll(async () => {
     if (server !== null) await server.close();

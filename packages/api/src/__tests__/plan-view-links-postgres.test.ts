@@ -41,8 +41,9 @@ import { pdfPageTexts } from "./support/pdf-text.js";
 const testUrl = process.env["VENVIEWER_VISITOR_PLAN_TEST_DATABASE_URL"];
 if (testUrl !== undefined) {
   const parsed = new URL(testUrl);
+  // Loopback and this exact name are the safety; any port (CI serves 55476).
   if (!["postgres:", "postgresql:"].includes(parsed.protocol)
-    || parsed.hostname !== "127.0.0.1" || parsed.port !== "55417"
+    || parsed.hostname !== "127.0.0.1"
     || parsed.pathname !== "/venviewer_visitor_plan_test"
     || parsed.search !== "" || parsed.hash !== "") {
     throw new Error("View-only link tests require their explicit isolated loopback database");
