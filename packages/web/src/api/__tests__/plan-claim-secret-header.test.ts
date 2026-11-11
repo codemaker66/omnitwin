@@ -136,6 +136,10 @@ describe("what a read and a save say about a guest plan's notes", () => {
     // An API from before this change says nothing: that is not "included".
     fetchMock.mockResolvedValue(answer(plan(MADE_HERE)));
     expect((await configurations.getPublicConfig(MADE_HERE)).notesIncluded).toBeUndefined();
+
+    // The signed-in read withholds nothing from whoever it admits, so its
+    // answer is a read with the notes whatever it says of itself.
+    expect((await configurations.getConfig(MADE_HERE)).notesIncluded).toBe(true);
   });
 
   it("declares a save's notes complete only when told the document was read with them", async () => {

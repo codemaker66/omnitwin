@@ -229,8 +229,16 @@ export async function updatePublicThumbnail(configId: string, thumbnailUrl: stri
 // Authenticated endpoints
 // ---------------------------------------------------------------------------
 
+/**
+ * The signed-in read. It returns the whole row and every piece's note to
+ * whoever it admits (the API's GET /configurations/:id withholds nothing), so
+ * its answer is a read with the plan's notes whether or not the API says so:
+ * the editor may save it through the signed-in route, which stores notes as
+ * sent. The public read of the same plan says for itself (getPublicConfig).
+ */
 export async function getConfig(configId: string): Promise<Configuration> {
-  return api.get(`/configurations/${configId}`, ConfigurationResponseSchema);
+  const config = await api.get(`/configurations/${configId}`, ConfigurationResponseSchema);
+  return { ...config, notesIncluded: true };
 }
 
 const ConfigurationSummarySchema = z.object({

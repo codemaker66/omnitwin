@@ -373,6 +373,20 @@ describe("a draft and the plan's notes", () => {
     expect(notesOf(informed.objects)).toEqual({ [A]: "TEST ONLY corrected", [B]: "" });
   });
 
+  it("keeps both notes when it wrote on a piece whose note it had never read, the stored one first", () => {
+    // Shown A as bare, the page wrote on it; A held a note all along. Neither
+    // is put in place of the other, as Replace keeps both when it carries a
+    // note to a table that has one.
+    keep([piece(A, "TEST ONLY typed here")], [piece(A, "")]);
+    const restored = plannerDraftWithUnreadNotes(kept(), [piece(A, HELD)]);
+    expect(notesOf(restored.objects)).toEqual({ [A]: `${HELD}\nTEST ONLY typed here` });
+    expect(notesOf(plannerDraftBaseObjects(restored) ?? [])).toEqual({ [A]: HELD });
+
+    // Having written exactly the stored note (a save that landed unheard) is no second note.
+    keep([piece(A, HELD, 5)], [piece(A, "")]);
+    expect(notesOf(plannerDraftWithUnreadNotes(kept(), [piece(A, HELD)]).objects)).toEqual({ [A]: HELD });
+  });
+
   it("without a base to say what it read, takes the server's note wherever it holds none", () => {
     persistAnonymousPlannerDraft({
       configId: "cfg-1", spaceId: "space-1", venueId: "venue-1", configRevision: 4, isPublicPreview: true,

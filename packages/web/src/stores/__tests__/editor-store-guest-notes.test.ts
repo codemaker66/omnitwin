@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { ApiError } from "../../api/client.js";
 import type { BatchObjectInput, Configuration, ObjectMetadata, PlacedObject } from "../../api/configurations.js";
 import { editorToPlacedItem, placedItemToEditor } from "../../components/editor/EditorBridge.js";
 import { persistAnonymousPlannerDraft, readAnonymousPlannerDraft } from "../../lib/anonymous-planner-draft.js";
@@ -170,6 +171,51 @@ describe("a save says its notes are complete only for a plan read with them", ()
   });
 });
 
+describe("a guest plan read without its notes, in a browser that is signed in", () => {
+  // The planner opens a plan before the sign-in has resolved, so venue staff
+  // read a guest plan through the public route like anyone with the link:
+  // without its notes. The signed-in save stores a piece's details as sent,
+  // so their first nudge of a chair would erase every note on the plan.
+  it("is never saved through the signed-in route, which would store its pieces without their notes", async () => {
+    await open(plan([placed(A, { noteHeld: true }), placed(B)], false));
+    store().updateObject(B, { positionX: 3 });
+
+    vi.mocked(configApi.publicBatchSave).mockResolvedValue({ objects: [placed(A, { noteHeld: true }), placed(B, {}, 3)], revision: 5 });
+    expect(await store().saveToServer(true)).toBe(true);
+    expect(configApi.authBatchSave).not.toHaveBeenCalled();
+    expect(saveSent(0).args).toBe(3);
+  });
+
+  it("is saved through the signed-in route once it has been read through it, notes and all", async () => {
+    vi.mocked(configApi.getConfig).mockResolvedValue(plan([placed(A, { notes: ALLERGY }), placed(B)], true));
+    await store().loadConfiguration(PLAN, true);
+    expect(store().notesIncluded).toBe(true);
+    store().updateObject(B, { positionX: 3 });
+
+    vi.mocked(configApi.authBatchSave).mockResolvedValue({ objects: [placed(A, { notes: ALLERGY }), placed(B, {}, 3)], revision: 5 });
+    expect(await store().saveToServer(true)).toBe(true);
+    expect(configApi.publicBatchSave).not.toHaveBeenCalled();
+    expect(vi.mocked(configApi.authBatchSave).mock.calls[0]?.[1].find((piece) => piece.id === A)?.metadata?.notes).toBe(ALLERGY);
+  });
+
+  it("takes the notes it never read when its kept work is restored over a signed-in read", async () => {
+    persistAnonymousPlannerDraft({
+      configId: PLAN, spaceId: SPACE, venueId: VENUE, configRevision: 4, isPublicPreview: true,
+      objects: [kept(A, "", 5)], baseObjects: [kept(A)], isDirty: true,
+    });
+    vi.mocked(configApi.getConfig).mockResolvedValue(plan([placed(A, { notes: ALLERGY })], true));
+    await store().loadConfiguration(PLAN, true);
+    expect(noteOn(A)).toBe(ALLERGY);
+
+    // Restored work that did not say it was read with the notes goes through
+    // the route that settles them, not the one that stores them as sent.
+    vi.mocked(configApi.publicBatchSave).mockResolvedValue({ objects: [placed(A, { notes: ALLERGY }, 5)], revision: 5 });
+    expect(await store().saveToServer(true)).toBe(true);
+    expect(configApi.authBatchSave).not.toHaveBeenCalled();
+    expect(sentPiece(0, A).metadata?.notes).toBe(ALLERGY);
+  });
+});
+
 describe("work kept on this device, restored where the plan is read with its notes", () => {
   it("clears no note when the page that kept it had read the plan without them", async () => {
     // A page that read the plan without its notes (a tab from before the API
@@ -198,6 +244,23 @@ describe("work kept on this device, restored where the plan is read with its not
     expect(saveSent(0).args).toBe(3);
     expect(saveSent(0).batch.every((piece) => piece.replacesNote === undefined)).toBe(true);
     expect(noteOn(A)).toBe(ALLERGY);
+  });
+
+  it("keeps both notes when the kept copy wrote on a piece whose note it had never been shown", async () => {
+    // A page that was shown the piece as bare wrote "TEST ONLY by the stage"
+    // on it. The piece held a note all along. Restoring the copy must not put
+    // the new words in place of words nobody on that page ever saw.
+    persistAnonymousPlannerDraft({
+      configId: PLAN, spaceId: SPACE, venueId: VENUE, configRevision: 4, isPublicPreview: true,
+      objects: [kept(A, "TEST ONLY by the stage")], baseObjects: [kept(A)], isDirty: true,
+    });
+    await open(plan([placed(A, { notes: ALLERGY })], true));
+    expect(noteOn(A)).toBe(`${ALLERGY}\nTEST ONLY by the stage`);
+
+    vi.mocked(configApi.publicBatchSave).mockResolvedValue({ objects: [placed(A, { notes: `${ALLERGY}\nTEST ONLY by the stage` })], revision: 5 });
+    expect(await store().saveToServer(false)).toBe(true);
+    // The save names the note it adds to, which this browser has now read.
+    expect(sentPiece(0, A)).toMatchObject({ replacesNote: ALLERGY, metadata: { notes: `${ALLERGY}\nTEST ONLY by the stage` } });
   });
 
   it("stays the whole truth when the copy itself was read with the notes", async () => {
@@ -266,6 +329,63 @@ describe("a browser that is not shown the plan's notes", () => {
     expect(sentPiece(2, B).metadata?.notes).toBeUndefined();
     // Never a declaration: this browser was not shown the plan's notes.
     expect([saveSent(0).args, saveSent(1).args, saveSent(2).args]).toEqual([3, 3, 3]);
+  });
+
+  // A fresh read without the secret hides every note, the ones this browser
+  // wrote included, so taking it as the new base forgot which notes the server
+  // had confirmed here: the person's next words on their own note were then
+  // refused, and the whole layout stopped saving.
+  it("goes on writing its own note after choosing to keep its version over a newer one", async () => {
+    await open(plan([placed(A, { noteHeld: true }), placed(B)], false));
+    store().setObjectNotes(B, "TEST ONLY VIP ta");
+    vi.mocked(configApi.publicBatchSave).mockResolvedValueOnce({
+      objects: [placed(A, { noteHeld: true }), placed(B, { notes: "TEST ONLY VIP ta" })], revision: 5,
+    });
+    expect(await store().saveToServer(false)).toBe(true);
+
+    // The maker saves a move; this browser's next save meets the newer version.
+    store().setObjectNotes(B, "TEST ONLY VIP table");
+    vi.mocked(configApi.publicBatchSave).mockRejectedValueOnce(
+      new ApiError(409, "Layout changed on the server. Reload before saving again.", "REVISION_CONFLICT", { expectedRevision: 5, currentRevision: 6 }),
+    );
+    vi.mocked(configApi.getPublicConfig).mockResolvedValue({
+      ...plan([placed(A, { noteHeld: true }, 2), placed(B, { noteHeld: true })], false), revision: 6,
+    });
+    expect(await store().saveToServer(false)).toBe(false);
+    expect(store().saveConflict?.currentRevision).toBe(6);
+
+    vi.mocked(configApi.publicBatchSave).mockResolvedValueOnce({
+      objects: [placed(A, { noteHeld: true }), placed(B, { notes: "TEST ONLY VIP table" })], revision: 7,
+    });
+    expect(await store().keepMine(false)).toBe(true);
+    expect(sentPiece(2, B)).toMatchObject({ replacesNote: "TEST ONLY VIP ta", metadata: { notes: "TEST ONLY VIP table" } });
+    expect(noteOn(B)).toBe("TEST ONLY VIP table");
+  });
+
+  it("goes on writing, or takes off, its own note when work kept here is restored after a reload", async () => {
+    // The copy's own base records the note the server had confirmed here.
+    persistAnonymousPlannerDraft({
+      configId: PLAN, spaceId: SPACE, venueId: VENUE, configRevision: 4, isPublicPreview: true,
+      objects: [kept(B, "TEST ONLY VIP table")], baseObjects: [kept(B, "TEST ONLY VIP ta")], isDirty: true,
+    });
+    await open(plan([placed(B, { noteHeld: true })], false));
+    expect(noteOn(B)).toBe("TEST ONLY VIP table");
+    vi.mocked(configApi.publicBatchSave).mockResolvedValueOnce({ objects: [placed(B, { notes: "TEST ONLY VIP table" })], revision: 5 });
+    expect(await store().saveToServer(false)).toBe(true);
+    expect(sentPiece(0, B)).toMatchObject({ replacesNote: "TEST ONLY VIP ta", metadata: { notes: "TEST ONLY VIP table" } });
+
+    // Taking it off just before the page closed is restored as that, too.
+    store().reset();
+    persistAnonymousPlannerDraft({
+      configId: PLAN, spaceId: SPACE, venueId: VENUE, configRevision: 4, isPublicPreview: true,
+      objects: [kept(B)], baseObjects: [kept(B, "TEST ONLY VIP ta")], isDirty: true,
+    });
+    await open(plan([placed(B, { noteHeld: true })], false));
+    expect(store().restoredFromDevice?.changes).toBe(1);
+    vi.mocked(configApi.publicBatchSave).mockResolvedValueOnce({ objects: [placed(B)], revision: 5 });
+    expect(await store().saveToServer(false)).toBe(true);
+    expect(sentPiece(1, B).replacesNote).toBe("TEST ONLY VIP ta");
+    expect(sentPiece(1, B).metadata?.notes).toBeUndefined();
   });
 
   it("marks nothing held in a plan read with its notes, or in a layout that is not a guest plan", async () => {

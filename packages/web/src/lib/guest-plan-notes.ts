@@ -61,6 +61,46 @@ export function noteHeldOn(state: GuestPlanNoteFacts, objectId: string): boolean
 }
 
 /**
+ * Whether the open document may go through the signed-in routes at all. The
+ * signed-in save stores each piece's details as sent, so it is only for a
+ * document that holds every note: any layout that is not a guest plan, and a
+ * guest plan read with its notes. The planner opens a plan before the sign-in
+ * has resolved, so venue staff read a guest plan through the public route,
+ * without its notes; saved through the signed-in route, that copy would erase
+ * them all. It stays on the public routes, which settle each note, for as long
+ * as it is open.
+ */
+export function signedInRoutesSuit(state: Pick<GuestPlanNoteFacts, "isPublicPreview" | "notesIncluded">): boolean {
+  return !state.isPublicPreview || state.notesIncluded;
+}
+
+/**
+ * A fresh copy from a read that does not show this browser the plan's notes,
+ * with the notes the server had already confirmed here put back on their
+ * pieces. Such a read hides every note, the ones this browser wrote included,
+ * so taken as it stands it forgets them, and the person's next words on their
+ * own note are refused. `confirmed` is the document that read replaces (the
+ * last confirmed one, or the base of work kept on this device, at the same
+ * revision). A note is put back only on a piece the fresh copy says holds
+ * one; the API still refuses a save naming a note the piece no longer holds.
+ */
+export function keepingConfirmedNotes(
+  fresh: readonly EditorObject[],
+  confirmed: readonly EditorObject[],
+): readonly EditorObject[] {
+  const known = new Map<string, string>();
+  for (const object of confirmed) {
+    if (object.notes.length > 0) known.set(object.id, object.notes);
+  }
+  if (known.size === 0) return fresh;
+  return fresh.map((object) => {
+    const { noteHeld, ...shown } = object;
+    const note = noteHeld === true && object.notes.length === 0 ? known.get(object.id) : undefined;
+    return note === undefined ? object : { ...shown, notes: note };
+  });
+}
+
+/**
  * A guest plan's save batch (objects through editorToBatch, in order), with
  * each piece whose note differs from the one the server last confirmed here
  * naming that note. A piece the server confirmed no note for names nothing:

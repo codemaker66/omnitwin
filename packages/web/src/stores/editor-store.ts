@@ -18,7 +18,7 @@ import {
   readAnonymousPlannerDraft,
   type AnonymousPlannerDraft,
 } from "../lib/anonymous-planner-draft.js";
-import { namingReplacedNotes } from "../lib/guest-plan-notes.js";
+import { keepingConfirmedNotes, namingReplacedNotes, signedInRoutesSuit } from "../lib/guest-plan-notes.js";
 import { holdPlannerPageLock, isPlannerPageOpen, plannerPageId } from "../lib/planner-page-lock.js";
 import { signedOutOwnerFrom } from "../lib/planner-draft-storage.js";
 import { summariseLayoutChange, type LayoutChangeSummary } from "../lib/layout-change-summary.js";
@@ -993,7 +993,10 @@ function bumpLocalIdsPast(objects: readonly EditorObject[]): void {
 /** The server's current copy of the layout, or null when it cannot be read. */
 async function readServerCopy(configId: string, useAuthPath: boolean): Promise<configApi.Configuration | null> {
   try {
-    const config = useAuthPath ? await configApi.getConfig(configId) : await configApi.getPublicConfig(configId);
+    // A guest plan read without its notes is only ever compared with, and
+    // kept over, a copy read the same way (lib/guest-plan-notes.ts).
+    const signedIn = useAuthPath && signedInRoutesSuit(useEditorStore.getState());
+    const config = signedIn ? await configApi.getConfig(configId) : await configApi.getPublicConfig(configId);
     return config.id === configId ? config : null;
   } catch {
     return null;
@@ -1056,7 +1059,7 @@ export const useEditorStore = create<EditorStore>()(withSaveFacts((set, get) => 
         set({ isLoading: false });
         return;
       }
-      const serverObjects = (config.objects ?? []).map(placedObjectToEditor);
+      const readObjects = (config.objects ?? []).map(placedObjectToEditor);
       // A guest plan's notes go only to the browser that made it, so this read
       // says whether it carries them. Work kept by a page that read the plan
       // without them holds every piece without its note: opened here with the
@@ -1064,8 +1067,15 @@ export const useEditorStore = create<EditorStore>()(withSaveFacts((set, get) => 
       // would clear them all (review of #375).
       const notesRead = config.notesIncluded === true;
       const localDraft = keptDraft !== null && notesRead && keptDraft.notesIncluded !== true
-        ? plannerDraftWithUnreadNotes(keptDraft, serverObjects)
+        ? plannerDraftWithUnreadNotes(keptDraft, readObjects)
         : keptDraft;
+      // The other way about: a read without the notes hides the ones this
+      // browser wrote. Work kept here at this very revision knows which notes
+      // the server had confirmed to it, so the person can go on with theirs.
+      const confirmedHere = localDraft !== null && !notesRead && localDraft.baseRevision === config.revision
+        ? plannerDraftBaseObjects(localDraft)
+        : null;
+      const serverObjects = confirmedHere === null ? readObjects : keepingConfirmedNotes(readObjects, confirmedHere);
       // One edited from this revision restores as it is. One edited from any
       // other revision restores onto the base it was edited from, at that
       // revision, as a conflict the person settles before anything is saved:
@@ -1456,7 +1466,10 @@ export const useEditorStore = create<EditorStore>()(withSaveFacts((set, get) => 
       // counts exactly what that save changes on the server.
       set({
         configRevision: conflict.currentRevision,
-        baseObjects: theirs,
+        // Their version read without the plan's notes hides the ones this
+        // browser wrote: the notes confirmed here stay known, so the person
+        // can go on with theirs.
+        baseObjects: keepingConfirmedNotes(theirs, current.baseObjects),
         objects: kept,
         history: remapHistoryIds(current.history, rekeyed),
         selectedObjectId: current.selectedObjectId === null ? null : rekeyed.get(current.selectedObjectId) ?? current.selectedObjectId,
@@ -1729,11 +1742,14 @@ async function saveDocument(
     // A guest plan's save names the note each changed note replaces, and says
     // its notes are complete only when this document was read with them
     // (lib/guest-plan-notes.ts; api/configurations.ts BatchSaveOptions).
-    const batch = useAuthPath
+    // The signed-in save stores each piece as sent, so a guest plan read
+    // without its notes never goes that way, whoever has signed in since.
+    const viaSignedIn = useAuthPath && signedInRoutesSuit(get());
+    const batch = viaSignedIn
       ? objects.map(editorToBatch)
       : namingReplacedNotes(objects.map(editorToBatch), objects, get().baseObjects);
-    const save = useAuthPath ? configApi.authBatchSave : configApi.publicBatchSave;
-    const sending: configApi.BatchSaveOptions | undefined = !useAuthPath && get().notesIncluded
+    const save = viaSignedIn ? configApi.authBatchSave : configApi.publicBatchSave;
+    const sending: configApi.BatchSaveOptions | undefined = !viaSignedIn && get().notesIncluded
       ? { ...transport, notesIncluded: true }
       : transport;
     const saved = sending === undefined

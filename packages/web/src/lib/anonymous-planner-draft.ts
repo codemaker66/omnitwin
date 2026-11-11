@@ -335,10 +335,13 @@ export function plannerDraftBaseObjects(draft: AnonymousPlannerDraft): readonly 
  *
  * So wherever the draft's own base held no note for a piece and the server's
  * copy holds one, the draft never read that note: its base takes it, and so
- * does the piece unless the draft wrote a note of its own there. A note the
- * draft's base did hold was read, and what the draft did with it (kept,
- * changed or cleared) stands. A draft with no base says nothing of what it
- * read, so it takes the server's note wherever it holds none.
+ * does the piece. Where the draft wrote a note of its own on such a piece,
+ * the piece keeps both, the stored one first, as Replace does when it carries
+ * a note to a table that has one: neither is put in place of words nobody on
+ * that page was shown. A note the draft's base did hold was read, and what
+ * the draft did with it (kept, changed or cleared) stands. A draft with no
+ * base says nothing of what it read, so every piece of it is treated as
+ * unread.
  *
  * For a draft that does not say it was read with the notes
  * (`notesIncluded`), against a read that included them.
@@ -360,9 +363,13 @@ export function plannerDraftWithUnreadNotes(
     const { noteHeld, ...shown } = object;
     return noteHeld === undefined ? { ...object, notes: note } : { ...shown, notes: note };
   };
+  const baseSays = draft.base !== undefined;
   const objects = draft.objects.map((object) => {
-    const note = unread(object.id, readAs.get(object.id) ?? object.notes);
-    return note === undefined || object.notes.length > 0 ? object : withNote(object, note);
+    // The base's note for a piece the draft changed is its stored copy's; for
+    // one it left alone, the piece's own.
+    const note = unread(object.id, baseSays ? readAs.get(object.id) ?? object.notes : "");
+    if (note === undefined || object.notes === note) return object;
+    return withNote(object, object.notes.length === 0 ? note : `${note}\n${object.notes}`);
   });
   if (draft.base === undefined) return { ...draft, objects };
   const changed = draft.base.changed.map((object) => {
