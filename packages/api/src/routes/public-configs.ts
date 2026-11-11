@@ -271,7 +271,8 @@ function withoutUnsentNotes(
 /**
  * The refusal of a save that would change a note its sender was not shown.
  * Nothing of the save is stored. The planner shows `error` as it stands, a
- * page loaded before it knew this code included.
+ * page loaded before it knew this code included. It does not advise a
+ * reload: the planner restores its kept work, and the same refusal, on one.
  *
  * It does not say which piece. A refusal costs its sender nothing and leaves
  * no trace, so naming the pieces would let one save try a guess at every held
@@ -279,7 +280,7 @@ function withoutUnsentNotes(
  * within the route's limit, and a right one is written to the plan.
  */
 const NOTE_HELD_REFUSAL = {
-  error: "A note on this plan cannot be changed from here, and this save tried to change it. Reload the page, or clear the note you wrote on that piece.",
+  error: "A note on this plan cannot be changed from here, and this save tried to change it. Clear the note you wrote on that piece.",
   code: "NOTE_HELD",
 } as const;
 

@@ -120,6 +120,8 @@ describe.skipIf(target === undefined)("who can find and read a guest's plan, thr
   const ALLERGY = "TEST ONLY nut allergy, seat by the door";
   const REVIEW = "TEST ONLY review: move the bar off the fire exit";
   const ACCESS = "TEST ONLY two wheelchair users at the top table";
+  /** The refusal of a save that would change a note its sender was not shown. */
+  const NOTE_HELD = "A note on this plan cannot be changed from here, and this save tried to change it. Clear the note you wrote on that piece.";
 
   interface StoredPiece { readonly id: string; readonly positionX: string; readonly metadata: Record<string, unknown> | null }
   interface PlanRead {
@@ -288,8 +290,9 @@ describe.skipIf(target === undefined)("who can find and read a guest's plan, thr
     expect(refused.statusCode, refused.body.slice(0, 300)).toBe(409);
     // The refusal is its code and its sentence. Naming the piece would let one
     // save try a guess at every held note and read off which were right.
-    expect(Object.keys(JSON.parse(refused.body) as Record<string, unknown>).sort()).toEqual(["code", "error"]);
-    expect(JSON.parse(refused.body)).toMatchObject({ code: "NOTE_HELD" });
+    // It does not say "Reload the page": a reload restores the kept work and
+    // the same refusal (release lead's ruling R-F).
+    expect(JSON.parse(refused.body)).toEqual({ code: "NOTE_HELD", error: NOTE_HELD });
     expect(refused.body.includes(ALLERGY)).toBe(false);
     expect(refused.body.includes(withNote.id)).toBe(false);
     expect(await asMade(plan)).toEqual(before);
@@ -325,7 +328,7 @@ describe.skipIf(target === undefined)("who can find and read a guest's plan, thr
     // Naming a note the piece does not hold shows nothing was read: refused.
     const guessed = await send(friend, [...others, { ...piece(4, "TEST ONLY guess", bare.id), replacesNote: "TEST ONLY not it" }]);
     expect(guessed.statusCode).toBe(409);
-    expect(JSON.parse(guessed.body)).toMatchObject({ code: "NOTE_HELD" });
+    expect(JSON.parse(guessed.body)).toEqual({ code: "NOTE_HELD", error: NOTE_HELD });
 
     // And it can take its own note off again.
     const cleared = await save(friend, [...others, { ...piece(4, undefined, bare.id), replacesNote: "TEST ONLY VIP table by the door" }]);
