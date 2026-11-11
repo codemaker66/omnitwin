@@ -15,6 +15,8 @@ const migrationsFolder = join(apiRoot, "drizzle");
 export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/api-hot-paths-postgres.test.ts",
   "src/__tests__/client-search-postgres.test.ts",
+  // A guest lead is read only by the venue its name and phone were given to (audit enquiries-crm-4).
+  "src/__tests__/guest-lead-tenancy-postgres.test.ts",
   // Per-row subqueries name the outer row by its table (utils/outer-column.ts).
   "src/__tests__/correlated-subqueries-postgres.test.ts",
   "src/__tests__/booking-mutations-postgres.test.ts",
