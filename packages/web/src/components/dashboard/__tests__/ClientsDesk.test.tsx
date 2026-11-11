@@ -81,7 +81,7 @@ function contactProfile(overrides: Partial<ContactProfile> = {}): ContactProfile
       { id: DEAL, title: "Wedding reception", stage: "won", preferredDate: "2026-09-05", guestCount: 160, estimatedValueMinor: 1_250_000, currency: "GBP", updatedAt: "2026-06-15T09:00:00.000Z" },
     ],
     proposals: [
-      { id: PROPOSAL, opportunityId: DEAL, title: "Henderson wedding proposal", status: "accepted", currentVersion: 2, sentAt: "2026-06-12T09:00:00.000Z" },
+      { id: PROPOSAL, opportunityId: DEAL, title: "Henderson wedding proposal", status: "accepted", currentVersion: 2, sentAt: "2026-06-12T09:00:00.000Z", sentVersion: 2 },
     ],
     ...overrides,
   };
