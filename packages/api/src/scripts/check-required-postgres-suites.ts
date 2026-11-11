@@ -12,7 +12,7 @@ import { z } from "zod";
 // 11 November 2026 nineteen of them skipped on every run, the /health/ready
 // refusal among them (audit api-schema-db-2). The API step writes Vitest's JSON
 // report; this reads it and fails unless every file named here is in the
-// report and ran every one of its tests.
+// report and ran every test it has written (an it.todo is not yet a test).
 //
 // The list is explicit on purpose. A suite that needs no database is never
 // caught by a file-name pattern, and a new database suite joins by being named
@@ -157,6 +157,13 @@ export interface SuiteShortfall {
 
 /** A failed test still ran; its verdict belongs to the Vitest step itself. */
 const RAN = new Set(["passed", "failed"]);
+/**
+ * An it.todo is a test not yet written, not one skipped: no database makes it
+ * run, and a suite may keep a ledger of them beside the tests it runs
+ * (one-event-pain-points-postgres does). A missing database shows instead as
+ * skipped tests, through describe.skipIf.
+ */
+const NOT_YET_WRITTEN = "todo";
 
 function normalizedPath(path: string): string {
   const absolute = resolve(path);
@@ -164,8 +171,8 @@ function normalizedPath(path: string): string {
 }
 
 /**
- * Every required suite that is absent from the report, loaded no tests, or left
- * any test skipped, pending or todo. Empty when all of them ran in full.
+ * Every required suite that is absent from the report, ran none of its tests,
+ * or left any test skipped or pending. Empty when all of them ran in full.
  */
 export function requiredSuiteShortfalls(
   report: unknown,
@@ -187,12 +194,15 @@ export function requiredSuiteShortfalls(
       shortfalls.push({ file, reason: message === "" ? "ran no tests" : `ran no tests: ${message}` });
       continue;
     }
-    const unrun = result.assertionResults.filter((assertion) => !RAN.has(assertion.status));
+    const unrun = result.assertionResults.filter((assertion) =>
+      !RAN.has(assertion.status) && assertion.status !== NOT_YET_WRITTEN);
     const first = unrun[0];
     if (first !== undefined) {
       const statuses = [...new Set(unrun.map((assertion) => assertion.status))].join(", ");
       shortfalls.push({ file, reason: `did not run ${String(unrun.length)} of ${String(result.assertionResults.length)} tests `
         + `(${statuses}), the first being "${first.fullName ?? "an unnamed test"}"` });
+    } else if (!result.assertionResults.some((assertion) => RAN.has(assertion.status))) {
+      shortfalls.push({ file, reason: "ran no tests: every test in it is a todo" });
     }
   }
   return shortfalls;

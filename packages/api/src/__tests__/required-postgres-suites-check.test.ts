@@ -65,20 +65,33 @@ describe("requiredSuiteShortfalls", () => {
     expect(requiredSuiteShortfalls(report([fileResult(kept, ["passed", "failed"])]), apiRoot, [kept])).toEqual([]);
   });
 
-  it("names a suite that skipped whole or in part, or left a test todo or pending", () => {
+  it("names a suite that skipped whole or in part, or left a test pending", () => {
     const whole = "src/__tests__/whole-postgres.test.ts";
     const part = "src/__tests__/part-postgres.test.ts";
-    const todo = "src/__tests__/todo-postgres.test.ts";
     const pending = "src/__tests__/pending-postgres.test.ts";
     const shortfalls = requiredSuiteShortfalls(report([
       fileResult(whole, ["skipped", "skipped"]), fileResult(part, ["passed", "skipped"]),
-      fileResult(todo, ["passed", "todo"]), fileResult(pending, ["pending"]), fileResult(kept, ["passed"]),
-    ]), apiRoot, [kept, whole, part, todo, pending]);
-    expect(shortfalls.map((shortfall) => shortfall.file)).toEqual([whole, part, todo, pending]);
+      fileResult(pending, ["pending"]), fileResult(kept, ["passed"]),
+    ]), apiRoot, [kept, whole, part, pending]);
+    expect(shortfalls.map((shortfall) => shortfall.file)).toEqual([whole, part, pending]);
     expect(shortfalls[0]?.reason).toBe('did not run 2 of 2 tests (skipped), the first being "a suite case 1"');
     expect(shortfalls[1]?.reason).toBe('did not run 1 of 2 tests (skipped), the first being "a suite case 2"');
-    expect(shortfalls[2]?.reason).toContain("(todo)");
-    expect(shortfalls[3]?.reason).toContain("(pending)");
+    expect(shortfalls[2]?.reason).toContain("(pending)");
+  });
+
+  it("lets a suite keep todos beside the tests it runs, and still names one whose tests skipped among todos", () => {
+    // As one-event-pain-points-postgres reported in CI: 3 passed, 9 it.todo.
+    const ledger = "src/__tests__/ledger-postgres.test.ts";
+    const unprovisioned = "src/__tests__/unprovisioned-postgres.test.ts";
+    const onlyTodos = "src/__tests__/only-todos-postgres.test.ts";
+    expect(requiredSuiteShortfalls(report([fileResult(ledger, ["passed", "todo", "todo", "passed", "todo", "passed"])]),
+      apiRoot, [ledger])).toEqual([]);
+    // Without its database, describe.skipIf skips the real tests; the todos do not hide that.
+    expect(requiredSuiteShortfalls(report([fileResult(unprovisioned, ["skipped", "todo", "skipped"])]), apiRoot,
+      [unprovisioned])).toEqual([{ file: unprovisioned,
+      reason: 'did not run 2 of 3 tests (skipped), the first being "a suite case 1"' }]);
+    expect(requiredSuiteShortfalls(report([fileResult(onlyTodos, ["todo", "todo"])]), apiRoot, [onlyTodos]))
+      .toEqual([{ file: onlyTodos, reason: "ran no tests: every test in it is a todo" }]);
   });
 
   it("names a suite missing from the report, and one whose file loaded no tests", () => {
