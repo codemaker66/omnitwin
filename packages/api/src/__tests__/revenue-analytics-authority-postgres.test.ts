@@ -4,6 +4,7 @@ import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { getTableConfig, type PgTable } from "drizzle-orm/pg-core";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { addRotaDays, rotaInstant, rotaLocalDate } from "@omnitwin/types";
 import * as schema from "../db/schema.js";
 import { analyticsRoutes } from "../routes/revenue-analytics.js";
 
@@ -196,6 +197,35 @@ describe.skipIf(testUrl === undefined)("analytics authority on isolated PostgreS
       method: "GET", url: PRICED_ROUTES[0], headers: headers("staff", null),
     });
     expect(res.statusCode).toBe(403);
+  });
+
+  // Room utilisation counts the Diary's day: 04:00 to 04:00 on the venue's
+  // clock, so an evening that runs past midnight is one booked day in either
+  // season, and a booking's end is exclusive. Both bookings below were two
+  // days each under UTC calendar days whenever the clocks read GMT, and the
+  // first one in BST as well.
+  it("counts an evening that runs past midnight as one booked day", async () => {
+    const timeZone = "Europe/London";
+    await pool.query("UPDATE venues SET timezone = $1 WHERE id = $2", [timeZone, VENUE]);
+    const today = rotaLocalDate(Date.now(), timeZone);
+    const evening = addRotaDays(today, 5);
+    const dayToMidnight = addRotaDays(today, 8);
+    const ink = (startsAt: number, endsAt: number) => pool.query(
+      `INSERT INTO bookings (venue_id, space_id, kind, status, title, starts_at, ends_at)
+       VALUES ($1, $2, 'ink', 'active', 'Fixture booking', $3, $4)`,
+      [VENUE, SPACE, new Date(startsAt), new Date(endsAt)],
+    );
+    // 19:00 to 01:30 the next morning, and 09:00 to exactly midnight.
+    await ink(rotaInstant(evening, 19 * 60, timeZone), rotaInstant(evening, 25 * 60 + 30, timeZone));
+    await ink(rotaInstant(dayToMidnight, 9 * 60, timeZone), rotaInstant(dayToMidnight, 24 * 60, timeZone));
+
+    const res = await server.inject({ method: "GET", url: ROOM_USE_ROUTE, headers: headers("staff") });
+    expect(res.statusCode, res.body).toBe(200);
+    // Two booked days of the 90-day window is 2%.
+    expect(res.json()).toEqual({ data: [{
+      spaceId: SPACE, roomName: "Grand Hall", bookedEvents: 2, proposedEvents: 0,
+      utilisationPercent: 2, reviewBottlenecks: 0,
+    }] });
   });
 
   // Proposals need no enquiry (deals from phone calls), so accepted proposals
