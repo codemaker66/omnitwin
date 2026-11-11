@@ -26,9 +26,13 @@ import { placedFootprint } from "../keep-doors-clear.js";
 import type { LayoutRect } from "../auto-layout.js";
 import { PUBLISHED_CAPACITY_LABEL } from "../planner-truth.js";
 import { usePlannerEventStore } from "../../stores/planner-event-store.js";
+import { HALL_LENGTH, HALL_WIDTH } from "../../components/grand-hall/hall-spec.js";
 
-// The Grand Hall as the planner opens it (21 × 10.5 m) with its four doors'
-// clear spaces. The counts are worked by hand:
+// A 21 × 10.5 m hall, the Grand Hall's old hand-drawn size, with the Grand
+// Hall's four doors' clear spaces from the survey. The planner now opens the
+// hall at its scanned 21.135 × 10.59 m (data/room-geometries.ts), where the
+// theatre fill has room for 280 with the doors kept clear and 294 without
+// (the last test here). The counts below are worked by hand for 21 × 10.5 m:
 //
 // Banquet rounds (6 ft rounds of ten, 0.6 m behind every chair): the 14-round
 // stagger has its door-side row's rounds at x −8.34, 0 and 8.34, in front of
@@ -243,5 +247,17 @@ describe("Theatre rows keep the Grand Hall's doors clear", () => {
   it("names the doors in the spacing it used", () => {
     expect(autoFillBasis(plan("theatre", 100)))
       .toBe("Rows 0.9 m apart, a 1.1 m centre aisle, 2.4 m clear at the front and the doors kept clear.");
+  });
+
+  it("has room for 280 with the doors kept clear, 294 without, in the hall as the planner opens it", () => {
+    // The scanned interior gives a 21st row of 14: 268 and 280 above become
+    // 280 and 294 (Blake, 11 November 2026: "Yes, use the E57 size").
+    const scanned = planAutoFill("theatre", 400, HALL_LENGTH, HALL_WIDTH, undefined, { doorSpaces: DOORS });
+    if (scanned === null) throw new Error("no theatre plan");
+    expect([scanned.roomForSeats, scanned.roomForSeatsIgnoringDoors]).toEqual([280, 294]);
+    const doorless = planAutoFill("theatre", 400, HALL_LENGTH, HALL_WIDTH);
+    expect(doorless?.style === "theatre" ? doorless.rows : null).toBe(21);
+    expect(roomAtSpacingLine(scanned, THEATRE))
+      .toBe("Room for 280 of the 400 guests at this spacing with the doors kept clear; the venue publishes 250 for theatre.");
   });
 });

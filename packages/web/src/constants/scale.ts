@@ -62,8 +62,11 @@ export function scaleForRendering(dimensions: SpaceDimensions): SpaceDimensions 
 }
 
 /**
- * Grand Hall dimensions scaled for comfortable 3D rendering.
- * Real: 21m × 10.5m × 7m → Rendered: 42m × 21m × 7m (height unchanged)
+ * The Grand Hall in render space: the planner's room until a space loads, and
+ * the default room of the placement, guideline and visibility helpers. It is
+ * the hall's scanned 21.14 × 10.59 m with its clear 6.7 m to the coffered
+ * ceiling (TRADES_HALL_GRAND_HALL_DIMENSIONS), rendered as measured at
+ * RENDER_SCALE 1.
  */
 export const GRAND_HALL_RENDER_DIMENSIONS: SpaceDimensions =
   scaleForRendering(TRADES_HALL_GRAND_HALL_DIMENSIONS);

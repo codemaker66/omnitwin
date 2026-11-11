@@ -9,6 +9,7 @@ import {
 import {
   HALL_HALF_LENGTH,
   HALL_HALF_WIDTH,
+  HALL_HEIGHT,
   HALL_LENGTH,
   HALL_WALLS,
   HALL_WIDTH,
@@ -77,8 +78,11 @@ describe("room geometries — all rooms", () => {
 });
 
 describe("ceiling heights", () => {
-  it("Grand Hall is 7.0m", () => {
-    expect(roomGeometries["Grand Hall"]?.ceilingHeight).toBe(7.0);
+  it("Grand Hall is the scan's clear 6.7 m to the coffered ceiling, not the dome", () => {
+    // The release lead's decision of 11 November 2026: the room's height is
+    // hall-spec's HALL_HEIGHT, the one the drawn hall is built to.
+    expect(roomGeometries["Grand Hall"]?.ceilingHeight).toBe(HALL_HEIGHT);
+    expect(HALL_HEIGHT).toBe(6.7);
   });
 
   it("Saloon is 5.4m", () => {

@@ -157,8 +157,13 @@ describe("PlannerSpatialHud", () => {
     expect(panel.textContent).toContain("/ 180");
     expect(screen.getByTestId("planner-capacity-caption").textContent).toBe("Published 180 for dinner");
     expect(screen.getByTestId("planner-capacity-source").textContent).toBe("Published guide · Trades Hall · 9 Jul 2026");
-    // The Grand Hall's 220.5 m² at generic spacing would read 147; a visitor never sees it.
-    expect(panel.textContent).not.toMatch(/\b147\b|generic spacing|comfortable|within/i);
+    // The room is the Grand Hall as GRAND_HALL_RENDER_DIMENSIONS gives it, its
+    // scanned 21.14 × 10.59 m = 223.9 m², which at generic spacing (1.5 m² a
+    // guest) would read 149; a visitor never sees it.
+    const area = (GRAND_HALL_RENDER_DIMENSIONS.width / RENDER_SCALE) * (GRAND_HALL_RENDER_DIMENSIONS.length / RENDER_SCALE);
+    const generic = Math.floor(area / 1.5);
+    expect(generic).toBe(149);
+    expect(panel.textContent).not.toMatch(new RegExp(`\\b${String(generic)}\\b|generic spacing|comfortable|within`, "i"));
   });
 
   it("says plainly when a visitor's seats are above the published figure", () => {

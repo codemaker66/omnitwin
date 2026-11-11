@@ -24,9 +24,15 @@
 //
 // Accuracy: wall planes and opening edges to about ±2 cm (mesh tier
 // "ops-grade-2cm"). Everything fixed to the walls comes from the scan's relief
-// directly (hall-relief.ts), not from this file. The venue's published plan
-// (21 m × 10.5 m) is the planning record; the scan measures the panelled
-// interior at 21.14 m × 10.59 m.
+// directly (hall-relief.ts), not from this file.
+//
+// Planning record: this scanned interior, 21.135 m × 10.59 m (21.14 × 10.59 m
+// when shown) with a clear 6.7 m to the underside of the coffered ceiling, is
+// the Grand Hall's planning record, in place of the venue's published plan of
+// 21 m × 10.5 m. Blake, 11 November 2026: "Use the measurements captured from
+// the lidar /e57 data". The planner places on it (data/room-geometries.ts) and
+// the public pages state it (TRADES_HALL_ROOM_DIMENSIONS in @omnitwin/types).
+// The dome rises above part of the hall and is never given as its height.
 // ---------------------------------------------------------------------------
 
 export const HALL_LENGTH = 21.135;

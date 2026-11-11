@@ -160,7 +160,7 @@ describe("computeGuideline", () => {
     // X-axis guideline should show real room width
     const xHit: WallHit = { axis: "x", position: 0, wallCoord: 0 };
     const xG = computeGuideline(xHit, 1);
-    expect(xG.realDistance).toBeCloseTo(21); // 21m real width
+    expect(xG.realDistance).toBeCloseTo(21.14); // the Grand Hall's scanned 21.14 m
 
     // Z-axis guideline should show real room length
     const zHit: WallHit = { axis: "z", position: 0, wallCoord: 0 };

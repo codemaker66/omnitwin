@@ -37,6 +37,11 @@ export interface RoomGeometry {
 // A layout save refuses a piece centred outside the outline the API stores for
 // the room (lib/placement-validation.ts in the API), so that outline must
 // contain this one. Has a 7m diameter gilded dome in the ceiling centre.
+//
+// Its ceiling height is the scan's clear 6.7 m, floor to the underside of the
+// coffered ceiling (HALL_HEIGHT in hall-spec.ts); the dome rises above part of
+// the hall and is never the room's height. The section slider's top and the
+// bookmarks' framing read it through usePlannerRoomDimensions.
 // ---------------------------------------------------------------------------
 
 const GRAND_HALL_HW = 10.5675; // half the x extent = 21.135 m / 2
@@ -173,7 +178,7 @@ const robertAdamPolygon: readonly (readonly [number, number])[] = [
 export const roomGeometries: Readonly<Record<string, RoomGeometry>> = {
   "Grand Hall": {
     wallPolygon: grandHallPolygon,
-    ceilingHeight: 7.0,
+    ceilingHeight: 6.7, // hall-spec HALL_HEIGHT: the clear height to the coffered ceiling
     features: grandHallFeatures,
     hasDome: true,
     domeRadius: 3.5,
