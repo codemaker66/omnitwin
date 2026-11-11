@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
-import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lt, notInArray, or, sql } from "drizzle-orm";
 import {
+  EVENT_ENDED_STATUSES,
   RoomLayoutTimelineQuerySchema,
   RoomLayoutTimelineResponseSchema,
   type RoomLayoutTimelineQuery,
@@ -187,6 +188,9 @@ export async function roomLayoutTimelineRoutes(
 
     const range = await resolveRoomLayoutTimelineRange(db, query, room.timeZone);
     const { from, to } = range;
+    // An event that ended (cancelled; lost: every option went) will not
+    // happen and occupies no room, as on the Diary: its phases, layouts,
+    // guest counts and revenue estimates stay off the room's timeline.
     const phaseRows = await db
       .select({
         phaseId: eventPhases.id,
@@ -213,6 +217,7 @@ export async function roomLayoutTimelineRoutes(
       .where(and(
         eq(events.venueId, query.venueId),
         isNull(events.deletedAt),
+        notInArray(events.status, [...EVENT_ENDED_STATUSES]),
         eq(eventPhases.spaceId, query.spaceId),
         isNotNull(eventPhases.startsAt),
         gt(eventPhases.durationMinutes, 0),
