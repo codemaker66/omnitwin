@@ -128,8 +128,11 @@ describe.each(SHAPED_ROOMS)("a click in the %s", (name) => {
 });
 
 describe("a click in the Grand Hall, a rectangle centred on the origin", () => {
-  // Here the store still takes the ghost's spot through the grid and the walls again, as it always has:
-  // the rectangle's rule gives the same answer the second time. These held before the shaped rooms' fix.
+  // Here the store still takes the ghost's spot through the grid and the walls again, as it always has.
+  // On an empty floor, which is all these cases click over, that second pass gives the same answer, and
+  // they held before the shaped rooms' fix. With furniture already down it does not always (a chair set
+  // off its valid ghost, a trestle set back through a wall it had been pushed clear of): that is the
+  // main room's behaviour on master, left alone here, and these cases do not cover it.
   describe.each([["on", true], ["off", false]] as const)("with the grid %s", (_grid, snapEnabled) => {
     it.each(IN_HAND)("sets %s exactly where its valid ghost stood", (_what, item, seats) => {
       const { width, length } = GRAND_HALL_RENDER_DIMENSIONS;

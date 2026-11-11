@@ -345,10 +345,14 @@ function numberEdited(items: readonly PlacedItem[], editedIds: ReadonlySet<strin
  * Both are handed the spot its ghost stood on (lib/place-in-hand, lib/chair-question), which
  * updateGhost has already taken through the grid, the platform edges, the walls and the furniture
  * lines. In a room that is the centred rectangle of its size they take it through those steps a
- * second time, as they always have: the rectangle's wall rule gives the same answer twice. A room's
- * own floor (lib/room-floor) does not, because a piece pulled against one wall then faces walls it
- * did not face before, and the second pass set it down up to 1.44 m from its valid ghost, on a spot
- * nothing had judged against the other furniture. There the piece stands where it is handed.
+ * second time, as they always have. On an empty floor there the second pass gives the same answer.
+ * With furniture already down it does not always: in the Grand Hall with 72 chairs placed, the second
+ * review's probe had a chair set up to 1.16 m off its valid ghost, and a trestle that had been pushed
+ * clear of a wall set back through it. That is the main room's behaviour on master, and it is left
+ * alone here. On a room's own floor (lib/room-floor) the second pass went wrong on an empty floor
+ * too, because a piece pulled against one wall then faces walls it did not face before: it set the
+ * piece down up to 1.44 m from its valid ghost, on a spot nothing had judged against the other
+ * furniture. There the piece stands where it is handed.
  */
 function standsWhereHanded(): boolean {
   return useRoomDimensionsStore.getState().dimensions.floor !== undefined;
