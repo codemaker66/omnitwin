@@ -9,6 +9,7 @@ import { isLayoutTimelineMutationLocked } from "../../lib/layout-timeline-previe
 import { useLayoutTimelinePreviewStore } from "../../stores/layout-timeline-preview-store.js";
 import { getCatalogueItem } from "../../lib/catalogue.js";
 import { canApplyTableLinenToItem, isDiningTableItem } from "../../lib/furniture-semantics.js";
+import { heldNoteIds, noteHeldOn } from "../../lib/guest-plan-notes.js";
 import { GOLD, BORDER, CARD_BG, TEXT_SEC, TEXT_MUT } from "../../constants/ui-palette.js";
 import { ActivityStatus } from "../shared/Activity.js";
 import { useOnlineStatus } from "../../hooks/use-online-status.js";
@@ -29,6 +30,11 @@ import type { EditorObject } from "../../stores/editor-store.js";
 // selection and on unmount. With several pieces selected it belongs to the
 // table of the selection's unit, never to whichever id came first (often a
 // chair); with several tables, or none, the panel says so and takes no note.
+//
+// A guest plan's notes go only to the browser that made the plan. In any other
+// browser a piece that holds one shows a single line in place of the field
+// (HELD_NOTE_LINE): the note cannot be read here, so it cannot be written over
+// here either. A piece that holds none takes a note as ever.
 //
 // Privacy: the note is written only through the editor store's
 // setObjectNotes, the one recorded path. That path also lands the text in the
@@ -193,6 +199,16 @@ type NoteTarget =
   | { readonly kind: "many-tables" }
   | { readonly kind: "no-table" };
 
+const NO_HELD_NOTES: ReadonlySet<string> = new Set<string>();
+
+/**
+ * What stands in place of the note field on a piece whose note this browser
+ * is not shown: a guest plan's notes go only to the browser that made the
+ * plan, and every other one is told which pieces hold one. An empty field
+ * there took the person's words and the save refused them.
+ */
+const HELD_NOTE_LINE = "This piece has a note that cannot be shown or changed here.";
+
 /**
  * Which piece the note belongs to. The tables in the selection, or in the
  * group of anything selected, are counted by unit (a table group, or a set of
@@ -203,6 +219,9 @@ type NoteTarget =
 export function noteTargetFor(
   objects: readonly Pick<EditorObject, "id" | "assetDefinitionId" | "groupId" | "notes">[],
   selectedIds: ReadonlySet<string>,
+  /** Pieces holding a note this browser is not shown (lib/guest-plan-notes.ts):
+   *  such a table holds the unit's note as much as one whose note is on screen. */
+  heldIds: ReadonlySet<string> = NO_HELD_NOTES,
 ): NoteTarget | null {
   const selected = objects.filter((object) => selectedIds.has(object.id));
   if (selected.length === 0) return null;
@@ -211,7 +230,7 @@ export function noteTargetFor(
     && (selectedIds.has(object.id) || (object.groupId !== null && groups.has(object.groupId))));
   const units = new Set(tables.map((table) => table.groupId ?? table.id));
   if (units.size > 1) return { kind: "many-tables" };
-  const table = tables.find((candidate) => candidate.notes.trim().length > 0) ?? tables[0];
+  const table = tables.find((candidate) => candidate.notes.trim().length > 0 || heldIds.has(candidate.id)) ?? tables[0];
   if (table !== undefined) return { kind: "piece", id: table.id };
   const only = selected.length === 1 ? selected[0] : undefined;
   return only === undefined ? { kind: "no-table" } : { kind: "piece", id: only.id };
@@ -255,6 +274,7 @@ export function ObjectNotePanel({ embedded = false, mobile = false, viewMode = "
   const code = useEditorStore((s) => targetCode(noteTargetFor(
     s.objects,
     selectedIds.size > 0 || s.selectedObjectId === null ? selectedIds : new Set([s.selectedObjectId]),
+    heldNoteIds(s),
   )));
   const target = targetFromCode(code);
   const selectedId = target?.kind === "piece" ? target.id : null;
@@ -275,6 +295,8 @@ export function ObjectNotePanel({ embedded = false, mobile = false, viewMode = "
     const o = s.objects.find((x) => x.id === selectedId);
     return o === undefined ? null : o.notes;
   });
+  // The piece holds a note this browser is not shown: no field, only the line.
+  const noteHeld = useEditorStore((s) => selectedId !== null && noteHeldOn(s, selectedId));
   const layoutDirty = useEditorStore((s) => s.isDirty);
   const layoutSaving = useEditorStore((s) => s.isSaving);
   const layoutSaveFailed = useEditorStore((s) => s.saveError !== null);
@@ -374,6 +396,10 @@ export function ObjectNotePanel({ embedded = false, mobile = false, viewMode = "
           {target.kind === "many-tables"
             ? "Several tables are selected. Select one table to write its note."
             : "There is no table in this selection. Select a table to write its note."}
+        </p>
+      ) : noteHeld ? (
+        <p role="status" data-testid="object-note-held" style={{ margin: 0, fontSize: 12, color: TEXT_SEC, lineHeight: 1.5 }}>
+          {HELD_NOTE_LINE}
         </p>
       ) : (
         <>
