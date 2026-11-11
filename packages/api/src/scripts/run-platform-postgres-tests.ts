@@ -66,6 +66,8 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/chair-sizes-migration-postgres.test.ts",
   // Migration 0105: product writes share the foundry's global lock; the kill switch still excludes them (T-677).
   "src/__tests__/foundry-product-lock-postgres.test.ts",
+  // A 200-character account name on the floor: taps, requests and their steps, the handover picker and the request's thread keep 160, never refuse.
+  "src/__tests__/floor-long-names-postgres.test.ts",
 ] as const;
 
 /**
