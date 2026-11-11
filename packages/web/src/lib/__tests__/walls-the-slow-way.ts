@@ -241,3 +241,169 @@ export function areaOf(outline: Walls): number {
   for (const [ax, az, bx, bz] of wallsOf(outline)) twice += ax * bz - bx * az;
   return Math.abs(twice) / 2;
 }
+
+// ---------------------------------------------------------------------------
+// A unit set against the walls, for tests of the gangway review there (third
+// review of audit editor-save-4): which side of a unit a wall stands on,
+// whether a piece lies against a wall between its ends or only reaches its
+// end, and what floor a drawn location claims. Still nothing of the planner's.
+// ---------------------------------------------------------------------------
+
+/** The side of a room a gangway runs along. */
+export type Side = "xMin" | "xMax" | "zMin" | "zMax";
+
+/** Nearer than this two things touch, metres: a thousandth of a millimetre. */
+export const TOUCHING = 1e-6;
+
+/**
+ * The way square off a wall into the room, one metre long: found by stepping a
+ * millimetre off the wall's middle each way and asking which step is inside.
+ */
+export function squareIntoRoom(walls: Walls, wall: Wall): readonly [number, number] {
+  const [ax, az, bx, bz] = wall;
+  const length = Math.hypot(bx - ax, bz - az);
+  const squareX = -(bz - az) / length;
+  const squareZ = (bx - ax) / length;
+  const middleX = (ax + bx) / 2;
+  const middleZ = (az + bz) / 2;
+  const oneWay = insideWalls(walls, middleX + squareX * 0.001, middleZ + squareZ * 0.001);
+  const theOther = insideWalls(walls, middleX - squareX * 0.001, middleZ - squareZ * 0.001);
+  if (oneWay === theOther) throw new Error(`the wall ${JSON.stringify(wall)} has the room on both sides or neither`);
+  return oneWay ? [squareX, squareZ] : [-squareX, -squareZ];
+}
+
+/**
+ * The side of a unit a wall stands on when the unit stands in front of it: to
+ * its west (xMin) with the room east of the wall, and so on, by the greater
+ * part of the way square off the wall into the room (as much x as z counts as
+ * x).
+ */
+export function sideOfWall(walls: Walls, wall: Wall): Side {
+  const [intoX, intoZ] = squareIntoRoom(walls, wall);
+  if (Math.abs(intoX) >= Math.abs(intoZ) - 1e-9) return intoX > 0 ? "xMin" : "xMax";
+  return intoZ > 0 ? "zMin" : "zMax";
+}
+
+/** How far a piece reaches from its middle, metres. */
+function reachOf(piece: Shape): number {
+  return piece.kind === "disc" ? piece.radius : Math.hypot(piece.halfW, piece.halfD);
+}
+
+/**
+ * Where a piece comes nearest a wall between its ends, and how near: the wall
+ * walked a millimetre at a time with its first and last millimetre left out,
+ * and, where a step comes within a millimetre and a half of the piece, the
+ * two millimetres about the nearest step walked again a thousandth of a
+ * millimetre at a time. Only the steps the piece could reach are walked. The
+ * first of equal steps is kept. An infinite gap for a wall with no step
+ * between its first and last, or one the piece comes nowhere near.
+ */
+export function nearestBetweenEnds(piece: Shape, wall: Wall): { readonly gap: number; readonly x: number; readonly z: number } {
+  const [ax, az, bx, bz] = wall;
+  const length = Math.hypot(bx - ax, bz - az);
+  const steps = Math.max(1, Math.ceil(length / 0.001));
+  const ux = (bx - ax) / length;
+  const uz = (bz - az) / length;
+  const gapAt = (along: number): number => nearestOnShape(piece, ax + ux * along, az + uz * along).gap;
+  const alongPiece = (piece.x - ax) * ux + (piece.z - az) * uz;
+  const reach = reachOf(piece) + 0.002;
+  let gap = Number.POSITIVE_INFINITY;
+  let at = 0;
+  // A piece whose middle is further from the wall's line than it reaches comes nowhere near the wall.
+  if (Math.abs((piece.x - ax) * uz - (piece.z - az) * ux) > reach) return { gap, x: ax, z: az };
+  const first = Math.max(1, Math.floor(((alongPiece - reach) / length) * steps));
+  const last = Math.min(steps - 1, Math.ceil(((alongPiece + reach) / length) * steps));
+  for (let s = first; s <= last; s += 1) {
+    const here = gapAt((length * s) / steps);
+    if (here < gap) {
+      gap = here;
+      at = (length * s) / steps;
+    }
+  }
+  if (gap <= 0.0015 && gap > TOUCHING) {
+    const from = Math.max(length / steps, at - 0.001);
+    const to = Math.min(length - length / steps, at + 0.001);
+    for (let along = from; along <= to; along += 1e-6) {
+      const here = gapAt(along);
+      if (here < gap) {
+        gap = here;
+        at = along;
+      }
+    }
+  }
+  return { gap, x: ax + ux * at, z: az + uz * at };
+}
+
+/** How near a piece comes to a wall between its ends (nearestBetweenEnds). */
+export function gapBetweenEnds(piece: Shape, wall: Wall): number {
+  return nearestBetweenEnds(piece, wall).gap;
+}
+
+/** Whether a piece lies against a wall, touching it or through it, somewhere between the wall's ends. */
+export function liesAgainst(piece: Shape, wall: Wall): boolean {
+  return gapBetweenEnds(piece, wall) <= TOUCHING;
+}
+
+/** Whether a piece touches, or covers, a point on the floor. */
+export function reaches(piece: Shape, x: number, z: number): boolean {
+  return nearestOnShape(piece, x, z).gap <= TOUCHING;
+}
+
+/**
+ * Whether two walls stand on one line with the room on the same side of
+ * both, as the walls either side of an alcove's mouth or a door recess do.
+ */
+export function inOneLine(walls: Walls, wall: Wall, other: Wall): boolean {
+  const [intoX, intoZ] = squareIntoRoom(walls, wall);
+  const [otherX, otherZ] = squareIntoRoom(walls, other);
+  const offLine = (x: number, z: number): number => Math.abs((x - wall[0]) * intoX + (z - wall[1]) * intoZ);
+  return intoX * otherX + intoZ * otherZ > 1 - 1e-9 && offLine(other[0], other[1]) <= TOUCHING && offLine(other[2], other[3]) <= TOUCHING;
+}
+
+/** What a drawn floor claims: how many spots of it were asked, how many are not the room's floor, how many are further than `reachM` from every one of `near`. */
+export interface FloorClaims {
+  readonly spots: number;
+  readonly offTheFloor: number;
+  readonly beyondReach: number;
+  /** The first spot found wrong, for the telling. */
+  readonly first: string | null;
+}
+
+/**
+ * A drawn floor asked spot by spot: each of its corners, and the middle of
+ * each cell of a 15 by 15 grid over its bounds that is inside it (its edges
+ * wind round the spot, so floor drawn as several parts joined by a line there
+ * and back is asked part by part and the line claims nothing). A spot is the
+ * room's floor inside the walls or within `slack` of one, and within reach
+ * when one of the walls `near` is no further than `reachM` and `slack`.
+ */
+export function floorClaims(walls: Walls, near: readonly Wall[], floor: Walls, reachM: number, slack: number): FloorClaims {
+  const xs = floor.map(([x]) => x);
+  const zs = floor.map(([, z]) => z);
+  const [minX, maxX, minZ, maxZ] = [Math.min(...xs), Math.max(...xs), Math.min(...zs), Math.max(...zs)];
+  const asked: (readonly [number, number])[] = [...floor];
+  for (let i = 0; i < 15; i += 1) {
+    for (let j = 0; j < 15; j += 1) {
+      const x = minX + ((maxX - minX) * (i + 0.5)) / 15;
+      const z = minZ + ((maxZ - minZ) * (j + 0.5)) / 15;
+      if (insideWalls(floor, x, z)) asked.push([x, z]);
+    }
+  }
+  let offTheFloor = 0;
+  let beyondReach = 0;
+  let first: string | null = null;
+  for (const [x, z] of asked) {
+    const at = `(${x.toFixed(3)}, ${z.toFixed(3)})`;
+    if (!onOrInside(walls, x, z, slack)) {
+      offTheFloor += 1;
+      first ??= `${at} is outside the walls`;
+      continue;
+    }
+    const nearest = Math.min(...near.map(([ax, az, bx, bz]) => pointToStretch(x, z, ax, az, bx, bz)));
+    if (nearest > reachM + slack) {
+      beyondReach += 1;
+      first ??= `${at} is ${nearest.toFixed(3)} m from the nearest wall it is drawn for`;
+    }
+  }
+  return { spots: asked.length, offTheFloor, beyondReach, first };
+}
