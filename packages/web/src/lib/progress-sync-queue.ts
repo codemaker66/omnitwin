@@ -14,8 +14,10 @@ import { openCache, type CacheHandle } from "./idb-cache.js";
 //   - On toggle, the HallkeeperPage attempts the PATCH immediately.
 //   - If the PATCH rejects (network error / 5xx), the operation is
 //     enqueued to IndexedDB under `{configId}:{rowKey}`.
-//   - A `flushPendingProgress` call (fired on `online` events + on
-//     mount) drains the queue by re-issuing each PATCH.
+//   - The open sheet drains the whole device's queue, every sheet's
+//     ticks, by re-issuing each PATCH: when a sheet is opened, when the
+//     device comes back online, when the page is shown again, and
+//     every QUEUE_RETRY_MS while anything still waits.
 //   - Successful re-issues delete the queue entry.
 //
 // The queue value shape is `{ configId, rowKey, desiredChecked,
@@ -52,6 +54,14 @@ export interface QueuedProgressOp {
 
 const DB_NAME = "omnitwin-hallkeeper";
 const STORE_NAME = "progress-queue";
+
+/**
+ * How often an open sheet tries the queue again while any tick waits. A tick
+ * queued on a 5xx or a blip has no reconnect to wait for: the browser never
+ * went offline, so no "online" event will come. The Day Board's own queue
+ * keeps the same beat (`use-slot-observations.ts`).
+ */
+export const QUEUE_RETRY_MS = 30_000;
 
 /** The IndexedDB key of a queued tick. A tick with no event keeps the key ops
  *  were stored under before ticks belonged to events, so an op already queued

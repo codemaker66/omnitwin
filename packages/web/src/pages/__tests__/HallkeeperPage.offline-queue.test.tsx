@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { Link, MemoryRouter, Route, Routes } from "react-router-dom";
 import { HallkeeperSheetV2Schema, type HallkeeperSheetV2 } from "@omnitwin/types";
 import { HallkeeperPage } from "../HallkeeperPage.js";
-import { ackProgress, listPendingProgress } from "../../lib/progress-sync-queue.js";
+import { ackProgress, enqueueProgress, listPendingProgress, QUEUE_RETRY_MS } from "../../lib/progress-sync-queue.js";
 
 // ---------------------------------------------------------------------------
 // The hallkeeper sheet's ticks, through its real offline queue.
@@ -267,5 +267,79 @@ describe("a row's ticks reach the server in the order they were made", () => {
     await settle();
     expect(server.ticked(CONFIG_A)).toBe(false);
     expect((await row(false)).getAttribute("aria-checked")).toBe("false");
+  });
+});
+
+// Audit hallkeeper-web-3: a tick queued on a 5xx or a blip has no "online"
+// event to wait for, and a tick queued on one room's sheet must not wait for
+// that same sheet to be opened again on that same device.
+describe("ticks that are waiting get sent", () => {
+  it("tries a tick queued on a server blip again, with no reconnect to wait for", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let serverDown = true;
+    const server = serve({ onWrite: () => (serverDown ? unavailable() : "take") });
+    mount();
+    fireEvent.click(await row(false));
+    const badge = await screen.findByRole("status", { name: ONE_PENDING });
+    // The WiFi never dropped, so the badge must not say it is waiting for WiFi.
+    expect(badge.textContent).not.toMatch(/wi-?fi/iu);
+
+    serverDown = false;
+    await act(async () => { await vi.advanceTimersByTimeAsync(QUEUE_RETRY_MS); });
+    await waitFor(() => { expect(screen.queryByRole("status", { name: ONE_PENDING })).toBeNull(); });
+    expect(server.ticked(CONFIG_A)).toBe(true);
+    expect(await listPendingProgress()).toEqual([]);
+    expect((await row(true)).getAttribute("aria-checked")).toBe("true");
+  });
+
+  it("tries again when the sheet is shown again", async () => {
+    let serverDown = true;
+    const server = serve({ onWrite: () => (serverDown ? unavailable() : "take") });
+    mount();
+    fireEvent.click(await row(false));
+    await screen.findByRole("status", { name: ONE_PENDING });
+
+    serverDown = false;
+    // The phone is unlocked, or the tab comes back to the front.
+    act(() => { document.dispatchEvent(new Event("visibilitychange")); });
+    await waitFor(() => { expect(screen.queryByRole("status", { name: ONE_PENDING })).toBeNull(); });
+    expect(server.ticked(CONFIG_A)).toBe(true);
+    expect(await listPendingProgress()).toEqual([]);
+  });
+
+  it("sends ticks waiting for another room's sheet from whichever sheet is open", async () => {
+    // Queued on the second room's sheet earlier today; that sheet is closed.
+    await enqueueProgress(CONFIG_B, ROW_KEY, true, null);
+    const server = serve();
+    mount();
+    await row(false);
+    await queueIsEmpty();
+    expect(server.writes).toEqual([{ configId: CONFIG_B, rowKey: ROW_KEY, checked: true }]);
+    expect(server.ticked(CONFIG_B)).toBe(true);
+    // The open sheet's own row is nobody's to tick but the hallkeeper's.
+    expect(server.ticked(CONFIG_A)).toBe(false);
+    expect((await row(false)).getAttribute("aria-checked")).toBe("false");
+  });
+
+  it("still sends a room's waiting ticks after the hallkeeper has moved to another room's sheet", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let serverDown = true;
+    const server = serve({ onWrite: () => (serverDown ? unavailable() : "take") });
+    mount();
+    fireEvent.click(await row(false));
+    await screen.findByRole("status", { name: ONE_PENDING });
+
+    fireEvent.click(screen.getByRole("link", { name: "Open second sheet" }));
+    await screen.findByText("Second dinner", { exact: true, selector: "p" });
+    await row(false);
+    // The badge counts the open sheet's ticks, and this one is the first room's.
+    await waitFor(() => { expect(screen.queryByRole("status", { name: ONE_PENDING })).toBeNull(); });
+    expect(await listPendingProgress()).toHaveLength(1);
+
+    serverDown = false;
+    await act(async () => { await vi.advanceTimersByTimeAsync(QUEUE_RETRY_MS); });
+    await queueIsEmpty();
+    expect(server.ticked(CONFIG_A)).toBe(true);
+    expect(server.ticked(CONFIG_B)).toBe(false);
   });
 });

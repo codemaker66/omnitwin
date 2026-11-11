@@ -707,6 +707,26 @@ describe("HallkeeperPage keeps the checklist with the venue's team", () => {
     expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "PATCH")).toHaveLength(0);
   });
 
+  // The queue is the device's. Sent in a client's name the venue team's
+  // waiting tick could only be refused, and a refused tick is dropped.
+  it("a client's sheet sends none of the venue team's waiting ticks, and drops none", async () => {
+    signIn("client");
+    vi.mocked(listPendingProgress).mockResolvedValue([
+      { configId: CONFIG_A, eventId: null, rowKey: ROW_KEY, desiredChecked: false, queuedAt: checkedAt },
+    ]);
+    const fetchMock = serveTicked();
+    mount();
+
+    await screen.findByRole("checkbox", { name: /Round table/u, checked: true });
+    await act(async () => { await new Promise((resolve) => { setTimeout(resolve, 40); }); });
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "PATCH")).toHaveLength(0);
+    expect(ackProgress).not.toHaveBeenCalled();
+    expect(screen.queryByRole("status", { name: "1 offline edit pending sync" })).toBeNull();
+    // Leave the sheet before this suite signs the reader out: a sheet still
+    // open with nobody signed in is no longer a client's.
+    cleanup();
+  });
+
   it("the venue's hallkeeper still ticks", async () => {
     signIn("hallkeeper");
     const fetchMock = serveTicked();
