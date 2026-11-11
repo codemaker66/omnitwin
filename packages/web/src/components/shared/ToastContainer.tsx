@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { useToastStore } from "../../stores/toast-store.js";
 
 // ---------------------------------------------------------------------------
@@ -23,17 +24,36 @@ const TOAST_COLORS: Record<string, ToastTone> = {
   info: INFO_COLORS,
 };
 
-export function ToastContainer(): React.ReactElement | null {
+export function ToastContainer(): React.ReactElement {
   const toasts = useToastStore((s) => s.toasts);
   const removeToast = useToastStore((s) => s.removeToast);
+  const holdToasts = useToastStore((s) => s.holdToasts);
+  const releaseToasts = useToastStore((s) => s.releaseToasts);
+  // Somebody is reading while the pointer rests on the notifications or the
+  // keyboard is inside them; the clock starts again only when both have left.
+  const reading = useRef({ pointer: false, keyboard: false });
+  const setReading = (how: "pointer" | "keyboard", on: boolean): void => {
+    reading.current[how] = on;
+    if (reading.current.pointer || reading.current.keyboard) holdToasts();
+    else releaseToasts();
+  };
+  // The page is not left holding the clock if this goes while someone reads.
+  useEffect(() => releaseToasts, [releaseToasts]);
 
-  if (toasts.length === 0) return null;
-
+  // The region is on the page from the first paint and stays when it empties.
+  // A live region created together with its first message is commonly not
+  // announced, so "Venue settings saved" used to go unheard.
   return (
     <div
       role="status"
       aria-live="polite"
       aria-label="Notifications"
+      onMouseEnter={() => { setReading("pointer", true); }}
+      onMouseLeave={() => { setReading("pointer", false); }}
+      onFocus={() => { setReading("keyboard", true); }}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setReading("keyboard", false);
+      }}
       style={{
         position: "fixed", top: 16, right: 16, zIndex: 500,
         display: "flex", flexDirection: "column", gap: 8,
