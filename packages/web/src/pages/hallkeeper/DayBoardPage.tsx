@@ -31,6 +31,9 @@ import { crewBySlot, unstaffedTurnRounds, UNSTAFFED_HORIZON_MS } from "./lib/tur
 import { useRotaDay } from "./lib/use-rota-day.js";
 import { arrivalNotices, arrivalParts } from "./lib/supplier-notices.js";
 import { useSupplierArrivals } from "./lib/use-supplier-arrivals.js";
+import { buildingDay } from "./lib/building-day.js";
+import { useBuildingChecks } from "./lib/use-building-checks.js";
+import { BuildingSection } from "./DayBoardBuilding.js";
 import { ChimeToggle } from "../../components/requests/ChimeToggle.js";
 import { ShiftHandover } from "../../components/requests/ShiftHandover.js";
 import { PushAlertsToggle } from "../../components/requests/PushAlertsToggle.js";
@@ -461,6 +464,11 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
   useEffect(() => { if (data !== null) refreshSuppliers(); }, [data, refreshSuppliers]);
   const plansSuppliers = !wall && administersVenue(user, venueId);
   const marksDoor = !wall && user !== null && venueId !== null && user.venueId === venueId && hasRole(VENUE_FLOOR_ROLES, user.role);
+  // The building: when it must be open, when it can be locked up, and the
+  // venue's own checks for each, on the shown day. The wall ticks nothing.
+  const checks = useBuildingChecks(venueId, shownDate, venueId !== null && !wall);
+  const boardArrivals = suppliers.arrivals;
+  const building = useMemo(() => buildingDay(lanes, boardArrivals, range), [lanes, boardArrivals, range]);
   const changedBySlot = useMemo(() => new Map([...changesBySlot]
     .filter(([, changes]) => changes.length > 0)
     .map(([bookingId, changes]) => [bookingId, changes.length] as const)), [changesBySlot]);
@@ -915,6 +923,11 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
           {!beside && rail}
 
           {notices}
+
+          {/* The building's day: open by, lock up after, and its own checks. */}
+          {board !== null && (
+            <BuildingSection building={building} api={checks} boardDate={shownDate} timeZone={timeZone} canTick={marksDoor} canPlan={plansSuppliers} />
+          )}
 
           {/* The rooms, what they show and the hours across them; a room
               can be chosen on its own from the list beside. */}

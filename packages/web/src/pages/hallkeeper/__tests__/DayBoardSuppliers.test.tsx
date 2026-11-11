@@ -96,7 +96,7 @@ describe("SuppliersSection", () => {
     const api = show({ arrivals: [arrival()], canPlan: true });
     fireEvent.click(screen.getByRole("button", { name: "Change The Kelvin Reelers" }));
     const form = screen.getByRole("form", { name: "Change The Kelvin Reelers" });
-    expect((within(form).getByLabelText("Arrives")).value).toBe("20:30");
+    expect(within(form).getByLabelText<HTMLInputElement>("Arrives").value).toBe("20:30");
     fireEvent.change(within(form).getByLabelText("Arrives"), { target: { value: "21:00" } });
     fireEvent.click(within(form).getByRole("button", { name: "Save" }));
     await waitFor(() => { expect(api.change).toHaveBeenCalled(); });

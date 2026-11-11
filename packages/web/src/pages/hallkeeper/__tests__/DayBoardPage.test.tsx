@@ -106,6 +106,17 @@ vi.mock("../../../api/supplier-arrivals.js", () => ({
   updateSupplierArrival: () => Promise.reject(new Error("not in this test")),
   removeSupplierArrival: () => Promise.reject(new Error("not in this test")),
 }));
+// The building's own checks: none unless a case feeds them.
+const checksApi = vi.hoisted(() => ({
+  get: vi.fn<(venueId: string, day: string) => Promise<unknown>>(),
+  mark: vi.fn<(venueId: string, checkId: string, day: string) => Promise<unknown>>(),
+}));
+vi.mock("../../../api/building-checks.js", () => ({
+  getBuildingChecks: (venueId: string, day: string) => checksApi.get(venueId, day),
+  markBuildingCheck: (venueId: string, checkId: string, day: string) => checksApi.mark(venueId, checkId, day),
+  unmarkBuildingCheck: () => Promise.reject(new Error("not in this test")),
+  replaceBuildingChecks: () => Promise.reject(new Error("not in this test")),
+}));
 // Who is on setup for each turn-round, from the published rota: a week with
 // no setup planned unless a case feeds one.
 const rotaMock = vi.hoisted(() => vi.fn<(venueId: string, start: string | null) => Promise<unknown>>());
@@ -302,6 +313,9 @@ beforeEach(() => {
   floor.acknowledge.mockReset();
   floor.acknowledge.mockResolvedValue({});
   changeoverMock.mockReset();
+  checksApi.get.mockReset();
+  checksApi.get.mockImplementation((_venueId, day) => Promise.resolve({ day, opening: [], lockup: [] }));
+  checksApi.mark.mockReset();
   arrivalsApi.list.mockReset();
   arrivalsApi.list.mockResolvedValue([]);
   arrivalsApi.step.mockReset();
@@ -1827,6 +1841,45 @@ describe("DayBoardPage: what changed since the floor last looked", () => {
     fireEvent.click(await screen.findByRole("button", { name: /^Chamber dinner,/u }));
     expect(await screen.findByText(/^Changes seen by Jamie at the door, \d{2}:\d{2}\.$/u)).toBeTruthy();
     expect(screen.queryByText("Changed")).toBeNull();
+  });
+});
+
+describe("DayBoardPage: the building", () => {
+  const at = (minutes: number): string => new Date(Date.now() + minutes * 60_000).toISOString();
+  const ALARM = "00000000-0000-4000-8000-0000000006c1";
+
+  function day(): CalendarResponse["entries"] {
+    return [
+      { ...liveBooking(), id: "00000000-0000-4000-8000-0000000000b8", title: "Dinner", eventId: "00000000-0000-4000-8000-0000000000e8", startsAt: at(60), endsAt: at(300) },
+    ] as CalendarResponse["entries"];
+  }
+
+  it("says when the building opens and locks up, and lets the floor tick its own checks", async () => {
+    getCalendarMock.mockResolvedValue(calendarFixture(day()));
+    checksApi.get.mockImplementation((_venueId, shown) => Promise.resolve({
+      day: shown, opening: [{ id: ALARM, kind: "opening", label: "Alarm unset", retired: false, mark: null }], lockup: [],
+    }));
+    checksApi.mark.mockImplementation(() => Promise.resolve({
+      id: ALARM, kind: "opening", label: "Alarm unset", retired: false, mark: { doneAt: at(0), doneByName: "Elaine" },
+    }));
+    renderBoard();
+    const section = await screen.findByRole("region", { name: "The building" });
+    await waitFor(() => { expect(within(section).getByText(/^Open by \d{2}:\d{2} · Lock up after \d{2}:\d{2}.* · opening 0 of 1$/u)).toBeTruthy(); });
+    fireEvent.click(within(section).getByText("The building"));
+    fireEvent.click(within(section).getByRole("checkbox", { name: "Alarm unset" }));
+    await waitFor(() => { expect(checksApi.mark).toHaveBeenCalled(); });
+    const [venueId, checkId, shownDay] = checksApi.mark.mock.calls[0] ?? [];
+    expect([venueId, checkId]).toEqual([VENUE, ALARM]);
+    expect(shownDay).toBe(checksApi.get.mock.calls[0]?.[1]);
+    expect(await within(section).findByText(/^Elaine · \d{2}:\d{2}$/u)).toBeTruthy();
+  });
+
+  it("reads no checks on the wall, which ticks nothing", async () => {
+    getCalendarMock.mockResolvedValue(calendarFixture(day()));
+    render(<MemoryRouter initialEntries={["/hallkeeper/today?register=wall"]}><DayBoardPage /></MemoryRouter>);
+    expect(await screen.findByText("Dinner")).toBeTruthy();
+    expect(checksApi.get).not.toHaveBeenCalled();
+    expect(screen.queryByRole("region", { name: "The building" })).toBeNull();
   });
 });
 

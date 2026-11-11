@@ -1466,6 +1466,8 @@ export * from "./sheet-paper-check.js";
 export * from "./changeover.js";
 // Supplier arrivals: who comes to the building for a booking, when, and at which door (T-692).
 export * from "./supplier-arrivals.js";
+// Opening and lock-up: the building's own checks, ticked each day (T-693).
+export * from "./building-checks.js";
 
 // The hallkeeper's brief derived from a sheet (day in order, store list,
 // setup steps, plan markers, keep-in-view facts), shared by paper and screen.
