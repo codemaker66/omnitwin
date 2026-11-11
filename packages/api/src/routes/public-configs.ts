@@ -12,10 +12,16 @@ import {
   assetDefinitions,
 } from "../db/schema.js";
 import type { Database } from "../db/client.js";
-import { syncPlacedObjectBatch } from "../lib/placed-object-batch.js";
+import { syncPlacedObjectBatch, type PlacedObjectBatchItem, type PlacedObjectRow } from "../lib/placed-object-batch.js";
+import { writeOrRefuse } from "../services/people-records.js";
 import { emit } from "../observability/event-bus.js";
 import { generateUniqueShortCode } from "../services/shortcode.js";
-import { generateClaimSecret, hashClaimSecret } from "../services/configuration-claim-secrets.js";
+import {
+  PLAN_CLAIM_SECRET_HEADER,
+  claimSecretMatches,
+  generateClaimSecret,
+  hashClaimSecret,
+} from "../services/configuration-claim-secrets.js";
 import { GuestSaveBudget } from "../services/guest-save-budget.js";
 import {
   validatePlacementsInPolygon,
@@ -54,16 +60,93 @@ const MAX_PUBLIC_OBJECT_METADATA_BYTES = 4 * 1024;
 // A plan at the 500-piece cap with every piece labelled is about 300 KB.
 const PUBLIC_BATCH_BODY_LIMIT_BYTES = 512 * 1024;
 
+/** What a piece says, in place of its note, to a reader the note is kept from
+ *  (withoutNote below). It is this route's word to a reader, never a fact
+ *  about the piece, so a save that sends it back does not store it. */
+const NOTE_HELD = "noteHeld";
+
 const PublicObjectMetadata = z.record(z.string(), z.unknown()).refine(
   (metadata) => Buffer.byteLength(JSON.stringify(metadata)) <= MAX_PUBLIC_OBJECT_METADATA_BYTES,
   "A piece's details are too large to save",
-);
+).transform((metadata) => Object.fromEntries(Object.entries(metadata).filter(([key]) => key !== NOTE_HELD)));
 
 /** The bytes a save asks the database to keep: its body as sent. */
 function saveBytes(request: FastifyRequest): number {
   const declared = Number(request.headers["content-length"]);
   if (Number.isFinite(declared) && declared > 0) return declared;
   return Buffer.byteLength(JSON.stringify(request.body ?? null));
+}
+
+// ---------------------------------------------------------------------------
+// Who reads a guest plan's notes (final review, TENANCY-3)
+//
+// Anyone holding a guest plan's id can open and edit the plan; that is what a
+// shared link is. A piece's note is whatever the guest typed on a table, which
+// can be health information ("nut allergy, seat by the door"), and the plan's
+// row also carries the venue's review note and event instructions. Those go
+// only to the browser that made the plan: it alone was given the plan's claim
+// secret (POST /configurations below) and presents it in a request header
+// (PLAN_CLAIM_SECRET_HEADER). Staff read them signed in, through
+// GET /configurations/:id. A plan with no stored secret (made before migration
+// 0102, or already claimed) has no such browser.
+//
+// One address answering two readers differently needs two more things said.
+//
+// A read says which answer it is. `notesIncluded` is true only on an answer
+// that carries the plan's notes. On any other, each piece that holds a note
+// says so (`noteHeld`) in place of the note, so the planner can show that the
+// piece has one instead of an empty field to write over.
+//
+// A save says what it was made from. That the saving browser holds the secret
+// says nothing about the copy it is saving: a page that read the plan without
+// its notes keeps unsaved work on the device, and the maker's browser later
+// restores it and saves. So a save's notes are taken as the whole truth only
+// when it presents the secret AND declares (`notesIncluded`) that the document
+// it saves was read with them. Every other save is settled note by note
+// (settledNotes below): it never clears or changes the note of a piece it
+// sends without having read that note, and it is never answered 200 for a
+// note that was not taken.
+//
+// What this does not do: a piece left out of a save is removed, and its note
+// with it. Anyone holding the plan's id may remove a piece, as before; the
+// planner shows which pieces hold a note the person cannot see.
+// ---------------------------------------------------------------------------
+
+type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
+
+async function presentsClaimSecret(db: Database, configId: string, request: FastifyRequest): Promise<boolean> {
+  const presented = request.headers[PLAN_CLAIM_SECRET_HEADER];
+  if (typeof presented !== "string" || presented.length < 16 || presented.length > 256) return false;
+  const [secret] = await db.select({ secretHash: configurationClaimSecrets.secretHash })
+    .from(configurationClaimSecrets)
+    .where(eq(configurationClaimSecrets.configurationId, configId))
+    .limit(1);
+  return secret !== undefined && claimSecretMatches(secret.secretHash, presented);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** The note a piece holds, if it holds one. */
+function noteOf(metadata: unknown): string | null {
+  const note = isRecord(metadata) ? metadata["notes"] : undefined;
+  return typeof note === "string" && note.length > 0 ? note : null;
+}
+
+/** A piece as any holder of the plan's id reads it: where it stands and how it
+ *  is dressed. Its note is left out, and a piece that holds one says so. The
+ *  mark is only ever this route's word: one found on the row is not passed on. */
+function withoutNote<T extends { readonly metadata: unknown }>(piece: T): T {
+  if (!isRecord(piece.metadata) || !("notes" in piece.metadata || NOTE_HELD in piece.metadata)) return piece;
+  const kept = Object.fromEntries(Object.entries(piece.metadata).filter(([key]) => key !== "notes" && key !== NOTE_HELD));
+  return { ...piece, metadata: noteOf(piece.metadata) === null ? kept : { ...kept, [NOTE_HELD]: true } };
+}
+
+/** The plan's row as any holder of its id reads it: without the venue's
+ *  review note or the event instructions kept in its metadata. */
+function withoutVenueNotes<T extends { readonly reviewNote: string | null; readonly metadata: unknown }>(plan: T): T {
+  return { ...plan, reviewNote: null, metadata: null };
 }
 
 const BatchObjectItem = z.object({
@@ -78,12 +161,121 @@ const BatchObjectItem = z.object({
   scale: z.number().positive().default(1),
   sortOrder: z.number().int().nonnegative().default(0),
   metadata: PublicObjectMetadata.nullable().optional(),
+  // The note this piece's note replaces, as its sender last had it confirmed
+  // (settledNotes). Read for the save, never stored.
+  replacesNote: z.string().max(MAX_PUBLIC_OBJECT_METADATA_BYTES).optional(),
 });
+
+type IncomingPiece = z.infer<typeof BatchObjectItem>;
 
 const BatchBody = z.object({
   expectedRevision: z.number().int().min(1),
   objects: z.array(BatchObjectItem).max(500),
+  // The document being saved was read with the plan's notes, so its notes are
+  // the whole truth. Believed only with the plan's claim secret.
+  notesIncluded: z.boolean().optional(),
 });
+
+interface SettledNotes {
+  /** The batch to store. */
+  readonly pieces: readonly PlacedObjectBatchItem[];
+  /** The pieces whose note this save would have changed without having read it. */
+  readonly refused: readonly string[];
+}
+
+/**
+ * The notes of a save that has not shown it read the plan's notes, settled
+ * against the notes the plan holds. Such a save comes from a browser that
+ * sends each piece back without the note it never saw, so:
+ *
+ *   - a piece sent without a note keeps the note it holds. It cannot mean
+ *     "clear": that would erase every note the first time a chair was moved;
+ *   - a note lands on a piece that holds none, and a piece sent with the note
+ *     it already holds is unchanged;
+ *   - a piece that names the note it replaces (`replacesNote`), and names it
+ *     rightly, has shown its sender knows that note, so its note is taken as
+ *     sent: changed or cleared. This is how a browser goes on writing,
+ *     corrects or removes a note it wrote itself, which the planner's
+ *     autosave often stores half-typed;
+ *   - any other note on a piece that holds a different one refuses the whole
+ *     save. Storing the old note and answering 200 threw the sender's words
+ *     away unseen.
+ *
+ * Must run inside the save's transaction, after the revision is advanced, so
+ * the notes read are the ones this save replaces.
+ */
+async function settledNotes(
+  tx: Transaction,
+  configId: string,
+  incoming: readonly IncomingPiece[],
+): Promise<SettledNotes> {
+  const stored = await tx.select({ id: placedObjects.id, metadata: placedObjects.metadata })
+    .from(placedObjects)
+    .where(eq(placedObjects.configurationId, configId));
+  const held = new Map<string, string>();
+  for (const row of stored) {
+    const note = noteOf(row.metadata);
+    if (note !== null) held.set(row.id, note);
+  }
+  const refused: string[] = [];
+  const pieces = incoming.map((piece) => {
+    if (piece.id === undefined) return piece;
+    const storedNote = held.get(piece.id);
+    if (storedNote === undefined) return piece;
+    const sent = noteOf(piece.metadata);
+    if (sent === storedNote || piece.replacesNote === storedNote) return piece;
+    if (sent === null && piece.replacesNote === undefined) {
+      return { ...piece, metadata: { ...(piece.metadata ?? {}), notes: storedNote } };
+    }
+    refused.push(piece.id);
+    return piece;
+  });
+  return { pieces, refused };
+}
+
+/**
+ * A save's answer to a browser that is not shown the plan's notes: each piece
+ * as stored, with its note only where this save itself sent that very note.
+ * That tells the sender nothing it did not write, and the planner takes the
+ * answer as the document, so leaving the note out wiped what the person had
+ * just typed from their screen. Any other piece that holds a note says so.
+ */
+function withoutUnsentNotes(
+  saved: readonly PlacedObjectRow[],
+  incoming: readonly IncomingPiece[],
+): readonly PlacedObjectRow[] {
+  const sent = new Map<string, string | null>();
+  for (const piece of incoming) {
+    if (piece.id !== undefined) sent.set(piece.id, noteOf(piece.metadata));
+  }
+  return saved.map((row) => {
+    // A piece this save placed holds exactly what the save sent.
+    if (!sent.has(row.id)) return row;
+    return sent.get(row.id) === noteOf(row.metadata) ? row : withoutNote(row);
+  });
+}
+
+/**
+ * The refusal of a save that would change a note its sender was not shown.
+ * Nothing of the save is stored. The planner shows `error` as it stands, a
+ * page loaded before it knew this code included.
+ *
+ * It does not say which piece. A refusal costs its sender nothing and leaves
+ * no trace, so naming the pieces would let one save try a guess at every held
+ * note at once and read off which were right. As it is, a guess is one save,
+ * within the route's limit, and a right one is written to the plan.
+ */
+const NOTE_HELD_REFUSAL = {
+  error: "A note on this plan cannot be changed from here, and this save tried to change it. Reload the page, or clear the note you wrote on that piece",
+  code: "NOTE_HELD",
+} as const;
+
+/** How a guest save ends. Only "saved" keeps anything it wrote. */
+type GuestSaveOutcome =
+  | { readonly status: "saved"; readonly objects: readonly PlacedObjectRow[]; readonly revision: number }
+  | { readonly status: "conflict"; readonly currentRevision: number }
+  | { readonly status: "locked"; readonly reviewStatus: string }
+  | { readonly status: "note-held" };
 
 // Punch list #24: accepts a data URL (PNG or JPEG) as the thumbnail for a
 // public preview config. The .max() checks the data URL's length; every
@@ -224,7 +416,8 @@ export async function publicConfigRoutes(
     }
 
     reply.header("ETag", configurationRevisionEtag(config.revision));
-    return reply.status(201).send({ data: { ...config, claimSecret } });
+    // A new plan holds no note, so the browser that made it has them all.
+    return reply.status(201).send({ data: { ...config, claimSecret, notesIncluded: true } });
   });
 
   // POST /public/configurations/:configId/objects/batch — save objects to preview config
@@ -320,9 +513,16 @@ export async function publicConfigRoutes(
       return reply.status(429).send({ error: "Too many requests — please slow down.", code: "RATE_LIMITED" });
     }
 
-    // Atomic batch: delete stale + update + insert in one transaction
-    const saveResult = await db.transaction(async (tx) => {
-      const txResults: (typeof placedObjects.$inferSelect)[] = [];
+    const madeHere = await presentsClaimSecret(db, configId, request);
+    // The notes are taken as sent only from the browser that made the plan,
+    // saving a document it read with them.
+    const notesAsSent = madeHere && parsed.data.notesIncluded === true;
+
+    // Atomic batch: delete stale + update + insert in one transaction. A save
+    // refused for a held note has already advanced the revision by then, so
+    // its transaction is rolled back and keeps nothing.
+    const saveResult = await writeOrRefuse<GuestSaveOutcome>(db, async (tx, refuse) => {
+      const txResults: PlacedObjectRow[] = [];
 
       const [advanced] = await tx.update(configurations)
         .set({
@@ -359,7 +559,11 @@ export async function publicConfigRoutes(
         };
       }
 
-      txResults.push(...await syncPlacedObjectBatch(tx, configId, parsed.data.objects));
+      const settled: SettledNotes = notesAsSent
+        ? { pieces: parsed.data.objects, refused: [] }
+        : await settledNotes(tx, configId, parsed.data.objects);
+      if (settled.refused.length > 0) return refuse({ status: "note-held" });
+      txResults.push(...await syncPlacedObjectBatch(tx, configId, settled.pieces));
 
       await tx.insert(configurationLayoutRevisions).values({
         configurationId: configId,
@@ -382,6 +586,9 @@ export async function publicConfigRoutes(
     if (saveResult.status === "locked") {
       return reply.status(409).send(lockedFor(saveResult.reviewStatus));
     }
+    if (saveResult.status === "note-held") {
+      return reply.status(409).send(NOTE_HELD_REFUSAL);
+    }
     if (saveResult.status === "conflict") {
       const change = await loadRevisionChange(db, configId, saveResult.currentRevision,
         { discloseActor: false, callerUserId: null, log: request.log });
@@ -401,7 +608,8 @@ export async function publicConfigRoutes(
       at: new Date().toISOString(),
     });
     reply.header("ETag", configurationRevisionEtag(saveResult.revision));
-    return { data: { objects: saveResult.objects, revision: saveResult.revision } };
+    const saved = madeHere ? saveResult.objects : withoutUnsentNotes(saveResult.objects, parsed.data.objects);
+    return { data: { objects: saved, revision: saveResult.revision } };
   });
 
   // POST /public/configurations/:configId/thumbnail — set floor plan diagram
@@ -471,7 +679,8 @@ export async function publicConfigRoutes(
       return reply.status(404).send({ error: "Public preview configuration not found", code: "NOT_FOUND" });
     }
     reply.header("ETag", configurationRevisionEtag(updated.revision));
-    return { data: updated };
+    const madeHere = await presentsClaimSecret(db, params.data.configId, request);
+    return { data: madeHere ? updated : withoutVenueNotes(updated) };
   });
 
   // GET /public/configurations/:configId — get a PUBLIC PREVIEW config with objects
@@ -511,7 +720,15 @@ export async function publicConfigRoutes(
       .orderBy(placedObjects.sortOrder);
 
     reply.header("ETag", configurationRevisionEtag(config.revision));
-    return { data: { ...config, objects } };
+    // One address, two answers, told apart by a request header: nothing
+    // between here and the reader may keep either to hand to the other.
+    reply.header("Cache-Control", "private, no-store");
+    const madeHere = await presentsClaimSecret(db, params.data.configId, request);
+    return {
+      data: madeHere
+        ? { ...config, objects, notesIncluded: true }
+        : { ...withoutVenueNotes(config), objects: objects.map(withoutNote), notesIncluded: false },
+    };
   });
 
   // GET /public/configurations/:configId/plan.pdf — the visitor's plan, to send on

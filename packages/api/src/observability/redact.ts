@@ -1,5 +1,6 @@
 import type { Breadcrumb, ErrorEvent, NodeOptions } from "@sentry/node";
 import { templateCapabilityPaths, templateCapabilityPathsDeep } from "@omnitwin/types";
+import { PLAN_CLAIM_SECRET_HEADER } from "../services/configuration-claim-secrets.js";
 
 // ---------------------------------------------------------------------------
 // Redaction — keeps query strings out of request logs and error reports.
@@ -210,24 +211,44 @@ const URL_ATTRIBUTE_KEYS: readonly string[] = ["url.full", "http.url", "http.tar
 
 /** Span / trace attribute keys that hold a bare query string, or the caller's
  *  address: node-core records the first X-Forwarded-For entry (behind Railway,
- *  the visitor's IP) as `http.client_ip` whatever `sendDefaultPii` says. */
+ *  the visitor's IP) as `http.client_ip` whatever `sendDefaultPii` says. The
+ *  last is the attribute the SDK writes for the claim-secret request header
+ *  (@sentry/core utils/request.js httpHeadersToSpanAttributes). 10.60 masks
+ *  its value only because the header's name happens to contain "secret"; it
+ *  is dropped here so that does not rest on the SDK's word list. */
 const DROPPED_ATTRIBUTE_KEYS: readonly string[] = [
   "url.query", "http.query",
   "http.client_ip", "client.address", "net.peer.ip", "network.peer.address", "net.sock.peer.addr",
+  `http.request.header.${PLAN_CLAIM_SECRET_HEADER.replaceAll("-", "_")}`,
 ];
+
+/**
+ * Request headers that are a credential: a sign-in, or a guest plan's claim
+ * secret, whose holder can claim the plan and read its notes. A header that
+ * comes to carry a credential is added here, and every scrubber drops it.
+ */
+const CREDENTIAL_REQUEST_HEADERS: readonly string[] = ["authorization", "cookie", PLAN_CLAIM_SECRET_HEADER];
 
 /** Request headers that carry a credential or the caller's address. */
 const DROPPED_REQUEST_HEADERS: readonly string[] = [
-  "authorization", "cookie",
+  ...CREDENTIAL_REQUEST_HEADERS,
   "x-forwarded-for", "x-real-ip", "forwarded", "cf-connecting-ip", "true-client-ip",
 ];
 
-function dropRequestHeaders(headers: Record<string, string> | undefined): void {
+function dropRequestHeaders(
+  headers: Record<string, string> | undefined,
+  dropped: readonly string[] = DROPPED_REQUEST_HEADERS,
+): void {
   if (headers === undefined) return;
   for (const key of Object.keys(headers)) {
     // eslint-disable-next-line @typescript-eslint/no-dynamic-delete -- header bags are open-ended records
-    if (DROPPED_REQUEST_HEADERS.includes(key.toLowerCase())) delete headers[key];
+    if (dropped.includes(key.toLowerCase())) delete headers[key];
   }
+}
+
+/** Removes every credential from a request's headers, however each is cased. */
+export function dropCredentialHeaders(headers: Record<string, string> | undefined): void {
+  dropRequestHeaders(headers, CREDENTIAL_REQUEST_HEADERS);
 }
 
 function scrubAttributes(data: Record<string, unknown> | undefined): void {
@@ -243,8 +264,8 @@ function scrubAttributes(data: Record<string, unknown> | undefined): void {
 }
 
 /**
- * `beforeSend`: strips request bodies, the query string, the authorization
- * and cookie headers, and the query from `request.url`; redacts query
+ * `beforeSend`: strips request bodies, the query string, the credential and
+ * address headers, and the query from `request.url`; redacts query
  * parameters from every exception value (the error and its linked causes).
  */
 export function scrubErrorEvent(event: ErrorEvent): ErrorEvent {
