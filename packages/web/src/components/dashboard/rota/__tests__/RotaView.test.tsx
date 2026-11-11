@@ -159,6 +159,23 @@ describe("RotaView", () => {
     await waitFor(() => { expect(mocks.week).toHaveBeenCalledTimes(2); });
   });
 
+  // T-695 api-requests-suppliers-rota-2: the week is read by overlap, so last
+  // week's unpublished overnight shift shows on Monday; the server publishes
+  // only the shifts that start in the week and refused the whole week for it.
+  it("publishes only the week's own drafts when last week's overnight draft runs into Monday", async () => {
+    const overnight = shift({ id: "00000000-0000-4000-8000-0000000000b9", staffMemberId: MORAG, role: "bar",
+      startsAt: "2026-10-04T21:00:00.000Z", endsAt: "2026-10-05T01:00:00.000Z", breakMinutes: 0 });
+    mocks.week.mockResolvedValue(rotaWeek({ shifts: [overnight, MORAG_SATURDAY] }));
+    mocks.publish.mockResolvedValue({ published: 1, told: 1, notTold: 0 });
+    renderView();
+    await screen.findByRole("heading", { name: "Rota", level: 1 });
+    fireEvent.click(await screen.findByRole("button", { name: "Publish this week" }));
+    fireEvent.click(screen.getByRole("button", { name: "Publish and tell 1 person" }));
+    expect(await screen.findByText("Published 1 shift. 1 person has been told in the app.")).toBeDefined();
+    const sent = (mocks.publish.mock.calls[0] ?? []) as [string, string, readonly RotaShift[]];
+    expect(sent[2].map((one) => one.id)).toEqual([MORAG_SATURDAY.id]);
+  });
+
   it("lets the question go with Escape, and puts focus back on the button", async () => {
     renderView();
     await screen.findByRole("heading", { name: "Rota", level: 1 });

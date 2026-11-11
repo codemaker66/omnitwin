@@ -154,9 +154,21 @@ export interface PublishPlan {
  * What "Publish this week" would do, said before it is done: which shifts,
  * who is told in the app, who has to be told another way, and what stays in
  * draft for a legal reason.
+ *
+ * Only the week's own shifts, those that start in it: the week is read by
+ * overlap, so last week's overnight shift shows on Monday, but a week
+ * publishes the shifts that start in it (services/rota.ts publishRotaWeek),
+ * and sending another refused the whole week as changed (T-695
+ * api-requests-suppliers-rota-2). That shift is published with its own week.
  */
-export function publishPlan(week: Pick<RotaWeek, "shifts" | "people">): PublishPlan {
-  const drafts = week.shifts.filter((shift) => shift.status === "draft");
+export function publishPlan(week: Pick<RotaWeek, "shifts" | "people" | "from" | "to">): PublishPlan {
+  const fromMs = Date.parse(week.from);
+  const toMs = Date.parse(week.to);
+  const own = week.shifts.filter((shift) => {
+    const startMs = Date.parse(shift.startsAt);
+    return startMs >= fromMs && startMs < toMs;
+  });
+  const drafts = own.filter((shift) => shift.status === "draft");
   const publishable = drafts.filter((shift) => !hasBlock(shift));
   const blocked = drafts.filter(hasBlock);
   const byId = new Map(week.people.map((person) => [person.id, person]));
@@ -173,7 +185,7 @@ export function publishPlan(week: Pick<RotaWeek, "shifts" | "people">): PublishP
   let consequence: string;
   if (publishable.length === 0) {
     // With only held-back drafts left, the reason below is the whole story.
-    consequence = drafts.length > 0 ? "" : week.shifts.length > 0 ? "Every shift this week is published." : "Nothing to publish yet.";
+    consequence = drafts.length > 0 ? "" : own.length > 0 ? "Every shift this week is published." : "Nothing to publish yet.";
   } else {
     const shifts = plural(publishable.length, "shift", "shifts");
     const unfilledWords = unfilled === 0 ? "" : unfilled === publishable.length
