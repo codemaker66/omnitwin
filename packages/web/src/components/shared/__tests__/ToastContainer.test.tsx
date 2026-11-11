@@ -77,12 +77,15 @@ describe("ToastContainer", () => {
     const dismiss = screen.getByRole("button", { name: "Dismiss notification" });
 
     fireEvent.mouseEnter(region());
-    fireEvent.focus(dismiss);
+    // Really focused: where the keyboard is gets looked up, not remembered.
+    act(() => { dismiss.focus(); });
+    expect(document.activeElement).toBe(dismiss);
     fireEvent.mouseLeave(region());
     pass(60_000);
     expect(region().textContent).toContain("could not be changed");
 
     // Focus leaves the notifications altogether.
+    act(() => { dismiss.blur(); });
     fireEvent.blur(dismiss, { relatedTarget: document.body });
     pass(4000);
     expect(region().textContent).toBe("");
@@ -99,6 +102,62 @@ describe("ToastContainer", () => {
     fireEvent.mouseLeave(region());
     pass(4000);
     expect(region().textContent).toBe("");
+  });
+
+  // Review of #378. Focus was remembered in a flag cleared only by a blur, and
+  // a dismissed button is removed without a blur ever reaching the region, so
+  // one keyboard dismissal left every later notification on screen for good.
+  it("lets later notifications go after one is dismissed from the keyboard", () => {
+    render(<ToastContainer />);
+    say("The status could not be changed", "error");
+    const dismiss = screen.getByRole("button", { name: "Dismiss notification" });
+    dismiss.focus();
+    expect(document.activeElement).toBe(dismiss);
+    fireEvent.click(dismiss);
+    expect(region().textContent).toBe("");
+
+    say("Venue settings saved");
+    pass(4000);
+    expect(region().textContent).toBe("");
+  });
+
+  it("moves focus to the next notification when a focused one is dismissed, and back where it came from after the last", () => {
+    render(<><button type="button">Save settings</button><ToastContainer /></>);
+    const origin = screen.getByRole("button", { name: "Save settings" });
+    origin.focus();
+    say("Venue settings saved");
+    say("Opportunity created. It is in the pipeline.");
+    const [first, second] = screen.getAllByRole("button", { name: "Dismiss notification" });
+    if (first === undefined || second === undefined) throw new Error("Two notifications were expected");
+
+    // Tab from the page into the notifications.
+    fireEvent.focus(first, { relatedTarget: origin });
+    first.focus();
+    fireEvent.click(first);
+    expect(document.activeElement).toBe(second);
+    // Still being read: it stays.
+    pass(60_000);
+    expect(region().textContent).toContain("Opportunity created");
+
+    fireEvent.click(second);
+    expect(region().textContent).toBe("");
+    expect(document.activeElement).toBe(origin);
+  });
+
+  it("does not hold the clock for a pointer that was over a notification now gone", () => {
+    render(<ToastContainer />);
+    say("Enquiry declined", "info");
+    fireEvent.mouseEnter(region());
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss notification" }));
+    // No mouseleave arrives until the pointer next moves; the stack is empty.
+    say("Venue settings saved");
+    pass(4000);
+    expect(region().textContent).toBe("");
+  });
+
+  it("announces each notification as it arrives, not the whole stack again", () => {
+    render(<ToastContainer />);
+    expect(region().getAttribute("aria-atomic")).toBe("false");
   });
 
   it("still lets a notification be dismissed by hand, and still marks an error as an alert", () => {
