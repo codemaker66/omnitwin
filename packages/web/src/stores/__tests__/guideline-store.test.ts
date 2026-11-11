@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { useGuidelineStore } from "../guideline-store.js";
+import { useRoomDimensionsStore } from "../room-dimensions-store.js";
 import type { WallHit } from "../../lib/guideline.js";
 import { GRAND_HALL_RENDER_DIMENSIONS } from "../../constants/scale.js";
 import { RENDER_SCALE } from "../../constants/scale.js";
@@ -81,6 +82,25 @@ describe("guideline-store", () => {
       expect(guidelines[0]?.axis).toBe("x");
       expect(guidelines[0]?.fixedCoord).toBe(5);
       expect(guidelines[0]?.realDistance).toBeCloseTo(width / RENDER_SCALE);
+    });
+
+    it("spans the room the planner has loaded, wall to wall", () => {
+      // The Grand Hall's scanned interior, as usePlannerRoomDimensions sets it.
+      useRoomDimensionsStore.getState().setDimensions({ width: 21.135, length: 10.59, height: 7 });
+      try {
+        useGuidelineStore.getState().activate();
+        useGuidelineStore.getState().placeGuideline(wallHit);
+        useGuidelineStore.getState().placeGuideline({ axis: "z", position: 0, wallCoord: -3 });
+        const [across, along] = useGuidelineStore.getState().guidelines;
+        expect(across?.start[0]).toBeCloseTo(-10.5675, 9);
+        expect(across?.end[0]).toBeCloseTo(10.5675, 9);
+        expect(across?.realDistance).toBeCloseTo(21.135, 9);
+        expect(along?.start[2]).toBeCloseTo(-5.295, 9);
+        expect(along?.end[2]).toBeCloseTo(5.295, 9);
+        expect(along?.realDistance).toBeCloseTo(10.59, 9);
+      } finally {
+        useRoomDimensionsStore.getState().setDimensions(GRAND_HALL_RENDER_DIMENSIONS);
+      }
     });
 
     it("increments nextId after each placement", () => {

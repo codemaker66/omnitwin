@@ -202,8 +202,8 @@ const STAT_LABEL_DINNER = "Dinner";
  *  between them, which is the part that silently broke. */
 export const STAT_LABEL_CEILING = "Ceiling";
 
-/** A published figure, the quiet word for it, and the venue's own qualifier
- *  where one exists (the Grand Hall's further height inside the dome). */
+/** A figure, the quiet word for it, and its qualifier where one exists (what
+ *  the Grand Hall's measured height is to, with the dome above part of it). */
 interface DossierStat {
   readonly key: string;
   readonly label: string;
@@ -579,7 +579,7 @@ export function RoomDossier({
                       {stat.value}
                       {/* The separator is DOM text, not a CSS margin: a span is
                           inline with no default whitespace, so styling alone
-                          would read "7 ma further 7 m under the dome" to anyone
+                          would read "6.7 mto the coffered ceiling" to anyone
                           whose stylesheet had not loaded — and to every screen
                           reader, which hears the concatenation regardless. */}
                       {stat.note !== undefined && (

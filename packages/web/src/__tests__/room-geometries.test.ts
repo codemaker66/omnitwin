@@ -6,6 +6,18 @@ import {
   resolveRoomGeometry,
   type SpaceLike,
 } from "../data/room-geometries.js";
+import {
+  HALL_HALF_LENGTH,
+  HALL_HALF_WIDTH,
+  HALL_LENGTH,
+  HALL_WALLS,
+  HALL_WIDTH,
+} from "../components/grand-hall/hall-spec.js";
+import { scaleForRendering } from "../constants/scale.js";
+import { getCatalogueItemBySlug } from "../lib/catalogue.js";
+import { UNASKED_PLANNER_CHAIR_SLUG } from "../lib/furniture-defaults.js";
+import { computeRotatedFootprint, isWithinRoomBounds, snapToWallEdge } from "../lib/placement.js";
+import { plannerInteractionFloorShape } from "../lib/planner-interaction-floor.js";
 
 // ---------------------------------------------------------------------------
 // Room geometry data tests
@@ -83,13 +95,29 @@ describe("ceiling heights", () => {
 });
 
 describe("Grand Hall features", () => {
-  it("uses the 21m by 10.5m floorplan footprint", () => {
+  it("places on the E57 interior the planner draws, not the old hand-drawn 21 m × 10.5 m", () => {
     const geom = roomGeometries["Grand Hall"];
-    expect(geom).toBeDefined();
-    if (geom !== undefined) {
-      const box = computeBoundingBox(geom.wallPolygon);
-      expect(box.width).toBe(21);
-      expect(box.depth).toBe(10.5);
+    if (geom === undefined) throw new Error("Grand Hall geometry missing");
+    const box = computeBoundingBox(geom.wallPolygon);
+    expect([box.minX, box.maxX, box.minZ, box.maxZ]).toEqual([
+      -HALL_HALF_LENGTH, HALL_HALF_LENGTH, -HALL_HALF_WIDTH, HALL_HALF_WIDTH,
+    ]);
+    expect(box.width).toBe(HALL_LENGTH);
+    expect(box.depth).toBe(HALL_WIDTH);
+    // The scan's own figures, so a change to either side shows here.
+    expect(box.width).toBeCloseTo(21.135, 9);
+    expect(box.depth).toBeCloseTo(10.59, 9);
+  });
+
+  it("has a vertex at both ends of every wall the planner draws", () => {
+    const polygon = roomGeometries["Grand Hall"]?.wallPolygon ?? [];
+    const isVertex = (x: number, z: number): boolean =>
+      polygon.some(([px, pz]) => Math.abs(px - x) < 1e-9 && Math.abs(pz - z) < 1e-9);
+    expect(HALL_WALLS).toHaveLength(4);
+    for (const wall of HALL_WALLS) {
+      const [x0, , z0] = wall.origin;
+      expect(isVertex(x0, z0), `${wall.id} wall start`).toBe(true);
+      expect(isVertex(x0 + wall.tangent[0] * wall.length, z0 + wall.tangent[2] * wall.length), `${wall.id} wall end`).toBe(true);
     }
   });
 
@@ -223,5 +251,61 @@ describe("resolveRoomGeometry", () => {
     const geom = resolveRoomGeometry(space);
     expect(geom).not.toBeNull();
     expect(geom?.ceilingHeight).toBe(3); // the defensive default
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The Grand Hall as the planner uses it: the room size it derives from the
+// outline (usePlannerRoomDimensions), and the bounds, wall snap and placement
+// floor that read it. A piece set against a long wall stands on the drawn wall.
+// ---------------------------------------------------------------------------
+
+describe("Grand Hall — placing against the walls the planner draws", () => {
+  const hall = resolveRoomGeometry({ name: "Grand Hall", heightM: "7", floorPlanOutline: [] });
+  if (hall === null) throw new Error("Grand Hall geometry missing");
+  const box = computeBoundingBox(hall.wallPolygon);
+  // What usePlannerRoomDimensions hands the room-size store.
+  const room = scaleForRendering({ width: box.width, length: box.depth, height: hall.ceilingHeight });
+  const chair = getCatalogueItemBySlug(UNASKED_PLANNER_CHAIR_SLUG);
+  if (chair === undefined) throw new Error("planner chair missing from the catalogue");
+  const { halfW, halfD } = computeRotatedFootprint(chair, 0);
+
+  it("lets a chair stand flush against each long wall and no further", () => {
+    const flush = HALL_HALF_WIDTH - halfD;
+    // The old 10.5 m outline stopped 4.5 cm short of the wall the hall draws.
+    expect(flush).toBeGreaterThan(5.25 - halfD + 0.04);
+    for (const side of [1, -1]) {
+      expect(isWithinRoomBounds(0, side * flush, chair, 0, room)).toBe(true);
+      expect(isWithinRoomBounds(0, side * (flush + 0.005), chair, 0, room)).toBe(false);
+    }
+  });
+
+  it("lets a chair stand flush against each end wall", () => {
+    const flush = HALL_HALF_LENGTH - halfW;
+    for (const side of [1, -1]) {
+      expect(isWithinRoomBounds(side * flush, 0, chair, 0, room)).toBe(true);
+      expect(isWithinRoomBounds(side * (flush + 0.005), 0, chair, 0, room)).toBe(false);
+    }
+  });
+
+  it("snaps a chair near a wall onto the drawn wall", () => {
+    expect(snapToWallEdge(0, HALL_HALF_WIDTH - halfD - 0.04, chair, 0, room).z).toBeCloseTo(HALL_HALF_WIDTH - halfD, 9);
+    expect(snapToWallEdge(0, -(HALL_HALF_WIDTH - halfD - 0.04), chair, 0, room).z).toBeCloseTo(-(HALL_HALF_WIDTH - halfD), 9);
+    expect(snapToWallEdge(HALL_HALF_LENGTH - halfW - 0.04, 0, chair, 0, room).x).toBeCloseTo(HALL_HALF_LENGTH - halfW, 9);
+  });
+
+  it("raycasts placement over the whole scanned floor", () => {
+    const points = plannerInteractionFloorShape(hall, room).getPoints();
+    const xs = points.map((point) => point.x);
+    // The shape's y is the floor's -z (planner-interaction-floor.ts).
+    const zs = points.map((point) => -point.y);
+    expect(Math.min(...xs)).toBeCloseTo(-HALL_HALF_LENGTH, 9);
+    expect(Math.max(...xs)).toBeCloseTo(HALL_HALF_LENGTH, 9);
+    expect(Math.min(...zs)).toBeCloseTo(-HALL_HALF_WIDTH, 9);
+    expect(Math.max(...zs)).toBeCloseTo(HALL_HALF_WIDTH, 9);
+  });
+
+  it("measures the floor area the planner reports from the scanned interior", () => {
+    expect(room.width * room.length).toBeCloseTo(223.82, 2);
   });
 });

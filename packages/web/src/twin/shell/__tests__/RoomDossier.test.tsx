@@ -141,13 +141,14 @@ describe("RoomDossier", () => {
     expect(screen.getByText(`${String(capacities.reception)} standing`)).toBeTruthy();
     expect(screen.getByText(`${String(capacities.dinner)} seated`)).toBeTruthy();
 
-    // The venue's own qualifier travels with the figure it qualifies, and the
-    // SEPARATOR between them is pinned here on purpose: asserting the note
-    // alone passed happily while the panel rendered "7 ma further 7 m under the
-    // dome", because a bare inline span contributes no whitespace of its own.
+    // The qualifier travels with the figure it qualifies, and the SEPARATOR
+    // between them is pinned here on purpose: asserting the note alone passed
+    // happily while the panel butted figure and note together ("7 ma further
+    // 7 m under the dome", in the note of the time), because a bare inline span
+    // contributes no whitespace of its own.
     const note = dimensions.note;
     if (note === undefined) {
-      throw new Error("venue truth no longer publishes the Grand Hall's dome note");
+      throw new Error("venue truth no longer carries the Grand Hall's ceiling note");
     }
     const ceiling = screen.getByText(STAT_LABEL_CEILING).nextElementSibling;
     expect(ceiling?.textContent).toBe(`${metres(dimensions.heightM)} m — ${note}`);
