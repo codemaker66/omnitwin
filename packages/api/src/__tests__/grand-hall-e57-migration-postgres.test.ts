@@ -11,7 +11,8 @@ import { migrationText } from "./migration-text.js";
 
 // Migration *_grand_hall_e57_interior gives production's Grand Hall the
 // panelled interior the E57 scan measures (db/grand-hall-e57.ts), so a layout
-// save stops refusing a chair the planner draws against a long wall. On a
+// save stops refusing a chair the planner draws against a long wall, and the
+// scan's clear height under the coffered ceiling, 6.70 m, not the dome. On a
 // throwaway schema per case, holding the rows production holds today (the
 // public GET /venues/:venueId/spaces of 11 November 2026), it must rewrite that
 // one row, replay inertly, skip a database without it, stop on a shape it does
@@ -172,12 +173,15 @@ describe.skipIf(target === undefined)("the Grand Hall E57 migration against the 
     return outline;
   }
 
-  it("rewrites production's Grand Hall to the E57 interior, keeps its height and every other row, and is inert on replay", async () => {
+  it("rewrites production's Grand Hall to the E57 interior and clear height, keeps every other row, and is inert on replay", async () => {
     const bystandersBefore = await wholeRows();
     await migrate();
 
     const hall = (await rows()).get(GRAND_HALL.id);
-    expect(hall).toMatchObject({ width_m: "21.14", length_m: "10.59", height_m: "7.00" });
+    expect(hall).toMatchObject({ width_m: "21.14", length_m: "10.59", height_m: "6.70" });
+    // The migration and the seed write the same room: the values in db/grand-hall-e57.ts.
+    expect([Number(hall?.width_m), Number(hall?.length_m), Number(hall?.height_m)])
+      .toEqual([GRAND_HALL_E57_INTERIOR.widthM, GRAND_HALL_E57_INTERIOR.lengthM, GRAND_HALL_E57_INTERIOR.heightM]);
     expect(hall?.floor_plan_outline).toEqual(E57_OUTLINE);
     expect(hall?.updated_at.getTime()).toBeGreaterThan(Date.parse("2026-01-01T00:00:00Z"));
     // The invariant db/schema.ts documents and migration 0007 established: the stored size is the outline's box.
@@ -226,12 +230,16 @@ describe.skipIf(target === undefined)("the Grand Hall E57 migration against the 
     { change: "an outline some other change redrew", sql: "UPDATE spaces SET width_m = 20, floor_plan_outline = $2 WHERE id = $1",
       values: [JSON.stringify(rectangle(20, 10))] },
     { change: "a size some other change rewrote", sql: "UPDATE spaces SET length_m = 10.5 WHERE id = $1", values: [] },
+    { change: "a height some other change rewrote (the dome's crown)", sql: "UPDATE spaces SET height_m = 8.93 WHERE id = $1", values: [] },
+    { change: "the E57 floor still at the old height", values: [JSON.stringify(E57_OUTLINE)],
+      sql: "UPDATE spaces SET width_m = 21.14, length_m = 10.59, floor_plan_outline = $2 WHERE id = $1" },
   ])("stops on $change, names the row, and writes nothing", async ({ sql, values }) => {
     await client.query(sql, [GRAND_HALL.id, ...values]);
     const before = await wholeRows();
     const failure = await migrationFailure();
     expect(failure.code).toBe("23514");
     expect(failure.message).toContain(`GRAND_HALL_SIZE_CONFLICT: space ${GRAND_HALL.id} is`);
+    expect(failure.message).toMatch(/ m, \d+\.\d{2} m high, with outline /);
     expect(await wholeRows()).toEqual(before);
   });
 
@@ -247,7 +255,7 @@ describe.skipIf(target === undefined)("the Grand Hall E57 migration against the 
       save.release();
     }
     await client.query("COMMIT");
-    expect((await rows()).get(GRAND_HALL.id)).toMatchObject({ width_m: "21.14", length_m: "10.59" });
+    expect((await rows()).get(GRAND_HALL.id)).toMatchObject({ width_m: "21.14", length_m: "10.59", height_m: "6.70" });
   });
 });
 
@@ -276,7 +284,7 @@ describe.skipIf(target === undefined)("the Grand Hall E57 migration on the migra
     const { rows: [hall] } = await client.query<SpaceRow>(
       "SELECT id, width_m, length_m, height_m, floor_plan_outline, updated_at FROM spaces WHERE id = $1", [GRAND_HALL.id],
     );
-    expect(hall).toMatchObject({ width_m: "21.14", length_m: "10.59", height_m: "7.00" });
+    expect(hall).toMatchObject({ width_m: "21.14", length_m: "10.59", height_m: "6.70" });
     expect(hall?.floor_plan_outline).toEqual(E57_OUTLINE);
     await client.query("ROLLBACK");
     const { rows: [left] } = await client.query<{ count: number }>("SELECT count(*)::int AS count FROM spaces WHERE id = $1", [GRAND_HALL.id]);

@@ -71,8 +71,8 @@ async function seed(): Promise<void> {
   console.log(`  Venue: ${venue.name} (${venue.id})`);
 
   // --- 2. Spaces (real dimensions from official Trades Hall website; the
-  // Grand Hall's floor from its E57 laser scan, as production stores it:
-  // db/grand-hall-e57.ts) ---
+  // Grand Hall's floor and clear height from its E57 laser scan, as
+  // production stores them: db/grand-hall-e57.ts) ---
   // Dataflow: we pick canonical source dimensions for each room, build the
   // rectangular polygon from them, then derive widthM/lengthM from the
   // polygon's bbox. The derived values equal the source by construction for
@@ -80,7 +80,7 @@ async function seed(): Promise<void> {
   // seed express the same polygon-is-source-of-truth invariant that the
   // write path enforces at runtime.
   const spaceData = [
-    { name: "Grand Hall", slug: "grand-hall", width: GRAND_HALL_E57_INTERIOR.widthM, length: GRAND_HALL_E57_INTERIOR.lengthM, height: 7, sort: 0 },
+    { name: "Grand Hall", slug: "grand-hall", width: GRAND_HALL_E57_INTERIOR.widthM, length: GRAND_HALL_E57_INTERIOR.lengthM, height: GRAND_HALL_E57_INTERIOR.heightM, sort: 0 },
     { name: "Saloon", slug: "saloon", width: 12, length: 7, height: 5.4, sort: 1 },
     { name: "Reception Room", slug: "reception-room", width: 13.4, length: 11.2, height: 3.2, sort: 2 },
     { name: "Robert Adam Room", slug: "robert-adam-room", width: 9.7, length: 5.6, height: 2.18, sort: 3 },
