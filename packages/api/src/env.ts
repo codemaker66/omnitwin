@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { createPublicKey } from "node:crypto";
-import { UserRoleSchema } from "@omnitwin/types";
+import { AIUsageFeatureSchema, UserRoleSchema } from "@omnitwin/types";
 import { isStripeTestSecretKey } from "./services/payments/stripe-mode.js";
 
 // ---------------------------------------------------------------------------
@@ -13,6 +13,16 @@ import { isStripeTestSecretKey } from "./services/payments/stripe-mode.js";
 // them ONLY when NODE_ENV === "production". This is the "fail fast in
 // prod, permissive in dev" pattern.
 // ---------------------------------------------------------------------------
+
+/** A comma-separated list of at least one `item`; spaces around each are
+ *  ignored and repeats are dropped. An empty list is refused, not read as "none". */
+function commaList<T extends z.ZodType<unknown, string>>(item: T) {
+  return z.string()
+    .transform((text) => text.split(",").map((part) => part.trim()).filter((part) => part !== ""))
+    .pipe(z.array(item).min(1, "must list at least one value, separated by commas"))
+    // After each value is read, so "A" and "a" are one id once both are lower case.
+    .transform((values) => [...new Set(values)]);
+}
 
 const EnvSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
@@ -100,6 +110,17 @@ const EnvSchema = z.object({
     .min(0.01, "AI_VENUE_MONTHLY_BUDGET_USD must be at least 0.01 (US dollars)")
     .max(100_000, "AI_VENUE_MONTHLY_BUDGET_USD must be at most 100000 (US dollars)")
     .optional(),
+  // C1, the Trades Hall pilot: which venues have AI drafts, and which drafts.
+  // Comma-separated venue ids and draft names (proposal_draft,
+  // enquiry_summary, event_brief, ...). With AI_ASSISTANT_ENABLED=true and
+  // either list unset, AI is on for no venue and no draft: the API starts,
+  // warns at boot and says why in /ai/status (services/ai-access.ts), so a
+  // forgotten variable never blocks a deploy and turning AI on can never give
+  // drafts to every venue. A list that is set but malformed stops the boot.
+  // There is no "every venue" value.
+  AI_ASSISTANT_VENUE_IDS: commaList(z.guid("AI_ASSISTANT_VENUE_IDS must hold venue ids separated by commas")
+    .transform((id) => id.toLowerCase())).optional(),
+  AI_ASSISTANT_FEATURES: commaList(AIUsageFeatureSchema).optional(),
   // Venue sky (T-647) — Met Office Weather DataHub key for the Site-Specific
   // Blended Probabilistic Forecast v2 API, sent as the `apikey` header. A
   // DataHub key belongs to one product subscription, so a key for another

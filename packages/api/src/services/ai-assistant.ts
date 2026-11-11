@@ -11,6 +11,7 @@ import {
 } from "@omnitwin/types";
 import { createReviewGatedAIDraft, draftLeftAfterWithholding } from "@omnitwin/types/ai-draft-review";
 import type { Env } from "../env.js";
+import { AIAccessPolicy, AIAssistantDisabledError, AIDraftsUnavailableError, isGatewayOutOfCredit } from "./ai-access.js";
 import { AIDraftNotProducedError, ANTHROPIC_PROVIDER, AnthropicAIGenerationAdapter } from "./anthropic-draft-adapter.js";
 import { scrubContactDetails } from "./proposal-message-draft.js";
 import {
@@ -74,12 +75,9 @@ const AdapterResponseSchema = z.object({
   text: z.string().trim().min(1).max(8000),
 }).strict();
 
-export class AIAssistantDisabledError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "AIAssistantDisabledError";
-  }
-}
+// Kept where the routes have always found them; they live in ai-access.ts
+// so the providers can throw them without importing this module.
+export { AIAssistantDisabledError, AIDraftsUnavailableError };
 
 export class DisabledAIGenerationAdapter implements AIGenerationAdapter, AIStructuredGenerationAdapter {
   readonly status: AIAssistantStatus;
@@ -119,6 +117,7 @@ export class HttpAIGenerationAdapter implements AIGenerationAdapter {
   private readonly usage: AIUsageMeter;
   private readonly prices: PriceTable;
   private readonly send: (url: string, init: RequestInit) => Promise<Response>;
+  private readonly access: AIAccessPolicy | undefined;
 
   constructor(input: {
     readonly provider: string;
@@ -127,6 +126,8 @@ export class HttpAIGenerationAdapter implements AIGenerationAdapter {
     readonly apiKey: string;
     /** Holds each call to its venue's allowance and records its estimated cost (T-656). */
     readonly usage: AIUsageMeter;
+    /** Which venues and drafts are switched on (C1); every one unless given. */
+    readonly access?: AIAccessPolicy;
     /** The prices the estimate is made at; the current table unless a test names another. */
     readonly prices?: PriceTable;
     /** Replaces the network call, for tests. */
@@ -145,9 +146,11 @@ export class HttpAIGenerationAdapter implements AIGenerationAdapter {
     this.usage = input.usage;
     this.prices = input.prices ?? ANTHROPIC_PRICE_TABLE;
     this.send = input.send ?? ((url, init) => fetch(url, init));
+    this.access = input.access;
   }
 
   async generateText(input: AIGenerationInput, attribution: AICallAttribution): Promise<string> {
+    this.access?.assertAllowed(attribution.venueId, input.useCase);
     const body = JSON.stringify({
       model: this.model,
       useCase: input.useCase,
@@ -174,6 +177,7 @@ export class HttpAIGenerationAdapter implements AIGenerationAdapter {
         },
         body,
       });
+      if (isGatewayOutOfCredit(response.status)) throw new AIDraftsUnavailableError();
       if (!response.ok) {
         throw new Error(`AI adapter request failed with ${String(response.status)}`);
       }
@@ -194,12 +198,14 @@ export class HttpAIGenerationAdapter implements AIGenerationAdapter {
  * the price table lists: a call that cannot be priced cannot be held to an
  * allowance, so an unlisted model leaves AI off rather than run unbounded.
  * The gateway, which reports no usage, is charged each call's whole
- * reservation at the table's highest rates.
+ * reservation at the table's highest rates. Every provider refuses, with
+ * nothing sent, a venue or draft the environment has not switched on (C1).
  */
 export function createAIGenerationAdapterFromEnv(env: Env, usage: AIUsageMeter): AIGenerationAdapter {
   if (env.AI_ASSISTANT_ENABLED !== "true") {
     return new DisabledAIGenerationAdapter();
   }
+  const access = AIAccessPolicy.fromEnv(env);
   if (
     env.AI_ASSISTANT_PROVIDER === undefined ||
     env.AI_ASSISTANT_MODEL === undefined ||
@@ -221,6 +227,7 @@ export function createAIGenerationAdapterFromEnv(env: Env, usage: AIUsageMeter):
       baseUrl: env.AI_ASSISTANT_BASE_URL,
       workspaceId: env.AI_ASSISTANT_WORKSPACE_ID,
       usage,
+      access,
     });
   }
   if (env.AI_ASSISTANT_BASE_URL === undefined) {
@@ -232,6 +239,7 @@ export function createAIGenerationAdapterFromEnv(env: Env, usage: AIUsageMeter):
     baseUrl: env.AI_ASSISTANT_BASE_URL,
     apiKey: env.AI_ASSISTANT_API_KEY,
     usage,
+    access,
   });
 }
 
