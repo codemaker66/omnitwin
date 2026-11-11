@@ -21,7 +21,7 @@ import { useDiaryLive } from "../diary/hooks/useDiaryLive.js";
 import { DashboardLayout } from "../../components/dashboard/DashboardLayout.js";
 import { VenueNotConnected } from "../../components/dashboard/VenueNotConnected.js";
 import { deskGreeting } from "../../components/dashboard/enquiries/enquiry-desk-format.js";
-import { awaitsVenue } from "../../lib/role-capabilities.js";
+import { VENUE_FLOOR_ROLES, administersVenue, awaitsVenue, hasRole } from "../../lib/role-capabilities.js";
 import { clockIsCorrected, correctedNowMs, subscribeClock } from "../../lib/clock-offset.js";
 import { useSlotRequests } from "../../components/requests/requests-context.js";
 import { listensForFloorRequests } from "../../lib/requests-live.js";
@@ -29,6 +29,8 @@ import { useSlotObservations } from "./lib/use-slot-observations.js";
 import { floorChangesBySlot, useFloorChanges } from "./lib/use-floor-changes.js";
 import { crewBySlot, unstaffedTurnRounds, UNSTAFFED_HORIZON_MS } from "./lib/turn-round-crew.js";
 import { useRotaDay } from "./lib/use-rota-day.js";
+import { arrivalNotices, arrivalParts } from "./lib/supplier-notices.js";
+import { useSupplierArrivals } from "./lib/use-supplier-arrivals.js";
 import { ChimeToggle } from "../../components/requests/ChimeToggle.js";
 import { ShiftHandover } from "../../components/requests/ShiftHandover.js";
 import { PushAlertsToggle } from "../../components/requests/PushAlertsToggle.js";
@@ -452,6 +454,13 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
     () => crewBySlot(lanes, { shifts: rotaShifts, people: rotaPeople }, range, nowMs),
     [lanes, rotaShifts, rotaPeople, range, nowMs],
   );
+  // Who comes to the building for each booking: the office plans them, the
+  // floor marks the door. The wall shows no contacts, so it reads none.
+  const suppliers = useSupplierArrivals(venueId, range, venueId !== null && !wall);
+  const refreshSuppliers = suppliers.refresh;
+  useEffect(() => { if (data !== null) refreshSuppliers(); }, [data, refreshSuppliers]);
+  const plansSuppliers = !wall && administersVenue(user, venueId);
+  const marksDoor = !wall && user !== null && venueId !== null && user.venueId === venueId && hasRole(VENUE_FLOOR_ROLES, user.role);
   const changedBySlot = useMemo(() => new Map([...changesBySlot]
     .filter(([, changes]) => changes.length > 0)
     .map(([bookingId, changes]) => [bookingId, changes.length] as const)), [changesBySlot]);
@@ -556,9 +565,16 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
     () => unstaffedTurnRounds(lanes, crew, nowMs, browsingToday ? UNSTAFFED_HORIZON_MS : Number.POSITIVE_INFINITY),
     [lanes, crew, nowMs, browsingToday],
   );
+  // Today's suppliers: who is late at the door, who is due within the hour.
+  const supplierArrivals = suppliers.arrivals;
+  const arrivals = useMemo(() => {
+    if (!browsingToday) return undefined;
+    const onBoard = new Set(lanes.flatMap((lane) => lane.slots.map((slot) => slot.bookingId)));
+    return arrivalParts(arrivalNotices(supplierArrivals, onBoard, nowMs), timeZone);
+  }, [browsingToday, lanes, supplierArrivals, nowMs, timeZone]);
   const summary = useMemo(
-    () => (board === null ? null : boardSummary({ lanes: board.lanes, unowned: board.unowned, today: browsingToday, nowMs, changed: changedRooms, unstaffed })),
-    [board, browsingToday, nowMs, changedRooms, unstaffed],
+    () => (board === null ? null : boardSummary({ lanes: board.lanes, unowned: board.unowned, today: browsingToday, nowMs, changed: changedRooms, unstaffed, arrivals })),
+    [board, browsingToday, nowMs, changedRooms, unstaffed, arrivals],
   );
 
   // A venue's own account not connected to one yet is told so, as on every
@@ -626,6 +642,12 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
         previous={previousSlot}
         crew={crew.get(selected.slot.bookingId) ?? null}
         crewNote={crewNote}
+        suppliers={wall ? null : {
+          arrivals: suppliers.byBooking.get(selected.slot.bookingId) ?? [],
+          canPlan: plansSuppliers,
+          canMark: marksDoor,
+          actions: suppliers,
+        }}
       />
     </div>
   );

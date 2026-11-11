@@ -1464,6 +1464,8 @@ export * from "./sheet-paper-check.js";
 
 // What moves at a changeover: from one booking's layout to the next one's in a room.
 export * from "./changeover.js";
+// Supplier arrivals: who comes to the building for a booking, when, and at which door (T-692).
+export * from "./supplier-arrivals.js";
 
 // The hallkeeper's brief derived from a sheet (day in order, store list,
 // setup steps, plan markers, keep-in-view facts), shared by paper and screen.

@@ -7,6 +7,7 @@ import {
   occasionLabel,
   isBookingMoveTitle,
   type EventAwaitingAcknowledgement,
+  type SupplierArrival,
   type HallkeeperSheetSummary,
   type ObservationKind,
 } from "@omnitwin/types";
@@ -22,6 +23,8 @@ import type { SlotRequestsComponent } from "./lib/slot-requests-contract.js";
 import type { TurnRoundCrew } from "./lib/turn-round-crew.js";
 import { StateIcon } from "./DayBoardRooms.js";
 import { ChangeoverSection } from "./DayBoardChangeover.js";
+import { SuppliersSection } from "./DayBoardSuppliers.js";
+import type { SupplierArrivalsApi } from "./lib/use-supplier-arrivals.js";
 
 // ---------------------------------------------------------------------------
 // The open slot, on the forest decision panel the desks use: the room's
@@ -257,7 +260,7 @@ function WhatChanged({ changes, timeZone, nowMs, onAcknowledge, sending, failure
 }
 
 /** The open slot: its sheet, its event, its phases and its requests. */
-export function SlotDetail({ slot, room, venueSlug, timeZone, slotRequests: SlotRequests, observations, onClose, closeLabel, changes = null, nowMs = Date.now(), onAcknowledge = null, acknowledging = false, acknowledgeFailure = null, changesUnread = false, previous = null, crew = null, crewNote = null }: {
+export function SlotDetail({ slot, room, venueSlug, timeZone, slotRequests: SlotRequests, observations, onClose, closeLabel, changes = null, nowMs = Date.now(), onAcknowledge = null, acknowledging = false, acknowledgeFailure = null, changesUnread = false, previous = null, crew = null, crewNote = null, suppliers = null }: {
   readonly slot: DayBoardSlot;
   readonly room: { readonly id: string; readonly name: string; readonly slug: string };
   readonly venueSlug: string | null;
@@ -283,6 +286,13 @@ export function SlotDetail({ slot, room, venueSlug, timeZone, slotRequests: Slot
   readonly crew?: TurnRoundCrew | null;
   /** When the crew was read, if the rota could not be read since. */
   readonly crewNote?: string | null;
+  /** Who comes to the building for this booking; null on the wall. */
+  readonly suppliers?: {
+    readonly arrivals: readonly SupplierArrival[];
+    readonly canPlan: boolean;
+    readonly canMark: boolean;
+    readonly actions: SupplierArrivalsApi;
+  } | null;
 }): ReactElement {
   const occasion = occasionLabel(slot.eventType);
   // The slot's layouts, read once: the sheet link and the changeover share them.
@@ -380,6 +390,19 @@ export function SlotDetail({ slot, room, venueSlug, timeZone, slotRequests: Slot
       ) : null}
       {/* What moves from the booking before to this one, in this room. */}
       {previous !== null && <ChangeoverSection previous={previous} slot={slot} room={room} after={sheet} crew={crew} crewNote={crewNote} timeZone={timeZone} />}
+      {/* Who comes to the building for this booking, and the door. */}
+      {suppliers !== null && (
+        <SuppliersSection
+          slot={slot}
+          arrivals={suppliers.arrivals}
+          timeZone={timeZone}
+          nowMs={nowMs}
+          canPlan={suppliers.canPlan}
+          canMark={suppliers.canMark}
+          actions={suppliers.actions}
+          unread={suppliers.actions.status === "failed"}
+        />
+      )}
       {/* What the room was seen doing (S5): the latest fact, and the next
           facts a hallkeeper may record from here. Facts never move a time. */}
       <section ref={seenRef} className="dayboard-seen dayboard-detail-section" aria-label="What the room is doing" tabIndex={-1}>

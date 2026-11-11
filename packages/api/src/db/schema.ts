@@ -6591,6 +6591,41 @@ export const bookingObservations = pgTable("booking_observations", {
 ]);
 
 // ---------------------------------------------------------------------------
+// Supplier arrivals (T-692, migration 0106) — who comes to the building for a
+// booking, when, and at which door. The office enters them; the floor marks
+// each one arrived and gone. Arrival and leaving are first-tap-wins facts and
+// never move the revision, which guards the office's own edits.
+// ---------------------------------------------------------------------------
+
+export const bookingSupplierArrivals = pgTable("booking_supplier_arrivals", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  venueId: uuid("venue_id").notNull().references(() => venues.id, { onDelete: "cascade" }),
+  bookingId: uuid("booking_id").notNull().references(() => bookings.id, { onDelete: "cascade" }),
+  supplierName: varchar("supplier_name", { length: 160 }).notNull(),
+  category: varchar("category", { length: 40 }),
+  arrivesAt: timestamp("arrives_at", { withTimezone: true }).notNull(),
+  leavesBy: timestamp("leaves_by", { withTimezone: true }),
+  entrance: varchar("entrance", { length: 100 }),
+  contact: varchar("contact", { length: 160 }),
+  note: varchar("note", { length: 500 }),
+  arrivedAt: timestamp("arrived_at", { withTimezone: true }),
+  arrivedByUserId: uuid("arrived_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  arrivedByName: varchar("arrived_by_name", { length: 160 }),
+  leftAt: timestamp("left_at", { withTimezone: true }),
+  leftByUserId: uuid("left_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  leftByName: varchar("left_by_name", { length: 160 }),
+  createdByUserId: uuid("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  revision: integer("revision").notNull().default(1),
+}, (table) => [
+  index("booking_supplier_arrivals_venue_arrives_idx").on(table.venueId, table.arrivesAt),
+  index("booking_supplier_arrivals_booking_idx").on(table.bookingId),
+  check("booking_supplier_arrivals_leaves_after", sql`${table.leavesBy} IS NULL OR ${table.leavesBy} > ${table.arrivesAt}`),
+  check("booking_supplier_arrivals_left_after_arrived", sql`${table.leftAt} IS NULL OR ${table.arrivedAt} IS NOT NULL`),
+]);
+
+// ---------------------------------------------------------------------------
 // AI usage (T-656, migration 0091) — one append-only row per model call, or
 // per call the venue's monthly allowance refused, with its tokens and its
 // cost in integer micro-USD from the versioned price table

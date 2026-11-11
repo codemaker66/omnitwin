@@ -47,6 +47,8 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/floor-changes-postgres.test.ts",
   // What moves at a changeover: two layouts of one room through the real sheet pipeline.
   "src/__tests__/changeover-postgres.test.ts",
+  // Supplier arrivals (migration 0106): the office plans them, the floor marks the door, each venue its own.
+  "src/__tests__/supplier-arrivals-postgres.test.ts",
   "src/__tests__/ai-usage-postgres.test.ts",
   // The People Book (migration 0098): the operator's read-only check of the backfill.
   "src/__tests__/check-people-book-postgres.test.ts",

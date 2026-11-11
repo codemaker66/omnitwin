@@ -126,7 +126,7 @@ function plural(count: number, one: string, many: string): string {
 }
 
 /** "A, B and C". */
-function listed(names: readonly string[]): string {
+export function listed(names: readonly string[]): string {
   if (names.length <= 1) return names[0] ?? "";
   return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1] ?? ""}`;
 }
@@ -250,10 +250,14 @@ export function boardSummary(input: {
   readonly changed?: readonly string[];
   /** The room of each turn-round not yet over with nobody on setup, in the board's order. */
   readonly unstaffed?: readonly string[];
+  /** Today's suppliers: who is late, and who is due within the hour (supplier-notices.ts). */
+  readonly arrivals?: { readonly late: readonly SummaryPart[]; readonly soon: readonly SummaryPart[] };
 }): readonly SummaryPart[] | null {
   const { lanes, unowned, today, nowMs } = input;
   const changed = changedParts(input.changed ?? []);
   const crew = crewParts(input.unstaffed ?? []);
+  const late = input.arrivals?.late ?? [];
+  const soon = input.arrivals?.soon ?? [];
   const bookings = lanes.reduce((sum, lane) => sum + lane.slots.length, 0);
   if (bookings === 0) return null;
   const risk = riskParts(lanes, today);
@@ -266,7 +270,7 @@ export function boardSummary(input: {
       crew,
     ]);
   }
-  const parts = sentences([risk, changed, crew, requestParts(lanes, unowned, nowMs), activityParts(lanes)]);
+  const parts = sentences([risk, changed, late, crew, requestParts(lanes, unowned, nowMs), soon, activityParts(lanes)]);
   return parts.length === 0 ? null : parts;
 }
 

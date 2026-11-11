@@ -94,6 +94,18 @@ const changeoverMock = vi.hoisted(() => vi.fn<(input: { from: string; to: string
 vi.mock("../../../api/changeover.js", () => ({
   getChangeover: (input: { from: string; to: string }) => changeoverMock(input),
 }));
+// Who comes to the building for each booking: none unless a case feeds them.
+const arrivalsApi = vi.hoisted(() => ({
+  list: vi.fn<(venueId: string, fromMs: number, toMs: number) => Promise<unknown[]>>(() => Promise.resolve([])),
+  step: vi.fn<(venueId: string, id: string, step: string) => Promise<unknown>>(),
+}));
+vi.mock("../../../api/supplier-arrivals.js", () => ({
+  listSupplierArrivals: (venueId: string, fromMs: number, toMs: number) => arrivalsApi.list(venueId, fromMs, toMs),
+  recordSupplierArrivalStep: (venueId: string, id: string, step: string) => arrivalsApi.step(venueId, id, step),
+  createSupplierArrival: () => Promise.reject(new Error("not in this test")),
+  updateSupplierArrival: () => Promise.reject(new Error("not in this test")),
+  removeSupplierArrival: () => Promise.reject(new Error("not in this test")),
+}));
 // Who is on setup for each turn-round, from the published rota: a week with
 // no setup planned unless a case feeds one.
 const rotaMock = vi.hoisted(() => vi.fn<(venueId: string, start: string | null) => Promise<unknown>>());
@@ -290,6 +302,9 @@ beforeEach(() => {
   floor.acknowledge.mockReset();
   floor.acknowledge.mockResolvedValue({});
   changeoverMock.mockReset();
+  arrivalsApi.list.mockReset();
+  arrivalsApi.list.mockResolvedValue([]);
+  arrivalsApi.step.mockReset();
   rotaMock.mockReset();
   rotaMock.mockImplementation((_venueId, start) => Promise.resolve(rotaWeek(start ?? "", [])));
   resolveLayoutsMock.mockReset();
@@ -1812,6 +1827,76 @@ describe("DayBoardPage: what changed since the floor last looked", () => {
     fireEvent.click(await screen.findByRole("button", { name: /^Chamber dinner,/u }));
     expect(await screen.findByText(/^Changes seen by Jamie at the door, \d{2}:\d{2}\.$/u)).toBeTruthy();
     expect(screen.queryByText("Changed")).toBeNull();
+  });
+});
+
+describe("DayBoardPage: who comes to the building", () => {
+  const at = (minutes: number): string => new Date(Date.now() + minutes * 60_000).toISOString();
+  const DINNER = "00000000-0000-4000-8000-0000000000b8";
+
+  function day(): CalendarResponse["entries"] {
+    return [
+      { ...liveBooking(), id: "00000000-0000-4000-8000-0000000000b7", title: "Lunch", eventId: "00000000-0000-4000-8000-0000000000e7", startsAt: at(-240), endsAt: at(-180) },
+      { ...liveBooking(), id: DINNER, title: "Dinner", eventId: "00000000-0000-4000-8000-0000000000e8", startsAt: at(60), endsAt: at(300) },
+    ] as CalendarResponse["entries"];
+  }
+
+  function arrival(id: string, name: string, arrivesIn: number, overrides: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      id, venueId: VENUE, bookingId: DINNER, supplierName: name, category: null, arrivesAt: at(arrivesIn), leavesBy: null,
+      entrance: null, contact: null, note: null, arrivedAt: null, arrivedByName: null, leftAt: null, leftByName: null,
+      revision: 1, updatedAt: at(-600), ...overrides,
+    };
+  }
+
+  const FLOWERS = "00000000-0000-4000-8000-0000000005a1";
+  const KITCHEN = "00000000-0000-4000-8000-0000000005a2";
+
+  it("says who is late at the door and who is due within the hour", async () => {
+    getCalendarMock.mockResolvedValue(calendarFixture(day()));
+    arrivalsApi.list.mockResolvedValue([
+      arrival(FLOWERS, "Thistle & Fern Flowers", -20),
+      arrival(KITCHEN, "Clydeside Kitchen Co.", 30, { entrance: "the kitchen lift" }),
+    ]);
+    renderBoard();
+    await waitFor(() => {
+      const sentence = document.querySelector(".dayboard-summary")?.textContent ?? "";
+      expect(sentence).toMatch(/Thistle & Fern Flowers was due at \d{2}:\d{2}\./u);
+      expect(sentence).toMatch(/Clydeside Kitchen Co\. is due at \d{2}:\d{2} \(the kitchen lift\)\./u);
+    });
+    expect(document.querySelector(".dayboard-summary strong[data-tone='copper']")?.textContent).toBe("Thistle & Fern Flowers");
+  });
+
+  it("lets the floor mark a supplier in from the booking's panel, and offers it no planning", async () => {
+    getCalendarMock.mockResolvedValue(calendarFixture(day()));
+    arrivalsApi.list.mockResolvedValue([arrival(FLOWERS, "Thistle & Fern Flowers", -20)]);
+    arrivalsApi.step.mockResolvedValue(arrival(FLOWERS, "Thistle & Fern Flowers", -20, { arrivedAt: at(0), arrivedByName: "Elaine" }));
+    renderBoard();
+    fireEvent.click(await screen.findByRole("button", { name: /^Dinner,/u }));
+    const section = await screen.findByRole("region", { name: "Suppliers" });
+    expect(within(section).getByText("Not here yet")).toBeTruthy();
+    expect(within(section).queryByRole("button", { name: "Add a supplier" })).toBeNull();
+    fireEvent.click(within(section).getByRole("button", { name: "Thistle & Fern Flowers arrived" }));
+    expect(arrivalsApi.step).toHaveBeenCalledWith(VENUE, FLOWERS, "arrived");
+    expect(await within(section).findByText(/^In at \d{2}:\d{2} · Elaine$/u)).toBeTruthy();
+  });
+
+  it("offers the office a way to add a supplier to a booking", async () => {
+    const user = useAuthStore.getState().user;
+    if (user === null) throw new Error("Expected test user");
+    useAuthStore.getState().setUser({ ...user, role: "admin" });
+    getCalendarMock.mockResolvedValue(calendarFixture(day()));
+    renderBoard();
+    fireEvent.click(await screen.findByRole("button", { name: /^Dinner,/u }));
+    const section = await screen.findByRole("region", { name: "Suppliers" });
+    expect(within(section).getByRole("button", { name: "Add a supplier" })).toBeTruthy();
+  });
+
+  it("reads no arrivals on the wall, which shows no contacts", async () => {
+    getCalendarMock.mockResolvedValue(calendarFixture(day()));
+    render(<MemoryRouter initialEntries={["/hallkeeper/today?register=wall"]}><DayBoardPage /></MemoryRouter>);
+    expect(await screen.findByText("Dinner")).toBeTruthy();
+    expect(arrivalsApi.list).not.toHaveBeenCalled();
   });
 });
 
