@@ -34,8 +34,10 @@ import { FurnitureCataloguePreview } from "../shared/FurnitureCataloguePreview.j
 import type { FurnitureCategory } from "@omnitwin/types";
 import {
   copyForEditorSaveStatus,
+  copyForRefusedSave,
   deriveEditorSaveStatus,
 } from "../../lib/editor-save-status.js";
+import { NOTE_HELD_CODE } from "../../lib/guest-plan-notes.js";
 import {
   PLANNER_TOOLBAR_COMMAND_EVENT,
   readPlannerToolbarCommand,
@@ -1538,8 +1540,10 @@ export function VerticalToolbox({ compactDesktop = false }: { readonly compactDe
   const savedConfigId = useEditorStore((s) => s.configId);
   const wallMode = useVisibilityStore((s) => s.mode);
   const allWallsUp = wallMode === "manual";
-  const saveStatus = deriveEditorSaveStatus({ configId: savedConfigId, isDirty, isSaving, saveError, lastSavedAt });
-  const baseSaveCopy = copyForEditorSaveStatus(saveStatus);
+  // A save refused over a note this browser is not shown (409 NOTE_HELD): the API's own sentence, and nothing that says retry.
+  const refusedForHeldNote = useEditorStore((s) => s.saveErrorCode === NOTE_HELD_CODE);
+  const saveStatus = deriveEditorSaveStatus({ configId: savedConfigId, isDirty, isSaving, saveError, lastSavedAt, refusedForHeldNote });
+  const baseSaveCopy = refusedForHeldNote && saveError !== null && !isSaving ? copyForRefusedSave(saveError) : copyForEditorSaveStatus(saveStatus);
   const saveCopy = saveConflict === null
     ? baseSaveCopy
     : {

@@ -6,6 +6,7 @@ import { useAuthStore } from "../../../stores/auth-store.js";
 import { useLayoutTimelinePreviewStore } from "../../../stores/layout-timeline-preview-store.js";
 import { ActivityIndicator } from "../../shared/Activity.js";
 import { isLayoutTimelineMutationLocked } from "../../../lib/layout-timeline-preview-lock.js";
+import { NOTE_HELD_CODE } from "../../../lib/guest-plan-notes.js";
 import { usePlannerVenueIdentity } from "../../../hooks/use-planner-venue-identity.js";
 import { canReadInternalEventData, customerEventPath, isCustomerRole } from "../../../lib/event-access.js";
 import { useOnlineStatus } from "../../../hooks/use-online-status.js";
@@ -17,18 +18,23 @@ interface HeaderSaveState {
   readonly saving: boolean;
   readonly dirty: boolean;
   readonly saveError: string | null;
+  /** The save was refused because it would change a note this browser is not
+   *  shown (409 NOTE_HELD): `saveError` is then the API's own sentence. */
+  readonly refusedForHeldNote?: boolean;
   readonly conflicted: boolean;
   readonly online: boolean;
 }
 
 /** The header's one line about the layout. It never says "saved" while the
- *  browser is offline with changes the server has not had (QoL D-03). */
+ *  browser is offline with changes the server has not had (QoL D-03). A save
+ *  refused over a held note is said in the API's own sentence: the same save
+ *  meets the same refusal, so "Retry save" would be the wrong thing to say. */
 export function headerSaveLabel(state: HeaderSaveState): string {
   if (state.configId === null) return "No saved layout";
   if (state.saving) return "Saving…";
   if (state.conflicted) return "Reload layout";
   if (!state.online && (state.dirty || state.saveError !== null)) return "Offline · not saved yet";
-  if (state.saveError !== null) return "Retry save";
+  if (state.saveError !== null) return state.refusedForHeldNote === true ? state.saveError : "Retry save";
   return state.dirty ? "Save layout" : "Layout saved";
 }
 
@@ -41,6 +47,7 @@ export function ReferenceRoomHeader(): ReactElement {
   const saving = useEditorStore((state) => state.isSaving);
   const dirty = useEditorStore((state) => state.isDirty);
   const saveError = useEditorStore((state) => state.saveError);
+  const refusedForHeldNote = useEditorStore((state) => state.saveErrorCode === NOTE_HELD_CODE);
   const saveConflict = useEditorStore((state) => state.saveConflict);
   const configId = useEditorStore((state) => state.configId);
   const auth = useAuthStore();
@@ -54,7 +61,7 @@ export function ReferenceRoomHeader(): ReactElement {
   const previewLocked = useLayoutTimelinePreviewStore((state) => state.mode !== "inactive");
   const online = useOnlineStatus();
   const offlineUnsaved = !online && (dirty || saveError !== null);
-  const saveLabel = headerSaveLabel({ configId, saving, dirty, saveError, conflicted: saveConflict !== null, online });
+  const saveLabel = headerSaveLabel({ configId, saving, dirty, saveError, refusedForHeldNote, conflicted: saveConflict !== null, online });
   // The crest hides and shows the planner's tools; the name beside it is the
   // way home (Blake, 28 Oct 2026: "Crest hides; name goes home", T-680).
   const toolsCleared = useChromePresenceStore((state) => state.cleared);

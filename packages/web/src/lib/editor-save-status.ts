@@ -10,6 +10,15 @@ export interface EditorSaveStatusInput {
   /** Present only after a configuration has been loaded or created on the server. */
   readonly configId?: string | null;
   readonly isOnline?: boolean;
+  /**
+   * The save was refused because it would change a note this browser is not
+   * shown (the API's 409 NOTE_HELD; lib/guest-plan-notes NOTE_HELD_CODE), and
+   * `saveError` is the API's own sentence. The same save meets the same
+   * refusal, so this is not "failed", whose words say retry: the layout has
+   * unsaved changes, and a surface with room says the sentence
+   * (copyForRefusedSave).
+   */
+  readonly refusedForHeldNote?: boolean;
 }
 
 export interface EditorSaveStatusCopy {
@@ -20,7 +29,7 @@ export interface EditorSaveStatusCopy {
 
 export function deriveEditorSaveStatus(input: EditorSaveStatusInput): EditorSaveStatus {
   if (input.isSaving) return "saving";
-  if (input.saveError !== null) return "failed";
+  if (input.saveError !== null && input.refusedForHeldNote !== true) return "failed";
   if (input.isOnline === false) return "offline";
   if (input.isDirty) return "unsaved";
   if (input.lastSavedAt !== null) return "saved";
@@ -69,6 +78,15 @@ export function copyForEditorSaveStatus(status: EditorSaveStatus): EditorSaveSta
   }
 }
 
+/**
+ * The words for a save the API refused and explained itself (409 NOTE_HELD: it
+ * would have changed a note this browser is not shown): the API's own
+ * sentence, and nothing that says retry.
+ */
+export function copyForRefusedSave(refusal: string): EditorSaveStatusCopy {
+  return { label: refusal, shortLabel: copyForEditorSaveStatus("unsaved").shortLabel, description: refusal };
+}
+
 // ---------------------------------------------------------------------------
 // The slate's honest save machine (T-671 slice 7; spec 6.1, sheet 17): what
 // happened and what is safe, in plain words. Saving is automatic, so "Save
@@ -104,6 +122,12 @@ export interface SlateSaveInput {
   /** The unsaved work is stored on this device, not only in this tab. */
   readonly keptOnDevice: boolean;
   readonly saveError: string | null;
+  /**
+   * The save was refused because it would change a note this browser is not
+   * shown (409 NOTE_HELD), and `saveError` is the API's own sentence. It did
+   * reach Venviewer, and trying again meets the same refusal.
+   */
+  readonly refusedForHeldNote?: boolean;
   readonly conflict: SlateConflict | null;
   readonly lockReason: "phase-preview" | "in-review" | null;
   readonly lastSavedAt: Date | null;
@@ -162,6 +186,11 @@ function keptWhere(keptOnDevice: boolean): string {
   return keptOnDevice ? "kept on this device" : "kept in this tab";
 }
 
+/** Where unsaved work is, as a sentence of a notice. */
+function keptSentence(keptOnDevice: boolean): string {
+  return keptOnDevice ? "Your changes are kept on this device." : "Your changes are kept in this tab until it closes.";
+}
+
 function state(partial: Partial<SlateSaveState> & Pick<SlateSaveState, "kind" | "status" | "mark">): SlateSaveState {
   return { detail: null, title: null, notice: null, sendWaits: false, lineAction: null, ...partial };
 }
@@ -204,22 +233,31 @@ export function slateSaveState(input: SlateSaveInput): SlateSaveState {
   if (input.lockReason !== null) {
     return state({ kind: "view-only", status: "View only", detail: LOCK_REASONS[input.lockReason], mark: "none" });
   }
+  // A save refused over a note this browser is not shown: the API's sentence,
+  // where the work is, and nothing to try again. A guest is told too (their
+  // slate otherwise says only Draft), and so is someone whose "Keep mine" was
+  // the save refused, above the two versions they still choose between.
+  const refusal: SlateNotice | null = input.saveError !== null && input.refusedForHeldNote === true
+    ? { heading: input.saveError, body: keptSentence(input.keptOnDevice), actions: [] }
+    : null;
   if (input.guest) {
     return state({
       kind: "draft",
       status: "Draft",
       detail: input.keptOnDevice ? keptWhere(true) : input.isDirty ? keptWhere(false) : null,
       mark: "draft",
+      notice: refusal,
       lineAction: { id: "sign-in", label: "Sign in to keep it" },
     });
   }
   if (input.conflict !== null) {
+    const choice = conflictNotice(input.conflict, timeZone);
     return state({
       kind: "changed-elsewhere",
       status: "Not saved",
       detail: "changed elsewhere",
       mark: "problem",
-      notice: conflictNotice(input.conflict, timeZone),
+      notice: refusal === null ? choice : { ...choice, heading: refusal.heading },
       sendWaits: true,
     });
   }
@@ -245,9 +283,9 @@ export function slateSaveState(input: SlateSaveInput): SlateSaveState {
       status: "Not saved",
       detail: keptWhere(input.keptOnDevice),
       mark: "problem",
-      notice: {
+      notice: refusal ?? {
         heading: "The last save did not reach Venviewer.",
-        body: input.keptOnDevice ? "Your changes are kept on this device." : "Your changes are kept in this tab until it closes.",
+        body: keptSentence(input.keptOnDevice),
         actions: [{ id: "try-again", label: "Try again" }],
       },
       sendWaits: true,

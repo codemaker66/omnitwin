@@ -7,6 +7,7 @@ import {
   copyForEditorSaveStatus,
   deriveEditorSaveStatus,
 } from "../../lib/editor-save-status.js";
+import { NOTE_HELD_CODE } from "../../lib/guest-plan-notes.js";
 import { GuestEnquiryModal } from "./GuestEnquiryModal.js";
 import { VisitorPlanPdfSheet } from "./VisitorPlanPdfSheet.js";
 import { prepareLayoutForGuestEnquiry } from "./send-layout-flow.js";
@@ -191,6 +192,11 @@ export function MobilePlannerTopBar({
     };
   }, []);
 
+  // A save refused over a note this browser is not shown (409 NOTE_HELD) is
+  // not offered for retry: the same save meets the same refusal. This bar has
+  // no room for the API's sentence, which the save notice shows; it says the
+  // layout has unsaved changes. A choice between versions keeps its control.
+  const refusedForHeldNote = useEditorStore((s) => s.saveErrorCode === NOTE_HELD_CODE && s.saveConflict === null);
   const status = deriveEditorSaveStatus({
     configId,
     isDirty,
@@ -198,6 +204,7 @@ export function MobilePlannerTopBar({
     saveError,
     lastSavedAt,
     isOnline: online,
+    refusedForHeldNote,
   });
   const saveCopy = copyForEditorSaveStatus(status);
 

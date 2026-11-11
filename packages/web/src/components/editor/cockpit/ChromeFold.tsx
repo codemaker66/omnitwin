@@ -18,6 +18,7 @@ import {
   type ChromePresenceState,
 } from "../../../stores/chrome-presence-store.js";
 import { useShownLens } from "../../../lib/use-lens-rail.js";
+import { NOTE_HELD_CODE } from "../../../lib/guest-plan-notes.js";
 import { useEditorStore } from "../../../stores/editor-store.js";
 import { useLayoutTimelinePreviewStore } from "../../../stores/layout-timeline-preview-store.js";
 import { usePlacementStore } from "../../../stores/placement-store.js";
@@ -360,9 +361,10 @@ function useSaveState(): SaveState {
   const saving = useEditorStore((state) => state.isSaving);
   const dirty = useEditorStore((state) => state.isDirty);
   const saveError = useEditorStore((state) => state.saveError);
+  const refusedForHeldNote = useEditorStore((state) => state.saveErrorCode === NOTE_HELD_CODE);
   const conflicted = useEditorStore((state) => state.saveConflict !== null);
   const online = useOnlineStatus();
-  return { configId, saving, dirty, saveError, conflicted, online };
+  return { configId, saving, dirty, saveError, refusedForHeldNote, conflicted, online };
 }
 
 function useChromeSaveTrouble(): string | null {

@@ -404,6 +404,17 @@ describe("spines, marks and the crest's companions", () => {
     expect(trouble?.textContent).toBe("Retry save");
   });
 
+  it("says a save refused over a held note as the header does, with no Retry", () => {
+    const refusal = "A note on this plan cannot be changed from here, and this save tried to change it. Reload the page, or clear the note you wrote on that piece.";
+    useChromePresenceStore.setState({ folded: { ...ALL_OPEN, left: true } });
+    useEditorStore.setState({ isDirty: true, saveError: refusal, saveErrorCode: "NOTE_HELD" });
+    render(<ChromeSpine unit="left" />);
+    const spine = screen.getByRole("button", { name: "Show On the floor" });
+    expect(spine.textContent).toContain(refusal);
+    expect(spine.textContent).not.toMatch(/retry/iu);
+    act(() => { useEditorStore.setState({ saveError: null, saveErrorCode: null }); });
+  });
+
   // Review findings, 28 Oct: the header's live region goes with a folded or
   // cleared dock, so this one speaks for it: every change from the moment it
   // went, never what the header had already said (that would be said twice),

@@ -47,6 +47,7 @@ import {
 import { canRedo, canUndo } from "../lib/editor-history.js";
 import { useEditorStore } from "../stores/editor-store.js";
 import { copyForEditorSaveStatus, deriveEditorSaveStatus } from "../lib/editor-save-status.js";
+import { NOTE_HELD_CODE } from "../lib/guest-plan-notes.js";
 import { ActivityIndicator } from "../components/shared/Activity.js";
 import { useCockpitStore } from "../stores/cockpit-store.js";
 import { MAX_GUEST_FLOW_AGENTS } from "../lib/guest-flow-layout-input.js";
@@ -737,7 +738,9 @@ function BlueprintFromStore(): ReactElement {
   const scene = useMemo<BlueprintScene>(() => adaptEditorStateToBlueprintScene({
     space, objects, lastSavedAt, eventType, guestCount, status: "draft",
   }), [space, objects, lastSavedAt, eventType, guestCount]);
-  const saveStatus = deriveEditorSaveStatus({ configId, isDirty, isSaving, saveError, lastSavedAt });
+  // A save refused over a note this browser is not shown (409 NOTE_HELD) is unsaved work, not a save to retry (the save notice says why).
+  const refusedForHeldNote = useEditorStore((s) => s.saveErrorCode === NOTE_HELD_CODE && s.saveConflict === null);
+  const saveStatus = deriveEditorSaveStatus({ configId, isDirty, isSaving, saveError, lastSavedAt, refusedForHeldNote });
   const savedLabel = saveStatus === "failed" && saveConflict !== null
     ? "Save conflict - reload"
     : saveStatus === "saved" && scene.lastSavedAtMs !== null

@@ -78,6 +78,21 @@ describe("VerticalToolbox undo buttons", () => {
     expect(screen.getByRole("button", { name: "Reload layout" })).toBeTruthy();
   });
 
+  // A save the API refused because it would change a note this browser is not
+  // shown (409 NOTE_HELD): the same save meets the same refusal.
+  it("shows a save refused over a held note in the API's own words, with no Retry", () => {
+    const refusal = "A note on this plan cannot be changed from here, and this save tried to change it. Reload the page, or clear the note you wrote on that piece.";
+    useEditorStore.setState({ configId: "saved", configRevision: 1, isPublicPreview: true, isDirty: true, saveError: refusal, saveErrorCode: "NOTE_HELD" });
+    renderToolbox();
+    const save = screen.getByRole("button", { name: refusal });
+    expect(save.textContent).toBe("Unsaved");
+    expect(screen.queryByRole("button", { name: /retry/iu })).toBeNull();
+    expect(document.body.textContent).not.toMatch(/retry/iu);
+    // Any other failed save reads as it did.
+    act(() => { useEditorStore.setState({ saveError: "Network failed", saveErrorCode: "NETWORK_ERROR" }); });
+    expect(screen.getByRole("button", { name: "Save failed - retry" })).toBeTruthy();
+  });
+
   it("renders the first-visit planner coach as a movable widget with a real catalogue action", async () => {
     renderToolbox();
 

@@ -52,6 +52,21 @@ describe("MobilePlannerTopBar activity", () => {
     expect(screen.getByRole("button", { name: "Save failed - retry" }).querySelector("[data-activity-indicator]")).toBeNull();
   });
 
+  // A save refused over a note this browser is not shown (409 NOTE_HELD): the
+  // same save meets the same refusal, so the phone's bar offers no retry. It
+  // has no room for the API's sentence, which the save notice below it shows.
+  it("offers no retry for a save refused over a held note", () => {
+    render(<MobilePlannerTopBar mode="3d" onModeChange={vi.fn()} />);
+    act(() => {
+      useEditorStore.setState({
+        isSaving: false, isDirty: true, saveErrorCode: "NOTE_HELD",
+        saveError: "A note on this plan cannot be changed from here, and this save tried to change it. Reload the page, or clear the note you wrote on that piece.",
+      });
+    });
+    expect(screen.queryByRole("button", { name: /retry/iu })).toBeNull();
+    expect(screen.getByRole("status").textContent).toBe("Unsaved changes");
+  });
+
   it.each(["ready", "blocked", "error"] as const)("stops send activity when preparation is %s", async outcome => {
     let resolveRequest: ((value: boolean) => void) | undefined;
     let rejectRequest: ((error: Error) => void) | undefined;

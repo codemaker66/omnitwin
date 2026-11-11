@@ -87,6 +87,44 @@ describe("the save line", () => {
     expect(onAction).toHaveBeenCalledWith("try-again");
   });
 
+  // A save the API refused because it would change a note this browser is not
+  // shown (409 NOTE_HELD). It did reach Venviewer, and trying again meets the
+  // same refusal: the notice is the API's own sentence, with nothing to press.
+  const REFUSAL = "A note on this plan cannot be changed from here, and this save tried to change it. Reload the page, or clear the note you wrote on that piece.";
+  const refused: SlateSaveInput = { ...steady, isDirty: true, pendingChanges: 1, keptOnDevice: true, saveError: REFUSAL, refusedForHeldNote: true };
+
+  it("says a save refused over a held note in the API's own words, with no Try again", () => {
+    slate({ save: slateSaveState(refused) });
+    const notice = screen.getByRole("alert");
+    expect(notice.textContent).toContain(REFUSAL);
+    expect(notice.textContent).toContain("Your changes are kept on this device.");
+    expect(notice.textContent).not.toContain("did not reach");
+    expect(within(notice).queryByRole("button")).toBeNull();
+    expect(screen.getByTestId("slate-line").textContent).toContain("Not saved");
+  });
+
+  it("says it to a guest too, whose slate otherwise says only Draft", () => {
+    slate({ hold: null, save: slateSaveState({ ...refused, guest: true }) });
+    expect(screen.getByText(REFUSAL)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Sign in to keep it" })).toBeTruthy();
+    expect(screen.getByTestId("slate-line").textContent).toContain("Draft");
+  });
+
+  it("says it above the choice between versions when Keep mine was the save refused", () => {
+    const onAction = vi.fn();
+    slate({
+      onAction,
+      save: slateSaveState({ ...refused, conflict: { changedByName: "Elaine", byYou: false, changedAt: new Date("2026-11-28T21:58:00Z"), theirChange: null } }),
+    });
+    const notice = screen.getByRole("alert");
+    expect(notice.textContent).toContain(REFUSAL);
+    expect(within(notice).queryByRole("button", { name: "Try again" })).toBeNull();
+    fireEvent.click(within(notice).getByRole("button", { name: "Keep mine" }));
+    expect(onAction).toHaveBeenCalledWith("keep-mine");
+    expect(within(notice).getByRole("button", { name: "Show Elaine's version" })).toBeTruthy();
+  });
+
   it("puts the offline notice quietly, and keeps the room working", () => {
     slate({ save: slateSaveState({ ...steady, isOnline: false, isDirty: true, pendingChanges: 3, keptOnDevice: true }) });
     const notice = screen.getByText("The connection to Venviewer has dropped.").closest("[role]");

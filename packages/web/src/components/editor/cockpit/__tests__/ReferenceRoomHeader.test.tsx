@@ -408,6 +408,25 @@ describe("ReferenceRoomHeader", () => {
     expect(save).toHaveBeenCalledTimes(1);
   });
 
+  // A save the API refused because it would change a note this browser is not
+  // shown (409 NOTE_HELD): the same save meets the same refusal, so the header
+  // says the API's own sentence and nothing about retrying.
+  it("says a save refused over a held note in the API's own words, with no Retry", () => {
+    const refusal = "A note on this plan cannot be changed from here, and this save tried to change it. Reload the page, or clear the note you wrote on that piece.";
+    showHeader();
+    act(() => { useEditorStore.setState({ isSaving: false, isDirty: true, saveError: refusal, saveErrorCode: "NOTE_HELD" }); });
+    expect(screen.getByRole("status").textContent).toBe(refusal);
+    expect(document.body.textContent).not.toMatch(/retry/iu);
+    expect(screen.queryByRole("button", { name: /retry/iu })).toBeNull();
+    // The header's one save control is still that: it saves once the note is cleared.
+    fireEvent.click(screen.getByRole("button", { name: refusal }));
+    expect(save).toHaveBeenCalledTimes(1);
+    // Any other failed save reads as it did.
+    act(() => { useEditorStore.setState({ saveError: "Network error", saveErrorCode: "NETWORK_ERROR" }); });
+    expect(screen.getByRole("status").textContent).toBe("Retry save");
+    act(() => { useEditorStore.setState({ saveError: null, saveErrorCode: null }); });
+  });
+
   it("never reads saved while the browser is offline with unsaved changes (D-03)", () => {
     const onLine = vi.spyOn(navigator, "onLine", "get").mockReturnValue(true);
     showHeader();

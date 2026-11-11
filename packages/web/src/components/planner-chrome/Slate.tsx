@@ -5,6 +5,7 @@ import { Check, ChevronDown } from "lucide-react";
 import type { PublishedRoomSlug } from "@omnitwin/types";
 import { slateAside, slateSaveState, type SlateAside, type SlateSaveMark, type SlateSaveState } from "../../lib/editor-save-status.js";
 import { customerEventPath } from "../../lib/event-access.js";
+import { NOTE_HELD_CODE } from "../../lib/guest-plan-notes.js";
 import { lastInputWasKeys, letter, usePlannerKeyBindings } from "../../lib/planner-keys.js";
 import { actsInRoom, planeFacts, slateEyebrow, venueDay, type PlaneFacts } from "../../lib/slate-facts.js";
 import { useFreezePhaseLayoutSnapshot } from "../../hooks/use-freeze-phase-layout-snapshot.js";
@@ -253,6 +254,7 @@ export function Slate(): ReactElement {
     isOnline: state.isOnline,
     keptOnDevice: state.keptOnDevice,
     saveError: state.saveError,
+    saveErrorCode: state.saveErrorCode,
     saveConflict: state.saveConflict,
     lockReason: state.lockReason,
     lastSavedAt: state.lastSavedAt,
@@ -291,6 +293,7 @@ export function Slate(): ReactElement {
     isOnline: facts.isOnline,
     keptOnDevice: facts.keptOnDevice,
     saveError: facts.saveError,
+    refusedForHeldNote: facts.saveErrorCode === NOTE_HELD_CODE,
     conflict: conflict === null ? null : {
       changedByName: conflict.changedBy?.name ?? null,
       byYou: conflict.byYou,
