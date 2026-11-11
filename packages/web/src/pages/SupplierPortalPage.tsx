@@ -30,17 +30,25 @@ import "./SupplierPortalPage.css";
 // a checked identity.
 // ---------------------------------------------------------------------------
 
+type ReplyStatus = CreateSupplierAcknowledgementInput["status"];
+
+type Contact = { readonly name: string; readonly phone: string | null } | null;
+
+/** A reply the link refused because it had closed while the brief was open:
+ *  what was not sent, and who to turn to instead. */
+interface Unsent {
+  readonly status: ReplyStatus;
+  readonly question: string | null;
+  readonly contact: Contact;
+}
+
 type LoadState =
   | { readonly kind: "loading" }
   /** "closed": the API said the link does not open (withdrawn, replaced,
    *  ended or never valid). "unreachable": the page could not ask, so it
    *  must not claim the link is dead. */
-  | { readonly kind: "error"; readonly reason: "closed" | "unreachable" }
+  | { readonly kind: "error"; readonly reason: "closed" | "unreachable"; readonly unsent?: Unsent }
   | { readonly kind: "ready"; readonly pack: SupplierSafePackView };
-
-type ReplyStatus = CreateSupplierAcknowledgementInput["status"];
-
-type Contact = { readonly name: string; readonly phone: string | null } | null;
 
 const DEFAULT_ZONE = "Europe/London";
 
@@ -56,6 +64,16 @@ function askWords(contact: Contact): string {
 function fallbackWords(contact: Contact): string {
   if (contact === null) return ".";
   return contact.phone === null ? `, or ask for ${contact.name}.` : `, or ring ${contact.name} on ${contact.phone}.`;
+}
+
+/** What a reply refused by a closed link says, and who to turn to. */
+function unsentWords(unsent: Unsent): string {
+  const what = unsent.status === "needs_clarification" ? "Your question" : "Your reply";
+  const contact = unsent.contact;
+  const turnTo = contact === null ? ""
+    : contact.phone === null ? ` Ask for ${contact.name} at the venue.`
+    : ` Ring ${contact.name} on ${contact.phone}.`;
+  return `${what} was not sent.${turnTo}`;
 }
 
 function ChangeList({ label, items }: { readonly label: string; readonly items: readonly string[] }): ReactElement | null {
@@ -110,6 +128,7 @@ export function SupplierPortalPage(): ReactElement {
     const note = question.trim();
     if (given.length === 0) return;
     if (status === "needs_clarification" && note.length === 0) return;
+    const contact: Contact = state.pack.passDetails?.venueContact ?? null;
     setSending(status);
     setSendError(false);
     setSent(null);
@@ -130,13 +149,25 @@ export function SupplierPortalPage(): ReactElement {
         }
         return getSupplierShare(token).then((pack) => { setState({ kind: "ready", pack }); }, () => undefined);
       })
-      .catch(() => {
+      .catch((err: unknown) => {
+        // The brief opened with this link, so a 404 or 410 now means the venue
+        // withdrew it or sent a newer one since: the brief on screen is no
+        // longer theirs to act on, and their signal is not the cause. (A 400
+        // here is the reply's own words being refused, not a closed link.)
+        if (err instanceof ApiError && (err.status === 404 || err.status === 410)) {
+          setState({
+            kind: "error",
+            reason: "closed",
+            unsent: { status, question: status === "needs_clarification" ? note : null, contact },
+          });
+          return;
+        }
         setSendError(true);
       })
       .finally(() => {
         setSending(null);
       });
-  }, [name, question, sending, state.kind, token]);
+  }, [name, question, sending, state, token]);
 
   if (state.kind === "loading") {
     return (
@@ -174,6 +205,14 @@ export function SupplierPortalPage(): ReactElement {
           <p>
             It may have reached its end date, or the venue may have sent you a newer link. Ask the person at the venue who sent it for the current one.
           </p>
+          {state.unsent !== undefined && (
+            <>
+              <p className="supplier-pass__error" role="alert">{unsentWords(state.unsent)}</p>
+              {state.unsent.question !== null && (
+                <blockquote className="supplier-pass__unsent">{state.unsent.question}</blockquote>
+              )}
+            </>
+          )}
         </section>
       </main>
     );
