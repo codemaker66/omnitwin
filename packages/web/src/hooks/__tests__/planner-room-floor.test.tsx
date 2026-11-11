@@ -318,6 +318,21 @@ describe.each(SHAPED_ROOMS)("what the planner sets by itself in the %s", (name) 
     expect(placed).toHaveLength(plan?.chairs ?? -1);
   });
 
+  it("sets no theatre row the walls cut down to one or two chairs", () => {
+    openRoom(name);
+    const plan = usePlacementStore.getState().autoArrangeTheatre(TURINI.id, 0);
+    if (plan === null) throw new Error("no theatre plan");
+    // A row is the seats abreast: at one z facing down the room's length, at one x facing along its width.
+    const rows = new Map<string, number>();
+    for (const seat of plan.seats) {
+      const row = (seat.rotationY === 0 ? seat.zM : seat.xM).toFixed(3);
+      rows.set(row, (rows.get(row) ?? 0) + 1);
+    }
+    expect([...rows.values()].filter((seats) => seats < 3)).toEqual([]);
+    expect(rows.size).toBe(plan.rows);
+    expect(plan.roomForSeats).toBe(plan.seats.length);
+  });
+
   it("says before it fills exactly what it then sets (the prompt's plan is the store's)", () => {
     const dims = openRoom(name);
     const options = { floor: dims.floor };

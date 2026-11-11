@@ -373,6 +373,13 @@ function seatInSpaces(chair: CatalogueItem, seat: TheatreSeatPlacement, spaces: 
 }
 
 /**
+ * The fewest seats the walls of a room's own floor may leave a theatre row.
+ * A row they cut down to one or two, a lone chair in each alcove mouth at the
+ * back of the Saloon, is no row: it is left out.
+ */
+const FLOOR_ROW_MIN_SEATS = 3;
+
+/**
  * Whether a seat (metres, in the room) stands on the floor for every chair
  * it may be set with: the chair wholly inside the walls, and the seat the
  * rows' wall band from every wall, as the rows keep it from a rectangle's
@@ -433,9 +440,11 @@ export function planTheatreFill(
   const laid = rowsOf(room.seats, room.seatsPerRow);
   const standing = floor === undefined
     ? laid
-    : laid.map((row) => row
-      .map((seat) => ({ ...seat, xM: seat.xM + origin.xM, zM: seat.zM + origin.zM }))
-      .filter((seat) => seatOnFloor(floor, supply, seat)));
+    : laid
+      .map((row) => row
+        .map((seat) => ({ ...seat, xM: seat.xM + origin.xM, zM: seat.zM + origin.zM }))
+        .filter((seat) => seatOnFloor(floor, supply, seat)))
+      .filter((row) => row.length >= FLOOR_ROW_MIN_SEATS);
   const rows = standing
     .map((row) => row.filter((seat) => !supply.some((kind) => seatInSpaces(kind.item, seat, doorSpaces))))
     .filter((row) => row.length > 0);
