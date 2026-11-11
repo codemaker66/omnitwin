@@ -1,4 +1,5 @@
 import { claimConfig } from "../api/configurations.js";
+import { TRACKED_CONFIGS_KEY, isEntryFor, readTrackedEntries, trackedClaimSecret } from "./tracked-claim-secret.js";
 
 // ---------------------------------------------------------------------------
 // Claiming this browser's own draft into the signed-in account (release audit
@@ -10,32 +11,7 @@ import { claimConfig } from "../api/configurations.js";
 // /plan/<id> link is never claimed, here or on the server.
 // ---------------------------------------------------------------------------
 
-/** The tracked list stores/editor-store.ts writes in createPublicConfig. */
-const TRACKED_CONFIGS_KEY = "omnitwin_my_configs";
-
-function readTrackedEntries(): readonly unknown[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = window.localStorage.getItem(TRACKED_CONFIGS_KEY);
-    if (raw === null) return [];
-    const parsed: unknown = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
-function isEntryFor(entry: unknown, configId: string): entry is Record<string, unknown> {
-  return typeof entry === "object" && entry !== null && (entry as Record<string, unknown>)["configId"] === configId;
-}
-
-/** The secret this browser was given for a draft it created, if it holds one. */
-export function trackedClaimSecret(configId: string): string | null {
-  for (const entry of readTrackedEntries()) {
-    if (isEntryFor(entry, configId) && typeof entry["claimSecret"] === "string") return entry["claimSecret"];
-  }
-  return null;
-}
+export { trackedClaimSecret };
 
 /** A spent secret proves nothing; drop it, keeping the draft's entry. */
 function forgetClaimSecret(configId: string): void {

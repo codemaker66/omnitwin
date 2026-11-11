@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { ConfigurationReviewStatusSchema, type EventInstructions, type GangwayReview, type GuestEnquiry } from "@omnitwin/types";
 import { api } from "./client.js";
+import { trackedClaimSecret } from "../lib/tracked-claim-secret.js";
 
 // ---------------------------------------------------------------------------
 // Response schemas — Zod validation at the API boundary
@@ -157,6 +158,18 @@ export interface BatchSaveTransport {
   readonly keepalive?: boolean;
 }
 
+/**
+ * A guest plan's notes go only to the browser that made the plan (final
+ * review, TENANCY-3): the API returns and accepts them when a request carries
+ * the claim secret that browser was given. Every anonymous read and save
+ * below presents it for a plan made here, and nothing for any other plan, so
+ * a plan opened from a link shows its layout without its notes.
+ */
+function asMaker(configId: string): { planClaimSecret?: string } {
+  const secret = trackedClaimSecret(configId);
+  return secret === null ? {} : { planClaimSecret: secret };
+}
+
 export async function publicBatchSave(
   configId: string,
   objects: readonly BatchObjectInput[],
@@ -168,12 +181,12 @@ export async function publicBatchSave(
     { expectedRevision, objects },
     true,
     BatchSaveResponseSchema,
-    transport?.keepalive === true ? { keepalive: true } : undefined,
+    { ...(transport?.keepalive === true ? { keepalive: true } : {}), ...asMaker(configId) },
   );
 }
 
 export async function getPublicConfig(configId: string, signal?: AbortSignal): Promise<Configuration> {
-  return api.get(`/public/configurations/${configId}`, ConfigurationResponseSchema, signal);
+  return api.get(`/public/configurations/${configId}`, ConfigurationResponseSchema, signal, asMaker(configId));
 }
 
 /**
@@ -182,7 +195,7 @@ export async function getPublicConfig(configId: string, signal?: AbortSignal): P
  * sends PLAN_THUMBNAIL's JPEG (lib/ortho-capture.ts).
  */
 export async function updatePublicThumbnail(configId: string, thumbnailUrl: string): Promise<Configuration> {
-  return api.post(`/public/configurations/${configId}/thumbnail`, { thumbnailUrl }, true, ConfigurationResponseSchema);
+  return api.post(`/public/configurations/${configId}/thumbnail`, { thumbnailUrl }, true, ConfigurationResponseSchema, asMaker(configId));
 }
 
 // ---------------------------------------------------------------------------

@@ -12,10 +12,10 @@ import {
   assetDefinitions,
 } from "../db/schema.js";
 import type { Database } from "../db/client.js";
-import { syncPlacedObjectBatch } from "../lib/placed-object-batch.js";
+import { syncPlacedObjectBatch, type PlacedObjectBatchItem } from "../lib/placed-object-batch.js";
 import { emit } from "../observability/event-bus.js";
 import { generateUniqueShortCode } from "../services/shortcode.js";
-import { generateClaimSecret, hashClaimSecret } from "../services/configuration-claim-secrets.js";
+import { claimSecretMatches, generateClaimSecret, hashClaimSecret } from "../services/configuration-claim-secrets.js";
 import { GuestSaveBudget } from "../services/guest-save-budget.js";
 import {
   validatePlacementsInPolygon,
@@ -64,6 +64,85 @@ function saveBytes(request: FastifyRequest): number {
   const declared = Number(request.headers["content-length"]);
   if (Number.isFinite(declared) && declared > 0) return declared;
   return Buffer.byteLength(JSON.stringify(request.body ?? null));
+}
+
+// ---------------------------------------------------------------------------
+// Who reads a guest plan's notes (final review, TENANCY-3)
+//
+// Anyone holding a guest plan's id can open and edit the plan; that is what a
+// shared link is. A piece's note is whatever the guest typed on a table, which
+// can be health information ("nut allergy, seat by the door"), and the plan's
+// row also carries the venue's review note and event instructions. Those go
+// only to the browser that made the plan: it alone was given the plan's claim
+// secret (POST /configurations below) and presents it in this header. Staff
+// read them signed in, through GET /configurations/:id. A plan with no stored
+// secret (made before migration 0102, or already claimed) has no such browser.
+// ---------------------------------------------------------------------------
+
+const CLAIM_SECRET_HEADER = "x-plan-claim-secret";
+
+type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
+
+async function presentsClaimSecret(db: Database, configId: string, request: FastifyRequest): Promise<boolean> {
+  const presented = request.headers[CLAIM_SECRET_HEADER];
+  if (typeof presented !== "string" || presented.length < 16 || presented.length > 256) return false;
+  const [secret] = await db.select({ secretHash: configurationClaimSecrets.secretHash })
+    .from(configurationClaimSecrets)
+    .where(eq(configurationClaimSecrets.configurationId, configId))
+    .limit(1);
+  return secret !== undefined && claimSecretMatches(secret.secretHash, presented);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** The note a piece holds, if it holds one. */
+function noteOf(metadata: unknown): string | null {
+  const note = isRecord(metadata) ? metadata["notes"] : undefined;
+  return typeof note === "string" && note.length > 0 ? note : null;
+}
+
+/** A piece as any holder of the plan's id reads it: where it stands and how it
+ *  is dressed, without its note. */
+function withoutNote<T extends { readonly metadata: unknown }>(piece: T): T {
+  if (!isRecord(piece.metadata) || !("notes" in piece.metadata)) return piece;
+  const kept = Object.fromEntries(Object.entries(piece.metadata).filter(([key]) => key !== "notes"));
+  return { ...piece, metadata: kept };
+}
+
+/** The plan's row as any holder of its id reads it: without the venue's
+ *  review note or the event instructions kept in its metadata. */
+function withoutVenueNotes<T extends { readonly reviewNote: string | null; readonly metadata: unknown }>(plan: T): T {
+  return { ...plan, reviewNote: null, metadata: null };
+}
+
+/**
+ * A save from a browser that could not read the plan's notes leaves every note
+ * the plan holds exactly as it is: that browser sends each piece back without
+ * the note it never saw, and storing that would erase it. A note it does send
+ * lands only on a piece that holds none. Must run inside the save's
+ * transaction, after the revision is advanced, so the notes read are the ones
+ * this save replaces.
+ */
+async function keepingStoredNotes(
+  tx: Transaction,
+  configId: string,
+  incoming: readonly PlacedObjectBatchItem[],
+): Promise<readonly PlacedObjectBatchItem[]> {
+  const stored = await tx.select({ id: placedObjects.id, metadata: placedObjects.metadata })
+    .from(placedObjects)
+    .where(eq(placedObjects.configurationId, configId));
+  const held = new Map<string, string>();
+  for (const row of stored) {
+    const note = noteOf(row.metadata);
+    if (note !== null) held.set(row.id, note);
+  }
+  if (held.size === 0) return incoming;
+  return incoming.map((piece) => {
+    const note = piece.id === undefined ? undefined : held.get(piece.id);
+    return note === undefined ? piece : { ...piece, metadata: { ...(piece.metadata ?? {}), notes: note } };
+  });
 }
 
 const BatchObjectItem = z.object({
@@ -320,6 +399,8 @@ export async function publicConfigRoutes(
       return reply.status(429).send({ error: "Too many requests — please slow down.", code: "RATE_LIMITED" });
     }
 
+    const madeHere = await presentsClaimSecret(db, configId, request);
+
     // Atomic batch: delete stale + update + insert in one transaction
     const saveResult = await db.transaction(async (tx) => {
       const txResults: (typeof placedObjects.$inferSelect)[] = [];
@@ -359,7 +440,8 @@ export async function publicConfigRoutes(
         };
       }
 
-      txResults.push(...await syncPlacedObjectBatch(tx, configId, parsed.data.objects));
+      const pieces = madeHere ? parsed.data.objects : await keepingStoredNotes(tx, configId, parsed.data.objects);
+      txResults.push(...await syncPlacedObjectBatch(tx, configId, pieces));
 
       await tx.insert(configurationLayoutRevisions).values({
         configurationId: configId,
@@ -401,7 +483,8 @@ export async function publicConfigRoutes(
       at: new Date().toISOString(),
     });
     reply.header("ETag", configurationRevisionEtag(saveResult.revision));
-    return { data: { objects: saveResult.objects, revision: saveResult.revision } };
+    const saved = madeHere ? saveResult.objects : saveResult.objects.map(withoutNote);
+    return { data: { objects: saved, revision: saveResult.revision } };
   });
 
   // POST /public/configurations/:configId/thumbnail — set floor plan diagram
@@ -471,7 +554,8 @@ export async function publicConfigRoutes(
       return reply.status(404).send({ error: "Public preview configuration not found", code: "NOT_FOUND" });
     }
     reply.header("ETag", configurationRevisionEtag(updated.revision));
-    return { data: updated };
+    const madeHere = await presentsClaimSecret(db, params.data.configId, request);
+    return { data: madeHere ? updated : withoutVenueNotes(updated) };
   });
 
   // GET /public/configurations/:configId — get a PUBLIC PREVIEW config with objects
@@ -511,7 +595,8 @@ export async function publicConfigRoutes(
       .orderBy(placedObjects.sortOrder);
 
     reply.header("ETag", configurationRevisionEtag(config.revision));
-    return { data: { ...config, objects } };
+    const madeHere = await presentsClaimSecret(db, params.data.configId, request);
+    return { data: madeHere ? { ...config, objects } : { ...withoutVenueNotes(config), objects: objects.map(withoutNote) } };
   });
 
   // GET /public/configurations/:configId/plan.pdf — the visitor's plan, to send on

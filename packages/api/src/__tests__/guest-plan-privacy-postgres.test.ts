@@ -101,4 +101,146 @@ describe.skipIf(target === undefined)("who can find and read a guest's plan, thr
     vi.setSystemTime(NOON + 61_000);
     expect(await lookUp(plan.shortCode)).toEqual({ statusCode: 200, status: "canonical", configId: plan.id });
   }, 60_000);
+
+  // -------------------------------------------------------------------------
+  // What a holder of the id reads. A piece's note is whatever the guest typed
+  // on a table ("nut allergy, seat by the door"), and the venue's review note
+  // and event instructions sit on the same row. Only the browser that made the
+  // plan, which alone was given its claim secret, reads them back; staff read
+  // them signed in, through the authenticated route.
+  // -------------------------------------------------------------------------
+
+  const ALLERGY = "TEST ONLY nut allergy, seat by the door";
+  const REVIEW = "TEST ONLY review: move the bar off the fire exit";
+  const ACCESS = "TEST ONLY two wheelchair users at the top table";
+
+  interface StoredPiece { readonly id: string; readonly positionX: string; readonly metadata: Record<string, unknown> | null }
+  interface PlanRead { readonly reviewNote: string | null; readonly metadata: unknown; readonly objects: readonly StoredPiece[] }
+
+  function asHolder(secret: string | undefined): { headers?: Record<string, string> } {
+    return secret === undefined ? {} : { headers: { "x-plan-claim-secret": secret } };
+  }
+
+  function piece(x: number, notes?: string, id?: string): Record<string, unknown> {
+    return {
+      ...(id === undefined ? {} : { id }),
+      assetDefinitionId: chairId, positionX: x, positionY: 0, positionZ: 5,
+      rotationX: 0, rotationY: 0, rotationZ: 0, scale: 1, sortOrder: x,
+      metadata: { clothed: false, groupId: null, ...(notes === undefined ? {} : { notes }) },
+    };
+  }
+
+  async function read(planId: string, secret?: string): Promise<{ body: string; plan: PlanRead }> {
+    const response = await server.inject({ method: "GET", url: `/public/configurations/${planId}`, ...asHolder(secret) });
+    expect(response.statusCode, response.body.slice(0, 300)).toBe(200);
+    return { body: response.body, plan: response.json<{ data: PlanRead }>().data };
+  }
+
+  async function save(plan: Plan, pieces: readonly Record<string, unknown>[], secret?: string): Promise<{ body: string; objects: readonly StoredPiece[] }> {
+    const response = await server.inject({
+      method: "POST", url: `/public/configurations/${plan.id}/objects/batch`, ...asHolder(secret),
+      payload: { expectedRevision: plan.revision, objects: pieces },
+    });
+    expect(response.statusCode, response.body.slice(0, 300)).toBe(200);
+    const data = response.json<{ data: { revision: number; objects: StoredPiece[] } }>().data;
+    plan.revision = data.revision;
+    return { body: response.body, objects: data.objects };
+  }
+
+  /** Each piece's note, by where it stands. */
+  function notesByPosition(pieces: readonly StoredPiece[]): Record<string, unknown> {
+    return Object.fromEntries(pieces.map((stored) => [String(Number(stored.positionX)), stored.metadata?.["notes"] ?? null]));
+  }
+
+  async function venueWrites(planId: string): Promise<void> {
+    await pool.query(
+      "UPDATE configurations SET review_note = $2, metadata = $3::jsonb WHERE id = $1",
+      [planId, REVIEW, JSON.stringify({ instructions: { accessNotes: ACCESS } })],
+    );
+  }
+
+  it("gives a plan's piece notes, review note and event instructions only to the browser that made it", async () => {
+    const plan = await newPlan();
+    await save(plan, [piece(2, ALLERGY), piece(4)], plan.claimSecret);
+    await venueWrites(plan.id);
+
+    // Anyone with the id still sees the layout itself.
+    for (const stranger of [undefined, "not-the-secret-this-plan-was-given"]) {
+      const { body, plan: seen } = await read(plan.id, stranger);
+      expect(seen.objects.map((stored) => Number(stored.positionX))).toEqual([2, 4]);
+      expect(notesByPosition(seen.objects)).toEqual({ 2: null, 4: null });
+      expect({ reviewNote: seen.reviewNote, metadata: seen.metadata }).toEqual({ reviewNote: null, metadata: null });
+      for (const kept of [ALLERGY, REVIEW, ACCESS]) expect(body.includes(kept), kept).toBe(false);
+    }
+
+    // The browser that made it reads everything, as before.
+    const { plan: own } = await read(plan.id, plan.claimSecret);
+    expect(notesByPosition(own.objects)).toEqual({ 2: ALLERGY, 4: null });
+    expect(own.reviewNote).toBe(REVIEW);
+    expect(own.metadata).toEqual({ instructions: { accessNotes: ACCESS } });
+
+    // The same holds for the picture upload's answer, which returns the plan's row.
+    for (const secret of [undefined, plan.claimSecret]) {
+      const picture = await server.inject({
+        method: "POST", url: `/public/configurations/${plan.id}/thumbnail`, ...asHolder(secret),
+        payload: { thumbnailUrl: "data:image/png;base64,iVBORw0KGgo=" },
+      });
+      expect(picture.statusCode, picture.body.slice(0, 300)).toBe(200);
+      expect(picture.body.includes(REVIEW)).toBe(secret !== undefined);
+      expect(picture.body.includes(ACCESS)).toBe(secret !== undefined);
+    }
+  });
+
+  it("lets a browser without the secret move pieces and add notes, but never read, change or clear a note the plan holds", async () => {
+    const plan = await newPlan();
+    const made = await save(plan, [piece(2, ALLERGY), piece(4)], plan.claimSecret);
+    const withNote = made.objects.find((stored) => stored.metadata?.["notes"] === ALLERGY);
+    const bare = made.objects.find((stored) => stored.metadata?.["notes"] === undefined);
+    if (withNote === undefined || bare === undefined) throw new Error("Fixture pieces not stored");
+
+    // A friend opens the link: no notes. They move the noted piece (sending it
+    // back as they saw it, without its note), write on the bare one, add a third.
+    const friend = { ...plan };
+    const theirSave = await save(friend, [
+      piece(3, undefined, withNote.id),
+      piece(4, "TEST ONLY from a friend", bare.id),
+      piece(6, "TEST ONLY a new table"),
+    ]);
+    // Their own save's answer tells them no note either.
+    expect(notesByPosition(theirSave.objects)).toEqual({ 3: null, 4: null, 6: null });
+    expect(theirSave.body.includes(ALLERGY)).toBe(false);
+
+    // The maker still has their note, on the piece where the friend left it,
+    // and now reads the friend's.
+    expect(notesByPosition((await read(plan.id, plan.claimSecret)).plan.objects))
+      .toEqual({ 3: ALLERGY, 4: "TEST ONLY from a friend", 6: "TEST ONLY a new table" });
+
+    // Nor can the note be overwritten by somebody who could not read it.
+    await save(friend, [piece(3, "TEST ONLY overwritten", withNote.id)]);
+    expect(notesByPosition((await read(plan.id, plan.claimSecret)).plan.objects)).toEqual({ 3: ALLERGY });
+  });
+
+  it("still lets the browser that made the plan change and clear its own notes", async () => {
+    const plan = await newPlan();
+    const made = await save(plan, [piece(2, ALLERGY)], plan.claimSecret);
+    const id = made.objects[0]?.id;
+    if (id === undefined) throw new Error("Fixture piece not stored");
+
+    const changed = await save(plan, [piece(2, "TEST ONLY changed", id)], plan.claimSecret);
+    expect(notesByPosition(changed.objects)).toEqual({ 2: "TEST ONLY changed" });
+
+    await save(plan, [piece(2, undefined, id)], plan.claimSecret);
+    expect(notesByPosition((await read(plan.id, plan.claimSecret)).plan.objects)).toEqual({ 2: null });
+  });
+
+  it("keeps the notes of a plan that has no claim secret from every anonymous reader", async () => {
+    // Plans made before claim secrets (migration 0102) have none to present.
+    const plan = await newPlan();
+    await save(plan, [piece(2, ALLERGY)], plan.claimSecret);
+    await pool.query("DELETE FROM configuration_claim_secrets WHERE configuration_id = $1", [plan.id]);
+
+    const { body, plan: seen } = await read(plan.id, plan.claimSecret);
+    expect(notesByPosition(seen.objects)).toEqual({ 2: null });
+    expect(body.includes(ALLERGY)).toBe(false);
+  });
 });
