@@ -726,6 +726,13 @@
     {
       "idx": 103,
       "version": "7",
+      "when": 1794362400000,
+      "tag": "0106_grand_hall_e57_interior",
+      "breakpoints": true
+    },
+    {
+      "idx": 104,
+      "version": "7",
       "when": 1794369600000,
       "tag": "0107_event_architect_ops_review_managers",
       "breakpoints": true
