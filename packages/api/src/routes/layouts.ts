@@ -11,8 +11,11 @@ import { parseLayoutUrlPath, resolveLayoutUrl } from "../services/layout-resolve
 //   - { status: "redirect",  configId, toPath }
 //   - { status: "not_found" }
 //
-// The endpoint is read-only and idempotent. Rate limited generously so
-// a React Router loader can call it on every navigation without fear.
+// The endpoint is read-only and idempotent. It turns a guest plan's
+// six-character code into the plan's id, and that id opens the plan, so the
+// pace at which codes can be tried decides how findable every guest plan is:
+// thirty lookups a minute per address. A person opens a link once; nothing in
+// the web app calls this on navigation.
 //
 // Malformed or reserved-segment paths resolve to `not_found` rather
 // than 400 — the frontend loader uses the `not_found` result to render
@@ -31,7 +34,7 @@ export async function layoutRoutes(
   const { db } = opts;
 
   server.get("/resolve", {
-    config: { rateLimit: { max: 600, timeWindow: "1 minute" } },
+    config: { rateLimit: { max: 30, timeWindow: "1 minute" } },
   }, async (request, reply) => {
     const parsed = LayoutResolveQuerySchema.safeParse(request.query);
     if (!parsed.success) {

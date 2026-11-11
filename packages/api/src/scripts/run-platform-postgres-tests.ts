@@ -42,6 +42,8 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/guest-save-limits-postgres.test.ts",
   // ...and how often: the planner's own pace through the whole app's rate limiter.
   "src/__tests__/guest-save-pace-postgres.test.ts",
+  // Who can find and read a guest's plan: code lookups, and notes kept to the browser that made it.
+  "src/__tests__/guest-plan-privacy-postgres.test.ts",
   "src/__tests__/role-vocabulary-postgres.test.ts",
   // An open socket acts with its person's current role: /ws/configurations saves and /ws/diary commands.
   "src/__tests__/socket-identity-postgres.test.ts",
