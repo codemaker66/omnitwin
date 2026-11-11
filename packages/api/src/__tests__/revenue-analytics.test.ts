@@ -2,14 +2,21 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import type { FastifyInstance } from "fastify";
-import type { RevenueScenario } from "@omnitwin/types";
+import { addRotaDays, type RevenueScenario } from "@omnitwin/types";
 import {
   buildPipelineSummary,
   buildRoomUtilisationRows,
   buildVenueDashboardAnalytics,
   comparisonSignals,
+  roomUtilisationWindow,
   summarizeRevenueScenarios,
 } from "../services/revenue-analytics.js";
+
+const LONDON = "Europe/London";
+
+function venueDates(first: string, count: number): string[] {
+  return Array.from({ length: count }, (_, index) => addRotaDays(first, index));
+}
 
 process.env["DATABASE_URL"] = "postgresql://mock:mock@localhost/mock";
 process.env["JWT_SECRET"] = "test-jwt-secret-that-is-at-least-32-characters-long";
@@ -136,9 +143,26 @@ describe("revenue analytics services", () => {
     expect(dashboard.pipelineValueMinor).toBe(250_000_000);
   });
 
+  it("caps accepted per enquiry at 100 when accepted proposals outnumber enquiries", () => {
+    // Two deals from phone calls, both accepted, and one web enquiry: the
+    // share used to read 200 and fail PercentSchema, taking the dashboard down.
+    const pipeline = buildPipelineSummary({
+      pipelineValueMinor: 0,
+      enquiryCount: 1,
+      proposalStatusCounts: { accepted: 2 },
+    });
+    expect(pipeline.conversionPercent).toBe(100);
+    expect(pipeline.acceptedProposalCount).toBe(2);
+    expect(pipeline.enquiryCount).toBe(1);
+    const dashboard = buildVenueDashboardAnalytics({
+      generatedAt: NOW, pipeline, roomUtilisation: [], revenueScenarios: [], comfortConstraints: [],
+    });
+    expect(dashboard.enquiryConversionPercent).toBe(100);
+    expect(buildPipelineSummary({ pipelineValueMinor: 0, enquiryCount: 0, proposalStatusCounts: { accepted: 3 } })
+      .conversionPercent).toBe(0);
+  });
+
   it("measures room utilisation from confirmed bookings, not from quotes", () => {
-    const windowStart = new Date("2026-07-01T00:00:00.000Z");
-    const windowEnd = new Date("2026-07-11T00:00:00.000Z"); // 10-day window
     const rows = buildRoomUtilisationRows({
       rooms: [
         { spaceId: "00000000-0000-4000-8000-000000003201", roomName: "Grand Hall" },
@@ -156,8 +180,8 @@ describe("revenue analytics services", () => {
         { spaceId: "00000000-0000-4000-8000-000000003202", kind: "prospect",
           startsAt: new Date("2026-07-03T09:00:00.000Z"), endsAt: new Date("2026-07-03T23:00:00.000Z") },
       ],
-      windowStart,
-      windowEnd,
+      windowDates: venueDates("2026-07-01", 10),
+      timeZone: LONDON,
       reviewBottlenecksBySpaceId: new Map(),
     });
 
@@ -181,11 +205,53 @@ describe("revenue analytics services", () => {
         { spaceId: "00000000-0000-4000-8000-000000003201", kind: "ink",
           startsAt: new Date("2026-07-02T00:00:00.000Z"), endsAt: new Date("2026-07-04T00:00:00.000Z") },
       ],
-      windowStart: new Date("2026-07-01T00:00:00.000Z"),
-      windowEnd: new Date("2026-07-11T00:00:00.000Z"),
+      windowDates: venueDates("2026-07-01", 10),
+      timeZone: LONDON,
       reviewBottlenecksBySpaceId: new Map(),
     });
     expect(rows[0]?.utilisationPercent).toBe(100);
+  });
+
+  it("counts an evening past midnight as one venue day in either season", () => {
+    const grandHall = "00000000-0000-4000-8000-000000003201";
+    const ink = (startsAt: string, endsAt: string) => ({
+      spaceId: grandHall, kind: "ink", startsAt: new Date(startsAt), endsAt: new Date(endsAt),
+    });
+    const rows = buildRoomUtilisationRows({
+      rooms: [{ spaceId: grandHall, roomName: "Grand Hall" }],
+      bookings: [
+        // 18:00 to midnight BST on Sat 24 Oct, before the clocks go back.
+        ink("2026-10-24T17:00:00.000Z", "2026-10-24T23:00:00.000Z"),
+        // The same evening in GMT on Sat 31 Oct ends at 00:00Z.
+        ink("2026-10-31T18:00:00.000Z", "2026-11-01T00:00:00.000Z"),
+        // 19:00 to 00:30 GMT.
+        ink("2026-11-01T19:00:00.000Z", "2026-11-02T00:30:00.000Z"),
+        // Ends exactly at 04:00, where the next venue day begins.
+        ink("2026-11-02T19:00:00.000Z", "2026-11-03T04:00:00.000Z"),
+      ],
+      windowDates: venueDates("2026-10-20", 20),
+      timeZone: LONDON,
+      reviewBottlenecksBySpaceId: new Map(),
+    });
+    // Four evenings, four venue days, of 20: 20%. UTC days with an inclusive
+    // end counted five (24 Oct, 31 Oct, 1, 2 and 3 Nov): 25%.
+    expect(rows[0]?.bookedEvents).toBe(4);
+    expect(rows[0]?.utilisationPercent).toBe(20);
+  });
+
+  it("measures the window from the venue's operational today, 04:00 to 04:00", () => {
+    // 02:30 GMT on 8 Nov still belongs to the Diary day of 7 Nov.
+    const early = roomUtilisationWindow(Date.parse("2026-11-08T02:30:00.000Z"), LONDON);
+    expect(early.dates).toHaveLength(90);
+    expect(early.dates[0]).toBe("2026-11-07");
+    expect(early.startsAt.toISOString()).toBe("2026-11-07T04:00:00.000Z");
+    expect(early.dates[89]).toBe("2027-02-04");
+    expect(early.endsAt.toISOString()).toBe("2027-02-05T04:00:00.000Z");
+    expect(roomUtilisationWindow(Date.parse("2026-11-08T04:00:00.000Z"), LONDON).dates[0]).toBe("2026-11-08");
+    // Across the spring change the window still ends at 04:00 venue time (BST).
+    const spring = roomUtilisationWindow(Date.parse("2026-03-01T12:00:00.000Z"), LONDON);
+    expect(spring.dates[89]).toBe("2026-05-29");
+    expect(spring.endsAt.toISOString()).toBe("2026-05-30T03:00:00.000Z");
   });
 
   it("marks scenario comparison for review when constraints worsen", () => {

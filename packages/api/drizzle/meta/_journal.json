@@ -726,8 +726,15 @@
     {
       "idx": 103,
       "version": "7",
-      "when": 1794355200000,
-      "tag": "0106_booking_supplier_arrivals",
+      "when": 1794362400000,
+      "tag": "0106_grand_hall_e57_interior",
+      "breakpoints": true
+    },
+    {
+      "idx": 104,
+      "version": "7",
+      "when": 1794430800000,
+      "tag": "0107_booking_supplier_arrivals",
       "breakpoints": true
     }
   ]

@@ -47,7 +47,7 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/floor-changes-postgres.test.ts",
   // What moves at a changeover: two layouts of one room through the real sheet pipeline.
   "src/__tests__/changeover-postgres.test.ts",
-  // Supplier arrivals (migration 0106): the office plans them, the floor marks the door, each venue its own.
+  // Supplier arrivals (migration 0107): the office plans them, the floor marks the door, each venue its own.
   "src/__tests__/supplier-arrivals-postgres.test.ts",
   "src/__tests__/ai-usage-postgres.test.ts",
   // The People Book (migration 0098): the operator's read-only check of the backfill.
@@ -72,6 +72,8 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/chair-sizes-migration-postgres.test.ts",
   // Migration 0105: product writes share the foundry's global lock; the kill switch still excludes them (T-677).
   "src/__tests__/foundry-product-lock-postgres.test.ts",
+  // The Grand Hall at its E57 interior and clear height (0106): one row, inert on replay, stops named, a chair against a long wall saves.
+  "src/__tests__/grand-hall-e57-migration-postgres.test.ts",
 ] as const;
 
 /**
