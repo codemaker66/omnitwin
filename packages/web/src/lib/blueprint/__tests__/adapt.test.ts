@@ -226,7 +226,10 @@ describe("adaptEditorStateToBlueprintScene — chair grouping", () => {
       }
     });
 
-    it("holds a round dragged past the top of the plan inside the north wall, and lets one reach the lower section", () => {
+    // The two functions together, and no more than that: no path of the planner composes them. The open
+    // layout's 2D drag (pages/BlueprintPage.tsx handleMoveTo) takes the pointer's spot to the scene and writes
+    // it with no clamp, in every room, so a piece can still be dragged anywhere there.
+    it("takes a spot the plan's clamp has held on the plan back to the scene inside the bounds of the walls, top and foot", () => {
       const { room } = sceneWith([]);
       // The plan's own clamp (the round's 0.9 m), then back to the scene.
       const top = blueprintPointToEditorPosition(clampCenterToRoom({ x: 5.7, y: -5 }, room, "round-table"), room);
