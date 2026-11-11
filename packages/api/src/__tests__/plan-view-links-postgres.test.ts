@@ -15,7 +15,7 @@ import * as schema from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { publicConfigRoutes } from "../routes/public-configs.js";
 import { publicPlanViewRoutes } from "../routes/public-plan-views.js";
-import { cleanupPreviewConfigurations } from "../services/cleanup.js";
+import { cleanupPreviewConfigurations, PLAN_KEPT_BY } from "../services/cleanup.js";
 import { migrationText } from "./migration-text.js";
 import { pdfPageTexts } from "./support/pdf-text.js";
 
@@ -76,11 +76,12 @@ describe.skipIf(testUrl === undefined)("view-only links on isolated PostgreSQL",
   let server: FastifyInstance;
   const fixtureSchema = `plan_view_${randomUUID().replaceAll("-", "")}`;
   // Every table the routes and the preview sweep read (the sweep spares a plan
-  // with a handoff pack, so it reads handoff_packs too).
-  const tables: PgTable[] = [
+  // that is in anybody's work, so it reads each table that can say so:
+  // enquiries, handoff_packs and the rest of PLAN_KEPT_BY).
+  const tables: PgTable[] = [...new Set<PgTable>([
     schema.venues, schema.spaces, schema.assetDefinitions, schema.configurations, schema.placedObjects,
-    schema.enquiries, schema.handoffPacks,
-  ];
+    ...PLAN_KEPT_BY.map((key) => key.table),
+  ])];
 
   beforeAll(async () => {
     pool = new Pool({
