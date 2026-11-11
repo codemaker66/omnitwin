@@ -207,7 +207,7 @@ describe("a fill over rounds that hold a note this browser is not shown", () => 
 
     expect(itsPieces).toHaveLength(11);
     expect(itsPieces.some((piece) => fill.refillIds.has(piece.id))).toBe(false);
-    expect(fill.keptForNotes).toEqual(["Table 6"]);
+    expect(fill.keptForNotes).toEqual([{ label: "Table 6", noun: "round" }]);
     // Without the mark the same fill takes Table 6 away: three spots, six rounds.
     const unmarked = planFor(placed, 30);
     expect(unmarked.refillIds.has(table6.id)).toBe(true);
@@ -229,19 +229,32 @@ describe("a fill over rounds that hold a note this browser is not shown", () => 
     if (table6 === undefined || chair === undefined) throw new Error("no Table 6");
     const fill = planOver(placed, 30, (id) => id === chair.id);
     expect(fill.refillIds.has(table6.id)).toBe(false);
-    expect(fill.keptForNotes).toEqual(["Table 6"]);
+    expect(fill.keptForNotes).toEqual([{ label: "Table 6", noun: "round" }]);
   });
 
-  it("says so for each round once laid, one sentence a name", () => {
+  it("says so once laid: one round by its name, several in one sentence that lists them", () => {
+    const named = (label: string | null): { readonly label: string | null; readonly noun: string } => ({ label, noun: "round" });
     expect(fillKeptForNotesLine([])).toBeNull();
-    expect(fillKeptForNotesLine(["Table 3"])).toBe("Table 3 stayed where it is, because it has a note that cannot be shown here.");
-    expect(fillKeptForNotesLine(["Table 3", "Table 5"])).toBe(
-      "Table 3 stayed where it is, because it has a note that cannot be shown here. Table 5 stayed where it is, because it has a note that cannot be shown here.",
-    );
-    // Rounds nobody named are told apart by nothing, so they are said once.
-    const placed = rounds(3).map((piece) => ({ ...piece, label: "" }));
-    const unnamed = planOver(placed, 10, () => true);
-    expect(unnamed.keptForNotes).toEqual(["a round", "a round", "a round"]);
-    expect(fillKeptForNotesLine(unnamed.keptForNotes)).toBe("A round stayed where it is, because it has a note that cannot be shown here.");
+    expect(fillKeptForNotesLine([named("Table 3")])).toBe("Table 3 stayed where it is, because it has a note that cannot be shown here.");
+    expect(fillKeptForNotesLine([named("Table 3"), named("Table 5")]))
+      .toBe("Tables 3 and 5 stayed where they are, because each has a note that cannot be shown here.");
+    expect(fillKeptForNotesLine([named("Table 3"), named("Table 5"), named("Table 8")]))
+      .toBe("Tables 3, 5 and 8 stayed where they are, because each has a note that cannot be shown here.");
+    expect(fillKeptForNotesLine([named(null)])).toBe("A round stayed where it is, because it has a note that cannot be shown here.");
+    expect(fillKeptForNotesLine([named("Table 3"), named("Top table"), named(null), named(null)]))
+      .toBe("Table 3, Top table and 2 rounds stayed where they are, because each has a note that cannot be shown here.");
+  });
+
+  it("lists the rounds a fill leaves, in the order it would have set them, from the real plan", () => {
+    const placed = rounds(6);
+    const fill = planOver(placed, 30, held(placed, "Table 2", "Table 5", "Table 6"));
+    expect(fill.keptForNotes).toEqual([
+      { label: "Table 2", noun: "round" }, { label: "Table 5", noun: "round" }, { label: "Table 6", noun: "round" },
+    ]);
+    expect(fillKeptForNotesLine(fill.keptForNotes)).toBe("Tables 2, 5 and 6 stayed where they are, because each has a note that cannot be shown here.");
+    // Rounds nobody named are counted, not repeated.
+    const bare = rounds(3).map((piece) => ({ ...piece, label: "" }));
+    const unnamed = planOver(bare, 10, () => true);
+    expect(fillKeptForNotesLine(unnamed.keptForNotes)).toBe("3 rounds stayed where they are, because each has a note that cannot be shown here.");
   });
 });

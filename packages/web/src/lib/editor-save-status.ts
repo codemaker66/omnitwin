@@ -431,7 +431,8 @@ type PiecePhrase =
   | { readonly kind: "numbered"; readonly word: string; readonly numbers: string[] }
   | { readonly kind: "counted"; readonly noun: string; count: number };
 
-function describePieces(pieces: readonly ChangedPiece[]): string {
+/** Pieces in a phrase: "Tables 3 and 4", "Table 3 and a lectern", "2 tables and a chair". */
+export function describePieces(pieces: readonly ChangedPiece[]): string {
   const phrases: PiecePhrase[] = [];
   const numbered = new Map<string, { numbers: string[] }>();
   const counted = new Map<string, { count: number }>();

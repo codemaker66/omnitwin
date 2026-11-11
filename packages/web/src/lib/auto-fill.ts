@@ -34,7 +34,8 @@ import { footprintInKeepOut } from "./door-clear-spaces.js";
 import { placedFootprint } from "./keep-doors-clear.js";
 import { isDiningTableItem } from "./furniture-semantics.js";
 import { countLabel } from "./count-label.js";
-import { stayedForNoteLine } from "./guest-plan-notes.js";
+import { stayedForNotesLine } from "./guest-plan-notes.js";
+import type { ChangedPiece } from "./layout-change-summary.js";
 import type { PublishedCapacityAnswer, PublishedFormat } from "./planner-truth.js";
 
 // ---------------------------------------------------------------------------
@@ -1052,10 +1053,11 @@ export interface RoomFill {
   readonly refillIds: ReadonlySet<string>;
   /**
    * Rounds of the fill's kind it leaves exactly where they stand, because the
-   * table or one of its chairs holds a note this browser is not shown: their
-   * names, in refill order, for fillKeptForNotesLine.
+   * table or one of its chairs holds a note this browser is not shown: each
+   * by its table's name (or as a round nobody named), in refill order, for
+   * fillKeptForNotesLine.
    */
-  readonly keptForNotes: readonly string[];
+  readonly keptForNotes: readonly ChangedPiece[];
 }
 
 /**
@@ -1084,7 +1086,11 @@ export function planRoomFill(
   const keptIds = new Set(kept.map((placed) => placed.id));
   const refillIds = keptIds.size === 0 ? ofKind : new Set([...ofKind].filter((id) => !keptIds.has(id)));
   const plan = planGangwayFill({ ...input, keepOuts: fillKeepOuts(placedItems, refillIds, input.rule.betweenTablesM) });
-  return plan === null ? null : { plan, refillIds, keptForNotes: refilledRounds(kept, keptIds).oldTables.map(roundName) };
+  const keptForNotes = refilledRounds(kept, keptIds).oldTables.map((table): ChangedPiece => {
+    const label = (table.label ?? "").trim();
+    return { label: label === "" ? null : label, noun: "round" };
+  });
+  return plan === null ? null : { plan, refillIds, keptForNotes };
 }
 
 /** Every kept piece as a keep-out, metres, room-centred: its footprint and the aisle round it. */
@@ -1375,13 +1381,13 @@ export function fillOverDoneLine(plan: BanquetFillPlan, consequence: FillConsequ
 
 /**
  * What the Guests lens adds once a fill has been laid round rounds it left
- * alone for their notes (RoomFill.keptForNotes): one sentence for each name,
- * "Table 3 stayed where it is, because it has a note that cannot be shown
- * here." Null when it left none.
+ * alone for their notes (RoomFill.keptForNotes): one sentence, "Table 3
+ * stayed where it is, because it has a note that cannot be shown here." or,
+ * for several, "Tables 3, 5 and 8 stayed where they are, because each has a
+ * note that cannot be shown here." Null when it left none.
  */
-export function fillKeptForNotesLine(names: readonly string[]): string | null {
-  const distinct = [...new Set(names)];
-  return distinct.length === 0 ? null : distinct.map(stayedForNoteLine).join(" ");
+export function fillKeptForNotesLine(kept: readonly ChangedPiece[]): string | null {
+  return stayedForNotesLine(kept);
 }
 
 /** The fill's changes to the rounds there, said before it lays ("moves 3 rounds") or after ("moved 3 rounds"). */

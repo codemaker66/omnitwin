@@ -110,6 +110,27 @@ describe("Fill's prompt over a layout", () => {
       "Seated 20 at 2 tables: moved 2 rounds and took away 2. Table 5 stayed where it is, because it has a note that cannot be shown here.",
     );
   });
+
+  it("lists several such rounds in one sentence", () => {
+    const laid = fiveRounds();
+    const held = new Set(laid.filter((piece) => ["Table 1", "Table 2", "Table 3"].includes(piece.label ?? "")).map((piece) => piece.id));
+    usePlacementStore.setState({ placedItems: laid });
+    useEditorStore.setState({
+      isPublicPreview: true,
+      notesIncluded: false,
+      baseObjects: laid.map((piece) => ({ ...placedItemToEditor(piece, undefined), ...(held.has(piece.id) ? { noteHeld: true } : {}) })),
+    });
+    const onPlaced = vi.fn();
+    render(<AutoFillPrompt style="dinner-rounds" published={PUBLISHED} onPlaced={onPlaced} onCancel={vi.fn()} />);
+    askFor(10);
+    fireEvent.click(screen.getByTestId("auto-fill-place"));
+
+    const names = usePlacementStore.getState().placedItems.map((piece) => piece.label ?? "").filter((name) => name !== "");
+    expect(names).toEqual(expect.arrayContaining(["Table 1", "Table 2", "Table 3"]));
+    const said: unknown = onPlaced.mock.calls[0]?.[1];
+    expect(typeof said === "string" ? said.slice(said.indexOf("Tables")) : said)
+      .toBe("Tables 1, 2 and 3 stayed where they are, because each has a note that cannot be shown here.");
+  });
 });
 
 /** Five rounds of 10 in a row across the hall, named Table 1 to Table 5. */

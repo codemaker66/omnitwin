@@ -1,15 +1,20 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, render } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import * as configApi from "../api/configurations.js";
 import type { BatchObjectInput, Configuration, ObjectMetadata, PlacedObject } from "../api/configurations.js";
 import { EditorBridge, __resetEditorBridgeMountCountForTests } from "../components/editor/EditorBridge.js";
+import { PlannerCommandDeck } from "../components/editor/PlannerCommandDeck.js";
+import { VerticalToolbox } from "../components/editor/VerticalToolbox.js";
+import { SelectedFurnitureInspector } from "../components/editor/cockpit/SelectedFurnitureInspector.js";
 import { GRAND_HALL_RENDER_DIMENSIONS, toRealWorld } from "../constants/scale.js";
 import { getCatalogueItemBySlug } from "../lib/catalogue.js";
 import { plannerChairSlug } from "../lib/furniture-defaults.js";
 import type { PlacedItem } from "../lib/placement.js";
 import { setPlannerFeaturesForTesting } from "../lib/planner-features.js";
-import { changeSeatsAtSelectedTables, removeSelection, replaceSelection } from "../lib/planner-keymap.js";
-import { cardParamsFor } from "../lib/setup-cards.js";
+import { changeSeatsAtSelectedTables, removeSelection, replaceSelection, selectionKeyBindings } from "../lib/planner-keymap.js";
+import { registerKeyBindings } from "../lib/planner-keys.js";
+import { cardParamsFor, stampSetup } from "../lib/setup-cards.js";
 import { createTableGroup } from "../lib/table-group.js";
 import { useEditorStore } from "../stores/editor-store.js";
 import { usePlacementNoticeStore } from "../stores/placement-notice-store.js";
@@ -28,9 +33,10 @@ import { useSelectionStore } from "../stores/selection-store.js";
 // and the fills did exactly that: they read the piece's working note, which is
 // empty for a note that is held.
 //
-// The rule these hold: a piece holding a held note leaves the floor only when
-// the person removes that piece themselves. The real commands run, through the
-// real stores and the scene bridge; only the network is replaced.
+// The rule these hold: someone who cannot see a note never destroys it. In a
+// browser the notes are kept from, a piece holding one does not leave the
+// floor, whatever was asked for. The real commands run, through the real
+// stores and the scene bridge; only the network is replaced.
 // ---------------------------------------------------------------------------
 
 vi.mock("../api/configurations.js", async (importOriginal) => {
@@ -86,6 +92,20 @@ function rounds(count: number): readonly Round[] {
   });
 }
 
+/** A dance floor of five panels by five, as the server holds it. */
+function danceFloor(): Round {
+  const params = cardParamsFor("dance-floor", { cols: 5, rows: 5 });
+  if (params === null) throw new Error("no dance floor card");
+  const pieces = stampSetup(params, { x: 0, z: 0 }, 0).map((piece, p): PlacedItem => ({
+    ...piece,
+    id: `0d0d0d0d-0000-4000-8000-${String(p).padStart(12, "0")}`,
+    groupId: "0e0e0e0e-0000-4000-8000-000000000000",
+  }));
+  const [first, ...rest] = pieces;
+  if (first === undefined) throw new Error("no panels");
+  return { table: first.id, chairs: rest.map((panel) => panel.id), pieces };
+}
+
 /** A piece as the API returns it. */
 function wire(piece: PlacedItem, metadata: ObjectMetadata): PlacedObject {
   const label = (piece.label ?? "").trim();
@@ -102,10 +122,10 @@ function wire(piece: PlacedItem, metadata: ObjectMetadata): PlacedObject {
  * note: a read without the notes marks each as holding one, a read with them
  * (and today's API, which keeps nothing back) returns the note itself.
  */
-async function open(floor: readonly Round[], noted: readonly string[], read: Read): Promise<void> {
+async function open(floor: readonly Round[], noted: readonly string[], read: Read, guestPlan = true): Promise<void> {
   const says: ObjectMetadata = read === "without its notes" ? { noteHeld: true } : { notes: ALLERGY };
   const plan: Configuration = {
-    id: PLAN, spaceId: SPACE, venueId: VENUE, userId: null, name: "TEST ONLY plan", isPublicPreview: true, revision: 4,
+    id: PLAN, spaceId: SPACE, venueId: VENUE, userId: null, name: "TEST ONLY plan", isPublicPreview: guestPlan, revision: 4,
     objects: floor.flatMap((round) => round.pieces).map((piece) => wire(piece, noted.includes(piece.id) ? says : {})),
     ...(read === "by today's API" ? {} : { notesIncluded: read === "with its notes" }),
   };
@@ -366,20 +386,222 @@ describe("a seat taken from a table, when the chair that would go holds a note t
     act(() => { changeSeatsAtSelectedTables(-1); });
 
     expect(placedIds()).toEqual(before);
-    expect(notice()).toBe("This piece has a note that cannot be shown or changed here.");
+    expect(notice()).toBe("No seat was removed: Table 1 has a note that cannot be shown here.");
   });
 });
 
-describe("removing the piece itself", () => {
-  it("still takes it, as it does for anyone who holds the plan's link", async () => {
+describe("a dance floor made smaller, when a panel that would go holds a note this browser is not shown", () => {
+  it("is not resized, and says why", async () => {
+    const floor = danceFloor();
+    await open([floor], floor.pieces.map((piece) => piece.id), "without its notes");
+    const before = placedIds();
+    const groupId = floor.pieces[0]?.groupId ?? "";
+
+    let resized = true;
+    act(() => { resized = usePlacementStore.getState().resizeArea(groupId, 3, 3); });
+
+    expect(resized).toBe(false);
+    expect(placedIds()).toEqual(before);
+    expect(notice()).toMatch(/^The dance floor was not resized: .+ has a note that cannot be shown here\.$/u);
+  });
+});
+
+describe("clearing the floor, when a piece on it holds a note this browser is not shown", () => {
+  it("clears nothing, and says which piece", async () => {
+    const floor = rounds(2);
+    const held = floor[1];
+    if (held === undefined) throw new Error("no rounds");
+    await open(floor, [held.table], "without its notes");
+    const before = placedIds();
+
+    act(() => { usePlacementStore.getState().clearAll(); });
+
+    expect(placedIds()).toEqual(before);
+    expect(notice()).toBe("Nothing was cleared: Table 2 has a note that cannot be shown here.");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Removing the piece itself. Someone who cannot see a note never destroys it
+// (the release lead, 11 November 2026): not by Replace or a fill, and not by
+// asking for the piece to go. Each way a person removes pieces today runs
+// here as they use it: the key, and the three buttons on screen. (The
+// catalogue drawer's bin calls the same store action; nothing mounts it.)
+// ---------------------------------------------------------------------------
+
+interface WayToRemove {
+  readonly name: string;
+  /** Puts the control on screen, or the key in the keymap. */
+  readonly mount: () => void;
+  readonly use: () => void;
+}
+
+const keymapCleanups: (() => void)[] = [];
+
+const WAYS_TO_REMOVE: readonly WayToRemove[] = [
+  {
+    name: "the Delete key",
+    mount: () => {
+      keymapCleanups.push(registerKeyBindings(selectionKeyBindings({
+        invalidate: () => undefined, cancelGesture: () => undefined, screenUp: () => ({ x: 0, z: -1 }),
+      })));
+    },
+    use: () => { window.dispatchEvent(new KeyboardEvent("keydown", { code: "Delete", key: "Delete", bubbles: true, cancelable: true })); },
+  },
+  {
+    name: "the command deck's Delete",
+    mount: () => { render(<PlannerCommandDeck />); },
+    use: () => { fireEvent.click(screen.getByTestId("planner-command-action-delete")); },
+  },
+  {
+    name: "the toolbox's Delete",
+    mount: () => { render(<MemoryRouter><VerticalToolbox /></MemoryRouter>); },
+    use: () => { fireEvent.click(screen.getByRole("button", { name: /^Delete/u })); },
+  },
+  {
+    name: "the inspector's Remove",
+    mount: () => { render(<SelectedFurnitureInspector />); },
+    use: () => { fireEvent.click(screen.getByRole("button", { name: /^Remove /u })); },
+  },
+];
+
+describe.each(WAYS_TO_REMOVE)("removing with $name", (way) => {
+  afterEach(() => {
+    while (keymapCleanups.length > 0) keymapCleanups.pop()?.();
+  });
+
+  /** Selects, puts the control on screen and uses it. */
+  function remove(ids: readonly string[]): void {
+    act(() => { useSelectionStore.getState().selectMultiple(ids); });
+    act(() => { way.mount(); });
+    act(() => { way.use(); });
+  }
+
+  it("removes nothing when the piece holds a note this browser is not shown, and says which", async () => {
+    const floor = rounds(2);
+    const [first] = floor;
+    if (first === undefined) throw new Error("no rounds");
+    await open(floor, [first.table], "without its notes");
+    const before = placedIds();
+    const stepsBefore = steps();
+
+    remove([first.table]);
+
+    expect(placedIds()).toEqual(before);
+    expect(notice()).toBe("Nothing was removed: Table 1 has a note that cannot be shown here.");
+    // Nothing was written, so there is nothing for Undo to take back.
+    expect(steps()).toBe(stepsBefore);
+    expect(useEditorStore.getState().isDirty).toBe(false);
+    act(() => { useEditorStore.getState().undo(); });
+    expect(placedIds()).toEqual(before);
+  });
+
+  it("keeps that piece, with its chairs, and removes the others selected with it", async () => {
+    const floor = rounds(3);
+    const [first, second, third] = floor;
+    if (first === undefined || second === undefined || third === undefined) throw new Error("no rounds");
+    await open(floor, [second.table], "without its notes");
+    const stepsBefore = steps();
+
+    remove([first.table, second.table, third.table]);
+
+    expect(placedIds()).toEqual(second.pieces.map((piece) => piece.id));
+    expect(notice()).toBe("Table 2 stayed where it is, because it has a note that cannot be shown here.");
+    expect(steps()).toBe(stepsBefore + 1);
+
+    // One Undo brings the two that went back; Redo takes them again. Table 2 is the server's own row throughout.
+    act(() => { useEditorStore.getState().undo(); });
+    expect(tableNames()).toEqual(["Table 1", "Table 2", "Table 3"]);
+    expect(placedIds()).toEqual(expect.arrayContaining(second.pieces.map((piece) => piece.id)));
+    act(() => { useEditorStore.getState().redo(); });
+    expect(tableNames()).toEqual(["Table 2"]);
+    expect(placedIds()).toEqual(second.pieces.map((piece) => piece.id));
+  });
+
+  it.each<Read>(["with its notes", "by today's API"])("removes the piece as it always did in a plan read %s", async (read) => {
     const floor = rounds(2);
     const [first, second] = floor;
     if (first === undefined || second === undefined) throw new Error("no rounds");
-    await open(floor, [first.table], "without its notes");
+    await open(floor, [first.table], read);
+
+    remove([first.table]);
+
+    expect(placedIds()).toEqual(second.pieces.map((piece) => piece.id));
+    expect(notice()).toBeNull();
+    act(() => { useEditorStore.getState().undo(); });
+    expect(tableNames()).toEqual(["Table 1", "Table 2"]);
+  });
+});
+
+describe("removing pieces, several of which hold a note this browser is not shown", () => {
+  it("says which stayed in one sentence, and removes the rest", async () => {
+    const floor = rounds(4);
+    const [first, second, third, fourth] = floor;
+    if (first === undefined || second === undefined || third === undefined || fourth === undefined) throw new Error("no rounds");
+    await open(floor, [first.table, third.table], "without its notes");
+
+    useSelectionStore.getState().selectMultiple(floor.map((round) => round.table));
+    act(() => { removeSelection(); });
+
+    expect(tableNames()).toEqual(["Table 1", "Table 3"]);
+    expect(notice()).toBe("Tables 1 and 3 stayed where they are, because each has a note that cannot be shown here.");
+  });
+
+  it("lists three or more by their numbers, and removes nothing when every one of them holds a note", async () => {
+    const floor = rounds(3);
+    await open(floor, floor.map((round) => round.table), "without its notes");
+    const before = placedIds();
+    const stepsBefore = steps();
+
+    useSelectionStore.getState().selectMultiple(floor.map((round) => round.table));
+    act(() => { removeSelection(); });
+
+    expect(placedIds()).toEqual(before);
+    expect(notice()).toBe("Tables 1, 2 and 3 stayed where they are, because each has a note that cannot be shown here.");
+    expect(steps()).toBe(stepsBefore);
+  });
+
+  it("keeps a table whose chair holds the note, and names the table", async () => {
+    const floor = rounds(2);
+    const [first, second] = floor;
+    const chair = first?.chairs[4];
+    if (first === undefined || second === undefined || chair === undefined) throw new Error("no rounds");
+    await open(floor, [chair], "without its notes");
+    const before = placedIds();
+
+    useSelectionStore.getState().selectMultiple([first.table]);
+    act(() => { removeSelection(); });
+
+    expect(placedIds()).toEqual(before);
+    expect(notice()).toBe("Nothing was removed: Table 1 has a note that cannot be shown here.");
+  });
+
+  it("removes a marked piece as ever from a layout that is not a guest plan, where the mark means nothing", async () => {
+    const floor = rounds(2);
+    const [first, second] = floor;
+    if (first === undefined || second === undefined) throw new Error("no rounds");
+    await open(floor, [first.table], "without its notes", false);
 
     useSelectionStore.getState().selectMultiple([first.table]);
     act(() => { removeSelection(); });
 
     expect(placedIds()).toEqual(second.pieces.map((piece) => piece.id));
+    expect(notice()).toBeNull();
+  });
+
+  it("removes one piece by its id only when it holds no such note", async () => {
+    const floor = rounds(2);
+    const [first, second] = floor;
+    const chair = second?.chairs[0];
+    if (first === undefined || second === undefined || chair === undefined) throw new Error("no rounds");
+    await open(floor, [first.table], "without its notes");
+    const before = placedIds();
+
+    act(() => { usePlacementStore.getState().removeItem(first.table); });
+    expect(placedIds()).toEqual(before);
+    expect(notice()).toBe("Nothing was removed: Table 1 has a note that cannot be shown here.");
+
+    act(() => { usePlacementStore.getState().removeItem(chair); });
+    expect(placedIds()).toEqual(before.filter((id) => id !== chair));
   });
 });

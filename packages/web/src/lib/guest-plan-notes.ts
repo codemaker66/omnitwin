@@ -1,6 +1,8 @@
 import type { BatchObjectInput } from "../api/configurations.js";
 import type { EditorObject } from "../stores/editor-store.js";
 import { getCatalogueItem } from "./catalogue.js";
+import { describePieces } from "./editor-save-status.js";
+import type { ChangedPiece } from "./layout-change-summary.js";
 
 // ---------------------------------------------------------------------------
 // A guest plan's notes, in a browser that is not shown them.
@@ -25,10 +27,11 @@ import { getCatalogueItem } from "./catalogue.js";
 //
 // A third thing follows (review of #388). A piece left out of a save is
 // removed, and its note with it, and Undo cannot bring that note back: it
-// returns the piece as a new one. So a piece holding a note the person cannot
-// see leaves the floor only when they remove that piece themselves. Replace
-// and the fills never take one as a side effect (currentHeldNoteIds, and the
-// lines at the foot of this file that say why nothing changed).
+// returns the piece as a new one. So someone who cannot see a note never
+// destroys it. In a browser the notes are kept from, a piece holding one is
+// not taken by Replace or a fill, nor by a seat fewer, a smaller dance floor
+// or a cleared floor, and it is not removed when the person asks for it to go
+// (currentHeldNoteIds, and the lines at the foot of this file that say why).
 // ---------------------------------------------------------------------------
 
 /** The parts of the editor's state these read. */
@@ -191,7 +194,7 @@ export function currentHeldNoteIds(): ReadonlySet<string> {
 // lead on 11 November 2026, for the owner to look at; change them here only.
 // ---------------------------------------------------------------------------
 
-/** In place of the note field, and wherever a change stops short of a piece without a line of its own. */
+/** In place of the note field. */
 export const HELD_NOTE_LINE = "This piece has a note that cannot be shown or changed here.";
 
 interface NamedPiece {
@@ -205,24 +208,35 @@ function ownName(piece: NamedPiece): string {
   return (piece.label ?? "").trim();
 }
 
+/** What a piece is, as layout-change-summary's nounFor says it: any table is "table". */
+function nounOf(piece: NamedPiece): string {
+  const item = getCatalogueItem(piece.catalogueItemId);
+  if (item === undefined) return "piece";
+  return item.tableShape !== null ? "table" : item.name.toLowerCase();
+}
+
 function isTable(piece: NamedPiece): boolean {
   const item = getCatalogueItem(piece.catalogueItemId);
   return item !== undefined && item.tableShape !== null;
 }
 
 /**
- * How these lines name a piece: by its own name ("Table 3"); a chair or other
+ * How these lines know a piece: by its own name ("Table 3"); a chair or other
  * piece of a named table's group by that table's name, since that is what the
- * person can find; otherwise by what it is ("a table", "a lectern").
+ * person can find; otherwise by what it is. A ChangedPiece, so several are
+ * said as the planner says changed pieces anywhere (describePieces).
  */
-export function heldNotePieceName(piece: NamedPiece, pieces: readonly NamedPiece[]): string {
-  if (ownName(piece) !== "") return ownName(piece);
+export function heldNotePieceNamed(piece: NamedPiece, pieces: readonly NamedPiece[]): ChangedPiece {
+  if (ownName(piece) !== "") return { label: ownName(piece), noun: nounOf(piece) };
   const tables = piece.groupId === null ? [] : pieces.filter((other) => other.groupId === piece.groupId && isTable(other) && ownName(other) !== "");
   const [table] = tables;
-  if (tables.length === 1 && table !== undefined) return ownName(table);
-  const item = getCatalogueItem(piece.catalogueItemId);
-  const noun = item === undefined ? "piece" : item.tableShape !== null ? "table" : item.name.toLowerCase();
-  return `${/^[aeiou]/iu.test(noun) ? "an" : "a"} ${noun}`;
+  if (tables.length === 1 && table !== undefined) return { label: ownName(table), noun: nounOf(table) };
+  return { label: null, noun: nounOf(piece) };
+}
+
+/** One piece as a line names it: "Table 3", or "a table", "a lectern". */
+export function heldNotePieceName(piece: NamedPiece, pieces: readonly NamedPiece[]): string {
+  return describePieces([heldNotePieceNamed(piece, pieces)]);
 }
 
 /**
@@ -251,17 +265,53 @@ export function pieceNamedForRefusedSave(state: GuestPlanNoteFacts): string | nu
   return heldNotePieceName(asNamed(only), state.objects.map(asNamed));
 }
 
+/** A change that did not happen because of one such piece: "<outcome>: <name> has a note that cannot be shown here." */
+function refusedLine(outcome: string, name: string): string {
+  return `${outcome}: ${name} has a note that cannot be shown here.`;
+}
+
 /** Replace's refusal: the selection holds such a piece, so nothing is replaced. */
 export function nothingReplacedLine(name: string): string {
-  return `Nothing was replaced: ${name} has a note that cannot be shown here.`;
+  return refusedLine("Nothing was replaced", name);
 }
 
 /** A fill's refusal, when it would clear such a piece from the floor. */
 export function nothingFilledLine(name: string): string {
-  return `Nothing was filled: ${name} has a note that cannot be shown here.`;
+  return refusedLine("Nothing was filled", name);
 }
 
-/** Said after a fill that worked round such a piece and left it where it stood. */
-export function stayedForNoteLine(name: string): string {
-  return `${name.charAt(0).toUpperCase()}${name.slice(1)} stayed where it is, because it has a note that cannot be shown here.`;
+/** A removal's refusal, when the one piece (or group) asked to go holds such a note. */
+export function nothingRemovedLine(name: string): string {
+  return refusedLine("Nothing was removed", name);
+}
+
+/** A seat taken from a table, when the chair that would go holds such a note. */
+export function noSeatRemovedLine(name: string): string {
+  return refusedLine("No seat was removed", name);
+}
+
+/** A dance floor made smaller, when a panel that would go holds such a note. */
+export function danceFloorNotResizedLine(name: string): string {
+  return refusedLine("The dance floor was not resized", name);
+}
+
+/** Clearing the floor, when a piece on it holds such a note. */
+export function nothingClearedLine(name: string): string {
+  return refusedLine("Nothing was cleared", name);
+}
+
+/**
+ * Said after a change that went ahead round such pieces and left them where
+ * they stood (a fill, a removal of several): one sentence, naming one piece
+ * ("Table 3 stayed where it is, because it has a note that cannot be shown
+ * here.") or listing several ("Tables 3, 5 and 8 stayed where they are,
+ * because each has a note that cannot be shown here."). Null for none.
+ */
+export function stayedForNotesLine(kept: readonly ChangedPiece[]): string | null {
+  if (kept.length === 0) return null;
+  const names = describePieces(kept);
+  const led = `${names.charAt(0).toUpperCase()}${names.slice(1)}`;
+  return kept.length === 1
+    ? `${led} stayed where it is, because it has a note that cannot be shown here.`
+    : `${led} stayed where they are, because each has a note that cannot be shown here.`;
 }
