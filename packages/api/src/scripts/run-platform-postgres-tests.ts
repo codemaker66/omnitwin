@@ -66,7 +66,7 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/chair-sizes-migration-postgres.test.ts",
   // Migration 0105: product writes share the foundry's global lock; the kill switch still excludes them (T-677).
   "src/__tests__/foundry-product-lock-postgres.test.ts",
-  // The Grand Hall at its E57 interior (0108): one row, inert on replay, stops named, a chair against a long wall saves.
+  // The Grand Hall at its E57 interior (0106): one row, inert on replay, stops named, a chair against a long wall saves.
   "src/__tests__/grand-hall-e57-migration-postgres.test.ts",
 ] as const;
 
