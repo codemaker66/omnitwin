@@ -138,18 +138,31 @@ export type CreateSpace = z.infer<typeof CreateSpaceSchema>;
 // Trades Hall Room Constants (client-side convenience)
 // ---------------------------------------------------------------------------
 
-export const TRADES_HALL_GRAND_HALL_DIMENSIONS: SpaceDimensions = { width: 21, length: 10.5, height: 7 };
+/** The Grand Hall's stored and published size, from its laser scan: 21.14 m
+ *  (the scanned 21.135 m rounded up) by 10.59 m, and its clear 6.7 m to the
+ *  underside of the coffered ceiling; the dome rises above part of the hall and
+ *  is not its height. Production stores these figures (migration 0106,
+ *  packages/api/src/db/grand-hall-e57.ts) and the public pages show them. The
+ *  planner draws and places in the unrounded scan instead
+ *  (GRAND_HALL_RENDER_DIMENSIONS in packages/web/src/constants/scale.ts, from
+ *  hall-spec.ts). Blake, 11 November 2026: "Use the measurements captured from
+ *  the lidar /e57 data". */
+export const TRADES_HALL_GRAND_HALL_DIMENSIONS: SpaceDimensions = { width: 21.14, length: 10.59, height: 6.7 };
 export const TRADES_HALL_ROBERT_ADAM_ROOM_DIMENSIONS: SpaceDimensions = { width: 9.7, length: 5.6, height: 2.18 };
 export const TRADES_HALL_RECEPTION_ROOM_DIMENSIONS: SpaceDimensions = { width: 13.4, length: 11.2, height: 3.2 };
 export const TRADES_HALL_SALOON_DIMENSIONS: SpaceDimensions = { width: 12, length: 7, height: 5.4 };
 
-/** Builds a rectangular floor plan from width and length. */
+/** Builds a rectangular floor plan from width and length, centred on the
+ *  origin as the API's seed stores every room (db/seed.ts rectOutline) and as
+ *  the planner draws it. */
 function rectangleOutline(width: number, length: number): readonly FloorPlanPoint[] {
-  return [{ x: 0, y: 0 }, { x: width, y: 0 }, { x: width, y: length }, { x: 0, y: length }];
+  const hw = width / 2;
+  const hl = length / 2;
+  return [{ x: -hw, y: -hl }, { x: hw, y: -hl }, { x: hw, y: hl }, { x: -hw, y: hl }];
 }
 
 export const TRADES_HALL_ROOMS = [
-  { name: "Grand Hall", slug: "grand-hall", description: "The flagship hall, 21m x 10.5m with 7m dome.", dimensions: TRADES_HALL_GRAND_HALL_DIMENSIONS, sortOrder: 0, floorPlanOutline: rectangleOutline(21, 10.5) },
+  { name: "Grand Hall", slug: "grand-hall", description: "The flagship hall, 21.14m x 10.59m and about 6.7m to the coffered ceiling, with the dome rising above part of the hall.", dimensions: TRADES_HALL_GRAND_HALL_DIMENSIONS, sortOrder: 0, floorPlanOutline: rectangleOutline(TRADES_HALL_GRAND_HALL_DIMENSIONS.width, TRADES_HALL_GRAND_HALL_DIMENSIONS.length) },
   { name: "Robert Adam Room", slug: "robert-adam-room", description: "Elegant intimate room, 9.7m x 5.6m.", dimensions: TRADES_HALL_ROBERT_ADAM_ROOM_DIMENSIONS, sortOrder: 1, floorPlanOutline: rectangleOutline(9.7, 5.6) },
   { name: "Reception Room", slug: "reception-room", description: "Versatile event space, 13.4m x 11.2m.", dimensions: TRADES_HALL_RECEPTION_ROOM_DIMENSIONS, sortOrder: 2, floorPlanOutline: rectangleOutline(13.4, 11.2) },
   { name: "Saloon", slug: "saloon", description: "Grand entertaining room, 12m x 7m.", dimensions: TRADES_HALL_SALOON_DIMENSIONS, sortOrder: 3, floorPlanOutline: rectangleOutline(12, 7) },
