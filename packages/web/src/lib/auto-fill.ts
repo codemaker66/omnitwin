@@ -33,6 +33,7 @@ import { chairsInStore, currentStoreStock, type UsableStock } from "./card-stock
 import { footprintInKeepOut } from "./door-clear-spaces.js";
 import { placedFootprint } from "./keep-doors-clear.js";
 import { isDiningTableItem } from "./furniture-semantics.js";
+import { discWithinFloor, floorCentre, rectWithinFloor, type RoomFloor } from "./room-floor.js";
 import { countLabel } from "./count-label.js";
 import type { PublishedCapacityAnswer, PublishedFormat } from "./planner-truth.js";
 
@@ -165,6 +166,38 @@ export interface FillOptions {
    * asked for, with no limit.
    */
   readonly chairSupply?: readonly ChairSupply[];
+  /**
+   * The room's floor, where its walls are not the rectangle of its size
+   * centred on the origin (lib/room-floor). The layout is then planned across
+   * the floor's bounds, where they stand, and a group or seat is set only
+   * where it stands inside the walls with the layout's wall band kept from
+   * every one of them.
+   */
+  readonly floor?: RoomFloor;
+}
+
+/** Where a layout planned on a room-centred origin stands in the room, metres: the middle of its floor's bounds. */
+function layoutOrigin(floor: RoomFloor | undefined): { readonly xM: number; readonly zM: number } {
+  if (floor === undefined) return { xM: 0, zM: 0 };
+  const centre = floorCentre(floor);
+  return { xM: toRealWorld(centre.x), zM: toRealWorld(centre.z) };
+}
+
+/**
+ * Whether a table group at a spot (metres, in the room) stands inside the
+ * floor's walls with `bandM` kept from each of them, as a layout keeps it
+ * from a rectangle's: a round's ring of chairs as a disc, a rectangle's
+ * bounds as they are.
+ */
+function groupOnFloor(
+  floor: RoomFloor,
+  bounds: { readonly width: number; readonly depth: number },
+  radiusM: number | undefined,
+  bandM: number,
+): (spot: { readonly xM: number; readonly zM: number }) => boolean {
+  return (spot) => (radiusM === undefined
+    ? rectWithinFloor(floor, toRenderSpace(spot.xM), toRenderSpace(spot.zM), toRenderSpace(bounds.width / 2 + bandM), toRenderSpace(bounds.depth / 2 + bandM))
+    : discWithinFloor(floor, toRenderSpace(spot.xM), toRenderSpace(spot.zM), toRenderSpace(radiusM + bandM)));
 }
 
 /**
@@ -267,13 +300,26 @@ export function planBanquetFill(
     admit,
   });
   const doorsKeptClear = doorSpaces.length > 0;
-  const plan = layout(doorsKeptClear ? groupClearOfDoors(table, seats, groupBounds(occupied, radiusM), doorSpaces) : undefined);
+  const clearOfDoors = doorsKeptClear ? groupClearOfDoors(table, seats, groupBounds(occupied, radiusM), doorSpaces) : undefined;
+  // On a room's own floor the layout stands on the floor's bounds, and a group stands only inside its walls.
+  const { floor } = options;
+  const origin = layoutOrigin(floor);
+  const inRoom = (spot: BanquetTablePlacement): BanquetTablePlacement => ({ ...spot, xM: spot.xM + origin.xM, zM: spot.zM + origin.zM });
+  const onFloor = floor === undefined ? undefined : groupOnFloor(floor, occupied, radiusM, BANQUET_CHAIR_CLEARANCE_M);
+  const admitting = (doorRule: ((spot: BanquetTablePlacement) => boolean) | undefined): ((spot: BanquetTablePlacement) => boolean) | undefined => {
+    if (onFloor === undefined) return doorRule;
+    return (spot) => {
+      const at = inRoom(spot);
+      return onFloor(at) && (doorRule === undefined || doorRule(at));
+    };
+  };
+  const plan = layout(admitting(clearOfDoors));
   if (plan.tables.length === 0) return null;
   return {
     style: "dinner-rounds",
     tableItemId: table.id,
     round,
-    tables: plan.tables,
+    tables: floor === undefined ? plan.tables : plan.tables.map(inRoom),
     seatsPerTable: seats,
     tableCount: plan.tableCount,
     chairs: plan.seatsPlanned,
@@ -281,7 +327,7 @@ export function planBanquetFill(
     roomForSeats: plan.capacityTables * seats,
     meetsTarget: plan.meetsTarget,
     doorsKeptClear,
-    roomForSeatsIgnoringDoors: (doorsKeptClear ? layout(undefined) : plan).capacityTables * seats,
+    roomForSeatsIgnoringDoors: (doorsKeptClear ? layout(admitting(undefined)) : plan).capacityTables * seats,
   };
 }
 
@@ -328,6 +374,22 @@ function seatInSpaces(chair: CatalogueItem, seat: TheatreSeatPlacement, spaces: 
 }
 
 /**
+ * Whether a seat (metres, in the room) stands on the floor for every chair
+ * it may be set with: the chair wholly inside the walls, and the seat the
+ * rows' wall band from every wall, as the rows keep it from a rectangle's
+ * back wall.
+ */
+function seatOnFloor(floor: RoomFloor, kinds: readonly ChairSupply[], seat: TheatreSeatPlacement): boolean {
+  const x = toRenderSpace(seat.xM);
+  const z = toRenderSpace(seat.zM);
+  if (!discWithinFloor(floor, x, z, toRenderSpace(THEATRE_SPACING.wallClearanceM))) return false;
+  return kinds.every((kind) => {
+    const { halfW, halfD } = computeRotatedFootprint(kind.item, seat.rotationY);
+    return rectWithinFloor(floor, x, z, halfW, halfD);
+  });
+}
+
+/**
  * Plan theatre rows for `guests` (0 fills the room): of `chair`, or of the
  * chairs in `options.chairSupply`, each row one kind in the hall's order, as
  * many as the hall has. A seat in a door's clear space (`options.doorSpaces`)
@@ -345,7 +407,8 @@ export function planTheatreFill(
   if (chair.category !== "chair") return null;
   const supply = options.chairSupply ?? [{ item: chair, inStore: null }];
   const target = requested(guests);
-  if (doorSpaces.length === 0) {
+  const { floor } = options;
+  if (doorSpaces.length === 0 && floor === undefined) {
     const plan = planTheatreLayout(roomWidthM, roomLengthM, { targetGuests: target ?? undefined });
     const set = seatRowsFromSupply(rowsOf(plan.seats, plan.seatsPerRow), supply, null);
     if (set.seats.length === 0) return null;
@@ -366,7 +429,15 @@ export function planTheatreFill(
     };
   }
   const room = planTheatreLayout(roomWidthM, roomLengthM);
-  const rows = rowsOf(room.seats, room.seatsPerRow)
+  // On a room's own floor the rows stand on the floor's bounds, and a seat outside its walls is left out as one in a door's space is.
+  const origin = layoutOrigin(floor);
+  const laid = rowsOf(room.seats, room.seatsPerRow);
+  const standing = floor === undefined
+    ? laid
+    : laid.map((row) => row
+      .map((seat) => ({ ...seat, xM: seat.xM + origin.xM, zM: seat.zM + origin.zM }))
+      .filter((seat) => seatOnFloor(floor, supply, seat)));
+  const rows = standing
     .map((row) => row.filter((seat) => !supply.some((kind) => seatInSpaces(kind.item, seat, doorSpaces))))
     .filter((row) => row.length > 0);
   const set = seatRowsFromSupply(rows, supply, target);
@@ -380,8 +451,8 @@ export function planTheatreFill(
     guests: target,
     roomForSeats: rows.reduce((sum, row) => sum + row.length, 0),
     meetsTarget: target === null || set.seats.length >= target,
-    doorsKeptClear: true,
-    roomForSeatsIgnoringDoors: room.seatCount,
+    doorsKeptClear: doorSpaces.length > 0,
+    roomForSeatsIgnoringDoors: floor === undefined ? room.seatCount : standing.reduce((sum, row) => sum + row.length, 0),
     chairKinds: chairKindsOf(set.seats),
     chairsRanOut: set.ranOut,
   };
@@ -572,6 +643,8 @@ export interface GangwayFillInput {
   readonly keepOuts?: readonly LayoutRect[];
   /** The room's door clear spaces (doorKeepOuts): no table may stand in them either. */
   readonly doorSpaces?: readonly LayoutRect[];
+  /** The room's floor, where its walls are not the centred rectangle of its size (FillOptions.floor): no table stands outside them. */
+  readonly floor?: RoomFloor;
 }
 
 export interface GangwayFillPlan extends BanquetFillPlan {
@@ -639,6 +712,15 @@ export function planGangwayFill(input: GangwayFillInput): GangwayFillPlan | null
     : Math.hypot(occupied.width, occupied.depth) / 2;
   const longAxis = roomWidthM >= roomLengthM ? "x" : "z";
   const band = (side: RoomSide, layout: GangwayLayout): number => (layout.sides[side] ? rule.gangwayM : rule.wallBandM);
+  // On a room's own floor the design stands on the floor's bounds, and a group stands only inside its walls.
+  const { floor } = input;
+  const origin = layoutOrigin(floor);
+  const inRoom = (rect: LayoutRect): LayoutRect => (floor === undefined ? rect : { ...rect, cx: rect.cx + origin.xM, cz: rect.cz + origin.zM });
+  const gangwaysOf = (layout: GangwayLayout): readonly LayoutRect[] => gangwayRects(layout, roomWidthM, roomLengthM, rule.gangwayM, longAxis).map(inRoom);
+  const onFloor = floor === undefined ? undefined : groupOnFloor(floor, occupied, table.tableShape === "round" ? radiusM : undefined, rule.wallBandM);
+  const admitting = (doorRule: ((spot: BanquetTablePlacement) => boolean) | undefined): ((spot: BanquetTablePlacement) => boolean) | undefined => (
+    onFloor === undefined ? doorRule : (spot) => onFloor(spot) && (doorRule === undefined || doorRule(spot))
+  );
 
   /** The way of setting the gangways that holds the most tables, each one `admit` lets stand. */
   const search = (admit: ((spot: BanquetTablePlacement) => boolean) | undefined): { readonly layout: GangwayLayout; readonly tables: readonly BanquetTablePlacement[] } | null => {
@@ -646,26 +728,26 @@ export function planGangwayFill(input: GangwayFillInput): GangwayFillPlan | null
     let found: { readonly layout: GangwayLayout; readonly tables: readonly BanquetTablePlacement[] } | null = null;
     for (const layout of gangwayLayouts()) {
       if (!gangwaysServeExits(layout, input.exits, longAxis)) continue;
-      const gangways = gangwayRects(layout, roomWidthM, roomLengthM, rule.gangwayM, longAxis);
+      const gangways = gangwaysOf(layout);
       const reach = (tables: readonly BanquetTablePlacement[]): boolean => seatReach(tables, radiusM, rule.betweenTablesM, gangways);
       const walls: WallClearances = { xMin: band("xMin", layout), xMax: band("xMax", layout), zMin: band("zMin", layout), zMax: band("zMax", layout) };
       let tables: readonly BanquetTablePlacement[];
       if (!layout.spine) {
-        tables = packRegion(packing, { cx: 0, cz: 0, width: roomWidthM, depth: roomLengthM }, walls, radiusM, occupied, reach, admit);
+        tables = packRegion(packing, inRoom({ cx: 0, cz: 0, width: roomWidthM, depth: roomLengthM }), walls, radiusM, occupied, reach, admit);
       } else if (longAxis === "x") {
         // Two halves either side of a spine running along X; each keeps its own wall's band and nothing at the spine.
         const half = (roomLengthM - rule.gangwayM) / 2;
         const offset = (rule.gangwayM + half) / 2;
         tables = [
-          ...packRegion(packing, { cx: 0, cz: -offset, width: roomWidthM, depth: half }, { ...walls, zMax: 0 }, radiusM, occupied, reach, admit),
-          ...packRegion(packing, { cx: 0, cz: offset, width: roomWidthM, depth: half }, { ...walls, zMin: 0 }, radiusM, occupied, reach, admit),
+          ...packRegion(packing, inRoom({ cx: 0, cz: -offset, width: roomWidthM, depth: half }), { ...walls, zMax: 0 }, radiusM, occupied, reach, admit),
+          ...packRegion(packing, inRoom({ cx: 0, cz: offset, width: roomWidthM, depth: half }), { ...walls, zMin: 0 }, radiusM, occupied, reach, admit),
         ];
       } else {
         const half = (roomWidthM - rule.gangwayM) / 2;
         const offset = (rule.gangwayM + half) / 2;
         tables = [
-          ...packRegion(packing, { cx: -offset, cz: 0, width: half, depth: roomLengthM }, { ...walls, xMax: 0 }, radiusM, occupied, reach, admit),
-          ...packRegion(packing, { cx: offset, cz: 0, width: half, depth: roomLengthM }, { ...walls, xMin: 0 }, radiusM, occupied, reach, admit),
+          ...packRegion(packing, inRoom({ cx: -offset, cz: 0, width: half, depth: roomLengthM }), { ...walls, xMax: 0 }, radiusM, occupied, reach, admit),
+          ...packRegion(packing, inRoom({ cx: offset, cz: 0, width: half, depth: roomLengthM }), { ...walls, xMin: 0 }, radiusM, occupied, reach, admit),
         ];
       }
       if (found === null || tables.length > found.tables.length) found = { layout, tables };
@@ -675,15 +757,16 @@ export function planGangwayFill(input: GangwayFillInput): GangwayFillPlan | null
   const doorSpaces = input.doorSpaces ?? [];
   const doorsKeptClear = doorSpaces.length > 0;
   const bounds = groupBounds(occupied, table.tableShape === "round" ? radiusM : undefined);
-  const best = search(doorsKeptClear ? groupClearOfDoors(table, seats, bounds, doorSpaces) : undefined);
+  const best = search(admitting(doorsKeptClear ? groupClearOfDoors(table, seats, bounds, doorSpaces) : undefined));
   if (best === null || best.tables.length === 0) return null;
   // The figure the line sets beside it: the same search with the doors left out.
-  const ignoringDoors = doorsKeptClear ? search(undefined) : best;
+  const ignoringDoors = doorsKeptClear ? search(admitting(undefined)) : best;
 
   const target = requested(input.guests);
   const wanted = target === null ? best.tables.length : Math.min(best.tables.length, Math.ceil(target / seats));
   const placed = [...best.tables]
-    .sort((a, b) => Math.hypot(a.xM, a.zM) - Math.hypot(b.xM, b.zM) || a.zM - b.zM || a.xM - b.xM)
+    // Nearest the middle of the layout first, wherever the room's floor puts it.
+    .sort((a, b) => Math.hypot(a.xM - origin.xM, a.zM - origin.zM) - Math.hypot(b.xM - origin.xM, b.zM - origin.zM) || a.zM - b.zM || a.xM - b.xM)
     .slice(0, wanted)
     .sort((a, b) => a.zM - b.zM || a.xM - b.xM);
   return {
@@ -700,7 +783,7 @@ export function planGangwayFill(input: GangwayFillInput): GangwayFillPlan | null
     doorsKeptClear,
     roomForSeatsIgnoringDoors: (ignoringDoors?.tables.length ?? 0) * seats,
     layout: best.layout,
-    gangways: gangwayRects(best.layout, roomWidthM, roomLengthM, rule.gangwayM, longAxis),
+    gangways: gangwaysOf(best.layout),
     rule,
   };
 }

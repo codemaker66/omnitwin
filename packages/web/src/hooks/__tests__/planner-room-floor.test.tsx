@@ -1,13 +1,18 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, renderHook } from "@testing-library/react";
-import type { SpaceDimensions } from "@omnitwin/types";
 import type { Space } from "../../api/spaces.js";
 import { placementViolationIds } from "../../components/PlacedFurniture.js";
-import { toRenderSpace } from "../../constants/scale.js";
+import { toRealWorld, toRenderSpace } from "../../constants/scale.js";
 import { isPointInPolygon, roomGeometries } from "../../data/room-geometries.js";
-import { getCatalogueItemBySlug, type CatalogueItem } from "../../lib/catalogue.js";
+import { planAutoFill } from "../../lib/auto-fill.js";
+import { getCatalogueItem, getCatalogueItemBySlug, type CatalogueItem } from "../../lib/catalogue.js";
 import { createGhostWorld, judgeGhost } from "../../lib/ghost-truth.js";
-import { computeRotatedFootprint, createPlacedItem, isWithinRoomBounds, snapToWallEdge } from "../../lib/placement.js";
+import { computeRotatedFootprint, createPlacedItem, isWithinRoomBounds, snapToWallEdge, type PlacedItem } from "../../lib/placement.js";
+import { setPlannerFeaturesForTesting } from "../../lib/planner-features.js";
+import { distanceToWalls, type PlannerRoomDimensions } from "../../lib/room-floor.js";
+import { seatShortfallOffer } from "../../lib/seat-shortfall.js";
+import { createTableGroup } from "../../lib/table-group.js";
+import { THEATRE_SPACING } from "../../lib/theatre-layout.js";
 import { useEditorStore } from "../../stores/editor-store.js";
 import { usePlacementStore } from "../../stores/placement-store.js";
 import { useRoomDimensionsStore } from "../../stores/room-dimensions-store.js";
@@ -46,7 +51,7 @@ function spaceNamed(name: string): Space {
 }
 
 /** Opens a room as the planner does, and gives back what the room store then holds. */
-function openRoom(name: string): SpaceDimensions {
+function openRoom(name: string): PlannerRoomDimensions {
   useEditorStore.setState({ space: spaceNamed(name) });
   renderHook(() => usePlannerRoomDimensions());
   usePlacementStore.setState({ placedItems: [], ghostPosition: null, ghostRotation: 0, ghostValid: false, ghostInvalidReason: null, snapEnabled: false });
@@ -265,5 +270,102 @@ describe("notches in the other rooms", () => {
     const dims = openRoom("Saloon");
     expect(isWithinRoomBounds(6.25, -1.05, chair, 0, dims)).toBe(true);
     expect(isWithinRoomBounds(6.25, 0, chair, 0, dims)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// What the planner sets by itself: Banquet rounds, Theatre, the seat
+// shortfall. Each used to lay its grid across the old box, so in these rooms
+// tables and chairs landed through the walls and the save was refused whole.
+// ---------------------------------------------------------------------------
+
+/** Every placed piece any of whose footprint is outside the walls, by the slow way. */
+function piecesOutside(walls: Polygon, placed: readonly PlacedItem[]): string[] {
+  const outside: string[] = [];
+  for (const one of placed) {
+    const item = getCatalogueItem(one.catalogueItemId);
+    if (item === undefined) throw new Error("unknown piece");
+    const { halfW, halfD } = computeRotatedFootprint(item, one.rotationY, one.scale);
+    if (!footprintInside(walls, one.x, one.z, halfW, halfD, HAIR)) outside.push(`${item.slug} at (${one.x.toFixed(2)}, ${one.z.toFixed(2)})`);
+  }
+  return outside;
+}
+
+const ROUND = piece("round-table-6ft-white");
+const TURINI = piece("burgess-turini-18-3");
+
+describe.each(SHAPED_ROOMS)("what the planner sets by itself in the %s", (name) => {
+  const walls = wallsOf(name);
+
+  it.each([0, 60])("sets every banquet round and chair for %i guests inside the walls", (guests) => {
+    openRoom(name);
+    const plan = usePlacementStore.getState().autoArrangeBanquet(ROUND.id, guests, 10);
+    const placed = usePlacementStore.getState().placedItems;
+    expect(piecesOutside(walls, placed)).toEqual([]);
+    expect(plan?.tableCount ?? 0).toBeGreaterThan(0);
+    expect(placed).toHaveLength((plan?.tableCount ?? 0) * 11);
+  });
+
+  it.each([0, 60])("sets every theatre chair for %i guests inside the walls", (guests) => {
+    openRoom(name);
+    const plan = usePlacementStore.getState().autoArrangeTheatre(TURINI.id, guests);
+    const placed = usePlacementStore.getState().placedItems;
+    expect(piecesOutside(walls, placed)).toEqual([]);
+    expect(placed.length).toBeGreaterThan(0);
+    expect(placed).toHaveLength(plan?.chairs ?? -1);
+  });
+
+  it("says before it fills exactly what it then sets (the prompt's plan is the store's)", () => {
+    const dims = openRoom(name);
+    const options = { floor: dims.floor };
+    const banquet = planAutoFill("dinner-rounds", 60, toRealWorld(dims.width), toRealWorld(dims.length), TURINI.slug, options);
+    const placedBanquet = usePlacementStore.getState().autoArrangeBanquet(ROUND.id, 60, 10);
+    expect(placedBanquet).toEqual(banquet);
+    const theatre = planAutoFill("theatre", 60, toRealWorld(dims.width), toRealWorld(dims.length), TURINI.slug, options);
+    const placedTheatre = usePlacementStore.getState().autoArrangeTheatre(TURINI.id, 60);
+    expect(placedTheatre).toEqual(theatre);
+  });
+
+  it("keeps the gangway fill inside the walls too", () => {
+    const dims = openRoom(name);
+    setPlannerFeaturesForTesting({ fillKeepOuts: true });
+    try {
+      const plan = usePlacementStore.getState().autoArrangeBanquet(ROUND.id, 0, 10, null);
+      expect(piecesOutside(walls, usePlacementStore.getState().placedItems)).toEqual([]);
+      // Nothing to set is an answer; a table through a wall is not.
+      if (plan !== null) expect(usePlacementStore.getState().placedItems).toHaveLength(plan.tableCount * 11);
+      else expect(dims.floor).toBeDefined();
+    } finally {
+      setPlannerFeaturesForTesting(null);
+    }
+  });
+});
+
+describe("the Robert Adam Room, filled", () => {
+  const walls = wallsOf("Robert Adam Room");
+
+  it("adds a seat shortfall's tables inside the walls", () => {
+    openRoom("Robert Adam Room");
+    usePlacementStore.setState({ placedItems: [...createTableGroup(ROUND.id, -2.5, 0, 0, 10)] });
+    const fix = usePlacementStore.getState().fillSeatShortfall(40);
+    expect(fix?.offer.kind).toBe("tables");
+    expect(piecesOutside(walls, usePlacementStore.getState().placedItems)).toEqual([]);
+  });
+
+  it("offers in the panel the tables the fix then adds", () => {
+    const dims = openRoom("Robert Adam Room");
+    const placedItems = [...createTableGroup(ROUND.id, -2.5, 0, 0, 10)];
+    usePlacementStore.setState({ placedItems });
+    const offer = seatShortfallOffer({ placedItems, guests: 40, roomWidthM: toRealWorld(dims.width), roomLengthM: toRealWorld(dims.length), floor: dims.floor });
+    expect(usePlacementStore.getState().fillSeatShortfall(40)?.offer).toEqual(offer);
+  });
+
+  it("keeps a theatre seat the rows' wall band from every wall, the notch's included", () => {
+    openRoom("Robert Adam Room");
+    usePlacementStore.getState().autoArrangeTheatre(TURINI.id, 0);
+    const floor = useRoomDimensionsStore.getState().dimensions.floor;
+    if (floor === undefined) throw new Error("no floor");
+    const near = usePlacementStore.getState().placedItems.filter((one) => distanceToWalls(floor, one.x, one.z) < THEATRE_SPACING.wallClearanceM - 1e-6);
+    expect(near).toEqual([]);
   });
 });

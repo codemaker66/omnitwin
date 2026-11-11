@@ -102,10 +102,11 @@ export function AutoFillPrompt({ style, published, onPlaced, onCancel }: AutoFil
     const keepOuts = doorKeepOuts(doorSpaces);
     const table = getCatalogueItemBySlug(DEFAULT_PLANNER_ROUND_TABLE_SLUG);
     if (fillsOver && placedItems !== null && table !== undefined) {
-      const fill = planRoomFill({ table, seatsPerTable: banquetSeatsPerTable(table), guests, roomWidthM: widthM, roomLengthM: lengthM, exits, rule: FILL_AISLE_RULE, doorSpaces: keepOuts }, placedItems);
+      const fill = planRoomFill({ table, seatsPerTable: banquetSeatsPerTable(table), guests, roomWidthM: widthM, roomLengthM: lengthM, exits, rule: FILL_AISLE_RULE, doorSpaces: keepOuts, floor: dimensions.floor }, placedItems);
       return fill === null ? null : { plan: fill.plan, fill };
     }
-    const planned = planAutoFill(style, guests, widthM, lengthM, eventChair, { doorSpaces: keepOuts });
+    // The room's own floor, as the placement store hands it over: what the button says is what lands.
+    const planned = planAutoFill(style, guests, widthM, lengthM, eventChair, { doorSpaces: keepOuts, floor: dimensions.floor });
     return planned === null ? null : { plan: planned, fill: null };
   }, [guests, style, dimensions, fillsOver, placedItems, exits, eventChair, doorSpaces]);
   const plan = preview?.plan ?? null;

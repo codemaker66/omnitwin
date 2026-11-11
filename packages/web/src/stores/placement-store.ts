@@ -886,6 +886,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
         rule: FILL_AISLE_RULE,
         // The same doors the prompt's preview kept clear (AutoFillPrompt), so what it said is what lands.
         doorSpaces,
+        floor: dims.floor,
       }, state.placedItems);
       if (fill === null) return null;
       // A kept chair the planner never sets takes the plan's chair where it would reach a door.
@@ -903,11 +904,13 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
       return fill.plan;
     }
     // Room dimensions are render-space; the plan works in metres. Spacing runs
-    // between the backs of the chairs (lib/auto-fill).
-    const plan = planBanquetFill(tableItem, targetGuests, chairsPerTable, toRealWorld(dims.width), toRealWorld(dims.length), { doorSpaces: roomDoorKeepOuts() });
+    // between the backs of the chairs (lib/auto-fill). A room whose walls are
+    // not the centred rectangle of its size hands over its floor, and no group
+    // is planned outside its walls.
+    const plan = planBanquetFill(tableItem, targetGuests, chairsPerTable, toRealWorld(dims.width), toRealWorld(dims.length), { doorSpaces: roomDoorKeepOuts(), floor: dims.floor });
     if (plan === null) return null;
 
-    // Map each planned table (metres, room-centred) back to render space and
+    // Map each planned table (metres, in the room) back to render space and
     // build a full table+chairs group at floor level.
     const placedItems: PlacedItem[] = [];
     for (const t of plan.tables) {
@@ -943,10 +946,11 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     const plan = planTheatreFill(chairItem, targetGuests, toRealWorld(dims.width), toRealWorld(dims.length), {
       doorSpaces: roomDoorKeepOuts(),
       chairSupply: plannerChairSupply(chairItem.slug),
+      floor: dims.floor,
     });
     if (plan === null) return null;
 
-    // Each planned seat (metres, room-centred, facing the stage) → a floor-level
+    // Each planned seat (metres, in the room, facing the stage) → a floor-level
     // chair of its row's kind in render space. No groups — theatre chairs stand alone.
     const placedItems = plan.seats.map((s) =>
       createPlacedItem(s.chairItemId, toRenderSpace(s.xM), toRenderSpace(s.zM), s.rotationY, null, 0),
@@ -969,6 +973,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
       roomWidthM: toRealWorld(dims.width),
       roomLengthM: toRealWorld(dims.length),
       doorSpaces: roomDoorKeepOuts(),
+      floor: dims.floor,
     });
     if (fix === null) return null;
     // One write, so the editor history records one step and one undo takes it back.
