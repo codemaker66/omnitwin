@@ -279,9 +279,13 @@ describe("HallkeeperPage request and offline queue isolation", () => {
     const checkbox = await screen.findByRole("checkbox", { name: /Round table/u });
     fireEvent.click(checkbox);
     fireEvent.click(checkbox);
-    await waitFor(() => { expect(writes).toBe(2); });
+    // One row's writes go out in turn (audit hallkeeper-web-1): the second
+    // tap is already being saved, and is sent once the first has its answer.
+    await waitFor(() => { expect(writes).toBe(1); });
     expect(screen.getByText("Saving shared checks…").closest("[role='status']")?.querySelector("[data-activity-indicator]")).not.toBeNull();
     await act(async () => { first.resolve(jsonResponse({})); await first.promise; });
+    expect(screen.getByText("Saving shared checks…")).toBeTruthy();
+    await waitFor(() => { expect(writes).toBe(2); });
     expect(screen.getByText("Saving shared checks…")).toBeTruthy();
     await act(async () => { second.resolve(new Response(null, { status: 403 })); await second.promise; });
     await waitFor(() => { expect(screen.queryByText("Saving shared checks…")).toBeNull(); });

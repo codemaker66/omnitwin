@@ -21,6 +21,15 @@ import { openCache, type CacheHandle } from "./idb-cache.js";
 // The queue value shape is `{ configId, rowKey, desiredChecked,
 // queuedAt }`. Toggling the same row twice while offline collapses
 // to a single queued state (last-write-wins on the same IDB key).
+//
+// Order. The server keeps the last write it hears for a row and has no
+// way to tell an old one from a new one, so the order is this device's
+// to keep: every write for a row (a tap's PATCH, a queued tick's replay,
+// the queue entry being written or cleared) takes its turn through
+// `inRowOrder`. A tap the server takes retires whatever is still queued
+// for its row, and a replay first checks its tick is still the one
+// queued (`isSameQueuedTick`), so an older tick is never sent, or
+// cleared, in place of a newer one.
 // ---------------------------------------------------------------------------
 
 export interface QueuedProgressOp {
@@ -88,6 +97,44 @@ export async function listPendingProgress(): Promise<readonly QueuedProgressOp[]
 /** Remove a queued entry after a successful replay. */
 export async function ackProgress(configId: string, rowKey: string, eventId: string | null = null): Promise<void> {
   await queueCache().delete(keyFor(configId, rowKey, eventId));
+}
+
+/**
+ * Is `now` the very tick `then` was when it was read from the queue? False
+ * once a newer tap on the row has replaced it: the queue holds one tick per
+ * row, so a replay asks this of a fresh listing before it sends or clears.
+ */
+export function isSameQueuedTick(now: QueuedProgressOp, then: QueuedProgressOp): boolean {
+  return keyFor(now.configId, now.rowKey, now.eventId) === keyFor(then.configId, then.rowKey, then.eventId)
+    && now.queuedAt === then.queuedAt && now.desiredChecked === then.desiredChecked;
+}
+
+/** Each row's line of writes: the last turn asked for, settled or not. */
+const rowTurns = new Map<string, Promise<void>>();
+
+/**
+ * Take a turn at one row of one sheet. Turns for the same row run one at a
+ * time, in the order they were asked for; other rows do not wait. A turn
+ * that fails does not hold up the next.
+ *
+ * `eventId` is the event whose ticks the write lands in, which for a tick
+ * queued before ticks carried an event is the open sheet's, not the absent
+ * one it was stored under.
+ */
+export function inRowOrder<T>(
+  configId: string,
+  rowKey: string,
+  eventId: string | null,
+  turn: () => Promise<T>,
+): Promise<T> {
+  const key = keyFor(configId, rowKey, eventId);
+  const run = (rowTurns.get(key) ?? Promise.resolve()).then(turn);
+  const settled = run.then(() => undefined, () => undefined);
+  rowTurns.set(key, settled);
+  void settled.then(() => {
+    if (rowTurns.get(key) === settled) rowTurns.delete(key);
+  });
+  return run;
 }
 
 /**

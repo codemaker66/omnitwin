@@ -3,7 +3,9 @@ import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import {
   ackProgress,
   enqueueProgress,
+  inRowOrder,
   isReplayStatusTerminal,
+  isSameQueuedTick,
   listPendingProgress,
   partitionReplay,
   resolveReplayDisposition,
@@ -107,6 +109,12 @@ function eventOf(op: QueuedProgressOp, sheetEventId: string | null): string | nu
 /** A queued tick made on this sheet: the same layout and the same event. */
 function onSheet(op: QueuedProgressOp, configId: string, sheetEventId: string | null): boolean {
   return op.configId === configId && eventOf(op, sheetEventId) === sheetEventId;
+}
+
+/** Is this queued tick still the one waiting for its row? Not once a newer
+ *  tap on the row has replaced it in the queue or retired it. */
+async function stillQueued(op: QueuedProgressOp): Promise<boolean> {
+  return (await listPendingProgress()).some((now) => isSameQueuedTick(now, op));
 }
 
 /** Where the server keeps this sheet's ticks: an event, or null for the
@@ -346,7 +354,8 @@ export function HallkeeperPage(): React.ReactElement {
   // --- Toggle with optimistic UI + offline-resilient server PATCH ---
   //
   // Three-state behaviour:
-  //   1. PATCH succeeds → UI matches server, no queue work.
+  //   1. PATCH succeeds → UI matches server, and any older tick still
+  //      queued for the row is retired: the server now holds a newer one.
   //   2. PATCH fails (network / 5xx) → ENQUEUE the desired state in
   //      IDB and KEEP the optimistic UI. The hallkeeper's checkmark
   //      stays checked even though the server hasn't heard yet.
@@ -355,6 +364,10 @@ export function HallkeeperPage(): React.ReactElement {
   //      double-tap when WiFi was flaky and lose work — the new
   //      enqueue path makes the tablet usable in the bad-network
   //      conditions where it matters most.
+  //
+  // A row's writes go out one at a time, in tap order (`inRowOrder`): the
+  // server keeps the last one it hears, so two sent side by side, or a
+  // replay sent beside a tap, could leave it holding the older.
   const handleToggle = useCallback((rowKey: string) => {
     if (configId === undefined || progressUnavailable || checksReadOnly) return;
     const wasChecked = checksRef.current[rowKey] === true;
@@ -375,8 +388,14 @@ export function HallkeeperPage(): React.ReactElement {
     setChecks(checksRef.current);
     setProgressNotice(null);
 
+    const showPending = (pending: readonly QueuedProgressOp[]): void => {
+      if (activeConfigRef.current === configId && activeEventRef.current === eventId) {
+        setPendingCount(pending.filter((op) => onSheet(op, configId, writeEventId)).length);
+      }
+    };
+
     const finishWrite = beginProgressWrite(configId);
-    void (async () => {
+    void inRowOrder(configId, rowKey, writeEventId, async () => {
       let result: ReplayResult;
       try {
         const token = await getAuthToken();
@@ -391,7 +410,21 @@ export function HallkeeperPage(): React.ReactElement {
         result = { ok: false, status: null };
       }
 
-      if (result.ok) return; // Server has the toggle; nothing to queue.
+      if (result.ok) {
+        // The server holds this tap, the newest word on the row. A tick still
+        // queued for the row is older: left there, the next sync would send
+        // it over this one.
+        try {
+          const pending = await listPendingProgress();
+          const older = pending.filter((op) => op.rowKey === rowKey && onSheet(op, configId, writeEventId));
+          if (older.length === 0) return;
+          for (const op of older) await ackProgress(op.configId, op.rowKey, op.eventId ?? null);
+          showPending(await listPendingProgress());
+        } catch {
+          // The queue cannot be read, so there is nothing in it to retire.
+        }
+        return;
+      }
 
       // The server actively REJECTED the toggle (revoked access, deleted
       // row, bad payload). Replaying it could never succeed, so don't
@@ -405,18 +438,16 @@ export function HallkeeperPage(): React.ReactElement {
       // Retriable failure (offline / 5xx / 408 / 429) — KEEP the
       // optimistic UI and queue the intent for replay on reconnect.
       try {
+        // A newer tap on the row is already waiting its turn and will speak for it.
         if (operationVersions.current.get(operationKey) !== operationVersion) return;
         await enqueueProgress(configId, rowKey, desiredChecked, writeEventId);
-        const pending = await listPendingProgress();
-        if (activeConfigRef.current === configId && activeEventRef.current === eventId) {
-          setPendingCount(pending.filter((op) => onSheet(op, configId, writeEventId)).length);
-        }
+        showPending(await listPendingProgress());
       } catch {
         // IDB unreachable — last-resort rollback so the UI doesn't
         // show a check that's neither on the server nor in IDB.
         rollback();
       }
-    })().finally(finishWrite);
+    }).finally(finishWrite);
   }, [configId, eventId, writeEventId, progressUnavailable, checksReadOnly, beginProgressWrite]);
 
   // Serialize drains for each sheet while allowing a newly opened sheet
@@ -486,25 +517,35 @@ export function HallkeeperPage(): React.ReactElement {
 
             const { replay, converged } = partitionReplay(ops, serverChecked);
 
+            // Each queued tick takes its row's turn, behind any tap already
+            // on its way, and is looked up again when the turn comes: a tap
+            // made since the queue was listed has replaced or retired it, and
+            // an older tick must be neither sent nor cleared in its place.
+
             // Server already satisfies these — safe to drop, no network.
             for (const op of converged) {
-              await ackProgress(op.configId, op.rowKey, op.eventId ?? null);
+              await inRowOrder(op.configId, op.rowKey, scopeEventId, async () => {
+                if (await stillQueued(op)) await ackProgress(op.configId, op.rowKey, op.eventId ?? null);
+              });
             }
 
             // Server still differs — replay each desired checked state.
             for (const op of replay) {
-              let result: ReplayResult;
-              try {
-                const res = await fetch(progressUrl(op.configId, scopeEventId), {
-                  method: "PATCH", headers, body: JSON.stringify({ rowKey: op.rowKey, checked: op.desiredChecked }),
-                });
-                result = { ok: res.ok, status: res.status };
-              } catch {
-                result = { ok: false, status: null };
-              }
-              if (resolveReplayDisposition(result) === "ack") {
-                await ackProgress(op.configId, op.rowKey, op.eventId ?? null);
-              }
+              await inRowOrder(op.configId, op.rowKey, scopeEventId, async () => {
+                if (!(await stillQueued(op))) return;
+                let result: ReplayResult;
+                try {
+                  const res = await fetch(progressUrl(op.configId, scopeEventId), {
+                    method: "PATCH", headers, body: JSON.stringify({ rowKey: op.rowKey, checked: op.desiredChecked }),
+                  });
+                  result = { ok: res.ok, status: res.status };
+                } catch {
+                  result = { ok: false, status: null };
+                }
+                if (resolveReplayDisposition(result) === "ack") {
+                  await ackProgress(op.configId, op.rowKey, op.eventId ?? null);
+                }
+              });
             }
           }
 
