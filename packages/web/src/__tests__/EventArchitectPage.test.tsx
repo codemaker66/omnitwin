@@ -89,6 +89,7 @@ const USER_ID = "44444444-4444-4444-8444-444444444444";
 const TABLE_ID = "a1ef4d89-7786-5878-bee1-87b3fac28200";
 const CHAIR_ID = "4dfcae64-b6e3-54f8-817f-af041edab935";
 const CREATED_AT = "2026-07-10T09:10:00.000Z";
+const OPS_REVIEW_READ_ONLY_LINE = "Only venue managers, staff, hallkeepers or administrators can record a review.";
 const FLOOR_PLAN = [
   { x: 0, y: 0 },
   { x: 21, y: 0 },
@@ -379,7 +380,7 @@ describe("EventArchitectPage", () => {
     // Once chosen, the note has done its work.
     expect(screen.queryByText(/That choice is final for this set/u)).toBeNull();
     expect(await screen.findByRole("heading", { name: "Ops review evidence" })).toBeTruthy();
-    expect(screen.getByText("Only venue staff, hallkeepers or administrators can record a review.")).toBeTruthy();
+    expect(screen.getByText(OPS_REVIEW_READ_ONLY_LINE)).toBeTruthy();
     expect(mockGetEventArchitectOpsReview).toHaveBeenCalledWith(
       candidate.candidateId,
       expect.any(AbortSignal),
@@ -410,11 +411,14 @@ describe("EventArchitectPage", () => {
     );
   });
 
-  // Release audit ai-4: the page offered managers the Ops review form, and
-  // POST /event-architect/candidates/:id/ops-review refuses them (403): its
-  // reviewer authority is the venue's staff, hallkeepers and administrators.
+  // The form is offered exactly where POST
+  // /event-architect/candidates/:id/ops-review records the review: the
+  // venue's staff, hallkeepers, managers and administrators (release audit
+  // ai-4 took it from managers while the route refused them; Blake, 11
+  // November 2026: "Yes, managers too"). Everyone else reads the gate.
   it.each([
-    ["manager", false], ["sales", false], ["staff", true], ["hallkeeper", true], ["admin", true],
+    ["manager", true], ["staff", true], ["hallkeeper", true], ["admin", true],
+    ["sales", false], ["caterer", false], ["planner", false], ["client", false],
   ] as const)("offers the Ops review form to a %s only as the review route admits them", async (role, admitted) => {
     useAuthStore.getState().setUser({
       id: USER_ID, email: "reviewer@trades-hall.test", role, platformRole: "none", venueId: VENUE_ID, name: "Venue Reviewer",
@@ -434,7 +438,7 @@ describe("EventArchitectPage", () => {
     expect(await screen.findByRole("heading", { name: "Ops review evidence" })).toBeTruthy();
     await waitFor(() => { expect(mockGetEventArchitectOpsReview).toHaveBeenCalled(); });
     expect(screen.queryByLabelText("Decision") !== null).toBe(admitted);
-    expect(screen.queryByText("Only venue staff, hallkeepers or administrators can record a review.") !== null).toBe(!admitted);
+    expect(screen.queryByText(OPS_REVIEW_READ_ONLY_LINE) !== null).toBe(!admitted);
   });
 
   it("keeps authority wording and raw planning prompts out of rendered evidence", async () => {

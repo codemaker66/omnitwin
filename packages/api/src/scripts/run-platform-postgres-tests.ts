@@ -66,6 +66,8 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/chair-sizes-migration-postgres.test.ts",
   // Migration 0105: product writes share the foundry's global lock; the kill switch still excludes them (T-677).
   "src/__tests__/foundry-product-lock-postgres.test.ts",
+  // Migration 0107: a venue manager's Ops review is stored as venue_manager; other roles and venues stay refused.
+  "src/__tests__/event-architect-ops-review-postgres.test.ts",
 ] as const;
 
 /**

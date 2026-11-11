@@ -722,6 +722,13 @@
       "when": 1793059200000,
       "tag": "0105_product_writes_share_foundry_lock",
       "breakpoints": true
+    },
+    {
+      "idx": 103,
+      "version": "7",
+      "when": 1794369600000,
+      "tag": "0107_event_architect_ops_review_managers",
+      "breakpoints": true
     }
   ]
 }

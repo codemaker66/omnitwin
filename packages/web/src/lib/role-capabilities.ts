@@ -237,14 +237,15 @@ export function movesEnquiry(
 }
 
 /**
- * Who records an Event Architect Ops review at their venue, as
- * `requireOpsReviewAuthority` (routes/event-architect.ts) admits them, each
- * recorded under its own authority (venue_staff, venue_hallkeeper,
- * venue_admin; migration 0048 allows no other), and a platform admin. Not the
- * whole floor: a manager reads the run and its review gate but cannot record
- * the review, so is not offered the form.
+ * Who records an Event Architect Ops review at their venue: the API's
+ * `requireOpsReviewAuthority` (routes/event-architect.ts) answers from this
+ * one list in @omnitwin/types, so the two cannot drift. The venue's staff,
+ * hallkeepers, managers and administrators each record under their own
+ * authority (venue_staff, venue_hallkeeper, venue_manager, venue_admin), and
+ * a platform admin at any venue. Managers record reviews too (Blake, 11
+ * November 2026: "Yes, managers too").
  */
-export const OPS_REVIEW_ROLES = ["admin", "hallkeeper", "staff"] as const;
+export { EVENT_ARCHITECT_OPS_REVIEW_ROLES as OPS_REVIEW_ROLES } from "@omnitwin/types/event-architect-ops-reviewers";
 
 // ---------------------------------------------------------------------------
 // The staff rota (T-637 slice B). A block of its own, with its own drift test
