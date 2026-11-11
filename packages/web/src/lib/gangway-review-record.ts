@@ -1,6 +1,7 @@
-import { GangwayReviewSchema, withGangwayDecisions, type GangwayReview, type GangwayReviewItem, type SpaceDimensions } from "@omnitwin/types";
+import { GangwayReviewSchema, withGangwayDecisions, type GangwayReview, type GangwayReviewItem } from "@omnitwin/types";
 import { getConfig, patchConfigMetadata, type ConfigMetadataInput } from "../api/configurations.js";
 import { gangwayReview, roomExits, roomWallNames } from "./auto-fill.js";
+import type { PlannerRoomDimensions } from "./room-floor.js";
 import { doorKeepOuts, roomDoorClearSpaces } from "./door-clear-spaces.js";
 import type { PlacedItem } from "./placement.js";
 import { useEditorStore } from "../stores/editor-store.js";
@@ -33,7 +34,7 @@ export const GANGWAY_RECORD_DELAY_MS = 3000;
  * them, judging the gangways Fill lays: clear of the room's doors where they
  * are recorded (lib/door-clear-spaces), wherever the review is read.
  */
-function derivedItems(placedItems: readonly PlacedItem[], room: SpaceDimensions, roomSlug: string | null): readonly GangwayReviewItem[] {
+function derivedItems(placedItems: readonly PlacedItem[], room: PlannerRoomDimensions, roomSlug: string | null): readonly GangwayReviewItem[] {
   const wallNames = roomWallNames(roomSlug);
   const doors = roomDoorClearSpaces(roomSlug);
   return gangwayReview(placedItems, room, roomExits(roomSlug), {
@@ -45,7 +46,7 @@ function derivedItems(placedItems: readonly PlacedItem[], room: SpaceDimensions,
 /** The review a layout holds: the items as derived now, each stored decision laid back over its item while it holds. */
 export function layoutGangwayReview(
   placedItems: readonly PlacedItem[],
-  room: SpaceDimensions,
+  room: PlannerRoomDimensions,
   roomSlug: string | null,
   stored: GangwayReview | null,
 ): GangwayReview {

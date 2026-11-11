@@ -4,7 +4,6 @@ import {
   type FloorPoint,
   type GangwayReviewItem,
   type GangwaySide,
-  type SpaceDimensions,
 } from "@omnitwin/types";
 import { convexPolygonClosestPoints } from "./circulation.js";
 import { createGhostWorld, obstacleName } from "./ghost-truth.js";
@@ -33,7 +32,7 @@ import { chairsInStore, currentStoreStock, type UsableStock } from "./card-stock
 import { footprintInKeepOut } from "./door-clear-spaces.js";
 import { placedFootprint } from "./keep-doors-clear.js";
 import { isDiningTableItem } from "./furniture-semantics.js";
-import { discWithinFloor, floorCentre, rectWithinFloor, type RoomFloor } from "./room-floor.js";
+import { discWithinFloor, floorCentre, rectWithinFloor, type PlannerRoomDimensions, type RoomFloor } from "./room-floor.js";
 import { countLabel } from "./count-label.js";
 import type { PublishedCapacityAnswer, PublishedFormat } from "./planner-truth.js";
 
@@ -817,24 +816,30 @@ export function designatedGangways(
   exits: readonly RoomExit[] | null,
   rule: AisleRule = FILL_AISLE_RULE,
   doorSpaces: readonly LayoutRect[] = [],
+  /** The room's floor, where its walls are not the centred rectangle of its size: the gangways then run along the floor's bounds, where those stand. */
+  floor?: RoomFloor,
 ): DesignatedGangways | null {
   const doors = doorSpaces.map((space) => [space.cx, space.cz, space.width, space.depth].join(",")).join(";");
-  const key = [roomWidthM, roomLengthM, rule.gangwayM, rule.betweenTablesM, rule.wallBandM, exits?.map((exit) => exit.side).sort().join(",") ?? "unknown", doors].join("|");
+  const walls = floor === undefined ? "" : floor.outline.map(([x, z]) => `${String(x)},${String(z)}`).join(";");
+  const key = [roomWidthM, roomLengthM, rule.gangwayM, rule.betweenTablesM, rule.wallBandM, exits?.map((exit) => exit.side).sort().join(",") ?? "unknown", doors, walls].join("|");
   const cached = designatedCache.get(key);
   if (cached !== undefined || designatedCache.has(key)) return cached ?? null;
   const table = getCatalogueItemBySlug(DEFAULT_PLANNER_ROUND_TABLE_SLUG);
   const plan = table === undefined
     ? null
-    : planGangwayFill({ table, seatsPerTable: banquetSeatsPerTable(table), guests: 0, roomWidthM, roomLengthM, exits, rule, doorSpaces });
+    : planGangwayFill({ table, seatsPerTable: banquetSeatsPerTable(table), guests: 0, roomWidthM, roomLengthM, exits, rule, doorSpaces, floor });
   const longAxis = roomWidthM >= roomLengthM ? "x" : "z";
+  // On a room's own floor each band stands where the floor's bounds do.
+  const origin = layoutOrigin(floor);
+  const inRoom = (rect: LayoutRect): LayoutRect => (floor === undefined ? rect : { ...rect, cx: rect.cx + origin.xM, cz: rect.cz + origin.zM });
   const result = plan === null ? null : {
     layout: plan.layout,
     bands: [
       ...ROOM_SIDES.filter((side) => plan.layout.sides[side]).map((side) => ({
         side,
-        rect: gangwayRects({ sides: { xMin: side === "xMin", xMax: side === "xMax", zMin: side === "zMin", zMax: side === "zMax" }, spine: false }, roomWidthM, roomLengthM, rule.gangwayM, longAxis)[0] ?? { cx: 0, cz: 0, width: 0, depth: 0 },
+        rect: inRoom(gangwayRects({ sides: { xMin: side === "xMin", xMax: side === "xMax", zMin: side === "zMin", zMax: side === "zMax" }, spine: false }, roomWidthM, roomLengthM, rule.gangwayM, longAxis)[0] ?? { cx: 0, cz: 0, width: 0, depth: 0 }),
       })),
-      ...(plan.layout.spine ? [{ side: null, rect: gangwayRects({ sides: { xMin: false, xMax: false, zMin: false, zMax: false }, spine: true }, roomWidthM, roomLengthM, rule.gangwayM, longAxis)[0] ?? { cx: 0, cz: 0, width: 0, depth: 0 } }] : []),
+      ...(plan.layout.spine ? [{ side: null, rect: inRoom(gangwayRects({ sides: { xMin: false, xMax: false, zMin: false, zMax: false }, spine: true }, roomWidthM, roomLengthM, rule.gangwayM, longAxis)[0] ?? { cx: 0, cz: 0, width: 0, depth: 0 }) }] : []),
     ],
   };
   designatedCache.set(key, result);
@@ -950,7 +955,7 @@ interface Pinch {
  */
 export function gangwayReview(
   placedItems: readonly PlacedItem[],
-  room: SpaceDimensions,
+  room: PlannerRoomDimensions,
   exits: readonly RoomExit[] | null,
   options: {
     readonly rule?: AisleRule;
@@ -963,7 +968,9 @@ export function gangwayReview(
   const names = options.wallNames ?? PLAIN_WALL_NAMES;
   const widthM = toRealWorld(room.width);
   const lengthM = toRealWorld(room.length);
-  const designated = designatedGangways(widthM, lengthM, exits, rule, options.doorSpaces);
+  // On a room's own floor the walls a gangway runs along are the floor's bounds, where they stand.
+  const origin = layoutOrigin(room.floor);
+  const designated = designatedGangways(widthM, lengthM, exits, rule, options.doorSpaces, room.floor);
   if (designated === null) return [];
   const world = createGhostWorld(placedItems, room);
   const unitOf = (placed: PlacedItem): string => placed.setId ?? placed.groupId ?? placed.id;
@@ -994,7 +1001,7 @@ export function gangwayReview(
     const side = band.side;
     if (side !== null) {
       for (const { placed, unit, points } of outlines) {
-        const distance = Math.max(0, Math.min(...points.map((point) => wallDistance(side, point, widthM, lengthM))));
+        const distance = Math.max(0, Math.min(...points.map((point) => wallDistance(side, { x: point.x - origin.xM, z: point.z - origin.zM }, widthM, lengthM))));
         if (!underGuidance(distance, rule)) continue;
         const alongs = points.map(along);
         note(`${side}|${unit}`, {

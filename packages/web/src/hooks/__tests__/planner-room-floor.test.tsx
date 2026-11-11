@@ -4,7 +4,7 @@ import type { Space } from "../../api/spaces.js";
 import { placementViolationIds } from "../../components/PlacedFurniture.js";
 import { toRealWorld, toRenderSpace } from "../../constants/scale.js";
 import { isPointInPolygon, roomGeometries } from "../../data/room-geometries.js";
-import { planAutoFill } from "../../lib/auto-fill.js";
+import { gangwayReview, planAutoFill } from "../../lib/auto-fill.js";
 import { getCatalogueItem, getCatalogueItemBySlug, type CatalogueItem } from "../../lib/catalogue.js";
 import { createGhostWorld, judgeGhost } from "../../lib/ghost-truth.js";
 import { computeRotatedFootprint, createPlacedItem, isWithinRoomBounds, snapToWallEdge, type PlacedItem } from "../../lib/placement.js";
@@ -367,5 +367,17 @@ describe("the Robert Adam Room, filled", () => {
     if (floor === undefined) throw new Error("no floor");
     const near = usePlacementStore.getState().placedItems.filter((one) => distanceToWalls(floor, one.x, one.z) < THEATRE_SPACING.wallClearanceM - 1e-6);
     expect(near).toEqual([]);
+  });
+});
+
+describe("the gangway review in the Robert Adam Room", () => {
+  it("measures a gangway from where the walls stand, not from the old box", () => {
+    const dims = openRoom("Robert Adam Room");
+    // In the lower section, 1.5 m and more from every wall of the room's bounds. The old box's far wall ran through it.
+    expect(gangwayReview([createPlacedItem(ROUND.id, -2.9, 6.5)], dims, null)).toEqual([]);
+    // Half a metre from the real north wall: under the 1.1 m guidance. The old box put that wall 2.65 m further off.
+    const review = gangwayReview([createPlacedItem(ROUND.id, 0, -3.7 + 0.5 + ROUND.width / 2)], dims, null);
+    expect(review.map((item) => item.gangway)).toEqual(["the wall"]);
+    expect(review[0]?.widthM).toBeCloseTo(0.5, 2);
   });
 });
