@@ -680,7 +680,7 @@ function EnquiryDrafts({ enquiry }: { readonly enquiry: Enquiry }): ReactElement
   // renders nothing without one, so the section would open onto an empty body.
   // The panel still mounts only once someone opens the section. A proposal's
   // message is drafted in the proposal itself, where it can be used.
-  const available = useAIDraftsAvailable();
+  const available = useAIDraftsAvailable("enquiry_summary");
   // A summary is drafted for the venue the person works at, and charged to
   // it: an enquiry at another venue (a platform admin reads every venue's) is
   // not offered one, as the server would not find it there.

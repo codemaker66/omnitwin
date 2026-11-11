@@ -2,6 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import Fastify, { type FastifyInstance } from "fastify";
 import { drizzle } from "drizzle-orm/neon-serverless";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { AI_USAGE_FEATURES } from "@omnitwin/types";
 import * as schema from "../db/schema.js";
 import type { Env } from "../env.js";
 import { aiAssistantRoutes } from "../routes/ai-assistant.js";
@@ -220,13 +221,18 @@ describe("the AI draft routes with the Anthropic provider", () => {
     vi.unstubAllEnvs();
   });
 
-  async function serve(fake: ReturnType<typeof provider>, usage = new TallyAIUsageMeter()): Promise<FastifyInstance> {
+  async function serve(
+    fake: ReturnType<typeof provider>,
+    usage = new TallyAIUsageMeter(),
+    // Switched on for the attributed venue's every draft unless a test narrows it (C1).
+    pilot: Pick<Env, "AI_ASSISTANT_VENUE_IDS" | "AI_ASSISTANT_FEATURES"> = { AI_ASSISTANT_VENUE_IDS: [ATTRIBUTION.venueId], AI_ASSISTANT_FEATURES: [...AI_USAGE_FEATURES] },
+  ): Promise<FastifyInstance> {
     vi.stubEnv("NODE_ENV", "test");
     // The provider is built from the environment, as in production; only the
     // global fetch under the SDK is the test's.
     vi.stubGlobal("fetch", fake.fetch);
     const app = Fastify();
-    const values = { AI_ASSISTANT_ENABLED: "true", AI_ASSISTANT_PROVIDER: "anthropic", AI_ASSISTANT_MODEL: "claude-opus-5-5", AI_ASSISTANT_API_KEY: "test-key-not-real" };
+    const values = { AI_ASSISTANT_ENABLED: "true", AI_ASSISTANT_PROVIDER: "anthropic", AI_ASSISTANT_MODEL: "claude-opus-5-5", AI_ASSISTANT_API_KEY: "test-key-not-real", ...pilot };
     await app.register(aiAssistantRoutes, { env: { ...values } as Env, db: drizzle.mock({ schema }), aiUsage: usage, prefix: "/ai" });
     await app.ready();
     server = app;
@@ -294,6 +300,50 @@ describe("the AI draft routes with the Anthropic provider", () => {
     expect(res.json()).toEqual({ error: "This venue's AI allowance for the month is used", code: "AI_BUDGET_REACHED" });
     expect(fake.fetch).not.toHaveBeenCalled();
     expect(usage.entries).toEqual([expect.objectContaining({ venueId: ATTRIBUTION.venueId, outcome: "budget_blocked", costMicroUsd: 0 })]);
+  });
+
+  it("tells a venue that is not switched on that AI is off, and sends nothing for it (C1)", async () => {
+    const fake = provider();
+    const usage = new TallyAIUsageMeter();
+    const app = await serve(fake, usage, { AI_ASSISTANT_VENUE_IDS: ["00000000-0000-4000-8000-0000000065ff"], AI_ASSISTANT_FEATURES: [...AI_USAGE_FEATURES] });
+    const status = await app.inject({ method: "GET", url: "/ai/status?feature=beo_supplier_instruction_draft", headers: staff });
+    expect(status.json()).toEqual({ data: { configured: false, provider: null, model: null, disabledReason: "AI drafts are not switched on for this venue." } });
+    const res = await app.inject({ method: "POST", url: "/ai/drafts", headers: staff, payload: DRAFT });
+    expect(res.statusCode).toBe(503);
+    expect(res.json()).toEqual({ error: "AI drafts are not switched on for this venue.", code: "AI_ASSISTANT_DISABLED" });
+    expect(fake.fetch).not.toHaveBeenCalled();
+    expect(usage.entries).toEqual([]);
+  });
+
+  it("offers a switched-on venue only the drafts switched on for it (C1)", async () => {
+    const fake = provider();
+    const app = await serve(fake, new TallyAIUsageMeter(), { AI_ASSISTANT_VENUE_IDS: [ATTRIBUTION.venueId], AI_ASSISTANT_FEATURES: ["enquiry_summary"] });
+    const on = await app.inject({ method: "GET", url: "/ai/status?feature=enquiry_summary", headers: staff });
+    expect(on.json()).toMatchObject({ data: { configured: true } });
+    const off = await app.inject({ method: "GET", url: "/ai/status?feature=beo_supplier_instruction_draft", headers: staff });
+    expect(off.json()).toEqual({ data: { configured: false, provider: null, model: null, disabledReason: "This AI draft is not switched on." } });
+    const unknown = await app.inject({ method: "GET", url: "/ai/status?feature=everything", headers: staff });
+    expect(unknown.statusCode).toBe(400);
+    const res = await app.inject({ method: "POST", url: "/ai/drafts", headers: staff, payload: DRAFT });
+    expect(res.statusCode).toBe(503);
+    expect(res.json()).toMatchObject({ code: "AI_ASSISTANT_DISABLED" });
+    expect(fake.fetch).not.toHaveBeenCalled();
+  });
+
+  it("answers 503 AI_DRAFTS_UNAVAILABLE, not a failure, when the provider is out of credit (C1)", async () => {
+    const outOfCredit = {
+      status: 400,
+      body: { type: "error", error: { type: "invalid_request_error", message: "Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits." } },
+    };
+    const app = await serve(provider(outOfCredit, { status: 402, body: errorBody("billing_error") }));
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const res = await app.inject({ method: "POST", url: "/ai/drafts", headers: staff, payload: DRAFT });
+      expect(res.statusCode).toBe(503);
+      expect(res.json()).toEqual({
+        error: "AI drafts are unavailable just now. Write this one by hand; drafts return on their own when the provider is back.",
+        code: "AI_DRAFTS_UNAVAILABLE",
+      });
+    }
   });
 
   it.each([

@@ -76,6 +76,7 @@ import { opsHandoffRoutes } from "./routes/ops-handoff.js";
 import { supplierCoordinationRoutes, supplierShareRoutes } from "./routes/supplier-coordination.js";
 import { analyticsRoutes, eventRevenueRoutes, revenueScenarioRoutes } from "./routes/revenue-analytics.js";
 import { aiAssistantRoutes } from "./routes/ai-assistant.js";
+import { missingAccessLists } from "./services/ai-access.js";
 import { aiUsageRoutes } from "./routes/ai-usage.js";
 import { venueAllowanceMeter } from "./services/ai-usage.js";
 import { embedConfigRoutes, integrationRoutes, webhookOutboundRoutes } from "./routes/integrations.js";
@@ -584,6 +585,12 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   await server.register(webhookOutboundRoutes, { db, prefix: "/webhooks" });
   await server.register(revenueScenarioRoutes, { db, prefix: "/revenue-scenarios" });
   await server.register(analyticsRoutes, { db, prefix: "/analytics" });
+  // C1: AI on without its allow lists fails closed (on for no venue). Said
+  // loudly at boot, not refused, so a forgotten variable never blocks a deploy.
+  const missingAiLists = missingAccessLists(env);
+  if (missingAiLists.length > 0) {
+    server.log.warn({ missing: missingAiLists }, `AI_ASSISTANT_ENABLED is true but ${missingAiLists.join(" and ")} ${missingAiLists.length === 1 ? "is" : "are"} unset: AI drafts are off for every venue until set (docs/operations/ai-pilot-switch-on.md)`);
+  }
   await server.register(aiAssistantRoutes, { env, db, aiUsage, prefix: "/ai" });
   await server.register(proposalRoutes, { db, prefix: "/proposals" });
   await server.register(proposalMessageDraftRoutes, { db, env, aiUsage, prefix: "/proposals" });
