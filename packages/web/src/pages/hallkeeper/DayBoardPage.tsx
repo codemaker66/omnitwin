@@ -463,7 +463,8 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
   const refreshSuppliers = suppliers.refresh;
   useEffect(() => { if (data !== null) refreshSuppliers(); }, [data, refreshSuppliers]);
   const plansSuppliers = !wall && administersVenue(user, venueId);
-  const marksDoor = !wall && user !== null && venueId !== null && user.venueId === venueId && hasRole(VENUE_FLOOR_ROLES, user.role);
+  // The door is marked as it happens: on today's board, never another day's.
+  const marksDoor = browsingToday && !wall && user !== null && venueId !== null && user.venueId === venueId && hasRole(VENUE_FLOOR_ROLES, user.role);
   // The building: when it must be open, when it can be locked up, and the
   // venue's own checks for each, on the shown day. The wall ticks nothing.
   const checks = useBuildingChecks(venueId, shownDate, venueId !== null && !wall);
@@ -574,12 +575,14 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
     [lanes, crew, nowMs, browsingToday],
   );
   // Today's suppliers: who is late at the door, who is due within the hour.
+  // Only from a read that stands: a failed one names nobody as late.
   const supplierArrivals = suppliers.arrivals;
+  const suppliersRead = suppliers.status === "ready";
   const arrivals = useMemo(() => {
-    if (!browsingToday) return undefined;
+    if (!browsingToday || !suppliersRead) return undefined;
     const onBoard = new Set(lanes.flatMap((lane) => lane.slots.map((slot) => slot.bookingId)));
     return arrivalParts(arrivalNotices(supplierArrivals, onBoard, nowMs), timeZone);
-  }, [browsingToday, lanes, supplierArrivals, nowMs, timeZone]);
+  }, [browsingToday, suppliersRead, lanes, supplierArrivals, nowMs, timeZone]);
   const summary = useMemo(
     () => (board === null ? null : boardSummary({ lanes: board.lanes, unowned: board.unowned, today: browsingToday, nowMs, changed: changedRooms, unstaffed, arrivals })),
     [board, browsingToday, nowMs, changedRooms, unstaffed, arrivals],
@@ -652,6 +655,9 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
         crewNote={crewNote}
         suppliers={wall ? null : {
           arrivals: suppliers.byBooking.get(selected.slot.bookingId) ?? [],
+          boardDate: shownDate,
+          dayBoundaryHour,
+          today: browsingToday,
           canPlan: plansSuppliers,
           canMark: marksDoor,
           actions: suppliers,

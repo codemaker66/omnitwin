@@ -1849,6 +1849,15 @@ button.dayboard-rail-item:disabled { cursor: default; }
   outline-offset: 1px;
 }
 
+/* What the form will save, with its date: the small hours are the night after. */
+.dayboard-supplier-form-when {
+  grid-column: 1 / -1;
+  margin: -2px 0 0;
+  color: var(--house-forest-ink-2);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
 .dayboard-supplier-form-actions {
   display: flex;
   align-items: center;

@@ -28,6 +28,7 @@ import { jointlyPromoted, writePromotionNotices, type HoldExit, type PromotionNo
 import { bindBookingToEvent, movePhasesWithBooking, syncEventStatus, syncEventStatuses, type BindTarget } from "./event-binding.js";
 import { lockLiveRoom } from "./room-liveness.js";
 import { recordBookingMove } from "./booking-move-feed.js";
+import { moveArrivalsWithBooking } from "./supplier-arrivals.js";
 
 // ---------------------------------------------------------------------------
 // Booking mutation cores (T-537; Canon §9) — extracted VERBATIM from the
@@ -559,6 +560,8 @@ async function updateBookingLocked(
   const timesChanged = updated.startsAt.getTime() !== row.startsAt.getTime()
     || updated.endsAt.getTime() !== row.endsAt.getTime();
   const roomChanged = updated.spaceId !== row.spaceId;
+  // Its suppliers not yet at the door move with it (services/supplier-arrivals.ts).
+  await moveArrivalsWithBooking(conn, row.id, updated.startsAt.getTime() - row.startsAt.getTime());
   if (row.eventId !== null && updated.eventId === row.eventId && (timesChanged || roomChanged)) {
     await movePhasesWithBooking(conn, {
       bookingId: row.id,

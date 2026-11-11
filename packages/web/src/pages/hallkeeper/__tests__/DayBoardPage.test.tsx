@@ -105,6 +105,7 @@ vi.mock("../../../api/supplier-arrivals.js", () => ({
   createSupplierArrival: () => Promise.reject(new Error("not in this test")),
   updateSupplierArrival: () => Promise.reject(new Error("not in this test")),
   removeSupplierArrival: () => Promise.reject(new Error("not in this test")),
+  undoSupplierArrivalStep: () => Promise.reject(new Error("not in this test")),
 }));
 // The building's own checks: none unless a case feeds them.
 const checksApi = vi.hoisted(() => ({
@@ -1914,7 +1915,7 @@ describe("DayBoardPage: who comes to the building", () => {
     renderBoard();
     await waitFor(() => {
       const sentence = document.querySelector(".dayboard-summary")?.textContent ?? "";
-      expect(sentence).toMatch(/Thistle & Fern Flowers was due at \d{2}:\d{2}\./u);
+      expect(sentence).toMatch(/Thistle & Fern Flowers is late: due at \d{2}:\d{2}\./u);
       expect(sentence).toMatch(/Clydeside Kitchen Co\. is due at \d{2}:\d{2} \(the kitchen lift\)\./u);
     });
     expect(document.querySelector(".dayboard-summary strong[data-tone='copper']")?.textContent).toBe("Thistle & Fern Flowers");
@@ -1927,7 +1928,7 @@ describe("DayBoardPage: who comes to the building", () => {
     renderBoard();
     fireEvent.click(await screen.findByRole("button", { name: /^Dinner,/u }));
     const section = await screen.findByRole("region", { name: "Suppliers" });
-    expect(within(section).getByText("Not here yet")).toBeTruthy();
+    expect(within(section).getByText("Not marked in yet")).toBeTruthy();
     expect(within(section).queryByRole("button", { name: "Add a supplier" })).toBeNull();
     fireEvent.click(within(section).getByRole("button", { name: "Thistle & Fern Flowers arrived" }));
     expect(arrivalsApi.step).toHaveBeenCalledWith(VENUE, FLOWERS, "arrived");
@@ -1943,6 +1944,77 @@ describe("DayBoardPage: who comes to the building", () => {
     fireEvent.click(await screen.findByRole("button", { name: /^Dinner,/u }));
     const section = await screen.findByRole("region", { name: "Suppliers" });
     expect(within(section).getByRole("button", { name: "Add a supplier" })).toBeTruthy();
+  });
+
+  it("offers the door only on today's board", async () => {
+    const tomorrow = dayRange(1);
+    const noon = Date.parse(tomorrow.from) + 12 * 3_600_000;
+    const AWARDS = "00000000-0000-4000-8000-0000000000b3";
+    getCalendarMock.mockImplementation((_venueId, from) => Promise.resolve(from === tomorrow.from
+      ? calendarFixture([{ ...liveBooking(), id: AWARDS, spaceId: SALOON, title: "Awards lunch", startsAt: new Date(noon).toISOString(), endsAt: new Date(noon + 3 * 3_600_000).toISOString() } as CalendarResponse["entries"][number]])
+      : calendarFixture([liveBooking()])));
+    arrivalsApi.list.mockImplementation((_venueId, fromMs) => Promise.resolve(fromMs === Date.parse(tomorrow.from)
+      ? [{ ...arrival(FLOWERS, "Thistle & Fern Flowers", 0), bookingId: AWARDS, arrivesAt: new Date(noon - 2 * 3_600_000).toISOString() }]
+      : []));
+    renderBoard();
+    await screen.findByText("Chamber dinner");
+    fireEvent.click(screen.getByRole("button", { name: "Next day" }));
+    fireEvent.click(await screen.findByRole("button", { name: /^Awards lunch,/u }));
+    const section = await screen.findByRole("region", { name: "Suppliers" });
+    expect(await within(section).findByText("Thistle & Fern Flowers")).toBeTruthy();
+    expect(within(section).queryByRole("button", { name: "Thistle & Fern Flowers arrived" })).toBeNull();
+  });
+
+  it("says it is reading the suppliers while their first read is on its way", async () => {
+    const user = useAuthStore.getState().user;
+    if (user === null) throw new Error("Expected test user");
+    useAuthStore.getState().setUser({ ...user, role: "admin" });
+    getCalendarMock.mockResolvedValue(calendarFixture(day()));
+    arrivalsApi.list.mockReturnValue(new Promise(() => undefined));
+    renderBoard();
+    fireEvent.click(await screen.findByRole("button", { name: /^Dinner,/u }));
+    const section = await screen.findByRole("region", { name: "Suppliers" });
+    expect(within(section).getByText("Reading the suppliers…")).toBeTruthy();
+    expect(within(section).queryByText("No suppliers are down for this booking.")).toBeNull();
+  });
+
+  it("keeps a failed tap with its own booking's panel", async () => {
+    const LUNCH = "00000000-0000-4000-8000-0000000000b7";
+    const CAKE = "00000000-0000-4000-8000-0000000005a3";
+    getCalendarMock.mockResolvedValue(calendarFixture(day()));
+    arrivalsApi.list.mockResolvedValue([
+      arrival(FLOWERS, "Thistle & Fern Flowers", -20),
+      { ...arrival(CAKE, "Ferry Road Cakes", -300), bookingId: LUNCH, arrivedAt: at(-300), arrivedByName: "Jamie" },
+    ]);
+    arrivalsApi.step.mockRejectedValue(new ApiError(0, "Network error — check your connection", "NETWORK_ERROR"));
+    renderBoard();
+    fireEvent.click(await screen.findByRole("button", { name: /^Dinner,/u }));
+    const dinner = await screen.findByRole("region", { name: "Suppliers" });
+    fireEvent.click(within(dinner).getByRole("button", { name: "Thistle & Fern Flowers arrived" }));
+    expect(await within(dinner).findByText("Couldn’t mark that: Network error — check your connection.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /^Lunch,/u }));
+    const lunch = await screen.findByRole("region", { name: "Suppliers" });
+    expect(await within(lunch).findByText("Ferry Road Cakes")).toBeTruthy();
+    expect(within(lunch).queryByText(/Couldn’t mark that/u)).toBeNull();
+  });
+
+  it("names nobody as late from a read that has since failed", async () => {
+    getCalendarMock.mockResolvedValue(calendarFixture(day()));
+    let failing = false;
+    arrivalsApi.list.mockImplementation(() => (failing
+      ? Promise.reject(new ApiError(0, "Network error — check your connection", "NETWORK_ERROR"))
+      : Promise.resolve([arrival(FLOWERS, "Thistle & Fern Flowers", -20)])));
+    renderBoard();
+    await waitFor(() => {
+      expect(document.querySelector(".dayboard-summary")?.textContent ?? "").toMatch(/Thistle & Fern Flowers is late/u);
+    });
+    const before = arrivalsApi.list.mock.calls.length;
+    failing = true;
+    act(() => { window.dispatchEvent(new Event("online")); });
+    await waitFor(() => { expect(arrivalsApi.list.mock.calls.length).toBeGreaterThan(before); });
+    await waitFor(() => {
+      expect(document.querySelector(".dayboard-summary")?.textContent ?? "").not.toMatch(/Thistle & Fern Flowers/u);
+    });
   });
 
   it("reads no arrivals on the wall, which shows no contacts", async () => {

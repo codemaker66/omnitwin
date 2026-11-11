@@ -19,11 +19,14 @@ import type { RequestActor } from "./requests.js";
 // The office (a venue administration role) enters, changes and removes an
 // arrival against one of its venue's bookings; each change names the
 // revision it was made from, so a colleague's newer change is refused rather
-// than overwritten. The floor (anyone who records what a room is doing) marks
-// a supplier arrived and gone: the first tap wins and a second reads it back,
-// so two phones at one door write one fact. Everyone on the floor reads the
-// day's arrivals; nobody outside the venue reads anything, and another
-// venue's arrival reads as absent.
+// than overwritten. A supplier the floor has marked in is not removed: the
+// tap is taken back first. The floor (anyone who records what a room is
+// doing) marks a supplier arrived and gone: the first tap wins and a second
+// reads it back, so two phones at one door write one fact; a mistaken tap is
+// taken back the same way. Everyone on the floor reads the day's arrivals;
+// nobody outside the venue reads anything, and another venue's arrival reads
+// as absent. When the Diary moves a booking, its arrivals not yet marked move
+// with it, in the move's own transaction.
 // ---------------------------------------------------------------------------
 
 export interface ArrivalDeny {
@@ -64,6 +67,15 @@ export function serializeArrival(row: ArrivalRow): SupplierArrival {
   };
 }
 
+export type ArrivalConn = Database | Parameters<Parameters<Database["transaction"]>[0]>[0];
+
+/** A collection after the event: the hire firm at 00:30, the vases the next morning. */
+export const SUPPLIER_ARRIVAL_AFTER_MS = 24 * 3_600_000;
+/** How long before they are due the floor may mark a supplier in: the same day's early arrival. */
+export const SUPPLIER_STEP_EARLY_MS = 12 * 3_600_000;
+/** The column holding who tapped: a longer name is clipped, never refused. */
+const NAME_MAX = 160;
+
 const NOT_FOUND = (): ArrivalDeny => deny(404, "ARRIVAL_NOT_FOUND", "That arrival is not on this venue's board.");
 const STALE = (): ArrivalDeny => deny(409, "STALE_ARRIVAL", "Someone changed this arrival since you opened it. Read it again.");
 
@@ -84,10 +96,11 @@ async function bookingOfVenue(db: Database, venueId: string, bookingId: string):
   return booking;
 }
 
-/** An arrival belongs near its booking: from two days before it to its end. */
+/** An arrival belongs near its booking: from two days before it to a day after it ends. */
 function outsideBooking(booking: BookingWindow, arrivesAt: Date, leavesBy: Date | null): ArrivalDeny | null {
-  if (arrivesAt.getTime() < booking.startsAt.getTime() - SUPPLIER_ARRIVAL_LEAD_MS || arrivesAt.getTime() > booking.endsAt.getTime()) {
-    return deny(400, "ARRIVAL_OUTSIDE_BOOKING", "A supplier arrives between two days before the booking and its end.");
+  if (arrivesAt.getTime() < booking.startsAt.getTime() - SUPPLIER_ARRIVAL_LEAD_MS
+    || arrivesAt.getTime() > booking.endsAt.getTime() + SUPPLIER_ARRIVAL_AFTER_MS) {
+    return deny(400, "ARRIVAL_OUTSIDE_BOOKING", "A supplier arrives between two days before the booking and a day after it ends.");
   }
   if (leavesBy !== null && (leavesBy.getTime() <= arrivesAt.getTime() || leavesBy.getTime() - arrivesAt.getTime() > SUPPLIER_ARRIVAL_STAY_MS)) {
     return deny(400, "ARRIVAL_LEAVES_BEFORE", "They leave after they arrive, within a day and a half.");
@@ -171,8 +184,11 @@ export async function updateArrival(
   if (booking === null) return NOT_FOUND();
   const arrivesAt = input.arrivesAt === undefined ? current.arrivesAt : new Date(input.arrivesAt);
   const leavesBy = input.leavesBy === undefined ? current.leavesBy : input.leavesBy === null ? null : new Date(input.leavesBy);
-  const outside = outsideBooking(booking, arrivesAt, leavesBy);
-  if (outside !== null) return outside;
+  // The times are held to the booking when they change; a new door or note is not.
+  if (input.arrivesAt !== undefined || input.leavesBy !== undefined) {
+    const outside = outsideBooking(booking, arrivesAt, leavesBy);
+    if (outside !== null) return outside;
+  }
   const [row] = await db.update(bookingSupplierArrivals)
     .set({
       ...(input.supplierName === undefined ? {} : { supplierName: input.supplierName }),
@@ -196,7 +212,7 @@ export async function updateArrival(
   return row === undefined ? STALE() : serializeArrival(row);
 }
 
-/** The office removes an arrival, from the revision it saw. */
+/** The office removes an arrival, from the revision it saw, while nobody has marked it in. */
 export async function removeArrival(
   db: Database,
   actor: RequestActor,
@@ -210,10 +226,27 @@ export async function removeArrival(
       eq(bookingSupplierArrivals.id, id),
       eq(bookingSupplierArrivals.venueId, venueId),
       eq(bookingSupplierArrivals.revision, expectedRevision),
+      // The floor's record of the door is not the office's to delete.
+      isNull(bookingSupplierArrivals.arrivedAt),
     ))
     .returning({ id: bookingSupplierArrivals.id });
   if (removed.length > 0) return { ok: true };
-  return (await arrivalOfVenue(db, venueId, id)) === null ? NOT_FOUND() : STALE();
+  const current = await arrivalOfVenue(db, venueId, id);
+  if (current === null) return NOT_FOUND();
+  if (current.arrivedAt !== null) {
+    return deny(409, "ARRIVAL_MARKED", `${current.arrivedByName ?? "The floor"} has marked ${current.supplierName} in. Undo that on the board first.`);
+  }
+  return STALE();
+}
+
+/** An arrival of a booking still on the venue's Diary. */
+async function liveArrival(db: Database, venueId: string, id: string): Promise<ArrivalRow | null> {
+  const [row] = await db.select({ arrival: bookingSupplierArrivals })
+    .from(bookingSupplierArrivals)
+    .innerJoin(bookings, eq(bookings.id, bookingSupplierArrivals.bookingId))
+    .where(and(eq(bookingSupplierArrivals.id, id), eq(bookingSupplierArrivals.venueId, venueId), isNull(bookings.deletedAt)))
+    .limit(1);
+  return row?.arrival ?? null;
 }
 
 /**
@@ -231,25 +264,80 @@ export async function recordArrivalStep(
   now: () => Date = () => new Date(),
 ): Promise<SupplierArrival | ArrivalDeny> {
   if (!canRecordObservation(actor, venueId)) return deny(403, "FORBIDDEN", "Forbidden");
+  const current = await liveArrival(db, venueId, id);
+  if (current === null) return NOT_FOUND();
   const at = now();
+  // A tap belongs to the day: not next week's arrival marked in today.
+  if (at.getTime() < current.arrivesAt.getTime() - SUPPLIER_STEP_EARLY_MS) {
+    return deny(400, "ARRIVAL_NOT_DUE", `${current.supplierName} is not due yet.`);
+  }
+  const name = actor.name.slice(0, NAME_MAX);
   const scope = and(eq(bookingSupplierArrivals.id, id), eq(bookingSupplierArrivals.venueId, venueId));
   const [row] = step === "arrived"
     ? await db.update(bookingSupplierArrivals)
-      .set({ arrivedAt: at, arrivedByUserId: actor.id, arrivedByName: actor.name })
+      .set({ arrivedAt: at, arrivedByUserId: actor.id, arrivedByName: name })
       .where(and(scope, isNull(bookingSupplierArrivals.arrivedAt)))
       .returning()
     : await db.update(bookingSupplierArrivals)
       .set({
         leftAt: at,
         leftByUserId: actor.id,
-        leftByName: actor.name,
+        leftByName: name,
         arrivedAt: sql`COALESCE(${bookingSupplierArrivals.arrivedAt}, ${at.toISOString()}::timestamptz)`,
         arrivedByUserId: sql`COALESCE(${bookingSupplierArrivals.arrivedByUserId}, ${actor.id}::uuid)`,
-        arrivedByName: sql`COALESCE(${bookingSupplierArrivals.arrivedByName}, ${actor.name})`,
+        arrivedByName: sql`COALESCE(${bookingSupplierArrivals.arrivedByName}, ${name})`,
       })
       .where(and(scope, isNull(bookingSupplierArrivals.leftAt)))
       .returning();
   if (row !== undefined) return serializeArrival(row);
   const existing = await arrivalOfVenue(db, venueId, id);
   return existing === null ? NOT_FOUND() : serializeArrival(existing);
+}
+
+/**
+ * The floor takes back a mistaken tap: "gone" clears the leaving; "arrived"
+ * clears the arrival while they have not been marked gone. Taking back a tap
+ * nobody made changes nothing.
+ */
+export async function undoArrivalStep(
+  db: Database,
+  actor: RequestActor,
+  venueId: string,
+  id: string,
+  step: SupplierArrivalStep,
+): Promise<SupplierArrival | ArrivalDeny> {
+  if (!canRecordObservation(actor, venueId)) return deny(403, "FORBIDDEN", "Forbidden");
+  if ((await liveArrival(db, venueId, id)) === null) return NOT_FOUND();
+  const scope = and(eq(bookingSupplierArrivals.id, id), eq(bookingSupplierArrivals.venueId, venueId));
+  const [row] = step === "left"
+    ? await db.update(bookingSupplierArrivals)
+      .set({ leftAt: null, leftByUserId: null, leftByName: null })
+      .where(scope)
+      .returning()
+    : await db.update(bookingSupplierArrivals)
+      .set({ arrivedAt: null, arrivedByUserId: null, arrivedByName: null })
+      .where(and(scope, isNull(bookingSupplierArrivals.leftAt)))
+      .returning();
+  if (row !== undefined) return serializeArrival(row);
+  const existing = await arrivalOfVenue(db, venueId, id);
+  if (existing === null) return NOT_FOUND();
+  return deny(409, "ARRIVAL_GONE", `${existing.supplierName} is marked gone. Undo that first.`);
+}
+
+/**
+ * When the Diary moves a booking, its arrivals not yet marked move by the
+ * same time, so they stay on the day and near the booking they serve. A
+ * supplier already marked in or gone is a fact and stays where it was.
+ */
+export async function moveArrivalsWithBooking(conn: ArrivalConn, bookingId: string, deltaMs: number): Promise<void> {
+  if (deltaMs === 0) return;
+  const shift = sql`make_interval(secs => ${deltaMs / 1000}::double precision)`;
+  await conn.update(bookingSupplierArrivals)
+    .set({
+      arrivesAt: sql`${bookingSupplierArrivals.arrivesAt} + ${shift}`,
+      leavesBy: sql`${bookingSupplierArrivals.leavesBy} + ${shift}`,
+      revision: sql`${bookingSupplierArrivals.revision} + 1`,
+      updatedAt: new Date(),
+    })
+    .where(and(eq(bookingSupplierArrivals.bookingId, bookingId), isNull(bookingSupplierArrivals.arrivedAt)));
 }
