@@ -9,8 +9,11 @@ import type { FastifyInstance, LightMyRequestResponse } from "fastify";
 // it runs in production; trustProxy is on, so x-forwarded-for sets request.ip.
 // ---------------------------------------------------------------------------
 
+const METRICS_TOKEN = "not-found-requests-metrics-token";
+
 process.env["DATABASE_URL"] = "postgresql://mock:mock@localhost/mock";
 process.env["JWT_SECRET"] = "test-jwt-secret-that-is-at-least-32-characters-long";
+process.env["METRICS_TOKEN"] = METRICS_TOKEN;
 delete process.env["CLERK_SECRET_KEY"];
 
 const { buildServer } = await import("../index.js");
@@ -73,5 +76,44 @@ describe("requests for a path no route matches", () => {
     const response = await get("/no-such-route", "203.0.113.33");
     expect(response.statusCode).toBe(404);
     expect(response.json()).toEqual({ error: "Route GET /no-such-route not found.", code: "NOT_FOUND" });
+  });
+
+  /** The request counter's and duration histogram's series, as an
+   *  authorised scrape of /metrics renders them. */
+  async function requestSeries(): Promise<string[]> {
+    const scrape = await server.inject({
+      method: "GET",
+      url: "/metrics",
+      headers: { authorization: `Bearer ${METRICS_TOKEN}`, "x-forwarded-for": "198.51.100.200" },
+    });
+    expect(scrape.statusCode).toBe(200);
+    return scrape.body.split("\n").filter((line) => line.startsWith("http_requests_total{") || line.startsWith("http_request_duration_seconds_count{"));
+  }
+
+  it("share one metrics series, however many distinct paths arrive", async () => {
+    // The first unmatched path and the scrape itself add their own series.
+    expect((await get(`/no-such-route/${randomUUID()}`, "198.18.0.1")).statusCode).toBe(404);
+    await requestSeries();
+    const before = await requestSeries();
+    // Each from its own address, so every one is answered 404.
+    for (let index = 0; index < 500; index += 1) {
+      const address = `198.18.${String(1 + Math.floor(index / 200))}.${String(1 + (index % 200))}`;
+      expect((await get(`/no-such-route/${randomUUID()}?q=${"x".repeat(200)}`, address)).statusCode).toBe(404);
+    }
+    const after = await requestSeries();
+    expect(after.length).toBe(before.length);
+    const rendered = after.join("\n");
+    expect(rendered).not.toContain("/no-such-route");
+    expect(rendered).toContain('http_requests_total{method="GET",route="<unmatched>",status="404"}');
+  });
+
+  it("leave a matched route labelled by its pattern, never by its path", async () => {
+    const venueId = randomUUID();
+    expect((await get(`/venues/${venueId}/operating-settings`, "198.51.100.201")).statusCode).toBe(401);
+    expect((await get("/health", "198.51.100.201")).statusCode).toBe(200);
+    const rendered = (await requestSeries()).join("\n");
+    expect(rendered).toContain('http_requests_total{method="GET",route="/venues/:id/operating-settings",status="401"}');
+    expect(rendered).toContain('http_requests_total{method="GET",route="/health",status="200"}');
+    expect(rendered).not.toContain(venueId);
   });
 });
