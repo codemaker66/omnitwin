@@ -1127,7 +1127,7 @@ function CapacityGuidance({ spaces, disabled, onInsert }: {
     <div className="pr-guidance">
       <p className="pr-guidance__title">Capacity note, from the venue's published figures</p>
       <div className="pr-guidance__fields">
-        <select aria-label="Guidance room" data-testid="capacity-space" value={space?.id ?? ""} disabled={disabled}
+        <select aria-label="Guidance room" data-testid="capacity-space" value={space.id} disabled={disabled}
           onChange={(event) => { setSpaceId(event.target.value); }}>
           {rooms.map((room) => <option key={room.id} value={room.id}>{room.name}</option>)}
         </select>
