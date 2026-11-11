@@ -1843,6 +1843,10 @@ describe("DayBoardPage: what changed since the floor last looked", () => {
 });
 
 describe("DayBoardPage: who comes to the building", () => {
+  // A supplier due twenty minutes ago is yesterday's just after midnight.
+  beforeEach(atMidday);
+  afterEach(() => { vi.useRealTimers(); });
+
   const at = (minutes: number): string => new Date(Date.now() + minutes * 60_000).toISOString();
   const DINNER = "00000000-0000-4000-8000-0000000000b8";
 
