@@ -1,4 +1,4 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { eq, and, isNull, inArray, sql } from "drizzle-orm";
 import { buildLayoutPathKey, ConfigurationReviewStatusSchema, isPlannerEditable } from "@omnitwin/types";
@@ -16,6 +16,7 @@ import { syncPlacedObjectBatch } from "../lib/placed-object-batch.js";
 import { emit } from "../observability/event-bus.js";
 import { generateUniqueShortCode } from "../services/shortcode.js";
 import { generateClaimSecret, hashClaimSecret } from "../services/configuration-claim-secrets.js";
+import { GuestSaveBudget } from "../services/guest-save-budget.js";
 import {
   validatePlacementsInPolygon,
   loadSpacePolygon,
@@ -43,6 +44,28 @@ const CreatePublicConfigBody = z.object({
   name: z.string().trim().min(1).max(200).default("Untitled Layout"),
 });
 
+// What one anonymous save may carry. Every accepted save is stored twice (the
+// plan's pieces, and whole in its revision log), by anyone, with no account.
+//
+// A piece's metadata as the planner writes it is a 500-character note, an
+// 80-character label, two dressing names, a group id and three flags: about
+// 2 KB at its largest, in any script.
+const MAX_PUBLIC_OBJECT_METADATA_BYTES = 4 * 1024;
+// A plan at the 500-piece cap with every piece labelled is about 300 KB.
+const PUBLIC_BATCH_BODY_LIMIT_BYTES = 512 * 1024;
+
+const PublicObjectMetadata = z.record(z.string(), z.unknown()).refine(
+  (metadata) => Buffer.byteLength(JSON.stringify(metadata)) <= MAX_PUBLIC_OBJECT_METADATA_BYTES,
+  "A piece's details are too large to save",
+);
+
+/** The bytes a save asks the database to keep: its body as sent. */
+function saveBytes(request: FastifyRequest): number {
+  const declared = Number(request.headers["content-length"]);
+  if (Number.isFinite(declared) && declared > 0) return declared;
+  return Buffer.byteLength(JSON.stringify(request.body ?? null));
+}
+
 const BatchObjectItem = z.object({
   id: z.uuid().optional(),
   assetDefinitionId: z.uuid(),
@@ -54,7 +77,7 @@ const BatchObjectItem = z.object({
   rotationZ: z.number().default(0),
   scale: z.number().positive().default(1),
   sortOrder: z.number().int().nonnegative().default(0),
-  metadata: z.record(z.string(), z.unknown()).nullable().optional(),
+  metadata: PublicObjectMetadata.nullable().optional(),
 });
 
 const BatchBody = z.object({
@@ -110,9 +133,10 @@ function lockedFor(reviewStatus: string): { error: string; code: "CONFIG_LOCKED"
 
 export async function publicConfigRoutes(
   server: FastifyInstance,
-  opts: { db: Database },
+  opts: { db: Database; saveBudget?: GuestSaveBudget },
 ): Promise<void> {
   const { db } = opts;
+  const saveBudget = opts.saveBudget ?? new GuestSaveBudget();
 
   // POST /public/configurations — create anonymous preview config
   server.post("/configurations", {
@@ -205,6 +229,7 @@ export async function publicConfigRoutes(
 
   // POST /public/configurations/:configId/objects/batch — save objects to preview config
   server.post("/configurations/:configId/objects/batch", {
+    bodyLimit: PUBLIC_BATCH_BODY_LIMIT_BYTES,
     config: { rateLimit: { max: 60, timeWindow: "1 hour" } },
   }, async (request, reply) => {
     const params = ConfigIdParam.safeParse(request.params);
@@ -279,6 +304,14 @@ export async function publicConfigRoutes(
     }
 
     const configId = params.data.configId;
+
+    // This save is about to be written: it draws on what its address may
+    // store (services/guest-save-budget.ts). Saves refused above cost nothing.
+    const allowance = saveBudget.charge(request.ip, saveBytes(request), Date.now());
+    if (!allowance.ok) {
+      reply.header("Retry-After", String(allowance.retryAfterSeconds));
+      return reply.status(429).send({ error: "Too many requests — please slow down.", code: "RATE_LIMITED" });
+    }
 
     // Atomic batch: delete stale + update + insert in one transaction
     const saveResult = await db.transaction(async (tx) => {
