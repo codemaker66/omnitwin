@@ -203,7 +203,8 @@ test.describe("Day Board", () => {
     await expect(page.locator(".dayboard-next")).toHaveText("Grand Hall · Doors · 5 min");
 
     // A finished booking keeps its words; a room with nothing on is one name.
-    await expect(page.getByText("Hammermen lunch")).toBeVisible();
+    // (Its title, exactly: the building's line may name it too.)
+    await expect(page.getByText("Hammermen lunch", { exact: true })).toBeVisible();
     expect(await page.locator(".dayboard-tone-faded").evaluate((element) => getComputedStyle(element).opacity)).toBe("1");
     await expect(page.locator(".dayboard-free")).toHaveText("Also free today: South Gallery.");
     await expect(page.getByRole("region", { name: "South Gallery" })).toHaveCount(0);
