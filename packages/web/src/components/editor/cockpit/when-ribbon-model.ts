@@ -119,13 +119,15 @@ function occupancySpan(
  *  sends it so, and the client's side names it so from the schedule), else
  *  the side's own word for an untitled booking. Rows written before #350
  *  can carry an empty title, and GET /calendar keeps a blank one as stored,
- *  so a blank title counts as none. */
+ *  so a blank title counts as none and a title is shown without the spaces
+ *  either side of it. Never blank. */
 export function ribbonBookingTitle(
   title: string,
   eventName: string | null | undefined,
   untitled: string,
 ): string {
-  if (title.trim() !== "") return title;
+  const own = title.trim();
+  if (own !== "") return own;
   const name = eventName?.trim() ?? "";
   return name !== "" ? name : untitled;
 }

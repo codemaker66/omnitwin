@@ -692,10 +692,11 @@ function RibbonBody({
         const next = moveRibbonDrag(current, day, already + direction * stepMs, event.shiftKey);
         if (next.proposedStartMs !== current.proposedStartMs || next.proposedEndMs !== current.proposedEndMs) tick();
         setKeyboardDrag(next);
-        const wall = day.ghosts.find((ghost) => ghost.exclusion === "hard")?.title ?? "";
+        // A ghost's title is never blank (ribbonBookingTitle, the client's span words): only a day with no wall falls back.
+        const wall = day.ghosts.find((ghost) => ghost.exclusion === "hard")?.title ?? "a confirmed booking";
         setAnnouncement(
           next.overshootMs !== 0 && next.mode === "move"
-            ? RIBBON_COPY.announceBlocked(wall.trim() === "" ? "a confirmed booking" : wall)
+            ? RIBBON_COPY.announceBlocked(wall)
             : RIBBON_COPY.announceMove(rangeLabel(next.proposedStartMs, next.proposedEndMs, timeZone)),
         );
         return;
