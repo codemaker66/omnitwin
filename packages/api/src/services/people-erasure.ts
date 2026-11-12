@@ -1,14 +1,17 @@
-import { and, eq, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, or, sql, type SQL } from "drizzle-orm";
 import type { RecordMergeSnapshot } from "@omnitwin/types";
 import {
   accountMemberships,
   bookings,
+  clientAccounts,
   contactPoints,
   contacts,
   emailSends,
   enquiries,
+  events,
   generalAuditLog,
   guestLeads,
+  opportunities,
   proposalComments,
   proposals,
   recordMerges,
@@ -40,6 +43,11 @@ import type { PeopleTx } from "./people-records.js";
 // financial year (the privacy page's accounting rule), so a person with a
 // confirmed or live provisional booking is refused, and the venue erases what
 // the booking does not need by hand (docs/operations/erasure-requests.md).
+// A booking is theirs when it came from one of their enquiries, or when it
+// belongs to an event of theirs: an event one of their enquiries was booked
+// into (a hold released and the date inked straight onto the event carries
+// no enquiry), the event of a deal they are the main contact for, or of an
+// organisation they are the main contact for, or of a household they belong to.
 //
 // Other venues' records of the same person are theirs to erase: nothing here
 // crosses the venue, except the guest lead, which has no venue.
@@ -85,6 +93,37 @@ export function erasedSnapshot(snapshot: RecordMergeSnapshot): RecordMergeSnapsh
   };
 }
 
+/** Whether a confirmed booking, or a provisional one still live, is the
+ *  person's: from their enquiries, or on any event of theirs. */
+export async function keepsBooking(tx: PeopleTx, ids: readonly string[], enquiryIds: readonly string[]): Promise<boolean> {
+  const enquired = enquiryIds.length === 0 ? [] : await tx.selectDistinct({ id: bookings.eventId }).from(bookings)
+    .where(and(inArray(bookings.enquiryId, [...enquiryIds]), isNotNull(bookings.eventId)));
+  const deals = ids.length === 0 ? [] : await tx.select({ id: events.id }).from(events)
+    .innerJoin(opportunities, eq(opportunities.id, events.opportunityId))
+    .where(inArray(opportunities.primaryContactId, [...ids]));
+  const led = ids.length === 0 ? [] : await tx.select({ id: clientAccounts.id }).from(clientAccounts)
+    .where(inArray(clientAccounts.primaryContactId, [...ids]));
+  const households = ids.length === 0 ? [] : await tx.select({ id: clientAccounts.id }).from(accountMemberships)
+    .innerJoin(clientAccounts, eq(clientAccounts.id, accountMemberships.clientAccountId))
+    .where(and(inArray(accountMemberships.contactId, [...ids]), eq(clientAccounts.kind, "household")));
+  const accountIds = [...led, ...households].map((row) => row.id);
+  const accounted = accountIds.length === 0 ? [] : await tx.select({ id: events.id }).from(events)
+    .where(inArray(events.clientAccountId, accountIds));
+  const eventIds = [...new Set([...enquired, ...deals, ...accounted].flatMap((row) => (row.id === null ? [] : [row.id])))];
+
+  const theirs = or(
+    enquiryIds.length === 0 ? undefined : inArray(bookings.enquiryId, [...enquiryIds]),
+    eventIds.length === 0 ? undefined : inArray(bookings.eventId, eventIds),
+  );
+  if (theirs === undefined) return false;
+  const [kept] = await tx.select({ id: bookings.id }).from(bookings).where(and(
+    theirs,
+    isNull(bookings.deletedAt),
+    or(eq(bookings.kind, "ink"), and(eq(bookings.kind, "hold"), eq(bookings.status, "active"))),
+  )).limit(1);
+  return kept !== undefined;
+}
+
 /** Lower-cased, trimmed, distinct email addresses. */
 function addresses(values: readonly (string | null)[]): readonly string[] {
   return [...new Set(values.flatMap((value) => {
@@ -95,7 +134,7 @@ function addresses(values: readonly (string | null)[]): readonly string[] {
 
 /** The email receipts this venue sent about an enquiry: their keys end in
  *  the enquiry's id, or carry it before a recipient's (`enquiry-new:<id>:<user>`). */
-function receiptsFor(enquiryIds: readonly string[]): SQL | undefined {
+export function receiptsFor(enquiryIds: readonly string[]): SQL | undefined {
   return or(...enquiryIds.map((id) => sql`${emailSends.idempotencyKey} ~ ${`:${id}(:|$)`}`));
 }
 
@@ -137,14 +176,7 @@ export async function eraseLockedPerson(
   ));
   const enquiryIds = theirEnquiries.map((row) => row.id);
 
-  if (enquiryIds.length > 0) {
-    const [kept] = await tx.select({ id: bookings.id }).from(bookings).where(and(
-      inArray(bookings.enquiryId, enquiryIds),
-      isNull(bookings.deletedAt),
-      or(eq(bookings.kind, "ink"), and(eq(bookings.kind, "hold"), eq(bookings.status, "active"))),
-    )).limit(1);
-    if (kept !== undefined) return { ok: false, refusal: "has_booking" };
-  }
+  if (await keepsBooking(tx, ids, enquiryIds)) return { ok: false, refusal: "has_booking" };
 
   const receipts = enquiryIds.length === 0 ? [] : await tx.delete(emailSends)
     .where(receiptsFor(enquiryIds))

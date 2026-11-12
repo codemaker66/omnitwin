@@ -3,10 +3,9 @@
 Written 26 October 2026 (release audit people-privacy-5). The privacy page says a
 person can ask us to delete their enquiry sooner, and that enquiries that did not
 become bookings, and the contact record, go 24 months after our last contact.
-Nothing in the product does either yet: no route erases a person or an enquiry,
-and `contacts.erased_at` is read as "not live" but never written. Until the
-erasure service and its 24-month pass ship, a request is handled by hand, as
-below.
+The erase route and the nightly 24-month pass (below) now do most of it. What
+they refuse or leave (a person with a booking, an account) is handled by hand,
+as below.
 
 **The clock:** one month from the day the request arrives (UK GDPR Article 12(3)).
 Write the date down when it arrives.
@@ -102,5 +101,22 @@ does sections 2 and 3 in one transaction for a person **with no booking**, and w
 - their comments on the venue's proposals.
 
 A person with a confirmed booking or a live provisional one is refused (`PERSON_HAS_BOOKING`): handle that by hand
-as above. An account, if they have one, is still by hand (step 3's last item). The nightly 24-month pass is
-next; until it ships, nothing is automatically deleted at 24 months, and the first record falls due in 2028.
+as above. The booking counts as theirs when it came from one of their enquiries, or sits on an event of theirs:
+- an event one of their enquiries was booked into, even when the confirmed booking was made on the event itself;
+- the event of a deal they are the main contact for;
+- the event of an organisation they are the main contact for;
+- the event of a household they belong to.
+
+An account, if they have one, is still by hand (step 3's last item).
+
+## The 24-month pass
+
+The nightly cleanup (`scripts/run-cleanup.ts`) erases, through the same erasure:
+- every person last in touch more than 24 months ago, meaning the later of the People Book's last contact (or
+  the record's creation) and the record's last change;
+- every enquiry no person holds that was last touched more than 24 months ago and never became a booking.
+
+A person kept for a booking is counted, never half-erased. `POST /admin/retention/people` (platform admins) runs the
+same steps and rolls each one back, so its counts are exactly what the night would do. Each erasure writes a
+`people.erased` row to `general_audit_log`, with "24 months after the last contact" as its summary and no actor.
+The first production record falls due in 2028.

@@ -34,6 +34,7 @@ import { cleanupPreviewConfigurations, cleanupOrphanedFiles } from "../services/
 import { removeUnusedRememberedNotes } from "../services/dietary-memory.js";
 import { removeLapsedDietaryNotes } from "../services/dietary-retention.js";
 import { removeExpiredEngagementEvents } from "../services/enquiry-funnel.js";
+import { eraseLapsedPeople } from "../services/people-retention.js";
 
 export interface ScheduledCleanupResult {
   readonly deletedConfigs: number;
@@ -46,6 +47,10 @@ export interface ScheduledCleanupResult {
   /** Layouts whose notes on single pieces passed their retention. */
   readonly lapsedPieceNoteLayouts: number;
   readonly rememberedNotesRemoved: number;
+  /** People and lone enquiries past the privacy page's 24 months. */
+  readonly peopleErased: number;
+  readonly peopleKeptForBooking: number;
+  readonly enquiriesErased: number;
   readonly engagementEventsRemoved: number;
 }
 
@@ -67,6 +72,9 @@ export async function runScheduledCleanup(
   const remembered = await removeUnusedRememberedNotes(db);
   log(`[cleanup] Removed ${String(remembered.removed)} remembered allergy note(s) unused for the agreed period`);
 
+  const lapsedPeople = await eraseLapsedPeople(db);
+  log(`[cleanup] Erased ${String(lapsedPeople.people)} person(s) and ${String(lapsedPeople.enquiries)} enquiry(ies) 24 months after the last contact; kept ${String(lapsedPeople.keptForBooking)} person(s) for a booking`);
+
   const engagementEventsRemoved = await removeExpiredEngagementEvents(db);
   log(`[cleanup] Removed ${String(engagementEventsRemoved)} engagement event(s) past their retention period`);
 
@@ -78,6 +86,9 @@ export async function runScheduledCleanup(
     loggedNotesRemoved: lapsed.actionLog,
     lapsedPieceNoteLayouts: lapsed.pieceNotes.layouts,
     rememberedNotesRemoved: remembered.removed,
+    peopleErased: lapsedPeople.people,
+    peopleKeptForBooking: lapsedPeople.keptForBooking,
+    enquiriesErased: lapsedPeople.enquiries,
     engagementEventsRemoved,
   };
 }

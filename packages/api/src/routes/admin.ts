@@ -12,6 +12,7 @@ import {
 import { runHoldReminderPass } from "../services/hold-reminders.js";
 import { isEmailDeliveryConfigured } from "../services/email.js";
 import { removeLapsedDietaryNotes } from "../services/dietary-retention.js";
+import { eraseLapsedPeople } from "../services/people-retention.js";
 import { removeUnusedRememberedNotes } from "../services/dietary-memory.js";
 import { runPageChecks } from "../services/competitor-watch-data.js";
 import { createHttpsPageFetcher, type PageFetcher } from "../services/page-check.js";
@@ -94,17 +95,20 @@ export async function adminRoutes(
     const deletedFiles = await cleanupOrphanedFiles(db);
     const dietaryNotes = await removeLapsedDietaryNotes(db);
     const rememberedNotes = await removeUnusedRememberedNotes(db);
+    const people = await eraseLapsedPeople(db);
     return {
       data: {
         deletedConfigs,
         deletedFiles,
         dietaryNotes,
         rememberedNotes,
+        people,
         message: `Cleaned up ${String(deletedConfigs)} stale preview configuration(s) and ${String(deletedFiles)} orphaned file(s); `
           + `removed the allergy note from ${String(dietaryNotes.layouts)} layout(s) and ${String(dietaryNotes.sheets)} event sheet(s)`
           + ` past their retention, and from ${String(dietaryNotes.actionLog)} logged change(s)`
           + `; removed the notes on single pieces from ${String(dietaryNotes.pieceNotes.layouts)} layout(s)`
-          + `; removed ${String(rememberedNotes.removed)} remembered note(s) unused for the agreed period`,
+          + `; removed ${String(rememberedNotes.removed)} remembered note(s) unused for the agreed period`
+          + `; erased ${String(people.people)} person(s) and ${String(people.enquiries)} enquiry(ies) 24 months after the last contact`,
       },
     };
   });
@@ -118,6 +122,12 @@ export async function adminRoutes(
     const rememberedNotes = await removeUnusedRememberedNotes(db, { dryRun: true });
     return { data: { ...layoutNotes, rememberedNotes } };
   });
+
+  // POST /admin/retention/people — who the 24-month pass would erase now,
+  // changing nothing: each step runs and is rolled back.
+  server.post("/retention/people", {
+    preHandler: [authenticate, authorizePlatformAdmin()],
+  }, async () => ({ data: await eraseLapsedPeople(db, { dryRun: true }) }));
 
   // -------------------------------------------------------------------------
   // POST /admin/prune-snapshots — retention for `configuration_sheet_snapshots`

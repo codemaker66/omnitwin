@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { LightMyRequestResponse } from "fastify";
 import * as schema from "../db/schema.js";
 import { peopleRoutes } from "../routes/people.js";
+import { eraseLapsedPeople, PEOPLE_RETENTION_DAYS } from "../services/people-retention.js";
 import { openPeopleFixture, PLATFORM_TARGET, type PeopleFixture, type PeopleFixtureUser } from "./support/people-platform-fixture.js";
 
 // ---------------------------------------------------------------------------
@@ -153,5 +154,130 @@ describe.skipIf(PLATFORM_TARGET === undefined)("erasing a person on the migrated
     expect(await count("contact_points WHERE contact_id = $1", [person])).toBe(1);
     expect(await count("enquiries WHERE id = $1", [asked])).toBe(1);
     expect(await count("general_audit_log WHERE target_id = $1", [person])).toBe(0);
+  });
+  /** An event on its own day with one booking on it, as the Diary binds them. */
+  let day = 0;
+  async function bookedEvent(input: {
+    clientAccountId?: string; opportunityId?: string; enquiryId?: string | null;
+    kind?: "ink" | "hold"; status?: "active" | "released";
+  }): Promise<string> {
+    day += 1;
+    const eventId = randomUUID();
+    const startsAt = new Date(Date.UTC(2027, 0, day, 18));
+    const endsAt = new Date(Date.UTC(2027, 0, day, 23));
+    await f.db.insert(schema.events).values({ id: eventId, venueId: f.venueId, name: "TEST ONLY event", startsAt, endsAt,
+      clientAccountId: input.clientAccountId ?? null, opportunityId: input.opportunityId ?? null });
+    await f.db.insert(schema.bookings).values({ venueId: f.venueId, spaceId, eventId, enquiryId: input.enquiryId ?? null,
+      kind: input.kind ?? "ink", status: input.status ?? "active", title: "TEST ONLY booking", startsAt, endsAt,
+      ...(input.kind === "hold"
+        ? { rank: 1, decisionAt: endsAt, nextAction: "TEST ONLY follow up", nextActionDueAt: startsAt, ownerUserId: f.users.staff }
+        : {}) });
+    return eventId;
+  }
+
+  async function refusedWithBooking(person: string): Promise<void> {
+    const refused = await post(`/people/${person}/erase`, "admin");
+    expect(refused.statusCode, refused.body).toBe(409);
+    expect(refused.json<{ code: string }>().code).toBe("PERSON_HAS_BOOKING");
+    expect(await count("contacts WHERE id = $1 AND erased_at IS NULL", [person])).toBe(1);
+  }
+
+  it("refuses a person whose event was inked straight onto it after their enquiry's hold was released", async () => {
+    // The hold that came from the enquiry is gone; the date was confirmed on
+    // the event itself, so the confirmed booking carries no enquiry at all.
+    const email = `inked-${randomUUID().slice(0, 8)}@example.test`;
+    const person = await f.addPerson({ name: "Ruaridh Inked", emails: [email] });
+    peopleIds.push(person);
+    const asked = await enquiry({ email, contactId: person });
+    const eventId = await bookedEvent({ enquiryId: asked, kind: "hold", status: "released" });
+    day += 1;
+    const startsAt = new Date(Date.UTC(2027, 0, day, 18));
+    await f.db.insert(schema.bookings).values({ venueId: f.venueId, spaceId, eventId, kind: "ink", title: "TEST ONLY inked",
+      startsAt, endsAt: new Date(startsAt.getTime() + 5 * 3600_000) });
+    await refusedWithBooking(person);
+  });
+
+  it("refuses the main contact of a booked deal or organisation, and a member of a booked household", async () => {
+    const dealContact = await f.addPerson({ name: "Ailsa Deal", emails: [`deal-${randomUUID().slice(0, 8)}@example.test`] });
+    const [deal] = await f.db.insert(schema.opportunities).values({ venueId: f.venueId, title: "TEST ONLY deal", primaryContactId: dealContact })
+      .returning({ id: schema.opportunities.id });
+    if (deal === undefined) throw new Error("deal fixture missing");
+    await bookedEvent({ opportunityId: deal.id });
+
+    const organisation = await f.addOrganisation({ name: "TEST ONLY Guild", kind: "organisation" });
+    const organisationContact = await f.addPerson({ name: "Callum Lead", organisations: [organisation] });
+    await f.pool.query("UPDATE client_accounts SET primary_contact_id = $1 WHERE id = $2", [organisationContact, organisation]);
+    await bookedEvent({ clientAccountId: organisation });
+
+    const household = await f.addOrganisation({ name: "TEST ONLY Household", kind: "household" });
+    const householdMember = await f.addPerson({ name: "Morven Home", organisations: [household] });
+    await bookedEvent({ clientAccountId: household, kind: "hold" });
+
+    peopleIds.push(dealContact, organisationContact, householdMember);
+    for (const person of [dealContact, organisationContact, householdMember]) await refusedWithBooking(person);
+  });
+
+  it("still erases an organisation's other members: the booking is the organisation's, not theirs", async () => {
+    const organisation = await f.addOrganisation({ name: "TEST ONLY Lodge", kind: "organisation" });
+    const member = await f.addPerson({ name: "Euan Member", organisations: [organisation] });
+    peopleIds.push(member);
+    await bookedEvent({ clientAccountId: organisation });
+    const erased = await post(`/people/${member}/erase`, "admin");
+    expect(erased.statusCode, erased.body).toBe(200);
+    expect(await count("contacts WHERE id = $1 AND erased_at IS NOT NULL", [member])).toBe(1);
+  });
+
+  it("erases people and lone enquiries 24 months after the last contact, and keeps the booked and the recent", async () => {
+    const now = new Date();
+    const daysAgo = (days: number) => new Date(now.getTime() - days * 86_400_000);
+    const lapsedDay = daysAgo(PEOPLE_RETENTION_DAYS + 31);
+    const recentDay = daysAgo(PEOPLE_RETENTION_DAYS - 31);
+    async function lastTouched(table: "contacts" | "enquiries", id: string, at: Date): Promise<void> {
+      const lastContact = table === "contacts" ? ", last_contact_at = $2" : "";
+      await f.pool.query(`UPDATE ${table} SET created_at = $2, updated_at = $2${lastContact} WHERE id = $1`, [id, at]);
+    }
+    async function personWithEnquiry(name: string, at: Date): Promise<{ person: string; asked: string }> {
+      const email = `${name.toLowerCase()}-${randomUUID().slice(0, 8)}@example.test`;
+      const person = await f.addPerson({ name, emails: [email] });
+      peopleIds.push(person);
+      const asked = await enquiry({ email, contactId: person });
+      await lastTouched("contacts", person, at);
+      await lastTouched("enquiries", asked, at);
+      return { person, asked };
+    }
+
+    const lapsed = await personWithEnquiry("Lapsed", lapsedDay);
+    const booked = await personWithEnquiry("Booked", lapsedDay);
+    await bookedEvent({ enquiryId: booked.asked });
+    const recent = await personWithEnquiry("Recent", recentDay);
+    const lone = await enquiry({ email: `lone-${randomUUID().slice(0, 8)}@example.test` });
+    await lastTouched("enquiries", lone, lapsedDay);
+    const loneRecent = await enquiry({ email: `lone-recent-${randomUUID().slice(0, 8)}@example.test` });
+    await lastTouched("enquiries", loneRecent, recentDay);
+    const loneReceipt = `enquiry-acknowledged:${lone}`;
+    receiptKeys.push(loneReceipt);
+    await f.db.insert(schema.emailSends).values({ idempotencyKey: loneReceipt, recipient: "lone@example.test", subject: "TEST ONLY thanks" });
+
+    const rehearsal = await eraseLapsedPeople(f.db, { now, dryRun: true });
+    expect(rehearsal.dryRun).toBe(true);
+    expect(rehearsal.people).toBeGreaterThanOrEqual(1);
+    expect(rehearsal.keptForBooking).toBeGreaterThanOrEqual(1);
+    expect(rehearsal.enquiries).toBeGreaterThanOrEqual(2);
+    expect(await count("contacts WHERE id = $1 AND erased_at IS NULL", [lapsed.person])).toBe(1);
+    expect(await count("enquiries WHERE id = ANY($1::uuid[])", [[lapsed.asked, lone]])).toBe(2);
+    expect(await count("general_audit_log WHERE target_id = $1", [lapsed.person])).toBe(0);
+
+    const pass = await eraseLapsedPeople(f.db, { now });
+    expect(pass.people).toBeGreaterThanOrEqual(1);
+    expect(await count("contacts WHERE id = $1 AND erased_at IS NOT NULL AND email IS NULL", [lapsed.person])).toBe(1);
+    expect(await count("enquiries WHERE id = ANY($1::uuid[])", [[lapsed.asked, lone]])).toBe(0);
+    expect(await count("email_sends WHERE idempotency_key = $1", [loneReceipt])).toBe(0);
+    // A booking keeps its person; inside the 24 months nothing goes.
+    expect(await count("contacts WHERE id = ANY($1::uuid[]) AND erased_at IS NULL", [[booked.person, recent.person]])).toBe(2);
+    expect(await count("enquiries WHERE id = ANY($1::uuid[])", [[booked.asked, recent.asked, loneRecent]])).toBe(3);
+
+    // A second run finds nothing more of theirs: still one audit row.
+    await eraseLapsedPeople(f.db, { now });
+    expect(await count("general_audit_log WHERE target_id = $1", [lapsed.person])).toBe(1);
   });
 });

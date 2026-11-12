@@ -11,7 +11,8 @@ import type { Database } from "../db/client.js";
 // The enquiry funnel's engagement events (migration 0100) are kept no longer
 // than the privacy page keeps an enquiry, so their retention pass runs here too.
 
-const { previewMock, orphanMock, lapsedMock, rememberedMock, engagementMock } = vi.hoisted(() => ({
+const { previewMock, orphanMock, lapsedMock, rememberedMock, peopleMock, engagementMock } = vi.hoisted(() => ({
+  peopleMock: vi.fn(),
   previewMock: vi.fn(),
   orphanMock: vi.fn(),
   lapsedMock: vi.fn(),
@@ -31,6 +32,9 @@ vi.mock("../services/dietary-retention.js", async (importOriginal) => ({
   ...await importOriginal<typeof import("../services/dietary-retention.js")>(),
   removeLapsedDietaryNotes: lapsedMock,
 }));
+vi.mock("../services/people-retention.js", () => ({
+  eraseLapsedPeople: peopleMock,
+}));
 vi.mock("../services/enquiry-funnel.js", () => ({
   removeExpiredEngagementEvents: engagementMock,
 }));
@@ -48,6 +52,7 @@ beforeEach(() => {
   lapsedMock.mockResolvedValue({ dryRun: false, layouts: 4, sheets: 5, actionLog: 6,
     pieceNotes: { layouts: 2, pieces: 7, revisions: 3, sheets: 1, actionLog: 4, opsTasks: 2 } });
   rememberedMock.mockResolvedValue({ dryRun: false, removed: 3 });
+  peopleMock.mockResolvedValue({ dryRun: false, people: 1, keptForBooking: 2, enquiries: 3 });
   engagementMock.mockResolvedValue(4);
 });
 
@@ -70,6 +75,9 @@ describe("runScheduledCleanup", () => {
       loggedNotesRemoved: 6,
       lapsedPieceNoteLayouts: 2,
       rememberedNotesRemoved: 3,
+      peopleErased: 1,
+      peopleKeptForBooking: 2,
+      enquiriesErased: 3,
       engagementEventsRemoved: 4,
     });
     // Called with the database alone: no dry run, so the notes really go.
@@ -80,12 +88,17 @@ describe("runScheduledCleanup", () => {
     const order = (mock: typeof previewMock): number => mock.mock.invocationCallOrder[0] ?? 0;
     expect(order(orphanMock)).toBeLessThan(order(lapsedMock));
     expect(order(lapsedMock)).toBeLessThan(order(rememberedMock));
+    // The 24-month pass runs for real too, before the engagement pass.
+    expect(peopleMock).toHaveBeenCalledWith(db);
+    expect(order(rememberedMock)).toBeLessThan(order(peopleMock));
+    expect(order(peopleMock)).toBeLessThan(order(engagementMock));
     expect(lines).toEqual([
       "[cleanup] Deleted 2 stale preview configuration(s)",
       "[cleanup] Deleted 1 orphaned file(s)",
       "[cleanup] Removed the allergy note from 4 layout(s) and 5 event sheet(s) past their retention, and from 6 logged change(s)",
       "[cleanup] Removed the notes on single pieces from 2 layout(s) past their retention",
       "[cleanup] Removed 3 remembered allergy note(s) unused for the agreed period",
+      "[cleanup] Erased 1 person(s) and 3 enquiry(ies) 24 months after the last contact; kept 2 person(s) for a booking",
       "[cleanup] Removed 4 engagement event(s) past their retention period",
     ]);
   });
