@@ -103,6 +103,24 @@ describe("SaveErrorToast for a save refused over a note this browser is not show
     expect(screen.getByRole("status").textContent).toContain("Couldn't save — Network error. Your changes are held in this tab until they save: press Retry, or your next change will try again.");
     expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
   });
+
+  // Delta review of #388, D3. Dismiss cleared the refusal from the store, so
+  // the header went back to "Save layout" and the slate to "Saving", with
+  // nothing in flight and the same save still sure to be refused.
+  it("is put away by Dismiss without the refusal being forgotten, so every other surface goes on saying it", () => {
+    refuseSaveOf([table("t3", "Table 3", "TEST ONLY typed over"), table("t4", "Table 4")]);
+    render(<SaveErrorToast message={REFUSAL} isAuthenticated={false} conflict={null} />);
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(useEditorStore.getState()).toMatchObject({ saveError: REFUSAL, saveErrorCode: "NOTE_HELD", isDirty: true });
+  });
+
+  it("is still cleared by Dismiss for any other failed save", () => {
+    useEditorStore.setState({ configId: "plan", isDirty: true, saveError: "Network error", saveErrorCode: "NETWORK_ERROR" });
+    render(<SaveErrorToast message="Network error" isAuthenticated={false} conflict={null} />);
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(useEditorStore.getState()).toMatchObject({ saveError: null, saveErrorCode: null });
+  });
 });
 
 describe("SaveErrorToast timeline isolation", () => {

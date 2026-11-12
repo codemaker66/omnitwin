@@ -732,8 +732,9 @@ export function SaveErrorToast({
   message: string;
   isAuthenticated: boolean;
   conflict: { readonly expectedRevision: number; readonly currentRevision: number } | null;
-}): React.ReactElement {
+}): React.ReactElement | null {
   const timelinePreviewActive = useLayoutTimelinePreviewStore((state) => state.mode !== "inactive");
+  const [putAway, setPutAway] = useState(false);
   const retry = (): void => {
     if (isLayoutTimelineMutationLocked()) return;
     useEditorStore.getState().clearSaveError();
@@ -743,13 +744,21 @@ export function SaveErrorToast({
     if (isLayoutTimelineMutationLocked()) return;
     void useEditorStore.getState().reloadAfterConflict(isAuthenticated);
   };
-  const dismiss = (): void => { useEditorStore.getState().clearSaveError(); };
   // A save refused because it would change a note this browser is not shown
   // (409 NOTE_HELD), or leave out a piece holding one (409 HELD_PIECE_OMITTED):
   // the API's own words, as they come, before them the piece when the planner
   // can tell which (lib/guest-plan-notes). Retrying sends the same save to the
   // same refusal, so it is not offered.
   const refusedForHeldNote = useEditorStore((s) => refusedOverHeldNote(s.saveErrorCode));
+  // Dismissing such a refusal puts this notice away and nothing more. The
+  // refusal still stands, so the header, toolbox and slate go on saying it:
+  // cleared, they would read "Save layout" and "Saving" with nothing in flight
+  // and the same save sure to be refused. The next save starts it afresh (the
+  // page mounts this notice per failure). Any other failure is cleared.
+  const dismiss = (): void => {
+    if (refusedForHeldNote) setPutAway(true);
+    else useEditorStore.getState().clearSaveError();
+  };
   const refusedPiece = useEditorStore((s) => (s.saveErrorCode === NOTE_HELD_CODE ? pieceNamedForRefusedSave(s) : null));
   const heldNoteRefusal = refusedPiece === null ? message : `${refusedPiece}: ${message}`;
   const failure = conflict === null
@@ -760,6 +769,7 @@ export function SaveErrorToast({
     ? `Couldn't save — ${message}. Your changes are held in this tab until they save: press Retry, or your next change will try again.`
     : `Couldn't save — ${message} Server revision ${String(conflict.currentRevision)} is newer than this tab's revision ${String(conflict.expectedRevision)}.`;
   const body = refusedForHeldNote ? heldNoteRefusal : failure;
+  if (putAway && refusedForHeldNote) return null;
   return (
     <div
       role="status"
