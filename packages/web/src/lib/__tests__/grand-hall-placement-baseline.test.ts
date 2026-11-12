@@ -11,7 +11,15 @@ import { computeGrandHallBaseline } from "./grand-hall-baseline.js";
 // the Robert Adam Room's walls are not a box round the origin) must change
 // nothing here: where a piece may stand, where the walls pull it, what the
 // ghost says, and every table, chair and seat Fill sets are held to the
-// figures taken from the code before that change (grand-hall-baseline.ts).
+// figures master's own planner code gives (grand-hall-baseline.ts).
+//
+// Since #391 the hall is the laser scan's 21.135 by 10.59 m, 6.7 m high.
+// The figures in the fixture were taken on 12 November 2026 from master's
+// planner code at origin/master cdb6eb8f, at that size, not from this
+// branch: the helper copied with its imports pointed at a worktree whose
+// planner files (the 45 the helper reaches) were byte for byte cdb6eb8f's,
+// taken twice, the same both times. So the test proves that this branch
+// decides the Grand Hall exactly as master does.
 // ---------------------------------------------------------------------------
 
 function recorded(): Record<string, unknown> {
@@ -30,9 +38,9 @@ describe("the Grand Hall's placement decisions", () => {
   const box = computeBoundingBox(geometry.wallPolygon);
   const dims = scaleForRendering({ width: box.width, length: box.depth, height: geometry.ceilingHeight });
 
-  it("opens as the 21 × 10.5 × 7 m room it always was", () => {
-    expect(dims).toStrictEqual({ width: 21, length: 10.5, height: 7 });
-    expect(recorded()["dims"]).toStrictEqual({ width: 21, length: 10.5, height: 7 });
+  it("opens as the 21.135 × 10.59 × 6.7 m room the hall's scan measured, the size master's figures were taken at", () => {
+    expect(dims).toStrictEqual({ width: 21.135, length: 10.59, height: 6.7 });
+    expect(recorded()["dims"]).toStrictEqual({ width: 21.135, length: 10.59, height: 6.7 });
   });
 
   const want = recorded();

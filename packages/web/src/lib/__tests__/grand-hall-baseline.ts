@@ -21,18 +21,21 @@ import { useDoorClearSpaceStore } from "../../stores/door-clear-space-store.js";
 // What the planner decides in the Grand Hall, written down whole: where a
 // piece may stand, where the walls pull it, what the ghost says, and every
 // table, chair and seat the automatic layouts set. The figures in
-// fixtures/grand-hall-placement-baseline.json were taken from the code as it
-// stood on 11 Nov 2026 (origin/master 9fdb57a6), before the planner learned a
-// room's real outline (audit editor-save-4); the test beside this file holds
-// the Grand Hall, a rectangle centred on the origin, to exactly those figures.
+// fixtures/grand-hall-placement-baseline.json are master's: taken on 12 Nov
+// 2026 from the planner code of origin/master cdb6eb8f, which has no room
+// outline of its own, at the Grand Hall's size there (the laser scan's
+// 21.135 × 10.59 m, 6.7 m high, since #391), by this file's code copied with
+// its imports pointed at a worktree whose 45 planner files this file reaches
+// were byte for byte cdb6eb8f's; taken twice, the same both times. The test
+// beside this file holds the Grand Hall, a rectangle centred on the origin,
+// to exactly those figures. (The first record, 21 × 10.5 × 7 m, was taken on
+// 11 Nov 2026 at origin/master 9fdb57a6.)
 //
 // TO REGENERATE the fixture, only to record a change to the Grand Hall that is
 // meant, or to check the record. It is this file's own output: one line of
 // JSON and a newline.
-//   1. Stand on the commit whose decisions are to be the record. The record
-//      was taken at 2a56eba2, which is origin/master 9fdb57a6 with nothing
-//      added but this file, the test beside it and the fixture. To take it
-//      from older code, copy this file onto that checkout.
+//   1. Stand on the commit whose decisions are to be the record, or on a
+//      checkout of its planner code with this file copied onto it.
 //   2. Beside this file write grand-hall-baseline.write.test.ts:
 //        import { writeFileSync } from "node:fs";
 //        import { it } from "vitest";
