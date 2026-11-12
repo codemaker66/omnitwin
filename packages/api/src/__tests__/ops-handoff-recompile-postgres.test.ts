@@ -168,7 +168,9 @@ describe.skipIf(target === undefined)("compiling an event's handoff pack again, 
           [applicationName],
         );
         return waiting.rows[0]?.waiting;
-      }, { timeout: 10000 }).toBe(2);
+        // Well inside the case's own 10 s, so a lock that is never taken
+        // reports here rather than as a bare test timeout (review T5).
+      }, { timeout: 5000 }).toBe(2);
     } finally {
       await blocker.query("ROLLBACK");
       blocker.release();
@@ -216,6 +218,10 @@ describe.skipIf(target === undefined)("compiling an event's handoff pack again, 
     expect(second.statusCode, second.body).toBe(201);
     expect(second.json<PackBody>().data.pack.id).not.toBe(first.json<PackBody>().data.pack.id);
     expect(second.json<PackBody>().data.roomFlipPlans).toHaveLength(1);
+    // And once that pack stands, compiling again returns it (review T6).
+    const third = await f.compile();
+    expect(third.statusCode, third.body).toBe(200);
+    expect(third.json<PackBody>().data.pack.id).toBe(second.json<PackBody>().data.pack.id);
   });
 
   // Review H1: the board and the supplier passes read the EVENT's newest pack
@@ -243,6 +249,38 @@ describe.skipIf(target === undefined)("compiling an event's handoff pack again, 
     const onceMore = await f.compile();
     expect(onceMore.statusCode, onceMore.body).toBe(200);
     expect(onceMore.json<PackBody>().data.pack.id).toBe(packA.id);
+  });
+
+  // Review H7: the equal-content path with room flips and supplier notes in the pack.
+  it("returns the pack again for an event with a room flip and catering and access notes, keeping a finished room flip", async () => {
+    const f = await fixture({ notes: true, roomFlip: true });
+    const first = await f.compile();
+    expect(first.statusCode, first.body).toBe(201);
+    const firstPack = first.json<PackBody>().data.pack;
+    expect(first.json<PackBody>().data.roomFlipPlans).toHaveLength(1);
+    const kinds = await db.select({ id: schema.opsTasks.id, kind: schema.opsTasks.kind, title: schema.opsTasks.title }).from(schema.opsTasks)
+      .where(eq(schema.opsTasks.handoffPackId, firstPack.id));
+    expect(kinds.map((task) => task.title)).toEqual(expect.arrayContaining(["Catering notes", "Load-in access notes"]));
+    const flip = kinds.find((task) => task.kind === "room_flip");
+    if (flip === undefined) throw new Error("The pack has no room-flip task");
+    await updateOpsTaskStatus(db, { opsTaskId: flip.id, status: "done", actorUserId: f.userId });
+
+    const second = await f.compile();
+    expect(second.statusCode, second.body).toBe(200);
+    expect(second.json<PackBody>().data.pack.id).toBe(firstPack.id);
+    expect((await board(f)).setupProgress.doneTasks).toBe(1);
+  });
+
+  // Review H7: the event's status is a line of the stored BEO, so a recompile
+  // after it changes never returns a pack that names the old one.
+  it("does not return a pack whose BEO names the event's earlier status", async () => {
+    const f = await fixture();
+    const first = await f.compile();
+    expect(first.statusCode, first.body).toBe(201);
+    await db.update(schema.events).set({ status: "confirmed" }).where(eq(schema.events.id, f.eventId));
+    const second = await f.compile();
+    expect(second.statusCode, second.body).toBe(201);
+    expect(second.json<{ data: { beoDocument: { body: string } } }>().data.beoDocument.body).toContain("(confirmed)");
   });
 
   // Review H8: a stored pack the current schema no longer reads (here a BEO
