@@ -180,4 +180,18 @@ describe("the conversation command envelope", () => {
       kind: "request.handover", commandId: KEY, requestId: BOOKING, payload: { toUserId: BOOKING },
     }).success).toBe(true);
   });
+
+  it("carries the state and owner a replayed request step was pressed against", () => {
+    const kept = ConversationCommandSchema.safeParse({
+      kind: "request.resolve", commandId: KEY, requestId: BOOKING, expectedState: "accepted", expectedOwnerUserId: KEY,
+      payload: { outcome: "done" },
+    });
+    expect(kept.success && "expectedOwnerUserId" in kept.data ? kept.data.expectedOwnerUserId : "lost").toBe(KEY);
+    expect(ConversationCommandSchema.safeParse({
+      kind: "request.accept", commandId: KEY, requestId: BOOKING, expectedState: "sent", expectedOwnerUserId: null, payload: {},
+    }).success).toBe(true);
+    expect(ConversationCommandSchema.safeParse({
+      kind: "request.accept", commandId: KEY, requestId: BOOKING, expectedOwnerUserId: "Graham", payload: {},
+    }).success).toBe(false);
+  });
 });

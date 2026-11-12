@@ -4,7 +4,7 @@ import { MemoryRouter } from "react-router-dom";
 import type { Booking, CalendarBookingEntry, CalendarResponse } from "@omnitwin/types";
 import type { Enquiry, EnquiryListQuery, EnquiryPage, EnquiryStageCounts } from "../../../api/enquiries.js";
 import type { Space, VenueDetail } from "../../../api/spaces.js";
-import { ApiError } from "../../../api/client.js";
+import { ApiError, api } from "../../../api/client.js";
 import { EnquiriesView } from "../EnquiriesView.js";
 
 // ---------------------------------------------------------------------------
@@ -18,6 +18,9 @@ const { mocks } = vi.hoisted(() => ({
   mocks: {
     addToast: vi.fn(),
     aiDraftsAvailable: vi.fn<() => boolean | undefined>(),
+    workVenueId: vi.fn<() => string>(() => "venue-1"),
+    workRole: vi.fn<() => string>(() => "staff"),
+    workPlatformRole: vi.fn<() => string>(() => "none"),
     countEnquiryStages: vi.fn(),
     createOpportunityFromEnquiry: vi.fn(),
     getCalendar: vi.fn(),
@@ -60,12 +63,21 @@ vi.mock("../../../stores/toast-store.js", () => ({
 
 vi.mock("../../../stores/auth-store.js", () => ({
   useAuthStore: (
-    selector: (state: { readonly user: { readonly name: string } }) => unknown,
-  ): unknown => selector({ user: { name: "Elaine MacGregor" } }),
+    selector: (state: {
+      readonly user: { readonly name: string; readonly venueId: string; readonly role: string; readonly platformRole: string };
+    }) => unknown,
+  ): unknown => selector({
+    user: { name: "Elaine MacGregor", venueId: mocks.workVenueId(), role: mocks.workRole(), platformRole: mocks.workPlatformRole() },
+  }),
 }));
 
 vi.mock("../../ai/AIDraftPanel.js", () => ({
-  AIDraftPanel: ({ useCase }: { readonly useCase: string }) => <div data-use-case={useCase}>AI draft</div>,
+  AIDraftPanel: ({ useCase, request }: { readonly useCase: string; readonly request?: () => Promise<unknown> }) => (
+    <div data-use-case={useCase}>
+      AI draft
+      <button type="button" onClick={() => { void request?.().catch(() => undefined); }}>Ask for the draft</button>
+    </div>
+  ),
 }));
 
 vi.mock("../../../hooks/use-ai-drafts-available.js", () => ({
@@ -690,6 +702,46 @@ describe("EnquiriesView decisions", () => {
     expect(document.querySelector(".enq-panel .enq-chip--stamped")?.textContent).toBe("Approved");
   });
 
+  // Release audit dash-commercial-2: a planner reads their own enquiries on
+  // this desk and was offered the venue's moves, which PATCH /enquiries/:id/
+  // status refuses; the desk then said the enquiry "had already moved on".
+  it("offers the venue's moves only to the venue's own team, or a platform admin", async () => {
+    wideDesk();
+    const request: Enquiry = {
+      ...enquiry(9), userId: null, guestEmail: "uninvited@example.test", name: "uninvited@example.test", eventType: "venue-access",
+    };
+    mocks.listEnquiryPage.mockResolvedValue(page([enquiry(3), reviewing(), request], {}));
+    const moves = ["Start review", "Start review with a note", "Approve…", "Decline…", "Mark done", "Mark done with a note"];
+    const offered = (): string[] => moves.filter((name) => screen.queryByRole("button", { name }) !== null);
+    const actAs = (role: string, venueId: string, platformRole: string): void => {
+      mocks.workRole.mockReturnValue(role);
+      mocks.workVenueId.mockReturnValue(venueId);
+      mocks.workPlatformRole.mockReturnValue(platformRole);
+    };
+    try {
+      for (const [role, venueId] of [["planner", "venue-1"], ["staff", "venue-2"]] as const) {
+        actAs(role, venueId, "none");
+        render(<EnquiriesView />);
+        fireEvent.click(await screen.findByRole("button", { name: /^Client 3,/u }));
+        expect(offered(), `${role} at ${venueId}, submitted`).toEqual([]);
+        expect(screen.queryByText("Only your team sees this stage. Nothing is sent to the client.")).toBeNull();
+        fireEvent.click(screen.getByRole("button", { name: /^Client 5,/u }));
+        expect(offered(), `${role} at ${venueId}, under review`).toEqual([]);
+        fireEvent.click(screen.getByRole("button", { name: /^uninvited@example\.test,/u }));
+        expect(offered(), `${role} at ${venueId}, a request`).toEqual([]);
+        cleanup();
+      }
+
+      // A platform admin acts for every venue.
+      actAs("admin", "venue-2", "admin");
+      render(<EnquiriesView />);
+      fireEvent.click(await screen.findByRole("button", { name: /^Client 3,/u }));
+      expect(offered()).toEqual(["Start review", "Start review with a note"]);
+    } finally {
+      actAs("staff", "venue-1", "none");
+    }
+  });
+
   // A read landing while the confirmation is open (a colleague declined it)
   // does not change what the person decided from: the move says the status
   // they saw, so the server refuses it rather than deciding again.
@@ -817,6 +869,46 @@ describe("EnquiriesView decisions", () => {
     drafts.open = true;
     fireEvent(drafts, new Event("toggle"));
     expect(screen.getAllByText("AI draft").map((panel) => panel.getAttribute("data-use-case"))).toEqual(["enquiry_summary"]);
+  });
+
+  // Release audit ai-1: the summary's context was built here and sent as it
+  // was, the guest's name, email address and message word for word. The
+  // server now builds it from the enquiry it holds; only the id goes, in the path.
+  it("asks for the enquiry summary by the enquiry's id alone, sending no email address, name or message", async () => {
+    const asked = { ...enquiry(3), guestEmail: "jane@example.com", guestPhone: "07700 900123", guestName: "Jane Doe",
+      message: "Jane Doe, jane@example.com, call me on 07700 900123" };
+    mocks.listEnquiryPage.mockResolvedValue(page([asked], {}));
+    const post = vi.spyOn(api, "post").mockRejectedValue(new Error("not answered in this test"));
+    try {
+      render(<EnquiriesView canDraftWithAI />);
+      fireEvent.click(await screen.findByRole("button", { name: /^Jane Doe,/u }));
+      const drafts = screen.getByText("Draft with AI").closest("details");
+      if (drafts === null) throw new Error("Expected the drafting disclosure");
+      drafts.open = true;
+      fireEvent(drafts, new Event("toggle"));
+      fireEvent.click(screen.getByRole("button", { name: "Ask for the draft" }));
+      await waitFor(() => { expect(post).toHaveBeenCalledTimes(1); });
+      const [path, body] = post.mock.calls[0] ?? [];
+      expect(path).toBe("/enquiries/enquiry-3/summary-draft");
+      expect(body).toEqual({});
+      expect(JSON.stringify(body)).not.toMatch(/email|enquiryId|jane@example\.com|07700|Jane Doe/u);
+      expect(post.mock.calls.some(([to]) => to === "/ai/drafts")).toBe(false);
+    } finally {
+      post.mockRestore();
+    }
+  });
+
+  it("offers no AI summary of an enquiry at a venue the person does not work at", async () => {
+    mocks.listEnquiryPage.mockResolvedValue(page([enquiry(3)], {}));
+    mocks.workVenueId.mockReturnValue("venue-2");
+    try {
+      render(<EnquiriesView canDraftWithAI />);
+      fireEvent.click(await screen.findByRole("button", { name: /^Client 3,/u }));
+      expect(await screen.findByRole("heading", { name: "Client 3" })).toBeTruthy();
+      expect(screen.queryByText("Draft with AI")).toBeNull();
+    } finally {
+      mocks.workVenueId.mockReturnValue("venue-1");
+    }
   });
 
   it("offers AI drafting only where a provider is configured", async () => {

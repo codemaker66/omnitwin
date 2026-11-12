@@ -217,6 +217,81 @@ describe.skipIf(target === undefined)("a setup sheet's ticks belong to the event
     for (const eventId of f.eventIds) expect(await summary(f, eventId)).toMatchObject({ checked: 0 });
   });
 
+  // Release audit tenancy-f-2: the checklist is the venue crew's record of
+  // its own work. The layout's owner reads it; only the venue's floor ticks.
+  async function ownedBy(f: Layout, role: string, venueId: string | null) {
+    const ownerId = randomUUID();
+    await db.insert(schema.users).values({ id: ownerId, venueId, name: "Layout owner", email: `${ownerId}@demo.invalid`, role });
+    await db.update(schema.configurations).set({ userId: ownerId }).where(eq(schema.configurations.id, f.configId));
+    return { authorization: `Bearer ${JSON.stringify({ id: ownerId, name: "Layout owner", email: `${ownerId}@demo.invalid`, role, venueId })}` };
+  }
+
+  function patchAs(f: Layout, headers: { authorization: string }, eventId: string | null, checked?: boolean) {
+    return server.inject({ method: "PATCH", url: `/hallkeeper/${f.configId}/progress${query(eventId)}`,
+      headers, payload: checked === undefined ? { rowKey: f.rowKey } : { rowKey: f.rowKey, checked } });
+  }
+
+  it.each(["client", "planner"])("a %s who owns the layout reads its checklist and cannot tick it", async (role) => {
+    const f = await layout(1);
+    const [only] = f.eventIds as [string];
+    const owner = await ownedBy(f, role, null);
+
+    for (const checked of [true, undefined]) {
+      const refused = await patchAs(f, owner, only, checked);
+      expect(refused.statusCode, refused.body).toBe(403);
+      expect(refused.json<{ code: string }>().code).toBe("FORBIDDEN");
+    }
+    expect(await storedEvents(f)).toEqual([]);
+
+    // Reading stays theirs.
+    const read = await server.inject({ method: "GET", url: `/hallkeeper/${f.configId}/progress${query(only)}`, headers: owner });
+    expect(read.statusCode, read.body).toBe(200);
+    expect(read.json<ProgressBody>().data.checked).toEqual({});
+    const sheet = await server.inject({ method: "GET", url: `/hallkeeper/${f.configId}/summary${query(only)}`, headers: owner });
+    expect(sheet.statusCode, sheet.body).toBe(200);
+  });
+
+  it("a hallkeeper's tick survives the owner's untick, and the Day Board's count with it", async () => {
+    const f = await layout(1);
+    const [only] = f.eventIds as [string];
+    const owner = await ownedBy(f, "client", null);
+    await tick(f, only, true);
+
+    expect((await patchAs(f, owner, only, false)).statusCode).toBe(403);
+    // The legacy toggle would have flipped it off.
+    expect((await patchAs(f, owner, only)).statusCode).toBe(403);
+    expect(await storedEvents(f)).toEqual([only]);
+    expect(await summary(f, only)).toMatchObject({ total: 1, checked: 1 });
+
+    const read = await server.inject({ method: "GET", url: `/hallkeeper/${f.configId}/progress${query(only)}`, headers: owner });
+    expect(Object.keys(read.json<ProgressBody>().data.checked)).toEqual([f.rowKey]);
+  });
+
+  it("another venue's staff who own a layout here read it and cannot tick it", async () => {
+    const f = await layout(1);
+    const [only] = f.eventIds as [string];
+    const elsewhere = randomUUID();
+    await db.insert(schema.venues).values({ id: elsewhere, name: "DEMO ONLY other venue", slug: elsewhere, address: "Test only" });
+    const owner = await ownedBy(f, "staff", elsewhere);
+
+    expect((await patchAs(f, owner, only, true)).statusCode).toBe(403);
+    expect(await storedEvents(f)).toEqual([]);
+    expect((await server.inject({ method: "GET", url: `/hallkeeper/${f.configId}/progress${query(only)}`, headers: owner })).statusCode).toBe(200);
+  });
+
+  it.each(["staff", "manager", "admin"])("the venue's %s ticks as the hallkeeper does", async (role) => {
+    const f = await layout(1);
+    const [only] = f.eventIds as [string];
+    const [{ venueId }] = await db.select({ venueId: schema.configurations.venueId }).from(schema.configurations)
+      .where(eq(schema.configurations.id, f.configId)) as [{ venueId: string }];
+    const id = randomUUID();
+    await db.insert(schema.users).values({ id, venueId, name: "Venue floor", email: `${id}@demo.invalid`, role });
+    const headers = { authorization: `Bearer ${JSON.stringify({ id, name: "Venue floor", email: `${id}@demo.invalid`, role, venueId })}` };
+    const response = await patchAs(f, headers, only, true);
+    expect(response.statusCode, response.body).toBe(200);
+    expect(await storedEvents(f)).toEqual([only]);
+  });
+
   it("removes an event's ticks with the event", async () => {
     const f = await layout(2);
     const [kept, removed] = f.eventIds as [string, string];

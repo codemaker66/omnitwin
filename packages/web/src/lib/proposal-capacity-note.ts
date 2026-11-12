@@ -1,10 +1,8 @@
 import type { LayoutStyle } from "@omnitwin/types";
 import {
-  comfortBandLabel,
   computeCapacityIntelligence,
   type CapacityIntelligence,
 } from "./layout-capacity.js";
-import { countLabel } from "./count-label.js";
 
 /**
  * Standing SAFE disclosure for every public/client capacity surface. It pairs
@@ -18,9 +16,8 @@ export const CAPACITY_GUIDANCE_DISCLOSURE =
 // Proposal capacity guidance — T-429 surfaced through T-427 phase 5.
 //
 // Reuses the planner's planning-grade capacity engine (layout-capacity.ts)
-// to generate a SAFE capacity note for proposals: scoped comfort estimates
-// with human-review-required wording instead of static room numbers. The
-// generated text must always pass the types-level claim guard.
+// for the proposal composer's staff-only estimate. What goes into the
+// client's capacity note is the venue's published figure (see below).
 // ---------------------------------------------------------------------------
 
 export const CAPACITY_STYLE_LABELS: Readonly<Record<LayoutStyle, string>> = {
@@ -43,24 +40,8 @@ export function buildProposalCapacityGuidance(
   return computeCapacityIntelligence(floorAreaM2, guestCount, layoutStyle);
 }
 
-// Public and client surfaces (the planner's enquiry form, the Share lens) no
-// longer show floor area ÷ generic spacing: they state the venue's published
-// figure through planner-truth.ts (redteam fix-first 1). What remains here is
-// the staff dashboard's proposal-composer aid.
-
-/**
- * SAFE capacity note for the proposal payload. Always ends with the
- * human-review disclosure, so it passes the proposal claim guard by
- * construction.
- */
-export function buildProposalCapacityNote(
-  spaceName: string,
-  intel: CapacityIntelligence,
-): string {
-  const style = CAPACITY_STYLE_LABELS[intel.layoutStyle];
-  const base = `${spaceName}: comfortable for around ${countLabel(intel.comfortableCapacity, "guest")} as ${style}`;
-  const fit = intel.plannedSeats > 0
-    ? ` — for ${countLabel(intel.plannedSeats, "guest")}: ${comfortBandLabel(intel.band)}`
-    : "";
-  return `${base}${fit}. Planning estimate only; human review required; final capacity confirmed by the venue team.`;
-}
+// Public and client surfaces (the planner's enquiry form, the Share lens, the
+// proposal's capacity note) never show floor area ÷ generic spacing: they state
+// the venue's published figure through planner-truth.ts (redteam fix-first 1;
+// publishedCapacityNote). The guidance above is only the staff estimate the
+// proposal composer shows beside it, labelled "Estimate at generic spacing".

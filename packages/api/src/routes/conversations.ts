@@ -20,7 +20,7 @@ import {
 import type { Database } from "../db/client.js";
 import { authenticate, isPlatformAdmin } from "../middleware/auth.js";
 import { emit } from "../observability/event-bus.js";
-import { pushForRequestLanded, tell } from "../services/push-triggers.js";
+import { pushForRequestLanded, tell, tellOfMessage } from "../services/push-triggers.js";
 import { canManageVenue } from "../utils/query.js";
 import {
   clientConversationSnapshot,
@@ -102,7 +102,10 @@ export function withHeaderKey(request: FastifyRequest, reply: FastifyReply): { r
   return { body: { ...record, idempotencyKey: parsedHeader.data } };
 }
 
-function announceMessage(request: FastifyRequest, thread: Thread, message: Message): void {
+/** A message that has just committed: on the house bus, and to the person
+ *  whose request it answers. Never called for a replay. */
+function announceMessage(db: Database, request: FastifyRequest, thread: Thread, message: Message): void {
+  tellOfMessage(db, thread, message, request.log);
   emit(request.log, "conversation.changed", {
     venueId: thread.venueId,
     kind: "message.sent",
@@ -233,7 +236,7 @@ export async function threadRoutes(server: FastifyInstance, opts: { db: Database
 
     const result = await sendMessageCore(db, actorOf(request), params.data.id, parsed.data);
     if (isDeny(result)) return sendDeny(reply, result);
-    if (!result.replay) announceMessage(request, result.thread, result.message);
+    if (!result.replay) announceMessage(db, request, result.thread, result.message);
     return reply
       .status(result.replay ? 200 : 201)
       .header("idempotency-replay", String(result.replay))
@@ -289,7 +292,7 @@ export async function clientConversationRoutes(server: FastifyInstance, opts: { 
 
     const result = await sendClientMessageCore(db, actorOf(request), params.data.eventId, parsed.data);
     if (isDeny(result)) return sendDeny(reply, result);
-    if (!result.replay) announceMessage(request, result.thread, result.message);
+    if (!result.replay) announceMessage(db, request, result.thread, result.message);
     return reply
       .status(result.replay ? 200 : 201)
       .header("idempotency-replay", String(result.replay))

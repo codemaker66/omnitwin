@@ -103,5 +103,9 @@ export default defineConfig({
     // 120s: a cold vite boot on a loaded machine can exceed 30s, and a boot
     // timeout reads as a mysterious run failure rather than what it is.
     timeout: IS_PREVIEW_MODE ? 60_000 : 120_000,
+    // On CI the server's own output goes to the job log: a dependency
+    // re-optimisation, a forced page reload or a transform error explains a
+    // slow planner boot that a test can otherwise only see as time.
+    ...(IS_CI ? { stdout: "pipe" as const } : {}),
   } : undefined,
 });

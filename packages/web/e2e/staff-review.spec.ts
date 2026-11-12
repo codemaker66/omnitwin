@@ -234,8 +234,9 @@ test.describe("Staff review — approve action", () => {
     await page.getByRole("button", { name: "Approve and email", exact: true }).click();
 
     // A native action sends one ordinary approval, without silently choosing
-    // demo-only notification suppression or a different configuration.
-    await expect.poll(() => approveRequests).toEqual([{ method: "POST", body: {} }]);
+    // demo-only notification suppression or a different configuration, and
+    // names the version it showed.
+    await expect.poll(() => approveRequests).toEqual([{ method: "POST", body: { snapshotId: MOCK_APPROVED_SNAPSHOT.id } }]);
     await expect(page.getByText("Approved. The planner and your hallkeepers are being emailed.")).toBeVisible({ timeout: 8_000 });
     await expect(page.getByRole("heading", { name: "No layouts waiting" })).toBeVisible();
     await expect(queueRow(page)).toHaveCount(0);

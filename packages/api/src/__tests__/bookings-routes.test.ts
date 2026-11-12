@@ -337,8 +337,12 @@ describe("booking mutation cores — source contract (extracted T-537, invariant
   it("validates a cross-lane move's target space against the venue (the Board)", async () => {
     const source = await readFile(resolve("src/services/booking-mutations.ts"), "utf-8");
     expect(source).toContain("patch.spaceId !== undefined");
-    expect(source).toContain("eq(spaces.id, patch.spaceId)");
+    // The target is read live at the booking's venue, under the room's lock
+    // (admin-venues-3); room-delete-writers-postgres proves the behaviour.
+    expect(source).toContain("lockLiveRoom(conn, row.venueId, patch.spaceId ?? row.spaceId)");
     expect(source).toContain("spaceId: patch.spaceId ?? row.spaceId");
+    const liveness = await readFile(resolve("src/services/room-liveness.ts"), "utf-8");
+    expect(liveness).toContain("eq(spaces.id, spaceId), eq(spaces.venueId, venueId), isNull(spaces.deletedAt)");
   });
 
   it("scopes diary writes to the roles that ink the diary while reads keep the shared venue policy", async () => {
@@ -452,5 +456,25 @@ describe("booking → event link (bookings.event_id, the bind)", () => {
   it("the serializer carries the link, so the board sees it without a second fetch", async () => {
     const source = await readFile(resolve("src/services/booking-mutations.ts"), "utf-8");
     expect(source).toContain("eventId: row.eventId");
+  });
+});
+
+describe("a hold's title from an enquiry with a blank name (blank-enquiry-name)", () => {
+  it("names the hold after the enquiry's email when its stored name is blank", async () => {
+    const { enquiryTitleName } = await import("../routes/bookings.js");
+    expect(enquiryTitleName({ name: "", email: "ada@example.com" })).toBe("ada@example.com");
+    expect(enquiryTitleName({ name: "   ", email: "ada@example.com" })).toBe("ada@example.com");
+    expect(enquiryTitleName({ name: " Ada Lovelace ", email: "ada@example.com" })).toBe("Ada Lovelace");
+  });
+
+  it("uses that name for both the conversion and the viewing titles, kept to 200 characters", async () => {
+    const source = await readFile(resolve("src/routes/bookings.ts"), "utf-8");
+    const conversion = source.slice(source.indexOf('server.post("/from-enquiry"'), source.indexOf('server.post("/viewings"'));
+    const viewing = source.slice(source.indexOf('server.post("/viewings"'));
+    expect(conversion).toContain("enquiryTitleName(enquiry)");
+    expect(conversion).toContain("fallbackTitle.slice(0, MAX_BOOKING_TITLE_LENGTH)");
+    expect(viewing).toContain("email: enquiries.email");
+    expect(viewing).toContain("enquiryTitleName(enquiry).slice(0, MAX_BOOKING_TITLE_LENGTH)");
+    expect(source).not.toContain("enquiry.name.slice(");
   });
 });

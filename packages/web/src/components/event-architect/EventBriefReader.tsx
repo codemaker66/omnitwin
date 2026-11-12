@@ -10,6 +10,7 @@ import {
 import { Check, CircleAlert, Quote, Sparkles } from "lucide-react";
 import {
   AI_BUDGET_REACHED,
+  AI_DRAFTS_UNAVAILABLE,
   EVENT_BRIEF_DESCRIPTION_MAX_LENGTH,
   type EventArchitectAccessibilityRequirement,
   type EventBriefDraft,
@@ -77,7 +78,8 @@ type Step =
   | { readonly kind: "filled"; readonly draft: EventBriefDraft; readonly readFor: ReadFor }
   | { readonly kind: "failed" }
   | { readonly kind: "refused" }
-  | { readonly kind: "gone" };
+  // Off, or (outOfCredit) the provider takes no calls until the next grant (C1).
+  | { readonly kind: "gone"; readonly outOfCredit?: boolean };
 
 const FIELD_LABELS: Readonly<Record<EventBriefDraftField, string>> = {
   eventName: "Event name",
@@ -223,7 +225,7 @@ interface EventBriefReaderProps {
 }
 
 export function EventBriefReader({ venueId, spaceId, roomName, onFill }: EventBriefReaderProps): ReactElement | null {
-  const available = useEventBriefReaderAvailable();
+  const available = useEventBriefReaderAvailable(venueId);
   const [description, setDescription] = useState("");
   const [step, setStep] = useState<Step>({ kind: "idle" });
   const [values, setValues] = useState<PreviewValues | null>(null);
@@ -307,6 +309,11 @@ export function EventBriefReader({ venueId, spaceId, roomName, onFill }: EventBr
           setStep({ kind: "gone" });
           return;
         }
+        if (error instanceof ApiError && error.status === 503 && error.code === AI_DRAFTS_UNAVAILABLE) {
+          markEventBriefReaderUnavailable();
+          setStep({ kind: "gone", outOfCredit: true });
+          return;
+        }
         // Refused as it stands (a room no longer there, a description it will
         // not take): asking again would be refused again.
         if (error instanceof ApiError && error.status >= 400 && error.status < 500 && ![401, 408, 429].includes(error.status)) {
@@ -384,7 +391,9 @@ export function EventBriefReader({ venueId, spaceId, roomName, onFill }: EventBr
 
       {step.kind === "gone" ? (
         <p className="ea-reader__quiet-note" data-testid="brief-reader-gone">
-          Reading briefs is not available now. The request form below works as before.
+          {step.outOfCredit === true
+            ? "Reading briefs is unavailable just now and returns on its own. Fill in the request form below by hand; your description is unchanged."
+            : "Reading briefs is not available now. The request form below works as before."}
         </p>
       ) : (
         <>

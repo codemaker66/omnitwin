@@ -41,7 +41,7 @@ soft-deleted in practice).
 | Outcome | Meaning |
 | --- | --- |
 | `ok` | an answer the route could use |
-| `refusal` | Claude declined (after any fallback) |
+| `refusal` | Claude declined (after any fallback), or another model than the one asked wrote a draft, which is then not passed on |
 | `max_tokens` | cut off before it finished |
 | `error` | the provider failed, or the answer was unusable |
 | `budget_blocked` | refused by the allowance; nothing was sent, so no tokens and no cost (a check constraint enforces this) |
@@ -151,6 +151,30 @@ month (on the database's clock), in US dollars.
 - `AI_ASSISTANT_ENABLED` is still the global switch. With AI off, nothing is
   reserved or recorded.
 
+### Which venues and drafts (C1, 5 November 2026)
+
+With AI on, a call is made only for a venue in `AI_ASSISTANT_VENUE_IDS` and a
+draft in `AI_ASSISTANT_FEATURES` (comma-separated; `services/ai-access.ts`).
+Both providers check this before anything is reserved, recorded or sent, and
+answer `AIAssistantDisabledError` (503 `AI_ASSISTANT_DISABLED`) otherwise.
+There is no "every venue" value. Two rules hold at boot:
+
+- **A list that is unset fails closed.** The API starts with AI on for no
+  venue and no draft. It logs a warning naming the unset variable, and every
+  status (`/ai/status`, `/event-architect/brief-drafts/status`) answers
+  `configured: false` with "AI drafts are on, but no venue or draft has been
+  switched on yet." A forgotten variable never blocks a deploy.
+- **A list that is set but malformed stops the boot**, like the allowance
+  above: an empty list, a value that is not a venue id, or an unknown draft
+  name. Such a value comes only from a deliberate variable change, and its
+  redeploy fails visibly at once while the old container keeps serving.
+
+When the provider refuses for want of credit (a 402 `billing_error`, or a 400
+saying the credit balance is too low or a spend limit is reached), the call is
+recorded as an error and the route answers 503 `AI_DRAFTS_UNAVAILABLE`; staff
+are told to write by hand until drafts return. The order to set the variables
+in is `docs/operations/ai-pilot-switch-on.md`.
+
 **Before every call,** the adapter reserves the call's worst-case cost.
 `PostgresAIUsageMeter.hold` does this in one transaction under
 `pg_advisory_xact_lock(hashtextextended('ai-usage:' || venue_id, 0))`:
@@ -174,9 +198,11 @@ failed write is logged as above. A second `settle` is ignored.
   dearest input-side rate (fresh input or either cache write);
 - output: `max_tokens` (16,000) at the output rate;
 - fallback: when the request carries the server-side fallback, a second attempt
-  at the dearest rates among that model's fallback models.
+  at the dearest rates among that model's fallback models. Only event briefs
+  carry it: a draft is written by the model asked or not at all (27 October
+  2026), so a draft is reserved as one attempt.
 
-At Claude Opus 5.5 this is about $0.80 for a draft and $1 for a brief. Real
+At Claude Opus 5.5 this is about $0.36 for a draft and $1 for a brief. Real
 calls cost cents: the 8 October proposal-draft evaluation measured a mean of
 $0.0096–$0.0130 a draft
 ([report](../reports/claude-proposal-drafts-eval-2026-10-08.md)). Event briefs
@@ -203,7 +229,7 @@ What can still escape:
 - **A ledger write that fails after a call** is logged with everything it
   would have held. Its reservation keeps the money held until it lapses ten
   minutes later; after that the spend is unrecorded.
-- **The server-side `default` fallback** is reserved as one extra hop. If the
+- **The server-side `default` fallback** (event briefs only) is reserved as one extra hop. If the
   API chained more, the ledger would still be exact (it prices
   `usage.iterations`), but the call could cost more than it reserved.
 - **A wrong or stale price table** gives a wrong ledger. The stored tokens and
@@ -247,8 +273,9 @@ five minutes.
   roughly 900–1,300 tokens. It goes as a system block with a five-minute
   `cache_control` breakpoint (`cacheSystem: true`). Everything that varies
   (the room, today's date, the description) is in the user turn after it.
-- **Drafts: not cached.** Their rules are about 1,500 characters for a
-  proposal message and under 600 for the others, below the minimum, so they
+- **Drafts: not cached.** Their rules are about 1,900 characters for a
+  proposal message and under 1,000 for the others (27 October 2026, with the
+  price, availability and capacity rule), below the minimum, so they
   carry no breakpoint.
 
 The hit rate is unmeasured until a key is set. Once one is, the ledger's
@@ -268,11 +295,20 @@ It also returns this month's allowance: limit, spent, held by calls in flight,
 and remaining. The `currency` is `USD` and the response names the price-table
 version.
 
-The venue's own `admin` and `manager`, and platform admins, may read it.
+The venue's own `admin` and `manager`, and platform admins, may read it
+(`AI_USAGE_READ_ROLES` in `@omnitwin/types`, read by `canReadAIUsage`).
 Everyone else gets 403 `FORBIDDEN`: staff, sales, hallkeeper, planner, client,
 caterer, and any other venue's managers. An unknown venue is 404, and a bad
-parameter or unknown query key is 400. There is no screen for it yet; how usage
-is shown or billed waits on Blake.
+parameter or unknown query key is 400.
+
+**The screen (Plan 19, L6, 27 October 2026):** Venue settings shows the
+venue's admin and manager an "AI drafting" section
+(`packages/web/src/components/dashboard/ai-usage/AIUsageSettings.tsx`): this
+month's spend against the allowance, money set aside for drafts being
+written, drafts the allowance refused, each feature's calls, unanswered calls
+and cost, and the two months before. Costs show in US dollars as the ledger
+records them, with a spend under a cent shown as "under US$0.01", never as
+nothing. How usage is billed to venues still waits on Blake.
 
 ## Who may spend a venue's allowance
 

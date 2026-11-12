@@ -69,15 +69,15 @@ describe("the paper check rule", () => {
       .toEqual({ state: "not_approved" });
   });
 
-  it.each(["archived", "withdrawn"])("retires a copy once the layout is %s", (reviewStatus) => {
-    expect(decideSheetPaperCheck(facts({ config: { reviewStatus, approvedAt: null } })))
+  it("retires a copy once the layout is archived", () => {
+    expect(decideSheetPaperCheck(facts({ config: { reviewStatus: "archived", approvedAt: null } })))
       .toEqual({ state: "retired" });
   });
 
-  it("never calls a rejected layout closed, because it can return to draft", () => {
+  it.each(["rejected", "withdrawn"])("never calls a %s layout closed, because it can be submitted again", (reviewStatus) => {
     expect(decideSheetPaperCheck(facts({
       claim: { kind: "working" }, named: null,
-      config: { reviewStatus: "rejected", approvedAt: null }, latestApproved: null,
+      config: { reviewStatus, approvedAt: null }, latestApproved: null,
     }))).toEqual({ state: "not_approved" });
   });
 

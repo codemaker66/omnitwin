@@ -9,6 +9,7 @@ import { normalizedFurniturePresentationScale } from "../../components/Furniture
 import { mountInStubRoot, type StubRoot } from "../../components/__tests__/stub-r3f-root.js";
 import { InstancedFurnitureLayer } from "../../components/editor/InstancedFurnitureLayer.js";
 import { FurnitureContactShadows } from "../../components/editor/FurnitureContactShadows.js";
+import { craftedTurn, drawnRotationY } from "../../components/meshes/crafted/crafted-turn.js";
 import {
   HIDDEN_MATRIX,
   currentFurniturePresentation,
@@ -89,10 +90,10 @@ function slot(mesh: InstancedMesh, index: number): number[] {
   return Array.from(mesh.instanceMatrix.array.slice(index * 16, index * 16 + 16));
 }
 
-function placedMatrix(item: PlacedItem): Matrix4 {
+function placedMatrix(item: PlacedItem, rotationY = item.rotationY): Matrix4 {
   const transform = new Object3D();
   transform.position.set(item.x, item.y, item.z);
-  transform.rotation.set(0, item.rotationY, 0);
+  transform.rotation.set(0, rotationY, 0);
   transform.scale.setScalar(normalizedFurniturePresentationScale(item.scale));
   transform.updateMatrix();
   return transform.matrix;
@@ -168,6 +169,26 @@ describe("the furniture presentation channel", () => {
     frame();
     expect(drawnBytes(root.scene)).toEqual(truth);
     expect(usePlacementStore.getState().placedItems).toBe(placed);
+  });
+
+  it("carries a round's own turn through a reveal and sets it down on it again", () => {
+    const table = createPlacedItem(catalogueId("round-table-6ft-white"), 1, -1, 0.3, "local-reveal-group");
+    expect(craftedTurn(table)).toBeGreaterThan(0);
+    const root = mount([table]);
+    const truth = drawnBytes(root.scene);
+    const batch = furnitureBatch(root.scene);
+    const atRest = placedMatrix(table, drawnRotationY(table)).elements;
+    slot(batch, 0).forEach((value, index) => { expect(value).toBeCloseTo(atRest[index] ?? Number.NaN, 5); });
+    act(() => {
+      publishFurniturePresentation({ pieces: new Map([[table.id, lifted(1)]]), others: "placed" });
+    });
+    frame();
+    // Lifted a metre: delta · placed, at the round's own turn.
+    const expected = new Matrix4().makeTranslation(0, 1, 0).multiply(placedMatrix(table, drawnRotationY(table))).elements;
+    slot(batch, 0).forEach((value, index) => { expect(value).toBeCloseTo(expected[index] ?? Number.NaN, 5); });
+    act(() => { publishFurniturePresentation(null); });
+    frame();
+    expect(drawnBytes(root.scene)).toEqual(truth);
   });
 
   it("draws the feet's floor shade only under furniture at rest: never under a piece the frame moves or hides", () => {

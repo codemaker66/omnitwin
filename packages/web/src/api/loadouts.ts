@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ReferenceLoadoutRowSchema, type ReferenceLoadoutRow } from "@omnitwin/types";
 import { api } from "./client.js";
 
 // ---------------------------------------------------------------------------
@@ -33,14 +34,7 @@ const LoadoutPhotoSchema = z.object({
 
 export type LoadoutPhoto = z.infer<typeof LoadoutPhotoSchema>;
 
-const LoadoutDetailSchema = z.object({
-  id: z.string(),
-  spaceId: z.string(),
-  venueId: z.string(),
-  name: z.string(),
-  description: z.string().nullable(),
-  createdAt: z.string(),
-  updatedAt: z.string(),
+const LoadoutDetailSchema = ReferenceLoadoutRowSchema.extend({
   photos: z.array(LoadoutPhotoSchema),
 });
 
@@ -58,12 +52,15 @@ export async function getLoadout(venueId: string, spaceId: string, id: string): 
   return api.get(`/venues/${venueId}/spaces/${spaceId}/loadouts/${id}`, LoadoutDetailSchema);
 }
 
-export async function createLoadout(venueId: string, spaceId: string, name: string, description?: string): Promise<LoadoutDetail> {
-  return api.post(`/venues/${venueId}/spaces/${spaceId}/loadouts`, { name, description }, undefined, LoadoutDetailSchema);
+/** A create and a change answer with the row itself, without its photos
+ *  (the detail read carries those). Parsed as a detail, every successful
+ *  create and rename was reported as a failure. */
+export async function createLoadout(venueId: string, spaceId: string, name: string, description?: string): Promise<ReferenceLoadoutRow> {
+  return api.post(`/venues/${venueId}/spaces/${spaceId}/loadouts`, { name, description }, undefined, ReferenceLoadoutRowSchema);
 }
 
-export async function updateLoadout(venueId: string, spaceId: string, id: string, data: { name?: string; description?: string | null }): Promise<LoadoutDetail> {
-  return api.patch(`/venues/${venueId}/spaces/${spaceId}/loadouts/${id}`, data, LoadoutDetailSchema);
+export async function updateLoadout(venueId: string, spaceId: string, id: string, data: { name?: string; description?: string | null }): Promise<ReferenceLoadoutRow> {
+  return api.patch(`/venues/${venueId}/spaces/${spaceId}/loadouts/${id}`, data, ReferenceLoadoutRowSchema);
 }
 
 export async function deleteLoadout(venueId: string, spaceId: string, id: string): Promise<void> {

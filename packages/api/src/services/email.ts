@@ -25,9 +25,12 @@ import { scrubErrorMessage } from "../observability/redact.js";
 //      permanent and fail immediately — no point retrying a bad address.
 //
 //   3. Structured logging. Every attempt, success, failure, and dedup
-//      emits a record with {event, idempotencyKey, recipient, ...}. The
-//      logger is injected — routes pass `request.log` (Fastify pino) so
-//      the request id is in every line; tests inject a capture.
+//      emits a record with {event, idempotencyKey, ...}. The logger is
+//      injected — routes pass `request.log` (Fastify pino) so the request
+//      id is in every line; tests inject a capture. No record names the
+//      recipient: an address in the logs is personal data copied to every
+//      log reader and drain. The `email_sends` row keyed by the same
+//      idempotencyKey holds it for whoever may read the database.
 //
 //   4. Audit trail. The `email_sends` row is updated with final status
 //      ("sent" / "failed" / "dev_mode"), the provider message id, and
@@ -36,7 +39,10 @@ import { scrubErrorMessage } from "../observability/redact.js";
 // Known gaps (documented rather than hidden):
 //   - If a process crashes between the INSERT and the Resend call, the
 //     row stays at status="pending". No future attempt will retry it;
-//     a human has to inspect and requeue. A durable worker with
+//     a human has to inspect and requeue. The same holds when the provider
+//     accepts the email and recording "sent" fails: the row stays pending
+//     and `email.sent_unrecorded` is logged, so it is never sent twice.
+//     A durable worker with
 //     pending-row timeouts is the next evolution — out of scope for the
 //     first shipping version.
 //   - If a concurrent duplicate arrives mid-flight (before the first
@@ -174,9 +180,12 @@ function isTransientError(err: unknown): boolean {
 
 // Read for the log and for `email_sends.last_error`. A drizzle failure's
 // message carries the query parameters (the recipient, the subject), so every
-// message goes through `scrubErrorMessage`.
+// message goes through `scrubErrorMessage`; a provider's refusal can quote the
+// address it refused, so any address left is replaced too.
+const EMAIL_ADDRESS = /[^\s@<>()[\]"',;:]+@[^\s@<>()[\]"',;:]+\.[^\s@<>()[\]"',;:]+/gu;
+
 function errorMessage(err: unknown): string {
-  return scrubErrorMessage(rawErrorMessage(err));
+  return scrubErrorMessage(rawErrorMessage(err)).replace(EMAIL_ADDRESS, "[email address]");
 }
 
 function rawErrorMessage(err: unknown): string {
@@ -234,7 +243,6 @@ export async function sendEmail(
       logger.error({
         event: "email.audit_insert_failed",
         idempotencyKey,
-        recipient: payload.to,
         error: errorMessage(err),
       }, "email.audit_insert_failed");
       return false;
@@ -252,7 +260,6 @@ export async function sendEmail(
       logger.error({
         event: "email.audit_insert_failed",
         idempotencyKey,
-        recipient: payload.to,
         error: errorMessage(reclaimError),
       }, "email.audit_insert_failed");
       return false;
@@ -261,14 +268,12 @@ export async function sendEmail(
       logger.info({
         event: "email.dedup_skip",
         idempotencyKey,
-        recipient: payload.to,
       }, "email.dedup_skip");
       return true;
     }
     logger.info({
       event: "email.retry_after_failure",
       idempotencyKey,
-      recipient: payload.to,
     }, "email.retry_after_failure");
   }
 
@@ -284,7 +289,6 @@ export async function sendEmail(
     logger.warn({
       event: "email.default_sender",
       idempotencyKey,
-      recipient: payload.to,
       from: emailFrom,
     }, "email.default_sender");
   }
@@ -292,7 +296,6 @@ export async function sendEmail(
     logger.warn({
       event: "email.dev_mode_skip",
       idempotencyKey,
-      recipient: payload.to,
     }, "email.dev_mode_skip");
     await db.update(emailSends)
       .set({ status: "dev_mode", sentAt: new Date(), updatedAt: new Date() })
@@ -302,10 +305,17 @@ export async function sendEmail(
 
   // 3. Retry loop. `attempt` runs 0..N where N = RETRY_DELAYS_MS.length;
   // the loop exits either on success, permanent failure, or exhaustion.
-  let lastError = "";
+  // Only the provider call is retried. Recording its outcome is a database
+  // write whose failure says nothing about the provider: a database error
+  // has no HTTP status, so classifying it would read it as a network fault
+  // and send an email the provider had already accepted a second time.
   for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
+    let result: unknown;
+    let providerError: unknown;
+    let failed = false;
+    let event: "email.send_exception" | "email.send_attempt_failed" = "email.send_attempt_failed";
     try {
-      const result = await client.emails.send({
+      result = await client.emails.send({
         from: emailFrom,
         to: payload.to,
         subject: payload.subject,
@@ -314,37 +324,36 @@ export async function sendEmail(
         // (replies go to From) rather than receiving an empty header.
         ...(replyTo === null ? {} : { replyTo }),
       });
-
       // Resend's SDK returns `{ data, error }` — inspect error first.
-      const resendErr = (result as { error?: unknown }).error;
-      if (resendErr !== null && resendErr !== undefined) {
-        lastError = errorMessage(resendErr);
-        const transient = isTransientError(resendErr);
-        logger.warn({
-          event: "email.send_attempt_failed",
-          idempotencyKey,
-          recipient: payload.to,
-          attempt,
-          transient,
-          error: lastError,
-        }, "email.send_attempt_failed");
-        if (!transient || attempt >= RETRY_DELAYS_MS.length) {
-          await markFailed(db, idempotencyKey, lastError, attempt + 1);
-          logger.error({
-            event: "email.send_failed",
-            idempotencyKey,
-            recipient: payload.to,
-            attempt,
-            error: lastError,
-          }, "email.send_failed");
-          return false;
-        }
-        const delay = RETRY_DELAYS_MS[attempt];
-        if (delay !== undefined) await sleep(delay);
-        continue;
-      }
+      providerError = (result as { error?: unknown }).error;
+      failed = providerError !== null && providerError !== undefined;
+    } catch (err) {
+      providerError = err;
+      failed = true;
+      event = "email.send_exception";
+    }
 
-      const messageId = (result as { data?: { id?: string } | null }).data?.id ?? null;
+    if (failed) {
+      const lastError = errorMessage(providerError);
+      const transient = isTransientError(providerError);
+      logger.warn({
+        event,
+        idempotencyKey,
+        attempt,
+        transient,
+        error: lastError,
+      }, event);
+      if (!transient || attempt >= RETRY_DELAYS_MS.length) {
+        await recordFailure(db, logger, idempotencyKey, lastError, attempt);
+        return false;
+      }
+      const delay = RETRY_DELAYS_MS[attempt];
+      if (delay !== undefined) await sleep(delay);
+      continue;
+    }
+
+    const messageId = (result as { data?: { id?: string } | null }).data?.id ?? null;
+    try {
       await db.update(emailSends)
         .set({
           status: "sent",
@@ -354,54 +363,59 @@ export async function sendEmail(
           updatedAt: new Date(),
         })
         .where(eq(emailSends.idempotencyKey, idempotencyKey));
-      logger.info({
-        event: "email.sent",
+    } catch (recordError) {
+      // Delivered but not recorded. The row stays "pending", which no replay
+      // takes over, so the email is never sent twice; someone reconciles it
+      // from this record (see "Known gaps" above).
+      logger.error({
+        event: "email.sent_unrecorded",
         idempotencyKey,
-        recipient: payload.to,
         attempt,
         providerMessageId: messageId,
-      }, "email.sent");
+        error: errorMessage(recordError),
+      }, "email.sent_unrecorded");
       return true;
-    } catch (err) {
-      lastError = errorMessage(err);
-      const transient = isTransientError(err);
-      logger.warn({
-        event: "email.send_exception",
-        idempotencyKey,
-        recipient: payload.to,
-        attempt,
-        transient,
-        error: lastError,
-      }, "email.send_exception");
-      if (!transient || attempt >= RETRY_DELAYS_MS.length) {
-        await markFailed(db, idempotencyKey, lastError, attempt + 1);
-        logger.error({
-          event: "email.send_failed",
-          idempotencyKey,
-          recipient: payload.to,
-          attempt,
-          error: lastError,
-        }, "email.send_failed");
-        return false;
-      }
-      const delay = RETRY_DELAYS_MS[attempt];
-      if (delay !== undefined) await sleep(delay);
     }
+    logger.info({
+      event: "email.sent",
+      idempotencyKey,
+      attempt,
+      providerMessageId: messageId,
+    }, "email.sent");
+    return true;
   }
 
   // Unreachable — every iteration either returns or continues.
   return false;
 }
 
-async function markFailed(
+/** The provider did not take the email. Mark the row failed so a replay may
+ *  try again; if even that write fails, say so rather than throw. */
+async function recordFailure(
   db: Database,
+  logger: EmailLogger,
   idempotencyKey: string,
   lastError: string,
-  attemptCount: number,
+  attempt: number,
 ): Promise<void> {
-  await db.update(emailSends)
-    .set({ status: "failed", lastError, attemptCount, updatedAt: new Date() })
-    .where(eq(emailSends.idempotencyKey, idempotencyKey));
+  try {
+    await db.update(emailSends)
+      .set({ status: "failed", lastError, attemptCount: attempt + 1, updatedAt: new Date() })
+      .where(eq(emailSends.idempotencyKey, idempotencyKey));
+  } catch (recordError) {
+    logger.error({
+      event: "email.failure_unrecorded",
+      idempotencyKey,
+      attempt,
+      error: errorMessage(recordError),
+    }, "email.failure_unrecorded");
+  }
+  logger.error({
+    event: "email.send_failed",
+    idempotencyKey,
+    attempt,
+    error: lastError,
+  }, "email.send_failed");
 }
 
 // ---------------------------------------------------------------------------

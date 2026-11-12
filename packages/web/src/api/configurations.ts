@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ConfigurationReviewStatusSchema, type EventInstructions, type GuestEnquiry, type PlannerEventKindSchema } from "@omnitwin/types";
+import { ConfigurationReviewStatusSchema, type EventInstructions, type GangwayReview, type GuestEnquiry, type PlannerEventKindSchema } from "@omnitwin/types";
 import { api } from "./client.js";
 
 // ---------------------------------------------------------------------------
@@ -151,16 +151,24 @@ export async function createPublicConfig(spaceId: string, name?: string): Promis
   return api.post("/public/configurations", { spaceId, name }, true, CreatedPublicConfigurationSchema);
 }
 
+/** How a batch save travels: `keepalive` lets one sent as the page hides or
+ *  closes finish after the page has gone, when its body is small enough. */
+export interface BatchSaveTransport {
+  readonly keepalive?: boolean;
+}
+
 export async function publicBatchSave(
   configId: string,
   objects: readonly BatchObjectInput[],
   expectedRevision: number,
+  transport?: BatchSaveTransport,
 ): Promise<BatchSaveResponse> {
   return api.post(
     `/public/configurations/${configId}/objects/batch`,
     { expectedRevision, objects },
     true,
     BatchSaveResponseSchema,
+    transport?.keepalive === true ? { keepalive: true } : undefined,
   );
 }
 
@@ -170,7 +178,8 @@ export async function getPublicConfig(configId: string, signal?: AbortSignal): P
 
 /**
  * Set the floor plan thumbnail on a public preview config.
- * Accepts a PNG data URL from the orthographic capture.
+ * Accepts a PNG or JPEG data URL of at most 270,000 characters; the planner
+ * sends PLAN_THUMBNAIL's JPEG (lib/ortho-capture.ts).
  */
 export async function updatePublicThumbnail(configId: string, thumbnailUrl: string): Promise<Configuration> {
   return api.post(`/public/configurations/${configId}/thumbnail`, { thumbnailUrl }, true, ConfigurationResponseSchema);
@@ -210,12 +219,14 @@ export async function authBatchSave(
   configId: string,
   objects: readonly BatchObjectInput[],
   expectedRevision: number,
+  transport?: BatchSaveTransport,
 ): Promise<BatchSaveResponse> {
   return api.post(
     `/configurations/${configId}/objects/batch`,
     { expectedRevision, objects },
     undefined,
     BatchSaveResponseSchema,
+    transport?.keepalive === true ? { keepalive: true } : undefined,
   );
 }
 
@@ -229,6 +240,8 @@ export async function authBatchSave(
 
 export interface ConfigMetadataInput {
   readonly instructions?: EventInstructions | null;
+  /** The layout's gangway review, as lib/gangway-review-record writes it. */
+  readonly gangwayReview?: GangwayReview | null;
   /** The kind of event the layout is for, as the planner asks it on first open; null when skipped (lib/event-kind-record). */
   readonly eventKind?: z.infer<typeof PlannerEventKindSchema> | null;
 }

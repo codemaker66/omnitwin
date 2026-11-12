@@ -44,6 +44,17 @@
 }
 .supplier-pass__closed p { margin: 0; }
 .supplier-pass__closed .supplier-pass__retry { margin-top: 20px; }
+/* A reply the closed link refused: said plainly, with the question kept
+   to send another way. */
+.supplier-pass__closed .supplier-pass__error { margin-top: 20px; text-align: left; }
+.supplier-pass__unsent {
+  border-left: 2px solid var(--house-rule-strong);
+  margin: 12px 0 0;
+  overflow-wrap: anywhere;
+  padding-left: 12px;
+  text-align: left;
+  white-space: pre-wrap;
+}
 
 /* -- The head: who, when and where, in the house serif ------------------- */
 

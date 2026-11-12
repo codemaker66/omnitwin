@@ -298,7 +298,9 @@ export const BookingSchema = z.object({
   kind: BookingKindSchema,
   status: BookingLivenessSchema,
   state: BookingStateSchema,
-  title: z.string().min(1).max(200),
+  // As stored, which may be "" (see CalendarBookingEntrySchema, API-9): a
+  // write's reply that refused it failed after the write had landed.
+  title: z.string().max(200),
   eventType: z.string().max(80).nullable(),
   startsAt: IsoInstantSchema,
   endsAt: IsoInstantSchema,
@@ -652,7 +654,8 @@ export const CalendarQuerySchema = z
     venueId: z.uuid(),
     from: IsoInstantSchema,
     to: IsoInstantSchema,
-    spaceIds: z.array(z.uuid()).min(1).optional(),
+    // A venue's rooms; far above any venue's count, it only refuses abuse.
+    spaceIds: z.array(z.uuid()).min(1).max(200).optional(),
   })
   .superRefine((value, ctx) => {
     const fromMs = Date.parse(value.from);
@@ -690,7 +693,12 @@ export const CalendarBookingEntrySchema = z.object({
   kind: BookingKindSchema,
   status: BookingLivenessSchema,
   state: BookingStateSchema,
-  title: z.string().min(1).max(200),
+  // What is stored, which may be "": rows written before #350 took a public
+  // enquiry's blank name as their title. Every writer refuses an empty title
+  // (Create/UpdateBookingSchema), so giving the booking one in the Diary is
+  // how such a row is put right; refusing it here failed the venue's whole
+  // range on GET /calendar instead (API-9).
+  title: z.string().max(200),
   eventType: z.string().max(80).nullable(),
   startsAt: IsoInstantSchema,
   endsAt: IsoInstantSchema,

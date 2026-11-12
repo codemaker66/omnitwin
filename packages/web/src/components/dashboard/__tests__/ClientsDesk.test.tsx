@@ -81,7 +81,7 @@ function contactProfile(overrides: Partial<ContactProfile> = {}): ContactProfile
       { id: DEAL, title: "Wedding reception", stage: "won", preferredDate: "2026-09-05", guestCount: 160, estimatedValueMinor: 1_250_000, currency: "GBP", updatedAt: "2026-06-15T09:00:00.000Z" },
     ],
     proposals: [
-      { id: PROPOSAL, opportunityId: DEAL, title: "Henderson wedding proposal", status: "accepted", currentVersion: 2, sentAt: "2026-06-12T09:00:00.000Z" },
+      { id: PROPOSAL, opportunityId: DEAL, title: "Henderson wedding proposal", status: "accepted", currentVersion: 2, sentAt: "2026-06-12T09:00:00.000Z", sentVersion: 2 },
     ],
     ...overrides,
   };
@@ -212,6 +212,23 @@ describe("before anything is typed", () => {
     renderDesk();
     expect(await screen.findByText("Who was last in touch could not be read. The search still works.")).toBeDefined();
     expect(screen.getByRole("searchbox", { name: "Search clients" })).toBeDefined();
+  });
+
+  // Release audit dash-commercial-4: "now" was taken once, as the desk opened.
+  it("turns the day at the venue's midnight while open, so today's event is then passed", async () => {
+    vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
+    // 23:58:30 in Glasgow on Tuesday 14 July 2026 (BST), 22:58 in UTC.
+    vi.setSystemTime("2026-07-14T22:58:30.000Z");
+    mocks.getUpcomingClients.mockResolvedValue([enquiry({ preferredDate: "2026-07-14" })]);
+    renderDesk();
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(row(/^Kirsty Fraser/u).querySelector(".enq-date--past")).toBeNull();
+    expect(screen.getByText("Tuesday 14 July")).toBeDefined();
+
+    // Two minutes on: 00:00:30 on Wednesday 15 July in Glasgow.
+    await act(async () => { await vi.advanceTimersByTimeAsync(120_000); });
+    expect(row(/^Kirsty Fraser/u).querySelector(".enq-date--past")).not.toBeNull();
+    expect(screen.getByText("Wednesday 15 July")).toBeDefined();
   });
 });
 

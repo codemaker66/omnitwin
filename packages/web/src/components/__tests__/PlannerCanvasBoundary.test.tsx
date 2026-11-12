@@ -3,6 +3,9 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { PlannerCanvasBoundary } from "../PlannerCanvasBoundary.js";
 import { PlannerWorkContext } from "../scene/planner-work.js";
 
+const reports = vi.hoisted(() => ({ reportFailure: vi.fn() }));
+vi.mock("../../observability/failure-reports.js", () => reports);
+
 afterEach(() => {
   cleanup();
 });
@@ -49,6 +52,8 @@ describe("PlannerCanvasBoundary", () => {
     fireEvent.click(screen.getByRole("button", { name: "Continue in 2D" }));
     expect(continueIn2d).toHaveBeenCalledOnce();
     expect(window.location.href).toBe(before);
+    // Sentry hears what failed by its name only: an error's message may quote what the planner held.
+    expect(reports.reportFailure).toHaveBeenCalledWith("planner-canvas-fallback", { error: "Error" });
 
     warn.mockRestore();
     error.mockRestore();

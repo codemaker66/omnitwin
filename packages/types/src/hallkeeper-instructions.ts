@@ -9,6 +9,7 @@ import {
   ProtectedPremisesSchema,
   hasProtectedPremisesContent,
 } from "./protected-premises.js";
+import { GangwayReviewSchema } from "./gangway-review.js";
 
 // ---------------------------------------------------------------------------
 // Hallkeeper Instructions — the human layer
@@ -130,7 +131,7 @@ export type EventInstructions = z.infer<typeof EventInstructionsSchema>;
 // ---------------------------------------------------------------------------
 // ConfigurationMetadataSchema — the shape of configurations.metadata JSONB
 //
-// "instructions" and "eventKind" are defined. Future additions (e.g.
+// "instructions", "gangwayReview" and "eventKind" are defined. Future additions (e.g.
 // seating-chart, dietary flags) go alongside them without breaking
 // existing records since the schema uses .passthrough() to tolerate
 // unknown keys.
@@ -141,6 +142,12 @@ export const PlannerEventKindSchema = z.enum(["wedding", "corporate", "other"]);
 
 export const ConfigurationMetadataSchema = z.object({
   instructions: EventInstructionsSchema.optional(),
+  /**
+   * The layout's gangway review (Blake's B5; QoL E-03): every pinch under the
+   * guidance as the planner derives it, with the venue's decisions on them,
+   * written by the planner with the layout (packages/web lib/gangway-review-record).
+   */
+  gangwayReview: GangwayReviewSchema.optional(),
   /**
    * The kind of event the layout is for, as the planner asks it on a new
    * layout's first open (T-674): absent until asked, null when the person

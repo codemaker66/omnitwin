@@ -1,36 +1,37 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { assemblyRequested } from "../flag.js";
+import { assemblyMode } from "../flag.js";
 
 afterEach(() => {
-  window.localStorage.removeItem("venviewer.assembly");
   vi.restoreAllMocks();
+  window.localStorage.removeItem("venviewer.assembly");
 });
 
-describe("the Grand Assembly flag", () => {
-  it("is off unless a device asks for it", () => {
-    expect(assemblyRequested("")).toBeNull();
-    expect(assemblyRequested("?assembly=unfolding")).toBeNull();
+describe("when the Grand Assembly plays", () => {
+  it("plays the first time a layout opens, by default", () => {
+    expect(assemblyMode("")).toBe("first");
+    expect(assemblyMode("?assembly=unfolding")).toBe("first");
   });
 
-  it("turns on with ?assembly=accio and is remembered on this device", () => {
-    expect(assemblyRequested("?assembly=accio")).toBe("accio");
-    expect(assemblyRequested("")).toBe("accio");
-    expect(assemblyRequested("?sky=1")).toBe("accio");
+  it("plays on every open with ?assembly=accio, remembered on this device", () => {
+    expect(assemblyMode("?assembly=accio")).toBe("always");
+    expect(assemblyMode("")).toBe("always");
+    expect(assemblyMode("?sky=1")).toBe("always");
   });
 
-  it("turns off again with ?assembly=off (or 0) and forgets it", () => {
-    assemblyRequested("?assembly=accio");
-    expect(assemblyRequested("?assembly=off")).toBeNull();
-    expect(assemblyRequested("")).toBeNull();
-    assemblyRequested("?assembly=accio");
-    expect(assemblyRequested("?assembly=0")).toBeNull();
-    expect(assemblyRequested("")).toBeNull();
+  it("turns off with ?assembly=off (or 0), remembered, and back to the default with ?assembly=on", () => {
+    expect(assemblyMode("?assembly=off")).toBe("off");
+    expect(assemblyMode("")).toBe("off");
+    expect(assemblyMode("?assembly=on")).toBe("first");
+    expect(assemblyMode("")).toBe("first");
+    expect(assemblyMode("?assembly=0")).toBe("off");
+    expect(assemblyMode("?assembly=1")).toBe("first");
   });
 
   it("still answers when the device's storage is unavailable", () => {
     vi.spyOn(window.localStorage, "getItem").mockImplementation(() => { throw new Error("blocked"); });
     vi.spyOn(window.localStorage, "setItem").mockImplementation(() => { throw new Error("blocked"); });
-    expect(assemblyRequested("?assembly=accio")).toBe("accio");
-    expect(assemblyRequested("")).toBeNull();
+    expect(assemblyMode("?assembly=accio")).toBe("always");
+    expect(assemblyMode("?assembly=off")).toBe("off");
+    expect(assemblyMode("")).toBe("first");
   });
 });
