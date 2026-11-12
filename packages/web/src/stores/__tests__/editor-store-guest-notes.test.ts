@@ -526,30 +526,33 @@ describe("a save refused for a held note, after keeping this version over a newe
     expect(store().saveConflict?.currentRevision).toBe(server.revision);
   }
 
-  it("saves once the person takes their words off the piece, as the refusal says", async () => {
+  it("saves, taking this browser's out-of-date copy of the note off the piece: nothing is left for the person to clear", async () => {
     const server: PlanOnServer = { revision: 4, notes: new Map() };
     await meetTheirRewrite(server, () => undefined);
+    const sentBefore = savesSent();
 
-    // Their version holds other words on B, so this one is refused, in the API's words.
-    expect(await store().keepMine(false)).toBe(false);
-    expect(store()).toMatchObject({ saveErrorCode: "NOTE_HELD", saveError: NOTE_HELD_MESSAGE });
-    expect(server.notes.get(B)).toBe(THEIRS);
-
-    store().setObjectNotes(B, "");
+    // Their version holds other words on B. The save that sent this browser's copy is refused; the next leaves B's note alone.
     expect(await store().keepMine(false)).toBe(true);
-    expect(store()).toMatchObject({ saveError: null, saveConflict: null, isDirty: false, configRevision: server.revision });
-    // Their note is as they wrote it; the move this browser kept is saved.
+    expect(savesSent()).toBe(sentBefore + 2);
+    expect(sentPiece(sentBefore, B).metadata?.notes).toBe(MINE);
+    expect(sentPiece(sentBefore + 1, B).metadata?.notes).toBeUndefined();
+    expect(store()).toMatchObject({ saveError: null, saveErrorCode: null, saveConflict: null, isDirty: false, configRevision: server.revision });
+    // Their note is as they wrote it; the move this browser kept is saved; B says only that it holds a note.
     expect(server.notes.get(B)).toBe(THEIRS);
     expect(store().objects.find((object) => object.id === A)?.positionX).toBe(3);
+    expect(noteOn(B)).toBe("");
     expect(noteHeldOn(store(), B)).toBe(true);
   });
 
-  it("shows the person their own words on that piece, the one piece the refusal can name", async () => {
+  it("keeps words the person had put in that note's place on the piece, the one piece the refusal can name", async () => {
     const server: PlanOnServer = { revision: 4, notes: new Map() };
-    await meetTheirRewrite(server, () => undefined);
+    await meetTheirRewrite(server, () => { store().setObjectNotes(B, `${MINE}, please`); });
 
+    // The rest of their version is saved. Their words for B are not, and the API's refusal is shown for them at once.
     expect(await store().keepMine(false)).toBe(false);
-    expect(noteOn(B)).toBe(MINE);
+    expect(store()).toMatchObject({ saveErrorCode: "NOTE_HELD", saveError: NOTE_HELD_MESSAGE, saveConflict: null, isDirty: true, configRevision: server.revision });
+    expect(server.notes.get(B)).toBe(THEIRS);
+    expect(noteOn(B)).toBe(`${MINE}, please`);
     expect(noteHeldOn(store(), B)).toBe(false);
     expect(ownWordsOverHeldNotes(store()).map((object) => object.id)).toEqual([B]);
 
@@ -558,7 +561,7 @@ describe("a save refused for a held note, after keeping this version over a newe
     expect(draftOnDevice()?.base?.changed.find((object) => object.id === B)).toMatchObject({ notes: "", noteHeld: true });
     store().reset();
     await open({ ...plan([placed(A), placed(B, { noteHeld: true })], false), revision: server.revision });
-    expect(noteOn(B)).toBe(MINE);
+    expect(noteOn(B)).toBe(`${MINE}, please`);
     expect(ownWordsOverHeldNotes(store()).map((object) => object.id)).toEqual([B]);
     store().setObjectNotes(B, "");
     expect(await store().saveToServer(false)).toBe(true);
@@ -899,5 +902,88 @@ describe("the notes Keep mine carries onto the newer version, before any save ha
     expect(await store().keepMine(false)).toBe(true);
     expect(heldNoteIds(store()).has(B)).toBe(false);
     expect(noteOn(B)).toBe("TEST ONLY by the window");
+  });
+});
+
+describe("Keep mine refused for a note the maker rewrote, with other notes of the person's own in the same save", () => {
+  const MINE_B = "TEST ONLY by the window";
+  const MINE_C = "TEST ONLY wheelchair space";
+
+  /** The person's own notes on B and C are confirmed; the maker rewrites B; `change` is what the person does before their next save meets it. */
+  async function theyRewriteB(server: PlanOnServer, change: () => void): Promise<void> {
+    serveNotesAsTheApiDoes(server);
+    await open(plan([placed(A), placed(B), placed(C)], false));
+    store().setObjectNotes(B, MINE_B);
+    store().setObjectNotes(C, MINE_C);
+    expect(await store().saveToServer(false)).toBe(true);
+    server.notes.set(B, THEIR_NOTE);
+    theyNowHave(server, [placed(A), placed(B, { noteHeld: true }), placed(C, { noteHeld: true })]);
+    change();
+    store().updateObject(A, { positionX: 3 });
+    expect(await store().saveToServer(false)).toBe(false);
+  }
+
+  it("still clears the note the person cleared, and drops only its out-of-date copy of the rewritten one", async () => {
+    const server: PlanOnServer = { revision: 4, notes: new Map() };
+    await theyRewriteB(server, () => { store().setObjectNotes(C, ""); });
+
+    expect(await store().keepMine(false)).toBe(true);
+    expect(server.notes.has(C)).toBe(false);
+    expect(server.notes.get(B)).toBe(THEIR_NOTE);
+    expect(noteHeldOn(store(), B)).toBe(true);
+    expect(noteHeldOn(store(), C)).toBe(false);
+    expect(store()).toMatchObject({ saveError: null, saveConflict: null, isDirty: false });
+  });
+
+  it("clears it when the person had cleared both", async () => {
+    const server: PlanOnServer = { revision: 4, notes: new Map() };
+    await theyRewriteB(server, () => { store().setObjectNotes(B, ""); store().setObjectNotes(C, ""); });
+
+    expect(await store().keepMine(false)).toBe(true);
+    expect(server.notes.has(C)).toBe(false);
+    expect(server.notes.get(B)).toBe(THEIR_NOTE);
+    expect(noteHeldOn(store(), B)).toBe(true);
+  });
+
+  it("saves a change the person was making to their other note, and keeps that note theirs to go on with", async () => {
+    const server: PlanOnServer = { revision: 4, notes: new Map() };
+    await theyRewriteB(server, () => { store().setObjectNotes(C, `${MINE_C}, please`); });
+
+    expect(await store().keepMine(false)).toBe(true);
+    expect(server.notes.get(C)).toBe(`${MINE_C}, please`);
+    expect(noteOn(C)).toBe(`${MINE_C}, please`);
+    expect(heldNoteIds(store()).has(C)).toBe(false);
+    expect(server.notes.get(B)).toBe(THEIR_NOTE);
+  });
+
+  it("keeps the person's new words for the rewritten note on their piece, refused and named, for them to take off", async () => {
+    const server: PlanOnServer = { revision: 4, notes: new Map() };
+    await theyRewriteB(server, () => { store().setObjectNotes(B, `${MINE_B}, please`); });
+
+    // Everything else of theirs is saved, their other note with it; the words they cannot put over the maker's are
+    // still theirs to see, and the refusal is about that one piece.
+    expect(await store().keepMine(false)).toBe(false);
+    expect(store()).toMatchObject({ saveErrorCode: "NOTE_HELD", saveError: NOTE_HELD_MESSAGE, saveConflict: null, isDirty: true, configRevision: server.revision });
+    expect(server.notes.get(C)).toBe(MINE_C);
+    expect(heldNoteIds(store()).has(C)).toBe(false);
+    expect(noteOn(B)).toBe(`${MINE_B}, please`);
+    expect(ownWordsOverHeldNotes(store()).map((object) => object.id)).toEqual([B]);
+    expect(await store().saveToServer(false)).toBe(false);
+    expect(store()).toMatchObject({ saveErrorCode: "NOTE_HELD", saveError: NOTE_HELD_MESSAGE });
+    store().setObjectNotes(B, "");
+    expect(await store().saveToServer(false)).toBe(true);
+    expect(server.notes.get(B)).toBe(THEIR_NOTE);
+  });
+
+  it("leaves every note it cannot vouch for to the server when the maker rewrote more than one, and still saves", async () => {
+    const server: PlanOnServer = { revision: 4, notes: new Map() };
+    await theyRewriteB(server, () => { server.notes.set(C, THEIR_NOTE); });
+
+    expect(await store().keepMine(false)).toBe(true);
+    expect(server.notes.get(B)).toBe(THEIR_NOTE);
+    expect(server.notes.get(C)).toBe(THEIR_NOTE);
+    expect(noteHeldOn(store(), B)).toBe(true);
+    expect(noteHeldOn(store(), C)).toBe(true);
+    expect(store().objects.find((object) => object.id === A)?.positionX).toBe(3);
   });
 });

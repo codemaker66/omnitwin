@@ -20,7 +20,7 @@ import {
 } from "../lib/anonymous-planner-draft.js";
 import {
   NOTE_HELD_CODE,
-  forgettingConfirmedNotes,
+  afterLeavingOutOfDateNotes,
   heldNoteIds,
   heldNoteObjectsName,
   heldNoteObjectsNamed,
@@ -32,6 +32,7 @@ import {
   nothingRemovedLine,
   nothingUndoneLine,
   ownWordsOverHeldNotes,
+  recordedNotes,
   registerHeldNotes,
   signedInRoutesSuit,
   stayedForNotesLine,
@@ -488,8 +489,6 @@ let liveHooks: EditorLiveHooks | null = null;
 let conflictPolicy: "report" | "rebase" = "report";
 /** Depth of the 409 rebase-and-retry in progress: one retry per save. */
 let rebaseRetryDepth = 0;
-/** Depth of the resend after a save refused for a held note: one per save. */
-let noteHeldRetryDepth = 0;
 /** Objects a later remote write owns; kept equal to base until re-edited. */
 const yieldedIds = new Set<string>();
 
@@ -1831,6 +1830,53 @@ function putBackHeldNotePieces(): boolean {
   return true;
 }
 
+/** How many recorded notes a refused save is tried without, one at a time, before it is tried without them all. */
+const OUT_OF_DATE_NOTE_TRIES = 8;
+
+/**
+ * A save the API refused for a held note without saying which piece, when no
+ * words of the person's stand over one: a note this browser has on record is
+ * out of date. Only the pieces the refusal can be about are tried, the ones
+ * sent with a recorded note. The save is sent again leaving each such note in
+ * turn to the server (the piece goes with no word about its note, which keeps
+ * whatever it holds); the one that lands shows which record was out of date,
+ * and every other note is settled as the person had it, a cleared one cleared.
+ * If none lands, more than one is out of date, and the save is sent leaving
+ * them all. `left` is what the save that landed left alone, with the words on
+ * record for each. Null when nothing lands, or the plan is no longer the open
+ * one; any other failure is thrown.
+ */
+async function saveLeavingOutOfDateNotes<T>(
+  objects: readonly EditorObject[],
+  batch: readonly BatchObjectInput[],
+  recorded: ReadonlyMap<string, string>,
+  send: (pieces: readonly BatchObjectInput[]) => Promise<T>,
+  stillOpen: () => boolean,
+): Promise<{ readonly saved: T; readonly left: ReadonlyMap<string, string> } | null> {
+  const sent = objects.flatMap((object): [string, string][] => {
+    const note = recorded.get(object.id);
+    return note === undefined ? [] : [[object.id, note]];
+  });
+  if (sent.length === 0) return null;
+  const tries: ReadonlyMap<string, string>[] = sent.length > 1 && sent.length <= OUT_OF_DATE_NOTE_TRIES
+    ? sent.map((one) => new Map([one]))
+    : [];
+  tries.push(new Map(sent));
+  for (const left of tries) {
+    if (!stillOpen()) return null;
+    const pieces = batch.map((piece, index) => {
+      const object = objects[index];
+      return object !== undefined && left.has(object.id) ? editorToBatch({ ...object, notes: "" }) : piece;
+    });
+    try {
+      return { saved: await send(pieces), left };
+    } catch (err) {
+      if (!(err instanceof ApiError) || err.code !== NOTE_HELD_CODE) throw err;
+    }
+  }
+  return null;
+}
+
 /**
  * The save itself. `keeping` is "Keep mine": it may run while the conflict it
  * settles is pending (every other save waits for the person's choice), and a
@@ -1896,9 +1942,32 @@ async function saveDocument(
     const sending: configApi.BatchSaveOptions | undefined = !viaSignedIn && get().notesIncluded
       ? { ...transport, notesIncluded: true }
       : transport;
-    const saved = sending === undefined
-      ? await save(configId, batch, configRevision)
-      : await save(configId, batch, configRevision, sending);
+    const send = (pieces: readonly BatchObjectInput[]): ReturnType<typeof save> => sending === undefined
+      ? save(configId, pieces, configRevision)
+      : save(configId, pieces, configRevision, sending);
+    // A save refused for a held note, though no words of the person's stand
+    // over one, was refused for a note this browser has on record that is out
+    // of date: "Keep mine" carries the notes confirmed at one revision onto a
+    // newer one, where someone else may have rewritten them. It is sent again
+    // leaving that note to the server (saveLeavingOutOfDateNotes), and
+    // isSaving stays true throughout: a caller waiting on this save is
+    // answered once, when it has settled.
+    const sentBase = get().baseObjects;
+    let saved: Awaited<ReturnType<typeof save>>;
+    let outOfDate: ReadonlyMap<string, string> = new Map<string, string>();
+    let refusedWords: string | null = null;
+    try {
+      saved = await send(batch);
+    } catch (refused) {
+      if (viaSignedIn || !(refused instanceof ApiError) || refused.code !== NOTE_HELD_CODE
+        || ownWordsOverHeldNotes({ ...get(), objects, baseObjects: sentBase }).length > 0) throw refused;
+      const stale = await saveLeavingOutOfDateNotes(objects, batch, recordedNotes(sentBase), send,
+        () => session === configurationSession && get().configId === configId);
+      if (stale === null) throw refused;
+      saved = stale.saved;
+      outOfDate = stale.left;
+      refusedWords = refused.message;
+    }
     // The server may have accepted the old document. It no longer owns this
     // editor, its revision/history/selection, or its caller's saved feedback.
     if (session !== configurationSession || get().configId !== configId) return false;
@@ -1947,12 +2016,18 @@ async function saveDocument(
     // happened. The asymmetry is deliberate — a false positive costs one
     // redundant save, a false negative silently loses the operator's work.
     const editedInFlight = latest.objects !== objects;
-    const nextObjects = editedInFlight
+    const answered = editedInFlight
       ? latest.objects.map((object) => {
           const serverId = idMap.get(object.id);
           return serverId === undefined ? object : { ...object, id: serverId };
         })
       : serverObjects;
+    // A note this save left to the server is no longer this browser's: its
+    // record went with the answer, and its words come off the piece. Words
+    // the person had put in its place stay there, unsaved, and the refusal
+    // that named no piece is now about that one (pieceNamedForRefusedSave).
+    const nextObjects = afterLeavingOutOfDateNotes(answered, latest.objects, outOfDate);
+    const wordsRefused = nextObjects.some((object) => outOfDate.has(object.id) && object.notes !== "");
     set({
       // A yielded object stays the server's: never resend an older local copy.
       objects: snapYieldedToBase(nextObjects, serverObjects),
@@ -1962,11 +2037,11 @@ async function saveDocument(
         ? null
         : idMap.get(latest.selectedObjectId) ?? latest.selectedObjectId,
       configRevision: saved.revision,
-      isDirty: editedInFlight,
+      isDirty: editedInFlight || wordsRefused,
       isSaving: false,
       lastSavedAt: new Date(),
       saveConflict: null,
-      saveErrorCode: null,
+      ...(wordsRefused ? { saveError: refusedWords, saveErrorCode: NOTE_HELD_CODE } : { saveErrorCode: null }),
       reviewLockRefused: false,
       // Its work arrived after all: nothing of it is waiting here.
       ...(latest.leftBehind?.configId === configId ? { leftBehind: null } : {}),
@@ -1984,7 +2059,8 @@ async function saveDocument(
     // endpoint is authenticated, and public-preview planning stays local.
     if (useAuthPath) flushActionLogToServer(saved.revision);
     liveHooks?.onSaved(saved.revision, idMap);
-    return true;
+    // Saved, but for words the person must take off a piece themselves.
+    return !wordsRefused;
   } catch (err) {
     if (session !== configurationSession || get().configId !== configId) return false;
     const conflict = parseRevisionConflict(err);
@@ -2046,25 +2122,6 @@ async function saveDocument(
       // coming back online saves it. isOnline follows the browser's event.
       set({ isSaving: false, saveError: null, saveErrorCode: null });
       return false;
-    }
-    if (code === NOTE_HELD_CODE && noteHeldRetryDepth === 0 && ownWordsOverHeldNotes(get()).length === 0) {
-      // Refused for a held note, though no words of the person's stand over
-      // one: this browser's own record of the notes confirmed to it is out of
-      // date. "Keep mine" carries that record onto a newer version, where
-      // someone else may have rewritten a note, and a save that names a note
-      // wrongly is refused every time. The record goes and the save is sent
-      // once more (lib/guest-plan-notes forgettingConfirmedNotes); what is
-      // still refused then is the person's own words, shown on their piece.
-      const forgotten = forgettingConfirmedNotes(get().baseObjects);
-      if (forgotten !== get().baseObjects) {
-        set({ baseObjects: forgotten, isSaving: false });
-        noteHeldRetryDepth += 1;
-        try {
-          return await saveDocument(isAuthenticated, keeping, transport);
-        } finally {
-          noteHeldRetryDepth -= 1;
-        }
-      }
     }
     const message = err instanceof Error ? err.message : "Save failed";
     // Log the failing payload so we can see which field the server rejects.

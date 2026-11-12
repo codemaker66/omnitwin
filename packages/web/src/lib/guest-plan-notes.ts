@@ -178,19 +178,46 @@ export function ownWordsOverHeldNotes(state: GuestPlanNoteFacts): readonly Edito
 }
 
 /**
- * The confirmed document with this browser's record of confirmed notes taken
- * out: each piece that held one says only that it holds a note. For a save
- * refused for a held note when no words of the person's stand over one. Then
- * the record itself is out of date: "Keep mine" carries the notes confirmed
- * at one revision onto a newer one, where someone else may have changed them,
- * and a save that names a note wrongly is refused every time. Without the
- * record the person's notes are shown as their own words again, a note they
- * left alone is confirmed afresh by the next save, and one they clear saves.
- * The same array when no note is recorded.
+ * The notes this browser has on record, by piece: the ones a save sends or
+ * names, and so the only ones a refusal for a held note can be about when no
+ * words of the person's stand over one. One of them is then out of date:
+ * "Keep mine" carries the notes confirmed at one revision onto a newer one,
+ * where someone else may have rewritten them, and a save that sends or names
+ * a note wrongly is refused every time (editor-store saveLeavingOutOfDateNotes).
  */
-export function forgettingConfirmedNotes(confirmed: readonly EditorObject[]): readonly EditorObject[] {
-  if (!confirmed.some((object) => object.notes !== "")) return confirmed;
-  return confirmed.map((object) => (object.notes === "" ? object : { ...object, notes: "", noteHeld: true }));
+export function recordedNotes(confirmed: readonly EditorObject[]): ReadonlyMap<string, string> {
+  const recorded = new Map<string, string>();
+  for (const object of confirmed) {
+    if (object.notes !== "") recorded.set(object.id, object.notes);
+  }
+  return recorded;
+}
+
+/**
+ * The working pieces after a save that landed by leaving the notes in
+ * `outOfDate` to the server (piece id to the words this browser had on record
+ * for it: the piece holds other words now). `working` is the document to go
+ * on with (the server's answer, or the work done while the save was in
+ * flight) and `theirs` the person's pieces as they stand. The recorded words
+ * come off the piece: they are not its note any more, and it is shown as
+ * holding one. Words the person had put in their place stay on it, theirs to
+ * read and to take off: they stand over a note this browser is not shown, and
+ * no save takes them. The same array when no note was left.
+ */
+export function afterLeavingOutOfDateNotes(
+  working: readonly EditorObject[],
+  theirs: readonly EditorObject[],
+  outOfDate: ReadonlyMap<string, string>,
+): readonly EditorObject[] {
+  if (outOfDate.size === 0) return working;
+  const words = new Map(theirs.filter((object) => outOfDate.has(object.id)).map((object) => [object.id, object.notes]));
+  return working.map((object) => {
+    const recorded = outOfDate.get(object.id);
+    if (recorded === undefined) return object;
+    const now = words.get(object.id) ?? "";
+    const notes = now === recorded ? "" : now;
+    return object.notes === notes ? object : { ...object, notes };
+  });
 }
 
 // ---------------------------------------------------------------------------
