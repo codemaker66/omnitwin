@@ -103,6 +103,13 @@ describe.skipIf(target === undefined)("an event made for a booking is named so a
     return row.name;
   }
 
+  async function clientName(eventId: string | null): Promise<string | null> {
+    if (eventId === null) throw new Error("The booking has no event");
+    const [row] = await db.select({ clientName: schema.events.clientName }).from(schema.events).where(eq(schema.events.id, eventId));
+    if (row === undefined) throw new Error("Missing event");
+    return row.clientName;
+  }
+
   it("names the event of an untitled interest-only booking made provisional by its occasion and the venue's own day", async () => {
     const v = await venue("transition");
     // As rows from before #350 stand: written straight to the table, since
@@ -188,10 +195,13 @@ describe.skipIf(target === undefined)("an event made for a booking is named so a
     const name = await eventName(hold.eventId);
     expect(name).toBe("Wedding, 7 August 2032");
     expect(name).not.toContain("@");
+    // Nor is the email the event's client name, which the handoff pack carries (N7).
+    expect(await clientName(hold.eventId)).toBeNull();
 
     // A guest who gave a name: the event takes the hold's title, as before.
     const theirs = await convert(named.id, v.rooms[1], "2032-08-14");
     expect(await eventName(theirs.eventId)).toBe("TEST ONLY Ailsa Grant — Wedding");
+    expect(await clientName(theirs.eventId)).toBe("TEST ONLY Ailsa Grant");
   });
 
   // A title holding any email address counts as no title (N4): the enquiry's

@@ -31,14 +31,15 @@ import { compileOpsHandoffPackFromConfiguration } from "../services/ops-compiler
 // #397, part a). Events made before eventNameFor named them can hold "": an
 // enquiry with a blank name converted before #350, or an untitled interest-only
 // booking made provisional. Every read of an event's name refused it, so one
-// such event turned the client's schedule and home, the event's own page (and
-// with it the only way to rename it), the venue's whole Diary range once a
+// such event turned the client's schedule and home, the event's own record
+// (and with it the API route that renames it, PATCH /events/:id; no screen
+// calls it yet), the venue's whole Diary range once a
 // phase was placed, and the room's timeline into a 400, and its handoff pack
 // would not compile. Each read now takes the name as stored. The event's own
 // record and the client's reads carry it as stored, for the screens to name
 // it (eventNameFor); the Diary's rows and the room's timeline, which do not
 // carry the event's start, and the handoff pack's document, name it here.
-// Writers still refuse an empty or blank name, so staff give it one.
+// Writers still refuse an empty or blank name.
 //
 // Runs on the disposable platform database only; the platform database is
 // shared and never truncated, so every test makes its own venue.
@@ -166,7 +167,7 @@ describe.skipIf(target === undefined)("an event stored with no name is read ever
     return response.json<{ data: unknown }>().data;
   }
 
-  it("serves the event's own record, the page staff rename it from, with the name as stored", async () => {
+  it("serves the event's own record, which the rename route (PATCH /events/:id) answers with, with the name as stored", async () => {
     const f = await fixture();
     expect(EventSchema.parse(await get(`/events/${f.eventId}`, f.office)).name).toBe("");
   });
@@ -296,7 +297,7 @@ describe.skipIf(target === undefined)("an event stored with no name is read ever
     });
   });
 
-  it("lets staff give the event a name, and still refuses an empty or blank one", async () => {
+  it("lets the venue's office name the event through PATCH /events/:id (no screen yet), and still refuses an empty or blank name", async () => {
     const f = await fixture();
     const patch = (payload: Record<string, unknown>) => server.inject({ method: "PATCH", url: `/events/${f.eventId}`, headers: f.office, payload });
     for (const name of ["", "   "]) {

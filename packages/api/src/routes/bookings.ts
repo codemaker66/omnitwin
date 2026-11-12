@@ -402,7 +402,9 @@ export async function bookingRoutes(
           startsAt,
           endsAt,
           createdBy: request.user.id,
-          clientName: enquiry.name,
+          // A guest who gave no name is filed under their email: no client
+          // name for the event, which the handoff pack carries (N7).
+          clientName: enquiryTitleName(enquiry).toLowerCase() === enquiry.email.trim().toLowerCase() ? null : enquiry.name,
         }, { join: "enquiry", enquiryId: enquiry.id });
         // The enquiry was read at this venue above; a mismatch here means it
         // changed meanwhile, and nothing is written.

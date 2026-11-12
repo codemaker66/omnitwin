@@ -52,6 +52,10 @@ describe("eventNameFor", () => {
     expect(eventNameFor({ title: " — Wedding", eventType: "dinner", startsAt: MARCH_14, timeZone: LONDON })).toBe("Dinner, 14 March 2027");
     expect(eventNameFor({ title: " — Wedding", eventType: null, startsAt: MARCH_14, timeZone: LONDON })).toBe("Wedding, 14 March 2027");
     expect(eventNameFor({ title: " — ", eventType: null, startsAt: MARCH_14, timeZone: LONDON })).toBe("Event, 14 March 2027");
+    // Typed with an en dash or a hyphen, it is the same bare title (N6).
+    for (const title of [" – Wedding", "- Wedding", "-Wedding"]) {
+      expect(eventNameFor({ title, eventType: null, startsAt: MARCH_14, timeZone: LONDON }), title).toBe("Wedding, 14 March 2027");
+    }
   });
 
   // A guest who gave no name is filed under their email, and the hold made for

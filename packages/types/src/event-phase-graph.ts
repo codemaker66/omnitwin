@@ -115,10 +115,10 @@ export const EventSchema = z.object({
   createdBy: UserIdSchema.nullable(),
   // As stored, trimmed (a blank name reads as ""): events made before
   // eventNameFor named every new one can hold "". Screens show such an event
-  // as eventDisplayName names it; refusing it here made the event's own page,
-  // its phase graph and its event-day board unreadable, and with them the way
-  // to rename it. Writers refuse an empty name (CreateEventSchema and
-  // UpdateEventSchema below), so staff give it one.
+  // as eventDisplayName names it; refusing it here made the event's own
+  // record, its phase graph and its event-day board unreadable, and with them
+  // the API route that renames it (PATCH /events/:id; no screen yet). Writers
+  // refuse an empty name (CreateEventSchema and UpdateEventSchema below).
   name: z.string().trim().max(200),
   eventType: z.string().trim().max(80).nullable(),
   status: EventStatusSchema,

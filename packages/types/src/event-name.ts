@@ -30,8 +30,9 @@ const NO_OCCASION = "Event";
 const MAX_EVENT_NAME_LENGTH = 200;
 
 /** The bare " — <occasion>" an enquiry with a blank name gave a title before
- *  #350: an em dash with nothing before it. */
-const BARE_OCCASION_TITLE = /^—\s*(.*)$/su;
+ *  #350: a dash with nothing before it (em dash as written; an en dash or a
+ *  hyphen as somebody may type it). */
+const BARE_OCCASION_TITLE = /^[—–-]\s*(.*)$/su;
 
 /** An email address anywhere in a title. A guest who gave no name is filed
  *  under their email, and the hold made for them is titled by it ("<email> —
