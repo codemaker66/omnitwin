@@ -1,7 +1,7 @@
 import { useEditorStore } from "../stores/editor-store.js";
 import { useToolStore } from "../stores/tool-store.js";
 import { useCatalogueStore } from "../stores/catalogue-store.js";
-import { usePlacementStore } from "../stores/placement-store.js";
+import { usePlacementStore, type SeatChange } from "../stores/placement-store.js";
 import { useSelectionStore } from "../stores/selection-store.js";
 import { useMeasurementStore } from "../stores/measurement-store.js";
 import { useMarkupStore } from "../stores/markup-store.js";
@@ -230,7 +230,7 @@ function seatsAt(table: PlacedItem, placedItems: readonly PlacedItem[]): number 
 export function changeSeatsAtSelectedTables(delta: 1 | -1): boolean {
   const ids = selectedIds();
   const placed = usePlacementStore.getState().placedItems;
-  const changes: { readonly tableId: string; readonly seats: number }[] = [];
+  const changes: SeatChange[] = [];
   for (const item of placed) {
     if (!ids.has(item.id) || item.groupId === null) continue;
     const catalogue = getCatalogueItem(item.catalogueItemId);
@@ -240,9 +240,8 @@ export function changeSeatsAtSelectedTables(delta: 1 | -1): boolean {
     if (next !== seats) changes.push({ tableId: item.id, seats: next });
   }
   if (changes.length === 0) return false;
-  asOneUndoStep(() => {
-    for (const change of changes) usePlacementStore.getState().rearrangeGroup(change.tableId, change.seats);
-  });
+  // One change, so a table kept for a held note is said once, beside the tables that did change.
+  asOneUndoStep(() => { usePlacementStore.getState().rearrangeGroups(changes); });
   return true;
 }
 

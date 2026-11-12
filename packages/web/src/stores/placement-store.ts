@@ -102,6 +102,12 @@ function candidateSurfaceHeight(
   return computeSurfaceHeight(x, z, candidate, placedItems, excludeIds);
 }
 
+/** A table's chairs to be set to `seats`. */
+export interface SeatChange {
+  readonly tableId: string;
+  readonly seats: number;
+}
+
 export interface PlacementState {
   /** All placed furniture items. */
   readonly placedItems: readonly PlacedItem[];
@@ -188,6 +194,13 @@ export interface PlacementState {
   readonly resizeArea: (groupId: string, cols: number, rows: number, anchor?: ResizeAnchor) => boolean;
   /** Re-arrange chairs for an existing table group. */
   readonly rearrangeGroup: (tableId: string, newChairCount: number) => void;
+  /**
+   * Re-arrange chairs for several table groups as one change. A table whose
+   * chair that would go holds a note this browser is not shown keeps its
+   * seats while the others change, and one line says so: "No seat was
+   * removed" only when no table lost one.
+   */
+  readonly rearrangeGroups: (changes: readonly SeatChange[]) => void;
   /**
    * Auto-fill the room with an even, circulation-safe arrangement of table
    * groups for a target guest count, at the banquet spacing (lib/auto-fill).
@@ -347,13 +360,18 @@ function refusedByStore(before: readonly PlacedItem[], after: readonly PlacedIte
  * not a guest plan, or from an API that marks none.
  */
 function refusedForHeldNote(before: readonly PlacedItem[], after: readonly PlacedItem[], words: (name: string) => string): boolean {
-  const held = currentHeldNoteIds();
-  if (held.size === 0) return false;
-  const staying = new Set(after.map((piece) => piece.id));
-  const going = heldNotePieceToName(before.filter((piece) => held.has(piece.id) && !staying.has(piece.id)));
+  const going = heldPieceGoing(before, after);
   if (going === undefined) return false;
   postPlacementNotice(words(heldNotePieceName(going, before)));
   return true;
+}
+
+/** The piece a line names when writing `after` over `before` would drop a piece holding such a note; undefined when none would go. */
+function heldPieceGoing(before: readonly PlacedItem[], after: readonly PlacedItem[]): PlacedItem | undefined {
+  const held = currentHeldNoteIds();
+  if (held.size === 0) return undefined;
+  const staying = new Set(after.map((piece) => piece.id));
+  return heldNotePieceToName(before.filter((piece) => held.has(piece.id) && !staying.has(piece.id)));
 }
 
 /**
@@ -957,25 +975,48 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
   },
 
   rearrangeGroup: (tableId: string, newChairCount: number) => {
+    get().rearrangeGroups([{ tableId, seats: newChairCount }]);
+  },
+
+  rearrangeGroups: (changes: readonly SeatChange[]) => {
     if (isLayoutTimelineMutationLocked()) return;
-    const state = get();
-    const newItems = rearrangeTableGroup(tableId, newChairCount, state.placedItems);
-    // Recompute individual surface heights for rearranged chairs
-    const adjusted = newItems.map((item) => {
-      if (!isSceneFurniturePlacement(item)) return item;
-      const surfaceY = candidateSurfaceHeight(
-        item.catalogueItemId,
-        item.x,
-        item.z,
-        newItems,
-        new Set([item.id]),
-      );
-      return surfaceY !== item.y ? { ...item, y: surfaceY } : item;
-    });
-    // Fewer seats takes the table's last chairs away.
-    if (refusedForHeldNote(state.placedItems, adjusted, noSeatRemovedLine)) return;
-    if (refusedByStore(state.placedItems, adjusted)) return;
-    set({ placedItems: numberEdited(adjusted, new Set([tableId])) });
+    let placed = get().placedItems;
+    let changed = false;
+    // The tables that keep their seats for a held note, said once at the end (review of #388, D2).
+    const kept: ChangedPiece[] = [];
+    for (const change of changes) {
+      const newItems = rearrangeTableGroup(change.tableId, change.seats, placed);
+      // Recompute individual surface heights for rearranged chairs
+      const adjusted = newItems.map((item) => {
+        if (!isSceneFurniturePlacement(item)) return item;
+        const surfaceY = candidateSurfaceHeight(
+          item.catalogueItemId,
+          item.x,
+          item.z,
+          newItems,
+          new Set([item.id]),
+        );
+        return surfaceY !== item.y ? { ...item, y: surfaceY } : item;
+      });
+      // Fewer seats takes the table's last chairs away.
+      const going = heldPieceGoing(placed, adjusted);
+      if (going !== undefined) {
+        kept.push(heldNotePieceNamed(going, placed));
+        continue;
+      }
+      if (refusedByStore(placed, adjusted)) continue;
+      placed = numberEdited(adjusted, new Set([change.tableId]));
+      changed = true;
+    }
+    if (changed) set({ placedItems: placed });
+    const [only] = kept;
+    if (!changed && kept.length === 1 && only !== undefined) {
+      postPlacementNotice(noSeatRemovedLine(describePieces([only])));
+      return;
+    }
+    // Another table lost a seat, or several kept theirs: say which stayed, as a removal of several does.
+    const stayed = stayedForNotesLine(kept);
+    if (stayed !== null) postPlacementNotice(stayed);
   },
 
   autoArrangeBanquet: (catalogueItemId: string, targetGuests: number, chairsPerTable: number, exits: readonly RoomExit[] | null = null) => {

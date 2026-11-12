@@ -394,6 +394,49 @@ describe("a seat taken from a table, when the chair that would go holds a note t
     expect(placedIds()).toEqual(before);
     expect(notice()).toBe("No seat was removed: a chair at Table 1 has a note that cannot be shown here.");
   });
+
+  /** The chairs standing round a round's table now. */
+  function chairsAt(round: Round): number {
+    const group = round.pieces[0]?.groupId ?? null;
+    return usePlacementStore.getState().placedItems.filter((piece) => piece.groupId === group && piece.id !== round.table).length;
+  }
+
+  it("takes a seat from the other selected tables, and says which kept its seat, not that none was removed (D2)", async () => {
+    const floor = rounds(2);
+    const [first, second] = floor;
+    const last = first?.chairs[9];
+    if (first === undefined || second === undefined || last === undefined) throw new Error("no rounds");
+    await open(floor, [last], "without its notes");
+    const stepsBefore = steps();
+
+    useSelectionStore.getState().selectMultiple([first.table, second.table]);
+    act(() => { changeSeatsAtSelectedTables(-1); });
+
+    expect(chairsAt(first)).toBe(10);
+    expect(placedIds()).toContain(last);
+    expect(chairsAt(second)).toBe(9);
+    expect(notice()).toBe("A chair at Table 1 stayed where it is, because it has a note that cannot be shown here.");
+    // One change, one undo step, which gives Table 2 its seat back.
+    expect(steps()).toBe(stepsBefore + 1);
+    act(() => { useEditorStore.getState().undo(); });
+    expect(chairsAt(second)).toBe(10);
+  });
+
+  it("names every table that kept its seat in one sentence when none lost one", async () => {
+    const floor = rounds(2);
+    const [first, second] = floor;
+    const firstLast = first?.chairs[9];
+    const secondLast = second?.chairs[9];
+    if (first === undefined || second === undefined || firstLast === undefined || secondLast === undefined) throw new Error("no rounds");
+    await open(floor, [firstLast, secondLast], "without its notes");
+    const before = placedIds();
+
+    useSelectionStore.getState().selectMultiple([first.table, second.table]);
+    act(() => { changeSeatsAtSelectedTables(-1); });
+
+    expect(placedIds()).toEqual(before);
+    expect(notice()).toBe("A chair at Tables 1 and 2 stayed where they are, because each has a note that cannot be shown here.");
+  });
 });
 
 describe("a dance floor made smaller, when a panel that would go holds a note this browser is not shown", () => {
