@@ -14,9 +14,11 @@ import { useSlateAudience } from "../slate-data.js";
 // staff through the event's graph and for a client through their schedule.
 // ---------------------------------------------------------------------------
 
-const mocks = vi.hoisted(() => ({ getEventPhaseGraph: vi.fn(), getClientEventSchedule: vi.fn() }));
+const mocks = vi.hoisted(() => ({ getEventPhaseGraph: vi.fn(), getClientEventSchedule: vi.fn(), getVenue: vi.fn() }));
 vi.mock("../../../api/events.js", () => ({ getEventPhaseGraph: mocks.getEventPhaseGraph }));
 vi.mock("../../../api/client-event-schedule.js", () => ({ getClientEventSchedule: mocks.getClientEventSchedule }));
+// The staff name of an unnamed event reads its day on the venue's clock.
+vi.mock("../../../api/spaces.js", async (importOriginal) => ({ ...await importOriginal<typeof import("../../../api/spaces.js")>(), getVenue: mocks.getVenue }));
 
 const VENUE = "00000000-0000-4000-8000-0000000000f1";
 const EVENT = "00000000-0000-4000-8000-0000000000e1";
@@ -43,6 +45,7 @@ describe("the slate's event, stored without a name (the event-name ruling)", () 
       phases: [], scenarios: [], layoutVariants: [], configurationLinks: [], phaseLayoutSnapshots: [],
     };
     mocks.getEventPhaseGraph.mockResolvedValue(graph);
+    mocks.getVenue.mockResolvedValue({ id: VENUE, timezone: "Europe/London", spaces: [] });
     const { result } = renderHook(() => useSlateAudience(), { wrapper });
     await waitFor(() => { expect(result.current.event?.name).toBe("Wedding, 14 March 2027"); });
   });

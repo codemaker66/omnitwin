@@ -8,9 +8,11 @@ import { useCockpitStore } from "../../../../stores/cockpit-store.js";
 import { CockpitTopBar } from "../CockpitTopBar.js";
 
 // The event reads, for the cases that link one; the rest link none and read nothing.
-const mocks = vi.hoisted(() => ({ getEventPhaseGraph: vi.fn(), getClientEventSchedule: vi.fn() }));
+const mocks = vi.hoisted(() => ({ getEventPhaseGraph: vi.fn(), getClientEventSchedule: vi.fn(), getVenue: vi.fn() }));
 vi.mock("../../../../api/events.js", () => ({ getEventPhaseGraph: mocks.getEventPhaseGraph }));
 vi.mock("../../../../api/client-event-schedule.js", () => ({ getClientEventSchedule: mocks.getClientEventSchedule }));
+// The staff name of an unnamed event reads its day on the venue's clock.
+vi.mock("../../../../api/spaces.js", async (importOriginal) => ({ ...await importOriginal<typeof import("../../../../api/spaces.js")>(), getVenue: mocks.getVenue }));
 
 function renderTopBar(): void {
   render(
@@ -104,6 +106,7 @@ describe("CockpitTopBar with an event stored without a name (the event-name ruli
       phases: [], scenarios: [], layoutVariants: [], configurationLinks: [], phaseLayoutSnapshots: [],
     };
     mocks.getEventPhaseGraph.mockResolvedValue(graph);
+    mocks.getVenue.mockResolvedValue({ id: VENUE, timezone: "Europe/London", spaces: [] });
     renderLinked();
     expect(await screen.findByText("Wedding, 14 March 2027")).toBeTruthy();
   });

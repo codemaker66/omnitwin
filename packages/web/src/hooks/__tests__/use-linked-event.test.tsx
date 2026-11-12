@@ -3,10 +3,13 @@ import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { MemoryRouter, useNavigate } from "react-router-dom";
 import type { ReactNode } from "react";
 import type { EventPhaseGraph } from "@omnitwin/types";
+import type { VenueDetail } from "../../api/spaces.js";
 
 vi.mock("../../api/events.js", () => ({ getEventPhaseGraph: vi.fn() }));
+vi.mock("../../api/spaces.js", () => ({ getVenue: vi.fn() }));
 
 const eventsApi = vi.mocked(await import("../../api/events.js"));
+const spacesApi = vi.mocked(await import("../../api/spaces.js"));
 const { useLinkedEvent } = await import("../use-linked-event.js");
 const { useAuthStore } = await import("../../stores/auth-store.js");
 
@@ -97,6 +100,44 @@ describe("useLinkedEvent", () => {
     await waitFor(() => { expect(result.current.status).toBe("loaded"); });
     expect(result.current.eventName).toBe("Spring Wedding");
     expect(eventsApi.getEventPhaseGraph).toHaveBeenCalledWith(fakeGraph.event.id);
+  });
+
+  it("never reads the venue for an event with a name of its own", async () => {
+    eventsApi.getEventPhaseGraph.mockResolvedValue(fakeGraph);
+    const { result } = renderHook(() => useLinkedEvent(), { wrapper: wrapperFor(`/plan/cfg-1?eventId=${fakeGraph.event.id}`) });
+    await waitFor(() => { expect(result.current.status).toBe("loaded"); });
+    expect(result.current.eventName).toBe("Spring Wedding");
+    expect(spacesApi.getVenue).not.toHaveBeenCalled();
+  });
+
+  // An event stored without a name is called by its occasion and its venue's
+  // day, as the Diary, the room's timeline and the handoff pack call it (N5,
+  // R3): 03:30 UTC on 15 March 2027 is 23:30 on the 14th in New York.
+  describe("an event stored without a name, at a venue in New York", () => {
+    const unnamed: EventPhaseGraph = { ...fakeGraph, event: { ...fakeGraph.event, name: "", startsAt: "2027-03-15T03:30:00.000Z" } };
+    const venueIn = (timezone: string): VenueDetail => ({
+      id: fakeGraph.event.venueId, name: "TEST ONLY venue", address: "Disposable fixture", slug: "test-only-venue", logoUrl: null,
+      brandColour: null, timezone, createdAt: now, updatedAt: now, spaces: [],
+    });
+
+    it("is named by the venue's own day", async () => {
+      eventsApi.getEventPhaseGraph.mockResolvedValue(unnamed);
+      spacesApi.getVenue.mockResolvedValue(venueIn("America/New_York"));
+      const { result } = renderHook(() => useLinkedEvent(), { wrapper: wrapperFor(`/plan/cfg-1?eventId=${fakeGraph.event.id}`) });
+      await waitFor(() => { expect(result.current.status).toBe("loaded"); });
+      expect(result.current.eventName).toBe("Wedding, 14 March 2027");
+      expect(spacesApi.getVenue).toHaveBeenCalledWith(fakeGraph.event.venueId);
+      // The graph keeps the name as stored.
+      expect(result.current.graph?.event.name).toBe("");
+    });
+
+    it("is named on the house's clock when the venue cannot be read, and still loads", async () => {
+      eventsApi.getEventPhaseGraph.mockResolvedValue(unnamed);
+      spacesApi.getVenue.mockRejectedValue(new Error("offline"));
+      const { result } = renderHook(() => useLinkedEvent(), { wrapper: wrapperFor(`/plan/cfg-1?eventId=${fakeGraph.event.id}`) });
+      await waitFor(() => { expect(result.current.status).toBe("loaded"); });
+      expect(result.current.eventName).toBe("Wedding, 15 March 2027");
+    });
   });
 
   it("reports 'error' and no event name when the fetch fails", async () => {
