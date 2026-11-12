@@ -414,6 +414,19 @@ interface EditorActions {
    * offline state or the save error says why).
    */
   readonly keepMine: (isAuthenticated?: boolean) => Promise<boolean>;
+  /**
+   * A guest plan opened before the sign-in resolved was read the public way,
+   * without its notes, so it saves that way (lib/guest-plan-notes
+   * signedInRoutesSuit). Once the person is known and the signed-in routes
+   * answer them (the venue's own staff, a platform admin), the plan is read
+   * again through those routes, once, so their saves go that way as #373 has
+   * them (delta review of #388, B2). Only a document with nothing unsaved is
+   * read again: unsaved work goes first, the way the plan was read, and the
+   * read waits for it. A read that comes back to a document changed while it
+   * was out is dropped, and asked for again once that change is saved. True
+   * when the plan was taken from the signed-in read.
+   */
+  readonly readAgainForSignedInRoutes: () => Promise<boolean>;
   /** The review state the review panel read or set for this layout. */
   readonly setReviewStatus: (configId: string, status: ConfigurationReviewStatus | null) => void;
   /**
@@ -925,6 +938,14 @@ let conflictServerCopy: {
 
 /** A "Keep mine" is under way (reading their version or saving): one at a time. */
 let keepMineInFlight = false;
+
+/** The open plan the signed-in routes were asked to read again, and for whom: once each (readAgainForSignedInRoutes). */
+let signedInReadAsked: string | null = null;
+
+/** Nothing on screen waits to be saved, and no save or conflict is under way. */
+function nothingUnsaved(state: EditorState): boolean {
+  return !state.isDirty && !state.isSaving && state.saveConflict === null;
+}
 
 /** The sign-in another tab ended (forgetting its drafts): while this tab still
  *  holds that very sign-in, it keeps nothing of theirs on this device. A new
@@ -1633,6 +1654,56 @@ export const useEditorStore = create<EditorStore>()(withSaveFacts((set, get) => 
     } finally {
       keepMineInFlight = false;
     }
+  },
+
+  readAgainForSignedInRoutes: async () => {
+    const s = get();
+    const configId = s.configId;
+    if (configId === null || s.isLoading || signedInRoutesSuit(s) || !nothingUnsaved(s)) return false;
+    if (!usesSignedInRoutes(s, useAuthStore.getState().isAuthenticated)) return false;
+    const key = JSON.stringify([configurationSession, configId, draftOwner()]);
+    if (signedInReadAsked === key) return false;
+    signedInReadAsked = key;
+    const session = configurationSession;
+    let config: configApi.Configuration;
+    try {
+      config = await configApi.getConfig(configId);
+    } catch {
+      // Refused or not arrived: the plan stays on the public routes it was opened by.
+      return false;
+    }
+    const now = get();
+    if (session !== configurationSession || now.configId !== configId || signedInRoutesSuit(now)) return false;
+    // A change made while the read was out is the person's: nothing is read
+    // over it. The read is asked for again once the change is saved.
+    if (now.objects !== s.objects || now.baseObjects !== s.baseObjects || now.configRevision !== s.configRevision
+      || !nothingUnsaved(now) || gestureOwnsCurrentDocument()) {
+      if (signedInReadAsked === key) signedInReadAsked = null;
+      return false;
+    }
+    if (config.id !== configId || config.notesIncluded !== true || now.configRevision === null || config.revision < now.configRevision) return false;
+    const server = (config.objects ?? []).map(placedObjectToEditor);
+    // As a newer copy is taken over a document with nothing unsaved
+    // (adoptServerConfiguration): undo never replays an older value over a
+    // piece the read changed. Here that is each piece the public read kept a
+    // note from, whose steps hold it without the note; replayed and saved by
+    // the signed-in route, which stores each piece as sent, they would clear it.
+    actionEmitter.flush(now.history);
+    yieldedIds.clear();
+    conflictServerCopy = null;
+    set({
+      isPublicPreview: config.isPublicPreview,
+      notesIncluded: true,
+      objects: server,
+      baseObjects: server,
+      history: forgetHistoryIds(now.history, changedBetween(now.baseObjects, server)),
+      configName: config.name,
+      configRevision: config.revision,
+      reviewStatus: config.reviewStatus ?? now.reviewStatus,
+      ...(config.reviewStatus !== undefined && isPlannerEditable(config.reviewStatus) ? { reviewLockRefused: false } : {}),
+      lastSavedAt: config.updatedAt === undefined ? now.lastSavedAt : new Date(config.updatedAt),
+    });
+    return true;
   },
 
   setReviewStatus: (configId, status) => {

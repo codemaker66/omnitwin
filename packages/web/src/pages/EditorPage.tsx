@@ -274,6 +274,17 @@ export function EditorPage(): React.ReactElement {
   // A plan still being started below is claimed there, before it has an address.
   usePlannerDraftClaim(urlConfigId !== undefined && urlConfigId === storeConfigId);
 
+  // A guest plan opened before the sign-in resolved was read the public way,
+  // without its notes, and saves that way. Once the person is known, the store
+  // reads it again through the signed-in routes if those answer them, and only
+  // when nothing waits to be saved (delta review of #388, B2).
+  const openReadWithoutNotes = useEditorStore((s) => s.isPublicPreview && !s.notesIncluded);
+  const nothingWaitsToSave = useEditorStore((s) => !s.isDirty && !s.isSaving && s.saveConflict === null);
+  useEffect(() => {
+    if (!isAuthenticated || storeConfigId === null || !openReadWithoutNotes || !nothingWaitsToSave) return;
+    void useEditorStore.getState().readAgainForSignedInRoutes();
+  }, [isAuthenticated, authUserId, authRole, authVenueId, storeConfigId, openReadWithoutNotes, nothingWaitsToSave]);
+
   // The slate's room switch (QoL D-X3) leaves this page on /plan?space=<room>
   // with the layout it left still open, and the bootstrap below opens a room
   // only when none is. Closing exactly that layout lets the bootstrap open the
