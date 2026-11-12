@@ -979,6 +979,16 @@ interface Pinch {
 // past the corner; a unit that reaches in front of both walls of a corner has
 // an item on each side, each the gangway of the wall on that side.
 //
+// One gap under two ids, and meant. A unit that stands in front of both walls
+// of a corner and is nearest each of them at the corner itself has two items
+// of one width, one on each side: the gap between the unit and the corner.
+// (So has a unit in front of one wall whose corner goes with the other.)
+// Each item is the unit's gap to the walls on its side, the least from any of
+// its pieces, and the corner is the end of both walls: it is where each
+// wall's gangway is narrowest. The venue decides on each wall's gangway under
+// its own id, and listing the gap for one wall only would leave the other's
+// item wider than the unit stands from that wall.
+//
 // Set against a wall (touching it, or through it) a piece is against it only
 // where it meets the wall between its ends (liesAgainst). A piece that lies
 // along one wall, and so reaches the end of the wall round the corner, has
@@ -994,6 +1004,19 @@ interface Pinch {
 // doorway, the wall beyond the doorway is in line with it, and the touch at
 // the jamb is listed with that wall's side, not as a gangway to the unit's
 // east or west.
+//
+// The far corner of a door recess, or of an alcove's mouth: the jamb beyond
+// the opening from where the unit stands. No piece stands in front of either
+// wall that meets there (the recess's short side wall, and the wall beyond
+// the opening), so within the guidance it is a corner's gap of its own: the
+// way a person has between the unit and that jamb. It goes with the recess's
+// side wall, and so is listed on the unit's east or west though the unit
+// stands by the south wall, where the unit is nearer the line of the wall the
+// recess is in than its edge stops short of the jamb along that wall, as a
+// unit close to the wall is; else with the wall beyond. It is listed and gone
+// again as a nudge carries it across the guidance or from one of its two
+// walls to the other. Whether a jamb's gap should be listed as a gangway is
+// the venue's and the owner's to say; nothing here hides it.
 //
 // Where an item is drawn (gangwayFloor): the gangway floor inside each wall
 // it narrows, between the unit's ends along that wall, and at each corner
