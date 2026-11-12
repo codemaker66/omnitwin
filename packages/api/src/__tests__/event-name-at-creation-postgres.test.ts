@@ -4,10 +4,11 @@ import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { BookingSchema, type Booking } from "@omnitwin/types";
+import { BookingSchema, LAYOUT_STYLES, type Booking } from "@omnitwin/types";
 import type { Database } from "../db/client.js";
 import * as schema from "../db/schema.js";
 import { bookingRoutes } from "../routes/bookings.js";
+import { windowProposalRoutes } from "../routes/window-proposals.js";
 import { insertBoundBookings } from "../services/event-binding.js";
 
 // ---------------------------------------------------------------------------
@@ -24,6 +25,11 @@ import { insertBoundBookings } from "../services/event-binding.js";
 // untitled interest-only booking, the enquiry conversion for an enquiry stored
 // with a blank name (whose event must never be named after the enquiry's
 // email), and the direct writer the seed and importers share.
+//
+// A name made that way carries the event's day, so it follows the event when
+// its start moves (syncEventStatus): a hold moved on the Diary, a client
+// moving their proposed time, an enquiry's rows written at once whose
+// earliest is not the first. A name a person gave is never touched.
 //
 // Runs on the disposable platform database only; the platform database is
 // shared and never truncated, so every test makes its own venue.
@@ -55,6 +61,7 @@ describe.skipIf(target === undefined)("an event made for a booking is named so a
     db = drizzle(pool, { schema });
     server = Fastify();
     await server.register(bookingRoutes, { db, prefix: "/bookings" });
+    await server.register(windowProposalRoutes, { db, prefix: "/events" });
     await server.ready();
   });
   afterAll(async () => { await server?.close(); await pool?.end(); });
@@ -203,5 +210,95 @@ describe.skipIf(target === undefined)("an event made for a booking is named so a
     ]);
     // The bookings themselves keep what they were given.
     expect(rows.map((row) => row.title)).toEqual(["", " — Wedding"]);
+  });
+
+  /** A wedding enquiry held on a day; a guest who gave no name is filed under
+   *  their email, as the public route files them. */
+  async function heldEnquiry(v: Awaited<ReturnType<typeof venue>>, room: string, day: string, guestName: string | null): Promise<Booking> {
+    const email = `${randomUUID()}@event-name.invalid`;
+    const [enquiry] = await db.insert(schema.enquiries).values({
+      venueId: v.venueId, spaceId: room, state: "under_review", name: guestName ?? email, email, eventType: "wedding", preferredDate: day,
+    }).returning({ id: schema.enquiries.id });
+    if (enquiry === undefined) throw new Error("Enquiry fixture missing");
+    const response = await server.inject({
+      method: "POST", url: "/bookings/from-enquiry", headers: v.headers,
+      payload: { enquiryId: enquiry.id, spaceId: room, startsAt: `${day}T16:00:00.000Z`, endsAt: `${day}T23:00:00.000Z`, ...hygiene(v.adminId) },
+    });
+    expect(response.statusCode, response.body).toBe(201);
+    return BookingSchema.parse(response.json<{ data: unknown }>().data);
+  }
+
+  async function moveOnDiary(v: Awaited<ReturnType<typeof venue>>, bookingId: string, startsAt: string, endsAt: string): Promise<void> {
+    const response = await server.inject({ method: "PATCH", url: `/bookings/${bookingId}`, headers: v.headers, payload: { startsAt, endsAt } });
+    expect(response.statusCode, response.body).toBe(200);
+  }
+
+  it("moves the day in a name it made when the hold moves on the Diary, and never touches a name a person gave", async () => {
+    const v = await venue("moved on the Diary");
+    const filed = await heldEnquiry(v, v.rooms[0], "2032-09-04", null);
+    const named = await heldEnquiry(v, v.rooms[1], "2032-09-04", "TEST ONLY Ailsa Grant");
+    expect(await eventName(filed.eventId)).toBe("Wedding, 4 September 2032");
+
+    await moveOnDiary(v, filed.id, "2032-09-11T16:00:00.000Z", "2032-09-11T23:00:00.000Z");
+    expect(await eventName(filed.eventId)).toBe("Wedding, 11 September 2032");
+    // 23:30 UTC on the 17th is the 18th in Glasgow (British Summer Time).
+    await moveOnDiary(v, filed.id, "2032-09-17T23:30:00.000Z", "2032-09-18T03:00:00.000Z");
+    expect(await eventName(filed.eventId)).toBe("Wedding, 18 September 2032");
+
+    await moveOnDiary(v, named.id, "2032-09-11T16:00:00.000Z", "2032-09-11T23:00:00.000Z");
+    expect(await eventName(named.eventId)).toBe("TEST ONLY Ailsa Grant — Wedding");
+  });
+
+  it("moves the day in a name it made when the client moves their proposed time a week", async () => {
+    const v = await venue("moved by the client");
+    const hold = await heldEnquiry(v, v.rooms[0], "2032-10-02", null);
+    const eventId = hold.eventId;
+    if (eventId === null) throw new Error("The hold has no event");
+    expect(await eventName(eventId)).toBe("Wedding, 2 October 2032");
+    // The client's plan, linked to the event: what lets them propose a time.
+    const clientId = randomUUID(), planId = randomUUID();
+    await db.insert(schema.users).values({ id: clientId, email: `${clientId}@event-name.invalid`, name: "TEST ONLY Morag Client", role: "client", venueId: null });
+    await db.insert(schema.configurations).values({
+      id: planId, spaceId: v.rooms[0], venueId: v.venueId, userId: clientId, name: "TEST ONLY the client's plan", layoutStyle: LAYOUT_STYLES[0],
+    });
+    await db.insert(schema.eventConfigurationLinks).values({ id: randomUUID(), eventId, configurationId: planId, linkType: "source_configuration" });
+    const client = {
+      authorization: `Bearer ${JSON.stringify({ id: clientId, email: `${clientId}@event-name.invalid`, name: "TEST ONLY Morag Client", role: "client", venueId: null, platformRole: "none" })}`,
+    };
+    const propose = async (day: string, status: number): Promise<void> => {
+      const response = await server.inject({
+        method: "PUT", url: `/events/${eventId}/proposed-window`, headers: client,
+        payload: { spaceId: v.rooms[0], startsAt: `${day}T16:00:00.000Z`, endsAt: `${day}T23:00:00.000Z`, idempotencyKey: randomUUID() },
+      });
+      expect(response.statusCode, response.body).toBe(status);
+    };
+
+    // The client proposes the time held for them, and the office lets its
+    // own hold go: the client's proposal is now what the event's day is.
+    await propose("2032-10-02", 201);
+    const released = await server.inject({ method: "POST", url: `/bookings/${hold.id}/transition`, headers: v.headers, payload: { toState: "released" } });
+    expect(released.statusCode, released.body).toBe(200);
+    expect(await eventName(eventId)).toBe("Wedding, 2 October 2032");
+
+    await propose("2032-10-09", 200);
+    expect(await eventName(eventId)).toBe("Wedding, 9 October 2032");
+  });
+
+  it("names the event of an enquiry's rows written at once by the earliest of them, not the first", async () => {
+    const v = await venue("rows written at once");
+    const email = `${randomUUID()}@event-name.invalid`;
+    const [enquiry] = await db.insert(schema.enquiries).values({
+      venueId: v.venueId, spaceId: v.rooms[0], state: "under_review", name: email, email, eventType: "wedding", preferredDate: "2032-11-13",
+    }).returning({ id: schema.enquiries.id });
+    if (enquiry === undefined) throw new Error("Enquiry fixture missing");
+    const option = (room: string, day: string) => ({
+      venueId: v.venueId, spaceId: room, kind: "hold" as const, title: `${email} — Wedding`, eventType: "wedding", createdBy: v.adminId,
+      enquiryId: enquiry.id, startsAt: new Date(`${day}T16:00:00.000Z`), endsAt: new Date(`${day}T23:00:00.000Z`), rank: 1,
+      decisionAt: new Date("2032-10-01T10:00:00.000Z"), ownerUserId: v.adminId,
+      nextAction: "TEST ONLY call the couple.", nextActionDueAt: new Date("2032-09-24T10:00:00.000Z"),
+    });
+    const rows = await insertBoundBookings(db, [option(v.rooms[0], "2032-11-20"), option(v.rooms[1], "2032-11-13")]);
+    expect(new Set(rows.map((row) => row.eventId)).size).toBe(1);
+    expect(await eventName(rows[0]?.eventId ?? null)).toBe("Wedding, 13 November 2032");
   });
 });

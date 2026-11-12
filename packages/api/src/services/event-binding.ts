@@ -34,8 +34,9 @@ import { bookings, enquiries, eventPhases, events, venues } from "../db/schema.j
 //     locked first, so two holds pencilled at once from one enquiry join one
 //     event rather than making two);
 // otherwise a new event is made from the booking: its title (without one,
-// its occasion and day: eventNameFor in @omnitwin/types), type and times, a
-// draft until syncEventStatus derives its status from the bookings.
+// its occasion and day: eventNameFor in @omnitwin/types, a day that follows
+// the event's start in syncEventStatus), type and times, a draft until
+// syncEventStatus derives its status from the bookings.
 //
 // Lock order: a booking path locks its bookings first, then the enquiry, then
 // the event (syncEventStatus, FOR NO KEY UPDATE so it never waits on another
@@ -301,9 +302,23 @@ export async function movePhasesWithBooking(conn: BindConn, move: BookingMove): 
  * once would each hold a key share and wait for the other's, a deadlock.
  * FOR NO KEY UPDATE still serialises the syncs with each other and with
  * updateEventCore's FOR UPDATE, which is all the status needs.
+ *
+ * A name createEventFor made carries the day the event started on then
+ * ("Wedding, 14 March 2027"), so it moves with the start, under the same
+ * lock: when the stored name is exactly what eventNameFor makes for the old
+ * start, it is made again for the new one. A name a person gave is never
+ * touched, nor one made before the event had a start.
  */
 export async function syncEventStatus(conn: BindConn, eventId: string): Promise<EventStatusChange | null> {
-  const [event] = await conn.select({ id: events.id, status: events.status, startsAt: events.startsAt, endsAt: events.endsAt })
+  const [event] = await conn.select({
+    id: events.id,
+    venueId: events.venueId,
+    status: events.status,
+    name: events.name,
+    eventType: events.eventType,
+    startsAt: events.startsAt,
+    endsAt: events.endsAt,
+  })
     .from(events)
     .where(eq(events.id, eventId))
     .limit(1)
@@ -324,13 +339,32 @@ export async function syncEventStatus(conn: BindConn, eventId: string): Promise<
   const spanMoved = span !== null && (event.startsAt?.getTime() !== span.startsAt.getTime()
     || event.endsAt?.getTime() !== span.endsAt.getTime());
   if (to !== from || spanMoved) {
+    const name = spanMoved ? await nameForMovedStart(conn, event, span.startsAt) : null;
     await conn.update(events).set({
       status: to,
       ...(spanMoved ? { startsAt: span.startsAt, endsAt: span.endsAt } : {}),
+      ...(name === null ? {} : { name }),
       updatedAt: new Date(),
     }).where(eq(events.id, eventId));
   }
   return { eventId, from, to };
+}
+
+/** The name an event takes when its start moves: eventNameFor's for the new
+ *  start when the stored name is eventNameFor's for the old one, else null
+ *  (the name stays). The venue's zone is read as createEventFor reads it. */
+async function nameForMovedStart(
+  conn: BindConn,
+  event: { readonly venueId: string; readonly name: string; readonly eventType: string | null; readonly startsAt: Date | null },
+  startsAt: Date,
+): Promise<string | null> {
+  if (event.startsAt === null) return null;
+  const [venue] = await conn.select({ timeZone: venues.timezone }).from(venues).where(eq(venues.id, event.venueId)).limit(1);
+  if (venue === undefined) return null;
+  const made = (at: Date): string => eventNameFor({ title: "", eventType: event.eventType, startsAt: at, timeZone: venue.timeZone });
+  if (event.name !== made(event.startsAt)) return null;
+  const renamed = made(startsAt);
+  return renamed === event.name ? null : renamed;
 }
 
 /** syncEventStatus for each distinct event, in id order (a stable lock order). */
