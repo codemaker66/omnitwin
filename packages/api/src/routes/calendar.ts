@@ -11,12 +11,13 @@ import {
   NEXT_ACTIONS_DUE_HORIZON_DAYS,
   NEXT_ACTIONS_DUE_LIMIT,
   deriveBookingState,
+  eventDisplayName,
   type CalendarBookingEntry,
   type CalendarEntry,
   type CalendarQuery,
   type CalendarResponse,
 } from "@omnitwin/types";
-import { bookings, eventPhases, events, spaces, turnaroundRules, users } from "../db/schema.js";
+import { bookings, eventPhases, events, spaces, turnaroundRules, users, venues } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { authenticate } from "../middleware/auth.js";
 import { canReadDiary } from "../utils/query.js";
@@ -77,6 +78,9 @@ const BOOKING_ENTRY_COLUMNS = {
   notes: bookings.notes,
   deletedAt: bookings.deletedAt,
   eventName: events.name,
+  // What the event is called when it was stored without a name (eventNameFor).
+  eventOccasion: events.eventType,
+  eventStartsAt: events.startsAt,
   eventClientName: events.clientName,
   eventGuestCount: events.guestCount,
   ownerName: userDisplayName,
@@ -101,12 +105,14 @@ interface BookingEntryRow {
   readonly seriesId: string | null;
   readonly notes: string | null;
   readonly eventName: string | null;
+  readonly eventOccasion: string | null;
+  readonly eventStartsAt: Date | null;
   readonly eventClientName: string | null;
   readonly eventGuestCount: number | null;
   readonly ownerName: string | null;
 }
 
-function toBookingEntry(row: BookingEntryRow): CalendarBookingEntry {
+function toBookingEntry(row: BookingEntryRow, timeZone: string): CalendarBookingEntry {
   return {
     entryType: "booking",
     id: row.id,
@@ -129,7 +135,12 @@ function toBookingEntry(row: BookingEntryRow): CalendarBookingEntry {
     // Command Centre card face (C1): the joined event's name/client/guests
     // (null when the booking has no live event) and the booking's own
     // margin note. All optional on the schema — older clients strip them.
-    eventName: row.eventName,
+    // An event stored without a name (made before eventNameFor named every
+    // new one) is named by its occasion and the venue's day, for display
+    // only: the Diary's rows do not carry the event's own start to name it by.
+    eventName: row.eventName === null
+      ? null
+      : eventDisplayName({ name: row.eventName, eventType: row.eventOccasion, startsAt: row.eventStartsAt }, timeZone),
     clientName: row.eventClientName,
     guestCount: row.eventGuestCount,
     notes: row.notes,
@@ -246,9 +257,9 @@ export async function calendarRoutes(
       lt(bookings.startsAt, contestedHorizon),
     );
 
-    // The six reads are independent — one round-trip of latency, not six
+    // The reads are independent — one round-trip of latency, not seven
     // (review finding: this is the endpoint every calendar view polls).
-    const [bookingRows, phaseRows, ruleRows, decisionRows, nextActionRows, liveRows] = await Promise.all([
+    const [bookingRows, phaseRows, ruleRows, decisionRows, nextActionRows, liveRows, venueRows] = await Promise.all([
       db
         .select(BOOKING_ENTRY_COLUMNS)
         .from(bookings)
@@ -280,6 +291,7 @@ export async function calendarRoutes(
           eventId: events.id,
           eventName: events.name,
           eventType: events.eventType,
+          eventStartsAt: events.startsAt,
         })
         .from(eventPhases)
         .innerJoin(events, eq(eventPhases.eventId, events.id))
@@ -367,7 +379,11 @@ export async function calendarRoutes(
         .where(liveContestConditions)
         .orderBy(asc(bookings.startsAt), asc(bookings.id))
         .limit(CONTESTED_SCAN_LIMIT),
+      // The venue's clock: an event stored without a name is named by the
+      // venue's own day of its start (eventNameFor).
+      db.select({ timeZone: venues.timezone }).from(venues).where(eq(venues.id, query.venueId)).limit(1),
     ]);
+    const venueZone = venueRows[0]?.timeZone ?? "Europe/London";
 
     // The dates found among the lean rows; full entries only for those shown.
     const contestedFound = contestedDates(liveRows.map((row) => ({
@@ -403,11 +419,14 @@ export async function calendarRoutes(
     for (const row of phaseRows) {
       if (row.spaceId === null || row.startsAt === null) continue;
       const endsAt = new Date(row.startsAt.getTime() + row.durationMinutes * MINUTE_MS);
+      // As on a booking's card: an event stored without a name is named by
+      // its occasion and the venue's day, here and in the conflicts' words.
+      const eventName = eventDisplayName({ name: row.eventName, eventType: row.eventType, startsAt: row.eventStartsAt }, venueZone);
       conflictPhases.push({
         id: row.id,
         spaceId: row.spaceId,
         eventId: row.eventId,
-        eventName: row.eventName,
+        eventName,
         name: row.name,
         eventType: row.eventType,
         startsAt: row.startsAt,
@@ -418,7 +437,7 @@ export async function calendarRoutes(
         id: row.id,
         spaceId: row.spaceId,
         eventId: row.eventId,
-        eventName: row.eventName,
+        eventName,
         name: row.name,
         startsAt: row.startsAt.toISOString(),
         endsAt: endsAt.toISOString(),
@@ -426,10 +445,10 @@ export async function calendarRoutes(
       });
     }
 
-    const bookingEntries: CalendarEntry[] = bookingRows.map(toBookingEntry);
+    const bookingEntries: CalendarEntry[] = bookingRows.map((row) => toBookingEntry(row, venueZone));
     // Grouped again from the full entries: a booking released in between
     // simply leaves its date, as the next read would show.
-    const contested = contestedDates(contestedRows.map(toBookingEntry));
+    const contested = contestedDates(contestedRows.map((row) => toBookingEntry(row, venueZone)));
 
     const entries = [...bookingEntries, ...phaseEntries].sort((a, b) => {
       if (a.startsAt !== b.startsAt) return a.startsAt < b.startsAt ? -1 : 1;
@@ -454,11 +473,11 @@ export async function calendarRoutes(
       // gap; the engine's advisory-only stance is unchanged.
       turnaroundRules: ruleRows,
       decisionsDue: {
-        holds: decisionRows.map(toBookingEntry),
+        holds: decisionRows.map((row) => toBookingEntry(row, venueZone)),
         total: decisionRows[0]?.total ?? 0,
       },
       nextActionsDue: {
-        holds: nextActionRows.map(toBookingEntry),
+        holds: nextActionRows.map((row) => toBookingEntry(row, venueZone)),
         total: nextActionRows[0]?.total ?? 0,
       },
       contested: {

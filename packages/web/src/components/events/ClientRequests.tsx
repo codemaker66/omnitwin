@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type ReactElement } from "react";
 import {
   COUNTABLE_REQUEST_KINDS,
   REQUEST_KINDS,
@@ -32,6 +32,12 @@ import "./client-requests.css";
 // Nothing here changes a time, a layout or stock; a quantity beyond the
 // release is a request the office decides.
 //
+// What a person at the house writes back in a thread the client can read is
+// on this page too: under the request it answers, or, for a thread that is
+// none of this person's requests, under the thread's own name. The poll
+// fetching a message is what tells its sender "Delivered", so nothing the
+// poll fetches goes unshown.
+//
 // Honest states: "Sending…" while the request travels, then the true one.
 // Offline keeps the draft and its key, so "Send again" replays the same
 // request rather than making a second. A revoked link closes the composer and
@@ -59,10 +65,22 @@ function whatWasAsked(request: { readonly kind: RequestKind; readonly quantity: 
     : `${describeRequestKind(request.kind)} × ${String(request.quantity)}`;
 }
 
+interface VenueClock {
+  readonly day: Intl.DateTimeFormat;
+  readonly time: Intl.DateTimeFormat;
+}
+
+/** The venue's own day ("Sat 10 Oct") and wall time ("14:02"). */
+function venueClock(timeZone: string): VenueClock {
+  return {
+    day: new Intl.DateTimeFormat("en-GB", { timeZone, weekday: "short", day: "numeric", month: "short" }),
+    time: new Intl.DateTimeFormat("en-GB", { timeZone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }),
+  };
+}
+
 /** "Grand Hall · Sat 10 Oct · 12:00–16:00", venue-local. */
 export function slotLabel(slot: ClientEventScheduleSlot, timeZone: string): string {
-  const day = new Intl.DateTimeFormat("en-GB", { timeZone, weekday: "short", day: "numeric", month: "short" });
-  const time = new Intl.DateTimeFormat("en-GB", { timeZone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+  const { day, time } = venueClock(timeZone);
   const start = new Date(slot.startsAt);
   const end = new Date(slot.endsAt);
   return `${slot.space.name} · ${day.format(start)} · ${time.format(start)}–${time.format(end)}`;
@@ -94,6 +112,52 @@ export function statusLine(request: VenueRequest, messages: readonly Message[]):
     return request.state === "underway" ? `${request.ownerName} is on it.` : `${request.ownerName} has this.`;
   }
   return SENT_WAITING;
+}
+
+function isWords(message: Message): boolean {
+  return message.kind === "text";
+}
+
+/** What people wrote in the threads the client can read, by thread, in the
+ *  order it was written. A request's steps are its status line and the ask is
+ *  the request itself, so neither is repeated as a message. */
+function wordsByThread(messages: readonly Message[]): ReadonlyMap<string, readonly Message[]> {
+  const byThread = new Map<string, Message[]>();
+  for (const message of messages) {
+    if (!isWords(message)) continue;
+    const thread = byThread.get(message.threadId);
+    if (thread === undefined) byThread.set(message.threadId, [message]);
+    else thread.push(message);
+  }
+  return byThread;
+}
+
+/** The words of one thread: who wrote each, when by the venue's clock, and
+ *  what they wrote, line breaks kept. */
+function Words({ label, messages, timeZone }: {
+  readonly label: string;
+  readonly messages: readonly Message[];
+  readonly timeZone: string;
+}): ReactElement {
+  const clock = useMemo(() => venueClock(timeZone), [timeZone]);
+  return (
+    <ol className="client-request-messages" aria-label={label}>
+      {messages.map((message) => {
+        const at = new Date(message.createdAt);
+        return (
+          <li key={message.id} className="client-request-message">
+            <p className="client-request-message-who">
+              <span className="client-request-message-author">{message.authorName}</span>
+              <time className="client-request-message-when" dateTime={message.createdAt}>
+                {`${clock.day.format(at)} · ${clock.time.format(at)}`}
+              </time>
+            </p>
+            <p className="client-request-message-body">{message.body}</p>
+          </li>
+        );
+      })}
+    </ol>
+  );
 }
 
 function isOffline(cause: unknown): boolean {
@@ -212,11 +276,29 @@ export function ClientRequests({ eventId, slots, timeZone, pollMs }: ClientReque
   const closed = conversation.closed || requests.closed;
   const [announcement, setAnnouncement] = useState("");
   const spoken = useRef<ReadonlyMap<string, string> | null>(null);
+  const heard = useRef<ReadonlySet<string> | null>(null);
+  const othersTitleId = useId();
 
   const lines = useMemo(
     () => new Map(requests.requests.map((request) => [request.id, statusLine(request, conversation.messages)])),
     [requests.requests, conversation.messages],
   );
+
+  const words = useMemo(() => wordsByThread(conversation.messages), [conversation.messages]);
+
+  // Words in a thread that is none of this person's requests (one a colleague
+  // on the same event made, or a thread the office opened): the poll fetched
+  // them, so they are shown, under the thread's own name.
+  const others = useMemo(() => {
+    const mine = new Set(requests.requests.map((request) => request.threadId));
+    return [...words]
+      .filter(([threadId]) => !mine.has(threadId))
+      .map(([threadId, messages]) => ({
+        threadId,
+        title: conversation.threads.find((thread) => thread.id === threadId)?.title ?? "Your event",
+        messages,
+      }));
+  }, [words, requests.requests, conversation.threads]);
 
   // Said once per change, never per poll: a step the house took since the
   // last reading is announced, politely, in its own words.
@@ -232,6 +314,27 @@ export function ClientRequests({ eventId, slots, timeZone, pollMs }: ClientReque
       }
     }
   }, [lines, requests.requests]);
+
+  // A message that arrives after the page's first reading is said once, by
+  // who wrote it; what was already written when the page opened is simply
+  // there to read.
+  useEffect(() => {
+    if (conversation.status !== "ready") {
+      if (conversation.status === "loading") heard.current = null;
+      return;
+    }
+    const written = conversation.messages.filter(isWords);
+    const previous = heard.current;
+    heard.current = new Set(written.map((message) => message.id));
+    if (previous === null) return;
+    const fresh = written.filter((message) => !previous.has(message.id));
+    const newest = fresh[fresh.length - 1];
+    if (newest === undefined) return;
+    const request = requests.requests.find((candidate) => candidate.threadId === newest.threadId);
+    setAnnouncement(request === undefined
+      ? `New message from ${newest.authorName}`
+      : `${whatWasAsked(request)}: new message from ${newest.authorName}`);
+  }, [conversation.messages, conversation.status, requests.requests]);
 
   return (
     <section className="client-requests" aria-label="Requests">
@@ -275,17 +378,39 @@ export function ClientRequests({ eventId, slots, timeZone, pollMs }: ClientReque
 
       {requests.requests.length > 0 && (
         <ul className="client-request-list" aria-label="Your requests">
-          {requests.requests.map((request) => (
-            <li key={request.id} className="client-request" data-state={request.state}>
-              <p className="client-request-what">
-                {whatWasAsked(request)}
-                {request.roomName !== null && <span className="client-request-where"> · {request.roomName}</span>}
-              </p>
-              <p className="client-request-status">{lines.get(request.id) ?? SENT_WAITING}</p>
-              {request.detail !== null && <p className="client-request-detail">{request.detail}</p>}
-            </li>
-          ))}
+          {requests.requests.map((request) => {
+            const replies = request.threadId === null ? undefined : words.get(request.threadId);
+            return (
+              <li key={request.id} className="client-request" data-state={request.state}>
+                <p className="client-request-what">
+                  {whatWasAsked(request)}
+                  {request.roomName !== null && <span className="client-request-where"> · {request.roomName}</span>}
+                </p>
+                <p className="client-request-status">{lines.get(request.id) ?? SENT_WAITING}</p>
+                {request.detail !== null && <p className="client-request-detail">{request.detail}</p>}
+                {replies !== undefined && (
+                  <Words label={`Messages about ${whatWasAsked(request)}`} messages={replies} timeZone={timeZone} />
+                )}
+              </li>
+            );
+          })}
         </ul>
+      )}
+
+      {/* Not before the first list is in: a reply to one of this person's own
+          requests belongs under it, not here for a moment and then there. */}
+      {others.length > 0 && requests.status !== "loading" && (
+        <>
+          <h3 id={othersTitleId} className="client-request-others">Other messages about this event</h3>
+          <ul className="client-request-list" aria-labelledby={othersTitleId}>
+            {others.map((thread) => (
+              <li key={thread.threadId} className="client-request">
+                <p className="client-request-what">{thread.title}</p>
+                <Words label={`Messages about ${thread.title}`} messages={thread.messages} timeZone={timeZone} />
+              </li>
+            ))}
+          </ul>
+        </>
       )}
       <span className="client-request-announcer" role="status" aria-live="polite">{announcement}</span>
     </section>

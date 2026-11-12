@@ -45,11 +45,14 @@ function contrast(foreground: Rgb, background: Rgb): number {
   return ((light ?? 0) + 0.05) / ((dark ?? 0) + 0.05);
 }
 
-/** The register's own values, as the six hallkeeper surfaces receive them. */
+/** The register's own values, as the six hallkeeper surfaces receive them,
+ *  and the house's: the Day Board takes its grounds from the desks' sheet. */
 function registerTokens(): ReadonlyMap<string, string> {
   const tokens = new Map<string, string>();
-  for (const match of css("src/styles/hallkeeper-register.css").matchAll(/(--hk-[a-z0-9-]+)\s*:\s*(#[0-9a-f]{6})\s*;/giu)) {
-    tokens.set(match[1] ?? "", match[2] ?? "");
+  for (const sheet of ["src/styles/house-tokens.css", "src/styles/hallkeeper-register.css"]) {
+    for (const match of css(sheet).matchAll(/(--(?:hk|house)-[a-z0-9-]+)\s*:\s*(#[0-9a-f]{6})\s*;/giu)) {
+      tokens.set(match[1] ?? "", match[2] ?? "");
+    }
   }
   return tokens;
 }

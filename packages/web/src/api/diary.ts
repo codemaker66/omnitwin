@@ -79,15 +79,22 @@ export interface EditBookingPatch extends MoveBookingPatch {
   readonly eventId?: string | null;
 }
 
-export async function createBooking(input: CreateBookingInput): Promise<Booking> {
+/**
+ * @param commandId The create's identity on the server's ledger. A person
+ *   pressing Save again on the same booking after a failure nobody answered
+ *   passes the id of the first attempt, so a create that did land replays
+ *   instead of making a second hold (hallkeeper-web-8). Minted when absent.
+ */
+export async function createBooking(input: CreateBookingInput, commandId?: string): Promise<Booking> {
   // T-538: the REST fallback carries the SAME commandId as an
   // Idempotency-Key, so a channel attempt and its retry are ONE operation
   // to the server's ledger — a committed-but-unacked create replays
   // instead of duplicating.
   return sendViaChannelOrRest(
-    (commandId) => ({ kind: "booking.create", commandId, payload: input }),
-    (commandId) =>
-      api.post("/bookings", input, undefined, BookingSchema, { idempotencyKey: commandId }),
+    (id) => ({ kind: "booking.create", commandId: id, payload: input }),
+    (id) =>
+      api.post("/bookings", input, undefined, BookingSchema, { idempotencyKey: id }),
+    commandId,
   );
 }
 

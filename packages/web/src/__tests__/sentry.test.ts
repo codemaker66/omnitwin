@@ -6,8 +6,23 @@ import {
   readBrowserSentryConfig,
   scrubSentryBreadcrumb,
   scrubSentryEvent,
+  withoutIds,
   withoutQuery,
 } from "../observability/sentry.js";
+
+/** A breadcrumb the scrubber keeps (fetch, xhr and navigation are kept, and a click on a known element; console ones are dropped). */
+function kept(breadcrumb: Breadcrumb): Breadcrumb {
+  const scrubbed = scrubSentryBreadcrumb(breadcrumb);
+  if (scrubbed === null) throw new Error("The breadcrumb was dropped");
+  return scrubbed;
+}
+
+/** The scrubber's answer for a click or keypress on `target`, as the SDK calls it: with the DOM event as its hint. */
+function scrubSentryBreadcrumbFor(breadcrumb: Breadcrumb, target: Element): Breadcrumb {
+  const scrubbed = scrubSentryBreadcrumb(breadcrumb, { event: { target } });
+  if (scrubbed === null) throw new Error("The breadcrumb was dropped");
+  return scrubbed;
+}
 
 describe("browser Sentry config", () => {
   it("is disabled when the browser DSN is absent", () => {
@@ -110,7 +125,7 @@ describe("browser Sentry breadcrumbs and search terms", () => {
   });
 
   it("does the same for an xhr breadcrumb", () => {
-    const scrubbed = scrubSentryBreadcrumb({
+    const scrubbed = kept({
       category: "xhr",
       type: "http",
       data: { method: "GET", url: "/clients/search?q=aileen%40example.test", status_code: 200 },
@@ -119,7 +134,7 @@ describe("browser Sentry breadcrumbs and search terms", () => {
   });
 
   it("keeps the query out of a navigation breadcrumb's from and to", () => {
-    const scrubbed = scrubSentryBreadcrumb({
+    const scrubbed = kept({
       category: "navigation",
       data: { from: "/dashboard?view=search&q=Aileen", to: "/clients?q=Aileen#top" },
     });
@@ -128,11 +143,90 @@ describe("browser Sentry breadcrumbs and search terms", () => {
   });
 
   it("leaves a breadcrumb with no url, and the caller's breadcrumb, as they were", () => {
-    const click: Breadcrumb = { category: "ui.click", message: "button.find" };
-    expect(scrubSentryBreadcrumb(click)).toEqual({ category: "ui.click", message: "button.find" });
+    const custom: Breadcrumb = { category: "planner", message: "layout opened" };
+    expect(scrubSentryBreadcrumb(custom)).toEqual({ category: "planner", message: "layout opened" });
     const original: Breadcrumb = { category: "fetch", data: { url: "/clients/search?q=Aileen" } };
     scrubSentryBreadcrumb(original);
     expect(original.data?.["url"]).toBe("/clients/search?q=Aileen");
+  });
+
+  // Final review, PRIVACY-1. The SDK describes a clicked or typed-in element
+  // with its aria-label, title, name and alt, and on the staff pages those hold
+  // a client's name, phone number and email ("Call Aileen Fraser on 07700 900123").
+  describe("clicks and keypresses", () => {
+    const LABEL = "Call Aileen Fraser on 07700 900123";
+    const TITLE = "aileen.fraser@client.invalid";
+
+    function callButton(): HTMLButtonElement {
+      const button = document.createElement("button");
+      button.className = "cw-link primary";
+      button.id = "call-client";
+      button.setAttribute("aria-label", LABEL);
+      button.setAttribute("title", TITLE);
+      button.setAttribute("name", "Aileen Fraser");
+      return button;
+    }
+
+    /** What the SDK writes for that button. */
+    const sdkMessage = `div.panel[title="${TITLE}"] > button#call-client.cw-link.primary[aria-label="${LABEL}"][title="${TITLE}"][name="Aileen Fraser"]`;
+
+    it("describes a clicked element by its tag and classes, and carries nothing the element says", () => {
+      const scrubbed = scrubSentryBreadcrumbFor({ category: "ui.click", message: sdkMessage, level: "info", timestamp: 1_700_000_000 }, callButton());
+      expect(scrubbed).toEqual({ category: "ui.click", message: "button.cw-link.primary", level: "info", timestamp: 1_700_000_000 });
+      for (const said of ["Aileen", "Fraser", "07700", "900123", "client.invalid"]) expect(JSON.stringify(scrubbed)).not.toContain(said);
+    });
+
+    it("does the same for a keypress", () => {
+      const input = document.createElement("input");
+      input.className = "search";
+      input.setAttribute("aria-label", "Notes for Aileen Fraser");
+      const scrubbed = scrubSentryBreadcrumbFor({ category: "ui.input", message: 'input.search[aria-label="Notes for Aileen Fraser"]' }, input);
+      expect(scrubbed).toEqual({ category: "ui.input", message: "input.search" });
+    });
+
+    it("drops one it cannot describe from the element itself, whatever the SDK wrote", () => {
+      expect(scrubSentryBreadcrumb({ category: "ui.click", message: sdkMessage })).toBeNull();
+      expect(scrubSentryBreadcrumb({ category: "ui.click", message: sdkMessage }, { event: { target: "not an element" } })).toBeNull();
+      expect(scrubSentryBreadcrumb({ category: "ui.input", message: sdkMessage }, {})).toBeNull();
+      // Reading an event's target can throw (the SDK guards the same read).
+      const hostile = { get target(): never { throw new Error("Permission denied to access property"); } };
+      expect(scrubSentryBreadcrumb({ category: "ui.click", message: sdkMessage }, { event: hostile })).toBeNull();
+    });
+
+    it("reads the element when the SDK hands it over in place of the event, as its handler allows", () => {
+      // A link's own `target` attribute must not be taken for an event's target.
+      const link = document.createElement("a");
+      link.className = "cw-link";
+      link.setAttribute("target", "_blank");
+      link.setAttribute("title", TITLE);
+      expect(scrubSentryBreadcrumb({ category: "ui.click", message: sdkMessage }, { event: link }))
+        .toEqual({ category: "ui.click", message: "a.cw-link" });
+    });
+
+    it("drops anything the SDK attached to it", () => {
+      const scrubbed = scrubSentryBreadcrumbFor({ category: "ui.click", message: sdkMessage, data: { label: LABEL } }, callButton());
+      expect(scrubbed.data).toBeUndefined();
+    });
+  });
+
+  it("drops console breadcrumbs, which can quote a layout's own words", () => {
+    expect(scrubSentryBreadcrumb({ category: "console", level: "error", message: "[editor-store] save failed: Smith wedding top table", data: { arguments: ["x"] } })).toBeNull();
+  });
+
+  it("keeps a guest layout's id and a shared plan's token out of every url", () => {
+    expect(withoutIds("/plan/7f1fb7a2-5210-57b1-9108-11255c059520")).toBe("/plan/:id");
+    expect(withoutIds("/plan/tour-config-0001?mode=walk")).toBe("/plan/:id?mode=walk");
+    expect(withoutIds("/plan-view/Zq3kP9vR2mW7xY1tB8nC4dF")).toBe("/plan-view/:id");
+    expect(withoutIds("https://api.example.test/public/configurations/abc123/objects/batch")).toBe("https://api.example.test/public/configurations/:id/objects/batch");
+    expect(withoutIds("/supplier-share/short")).toBe("/supplier-share/:id");
+    expect(withoutIds("/dashboard/clients")).toBe("/dashboard/clients");
+    expect(withoutIds("/plan")).toBe("/plan");
+    // Through the whole scrubber the capability pass then marks those segments as tokens.
+    expect(kept({ category: "fetch", data: { url: "https://api.example.test/public/configurations/abc123?revision=4" } }).data?.["url"])
+      .toBe("https://api.example.test/public/configurations/:token?[redacted]");
+    expect(kept({ category: "navigation", data: { from: "/plan/abc123", to: "/plan-view/Zq3kP9vR2mW7xY1tB8nC4dF" } }).data)
+      .toEqual({ from: "/plan/:token", to: "/plan-view/:token" });
+    expect(scrubSentryEvent({ request: { url: "https://venviewer.com/plan/abc123?x=1" } }).request).toEqual({ url: "https://venviewer.com/plan/:token" });
   });
 });
 
@@ -151,6 +245,76 @@ describe("browser Sentry event scrubber and guests' allergy notes", () => {
     expect(JSON.stringify(scrubbed)).not.toContain("sesame");
     expect(scrubbed.exception?.values?.[0]?.type).toBe("ApiError");
     expect(scrubbed.contexts?.["planner"]).toEqual({ dietary: { vegan: 2, otherAllergies: "[redacted]" } });
+  });
+});
+
+describe("browser Sentry and capability urls (share tokens, guest layout ids)", () => {
+  const TOKEN = "tok_SECRET123";
+
+  it.each([
+    ["proposal-share"], ["plan-view"], ["supplier-share"], ["proposal"], ["plan"],
+  ])("keeps the page's /%s/ token out of the event's request url", (prefix) => {
+    const scrubbed = scrubSentryEvent({ request: { url: `https://venviewer.com/${prefix}/${TOKEN}?from=email` } });
+    expect(scrubbed.request?.url).toBe(`https://venviewer.com/${prefix}/:token`);
+  });
+
+  it("templates a fetch breadcrumb's url and message", () => {
+    const fetch: Breadcrumb = {
+      category: "fetch",
+      message: `POST https://api.venviewer.com/proposal-share/${TOKEN}/approve?x=1`,
+      data: { method: "POST", url: `https://api.venviewer.com/proposal-share/${TOKEN}/approve?x=1`, status_code: 500 },
+    };
+    const scrubbed = kept(fetch);
+    expect(scrubbed.data?.["url"]).toBe("https://api.venviewer.com/proposal-share/:token/approve?[redacted]");
+    // The message keeps its query as the SDK wrote it; the token goes.
+    expect(scrubbed.message).toBe("POST https://api.venviewer.com/proposal-share/:token/approve?x=1");
+    expect(JSON.stringify(scrubbed)).not.toContain(TOKEN);
+    expect(scrubbed.data?.["status_code"]).toBe(500);
+  });
+
+  it("templates a view-only plan's PDF download", () => {
+    const xhr: Breadcrumb = { category: "xhr", data: { url: `https://api.venviewer.com/public/plan-views/${TOKEN}/plan.pdf` } };
+    expect(kept(xhr).data?.["url"]).toBe("https://api.venviewer.com/public/plan-views/:token/plan.pdf");
+  });
+
+  it("templates both ends of a navigation breadcrumb", () => {
+    const navigation: Breadcrumb = { category: "navigation", data: { from: `/proposal-share/${TOKEN}`, to: `/plan/${TOKEN}` } };
+    expect(kept(navigation).data).toEqual({ from: "/proposal-share/:token", to: "/plan/:token" });
+  });
+
+  it("templates a url in a breadcrumb that carries only a message", () => {
+    // Console breadcrumbs are dropped whole; the SDK's own event breadcrumb carries only a message.
+    const logged: Breadcrumb = { category: "sentry.event", message: `could not load /supplier-share/${TOKEN}` };
+    expect(kept(logged).message).toBe("could not load /supplier-share/:token");
+  });
+
+  it("leaves the venue's own pages alone", () => {
+    const navigation: Breadcrumb = { category: "navigation", data: { from: "/dashboard/proposals", to: "/dashboard?view=enquiries" } };
+    expect(kept(navigation).data).toEqual({ from: "/dashboard/proposals", to: "/dashboard?[redacted]" });
+    expect(scrubSentryEvent({ request: { url: "https://venviewer.com/dashboard/proposals" } }).request?.url)
+      .toBe("https://venviewer.com/dashboard/proposals");
+  });
+
+  it("never sends the raw token, wherever an event quotes it", () => {
+    const event: Event = {
+      request: { url: `https://venviewer.com/proposal-share/${TOKEN}` },
+      message: `Approve failed on /proposal-share/${TOKEN}`,
+      exception: { values: [{ type: "ApiError", value: `POST https://api.venviewer.com/proposal-share/${TOKEN}/approve answered 500` }] },
+      breadcrumbs: [
+        { category: "navigation", data: { from: "/", to: `/proposal-share/${TOKEN}` } },
+        { category: "fetch", data: { url: `https://api.venviewer.com/proposal-share/${TOKEN}`, status_code: 200 } },
+      ],
+      contexts: { page: { path: `/plan-view/${TOKEN}` } },
+      tags: { route: `/supplier-share/${TOKEN}` },
+    };
+
+    const scrubbed = scrubSentryEvent(event);
+
+    expect(JSON.stringify(scrubbed)).not.toContain(TOKEN);
+    expect(scrubbed.exception?.values?.[0]?.value).toBe("POST https://api.venviewer.com/proposal-share/:token/approve answered 500");
+    expect(scrubbed.breadcrumbs?.[1]?.data?.["status_code"]).toBe(200);
+    // The caller's event is not changed.
+    expect(event.request?.url).toBe(`https://venviewer.com/proposal-share/${TOKEN}`);
   });
 });
 

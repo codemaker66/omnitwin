@@ -376,6 +376,31 @@ the clock. Presentation only: nothing is saved, and nothing is kept between visi
   5 mm under the wall's foot at -6.245) to z 5.95 behind, |x| 11.2; until 22 October it stopped at
   |z| 5.95, 0.3 m inside the street wall. `?setting=none` leaves the hall under the sky alone, for
   measuring.
+- **The front** (`hall-exterior-spec.ts`, `hall-exterior.ts`, `hall-exterior-material.ts`,
+  `hall-exterior-cut.ts`, `HallExterior.tsx`; off unless `?facade=1`, remembered per device by
+  `lib/hall-facade-access.ts`, and only under the real sky, with the city): Trades Hall's Glassford Street front as
+  solid masonry in place of the city's LiDAR trace of it, which stood 1.0-1.2 m out and stair-stepped (the DSM's
+  shadow on a front facing away from the survey aircraft). Every number in the spec names its source: the E57 scan
+  for the faces (links z -6.312, pavilions -6.607, the temple's podium -7.200), the venue's plan for the columns'
+  axes (z -6.836), the DSM for the end bays' steps and the dome's centre (planner x -0.053, z -0.447, 0.44 m
+  streetward of the painted dome inside), photographs for heights and details, and the room for the hall's five
+  windows (`HALL_OPENINGS`, so the front's openings and the room's glazing are one). 31,764 triangles (26,644 on a
+  phone's finish), closed solids built a frame's spare time at a time after the city; its code is a lazy chunk
+  (28.7 kB, 10.9 kB gzipped) fetched only when the front is asked for. With it the city comes from
+  `merchant-city-v3.bin` (the old front cut away to bare pavement, the neighbours' street fronts straightened; the
+  survey README's v3 paragraph) with its lamps baked against it (the two door lanterns on the modelled podium). The
+  material discards everything above the window wall's eased cut (`hallFrontCut`, written by GrandHallModel's cut
+  loop for wall 0) and draws the solids' insides as the section, so above the cut the front reads as masonry cut
+  through (lit by the sun with no shadow, as the hall's cut tops are: its faces lie inside the uncut caster), and
+  in the overview the attics and the dome, which stands over the room, are cut away with the wall; it takes the
+  city's sun, sky and haze and, after dusk, the street lamps' scallops and the pools' wash (`streetLampLight` in
+  `hall-context.ts`, shared with the city's walls), the door lanterns 0.30 m off the podium and Trades Hall's own
+  lamp (24094) where photograph A puts it. Its round pieces keep sharp corners (`MeshBuilder.lathe`'s crease).
+  An uncut copy casts on the sun's shadow layer, so the columns, cornices and pediment shade the hall's windows. Against photograph A from its solved
+  camera (`tools/grand-hall-survey/front`) the render's edges lie a median 0.95 px (about 2.6 cm) from the
+  photograph's, the skyline within 1-4 px. On the RTX 4090 (Chrome 156, WebGPU, 160 guests, off/on/on/off pages)
+  the front changed the mean frame time by -0.23 to +0.29 ms across two poses by day and night, within the spread
+  of repeated runs (up to 1.2 ms).
 - **The street at night** (`lib/sky/night-looks.ts`, `hall-street-light.ts`, `HallStreetLights.tsx`):
   after dusk the card turns a dark violet with its skyline brighter than its blocks, so every
   building stands as a silhouette and no lit window floats; Glasgow City Council's street lamps

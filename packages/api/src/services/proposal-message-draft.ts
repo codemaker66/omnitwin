@@ -30,7 +30,10 @@ export interface MessageDraftContext {
   readonly drewOn: ProposalMessageDraft["drewOn"];
 }
 
-const EMAIL = /[^\s@<>()[\]]+@[^\s@<>()[\]]+\.[^\s@<>()[\].,;:!?]+/gu;
+// An address starts where a word does: anchored so, a long run of letters with
+// no "@" is tried once, not once per letter (release review, 27 October 2026:
+// unanchored, 40,000 such characters took two seconds and grew with the square).
+const EMAIL = /(?<![^\s@<>()[\]])[^\s@<>()[\]]+@[^\s@<>()[\]]+\.[^\s@<>()[\].,;:!?]+/gu;
 
 // Characters that read as others when finding numbers: wide and non-breaking
 // spaces as spaces, hyphen, minus and figure-dash variants as hyphens, and

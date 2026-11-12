@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNull, or } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, or, type Column } from "drizzle-orm";
 import {
   CheckResultSchema,
   EvidenceItemSchema,
@@ -702,41 +702,84 @@ export function buildTruthModeSummary(input: {
   });
 }
 
+/**
+ * Whose layouts a Truth Mode summary may count. Every evidence row belongs to
+ * one layout (configuration), so a summary counts only the rows of layouts the
+ * caller may open: the rule canAccessResource applies to one layout (its
+ * owner or its venue's floor), with a platform admin reading every venue.
+ */
+export type TruthModeSummaryScope =
+  | { readonly kind: "every_venue" }
+  | { readonly kind: "own_layouts"; readonly userId: string; readonly floorVenueId: string | null };
+
 export async function getTruthModeSummary(
   db: Database,
   input: {
     readonly targetType: EvidenceTargetType;
     readonly targetId: string;
+    readonly scope: TruthModeSummaryScope;
   },
 ): Promise<TruthModeSummary> {
+  const scope = input.scope;
+  const openableLayouts = scope.kind === "every_venue"
+    ? null
+    : db.select({ id: configurations.id })
+      .from(configurations)
+      .where(and(
+        isNull(configurations.deletedAt),
+        scope.floorVenueId === null
+          ? eq(configurations.userId, scope.userId)
+          : or(eq(configurations.userId, scope.userId), eq(configurations.venueId, scope.floorVenueId)),
+      ));
+  const withinScope = (configId: Column) =>
+    openableLayouts === null ? undefined : inArray(configId, openableLayouts);
+
   const itemRows = await db.select()
     .from(evidenceItems)
-    .where(and(eq(evidenceItems.targetType, input.targetType), eq(evidenceItems.targetId, input.targetId)));
+    .where(and(
+      eq(evidenceItems.targetType, input.targetType),
+      eq(evidenceItems.targetId, input.targetId),
+      withinScope(evidenceItems.configId),
+    ));
   const configIds = [...new Set(itemRows.map((item) => item.configId).filter((id): id is string => id !== null))];
 
   const [checkRows, assumptionRows, gateRows, staleRows] = await Promise.all([
     db.select()
       .from(checkResults)
-      .where(and(eq(checkResults.targetType, input.targetType), eq(checkResults.targetId, input.targetId))),
+      .where(and(
+        eq(checkResults.targetType, input.targetType),
+        eq(checkResults.targetId, input.targetId),
+        withinScope(checkResults.configId),
+      )),
     db.select()
       .from(assumptionRecords)
-      .where(configIds.length === 0
-        ? and(eq(assumptionRecords.targetType, input.targetType), eq(assumptionRecords.targetId, input.targetId))
-        : or(
-          and(eq(assumptionRecords.targetType, input.targetType), eq(assumptionRecords.targetId, input.targetId)),
-          inArray(assumptionRecords.configId, configIds),
-        )),
+      .where(and(
+        configIds.length === 0
+          ? and(eq(assumptionRecords.targetType, input.targetType), eq(assumptionRecords.targetId, input.targetId))
+          : or(
+            and(eq(assumptionRecords.targetType, input.targetType), eq(assumptionRecords.targetId, input.targetId)),
+            inArray(assumptionRecords.configId, configIds),
+          ),
+        withinScope(assumptionRecords.configId),
+      )),
     db.select()
       .from(reviewGates)
-      .where(configIds.length === 0
-        ? and(eq(reviewGates.targetType, input.targetType), eq(reviewGates.targetId, input.targetId))
-        : or(
-          and(eq(reviewGates.targetType, input.targetType), eq(reviewGates.targetId, input.targetId)),
-          inArray(reviewGates.configId, configIds),
-        )),
+      .where(and(
+        configIds.length === 0
+          ? and(eq(reviewGates.targetType, input.targetType), eq(reviewGates.targetId, input.targetId))
+          : or(
+            and(eq(reviewGates.targetType, input.targetType), eq(reviewGates.targetId, input.targetId)),
+            inArray(reviewGates.configId, configIds),
+          ),
+        withinScope(reviewGates.configId),
+      )),
     db.select()
       .from(staleEvidenceEvents)
-      .where(and(eq(staleEvidenceEvents.targetType, input.targetType), eq(staleEvidenceEvents.targetId, input.targetId))),
+      .where(and(
+        eq(staleEvidenceEvents.targetType, input.targetType),
+        eq(staleEvidenceEvents.targetId, input.targetId),
+        withinScope(staleEvidenceEvents.configId),
+      )),
   ]);
 
   return buildTruthModeSummary({

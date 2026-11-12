@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { CalendarBookingEntry } from "@omnitwin/types";
 import { getCatalogueItemBySlug } from "../catalogue.js";
 import { createTableGroup } from "../table-group.js";
-import { DEFAULT_PLANNER_CHAIR_SLUG } from "../furniture-defaults.js";
+import { plannerChairSlug } from "../furniture-defaults.js";
 import type { PlacedItem } from "../placement.js";
 import { actsInRoom, eventHoldWords, holdChipWords, planeFacts, slateEyebrow, venueDay } from "../slate-facts.js";
 
@@ -18,7 +18,7 @@ function tables(count: number, chairsEach: number): PlacedItem[] {
 }
 
 function rowOfChairs(count: number): PlacedItem[] {
-  const one = tables(1, 1).find((item) => getCatalogueItemBySlug(DEFAULT_PLANNER_CHAIR_SLUG)?.id === item.catalogueItemId);
+  const one = tables(1, 1).find((item) => getCatalogueItemBySlug(plannerChairSlug())?.id === item.catalogueItemId);
   if (one === undefined) throw new Error("no chair");
   return Array.from({ length: count }, (_, index) => ({ ...one, id: `chair-${String(index)}`, groupId: null, x: index * 0.6 }));
 }
@@ -32,6 +32,16 @@ describe("the eyebrow", () => {
 
   it("names only the room without a date", () => {
     expect(slateEyebrow({ startsAt: null, roomName: "Grand Hall" })).toBe("Grand Hall");
+  });
+
+  // The day the event's name carries is its venue's (#407 review, B3).
+  it("reads the day on the venue's own clock when the slate knows it, and on the house's when not", () => {
+    // 06:30 UTC on 15 March 2027 is 23:30 on Sunday the 14th in Los Angeles,
+    // and Monday the 15th in London.
+    const startsAt = "2027-03-15T06:30:00Z";
+    expect(slateEyebrow({ startsAt, roomName: "Grand Hall", timeZone: "America/Los_Angeles" })).toBe("Sun 14 Mar 2027 · Grand Hall");
+    expect(slateEyebrow({ startsAt, roomName: "Grand Hall", timeZone: "Europe/London" })).toBe("Mon 15 Mar 2027 · Grand Hall");
+    expect(slateEyebrow({ startsAt, roomName: "Grand Hall", timeZone: null })).toBe("Mon 15 Mar 2027 · Grand Hall");
   });
 });
 

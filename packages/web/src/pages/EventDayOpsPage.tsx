@@ -1,13 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactElement, type ReactNode, type RefObject } from "react";
 import { useParams } from "react-router-dom";
 import { AlertCircle, Bell, Check, CircleDashed, Clock, NotebookPen, RefreshCw, Send, ShieldAlert, Truck } from "lucide-react";
-import type {
-  ChangeFeedItem, EventDayIssue, EventDayIssueSeverity, EventDayIssueStatus,
-  EventDayOpsBoard, OpsTask, OpsTaskStatus, SupplierInstruction,
+import {
+  eventDisplayName,
+  type ChangeFeedItem, type EventDayIssue, type EventDayIssueSeverity, type EventDayIssueStatus,
+  type EventDayOpsBoard, type OpsTask, type OpsTaskStatus, type SupplierInstruction,
 } from "@omnitwin/types";
 import { ApiError } from "../api/client.js";
 import { createEventDayIssue, getEventDayOpsBoard, updateEventDayIssue, updateOpsTaskStatus } from "../api/event-day-ops.js";
-import { acknowledgeEventPlanChange, getEventChangeFeed, listEventChangeAcknowledgements } from "../api/notifications.js";
+import {
+  acknowledgeEventPlanChange,
+  getChangesAwaitingAcknowledgement,
+  getEventChangeFeed,
+  listEventChangeAcknowledgements,
+} from "../api/notifications.js";
 import {
   ackEventDayOp,
   enqueueEventDayIssueCreate,
@@ -85,10 +91,21 @@ function formatEventDate(iso: string | null, timeZone: string): string {
   });
 }
 
-/** A change-feed read, or null when it could not be read: a failed read is
- *  never taken for "no changes". */
+/** The changes awaiting the floor's acknowledgement, or null when they could
+ *  not be read: a failed read is never taken for "no changes".
+ *
+ *  The API is asked for exactly those. The newest page of every change is
+ *  mostly task moves on a busy set-up, and an unacknowledged guest count used
+ *  to fall off it while this board said nothing was waiting. An API from
+ *  before that answer says 404; until it catches up the board reads the feed
+ *  as it used to, at the feed's largest page. */
 function readChangeFeed(eventId: string): Promise<readonly ChangeFeedItem[] | null> {
-  return getEventChangeFeed(eventId, 25).catch((): null => null);
+  return getChangesAwaitingAcknowledgement(eventId)
+    .catch((err: unknown) => {
+      if (err instanceof ApiError && err.status === 404) return getEventChangeFeed(eventId, 100);
+      throw err;
+    })
+    .catch((): null => null);
 }
 
 /** What the page says while the change feed cannot be read: that nothing is
@@ -376,9 +393,9 @@ export function EventDayOpsPage(): ReactElement {
 
   const refreshPendingCount = useCallback(() => {
     void listPendingEventDayOps()
-      // A fact about a room (goal 19 S5) is the Day Board's to send; it is
-      // not this page's pending change.
-      .then((ops) => { setPendingCount(ops.filter((op) => op.kind !== "observation_record").length); })
+      // A fact about a room (goal 19 S5) and a step on a floor request (L9)
+      // are the Day Board's to send; they are not this page's pending changes.
+      .then((ops) => { setPendingCount(ops.filter((op) => op.kind === "task_status" || op.kind === "issue_create").length); })
       .catch(() => { setPendingCount(0); });
   }, []);
 
@@ -450,9 +467,10 @@ export function EventDayOpsPage(): ReactElement {
     void (async () => {
       const queued = await listPendingEventDayOps();
       for (const op of queued) {
-        // A fact about a room (goal 19 S5) is the Day Board's to replay; it
-        // stays queued here, untouched, for that screen.
-        if (op.kind === "observation_record") continue;
+        // A fact about a room (goal 19 S5) and a step on a floor request (L9)
+        // are the Day Board's to replay; they stay queued here, untouched,
+        // for that screen.
+        if (op.kind !== "task_status" && op.kind !== "issue_create") continue;
         try {
           if (op.kind === "task_status") {
             await updateOpsTaskStatus(op.opsTaskId, op.input);
@@ -793,7 +811,7 @@ export function EventDayOpsPage(): ReactElement {
       <header className="event-day-hero">
         <div>
           <p className="event-day-kicker">{eventDayKicker(bookedStartsAt ?? readyBoard.event.startsAt, timeZone, nowMs)}</p>
-          <h1>{readyBoard.event.name}</h1>
+          <h1>{eventDisplayName(readyBoard.event, timeZone)}</h1>
           <p>
             {formatEventDate(bookedStartsAt ?? readyBoard.event.startsAt, timeZone)}
             {" · "}{formatTime(bookedStartsAt ?? readyBoard.event.startsAt, timeZone)}

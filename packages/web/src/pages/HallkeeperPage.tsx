@@ -3,10 +3,14 @@ import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import {
   ackProgress,
   enqueueProgress,
+  inRowOrder,
   isReplayStatusTerminal,
+  isSameQueuedTick,
   listPendingProgress,
   partitionReplay,
+  QUEUE_RETRY_MS,
   resolveReplayDisposition,
+  SHARED_CHECKS_REFRESH_MS,
   type QueuedProgressOp,
   type ReplayResult,
 } from "../lib/progress-sync-queue.js";
@@ -35,9 +39,13 @@ import { InteractiveFloorPlan } from "../components/hallkeeper/InteractiveFloorP
 import { HallkeeperStatusBanner } from "../components/hallkeeper/HallkeeperStatusBanner.js";
 import { HallkeeperWorkspace } from "../components/hallkeeper/HallkeeperWorkspace.js";
 import { ProtectedPremisesBlock } from "../components/hallkeeper/ProtectedPremisesBlock.js";
+import { SheetStandingMark, describeSheetStanding } from "../components/hallkeeper/SheetStandingMark.js";
+import { useSheetStanding } from "../components/hallkeeper/useSheetStanding.js";
 import { PaperCopyStamp, paperCopyLine, usePrintedAt } from "../components/hallkeeper/PaperCopyStamp.js";
 import { formatSheetTimes } from "../components/hallkeeper/sheet-facts.js";
 import { ActivityIndicator, ActivityStatus } from "../components/shared/Activity.js";
+import { useAuthStore } from "../stores/auth-store.js";
+import { CLIENT_SIDE_ROLES, hasRole } from "../lib/role-capabilities.js";
 import "../styles/hallkeeper-register.css";
 import "./hallkeeper-sheet.css";
 
@@ -53,7 +61,9 @@ const INK = "#2e382e";
 //
 // Server-backed: fetches /v2 (manifest) + /progress (checkboxes) in
 // parallel. Checkbox toggles are optimistic with rollback on failure.
-// Multiple hallkeepers share the same state.
+// Multiple hallkeepers share the same state: an open sheet reads the
+// checks again while it is in view, and what this device has ticked but
+// the server has not yet settled stands over every such read.
 //
 // Design principles (matching the PDF):
 //   - Scanability: phase headers are bold + collapsible
@@ -103,6 +113,59 @@ function eventOf(op: QueuedProgressOp, sheetEventId: string | null): string | nu
 /** A queued tick made on this sheet: the same layout and the same event. */
 function onSheet(op: QueuedProgressOp, configId: string, sheetEventId: string | null): boolean {
   return op.configId === configId && eventOf(op, sheetEventId) === sheetEventId;
+}
+
+/** Is this queued tick still the one waiting for its row? Not once a newer
+ *  tap on the row has replaced it in the queue or retired it. */
+async function stillQueued(op: QueuedProgressOp): Promise<boolean> {
+  return (await listPendingProgress()).some((now) => isSameQueuedTick(now, op));
+}
+
+/** The device's queued ticks, or none when the queue cannot be read. */
+async function queuedTicks(): Promise<readonly QueuedProgressOp[]> {
+  try {
+    return await listPendingProgress();
+  } catch {
+    return [];
+  }
+}
+
+/** A row this device is writing or has just written: what it made of the
+ *  row, how many of its writes are still out, and when the last one settled
+ *  (on the sheet's own count of settled writes). */
+interface OwnRow {
+  readonly checked: boolean;
+  readonly inFlight: number;
+  readonly settledAt: number;
+}
+
+/**
+ * What the sheet shows after a read of the shared checks: the server's set,
+ * with this device's own unsettled work standing over it. First the ticks
+ * still queued (the server has not heard them), then the rows it is writing
+ * or wrote while the answer was on its way (the answer may be older than
+ * they are). Everything else is the server's, so a colleague's ticks arrive.
+ */
+function standOver(
+  server: CheckMap, queued: readonly QueuedProgressOp[], own: ReadonlyMap<string, boolean>,
+): CheckMap {
+  const checked = new Set(Object.keys(server).filter((rowKey) => server[rowKey] === true));
+  const put = (rowKey: string, isChecked: boolean): void => {
+    if (isChecked) checked.add(rowKey);
+    else checked.delete(rowKey);
+  };
+  for (const op of queued) put(op.rowKey, op.desiredChecked);
+  for (const [rowKey, isChecked] of own) put(rowKey, isChecked);
+  const shown: Record<string, boolean> = {};
+  for (const rowKey of checked) shown[rowKey] = true;
+  return shown;
+}
+
+/** Do two sets of checks tick the same rows? */
+function sameChecks(a: CheckMap, b: CheckMap): boolean {
+  const ticked = (checks: CheckMap): string[] => Object.keys(checks).filter((rowKey) => checks[rowKey] === true);
+  const inA = ticked(a);
+  return inA.length === ticked(b).length && inA.every((rowKey) => b[rowKey] === true);
 }
 
 /** Where the server keeps this sheet's ticks: an event, or null for the
@@ -171,11 +234,14 @@ export function HallkeeperPage(): React.ReactElement {
   const [highlightedRowKey, setHighlightedRowKey] = useState<string | null>(null);
   const [downloadBusy, setDownloadBusy] = useState(false);
   const [downloadNotice, setDownloadNotice] = useState<DownloadNotice | null>(null);
-  // Count of progress toggles queued offline. Surfaces as a small
-  // badge on the page so the hallkeeper sees "3 edits pending sync"
-  // when WiFi drops mid-event-setup. The number drains to 0 when the
-  // online-event flush runs on reconnect.
+  // Count of this sheet's progress toggles still queued. Surfaces as a small
+  // badge on the page so the hallkeeper sees "3 edits pending sync" when the
+  // WiFi drops, or the server falters, mid-event-setup. The number drains to
+  // 0 as the queue is sent.
   const [pendingCount, setPendingCount] = useState(0);
+  // Whether anything at all waits in this device's queue, for any sheet:
+  // while it does, the queue is tried again on a timer.
+  const [queueWaiting, setQueueWaiting] = useState(false);
   const [progressWrites, setProgressWrites] = useState<ReadonlyMap<string, number>>(new Map());
   const [syncingConfigs, setSyncingConfigs] = useState<ReadonlySet<string>>(new Set());
   const mountedRef = useRef(true);
@@ -207,6 +273,11 @@ export function HallkeeperPage(): React.ReactElement {
   const checksRef = useRef<CheckMap>({});
   const operationVersions = useRef(new Map<string, number>());
   const [progressUnavailable, setProgressUnavailable] = useState(false);
+  // The checklist is the venue crew's record (release audit tenancy-f-2): a
+  // client or planner opening their own layout's sheet reads the ticks and
+  // makes none. The API refuses their writes either way.
+  const checksReadOnly = useAuthStore((state) =>
+    hasRole(CLIENT_SIDE_ROLES, state.user?.role) && state.user?.platformRole !== "admin");
   const [progressNotice, setProgressNotice] = useState<string | null>(null);
   const progressReloadRef = useRef(0);
   const [checksReloading, setChecksReloading] = useState(false);
@@ -217,6 +288,45 @@ export function HallkeeperPage(): React.ReactElement {
   // first read (or from an older API) the sheet's own ?eventId= stands.
   const [tickScope, setTickScope] = useState<TickScope | null>(null);
   const writeEventId = tickScope === null ? eventId : tickScope.eventId;
+  const writeEventRef = useRef(writeEventId);
+  writeEventRef.current = writeEventId;
+
+  // What the queue holds, as the open sheet shows it: its own ticks on the
+  // badge, and whether anything on the device still waits. Read through refs,
+  // because a write or a drain begun on one sheet can end on another.
+  const showPending = useCallback((pending: readonly QueuedProgressOp[]): void => {
+    if (!mountedRef.current) return;
+    setQueueWaiting(pending.length > 0);
+    const openSheet = activeConfigRef.current;
+    if (openSheet === undefined) return;
+    setPendingCount(pending.filter((op) => onSheet(op, openSheet, writeEventRef.current)).length);
+  }, []);
+
+  // The rows this device is writing or has just written, keyed by sheet,
+  // event and row, and a count of its writes that have settled. A read of the
+  // shared checks leaves such rows as this device left them (`standOver`).
+  const ownRowsRef = useRef(new Map<string, OwnRow>());
+  const settledWritesRef = useRef(0);
+  const checksReadOnlyRef = useRef(checksReadOnly);
+  checksReadOnlyRef.current = checksReadOnly;
+
+  // What a sheet shows for a read of its shared checks. `since` is the count
+  // of settled writes when the read began: a row written after that is this
+  // device's to say, as is any row still being written.
+  const shownChecks = useCallback((
+    server: CheckMap, queued: readonly QueuedProgressOp[], sheetId: string, sheetEventId: string | null, since: number,
+  ): CheckMap => {
+    const prefix = `${sheetId}|${sheetEventId ?? ""}|`;
+    const own = new Map<string, boolean>();
+    for (const [key, row] of ownRowsRef.current) {
+      if (key.startsWith(prefix) && (row.inFlight > 0 || row.settledAt > since)) own.set(key.slice(prefix.length), row.checked);
+    }
+    // A reader who may not tick has no ticks waiting: the queue is the venue team's.
+    const waiting = checksReadOnlyRef.current ? [] : queued.filter((op) => onSheet(op, sheetId, sheetEventId));
+    return standOver(server, waiting, own);
+  }, []);
+  // A read asked for before the sheet's checks were loaded is made once they are.
+  const sharedReadWantedRef = useRef(false);
 
   // --- Fetch sheet data + progress in parallel ---
   const loadData = useCallback(() => {
@@ -237,6 +347,7 @@ export function HallkeeperPage(): React.ReactElement {
     setTickScope(null);
     setHighlightedRowKey(null);
     setPendingCount(0);
+    sharedReadWantedRef.current = false;
     fetchCountRef.current += 1;
     const thisFetch = fetchCountRef.current;
     const isCurrent = (): boolean => mountedRef.current
@@ -268,13 +379,20 @@ export function HallkeeperPage(): React.ReactElement {
         setData(sheetJson.data);
 
         try {
+          // The queue is read before the server. A tick sent while the answer
+          // is on its way is then in one or the other: still listed here, or
+          // already in what the server says.
+          const queued = await queuedTicks();
           const loaded = await readProgress(configId, eventId, headers);
           if (!isCurrent()) return;
           if (loaded === null) {
             setProgressUnavailable(true);
           } else {
-            checksRef.current = loaded.checks;
-            setChecks(loaded.checks);
+            // Ticks still waiting to be sent stand on the sheet: it is this
+            // hallkeeper's work, and the badge beside it says it is not saved.
+            const sheetEventId = loaded.scope === null ? eventId : loaded.scope.eventId;
+            checksRef.current = shownChecks(loaded.checks, queued, configId, sheetEventId, Number.POSITIVE_INFINITY);
+            setChecks(checksRef.current);
             setTickScope(loaded.scope);
           }
         } catch {
@@ -289,7 +407,7 @@ export function HallkeeperPage(): React.ReactElement {
         if (isCurrent()) setLoading(false);
       }
     })();
-  }, [configId, eventId, eventQuery]);
+  }, [configId, eventId, eventQuery, shownChecks]);
 
   useEffect(() => {
     loadData();
@@ -316,13 +434,15 @@ export function HallkeeperPage(): React.ReactElement {
         if (!isCurrent()) return;
         const headers: Record<string, string> = {};
         if (token !== null) headers["Authorization"] = `Bearer ${token}`;
+        const queued = await queuedTicks();
         const loaded = await readProgress(configId, eventId, headers);
         if (!isCurrent()) return;
         // Still unavailable: the sheet and the notice stay, and the notice
         // says the reload failed too.
         if (loaded === null) { setChecksReloadFailed(true); return; }
-        checksRef.current = loaded.checks;
-        setChecks(loaded.checks);
+        const sheetEventId = loaded.scope === null ? eventId : loaded.scope.eventId;
+        checksRef.current = shownChecks(loaded.checks, queued, configId, sheetEventId, Number.POSITIVE_INFINITY);
+        setChecks(checksRef.current);
         setTickScope(loaded.scope);
         setProgressUnavailable(false);
         setChecksReloadFailed(false);
@@ -332,32 +452,111 @@ export function HallkeeperPage(): React.ReactElement {
         if (isCurrent()) setChecksReloading(false);
       }
     })();
-  }, [configId, eventId]);
+  }, [configId, eventId, shownChecks]);
+
+  // --- Read the shared checks again ---
+  //
+  // The checks are shared: a colleague ticking rows on their own phone, and
+  // this device's queued ticks landing, both change what the server holds
+  // while this sheet stays open. It is read again every
+  // SHARED_CHECKS_REFRESH_MS while the page is in view, when the page is shown
+  // again, when the device comes back online and after a drain that settled
+  // any of this sheet's queued ticks. The read is laid under this device's
+  // own unsettled work (`shownChecks`), so it never undoes a tap. A read that
+  // fails changes nothing: the checks on screen stand until the next one.
+  //
+  // The sheet's ticks stay where its first read put them, so an answer about
+  // another event's ticks (a booking linked to the layout mid-setup) is left
+  // alone, as the writes are.
+  const checksLive = !loading && data !== null && !progressUnavailable;
+  const checksLiveRef = useRef(checksLive);
+  checksLiveRef.current = checksLive;
+  const sharedReadRef = useRef(0);
+  const refreshChecks = useCallback((): void => {
+    if (configId === undefined) return;
+    if (!checksLiveRef.current) { sharedReadWantedRef.current = true; return; }
+    if (document.visibilityState === "hidden") return;
+    sharedReadRef.current += 1;
+    const thisRead = sharedReadRef.current;
+    const sheetFetch = fetchCountRef.current;
+    const since = settledWritesRef.current;
+    // The newest read wins, and only on the sheet it was made for.
+    const isCurrent = (): boolean => mountedRef.current && thisRead === sharedReadRef.current
+      && sheetFetch === fetchCountRef.current && activeConfigRef.current === configId
+      && writeEventRef.current === writeEventId;
+    void (async () => {
+      try {
+        const token = await getAuthToken();
+        const headers: Record<string, string> = {};
+        if (token !== null) headers["Authorization"] = `Bearer ${token}`;
+        const queued = await queuedTicks();
+        // The token and the queue take a moment. A sheet closed since, or a
+        // newer read begun, would throw the answer away: do not ask for it.
+        if (!isCurrent()) return;
+        const loaded = await readProgress(configId, writeEventId, headers);
+        if (loaded === null || !isCurrent()) return;
+        if (loaded.scope !== null && loaded.scope.eventId !== writeEventId) return;
+        const shown = shownChecks(loaded.checks, queued, configId, writeEventId, since);
+        if (sameChecks(shown, checksRef.current)) return;
+        checksRef.current = shown;
+        setChecks(shown);
+      } catch {
+        // No signal, or no answer: the checks on screen stand.
+      }
+    })();
+  }, [configId, writeEventId, shownChecks]);
+  const refreshChecksRef = useRef(refreshChecks);
+  refreshChecksRef.current = refreshChecks;
+
+  useEffect(() => {
+    if (!checksLive) return;
+    if (sharedReadWantedRef.current) {
+      sharedReadWantedRef.current = false;
+      refreshChecks();
+    }
+    const onShown = (): void => { if (document.visibilityState === "visible") refreshChecks(); };
+    const timer = window.setInterval(refreshChecks, SHARED_CHECKS_REFRESH_MS);
+    window.addEventListener("online", refreshChecks);
+    document.addEventListener("visibilitychange", onShown);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("online", refreshChecks);
+      document.removeEventListener("visibilitychange", onShown);
+    };
+  }, [checksLive, refreshChecks]);
 
   // --- Toggle with optimistic UI + offline-resilient server PATCH ---
   //
   // Three-state behaviour:
-  //   1. PATCH succeeds → UI matches server, no queue work.
+  //   1. PATCH succeeds → UI matches server, and any older tick still
+  //      queued for the row is retired: the server now holds a newer one.
   //   2. PATCH fails (network / 5xx) → ENQUEUE the desired state in
   //      IDB and KEEP the optimistic UI. The hallkeeper's checkmark
   //      stays checked even though the server hasn't heard yet.
-  //      An `online`-event listener flushes the queue on reconnect.
+  //      The queue is sent when the server can next be reached (below).
   //   3. Old behaviour (rollback on any failure) caused users to
   //      double-tap when WiFi was flaky and lose work — the new
   //      enqueue path makes the tablet usable in the bad-network
   //      conditions where it matters most.
+  //
+  // A row's writes go out one at a time, in tap order (`inRowOrder`): the
+  // server keeps the last one it hears, so two sent side by side, or a
+  // replay sent beside a tap, could leave it holding the older.
   const handleToggle = useCallback((rowKey: string) => {
-    if (configId === undefined || progressUnavailable) return;
+    if (configId === undefined || progressUnavailable || checksReadOnly) return;
     const wasChecked = checksRef.current[rowKey] === true;
     const operationKey = `${configId}|${writeEventId ?? ""}|${rowKey}`;
     const operationVersion = (operationVersions.current.get(operationKey) ?? 0) + 1;
     operationVersions.current.set(operationKey, operationVersion);
     const isCurrent = (): boolean => activeConfigRef.current === configId && activeEventRef.current === eventId
       && operationVersions.current.get(operationKey) === operationVersion;
+    const ownRows = ownRowsRef.current;
     const rollback = (): void => {
       if (!isCurrent()) return;
       checksRef.current = toggleCheck(checksRef.current, rowKey, wasChecked);
       setChecks(checksRef.current);
+      const row = ownRows.get(operationKey);
+      if (row !== undefined) ownRows.set(operationKey, { ...row, checked: wasChecked });
       setProgressNotice("That check could not be saved. Your previous check has been restored; please try again.");
     };
     const desiredChecked = !wasChecked;
@@ -366,8 +565,20 @@ export function HallkeeperPage(): React.ReactElement {
     setChecks(checksRef.current);
     setProgressNotice(null);
 
+    // The row is this device's to say until its write has settled, and for
+    // any read of the shared checks that began before it did.
+    const rowBefore = ownRows.get(operationKey);
+    ownRows.set(operationKey, {
+      checked: desiredChecked, inFlight: (rowBefore?.inFlight ?? 0) + 1, settledAt: rowBefore?.settledAt ?? 0,
+    });
+    const settleRow = (): void => {
+      settledWritesRef.current += 1;
+      const row = ownRows.get(operationKey);
+      if (row !== undefined) ownRows.set(operationKey, { ...row, inFlight: row.inFlight - 1, settledAt: settledWritesRef.current });
+    };
+
     const finishWrite = beginProgressWrite(configId);
-    void (async () => {
+    void inRowOrder(configId, rowKey, writeEventId, async () => {
       let result: ReplayResult;
       try {
         const token = await getAuthToken();
@@ -382,7 +593,21 @@ export function HallkeeperPage(): React.ReactElement {
         result = { ok: false, status: null };
       }
 
-      if (result.ok) return; // Server has the toggle; nothing to queue.
+      if (result.ok) {
+        // The server holds this tap, the newest word on the row. A tick still
+        // queued for the row is older: left there, the next sync would send
+        // it over this one.
+        try {
+          const pending = await listPendingProgress();
+          const older = pending.filter((op) => op.rowKey === rowKey && onSheet(op, configId, writeEventId));
+          if (older.length === 0) return;
+          for (const op of older) await ackProgress(op.configId, op.rowKey, op.eventId ?? null);
+          showPending(await listPendingProgress());
+        } catch {
+          // The queue cannot be read, so there is nothing in it to retire.
+        }
+        return;
+      }
 
       // The server actively REJECTED the toggle (revoked access, deleted
       // row, bad payload). Replaying it could never succeed, so don't
@@ -394,133 +619,186 @@ export function HallkeeperPage(): React.ReactElement {
       }
 
       // Retriable failure (offline / 5xx / 408 / 429) — KEEP the
-      // optimistic UI and queue the intent for replay on reconnect.
+      // optimistic UI and queue the intent for replay.
       try {
+        // A newer tap on the row is already waiting its turn and will speak for it.
         if (operationVersions.current.get(operationKey) !== operationVersion) return;
         await enqueueProgress(configId, rowKey, desiredChecked, writeEventId);
-        const pending = await listPendingProgress();
-        if (activeConfigRef.current === configId && activeEventRef.current === eventId) {
-          setPendingCount(pending.filter((op) => onSheet(op, configId, writeEventId)).length);
-        }
+        showPending(await listPendingProgress());
       } catch {
         // IDB unreachable — last-resort rollback so the UI doesn't
         // show a check that's neither on the server nor in IDB.
         rollback();
       }
-    })().finally(finishWrite);
-  }, [configId, eventId, writeEventId, progressUnavailable, beginProgressWrite]);
+    }).finally(() => {
+      settleRow();
+      finishWrite();
+    });
+  }, [configId, eventId, writeEventId, progressUnavailable, checksReadOnly, beginProgressWrite, showPending]);
 
-  // Serialize drains for each sheet while allowing a newly opened sheet
-  // to sync even when the previous sheet still has a request in flight.
-  const flushingConfigsRef = useRef(new Set<string>());
+  // One drain per sheet at a time, while another sheet's drain goes ahead
+  // even when this one still has a request in flight.
+  const drainingSheetsRef = useRef(new Set<string>());
 
-  // --- Flush queued progress on reconnect ---
+  // --- Send one sheet's queued ticks ---
   //
-  // On reconnect (or mount) reconcile the offline queue against the
-  // server. We fetch AUTHORITATIVE server state first — never the
-  // optimistic local `checks`, which already reflects the queued
-  // toggles and would make every op look already-applied, silently
-  // discarding the very edits we are trying to save. Ops the server
-  // already satisfies are acknowledged without a network call; the rest
-  // are re-issued as idempotent set-state (`checked: desiredChecked`), which
-  // converges on the user's intent regardless of any change between the read
-  // and the write (no toggle TOCTOU). Successful and terminally-rejected
-  // replays are dropped; network/5xx failures stay queued for the next flush.
-  useEffect(() => {
-    if (configId === undefined) return;
+  // Reconcile the sheet's queued ticks against the server. We fetch
+  // AUTHORITATIVE server state first — never the optimistic local `checks`,
+  // which already reflects the queued toggles and would make every op look
+  // already-applied, silently discarding the very edits we are trying to
+  // save. Ops the server already satisfies are acknowledged without a network
+  // call; the rest are re-issued as idempotent set-state
+  // (`checked: desiredChecked`), which converges on the user's intent
+  // regardless of any change between the read and the write (no toggle
+  // TOCTOU). Successful and terminally-rejected replays are dropped;
+  // network/5xx failures stay queued for the next try.
+  //
+  // `untaggedEventId` is the event a tick queued before ticks carried one
+  // goes to: the open sheet's, and such a tick is only ever drained there.
+  const drainSheet = useCallback(async (
+    sheetId: string, queued: readonly QueuedProgressOp[], untaggedEventId: string | null,
+  ): Promise<void> => {
+    if (drainingSheetsRef.current.has(sheetId)) return;
+    drainingSheetsRef.current.add(sheetId);
+    // Whether the server answered for any replayed tick, taking it or
+    // refusing it for good: either way the sheet's checks have moved.
+    const replays = { answered: false };
+    try {
+      if (mountedRef.current) setSyncingConfigs((previous) => new Set(previous).add(sheetId));
+      const token = await getAuthToken();
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (token !== null) headers["Authorization"] = `Bearer ${token}`;
 
-    const flush = (): void => {
-      if (flushingConfigsRef.current.has(configId)) return;
-      flushingConfigsRef.current.add(configId);
-      void (async () => {
+      // Ticks belong to an event, so each event's queued ticks are
+      // reconciled against that event's own server truth and replayed
+      // into it — including ops queued on another of this layout's sheets.
+      const byEvent = new Map<string, { readonly eventId: string | null; readonly ops: QueuedProgressOp[] }>();
+      for (const op of queued) {
+        const opEventId = eventOf(op, untaggedEventId);
+        const group = byEvent.get(opEventId ?? "") ?? { eventId: opEventId, ops: [] };
+        group.ops.push(op);
+        byEvent.set(opEventId ?? "", group);
+      }
+
+      for (const { eventId: scopeEventId, ops } of byEvent.values()) {
+        // Authoritative server truth. If we can't read it, leave this
+        // event's ops queued rather than guessing and dropping edits.
+        let serverChecked: Set<string>;
         try {
-          const queued = (await listPendingProgress()).filter((op) => op.configId === configId);
-          const showCount = (ops: readonly QueuedProgressOp[]): void => {
-            if (activeConfigRef.current === configId && activeEventRef.current === eventId) {
-              setPendingCount(ops.filter((op) => onSheet(op, configId, writeEventId)).length);
-            }
-          };
-          showCount(queued);
-          if (queued.length === 0) {
-            return;
-          }
-
-          if (mountedRef.current) setSyncingConfigs((previous) => new Set(previous).add(configId));
-          const token = await getAuthToken();
-          const headers: Record<string, string> = { "Content-Type": "application/json" };
-          if (token !== null) headers["Authorization"] = `Bearer ${token}`;
-
-          // Ticks belong to an event, so each event's queued ticks are
-          // reconciled against that event's own server truth and replayed
-          // into it — including ops queued on another of this layout's sheets.
-          // A tick queued before ticks carried an event goes to this sheet's.
-          const byEvent = new Map<string, { readonly eventId: string | null; readonly ops: QueuedProgressOp[] }>();
-          for (const op of queued) {
-            const opEventId = eventOf(op, writeEventId);
-            const group = byEvent.get(opEventId ?? "") ?? { eventId: opEventId, ops: [] };
-            group.ops.push(op);
-            byEvent.set(opEventId ?? "", group);
-          }
-
-          for (const { eventId: scopeEventId, ops } of byEvent.values()) {
-            // Authoritative server truth. If we can't read it, leave this
-            // event's ops queued rather than guessing and dropping edits.
-            let serverChecked: Set<string>;
-            try {
-              const stateRes = await fetch(progressUrl(configId, scopeEventId), { headers });
-              if (!stateRes.ok) continue;
-              const stateJson = (await stateRes.json()) as { data: { checked: Record<string, string> } };
-              serverChecked = new Set(Object.keys(stateJson.data.checked));
-            } catch {
-              continue;
-            }
-
-            const { replay, converged } = partitionReplay(ops, serverChecked);
-
-            // Server already satisfies these — safe to drop, no network.
-            for (const op of converged) {
-              await ackProgress(op.configId, op.rowKey, op.eventId ?? null);
-            }
-
-            // Server still differs — replay each desired checked state.
-            for (const op of replay) {
-              let result: ReplayResult;
-              try {
-                const res = await fetch(progressUrl(op.configId, scopeEventId), {
-                  method: "PATCH", headers, body: JSON.stringify({ rowKey: op.rowKey, checked: op.desiredChecked }),
-                });
-                result = { ok: res.ok, status: res.status };
-              } catch {
-                result = { ok: false, status: null };
-              }
-              if (resolveReplayDisposition(result) === "ack") {
-                await ackProgress(op.configId, op.rowKey, op.eventId ?? null);
-              }
-            }
-          }
-
-          showCount(await listPendingProgress());
+          const stateRes = await fetch(progressUrl(sheetId, scopeEventId), { headers });
+          if (!stateRes.ok) continue;
+          const stateJson = (await stateRes.json()) as { data: { checked: Record<string, string> } };
+          serverChecked = new Set(Object.keys(stateJson.data.checked));
         } catch {
-          // Don't surface — flush failures are silent ops noise.
-        } finally {
-          flushingConfigsRef.current.delete(configId);
-          if (mountedRef.current) setSyncingConfigs((previous) => {
-            const next = new Set(previous);
-            next.delete(configId);
-            return next;
+          continue;
+        }
+
+        const { replay, converged } = partitionReplay(ops, serverChecked);
+
+        // Each queued tick takes its row's turn, behind any tap already
+        // on its way, and is looked up again when the turn comes: a tap
+        // made since the queue was listed has replaced or retired it, and
+        // an older tick must be neither sent nor cleared in its place.
+
+        // Server already satisfies these — safe to drop, no network.
+        for (const op of converged) {
+          await inRowOrder(op.configId, op.rowKey, scopeEventId, async () => {
+            if (await stillQueued(op)) await ackProgress(op.configId, op.rowKey, op.eventId ?? null);
           });
         }
-      })();
-    };
 
-    // Initial drain on mount in case the previous session left ops.
-    flush();
+        // Server still differs — replay each desired checked state.
+        for (const op of replay) {
+          await inRowOrder(op.configId, op.rowKey, scopeEventId, async () => {
+            if (!(await stillQueued(op))) return;
+            let result: ReplayResult;
+            try {
+              const res = await fetch(progressUrl(op.configId, scopeEventId), {
+                method: "PATCH", headers, body: JSON.stringify({ rowKey: op.rowKey, checked: op.desiredChecked }),
+              });
+              result = { ok: res.ok, status: res.status };
+            } catch {
+              result = { ok: false, status: null };
+            }
+            if (resolveReplayDisposition(result) === "ack") {
+              await ackProgress(op.configId, op.rowKey, op.eventId ?? null);
+              replays.answered = true;
+            }
+          });
+        }
+      }
 
-    window.addEventListener("online", flush);
+      showPending(await listPendingProgress());
+    } catch {
+      // Don't surface — drain failures are silent ops noise.
+    } finally {
+      drainingSheetsRef.current.delete(sheetId);
+      if (mountedRef.current) setSyncingConfigs((previous) => {
+        const next = new Set(previous);
+        next.delete(sheetId);
+        return next;
+      });
+      // The open sheet's ticks have landed, or been refused and dropped: show
+      // what the server now holds, not what was hoped for.
+      if (replays.answered && mountedRef.current && activeConfigRef.current === sheetId) refreshChecksRef.current();
+    }
+  }, [showPending]);
+
+  // --- Send everything this device has queued ---
+  //
+  // The queue belongs to the device, not to the sheet on screen: a tick
+  // queued on the Grand Hall's sheet must not wait for that sheet to be
+  // opened again on this tablet while the Day Board reads the room as rows
+  // short. Each sheet's ticks drain on their own, so a reply that never comes
+  // for one room does not hold up another's.
+  const drainQueue = useCallback((): void => {
+    void (async () => {
+      let queued: readonly QueuedProgressOp[];
+      try {
+        queued = await listPendingProgress();
+      } catch {
+        return;
+      }
+      if (!mountedRef.current) return;
+      showPending(queued);
+      const openSheet = activeConfigRef.current;
+      const bySheet = new Map<string, QueuedProgressOp[]>();
+      for (const op of queued) {
+        // A tick queued before ticks carried an event names none; it belongs
+        // to the event of the sheet it was made on, so it waits for that sheet.
+        if (op.eventId === undefined && op.configId !== openSheet) continue;
+        const ops = bySheet.get(op.configId) ?? [];
+        ops.push(op);
+        bySheet.set(op.configId, ops);
+      }
+      for (const [sheetId, ops] of bySheet) void drainSheet(sheetId, ops, writeEventRef.current);
+    })();
+  }, [drainSheet, showPending]);
+
+  // When the queue is sent: on opening a sheet (an earlier visit may have
+  // left ticks), when the device comes back online, when the page is shown
+  // again, and, while anything still waits, every QUEUE_RETRY_MS. A tick
+  // queued on a 5xx or a blip never sees an "online" event, so the timer is
+  // what sends it; a try that finds no connection fails at once and costs
+  // nothing. A reader who may not tick sends nothing: the server would refuse
+  // the venue team's queued ticks in their name, and a refused tick is dropped.
+  useEffect(() => {
+    if (configId === undefined || checksReadOnly) return;
+    drainQueue();
+    const onShown = (): void => { if (document.visibilityState === "visible") drainQueue(); };
+    window.addEventListener("online", drainQueue);
+    document.addEventListener("visibilitychange", onShown);
     return () => {
-      window.removeEventListener("online", flush);
+      window.removeEventListener("online", drainQueue);
+      document.removeEventListener("visibilitychange", onShown);
     };
-  }, [configId, eventId, writeEventId]);
+  }, [configId, eventId, writeEventId, checksReadOnly, drainQueue]);
+
+  useEffect(() => {
+    if (!queueWaiting || checksReadOnly) return;
+    const timer = window.setInterval(drainQueue, QUEUE_RETRY_MS);
+    return () => { window.clearInterval(timer); };
+  }, [queueWaiting, checksReadOnly, drainQueue]);
 
   const handleDownload = useCallback(() => {
     if (configId === undefined || downloadBusy) return;
@@ -584,6 +862,9 @@ export function HallkeeperPage(): React.ReactElement {
   const counts = useMemo(() => computeCounts(data, checks), [data, checks]);
   // The printed copy states its own printed minute ("…, printed 17 Oct 06:02").
   const printedAt = usePrintedAt();
+  // Whether this screen is still the version in force, asked again while it stays open (goal 05).
+  const standingResult = useSheetStanding(data?.paperCheck);
+  const standing = describeSheetStanding(standingResult, data?.approval?.version ?? null);
 
   if (loading) {
     return <main className="hk-page hk-sheet-state" aria-label="Hallkeeper sheet loading">
@@ -620,8 +901,10 @@ export function HallkeeperPage(): React.ReactElement {
   return <main className="hk-page hk-focused-page" aria-label={`Hallkeeper sheet for ${data.config.name} at ${data.venue.name}`}>
     <HallkeeperWorkspace key={data.config.id} data={data} checks={checks} onToggle={handleToggle}
       highlightedRowKey={highlightedRowKey} onHighlight={setHighlightedRowKey} disabled={progressUnavailable}
+      checksReadOnly={checksReadOnly}
       downloadBusy={downloadBusy} onDownload={handleDownload} onPrint={handlePrint}
       notices={<>
+        {standing !== null && <SheetStandingMark standing={standing} onOpen={loadData} />}
         {pendingCount > 0 && <OfflinePendingBadge count={pendingCount} />}
         {configId !== undefined && (progressWrites.get(configId) ?? 0) > 0 && <ActivityStatus>Saving shared checks…</ActivityStatus>}
         {configId !== undefined && syncingConfigs.has(configId) && <ActivityStatus>Syncing saved checks…</ActivityStatus>}
@@ -646,13 +929,14 @@ export function HallkeeperPage(): React.ReactElement {
     <div className="hk-print-only" aria-hidden="true">
       <h1>{data.space.name}</h1><h2>{data.config.name}</h2><p>{data.venue.name} · {formatDims(data.space)} · {data.config.guestCount} guests · {formatLayoutStyle(data.config.layoutStyle)}</p>
       <p className="hk-print-version">{paperCopyLine(data, printedAt)}</p>
+      {standing !== null && <SheetStandingMark standing={standing} />}
       {data.timing !== null && <p>{formatSheetTimes(data.timing, data.venue.timezone)}</p>}
       <HallkeeperStatusBanner key={data.config.id} configId={data.config.id} timeZone={data.venue.timezone} />
       {approval !== null && <ApprovalStampBanner approval={approval} timezone={data.venue.timezone} />}
       <p>{progressUnavailable ? "Shared checks unavailable" : `${String(counts.checkedRows)} of ${String(counts.totalRows)} setup rows checked`}</p>
       <InteractiveFloorPlan floorPlan={data.floorPlan} room={data.space} phases={data.phases} highlightedRowKey={null} onMarkerClick={() => undefined} />
       {data.phases.map((phase) => <PhaseBlock key={phase.phase} phase={phase} checks={checks} onToggle={handleToggle}
-        highlightedRowKey={null} onHighlightRow={() => undefined} isCollapsed={false} onToggleCollapse={() => undefined} disabled={progressUnavailable} />)}
+        highlightedRowKey={null} onHighlightRow={() => undefined} isCollapsed={false} onToggleCollapse={() => undefined} disabled={progressUnavailable || checksReadOnly} />)}
       {instructions !== null && <InstructionsBanner instructions={instructions} timezone={data.venue.timezone} />}
       {instructions !== null && <AccessibilityCallouts callouts={buildAccessibilityCallouts(instructions.accessibility)} />}
       {instructions !== null && instructions.dietary !== null && hasDietaryContent(instructions.dietary) && <DietarySummaryBlock dietary={instructions.dietary} />}
@@ -1077,11 +1361,13 @@ function ApprovalStampBanner({
 // ---------------------------------------------------------------------------
 // OfflinePendingBadge — surfaces queued progress toggles
 //
-// When the tablet's WiFi drops mid-event-setup, each checkbox toggle
-// is enqueued to IDB by the toggle handler. This badge tells the
-// hallkeeper "your last 3 edits haven't synced yet" so they don't
-// double-tap or worry that the work is lost. Drains to 0 when the
-// online-event flush completes — the badge disappears automatically.
+// When the tablet's WiFi drops, or the server falters, mid-event-setup,
+// each checkbox toggle is enqueued to IDB by the toggle handler. This
+// badge tells the hallkeeper "your last 3 edits haven't synced yet" so
+// they don't double-tap or worry that the work is lost. Drains to 0 as
+// the queue is sent — the badge disappears automatically. Its note names
+// the connection, not the WiFi: a tick is also queued when the WiFi is
+// fine and the server is not.
 //
 // `role="status"` + an aria-label so screen readers announce the
 // pending count change.
@@ -1119,7 +1405,7 @@ function OfflinePendingBadge({ count }: { count: number }): React.ReactElement {
       />
       <span>{label}</span>
       <span style={{ marginLeft: "auto", fontSize: 12 }}>
-        will sync when WiFi returns
+        will sync when the connection returns
       </span>
     </div>
   );

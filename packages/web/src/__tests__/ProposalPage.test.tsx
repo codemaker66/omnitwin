@@ -19,6 +19,18 @@ const {
   mockRespondToProposal: vi.fn(),
 }));
 
+// An accepted proposal reads its deposit (Plan 19 L5); none asked for here.
+const { mockGetShareDeposit } = vi.hoisted(() => ({ mockGetShareDeposit: vi.fn() }));
+vi.mock("../api/deposits.js", () => ({
+  getShareDeposit: mockGetShareDeposit,
+  startShareDepositCheckout: vi.fn(),
+}));
+// And its contract; none prepared here.
+vi.mock("../api/contracts.js", () => ({
+  getShareContract: () => Promise.resolve(null),
+  signShareContract: vi.fn(),
+}));
+
 vi.mock("../api/proposals.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../api/proposals.js")>();
   return {
@@ -96,6 +108,8 @@ beforeEach(() => {
   mockGetProposalShare.mockReset();
   mockGetPublicProposal.mockReset();
   mockRespondToProposal.mockReset();
+  mockGetShareDeposit.mockReset();
+  mockGetShareDeposit.mockResolvedValue(null);
 });
 
 // RTL auto-cleanup is not wired globally in this suite's environment.
@@ -604,7 +618,7 @@ describe("the conversation", () => {
     expect(await thread.findByText("Can we add a cheese table?")).toBeTruthy();
     // A link reaches more than one person: a nameless client message is the
     // client's, not "You".
-    expect(thread.getByText("The client")).toBeTruthy();
+    expect(await thread.findByText("The client")).toBeTruthy();
   });
 
   it("says whose each message is by where it came from, never by the name typed alone", async () => {

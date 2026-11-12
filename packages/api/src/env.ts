@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { createPublicKey } from "node:crypto";
-import { UserRoleSchema } from "@omnitwin/types";
+import { AIUsageFeatureSchema, UserRoleSchema } from "@omnitwin/types";
+import { isStripeTestSecretKey } from "./services/payments/stripe-mode.js";
 
 // ---------------------------------------------------------------------------
 // Zod-validated environment variables — fail fast on startup if missing
@@ -12,6 +13,16 @@ import { UserRoleSchema } from "@omnitwin/types";
 // them ONLY when NODE_ENV === "production". This is the "fail fast in
 // prod, permissive in dev" pattern.
 // ---------------------------------------------------------------------------
+
+/** A comma-separated list of at least one `item`; spaces around each are
+ *  ignored and repeats are dropped. An empty list is refused, not read as "none". */
+function commaList<T extends z.ZodType<unknown, string>>(item: T) {
+  return z.string()
+    .transform((text) => text.split(",").map((part) => part.trim()).filter((part) => part !== ""))
+    .pipe(z.array(item).min(1, "must list at least one value, separated by commas"))
+    // After each value is read, so "A" and "a" are one id once both are lower case.
+    .transform((values) => [...new Set(values)]);
+}
 
 const EnvSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
@@ -99,6 +110,17 @@ const EnvSchema = z.object({
     .min(0.01, "AI_VENUE_MONTHLY_BUDGET_USD must be at least 0.01 (US dollars)")
     .max(100_000, "AI_VENUE_MONTHLY_BUDGET_USD must be at most 100000 (US dollars)")
     .optional(),
+  // C1, the Trades Hall pilot: which venues have AI drafts, and which drafts.
+  // Comma-separated venue ids and draft names (proposal_draft,
+  // enquiry_summary, event_brief, ...). With AI_ASSISTANT_ENABLED=true and
+  // either list unset, AI is on for no venue and no draft: the API starts,
+  // warns at boot and says why in /ai/status (services/ai-access.ts), so a
+  // forgotten variable never blocks a deploy and turning AI on can never give
+  // drafts to every venue. A list that is set but malformed stops the boot.
+  // There is no "every venue" value.
+  AI_ASSISTANT_VENUE_IDS: commaList(z.guid("AI_ASSISTANT_VENUE_IDS must hold venue ids separated by commas")
+    .transform((id) => id.toLowerCase())).optional(),
+  AI_ASSISTANT_FEATURES: commaList(AIUsageFeatureSchema).optional(),
   // Venue sky (T-647) — Met Office Weather DataHub key for the Site-Specific
   // Blended Probabilistic Forecast v2 API, sent as the `apikey` header. A
   // DataHub key belongs to one product subscription, so a key for another
@@ -127,6 +149,19 @@ const EnvSchema = z.object({
   // secret so the reminder token cannot run it. Unset: only a signed-in
   // platform administrator reaches POST /admin/competitor-watch/page-checks.
   COMPETITOR_WATCH_CRON_TOKEN: z.string().min(32).optional(),
+  // Deposits through Stripe Checkout (Plan 19 L5). All three or deposits are
+  // off, the way uploads are off without R2. TEST MODE ONLY: the API refuses
+  // to start with a secret key that is not a test key (sk_test_…) unless
+  // STRIPE_LIVE_PAYMENTS_ALLOWED is "true", which nothing in this lane sets,
+  // and every payment route refuses it again (services/payments). The webhook
+  // secret is the signing secret of the endpoint at /webhooks/stripe. The
+  // slug names the one venue whose Stripe account the key belongs to: another
+  // venue's proposals offer no deposit, so no client pays into another
+  // venue's account. Never logged and never returned to a client.
+  STRIPE_SECRET_KEY: z.string().trim().min(1).optional(),
+  STRIPE_WEBHOOK_SECRET: z.string().trim().min(1).optional(),
+  STRIPE_DEPOSIT_VENUE_SLUG: z.string().trim().max(100).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/u, "must be a venue slug").optional(),
+  STRIPE_LIVE_PAYMENTS_ALLOWED: z.enum(["true", "false"]).optional(),
 }).superRefine((env, ctx) => {
   // Punch list #5: in production, CLERK_WEBHOOK_SECRET MUST be set so
   // the webhook route can verify signatures. The route itself also fails
@@ -337,6 +372,32 @@ const EnvSchema = z.object({
         message: "FOUNDRY_ED25519_PUBLIC_KEYS_JSON must contain valid JSON",
       });
     }
+  }
+
+  const stripeFields = [env.STRIPE_SECRET_KEY, env.STRIPE_WEBHOOK_SECRET, env.STRIPE_DEPOSIT_VENUE_SLUG];
+  const stripeSet = stripeFields.filter((field) => field !== undefined).length;
+  if (stripeSet > 0 && stripeSet < stripeFields.length) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["STRIPE_SECRET_KEY"],
+      message: "Stripe deposit configuration is incomplete — set STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET and STRIPE_DEPOSIT_VENUE_SLUG together or none",
+    });
+  }
+  // The key itself is never echoed: only whether it is a test key.
+  if (env.STRIPE_SECRET_KEY !== undefined && !isStripeTestSecretKey(env.STRIPE_SECRET_KEY)
+    && env.STRIPE_LIVE_PAYMENTS_ALLOWED !== "true") {
+    ctx.addIssue({
+      code: "custom",
+      path: ["STRIPE_SECRET_KEY"],
+      message: "STRIPE_SECRET_KEY is not a Stripe test-mode secret key (sk_test_…). Deposits take no real money, so the API will not start with any other key",
+    });
+  }
+  if (env.STRIPE_WEBHOOK_SECRET !== undefined && !env.STRIPE_WEBHOOK_SECRET.startsWith("whsec_")) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["STRIPE_WEBHOOK_SECRET"],
+      message: "STRIPE_WEBHOOK_SECRET must be the endpoint's signing secret (whsec_…)",
+    });
   }
 
   if (env.AI_ASSISTANT_ENABLED === "true") {

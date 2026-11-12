@@ -69,9 +69,16 @@ export async function makeVenueRequest(
   );
 }
 
+/** One step on the ladder. The commandId is minted at the press and sent as
+ *  the Idempotency-Key, so sending it again (a lost answer, or the offline
+ *  queue's replay) is that press again on the server's ledger, never a
+ *  second step (L9). */
 export async function moveVenueRequest(
   requestId: string,
   transition: RequestTransition,
+  commandId: string,
 ): Promise<VenueRequest> {
-  return api.patch(`/requests/${encodeURIComponent(requestId)}`, transition, VenueRequestSchema);
+  return api.patch(`/requests/${encodeURIComponent(requestId)}`, transition, VenueRequestSchema, {
+    idempotencyKey: commandId,
+  });
 }

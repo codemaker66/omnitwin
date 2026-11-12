@@ -35,6 +35,9 @@ const ROLES: readonly Role[] = ["client", "planner", "staff", "hallkeeper", "adm
  */
 const EXPECTED_ALLOWED: Readonly<Record<string, readonly Role[]>> = {
   "draft→submitted": ["client", "planner", "staff", "admin"],
+  "changes_requested→submitted": ["client", "planner", "staff", "admin"],
+  "rejected→submitted": ["client", "planner", "staff", "admin"],
+  "withdrawn→submitted": ["client", "planner", "staff", "admin"],
   "changes_requested→draft": ["client", "planner", "staff", "admin"],
   "rejected→draft": ["client", "planner", "staff", "admin"],
   "submitted→under_review": ["staff", "admin"],
@@ -123,15 +126,23 @@ describe("invariant: unknown role has zero transitions", () => {
   }
 });
 
-describe("invariant: terminal states are unreachable", () => {
-  const terminals = ["withdrawn", "archived"] as const;
-  for (const terminal of terminals) {
-    for (const to of CONFIGURATION_REVIEW_STATES) {
-      for (const role of ROLES) {
-        it(`${terminal} → ${to} as ${role} is rejected`, () => {
-          expect(canTransition(terminal, to, role)).toBe(false);
-        });
-      }
+describe("invariant: the terminal state leads nowhere", () => {
+  for (const to of CONFIGURATION_REVIEW_STATES) {
+    for (const role of ROLES) {
+      it(`archived → ${to} as ${role} is rejected`, () => {
+        expect(canTransition("archived", to, role)).toBe(false);
+      });
+    }
+  }
+});
+
+describe("invariant: a withdrawn layout only goes back to the venue", () => {
+  for (const to of CONFIGURATION_REVIEW_STATES) {
+    for (const role of ROLES) {
+      const expected = to === "submitted" && role !== "hallkeeper" && role !== "moderator";
+      it(`withdrawn → ${to} as ${role} = ${String(expected)}`, () => {
+        expect(canTransition("withdrawn", to, role)).toBe(expected);
+      });
     }
   }
 });

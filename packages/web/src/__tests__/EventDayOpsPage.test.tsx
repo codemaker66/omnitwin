@@ -30,6 +30,7 @@ const {
   mockUpdateOpsTaskStatus,
   mockCreateEventDayIssue,
   mockUpdateEventDayIssue,
+  mockGetChangesAwaitingAcknowledgement,
   mockGetEventChangeFeed,
   mockGetCalendar,
   mockAcknowledgeEventPlanChange,
@@ -43,6 +44,8 @@ const {
   mockUpdateOpsTaskStatus: vi.fn(),
   mockCreateEventDayIssue: vi.fn(),
   mockUpdateEventDayIssue: vi.fn(),
+  mockGetChangesAwaitingAcknowledgement: vi.fn(),
+  // The every-change feed: read only while an older API lacks the answer above.
   mockGetEventChangeFeed: vi.fn(),
   mockGetCalendar: vi.fn(),
   mockAcknowledgeEventPlanChange: vi.fn(),
@@ -66,6 +69,7 @@ vi.mock("../api/diary.js", () => ({
 }));
 
 vi.mock("../api/notifications.js", () => ({
+  getChangesAwaitingAcknowledgement: mockGetChangesAwaitingAcknowledgement,
   getEventChangeFeed: mockGetEventChangeFeed,
   acknowledgeEventPlanChange: mockAcknowledgeEventPlanChange,
   listEventChangeAcknowledgements: mockListEventChangeAcknowledgements,
@@ -332,7 +336,7 @@ beforeEach(() => {
   mockUpdateOpsTaskStatus.mockReset();
   mockCreateEventDayIssue.mockReset();
   mockUpdateEventDayIssue.mockReset();
-  mockGetEventChangeFeed.mockReset();
+  mockGetChangesAwaitingAcknowledgement.mockReset();
   mockGetCalendar.mockReset();
   mockGetCalendar.mockResolvedValue({
     venueId: "00000000-0000-4000-8000-000000003004",
@@ -351,6 +355,8 @@ beforeEach(() => {
   mockEnqueueEventDayTaskStatus.mockReset();
   mockListPendingEventDayOps.mockReset();
   mockListPendingEventDayOps.mockResolvedValue([]);
+  mockGetChangesAwaitingAcknowledgement.mockResolvedValue([]);
+  mockGetEventChangeFeed.mockReset();
   mockGetEventChangeFeed.mockResolvedValue([]);
   mockAcknowledgeEventPlanChange.mockResolvedValue({
     id: "00000000-0000-4000-8000-000000003020",
@@ -442,11 +448,11 @@ describe("EventDayOpsPage", () => {
     const boardRead = new Promise<EventDayOpsBoard>((resolve) => { resolveBoard = resolve; });
     const feedRead = new Promise<ChangeFeedItem[]>((resolve) => { resolveFeed = resolve; });
     mockGetEventDayOpsBoard.mockReturnValue(boardRead);
-    mockGetEventChangeFeed.mockReturnValue(feedRead);
+    mockGetChangesAwaitingAcknowledgement.mockReturnValue(feedRead);
     renderPage();
 
     // Both reads are out before either answers.
-    await waitFor(() => { expect(mockGetEventChangeFeed).toHaveBeenCalledWith(EVENT_ID, 25); });
+    await waitFor(() => { expect(mockGetChangesAwaitingAcknowledgement).toHaveBeenCalledWith(EVENT_ID); });
     expect(mockGetEventDayOpsBoard).toHaveBeenCalledWith(EVENT_ID);
     expect(screen.getByRole("heading", { level: 1, name: "Loading event-day board" })).toBeTruthy();
 
@@ -462,17 +468,23 @@ describe("EventDayOpsPage", () => {
     expect(screen.queryByText("Loading event-day board")).toBeNull();
   });
 
+  it("names an event stored without a name by its occasion and the venue's day (the event-name ruling)", async () => {
+    mockGetEventDayOpsBoard.mockResolvedValue({ ...boardFixture(), event: { ...boardFixture().event, name: "" } });
+    renderPage();
+    expect(await screen.findByRole("heading", { level: 1, name: "Wedding, 12 June 2026" })).toBeTruthy();
+  });
+
   it("says the board is unavailable when the board cannot be read, without waiting for the feed, and Retry reads both again", async () => {
     mockGetEventDayOpsBoard.mockRejectedValueOnce(new ApiError(503, "Unavailable", "SERVICE_UNAVAILABLE"));
     mockGetEventDayOpsBoard.mockResolvedValue(boardFixture());
-    mockGetEventChangeFeed.mockReturnValueOnce(new Promise<ChangeFeedItem[]>(() => undefined));
+    mockGetChangesAwaitingAcknowledgement.mockReturnValueOnce(new Promise<ChangeFeedItem[]>(() => undefined));
     renderPage();
 
     expect(await screen.findByRole("heading", { level: 1, name: "Event-day board unavailable" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(await screen.findByRole("heading", { level: 1, name: "Blake event day" })).toBeTruthy();
     expect(mockGetEventDayOpsBoard).toHaveBeenCalledTimes(2);
-    expect(mockGetEventChangeFeed).toHaveBeenCalledTimes(2);
+    expect(mockGetChangesAwaitingAcknowledgement).toHaveBeenCalledTimes(2);
   });
 
   it("keeps the board when only its change feed cannot be read, and never takes the failure for no changes", async () => {
@@ -481,7 +493,7 @@ describe("EventDayOpsPage", () => {
       // 14:05 in Glasgow.
       vi.setSystemTime(new Date("2026-06-11T13:05:00.000Z"));
       mockGetEventDayOpsBoard.mockResolvedValue(boardFixture());
-      mockGetEventChangeFeed.mockRejectedValue(new ApiError(503, "Unavailable", "SERVICE_UNAVAILABLE"));
+      mockGetChangesAwaitingAcknowledgement.mockRejectedValue(new ApiError(503, "Unavailable", "SERVICE_UNAVAILABLE"));
       renderPage();
 
       expect(await screen.findByRole("heading", { level: 1, name: "Blake event day" })).toBeTruthy();
@@ -490,7 +502,7 @@ describe("EventDayOpsPage", () => {
       expect(screen.queryByText("No changes awaiting acknowledgement.")).toBeNull();
 
       // Tried again and read: the notice goes, and the changes are listed.
-      mockGetEventChangeFeed.mockResolvedValue([requiredChangeFixture()]);
+      mockGetChangesAwaitingAcknowledgement.mockResolvedValue([requiredChangeFixture()]);
       fireEvent.click(screen.getByRole("button", { name: "Try again" }));
       expect(await screen.findByText("Guest count changed")).toBeTruthy();
       expect(screen.queryByTestId("change-feed-notice")).toBeNull();
@@ -504,7 +516,7 @@ describe("EventDayOpsPage", () => {
     try {
       vi.setSystemTime(new Date("2026-06-11T13:05:00.000Z"));
       mockGetEventDayOpsBoard.mockResolvedValue(boardFixture());
-      mockGetEventChangeFeed.mockRejectedValue(new ApiError(503, "Unavailable", "SERVICE_UNAVAILABLE"));
+      mockGetChangesAwaitingAcknowledgement.mockRejectedValue(new ApiError(503, "Unavailable", "SERVICE_UNAVAILABLE"));
       renderPage();
       await screen.findByTestId("change-feed-notice");
       await waitFor(() => { expect(screen.getByTestId("change-feed-heard").textContent).toBe("Couldn't read the changes at 14:05."); });
@@ -512,7 +524,7 @@ describe("EventDayOpsPage", () => {
       // Two minutes on, a retry that also fails: it works, then says so.
       vi.setSystemTime(new Date("2026-06-11T13:07:00.000Z"));
       let fail: ((reason: Error) => void) | undefined;
-      mockGetEventChangeFeed.mockImplementationOnce(() => new Promise<ChangeFeedItem[]>((_resolve, reject) => { fail = reject; }));
+      mockGetChangesAwaitingAcknowledgement.mockImplementationOnce(() => new Promise<ChangeFeedItem[]>((_resolve, reject) => { fail = reject; }));
       fireEvent.click(screen.getByRole("button", { name: "Try again" }));
       const trying = screen.getByRole("button", { name: "Trying again…" });
       expect(trying.getAttribute("aria-busy")).toBe("true");
@@ -527,7 +539,7 @@ describe("EventDayOpsPage", () => {
       // A retry that reads: the notice goes, the focus moves to the section's
       // heading, and it is said that the changes were read.
       vi.setSystemTime(new Date("2026-06-11T13:08:00.000Z"));
-      mockGetEventChangeFeed.mockResolvedValue([requiredChangeFixture()]);
+      mockGetChangesAwaitingAcknowledgement.mockResolvedValue([requiredChangeFixture()]);
       const again = screen.getByRole("button", { name: "Try again" });
       again.focus();
       fireEvent.click(again);
@@ -545,7 +557,7 @@ describe("EventDayOpsPage", () => {
     try {
       vi.setSystemTime(new Date("2026-06-11T13:05:00.000Z"));
       mockGetEventDayOpsBoard.mockResolvedValue(boardFixture());
-      mockGetEventChangeFeed.mockRejectedValue(new ApiError(503, "Unavailable", "SERVICE_UNAVAILABLE"));
+      mockGetChangesAwaitingAcknowledgement.mockRejectedValue(new ApiError(503, "Unavailable", "SERVICE_UNAVAILABLE"));
       renderPage();
       await screen.findByTestId("change-feed-notice");
       await waitFor(() => { expect(screen.getByTestId("change-feed-heard").textContent).toBe("Couldn't read the changes at 14:05."); });
@@ -556,7 +568,7 @@ describe("EventDayOpsPage", () => {
         fireEvent.click(screen.getByRole("button", { name: "Sync pending event-day changes" }));
         await waitFor(() => { expect(screen.getByRole("button", { name: "Sync pending event-day changes" }).getAttribute("aria-busy")).toBe("false"); });
       }
-      expect(mockGetEventChangeFeed.mock.calls.length).toBeGreaterThanOrEqual(4);
+      expect(mockGetChangesAwaitingAcknowledgement.mock.calls.length).toBeGreaterThanOrEqual(4);
       expect(screen.getByTestId("change-feed-notice").textContent).toContain("since 14:05.");
       // Nothing new was said: the same saying stands.
       expect(screen.getByTestId("change-feed-heard").firstElementChild).toBe(said);
@@ -575,7 +587,7 @@ describe("EventDayOpsPage", () => {
       return null;
     }
     mockGetEventDayOpsBoard.mockImplementation((id: string) => Promise.resolve(id === OTHER_EVENT ? otherBoard : boardFixture()));
-    mockGetEventChangeFeed.mockResolvedValueOnce([requiredChangeFixture()]);
+    mockGetChangesAwaitingAcknowledgement.mockResolvedValueOnce([requiredChangeFixture()]);
     render(
       <MemoryRouter initialEntries={[`/ops/events/${EVENT_ID}`]}>
         <Navigator />
@@ -589,7 +601,7 @@ describe("EventDayOpsPage", () => {
     // A sync for this event sets out; its read is still out when the other
     // event is opened, whose own changes cannot be read.
     let late: ((items: ChangeFeedItem[]) => void) | undefined;
-    mockGetEventChangeFeed.mockImplementation((id: string) => (id === EVENT_ID
+    mockGetChangesAwaitingAcknowledgement.mockImplementation((id: string) => (id === EVENT_ID
       ? new Promise<ChangeFeedItem[]>((resolve) => { late = resolve; })
       : Promise.reject(new ApiError(503, "Unavailable", "SERVICE_UNAVAILABLE"))));
     fireEvent.click(screen.getByRole("button", { name: "Sync pending event-day changes" }));
@@ -603,10 +615,10 @@ describe("EventDayOpsPage", () => {
     expect(screen.getByTestId("change-feed-notice").textContent).toMatch(/^Couldn't read the changes, so what waits/u);
 
     // This event's Try again reads this event, whatever was out for the last.
-    const reads = mockGetEventChangeFeed.mock.calls.length;
+    const reads = mockGetChangesAwaitingAcknowledgement.mock.calls.length;
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
-    await waitFor(() => { expect(mockGetEventChangeFeed.mock.calls.length).toBe(reads + 1); });
-    expect(mockGetEventChangeFeed).toHaveBeenLastCalledWith(OTHER_EVENT, 25);
+    await waitFor(() => { expect(mockGetChangesAwaitingAcknowledgement.mock.calls.length).toBe(reads + 1); });
+    expect(mockGetChangesAwaitingAcknowledgement).toHaveBeenLastCalledWith(OTHER_EVENT);
   });
 
   it("lets a retry on the event now open read it, even while the last event's retry is still out", async () => {
@@ -619,7 +631,7 @@ describe("EventDayOpsPage", () => {
       return null;
     }
     mockGetEventDayOpsBoard.mockImplementation((id: string) => Promise.resolve(id === OTHER_EVENT ? otherBoard : boardFixture()));
-    mockGetEventChangeFeed.mockRejectedValue(new ApiError(503, "Unavailable", "SERVICE_UNAVAILABLE"));
+    mockGetChangesAwaitingAcknowledgement.mockRejectedValue(new ApiError(503, "Unavailable", "SERVICE_UNAVAILABLE"));
     render(
       <MemoryRouter initialEntries={[`/ops/events/${EVENT_ID}`]}>
         <Navigator />
@@ -630,15 +642,15 @@ describe("EventDayOpsPage", () => {
     );
     await screen.findByTestId("change-feed-notice");
     // This event's retry is still out when the other event is opened.
-    mockGetEventChangeFeed.mockImplementationOnce(() => new Promise<ChangeFeedItem[]>(() => undefined));
+    mockGetChangesAwaitingAcknowledgement.mockImplementationOnce(() => new Promise<ChangeFeedItem[]>(() => undefined));
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
     act(() => { navigateTo.current?.(`/ops/events/${OTHER_EVENT}`); });
     expect(await screen.findByRole("heading", { level: 1, name: "Other event day" })).toBeTruthy();
     await screen.findByTestId("change-feed-notice");
-    const calls = mockGetEventChangeFeed.mock.calls.length;
+    const calls = mockGetChangesAwaitingAcknowledgement.mock.calls.length;
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
-    await waitFor(() => { expect(mockGetEventChangeFeed.mock.calls.length).toBe(calls + 1); });
-    expect(mockGetEventChangeFeed).toHaveBeenLastCalledWith(OTHER_EVENT, 25);
+    await waitFor(() => { expect(mockGetChangesAwaitingAcknowledgement.mock.calls.length).toBe(calls + 1); });
+    expect(mockGetChangesAwaitingAcknowledgement).toHaveBeenLastCalledWith(OTHER_EVENT);
   });
 
   function renderNavigable(): { readonly navigateTo: { current: ((path: string) => void) | null } } {
@@ -669,8 +681,8 @@ describe("EventDayOpsPage", () => {
       boardReads += 1;
       return boardReads === 1 ? Promise.resolve(boardFixture()) : new Promise<EventDayOpsBoard>((resolve) => { lateBoard = resolve; });
     });
-    mockGetEventChangeFeed.mockResolvedValue([]);
-    mockGetEventChangeFeed.mockResolvedValueOnce([requiredChangeFixture()]);
+    mockGetChangesAwaitingAcknowledgement.mockResolvedValue([]);
+    mockGetChangesAwaitingAcknowledgement.mockResolvedValueOnce([requiredChangeFixture()]);
     const { navigateTo } = renderNavigable();
     expect(await screen.findByText("Guest count changed")).toBeTruthy();
     // An acknowledgement reads the board again; that read is slow.
@@ -688,7 +700,7 @@ describe("EventDayOpsPage", () => {
     mockGetEventDayOpsBoard.mockImplementation((id: string) => (id === OTHER_EVENT
       ? Promise.resolve(otherBoard)
       : new Promise<EventDayOpsBoard>((resolve) => { lateFirst = resolve; })));
-    mockGetEventChangeFeed.mockImplementation((id: string) => (id === OTHER_EVENT
+    mockGetChangesAwaitingAcknowledgement.mockImplementation((id: string) => (id === OTHER_EVENT
       ? Promise.reject(new ApiError(503, "Unavailable", "SERVICE_UNAVAILABLE"))
       : Promise.resolve([requiredChangeFixture()])));
     const second = renderNavigable();
@@ -713,7 +725,7 @@ describe("EventDayOpsPage", () => {
       boardReads += 1;
       return boardReads === 1 ? Promise.resolve(boardFixture()) : new Promise<EventDayOpsBoard>((resolve) => { lateBoard = resolve; });
     });
-    mockGetEventChangeFeed.mockResolvedValue([requiredChangeFixture()]);
+    mockGetChangesAwaitingAcknowledgement.mockResolvedValue([requiredChangeFixture()]);
     const { navigateTo } = renderNavigable();
     expect(await screen.findByText("Guest count changed")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Acknowledge change" }));
@@ -744,31 +756,31 @@ describe("EventDayOpsPage", () => {
 
   it("lets Try again join the read already out rather than send another", async () => {
     mockGetEventDayOpsBoard.mockResolvedValue(boardFixture());
-    mockGetEventChangeFeed.mockRejectedValue(new ApiError(503, "Unavailable", "SERVICE_UNAVAILABLE"));
+    mockGetChangesAwaitingAcknowledgement.mockRejectedValue(new ApiError(503, "Unavailable", "SERVICE_UNAVAILABLE"));
     renderPage();
     await screen.findByTestId("change-feed-notice");
     // A task marked done reads the board again; that read is still out.
     let land: ((items: ChangeFeedItem[]) => void) | undefined;
-    mockGetEventChangeFeed.mockImplementationOnce(() => new Promise<ChangeFeedItem[]>((resolve) => { land = resolve; }));
+    mockGetChangesAwaitingAcknowledgement.mockImplementationOnce(() => new Promise<ChangeFeedItem[]>((resolve) => { land = resolve; }));
     mockUpdateOpsTaskStatus.mockResolvedValue(task("done"));
     fireEvent.click(screen.getByText("Done"));
     await waitFor(() => { expect(land).toBeDefined(); });
-    const reads = mockGetEventChangeFeed.mock.calls.length;
+    const reads = mockGetChangesAwaitingAcknowledgement.mock.calls.length;
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
     expect(screen.getByRole("button", { name: "Trying again…" })).toBeTruthy();
     await act(async () => { await Promise.resolve(); });
-    expect(mockGetEventChangeFeed.mock.calls.length).toBe(reads);
+    expect(mockGetChangesAwaitingAcknowledgement.mock.calls.length).toBe(reads);
     await act(async () => { land?.([requiredChangeFixture()]); await Promise.resolve(); });
     expect(await screen.findByText("Guest count changed")).toBeTruthy();
   });
 
   it("never takes the focus from where someone went while a retry read", async () => {
     mockGetEventDayOpsBoard.mockResolvedValue(boardFixture());
-    mockGetEventChangeFeed.mockRejectedValue(new ApiError(503, "Unavailable", "SERVICE_UNAVAILABLE"));
+    mockGetChangesAwaitingAcknowledgement.mockRejectedValue(new ApiError(503, "Unavailable", "SERVICE_UNAVAILABLE"));
     renderPage();
     await screen.findByTestId("change-feed-notice");
     let land: ((items: ChangeFeedItem[]) => void) | undefined;
-    mockGetEventChangeFeed.mockImplementationOnce(() => new Promise<ChangeFeedItem[]>((resolve) => { land = resolve; }));
+    mockGetChangesAwaitingAcknowledgement.mockImplementationOnce(() => new Promise<ChangeFeedItem[]>((resolve) => { land = resolve; }));
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
     // While it reads, the hallkeeper starts writing an issue.
     const title = screen.getByLabelText("Title");
@@ -784,7 +796,7 @@ describe("EventDayOpsPage", () => {
     try {
       vi.setSystemTime(new Date("2026-06-11T13:07:05.000Z"));
       mockGetEventDayOpsBoard.mockResolvedValue(boardFixture());
-      mockGetEventChangeFeed.mockRejectedValue(new ApiError(503, "Unavailable", "SERVICE_UNAVAILABLE"));
+      mockGetChangesAwaitingAcknowledgement.mockRejectedValue(new ApiError(503, "Unavailable", "SERVICE_UNAVAILABLE"));
       renderPage();
       await screen.findByTestId("change-feed-notice");
       fireEvent.click(screen.getByRole("button", { name: "Try again" }));
@@ -801,15 +813,15 @@ describe("EventDayOpsPage", () => {
 
   it("says nothing failed when a later read found the changes before a retry's older read failed", async () => {
     mockGetEventDayOpsBoard.mockResolvedValue(boardFixture());
-    mockGetEventChangeFeed.mockRejectedValue(new ApiError(503, "Unavailable", "SERVICE_UNAVAILABLE"));
+    mockGetChangesAwaitingAcknowledgement.mockRejectedValue(new ApiError(503, "Unavailable", "SERVICE_UNAVAILABLE"));
     renderPage();
     await screen.findByTestId("change-feed-notice");
     // The retry's read is slow; a sync sets out after it and finds the changes.
     let failRetry: ((reason: Error) => void) | undefined;
-    mockGetEventChangeFeed.mockImplementationOnce(() => new Promise<ChangeFeedItem[]>((_resolve, reject) => { failRetry = reject; }));
+    mockGetChangesAwaitingAcknowledgement.mockImplementationOnce(() => new Promise<ChangeFeedItem[]>((_resolve, reject) => { failRetry = reject; }));
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
     await waitFor(() => { expect(failRetry).toBeDefined(); });
-    mockGetEventChangeFeed.mockResolvedValueOnce([requiredChangeFixture()]);
+    mockGetChangesAwaitingAcknowledgement.mockResolvedValueOnce([requiredChangeFixture()]);
     fireEvent.click(screen.getByRole("button", { name: "Sync pending event-day changes" }));
     expect(await screen.findByText("Guest count changed")).toBeTruthy();
     await act(async () => { failRetry?.(new ApiError(0, "Network error", "NETWORK_ERROR")); await Promise.resolve(); });
@@ -827,7 +839,7 @@ describe("EventDayOpsPage", () => {
       vi.mocked(getVenue).mockImplementationOnce(() => new Promise((resolve) => { venueLands = resolve; }));
       vi.setSystemTime(new Date("2026-06-11T13:05:00.000Z"));
       mockGetEventDayOpsBoard.mockResolvedValue(boardFixture());
-      mockGetEventChangeFeed.mockRejectedValue(new ApiError(503, "Unavailable", "SERVICE_UNAVAILABLE"));
+      mockGetChangesAwaitingAcknowledgement.mockRejectedValue(new ApiError(503, "Unavailable", "SERVICE_UNAVAILABLE"));
       const said: string[] = [];
       const observer = new MutationObserver(() => {
         const text = document.querySelector("[data-testid=change-feed-heard]")?.textContent ?? "";
@@ -850,18 +862,18 @@ describe("EventDayOpsPage", () => {
 
   it("keeps the changes a read found, whatever a read that set out later failed to find", async () => {
     mockGetEventDayOpsBoard.mockResolvedValue(boardFixture());
-    mockGetEventChangeFeed.mockRejectedValue(new ApiError(503, "Unavailable", "SERVICE_UNAVAILABLE"));
+    mockGetChangesAwaitingAcknowledgement.mockRejectedValue(new ApiError(503, "Unavailable", "SERVICE_UNAVAILABLE"));
     renderPage();
     await screen.findByTestId("change-feed-notice");
     // The retry's read is slow, and will find the change.
     let landRetry: ((items: ChangeFeedItem[]) => void) | undefined;
-    mockGetEventChangeFeed.mockImplementationOnce(() => new Promise<ChangeFeedItem[]>((resolve) => { landRetry = resolve; }));
+    mockGetChangesAwaitingAcknowledgement.mockImplementationOnce(() => new Promise<ChangeFeedItem[]>((resolve) => { landRetry = resolve; }));
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
     await waitFor(() => { expect(landRetry).toBeDefined(); });
     // A sync sets out after it; its read cannot read the changes, and lands first.
-    const reads = mockGetEventChangeFeed.mock.calls.length;
+    const reads = mockGetChangesAwaitingAcknowledgement.mock.calls.length;
     fireEvent.click(screen.getByRole("button", { name: "Sync pending event-day changes" }));
-    await waitFor(() => { expect(mockGetEventChangeFeed.mock.calls.length).toBe(reads + 1); });
+    await waitFor(() => { expect(mockGetChangesAwaitingAcknowledgement.mock.calls.length).toBe(reads + 1); });
     await act(async () => { await new Promise((resolve) => { setTimeout(resolve, 0); }); });
     await act(async () => { landRetry?.([requiredChangeFixture()]); await Promise.resolve(); });
     expect(await screen.findByText("Guest count changed")).toBeTruthy();
@@ -873,7 +885,7 @@ describe("EventDayOpsPage", () => {
   it("keeps the board a later read drew when an older read of it lands after", async () => {
     const renamed: EventDayOpsBoard = { ...boardFixture(), event: { ...boardFixture().event, name: "Blake event day, as amended" } };
     mockGetEventDayOpsBoard.mockResolvedValue(boardFixture());
-    mockGetEventChangeFeed.mockRejectedValue(new ApiError(503, "Unavailable", "SERVICE_UNAVAILABLE"));
+    mockGetChangesAwaitingAcknowledgement.mockRejectedValue(new ApiError(503, "Unavailable", "SERVICE_UNAVAILABLE"));
     renderPage();
     await screen.findByTestId("change-feed-notice");
     // The retry's board read is slow and will answer with the board as it was.
@@ -892,18 +904,18 @@ describe("EventDayOpsPage", () => {
 
   it("leaves the focus on a Try again that stays, when a read that found the changes and a newer one that did not answer together", async () => {
     mockGetEventDayOpsBoard.mockResolvedValue(boardFixture());
-    mockGetEventChangeFeed.mockRejectedValue(new ApiError(503, "Unavailable", "SERVICE_UNAVAILABLE"));
+    mockGetChangesAwaitingAcknowledgement.mockRejectedValue(new ApiError(503, "Unavailable", "SERVICE_UNAVAILABLE"));
     renderPage();
     await screen.findByTestId("change-feed-notice");
     const button = screen.getByRole("button", { name: "Try again" });
     // An older read (a task's refresh) will find the changes; a newer one (a sync) will not.
     let landOlder: ((items: ChangeFeedItem[]) => void) | undefined;
     let failNewer: ((reason: Error) => void) | undefined;
-    mockGetEventChangeFeed.mockImplementationOnce(() => new Promise<ChangeFeedItem[]>((resolve) => { landOlder = resolve; }));
+    mockGetChangesAwaitingAcknowledgement.mockImplementationOnce(() => new Promise<ChangeFeedItem[]>((resolve) => { landOlder = resolve; }));
     mockUpdateOpsTaskStatus.mockResolvedValue(task("done"));
     fireEvent.click(screen.getByText("Done"));
     await waitFor(() => { expect(landOlder).toBeDefined(); });
-    mockGetEventChangeFeed.mockImplementationOnce(() => new Promise<ChangeFeedItem[]>((_resolve, reject) => { failNewer = reject; }));
+    mockGetChangesAwaitingAcknowledgement.mockImplementationOnce(() => new Promise<ChangeFeedItem[]>((_resolve, reject) => { failNewer = reject; }));
     fireEvent.click(screen.getByRole("button", { name: "Sync pending event-day changes" }));
     await waitFor(() => { expect(failNewer).toBeDefined(); });
     act(() => { button.focus(); });
@@ -917,6 +929,45 @@ describe("EventDayOpsPage", () => {
     // The newest read failed, so the notice and its button stay, with the focus.
     expect(screen.getByTestId("change-feed-notice")).toBeTruthy();
     expect(document.activeElement).toBe(screen.getByRole("button", { name: "Try again" }));
+  });
+
+  // L9: the queue also holds the Day Board's facts and request steps; this
+  // page replays only its own, and never sends a request step as an issue.
+  it("leaves the Day Board's request steps and facts in the queue for that screen", async () => {
+    mockGetEventDayOpsBoard.mockResolvedValue(boardFixture());
+    mockCreateEventDayIssue.mockResolvedValue(undefined);
+    const issue = {
+      kind: "issue_create" as const, queueKey: "issue:issue-a", eventId: "event-1", queuedAt: "2026-10-29T18:39:00.000Z",
+      input: { title: "Lift unavailable", detail: "Use the north stair.", severity: "urgent" as const },
+    };
+    mockListPendingEventDayOps.mockResolvedValue([
+      {
+        kind: "request_step", queueKey: "request:00000000-0000-4000-8000-00000000e001",
+        venueId: "00000000-0000-4000-8000-00000000a001", requestId: "00000000-0000-4000-8000-00000000d001",
+        bookingId: null, summary: "Chairs × 10", transition: { to: "accepted" }, expectedState: "sent", expectedOwnerUserId: null,
+        commandId: "00000000-0000-4000-8000-00000000e001", authorUserId: "00000000-0000-4000-8000-0000000000ff",
+        authorName: "Elaine", queuedAt: "2026-10-29T18:38:00.000Z",
+      },
+      {
+        kind: "observation_record", queueKey: "observation:00000000-0000-4000-8000-00000000c001",
+        venueId: "00000000-0000-4000-8000-00000000a001", queuedAt: "2026-10-29T18:38:30.000Z",
+        input: {
+          bookingId: "00000000-0000-4000-8000-00000000b001", kind: "doors-open",
+          observedAt: "2026-10-29T18:38:30.000Z", idempotencyKey: "00000000-0000-4000-8000-00000000c001",
+        },
+      },
+      issue,
+    ]);
+    renderPage();
+    await screen.findByRole("heading", { level: 1, name: "Blake event day" });
+    act(() => { window.dispatchEvent(new Event("online")); });
+
+    // The issue is last in the queue: once it is acked, every op before it was met.
+    await waitFor(() => { expect(mockAckEventDayOp).toHaveBeenCalledWith("issue:issue-a"); });
+    expect(mockCreateEventDayIssue).toHaveBeenCalledTimes(1);
+    expect(mockCreateEventDayIssue).toHaveBeenCalledWith("event-1", issue.input);
+    expect(mockAckEventDayOp).toHaveBeenCalledTimes(1);
+    expect(mockUpdateOpsTaskStatus).not.toHaveBeenCalled();
   });
 
   it("keeps the board a later read drew when the first load fails late", async () => {
@@ -942,12 +993,12 @@ describe("EventDayOpsPage", () => {
     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
     try {
       mockGetEventDayOpsBoard.mockResolvedValue(boardFixture());
-      mockGetEventChangeFeed.mockRejectedValue(new ApiError(503, "Unavailable", "SERVICE_UNAVAILABLE"));
+      mockGetChangesAwaitingAcknowledgement.mockRejectedValue(new ApiError(503, "Unavailable", "SERVICE_UNAVAILABLE"));
       renderPage();
       await screen.findByTestId("change-feed-notice");
       const button = screen.getByRole("button", { name: "Try again" });
       act(() => { button.focus(); });
-      mockGetEventChangeFeed.mockResolvedValue([requiredChangeFixture()]);
+      mockGetChangesAwaitingAcknowledgement.mockResolvedValue([requiredChangeFixture()]);
       await act(async () => { vi.advanceTimersByTime(10_000); await Promise.resolve(); });
       expect(await screen.findByText("Guest count changed")).toBeTruthy();
       await waitFor(() => { expect(document.activeElement).toBe(screen.getByRole("heading", { level: 2, name: "Required acknowledgements" })); });
@@ -961,13 +1012,13 @@ describe("EventDayOpsPage", () => {
     try {
       vi.setSystemTime(new Date("2026-06-11T13:05:00.000Z"));
       mockGetEventDayOpsBoard.mockResolvedValue(boardFixture());
-      mockGetEventChangeFeed.mockResolvedValueOnce([requiredChangeFixture()]);
+      mockGetChangesAwaitingAcknowledgement.mockResolvedValueOnce([requiredChangeFixture()]);
       renderPage();
       expect(await screen.findByText("Guest count changed")).toBeTruthy();
 
       // Ten minutes on, the feed cannot be read: what was read stays.
       vi.setSystemTime(new Date("2026-06-11T13:15:00.000Z"));
-      mockGetEventChangeFeed.mockRejectedValue(new ApiError(0, "Network error", "NETWORK_ERROR"));
+      mockGetChangesAwaitingAcknowledgement.mockRejectedValue(new ApiError(0, "Network error", "NETWORK_ERROR"));
       fireEvent.click(screen.getByRole("button", { name: "Sync pending event-day changes" }));
       expect(await screen.findByText("Couldn't refresh the changes since 14:15. Showing them as they were at 14:05.")).toBeTruthy();
       expect(screen.getByText("Guest count changed")).toBeTruthy();
@@ -988,7 +1039,7 @@ describe("EventDayOpsPage", () => {
   it("acknowledges required planner or client changes", async () => {
     const change = requiredChangeFixture();
     mockGetEventDayOpsBoard.mockResolvedValue(boardFixture());
-    mockGetEventChangeFeed.mockResolvedValue([change]);
+    mockGetChangesAwaitingAcknowledgement.mockResolvedValue([change]);
     renderPage();
 
     expect(await screen.findByText("Guest count changed")).toBeTruthy();
@@ -1000,13 +1051,59 @@ describe("EventDayOpsPage", () => {
     expect(await screen.findByText("Change acknowledged.")).toBeTruthy();
   });
 
+  // Release audit, contract-n-1. The board used to read the newest 25 changes
+  // of every kind and pick out the ones needing acknowledgement. On a busy
+  // set-up that page is all task moves, the change that mattered is older than
+  // every one of them, and the board said nothing was waiting.
+  it("shows a change awaiting acknowledgement however many newer changes there are", async () => {
+    const taskMoves = Array.from({ length: 25 }, (_unused, index): ChangeFeedItem => ({
+      ...requiredChangeFixture(),
+      id: `00000000-0000-4000-8000-0000000040${String(index).padStart(2, "0")}`,
+      sourceKind: "ops_task",
+      title: "Hallkeeper task updated",
+      summary: "A set-up task moved on.",
+      requiresHallkeeperAcknowledgement: false,
+    }));
+    mockGetEventDayOpsBoard.mockResolvedValue(boardFixture());
+    // The newest page of every change holds nothing to acknowledge...
+    mockGetEventChangeFeed.mockResolvedValue(taskMoves);
+    // ...and the guest-count change, older than all of it, is still waiting.
+    mockGetChangesAwaitingAcknowledgement.mockResolvedValue([requiredChangeFixture()]);
+    renderPage();
+
+    expect(await screen.findByText("Guest count changed")).toBeTruthy();
+    expect(screen.queryByText("No changes awaiting acknowledgement.")).toBeNull();
+    expect(mockGetChangesAwaitingAcknowledgement).toHaveBeenCalledWith(EVENT_ID);
+    expect(mockGetEventChangeFeed).not.toHaveBeenCalled();
+  });
+
+  it("reads the feed as it used to, at its largest page, while an older API has no such answer", async () => {
+    mockGetEventDayOpsBoard.mockResolvedValue(boardFixture());
+    mockGetChangesAwaitingAcknowledgement.mockRejectedValue(new ApiError(404, "Route not found", "NOT_FOUND"));
+    mockGetEventChangeFeed.mockResolvedValue([requiredChangeFixture()]);
+    renderPage();
+
+    expect(await screen.findByText("Guest count changed")).toBeTruthy();
+    expect(mockGetEventChangeFeed).toHaveBeenCalledWith(EVENT_ID, 100);
+  });
+
+  it("does not take any other failure for an older API, nor for nothing waiting", async () => {
+    mockGetEventDayOpsBoard.mockResolvedValue(boardFixture());
+    mockGetChangesAwaitingAcknowledgement.mockRejectedValue(new ApiError(500, "Server error", "INTERNAL_ERROR"));
+    renderPage();
+
+    expect(await screen.findByRole("button", { name: "Try again" })).toBeTruthy();
+    expect(mockGetEventChangeFeed).not.toHaveBeenCalled();
+    expect(screen.queryByText("No changes awaiting acknowledgement.")).toBeNull();
+  });
+
   it("does not ask again for a change the room already acknowledged on another device", async () => {
     // Acknowledgements used to live in this component's state, so a reload or
     // a second tablet showed an acknowledged change as still waiting. They are
     // read from the event's persisted acknowledgements now.
     const change = requiredChangeFixture();
     mockGetEventDayOpsBoard.mockResolvedValue(boardFixture());
-    mockGetEventChangeFeed.mockResolvedValue([change]);
+    mockGetChangesAwaitingAcknowledgement.mockResolvedValue([change]);
     mockListEventChangeAcknowledgements.mockResolvedValue([{
       id: "00000000-0000-4000-8000-000000003040",
       changeId: change.id,
@@ -1030,7 +1127,7 @@ describe("EventDayOpsPage", () => {
     // it settles the page says it is checking rather than listing a change the
     // room may already have acknowledged.
     mockGetEventDayOpsBoard.mockResolvedValue(boardFixture());
-    mockGetEventChangeFeed.mockResolvedValue([requiredChangeFixture()]);
+    mockGetChangesAwaitingAcknowledgement.mockResolvedValue([requiredChangeFixture()]);
     let settle: (rows: []) => void = () => undefined;
     mockListEventChangeAcknowledgements.mockReturnValue(new Promise<[]>((resolve) => { settle = resolve; }));
     renderPage();
@@ -1048,7 +1145,7 @@ describe("EventDayOpsPage", () => {
     // Failing towards "still needs acknowledging" is safe: acknowledging twice
     // is harmless, and a change that silently vanishes is not.
     mockGetEventDayOpsBoard.mockResolvedValue(boardFixture());
-    mockGetEventChangeFeed.mockResolvedValue([requiredChangeFixture()]);
+    mockGetChangesAwaitingAcknowledgement.mockResolvedValue([requiredChangeFixture()]);
     mockListEventChangeAcknowledgements.mockRejectedValue(new ApiError(503, "Unavailable", "SERVICE_UNAVAILABLE"));
     renderPage();
 
@@ -1059,7 +1156,7 @@ describe("EventDayOpsPage", () => {
   it("keeps an acknowledged change gone when a read that set out earlier returns without it", async () => {
     const change = requiredChangeFixture();
     mockGetEventDayOpsBoard.mockResolvedValue(boardFixture());
-    mockGetEventChangeFeed.mockResolvedValue([change]);
+    mockGetChangesAwaitingAcknowledgement.mockResolvedValue([change]);
     // The server's list lags the POST: it never includes this change here.
     mockListEventChangeAcknowledgements.mockResolvedValue([]);
     renderPage();
@@ -1082,7 +1179,7 @@ describe("EventDayOpsPage", () => {
     // lives in the border, not in the text.
     const change = { ...requiredChangeFixture(), riskLevel: "blocker" as const, title: "Fire exit blocked" };
     mockGetEventDayOpsBoard.mockResolvedValue(boardFixture());
-    mockGetEventChangeFeed.mockResolvedValue([change]);
+    mockGetChangesAwaitingAcknowledgement.mockResolvedValue([change]);
     renderPage();
 
     expect(await screen.findByText("Fire exit blocked")).toBeTruthy();

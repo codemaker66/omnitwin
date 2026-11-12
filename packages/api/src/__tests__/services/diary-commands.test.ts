@@ -149,7 +149,7 @@ describe("executeDiaryCommand", () => {
       status: 201,
     });
     expect(result.ack.booking).toEqual({ id: BOOKING_ROW.id });
-    expect(result.changed).toEqual({ kind: "booking.created", bookingId: BOOKING_ROW.id });
+    expect(result.changed).toEqual({ kind: "booking.created", bookingId: BOOKING_ROW.id, venueId: VENUE });
   });
 
   it("records rejected outcomes too — a deny is a completed command", async () => {
@@ -249,9 +249,27 @@ describe("executeDiaryCommand", () => {
     const t = await executeDiaryCommand(DB, ACTOR, VENUE, transition, d);
     expect(d.updateBooking).toHaveBeenCalledWith(expect.anything(), ACTOR, BOOKING_ROW.id, update.payload);
     expect(d.transitionBooking).toHaveBeenCalledWith(expect.anything(), ACTOR, BOOKING_ROW.id, transition.payload);
-    expect(u.changed).toEqual({ kind: "booking.updated", bookingId: BOOKING_ROW.id });
-    expect(t.changed).toEqual({ kind: "booking.transitioned", bookingId: BOOKING_ROW.id });
+    expect(u.changed).toEqual({ kind: "booking.updated", bookingId: BOOKING_ROW.id, venueId: VENUE });
+    expect(t.changed).toEqual({ kind: "booking.transitioned", bookingId: BOOKING_ROW.id, venueId: VENUE });
     expect(t.ack.resequence).toBeNull();
+  });
+
+  it("names the booking's venue for the announcement, not the connection's", async () => {
+    // A platform admin's connection is their own venue's, and they may change
+    // another venue's booking: that venue's boards hear of it, not theirs.
+    const OTHER_VENUE = "00000000-0000-4000-8000-00000000ffff";
+    const elsewhere = { ...BOOKING_ROW, venueId: OTHER_VENUE } as BookingRow;
+    const d = deps({
+      updateBooking: vi.fn().mockResolvedValue({ ok: true, status: 200, booking: elsewhere, changeKind: "booking.updated" }),
+    });
+    const update: DiaryCommand = {
+      kind: "booking.update",
+      commandId: "00000000-0000-4000-8000-000000000012",
+      bookingId: elsewhere.id,
+      payload: { title: "Fixed by support" },
+    };
+    const result = await executeDiaryCommand(DB, { ...ACTOR, role: "admin", platformRole: "admin" }, VENUE, update, d);
+    expect(result.changed).toEqual({ kind: "booking.updated", bookingId: elsewhere.id, venueId: OTHER_VENUE });
   });
 
   it("an unexpected throw becomes a calm rejected ack, never an unhandled rejection", async () => {
