@@ -222,6 +222,43 @@ describe.skipIf(target === undefined)("the layout review loop on migrated Postgr
     expect(await approvedSheetVersion(f)).toBe(1);
   });
 
+  // Whole-repository audit, api-planner-configs-4. The "submitted for review"
+  // email went only to accounts with the role 'staff', while managers and
+  // admins decide reviews too (VENUE_REVIEW_ROLES). A venue whose team is
+  // admins and a hallkeeper was told nothing, and the planner waited.
+  it("tells everyone at the venue who can decide a review of a submission, and nobody else", async () => {
+    const f = await fixture();
+    const manager = randomUUID(), admin = randomUUID(), otherVenueId = randomUUID(), otherVenueAdmin = randomUUID();
+    await db.insert(schema.venues).values({ id: otherVenueId, name: "TEST ONLY other review venue", slug: otherVenueId, address: "Disposable fixture" });
+    await db.insert(schema.users).values([
+      { id: manager, venueId: f.venueId, name: "Manager", email: `${manager}@loop.invalid`, role: "manager" },
+      { id: admin, venueId: f.venueId, name: "Admin", email: `${admin}@loop.invalid`, role: "admin" },
+      { id: otherVenueAdmin, venueId: otherVenueId, name: "Another venue's admin", email: `${otherVenueAdmin}@loop.invalid`, role: "admin" },
+    ]);
+
+    await expectReview(f, "planner", "submit");
+
+    // One email each to the staff member, the manager and the admin: not to
+    // the hallkeeper or the planner, and not to another venue's admin.
+    const told = (): string[] => submittedEmailKeys().map((key) => key.split(":").at(-1) ?? "").sort();
+    await expect.poll(told).toEqual([f.users.staff, manager, admin].sort());
+  });
+
+  it("does not email a submission to the person at the venue who submitted it", async () => {
+    const f = await fixture();
+    const manager = randomUUID();
+    await db.insert(schema.users).values({ id: manager, venueId: f.venueId, name: "Manager", email: `${manager}@loop.invalid`, role: "manager" });
+
+    // The venue's staff member sends the planner's layout in on their behalf.
+    await expectReview(f, "staff", "submit");
+
+    const told = (): string[] => submittedEmailKeys().map((key) => key.split(":").at(-1) ?? "").sort();
+    await expect.poll(told).toEqual([manager]);
+    // Settled at one: the staff member who pressed submit hears nothing of it.
+    await new Promise((resolve) => { setTimeout(resolve, 150); });
+    expect(told()).toEqual([manager]);
+  });
+
   it("a draft identical to its latest version stays a draft, as before", async () => {
     const f = await fixture();
     await expectReview(f, "planner", "submit");

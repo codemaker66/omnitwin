@@ -5,6 +5,7 @@ import type { Breadcrumb, ErrorEvent } from "@sentry/node";
 import { DrizzleQueryError } from "drizzle-orm";
 import { registerErrorNormalizer } from "../middleware/error-normalizer.js";
 import {
+  CREDENTIAL_REQUEST_HEADERS,
   REDACTED_PARAMS_MARKER,
   REDACTED_QUERY_MARKER,
   errorLogSerializer,
@@ -637,4 +638,222 @@ describe("a guest plan's claim secret", () => {
     expect(out.spans?.[0]?.data).toEqual({ "http.request.header.user_agent": "vitest" });
     expect(JSON.stringify(out)).not.toContain(CLAIM_SECRET);
   });
+});
+
+// ---------------------------------------------------------------------------
+// One list of credential headers. The SDK writes an attribute for every
+// request header on the request's span (@sentry/core 10.60 utils/request.js,
+// httpHeadersToSpanAttributes: `http.request.header.<name, dashes as
+// underscores>`), so each header in CREDENTIAL_REQUEST_HEADERS loses its
+// attribute as well as its place in the request headers, with nothing to add
+// by hand when a header joins the list.
+// ---------------------------------------------------------------------------
+
+/** The SDK's attribute key for a request header, written out independently of redact.ts. */
+const sdkHeaderAttribute = (header: string): string => `http.request.header.${header.replaceAll("-", "_")}`;
+
+function transactionWithHeaderAttributes(attributes: Record<string, string>): ScrubbableTransaction {
+  return {
+    type: "transaction",
+    contexts: { trace: { trace_id: "00000000000000000000000000000001", span_id: "0000000000000001", data: { ...attributes, "http.method": "GET" } } },
+    spans: [{ trace_id: "00000000000000000000000000000001", span_id: "0000000000000002", start_timestamp: 1, data: { ...attributes, "db.system": "postgresql" } }],
+  };
+}
+
+describe("the credential request headers' span attributes", () => {
+  it("names the sign-in, cookie and claim-secret headers, the webhook signatures, the MCP session id and Set-Cookie", () => {
+    expect([...CREDENTIAL_REQUEST_HEADERS].sort()).toEqual([
+      "authorization", "cookie", "mcp-session-id", "set-cookie",
+      "stripe-signature", "svix-signature", "webhook-signature", "x-plan-claim-secret",
+    ]);
+  });
+
+  it("drops the attribute of every header in the list, on the trace and on every span", () => {
+    const attributes = Object.fromEntries(CREDENTIAL_REQUEST_HEADERS.map((header) => [sdkHeaderAttribute(header), `value-of-${header}`]));
+    const out = scrubTransaction(transactionWithHeaderAttributes({ ...attributes, "http.request.header.user_agent": "vitest" }));
+    expect(out.contexts?.trace?.data).toEqual({ "http.request.header.user_agent": "vitest", "http.method": "GET" });
+    expect(out.spans?.[0]?.data).toEqual({ "http.request.header.user_agent": "vitest", "db.system": "postgresql" });
+    expect(JSON.stringify(out)).not.toContain("value-of-");
+  });
+
+  it("drops the sign-in header's attribute, which only the SDK's own word list kept back before", () => {
+    // 10.60 writes "[Filtered]" because the name contains "auth"; a later
+    // version or a dataCollection setting could write the bearer token.
+    const out = scrubTransaction(transactionWithHeaderAttributes({ [sdkHeaderAttribute("authorization")]: "Bearer synthetic-session-token" }));
+    expect(out.contexts?.trace?.data).toEqual({ "http.method": "GET" });
+    expect(out.spans?.[0]?.data).toEqual({ "db.system": "postgresql" });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Cookies. The sign-in provider keeps the browser's session token in the
+// `__session` cookie. Dropping the Cookie header is not enough: the SDK's
+// RequestData integration also parses it into `request.cookies` on error
+// events and transactions (@sentry/core 10.60 integrations/requestdata.js),
+// and its http instrumentation writes one span attribute per cookie,
+// `http.request.header.cookie.<name>`, masking the value only when the
+// cookie's name is on its word list (utils/request.js).
+// ---------------------------------------------------------------------------
+
+const SESSION_TOKEN = "eyJhbGciOiJSUzI1NiJ9.eyJzaWQiOiJzZXNzX3N5bnRoZXRpYyJ9.c3ludGhldGljLXNpZ25hdHVyZQ";
+const OTHER_COOKIE_VALUE = "rt_synthetic_returning_visit";
+const COOKIE_HEADER = `__session=${SESSION_TOKEN}; vv_returning=${OTHER_COOKIE_VALUE}`;
+
+describe("cookies", () => {
+  it("are dropped from an error event: the parsed cookies and the Cookie header, however it is cased", () => {
+    for (const name of ["cookie", "Cookie", "COOKIE"]) {
+      const out = scrubErrorEvent({
+        type: undefined,
+        request: {
+          url: "https://api.example.test/venues",
+          cookies: { __session: SESSION_TOKEN, vv_returning: OTHER_COOKIE_VALUE },
+          headers: { [name]: COOKIE_HEADER, "user-agent": "vitest" },
+        },
+      });
+      expect(out.request).not.toHaveProperty("cookies");
+      expect(out.request?.headers).toEqual({ "user-agent": "vitest" });
+      expect(out.request?.url).toBe("https://api.example.test/venues");
+      const text = JSON.stringify(out);
+      expect(text).not.toContain(SESSION_TOKEN);
+      expect(text).not.toContain(OTHER_COOKIE_VALUE);
+    }
+  });
+
+  it("are dropped from a transaction: the parsed cookies, the header, and each cookie's attribute on the trace and spans in any casing", () => {
+    const out = scrubTransaction({
+      type: "transaction",
+      request: {
+        url: "https://api.example.test/venues",
+        cookies: { __session: SESSION_TOKEN, vv_returning: OTHER_COOKIE_VALUE },
+        headers: { cookie: COOKIE_HEADER, "user-agent": "vitest" },
+      },
+      contexts: {
+        trace: {
+          trace_id: "00000000000000000000000000000001",
+          span_id: "0000000000000001",
+          data: {
+            // As 10.60 writes them: masked for a name on its word list, raw otherwise.
+            "http.request.header.cookie.__session": "[Filtered]",
+            "http.request.header.cookie.vv_returning": OTHER_COOKIE_VALUE,
+            "http.request.header.cookie": "[Filtered]",
+            "http.method": "GET",
+          },
+        },
+      },
+      spans: [{
+        trace_id: "00000000000000000000000000000001",
+        span_id: "0000000000000002",
+        start_timestamp: 1,
+        data: {
+          "HTTP.REQUEST.HEADER.COOKIE.VV_RETURNING": OTHER_COOKIE_VALUE,
+          "http.request.header.Cookie.__session": SESSION_TOKEN,
+          "http.request.header.user_agent": "vitest",
+        },
+      }],
+    });
+    expect(out.request).not.toHaveProperty("cookies");
+    expect(out.request?.headers).toEqual({ "user-agent": "vitest" });
+    expect(out.contexts?.trace?.data).toEqual({ "http.method": "GET" });
+    expect(out.spans?.[0]?.data).toEqual({ "http.request.header.user_agent": "vitest" });
+    const text = JSON.stringify(out);
+    expect(text).not.toContain(SESSION_TOKEN);
+    expect(text).not.toContain(OTHER_COOKIE_VALUE);
+  });
+
+  it("leaves another header whose name only begins like a credential header's", () => {
+    // A cookie's attribute sits under `cookie.`; `cookie_consent` is a header of its own.
+    const out = scrubTransaction(transactionWithHeaderAttributes({
+      "http.request.header.cookie_consent": "granted",
+      "http.request.header.authorization_hint": "none",
+    }));
+    expect(out.contexts?.trace?.data).toEqual({
+      "http.request.header.cookie_consent": "granted",
+      "http.request.header.authorization_hint": "none",
+      "http.method": "GET",
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The other headers a reader of a report could use: the webhook signatures
+// (routes/stripe-webhook.ts reads Stripe-Signature, routes/webhooks.ts reads
+// Svix-Signature; Webhook-Signature is the Standard Webhooks name, read by no
+// route today), the public MCP session id (routes/public-mcp.ts reads it and
+// sends a new one back) and Set-Cookie, a response header, listed so its
+// attribute goes too. Each is dropped from an event's and a transaction's
+// headers in any casing, and its attribute as a request or a response header
+// (`http.response.header.<name>`), with any key under it, from the trace and
+// every span.
+// ---------------------------------------------------------------------------
+
+const FURTHER_CREDENTIALS: Readonly<Record<string, string>> = {
+  "stripe-signature": "t=1794355200,v1=5257a869e7ecebeda32affa62cdca3fa51cad7e77a0e56ff536d0ce8e108d8bd",
+  "svix-signature": "v1,g0hM9SsE+OTPJTGt/tmIKtSyZlE3uFJELVlNIOLJ1OE=",
+  "webhook-signature": "v1,K5oZfzN95Z9UVu1EsfQmfVNQhnkZ2pj9o9NDN/H/pI4=",
+  "mcp-session-id": "3f1c9a52-7d4e-4b8a-9e61-0c2b5d8f7a14",
+  "set-cookie": "__session=synthetic-set-cookie-token; Path=/; HttpOnly",
+};
+
+/** A header name as a client might case it: Title-Case. */
+const titleCase = (header: string): string =>
+  header.split("-").map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`).join("-");
+
+describe.each(Object.entries(FURTHER_CREDENTIALS))("the %s header", (header, value) => {
+  it("is dropped from an error event's request headers, however it is cased", () => {
+    for (const name of [header, header.toUpperCase(), titleCase(header)]) {
+      const out = scrubErrorEvent({
+        type: undefined,
+        request: { url: "https://api.example.test/webhooks/clerk", method: "POST", headers: { [name]: value, "user-agent": "vitest" } },
+      });
+      expect(out.request?.headers).toEqual({ "user-agent": "vitest" });
+      expect(JSON.stringify(out)).not.toContain(value);
+    }
+  });
+
+  it("is dropped from a transaction's request headers, and its attribute as a request or a response header from the trace and every span", () => {
+    const name = header.replaceAll("-", "_");
+    const out = scrubTransaction({
+      type: "transaction",
+      request: { url: "https://api.example.test/webhooks/clerk", method: "POST", headers: { [titleCase(header)]: value, "user-agent": "vitest" } },
+      contexts: {
+        trace: {
+          trace_id: "00000000000000000000000000000001",
+          span_id: "0000000000000001",
+          data: { [`http.request.header.${name}`]: value, [`http.response.header.${name}`]: value, "http.method": "POST" },
+        },
+      },
+      spans: [{
+        trace_id: "00000000000000000000000000000001",
+        span_id: "0000000000000002",
+        start_timestamp: 1,
+        data: { [`HTTP.REQUEST.HEADER.${name.toUpperCase()}`]: value, [`http.response.header.${name}.__session`]: value, "db.system": "postgresql" },
+      }],
+    });
+    expect(out.request?.headers).toEqual({ "user-agent": "vitest" });
+    expect(out.contexts?.trace?.data).toEqual({ "http.method": "POST" });
+    expect(out.spans?.[0]?.data).toEqual({ "db.system": "postgresql" });
+    expect(JSON.stringify(out)).not.toContain(value);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The caller's address. Every header the scrubbers drop for carrying an
+// address loses its span attribute too: 10.60 writes "[Filtered]" for these
+// only because their names contain "forwarded" or "-ip".
+// ---------------------------------------------------------------------------
+
+describe("an address header's span attribute", () => {
+  it.each(["x-forwarded-for", "x-real-ip", "forwarded", "cf-connecting-ip", "true-client-ip"])(
+    "is dropped for %s, in any casing, as a request or a response header",
+    (header) => {
+      const name = header.replaceAll("-", "_");
+      const out = scrubTransaction(transactionWithHeaderAttributes({
+        [`http.request.header.${name}`]: "203.0.113.77",
+        [`HTTP.REQUEST.HEADER.${name.toUpperCase()}`]: "203.0.113.77, 10.0.0.1",
+        [`http.response.header.${name}`]: "203.0.113.77",
+      }));
+      expect(out.contexts?.trace?.data).toEqual({ "http.method": "GET" });
+      expect(out.spans?.[0]?.data).toEqual({ "db.system": "postgresql" });
+    },
+  );
 });

@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { and, desc, eq, gte, isNull, lt, sql } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, lt, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   ComfortConstraintSchema,
@@ -8,6 +8,7 @@ import {
   RevenueScenarioBundleSchema,
   RevenueScenarioSchema,
   RoomUtilisationRowSchema,
+  resolveRotaTimeZone,
   type ComfortConstraint,
   type PricingAssumption,
   type RevenueScenario,
@@ -24,15 +25,16 @@ import {
   quotes,
   revenueScenarios,
   spaces,
+  venues,
 } from "../db/schema.js";
 import { authenticate, isPlatformAdmin } from "../middleware/auth.js";
 import { canAccessInternalEvent, canManageCommercial, canWriteEvents } from "../utils/query.js";
 import { loadPipelineValueMinor } from "../services/commercial-pipeline.js";
 import {
-  ROOM_UTILISATION_WINDOW_DAYS,
   buildPipelineSummary,
   buildRoomUtilisationRows,
   buildVenueDashboardAnalytics,
+  roomUtilisationWindow,
   summarizeRevenueScenarios,
 } from "../services/revenue-analytics.js";
 
@@ -358,13 +360,14 @@ async function loadPipelineSummary(db: Database, venueId: string) {
 }
 
 async function loadRoomUtilisation(db: Database, venueId: string): Promise<readonly z.infer<typeof RoomUtilisationRowSchema>[]> {
-  // The window the utilisation figure is measured over. Anchored to UTC
-  // midnight so the same request made twice in one day returns the same
-  // denominator.
-  const windowStart = new Date(Date.UTC(
-    new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate(),
-  ));
-  const windowEnd = new Date(windowStart.getTime() + ROOM_UTILISATION_WINDOW_DAYS * 86_400_000);
+  // The window the utilisation figure is measured over: 90 of the venue's own
+  // Diary days (04:00 to 04:00 on its clock) from its operational today, so
+  // the same request made twice in one day returns the same denominator and
+  // an evening past midnight is one day, not two.
+  const [venueRow] = await db.select({ timezone: venues.timezone }).from(venues)
+    .where(eq(venues.id, venueId)).limit(1);
+  const timeZone = resolveRotaTimeZone(venueRow?.timezone);
+  const window = roomUtilisationWindow(Date.now(), timeZone);
 
   const [roomRows, bookingRows, bottleneckRows] = await Promise.all([
     db.select({ spaceId: spaces.id, roomName: spaces.name }).from(spaces).where(and(eq(spaces.venueId, venueId), isNull(spaces.deletedAt))),
@@ -381,8 +384,8 @@ async function loadRoomUtilisation(db: Database, venueId: string): Promise<reado
       eq(bookings.venueId, venueId),
       eq(bookings.status, "active"),
       isNull(bookings.deletedAt),
-      lt(bookings.startsAt, windowEnd),
-      gte(bookings.endsAt, windowStart),
+      lt(bookings.startsAt, window.endsAt),
+      gt(bookings.endsAt, window.startsAt),
     )),
     // A scenario's review gates count against its layout's room; the layout
     // must belong to this venue (a soft-deleted layout still counts).
@@ -401,8 +404,8 @@ async function loadRoomUtilisation(db: Database, venueId: string): Promise<reado
   return buildRoomUtilisationRows({
     rooms: roomRows.length > 0 ? roomRows : [{ spaceId: null, roomName: "Unassigned room" }],
     bookings: bookingRows,
-    windowStart,
-    windowEnd,
+    windowDates: window.dates,
+    timeZone,
     reviewBottlenecksBySpaceId: new Map(bottleneckRows.map((row) => [row.spaceId, row.reviewGateCount])),
   });
 }

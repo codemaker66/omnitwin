@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { TRADES_HALL_GRAND_HALL_DIMENSIONS, TRADES_HALL_SALOON_DIMENSIONS } from "@omnitwin/types";
+import { TRADES_HALL_SALOON_DIMENSIONS } from "@omnitwin/types";
+import { HALL_LENGTH, HALL_WIDTH } from "../../components/grand-hall/hall-spec.js";
 import {
   BANQUET_CHAIR_CLEARANCE_M,
   autoFillActionLabel,
@@ -18,9 +19,10 @@ import { banquetSeatsPerTable, tableGroupPlanningRadius } from "../table-group.j
 import { computeCirculation, CIRCULATION_AISLE } from "../circulation.js";
 import { PUBLISHED_CAPACITY_LABEL } from "../planner-truth.js";
 
-// The Grand Hall's real interior, as the planner opens it (types/space.ts).
-const HALL_W = TRADES_HALL_GRAND_HALL_DIMENSIONS.width; // 21 m
-const HALL_L = TRADES_HALL_GRAND_HALL_DIMENSIONS.length; // 10.5 m
+// The Grand Hall's real interior, as the planner opens it: the scanned
+// 21.135 × 10.59 m it draws and places on (hall-spec.ts, room-geometries.ts).
+const HALL_W = HALL_LENGTH; // 21.135 m
+const HALL_L = HALL_WIDTH; // 10.59 m
 const PUBLISHED = { kind: "published", capacity: { theatre: 250, classroom: 80, dinner: 180, reception: 250 }, source: PUBLISHED_CAPACITY_LABEL } as const;
 
 function banquet(guests: number, width = HALL_W, length = HALL_L): BanquetFillPlan {
@@ -35,7 +37,7 @@ function whiteRound(): NonNullable<ReturnType<typeof getCatalogueItemBySlug>> {
   return table;
 }
 
-describe("auto-fill banquet in the Grand Hall (21 × 10.5 m)", () => {
+describe("auto-fill banquet in the Grand Hall (21.135 × 10.59 m, as scanned)", () => {
   it("sets the 6 ft rounds for the ten the catalogue records, not eight", () => {
     expect(banquetSeatsPerTable(whiteRound())).toBe(10);
     expect(banquet(220).seatsPerTable).toBe(10);
@@ -126,6 +128,8 @@ describe("auto-fill theatre in the Grand Hall", () => {
     const plan = planAutoFill("theatre", 400, HALL_W, HALL_L);
     if (plan === null || plan.style !== "theatre") throw new Error("no theatre plan");
     expect(plan.meetsTarget).toBe(false);
+    // 21 rows of 14 in the scanned hall; 280 in the old hand-drawn 21 × 10.5 m.
+    expect([plan.rows, plan.roomForSeats]).toEqual([21, 294]);
     expect(roomAtSpacingLine(plan, publishedFigureFor(PUBLISHED, "theatre")))
       .toBe(`Room for ${String(plan.roomForSeats)} at this spacing; the venue publishes 250 for theatre.`);
   });

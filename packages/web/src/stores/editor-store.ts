@@ -22,6 +22,7 @@ import { signedOutOwnerFrom } from "../lib/planner-draft-storage.js";
 import { summariseLayoutChange, type LayoutChangeSummary } from "../lib/layout-change-summary.js";
 import { browserSaysOnline, readOnlineStatus, subscribeOnlineStatus } from "../lib/online-status.js";
 import { useAuthStore, type AuthUser } from "./auth-store.js";
+import { hasRole, VENUE_FLOOR_ROLES } from "../lib/role-capabilities.js";
 import { getCatalogueItem } from "../lib/catalogue.js";
 import { normalizeFurnitureScale } from "../lib/furniture-scale.js";
 import { isTableDressingApplicator } from "../lib/table-dressing.js";
@@ -302,7 +303,9 @@ interface EditorActions {
    * Load a configuration by ID.
    *
    * The endpoint depends on `isAuthenticated`:
-   *   - true  → `getConfig()`        — auth path, enforces ownership/venue access
+   *   - true  → `getConfig()`        — auth path, enforces ownership/venue access;
+   *                                    a refusal (403) tries the public path, so a
+   *                                    preview a guest can open still opens
    *   - false → `getPublicConfig()`  — public path, only returns public previews
    *
    * Punch list #2 / #33: previously this always called `getPublicConfig()`,
@@ -338,8 +341,11 @@ interface EditorActions {
   readonly removeObject: (objectId: string) => void;
   readonly selectObject: (id: string) => void;
   readonly deselectObject: () => void;
-  /** Save to server. Uses public endpoint for preview configs, authenticated for claimed.
-   *  `transport.keepalive` lets a save sent as the page hides or closes outlive it. */
+  /** Save to server. A claimed layout saves through the authenticated endpoint;
+   *  a public preview through the public one, unless the person is signed in
+   *  and on its venue's floor (or a platform admin), whom the authenticated
+   *  endpoint answers. `transport.keepalive` lets a save sent as the page
+   *  hides or closes outlive it. */
   readonly saveToServer: (isAuthenticated?: boolean, transport?: configApi.BatchSaveTransport) => Promise<boolean>;
   /** Reload the server copy after an explicit conflict acknowledgement.
    *  This device's copy of the layout's unsaved work is discarded first, or
@@ -968,6 +974,58 @@ function bumpLocalIdsPast(objects: readonly EditorObject[]): void {
   }
 }
 
+/**
+ * Whether the signed-in routes answer this person for a public preview. It
+ * names no owner, so they admit only the floor at its venue and a platform
+ * admin (the API's canAccessResource; claim-new-draft-postgres.test.ts holds
+ * the refusal for everyone else).
+ */
+function signedInRoutesAnswerPreview(venueId: string | null): boolean {
+  const user = useAuthStore.getState().user;
+  if (user === null) return false;
+  if (user.platformRole === "admin") return true;
+  return venueId !== null && user.venueId === venueId && hasRole(VENUE_FLOOR_ROLES, user.role);
+}
+
+/**
+ * Which routes read and save the open layout. One a person owns goes through
+ * the signed-in routes. A public preview does so only for those they answer;
+ * anyone else, signed in or not, uses the public routes, as the guest who made
+ * it does. The choice used to follow the sign-in alone, so a signed-in client's
+ * every save to a preview was refused (audit editor-save-1).
+ */
+function usesSignedInRoutes(
+  layout: Pick<EditorState, "isPublicPreview" | "venueId">,
+  isAuthenticated: boolean | undefined,
+): boolean {
+  if (!layout.isPublicPreview) return true;
+  return isAuthenticated === true && signedInRoutesAnswerPreview(layout.venueId);
+}
+
+/**
+ * The read that opens a layout. A signed-in person's goes through the
+ * signed-in route, which refuses a public preview to anyone off its venue's
+ * floor. A guest could open that preview, so a refused read tries the public
+ * route before giving up, and gives the refusal when that has nothing either.
+ */
+async function readLayoutToOpen(
+  configId: string,
+  isAuthenticated: boolean | undefined,
+  handedOff: configApi.Configuration | null,
+): Promise<configApi.Configuration> {
+  if (isAuthenticated !== true) return handedOff ?? await configApi.getPublicConfig(configId);
+  try {
+    return await configApi.getConfig(configId);
+  } catch (refusal) {
+    if (!(refusal instanceof ApiError) || refusal.status !== 403) throw refusal;
+    try {
+      return handedOff ?? await configApi.getPublicConfig(configId);
+    } catch {
+      throw refusal;
+    }
+  }
+}
+
 /** The server's current copy of the layout, or null when it cannot be read. */
 async function readServerCopy(configId: string, useAuthPath: boolean): Promise<configApi.Configuration | null> {
   try {
@@ -1012,9 +1070,7 @@ export const useEditorStore = create<EditorStore>()(withSaveFacts((set, get) => 
     const outgoing = leaving !== null && leaving !== configId ? saveBeforeLayoutChange() : null;
     try {
       const [config, outgoingOutcome] = await Promise.all([
-        isAuthenticated === true
-          ? configApi.getConfig(configId)
-          : handedOff ?? configApi.getPublicConfig(configId),
+        readLayoutToOpen(configId, isAuthenticated, handedOff),
         outgoing,
       ]);
       if (request !== configurationLoadRequest) return;
@@ -1373,7 +1429,7 @@ export const useEditorStore = create<EditorStore>()(withSaveFacts((set, get) => 
       if (theirs === null) {
         // Their version says which of my objects it no longer has, and so
         // which the server must place again: without it nothing is saved.
-        const read = await readServerCopy(configId, !s.isPublicPreview || authenticated);
+        const read = await readServerCopy(configId, usesSignedInRoutes(s, authenticated));
         if (session !== configurationSession || get().configId !== configId) return false;
         const pending = get().saveConflict;
         if (pending === null) return false;
@@ -1663,7 +1719,7 @@ async function saveDocument(
   // A mid-drag save would seal an incomplete action-log entry. Release or
   // cancellation schedules the complete transaction through the same bridge.
   if (gestureOwnsCurrentDocument()) return false;
-  const { configId, configRevision, objects, isSaving, isPublicPreview, saveConflict } = get();
+  const { configId, configRevision, objects, isSaving, isPublicPreview, venueId, saveConflict } = get();
   if (configId === null || isSaving) return false;
   // A conflict waits for the person's choice. Any other save could only meet
   // it again (and, in the live room, merge what they have not chosen).
@@ -1681,10 +1737,9 @@ async function saveDocument(
     return false;
   }
 
-  // Determine save path: use authenticated endpoint if config is claimed
-  // (isPublicPreview=false) OR if caller explicitly says authenticated.
-  // Public preview configs always use the public endpoint.
-  const useAuthPath = !isPublicPreview || isAuthenticated === true;
+  // The save path: the signed-in route for a layout someone owns, and for a
+  // public preview only when that route answers this person (usesSignedInRoutes).
+  const useAuthPath = usesSignedInRoutes({ isPublicPreview, venueId }, isAuthenticated);
 
   // savingChanges is captured from pendingChanges here (deriveSaveFacts). A
   // pending conflict stays until this save lands: only then is it settled.

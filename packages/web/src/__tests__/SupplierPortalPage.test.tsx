@@ -277,6 +277,48 @@ describe("SupplierPortalPage", () => {
     expect(screen.getByRole("button", { name: "I've read it" })).toHaveProperty("disabled", false);
   });
 
+  it("says the link was closed, not the signal, when a reply meets a withdrawn or replaced link, and stops showing that brief", async () => {
+    mockGetSupplierShare.mockResolvedValue(fixturePack());
+    mockAcknowledgeSupplierShare.mockRejectedValue(new ApiError(404, "Supplier pack not found", "NOT_FOUND"));
+    renderSupplierPortal();
+
+    fireEvent.click(await screen.findByRole("button", { name: "I've read it" }));
+    expect(await screen.findByRole("heading", { level: 1, name: "This link no longer opens" })).toBeTruthy();
+    expect(screen.getByText(/the venue may have sent you a newer link/u)).toBeTruthy();
+    expect(screen.getByRole("alert").textContent).toBe("Your reply was not sent. Ring Kerry Mackay on 0141 496 0100.");
+    expect(document.body.textContent).not.toContain("Check your signal");
+    // The superseded brief's part and times are no longer on screen.
+    expect(screen.queryByRole("heading", { level: 1, name: "Bloom & Co" })).toBeNull();
+    expect(screen.queryByText("Table centrepieces")).toBeNull();
+    // The page does not ask the closed link again.
+    expect(mockGetSupplierShare).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps an unsent question on screen when the link has closed, so it can be sent another way", async () => {
+    mockGetSupplierShare.mockResolvedValue(fixturePack({ passDetails: details({ venueContact: { name: "Kerry Mackay", phone: null } }) }));
+    mockAcknowledgeSupplierShare.mockRejectedValue(new ApiError(410, "Gone", "GONE"));
+    renderSupplierPortal();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Ask a question" }));
+    fireEvent.change(screen.getByLabelText("Your question"), { target: { value: "Which door do we load through?" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send my question" }));
+
+    expect(await screen.findByRole("heading", { level: 1, name: "This link no longer opens" })).toBeTruthy();
+    expect(screen.getByRole("alert").textContent).toBe("Your question was not sent. Ask for Kerry Mackay at the venue.");
+    expect(screen.getByText("Which door do we load through?")).toBeTruthy();
+  });
+
+  it("still blames the signal, and keeps the brief, when the venue answers a reply with a server failure", async () => {
+    mockGetSupplierShare.mockResolvedValue(fixturePack());
+    mockAcknowledgeSupplierShare.mockRejectedValue(new ApiError(503, "Service unavailable", "UNAVAILABLE"));
+    renderSupplierPortal();
+
+    fireEvent.click(await screen.findByRole("button", { name: "I've read it" }));
+    expect((await screen.findByRole("alert")).textContent)
+      .toBe("Your reply did not reach the venue. Check your signal and try again, or ring Kerry Mackay on 0141 496 0100.");
+    expect(screen.getByRole("heading", { level: 1, name: "Bloom & Co" })).toBeTruthy();
+  });
+
   it("still reads plainly when the page has no plain-words details, pointing to the venue team", async () => {
     mockGetSupplierShare.mockResolvedValue(fixturePack({ passDetails: undefined }));
     renderSupplierPortal();

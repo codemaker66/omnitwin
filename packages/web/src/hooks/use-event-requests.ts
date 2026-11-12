@@ -103,7 +103,11 @@ export function useEventRequests(
   const merge = useCallback((request: VenueRequest): void => {
     setRequests((current) => [request, ...current.filter((row) => row.id !== request.id)].sort(byNewest));
     setStatus("ready");
-  }, []);
+    // A poll already on its way read the list before this request existed;
+    // landing now, it would take the request off the page. Ask again instead,
+    // so the answer that confirms it is one sent after it was made.
+    ask();
+  }, [ask]);
 
   return { status, requests, error, closed, refresh: ask, merge };
 }
