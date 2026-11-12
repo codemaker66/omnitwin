@@ -128,8 +128,9 @@ describe("auto-fill theatre in the Grand Hall", () => {
     const plan = planAutoFill("theatre", 400, HALL_W, HALL_L);
     if (plan === null || plan.style !== "theatre") throw new Error("no theatre plan");
     expect(plan.meetsTarget).toBe(false);
-    // 21 rows of 14 in the scanned hall; 280 in the old hand-drawn 21 × 10.5 m.
-    expect([plan.rows, plan.roomForSeats]).toEqual([21, 294]);
+    // 20 rows of 14 in the scanned hall, as in the old hand-drawn 21 × 10.5 m: a 21st
+    // would leave under 1.2 m behind the last row (Blake, 12 November 2026).
+    expect([plan.rows, plan.roomForSeats]).toEqual([20, 280]);
     expect(roomAtSpacingLine(plan, publishedFigureFor(PUBLISHED, "theatre")))
       .toBe(`Room for ${String(plan.roomForSeats)} at this spacing; the venue publishes 250 for theatre.`);
   });

@@ -328,6 +328,14 @@ function seatInSpaces(chair: CatalogueItem, seat: TheatreSeatPlacement, spaces: 
 }
 
 /**
+ * A chair's depth front to back, metres. Theatre rows face the stage with the
+ * chair's own front, so this is its depth whatever way the room runs.
+ */
+function seatDepthM(chair: CatalogueItem): number {
+  return 2 * toRealWorld(computeRotatedFootprint(chair, 0).halfD);
+}
+
+/**
  * Plan theatre rows for `guests` (0 fills the room): of `chair`, or of the
  * chairs in `options.chairSupply`, each row one kind in the hall's order, as
  * many as the hall has. A seat in a door's clear space (`options.doorSpaces`)
@@ -345,11 +353,13 @@ export function planTheatreFill(
   if (chair.category !== "chair") return null;
   const supply = options.chairSupply ?? [{ item: chair, inStore: null }];
   const target = requested(guests);
+  // The rear walkway is measured from the back of `chair`, the kind the rows start with.
+  const chairDepthM = seatDepthM(chair);
   if (doorSpaces.length === 0) {
-    const plan = planTheatreLayout(roomWidthM, roomLengthM, { targetGuests: target ?? undefined });
+    const plan = planTheatreLayout(roomWidthM, roomLengthM, { targetGuests: target ?? undefined, seatDepthM: chairDepthM });
     const set = seatRowsFromSupply(rowsOf(plan.seats, plan.seatsPerRow), supply, null);
     if (set.seats.length === 0) return null;
-    const room = target === null ? plan : planTheatreLayout(roomWidthM, roomLengthM);
+    const room = target === null ? plan : planTheatreLayout(roomWidthM, roomLengthM, { seatDepthM: chairDepthM });
     return {
       style: "theatre",
       chairItemId: set.seats[0]?.chairItemId ?? chair.id,
@@ -365,7 +375,7 @@ export function planTheatreFill(
       chairsRanOut: set.ranOut,
     };
   }
-  const room = planTheatreLayout(roomWidthM, roomLengthM);
+  const room = planTheatreLayout(roomWidthM, roomLengthM, { seatDepthM: chairDepthM });
   const rows = rowsOf(room.seats, room.seatsPerRow)
     .map((row) => row.filter((seat) => !supply.some((kind) => seatInSpaces(kind.item, seat, doorSpaces))))
     .filter((row) => row.length > 0);
