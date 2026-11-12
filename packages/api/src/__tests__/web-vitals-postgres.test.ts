@@ -8,7 +8,7 @@ import { WEB_VITAL_RETENTION_DAYS } from "@omnitwin/types";
 import * as schema from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { validateEnv } from "../env.js";
-import { createDailyCeiling, removeExpiredWebVitalSamples, webVitalsP75 } from "../services/web-vitals.js";
+import { createAddressKey, createDailyCeiling, removeExpiredWebVitalSamples, webVitalsP75 } from "../services/web-vitals.js";
 import { publicWebVitalsRoutes } from "../routes/public-web-vitals.js";
 import { formatP75Line } from "../scripts/web-vitals-report.js";
 
@@ -51,12 +51,32 @@ const REPORT = {
   page: "/proposal-share/:token",
   device: "phone",
   metrics: [
-    { name: "LCP", value: 5234.5, rating: "poor", navigationType: "navigate" },
-    { name: "INP", value: 184, rating: "good", navigationType: "navigate" },
-    { name: "CLS", value: 0.04, rating: "good", navigationType: "navigate" },
-    { name: "TTFB", value: 412.25, rating: "good", navigationType: "navigate" },
+    { name: "LCP", value: 5234.5, rating: "poor" },
+    { name: "INP", value: 184, rating: "good" },
+    { name: "CLS", value: 0.04, rating: "good" },
+    { name: "TTFB", value: 412.25, rating: "good" },
   ],
 } as const;
+
+describe("the per-address limiter's key", () => {
+  it("is one key per address under one secret, and never holds the address itself", () => {
+    const key = createAddressKey(() => Buffer.alloc(32, 7));
+    expect(key.keyFor("203.0.113.7")).toBe(key.keyFor("203.0.113.7"));
+    expect(key.keyFor("203.0.113.7")).not.toBe(key.keyFor("203.0.113.8"));
+    for (const address of ["203.0.113.7", "2001:db8::7"]) {
+      expect(key.keyFor(address)).not.toContain(address);
+      expect(key.keyFor(address)).toMatch(/^web-vitals:[A-Za-z0-9_-]{43}$/u);
+    }
+  });
+
+  it("cannot be traced back once its secret is replaced", () => {
+    let secret = 0;
+    const key = createAddressKey(() => Buffer.alloc(32, (secret += 1)));
+    const before = key.keyFor("203.0.113.7");
+    key.rotate();
+    expect(key.keyFor("203.0.113.7")).not.toBe(before);
+  });
+});
 
 interface SampleRow {
   readonly page: string;
@@ -64,7 +84,6 @@ interface SampleRow {
   readonly metric: string;
   readonly value: number;
   readonly rating: string;
-  readonly navigation_type: string;
 }
 
 describe.skipIf(testUrl === undefined)("field web vitals on the whole API (migrated PostgreSQL)", () => {
@@ -87,7 +106,7 @@ describe.skipIf(testUrl === undefined)("field web vitals on the whole API (migra
 
   async function rows(): Promise<SampleRow[]> {
     const { rows: found } = await pool.query<SampleRow>(
-      "SELECT page, device, metric, value, rating, navigation_type FROM web_vital_samples ORDER BY metric",
+      "SELECT page, device, metric, value, rating FROM web_vital_samples ORDER BY metric",
     );
     return found;
   }
@@ -135,17 +154,30 @@ describe.skipIf(testUrl === undefined)("field web vitals on the whole API (migra
     expect(res.statusCode).toBe(204);
     expect(res.headers["cache-control"]).toBe("no-store");
     expect(await rows()).toEqual([
-      { page: "/proposal-share/:token", device: "phone", metric: "CLS", value: 0.04, rating: "good", navigation_type: "navigate" },
-      { page: "/proposal-share/:token", device: "phone", metric: "INP", value: 184, rating: "good", navigation_type: "navigate" },
-      { page: "/proposal-share/:token", device: "phone", metric: "LCP", value: 5234.5, rating: "poor", navigation_type: "navigate" },
-      { page: "/proposal-share/:token", device: "phone", metric: "TTFB", value: 412.25, rating: "good", navigation_type: "navigate" },
+      { page: "/proposal-share/:token", device: "phone", metric: "CLS", value: 0.04, rating: "good" },
+      { page: "/proposal-share/:token", device: "phone", metric: "INP", value: 184, rating: "good" },
+      { page: "/proposal-share/:token", device: "phone", metric: "LCP", value: 5234.5, rating: "poor" },
+      { page: "/proposal-share/:token", device: "phone", metric: "TTFB", value: 412.25, rating: "good" },
     ]);
-    // The row holds nothing else: no address, no agent, no time but its own.
+    // The row holds nothing else: no address, no agent, no time but its own,
+    // and nothing the privacy page does not name.
     const { rows: columns } = await pool.query<{ column_name: string }>(
       "SELECT column_name FROM information_schema.columns WHERE table_name = 'web_vital_samples' ORDER BY column_name",
     );
     expect(columns.map((column) => column.column_name))
-      .toEqual(["device", "id", "metric", "navigation_type", "page", "rating", "recorded_at", "value"]);
+      .toEqual(["device", "id", "metric", "page", "rating", "recorded_at", "value"]);
+  });
+
+  it("keeps the day a report arrived, not the moment, so no row matches a request log by time", async () => {
+    process.env["WEB_VITALS_COLLECTION"] = "on";
+    expect((await beacon(JSON.stringify(REPORT))).statusCode).toBe(204);
+    const { rows: [day] } = await pool.query<{ rows: string; whole_days: boolean; today: boolean }>(
+      `SELECT count(*)::text AS rows,
+              bool_and(recorded_at = date_trunc('day', recorded_at)) AS whole_days,
+              bool_and(recorded_at = date_trunc('day', now())) AS today
+         FROM web_vital_samples`,
+    );
+    expect(day).toEqual({ rows: "4", whole_days: true, today: true });
   });
 
   it("reads a JSON body as well as a beacon's text", async () => {
@@ -167,6 +199,8 @@ describe.skipIf(testUrl === undefined)("field web vitals on the whole API (migra
       JSON.stringify({ ...REPORT, url: "https://venviewer.com/proposal-share/tok_SECRET123" }),
       JSON.stringify({ ...REPORT, userAgent: "Mozilla/5.0" }),
       JSON.stringify({ ...REPORT, metrics: [{ ...REPORT.metrics[0], id: "v5-1690000000000-123" }] }),
+      // How the page was reached: the privacy page names no such field.
+      JSON.stringify({ ...REPORT, metrics: [{ ...REPORT.metrics[0], navigationType: "reload" }] }),
       JSON.stringify({ ...REPORT, device: "watch" }),
       "{not json",
       "",
@@ -179,7 +213,7 @@ describe.skipIf(testUrl === undefined)("field web vitals on the whole API (migra
 
   it("has the database refuse a page that is not a route pattern", async () => {
     const insert = (page: string): Promise<unknown> => pool.query(
-      "INSERT INTO web_vital_samples (page, device, metric, value, rating, navigation_type) VALUES ($1, 'phone', 'LCP', 1, 'good', 'navigate')",
+      "INSERT INTO web_vital_samples (page, device, metric, value, rating) VALUES ($1, 'phone', 'LCP', 1, 'good')",
       [page],
     );
     for (const page of ["/proposal-share/tok_SECRET123", "/plan/2b9f1c3e-5d8a", "diary", "/Diary"]) {
@@ -250,9 +284,9 @@ describe.skipIf(testUrl === undefined)("field web vitals on the whole API (migra
 
   it("removes samples past their retention and keeps the rest", async () => {
     await pool.query(
-      `INSERT INTO web_vital_samples (page, device, metric, value, rating, navigation_type, recorded_at) VALUES
-         ('/', 'desktop', 'LCP', 1, 'good', 'navigate', now() - make_interval(days => $1 + 1)),
-         ('/', 'desktop', 'LCP', 2, 'good', 'navigate', now() - make_interval(days => $1 - 1))`,
+      `INSERT INTO web_vital_samples (page, device, metric, value, rating, recorded_at) VALUES
+         ('/', 'desktop', 'LCP', 1, 'good', now() - make_interval(days => $1 + 1)),
+         ('/', 'desktop', 'LCP', 2, 'good', now() - make_interval(days => $1 - 1))`,
       [WEB_VITAL_RETENTION_DAYS],
     );
     expect(await removeExpiredWebVitalSamples(db)).toBe(1);
@@ -261,8 +295,8 @@ describe.skipIf(testUrl === undefined)("field web vitals on the whole API (migra
 
   it("reads each vital's p75 by device class, across every page and by page, beside goal 07's target", async () => {
     const insert = (page: string, device: string, metric: string, values: readonly number[], daysAgo = 1): Promise<unknown> => pool.query(
-      `INSERT INTO web_vital_samples (page, device, metric, value, rating, navigation_type, recorded_at)
-       SELECT $1, $2, $3, value, 'good', 'navigate', now() - make_interval(days => $5) FROM unnest($4::double precision[]) AS value`,
+      `INSERT INTO web_vital_samples (page, device, metric, value, rating, recorded_at)
+       SELECT $1, $2, $3, value, 'good', now() - make_interval(days => $5) FROM unnest($4::double precision[]) AS value`,
       [page, device, metric, values, daysAgo],
     );
     await insert("/", "phone", "LCP", [1000, 2000, 3000, 4000, 5000]);

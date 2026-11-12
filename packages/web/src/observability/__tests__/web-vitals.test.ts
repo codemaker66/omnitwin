@@ -37,8 +37,8 @@ function metric(name: Metric["name"], value: number, rating: Metric["rating"] = 
   } as Metric;
 }
 
-function sentReports(send: { mock: { calls: string[][] } }): { page: string; device: string; metrics: { name: string; value: number; navigationType: string }[] }[] {
-  return send.mock.calls.map((call) => JSON.parse(call[0] ?? "{}") as { page: string; device: string; metrics: { name: string; value: number; navigationType: string }[] });
+function sentReports(send: { mock: { calls: string[][] } }): { page: string; device: string; metrics: { name: string; value: number; rating: string }[] }[] {
+  return send.mock.calls.map((call) => JSON.parse(call[0] ?? "{}") as { page: string; device: string; metrics: { name: string; value: number; rating: string }[] });
 }
 
 /** A router that moves when told, as React Router's data router reports. */
@@ -147,13 +147,14 @@ describe("the reporter", () => {
       page: "/plan/:code",
       device: "phone",
       metrics: [
-        { name: "TTFB", value: 412.25, rating: "good", navigationType: "navigate" },
-        { name: "LCP", value: 5_234.5, rating: "poor", navigationType: "navigate" },
-        { name: "CLS", value: 0.04, rating: "good", navigationType: "navigate" },
+        { name: "TTFB", value: 412.25, rating: "good" },
+        { name: "LCP", value: 5_234.5, rating: "poor" },
+        { name: "CLS", value: 0.04, rating: "good" },
       ],
     });
-    // The library's metric id, its entries and the address never travel.
-    expect(send.mock.calls[0]?.[0]).not.toMatch(/v6-|entries|http|tok_SECRET123|navigationURL/u);
+    // The library's metric id, its entries, the address and how the page was
+    // reached never travel: the privacy page names none of them.
+    expect(send.mock.calls[0]?.[0]).not.toMatch(/v6-|entries|http|tok_SECRET123|navigationURL|navigationType/u);
   });
 
   it("sends each measurement once: a page shown and hidden again adds no second row", () => {
@@ -173,7 +174,7 @@ describe("the reporter", () => {
     // INP first measured after the first hide is still that load's only INP.
     reporter.add(metric("INP", 96));
     reporter.flush();
-    expect(sentReports(send)[1]?.metrics).toEqual([{ name: "INP", value: 96, rating: "good", navigationType: "navigate" }]);
+    expect(sentReports(send)[1]?.metrics).toEqual([{ name: "INP", value: 96, rating: "good" }]);
   });
 
   it("measures a page restored from the back/forward cache as a new page load", () => {
@@ -184,9 +185,10 @@ describe("the reporter", () => {
     reporter.add(metric("LCP", 40, "good", "v6-1761650009999-LCP", "back-forward-cache"));
     reporter.flush();
     expect(sentReports(send).map((report) => report.metrics)).toEqual([
-      [{ name: "LCP", value: 1_200, rating: "good", navigationType: "navigate" }],
-      [{ name: "LCP", value: 40, rating: "good", navigationType: "back-forward-cache" }],
+      [{ name: "LCP", value: 1_200, rating: "good" }],
+      [{ name: "LCP", value: 40, rating: "good" }],
     ]);
+    expect(send.mock.calls[1]?.[0]).not.toContain("back-forward");
   });
 
   it("stops the landing page's vitals when the visitor moves on, keeping its first byte", () => {
@@ -355,7 +357,8 @@ describe("starting on a page load", () => {
     const main = readFileSync(resolve("src/main.tsx"), "utf8");
     expect(main).not.toMatch(/^import .*observability\/web-vitals\.js/mu);
     expect(main).toContain("import(\"./observability/web-vitals.js\")");
-    expect(main).toMatch(/if \(webVitalsSampleRate\(import\.meta\.env\) > 0\) \{\n {2}const landing = recordLandingRoute\(router\);/u);
+    // \r?\n: a Windows checkout with core.autocrlf reads the file with CRLF.
+    expect(main).toMatch(/if \(webVitalsSampleRate\(import\.meta\.env\) > 0\) \{\r?\n {2}const landing = recordLandingRoute\(router\);/u);
     // A chunk that fails to load stops the recording and raises nothing.
     expect(main).toContain(".catch(() => { landing.stop(); })");
   });

@@ -17,7 +17,7 @@ A sampled page load reports the vitals of the page it landed on to
 
 ```json
 { "v": 1, "page": "/proposal-share/:token", "device": "phone",
-  "metrics": [{ "name": "LCP", "value": 2968, "rating": "needs-improvement", "navigationType": "navigate" }, …] }
+  "metrics": [{ "name": "LCP", "value": 2968, "rating": "needs-improvement" }, …] }
 ```
 
 - **The page is the route's pattern**, read from the router's matched routes when the
@@ -41,21 +41,28 @@ A sampled page load reports the vitals of the page it landed on to
   and a tablet otherwise, however it is held or split; mouse-first is a desktop,
   however narrow its window.
 - **The four vitals** are measured by Google's `web-vitals` library (6.2.3): LCP,
-  INP, CLS and TTFB, each with its rating and how the page was reached. LCP, INP and
-  CLS are taken at every change, so the values held are current when the visitor
-  moves on. The library's metric id (used only to send each once) and its
-  performance entries never leave the browser.
+  INP, CLS and TTFB, each with its rating. LCP, INP and CLS are taken at every
+  change, so the values held are current when the visitor moves on. The library's
+  metric id (used only to send each once), its performance entries and how the page
+  was reached (`navigationType`, which the privacy page does not name; dropped on
+  12 November 2026) never leave the browser.
 - **How it is sent:** `fetch` with `keepalive`, `credentials: "omit"` and a
   `text/plain` body, so it needs no preflight and carries no cookie or token.
-- **What is stored:** the API stores one row per vital: page, device, metric, value,
-  rating, navigation type and the time received. It stores no address, user agent,
-  identifier or session, and nothing is stored on the device.
+- **What is stored:** the API stores one row per vital: page, device, metric, value
+  and rating, with the day it arrived, not the moment (`date_trunc('day', now())`),
+  so no row can be matched to the hosting provider's request log by time. It stores
+  no address, user agent, identifier or session, and nothing is stored on the device.
   Rows go after `WEB_VITAL_RETENTION_DAYS` (90) in the nightly cleanup.
 - **What the server sees:** like any request, the report reaches the API from the
   visitor's internet address. The route writes no access line (`logLevel: "warn"`,
-  as `POST /public/quiz-runs`), so the address is used by the rate limiter in memory
-  and kept nowhere; an error on the route still logs. The hosting platform's own
-  edge logs are outside the app; the solicitor should confirm the notice covers them.
+  as `POST /public/quiz-runs`); its rate limiter keys the address by an HMAC under a
+  secret held in memory and replaced every ten minutes (`createAddressKey`), so it
+  never holds the address itself; and API tracing leaves the route out
+  (`ignoreTransactions` in `observability/sentry.ts`). An error on the route still
+  reaches the error log and Sentry, with the request id and route only.
+- **What the host sees:** the hosting provider's own request logs (Railway's HTTP
+  logs) record every request's address, user agent and path, these included, as they
+  do for every request. No code here changes that, so the privacy page says so.
 
 ## Two switches, both off today
 
@@ -86,8 +93,9 @@ it is not in this change.
 1. publish the privacy page's line (draft below, through the solicitor) with a way to
    object that works on an iPhone (above);
 2. set `WEB_VITALS_COLLECTION=on` on the API;
-3. build the web with a sample rate. At the pilot's traffic, 1 gives a usable p75
-   within weeks; lower it as traffic grows.
+3. build the web with a sample rate **below 1** (0.5 to start): the privacy page and
+   the description the solicitor approved say only a sample of page loads is
+   measured. Measuring every page load needs that description changed first.
 
 Draft for the privacy page (for the solicitor and Blake; not live):
 

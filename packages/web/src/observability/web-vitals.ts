@@ -109,7 +109,8 @@ export function createWebVitalsReporter(landingPage: string, device: WebVitalDev
       if (left && metric.name !== "TTFB") return;
       held.set(metric.name, {
         id: metric.id,
-        sample: { name: metric.name, value: metric.value, rating: metric.rating, navigationType: metric.navigationType },
+        // Only what the privacy page names: the vital, its value and rating.
+        sample: { name: metric.name, value: metric.value, rating: metric.rating },
       });
     },
     relabel: (target) => { page = target; },

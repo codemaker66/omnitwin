@@ -2,7 +2,9 @@ import type { FastifyInstance } from "fastify";
 import { WebVitalsReportSchema } from "@omnitwin/types";
 import type { Database } from "../db/client.js";
 import {
+  WEB_VITALS_ADDRESS_KEY_ROTATION_MS,
   WEB_VITALS_DAILY_REPORT_CEILING,
+  createAddressKey,
   createDailyCeiling,
   recordWebVitals,
   webVitalsCollectionEnabled,
@@ -19,7 +21,10 @@ import {
 // CORS preflight; JSON is read either way. Off (404) unless
 // WEB_VITALS_COLLECTION=on. Anyone can post a number here, so the limiter
 // bounds an address, a daily ceiling bounds everyone together, and the p75 is
-// read as a measure, never as a guarantee.
+// read as a measure, never as a guarantee. The limiter keys an address by an
+// HMAC under a secret replaced every ten minutes (createAddressKey), so it
+// never holds the address itself, and API tracing leaves this route out
+// (observability/sentry.ts).
 // ---------------------------------------------------------------------------
 
 /** A report is a few hundred bytes; anything far larger is not one. */
@@ -40,6 +45,11 @@ export async function publicWebVitalsRoutes(
 ): Promise<void> {
   const { db } = opts;
   const ceiling = createDailyCeiling(opts.dailyReportCeiling ?? WEB_VITALS_DAILY_REPORT_CEILING);
+  const addressKey = createAddressKey();
+  // On a timer, not on the next request: a quiet hour must not keep the secret.
+  const rotation = setInterval(addressKey.rotate, WEB_VITALS_ADDRESS_KEY_ROTATION_MS);
+  rotation.unref();
+  server.addHook("onClose", async () => { clearInterval(rotation); });
 
   server.post("/web-vitals", {
     bodyLimit: REPORT_BODY_LIMIT_BYTES,
@@ -48,8 +58,9 @@ export async function publicWebVitalsRoutes(
     // log (as POST /public/quiz-runs).
     logLevel: "warn",
     // A page load sends one report, and another if it is restored from the
-    // back/forward cache; an office shares one address.
-    config: { rateLimit: { max: 60, timeWindow: "1 minute" } },
+    // back/forward cache; an office shares one address. Keyed without the
+    // address itself (createAddressKey).
+    config: { rateLimit: { max: 60, timeWindow: "1 minute", keyGenerator: (request) => addressKey.keyFor(request.ip) } },
   }, async (request, reply) => {
     reply.header("Cache-Control", "no-store");
     if (!webVitalsCollectionEnabled()) {

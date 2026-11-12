@@ -1,3 +1,4 @@
+import { createHmac, randomBytes } from "node:crypto";
 import { sql } from "drizzle-orm";
 import {
   WEB_VITAL_P75_TARGETS,
@@ -59,6 +60,33 @@ export function createDailyCeiling(limit: number, now: () => number = Date.now):
   };
 }
 
+/** How often the per-address limiter's secret is replaced (createAddressKey). */
+export const WEB_VITALS_ADDRESS_KEY_ROTATION_MS = 10 * 60_000;
+
+export interface AddressKey {
+  /** The limiter's key for an address, which never contains the address. */
+  readonly keyFor: (address: string) => string;
+  /** Replaces the secret, after which no earlier key leads back to an address. */
+  readonly rotate: () => void;
+}
+
+/**
+ * The per-address limiter's key without the address: an HMAC of it under a
+ * secret held only in memory. The limiter needs one key per address within a
+ * minute's window; once the secret is replaced (every ten minutes, by the
+ * route) no key it stored can be traced back to an address. So the address is
+ * used briefly and in memory only, as the privacy page says, rather than kept
+ * as the limiter's key until newer ones push it out. The global limiter keys
+ * every other route by `ip:<address>`; this route's own key overrides it.
+ */
+export function createAddressKey(secret: () => Buffer = () => randomBytes(32)): AddressKey {
+  let current = secret();
+  return {
+    keyFor: (address) => `web-vitals:${createHmac("sha256", current).update(address).digest("base64url")}`,
+    rotate: () => { current = secret(); },
+  };
+}
+
 /** One row per vital of a report. Returns how many were kept. */
 export async function recordWebVitals(db: Database, report: WebVitalsReport): Promise<number> {
   const rows = await db.insert(webVitalSamples)
@@ -68,7 +96,6 @@ export async function recordWebVitals(db: Database, report: WebVitalsReport): Pr
       metric: metric.name,
       value: metric.value,
       rating: metric.rating,
-      navigationType: metric.navigationType,
     })))
     .returning({ id: webVitalSamples.id });
   return rows.length;
