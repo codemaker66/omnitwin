@@ -18,6 +18,7 @@ import { roomPhrase } from "../../lib/unrecorded-ask.js";
 import { useFocusTrap } from "../../lib/use-focus-trap.js";
 import { useEscapeLayer } from "../../lib/planner-keys.js";
 import { isValidEmail } from "../../lib/email-validation.js";
+import { messageLengthProblem } from "../../lib/enquiry-message-length.js";
 import { sceneFurniturePlacements } from "../../lib/table-dressing.js";
 import { PLAN_LINK_CONSEQUENCE } from "./VisitorPlanLinkActions.js";
 
@@ -146,9 +147,11 @@ function readStored(key: string): Partial<Record<keyof EnquiryDraft, string>> {
     const parsed: unknown = raw === null ? null : JSON.parse(raw);
     if (typeof parsed !== "object" || parsed === null) return {};
     const out: Partial<Record<keyof EnquiryDraft, string>> = {};
+    // Each field comes back whole: a message over the API's limit is held at
+    // Send with the reason, never cut short here (review of #405, F5).
     for (const field of Object.keys(EMPTY_DRAFT) as (keyof EnquiryDraft)[]) {
       const value = (parsed as Record<string, unknown>)[field];
-      if (typeof value === "string") out[field] = value.slice(0, 2000);
+      if (typeof value === "string") out[field] = value;
     }
     return out;
   } catch {
@@ -266,6 +269,7 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
   // change the layout the venue is reading.
   const isPublicPreview = useEditorStore((s) => s.isPublicPreview);
   const emailRef = useRef<HTMLInputElement>(null);
+  const messageRef = useRef<HTMLTextAreaElement>(null);
   const successHeadingRef = useRef<HTMLHeadingElement>(null);
   const trapRef = useFocusTrap<HTMLDivElement>();
 
@@ -315,6 +319,15 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
       setEmailTouched(true);
       setError("We need a valid email so the events team can reach you");
       emailRef.current?.focus();
+      return;
+    }
+
+    // A message longer than the API takes is kept, never cut, and held here
+    // with the reason (review of #405, F5).
+    const messageProblem = messageLengthProblem(message);
+    if (messageProblem !== null) {
+      setError(messageProblem);
+      messageRef.current?.focus();
       return;
     }
 
@@ -698,13 +711,13 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
               Anything else?
             </label>
             <textarea
+              ref={messageRef}
               id="ge-message"
               className="omni-enq-input"
               style={{ minHeight: 72, resize: "vertical" }}
               value={message}
               onChange={(e) => { setMessage(e.target.value); }}
               placeholder="Event details"
-              maxLength={GUEST_ENQUIRY_LIMITS.messageLength}
             />
           </div>
 

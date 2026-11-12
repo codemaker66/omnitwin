@@ -16,6 +16,7 @@ import { ActivityIndicator } from "../components/shared/Activity.js";
 import { submitGuestEnquiry } from "../api/configurations.js";
 import { useFocusTrap } from "../lib/use-focus-trap.js";
 import { isValidEmail } from "../lib/email-validation.js";
+import { messageLengthProblem } from "../lib/enquiry-message-length.js";
 import {
   TWIN_ENQUIRE_CLOSE,
   TWIN_ENQUIRE_CTA,
@@ -63,6 +64,7 @@ export function TwinEnquiryModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const emailRef = useRef<HTMLInputElement>(null);
+  const messageRef = useRef<HTMLTextAreaElement>(null);
   const trapRef = useFocusTrap<HTMLDivElement>();
 
   useEffect(() => {
@@ -85,6 +87,14 @@ export function TwinEnquiryModal({
         setEmailTouched(true);
         setError(TWIN_ENQUIRE_EMAIL_INVALID);
         emailRef.current?.focus();
+        return;
+      }
+      // A message longer than the API takes is kept, never cut, and held
+      // here with the reason (review of #405, F5).
+      const messageProblem = messageLengthProblem(message);
+      if (messageProblem !== null) {
+        setError(messageProblem);
+        messageRef.current?.focus();
         return;
       }
       const parsedGuests =
@@ -319,8 +329,8 @@ export function TwinEnquiryModal({
             Anything else?
           </label>
           <textarea
+            ref={messageRef}
             id="tw-enq-message"
-            maxLength={GUEST_ENQUIRY_LIMITS.messageLength}
             className="vv-twin-enq-input vv-twin-enq-textarea"
             value={message}
             onChange={(event) => {

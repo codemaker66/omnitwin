@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { findUnsupportedProposalClaim, GUEST_ENQUIRY_LATEST_EVENT_DATE, GUEST_ENQUIRY_LIMITS } from "@omnitwin/types";
+import {
+  findUnsupportedProposalClaim,
+  GUEST_ENQUIRY_LATEST_EVENT_DATE,
+  GUEST_ENQUIRY_LIMITS,
+  GuestEnquirySchema,
+} from "@omnitwin/types";
 import type { VenueDetail } from "../../../api/spaces.js";
 
 const mocks = vi.hoisted(() => ({ getVenue: vi.fn(), submit: vi.fn(), createLink: vi.fn(), listLinks: vi.fn(), flush: vi.fn() }));
@@ -301,20 +306,69 @@ describe("GuestEnquiryModal takes no more than the API accepts", () => {
     await screen.findByText("Your details are shared only with the Limit Rooms events team.");
   }
 
+  // The message is held at Send instead (below).
   it("limits every field to the shared enquiry limits", async () => {
     await open();
     const limits: readonly [string, number][] = [
       ["Your name", screen.getByRole<HTMLInputElement>("textbox", { name: "Your name" }).maxLength],
       ["Phone", screen.getByRole<HTMLInputElement>("textbox", { name: /^Phone/u }).maxLength],
-      ["Anything else?", screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Anything else?" }).maxLength],
       ["Guest count", Number(screen.getByRole<HTMLInputElement>("spinbutton", { name: "Guest count" }).max)],
     ];
     expect(limits).toEqual([
       ["Your name", GUEST_ENQUIRY_LIMITS.nameLength],
       ["Phone", GUEST_ENQUIRY_LIMITS.phoneLength],
-      ["Anything else?", GUEST_ENQUIRY_LIMITS.messageLength],
       ["Guest count", GUEST_ENQUIRY_LIMITS.guestCount],
     ]);
+  });
+
+  // Review of #405, F5. A maxlength message field cut a longer paste at the
+  // API's limit without a word, and the events team got a brief that stopped
+  // mid-sentence. The field keeps everything; Send holds the enquiry, says
+  // why in the alert the email's problem uses, and takes the guest there.
+  it("keeps a long pasted message and holds Send, saying how long it is", async () => {
+    await open();
+    fireEvent.change(screen.getByLabelText(/email/iu), { target: { value: "guest@example.test" } });
+    const message = screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Anything else?" });
+    expect(message.hasAttribute("maxlength"), "a maxlength field cuts a paste without a word").toBe(false);
+    const brief = "b".repeat(3214);
+    fireEvent.change(message, { target: { value: brief } });
+    fireEvent.click(screen.getByRole("button", { name: "Send to Events Team" }));
+    expect(mocks.submit).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert").textContent).toBe("Messages can be up to 2,000 characters. Yours is 3,214.");
+    expect(document.activeElement, "focus after Send").toBe(message);
+    expect(message.value).toBe(brief);
+  });
+
+  // Counted as the API counts, or a message one past the limit is sent and
+  // refused, or one at it is held for nothing: what is posted (trimmed), in
+  // Unicode code points, as zod 4 reads a string's length. An emoji outside
+  // the basic plane is one, though it is two UTF-16 units.
+  it("holds a message one past the API's limit and sends one at it, counting as the API does", async () => {
+    mocks.submit.mockResolvedValue({});
+    const limit = GUEST_ENQUIRY_LIMITS.messageLength;
+    const onePast = `${"a".repeat(limit)}🎻`;
+    const atLimit = ` \n${"a".repeat(limit - 1)}🎻\n `;
+    expect(atLimit.trim().length, "UTF-16 units: a count of these would hold it").toBe(limit + 1);
+    const apiTakes = (text: string): boolean => GuestEnquirySchema.safeParse({
+      venueSlug: rooms.slug, email: "guest@example.test", message: text,
+    }).success;
+    await open();
+    fireEvent.change(screen.getByLabelText(/email/iu), { target: { value: "guest@example.test" } });
+    const message = screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Anything else?" });
+    const send = screen.getByRole("button", { name: "Send to Events Team" });
+
+    fireEvent.change(message, { target: { value: onePast } });
+    fireEvent.click(send);
+    expect(mocks.submit).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert").textContent).toBe("Messages can be up to 2,000 characters. Yours is 2,001.");
+    expect(apiTakes(onePast.trim()), "the API refuses it too").toBe(false);
+
+    fireEvent.change(message, { target: { value: atLimit } });
+    fireEvent.click(send);
+    await waitFor(() => {
+      expect(mocks.submit).toHaveBeenCalledWith(expect.objectContaining({ message: atLimit.trim() }));
+    });
+    expect(apiTakes(atLimit.trim()), "the API takes it").toBe(true);
   });
 
   // Review of #405, F2: a date field with no max takes a year of five digits
@@ -373,6 +427,24 @@ describe("GuestEnquiryModal keeps the guest's work", () => {
     await open();
     expect(screen.getByLabelText<HTMLInputElement>(/email/iu).value).toBe("guest@example.test");
     expect(screen.getByLabelText<HTMLInputElement>("Guest count").value).toBe("120");
+  });
+
+  // Review of #405, F5: a long message is kept whole, and that holds across
+  // a close. Restoring the draft cut it at 2,000 without a word, and the next
+  // Send went out with the brief stopping mid-sentence.
+  it("keeps a long message whole when the form is closed and opened again, and still holds it", async () => {
+    await open();
+    fireEvent.change(screen.getByLabelText(/email/iu), { target: { value: "guest@example.test" } });
+    const brief = "b".repeat(3214);
+    fireEvent.change(screen.getByRole("textbox", { name: "Anything else?" }), { target: { value: brief } });
+    fireEvent.click(screen.getByRole("dialog"));
+    cleanup();
+
+    await open();
+    expect(screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Anything else?" }).value).toBe(brief);
+    fireEvent.click(screen.getByRole("button", { name: "Send to Events Team" }));
+    expect(mocks.submit).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert").textContent).toBe("Messages can be up to 2,000 characters. Yours is 3,214.");
   });
 
   it("starts the next send from the contact details given last time, with the sent draft gone", async () => {

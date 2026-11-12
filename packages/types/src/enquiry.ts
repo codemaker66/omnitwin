@@ -180,10 +180,12 @@ export type GuestEnquirySource = (typeof GUEST_ENQUIRY_SOURCES)[number];
 /**
  * The most a guest may give in each field the public enquiry forms offer:
  * characters for the name, telephone and message, and the largest guest
- * count. GuestEnquirySchema holds the API to these and the forms (the front
- * door's composer, the walkthrough's and the planner's) set them on their
- * fields, so a form never takes what the API would refuse as "Validation
- * failed".
+ * count. GuestEnquirySchema holds the API to these (zod counts a string's
+ * Unicode code points). The forms (the front door's composer, the
+ * walkthrough's and the planner's) set the name, telephone and guest count
+ * on their fields; a message over its limit is kept whole and held at Send
+ * with the reason (packages/web lib/enquiry-message-length.ts). So a form
+ * never sends what the API would refuse as "Validation failed".
  */
 export const GUEST_ENQUIRY_LIMITS = {
   nameLength: 200,
