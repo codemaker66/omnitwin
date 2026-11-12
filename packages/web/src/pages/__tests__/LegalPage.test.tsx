@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { measurementDeclined, setMeasurementDeclined } from "../../observability/measurement-choice.js";
 import {
@@ -149,14 +149,25 @@ describe("the privacy policy", () => {
   });
 
   it("says plainly when the browser would not keep the choice, rather than claiming it was kept", () => {
-    vi.spyOn(window.localStorage, "setItem").mockImplementation(() => { throw new Error("QuotaExceededError"); });
+    // A stand-in that reads but will not write (storage full), put back after:
+    // a spy on happy-dom's localStorage is not restored and leaks into later tests.
+    const real = window.localStorage;
+    const kept = new Map<string, string>();
+    Object.defineProperty(window, "localStorage", {
+      configurable: true,
+      value: {
+        getItem: (key: string) => kept.get(key) ?? null,
+        setItem: () => { throw new Error("QuotaExceededError"); },
+        removeItem: (key: string) => { kept.delete(key); },
+      },
+    });
     try {
       render(<LegalPage type="privacy" />);
       fireEvent.click(screen.getByRole("button", { name: "Don't measure my visits" }));
       expect(screen.getByRole("status").textContent)
         .toBe("This browser would not let us keep your choice, so it holds only until you leave this page.");
     } finally {
-      vi.restoreAllMocks();
+      Object.defineProperty(window, "localStorage", { configurable: true, value: real });
       setMeasurementDeclined(false);
     }
   });
