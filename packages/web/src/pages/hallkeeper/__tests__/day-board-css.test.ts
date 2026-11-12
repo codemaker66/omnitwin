@@ -132,6 +132,13 @@ describe("the Day Board's stylesheet", () => {
     expect(rules(CSS).filter((rule) => rule.selectors.includes(".dayboard[data-layout=\"phone\"] .dayboard-next"))).toHaveLength(1);
   });
 
+  it("sets a count's note in line with its label's words, not under the label's dot", () => {
+    const px = (value: string | undefined): number => Number.parseFloat(value ?? "");
+    const dot = cascaded(SHEET, ".dayboard-stage-dot").get("width");
+    const gap = cascaded(SHEET, ".dayboard-stage > span").get("gap");
+    expect(px(cascaded(SHEET, ".dayboard-stage-note").get("padding-left"))).toBe(px(dot) + px(gap));
+  });
+
   it("gives the wall's height to its rooms, not to a note on counts that filter nothing", () => {
     expect(cascaded(rules(CSS), ".dayboard[data-register=\"wall\"] .dayboard-stage-note").get("display")).toBe("none");
   });

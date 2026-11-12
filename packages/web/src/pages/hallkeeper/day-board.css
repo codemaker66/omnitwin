@@ -421,8 +421,10 @@ button.dayboard-stage:hover { background: var(--house-plane-hover); }
 }
 
 /* What a count covers that its filter cannot show ("1 not on today's
-   bookings"), under its label in the plane's own ink. */
+   bookings"), under its label in the plane's own ink, in line with the
+   label's words rather than its dot (8 px and the 7 px gap after it). */
 .dayboard-stage-note {
+  padding-left: 15px;
   font-size: 12px;
   line-height: 1.25;
 }
