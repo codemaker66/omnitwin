@@ -749,25 +749,29 @@ export function deriveDayBoard(
         timeZone,
       );
 
-      // What this slot follows: of the bookings before it, the one that ends
-      // last, which leaves the room as this setup finds it. A function follows
-      // the last function, past any viewing in between, so a show-round never
-      // hides the changeover between two functions; a viewing follows
-      // whatever came before it. A talk inside a running exhibition never
-      // hides the exhibition, which still stands after the talk.
+      // What this slot follows: of the bookings before it that have left the
+      // room by the time its doors open, the one that left last, which leaves
+      // the room as this setup finds it. A function follows the last
+      // function, past any viewing in between, so a show-round never hides
+      // the changeover between two functions; a viewing follows whatever
+      // came before it. A booking still running when this one opens (a first
+      // and second option on the same evening; an exhibition a talk sits
+      // inside) has no changeover with it: neither a turn-round to dimension
+      // nor a room to clear. So a talk inside a running exhibition has none,
+      // the private view after that talk runs from the talk, and the dinner
+      // after the exhibition from the exhibition. The doors, not the setup,
+      // mark the cut: a setup that starts before the booking ahead of it has
+      // ended is the short turn-round the board exists to show.
       let previous: (typeof entries)[number] | undefined;
       for (const candidate of entries.slice(0, index)) {
         if (entry.kind !== "viewing" && candidate.kind === "viewing") continue;
+        if (Date.parse(candidate.endsAt) > startsAtMs) continue;
         if (previous === undefined || Date.parse(candidate.endsAt) >= Date.parse(previous.endsAt)) previous = candidate;
       }
       let gapBefore: LaneGap | null = null;
       let changeover: string | null = null;
       let changeoverFromMs: number | null = null;
-      // Two bookings at once in one room (a first and second option on the
-      // same evening; a talk inside a running exhibition) have no changeover
-      // between them: neither a turn-round to dimension nor a room to clear.
-      const concurrent = previous !== undefined && startsAtMs < Date.parse(previous.endsAt);
-      if (previous !== undefined && !concurrent) {
+      if (previous !== undefined) {
         const previousEnd = Date.parse(previous.endsAt);
         // After a viewing there is nothing to clear; before one, the room
         // still needs the previous function's changeover to be shown.

@@ -110,6 +110,39 @@ describe("a room's day", () => {
     expect(dinner?.gapBefore).toEqual({ minutes: 60, neededMinutes: 60, short: false });
   });
 
+  it("runs a function inside a longer booking from the function before it, still warning when that room is not cleared", () => {
+    // An exhibition runs all week; today a talk runs 12:00–13:00 inside it,
+    // then a private view from 18:30. The talk was marked done, not cleaned.
+    const exhibition = { ...booking("exhibition", -50 * 60, 52 * 60), title: "Exhibition" } as CalendarResponse["entries"][number];
+    const day = response([exhibition, booking("talk", -60, 0, { title: "Talk" }), booking("view", 330, 480, { title: "Private view" })]);
+    const seen: DayBoardSlotObservation[] = [{ bookingId: "talk", spaceId: GRAND_HALL, kind: "done", observedAt: new Date(NOW + 5 * MIN).toISOString() }];
+    const atSix = NOW + 5 * HOUR;
+    const [, talk, view] = deriveDayBoard(day, atSix, TZ, [], seen).lanes[0]?.slots ?? [];
+    // The talk sits inside the running exhibition: no turn-round of its own.
+    expect([talk?.previousBookingId, talk?.gapBefore]).toEqual([null, null]);
+    expect(view?.previousBookingId).toBe("talk");
+    expect(view?.gapBefore).toEqual({ minutes: 330, neededMinutes: 60, short: false });
+    expect([view?.stateLabel, view?.exceptionDetail]).toEqual(["Changeover at risk", "Talk not yet cleared · 30 min until setup, 1 h needed"]);
+  });
+
+  it("runs a turn-round from the booking still in the room when setup starts, not an earlier one", () => {
+    // The dinner's setup starts at 13:30, half an hour before the lunch
+    // ends: the turn-round runs from the lunch (none to spare), not from the
+    // breakfast that left the room at 09:00.
+    const DINNER_EVENT = "00000000-0000-4000-8000-0000000000e1";
+    const setup = {
+      entryType: "phase", id: "00000000-0000-4000-8000-0000000000f1", spaceId: GRAND_HALL, eventId: DINNER_EVENT, eventName: "Dinner",
+      name: "Setup", startsAt: new Date(NOW + 30 * MIN).toISOString(), endsAt: new Date(NOW + 90 * MIN).toISOString(), sortOrder: 0,
+    } as CalendarResponse["entries"][number];
+    const board = deriveDayBoard(response([
+      booking("breakfast", -5 * 60, -4 * 60), booking("lunch", -60, 60),
+      { ...booking("dinner", 90, 300), eventId: DINNER_EVENT } as CalendarResponse["entries"][number], setup,
+    ]), NOW, TZ);
+    const dinner = board.lanes[0]?.slots.find((slot) => slot.bookingId === "dinner");
+    expect(dinner?.previousBookingId).toBe("lunch");
+    expect(dinner?.gapBefore).toEqual({ minutes: 0, neededMinutes: 60, short: true });
+  });
+
   it("fades a room whose day is done, and keeps a room with nothing on quiet", () => {
     const board = deriveDayBoard(response([booking("a", -6 * 60, -5 * 60)]), NOW, TZ);
     const [grandHall, saloon] = board.lanes.map(roomDay);
