@@ -70,9 +70,13 @@ export function heldNoteIds(state: Pick<GuestPlanNoteFacts, "isPublicPreview" | 
  * or change here. A piece they have written on shows their own words instead
  * (work kept on the device can carry a note for a piece that has since come
  * to hold one): they can then read it and take it off, which the save needs.
+ * So does a piece whose note this browser carried onto a newer version
+ * (keepingConfirmedNotes): the note is theirs to read, change or clear, and
+ * a cleared one is an empty note, not one kept from them.
  */
 export function noteHeldOn(state: GuestPlanNoteFacts, objectId: string): boolean {
   if (!heldNoteIds(state).has(objectId)) return false;
+  if ((state.baseObjects.find((object) => object.id === objectId)?.notes ?? "") !== "") return false;
   return (state.objects.find((object) => object.id === objectId)?.notes ?? "") === "";
 }
 
@@ -99,20 +103,30 @@ export function signedInRoutesSuit(state: Pick<GuestPlanNoteFacts, "isPublicPrev
  * last confirmed one, or the base of work kept on this device, at the same
  * revision). A note is put back only on a piece the fresh copy says holds
  * one; the API still refuses a save naming a note the piece no longer holds.
+ *
+ * `carried` is "Keep mine": the notes were confirmed at an older revision and
+ * are put on a newer one, where someone else may have rewritten them. Such a
+ * note is what this browser last knew, not the server's word, so the piece
+ * keeps its mark beside it: it counts as holding a note this browser is not
+ * shown (nothing may take the piece) until a save confirms the note, and the
+ * person still reads and changes their own words on it. A note that came with
+ * its mark stays so through a reload.
  */
 export function keepingConfirmedNotes(
   fresh: readonly EditorObject[],
   confirmed: readonly EditorObject[],
+  carried = false,
 ): readonly EditorObject[] {
-  const known = new Map<string, string>();
+  const known = new Map<string, EditorObject>();
   for (const object of confirmed) {
-    if (object.notes.length > 0) known.set(object.id, object.notes);
+    if (object.notes.length > 0) known.set(object.id, object);
   }
   if (known.size === 0) return fresh;
   return fresh.map((object) => {
     const { noteHeld, ...shown } = object;
-    const note = noteHeld === true && object.notes.length === 0 ? known.get(object.id) : undefined;
-    return note === undefined ? object : { ...shown, notes: note };
+    const was = noteHeld === true && object.notes.length === 0 ? known.get(object.id) : undefined;
+    if (was === undefined) return object;
+    return carried || was.noteHeld === true ? { ...object, notes: was.notes } : { ...shown, notes: was.notes };
   });
 }
 
@@ -152,11 +166,15 @@ export const NOTE_HELD_CODE = "NOTE_HELD";
  * The pieces on which the person's own words stand over a note this browser
  * is not shown (work kept on the device from before the piece held one, or
  * kept over a newer version that put one there). These are what a refused
- * save tried to change, and the person can take their words off again.
+ * save tried to change, and the person can take their words off again. A
+ * piece whose note this browser carried is not one of them: its words name
+ * the note they replace, and are refused only if that note is out of date.
  */
 export function ownWordsOverHeldNotes(state: GuestPlanNoteFacts): readonly EditorObject[] {
   const held = heldNoteIds(state);
-  return held.size === 0 ? [] : state.objects.filter((object) => held.has(object.id) && object.notes !== "");
+  if (held.size === 0) return [];
+  const carried = new Set(state.baseObjects.filter((object) => object.notes !== "").map((object) => object.id));
+  return state.objects.filter((object) => held.has(object.id) && object.notes !== "" && !carried.has(object.id));
 }
 
 /**

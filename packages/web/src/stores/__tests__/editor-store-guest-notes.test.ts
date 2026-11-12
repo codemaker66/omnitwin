@@ -3,7 +3,7 @@ import { ApiError } from "../../api/client.js";
 import type { BatchObjectInput, Configuration, ObjectMetadata, PlacedObject } from "../../api/configurations.js";
 import { editorToPlacedItem, placedItemToEditor } from "../../components/editor/EditorBridge.js";
 import { persistAnonymousPlannerDraft, readAnonymousPlannerDraft } from "../../lib/anonymous-planner-draft.js";
-import { noteHeldOn, ownWordsOverHeldNotes } from "../../lib/guest-plan-notes.js";
+import { heldNoteIds, noteHeldOn, ownWordsOverHeldNotes } from "../../lib/guest-plan-notes.js";
 import { useAuthStore } from "../auth-store.js";
 import { useEditorStore, type EditorObject } from "../editor-store.js";
 import { usePlacementNoticeStore } from "../placement-notice-store.js";
@@ -641,6 +641,7 @@ describe("a save refused for a held note the person wrote over", () => {
 
 const C = "0a0a0a0a-0000-4000-8000-00000000000c";
 const D = "0a0a0a0a-0000-4000-8000-00000000000d";
+const THEIR_NOTE = "TEST ONLY nut allergy, table by the door";
 
 function notice(): string | null {
   return usePlacementNoticeStore.getState().notice?.text ?? null;
@@ -648,6 +649,12 @@ function notice(): string | null {
 
 function pieceIds(): readonly string[] {
   return store().objects.map((object) => object.id);
+}
+
+/** The newer version as any browser without the plan's secret reads it. */
+function theyNowHave(server: PlanOnServer, pieces: readonly PlacedObject[]): void {
+  server.revision += 1;
+  vi.mocked(configApi.getPublicConfig).mockResolvedValue({ ...plan(pieces, false), revision: server.revision });
 }
 
 describe("a save of a document that has lost a piece holding a note this browser is not shown", () => {
@@ -711,5 +718,49 @@ describe("a save of a document that has lost a piece holding a note this browser
     expect(await store().saveToServer(false)).toBe(true);
     expect(saveSent(savesSent() - 1).batch.map((piece) => piece.id)).toEqual([B]);
     expect(notice()).toBeNull();
+  });
+});
+
+describe("the notes Keep mine carries onto the newer version, before any save has confirmed them", () => {
+  it("count as notes this browser is not shown, so nothing takes those pieces meanwhile", async () => {
+    const server: PlanOnServer = { revision: 4, notes: new Map() };
+    serveNotesAsTheApiDoes(server);
+    await open(plan([placed(A), placed(B)], false));
+    store().setObjectNotes(B, "TEST ONLY by the window");
+    expect(await store().saveToServer(false)).toBe(true);
+    expect(heldNoteIds(store()).has(B)).toBe(false);
+    // The maker rewrites B's note. Keep mine's own save then fails for another reason.
+    server.notes.set(B, THEIR_NOTE);
+    theyNowHave(server, [placed(A), placed(B, { noteHeld: true })]);
+    store().updateObject(A, { positionX: 3 });
+    expect(await store().saveToServer(false)).toBe(false);
+    vi.mocked(configApi.publicBatchSave).mockRejectedValueOnce(new ApiError(429, "Too many requests — please slow down.", "RATE_LIMITED"));
+    expect(await store().keepMine(false)).toBe(false);
+
+    // B may hold other words now: it is guarded, though the person still sees and can change their own.
+    expect(heldNoteIds(store()).has(B)).toBe(true);
+    expect(noteOn(B)).toBe("TEST ONLY by the window");
+    expect(noteHeldOn(store(), B)).toBe(false);
+    expect(ownWordsOverHeldNotes(store())).toEqual([]);
+    // The copy kept on this device says the same after a reload.
+    store().reset();
+    await open({ ...plan([placed(A), placed(B, { noteHeld: true })], false), revision: server.revision });
+    expect(heldNoteIds(store()).has(B)).toBe(true);
+    expect(noteOn(B)).toBe("TEST ONLY by the window");
+  });
+
+  it("are confirmed, and unguarded again, by the save that lands them", async () => {
+    const server: PlanOnServer = { revision: 4, notes: new Map() };
+    serveNotesAsTheApiDoes(server);
+    await open(plan([placed(A), placed(B)], false));
+    store().setObjectNotes(B, "TEST ONLY by the window");
+    expect(await store().saveToServer(false)).toBe(true);
+    theyNowHave(server, [placed(A, {}, 2), placed(B, { noteHeld: true })]);
+    store().updateObject(A, { positionX: 3 });
+    expect(await store().saveToServer(false)).toBe(false);
+
+    expect(await store().keepMine(false)).toBe(true);
+    expect(heldNoteIds(store()).has(B)).toBe(false);
+    expect(noteOn(B)).toBe("TEST ONLY by the window");
   });
 });

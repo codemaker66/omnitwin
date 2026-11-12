@@ -1544,18 +1544,19 @@ export const useEditorStore = create<EditorStore>()(withSaveFacts((set, get) => 
       if ([...selection.selectedIds].some((id) => rekeyed.has(id))) {
         selection.selectMultiple([...selection.selectedIds].map((id) => rekeyed.get(id) ?? id));
       }
+      // Their version read without the plan's notes hides the ones this
+      // browser wrote: the notes confirmed here stay known, so the person
+      // can go on with theirs. They were confirmed at the older revision,
+      // and their version may hold other words on such a piece. So each is
+      // carried with its mark (keepingConfirmedNotes): nothing takes the
+      // piece until a save has confirmed the note, and a save refused for a
+      // held note drops the record rather than name a wrong note for ever.
       // The newer revision becomes this document's base: the full-sync save
       // replaces it with this document, and pendingChanges (so savingChanges)
       // counts exactly what that save changes on the server.
       set({
         configRevision: conflict.currentRevision,
-        // Their version read without the plan's notes hides the ones this
-        // browser wrote: the notes confirmed here stay known, so the person
-        // can go on with theirs. They were confirmed at the older revision,
-        // and their version may hold other words on such a piece: the save
-        // is then refused for a held note, and saveDocument drops this record
-        // rather than name a wrong note for ever.
-        baseObjects: keepingConfirmedNotes(theirs, current.baseObjects),
+        baseObjects: keepingConfirmedNotes(theirs, current.baseObjects, true),
         objects: kept,
         history: remapHistoryIds(current.history, rekeyed),
         selectedObjectId: current.selectedObjectId === null ? null : rekeyed.get(current.selectedObjectId) ?? current.selectedObjectId,

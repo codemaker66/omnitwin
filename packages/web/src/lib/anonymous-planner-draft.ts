@@ -189,7 +189,10 @@ function baseDelta(
 ): AnonymousPlannerDraft["base"] {
   const differing = changedBetween(base, objects);
   const baseIds = new Set(base.map((object) => object.id));
-  const changed = base.filter((object) => differing.has(object.id));
+  // A note carried onto a newer version with its mark (lib/guest-plan-notes
+  // keepingConfirmedNotes) is kept as it stands: the mark says no save has
+  // confirmed the note, and a copy rebuilt from the working piece would lose it.
+  const changed = base.filter((object) => differing.has(object.id) || (object.noteHeld === true && object.notes !== ""));
   const addedIds = objects.filter((object) => !baseIds.has(object.id)).map((object) => object.id);
   if (changed.length > MAX_DRAFT_OBJECTS || addedIds.length > MAX_DRAFT_OBJECTS) return undefined;
   return { changed, addedIds };
