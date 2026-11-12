@@ -118,11 +118,12 @@ export function metres(value: number): string {
  * nothing at all rather than an empty field or an inferred figure.
  *
  * Renders the qualifier when there is one — the Grand Hall's says its height is
- * to the coffered ceiling, with the dome rising above part of the hall, and
- * dropping it would let a visitor read the ceiling's figure as the dome's. The
- * qualifier joins with an em dash HERE, in the string, so no surface can render
- * the figure and its note butted together; a caller that concatenated them in
- * JSX would print "6.7 mto the coffered ceiling".
+ * to the coffered ceiling, and dropping it would let a visitor read the
+ * ceiling's figure as the dome's — and then the room's remark, the sentence
+ * that says the dome rises above part of the hall. The qualifier joins with an
+ * em dash HERE, in the string, so no surface can render the figure and its note
+ * butted together; a caller that concatenated them in JSX would print
+ * "6.7 mto the coffered ceiling". The remark follows as its own sentence.
  * See TRADES_HALL_ROOM_DIMENSIONS for the figures themselves.
  */
 export function formatRoomDimensions(slug: PublishedRoomSlug): string | null {
@@ -133,7 +134,8 @@ export function formatRoomDimensions(slug: PublishedRoomSlug): string | null {
   const extent =
     `${metres(dimensions.lengthM)} × ${metres(dimensions.widthM)} × ` +
     `${metres(dimensions.heightM)} m`;
-  return dimensions.note === undefined ? extent : `${extent} — ${dimensions.note}`;
+  const qualified = dimensions.note === undefined ? extent : `${extent} — ${dimensions.note}`;
+  return dimensions.remark === undefined ? qualified : `${qualified}. ${dimensions.remark}`;
 }
 
 /**

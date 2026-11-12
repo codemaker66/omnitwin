@@ -152,8 +152,27 @@ describe("RoomDossier", () => {
     }
     const ceiling = screen.getByText(STAT_LABEL_CEILING).nextElementSibling;
     expect(ceiling?.textContent).toBe(`${metres(dimensions.heightM)} m — ${note}`);
+    // The dome is never the stat: the Ceiling row says only what the height is
+    // measured to, short enough not to wrap a narrow column into four lines.
+    expect(ceiling?.textContent).not.toMatch(/dome/i);
 
-    expect(screen.getByText(TWIN_DOSSIER_FOOTNOTE)).toBeTruthy();
+    // The dome's sentence leads the footnote instead, straight under the stat,
+    // and the provenance after it is still the venue-truth constant verbatim.
+    const remark = dimensions.remark;
+    if (remark === undefined) {
+      throw new Error("venue truth no longer carries the Grand Hall's dome remark");
+    }
+    const footnote = screen.getByText(TWIN_DOSSIER_FOOTNOTE);
+    expect(footnote.textContent).toBe(`${remark} ${TWIN_DOSSIER_FOOTNOTE}`);
+    expect(footnote.firstElementChild?.textContent).toBe(remark);
+  });
+
+  it("leaves the footnote as the provenance alone in a room with no remark", () => {
+    expect(publishedDimensions(SALOON).remark).toBeUndefined();
+    render(<RoomDossier currentId={SALOON_NODE} venueName={VENUE} />);
+    const footnote = screen.getByText(TWIN_DOSSIER_FOOTNOTE);
+    expect(footnote.textContent).toBe(TWIN_DOSSIER_FOOTNOTE);
+    expect(footnote.children).toHaveLength(0);
   });
 
   it("says nothing at all at a viewpoint whose room is unverified", () => {
