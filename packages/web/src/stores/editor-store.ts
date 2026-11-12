@@ -570,6 +570,19 @@ const EDITOR_HISTORY_IDS: HistoryIdAdapter = {
   isLocalId: (id) => id.startsWith("local-"),
 };
 
+/**
+ * The ids for a step back or forward. A row the confirmed document still
+ * holds has been removed by no save, so the step returns the row itself, with
+ * whatever note the server keeps on it (lib/editor-history isStored). While a
+ * save is in flight that save may be the one removing the row, so every
+ * returned row is healed, as before.
+ */
+function historyIdsFor(state: Pick<EditorState, "baseObjects" | "isSaving">): HistoryIdAdapter {
+  if (state.isSaving) return EDITOR_HISTORY_IDS;
+  const stored = new Set(state.baseObjects.map((object) => object.id));
+  return { ...EDITOR_HISTORY_IDS, isStored: (id) => stored.has(id) };
+}
+
 // G4 Slice 1: every sealed gesture ALSO lands in the append-only action log
 // (fire-and-forget — the undo timeline itself is unchanged). Actor/surface
 // stamping is shared with the direct-surface seams via plannerActionContext.
@@ -1742,7 +1755,7 @@ export const useEditorStore = create<EditorStore>()(withSaveFacts((set, get) => 
     if (isLayoutTimelineMutationLocked()) return;
     activeHistoryGesture = null;
     const s = get();
-    const step = performUndo(s.history, s.objects, EDITOR_HISTORY_IDS);
+    const step = performUndo(s.history, s.objects, historyIdsFor(s));
     if (step === null) return;
     if (stepRefusedForHeldNote(s, step.objects, nothingUndoneLine)) return;
     actionEmitter.afterUndo(s.history); // G4: seals the popped gesture + logs history.undo
@@ -1757,7 +1770,7 @@ export const useEditorStore = create<EditorStore>()(withSaveFacts((set, get) => 
     if (isLayoutTimelineMutationLocked()) return;
     activeHistoryGesture = null;
     const s = get();
-    const step = performRedo(s.history, s.objects, EDITOR_HISTORY_IDS);
+    const step = performRedo(s.history, s.objects, historyIdsFor(s));
     if (step === null) return;
     if (stepRefusedForHeldNote(s, step.objects, nothingRedoneLine)) return;
     actionEmitter.afterRedo(step.history); // G4: logs history.redo

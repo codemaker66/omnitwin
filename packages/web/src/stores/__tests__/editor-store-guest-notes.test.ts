@@ -792,6 +792,73 @@ describe("Undo and Redo of a step that would take a piece which has come to hold
   });
 });
 
+describe("Undo of a removal the server has not had", () => {
+  it("returns the piece as the row it was, so a save keeps the row and whatever note it holds", async () => {
+    const server: PlanOnServer = { revision: 4, notes: new Map() };
+    serveNotesAsTheApiDoes(server);
+    await open(plan([placed(A), placed(B)], false));
+    store().setObjectNotes(B, "TEST ONLY by the window");
+    expect(await store().saveToServer(false)).toBe(true);
+    // B's note is this browser's own, so it may take B away; the server has not heard of that yet.
+    store().removeObject(B);
+    store().undo();
+
+    expect(pieceIds()).toEqual([A, B]);
+    expect(await store().saveToServer(false)).toBe(true);
+    expect(sentPiece(1, B).id).toBe(B);
+    expect(server.notes.get(B)).toBe("TEST ONLY by the window");
+  });
+
+  it("returns it as a new piece once the server has removed the row, as before", async () => {
+    const server: PlanOnServer = { revision: 4, notes: new Map() };
+    serveNotesAsTheApiDoes(server);
+    await open(plan([placed(A), placed(B)], false));
+    store().removeObject(B);
+    expect(await store().saveToServer(false)).toBe(true);
+    store().undo();
+
+    expect(pieceIds()).toHaveLength(2);
+    expect(pieceIds()).not.toContain(B);
+    expect(await store().saveToServer(false)).toBe(true);
+    expect(saveSent(1).batch.map((piece) => piece.id)).toEqual([A, undefined]);
+  });
+
+  it("returns a piece holding a note this browser is not shown as itself, before any save has had to take it back", async () => {
+    const server: PlanOnServer = { revision: 4, notes: new Map([[A, ALLERGY]]) };
+    serveNotesAsTheApiDoes(server);
+    await open(plan([placed(A, { noteHeld: true, displayLabel: "Table 3" }), placed(B)], false));
+    store().replaceObjectsFromScene(store().objects.filter((object) => object.id !== A));
+
+    store().undo();
+    expect(pieceIds()).toEqual([A, B]);
+    expect(noteHeldOn(store(), A)).toBe(true);
+    expect(await store().saveToServer(false)).toBe(true);
+    expect(notice()).toBeNull();
+    expect(server.notes.get(A)).toBe(ALLERGY);
+  });
+
+  it("leaves Redo of that removal refused once the piece has come to hold a note this browser is not shown", async () => {
+    const server: PlanOnServer = { revision: 4, notes: new Map() };
+    serveNotesAsTheApiDoes(server);
+    await open(plan([placed(A), placed(B, { displayLabel: "Table 5" })], false));
+    store().removeObject(B);
+    store().undo();
+    // The maker writes on B before this browser's next save arrives. That save meets their version, which holds
+    // nothing this browser's does not, so it is taken as saved: B is the same row, now holding a note not shown here.
+    server.notes.set(B, THEIR_NOTE);
+    theyNowHave(server, [placed(A), placed(B, { noteHeld: true, displayLabel: "Table 5" })]);
+    expect(await store().saveToServer(false)).toBe(true);
+    expect(heldNoteIds(store()).has(B)).toBe(true);
+    const { past, future } = store().history;
+
+    store().redo();
+    expect(pieceIds()).toEqual([A, B]);
+    expect(notice()).toBe("Nothing was redone: Table 5 has a note that cannot be shown here.");
+    expect(store().history.past).toBe(past);
+    expect(store().history.future).toBe(future);
+  });
+});
+
 describe("Keep mine, when the newer version has a piece holding a note this browser is not shown that this version lacks", () => {
   it("keeps that piece where they put it, says so, and saves this version round it", async () => {
     const server: PlanOnServer = { revision: 4, notes: new Map() };

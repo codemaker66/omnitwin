@@ -559,11 +559,15 @@ describe("save remap", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Dead-id healing — resurrection must never reuse a server id
+// Dead-id healing — resurrection must never reuse a dead server id. A row is
+// dead once a save has removed it. Until then the server still holds it, and
+// it returns as itself: under a new id the row would be left out of the next
+// save and removed, with whatever the server keeps on it (final review of
+// #388, F2). These two cases used to expect a fresh id straight away.
 // ---------------------------------------------------------------------------
 
 describe("dead-id healing", () => {
-  it("redo of a placement after save re-inserts under a fresh local id", async () => {
+  it("redo of a placement re-inserts under a fresh local id once a save has removed the row", async () => {
     store().addObject(TABLE_ID, 1, 0, 1);
     installEchoSave();
     await store().saveToServer();
@@ -571,6 +575,7 @@ describe("dead-id healing", () => {
 
     store().undo();
     expect(store().objects).toHaveLength(0);
+    await store().saveToServer();
 
     store().redo();
     const resurrected = store().objects[0];
@@ -578,18 +583,36 @@ describe("dead-id healing", () => {
     expect(resurrected?.positionX).toBe(1);
   });
 
-  it("undo of a delete after save resurrects under a fresh local id", async () => {
+  it("undo of a delete resurrects under a fresh local id once a save has removed the row", async () => {
     store().addObject(TABLE_ID, 3, 0, 3);
     installEchoSave();
     await store().saveToServer();
 
     store().removeObject("srv-1");
+    await store().saveToServer();
     store().undo();
 
     const resurrected = store().objects[0];
     expect(resurrected?.id).toMatch(/^local-/);
     expect(resurrected?.id).not.toBe("srv-1");
     expect(resurrected?.positionX).toBe(3);
+  });
+
+  it("returns a row the server still holds as itself, by undo of a delete and by redo of a placement", async () => {
+    store().addObject(TABLE_ID, 3, 0, 3);
+    installEchoSave();
+    await store().saveToServer();
+
+    store().removeObject("srv-1");
+    store().undo();
+    expect(objectIds()).toEqual(["srv-1"]);
+
+    // Back past the removal and the placement, then forward again: no save has removed the row.
+    store().undo();
+    expect(store().objects).toHaveLength(0);
+    store().redo();
+    expect(objectIds()).toEqual(["srv-1"]);
+    expect(store().objects[0]?.positionX).toBe(3);
   });
 
   it("healing remaps the rest of the timeline so deeper undos still work", async () => {
