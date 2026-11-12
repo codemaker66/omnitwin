@@ -18,11 +18,12 @@ const ScheduleSpaceSchema = z.object({
 export const ScheduleSlotSchema = z.object({
   bookingId: z.uuid(),
   kind: BookingKindSchema,
-  // As stored, which may be "" (see CalendarBookingEntrySchema, API-9): rows
-  // written before #350 took a public enquiry's blank name as their title.
-  // Every writer refuses an empty title (Create/UpdateBookingSchema); refusing
-  // it here failed the client's whole schedule, and a proposal's reply after
-  // the move had landed.
+  // As stored, trimmed (a blank title reads as ""): rows written before #350
+  // took a public enquiry's blank name as their title (API-9). Unlike
+  // CalendarBookingEntrySchema, which keeps a blank title as it is, this read
+  // trims. Every writer refuses an empty or blank title (the Create, Update,
+  // ConvertEnquiry and BookViewing schemas); refusing it here failed the
+  // client's whole schedule, and a proposal's reply after the move had landed.
   title: z.string().trim().max(200),
   space: ScheduleSpaceSchema,
   startsAt: z.iso.datetime(),
@@ -132,8 +133,9 @@ export const RoomDaySpanSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("yours"),
     bookingId: z.uuid(),
-    // As stored, which may be "" (see ScheduleSlotSchema, API-9); refusing it
-    // here left the ribbon unable to read the room's day at all.
+    // As stored, trimmed (a blank title reads as ""; see ScheduleSlotSchema,
+    // API-9); refusing it here left the ribbon unable to read the room's day
+    // at all.
     title: z.string().trim().max(200),
     ...RoomDayInstants,
   }).strict(),
