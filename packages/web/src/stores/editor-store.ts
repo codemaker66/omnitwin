@@ -1964,10 +1964,19 @@ async function saveDocument(
     // piece out. So the note is cleared first, by name, in a save of its own
     // (lib/guest-plan-notes batchClearingOwnNotesOfRemovedPieces), and the
     // save that removes the piece follows on the revision that one made.
+    // Only that save's confirmed document and revision are taken: the working
+    // document is untouched, so the piece does not come back on screen.
     let revision = configRevision;
     const confirmed = get().baseObjects;
     const clearing = viaSignedIn || get().notesIncluded ? null : batchClearingOwnNotesOfRemovedPieces(confirmed, objects, editorToBatch);
     if (clearing !== null) {
+      // Never as the page hides or closes: the second save cannot be counted
+      // on to follow the first. Nothing is sent; the work is on this device,
+      // and the next open sends it in its two steps.
+      if (transport?.keepalive === true) {
+        set({ isSaving: false });
+        return false;
+      }
       const cleared = sending === undefined
         ? await save(configId, clearing, revision)
         : await save(configId, clearing, revision, sending);

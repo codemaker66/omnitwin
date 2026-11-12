@@ -743,10 +743,19 @@ describe("removing a piece whose only note is the person's own, in a browser the
 
     store().removeObject(B);
     expect(notice()).toBeNull();
+    // Every state the document passes through while it saves: B must never come back on screen.
+    const backOnScreen: boolean[] = [];
+    const stopWatching = useEditorStore.subscribe((state) => { backOnScreen.push(state.objects.some((object) => object.id === B)); });
     expect(await store().saveToServer(false)).toBe(true);
+    stopWatching();
+    expect(backOnScreen.length).toBeGreaterThan(0);
+    expect(backOnScreen).not.toContain(true);
 
     // The API cannot tell their note from one kept from them, and would refuse a save that only left B out.
     expect(savesSent()).toBe(sentBefore + 2);
+    // The removing save is sent on the revision the clearing save made.
+    const revisionSent = (n: number): unknown => vi.mocked(configApi.publicBatchSave).mock.calls[n]?.[2];
+    expect(revisionSent(sentBefore + 1)).toBe(Number(revisionSent(sentBefore)) + 1);
     expect(saveSent(sentBefore).batch.map((piece) => piece.id)).toEqual([A, B, C]);
     expect(sentPiece(sentBefore, B).replacesNote).toBe(MINE);
     expect(sentPiece(sentBefore, B).metadata?.notes).toBeUndefined();
@@ -783,6 +792,30 @@ describe("removing a piece whose only note is the person's own, in a browser the
     expect(server.notes.get(A)).toBe(ALLERGY);
   });
 
+  it("sends neither save as the page goes, and leaves the work on this device for the next open to send", async () => {
+    const server: PlanOnServer = { revision: 4, notes: new Map([[A, ALLERGY]]) };
+    await withOwnNoteOnB(server);
+    const sentBefore = savesSent();
+
+    store().removeObject(B);
+    // A request sent as the page hides or closes: the second of two could not be counted on to follow the first.
+    expect(await store().saveToServer(false, { keepalive: true })).toBe(false);
+    expect(savesSent()).toBe(sentBefore);
+    expect(store()).toMatchObject({ saveError: null, saveErrorCode: null, isSaving: false, isDirty: true });
+    expect(server.notes.get(B)).toBe(MINE);
+    expect(draftOnDevice()?.objects.map((object) => object.id)).toEqual([A, C]);
+
+    // The next open restores that work, with the note the server had confirmed here, and its save goes in the two steps.
+    store().reset();
+    await open({ ...plan([placed(A, { noteHeld: true }), placed(B, { noteHeld: true }), placed(C)], false), revision: server.revision });
+    expect(pieceIds()).toEqual([A, C]);
+    expect(await store().saveToServer(false)).toBe(true);
+    expect(savesSent()).toBe(sentBefore + 2);
+    expect(sentPiece(sentBefore, B).replacesNote).toBe(MINE);
+    expect(server.notes.has(B)).toBe(false);
+    expect(server.notes.get(A)).toBe(ALLERGY);
+  });
+
   it("sends the one save for a piece that carries no note", async () => {
     const server: PlanOnServer = { revision: 4, notes: new Map([[A, ALLERGY]]) };
     await withOwnNoteOnB(server);
@@ -808,7 +841,10 @@ describe("removing a piece whose only note is the person's own, in a browser the
 
     store().removeObject(B);
     expect(await store().saveToServer(false)).toBe(false);
-    expect(store()).toMatchObject({ saveErrorCode: "RATE_LIMITED", isDirty: true, isSaving: false, configRevision: server.revision });
+    // The person is told the save failed, as for any failed save.
+    expect(store()).toMatchObject({
+      saveError: "Too many requests — please slow down.", saveErrorCode: "RATE_LIMITED", isDirty: true, isSaving: false, configRevision: server.revision,
+    });
     // What the person asked for, as far as it got: the piece is still the server's, its note gone.
     expect(server.notes.has(B)).toBe(false);
     expect(store().baseObjects.find((object) => object.id === B)).toMatchObject({ notes: "" });
