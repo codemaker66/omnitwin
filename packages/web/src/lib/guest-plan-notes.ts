@@ -252,6 +252,9 @@ interface NamedPiece {
   readonly label?: string;
   readonly catalogueItemId: string;
   readonly groupId: string | null;
+  /** Where it stands, when the caller knows: which of several tables is its own. */
+  readonly x?: number;
+  readonly z?: number;
 }
 
 function ownName(piece: NamedPiece): string {
@@ -270,18 +273,34 @@ function isTable(piece: NamedPiece): boolean {
   return item !== undefined && item.tableShape !== null;
 }
 
+/** What a piece at a table is called there: any chair is "chair". */
+function nounAtTable(piece: NamedPiece): string {
+  return getCatalogueItem(piece.catalogueItemId)?.category === "chair" ? "chair" : nounOf(piece);
+}
+
+/** The named table of the piece's group that stands nearest it: its own table, also in an old group of several. */
+function tableToFindBy(piece: NamedPiece, pieces: readonly NamedPiece[]): NamedPiece | undefined {
+  if (piece.groupId === null || isTable(piece)) return undefined;
+  const away = (table: NamedPiece): number => Math.hypot((table.x ?? 0) - (piece.x ?? 0), (table.z ?? 0) - (piece.z ?? 0));
+  return pieces
+    .filter((other) => other.groupId === piece.groupId && isTable(other) && ownName(other) !== "")
+    .reduce<NamedPiece | undefined>((nearest, table) => (nearest === undefined || away(table) < away(nearest) ? table : nearest), undefined);
+}
+
 /**
  * How these lines know a piece: by its own name ("Table 3"); a chair or other
- * piece of a named table's group by that table's name, since that is what the
- * person can find; otherwise by what it is. A ChangedPiece, so several are
- * said as the planner says changed pieces anywhere (describePieces).
+ * piece of a named table's group by that table, where the person can find it
+ * ("a chair at Table 3": the table's own note panel shows nothing held, so the
+ * table's name alone would send them to the wrong piece); otherwise by what
+ * it is. A ChangedPiece, so several are said as the planner says changed
+ * pieces anywhere (describePieces).
  */
 export function heldNotePieceNamed(piece: NamedPiece, pieces: readonly NamedPiece[]): ChangedPiece {
   if (ownName(piece) !== "") return { label: ownName(piece), noun: nounOf(piece) };
-  const tables = piece.groupId === null ? [] : pieces.filter((other) => other.groupId === piece.groupId && isTable(other) && ownName(other) !== "");
-  const [table] = tables;
-  if (tables.length === 1 && table !== undefined) return { label: ownName(table), noun: nounOf(table) };
-  return { label: null, noun: nounOf(piece) };
+  const table = tableToFindBy(piece, pieces);
+  if (table === undefined) return { label: null, noun: nounOf(piece) };
+  const what = describePieces([{ label: null, noun: nounAtTable(piece) }]);
+  return { label: `${what} at ${ownName(table)}`, noun: nounOf(piece) };
 }
 
 /** One piece as a line names it: "Table 3", or "a table", "a lectern". */
@@ -306,7 +325,9 @@ export function pieceNamedForRefusedSave(state: GuestPlanNoteFacts): string | nu
   const written = ownWordsOverHeldNotes(state);
   const [only] = written;
   if (written.length !== 1 || only === undefined) return null;
-  return heldNotePieceName(asNamed(only), state.objects.map(asNamed));
+  // It leads its line: "A chair at Table 3: ...".
+  const name = heldNotePieceName(asNamed(only), state.objects.map(asNamed));
+  return `${name.charAt(0).toUpperCase()}${name.slice(1)}`;
 }
 
 /** A piece of the document as these lines name pieces. */
@@ -315,6 +336,8 @@ function asNamed(object: EditorObject): NamedPiece {
     id: object.id,
     catalogueItemId: object.assetDefinitionId,
     groupId: object.groupId,
+    x: object.positionX,
+    z: object.positionZ,
     ...(object.label === undefined ? {} : { label: object.label }),
   };
 }

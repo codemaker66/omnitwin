@@ -386,7 +386,7 @@ describe("a seat taken from a table, when the chair that would go holds a note t
     act(() => { changeSeatsAtSelectedTables(-1); });
 
     expect(placedIds()).toEqual(before);
-    expect(notice()).toBe("No seat was removed: Table 1 has a note that cannot be shown here.");
+    expect(notice()).toBe("No seat was removed: a chair at Table 1 has a note that cannot be shown here.");
   });
 });
 
@@ -561,7 +561,7 @@ describe("removing pieces, several of which hold a note this browser is not show
     expect(steps()).toBe(stepsBefore);
   });
 
-  it("keeps a table whose chair holds the note, and names the table", async () => {
+  it("keeps a table whose chair holds the note, and says the chair is at that table", async () => {
     const floor = rounds(2);
     const [first, second] = floor;
     const chair = first?.chairs[4];
@@ -573,7 +573,25 @@ describe("removing pieces, several of which hold a note this browser is not show
     act(() => { removeSelection(); });
 
     expect(placedIds()).toEqual(before);
-    expect(notice()).toBe("Nothing was removed: Table 1 has a note that cannot be shown here.");
+    expect(notice()).toBe("Nothing was removed: a chair at Table 1 has a note that cannot be shown here.");
+  });
+
+  it("finds a held chair by the nearest table of an old group that holds several", async () => {
+    const floor = rounds(2);
+    const [first, second] = floor;
+    const chair = second?.chairs[4];
+    if (first === undefined || second === undefined || chair === undefined) throw new Error("no rounds");
+    // Both rounds in one group, as old plans grouped them: the chair stands at Table 2.
+    const oldGroup = first.pieces[0]?.groupId ?? null;
+    const together = floor.map((round): Round => ({ ...round, pieces: round.pieces.map((piece) => ({ ...piece, groupId: oldGroup })) }));
+    await open(together, [chair], "without its notes");
+    const before = placedIds();
+
+    useSelectionStore.getState().selectMultiple([first.table]);
+    act(() => { removeSelection(); });
+
+    expect(placedIds()).toEqual(before);
+    expect(notice()).toBe("Nothing was removed: a chair at Table 2 has a note that cannot be shown here.");
   });
 
   it("keeps the held ones, with their chairs, when everything is selected with Ctrl A and then deleted", async () => {
@@ -596,7 +614,7 @@ describe("removing pieces, several of which hold a note this browser is not show
     }
 
     expect(placedIds()).toEqual([...second.pieces, ...fourth.pieces].map((piece) => piece.id));
-    expect(notice()).toBe("Tables 2 and 4 stayed where they are, because each has a note that cannot be shown here.");
+    expect(notice()).toBe("Table 2 and a chair at Table 4 stayed where they are, because each has a note that cannot be shown here.");
   });
 
   it("removes a marked piece as ever from a layout that is not a guest plan, where the mark means nothing", async () => {
