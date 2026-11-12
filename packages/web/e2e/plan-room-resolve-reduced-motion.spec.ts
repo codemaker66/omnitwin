@@ -1,38 +1,39 @@
-import { expect, type Page } from "@playwright/test";
+import { expect } from "@playwright/test";
 import { captureLaunchOptions } from "./support/capture-launch.js";
 import {
   stubPlannerBootstrap,
 } from "./support/plan-bootstrap.js";
+import { attachStageEvidence, recordStageTimeline, stageMilestone } from "./support/stage-timeline.js";
 import { test } from "./support/staged-reception.js";
 
 test.use({ launchOptions: captureLaunchOptions });
 
 // ---------------------------------------------------------------------------
-// Reduced-motion resolve, in its own file deliberately: fifth-in-sequence on a
-// churned worker this case cannot even boot the planner (GPU e2e law: serial
-// AND per-file invocations). In isolation it passes in ~40s.
+// Reduced-motion resolve, in its own file (GPU e2e law: serial AND per-file
+// invocations). Its launch options are worker-scoped, so this file always
+// starts on a fresh worker and browser; worker churn is not what it meets.
+//
+// What it met on CI (11-12 Nov 2026, two retried failures in 198 runs) was the
+// dev server's cold start. It is the shard's first navigation of the Vite app,
+// and the planner had only just mounted ("Opening the 3D view…", "0 of 5
+// chunks") when the 20 s window closed; on a warm server the same case reads
+// developing about 4 s after the navigation. The dev server now prepares the
+// planner's lazily imported modules at start (vite.config.ts server.warmup),
+// and both windows run on the page's clock from the navigation's start
+// (support/stage-timeline.ts).
 // ---------------------------------------------------------------------------
 
 test.describe.configure({ mode: "default" });
 
-async function readPhase(page: Page): Promise<string> {
-  return page.evaluate(() =>
-    document.querySelector("[data-resolve-phase]")?.getAttribute("data-resolve-phase") ?? "absent",
-  );
-}
-
-async function readCaptionVisible(page: Page): Promise<string> {
-  return page.evaluate(() => {
-    const captions = document.querySelectorAll('[data-testid="room-resolve-caption"]');
-    const last = captions[captions.length - 1];
-    return last?.getAttribute("data-visible") ?? "absent";
-  });
-}
+/** The develop must begin this soon after the navigation starts. */
+const DEVELOPING_WITHIN_MS = 20_000;
+/** And the room must settle this soon after it began to develop. */
+const SETTLED_AFTER_DEVELOPING_MS = 180_000;
 
 test.describe("CARD A2 reduced motion", () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
-  test("reduced motion: the resolve still completes as a crossfade, no develop choreography required", async ({ page, stagedReception }) => {
+  test("reduced motion: the resolve still completes as a crossfade, no develop choreography required", async ({ page, stagedReception }, testInfo) => {
     test.setTimeout(240_000);
     // eslint-disable-next-line no-console -- deliberate: CARD-A2 failure evidence in the runner output
     page.on("pageerror", (error) => { console.log(`[rm-pageerror] ${error.message.slice(0, 300)}`); });
@@ -42,17 +43,18 @@ test.describe("CARD A2 reduced motion", () => {
     });
     await page.emulateMedia({ reducedMotion: "reduce" });
 
+    await recordStageTimeline(page);
     await stubPlannerBootstrap(page);
 
-    await page.goto("/plan?capture=1&space=reception-room");
+    await page.goto("/plan?capture=1&space=reception-room", { waitUntil: "commit" });
 
-    await expect
-      .poll(() => readPhase(page), { timeout: 20_000, message: "waiting for developing" })
-      .toBe("developing");
+    const developing = await stageMilestone(page, "developing", DEVELOPING_WITHIN_MS);
+    if (developing === null) await attachStageEvidence(page, testInfo, "reduced-motion");
+    expect(developing, `the stage reads developing within ${String(DEVELOPING_WITHIN_MS)} ms of the navigation`).not.toBeNull();
     await expect(page.getByTestId("room-resolve-caption").last()).toBeVisible();
-    await expect
-      .poll(async () => `${await readPhase(page)}|${await readCaptionVisible(page)}`, { timeout: 180_000 })
-      .toBe("resolved|false");
+    const settled = await stageMilestone(page, "settled", (developing ?? 0) + SETTLED_AFTER_DEVELOPING_MS);
+    await attachStageEvidence(page, testInfo, "reduced-motion");
+    expect(settled, "the stage resolves and its caption exits").not.toBeNull();
     expect([...stagedReception.requestedFiles].sort()).toEqual([...stagedReception.files].sort());
   });
 });
