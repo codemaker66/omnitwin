@@ -42,6 +42,7 @@ import type { RequestActor } from "./requests.js";
 //
 // Every mark, mark taken back and removal writes a row of the door's history
 // (booking_supplier_arrival_events) in the same transaction: who and when.
+// A Gone for someone nobody marked in marks them in as well, and writes both.
 // A supplier marked in is not removed: the tap is taken back first.
 //
 // Everyone on the floor reads the day's arrivals; nobody outside the venue
@@ -343,13 +344,18 @@ export async function removeArrival(
   });
 }
 
-/** An arrival of this venue, with whether its booking is still on the Diary. */
-async function doorArrival(conn: ArrivalConn, venueId: string, id: string): Promise<{ readonly arrival: ArrivalRow; readonly live: boolean } | null> {
-  const [found] = await conn.select({ arrival: bookingSupplierArrivals, status: bookings.status, deletedAt: bookings.deletedAt })
+/**
+ * An arrival of this venue, with whether its booking is still on the Diary;
+ * `hold` keeps the arrival locked from this read until the transaction
+ * commits, so what a tap decides from is what it writes over.
+ */
+async function doorArrival(conn: ArrivalConn, venueId: string, id: string, hold = false): Promise<{ readonly arrival: ArrivalRow; readonly live: boolean } | null> {
+  const read = conn.select({ arrival: bookingSupplierArrivals, status: bookings.status, deletedAt: bookings.deletedAt })
     .from(bookingSupplierArrivals)
     .innerJoin(bookings, eq(bookings.id, bookingSupplierArrivals.bookingId))
     .where(and(eq(bookingSupplierArrivals.id, id), eq(bookingSupplierArrivals.venueId, venueId)))
     .limit(1);
+  const [found] = await (hold ? read.for("update", { of: bookingSupplierArrivals }) : read);
   return found === undefined ? null : { arrival: found.arrival, live: isLiveBooking(found) };
 }
 
@@ -367,10 +373,11 @@ function outsideTheDay(arrival: ArrivalRow, at: Date): ArrivalDeny | null {
 }
 
 /**
- * The floor records a supplier at the door. The first tap wins: a second
- * reads the first back, so two phones at one door write one fact. Leaving
- * marks the arrival too when nobody did, so the board never holds someone
- * who left without having come.
+ * The floor records a supplier at the door. The first tap wins: the arrival
+ * is held from the tap's read until it commits, so a second phone's tap waits
+ * and then reads the first back, and two phones at one door write one fact.
+ * Leaving marks the arrival too when nobody did, so the board never holds
+ * someone who left without having come, and the history records both.
  */
 export async function recordArrivalStep(
   db: Database,
@@ -382,44 +389,37 @@ export async function recordArrivalStep(
 ): Promise<SupplierArrival | ArrivalDeny> {
   if (!canRecordObservation(actor, venueId)) return deny(403, "FORBIDDEN", "Forbidden");
   return db.transaction(async (tx): Promise<SupplierArrival | ArrivalDeny> => {
-    const found = await doorArrival(tx, venueId, id);
+    const found = await doorArrival(tx, venueId, id, true);
     // Off the Diary, only someone already in is still the floor's to mark.
     if (found === null || (!found.live && found.arrival.arrivedAt === null)) return NOT_FOUND();
     const current = found.arrival;
     // Marked already: the first tap stands, read back.
     if (step === "arrived" ? current.arrivedAt !== null : current.leftAt !== null) return serializeArrival(current);
     const at = now();
-    // Gone for someone not yet marked in writes their arrival too, so it is
-    // held to the day; Gone for someone in the building never is.
-    if (current.arrivedAt === null) {
+    // A tap that marks them in, Arrived or Gone for someone not yet marked
+    // in, is held to the day; Gone for someone in the building never is.
+    const comingIn = current.arrivedAt === null;
+    if (comingIn) {
       const refused = outsideTheDay(current, at);
       if (refused !== null) return refused;
     }
     const name = clipped(actor.name);
+    const marksIn = comingIn ? { arrivedAt: at, arrivedByUserId: actor.id, arrivedByName: name } : {};
     const scope = and(eq(bookingSupplierArrivals.id, id), eq(bookingSupplierArrivals.venueId, venueId));
-    const [row] = step === "arrived"
-      ? await tx.update(bookingSupplierArrivals)
-        .set({ arrivedAt: at, arrivedByUserId: actor.id, arrivedByName: name })
-        .where(and(scope, isNull(bookingSupplierArrivals.arrivedAt)))
-        .returning()
-      : await tx.update(bookingSupplierArrivals)
-        .set({
-          leftAt: at,
-          leftByUserId: actor.id,
-          leftByName: name,
-          arrivedAt: sql`COALESCE(${bookingSupplierArrivals.arrivedAt}, ${at.toISOString()}::timestamptz)`,
-          arrivedByUserId: sql`COALESCE(${bookingSupplierArrivals.arrivedByUserId}, ${actor.id}::uuid)`,
-          arrivedByName: sql`COALESCE(${bookingSupplierArrivals.arrivedByName}, ${name})`,
-        })
-        .where(and(scope, isNull(bookingSupplierArrivals.leftAt)))
-        .returning();
-    if (row !== undefined) {
-      await recordDoor(tx, row, step === "arrived" ? "arrived" : "left", actor, at);
-      return serializeArrival(row);
+    const [row] = await tx.update(bookingSupplierArrivals)
+      .set(step === "arrived" ? marksIn : { ...marksIn, leftAt: at, leftByUserId: actor.id, leftByName: name })
+      .where(and(scope, step === "arrived" ? isNull(bookingSupplierArrivals.arrivedAt) : isNull(bookingSupplierArrivals.leftAt)))
+      .returning();
+    if (row === undefined) {
+      // Held since the read, so nothing has marked it since; read back all the same.
+      const existing = await arrivalOfVenue(tx, venueId, id);
+      return existing === null ? NOT_FOUND() : serializeArrival(existing);
     }
-    // Another phone's tap landed between the read and this one: it stands.
-    const existing = await arrivalOfVenue(tx, venueId, id);
-    return existing === null ? NOT_FOUND() : serializeArrival(existing);
+    // The history holds what the tap did: Gone for someone nobody marked in
+    // records their arrival too, by the same hand at the same moment.
+    if (comingIn) await recordDoor(tx, row, "arrived", actor, at);
+    if (step === "left") await recordDoor(tx, row, "left", actor, at);
+    return serializeArrival(row);
   });
 }
 
