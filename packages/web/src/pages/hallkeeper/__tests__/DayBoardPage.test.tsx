@@ -1472,6 +1472,7 @@ describe("DayBoardPage", () => {
       liveBooking(),
       bookingAt("00000000-0000-4000-8000-0000000000c2", GRAND_HALL, "Ceilidh", 3 * 60, 5 * 60),
       bookingAt("00000000-0000-4000-8000-0000000000c3", GRAND_HALL, "Late bar", 5 * 60 + 5, 7 * 60),
+      bookingAt("00000000-0000-4000-8000-0000000000c4", GRAND_HALL, "Last orders", 7 * 60 + 5, 8 * 60),
     ];
     getCalendarMock.mockResolvedValue({ ...calendarFixture(entries), turnaroundRules: house });
     renderBoard();
@@ -1481,14 +1482,15 @@ describe("DayBoardPage", () => {
     expect(lateBar.getAttribute("aria-label")).toContain(", Turn-round 5 min · needs 1 h");
     cleanup();
 
-    // The Diary holds the pair blocking: the line says why, in its words.
+    // The Diary holds the pair after the Ceilidh blocking: the first line
+    // says why, in its words; the second, under it, keeps them to its label.
     const atRisk = calendarFixture(entries);
     getCalendarMock.mockResolvedValue({
       ...atRisk,
       turnaroundRules: house,
       conflicts: { ...atRisk.conflicts, conflicts: [{
         id: "x", type: "insufficient_turnaround", severity: "blocking", spaceId: GRAND_HALL,
-        entryIds: ["00000000-0000-4000-8000-0000000000c2", "00000000-0000-4000-8000-0000000000c3"],
+        entryIds: ["00000000-0000-4000-8000-0000000000c3", "00000000-0000-4000-8000-0000000000c4"],
         explanation: "5 minutes between events; this changeover needs 60.",
       }] },
     } as CalendarResponse);
@@ -1497,6 +1499,36 @@ describe("DayBoardPage", () => {
     expect(risky.className).toContain("is-line");
     expect(within(risky).getByText("5 minutes between events; this changeover needs 60.")).toBeTruthy();
     expect(risky.getAttribute("aria-label")).toContain(", 5 minutes between events; this changeover needs 60.");
+    const lastOrders = screen.getByRole("button", { name: /^Last orders,/u });
+    expect(within(lastOrders).queryByText("5 minutes between events; this changeover needs 60.")).toBeNull();
+    expect(lastOrders.getAttribute("aria-label")).toContain(", 5 minutes between events; this changeover needs 60.");
+  });
+
+  it("says a pair's changeover reason once in its room: a line under the slot that says it keeps it to its label", async () => {
+    const day = calendarFixture([
+      liveBooking(),
+      bookingAt("00000000-0000-4000-8000-0000000000c2", GRAND_HALL, "Ceilidh", 3 * 60, 5 * 60),
+      bookingAt("00000000-0000-4000-8000-0000000000c3", GRAND_HALL, "Late bar", 5 * 60 + 5, 7 * 60),
+    ]);
+    const why = "5 minutes between events; this changeover needs 60.";
+    getCalendarMock.mockResolvedValue({
+      ...day,
+      turnaroundRules: [{ spaceId: null, eventType: null, name: "House", minutes: 60, isActive: true }],
+      conflicts: { ...day.conflicts, conflicts: [{
+        id: "x", type: "insufficient_turnaround", severity: "blocking", spaceId: GRAND_HALL,
+        entryIds: ["00000000-0000-4000-8000-0000000000c2", "00000000-0000-4000-8000-0000000000c3"], explanation: why,
+      }] },
+    } as CalendarResponse);
+    renderBoard();
+    const ceilidh = await screen.findByRole("button", { name: /^Ceilidh,/u });
+    expect(ceilidh.className).toContain("is-next");
+    expect(within(ceilidh).getByText(why)).toBeTruthy();
+    const lateBar = screen.getByRole("button", { name: /^Late bar,/u });
+    expect(lateBar.className).toContain("is-line");
+    expect(lateBar.textContent).toContain("Changeover at risk");
+    expect(within(lateBar).queryByText(why)).toBeNull();
+    // A screen reader hears one slot at a time, so its label still says why.
+    expect(lateBar.getAttribute("aria-label")).toContain(`, ${why}`);
   });
 
   it("keeps the Diary's turnaround advice off a slot named in passing: a line says its short turn-round, never another pair's warning or one already over", async () => {

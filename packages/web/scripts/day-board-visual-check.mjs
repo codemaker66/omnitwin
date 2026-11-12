@@ -323,9 +323,14 @@ try {
   check(`short changeovers drawn against the rule on their rooms' bars (${String(shortGaps)})`, shortGaps === 3);
   // The rule on the bar is a picture nothing reads aloud: the words carry it.
   check("a short turn-round says how long it has and what the rule needs", /Turn-round 30 min · needs 1 h/u.test(text));
+  // The pair the Diary holds at risk says its one reason once in its room:
+  // on Next, and on the later line only in the words a screen reader hears.
+  const nextAtRisk = page.locator(".dayboard-slab.is-next", { hasText: "Turnover pair A" });
   const laterAtRisk = page.locator(".dayboard-slab.is-line", { hasText: "Turnover pair B" });
-  check("a later function at risk says why on its line, and in the words a screen reader hears", (await laterAtRisk.count()) === 1
-    && /this changeover needs 60/u.test(await laterAtRisk.innerText())
+  check("a pair at risk says why once in its room: on Next, and on the later line in the words a screen reader hears",
+    (await nextAtRisk.count()) === 1 && /this changeover needs 60/u.test(await nextAtRisk.innerText())
+    && (await laterAtRisk.count()) === 1 && /Changeover at risk/iu.test(await laterAtRisk.innerText())
+    && !/this changeover needs 60/u.test(await laterAtRisk.innerText())
     && /this changeover needs 60/u.test((await laterAtRisk.getAttribute("aria-label")) ?? ""));
   check("the next action is the urgent request nobody owns", /^Take now:/u.test((await page.locator(".dayboard-next").innerText()).trim()));
   check("UNOWNED rail lists the two requests nobody has", (await page.locator(".dayboard-rail-item").count()) === 2);
