@@ -253,6 +253,14 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
       retryAfterSeconds: Math.ceil(context.ttl / 1000),
     }),
   });
+  // The plugin attaches itself to each route as it is added, and Fastify's
+  // not-found handler is not a route, so a path matching no route went
+  // unlimited: anyone could send any number. Such requests draw on the same
+  // budget as the rest, checked at the same point, before any body is read.
+  const limitUnmatched = server.rateLimit();
+  server.addHook("onRequest", async function limitUnmatchedPaths(request, reply) {
+    if (request.is404) await limitUnmatched.call(this, request, reply);
+  });
 
   // Response compression. Railway's edge forwards an encoded body as-is but
   // does not compress API responses itself, so layouts (130 KB for 300

@@ -261,8 +261,13 @@ describe("the room dossiers", () => {
     const first = buttons[0];
     if (first === undefined) throw new Error("no room to open");
     fireEvent.click(first);
-    expect(screen.getByText(/21\.14 × 10\.59 m · 6\.7 m high/)).toBeTruthy();
-    expect(screen.getByText(/to the coffered ceiling, with the dome rising above part of the hall/)).toBeTruthy();
+    // The height says what it is measured to; the dome follows as a sentence of
+    // its own and is never given as the room's height.
+    expect(
+      screen.getByText(
+        "21.14 × 10.59 m · 6.7 m high (to the coffered ceiling). The dome rises above part of the hall.",
+      ),
+    ).toBeTruthy();
     expect(screen.queryByText(/under the dome/)).toBeNull();
   });
 });

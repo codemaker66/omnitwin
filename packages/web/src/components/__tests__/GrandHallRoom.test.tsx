@@ -33,6 +33,7 @@ import {
 import {
   describeGrandHallOrnaments,
   fitWindowHeight,
+  WINDOW_ARCH_RADIUS,
   WINDOW_CROWN_CLEARANCE,
   type OrnamentLayer,
   type OrnamentSurface,
@@ -551,6 +552,35 @@ describe("Grand Hall ornaments source", () => {
     expect(fitWindowHeight(6.7)).toBeCloseTo(4.25, 9);
     const scannedTop = Math.max(...partYExtents(windowsAndCrown(6.7).windows).map((part) => part.max));
     expect(scannedTop).toBeCloseTo(6.4, 6);
+  });
+
+  // Only the straight run under the arch gives way, and below a wall of about
+  // 3.675 m (crown 0.28 + clearance + sill + arch radius) it would go negative
+  // and turn the window's rectangle inside out.
+  it("stops the window at its bare arch head on a wall too low for any straight run", () => {
+    const lowestFitted = 0.28 + WINDOW_CROWN_CLEARANCE + WINDOW_SILL_Y + WINDOW_ARCH_RADIUS;
+    expect(lowestFitted).toBeCloseTo(3.675, 9);
+    // Above it the run is still fitted to the wall, as before.
+    expect(fitWindowHeight(lowestFitted + 0.5)).toBeCloseTo(WINDOW_ARCH_RADIUS + 0.5, 9);
+    expect(fitWindowHeight(lowestFitted)).toBeCloseTo(WINDOW_ARCH_RADIUS, 9);
+    for (const wallHeight of [3.6, 3.2, 2.4, 0]) {
+      expect(fitWindowHeight(wallHeight), `${String(wallHeight)} m wall`).toBe(WINDOW_ARCH_RADIUS);
+    }
+
+    // On a 3.2 m wall no window part is sized negative: the rectangle's pieces
+    // shrink to nothing and the arch head stands on the sill.
+    const { windows } = windowsAndCrown(3.2);
+    expect(windows).toHaveLength(3);
+    const sized = ornamentNodes(windows).filter((node): node is OrnamentMeshNode =>
+      node.kind === "mesh" && (node.geometry.kind === "box" || node.geometry.kind === "plane"));
+    expect(sized.length).toBeGreaterThan(40);
+    for (const node of sized) {
+      for (const size of node.geometry.args) {
+        expect(size, node.name ?? node.geometry.kind).toBeGreaterThanOrEqual(0);
+      }
+    }
+    const top = Math.max(...partYExtents(windows).map((part) => part.max));
+    expect(top).toBeCloseTo(WINDOW_SILL_Y + WINDOW_ARCH_RADIUS, 6);
   });
 
   it("gives the arched windows translucent glass over daylight backing", () => {

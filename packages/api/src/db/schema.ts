@@ -6591,7 +6591,7 @@ export const bookingObservations = pgTable("booking_observations", {
 ]);
 
 // ---------------------------------------------------------------------------
-// Supplier arrivals (T-692, migration 0107) — who comes to the building for a
+// Supplier arrivals (T-692, migration 0108) — who comes to the building for a
 // booking, when, and at which door. The office enters them; the floor marks
 // each one arrived and gone. Arrival and leaving are first-tap-wins facts and
 // never move the revision, which guards the office's own edits.

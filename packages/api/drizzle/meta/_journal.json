@@ -733,8 +733,15 @@
     {
       "idx": 104,
       "version": "7",
+      "when": 1794369600000,
+      "tag": "0107_event_architect_ops_review_managers",
+      "breakpoints": true
+    },
+    {
+      "idx": 105,
+      "version": "7",
       "when": 1794430800000,
-      "tag": "0107_booking_supplier_arrivals",
+      "tag": "0108_booking_supplier_arrivals",
       "breakpoints": true
     }
   ]

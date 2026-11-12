@@ -1,6 +1,6 @@
 -- Supplier arrivals on the Day Board (T-692, 11 November 2026).
--- 0107, after 0106 (the Grand Hall's E57 interior); the release queue confirms
--- the number at the merge slot.
+-- 0108, after #394's 0107 (venue managers record Ops reviews); the release
+-- queue confirms the number at the merge slot.
 -- A renumber changes this file's name, this line, and the journal entry's
 -- tag, idx and `when`. Its `when` must be strictly later than the entry
 -- before it: drizzle applies a migration only when its `when` is later than
