@@ -141,6 +141,11 @@ export interface DayBoardSlot {
   readonly setupStartsAtMs: number;
   readonly segments: SlotSegments;
   readonly state: DayBoardState;
+  /** Under way by the clock: past its doors and not finished (live or
+   *  clearing down), or seen in use past its end. Decided before an
+   *  exception lays its state over the slot's, so a live function held at
+   *  risk is still happening now. */
+  readonly underWay: boolean;
   readonly stateLabel: string;
   readonly tone: DayBoardTone;
   readonly motion: DayBoardMotion;
@@ -825,6 +830,7 @@ export function deriveDayBoard(
 
       const overrunFromMs = endsAtMs + OVERRUN_GRACE_MIN * MIN_MS;
       const seenInUse = observed !== null && observationMeansInUse(observed.kind);
+      const underWay = timed.state === "live" || timed.state === "clear-down";
 
       let slot: DayBoardSlot;
       if (observed !== null && observationMeansOver(observed.kind)) {
@@ -832,6 +838,7 @@ export function deriveDayBoard(
         slot = {
           ...base,
           state: "done",
+          underWay: false,
           stateLabel: observed.kind === "cleaned" ? "Cleaned" : "Done",
           tone: "faded",
           motion: "none",
@@ -849,6 +856,7 @@ export function deriveDayBoard(
         slot = {
           ...base,
           state: "exception",
+          underWay: true,
           stateLabel: "Overrun",
           tone: "red",
           motion: "none",
@@ -863,6 +871,7 @@ export function deriveDayBoard(
         slot = {
           ...base,
           state: "exception",
+          underWay,
           stateLabel: "Changeover at risk",
           tone: "red",
           motion: "none",
@@ -880,6 +889,7 @@ export function deriveDayBoard(
         slot = {
           ...base,
           state: "exception",
+          underWay,
           stateLabel: "Changeover at risk",
           tone: "red",
           motion: "none",
@@ -894,6 +904,7 @@ export function deriveDayBoard(
         slot = {
           ...base,
           state: timed.state,
+          underWay,
           stateLabel: timed.stateLabel,
           tone: timed.tone,
           motion: timed.motion,

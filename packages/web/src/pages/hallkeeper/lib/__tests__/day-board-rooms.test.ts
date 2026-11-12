@@ -100,6 +100,40 @@ describe("a room's day", () => {
     expect(roomDay({ ...lane, slots: lane.slots.slice(0, 1) }).alsoNow).toEqual([]);
   });
 
+  it("keeps a function under way \"Also now\" when an exception lays its state over it: held at risk while live or clearing down, or running over", () => {
+    /** The room's day with the Diary holding one changeover blocking. */
+    const held = (entries: CalendarResponse["entries"], pair: readonly [string, string], observations: readonly DayBoardSlotObservation[] = []): ReturnType<typeof roomDay> => {
+      const day = response(entries);
+      const board = deriveDayBoard({
+        ...day,
+        conflicts: { ...day.conflicts, conflicts: [{ id: "x", type: "insufficient_turnaround", severity: "blocking", spaceId: GRAND_HALL, entryIds: [...pair], explanation: "10 minutes between events; this changeover needs 60." }] },
+      } as CalendarResponse, NOW, TZ, [], observations);
+      const lane = board.lanes[0];
+      if (lane === undefined) throw new Error("no lane");
+      return roomDay(lane);
+    };
+    // A talk live inside the running exhibition, held at risk with the
+    // private view ten minutes after it: the talk is happening now.
+    const exhibition = { ...booking("x", -50 * 60, 52 * 60), title: "Exhibition" } as CalendarResponse["entries"][number];
+    const talk = held([exhibition, booking("t", -30, 60), booking("v", 70, 150)], ["t", "v"]);
+    expect(talk.lead?.bookingId).toBe("x");
+    expect(talk.alsoNow.map((slot) => [slot.bookingId, slot.state, slot.underWay])).toEqual([["t", "exception", true]]);
+    expect(talk.next?.bookingId).toBe("v");
+    expect(talk.next?.underWay).toBe(false);
+    expect(talk.later).toEqual([]);
+    // A coffee clearing down beside the live lunch, held at risk with the
+    // talk set up 25 minutes after it ends.
+    const coffee = held([booking("l", -120, 120), booking("c", -40, -5), booking("n", 20, 100)], ["c", "n"]);
+    expect(coffee.alsoNow.map((slot) => [slot.bookingId, slot.state, slot.underWay])).toEqual([["c", "exception", true]]);
+    expect(coffee.next?.bookingId).toBe("n");
+    // Seen in use past its end and not marked done: running over, and so
+    // under way, as before.
+    const seen: DayBoardSlotObservation = { bookingId: "o", spaceId: GRAND_HALL, kind: "live", observedAt: new Date(NOW - 60 * MIN).toISOString(), actorName: "Elaine" };
+    const overrun = held([booking("l", -120, 120), booking("o", -90, -30), booking("n", 3 * 60, 4 * 60)], ["l", "n"], [seen]);
+    expect(overrun.alsoNow.map((slot) => [slot.bookingId, slot.exception, slot.underWay])).toEqual([["o", "overrun", true]]);
+    expect(overrun.next?.bookingId).toBe("n");
+  });
+
   it("dimensions no turn-round between two bookings at once: a second option, a talk inside an exhibition", () => {
     const board = deriveDayBoard(response([booking("first", 6 * 60, 10 * 60), booking("second", 6 * 60, 10 * 60)]), NOW, TZ);
     expect(board.lanes[0]?.slots.map((slot) => slot.gapBefore)).toEqual([null, null]);
