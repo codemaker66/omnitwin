@@ -23,6 +23,7 @@ import {
   afterLeavingOutOfDateNotes,
   batchClearingOwnNotesOfRemovedPieces,
   carriedNoteIds,
+  confirmedAfterLeaving,
   givingUpOwnNoteRemoval,
   heldNoteIds,
   heldNoteObjectsName,
@@ -2380,13 +2381,16 @@ async function saveDocument(
     // as "Keep mine" carries one (keepingConfirmedNotes), with the person's
     // words on the piece: the next save sends it again.
     const theirWords = new Map(latest.objects.map((object) => [object.id, object.notes]));
-    const nextObjects = afterLeavingOutOfDateNotes(answered, latest.objects, outOfDate)
+    const nextObjects = afterLeavingOutOfDateNotes(answered, latest.objects, outOfDate, serverObjects)
       .map((object) => (unsettled.has(object.id) ? { ...object, notes: theirWords.get(object.id) ?? object.notes } : object));
     // A yielded object stays the server's: never resend an older local copy.
     const objectsAfter = snapYieldedToBase(nextObjects, serverObjects);
+    // A note left to the server is never named by a later save unless this
+    // browser shows it (delta review of #388 at 33a8e0ad, S2).
+    const confirmedAnswer = confirmedAfterLeaving(serverObjects, objectsAfter, outOfDate, unsettled);
     const base = unsettled.size === 0
-      ? serverObjects
-      : keepingConfirmedNotes(serverObjects, sentBase.filter((object) => unsettled.has(object.id)), true);
+      ? confirmedAnswer
+      : keepingConfirmedNotes(confirmedAnswer, sentBase.filter((object) => unsettled.has(object.id)), true);
     // The API's sentence is for words over a held note; a refused clear has its
     // own (ruling C3 on #388), and both stand in one notice when both are refused.
     const refusal = { objects: objectsAfter, noteClearsRefused: noteRefused ? clearsRefused : get().noteClearsRefused };

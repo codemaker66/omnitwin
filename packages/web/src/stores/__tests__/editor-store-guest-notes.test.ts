@@ -1667,3 +1667,141 @@ describe("Keep mine refused for notes the maker rewrote, among many notes of the
     expect(store()).toMatchObject({ saveError: null, saveErrorCode: null, isDirty: false });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Delta review of #388 at 33a8e0ad, S2 (major). The maker's browser presents
+// the plan's claim secret, so #389 answers its saves with the rows as stored,
+// every note in them (public-configs.ts: `madeHere ? saveResult.objects :
+// withoutUnsentNotes(...)`). Restoring work this device kept before a save
+// said what its notes were read with, it saves a copy that is not the whole
+// truth about them (notesIncluded false), whose base holds the notes as read.
+// When a note then changes with no new revision (the single-piece route), the
+// halving leaves it to the server and the answer carries the new words. The
+// piece was blanked on screen while the base held those words, so the next
+// save named them as the note it replaced and cleared them. Ruled: a piece
+// left to the server takes the answer's note when it carries one, and a note
+// the base holds is never blanked. Put the other way round: after a save that
+// left a piece's note to the server, this browser never names, as the note a
+// piece's note replaces, words it did not show on that piece.
+// ---------------------------------------------------------------------------
+
+describe("the maker's browser, when a note it saved without the notes' word is changed with no new revision", () => {
+  const OLD = "TEST ONLY by the window";
+  const STAFF = "TEST ONLY staff rewrite";
+  const OLD_C = "TEST ONLY wheelchair space";
+
+  /**
+   * The maker's browser restores work kept on this device before #388 (no
+   * word on its notes): it reads the plan with its notes, B's included, and
+   * saves the restored copy as one that is not the whole truth about them.
+   * Staff then rewrite `rewritten`'s note through the single-piece route,
+   * which makes no new revision. Every note on record is in the base, unmarked.
+   */
+  async function staffRewriteUnderTheMaker(server: PlanOnServer, rewritten: string): Promise<void> {
+    persistAnonymousPlannerDraft({
+      configId: PLAN, spaceId: SPACE, venueId: VENUE, configRevision: 4, isPublicPreview: true,
+      objects: [kept(A, "", 5), kept(B, OLD), kept(C, OLD_C)], baseObjects: [kept(A), kept(B, OLD), kept(C, OLD_C)], isDirty: true,
+    });
+    serveTheApi(server, placed, { madeHere: true });
+    await open(plan([placed(A), placed(B, { notes: OLD }), placed(C, { notes: OLD_C })], true));
+    expect(store()).toMatchObject({ notesIncluded: false, isDirty: true });
+    expect(heldNoteIds(store()).size).toBe(0);
+    server.notes.set(rewritten, STAFF);
+  }
+
+  /** The words the person sees on a piece: its note, or none when it shows a note it holds that cannot be shown here. */
+  function shownOn(id: string): string | null {
+    return noteHeldOn(store(), id) ? null : noteOn(id) ?? null;
+  }
+
+  /** Every save from now on, with the words on `id` on screen as it went. */
+  function watchSaves(id: string): { readonly shownAtSend: (string | null)[]; readonly firstSave: number } {
+    const api = vi.mocked(configApi.publicBatchSave).getMockImplementation();
+    if (api === undefined) throw new Error("no API model");
+    const shownAtSend: (string | null)[] = [];
+    vi.mocked(configApi.publicBatchSave).mockImplementation((...sent) => {
+      shownAtSend.push(shownOn(id));
+      return api(...sent);
+    });
+    return { shownAtSend, firstSave: savesSent() };
+  }
+
+  it("keeps the note the server holds when it leaves it to the server, and no later save names it (probe P4)", async () => {
+    const server: PlanOnServer = { revision: 4, notes: new Map([[B, OLD], [C, OLD_C]]) };
+    await staffRewriteUnderTheMaker(server, B);
+
+    // Refused for B's note, then saved leaving it to the server: the answer carries the staff's words.
+    expect(await store().saveToServer(false)).toBe(true);
+    expect(server.notes.get(B)).toBe(STAFF);
+    // The maker's browser is shown that note, so B shows it: never an empty note over a note the base holds.
+    expect(store().baseObjects.find((object) => object.id === B)?.notes).toBe(STAFF);
+    expect({ onScreen: noteOn(B), isDirty: store().isDirty, saveError: store().saveError }).toEqual({ onScreen: STAFF, isDirty: false, saveError: null });
+
+    // Two more saves of other work: neither names B's note, and the staff's words stand after both.
+    for (const x of [6, 7]) {
+      const sentBefore = savesSent();
+      store().updateObject(A, { positionX: x });
+      expect(await store().saveToServer(false)).toBe(true);
+      expect(sentPiece(sentBefore, B).replacesNote).toBeUndefined();
+      expect(server.notes.get(B)).toBe(STAFF);
+    }
+    expect(server.notes.get(C)).toBe(OLD_C);
+  });
+
+  it.each([
+    ["leaves B's note as it was", (): void => undefined],
+    ["clears B's note", (): void => { store().setObjectNotes(B, ""); }],
+    ["writes their own words on B", (): void => { store().setObjectNotes(B, "TEST ONLY by the stage"); }],
+  ])("never names words it did not show on a piece whose note it left to the server, when the person %s", async (_what, change) => {
+    const server: PlanOnServer = { revision: 4, notes: new Map([[B, OLD], [C, OLD_C]]) };
+    await staffRewriteUnderTheMaker(server, B);
+    change();
+    const saves = watchSaves(B);
+
+    await store().saveToServer(false);
+    // Refused; every recorded note left (lands); B sent (refused: out of date); C sent and B left (lands).
+    expect({ sent: savesSent() - saves.firstSave, revision: server.revision }).toEqual({ sent: 4, revision: 6 });
+    expect(server.notes.get(B)).toBe(STAFF);
+    const shownSince = new Set<string | null>([shownOn(B)]);
+    const leftAt = savesSent();
+    for (const x of [6, 7]) {
+      store().updateObject(A, { positionX: x });
+      await store().saveToServer(false);
+      shownSince.add(shownOn(B));
+    }
+    for (let n = leftAt; n < savesSent(); n += 1) shownSince.add(saves.shownAtSend[n - saves.firstSave] ?? null);
+    for (let n = leftAt; n < savesSent(); n += 1) {
+      const named = sentPiece(n, B).replacesNote;
+      expect(named === undefined || shownSince.has(named), `save ${String(n)} names "${String(named)}", never shown on B`).toBe(true);
+    }
+    expect(server.notes.get(B)).toBe(STAFF);
+  });
+
+  it("carries the notes a cut-short halving left unsettled, and no later save names words it did not show", async () => {
+    const server: PlanOnServer = { revision: 4, notes: new Map([[B, OLD], [C, OLD_C]]) };
+    await staffRewriteUnderTheMaker(server, C);
+    const api = vi.mocked(configApi.publicBatchSave).getMockImplementation();
+    if (api === undefined) throw new Error("no API model");
+    // The refused save, then the save leaving every recorded note (it lands); the first halving is turned away.
+    vi.mocked(configApi.publicBatchSave).mockImplementation((...sent) => (savesSent() === 3
+      ? Promise.reject(new ApiError(429, "Too many requests — please slow down.", "RATE_LIMITED"))
+      : api(...sent)));
+    expect(await store().saveToServer(false)).toBe(false);
+    expect(store()).toMatchObject({ saveErrorCode: "RATE_LIMITED", isDirty: true, configRevision: server.revision });
+    expect({ b: noteOn(B), c: noteOn(C) }).toEqual({ b: OLD, c: OLD_C });
+
+    vi.mocked(configApi.publicBatchSave).mockImplementation(api);
+    const saves = watchSaves(C);
+    for (const x of [6, 7]) {
+      store().updateObject(A, { positionX: x });
+      await store().saveToServer(false);
+    }
+    for (let n = saves.firstSave; n < savesSent(); n += 1) {
+      const named = sentPiece(n, C).replacesNote;
+      const shown = saves.shownAtSend[n - saves.firstSave];
+      expect(named === undefined || named === shown, `save ${String(n)} names "${String(named)}" while C shows "${String(shown)}"`).toBe(true);
+    }
+    expect(server.notes.get(C)).toBe(STAFF);
+    expect(server.notes.get(B)).toBe(OLD);
+  });
+});

@@ -273,28 +273,79 @@ export function recordedNotes(confirmed: readonly EditorObject[]): ReadonlyMap<s
  * `outOfDate` to the server (piece id to the words this browser had on record
  * for it: the piece holds other words now). `working` is the document to go
  * on with (the server's answer, or the work done while the save was in
- * flight) and `theirs` the person's pieces as they stand. The recorded words
- * come off the piece: they are not its note any more, and it is shown as
- * holding one. Words the person had put in their place stay on it, theirs to
+ * flight), `theirs` the person's pieces as they stand and `answer` the
+ * save's answer. The recorded words come off the piece: they are not its note
+ * any more. Words the person had put in their place stay on it, theirs to
  * read and to take off: they stand over a note this browser is not shown, and
- * no save takes them. A note they had cleared stays cleared on screen, and
- * the piece shows the note it holds. Either change was refused, not saved
- * (notesRefusedOnLeaving). The same array when no note was left.
+ * no save takes them. Otherwise, a note they had left or cleared, the piece
+ * takes the note the answer gives it: the plan's maker is answered with the
+ * rows as stored (#389, `madeHere`), and shown each note in them. Any other
+ * browser is given none, and the piece shows that it holds one. Either change
+ * of the person's was refused, not saved (notesRefusedOnLeaving). The same
+ * array when no note was left. Delta review of #388 at 33a8e0ad, S2: never an
+ * empty note over a note the base holds (confirmedAfterLeaving).
  */
 export function afterLeavingOutOfDateNotes(
   working: readonly EditorObject[],
   theirs: readonly EditorObject[],
   outOfDate: ReadonlyMap<string, string>,
+  answer: readonly EditorObject[],
 ): readonly EditorObject[] {
   if (outOfDate.size === 0) return working;
   const words = new Map(theirs.filter((object) => outOfDate.has(object.id)).map((object) => [object.id, object.notes]));
+  const given = new Map(answer.filter((object) => outOfDate.has(object.id)).map((object) => [object.id, noteGiven(object)]));
   return working.map((object) => {
     const recorded = outOfDate.get(object.id);
     if (recorded === undefined) return object;
     const now = words.get(object.id) ?? "";
-    const notes = now === recorded ? "" : now;
+    const ownWords = now !== recorded && now !== "";
+    const notes = ownWords ? now : given.get(object.id) ?? "";
     return object.notes === notes ? object : { ...object, notes };
   });
+}
+
+/** The words an answer gives a piece as its note; "" for none, and for a piece it only marks as holding one. */
+function noteGiven(object: EditorObject): string {
+  return object.noteHeld === true ? "" : object.notes;
+}
+
+/**
+ * The confirmed document after a save that left notes to the server: its
+ * answer, read so that no later save names, as the note a piece's note
+ * replaces (namingReplacedNotes), words this browser did not show on that
+ * piece (delta review of #388 at 33a8e0ad, S2). The maker's browser is
+ * answered with the rows as stored, so a note left to the server comes back
+ * in it, unmarked:
+ *
+ *   - a piece whose note was out of date (`outOfDate`) and which now shows
+ *     the answer's note (afterLeavingOutOfDateNotes) keeps it: shown, it is
+ *     this browser's to change or clear;
+ *   - such a piece showing the person's own words instead is marked as
+ *     holding a note this browser is not shown, as the answer to any other
+ *     browser marks it: the words stand over it and no save takes them;
+ *   - a piece whose note no save has yet shown to be in date or out of date
+ *     (`unsettled`) is marked the same way, so the caller can carry the note
+ *     on record onto it, as "Keep mine" carries one (keepingConfirmedNotes).
+ *
+ * `shown` is the working document after the save. The same array when no
+ * piece is marked.
+ */
+export function confirmedAfterLeaving(
+  answer: readonly EditorObject[],
+  shown: readonly EditorObject[],
+  outOfDate: ReadonlyMap<string, string>,
+  unsettled: ReadonlyMap<string, string>,
+): readonly EditorObject[] {
+  if (outOfDate.size === 0 && unsettled.size === 0) return answer;
+  const onScreen = new Map(shown.map((object) => [object.id, object.notes]));
+  const unshown = new Set(answer.filter((object) => {
+    const note = noteGiven(object);
+    if (note === "") return false;
+    if (unsettled.has(object.id)) return true;
+    return outOfDate.has(object.id) && onScreen.get(object.id) !== note;
+  }).map((object) => object.id));
+  if (unshown.size === 0) return answer;
+  return answer.map((object) => (unshown.has(object.id) ? { ...object, notes: "", noteHeld: true } : object));
 }
 
 /**
