@@ -145,7 +145,8 @@ export function slabGeometry(slot: DayBoardSlot, window: BoardWindow): SlabGeome
   };
 }
 
-/** The dimensioned gap drawn before a slot, or null for the first in a lane. */
+/** The dimensioned gap drawn before a slot, from the end of the booking its
+ *  turn-round runs from (`previousBookingId`); null when it has none. */
 export function gapGeometry(previous: DayBoardSlot | undefined, slot: DayBoardSlot, window: BoardWindow): Span | null {
   if (previous === undefined) return null;
   return span(previous.endsAtMs, slot.segments.setupStartsAtMs, window);

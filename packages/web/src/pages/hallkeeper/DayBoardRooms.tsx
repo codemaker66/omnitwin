@@ -245,10 +245,14 @@ function DayBar({ day, view, plaque, selectedId }: {
 }): ReactElement {
   return (
     <span className="dayboard-bar" aria-hidden="true">
-      {day.slots.map((slot, index) => {
+      {day.slots.map((slot) => {
         const geometry = slabGeometry(slot, view);
         const width = geometry.slab.width > 0 ? geometry.slab.width : 1;
-        const short = slot.gapBefore?.short === true ? gapGeometry(day.slots[index - 1], slot, view) : null;
+        // From the booking the turn-round runs from, which its words measure,
+        // not the slot listed before (a talk inside an exhibition, an option
+        // beside another).
+        const from = day.slots.find((candidate) => candidate.bookingId === slot.previousBookingId);
+        const short = slot.gapBefore?.short === true ? gapGeometry(from, slot, view) : null;
         return (
           <span key={slot.bookingId} className="dayboard-bar-slot">
             {short !== null && short.width > 0 && <span className="dayboard-bar-gap" style={across(short)} />}
