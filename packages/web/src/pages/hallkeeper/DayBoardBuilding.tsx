@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useId, useRef, useState, type ReactElement } from "react";
+import { Fragment, useEffect, useId, useMemo, useRef, useState, type ReactElement } from "react";
 import {
   BUILDING_CHECK_LABEL_MAX,
   BUILDING_CHECKS_MAX,
@@ -23,11 +23,12 @@ import type { SupplierArrivalsApi } from "./lib/use-supplier-arrivals.js";
 // its times and its count of who is in may then leave someone out. Whoever
 // is marked in and not out is named, with Gone for the floor, whether or not
 // the checks could be read; one marked gone here stays named, with Undo,
-// while the board shows the day. While last night's lock-up may still be
-// ticked and is not done, its list stands on today's board, ticked against
-// last night. The lists are the venue's words, kept by its administrators on
-// today's board or a later one: a building with none says so rather than
-// offering an invented list.
+// while the board shows the day, as the board last read them, even once a
+// read no longer carries them (their booking has left the Diary since).
+// While last night's lock-up may still be ticked and is not done, its list
+// stands on today's board, ticked against last night. The lists are the
+// venue's words, kept by its administrators on today's board or a later one:
+// a building with none says so rather than offering an invented list.
 // ---------------------------------------------------------------------------
 
 const KIND_WORDS: Readonly<Record<BuildingCheckKind, { readonly title: string; readonly short: string }>> = {
@@ -44,7 +45,19 @@ interface Clock {
 /** What the building reads of the suppliers. */
 export type BuildingSuppliers = Pick<SupplierArrivalsApi, "status" | "reading" | "arrivals" | "earlier" | "busy" | "failures" | "refresh" | "step" | "undo">;
 
-const NO_IDS: readonly string[] = [];
+const NO_ARRIVALS: readonly SupplierArrival[] = [];
+const NO_GONE: ReadonlyMap<string, SupplierArrival> = new Map();
+
+/** Marked in, and since marked gone. */
+function isGone(arrival: SupplierArrival): boolean {
+  return arrival.arrivedAt !== null && arrival.leftAt !== null;
+}
+
+/** The same row on the board: the words it shows, and the revision behind them. */
+function sameRow(a: SupplierArrival, b: SupplierArrival): boolean {
+  return a.revision === b.revision && a.supplierName === b.supplierName && a.arrivesAt === b.arrivesAt
+    && a.arrivedAt === b.arrivedAt && a.leftAt === b.leftAt;
+}
 
 function onList(list: readonly BuildingCheck[]): readonly BuildingCheck[] {
   return list.filter((check) => !check.retired);
@@ -333,7 +346,8 @@ function StillIn({ rows, boardDate, clock, suppliers, canMark, asLastRead, onGon
   readonly canMark: boolean;
   /** The suppliers could not be read since: these are as last read. */
   readonly asLastRead: boolean;
-  readonly onGone: (id: string) => void;
+  /** Marked gone here: the supplier as tapped. */
+  readonly onGone: (arrival: SupplierArrival) => void;
   readonly onBack: (id: string) => void;
 }): ReactElement {
   const [said, setSaid] = useState("");
@@ -359,7 +373,7 @@ function StillIn({ rows, boardDate, clock, suppliers, canMark, asLastRead, onGon
     void (act === "gone" ? suppliers.step(arrival, "left") : suppliers.undo(arrival, "left")).then((outcome) => {
       setWorking((current) => new Set([...current].filter((id) => id !== arrival.id)));
       if (outcome === "saved") {
-        if (act === "gone") onGone(arrival.id);
+        if (act === "gone") onGone(arrival);
         else onBack(arrival.id);
         setSaid(act === "gone" ? `${arrival.supplierName} marked gone.` : `${arrival.supplierName} no longer marked gone.`);
       }
@@ -384,7 +398,7 @@ function StillIn({ rows, boardDate, clock, suppliers, canMark, asLastRead, onGon
                 {gone === null ? "" : `, gone at ${gone}`}
               </span>
               {canMark && suppliers !== null && (gone === null ? (
-                <button type="button" className="dayboard-button" aria-busy={busy} aria-disabled={busy} aria-label={`${arrival.supplierName} gone`}
+                <button type="button" className="dayboard-button" aria-busy={busy} aria-disabled={busy} aria-label={`Mark ${arrival.supplierName} gone`}
                   onClick={() => { tap(arrival, "gone"); }}>
                   {busy && <ActivityIndicator size={14} />}Gone
                 </button>
@@ -442,9 +456,37 @@ export function BuildingSection({
   const [suppliersRetried, setSuppliersRetried] = useState(false);
   const [said, setSaid] = useState("");
   const sectionRef = useRef<HTMLElement>(null);
-  // Suppliers marked gone from this board, kept named with Undo while it shows the day.
-  const [goneHere, setGoneHere] = useState<{ readonly day: string; readonly ids: readonly string[] }>({ day: boardDate, ids: NO_IDS });
-  const goneIds = goneHere.day === boardDate ? goneHere.ids : NO_IDS;
+  // Suppliers marked gone from this board, once each, kept named with Undo
+  // while it shows the day: each as the board last read them gone, so a read
+  // that leaves them out (their booking has left the Diary since) leaves the
+  // row, and its Undo, where it was.
+  const [goneHere, setGoneHere] = useState<{ readonly day: string; readonly byId: ReadonlyMap<string, SupplierArrival> }>({ day: boardDate, byId: NO_GONE });
+  const goneKept = goneHere.day === boardDate ? goneHere.byId : NO_GONE;
+  const earlier = suppliers?.earlier ?? NO_ARRIVALS;
+  const dayArrivals = suppliers?.arrivals ?? NO_ARRIVALS;
+  const known = useMemo(() => [...earlier, ...dayArrivals], [earlier, dayArrivals]);
+  // The latest copy read of each: kept while it reads them gone; let go once
+  // a read has them in again, their Gone taken back on the panel or another
+  // phone, so a Gone here after that names them once.
+  useEffect(() => {
+    setGoneHere((current) => {
+      if (current.day !== boardDate || current.byId.size === 0) return current;
+      const byId = new Map(current.byId);
+      let changed = false;
+      for (const [id, kept] of current.byId) {
+        const now = known.find((arrival) => arrival.id === id);
+        if (now === undefined || sameRow(now, kept)) continue;
+        if (isGone(now)) {
+          byId.set(id, now);
+          changed = true;
+        } else if (isGone(kept)) {
+          byId.delete(id);
+          changed = true;
+        }
+      }
+      return changed ? { day: current.day, byId } : current;
+    });
+  }, [known, boardDate]);
   const clock: Clock = { timeZone, nowMs, dayBoundaryHour };
   const day = api.day;
   const lastNightDay = lastNight?.api.day ?? null;
@@ -465,10 +507,10 @@ export function BuildingSection({
   }, [lastNightOpen, lastNightDay]);
 
   const suppliersState = suppliers === null || suppliers.status === "idle" ? "ready" : suppliers.status;
-  const known = suppliers === null ? [] : [...suppliers.earlier, ...suppliers.arrivals];
-  const goneRows = goneIds.flatMap((id) => {
-    const arrival = known.find((item) => item.id === id);
-    return arrival !== undefined && arrival.arrivedAt !== null && arrival.leftAt !== null ? [arrival] : [];
+  // Drawn from the latest read that carries them, else from the copy kept.
+  const goneRows = [...goneKept.values()].flatMap((kept) => {
+    const now = known.find((arrival) => arrival.id === kept.id) ?? kept;
+    return isGone(now) ? [now] : [];
   });
   const stillRows = [...building.stillIn, ...goneRows.filter((gone) => !building.stillIn.some((still) => still.id === gone.id))].sort(byIn);
 
@@ -554,8 +596,21 @@ export function BuildingSection({
               suppliers={suppliers}
               canMark={canMark}
               asLastRead={suppliersState === "failed"}
-              onGone={(id) => { setGoneHere((now) => ({ day: boardDate, ids: [...(now.day === boardDate ? now.ids : NO_IDS), id] })); }}
-              onBack={(id) => { setGoneHere((now) => ({ day: boardDate, ids: (now.day === boardDate ? now.ids : NO_IDS).filter((other) => other !== id) })); }}
+              onGone={(arrival) => {
+                setGoneHere((now) => {
+                  const byId = now.day === boardDate ? now.byId : NO_GONE;
+                  // Once each: a second Gone here keeps the one row.
+                  return byId.has(arrival.id) ? now : { day: boardDate, byId: new Map([...byId, [arrival.id, arrival]]) };
+                });
+              }}
+              onBack={(id) => {
+                setGoneHere((now) => {
+                  if (now.day !== boardDate || !now.byId.has(id)) return now;
+                  const byId = new Map(now.byId);
+                  byId.delete(id);
+                  return { day: boardDate, byId };
+                });
+              }}
             />
           )}
           {lastNight !== null && lastNightDay !== null && lastNightOpen && (

@@ -114,24 +114,33 @@ function description(element: HTMLElement): string {
     .map((id) => document.getElementById(id)?.textContent ?? "").join(" ");
 }
 
+/** The stand-in hook's next read, which a case answers as the server would. */
+interface Reads {
+  read?: (arrivals: readonly SupplierArrival[]) => void;
+}
+
 /**
  * The section as the page holds it, with a stand-in for the suppliers' hook:
- * Gone and Undo answer with the arrival as it now stands, and the day's
- * still-in list follows from it.
+ * Gone and Undo answer with the arrival as it now stands, which replaces the
+ * hook's copy or joins its list, as the hook does; a read replaces the list;
+ * and the day's still-in list follows from it.
  */
-function WithSuppliers({ start, step, undo }: {
+function WithSuppliers({ start, step, undo, reads }: {
   readonly start: readonly SupplierArrival[];
   readonly step: (arrival: SupplierArrival) => Promise<ArrivalOutcome>;
   readonly undo: (arrival: SupplierArrival) => Promise<ArrivalOutcome>;
+  readonly reads?: Reads;
 }): ReactElement {
   const [arrivals, setArrivals] = useState(start);
-  const settle = (id: string, leftAt: string | null): void => {
-    setArrivals((current) => current.map((item) => (item.id === id ? { ...item, leftAt, leftByName: leftAt === null ? null : "Jamie" } : item)));
+  if (reads !== undefined) reads.read = setArrivals;
+  const settle = (arrival: SupplierArrival, leftAt: string | null): void => {
+    const now = { ...arrival, leftAt, leftByName: leftAt === null ? null : "Jamie" };
+    setArrivals((current) => [...current.filter((item) => item.id !== arrival.id), now]);
   };
   const suppliers = suppliersApi({
     arrivals,
-    step: async (arrival) => { const outcome = await step(arrival); if (outcome === "saved") settle(arrival.id, new Date(NOW).toISOString()); return outcome; },
-    undo: async (arrival) => { const outcome = await undo(arrival); if (outcome === "saved") settle(arrival.id, null); return outcome; },
+    step: async (arrival) => { const outcome = await step(arrival); if (outcome === "saved") settle(arrival, new Date(NOW).toISOString()); return outcome; },
+    undo: async (arrival) => { const outcome = await undo(arrival); if (outcome === "saved") settle(arrival, null); return outcome; },
   });
   const building = { ...BUILDING, stillIn: arrivals.filter((item) => item.arrivedAt !== null && item.leftAt === null) };
   return (
@@ -190,7 +199,7 @@ describe("BuildingSection", () => {
     const still = within(section).getByRole("group", { name: "Marked in, not out" });
     expect(within(still).getByText("Clyde Staging · in at 20:05 on Fri 13 Nov")).toBeTruthy();
     expect(within(still).getByText("Thistle & Fern Flowers · in at 11:31")).toBeTruthy();
-    fireEvent.click(within(still).getByRole("button", { name: "Clyde Staging gone" }));
+    fireEvent.click(within(still).getByRole("button", { name: "Mark Clyde Staging gone" }));
     expect(props.suppliers.step).toHaveBeenCalledWith(expect.objectContaining({ supplierName: "Clyde Staging" }), "left");
     await act(async () => { await Promise.resolve(); });
   });
@@ -366,7 +375,7 @@ describe("BuildingSection", () => {
     fireEvent.click(screen.getByText("The building"));
     expect(screen.getByText(/· 2 marked in, not out$/u)).toBeTruthy();
     const still = screen.getByRole("group", { name: "Marked in, not out" });
-    const gone = within(still).getByRole("button", { name: "Clyde Staging gone" });
+    const gone = within(still).getByRole("button", { name: "Mark Clyde Staging gone" });
     gone.focus();
     fireEvent.click(gone);
     const back = await within(still).findByRole("button", { name: "Undo: Clyde Staging marked gone" });
@@ -377,11 +386,54 @@ describe("BuildingSection", () => {
     expect(screen.getByText(/· 1 marked in, not out$/u)).toBeTruthy();
     // The wrong row, put back where it was tapped.
     fireEvent.click(back);
-    const again = await within(still).findByRole("button", { name: "Clyde Staging gone" });
+    const again = await within(still).findByRole("button", { name: "Mark Clyde Staging gone" });
     expect(undo).toHaveBeenCalledWith(expect.objectContaining({ supplierName: "Clyde Staging" }));
     await waitFor(() => { expect(document.activeElement).toBe(again); });
     expect(within(still).getByText("Clyde Staging no longer marked gone.")).toBeTruthy();
     expect(screen.getByText(/· 2 marked in, not out$/u)).toBeTruthy();
+  });
+
+  it("keeps a supplier marked gone here, with Undo, once a read no longer carries them as their booking has been cancelled", async () => {
+    const clyde = inside("Clyde Staging", "2026-11-13T20:05:00.000Z");
+    const flowers = inside("Thistle & Fern Flowers", "2026-11-14T11:31:00.000Z");
+    const undo = vi.fn(arrived);
+    const reads: Reads = {};
+    render(<WithSuppliers start={[clyde, flowers]} step={vi.fn(arrived)} undo={undo} reads={reads} />);
+    fireEvent.click(screen.getByText("The building"));
+    const still = screen.getByRole("group", { name: "Marked in, not out" });
+    // Gone for Thistle & Fern was meant; the tap landed on Clyde Staging.
+    fireEvent.click(within(still).getByRole("button", { name: "Mark Clyde Staging gone" }));
+    await within(still).findByRole("button", { name: "Undo: Clyde Staging marked gone" });
+    // Clyde's wedding was cancelled: a supplier gone from a booking off the Diary leaves the next read.
+    act(() => { reads.read?.([flowers]); });
+    expect(within(still).getByText("Clyde Staging · in at 20:05 on Fri 13 Nov, gone at 15:00")).toBeTruthy();
+    fireEvent.click(within(still).getByRole("button", { name: "Undo: Clyde Staging marked gone" }));
+    // Put back from the Gone the board read, and in again.
+    await within(still).findByRole("button", { name: "Mark Clyde Staging gone" });
+    expect(undo).toHaveBeenCalledWith(expect.objectContaining({ id: clyde.id, leftAt: new Date(NOW).toISOString() }));
+    expect(screen.getByText(/· 2 marked in, not out$/u)).toBeTruthy();
+  });
+
+  it("names a supplier once, with one Undo, when marked gone here again after that Gone was taken back elsewhere", async () => {
+    const clyde = inside("Clyde Staging", "2026-11-13T20:05:00.000Z");
+    const reads: Reads = {};
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      render(<WithSuppliers start={[clyde]} step={vi.fn(arrived)} undo={vi.fn(arrived)} reads={reads} />);
+      fireEvent.click(screen.getByText("The building"));
+      const still = screen.getByRole("group", { name: "Marked in, not out" });
+      fireEvent.click(within(still).getByRole("button", { name: "Mark Clyde Staging gone" }));
+      await within(still).findByRole("button", { name: "Undo: Clyde Staging marked gone" });
+      // Taken back from the booking's panel, or on another phone: the next read has them in.
+      act(() => { reads.read?.([clyde]); });
+      fireEvent.click(await within(still).findByRole("button", { name: "Mark Clyde Staging gone" }));
+      await within(still).findByRole("button", { name: "Undo: Clyde Staging marked gone" });
+      expect(within(still).getAllByRole("listitem")).toHaveLength(1);
+      expect(within(still).getAllByRole("button", { name: /Clyde Staging/u })).toHaveLength(1);
+      expect(errors.mock.calls.flat().map(String).join(" ")).not.toMatch(/same key/u);
+    } finally {
+      errors.mockRestore();
+    }
   });
 
   it("offers the lists' changes only on today's board or a later one, never from a past day's list", () => {

@@ -100,6 +100,7 @@ vi.mock("../../../api/changeover.js", async (importOriginal) => ({
 const arrivalsApi = vi.hoisted(() => ({
   list: vi.fn<(venueId: string, fromMs: number, toMs: number) => Promise<unknown[]>>(() => Promise.resolve([])),
   step: vi.fn<(venueId: string, id: string, step: string) => Promise<unknown>>(),
+  undo: vi.fn<(venueId: string, id: string, step: string) => Promise<unknown>>(),
 }));
 vi.mock("../../../api/supplier-arrivals.js", () => ({
   listSupplierArrivals: (venueId: string, fromMs: number, toMs: number) => arrivalsApi.list(venueId, fromMs, toMs),
@@ -107,7 +108,7 @@ vi.mock("../../../api/supplier-arrivals.js", () => ({
   createSupplierArrival: () => Promise.reject(new Error("not in this test")),
   updateSupplierArrival: () => Promise.reject(new Error("not in this test")),
   removeSupplierArrival: () => Promise.reject(new Error("not in this test")),
-  undoSupplierArrivalStep: () => Promise.reject(new Error("not in this test")),
+  undoSupplierArrivalStep: (venueId: string, id: string, step: string) => arrivalsApi.undo(venueId, id, step),
 }));
 // The building's own checks: none unless a case feeds them.
 const checksApi = vi.hoisted(() => ({
@@ -329,6 +330,8 @@ beforeEach(() => {
   arrivalsApi.list.mockReset();
   arrivalsApi.list.mockResolvedValue([]);
   arrivalsApi.step.mockReset();
+  arrivalsApi.undo.mockReset();
+  arrivalsApi.undo.mockRejectedValue(new Error("not in this test"));
   rotaMock.mockReset();
   rotaMock.mockImplementation((_venueId, start) => Promise.resolve(rotaWeek(start ?? "", [])));
   resolveLayoutsMock.mockReset();
@@ -2058,6 +2061,35 @@ describe("DayBoardPage: the building", () => {
     expect(arrivalsApi.list).toHaveBeenCalledWith(VENUE, Date.parse(dayRange(0).from) - 36 * 3_600_000, Date.parse(dayRange(0).to));
   });
 
+  it("offers the office the lists' editor on today's board and later ones, never on a past day's", async () => {
+    const user = useAuthStore.getState().user;
+    if (user === null) throw new Error("Expected test user");
+    useAuthStore.getState().setUser({ ...user, role: "admin" });
+    getCalendarMock.mockResolvedValue(calendarFixture(day()));
+    renderBoard();
+    /** The building's section on the day now shown, opened. */
+    const opened = async (): Promise<HTMLElement> => {
+      const section = await screen.findByRole("region", { name: "The building" });
+      if (section.querySelector("details")?.open !== true) fireEvent.click(within(section).getByText("The building"));
+      return section;
+    };
+    expect(await within(await opened()).findByRole("button", { name: "Write the opening checks" })).toBeTruthy();
+    const shown = screen.getByLabelText<HTMLInputElement>("Day");
+    const today = shown.value;
+    // Yesterday's lists are a record: read, never written.
+    fireEvent.click(screen.getByRole("button", { name: "Previous day" }));
+    expect(shown.value < today).toBe(true);
+    await waitFor(() => { expect(checksApi.get).toHaveBeenCalledWith(VENUE, shown.value); });
+    const past = await opened();
+    expect(await within(past).findByText("No opening checks were set up for this day.")).toBeTruthy();
+    expect(within(past).queryByRole("button", { name: /^(Write|Change) the / })).toBeNull();
+    // Tomorrow's list is the venue's list now: the office writes it there too.
+    fireEvent.click(screen.getByRole("button", { name: "Next day" }));
+    fireEvent.click(screen.getByRole("button", { name: "Next day" }));
+    expect(shown.value > today).toBe(true);
+    expect(await within(await opened()).findByRole("button", { name: "Write the opening checks" })).toBeTruthy();
+  });
+
   it("reads no checks on the wall, which ticks nothing", async () => {
     getCalendarMock.mockResolvedValue(calendarFixture(day()));
     render(<MemoryRouter initialEntries={["/hallkeeper/today?register=wall"]}><DayBoardPage /></MemoryRouter>);
@@ -2296,6 +2328,33 @@ describe("DayBoardPage: who comes to the building", () => {
     render(<MemoryRouter initialEntries={["/hallkeeper/today?register=wall"]}><DayBoardPage /></MemoryRouter>);
     expect(await screen.findByText("Dinner")).toBeTruthy();
     expect(arrivalsApi.list).not.toHaveBeenCalled();
+  });
+
+  it("keeps a supplier marked gone from the building's list, with Undo, once a read leaves them out as their booking is cancelled", async () => {
+    // Clyde Staging, in since this morning for a wedding cancelled since: on no panel of this board.
+    const CLYDE = "00000000-0000-4000-8000-0000000005a3";
+    const clyde = arrival(CLYDE, "Clyde Staging", -300, { bookingId: "00000000-0000-4000-8000-0000000000b6", arrivedAt: at(-295), arrivedByName: "Ngozi" });
+    getCalendarMock.mockResolvedValue(calendarFixture(day()));
+    arrivalsApi.list.mockResolvedValue([clyde]);
+    arrivalsApi.step.mockResolvedValue({ ...clyde, leftAt: at(0), leftByName: "Elaine" });
+    arrivalsApi.undo.mockResolvedValue(clyde);
+    renderBoard();
+    const section = await screen.findByRole("region", { name: "The building" });
+    fireEvent.click(within(section).getByText("The building"));
+    fireEvent.click(await within(section).findByRole("button", { name: "Mark Clyde Staging gone" }));
+    expect(await within(section).findByRole("button", { name: "Undo: Clyde Staging marked gone" })).toBeTruthy();
+    expect(arrivalsApi.step).toHaveBeenCalledWith(VENUE, CLYDE, "left");
+    expect(within(section).getByText(/· Clyde Staging due$/u)).toBeTruthy();
+    // The server now leaves them out: gone, from a booking off the Diary. Once
+    // that read is on the board, Clyde no longer opens the building.
+    arrivalsApi.list.mockResolvedValue([]);
+    act(() => { window.dispatchEvent(new Event("online")); });
+    expect(await within(section).findByText(/· Lunch begins$/u)).toBeTruthy();
+    fireEvent.click(within(section).getByRole("button", { name: "Undo: Clyde Staging marked gone" }));
+    await waitFor(() => { expect(arrivalsApi.undo).toHaveBeenCalledWith(VENUE, CLYDE, "left"); });
+    // In again, and the floor can mark them gone when they do go.
+    expect(await within(section).findByRole("button", { name: "Mark Clyde Staging gone" })).toBeTruthy();
+    expect(within(section).getByText(/· 1 marked in, not out$/u)).toBeTruthy();
   });
 });
 
