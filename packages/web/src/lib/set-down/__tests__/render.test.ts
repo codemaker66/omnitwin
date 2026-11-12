@@ -302,6 +302,26 @@ describe("when the feet meet the floor (ruling R43)", () => {
 });
 
 describe("what each piece is made of", () => {
+  /** The energy in 1-3.2 kHz over 35-70 ms, where the legs rattle. */
+  const rattleBand = (render: SetDownRender): number => bandEnergy(render.left.subarray(Math.round(0.035 * SR), Math.round(0.07 * SR)), SR, 1000, 3200);
+
+  it.each(["mic-stand", "round-table-6ft-white", "trestle-6ft"])("rattles %s's folding legs at least 6 dB over the same set-down without them, seeds 1-8 (ruling R44)", (slug) => {
+    for (let seed = 1; seed <= 8; seed += 1) {
+      const input = inputFor(slug, "oak-boards-joists", { seed });
+      expect(input.body.legRattle).toBe(true);
+      const rattling = renderSetDown(input);
+      const still = renderSetDown({ ...input, body: { ...input.body, legRattle: false } });
+      expect(10 * Math.log10(rattleBand(rattling) / rattleBand(still)), `seed ${String(seed)}`).toBeGreaterThanOrEqual(6);
+    }
+  });
+
+  it("rings a steel mic stand at 1 kHz for 0.2 s and more, seeds 1-8 (ruling R44)", () => {
+    for (let seed = 1; seed <= 8; seed += 1) {
+      const stand = setDown("mic-stand", "oak-boards-joists", { seed });
+      expect(schroederT20(octaveBandpassSteep(stand.left, 1000, SR), SR), `seed ${String(seed)}`).toBeGreaterThanOrEqual(0.2);
+    }
+  });
+
   it.each(SEEDS)("rings a steel mic stand at 1 kHz for more than twice as long as a beech chair (seed %i)", (seed) => {
     const stand = setDown("mic-stand", "oak-boards-joists", { seed });
     const chair = setDown("chiavari-chair", "oak-boards-joists", { seed });
@@ -353,13 +373,19 @@ describe("levels", () => {
     expect(spread(values)).toBeLessThanOrEqual(3);
   });
 
-  it("sets a Chiavari dropped on oak at 1 m/s to the anchor's loudness on every play, its median peak at the touch level (ruling R36)", () => {
-    // The play's +-15 % spread of the speed shapes its contacts, not its level.
+  it("sets a Chiavari dropped on oak at 1 m/s to the anchor's loudness, give or take its play's speed, its median peak at the touch level (rulings R36, R45)", () => {
+    // Each play is levelled at its own speed, within +-15 % of 1 m/s: 10 log10(0.85) to 10 log10(1.15) dB about the anchor.
+    const loudnesses: number[] = [];
     const peaks = Array.from({ length: 21 }, (_, i) => {
       const render = setDown("chiavari-chair", "oak-boards-joists", { seed: 1 + i });
-      expect(loudness(render)).toBeCloseTo(SET_DOWN_TOUCH_LOUDNESS_DB, 2);
+      loudnesses.push(loudness(render));
       return render.peakDb;
     });
+    for (const value of loudnesses) {
+      expect(value).toBeGreaterThanOrEqual(SET_DOWN_TOUCH_LOUDNESS_DB + 10 * Math.log10(0.85) - 1e-6);
+      expect(value).toBeLessThanOrEqual(SET_DOWN_TOUCH_LOUDNESS_DB + 10 * Math.log10(1.15) + 1e-6);
+    }
+    expect(Math.abs(median(loudnesses) - SET_DOWN_TOUCH_LOUDNESS_DB)).toBeLessThan(0.35);
     expect(Math.abs(median(peaks) - SET_DOWN_TOUCH_DB)).toBeLessThan(0.5);
   });
 

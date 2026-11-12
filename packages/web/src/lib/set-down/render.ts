@@ -24,7 +24,7 @@ import { PLANNER_TOUCH_DB } from "../planner-sound-recipes.js";
 import { biquadCoefficients, dbToGain, gainToDb, seededRandom } from "../planner-sound-render.js";
 import type { BodyPart, Foot, PartKind, SetDownBody } from "./bodies.js";
 import { contactSeconds, decaySeconds, knockSeconds, modeEnergy, partModes, surfaceModes } from "./modes.js";
-import { LOUDNESS_GATE, kWeighted } from "./analysis.js";
+import { kWeighted, momentaryMaxOfWeighted } from "./analysis.js";
 import type { Reflection } from "./reflections.js";
 import { SURFACES, type SurfaceKind, type SurfaceResponse } from "./surfaces.js";
 import type { Stereo } from "./tail.js";
@@ -36,17 +36,19 @@ import type { Stereo } from "./tail.js";
  */
 export const SET_DOWN_TOUCH_DB = PLANNER_TOUCH_DB;
 
-/** How far the anchor's K-weighted loudness sits below its peak (measured: the median of 21 plays). */
-const ANCHOR_LOUDNESS_BELOW_PEAK_DB = -14.07;
+/** How far the anchor's momentary loudness sits below its peak (measured: the median of 21 plays). */
+const ANCHOR_LOUDNESS_BELOW_PEAK_DB = -21.46;
 
 /**
- * The K-weighted loudness of that anchor when it peaks at SET_DOWN_TOUCH_DB:
- * kWeightedLoudness of the centred render's first 400 ms, the median over
- * 21 plays (measured on this renderer; a test holds the anchor's median peak
- * to the touch level, so a change to the model that moves it is caught).
- * Every set-down is set to this loudness plus the level rule's offset (ruling
- * R36): set by peak, a sharp knock that topped one play and not the next
- * moved a piece's loudness by 3.4-6.8 dB over 200 plays.
+ * The loudness of that anchor when it peaks at SET_DOWN_TOUCH_DB: the
+ * momentary loudness at its loudest (momentaryMaxLoudness, ruling R45) of the
+ * centred render, the median over 21 plays (measured on this renderer; a test
+ * holds the anchor's median peak to the touch level, so a change to the model
+ * that moves it is caught). Every set-down is set to this loudness plus the
+ * level rule's offset (ruling R36): set by peak, a sharp knock that topped one
+ * play and not the next moved a piece's loudness by 3.4-6.8 dB over 200
+ * plays. Momentary loudness counts a sound's length, so a long ring reads
+ * loud and is set down, and loudness follows mass.
  */
 export const SET_DOWN_TOUCH_LOUDNESS_DB = SET_DOWN_TOUCH_DB + ANCHOR_LOUDNESS_BELOW_PEAK_DB;
 
@@ -96,8 +98,6 @@ export interface SetDownRender extends Stereo {
 
 // --- Level ---------------------------------------------------------------------
 
-/** Loudness is read over the first 400 ms, BS.1770's momentary block, as the tests read it. */
-const LOUDNESS_WINDOW_S = 0.4;
 /**
  * The safety above the ceiling: a play the loudness rule would take past
  * -6 dBFS is held there by a look-ahead peak limiter, as broadcast holds R128
@@ -187,8 +187,14 @@ const RATTLE_COUNT = [2, 4] as const;
 const RATTLE_WINDOW_S = 0.06;
 const RATTLE_AFTER_S = 0.004;
 const RATTLE_HZ = [1200, 3000] as const;
-/** A rattle's knock in a joint carries this much of the feet's peak landing force, so it rings the frame 18 dB under the landing's drive. */
+/**
+ * The rattle sounds this far under the landing, as briefed: what the ticks
+ * ring in the frames peaks this far under the landing's own peak (the body and
+ * the struck spot), measured as the drive is rung (ruling R44).
+ */
 const RATTLE_DB = -18;
+/** The rattle's ring is read this far past its last tick, so its peak (a moment after the tick) is caught. */
+const RATTLE_RING_S = 0.005;
 const RATTLE_TICK_S = 0.004;
 const RATTLE_Q = 3;
 const PUFF_S = 0.04;
@@ -362,8 +368,6 @@ interface Pulse {
   readonly start: number;
   readonly duration: number;
   readonly impulse: number;
-  /** A foot's own landing, rather than its chatter, its bottoming out or a castor's roll. */
-  readonly landing: boolean;
 }
 
 interface Group {
@@ -417,7 +421,7 @@ function landingPulses(
     const mass = landing.share * piece.massKg;
     const impulse = mass * speed;
     const duration = contactSeconds(foot.cap, surface, mass, speed);
-    pulses.push({ group, start: landing.time, duration, impulse, landing: true });
+    pulses.push({ group, start: landing.time, duration, impulse });
     if (surface.kind === "carpet") {
       // The pile gives way and the foot bottoms out onto the floor beneath, through what is left of the pile.
       const through = Math.PI * Math.sqrt(mass / PILE_STIFFNESS_N_PER_M);
@@ -426,7 +430,6 @@ function landingPulses(
         start: landing.time + bottomDelay + BOTTOM_JITTER_S * (2 * random() - 1),
         duration: Math.max(through, contactSeconds(foot.cap, OAK, mass, speed * BOTTOM_SPEED)),
         impulse: impulse * dbToGain(BOTTOM_DB),
-        landing: false,
       });
     } else if (kind === "drop") {
       const knock = knockSeconds(foot.cap, surface, speed);
@@ -437,7 +440,7 @@ function landingPulses(
       let start = landing.time + duration + gap;
       for (let k = 0; k < count && start <= landing.time + MICRO_WINDOW_S; k += 1) {
         momentum *= dbToGain(-lerp(MICRO_FALL_DB, random()));
-        pulses.push({ group, start, duration: knock, impulse: momentum, landing: false });
+        pulses.push({ group, start, duration: knock, impulse: momentum });
         gap *= lerp(MICRO_GAP_SHRINK, random());
         start += gap;
       }
@@ -455,7 +458,6 @@ function landingPulses(
           start: start + bump * ROLL_GAP_S,
           duration: contactSeconds("castor", group.surface, footMass, speed),
           impulse: footMass * speed * weight * dbToGain(db),
-          landing: false,
         });
       });
     });
@@ -465,10 +467,10 @@ function landingPulses(
 
 /**
  * Folding legs knocking in their joints after the landing: short noise ticks
- * at 1.2-3 kHz, each peaking at `peak`, written into `force`, which rings the
- * frames.
+ * at 1.2-3 kHz, each peaking at 1, written into `force`, which rings the
+ * frames (at the level RATTLE_DB sets on what it rings).
  */
-function addRattle(force: Float64Array, landings: readonly FootLanding[], peak: number, sampleRate: number, random: () => number): void {
+function addRattle(force: Float64Array, landings: readonly FootLanding[], sampleRate: number, random: () => number): void {
   const last = Math.max(...landings.map((landing) => landing.time));
   const count = RATTLE_COUNT[0] + Math.floor(random() * (RATTLE_COUNT[1] - RATTLE_COUNT[0] + 1));
   const earliest = last + RATTLE_AFTER_S;
@@ -481,14 +483,14 @@ function addRattle(force: Float64Array, landings: readonly FootLanding[], peak: 
     for (let i = 0; i < length; i += 1) tick[i] = 2 * random() - 1;
     filterInPlace(tick, length, biquadCoefficients("bandpass", lerp(RATTLE_HZ, random()), RATTLE_Q, sampleRate));
     for (let i = 0; i < length; i += 1) tick[i] = (tick[i] ?? 0) * (i < attack ? i / attack : Math.exp(-(i - attack) / fall));
-    scalePeakTo(tick, length, peak);
+    scalePeakTo(tick, length, 1);
     for (let i = 0; i < length && start + i < force.length - DRIVE_TAIL; i += 1) force[start + i] = (force[start + i] ?? 0) + (tick[i] ?? 0);
   }
 }
 
-/** The end of the rattle's ticks, in samples, for sizing the drive. */
+/** The end of the rattle's ticks and the moment after them its ring peaks, in samples, for sizing the drive. */
 function rattleEnd(sampleRate: number): number {
-  return Math.round((RATTLE_WINDOW_S + RATTLE_TICK_S) * sampleRate);
+  return Math.round((RATTLE_WINDOW_S + RATTLE_TICK_S + RATTLE_RING_S) * sampleRate);
 }
 
 /** Adds one 1 - cos pulse, its area the pulse's impulse, into `force`. */
@@ -609,6 +611,8 @@ interface Voice {
   readonly weights: readonly number[];
   /** Where it sounds: the body, or the floor's heave (never reflected). */
   readonly layer: Layer;
+  /** Whether the rattle rings it too (a frame of a piece whose legs rattle). */
+  readonly rattled: boolean;
 }
 
 /** A second-order low-pass's magnitude at `hz`: how much of a pulse a soft surface lets reach a mode. */
@@ -635,8 +639,16 @@ interface Rung {
   readonly a1: number;
   readonly a2: number;
   readonly r: number;
+  readonly w: number;
   /** Its envelope when the drive ends. */
   readonly amplitude: number;
+}
+
+/** The envelope of a decaying sinusoid from its last two samples: A^2 = y1^2 + ((y1 cos w - r y2) / sin w)^2. */
+function envelope(y1: number, y2: number, w: number, r: number): number {
+  const sin = Math.sin(w);
+  const quadrature = sin > 1e-9 ? (y1 * Math.cos(w) - r * y2) / sin : 0;
+  return Math.hypot(y1, quadrature);
 }
 
 /**
@@ -672,10 +684,7 @@ function driveVoice(voice: Voice, out: Float64Array, drive: number, scratch: Flo
     y2 = y1; y1 = y0;
     out[n] = (out[n] ?? 0) + y0;
   }
-  // The envelope from the last two samples of a decaying sinusoid: A^2 = y1^2 + ((y1 cos w - r y2) / sin w)^2.
-  const sin = Math.sin(w);
-  const quadrature = sin > 1e-9 ? (y1 * Math.cos(w) - r * y2) / sin : 0;
-  return { y1, y2, a1, a2, r, amplitude: Math.hypot(y1, quadrature) };
+  return { y1, y2, a1, a2, r, w, amplitude: envelope(y1, y2, w, r) };
 }
 
 /** Carries a voice's free decay on from `from` for `count` samples. */
@@ -704,14 +713,41 @@ interface Layered {
   cut: boolean;
 }
 
+interface Driven {
+  readonly rungs: readonly Rung[];
+  /** What the rattle alone rang through the drive, and each rattled voice's state from it (null for the rest). */
+  readonly rattle: { readonly out: Float64Array; readonly rungs: readonly (Rung | null)[] } | null;
+}
+
 /**
- * Rings every voice through the drive, then on until it is LIFE_FLOOR_DB
- * under the loudest voice of its own layer, each layer held to its buffer
- * (a voice still ringing at the end is faded out with it).
+ * Rings every voice through the drive into its layer, and each rattled voice
+ * on the rattle alone as well, into a buffer of its own: the resonators are
+ * linear, so the two add at any gain, and the rattle's level can be set on
+ * what it rings before the voices ring on (ruling R44).
  */
-function ringVoices(voices: readonly Voice[], layers: Readonly<Record<Layer, Layered>>, drive: number, sampleRate: number): void {
+function driveVoices(voices: readonly Voice[], layers: Readonly<Record<Layer, Layered>>, drive: number, sampleRate: number, rattle: Float64Array | null): Driven {
   const scratch = new Float64Array(drive);
   const rungs = voices.map((voice) => driveVoice(voice, layers[voice.layer].out, drive, scratch, sampleRate));
+  if (rattle === null) return { rungs, rattle: null };
+  const out = new Float64Array(drive);
+  const rattleRungs = voices.map((voice) => (voice.rattled ? driveVoice({ ...voice, sources: [rattle], weights: [1] }, out, drive, scratch, sampleRate) : null));
+  return { rungs, rattle: { out, rungs: rattleRungs } };
+}
+
+/**
+ * Rings every voice on from the drive, once, with each rattled voice's rattle
+ * state added at `rattleGain`, until it is LIFE_FLOOR_DB under the loudest
+ * voice of its own layer, each layer held to its buffer (a voice still
+ * ringing at the end is faded out with it).
+ */
+function ringVoices(voices: readonly Voice[], driven: Driven, rattleGain: number, layers: Readonly<Record<Layer, Layered>>, drive: number): void {
+  const rungs = driven.rungs.map((rung, v) => {
+    const rattled = driven.rattle?.rungs[v] ?? null;
+    if (rattled === null || rattleGain === 0) return rung;
+    const y1 = rung.y1 + rattleGain * rattled.y1;
+    const y2 = rung.y2 + rattleGain * rattled.y2;
+    return { ...rung, y1, y2, amplitude: envelope(y1, y2, rung.w, rung.r) };
+  });
   const loudest: Record<Layer, number> = { body: 0, heave: 0 };
   rungs.forEach((rung, v) => {
     const layer = voices[v]?.layer ?? "body";
@@ -826,9 +862,7 @@ function onePoleGain(pole: number, hz: number, sampleRate: number): number {
 interface PlayStart {
   /** The play's random stream, already past the speed and the feet. */
   readonly random: () => number;
-  /** The set-down's own speed, which sets its level. */
-  readonly nominal: number;
-  /** The play's speed, within SPEED_SPREAD of it, which shapes its contacts. */
+  /** The play's own speed, within SPEED_SPREAD of the set-down's: it shapes the contacts and sets the level. */
   readonly speed: number;
   readonly landings: FootLanding[];
 }
@@ -836,10 +870,9 @@ interface PlayStart {
 /** How a play begins: its speed and its feet, the first draws on its seed, in this order. */
 function startPlay(piece: Piece, seed: number, speedMps: number, kind: SetDownInput["kind"]): PlayStart {
   const random = seededRandom(seed);
-  // The set-down's own speed sets its level; the play's spread of it shapes only its contacts.
   const nominal = saneSpeed(speedMps) * (kind === "settle" ? SETTLE_SPEED : 1);
   const speed = nominal * (1 + SPEED_SPREAD * (2 * random() - 1));
-  return { random, nominal, speed, landings: scheduleFeet(piece.feet.length, piece.massKg, random) };
+  return { random, speed, landings: scheduleFeet(piece.feet.length, piece.massKg, random) };
 }
 
 /** Feet that land within this of the one before land together: one contact, as a 1 ms onset block hears it. */
@@ -876,38 +909,14 @@ export function footSchedule(body: SetDownBody, seed: number, speedMps: number):
 
 // --- The render ---------------------------------------------------------------------------------
 
-/** The loudness a set-down is set to: the anchor's, plus 3 log10(m / 4 kg) and 10 log10(v / 1 m/s). */
+/** The loudness a set-down is set to: the anchor's, plus 3 log10(m / 4 kg) and 10 log10(v / 1 m/s), v the play's own speed. */
 function targetLoudnessDb(massKg: number, speed: number): number {
   return SET_DOWN_TOUCH_LOUDNESS_DB + 3 * Math.log10(massKg / REFERENCE_MASS_KG) + 10 * Math.log10(speed);
 }
 
-/** kWeightedLoudness of a centred render whose two channels are `k`, the K-weighted source, times `scale`. */
-function centredLoudness(k: Float64Array, scale: number): number {
-  const power = 2 * scale * scale;
-  let sum = 0;
-  let counted = 0;
-  for (let n = 0; n < k.length; n += 1) {
-    const p = power * (k[n] ?? 0) ** 2;
-    if (p < LOUDNESS_GATE) continue;
-    sum += p;
-    counted += 1;
-  }
-  return counted > 0 ? 10 * Math.log10(sum / counted) : -120;
-}
-
-/**
- * The scale that sets the source to `targetDb` of K-weighted loudness. The
- * gate is absolute, so the reading is solved at the scale it is read at, from
- * `guess`, in a few steps.
- */
-function loudnessScale(k: Float64Array, targetDb: number, guess: number): number {
-  let scale = guess;
-  for (let step = 0; step < 6; step += 1) {
-    const off = targetDb - centredLoudness(k, scale);
-    if (!Number.isFinite(off) || Math.abs(off) < 1e-4) break;
-    scale *= dbToGain(clamp(off, -40, 40));
-  }
-  return scale;
+/** The momentary loudness at its loudest of the centred render at unit scale, both of whose channels carry `k`, the K-weighted source. */
+function centredLoudness(k: Float64Array, sampleRate: number): number {
+  return momentaryMaxOfWeighted([k, k], sampleRate);
 }
 
 /**
@@ -957,44 +966,45 @@ function limiterGain(source: Float64Array, length: number, threshold: number, wi
   return gain;
 }
 
-/** The K-weighted `head` times `gain`, from `k` (the K-weighted head): only where the gain moves, and its ring after, is filtered again. */
-function kWeightedHeld(head: Float64Array, k: Float64Array, gain: Float64Array, sampleRate: number): Float64Array {
+/** The K-weighted `source` times `gain`, from `k` (the K-weighted source): only where the gain moves, and its ring after, is filtered again. */
+function kWeightedHeld(source: Float64Array, k: Float64Array, gain: Float64Array, sampleRate: number): Float64Array {
   let from = 0;
-  while (from < head.length && gain[from] === 1) from += 1;
-  let to = head.length;
+  while (from < k.length && gain[from] === 1) from += 1;
+  let to = k.length;
   while (to > from && gain[to - 1] === 1) to -= 1;
   const out = k.slice();
   if (from >= to) return out;
-  // K-weighting is linear and causal: the held head's is the head's plus that of what the hold took away.
-  const end = Math.min(head.length, to + Math.round(K_TAIL_S * sampleRate));
+  // K-weighting is linear and causal: the held source's is the source's plus that of what the hold took away.
+  const end = Math.min(k.length, to + Math.round(K_TAIL_S * sampleRate));
   const taken = new Float64Array(end - from);
-  for (let n = from; n < to; n += 1) taken[n - from] = (head[n] ?? 0) * ((gain[n] ?? 1) - 1);
+  for (let n = from; n < to; n += 1) taken[n - from] = (source[n] ?? 0) * ((gain[n] ?? 1) - 1);
   const change = kWeighted(taken, sampleRate);
   for (let n = from; n < end; n += 1) out[n] = (out[n] ?? 0) + (change[n - from] ?? 0);
   return out;
 }
 
 /**
- * The scale that sets the source (`head`, its first 400 ms, and `source`, all
- * of it) to `targetDb` of K-weighted loudness with its peak held to
- * -32..-6 dBFS, and the limiter gain that holds it there (null if none). A
- * quiet play is turned up to -32; a loud one is limited to -6 by up to
- * LIMIT_MAX_DB and turned down past that, its loudness solved again through
- * the limiter until it holds.
+ * The scale that sets `source` to `targetDb` of momentary loudness with its
+ * peak held to -32..-6 dBFS, and the limiter gain that holds it there (null
+ * if none). Momentary loudness is ungated, so the scale is solved in one
+ * step. A quiet play is turned up to -32; a loud one is limited to -6 by up
+ * to LIMIT_MAX_DB and turned down past that, its loudness solved again
+ * through the limiter until it holds.
  */
-function levelFor(head: Float64Array, source: Float64Array, length: number, sourcePeak: number, targetDb: number, sampleRate: number): { readonly scale: number; readonly gain: Float64Array | null } {
+function levelFor(source: Float64Array, sourcePeak: number, targetDb: number, sampleRate: number): { readonly scale: number; readonly gain: Float64Array | null } {
+  const length = source.length;
   const ceiling = dbToGain(PEAK_CEILING_DB);
   const most = (ceiling * dbToGain(LIMIT_MAX_DB)) / sourcePeak;
-  const k = kWeighted(head, sampleRate);
-  let scale = loudnessScale(k, targetDb, dbToGain(SET_DOWN_TOUCH_DB) / sourcePeak);
+  const k = kWeighted(source, sampleRate);
+  let scale = dbToGain(targetDb - centredLoudness(k, sampleRate));
   if (scale * sourcePeak < dbToGain(PEAK_FLOOR_DB)) return { scale: dbToGain(PEAK_FLOOR_DB) / sourcePeak, gain: null };
   if (scale * sourcePeak <= ceiling) return { scale, gain: null };
   const window = Math.max(1, Math.round(LIMIT_WINDOW_S * sampleRate));
   scale = Math.min(scale, most);
   for (let step = 0; step < LIMIT_STEPS; step += 1) {
-    const gain = limiterGain(source, head.length, (ceiling * LIMIT_HEADROOM) / scale, window);
+    const gain = limiterGain(source, length, (ceiling * LIMIT_HEADROOM) / scale, window);
     if (gain === null) break;
-    const next = Math.min(most, loudnessScale(kWeightedHeld(head, k, gain, sampleRate), targetDb, scale));
+    const next = Math.min(most, dbToGain(targetDb - centredLoudness(kWeightedHeld(source, k, gain, sampleRate), sampleRate)));
     const settled = Math.abs(next / scale - 1) < LIMIT_SETTLE;
     scale = next;
     if (settled) break;
@@ -1009,9 +1019,10 @@ function levelFor(head: Float64Array, source: Float64Array, length: number, sour
  * throws, and every body, even an empty one, is heard.
  *
  * At full direct gain the source is set to SET_DOWN_TOUCH_LOUDNESS_DB
- * + 3 log10(m / 4) + 10 log10(v) of K-weighted loudness (ruling R36), where v
- * is the set-down's own speed (a quarter of it for a settle): the play's
- * +-15 % spread shapes its contacts, not its level. Its peak is then held to
+ * + 3 log10(m / 4) + 10 log10(v) of momentary loudness (rulings R36, R45),
+ * where v is the play's own speed (a quarter of the set-down's for a settle,
+ * and within +-15 % of it), so plays differ as their speeds do, by about
+ * +-0.6 dB. Its peak is then held to
  * -32..-6 dBFS (ruling R42): a quiet play is turned up, and a loud one is
  * held by a look-ahead limiter (by up to LIMIT_MAX_DB, then turned down). A
  * reflection under 1 ms (the floor beneath a piece standing on it) folds into
@@ -1022,7 +1033,7 @@ function levelFor(head: Float64Array, source: Float64Array, length: number, sour
 export function renderSetDown(input: SetDownInput): SetDownRender {
   const sampleRate = saneRate(input.sampleRate);
   const piece = pieceOf(input.body);
-  const { random, nominal, speed, landings } = startPlay(piece, input.seed, input.speed, input.kind);
+  const { random, speed, landings } = startPlay(piece, input.seed, input.speed, input.kind);
   const { groups, of: groupOf } = groupFeet(piece.feet, input.surfaces);
   const pulses = landingPulses(piece, landings, groupOf, groups, speed, input.kind, random);
 
@@ -1038,11 +1049,8 @@ export function renderSetDown(input: SetDownInput): SetDownRender {
   }
   let rattle: Float64Array | null = null;
   if (piece.body.legRattle) {
-    // A knock in a joint carries RATTLE_DB of the feet's mean peak landing force (in the drive's own units).
-    const mains = pulses.filter((pulse) => pulse.landing);
-    const peakForce = mains.reduce((sum, pulse) => sum + (2 * pulse.impulse) / Math.max(2, Math.round(pulse.duration * sampleRate)), 0) / Math.max(1, mains.length);
     rattle = new Float64Array(drive);
-    addRattle(rattle, landings, peakForce * dbToGain(RATTLE_DB), sampleRate, random);
+    addRattle(rattle, landings, sampleRate, random);
   }
 
   // The voices: the piece's parts, driven by every foot (and its frames by the rattle too), and each surface's
@@ -1058,9 +1066,7 @@ export function renderSetDown(input: SetDownInput): SetDownRender {
       if (mode.hz >= nyquistGuard) continue;
       const t60 = contactEta > 0 ? 1 / (1 / mode.t60 + 1 / decaySeconds(mode.hz, contactEta)) : mode.t60;
       const weights = groups.map((group) => cutAt(mode.hz, group.surface.highCutHz));
-      const sources = rattled && rattle !== null ? [...forces, rattle] : forces;
-      if (sources !== forces) weights.push(1);
-      voices.push({ hz: mode.hz, t60, gain: mode.gain * ceilingGain(mode.hz, sampleRate), sources, weights, layer: "body" });
+      voices.push({ hz: mode.hz, t60, gain: mode.gain * ceilingGain(mode.hz, sampleRate), sources: forces, weights, layer: "body", rattled });
     }
   }
   const footMass = piece.massKg / piece.feet.length;
@@ -1081,6 +1087,7 @@ export function renderSetDown(input: SetDownInput): SetDownRender {
         sources: [force],
         weights: [cutAt(mode.hz, group.surface.highCutHz)],
         layer: mode.hz < HEAVE_BELOW_HZ ? "heave" : "body",
+        rattled: false,
       });
     }
   });
@@ -1090,19 +1097,9 @@ export function renderSetDown(input: SetDownInput): SetDownRender {
     body: { out: new Float64Array(bodyLength), end: drive, cut: false },
     heave: { out: new Float64Array(voices.some((v) => v.layer === "heave") ? Math.max(drive, Math.round(HEAVE_MAX_S * sampleRate)) : 0), end: 0, cut: false },
   };
-  ringVoices(voices, layers, drive, sampleRate);
-  const { body, heave } = layers;
-  if (body.cut) fadeOut(body.out, body.end, Math.round(BODY_FADE_S * sampleRate));
-  // The heave is one swell under the landing: its buffer ends at HEAVE_MAX_S (or with the drive, if that is
-  // later), and it fades out over the last HEAVE_FADE_S of it.
-  if (heave.out.length > 0) {
-    heave.end = heave.out.length;
-    fadeOut(heave.out, heave.end, Math.round(HEAVE_FADE_S * sampleRate));
-  }
-
   // The struck spot's own sound, straight from each surface's force: broadband, so it runs the ceiling itself.
   const settleSamples = Math.round(0.01 * sampleRate);
-  const spot = new Float64Array(Math.min(body.out.length, drive + settleSamples));
+  const spot = new Float64Array(Math.min(bodyLength, drive + settleSamples));
   groups.forEach((group, g) => {
     const force = forces[g];
     const bank = group.surface.boards ?? group.surface.beneath;
@@ -1116,6 +1113,29 @@ export function renderSetDown(input: SetDownInput): SetDownRender {
     for (let n = 0; n < direct.length; n += 1) spot[n] = (spot[n] ?? 0) + k * (direct[n] ?? 0);
   });
   ceilingInPlace(spot, spot.length, sampleRate);
+  const driven = driveVoices(voices, layers, drive, sampleRate, rattle);
+  const { body, heave } = layers;
+  // The rattle, set RATTLE_DB under the landing's own peak (the body and the struck spot) through the drive.
+  let rattleGain = 0;
+  if (driven.rattle !== null) {
+    let landing = 0;
+    let rattled = 0;
+    for (let n = 0; n < drive; n += 1) {
+      landing = Math.max(landing, Math.abs((body.out[n] ?? 0) + (spot[n] ?? 0)));
+      rattled = Math.max(rattled, Math.abs(driven.rattle.out[n] ?? 0));
+    }
+    rattleGain = rattled > 0 ? (landing * dbToGain(RATTLE_DB)) / rattled : 0;
+    for (let n = 0; n < drive; n += 1) body.out[n] = (body.out[n] ?? 0) + rattleGain * (driven.rattle.out[n] ?? 0);
+  }
+  ringVoices(voices, driven, rattleGain, layers, drive);
+  if (body.cut) fadeOut(body.out, body.end, Math.round(BODY_FADE_S * sampleRate));
+  // The heave is one swell under the landing: its buffer ends at HEAVE_MAX_S (or with the drive, if that is
+  // later), and it fades out over the last HEAVE_FADE_S of it.
+  if (heave.out.length > 0) {
+    heave.end = heave.out.length;
+    fadeOut(heave.out, heave.end, Math.round(HEAVE_FADE_S * sampleRate));
+  }
+
   for (let n = 0; n < spot.length; n += 1) body.out[n] = (body.out[n] ?? 0) + (spot[n] ?? 0);
   body.end = Math.max(body.end, spot.length);
 
@@ -1152,12 +1172,11 @@ export function renderSetDown(input: SetDownInput): SetDownRender {
   for (let n = 0; n < sourceEnd; n += 1) sourcePeak = Math.max(sourcePeak, Math.abs((dry[n] ?? 0) + (swell[n] ?? 0)));
   const source = new Float64Array(sourceEnd);
   for (let n = 0; n < sourceEnd; n += 1) source[n] = (dry[n] ?? 0) + (swell[n] ?? 0);
-  const head = source.subarray(0, Math.min(sourceEnd, Math.round(LOUDNESS_WINDOW_S * sampleRate)));
   let level = 0;
   // The least gain the limiter applied: 1 unless it held the play.
   let held = 1;
   if (sourcePeak > 0) {
-    const set = levelFor(head, source, sourceEnd, sourcePeak, targetLoudnessDb(piece.massKg, nominal), sampleRate);
+    const set = levelFor(source, sourcePeak, targetLoudnessDb(piece.massKg, speed), sampleRate);
     level = set.scale / folded;
     // The limiter holds the whole source, so the reflections (copies of the dry sound) are held with it.
     const gain = set.gain;

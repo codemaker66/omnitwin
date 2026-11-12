@@ -279,7 +279,7 @@ export function kWeighted(channel: ArrayLike<number>, sampleRate: number): Float
 const kWeight = kWeighted;
 
 /** Samples whose K-weighted power (both channels summed) is below -70 dB do not count. */
-export const LOUDNESS_GATE = 1e-7;
+const LOUDNESS_GATE = 1e-7;
 /** What a render with nothing above the gate reads as. */
 const SILENT_DB = -120;
 
@@ -301,4 +301,44 @@ export function kWeightedLoudness(left: Float32Array, right: Float32Array, sampl
     counted += 1;
   }
   return counted > 0 ? 10 * Math.log10(sum / counted) : SILENT_DB;
+}
+
+/** BS.1770's momentary block, and the hop it is read at. */
+const MOMENTARY_S = 0.4;
+const MOMENTARY_HOP_S = 0.01;
+
+/**
+ * The loudest moment of channels already K-weighted, in dB: the mean of their
+ * summed squares over a 400 ms window, read every 10 ms, ungated, at its
+ * maximum over the render (BS.1770's momentary loudness, without its
+ * -0.691 dB offset, as kWeightedLoudness reads). A render shorter than the
+ * window is read with silence after it, so a short sound reads quieter than
+ * the same sound held: duration counts, and a long ring reads its length.
+ */
+export function momentaryMaxOfWeighted(channels: readonly ArrayLike<number>[], sampleRate: number): number {
+  const length = Math.max(0, ...channels.map((channel) => channel.length));
+  const window = Math.max(1, Math.round(MOMENTARY_S * sampleRate));
+  const hop = Math.max(1, Math.round(MOMENTARY_HOP_S * sampleRate));
+  const total = new Float64Array(length + 1);
+  for (let n = 0; n < length; n += 1) {
+    let power = 0;
+    for (const channel of channels) power += (channel[n] ?? 0) ** 2;
+    total[n + 1] = (total[n] ?? 0) + power;
+  }
+  let loudest = 0;
+  for (let start = 0; start === 0 || start + window <= length; start += hop) {
+    const end = Math.min(length, start + window);
+    loudest = Math.max(loudest, ((total[end] ?? 0) - (total[start] ?? 0)) / window);
+  }
+  return loudest > 0 ? 10 * Math.log10(loudest) : SILENT_DB;
+}
+
+/**
+ * How loud a set-down is, in dB (ruling R45): both channels through the two
+ * BS.1770 K-weighting stages, then momentaryMaxOfWeighted. Unlike
+ * kWeightedLoudness it is not gated, so it is exactly linear: scaling the
+ * input by k moves it by 20 log10 k.
+ */
+export function momentaryMaxLoudness(left: ArrayLike<number>, right: ArrayLike<number>, sampleRate: number): number {
+  return momentaryMaxOfWeighted([kWeighted(left, sampleRate), kWeighted(right, sampleRate)], sampleRate);
 }

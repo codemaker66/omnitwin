@@ -4,7 +4,9 @@ import { OCTAVE_BANDS_HZ, bandMap, type BandValues } from "../bands.js";
 import {
   bandEnergy,
   brightnessHz,
+  kWeighted,
   kWeightedLoudness,
+  momentaryMaxLoudness,
   octaveBandpass,
   octaveBandpassSteep,
   onsetTimesMs,
@@ -210,5 +212,37 @@ describe("kWeightedLoudness", () => {
     const padded = new Float32Array(RATE * 2);
     padded.set(burst);
     expect(Math.abs(kWeightedLoudness(padded, padded, RATE) - kWeightedLoudness(burst, burst, RATE))).toBeLessThan(0.5);
+  });
+});
+
+describe("momentaryMaxLoudness (ruling R45)", () => {
+  const tone = (seconds: number, amplitude: number, total = 1): Float32Array =>
+    Float32Array.from({ length: Math.round(total * RATE) }, (_, i) => (i < seconds * RATE ? amplitude * Math.sin((2 * Math.PI * 1000 * i) / RATE) : 0));
+
+  it("reads a -20 dBFS 1 kHz sine in both channels at -20 dB plus K-weighting's gain at 1 kHz", () => {
+    const sine = tone(1, 0.1);
+    // K-weighting's gain at 1 kHz, from its steady state over the second half of a long sine (about 0.69 dB, BS.1770's offset).
+    const weighted = kWeighted(sine, RATE);
+    let inPower = 0;
+    let outPower = 0;
+    for (let i = RATE / 2; i < RATE; i += 1) {
+      inPower += (sine[i] ?? 0) ** 2;
+      outPower += (weighted[i] ?? 0) ** 2;
+    }
+    const gainDb = 10 * Math.log10(outPower / inPower);
+    expect(gainDb).toBeCloseTo(0.69, 1);
+    expect(momentaryMaxLoudness(sine, sine, RATE)).toBeCloseTo(-20 + gainDb, 1);
+  });
+
+  it("reads a 50 ms burst 10 log10(50 / 400) under the same burst held for 400 ms", () => {
+    const short = tone(0.05, 0.1);
+    const held = tone(0.4, 0.1);
+    expect(momentaryMaxLoudness(short, short, RATE) - momentaryMaxLoudness(held, held, RATE)).toBeCloseTo(10 * Math.log10(50 / 400), 1);
+  });
+
+  it("moves by 20 log10 k when the input is scaled by k", () => {
+    const sound = Float32Array.from({ length: RATE }, (_, i) => Math.exp(-i / 4000) * Math.sin((2 * Math.PI * 440 * i) / RATE));
+    const quieter = Float32Array.from(sound, (sample) => 0.25 * sample);
+    expect(momentaryMaxLoudness(quieter, quieter, RATE) - momentaryMaxLoudness(sound, sound, RATE)).toBeCloseTo(20 * Math.log10(0.25), 4);
   });
 });

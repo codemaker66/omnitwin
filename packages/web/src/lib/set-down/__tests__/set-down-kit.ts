@@ -1,10 +1,10 @@
 // ---------------------------------------------------------------------------
 // Shared helpers for the set-down render tests and the listening renders: one
-// way to build an input, and one length rule for loudness, so every render is
-// measured like with like.
+// way to build an input, and one loudness measure (the renderer's own,
+// ruling R45), so every render is measured like with like.
 // ---------------------------------------------------------------------------
 
-import { bandEnergy, kWeightedLoudness } from "../analysis.js";
+import { bandEnergy, momentaryMaxLoudness } from "../analysis.js";
 import { bodyFor } from "../bodies.js";
 import type { Reflection } from "../reflections.js";
 import { renderSetDown, type SetDownInput, type SetDownRender } from "../render.js";
@@ -45,17 +45,9 @@ export function setDown(slug: string, surface: SurfaceKind, options: SetDownOpti
   return renderSetDown(inputFor(slug, surface, options));
 }
 
-/** Loudness is always read over the same first 400 ms (BS.1770's momentary block), so renders compare like with like. */
-export const LOUDNESS_WINDOW = Math.round(0.4 * SR);
-
-export function windowed(samples: Float32Array): Float32Array {
-  const out = new Float32Array(LOUDNESS_WINDOW);
-  out.set(samples.subarray(0, Math.min(samples.length, LOUDNESS_WINDOW)));
-  return out;
-}
-
+/** A render's loudness as the renderer levels it: the momentary loudness at its loudest, over the whole render (ruling R45). */
 export function loudness(render: SetDownRender): number {
-  return kWeightedLoudness(windowed(render.left), windowed(render.right), SR);
+  return momentaryMaxLoudness(render.left, render.right, SR);
 }
 
 export function energy(samples: Float32Array): number {

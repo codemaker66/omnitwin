@@ -2,10 +2,10 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { CRAFTED_FURNITURE_SLUGS } from "../../../components/meshes/crafted/crafted-slugs.js";
-import { bandEnergy, brightnessHz, octaveBandpassSteep, onsetTimesMs, schroederT20, spectralCentroidHz } from "../analysis.js";
-import type { SetDownRender } from "../render.js";
+import { bandEnergy, brightnessHz, kWeightedLoudness, octaveBandpassSteep, onsetTimesMs, schroederT20, spectralCentroidHz } from "../analysis.js";
+import { renderSetDown, type SetDownRender } from "../render.js";
 import { SURFACES, floorKindForRoom, type SurfaceKind } from "../surfaces.js";
-import { SR, clickShare, energy, loudness, setDown } from "./set-down-kit.js";
+import { SR, clickShare, energy, inputFor, loudness, setDown } from "./set-down-kit.js";
 
 // ---------------------------------------------------------------------------
 // Renders for the ear and for independent analysis: never run in CI. Set
@@ -16,7 +16,9 @@ import { SR, clickShare, energy, loudness, setDown } from "./set-down-kit.js";
 // click shares, play-to-play spreads over 200 seeds (500 for the bare
 // poseur and the bare trestle), and how often the safety limiter above
 // -6 dBFS holds a play, over those plays and the whole catalogue on every
-// surface (ruling R42).
+// surface (ruling R42). Loudness is the renderer's (momentary, ruling R45),
+// with Task 1's gated reading beside it; the rattling pieces' rattle is read
+// against the same set-down without it (ruling R44).
 // ---------------------------------------------------------------------------
 
 const OUT = process.env["SET_DOWN_WAV_DIR"] ?? "";
@@ -97,6 +99,7 @@ describe.skipIf(OUT === "")("set-down renders for listening (SET_DOWN_WAV_DIR)",
         slug,
         peakDb: round(r.peakDb),
         loudnessDb: round(loudness(r)),
+        gatedLoudnessDb: round(kWeightedLoudness(r.left, r.right, SR)),
         lengthMs: round((r.left.length / SR) * 1000, 0),
         brightnessHz: round(brightnessHz(r.left, SR), 0),
         above2kIn50msPct: round(100 * clickShare(r.left, 50, 2000), 2),
@@ -161,7 +164,16 @@ describe.skipIf(OUT === "")("set-down renders for listening (SET_DOWN_WAV_DIR)",
       ...limiting(everyPiece),
     };
     const surfaces = (Object.keys(SURFACES) as SurfaceKind[]).map((surface) => ({ surface, chiavariMedianRenderMs: round(timedMs("chiavari-chair", surface), 2) }));
-    const figures = { pieces, features, clicks, plays, catalogue, surfaces };
+    const rattleBand = (r: SetDownRender): number => bandEnergy(r.left.subarray(Math.round(0.035 * SR), Math.round(0.07 * SR)), SR, 1000, 3200);
+    const rattles = ["mic-stand", "round-table-6ft-white", "trestle-6ft", "projector-screen"].map((slug) => {
+      const rise = [1, 2, 3, 4, 5, 6, 7, 8].map((seed) => {
+        const input = inputFor(slug, "oak-boards-joists", { seed });
+        return round(10 * Math.log10(rattleBand(renderSetDown(input)) / rattleBand(renderSetDown({ ...input, body: { ...input.body, legRattle: false } }))));
+      });
+      const t20At1kS = [1, 2, 3, 4, 5, 6, 7, 8].map((seed) => round(schroederT20(octaveBandpassSteep(render(slug, "oak-boards-joists", seed).left, 1000, SR), SR), 3));
+      return { slug, riseDbIn1To3kAt35To70ms: rise, t20At1kS };
+    });
+    const figures = { pieces, features, clicks, plays, catalogue, rattles, surfaces };
     writeFileSync(join(OUT, "figures.json"), JSON.stringify(figures, null, 2));
     expect(pieces.length).toBe(CRAFTED_FURNITURE_SLUGS.length);
   }, 600_000);
