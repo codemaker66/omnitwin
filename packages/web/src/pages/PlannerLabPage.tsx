@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactElement } from "react";
 import { advance as advanceFrame, invalidate } from "@react-three/fiber";
-import type { Space } from "@omnitwin/types";
+import { TRADES_HALL_GRAND_HALL_DIMENSIONS, type Space } from "@omnitwin/types";
+import { GRAND_HALL_RENDER_DIMENSIONS } from "../constants/scale.js";
 import { PlannerScene } from "../components/editor/PlannerScene.js";
 import { useEditorStore } from "../stores/editor-store.js";
 import { usePlacementStore } from "../stores/placement-store.js";
@@ -67,16 +68,24 @@ function keyState(): LabKeyState {
   };
 }
 
+/** The Grand Hall's row as production stores it: 21.14 × 10.59 × 6.7 m, centred. */
+const LAB_HALL = TRADES_HALL_GRAND_HALL_DIMENSIONS;
+
 const LAB_SPACE: Space = {
   id: "00000000-0000-4000-8000-00000000a11b",
   venueId: "00000000-0000-4000-8000-00000000a11a",
   name: "Grand Hall",
   slug: "grand-hall",
   description: null,
-  widthM: "21",
-  lengthM: "10.5",
-  heightM: "7",
-  floorPlanOutline: [{ x: 0, y: 0 }, { x: 21, y: 0 }, { x: 21, y: 10.5 }, { x: 0, y: 10.5 }],
+  widthM: String(LAB_HALL.width),
+  lengthM: String(LAB_HALL.length),
+  heightM: String(LAB_HALL.height),
+  floorPlanOutline: [
+    { x: -LAB_HALL.width / 2, y: -LAB_HALL.length / 2 },
+    { x: LAB_HALL.width / 2, y: -LAB_HALL.length / 2 },
+    { x: LAB_HALL.width / 2, y: LAB_HALL.length / 2 },
+    { x: -LAB_HALL.width / 2, y: LAB_HALL.length / 2 },
+  ],
   meshUrl: null,
   thumbnailUrl: null,
   sortOrder: 0,
@@ -265,7 +274,9 @@ export function PlannerLabPage(): ReactElement {
     useEditorStore.setState({ space: LAB_SPACE, configId: "planner-lab" });
     // The drawn hall, not a capture: production keeps captures off.
     useCockpitStore.setState({ layerMode: "mesh" });
-    useRoomDimensionsStore.getState().setDimensions({ width: 21, length: 10.5, height: 7 });
+    // The room the planner sizes from the Grand Hall's geometry (pinned equal
+    // to roomGeometries["Grand Hall"] in constants/__tests__/scale.test.ts).
+    useRoomDimensionsStore.getState().setDimensions(GRAND_HALL_RENDER_DIMENSIONS);
     setReady(true);
     window.__plannerLab = {
       furnish,

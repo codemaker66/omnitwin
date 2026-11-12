@@ -41,7 +41,9 @@ beforeEach(() => {
   venue.status = "trades-hall";
   usePlacementStore.setState({ placedItems: [] });
   useCockpitStore.getState().reset();
-  // The Grand Hall's real floor: 21 × 10.5 m = 220.5 m².
+  // A 21 × 10.5 m = 220.5 m² floor, the Grand Hall's old hand-drawn size, which
+  // the figures below are worked for (the planner now opens it at the scanned
+  // 21.135 × 10.59 m = 223.8 m²).
   useRoomDimensionsStore.getState().setDimensions({ width: 21, length: 10.5, height: 7 });
   fixtures.resetPlannerTruth();
   fixtures.openRoom(fixtures.plannerRoom());

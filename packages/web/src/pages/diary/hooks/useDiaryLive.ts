@@ -23,8 +23,15 @@ import {
 // message, answers heartbeats, and:
 //   - diary.event  → onEvent() (the page refetches; server truth wins)
 //   - presence     → colleague chips
-//   - reconnect    → exponential backoff; a fresh snapshot is pulled on every
-//                    RE-connect (hello after a drop), never trusted deltas.
+//   - hello        → a fresh snapshot is pulled on EVERY hello, the first
+//                    included (hallkeeper-web-4): the server sends this
+//                    socket changes only from its join, just before the
+//                    hello, so whatever was committed after the page's own
+//                    read and before then is read again, never trusted to
+//                    deltas. When onEvent says when its read has ended (it
+//                    returns a promise), `connected` waits for it, so the
+//                    board never says Live on the strength of an older read.
+//   - reconnect    → exponential backoff, then a hello as above.
 //   - commands     → T-537: while authenticated, the hook registers a sender
 //                    with the command-channel registry; api/diary.ts routes
 //                    mutations through it. Acks settle in-flight promises by
@@ -49,7 +56,20 @@ export interface DiaryLiveOptions {
   readonly device?: "wall" | "phone" | "desk";
 }
 
-export function useDiaryLive(enabled: boolean, onEvent: () => void, options: DiaryLiveOptions = {}): DiaryLive {
+/** Why the page is asked to read again: this socket's first hello, a hello
+ *  after a drop, or a colleague's change. */
+export type DiaryLiveRefresh = "joined" | "rejoined" | "changed";
+
+/**
+ * @param onEvent Reads the page's snapshot again. It is called on every
+ *   hello and every diary.event. A page that returns a promise settling when
+ *   that read has landed or failed keeps `connected` false until then.
+ */
+export function useDiaryLive(
+  enabled: boolean,
+  onEvent: (why: DiaryLiveRefresh) => void | Promise<void>,
+  options: DiaryLiveOptions = {},
+): DiaryLive {
   const [connected, setConnected] = useState(false);
   const [presence, setPresence] = useState<readonly LivePresenceUser[]>([]);
   const onEventRef = useRef(onEvent);
@@ -146,10 +166,9 @@ export function useDiaryLive(enabled: boolean, onEvent: () => void, options: Dia
         const clock = (message as { readonly serverNowMs?: number }).serverNowMs;
         if (clock !== undefined) observeServerNow(clock);
         if (message.type === "hello") {
-          const isReconnect = hadConnection;
+          const why: DiaryLiveRefresh = hadConnection ? "rejoined" : "joined";
           hadConnection = true;
           attempt = 0;
-          setConnected(true);
           setPresence(message.presence);
           // T-537: the channel is open for commands — register the sender.
           const sender: DiaryCommandSender = (command: DiaryCommand) => {
@@ -177,9 +196,18 @@ export function useDiaryLive(enabled: boolean, onEvent: () => void, options: Dia
           };
           activeSender = sender;
           setDiaryCommandChannel(sender);
-          // Snapshot/delta doctrine: after a drop, refetch — never trust
-          // whatever was missed while offline.
-          if (isReconnect) onEventRef.current();
+          // Snapshot/delta doctrine: every hello, the first included, reads
+          // again — never trust whatever was committed before this socket
+          // joined, while it was offline or between the page's own read and
+          // the join. Live waits for that read; one that fails ends the wait
+          // too, because the socket is up and the page says its read failed.
+          // A socket that has since dropped never says Live.
+          const markLive = (): void => {
+            if (!disposed && socket === ws) setConnected(true);
+          };
+          const refreshed = onEventRef.current(why);
+          if (refreshed instanceof Promise) void refreshed.then(markLive, markLive);
+          else markLive();
           return;
         }
         if (message.type === "diary.ack") {
@@ -196,7 +224,7 @@ export function useDiaryLive(enabled: boolean, onEvent: () => void, options: Dia
           return;
         }
         if (message.type === "diary.event") {
-          onEventRef.current();
+          void onEventRef.current("changed");
           return;
         }
         if (message.type === "ping") {
