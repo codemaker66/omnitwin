@@ -275,8 +275,8 @@ interface EditorState {
   readonly saveErrorCode: string | null;
   /** Pieces whose note the person had cleared in a save refused for a held
    *  note (NOTE_HELD), where someone else had rewritten that note: the clear
-   *  was not made, and the refusal names the piece (lib/guest-plan-notes
-   *  pieceNamedForRefusedSave). Its notice stands until the person dismisses
+   *  was not made, and its own sentence names the piece (lib/guest-plan-notes
+   *  refusedClearsLine). Its notice stands until the person dismisses
    *  it (dismissRefusedClears): no later save says the layout saved while it
    *  does (ruling R1(b) on #388). Empty otherwise, and for each layout opened. */
   readonly noteClearsRefused: readonly string[];
@@ -2363,7 +2363,8 @@ async function saveDocument(
     // the person had made to it was not made: words they had put in its place
     // stay there, unsaved, and a note they had cleared stays cleared. Either
     // is refused, never said to be saved, and the refusal that named no piece
-    // is now about that one (pieceNamedForRefusedSave).
+    // is now about that one: the API's sentence names words over a held note
+    // (pieceNamedForRefusedSave), and a refused clear has its own (refusedClearsLine).
     const refusedNotes = notesRefusedOnLeaving(latest.objects, outOfDate);
     const noteRefused = refusedNotes.length > 0;
     // A refused clear leaves nothing unsaved: the piece is as the server has
