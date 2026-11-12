@@ -1037,7 +1037,7 @@ test.describe("Proposals desk", () => {
     const message = composer.getByTestId("composer-message");
 
     // No provider: the status is asked once, and nothing about AI is offered.
-    let status = page.waitForResponse((response) => response.url().endsWith("/ai/status"));
+    let status = page.waitForResponse((response) => new URL(response.url()).pathname === "/ai/status");
     await page.goto(path);
     await status;
     await expect(message).toHaveValue("Planning-grade proposal for your wedding on 5 June.");
@@ -1046,7 +1046,7 @@ test.describe("Proposals desk", () => {
 
     // A provider: a draft that fails says so and is drafted again.
     emulator.ai = [502, WORDS, 503];
-    status = page.waitForResponse((response) => response.url().endsWith("/ai/status"));
+    status = page.waitForResponse((response) => new URL(response.url()).pathname === "/ai/status");
     await page.goto(path);
     await status;
     await message.fill(OWN);
