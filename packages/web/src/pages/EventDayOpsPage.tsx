@@ -7,7 +7,12 @@ import type {
 } from "@omnitwin/types";
 import { ApiError } from "../api/client.js";
 import { createEventDayIssue, getEventDayOpsBoard, updateEventDayIssue, updateOpsTaskStatus } from "../api/event-day-ops.js";
-import { acknowledgeEventPlanChange, getEventChangeFeed, listEventChangeAcknowledgements } from "../api/notifications.js";
+import {
+  acknowledgeEventPlanChange,
+  getChangesAwaitingAcknowledgement,
+  getEventChangeFeed,
+  listEventChangeAcknowledgements,
+} from "../api/notifications.js";
 import {
   ackEventDayOp,
   enqueueEventDayIssueCreate,
@@ -85,10 +90,21 @@ function formatEventDate(iso: string | null, timeZone: string): string {
   });
 }
 
-/** A change-feed read, or null when it could not be read: a failed read is
- *  never taken for "no changes". */
+/** The changes awaiting the floor's acknowledgement, or null when they could
+ *  not be read: a failed read is never taken for "no changes".
+ *
+ *  The API is asked for exactly those. The newest page of every change is
+ *  mostly task moves on a busy set-up, and an unacknowledged guest count used
+ *  to fall off it while this board said nothing was waiting. An API from
+ *  before that answer says 404; until it catches up the board reads the feed
+ *  as it used to, at the feed's largest page. */
 function readChangeFeed(eventId: string): Promise<readonly ChangeFeedItem[] | null> {
-  return getEventChangeFeed(eventId, 25).catch((): null => null);
+  return getChangesAwaitingAcknowledgement(eventId)
+    .catch((err: unknown) => {
+      if (err instanceof ApiError && err.status === 404) return getEventChangeFeed(eventId, 100);
+      throw err;
+    })
+    .catch((): null => null);
 }
 
 /** What the page says while the change feed cannot be read: that nothing is

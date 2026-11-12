@@ -9,7 +9,16 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 // one of these to the creating browser, once; the database keeps only its
 // SHA-256 (configuration_claim_secrets). POST /configurations/:id/claim
 // accepts the plan only with the secret, and consumes it.
+//
+// The same secret is what the anonymous plan routes ask for before they return
+// a guest plan's notes (routes/public-configs.ts). There it travels in a
+// request header, named here once so the route that reads it and the scrubbers
+// that keep it out of error reports (observability/redact.ts) cannot disagree.
 // ---------------------------------------------------------------------------
+
+/** The request header a browser presents its plan's claim secret in, as Node
+ *  names it (lower case). The web app sends `X-Plan-Claim-Secret`. */
+export const PLAN_CLAIM_SECRET_HEADER = "x-plan-claim-secret";
 
 /** 32 random bytes, base64url: 43 characters. */
 export function generateClaimSecret(): string {

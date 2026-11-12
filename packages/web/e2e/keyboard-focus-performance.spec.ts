@@ -1042,7 +1042,7 @@ async function mockApiRoutes(page: Page): Promise<MockState> {
       void route.fulfill({ json: { data: eventDayBoardFixture(taskStatus) } });
       return;
     }
-    if (path === `/events/${EVENT_ID}/change-feed`) {
+    if (path === `/events/${EVENT_ID}/change-feed` || path === `/events/${EVENT_ID}/changes-awaiting-acknowledgement`) {
       void route.fulfill({ json: { data: [changeFeedFixture()] } });
       return;
     }
