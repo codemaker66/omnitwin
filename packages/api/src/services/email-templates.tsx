@@ -473,8 +473,18 @@ export interface EnquiryAcknowledgementData {
  */
 const GREETABLE_NAME = /^(?=[^\p{L}]*\p{L})[\p{L}\p{M} '’.-]{1,60}$/u;
 
+/**
+ * A full stop that joins two words, as in a web address: letters, a hyphen
+ * and a full stop are enough to write one ("th-deposit.example"), and mail
+ * programs make a link of it. A name's own stops end a word ("Dr. Grant",
+ * "Jr.") or follow an initial ("J.R.R. Tolkien"). So a stop followed by
+ * anything but the end, a space, a hyphen, or one initial with its own stop
+ * means the name is not repeated; "Dr.Smith" is greeted "Hello," for it.
+ */
+const JOINING_STOP = /\.(?!$|[ -]|\p{L}\p{M}*\.)/u;
+
 function greetingFor(name: string | null): string {
-  return name !== null && GREETABLE_NAME.test(name) ? `Dear ${name},` : "Hello,";
+  return name !== null && GREETABLE_NAME.test(name) && !JOINING_STOP.test(name) ? `Dear ${name},` : "Hello,";
 }
 
 export function EnquiryAcknowledgementEmail(props: EnquiryAcknowledgementData): ReactElement {

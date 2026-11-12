@@ -400,7 +400,9 @@ describe.skipIf(target === undefined)("the public enquiry route on the migrated 
   // says "Hello,", never the address it is sent to.
   it("greets by name only a name that reads as one, and everyone else with Hello", async () => {
     const lure = "URGENT payment notice - call 0800 000 000";
-    const given: Record<string, string | undefined> = { lure, accented: "Siobhán O’Neill-Smith", none: undefined };
+    // A web address made of letters, a hyphen and a full stop: mail programs make a link of it.
+    const address = "Refund at th-deposit.example";
+    const given: Record<string, string | undefined> = { lure, address, accented: "Siobhán O’Neill-Smith", none: undefined };
     const greetings: Record<string, string | undefined> = {};
     const bodies = new Map<string, string>();
     for (const [label, name] of Object.entries(given)) {
@@ -412,11 +414,12 @@ describe.skipIf(target === undefined)("the public enquiry route on the migrated 
       greetings[label] = greetingOf(words);
       bodies.set(email, words);
     }
-    expect(greetings).toEqual({ lure: "Hello,", accented: "Dear Siobhán O’Neill-Smith,", none: "Hello," });
+    expect(greetings).toEqual({ lure: "Hello,", address: "Hello,", accented: "Dear Siobhán O’Neill-Smith,", none: "Hello," });
     // Nowhere else in the email either: not the lure, and not the address.
     for (const [email, words] of bodies) {
       expect(words).not.toContain("URGENT");
       expect(words).not.toContain("0800 000 000");
+      expect(words).not.toContain("th-deposit");
       expect(words).not.toContain(email);
     }
   });

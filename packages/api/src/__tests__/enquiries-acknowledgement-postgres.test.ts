@@ -111,10 +111,16 @@ describe("the venue's acknowledgement copy", () => {
     expect(await greetingFor("Siobhán O’Neill-Smith")).toBe("Dear Siobhán O’Neill-Smith,");
     expect(await greetingFor("Mary O'Brien")).toBe("Dear Mary O'Brien,");
     expect(await greetingFor("J. R. Fraser")).toBe("Dear J. R. Fraser,");
+    // Initials run together, and a title with its stop, are still names.
+    expect(await greetingFor("J.R.R. Tolkien")).toBe("Dear J.R.R. Tolkien,");
+    expect(await greetingFor("Dr. Ailsa Grant Jr.")).toBe("Dear Dr. Ailsa Grant Jr.,");
     expect(await greetingFor(sixty)).toBe(`Dear ${sixty},`);
     for (const refused of [
       null, `${sixty}k`, "Elaine Fraser 2", "elaine@example.test", "Elaine / Fraser", "Re: your deposit",
       "Elaine‮resarF", "Elaine\nFraser", "- . '",
+      // A web address needs no digit, '/' or ':': mail programs make a link of
+      // words joined by a full stop. "Dr.Smith" pays for that with a Hello.
+      "pay at th-deposit.example", "www.example.test", "Visit x.co now", "Dr.Smith",
     ]) {
       expect(await greetingFor(refused), JSON.stringify(refused)).toBe("Hello,");
     }
