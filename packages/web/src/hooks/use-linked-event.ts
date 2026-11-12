@@ -39,8 +39,8 @@ interface StoredLinkedEvent {
 async function nameTimeZone(event: EventPhaseGraph["event"]): Promise<string> {
   if (eventDisplayName(event, VENUE_TIME_ZONE) === event.name) return VENUE_TIME_ZONE;
   try {
-    const venue = await getVenue(event.venueId);
-    return venue.timezone.length > 0 ? venue.timezone : VENUE_TIME_ZONE;
+    const zone = (await getVenue(event.venueId)).timezone;
+    return zone !== undefined && zone.length > 0 ? zone : VENUE_TIME_ZONE;
   } catch {
     return VENUE_TIME_ZONE;
   }

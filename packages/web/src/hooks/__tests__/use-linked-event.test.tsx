@@ -117,7 +117,7 @@ describe("useLinkedEvent", () => {
     const unnamed: EventPhaseGraph = { ...fakeGraph, event: { ...fakeGraph.event, name: "", startsAt: "2027-03-15T03:30:00.000Z" } };
     const venueIn = (timezone: string): VenueDetail => ({
       id: fakeGraph.event.venueId, name: "TEST ONLY venue", address: "Disposable fixture", slug: "test-only-venue", logoUrl: null,
-      brandColour: null, timezone, createdAt: now, updatedAt: now, spaces: [],
+      brandColour: null, timezone, spaces: [],
     });
 
     it("is named by the venue's own day", async () => {
