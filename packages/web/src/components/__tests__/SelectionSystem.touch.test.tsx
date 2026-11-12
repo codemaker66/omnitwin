@@ -521,6 +521,55 @@ describe("the touch arbiter", () => {
       // The refused lift left no gesture open: the next save is not held back.
       expect(holdTheSave().sent()).toBe(true);
     });
+
+    // A page too busy to run the hold's timer on time: the lift comes with a move the finger made
+    // after the hold, still within the slop, handed over before the timer ran (the arbiter's move
+    // judges the hold as its tick does).
+    it.each([
+      ["the piece has left the layout", (): void => {
+        usePlacementStore.setState({ placedItems: usePlacementStore.getState().placedItems.filter((item) => item.id !== tableId) });
+      }],
+      ["a history preview holds the layout", (): void => { setLayoutTimelineMutationLock(true); }],
+    ])("hands the finger to the camera, carrying nothing, when %s and the lift comes with a late move", (_name, interrupt) => {
+      seedUnsavedLayout();
+      render(<SelectionSystem />);
+      try {
+        finger("pointerDown", OVER_TABLE.x, OVER_TABLE.y, 1_000);
+        wait(1_100);
+        act(interrupt);
+        lateMove(OVER_TABLE.x + 2, OVER_TABLE.y, 1_000 + LIFT_HOLD_MS + 5);
+        // The move that brought the lift does not hold the camera still for the lift refused.
+        expect(window.__plannerTouch?.carrying()).toBeNull();
+        expect(useTouchGestureStore.getState().mode).toBe("orbit");
+        expect(useTouchGestureStore.getState().cameraHeld).toBe(false);
+        // Nor does it stay held for the rest of the touch.
+        finger("pointerMove", OVER_TABLE.x - 60, OVER_TABLE.y, 1_400);
+        expect(useTouchGestureStore.getState().mode).toBe("orbit");
+        expect(useTouchGestureStore.getState().cameraHeld).toBe(false);
+        finger("pointerUp", OVER_TABLE.x - 60, OVER_TABLE.y, 1_500);
+        expect(useTouchGestureStore.getState().mode).toBe("idle");
+      } finally {
+        setLayoutTimelineMutationLock(false);
+      }
+      expect(holdTheSave().sent()).toBe(true);
+    });
+
+    it("lifts the piece held, and holds the camera while it carries, when the lift comes with a late move", () => {
+      seedUnsavedLayout();
+      render(<SelectionSystem />);
+      const before = tableAt();
+      finger("pointerDown", OVER_TABLE.x, OVER_TABLE.y, 1_000);
+      wait(1_100);
+      lateMove(OVER_TABLE.x + 2, OVER_TABLE.y, 1_000 + LIFT_HOLD_MS + 5);
+      expect(useTouchGestureStore.getState().mode).toBe("lift");
+      expect(window.__plannerTouch?.carrying()).toBe(tableId);
+      expect(useTouchGestureStore.getState().cameraHeld).toBe(true);
+      finger("pointerMove", OVER_TABLE.x - 60, OVER_TABLE.y, 1_400);
+      expect(useTouchGestureStore.getState().cameraHeld).toBe(true);
+      finger("pointerUp", OVER_TABLE.x - 60, OVER_TABLE.y, 1_500);
+      expect(tableAt().x).toBeLessThan(before.x - 0.5);
+      expect(useTouchGestureStore.getState().mode).toBe("idle");
+    });
   });
 
   it("leaves the finger to the camera as before when the switch is off", () => {

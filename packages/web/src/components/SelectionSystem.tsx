@@ -749,8 +749,10 @@ export function SelectionSystem(): null {
       const coalesced = typeof event.getCoalescedEvents === "function" ? event.getCoalescedEvents() : [];
       let mode = arbiter.mode;
       for (const sample of coalesced.length > 0 ? coalesced : [event]) {
-        mode = arbiter.move(event.pointerId, sample.timeStamp, sample.clientX, sample.clientY);
-        follow(mode);
+        follow(arbiter.move(event.pointerId, sample.timeStamp, sample.clientX, sample.clientY));
+        // Following can change the arbiter's mind: a lift that carries nothing is refused to the
+        // orbit (follow), and the camera below must not then be held for the lift that never was.
+        mode = arbiter.mode;
         if (event.pointerId === touchPointer && (mode === "pending" || mode === "place" || mode === "lift")) {
           trail.record(sample.timeStamp, sample.clientX, sample.clientY);
         }
