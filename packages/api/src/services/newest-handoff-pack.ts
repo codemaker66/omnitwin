@@ -6,10 +6,12 @@ import { configurations, handoffPacks } from "../db/schema.js";
 // Which handoff pack stands for an event: one definition (T-695 review H1).
 //
 // The Event Day board shows it, the supplier passes compare against it to say
-// the plan changed, a proposal links to it, and the compiler returns it
-// unchanged only when it is already the event's. Each once had its own rule
-// (the board took any pack of the event; the compiler took the layout's own),
-// so a recompile could return a pack the board did not show.
+// the plan changed, a proposal's change to the event is recorded against it
+// (and the hallkeeper asked to acknowledge it, routes/proposals.ts), and the
+// compiler returns it unchanged only when it is already the event's. Each once
+// had its own rule (the board and a proposal took any pack of the event; the
+// compiler took the layout's own), so a recompile could return a pack the
+// board did not show (review H1, K1, I5).
 // ---------------------------------------------------------------------------
 
 /** Statuses whose pack still stands. Nothing writes the others today. */

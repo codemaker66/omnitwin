@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Database } from "../db/client.js";
 import * as schema from "../db/schema.js";
 import { opsHandoffRoutes } from "../routes/ops-handoff.js";
+import { loadProposalEventContext } from "../routes/proposals.js";
 import { getEventDayOpsBoard, loadEventForOpsBoard, updateOpsTaskStatus } from "../services/event-day-ops.js";
 import { approveSnapshot, createSnapshot } from "../services/sheet-snapshot.js";
 import { latestEventHandoff, planChangedAfter } from "../services/supplier-passes.js";
@@ -325,5 +326,25 @@ describe.skipIf(target === undefined)("compiling an event's handoff pack again, 
     expect(compiled.statusCode, compiled.body).toBe(201);
     const diff = compiled.json<{ data: { snapshotDiff: { summary: string } } }>().data.snapshotDiff;
     expect(diff.summary).toBe("Chairs at tables can't be compared with a plan frozen before 6 September 2026.");
+  });
+
+  // Review K1, I5: a proposal's change to the event is recorded against the
+  // pack that stands for the event, the one the board shows, so the
+  // hallkeeper is never asked to acknowledge a change to a deleted layout's.
+  it("records a proposal's change against the pack the board shows, not a deleted layout's newer one", async () => {
+    const f = await fixture();
+    const first = await f.compile();
+    expect(first.statusCode, first.body).toBe(201);
+    const other = await layout({ venueId: f.venueId, roomId: f.roomId, userId: f.userId, eventId: f.eventId, headers: f.headers });
+    const newer = await other.compile();
+    expect(newer.statusCode, newer.body).toBe(201);
+    await db.update(schema.configurations).set({ deletedAt: new Date() }).where(eq(schema.configurations.id, other.configId));
+    const [proposal] = await db.insert(schema.proposals)
+      .values({ venueId: f.venueId, configurationId: f.configId, title: "TEST ONLY proposal" }).returning();
+    if (proposal === undefined) throw new Error("Proposal fixture missing");
+
+    const shown = (await board(f)).handoffPack?.pack.id;
+    expect(shown).toBe(first.json<PackBody>().data.pack.id);
+    expect((await loadProposalEventContext(db, proposal))?.handoffPackId).toBe(shown);
   });
 });
