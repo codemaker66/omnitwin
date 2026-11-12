@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { Resend } from "resend";
 import { emailSends } from "../db/schema.js";
 import type { Database } from "../db/client.js";
@@ -18,7 +18,10 @@ import { scrubErrorMessage } from "../observability/redact.js";
 //      second send is a no-op. Survives process restarts. The exception is
 //      a send that failed: a replay reclaims its row (compare-and-set from
 //      "failed" to "pending", so one concurrent replay wins) and tries the
-//      provider again. The hold-reminder pass replays by design.
+//      provider again. The hold-reminder pass replays by design. A send
+//      may also keep a limit (SendLimit): it is decided under the limit's
+//      advisory lock in the transaction that writes its row, and one the
+//      limit refuses is recorded as "suppressed" and never sent.
 //
 //   2. Bounded retry with exponential backoff. Network errors, 5xx and
 //      429 responses retry (250, 500, 1000, 2000 ms). 4xx responses are
@@ -73,11 +76,29 @@ const NOOP_LOGGER: EmailLogger = {
   error: () => { /* noop */ },
 };
 
+/** The transaction a send's limit reads in. */
+export type EmailTransaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
+
+/**
+ * A limit a send keeps, decided in the transaction that records the send. The
+ * transaction first takes the advisory lock on `lockKey`'s hash, so two sends
+ * under one key are decided one after the other and the second sees the
+ * first's row; `allows` then reads, under that lock, whether this one may go.
+ * One it refuses is recorded as "suppressed" and handed to no provider. The
+ * key is hashed, never stored or logged; it holds nothing the row does not.
+ */
+export interface SendLimit {
+  readonly lockKey: string;
+  readonly allows: (tx: EmailTransaction) => Promise<boolean>;
+}
+
 export interface SendOptions {
   readonly db: Database;
   /** Stable key deduping business-level duplicates. See module comment. */
   readonly idempotencyKey: string;
   readonly logger?: EmailLogger;
+  /** A limit this send keeps (SendLimit); none when absent. */
+  readonly limit?: SendLimit;
   /** Test hook — override the retry sleep so tests don't burn real ms. */
   readonly sleep?: (ms: number) => Promise<void>;
 }
@@ -230,14 +251,11 @@ export async function sendEmail(
   const logger = options.logger ?? NOOP_LOGGER;
   const sleep = options.sleep ?? defaultSleep;
 
-  // 1. Atomic dedup via the UNIQUE(idempotency_key) constraint.
+  // 1. Atomic dedup via the UNIQUE(idempotency_key) constraint. A send under
+  // a limit is decided and recorded in one transaction (SendLimit).
+  let recorded: RecordedAs = "pending";
   try {
-    await db.insert(emailSends).values({
-      idempotencyKey,
-      recipient: payload.to,
-      subject: payload.subject,
-      status: "pending",
-    });
+    recorded = await recordSend(db, payload, idempotencyKey, options.limit);
   } catch (err) {
     if (!isUniqueViolation(err)) {
       logger.error({
@@ -275,6 +293,13 @@ export async function sendEmail(
       event: "email.retry_after_failure",
       idempotencyKey,
     }, "email.retry_after_failure");
+  }
+  if (recorded === "suppressed") {
+    logger.info({
+      event: "email.suppressed",
+      idempotencyKey,
+    }, "email.suppressed");
+    return true;
   }
 
   // 2. Dev mode — no API key set. Audit row records a clear "dev_mode"
@@ -387,6 +412,31 @@ export async function sendEmail(
 
   // Unreachable — every iteration either returns or continues.
   return false;
+}
+
+/** How a send's row was first written. */
+type RecordedAs = "pending" | "suppressed";
+
+/** Writes the send's row before any provider is called: "pending", or, for a
+ *  send its limit refuses, "suppressed" (decided under the limit's lock). */
+async function recordSend(
+  db: Database,
+  payload: EmailPayload,
+  idempotencyKey: string,
+  limit: SendLimit | undefined,
+): Promise<RecordedAs> {
+  const row = (status: RecordedAs): typeof emailSends.$inferInsert =>
+    ({ idempotencyKey, recipient: payload.to, subject: payload.subject, status });
+  if (limit === undefined) {
+    await db.insert(emailSends).values(row("pending"));
+    return "pending";
+  }
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${limit.lockKey}, 0))`);
+    const status: RecordedAs = await limit.allows(tx) ? "pending" : "suppressed";
+    await tx.insert(emailSends).values(row(status));
+    return status;
+  });
 }
 
 /** The provider did not take the email. Mark the row failed so a replay may

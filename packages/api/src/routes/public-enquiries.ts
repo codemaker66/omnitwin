@@ -12,10 +12,10 @@ import {
   type EnquiryAttributionRecord,
   type EnquirySource,
 } from "@omnitwin/types";
-import { eq, and, isNull, asc, inArray, sql } from "drizzle-orm";
-import { enquiries, enquiryStatusHistory, configurations, spaces, users, venues } from "../db/schema.js";
+import { eq, and, isNull, asc, inArray, like, ne, sql } from "drizzle-orm";
+import { enquiries, enquiryStatusHistory, configurations, emailSends, spaces, users, venues } from "../db/schema.js";
 import type { Database } from "../db/client.js";
-import { resolveEmailReplyTo, sendEmailAsync } from "../services/email.js";
+import { resolveEmailReplyTo, sendEmailAsync, type SendLimit } from "../services/email.js";
 import { enquiryAcknowledgement, newEnquiryNotification } from "../services/email-templates.js";
 import { notifyCommercialTeam } from "../services/commercial-notifications.js";
 import { acquisitionContextFor, funnelBrowserSignalsEnabled, recordEnquiryEngagement } from "../services/enquiry-funnel.js";
@@ -75,6 +75,38 @@ const ENQUIRY_NAME_MAX = 200;
 function offeredOccasionLabel(eventType: string | undefined): string | null {
   const key = eventType?.trim().toLowerCase() ?? "";
   return ENQUIRY_OCCASION_KEYS.includes(key) ? occasionLabel(key) : null;
+}
+
+/** An enquiry's acknowledgement is recorded in email_sends under this key and its id. */
+const ACKNOWLEDGEMENT_KEY = "enquiry-acknowledged:";
+
+/**
+ * At most one acknowledgement to one address in 24 hours (Blake, 12 November
+ * 2026, decision (c)): it goes in the venue's name to an address nobody has
+ * confirmed, so without this anyone could have the venue mail a stranger as
+ * often as they liked. Counted from the acknowledgements email_sends holds for
+ * the address, lower-cased, recorded in the 24 hours before this one is
+ * decided; one this limit held back ("suppressed") does not count. Decided
+ * under a transaction-scoped advisory lock on the address, so of two sent at
+ * once one goes. The enquiry is kept and the team told whatever it decides.
+ */
+function oneAcknowledgementADay(recipient: string): SendLimit {
+  const address = recipient.toLowerCase();
+  return {
+    lockKey: `enquiry-acknowledgement-to:${address}`,
+    allows: async (tx) => {
+      const [recent] = await tx.select({ id: emailSends.id })
+        .from(emailSends)
+        .where(and(
+          like(emailSends.idempotencyKey, `${ACKNOWLEDGEMENT_KEY}%`),
+          sql`lower(${emailSends.recipient}) = ${address}`,
+          ne(emailSends.status, "suppressed"),
+          sql`${emailSends.createdAt} > now() - interval '24 hours'`,
+        ))
+        .limit(1);
+      return recent === undefined;
+    },
+  };
 }
 
 /** How a notice says where an enquiry came from, when it names no room. */
@@ -445,7 +477,8 @@ export async function publicEnquiryRoutes(
 
     // The venue's own acknowledgement to the organiser. Until this existed a
     // guest got a 201 and silence. Idempotent per enquiry, so a retried POST
-    // or a replayed webhook cannot thank the same person twice.
+    // or a replayed webhook cannot thank the same person twice, and at most
+    // one a day to one address (oneAcknowledgementADay).
     if (!accessRequest && !pricingEnquiry) {
       const acknowledgement = await enquiryAcknowledgement({
         venueName,
@@ -459,8 +492,9 @@ export async function publicEnquiryRoutes(
       });
       sendEmailAsync({ to: parsed.data.email, ...acknowledgement }, {
         db,
-        idempotencyKey: `enquiry-acknowledged:${enquiry.id}`,
+        idempotencyKey: `${ACKNOWLEDGEMENT_KEY}${enquiry.id}`,
         logger: request.log,
+        limit: oneAcknowledgementADay(parsed.data.email),
       });
     }
 

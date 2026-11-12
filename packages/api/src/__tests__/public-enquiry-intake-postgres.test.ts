@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
 import Fastify, { type FastifyInstance, type LightMyRequestResponse } from "fastify";
-import { Pool } from "pg";
+import { Client, Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import * as schema from "../db/schema.js";
 import { publicConfigRoutes } from "../routes/public-configs.js";
 import { publicEnquiryRoutes } from "../routes/public-enquiries.js";
+import { notifyCommercialTeam } from "../services/commercial-notifications.js";
 import { __resetResendClientForTests } from "../services/email.js";
 
 // ---------------------------------------------------------------------------
@@ -80,11 +81,13 @@ describe.skipIf(target === undefined)("the public enquiry route on the migrated 
   // Guest leads and people are found by email, so each address is this run's own.
   const run = randomUUID().slice(0, 8);
   const saved = new Map(SET_HERE.map((name) => [name, process.env[name]]));
+  /** The routes' connections, as pg_stat_activity names them. */
+  const applicationName = `public_enquiry_intake_${randomUUID()}`;
 
   beforeAll(async () => {
     if (target === undefined) throw new Error("Explicit test database required");
     pool = new Pool({
-      connectionString: target, application_name: `public_enquiry_intake_${randomUUID()}`, max: 4,
+      connectionString: target, application_name: applicationName, max: 4,
       options: "-c statement_timeout=30000 -c lock_timeout=20000",
     });
     expect((await pool.query<{ name: string }>("SELECT current_database() AS name")).rows[0]?.name).toBe("venviewer_platform_test");
@@ -193,6 +196,32 @@ describe.skipIf(target === undefined)("the public enquiry route on the migrated 
       await new Promise((resolve) => { setTimeout(resolve, 50); });
     }
     throw new Error(`Nothing was handed to the provider for ${address}`);
+  }
+
+  /** How many messages were handed to the provider for this address, however its case was typed. */
+  function handedCount(address: string): number {
+    return handed.filter((each) => each.to.toLowerCase() === address.toLowerCase()).length;
+  }
+
+  /** What became of an enquiry's acknowledgement once the send was decided
+   *  (the route queues it after answering): its email_sends status. */
+  async function acknowledgementOf(enquiryId: string): Promise<string> {
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      const { rows } = await pool.query<{ status: string }>(
+        "SELECT status FROM email_sends WHERE idempotency_key = $1 AND status <> 'pending'", [`enquiry-acknowledged:${enquiryId}`],
+      );
+      if (rows[0] !== undefined) return rows[0].status;
+      await new Promise((resolve) => { setTimeout(resolve, 50); });
+    }
+    throw new Error(`The acknowledgement of ${enquiryId} was never decided`);
+  }
+
+  /** Waits for this many messages to be handed to the provider for the address, and no more. */
+  async function expectHanded(address: string, count: number): Promise<void> {
+    for (let attempt = 0; attempt < 100 && handedCount(address) < count; attempt += 1) {
+      await new Promise((resolve) => { setTimeout(resolve, 50); });
+    }
+    expect(handedCount(address)).toBe(count);
   }
 
   /** The words a reader sees: react-email writes `<!-- -->` between the parts of a sentence. */
@@ -357,5 +386,98 @@ describe.skipIf(target === undefined)("the public enquiry route on the migrated 
       expect(words).not.toContain("0800 000 000");
       expect(words).not.toContain(email);
     }
+  });
+
+  // Blake, 12 November 2026, decision (c), the cap: at most one
+  // acknowledgement to one address in 24 hours, so nobody can make the venue
+  // mail a stranger again and again. The enquiry is still kept and the team
+  // still told; only the guest's copy is held back, and recorded as such.
+  it("acknowledges one address once in a day, and still keeps every enquiry and tells the team of each", async () => {
+    const team = `test-only-team-${run}@example.test`;
+    process.env["ENQUIRY_FALLBACK_EMAIL"] = team;
+    const noticesBefore = vi.mocked(notifyCommercialTeam).mock.calls.length;
+    try {
+      const guest = `test-only-twice-${run}@example.test`;
+      const asked = { venueSlug: liveVenue, source: "website", name: "TEST ONLY Ailsa Grant", eventType: "wedding" };
+      const first = idOf(await enquire({ ...asked, email: guest }), "enquiryId");
+      // The same address, typed in capitals.
+      const second = idOf(await enquire({ ...asked, email: guest.toUpperCase() }), "enquiryId");
+      expect([await acknowledgementOf(first), await acknowledgementOf(second)]).toEqual(["sent", "suppressed"]);
+      expect(handedCount(guest)).toBe(1);
+
+      const { rows } = await pool.query<{ id: string }>("SELECT id FROM enquiries WHERE id = ANY($1::uuid[]) ORDER BY created_at", [[first, second]]);
+      expect(rows.map((row) => row.id)).toEqual([first, second]);
+      await expectHanded(team, 2);
+      expect(vi.mocked(notifyCommercialTeam).mock.calls.length - noticesBefore).toBe(2);
+
+      // Another address has its own day.
+      const other = idOf(await enquire({ ...asked, email: `test-only-other-${run}@example.test` }), "enquiryId");
+      expect(await acknowledgementOf(other)).toBe("sent");
+      await expectHanded(team, 3);
+    } finally {
+      delete process.env["ENQUIRY_FALLBACK_EMAIL"];
+    }
+  });
+
+  it("counts the day back from the last acknowledgement that went to the address, in whatever case it was typed", async () => {
+    const lapsed = `test-only-lapsed-${run}@example.test`;
+    const recent = `test-only-recent-${run}@example.test`;
+    const held = `test-only-held-${run}@example.test`;
+    // What earlier acknowledgements left behind: one sent 25 hours ago, one
+    // sent 23 hours ago, and one held back an hour ago, each address in capitals.
+    const earlier = [
+      { address: lapsed, status: "sent", ago: "25 hours" },
+      { address: recent, status: "sent", ago: "23 hours" },
+      { address: held, status: "suppressed", ago: "1 hour" },
+    ].map((row) => ({ ...row, key: `enquiry-acknowledged:test-only-${randomUUID()}` }));
+    try {
+      for (const row of earlier) {
+        await pool.query(
+          `INSERT INTO email_sends (idempotency_key, recipient, subject, status, created_at)
+           VALUES ($1, $2, 'TEST ONLY earlier acknowledgement', $3, now() - $4::interval)`,
+          [row.key, row.address.toUpperCase(), row.status, row.ago],
+        );
+      }
+      const asked = { venueSlug: liveVenue, source: "website", eventType: "wedding" };
+      const decided: string[] = [];
+      for (const email of [lapsed, recent, held]) {
+        decided.push(await acknowledgementOf(idOf(await enquire({ ...asked, email }), "enquiryId")));
+      }
+      expect(decided).toEqual(["sent", "suppressed", "sent"]);
+      expect([lapsed, recent, held].map(handedCount)).toEqual([1, 0, 1]);
+    } finally {
+      await pool.query("DELETE FROM email_sends WHERE idempotency_key = ANY($1::text[])", [earlier.map((row) => row.key)]);
+    }
+  });
+
+  it("acknowledges two enquiries from one address sent at the same moment once", async () => {
+    // Nothing this suite queued earlier may still be on its way to email_sends.
+    await acknowledgementsSettled();
+    const guest = `test-only-same-moment-${run}@example.test`;
+    const asked = { venueSlug: liveVenue, source: "website", email: guest, eventType: "wedding" };
+    // Every write to email_sends waits behind this lock and every read passes
+    // it, so both acknowledgements read before either is written: only a
+    // lock taken before the read can let the second see the first.
+    const blocker = new Client({ connectionString: target, application_name: `public_enquiry_blocker_${run}`, options: "-c lock_timeout=20000" });
+    await blocker.connect();
+    let ids: string[] = [];
+    try {
+      await blocker.query("BEGIN");
+      await blocker.query("LOCK TABLE email_sends IN SHARE MODE");
+      ids = (await Promise.all([enquire(asked), enquire(asked)])).map((response) => idOf(response, "enquiryId"));
+      await expect.poll(async () => {
+        const { rows } = await pool.query<{ waiting: number }>(
+          "SELECT count(*)::int AS waiting FROM pg_stat_activity WHERE application_name = $1 AND wait_event_type = 'Lock'",
+          [applicationName],
+        );
+        return rows[0]?.waiting;
+      }, { timeout: 10_000 }).toBe(2);
+    } finally {
+      await blocker.query("ROLLBACK");
+      await blocker.end();
+    }
+    const decided = await Promise.all(ids.map(acknowledgementOf));
+    expect([...decided].sort()).toEqual(["sent", "suppressed"]);
+    expect(handedCount(guest)).toBe(1);
   });
 });
