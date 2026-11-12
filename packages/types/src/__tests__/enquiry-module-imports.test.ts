@@ -16,7 +16,7 @@ import { describe, expect, it } from "vitest";
 // alone went from 32 KB to 99 KB, 6 modules to 17, before minifying.
 //
 // So the list below is the whole of it. Adding to it is a decision about those
-// two bundles; a small helper belongs in a module of its own (calendar-date.ts).
+// two bundles; a small helper belongs in a module of its own that imports nothing (calendar-date.ts, occasion.ts).
 // ---------------------------------------------------------------------------
 
 const SRC = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -59,6 +59,7 @@ describe("the public enquiry schema's module", () => {
       "configuration.ts",
       "enquiry-funnel.ts",
       "enquiry.ts",
+      "occasion.ts",
       "space.ts",
       "user.ts",
       "venue.ts",
@@ -70,5 +71,15 @@ describe("the public enquiry schema's module", () => {
     expect(reachedFrom("event-brief-draft.ts")).toEqual(
       expect.arrayContaining(["event-architect.ts", "evidence-runtime.ts", "space.ts", "venue.ts"]),
     );
+  });
+});
+
+// Every screen that shows an event's name bundles event-name.ts, so it holds
+// to the same rule: the occasion words and the venue clock, nothing more. The
+// walk sees what a one-line import check cannot (#407 review, C7): an import
+// over several lines, an `export … from`, and what each module brings in turn.
+describe("the event name's module", () => {
+  it("brings only the occasion words and the venue clock", () => {
+    expect(reachedFrom("event-name.ts")).toEqual(["event-name.ts", "occasion.ts", "staff-rota-checks.ts"]);
   });
 });

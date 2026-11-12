@@ -20,13 +20,7 @@ import { isSceneFurniturePlacement } from "./table-dressing.js";
 
 const VENUE_TIME_ZONE = "Europe/London";
 
-const DAY = new Intl.DateTimeFormat("en-GB", {
-  timeZone: VENUE_TIME_ZONE,
-  weekday: "short",
-  day: "numeric",
-  month: "short",
-  year: "numeric",
-});
+const DAY = new Map<string, Intl.DateTimeFormat>();
 
 const ISO_DAY = new Map<string, Intl.DateTimeFormat>();
 
@@ -41,10 +35,22 @@ export function venueDay(startsAt: string, timeZone: string | null): string {
   return format.format(new Date(startsAt));
 }
 
-/** "Sat 28 Nov 2026 · Grand Hall", the day in the venue's own time; the room alone without a date. */
-export function slateEyebrow({ startsAt, roomName }: { readonly startsAt: string | null; readonly roomName: string }): string {
+/** "Sat 28 Nov 2026 · Grand Hall", the day in the venue's own time (the
+ *  house's when the slate does not know the venue's zone); the room alone
+ *  without a date. */
+export function slateEyebrow({ startsAt, roomName, timeZone = null }: {
+  readonly startsAt: string | null;
+  readonly roomName: string;
+  readonly timeZone?: string | null;
+}): string {
   if (startsAt === null) return roomName;
-  const parts = DAY.formatToParts(new Date(startsAt));
+  const zone = timeZone ?? VENUE_TIME_ZONE;
+  let format = DAY.get(zone);
+  if (format === undefined) {
+    format = new Intl.DateTimeFormat("en-GB", { timeZone: zone, weekday: "short", day: "numeric", month: "short", year: "numeric" });
+    DAY.set(zone, format);
+  }
+  const parts = format.formatToParts(new Date(startsAt));
   const part = (type: Intl.DateTimeFormatPartTypes): string => parts.find((entry) => entry.type === type)?.value ?? "";
   return `${part("weekday")} ${part("day")} ${part("month")} ${part("year")} · ${roomName}`;
 }

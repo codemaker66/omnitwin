@@ -9,9 +9,10 @@ import {
   EVENT_CONFIRMED_STATUSES,
   EVENT_PIPELINE_STATUSES,
   EVENT_STATUSES,
+  eventNameFor,
 } from "@omnitwin/types";
 import { bookings, eventBindingReviews, events } from "../db/schema.js";
-import { readBindInvariant } from "../services/event-binding.js";
+import { readBindInvariant, titleWithoutEnquiryEmail } from "../services/event-binding.js";
 
 // ---------------------------------------------------------------------------
 // The bind (migration 0090) without a database: the migration's SQL, the
@@ -136,5 +137,45 @@ describe("readBindInvariant", () => {
     await expect(readBindInvariant(reader([]))).rejects.toThrow("no unbound booking count");
     await expect(readBindInvariant(reader([{ unbound_bookings: "-1", contradicting_events: "0" }]))).rejects.toThrow();
     await expect(readBindInvariant(reader([{ unbound_bookings: "0", contradicting_events: "many" }]))).rejects.toThrow();
+  });
+});
+
+// A hold made for an enquiry that gave no name is titled by the enquiry's
+// email (routes/bookings.ts enquiryTitleName). The event made for it is never
+// named by it, nor by any address: what the bind names a new event from
+// (titleWithoutEnquiryEmail), named as createEventFor names it (eventNameFor).
+describe("what the bind names an enquiry's new event", () => {
+  const email = "jane.fraser@example.test";
+  const DERIVED = "Wedding, 14 March 2032";
+  const named = (title: string, address = email, eventType: string | null = "wedding"): string => eventNameFor({
+    title: titleWithoutEnquiryEmail(title, address), eventType, startsAt: "2032-03-14T18:00:00.000Z", timeZone: "Europe/London",
+  });
+
+  it("never names it by the enquiry's email, alone or before its occasion", () => {
+    expect(named(email)).toBe(DERIVED);
+    expect(named(`${email} — Wedding`)).toBe(DERIVED);
+    expect(named(`  Jane.Fraser@Example.TEST — Drinks reception `, email, null)).toBe("Drinks reception, 14 March 2032");
+    // Cut at the title's 200 characters, inside the occasion or inside the dash.
+    expect(named(`${email} — Wed`)).toBe(DERIVED);
+    expect(named(`${email} `)).toBe(DERIVED);
+  });
+
+  it("takes an address that fills the title, cut at its 200 characters before its domain, as all of it", () => {
+    const long = `${"x".repeat(215)}@example.test`;
+    expect(long.length).toBeGreaterThan(200);
+    expect(titleWithoutEnquiryEmail(long.slice(0, 200), long)).toBe("");
+    expect(named(long.slice(0, 200), long)).toBe(DERIVED);
+    // A short title that only begins the address is somebody's own words.
+    expect(titleWithoutEnquiryEmail("xxx", long)).toBe("xxx");
+    expect(named("xxx", long)).toBe("xxx");
+  });
+
+  it("never names it by any other address or the enquiry's among other words, and keeps a title a person wrote", () => {
+    expect(named("Ailsa Grant — Wedding")).toBe("Ailsa Grant — Wedding");
+    expect(named(`${email}.uk — Wedding`)).toBe(DERIVED);
+    // The enquiry's email within other words still says who asked, not what the event is.
+    expect(named(`${email} and party`)).toBe(DERIVED);
+    expect(named("")).toBe(DERIVED);
+    expect(named("Ailsa Grant — Wedding", "")).toBe("Ailsa Grant — Wedding");
   });
 });
