@@ -91,6 +91,23 @@ describe("BlueprintFromStore save status", () => {
     expect(mobile()).toContain("Layout saved");
     expect(chrome()).not.toContain("Not saved");
   });
+
+  // A save the API refused over a note this browser is not shown is unsaved
+  // work, not a save to retry: the same save meets the same refusal (delta
+  // review of #388, D8). The save notice carries the API's sentence.
+  it.each([
+    ["NOTE_HELD", "A note on this plan cannot be changed from here, and this save tried to change it. Clear the note you wrote on that piece."],
+    ["HELD_PIECE_OMITTED", "Nothing was saved: this save would remove a piece with a note that cannot be shown here. Reload the page to put it back."],
+  ])("calls a save refused over a held note unsaved changes, and offers no retry (%s)", (code, refusal) => {
+    useEditorStore.setState({ configId: "saved-layout", lastSavedAt: new Date(Date.now() - 120_000), isDirty: true, saveError: refusal, saveErrorCode: code });
+    const { container } = render(<BlueprintPage source="editor-store" />);
+    const chrome = (): string => container.querySelector(".bp-chrome")?.textContent ?? "";
+    expect(chrome()).toContain("Unsaved changes");
+    expect(chrome()).not.toMatch(/retry/iu);
+    // Any other failed save still reads as one to retry.
+    act(() => { useEditorStore.setState({ saveError: "Failed", saveErrorCode: "NETWORK_ERROR" }); });
+    expect(chrome()).toContain("Save failed - retry");
+  });
 });
 
 describe("BlueprintFromStore seating and guests", () => {

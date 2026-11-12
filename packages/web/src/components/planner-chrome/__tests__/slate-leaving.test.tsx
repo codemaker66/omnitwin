@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
@@ -179,6 +179,22 @@ describe("what the slate says about work that outlived its page", () => {
     const receipt = screen.getAllByRole("status").find((region) => region.classList.contains("pc-notice"));
     expect(receipt?.textContent).toMatch(/^Restored 2 changes you made at \d\d:\d\d on this deviceSaving$/u);
     expect(screen.getByTestId("slate-line").textContent).toContain("Saving · 2 changes");
+  });
+
+  // The slate reads the refusal from the store's own facts (delta review of
+  // #388, D8): without that reading it says the save "did not reach Venviewer"
+  // and offers Try again, for a save the API did receive and will refuse again.
+  it.each([
+    ["NOTE_HELD", "A note on this plan cannot be changed from here, and this save tried to change it. Clear the note you wrote on that piece."],
+    ["HELD_PIECE_OMITTED", "Nothing was saved: this save would remove a piece with a note that cannot be shown here. Reload the page to put it back."],
+  ])("says a save the API refused over a held note in its own words, with nothing to try again (%s)", (code, refusal) => {
+    useEditorStore.setState({ saveError: refusal, saveErrorCode: code, keptOnDevice: true });
+    openSlate();
+    const notice = screen.getByRole("alert");
+    expect(notice.textContent).toContain(refusal);
+    expect(notice.textContent).not.toContain("did not reach");
+    expect(within(notice).queryByRole("button")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
   });
 
   it("says what stayed behind in the layout it came from", () => {
