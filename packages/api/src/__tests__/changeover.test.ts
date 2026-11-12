@@ -8,7 +8,7 @@ import {
   type SetupPhase,
   type Zone,
 } from "@omnitwin/types";
-import { changeoverBetween } from "../lib/changeover.js";
+import { MAX_PAIRED_PIECES, changeoverBetween } from "../lib/changeover.js";
 import { generateManifestV2, type AccessoryMap, type ManifestObjectV2 } from "../services/manifest-generator-v2.js";
 
 // ---------------------------------------------------------------------------
@@ -112,7 +112,9 @@ describe("changeoverBetween: the items", () => {
       sheet({ rows: [{ name: "Round", qty: 18 }] }),
       sheet({ rows: [{ name: "Round", qty: 12 }] }));
     const [item] = changeover.items;
-    expect(item).toMatchObject({ before: 18, after: 12, zones: [{ zone: "Centre", before: 18, after: 12 }] });
+    // Sheets without plans give counts, never parts of the room.
+    expect(item).toMatchObject({ before: 18, after: 12, zones: [] });
+    expect(changeover.zonesCompared).toBe(false);
     expect(changeoverSplit(item ?? { before: 0, after: 0 })).toEqual({ stays: 12, toStore: 6, fromStore: 0 });
   });
 
@@ -289,5 +291,120 @@ describe("changeoverBetween: the plan", () => {
     expect(performance.now() - started).toBeLessThan(1500);
     expect(changeover.plan?.fromStore).toEqual([]);
     expect(changeover.plan?.toStore).toEqual([]);
+  });
+
+  it("knows a piece the catalogue renamed between the two layouts as one item, by the next layout's name", () => {
+    const before = rounds(2, 10).plan;
+    // The chairs' entry was renamed after the earlier layout was approved; two of them are no longer needed.
+    const after = before
+      .filter((piece, index) => !(piece.category === "chair" && index >= 20))
+      .map((piece) => ({ ...piece, objectId: nextId(), ...(piece.category === "chair" ? { name: "Banquet Chair (gold)" } : {}) }));
+    const changeover = changeoverBetween(FROM, TO, sheet({ rows: [], plan: before }), sheet({ rows: [], plan: after }));
+    expect(counts(changeover)).toEqual([["6ft Round Table", 2, 2], ["Banquet Chair (gold)", 20, 18]]);
+    expect(changeover.plan).toMatchObject({
+      staysPut: 20,
+      moved: [],
+      fromStore: [],
+      toStore: [{ name: "Banquet Chair (gold)", category: "chair", count: 2 }],
+    });
+  });
+
+  it("keeps a trestle or a stage deck turned half round where it stands, and a square deck a quarter, but not a chair or a lectern", () => {
+    const piece = (assetDefinitionId: string, name: string, category: string, widthM: number, depthM: number, x: number): Piece => ({
+      objectId: nextId(), assetDefinitionId, name, category, x, z: 0, rotationY: 0, scale: 1, widthM, depthM, collisionType: "box",
+    });
+    const before = [
+      piece("00000000-0000-4000-8000-0000000000b1", "6ft Trestle Table", "table", 1.83, 0.76, -6),
+      piece("00000000-0000-4000-8000-0000000000b2", "Platform", "stage", 2.44, 1.22, -3),
+      piece("00000000-0000-4000-8000-0000000000b3", "Parquet Dance Floor Panel", "stage", 0.91, 0.91, 0),
+      piece(LECTERN, "Lectern", "lectern", 0.6, 0.5, 3),
+      { ...chair(6, 0) },
+    ];
+    const turnedBy = [Math.PI, -Math.PI, Math.PI / 2, Math.PI, Math.PI];
+    const after = before.map((placed, index) => ({ ...placed, objectId: nextId(), rotationY: turnedBy[index] ?? 0 }));
+    const changeover = changeoverBetween(FROM, TO, sheet({ rows: [], plan: before }), sheet({ rows: [], plan: after }));
+    expect(changeover.plan?.staysPut).toBe(3);
+    expect(changeover.plan?.moved).toEqual([
+      { name: "Banquet chair", category: "chair", count: 1 },
+      { name: "Lectern", category: "lectern", count: 1 },
+    ]);
+    // A long deck turned a quarter does not stand where it stood.
+    const quarter = changeoverBetween(FROM, TO,
+      sheet({ rows: [], plan: [before[1] as Piece] }),
+      sheet({ rows: [], plan: [{ ...(before[1] as Piece), objectId: nextId(), rotationY: Math.PI / 2 }] }));
+    expect(quarter.plan?.moved).toEqual([{ name: "Platform", category: "stage", count: 1 }]);
+  });
+});
+
+/** The same sheet, frozen while the room measured otherwise. */
+function measured(frozen: HallkeeperSheetV2, widthM: number, lengthM: number): HallkeeperSheetV2 {
+  return { ...frozen, space: { ...frozen.space, widthM, lengthM } };
+}
+
+function zoneChanges(changeover: ReturnType<typeof changeoverBetween>): unknown[] {
+  return changeover.items.flatMap((item) => item.zones.map((zone) => ({ name: item.name, ...zone })));
+}
+
+describe("changeoverBetween: which parts of the room change", () => {
+  it("finds no part changing between a planless and a planned copy of one rounds layout", () => {
+    // Each round's chairs stand around it, some across a zone's edge from
+    // their table: a sheet frozen without a plan lists them at the table.
+    const saved = rounds(18, 10);
+    const changeover = changeoverBetween(FROM, TO, generated(saved, false), generated(saved));
+    expect(counts(changeover)).toEqual([
+      ["6ft Round Table", 18, 18],
+      ["Chairs", 180, 180],
+      ["Black Round Table Linen", 18, 18],
+    ]);
+    expect(zoneChanges(changeover)).toEqual([]);
+    expect(changeover.zonesCompared).toBe(false);
+  });
+
+  it("places both layouts in the next layout's room size, so a hall measured again since approval changes no part", () => {
+    // A row of chairs 3.05 m north of the middle: in the North wall band of
+    // a hall 10 m long, in the Perimeter band of one 10.59 m long.
+    const saved: Saved = { objects: [], plan: [] };
+    for (let i = 0; i < 12; i += 1) place(saved, chair(-5.5 + i, -3.05), null);
+    const approvedEarlier = measured(generated(saved), 21, 10);
+    const current = measured(generated(saved), 21.14, 10.59);
+    const changeover = changeoverBetween(FROM, TO, approvedEarlier, current);
+    expect(changeover.zonesCompared).toBe(true);
+    expect(zoneChanges(changeover)).toEqual([]);
+    expect(changeover.plan?.staysPut).toBe(12);
+    // A piece brought from store is placed in the next layout's own parts of the room.
+    const lectern: Piece = { ...chair(0, -3.05), assetDefinitionId: LECTERN, name: "Lectern", category: "lectern" };
+    const more = changeoverBetween(FROM, TO, approvedEarlier, { ...current, floorPlan: current.floorPlan === null || current.floorPlan === undefined ? null : { ...current.floorPlan, objects: [...current.floorPlan.objects, lectern] } });
+    expect(zoneChanges(more)).toEqual([{ name: "Lectern", zone: "Perimeter", before: 0, after: 1 }]);
+  });
+
+  it("gives dressing no parts of the room: each booking clears its own and lays the next's", () => {
+    const changeover = changeoverBetween(FROM, TO, generated(rounds(6, 10)), generated(rounds(12, 10)));
+    const linen = changeover.items.find((item) => item.isAccessory);
+    expect(linen).toMatchObject({ name: "Black Round Table Linen", before: 6, after: 12, zones: [] });
+  });
+});
+
+describe("changeoverBetween: bounded work", () => {
+  const row = (count: number, x0: number): Piece[] =>
+    Array.from({ length: count }, (_, i) => chair(x0 + (i % 40) * 0.05, -5 + Math.floor(i / 40) * 0.2));
+
+  it("pairs no pieces beyond the limit, and still counts them and their parts of the room", () => {
+    const before = row(MAX_PAIRED_PIECES + 1, -10);
+    const changeover = changeoverBetween(FROM, TO, sheet({ rows: [], plan: before }), sheet({ rows: [], plan: before.slice(0, 10) }));
+    expect(changeover.plan).toBeNull();
+    expect(changeover.tooManyPieces).toBe(true);
+    expect(counts(changeover)).toEqual([["Banquet chair", MAX_PAIRED_PIECES + 1, 10]]);
+    expect(changeover.zonesCompared).toBe(true);
+  });
+
+  it("carries a few hundred chairs across the hall pair by pair, and refuses to weigh thousands that way", () => {
+    // Every chair packed at the west end is needed at the east end, beyond
+    // any neighbour the grid searches.
+    const westToEast = changeoverBetween(FROM, TO, sheet({ rows: [], plan: row(500, -10) }), sheet({ rows: [], plan: row(500, 8) }));
+    expect(westToEast.plan).toMatchObject({ staysPut: 0, moved: [{ name: "Banquet chair", count: 500 }], fromStore: [], toStore: [] });
+    const started = performance.now();
+    const crowded = changeoverBetween(FROM, TO, sheet({ rows: [], plan: row(MAX_PAIRED_PIECES, -10) }), sheet({ rows: [], plan: row(MAX_PAIRED_PIECES, 8) }));
+    expect(performance.now() - started).toBeLessThan(1500);
+    expect([crowded.plan, crowded.tooManyPieces]).toEqual([null, true]);
   });
 });

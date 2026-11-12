@@ -8,10 +8,11 @@ import { ZoneSchema } from "./zone.js";
 // holds and how many it needs, so the floor reads what stays, what goes back
 // to store and what comes from store; the plan says which pieces move within
 // the room. Built from the two sheets the floor already reads, in the same
-// room's own coordinates.
+// room's own coordinates, and with both plans, in one room size.
 // ---------------------------------------------------------------------------
 
-/** One item's count in one zone, before and after the changeover. */
+/** One item's count in one zone, before and after the changeover, both
+ *  sides' pieces placed in the next layout's room size. */
 export const ChangeoverZoneCountSchema = z.object({
   zone: ZoneSchema,
   before: z.number().int().nonnegative(),
@@ -35,7 +36,8 @@ export const ChangeoverItemSchema = z.object({
   isAccessory: z.boolean(),
   before: z.number().int().nonnegative(),
   after: z.number().int().nonnegative(),
-  /** Only the zones whose count changes. */
+  /** Only the zones whose count changes; always empty for dressing, and for
+   *  every item when the changeover's `zonesCompared` is false. */
   zones: z.array(ChangeoverZoneCountSchema),
 }).strict();
 export type ChangeoverItem = z.infer<typeof ChangeoverItemSchema>;
@@ -87,20 +89,32 @@ export const ChangeoverSchema = z.object({
   from: LayoutRefSchema,
   to: LayoutRefSchema,
   items: z.array(ChangeoverItemSchema),
-  /** Null when either layout has no saved plan. */
+  /**
+   * True when both layouts' pieces were placed in parts of the room the same
+   * way: both have plans, and each piece is placed where it stands, in the
+   * next layout's room size. False when either sheet was frozen without a
+   * plan, whose rows list a table's chairs at the table and a laid floor at
+   * its middle: every item's `zones` is then empty, and nothing can be said
+   * about which parts of the room change.
+   */
+  zonesCompared: z.boolean(),
+  /** Null when either layout has no saved plan, or `tooManyPieces`. */
   plan: ChangeoverPlanSchema.nullable(),
+  /** Both layouts have plans, but too many pieces to pair one by one within
+   *  one read's bounded work: `plan` is null, the counts and zones stand. */
+  tooManyPieces: z.boolean(),
 }).strict();
 export type Changeover = z.infer<typeof ChangeoverSchema>;
 
+/**
+ * The two layouts. `to` may be `from` again, when the next booking keeps the
+ * layout: the furniture then stays, and the dressing is still cleared and
+ * laid for a different booking. Unknown keys are dropped, so a page loaded
+ * while the route still took each booking's event reads on.
+ */
 export const ChangeoverQuerySchema = z.object({
   from: z.uuid(),
   to: z.uuid(),
-  /** The events the two bookings belong to, which scope each sheet's hours. */
-  fromEventId: z.uuid().optional(),
-  toEventId: z.uuid().optional(),
-}).strict().refine((query) => query.from !== query.to, {
-  message: "A changeover runs between two layouts.",
-  path: ["to"],
 });
 export type ChangeoverQuery = z.infer<typeof ChangeoverQuerySchema>;
 

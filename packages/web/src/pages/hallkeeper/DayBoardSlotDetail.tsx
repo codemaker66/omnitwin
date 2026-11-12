@@ -96,9 +96,17 @@ function SlotSheetLink({ result, roomName, timeZone }: {
   readonly roomName: string;
   readonly timeZone: string;
 }): ReactElement {
+  // Every state below is this one box, so Try again, which leaves the page
+  // while the link is checked again, hands focus here rather than to the page.
+  const box = useRef<HTMLDivElement>(null);
+  const retry = (): void => {
+    box.current?.focus();
+    result.retry();
+  };
+
   if (result.status === "loading") {
     return (
-      <div className="dayboard-slot-sheet">
+      <div className="dayboard-slot-sheet" ref={box} tabIndex={-1}>
         <ActivityStatus>Finding this room’s setup sheet…</ActivityStatus>
       </div>
     );
@@ -106,16 +114,16 @@ function SlotSheetLink({ result, roomName, timeZone }: {
 
   if (result.status === "error" || result.state === null) {
     return (
-      <div className="dayboard-slot-sheet">
+      <div className="dayboard-slot-sheet" ref={box} tabIndex={-1}>
         <p className="dayboard-slot-sheet-note">{result.error ?? "The setup sheet link could not be checked."}</p>
-        <button type="button" className="dayboard-seen-button" onClick={result.retry}>Try again</button>
+        <button type="button" className="dayboard-seen-button" onClick={retry} aria-label="Try again to check the setup sheet link">Try again</button>
       </div>
     );
   }
 
   const state = result.state;
   return (
-    <div className="dayboard-slot-sheet">
+    <div className="dayboard-slot-sheet" ref={box} tabIndex={-1}>
       {state.kind === "one" && (
         <>
           <Link className="dayboard-open-sheet" to={state.href}>

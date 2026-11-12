@@ -15,7 +15,7 @@ import {
   type SetupPhase,
   type Zone,
 } from "@omnitwin/types";
-import { classifyZoneV2 } from "../services/spatial-classifier-v2.js";
+import { classifyZoneV2, type RoomDimensions } from "../services/spatial-classifier-v2.js";
 
 // ---------------------------------------------------------------------------
 // What moves at a changeover (pure): from the layout one booking leaves in a
@@ -28,32 +28,64 @@ import { classifyZoneV2 } from "../services/spatial-classifier-v2.js";
 // with 10 chairs"), so a dinner of 10-tops and one of 8-tops would share no
 // item at all. A sheet frozen without a plan is counted from its rows, each
 // table's chairs split back out; those chairs have no name of their own, so
-// then the chairs on both sides are compared as chairs.
+// then the chairs on both sides are compared as chairs. With both plans, a
+// piece is known by its catalogue entry and named as the next layout names
+// it, so an entry renamed between the two is one item, not a strike and a
+// re-set.
+//
+// Which parts of the room change is said only when both sides were placed
+// the same way: with both plans, each piece where it stands, in one room
+// size (the next layout's, which its own sheet's parts are named by). An
+// approved sheet keeps the room's size as it was measured then, and a sheet
+// frozen without a plan lists a table's chairs at the table and a laid floor
+// at its middle, so a planless side's parts are not compared at all.
 //
 // Pieces on the two plans are paired by where they stand, never by id or
 // table name: the two layouts belong to different events, and "Table 1" at
 // the wedding is not "Table 1" at the dinner. A piece that already stands
 // where the next layout needs one of its kind stays put; the rest of a kind
 // pair nearest first, as moves; only a change in how many of a kind the room
-// holds goes to or comes from store.
+// holds goes to or comes from store. The work one read does is bounded: past
+// MAX_PAIRED_PIECES a side, or CARRY_CANDIDATES pairs weighed across the
+// room, the plan is not paired at all and the counts stand alone.
 // ---------------------------------------------------------------------------
 
 /** A piece that moves less than this, and turns less than MOVE_TURN_RAD,
  *  is where the crew would put it anyway. */
 export const MOVE_DISTANCE_M = 0.3;
 const MOVE_TURN_RAD = (10 * Math.PI) / 180;
+/** Kinds with no front: a trestle or a stage deck turned half round stands
+ *  as it did, and a square one turned a quarter too. A chair, a lectern, a
+ *  screen or a bar faces a way, so any turn of it is a move. */
+const NO_FRONT = new Set(["table", "stage", "barrier"]);
+const SQUARE_WITHIN_M = 0.01;
+/** Above this many pieces on either plan, none are paired; the counts still
+ *  stand. Twice what one planner save holds (500), so it bounds a read
+ *  without touching any layout the planner saves: at the limit, the nearest
+ *  search's worst case (every piece in one grid cell) is about 0.15 s. */
+export const MAX_PAIRED_PIECES = 1_000;
 /** The grid the nearest pieces are searched through. Pieces further apart
  *  still pair, last, as a carry across the room. */
 const SEARCH_CELL_M = 8;
 const NEAREST_FIRST = 8;
+/** The most pairs weighed for carries across the room: every piece of a
+ *  500-piece layout carried end to end (measured at about 0.2 s and 35 MB).
+ *  Past it the plan is not paired. */
+export const CARRY_CANDIDATES = 250_000;
 
 const PHASE_ORDER = new Map<SetupPhase, number>(SETUP_PHASES.map((phase, index) => [phase, index]));
 const ZONE_ORDER = new Map<Zone, number>(ZONES.map((zone, index) => [zone, index]));
 const naturally = (a: string, b: string): number => a.localeCompare(b, "en-GB", { numeric: true, sensitivity: "base" });
 
-interface ItemTally {
+type PlanObject = HallkeeperFloorPlan["objects"][number];
+
+/** What a piece is called and filed under. */
+interface Kind {
   readonly name: string;
   readonly category: string;
+}
+
+interface ItemTally extends Kind {
   phase: SetupPhase;
   isAccessory: boolean;
   total: number;
@@ -75,20 +107,52 @@ function hidesChairNames(sheet: HallkeeperSheetV2): boolean {
     zone.rows.some((row) => !row.isAccessory && WITH_CHAIRS.test(row.name))));
 }
 
-function tallyItems(sheet: HallkeeperSheetV2, chairsByName: boolean): Map<string, ItemTally> {
+/** How both layouts are read: the same way on both sides, or not compared. */
+interface Reading {
+  /** Chairs by their catalogue name; false when a sheet frozen without a
+   *  plan hides them in its tables' rows, and every chair is then a chair. */
+  readonly chairsByName: boolean;
+  /** With both plans: each catalogue entry's name and category, as the next
+   *  layout has it where both do. Null when either side has no plan. */
+  readonly kinds: ReadonlyMap<string, Kind> | null;
+  /** The one room size both sides' pieces are placed in parts of the room
+   *  by. Null when their parts are not compared. */
+  readonly frame: RoomDimensions | null;
+}
+
+function readingOf(before: HallkeeperSheetV2, after: HallkeeperSheetV2): Reading {
+  const was = before.floorPlan ?? null;
+  const now = after.floorPlan ?? null;
+  if (was === null || now === null) {
+    return { chairsByName: !hidesChairNames(before) && !hidesChairNames(after), kinds: null, frame: null };
+  }
+  const kinds = new Map<string, Kind>();
+  for (const piece of [...was.objects, ...now.objects]) {
+    kinds.set(piece.assetDefinitionId, { name: piece.name, category: piece.category });
+  }
+  const { widthM, lengthM } = after.space;
+  const frame = widthM > 0 && lengthM > 0 ? { widthM, lengthM } : null;
+  return { chairsByName: true, kinds, frame };
+}
+
+function kindOf(reading: Reading, piece: PlanObject): Kind {
+  return reading.kinds?.get(piece.assetDefinitionId) ?? piece;
+}
+
+function tallyItems(sheet: HallkeeperSheetV2, reading: Reading): Map<string, ItemTally> {
   const items = new Map<string, ItemTally>();
-  const add = (rawName: string, category: string, phase: SetupPhase, zone: Zone, qty: number, isAccessory: boolean): void => {
-    const name = !chairsByName && !isAccessory && category === CHAIR_CATEGORY ? CHAIRS : rawName;
-    const key = itemKey(name, category);
+  const add = (kind: Kind, phase: SetupPhase, zone: Zone | null, qty: number, isAccessory: boolean): void => {
+    const name = !reading.chairsByName && !isAccessory && kind.category === CHAIR_CATEGORY ? CHAIRS : kind.name;
+    const key = itemKey(name, kind.category);
     let tally = items.get(key);
     if (tally === undefined) {
-      tally = { name, category, phase, isAccessory, total: 0, zones: new Map() };
+      tally = { name, category: kind.category, phase, isAccessory, total: 0, zones: new Map() };
       items.set(key, tally);
     }
     if ((PHASE_ORDER.get(phase) ?? 0) < (PHASE_ORDER.get(tally.phase) ?? 0)) tally.phase = phase;
     if (!isAccessory) tally.isAccessory = false;
     tally.total += qty;
-    tally.zones.set(zone, (tally.zones.get(zone) ?? 0) + qty);
+    if (zone !== null) tally.zones.set(zone, (tally.zones.get(zone) ?? 0) + qty);
   };
 
   const plan = sheet.floorPlan ?? null;
@@ -98,8 +162,10 @@ function tallyItems(sheet: HallkeeperSheetV2, chairsByName: boolean): Map<string
   for (const phase of sheet.phases) {
     for (const zone of phase.zones) {
       for (const row of zone.rows) {
+        // Dressing is cleared and laid by each booking wherever its tables
+        // stand, so it is placed in no part of the room.
         if (row.isAccessory) {
-          add(row.name, row.category, phase.phase, zone.zone, row.qty, true);
+          add(row, phase.phase, null, row.qty, true);
           continue;
         }
         if (plan !== null) {
@@ -110,25 +176,26 @@ function tallyItems(sheet: HallkeeperSheetV2, chairsByName: boolean): Map<string
         const table = seated?.[1];
         const each = seated?.[2];
         if (table === undefined || each === undefined) {
-          add(row.name, row.category, phase.phase, zone.zone, row.qty, false);
+          add(row, phase.phase, null, row.qty, false);
           continue;
         }
-        add(table, row.category, phase.phase, zone.zone, row.qty, false);
-        add(CHAIRS, CHAIR_CATEGORY, defaultPhaseForCategory(CHAIR_CATEGORY), zone.zone, row.qty * Number(each), false);
+        add({ name: table, category: row.category }, phase.phase, null, row.qty, false);
+        add({ name: CHAIRS, category: CHAIR_CATEGORY }, defaultPhaseForCategory(CHAIR_CATEGORY), null, row.qty * Number(each), false);
       }
     }
   }
+  const frame = reading.frame;
   for (const piece of plan?.objects ?? []) {
-    add(piece.name, piece.category, phaseOf.get(piece.objectId) ?? defaultPhaseForCategory(piece.category),
-      classifyZoneV2(piece.x, piece.z, sheet.space), 1, false);
+    const kind = kindOf(reading, piece);
+    add(kind, phaseOf.get(piece.objectId) ?? defaultPhaseForCategory(kind.category),
+      frame === null ? null : classifyZoneV2(piece.x, piece.z, frame), 1, false);
   }
   return items;
 }
 
-function changeoverItems(before: HallkeeperSheetV2, after: HallkeeperSheetV2): ChangeoverItem[] {
-  const chairsByName = !hidesChairNames(before) && !hidesChairNames(after);
-  const was = tallyItems(before, chairsByName);
-  const now = tallyItems(after, chairsByName);
+function changeoverItems(before: HallkeeperSheetV2, after: HallkeeperSheetV2, reading: Reading): ChangeoverItem[] {
+  const was = tallyItems(before, reading);
+  const now = tallyItems(after, reading);
   const items: ChangeoverItem[] = [];
   for (const key of new Set([...was.keys(), ...now.keys()])) {
     const prior = was.get(key);
@@ -158,13 +225,16 @@ function changeoverItems(before: HallkeeperSheetV2, after: HallkeeperSheetV2): C
     || naturally(a.name, b.name));
 }
 
-type PlanObject = HallkeeperFloorPlan["objects"][number];
+/** How far a piece of this kind turns before it stands as it did. */
+function turnPeriod(piece: PlanObject, kind: Kind): number {
+  if (!NO_FRONT.has(kind.category)) return 2 * Math.PI;
+  return Math.abs(piece.widthM - piece.depthM) < SQUARE_WITHIN_M ? Math.PI / 2 : Math.PI;
+}
 
-function turned(a: PlanObject, b: PlanObject): boolean {
+function turned(a: PlanObject, b: PlanObject, period: number): boolean {
   if (a.collisionType === "cylinder" && b.collisionType === "cylinder") return false;
-  const full = 2 * Math.PI;
-  const delta = Math.abs((((b.rotationY - a.rotationY) % full) + full) % full);
-  return Math.min(delta, full - delta) > MOVE_TURN_RAD;
+  const delta = (((b.rotationY - a.rotationY) % period) + period) % period;
+  return Math.min(delta, period - delta) > MOVE_TURN_RAD;
 }
 
 function distance(a: PlanObject, b: PlanObject): number {
@@ -182,83 +252,118 @@ function takeClosest(candidates: Candidate[], pairs: Map<number, number>, taken:
   }
 }
 
+/** Keeps the `limit` closest candidates seen so far, closest first (ties to the lower index). */
+function keepNearest(near: Candidate[], candidate: Candidate, limit: number): void {
+  const closer = (a: Candidate, b: Candidate): boolean => a.metres < b.metres || (a.metres === b.metres && a.to < b.to);
+  const last = near[near.length - 1];
+  if (near.length === limit && last !== undefined && !closer(candidate, last)) return;
+  if (near.length === limit) near.pop();
+  let at = near.length;
+  for (let previous = near[at - 1]; previous !== undefined && closer(candidate, previous); previous = near[at - 1]) at -= 1;
+  near.splice(at, 0, candidate);
+}
+
+/** Piece indices under each key, in order; a null key leaves a piece out. */
+function indicesBy(pieces: readonly PlanObject[], keyOf: (piece: PlanObject, index: number) => string | null): Map<string, number[]> {
+  const groups = new Map<string, number[]>();
+  pieces.forEach((piece, index) => {
+    const key = keyOf(piece, index);
+    if (key === null) return;
+    const list = groups.get(key);
+    if (list === undefined) groups.set(key, [index]);
+    else list.push(index);
+  });
+  return groups;
+}
+
 /**
  * Pairs each piece the room holds with a piece the next layout needs, of the
  * same kind: first where one already stands (to the centimetre), then the
  * nearest few through a grid, then every piece of the kind still unpaired,
- * nearest first, as a carry across the room.
+ * nearest first, as a carry across the room. Null when the carries would
+ * weigh more than CARRY_CANDIDATES pairs.
  */
-function pairPieces(before: readonly PlanObject[], after: readonly PlanObject[]): Map<number, number> {
+function pairPieces(before: readonly PlanObject[], after: readonly PlanObject[]): Map<number, number> | null {
   const pairs = new Map<number, number>();
   const taken = new Set<number>();
 
   const spot = (piece: PlanObject): string =>
     `${piece.assetDefinitionId}\u0000${String(Math.round(piece.x * 100))}\u0000${String(Math.round(piece.z * 100))}`;
-  const afterBySpot = new Map<string, number[]>();
-  after.forEach((piece, index) => { afterBySpot.set(spot(piece), [...(afterBySpot.get(spot(piece)) ?? []), index]); });
+  const afterBySpot = indicesBy(after, spot);
+  const usedAtSpot = new Map<string, number>();
   before.forEach((piece, index) => {
-    const free = (afterBySpot.get(spot(piece)) ?? []).find((to) => !taken.has(to));
+    const key = spot(piece);
+    const used = usedAtSpot.get(key) ?? 0;
+    const free = afterBySpot.get(key)?.[used];
     if (free === undefined) return;
+    usedAtSpot.set(key, used + 1);
     pairs.set(index, free);
     taken.add(free);
   });
 
   const cell = (value: number): number => Math.floor(value / SEARCH_CELL_M);
-  const grid = new Map<string, number[]>();
-  after.forEach((piece, index) => {
-    if (taken.has(index)) return;
-    const key = `${piece.assetDefinitionId}\u0000${String(cell(piece.x))}\u0000${String(cell(piece.z))}`;
-    grid.set(key, [...(grid.get(key) ?? []), index]);
-  });
+  const cellKey = (asset: string, x: number, z: number): string => `${asset}\u0000${String(x)}\u0000${String(z)}`;
+  const grid = indicesBy(after, (piece, index) =>
+    (taken.has(index) ? null : cellKey(piece.assetDefinitionId, cell(piece.x), cell(piece.z))));
   const nearest: Candidate[] = [];
   before.forEach((piece, index) => {
     if (pairs.has(index)) return;
     const near: Candidate[] = [];
     for (let dx = -1; dx <= 1; dx += 1) {
       for (let dz = -1; dz <= 1; dz += 1) {
-        for (const to of grid.get(`${piece.assetDefinitionId}\u0000${String(cell(piece.x) + dx)}\u0000${String(cell(piece.z) + dz)}`) ?? []) {
+        for (const to of grid.get(cellKey(piece.assetDefinitionId, cell(piece.x) + dx, cell(piece.z) + dz)) ?? []) {
           const target = after[to];
-          if (target !== undefined) near.push({ from: index, to, metres: distance(piece, target) });
+          if (target !== undefined) keepNearest(near, { from: index, to, metres: distance(piece, target) }, NEAREST_FIRST);
         }
       }
     }
-    near.sort((a, b) => a.metres - b.metres || a.to - b.to);
-    nearest.push(...near.slice(0, NEAREST_FIRST));
+    nearest.push(...near);
   });
   takeClosest(nearest, pairs, taken);
 
-  const freeAfter = new Map<string, number[]>();
-  after.forEach((piece, index) => {
-    if (!taken.has(index)) freeAfter.set(piece.assetDefinitionId, [...(freeAfter.get(piece.assetDefinitionId) ?? []), index]);
-  });
-  const rest: Candidate[] = [];
-  before.forEach((piece, index) => {
-    if (pairs.has(index)) return;
-    for (const to of freeAfter.get(piece.assetDefinitionId) ?? []) {
+  const freeBefore = indicesBy(before, (piece, index) => (pairs.has(index) ? null : piece.assetDefinitionId));
+  const freeAfter = indicesBy(after, (piece, index) => (taken.has(index) ? null : piece.assetDefinitionId));
+  let weighed = 0;
+  for (const [asset, froms] of freeBefore) weighed += froms.length * (freeAfter.get(asset)?.length ?? 0);
+  if (weighed > CARRY_CANDIDATES) return null;
+  const carries: Candidate[] = [];
+  for (const [asset, froms] of freeBefore) {
+    for (const to of freeAfter.get(asset) ?? []) {
       const target = after[to];
-      if (target !== undefined) rest.push({ from: index, to, metres: distance(piece, target) });
+      if (target === undefined) continue;
+      for (const from of froms) {
+        const piece = before[from];
+        if (piece !== undefined) carries.push({ from, to, metres: distance(piece, target) });
+      }
     }
-  });
-  takeClosest(rest, pairs, taken);
+  }
+  takeClosest(carries, pairs, taken);
   return pairs;
 }
 
-function groupPieces(pieces: readonly PlanObject[]): ChangeoverPlanGroup[] {
+function groupPieces(pieces: readonly PlanObject[], reading: Reading): ChangeoverPlanGroup[] {
   const groups = new Map<string, { name: string; category: string; count: number }>();
   for (const piece of pieces) {
-    const key = itemKey(piece.name, piece.category);
-    const group = groups.get(key) ?? { name: piece.name, category: piece.category, count: 0 };
+    const kind = kindOf(reading, piece);
+    const key = itemKey(kind.name, kind.category);
+    const group = groups.get(key) ?? { name: kind.name, category: kind.category, count: 0 };
     group.count += 1;
     groups.set(key, group);
   }
   return [...groups.values()].sort((a, b) => b.count - a.count || naturally(a.name, b.name));
 }
 
-function changeoverPlan(before: HallkeeperSheetV2, after: HallkeeperSheetV2): ChangeoverPlan | null {
+function changeoverPlan(
+  before: HallkeeperSheetV2,
+  after: HallkeeperSheetV2,
+  reading: Reading,
+): { readonly plan: ChangeoverPlan | null; readonly tooManyPieces: boolean } {
   const was = before.floorPlan ?? null;
   const now = after.floorPlan ?? null;
-  if (was === null || now === null) return null;
+  if (was === null || now === null) return { plan: null, tooManyPieces: false };
+  if (was.objects.length > MAX_PAIRED_PIECES || now.objects.length > MAX_PAIRED_PIECES) return { plan: null, tooManyPieces: true };
   const pairs = pairPieces(was.objects, now.objects);
+  if (pairs === null) return { plan: null, tooManyPieces: true };
   const pairedAfter = new Set(pairs.values());
   const toStore = was.objects.filter((_, index) => !pairs.has(index));
   const fromStore = now.objects.filter((_, index) => !pairedAfter.has(index));
@@ -268,7 +373,7 @@ function changeoverPlan(before: HallkeeperSheetV2, after: HallkeeperSheetV2): Ch
     const prior = was.objects[from];
     const next = now.objects[to];
     if (prior === undefined || next === undefined) continue;
-    if (distance(prior, next) > MOVE_DISTANCE_M || turned(prior, next)) moved.push(next);
+    if (distance(prior, next) > MOVE_DISTANCE_M || turned(prior, next, turnPeriod(next, kindOf(reading, next)))) moved.push(next);
     else staysPut += 1;
   }
   const footprint = (piece: PlanObject): ChangeoverFootprint => ({
@@ -276,13 +381,16 @@ function changeoverPlan(before: HallkeeperSheetV2, after: HallkeeperSheetV2): Ch
     widthM: piece.widthM, depthM: piece.depthM, collisionType: piece.collisionType,
   });
   return {
-    staysPut,
-    moved: groupPieces(moved),
-    fromStore: groupPieces(fromStore),
-    toStore: groupPieces(toStore),
-    movedIds: moved.map((piece) => piece.objectId),
-    fromStoreIds: fromStore.map((piece) => piece.objectId),
-    toStoreFootprints: toStore.map(footprint),
+    plan: {
+      staysPut,
+      moved: groupPieces(moved, reading),
+      fromStore: groupPieces(fromStore, reading),
+      toStore: groupPieces(toStore, reading),
+      movedIds: moved.map((piece) => piece.objectId),
+      fromStoreIds: fromStore.map((piece) => piece.objectId),
+      toStoreFootprints: toStore.map(footprint),
+    },
+    tooManyPieces: false,
   };
 }
 
@@ -297,10 +405,14 @@ export function changeoverBetween(
   before: HallkeeperSheetV2,
   after: HallkeeperSheetV2,
 ): Changeover {
+  const reading = readingOf(before, after);
+  const { plan, tooManyPieces } = changeoverPlan(before, after, reading);
   return ChangeoverSchema.parse({
     from: { configId: from.configId, name: before.config.name.slice(0, 200), guests: before.config.guestCount, hasPlan: (before.floorPlan ?? null) !== null },
     to: { configId: to.configId, name: after.config.name.slice(0, 200), guests: after.config.guestCount, hasPlan: (after.floorPlan ?? null) !== null },
-    items: changeoverItems(before, after),
-    plan: changeoverPlan(before, after),
+    items: changeoverItems(before, after, reading),
+    zonesCompared: reading.frame !== null,
+    plan,
+    tooManyPieces,
   });
 }

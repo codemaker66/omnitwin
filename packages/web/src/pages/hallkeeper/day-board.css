@@ -1697,6 +1697,14 @@ button.dayboard-rail-item:disabled { cursor: default; }
   font-variant-numeric: tabular-nums;
 }
 
+/* Where focus waits while a Try again reads: the changeover's heading and
+   the sheet link's box. A Try again sits at its own width, not the panel's. */
+.dayboard-changeover .dayboard-detail-heading:focus,
+.dayboard-slot-sheet:focus { outline: none; }
+.dayboard-changeover .dayboard-detail-heading:focus-visible,
+.dayboard-slot-sheet:focus-visible { outline: 2px solid var(--house-cream); outline-offset: 4px; }
+.dayboard-slot-sheet > .dayboard-seen-button { justify-self: start; }
+
 .dayboard-changeover-where,
 .dayboard-changeover-note,
 .dayboard-changeover-plan {
