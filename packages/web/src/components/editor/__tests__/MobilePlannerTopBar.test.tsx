@@ -67,6 +67,27 @@ describe("MobilePlannerTopBar activity", () => {
     expect(screen.getByRole("status").textContent).toBe("Unsaved changes");
   });
 
+  // The phone has no room header, and the save notice that shows the reason is inserted already holding it, which
+  // screen readers do not reliably announce. A polite region that stays in the bar carries the sentence the notice
+  // shows (delta review of #388 at 713dc3f1, C5).
+  it.each([
+    ["NOTE_HELD", "A note on this plan cannot be changed from here, and this save tried to change it. Clear the note you wrote on that piece."],
+    ["HELD_PIECE_OMITTED", "Nothing was saved: this save would remove a piece with a note that cannot be shown here. Reload the page to put it back."],
+  ])("says the refusal in a polite region that was there before it came (%s)", (code, refusal) => {
+    render(<MobilePlannerTopBar mode="3d" onModeChange={vi.fn()} />);
+    const region = screen.getByTestId("mobile-planner-save-refusal");
+    expect(region.getAttribute("aria-live")).toBe("polite");
+    expect(region.textContent).toBe("");
+
+    act(() => { useEditorStore.setState({ isSaving: false, isDirty: true, saveErrorCode: code, saveError: refusal }); });
+    expect(screen.getByTestId("mobile-planner-save-refusal")).toBe(region);
+    expect(region.textContent).toBe(refusal);
+
+    // Any other failure has its own control and words; the region says nothing of it.
+    act(() => { useEditorStore.setState({ saveError: "Connection lost", saveErrorCode: "NETWORK_ERROR" }); });
+    expect(region.textContent).toBe("");
+  });
+
   it.each(["ready", "blocked", "error"] as const)("stops send activity when preparation is %s", async outcome => {
     let resolveRequest: ((value: boolean) => void) | undefined;
     let rejectRequest: ((error: Error) => void) | undefined;

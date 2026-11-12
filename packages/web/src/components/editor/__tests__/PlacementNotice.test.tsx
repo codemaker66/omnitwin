@@ -45,6 +45,24 @@ describe.each([
     expect(screen.queryByTestId("placement-notice")).toBeNull();
   });
 
+  // A reload that puts a held piece back posts its line in the same tick the loading screen gives way to the
+  // planner, so the region was created already holding it, which screen readers do not reliably announce. The region
+  // now goes into the page empty and the line arrives in it (delta review of #388 at 713dc3f1, C5).
+  it("puts a line already standing when it mounts into the region once the region is in the page", () => {
+    const stayed = "Table 9 stayed where it is, because it has a note that cannot be shown here.";
+    usePlacementNoticeStore.getState().post(stayed);
+    const changes: MutationRecord[] = [];
+    const observer = new MutationObserver((records) => { changes.push(...records); });
+    observer.observe(document.body, { childList: true, subtree: true });
+    render(<PlacementNotice mobile={mobile} />);
+    changes.push(...observer.takeRecords());
+    observer.disconnect();
+
+    const region = screen.getByTestId("placement-notice-region");
+    expect(region.textContent).toBe(stayed);
+    expect(changes.some((change) => change.target === region && [...change.addedNodes].some((node) => node.textContent === stayed))).toBe(true);
+  });
+
   it("clears when the piece is put down or another is chosen", () => {
     useCatalogueStore.getState().selectItem("platform-narrow");
     render(<PlacementNotice mobile={mobile} />);

@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactElement } from "react";
+import { useEffect, useRef, useState, type ReactElement } from "react";
 import { usePlacementNoticeStore } from "../../stores/placement-notice-store.js";
 import { useCatalogueStore } from "../../stores/catalogue-store.js";
 import "./PlacementNotice.css";
@@ -20,6 +20,13 @@ export function PlacementNotice({ mobile = false }: { readonly mobile?: boolean 
   const dismiss = usePlacementNoticeStore((state) => state.dismiss);
   const selectedItemId = useCatalogueStore((state) => state.selectedItemId);
 
+  // A line already standing when the region mounts (a reload that puts a held
+  // piece back posts it as the loading screen gives way) goes in after the
+  // region's first render: a region created already holding its words is not
+  // reliably announced (delta review of #388 at 713dc3f1, C5).
+  const [inPage, setInPage] = useState(false);
+  useEffect(() => { setInPage(true); }, []);
+
   // Putting the piece down, or choosing another, makes the line about it stale.
   const shownFor = useRef(selectedItemId);
   useEffect(() => {
@@ -35,7 +42,7 @@ export function PlacementNotice({ mobile = false }: { readonly mobile?: boolean 
       aria-live="polite"
       data-testid="placement-notice-region"
     >
-      {notice !== null && (
+      {inPage && notice !== null && (
         <p key={notice.id} className="placement-notice__line" data-testid="placement-notice">
           {notice.text}
         </p>
