@@ -247,7 +247,9 @@ export function recordedNotes(confirmed: readonly EditorObject[]): ReadonlyMap<s
  * come off the piece: they are not its note any more, and it is shown as
  * holding one. Words the person had put in their place stay on it, theirs to
  * read and to take off: they stand over a note this browser is not shown, and
- * no save takes them. The same array when no note was left.
+ * no save takes them. A note they had cleared stays cleared on screen, and
+ * the piece shows the note it holds. Either change was refused, not saved
+ * (notesRefusedOnLeaving). The same array when no note was left.
  */
 export function afterLeavingOutOfDateNotes(
   working: readonly EditorObject[],
@@ -262,6 +264,24 @@ export function afterLeavingOutOfDateNotes(
     const now = words.get(object.id) ?? "";
     const notes = now === recorded ? "" : now;
     return object.notes === notes ? object : { ...object, notes };
+  });
+}
+
+/**
+ * Of the person's pieces (`theirs`), the ones whose note a save left to the
+ * server as out of date (`outOfDate`, as for afterLeavingOutOfDateNotes) and
+ * which they had changed or cleared: someone else had rewritten that note, so
+ * the change was not made. Such a save is refused for them, and never said to
+ * have saved (delta review of #388 at 713dc3f1, R1).
+ */
+export function notesRefusedOnLeaving(
+  theirs: readonly EditorObject[],
+  outOfDate: ReadonlyMap<string, string>,
+): readonly EditorObject[] {
+  if (outOfDate.size === 0) return [];
+  return theirs.filter((object) => {
+    const recorded = outOfDate.get(object.id);
+    return recorded !== undefined && object.notes !== recorded;
   });
 }
 
@@ -388,11 +408,16 @@ export function heldNotePieceToName<T extends NamedPiece>(held: readonly T[]): T
 
 /**
  * The piece a refused save can be said to be about: the one piece on which
- * the person's own words stand over a held note, by name. Null when there is
- * none, or more than one: the API does not say which piece it refused.
+ * the person's own words stand over a held note, or whose note they cleared
+ * after someone else had rewritten it (`noteClearsRefused`, editor-store
+ * saveLeavingOutOfDateNotes), by name. Null when there is none, or more than
+ * one: the API does not say which piece it refused.
  */
-export function pieceNamedForRefusedSave(state: GuestPlanNoteFacts): string | null {
-  const written = ownWordsOverHeldNotes(state);
+export function pieceNamedForRefusedSave(state: GuestPlanNoteFacts & { readonly noteClearsRefused: readonly string[] }): string | null {
+  const written = [
+    ...ownWordsOverHeldNotes(state),
+    ...state.objects.filter((object) => object.notes === "" && state.noteClearsRefused.includes(object.id)),
+  ];
   const [only] = written;
   if (written.length !== 1 || only === undefined) return null;
   // It leads its line: "A chair at Table 3: ...".

@@ -3,7 +3,7 @@ import { ApiError } from "../../api/client.js";
 import type { BatchObjectInput, Configuration, ObjectMetadata, PlacedObject } from "../../api/configurations.js";
 import { editorToPlacedItem, flushAutoSave, placedItemToEditor } from "../../components/editor/EditorBridge.js";
 import { persistAnonymousPlannerDraft, readAnonymousPlannerDraft } from "../../lib/anonymous-planner-draft.js";
-import { heldNoteIds, noteHeldOn, ownWordsOverHeldNotes, refusedOverHeldNote } from "../../lib/guest-plan-notes.js";
+import { heldNoteIds, noteHeldOn, ownWordsOverHeldNotes, pieceNamedForRefusedSave, refusedOverHeldNote } from "../../lib/guest-plan-notes.js";
 import { useAuthStore } from "../auth-store.js";
 import { useEditorStore, type EditorObject } from "../editor-store.js";
 import { usePlacementNoticeStore } from "../placement-notice-store.js";
@@ -568,18 +568,21 @@ describe("a save refused for a held note, after keeping this version over a newe
     expect(server.notes.get(B)).toBe(THEIRS);
   });
 
-  it("saves at once when the person had already taken their note off: nothing is left for them to clear", async () => {
+  it("refuses the person's clear of their note once the maker has rewritten it: the rest is saved, the clear is not said to be", async () => {
     const server: PlanOnServer = { revision: 4, notes: new Map() };
     await meetTheirRewrite(server, () => { store().setObjectNotes(B, ""); });
     const sentBefore = savesSent();
 
-    expect(await store().keepMine(false)).toBe(true);
+    // The note they cleared is not the one B holds now: that clear was not made (delta review at 713dc3f1, R1).
+    expect(await store().keepMine(false)).toBe(false);
     // One save named the note this browser last knew and was refused; the next sent the piece as one whose note it never saw.
     expect(savesSent()).toBe(sentBefore + 2);
     expect(sentPiece(sentBefore, B).replacesNote).toBe(MINE);
     expect(sentPiece(sentBefore + 1, B).replacesNote).toBeUndefined();
     expect(sentPiece(sentBefore + 1, B).metadata?.notes).toBeUndefined();
-    expect(store()).toMatchObject({ saveError: null, saveErrorCode: null, saveConflict: null, isDirty: false });
+    expect(store()).toMatchObject({ saveError: NOTE_HELD_MESSAGE, saveErrorCode: "NOTE_HELD", saveConflict: null, isDirty: true });
+    expect(pieceNamedForRefusedSave(store())).not.toBeNull();
+    expect(store().objects.find((object) => object.id === A)?.positionX).toBe(3);
     expect(server.notes.get(B)).toBe(THEIRS);
     expect(noteHeldOn(store(), B)).toBe(true);
   });
@@ -1252,14 +1255,15 @@ describe("Keep mine refused for a note the maker rewrote, with other notes of th
     expect(store()).toMatchObject({ saveError: null, saveConflict: null, isDirty: false });
   });
 
-  it("clears it when the person had cleared both", async () => {
+  it("clears it when the person had cleared both, and refuses their clear of the rewritten one", async () => {
     const server: PlanOnServer = { revision: 4, notes: new Map() };
     await theyRewriteB(server, () => { store().setObjectNotes(B, ""); store().setObjectNotes(C, ""); });
 
-    expect(await store().keepMine(false)).toBe(true);
+    expect(await store().keepMine(false)).toBe(false);
     expect(server.notes.has(C)).toBe(false);
     expect(server.notes.get(B)).toBe(THEIR_NOTE);
     expect(noteHeldOn(store(), B)).toBe(true);
+    expect(store()).toMatchObject({ saveErrorCode: "NOTE_HELD", saveError: NOTE_HELD_MESSAGE, saveConflict: null, isDirty: true });
   });
 
   it("saves a change the person was making to their other note, and keeps that note theirs to go on with", async () => {
@@ -1306,9 +1310,9 @@ describe("Keep mine refused for a note the maker rewrote, with other notes of th
 
   it("tells a caller that was waiting on the save the truth: it landed", async () => {
     const server: PlanOnServer = { revision: 4, notes: new Map() };
-    // The person had cleared the rewritten note: the first save is refused, and the one sent after it lands.
-    await theyRewriteB(server, () => { store().setObjectNotes(B, ""); });
-    // Answers arrive a moment later, as over a network, so the caller's turn comes while the second save is in flight.
+    // The first save is refused for the rewritten note; the saves after it find it, and the last lands.
+    await theyRewriteB(server, () => undefined);
+    // Answers arrive a moment later, as over a network, so the caller's turn comes while a later save is in flight.
     const api = vi.mocked(configApi.publicBatchSave).getMockImplementation();
     if (api === undefined) throw new Error("no API model");
     vi.mocked(configApi.publicBatchSave).mockImplementation((...sent) => new Promise((resolve, reject) => {
@@ -1319,8 +1323,191 @@ describe("Keep mine refused for a note the maker rewrote, with other notes of th
     const keeping = store().keepMine(false);
     const flushed = flushAutoSave();
     expect(await keeping).toBe(true);
-    expect(savesSent()).toBe(sentBefore + 2);
-    // The caller waited through both, and is not told the layout failed to save.
+    // Refused; every recorded note left (lands); B sent and C left (refused: B is out of date); C sent and B left (lands).
+    expect(savesSent()).toBe(sentBefore + 4);
+    // The caller waited through them all, sent nothing of its own, and is not told the layout failed to save.
     expect(await flushed).toBe(true);
+    expect(savesSent()).toBe(sentBefore + 4);
+    expect(server.notes.get(C)).toBe(MINE_C);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Delta review of #388 at 713dc3f1, R1 and A1 (major). A save refused for an
+// out-of-date note was tried without each recorded note in turn only while
+// there were at most 8 of them, and then without them all. With 9 or more on
+// record, or 2 or more rewritten, every recorded note was left to the server:
+// a note the person had cleared stayed there, each of their notes was hidden
+// from them, and the save said it had landed. The out-of-date notes are now
+// found by halving the recorded ones, and a note left to the server that the
+// person had cleared or changed is refused, never said to be saved.
+// ---------------------------------------------------------------------------
+
+/** The id of table `index` (Table index + 1) in these plans. */
+function tableId(index: number): string {
+  return `0b0b0b0b-0000-4000-8000-${String(index + 1).padStart(12, "0")}`;
+}
+
+/** What the person wrote on table `index`; Table 4's is a health note. */
+function ownNote(index: number): string {
+  return index === 3 ? ALLERGY : `TEST ONLY own note for Table ${String(index + 1)}`;
+}
+
+describe("Keep mine refused for notes the maker rewrote, among many notes of the person's own", () => {
+  /**
+   * A chair A, and `count` tables on each of which the person writes a note of
+   * their own; the server confirms them all. The maker then rewrites the notes
+   * on the tables at `rewritten`. `change` is what the person does before their
+   * next save, a move of A included, meets that version, which says only that
+   * every table holds a note.
+   */
+  async function theyRewrite(server: PlanOnServer, count: number, rewritten: readonly number[], change: () => void): Promise<readonly string[]> {
+    const tables = Array.from({ length: count }, (_, index) => tableId(index));
+    const shown = (marks: ObjectMetadata): PlacedObject[] => [
+      placed(A), ...tables.map((id, index) => placed(id, { displayLabel: `Table ${String(index + 1)}`, ...marks }, index + 1)),
+    ];
+    serveNotesAsTheApiDoes(server);
+    await open(plan(shown({}), false));
+    tables.forEach((id, index) => { store().setObjectNotes(id, ownNote(index)); });
+    expect(await store().saveToServer(false)).toBe(true);
+    for (const index of rewritten) server.notes.set(tableId(index), THEIR_NOTE);
+    theyNowHave(server, shown({ noteHeld: true }));
+    change();
+    store().updateObject(A, { positionX: 3 });
+    expect(await store().saveToServer(false)).toBe(false);
+    expect(store().saveConflict?.currentRevision).toBe(server.revision);
+    return tables;
+  }
+
+  /** Every table but those at `except` still holds the person's own note, on the server and on screen, and it is theirs. */
+  function ownNotesKept(tables: readonly string[], server: PlanOnServer, except: readonly number[]): void {
+    tables.forEach((id, index) => {
+      if (except.includes(index)) return;
+      expect({ table: index + 1, onServer: server.notes.get(id), onScreen: noteOn(id), guarded: heldNoteIds(store()).has(id) })
+        .toEqual({ table: index + 1, onServer: ownNote(index), onScreen: ownNote(index), guarded: false });
+    });
+  }
+
+  it("clears the note the person cleared, keeps their other notes theirs, and leaves only the rewritten one to the server (9 notes, 1 rewritten)", async () => {
+    const server: PlanOnServer = { revision: 4, notes: new Map() };
+    const tables = await theyRewrite(server, 9, [6], () => { store().setObjectNotes(tableId(3), ""); });
+    const sentBefore = savesSent();
+
+    const saved = await store().keepMine(false);
+    // The clear on Table 4 is made, and only then is the save said to have landed.
+    expect({ saved, tableFourOnServer: server.notes.get(tableId(3)) }).toEqual({ saved: true, tableFourOnServer: undefined });
+    expect(store()).toMatchObject({ saveError: null, saveErrorCode: null, saveConflict: null, isDirty: false, configRevision: server.revision });
+    expect(noteOn(tableId(3))).toBe("");
+    expect(noteHeldOn(store(), tableId(3))).toBe(false);
+    // The maker's words on Table 7 stand, and Table 7 says it holds a note this browser is not shown.
+    expect(server.notes.get(tableId(6))).toBe(THEIR_NOTE);
+    expect(noteHeldOn(store(), tableId(6))).toBe(true);
+    ownNotesKept(tables, server, [3, 6]);
+    expect(store().objects.find((object) => object.id === A)?.positionX).toBe(3);
+    // Found by halving, not one save per note: the refused save, the save that leaves every recorded note
+    // (it lands, so the rest of the work is saved at once), three halvings, and the save of all but Table 7.
+    expect(savesSent() - sentBefore).toBe(6);
+  });
+
+  it("refuses the clear of a note the maker rewrote: the save is not said to have landed, the piece is named, and the work stays unsaved", async () => {
+    const server: PlanOnServer = { revision: 4, notes: new Map() };
+    const tables = await theyRewrite(server, 9, [6], () => { store().setObjectNotes(tableId(6), ""); });
+
+    const saved = await store().keepMine(false);
+    expect({ saved, isDirty: store().isDirty, saveErrorCode: store().saveErrorCode }).toEqual({ saved: false, isDirty: true, saveErrorCode: "NOTE_HELD" });
+    expect(store()).toMatchObject({ saveError: NOTE_HELD_MESSAGE, saveConflict: null, isSaving: false, configRevision: server.revision });
+    expect(pieceNamedForRefusedSave(store())).toBe("Table 7");
+    // Nothing of the maker's is touched; every other note of the person's is still theirs; the move is saved.
+    expect(server.notes.get(tableId(6))).toBe(THEIR_NOTE);
+    expect(noteHeldOn(store(), tableId(6))).toBe(true);
+    ownNotesKept(tables, server, [6]);
+    expect(store().objects.find((object) => object.id === A)?.positionX).toBe(3);
+
+    // The note on Table 7 is not theirs to clear, so the next save leaves it to the server, as the piece now shows.
+    const sentBefore = savesSent();
+    expect(await store().saveToServer(false)).toBe(true);
+    expect(sentPiece(sentBefore, tableId(6)).metadata?.notes).toBeUndefined();
+    expect(sentPiece(sentBefore, tableId(6)).replacesNote).toBeUndefined();
+    expect(server.notes.get(tableId(6))).toBe(THEIR_NOTE);
+  });
+
+  it("keeps words the person put on a rewritten note among nine refused and named, and saves the rest", async () => {
+    const server: PlanOnServer = { revision: 4, notes: new Map() };
+    const tables = await theyRewrite(server, 9, [6], () => { store().setObjectNotes(tableId(6), "TEST ONLY by the stage"); });
+
+    expect(await store().keepMine(false)).toBe(false);
+    expect(store()).toMatchObject({ saveErrorCode: "NOTE_HELD", saveError: NOTE_HELD_MESSAGE, isDirty: true, saveConflict: null });
+    expect(pieceNamedForRefusedSave(store())).toBe("Table 7");
+    expect(noteOn(tableId(6))).toBe("TEST ONLY by the stage");
+    expect(server.notes.get(tableId(6))).toBe(THEIR_NOTE);
+    ownNotesKept(tables, server, [6]);
+  });
+
+  it.each([
+    [0, 7], [1, 7], [2, 6], [3, 6], [4, 6], [5, 6], [6, 6], [7, 6], [8, 5],
+  ])("finds the one rewritten note among nine by halving (the table at index %i rewritten: %i saves)", async (rewritten, saves) => {
+    const server: PlanOnServer = { revision: 4, notes: new Map() };
+    const tables = await theyRewrite(server, 9, [rewritten], () => undefined);
+    const sentBefore = savesSent();
+
+    expect(await store().keepMine(false)).toBe(true);
+    expect(server.notes.get(tableId(rewritten))).toBe(THEIR_NOTE);
+    expect(noteHeldOn(store(), tableId(rewritten))).toBe(true);
+    ownNotesKept(tables, server, [rewritten]);
+    expect(store()).toMatchObject({ saveError: null, saveErrorCode: null, isDirty: false });
+    expect(savesSent() - sentBefore).toBe(saves);
+    // At most k (ceil(log2 n) + 1) + 2 for k rewritten among n: never one save per note.
+    expect(saves).toBeLessThanOrEqual(1 * (Math.ceil(Math.log2(9)) + 1) + 2);
+  });
+
+  it.each([
+    [0, 1, 12], [1, 2, 12], [0, 15, 10], [3, 12, 11], [6, 9, 11], [14, 15, 7],
+  ])("finds two rewritten notes among sixteen by halving (the tables at indexes %i and %i rewritten: %i saves)", async (first, second, saves) => {
+    const server: PlanOnServer = { revision: 4, notes: new Map() };
+    const tables = await theyRewrite(server, 16, [first, second], () => undefined);
+    const sentBefore = savesSent();
+
+    expect(await store().keepMine(false)).toBe(true);
+    for (const index of [first, second]) {
+      expect(server.notes.get(tableId(index))).toBe(THEIR_NOTE);
+      expect(noteHeldOn(store(), tableId(index))).toBe(true);
+    }
+    ownNotesKept(tables, server, [first, second]);
+    expect(savesSent() - sentBefore).toBe(saves);
+    expect(saves).toBeLessThanOrEqual(2 * (Math.ceil(Math.log2(16)) + 1) + 2);
+  });
+
+  it("keeps every note it has not yet vouched for on record if the halving is cut short, and the next save finishes it", async () => {
+    const server: PlanOnServer = { revision: 4, notes: new Map() };
+    const tables = await theyRewrite(server, 9, [6], () => { store().setObjectNotes(tableId(3), ""); });
+    const api = vi.mocked(configApi.publicBatchSave).getMockImplementation();
+    if (api === undefined) throw new Error("no API model");
+    const sentBefore = savesSent();
+    // The refused save, then the save that leaves every recorded note (it lands); the first halving is turned away.
+    vi.mocked(configApi.publicBatchSave).mockImplementation((...sent) => (savesSent() === sentBefore + 3
+      ? Promise.reject(new ApiError(429, "Too many requests — please slow down.", "RATE_LIMITED"))
+      : api(...sent)));
+
+    expect(await store().keepMine(false)).toBe(false);
+    // What landed is this page's: its revision, the move. The failure is said as any failed save's is.
+    expect(store()).toMatchObject({
+      saveError: "Too many requests — please slow down.", saveErrorCode: "RATE_LIMITED", saveConflict: null,
+      isDirty: true, isSaving: false, configRevision: server.revision,
+    });
+    expect(store().objects.find((object) => object.id === A)?.positionX).toBe(3);
+    // No note of the person's was given up on: each is still theirs to read and change, and guarded until a save confirms it.
+    tables.forEach((id, index) => {
+      expect(noteOn(id)).toBe(index === 3 ? "" : ownNote(index));
+      expect(noteHeldOn(store(), id)).toBe(false);
+      expect(heldNoteIds(store()).has(id)).toBe(true);
+    });
+
+    vi.mocked(configApi.publicBatchSave).mockImplementation(api);
+    expect(await store().saveToServer(false)).toBe(true);
+    expect(server.notes.has(tableId(3))).toBe(false);
+    expect(server.notes.get(tableId(6))).toBe(THEIR_NOTE);
+    expect(noteHeldOn(store(), tableId(6))).toBe(true);
+    ownNotesKept(tables, server, [3, 6]);
+    expect(store()).toMatchObject({ saveError: null, saveErrorCode: null, isDirty: false });
   });
 });

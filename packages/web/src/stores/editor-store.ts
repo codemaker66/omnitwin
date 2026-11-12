@@ -31,6 +31,7 @@ import {
   keepingConfirmedNotes,
   namingReplacedNotes,
   noteStillSavingLine,
+  notesRefusedOnLeaving,
   nothingRedoneLine,
   nothingRemovedLine,
   nothingUndoneLine,
@@ -269,6 +270,11 @@ interface EditorState {
    *  (NETWORK_ERROR, UNAUTHORIZED, CONFIG_LOCKED, REVISION_CONFLICT, ...);
    *  null when there is none or the failure was not an API error. */
   readonly saveErrorCode: string | null;
+  /** Pieces whose note the person had cleared in a save refused for a held
+   *  note (NOTE_HELD), where someone else had rewritten that note: the clear
+   *  was not made, and the refusal names the piece (lib/guest-plan-notes
+   *  pieceNamedForRefusedSave). Empty otherwise; each save starts it afresh. */
+  readonly noteClearsRefused: readonly string[];
   readonly saveConflict: EditorSaveConflict | null;
   /** How many objects differ from `baseObjects` right now: changed, placed
    *  or removed (objects, not edits). Kept live with every change. */
@@ -826,6 +832,7 @@ const INITIAL_STATE: EditorState = {
   error: null,
   saveError: null,
   saveErrorCode: null,
+  noteClearsRefused: [],
   saveConflict: null,
   pendingChanges: 0,
   savingChanges: null,
@@ -1855,51 +1862,151 @@ function putBackHeldNotePieces(): boolean {
   return true;
 }
 
-/** How many recorded notes a refused save is tried without, one at a time, before it is tried without them all. */
-const OUT_OF_DATE_NOTE_TRIES = 8;
+/**
+ * The ids the server gave the pieces a save placed: the local ids it sent
+ * (batch order) zipped with the rows it inserted (echoed updates first, then
+ * inserts, each in input order). Null when they cannot be aligned.
+ */
+function placedIdsOf(sent: readonly EditorObject[], answer: readonly PlacedObject[]): Map<string, string> | null {
+  const sentLocalIds = sent.map((o) => o.id).filter((id) => EDITOR_HISTORY_IDS.isLocalId(id));
+  const sentServerIds = new Set(sent.map((o) => o.id).filter((id) => !EDITOR_HISTORY_IDS.isLocalId(id)));
+  const insertedIds = answer.map((p) => p.id).filter((id) => !sentServerIds.has(id));
+  if (sentLocalIds.length !== insertedIds.length) return null;
+  const idMap = new Map<string, string>();
+  sentLocalIds.forEach((localId, i) => {
+    const serverId = insertedIds[i];
+    if (serverId !== undefined) idMap.set(localId, serverId);
+  });
+  return idMap;
+}
+
+/** What the saves sent after a refusal for an out-of-date note came to. */
+interface OutOfDateNotesSettled {
+  /** The answer to the last of them that landed. */
+  readonly saved: configApi.BatchSaveResponse;
+  /** The notes that save left to the server that are out of date: piece id to the words on record. */
+  readonly left: ReadonlyMap<string, string>;
+  /**
+   * The notes it left that no save has yet shown to be either, because the
+   * saves stopped early: still this browser's record, carried until a save
+   * confirms them. Empty when they finished.
+   */
+  readonly unsettled: ReadonlyMap<string, string>;
+  /** What stopped them early, after one had landed; null when they finished. */
+  readonly stoppedBy: { readonly failure: unknown } | null;
+}
 
 /**
  * A save the API refused for a held note without saying which piece, when no
  * words of the person's stand over one: a note this browser has on record is
  * out of date. Only the pieces the refusal can be about are tried, the ones
- * sent with a recorded note. The save is sent again leaving each such note in
- * turn to the server (the piece goes with no word about its note, which keeps
- * whatever it holds); the one that lands shows which record was out of date,
- * and every other note is settled as the person had it, a cleared one cleared.
- * If none lands, more than one is out of date, and the save is sent leaving
- * them all. `left` is what the save that landed left alone, with the words on
- * record for each. Null when nothing lands, or the plan is no longer the open
- * one; any other failure is thrown.
+ * sent with a recorded note. A piece whose note is left to the server goes
+ * with no word about its note, which keeps whatever it holds; a save lands
+ * exactly when every out-of-date note is among those it leaves.
+ *
+ * The save is sent first leaving them all. It lands unless the refusal was for
+ * something else, and the rest of the work is then saved at once. The notes
+ * out of date are then found by halving (delta review of #388 at 713dc3f1,
+ * R1): each save sends the notes known to be in date and the first half of
+ * those still in question as the person has them, and leaves the rest; it
+ * lands only if none it sends is out of date, which settles those it sends,
+ * and is refused otherwise. So a recorded note is never left to the server
+ * unless it is out of date, and a note the person cleared or changed is
+ * cleared or changed. With k of n notes out of date that is at most
+ * 2 + k (ceil(log2 n) + 1) saves, the refused one included: never one a note.
+ * Each save goes on the revision the last one that landed made, and names the
+ * rows the first one placed, so nothing is placed twice.
+ *
+ * Null when nothing lands, or the plan is no longer the open one; a failure
+ * before anything lands is thrown. A failure after that stops the saves, and
+ * what landed is kept (`stoppedBy`, `unsettled`).
  */
-async function saveLeavingOutOfDateNotes<T>(
+async function saveLeavingOutOfDateNotes(
   objects: readonly EditorObject[],
   batch: readonly BatchObjectInput[],
   recorded: ReadonlyMap<string, string>,
-  send: (pieces: readonly BatchObjectInput[]) => Promise<T>,
+  revision: number,
+  send: (pieces: readonly BatchObjectInput[], revision: number) => Promise<configApi.BatchSaveResponse>,
   stillOpen: () => boolean,
-): Promise<{ readonly saved: T; readonly left: ReadonlyMap<string, string> } | null> {
-  const sent = objects.flatMap((object): [string, string][] => {
-    const note = recorded.get(object.id);
-    return note === undefined ? [] : [[object.id, note]];
-  });
-  if (sent.length === 0) return null;
-  const tries: ReadonlyMap<string, string>[] = sent.length > 1 && sent.length <= OUT_OF_DATE_NOTE_TRIES
-    ? sent.map((one) => new Map([one]))
-    : [];
-  tries.push(new Map(sent));
-  for (const left of tries) {
-    if (!stillOpen()) return null;
+): Promise<OutOfDateNotesSettled | null> {
+  const sent = objects.flatMap((object) => (recorded.has(object.id) ? [object.id] : []));
+  if (sent.length === 0 || !stillOpen()) return null;
+  const onRecord = (ids: Iterable<string>): ReadonlyMap<string, string> => new Map([...ids].map((id) => [id, recorded.get(id) ?? ""]));
+  let placedAs: ReadonlyMap<string, string> = new Map<string, string>();
+  let current = revision;
+  /** The save leaving these notes to the server: its answer, or its refusal for a held note. Any other failure is thrown. */
+  const leaving = async (left: ReadonlySet<string>): Promise<configApi.BatchSaveResponse | ApiError> => {
     const pieces = batch.map((piece, index) => {
       const object = objects[index];
-      return object !== undefined && left.has(object.id) ? editorToBatch({ ...object, notes: "" }) : piece;
+      if (object === undefined) return piece;
+      const going = left.has(object.id) ? editorToBatch({ ...object, notes: "" }) : piece;
+      const id = placedAs.get(object.id);
+      return id === undefined ? going : { ...going, id };
     });
     try {
-      return { saved: await send(pieces), left };
+      const answer = await send(pieces, current);
+      current = answer.revision;
+      return answer;
     } catch (err) {
-      if (!(err instanceof ApiError) || err.code !== NOTE_HELD_CODE) throw err;
+      if (err instanceof ApiError && err.code === NOTE_HELD_CODE) return err;
+      throw err;
     }
+  };
+
+  const everyNote: ReadonlySet<string> = new Set(sent);
+  const first = await leaving(everyNote);
+  if (first instanceof ApiError) return null;
+  let landed: { readonly saved: configApi.BatchSaveResponse; readonly left: ReadonlySet<string> } = { saved: first, left: everyNote };
+  // Rows that cannot be matched to the pieces placed would be placed again by a later save: what landed stands.
+  const placed = placedIdsOf(objects, first.objects);
+  if (placed === null) return { saved: first, left: onRecord(everyNote), unsettled: new Map(), stoppedBy: null };
+  placedAs = placed;
+
+  const outOfDate: string[] = [];
+  // Still in question, in the document's order; at least one of them is out of date.
+  let open: readonly string[] = sent;
+  try {
+    for (;;) {
+      // The first one out of date: everything before it is in date.
+      let low = 0;
+      let high = open.length - 1;
+      while (low < high) {
+        if (!stillOpen()) return null;
+        const middle = Math.floor((low + high) / 2);
+        const left = new Set([...outOfDate, ...open.slice(middle + 1)]);
+        const answer = await leaving(left);
+        if (answer instanceof ApiError) {
+          high = middle;
+        } else {
+          landed = { saved: answer, left };
+          low = middle + 1;
+        }
+      }
+      const found = open[low];
+      if (found !== undefined) outOfDate.push(found);
+      open = open.slice(low + 1);
+      if (open.length === 0 && landed.left.size === outOfDate.length && outOfDate.every((id) => landed.left.has(id))) break;
+      // The rest, sent as the person has them: all in date, or another one is out of date.
+      if (!stillOpen()) return null;
+      const rest = new Set(outOfDate);
+      const answer = await leaving(rest);
+      if (!(answer instanceof ApiError)) {
+        landed = { saved: answer, left: rest };
+        break;
+      }
+      // Every note left is out of date already: the same save can only be refused again.
+      if (open.length === 0) throw answer;
+    }
+  } catch (failure) {
+    const proven = new Set(outOfDate);
+    return {
+      saved: landed.saved,
+      left: onRecord([...landed.left].filter((id) => proven.has(id))),
+      unsettled: onRecord([...landed.left].filter((id) => !proven.has(id))),
+      stoppedBy: { failure },
+    };
   }
-  return null;
+  return { saved: landed.saved, left: onRecord(outOfDate), unsettled: new Map(), stoppedBy: null };
 }
 
 /**
@@ -1952,7 +2059,7 @@ async function saveDocument(
 
   // savingChanges is captured from pendingChanges here (deriveSaveFacts). A
   // pending conflict stays until this save lands: only then is it settled.
-  set({ isSaving: true, saveError: null, saveErrorCode: null });
+  set({ isSaving: true, saveError: null, saveErrorCode: null, noteClearsRefused: [] });
   try {
     // A guest plan's save names the note each changed note replaces, and says
     // its notes are complete only when this document was read with them
@@ -1993,54 +2100,43 @@ async function saveDocument(
     const batch = viaSignedIn
       ? objects.map(editorToBatch)
       : namingReplacedNotes(objects.map(editorToBatch), objects, get().baseObjects);
-    const send = (pieces: readonly BatchObjectInput[]): ReturnType<typeof save> => sending === undefined
-      ? save(configId, pieces, revision)
-      : save(configId, pieces, revision, sending);
+    const send = (pieces: readonly BatchObjectInput[], at: number): ReturnType<typeof save> => sending === undefined
+      ? save(configId, pieces, at)
+      : save(configId, pieces, at, sending);
     // A save refused for a held note, though no words of the person's stand
     // over one, was refused for a note this browser has on record that is out
     // of date: "Keep mine" carries the notes confirmed at one revision onto a
     // newer one, where someone else may have rewritten them. It is sent again
-    // leaving that note to the server (saveLeavingOutOfDateNotes), and
-    // isSaving stays true throughout: a caller waiting on this save is
-    // answered once, when it has settled.
+    // until the notes out of date are found and left to the server
+    // (saveLeavingOutOfDateNotes), and isSaving stays true throughout: a
+    // caller waiting on this save is answered once, when it has settled.
     const sentBase = get().baseObjects;
     let saved: Awaited<ReturnType<typeof save>>;
     let outOfDate: ReadonlyMap<string, string> = new Map<string, string>();
+    let unsettled: ReadonlyMap<string, string> = new Map<string, string>();
+    let stoppedBy: { readonly failure: unknown } | null = null;
     let refusedWords: string | null = null;
     try {
-      saved = await send(batch);
+      saved = await send(batch, revision);
     } catch (refused) {
       if (viaSignedIn || !(refused instanceof ApiError) || refused.code !== NOTE_HELD_CODE
         || ownWordsOverHeldNotes({ ...get(), objects, baseObjects: sentBase }).length > 0) throw refused;
-      const stale = await saveLeavingOutOfDateNotes(objects, batch, recordedNotes(sentBase), send,
+      const stale = await saveLeavingOutOfDateNotes(objects, batch, recordedNotes(sentBase), revision, send,
         () => session === configurationSession && get().configId === configId);
       if (stale === null) throw refused;
-      saved = stale.saved;
-      outOfDate = stale.left;
+      ({ saved, left: outOfDate, unsettled, stoppedBy } = stale);
       refusedWords = refused.message;
     }
     // The server may have accepted the old document. It no longer owns this
     // editor, its revision/history/selection, or its caller's saved feedback.
     if (session !== configurationSession || get().configId !== configId) return false;
     const serverObjects = saved.objects.map(placedObjectToEditor);
-    // Whole-history id remap: zip the local ids we sent (batch order)
-    // with the rows the server inserted (echoed updates-first, then
-    // inserts, each in input order). If they cannot be aligned the
-    // timeline can no longer be trusted — clear it rather than risk
-    // undo resurrecting rows under dead ids.
-    const sentLocalIds = objects.map((o) => o.id).filter((id) => EDITOR_HISTORY_IDS.isLocalId(id));
-    const sentServerIds = new Set(objects.map((o) => o.id).filter((id) => !EDITOR_HISTORY_IDS.isLocalId(id)));
-    const insertedIds = saved.objects.map((p) => p.id).filter((id) => !sentServerIds.has(id));
-    const idMap = new Map<string, string>();
-    const aligned = sentLocalIds.length === insertedIds.length;
-    if (aligned) {
-      sentLocalIds.forEach((localId, i) => {
-        const serverId = insertedIds[i];
-        if (serverId !== undefined) {
-          idMap.set(localId, serverId);
-        }
-      });
-    }
+    // Whole-history id remap (placedIdsOf). If the rows cannot be aligned the
+    // timeline can no longer be trusted — clear it rather than risk undo
+    // resurrecting rows under dead ids.
+    const placedIds = placedIdsOf(objects, saved.objects);
+    const aligned = placedIds !== null;
+    const idMap = placedIds ?? new Map<string, string>();
     // The user may have kept editing while the request was in flight —
     // remap the latest state, not the snapshot captured before the await.
     const latest = get();
@@ -2074,25 +2170,43 @@ async function saveDocument(
         })
       : serverObjects;
     // A note this save left to the server is no longer this browser's: its
-    // record went with the answer, and its words come off the piece. Words
-    // the person had put in its place stay there, unsaved, and the refusal
-    // that named no piece is now about that one (pieceNamedForRefusedSave).
-    const nextObjects = afterLeavingOutOfDateNotes(answered, latest.objects, outOfDate);
-    const wordsRefused = nextObjects.some((object) => outOfDate.has(object.id) && object.notes !== "");
+    // record went with the answer, and its words come off the piece. A change
+    // the person had made to it was not made: words they had put in its place
+    // stay there, unsaved, and a note they had cleared stays cleared. Either
+    // is refused, never said to be saved, and the refusal that named no piece
+    // is now about that one (pieceNamedForRefusedSave).
+    const refusedNotes = notesRefusedOnLeaving(latest.objects, outOfDate);
+    const noteRefused = refusedNotes.length > 0;
+    // A note the saves stopped short of vouching for stays on record, carried
+    // as "Keep mine" carries one (keepingConfirmedNotes), with the person's
+    // words on the piece: the next save sends it again.
+    const theirWords = new Map(latest.objects.map((object) => [object.id, object.notes]));
+    const nextObjects = afterLeavingOutOfDateNotes(answered, latest.objects, outOfDate)
+      .map((object) => (unsettled.has(object.id) ? { ...object, notes: theirWords.get(object.id) ?? object.notes } : object));
+    const base = unsettled.size === 0
+      ? serverObjects
+      : keepingConfirmedNotes(serverObjects, sentBase.filter((object) => unsettled.has(object.id)), true);
     set({
       // A yielded object stays the server's: never resend an older local copy.
       objects: snapYieldedToBase(nextObjects, serverObjects),
-      baseObjects: serverObjects,
+      baseObjects: base,
       history: aligned ? remapHistoryIds(latest.history, idMap) : emptyHistory<EditorObject>(),
       selectedObjectId: latest.selectedObjectId === null
         ? null
         : idMap.get(latest.selectedObjectId) ?? latest.selectedObjectId,
       configRevision: saved.revision,
-      isDirty: editedInFlight || wordsRefused,
-      isSaving: false,
+      isDirty: editedInFlight || noteRefused || unsettled.size > 0,
+      // Saves stopped by a failure are answered by it, below.
+      isSaving: stoppedBy !== null,
       lastSavedAt: new Date(),
       saveConflict: null,
-      ...(wordsRefused ? { saveError: refusedWords, saveErrorCode: NOTE_HELD_CODE } : { saveErrorCode: null }),
+      ...(noteRefused
+        ? {
+            saveError: refusedWords,
+            saveErrorCode: NOTE_HELD_CODE,
+            noteClearsRefused: refusedNotes.filter((object) => object.notes === "").map((object) => object.id),
+          }
+        : { saveErrorCode: null }),
       reviewLockRefused: false,
       // Its work arrived after all: nothing of it is waiting here.
       ...(latest.leftBehind?.configId === configId ? { leftBehind: null } : {}),
@@ -2110,8 +2224,10 @@ async function saveDocument(
     // endpoint is authenticated, and public-preview planning stays local.
     if (useAuthPath) flushActionLogToServer(saved.revision);
     liveHooks?.onSaved(saved.revision, idMap);
-    // Saved, but for words the person must take off a piece themselves.
-    return !wordsRefused;
+    // What landed is kept; the failure that stopped the saves is said as any is.
+    if (stoppedBy !== null) throw stoppedBy.failure;
+    // Saved, but not a change the person made to a note someone else had rewritten.
+    return !noteRefused;
   } catch (err) {
     if (session !== configurationSession || get().configId !== configId) return false;
     const conflict = parseRevisionConflict(err);
