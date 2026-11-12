@@ -431,17 +431,17 @@ export async function authenticate(
     return;
   }
 
-  try {
-    const user = await getUserByClerkId(_db, clerkId, emailResolution.email);
-    if (user === null) {
-      await reply.status(403).send({ error: "Invitation required", code: "INVITATION_REQUIRED" });
-      return;
-    }
-
-    request.user = user;
-  } catch {
-    await reply.status(500).send({ error: "Failed to resolve user", code: "SERVER_ERROR" });
+  // A failure to read the user (the database is down, or the account changed
+  // under a first sign-in) is thrown on: the error handler logs it with its
+  // cause, reports it and answers 500. Answering it here left a bare 500 that
+  // no log line and no report explained.
+  const user = await getUserByClerkId(_db, clerkId, emailResolution.email);
+  if (user === null) {
+    await reply.status(403).send({ error: "Invitation required", code: "INVITATION_REQUIRED" });
+    return;
   }
+
+  request.user = user;
 }
 
 // ---------------------------------------------------------------------------

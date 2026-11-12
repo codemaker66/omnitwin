@@ -16,7 +16,8 @@ import {
 // layers the ROLE policy on top, mirroring state-machines/enquiry.ts:
 // staff/admin drive the sales lifecycle; client/planner may only perform the
 // client-side responses (accept / decline / request changes). Admin override
-// follows the enquiry house rule: any transition, any state.
+// follows the enquiry house rule: any transition, any state, except the quote
+// moves canTransitionQuote names.
 // ---------------------------------------------------------------------------
 
 export const PROPOSAL_STATES = PROPOSAL_STATUSES;
@@ -81,13 +82,25 @@ export function canTransitionProposal(
   return allowed.includes(role as TransitionRole);
 }
 
-/** True when `role` may move a quote from `currentState` to `nextState`. */
+/**
+ * True when `role` may move a quote from `currentState` to `nextState`.
+ * The admin house override reaches any move except two (audit pricing-money-5):
+ * - Out of `superseded`, for anyone: the row keeps its successor link, which
+ *   the quotes_superseded_coherent CHECK refuses, so the move could only fail
+ *   in the database.
+ * - Out of `accepted`, for a venue admin: it undoes the client's acceptance,
+ *   and back in draft the quote could be rewritten and deleted, which
+ *   routes/quotes.ts keeps from a venue admin. Whether a platform admin keeps
+ *   this override is Blake's open decision 4 (docs/state/goal-ledger-2026-10-24.md).
+ */
 export function canTransitionQuote(
   currentState: string,
   nextState: string,
   role: string,
+  platformAdmin: boolean,
 ): boolean {
-  if (role === "admin") return true;
+  if (currentState === "superseded" && nextState !== "superseded") return false;
+  if (role === "admin") return currentState !== "accepted" || nextState === "accepted" || platformAdmin;
   const allowed = QUOTE_TRANSITION_ROLES[`${currentState}→${nextState}`];
   if (allowed === undefined) return false;
   return allowed.includes(role as TransitionRole);
@@ -117,9 +130,10 @@ export function getAvailableProposalTransitions(
 export function getAvailableQuoteTransitions(
   currentState: string,
   role: string,
+  platformAdmin: boolean,
 ): readonly QuoteStatus[] {
   if (role === "admin") {
-    return QUOTE_STATES.filter((s) => s !== currentState);
+    return QUOTE_STATES.filter((s) => s !== currentState && canTransitionQuote(currentState, s, role, platformAdmin));
   }
   const result: QuoteStatus[] = [];
   for (const key of Object.keys(QUOTE_TRANSITION_ROLES)) {

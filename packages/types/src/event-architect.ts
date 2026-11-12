@@ -319,9 +319,13 @@ export type EventArchitectOpsReviewDecision = z.infer<
   typeof EventArchitectOpsReviewDecisionSchema
 >;
 
+// The authority a review is stored under, one per reviewing role. The roles
+// that hold each are EVENT_ARCHITECT_OPS_REVIEW_AUTHORITY_BY_ROLE
+// (event-architect-ops-reviewers.ts); the database CHECK is migration 0107's.
 export const EventArchitectOpsReviewerAuthoritySchema = z.enum([
   "venue_staff",
   "venue_hallkeeper",
+  "venue_manager",
   "venue_admin",
   "platform_admin",
 ]);
