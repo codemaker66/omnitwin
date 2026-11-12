@@ -1463,7 +1463,7 @@ describe("DayBoardPage", () => {
     expect(screen.getByText("No room has a request waiting")).toBeTruthy();
     // Another day counts the requests on its own bookings, and says it is that day's.
     fireEvent.click(screen.getByRole("button", { name: "Next day" }));
-    expect(await screen.findByRole("button", { name: "Waiting this day, 0" })).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "Requests waiting this day, 0" })).toBeTruthy();
   });
 
   it("says a later function's short turn-round on its line, and why it is at risk, in the words a screen reader hears", async () => {

@@ -112,7 +112,7 @@ export function planeStages(lanes: readonly DayBoardLane[], waiting?: number): r
   const onBookings = slots.reduce((sum, slot) => sum + (slot.attention?.unownedCount ?? 0), 0);
   const elsewhere = waiting === undefined ? 0 : Math.max(0, waiting - onBookings);
   const requests: PlaneStage = waiting === undefined
-    ? { focus: "waiting", label: "Waiting this day", count: onBookings, note: null }
+    ? { focus: "waiting", label: "Requests waiting this day", count: onBookings, note: null }
     : {
       focus: "waiting",
       label: "Requests waiting",

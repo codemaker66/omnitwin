@@ -225,7 +225,7 @@ describe("the plane", () => {
     expect(planeStages(board.lanes, 1).find((stage) => stage.focus === "waiting")?.note).toBeNull();
     // Another day counts that day's own and says so, beside a list of today's.
     expect(planeStages(board.lanes).find((stage) => stage.focus === "waiting"))
-      .toEqual({ focus: "waiting", label: "Waiting this day", count: 1, note: null });
+      .toEqual({ focus: "waiting", label: "Requests waiting this day", count: 1, note: null });
   });
 });
 
