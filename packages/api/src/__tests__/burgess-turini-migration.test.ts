@@ -18,8 +18,9 @@ const migrationUrl = new URL("../../drizzle/0067_burgess_turini_chair.sql", impo
 const databaseUrl = process.env["VENVIEWER_TURINI_TEST_DATABASE_URL"];
 if (databaseUrl !== undefined) {
   const url = new URL(databaseUrl);
+  // Loopback and this exact name are the safety; any port (CI serves 55476).
   if (!["postgres:", "postgresql:"].includes(url.protocol)
-    || url.hostname !== "127.0.0.1" || url.port !== "55567"
+    || url.hostname !== "127.0.0.1"
     || url.pathname !== "/venviewer_turini_test" || url.search !== "" || url.hash !== "") {
     throw new Error("Turini migration tests require their explicit isolated loopback database");
   }
