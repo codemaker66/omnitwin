@@ -21,8 +21,10 @@ import { errors, type Page, type TestInfo } from "@playwright/test";
 // the page makes passes through the worker's route handlers. The page clock
 // therefore does not say where that 166 s went, and its cause is unresolved.
 // So the worker's own event-loop delay is recorded too (watchWorkerEventLoop),
-// and printed with the page's evidence: a page that waited on a stalled worker
-// shows a long worker delay, and a page that stalled by itself does not.
+// and printed with the page's evidence. It shows whether the worker's loop was
+// blocked, not what the worker waited on: a worker awaiting slow I/O, or a dev
+// server stalled behind a route's continue, still reads a normal loop. The
+// slowest requests, printed on the same line, cover part of that.
 // ---------------------------------------------------------------------------
 
 export type StageMilestone = "firstPaint" | "developing" | "settled";
@@ -136,6 +138,27 @@ export async function recordStageTimeline(page: Page): Promise<void> {
  */
 export const RUNNER_BACKSTOP_MS = 60_000;
 
+/** How long the evidence waits for the page to answer: a page that stopped running must not hide why. */
+const PAGE_ANSWER_MS = 10_000;
+
+/**
+ * Kept back from the test's own timeout for the evidence: the page gets
+ * PAGE_ANSWER_MS to answer (attachStageEvidence), and the rest attaches and
+ * prints it, with room for the case's clock to have started a little early.
+ */
+export const EVIDENCE_RESERVE_MS = PAGE_ANSWER_MS + 5_000;
+
+/**
+ * When, on the worker's clock (performance.now()), a stage wait must give up
+ * so that the evidence still prints before the test's own timeout closes the
+ * page: `testInfo.timeout` counted from `caseStartedAt`, less
+ * EVIDENCE_RESERVE_MS. Read it after test.setTimeout. Infinity when the test
+ * has no timeout.
+ */
+export function evidenceDeadline(testInfo: TestInfo, caseStartedAt: number): number {
+  return testInfo.timeout > 0 ? caseStartedAt + testInfo.timeout - EVIDENCE_RESERVE_MS : Number.POSITIVE_INFINITY;
+}
+
 /** The page gave no answer in the time the runner allowed it. */
 class PageSilent extends Error {}
 
@@ -164,9 +187,15 @@ async function answerWithin<T>(work: Promise<T>, ms: number): Promise<T> {
  * null once `withinMs` have passed since the navigation began without it. The
  * runner's clock only backstops a page that stops answering: null also after
  * `withinMs` + RUNNER_BACKSTOP_MS on the runner's clock, with a line saying so.
+ * With `answerBy` (evidenceDeadline), the backstop comes no later than that, so
+ * a window that ends near the test's own timeout still leaves time to print the
+ * evidence. The page's window itself is unchanged: the backstop only cuts short
+ * a wait the test's timeout would otherwise end first.
  */
-export async function stageMilestone(page: Page, milestone: StageMilestone, withinMs: number): Promise<number | null> {
-  const backstopMs = withinMs + RUNNER_BACKSTOP_MS;
+export async function stageMilestone(page: Page, milestone: StageMilestone, withinMs: number, answerBy = Number.POSITIVE_INFINITY): Promise<number | null> {
+  const fullBackstopMs = withinMs + RUNNER_BACKSTOP_MS;
+  // At least 1 ms: a timeout of 0 means no timeout to waitForFunction.
+  const backstopMs = Math.max(1, Math.min(fullBackstopMs, Math.floor(answerBy - performance.now())));
   const recorded = async (): Promise<number | null> => {
     const handle = await page.waitForFunction(([key, limit]) => {
       const recorder = window.__stageTimeline;
@@ -184,8 +213,11 @@ export async function stageMilestone(page: Page, milestone: StageMilestone, with
     return await answerWithin(recorded(), backstopMs);
   } catch (error) {
     if (!(error instanceof PageSilent) && !(error instanceof errors.TimeoutError)) throw error;
+    const why = backstopMs < fullBackstopMs
+      ? `cut short from ${String(fullBackstopMs)} ms so the evidence prints before the test's own timeout`
+      : "the page stopped answering, or its stage recorder never installed";
     // eslint-disable-next-line no-console -- deliberate: CARD-A2 failure evidence in the runner output
-    console.log(`[CARD-A2] no ${milestone} from the page within ${String(backstopMs)} ms on the runner's clock: the page stopped answering, or its stage recorder never installed`);
+    console.log(`[CARD-A2] no ${milestone} from the page within ${String(backstopMs)} ms on the runner's clock: ${why}`);
     return null;
   }
 }
@@ -220,6 +252,13 @@ export interface WorkerLoopDelay {
 }
 
 export interface WorkerLoopWatch {
+  /**
+   * When the watch began, on the worker's clock (performance.now()). Its
+   * fixture is automatic (staged-reception.ts), so it is the first of the
+   * case's own fixtures to be set up: about when the test's timeout began to
+   * count (evidenceDeadline).
+   */
+  readonly startedAt: number;
   /** The delays so far. */
   readonly read: () => WorkerLoopDelay;
   /** Stops watching; the delays over the whole watch. */
@@ -246,6 +285,7 @@ export function watchWorkerEventLoop(): WorkerLoopWatch {
     };
   };
   return {
+    startedAt,
     read,
     stop: () => {
       histogram.disable();
@@ -258,9 +298,6 @@ export function watchWorkerEventLoop(): WorkerLoopWatch {
 export function describeWorkerLoop(delay: WorkerLoopDelay): string {
   return `worker loop delay max ${String(delay.maxMs)}ms p99 ${String(delay.p99Ms)}ms mean ${String(delay.meanMs)}ms (${String(delay.samples)} ${String(LOOP_RESOLUTION_MS)} ms ticks over ${String(delay.watchedMs)}ms)`;
 }
-
-/** How long the evidence waits for the page to answer: a page that stopped running must not hide why. */
-const PAGE_ANSWER_MS = 10_000;
 
 /**
  * Attaches the stage timeline, the navigation's timing, the ten slowest

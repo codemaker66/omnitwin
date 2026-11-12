@@ -3,7 +3,7 @@ import { captureLaunchOptions } from "./support/capture-launch.js";
 import {
   stubPlannerBootstrap,
 } from "./support/plan-bootstrap.js";
-import { attachStageEvidence, recordStageTimeline, stageMilestone } from "./support/stage-timeline.js";
+import { attachStageEvidence, evidenceDeadline, recordStageTimeline, stageMilestone } from "./support/stage-timeline.js";
 import { test } from "./support/staged-reception.js";
 
 // A failing first attempt keeps its trace, without screenshots (as plan-room-resolve.spec.ts says why).
@@ -27,8 +27,9 @@ test.use({ launchOptions: captureLaunchOptions, trace: { mode: "retain-on-first-
 // planner's lazily imported modules at start (vite.config.ts server.warmup:
 // the first planner navigation measured 30 on-demand transforms before, 7
 // after). Both windows run on the page's clock from the navigation's start, and
-// a failure prints what the page and the Playwright worker were waiting on
-// (support/stage-timeline.ts).
+// a failure prints what the page was waiting on and whether the Playwright
+// worker's loop was blocked (support/stage-timeline.ts). The runner gives up on
+// a silent page early enough to print that before the test's own timeout.
 // ---------------------------------------------------------------------------
 
 test.describe.configure({ mode: "default" });
@@ -43,6 +44,9 @@ test.describe("CARD A2 reduced motion", () => {
 
   test("reduced motion: the resolve still completes as a crossfade, no develop choreography required", async ({ page, stagedReception, workerEventLoop }, testInfo) => {
     test.setTimeout(240_000);
+    // The settled window can end past the test's timeout on the runner's clock (developing, plus
+    // 180 s, plus the runner's 60 s backstop): each wait gives up in time for the evidence instead.
+    const answerBy = evidenceDeadline(testInfo, workerEventLoop.startedAt);
     // eslint-disable-next-line no-console -- deliberate: CARD-A2 failure evidence in the runner output
     page.on("pageerror", (error) => { console.log(`[rm-pageerror] ${error.message.slice(0, 300)}`); });
     page.on("console", (message) => {
@@ -56,11 +60,11 @@ test.describe("CARD A2 reduced motion", () => {
 
     await page.goto("/plan?capture=1&space=reception-room", { waitUntil: "commit" });
 
-    const developing = await stageMilestone(page, "developing", DEVELOPING_WITHIN_MS);
+    const developing = await stageMilestone(page, "developing", DEVELOPING_WITHIN_MS, answerBy);
     if (developing === null) await attachStageEvidence(page, testInfo, "reduced-motion", workerEventLoop);
     expect(developing, `the stage reads developing within ${String(DEVELOPING_WITHIN_MS)} ms of the navigation (or the page stopped answering)`).not.toBeNull();
     await expect(page.getByTestId("room-resolve-caption").last()).toBeVisible();
-    const settled = await stageMilestone(page, "settled", (developing ?? 0) + SETTLED_AFTER_DEVELOPING_MS);
+    const settled = await stageMilestone(page, "settled", (developing ?? 0) + SETTLED_AFTER_DEVELOPING_MS, answerBy);
     await attachStageEvidence(page, testInfo, "reduced-motion", workerEventLoop);
     expect(settled, "the stage resolves and its caption exits").not.toBeNull();
     expect([...stagedReception.requestedFiles].sort()).toEqual([...stagedReception.files].sort());
