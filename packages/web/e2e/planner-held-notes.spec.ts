@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { PlannerSaveServer, SAVE_GRAND_HALL, signInAs, type SeedUser } from "./support/planner-save-server.js";
 
 // ---------------------------------------------------------------------------
@@ -15,9 +15,9 @@ import { PlannerSaveServer, SAVE_GRAND_HALL, signInAs, type SeedUser } from "./s
 //
 // Where the person reads it: today's chrome (v1) shows the planner's
 // placement notice under the room. "Keep mine" is offered only by the new
-// chrome's slate (v2), and only to someone signed in; the new chrome mounts no
-// placement notice yet, so there the line is read from the planner's notice
-// store, the line it would show.
+// chrome's slate (v2), and only to someone signed in; the new chrome shows the
+// same line in its own notice above the dock (ruling C2 on #388), and it is
+// read there, once on the page.
 //
 // Edits go through the planner's own stores and commands, by importing the
 // modules Vite serves to the app (one module instance per URL), as
@@ -142,7 +142,12 @@ async function undoSteps(page: Page): Promise<number> {
   });
 }
 
-/** The planner's placement notice, as the new chrome would show it. */
+/** The line the new chrome shows above its dock, in its own notice. */
+function lineAboveTheDock(page: Page): Locator {
+  return page.locator("[data-pc-zone='above-dock'] [data-testid='placement-notice']");
+}
+
+/** The planner's placement notice store: what any chrome would show. */
 async function noticeLine(page: Page): Promise<string | null> {
   return page.evaluate(async () => {
     const notices = await import("/src/stores/placement-notice-store.ts") as NoticeModule;
@@ -288,12 +293,15 @@ test("v2: Keep mine over a newer version keeps a table someone has since written
   expect(await saveByHand(page, true)).toBe(false);
   await page.getByRole("button", { name: "Keep mine" }).first().click();
 
+  // Said where the person reads it, above the dock, and only there.
+  const stayed = "Table 2 stayed where it is, because it has a note that cannot be shown here.";
+  await expect(lineAboveTheDock(page)).toHaveText(stayed);
+  await expect(page.getByText(stayed, { exact: true })).toHaveCount(1);
   await expect.poll(() => server.layout(PLAN)?.revision, { timeout: 15_000 }).toBe(3);
   expect(storedIds(server)).toContain(TABLE_2);
   expect(server.heldNotes.get(TABLE_2)).toBe(THEIR_NOTE);
   expect(await pieceIds(page)).toEqual(expect.arrayContaining([TABLE_1, TABLE_2]));
   expect(await heldIds(page)).toEqual([TABLE_2]);
-  expect(await noticeLine(page)).toBe("Table 2 stayed where it is, because it has a note that cannot be shown here.");
 });
 
 test("v2: Undo will not take away a table that has come to hold a note this browser is not shown", async ({ page }) => {
@@ -326,7 +334,10 @@ test("v2: Undo will not take away a table that has come to hold a note this brow
   await undo(page);
   expect(await pieceIds(page)).toContain(copy);
   expect(await undoSteps(page)).toBe(steps);
-  expect(await noticeLine(page)).toMatch(/^Nothing was undone: .+ has a note that cannot be shown here\.$/u);
+  // Said where the person reads it, above the dock, and only there.
+  const refused = /^Nothing was undone: .+ has a note that cannot be shown here\.$/u;
+  await expect(lineAboveTheDock(page)).toHaveText(refused);
+  await expect(page.getByText(refused)).toHaveCount(1);
   expect(storedIds(server)).toContain(copy);
   expect(server.heldNotes.get(copy)).toBe(THEIR_NOTE);
 });
