@@ -109,16 +109,18 @@ describe.skipIf(target === undefined)("per-row subqueries on the migrated dispos
 
   it("counts each guest lead's own enquiries, not enquiries whose two emails agree", async () => {
     const leadEmail = `rhona-${randomUUID()}@subqueries.invalid`;
-    await db.insert(schema.guestLeads).values({ email: leadEmail, name: "Rhona Muir" });
     const planner = `planner-${randomUUID()}@subqueries.invalid`;
     const same = `same-${randomUUID()}@subqueries.invalid`;
-    await db.insert(schema.enquiries).values([
+    const [first] = await db.insert(schema.enquiries).values([
       { venueId, spaceId, name: "Rhona Muir", email: planner, guestEmail: leadEmail },
       { venueId, spaceId, name: "Rhona Muir", email: planner, guestEmail: leadEmail },
       // Someone else's, whose own two addresses are the same: never this lead's.
       { venueId, spaceId, name: "Same both", email: same, guestEmail: same },
       { venueId: otherVenueId, spaceId: otherSpaceId, name: "Rhona Muir", email: leadEmail, guestEmail: leadEmail },
-    ]);
+    ]).returning({ id: schema.enquiries.id });
+    // As the public route writes a lead: once, by the first enquiry from the
+    // email, here this venue's, so this venue's team may read it.
+    await db.insert(schema.guestLeads).values({ email: leadEmail, name: "Rhona Muir", firstEnquiryId: first?.id ?? null });
 
     type Found = { guestLeads: { email: string; enquiryCount: number }[] };
     const here = await get<Found>(`/clients/search?q=${encodeURIComponent(leadEmail)}`);
