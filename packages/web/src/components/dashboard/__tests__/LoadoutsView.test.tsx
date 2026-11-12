@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { Loadout, LoadoutDetail as LoadoutDetailData, LoadoutPhoto } from "../../../api/loadouts.js";
 import type { Space } from "../../../api/spaces.js";
 import { LoadoutDetail } from "../LoadoutDetail.js";
@@ -365,6 +365,32 @@ describe("LoadoutDetail keeps what is typed and says what a delete does", () => 
     expect(mocks.updatePhoto).not.toHaveBeenCalled();
     fireEvent.click(save);
     await waitFor(() => { expect(mocks.updatePhoto).toHaveBeenCalledTimes(1); });
+  });
+
+  // Master CI 43218818843 (12 Nov 2026): a photo's Remove stayed live while
+  // a reorder was saving, so its confirm was dropped by the busy guard and the
+  // dialog sat open with nothing sent. Remove now waits like Move Up and Down.
+  it("holds a photo's Remove while another change to the loadout is saving", async () => {
+    const second = photoFixture({ id: "00000000-0000-4000-8000-000000008006", filename: "side.jpg", caption: null, sortOrder: 1 });
+    mocks.getLoadout.mockResolvedValue(detailFixture({ photos: [photoFixture(), second] }));
+    let finishReorder: (photos: LoadoutPhoto[]) => void = () => undefined;
+    mocks.reorderPhotos.mockReturnValueOnce(new Promise<LoadoutPhoto[]>((resolve) => { finishReorder = resolve; }));
+    renderDetail();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Move main.jpg down" }));
+    await waitFor(() => { expect(mocks.reorderPhotos).toHaveBeenCalledTimes(1); });
+    const remove = screen.getByRole<HTMLButtonElement>("button", { name: "Remove main.jpg" });
+    expect(remove.disabled).toBe(true);
+    fireEvent.click(remove);
+    expect(screen.queryByRole("dialog", { name: "Remove Photo" })).toBeNull();
+
+    finishReorder([second, photoFixture({ sortOrder: 1 })]);
+    await waitFor(() => {
+      expect(screen.getByRole<HTMLButtonElement>("button", { name: "Remove main.jpg" }).disabled).toBe(false);
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Remove main.jpg" }));
+    fireEvent.click(within(screen.getByRole("dialog", { name: "Remove Photo" })).getByRole("button", { name: "Remove" }));
+    await waitFor(() => { expect(mocks.deletePhoto).toHaveBeenCalledWith(LOADOUT_ID, PHOTO_ID); });
   });
 
   it("says a deleted loadout's photos are kept, not that it cannot be undone", async () => {

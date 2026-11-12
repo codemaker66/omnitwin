@@ -439,8 +439,11 @@ export function LoadoutDetail({ venueId, spaceId, loadoutId, onBack, onDeleted }
                     style={{ fontSize: 11, color: idx === loadout.photos.length - 1 ? "rgba(246,241,232,0.34)" : "#68d8d2", background: "none", border: "none", cursor: idx === loadout.photos.length - 1 || busyAction !== null ? "default" : "pointer", padding: 0 }}>
                     Move Down
                   </button>
-                  <button type="button" aria-label={`Remove ${p.filename}`} onClick={() => { setShowDeletePhoto(p.id); }}
-                    style={{ fontSize: 11, color: "#ff8a75", background: "none", border: "none", cursor: "pointer", padding: 0, marginLeft: "auto" }}>
+                  {/* Held while another change saves, like Move Up and Down:
+                      handleDeletePhoto drops a confirm made mid-save. */}
+                  <button type="button" disabled={busyAction !== null}
+                    aria-label={`Remove ${p.filename}`} onClick={() => { setShowDeletePhoto(p.id); }}
+                    style={{ fontSize: 11, color: "#ff8a75", background: "none", border: "none", cursor: busyAction !== null ? "default" : "pointer", padding: 0, marginLeft: "auto" }}>
                     Remove
                   </button>
                 </div>
