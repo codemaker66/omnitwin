@@ -10,6 +10,7 @@ import {
   placedObjects,
   spaces,
   assetDefinitions,
+  venues,
 } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { syncPlacedObjectBatch } from "../lib/placed-object-batch.js";
@@ -147,10 +148,12 @@ export async function publicConfigRoutes(
       return reply.status(400).send({ error: "Validation failed", code: "VALIDATION_ERROR", details: parsed.error.issues });
     }
 
-    // Verify space exists and get venueId
+    // A live room of a live venue: deleting a venue leaves its rooms as they
+    // were, and a deleted venue's rooms take no new guest plan.
     const [space] = await db.select({ id: spaces.id, venueId: spaces.venueId })
       .from(spaces)
-      .where(and(eq(spaces.id, parsed.data.spaceId), isNull(spaces.deletedAt)))
+      .innerJoin(venues, eq(venues.id, spaces.venueId))
+      .where(and(eq(spaces.id, parsed.data.spaceId), isNull(spaces.deletedAt), isNull(venues.deletedAt)))
       .limit(1);
 
     if (space === undefined) {
