@@ -257,6 +257,14 @@ describe.skipIf(target === undefined)("the public enquiry route on the migrated 
       "SELECT preferred_date::text AS preferred_date FROM enquiries WHERE id = $1", [enquiryId],
     );
     expect(rows).toEqual([{ preferred_date: "2028-02-29" }]);
+
+    // A two-digit year typed in a desktop date input posts year 0027. The date
+    // column stores it, so the enquiry is kept, not lost (review of #404, P1).
+    const early = idOf(await enquire({ venueSlug: liveVenue, source: "website", email, eventType: "wedding", eventDate: "0027-06-12" }), "enquiryId");
+    const stored = await pool.query<{ preferred_date: string }>(
+      "SELECT preferred_date::text AS preferred_date FROM enquiries WHERE id = $1", [early],
+    );
+    expect(stored.rows).toEqual([{ preferred_date: "0027-06-12" }]);
   });
 
   // Audit enquiries-crm-3: the acknowledgement goes, in the venue's name, to
