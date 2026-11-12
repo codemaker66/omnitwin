@@ -137,6 +137,27 @@ describe("sheetStoreList", () => {
       { title: "Chairs", items: [{ name: "Chairs for the tables", qty: 122 }, { name: "Chiavari Wedding Chair", qty: 6 }] },
     ]);
   });
+
+  // Before T-672 the generator gave every piece in a group the group's whole chair count.
+  it("splits only a table's row, so a piece grouped at a table does not count the group's chairs again", () => {
+    const store = sheetStoreList(sheet({ totals: { entries: [
+      { name: "6ft Round Table with 10 chairs", category: "table", qty: 1 },
+      { name: "Table Centrepiece with 10 chairs", category: "decor", qty: 1 },
+    ], totalRows: 2, totalItems: 2 } }));
+    expect(store).toEqual([
+      { title: "Tables", items: [{ name: "6ft Round Table", qty: 1 }] },
+      { title: "Chairs", items: [{ name: "Chairs for the tables", qty: 10 }] },
+      { title: "Linen and dressing", items: [{ name: "Table Centrepiece with 10 chairs", qty: 1 }] },
+    ]);
+  });
+
+  it("counts an old copy's grouped tables' chairs once per table, as its setup list does: the copy cannot say whose they were", () => {
+    const store = sheetStoreList(sheet({ totals: { entries: [{ name: "Trestle Table with 10 chairs", category: "table", qty: 2 }], totalRows: 1, totalItems: 2 } }));
+    expect(store).toEqual([
+      { title: "Tables", items: [{ name: "Trestle Table", qty: 2 }] },
+      { title: "Chairs", items: [{ name: "Chairs for the tables", qty: 20 }] },
+    ]);
+  });
 });
 
 describe("sheetSetupSteps", () => {
@@ -240,6 +261,30 @@ describe("sheetNoteMarkers", () => {
     const notes = sheetSetupSteps(noted)[0]?.items[0]?.notes ?? [];
     expect(notes).toEqual(["Needs a socket", whole, "Bring the spare cloth"]);
     expect(notes.map((note) => markers.get(note) ?? null)).toEqual([2, 1, null]);
+  });
+
+  it("reads a row's notes as its own pieces' notes, so two notes never merge into a third piece's note", () => {
+    const joined = "Needs a socket · Bring the spare cloth";
+    const at = (id: number) => ({ objectId: `00000000-0000-4000-8000-${id.toString(16).padStart(12, "0")}`, x: 0, z: 0, rotationY: 0 });
+    const noted = sheet({
+      floorPlan: {
+        coordinateSpace: "real_m_v1", outline: [{ x: -5, z: -5 }, { x: 5, z: -5 }, { x: 5, z: 5 }],
+        objects: [
+          plannedObject(1, "Trestle Table", "table", 0, -3, { note: "Needs a socket" }),
+          plannedObject(2, "Trestle Table", "table", 2, -3, { note: "Bring the spare cloth" }),
+          plannedObject(3, "Cake Table", "table", 4, 0, { note: joined }),
+        ],
+      },
+      phases: [{ phase: "furniture", zones: [{ zone: "North wall", rows: [
+        row({ name: "Trestle Table", qty: 2, notes: joined, positions: [at(1), at(2)] }),
+        row({ name: "Cake Table", qty: 1, notes: joined, positions: [at(3)] }),
+      ] }] }],
+    });
+    const markers = sheetNoteMarkers(noted);
+    const [trestles, cake] = sheetSetupSteps(noted)[0]?.items ?? [];
+    expect(trestles?.notes).toEqual(["Needs a socket", "Bring the spare cloth"]);
+    expect(cake?.notes).toEqual([joined]);
+    expect([...(trestles?.notes ?? []), ...(cake?.notes ?? [])].map((note) => markers.get(note) ?? null)).toEqual([1, 2, 3]);
   });
 });
 
