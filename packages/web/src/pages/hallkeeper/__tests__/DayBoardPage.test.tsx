@@ -1541,6 +1541,28 @@ describe("DayBoardPage", () => {
     expect(lastOrders.getAttribute("aria-label")).not.toMatch(/minutes between/u);
   });
 
+  it("says a slot's guests, its hold and its other rooms in the words a screen reader hears, and on the wall names no other room", async () => {
+    // A first-option hold for 120 guests, one event across two rooms.
+    const held = { kind: "hold", state: "hold", rank: 1, guestCount: 120, eventId: EVENT_ID } as Partial<CalendarResponse["entries"][number]>;
+    getCalendarMock.mockResolvedValue(calendarFixture([
+      bookingAt("00000000-0000-4000-8000-0000000000c1", GRAND_HALL, "Awards dinner", -30, 90, held),
+      bookingAt("00000000-0000-4000-8000-0000000000c2", SALOON, "Awards dinner", -30, 90, held),
+    ]));
+    renderBoard();
+    const room = await screen.findByRole("region", { name: "Grand Hall" });
+    const office = within(room).getByRole("button", { name: /^Awards dinner,/u }).getAttribute("aria-label") ?? "";
+    expect(office).toContain("120 guests");
+    expect(office).toContain("Provisional · 1st option");
+    expect(office).toContain("also Saloon");
+
+    // The wall names no other room, on screen or in its words.
+    fireEvent.click(screen.getByRole("button", { name: "Wall display" }));
+    const wallRoom = screen.getByRole("region", { name: "Grand Hall" });
+    const wall = within(wallRoom).getByRole("group", { name: /^Awards dinner,/u });
+    expect(wall.getAttribute("aria-label")).not.toMatch(/\balso\b/u);
+    expect(wall.textContent).not.toMatch(/\balso\b/u);
+  });
+
   it("names everything under way beside the lead \"Also now\", and on the wall keeps one line after the lead", async () => {
     getCalendarMock.mockResolvedValue(calendarFixture([
       bookingAt("00000000-0000-4000-8000-0000000000e1", GRAND_HALL, "Exhibition", -50 * 60, 52 * 60),
