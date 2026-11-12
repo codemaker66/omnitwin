@@ -128,6 +128,17 @@ export class PlannerSaveServer {
   readonly saves: { readonly configId: string; readonly expectedRevision: number; readonly objectCount: number }[] = [];
   /** While true, a batch save never arrives (the connection drops it). */
   dropSaves = false;
+  /**
+   * Notes on rows, by row id, that a reader without the plan's claim secret
+   * is not shown: the API's rules for them (packages/api/src/routes/
+   * public-configs.ts). Such a reader gets the row marked noteHeld and without
+   * its note, a save that sends the row without a note keeps the note, and a
+   * save from such a reader that leaves the row out is refused (409
+   * HELD_PIECE_OMITTED). Empty, the server answers as it always did.
+   */
+  readonly heldNotes = new Map<string, string>();
+  /** While true, the signed-in read refuses a public preview (403), as the API does for anyone off its venue's floor. */
+  previewsOffTheFloor = false;
 
   private mint(prefix: string): string {
     const id = `${prefix}-${String(this.nextId).padStart(4, "0")}`;
@@ -155,15 +166,26 @@ export class PlannerSaveServer {
     return this.layouts.get(id);
   }
 
-  private wire(layout: StoredLayout): Record<string, unknown> {
+  /** The layout's rows as a reader gets them: `marked`, a held note is only marked; otherwise it is there. */
+  private rows(layout: StoredLayout, marked: boolean): readonly WirePlacedObject[] {
+    if (this.heldNotes.size === 0) return layout.objects;
+    return layout.objects.map((object) => {
+      const note = this.heldNotes.get(object.id);
+      if (note === undefined) return object;
+      const rest = Object.fromEntries(Object.entries(object.metadata ?? {}).filter(([key]) => key !== "notes"));
+      return { ...object, metadata: marked ? { ...rest, noteHeld: true } : { ...rest, notes: note } };
+    });
+  }
+
+  private wire(layout: StoredLayout, marked = false): Record<string, unknown> {
     return {
       id: layout.id, spaceId: layout.spaceId, venueId: SAVE_VENUE.id, userId: layout.userId, name: layout.name,
       isPublicPreview: layout.isPublicPreview, revision: layout.revision, updatedAt: layout.updatedAt,
-      objects: layout.objects, metadata: null, reviewStatus: "draft",
+      objects: this.rows(layout, marked), metadata: null, reviewStatus: "draft",
     };
   }
 
-  private batchSave(layout: StoredLayout, body: unknown): { readonly status: number; readonly json: unknown } {
+  private batchSave(layout: StoredLayout, body: unknown, marked: boolean): { readonly status: number; readonly json: unknown } {
     if (!isRecord(body) || typeof body["expectedRevision"] !== "number" || !Array.isArray(body["objects"])) {
       return { status: 400, json: { error: "Bad batch", code: "VALIDATION_ERROR" } };
     }
@@ -176,6 +198,13 @@ export class PlannerSaveServer {
       };
     }
     const batch = body["objects"].map(asBatchObject);
+    const sent = new Set(batch.flatMap((object) => (object.id === undefined ? [] : [object.id])));
+    if (marked && layout.objects.some((object) => this.heldNotes.has(object.id) && !sent.has(object.id))) {
+      return {
+        status: 409,
+        json: { error: "Nothing was saved: this save would remove a piece with a note that cannot be shown here.", code: "HELD_PIECE_OMITTED" },
+      };
+    }
     const kept = new Set(layout.objects.map((object) => object.id));
     // Updates first, then inserts, each in input order: the API's echo order.
     const updates = batch.filter((object) => object.id !== undefined && kept.has(object.id));
@@ -193,7 +222,7 @@ export class PlannerSaveServer {
     layout.revision += 1;
     layout.updatedAt = new Date().toISOString();
     this.saves.push({ configId: layout.id, expectedRevision, objectCount: batch.length });
-    return { status: 200, json: { data: { objects: layout.objects, revision: layout.revision } } };
+    return { status: 200, json: { data: { objects: this.rows(layout, marked), revision: layout.revision } } };
   }
 
   private async answer(route: Route): Promise<void> {
@@ -232,6 +261,9 @@ export class PlannerSaveServer {
     if (method === "GET" && read !== null) {
       const layout = this.layouts.get(read[1] ?? "");
       if (layout === undefined) return json(404, { error: "No layout", code: "NOT_FOUND" });
+      if (!path.startsWith("/public/") && this.previewsOffTheFloor && layout.isPublicPreview) {
+        return json(403, { error: "This layout is not yours to open here", code: "FORBIDDEN" });
+      }
       if (!path.startsWith("/public/")) return json(200, { data: this.wire(layout) });
       // The public read says whether it carries the plan's notes: it does only
       // for the browser that presents the plan's claim secret. This server
@@ -239,14 +271,15 @@ export class PlannerSaveServer {
       // spec that saves notes from two browsers must first give it the API's
       // note rules (packages/api/src/routes/public-configs.ts).
       const notesIncluded = request.headers()["x-plan-claim-secret"] === claimSecretFor(layout.id);
-      return json(200, { data: { ...this.wire(layout), notesIncluded } });
+      return json(200, { data: { ...this.wire(layout, !notesIncluded), notesIncluded } });
     }
     const save = /^\/(?:public\/)?configurations\/([^/]+)\/objects\/batch$/u.exec(path);
     if (method === "POST" && save !== null && this.dropSaves) return route.abort("connectionreset");
     if (method === "POST" && save !== null) {
       const layout = this.layouts.get(save[1] ?? "");
       if (layout === undefined) return json(404, { error: "No layout", code: "NOT_FOUND" });
-      const outcome = this.batchSave(layout, request.postDataJSON());
+      const marked = path.startsWith("/public/") && request.headers()["x-plan-claim-secret"] !== claimSecretFor(layout.id);
+      const outcome = this.batchSave(layout, request.postDataJSON(), marked);
       return json(outcome.status, outcome.json);
     }
     if (method === "GET" && path.startsWith("/assets/runtime-packages/latest")) return json(200, { data: null });
