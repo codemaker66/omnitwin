@@ -171,13 +171,27 @@ describe.skipIf(testUrl === undefined)("field web vitals on the whole API (migra
   it("keeps the day a report arrived, not the moment, so no row matches a request log by time", async () => {
     process.env["WEB_VITALS_COLLECTION"] = "on";
     expect((await beacon(JSON.stringify(REPORT))).statusCode).toBe(204);
-    const { rows: [day] } = await pool.query<{ rows: string; whole_days: boolean; today: boolean }>(
+    // Today or, if the run crosses midnight, yesterday: a whole day either way.
+    const { rows: [day] } = await pool.query<{ rows: string; whole_days: boolean; recent: boolean }>(
       `SELECT count(*)::text AS rows,
               bool_and(recorded_at = date_trunc('day', recorded_at)) AS whole_days,
-              bool_and(recorded_at = date_trunc('day', now())) AS today
+              bool_and(recorded_at >= date_trunc('day', now()) - interval '1 day') AS recent
          FROM web_vital_samples`,
     );
-    expect(day).toEqual({ rows: "4", whole_days: true, today: true });
+    expect(day).toEqual({ rows: "4", whole_days: true, recent: true });
+  });
+
+  it("keeps nothing from a browser that sends Global Privacy Control or Do Not Track", async () => {
+    process.env["WEB_VITALS_COLLECTION"] = "on";
+    for (const objection of [{ "sec-gpc": "1" }, { dnt: "1" }]) {
+      const res = await server.inject({
+        method: "POST", url: "/public/web-vitals",
+        headers: { "content-type": "text/plain;charset=UTF-8", origin: "https://venviewer.com", ...objection },
+        payload: JSON.stringify(REPORT), remoteAddress: "10.6.6.6",
+      });
+      expect(res.statusCode, JSON.stringify(objection)).toBe(204);
+    }
+    expect(await rows()).toEqual([]);
   });
 
   it("reads a JSON body as well as a beacon's text", async () => {

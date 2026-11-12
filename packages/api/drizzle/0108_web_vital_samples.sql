@@ -8,11 +8,13 @@
 -- load sends its LCP, INP, CLS and TTFB once (POST /public/web-vitals, off
 -- unless WEB_VITALS_COLLECTION=on), one row each: the route's pattern (never
 -- the address opened, so no share token or layout id), a device class, the
--- value and its rating, and nothing the privacy page does not name (how the
--- page was reached was dropped on 12 November). Nothing names or follows the
--- visitor. A row keeps the day it arrived, not the moment, so it cannot be
--- matched to a hosting provider's request log by time. Rows go after 90 days
--- (the nightly cleanup).
+-- value and its rating. How the page was reached is not kept (dropped on
+-- 12 November: the privacy page does not mention it). Nothing names or follows
+-- the visitor. A row keeps only the day it arrived, not the moment. That
+-- removes the exact time, but row order and the database's restore history
+-- still follow arrival, so on its own it does not stop a row being matched to
+-- a hosting provider's request log. Rows go after 90 days (the nightly
+-- cleanup).
 --
 -- Additive only: one new table, no change to existing rows. The file is one
 -- transaction; a failed statement leaves the database as it was.

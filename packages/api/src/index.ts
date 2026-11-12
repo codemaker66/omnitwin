@@ -210,7 +210,8 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   // Rate limiting — per-user where authenticated, per-IP otherwise.
   // Global 100/min is the baseline; individual routes tighten or
   // relax via their own `config.rateLimit` option, which inherits this
-  // keyGenerator.
+  // keyGenerator unless it names its own (POST /public/web-vitals keys by
+  // an HMAC of the address, never the address; routes/public-web-vitals.ts).
   //
   // The limiter keys each request at onRequest, before any route's
   // `authenticate` preHandler runs, so it cannot read `request.user`.

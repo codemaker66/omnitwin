@@ -6857,10 +6857,11 @@ export const venueEngagementEvents = pgTable("venue_engagement_events", {
 // Migration 0108: field web vitals (goal 07).
 //
 // One row per vital of a sampled page load: the route's pattern (never an
-// address), a device class, the value and its rating, and nothing the privacy
-// page does not name. Nothing about the visitor. The day it arrived, not the
-// moment, so no row can be matched to a hosting provider's request log by
-// time. Kept WEB_VITAL_RETENTION_DAYS, then removed by the nightly cleanup.
+// address), a device class, the value and its rating; not how the page was
+// reached. Nothing about the visitor. Only the day it arrived, not the moment
+// (row order and the database's restore history still follow arrival, so this
+// alone does not stop a match with a host's request log). Kept
+// WEB_VITAL_RETENTION_DAYS, then removed by the nightly cleanup.
 // Written only by routes/public-web-vitals.ts.
 // ---------------------------------------------------------------------------
 
