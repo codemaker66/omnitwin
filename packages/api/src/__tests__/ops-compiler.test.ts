@@ -510,7 +510,7 @@ describe("ops compiler services", () => {
     const graph = eventGraph();
     const [ceremony, flip, dinner] = graph.phases;
     if (ceremony === undefined || flip === undefined || dinner === undefined) throw new Error("fixture");
-    const drinks = { ...ceremony, id: "00000000-0000-4000-8000-000000000314", templateKey: "drinks", name: "Drinks reception" };
+    const drinks = { ...ceremony, id: "00000000-0000-4000-8000-000000000314", templateKey: "arrival" as const, name: "Drinks reception" };
     const compile = (phases: EventPhaseGraph["phases"]) => compileOpsHandoffDraft({
       snapshot: snapshot(), previousSnapshot: null, eventGraph: { ...graph, phases }, clientNotes: null,
     });
