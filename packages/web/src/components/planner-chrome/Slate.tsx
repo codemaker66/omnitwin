@@ -48,6 +48,9 @@ export type SlateActionId = "try-again" | "show-theirs" | "keep-mine" | "sign-in
 /** A way forward that runs a while (Dismiss is done at once: a refused clear's notice, or the note carrying one here). */
 type SlateBusyId = Exclude<SlateActionId, "dismiss" | "dismiss-note">;
 
+/** The notice under the plane, whose keys a Dismiss takes away with it. */
+const SLATE_NOTICE_CLASS = "pc-slate__notice";
+
 /** What each way forward is doing while it runs: the words the other keys wait on. */
 const BUSY_WORDS: Readonly<Record<SlateBusyId, string>> = {
   "try-again": "Saving",
@@ -82,6 +85,8 @@ export interface SlateCardProps {
   readonly menuOpen: boolean;
   readonly menuId?: string;
   readonly titleRef?: Ref<HTMLButtonElement>;
+  /** The save status: where focus goes when a Dismiss puts its notice away. */
+  readonly statusRef?: Ref<HTMLElement>;
   readonly onMenu: () => void;
   readonly onAction: (id: SlateActionId) => void;
   /** The way forward now running, or null. */
@@ -164,7 +169,7 @@ function Plane({ facts }: { readonly facts: PlaneFacts }): ReactElement {
 }
 
 export function SlateCard({
-  crest, eyebrow, title, hold, sample, save, aside = null, plane, menuOpen, menuId, titleRef, onMenu, onAction, busy,
+  crest, eyebrow, title, hold, sample, save, aside = null, plane, menuOpen, menuId, titleRef, statusRef, onMenu, onAction, busy,
 }: SlateCardProps): ReactElement {
   const { lineAction } = save;
   // An urgent aside (a held switch) answers what the person just asked for, so
@@ -196,7 +201,7 @@ export function SlateCard({
             {hold !== null ? <Chip tone="hold">{hold}</Chip> : null}
             <span className="pc-slate__save" title={save.title ?? undefined}>
               <SaveMark mark={save.mark} />
-              <b className="pc-slate__status">{save.status}</b>
+              <b ref={statusRef} className="pc-slate__status" tabIndex={-1}>{save.status}</b>
               {save.detail !== null ? <span className="pc-slate__detail"> · {save.detail}</span> : null}
             </span>
             {sample ? <Chip tone="sample">Sample</Chip> : null}
@@ -211,7 +216,7 @@ export function SlateCard({
       {plane !== null ? <Plane facts={plane} /> : null}
       {notice !== null ? (
         <Notice
-          className="pc-slate__notice"
+          className={SLATE_NOTICE_CLASS}
           lead={notice.heading}
           body={notice.body}
           urgency={notice.urgent ? "alert" : "status"}
@@ -285,6 +290,20 @@ export function Slate(): ReactElement {
   // held because its changes could be neither saved nor kept on this device.
   const [leaving, setLeaving] = useState(false);
   const [held, setHeld] = useState<{ readonly destination: string; readonly go: () => void } | null>(null);
+  // A Dismiss takes its own key away with the notice (or with its line of the
+  // notice), and focus on it would fall to the page: it goes to the save
+  // status instead, which says where saving now stands (ruling (1) on #388,
+  // delta review U1 and T2). Only when focus was on that key: a notice put
+  // away while the person is elsewhere takes nothing from them.
+  const statusRef = useRef<HTMLElement>(null);
+  const [focusFrom, setFocusFrom] = useState<Element | null>(null);
+  useLayoutEffect(() => {
+    if (focusFrom === null) return;
+    setFocusFrom(null);
+    const at = document.activeElement;
+    if (focusFrom.isConnected || (at !== null && at !== document.body)) return;
+    statusRef.current?.focus();
+  }, [focusFrom]);
 
   const { saveConflict: conflict } = facts;
   const save = slateSaveState({
@@ -390,12 +409,11 @@ export function Slate(): ReactElement {
       going?.go();
       return;
     }
-    if (id === "dismiss") {
-      useEditorStore.getState().dismissRefusedClears();
-      return;
-    }
-    if (id === "dismiss-note") {
-      useEditorStore.setState({ leftBehind: null });
+    if (id === "dismiss" || id === "dismiss-note") {
+      const at = document.activeElement;
+      if (at !== null && at.closest(`.${SLATE_NOTICE_CLASS}`) !== null) setFocusFrom(at);
+      if (id === "dismiss") useEditorStore.getState().dismissRefusedClears();
+      else useEditorStore.setState({ leftBehind: null });
       return;
     }
     const editor = useEditorStore.getState();
@@ -463,6 +481,7 @@ export function Slate(): ReactElement {
         menuOpen={menu.open}
         menuId={menu.panelId}
         titleRef={menu.triggerRef}
+        statusRef={statusRef}
         onMenu={menu.toggle}
         onAction={onAction}
         busy={busy}

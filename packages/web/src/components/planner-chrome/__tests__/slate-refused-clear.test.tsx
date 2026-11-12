@@ -255,3 +255,171 @@ describe("the slate's notice of a refused clear of a note (ruling R1(b) on #388)
     expect(noteHeldOn(store(), TABLE_7)).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Delta review of #388 at 33a8e0ad, U1 and T2 (ruling (1)): the Dismiss key
+// goes with the notice it puts away, and focus fell to <body>, so a keyboard
+// or screen-reader user lost their place. Focus now goes to the slate's save
+// status, which says where saving stands, and only when it was in the notice.
+// ---------------------------------------------------------------------------
+
+/** The page's Tab stops in document order, as a browser takes them (nothing here has a positive tabindex). */
+function tabStops(): HTMLElement[] {
+  return [...document.body.querySelectorAll<HTMLElement>("*")].filter((element) => element.tabIndex >= 0
+    && !(element instanceof HTMLButtonElement && element.disabled));
+}
+
+/** Tab, as a browser moves focus on it: jsdom moves none, so this does what the browser would. */
+function pressTab(): void {
+  const from = document.activeElement instanceof HTMLElement ? document.activeElement : document.body;
+  fireEvent.keyDown(from, { key: "Tab", code: "Tab" });
+  const stops = tabStops();
+  const next = stops[stops.indexOf(from) + 1] ?? stops[0];
+  next?.focus();
+  fireEvent.keyUp(next ?? document.body, { key: "Tab", code: "Tab" });
+}
+
+/** Tab until the key named `name` has focus; it must be reached by Tab alone. */
+function tabTo(name: string): HTMLElement {
+  for (let stop = 0; stop < 30; stop += 1) {
+    pressTab();
+    const at = document.activeElement;
+    if (at instanceof HTMLButtonElement && at.textContent === name) return at;
+  }
+  throw new Error(`Tab never reached ${name}`);
+}
+
+/** Enter on the focused key, as a browser takes it: its keydown, then the press it makes (jsdom makes none). */
+function pressEnter(): void {
+  const on = document.activeElement;
+  if (!(on instanceof HTMLElement)) throw new Error("nothing has focus");
+  act(() => {
+    fireEvent.keyDown(on, { key: "Enter", code: "Enter" });
+    if (on instanceof HTMLButtonElement) on.click();
+    fireEvent.keyUp(on.isConnected ? on : document.body, { key: "Enter", code: "Enter" });
+  });
+}
+
+/** The slate's save status, where focus goes after a Dismiss. */
+function saveStatus(): HTMLElement {
+  const status = document.querySelector<HTMLElement>(".pc-slate__status");
+  if (status === null) throw new Error("no save status");
+  return status;
+}
+
+const TABLE_8 = "0b0b0b0b-0000-4000-8000-000000000008";
+const REFUSED_CLEAR_8 = "Table 8's note was not removed: it was changed somewhere else, and that note cannot be shown here.";
+
+function table8(marks: ObjectMetadata = {}): PlacedObject {
+  return placed(TABLE_8, { displayLabel: "Table 8", ...marks }, 4);
+}
+
+/**
+ * Own notes on Tables 7 and 8, both confirmed. The maker rewrites `rewritten`
+ * (a newer version); the person does `change` and moves the chair, and the
+ * save meets that version, which says only that the rewritten tables hold notes.
+ */
+async function theyRewriteTables(server: PlanOnServer, rewritten: readonly string[], change: () => void): Promise<void> {
+  for (const id of rewritten) server.notes.set(id, THEIRS);
+  server.revision += 1;
+  const marked = (id: string): ObjectMetadata => (rewritten.includes(id) || store().baseObjects.find((object) => object.id === id)?.noteHeld === true ? { noteHeld: true } : {});
+  vi.mocked(configApi.getPublicConfig).mockResolvedValue(plan([placed(A), table7(marked(TABLE_7)), table8(marked(TABLE_8))], server.revision));
+  change();
+  store().updateObject(A, { positionX: store().objects.find((object) => object.id === A)?.positionX === 3 ? 4 : 3 });
+  expect(await store().saveToServer(false)).toBe(false);
+  expect(store().saveConflict?.currentRevision).toBe(server.revision);
+}
+
+async function ownNotesOnTablesSevenAndEight(server: PlanOnServer): Promise<void> {
+  serveNotesAsTheApiDoes(server, placed);
+  vi.mocked(configApi.getPublicConfig).mockResolvedValue(plan([placed(A), table7(), table8()], server.revision));
+  await store().loadConfiguration(PLAN, false);
+  store().setObjectNotes(TABLE_7, MINE);
+  store().setObjectNotes(TABLE_8, "TEST ONLY wheelchair space");
+  expect(await store().saveToServer(false)).toBe(true);
+}
+
+describe("where focus goes when the slate's Dismiss puts a refused clear away (ruling (1) on #388)", () => {
+  it("goes to the save status when the notice goes, never to the page; a second refused clear brings the notice and its Dismiss back", async () => {
+    const server: PlanOnServer = { revision: 4, notes: new Map() };
+    await ownNotesOnTablesSevenAndEight(server);
+    await theyRewriteTables(server, [TABLE_7], () => { store().setObjectNotes(TABLE_7, ""); });
+    openSlate();
+    await act(async () => { expect(await store().keepMine(false)).toBe(false); });
+    expect(within(screen.getByRole("alert")).getByText(REFUSED_CLEAR)).toBeTruthy();
+
+    const dismiss = tabTo("Dismiss");
+    expect(dismiss.closest(".pc-notice")).not.toBeNull();
+    pressEnter();
+    expect(screen.queryByText(REFUSED_CLEAR)).toBeNull();
+    expect(document.activeElement).not.toBe(document.body);
+    expect(document.activeElement).toBe(saveStatus());
+    expect(saveStatus().textContent).toBe("Saved");
+
+    // The maker rewrites Table 8 too; the person clears it, and Keep mine is refused that clear.
+    await act(async () => { await theyRewriteTables(server, [TABLE_8], () => { store().setObjectNotes(TABLE_8, ""); }); });
+    await act(async () => { expect(await store().keepMine(false)).toBe(false); });
+    const back = screen.getByRole("alert");
+    expect(within(back).getByText(REFUSED_CLEAR_8)).toBeTruthy();
+    expect(within(back).getByRole("button", { name: "Dismiss" })).toBeTruthy();
+    tabTo("Dismiss");
+    pressEnter();
+    expect(document.activeElement).toBe(saveStatus());
+    expect(server.notes.get(TABLE_8)).toBe(THEIRS);
+  });
+
+  it("goes to the save status when the API's refusal of the person's words stays and only the Dismiss key goes", async () => {
+    const server: PlanOnServer = { revision: 4, notes: new Map() };
+    await ownNotesOnTablesSevenAndEight(server);
+    // Both rewritten: the person clears Table 7 and writes over Table 8.
+    await theyRewriteTables(server, [TABLE_7, TABLE_8], () => {
+      store().setObjectNotes(TABLE_7, "");
+      store().setObjectNotes(TABLE_8, "TEST ONLY by the stage");
+    });
+    openSlate();
+    await act(async () => { expect(await store().keepMine(false)).toBe(false); });
+    expect(screen.getByRole("alert").textContent).toContain(NOTE_HELD_MESSAGE);
+    expect(screen.getByRole("alert").textContent).toContain(REFUSED_CLEAR);
+
+    tabTo("Dismiss");
+    pressEnter();
+    // The words refusal stands, without its Dismiss; focus is not left on the page.
+    const notice = screen.getByRole("alert");
+    expect(notice.textContent).toContain(NOTE_HELD_MESSAGE);
+    expect(notice.textContent).not.toContain(REFUSED_CLEAR);
+    expect(within(notice).queryByRole("button", { name: "Dismiss" })).toBeNull();
+    expect(document.activeElement).toBe(saveStatus());
+  });
+
+  it("never takes focus from someone typing elsewhere when the notice is put away", async () => {
+    const server: PlanOnServer = { revision: 4, notes: new Map() };
+    await ownNotesOnTablesSevenAndEight(server);
+    await theyRewriteTables(server, [TABLE_7], () => { store().setObjectNotes(TABLE_7, ""); });
+    render(<input aria-label="TEST ONLY elsewhere" />);
+    openSlate();
+    await act(async () => { expect(await store().keepMine(false)).toBe(false); });
+
+    const field = screen.getByRole("textbox", { name: "TEST ONLY elsewhere" });
+    field.focus();
+    // A press that takes no focus (a pointer, on some browsers) puts the notice away while the person types.
+    act(() => { within(screen.getByRole("alert")).getByRole("button", { name: "Dismiss" }).click(); });
+    expect(screen.queryByText(REFUSED_CLEAR)).toBeNull();
+    expect(document.activeElement).toBe(field);
+  });
+
+  it("goes to the save status when the next layout's note of a refused clear is dismissed (delta review S1)", () => {
+    act(() => {
+      useEditorStore.setState({
+        configId: PLAN,
+        leftBehind: { configId: "0f0f0f0f-0000-4000-8000-000000000002", roomName: "Saloon", kept: null, savesOnReturn: false, notRemoved: REFUSED_CLEAR },
+      });
+    });
+    openSlate();
+    expect(document.body.textContent).toContain(REFUSED_CLEAR);
+    tabTo("Dismiss");
+    pressEnter();
+    expect(document.body.textContent).not.toContain(REFUSED_CLEAR);
+    expect(store().leftBehind).toBeNull();
+    expect(document.activeElement).toBe(saveStatus());
+  });
+});
