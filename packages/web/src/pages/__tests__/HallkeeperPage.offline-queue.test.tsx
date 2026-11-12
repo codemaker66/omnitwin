@@ -163,8 +163,20 @@ function checksAnswer(checkedRows: readonly string[], scope: { eventId: string |
   return new Response(JSON.stringify({ data: { configId: CONFIG_A, ...scope, checked } }), { status: 200 });
 }
 
-/** The page is shown again: the phone is unlocked, or the tab comes to the front. */
-function showAgain(): void {
+/**
+ * The page is shown again: the phone is unlocked, or the tab comes to the front.
+ *
+ * One turn of the event loop passes first. The page hears this through
+ * listeners its effects attach, and React runs a commit's effects a turn later
+ * whenever that commit's task ran past the scheduler's 5 ms. A test resumed
+ * the moment a row appears can be ahead of them, and an event sent then
+ * reaches nobody: the next read is a whole refresh away, long after the wait
+ * has given up (CI, 11 November 2026: "expected 1 to be greater than 1").
+ * HallkeeperPage.release.test.tsx meets the same gap in comeBackOnline, by
+ * sending until one lands; here each case needs exactly one read, so it waits.
+ */
+async function showAgain(): Promise<void> {
+  await act(async () => { await new Promise((resolve) => { setTimeout(resolve, 0); }); });
   act(() => { document.dispatchEvent(new Event("visibilitychange")); });
 }
 
@@ -400,7 +412,7 @@ describe("an open sheet keeps up with the shared checks", () => {
     await row(false);
 
     server.set(CONFIG_A, ROW_KEY, true);
-    showAgain();
+    await showAgain();
     await row(true);
 
     server.set(CONFIG_A, OTHER_ROW_KEY, true);
@@ -423,7 +435,7 @@ describe("an open sheet keeps up with the shared checks", () => {
     } finally {
       outOfView.mockRestore();
     }
-    showAgain();
+    await showAgain();
     await row(true);
   });
 
@@ -440,7 +452,7 @@ describe("an open sheet keeps up with the shared checks", () => {
     // ticked the lectern.
     hold = true;
     const readsBefore = server.reads();
-    showAgain();
+    await showAgain();
     await waitFor(() => { expect(server.reads()).toBeGreaterThan(readsBefore); });
     fireEvent.click(await row(false));
     server.set(CONFIG_A, OTHER_ROW_KEY, true);
@@ -463,7 +475,7 @@ describe("an open sheet keeps up with the shared checks", () => {
 
     hold = true;
     const readsBefore = server.reads();
-    showAgain();
+    await showAgain();
     await waitFor(() => { expect(server.reads()).toBeGreaterThan(readsBefore); });
     fireEvent.click(await row(false));
     await waitFor(() => { expect(server.ticked(CONFIG_A)).toBe(true); });
@@ -475,7 +487,7 @@ describe("an open sheet keeps up with the shared checks", () => {
     expect((await row(true)).getAttribute("aria-checked")).toBe("true");
 
     // The next read agrees with the hallkeeper.
-    showAgain();
+    await showAgain();
     await settle();
     expect((await row(true)).getAttribute("aria-checked")).toBe("true");
   });
@@ -492,7 +504,7 @@ describe("ticks still waiting to be sent stand on the sheet", () => {
     expect(server.ticked(CONFIG_A)).toBe(false);
 
     const readsBefore = server.reads();
-    showAgain();
+    await showAgain();
     await waitFor(() => { expect(server.reads()).toBeGreaterThan(readsBefore); });
     await settle();
     expect((await row(true)).getAttribute("aria-checked")).toBe("true");
@@ -520,7 +532,7 @@ describe("ticks still waiting to be sent stand on the sheet", () => {
 
     linked = true;
     const readsBefore = server.reads();
-    showAgain();
+    await showAgain();
     await waitFor(() => { expect(server.reads()).toBeGreaterThan(readsBefore); });
     await settle();
     expect((await row(false)).getAttribute("aria-checked")).toBe("false");
