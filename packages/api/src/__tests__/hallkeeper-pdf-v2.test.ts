@@ -227,7 +227,7 @@ describe("section rules", () => {
     const base = weddingSheet();
     const notes = "Keep the north aisle clear for the photographer between courses and check the candles before service. ".repeat(30).trim();
     const sheet = { ...base, instructions: { ...(base.instructions ?? EMPTY_INSTRUCTIONS), specialInstructions: notes } };
-    expectRulesHeadText(await sweep((flow) => { setupPage(flow, sheet, brief(flow, sheet)); }));
+    expectRulesHeadText(await sweep((flow) => { setupPage(flow, sheet, "v1", brief(flow, sheet)); }));
   }, 60_000);
 
   it("sets page 1's two columns from any height, with no stray rule", async () => {
@@ -237,7 +237,7 @@ describe("section rules", () => {
 
   it("heads the setup's steps with the rail, wherever the setup starts", async () => {
     const sheet = weddingSheet();
-    expectRulesHeadText(await sweep((flow) => { setupPage(flow, sheet); }));
+    expectRulesHeadText(await sweep((flow) => { setupPage(flow, sheet, "v1"); }));
   }, 60_000);
 
   it("heads Martyn's Law, whether it fits a page or runs on", async () => {
@@ -655,6 +655,23 @@ describe("A, then D (T-696): the brief with the room, then the setup to tick", (
     expect(second.indexOf("Guests in")).toBeLessThan(second.indexOf("Staging Deck"));
   });
 
+  it("heads the setup's own page with the event, its guests and whether this copy is approved", async () => {
+    const second = textOf(pdfPages(await render())[1] ?? []);
+    let at = 0;
+    for (const words of ["Mackenzie–Ross wedding breakfast", "Saturday 24 October · Grand Hall · 120 guests · Dinner rounds",
+      "Approved by Fiona Grant · v3, issued 22 Oct 16:12, printed 24 Oct 07:42", "SETUP, IN ORDER"]) {
+      const found = second.indexOf(words, at);
+      expect(found, words).toBeGreaterThanOrEqual(at);
+      at = found + words.length;
+    }
+  });
+
+  it("warns on the setup's own page too when the copy is a draft", async () => {
+    const pages = pdfPages(await generateSheetPdfV2(await withPaperCheck(boardMeetingSheet(), false)));
+    expect(pages).toHaveLength(2);
+    expect(textOf(pages[1] ?? [])).toContain("Draft, printed 24 Oct 07:05 · not yet approved. Check with the duty manager before setting up.");
+  });
+
   it("keeps what to keep in view and who to call beside the steps on page 2", async () => {
     const second = pdfPages(await render())[1] ?? [];
     const keep = second.find((line) => line.text === "KEEP IN VIEW");
@@ -677,12 +694,12 @@ describe("A, then D (T-696): the brief with the room, then the setup to tick", (
     const first = textOf(pages[0] ?? []);
     expect(first.indexOf("Keep the north aisle clear for the photographer.")).toBeGreaterThan(first.indexOf("THE DAY, IN ORDER"));
     expect(first).toContain("Florist unloads at the service door.");
-    expect(first).not.toContain("Printed with the setup");
+    expect(first).not.toContain("above the setup's steps");
   });
 
   it("opens the setup with the planner's words when page 1 is full, and page 1 says where they are", async () => {
     const [first, second] = pdfPages(await render()).map((page) => textOf(page));
-    expect(first).toContain("FROM THE PLANNER Printed with the setup, before its first step.");
+    expect(first).toContain("FROM THE PLANNER On page 2, above the setup's steps.");
     expect(first).not.toContain("Petals only on the stairs");
     let at = 0;
     for (const words of ["Guests in", "FROM THE PLANNER", "Petals only on the stairs", "ACCESS AND LOAD-IN", "Band's van leaves before 12:00", "Staging Deck"]) {

@@ -95,19 +95,30 @@ function drawQr(doc: Doc, rows: readonly string[], x: number, y: number, size: n
   doc.fill("#000000").restore();
 }
 
+/** "Saturday 24 October · Grand Hall · Dinner rounds", with the guest count when asked for. */
+function ledeWords(sheet: HallkeeperSheetV2, withGuests: boolean): string {
+  const when = sheet.timing === null ? "Date not set" : longDay(sheet.timing.eventStart, sheet.venue.timezone);
+  const count = sheet.config.guestCount;
+  const guests = withGuests && count > 0 ? `${String(count)} ${count === 1 ? "guest" : "guests"}` : null;
+  return [when, sheet.space.name, guests, layoutWords(sheet.config.layoutStyle)].filter((part): part is string => part !== null).join(" · ");
+}
+
+/** Who approved this copy and which copy it is; before approval, that it is a draft. */
+function statusOf(sheet: HallkeeperSheetV2, copyLine: string): { readonly text: string; readonly style: TextStyle } {
+  return sheet.approval === null
+    ? { text: `${copyLine} · not yet approved. Check with the duty manager before setting up.`, style: TYPE.statusAlert }
+    : { text: `Approved by ${sheet.approval.approverName} · ${copyLine}`, style: TYPE.status };
+}
+
 export function header(flow: Flow, sheet: HallkeeperSheetV2, marks: CopyMarks): void {
   const { doc } = flow;
   const textW = W - QR_SIZE - 18;
   const top = flow.y;
-  const timeZone = sheet.venue.timezone;
   drawLine(doc, TYPE.overline, oneLine(doc, TYPE.overline, `Hallkeeper sheet · ${sheet.venue.name}`, textW), X, top);
   let y = drawBlock(doc, TYPE.title, sheet.config.name, X, top + 11, textW);
-  const when = sheet.timing === null ? "Date not set" : longDay(sheet.timing.eventStart, timeZone);
-  y = drawBlock(doc, TYPE.lede, `${when} · ${sheet.space.name} · ${layoutWords(sheet.config.layoutStyle)}`, X, y + 3, textW);
-  const status = sheet.approval === null
-    ? `${marks.copyLine} · not yet approved. Check with the duty manager before setting up.`
-    : `Approved by ${sheet.approval.approverName} · ${marks.copyLine}`;
-  y = drawBlock(doc, sheet.approval === null ? TYPE.statusAlert : TYPE.status, status, X, y + 6, textW);
+  y = drawBlock(doc, TYPE.lede, ledeWords(sheet, false), X, y + 3, textW);
+  const status = statusOf(sheet, marks.copyLine);
+  y = drawBlock(doc, status.style, status.text, X, y + 6, textW);
   if (marks.qr !== null) {
     y = drawBlock(doc, TYPE.small, marks.caption, X, y + 2, textW);
     drawQr(doc, marks.qr, X + W - QR_SIZE, top - 2, QR_SIZE);
@@ -510,17 +521,19 @@ function notesFlowingHeight(doc: Doc, parts: BriefParts): number {
   return parts.notes.reduce((sum, [, text]) => sum + 13 + blockHeight(doc, TYPE.paragraph, text, W) + 8, 0) + 10;
 }
 
-const NOTES_WITH_SETUP = "Printed with the setup, before its first step.";
-
-/** Where the planner's notes would stand on page 1, saying where they are instead. */
-function notesPointerUnit(doc: Doc, parts: BriefParts, x: number, width: number): Unit {
+/**
+ * Where the planner's notes would stand on page 1, saying where they are
+ * instead: on the page the setup opens, when that page is already known.
+ */
+function notesPointerUnit(doc: Doc, parts: BriefParts, x: number, width: number, page: number | null): Unit {
   const heading = parts.notes[0]?.[0] ?? "From the planner";
+  const where = page === null ? "With the setup, above its steps." : `On page ${String(page)}, above the setup's steps.`;
   return {
-    height: 13 + blockHeight(doc, TYPE.bodyDim, NOTES_WITH_SETUP, width),
+    height: 13 + blockHeight(doc, TYPE.bodyDim, where, width),
     before: 14,
     draw: (y) => {
       drawLine(doc, TYPE.overline, heading, x, y);
-      drawBlock(doc, TYPE.bodyDim, NOTES_WITH_SETUP, x, y + 13, width);
+      drawBlock(doc, TYPE.bodyDim, where, x, y + 13, width);
     },
   };
 }
@@ -551,10 +564,13 @@ export function brief(flow: Flow, sheet: HallkeeperSheetV2): boolean {
   const deferred = notes.length > 0 && !beside && !below;
   if (beside) left.push(...notes);
   if (deferred) {
-    // The pointer takes whichever column still has room for it on this page.
-    const pointer = notesPointerUnit(doc, parts, X, leftW);
-    if (leftH + unitsHeight([pointer]) <= flow.room) left.push(pointer);
-    else if (rightH + unitsHeight([pointer]) <= flow.room) right.push(notesPointerUnit(doc, parts, rightX, rightW));
+    // When both columns end on this page, the setup opens the next one. The
+    // pointer takes whichever column still has room for it on this page.
+    const next = doc.bufferedPageRange().count + 1;
+    const pointerH = unitsHeight([notesPointerUnit(doc, parts, X, leftW, next)]);
+    const page = Math.max(leftH + pointerH, rightH) <= flow.room ? next : null;
+    if (leftH + pointerH <= flow.room) left.push(notesPointerUnit(doc, parts, X, leftW, page));
+    else if (rightH + pointerH <= flow.room) right.push(notesPointerUnit(doc, parts, rightX, rightW, page));
   }
   flow.lanes([left, right]);
   flow.y += 14;
@@ -907,7 +923,24 @@ const SPILL_SHARE = 0.4;
  * most of that page empty, the setup starts there instead of a page later. A
  * layout with nothing placed says so where it stands instead.
  */
-export function setupPage(flow: Flow, sheet: HallkeeperSheetV2, plannerNotes = false): void {
+/**
+ * The head of the setup's own page, for the crew handed it alone: which
+ * event, when, where and for how many, and whether this copy is approved.
+ * Page 1 keeps the paper check's code; every page's footer names the copy.
+ */
+function setupHeader(flow: Flow, sheet: HallkeeperSheetV2, copyLine: string): void {
+  const { doc } = flow;
+  const top = flow.y;
+  drawLine(doc, TYPE.overline, oneLine(doc, TYPE.overline, `Hallkeeper sheet · ${sheet.venue.name}`, W), X, top);
+  let y = drawBlock(doc, TYPE.runningTitle, sheet.config.name, X, top + 11, W);
+  y = drawBlock(doc, TYPE.lede, ledeWords(sheet, true), X, y + 2, W);
+  const status = statusOf(sheet, copyLine);
+  y = drawBlock(doc, status.style, status.text, X, y + 4, W);
+  hairline(doc, X, y + 8, X + W, INK.ruleStrong, 0.7);
+  flow.y = y + 20;
+}
+
+export function setupPage(flow: Flow, sheet: HallkeeperSheetV2, copyLine: string, plannerNotes = false): void {
   const { doc } = flow;
   const steps = sheetSetupSteps(sheet);
   if (steps.length === 0) {
@@ -928,8 +961,12 @@ export function setupPage(flow: Flow, sheet: HallkeeperSheetV2, plannerNotes = f
     return;
   }
   const spilled = doc.bufferedPageRange().count > 1 && flow.y - flow.top <= flow.pageRoom * SPILL_SHARE;
-  if (spilled) ruleAbove(flow);
-  else if (flow.y > flow.top) flow.newPage();
+  if (spilled) {
+    ruleAbove(flow);
+  } else {
+    if (flow.y > flow.top) flow.newPage();
+    setupHeader(flow, sheet, copyLine);
+  }
   progressRail(flow, sheet, steps);
   // The planner's notes page 1 had no room for: across the page, before the first step.
   if (plannerNotes) notesFlowing(flow, briefParts(sheet));

@@ -69,7 +69,7 @@ export async function generateSheetPdfV2(data: HallkeeperSheetV2): Promise<Buffe
       header(flow, data, marks);
       facts(flow, data);
       const plannerNotesLeft = brief(flow, data);
-      setupPage(flow, data, plannerNotesLeft);
+      setupPage(flow, data, marks.copyLine, plannerNotesLeft);
       signOff(flow);
       martynsLaw(flow, data);
       footers(doc, data, marks.copyLine);

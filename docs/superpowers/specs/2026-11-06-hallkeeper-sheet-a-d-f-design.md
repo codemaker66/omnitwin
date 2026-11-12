@@ -65,7 +65,17 @@ planner's words. The build keeps every fact and changes the arrangement:
   rail: Keep in view is already on that page. A one-page sheet stays one page.
 - **When the brief itself runs onto page 2** and fills less than 40% of it, the setup starts there after a rule,
   rather than leaving most of a page empty and starting on page 3.
+- **The setup's own page opens with a head** for the crew handed it alone: the event, its date, room, guest count
+  and layout, and the copy's approval line, with a draft's warning in brick. The blind review of the real page 2
+  found these only in the footer (glance 6 and 7 against the study's 9) and both testers asked for this strip.
+  With it, the page 2 re-test scored 8 / 8 / 8.5 (calm / glance / finish). Page 1 keeps the paper check's code.
+- **Page 1's pointer names the page** ("On page 2, above the setup's steps.") when both columns end on page 1, so
+  the setup's page is known. Both page 1 testers found the first wording, "Printed with the setup, before its
+  first step.", vague.
 - **The rail's contact** shows the name, role and phone a crew calls; the email stays with the contact on page 1.
+- **Next (not in PR 1):** study D sets the chairs as their own tick line in Furniture ("120 Chiavari chairs · 110
+  at the rounds · 10 at the top table"). Both page 2 re-testers asked for a chair total. The setup rules fold
+  seated chairs into their tables and are shared with the screen's setup list, so the line changes both.
 - **Notes on the plan** that no setup line carries are listed after the last step under their numbers, so every
   number on the plan can still be looked up (the old legend's guarantee). The manifest normally carries each note
   under its item.

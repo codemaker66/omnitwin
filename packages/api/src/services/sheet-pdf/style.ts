@@ -62,6 +62,8 @@ export const TYPE = {
   overlineAccent: { face: "Inter-SemiBold", size: 6.6, color: INK.accent, tracking: 0.85, upper: true },
   overlineAlert: { face: "Inter-SemiBold", size: 6.6, color: INK.alert, tracking: 0.85, upper: true },
   title: { face: "Newsreader-Regular", size: 25, color: INK.primary },
+  /** The event's name heading the setup's own page: smaller than page 1's title. */
+  runningTitle: { face: "Newsreader-Regular", size: 18, color: INK.primary },
   lede: { face: "Inter-Regular", size: 9.5, color: INK.secondary },
   status: { face: "Inter-Medium", size: 7.8, color: INK.secondary, lineGap: 1 },
   statusAlert: { face: "Inter-Medium", size: 7.8, color: INK.alert, lineGap: 1 },
