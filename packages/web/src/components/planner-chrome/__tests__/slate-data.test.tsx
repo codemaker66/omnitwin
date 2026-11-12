@@ -48,6 +48,8 @@ describe("the slate's event, stored without a name (the event-name ruling)", () 
     mocks.getVenue.mockResolvedValue({ id: VENUE, timezone: "Europe/London", spaces: [] });
     const { result } = renderHook(() => useSlateAudience(), { wrapper });
     await waitFor(() => { expect(result.current.event?.name).toBe("Wedding, 14 March 2027"); });
+    // The slate's day and its Diary link read the zone the name was read on (B3).
+    expect(result.current.event?.timeZone).toBe("Europe/London");
   });
 
   it("is named by its occasion and day for the client", async () => {

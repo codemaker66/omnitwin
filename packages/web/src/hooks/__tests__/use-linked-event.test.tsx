@@ -108,6 +108,7 @@ describe("useLinkedEvent", () => {
     await waitFor(() => { expect(result.current.status).toBe("loaded"); });
     expect(result.current.eventName).toBe("Spring Wedding");
     expect(spacesApi.getVenue).not.toHaveBeenCalled();
+    expect(result.current.timeZone).toBeNull();
   });
 
   // An event stored without a name is called by its occasion and its venue's
@@ -129,6 +130,8 @@ describe("useLinkedEvent", () => {
       expect(spacesApi.getVenue).toHaveBeenCalledWith(fakeGraph.event.venueId);
       // The graph keeps the name as stored.
       expect(result.current.graph?.event.name).toBe("");
+      // The zone the name's day was read on, for the slate's day (B3).
+      expect(result.current.timeZone).toBe("America/New_York");
     });
 
     it("is named on the house's clock when the venue cannot be read, and still loads", async () => {
@@ -137,6 +140,16 @@ describe("useLinkedEvent", () => {
       const { result } = renderHook(() => useLinkedEvent(), { wrapper: wrapperFor(`/plan/cfg-1?eventId=${fakeGraph.event.id}`) });
       await waitFor(() => { expect(result.current.status).toBe("loaded"); });
       expect(result.current.eventName).toBe("Wedding, 15 March 2027");
+      expect(result.current.timeZone).toBeNull();
+    });
+
+    it("is named on the house's clock when the venue's zone is one no clock knows", async () => {
+      eventsApi.getEventPhaseGraph.mockResolvedValue(unnamed);
+      spacesApi.getVenue.mockResolvedValue(venueIn("Nowhere/Never_Land"));
+      const { result } = renderHook(() => useLinkedEvent(), { wrapper: wrapperFor(`/plan/cfg-1?eventId=${fakeGraph.event.id}`) });
+      await waitFor(() => { expect(result.current.status).toBe("loaded"); });
+      expect(result.current.eventName).toBe("Wedding, 15 March 2027");
+      expect(result.current.timeZone).toBeNull();
     });
 
     // The venue read is a second wait after the graph arrives, so the request
