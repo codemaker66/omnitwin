@@ -890,6 +890,14 @@ describe("the client's day (goal 19 S6)", () => {
     expect(buildClientRibbonDay({ ...base, own: null, draft: { startMs: T("18:00"), endMs: T("23:00"), title: "" }, eventName: "" })?.self.title).toBe("Your booking");
   });
 
+  it("names another of the client's bookings stored without a title by its event, and as theirs when the event has no name (API-9)", () => {
+    const untitled = spans.map((span) => (span.kind === "yours" && span.bookingId === OTHER_OWN_ID ? { ...span, title: "" } : span));
+    const ghostTitle = (eventName: string): string | undefined =>
+      buildClientRibbonDay({ ...base, spans: untitled, eventName })?.ghosts.find((ghost) => ghost.id === OTHER_OWN_ID)?.title;
+    expect(ghostTitle("Fraser dinner")).toBe("Fraser dinner");
+    expect(ghostTitle("")).toBe("Your booking");
+  });
+
   it("draws the venue's turnaround on both sides of every booked span, and none when the venue has no guideline", () => {
     const day = buildClientRibbonDay(base);
     expect(day?.guidelinesAvailable).toBe(true);

@@ -756,7 +756,7 @@ export function buildClientRibbonDay(input: ClientRibbonDayInput): RibbonDay | n
     if (!overlapsHalfOpen(startMs, endMs, range.fromMs, range.toMs)) return;
     if (span.kind === "yours") {
       if (own !== null && span.bookingId === own.bookingId) return;
-      ghosts.push({ ...slotOf(span.bookingId, span.title, "hold", startMs, endMs), exclusion: "none" });
+      ghosts.push({ ...slotOf(span.bookingId, named(span.title), "hold", startMs, endMs), exclusion: "none" });
       return;
     }
     ghosts.push(

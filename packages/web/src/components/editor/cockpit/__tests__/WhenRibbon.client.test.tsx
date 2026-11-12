@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import type { ClientEventSchedule, RoomDay } from "@omnitwin/types";
 import { ApiError } from "../../../../api/client.js";
@@ -17,6 +17,7 @@ const ROOM = "00000000-0000-4000-8000-0000000000a1";
 const EVENT = "00000000-0000-4000-8000-0000000000e1";
 const CONFIG = "00000000-0000-4000-8000-0000000000f1";
 const OWN = "00000000-0000-4000-8000-0000000000b1";
+const SECOND = "00000000-0000-4000-8000-0000000000b2";
 const MIN = 60_000;
 // 2030-05-10 18:00 in Glasgow (BST).
 const SIX = Date.parse("2030-05-10T17:00:00.000Z");
@@ -114,6 +115,23 @@ describe("the client's When ribbon", () => {
     const ingot = await screen.findByTestId("when-ribbon-ingot");
     expect(ingot.getAttribute("aria-label")).toMatch(/^Fraser dinner, 18:00 – 23:00\. /u);
     expect(ingot.querySelector(".when-ribbon__ingot-title")?.textContent).toBe("Fraser dinner");
+  });
+
+  it("names another booking of the client's event stored without a title by the event, on its bar and in its tooltip (API-9)", async () => {
+    // The room's day returns every live booking of the event as theirs; one
+    // from before #350 can carry "" as its title.
+    const base = schedule({ kind: "hold" });
+    scheduleState.current = { status: "loaded", data: { ...base, event: { ...base.event, name: "Fraser dinner" } }, refresh: vi.fn() };
+    const own = { kind: "yours" as const, bookingId: OWN, title: "Our dinner", startsAt: iso(SIX), endsAt: iso(SIX + 300 * MIN) };
+    const second = { kind: "yours" as const, bookingId: SECOND, title: "", startsAt: "2030-05-10T13:00:00.000Z", endsAt: "2030-05-10T15:00:00.000Z" };
+    getRoomDayMock.mockImplementation((_event: string, query: { day: string }) =>
+      Promise.resolve(roomDay(query.day, query.day === "2030-05-10" ? [BUSY_MORNING, own, second] : [])));
+    renderRibbon();
+    await screen.findByTestId("when-ribbon-ingot");
+    await act(async () => { await new Promise((resolve) => { setTimeout(resolve, 0); }); });
+    const ghosts = screen.getAllByTestId("when-ribbon-ghost");
+    expect(ghosts.map((ghost) => ghost.textContent)).toEqual(["Booked", "Fraser dinner"]);
+    expect(ghosts[1]?.getAttribute("title")).toBe("Fraser dinner · 14:00 – 16:00");
   });
 
   it("every proposal pauses for the question, then goes out as one keyed PUT", async () => {
