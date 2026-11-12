@@ -20,8 +20,9 @@ import { venueRoutes } from "../routes/venues.js";
 const databaseUrl = process.env["VENVIEWER_ONBOARDING_TEST_DATABASE_URL"];
 if (databaseUrl !== undefined) {
   const target = new URL(databaseUrl);
+  // Loopback and this exact name are the safety; any port (CI serves 55476).
   if (!["postgres:", "postgresql:"].includes(target.protocol)
-    || target.hostname !== "127.0.0.1" || target.port !== "55478"
+    || target.hostname !== "127.0.0.1"
     || target.pathname !== "/venviewer_onboarding_test"
     || target.search !== "" || target.hash !== "") {
     throw new Error("Onboarding tests require their explicit isolated loopback database");
@@ -73,7 +74,7 @@ describe.skipIf(databaseUrl === undefined)("managed onboarding on isolated Postg
   }, 120000);
 
   beforeEach(async () => {
-    await pool.query("TRUNCATE onboarding_audit_events, onboarding_projects, workspace_entitlements, workspace_memberships, workspaces, organisations, user_invitations, users, venues");
+    await pool.query("TRUNCATE general_audit_log, onboarding_audit_events, onboarding_projects, workspace_entitlements, workspace_memberships, workspaces, organisations, user_invitations, users, venues");
     await pool.query("INSERT INTO venues(id, name, slug, address) VALUES ($1, 'Existing venue fixture', 'existing-venue', 'Synthetic fixture address'), ($2, 'Other venue fixture', 'other-venue', 'Other synthetic address')", [VENUE, OTHER_VENUE]);
     await pool.query("INSERT INTO users(id, email, name, role, platform_role) VALUES ($1, $2, $3, 'admin', 'admin')", [PLATFORM_ADMIN, platformUser.email, platformUser.name]);
   }, 30000);

@@ -46,6 +46,13 @@ export async function getEventChangeFeed(eventId: string, limit = 50): Promise<C
   return api.get(`/events/${encodeURIComponent(eventId)}/change-feed?${params.toString()}`, ChangeFeedListSchema);
 }
 
+/** The changes to an event that ask for a hallkeeper's acknowledgement and
+ *  have none yet, newest first: the whole set, however many other changes
+ *  have been recorded since. */
+export async function getChangesAwaitingAcknowledgement(eventId: string): Promise<ChangeFeedItem[]> {
+  return api.get(`/events/${encodeURIComponent(eventId)}/changes-awaiting-acknowledgement`, ChangeFeedListSchema);
+}
+
 export async function acknowledgeEventPlanChange(
   eventId: string,
   input: CreateHallkeeperAcknowledgementInput,

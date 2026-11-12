@@ -145,7 +145,7 @@ describe.skipIf(testUrl === undefined)("route atomicity on isolated PostgreSQL",
   it("rejects a delayed anonymous thumbnail write once its preview is claimed", async () => {
     await withBlocker(async (client) => {
       await client.query("SELECT id FROM configurations WHERE id = $1 FOR UPDATE", [CONFIG]);
-      const response = server.inject({ method: "POST", url: `/public/configurations/${CONFIG}/thumbnail`, payload: { thumbnailUrl: "data:image/png;base64,YQ==" } }).then((r) => r);
+      const response = server.inject({ method: "POST", url: `/public/configurations/${CONFIG}/thumbnail`, payload: { thumbnailUrl: "data:image/png;base64,iVBORw0KGgo=" } }).then((r) => r);
       await waitForBlockedQueries(1);
       await client.query("UPDATE configurations SET user_id = $1, is_public_preview = false, visibility = 'private' WHERE id = $2", [USER_A, CONFIG]);
       await client.query("COMMIT");

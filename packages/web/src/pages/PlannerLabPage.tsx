@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactElement } from "react";
 import { advance as advanceFrame, invalidate } from "@react-three/fiber";
-import type { Space } from "@omnitwin/types";
+import { TRADES_HALL_GRAND_HALL_DIMENSIONS, type Space } from "@omnitwin/types";
+import { GRAND_HALL_RENDER_DIMENSIONS } from "../constants/scale.js";
 import { PlannerScene } from "../components/editor/PlannerScene.js";
 import { useEditorStore } from "../stores/editor-store.js";
 import { usePlacementStore } from "../stores/placement-store.js";
@@ -10,6 +11,7 @@ import { useCockpitStore } from "../stores/cockpit-store.js";
 import { useBookmarkStore } from "../stores/bookmark-store.js";
 import { nativeFrameComposer } from "../lib/native-frame-composer.js";
 import { getNativeRenderer } from "../lib/native-renderer.js";
+import { nativePrecompileSettled } from "../lib/native-precompile.js";
 import { getCatalogueItem, getCatalogueItemBySlug } from "../lib/catalogue.js";
 import { usePlannerToolKeys } from "../lib/planner-keymap.js";
 import { plannerChromeRequested } from "../lib/planner-chrome-flag.js";
@@ -66,16 +68,24 @@ function keyState(): LabKeyState {
   };
 }
 
+/** The Grand Hall's row as production stores it: 21.14 × 10.59 × 6.7 m, centred. */
+const LAB_HALL = TRADES_HALL_GRAND_HALL_DIMENSIONS;
+
 const LAB_SPACE: Space = {
   id: "00000000-0000-4000-8000-00000000a11b",
   venueId: "00000000-0000-4000-8000-00000000a11a",
   name: "Grand Hall",
   slug: "grand-hall",
   description: null,
-  widthM: "21",
-  lengthM: "10.5",
-  heightM: "7",
-  floorPlanOutline: [{ x: 0, y: 0 }, { x: 21, y: 0 }, { x: 21, y: 10.5 }, { x: 0, y: 10.5 }],
+  widthM: String(LAB_HALL.width),
+  lengthM: String(LAB_HALL.length),
+  heightM: String(LAB_HALL.height),
+  floorPlanOutline: [
+    { x: -LAB_HALL.width / 2, y: -LAB_HALL.length / 2 },
+    { x: LAB_HALL.width / 2, y: -LAB_HALL.length / 2 },
+    { x: LAB_HALL.width / 2, y: LAB_HALL.length / 2 },
+    { x: -LAB_HALL.width / 2, y: LAB_HALL.length / 2 },
+  ],
   meshUrl: null,
   thumbnailUrl: null,
   sortOrder: 0,
@@ -106,7 +116,8 @@ declare global {
       ready: () => boolean;
       /**
        * Steps the planner's frame loop `frames` times at 60 fps, waiting for the
-       * GPU after each: frames advance even while the page is hidden.
+       * GPU after each: frames advance even while the page is hidden. Each waits
+       * first for any precompile hold to lift, as the view's own frames do.
        */
       advance: (frames?: number) => Promise<void>;
       /**
@@ -263,7 +274,9 @@ export function PlannerLabPage(): ReactElement {
     useEditorStore.setState({ space: LAB_SPACE, configId: "planner-lab" });
     // The drawn hall, not a capture: production keeps captures off.
     useCockpitStore.setState({ layerMode: "mesh" });
-    useRoomDimensionsStore.getState().setDimensions({ width: 21, length: 10.5, height: 7 });
+    // The room the planner sizes from the Grand Hall's geometry (pinned equal
+    // to roomGeometries["Grand Hall"] in constants/__tests__/scale.test.ts).
+    useRoomDimensionsStore.getState().setDimensions(GRAND_HALL_RENDER_DIMENSIONS);
     setReady(true);
     window.__plannerLab = {
       furnish,
@@ -297,6 +310,11 @@ export function PlannerLabPage(): ReactElement {
       advance: async (frames = 30) => {
         const started = performance.now();
         for (let frame = 0; frame < frames; frame++) {
+          // R3F's advance draws through the view's precompile hold, with the
+          // job's target and MRT still set (lib/native-precompile.ts): driven
+          // so, 25 pipelines failed on WebGPU (4 Nov 2026).
+          const native = window.__venPerf === undefined ? null : getNativeRenderer(window.__venPerf.gl);
+          if (native !== null) await nativePrecompileSettled(native);
           // A demand loop draws only what was asked for: ask for every frame.
           invalidate();
           advanceFrame(started + frame * (1000 / 60));

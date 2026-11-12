@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Booking, DiaryCommand, DiaryCommandAck } from "@omnitwin/types";
-import { bookViewing, transitionBooking } from "../diary.js";
+import { bookViewing, createBooking, transitionBooking } from "../diary.js";
 import { _resetTokenGetterForTests } from "../auth-bridge.js";
 import { setDiaryCommandChannel } from "../../pages/diary/lib/diary-command-channel.js";
 
@@ -114,5 +114,23 @@ describe("bookViewing", () => {
     expect(url).toEqual(expect.stringMatching(/\/bookings\/viewings$/u));
     expect(init?.method).toBe("POST");
     expect(typeof init?.body === "string" ? JSON.parse(init.body) as unknown : null).toEqual(input);
+  });
+});
+
+describe("createBooking", () => {
+  it("sends the command id it is given as the Idempotency-Key, so Save again replays a create that landed (hallkeeper-web-8)", async () => {
+    const created: Booking = { ...releasedRow(), kind: "prospect", status: "active", state: "prospect", decisionAt: null, title: "Fraser wedding" };
+    fetchMock.mockImplementation(() => Promise.resolve(new Response(JSON.stringify({ data: created }), { status: 201 })));
+    const input = {
+      venueId: created.venueId, spaceId: created.spaceId, kind: "prospect" as const, title: "Fraser wedding",
+      startsAt: created.startsAt, endsAt: created.endsAt,
+    };
+    const given = "00000000-0000-4000-8000-0000000000f8";
+    await createBooking(input, given);
+    await createBooking(input);
+    const keys = fetchMock.mock.calls.map(([, init]) => new Headers(init?.headers).get("Idempotency-Key"));
+    expect(keys[0]).toBe(given);
+    expect(keys[1]).toMatch(/^[0-9a-f-]{36}$/u);
+    expect(keys[1]).not.toBe(given);
   });
 });

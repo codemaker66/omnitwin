@@ -131,6 +131,7 @@ async function openEvening(page: Page): Promise<{ readonly acknowledgements: str
   });
   await page.route(`${API}/events/${EVENT}/ops-board`, (route) => { json(route, BOARD); });
   await page.route(`${API}/events/${EVENT}/change-feed**`, (route) => { json(route, []); });
+  await page.route(`${API}/events/${EVENT}/changes-awaiting-acknowledgement`, (route) => { json(route, []); });
   await page.route(`${API}/events/${EVENT}/change-acknowledgements**`, (route) => { json(route, []); });
   await page.route(`${API}/events/${EVENT}/mission`, (route) => { json(route, missionBoard()); });
   await page.route(`${API}/event-missions/${MISSION}/timeline**`, (route) => {

@@ -1,13 +1,15 @@
 import type { FastifyInstance } from "fastify";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
-import { AI_BUDGET_REACHED } from "@omnitwin/types";
+import { AI_BUDGET_REACHED, AI_DRAFTS_UNAVAILABLE } from "@omnitwin/types";
 import type { Database } from "../db/client.js";
 import { enquiries } from "../db/schema.js";
 import type { Env } from "../env.js";
 import { authenticate } from "../middleware/auth.js";
+import { AIAccessPolicy } from "../services/ai-access.js";
 import {
   AIAssistantDisabledError,
+  AIDraftsUnavailableError,
   createAIGenerationAdapterFromEnv,
   generateAIDraft,
   type AIGenerationAdapter,
@@ -29,6 +31,10 @@ import { aiDraftVenue } from "../utils/query.js";
 // The call is the venue's (T-656): held to its monthly AI allowance (429
 // AI_BUDGET_REACHED once used, and nothing is sent) and recorded in the AI
 // usage ledger as an enquiry summary.
+//
+// Only a venue the environment switches on for enquiry summaries may ask
+// (C1, services/ai-access.ts). When the provider takes no calls for want of
+// credit, the answer is 503 AI_DRAFTS_UNAVAILABLE.
 // ---------------------------------------------------------------------------
 
 const IdParam = z.object({ id: z.uuid() });
@@ -41,11 +47,14 @@ export async function enquirySummaryDraftRoutes(
     readonly adapter?: AIGenerationAdapter;
     /** Holds each call to its venue's allowance and records it; the venue allowance meter unless given. */
     readonly aiUsage?: AIUsageMeter;
+    /** Which venues and drafts are switched on; the environment's unless a test names one. */
+    readonly access?: AIAccessPolicy;
   },
 ): Promise<void> {
   const { db } = opts;
   const adapter = opts.adapter
     ?? createAIGenerationAdapterFromEnv(opts.env, opts.aiUsage ?? venueAllowanceMeter(db, opts.env, server.log));
+  const access = opts.access ?? AIAccessPolicy.fromEnv(opts.env);
 
   server.post("/:id/summary-draft", { preHandler: [authenticate] }, async (request, reply) => {
     const params = IdParam.safeParse(request.params);
@@ -62,9 +71,10 @@ export async function enquirySummaryDraftRoutes(
     if (enquiry === undefined) {
       return reply.status(404).send({ error: "Enquiry not found", code: "NOT_FOUND" });
     }
-    if (!adapter.status.configured) {
+    const status = access.statusFor(adapter.status, venueId, "enquiry_summary");
+    if (!status.configured) {
       return reply.status(503).send({
-        error: adapter.status.disabledReason ?? "AI assistant is not configured",
+        error: status.disabledReason ?? "AI assistant is not configured",
         code: "AI_ASSISTANT_DISABLED",
       });
     }
@@ -81,6 +91,9 @@ export async function enquirySummaryDraftRoutes(
     } catch (err) {
       if (err instanceof AIAssistantDisabledError) {
         return reply.status(503).send({ error: err.message, code: "AI_ASSISTANT_DISABLED" });
+      }
+      if (err instanceof AIDraftsUnavailableError) {
+        return reply.status(503).send({ error: err.message, code: AI_DRAFTS_UNAVAILABLE });
       }
       if (err instanceof AIBudgetReachedError) {
         return reply.status(429).send({ error: err.message, code: AI_BUDGET_REACHED });
