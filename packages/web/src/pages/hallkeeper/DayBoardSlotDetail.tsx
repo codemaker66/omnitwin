@@ -5,12 +5,14 @@ import {
   describeObservationKind,
   nextObservationKinds,
   occasionLabel,
+  isBookingMoveTitle,
   type BookingKind,
+  type EventAwaitingAcknowledgement,
   type HallkeeperSheetSummary,
   type ObservationKind,
 } from "@omnitwin/types";
 import { getSheetSummary } from "../../api/hallkeeper-summary.js";
-import { formatWallTime } from "../diary/lib/board-time.js";
+import { formatWallDay, formatWallTime } from "../diary/lib/board-time.js";
 import { ActivityIndicator, ActivityStatus } from "../../components/shared/Activity.js";
 import { resolveEventLinkedLayouts, type LinkedLayoutChoice } from "../../lib/event-linked-layouts.js";
 import { roomPhoto } from "../../components/dashboard/enquiries/enquiry-room-photo.js";
@@ -22,10 +24,11 @@ import { StateIcon } from "./DayBoardRooms.js";
 
 // ---------------------------------------------------------------------------
 // The open slot, on the forest decision panel the desks use: the room's
-// photograph, the function, where it stands, what the room was seen doing and
-// the next fact to record (the first offered as the panel's one primary
-// button), the setup sheet and how far it has got, the event, its phases and
-// the requests made against it. The requests surface is Lane 9's and was
+// photograph, the function, where it stands, what changed since the floor
+// last looked (with one "Got it"), what the room was seen doing and the next
+// fact to record (the first offered as the panel's one primary button, unless
+// a change waits to be read), the setup sheet and how far it has got, the
+// event, its phases and the requests made against it. The requests surface is Lane 9's and was
 // drawn for paper, so it sits on an ivory slip laid on the forest.
 // ---------------------------------------------------------------------------
 
@@ -206,8 +209,105 @@ function seenStatus(kind: ObservationKind, outcome: RecordOutcome | "sending" | 
   return `Couldn’t record ${what.toLowerCase()}: ${outcome.message}`;
 }
 
+/** When a change was made: the time today, the day and time before that. */
+function changeWhen(atMs: number, nowMs: number, timeZone: string): string {
+  const time = formatWallTime(atMs, timeZone);
+  return formatWallDay(atMs, timeZone) === formatWallDay(nowMs, timeZone) ? time : `${formatWallDay(atMs, timeZone)}, ${time}`;
+}
+
+/** Who last acknowledged a change here, while it is still today's news. */
+const SEEN_BY_FOR_MS = 12 * 60 * 60 * 1000;
+
+/**
+ * What changed on the slot's event since the floor last looked: each change
+ * with its words before and after, and one "Got it" for all of them, which
+ * puts them in hand for the whole floor.
+ */
+function WhatChanged({ changes, timeZone, nowMs, onAcknowledge, sending, failure, unread }: {
+  readonly changes: EventAwaitingAcknowledgement;
+  /** The last read of what changed failed: what shows is as last read. */
+  readonly unread: boolean;
+  readonly timeZone: string;
+  readonly nowMs: number;
+  /** Null where nothing may be acknowledged (the wall, a role that only reads). */
+  readonly onAcknowledge: (() => void) | null;
+  readonly sending: boolean;
+  readonly failure: string | null;
+}): ReactElement | null {
+  const waiting = changes.changes;
+  const seenRef = useRef<HTMLParagraphElement>(null);
+  const wasSending = useRef(false);
+  // The button leaves with the changes it acknowledged; the keyboard's place
+  // goes to the line that says who has them, not to the document.
+  useEffect(() => {
+    if (wasSending.current && !sending && waiting.length === 0) {
+      const active = document.activeElement;
+      if (active === null || active === document.body) seenRef.current?.focus();
+    }
+    wasSending.current = sending;
+  }, [sending, waiting.length]);
+  const unreadLine = unread
+    ? <p className="dayboard-changes-unread">What changed could not be read just now; this is as last read.</p>
+    : null;
+  if (waiting.length === 0) {
+    const last = changes.lastAcknowledgement;
+    if (last === null || nowMs - Date.parse(last.at) > SEEN_BY_FOR_MS) return unreadLine;
+    return (
+      <p ref={seenRef} className="dayboard-changes-seen" tabIndex={-1}>
+        Changes seen by {last.by}, {changeWhen(Date.parse(last.at), nowMs, timeZone)}.
+      </p>
+    );
+  }
+  return (
+    <section className="dayboard-changes dayboard-detail-section" aria-label="What changed">
+      <h3 className="dayboard-detail-heading">What changed</h3>
+      <ol className="dayboard-changes-list">
+        {waiting.map((change) => {
+          const fromTo = change.beforeSummary !== null && change.afterSummary !== null && change.beforeSummary !== change.afterSummary;
+          // Said once: a Diary move's Was and Now carry its room and exact
+          // hours, so its sentence would only repeat them. Every other change
+          // keeps its sentence, whatever its Was and Now happen to hold.
+          const saysMore = !fromTo || !isBookingMoveTitle(change.title);
+          return (
+            <li key={change.id} className="dayboard-change">
+              <p className="dayboard-change-title">
+                {change.title}<span className="dayboard-change-when"> · {changeWhen(Date.parse(change.createdAt), nowMs, timeZone)}</span>
+              </p>
+              {saysMore && <p className="dayboard-change-summary">{change.summary}</p>}
+              {fromTo && (
+                <dl className="dayboard-change-fromto">
+                  <div><dt>Was</dt><dd>{change.beforeSummary}</dd></div>
+                  <div><dt>Now</dt><dd>{change.afterSummary}</dd></div>
+                </dl>
+              )}
+            </li>
+          );
+        })}
+      </ol>
+      {onAcknowledge !== null && (
+        // Never disabled: a disabled button drops the keyboard's place to the
+        // page, and on a failed send nothing would bring it back.
+        <button
+          type="button"
+          className="dayboard-seen-button is-primary dayboard-changes-ack"
+          aria-busy={sending}
+          aria-disabled={sending}
+          onClick={() => { if (!sending) onAcknowledge(); }}
+        >
+          {sending && <ActivityIndicator size={14} />}
+          {waiting.length === 1 ? "Got it" : `Got all ${String(waiting.length)}`}
+        </button>
+      )}
+      <p className="dayboard-changes-status" aria-live="polite">
+        {failure === null ? "" : `Couldn’t send that: ${failure}. Try again.`}
+      </p>
+      {unreadLine}
+    </section>
+  );
+}
+
 /** The open slot: its sheet, its event, its phases and its requests. */
-export function SlotDetail({ slot, room, venueSlug, timeZone, slotRequests: SlotRequests, observations, onClose, closeLabel }: {
+export function SlotDetail({ slot, room, venueSlug, timeZone, slotRequests: SlotRequests, observations, onClose, closeLabel, changes = null, nowMs = Date.now(), onAcknowledge = null, acknowledging = false, acknowledgeFailure = null, changesUnread = false }: {
   readonly slot: DayBoardSlot;
   readonly room: { readonly id: string; readonly name: string; readonly slug: string };
   readonly venueSlug: string | null;
@@ -218,6 +318,15 @@ export function SlotDetail({ slot, room, venueSlug, timeZone, slotRequests: Slot
   readonly onClose: () => void;
   /** What closing does, in words: back to the requests, or back to the room. */
   readonly closeLabel: string;
+  /** What changed on the slot's event since the floor last looked. */
+  readonly changes?: EventAwaitingAcknowledgement | null;
+  readonly nowMs?: number;
+  /** Acknowledge the waiting changes for the floor; null where none may. */
+  readonly onAcknowledge?: (() => void) | null;
+  readonly acknowledging?: boolean;
+  readonly acknowledgeFailure?: string | null;
+  /** The last read of what changed failed. */
+  readonly changesUnread?: boolean;
 }): ReactElement {
   const occasion = occasionLabel(slot.eventType);
   const photo = venueSlug === null ? null : roomPhoto(venueSlug, room.slug);
@@ -249,6 +358,8 @@ export function SlotDetail({ slot, room, venueSlug, timeZone, slotRequests: Slot
     else seenRef.current?.focus();
   }, [busy]);
   const nextKinds = nextObservationKinds(slot.observed?.kind ?? null);
+  // A change waiting to be read takes the panel's one cream button.
+  const changeFirst = onAcknowledge !== null && (changes?.changes.length ?? 0) > 0;
   const waitingHere = observations?.pendingByBooking.get(slot.bookingId) ?? 0;
   // The latest fact stands as this device's own until the server lists it.
   const latestWaiting = slot.observed !== null && observations !== null
@@ -296,6 +407,19 @@ export function SlotDetail({ slot, room, venueSlug, timeZone, slotRequests: Slot
       {slot.turnaroundWarning !== null ? (
         <p className="dayboard-slot-warning">{slot.turnaroundWarning}</p>
       ) : null}
+      {changes !== null ? (
+        <WhatChanged
+          changes={changes}
+          timeZone={timeZone}
+          nowMs={nowMs}
+          onAcknowledge={onAcknowledge}
+          sending={acknowledging}
+          failure={acknowledgeFailure}
+          unread={changesUnread}
+        />
+      ) : changesUnread && slot.eventId !== null ? (
+        <p className="dayboard-changes-unread">What changed could not be read just now.</p>
+      ) : null}
       {/* What the room was seen doing (S5): the latest fact, and the next
           facts a hallkeeper may record from here. Facts never move a time. */}
       <section ref={seenRef} className="dayboard-seen dayboard-detail-section" aria-label="What the room is doing" tabIndex={-1}>
@@ -307,7 +431,7 @@ export function SlotDetail({ slot, room, venueSlug, timeZone, slotRequests: Slot
               <button
                 key={kind}
                 type="button"
-                className={`dayboard-seen-button${index === 0 ? " is-primary" : ""}`}
+                className={`dayboard-seen-button${index === 0 && !changeFirst ? " is-primary" : ""}`}
                 aria-busy={busy === kind}
                 disabled={busy !== null && busy !== kind}
                 onClick={() => { tap(kind); }}

@@ -185,6 +185,18 @@ describe("the sentence under the title", () => {
     expect(summaryText(boardSummary({ lanes: atRisk.lanes, unowned: [], today: false, nowMs: NOW }) ?? []))
       .toBe("Four bookings across two rooms. Two changeovers are at risk: Grand Hall and Saloon.");
   });
+
+  it("names the rooms with a change to read, after anything at risk and before the requests", () => {
+    const board = deriveDayBoard(response([booking("a", -60, 60)]), NOW, TZ, [request("r1", "a", 7)]);
+    const said = (changed: readonly string[], today = true): string =>
+      summaryText(boardSummary({ lanes: board.lanes, unowned: board.unowned, today, nowMs: NOW, changed }) ?? []);
+    expect(said(["Grand Hall"])).toBe("Grand Hall has a change to read. One request has no one on it, waiting 7 min. One function is live.");
+    expect(said(["Grand Hall", "Saloon"])).toBe("Two rooms have changes to read: Grand Hall and Saloon. One request has no one on it, waiting 7 min. One function is live.");
+    // Past three, the rooms are counted, not listed.
+    expect(said(["A", "B", "C", "D"])).toMatch(/^Four rooms have changes to read\. /u);
+    expect(said(["Grand Hall"], false)).toBe("One booking across one room. Grand Hall has a change to read.");
+    expect(said([])).toBe("One request has no one on it, waiting 7 min. One function is live.");
+  });
 });
 
 describe("a booking that runs for days", () => {

@@ -201,6 +201,44 @@ export const HallkeeperAcknowledgementSchema = z.object({
 }).strict();
 export type HallkeeperAcknowledgement = z.infer<typeof HallkeeperAcknowledgementSchema>;
 
+/**
+ * The Day Board's one read of what waits for the floor: for each event asked
+ * about, the changes that need a hallkeeper's acknowledgement and that nobody
+ * has acknowledged yet (the floor acknowledges as one, as the event-day board
+ * does), and who last acknowledged anything on the event.
+ */
+export const AwaitingAcknowledgementQuerySchema = z.object({
+  eventIds: z.string().max(4000)
+    .transform((value) => value.split(",").map((part) => part.trim()).filter((part) => part.length > 0))
+    .pipe(z.array(EventIdSchema).min(1).max(100)),
+}).strict();
+export type AwaitingAcknowledgementQuery = z.infer<typeof AwaitingAcknowledgementQuerySchema>;
+
+/**
+ * The titles a booking moved in the Diary is recorded under
+ * (api services/booking-move-feed.ts). Its Was and Now carry the room and the
+ * exact hours, so the Day Board says the move with them alone.
+ */
+export const BOOKING_MOVE_TITLES = ["Times moved", "Room changed", "Room and times changed"] as const;
+export type BookingMoveTitle = (typeof BOOKING_MOVE_TITLES)[number];
+
+export function isBookingMoveTitle(title: string): title is BookingMoveTitle {
+  return (BOOKING_MOVE_TITLES as readonly string[]).includes(title);
+}
+
+export const EventAwaitingAcknowledgementSchema = z.object({
+  eventId: EventIdSchema,
+  /** Newest first. */
+  changes: z.array(ChangeFeedItemSchema),
+  lastAcknowledgement: z.object({
+    at: z.iso.datetime(),
+    by: z.string().trim().min(1).max(200),
+    /** Who it was; null for this device's own acknowledgement before the server answers. */
+    byUserId: UserIdSchema.nullable(),
+  }).strict().nullable(),
+}).strict();
+export type EventAwaitingAcknowledgement = z.infer<typeof EventAwaitingAcknowledgementSchema>;
+
 export const RecordEventPlanChangeInputSchema = z.object({
   eventId: EventIdSchema,
   venueId: VenueIdSchema,
