@@ -237,6 +237,38 @@ describe("the ledger", () => {
     await waitFor(() => row(/^Henderson wedding/u));
     expect(screen.getByRole("complementary", { name: "Pipeline overview" }).textContent).not.toContain("once the pipeline is read");
   });
+
+  // Release audit dash-commercial-4: the desk took "now" once, as it opened,
+  // so a desk left open past midnight grouped yesterday's deals while the
+  // sentence above it, read again from the server, counted today's.
+  it("turns the day at the venue's midnight while open, and reads the pipeline again so its sentence counts the same day", async () => {
+    vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
+    // 23:58:30 in Glasgow on Tuesday 14 July 2026 (BST): still 22:58 in UTC,
+    // so the day turns at the venue's midnight, an hour before UTC's.
+    vi.setSystemTime("2026-07-14T22:58:30.000Z");
+    const rows = [
+      deal({ id: "o1", title: "Kerr dinner", nextActionDueAt: "2026-07-14T11:00:00.000Z" }),
+      deal({ id: "o2", title: "Lindsay lunch", nextActionDueAt: "2026-07-15T09:00:00.000Z" }),
+    ];
+    mocks.getPipeline
+      .mockResolvedValueOnce(pipeline({ opportunities: rows, todayTasks: [], due: { overdue: 0, today: 1 } }))
+      .mockResolvedValue(pipeline({ opportunities: rows, todayTasks: [], due: { overdue: 1, today: 1 } }));
+    render(<PipelineDesk />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(groupLabels()).toEqual(["Due today", "This week"]);
+    expect(row(/^Lindsay lunch/u).getAttribute("aria-label")).toContain("due tomorrow");
+    expect(screen.getByTestId("pipeline-summary").textContent).toMatch(/^1 deal has a step due today\./u);
+    expect(screen.getByText("Tuesday 14 July")).toBeDefined();
+
+    // Two minutes on: 00:00:30 on Wednesday 15 July in Glasgow.
+    await act(async () => { await vi.advanceTimersByTimeAsync(120_000); });
+    expect(mocks.getPipeline).toHaveBeenCalledTimes(2);
+    expect(groupLabels()).toEqual(["Overdue", "Due today"]);
+    expect(row(/^Kerr dinner/u).getAttribute("aria-label")).toContain("due yesterday");
+    expect(row(/^Lindsay lunch/u).getAttribute("aria-label")).toContain("due today");
+    expect(screen.getByTestId("pipeline-summary").textContent).toMatch(/^1 deal has a step due today, and 1 is overdue\./u);
+    expect(screen.getByText("Wednesday 15 July")).toBeDefined();
+  });
 });
 
 describe("the open deal", () => {

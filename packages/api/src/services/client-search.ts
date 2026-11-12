@@ -281,6 +281,9 @@ export interface ContactProfile {
   }[];
   readonly proposals: readonly {
     id: string; opportunityId: string | null; title: string; status: string; currentVersion: number; sentAt: Date | null;
+    /** The version the client was last sent (migration 0082); a version
+     *  saved since, while changes are asked for, has not been sent. */
+    sentVersion: number | null;
   }[];
 }
 
@@ -323,6 +326,7 @@ export async function contactProfile(db: Database, contactId: string, venueId: s
     status: proposals.status,
     currentVersion: proposals.currentVersion,
     sentAt: proposals.sentAt,
+    sentVersion: proposals.sentVersion,
   })
     .from(proposals)
     .where(and(inArray(proposals.opportunityId, dealIds), eq(proposals.venueId, row.venueId), isNull(proposals.deletedAt)))

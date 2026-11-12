@@ -23,7 +23,13 @@ import { resolveVerifiedClerkEmailWithFallback } from "../middleware/clerk-email
 import { canOverrideReviewLock } from "../middleware/require-editable-config.js";
 import { emit, subscribe } from "../observability/event-bus.js";
 import { LayoutLiveHub, type LayoutLiveConnection } from "./layout-live.js";
-import { currentAuthority, readCurrentSocketUser, readCurrentSocketUsers } from "./socket-identity.js";
+import {
+  currentAuthority,
+  readCurrentSocketUser,
+  readCurrentSocketUsers,
+  startSignInDeadline,
+  type SocketSignInOptions,
+} from "./socket-identity.js";
 
 const FLUSH_DEBOUNCE_MS = 500;
 /** Live co-editing heartbeat: the Diary's cadence (Canon §15). */
@@ -497,7 +503,11 @@ export async function revalidateLayoutLiveRooms(db: Database, hub: LayoutLiveHub
   return revoked;
 }
 
-export async function registerAutoSave(server: FastifyInstance, db: Database): Promise<void> {
+export async function registerAutoSave(
+  server: FastifyInstance,
+  db: Database,
+  options: SocketSignInOptions = {},
+): Promise<void> {
   // Live co-editing v1: presence and live ops ride this socket after auth.
   const hub = new LayoutLiveHub();
   const unsubscribeLayoutChanged = subscribe("layout.changed", {
@@ -544,6 +554,17 @@ export async function registerAutoSave(server: FastifyInstance, db: Database): P
     function send(payload: Record<string, unknown>): void {
       if (socket.readyState === 1) socket.send(JSON.stringify(payload));
     }
+
+    // A socket that has not begun to sign in by the deadline is closed: the
+    // hub's ping and stale sweep reach only sockets that have joined a room.
+    const cancelSignInDeadline = startSignInDeadline(
+      options,
+      () => authenticatedUser !== null || authenticationInFlight || closed,
+      () => {
+        send({ type: "error", code: "UNAUTHORIZED", message: "Authentication required" });
+        socket.close();
+      },
+    );
 
     async function performFlush(notify: boolean): Promise<void> {
       if (flushTimer !== null) clearTimeout(flushTimer);
@@ -725,6 +746,7 @@ export async function registerAutoSave(server: FastifyInstance, db: Database): P
 
     socket.on("close", () => {
       closed = true;
+      cancelSignInDeadline();
       if (liveConnection !== null) {
         hub.leave(liveConnection);
         liveConnection = null;

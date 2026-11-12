@@ -4,6 +4,7 @@ import { StrictMode } from "react";
 import { ApiError } from "../../../api/client.js";
 import { ProposalsDesk } from "../ProposalsDesk.js";
 import { forgetProposalMemory, recallDraft, rememberDraft } from "../proposals/proposal-memory.js";
+import { resetTradesHallVenueReads } from "../../../hooks/use-trades-hall-venue.js";
 
 // ---------------------------------------------------------------------------
 // The Proposals desk (roadmap X1): proposals grouped as a booker works them,
@@ -30,6 +31,7 @@ const mocks = vi.hoisted(() => ({
   transitionProposal: vi.fn(),
   changeProposalLayout: vi.fn(),
   listSpaces: vi.fn(),
+  getVenue: vi.fn(),
   listPricingRules: vi.fn(),
   listProposalTemplates: vi.fn(),
   createProposalTemplate: vi.fn(),
@@ -61,7 +63,7 @@ vi.mock("../../../api/proposals.js", async (importOriginal) => ({
   transitionProposal: mocks.transitionProposal,
   changeProposalLayout: mocks.changeProposalLayout,
 }));
-vi.mock("../../../api/spaces.js", () => ({ listSpaces: mocks.listSpaces }));
+vi.mock("../../../api/spaces.js", () => ({ listSpaces: mocks.listSpaces, getVenue: mocks.getVenue }));
 // An accepted proposal reads its contract and deposit (Plan 19 L5): none here.
 vi.mock("../../../api/deposits.js", () => ({
   getProposalDeposit: () => Promise.resolve({ availability: "off", requests: [] }),
@@ -196,6 +198,9 @@ function reloadHeld(): boolean {
 beforeEach(() => {
   for (const fn of Object.values(mocks)) fn.mockReset();
   ai.available = false;
+  // The venue "v1" is Trades Hall unless a test says otherwise; each test reads it afresh.
+  resetTradesHallVenueReads();
+  mocks.getVenue.mockResolvedValue({ id: "v1", slug: "trades-hall-glasgow", name: "Trades Hall" });
   // What the booker wrote lives for the page; each test is a fresh page.
   forgetProposalMemory();
   authState.user = { ...authState.user, id: "u1", name: "Catherine Tait", venueId: "v1" };
@@ -319,6 +324,23 @@ describe("the ledger", () => {
     expect((await screen.findByTestId("proposal-list-error")).textContent).toContain("The proposals could not be read.");
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
     expect(await screen.findByTestId("proposal-row-p1")).toBeDefined();
+  });
+
+  // Release audit dash-commercial-4: "now" was taken once, as the desk opened.
+  it("turns the day at the venue's midnight while open, so its ages and date stay true", async () => {
+    vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
+    // 23:58:30 in Glasgow on Tuesday 14 July 2026 (BST), 22:58 in UTC.
+    vi.setSystemTime("2026-07-14T22:58:30.000Z");
+    existing = [proposal({ id: "p2", title: "Draft lunch", currentVersion: 1, updatedAt: "2026-07-13T10:00:00.000Z" })];
+    render(<ProposalsDesk />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(row("p2").getAttribute("aria-label")).toContain("changed yesterday");
+    expect(screen.getByText("Tuesday 14 July")).toBeDefined();
+
+    // Two minutes on: 00:00:30 on Wednesday 15 July in Glasgow.
+    await act(async () => { await vi.advanceTimersByTimeAsync(120_000); });
+    expect(row("p2").getAttribute("aria-label")).toContain("changed 2 days ago");
+    expect(screen.getByText("Wednesday 15 July")).toBeDefined();
   });
 });
 
@@ -2853,23 +2875,64 @@ describe("the next version", () => {
     expect(mocks.createProposalVersion).not.toHaveBeenCalled();
   });
 
-  it("computes capacity guidance from the room's area and puts the careful note in", async () => {
-    mocks.listSpaces.mockResolvedValue([{
-      id: "s1", venueId: "v1", name: "Grand Hall", slug: "grand-hall", description: "", widthM: "21", lengthM: "10", heightM: "7",
-      floorPlanOutline: [], meshUrl: null, thumbnailUrl: null, sortOrder: 0, createdAt: NOW, updatedAt: NOW,
-    }]);
+  /** The Grand Hall as seeded: 21 m × 10.5 m, so 220.5 m² of bounding rectangle. */
+  const SEEDED_GRAND_HALL = {
+    id: "s1", venueId: "v1", name: "Grand Hall", slug: "grand-hall", description: "", widthM: "21", lengthM: "10.5", heightM: "7",
+    floorPlanOutline: [], meshUrl: null, thumbnailUrl: null, sortOrder: 0, createdAt: NOW, updatedAt: NOW,
+  };
+
+  it("shows staff the estimate at generic spacing and puts the venue's published figure in the client's note", async () => {
+    mocks.listSpaces.mockResolvedValue([SEEDED_GRAND_HALL]);
     render(<ProposalsDesk />);
     const panel = within(await openProposal());
-    // 21 m × 10 m = 210 m²; dinner rounds by default: floor(210 / 1.5) = 140.
+    // 220.5 m²; dinner rounds by default: floor(220.5 / 1.5) = 147, for staff only.
     fireEvent.change(await panel.findByTestId("capacity-guests"), { target: { value: "120" } });
     const result = panel.getByTestId("capacity-result");
-    expect(result.textContent).toContain("around 140 guests");
+    expect(result.textContent).toContain("Estimate at generic spacing");
+    expect(result.textContent).toContain("around 147 guests");
     expect(result.textContent).toContain("120 asked for");
-    expect(result.textContent).toContain("Planning estimate only");
+    expect(result.textContent).toContain("not the venue's published figure");
+    await waitFor(() => { expect(panel.getByTestId<HTMLButtonElement>("capacity-insert").disabled).toBe(false); });
     fireEvent.click(panel.getByTestId("capacity-insert"));
     const note = panel.getByTestId<HTMLInputElement>("composer-capacity");
-    expect(note.value).toContain("Grand Hall: comfortable for around 140 guests");
-    expect(note.value).toContain("final capacity confirmed by the venue team");
+    expect(note.value).toBe(
+      "The venue publishes 180 for dinner in the Grand Hall (Published guide · Trades Hall · 9 Jul 2026). "
+      + "Final numbers depend on the layout and are confirmed by the venue team.",
+    );
+    expect(note.value).not.toContain("147");
+  });
+
+  it("never tells the client the 339 standing worked out from floor area, only the published 250", async () => {
+    mocks.listSpaces.mockResolvedValue([SEEDED_GRAND_HALL]);
+    render(<ProposalsDesk />);
+    const panel = within(await openProposal());
+    fireEvent.change(await panel.findByTestId("capacity-style"), { target: { value: "cocktail" } });
+    fireEvent.change(panel.getByTestId("capacity-guests"), { target: { value: "300" } });
+    // Staff still see the arithmetic: floor(220.5 / 0.65) = 339.
+    expect(panel.getByTestId("capacity-result").textContent).toContain("around 339 guests");
+    await waitFor(() => { expect(panel.getByTestId<HTMLButtonElement>("capacity-insert").disabled).toBe(false); });
+    fireEvent.click(panel.getByTestId("capacity-insert"));
+    const note = panel.getByTestId<HTMLInputElement>("composer-capacity").value;
+    expect(note).not.toContain("339");
+    expect(note).not.toContain("comfortable for around");
+    expect(note).toBe(
+      "The venue publishes 250 for reception in the Grand Hall (Published guide · Trades Hall · 9 Jul 2026). "
+      + "300 guests is more than the published 250 for reception; the venue team will say what is possible.",
+    );
+  });
+
+  it("states no figure for another venue's room of the same name", async () => {
+    mocks.getVenue.mockResolvedValue({ id: "v1", slug: "another-hall", name: "Another Hall" });
+    mocks.listSpaces.mockResolvedValue([SEEDED_GRAND_HALL]);
+    render(<ProposalsDesk />);
+    const panel = within(await openProposal());
+    fireEvent.change(await panel.findByTestId("capacity-style"), { target: { value: "theatre" } });
+    await waitFor(() => { expect(panel.getByTestId<HTMLButtonElement>("capacity-insert").disabled).toBe(false); });
+    fireEvent.click(panel.getByTestId("capacity-insert"));
+    const note = panel.getByTestId<HTMLInputElement>("composer-capacity").value;
+    expect(note).toBe("The venue team confirms the capacity of the Grand Hall for this layout.");
+    expect(note).not.toMatch(/\d/u);
+    expect(mocks.getVenue).toHaveBeenCalledWith("v1");
   });
 
   it("holds capacity guidance still while a save is on its way, so nothing is put in that the version would not keep", async () => {
