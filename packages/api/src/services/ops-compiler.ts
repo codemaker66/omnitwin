@@ -23,6 +23,7 @@ import {
   TaskGroupSchema,
   LayoutVariantSchema,
   PhaseLayoutSnapshotSchema,
+  eventDisplayName,
   opsHandoffPayloadDigest,
   safePlanningLanguage,
   type BeoDocument,
@@ -66,6 +67,7 @@ import {
   snapshotDiffs,
   supplierInstructions,
   taskGroups,
+  venues,
 } from "../db/schema.js";
 import { parseHallkeeperSnapshotPayload } from "./layout-coordinate-space.js";
 import { newestHandoffPack } from "./newest-handoff-pack.js";
@@ -969,7 +971,7 @@ async function loadEventGraph(db: Database, eventId: string): Promise<EventPhase
     .limit(1);
   if (eventRow === undefined) throw new OpsHandoffEventNotFoundError(eventId);
 
-  const [phaseRows, scenarioRows, variantRows, linkRows, snapshotRows] = await Promise.all([
+  const [phaseRows, scenarioRows, variantRows, linkRows, snapshotRows, venueRows] = await Promise.all([
     db.select().from(eventPhases).where(eq(eventPhases.eventId, eventId)).orderBy(eventPhases.sortOrder, eventPhases.id),
     db.select().from(eventScenarios).where(eq(eventScenarios.eventId, eventId)).orderBy(eventScenarios.createdAt),
     db.select().from(layoutVariants).where(eq(layoutVariants.eventId, eventId)).orderBy(layoutVariants.createdAt),
@@ -979,14 +981,19 @@ async function loadEventGraph(db: Database, eventId: string): Promise<EventPhase
       .innerJoin(eventPhases, eq(phaseLayoutSnapshots.eventPhaseId, eventPhases.id))
       .where(eq(eventPhases.eventId, eventId))
       .orderBy(phaseLayoutSnapshots.createdAt),
+    db.select({ timeZone: venues.timezone }).from(venues).where(eq(venues.id, eventRow.venueId)).limit(1),
   ]);
+  const venueZone = venueRows[0]?.timeZone ?? "Europe/London";
 
   return EventPhaseGraphSchema.parse({
     event: EventSchema.parse({
       id: eventRow.id,
       venueId: eventRow.venueId,
       createdBy: eventRow.createdBy,
-      name: eventRow.name,
+      // The pack's documents name the event as people read it: an event
+      // stored without a name (made before eventNameFor named every new one)
+      // by its occasion and the venue's day. The stored name is not changed.
+      name: eventDisplayName(eventRow, venueZone),
       eventType: eventRow.eventType,
       status: eventRow.status,
       startsAt: toIsoOrNull(eventRow.startsAt),

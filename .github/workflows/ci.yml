@@ -532,9 +532,19 @@ jobs:
         # against an unreachable mirror apt spends about 10 minutes per try
         # waiting out each fetch, and two tries pushed shards past the job's
         # 30-minute limit. 180 s is about five times the normal time.
+        #
+        # The apt-get that --with-deps starts runs as root under sudo, so
+        # timeout cannot always stop it, and left running it keeps installing
+        # fonts while the tests start (seen in run 43062420466). It is stopped
+        # before the apt-free install.
         run: |
           if timeout --kill-after=10 180 pnpm --filter @omnitwin/web exec playwright install --with-deps chromium; then exit 0; fi
           echo "::warning::playwright install --with-deps failed or ran past 180 s; the Ubuntu apt mirror may be unreachable"
+          sudo pkill -TERM -x apt-get || true
+          sudo pkill -TERM -x dpkg || true
+          for _ in $(seq 1 15); do pgrep -x apt-get >/dev/null || pgrep -x dpkg >/dev/null || break; sleep 1; done
+          sudo pkill -KILL -x apt-get || true
+          sudo pkill -KILL -x dpkg || true
           echo "::warning::Installing Chromium without apt; relying on the runner image's own system libraries"
           pnpm --filter @omnitwin/web exec playwright install chromium
 
