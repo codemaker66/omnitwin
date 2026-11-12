@@ -332,6 +332,13 @@ export function draftInstants(draft: Pick<ShiftDraft, "date" | "start" | "end">,
   };
 }
 
+/** How long a draft runs, by the instants it saves as: on the night the
+ *  clocks change, an hour more or less than its clock times suggest. */
+export function draftMinutes(draft: Pick<ShiftDraft, "date" | "start" | "end">, timeZone: string): number | null {
+  const instants = draftInstants(draft, timeZone);
+  return instants === null ? null : (Date.parse(instants.endsAt) - Date.parse(instants.startsAt)) / 60_000;
+}
+
 /** The break the law asks for, over the working time a draft describes. */
 export function suggestedBreak(minutes: number, under18: boolean): number {
   if (under18) return minutes > 4 * 60 + 30 ? 30 : 0;
@@ -378,7 +385,7 @@ export function prefillShift(input: {
     date,
     start: clockFromMinutes(start),
     end: clockFromMinutes(end),
-    breakMinutes: suggestedBreak(end - start, under18),
+    breakMinutes: suggestedBreak((rotaInstant(date, end, timeZone) - rotaInstant(date, start, timeZone)) / 60_000, under18),
     functionId: first?.id ?? null,
     eventId: first?.eventId ?? null,
     spaceId: first?.spaceId ?? null,

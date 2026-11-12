@@ -2,6 +2,7 @@ import { z } from "zod";
 import { ConfigurationIdSchema, LayoutStyleSchema } from "./configuration.js";
 import { SetupPhaseSchema } from "./hallkeeper-accessories.js";
 import { EventInstructionsSchema } from "./hallkeeper-instructions.js";
+import { GangwayReviewSchema } from "./gangway-review.js";
 import { TimezoneSchema, DEFAULT_VENUE_TIMEZONE } from "./venue.js";
 import { ZONES, ZoneSchema, type Zone } from "./zone.js";
 import { SheetPaperCheckSchema } from "./sheet-paper-check.js";
@@ -84,10 +85,17 @@ export const ManifestRowV2Schema = z.object({
   isAccessory: z.boolean(),
   /**
    * Planner-authored notes from the union of placed-object `notes`
-   * fields that aggregate into this row. Empty string when no source
-   * placement carried a note.
+   * fields that aggregate into this row, joined with " · ". Empty string
+   * when no source placement carried a note.
+   *
+   * No length cap of its own: a row gathers every distinct note of its
+   * pieces (eight tables' notes, and the linen each table takes), so its
+   * length grows with the room. The bound is each piece's note (500, the
+   * planner's limit); the phone shows the row's notes in full and the paper
+   * carries them across pages. A fixed cap here made one detailed wedding
+   * fail the whole sheet and every submit (audit hallkeeper-ops-5).
    */
-  notes: z.string().max(2000).default(""),
+  notes: z.string().default(""),
   /**
    * Floor-plan coordinates for every placement that aggregates into
    * this row. Empty for accessory rows — accessories don't have their
@@ -232,6 +240,14 @@ export const HallkeeperSheetV2Schema = z.object({
    * stub.
    */
   instructions: EventInstructionsSchema.nullable(),
+  /**
+   * The layout's gangway review as it stood when the sheet was assembled
+   * (configurations.metadata.gangwayReview, written by the planner): every
+   * pinch under the guidance, with the venue's decisions. Frozen with a
+   * submitted or approved snapshot, so the venue reviews what was sent.
+   * Null when the layout has none; absent from older snapshots.
+   */
+  gangwayReview: GangwayReviewSchema.nullable().optional(),
   phases: z.array(PhaseSchema),
   totals: z.object({
     /** One entry per distinct item name, summed across phases + zones. */

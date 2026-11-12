@@ -25,7 +25,7 @@ import { buildHallGeometry, buildHallWallGeometry } from "../hall-geometry.js";
 import { parseWallRelief } from "../hall-relief.js";
 import { drawnRelief } from "../hall-walls.js";
 import { buildHallDoorGeometry } from "../hall-doors.js";
-import { bodyOpenings, buildWallBody, insideHole } from "../hall-wall-body.js";
+import { bodyCasterGeometry, bodyOpenings, buildWallBody, insideHole, isBayRole } from "../hall-wall-body.js";
 import { hallSunCasterParts, type SunCasterPart } from "../hall-sun.js";
 import { hallSkyAt } from "../hall-sky.js";
 import { hallDirection } from "../hall-site.js";
@@ -240,6 +240,8 @@ function bodyLight(iso: string): { readonly body: "sun" | "moon"; readonly direc
 }
 
 let parts: SunCasterPart[] = [];
+/** The walls' bodies as drawn, of which the casters keep all but the cleared bays' faces. */
+const wallBody = buildWallBody().geometry;
 const coveredByGrid = new Map<number, Uint8Array>();
 /** underRelief for the grid, once. */
 function covered(g: Grid): Uint8Array {
@@ -266,7 +268,8 @@ beforeAll(async () => {
     room: buildHallGeometry().geometries,
     walls: buildHallWallGeometry(relief).geometries,
     doors: buildHallDoorGeometry().geometries,
-    body: buildWallBody().geometry,
+    // As createHallSection hands GrandHallModel the bodies' casters.
+    body: bodyCasterGeometry(wallBody),
   });
 }, 60_000);
 
@@ -313,6 +316,27 @@ describe("the hall's sun and moon casters", () => {
     });
     for (const [index, { id }] of WINDOW_HOLES.entries()) expect(byWindow[index], id).toBeGreaterThan(0.5);
   }, 60_000);
+
+  it("casts none of a cleared window bay's faces, which only a cut lays, and all the rest of the bodies", () => {
+    const part = parts.find((item) => item.key === "body");
+    if (part === undefined) throw new Error("no body caster");
+    const index = part.geometry.getIndex();
+    const whole = wallBody.getIndex();
+    if (index === null || whole === null) throw new Error("the bodies are indexed");
+    // The caster keeps the body's vertices in their order, so its triangles' roles are the body's.
+    expect(Array.from(part.geometry.getAttribute("position").array)).toEqual(Array.from(wallBody.getAttribute("position").array));
+    const role = wallBody.getAttribute("aSection");
+    const bayCorners = (indices: { readonly count: number; getX(k: number): number }): number => {
+      let corners = 0;
+      for (let k = 0; k < indices.count; k++) if (isBayRole(Math.round(role.getZ(indices.getX(k))))) corners += 1;
+      return corners;
+    };
+    expect(bayCorners(index)).toBe(0);
+    // The body has bay faces to leave out (their corners are never shared with another face's).
+    const leftOut = bayCorners(whole);
+    expect(leftOut).toBeGreaterThan(0);
+    expect(index.count).toBe(whole.count - leftOut);
+  });
 
   it("closes the ceiling to the room's corners", () => {
     const ceiling = buildHallGeometry().geometries.get("ceilingPhoto");

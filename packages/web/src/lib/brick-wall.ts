@@ -24,6 +24,24 @@ export const IMPACT_POINT = 0.6;
 /** How far past rest position the brick overshoots on impact. */
 export const BOUNCE_OVERSHOOT = 0.04;
 
+/** How the blocks of a click-driven wall travel: the rows' stagger and each block's throw. */
+export interface BrickMotion {
+  /** Proportion of the 0->1 timeline used for row stagger; the rest is each block's own flight. */
+  readonly staggerSpan: number;
+  /** How far blocks scatter outward from the wall face (meters). */
+  readonly scatterDistance: number;
+}
+
+/** The 5 s brick-down: rows over 80 % of it, each block thrown 2.2 m in about a second. */
+export const BRICK_MOTION_SLOW: BrickMotion = { staggerSpan: STAGGER_SPAN, scatterDistance: SCATTER_DISTANCE };
+
+/**
+ * The 450 ms brick-down (`wallsQuick`): each block in flight for half of it,
+ * 225 ms, over 0.6 m. Today's throw squeezed into 450 ms would fly each block
+ * 2.2 m in 90 ms, which reads as a flicker rather than a fall.
+ */
+export const BRICK_MOTION_QUICK: BrickMotion = { staggerSpan: 0.5, scatterDistance: 0.6 };
+
 export interface BrickInstance {
   readonly restX: number;
   readonly restY: number;
@@ -113,9 +131,9 @@ export function easeHeavyLanding(t: number): number {
   return 1 + bounce;
 }
 
-export function computeBrickProgress(globalProgress: number, stagger: number): number {
-  const startTime = stagger * STAGGER_SPAN;
-  const endTime = startTime + (1 - STAGGER_SPAN);
+export function computeBrickProgress(globalProgress: number, stagger: number, staggerSpan: number = STAGGER_SPAN): number {
+  const startTime = stagger * staggerSpan;
+  const endTime = startTime + (1 - staggerSpan);
   const raw = (globalProgress - startTime) / (endTime - startTime);
   return Math.max(0, Math.min(1, raw));
 }

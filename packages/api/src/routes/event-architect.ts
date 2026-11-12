@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import {
   AI_BUDGET_REACHED,
+  AI_DRAFTS_UNAVAILABLE,
   CreateEventArchitectRunInputSchema,
   CreateEventArchitectOpsReviewInputSchema,
   CreateEventBriefDraftInputSchema,
@@ -9,13 +10,16 @@ import {
   EventArchitectOpsReviewGateSchema,
   PersistedEventArchitectRunSchema,
   SelectEventArchitectCandidateInputSchema,
+  eventArchitectOpsReviewerAuthorityFor,
   type EventArchitectOpsReviewerAuthority,
 } from "@omnitwin/types";
 import type { Database } from "../db/client.js";
 import type { Env } from "../env.js";
 import { authenticate, isPlatformAdmin } from "../middleware/auth.js";
+import { AIAccessPolicy } from "../services/ai-access.js";
 import {
   AIAssistantDisabledError,
+  AIDraftsUnavailableError,
   DisabledAIGenerationAdapter,
   createAIStructuredGenerationAdapterFromEnv,
   type AIStructuredGenerationAdapter,
@@ -50,6 +54,8 @@ const CandidateParamsSchema = z.object({ candidateId: z.uuid() }).strict();
 function validationError(reply: FastifyReply, details: unknown): FastifyReply {
   return reply.status(400).send({ error: "Validation failed", code: "VALIDATION_ERROR", details });
 }
+
+const BriefStatusQuery = z.object({ venueId: z.uuid().optional() });
 
 function roleCanArchitect(request: FastifyRequest, venueId: string): "ok" | "wrong_venue" | "wrong_role" {
   if (isPlatformAdmin(request.user)) return "ok";
@@ -86,9 +92,10 @@ function requireOpsReviewAuthority(
     void reply.status(404).send({ error: "Event Architect resource not found", code: "NOT_FOUND" });
     return null;
   }
-  if (request.user.role === "admin") return "venue_admin";
-  if (request.user.role === "hallkeeper") return "venue_hallkeeper";
-  if (request.user.role === "staff") return "venue_staff";
+  // The venue's staff, hallkeepers, managers and administrators, each stored
+  // under its own authority; the web offers the form from the same list.
+  const authority = eventArchitectOpsReviewerAuthorityFor(request.user.role);
+  if (authority !== null) return authority;
   void reply.status(403).send({
     error: "Event Architect Ops review requires venue operations authority",
     code: "FORBIDDEN",
@@ -184,6 +191,8 @@ export async function eventArchitectRoutes(
     briefReader?: AIStructuredGenerationAdapter;
     /** Holds each brief read to its venue's AI allowance and records it (T-656); the venue allowance meter unless given. */
     aiUsage?: AIUsageMeter;
+    /** Which venues and drafts are switched on (C1); the environment's unless a test names one. */
+    access?: AIAccessPolicy;
   },
 ): Promise<void> {
   const { db } = opts;
@@ -191,6 +200,7 @@ export async function eventArchitectRoutes(
     ?? (opts.env === undefined
       ? new DisabledAIGenerationAdapter()
       : createAIStructuredGenerationAdapterFromEnv(opts.env, opts.aiUsage ?? venueAllowanceMeter(db, opts.env, server.log)));
+  const access = opts.access ?? (opts.env === undefined ? AIAccessPolicy.unrestricted() : AIAccessPolicy.fromEnv(opts.env));
 
   // -------------------------------------------------------------------------
   // Typed event briefs (T-650). A planner's description is read by the AI
@@ -201,8 +211,15 @@ export async function eventArchitectRoutes(
   // draft, and nothing runs or is stored until a person generates options.
   // -------------------------------------------------------------------------
 
-  server.get("/brief-drafts/status", { preHandler: [authenticate] }, async () => {
-    return { data: briefReader.status };
+  // The status is for the venue named in ?venueId= where the person may plan
+  // there, else for the venue they work at: a venue the environment has not
+  // switched on for brief reading is told AI is off (C1).
+  server.get("/brief-drafts/status", { preHandler: [authenticate] }, async (request) => {
+    const asked = BriefStatusQuery.safeParse(request.query);
+    const venueId = asked.success && asked.data.venueId !== undefined && roleCanArchitect(request, asked.data.venueId) === "ok"
+      ? asked.data.venueId
+      : request.user.venueId;
+    return { data: access.statusFor(briefReader.status, venueId, "event_brief") };
   });
 
   server.post("/brief-drafts", {
@@ -214,9 +231,10 @@ export async function eventArchitectRoutes(
     const body = CreateEventBriefDraftInputSchema.safeParse(request.body);
     if (!body.success) return validationError(reply, body.error.issues);
     if (!requireArchitectAccess(request, reply, body.data.venueId)) return;
-    if (!briefReader.status.configured) {
+    const status = access.statusFor(briefReader.status, body.data.venueId, "event_brief");
+    if (!status.configured) {
       return reply.status(503).send({
-        error: briefReader.status.disabledReason ?? "AI assistant is not configured",
+        error: status.disabledReason ?? "AI assistant is not configured",
         code: "AI_ASSISTANT_DISABLED",
       });
     }
@@ -241,6 +259,9 @@ export async function eventArchitectRoutes(
     } catch (err) {
       if (err instanceof AIAssistantDisabledError) {
         return reply.status(503).send({ error: err.message, code: "AI_ASSISTANT_DISABLED" });
+      }
+      if (err instanceof AIDraftsUnavailableError) {
+        return reply.status(503).send({ error: err.message, code: AI_DRAFTS_UNAVAILABLE });
       }
       if (err instanceof AIBudgetReachedError) {
         return reply.status(429).send({ error: err.message, code: AI_BUDGET_REACHED });

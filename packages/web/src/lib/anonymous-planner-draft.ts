@@ -169,6 +169,11 @@ export function discardPlannerDraft(configId: string, ownerUserId: string | null
   removeKey(anonymousPlannerDraftKey(configId));
 }
 
+/** Forget the one copy this draft was read from (the server already holds it). */
+export function forgetPlannerDraft(draft: AnonymousPlannerDraft): void {
+  removeKey(draftKey(draft.configId, draft.ownerUserId ?? null));
+}
+
 function baseDelta(
   base: readonly EditorObject[],
   objects: readonly EditorObject[],

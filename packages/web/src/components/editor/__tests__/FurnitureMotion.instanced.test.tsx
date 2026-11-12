@@ -115,11 +115,11 @@ describe("a piece placed while the frame loop sleeps", () => {
     // whole gap to the first frame as its delta.
     let seconds = 103;
     frameAt(seconds);
-    // A drop starts a hand's width up (0.11 m and more); one display frame
-    // takes off a few millimetres, where the gap would have taken four fifths.
-    expect(group.position.y).toBeGreaterThan(0.1);
+    // A drop starts just above the floor (5 cm); one display frame takes off a
+    // few millimetres, where the gap would have set it down already.
+    expect(group.position.y).toBeGreaterThan(0.04);
 
-    // Then it lands, rocks and comes to rest on the floor at store truth.
+    // Then it lands, takes its weight and comes to rest on the floor at store truth.
     let frames = 0;
     while (activeFurnitureSettleCount() > 0 && frames < 600) {
       seconds += 1 / 60;

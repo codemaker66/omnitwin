@@ -952,7 +952,9 @@ describe("an item at the venue's cap says why nothing was placed", () => {
   });
 });
 
-describe("auto-fill counts in the Grand Hall (21 × 10.5 m)", () => {
+// The Grand Hall's old hand-drawn 21 × 10.5 m: the counts below are worked for
+// it. The planner now opens the hall at its scanned 21.135 × 10.59 m.
+describe("auto-fill counts in a 21 × 10.5 m hall", () => {
   beforeEach(() => {
     useRoomDimensionsStore.setState({ dimensions: { width: 21, length: 10.5, height: 7 } });
   });

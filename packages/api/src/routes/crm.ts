@@ -15,11 +15,16 @@ import {
   opportunityStatusHistory,
 } from "../db/schema.js";
 import type { Database } from "../db/client.js";
+import { outerColumn } from "../utils/outer-column.js";
 import { authenticate, isPlatformAdmin, type JwtUser } from "../middleware/auth.js";
 import { canManageCommercial } from "../utils/query.js";
 import { OPEN_PIPELINE_STAGES, PIPELINE_VALUE_CURRENCY, loadPipelineValueMinor } from "../services/commercial-pipeline.js";
 import { ensureEnquiryPerson, ensurePrimaryAccount } from "../services/people-link.js";
 import { isCommercialMember } from "../services/people-records.js";
+import { clipped } from "../services/client-answer-notice.js";
+
+/** What opportunities.title holds (varchar(200)). */
+const OPPORTUNITY_TITLE_MAX = 200;
 
 const IdParam = {
   schema: {
@@ -163,7 +168,9 @@ export async function crmRoutes(
         primaryContactId: contact.id,
         sourceEnquiryId: enquiry.id,
         ownerUserId: request.user.id,
-        title: `${eventLabel} — ${clientName}`,
+        // opportunities.title holds 200 characters; the occasion (up to 100)
+        // and the guest's name (up to 200) together can be longer.
+        title: clipped(`${eventLabel} — ${clientName}`, OPPORTUNITY_TITLE_MAX),
         stage: "new",
         eventType: enquiry.eventType,
         preferredDate: enquiry.preferredDate,
@@ -311,7 +318,7 @@ export async function crmRoutes(
     const tasks = await db.select({
       ...getTableColumns(followUpTasks),
       // The deal each is for, so a follow-up can be read on its own.
-      opportunityTitle: sql<string | null>`(SELECT ${opportunities.title} FROM ${opportunities} WHERE ${opportunities.id} = ${followUpTasks.opportunityId})`,
+      opportunityTitle: sql<string | null>`(SELECT o.title FROM opportunities o WHERE o.id = ${outerColumn(followUpTasks.opportunityId)})`,
     })
       .from(followUpTasks)
       .where(taskWhere)

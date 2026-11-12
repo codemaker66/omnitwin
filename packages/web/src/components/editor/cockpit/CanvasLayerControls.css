@@ -106,3 +106,23 @@
   justify-content: center;
   min-height: 44px;
 }
+
+/* Present, the sheet's last row (HallPresent.tsx): what it plays, or why it
+   can't, is written beneath it, since a touch screen shows no tooltip. */
+.hall-view-present {
+  display: grid;
+  gap: 4px;
+  margin-top: 6px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(245, 240, 232, 0.14);
+}
+.hall-view-present__button {
+  justify-content: center;
+  min-height: 44px;
+}
+.hall-view-present__line {
+  margin: 0 6px;
+  color: rgba(246, 238, 220, 0.7);
+  font: 11px/1.4 "Inter", system-ui, sans-serif;
+  text-align: center;
+}

@@ -67,14 +67,17 @@ export function releaseDiaryCommandChannel(sender: DiaryCommandSender): void {
 }
 
 /** Route a mutation command-first with REST fallback (see module comment).
- *  ONE commandId is minted per logical operation and travels with BOTH
- *  transports — the fallback passes it as an Idempotency-Key, so the
- *  server's ledger dedupes a channel attempt and its REST retry. */
+ *  ONE commandId per logical operation travels with BOTH transports — the
+ *  fallback passes it as an Idempotency-Key, so the server's ledger dedupes
+ *  a channel attempt and its REST retry. A caller that retries the same
+ *  operation by hand passes the id it used before (hallkeeper-web-8);
+ *  otherwise one is minted. */
 export async function sendViaChannelOrRest(
   buildCommand: (commandId: string) => DiaryCommand,
   restFallback: (commandId: string) => Promise<Booking>,
+  commandId: string = crypto.randomUUID(),
 ): Promise<Booking> {
-  return sendCommandViaChannelOrRest(buildCommand, restFallback, (ack) => ack.booking);
+  return sendCommandViaChannelOrRest(buildCommand, restFallback, (ack) => ack.booking, commandId);
 }
 
 /** The same routing, for a result that carries more than the booking: a
@@ -85,8 +88,8 @@ export async function sendCommandViaChannelOrRest<T>(
   buildCommand: (commandId: string) => DiaryCommand,
   restFallback: (commandId: string) => Promise<T>,
   fromAck: (ack: DiaryCommandAck) => T | undefined,
+  commandId: string = crypto.randomUUID(),
 ): Promise<T> {
-  const commandId = crypto.randomUUID();
   const channel = currentChannel;
   if (channel === null) return restFallback(commandId);
 

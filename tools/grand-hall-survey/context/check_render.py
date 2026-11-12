@@ -6,8 +6,11 @@ by build_context.py --keep-work), and the DSM grid. Checks the mesh (cap and wal
 normals, zero-area triangles, edges shared by exactly two triangles, open edges
 only on the rim and the site cut, walls facing out of their solids), measures the
 Glassford Street section in front of the window wall and lists what the clamp
-removed. Writes checks.json, top-down and oblique renders (Lambert with a shadow
-map) and a hillshade sheet of the suppressed trees into <build-dir>.
+removed. On a --front-cut build (merchant-city-v3) it also counts what stands
+inside the front cut and measures how far the street-facing walls along each
+straightened street-front segment stand from its line. Writes checks.json,
+top-down and oblique renders (Lambert with a shadow map) and a hillshade sheet
+of the suppressed trees into <build-dir>.
 
 Usage: python3 check_render.py <build-dir> <dsm-dir> [--name merchant-city-v2]
 Requires numpy, scipy and Pillow. The oblique renders are a slow pure-numpy rasteriser (minutes).
@@ -96,6 +99,40 @@ rep["boundary_on_site_cut"] = int(on_cut.sum())
 rep["boundary_elsewhere (cracks)"] = int(other.sum())
 if other.any():
     rep["crack_examples"] = mid[other][:5].round(2).tolist()
+
+# ------------------------------------------------------------ v3 (build_context.py --front-cut): the front cut and the
+# straightened street fronts beside it
+PAR = meta["parameters"]
+if "front_cut_x" in PAR:
+    fx0, fx1 = PAR["front_cut_x"]
+    fz0, fz1 = PAR["front_cut_z"]
+    eps = 0.005
+    inside = (V[:, 0] > fx0 + eps) & (V[:, 0] < fx1 - eps) & (V[:, 2] > fz0 + eps) & (V[:, 2] < fz1 - eps)
+    rep["front_cut"] = {
+        "vertices_strictly_inside": int(inside.sum()),
+        "of_them_above_ground_plus_1cm": int((inside & (V[:, 1] > GROUND + 0.01)).sum()),
+        "highest_y_inside": round(float(V[inside, 1].max()), 3) if inside.any() else None,
+    }
+    Iw_ = I[walls]
+    A_, B_, C_ = V[Iw_[:, 0]], V[Iw_[:, 1]], V[Iw_[:, 2]]
+    nh_ = np.cross(B_ - A_, C_ - A_)[:, [0, 2]]
+    nh_ /= np.maximum(np.hypot(nh_[:, 0], nh_[:, 1]), 1e-12)[:, None]
+    cen_ = ((A_ + B_ + C_) / 3)[:, [0, 2]]
+    fronts = []
+    for run in meta["street_fronts"]["runs"]:
+        for s in run["segments"]:
+            c = np.array(s["line"]["point"])
+            d = np.array(s["line"]["direction"])
+            n = np.array([-d[1], d[0]])
+            t0, t1 = sorted(float((np.array(e) - c) @ d) for e in s["ends"])
+            tc = (cen_ - c) @ d
+            # every wall facing the street (within 30 degrees) whose centre stands along the segment within 1 m of it
+            sel = (nh_ @ -n > math.cos(math.radians(30))) & (tc > t0 + 0.01) & (tc < t1 - 0.01) & (np.abs((cen_ - c) @ n) < 1.0)
+            vv = np.vstack([A_[sel], B_[sel], C_[sel]])[:, [0, 2]]
+            dev = np.abs((vv - c) @ n)
+            fronts.append(dict(id=s["id"], length_m=s["length_m"], walls=int(sel.sum()),
+                               max_deviation_m=round(float(dev.max()), 4) if len(dev) else None))
+    rep["street_fronts"] = fronts
 
 
 # ------------------------------------------------------------ rasteriser
@@ -362,11 +399,12 @@ rep["oblique_lit_fraction_of_visible"] = round(float(lit.mean()), 3)
 G = 6000
 rawg = np.fromfile(ARGS.dsm_dir / "heights_50cm.f32", "<f4").reshape(G, G)
 tiles = []
+CE, CN = meta["parameters"]["centre_local"]
 for b in report["trees_suppressed"]["blobs"]:
     x, z = b["centre_xz"]
     de = XH[0] * x + ZH[0] * z
     dn = XH[1] * x + ZH[1] * z
-    ci, cj = int(round((8.0 + dn + 1500) / 0.5)), int(round((3.0 + de + 1500) / 0.5))
+    ci, cj = int(round((CN + dn + 1500) / 0.5)), int(round((CE + de + 1500) / 0.5))
     t = rawg[ci - 40:ci + 40, cj - 40:cj + 40].astype(float)
     gy, gx = np.gradient(t, 0.5)
     hs = np.clip(0.6 + 0.4 * (-gx * 0.6 + gy * 0.6) / np.sqrt(1 + gx ** 2 + gy ** 2), 0, 1)

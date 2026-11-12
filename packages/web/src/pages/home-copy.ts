@@ -32,10 +32,13 @@ import { ENQUIRY_ROOM_NAMES } from "./fresh/enquiry-fit.js";
 // -----------------------------------------------------------------------------
 
 /** Kept in sync with the static tags in index.html — scrapers read those, the
- *  page sets these, and a visitor should not meet two different sentences. */
+ *  page sets these, and a visitor should not meet two different sentences.
+ *  1794, not 1791: Robert Adam's design is of 1791, and the hall was first
+ *  used in September 1794 (TheGlasgowStory; the venue's own leaflet, "Opened
+ *  in 1794"; docs/trades-house/craft-research/15-trades-house-core.md). */
 export const HOME_META_TITLE = "Trades Hall of Glasgow — weddings and events";
 export const HOME_META_DESCRIPTION =
-  "Robert Adam's guild hall on Glassford Street — weddings, dinners, and conferences in the room Glasgow has celebrated in since 1791.";
+  "Robert Adam's guild hall on Glassford Street — weddings, dinners, and conferences in the room Glasgow has celebrated in since 1794.";
 
 /** The room walk's own title, so a shared /room/:slug link names its room. */
 export function roomWalkMetaTitle(roomName: string): string {

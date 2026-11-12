@@ -822,6 +822,11 @@ describe.skipIf(target === undefined)("the bind: every hold and ink belongs to i
       }
       expect(await snapshot()).toEqual(once);
     } finally {
+      // Ending a pool does not wait for its connections to close, so the
+      // forced drop can cut one still closing, and its "terminating
+      // connection" (57P01) reaches the pool, which throws an error nothing
+      // listens for. Expected here; nothing else is.
+      legacy.on("error", (error: Error & { readonly code?: string }) => { if (error.code !== "57P01") throw error; });
       await legacy.end();
       await pool.query(`DROP DATABASE IF EXISTS "${name}" WITH (FORCE)`);
       await rm(before0090, { recursive: true, force: true });

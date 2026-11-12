@@ -291,19 +291,19 @@
     },
     {
       "source": "/plan",
-      "destination": "/index.html"
+      "destination": "/route-documents/planner.html"
     },
     {
       "source": "/plan/",
-      "destination": "/index.html"
+      "destination": "/route-documents/planner.html"
     },
     {
       "source": "/plan/:code",
-      "destination": "/index.html"
+      "destination": "/route-documents/layout.html"
     },
     {
       "source": "/plan/:code/",
-      "destination": "/index.html"
+      "destination": "/route-documents/layout.html"
     },
     {
       "source": "/blueprint",
@@ -523,18 +523,26 @@
     },
     {
       "source": "/proposal/:shareCode",
-      "destination": "/index.html"
+      "destination": "/route-documents/proposal.html"
     },
     {
       "source": "/proposal/:shareCode/",
-      "destination": "/index.html"
+      "destination": "/route-documents/proposal.html"
     },
     {
       "source": "/proposal-share/:token",
-      "destination": "/index.html"
+      "destination": "/route-documents/proposal.html"
     },
     {
       "source": "/proposal-share/:token/",
+      "destination": "/route-documents/proposal.html"
+    },
+    {
+      "source": "/deposit-return",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/deposit-return/",
       "destination": "/index.html"
     },
     {
@@ -547,11 +555,11 @@
     },
     {
       "source": "/supplier-share/:token",
-      "destination": "/index.html"
+      "destination": "/route-documents/supplier-pass.html"
     },
     {
       "source": "/supplier-share/:token/",
-      "destination": "/index.html"
+      "destination": "/route-documents/supplier-pass.html"
     },
     {
       "source": "/sheet-check",
@@ -571,11 +579,11 @@
     },
     {
       "source": "/plan-view/:token",
-      "destination": "/index.html"
+      "destination": "/route-documents/plan-view.html"
     },
     {
       "source": "/plan-view/:token/",
-      "destination": "/index.html"
+      "destination": "/route-documents/plan-view.html"
     }
   ],
   "headers": [

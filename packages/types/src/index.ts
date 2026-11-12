@@ -311,6 +311,7 @@ export {
   SupplierCoordinationItemKindSchema,
   SupplierAcknowledgementStatusSchema,
   SupplierCoordinationTextSchema,
+  SupplierAuthoredTextSchema,
   SupplierCoordinationPackSchema,
   SupplierCoordinationPackItemSchema,
   SupplierCoordinationShareTokenSchema,
@@ -355,6 +356,7 @@ export {
   type SupplierCoordinationItemKind,
   type SupplierAcknowledgementStatus,
   type SupplierCoordinationText,
+  type SupplierAuthoredText,
   type SupplierCoordinationPack,
   type SupplierCoordinationPackItem,
   type SupplierCoordinationShareToken,
@@ -930,6 +932,7 @@ export {
   UserIdSchema,
   USER_ROLES,
   UserRoleSchema,
+  VENUE_ADMINISTRATION_ROLES,
   PLATFORM_ROLES,
   PlatformRoleSchema,
   EmailSchema,
@@ -1183,13 +1186,13 @@ export {
   AIDraftSendStateSchema,
   AIDraftContextSchema,
   CreateAIDraftRequestSchema,
+  MAX_AI_DRAFT_CONTEXT_CHARACTERS,
   AIAssistantStatusSchema,
   AIDraftSchema,
   ProposalMessageDraftSchema,
   findUnsafeAIDraftClaims,
   sanitizeAIDraftText,
   aiDraftDigest,
-  createReviewGatedAIDraft,
   type AIDraftUseCase,
   type AIDraftProvenance,
   type AIDraftEvidenceStatus,
@@ -1200,6 +1203,13 @@ export {
   type AIDraft,
   type ProposalMessageDraft,
 } from "./ai-assistant.js";
+
+export {
+  AI_DRAFT_COMMITMENT_KINDS,
+  AIDraftCommitmentKindSchema,
+  type AIDraftCommitmentKind,
+} from "./ai-draft-commitment-kinds.js";
+// The filter and createReviewGatedAIDraft: @omnitwin/types/ai-draft-review.
 
 export {
   COMMERCIAL_SPINE_SCHEMA_VERSION,
@@ -1451,6 +1461,10 @@ export * from "./sheet-paper-check.js";
 // setup steps, plan markers, keep-in-view facts), shared by paper and screen.
 export * from "./sheet-brief.js";
 
+// Share tokens and guest layout ids templated out of error reports, spans and
+// request logs, in the browser and the API alike.
+export * from "./capability-paths.js";
+
 export {
   DayOfContactSchema,
   PhaseDeadlineSchema,
@@ -1537,6 +1551,7 @@ export {
   REDACTED_HEALTH_TEXT,
   redactHealthFreeText,
   redactHealthFreeTextInString,
+  redactAllergyNote,
   emptyDoorSchedule,
   hasDoorScheduleContent,
   type AccessibilityRequirements,
@@ -2525,6 +2540,7 @@ export * from "./event-mission-control.js";
 export * from "./capture-intake.js";
 export * from "./layout-validator.js";
 export * from "./event-architect.js";
+export * from "./event-architect-ops-reviewers.js";
 export * from "./event-architect-engine.js";
 export * from "./event-brief-draft.js";
 export * from "./reconstruction-release.js";
@@ -2612,3 +2628,11 @@ export * from "./gangway-review.js";
 // The venue team (Plan 19 L1): venue admins invite their own staff; Blake
 // decided on 24 October 2026 that venue administrators invite any role.
 export * from "./venue-team.js";
+// A crowded Trades Hall day (Plan 19 L9): one deterministic Saturday in all
+// six published rooms, for tests and local demos; invented people only.
+export * from "./crowded-day.js";
+// Plan 19 L5 (goal 06 S6): deposits through Stripe Checkout in test mode, and
+// the contract's simple electronic signature with its audit record.
+export * from "./deposits.js";
+export * from "./contracts.js";
+export * from "./reference-loadouts.js";

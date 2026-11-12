@@ -17,12 +17,35 @@ Pipeline (all in this file, no OSM):
 # The docstring above is copied into the published JSON as "method"; keep it in step with the code.
 #
 # Usage: python3 build_context.py <dsm-dir> <out-dir> [--name merchant-city-v2] [--date YYYY-MM-DD] [--keep-work]
+#                                 [--front-cut]
 #   <dsm-dir>  heights_50cm.f32 and meta.json from fetch_dsm.py
 #   <out-dir>  receives <name>.bin and <name>.json (the published pair), <name>.build.json (the build's
 #              own report: the suppressed trees, repair counts and input hashes) and, with --keep-work,
 #              _work.npz (the rasters check_render.py reads)
 #   --date     the JSON's "generated" date; defaults to SOURCE_DATE_EPOCH, else today
+#   --front-cut  v3 (merchant-city-v3): the city registered on the dome's drum ring, Trades Hall's street front
+#              emptied for the planner's modelled front, and the neighbours' fronts beside it straightened
+#              (FRONT_CUT_METHOD below). Without it the build is v2's, byte for byte.
 # Requires numpy, scipy, scikit-image and shapely 2.
+
+# Appended to "method" in a --front-cut build's JSON (v2's method is the docstring alone).
+FRONT_CUT_METHOD = """\
+v3 (--front-cut), on top of the above, in v2's frame and registration:
+  5b. FRONT: x and z inside the modelled front's footprint plus 2.7 cm (front_cut_x, front_cut_z), less the hall's
+      cut, is ground (band 0, y = ground_y); its chains snap to the exact rectangle as the cut's do, and where it
+      meets the cut, to the two rectangles' crossing points
+  5c. on the street front beside it (street_front_x, street_front_z, inside the clamp), band-1 components of at
+      most street_front_sliver_m2 lying between the street and a band-2 block join the block: they are the
+      wall's foot sharing its 0.5 m cells with the pavement, not a step
+  7b. each run of chains between the street and the blocks beside the front is fitted, on its raster boundary
+      sampled along its length, with the fewest straight segments (each at least street_front_min_m long and within
+      street_front_max_angle_deg of the street) whose line stays within street_front_tol_m of the boundary averaged
+      over street_front_window_m; segments meet at their lines' crossing within street_front_junction_m, else by a
+      square jog (lines nearer than street_front_min_jog_m share one vertex); a run ending on FRONT ends where its
+      line crosses the rectangle, one ending on another chain moves that node onto its line (pinning the segment
+      through it instead if it would move more than street_front_end_move_m); the run's own nodes move onto the
+      segments and its chains become them, so shared chains stay coincident and the validity loop runs as before on
+      everything else"""
 import argparse
 import datetime
 import gzip
@@ -48,10 +71,14 @@ def parse_args():
     ap = argparse.ArgumentParser(description="Architect's contour model of the city around Trades Hall (VVCX v1).")
     ap.add_argument("dsm_dir", type=Path, help="directory holding heights_50cm.f32 and meta.json (fetch_dsm.py)")
     ap.add_argument("out_dir", type=Path, help="directory the model, its JSON and the build report are written to")
-    ap.add_argument("--name", default="merchant-city-v2", help="file stem of the outputs (default merchant-city-v2)")
+    ap.add_argument("--name", help="file stem of the outputs (default merchant-city-v2; merchant-city-v3 with --front-cut)")
     ap.add_argument("--date", help="the JSON's 'generated' date, YYYY-MM-DD (default: SOURCE_DATE_EPOCH, else today)")
     ap.add_argument("--keep-work", action="store_true", help="also write _work.npz for check_render.py")
+    ap.add_argument("--front-cut", action="store_true",
+                    help="v3: register on the dome's drum ring, empty Trades Hall's street front, straighten its neighbours'")
     a = ap.parse_args()
+    if a.name is None:
+        a.name = "merchant-city-v3" if a.front_cut else "merchant-city-v2"
     if a.date is None:
         epoch = os.environ.get("SOURCE_DATE_EPOCH")
         day = (datetime.datetime.fromtimestamp(int(epoch), datetime.timezone.utc).date() if epoch
@@ -75,6 +102,32 @@ P = dict(
     rim_step_deg=1.5, terrain_cut_y=-1.0, terrain_sigma=3.0,
     tree_max_area=1000.0, tree_min_residual=0.2, tree_max_height=22.0, frame_bearing_deg=102.96, centre_local=[3.0, 8.0],
 )
+V2_CENTRE_LOCAL = list(P["centre_local"])
+
+# v3's registration (--front-cut): the planner's origin (the hall floor's centre) in NGR-local metres, the one
+# number a later correction changes (a centre between cell corners is handled: OFF_E, OFF_N). It stays v2's
+# (E 3.0, N 8.0). The hall's own E57 scan, which is the planner's frame, ranges out through the front door and the
+# windows to the walls across Glassford Street, Garth Street and Hutcheson Street; matched to the DSM's edges of
+# those walls it puts the origin at (E 3.018, N 7.981), sigma 0.06 / 0.12 m: the city is in register with the room
+# to about 2 cm, bearing within 0.16 deg (D:/claude/th-facade-20261028/registration/registration.json,
+# city_model_vs_room). The 0.96 m between the 2010 plan's front face (planner z -6.218) and the DSM's Trades Hall
+# front is the DSM's own: that front faces away from the aircraft and its LiDAR shadow is filled 1.0-1.2 m out from
+# the scanned faces. The DSM's dome-drum ring (E 3.435, N 7.891; facade.json dome.centre_local) stands 0.44 m
+# streetward of the hall's interior dome, so it is not a registration target either.
+FRONT_CUT_CENTRE_LOCAL = [3.0, 8.0]
+# The modelled front's footprint (packages/web/src/components/grand-hall/hall-exterior-spec.ts): x = FRONT_AXIS_X
+# -0.025 -+ FRONT_HALF_WIDTH 15.298, i.e. -15.323 .. +15.273, from the room's plane (z -5.295) out to the pediment's
+# cornice (about z -7.54). The front cut is that plus 2.7 cm at each end and 5 mm behind its back, out into the
+# street to z -12; in front of the hall the cut (rect_*) stays as it is.
+FRONT_CUT_PARAMS = dict(
+    front_cut_x=[-15.35, 15.3], front_cut_z=[-12.0, -5.29],
+    street_front_x=[15.3, 45.0], street_front_z=[-12.0, -3.0], street_front_sliver_m2=3.0,
+    street_front_tol_m=0.25, street_front_window_m=3.0, street_front_min_m=2.0, street_front_junction_m=1.0,
+    street_front_max_angle_deg=5.0, street_front_end_move_m=0.35, street_front_min_jog_m=0.04,
+)
+FRONT_CUT = ARGS.front_cut
+if FRONT_CUT:
+    P = dict(P, centre_local=FRONT_CUT_CENTRE_LOCAL, **FRONT_CUT_PARAMS)
 RES = 0.5
 T0 = time.time()
 
@@ -107,14 +160,17 @@ HALF = meta["sizeM"] / 2
 raw = np.fromfile(SRC / "heights_50cm.f32", dtype="<f4").reshape(G, G)   # row 0 = south, col 0 = west
 ce, cn = P["centre_local"]
 jc, ic = int(round((ce + HALF) / RES)), int(round((cn + HALF) / RES))   # corner indices of the centre
+# The crop stays on the DSM's own cells: a centre between cell corners (v3's registration) moves the frame by the
+# remainder, the corner's offset from the centre (exactly 0, 0 for v2's crown cell).
+OFF_E, OFF_N = jc * RES - HALF - ce, ic * RES - HALF - cn
 K = int(math.ceil((P["radius"] + 4) / RES))
 m = 2
 sub = raw[ic - K - m:ic + K + m, jc - K - m:jc + K + m].astype(np.float64)
 med = ndi.median_filter(sub, size=P["median_px"])[m:-m, m:-m]
 NR, NC = med.shape
 ii, jj = np.mgrid[0:NR, 0:NC]
-DE = (jj - K + 0.5) * RES
-DN = (ii - K + 0.5) * RES
+DE = (jj - K + 0.5) * RES + OFF_E
+DN = (ii - K + 0.5) * RES + OFF_N
 PX, PZ = to_planner(DE, DN)
 RR = np.hypot(DE, DN)
 y_raw = med + P["dsm_to_y"]
@@ -221,6 +277,38 @@ lab[RR > P["radius"]] = OUTL
 # it) to rect_half_z behind.
 incut = (np.abs(PX) <= P["rect_half_x"]) & (PZ >= P["rect_front_z"]) & (PZ <= P["rect_half_z"])
 lab[incut] = CUTL
+FRONTL = -3
+SLIVERS = []
+if FRONT_CUT:
+    # v3: Trades Hall's street front is the planner's own model; the city keeps only bare ground there (band 0),
+    # as a region of its own so its edges can snap to the exact rectangle.
+    fx0, fx1 = P["front_cut_x"]
+    fz0, fz1 = P["front_cut_z"]
+    infront = (PX >= fx0) & (PX <= fx1) & (PZ >= fz0) & (PZ <= fz1) & ~incut
+    lab[infront] = FRONTL
+    band[infront] = 0
+    # The neighbours' street fronts: a band-1 sliver between the pavement and a band-2 block is the wall's foot
+    # sharing its 0.5 m cells with the pavement (the DSM there is part wall, part street), not a step; it joins
+    # the block, so the front is one wall to straighten.
+    ax_ = np.abs(PX)
+    rr_ = np.hypot(PX, PZ)
+    in_clamp = (rr_ < P["clamp_inner_radius"]) | ((rr_ < P["clamp_radius"]) & (PZ > P["clamp_front_z"]))
+    sbox = ((ax_ >= P["street_front_x"][0]) & (ax_ <= P["street_front_x"][1]) & (PZ >= P["street_front_z"][0])
+            & (PZ <= P["street_front_z"][1]) & in_clamp)
+    four = ndi.generate_binary_structure(2, 1)
+    slab, sn = ndi.label((lab == 1) & sbox, structure=four)
+    for k_, sl_ in enumerate(ndi.find_objects(slab), start=1):
+        grow = (slice(max(sl_[0].start - 1, 0), sl_[0].stop + 1), slice(max(sl_[1].start - 1, 0), sl_[1].stop + 1))
+        mk = slab[grow] == k_
+        ring = ndi.binary_dilation(mk, structure=four) & ~mk
+        around = lab[grow][ring]
+        area = float(mk.sum()) * RES * RES
+        if area <= P["street_front_sliver_m2"] and (around == 0).any() and (around == 2).any() and not (around < 0).any():
+            lab[grow][mk] = 2
+            band[grow][mk] = 2
+            SLIVERS.append(dict(centre_xz=[round(float(PX[grow][mk].mean()), 2), round(float(PZ[grow][mk].mean()), 2)],
+                                area_m2=area))
+    log("front cut", int(infront.sum()), "cells; street-front slivers joined to their blocks", len(SLIVERS))
 for it in range(100):
     a, b_, c, d = lab[:-1, :-1], lab[:-1, 1:], lab[1:, :-1], lab[1:, 1:]
     m1 = (a == d) & (b_ != a) & (c != a)
@@ -346,20 +434,22 @@ for ch in chains:
 NN = len(node_id)
 node_xz = np.zeros((NN, 2))
 for (ci_, cj_), k in node_id.items():
-    node_xz[k] = to_planner((cj_ - K) * RES, (ci_ - K) * RES)
+    node_xz[k] = to_planner((cj_ - K) * RES + OFF_E, (ci_ - K) * RES + OFF_N)
 
 
 def corner_xz(pts):
     a = np.array(pts, dtype=np.float64)
-    x, z = to_planner((a[:, 1] - K) * RES, (a[:, 0] - K) * RES)
+    x, z = to_planner((a[:, 1] - K) * RES + OFF_E, (a[:, 0] - K) * RES + OFF_N)
     return np.stack([x, z], 1)
 
 
 OUTC = set(np.nonzero(comp_label == OUTL)[0].tolist())
 CUTC = set(np.nonzero(comp_label == CUTL)[0].tolist())
+FRONTC = set(np.nonzero(comp_label == FRONTL)[0].tolist())
 for ch in chains:
     ch["rim"] = ch["l"] in OUTC or ch["r"] in OUTC
     ch["cut"] = ch["l"] in CUTC or ch["r"] in CUTC
+    ch["front"] = ch["l"] in FRONTC or ch["r"] in FRONTC
     pts = ch["pts"]
     # drop collinear staircase points (axis-aligned runs)
     if len(pts) > 2:
@@ -375,47 +465,395 @@ for ch in chains:
 # ---------------------------------------------------------------- 7 snapping
 R0 = P["radius"]
 HX, HZ, FZ = P["rect_half_x"], P["rect_half_z"], P["rect_front_z"]
-RC = np.array([[-HX, FZ], [HX, FZ], [HX, HZ], [-HX, HZ]])
-SEGL = np.array([2 * HX, HZ - FZ, 2 * HX, HZ - FZ])
-SCUM = np.concatenate([[0], np.cumsum(SEGL)])
-PER = SCUM[-1]
 
 
-def rect_s(p):
+def rectangle(x0, x1, z0, z1):
+    """corners counter-clockwise from (x0, z0), edge lengths, cumulative perimeter, perimeter"""
+    rc = np.array([[x0, z0], [x1, z0], [x1, z1], [x0, z1]])
+    segl = np.array([x1 - x0, z1 - z0, x1 - x0, z1 - z0])
+    scum = np.concatenate([[0], np.cumsum(segl)])
+    return rc, segl, scum, scum[-1]
+
+
+CUT_RECT = rectangle(-HX, HX, FZ, HZ)
+RC, SEGL, SCUM, PER = CUT_RECT
+FRONT_RECT = rectangle(*P["front_cut_x"], *P["front_cut_z"]) if FRONT_CUT else None
+
+
+def rect_s(p, R=CUT_RECT):
+    rc, segl, scum, _ = R
     best = None
     for k in range(4):
-        a, b = RC[k], RC[(k + 1) % 4]
-        t = np.clip(np.dot(p - a, b - a) / SEGL[k] ** 2, 0, 1)
+        a, b = rc[k], rc[(k + 1) % 4]
+        t = np.clip(np.dot(p - a, b - a) / segl[k] ** 2, 0, 1)
         q = a + t * (b - a)
         dd = np.hypot(*(p - q))
         if best is None or dd < best[0]:
-            best = (dd, SCUM[k] + t * SEGL[k])
+            best = (dd, scum[k] + t * segl[k])
     return best[1]
 
 
-def rect_pt(s):
-    s = s % PER
-    k = min(int(np.searchsorted(SCUM, s, side="right") - 1), 3)
-    t = (s - SCUM[k]) / SEGL[k]
-    return RC[k] + t * (RC[(k + 1) % 4] - RC[k])
+def rect_pt(s, R=CUT_RECT):
+    rc, segl, scum, per = R
+    s = s % per
+    k = min(int(np.searchsorted(scum, s, side="right") - 1), 3)
+    t = (s - scum[k]) / segl[k]
+    return rc[k] + t * (rc[(k + 1) % 4] - rc[k])
 
 
-rim_nodes, cut_nodes = set(), set()
+def rect_crossings(A, B):
+    """the points where two axis-aligned rectangles' perimeters cross"""
+    out = []
+    for k in range(4):
+        a0, a1 = A[0][k], A[0][(k + 1) % 4]
+        for m_ in range(4):
+            b0, b1 = B[0][m_], B[0][(m_ + 1) % 4]
+            for (p0, p1), (q0, q1) in (((a0, a1), (b0, b1)), ((b0, b1), (a0, a1))):
+                if p0[1] == p1[1] and q0[0] == q1[0]:          # p horizontal (z constant), q vertical (x constant)
+                    x, z = q0[0], p0[1]
+                    if min(p0[0], p1[0]) <= x <= max(p0[0], p1[0]) and min(q0[1], q1[1]) <= z <= max(q0[1], q1[1]):
+                        out.append((float(x), float(z)))
+    return np.array(sorted(set(out)))
+
+
+rim_nodes, cut_nodes, front_nodes = set(), set(), set()
 for ch in chains:
     if ch["rim"]:
         rim_nodes.update([ch["sn"], ch["en"]])
     if ch["cut"]:
         cut_nodes.update([ch["sn"], ch["en"]])
+    elif ch["front"]:
+        front_nodes.update([ch["sn"], ch["en"]])
 assert not (rim_nodes & cut_nodes)
+assert not (rim_nodes & front_nodes)
 for k in rim_nodes:
     node_xz[k] *= R0 / np.hypot(*node_xz[k])
-for k in cut_nodes:
+for k in cut_nodes - front_nodes:
     node_xz[k] = rect_pt(rect_s(node_xz[k]))
+FRONT_JUNCTIONS = []
+if FRONT_CUT:
+    for k in front_nodes - cut_nodes:
+        node_xz[k] = rect_pt(rect_s(node_xz[k], FRONT_RECT), FRONT_RECT)
+    # where the front cut's edge meets the hall's cut: one of the two rectangles' crossing points
+    crossings = rect_crossings(CUT_RECT, FRONT_RECT)
+    for k in sorted(front_nodes & cut_nodes):
+        dd = np.hypot(*(crossings - node_xz[k]).T)
+        j = int(np.argmin(dd))
+        assert dd[j] < 0.75, f"a node on both cuts lies {dd[j]:.2f} m from their crossings"
+        FRONT_JUNCTIONS.append(dict(node=int(k), at=crossings[j].tolist(), moved_m=round(float(dd[j]), 3)))
+        node_xz[k] = crossings[j]
+
+# ---------------------------------------------------------------- 7b street fronts beside the front cut (v3)
+def raster_cell(x, z):
+    """the crop's cell (row, column) holding planner (x, z); the frame's matrix is orthonormal, so its inverse is
+    its transpose"""
+    de, dn = x * XH[0] + z * ZH[0], x * XH[1] + z * ZH[1]
+    return int(math.floor((dn - OFF_N) / RES + K)), int(math.floor((de - OFF_E) / RES + K))
+
+
+def along(poly, step=0.05):
+    """points at most step m apart along a polyline, the length each stands for, and their arc positions"""
+    pts, wts = [], []
+    for a, b in zip(poly[:-1], poly[1:]):
+        L = float(np.hypot(*(b - a)))
+        if L < 1e-12:
+            continue
+        n = max(1, int(math.ceil(L / step)))
+        t = (np.arange(n) + 0.5) / n
+        pts.append(a + t[:, None] * (b - a))
+        wts.append(np.full(n, L / n))
+    Q, W = np.vstack(pts), np.concatenate(wts)
+    return Q, W, np.cumsum(W) - W / 2
+
+
+def line_fit(Q, W, p0=None, p1=None):
+    """weighted total least squares line (point, unit direction with +x along it); p0 and p1 pin points on it"""
+    if p0 is not None and p1 is not None:
+        c, d = p0, (p1 - p0) / np.hypot(*(p1 - p0))
+    else:
+        c = p0 if p0 is not None else p1 if p1 is not None else (Q * W[:, None]).sum(0) / W.sum()
+        D = Q - c
+        d = np.linalg.eigh((D * W[:, None]).T @ D)[1][:, 1]
+    return c, (-d if d[0] < 0 else d)
+
+
+def averaged(S, r, W, window):
+    """r averaged (weighted by length) over the window centred on each arc position"""
+    cw = np.concatenate([[0.0], np.cumsum(W)])
+    cr = np.concatenate([[0.0], np.cumsum(W * r)])
+    lo = np.searchsorted(S, S - window / 2, side="left")
+    hi = np.searchsorted(S, S + window / 2, side="right")
+    return (cr[hi] - cr[lo]) / (cw[hi] - cw[lo])
+
+
+def residuals(Q, c, d):
+    return (Q - c) @ np.array([-d[1], d[0]])     # + = behind the line (+z, into the block)
+
+
+def on_polyline(F, p):
+    """the closest point of a polyline to p and its arc position"""
+    best = None
+    arc = 0.0
+    for a, b in zip(F[:-1], F[1:]):
+        ab = b - a
+        L = float(np.hypot(*ab))
+        t = 0.0 if L < 1e-12 else min(max(float((p - a) @ ab) / (L * L), 0.0), 1.0)
+        q = a + t * ab
+        dd = float(np.hypot(*(p - q)))
+        if best is None or dd < best[0]:
+            best = (dd, q, arc + t * L)
+        arc += L
+    return best[1], best[2]
+
+
+def sub_polyline(F, u0, u1, eps=0.02):
+    """F from arc position u0 to u1 (u0 < u1), with F's own vertices in between"""
+    arcs = np.concatenate([[0.0], np.cumsum(np.hypot(*np.diff(F, axis=0).T))])
+
+    def at(u):
+        k = min(int(np.searchsorted(arcs, u, side="right")) - 1, len(F) - 2)
+        L = arcs[k + 1] - arcs[k]
+        return F[k] + (F[k + 1] - F[k]) * ((u - arcs[k]) / L if L > 0 else 0.0)
+
+    mid = [F[k] for k in range(len(F)) if u0 + eps < arcs[k] < u1 - eps]
+    return np.vstack([at(u0), *mid, at(u1)]) if mid else np.vstack([at(u0), at(u1)])
+
+
+def street_front_runs(street):
+    """chains between the street and a band 1-2 block inside the box and the clamp, joined end to end at nodes"""
+    x_lo, x_hi = P["street_front_x"]
+    z_lo, z_hi = P["street_front_z"]
+    cand = {}
+    for ci, ch in enumerate(chains):
+        if ch["rim"] or ch["cut"] or ch["front"] or ch["sn"] == ch["en"] or street not in (ch["l"], ch["r"]):
+            continue
+        other = ch["r"] if ch["l"] == street else ch["l"]
+        if int(comp_label[other]) not in (1, 2):
+            continue
+        q = ch["raw"]
+        rr = np.hypot(q[:, 0], q[:, 1])
+        clamp = (rr < P["clamp_inner_radius"] + 1.0) | ((rr < P["clamp_radius"] + 1.0) & (q[:, 1] > P["clamp_front_z"]))
+        ax = np.abs(q[:, 0])
+        if ((ax >= x_lo - 1.0) & (ax <= x_hi) & (q[:, 1] >= z_lo) & (q[:, 1] <= z_hi) & clamp).all():
+            cand[ci] = other
+    at = {}
+    for ci in cand:
+        for nd in (chains[ci]["sn"], chains[ci]["en"]):
+            at.setdefault(nd, []).append(ci)
+    used, runs = set(), []
+    for nd0 in sorted(nd for nd, cs in at.items() if len(cs) != 2):
+        for ci0 in at[nd0]:
+            if ci0 in used:
+                continue
+            nodes, links = [nd0], []
+            nd, ci = nd0, ci0
+            while True:
+                used.add(ci)
+                ch = chains[ci]
+                forward = ch["sn"] == nd
+                nxt = ch["en"] if forward else ch["sn"]
+                links.append((ci, forward))
+                nodes.append(nxt)
+                if len(at[nxt]) != 2:
+                    break
+                ci = next(c for c in at[nxt] if c != ci)
+                if ci in used:
+                    break
+                nd = nxt
+            runs.append((nodes, links))
+    return runs
+
+
+def segment_run(Q, W, S, p0, p1):
+    """the fewest straight segments (then the least squared residual) whose lines stay within the tolerance of the
+    boundary averaged along it; p0 / p1 pin the first / last segment through a node. [(arc0, arc1, c, d)] or None"""
+    tol, window, min_len = P["street_front_tol_m"], P["street_front_window_m"], P["street_front_min_m"]
+    total = float(S[-1] + W[-1] / 2)
+    arcs = np.concatenate([np.arange(0.0, total - 0.25, 0.5), [total]])
+    idx = np.searchsorted(S, arcs)
+    nb = len(arcs) - 1
+    best = [None] * (nb + 1)
+    best[0] = (0, 0.0, -1, None)
+    for k in range(1, nb + 1):
+        for j in range(k):
+            if best[j] is None or (arcs[k] - arcs[j] < min_len and not (j == 0 and k == nb)):
+                continue
+            sl = slice(idx[j], idx[k])
+            if sl.stop - sl.start < 2:
+                continue
+            c, d = line_fit(Q[sl], W[sl], p0 if j == 0 else None, p1 if k == nb else None)
+            if abs(math.degrees(math.atan2(d[1], d[0]))) > P["street_front_max_angle_deg"]:
+                continue   # a building front runs along the street; a slanted piece is the average's ramp over a step
+            r = residuals(Q[sl], c, d)
+            if np.abs(averaged(S[sl], r, W[sl], window)).max() > tol:
+                continue
+            cand = (best[j][0] + 1, best[j][1] + float((W[sl] * r * r).sum()), j, (c, d))
+            if best[k] is None or cand[:2] < best[k][:2]:
+                best[k] = cand
+    if best[nb] is None:
+        return None
+    segs, k = [], nb
+    while k > 0:
+        _, _, j, (c, d) = best[k]
+        segs.append((float(arcs[j]), float(arcs[k]), c, d))
+        k = j
+    return segs[::-1]
+
+
+def regularise_street_fronts():
+    street = C[raster_cell(0.0, -16.0)]
+    assert comp_label[street] == 0, "the street before the hall is not ground"
+    report = []
+    for nodes, links in street_front_runs(street):
+        geoms = []
+        for ci, forward in links:
+            g = chains[ci]["raw"]
+            geoms.append(g if forward else g[::-1])
+        poly = np.vstack([geoms[0]] + [g[1:] for g in geoms[1:]])
+        chord = node_xz[nodes[-1]] - node_xz[nodes[0]]
+        side = "north" if float(poly[:, 0].mean()) < 0 else "south"
+        if abs(chord[1]) > math.tan(math.radians(25)) * abs(chord[0]) or float(np.hypot(*chord)) < P["street_front_min_m"]:
+            log(f"street front: run of {len(links)} chains at x {poly[:, 0].min():.1f}..{poly[:, 0].max():.1f} not along the street, left")
+            continue
+        # the street must lie on its -z side and the block on its +z side
+        Q, W, S = along(poly)
+        c, d = line_fit(Q, W)
+        n = np.array([-d[1], d[0]])
+        probe = [Q[int(k)] for k in np.linspace(0, len(Q) - 1, 9)]
+        fronts = sum(C[raster_cell(*(q - 0.75 * n))] == street and C[raster_cell(*(q + 0.75 * n))] != street for q in probe)
+        if fronts < 6:
+            log(f"street front: run at x {poly[:, 0].min():.1f}..{poly[:, 0].max():.1f} does not face the street, left")
+            continue
+        # a run ending on the front cut ends where its line crosses the rectangle; one ending on another chain keeps
+        # that node, and its last segment passes through it
+        edge = {}
+        for end, nd in (("start", nodes[0]), ("end", nodes[-1])):
+            if nd in front_nodes:
+                edge[end] = P["front_cut_x"][0] if node_xz[nd][0] < 0 else P["front_cut_x"][1]
+        if edge:
+            xe = next(iter(edge.values()))
+            keep = np.abs(Q[:, 0]) >= abs(xe)
+            Q, W = Q[keep], W[keep]
+            S = np.cumsum(W) - W / 2
+        def cross_x(c, d, xe):
+            return c + d * ((xe - c[0]) / d[0])
+
+        def proj(q, c, d):
+            return c + d * float((q - c) @ d)
+
+        # A run ending on another chain (the clamp's edge, where the full-height blocks begin) moves that node onto
+        # its line, as it moves its own nodes: a raster corner stands up to a staircase's half-step off the wall.
+        # Only a node that would move more than street_front_end_move_m is kept, its segment pinned through it.
+        p0 = p1 = None
+        for _ in range(3):
+            segs = segment_run(Q, W, S, p0, p1)
+            if segs is None:
+                break
+            again = False
+            for end, k_, nd in (("start", 0, nodes[0]), ("end", -1, nodes[-1])):
+                if end in edge or (end == "start" and p0 is not None) or (end == "end" and p1 is not None):
+                    continue
+                c_, d_ = segs[k_][2], segs[k_][3]
+                if float(np.hypot(*(proj(node_xz[nd], c_, d_) - node_xz[nd]))) > P["street_front_end_move_m"]:
+                    if end == "start":
+                        p0 = node_xz[nd].copy()
+                    else:
+                        p1 = node_xz[nd].copy()
+                    again = True
+            if not again:
+                break
+        if segs is None:
+            log(f"street front: no segmentation within tolerance for the {side} run, left as drawn")
+            continue
+
+        def end_point(end, seg):
+            if end in edge:
+                return cross_x(seg[2], seg[3], edge[end])
+            pin = p0 if end == "start" else p1
+            return pin if pin is not None else proj(node_xz[nodes[0 if end == "start" else -1]], seg[2], seg[3])
+
+        F = [end_point("start", segs[0])]
+        seg_ends = [[F[0], None] for _ in segs]
+        junctions = []
+        for k, ((a0, a1, ca, da), (_, _, cb, db)) in enumerate(zip(segs[:-1], segs[1:])):
+            qb = Q[min(int(np.searchsorted(S, a1)), len(Q) - 1)]
+            pa, pb = proj(qb, ca, da), proj(qb, cb, db)
+            cr = da[0] * db[1] - da[1] * db[0]
+            X = None
+            if abs(cr) > 1e-9:
+                t = ((cb - ca)[0] * db[1] - (cb - ca)[1] * db[0]) / cr
+                X = ca + t * da
+            jog = float(np.hypot(*(pb - pa)))
+            if X is not None and float(np.hypot(*(X - pa))) <= P["street_front_junction_m"]:
+                F.append(X)
+                seg_ends[k][1], seg_ends[k + 1][0] = X, X
+                junctions.append("kink")
+            elif jog < P["street_front_min_jog_m"]:
+                X = (pa + pb) / 2      # lines a centimetre or two apart: one vertex between them, no step
+                F.append(X)
+                seg_ends[k][1], seg_ends[k + 1][0] = X, X
+                junctions.append(f"meet ({jog:.3f} m apart)")
+            else:
+                F += [pa, pb]
+                seg_ends[k][1], seg_ends[k + 1][0] = pa, pb
+                junctions.append(f"jog {jog:.2f} m")
+        F.append(end_point("end", segs[-1]))
+        seg_ends[-1][1] = F[-1]
+        F = np.array(F)
+        # the run's nodes onto the segments, its chains become them
+        before = {nd: node_xz[nd].copy() for nd in nodes}
+        us = [0.0]
+        for nd in nodes[1:-1]:
+            q, u = on_polyline(F, node_xz[nd])
+            us.append(u)
+        us.append(float(np.hypot(*np.diff(F, axis=0).T).sum()))
+        if any(b <= a for a, b in zip(us[:-1], us[1:])):
+            log(f"street front: the {side} run's nodes do not fall in order on its segments, left as drawn")
+            continue
+        vert_arcs = np.concatenate([[0.0], np.cumsum(np.hypot(*np.diff(F, axis=0).T))])
+        for k, nd in enumerate(nodes):
+            if 0 < k < len(nodes) - 1:
+                near = np.abs(vert_arcs - us[k]) < 0.02
+                if near.any():
+                    us[k] = float(vert_arcs[np.argmax(near)])
+            node_xz[nd] = sub_polyline(F, us[k], us[k], 0.0)[0] if 0 < k < len(nodes) - 1 else F[0 if k == 0 else -1]
+        rid = len(report)
+        for k, (ci, forward) in enumerate(links):
+            g = sub_polyline(F, us[k], us[k + 1])
+            g[0], g[-1] = node_xz[nodes[k]], node_xz[nodes[k + 1]]
+            chains[ci]["geom"] = g if forward else g[::-1]
+            chains[ci]["fixed"] = True
+            chains[ci]["street_front"] = rid
+        moved = [float(np.hypot(*(node_xz[nd] - before[nd]))) for nd in nodes]
+        segments = []
+        for k, (a0, a1, c, d) in enumerate(segs):
+            sl = (S >= a0) & (S < a1)
+            r = residuals(Q[sl], c, d)
+            sm = averaged(S[sl], r, W[sl], P["street_front_window_m"])
+            segments.append(dict(
+                id=f"{side}-{k + 1}", c=c, d=d, arcs=(a0, a1), ends=seg_ends[k],
+                raw=dict(samples_m=round(float(W[sl].sum()), 2), rms_m=round(float(np.sqrt((W[sl] * r * r).sum() / W[sl].sum())), 3),
+                         max_m=round(float(np.abs(r).max()), 3), mean_m=round(float((W[sl] * r).sum() / W[sl].sum()), 3),
+                         averaged_max_m=round(float(np.abs(sm).max()), 3)),
+                pinned="start" if (k == 0 and p0 is not None) else "end" if (k == len(segs) - 1 and p1 is not None) else None))
+        report.append(dict(side=side, nodes=nodes, links=links, F=F, segments=segments, junctions=junctions,
+                           ends={e: "on the front cut" if e in edge else "node kept, segment through it" if pin is not None
+                                 else "node moved onto the line" for e, pin in (("start", p0), ("end", p1))},
+                           nodes_moved=dict(count=sum(1 for v in moved if v > 1e-9), max_m=round(max(moved), 3)),
+                           before=before, raw=[chains[ci]["raw"] for ci, _ in links]))
+        log(f"street front {side}: {len(links)} chains, {len(segs)} segments, {sum(len(chains[ci]['raw']) for ci, _ in links)} raw "
+            f"corners, nodes moved up to {max(moved):.3f} m")
+    return report
+
+
+STREET_FRONTS = regularise_street_fronts() if FRONT_CUT else []
 
 STEP = math.radians(P["rim_step_deg"])
 for ch in chains:
     a, b = node_xz[ch["sn"]], node_xz[ch["en"]]
     raw_ = ch["raw"]
+    if ch.get("street_front") is not None:
+        continue   # v3: already the run's straight segments (7b)
     if ch["rim"]:
         ang = np.unwrap(np.arctan2(raw_[:, 1], raw_[:, 0]))
         dlt = ang[-1] - ang[0]
@@ -434,19 +872,21 @@ for ch in chains:
         mid = np.stack([R0 * np.cos(th), R0 * np.sin(th)], 1)
         ch["geom"] = np.vstack([a, mid, b])
         ch["fixed"] = True
-    elif ch["cut"]:
-        ss = np.array([rect_s(p) for p in raw_])
-        ss = np.unwrap(ss, period=PER)
+    elif ch["cut"] or ch["front"]:
+        R = CUT_RECT if ch["cut"] else FRONT_RECT
+        per, scum = R[3], R[2]
+        ss = np.array([rect_s(p, R) for p in raw_])
+        ss = np.unwrap(ss, period=per)
         dlt = ss[-1] - ss[0]
-        sa, sb = rect_s(a), rect_s(b)
+        sa, sb = rect_s(a, R), rect_s(b, R)
         d2 = sb - sa
-        d2 += PER * round((dlt - d2) / PER)
+        d2 += per * round((dlt - d2) / per)
         if ch["sn"] == ch["en"] and abs(d2) < 1e-9:
-            d2 = PER * (1 if dlt > 0 else -1)
+            d2 = per * (1 if dlt > 0 else -1)
         lo, hi = sorted([sa, sa + d2])
-        corners = [c for kk in range(-2, 3) for c in (SCUM[:4] + kk * PER) if lo + 1e-6 < c < hi - 1e-6]
+        corners = [c for kk in range(-2, 3) for c in (scum[:4] + kk * per) if lo + 1e-6 < c < hi - 1e-6]
         corners = sorted(corners, reverse=d2 < 0)
-        mid = np.array([rect_pt(c) for c in corners]).reshape(-1, 2)
+        mid = np.array([rect_pt(c, R) for c in corners]).reshape(-1, 2)
         ch["geom"] = np.vstack([a, mid, b])
         ch["fixed"] = True
     else:
@@ -626,6 +1066,9 @@ while bad and rounds < 12:
             faces[f] = poly
     log(f"repair round {rounds}: still invalid {len(bad)}")
 unresolved = {int(f): w for f, w in bad.items()}
+if FRONT_CUT:
+    beside = {chains[ci][s] for run in STREET_FRONTS for ci, _ in run["links"] for s in ("l", "r")}
+    assert not (set(bad) & beside), f"faces beside a straightened street front are invalid: {sorted(set(bad) & beside)}"
 for f in list(bad):
     # last resort keeps the face out of the mesh; reported in the JSON
     faces.pop(f, None)
@@ -815,6 +1258,75 @@ if ARGS.keep_work:
                         PX=PX, PZ=PZ, RR=RR, DE=DE, DN=DN)
 levels_used = sorted({band_level(b) for b in np.unique(band)})
 f32 = verts.astype(np.float64) / 100
+
+
+def street_front_summary():
+    """each straightened segment as published: its line and ends, the raw boundary's spread about it, and how far
+    the written walls facing the street along it stand from it (centimetre vertices)"""
+    Vw = wq.astype(np.float64) / 100
+    A_, B_, C_ = Vw[wt[:, 0]], Vw[wt[:, 1]], Vw[wt[:, 2]]
+    nrm = np.cross(B_ - A_, C_ - A_)[:, [0, 2]]
+    nrm /= np.maximum(np.hypot(nrm[:, 0], nrm[:, 1]), 1e-12)[:, None]
+    cen = ((A_ + B_ + C_) / 3)[:, [0, 2]]
+    runs = []
+    for run in STREET_FRONTS:
+        segs = []
+        for s in run["segments"]:
+            c, d = s["c"], s["d"]
+            n = np.array([-d[1], d[0]])
+            t0, t1 = sorted(float((e - c) @ d) for e in s["ends"])
+            tc = (cen - c) @ d
+            sel = (nrm @ -n > math.cos(math.radians(30))) & (tc > t0 + 0.01) & (tc < t1 - 0.01) & (np.abs((cen - c) @ n) < 1.0)
+            vv = np.vstack([A_[sel], B_[sel], C_[sel]])[:, [0, 2]]
+            dev = np.abs((vv - c) @ n)
+            segs.append({
+                "id": s["id"],
+                "line": {"point": [round(float(v), 4) for v in c], "direction": [round(float(v), 6) for v in d]},
+                "ends": [[round(float(v), 3) for v in e] for e in s["ends"]],
+                "length_m": round(t1 - t0, 3),
+                "angle_to_x_deg": round(math.degrees(math.atan2(d[1], d[0])), 3),
+                "pinned_through_node": s["pinned"],
+                "raw_boundary_m": s["raw"],
+                "walls": {"triangles": int(sel.sum()), "max_deviation_m": round(float(dev.max()), 4) if len(dev) else None},
+            })
+        runs.append({"side": run["side"], "chains": len(run["links"]), "ends": run["ends"], "junctions": run["junctions"],
+                     "nodes_moved": run["nodes_moved"], "segments": segs})
+    return runs
+
+
+SF_SUMMARY = street_front_summary() if FRONT_CUT else []
+for run in SF_SUMMARY:
+    for s in run["segments"]:
+        log(f"  {s['id']}: {s['length_m']} m at {s['angle_to_x_deg']} deg, raw rms {s['raw_boundary_m']['rms_m']} max "
+            f"{s['raw_boundary_m']['max_m']} averaged {s['raw_boundary_m']['averaged_max_m']}, walls {s['walls']}")
+FRONT_DOC = {}
+if FRONT_CUT:
+    FRONT_DOC = {
+        "registration": {
+            "centre_local": P["centre_local"],
+            "note": ("unchanged from merchant-city-v2: the hall's own E57 scan (the planner's frame), ranging through the "
+                     "front door and the windows to the walls across Glassford, Garth and Hutcheson Streets and matched "
+                     "to the DSM's edges of them, puts the planner's origin at local (E 3.018, N 7.981), sigma 0.06 / "
+                     "0.12 m: in register to about 2 cm. The DSM's own Trades Hall front stands 1.0-1.2 m out from the "
+                     "scanned faces (it faces away from the aircraft; its LiDAR shadow is filled), and the DSM's dome-"
+                     "drum ring 0.44 m streetward of the interior dome, so neither registers the city"),
+        },
+        "front_cut": (f"Trades Hall's street front is the planner's own model (hall-exterior-spec.ts: x -15.323..15.273, "
+                      f"z -5.295 out to about -7.54, on the pavement): {P['front_cut_x'][0]}<=x<={P['front_cut_x'][1]}, "
+                      f"{P['front_cut_z'][0]}<=z<={P['front_cut_z'][1]}, less the site cut, is ground at the ground disc's "
+                      f"level (y {P['ground_y']}), its edges on the exact rectangle; the blocks beside it end there in "
+                      f"section walls"),
+        "street_fronts": {
+            "rule": ("the fronts of the blocks beside the front cut on Glassford Street (|x| "
+                     f"{P['street_front_x'][0]}..{P['street_front_x'][1]}, z {P['street_front_z'][0]}..{P['street_front_z'][1]}, "
+                     "inside the clamp) are straight segments fitted to the DSM's raster boundary; raw_boundary_m is that "
+                     "boundary's spread about each segment's line (+ = behind it), averaged_max_m its largest offset "
+                     f"averaged over {P['street_front_window_m']} m, at most street_front_tol_m; walls.max_deviation_m is "
+                     "the written walls' largest offset from the line, after rounding to centimetres"),
+            "slivers_joined": len(SLIVERS),
+            "runs": SF_SUMMARY,
+        },
+    }
 info = dict(
     unresolved_faces=unresolved, repair_rounds=rounds,
     chains=len(chains), nodes=NN, faces=len(faces),
@@ -834,10 +1346,10 @@ doc = {
     },
     "frame": {
         "name": "planner hall frame (metres, y up, right-handed)",
-        "origin": "hall floor centre = local (E 3.0, N 8.0) m from E259329 N665183, 3.79 m above the pavement",
+        "origin": f"hall floor centre = local (E {ce}, N {cn}) m from E259329 N665183, 3.79 m above the pavement",
         "minus_z_grid_bearing_deg": P["frame_bearing_deg"],
         "plus_x_unit_EN": XH.round(5).tolist(), "plus_z_unit_EN": ZH.round(5).tolist(),
-        "from_local": "dx=e-3.0, dn=n-8.0; x=XH.(dx,dn); z=ZH.(dx,dn); y=(DSM+0.30)-3.79",
+        "from_local": f"dx=e-{ce}, dn=n-{cn}; x=XH.(dx,dn); z=ZH.(dx,dn); y=(DSM+0.30)-3.79",
         "true_bearing": "true = grid - 1.861 deg",
         "y_odn": "y = ODN - 14.19 (DSM datum 10.7 m ODN; pavement 10.40 m ODN at y=-3.79)",
     },
@@ -850,7 +1362,7 @@ doc = {
                  "walls": {"vertices": [int(len(cq)), int(len(verts))], "indices": [int(ct.size), int(idx.size)]}},
         "shading": "flat (derivative normals); caps and walls do not share vertices",
     },
-    "method": __doc__.strip(),
+    "method": __doc__.strip() + ("\n" + FRONT_CUT_METHOD if FRONT_CUT else ""),
     "parameters": P,
     "bands": {
         "spacing_m": S, "anchor_y": P["level_anchor_y"], "ground_disc_y": P["ground_y"],
@@ -861,6 +1373,7 @@ doc = {
     "site_cut": f"nothing emitted inside |x|<={P['rect_half_x']}, {P['rect_front_z']}<=z<={P['rect_half_z']} (the street face: the hall's window wall's outer face); the solids cut by it are left open there (the hall model fills it)",
     "clamp": f"within {P['clamp_inner_radius']} m of the origin, and within {P['clamp_radius']} m where planner z > {P['clamp_front_z']} (all but the blocks across Glassford Street), y = min(y, 0) before banding",
     "rim": "solids crossing the 260 m circle are closed with section walls on the circle; the ground disc rim is open",
+    **FRONT_DOC,
     "bbox_m": {"min": f32.min(0).round(2).tolist(), "max": f32.max(0).round(2).tolist(), "order": "x, y, z"},
     "counts": {"triangles": int(ntri), "cap_triangles": int(len(ct)), "wall_triangles": int(len(wt)),
                "vertices": int(len(verts)), "bytes_raw": len(blob), "bytes_gzip": len(gz)},
@@ -887,5 +1400,8 @@ report = {
     "trees_suppressed": {"rule": "isolated raised blob (DSM > terrain_cut) with area < tree_max_area, interior median residual from a 1.5 m local plane > tree_min_residual (roof interiors: median 0.035 m) and top < tree_max_height above the pavement; flattened to the smoothed terrain", "blobs": TREES},
     "build": info,
 }
+if FRONT_CUT:
+    report["front_cut"] = {"slivers_joined": SLIVERS, "junctions_on_both_cuts": FRONT_JUNCTIONS,
+                           "street_front_lines": [[[round(float(v), 4) for v in p] for p in run["F"]] for run in STREET_FRONTS]}
 (OUT / f"{ARGS.name}.build.json").write_bytes((json.dumps(report, indent=1) + "\n").encode("utf-8"))
 log("done", json.dumps(info))
