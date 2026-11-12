@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { GUEST_ENQUIRY_LIMITS, TRADES_HALL_ENQUIRY_VENUE_SLUG } from "@omnitwin/types";
 
 const mocks = vi.hoisted(() => ({
@@ -8,7 +8,13 @@ const mocks = vi.hoisted(() => ({
 vi.mock("../../../api/configurations.js", () => ({ submitGuestEnquiry: mocks.submitGuestEnquiry }));
 
 const { FreshEnquiry } = await import("../FreshEnquiry.js");
-const { FRESH_ENQUIRY_CRAFT_PREFIX } = await import("../fresh-copy.js");
+const {
+  FRESH_ENQUIRY_CRAFT_PREFIX,
+  FRESH_ENQUIRY_EMAIL_INVALID,
+  FRESH_ENQUIRY_EMAIL_REQUIRED,
+  FRESH_ENQUIRY_SENT_LINE,
+  FRESH_ENQUIRY_SENT_TITLE,
+} = await import("../fresh-copy.js");
 
 // ---------------------------------------------------------------------------
 // The composer's POST — what reaches the events team from the front door and
@@ -99,5 +105,42 @@ describe("FreshEnquiry — the enquiry it posts", () => {
     expect(screen.getByRole("button", { name: "Send enquiry" })).toBeTruthy();
     expect(document.querySelector('a[href^="tel:"]')).toBeTruthy();
     expect(document.querySelector('a[href^="mailto:"]')).toBeNull();
+  });
+});
+
+// a11y-2: a keyboard or screen-reader visitor must hear what the page says.
+// The email's problem appeared beside a field they were not on, with focus
+// left on Send, so nothing was spoken; a sent enquiry unmounted the focused
+// Send button, dropping focus to the page, and its confirmation arrived in a
+// status region created with its words already in it.
+describe("FreshEnquiry — what a keyboard and a screen reader are told", () => {
+  it.each([
+    ["no address", "", FRESH_ENQUIRY_EMAIL_REQUIRED],
+    ["an address that is not one", "jane@", FRESH_ENQUIRY_EMAIL_INVALID],
+  ])("takes focus to the email field, which names its problem, when Send finds %s", (_case, address, problem) => {
+    render(<FreshEnquiry />);
+    if (address !== "") fireEvent.change(screen.getByLabelText("Your email"), { target: { value: address } });
+    const sendButton = screen.getByRole("button", { name: "Send enquiry" });
+    sendButton.focus();
+    fireEvent.click(sendButton);
+    expect(mocks.submitGuestEnquiry).not.toHaveBeenCalled();
+    const field = screen.getByRole("textbox", { name: /^Your email/u, description: problem });
+    expect(document.activeElement, "focus after Send").toBe(field);
+    expect(field.getAttribute("aria-invalid")).toBe("true");
+  });
+
+  it("takes focus to the confirmation once the enquiry is sent, named by the words on it", async () => {
+    mocks.submitGuestEnquiry.mockResolvedValueOnce({ enquiryId: "enq-3" });
+    render(<FreshEnquiry />);
+    fireEvent.change(screen.getByLabelText("Your email"), { target: { value: "couple@example.test" } });
+    const sendButton = screen.getByRole("button", { name: "Send enquiry" });
+    sendButton.focus();
+    fireEvent.click(sendButton);
+    const confirmation = await screen.findByRole("status");
+    await waitFor(() => {
+      expect(document.activeElement, "focus after sending").toBe(confirmation);
+    });
+    expect(screen.getByRole("status", { name: FRESH_ENQUIRY_SENT_TITLE })).toBe(confirmation);
+    expect(confirmation.textContent).toContain(FRESH_ENQUIRY_SENT_LINE);
   });
 });

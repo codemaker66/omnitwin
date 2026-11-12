@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type FormEvent,
   type ReactElement,
@@ -100,6 +101,25 @@ export function FreshEnquiry(): ReactElement {
   const [phone, setPhone] = useState("");
   const [emailTouched, setEmailTouched] = useState(false);
   const [sendState, setSendState] = useState<EnquirySendState>("idle");
+  /** Counts the sends that found no usable address; each takes focus to the field. */
+  const [emailFocusRequests, setEmailFocusRequests] = useState(0);
+  const emailRef = useRef<HTMLInputElement>(null);
+  const sentRef = useRef<HTMLDivElement>(null);
+
+  // The form sets noValidate, so the browser neither focuses nor announces a
+  // missing or invalid email: Send does it here (a11y-2). Focus moves once the
+  // field has rendered as invalid with its problem attached, so a screen reader
+  // reads the label, the invalid state and the problem together.
+  useEffect(() => {
+    if (emailFocusRequests > 0) emailRef.current?.focus();
+  }, [emailFocusRequests]);
+
+  // A sent enquiry replaces the Send button that held focus. Focus goes to the
+  // confirmation, which is named by its own title, rather than falling to the
+  // page with nothing said.
+  useEffect(() => {
+    if (sendState === "sent") sentRef.current?.focus();
+  }, [sendState]);
 
   /**
    * The Craft the Trades House quiz drew, arriving as `?craft=`.
@@ -157,6 +177,7 @@ export function FreshEnquiry(): ReactElement {
       if (composed === null || guests === null) return;
       if (emailProblem !== null) {
         setEmailTouched(true);
+        setEmailFocusRequests((count) => count + 1);
         return;
       }
       setSendState("sending");
@@ -275,6 +296,7 @@ export function FreshEnquiry(): ReactElement {
           <label className="fr-enq-field">
             <span>{FRESH_ENQUIRY_EMAIL_LABEL}</span>
             <input
+              ref={emailRef}
               type="email"
               autoComplete="email"
               inputMode="email"
@@ -338,8 +360,14 @@ export function FreshEnquiry(): ReactElement {
             {craftNote === null ? composed.body : `${composed.body}\n\n${craftNote}`}
           </pre>
           {sendState === "sent" ? (
-            <div className="fr-enq-sent" role="status">
-              <p className="fr-enq-sent-title">{FRESH_ENQUIRY_SENT_TITLE}</p>
+            <div
+              className="fr-enq-sent"
+              role="status"
+              ref={sentRef}
+              tabIndex={-1}
+              aria-labelledby="fr-enq-sent-title"
+            >
+              <p className="fr-enq-sent-title" id="fr-enq-sent-title">{FRESH_ENQUIRY_SENT_TITLE}</p>
               <p className="fr-enq-sent-line">{FRESH_ENQUIRY_SENT_LINE}</p>
               <span className="fr-enq-call">
                 {FRESH_ENQUIRY_OR_CALL}{" "}
