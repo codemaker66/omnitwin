@@ -1,6 +1,6 @@
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import * as configApi from "../../../api/configurations.js";
 import type { BatchObjectInput, Configuration, ObjectMetadata, PlacedObject } from "../../../api/configurations.js";
 import { GRAND_HALL_RENDER_DIMENSIONS, toRealWorld } from "../../../constants/scale.js";
@@ -134,6 +134,13 @@ async function saved(held: ReadonlySet<string> = new Set<string>()): Promise<voi
   await act(async () => { landed = await useEditorStore.getState().saveToServer(false); });
   expect(landed).toBe(true);
 }
+
+// The new chrome is a lazy chunk of EditorPage. Loaded here, before any test,
+// a render waits only on React, never on a cold module transform, which under
+// load outlasted waitFor's one second (delta review of #388 at 33a8e0ad, T9).
+beforeAll(async () => {
+  await import("../PlannerChromeV2.js");
+});
 
 async function openTheNewChrome(): Promise<void> {
   render(
