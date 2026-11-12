@@ -460,6 +460,7 @@ describe.skipIf(target === undefined)("the public enquiry route on the migrated 
     const recent = `test-only-recent-${run}@example.test`;
     const held = `test-only-held-${run}@example.test`;
     const undelivered = `test-only-undelivered-${run}@example.test`;
+    const elsewhere = `test-only-other-email-${run}@example.test`;
     // What earlier acknowledgements left behind: one sent 25 hours ago, one
     // sent 23 hours ago, one held back an hour ago, and one the provider did
     // not take an hour ago (nothing reached that address, so its guest is
@@ -470,8 +471,11 @@ describe.skipIf(target === undefined)("the public enquiry route on the migrated 
       { address: held, status: "suppressed", ago: "1 hour" },
       { address: undelivered, status: "failed", ago: "1 hour" },
     ].map((row) => ({ ...row, key: `enquiry-acknowledged:test-only-${randomUUID()}` }));
+    // Another email the venue sent an address an hour ago, under another key:
+    // only an acknowledgement uses up an address's day (review of #414, Y3).
+    const otherEmail = { address: elsewhere, status: "sent", ago: "1 hour", key: `enquiry-approved:test-only-${randomUUID()}` };
     try {
-      for (const row of earlier) {
+      for (const row of [...earlier, otherEmail]) {
         await pool.query(
           `INSERT INTO email_sends (idempotency_key, recipient, subject, status, created_at)
            VALUES ($1, $2, 'TEST ONLY earlier acknowledgement', $3, now() - $4::interval)`,
@@ -480,13 +484,13 @@ describe.skipIf(target === undefined)("the public enquiry route on the migrated 
       }
       const asked = { venueSlug: liveVenue, source: "website", eventType: "wedding" };
       const decided: string[] = [];
-      for (const email of [lapsed, recent, held, undelivered]) {
+      for (const email of [lapsed, recent, held, undelivered, elsewhere]) {
         decided.push(await acknowledgementOf(idOf(await enquire({ ...asked, email }), "enquiryId")));
       }
-      expect(decided).toEqual(["sent", "suppressed", "sent", "sent"]);
-      expect([lapsed, recent, held, undelivered].map(handedCount)).toEqual([1, 0, 1, 1]);
+      expect(decided).toEqual(["sent", "suppressed", "sent", "sent", "sent"]);
+      expect([lapsed, recent, held, undelivered, elsewhere].map(handedCount)).toEqual([1, 0, 1, 1, 1]);
     } finally {
-      await pool.query("DELETE FROM email_sends WHERE idempotency_key = ANY($1::text[])", [earlier.map((row) => row.key)]);
+      await pool.query("DELETE FROM email_sends WHERE idempotency_key = ANY($1::text[])", [[...earlier, otherEmail].map((row) => row.key)]);
     }
   });
 
