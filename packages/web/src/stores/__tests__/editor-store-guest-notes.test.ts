@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../api/client.js";
 import type { BatchObjectInput, Configuration, ObjectMetadata, PlacedObject } from "../../api/configurations.js";
 import { editorToPlacedItem, flushAutoSave, placedItemToEditor } from "../../components/editor/EditorBridge.js";
+import { prepareLayoutForGuestEnquiry } from "../../components/editor/send-layout-flow.js";
 import { persistAnonymousPlannerDraft, readAnonymousPlannerDraft } from "../../lib/anonymous-planner-draft.js";
 import { deriveEditorSaveStatus, leftBehindWords, slateSaveState, type EditorSaveStatus, type SlateSaveKind } from "../../lib/editor-save-status.js";
 import { heldNoteIds, noteHeldOn, ownWordsOverHeldNotes, pieceNamedForRefusedSave, refusedOverHeldNote } from "../../lib/guest-plan-notes.js";
@@ -1713,6 +1714,36 @@ describe("Keep mine refused for notes the maker rewrote, among many notes of the
     expect(noteHeldOn(store(), tableId(6))).toBe(true);
     ownNotesKept(tables, server, [3, 6]);
     expect(store()).toMatchObject({ saveError: null, saveErrorCode: null, isDirty: false });
+  });
+
+  // Delta review of #388 at 33a8e0ad, S6. Send flushes the work first; when
+  // that flush's own save proved a clear refused, the save landed everything
+  // else, yet Send stopped on the first press and went on only on a second.
+  // It goes on beside the standing notice, which it does not put away.
+  it("lets Send go on, on its first press, when its own save proves a clear refused, and leaves the notice standing", async () => {
+    const server: PlanOnServer = { revision: 4, notes: new Map() };
+    await theyRewrite(server, 9, [6], () => undefined);
+    const api = vi.mocked(configApi.publicBatchSave).getMockImplementation();
+    if (api === undefined) throw new Error("no API model");
+    // Keep mine is cut short after the save leaving every note lands: every note stays carried, Table 7's not yet found out of date.
+    const sentBefore = savesSent();
+    vi.mocked(configApi.publicBatchSave).mockImplementation((...sent) => (savesSent() === sentBefore + 3
+      ? Promise.reject(new ApiError(429, "Too many requests — please slow down.", "RATE_LIMITED"))
+      : api(...sent)));
+    expect(await store().keepMine(false)).toBe(false);
+    vi.mocked(configApi.publicBatchSave).mockImplementation(api);
+
+    // The person clears their note on Table 7, which the maker has rewritten, and presses Send.
+    store().setObjectNotes(tableId(6), "");
+    expect(await prepareLayoutForGuestEnquiry(PLAN)).toBe(true);
+    expect(store()).toMatchObject({ isDirty: false, noteClearsRefused: [tableId(6)], saveError: TABLE_7_NOT_REMOVED, saveErrorCode: "NOTE_HELD" });
+    expect(server.notes.get(tableId(6))).toBe(THEIR_NOTE);
+    expect(saveStatusesNow()).toEqual({ status: "unsaved", slate: "not-saved" });
+    // The flush left nothing for a second press to send.
+    const sentAfter = savesSent();
+    expect(await prepareLayoutForGuestEnquiry(PLAN)).toBe(true);
+    expect(savesSent()).toBe(sentAfter);
+    expect(store().noteClearsRefused).toEqual([tableId(6)]);
   });
 
   // Delta review of #388 at 33a8e0ad, S1. A layout switch waits for the open

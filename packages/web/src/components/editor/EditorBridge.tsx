@@ -507,6 +507,13 @@ export function watchPlannerPageLeave(): () => void {
  * enquiry and review flows the venue holds the latest layout while newer
  * objects had never been pushed — reporting success over a stale layout is an
  * unfounded claim, not merely a bug.
+ *
+ * A save that landed everything but a clear of a note the API refused is its
+ * own outcome (landedButForRefusedClears): saveToServer answers false, as no
+ * change of the person's may be said to have saved over a clear it refused,
+ * yet nothing of the document is left to send, as the next flush would find.
+ * The flush answers true then, so Send goes on, on its first press, beside the
+ * clear's notice, which stands (ruling R1(b) on #388; delta review S6).
  */
 export async function flushAutoSave(transport?: BatchSaveTransport): Promise<boolean> {
   if (bridgeSaveTimer !== null) {
@@ -522,7 +529,13 @@ export async function flushAutoSave(transport?: BatchSaveTransport): Promise<boo
     const saved = transport === undefined
       ? await state.saveToServer(authenticated)
       : await state.saveToServer(authenticated, transport);
-    return saved && isCurrentEditorSession(session);
+    if (!isCurrentEditorSession(session)) return false;
+    return saved || landedButForRefusedClears(useEditorStore.getState());
   }
   return true;
+}
+
+/** After a save answered false: it landed, and only clears of notes were refused, whose notice stands. */
+function landedButForRefusedClears(state: Pick<ReturnType<typeof useEditorStore.getState>, "isDirty" | "isSaving" | "saveConflict" | "noteClearsRefused">): boolean {
+  return !state.isDirty && !state.isSaving && state.saveConflict === null && state.noteClearsRefused.length > 0;
 }
