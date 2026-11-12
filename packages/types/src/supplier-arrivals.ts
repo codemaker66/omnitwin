@@ -32,7 +32,7 @@ export const SUPPLIER_ARRIVAL_STAY_MS = 36 * 3_600_000;
  * this many days after its booking ends. The supplier's name, their times and
  * the door marks stay as the venue's record, and so do the names of the staff
  * who marked them in and out: they are the record of who was in the building,
- * kept after a member of staff's account is closed. The API's pass and the
+ * kept after a member of staff's account is deleted. The API's pass and the
  * privacy policy both read this one definition.
  */
 export const SUPPLIER_ARRIVAL_RETENTION = { daysAfterBooking: 365 } as const;

@@ -31,12 +31,15 @@
 -- arrival's contact and note a year after its booking ends
 -- (SUPPLIER_ARRIVAL_RETENTION in @omnitwin/types). The supplier's name, the
 -- times and the names of the staff who marked the door stay as the venue's
--- record of who was in the building, after an account is closed too.
+-- record of who was in the building, after an account is deleted too.
 --
 -- New tables only: nothing existing is read or rewritten. Creating their
 -- foreign keys takes SHARE ROW EXCLUSIVE locks on venues, bookings and users.
 -- Each waits at most five seconds and then fails the deploy, rather than
 -- queue every Diary save behind it while another session holds bookings.
+-- Once taken, the locks are held until the whole migration run commits, not
+-- just this file: drizzle applies every pending migration in one
+-- transaction, so writes to those three tables wait for the run's last one.
 SET LOCAL lock_timeout = '5s';
 --> statement-breakpoint
 CREATE TABLE booking_supplier_arrivals (
