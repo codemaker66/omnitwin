@@ -136,6 +136,9 @@ describe.skipIf(target === undefined)("compiling an event's handoff pack again, 
     expect(second.statusCode, second.body).toBe(200);
     expect(second.json<PackBody>().data.pack.id).toBe(firstPack.id);
     expect(await packsOf(f.configId)).toHaveLength(1);
+    // The planner's panel reads `created` to say the pack is unchanged (review H6).
+    expect(first.json<{ created?: unknown }>().created).toBe(true);
+    expect(second.json<{ created?: unknown }>().created).toBe(false);
 
     const event = await loadEventForOpsBoard(db, f.eventId);
     if (event === null) throw new Error("Event fixture missing");

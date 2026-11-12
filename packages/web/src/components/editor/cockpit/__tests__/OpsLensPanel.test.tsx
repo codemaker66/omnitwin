@@ -84,7 +84,49 @@ beforeEach(() => {
   useLightingRigStore.getState().clear();
 });
 
-afterEach(() => { cleanup(); });
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+
+const HASH = "a".repeat(64);
+const STAMP = "2026-11-12T09:00:00.000Z";
+
+/** A whole pack as the compile route sends it, valid against the shared schema. */
+function storedBundle(): unknown {
+  const packId = "44444444-4444-4444-8444-444444444444";
+  return {
+    pack: {
+      id: packId, eventId: null, configId: CONFIG_ID, snapshotId: "55555555-5555-4555-8555-555555555555",
+      snapshotHash: HASH, version: 1, status: "compiled", sourceLabel: "Approved configuration snapshot v1",
+      summary: "Grand Hall handoff compiled from approved snapshot v1.", createdBy: null, compiledAt: STAMP, updatedAt: STAMP,
+    },
+    taskGroups: [], opsTasks: [],
+    furniturePickList: { id: "66666666-6666-4666-8666-666666666666", handoffPackId: packId, title: "Grand Hall furniture pick list", totalItems: 0, createdAt: STAMP },
+    pickListItems: [], supplierInstructions: [], loadInSequence: [], breakdownSequence: [], roomFlipPlans: [],
+    beoDocument: {
+      id: "77777777-7777-4777-8777-777777777777", handoffPackId: packId, title: "Dinner BEO internal handoff",
+      body: "BEO internal operations handoff.", sourceSnapshotHash: HASH, safeStatus: "internal_operations_handoff", createdAt: STAMP,
+    },
+    snapshotDiff: {
+      id: "88888888-8888-4888-8888-888888888888", handoffPackId: packId, previousSnapshotHash: null, currentSnapshotHash: HASH,
+      addedCount: 0, removedCount: 0, changedCount: 0, summary: "No previous approved snapshot is available for comparison.",
+      payload: { added: [], removed: [], changed: [] }, createdAt: STAMP,
+    },
+  };
+}
+
+/** A mocked compile that made a new pack, as most cases here want. */
+function compiled(bundle: unknown): { readonly bundle: unknown; readonly created: true } {
+  return { bundle, created: true };
+}
+
+/** The real compile call, answered by the route's envelope (`created` beside `data`). */
+async function answerCompileWith(created: boolean): Promise<void> {
+  const actual = await vi.importActual<typeof import("../../../../api/ops-handoff.js")>("../../../../api/ops-handoff.js");
+  mocks.compileOpsHandoffPack.mockImplementation(actual.compileOpsHandoffPack);
+  vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(new Response(
+    JSON.stringify({ data: storedBundle(), created }),
+    { status: created ? 201 : 200, headers: { "Content-Type": "application/json" } },
+  ))));
+}
 
 describe("OpsLensPanel", () => {
   it("builds the live setup plan from the layout", () => {
@@ -129,11 +171,11 @@ describe("OpsLensPanel", () => {
     signInStaff();
     useEditorStore.setState({ configId: CONFIG_ID });
     usePlacementStore.setState({ placedItems: place(chair(), 20) });
-    mocks.compileOpsHandoffPack.mockResolvedValue({
+    mocks.compileOpsHandoffPack.mockResolvedValue(compiled({
       pack: { id: "pk1", summary: "Setup plan compiled for the Grand Hall.", status: "draft" },
       opsTasks: [{}, {}, {}],
       loadInSequence: [{}, {}],
-    });
+    }));
 
     renderPanel();
     fireEvent.click(screen.getByTestId("ops-compile"));
@@ -142,6 +184,40 @@ describe("OpsLensPanel", () => {
     expect(mocks.compileOpsHandoffPack).toHaveBeenCalledWith({ configId: CONFIG_ID });
     expect(screen.getByTestId("ops-pack-open").getAttribute("href")).toBe("/ops/handoff/pk1");
     expect(screen.getByTestId("ops-pack-result").textContent).toMatch(/3 tasks · 2 load-in steps/);
+  });
+
+  // T-695 review H6: a recompile that changes nothing returns the standing
+  // pack (200, created false), and the panel says so rather than "compiled".
+  it("says the pack is unchanged when the compile returned the standing pack", async () => {
+    signInStaff();
+    useEditorStore.setState({ configId: CONFIG_ID });
+    usePlacementStore.setState({ placedItems: place(chair(), 20) });
+    await answerCompileWith(false);
+
+    renderPanel();
+    fireEvent.click(screen.getByTestId("ops-compile"));
+
+    await waitFor(() => { expect(screen.getByTestId("ops-pack-result")).toBeTruthy(); });
+    const result = screen.getByTestId("ops-pack-result");
+    expect(result.textContent).toContain("Handoff pack unchanged");
+    expect(result.textContent).toContain("The plan is the same as the last pack, so the floor keeps its progress.");
+    expect(result.textContent).not.toContain("Handoff pack compiled");
+  });
+
+  it("says the pack is compiled when the compile made a new one", async () => {
+    signInStaff();
+    useEditorStore.setState({ configId: CONFIG_ID });
+    usePlacementStore.setState({ placedItems: place(chair(), 20) });
+    await answerCompileWith(true);
+
+    renderPanel();
+    fireEvent.click(screen.getByTestId("ops-compile"));
+
+    await waitFor(() => { expect(screen.getByTestId("ops-pack-result")).toBeTruthy(); });
+    const result = screen.getByTestId("ops-pack-result");
+    expect(result.textContent).toContain("Handoff pack compiled");
+    expect(result.textContent).not.toContain("Handoff pack unchanged");
+    expect(result.textContent).not.toContain("the floor keeps its progress");
   });
 
   it("shows a friendly error when compiling fails", async () => {
@@ -215,11 +291,11 @@ describe("OpsLensPanel", () => {
     signInStaff();
     useEditorStore.setState({ configId: CONFIG_ID, venueId: VENUE_ID });
     usePlacementStore.setState({ placedItems: place(chair(), 20) });
-    mocks.compileOpsHandoffPack.mockResolvedValue({
+    mocks.compileOpsHandoffPack.mockResolvedValue(compiled({
       pack: { id: "pk2", summary: "Setup plan compiled for the Grand Hall.", status: "compiled" },
       opsTasks: [{}],
       loadInSequence: [{}],
-    });
+    }));
 
     renderPanel(`?eventId=${EVENT_ID}`);
 
@@ -248,10 +324,10 @@ describe("OpsLensPanel", () => {
   it("compiles without an event when the planner was not opened from an event link", async () => {
     signInStaff();
     useEditorStore.setState({ configId: CONFIG_ID, venueId: VENUE_ID });
-    mocks.compileOpsHandoffPack.mockResolvedValue({
+    mocks.compileOpsHandoffPack.mockResolvedValue(compiled({
       pack: { id: "pk3", summary: "Setup plan compiled.", status: "compiled" },
       opsTasks: [], loadInSequence: [],
-    });
+    }));
 
     renderPanel();
     fireEvent.click(screen.getByTestId("ops-compile"));
@@ -271,10 +347,10 @@ describe("OpsLensPanel", () => {
       "This layout belongs to a client account, and linking it would give that client access to the event schedule",
       "CONFIGURATION_OWNER_IS_CUSTOMER",
     ));
-    mocks.compileOpsHandoffPack.mockResolvedValue({
+    mocks.compileOpsHandoffPack.mockResolvedValue(compiled({
       pack: { id: "pk4", summary: "Setup plan compiled.", status: "compiled" },
       opsTasks: [{}], loadInSequence: [{}],
-    });
+    }));
 
     renderPanel(`?eventId=${EVENT_ID}`);
     await screen.findByTestId("ops-event-binding");
@@ -297,10 +373,10 @@ describe("OpsLensPanel", () => {
     useEditorStore.setState({ configId: CONFIG_ID, venueId: VENUE_ID });
     usePlacementStore.setState({ placedItems: place(chair(), 20) });
     mocks.linkEventConfiguration.mockRejectedValue(new ApiError(403, "Insufficient permissions", "FORBIDDEN"));
-    mocks.compileOpsHandoffPack.mockResolvedValue({
+    mocks.compileOpsHandoffPack.mockResolvedValue(compiled({
       pack: { id: "pk5", summary: "Setup plan compiled.", status: "compiled" },
       opsTasks: [{}], loadInSequence: [{}],
-    });
+    }));
 
     renderPanel(`?eventId=${EVENT_ID}`);
     await screen.findByTestId("ops-event-binding");
@@ -318,10 +394,10 @@ describe("OpsLensPanel", () => {
     usePlacementStore.setState({ placedItems: place(chair(), 20) });
     mocks.linkEventConfiguration.mockRejectedValueOnce(new Error("network"));
     mocks.linkEventConfiguration.mockResolvedValue({});
-    mocks.compileOpsHandoffPack.mockResolvedValue({
+    mocks.compileOpsHandoffPack.mockResolvedValue(compiled({
       pack: { id: "pk6", summary: "Setup plan compiled.", status: "compiled" },
       opsTasks: [{}], loadInSequence: [{}],
-    });
+    }));
 
     renderPanel(`?eventId=${EVENT_ID}`);
     await screen.findByTestId("ops-event-binding");

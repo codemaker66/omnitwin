@@ -92,14 +92,15 @@ export async function opsHandoffRoutes(server: FastifyInstance, opts: { db: Data
 
     try {
       // 200 when the event's newest pack already said this and is returned
-      // as it stands, with the floor's progress on it.
+      // as it stands, with the floor's progress on it. `created` says which,
+      // for the planner's panel (T-695 review H6).
       const { bundle, created } = await compileOpsHandoffPackFromConfiguration(db, {
         configId: params.data.configId,
         eventId,
         clientNotes: body.data.clientNotes ?? null,
         actorUserId: request.user.id,
       });
-      return reply.status(created ? 201 : 200).send({ data: bundle });
+      return reply.status(created ? 201 : 200).send({ data: bundle, created });
     } catch (err) {
       if (err instanceof OpsHandoffSourceNotFoundError) {
         return reply.status(404).send({ error: "Configuration not found", code: "NOT_FOUND" });

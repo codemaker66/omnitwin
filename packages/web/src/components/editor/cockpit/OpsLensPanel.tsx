@@ -126,6 +126,9 @@ export function OpsLensPanel(): ReactElement {
   const [phase, setPhase] = useState<OpsPhase>("idle");
   const [error, setError] = useState<string | null>(null);
   const [pack, setPack] = useState<OpsHandoffPackBundle | null>(null);
+  // Whether the last compile made a new pack, or returned the event's
+  // standing pack because the plan had not changed (T-695 review H6).
+  const [packCreated, setPackCreated] = useState(true);
 
   const rigCounts = useLightingRigStore((state) => state.counts);
   const lightingFixtures = useMemo(
@@ -188,7 +191,7 @@ export function OpsLensPanel(): ReactElement {
           ? { configId, eventId }
           : { configId });
       })
-      .then((bundle) => { setPack(bundle); setPhase("idle"); })
+      .then(({ bundle, created }) => { setPack(bundle); setPackCreated(created); setPhase("idle"); })
       .catch((error: unknown) => {
         setError(opsCompilationErrorMessage(error));
         setPhase("error");
@@ -276,7 +279,10 @@ export function OpsLensPanel(): ReactElement {
 
         {pack !== null && (
           <div className="lens-panel__share-result" data-testid="ops-pack-result">
-            <span className="lens-panel__share-result-label">Handoff pack compiled</span>
+            <span className="lens-panel__share-result-label">{packCreated ? "Handoff pack compiled" : "Handoff pack unchanged"}</span>
+            {!packCreated && (
+              <p className="lens-panel__note" data-testid="ops-pack-unchanged">The plan is the same as the last pack, so the floor keeps its progress.</p>
+            )}
             <p className="lens-panel__paragraph">{pack.pack.summary}</p>
             <div className="lens-panel__share-buttons">
               <a className="lens-panel__chip-link" href={`/ops/handoff/${pack.pack.id}`} target="_blank" rel="noreferrer" data-testid="ops-pack-open">
