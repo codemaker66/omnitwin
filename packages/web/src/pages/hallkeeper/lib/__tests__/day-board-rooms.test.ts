@@ -4,6 +4,7 @@ import { boardRange } from "../../../diary/lib/board-time.js";
 import { deriveDayBoard, runningDays, type DayBoardSlotObservation, type DayBoardSlotRequest } from "../day-board-state.js";
 import { boardWindow } from "../day-board-layout.js";
 import { boardSummary, countWord, planeStages, roomDay, roomInFocus, showingLine, summaryText } from "../day-board-rooms.js";
+import { turnRound } from "../../DayBoardRooms.js";
 
 // The rooms board's reading of a day (concept C): a room's slots fall into
 // earlier, lead, next and later; the plane counts and filters; the sentence
@@ -80,15 +81,23 @@ describe("a room's day", () => {
     expect(day.tone).toBe("red");
   });
 
-  it("names a function already under way beside the lead \"Also now\", not \"Next\"", () => {
+  it("names every function under way beside the lead \"Also now\", whatever its state, never \"Next\" or \"Later\"", () => {
     const exhibition = { ...booking("x", -50 * 60, 52 * 60), title: "Exhibition" } as CalendarResponse["entries"][number];
-    const board = deriveDayBoard(response([exhibition, booking("t", -30, 60)]), NOW, TZ);
+    // Inside the running exhibition: two talks live, a coffee clearing down
+    // (nothing after it until the dinner, so its clear-down runs on), and a
+    // dinner still to come.
+    const board = deriveDayBoard(response([
+      exhibition, booking("t", -30, 60), booking("u", -20, 40), booking("c", -15, -5), booking("d", 3 * 60, 5 * 60),
+    ]), NOW, TZ);
     const lane = board.lanes[0];
     if (lane === undefined) throw new Error("no lane");
     const day = roomDay(lane);
-    expect(day.next?.bookingId).toBe("t");
-    expect(day.nextLabel).toBe("Also now");
-    expect(roomDay({ ...lane, slots: lane.slots.slice(0, 1) }).nextLabel).toBe("Next");
+    expect(day.lead?.bookingId).toBe("x");
+    expect(day.alsoNow.map((slot) => [slot.bookingId, slot.state])).toEqual([["t", "live"], ["u", "live"], ["c", "clear-down"]]);
+    expect(day.next?.bookingId).toBe("d");
+    expect(day.later).toEqual([]);
+    // Alone, the exhibition has nothing beside it.
+    expect(roomDay({ ...lane, slots: lane.slots.slice(0, 1) }).alsoNow).toEqual([]);
   });
 
   it("dimensions no turn-round between two bookings at once: a second option, a talk inside an exhibition", () => {
@@ -106,6 +115,48 @@ describe("a room's day", () => {
     expect(grandHall?.tone).toBe("faded");
     expect(saloon?.slots).toEqual([]);
     expect(saloon?.tone).toBe("quiet");
+  });
+});
+
+describe("the turn-round's words", () => {
+  /** The day under a house rule of an hour and a half, with any blocking
+   *  turnaround conflicts the Diary reports. */
+  function ruled(entries: CalendarResponse["entries"], blocking: readonly (readonly [string, string])[] = []): CalendarResponse {
+    const base = response(entries);
+    return {
+      ...base,
+      turnaroundRules: [{ spaceId: null, eventType: null, name: "House", minutes: 90, isActive: true }],
+      conflicts: { ...base.conflicts, conflicts: blocking.map(([first, second], index) => ({
+        id: `c${String(index)}`, type: "insufficient_turnaround", severity: "blocking", spaceId: GRAND_HALL,
+        entryIds: [first, second], explanation: "45 minutes between events; this changeover needs 90.",
+      })) },
+    } as CalendarResponse;
+  }
+  function slotOf(response: CalendarResponse, id: string): Parameters<typeof turnRound>[0] {
+    const slot = deriveDayBoard(response, NOW, TZ).lanes[0]?.slots.find((candidate) => candidate.bookingId === id);
+    if (slot === undefined) throw new Error(`no slot ${id}`);
+    return slot;
+  }
+
+  it("says a short turn-round whose setup is still ahead, and what the rule needs", () => {
+    const day = ruled([booking("a", 60, 120), booking("b", 165, 240)]);
+    expect(turnRound(slotOf(day, "b"), NOW)).toBe("Turn-round 45 min · needs 1 h 30");
+  });
+
+  it("gives a turn-round the rule covers by its length alone", () => {
+    expect(turnRound(slotOf(ruled([booking("a", 60, 120), booking("b", 240, 300)]), "b"), NOW)).toBe("Turn-round 2 h");
+  });
+
+  it("says nothing before a room's first function, once setup is due, or when the changeover is at risk and says why itself", () => {
+    const day = ruled([booking("a", 60, 120), booking("b", 165, 240)]);
+    expect(turnRound(slotOf(day, "a"), NOW)).toBeNull();
+    // Setup is due at 165 minutes: by then the turn-round has been spent.
+    expect(turnRound(slotOf(day, "b"), NOW + 165 * MIN)).toBeNull();
+    expect(turnRound(slotOf(day, "b"), NOW + 164 * MIN)).toBe("Turn-round 45 min · needs 1 h 30");
+    const atRisk = slotOf(ruled([booking("a", 60, 120), booking("b", 165, 240)], [["a", "b"]]), "b");
+    expect(atRisk.exception).not.toBeNull();
+    expect(atRisk.exceptionDetail).toBe("45 minutes between events; this changeover needs 90.");
+    expect(turnRound(atRisk, NOW)).toBeNull();
   });
 });
 
@@ -131,10 +182,16 @@ describe("the plane", () => {
     expect(countWord(11)).toBe("11");
   });
 
-  it("counts every request nobody has today, as the list and the sentence do", () => {
+  it("counts every request nobody has today, as the list and the sentence do, and says how many no room of today's can show", () => {
     const board = deriveDayBoard(response([booking("a", -60, 60)]), NOW, TZ, [request("r1", "a", 5)]);
-    expect(planeStages(board.lanes, 3).find((stage) => stage.focus === "waiting")?.count).toBe(3);
-    expect(planeStages(board.lanes).find((stage) => stage.focus === "waiting")?.count).toBe(1);
+    // Three on the list, one of them on today's dinner: the filter can show
+    // one room's worth, and the count says where the other two are not.
+    expect(planeStages(board.lanes, 3).find((stage) => stage.focus === "waiting"))
+      .toEqual({ focus: "waiting", label: "Requests waiting", count: 3, note: "2 not on today’s bookings" });
+    expect(planeStages(board.lanes, 1).find((stage) => stage.focus === "waiting")?.note).toBeNull();
+    // Another day counts that day's own and says so, beside a list of today's.
+    expect(planeStages(board.lanes).find((stage) => stage.focus === "waiting"))
+      .toEqual({ focus: "waiting", label: "Waiting this day", count: 1, note: null });
   });
 });
 
@@ -182,8 +239,9 @@ describe("the sentence under the title", () => {
         { id: "y", type: "insufficient_turnaround", severity: "blocking", spaceId: SALOON, entryIds: ["c", "d"], explanation: "5 minutes; needs 60." },
       ] },
     } as CalendarResponse, NOW, TZ);
+    // The names are rooms, so the count is of rooms.
     expect(summaryText(boardSummary({ lanes: atRisk.lanes, unowned: [], today: false, nowMs: NOW }) ?? []))
-      .toBe("Four bookings across two rooms. Two changeovers are at risk: Grand Hall and Saloon.");
+      .toBe("Four bookings across two rooms. Two rooms have a changeover at risk: Grand Hall and Saloon.");
   });
 });
 
@@ -198,6 +256,26 @@ describe("a booking that runs for days", () => {
     // any other weekend (24 hours): two days either way.
     expect(runningDays(Date.parse("2026-10-24T09:00:00.000Z"), Date.parse("2026-10-25T10:00:00.000Z"), Date.parse("2026-10-24T12:00:00.000Z"), TZ)).toEqual({ day: 1, of: 2 });
     expect(runningDays(Date.parse("2026-10-17T09:00:00.000Z"), Date.parse("2026-10-18T09:00:00.000Z"), Date.parse("2026-10-17T12:00:00.000Z"), TZ)).toEqual({ day: 1, of: 2 });
+  });
+
+  it("counts its days on the board's day, rolling at the venue's boundary hour as the heading does", () => {
+    // Thursday 12 to Monday 16 November; at 01:00 on Sunday a board whose
+    // day ends at 04:00 still shows Saturday, and so does the count.
+    const doors = Date.parse("2026-11-12T10:00:00.000Z");
+    const end = Date.parse("2026-11-16T17:00:00.000Z");
+    const sundayOneAm = Date.parse("2026-11-15T01:00:00.000Z");
+    expect(runningDays(doors, end, sundayOneAm, TZ, 4)).toEqual({ day: 3, of: 5 });
+    // A venue that keeps midnight counts the calendar's day, as before.
+    expect(runningDays(doors, end, sundayOneAm, TZ)).toEqual({ day: 4, of: 5 });
+    // At the boundary the board rolls, and the count with it.
+    expect(runningDays(doors, end, Date.parse("2026-11-15T04:00:00.000Z"), TZ, 4)).toEqual({ day: 4, of: 5 });
+    // An end in the small hours belongs to the board's day before it.
+    expect(runningDays(doors, Date.parse("2026-11-16T02:00:00.000Z"), sundayOneAm, TZ, 4)).toEqual({ day: 3, of: 4 });
+    // The slot's verb reads the same count.
+    const show = { ...booking("x", 0, 60), startsAt: new Date(doors).toISOString(), endsAt: new Date(end).toISOString() } as CalendarResponse["entries"][number];
+    const verb = (hour: number): string | undefined => deriveDayBoard(response([show]), sundayOneAm, TZ, [], [], hour).lanes[0]?.slots[0]?.countdown;
+    expect(verb(4)).toBe("LIVE · day 3 of 5");
+    expect(verb(0)).toBe("LIVE · day 4 of 5");
   });
 
   it("widens the window only by its own moments on the day", () => {
