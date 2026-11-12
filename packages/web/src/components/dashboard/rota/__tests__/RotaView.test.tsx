@@ -6,7 +6,7 @@ import { ApiError } from "../../../../api/client.js";
 import { useAuthStore } from "../../../../stores/auth-store.js";
 import { RotaView } from "../RotaView.js";
 import {
-  CALLUM, HALL, JAMIE, MORAG, MORAG_SATURDAY, RECORDS, UNFILLED_BAR, VENUE, WEDDING_EVENT, hallCalendar, rotaWeek, shift,
+  CALLUM, CALLUM_FRIDAY, HALL, JAMIE, MORAG, MORAG_SATURDAY, RECORDS, UNFILLED_BAR, VENUE, WEDDING_EVENT, hallCalendar, rotaWeek, shift,
 } from "./rota-fixtures.js";
 
 // ---------------------------------------------------------------------------
@@ -222,6 +222,38 @@ describe("RotaView", () => {
     await screen.findByRole("heading", { name: "Rota", level: 1 });
     expect(await screen.findByRole("button", { name: "2 overnight drafts from last week: publish them from last week." })).toBeDefined();
     expect(screen.getByText("In draft").nextElementSibling?.textContent).toBe("0");
+  });
+
+  // T-695 review X2: "In draft" counts every draft that starts in the week,
+  // held back or not, so it agrees with Publish, which says the held-back
+  // draft stays in draft.
+  it("counts a draft of this week that Publish holds back in In draft", async () => {
+    mocks.week.mockResolvedValue(rotaWeek({ shifts: [CALLUM_FRIDAY, UNFILLED_BAR] }));
+    renderView();
+    await screen.findByRole("heading", { name: "Rota", level: 1 });
+    await screen.findByText("Publishes 1 shift, unfilled.");
+    expect(screen.getByText("Callum Reid has no right-to-work check recorded, so 1 shift stays in draft until one is.")).toBeDefined();
+    expect(screen.getByText("In draft").nextElementSibling?.textContent).toBe("2");
+  });
+
+  // T-695 review X2: only a draft is pointed at. Last week's overnight shift
+  // that is already published, or was cancelled, has nothing left to publish.
+  it("points to last week for no carried shift that is published or cancelled", async () => {
+    const published = shift({ id: "00000000-0000-4000-8000-0000000000c4", staffMemberId: MORAG, role: "bar",
+      startsAt: "2026-10-04T21:00:00.000Z", endsAt: "2026-10-05T01:00:00.000Z", breakMinutes: 0,
+      status: "published", publishedAt: "2026-10-01T09:00:00.000Z" });
+    const cancelled = shift({ id: "00000000-0000-4000-8000-0000000000c5", staffMemberId: JAMIE, role: "bar",
+      startsAt: "2026-10-04T21:00:00.000Z", endsAt: "2026-10-05T01:00:00.000Z", breakMinutes: 0,
+      status: "cancelled", publishedAt: "2026-10-01T09:00:00.000Z", cancelledAt: "2026-10-02T09:00:00.000Z", cancellationNoticeHours: 60 });
+    mocks.week.mockResolvedValue(rotaWeek({ shifts: [published, cancelled, UNFILLED_BAR] }));
+    renderView();
+    await screen.findByRole("heading", { name: "Rota", level: 1 });
+    await screen.findByText("Publishes 1 shift, unfilled.");
+    // The published overnight shift is on the week; the cancelled one is not counted.
+    const numbers = screen.getByLabelText("This week in numbers");
+    expect(within(numbers).getByText("Shifts").nextElementSibling?.textContent).toBe("2");
+    expect(within(numbers).getByText("In draft").nextElementSibling?.textContent).toBe("1");
+    expect(screen.queryByRole("button", { name: /from last week/u })).toBeNull();
   });
 
   it("shows one day at a time on a phone, chosen from day tabs", async () => {
