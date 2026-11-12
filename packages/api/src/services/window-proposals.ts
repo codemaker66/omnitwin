@@ -1,7 +1,7 @@
 import { and, desc, eq, gt, isNull, lt, sql } from "drizzle-orm";
-import type { ClientEventScheduleSlot, PlatformRole, ProposeWindow } from "@omnitwin/types";
+import { eventDisplayName, type ClientEventScheduleSlot, type PlatformRole, type ProposeWindow } from "@omnitwin/types";
 import type { Database } from "../db/client.js";
-import { bookings, diaryCommands, events, spaces, users } from "../db/schema.js";
+import { bookings, diaryCommands, events, spaces, users, venues } from "../db/schema.js";
 import { canProposeWindow, isClientSideRole } from "../utils/query.js";
 import { canWriteBookings, ownerWorksAtVenue, PG_UNIQUE_VIOLATION } from "./booking-mutations.js";
 import { clientHoldsEventLink } from "./conversations.js";
@@ -125,8 +125,8 @@ export async function proposeWindowCore(
   now: Date = new Date(),
 ): Promise<ProposalOk | ProposalDeny> {
   const [eventRow] = await db
-    .select({ id: events.id, venueId: events.venueId, name: events.name, eventType: events.eventType, createdBy: events.createdBy })
-    .from(events).where(and(eq(events.id, eventId), isNull(events.deletedAt))).limit(1);
+    .select({ id: events.id, venueId: events.venueId, name: events.name, eventType: events.eventType, createdBy: events.createdBy, startsAt: events.startsAt, timeZone: venues.timezone })
+    .from(events).innerJoin(venues, eq(venues.id, events.venueId)).where(and(eq(events.id, eventId), isNull(events.deletedAt))).limit(1);
   if (eventRow === undefined) return deny(404, "EVENT_NOT_FOUND", "That event does not exist.");
 
   const holdsEventLink = isClientSideRole(actor.role) ? await clientHoldsEventLink(db, actor.id, eventId) : false;
@@ -210,10 +210,10 @@ export async function proposeWindowCore(
       const decisionAt = decisionDateFor(startsAt, now);
       [row] = await tx.insert(bookings).values({
         venueId: eventRow.venueId, spaceId: space.id, eventId, kind: "hold", status: "active",
-        title: eventRow.name, eventType: eventRow.eventType, startsAt, endsAt,
+        title: eventDisplayName(eventRow, eventRow.timeZone), eventType: eventRow.eventType, startsAt, endsAt,
         rank: await nextRank(tx, space.id, startsAt, endsAt, null),
         jointFlag: false, decisionAt, ownerUserId,
-        nextAction: `Decide ${actor.name}'s proposed time for ${eventRow.name}`.slice(0, 500),
+        nextAction: `Decide ${actor.name}'s proposed time for ${eventDisplayName(eventRow, eventRow.timeZone)}`.slice(0, 500),
         nextActionDueAt: decisionAt, createdBy: actor.id,
       }).returning();
       if (row === undefined) return deny(500, "BOOKING_CREATE_FAILED", "The proposal could not be kept.");

@@ -135,6 +135,20 @@ describe.skipIf(target === undefined)("window proposals on migrated PostgreSQL",
     expect(row.decisionAt?.getTime()).toBeLessThan(Date.parse(at("18:00")));
   });
 
+  it("names a proposal on an event stored without a name as the event is shown, on the venue's own day", async () => {
+    // An event made before eventNameFor named every new one can hold "" (#407).
+    // 03:30 UTC on 10 May is 23:30 on 9 May in New York.
+    const f = await fixture();
+    await db.update(schema.venues).set({ timezone: "America/New_York" }).where(eq(schema.venues.id, f.venueId));
+    await db.update(schema.events).set({ name: "", startsAt: new Date("2030-05-10T03:30:00.000Z"), endsAt: new Date("2030-05-10T08:00:00.000Z") })
+      .where(eq(schema.events.id, f.eventId));
+    const made = granted(await propose(f, f.client, "18:00", "23:00"));
+    expect(made.slot.title).toBe("Dinner, 9 May 2030");
+    const row = await stored(made.slot.bookingId);
+    expect(row.title).toBe("Dinner, 9 May 2030");
+    expect(row.nextAction).toBe("Decide Morag Client's proposed time for Dinner, 9 May 2030");
+  });
+
   it("replays the same key as the same hold, and moves the hold on a new key instead of making a second", async () => {
     const f = await fixture();
     const key = randomUUID();
