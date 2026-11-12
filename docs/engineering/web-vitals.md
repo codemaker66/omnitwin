@@ -86,13 +86,18 @@ too: keep nothing until the privacy page describes it.
 Track are honoured, but Safari, and so every browser on an iPhone, sends neither. The
 privacy page therefore carries a "Don't measure my visits" switch
 (`observability/measurement-choice.ts`, rendered in `LegalPage.tsx`). The choice is
-kept in the browser under `venviewer.measurement.declined`, and for the visit alone
-where storage fails, and `shouldReportWebVitals` refuses while it is set. The
+kept in the browser under `venviewer.measurement.declined`, and
+`shouldReportWebVitals` refuses while it is set. A browser that will not let the site
+read its storage at all counts as declined and is never measured; one that will not
+keep the choice (storage full) keeps it for the visit, and the switch says so rather
+than claiming it was kept (`setMeasurementDeclined` writes, then reads back). The
 reporter reads it again at every send, so pressing the switch also stops the page
-load in progress (the privacy page is itself measured). Safari's tracking prevention
-clears script storage after about seven days without a visit, so there the choice
-can lapse; the paragraph says so. Blake chose the switch's place: on the privacy
-page, which every public page links to, not in every footer.
+load in progress (the privacy page is itself measured), and so does a press in
+another tab before this one is hidden. Safari's tracking prevention clears script
+storage after about seven days without a visit, so there the choice can lapse; the
+paragraph says so, and the page's storage list names the choice ("Your page-speed
+choice"). Blake chose the switch's place: on the privacy page, which every public
+page links to, not in every footer.
 
 **To switch on**, in one release:
 1. merge the privacy page's paragraph and switch (below) once the solicitor has
@@ -109,17 +114,21 @@ provider's request logs record every request's address, and Safari clears the st
 choice. Blake approved the corrected wording below the same day ("everything is
 approved and have full permissions"); the code was trimmed to match the rest (no
 navigation type, no tracing, the limiter keyed without the address, rows kept to the
-day, and a press of the switch stops the load in progress):
+day, and a press of the switch stops the load in progress). A second check that day
+corrected "four timings" (one of the four, CLS, is a layout-shift score, not a time)
+and the switch's status line ("in this browser", and a plain line when the browser
+will not keep the choice):
 
 > **How fast our pages are.** When you open one of our pages, your browser may measure
-> how quickly it loaded and responded (four timings) and send them to us with the kind
-> of page (for example "a proposal") and whether it was opened on a phone, tablet or
-> computer. It does not send the address of the page you opened, anything you typed,
-> or any identifier, and nothing is stored on your device for it. Like any request,
-> it reaches us from your internet address. We do not keep that with the timings, and
-> our own server does not log it; our hosting provider's standard request logs record
-> it, as they do for every request (see "Server and request logs"). We use these
-> timings only to make the site faster, and delete them after 90 days. If your browser
+> how quickly it loaded and responded, and how much its content shifted as it loaded
+> (four measurements), and send them to us with the kind of page (for example "a
+> proposal") and whether it was opened on a phone, tablet or computer. It does not
+> send the address of the page you opened, anything you typed, or any identifier, and
+> nothing is stored on your device for it. Like any request, it reaches us from your
+> internet address. We do not keep that with the measurements, and our own server does
+> not log it; our hosting provider's standard request logs record it, as they do for
+> every request (see "Server and request logs"). We use these measurements only to
+> make the site faster, and delete them after 90 days. If your browser
 > sends Global Privacy Control or Do Not Track, nothing is measured or sent. On any
 > browser you can also turn it off with the "Don't measure my visits" switch on this
 > page. That choice is kept in this browser on this device until the browser clears

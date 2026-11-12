@@ -194,8 +194,8 @@ export async function startWebVitals(options: StartWebVitalsOptions): Promise<bo
     routePattern(options.landing.paths),
     deviceClass(Math.min(window.screen.width, window.screen.height), coarse),
     // The visitor may press "Don't measure my visits" while this load is
-    // measured, on the privacy page itself or in another tab: from then on
-    // nothing is sent, this load's values included.
+    // measured, on the privacy page itself, or in another tab before this one
+    // is hidden: from then on nothing is sent, this load's values included.
     (body) => { if (!measurementDeclined()) send(body); },
   );
   followLandingPage(options.landing, reporter);

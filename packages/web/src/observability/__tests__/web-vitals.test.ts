@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Metric } from "web-vitals";
 import { webVitalsSampleRate } from "../web-vitals-rate.js";
 import { recordLandingRoute, type AppRoutes, type LandingRoute } from "../landing-route.js";
-import { setMeasurementDeclined } from "../measurement-choice.js";
+import { MEASUREMENT_DECLINED_KEY, setMeasurementDeclined } from "../measurement-choice.js";
 import {
   createWebVitalsReporter, deviceClass, followLandingPage, routePattern, sendWebVitals, shouldReportWebVitals, startWebVitals,
 } from "../web-vitals.js";
@@ -393,6 +393,23 @@ describe("starting on a page load", () => {
     } finally {
       setVisibility("visible");
       setMeasurementDeclined(false);
+    }
+  });
+
+  it("sends nothing once another tab has chosen \"Don't measure my visits\" before this one is hidden", async () => {
+    const send = vi.fn<(body: string) => void>();
+    ordinaryBrowser();
+    const router = fakeRouter(["/"]);
+    try {
+      expect(await startWebVitals({ env: { VITE_WEB_VITALS_SAMPLE_RATE: "1" }, landing: recordLandingRoute(router, new EventTarget()), random: () => 0, send })).toBe(true);
+      for (const [name, entry] of vitals.callbacks) entry.callback(metric(name as Metric["name"], name === "CLS" ? 0.02 : 300));
+      // Another tab writes the choice; this module's own flag never changes.
+      window.localStorage.setItem(MEASUREMENT_DECLINED_KEY, "1");
+      setVisibility("hidden");
+      expect(send).not.toHaveBeenCalled();
+    } finally {
+      setVisibility("visible");
+      window.localStorage.removeItem(MEASUREMENT_DECLINED_KEY);
     }
   });
 

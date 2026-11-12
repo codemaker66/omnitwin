@@ -3,7 +3,8 @@ import { MEASUREMENT_DECLINED_KEY, measurementDeclined, setMeasurementDeclined }
 
 // ---------------------------------------------------------------------------
 // "Don't measure my visits" (T-685): the privacy page's way to object to the
-// page-speed timings, kept on this device; for this visit where storage fails.
+// page-speed measurements, kept in this browser; for this visit where the
+// browser will not keep it; and never measuring where storage is refused.
 // ---------------------------------------------------------------------------
 
 afterEach(() => {
@@ -17,11 +18,11 @@ describe("the measurement choice", () => {
     expect(measurementDeclined()).toBe(false);
   });
 
-  it("keeps the choice on this device, and forgets it when undone", () => {
-    setMeasurementDeclined(true);
+  it("keeps the choice in this browser, says it did, and forgets it when undone", () => {
+    expect(setMeasurementDeclined(true)).toBe(true);
     expect(window.localStorage.getItem(MEASUREMENT_DECLINED_KEY)).toBe("1");
     expect(measurementDeclined()).toBe(true);
-    setMeasurementDeclined(false);
+    expect(setMeasurementDeclined(false)).toBe(true);
     expect(window.localStorage.getItem(MEASUREMENT_DECLINED_KEY)).toBeNull();
     expect(measurementDeclined()).toBe(false);
   });
@@ -36,5 +37,18 @@ describe("the measurement choice", () => {
     vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => { throw new Error("storage unavailable"); });
     expect(() => { setMeasurementDeclined(true); }).not.toThrow();
     expect(measurementDeclined()).toBe(true);
+  });
+
+  it("never measures a browser that will not let the site read its storage at all", () => {
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => { throw new Error("SecurityError"); });
+    expect(measurementDeclined()).toBe(true);
+  });
+
+  it("says when the browser would not keep the choice (storage full): it holds for this visit only", () => {
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("QuotaExceededError"); });
+    expect(setMeasurementDeclined(true)).toBe(false);
+    expect(measurementDeclined()).toBe(true);
+    // Nothing was kept, so the next visit is measured unless the visitor says again.
+    expect(window.localStorage.getItem(MEASUREMENT_DECLINED_KEY)).toBeNull();
   });
 });

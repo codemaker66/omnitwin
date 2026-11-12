@@ -272,9 +272,9 @@ const PRIVACY: LegalDocument = {
             {
               term: "How fast our pages are",
               detail:
-                "When you open one of our pages, your browser may measure how quickly it loaded and responded (four timings) and send them to us with the kind of page (for example \"a proposal\") and whether it was opened on a phone, tablet or computer. "
-                + "It does not send the address of the page you opened, anything you typed, or any identifier, and nothing is stored on your device for it. Like any request, it reaches us from your internet address. We do not keep that with the timings, and our own server does not log it; our hosting provider's standard request logs record it, as they do for every request (see \"Server and request logs\"). "
-                + "We use these timings only to make the site faster, and delete them after 90 days. "
+                "When you open one of our pages, your browser may measure how quickly it loaded and responded, and how much its content shifted as it loaded (four measurements), and send them to us with the kind of page (for example \"a proposal\") and whether it was opened on a phone, tablet or computer. "
+                + "It does not send the address of the page you opened, anything you typed, or any identifier, and nothing is stored on your device for it. Like any request, it reaches us from your internet address. We do not keep that with the measurements, and our own server does not log it; our hosting provider's standard request logs record it, as they do for every request (see \"Server and request logs\"). "
+                + "We use these measurements only to make the site faster, and delete them after 90 days. "
                 + "If your browser sends Global Privacy Control or Do Not Track, nothing is measured or sent. On any browser you can also turn it off with the \"Don't measure my visits\" switch on this page. That choice is kept in this browser on this device until the browser clears our site's data (Safari does this after about a week without a visit), so you may need to set it again.",
             },
           ],
@@ -394,6 +394,11 @@ const PRIVACY: LegalDocument = {
               term: "Local storage preferences",
               detail:
                 "Your light or dark theme choice, and similar view preferences, are stored by your browser on your own device. They are not transmitted to us and are not used to identify you.",
+            },
+            {
+              term: "Your page-speed choice",
+              detail:
+                "If you use the \"Don't measure my visits\" switch, your browser keeps that choice on your device so we can respect it on later visits (see \"How fast our pages are\"). It is never sent to us.",
             },
             {
               // Self-hosted since 777e3985 (index.html, src/styles/fonts). The
@@ -1088,19 +1093,24 @@ function storedTheme(): "dark" | "light" | undefined {
 /** "Don't measure my visits" (observability/measurement-choice.ts). */
 function MeasurementChoice(): ReactElement {
   const [declined, setDeclined] = useState(measurementDeclined);
+  // Whether the browser kept the last choice for later visits.
+  const [kept, setKept] = useState(true);
   const toggle = (): void => {
-    const next = !declined;
-    setMeasurementDeclined(next);
-    setDeclined(next);
+    setKept(setMeasurementDeclined(!declined));
+    // Read back: a browser that refuses its storage altogether stays declined.
+    setDeclined(measurementDeclined());
   };
+  const status = !declined
+    ? "Your visits may be measured, as described above."
+    : kept
+      ? "Your visits in this browser are not measured."
+      : "This browser would not let us keep your choice, so it holds only until you leave this page.";
   return (
     <p className="lg-p lg-choice">
       <button type="button" className="lg-choice-button" aria-pressed={declined} onClick={toggle}>
         {"Don't measure my visits"}
       </button>
-      <span className="lg-choice-state" role="status">
-        {declined ? "Your visits on this device are not measured." : "Your visits may be measured, as described above."}
-      </span>
+      <span className="lg-choice-state" role="status">{status}</span>
     </p>
   );
 }
