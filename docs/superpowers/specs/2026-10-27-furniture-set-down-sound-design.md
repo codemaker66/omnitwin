@@ -254,13 +254,13 @@ The policy's limits (eight a second, collapse at four within 250 ms) still bound
 ### 7. Mix and levels
 
 - Set-downs play in **Quiet and Full**.
-- **Loudness follows mass and impact speed, compressed.** A deck is louder than a chair, which is louder than a lapel mic. Across the catalogue, K-weighted loudness stays within about an 8 dB window, and peaks stay between about −32 and −16 dBFS before the master (my call, settled by ear).
+- **Loudness follows mass and impact speed, compressed.** A deck is louder than a chair, which is louder than a lapel mic. Across the catalogue, momentary K-weighted loudness (R45) stays within about an 8 dB window, and peaks stay between about −32 and −6 dBFS on the pre-pan mono source before the master (R42: the click is peaky, and the chain has the headroom).
 - **Which of spec 9's rules bind set-downs** (my call; Blake's ear test is the judge). Realism supersedes the palette's tonal rules for set-downs only:
   - the "fundamentals 150 Hz–1.3 kHz" band does not apply: a board knock, a deck's boom and a floor's sub-audible thump are physics, not tones;
   - the "touch sounds within 6 dB of each other" rule does not apply either: a deck must be louder than a lapel mic.
 
   These rules replace them:
-  - set-downs stay within an 8 dB K-weighted loudness window across the catalogue;
+  - set-downs stay within an 8 dB window of momentary K-weighted loudness (BS.1770 momentary maximum: 400 ms window, 10 ms hop) across the catalogue (R45);
   - the common pieces (chairs, rounds, trestles, poseurs) stay within 4 dB of each other;
   - the rare moments (horizon, Send, Present, act) stay at most 6 dB above the common set-downs.
 
