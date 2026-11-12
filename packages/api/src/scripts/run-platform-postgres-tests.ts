@@ -54,6 +54,8 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/public-mcp-postgres.test.ts",
   "src/__tests__/sheet-paper-check-postgres.test.ts",
   "src/__tests__/ai-usage-postgres.test.ts",
+  // A supplier's reply has a limit of its own: twenty an hour from one address, through the whole app.
+  "src/__tests__/supplier-reply-limit-postgres.test.ts",
   // The People Book (migration 0098): the operator's read-only check of the backfill.
   "src/__tests__/check-people-book-postgres.test.ts",
   // Possible duplicates, and the marks that keep two people apart through merges.
