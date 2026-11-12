@@ -400,15 +400,16 @@ describe("ops compiler services", () => {
     } as const;
     const CLOTH: AccessoryRule = { name: "Ivory Tablecloth", category: "linen", quantityPerParent: 1, phase: "dress", afterDepth: 1 };
 
-    /** Two round tables of four chairs, as the planner groups them, plus
-     *  `looseChairs` chairs nobody grouped; frozen as an approval freezes them. */
-    function frozen(chair: "Chiavari Chair" | "Banquet Chair", looseChairs: number): ConfigurationSheetSnapshot {
+    /** Two round tables of `seatedPerTable` chairs, as the planner groups
+     *  them, plus `looseChairs` chairs nobody grouped; frozen as an approval
+     *  freezes them. */
+    function frozen(chair: "Chiavari Chair" | "Banquet Chair", looseChairs: number, seatedPerTable = 4): ConfigurationSheetSnapshot {
       const objects: ManifestObjectV2[] = [];
       for (let table = 0; table < 2; table += 1) {
         const tableId = `00000000-0000-4000-8000-0000000005${String(table)}0`;
         const x = table * 5 - 2.5;
         objects.push({ id: tableId, assetName: "Round Table", assetCategory: "table", positionX: x, positionY: 0, positionZ: 0, rotationY: 0, chairCount: 0, groupId: tableId });
-        for (let seat = 0; seat < 4; seat += 1) {
+        for (let seat = 0; seat < seatedPerTable; seat += 1) {
           const angle = (seat * Math.PI) / 2;
           objects.push({
             id: `00000000-0000-4000-8000-0000000005${String(table)}${String(seat + 1)}`, assetName: chair, assetCategory: "chair",
@@ -465,6 +466,29 @@ describe("ops compiler services", () => {
         clientNotes: null,
       });
       expect(draft.snapshotDiff.payload).toEqual({ added: ["8 x Chiavari Chair"], removed: ["8 x Banquet Chair"], changed: [] });
+    });
+
+    // T-695 review C7: counting pieces alone hid a re-seating that keeps every
+    // count, which the row-based diff used to show: the tables' rows name the
+    // chairs set at them, so they are compared as well.
+    it("shows chairs moved from the tables into rows, though every count is the same", () => {
+      const draft = compileOpsHandoffDraft({
+        snapshot: frozen("Chiavari Chair", 8, 0),
+        previousSnapshot: { ...frozen("Chiavari Chair", 0), id: PREVIOUS_SNAPSHOT_ID, version: 1, sourceHash: PREVIOUS_HASH },
+        eventGraph: null,
+        clientNotes: null,
+      });
+      expect(draft.snapshotDiff.payload).toEqual({ added: ["2 x Round Table"], removed: ["2 x Round Table with 4 chairs"], changed: [] });
+    });
+
+    it("does not report a change twice, or report one at all, when nothing moved", () => {
+      const same = compileOpsHandoffDraft({
+        snapshot: frozen("Chiavari Chair", 2),
+        previousSnapshot: { ...frozen("Chiavari Chair", 2), id: PREVIOUS_SNAPSHOT_ID, version: 1, sourceHash: PREVIOUS_HASH },
+        eventGraph: null,
+        clientNotes: null,
+      });
+      expect(same.snapshotDiff.summary).toBe("No furniture count changes since the previous approved snapshot.");
     });
 
     it("compares a plan frozen before floor plans by its totals on both sides, never totals against pieces", () => {

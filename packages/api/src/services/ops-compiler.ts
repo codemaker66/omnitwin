@@ -470,6 +470,39 @@ function placedCounts(payload: ConfigurationSheetSnapshot["payload"]): readonly 
   return [...counts.values()];
 }
 
+interface CountChanges {
+  readonly added: readonly string[];
+  readonly removed: readonly string[];
+  readonly changed: readonly string[];
+}
+
+/** What was added, removed or changed in quantity between two counts, in
+ *  the words the pack shows ("12 x Round Table", "Round Table: 10 -> 12"). */
+function countChanges(currentCounts: readonly PieceCount[], previousCounts: readonly PieceCount[]): CountChanges {
+  const current = new Map(currentCounts.map((entry) => [itemKey(entry), entry]));
+  const previous = new Map(previousCounts.map((entry) => [itemKey(entry), entry]));
+  const added: string[] = [];
+  const removed: string[] = [];
+  const changed: string[] = [];
+  for (const [key, entry] of current) {
+    const prior = previous.get(key);
+    if (prior === undefined) {
+      added.push(`${String(entry.qty)} x ${entry.name}`);
+    } else if (prior.qty !== entry.qty) {
+      changed.push(`${entry.name}: ${String(prior.qty)} -> ${String(entry.qty)}`);
+    }
+  }
+  for (const [key, entry] of previous) {
+    if (!current.has(key)) removed.push(`${String(entry.qty)} x ${entry.name}`);
+  }
+  return { added, removed, changed };
+}
+
+/** The manifest's table rows, each named with the chairs set at it. */
+function tableRows(payload: ConfigurationSheetSnapshot["payload"]): readonly PieceCount[] {
+  return payload.totals.entries.filter((entry) => entry.category === "table");
+}
+
 function compileSnapshotDiff(
   snapshot: ConfigurationSheetSnapshot,
   previousSnapshot: ConfigurationSheetSnapshot | null,
@@ -490,34 +523,23 @@ function compileSnapshotDiff(
   // Like for like: placed pieces on both sides, or, when either plan was
   // frozen before floor plans were kept, the manifest's totals on both, so a
   // count of pieces is never reported as a change against a count of rows.
+  // With pieces on both sides, the tables' rows are compared too: they name
+  // the chairs set at each table ("Round Table with 4 chairs"), so a
+  // re-seating that keeps every count still shows (T-695 review C7).
   const piecesOnBoth = (snapshot.payload.floorPlan ?? null) !== null && (previousSnapshot.payload.floorPlan ?? null) !== null;
-  const counted = (frozen: ConfigurationSheetSnapshot): readonly PieceCount[] =>
-    piecesOnBoth ? placedCounts(frozen.payload) : frozen.payload.totals.entries;
-  const current = new Map(counted(snapshot).map((entry) => [itemKey(entry), entry]));
-  const previous = new Map(counted(previousSnapshot).map((entry) => [itemKey(entry), entry]));
-  const added: string[] = [];
-  const removed: string[] = [];
-  const changed: string[] = [];
-
-  for (const [key, entry] of current) {
-    const prior = previous.get(key);
-    if (prior === undefined) {
-      added.push(`${String(entry.qty)} x ${entry.name}`);
-    } else if (prior.qty !== entry.qty) {
-      changed.push(`${entry.name}: ${String(prior.qty)} -> ${String(entry.qty)}`);
-    }
-  }
-
-  for (const [key, entry] of previous) {
-    if (!current.has(key)) {
-      removed.push(`${String(entry.qty)} x ${entry.name}`);
-    }
-  }
+  const lines = piecesOnBoth
+    ? [
+      countChanges(placedCounts(snapshot.payload), placedCounts(previousSnapshot.payload)),
+      countChanges(tableRows(snapshot.payload), tableRows(previousSnapshot.payload)),
+    ]
+    : [countChanges(snapshot.payload.totals.entries, previousSnapshot.payload.totals.entries)];
+  const merged = (pick: (changes: CountChanges) => readonly string[]): string[] =>
+    [...new Set(lines.flatMap(pick))].sort((a, b) => a.localeCompare(b));
 
   const payload = SnapshotDiffPayloadSchema.parse({
-    added: added.sort((a, b) => a.localeCompare(b)),
-    removed: removed.sort((a, b) => a.localeCompare(b)),
-    changed: changed.sort((a, b) => a.localeCompare(b)),
+    added: merged((changes) => changes.added),
+    removed: merged((changes) => changes.removed),
+    changed: merged((changes) => changes.changed),
   });
   const changedCount = payload.changed.length;
   const addedCount = payload.added.length;
