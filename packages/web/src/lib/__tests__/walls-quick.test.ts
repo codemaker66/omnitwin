@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   BRICK_MOTION_QUICK,
   BRICK_MOTION_SLOW,
@@ -41,6 +41,11 @@ afterEach(() => {
 });
 
 describe("wallsQuick off: today's brick-down", () => {
+  // #329 turns the key on by default; these cases are about it off.
+  beforeEach(() => {
+    setPlannerFeaturesForTesting({ wallsQuick: false });
+  });
+
   it("takes 5 s with today's throw, reduced motion or not", () => {
     expect(wallClickSeconds()).toBe(5);
     reducedMotion(true);

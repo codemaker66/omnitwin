@@ -3,6 +3,7 @@ import { VenueIdSchema } from "./venue.js";
 import { SpaceIdSchema } from "./space.js";
 import { ConfigurationIdSchema } from "./configuration.js";
 import { UserIdSchema } from "./user.js";
+import { isCalendarDate } from "./calendar-date.js";
 import {
   AcquisitionChannelSchema,
   EnquiryAttributionSchema,
@@ -182,8 +183,18 @@ export const GuestEnquirySchema = z
     venueSlug: z.string().trim().min(1).max(100).optional(),
     email: z.string().trim().check(z.email()).max(255),
     phone: z.string().trim().max(30).optional(),
-    name: z.string().trim().max(200).optional(),
-    eventDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    /** A name that is empty once trimmed is no name: it parses to undefined,
+     *  so the enquiry falls back to the email and never stores "" as the name
+     *  a hold's title is later built from (booking titles need a character). */
+    name: z
+      .string()
+      .trim()
+      .max(200)
+      .transform((name) => (name === "" ? undefined : name))
+      .optional(),
+    /** A day the calendar has: it is stored in a date column, which refuses
+     *  "2027-02-30", "2027-13-01" and year 0000 (audit enquiries-crm-6). */
+    eventDate: z.string().refine(isCalendarDate, "Not a calendar date").optional(),
     eventType: z.string().trim().max(100).optional(),
     guestCount: z.number().int().nonnegative().max(MAX_GUEST_COUNT).optional(),
     message: z.string().max(MAX_MESSAGE_LENGTH).optional(),

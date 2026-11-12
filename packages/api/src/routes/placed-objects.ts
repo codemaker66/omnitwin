@@ -83,7 +83,7 @@ const BatchBody = z.object({
 // Helper: verify config ownership
 //
 // Runs on every planner save, so it reads only the columns these routes use.
-// A whole row would also carry `thumbnail_url`, a PNG data URL of tens to
+// A whole row would also carry `thumbnail_url`, an image data URL of tens to
 // hundreds of KB that no object route needs.
 // ---------------------------------------------------------------------------
 

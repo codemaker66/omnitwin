@@ -8,9 +8,10 @@ import { z } from "zod";
 // library measures them, with only what p75 by page and device needs: the
 // route's pattern ("/proposal-share/:token", never the address the visitor
 // opened, so a share token or a layout's id cannot travel), a device class
-// from the viewport and pointer, the value, its rating and how the page was
-// reached. Nothing names or follows the visitor: no address, no identifier,
-// no user agent, nothing stored on the device. Whether to report at all is the
+// from the viewport and pointer, the value and its rating: nothing the privacy
+// page does not name, so not even how the page was reached (12 November 2026).
+// Nothing names or follows the visitor: no address, no identifier, no user
+// agent, nothing stored on the device. Whether to report at all is the
 // server's switch and the page's sample rate (docs/engineering/web-vitals.md).
 // ---------------------------------------------------------------------------
 
@@ -21,9 +22,6 @@ export const WEB_VITAL_DEVICE_CLASSES = ["phone", "tablet", "desktop"] as const;
 export type WebVitalDeviceClass = (typeof WEB_VITAL_DEVICE_CLASSES)[number];
 
 export const WEB_VITAL_RATINGS = ["good", "needs-improvement", "poor"] as const;
-
-/** How the page was reached, as web-vitals reports it. */
-export const WEB_VITAL_NAVIGATION_TYPES = ["navigate", "reload", "back-forward", "back-forward-cache", "prerender", "restore", "soft-navigation"] as const;
 
 /** Goal 07's p75 targets: milliseconds, except CLS, which has no unit. */
 export const WEB_VITAL_P75_TARGETS: Readonly<Record<WebVitalName, number>> = {
@@ -53,7 +51,6 @@ export const WebVitalSampleSchema = z.object({
   /** Milliseconds; CLS is a unitless score. */
   value: ValueSchema,
   rating: z.enum(WEB_VITAL_RATINGS),
-  navigationType: z.enum(WEB_VITAL_NAVIGATION_TYPES),
 }).strict().refine((sample) => sample.value <= (sample.name === "CLS" ? 100 : 600_000), {
   message: "Beyond any value a page load can report",
   path: ["value"],

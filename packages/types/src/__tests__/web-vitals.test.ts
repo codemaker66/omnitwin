@@ -11,10 +11,10 @@ const report = {
   page: "/proposal-share/:token",
   device: "phone",
   metrics: [
-    { name: "LCP", value: 5_234.5, rating: "poor", navigationType: "navigate" },
-    { name: "INP", value: 184, rating: "good", navigationType: "navigate" },
-    { name: "CLS", value: 0.04, rating: "good", navigationType: "navigate" },
-    { name: "TTFB", value: 412.3, rating: "good", navigationType: "navigate" },
+    { name: "LCP", value: 5_234.5, rating: "poor" },
+    { name: "INP", value: 184, rating: "good" },
+    { name: "CLS", value: 0.04, rating: "good" },
+    { name: "TTFB", value: 412.3, rating: "good" },
   ],
 };
 
@@ -54,7 +54,7 @@ describe("a web vitals report", () => {
       { ...report, metrics: [{ ...report.metrics[0], name: "FID" }] },
       { ...report, metrics: [{ ...report.metrics[0], value: -1 }] },
       { ...report, metrics: [{ ...report.metrics[0], value: 700_000 }] },
-      { ...report, metrics: [{ name: "CLS", value: 101, rating: "poor", navigationType: "navigate" }] },
+      { ...report, metrics: [{ name: "CLS", value: 101, rating: "poor" }] },
       { ...report, metrics: [{ ...report.metrics[0], value: Number.NaN }] },
       { ...report, device: "watch" },
       { ...report, v: 2 },
@@ -62,5 +62,10 @@ describe("a web vitals report", () => {
       { ...report, metrics: [{ ...report.metrics[0], id: "v5-1690000000000-123" }] },
     ];
     for (const body of refused) expect(WebVitalsReportSchema.safeParse(body).success, JSON.stringify(body)).toBe(false);
+  });
+
+  it("refuses how the page was reached: the privacy page names no such field (12 November 2026)", () => {
+    const withNavigation = { ...report, metrics: [{ ...report.metrics[0], navigationType: "reload" }] };
+    expect(WebVitalsReportSchema.safeParse(withNavigation).success).toBe(false);
   });
 });

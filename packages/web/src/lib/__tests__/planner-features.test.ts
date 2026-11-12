@@ -35,8 +35,9 @@ describe("planner features: everyone's switches", () => {
     ]));
   });
 
-  it("has lane P's touch arbiter and lean motion pipeline on for everyone, and every other slice off until it is green", () => {
-    const on = new Set(["touchArbiter", "leanMotionPipeline"]);
+  it("has lane P's touch arbiter and lean motion pipeline, and Blake's answered decisions, on for everyone, and every other slice off", () => {
+    // Blake, 4 Nov: decisions 2 (the faint, judged ghost), 4 (Alt-click hides a wall, in 450 ms) and 5 (lenses by role).
+    const on = new Set(["touchArbiter", "leanMotionPipeline", "truthfulGhost", "wallClickAlt", "wallsQuick", "lensesByRole"]);
     for (const [key, enabled] of Object.entries(plannerFeatures())) expect(enabled, key).toBe(on.has(key));
   });
 
@@ -50,10 +51,11 @@ describe("planner features: everyone's switches", () => {
     }
   });
 
-  it("has planner-qol's keys for Blake's decisions 3 to 5, every one off until he answers", () => {
+  it("has planner-qol's keys for Blake's decisions 3 to 5: his chosen options on, the rest off", () => {
+    const chosen = new Set(["lensesByRole", "wallsQuick"]);
     for (const key of ["clothDrape", "clothDrapeOnly", "lensesByRole", "lensesDivider", "wallsQuick"] as const) {
       expect(PLANNER_FEATURE_SPECS[key].lane, key).toBe("planner-qol");
-      expect(plannerFeatures()[key], key).toBe(false);
+      expect(plannerFeatures()[key], key).toBe(chosen.has(key));
     }
   });
 });

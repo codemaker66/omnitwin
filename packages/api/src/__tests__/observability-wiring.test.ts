@@ -10,7 +10,7 @@ import {
   scrubBreadcrumb,
   scrubTransaction,
 } from "../observability/redact.js";
-import { buildSentryOptions } from "../observability/sentry.js";
+import { WEB_VITALS_TRANSACTION, buildSentryOptions } from "../observability/sentry.js";
 
 // ---------------------------------------------------------------------------
 // The wiring: the redaction in observability/redact.ts reaches the server only
@@ -82,6 +82,15 @@ describe("the API's Sentry options", () => {
     expect(options.beforeSend).toBeTypeOf("function");
     expect(options.beforeSendTransaction).toBe(scrubTransaction);
     expect(options.beforeBreadcrumb).toBe(scrubBreadcrumb);
+  });
+
+  it("leave the page-speed reports out of tracing, whatever the method in the transaction's name", () => {
+    expect(options.ignoreTransactions).toEqual([WEB_VITALS_TRANSACTION]);
+    // The SDK drops a transaction whose name contains a string pattern.
+    const ignored = (name: string): boolean => (options.ignoreTransactions ?? [])
+      .some((pattern) => (typeof pattern === "string" ? name.includes(pattern) : pattern.test(name)));
+    expect(ignored("POST /public/web-vitals")).toBe(true);
+    expect(ignored("POST /public/enquiries")).toBe(false);
   });
 
   it("name SENTRY_ENVIRONMENT over NODE_ENV when it is set", () => {

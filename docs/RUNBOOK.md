@@ -146,51 +146,68 @@ mcp__railway__list-variables service=@omnitwin/api
 
 ## Database migrations
 
-Migrations live in `packages/api/drizzle/00NN_*.sql`. Every migration is
-idempotent (`IF NOT EXISTS`, guarded constraint adds via `DO $$` blocks) —
-safe to re-run.
+Migrations live in `packages/api/drizzle/00NN_*.sql` and are recorded in the
+ledger `drizzle.__drizzle_migrations`. **The deploy applies them. Nobody
+applies one by hand.**
 
-### Applying a migration to production
+### How a migration reaches production
 
-**Preferred path** — one-shot TypeScript script per migration:
+Two things apply pending migrations, and both write the ledger:
 
-```bash
-cd packages/api
-pnpm tsx src/scripts/apply-migration-0012.ts
-```
+- Railway's pre-deploy command (`railway.json`:
+  `node --conditions=omnitwin-dist dist/scripts/migrate-before-deploy.js`)
+  runs inside the new image before traffic switches. A failed gate or a failed
+  migration fails the deployment, and the previous container keeps serving.
+- The Deploy workflow (`.github/workflows/deploy.yml`) runs after master's CI
+  passes and then finds nothing pending.
 
-Requires `DATABASE_URL` to point at production Neon (from `.env` or
-exported).
+[Deploy ordering](engineering/deploy-ordering.md) says how this works and how
+to check a deploy. [The current deploy flow](operations/deploy-flow-current.md)
+lists every moving part.
 
-**Fast path via Claude** — run the SQL through Neon MCP:
+### What not to do
 
-```
-mcp__neon__run_sql_transaction projectId=misty-pine-24061977 sqlStatements=[...]
-```
+Do not paste a migration's SQL into Neon, and do not run a one-shot
+`apply-migration-00NN.ts` script, to apply a new migration.
 
-Pass each migration file's contents as separate elements in the array. For
-0012 specifically, wrap the unguarded `ADD CONSTRAINT` in a
-`DO $$ ... IF NOT EXISTS` block so it's idempotent.
+- Most migrations cannot be run twice: a plain `CREATE TABLE` or `ADD COLUMN`
+  fails the second time (0091, 0092 and 0101 are examples).
+- SQL applied outside the ledger leaves its tables in place with no ledger
+  row. The next deploy's gate then finds a pending migration whose target
+  table already exists (`verify-migration-tail-readiness.ts`) and refuses
+  every deployment until the ledger is repaired by hand.
+
+The `apply-migration-0009.ts` to `apply-migration-0018.ts` scripts in
+`packages/api/src/scripts` are how those early migrations were applied, before
+the ledger was the rule. They are a record, not a path for new migrations.
 
 ### Verifying a migration landed
+
+- The Railway deployment log carries the pre-deploy command's line:
+  `{"status":"migrated","appliedBefore":…,"appliedAfter":…}`, or its failure
+  reason.
+- `GET /health/ready` compares the journal the image ships with the ledger,
+  so it is not green on a container that is ahead of its schema.
+- To look at the schema itself, read-only:
 
 ```
 mcp__neon__get_database_tables projectId=misty-pine-24061977
 ```
 
-Look for the new tables. Or query `information_schema.columns` for new
-columns:
+  or query `information_schema.columns` for a new column:
+
 ```sql
 SELECT column_name FROM information_schema.columns
 WHERE table_name = 'configurations' AND column_name = 'review_status';
 ```
 
-### Known drift: `drizzle.__drizzle_migrations`
+### An old note: the ledger was once behind
 
-The tracker table is 7 migrations behind the journal (0009–0016 not
-recorded) as of 2026-04-20. Cosmetic — all migrations are applied to the
-schema. A future `drizzle-kit migrate` would re-run 0009–0016 as no-ops.
-To fix, compute sha256 of each `.sql` file and INSERT the rows.
+On 20 April 2026 the ledger was seven rows behind the journal (0009 to 0016
+had been applied by hand and not recorded). The deploy gate has since required
+the ledger to reach the journal's count before a deployment is promoted, so
+that note describes April, not now. This section was corrected on 11 November
+2026 without reading production's ledger.
 
 ---
 
@@ -201,7 +218,7 @@ To fix, compute sha256 of each `.sql` file and INSERT the rows.
    error.
 3. Common culprits:
    - **Missing env var** — crashed with `Environment validation failed: XYZ`. Fix: set via `mcp__railway__set-variables`.
-   - **Missing table/column** — `relation "..." does not exist` or `column "..." does not exist`. Fix: apply the pending migration (see above).
+   - **Missing table/column** — `relation "..." does not exist` or `column "..." does not exist`. The deploy applies migrations (see above): read the Railway deployment log for the pre-deploy line and why it failed. Do not apply the SQL by hand.
    - **DB connection** — `ECONNREFUSED`, `password authentication failed`. Fix: check Neon dashboard → project suspended? Password rotated? `DATABASE_URL` still valid?
    - **Clerk auth** — `Invalid publishable key`. Fix: confirm `CLERK_PUBLISHABLE_KEY` / `CLERK_SECRET_KEY` match the active Clerk instance.
 

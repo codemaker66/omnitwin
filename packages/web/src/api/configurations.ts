@@ -178,7 +178,8 @@ export async function getPublicConfig(configId: string, signal?: AbortSignal): P
 
 /**
  * Set the floor plan thumbnail on a public preview config.
- * Accepts a PNG data URL from the orthographic capture.
+ * Accepts a PNG or JPEG data URL of at most 270,000 characters; the planner
+ * sends PLAN_THUMBNAIL's JPEG (lib/ortho-capture.ts).
  */
 export async function updatePublicThumbnail(configId: string, thumbnailUrl: string): Promise<Configuration> {
   return api.post(`/public/configurations/${configId}/thumbnail`, { thumbnailUrl }, true, ConfigurationResponseSchema);

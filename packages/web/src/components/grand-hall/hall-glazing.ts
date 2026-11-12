@@ -29,7 +29,8 @@
 
 import { BufferAttribute, BufferGeometry, FrontSide, ShapeUtils, Vector2, type Texture, type Vector3 } from "three";
 import { MeshBasicNodeMaterial } from "three/webgpu";
-import { attribute, cameraPosition, dot, float, max, min, mrt, normalize, output, pmremTexture, positionWorld, pow, reflect, smoothstep, uniform, vec3, vec4 } from "three/tsl";
+import { attribute, cameraPosition, dot, float, max, min, normalize, output, pmremTexture, positionWorld, pow, reflect, smoothstep, uniform, vec3, vec4 } from "three/tsl";
+import { targetSafeMrt } from "../../lib/target-safe-mrt.js";
 import type { MeshBuilder, V2, V3 } from "./mesh-builder.js";
 import type { HallBuilders } from "./hall-builders.js";
 import { wallAtlasUv } from "./hall-atlas.js";
@@ -555,8 +556,9 @@ export function createGlassMaterial(options: GlassMaterialOptions): GlassMateria
   material.maskNode = positionWorld.y.lessThan(options.section.cuts[WINDOW_WALL_INDEX]);
   // The normal and velocity targets keep what lies behind (alpha 0 under the
   // pipeline's blend for them), so occlusion and the temporal resolve see the
-  // street through the glass, not the glass.
-  material.mrtNode = mrt({ output, normal: vec4(0, 0, 0, 0), velocity: vec4(0, 0, 0, 0) });
+  // street through the glass, not the glass. A snapshot's target takes the
+  // pane's colour alone (lib/target-safe-mrt.ts).
+  material.mrtNode = targetSafeMrt({ output, normal: vec4(0, 0, 0, 0), velocity: vec4(0, 0, 0, 0) });
   material.name = "grand-hall-glass";
   return { material, intensity };
 }

@@ -24,6 +24,7 @@ vi.mock("@react-three/drei", () => ({
 vi.mock("../../../hooks/use-cockpit-replay.js", () => ({ useCockpitReplay: vi.fn() }));
 
 const replayHook = vi.mocked(await import("../../../hooks/use-cockpit-replay.js"));
+const { CHROME_SETTLE_MS } = await import("../../../stores/chrome-presence-store.js");
 const { TRADES_HALL_GUEST_FLOW_REPLAY_INPUT } = await import("../../../lib/trades-hall-visual-demo-state.js");
 const { useCockpitStore } = await import("../../../stores/cockpit-store.js");
 const { CockpitSceneOverlays } = await import("../CockpitSceneOverlays.js");
@@ -116,7 +117,7 @@ describe("CockpitSceneOverlays", () => {
     expect(container.querySelector("mesh, lineSegments")).toBeNull();
     expect(marker.getAttribute("aria-expanded")).toBe("true");
     expect(useCockpitStore.getState().beam).toBe(beam);
-    expect(screen.getByRole("button", { name: "Dismiss annotation details" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Close note" })).toBeTruthy();
     rerender(<CockpitSceneOverlays renderGeometry />);
     expect(container.querySelector('[name="cockpit-heritage"]')).not.toBeNull();
     expect(marker.getAttribute("aria-expanded")).toBe("true");
@@ -153,7 +154,7 @@ describe("CockpitSceneOverlays", () => {
     expect(detail?.textContent).toBeTruthy();
     expect(beam?.label).toContain(detail?.textContent);
     expect(useCockpitStore.getState().walkMode).toBe(true);
-    expect(screen.getByRole("button", { name: "Dismiss annotation details" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Close note" })).toBeTruthy();
   });
 
   it("clears its focused annotation beam when the overlay owner unmounts", () => {
@@ -218,7 +219,7 @@ describe("CockpitSceneOverlays", () => {
     act(runFrame);
     expect(layer?.style.visibility).toBe("visible");
     expect(useCockpitStore.getState().beam).not.toBeNull();
-    expect(screen.getByRole("button", { name: "Dismiss annotation details" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Close note" })).toBeTruthy();
     unmount(); shell.remove(); canvasBox.mockRestore(); coverBox.mockRestore();
   });
 
@@ -248,7 +249,25 @@ describe("CockpitSceneOverlays", () => {
     useCockpitStore.getState().setMode("flow");
     render(<CockpitSceneOverlays />);
     expect(screen.getAllByRole("button", { name: /Distinct warning/ })).toHaveLength(12);
-    expect(screen.getByText("13 planning annotations · scroll for all")).toBeTruthy();
+    expect(screen.getByText("13 planning notes · scroll for all")).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Planning notes in the room" })).toBeTruthy();
+  });
+
+  it("counts one planning note as one, in the planner's words", () => {
+    // The Lighting lens shows its one placeholder note alone.
+    useCockpitStore.getState().setMode("lighting");
+    const { container } = render(<CockpitSceneOverlays />);
+    expect(screen.getByText("1 planning note · scroll for all")).toBeTruthy();
+    expect(container.textContent).not.toMatch(/annotation/iu);
+    // Opened, the note still speaks the planner's words, to the eye and to the ear.
+    const note = container.querySelector<HTMLButtonElement>(".scene-annotations__button");
+    if (note === null) throw new Error("Missing planning note");
+    fireEvent.click(note);
+    expect(screen.getByRole("button", { name: "Close note" })).toBeTruthy();
+    expect(container.textContent).not.toMatch(/annotation/iu);
+    const spoken = [...container.querySelectorAll("[aria-label], [title]")]
+      .map((element) => `${element.getAttribute("aria-label") ?? ""} ${element.getAttribute("title") ?? ""}`);
+    expect(spoken.join(" ")).not.toMatch(/annotation/iu);
   });
 
   it("defers to a portalled modal and restores the selected details after it closes", async () => {
@@ -275,7 +294,7 @@ describe("CockpitSceneOverlays", () => {
     act(runFrame);
     expect(layer?.hasAttribute("inert")).toBe(false);
     expect(layer?.getAttribute("aria-hidden")).toBe("false");
-    expect(screen.getByRole("button", { name: "Dismiss annotation details" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Close note" })).toBeTruthy();
   });
 
   it("measures and observes a sibling mobile header while excluding off-canvas widgets", () => {
@@ -397,6 +416,43 @@ describe("CockpitSceneOverlays", () => {
       if (match?.[1] === undefined) throw new Error("Missing annotation placement");
       expect(Number.parseFloat(match[1]) + 44).toBeLessThanOrEqual(932);
     }
+    unmount(); shell.remove(); canvasBox.mockRestore();
+  });
+
+  // T-680: a unit folded by the pointer frees its space only once its fade
+  // has run, and a fold changes no element's size, so only the chrome's own
+  // attribute on <html> can say to measure again then.
+  it("measures again once a folded unit's fade has run, so the cards use the space it frees", async () => {
+    const canvas = frameState.canvas;
+    if (canvas === null) throw new Error("Missing canvas");
+    const shell = document.createElement("div"); shell.className = "cockpit-shell";
+    const dock = document.createElement("footer"); dock.className = "cockpit-bottom client-event-dock";
+    dock.setAttribute("aria-label", "Your event schedule");
+    shell.append(canvas, dock); document.body.append(shell);
+    const canvasBox = vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 1366, 1000));
+    const dockBox = vi.spyOn(dock, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 80, 1366, 920));
+    useCockpitStore.getState().setMode("flow");
+    const { container, unmount } = render(<CockpitSceneOverlays renderGeometry={false} />);
+    const runFrame = (): void => {
+      const callback = frameState.callbacks.at(-1);
+      if (callback === undefined) throw new Error("Missing annotation frame");
+      callback();
+    };
+    act(runFrame);
+    const layer = container.querySelector<HTMLElement>(".scene-annotations");
+    expect(layer?.getAttribute("aria-hidden")).toBe("true");
+    // The fold starts: the unit is still there while its fade runs.
+    await act(async () => { document.documentElement.setAttribute("data-planner-fold-bottom", "folded"); await Promise.resolve(); });
+    act(runFrame);
+    expect(layer?.getAttribute("aria-hidden")).toBe("true");
+    // The fade ends with no resize and no mutation: only the settle measures again.
+    dockBox.mockReturnValue(new DOMRect(0, 940, 1366, 60));
+    act(runFrame);
+    expect(layer?.getAttribute("aria-hidden")).toBe("true");
+    await act(async () => { await new Promise((resolve) => { window.setTimeout(resolve, CHROME_SETTLE_MS + 40); }); });
+    act(runFrame);
+    expect(layer?.getAttribute("aria-hidden")).toBe("false");
+    document.documentElement.removeAttribute("data-planner-fold-bottom");
     unmount(); shell.remove(); canvasBox.mockRestore();
   });
 
