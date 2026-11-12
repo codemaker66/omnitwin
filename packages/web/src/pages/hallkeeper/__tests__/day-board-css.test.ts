@@ -60,6 +60,9 @@ function rules(body: string): readonly Rule[] {
   return found;
 }
 
+/** Every rule in the sheet, inside a media block or not. */
+const SHEET: readonly Rule[] = rules(CSS);
+
 /** What an element selector hides: the last class of its last compound, or
  *  the whole selector when that compound names no class (`> *`, a tag, an
  *  attribute), so no hiding rule can slip past the lists below unnamed. */
@@ -79,9 +82,47 @@ function cascaded(block: readonly Rule[], selector: string): ReadonlyMap<string,
   return merged;
 }
 
-function hides(rule: Rule): boolean {
-  return rule.declarations.get("display")?.startsWith("none") === true
-    || rule.declarations.get("visibility")?.startsWith("hidden") === true;
+/** A declared value as the cascade compares it: no !important, lower case. */
+function plain(value: string | undefined): string {
+  return (value ?? "").replace(/!\s*important\s*$/iu, "").trim().toLowerCase();
+}
+
+/** Nothing: 0, 0px, .0em, 0%. */
+function zero(value: string | undefined): boolean {
+  return /^[+-]?(?:0+(?:\.0*)?|\.0+)(?:[a-z]+|%)?$/u.test(plain(value));
+}
+
+/** A colour with nothing to see: transparent, or any colour whose alpha is
+ *  nothing (#0000, #ffffff00, rgba(0, 0, 0, 0), rgb(0 0 0 / 0)). */
+function transparent(value: string | undefined): boolean {
+  const colour = plain(value);
+  if (colour === "transparent" || /^#(?:[\da-f]{3}0|[\da-f]{6}00)$/u.test(colour)) return true;
+  const inside = /^[a-z-]+\((.*)\)$/u.exec(colour)?.[1];
+  if (inside === undefined) return false;
+  const commas = inside.split(",");
+  const alpha = inside.includes("/") ? inside.split("/").pop() : commas.length === 4 ? commas.pop() : undefined;
+  return alpha !== undefined && zero(alpha);
+}
+
+/** Whether a rule hides what `selector` selects, in any of the ways a sheet
+ *  can: no box (display), no paint (visibility, opacity, a transparent
+ *  colour or text fill), no glyphs (a zero font size), nothing rendered
+ *  inside it (content-visibility), or a box with no height or width whose
+ *  overflow is not visible (paper cannot scroll), set in this rule or in
+ *  any other for the same selector. */
+function hides(rule: Rule, selector: string): boolean {
+  const value = (property: string): string => plain(rule.declarations.get(property));
+  if (value("display") === "none" || value("visibility") === "hidden" || value("visibility") === "collapse") return true;
+  if (zero(rule.declarations.get("opacity")) || zero(rule.declarations.get("font-size"))) return true;
+  if (transparent(rule.declarations.get("color")) || transparent(rule.declarations.get("-webkit-text-fill-color"))) return true;
+  if (value("content-visibility") === "hidden") return true;
+  const overflow = cascaded(SHEET, selector);
+  const clipped = (properties: readonly string[]): boolean =>
+    properties.some((property) => /\b(?:hidden|clip|auto|scroll)\b/u.test(plain(overflow.get(property))));
+  const flat = ["height", "max-height", "block-size", "max-block-size"].some((property) => zero(rule.declarations.get(property)));
+  const narrow = ["width", "max-width", "inline-size", "max-inline-size"].some((property) => zero(rule.declarations.get(property)));
+  return (flat && clipped(["overflow", "overflow-y", "overflow-block"]))
+    || (narrow && clipped(["overflow", "overflow-x", "overflow-inline"]));
 }
 
 describe("the Day Board's stylesheet", () => {
@@ -102,8 +143,7 @@ describe("the Day Board's stylesheet", () => {
   it("prints every room and every slot in words, hiding only the screen's chrome", () => {
     const print = atBlocks("@media print").flatMap(rules);
     const hidden = new Set(print
-      .filter(hides)
-      .flatMap((rule) => rule.selectors)
+      .flatMap((rule) => rule.selectors.filter((selector) => hides(rule, selector)))
       // A pseudo-element is a decoration, not a word.
       .filter((selector) => !selector.includes("::"))
       .map(hiddenTarget));
