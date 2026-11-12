@@ -157,6 +157,18 @@ describe("the privacy policy", () => {
     expect(text).toContain("they are the venue's record of who was in the building, and are kept after a member of staff's account is closed");
   });
 
+  it("gives the lawful basis for suppliers' contacts and the names on door marks: legitimate interests", () => {
+    textOf("privacy");
+    const basis = document.getElementById("why-we-use-it");
+    const term = [...(basis?.querySelectorAll("dt") ?? [])].find((dt) => dt.textContent === "Receiving suppliers at the door");
+    const detail = term?.nextElementSibling?.textContent ?? "";
+    expect(detail).toMatch(/^Article 6\(1\)\(f\), legitimate interests:/u);
+    expect(detail).toContain("a supplier's contact and note for the day");
+    expect(detail).toContain("the names of the staff who marked them in and out");
+    // Blake's word, and the app's: an account is deleted (Clerk's user.deleted).
+    expect(detail).toContain("after a member of staff's account is deleted");
+  });
+
   it("names no lawful condition for the health note: that is the venue adviser's to confirm", () => {
     const text = textOf("privacy");
     for (const claim of ["Article 9", "explicit consent", "9(2)"]) {

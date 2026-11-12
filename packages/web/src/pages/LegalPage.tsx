@@ -347,6 +347,13 @@ const PRIVACY: LegalDocument = {
                 "Article 6(1)(b): entering into and performing the contract for your event. Keeping the signature record and the payment records afterwards is Article 6(1)(c), the venue's legal obligation to keep accounting records, and Article 6(1)(f), our legitimate interest in being able to show what was agreed, by whom and when.",
             },
             {
+              // The Day Board's supplier arrivals (T-692; Blake, 12 November 2026).
+              term: "Receiving suppliers at the door",
+              detail:
+                "Article 6(1)(f), legitimate interests: receiving each supplier at the right door and time, with a supplier's contact and note for the day to reach them by, and keeping the venue's record of who was in the building, with the names of the staff who marked them in and out. "
+                + `We have weighed this against the interests of the people named: the contact and note are ordinary business details, removed ${String(SUPPLIER_CONTACT_DAYS)} days after the booking ends, and the names on the door are the venue's safety record, kept after a member of staff's account is deleted.`,
+            },
+            {
               term: "Keeping the service secure and working",
               detail:
                 "Article 6(1)(f), legitimate interests: protecting the site from abuse, spam and bulk harvesting, and diagnosing faults so that the service stays available.",
