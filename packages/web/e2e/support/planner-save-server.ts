@@ -113,6 +113,29 @@ function asBatchObject(value: unknown): BatchObject {
   };
 }
 
+/**
+ * The API's refusals over a held note, in its own words (#389,
+ * packages/api/src/routes/public-configs.ts NOTE_HELD_REFUSAL and
+ * HELD_PIECE_OMITTED_REFUSAL): the planner shows them as they arrive, so a
+ * spec run against the API itself meets these same sentences.
+ */
+export const NOTE_HELD_SENTENCE = "A note on this plan cannot be changed from here, and this save tried to change it. Clear the note you wrote on that piece.";
+export const HELD_PIECE_OMITTED_SENTENCE = "Nothing was saved: this save would remove a piece with a note that cannot be shown here. Reload the page to put it back.";
+
+/**
+ * How #389 takes a public batch save. `settle`: the notes are settled one by
+ * one (settledNotes), because the save is not taken as the whole truth: that
+ * needs the plan's claim secret AND the save's own word that it was read with
+ * the notes (`notesAsSent = madeHere && notesIncluded === true`). `withhold`:
+ * the answer keeps each held note from its reader, as withoutUnsentNotes
+ * does, because the reader is not the plan's maker (`madeHere ? stored rows :
+ * withoutUnsentNotes(...)`).
+ */
+interface PublicSaveRules {
+  readonly settle: boolean;
+  readonly withhold: boolean;
+}
+
 /** The note a batch piece sends, if any. */
 function sentNote(object: BatchObject): string | null {
   const note = object.metadata?.["notes"];
@@ -142,9 +165,10 @@ export class PlannerSaveServer {
    * Notes on rows, by row id, that a reader without the plan's claim secret
    * is not shown: the API's rules for them (packages/api/src/routes/
    * public-configs.ts). Such a reader gets the row marked noteHeld and without
-   * its note, a save that sends the row without a note keeps the note, and a
-   * save from such a reader that leaves the row out is refused (409
-   * HELD_PIECE_OMITTED). Empty, the server answers as it always did.
+   * its note. A public save not taken as the whole truth (PublicSaveRules: from
+   * such a reader, or from the maker without saying it read the notes) keeps
+   * the note of a row it sends without one, and is refused if it leaves the row
+   * out (409 HELD_PIECE_OMITTED). Empty, the server answers as it always did.
    */
   readonly heldNotes = new Map<string, string>();
   /** While true, the signed-in read refuses a public preview (403), as the API does for anyone off its venue's floor. */
@@ -199,7 +223,7 @@ export class PlannerSaveServer {
     };
   }
 
-  private batchSave(layout: StoredLayout, body: unknown, marked: boolean): { readonly status: number; readonly json: unknown } {
+  private batchSave(layout: StoredLayout, body: unknown, { settle, withhold }: PublicSaveRules): { readonly status: number; readonly json: unknown } {
     if (!isRecord(body) || typeof body["expectedRevision"] !== "number" || !Array.isArray(body["objects"])) {
       return { status: 400, json: { error: "Bad batch", code: "VALIDATION_ERROR" } };
     }
@@ -213,25 +237,19 @@ export class PlannerSaveServer {
     }
     const batch = body["objects"].map(asBatchObject);
     const sent = new Set(batch.flatMap((object) => (object.id === undefined ? [] : [object.id])));
-    if (marked && layout.objects.some((object) => this.heldNotes.has(object.id) && !sent.has(object.id))) {
-      return {
-        status: 409,
-        json: { error: "Nothing was saved: this save would remove a piece with a note that cannot be shown here.", code: "HELD_PIECE_OMITTED" },
-      };
+    if (settle && layout.objects.some((object) => this.heldNotes.has(object.id) && !sent.has(object.id))) {
+      return { status: 409, json: { error: HELD_PIECE_OMITTED_SENTENCE, code: "HELD_PIECE_OMITTED" } };
     }
-    // From such a reader, a stored piece's note is kept when the piece says
+    // From such a save, a stored piece's note is kept when the piece says
     // nothing of it, and changed or cleared only by a save that names the note
     // it replaces; any other change is refused (the API's settledNotes).
-    if (marked && batch.some((object) => {
+    if (settle && batch.some((object) => {
       const held = object.id === undefined ? undefined : this.heldNotes.get(object.id);
       if (held === undefined) return false;
       const note = sentNote(object);
       return note !== held && object.replacesNote !== held && (note !== null || object.replacesNote !== undefined);
     })) {
-      return {
-        status: 409,
-        json: { error: "A note on this plan cannot be changed from here, and this save tried to change it. Clear the note you wrote on that piece.", code: "NOTE_HELD" },
-      };
+      return { status: 409, json: { error: NOTE_HELD_SENTENCE, code: "NOTE_HELD" } };
     }
     const kept = new Set(layout.objects.map((object) => object.id));
     // Updates first, then inserts, each in input order: the API's echo order.
@@ -252,7 +270,7 @@ export class PlannerSaveServer {
     // every reader but the plan's maker, and given back only in the answer to
     // the save that sent them.
     const sentHere = new Set<string>();
-    if (marked) {
+    if (settle) {
       for (const [object, id] of placed) {
         const note = sentNote(object);
         if (note !== null) {
@@ -266,7 +284,7 @@ export class PlannerSaveServer {
     layout.revision += 1;
     layout.updatedAt = new Date().toISOString();
     this.saves.push({ configId: layout.id, expectedRevision, objectCount: batch.length });
-    return { status: 200, json: { data: { objects: this.rows(layout, marked, sentHere), revision: layout.revision } } };
+    return { status: 200, json: { data: { objects: this.rows(layout, withhold, sentHere), revision: layout.revision } } };
   }
 
   private async answer(route: Route): Promise<void> {
@@ -322,8 +340,14 @@ export class PlannerSaveServer {
     if (method === "POST" && save !== null) {
       const layout = this.layouts.get(save[1] ?? "");
       if (layout === undefined) return json(404, { error: "No layout", code: "NOT_FOUND" });
-      const marked = path.startsWith("/public/") && request.headers()["x-plan-claim-secret"] !== claimSecretFor(layout.id);
-      const outcome = this.batchSave(layout, request.postDataJSON(), marked);
+      // The signed-in route stores the batch as sent. The public one takes the
+      // notes as sent only from the plan's maker saving a copy it says was read
+      // with them, and answers only the maker with every note (#389).
+      const body: unknown = request.postDataJSON();
+      const publicSave = path.startsWith("/public/");
+      const madeHere = publicSave && request.headers()["x-plan-claim-secret"] === claimSecretFor(layout.id);
+      const notesAsSent = madeHere && isRecord(body) && body["notesIncluded"] === true;
+      const outcome = this.batchSave(layout, body, { settle: publicSave && !notesAsSent, withhold: publicSave && !madeHere });
       return json(outcome.status, outcome.json);
     }
     if (method === "GET" && path.startsWith("/assets/runtime-packages/latest")) return json(200, { data: null });

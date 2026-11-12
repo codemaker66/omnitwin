@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
-import { PlannerSaveServer, SAVE_GRAND_HALL, signInAs, type SeedUser } from "./support/planner-save-server.js";
+import { HELD_PIECE_OMITTED_SENTENCE, PlannerSaveServer, SAVE_GRAND_HALL, signInAs, type SeedUser } from "./support/planner-save-server.js";
 
 // ---------------------------------------------------------------------------
 // E2E: a table holding a note this browser is not shown (review of #388).
@@ -237,7 +237,9 @@ test("v1: a save refused for leaving out a table holding a note says the server'
 
   expect(await saveByHand(page, false)).toBe(false);
 
-  const sentence = "Nothing was saved: this save would remove a piece with a note that cannot be shown here.";
+  // #389's own words (public-configs.ts HELD_PIECE_OMITTED_REFUSAL), in full: the description must match the whole of it.
+  const sentence = HELD_PIECE_OMITTED_SENTENCE;
+  expect(sentence).toBe("Nothing was saved: this save would remove a piece with a note that cannot be shown here. Reload the page to put it back.");
   await expect(page.getByRole("status").filter({ hasText: sentence }).first()).toBeVisible();
   await expect(page.getByRole("button", { name: /retry/iu })).toHaveCount(0);
   await expect(page.getByText(/press Retry|will try again|Couldn't save/u)).toHaveCount(0);
