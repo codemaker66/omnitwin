@@ -8,10 +8,14 @@ export async function getOpsHandoffPack(id: string): Promise<OpsHandoffPackBundl
 
 /** The compile route's whole reply: the pack, and whether this compile made
  *  it (false when the event's standing pack already said this and was
- *  returned as it stands, with the floor's progress kept). */
+ *  returned as it stands, with the floor's progress kept).
+ *
+ *  `created` is absent from an API a deploy behind this page. That API made
+ *  a new pack on every compile, so a reply without it reads as made, and the
+ *  page never fails a compile that succeeded while the two deploys land. */
 const CompileReplySchema = z.object({
   data: OpsHandoffPackBundleSchema,
-  created: z.boolean(),
+  created: z.boolean().default(true),
 });
 
 export interface OpsHandoffCompileResult {

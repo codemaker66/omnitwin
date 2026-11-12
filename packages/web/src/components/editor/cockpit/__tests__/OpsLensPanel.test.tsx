@@ -118,13 +118,15 @@ function compiled(bundle: unknown): { readonly bundle: unknown; readonly created
   return { bundle, created: true };
 }
 
-/** The real compile call, answered by the route's envelope (`created` beside `data`). */
-async function answerCompileWith(created: boolean): Promise<void> {
+/** The real compile call, answered by the route's envelope (`created` beside
+ *  `data`). Undefined answers as an API a deploy behind does: 201 and `data`
+ *  alone, because it made a new pack on every compile. */
+async function answerCompileWith(created: boolean | undefined): Promise<void> {
   const actual = await vi.importActual<typeof import("../../../../api/ops-handoff.js")>("../../../../api/ops-handoff.js");
   mocks.compileOpsHandoffPack.mockImplementation(actual.compileOpsHandoffPack);
   vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(new Response(
     JSON.stringify({ data: storedBundle(), created }),
-    { status: created ? 201 : 200, headers: { "Content-Type": "application/json" } },
+    { status: created === false ? 200 : 201, headers: { "Content-Type": "application/json" } },
   ))));
 }
 
@@ -218,6 +220,25 @@ describe("OpsLensPanel", () => {
     expect(result.textContent).toContain("Handoff pack compiled");
     expect(result.textContent).not.toContain("Handoff pack unchanged");
     expect(result.textContent).not.toContain("the floor keeps its progress");
+  });
+
+  // The web and the API deploy separately, so the page is briefly ahead of
+  // the API. An API before `created` made a new pack on every compile and
+  // sent only `data`: the pack it made must still show, as compiled.
+  it("shows the pack an API a deploy behind made, whose reply has no `created`", async () => {
+    signInStaff();
+    useEditorStore.setState({ configId: CONFIG_ID });
+    usePlacementStore.setState({ placedItems: place(chair(), 20) });
+    await answerCompileWith(undefined);
+
+    renderPanel();
+    fireEvent.click(screen.getByTestId("ops-compile"));
+
+    await waitFor(() => { expect(screen.getByTestId("ops-pack-result")).toBeTruthy(); });
+    const result = screen.getByTestId("ops-pack-result");
+    expect(result.textContent).toContain("Handoff pack compiled");
+    expect(result.textContent).not.toContain("Handoff pack unchanged");
+    expect(screen.queryByTestId("ops-pack-unchanged")).toBeNull();
   });
 
   it("shows a friendly error when compiling fails", async () => {
