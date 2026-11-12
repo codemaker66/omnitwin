@@ -9,7 +9,16 @@ import { buildWallBody } from "../hall-wall-body.js";
 // body's planes where the two overlap (SKIN_GAP, hall-exterior.ts).
 
 type V3 = readonly [number, number, number];
-interface Triangle { readonly corners: readonly [V3, V3, V3]; readonly normal: V3; readonly offset: number }
+interface Triangle {
+  readonly corners: readonly [V3, V3, V3];
+  /** The plane's normal, one sign per plane (so faces back to back share it). */
+  readonly normal: V3;
+  readonly offset: number;
+  /** The way the face itself looks. */
+  readonly facing: V3;
+  /** Its first corner's vertex, for the face's attributes. */
+  readonly vertex: number;
+}
 
 const sub = (a: V3, b: V3): V3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 const cross = (a: V3, b: V3): V3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
@@ -29,11 +38,11 @@ function triangles(geometry: BufferGeometry): Triangle[] {
     const c = cross(sub(corners[1], corners[0]), sub(corners[2], corners[0]));
     const length = Math.hypot(...c);
     if (length < 1e-9) continue;
-    let normal: V3 = [c[0] / length, c[1] / length, c[2] / length];
+    const facing: V3 = [c[0] / length, c[1] / length, c[2] / length];
     // One sign per plane, so faces back to back compare as one plane.
-    const lead = Math.abs(normal[0]) > 1e-6 ? normal[0] : Math.abs(normal[1]) > 1e-6 ? normal[1] : normal[2];
-    if (lead < 0) normal = [-normal[0], -normal[1], -normal[2]];
-    out.push({ corners, normal, offset: dot(normal, corners[0]) });
+    const lead = Math.abs(facing[0]) > 1e-6 ? facing[0] : Math.abs(facing[1]) > 1e-6 ? facing[1] : facing[2];
+    const normal: V3 = lead < 0 ? [-facing[0], -facing[1], -facing[2]] : facing;
+    out.push({ corners, normal, offset: dot(normal, corners[0]), facing, vertex: at(k) });
   }
   return out;
 }
@@ -95,5 +104,51 @@ describe("the measured front against the window wall's body", () => {
   it("keeps every face off the body's planes where the two overlap", () => {
     const overlaps = frontOnBody(buildHallFront(FRONT_DETAIL_FULL).geometry, buildWallBody().geometry);
     expect(overlaps.slice(0, 5)).toEqual([]);
+  });
+});
+
+/**
+ * Every pair of the front's own faces lying on one plane and overlapping: either back to back (two
+ * blocks touching, inside the stone; where a cut shows them, one is seen from inside, and the cut pass,
+ * drawn a hair toward the eye, wins the tie), or flush. Flush faces of one material draw alike; flush
+ * faces of two materials would fight on the front's outside, where nothing covers them.
+ */
+function frontOnItself(front: BufferGeometry): { readonly backToBack: number; readonly mixedFlush: readonly { readonly at: readonly number[]; readonly parts: readonly number[] }[] } {
+  const part = front.getAttribute("aPart");
+  const byNormal = new Map<string, Triangle[]>();
+  for (const t of triangles(front)) {
+    const key = t.normal.map((x) => Math.round(x * 200)).join(",");
+    const list = byNormal.get(key);
+    if (list === undefined) byNormal.set(key, [t]); else list.push(t);
+  }
+  let backToBack = 0;
+  const mixedFlush: { at: readonly number[]; parts: readonly number[] }[] = [];
+  for (const list of byNormal.values()) {
+    const sorted = [...list].sort((a, b) => a.offset - b.offset);
+    for (let i = 0; i < sorted.length; i++) {
+      const a = sorted[i];
+      if (a === undefined) continue;
+      for (let j = i + 1; j < sorted.length; j++) {
+        const b = sorted[j];
+        if (b === undefined || b.offset - a.offset > ON_PLANE) break;
+        if (dot(a.normal, b.normal) < 0.99995 || sharedArea(a, b) <= 1e-6) continue;
+        if (dot(a.facing, b.facing) < 0) { backToBack += 1; continue; }
+        const parts = [Math.round(part.getX(a.vertex)), Math.round(part.getX(b.vertex))];
+        if (parts[0] !== parts[1]) {
+          const [p, q, r] = a.corners;
+          mixedFlush.push({ at: [p[0] + q[0] + r[0], p[1] + q[1] + r[1], p[2] + q[2] + r[2]].map((x) => Math.round((x / 3) * 1000) / 1000), parts });
+        }
+      }
+    }
+  }
+  return { backToBack, mixedFlush };
+}
+
+describe("the measured front's own solids", () => {
+  it("meet one another back to back or flush in one material, never two materials on one plane", () => {
+    const { backToBack, mixedFlush } = frontOnItself(buildHallFront(FRONT_DETAIL_FULL).geometry);
+    expect(mixedFlush.slice(0, 5)).toEqual([]);
+    // The touching pairs whose ties the cut pass wins (hall-exterior-material.ts CUT_EYEWARD): many, all inside the stone.
+    expect(backToBack).toBeGreaterThan(0);
   });
 });

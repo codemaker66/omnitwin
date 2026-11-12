@@ -19,7 +19,7 @@ import { HALL_SUN_CASTER_LAYER, requestHallSunRedraw, type HallSun } from "./hal
 import { runSliced } from "./hall-slices.js";
 import { parseSectionPreset } from "./hall-section.js";
 import { FRONT_DETAIL_FULL, FRONT_DETAIL_LIGHT, hallFrontSteps } from "./hall-exterior.js";
-import { createFrontCasterMaterial, createFrontMaterial } from "./hall-exterior-material.js";
+import { createFrontCasterMaterial, createFrontMaterials } from "./hall-exterior-material.js";
 import type { StreetLightMaps } from "./hall-street-light.js";
 
 export interface HallExteriorProps {
@@ -38,7 +38,7 @@ export function HallExterior({ sun, lightMaps, onFailed }: HallExteriorProps): R
   const finish = useHallFinish();
   const preset = useMemo(() => parseSectionPreset(typeof window === "undefined" ? null : window.location.search), []);
   const [geometry, setGeometry] = useState<BufferGeometry | null>(null);
-  const material = useMemo(() => createFrontMaterial(sun, lightMaps, preset), [lightMaps, preset, sun]);
+  const materials = useMemo(() => createFrontMaterials(sun, lightMaps, preset), [lightMaps, preset, sun]);
   const caster = useMemo(createFrontCasterMaterial, []);
   // A phone's finish draws the round things with fewer segments. The build
   // depends on that alone: a new renderer (a lost device, restored) keeps it.
@@ -78,14 +78,18 @@ export function HallExterior({ sun, lightMaps, onFailed }: HallExteriorProps): R
   }, [geometry, invalidate, sun]);
 
   useEffect(() => () => {
-    material.dispose();
+    materials.outside.dispose();
+    materials.cut.dispose();
     caster.dispose();
-  }, [caster, material]);
+  }, [caster, materials]);
 
   if (geometry === null) return null;
+  // The outside, then the cut (hall-exterior-material.ts) once the scene's depth
+  // is down, so the depth test turns its hidden faces away before they are shaded.
   return (
     <group name="grand-hall-front">
-      <mesh geometry={geometry} material={material} frustumCulled={false} raycast={() => undefined} />
+      <mesh geometry={geometry} material={materials.outside} frustumCulled={false} raycast={() => undefined} />
+      <mesh geometry={geometry} material={materials.cut} renderOrder={1} frustumCulled={false} raycast={() => undefined} />
       <mesh geometry={geometry} material={caster} layers={HALL_SUN_CASTER_LAYER} castShadow frustumCulled={false} raycast={() => undefined} />
     </group>
   );

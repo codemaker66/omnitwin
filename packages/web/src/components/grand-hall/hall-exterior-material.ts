@@ -17,15 +17,21 @@
 // is discarded, and the solids' inner faces, seen through the cut, draw flat
 // in the section's colour and lit from above as the cut's top, by the sun
 // with no shadow as the hall's cut is, so the front reads as masonry cut
-// through, as the wall behind it does. Normals come from
-// the geometry's own attribute (it is built in world space), never
-// normalWorld, which the section's unlit materials keep out of the pass's
-// normal target (hall-section.ts).
+// through, as the wall behind it does. They are a pass of their own, drawn a
+// hair toward the eye (CUT_EYEWARD): where two blocks touch, one block's face
+// seen from inside and its neighbour's outer face lie on one plane, and the
+// cut, which is what a section shows there, wins that tie every frame instead
+// of the two taking turns. Normals come from the geometry's own attribute (it
+// is built in world space), never normalWorld, which the section's unlit
+// materials keep out of the pass's normal target (hall-section.ts).
 // ---------------------------------------------------------------------------
 
-import { Color, DoubleSide, FrontSide, SRGBColorSpace } from "three";
+import { BackSide, Color, FrontSide, SRGBColorSpace, type Side } from "three";
 import { MeshBasicNodeMaterial, type Node } from "three/webgpu";
-import { Discard, Fn, If, attribute, float, frontFacing, mix, normalize, positionWorld, select, smoothstep, vec3, vec4 } from "three/tsl";
+import {
+  Discard, Fn, If, attribute, cameraProjectionMatrix, float, frontFacing, mix, normalize, positionView, positionWorld, select,
+  smoothstep, vec3, vec4,
+} from "three/tsl";
 import { cardHaze, cardLight, nightDither, type StreetLightMaps } from "./hall-street-light.js";
 import { NIGHT_WORK_BELOW, streetLampLight } from "./hall-context.js";
 import { hallSkyUniforms as sky } from "./hall-sky-runtime.js";
@@ -82,12 +88,39 @@ function partColour(part: Node<"float">, palette: Palette): Node<"vec3"> {
 }
 
 /**
+ * How far the cut's faces are drawn toward the eye, as a share of their
+ * distance from it: a quarter of a millimetre a metre. That is more than ten
+ * steps of the depth buffer out to 30 m (near plane 0.1 m), enough to win
+ * every tie with a face on the same plane. At a solid's own edge, where its
+ * outside and inside meet, it shows across well under a pixel.
+ */
+export const CUT_EYEWARD = 2.5e-4;
+
+/** The front as drawn, two passes over one geometry: its outside, and its cut (each solid seen from inside). */
+export interface FrontMaterials {
+  readonly outside: MeshBasicNodeMaterial;
+  readonly cut: MeshBasicNodeMaterial;
+}
+
+/**
  * The front as drawn: its finish, cut at the window wall's cut, in the city's
  * light and haze. `maps` are the city's street-light maps (HallContext).
  */
-export function createFrontMaterial(sun: HallSun, maps: StreetLightMaps, preset: SectionPresetName): MeshBasicNodeMaterial {
+export function createFrontMaterials(sun: HallSun, maps: StreetLightMaps, preset: SectionPresetName): FrontMaterials {
+  const outside = frontPass(sun, maps, preset, FrontSide);
+  const cut = frontPass(sun, maps, preset, BackSide);
+  // Each inside face is drawn as though a hair nearer the eye. A point moved straight toward the eye
+  // projects where it did, so the cut covers the same pixels and is lit and coloured at its own place,
+  // but every tie with a face on its plane is its own. Depth is set per vertex, never per fragment,
+  // so the depth test still turns hidden faces away before they are shaded.
+  cut.vertexNode = cameraProjectionMatrix.mul(vec4(positionView.mul(1 - CUT_EYEWARD), 1));
+  cut.name = "grand-hall-front-cut";
+  return { outside, cut };
+}
+
+function frontPass(sun: HallSun, maps: StreetLightMaps, preset: SectionPresetName, side: Side): MeshBasicNodeMaterial {
   const palette = FRONT_PALETTES[preset];
-  const material = new MeshBasicNodeMaterial({ side: DoubleSide, fog: false });
+  const material = new MeshBasicNodeMaterial({ side, fog: false });
   material.colorNode = Fn(() => {
     const p = positionWorld;
     const part = attribute<"float">("aPart", "float");

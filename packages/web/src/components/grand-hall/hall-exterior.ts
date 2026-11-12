@@ -71,6 +71,13 @@ export const ROOM_BODY_HALF_X = HALL_HALF_LENGTH + HALL_WALL_THICKNESS.end.thick
 /** The skin's back stands this far out from the wall's face, so the two never fight for the same depth. */
 const SKIN_GAP = 0.004;
 
+/**
+ * How far a piece is let into what holds it (a pane into its frame, a pipe
+ * into the pavement, a pole into its pedestal), so its end never lies on that
+ * holder's own face in another material, where the two would fight for the same depth.
+ */
+export const LET_IN = 0.005;
+
 /** How far back from a bay's face shopfronts, doors and their glass stand (I: a reveal of a stone's depth). */
 const FILL_SETBACK = 0.26;
 
@@ -484,9 +491,10 @@ function doorway(front: FrontBuilder, opening: GroundOpening, face: number): voi
     const s = Math.sin(angle);
     front.mesh.tube([frontPoint(opening.u + r0 * c, centreZ + r0 * s + (transom - centreZ), frontFace - 0.03), frontPoint(opening.u + r1 * c, centreZ + r1 * s, frontFace - 0.03)], [0.012, 0.012], 4, true);
   }
-  front.disc(opening.u, transom + 0.02, frontFace - 0.05, frontFace - 0.01, 0.16, 12);
+  // The hub's back let into the glass, and the glass into the frame round it.
+  front.disc(opening.u, transom + 0.02, frontFace - 0.05 + LET_IN, frontFace - 0.01, 0.16, 12);
   front.as("glass");
-  front.box(opening.u - half, opening.u + half, opening.bottom + 0.5, transom + opening.rise, back + 0.02, back + 0.035);
+  front.box(opening.u - half + LET_IN, opening.u + half - LET_IN, opening.bottom + 0.5, transom + opening.rise, back + 0.02, back + 0.035);
 }
 
 /** The front door: a pair of dark panelled leaves under a fanlight, in the podium's moulded arch (P). */
@@ -515,8 +523,9 @@ function frontDoor(front: FrontBuilder, opening: GroundOpening, face: number): v
     const r1 = radius - 0.08;
     front.mesh.tube([frontPoint(opening.u + 0.14 * Math.cos(angle), transom + 0.06 + 0.14 * Math.sin(angle), frontFace - 0.02), frontPoint(opening.u + r1 * Math.cos(angle), centreZ + r1 * Math.sin(angle), frontFace - 0.02)], [0.01, 0.01], 4, true);
   }
+  // The glass let into the transom bar under it and the stone each side, never resting on the frame's foot.
   front.as("glass");
-  front.box(opening.u - half, opening.u + half, transom + 0.04, transom + opening.rise, back + 0.02, back + 0.035);
+  front.box(opening.u - half - LET_IN, opening.u + half + LET_IN, transom + 0.04 - LET_IN, transom + opening.rise, back + 0.02, back + 0.035);
   // The moulded arch round the door, its keystone plaque, and the bracket lamps (P).
   front.as("stone");
   const band = FRONT_DOOR.archBand;
@@ -686,7 +695,9 @@ function domeGroup(front: FrontBuilder, segments: number): void {
   front.lathe(d.u, proud, arcPoints(0, d.finialTip - 0.13, 0.13, -Math.PI / 2, Math.PI / 2, 8).map(([r, z]): V2 => [Math.max(0, r), z]), 10);
   front.as("paint");
   const pole = d.flagpoleDiameter / 2;
-  front.lathe(d.flagpoleU, -d.flagpoleBehindFace, [[0, d.flagpoleBase], [pole, d.flagpoleBase], [pole * 0.6, d.flagpoleTop], [0, d.flagpoleTop]], 8);
+  // Let into the pedestal it stands on.
+  const foot = d.flagpoleBase - LET_IN;
+  front.lathe(d.flagpoleU, -d.flagpoleBehindFace, [[0, foot], [pole, foot], [pole * 0.6, d.flagpoleTop], [0, d.flagpoleTop]], 8);
 }
 
 /** The ground floor of one bay: plinth, wall, courses, openings and their fill. */
@@ -892,10 +903,10 @@ export function* hallFrontSteps(detail: HallFrontDetail = FRONT_DETAIL_FULL): St
     const centre = (pair[0] + pair[1]) / 2;
     front.box(centre - t.respondHalfWidth, centre + t.respondHalfWidth, t.podiumTop, t.columnTop, LINK_FACE_PROUD, t.respondProud);
   }
-  // The rainwater pipes down the links' corners, to the pavement.
+  // The rainwater pipes down the links' corners, let into the pavement.
   front.as("metal");
   for (const u of DOWNPIPES.u) {
-    front.lathe(u, DOWNPIPES.proud, [[0, 0], [DOWNPIPES.radius, 0], [DOWNPIPES.radius, DOWNPIPES.top], [0, DOWNPIPES.top]], 8);
+    front.lathe(u, DOWNPIPES.proud, [[0, -LET_IN], [DOWNPIPES.radius, -LET_IN], [DOWNPIPES.radius, DOWNPIPES.top], [0, DOWNPIPES.top]], 8);
   }
   yield;
   front.as("stone");
