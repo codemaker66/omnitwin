@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../api/client.js";
 import type { BatchObjectInput, Configuration, ObjectMetadata, PlacedObject } from "../../api/configurations.js";
-import { editorToPlacedItem, placedItemToEditor } from "../../components/editor/EditorBridge.js";
+import { editorToPlacedItem, flushAutoSave, placedItemToEditor } from "../../components/editor/EditorBridge.js";
 import { persistAnonymousPlannerDraft, readAnonymousPlannerDraft } from "../../lib/anonymous-planner-draft.js";
 import { heldNoteIds, noteHeldOn, ownWordsOverHeldNotes } from "../../lib/guest-plan-notes.js";
 import { useAuthStore } from "../auth-store.js";
@@ -985,5 +985,25 @@ describe("Keep mine refused for a note the maker rewrote, with other notes of th
     expect(noteHeldOn(store(), B)).toBe(true);
     expect(noteHeldOn(store(), C)).toBe(true);
     expect(store().objects.find((object) => object.id === A)?.positionX).toBe(3);
+  });
+
+  it("tells a caller that was waiting on the save the truth: it landed", async () => {
+    const server: PlanOnServer = { revision: 4, notes: new Map() };
+    // The person had cleared the rewritten note: the first save is refused, and the one sent after it lands.
+    await theyRewriteB(server, () => { store().setObjectNotes(B, ""); });
+    // Answers arrive a moment later, as over a network, so the caller's turn comes while the second save is in flight.
+    const api = vi.mocked(configApi.publicBatchSave).getMockImplementation();
+    if (api === undefined) throw new Error("no API model");
+    vi.mocked(configApi.publicBatchSave).mockImplementation((...sent) => new Promise((resolve, reject) => {
+      setTimeout(() => { api(...sent).then(resolve, reject); }, 0);
+    }));
+    const sentBefore = savesSent();
+
+    const keeping = store().keepMine(false);
+    const flushed = flushAutoSave();
+    expect(await keeping).toBe(true);
+    expect(savesSent()).toBe(sentBefore + 2);
+    // The caller waited through both, and is not told the layout failed to save.
+    expect(await flushed).toBe(true);
   });
 });
