@@ -247,7 +247,7 @@ describe("Theatre rows keep the Grand Hall's doors clear", () => {
 
   it("names the doors in the spacing it used", () => {
     expect(autoFillBasis(plan("theatre", 100)))
-      .toBe("Rows 0.9 m apart, a 1.1 m centre aisle, 2.4 m clear at the front and the doors kept clear.");
+      .toBe("Rows 0.9 m apart, a 1.1 m centre aisle, 2.4 m clear at the front, 1.2 m behind the last row and the doors kept clear.");
   });
 
   it("has room for 268 with the doors kept clear, 280 without, in the hall as the planner opens it", () => {

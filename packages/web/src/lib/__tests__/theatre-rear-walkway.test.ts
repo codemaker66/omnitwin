@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { planAutoFill } from "../auto-fill.js";
-import { getCatalogueItemBySlug } from "../catalogue.js";
+import { planAutoFill, planTheatreFill } from "../auto-fill.js";
+import { getCatalogueItem, getCatalogueItemBySlug } from "../catalogue.js";
 import { computeRotatedFootprint } from "../placement.js";
 import { toRealWorld } from "../../constants/scale.js";
 import { planTheatreLayout, THEATRE_SPACING } from "../theatre-layout.js";
@@ -16,15 +16,26 @@ import { roomGeometries, computeBoundingBox } from "../../data/room-geometries.j
 const TURINI_DEPTH_M = 0.58;
 const WALKWAY_M = THEATRE_SPACING.rearWalkwayM;
 
-/** Metres from the back edge of the last row's chairs to the back wall. */
+/**
+ * Metres from the back edge of the last row's chairs to the back wall. A seat
+ * that names its chair (a fill's) is measured with that chair's own depth;
+ * `seatDepthM` stands for any seat that does not (a bare layout's). The least
+ * over the row is returned.
+ */
 function clearBehindLastRow(
-  seats: readonly { readonly xM: number; readonly zM: number }[],
+  seats: readonly { readonly xM: number; readonly zM: number; readonly chairItemId?: string }[],
   alongLength: boolean,
   roomDepthM: number,
   seatDepthM: number,
 ): number {
-  const lastRowCentre = Math.max(...seats.map((seat) => (alongLength ? seat.zM : seat.xM)));
-  return roomDepthM / 2 - (lastRowCentre + seatDepthM / 2);
+  const along = (seat: { readonly xM: number; readonly zM: number }): number => (alongLength ? seat.zM : seat.xM);
+  const lastRowCentre = Math.max(...seats.map(along));
+  const lastRow = seats.filter((seat) => Math.abs(along(seat) - lastRowCentre) < 1e-9);
+  return Math.min(...lastRow.map((seat) => {
+    const chair = seat.chairItemId === undefined ? undefined : getCatalogueItem(seat.chairItemId);
+    const depthM = chair === undefined ? seatDepthM : 2 * toRealWorld(computeRotatedFootprint(chair, 0).halfD);
+    return roomDepthM / 2 - (lastRowCentre + depthM / 2);
+  }));
 }
 
 describe("theatre rear walkway", () => {
@@ -106,6 +117,49 @@ describe("theatre fill uses the real chair's depth", () => {
     expect(fill.doorsKeptClear).toBe(true);
     expect([fill.rows, fill.chairs, fill.roomForSeatsIgnoringDoors]).toEqual([20, 268, 280]);
     expect(clearBehindLastRow(fill.seats, false, HALL_LENGTH, TURINI_DEPTH_M)).toBeGreaterThanOrEqual(WALKWAY_M - 1e-9);
+  });
+});
+
+describe("theatre fill holds the walkway behind whichever chair is in the last row", () => {
+  const turini = getCatalogueItemBySlug("burgess-turini-18-3");
+  const checked = getCatalogueItemBySlug("checked-banquet-chair");
+  if (turini === undefined || checked === undefined) throw new Error("no chairs");
+  const reception = roomGeometries["Reception Room"];
+  if (reception === undefined) throw new Error("no Reception Room");
+  const box = computeBoundingBox(reception.wallPolygon);
+
+  it("plans again, one row shorter, when the pink chair's stock puts the deeper checked chair in the last row", () => {
+    // 119 pink chairs seat 9 rows of 12; row 10 would be checked chairs (0.62 m) with 1.19 m behind them.
+    const fill = planTheatreFill(turini, 0, box.width, box.depth, {
+      chairSupply: [{ item: turini, inStore: 119 }, { item: checked, inStore: null }],
+    });
+    if (fill === null) throw new Error("no theatre plan");
+    expect([fill.rows, fill.chairs, fill.roomForSeats]).toEqual([9, 108, 108]);
+    expect(clearBehindLastRow(fill.seats, box.depth >= box.width, Math.max(box.width, box.depth), TURINI_DEPTH_M))
+      .toBeGreaterThanOrEqual(WALKWAY_M - 1e-9);
+  });
+
+  it("keeps the 10th row while the pink chairs last", () => {
+    const fill = planTheatreFill(turini, 0, box.width, box.depth, {
+      chairSupply: [{ item: turini, inStore: 120 }, { item: checked, inStore: null }],
+    });
+    if (fill === null) throw new Error("no theatre plan");
+    expect([fill.rows, fill.chairs]).toEqual([10, 120]);
+    expect(clearBehindLastRow(fill.seats, box.depth >= box.width, Math.max(box.width, box.depth), TURINI_DEPTH_M))
+      .toBeGreaterThanOrEqual(WALKWAY_M - 1e-9);
+  });
+
+  it("does the same with the doors kept clear", () => {
+    // A door space in the centre aisle takes no seat, but puts the fill on the door-clear path.
+    const fill = planTheatreFill(turini, 0, box.width, box.depth, {
+      doorSpaces: [{ cx: 0, cz: 0, width: 0.5, depth: 0.5 }],
+      chairSupply: [{ item: turini, inStore: 119 }, { item: checked, inStore: null }],
+    });
+    if (fill === null) throw new Error("no theatre plan");
+    expect(fill.doorsKeptClear).toBe(true);
+    expect([fill.rows, fill.chairs, fill.roomForSeats, fill.roomForSeatsIgnoringDoors]).toEqual([9, 108, 108, 108]);
+    expect(clearBehindLastRow(fill.seats, box.depth >= box.width, Math.max(box.width, box.depth), TURINI_DEPTH_M))
+      .toBeGreaterThanOrEqual(WALKWAY_M - 1e-9);
   });
 });
 
