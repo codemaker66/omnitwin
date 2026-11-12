@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import {
   buildingBoardDay,
   buildingTickDays,
@@ -15,15 +15,19 @@ import type { RequestActor } from "./requests.js";
 // ---------------------------------------------------------------------------
 // Opening and lock-up (T-693).
 //
-// The venue's administrators keep its two lists; each change names the list
-// it was made from, so a colleague's newer list is refused rather than
-// overwritten. A check taken off a list is retired, not deleted, so a day
-// keeps what was ticked on it, and a past day reads the list as it stood
-// then. Everyone on the floor reads a day's checks and ticks them on the
+// The venue's administrators keep its two lists. Each save names the list as
+// its editor opened it, check by check in order, so a colleague's newer list
+// (a check added, taken off, reworded or moved) is refused rather than
+// overwritten. A check is never deleted: one taken off is retired, and new
+// words make a new check, so a past day reads the checks on its list then,
+// in the words they had, with what was ticked against them (in today's
+// order). Everyone on the floor reads a day's checks and ticks them on the
 // board's day: the venue's own, or the one before for a few hours after the
 // board rolls, since a night's lock-up may run past the boundary hour. The
-// unique index decides two ticks at once, and the second reads the first
-// back. A tick is taken back only by whoever made it, or by the office.
+// unique index over live ticks decides two ticks at once, and the second
+// reads the first back. A tick is taken back only by whoever made it, or by
+// the office, and stays on record with who took it back. Who wrote and
+// retired each check is kept too.
 // ---------------------------------------------------------------------------
 
 export interface CheckDeny {
@@ -46,6 +50,12 @@ type MarkRow = typeof venueBuildingCheckMarks.$inferSelect;
 
 /** The column holding who ticked: a longer name is clipped, never refused. */
 const NAME_MAX = 160;
+
+/** The name a tick is recorded under: the account's own, or "Someone" when it has none. */
+function tickName(actor: RequestActor): string {
+  const name = actor.name.trim().slice(0, NAME_MAX).trim();
+  return name.length > 0 ? name : "Someone";
+}
 
 /** The venue's clock: its time zone, and the hour its board's day rolls (midnight without settings, as the board). */
 interface VenueClock {
@@ -86,7 +96,7 @@ function inOrder(a: CheckRow, b: CheckRow): number {
 
 /**
  * A day's two lists as they stood that day: the checks on the list by its
- * end, and any ticked that day, though taken off since.
+ * end, in the words they had, and any ticked that day, though taken off since.
  */
 export async function readBuildingChecks(
   db: Database,
@@ -100,7 +110,7 @@ export async function readBuildingChecks(
   const [checks, marks] = await Promise.all([
     db.select().from(venueBuildingChecks).where(eq(venueBuildingChecks.venueId, venueId)),
     db.select().from(venueBuildingCheckMarks)
-      .where(and(eq(venueBuildingCheckMarks.venueId, venueId), eq(venueBuildingCheckMarks.boardDay, day))),
+      .where(and(eq(venueBuildingCheckMarks.venueId, venueId), eq(venueBuildingCheckMarks.boardDay, day), isNull(venueBuildingCheckMarks.undoneAt))),
   ]);
   const byCheck = new Map(marks.map((mark) => [mark.checkId, mark]));
   const shown = checks
@@ -115,8 +125,10 @@ export async function readBuildingChecks(
 
 /**
  * An administrator leaves one list as it should be: existing checks by id,
- * renamed or moved; new ones without; any left out are retired. Refused when
- * the list changed since they saw it.
+ * moved; new ones without; any left out are retired. A check given new words
+ * is retired and a new one takes its place, so its ticks keep the words they
+ * were given against. Refused when the list is not, check by check and in
+ * order, the one the editor opened on.
  */
 export async function replaceBuildingChecks(
   db: Database,
@@ -129,33 +141,37 @@ export async function replaceBuildingChecks(
   return db.transaction(async (tx) => {
     // One administrator's change to a list at a time, whether or not it has rows yet.
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${`building-checks:${venueId}:${kind}`}, 0))`);
-    const current = await tx.select().from(venueBuildingChecks)
-      .where(and(eq(venueBuildingChecks.venueId, venueId), eq(venueBuildingChecks.kind, kind), isNull(venueBuildingChecks.retiredAt)));
-    const currentIds = new Set(current.map((check) => check.id));
-    const expected = new Set(body.expected);
-    if (currentIds.size !== expected.size || [...currentIds].some((id) => !expected.has(id))) {
+    const current = (await tx.select().from(venueBuildingChecks)
+      .where(and(eq(venueBuildingChecks.venueId, venueId), eq(venueBuildingChecks.kind, kind), isNull(venueBuildingChecks.retiredAt))))
+      .sort(inOrder);
+    // The list as the editor opened it: the same checks in the same order.
+    // New words make a new check, so a colleague's rewording is caught here
+    // as surely as an addition, a removal or a move.
+    if (current.length !== body.expected.length || current.some((check, index) => check.id !== body.expected[index])) {
       return deny(409, "STALE_CHECKS", "Someone changed this list since you opened it.");
     }
-    if (body.items.some((item) => item.id !== undefined && !currentIds.has(item.id))) {
+    const byId = new Map(current.map((check) => [check.id, check]));
+    if (body.items.some((item) => item.id !== undefined && !byId.has(item.id))) {
       return deny(400, "UNKNOWN_CHECK", "A check on the list is not one of this venue's.");
     }
-    const kept = new Set(body.items.flatMap((item) => (item.id === undefined ? [] : [item.id])));
-    const retire = [...currentIds].filter((id) => !kept.has(id));
+    // A check keeps its id while its words stand; reworded, it is retired.
+    const kept = new Set(body.items.flatMap((item) => (item.id !== undefined && byId.get(item.id)?.label === item.label ? [item.id] : [])));
+    const retire = current.filter((check) => !kept.has(check.id)).map((check) => check.id);
     if (retire.length > 0) {
-      await tx.update(venueBuildingChecks).set({ retiredAt: new Date() })
+      await tx.update(venueBuildingChecks).set({ retiredAt: sql`clock_timestamp()`, retiredByUserId: actor.id })
         .where(and(eq(venueBuildingChecks.venueId, venueId), inArray(venueBuildingChecks.id, retire)));
     }
     for (const [index, item] of body.items.entries()) {
-      if (item.id === undefined) {
-        await tx.insert(venueBuildingChecks).values({ venueId, kind, label: item.label, sortOrder: index });
-      } else {
-        await tx.update(venueBuildingChecks).set({ label: item.label, sortOrder: index })
+      if (item.id !== undefined && kept.has(item.id)) {
+        await tx.update(venueBuildingChecks).set({ sortOrder: index })
           .where(and(eq(venueBuildingChecks.venueId, venueId), eq(venueBuildingChecks.id, item.id)));
+      } else {
+        await tx.insert(venueBuildingChecks).values({ venueId, kind, label: item.label, sortOrder: index, createdByUserId: actor.id });
       }
     }
-    const after = await tx.select().from(venueBuildingChecks)
-      .where(and(eq(venueBuildingChecks.venueId, venueId), eq(venueBuildingChecks.kind, kind), isNull(venueBuildingChecks.retiredAt)))
-      .orderBy(asc(venueBuildingChecks.sortOrder), asc(venueBuildingChecks.createdAt), asc(venueBuildingChecks.id));
+    const after = (await tx.select().from(venueBuildingChecks)
+      .where(and(eq(venueBuildingChecks.venueId, venueId), eq(venueBuildingChecks.kind, kind), isNull(venueBuildingChecks.retiredAt))))
+      .sort(inOrder);
     return after.map((check) => serializeCheck(check, undefined, false));
   });
 }
@@ -187,11 +203,11 @@ export async function markBuildingCheck(
       .for("share");
     if (check === undefined || standing(check, day, clock) !== "listed") return NOT_ON_LIST();
     await tx.insert(venueBuildingCheckMarks)
-      .values({ venueId, checkId, boardDay: day, doneAt: at, doneByUserId: actor.id, doneByName: actor.name.slice(0, NAME_MAX) })
-      // The index decides, not a prior read: two taps at once write one tick.
-      .onConflictDoNothing({ target: [venueBuildingCheckMarks.checkId, venueBuildingCheckMarks.boardDay] });
+      .values({ venueId, checkId, boardDay: day, doneAt: at, doneByUserId: actor.id, doneByName: tickName(actor) })
+      // The index over live ticks decides, not a prior read: two taps at once write one tick.
+      .onConflictDoNothing({ target: [venueBuildingCheckMarks.checkId, venueBuildingCheckMarks.boardDay], where: sql.raw("undone_at IS NULL") });
     const [mark] = await tx.select().from(venueBuildingCheckMarks)
-      .where(and(eq(venueBuildingCheckMarks.checkId, checkId), eq(venueBuildingCheckMarks.boardDay, day))).limit(1);
+      .where(and(eq(venueBuildingCheckMarks.checkId, checkId), eq(venueBuildingCheckMarks.boardDay, day), isNull(venueBuildingCheckMarks.undoneAt))).limit(1);
     return serializeCheck(check, mark, false);
   });
 }
@@ -199,7 +215,8 @@ export async function markBuildingCheck(
 /**
  * A tick is taken back on the same days it may be given, by whoever made it
  * or by the office; never silently by a colleague. A check taken off the
- * list since may still have its tick taken back.
+ * list since may still have its tick taken back. The tick stays on record,
+ * marked as taken back, by whom and when.
  */
 export async function unmarkBuildingCheck(
   db: Database,
@@ -212,17 +229,25 @@ export async function unmarkBuildingCheck(
   if (!canRecordObservation(actor, venueId)) return deny(403, "FORBIDDEN", "Forbidden");
   const clock = await venueClock(db, venueId);
   if (clock === null) return deny(404, "VENUE_NOT_FOUND", "Venue not found.");
-  if (!buildingTickDays(now().getTime(), clock.dayBoundaryHour, clock.timeZone).includes(day)) return OUT_OF_RANGE();
+  const at = now();
+  if (!buildingTickDays(at.getTime(), clock.dayBoundaryHour, clock.timeZone).includes(day)) return OUT_OF_RANGE();
   const [check] = await db.select().from(venueBuildingChecks)
     .where(and(eq(venueBuildingChecks.id, checkId), eq(venueBuildingChecks.venueId, venueId))).limit(1);
   if (check === undefined || standing(check, day, clock) === "later") return NOT_ON_LIST();
   const retired = standing(check, day, clock) === "retired";
-  const [mark] = await db.select().from(venueBuildingCheckMarks)
-    .where(and(eq(venueBuildingCheckMarks.checkId, checkId), eq(venueBuildingCheckMarks.boardDay, day))).limit(1);
-  if (mark === undefined) return serializeCheck(check, undefined, retired);
-  if (mark.doneByUserId !== actor.id && !canAdministerVenue(actor, venueId)) {
-    return deny(403, "TICK_NOT_YOURS", `${mark.doneByName} ticked this. Only they, or the office, can take it back.`);
-  }
-  await db.delete(venueBuildingCheckMarks).where(eq(venueBuildingCheckMarks.id, mark.id));
-  return serializeCheck(check, undefined, retired);
+  return db.transaction(async (tx) => {
+    // The live tick is held while it is taken back, so two at once take it back once.
+    const [mark] = await tx.select().from(venueBuildingCheckMarks)
+      .where(and(eq(venueBuildingCheckMarks.checkId, checkId), eq(venueBuildingCheckMarks.boardDay, day), isNull(venueBuildingCheckMarks.undoneAt)))
+      .limit(1)
+      .for("update");
+    if (mark === undefined) return serializeCheck(check, undefined, retired);
+    if (mark.doneByUserId !== actor.id && !canAdministerVenue(actor, venueId)) {
+      return deny(403, "TICK_NOT_YOURS", `${mark.doneByName} ticked this. Only they, or the office, can take it back.`);
+    }
+    await tx.update(venueBuildingCheckMarks)
+      .set({ undoneAt: at, undoneByUserId: actor.id, undoneByName: tickName(actor) })
+      .where(eq(venueBuildingCheckMarks.id, mark.id));
+    return serializeCheck(check, undefined, retired);
+  });
 }

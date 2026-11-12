@@ -15,7 +15,17 @@ import { addRotaDays, rotaLocalDate, rotaMinuteOfDay } from "./staff-rota-checks
 // ---------------------------------------------------------------------------
 
 const IsoInstantSchema = z.iso.datetime({ offset: true });
-const CalendarDateSchema = z.iso.date({ error: "Use a date such as 2026-11-14" });
+
+/** The years a board day may fall in: ones the database and the board both hold. */
+export const BUILDING_DAY_FIRST_YEAR = 2000;
+export const BUILDING_DAY_LAST_YEAR = 2100;
+
+/** A board day a list is read or ticked for: a real date, in those years. */
+const CalendarDateSchema = z.iso.date({ error: "Use a date such as 2026-11-14" })
+  .refine((date) => {
+    const year = Number(date.slice(0, 4));
+    return year >= BUILDING_DAY_FIRST_YEAR && year <= BUILDING_DAY_LAST_YEAR;
+  }, { message: `Use a date between ${String(BUILDING_DAY_FIRST_YEAR)} and ${String(BUILDING_DAY_LAST_YEAR)}` });
 
 export const BUILDING_CHECK_KINDS = ["opening", "lockup"] as const;
 export const BuildingCheckKindSchema = z.enum(BUILDING_CHECK_KINDS);
@@ -27,8 +37,13 @@ export const BUILDING_CHECKS_MAX = 40;
 
 export const BuildingCheckMarkSchema = z.object({
   doneAt: IsoInstantSchema,
-  /** Who ticked it: only they, or the office, may take it back. Null once their account is gone. */
+  /** Who ticked it: only they, or the office, may take it back. Null only if their user record is removed. */
   doneByUserId: z.uuid().nullable(),
+  /**
+   * Their name at the tick ("Someone" for an account with none). It stays on
+   * the tick as the venue's record of who did the check, after their account
+   * is deleted too (Blake, 12 November 2026).
+   */
   doneByName: z.string().min(1),
 }).strict();
 export type BuildingCheckMark = z.infer<typeof BuildingCheckMarkSchema>;
@@ -54,9 +69,11 @@ export type BuildingChecksDay = z.infer<typeof BuildingChecksDaySchema>;
 export const BuildingChecksDayQuerySchema = z.object({ day: CalendarDateSchema }).strict();
 
 /**
- * One list, as the administrator leaves it: existing checks by id (renamed
- * or moved), new ones without. `expected` is the list as they saw it, so a
- * colleague's newer change is refused rather than overwritten.
+ * One list, as the administrator leaves it: existing checks by id (moved, or
+ * reworded, which makes a new check), new ones without. `expected` is the
+ * list as they saw it, its checks' ids in order, so a colleague's newer
+ * change (an addition, a removal, new words or a new order) is refused
+ * rather than overwritten.
  */
 export const ReplaceBuildingChecksSchema = z.object({
   expected: z.array(z.uuid()).max(BUILDING_CHECKS_MAX),

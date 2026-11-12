@@ -105,12 +105,13 @@ describe.skipIf(target === undefined)("opening and lock-up, on migrated PostgreS
     const [doors, alarm] = first.data as BuildingCheck[];
     expect([doors?.label, alarm?.label]).toEqual(["Fire doors shut", "Alarm set"]);
 
-    // Moved, renamed, one added: the same checks keep their ids.
+    // Moved, reworded, one added: a moved check keeps its id; reworded, it is
+    // a new check, so a tick keeps the words it was given against.
     const second = await call(f, "staff", "PUT", `/venues/${f.venueId}/building-checks/lockup`, {
       expected: [doors?.id, alarm?.id], items: [{ id: alarm?.id, label: "Alarm set, zone 1" }, { id: doors?.id, label: "Fire doors shut" }, { label: "Keys back in the safe" }],
     });
-    expect((second.data as BuildingCheck[]).map((check) => [check.id === alarm?.id, check.label])).toEqual([
-      [true, "Alarm set, zone 1"], [false, "Fire doors shut"], [false, "Keys back in the safe"],
+    expect((second.data as BuildingCheck[]).map((check) => [check.id === doors?.id, check.id === alarm?.id, check.label])).toEqual([
+      [false, false, "Alarm set, zone 1"], [true, false, "Fire doors shut"], [false, false, "Keys back in the safe"],
     ]);
     // A change from the list as it first was is refused, and changes nothing.
     const stale = await call(f, "admin", "PUT", `/venues/${f.venueId}/building-checks/lockup`, { expected: [doors?.id, alarm?.id], items: [] });
@@ -221,17 +222,142 @@ describe.skipIf(target === undefined)("opening and lock-up, on migrated PostgreS
     expect([lights?.id, keys?.id].every((id) => typeof id === "string")).toBe(true);
   });
 
+  it("refuses a list saved over a colleague's rewording or reordering, as over an addition", async () => {
+    const f = await fixture();
+    const lockup = `/venues/${f.venueId}/building-checks/lockup`;
+    const opened = (await call(f, "admin", "PUT", lockup, { expected: [], items: [{ label: "Fire doors shut" }, { label: "Alarm set" }] })).data as BuildingCheck[];
+    const seen = opened.map((check) => check.id);
+    // Fiona rewords the alarm; Elaine, on the list as she opened it, adds one.
+    const reworded = await call(f, "staff", "PUT", lockup, {
+      expected: seen, items: [{ id: seen[0], label: "Fire doors shut" }, { id: seen[1], label: "Alarm set, zone 1 and 2" }],
+    });
+    expect(reworded.status).toBe(200);
+    const overWords = await call(f, "admin", "PUT", lockup, {
+      expected: seen, items: [{ id: seen[0], label: "Fire doors shut" }, { id: seen[1], label: "Alarm set" }, { label: "Keys back in the safe" }],
+    });
+    expect([overWords.status, overWords.code]).toEqual([409, "STALE_CHECKS"]);
+    expect((await day(f)).lockup.map((check) => check.label)).toEqual(["Fire doors shut", "Alarm set, zone 1 and 2"]);
+    // A new order is a change too.
+    const now = (reworded.data as BuildingCheck[]).map((check) => ({ id: check.id, label: check.label }));
+    const moved = await call(f, "staff", "PUT", lockup, { expected: now.map((check) => check.id), items: [now[1], now[0]] });
+    expect(moved.status).toBe(200);
+    const overOrder = await call(f, "admin", "PUT", lockup, { expected: now.map((check) => check.id), items: [...now, { label: "Keys back in the safe" }] });
+    expect([overOrder.status, overOrder.code]).toEqual([409, "STALE_CHECKS"]);
+    expect((await day(f)).lockup.map((check) => check.label)).toEqual(["Alarm set, zone 1 and 2", "Fire doors shut"]);
+  });
+
+  it("keeps a tick with the words it was given against when the check is reworded", async () => {
+    const f = await fixture();
+    const [doors] = await db.insert(schema.venueBuildingChecks)
+      .values({ venueId: f.venueId, kind: "lockup", label: "Fire doors shut", sortOrder: 0, createdAt: new Date("2026-11-01T09:00:00.000Z") })
+      .returning();
+    const id = doors?.id ?? "";
+    await db.insert(schema.venueBuildingCheckMarks).values({
+      venueId: f.venueId, checkId: id, boardDay: "2026-11-05", doneAt: new Date("2026-11-05T23:10:00.000Z"), doneByName: "Jamie",
+    });
+    await call(f, "hallkeeper", "POST", `/venues/${f.venueId}/building-checks/${id}/marks`, { day: TODAY });
+    const reworded = await call(f, "admin", "PUT", `/venues/${f.venueId}/building-checks/lockup`, { expected: [id], items: [{ id, label: "Alarm set" }] });
+    expect(reworded.status).toBe(200);
+    const lockup = async (date: string) => (await day(f, "hallkeeper", date)).lockup.map((check) => [check.label, check.retired, check.mark?.doneByName ?? null]);
+    // The 5th reads what Jamie ticked, in the words he ticked.
+    expect(await lockup("2026-11-05")).toEqual([["Fire doors shut", false, "Jamie"]]);
+    // Today keeps today's tick on the old words, and the new words wait for theirs.
+    expect(await lockup(TODAY)).toEqual([["Fire doors shut", true, "Jamie"], ["Alarm set", false, null]]);
+    expect(await lockup(addRotaDays(TODAY, 1))).toEqual([["Alarm set", false, null]]);
+  });
+
+  it("keeps who wrote and retired each check, and a tick taken back, with who took it back", async () => {
+    const f = await fixture();
+    const [alarm, doors] = (await call(f, "admin", "PUT", `/venues/${f.venueId}/building-checks/lockup`, {
+      expected: [], items: [{ label: "Alarm set" }, { label: "Fire doors shut" }],
+    })).data as BuildingCheck[];
+    await call(f, "staff", "PUT", `/venues/${f.venueId}/building-checks/lockup`, { expected: [alarm?.id, doors?.id], items: [{ id: alarm?.id, label: "Alarm set" }] });
+    const written = await pool.query<{ label: string; created_by: string | null; retired_by: string | null }>(
+      "SELECT label, created_by_user_id AS created_by, retired_by_user_id AS retired_by FROM venue_building_checks WHERE venue_id = $1 ORDER BY label",
+      [f.venueId],
+    );
+    expect(written.rows).toEqual([
+      { label: "Alarm set", created_by: f.people.admin, retired_by: null },
+      { label: "Fire doors shut", created_by: f.people.admin, retired_by: f.people.staff },
+    ]);
+    // Jamie ticks, the office takes it back, Ngozi ticks again: all three stay on record.
+    const url = `/venues/${f.venueId}/building-checks/${alarm?.id ?? ""}/marks`;
+    await call(f, "hallkeeper", "POST", url, { day: TODAY });
+    expect((await call(f, "staff", "DELETE", `${url}?day=${TODAY}`)).status).toBe(200);
+    expect((await day(f)).lockup[0]?.mark).toBeNull();
+    await call(f, "porter", "POST", url, { day: TODAY });
+    expect((await day(f)).lockup[0]?.mark?.doneByName).toBe("Ngozi");
+    const marks = await pool.query<{ done_by_name: string; undone_by_name: string | null; undone_by: string | null; undone: boolean }>(
+      `SELECT done_by_name, undone_by_name, undone_by_user_id AS undone_by, undone_at IS NOT NULL AS undone
+         FROM venue_building_check_marks WHERE check_id = $1 ORDER BY done_at`,
+      [alarm?.id],
+    );
+    expect(marks.rows).toEqual([
+      { done_by_name: "Jamie", undone_by_name: "Fiona", undone_by: f.people.staff, undone: true },
+      { done_by_name: "Ngozi", undone_by_name: null, undone_by: null, undone: false },
+    ]);
+    // A check that has been ticked is never deleted out from under its ticks.
+    await expect(pool.query("DELETE FROM venue_building_checks WHERE id = $1", [alarm?.id])).rejects.toThrow(/venue_building_check_marks_check/u);
+  });
+
+  it("keeps the database to the lists' own rules, whoever writes to it", async () => {
+    const f = await fixture();
+    const [ours] = await db.insert(schema.venueBuildingChecks).values({ venueId: f.venueId, kind: "lockup", label: "Alarm set" }).returning();
+    const [theirs] = await db.insert(schema.venueBuildingChecks).values({ venueId: f.otherVenueId, kind: "lockup", label: "Alarm set" }).returning();
+    // A tick names a check of its own venue only.
+    await expect(pool.query(
+      "INSERT INTO venue_building_check_marks (venue_id, check_id, board_day, done_by_name) VALUES ($1, $2, '2026-11-05', 'Jamie')",
+      [f.venueId, theirs?.id],
+    )).rejects.toThrow(/venue_building_check_marks_check/u);
+    // Words with no blank ends, and someone's name on every tick.
+    for (const label of ["", " Alarm set", "Alarm set "]) {
+      await expect(pool.query("INSERT INTO venue_building_checks (venue_id, kind, label) VALUES ($1, 'lockup', $2)", [f.venueId, label]))
+        .rejects.toThrow(/venue_building_checks_label/u);
+    }
+    await expect(pool.query(
+      "INSERT INTO venue_building_check_marks (venue_id, check_id, board_day, done_by_name) VALUES ($1, $2, '2026-11-05', '  ')",
+      [f.venueId, ours?.id],
+    )).rejects.toThrow(/venue_building_check_marks_done_by_name/u);
+    await expect(pool.query("UPDATE venue_building_checks SET retired_at = created_at - interval '1 hour' WHERE id = $1", [ours?.id]))
+      .rejects.toThrow(/venue_building_checks_retired_after_created/u);
+    // A venue that goes takes its lists and ticks with it.
+    const gone = randomUUID();
+    await db.insert(schema.venues).values({ id: gone, name: "TEST ONLY closed venue", slug: gone, address: "Disposable fixture", timezone: "Europe/London" });
+    const [check] = await db.insert(schema.venueBuildingChecks).values({ venueId: gone, kind: "opening", label: "Alarm unset" }).returning();
+    await db.insert(schema.venueBuildingCheckMarks).values({ venueId: gone, checkId: check?.id ?? "", boardDay: "2026-11-05", doneByName: "Jamie" });
+    await pool.query("DELETE FROM venues WHERE id = $1", [gone]);
+    expect((await pool.query("SELECT 1 FROM venue_building_check_marks WHERE venue_id = $1", [gone])).rowCount).toBe(0);
+  });
+
+  it("records a tick under a name even when the account has none", async () => {
+    const f = await fixture();
+    const [alarm] = (await call(f, "admin", "PUT", `/venues/${f.venueId}/building-checks/opening`, { expected: [], items: [{ label: "Alarm unset" }] })).data as BuildingCheck[];
+    const id = f.people.hallkeeper;
+    const response = await server.inject({
+      method: "POST", url: `/venues/${f.venueId}/building-checks/${alarm?.id ?? ""}/marks`, payload: { day: TODAY },
+      headers: { authorization: `Bearer ${JSON.stringify({ id, email: `${id}@checks.invalid`, name: "   ", role: "hallkeeper", platformRole: "none", venueId: f.venueId })}` },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json<{ data: BuildingCheck }>().data.mark?.doneByName).toBe("Someone");
+    expect((await day(f)).opening[0]?.mark?.doneByName).toBe("Someone");
+  });
+
   it("lets one of two administrators saving one list at once land, and refuses the other", async () => {
     const f = await fixture();
-    const [doors] = (await call(f, "admin", "PUT", `/venues/${f.venueId}/building-checks/lockup`, { expected: [], items: [{ label: "Fire doors shut" }] })).data as BuildingCheck[];
-    let expected = [doors?.id ?? ""];
+    let list = (await call(f, "admin", "PUT", `/venues/${f.venueId}/building-checks/lockup`, { expected: [], items: [{ label: "Fire doors shut" }] })).data as BuildingCheck[];
     for (let round = 0; round < 8; round += 1) {
+      // Both open the same list, keep its checks as they are and add their own.
+      const expected = list.map((check) => check.id);
+      const kept = list.map((check) => ({ id: check.id, label: check.label }));
       const both = await Promise.all([
-        call(f, "admin", "PUT", `/venues/${f.venueId}/building-checks/lockup`, { expected, items: [...expected.map((id) => ({ id, label: "Fire doors shut" })), { label: `Elaine's ${String(round)}` }] }),
-        call(f, "staff", "PUT", `/venues/${f.venueId}/building-checks/lockup`, { expected, items: [...expected.map((id) => ({ id, label: "Fire doors shut" })), { label: `Fiona's ${String(round)}` }] }),
+        call(f, "admin", "PUT", `/venues/${f.venueId}/building-checks/lockup`, { expected, items: [...kept, { label: `Elaine's ${String(round)}` }] }),
+        call(f, "staff", "PUT", `/venues/${f.venueId}/building-checks/lockup`, { expected, items: [...kept, { label: `Fiona's ${String(round)}` }] }),
       ]);
       expect(both.map((result) => result.status).sort()).toEqual([200, 409]);
-      expected = (both.find((result) => result.status === 200)?.data as BuildingCheck[]).map((check) => check.id);
+      const landed = both.find((result) => result.status === 200)?.data as BuildingCheck[];
+      // The checks kept are the same checks, not new ones.
+      expect(landed.slice(0, expected.length).map((check) => check.id)).toEqual(expected);
+      list = landed;
     }
     expect((await day(f)).lockup).toHaveLength(9);
   });
@@ -239,6 +365,8 @@ describe.skipIf(target === undefined)("opening and lock-up, on migrated PostgreS
   it("refuses a day that is not a date, and records a long name at the box", async () => {
     const f = await fixture();
     expect((await call(f, "hallkeeper", "GET", `/venues/${f.venueId}/building-checks?day=2026-02-30`)).status).toBe(400);
+    // A real calendar date the database cannot hold is refused too, not a server error.
+    expect((await call(f, "hallkeeper", "GET", `/venues/${f.venueId}/building-checks?day=0000-01-01`)).status).toBe(400);
     const [alarm] = (await call(f, "admin", "PUT", `/venues/${f.venueId}/building-checks/opening`, { expected: [], items: [{ label: "Alarm unset" }] })).data as BuildingCheck[];
     const id = f.people.hallkeeper;
     const response = await server.inject({

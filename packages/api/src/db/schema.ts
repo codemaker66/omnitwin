@@ -6627,9 +6627,13 @@ export const bookingSupplierArrivals = pgTable("booking_supplier_arrivals", {
 
 // ---------------------------------------------------------------------------
 // Opening and lock-up (T-693, migration 0109) — the venue's own checks, in its
-// own words, and each day's ticks. A check taken off the list is retired, not
-// deleted, so a day keeps what was ticked on it. A tick is first-tap-wins per
-// check per board day (the venue's day, to its boundary hour).
+// own words, and each day's ticks. A check is never deleted: one taken off the
+// list is retired, and new words make a new check, so a day keeps what was
+// ticked on it in the words it was ticked against. A tick is first-tap-wins
+// per check per board day (the venue's day, to its boundary hour); one taken
+// back stays on record with who took it back. The name on a tick stays as the
+// venue's record of who did the check, after their account is deleted too
+// (Blake, 12 November 2026).
 // ---------------------------------------------------------------------------
 
 export const venueBuildingChecks = pgTable("venue_building_checks", {
@@ -6638,24 +6642,37 @@ export const venueBuildingChecks = pgTable("venue_building_checks", {
   kind: varchar("kind", { length: 10 }).$type<"opening" | "lockup">().notNull(),
   label: varchar("label", { length: 200 }).notNull(),
   sortOrder: integer("sort_order").notNull().default(0),
-  retiredAt: timestamp("retired_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  createdByUserId: uuid("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  retiredAt: timestamp("retired_at", { withTimezone: true }),
+  retiredByUserId: uuid("retired_by_user_id").references(() => users.id, { onDelete: "set null" }),
 }, (table) => [
   index("venue_building_checks_venue_kind_idx").on(table.venueId, table.kind, table.sortOrder),
   check("venue_building_checks_kind", sql`${table.kind} IN ('opening', 'lockup')`),
+  check("venue_building_checks_label", sql`${table.label} = btrim(${table.label}) AND char_length(${table.label}) BETWEEN 1 AND 200`),
+  check("venue_building_checks_retired_after_created", sql`${table.retiredAt} IS NULL OR ${table.retiredAt} >= ${table.createdAt}`),
+  unique("venue_building_checks_id_venue").on(table.id, table.venueId),
 ]);
 
 export const venueBuildingCheckMarks = pgTable("venue_building_check_marks", {
   id: uuid("id").primaryKey().defaultRandom(),
   venueId: uuid("venue_id").notNull().references(() => venues.id, { onDelete: "cascade" }),
-  checkId: uuid("check_id").notNull().references(() => venueBuildingChecks.id, { onDelete: "cascade" }),
+  /** A check of this tick's own venue (the composite key below); never deleted from under its ticks. */
+  checkId: uuid("check_id").notNull(),
   /** The venue's day the board shows, to its boundary hour. */
   boardDay: date("board_day", { mode: "string" }).notNull(),
   doneAt: timestamp("done_at", { withTimezone: true }).defaultNow().notNull(),
   doneByUserId: uuid("done_by_user_id").references(() => users.id, { onDelete: "set null" }),
   doneByName: varchar("done_by_name", { length: 160 }).notNull(),
+  /** Taken back: when, and by whom; the tick stays on record. */
+  undoneAt: timestamp("undone_at", { withTimezone: true }),
+  undoneByUserId: uuid("undone_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  undoneByName: varchar("undone_by_name", { length: 160 }),
 }, (table) => [
-  uniqueIndex("venue_building_check_marks_check_day_unique").on(table.checkId, table.boardDay),
+  foreignKey({ columns: [table.checkId, table.venueId], foreignColumns: [venueBuildingChecks.id, venueBuildingChecks.venueId], name: "venue_building_check_marks_check" }),
+  check("venue_building_check_marks_done_by_name", sql`btrim(${table.doneByName}) <> ''`),
+  check("venue_building_check_marks_undone", sql`(${table.undoneAt} IS NULL) = (${table.undoneByName} IS NULL) AND (${table.undoneByName} IS NULL OR btrim(${table.undoneByName}) <> '')`),
+  uniqueIndex("venue_building_check_marks_check_day_unique").on(table.checkId, table.boardDay).where(sql`${table.undoneAt} IS NULL`),
   index("venue_building_check_marks_venue_day_idx").on(table.venueId, table.boardDay),
 ]);
 

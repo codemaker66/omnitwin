@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BuildingChecksDayQuerySchema, buildingBoardDay, buildingTickDays } from "../building-checks.js";
+import { BuildingCheckMarkBodySchema, BuildingChecksDayQuerySchema, buildingBoardDay, buildingTickDays } from "../building-checks.js";
 
 // ---------------------------------------------------------------------------
 // Opening and lock-up's day rules (T-693): the board day an instant falls on,
@@ -42,5 +42,13 @@ describe("BuildingChecksDayQuerySchema", () => {
     expect(BuildingChecksDayQuerySchema.safeParse({ day: "2026-11-14" }).success).toBe(true);
     expect(BuildingChecksDayQuerySchema.safeParse({ day: "2026-02-30" }).success).toBe(false);
     expect(BuildingChecksDayQuerySchema.safeParse({ day: "14/11/2026" }).success).toBe(false);
+  });
+
+  it("takes the years a board day may fall in, so the database is never asked for year 0", () => {
+    for (const day of ["2000-01-01", "2100-12-31"]) expect(BuildingCheckMarkBodySchema.safeParse({ day }).success).toBe(true);
+    for (const day of ["0000-01-01", "1999-12-31", "2101-01-01"]) {
+      expect(BuildingChecksDayQuerySchema.safeParse({ day }).success).toBe(false);
+      expect(BuildingCheckMarkBodySchema.safeParse({ day }).success).toBe(false);
+    }
   });
 });
