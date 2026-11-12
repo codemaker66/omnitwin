@@ -498,17 +498,19 @@ function countChanges(currentCounts: readonly PieceCount[], previousCounts: read
   return { added, removed, changed };
 }
 
-/** The manifest's table rows, each named with the chairs set at it. */
-function tableRows(payload: ConfigurationSheetSnapshot["payload"]): readonly PieceCount[] {
-  return payload.totals.entries.filter((entry) => entry.category === "table");
-}
-
 /** A table row with chairs set at it, as the manifest generator names it
  *  ("Round Table with 10 chairs", manifest-generator-v2.ts generateManifestV2). */
 const SEATED_TABLE_ROW = / with \d+ chairs$/u;
 
+/** The manifest's rows of tables with chairs set at them. A bare table's row
+ *  is left out: it bears the table's own name, which the placed count uses
+ *  for every table of that kind, seated or not (T-695 review I3). */
+function seatedTableRows(payload: ConfigurationSheetSnapshot["payload"]): readonly PieceCount[] {
+  return payload.totals.entries.filter((entry) => entry.category === "table" && SEATED_TABLE_ROW.test(entry.name));
+}
+
 function hasChairsAtTables(payload: ConfigurationSheetSnapshot["payload"]): boolean {
-  return tableRows(payload).some((entry) => SEATED_TABLE_ROW.test(entry.name));
+  return seatedTableRows(payload).length > 0;
 }
 
 /**
@@ -540,18 +542,20 @@ function compileSnapshotDiff(
   // Like for like: placed pieces on both sides, or, when either plan was
   // frozen before floor plans were kept, the manifest's totals on both, so a
   // count of pieces is never reported as a change against a count of rows.
-  // With pieces on both sides, the tables' rows are compared too: they name
-  // the chairs set at each table ("Round Table with 4 chairs"), so a
-  // re-seating that keeps every count still shows (T-695 review C7).
+  // With pieces on both sides, the rows of seated tables are compared too:
+  // they name the chairs set at each table ("Round Table with 4 chairs"), so
+  // a re-seating that keeps every count still shows (T-695 review C7). Their
+  // names never match a placed count's, so no change is listed twice and no
+  // name carries two counts (review I3, I4).
   const piecesOnBoth = (snapshot.payload.floorPlan ?? null) !== null && (previousSnapshot.payload.floorPlan ?? null) !== null;
   const lines = piecesOnBoth
     ? [
       countChanges(placedCounts(snapshot.payload), placedCounts(previousSnapshot.payload)),
-      countChanges(tableRows(snapshot.payload), tableRows(previousSnapshot.payload)),
+      countChanges(seatedTableRows(snapshot.payload), seatedTableRows(previousSnapshot.payload)),
     ]
     : [countChanges(snapshot.payload.totals.entries, previousSnapshot.payload.totals.entries)];
   const merged = (pick: (changes: CountChanges) => readonly string[]): string[] =>
-    [...new Set(lines.flatMap(pick))].sort((a, b) => a.localeCompare(b));
+    lines.flatMap(pick).sort((a, b) => a.localeCompare(b));
 
   const payload = SnapshotDiffPayloadSchema.parse({
     added: merged((changes) => changes.added),
