@@ -501,6 +501,15 @@ let conflictPolicy: "report" | "rebase" = "report";
 let rebaseRetryDepth = 0;
 /** Objects a later remote write owns; kept equal to base until re-edited. */
 const yieldedIds = new Set<string>();
+/**
+ * Rows a step back or forward returned under a fresh local id (historyIdsFor
+ * heals every row while a save is in flight): original id to that id. If that
+ * save did not remove the row, and it has since come to hold a note this
+ * browser is not shown, the copy is that very row: it takes its id back
+ * rather than stand beside the row the put-back returns (putBackHeldNotePieces;
+ * delta review R7).
+ */
+const healedCopies = new Map<string, string>();
 
 /** Hooks are present only while in the live room. */
 export function setEditorLiveHooks(hooks: EditorLiveHooks | null): void {
@@ -1241,6 +1250,7 @@ export const useEditorStore = create<EditorStore>()(withSaveFacts((set, get) => 
       const leftBehind = lostOnLeaving ?? get().leftBehind;
       configurationSession += 1;
       yieldedIds.clear();
+      healedCopies.clear();
       conflictServerCopy = loadConflict === null
         ? null
         : { session: configurationSession, configId: config.id, revision: config.revision, objects: serverObjects };
@@ -1344,6 +1354,7 @@ export const useEditorStore = create<EditorStore>()(withSaveFacts((set, get) => 
       if (request !== configurationLoadRequest || shouldOpen?.() === false) throw new Error("A different layout was opened while this draft was being created.");
       configurationSession += 1;
       yieldedIds.clear();
+      healedCopies.clear();
       conflictServerCopy = null;
       set({
         configId: config.id,
@@ -1745,6 +1756,7 @@ export const useEditorStore = create<EditorStore>()(withSaveFacts((set, get) => 
     activeHistoryGesture = null;
     interactionEpoch++;
     yieldedIds.clear();
+    healedCopies.clear();
     useCockpitStore.getState().setPlannedGuestCount(null);
     conflictServerCopy = null;
     layoutChangeAttempt = null;
@@ -1780,6 +1792,7 @@ export const useEditorStore = create<EditorStore>()(withSaveFacts((set, get) => 
     if (stepRefusedForHeldNote(s, step.objects, nothingUndoneLine)) return;
     actionEmitter.afterUndo(s.history); // G4: seals the popped gesture + logs history.undo
     interactionEpoch++;
+    for (const [original, copy] of step.healed) healedCopies.set(original, copy);
     set(historyStepPatch(step));
     notifyLocalChange(s.objects, step.objects);
     useSelectionStore.getState().selectMultiple(step.selection);
@@ -1795,6 +1808,7 @@ export const useEditorStore = create<EditorStore>()(withSaveFacts((set, get) => 
     if (stepRefusedForHeldNote(s, step.objects, nothingRedoneLine)) return;
     actionEmitter.afterRedo(step.history); // G4: logs history.redo
     interactionEpoch++;
+    for (const [original, copy] of step.healed) healedCopies.set(original, copy);
     set(historyStepPatch(step));
     notifyLocalChange(s.objects, step.objects);
     useSelectionStore.getState().selectMultiple(step.selection);
@@ -1851,14 +1865,42 @@ function putBackHeldNotePieces(): boolean {
   const s = useEditorStore.getState();
   const back = heldNotePiecesToPutBack(s, s.baseObjects, s.objects);
   if (back.pieces.length === 0) return false;
-  const objects = [...s.objects, ...back.pieces];
+  // A piece the person brought back with Undo or Redo while a save was in
+  // flight stands under a fresh id (healedCopies): it is that piece, so it
+  // takes its own id back instead of a second one being returned beside it.
+  const present = new Set(s.objects.map((object) => object.id));
+  const returning = new Map<string, string>();
+  for (const piece of back.pieces) {
+    const copy = healedCopies.get(piece.id);
+    if (copy !== undefined && present.has(copy)) {
+      returning.set(copy, piece.id);
+      healedCopies.delete(piece.id);
+    }
+  }
+  const comingBack = new Set(returning.values());
+  const inserted = back.pieces.filter((piece) => !comingBack.has(piece.id));
+  const objects = [
+    ...(returning.size === 0 ? s.objects : s.objects.map((object) => {
+      const id = returning.get(object.id);
+      return id === undefined ? object : { ...object, id };
+    })),
+    ...inserted,
+  ];
+  if (returning.size > 0) {
+    const selection = useSelectionStore.getState();
+    if ([...selection.selectedIds].some((id) => returning.has(id))) {
+      selection.selectMultiple([...selection.selectedIds].map((id) => returning.get(id) ?? id));
+    }
+  }
   useEditorStore.setState({
     objects,
     isDirty: true,
-    history: forgetHistoryIds(s.history, new Set(back.pieces.map((piece) => piece.id))),
+    history: forgetHistoryIds(remapHistoryIds(s.history, returning), new Set(inserted.map((piece) => piece.id))),
+    ...(s.selectedObjectId !== null && returning.has(s.selectedObjectId) ? { selectedObjectId: returning.get(s.selectedObjectId) } : {}),
   });
   notifyLocalChange(s.objects, objects);
-  const stayed = stayedForNotesLine(heldNoteObjectsNamed(back.held, s.baseObjects));
+  const insertedIds = new Set(inserted.map((piece) => piece.id));
+  const stayed = stayedForNotesLine(heldNoteObjectsNamed(back.held.filter((piece) => insertedIds.has(piece.id)), s.baseObjects));
   if (stayed !== null) postPlacementNotice(stayed);
   return true;
 }

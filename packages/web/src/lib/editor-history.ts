@@ -115,6 +115,8 @@ export interface HistoryStep<T extends HistoryObject> {
   readonly objects: readonly T[];
   readonly selection: readonly string[];
   readonly label: string;
+  /** Rows the step returned under a fresh local id (buildHealMap): original id to that id. */
+  readonly healed: ReadonlyMap<string, string>;
 }
 
 function remapId(id: string, idMap: ReadonlyMap<string, string>): string {
@@ -271,6 +273,7 @@ export function performUndo<T extends HistoryObject>(
     objects: applyEntryToDoc(objects, healed.added, healed.removed, healed.updated, "before"),
     selection: healed.selectionBefore,
     label: entry.label,
+    healed: healMap,
   };
 }
 
@@ -293,6 +296,7 @@ export function performRedo<T extends HistoryObject>(
     objects: applyEntryToDoc(objects, healed.removed, healed.added, healed.updated, "after"),
     selection: healed.selectionAfter,
     label: entry.label,
+    healed: healMap,
   };
 }
 

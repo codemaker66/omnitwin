@@ -1267,6 +1267,40 @@ describe("Keep mine, when the newer version has a piece holding a note this brow
     expect(pieceIds().filter((id) => id === B)).toHaveLength(1);
   });
 
+  it("keeps a piece the person brought back with Undo while a save was in flight once, as itself (delta review R7)", async () => {
+    const server: PlanOnServer = { revision: 4, notes: new Map() };
+    serveNotesAsTheApiDoes(server);
+    await open(plan([placed(A), placed(B), placed(C, { displayLabel: "Table 9" }, 6)], false));
+    const api = vi.mocked(configApi.publicBatchSave).getMockImplementation();
+    if (api === undefined) throw new Error("no API model");
+    // The save of the removal is answered only once the person has acted.
+    let answer: () => void = () => undefined;
+    const answered = new Promise<void>((resolve) => { answer = resolve; });
+    vi.mocked(configApi.publicBatchSave).mockImplementationOnce(async (...sent) => {
+      await answered;
+      return api(...sent);
+    });
+
+    store().removeObject(C);
+    const saving = store().saveToServer(false);
+    // Within that round trip the maker writes a note on C, and the person's Undo brings C back.
+    server.notes.set(C, THEIR_NOTE);
+    theyNowHave(server, [placed(A), placed(B), placed(C, { noteHeld: true, displayLabel: "Table 9" }, 6)]);
+    store().undo();
+    expect(pieceIds()).toHaveLength(3);
+    answer();
+    expect(await saving).toBe(false);
+    expect(store().saveConflict?.currentRevision).toBe(server.revision);
+
+    const sentBefore = savesSent();
+    expect(await store().keepMine(false)).toBe(true);
+    // C stands once, under its own id: no copy of it goes as a new piece.
+    expect({ pieces: [...pieceIds()].sort(), sent: saveSent(sentBefore).batch.map((piece) => piece.id ?? "a new piece").sort() })
+      .toEqual({ pieces: [A, B, C].sort(), sent: [A, B, C].sort() });
+    expect(server.notes.get(C)).toBe(THEIR_NOTE);
+    expect(noteHeldOn(store(), C)).toBe(true);
+  });
+
   it("keeps it when the choice came from work kept on this device against an older version", async () => {
     const server: PlanOnServer = { revision: 6, notes: new Map([[C, THEIR_NOTE]]) };
     serveNotesAsTheApiDoes(server);
