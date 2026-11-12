@@ -10,6 +10,8 @@ interface PackageManifest {
   readonly devDependencies?: DependencyMap;
   readonly peerDependencies?: DependencyMap;
   readonly optionalDependencies?: DependencyMap;
+  /** `pnpm.overrides`: what every dependent resolves a package to, whatever range it asks for. */
+  readonly pnpmOverrides?: DependencyMap;
 }
 
 const TEST_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -45,12 +47,14 @@ async function readManifest(relativePath: string): Promise<PackageManifest> {
   const raw = await readFile(path.join(REPO_ROOT, relativePath), "utf-8");
   const parsed = JSON.parse(raw) as unknown;
   if (!isRecord(parsed)) throw new Error(`${relativePath} is not a JSON object`);
+  const pnpm = parsed["pnpm"];
 
   return {
     dependencies: readDependencyMap(parsed["dependencies"]),
     devDependencies: readDependencyMap(parsed["devDependencies"]),
     peerDependencies: readDependencyMap(parsed["peerDependencies"]),
     optionalDependencies: readDependencyMap(parsed["optionalDependencies"]),
+    pnpmOverrides: isRecord(pnpm) ? readDependencyMap(pnpm["overrides"]) : undefined,
   };
 }
 
@@ -96,6 +100,7 @@ describe("direct dependency reproducibility", () => {
   });
 
   it("keeps auth and build tooling on exact audited pins", async () => {
+    const root = await readManifest("package.json");
     const api = await readManifest("packages/api/package.json");
     const web = await readManifest("packages/web/package.json");
 
@@ -106,6 +111,8 @@ describe("direct dependency reproducibility", () => {
     // 6.4.5 is the first 6.x past GHSA-8g5g-mxqh-grgj (server.fs.deny bypassed with queries,
     // 2026-10-29), after 6.4.4 for GHSA-698v-4r3x-3vcv (launch-editor, 2026-10-20).
     expect(web.devDependencies?.["vite"]).toBe("6.4.5");
+    // The root override decides which vite every dependent resolves to, so it moves with the pin.
+    expect(root.pnpmOverrides?.["vite"]).toBe("6.4.5");
     // 4.1.12 is the first release past GHSA-qxg6-89mg-rqv8 and the @vitest/mocker
     // backslash-traversal advisory (2026-10-22).
     expect(web.devDependencies?.["vitest"]).toBe("4.1.12");

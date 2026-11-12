@@ -3,7 +3,9 @@ import {
   VenueDashboardAnalyticsSchema,
   PipelineSummarySchema,
   RoomUtilisationRowSchema,
+  addRotaDays,
   compareRevenueScenarios,
+  rotaLocalDate,
   type ComfortConstraint,
   type PipelineSummary,
   type RevenueScenario,
@@ -11,6 +13,7 @@ import {
   type RoomUtilisationRow,
   type VenueDashboardAnalytics,
 } from "@omnitwin/types";
+import { venueDayWindow } from "./public-discovery.js";
 
 // ---------------------------------------------------------------------------
 // Revenue analytics services — pure aggregation helpers.
@@ -47,6 +50,14 @@ export function summarizeRevenueScenarios(input: {
   });
 }
 
+/** `part` as a whole-number share of `whole`, held to 0–100. A share that is
+ *  not a share (more accepted proposals than enquiries, say) reads 100 rather
+ *  than failing PercentSchema and taking the whole dashboard down with it. */
+function boundedPercent(part: number, whole: number): number {
+  if (!(whole > 0) || !(part > 0)) return 0;
+  return Math.min(100, Math.round((part / whole) * 100));
+}
+
 /** Inputs are the venue's aggregates (open pipeline value, enquiry count,
  *  proposals per status), computed by the database rather than from every row. */
 export function buildPipelineSummary(input: {
@@ -59,9 +70,9 @@ export function buildPipelineSummary(input: {
 }): PipelineSummary {
   const proposalStatusCounts = { ...input.proposalStatusCounts };
   const acceptedProposalCount = proposalStatusCounts["accepted"] ?? 0;
-  const conversionPercent = input.enquiryCount > 0
-    ? Math.round((acceptedProposalCount / input.enquiryCount) * 100)
-    : 0;
+  // Proposals need no enquiry (a deal from a phone call has none), so accepted
+  // proposals can outnumber enquiries; the counts beside it stay exact.
+  const conversionPercent = boundedPercent(acceptedProposalCount, input.enquiryCount);
 
   return PipelineSummarySchema.parse({
     currency: "GBP",
@@ -74,16 +85,33 @@ export function buildPipelineSummary(input: {
   });
 }
 
-const MS_PER_DAY = 86_400_000;
-
 /** Utilisation window rows are measured over. Ninety days is the horizon a
  *  venue team actually plans against; a room's "utilisation" with no window
  *  is not a number, it is a mood. */
 export const ROOM_UTILISATION_WINDOW_DAYS = 90;
 
-/** UTC calendar day key for a moment — the unit a room is booked in. */
-function utcDayKey(value: Date): string {
-  return value.toISOString().slice(0, 10);
+/** The venue date whose Diary day (04:00 to 04:00 on the venue's clock) holds
+ *  `nowMs`: before 04:00 it is still the previous date, as the Diary reads. */
+export function venueOperationalDate(nowMs: number, timeZone: string): string {
+  const date = rotaLocalDate(nowMs, timeZone);
+  return nowMs < venueDayWindow(date, timeZone).startMs ? addRotaDays(date, -1) : date;
+}
+
+/** The venue dates a utilisation figure is measured over, from the venue's
+ *  operational today, and the instants they span (half-open). */
+export function roomUtilisationWindow(nowMs: number, timeZone: string, days = ROOM_UTILISATION_WINDOW_DAYS): {
+  readonly dates: readonly string[];
+  readonly startsAt: Date;
+  readonly endsAt: Date;
+} {
+  const first = venueOperationalDate(nowMs, timeZone);
+  const dates = Array.from({ length: Math.max(1, days) }, (_, index) => addRotaDays(first, index));
+  const last = dates[dates.length - 1] ?? first;
+  return {
+    dates,
+    startsAt: new Date(venueDayWindow(first, timeZone).startMs),
+    endsAt: new Date(venueDayWindow(last, timeZone).endMs),
+  };
 }
 
 export interface UtilisationBooking {
@@ -108,20 +136,25 @@ export interface UtilisationBooking {
  *   utilisation    — the share of the window's days that carry a confirmed
  *                    booking; 30 of 90 days inked is 33%.
  *
+ * A day is the Diary's operational day, 04:00 to 04:00 on the venue's clock
+ * (public-discovery.ts venueDayWindow), so an evening that runs past midnight
+ * is one day in either season. A booking touches a day when it overlaps it,
+ * half-open, so a booking that ends exactly at 04:00 does not reach the next.
+ *
  * Callers pass only ACTIVE bookings (released/expired/cancelled/lost rows are
  * filtered in SQL) so an abandoned hold never inflates demand.
  */
 export function buildRoomUtilisationRows(input: {
   readonly rooms: readonly { readonly spaceId: string | null; readonly roomName: string }[];
   readonly bookings: readonly UtilisationBooking[];
-  readonly windowStart: Date;
-  readonly windowEnd: Date;
+  /** The venue dates measured, YYYY-MM-DD (roomUtilisationWindow). */
+  readonly windowDates: readonly string[];
+  /** The venue's IANA time zone, which places each date's 04:00. */
+  readonly timeZone: string;
   readonly reviewBottlenecksBySpaceId: ReadonlyMap<string, number>;
 }): readonly RoomUtilisationRow[] {
-  const windowDays = Math.max(
-    1,
-    Math.round((input.windowEnd.getTime() - input.windowStart.getTime()) / MS_PER_DAY),
-  );
+  const windowDays = Math.max(1, input.windowDates.length);
+  const days = input.windowDates.map((date) => ({ date, ...venueDayWindow(date, input.timeZone) }));
 
   return input.rooms.map((room) => {
     const roomBookings = input.bookings.filter((booking) => booking.spaceId === room.spaceId);
@@ -130,21 +163,19 @@ export function buildRoomUtilisationRows(input: {
       (booking) => booking.kind === "prospect" || booking.kind === "hold",
     ).length;
 
-    // Distinct confirmed days, clipped to the window, so overlapping or
+    // Distinct confirmed venue days inside the window, so overlapping or
     // multi-day bookings cannot push a room past 100%.
     const bookedDays = new Set<string>();
     for (const booking of roomBookings) {
       if (booking.kind !== "ink") continue;
-      const from = Math.max(booking.startsAt.getTime(), input.windowStart.getTime());
-      const to = Math.min(booking.endsAt.getTime(), input.windowEnd.getTime());
-      if (to < from) continue;
-      for (let day = from; day <= to; day += MS_PER_DAY) {
-        bookedDays.add(utcDayKey(new Date(day)));
+      const startsMs = booking.startsAt.getTime();
+      const endsMs = booking.endsAt.getTime();
+      for (const day of days) {
+        if (startsMs < day.endMs && endsMs > day.startMs) bookedDays.add(day.date);
       }
-      bookedDays.add(utcDayKey(new Date(to)));
     }
 
-    const utilisationPercent = Math.min(100, Math.round((bookedDays.size / windowDays) * 100));
+    const utilisationPercent = boundedPercent(bookedDays.size, windowDays);
 
     return RoomUtilisationRowSchema.parse({
       spaceId: room.spaceId,

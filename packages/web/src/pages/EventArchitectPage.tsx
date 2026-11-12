@@ -19,7 +19,7 @@ import {
   Users,
 } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
-import { hasRole, VENUE_FLOOR_ROLES } from "../lib/role-capabilities.js";
+import { hasRole, OPS_REVIEW_ROLES } from "../lib/role-capabilities.js";
 import { ActivityIndicator, ActivityStatus } from "../components/shared/Activity.js";
 import type {
   EventArchitectCandidate,
@@ -578,10 +578,11 @@ export function EventArchitectPage(): ReactElement {
   const selectedCandidate = persisted?.run.candidates.find(
     (candidate) => candidate.candidateId === selectedCandidateId,
   ) ?? null;
-  // Mirrors the API's canAccessInternalEvent (canManageVenue): the venue
-  // floor, manager included.
+  // Mirrors the review route's own gate (requireOpsReviewAuthority), which
+  // answers from the same list: the venue's staff, hallkeepers, managers and
+  // administrators, and a platform admin.
   const canRecordOpsReview = user?.platformRole === "admin"
-    || hasRole(VENUE_FLOOR_ROLES, user?.role);
+    || hasRole(OPS_REVIEW_ROLES, user?.role);
 
   return (
     <DashboardLayout mainLabel="Event Architect workspace">

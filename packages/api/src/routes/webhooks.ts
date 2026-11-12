@@ -100,9 +100,12 @@ function getVerifiedPrimaryEmail(data: ClerkUserData): string | null {
   return normalizeAuthEmail(candidate.email_address);
 }
 
-function getFullName(data: ClerkUserData): string {
-  const parts = [data.first_name, data.last_name].filter((part): part is string => part !== null && part.length > 0);
-  return parts.length > 0 ? parts.join(" ") : "User";
+/** The name Clerk holds, or null when it holds none (a person who signed up with an email and a code has neither part). */
+function getFullName(data: ClerkUserData): string | null {
+  const parts = [data.first_name, data.last_name]
+    .map((part) => part?.trim() ?? "")
+    .filter((part) => part.length > 0);
+  return parts.length > 0 ? parts.join(" ") : null;
 }
 
 export function parseClerkWebhookPayload(payload: unknown): ParsedClerkWebhookPayload {
@@ -122,11 +125,13 @@ export function parseClerkWebhookPayload(payload: unknown): ParsedClerkWebhookPa
 }
 
 function profileUpdate(data: ClerkUserData, updatedAt: Date, email?: string): ClerkUserUpdate {
+  // With no name at Clerk the account keeps the name it has: the one made at
+  // first sign-in, or an earlier Clerk name. A placeholder is never written
+  // over it.
   const name = getFullName(data);
   return {
     ...(email === undefined ? {} : { email }),
-    name,
-    displayName: name,
+    ...(name === null ? {} : { name, displayName: name }),
     phone: data.phone_numbers[0]?.phone_number ?? null,
     username: normaliseUsername(data.username),
     updatedAt,

@@ -874,7 +874,13 @@ export async function supplierShareRoutes(
     return { data: supplierSafe };
   });
 
-  server.post("/:token/acknowledge", async (request, reply) => {
+  // A reply writes a row that cannot be deleted, an audit row and a notice to
+  // every staff role, so it has a limit of its own, as the other public
+  // writes have (a signed contract allows the same twenty an hour). A pass
+  // needs a handful of replies at most.
+  server.post("/:token/acknowledge", {
+    config: { rateLimit: { max: 20, timeWindow: "1 hour" } },
+  }, async (request, reply) => {
     const params = ShareTokenParam.safeParse(request.params);
     if (!params.success) {
       return reply.status(400).send({ error: "Invalid share token", code: "VALIDATION_ERROR" });

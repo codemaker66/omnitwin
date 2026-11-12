@@ -88,6 +88,17 @@ const HOUR_MS = 3_600_000;
 const DEFAULT_START_HOUR_OFFSET = 17;
 const DEFAULT_END_HOUR_OFFSET = 23;
 
+/** The default evening on a venue day ("YYYY-MM-DD"), 17:00 to 23:00 on the
+ *  venue's clock through board-time's wall-clock helpers: on the days the
+ *  clocks change, local midnight plus 17 hours is 16:00 or 18:00
+ *  (time-dst-3). Null for a day that is not a date. */
+function eveningOn(day: string): { readonly startMs: number; readonly endMs: number } | null {
+  const at = (hour: number): number | null => wallInputToMs(`${day}T${String(hour).padStart(2, "0")}:00`);
+  const startMs = at(DEFAULT_START_HOUR_OFFSET);
+  const endMs = at(DEFAULT_END_HOUR_OFFSET);
+  return startMs === null || endMs === null ? null : { startMs, endMs };
+}
+
 function emptyToUndefined(value: string): string | undefined {
   const trimmed = value.trim();
   return trimmed.length === 0 ? undefined : trimmed;
@@ -123,15 +134,12 @@ export function initialDrawerForm(mode: DrawerMode): DrawerForm {
   if (mode.kind === "convert") {
     const { enquiry } = mode;
     const occasion = occasionLabel(enquiry.eventType);
-    const dayStart =
-      enquiry.preferredDate === null
-        ? null
-        : wallInputToMs(`${enquiry.preferredDate}T00:00`);
+    const evening = enquiry.preferredDate === null ? null : eveningOn(enquiry.preferredDate);
     const startMs =
-      mode.drop?.startMs ?? (dayStart ?? Date.now()) + DEFAULT_START_HOUR_OFFSET * HOUR_MS;
+      mode.drop?.startMs ?? evening?.startMs ?? Date.now() + DEFAULT_START_HOUR_OFFSET * HOUR_MS;
     const endMs =
       mode.drop === undefined
-        ? (dayStart ?? Date.now()) + DEFAULT_END_HOUR_OFFSET * HOUR_MS
+        ? evening?.endMs ?? Date.now() + DEFAULT_END_HOUR_OFFSET * HOUR_MS
         : mode.drop.startMs + (DEFAULT_END_HOUR_OFFSET - DEFAULT_START_HOUR_OFFSET) * HOUR_MS;
     return {
       kind: "hold",
@@ -153,8 +161,9 @@ export function initialDrawerForm(mode: DrawerMode): DrawerForm {
   // A clicked position wins over the day's default evening window: the
   // coordinator pointed at a time, so the drawer opens at that time and keeps
   // the default window's length as the duration.
-  const createStartMs = mode.startMs ?? mode.dayStartMs + DEFAULT_START_HOUR_OFFSET * HOUR_MS;
-  const createEndMs = createStartMs + (DEFAULT_END_HOUR_OFFSET - DEFAULT_START_HOUR_OFFSET) * HOUR_MS;
+  const evening = mode.startMs === undefined ? eveningOn(msToWallInput(mode.dayStartMs).slice(0, 10)) : null;
+  const createStartMs = mode.startMs ?? evening?.startMs ?? mode.dayStartMs + DEFAULT_START_HOUR_OFFSET * HOUR_MS;
+  const createEndMs = evening?.endMs ?? createStartMs + (DEFAULT_END_HOUR_OFFSET - DEFAULT_START_HOUR_OFFSET) * HOUR_MS;
   return {
     kind: "hold",
     spaceId: mode.spaceId,

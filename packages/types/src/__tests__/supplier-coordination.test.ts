@@ -3,10 +3,16 @@ import {
   CreateSupplierAcknowledgementInputSchema,
   CreateSupplierCoordinationPackInputSchema,
   GenerateSupplierCoordinationShareTokenInputSchema,
+  SupplierAcknowledgementSchema,
+  SupplierAuthoredTextSchema,
+  SupplierCoordinationPackItemSchema,
   SupplierCoordinationPackSchema,
   SupplierPassBoardSchema,
   SupplierPassDetailsSchema,
+  SupplierPassScopeItemSchema,
   SupplierPassSummarySchema,
+  SupplierSafeAcknowledgementSchema,
+  SupplierSafePackItemSchema,
   SupplierSafePackViewSchema,
   checkSupplierPassExpiry,
   defaultSupplierPassExpiry,
@@ -65,16 +71,11 @@ describe("supplier coordination contracts", () => {
     expect(result.success).toBe(false);
   });
 
-  it("blocks unsafe public or supplier-facing wording", () => {
+  it("blocks unsafe claim wording in text the venue writes for suppliers", () => {
     expect(CreateSupplierCoordinationPackInputSchema.safeParse({
       handoffPackId: HANDOFF_PACK_ID,
       supplierInstructionIds: [INSTRUCTION_ID],
       title: "Certified safe load-in pack",
-    }).success).toBe(false);
-
-    expect(CreateSupplierAcknowledgementInputSchema.safeParse({
-      acknowledgedByName: "Sam Supplier",
-      note: "This confirms it is legally compliant.",
     }).success).toBe(false);
   });
 
@@ -150,6 +151,98 @@ describe("supplier coordination contracts", () => {
 
     expect(left).toMatch(/^[a-f0-9]{64}$/u);
     expect(right).toBe(left);
+  });
+});
+
+describe("supplier-authored text", () => {
+  const RIGGING_QUESTION = "Is the rigging point certified safe for 300kg?";
+  const HAZE_QUESTION = "Is the Grand Hall fire approved for a haze machine?";
+
+  it("lets a supplier ask the venue a safety question in their reply", () => {
+    for (const question of [RIGGING_QUESTION, HAZE_QUESTION]) {
+      const asked = CreateSupplierAcknowledgementInputSchema.safeParse({
+        status: "needs_clarification",
+        acknowledgedByName: "Sam Supplier",
+        note: question,
+      });
+      expect(asked.success).toBe(true);
+      expect(asked.data?.note).toBe(question);
+
+      expect(CreateSupplierAcknowledgementInputSchema.safeParse({
+        acknowledgedByEmail: "ops@example.com",
+        note: `Read, thanks. ${question}`,
+      }).success).toBe(true);
+
+      expect(SupplierAuthoredTextSchema.safeParse(question).success).toBe(true);
+    }
+  });
+
+  it("reads a stored supplier question back on the venue and supplier sides", () => {
+    expect(SupplierAcknowledgementSchema.safeParse({
+      id: "00000000-0000-4000-8000-000000000508",
+      packId: PACK_ID,
+      shareTokenId: null,
+      status: "needs_clarification",
+      acknowledgedByName: "Sam Supplier",
+      acknowledgedByEmail: null,
+      note: RIGGING_QUESTION,
+      createdAt: NOW,
+    }).success).toBe(true);
+    expect(SupplierSafeAcknowledgementSchema.safeParse({
+      status: "needs_clarification",
+      acknowledgedByName: "Sam Supplier",
+      note: HAZE_QUESTION,
+      createdAt: NOW,
+    }).success).toBe(true);
+  });
+
+  it("refuses empty and over-long supplier text, as before", () => {
+    expect(SupplierAuthoredTextSchema.safeParse("").success).toBe(false);
+    expect(SupplierAuthoredTextSchema.safeParse("   ").success).toBe(false);
+    expect(SupplierAuthoredTextSchema.safeParse("a".repeat(4000)).success).toBe(true);
+    expect(SupplierAuthoredTextSchema.safeParse("a".repeat(4001)).success).toBe(false);
+    expect(SupplierAuthoredTextSchema.parse("  Can we arrive at 07:30?  ")).toBe("Can we arrive at 07:30?");
+
+    expect(CreateSupplierAcknowledgementInputSchema.safeParse({
+      acknowledgedByName: "Sam Supplier",
+      note: "",
+    }).success).toBe(false);
+    expect(CreateSupplierAcknowledgementInputSchema.safeParse({
+      acknowledgedByName: "Sam Supplier",
+      note: "a".repeat(4001),
+    }).success).toBe(false);
+  });
+
+  it("still refuses claim phrases in instruction text the venue writes", () => {
+    const venueTitle = "Rigging point certified safe for 300kg";
+    expect(SupplierCoordinationPackItemSchema.safeParse({
+      id: "00000000-0000-4000-8000-000000000509",
+      packId: PACK_ID,
+      supplierInstructionId: INSTRUCTION_ID,
+      kind: "handoff_instruction",
+      title: venueTitle,
+      detail: "Load-in through the east door.",
+      arrivalWindow: null,
+      sourceRef: null,
+      sortOrder: 0,
+      createdAt: NOW,
+    }).success).toBe(false);
+    expect(SupplierSafePackItemSchema.safeParse({
+      title: venueTitle,
+      detail: "Load-in through the east door.",
+      kind: "handoff_instruction",
+      arrivalWindow: null,
+      sourceRef: null,
+      sortOrder: 0,
+    }).success).toBe(false);
+    expect(SupplierPassScopeItemSchema.safeParse({
+      instructionId: INSTRUCTION_ID,
+      supplierId: SUPPLIER_ID,
+      category: "Technical",
+      title: venueTitle,
+      detail: "Load-in through the east door.",
+      arrivalWindow: null,
+    }).success).toBe(false);
   });
 });
 

@@ -4,11 +4,12 @@ import { computeCapacityIntelligence } from "./layout-capacity.js";
 // ---------------------------------------------------------------------------
 // room-capacity — floor area divided by generic spacing, for every style.
 //
-// This is arithmetic, not the room's capacity. On the Grand Hall's 220.5 m² it
-// gives 339 standing where the venue publishes 250, so it is shown only to
-// venue staff, labelled "estimate at generic spacing", and never as a verdict:
-// there is no fits / tight / over here any more, and no "tight" count at the
-// minimum allowance (490 standing) at all (redteam fix-first 1). The venue's
+// This is arithmetic, not the room's capacity. On the Grand Hall's 223.8 m²
+// (the planner's 21.135 × 10.59 m scanned interior) it gives 344 standing
+// where the venue publishes 250, so it is shown only to venue staff, labelled
+// "estimate at generic spacing", and never as a verdict: there is no fits /
+// tight / over here any more, and no "tight" count at the minimum allowance
+// (497 standing) at all (redteam fix-first 1). The venue's
 // published figures live in planner-truth.ts and lead every surface.
 // ---------------------------------------------------------------------------
 
