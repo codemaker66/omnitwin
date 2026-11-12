@@ -41,7 +41,7 @@ import { markWelcomeSeen, shouldShowWelcome } from "./lib/welcome.js";
 import { holdScrollWhileLifted, keepTouchesHoldable, type ScrollHold } from "./lib/touch-scroll.js";
 import { useCalendar } from "./hooks/useCalendar.js";
 import { useBoardDrag } from "./hooks/useBoardDrag.js";
-import { useDiaryLive } from "./hooks/useDiaryLive.js";
+import { useDiaryLive, type DiaryLiveRefresh } from "./hooks/useDiaryLive.js";
 import { presenceLine } from "./lib/presence-line.js";
 import { getOperatingSettings } from "../../api/operating-settings.js";
 import { getEnquiry, listEnquiries, type Enquiry } from "../../api/enquiries.js";
@@ -177,7 +177,7 @@ export function DiaryBoardPage(): ReactElement {
 
   // Later first: the way a booker usually steps.
   const neighbours = useMemo(() => [shiftRange(range, 1), shiftRange(range, -1)], [range]);
-  const { data, frame, status, error, refetch, isRefreshing, refreshFailedAtMs, readAtMs } = useCalendar(venueId, range, neighbours);
+  const { data, frame, status, error, refetch, refetchAndWait, isRefreshing, refreshFailedAtMs, readAtMs } = useCalendar(venueId, range, neighbours);
   // What the board stands on: this range's read, or while it is on its way,
   // the venue's rooms, rules and decisions from the last range read. Only
   // `data` speaks for this range's bookings and conflicts.
@@ -283,11 +283,14 @@ export function DiaryBoardPage(): ReactElement {
   }, [userId]);
 
   // A colleague's change can be an enquiry turned into a booking, so a live
-  // event reloads the tray along with the board (T-619).
-  const onLiveChange = useCallback(() => {
-    refetch();
-    setEnquiryRetry((value) => value + 1);
-  }, [refetch]);
+  // event, or a reconnect after a drop, reloads the tray along with the
+  // board (T-619). The socket's first hello reads the board again
+  // (hallkeeper-web-4) and the tray stays read once at load. The socket
+  // says Live once the board's own read is in.
+  const onLiveChange = useCallback((why: DiaryLiveRefresh): Promise<void> => {
+    if (why !== "joined") setEnquiryRetry((value) => value + 1);
+    return refetchAndWait();
+  }, [refetchAndWait]);
   const live = useDiaryLive(venueId !== null, onLiveChange, { device: "desk" });
   /** Presence minus yourself: "who else is on this board right now". */
   const othersPresent = useMemo(

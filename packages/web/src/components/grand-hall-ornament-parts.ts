@@ -478,6 +478,29 @@ const WINDOW_WIDTH = 2.45;
 export const WINDOW_SILL_Y = 2.15;
 const WINDOW_INSET = 0.04;
 const WINDOW_FRAME_THICKNESS = 0.12;
+/** Least gap between an arch's apex and the underside of the crown moulding. */
+export const WINDOW_CROWN_CLEARANCE = 0.02;
+/** Radius of each window's semicircular head: half the window's width. */
+export const WINDOW_ARCH_RADIUS = WINDOW_WIDTH / 2;
+
+/**
+ * Sill-to-apex height of the arched windows on a wall `wallHeight` tall. The
+ * sill stays at WINDOW_SILL_Y and the arch keeps its radius; only the straight
+ * run between them gives way, so the apex stands WINDOW_CROWN_CLEARANCE below
+ * the crown moulding, which follows the wall top. On a 7 m wall that is the
+ * full WINDOW_HEIGHT (apex 6.70 m under a moulding at 6.72 m), exactly as
+ * before; on the Grand Hall's scanned 6.7 m wall the apex comes down to 6.40 m
+ * rather than running 0.28 m behind the cornice.
+ *
+ * Never less than the arch radius: the straight run is all that gives way, and
+ * below a wall of about 3.675 m it would otherwise go negative and turn the
+ * window's rectangle inside out. On such a wall the head is a bare semicircle
+ * standing on the sill.
+ */
+export function fitWindowHeight(wallHeight: number): number {
+  const fitted = Math.min(WINDOW_HEIGHT, wallHeight - CROWN_HEIGHT - WINDOW_CROWN_CLEARANCE - WINDOW_SILL_Y);
+  return Math.max(WINDOW_ARCH_RADIUS, fitted);
+}
 
 interface WindowFrameVerticals<T> {
   readonly left: T;
@@ -486,8 +509,8 @@ interface WindowFrameVerticals<T> {
 }
 
 /** Front-face extent of a window's frame verticals and centre mullion (see `archedWindow`). */
-function windowFrameVerticals(centerX: number): WindowFrameVerticals<FaceBounds> {
-  const rectHeight = WINDOW_HEIGHT - WINDOW_WIDTH / 2;
+function windowFrameVerticals(centerX: number, windowHeight: number): WindowFrameVerticals<FaceBounds> {
+  const rectHeight = windowHeight - WINDOW_WIDTH / 2;
   const y = { min: WINDOW_SILL_Y, max: WINDOW_SILL_Y + rectHeight };
   const around = (x: number, halfWidth: number): FaceBounds => ({ x: { min: x - halfWidth, max: x + halfWidth }, y });
   return {
@@ -497,9 +520,14 @@ function windowFrameVerticals(centerX: number): WindowFrameVerticals<FaceBounds>
   };
 }
 
-function archedWindow(position: Vec3, rotationY: number, exactVerticals: WindowFrameVerticals<boolean>): OrnamentGroupNode {
+function archedWindow(
+  position: Vec3,
+  rotationY: number,
+  windowHeight: number,
+  exactVerticals: WindowFrameVerticals<boolean>,
+): OrnamentGroupNode {
   const archRadius = WINDOW_WIDTH / 2;
-  const rectHeight = WINDOW_HEIGHT - archRadius;
+  const rectHeight = windowHeight - archRadius;
   const curtainHeight = rectHeight + 0.55;
   const curtainY = WINDOW_SILL_Y + curtainHeight / 2 - 0.12;
   const trim = (): OrnamentMaterial => standard(TRIM_COLOR, 0.85, 0);
@@ -530,7 +558,9 @@ function archedWindow(position: Vec3, rotationY: number, exactVerticals: WindowF
       { name: "arched-window-daylight-pane-rect", position: [0, WINDOW_SILL_Y + rectHeight / 2, WINDOW_INSET] },
     ),
     mesh(
-      { kind: "plane", args: [WINDOW_WIDTH - 0.22, rectHeight - 0.12] },
+      // Inset 0.12 m from the run, so on a wall low enough to leave almost no
+      // run (fitWindowHeight's floor) it shrinks to nothing rather than flip.
+      { kind: "plane", args: [WINDOW_WIDTH - 0.22, Math.max(0, rectHeight - 0.12)] },
       standard(GLASS_BLUE, 0.08, 0.04, {
         emissive: WINDOW_GLOW,
         emissiveIntensity: 0.12,
@@ -1070,11 +1100,14 @@ export function describeGrandHallOrnaments(width: number, length: number, height
   const pilasterX = [-width * 0.42, -width * 0.15, width * 0.15, width * 0.42];
   const chandelierX = [-width * 0.28, 0, width * 0.28];
 
+  // The arches stand clear of the crown moulding, which follows the wall top.
+  const windowHeight = fitWindowHeight(height);
+
   // The window-wall frieze figures' bodies and the windows' frame verticals
   // share one front plane (length / 2 - 0.085 from the centre). Where they
   // overlap, both keep exact draws.
   const figureBodies = longFriezeFigureBodies(width, height);
-  const verticals = windowX.map(windowFrameVerticals);
+  const verticals = windowX.map((x) => windowFrameVerticals(x, windowHeight));
   const meets = (a: FaceBounds, b: FaceBounds): boolean => overlaps(a.x, b.x) && overlaps(a.y, b.y);
   const meetsAnyFigure = (face: FaceBounds): boolean => figureBodies.some((body) => meets(body, face));
   const exactFigure = (index: number): boolean => {
@@ -1096,8 +1129,8 @@ export function describeGrandHallOrnaments(width: number, length: number, height
         ...pilasterX.map((x) => pilaster([x, 0, -halfL + 0.12], height, "z")),
         // Arched windows on the real window wall, facing inward.
         ...windowX.map((x, i) => {
-          const frame = verticals[i] ?? windowFrameVerticals(x);
-          return archedWindow([x, 0, windowWallZ], 0, {
+          const frame = verticals[i] ?? windowFrameVerticals(x, windowHeight);
+          return archedWindow([x, 0, windowWallZ], 0, windowHeight, {
             left: meetsAnyFigure(frame.left),
             right: meetsAnyFigure(frame.right),
             centre: meetsAnyFigure(frame.centre),

@@ -253,7 +253,8 @@ describe("the request slab travels with the Day Board (T-623)", () => {
 
   it("brings the requests provider with the Day Board's own lazy route", async () => {
     const { codeOnly: router } = await readSource("src/router.tsx");
-    expect(router).toMatch(/lazyWithPreload\(\(\)\s*=>\s*import\(["']\.\/pages\/hallkeeper\/DayBoardRoute\.js["']/);
+    // Through the cockpit fonts, as every desk is: the board sets its type in Inter.
+    expect(router).toMatch(/lazyWithPreload\(\(\)\s*=>\s*(?:cockpitImport\(\(\)\s*=>\s*)?import\(["']\.\/pages\/hallkeeper\/DayBoardRoute\.js["']/);
     expect(router).not.toMatch(/from\s+["']\.\/components\/requests\//);
     const { codeOnly: route } = await readSource("src/pages/hallkeeper/DayBoardRoute.tsx");
     expect(route).toContain("<RequestsProvider>");

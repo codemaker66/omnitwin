@@ -235,7 +235,7 @@ export const FRESH_ENQUIRY_CRAFT_PREFIX = "From the Discover Your Craft quiz, my
 
 /** Shown at the point of collection, as UK GDPR transparency requires. */
 export const FRESH_ENQUIRY_PRIVACY_NOTE =
-  "Your details go to Trades Hall so they can answer this enquiry, and are not used for anything else.";
+  "Your details go to Trades Hall so they can answer this enquiry, and are kept as a record of it.";
 export const FRESH_ENQUIRY_PRIVACY_LINK = "How we handle your data";
 export const FRESH_ENQUIRY_PRIVACY_HREF = "/privacy";
 

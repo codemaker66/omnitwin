@@ -622,6 +622,57 @@ describe("Calendar entries and conflicts", () => {
     ).toBe(false);
   });
 
+  it("reads a booking stored with an empty title, so one such row never fails the venue's whole range (API-9)", () => {
+    // Rows written before #350 can carry "" (a public enquiry's blank name).
+    // The read model says what is stored; the writers still refuse it, so
+    // the drawer's title is how the row is put right.
+    const untitled = {
+      entryType: "booking",
+      id: BOOKING_ID,
+      spaceId: SPACE_ID,
+      kind: "prospect",
+      status: "active",
+      state: "prospect",
+      title: "",
+      eventType: null,
+      startsAt: "2026-09-16T12:00:00.000Z",
+      endsAt: "2026-09-16T16:00:00.000Z",
+      rank: null,
+      jointFlag: false,
+      decisionAt: null,
+      ownerUserId: null,
+      nextAction: null,
+      nextActionDueAt: null,
+      eventId: null,
+      seriesId: null,
+    };
+    expect(CalendarBookingEntrySchema.safeParse(untitled).success).toBe(true);
+    expect(CalendarResponseSchema.safeParse({
+      venueId: VENUE_ID,
+      range: { from: "2026-09-14T00:00:00.000Z", to: "2026-09-21T00:00:00.000Z" },
+      rooms: [],
+      entries: [untitled, { ...untitled, id: "00000000-0000-4000-8000-00000000000e", title: "Chamber dinner" }],
+      conflicts: { conflicts: [], checks: { inkDoubleBook: { status: "checked" }, holdOverlap: { status: "checked" }, turnaround: { status: "checked", uncoveredPairCount: 0, detail: "Checked" } } },
+    }).success).toBe(true);
+    // A write's reply carries the booking as stored too, so moving one that
+    // is still untitled is not refused after it was written.
+    const { entryType: _entryType, ...stored } = untitled;
+    const reply = {
+      ...stored, venueId: VENUE_ID, notes: null, createdBy: null, enquiryId: null,
+      createdAt: "2026-09-01T09:00:00.000Z", updatedAt: "2026-09-16T08:00:00.000Z",
+    };
+    expect(BookingSchema.safeParse(reply).success).toBe(true);
+    expect(BookingSchema.safeParse({ ...reply, title: "x".repeat(201) }).success).toBe(false);
+    // Still bounded, and still never written.
+    expect(CalendarBookingEntrySchema.safeParse({ ...untitled, title: "x".repeat(201) }).success).toBe(false);
+    expect(UpdateBookingSchema.safeParse({ title: "" }).success).toBe(false);
+    expect(UpdateBookingSchema.safeParse({ title: "   " }).success).toBe(false);
+    expect(CreateBookingSchema.safeParse({
+      venueId: VENUE_ID, spaceId: SPACE_ID, kind: "prospect", title: "",
+      startsAt: "2026-09-16T12:00:00.000Z", endsAt: "2026-09-16T16:00:00.000Z",
+    }).success).toBe(false);
+  });
+
   it("names the owner when the server knows them, and stays valid when it does not (T-619)", () => {
     const entry = {
       entryType: "booking",

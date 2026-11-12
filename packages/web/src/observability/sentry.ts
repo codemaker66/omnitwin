@@ -1,5 +1,5 @@
 import type { ErrorInfo } from "react";
-import type { Breadcrumb, ErrorEvent, Event } from "@sentry/react";
+import type { Breadcrumb, BreadcrumbHint, ErrorEvent, Event } from "@sentry/react";
 import { templateCapabilityPathsDeep } from "@omnitwin/types/capability-paths";
 import { redactHealthFreeText } from "@omnitwin/types/event-requirements";
 
@@ -150,15 +150,72 @@ export function withoutIds(url: string): string {
  *  navigation writes `from` and `to`. */
 const BREADCRUMB_URL_KEYS: readonly string[] = ["url", "from", "to"];
 
+const DESCRIBED_CLASSES = 3;
+const DESCRIBED_CLASS_LENGTH = 40;
+
+const TAG_NAME = /^[a-z][a-z0-9-]{0,39}$/u;
+
+/**
+ * An element as "tag.class.class": what it is, never what it says. Read by
+ * shape, not `instanceof`: an element from another document (a frame) is not
+ * an instance of this window's Element.
+ */
+function describeElement(target: unknown): string | null {
+  if (typeof target !== "object" || target === null) return null;
+  const tagName: unknown = Reflect.get(target, "tagName");
+  if (typeof tagName !== "string" || !TAG_NAME.test(tagName.toLowerCase())) return null;
+  const classList: unknown = Reflect.get(target, "classList");
+  const names: unknown[] = typeof classList === "object" && classList !== null && Symbol.iterator in classList
+    ? Array.from(classList as Iterable<unknown>)
+    : [];
+  const classes = names
+    .filter((name): name is string => typeof name === "string" && name.length > 0)
+    .slice(0, DESCRIBED_CLASSES)
+    .map((name) => `.${name.slice(0, DESCRIBED_CLASS_LENGTH)}`);
+  return `${tagName.toLowerCase()}${classes.join("")}`;
+}
+
+/**
+ * A click or keypress breadcrumb (`ui.click`, `ui.input`), rewritten.
+ *
+ * The SDK's own message describes the element and its ancestors with their
+ * aria-label, title, name and alt, and on the staff pages those hold a
+ * client's name, phone number and email ("Call Aileen Fraser on 07700 …").
+ * Those values are free text inside a string with no escaping, so they cannot
+ * be cut out of it reliably. The message is thrown away instead and written
+ * again from the element the event names: its tag and its first few classes,
+ * which say which control it was and carry nothing a person typed. With no
+ * element to read, the breadcrumb is dropped.
+ */
+function interactionBreadcrumb(breadcrumb: Breadcrumb, hint: BreadcrumbHint | undefined): Breadcrumb | null {
+  let described: string | null;
+  try {
+    // The SDK's hint carries the DOM event, or now and then the element itself
+    // (its own handler allows for both). Reading a target can throw.
+    const event: unknown = hint?.["event"];
+    const isElement = typeof event === "object" && event !== null && typeof Reflect.get(event, "tagName") === "string";
+    const target: unknown = isElement || typeof event !== "object" || event === null ? event : Reflect.get(event, "target");
+    described = describeElement(target);
+  } catch {
+    described = null;
+  }
+  if (described === null) return null;
+  const rewritten: Breadcrumb = { ...breadcrumb, message: described };
+  delete rewritten.data;
+  return rewritten;
+}
+
 /**
  * `beforeBreadcrumb`: the browser SDK's fetch and xhr breadcrumbs keep the
  * whole request url in `data.url`, and navigation breadcrumbs the page urls
  * in `data.from` and `data.to`. Each loses its query, fragment and ids. Console
  * breadcrumbs are dropped: what the app logs can quote a layout's own words
- * (a failed save logs the server's message and the pieces it carried).
+ * (a failed save logs the server's message and the pieces it carried). Clicks
+ * and keypresses are rewritten from the element itself (see above).
  */
-export function scrubSentryBreadcrumb(breadcrumb: Breadcrumb): Breadcrumb | null {
+export function scrubSentryBreadcrumb(breadcrumb: Breadcrumb, hint?: BreadcrumbHint): Breadcrumb | null {
   if (breadcrumb.category === "console") return null;
+  if (breadcrumb.category?.startsWith("ui.") === true) return interactionBreadcrumb(breadcrumb, hint);
   const data: Record<string, unknown> | undefined = breadcrumb.data;
   if (data === undefined) return templateCapabilityPathsDeep(breadcrumb);
   const scrubbed: Record<string, unknown> = { ...data };

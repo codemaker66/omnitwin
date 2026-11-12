@@ -32,9 +32,13 @@ interface RoomDossierProps {
   readonly onClose: () => void;
 }
 
+/** The room's figures on one line: the height's qualifier in brackets beside
+ *  it, then the room's remark (the Grand Hall's dome) as a sentence of its
+ *  own, so the dome is never read as the height. */
 function dimsLine(dims: RoomDimensions): string {
   const base = `${String(dims.lengthM)} × ${String(dims.widthM)} m · ${String(dims.heightM)} m high`;
-  return dims.note === undefined ? base : `${base} (${dims.note})`;
+  const qualified = dims.note === undefined ? base : `${base} (${dims.note})`;
+  return dims.remark === undefined ? qualified : `${qualified}. ${dims.remark}`;
 }
 
 export function RoomDossier({ room, onClose }: RoomDossierProps): ReactElement {
