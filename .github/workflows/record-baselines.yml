@@ -82,7 +82,16 @@ jobs:
         run: pnpm --filter @omnitwin/types build
 
       - name: Install Playwright browsers
-        run: pnpm --filter @omnitwin/web exec playwright install --with-deps chromium
+        # Same as ci.yml's e2e step (#383): one --with-deps try capped at 180 s
+        # (normally 20-35 s), then Chromium alone from Playwright's download
+        # host, so an unreachable Ubuntu apt mirror cannot block recording. A
+        # missing system library makes the browser fail to start, so this
+        # cannot record a baseline from a broken browser.
+        run: |
+          if timeout --kill-after=10 180 pnpm --filter @omnitwin/web exec playwright install --with-deps chromium; then exit 0; fi
+          echo "::warning::playwright install --with-deps failed or ran past 180 s; the Ubuntu apt mirror may be unreachable"
+          echo "::warning::Installing Chromium without apt; relying on the runner image's own system libraries"
+          pnpm --filter @omnitwin/web exec playwright install chromium
 
       - name: Record the named cases
         working-directory: packages/web
