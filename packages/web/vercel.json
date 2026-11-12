@@ -617,6 +617,15 @@
       ]
     },
     {
+      "source": "/trades-house-media/leaflet.html",
+      "headers": [
+        {
+          "key": "X-Frame-Options",
+          "value": "SAMEORIGIN"
+        }
+      ]
+    },
+    {
       "source": "/assets/(.*)",
       "headers": [
         {
