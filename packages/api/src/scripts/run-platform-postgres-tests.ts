@@ -15,6 +15,8 @@ const migrationsFolder = join(apiRoot, "drizzle");
 export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/api-hot-paths-postgres.test.ts",
   "src/__tests__/client-search-postgres.test.ts",
+  // A guest lead is read only by the venue its name and phone were given to (audit enquiries-crm-4).
+  "src/__tests__/guest-lead-tenancy-postgres.test.ts",
   // Per-row subqueries name the outer row by its table (utils/outer-column.ts).
   "src/__tests__/correlated-subqueries-postgres.test.ts",
   "src/__tests__/booking-mutations-postgres.test.ts",
@@ -37,6 +39,8 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/proposal-permissions-postgres.test.ts",
   "src/__tests__/proposal-links-postgres.test.ts",
   "src/__tests__/proposal-next-version-postgres.test.ts",
+  // A long proposal thread reaches the desk with its newest messages (audit contract-n-4).
+  "src/__tests__/proposal-conversation-postgres.test.ts",
   "src/__tests__/placed-object-batch-postgres.test.ts",
   // The review loop: a layout sent back, declined or withdrawn goes to the venue again; a stale move writes nothing.
   "src/__tests__/configuration-review-loop-postgres.test.ts",
@@ -74,6 +78,8 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/people-merge-postgres.test.ts",
   // Deal writes during a merge or undo: never to the closed record, no deadlock, RETRY on a lock conflict.
   "src/__tests__/opportunity-merge-race-postgres.test.ts",
+  // Two stage moves of one deal at once: one stands, the other writes nothing (audit dash-commercial-6).
+  "src/__tests__/deal-stage-race-postgres.test.ts",
   // POST /public/enquiries against real constraints, on its own database (below).
   "src/__tests__/public-enquiry-venue-slug-postgres.test.ts",
   // The reference loadouts list: photo count and cover subqueries name their loadout (VENVIEWER-API-1).
