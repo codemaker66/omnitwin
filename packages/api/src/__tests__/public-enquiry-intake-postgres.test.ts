@@ -15,7 +15,11 @@ import { __resetResendClientForTests } from "../services/email.js";
 // POST /public/enquiries needs no account: a guest's plan (the planner path)
 // or a venue's slug (the website and the walkthrough) says where the enquiry
 // goes. A venue that has been deleted takes no enquiry on either path, and no
-// new guest plan in its rooms (public-surface-7).
+// new guest plan in its rooms (public-surface-7). What the form takes, the
+// enquiries table holds, so a valid enquiry is never lost to a 500
+// (enquiries-crm-6). The acknowledgement goes in the venue's name to an
+// address nobody has confirmed, so it repeats only the venue's own words for
+// the occasion (enquiries-crm-3).
 //
 // The routes run on the migrated database with the real email service; only
 // the provider's client is replaced, so a test reads exactly what would have
@@ -175,6 +179,22 @@ describe.skipIf(target === undefined)("the public enquiry route on the migrated 
     return id;
   }
 
+  /** What was handed to the provider for this address, once the send the
+   *  route queued after answering has run. */
+  async function handedTo(address: string): Promise<HandedToProvider> {
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      const message = handed.find((each) => each.to === address);
+      if (message !== undefined) return message;
+      await new Promise((resolve) => { setTimeout(resolve, 50); });
+    }
+    throw new Error(`Nothing was handed to the provider for ${address}`);
+  }
+
+  /** The words a reader sees: react-email writes `<!-- -->` between the parts of a sentence. */
+  function readable(html: string): string {
+    return html.replaceAll("<!-- -->", "");
+  }
+
   async function enquiriesAt(venueId: string): Promise<number> {
     const { rows } = await pool.query<{ count: number }>("SELECT count(*)::int AS count FROM enquiries WHERE venue_id = $1", [venueId]);
     return rows[0]?.count ?? -1;
@@ -237,5 +257,36 @@ describe.skipIf(target === undefined)("the public enquiry route on the migrated 
       "SELECT preferred_date::text AS preferred_date FROM enquiries WHERE id = $1", [enquiryId],
     );
     expect(rows).toEqual([{ preferred_date: "2028-02-29" }]);
+  });
+
+  // Audit enquiries-crm-3: the acknowledgement goes, in the venue's name, to
+  // whatever address the enquiry names, and nobody has confirmed that address.
+  it("repeats to that address only an occasion the venue offers, never one typed in free", async () => {
+    const typed = "URGENT payment notice - call 0800 000 000";
+    const stranger = `test-only-typed-${run}@example.test`;
+    const enquiryId = idOf(await enquire({
+      venueSlug: liveVenue, source: "website", email: stranger, name: "TEST ONLY Ailsa Grant",
+      eventType: typed, eventDate: "2027-06-12", guestCount: 80,
+    }), "enquiryId");
+
+    const sent = await handedTo(stranger);
+    const words = readable(sent.html);
+    expect(words).not.toContain(typed);
+    expect(words).not.toContain("0800 000 000");
+    expect(words).not.toContain("Occasion");
+    // The rest of what they told us is still there, and the venue keeps the
+    // occasion as it was typed, for the team.
+    expect(sent.subject).toBe("We have your enquiry — TEST ONLY Intake Hall");
+    expect(words).toContain("12 June 2027");
+    expect(words).toContain("Guests");
+    const { rows } = await pool.query<{ event_type: string }>("SELECT event_type FROM enquiries WHERE id = $1", [enquiryId]);
+    expect(rows).toEqual([{ event_type: typed }]);
+
+    // An occasion the venue offers is repeated in the venue's words, as before.
+    const guest = `test-only-offered-${run}@example.test`;
+    idOf(await enquire({ venueSlug: liveVenue, source: "website", email: guest, name: "TEST ONLY Ailsa Grant", eventType: "wedding" }), "enquiryId");
+    const offered = readable((await handedTo(guest)).html);
+    expect(offered).toContain("Occasion");
+    expect(offered).toContain("Wedding");
   });
 });

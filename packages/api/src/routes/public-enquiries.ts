@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import {
+  ENQUIRY_OCCASION_KEYS,
   GuestEnquirySchema,
   TRADES_HALL_ENQUIRY_VENUE_SLUG,
   VENUE_ACCESS_ENQUIRY_TYPE,
@@ -60,6 +61,20 @@ const ENQUIRY_EMAIL_ROLES = ["sales", "manager", "hallkeeper"] as const;
 /** What enquiries.name holds (varchar(200)). An email is ASCII (z.email()),
  *  so cutting it by code unit never splits a character. */
 const ENQUIRY_NAME_MAX = 200;
+
+/**
+ * The occasion in the venue's own words when it is one the venue offers
+ * (ENQUIRY_OCCASION_KEYS), and null for one typed in free. The guest's
+ * acknowledgement is sent in the venue's name to whatever address the
+ * enquiry gives, which nobody has confirmed, so it repeats none of a
+ * stranger's text in its facts (audit enquiries-crm-3). Every form the venue
+ * publishes sends one of its own occasions; the enquiry and the team's email
+ * keep a typed one as it was typed.
+ */
+function offeredOccasionLabel(eventType: string | undefined): string | null {
+  const key = eventType?.trim().toLowerCase() ?? "";
+  return ENQUIRY_OCCASION_KEYS.includes(key) ? occasionLabel(key) : null;
+}
 
 /** How a notice says where an enquiry came from, when it names no room. */
 const SOURCE_PHRASE: Readonly<Record<EnquirySource, string>> = {
@@ -428,7 +443,7 @@ export async function publicEnquiryRoutes(
         venueName,
         roomName,
         organiserName: parsed.data.name ?? parsed.data.email,
-        eventType: occasionLabel(parsed.data.eventType),
+        eventType: offeredOccasionLabel(parsed.data.eventType),
         eventDate: parsed.data.eventDate ?? null,
         guestCount: parsed.data.guestCount ?? null,
         replyToEmail: resolveEmailReplyTo(),
