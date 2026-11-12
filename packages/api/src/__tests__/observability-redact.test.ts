@@ -581,3 +581,60 @@ describe("scrubTransaction", () => {
     expect(scrubTransaction({ type: "transaction" })).toEqual({ type: "transaction" });
   });
 });
+
+// ---------------------------------------------------------------------------
+// A guest plan's claim secret travels in the X-Plan-Claim-Secret header on
+// every anonymous read and save of that plan (routes/public-configs.ts).
+// Whoever holds it can claim the plan and read its notes, so it never reaches
+// an error report: not in an event's request headers, not in a transaction's,
+// and not in the attribute the SDK's http instrumentation writes for each
+// request header (@sentry/core 10.60 utils/request.js,
+// httpHeadersToSpanAttributes: `http.request.header.<name, dashes as underscores>`).
+// ---------------------------------------------------------------------------
+
+const CLAIM_SECRET = "synthetic-claim-secret-0123456789abcdefghijklmnopq";
+
+describe("a guest plan's claim secret", () => {
+  it("is dropped from an error event's request headers, as Node names it and as the browser sends it", () => {
+    for (const name of ["x-plan-claim-secret", "X-Plan-Claim-Secret"]) {
+      const out = scrubErrorEvent({
+        type: undefined,
+        request: {
+          url: "https://api.example.test/public/configurations/0f0f0f0f-0000-4000-8000-000000000001",
+          method: "GET",
+          headers: { [name]: CLAIM_SECRET, "user-agent": "vitest" },
+        },
+      });
+      expect(out.request?.headers).toEqual({ "user-agent": "vitest" });
+      expect(JSON.stringify(out)).not.toContain(CLAIM_SECRET);
+    }
+  });
+
+  it("is dropped from a transaction's request headers and from the header attribute on its trace and spans", () => {
+    const out = scrubTransaction({
+      type: "transaction",
+      request: {
+        url: "https://api.example.test/public/configurations/0f0f0f0f-0000-4000-8000-000000000001/objects/batch",
+        method: "POST",
+        headers: { "x-plan-claim-secret": CLAIM_SECRET, "user-agent": "vitest" },
+      },
+      contexts: {
+        trace: {
+          trace_id: "00000000000000000000000000000001",
+          span_id: "0000000000000001",
+          data: { "http.request.header.x_plan_claim_secret": CLAIM_SECRET, "http.method": "POST" },
+        },
+      },
+      spans: [{
+        trace_id: "00000000000000000000000000000001",
+        span_id: "0000000000000002",
+        start_timestamp: 1,
+        data: { "http.request.header.x_plan_claim_secret": CLAIM_SECRET, "http.request.header.user_agent": "vitest" },
+      }],
+    });
+    expect(out.request?.headers).toEqual({ "user-agent": "vitest" });
+    expect(out.contexts?.trace?.data).toEqual({ "http.method": "POST" });
+    expect(out.spans?.[0]?.data).toEqual({ "http.request.header.user_agent": "vitest" });
+    expect(JSON.stringify(out)).not.toContain(CLAIM_SECRET);
+  });
+});

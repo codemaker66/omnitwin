@@ -79,4 +79,15 @@ describe("the API's Sentry beforeSend", () => {
     expect(scrubbed.exception.values[0]?.type).toBe("DrizzleQueryError");
     expect(scrubbed.extra.metadata.instructions.dietary).toEqual({ vegetarian: 12, otherAllergies: "[redacted]" });
   });
+
+  it("drops a guest plan's claim secret, which opens the plan's notes to whoever holds it", () => {
+    // The header every anonymous read and save of a plan made in that browser
+    // carries (routes/public-configs.ts), as Node names it and as it is sent.
+    for (const name of ["x-plan-claim-secret", "X-Plan-Claim-Secret"]) {
+      const scrubbed = scrubApiSentryEvent({
+        request: { headers: { [name]: "synthetic-claim-secret-0123456789abcdefghijklmnopq", "user-agent": "test" } },
+      });
+      expect(scrubbed.request.headers).toEqual({ "user-agent": "test" });
+    }
+  });
 });
