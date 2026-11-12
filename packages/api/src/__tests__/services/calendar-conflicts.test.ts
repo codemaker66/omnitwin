@@ -582,6 +582,22 @@ describe("one event's days in a room", () => {
     ]);
   });
 
+  // T-695 review Z6: a confirmed booking with no event (a private hire) is
+  // somebody else in the room too, and parts the event's pieces round it.
+  it("measures the changeovers round a booking with no event between one event's morning and evening", () => {
+    const morning = booking({ id: "c-am", title: "Gala rehearsal", eventId: "event-c",
+      startsAt: at("2026-09-18T08:00:00.000Z"), endsAt: at("2026-09-18T10:00:00.000Z") });
+    const evening = booking({ id: "c-pm", title: "Gala", eventId: "event-c",
+      startsAt: at("2026-09-18T17:00:00.000Z"), endsAt: at("2026-09-18T21:00:00.000Z") });
+    const hire = booking({ id: "hire", title: "Private hire",
+      startsAt: at("2026-09-18T11:00:00.000Z"), endsAt: at("2026-09-18T15:00:00.000Z") });
+    const report = detect({ bookings: [morning, evening, hire], turnaroundRules: [rule({ minutes: 180 })] });
+    expect(report.conflicts.map((c) => c.id)).toEqual([
+      "insufficient_turnaround:c-am:hire",
+      "insufficient_turnaround:hire:c-pm",
+    ]);
+  });
+
   // T-695 review Z2. Which changeovers are measured, as an invariant. The
   // occupancies are taken in start order, and each is measured against the
   // room's last occupants before it: of those that started before it, the
