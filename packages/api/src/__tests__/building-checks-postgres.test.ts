@@ -180,7 +180,12 @@ describe.skipIf(target === undefined)("opening and lock-up, on migrated PostgreS
     const f = await fixture();
     // The venue's board rolls at 04:00 (December is on GMT).
     await db.insert(schema.venueSettings).values({ venueId: f.venueId, requestEscalationSeconds: 300, dayBoundaryHour: 4 });
-    const [alarm] = (await call(f, "admin", "PUT", `/venues/${f.venueId}/building-checks/lockup`, { expected: [], items: [{ label: "Alarm set" }] })).data as BuildingCheck[];
+    // Written well before the days below, and stamped so: a check written
+    // through the API would carry the real clock's day, and from 6 December
+    // 2026 that day is later than the 5th, so the 5th would refuse it.
+    const [alarm] = await db.insert(schema.venueBuildingChecks)
+      .values({ venueId: f.venueId, kind: "lockup", label: "Alarm set", sortOrder: 0, createdAt: new Date("2026-11-01T09:00:00.000Z") })
+      .returning();
     const actor: RequestActor = { id: f.people.hallkeeper, name: "Jamie", role: "hallkeeper", venueId: f.venueId, platformRole: "none" };
     const at = (iso: string) => () => new Date(iso);
     const tick = (day: string, now: string) => markBuildingCheck(db, actor, f.venueId, alarm?.id ?? "", day, at(now));
