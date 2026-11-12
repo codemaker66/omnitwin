@@ -7,18 +7,22 @@ import { describe, expect, it } from "vitest";
 // ---------------------------------------------------------------------------
 // What the public enquiry schema brings with it (whole-repository audit T-695).
 //
-// The walkthrough's and the front door's enquiry forms import
-// `@omnitwin/types/enquiry` on its own, because both sit in bundles held to a
-// byte budget. A bundler keeps every module this one imports for a value: a
-// schema built at a module's top level is a call it cannot prove harmless, so
-// tree-shaking does not drop it. One small function imported from a large
-// module therefore ships that module and everything under it. Measured for
-// `isCalendarDate` taken from event-brief-draft.ts: the enquiry module bundled
-// alone went from 32 KB to 99 KB, 6 modules to 17, before minifying.
+// The walkthrough's enquiry form imports `@omnitwin/types/enquiry`, and the
+// website's (pages/fresh/FreshEnquiry.tsx) takes a constant defined in it from
+// the package root, whose `sideEffects: false` lets a bundler keep only the
+// modules that are used: both carry this module and what it imports. A
+// bundler keeps every module this one imports for a value: a schema built at
+// a module's top level is a call it cannot prove harmless, so tree-shaking
+// does not drop it. One small function imported from a large module therefore
+// ships that module and everything under it. Measured for `isCalendarDate`
+// taken from event-brief-draft.ts: the enquiry module bundled alone went from
+// 32 KB to 99 KB, 6 modules to 17, before minifying.
 //
 // So the lists below are the whole of it. Adding a schema is a decision about
-// those two bundles; a small helper belongs in a module of its own that
-// imports nothing (a leaf, like calendar-date.ts), added to LEAVES.
+// those forms' bundles; a small helper belongs in a module of its own that
+// imports nothing (a leaf, like calendar-date.ts), added to LEAVES. This test
+// holds which modules they carry, not their bytes: the built enquiry chunk's
+// bytes are held to a budget in packages/web/src/__tests__/twin-chunk-budget.test.ts.
 // ---------------------------------------------------------------------------
 
 const SRC = resolve(dirname(fileURLToPath(import.meta.url)), "..");
