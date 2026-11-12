@@ -106,8 +106,10 @@ share) is never made to try.
 - **A guest's draft that is claimed** into an account keeps its device answer, and the answer is written to the
   layout's metadata the next time the layout opens signed in.
 
-## The look (Blake decides, from frames)
+## The look (Blake chose it from frames)
 
+- **Blake's choice, 26 October 2026.** From the round-3 frames, served on a product host as on venviewer.com, Blake
+  approved the look as shown, and turned Auto-fix off for #253.
 - **Over the room.** A lacquer scrim with no blur; the room's arrival continues underneath and shows through at the
   edges.
 - **The words.** The heading is in Newsreader: "What are you planning?". One line in Inter follows: "One tap sets up
@@ -128,11 +130,10 @@ share) is never made to try.
 - **Tests.** The e2e suite runs on a device told not to ask, through the default `storageState` in
   `playwright.config.ts`. The picker's own cases use `?event-question=on`. The config edit puts the PR in the GPU
   benchmark scope; that is cheaper than editing thirteen specs owned by other lanes.
-- **Art.** Two directions go to Blake as frames:
-  - (a) the venue's own photographs, where they exist;
-  - (b) the planner's own furniture as the hero: the Chiavari, the pink chair, and the hall for "something else".
-
-  No art may show furniture the planner will not set.
+- **Art.** Each panel's art is its own set as the planner places it, seen from above in copper ink
+  (`EventKindInk.tsx`): the table first, then its chairs, then the room, drawn in on one spring. No art shows
+  furniture the planner will not set. The brief first offered the venue's photographs or the planner's furniture as
+  the hero; the frames Blake approved carry the ink plans.
 
 ## Accessibility
 
@@ -145,8 +146,9 @@ share) is never made to try.
 ## Coordination
 
 - **E.**
-  - The E12 core on master: `plannerChairSlug` and its callers, the researched sizes, and the `eventKind` key in
-    `ConfigurationMetadataSchema`. The picker cannot ship before it.
+  - The E12 core on master: `plannerChairSlug` and its callers, and the researched sizes. The picker could not ship
+    before it. It reached master as 6fab419d (lane E's #249 closed) without the `eventKind` key in
+    `ConfigurationMetadataSchema`, so this PR adds that key, and #253 merged master on 12 November 2026.
   - This PR carries E12's store byte for byte, `ConfigMetadataInput.eventKind`, and the two editor-store calls. E is
     asked to review those.
 - **C.** One line in `PlannerChromeV2`; later, the dock's card set by kind.
