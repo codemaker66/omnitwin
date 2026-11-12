@@ -423,3 +423,32 @@ describe("where focus goes when the slate's Dismiss puts a refused clear away (r
     expect(document.activeElement).toBe(saveStatus());
   });
 });
+
+// ---------------------------------------------------------------------------
+// Delta review of #388 at 33a8e0ad, U4. A guest's slate says Draft whatever
+// happens, so its refusal notice is the only voice of a refused save there.
+// It was a polite region inserted already holding its words, which screen
+// readers do not reliably announce; a signed-in viewer's same refusal is an
+// alert. A guest's is too now.
+// ---------------------------------------------------------------------------
+
+describe("a guest's slate notice of a save refused over a held note (U4)", () => {
+  beforeEach(() => {
+    audience.value = { event: null, graph: null, staff: false, signedIn: false, eventId: null };
+  });
+
+  it.each([
+    ["a refused clear, with its Dismiss", REFUSED_CLEAR, [TABLE_7], ["Dismiss"]],
+    ["the API's refusal of the person's words", NOTE_HELD_MESSAGE, [], []],
+  ] as const)("is an alert, as a signed-in viewer's is, for %s", (_what, sentence, cleared, keys) => {
+    act(() => {
+      useEditorStore.setState({ configId: PLAN, isPublicPreview: true, saveError: sentence, saveErrorCode: "NOTE_HELD", noteClearsRefused: [...cleared] });
+    });
+    openSlate();
+    expect(screen.getByTestId("slate-line").textContent).toContain("Draft");
+    const notice = screen.getByRole("alert");
+    expect(notice.getAttribute("aria-live")).toBe("assertive");
+    expect(within(notice).getByText(sentence)).toBeTruthy();
+    expect(within(notice).queryAllByRole("button").map((key) => key.textContent)).toEqual([...keys]);
+  });
+});

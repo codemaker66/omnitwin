@@ -174,11 +174,14 @@ export function SlateCard({
   const { lineAction } = save;
   // An urgent aside (a held switch) answers what the person just asked for, so
   // it comes first; a quiet one waits for the save state's own notice to clear.
+  // A guest's draft has a notice only for a save refused over a held note, the
+  // one voice of it on a line that says Draft whatever happens: an alert, as
+  // a signed-in viewer's is (delta review of #388 at 33a8e0ad, U4).
   const notice = aside !== null && (aside.urgent || save.notice === null)
     ? { heading: aside.heading, body: aside.body ?? undefined, actions: aside.actions, urgent: aside.urgent }
     : save.notice === null
       ? null
-      : { ...save.notice, urgent: save.kind === "not-saved" || save.kind === "changed-elsewhere" };
+      : { ...save.notice, urgent: save.kind === "not-saved" || save.kind === "changed-elsewhere" || save.kind === "draft" };
   return (
     <section className="pc-slate" aria-label={title} data-save={save.kind} data-plane={plane === null ? "none" : "joined"} data-pc-popover-anchor>
       <div className="pc-lacquer pc-slate__plate">
