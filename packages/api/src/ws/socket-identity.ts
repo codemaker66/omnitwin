@@ -83,3 +83,38 @@ export async function readCurrentSocketUsers(
   const rows = await db.select(USER_COLUMNS).from(users).where(inArray(users.id, [...new Set(userIds)]));
   return new Map(rows.map((row) => [row.id, row]));
 }
+
+// ---------------------------------------------------------------------------
+// A socket that never signs in.
+//
+// Both socket routes accept a connection first and learn who it is from its
+// first frame. A connection that never sends one (a phone that dropped before
+// its auth frame, or anyone opening sockets and saying nothing) was kept for
+// good: the hubs' ping and stale sweep reach only sockets that have joined.
+// ---------------------------------------------------------------------------
+
+/** How long a socket may stay open before it has begun to sign in. */
+export const SOCKET_SIGN_IN_DEADLINE_MS = 10_000;
+
+export interface SocketSignInOptions {
+  /** In place of SOCKET_SIGN_IN_DEADLINE_MS, for tests. */
+  readonly signInDeadlineMs?: number;
+}
+
+/**
+ * Calls `onExpired` once if the socket has not begun to sign in by the
+ * deadline. A sign-in already under way is left to finish: it ends in a
+ * joined or a closed socket by itself. The timer never holds the process
+ * open. Returns the function that cancels it, for when the socket closes.
+ */
+export function startSignInDeadline(
+  options: SocketSignInOptions,
+  hasBegunToSignIn: () => boolean,
+  onExpired: () => void,
+): () => void {
+  const timer = setTimeout(() => {
+    if (!hasBegunToSignIn()) onExpired();
+  }, options.signInDeadlineMs ?? SOCKET_SIGN_IN_DEADLINE_MS);
+  timer.unref();
+  return () => { clearTimeout(timer); };
+}
