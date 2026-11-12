@@ -176,25 +176,40 @@ export type CreateEnquiry = z.infer<typeof CreateEnquirySchema>;
 export const GUEST_ENQUIRY_SOURCES = ["website", "walkthrough"] as const;
 export type GuestEnquirySource = (typeof GUEST_ENQUIRY_SOURCES)[number];
 
+/**
+ * The most a guest may give in each field the public enquiry forms offer:
+ * characters for the name, telephone and message, and the largest guest
+ * count. GuestEnquirySchema holds the API to these and the forms (the front
+ * door's composer, the walkthrough's and the planner's) set them on their
+ * fields, so a form never takes what the API would refuse as "Validation
+ * failed".
+ */
+export const GUEST_ENQUIRY_LIMITS = {
+  nameLength: 200,
+  phoneLength: 30,
+  messageLength: MAX_MESSAGE_LENGTH,
+  guestCount: MAX_GUEST_COUNT,
+} as const;
+
 export const GuestEnquirySchema = z
   .object({
     configurationId: ConfigurationIdSchema.optional(),
     venueSlug: z.string().trim().min(1).max(100).optional(),
     email: z.string().trim().check(z.email()).max(255),
-    phone: z.string().trim().max(30).optional(),
+    phone: z.string().trim().max(GUEST_ENQUIRY_LIMITS.phoneLength).optional(),
     /** A name that is empty once trimmed is no name: it parses to undefined,
      *  so the enquiry falls back to the email and never stores "" as the name
      *  a hold's title is later built from (booking titles need a character). */
     name: z
       .string()
       .trim()
-      .max(200)
+      .max(GUEST_ENQUIRY_LIMITS.nameLength)
       .transform((name) => (name === "" ? undefined : name))
       .optional(),
     eventDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     eventType: z.string().trim().max(100).optional(),
-    guestCount: z.number().int().nonnegative().max(MAX_GUEST_COUNT).optional(),
-    message: z.string().max(MAX_MESSAGE_LENGTH).optional(),
+    guestCount: z.number().int().nonnegative().max(GUEST_ENQUIRY_LIMITS.guestCount).optional(),
+    message: z.string().max(GUEST_ENQUIRY_LIMITS.messageLength).optional(),
     source: z.enum(GUEST_ENQUIRY_SOURCES).optional(),
     roomSlug: z.string().trim().min(1).max(100).optional(),
     /** Where the person came from (migration 0100). No page sends it until

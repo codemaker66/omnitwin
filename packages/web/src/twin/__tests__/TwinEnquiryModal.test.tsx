@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { TRADES_HALL_ENQUIRY_VENUE_SLUG } from "@omnitwin/types";
+import { GUEST_ENQUIRY_LIMITS, TRADES_HALL_ENQUIRY_VENUE_SLUG } from "@omnitwin/types";
 import { TwinEnquiryModal } from "../TwinEnquiryModal.js";
 
 // -----------------------------------------------------------------------------
@@ -64,6 +64,35 @@ describe("TwinEnquiryModal", () => {
     fireEvent.submit(screen.getByTestId("twin-enquiry-form"));
     expect(submitMock).not.toHaveBeenCalled();
     expect(screen.getByRole("alert")).toBeTruthy();
+  });
+
+  // enquiries-crm-2: the API refuses a long name, telephone or message, or a
+  // guest count past its limit, as "Validation failed", which this form then
+  // shows with no field named. The fields take no more than the API accepts.
+  it("takes no more in any field than the API accepts", () => {
+    renderModal();
+    const limits: readonly [string, number][] = [
+      ["Your name", screen.getByRole<HTMLInputElement>("textbox", { name: "Your name" }).maxLength],
+      ["Phone", screen.getByRole<HTMLInputElement>("textbox", { name: "Phone" }).maxLength],
+      ["Anything else?", screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Anything else?" }).maxLength],
+      ["Guests", Number(screen.getByRole<HTMLInputElement>("spinbutton", { name: "Guests" }).max)],
+    ];
+    expect(limits).toEqual([
+      ["Your name", GUEST_ENQUIRY_LIMITS.nameLength],
+      ["Phone", GUEST_ENQUIRY_LIMITS.phoneLength],
+      ["Anything else?", GUEST_ENQUIRY_LIMITS.messageLength],
+      ["Guests", GUEST_ENQUIRY_LIMITS.guestCount],
+    ]);
+  });
+
+  it("does not post a guest count past what the API accepts", () => {
+    renderModal();
+    fireEvent.change(screen.getByLabelText(/^email/i), { target: { value: "guest@example.com" } });
+    const guests = screen.getByRole<HTMLInputElement>("spinbutton", { name: "Guests" });
+    fireEvent.change(guests, { target: { value: String(GUEST_ENQUIRY_LIMITS.guestCount + 1) } });
+    fireEvent.click(screen.getByRole("button", { name: "Send to the events team" }));
+    expect(submitMock).not.toHaveBeenCalled();
+    expect(guests.checkValidity()).toBe(false);
   });
 
   it("shows work during submission and removes it on failure", async () => {

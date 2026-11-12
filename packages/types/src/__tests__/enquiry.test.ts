@@ -8,6 +8,7 @@ import {
   EnquirySchema,
   CreateEnquirySchema,
   GuestEnquirySchema,
+  GUEST_ENQUIRY_LIMITS,
   GUEST_ENQUIRY_SOURCES,
   ENQUIRY_SOURCES,
   occasionLabel,
@@ -589,6 +590,22 @@ describe("GuestEnquirySchema", () => {
 
   it("rejects phone exceeding 30 characters", () => {
     expect(GuestEnquirySchema.safeParse({ ...validGuest, phone: "1".repeat(31) }).success).toBe(false);
+  });
+
+  // The public forms set these limits on their fields (enquiries-crm-2), so
+  // the schema must refuse exactly one past each of them and take the limit.
+  it("holds each field the forms limit to GUEST_ENQUIRY_LIMITS, no more and no less", () => {
+    const { nameLength, phoneLength, messageLength, guestCount } = GUEST_ENQUIRY_LIMITS;
+    const cases: readonly [string, Record<string, unknown>, Record<string, unknown>][] = [
+      ["name", { name: "a".repeat(nameLength) }, { name: "a".repeat(nameLength + 1) }],
+      ["phone", { phone: "1".repeat(phoneLength) }, { phone: "1".repeat(phoneLength + 1) }],
+      ["message", { message: "m".repeat(messageLength) }, { message: "m".repeat(messageLength + 1) }],
+      ["guestCount", { guestCount }, { guestCount: guestCount + 1 }],
+    ];
+    for (const [field, atLimit, pastLimit] of cases) {
+      expect(GuestEnquirySchema.safeParse({ ...validGuest, ...atLimit }).success, `${field} at the limit`).toBe(true);
+      expect(GuestEnquirySchema.safeParse({ ...validGuest, ...pastLimit }).success, `${field} past the limit`).toBe(false);
+    }
   });
 
   it("accepts where the enquiry was written: the website composer or the walkthrough", () => {

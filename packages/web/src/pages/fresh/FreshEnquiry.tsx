@@ -6,7 +6,7 @@ import {
   type FormEvent,
   type ReactElement,
 } from "react";
-import { TRADES_HALL_ENQUIRY_VENUE_SLUG } from "@omnitwin/types";
+import { GUEST_ENQUIRY_LIMITS, TRADES_HALL_ENQUIRY_VENUE_SLUG } from "@omnitwin/types";
 import { ActivityIndicator } from "../../components/shared/Activity.js";
 import { submitGuestEnquiry } from "../../api/configurations.js";
 import { isValidEmail } from "../../lib/email-validation.js";
@@ -265,6 +265,7 @@ export function FreshEnquiry(): ReactElement {
             <input
               type="text"
               autoComplete="name"
+              maxLength={GUEST_ENQUIRY_LIMITS.nameLength}
               value={name}
               onChange={(event) => {
                 setName(event.target.value);
@@ -303,6 +304,7 @@ export function FreshEnquiry(): ReactElement {
             <input
               type="tel"
               autoComplete="tel"
+              maxLength={GUEST_ENQUIRY_LIMITS.phoneLength}
               value={phone}
               onChange={(event) => {
                 setPhone(event.target.value);

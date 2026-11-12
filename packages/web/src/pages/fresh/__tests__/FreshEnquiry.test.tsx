@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { TRADES_HALL_ENQUIRY_VENUE_SLUG } from "@omnitwin/types";
+import { GUEST_ENQUIRY_LIMITS, TRADES_HALL_ENQUIRY_VENUE_SLUG } from "@omnitwin/types";
 
 const mocks = vi.hoisted(() => ({
   submitGuestEnquiry: vi.fn<(input: unknown) => Promise<unknown>>(),
@@ -65,6 +65,17 @@ describe("FreshEnquiry — the enquiry it posts", () => {
     fireEvent.click(screen.getByRole("button", { name: "Send enquiry" }));
     expect(mocks.submitGuestEnquiry).not.toHaveBeenCalled();
     expect(screen.getByText("Enter your email address.")).toBeTruthy();
+  });
+
+  // enquiries-crm-2: the API refuses a name over its limit or a telephone over
+  // 30 characters as "Validation failed", and this page then says only "Try
+  // again", which can never work. The fields take no more than it accepts.
+  it("takes no more name or telephone than the API accepts", () => {
+    render(<FreshEnquiry />);
+    const name = screen.getByRole<HTMLInputElement>("textbox", { name: /^Your name/u });
+    const phone = screen.getByRole<HTMLInputElement>("textbox", { name: /^Phone/u });
+    expect(name.maxLength, "Your name").toBe(GUEST_ENQUIRY_LIMITS.nameLength);
+    expect(phone.maxLength, "Phone").toBe(GUEST_ENQUIRY_LIMITS.phoneLength);
   });
 
   it("keeps the draft and the telephone when the post fails", async () => {

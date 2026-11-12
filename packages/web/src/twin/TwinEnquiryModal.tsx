@@ -7,7 +7,7 @@ import {
   type KeyboardEvent,
   type ReactElement,
 } from "react";
-import { TRADES_HALL_ENQUIRY_VENUE_SLUG } from "@omnitwin/types/enquiry";
+import { GUEST_ENQUIRY_LIMITS, TRADES_HALL_ENQUIRY_VENUE_SLUG } from "@omnitwin/types/enquiry";
 import { ActivityIndicator } from "../components/shared/Activity.js";
 import { submitGuestEnquiry } from "../api/configurations.js";
 import { useFocusTrap } from "../lib/use-focus-trap.js";
@@ -228,6 +228,7 @@ export function TwinEnquiryModal({
                 id="tw-enq-name"
                 type="text"
                 autoComplete="name"
+                maxLength={GUEST_ENQUIRY_LIMITS.nameLength}
                 className="vv-twin-enq-input"
                 value={name}
                 onChange={(event) => {
@@ -244,6 +245,7 @@ export function TwinEnquiryModal({
                 id="tw-enq-phone"
                 type="tel"
                 autoComplete="tel"
+                maxLength={GUEST_ENQUIRY_LIMITS.phoneLength}
                 className="vv-twin-enq-input"
                 value={phone}
                 onChange={(event) => {
@@ -277,6 +279,7 @@ export function TwinEnquiryModal({
                 id="tw-enq-guests"
                 type="number"
                 min="0"
+                max={GUEST_ENQUIRY_LIMITS.guestCount}
                 className="vv-twin-enq-input"
                 value={guestCount}
                 onChange={(event) => {
@@ -312,6 +315,7 @@ export function TwinEnquiryModal({
           </label>
           <textarea
             id="tw-enq-message"
+            maxLength={GUEST_ENQUIRY_LIMITS.messageLength}
             className="vv-twin-enq-input vv-twin-enq-textarea"
             value={message}
             onChange={(event) => {

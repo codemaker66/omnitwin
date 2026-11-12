@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { findUnsupportedProposalClaim } from "@omnitwin/types";
+import { findUnsupportedProposalClaim, GUEST_ENQUIRY_LIMITS } from "@omnitwin/types";
 import type { VenueDetail } from "../../../api/spaces.js";
 
 const mocks = vi.hoisted(() => ({ getVenue: vi.fn(), submit: vi.fn(), createLink: vi.fn(), listLinks: vi.fn(), flush: vi.fn() }));
@@ -275,6 +275,59 @@ describe("GuestEnquiryModal shares a view-only link after sending", () => {
 // planner-qol E-08, E-X1 and E-X6: what the guest types survives a close,
 // the form cannot be closed while the enquiry is on its way, and the answer
 // takes focus and is announced.
+// enquiries-crm-2: the API refuses a long name, telephone or message, or a
+// guest count past its limit, as "Validation failed", which this form then
+// shows with no field named. The fields take no more than the API accepts.
+describe("GuestEnquiryModal takes no more than the API accepts", () => {
+  const rooms: VenueDetail = {
+    id: "venue-limits", name: "Limit Rooms", slug: "limit-rooms", address: "1 Example Street",
+    logoUrl: null, brandColour: null, spaces: [],
+  };
+
+  beforeEach(() => {
+    resetStores();
+    for (const mock of Object.values(mocks)) mock.mockReset();
+    mocks.getVenue.mockResolvedValue(rooms);
+    useEditorStore.setState({ configId: "cfg-1", venueId: rooms.id, isPublicPreview: false });
+  });
+  afterEach(() => {
+    cleanup();
+    resetStores();
+    useEditorStore.getState().reset();
+  });
+
+  async function open(): Promise<void> {
+    render(<GuestEnquiryModal configId="cfg-1" onClose={() => { /* noop */ }} />);
+    await screen.findByText("Your details are shared only with the Limit Rooms events team.");
+  }
+
+  it("limits every field to the shared enquiry limits", async () => {
+    await open();
+    const limits: readonly [string, number][] = [
+      ["Your name", screen.getByRole<HTMLInputElement>("textbox", { name: "Your name" }).maxLength],
+      ["Phone", screen.getByRole<HTMLInputElement>("textbox", { name: /^Phone/u }).maxLength],
+      ["Anything else?", screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Anything else?" }).maxLength],
+      ["Guest count", Number(screen.getByRole<HTMLInputElement>("spinbutton", { name: "Guest count" }).max)],
+    ];
+    expect(limits).toEqual([
+      ["Your name", GUEST_ENQUIRY_LIMITS.nameLength],
+      ["Phone", GUEST_ENQUIRY_LIMITS.phoneLength],
+      ["Anything else?", GUEST_ENQUIRY_LIMITS.messageLength],
+      ["Guest count", GUEST_ENQUIRY_LIMITS.guestCount],
+    ]);
+  });
+
+  it("does not post a guest count past what the API accepts", async () => {
+    await open();
+    fireEvent.change(screen.getByLabelText(/email/iu), { target: { value: "guest@example.test" } });
+    const guests = screen.getByRole<HTMLInputElement>("spinbutton", { name: "Guest count" });
+    fireEvent.change(guests, { target: { value: String(GUEST_ENQUIRY_LIMITS.guestCount + 1) } });
+    fireEvent.click(screen.getByRole("button", { name: "Send to Events Team" }));
+    expect(mocks.submit).not.toHaveBeenCalled();
+    expect(guests.checkValidity()).toBe(false);
+  });
+});
+
 describe("GuestEnquiryModal keeps the guest's work", () => {
   const rooms: VenueDetail = {
     id: "venue-keep", name: "Keep Rooms", slug: "keep-rooms", address: "1 Example Street",

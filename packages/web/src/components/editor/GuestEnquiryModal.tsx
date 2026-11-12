@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from "react";
+import { GUEST_ENQUIRY_LIMITS } from "@omnitwin/types";
 import { ActivityIndicator } from "../shared/Activity.js";
 import { submitGuestEnquiry } from "../../api/configurations.js";
 import { usePlacementStore } from "../../stores/placement-store.js";
@@ -582,6 +583,7 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
                 onChange={(e) => { setName(e.target.value); }}
                 placeholder="First name or organisation"
                 autoComplete="name"
+                maxLength={GUEST_ENQUIRY_LIMITS.nameLength}
               />
             </div>
             <div style={{ flex: 1 }}>
@@ -599,6 +601,7 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
                 onChange={(e) => { setPhone(e.target.value); }}
                 placeholder="+44 7700 900000"
                 autoComplete="tel"
+                maxLength={GUEST_ENQUIRY_LIMITS.phoneLength}
               />
             </div>
           </div>
@@ -634,6 +637,7 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
                 value={guestCount}
                 onChange={(e) => { setGuestCount(e.target.value); }}
                 min="0"
+                max={GUEST_ENQUIRY_LIMITS.guestCount}
                 placeholder="Approx. number"
               />
             </div>
@@ -699,6 +703,7 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
               value={message}
               onChange={(e) => { setMessage(e.target.value); }}
               placeholder="Event details"
+              maxLength={GUEST_ENQUIRY_LIMITS.messageLength}
             />
           </div>
 
