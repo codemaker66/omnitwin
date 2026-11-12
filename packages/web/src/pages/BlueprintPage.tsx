@@ -49,6 +49,8 @@ import { useEditorStore } from "../stores/editor-store.js";
 import { copyForEditorSaveStatus, deriveEditorSaveStatus } from "../lib/editor-save-status.js";
 import { refusedOverHeldNote } from "../lib/guest-plan-notes.js";
 import { ActivityIndicator } from "../components/shared/Activity.js";
+import { PlacementNotice } from "../components/editor/PlacementNotice.js";
+import { useIsCoarsePointer, useIsNarrowViewport } from "../hooks/use-media-query.js";
 import { useCockpitStore } from "../stores/cockpit-store.js";
 import { MAX_GUEST_FLOW_AGENTS } from "../lib/guest-flow-layout-input.js";
 import {
@@ -721,6 +723,10 @@ function BlueprintFromStore(): ReactElement {
   const selectedObjectId = useEditorStore((s) => s.selectedObjectId);
   const history = useEditorStore((s) => s.history);
   const plannedGuestCount = useCockpitStore((s) => s.plannedGuestCount);
+  // As the 3D view decides it (App.tsx): a phone's notice sits above its toolbar.
+  const isNarrow = useIsNarrowViewport();
+  const isTouch = useIsCoarsePointer();
+  const mobileChrome = isNarrow || isTouch;
 
   const [eventType, setEventType] = useState<EventType>("wedding");
   const guestCount = plannedGuestCount ?? 0;
@@ -854,6 +860,11 @@ function BlueprintFromStore(): ReactElement {
         />
       </main>
       <StatusBar metrics={metrics} enquireHref={null} onExportPng={null} />
+      {/* The planner's placement notices (an Undo or Redo refused for a held
+          note, a piece that stayed), in the same polite status the 3D view
+          mounts (App.tsx). Without it a refused Undo here did nothing and said
+          nothing (delta review of #388 at 713dc3f1, C2). */}
+      <PlacementNotice mobile={mobileChrome} />
     </div>
   );
 }

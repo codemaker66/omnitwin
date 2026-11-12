@@ -5,6 +5,7 @@ import { BlueprintPage } from "../pages/BlueprintPage.js";
 import { MobilePlannerTopBar } from "../components/editor/MobilePlannerTopBar.js";
 import { useEditorStore, type EditorObject } from "../stores/editor-store.js";
 import { useCockpitStore } from "../stores/cockpit-store.js";
+import { usePlacementNoticeStore } from "../stores/placement-notice-store.js";
 import { GuestsLensPanel } from "../components/editor/cockpit/GuestsLensPanel.js";
 import { MAX_GUEST_FLOW_AGENTS } from "../lib/guest-flow-layout-input.js";
 
@@ -239,6 +240,31 @@ describe("BlueprintFromStore undo toolbar", () => {
 
     fireEvent.click(redo);
     expect(useEditorStore.getState().objects).toHaveLength(1);
+  });
+});
+
+// The planner's placement notices (Undo's and Redo's refusals, the line that
+// says a piece stayed) were posted only to the notice the 3D view mounts, so in
+// the 2D view a refused Undo did nothing and said nothing (delta review of
+// #388 at 713dc3f1, C2). The 2D view shows them in the same polite status.
+describe("BlueprintFromStore placement notices", () => {
+  beforeEach(() => { usePlacementNoticeStore.getState().dismiss(); });
+
+  it("says why its Undo did nothing, when the step would take a piece that has come to hold a note this browser is not shown", () => {
+    const table: EditorObject = { ...object("held-table", "round-table-6ft", null), label: "Table 3" };
+    // A guest plan read without its notes: the person placed Table 3 and saved it.
+    useEditorStore.setState({ configId: "guest-plan", configRevision: 2, isPublicPreview: true, notesIncluded: false });
+    act(() => { useEditorStore.getState().replaceObjectsFromScene([table]); });
+    // Since then the maker has written a note on it, and the confirmed copy says it holds one.
+    act(() => { useEditorStore.setState({ baseObjects: [{ ...table, noteHeld: true }], isDirty: false }); });
+    render(<BlueprintPage source="editor-store" />);
+
+    fireEvent.click(screen.getByTitle("Undo (⌘Z)"));
+
+    expect(useEditorStore.getState().objects.map((piece) => piece.id)).toEqual(["held-table"]);
+    const region = screen.getByTestId("placement-notice-region");
+    expect(region.getAttribute("role")).toBe("status");
+    expect(region.textContent).toBe("Nothing was undone: Table 3 has a note that cannot be shown here.");
   });
 });
 
