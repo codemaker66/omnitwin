@@ -789,6 +789,75 @@ describe("Undo and Redo of a step that would take a piece which has come to hold
   });
 });
 
+describe("Keep mine, when the newer version has a piece holding a note this browser is not shown that this version lacks", () => {
+  it("keeps that piece where they put it, says so, and saves this version round it", async () => {
+    const server: PlanOnServer = { revision: 4, notes: new Map() };
+    serveNotesAsTheApiDoes(server);
+    await open(plan([placed(A), placed(B)], false));
+    // The maker adds Table 9 with a note; this browser's save meets that version.
+    server.notes.set(C, THEIR_NOTE);
+    theyNowHave(server, [placed(A), placed(B), placed(C, { noteHeld: true, displayLabel: "Table 9" }, 7)]);
+    store().updateObject(A, { positionX: 3 });
+    expect(await store().saveToServer(false)).toBe(false);
+
+    const sentBefore = savesSent();
+    expect(await store().keepMine(false)).toBe(true);
+    expect(notice()).toBe("Table 9 stayed where it is, because it has a note that cannot be shown here.");
+    expect(pieceIds()).toEqual([A, B, C]);
+    // It went with its own row, where they stood it, under their name for it, and with no word about its note.
+    expect(sentPiece(sentBefore, C).positionX).toBeCloseTo(7, 3);
+    expect(sentPiece(sentBefore, C).metadata).toMatchObject({ displayLabel: "Table 9" });
+    expect(sentPiece(sentBefore, C).metadata?.notes).toBeUndefined();
+    expect(store().objects.find((object) => object.id === A)?.positionX).toBe(3);
+    expect(server.notes.get(C)).toBe(THEIR_NOTE);
+    expect(noteHeldOn(store(), C)).toBe(true);
+    // Undo takes back the person's own move, and never the piece that stayed.
+    store().undo();
+    expect(pieceIds()).toEqual([A, B, C]);
+  });
+
+  it("keeps it with the rest of its group, and keeps a piece this version had removed that has come to hold one", async () => {
+    const server: PlanOnServer = { revision: 4, notes: new Map() };
+    serveNotesAsTheApiDoes(server);
+    await open(plan([placed(A), placed(B, { displayLabel: "Table 5" })], false));
+    // This browser removes B, which holds no note. Before that is saved the maker writes on B, and adds Table 9 with a chair.
+    store().removeObject(B);
+    server.notes.set(B, THEIR_NOTE);
+    server.notes.set(C, THEIR_NOTE);
+    theyNowHave(server, [
+      placed(A), placed(B, { noteHeld: true, displayLabel: "Table 5" }),
+      placed(C, { noteHeld: true, displayLabel: "Table 9", groupId: "group-9" }), placed(D, { groupId: "group-9" }),
+    ]);
+    expect(await store().saveToServer(false)).toBe(false);
+
+    expect(await store().keepMine(false)).toBe(true);
+    expect(notice()).toBe("Tables 5 and 9 stayed where they are, because each has a note that cannot be shown here.");
+    expect([...pieceIds()].sort()).toEqual([A, B, C, D].sort());
+    expect(server.notes.get(B)).toBe(THEIR_NOTE);
+    expect(server.notes.get(C)).toBe(THEIR_NOTE);
+    // The removal the person made is no longer a step to redo or undo: B stays whichever way they go.
+    store().undo();
+    store().redo();
+    expect(pieceIds().filter((id) => id === B)).toHaveLength(1);
+  });
+
+  it("keeps it when the choice came from work kept on this device against an older version", async () => {
+    const server: PlanOnServer = { revision: 6, notes: new Map([[C, THEIR_NOTE]]) };
+    serveNotesAsTheApiDoes(server);
+    persistAnonymousPlannerDraft({
+      configId: PLAN, spaceId: SPACE, venueId: VENUE, configRevision: 4, isPublicPreview: true,
+      objects: [kept(A, "", 3), kept(B)], baseObjects: [kept(A), kept(B)], isDirty: true,
+    });
+    await open({ ...plan([placed(A), placed(B), placed(C, { noteHeld: true, displayLabel: "Table 9" }, 7)], false), revision: 6 });
+    expect(store().saveConflict?.currentRevision).toBe(6);
+
+    expect(await store().keepMine(false)).toBe(true);
+    expect(pieceIds()).toEqual([A, B, C]);
+    expect(notice()).toBe("Table 9 stayed where it is, because it has a note that cannot be shown here.");
+    expect(server.notes.get(C)).toBe(THEIR_NOTE);
+  });
+});
+
 describe("the notes Keep mine carries onto the newer version, before any save has confirmed them", () => {
   it("count as notes this browser is not shown, so nothing takes those pieces meanwhile", async () => {
     const server: PlanOnServer = { revision: 4, notes: new Map() };
