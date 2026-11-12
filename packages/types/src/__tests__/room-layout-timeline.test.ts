@@ -179,6 +179,14 @@ describe("RoomLayoutTimelineResponseSchema", () => {
     expect(parsed.frames[0]?.keyframe.state).toBe("available");
   });
 
+  it("reads a frame of an event stored with no name, so one never fails the room's whole timeline (the event-name ruling)", () => {
+    const frame = { ...baseFrame, eventName: "", keyframe: availableKeyframe };
+    expect(acceptsFrame(frame)).toBe(true);
+    expect(RoomLayoutTimelineResponseSchema.parse({ ...baseResponse, frames: [{ ...frame, eventName: "   " }] }).frames[0]?.eventName)
+      .toBe("");
+    expect(acceptsFrame({ ...frame, eventName: "x".repeat(201) })).toBe(false);
+  });
+
   it("rejects mismatched frame and phase identities", () => {
     const response = availableResponse();
     expect(RoomLayoutTimelineResponseSchema.safeParse({

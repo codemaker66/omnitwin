@@ -39,7 +39,7 @@ function staffEvent(startsAt: string | null): LinkedEvent {
     },
     phases: [], scenarios: [], layoutVariants: [], configurationLinks: [], phaseLayoutSnapshots: [],
   };
-  return { status: "loaded", eventName: graph.event.name, graph };
+  return { status: "loaded", eventName: graph.event.name, graph, timeZone: null };
 }
 
 function clientSchedule(startsAt: string | null): ReturnType<typeof useClientEventSchedule> {
@@ -60,7 +60,7 @@ beforeEach(() => {
   vi.setSystemTime(NOW);
   useHallTimeStore.setState({ mode: "now", at: 0, scrubbing: false, openedFor: null, chosen: false });
   useEditorStore.setState({ configId: CONFIG, venueId: VENUE });
-  linked.mockReturnValue({ status: "none", eventName: null, graph: null });
+  linked.mockReturnValue({ status: "none", eventName: null, graph: null, timeZone: null });
   schedule.mockReturnValue({ status: "none", data: null, refresh: () => undefined });
 });
 afterEach(() => {
@@ -97,7 +97,7 @@ describe("HallOpeningHour", () => {
 
   it("moves to the event's start when it arrives after the plan opened", () => {
     signIn("manager");
-    linked.mockReturnValue({ status: "loading", eventName: null, graph: null });
+    linked.mockReturnValue({ status: "loading", eventName: null, graph: null, timeZone: null });
     const shown = render(view(PLAN_PATH));
     expect(useHallTimeStore.getState().mode).toBe("now");
     linked.mockReturnValue(staffEvent(STARTS_AT));

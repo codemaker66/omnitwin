@@ -25,6 +25,7 @@ import {
 } from "../lib/truth-mode-summary.js";
 import { getConfig, getPublicConfig, type Configuration } from "../api/configurations.js";
 import { claimTrackedDraft } from "../lib/planner-claim.js";
+import { usePlannerDraftClaim } from "../hooks/use-planner-draft-claim.js";
 import { useIsCoarsePointer, useIsNarrowViewport } from "../hooks/use-media-query.js";
 import { prefetchPlannerVenue } from "../hooks/use-planner-venue-identity.js";
 import { usePlannerToolKeys } from "../lib/planner-keymap.js";
@@ -264,6 +265,13 @@ export function EditorPage(): React.ReactElement {
       void useEditorStore.getState().loadConfiguration(urlConfigId, isAuthenticated);
     }
   }, [urlConfigId, storeConfigId, isAuthenticated]);
+
+  // A signed-in person's own draft, open at its address, becomes theirs. The
+  // page asks, not only the sign-in dialog: signing in sends the person back
+  // here or remounts this page inside Clerk's provider, and either way the
+  // dialog is gone before the account is known (audit web-auth-routing-2).
+  // A plan still being started below is claimed there, before it has an address.
+  usePlannerDraftClaim(urlConfigId !== undefined && urlConfigId === storeConfigId);
 
   // The slate's room switch (QoL D-X3) leaves this page on /plan?space=<room>
   // with the layout it left still open, and the bootstrap below opens a room

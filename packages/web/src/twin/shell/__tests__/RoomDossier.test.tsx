@@ -141,18 +141,38 @@ describe("RoomDossier", () => {
     expect(screen.getByText(`${String(capacities.reception)} standing`)).toBeTruthy();
     expect(screen.getByText(`${String(capacities.dinner)} seated`)).toBeTruthy();
 
-    // The venue's own qualifier travels with the figure it qualifies, and the
-    // SEPARATOR between them is pinned here on purpose: asserting the note
-    // alone passed happily while the panel rendered "7 ma further 7 m under the
-    // dome", because a bare inline span contributes no whitespace of its own.
+    // The qualifier travels with the figure it qualifies, and the SEPARATOR
+    // between them is pinned here on purpose: asserting the note alone passed
+    // happily while the panel butted figure and note together ("7 ma further
+    // 7 m under the dome", in the note of the time), because a bare inline span
+    // contributes no whitespace of its own.
     const note = dimensions.note;
     if (note === undefined) {
-      throw new Error("venue truth no longer publishes the Grand Hall's dome note");
+      throw new Error("venue truth no longer carries the Grand Hall's ceiling note");
     }
     const ceiling = screen.getByText(STAT_LABEL_CEILING).nextElementSibling;
     expect(ceiling?.textContent).toBe(`${metres(dimensions.heightM)} m — ${note}`);
+    // The dome is never the stat: the Ceiling row says only what the height is
+    // measured to, short enough not to wrap a narrow column into four lines.
+    expect(ceiling?.textContent).not.toMatch(/dome/i);
 
-    expect(screen.getByText(TWIN_DOSSIER_FOOTNOTE)).toBeTruthy();
+    // The dome's sentence leads the footnote instead, straight under the stat,
+    // and the provenance after it is still the venue-truth constant verbatim.
+    const remark = dimensions.remark;
+    if (remark === undefined) {
+      throw new Error("venue truth no longer carries the Grand Hall's dome remark");
+    }
+    const footnote = screen.getByText(TWIN_DOSSIER_FOOTNOTE);
+    expect(footnote.textContent).toBe(`${remark} ${TWIN_DOSSIER_FOOTNOTE}`);
+    expect(footnote.firstElementChild?.textContent).toBe(remark);
+  });
+
+  it("leaves the footnote as the provenance alone in a room with no remark", () => {
+    expect(publishedDimensions(SALOON).remark).toBeUndefined();
+    render(<RoomDossier currentId={SALOON_NODE} venueName={VENUE} />);
+    const footnote = screen.getByText(TWIN_DOSSIER_FOOTNOTE);
+    expect(footnote.textContent).toBe(TWIN_DOSSIER_FOOTNOTE);
+    expect(footnote.children).toHaveLength(0);
   });
 
   it("says nothing at all at a viewpoint whose room is unverified", () => {

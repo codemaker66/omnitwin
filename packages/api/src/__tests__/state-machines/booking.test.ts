@@ -99,7 +99,7 @@ describe("canTransitionBooking", () => {
       const gate = canManageCommercial({ role, venueId: VENUE, platformRole: "none" }, VENUE);
       expect(canTransitionProposal("draft", "sent", role),
         `${role}: proposal draft→sent should follow the REST gate ${String(gate)}`).toBe(gate);
-      expect(canTransitionQuote("draft", "issued", role),
+      expect(canTransitionQuote("draft", "issued", role, false),
         `${role}: quote draft→issued should follow the REST gate ${String(gate)}`).toBe(gate);
     }
   });

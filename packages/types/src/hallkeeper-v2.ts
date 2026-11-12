@@ -85,10 +85,17 @@ export const ManifestRowV2Schema = z.object({
   isAccessory: z.boolean(),
   /**
    * Planner-authored notes from the union of placed-object `notes`
-   * fields that aggregate into this row. Empty string when no source
-   * placement carried a note.
+   * fields that aggregate into this row, joined with " · ". Empty string
+   * when no source placement carried a note.
+   *
+   * No length cap of its own: a row gathers every distinct note of its
+   * pieces (eight tables' notes, and the linen each table takes), so its
+   * length grows with the room. The bound is each piece's note (500, the
+   * planner's limit); the phone shows the row's notes in full and the paper
+   * carries them across pages. A fixed cap here made one detailed wedding
+   * fail the whole sheet and every submit (audit hallkeeper-ops-5).
    */
-  notes: z.string().max(2000).default(""),
+  notes: z.string().default(""),
   /**
    * Floor-plan coordinates for every placement that aggregates into
    * this row. Empty for accessory rows — accessories don't have their

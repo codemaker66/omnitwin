@@ -1,6 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Enquiry, EnquiryListQuery, EnquiryPage, StatusHistoryEntry } from "../../../api/enquiries.js";
+import { useAuthStore } from "../../../stores/auth-store.js";
 import { EnquiriesView } from "../EnquiriesView.js";
 
 const { mocks } = vi.hoisted(() => ({
@@ -101,6 +102,10 @@ function deferred<T>(): Deferred<T> {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // The desk as the venue's own staff read it: only they move its enquiries.
+  useAuthStore.getState().setUser({
+    id: "staff-1", email: "staff@example.test", name: "Elaine MacGregor", role: "staff", platformRole: "none", venueId: "venue-1",
+  });
   mocks.getEnquiry.mockResolvedValue(enquiryFixture("enquiry-a", "Alice"));
   mocks.getEnquiryHistory.mockResolvedValue([]);
   mocks.listEnquiryPage.mockResolvedValue(enquiryPage([]));
@@ -112,6 +117,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  useAuthStore.getState().setUser(null);
   vi.useRealTimers();
 });
 
