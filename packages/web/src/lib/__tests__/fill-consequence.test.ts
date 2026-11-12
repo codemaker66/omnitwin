@@ -46,7 +46,7 @@ function rounds(count: number): PlacedItem[] {
 function planFor(placed: readonly PlacedItem[], guests: number): RoomFill {
   if (round === undefined) throw new Error("no round");
   const fill = planRoomFill({ table: round, seatsPerTable: 10, guests, roomWidthM: 21, roomLengthM: 10.5, exits: grandHallExits(), rule: FILL_AISLE_RULE }, placed);
-  if (fill === null) throw new Error("no fill");
+  if (fill.plan === null) throw new Error("no fill");
   return fill;
 }
 
@@ -194,7 +194,7 @@ describe("a fill over rounds that hold a note this browser is not shown", () => 
   function planOver(placed: readonly PlacedItem[], guests: number, holdsUnseenNote: (id: string) => boolean): RoomFill {
     if (round === undefined) throw new Error("no round");
     const fill = planRoomFill({ table: round, seatsPerTable: 10, guests, roomWidthM: 21, roomLengthM: 10.5, exits: grandHallExits(), rule: FILL_AISLE_RULE }, placed, holdsUnseenNote);
-    if (fill === null) throw new Error("no fill");
+    if (fill.plan === null) throw new Error("no fill");
     return fill;
   }
 
@@ -260,5 +260,20 @@ describe("a fill over rounds that hold a note this browser is not shown", () => 
     const bare = rounds(3).map((piece) => ({ ...piece, label: "" }));
     const unnamed = planOver(bare, 10, () => true);
     expect(fillKeptForNotesLine(unnamed.keptForNotes)).toBe("3 rounds stayed where they are, because each has a note that cannot be shown here.");
+  });
+
+  it("still names the rounds it leaves when they leave it no room, so the prompt need not blame the room (KG2)", () => {
+    if (round === undefined) throw new Error("no round");
+    // Three rounds in a row across the middle of the hall.
+    const placed = [-6, 0, 6].flatMap((x, i) => stamp("round", x, 0)
+      .map((piece, p) => (p === 0 ? { ...piece, label: `Table ${String(i + 1)}` } : piece)));
+    const input = { table: round, seatsPerTable: 10, guests: 20, roomWidthM: 21, roomLengthM: 10.5, exits: grandHallExits(), rule: FILL_AISLE_RULE };
+    expect(planRoomFill(input, placed).plan?.tables).toHaveLength(2);
+
+    const boxedIn = planRoomFill(input, placed, held(placed, "Table 1", "Table 2", "Table 3"));
+    expect(boxedIn.plan).toBeNull();
+    expect(boxedIn.keptForNotes).toEqual([
+      { label: "Table 1", noun: "round" }, { label: "Table 2", noun: "round" }, { label: "Table 3", noun: "round" },
+    ]);
   });
 });

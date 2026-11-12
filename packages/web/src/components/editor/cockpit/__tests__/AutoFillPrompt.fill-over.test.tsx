@@ -2,7 +2,7 @@
 // design reaches in the room it is in, beside the venue's published one, and the spacing in the
 // trade's words, from the same plan the store will lay.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { GRAND_HALL_RENDER_DIMENSIONS } from "../../../../constants/scale.js";
 import type { PublishedCapacityAnswer } from "../../../../lib/planner-truth.js";
 import { setPlannerFeaturesForTesting } from "../../../../lib/planner-features.js";
@@ -131,12 +131,41 @@ describe("Fill's prompt over a layout", () => {
     expect(typeof said === "string" ? said.slice(said.indexOf("Tables")) : said)
       .toBe("Tables 1, 2 and 3 stayed where they are, because each has a note that cannot be shown here.");
   });
+
+  it("says which rounds stay for their notes when they leave it no room, not only that the room has none (KG2)", () => {
+    // Three rounds in a row across the middle: unmarked, the fill sets two of them anew for twenty.
+    const laid = roundsAt([-6, 0, 6]);
+    const tables = new Set(laid.filter((piece) => (piece.label ?? "") !== "").map((piece) => piece.id));
+    usePlacementStore.setState({ placedItems: laid });
+    render(<AutoFillPrompt style="dinner-rounds" published={PUBLISHED} onPlaced={vi.fn()} onCancel={vi.fn()} />);
+    askFor(20);
+    expect(screen.queryByTestId("auto-fill-no-room")).toBeNull();
+
+    // Held where they stand for their notes, the same three leave the gangways no room.
+    act(() => {
+      useEditorStore.setState({
+        isPublicPreview: true,
+        notesIncluded: false,
+        baseObjects: laid.map((piece) => ({ ...placedItemToEditor(piece, undefined), ...(tables.has(piece.id) ? { noteHeld: true } : {}) })),
+      });
+    });
+    expect(screen.getByTestId("auto-fill-no-room").textContent).toBe("There is no room for this layout at this spacing.");
+    expect(screen.getByTestId("auto-fill-kept-for-notes").textContent)
+      .toBe("Tables 1, 2 and 3 stayed where they are, because each has a note that cannot be shown here.");
+    expect(screen.getByTestId("auto-fill-place")).toHaveProperty("disabled", true);
+    expect(usePlacementStore.getState().placedItems).toBe(laid);
+  });
 });
 
 /** Five rounds of 10 in a row across the hall, named Table 1 to Table 5. */
 function fiveRounds(): readonly PlacedItem[] {
+  return roundsAt([-6, -3, 0, 3, 6]);
+}
+
+/** Rounds of 10 at these points along the hall's middle, named Table 1 onwards. */
+function roundsAt(xs: readonly number[]): readonly PlacedItem[] {
   const params = cardParamsFor("round");
   if (params === null) throw new Error("no round");
-  return [-6, -3, 0, 3, 6].flatMap((x, i) => stampSetup(params, { x, z: 0 }, 0)
+  return xs.flatMap((x, i) => stampSetup(params, { x, z: 0 }, 0)
     .map((piece, p) => (p === 0 ? { ...piece, label: `Table ${String(i + 1)}` } : piece)));
 }

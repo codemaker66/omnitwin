@@ -34,6 +34,7 @@ import {
   roomExits,
   type AutoFillPlan,
   type AutoFillStyle,
+  type NoRoomFill,
   type RoomFill,
 } from "../../../lib/auto-fill.js";
 import "./AutoFill.css";
@@ -100,7 +101,7 @@ export function AutoFillPrompt({ style, published, onPlaced, onCancel }: AutoFil
   const heldNotes = useEditorStore((state) => heldNoteIds(state));
   const exits = useMemo(() => roomExits(roomSlug), [roomSlug]);
   // A round's seats are the event's chair as well (its table group reads it), so both plans follow the event.
-  const preview = useMemo((): { readonly plan: AutoFillPlan; readonly fill: RoomFill | null } | null => {
+  const preview = useMemo((): { readonly plan: AutoFillPlan | null; readonly fill: RoomFill | NoRoomFill | null } | null => {
     if (guests === null) return null;
     const widthM = dimensions.width / RENDER_SCALE;
     const lengthM = dimensions.length / RENDER_SCALE;
@@ -108,19 +109,20 @@ export function AutoFillPrompt({ style, published, onPlaced, onCancel }: AutoFil
     const table = getCatalogueItemBySlug(DEFAULT_PLANNER_ROUND_TABLE_SLUG);
     if (fillsOver && placedItems !== null && table !== undefined) {
       const fill = planRoomFill({ table, seatsPerTable: banquetSeatsPerTable(table), guests, roomWidthM: widthM, roomLengthM: lengthM, exits, rule: FILL_AISLE_RULE, doorSpaces: keepOuts }, placedItems, (id) => heldNotes.has(id));
-      return fill === null ? null : { plan: fill.plan, fill };
+      return { plan: fill.plan, fill };
     }
-    const planned = planAutoFill(style, guests, widthM, lengthM, eventChair, { doorSpaces: keepOuts });
-    return planned === null ? null : { plan: planned, fill: null };
+    return { plan: planAutoFill(style, guests, widthM, lengthM, eventChair, { doorSpaces: keepOuts }), fill: null };
   }, [guests, style, dimensions, fillsOver, placedItems, exits, eventChair, doorSpaces, heldNotes]);
   const plan = preview?.plan ?? null;
   // What a fill over a laid floor does to the rounds already there, said before it is pressed (planner-qol C-02).
   const consequence = useMemo(() => {
     const fill = preview?.fill ?? null;
-    if (fill === null || placedItems === null) return null;
+    if (fill === null || fill.plan === null || placedItems === null) return null;
     const noted = new Set(objects.filter((object) => object.notes.trim() !== "").map((object) => object.id));
     return fillConsequence(placedItems, fill.refillIds, fill.plan, (id) => noted.has(id));
   }, [preview, placedItems, objects]);
+  // Rounds left where they stand for their notes can be what leaves the fill no room: said beside the room's line (review of #388, KG2).
+  const keptWithoutRoom = plan === null && preview !== null && preview.fill !== null ? fillKeptForNotesLine(preview.fill.keptForNotes) : null;
   const figure = publishedFigureFor(published, option.format);
   const short = plan === null ? null : roomAtSpacingLine(plan, figure);
   // Only when the room takes them: above the published figure is its own fact.
@@ -195,6 +197,9 @@ export function AutoFillPrompt({ style, published, onPlaced, onCancel }: AutoFil
       )}
       {guests !== null && plan === null && (
         <p className="auto-fill__note" data-testid="auto-fill-no-room">There is no room for this layout at this spacing.</p>
+      )}
+      {keptWithoutRoom !== null && (
+        <p className="auto-fill__note" data-testid="auto-fill-kept-for-notes">{keptWithoutRoom}</p>
       )}
       {plan !== null && (
         <p className="auto-fill__basis" id={basisId} data-testid="auto-fill-basis">{autoFillBasis(plan)}</p>

@@ -1043,7 +1043,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
         // The same doors the prompt's preview kept clear (AutoFillPrompt), so what it said is what lands.
         doorSpaces,
       }, state.placedItems, (id) => heldNotes.has(id));
-      if (fill === null) return null;
+      if (fill.plan === null) return null;
       // A kept chair the planner never sets takes the plan's chair where it would reach a door.
       const refilled = refillPieces(state.placedItems, fill.refillIds, fill.plan, undefined, { doorSpaces });
       if (refilled.length === 0) return null;

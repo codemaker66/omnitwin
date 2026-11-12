@@ -1061,6 +1061,16 @@ export interface RoomFill {
 }
 
 /**
+ * Fill over what is placed that finds no room at this spacing. The rounds it
+ * would have left where they stand for their notes may be what leaves it none
+ * (review of #388, KG2), so they are kept to be said, as RoomFill's are.
+ */
+export interface NoRoomFill {
+  readonly plan: null;
+  readonly keptForNotes: readonly ChangedPiece[];
+}
+
+/**
  * Fill over a layout (Q-10), the one function the prompt's preview and the
  * store's commit both call, so what the button says is what it places:
  * only round groups of the fill table's kind are set anew; every other
@@ -1077,7 +1087,7 @@ export function planRoomFill(
   input: Omit<GangwayFillInput, "keepOuts">,
   placedItems: readonly PlacedItem[],
   holdsUnseenNote: (id: string) => boolean = () => false,
-): RoomFill | null {
+): RoomFill | NoRoomFill {
   const ofKind = fillRefillIds(placedItems, input.table);
   const heldGroups = new Set(placedItems
     .filter((placed) => ofKind.has(placed.id) && holdsUnseenNote(placed.id))
@@ -1095,7 +1105,7 @@ export function planRoomFill(
     const byChair = chair === undefined ? null : heldNotePieceNamed(chair, kept).label;
     return { label: byChair ?? (label === "" ? null : label), noun: "round" };
   });
-  return plan === null ? null : { plan, refillIds, keptForNotes };
+  return plan === null ? { plan, keptForNotes } : { plan, refillIds, keptForNotes };
 }
 
 /** Every kept piece as a keep-out, metres, room-centred: its footprint and the aisle round it. */
