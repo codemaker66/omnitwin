@@ -157,16 +157,22 @@ function steps(): number {
   return useEditorStore.getState().history.past.length;
 }
 
-/** Saves, the server echoing what it was sent, and returns the batch that went. */
-async function savedBatch(): Promise<readonly BatchObjectInput[]> {
+/**
+ * Saves, the server echoing what it was sent, and returns the batch that went.
+ * `held` are the rows that hold a note this browser is not shown: the answer
+ * marks them again, as the API's does.
+ */
+async function savedBatch(held: ReadonlySet<string> = new Set<string>()): Promise<readonly BatchObjectInput[]> {
+  const revision = (useEditorStore.getState().configRevision ?? 4) + 1;
   vi.mocked(configApi.publicBatchSave).mockImplementationOnce((_id, batch) => Promise.resolve({
-    revision: 5,
+    revision,
     objects: batch.map((piece, index): PlacedObject => ({
-      id: piece.id ?? `0c0c0c0c-0000-4000-8000-${String(index).padStart(12, "0")}`,
+      id: piece.id ?? `0c0c0c0c-0000-4000-8000-${String(revision).padStart(6, "0")}${String(index).padStart(6, "0")}`,
       configurationId: PLAN, assetDefinitionId: piece.assetDefinitionId,
       positionX: String(piece.positionX), positionY: String(piece.positionY), positionZ: String(piece.positionZ),
       rotationX: String(piece.rotationX), rotationY: String(piece.rotationY), rotationZ: String(piece.rotationZ),
-      scale: String(piece.scale), sortOrder: piece.sortOrder, metadata: piece.metadata ?? null,
+      scale: String(piece.scale), sortOrder: piece.sortOrder,
+      metadata: piece.id !== undefined && held.has(piece.id) ? { ...piece.metadata, noteHeld: true } : piece.metadata ?? null,
     })),
   }));
   let saved = false;
@@ -509,13 +515,24 @@ describe.each(WAYS_TO_REMOVE)("removing with $name", (way) => {
     expect(notice()).toBe("Table 2 stayed where it is, because it has a note that cannot be shown here.");
     expect(steps()).toBe(stepsBefore + 1);
 
+    // What the server acts on is the batch, not the scene (it removes every row a batch leaves out): Table 2 and
+    // its chairs go as their own rows, and say nothing of a note, which keeps the one the table holds.
+    const rows = second.pieces.map((piece) => piece.id);
+    const says = (batch: readonly BatchObjectInput[]): boolean => batch.some((piece) => piece.metadata?.notes !== undefined || piece.replacesNote !== undefined);
+    const afterRemoval = await savedBatch(new Set([second.table]));
+    expect(afterRemoval.map((piece) => piece.id)).toEqual(rows);
+    expect(says(afterRemoval)).toBe(false);
+
     // One Undo brings the two that went back; Redo takes them again. Table 2 is the server's own row throughout.
     act(() => { useEditorStore.getState().undo(); });
     expect(tableNames()).toEqual(["Table 1", "Table 2", "Table 3"]);
-    expect(placedIds()).toEqual(expect.arrayContaining(second.pieces.map((piece) => piece.id)));
+    expect(placedIds()).toEqual(expect.arrayContaining(rows));
     act(() => { useEditorStore.getState().redo(); });
     expect(tableNames()).toEqual(["Table 2"]);
-    expect(placedIds()).toEqual(second.pieces.map((piece) => piece.id));
+    expect(placedIds()).toEqual(rows);
+    const afterRedo = await savedBatch(new Set([second.table]));
+    expect(afterRedo.map((piece) => piece.id)).toEqual(rows);
+    expect(says(afterRedo)).toBe(false);
   });
 
   it.each<Read>(["with its notes", "by today's API"])("removes the piece as it always did in a plan read %s", async (read) => {
