@@ -18,6 +18,7 @@ import {
   rimToNearestWall,
   sideOfWall,
   squareIntoRoom,
+  standsOnTheFloor,
   straightWalls,
   unitToPoint,
   unitToWall,
@@ -99,6 +100,20 @@ describe("the slow way round the Saloon and the Reception Room", () => {
     const robertAdam = wallsOf("Robert Adam Room");
     expect(wayKeepsToFloor(robertAdam, -4.8, 8.0, -4.8, 4.4, 1e-6)).toBe(false);
     expect(wayKeepsToFloor(robertAdam, -4.0, 8.0, -4.0, 4.4, 1e-6)).toBe(true);
+  });
+
+  it("knows a piece wholly on the floor from one through a wall", () => {
+    const saloon = wallsOf("Saloon");
+    const box = (x: number, z: number, halfW: number, halfD: number, turn: number): Shape => ({ kind: "box", x, z, halfW, halfD, turn });
+    // A banquet chair flush in the corner of the south-east alcove beside the pier: on the floor, touching two walls.
+    expect(standsOnTheFloor(saloon, box(6.325, -0.375, 0.225, 0.225, 0))).toBe(true);
+    // A trestle's chair whose back edge is 5 mm inside the west pier, z = −0.15, from x = −6.445 to −6.025.
+    expect(standsOnTheFloor(saloon, box(-6.235, 0.145, 0.21, 0.29, 0))).toBe(false);
+    // A chair astride the pier's front corner (5.95, −0.15): its corners in the room and the alcove, the wall's corner inside it.
+    expect(standsOnTheFloor(saloon, box(5.95, -0.15, 0.2, 0.2, Math.PI / 4))).toBe(false);
+    // A 6 ft round in the middle of the room, and one whose rim crosses the north wall, z = 3.45.
+    expect(standsOnTheFloor(saloon, { kind: "disc", x: 0, z: 0, radius: 0.915 })).toBe(true);
+    expect(standsOnTheFloor(saloon, { kind: "disc", x: 0, z: 2.95, radius: 0.915 })).toBe(false);
   });
 
   it("knows the Reception Room's stepped-in corners", () => {

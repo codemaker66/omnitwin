@@ -216,6 +216,28 @@ function pointToStretch(px: number, pz: number, ax: number, az: number, bx: numb
   return Math.hypot(px - (ax + along * (bx - ax)), pz - (az + along * (bz - az)));
 }
 
+/**
+ * Whether a piece stands wholly on the floor, no part of it through a wall: a
+ * box with every corner inside the walls or within a thousandth of a
+ * millimetre of one, and no corner of the walls inside it; a disc with its
+ * middle inside and every wall at least its radius away.
+ */
+export function standsOnTheFloor(walls: Walls, shape: Shape): boolean {
+  if (shape.kind === "disc") {
+    return insideWalls(walls, shape.x, shape.z)
+      && wallsOf(walls).every(([ax, az, bx, bz]) => pointToStretch(shape.x, shape.z, ax, az, bx, bz) >= shape.radius - TOUCHING);
+  }
+  const cos = Math.cos(shape.turn);
+  const sin = Math.sin(shape.turn);
+  const corners = ([[-1, -1], [1, -1], [1, 1], [-1, 1]] as const).map(([sx, sz]) => [
+    shape.x + sx * shape.halfW * cos + sz * shape.halfD * sin,
+    shape.z - sx * shape.halfW * sin + sz * shape.halfD * cos,
+  ] as const);
+  if (!corners.every(([x, z]) => onOrInside(walls, x, z, TOUCHING))) return false;
+  const within: Shape = { ...shape, halfW: shape.halfW - TOUCHING, halfD: shape.halfD - TOUCHING };
+  return walls.every(([x, z]) => nearestOnShape(within, x, z).gap > 0);
+}
+
 /** How much of a wall the edges of an outline lie along, metres: an edge counts where both its ends are on the wall's line. */
 export function lengthAlongWall(outline: Walls, wall: Wall): number {
   const [ax, az, bx, bz] = wall;

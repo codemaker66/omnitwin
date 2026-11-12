@@ -31,7 +31,7 @@ import {
   verdictOn,
   type Room,
 } from "./gangway-against-walls.js";
-import { insideWalls, nearestOnShape, onOrInside, squareIntoRoom, TOUCHING, type Shape, type Wall } from "./walls-the-slow-way.js";
+import { insideWalls, nearestOnShape, squareIntoRoom, standsOnTheFloor, TOUCHING, type Shape, type Wall } from "./walls-the-slow-way.js";
 
 const CHAIR = piece("burgess-turini-18-3");
 const TRESTLE = piece("trestle-6ft");
@@ -242,19 +242,6 @@ describe("the gangway review of a unit with a piece that touches a wall only at 
 // the pier is measured through the pier, the judge says so (falseGap).
 // ---------------------------------------------------------------------------
 
-/** Whether a box stands wholly on the floor: every corner inside the walls or on one, and no corner of the walls inside it. */
-function wholeOnTheFloor(r: Room, shape: Shape & { readonly kind: "box" }): boolean {
-  const cos = Math.cos(shape.turn);
-  const sin = Math.sin(shape.turn);
-  const corners = ([[-1, -1], [1, -1], [1, 1], [-1, 1]] as const).map(([sx, sz]) => [
-    shape.x + sx * shape.halfW * cos + sz * shape.halfD * sin,
-    shape.z - sx * shape.halfW * sin + sz * shape.halfD * cos,
-  ] as const);
-  if (!corners.every(([x, z]) => onOrInside(r.walls, x, z, 1e-9))) return false;
-  const within = { ...shape, halfW: shape.halfW - 1e-6, halfD: shape.halfD - 1e-6 };
-  return r.walls.every(([x, z]) => nearestOnShape(within, x, z).gap > 0);
-}
-
 describe("lone chairs set through the Saloon's alcoves", () => {
   const CHAIR_IN_ALCOVES = piece("banquet-chair");
 
@@ -280,8 +267,8 @@ describe("lone chairs set through the Saloon's alcoves", () => {
             const x = east * (6.55 - reachX - 0.03 * i);
             const z = north * (0.15 + reachZ + 0.03 * j);
             const chair = createPlacedItem(CHAIR_IN_ALCOVES.id, x, z, turn, null, 0, "chair-1");
-            const shape = { kind: "box" as const, x, z, halfW, halfD, turn };
-            if (!wholeOnTheFloor(r, shape)) continue;
+            const shape: Shape = { kind: "box", x, z, halfW, halfD, turn };
+            if (!standsOnTheFloor(r.walls, shape)) continue;
             const toAnEnd = Math.min(...r.walls.map(([wx, wz]) => nearestOnShape(shape, wx, wz).gap));
             if (toAnEnd > TOUCHING && toAnEnd <= 0.001) {
               inTheBand += 1;
