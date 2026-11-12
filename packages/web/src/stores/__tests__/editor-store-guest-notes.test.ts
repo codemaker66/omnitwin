@@ -816,6 +816,33 @@ describe("removing a piece whose only note is the person's own, in a browser the
     expect(server.notes.get(A)).toBe(ALLERGY);
   });
 
+  it("meets a newer version at the clearing save as any save does: the usual choice is offered, and nothing is lost", async () => {
+    const server: PlanOnServer = { revision: 4, notes: new Map([[A, ALLERGY]]) };
+    await withOwnNoteOnB(server);
+    // The maker moves C before this browser's removal is saved.
+    theyNowHave(server, [placed(A, { noteHeld: true }), placed(B, { noteHeld: true }), placed(C, {}, 6)]);
+    const sentBefore = savesSent();
+    store().removeObject(B);
+
+    // The clearing save is sent on the revision the confirmed document was read at, and that is no longer the server's.
+    expect(await store().saveToServer(false)).toBe(false);
+    expect(savesSent()).toBe(sentBefore + 1);
+    expect(sentPiece(sentBefore, B).replacesNote).toBe(MINE);
+    expect(store()).toMatchObject({ saveErrorCode: "REVISION_CONFLICT", isDirty: true, isSaving: false });
+    expect(store().saveConflict?.currentRevision).toBe(server.revision);
+    // Nothing went: the note is on the server, and this version is as the person left it.
+    expect(server.notes.get(B)).toBe(MINE);
+    expect(pieceIds()).toEqual([A, C]);
+
+    // Keeping this version: B's note can no longer be vouched for across the versions, so B stays, with its note.
+    expect(await store().keepMine(false)).toBe(true);
+    expect(store()).toMatchObject({ saveConflict: null, saveError: null, isDirty: false });
+    expect(pieceIds()).toContain(B);
+    expect(notice()).toMatch(/ stayed where it is, because it has a note that cannot be shown here\.$/u);
+    expect(server.notes.get(B)).toBe(MINE);
+    expect(server.notes.get(A)).toBe(ALLERGY);
+  });
+
   it("sends the one save for a piece that carries no note", async () => {
     const server: PlanOnServer = { revision: 4, notes: new Map([[A, ALLERGY]]) };
     await withOwnNoteOnB(server);
