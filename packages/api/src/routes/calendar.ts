@@ -11,6 +11,7 @@ import {
   NEXT_ACTIONS_DUE_HORIZON_DAYS,
   NEXT_ACTIONS_DUE_LIMIT,
   deriveBookingState,
+  resolveRotaTimeZone,
   type CalendarBookingEntry,
   type CalendarEntry,
   type CalendarQuery,
@@ -196,7 +197,8 @@ export async function calendarRoutes(
       // are one stay there (services/calendar-conflicts.ts).
       db.select({ timeZone: venues.timezone }).from(venues).where(eq(venues.id, query.venueId)).limit(1),
     ]);
-    const timeZone = venue?.timeZone ?? "Europe/London";
+    // A zone no clock knows is read as the house's, as the rota reads it (review Y4).
+    const timeZone = resolveRotaTimeZone(venue?.timeZone);
 
     const knownSpaceIds = new Set(venueSpaces.map((space) => space.id));
     const requestedSpaceIds = query.spaceIds?.filter((id) => knownSpaceIds.has(id));

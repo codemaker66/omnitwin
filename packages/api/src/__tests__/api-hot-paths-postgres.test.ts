@@ -891,6 +891,31 @@ describe.skipIf(target === undefined)("API hot paths through real routes and Pos
       expect(report.conflicts.filter((conflict) => conflict.type === "viewing_overlap")).toEqual([]);
     });
 
+    // T-695 review Y4: a zone the column holds but no clock knows (written by
+    // hand, or before writes were checked) is read as the house's, as the
+    // rota and the room day read it; the Diary does not answer 500.
+    it("reads the Diary of a venue whose stored zone no clock knows", async () => {
+      const a = await venue("unreadable zone");
+      await db.update(schema.venues).set({ timezone: "Nowhere/Never_Land" }).where(eq(schema.venues.id, a.venueId));
+      const staff = await a.actor("staff");
+      const room = a.rooms[0] ?? "";
+      const ink = (title: string, startsAt: string, eventId?: string): typeof schema.bookings.$inferInsert => ({
+        venueId: a.venueId, spaceId: room, kind: "ink", title, startsAt: new Date(startsAt),
+        endsAt: new Date(Date.parse(startsAt) + 3 * HOUR), ...(eventId === undefined ? {} : { eventId }),
+      });
+      // Two pieces of one event that do not touch, so the engine asks which day each is.
+      const [first] = await insertBoundBookings(db, [ink("Conference, day one", "2027-09-17T08:00:00.000Z")]);
+      if (first?.eventId === null || first?.eventId === undefined) throw new Error("The conference has no event");
+      await insertBoundBookings(db, [ink("Conference, day two", "2027-09-18T08:00:00.000Z", first.eventId)]);
+
+      const response = await server.inject({
+        method: "GET", headers: bearer(staff),
+        url: `/calendar?venueId=${a.venueId}&from=2027-09-16T23:00:00.000Z&to=2027-09-19T23:00:00.000Z`,
+      });
+      expect(response.statusCode, response.body).toBe(200);
+      expect(response.json<{ data: { entries: { id: string }[] } }>().data.entries.map((entry) => entry.id)).toContain(first.id);
+    });
+
     // T-695 api-diary-bookings-5: the owner recorded on a hold may since have
     // moved to another venue or stopped working the Diary. Such a hold is
     // reported as nobody's, as the reminder's own rule says, never emailed.
