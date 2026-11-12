@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { eventDisplayName, eventNameFor } from "../event-name.js";
+import { eventDisplayName, eventNameFor, eventTitleFor } from "../event-name.js";
 
 // What an event is called when it has no name of its own (the release lead's
 // ruling of 12 November 2026 on #397): the occasion and the venue's own day
@@ -132,5 +132,53 @@ describe("eventDisplayName", () => {
     expect(eventDisplayName({ name: "jane.fraser@example.test — Wedding", eventType: "wedding", startsAt: MARCH_14 }, LONDON))
       .toBe("Wedding, 14 March 2027");
     expect(eventDisplayName({ name: "jane.fraser@example.test", eventType: null, startsAt: MARCH_14 }, LONDON)).toBe("Event, 14 March 2027");
+  });
+});
+
+// A hold a client proposes is titled by its event and keeps that title when
+// it moves, so the title carries no day: the name a person gave the event,
+// else the occasion alone (the release lead's ruling of 12 November 2026 on
+// #407, item 1). It rests on the same decision as the shown name, so the two
+// never disagree: where the shown name is the stored one, the title is that
+// name; where the shown name is made from the occasion and the day, the
+// title is that occasion.
+describe("eventTitleFor", () => {
+  const rows: readonly { readonly name: string; readonly eventType: string | null; readonly given: boolean; readonly title: string }[] = [
+    { name: "Fraser wedding", eventType: "wedding", given: true, title: "Fraser wedding" },
+    { name: "  Fraser wedding ", eventType: "wedding", given: true, title: "Fraser wedding" },
+    { name: "Drinks @ the Saloon", eventType: "reception", given: true, title: "Drinks @ the Saloon" },
+    // A dated name that is not the one made for this event's day is someone's,
+    // as the rule that moves a made name's day reads it (syncEventStatus).
+    { name: "Wedding, 21 March 2027", eventType: "wedding", given: true, title: "Wedding, 21 March 2027" },
+    { name: "", eventType: "wedding", given: false, title: "Wedding" },
+    { name: "   ", eventType: null, given: false, title: "Event" },
+    { name: " — Drinks reception", eventType: null, given: false, title: "Drinks reception" },
+    { name: "jane.fraser@example.test — Wedding", eventType: "wedding", given: false, title: "Wedding" },
+    { name: "jane.fraser@example.test", eventType: null, given: false, title: "Event" },
+    // The name the API made for the event (createEventFor) is nobody's.
+    { name: "Wedding, 14 March 2027", eventType: "wedding", given: false, title: "Wedding" },
+    { name: " Dinner, 14 March 2027 ", eventType: "dinner", given: false, title: "Dinner" },
+  ];
+
+  it("is the stored name wherever that is shown, and the occasion alone wherever the shown name is made", () => {
+    for (const { name, eventType, given, title } of rows) {
+      const event = { name, eventType, startsAt: MARCH_14 };
+      expect(eventTitleFor(event, LONDON), JSON.stringify(name)).toBe(title);
+      expect(eventDisplayName(event, LONDON), JSON.stringify(name)).toBe(given ? title : `${title}, 14 March 2027`);
+    }
+  });
+
+  it("knows a made name by the venue's own day", () => {
+    // 03:30 UTC on 10 May is 23:30 on 9 May in New York: the API named the
+    // event for the 9th there, and nobody gave it that name.
+    const event = { name: "Dinner, 9 May 2030", eventType: "dinner", startsAt: "2030-05-10T03:30:00.000Z" };
+    expect(eventTitleFor(event, "America/New_York")).toBe("Dinner");
+    // On a London clock the same words name another day than the event's, so someone gave them.
+    expect(eventTitleFor(event, LONDON)).toBe("Dinner, 9 May 2030");
+  });
+
+  it("is the occasion alone for an event with no start", () => {
+    expect(eventTitleFor({ name: "", eventType: "wedding", startsAt: null }, LONDON)).toBe("Wedding");
+    expect(eventTitleFor({ name: "Wedding", eventType: "wedding", startsAt: null }, LONDON)).toBe("Wedding");
   });
 });

@@ -23,7 +23,8 @@ export const ScheduleSlotSchema = z.object({
   // CalendarBookingEntrySchema, which keeps a blank title as it is, this read
   // trims. Writers no longer store an empty or blank title: the Create,
   // Update, ConvertEnquiry and BookViewing schemas refuse one, and a client's
-  // proposal takes its event's shown name (eventDisplayName), never blank.
+  // proposal takes its event's title (eventTitleFor: the name a person gave
+  // it, else its occasion), never blank.
   // Refusing it here failed the client's whole schedule, and a proposal's
   // reply after the move had landed.
   title: z.string().trim().max(200),

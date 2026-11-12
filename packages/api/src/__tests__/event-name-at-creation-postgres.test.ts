@@ -304,23 +304,33 @@ describe.skipIf(target === undefined)("an event made for a booking is named so a
     const client = {
       authorization: `Bearer ${JSON.stringify({ id: clientId, email: `${clientId}@event-name.invalid`, name: "TEST ONLY Morag Client", role: "client", venueId: null, platformRole: "none" })}`,
     };
-    const propose = async (day: string, status: number): Promise<void> => {
+    const propose = async (day: string, status: number): Promise<string> => {
       const response = await server.inject({
         method: "PUT", url: `/events/${eventId}/proposed-window`, headers: client,
         payload: { spaceId: v.rooms[0], startsAt: `${day}T16:00:00.000Z`, endsAt: `${day}T23:00:00.000Z`, idempotencyKey: randomUUID() },
       });
       expect(response.statusCode, response.body).toBe(status);
+      return response.json<{ data: { bookingId: string } }>().data.bookingId;
     };
 
     // The client proposes the time held for them, and the office lets its
     // own hold go: the client's proposal is now what the event's day is.
-    await propose("2032-10-02", 201);
+    const proposal = await propose("2032-10-02", 201);
     const released = await server.inject({ method: "POST", url: `/bookings/${hold.id}/transition`, headers: v.headers, payload: { toState: "released" } });
     expect(released.statusCode, released.body).toBe(200);
     expect(await eventName(eventId)).toBe("Wedding, 2 October 2032");
 
-    await propose("2032-10-09", 200);
+    expect(await propose("2032-10-09", 200)).toBe(proposal);
     expect(await eventName(eventId)).toBe("Wedding, 9 October 2032");
+    // The client's hold moved with it and still says what it is for: titled
+    // by the occasion alone, it carries no day to go stale (eventTitleFor).
+    const [moved] = await db.select({ title: schema.bookings.title, nextAction: schema.bookings.nextAction, startsAt: schema.bookings.startsAt })
+      .from(schema.bookings).where(eq(schema.bookings.id, proposal));
+    expect(moved).toEqual({
+      title: "Wedding",
+      nextAction: "Decide TEST ONLY Morag Client's proposed time for Wedding",
+      startsAt: new Date("2032-10-09T16:00:00.000Z"),
+    });
   });
 
   it("names the event of an enquiry's rows written at once by the earliest of them, not the first", async () => {

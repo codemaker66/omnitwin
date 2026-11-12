@@ -1,5 +1,5 @@
 import { and, desc, eq, gt, isNull, lt, sql } from "drizzle-orm";
-import { eventDisplayName, type ClientEventScheduleSlot, type PlatformRole, type ProposeWindow } from "@omnitwin/types";
+import { eventTitleFor, type ClientEventScheduleSlot, type PlatformRole, type ProposeWindow } from "@omnitwin/types";
 import type { Database } from "../db/client.js";
 import { bookings, diaryCommands, events, spaces, users, venues } from "../db/schema.js";
 import { canProposeWindow, isClientSideRole } from "../utils/query.js";
@@ -210,10 +210,10 @@ export async function proposeWindowCore(
       const decisionAt = decisionDateFor(startsAt, now);
       [row] = await tx.insert(bookings).values({
         venueId: eventRow.venueId, spaceId: space.id, eventId, kind: "hold", status: "active",
-        title: eventDisplayName(eventRow, eventRow.timeZone), eventType: eventRow.eventType, startsAt, endsAt,
+        title: eventTitleFor(eventRow, eventRow.timeZone), eventType: eventRow.eventType, startsAt, endsAt,
         rank: await nextRank(tx, space.id, startsAt, endsAt, null),
         jointFlag: false, decisionAt, ownerUserId,
-        nextAction: `Decide ${actor.name}'s proposed time for ${eventDisplayName(eventRow, eventRow.timeZone)}`.slice(0, 500),
+        nextAction: `Decide ${actor.name}'s proposed time for ${eventTitleFor(eventRow, eventRow.timeZone)}`.slice(0, 500),
         nextActionDueAt: decisionAt, createdBy: actor.id,
       }).returning();
       if (row === undefined) return deny(500, "BOOKING_CREATE_FAILED", "The proposal could not be kept.");

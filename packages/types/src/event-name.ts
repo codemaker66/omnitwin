@@ -69,6 +69,35 @@ export interface EventNameInput {
   readonly timeZone: string;
 }
 
+/** What a title says of its event. */
+interface TitleReading {
+  /** The title, trimmed and cut to an event name's length, when it says what
+   *  the event is; null when it says nothing of it: blank, the bare
+   *  " — <occasion>", or holding an email address. */
+  readonly said: string | null;
+  /** The occasion a bare " — <occasion>" title names, else "". */
+  readonly occasion: string;
+}
+
+function readTitle(title: string): TitleReading {
+  const trimmed = title.trim();
+  // What the title says once any address is taken out of it.
+  const withoutAddresses = trimmed.replace(EMAIL_ADDRESS, "").trim();
+  const bare = BARE_OCCASION_TITLE.exec(withoutAddresses);
+  if (withoutAddresses === trimmed && trimmed !== "" && bare === null) {
+    return { said: trimmed.slice(0, MAX_EVENT_NAME_LENGTH), occasion: "" };
+  }
+  return { said: null, occasion: bare?.[1]?.trim() ?? "" };
+}
+
+/** "<Occasion>, <the venue's day>", or the occasion alone with no day. The
+ *  occasion is the event's own, else the one a title's " — <occasion>" names. */
+function madeName(reading: TitleReading, eventType: string | null | undefined, startsAt: Date | string | null, timeZone: string): string {
+  const occasion = occasionLabel(eventType) ?? (reading.occasion === "" ? NO_OCCASION : reading.occasion);
+  const day = venueDay(startsAt, timeZone);
+  return (day === null ? occasion : `${occasion}, ${day}`).slice(0, MAX_EVENT_NAME_LENGTH);
+}
+
 /**
  * The name a person reads for an event: the title, trimmed, when it says
  * something and holds no email address; otherwise "<Occasion>, <the venue's
@@ -77,15 +106,8 @@ export interface EventNameInput {
  * own, else the one a title's " — <occasion>" names.
  */
 export function eventNameFor(input: EventNameInput): string {
-  const title = input.title.trim();
-  // What the title says once any address is taken out of it.
-  const said = title.replace(EMAIL_ADDRESS, "").trim();
-  const bare = BARE_OCCASION_TITLE.exec(said);
-  if (said === title && title !== "" && bare === null) return title.slice(0, MAX_EVENT_NAME_LENGTH);
-  const fromTitle = bare?.[1]?.trim() ?? "";
-  const occasion = occasionLabel(input.eventType) ?? (fromTitle === "" ? NO_OCCASION : fromTitle);
-  const day = venueDay(input.startsAt, input.timeZone);
-  return (day === null ? occasion : `${occasion}, ${day}`).slice(0, MAX_EVENT_NAME_LENGTH);
+  const reading = readTitle(input.title);
+  return reading.said ?? madeName(reading, input.eventType, input.startsAt, input.timeZone);
 }
 
 /** The fields of a stored event its shown name is made from. */
@@ -96,10 +118,41 @@ export interface NamedEvent {
 }
 
 /**
- * The name to show for a stored event: its own, or eventNameFor's when it was
- * stored without one. For display only: the stored name stays as it is (reads
- * carry it as stored), and only a person gives the event a name.
+ * A stored event's name when a person gave it; otherwise the name made from
+ * its occasion and `day` (the occasion alone when `day` is null). Whether a
+ * person gave it is decided here and nowhere else, so the shown name and the
+ * title never disagree. Nobody did when the stored name says nothing of the
+ * event (blank, the bare " — <occasion>", or holding an email address), or
+ * when it is the very name eventNameFor makes for the event's start on the
+ * venue's day: the name the API stored for it (createEventFor) and moves with
+ * its day (syncEventStatus). A person who typed exactly those words cannot be
+ * told from it, and is read the same way.
+ */
+function storedEventName(event: NamedEvent, timeZone: string, day: Date | string | null): string {
+  const reading = readTitle(event.name);
+  if (reading.said !== null && reading.said !== eventNameFor({ title: "", eventType: event.eventType, startsAt: event.startsAt, timeZone })) {
+    return reading.said;
+  }
+  return madeName(reading, event.eventType, day, timeZone);
+}
+
+/**
+ * The name to show for a stored event: the one a person gave it, or
+ * eventNameFor's from its occasion and day. For display only: reads carry the
+ * stored name as it is, and display never writes it. The API names an event
+ * when it makes it and moves the day of a name it made; nothing else renames.
  */
 export function eventDisplayName(event: NamedEvent, timeZone: string): string {
-  return eventNameFor({ title: event.name, eventType: event.eventType, startsAt: event.startsAt, timeZone });
+  return storedEventName(event, timeZone, event.startsAt);
+}
+
+/**
+ * What a booking made for an existing event is titled: the name a person gave
+ * the event, else its occasion alone ("Wedding", "Event"), never a day. A
+ * booking keeps its title wherever it moves, and a day copied from the
+ * event's name would go stale there (a client's proposed hold,
+ * window-proposals.ts).
+ */
+export function eventTitleFor(event: NamedEvent, timeZone: string): string {
+  return storedEventName(event, timeZone, null);
 }

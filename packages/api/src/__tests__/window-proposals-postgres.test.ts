@@ -135,18 +135,34 @@ describe.skipIf(target === undefined)("window proposals on migrated PostgreSQL",
     expect(row.decisionAt?.getTime()).toBeLessThan(Date.parse(at("18:00")));
   });
 
-  it("names a proposal on an event stored without a name as the event is shown, on the venue's own day", async () => {
-    // An event made before eventNameFor named every new one can hold "" (#407).
-    // 03:30 UTC on 10 May is 23:30 on 9 May in New York.
+  // A proposal's hold keeps its title wherever it moves, so it carries no day
+  // (#407, the release lead's second ruling, item 1): an event nobody named is
+  // titled by its occasion alone (eventTitleFor).
+  it("titles a proposal on an event stored without a name by its occasion alone", async () => {
+    // An event made before eventNameFor named every new one can hold "".
     const f = await fixture();
-    await db.update(schema.venues).set({ timezone: "America/New_York" }).where(eq(schema.venues.id, f.venueId));
     await db.update(schema.events).set({ name: "", startsAt: new Date("2030-05-10T03:30:00.000Z"), endsAt: new Date("2030-05-10T08:00:00.000Z") })
       .where(eq(schema.events.id, f.eventId));
     const made = granted(await propose(f, f.client, "18:00", "23:00"));
-    expect(made.slot.title).toBe("Dinner, 9 May 2030");
+    expect(made.slot.title).toBe("Dinner");
     const row = await stored(made.slot.bookingId);
-    expect(row.title).toBe("Dinner, 9 May 2030");
-    expect(row.nextAction).toBe("Decide Morag Client's proposed time for Dinner, 9 May 2030");
+    expect(row.title).toBe("Dinner");
+    expect(row.nextAction).toBe("Decide Morag Client's proposed time for Dinner");
+  });
+
+  it("titles a proposal on an event the API named by its occasion alone, knowing that name by the venue's own day", async () => {
+    // 03:30 UTC on 10 May is 23:30 on 9 May in New York, so the API named the
+    // event for the 9th there. On a London clock these words would name
+    // another day than the event's, and be read as a name a person gave.
+    const f = await fixture();
+    await db.update(schema.venues).set({ timezone: "America/New_York" }).where(eq(schema.venues.id, f.venueId));
+    await db.update(schema.events).set({ name: "Dinner, 9 May 2030", startsAt: new Date("2030-05-10T03:30:00.000Z"), endsAt: new Date("2030-05-10T08:00:00.000Z") })
+      .where(eq(schema.events.id, f.eventId));
+    const made = granted(await propose(f, f.client, "18:00", "23:00"));
+    expect(made.slot.title).toBe("Dinner");
+    const row = await stored(made.slot.bookingId);
+    expect(row.title).toBe("Dinner");
+    expect(row.nextAction).toBe("Decide Morag Client's proposed time for Dinner");
   });
 
   it("replays the same key as the same hold, and moves the hold on a new key instead of making a second", async () => {
