@@ -81,10 +81,14 @@ export function copyForEditorSaveStatus(status: EditorSaveStatus): EditorSaveSta
 /**
  * The words for a save the API refused and explained itself (409 NOTE_HELD: it
  * would have changed a note this browser is not shown): the API's own
- * sentence, and nothing that says retry.
+ * sentence as the description, and nothing that says retry. The control is
+ * still named for the unsaved layout it saves: named by the refusal, which can
+ * say "Reload the page", it was announced as something it does not do, and
+ * lost its visible caption from its name (delta review of #388 at 713dc3f1, C4).
  */
 export function copyForRefusedSave(refusal: string): EditorSaveStatusCopy {
-  return { label: refusal, shortLabel: copyForEditorSaveStatus("unsaved").shortLabel, description: refusal };
+  const unsaved = copyForEditorSaveStatus("unsaved");
+  return { label: unsaved.label, shortLabel: unsaved.shortLabel, description: refusal };
 }
 
 // ---------------------------------------------------------------------------

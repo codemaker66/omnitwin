@@ -420,8 +420,10 @@ describe("ReferenceRoomHeader", () => {
     expect(screen.getByRole("status").textContent).toBe(refusal);
     expect(document.body.textContent).not.toMatch(/retry/iu);
     expect(screen.queryByRole("button", { name: /retry/iu })).toBeNull();
-    // The header's one save control is still that: it saves once the note is cleared.
-    fireEvent.click(screen.getByRole("button", { name: refusal }));
+    // The header's one save control is still that: it saves once the note is cleared. It is named for what it
+    // does, and the refusal describes it (delta review of #388 at 713dc3f1, C4): named by the refusal, which
+    // can say "Reload the page", it read as a reload while it saves.
+    fireEvent.click(screen.getByRole("button", { name: "Save layout", description: refusal }));
     expect(save).toHaveBeenCalledTimes(1);
     // Any other failed save reads as it did.
     act(() => { useEditorStore.setState({ saveError: "Network error", saveErrorCode: "NETWORK_ERROR" }); });

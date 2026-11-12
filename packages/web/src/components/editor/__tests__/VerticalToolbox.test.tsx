@@ -86,7 +86,9 @@ describe("VerticalToolbox undo buttons", () => {
   ])("shows a save refused over a held note in the API's own words, with no Retry (%s)", (code, refusal) => {
     useEditorStore.setState({ configId: "saved", configRevision: 1, isPublicPreview: true, isDirty: true, saveError: refusal, saveErrorCode: code });
     renderToolbox();
-    const save = screen.getByRole("button", { name: refusal });
+    // Named for the state its caption shows, so the name holds the visible "Unsaved" (WCAG 2.5.3), and described by
+    // the refusal (delta review of #388 at 713dc3f1, C4): the button saves, whatever the refusal says to do.
+    const save = screen.getByRole("button", { name: "Unsaved changes", description: refusal });
     expect(save.textContent).toBe("Unsaved");
     expect(screen.queryByRole("button", { name: /retry/iu })).toBeNull();
     expect(document.body.textContent).not.toMatch(/retry/iu);
