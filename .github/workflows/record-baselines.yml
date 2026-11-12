@@ -82,16 +82,17 @@ jobs:
         run: pnpm --filter @omnitwin/types build
 
       - name: Install Playwright browsers
-        # Same as ci.yml's e2e step (#383): one --with-deps try capped at 180 s
-        # (normally 20-35 s), then Chromium alone from Playwright's download
-        # host, so an unreachable Ubuntu apt mirror cannot block recording. A
-        # missing system library makes the browser fail to start, so this
-        # cannot record a baseline from a broken browser.
+        # Unlike ci.yml and production-receipt.yml, this step does NOT fall back
+        # to an apt-free install. On the ubuntu-24.04 image --with-deps adds only
+        # fonts (FreeFont, Unifont, IPA, WenQuanYi, Loma, xfonts-cyrillic,
+        # xfonts-scalable), so without it a few symbol glyphs could render in
+        # another face and be committed as the new baseline. Recording is manual
+        # and rare, so when the Ubuntu apt mirror is unreachable it fails loudly
+        # and is re-run later. 180 s caps a hung mirror (normally 20-35 s).
         run: |
           if timeout --kill-after=10 180 pnpm --filter @omnitwin/web exec playwright install --with-deps chromium; then exit 0; fi
-          echo "::warning::playwright install --with-deps failed or ran past 180 s; the Ubuntu apt mirror may be unreachable"
-          echo "::warning::Installing Chromium without apt; relying on the runner image's own system libraries"
-          pnpm --filter @omnitwin/web exec playwright install chromium
+          echo "::error::playwright install --with-deps failed or ran past 180 s. Baselines are not recorded without its system fonts; re-run this workflow when the Ubuntu apt mirror is reachable."
+          exit 1
 
       - name: Record the named cases
         working-directory: packages/web
