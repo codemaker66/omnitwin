@@ -1,0 +1,79 @@
+import { describe, expect, it } from "vitest";
+import { eventNameFor } from "../event-name.js";
+
+// What an event is called when it has no name of its own (the release lead's
+// ruling of 12 November 2026 on #397): the occasion and the venue's own day
+// of its start, "Wedding, 14 March 2027", or "Event, 14 March 2027" with no
+// occasion. Never anything personal: the name travels to sheets, supplier
+// passes and notifications.
+
+const LONDON = "Europe/London";
+const MARCH_14 = "2027-03-14T18:00:00.000Z";
+
+describe("eventNameFor", () => {
+  it("keeps a booking's own title, trimmed", () => {
+    expect(eventNameFor({ title: "  Fraser wedding ", eventType: "wedding", startsAt: MARCH_14, timeZone: LONDON })).toBe("Fraser wedding");
+    // A dash inside a title is part of someone's name for it.
+    expect(eventNameFor({ title: "Fraser — Wedding", eventType: "wedding", startsAt: MARCH_14, timeZone: LONDON })).toBe("Fraser — Wedding");
+  });
+
+  it("names an event with no title by its occasion and day", () => {
+    for (const title of ["", "   "]) {
+      expect(eventNameFor({ title, eventType: "wedding", startsAt: MARCH_14, timeZone: LONDON }), JSON.stringify(title)).toBe("Wedding, 14 March 2027");
+    }
+    expect(eventNameFor({ title: "", eventType: "reception", startsAt: MARCH_14, timeZone: LONDON })).toBe("Drinks reception, 14 March 2027");
+    // An occasion typed in free reads as typed.
+    expect(eventNameFor({ title: "", eventType: " Charity gala ", startsAt: MARCH_14, timeZone: LONDON })).toBe("Charity gala, 14 March 2027");
+  });
+
+  it("calls it an event when there is no occasion either", () => {
+    for (const eventType of [null, undefined, "", "   "]) {
+      expect(eventNameFor({ title: "", eventType, startsAt: MARCH_14, timeZone: LONDON }), String(eventType)).toBe("Event, 14 March 2027");
+    }
+  });
+
+  it("treats the bare ' — <occasion>' an enquiry with a blank name once gave as no title", () => {
+    // As written before #350, and as a read that trims it shows it.
+    for (const title of [" — Wedding", "— Wedding", "—Wedding"]) {
+      expect(eventNameFor({ title, eventType: "wedding", startsAt: MARCH_14, timeZone: LONDON }), title).toBe("Wedding, 14 March 2027");
+    }
+    expect(eventNameFor({ title: " — Drinks reception", eventType: "reception", startsAt: MARCH_14, timeZone: LONDON }))
+      .toBe("Drinks reception, 14 March 2027");
+    // The event's own occasion decides; without one, the occasion the title names.
+    expect(eventNameFor({ title: " — Wedding", eventType: "dinner", startsAt: MARCH_14, timeZone: LONDON })).toBe("Dinner, 14 March 2027");
+    expect(eventNameFor({ title: " — Wedding", eventType: null, startsAt: MARCH_14, timeZone: LONDON })).toBe("Wedding, 14 March 2027");
+    expect(eventNameFor({ title: " — ", eventType: null, startsAt: MARCH_14, timeZone: LONDON })).toBe("Event, 14 March 2027");
+  });
+
+  it("dates it by the venue's own calendar day, near midnight and across both changes of the clocks", () => {
+    const day = (startsAt: string, timeZone = LONDON): string =>
+      eventNameFor({ title: "", eventType: null, startsAt, timeZone }).replace("Event, ", "");
+    // Greenwich Mean Time: the venue's day is the UTC day.
+    expect(day("2027-03-13T23:59:00.000Z")).toBe("13 March 2027");
+    // British Summer Time: 23:30 UTC is half past midnight the next day.
+    expect(day("2027-06-13T23:30:00.000Z")).toBe("14 June 2027");
+    // The spring change, 01:00 UTC on Sunday 28 March 2027.
+    expect(day("2027-03-27T23:30:00.000Z")).toBe("27 March 2027");
+    expect(day("2027-03-28T00:30:00.000Z")).toBe("28 March 2027");
+    expect(day("2027-03-28T23:30:00.000Z")).toBe("29 March 2027");
+    // The autumn change, 01:00 UTC on Sunday 31 October 2027.
+    expect(day("2027-10-30T23:30:00.000Z")).toBe("31 October 2027");
+    expect(day("2027-10-31T23:30:00.000Z")).toBe("31 October 2027");
+    // Another venue's clock.
+    expect(day("2027-03-15T03:30:00.000Z", "America/New_York")).toBe("14 March 2027");
+    expect(day("2027-03-14T14:00:00.000Z", "Australia/Sydney")).toBe("15 March 2027");
+  });
+
+  it("takes the start as an instant or its ISO string alike", () => {
+    expect(eventNameFor({ title: "", eventType: "wedding", startsAt: new Date(MARCH_14), timeZone: LONDON })).toBe("Wedding, 14 March 2027");
+  });
+
+  it("names the occasion alone when the event has no start", () => {
+    expect(eventNameFor({ title: "", eventType: "wedding", startsAt: null, timeZone: LONDON })).toBe("Wedding");
+    expect(eventNameFor({ title: "", eventType: null, startsAt: "not a date", timeZone: LONDON })).toBe("Event");
+  });
+
+  it("never gives a name longer than an event's name may be", () => {
+    expect(eventNameFor({ title: "x".repeat(250), eventType: null, startsAt: MARCH_14, timeZone: LONDON })).toHaveLength(200);
+  });
+});

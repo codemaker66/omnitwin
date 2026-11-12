@@ -7,11 +7,12 @@ import {
   bookingKindNeedsEvent,
   defaultEventPhaseInputs,
   deriveEventStatus,
+  eventNameFor,
   summariseEventBookings,
   type EventStatus,
 } from "@omnitwin/types";
 import type { Database } from "../db/client.js";
-import { bookings, enquiries, eventPhases, events } from "../db/schema.js";
+import { bookings, enquiries, eventPhases, events, venues } from "../db/schema.js";
 
 // ---------------------------------------------------------------------------
 // The bind (event-spine Phase A; migration 0090).
@@ -32,8 +33,9 @@ import { bookings, enquiries, eventPhases, events } from "../db/schema.js";
 //   - the event its enquiry's other bookings already have (the enquiry row is
 //     locked first, so two holds pencilled at once from one enquiry join one
 //     event rather than making two);
-// otherwise a new event is made from the booking: its title, type and times,
-// a draft until syncEventStatus derives its status from the bookings.
+// otherwise a new event is made from the booking: its title (without one,
+// its occasion and day: eventNameFor in @omnitwin/types), type and times, a
+// draft until syncEventStatus derives its status from the bookings.
 //
 // Lock order: a booking path locks its bookings first, then the enquiry, then
 // the event (syncEventStatus, FOR NO KEY UPDATE so it never waits on another
@@ -99,12 +101,18 @@ export function defaultEventPhaseRows(eventId: string): (typeof eventPhases.$inf
 }
 
 /** A new event for a booking. Headcounts stay unknown (0 and null) until
- *  someone enters them; nothing is copied that nobody stated. */
+ *  someone enters them; nothing is copied that nobody stated. It is named by
+ *  the booking's title, or, when the booking has none it can use, by its
+ *  occasion and the venue's own day of its start (eventNameFor): an event
+ *  named "" failed every read of its name, the client's schedule and home,
+ *  the Diary range and the room's timeline among them. */
 async function createEventFor(conn: BindConn, seed: EventSeed): Promise<string> {
+  const [venue] = await conn.select({ timeZone: venues.timezone }).from(venues).where(eq(venues.id, seed.venueId)).limit(1);
+  if (venue === undefined) throw new Error("A new event's venue is missing");
   const [created] = await conn.insert(events).values({
     venueId: seed.venueId,
     createdBy: seed.createdBy,
-    name: seed.title,
+    name: eventNameFor({ title: seed.title, eventType: seed.eventType, startsAt: seed.startsAt, timeZone: venue.timeZone }),
     eventType: seed.eventType,
     status: "draft",
     startsAt: seed.startsAt,

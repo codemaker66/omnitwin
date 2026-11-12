@@ -1067,6 +1067,8 @@ export {
   type EnquirySource,
 } from "./enquiry.js";
 
+export { eventNameFor, type EventNameInput } from "./event-name.js";
+
 export {
   PricingRuleIdSchema,
   SUPPORTED_CURRENCIES,
