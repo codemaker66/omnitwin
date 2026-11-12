@@ -258,6 +258,10 @@
   margin: 3px 0 0;
   font-size: 13px;
   color: var(--ink, #fbf2df);
+  /* A value that wraps (the Ceiling's figure and note) splits into even lines
+   * rather than leaving one word alone on the last: in the 149px desktop column
+   * "6.7 m — to the coffered ceiling" would otherwise end on a lone "ceiling". */
+  text-wrap: balance;
 }
 
 /* The venue's own qualifier, e.g. what the Grand Hall's height is measured to.
@@ -272,6 +276,9 @@
   font-size: 10.5px;
   line-height: 1.45;
   color: var(--ink-3, #b9aa8b);
+  /* The footnote leads with a room's remark (the Grand Hall's dome) before the
+   * provenance; no word is left alone on its last line. */
+  text-wrap: pretty;
 }
 
 .vv-twin-dossier-action {
