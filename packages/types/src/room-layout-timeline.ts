@@ -222,7 +222,11 @@ export const RoomLayoutTimelineFrameSchema = z.object({
   id: EventPhaseIdSchema,
   kind: z.enum(["phase", "room_flip"]),
   eventId: EventIdSchema,
-  eventName: z.string().trim().min(1).max(200),
+  // The room's timeline names an event stored without a name by eventNameFor
+  // (routes/room-layout-timeline.ts), as the frame does not carry the event's
+  // start; this read still takes "", since refusing it failed the room's
+  // whole timeline.
+  eventName: z.string().trim().max(200),
   eventType: z.string().trim().max(80).nullable(),
   eventStatus: EventStatusSchema,
   eventGuestCount: z.number().int().nonnegative(),

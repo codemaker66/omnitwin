@@ -71,6 +71,16 @@ describe("client event schedule contract", () => {
     expect(UpdateBookingSchema.safeParse({ title: "   " }).success).toBe(false);
   });
 
+  it("reads an event stored with no name, so it never fails the whole schedule (the event-name ruling)", () => {
+    // Events made before eventNameFor named them can hold "" (an untitled
+    // booking's); the screens name them by their occasion and day.
+    const original = schedule();
+    for (const name of ["", "   "]) {
+      expect(ClientEventScheduleSchema.parse({ ...original, event: { ...original.event, name } }).event.name, JSON.stringify(name)).toBe("");
+    }
+    expect(ClientEventScheduleSchema.safeParse({ ...original, event: { ...original.event, name: "x".repeat(201) } }).success).toBe(false);
+  });
+
   // The reads above take what is stored; no writer stores it. Each input is
   // otherwise valid, so the title is the one thing refused.
   const WINDOW = { startsAt: "2026-10-25T18:00:00.000Z", endsAt: "2026-10-25T23:00:00.000Z" };
