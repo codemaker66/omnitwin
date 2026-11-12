@@ -3,6 +3,7 @@ import { VenueIdSchema } from "./venue.js";
 import { SpaceIdSchema } from "./space.js";
 import { ConfigurationIdSchema } from "./configuration.js";
 import { UserIdSchema } from "./user.js";
+import { isCalendarDate } from "./calendar-date.js";
 import {
   AcquisitionChannelSchema,
   EnquiryAttributionSchema,
@@ -215,7 +216,9 @@ export const GuestEnquirySchema = z
       .max(GUEST_ENQUIRY_LIMITS.nameLength)
       .transform((name) => (name === "" ? undefined : name))
       .optional(),
-    eventDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    /** A day the calendar has: it is stored in a date column, which refuses
+     *  "2027-02-30", "2027-13-01" and year 0000 (audit enquiries-crm-6). */
+    eventDate: z.string().refine(isCalendarDate, "Not a calendar date").optional(),
     eventType: z.string().trim().max(100).optional(),
     guestCount: z.number().int().nonnegative().max(GUEST_ENQUIRY_LIMITS.guestCount).optional(),
     message: z.string().max(GUEST_ENQUIRY_LIMITS.messageLength).optional(),
