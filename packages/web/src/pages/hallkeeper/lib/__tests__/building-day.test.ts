@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { SupplierArrival } from "@omnitwin/types";
+import type { CalendarPhaseEntry, SupplierArrival } from "@omnitwin/types";
 import { buildingDay } from "../building-day.js";
 import type { DayBoardLane, DayBoardSlot } from "../day-board-state.js";
 
@@ -9,23 +9,41 @@ import type { DayBoardLane, DayBoardSlot } from "../day-board-state.js";
 // opens it; the last one's end, by the small hours after, locks it up; a
 // stretch already running as the day begins, or running on past the night,
 // is named instead of a time. A night's lock-up stays with the day it began.
+// A setup is a phase on the Diary, as deriveDayBoard reads it, and a phase on
+// the day whose booking is on another day counts too.
 // November is on GMT, so these UTC times are the venue's clock.
 // ---------------------------------------------------------------------------
 
 const TZ = "Europe/London";
 const ms = (time: string, day = "14"): number => Date.parse(`2026-11-${day}T${time}:00.000Z`);
 const SATURDAY = { date: "2026-11-14", dayBoundaryHour: 4, timeZone: TZ };
+const GRAND_HALL = "00000000-0000-4000-8000-0000000000a1";
 
-function slot(bookingId: string, title: string, setup: string, start: string, end: string, clear: string, days: { setup?: string; end?: string } = {}, kind: DayBoardSlot["kind"] = "ink"): DayBoardSlot {
-  const setupMs = ms(setup, days.setup ?? "14");
+let p = 0;
+/** A phase on the Diary, in the Grand Hall unless another room is named. */
+function phase(eventId: string, eventName: string, name: string, fromMs: number, toMs: number, spaceId = GRAND_HALL): CalendarPhaseEntry {
+  p += 1;
   return {
-    bookingId, title, kind, setupStartsAtMs: setupMs, startsAtMs: ms(start, days.setup ?? "14"), endsAtMs: ms(end, days.end ?? "14"),
-    segments: { setupStartsAtMs: setupMs, doorsAtMs: ms(start, days.setup ?? "14"), endsAtMs: ms(end, days.end ?? "14"), clearDownEndsAtMs: ms(clear, days.end ?? "14"), turnaroundMinutes: 60 },
+    entryType: "phase", id: `00000000-0000-4000-8000-${p.toString(16).padStart(12, "a")}`, spaceId, eventId, eventName, name,
+    startsAt: new Date(fromMs).toISOString(), endsAt: new Date(toMs).toISOString(), sortOrder: p,
+  };
+}
+
+/** A slot as deriveDayBoard makes it: a setup before its doors is a phase of its event. */
+function slot(bookingId: string, title: string, setup: string, start: string, end: string, clear: string, days: { setup?: string; start?: string; end?: string } = {}, kind: DayBoardSlot["kind"] = "ink"): DayBoardSlot {
+  const setupMs = ms(setup, days.setup ?? "14");
+  const startMs = ms(start, days.start ?? days.setup ?? "14");
+  const eventId = kind === "internal_block" || kind === "prospect" ? null : `event-${bookingId}`;
+  const phases: readonly CalendarPhaseEntry[] = eventId !== null && setupMs < startMs ? [phase(eventId, title, "Setup", setupMs, startMs)] : [];
+  return {
+    bookingId, title, kind, roomId: GRAND_HALL, eventId, setupStartsAtMs: setupMs, startsAtMs: startMs, endsAtMs: ms(end, days.end ?? "14"),
+    phases,
+    segments: { setupStartsAtMs: setupMs, doorsAtMs: startMs, endsAtMs: ms(end, days.end ?? "14"), clearDownEndsAtMs: ms(clear, days.end ?? "14"), turnaroundMinutes: 60 },
   } as DayBoardSlot;
 }
 
 function lanes(...slots: DayBoardSlot[]): DayBoardLane[] {
-  return [{ room: { id: "00000000-0000-4000-8000-0000000000a1", name: "Grand Hall", slug: "grand-hall", sortOrder: 0 }, slots }];
+  return [{ room: { id: GRAND_HALL, name: "Grand Hall", slug: "grand-hall", sortOrder: 0 }, slots }];
 }
 
 let n = 0;
@@ -119,9 +137,8 @@ describe("buildingDay", () => {
   });
 
   describe("a setup through the night", () => {
-    const conference = slot("conf", "Trades conference", "22:00", "09:00", "17:00", "18:00", { setup: "13" });
     // Its doors are the 14th's; its setup began the evening before.
-    const built = { ...conference, startsAtMs: ms("09:00"), segments: { ...conference.segments, doorsAtMs: ms("09:00") } };
+    const built = slot("conf", "Trades conference", "22:00", "09:00", "17:00", "18:00", { setup: "13", start: "14" });
 
     it("holds the building open from the night before, rather than an evening dinner opening it", () => {
       const day = buildingDay(lanes(built, slot("dinner", "Wedding dinner", "16:30", "18:30", "23:00", "23:30")), [], SATURDAY);
@@ -137,6 +154,57 @@ describe("buildingDay", () => {
       expect(day.lockUpAfter).toBeNull();
       expect(day.heldUntil).toMatchObject({ title: "Trades conference", setsUp: true });
     });
+  });
+
+  describe("tomorrow's booking, from tonight's phases", () => {
+    // The 13th's board: its read holds the phases on the 13th, whatever day
+    // their booking is, but not the booking itself, which is the 14th's.
+    const FRIDAY = { ...SATURDAY, date: "2026-11-13" };
+    const lunch = slot("lunch", "Friday lunch", "11:00", "12:00", "16:30", "17:30", { setup: "13", end: "13" });
+    const CONFERENCE = "00000000-0000-4000-8000-0000000000e9";
+
+    it("means no lock-up when tomorrow's setup runs through the night", () => {
+      const setup = phase(CONFERENCE, "Trades conference", "Setup", ms("22:00", "13"), ms("09:00", "14"));
+      const day = buildingDay(lanes(lunch), [], FRIDAY, [...lunch.phases, setup]);
+      expect(day.lockUpAfter).toBeNull();
+      expect(day.heldUntil).toMatchObject({ title: "Trades conference setup", setsUp: false, provisional: false });
+    });
+
+    it("locks up after tomorrow's setup tonight, not after the day's own last booking", () => {
+      const setup = phase(CONFERENCE, "Trades conference", "Setup", ms("18:00", "13"), ms("22:00", "13"));
+      const day = buildingDay(lanes(lunch), [], FRIDAY, [setup]);
+      expect(day.lockUpAfter).toEqual({ atMs: ms("22:00", "13"), why: "Trades conference setup ends" });
+      // On the 14th the setup is over before the day begins: the doors open it.
+      const conference = { ...slot("conf", "Trades conference", "09:00", "09:00", "17:00", "18:00"), eventId: CONFERENCE };
+      const saturday = buildingDay(lanes(conference), [], SATURDAY, []);
+      expect([saturday.openBy, saturday.heldFrom]).toEqual([{ atMs: ms("09:00"), why: "Trades conference begins" }, null]);
+    });
+
+    it("leaves the building empty between a setup that ends in the small hours and the morning's doors", () => {
+      const setup = phase(CONFERENCE, "Trades conference", "Setup", ms("23:00", "13"), ms("01:00", "14"));
+      expect(buildingDay(lanes(lunch), [], FRIDAY, [setup]).lockUpAfter).toEqual({ atMs: ms("01:00", "14"), why: "Trades conference setup ends" });
+      // The 14th's read holds that phase too, now beside its booking: it does not hold the building all night.
+      const conference = { ...slot("conf", "Trades conference", "09:00", "09:00", "17:00", "18:00"), eventId: CONFERENCE, setupStartsAtMs: ms("23:00", "13"), phases: [setup] };
+      const saturday = buildingDay(lanes(conference), [], SATURDAY, [setup]);
+      expect(saturday.heldFrom).toBeNull();
+      expect(saturday.openBy).toEqual({ atMs: ms("09:00"), why: "Trades conference begins" });
+    });
+
+    it("names a phase in a room its event has no booking in under the booking's title, provisional when it is", () => {
+      const burns = slot("burns", "Burns supper", "17:00", "19:00", "23:00", "23:30", { setup: "13", end: "13" }, "hold");
+      const piping = phase(burns.eventId ?? "", "Burns night", "Piping in", ms("18:00", "13"), ms("18:30", "13"), "00000000-0000-4000-8000-0000000000a2");
+      const day = buildingDay(lanes(burns), [], FRIDAY, [...burns.phases, piping]);
+      expect(day.openBy).toEqual({ atMs: ms("17:00", "13"), why: "Burns supper sets up (provisional)" });
+      const strike = phase(burns.eventId ?? "", "Burns night", "Strike", ms("23:30", "13"), ms("00:30", "14"), "00000000-0000-4000-8000-0000000000a2");
+      expect(buildingDay(lanes(burns), [], FRIDAY, [strike]).lockUpAfter).toEqual({ atMs: ms("00:30", "14"), why: "Burns supper strike ends (provisional)" });
+    });
+  });
+
+  it("keeps the building for a booking's own phase after it ends, such as its strike", () => {
+    const dinner = slot("dinner", "Wedding dinner", "16:30", "18:30", "23:00", "23:30");
+    const strike = phase(dinner.eventId ?? "", "Morrison wedding", "AV strike", ms("23:30"), ms("01:00", "15"));
+    const day = buildingDay(lanes({ ...dinner, phases: [...dinner.phases, strike] }), [], SATURDAY, [...dinner.phases, strike]);
+    expect(day.lockUpAfter).toEqual({ atMs: ms("01:00", "15"), why: "Wedding dinner AV strike ends" });
   });
 
   describe("the night's lock-up stays with the day it began", () => {
@@ -163,11 +231,16 @@ describe("buildingDay", () => {
   });
 
   it("reads the venue's clock in summer", () => {
-    const june = slot("dinner", "Midsummer dinner", "16:00", "18:00", "22:30", "23:00");
-    const shifted = { ...june, setupStartsAtMs: Date.parse("2026-06-13T15:00:00.000Z"), segments: { ...june.segments, clearDownEndsAtMs: Date.parse("2026-06-13T22:00:00.000Z") },
-      startsAtMs: Date.parse("2026-06-13T17:00:00.000Z"), endsAtMs: Date.parse("2026-06-13T21:30:00.000Z") };
-    const day = buildingDay(lanes(shifted), [], { ...SATURDAY, date: "2026-06-13" });
-    expect(day.openBy?.atMs).toBe(Date.parse("2026-06-13T15:00:00.000Z"));
-    expect(day.lockUpAfter?.atMs).toBe(Date.parse("2026-06-13T22:00:00.000Z"));
+    // 16:00 to 23:00 BST is 15:00 to 22:00 UTC.
+    const at = (iso: string): number => Date.parse(iso);
+    const june = {
+      ...slot("dinner", "Midsummer dinner", "16:00", "18:00", "22:30", "23:00"),
+      setupStartsAtMs: at("2026-06-13T15:00:00.000Z"), startsAtMs: at("2026-06-13T17:00:00.000Z"), endsAtMs: at("2026-06-13T21:30:00.000Z"),
+      phases: [phase("event-dinner", "Midsummer dinner", "Setup", at("2026-06-13T15:00:00.000Z"), at("2026-06-13T17:00:00.000Z"))],
+      segments: { setupStartsAtMs: at("2026-06-13T15:00:00.000Z"), doorsAtMs: at("2026-06-13T17:00:00.000Z"), endsAtMs: at("2026-06-13T21:30:00.000Z"), clearDownEndsAtMs: at("2026-06-13T22:00:00.000Z"), turnaroundMinutes: 30 },
+    };
+    const day = buildingDay(lanes(june), [], { ...SATURDAY, date: "2026-06-13" });
+    expect(day.openBy?.atMs).toBe(at("2026-06-13T15:00:00.000Z"));
+    expect(day.lockUpAfter?.atMs).toBe(at("2026-06-13T22:00:00.000Z"));
   });
 });

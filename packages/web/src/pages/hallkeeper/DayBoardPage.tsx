@@ -31,7 +31,7 @@ import { crewBySlot, unstaffedTurnRounds, UNSTAFFED_HORIZON_MS } from "./lib/tur
 import { useRotaDay } from "./lib/use-rota-day.js";
 import { arrivalNotices, arrivalParts } from "./lib/supplier-notices.js";
 import { useSupplierArrivals } from "./lib/use-supplier-arrivals.js";
-import { SUPPLIER_ARRIVAL_STAY_MS, buildingTickDays } from "@omnitwin/types";
+import { SUPPLIER_ARRIVAL_STAY_MS, buildingTickDays, type CalendarPhaseEntry } from "@omnitwin/types";
 import { buildingDay } from "./lib/building-day.js";
 import { useBuildingChecks } from "./lib/use-building-checks.js";
 import { BuildingSection } from "./DayBoardBuilding.js";
@@ -131,6 +131,7 @@ function keyboardFocus(target: EventTarget): boolean {
 const NO_DAYS: readonly BoardRange[] = [];
 /** The board before its day has landed: no lanes, one stable value. */
 const NO_LANES: readonly DayBoardLane[] = [];
+const NO_PHASES: readonly CalendarPhaseEntry[] = [];
 const DAY_MS = 86_400_000;
 /** The phone: the rooms in one column, everything a thumb's width. */
 const PHONE_QUERY = "(max-width: 760px)";
@@ -479,9 +480,15 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
   const lastNightChecks = useBuildingChecks(venueId, lastNightDate, venueId !== null && !wall && lastNightDate !== "");
   const dayArrivals = suppliers.arrivals;
   const earlierArrivals = suppliers.earlier;
+  // The day's read holds every phase that falls on the day, whichever day its
+  // booking is: tomorrow's setup tonight keeps the building open tonight.
+  const dayPhases = useMemo(
+    () => (data === null ? NO_PHASES : data.entries.filter((entry): entry is CalendarPhaseEntry => entry.entryType === "phase")),
+    [data],
+  );
   const building = useMemo(
-    () => buildingDay(lanes, [...earlierArrivals, ...dayArrivals], { date: shownDate, dayBoundaryHour, timeZone }),
-    [lanes, earlierArrivals, dayArrivals, shownDate, dayBoundaryHour, timeZone],
+    () => buildingDay(lanes, [...earlierArrivals, ...dayArrivals], { date: shownDate, dayBoundaryHour, timeZone }, dayPhases),
+    [lanes, earlierArrivals, dayArrivals, shownDate, dayBoundaryHour, timeZone, dayPhases],
   );
   const changedBySlot = useMemo(() => new Map([...changesBySlot]
     .filter(([, changes]) => changes.length > 0)
@@ -955,7 +962,9 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
               nowMs={nowMs}
               userId={user?.id ?? null}
               canTick={onFloor && tickDays.includes(shownDate)}
+              tickNote={onFloor ? "Checks are ticked on the day itself, and last night’s the morning after." : "Checks are ticked by the venue’s own team."}
               canPlan={plansSuppliers}
+              current={shownDate >= today}
               canMark={marksDoor}
               suppliers={suppliers}
             />

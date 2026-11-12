@@ -1,4 +1,4 @@
-import type { SupplierArrival } from "@omnitwin/types";
+import type { CalendarPhaseEntry, SupplierArrival } from "@omnitwin/types";
 import { wallInputToMs } from "../../diary/lib/board-time.js";
 import type { DayBoardLane, DayBoardSlot } from "./day-board-state.js";
 
@@ -6,15 +6,21 @@ import type { DayBoardLane, DayBoardSlot } from "./day-board-state.js";
 // The building's day (pure, T-693): when it must be open and when it can be
 // locked up, and who was marked in and not out.
 //
-// Everything that needs the building is a span: each function from its setup
-// to its clear-down (a provisional one says so), and each supplier from their
-// arrival to their leaving time. Spans that touch are one stretch of use. The
-// board's own day runs from its boundary hour to the next; a stretch is that
-// day's when it starts in it, so a night's late lock-up stays with the day it
-// began and never becomes the next morning's. "Open by" is the first stretch
-// the day begins; "Lock up after" is the last one's end, when that comes by
-// the small hours after the day. A stretch already running as the day begins
-// (a setup through the night) holds the building from before, and one that
+// Everything that needs the building is a span: each function's own hours to
+// its clear-down, each of its phases on the Diary (a provisional one says
+// so), and each supplier from their arrival to their leaving time. A setup
+// phase is its own span, so a setup the evening before leaves the building
+// empty overnight until the doors, rather than holding it all night. The
+// day's read carries every phase that falls on the day, whichever day its
+// booking is: a phase whose booking is not on this board (tomorrow's setup
+// tonight, a breakdown after an exhibition that has ended) counts too, under
+// its event's name. Spans that touch are one stretch of use. The board's own
+// day runs from its boundary hour to the next; a stretch is that day's when
+// it starts in it, so a night's late lock-up stays with the day it began and
+// never becomes the next morning's. "Open by" is the first stretch the day
+// begins; "Lock up after" is the last one's end, when that comes by the
+// small hours after the day. A stretch already running as the day begins (a
+// setup through the night) holds the building from before, and one that
 // runs on past the night holds it after: each is named instead of a time.
 // A booking running for days (an exhibition) has no daily hours on the
 // Diary: only its first setup and its last clear-down are known, and they
@@ -43,6 +49,8 @@ export interface BuildingHold {
   readonly setsUp: boolean;
   /** It runs for days: the Diary holds no daily hours for it. */
   readonly days: boolean;
+  /** A provisional booking: the board says so wherever it names it. */
+  readonly provisional: boolean;
 }
 
 /** A booking running for days, and where this day falls in it. */
@@ -80,21 +88,79 @@ function holdOf(slot: DayBoardSlot): BuildingHold {
     toMs: Math.max(slot.endsAtMs, slot.segments.clearDownEndsAtMs),
     setsUp: slot.setupStartsAtMs < slot.startsAtMs,
     days: slot.endsAtMs - slot.startsAtMs >= DAY_MS,
+    provisional: slot.kind === "hold",
   };
 }
 
-/** A function's span; a booking running for days gives only its known edges. */
+/** A phase's name as the middle of a sentence: "Setup" reads "setup", "AV check" stays. */
+function phaseWords(name: string): string {
+  const second = name.charAt(1);
+  return second !== "" && second === second.toLowerCase() && second !== second.toUpperCase()
+    ? `${name.charAt(0).toLowerCase()}${name.slice(1)}`
+    : name;
+}
+
+/**
+ * A phase on the Diary, as a span of its own. Before its booking's doors it
+ * is the booking's setup; otherwise it is named for what it is.
+ */
+function phaseNeed(phase: CalendarPhaseEntry, title: string, provisional: boolean, doorsAtMs: number | null): Need {
+  const fromMs = Date.parse(phase.startsAt);
+  const toMs = Date.parse(phase.endsAt);
+  const suffix = provisional ? " (provisional)" : "";
+  if (doorsAtMs !== null && fromMs < doorsAtMs) {
+    return {
+      fromMs, toMs, opens: `${title} sets up${suffix}`, closes: `${title} setup ends${suffix}`,
+      hold: { title, fromMs, toMs, setsUp: true, days: false, provisional },
+    };
+  }
+  const what = `${title} ${phaseWords(phase.name)}`;
+  return {
+    fromMs, toMs, opens: `${what} begins${suffix}`, closes: `${what} ends${suffix}`,
+    hold: { title: what, fromMs, toMs, setsUp: false, days: false, provisional },
+  };
+}
+
+/** A function's spans: its own hours to its clear-down, and each of its phases; a booking running for days gives only its known edges. */
 function slotNeeds(slot: DayBoardSlot): readonly Need[] {
   if (slot.kind === "internal_block" || slot.kind === "prospect") return [];
-  const provisional = slot.kind === "hold" ? " (provisional)" : "";
+  const provisional = slot.kind === "hold";
+  const suffix = provisional ? " (provisional)" : "";
   const hold = holdOf(slot);
-  const opens = `${slot.title} ${hold.setsUp ? "sets up" : "begins"}${provisional}`;
-  const closes = `${slot.title} ${hold.toMs > slot.endsAtMs ? "clears" : "ends"}${provisional}`;
-  if (!hold.days) return [{ fromMs: hold.fromMs, toMs: hold.toMs, opens, closes, hold }];
-  return [
-    { fromMs: hold.fromMs, toMs: hold.fromMs, opens, closes: null, hold },
-    { fromMs: hold.toMs, toMs: hold.toMs, opens: null, closes, hold },
-  ];
+  if (hold.days) {
+    const opens = `${slot.title} ${hold.setsUp ? "sets up" : "begins"}${suffix}`;
+    const closes = `${slot.title} ${hold.toMs > slot.endsAtMs ? "clears" : "ends"}${suffix}`;
+    return [
+      { fromMs: hold.fromMs, toMs: hold.fromMs, opens, closes: null, hold },
+      { fromMs: hold.toMs, toMs: hold.toMs, opens: null, closes, hold },
+    ];
+  }
+  const own: Need = {
+    fromMs: slot.startsAtMs,
+    toMs: hold.toMs,
+    opens: `${slot.title} begins${suffix}`,
+    closes: `${slot.title} ${hold.toMs > slot.endsAtMs ? "clears" : "ends"}${suffix}`,
+    hold: { ...hold, fromMs: slot.startsAtMs, setsUp: false },
+  };
+  return [own, ...slot.phases.map((phase) => phaseNeed(phase, slot.title, provisional, slot.startsAtMs))];
+}
+
+/**
+ * The day's phases that no booking on this board holds: a setup tonight for
+ * tomorrow's booking, a breakdown after one that has ended, a phase in a room
+ * its event has no booking in. Under the booking's title when its event is on
+ * the board in another room; otherwise under the event's own name.
+ */
+function loosePhaseNeeds(slots: readonly DayBoardSlot[], phases: readonly CalendarPhaseEntry[]): readonly Need[] {
+  const held = new Set(slots.flatMap((slot) => slot.phases.map((phase) => phase.id)));
+  const byEvent = new Map(slots.flatMap((slot) => (slot.eventId === null ? [] : [[slot.eventId, slot] as const])));
+  const seen = new Set<string>();
+  return phases.flatMap((phase) => {
+    if (held.has(phase.id) || seen.has(phase.id)) return [];
+    seen.add(phase.id);
+    const slot = byEvent.get(phase.eventId);
+    return [phaseNeed(phase, slot?.title ?? phase.eventName, slot?.kind === "hold", null)];
+  });
 }
 
 function arrivalNeed(arrival: SupplierArrival): Need {
@@ -102,10 +168,10 @@ function arrivalNeed(arrival: SupplierArrival): Need {
   const opens = `${arrival.supplierName} due`;
   // With no leaving time, nobody knows when they go: they open the building, never close it.
   if (arrival.leavesBy === null) {
-    return { fromMs, toMs: fromMs, opens, closes: null, hold: { title: arrival.supplierName, fromMs, toMs: fromMs, setsUp: false, days: false } };
+    return { fromMs, toMs: fromMs, opens, closes: null, hold: { title: arrival.supplierName, fromMs, toMs: fromMs, setsUp: false, days: false, provisional: false } };
   }
   const toMs = Date.parse(arrival.leavesBy);
-  return { fromMs, toMs, opens, closes: `${arrival.supplierName} out`, hold: { title: arrival.supplierName, fromMs, toMs, setsUp: false, days: false } };
+  return { fromMs, toMs, opens, closes: `${arrival.supplierName} out`, hold: { title: arrival.supplierName, fromMs, toMs, setsUp: false, days: false, provisional: false } };
 }
 
 interface Stretch {
@@ -168,6 +234,8 @@ export function buildingDay(
     readonly dayBoundaryHour: number;
     readonly timeZone: string;
   },
+  /** Every phase the day's read holds, whichever day its booking is. */
+  phases: readonly CalendarPhaseEntry[] = [],
 ): BuildingDay {
   const at = (date: string, hour: number): number => wallInputToMs(`${date}T${String(hour).padStart(2, "0")}:00`, day.timeZone) ?? Number.NaN;
   const nightHour = Math.max(day.dayBoundaryHour, NIGHT_ENDS_HOUR);
@@ -178,7 +246,7 @@ export function buildingDay(
   const tonightEndsMs = at(nextDate(day.date, 1), nightHour);
 
   const slots = lanes.flatMap((lane) => lane.slots);
-  const needs = [...slots.flatMap(slotNeeds), ...arrivals.map(arrivalNeed)];
+  const needs = [...slots.flatMap(slotNeeds), ...loosePhaseNeeds(slots, phases), ...arrivals.map(arrivalNeed)];
   const stretches = stretchesOf(needs);
   // A stretch running as the day begins, past last night's lock-up, holds the building from before.
   const carried = stretches.find((stretch) => stretch.fromMs < startMs && stretch.toMs > lastNightEndsMs);
@@ -189,7 +257,10 @@ export function buildingDay(
   const runsOn = last !== undefined && last.toMs > tonightEndsMs;
   const closer = latest(mine.flatMap((stretch) => stretch.needs));
   const heldFrom = carried === undefined ? undefined : earliest(carried.needs) ?? carried.needs[0];
-  const heldUntil = runsOn ? longest(last.needs) : undefined;
+  // What holds it after the night: whatever is under way as the night ends.
+  const heldUntil = runsOn
+    ? longest(last.needs.filter((need) => need.fromMs <= tonightEndsMs && need.toMs > tonightEndsMs)) ?? longest(last.needs)
+    : undefined;
   // Bookings running for days that run during this board day.
   const longHolds = slots
     .filter((slot) => slot.kind !== "internal_block" && slot.kind !== "prospect")

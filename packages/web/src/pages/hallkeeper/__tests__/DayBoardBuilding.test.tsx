@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { useState, type ReactElement } from "react";
 import type { BuildingCheck, BuildingChecksDay, SupplierArrival } from "@omnitwin/types";
-import { BuildingSection } from "../DayBoardBuilding.js";
+import { BuildingSection, type BuildingSuppliers } from "../DayBoardBuilding.js";
 import type { BuildingDay } from "../lib/building-day.js";
 import type { BuildingChecksApi, CheckOutcome } from "../lib/use-building-checks.js";
 import type { ArrivalOutcome } from "../lib/use-supplier-arrivals.js";
@@ -11,7 +12,10 @@ import type { ArrivalOutcome } from "../lib/use-supplier-arrivals.js";
 // across the day's edge; whoever is marked in and not out, with Gone; the
 // venue's own checks ticked by the floor, a tick taken back by whoever made
 // it or the office; last night's lock-up while it may still be ticked; and
-// the office's lists saved from the list the editor opened on.
+// the office's lists saved from the list the editor opened on, on today's
+// board or a later one. While the suppliers are read, or could not be, the
+// line says so; one marked gone here stays named, with Undo. What changes
+// under the keyboard keeps it in the section, and is said.
 // November is on GMT, so these UTC times are the venue's clock.
 // ---------------------------------------------------------------------------
 
@@ -61,15 +65,25 @@ function inside(name: string, arrivedAt: string): SupplierArrival {
   };
 }
 
+const arrived = (): Promise<ArrivalOutcome> => Promise.resolve("saved");
+
+function suppliersApi(overrides: Partial<BuildingSuppliers> = {}): BuildingSuppliers {
+  return {
+    status: "ready", reading: false, arrivals: [], earlier: [], busy: new Set(), failures: new Map(), refresh: vi.fn(),
+    step: vi.fn(arrived), undo: vi.fn(arrived), ...overrides,
+  };
+}
+
 interface Shown {
   readonly building?: BuildingDay;
   readonly api?: BuildingChecksApi;
   readonly lastNight?: { readonly api: BuildingChecksApi; readonly canTick: boolean } | null;
   readonly canTick?: boolean;
   readonly canPlan?: boolean;
+  readonly current?: boolean;
   readonly canMark?: boolean;
   readonly userId?: string | null;
-  readonly step?: () => Promise<ArrivalOutcome>;
+  readonly suppliers?: BuildingSuppliers;
 }
 
 function show(shown: Shown, open = true) {
@@ -83,13 +97,47 @@ function show(shown: Shown, open = true) {
     nowMs: NOW,
     userId: shown.userId === undefined ? JAMIE : shown.userId,
     canTick: shown.canTick ?? true,
+    tickNote: "Checks are ticked on the day itself, and last night’s the morning after.",
     canPlan: shown.canPlan ?? false,
+    current: shown.current ?? true,
     canMark: shown.canMark ?? false,
-    suppliers: { busy: new Set<string>(), failures: new Map<string, string>(), step: vi.fn(shown.step ?? (() => Promise.resolve<ArrivalOutcome>("saved"))) },
+    suppliers: shown.suppliers ?? suppliersApi(),
   };
   const view = render(<BuildingSection {...props} />);
   if (open) fireEvent.click(screen.getByText("The building"));
   return { props, view };
+}
+
+/** What a box is described by, read as one string. */
+function description(element: HTMLElement): string {
+  return (element.getAttribute("aria-describedby") ?? "").split(" ").filter((id) => id !== "")
+    .map((id) => document.getElementById(id)?.textContent ?? "").join(" ");
+}
+
+/**
+ * The section as the page holds it, with a stand-in for the suppliers' hook:
+ * Gone and Undo answer with the arrival as it now stands, and the day's
+ * still-in list follows from it.
+ */
+function WithSuppliers({ start, step, undo }: {
+  readonly start: readonly SupplierArrival[];
+  readonly step: (arrival: SupplierArrival) => Promise<ArrivalOutcome>;
+  readonly undo: (arrival: SupplierArrival) => Promise<ArrivalOutcome>;
+}): ReactElement {
+  const [arrivals, setArrivals] = useState(start);
+  const settle = (id: string, leftAt: string | null): void => {
+    setArrivals((current) => current.map((item) => (item.id === id ? { ...item, leftAt, leftByName: leftAt === null ? null : "Jamie" } : item)));
+  };
+  const suppliers = suppliersApi({
+    arrivals,
+    step: async (arrival) => { const outcome = await step(arrival); if (outcome === "saved") settle(arrival.id, new Date(NOW).toISOString()); return outcome; },
+    undo: async (arrival) => { const outcome = await undo(arrival); if (outcome === "saved") settle(arrival.id, null); return outcome; },
+  });
+  const building = { ...BUILDING, stillIn: arrivals.filter((item) => item.arrivedAt !== null && item.leftAt === null) };
+  return (
+    <BuildingSection building={building} api={api()} boardDate="2026-11-14" dayBoundaryHour={4} timeZone={TZ} nowMs={NOW}
+      userId={JAMIE} canTick canPlan={false} canMark suppliers={suppliers} />
+  );
 }
 
 describe("BuildingSection", () => {
@@ -161,7 +209,7 @@ describe("BuildingSection", () => {
   });
 
   it("names a booking running for days beside the day's own times, and its hours as not on the Diary", () => {
-    const exhibition = { title: "Glasgow Trades in Print", fromMs: ms("09:00", "12"), toMs: ms("17:45", "16"), setsUp: true, days: true, startsToday: false, endsToday: false };
+    const exhibition = { title: "Glasgow Trades in Print", fromMs: ms("09:00", "12"), toMs: ms("17:45", "16"), setsUp: true, days: true, provisional: false, startsToday: false, endsToday: false };
     show({ building: { ...BUILDING, longHolds: [exhibition] } });
     expect(screen.getByText("Open by 07:00 · Lock up after 01:00, after midnight · Glasgow Trades in Print runs all day · opening 1 of 2 · lock-up 0 of 2")).toBeTruthy();
     expect(screen.getByText("Glasgow Trades in Print runs from Thu 12 Nov to Mon 16 Nov; its daily hours are not on the Diary.")).toBeTruthy();
@@ -172,7 +220,7 @@ describe("BuildingSection", () => {
     show({ building: { ...BUILDING, openBy: null, longHolds: [{ ...exhibition, endsToday: true }] } });
     expect(screen.getByText(/^Lock up after 01:00, after midnight · Glasgow Trades in Print ends today/u)).toBeTruthy();
     cleanup();
-    const conference = { title: "Trades conference", fromMs: ms("22:00", "13"), toMs: ms("18:00"), setsUp: true, days: false };
+    const conference = { title: "Trades conference", fromMs: ms("22:00", "13"), toMs: ms("18:00"), setsUp: true, days: false, provisional: false };
     show({ building: { ...BUILDING, openBy: null, heldFrom: conference } });
     expect(screen.getByText(/^Open since last night · Lock up after 01:00/u)).toBeTruthy();
     expect(screen.getByText("Open since last night: Trades conference sets up through the night.")).toBeTruthy();
@@ -180,6 +228,12 @@ describe("BuildingSection", () => {
     show({ building: { ...BUILDING, lockUpAfter: null, heldUntil: { ...conference, fromMs: ms("22:00"), toMs: ms("18:00", "15") } } });
     expect(screen.getByText(/^Open by 07:00 · No lock-up tonight/u)).toBeTruthy();
     expect(screen.getByText("No lock-up tonight: Trades conference sets up through the night.")).toBeTruthy();
+    cleanup();
+    // A provisional booking says so wherever it is named.
+    show({ building: { ...BUILDING, longHolds: [{ ...exhibition, title: "Burns weekend", provisional: true }], heldUntil: { ...conference, provisional: true }, lockUpAfter: null } });
+    expect(screen.getByText(/· Burns weekend \(provisional\) runs all day ·/u)).toBeTruthy();
+    expect(screen.getByText("Burns weekend (provisional) runs from Thu 12 Nov to Mon 16 Nov; its daily hours are not on the Diary.")).toBeTruthy();
+    expect(screen.getByText("No lock-up tonight: Trades conference (provisional) sets up through the night.")).toBeTruthy();
   });
 
   it("puts last night's lock-up on the board while it is not done, ticked against last night", () => {
@@ -280,5 +334,131 @@ describe("BuildingSection", () => {
     expect(props.api.refresh).toHaveBeenCalled();
     view.rerender(<BuildingSection {...props} api={{ ...props.api, reading: true }} />);
     expect(screen.getByRole("button", { name: "Try again" }).getAttribute("aria-busy")).toBe("true");
+  });
+
+  it("says on the line while the suppliers are read, and when they could not be, with who is in as last read", () => {
+    const stillIn = [inside("Clyde Staging", "2026-11-13T20:05:00.000Z")];
+    show({ building: { ...BUILDING, stillIn: [] }, suppliers: suppliersApi({ status: "loading" }) }, false);
+    const line = screen.getByText(/reading the suppliers…$/u);
+    expect(line.textContent).toBe("Open by 07:00 · Lock up after 01:00, after midnight · opening 1 of 2 · lock-up 0 of 2 · reading the suppliers…");
+    expect(line.querySelector("[data-activity-indicator]")).not.toBeNull();
+    cleanup();
+    const refresh = vi.fn();
+    show({ building: { ...BUILDING, stillIn }, suppliers: suppliersApi({ status: "failed", earlier: stillIn, refresh }), canMark: true });
+    expect(screen.getByText("Open by 07:00 · Lock up after 01:00, after midnight · opening 1 of 2 · lock-up 0 of 2 · 1 marked in, not out, as last read · suppliers could not be read")).toBeTruthy();
+    expect(screen.getByRole("group", { name: "Marked in, not out, as last read" })).toBeTruthy();
+    expect(screen.getByText("The suppliers could not be read just now, so these times, and who is marked in, may leave someone out.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(refresh).toHaveBeenCalled();
+    cleanup();
+    // With nothing else to say, a read that failed still shows the section.
+    show({ api: api({ day: { day: "2026-11-14", opening: [], lockup: [] } }), building: { ...BUILDING, openBy: null, lockUpAfter: null },
+      suppliers: suppliersApi({ status: "failed" }) }, false);
+    expect(screen.getByText("suppliers could not be read")).toBeTruthy();
+  });
+
+  it("keeps a supplier marked gone here named with Undo, says so, and keeps the keyboard on the row", async () => {
+    const clyde = inside("Clyde Staging", "2026-11-13T20:05:00.000Z");
+    const flowers = inside("Thistle & Fern Flowers", "2026-11-14T11:31:00.000Z");
+    const step = vi.fn(arrived);
+    const undo = vi.fn(arrived);
+    render(<WithSuppliers start={[clyde, flowers]} step={step} undo={undo} />);
+    fireEvent.click(screen.getByText("The building"));
+    expect(screen.getByText(/· 2 marked in, not out$/u)).toBeTruthy();
+    const still = screen.getByRole("group", { name: "Marked in, not out" });
+    const gone = within(still).getByRole("button", { name: "Clyde Staging gone" });
+    gone.focus();
+    fireEvent.click(gone);
+    const back = await within(still).findByRole("button", { name: "Undo: Clyde Staging marked gone" });
+    expect(step).toHaveBeenCalledWith(expect.objectContaining({ supplierName: "Clyde Staging" }));
+    expect(within(still).getByText("Clyde Staging · in at 20:05 on Fri 13 Nov, gone at 15:00")).toBeTruthy();
+    await waitFor(() => { expect(document.activeElement).toBe(back); });
+    expect(within(still).getByText("Clyde Staging marked gone.")).toBeTruthy();
+    expect(screen.getByText(/· 1 marked in, not out$/u)).toBeTruthy();
+    // The wrong row, put back where it was tapped.
+    fireEvent.click(back);
+    const again = await within(still).findByRole("button", { name: "Clyde Staging gone" });
+    expect(undo).toHaveBeenCalledWith(expect.objectContaining({ supplierName: "Clyde Staging" }));
+    await waitFor(() => { expect(document.activeElement).toBe(again); });
+    expect(within(still).getByText("Clyde Staging no longer marked gone.")).toBeTruthy();
+    expect(screen.getByText(/· 2 marked in, not out$/u)).toBeTruthy();
+  });
+
+  it("offers the lists' changes only on today's board or a later one, never from a past day's list", () => {
+    show({ canPlan: true, current: false });
+    expect(screen.queryByRole("button", { name: /Change the/u })).toBeNull();
+    cleanup();
+    show({ canPlan: true, current: false, api: api({ day: { day: "2026-11-14", opening: [], lockup: [] } }) });
+    expect(screen.getByText("No opening checks were set up for this day.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Write the/u })).toBeNull();
+  });
+
+  it("says last night's lock-up is done once its last check is ticked, and keeps the keyboard in the section", async () => {
+    const open = api({ day: { day: "2026-11-13", opening: [], lockup: [check("5", "lockup", "Keys in the safe")] } });
+    const { props, view } = show({ lastNight: { api: open, canTick: true } });
+    const box = within(screen.getByRole("group", { name: "Last night’s lock-up, Fri 13 Nov" })).getByRole("checkbox", { name: "Keys in the safe" });
+    box.focus();
+    fireEvent.click(box);
+    expect(open.tick).toHaveBeenCalledWith(expect.objectContaining({ label: "Keys in the safe" }), true);
+    // The tick lands: the list is done, and leaves.
+    const doneNight = api({ day: { day: "2026-11-13", opening: [], lockup: [check("5", "lockup", "Keys in the safe", tick("2026-11-14T05:10:00.000Z"))] } });
+    box.blur();
+    view.rerender(<BuildingSection {...props} lastNight={{ api: doneNight, canTick: true }} />);
+    expect(screen.queryByRole("group", { name: /Last night’s lock-up/u })).toBeNull();
+    await waitFor(() => { expect(screen.getByText("Last night’s lock-up is done.")).toBeTruthy(); });
+    expect(document.activeElement).toBe(screen.getByRole("group", { name: "Lock-up checks" }));
+  });
+
+  it("keeps the keyboard on a moved check, and says where it went", () => {
+    show({ canPlan: true });
+    fireEvent.click(screen.getByRole("button", { name: "Change the lock-up checks" }));
+    const form = screen.getByRole("form", { name: "Change the lock-up checks" });
+    const down = within(form).getByRole("button", { name: "Move “Fire doors shut” down" });
+    down.focus();
+    fireEvent.click(down);
+    // At the foot of the list its down arrow stops: the keyboard goes to its words.
+    expect(document.activeElement).toBe(within(form).getByRole("textbox", { name: "Lock-up checks, 2" }));
+    expect(within(form).getByRole<HTMLInputElement>("textbox", { name: "Lock-up checks, 2" }).value).toBe("Fire doors shut");
+    expect(within(form).getByText("“Fire doors shut” moved to 2 of 2.")).toBeTruthy();
+    const up = within(form).getByRole("button", { name: "Move “Fire doors shut” up" });
+    up.focus();
+    fireEvent.click(up);
+    expect(document.activeElement).toBe(within(form).getByRole("textbox", { name: "Lock-up checks, 1" }));
+    // Moved within the list, it keeps the arrow it was moved with.
+    fireEvent.click(within(form).getByRole("button", { name: "Add a check" }));
+    fireEvent.change(within(form).getByRole("textbox", { name: "Lock-up checks, 3" }), { target: { value: "Keys back in the safe" } });
+    const keys = within(form).getByRole("button", { name: "Move “Keys back in the safe” up" });
+    keys.focus();
+    fireEvent.click(keys);
+    expect(document.activeElement).toBe(within(form).getByRole("button", { name: "Move “Keys back in the safe” up" }));
+    expect(within(form).getByRole<HTMLInputElement>("textbox", { name: "Lock-up checks, 2" }).value).toBe("Keys back in the safe");
+    expect(within(form).getByText("“Keys back in the safe” moved to 2 of 3.")).toBeTruthy();
+  });
+
+  it("names a new check by its place, and takes the keyboard to the first check still without words", () => {
+    const { props } = show({ canPlan: true });
+    fireEvent.click(screen.getByRole("button", { name: "Change the opening checks" }));
+    const form = screen.getByRole("form", { name: "Change the opening checks" });
+    fireEvent.click(within(form).getByRole("button", { name: "Add a check" }));
+    expect(within(form).getByRole("button", { name: "Move new check 3 up" })).toBeTruthy();
+    expect(within(form).getByRole("button", { name: "Take new check 3 off" })).toBeTruthy();
+    within(form).getByRole("button", { name: "Add a check" }).focus();
+    fireEvent.submit(form);
+    const empty = within(form).getByRole("textbox", { name: "Opening checks, 3" });
+    expect(document.activeElement).toBe(empty);
+    expect(empty.getAttribute("aria-invalid")).toBe("true");
+    expect(description(empty)).toBe("Write each check, or take it off.");
+    expect(within(form).getByText("Write each check, or take it off.").getAttribute("role")).toBe("status");
+    expect(props.api.replace).not.toHaveBeenCalled();
+  });
+
+  it("reads who ticked a check, and why a box cannot be ticked, with the box", () => {
+    show({ userId: ELAINE });
+    expect(description(screen.getByRole("checkbox", { name: "Alarm unset" }))).toBe("Jamie · 06:52 Jamie ticked this. Only they, or the office, can take it back.");
+    expect(description(screen.getByRole("checkbox", { name: "Fire exits unlocked and clear" }))).toBe("");
+    cleanup();
+    show({ canTick: false });
+    expect(description(screen.getByRole("checkbox", { name: "Fire exits unlocked and clear" }))).toBe("Checks are ticked on the day itself, and last night’s the morning after.");
+    expect(description(screen.getByRole("checkbox", { name: "Alarm unset" }))).toBe("Jamie · 06:52 Checks are ticked on the day itself, and last night’s the morning after.");
   });
 });

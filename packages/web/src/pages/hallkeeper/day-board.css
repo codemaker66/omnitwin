@@ -2074,7 +2074,28 @@ button.dayboard-rail-item:disabled { cursor: default; }
 }
 
 .dayboard-checks-problem { margin: 0; color: var(--house-copper-text); font-size: 14px; }
-.dayboard-checks-problem:empty { display: none; }
+/* Empty, a live region stays in the accessibility tree, so what it says next
+   is read out; it only takes no room. */
+.dayboard-checks-problem:empty {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+/* The suppliers being read: the shared particles, in line with the words. */
+.dayboard-building-line .vv-activity-indicator { margin-right: 6px; vertical-align: -2px; }
+
+/* A group the keyboard is brought to rings only for the keyboard. */
+.dayboard-checks:focus,
+.dayboard-still-in:focus { outline: none; }
+.dayboard-checks:focus-visible,
+.dayboard-still-in:focus-visible { outline: 2px solid var(--house-ink-1); outline-offset: 4px; }
+
+/* Marked gone from here: still named, quieter, with Undo beside it. */
+.dayboard-still-in li.is-gone .dayboard-checks-label { color: var(--house-ink-3); }
 
 @media (max-width: 767px) {
   .dayboard-checks-pair { grid-template-columns: minmax(0, 1fr); }

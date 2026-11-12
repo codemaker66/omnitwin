@@ -5,7 +5,7 @@ import type { CalendarResponse, VenueRequest } from "@omnitwin/types";
 import type { ReactElement } from "react";
 import { DayBoardPage, DayBoardSlotRequestsContext } from "../DayBoardPage.js";
 import { DAY_BOARD_LEGEND, DAY_BOARD_RING_LEGEND } from "../lib/day-board-state.js";
-import { boardRange, msToWallInput, wallInputToMs } from "../../diary/lib/board-time.js";
+import { boardRange, formatWallTime, msToWallInput, wallInputToMs } from "../../diary/lib/board-time.js";
 import { useAuthStore } from "../../../stores/auth-store.js";
 import { CALENDAR_REUSE_MS } from "../../diary/hooks/useCalendar.js";
 import { SLOT_REQUESTS_UNAVAILABLE, SlotRequestsContext } from "../../../components/requests/requests-context.js";
@@ -1862,12 +1862,31 @@ describe("DayBoardPage: the building", () => {
   afterEach(() => { vi.useRealTimers(); });
 
   const ALARM = "00000000-0000-4000-8000-0000000006c1";
+  const KEYS = "00000000-0000-4000-8000-0000000006c2";
+  const CONFERENCE_EVENT = "00000000-0000-4000-8000-0000000000e9";
   const tonight = (hours: number): string => new Date(Date.parse(dayRange(0).from) + hours * 3_600_000).toISOString();
+  /** The board's own words for an instant: its hour and minute on the venue's clock. */
+  const at = (iso: string): string => formatWallTime(Date.parse(iso), "Europe/London");
 
   function day(): CalendarResponse["entries"] {
     return [
       { ...liveBooking(), id: "00000000-0000-4000-8000-0000000000b8", title: "Dinner", eventId: "00000000-0000-4000-8000-0000000000e8", startsAt: tonight(18), endsAt: tonight(22) },
     ] as CalendarResponse["entries"];
+  }
+
+  /** Today's lunch, and tomorrow's conference's setup on today's read, as the calendar returns a phase. */
+  function lunchAndSetup(setupFrom: number, setupTo: number): CalendarResponse["entries"] {
+    return [
+      { ...liveBooking(), id: "00000000-0000-4000-8000-0000000000b9", title: "Trades lunch", eventId: "00000000-0000-4000-8000-0000000000ea", startsAt: tonight(12), endsAt: tonight(15) },
+      { entryType: "phase", id: "00000000-0000-4000-8000-0000000007a1", spaceId: GRAND_HALL, eventId: CONFERENCE_EVENT, eventName: "Trades conference",
+        name: "Setup", startsAt: tonight(setupFrom), endsAt: tonight(setupTo), sortOrder: 0 },
+    ] as CalendarResponse["entries"];
+  }
+
+  /** The building's one line, once it reads `words`. */
+  async function line(words: string): Promise<HTMLElement> {
+    const section = await screen.findByRole("region", { name: "The building" });
+    return await waitFor(() => within(section).getByText(words));
   }
 
   it("says when the building opens and locks up, and lets the floor tick its own checks", async () => {
@@ -1879,9 +1898,11 @@ describe("DayBoardPage: the building", () => {
       id: ALARM, kind: "opening", label: "Alarm unset", retired: false, mark: { doneAt: new Date().toISOString(), doneByUserId: null, doneByName: "Elaine" },
     }));
     renderBoard();
-    const section = await screen.findByRole("region", { name: "The building" });
-    await waitFor(() => { expect(within(section).getByText(/^Open by \d{2}:\d{2} · Lock up after \d{2}:\d{2}.* · opening 0 of 1$/u)).toBeTruthy(); });
+    // The dinner's own hours: no setup phase and no turn-round rule, so it opens at its doors and locks up at its end.
+    await line(`Open by ${at(tonight(18))} · Lock up after ${at(tonight(22))} · opening 0 of 1`);
+    const section = screen.getByRole("region", { name: "The building" });
     fireEvent.click(within(section).getByText("The building"));
+    expect(within(section).getByText(`· Dinner begins`, { exact: false })).toBeTruthy();
     fireEvent.click(within(section).getByRole("checkbox", { name: "Alarm unset" }));
     await waitFor(() => { expect(checksApi.mark).toHaveBeenCalled(); });
     // Ticked against the board's own day (the tests' venue keeps midnight).
@@ -1897,6 +1918,79 @@ describe("DayBoardPage: the building", () => {
     expect(await screen.findByText("Dinner")).toBeTruthy();
     expect(checksApi.get).not.toHaveBeenCalled();
     expect(screen.queryByRole("region", { name: "The building" })).toBeNull();
+  });
+
+  it("means no lock-up tonight when tomorrow's setup on today's read runs through the night", async () => {
+    serveToday(calendarFixture(lunchAndSetup(22, 33)));
+    renderBoard();
+    await line(`Open by ${at(tonight(12))} · No lock-up tonight`);
+    fireEvent.click(screen.getByText("The building"));
+    expect(screen.getByText("No lock-up tonight: Trades conference setup runs through the night.")).toBeTruthy();
+    // Tomorrow's booking is not on today's board: only its setup tonight counts here.
+    expect(screen.queryByText("Trades conference")).toBeNull();
+  });
+
+  it("locks up after tomorrow's setup this evening, not after the day's own last booking", async () => {
+    serveToday(calendarFixture(lunchAndSetup(18, 21)));
+    renderBoard();
+    await line(`Open by ${at(tonight(12))} · Lock up after ${at(tonight(21))}`);
+    fireEvent.click(screen.getByText("The building"));
+    expect(screen.getByText("· Trades conference setup ends", { exact: false })).toBeTruthy();
+  });
+
+  it("says on the line when the suppliers could not be read, so its times may leave someone out", async () => {
+    getCalendarMock.mockResolvedValue(calendarFixture(day()));
+    arrivalsApi.list.mockRejectedValue(new Error("offline"));
+    renderBoard();
+    await line(`Open by ${at(tonight(18))} · Lock up after ${at(tonight(22))} · suppliers could not be read`);
+    fireEvent.click(screen.getByText("The building"));
+    expect(screen.getByText("The suppliers could not be read just now, so these times, and who is marked in, may leave someone out.")).toBeTruthy();
+    // Try again reads the suppliers now.
+    const reads = arrivalsApi.list.mock.calls.length;
+    arrivalsApi.list.mockResolvedValue([]);
+    fireEvent.click(within(screen.getByRole("region", { name: "The building" })).getByRole("button", { name: "Try again" }));
+    await waitFor(() => { expect(arrivalsApi.list.mock.calls.length).toBeGreaterThan(reads); });
+    await line(`Open by ${at(tonight(18))} · Lock up after ${at(tonight(22))}`);
+  });
+
+  it("says while the building's checks are being read", async () => {
+    getCalendarMock.mockResolvedValue(calendarFixture(day()));
+    const read = deferred<unknown>();
+    checksApi.get.mockReturnValue(read.promise);
+    renderBoard();
+    const section = await screen.findByRole("region", { name: "The building" });
+    fireEvent.click(within(section).getByText("The building"));
+    expect(within(section).getByText("Reading the building’s checks…")).toBeTruthy();
+    await act(async () => {
+      read.resolve({ day: msToWallInput(Date.now(), "Europe/London").slice(0, 10), opening: [{ id: ALARM, kind: "opening", label: "Alarm unset", retired: false, mark: null }], lockup: [] });
+      await read.promise;
+    });
+    expect(within(section).queryByText("Reading the building’s checks…")).toBeNull();
+    expect(within(section).getByRole("checkbox", { name: "Alarm unset" })).toBeTruthy();
+  });
+
+  it("stands last night's lock-up on the board in the morning, ticked against last night", async () => {
+    // 05:00: the board shows today, and last night may still be ticked until 08:00.
+    const today = msToWallInput(Date.now(), "Europe/London").slice(0, 10);
+    vi.setSystemTime(wallInputToMs(`${today}T05:00`, "Europe/London") ?? Date.now());
+    const lastNight = new Date(Date.parse(`${today}T12:00:00.000Z`) - 86_400_000).toISOString().slice(0, 10);
+    getCalendarMock.mockResolvedValue(calendarFixture(day()));
+    checksApi.get.mockImplementation((_venueId, shown) => Promise.resolve(shown === lastNight
+      ? { day: shown, opening: [], lockup: [{ id: KEYS, kind: "lockup", label: "Keys in the safe", retired: false, mark: null }] }
+      : { day: shown, opening: [], lockup: [] }));
+    checksApi.mark.mockImplementation(() => Promise.resolve({
+      id: KEYS, kind: "lockup", label: "Keys in the safe", retired: false, mark: { doneAt: new Date().toISOString(), doneByUserId: null, doneByName: "Elaine" },
+    }));
+    renderBoard();
+    await line(`Open by ${at(tonight(18))} · Lock up after ${at(tonight(22))} · last night’s lock-up 0 of 1`);
+    fireEvent.click(screen.getByText("The building"));
+    const list = screen.getByRole("group", { name: /^Last night’s lock-up, / });
+    fireEvent.click(within(list).getByRole("checkbox", { name: "Keys in the safe" }));
+    await waitFor(() => { expect(checksApi.mark).toHaveBeenCalled(); });
+    expect(checksApi.mark.mock.calls[0]).toEqual([VENUE, KEYS, lastNight]);
+    // Done, last night leaves the board, and the board says so.
+    await waitFor(() => { expect(screen.queryByRole("group", { name: /^Last night’s lock-up, / })).toBeNull(); });
+    expect(screen.getByText("Last night’s lock-up is done.")).toBeTruthy();
   });
 });
 
