@@ -885,6 +885,24 @@
       ],
       "expectedStatus": "passed",
       "limits": "This is reviewed inventory admission, not execution evidence. The case replaces the retired identity 1b07f1b6eeb3a7bdbe8c-0ea22414db33ce2b5918 one for one, so the totals are unchanged; it was absent from sourceRunId, sourceReports and the earlier admissions, and every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
+    },
+    {
+      "date": "2026-11-12",
+      "reason": "A table holding a note this browser is not shown (PR #388, the web half of the guest plan notes; the API half is #389), five ordinary cases against an in-memory layout server given #389's rules for held notes: in today's chrome Delete leaves such a table and the notice under the room names it, a save refused for leaving one out says the server's sentence with no Retry, and a table holding the person's own note goes in the two saves the planner makes for that; in the new chrome Keep mine over a newer version keeps a table someone has since written a note on, and Undo will not take away a table that has come to hold one.",
+      "sourceCommit": "823ae71ab21e838f56b4539649675e793d31022e",
+      "sourceFile": "packages/web/e2e/planner-held-notes.spec.ts",
+      "sourceFileGitBlobSha256": "a5e311320b3a1b97a875a174a2ea09d3a489b9503547640eef3476513c0fcc5f",
+      "inventoryCommand": "pnpm --filter @omnitwin/web exec playwright test e2e/planner-held-notes.spec.ts --list --project=chromium --update-snapshots=none --reporter=json",
+      "inventorySha256": "949aecde7c889e873049459a81b7cb027af4bbf7074b752b345927823f1afdc2",
+      "caseIds": [
+        "3bc0e3d67bc9f1130b3f-11caae3b7804427ee5cf",
+        "3bc0e3d67bc9f1130b3f-39e5c14090058158c594",
+        "3bc0e3d67bc9f1130b3f-c6f0bee7ee5954b583e8",
+        "3bc0e3d67bc9f1130b3f-c780ed80249f68975b77",
+        "3bc0e3d67bc9f1130b3f-d1906fc1d1ae9f66a4f5"
+      ],
+      "expectedStatus": "passed",
+      "limits": "This is reviewed inventory admission, not execution evidence. These five cases were absent from sourceRunId, sourceReports and the earlier admissions. They answer the API from an in-memory server given #389's rules for held notes (route-mocked, house pattern), so they prove the planner's behaviour in hosted Chromium, not #389's route or a note kept on a real database (#389's own suites prove those); every current case still requires execution in the hosted browser gate. The listing covers this one spec file, so a re-listing reproduces these identities, not this hash."
     }
   ],
   "cases": [
@@ -5380,6 +5398,56 @@
       "suitePath": [
         "living-timetable-offline-steps.spec.ts",
         "A request step pressed with no connection"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "3bc0e3d67bc9f1130b3f-39e5c14090058158c594",
+      "file": "planner-held-notes.spec.ts",
+      "title": "v1: Delete leaves a table holding a note this browser is not shown, and the notice under the room names it",
+      "suitePath": [
+        "planner-held-notes.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "3bc0e3d67bc9f1130b3f-d1906fc1d1ae9f66a4f5",
+      "file": "planner-held-notes.spec.ts",
+      "title": "v1: a save refused for leaving out a table holding a note says the server's sentence, and offers no Retry",
+      "suitePath": [
+        "planner-held-notes.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "3bc0e3d67bc9f1130b3f-11caae3b7804427ee5cf",
+      "file": "planner-held-notes.spec.ts",
+      "title": "v1: a table holding the person's own note goes when they remove it, in the two saves the planner makes for that",
+      "suitePath": [
+        "planner-held-notes.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "3bc0e3d67bc9f1130b3f-c780ed80249f68975b77",
+      "file": "planner-held-notes.spec.ts",
+      "title": "v2: Keep mine over a newer version keeps a table someone has since written a note on",
+      "suitePath": [
+        "planner-held-notes.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "3bc0e3d67bc9f1130b3f-c6f0bee7ee5954b583e8",
+      "file": "planner-held-notes.spec.ts",
+      "title": "v2: Undo will not take away a table that has come to hold a note this browser is not shown",
+      "suitePath": [
+        "planner-held-notes.spec.ts"
       ],
       "project": "chromium",
       "expectedStatus": "passed"
