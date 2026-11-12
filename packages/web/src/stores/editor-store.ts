@@ -24,10 +24,13 @@ import {
   heldNoteIds,
   heldNoteObjectsName,
   heldNoteObjectsNamed,
+  heldNotePiecesDropped,
   heldNotePiecesToPutBack,
   keepingConfirmedNotes,
   namingReplacedNotes,
+  nothingRedoneLine,
   nothingRemovedLine,
+  nothingUndoneLine,
   ownWordsOverHeldNotes,
   registerHeldNotes,
   signedInRoutesSuit,
@@ -35,7 +38,7 @@ import {
 } from "../lib/guest-plan-notes.js";
 import { holdPlannerPageLock, isPlannerPageOpen, plannerPageId } from "../lib/planner-page-lock.js";
 import { signedOutOwnerFrom } from "../lib/planner-draft-storage.js";
-import { summariseLayoutChange, type LayoutChangeSummary } from "../lib/layout-change-summary.js";
+import { summariseLayoutChange, type ChangedPiece, type LayoutChangeSummary } from "../lib/layout-change-summary.js";
 import { browserSaysOnline, readOnlineStatus, subscribeOnlineStatus } from "../lib/online-status.js";
 import { useAuthStore, type AuthUser } from "./auth-store.js";
 import { hasRole, VENUE_FLOOR_ROLES } from "../lib/role-capabilities.js";
@@ -761,6 +764,26 @@ function historyStepPatch(step: HistoryStep<EditorObject>): Partial<EditorState>
     isDirty: true,
     selectedObjectId: step.selection[0] ?? null,
   };
+}
+
+/**
+ * A step back or forward is refused whole when its result would lack a piece
+ * that holds a note this browser is not shown (lib/guest-plan-notes): the
+ * piece would be gone, and its note with it at the next save. A piece the
+ * person placed can come to hold one: the newer version they kept theirs
+ * over, or took as already saved, put a note on it, and the history outlives
+ * both. The reason is posted in `words`; the document and the history stay as
+ * they are, and no step is added.
+ */
+function stepRefusedForHeldNote(
+  state: EditorState,
+  result: readonly EditorObject[],
+  words: (pieces: readonly ChangedPiece[]) => string,
+): boolean {
+  const dropped = heldNotePiecesDropped(state, result);
+  if (dropped.length === 0) return false;
+  postPlacementNotice(words(heldNoteObjectsNamed(dropped, state.objects)));
+  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -1722,6 +1745,7 @@ export const useEditorStore = create<EditorStore>()(withSaveFacts((set, get) => 
     const s = get();
     const step = performUndo(s.history, s.objects, EDITOR_HISTORY_IDS);
     if (step === null) return;
+    if (stepRefusedForHeldNote(s, step.objects, nothingUndoneLine)) return;
     actionEmitter.afterUndo(s.history); // G4: seals the popped gesture + logs history.undo
     interactionEpoch++;
     set(historyStepPatch(step));
@@ -1736,6 +1760,7 @@ export const useEditorStore = create<EditorStore>()(withSaveFacts((set, get) => 
     const s = get();
     const step = performRedo(s.history, s.objects, EDITOR_HISTORY_IDS);
     if (step === null) return;
+    if (stepRefusedForHeldNote(s, step.objects, nothingRedoneLine)) return;
     actionEmitter.afterRedo(step.history); // G4: logs history.redo
     interactionEpoch++;
     set(historyStepPatch(step));

@@ -721,6 +721,74 @@ describe("a save of a document that has lost a piece holding a note this browser
   });
 });
 
+describe("Undo and Redo of a step that would take a piece which has come to hold a note this browser is not shown", () => {
+  /**
+   * The person places `count` pieces in one step and saves. The maker writes a
+   * note on each. The person's next save meets that version and they keep
+   * theirs: the pieces they placed now hold notes they are not shown.
+   */
+  async function placeThenTheyNoteThem(server: PlanOnServer, labels: readonly string[]): Promise<readonly string[]> {
+    serveNotesAsTheApiDoes(server);
+    await open(plan([placed(A), placed(B)], false));
+    store().replaceObjectsFromScene([
+      ...store().objects,
+      ...labels.map((label, index) => ({ ...kept(`local-placed-${String(index)}`, "", 2 + index), ...(label === "" ? {} : { label }) })),
+    ]);
+    expect(await store().saveToServer(false)).toBe(true);
+    const theirs = pieceIds().filter((id) => id !== A && id !== B);
+    expect(theirs).toHaveLength(labels.length);
+    for (const id of theirs) server.notes.set(id, THEIR_NOTE);
+    theyNowHave(server, [placed(A), placed(B), ...theirs.map((id, index) => placed(id, { noteHeld: true }, 2 + index))]);
+    store().updateObject(B, { positionX: 3 });
+    expect(await store().saveToServer(false)).toBe(false);
+    expect(await store().keepMine(false)).toBe(true);
+    expect(theirs.every((id) => heldNoteIds(store()).has(id))).toBe(true);
+    return theirs;
+  }
+
+  it("refuses the whole step, says which piece, and leaves the document and the history as they were", async () => {
+    const server: PlanOnServer = { revision: 4, notes: new Map() };
+    const [placedPiece] = await placeThenTheyNoteThem(server, ["Table 3"]);
+    if (placedPiece === undefined) throw new Error("nothing placed");
+
+    // The move of B is theirs to take back: nothing held goes with it.
+    store().undo();
+    expect(store().objects.find((object) => object.id === B)?.positionX).toBe(0);
+    const { past, future } = store().history;
+    const before = store().objects;
+
+    store().undo();
+    expect(pieceIds()).toContain(placedPiece);
+    expect(store().objects).toBe(before);
+    expect(notice()).toBe("Nothing was undone: Table 3 has a note that cannot be shown here.");
+    expect(store().history.past).toBe(past);
+    expect(store().history.future).toBe(future);
+
+    // What is saved next still holds the row, and the note it never saw.
+    expect(await store().saveToServer(false)).toBe(true);
+    expect(server.notes.get(placedPiece)).toBe(THEIR_NOTE);
+  });
+
+  it("refuses a step that placed several, though only some of them hold a note, and lists those", async () => {
+    const server: PlanOnServer = { revision: 4, notes: new Map() };
+    const theirs = await placeThenTheyNoteThem(server, ["Table 3", "Table 5", "Table 8"]);
+
+    store().undo();
+    store().undo();
+    expect(pieceIds()).toEqual(expect.arrayContaining([...theirs]));
+    expect(notice()).toBe("Nothing was undone: Tables 3, 5 and 8 have notes that cannot be shown here.");
+  });
+
+  it("counts pieces nobody named", async () => {
+    const server: PlanOnServer = { revision: 4, notes: new Map() };
+    await placeThenTheyNoteThem(server, ["", ""]);
+
+    store().undo();
+    store().undo();
+    expect(notice()).toMatch(/^Nothing was undone: 2 \S.* have notes that cannot be shown here\.$/u);
+  });
+});
+
 describe("the notes Keep mine carries onto the newer version, before any save has confirmed them", () => {
   it("count as notes this browser is not shown, so nothing takes those pieces meanwhile", async () => {
     const server: PlanOnServer = { revision: 4, notes: new Map() };

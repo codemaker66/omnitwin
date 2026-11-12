@@ -343,9 +343,38 @@ export function heldNotePiecesToPutBack(
   return { held, pieces };
 }
 
+/**
+ * The pieces holding a note this browser is not shown that are in the working
+ * document and would not be in `next`: what a change of the document to
+ * `next` (a step back or forward) would take away.
+ */
+export function heldNotePiecesDropped(state: GuestPlanNoteFacts, next: readonly EditorObject[]): readonly EditorObject[] {
+  const held = heldNoteIds(state);
+  if (held.size === 0) return [];
+  const staying = new Set(next.map((object) => object.id));
+  return state.objects.filter((object) => held.has(object.id) && !staying.has(object.id));
+}
+
 /** A change that did not happen because of one such piece: "<outcome>: <name> has a note that cannot be shown here." */
 function refusedLine(outcome: string, name: string): string {
   return `${outcome}: ${name} has a note that cannot be shown here.`;
+}
+
+/** The same for one piece or several: "<outcome>: Tables 3 and 5 have notes that cannot be shown here." */
+function refusedForPiecesLine(outcome: string, pieces: readonly ChangedPiece[]): string {
+  return pieces.length === 1
+    ? refusedLine(outcome, describePieces(pieces))
+    : `${outcome}: ${describePieces(pieces)} have notes that cannot be shown here.`;
+}
+
+/** Undo's refusal: the step back would take such pieces away. The whole step is refused. */
+export function nothingUndoneLine(pieces: readonly ChangedPiece[]): string {
+  return refusedForPiecesLine("Nothing was undone", pieces);
+}
+
+/** Redo's refusal: the step forward would take such pieces away. The whole step is refused. */
+export function nothingRedoneLine(pieces: readonly ChangedPiece[]): string {
+  return refusedForPiecesLine("Nothing was redone", pieces);
 }
 
 /** Replace's refusal: the selection holds such a piece, so nothing is replaced. */
