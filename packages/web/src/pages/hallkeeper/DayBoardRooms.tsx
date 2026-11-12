@@ -142,7 +142,9 @@ export function Slab({ slot, variant, nowMs, selected, onOpen, wall, frozen, cha
   const ring = slot.attention;
   const words = ringWords(slot, nowMs);
   const seen = seenLine(slot);
-  const changedWords = changed === 0 ? null : changed === 1 ? "a change to read" : `${String(changed)} changes to read`;
+  // Spoken with the mark's own word in it ("Changed", "2 changes"), so the
+  // name a voice user reads off the slab opens it (WCAG 2.5.3).
+  const changedWords = changed === 0 ? null : changed === 1 ? "changed, a change to read" : `${String(changed)} changes to read`;
   // The wall reads room, title, state and time (D11): no turn-round, no
   // facts seen, no other rooms named; the ring in its short words on what
   // it shows, so a request nobody has still breathes there (D3).

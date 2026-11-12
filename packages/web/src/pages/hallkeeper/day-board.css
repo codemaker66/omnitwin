@@ -1704,6 +1704,14 @@ button.dayboard-rail-item:disabled { cursor: default; }
   font-variant-numeric: tabular-nums;
 }
 
+/* Where focus waits while a Try again reads: the changeover's heading and
+   the sheet link's box. A Try again sits at its own width, not the panel's. */
+.dayboard-changeover .dayboard-detail-heading:focus,
+.dayboard-slot-sheet:focus { outline: none; }
+.dayboard-changeover .dayboard-detail-heading:focus-visible,
+.dayboard-slot-sheet:focus-visible { outline: 2px solid var(--house-cream); outline-offset: 4px; }
+.dayboard-slot-sheet > .dayboard-seen-button { justify-self: start; }
+
 .dayboard-changeover-where,
 .dayboard-changeover-note,
 .dayboard-changeover-plan {
@@ -1721,6 +1729,36 @@ button.dayboard-rail-item:disabled { cursor: default; }
   justify-items: start;
   gap: 10px;
 }
+
+/* A function seen on this day that has left it: on the paper, its changes
+   in the panel's words (in paper inks), then its one Got it. */
+.dayboard-moved-off-list { display: grid; gap: 12px; margin-top: 18px; }
+.dayboard-moved-off-list > .dayboard-notice { margin: 0; }
+
+.dayboard-notice.dayboard-moved-off {
+  display: grid;
+  justify-items: start;
+  gap: 12px;
+}
+
+.dayboard-moved-off-head { color: var(--lt-ink); }
+.dayboard-moved-off .dayboard-changes-list { width: 100%; gap: 10px; }
+.dayboard-moved-off .dayboard-change + .dayboard-change { padding-top: 10px; border-top-color: var(--house-rule); }
+.dayboard-moved-off .dayboard-change-title { color: var(--lt-ink); font-size: 14px; }
+.dayboard-moved-off .dayboard-change-when { color: var(--house-ink-2); }
+.dayboard-moved-off .dayboard-change-summary { color: var(--lt-ink); font-size: 15px; }
+.dayboard-moved-off .dayboard-change-fromto dt { color: var(--house-ink-2); }
+
+.dayboard-moved-off-ack { display: inline-flex; align-items: center; gap: 8px; }
+.dayboard-moved-off-ack[aria-disabled="true"] { cursor: default; }
+.dayboard-moved-off-note { color: var(--lt-ink); }
+
+/* The day's sentence and the title take the keyboard's place when a notice
+   it was in leaves the page; a ring only for the keyboard. */
+.dayboard-summary:focus,
+.dayboard-title:focus { outline: none; }
+.dayboard-summary:focus-visible,
+.dayboard-title:focus-visible { outline: var(--vv-focus-ring, 2px solid var(--lt-focus)); outline-offset: 4px; }
 
 /* --- the setup sheet, the event, the phases --------------------------------- */
 

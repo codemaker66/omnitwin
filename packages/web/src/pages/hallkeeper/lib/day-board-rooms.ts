@@ -191,13 +191,18 @@ function requestParts(lanes: readonly DayBoardLane[], unowned: readonly UnownedR
   ];
 }
 
-/** The rooms with a change nobody on the floor has acknowledged yet: an
- *  event edit, a phase or a booking moved since anyone looked. */
-function changedParts(rooms: readonly string[]): readonly SummaryPart[] {
+/** A room with changes nobody on the floor has acknowledged yet (an event
+ *  edit, a phase or a booking moved since anyone looked), and how many. */
+export interface ChangedRoom {
+  readonly room: string;
+  readonly count: number;
+}
+
+function changedParts(rooms: readonly ChangedRoom[]): readonly SummaryPart[] {
   const only = rooms[0];
   if (only === undefined) return [];
-  if (rooms.length === 1) return [{ strong: only, tone: "copper" }, " has a change to read."];
-  const names = rooms.length > 3 ? "" : `: ${listed(rooms)}`;
+  if (rooms.length === 1) return [{ strong: only.room, tone: "copper" }, only.count > 1 ? " has changes to read." : " has a change to read."];
+  const names = rooms.length > 3 ? "" : `: ${listed(rooms.map((entry) => entry.room))}`;
   return [{ strong: `${countWord(rooms.length)} rooms`, tone: "copper" }, ` have changes to read${names}.`];
 }
 
@@ -247,7 +252,7 @@ export function boardSummary(input: {
   readonly today: boolean;
   readonly nowMs: number;
   /** Rooms with a change to read, in the board's order. */
-  readonly changed?: readonly string[];
+  readonly changed?: readonly ChangedRoom[];
   /** The room of each turn-round not yet over with nobody on setup, in the board's order. */
   readonly unstaffed?: readonly string[];
 }): readonly SummaryPart[] | null {

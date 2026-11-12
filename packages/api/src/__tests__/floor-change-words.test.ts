@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { describeBookingMove, shiftAmount, shiftWords, wallRange } from "../services/booking-move-feed.js";
+import {
+  describeBookingMove,
+  describeFoldedMove,
+  describeMoveBack,
+  isRepeatedWallTime,
+  samePlace,
+  shiftAmount,
+  shiftWords,
+  wallRange,
+} from "../services/booking-move-feed.js";
 import { describeEventEdit } from "../services/event-mutations.js";
 import type * as schema from "../db/schema.js";
 
@@ -25,6 +34,30 @@ describe("wallRange", () => {
   it("keeps summer hours in British Summer Time", () => {
     expect(wallRange({ startsAt: at("2027-06-12T17:00:00Z"), endsAt: at("2027-06-12T22:00:00Z") }, LONDON))
       .toBe("Sat 12 Jun, 18:00 – 23:00");
+  });
+
+  it("names the zone for a time the clocks show twice, the night they go back", () => {
+    // Sun 25 Oct 2026: 01:30 comes first in summer time, then again in winter time.
+    expect(wallRange({ startsAt: at("2026-10-24T22:00:00Z"), endsAt: at("2026-10-25T00:30:00Z") }, LONDON))
+      .toBe("Sat 24 Oct, 23:00 – Sun 25 Oct, 01:30 BST");
+    expect(wallRange({ startsAt: at("2026-10-24T22:00:00Z"), endsAt: at("2026-10-25T01:30:00Z") }, LONDON))
+      .toBe("Sat 24 Oct, 23:00 – Sun 25 Oct, 01:30 GMT");
+    // 02:00 comes once that night, and every hour of the night the clocks go forward comes at most once.
+    expect(wallRange({ startsAt: at("2026-10-24T22:00:00Z"), endsAt: at("2026-10-25T02:00:00Z") }, LONDON))
+      .toBe("Sat 24 Oct, 23:00 – Sun 25 Oct, 02:00");
+    expect(wallRange({ startsAt: at("2027-03-27T23:00:00Z"), endsAt: at("2027-03-28T01:30:00Z") }, LONDON))
+      .toBe("Sat 27 Mar, 23:00 – Sun 28 Mar, 02:30");
+  });
+});
+
+describe("isRepeatedWallTime", () => {
+  it("is true only in the hour the clocks repeat", () => {
+    expect(isRepeatedWallTime(at("2026-10-25T00:00:00Z"), LONDON)).toBe(true); // 01:00 BST
+    expect(isRepeatedWallTime(at("2026-10-25T01:59:00Z"), LONDON)).toBe(true); // 01:59 GMT
+    expect(isRepeatedWallTime(at("2026-10-24T23:59:00Z"), LONDON)).toBe(false); // 00:59 BST
+    expect(isRepeatedWallTime(at("2026-10-25T02:00:00Z"), LONDON)).toBe(false); // 02:00 GMT
+    expect(isRepeatedWallTime(at("2027-03-28T00:30:00Z"), LONDON)).toBe(false); // 00:30 GMT, the clocks then skip an hour
+    expect(isRepeatedWallTime(at("2026-11-14T18:00:00Z"), LONDON)).toBe(false);
   });
 });
 
@@ -85,6 +118,17 @@ describe("how far the hours moved", () => {
     expect(shiftWords(at18, { startsAt: at("2026-11-14T18:00:00Z"), endsAt: at("2026-11-15T00:15:00Z") }, LONDON)).toBe("ends 1 h 15 later");
   });
 
+  it("counts the real time when the clock shows the same hour twice", () => {
+    // 01:00 BST to 01:00 GMT: the same on the wall, an hour later in fact.
+    expect(shiftWords(
+      { startsAt: at("2026-10-25T00:00:00Z"), endsAt: at("2026-10-25T02:30:00Z") },
+      { startsAt: at("2026-10-25T01:00:00Z"), endsAt: at("2026-10-25T03:30:00Z") }, LONDON)).toBe("1 h later");
+    // 01:30 GMT back to 01:00 BST reads 30 min earlier on the wall; it is 1 h 30.
+    expect(shiftWords(
+      { startsAt: at("2026-10-25T01:30:00Z"), endsAt: at("2026-10-25T04:00:00Z") },
+      { startsAt: at("2026-10-25T00:00:00Z"), endsAt: at("2026-10-25T04:00:00Z") }, LONDON)).toBe("starts 1 h 30 earlier");
+  });
+
   it("counts on the venue's clock across the clocks changing", () => {
     // Sat 24 Oct 18:00 BST to Sun 25 Oct 18:00 GMT: the same time on the wall, a day on.
     expect(shiftWords(
@@ -98,6 +142,57 @@ describe("how far the hours moved", () => {
     expect(shiftWords(
       { startsAt: at("2026-10-21T17:00:00Z"), endsAt: at("2026-10-21T22:00:00Z") },
       { startsAt: at("2026-10-28T18:00:00Z"), endsAt: at("2026-10-28T23:00:00Z") }, LONDON)).toBe("7 days later");
+  });
+});
+
+describe("moves folded into one, and a move back", () => {
+  // Sat 11 Sept 2027, 18:00 – 23:00 in London: en-GB writes the month "Sept".
+  const september = { spaceId: HALL, startsAt: at("2027-09-11T17:00:00Z"), endsAt: at("2027-09-11T22:00:00Z") };
+  const later = (hours: number) => ({
+    spaceId: HALL,
+    startsAt: new Date(september.startsAt.getTime() + hours * 3_600_000),
+    endsAt: new Date(september.endsAt.getTime() + hours * 3_600_000),
+  });
+
+  it("folds a September function's moves as 'Times moved': the room is compared by id, not read from the words", () => {
+    const words = describeFoldedMove({ known: september, after: later(2), roomKnown: "Grand Hall", roomAfter: "Grand Hall", timeZone: LONDON });
+    expect(words).toEqual({
+      title: "Times moved",
+      summary: "Grand Hall: now Sat 11 Sept, 20:00 – Sun 12 Sept, 01:00.",
+      beforeSummary: "Grand Hall, Sat 11 Sept, 18:00 – 23:00",
+      afterSummary: "Grand Hall, Sat 11 Sept, 20:00 – Sun 12 Sept, 01:00",
+      surfaces: ["timings"],
+    });
+  });
+
+  it("names a room renamed between two moves as it is called now, and keeps it the same room", () => {
+    const words = describeFoldedMove({ known: september, after: later(1), roomKnown: "The Grand Hall", roomAfter: "The Grand Hall", timeZone: LONDON });
+    expect([words.title, words.surfaces, words.beforeSummary]).toEqual(["Times moved", ["timings"], "The Grand Hall, Sat 11 Sept, 18:00 – 23:00"]);
+  });
+
+  it("says the room changed only when its id did", () => {
+    const words = describeFoldedMove({ known: september, after: { ...september, spaceId: SALOON }, roomKnown: "Grand Hall", roomAfter: "Saloon", timeZone: LONDON });
+    expect([words.title, words.surfaces]).toEqual(["Room changed", ["layout"]]);
+  });
+
+  it("says a move back is back, from the place given up to the original", () => {
+    expect(describeMoveBack({ before: later(1), after: september, roomBefore: "Grand Hall", roomAfter: "Grand Hall", timeZone: LONDON })).toEqual({
+      title: "Back to the original hours",
+      summary: "Grand Hall: back to Sat 11 Sept, 18:00 – 23:00.",
+      beforeSummary: "Grand Hall, Sat 11 Sept, 19:00 – Sun 12 Sept, 00:00",
+      afterSummary: "Grand Hall, Sat 11 Sept, 18:00 – 23:00",
+      surfaces: ["timings"],
+    });
+    expect(describeMoveBack({ before: { ...later(1), spaceId: SALOON }, after: september, roomBefore: "Saloon", roomAfter: "Grand Hall", timeZone: LONDON }).title)
+      .toBe("Back to the original room and hours");
+    expect(describeMoveBack({ before: { ...september, spaceId: SALOON }, after: september, roomBefore: "Saloon", roomAfter: "Grand Hall", timeZone: LONDON }).title)
+      .toBe("Back to the original room");
+  });
+
+  it("knows a place by its room's id and its instants", () => {
+    expect(samePlace(september, { ...september, startsAt: new Date(september.startsAt.getTime()) })).toBe(true);
+    expect(samePlace(september, later(0.5))).toBe(false);
+    expect(samePlace(september, { ...september, spaceId: SALOON })).toBe(false);
   });
 });
 

@@ -1,7 +1,8 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { and, count, desc, eq, exists, getTableColumns, inArray, isNotNull, isNull, or, type SQL } from "drizzle-orm";
+import { and, count, desc, eq, exists, getTableColumns, inArray, isNotNull, isNull, lte, notExists, or, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import {
+  AWAITING_CHANGES_PER_EVENT,
   AwaitingAcknowledgementQuerySchema,
   ChangeFeedListQuerySchema,
   ChangeFeedItemSchema,
@@ -27,8 +28,12 @@ import { canAccessInternalEvent } from "../utils/query.js";
 import {
   serializeAcknowledgement,
   serializeEventPlanChange,
+  serializeFloorChange,
   serializeNotification,
 } from "../services/event-plan-lifecycle.js";
+import { pgErrorCode } from "../services/booking-mutations.js";
+
+const PG_FOREIGN_KEY_VIOLATION = "23503";
 
 const IdParam = z.object({ id: z.uuid() });
 const EventIdParam = z.object({ eventId: z.uuid() });
@@ -169,14 +174,23 @@ export async function notificationRoutes(server: FastifyInstance, opts: { db: Da
     }
 
     const now = new Date();
-    await db.insert(eventPlanNotificationReads).values({
-      notificationId: notification.id,
-      userId: request.user.id,
-      readAt: now,
-    }).onConflictDoUpdate({
-      target: [eventPlanNotificationReads.notificationId, eventPlanNotificationReads.userId],
-      set: { readAt: now },
-    });
+    try {
+      await db.insert(eventPlanNotificationReads).values({
+        notificationId: notification.id,
+        userId: request.user.id,
+        readAt: now,
+      }).onConflictDoUpdate({
+        target: [eventPlanNotificationReads.notificationId, eventPlanNotificationReads.userId],
+        set: { readAt: now },
+      });
+    } catch (error) {
+      // Taken away while it was opened: a quick Undo of the move it announced
+      // (services/booking-move-feed.ts). Gone, as if it had never rung.
+      if (pgErrorCode(error) === PG_FOREIGN_KEY_VIOLATION) {
+        return reply.status(404).send({ error: "Notification not found", code: "NOT_FOUND" });
+      }
+      throw error;
+    }
 
     return { data: serializeNotification(notification, now) };
   });
@@ -228,9 +242,13 @@ export async function eventPlanLifecycleRoutes(server: FastifyInstance, opts: { 
 
   // The Day Board's one read of what waits for the floor (types:
   // EventAwaitingAcknowledgementSchema): for each event asked about that the
-  // caller's venue holds, the changes that need a hallkeeper's acknowledgement
-  // and that nobody has acknowledged, newest first, and who last acknowledged
-  // anything there.
+  // caller's venue holds, the changes to the plan itself (source kind
+  // "event": the event, its phases, its bookings moved in the Diary) that need
+  // a hallkeeper's acknowledgement and that nobody has acknowledged, newest
+  // first, at most AWAITING_CHANGES_PER_EVENT of each event so a busy one
+  // never crowds another out, and who last acknowledged one of them there.
+  // Proposal traffic stays on the event-day board: nothing has changed on the
+  // floor until the plan does.
   // The floor acknowledges as one, as the event-day board does: once anyone
   // has, the change is in hand. Events of other venues are left out, not
   // refused, so one board read never fails for a stale id.
@@ -246,16 +264,23 @@ export async function eventPlanLifecycleRoutes(server: FastifyInstance, opts: { 
     const readable = eventRows.filter((row) => canAccessInternalEvent(request.user, row.venueId)).map((row) => row.id);
     if (readable.length === 0) return { data: [] };
 
-    const pending = await db.select(getTableColumns(eventPlanChanges))
+    const ranked = db.select({
+      ...getTableColumns(eventPlanChanges),
+      place: sql<number>`row_number() over (partition by ${eventPlanChanges.eventId} order by ${eventPlanChanges.createdAt} desc, ${eventPlanChanges.id} desc)`.as("place"),
+    })
       .from(eventPlanChanges)
-      .leftJoin(eventPlanChangeAcknowledgements, eq(eventPlanChangeAcknowledgements.changeId, eventPlanChanges.id))
       .where(and(
         inArray(eventPlanChanges.eventId, readable),
+        eq(eventPlanChanges.sourceKind, "event"),
         eq(eventPlanChanges.requiresHallkeeperAcknowledgement, true),
-        isNull(eventPlanChangeAcknowledgements.id),
+        notExists(db.select({ id: eventPlanChangeAcknowledgements.id })
+          .from(eventPlanChangeAcknowledgements)
+          .where(eq(eventPlanChangeAcknowledgements.changeId, eventPlanChanges.id))),
       ))
-      .orderBy(desc(eventPlanChanges.createdAt))
-      .limit(500);
+      .as("ranked");
+    const pending = await db.select().from(ranked)
+      .where(lte(ranked.place, AWAITING_CHANGES_PER_EVENT))
+      .orderBy(desc(ranked.createdAt), desc(ranked.id));
 
     const lastAcknowledgements = await db.selectDistinctOn([eventPlanChangeAcknowledgements.eventId], {
       eventId: eventPlanChangeAcknowledgements.eventId,
@@ -266,7 +291,8 @@ export async function eventPlanLifecycleRoutes(server: FastifyInstance, opts: { 
     })
       .from(eventPlanChangeAcknowledgements)
       .innerJoin(users, eq(users.id, eventPlanChangeAcknowledgements.acknowledgedBy))
-      .where(inArray(eventPlanChangeAcknowledgements.eventId, readable))
+      .innerJoin(eventPlanChanges, eq(eventPlanChanges.id, eventPlanChangeAcknowledgements.changeId))
+      .where(and(inArray(eventPlanChangeAcknowledgements.eventId, readable), eq(eventPlanChanges.sourceKind, "event")))
       .orderBy(eventPlanChangeAcknowledgements.eventId, desc(eventPlanChangeAcknowledgements.createdAt));
     const lastByEvent = new Map(lastAcknowledgements.map((row) => [row.eventId, row]));
 
@@ -276,7 +302,7 @@ export async function eventPlanLifecycleRoutes(server: FastifyInstance, opts: { 
         const by = last === undefined ? "" : (last.displayName ?? "").trim() || last.name.trim();
         return {
           eventId,
-          changes: pending.filter((change) => change.eventId === eventId).map(serializeEventPlanChange),
+          changes: pending.filter((change) => change.eventId === eventId).map(serializeFloorChange),
           lastAcknowledgement: last === undefined || by === "" ? null : { at: last.at.toISOString(), by: by.slice(0, 200), byUserId: last.userId },
         };
       })),
@@ -340,49 +366,80 @@ export async function eventPlanLifecycleRoutes(server: FastifyInstance, opts: { 
       return reply.status(403).send({ error: "Only hallkeepers, venue staff, or admins can acknowledge operational changes", code: "FORBIDDEN" });
     }
 
-    const [change] = await db
-      .select()
-      .from(eventPlanChanges)
-      .where(and(
-        eq(eventPlanChanges.id, body.data.changeId),
-        eq(eventPlanChanges.eventId, eventRow.id),
-      ))
-      .limit(1);
-    if (change === undefined) {
-      return reply.status(404).send({ error: "Change not found", code: "NOT_FOUND" });
+    const outcome = await db.transaction(async (tx) => {
+      // Held until this commits. A Diary move folding this change in
+      // (services/booking-move-feed.ts) holds it too, so one of the two lands
+      // first and the other sees it: never acknowledged and replaced at once.
+      const [change] = await tx
+        .select()
+        .from(eventPlanChanges)
+        .where(and(
+          eq(eventPlanChanges.id, body.data.changeId),
+          eq(eventPlanChanges.eventId, eventRow.id),
+        ))
+        .for("update");
+      if (change === undefined) return { kind: "missing" } as const;
+      if (!change.requiresHallkeeperAcknowledgement) {
+        if (change.moveChainId === null) return { kind: "not-required" } as const;
+        // A Diary move replaced by a newer one (folded in, or taken back):
+        // the floor reads the newer change instead, if one still waits.
+        const [newer] = await tx
+          .select({ id: eventPlanChanges.id })
+          .from(eventPlanChanges)
+          .where(and(
+            eq(eventPlanChanges.venueId, change.venueId),
+            eq(eventPlanChanges.sourceId, change.sourceId),
+            eq(eventPlanChanges.moveChainId, change.moveChainId),
+            eq(eventPlanChanges.requiresHallkeeperAcknowledgement, true),
+            notExists(tx.select({ id: eventPlanChangeAcknowledgements.id })
+              .from(eventPlanChangeAcknowledgements)
+              .where(eq(eventPlanChangeAcknowledgements.changeId, eventPlanChanges.id))),
+          ))
+          .orderBy(desc(eventPlanChanges.createdAt))
+          .limit(1);
+        return { kind: "superseded", by: newer?.id ?? null } as const;
+      }
+
+      const [existing] = await tx
+        .select()
+        .from(eventPlanChangeAcknowledgements)
+        .where(and(
+          eq(eventPlanChangeAcknowledgements.changeId, change.id),
+          eq(eventPlanChangeAcknowledgements.acknowledgedBy, request.user.id),
+        ))
+        .limit(1);
+      if (existing !== undefined) return { kind: "existing", row: existing } as const;
+
+      const [created] = await tx.insert(eventPlanChangeAcknowledgements).values({
+        changeId: change.id,
+        eventId: eventRow.id,
+        acknowledgedBy: request.user.id,
+        acknowledgedByRole: role,
+        note: body.data.note ?? null,
+      }).returning();
+      return created === undefined ? { kind: "failed" } as const : { kind: "created", row: created } as const;
+    });
+
+    switch (outcome.kind) {
+      case "missing":
+        return reply.status(404).send({ error: "Change not found", code: "NOT_FOUND" });
+      case "not-required":
+        return reply.status(422).send({
+          error: "This change does not require hallkeeper acknowledgement",
+          code: "ACKNOWLEDGEMENT_NOT_REQUIRED",
+        });
+      case "superseded":
+        return reply.status(409).send({
+          error: "This change was replaced by a newer one",
+          code: "CHANGE_SUPERSEDED",
+          details: { supersededBy: outcome.by },
+        });
+      case "existing":
+        return { data: HallkeeperAcknowledgementSchema.parse(serializeAcknowledgement(outcome.row)) };
+      case "failed":
+        return reply.status(500).send({ error: "Failed to acknowledge change", code: "ACKNOWLEDGEMENT_CREATE_FAILED" });
+      case "created":
+        return reply.status(201).send({ data: serializeAcknowledgement(outcome.row) });
     }
-    if (!change.requiresHallkeeperAcknowledgement) {
-      return reply.status(422).send({
-        error: "This change does not require hallkeeper acknowledgement",
-        code: "ACKNOWLEDGEMENT_NOT_REQUIRED",
-      });
-    }
-
-    const [existing] = await db
-      .select()
-      .from(eventPlanChangeAcknowledgements)
-      .where(and(
-        eq(eventPlanChangeAcknowledgements.changeId, change.id),
-        eq(eventPlanChangeAcknowledgements.acknowledgedBy, request.user.id),
-      ))
-      .limit(1);
-
-    if (existing !== undefined) {
-      return { data: HallkeeperAcknowledgementSchema.parse(serializeAcknowledgement(existing)) };
-    }
-
-    const [acknowledgement] = await db.insert(eventPlanChangeAcknowledgements).values({
-      changeId: change.id,
-      eventId: eventRow.id,
-      acknowledgedBy: request.user.id,
-      acknowledgedByRole: role,
-      note: body.data.note ?? null,
-    }).returning();
-
-    if (acknowledgement === undefined) {
-      return reply.status(500).send({ error: "Failed to acknowledge change", code: "ACKNOWLEDGEMENT_CREATE_FAILED" });
-    }
-
-    return reply.status(201).send({ data: serializeAcknowledgement(acknowledgement) });
   });
 }

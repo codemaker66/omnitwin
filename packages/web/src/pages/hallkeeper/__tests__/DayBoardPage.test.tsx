@@ -4,6 +4,7 @@ import { MemoryRouter } from "react-router-dom";
 import type { CalendarResponse, VenueRequest } from "@omnitwin/types";
 import type { ReactElement } from "react";
 import { DayBoardPage, DayBoardSlotRequestsContext } from "../DayBoardPage.js";
+import { CHANGEOVER_REFRESH_MS } from "../DayBoardChangeover.js";
 import { DAY_BOARD_LEGEND, DAY_BOARD_RING_LEGEND } from "../lib/day-board-state.js";
 import { boardRange, msToWallInput, wallInputToMs } from "../../diary/lib/board-time.js";
 import { useAuthStore } from "../../../stores/auth-store.js";
@@ -91,7 +92,8 @@ vi.mock("../../../api/plan-changes.js", () => ({
 }));
 // What moves at a changeover, fed per case.
 const changeoverMock = vi.hoisted(() => vi.fn<(input: { from: string; to: string }) => Promise<unknown>>());
-vi.mock("../../../api/changeover.js", () => ({
+vi.mock("../../../api/changeover.js", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../../../api/changeover.js")>(),
   getChangeover: (input: { from: string; to: string }) => changeoverMock(input),
 }));
 // Who is on setup for each turn-round, from the published rota: a week with
@@ -1594,8 +1596,19 @@ describe("DayBoardPage", () => {
 });
 
 const CHANGE_ID = "00000000-0000-4000-8000-0000000000d1";
+const DINNER_BOOKING = "00000000-0000-4000-8000-0000000000b1";
 
-function timesMoved(minutesAgo: number, id = CHANGE_ID, sourceId = EVENT_ID): Record<string, unknown> {
+/** Where a Diary move put the dinner: `hours` from the start of today's dinner, on its own length. */
+function placeFrom(hours: number): Record<string, unknown> {
+  const dinner = liveBooking();
+  return {
+    spaceId: GRAND_HALL,
+    startsAt: new Date(Date.parse(dinner.startsAt) + hours * 3_600_000).toISOString(),
+    endsAt: new Date(Date.parse(dinner.endsAt) + hours * 3_600_000).toISOString(),
+  };
+}
+
+function timesMoved(minutesAgo: number, id = CHANGE_ID, sourceId = EVENT_ID, movedTo: Record<string, unknown> | null = placeFrom(1)): Record<string, unknown> {
   return {
     id, eventId: EVENT_ID, venueId: VENUE, configurationId: null, proposalId: null, handoffPackId: null,
     actorUserId: null, actorRole: "staff", actorLabel: "Diary desk", sourceKind: "event", sourceId,
@@ -1606,6 +1619,16 @@ function timesMoved(minutesAgo: number, id = CHANGE_ID, sourceId = EVENT_ID): Re
     affectedSurfaces: ["timings"], audienceRoles: ["staff", "hallkeeper"], riskLevel: "attention",
     requiresHallkeeperAcknowledgement: true,
     createdAt: new Date(Date.now() - minutesAgo * 60_000).toISOString(),
+    movedTo,
+  };
+}
+
+/** An edit to the event itself, as an older row wrote it: its Was and Now
+ *  carry only the guests, whatever else changed. */
+function eventEdited(minutesAgo: number, id: string, summary: string): Record<string, unknown> {
+  return {
+    ...timesMoved(minutesAgo, id, EVENT_ID, null), title: "Event plan updated", summary,
+    beforeSummary: "80 guests", afterSummary: "80 guests", affectedSurfaces: ["timings"],
   };
 }
 
@@ -1648,6 +1671,14 @@ describe("DayBoardPage: what changed since the floor last looked", () => {
     await waitFor(() => { expect(screen.getByText(/has a change to read\./u).closest("p")?.textContent).toContain("Grand Hall has a change to read."); });
   });
 
+  it("names the slab with the mark's own word, so a voice user can open it by what it shows", async () => {
+    getCalendarMock.mockResolvedValue(calendarFixture([bookingWithEvent()]));
+    floor.awaiting.mockResolvedValue([{ eventId: EVENT_ID, changes: [timesMoved(20)], lastAcknowledgement: null }]);
+    renderBoard();
+    const slab = await screen.findByRole("button", { name: /, changed, a change to read/u });
+    expect(within(slab).getByText("Changed")).toBeTruthy();
+  });
+
   it("opens the change with Got it as the panel's one cream button, and puts it in hand for the floor", async () => {
     getCalendarMock.mockResolvedValue(calendarFixture([bookingWithEvent()]));
     serve([{ eventId: EVENT_ID, changes: [timesMoved(20)], lastAcknowledgement: null }]);
@@ -1666,7 +1697,7 @@ describe("DayBoardPage: what changed since the floor last looked", () => {
     act(() => { gotIt.focus(); });
     fireEvent.click(gotIt);
     await waitFor(() => { expect(floor.acknowledge).toHaveBeenCalledWith(EVENT_ID, { changeId: CHANGE_ID }); });
-    const seenBy = await screen.findByText(/^Changes seen by you, \d{2}:\d{2}\.$/u);
+    const seenBy = await screen.findByText(/^You last acknowledged a change to this event, \d{2}:\d{2}\.$/u);
     expect(screen.queryByRole("region", { name: "What changed" })).toBeNull();
     expect(document.activeElement).toBe(seenBy);
     // In hand: the mark leaves the slot, and the facts take the cream button back.
@@ -1686,20 +1717,40 @@ describe("DayBoardPage: what changed since the floor last looked", () => {
     expect(floor.acknowledge.mock.calls.map(([, input]) => input.changeId)).toEqual(["00000000-0000-4000-8000-0000000000d2", CHANGE_ID]);
   });
 
-  it("keeps the change waiting when the acknowledgement does not go through, and says so", async () => {
+  it("keeps the change waiting when the acknowledgement does not go through, says so, and reads again", async () => {
     getCalendarMock.mockResolvedValue(calendarFixture([bookingWithEvent()]));
     floor.awaiting.mockResolvedValue([{ eventId: EVENT_ID, changes: [timesMoved(20)], lastAcknowledgement: null }]);
     floor.acknowledge.mockRejectedValue(new Error("the connection dropped"));
     renderBoard();
     fireEvent.click(await screen.findByRole("button", { name: /^Chamber dinner,.*a change to read/u }));
     const gotIt = await screen.findByRole("button", { name: "Got it" });
+    const reads = floor.awaiting.mock.calls.length;
     act(() => { gotIt.focus(); });
     fireEvent.click(gotIt);
     expect(await screen.findByText("Couldn’t send that: the connection dropped. Try again.")).toBeTruthy();
+    await waitFor(() => { expect(floor.awaiting.mock.calls.length).toBeGreaterThan(reads); });
     // Never disabled, so the keyboard's place stays on it through a failed send.
     expect(screen.getByRole("button", { name: "Got it" }).hasAttribute("disabled")).toBe(false);
     expect(document.activeElement).toBe(screen.getByRole("button", { name: "Got it" }));
     expect(screen.getByText("Changed")).toBeTruthy();
+  });
+
+  it("goes on past a change replaced on the server, shows the newer one, and says it moved again", async () => {
+    getCalendarMock.mockResolvedValue(calendarFixture([bookingWithEvent()]));
+    const newerId = "00000000-0000-4000-8000-0000000000d7";
+    const newer = { ...timesMoved(0, newerId), afterSummary: "Grand Hall, Sat 14 Nov, 20:00 – Sun 15 Nov, 01:00" };
+    floor.awaiting.mockResolvedValue([{ eventId: EVENT_ID, changes: [timesMoved(20)], lastAcknowledgement: null }]);
+    floor.acknowledge.mockImplementation(() => {
+      floor.awaiting.mockResolvedValue([{ eventId: EVENT_ID, changes: [newer], lastAcknowledgement: null }]);
+      return Promise.reject(new ApiError(409, "This change was replaced by a newer one", "CHANGE_SUPERSEDED", { supersededBy: newerId }));
+    });
+    renderBoard();
+    fireEvent.click(await screen.findByRole("button", { name: /^Chamber dinner,.*a change to read/u }));
+    fireEvent.click(await screen.findByRole("button", { name: "Got it" }));
+    expect(await screen.findByText("It changed again before your Got it went through. This is where it stands now.")).toBeTruthy();
+    const section = await screen.findByRole("region", { name: "What changed" });
+    expect(within(section).getByText("Grand Hall, Sat 14 Nov, 20:00 – Sun 15 Nov, 01:00")).toBeTruthy();
+    expect(screen.queryByText(/^Couldn’t send that/u)).toBeNull();
   });
 
   it("says when what changed could not be read, on the board and in the panel", async () => {
@@ -1728,24 +1779,84 @@ describe("DayBoardPage: what changed since the floor last looked", () => {
     expect(floor.awaiting.mock.calls.length).toBeGreaterThan(before);
   });
 
-  it("tells the day a function moved off it, until the floor has it", async () => {
+  it("tells the day a function moved off it, in the panel's words, until the floor has it", async () => {
     let moved = false;
     calendarOf(() => (moved ? [] : [bookingWithEvent()]));
     renderBoard();
     await screen.findByText("Chamber dinner");
     // The dinner is moved to tomorrow: it leaves today's rooms, and its move waits.
     moved = true;
-    serve([{ eventId: EVENT_ID, changes: [{ ...timesMoved(1), summary: "Grand Hall: 1 day later.",
+    serve([{ eventId: EVENT_ID, changes: [{ ...timesMoved(1, CHANGE_ID, DINNER_BOOKING, placeFrom(24)), summary: "Grand Hall: 1 day later.",
       beforeSummary: "Grand Hall, Sat 14 Nov, 18:00 – 23:00", afterSummary: "Grand Hall, Sun 15 Nov, 18:00 – 23:00" }], lastAcknowledgement: null }]);
     act(() => { liveUpdate.current?.(); });
-    const notice = await screen.findByText((_, element) => element?.tagName === "P"
-      && element.textContent === "Chamber dinner · Times moved: now Grand Hall, Sun 15 Nov, 18:00 – 23:00");
+    const head = await screen.findByText((_, element) => element?.tagName === "P" && element.textContent === "Chamber dinner has moved off this day.");
     expect(floor.awaiting).toHaveBeenLastCalledWith([EVENT_ID]);
-    const box = notice.closest(".dayboard-moved-off");
+    const box = head.closest(".dayboard-moved-off");
     if (!(box instanceof HTMLElement)) throw new Error("expected the moved-off notice");
+    expect(within(box).getByText("Grand Hall, Sun 15 Nov, 18:00 – 23:00")).toBeTruthy();
+    // Said once, by its Was and Now, as on the panel.
+    expect(within(box).queryByText("Grand Hall: 1 day later.")).toBeNull();
     fireEvent.click(within(box).getByRole("button", { name: "Got it" }));
     await waitFor(() => { expect(floor.acknowledge).toHaveBeenCalledWith(EVENT_ID, { changeId: CHANGE_ID }); });
     await waitFor(() => { expect(document.querySelector(".dayboard-moved-off")).toBeNull(); });
+  });
+
+  it("says a function that left the day without a move is no longer on it, with its change in full", async () => {
+    let cancelled = false;
+    calendarOf(() => (cancelled ? [] : [bookingWithEvent()]));
+    renderBoard();
+    await screen.findByText("Chamber dinner");
+    // The dinner is cancelled; an older edit to its hours still waits, its Was and Now both "80 guests".
+    cancelled = true;
+    serve([{ eventId: EVENT_ID, changes: [eventEdited(30, "00000000-0000-4000-8000-0000000000d6", "Chamber dinner: hours now Sat 14 Nov, 19:00 – 23:00.")], lastAcknowledgement: null }]);
+    act(() => { liveUpdate.current?.(); });
+    const head = await screen.findByText((_, element) => element?.tagName === "P" && element.textContent === "Chamber dinner is no longer on this day.");
+    const box = head.closest(".dayboard-moved-off");
+    if (!(box instanceof HTMLElement)) throw new Error("expected the notice");
+    expect(within(box).getByText("Chamber dinner: hours now Sat 14 Nov, 19:00 – 23:00.")).toBeTruthy();
+    expect(within(box).queryByText(/now 80 guests/u)).toBeNull();
+    expect(screen.queryByText(/has moved off this day/u)).toBeNull();
+  });
+
+  it("gives the left-the-day notice the panel's working Got all, and the keyboard the day's sentence once it goes", async () => {
+    let moved = false;
+    calendarOf(() => (moved ? [] : [bookingWithEvent()]));
+    renderBoard();
+    await screen.findByText("Chamber dinner");
+    moved = true;
+    const sent = deferred<unknown>();
+    serve([{ eventId: EVENT_ID, changes: [
+      timesMoved(1, CHANGE_ID, DINNER_BOOKING, placeFrom(24)),
+      eventEdited(5, "00000000-0000-4000-8000-0000000000d8", "Chamber dinner: guests 80 to 96."),
+    ], lastAcknowledgement: null }]);
+    const answer = floor.acknowledge.getMockImplementation();
+    floor.acknowledge.mockImplementationOnce(async (eventId, input) => {
+      await sent.promise;
+      return answer?.(eventId, input);
+    });
+    act(() => { liveUpdate.current?.(); });
+    const gotAll = await screen.findByRole("button", { name: "Got all 2" });
+    act(() => { gotAll.focus(); });
+    fireEvent.click(gotAll);
+    await waitFor(() => { expect(gotAll.getAttribute("aria-busy")).toBe("true"); });
+    expect(gotAll.getAttribute("aria-disabled")).toBe("true");
+    expect(gotAll.querySelector(".vv-activity-indicator")).not.toBeNull();
+    await act(async () => { sent.resolve({}); await Promise.resolve(); });
+    await waitFor(() => { expect(document.querySelector(".dayboard-moved-off")).toBeNull(); });
+    await waitFor(() => { expect(document.activeElement?.classList.contains("dayboard-summary") === true || document.activeElement?.id === "dayboard-title").toBe(true); });
+  });
+
+  it("keeps a change to the same event's booking on another day off this day's slots", async () => {
+    getCalendarMock.mockResolvedValue(calendarFixture([bookingWithEvent()]));
+    floor.awaiting.mockResolvedValue([{ eventId: EVENT_ID, changes: [
+      timesMoved(10, "00000000-0000-4000-8000-0000000000d9", "00000000-0000-4000-8000-0000000000b9", placeFrom(24.5)),
+    ], lastAcknowledgement: null }]);
+    renderBoard();
+    await screen.findByText("Chamber dinner");
+    await waitFor(() => { expect(floor.awaiting).toHaveBeenCalled(); });
+    await act(async () => { await Promise.resolve(); });
+    expect(screen.queryByText("Changed")).toBeNull();
+    expect(screen.queryByText(/a change to read/u)).toBeNull();
   });
 
   it("reads again after Got it, and clears a failure once the waiting changes are different", async () => {
@@ -1781,7 +1892,7 @@ describe("DayBoardPage: what changed since the floor last looked", () => {
     getCalendarMock.mockResolvedValue(calendarFixture([bookingWithEvent()]));
     floor.awaiting.mockResolvedValue([{ eventId: EVENT_ID, changes: [
       timesMoved(20),
-      { ...timesMoved(10, "00000000-0000-4000-8000-0000000000d3"), title: "Event plan updated",
+      { ...timesMoved(10, "00000000-0000-4000-8000-0000000000d3", EVENT_ID, null), title: "Event plan updated",
         summary: "Chamber dinner: guests 80 to 96; hours now Sat 14 Nov, 19:00 – 23:00.", beforeSummary: "80 guests", afterSummary: "96 guests",
         affectedSurfaces: ["guest_count", "timings"] },
     ], lastAcknowledgement: null }]);
@@ -1816,12 +1927,46 @@ describe("DayBoardPage: what changed since the floor last looked", () => {
     expect(await screen.findByRole("button", { name: /^Chamber dinner · Saloon,.*a change to read/u })).toBeTruthy();
   });
 
-  it("says who has the changes once someone on the floor acknowledged them", async () => {
+  it("keeps a failed or working Got it on the slot it was pressed on, not on the event's other rooms", async () => {
+    const saloon = "00000000-0000-4000-8000-0000000000b2";
+    getCalendarMock.mockResolvedValue(calendarFixture([
+      bookingWithEvent(),
+      { ...bookingWithEvent(), id: saloon, spaceId: SALOON, title: "Chamber dinner · Saloon" } as CalendarResponse["entries"][number],
+    ]));
+    floor.awaiting.mockResolvedValue([{ eventId: EVENT_ID, changes: [
+      timesMoved(20, "00000000-0000-4000-8000-0000000000d4", saloon),
+      timesMoved(10, "00000000-0000-4000-8000-0000000000d5", DINNER_BOOKING),
+    ], lastAcknowledgement: null }]);
+    floor.acknowledge.mockRejectedValue(new Error("the connection dropped"));
+    renderBoard();
+    fireEvent.click(await screen.findByRole("button", { name: /^Chamber dinner, .*a change to read/u }));
+    fireEvent.click(await screen.findByRole("button", { name: "Got it" }));
+    expect(await screen.findByText("Couldn’t send that: the connection dropped. Try again.")).toBeTruthy();
+    // The Saloon's own move was never sent: its panel says nothing of the Grand Hall's failure.
+    fireEvent.click(screen.getByRole("button", { name: /^Chamber dinner · Saloon,.*a change to read/u }));
+    const section = await screen.findByRole("region", { name: "What changed" });
+    expect(within(section).getByText("Times moved")).toBeTruthy();
+    expect(screen.queryByText(/^Couldn’t send that/u)).toBeNull();
+    expect(within(section).getByRole("button", { name: "Got it" }).getAttribute("aria-busy")).toBe("false");
+  });
+
+  it("leaves the mark off a function that has ended, and says a room holding several changes has changes to read", async () => {
+    const ended = { ...bookingWithEvent(), id: "00000000-0000-4000-8000-0000000000b4", spaceId: SALOON, title: "Breakfast",
+      startsAt: new Date(Date.now() - 5 * 3_600_000).toISOString(), endsAt: new Date(Date.now() - 3 * 3_600_000).toISOString() } as CalendarResponse["entries"][number];
+    getCalendarMock.mockResolvedValue(calendarFixture([bookingWithEvent(), ended]));
+    floor.awaiting.mockResolvedValue([{ eventId: EVENT_ID, changes: [timesMoved(5), timesMoved(20, "00000000-0000-4000-8000-0000000000d2")], lastAcknowledgement: null }]);
+    renderBoard();
+    expect(await screen.findByRole("button", { name: /^Chamber dinner,.*2 changes to read/u })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^Breakfast,/u }).getAttribute("aria-label")).not.toMatch(/to read/u);
+    await waitFor(() => { expect(screen.getByText(/has changes to read\./u).closest("p")?.textContent).toContain("Grand Hall has changes to read."); });
+  });
+
+  it("says who last acknowledged a change to the event, as the event's, once someone on the floor has", async () => {
     getCalendarMock.mockResolvedValue(calendarFixture([bookingWithEvent()]));
     floor.awaiting.mockResolvedValue([{ eventId: EVENT_ID, changes: [], lastAcknowledgement: { at: new Date(Date.now() - 30 * 60_000).toISOString(), by: "Jamie at the door", byUserId: "00000000-0000-4000-8000-0000000000aa" } }]);
     renderBoard();
     fireEvent.click(await screen.findByRole("button", { name: /^Chamber dinner,/u }));
-    expect(await screen.findByText(/^Changes seen by Jamie at the door, \d{2}:\d{2}\.$/u)).toBeTruthy();
+    expect(await screen.findByText(/^Jamie at the door last acknowledged a change to this event, \d{2}:\d{2}\.$/u)).toBeTruthy();
     expect(screen.queryByText("Changed")).toBeNull();
   });
 });
@@ -1985,11 +2130,33 @@ describe("DayBoardPage: what moves at a changeover", () => {
     ] as CalendarResponse["entries"];
   }
 
-  function layouts(byEvent: Record<string, readonly string[]>): void {
-    resolveLayoutsMock.mockImplementation((input: { eventId: string }) => Promise.resolve({
-      eventName: "", roomName: "Grand Hall", unavailableCount: 0,
-      layouts: (byEvent[input.eventId] ?? []).map((configurationId) => ({ configurationId, name: `Layout ${configurationId.slice(-2)}`, spaceName: "Grand Hall" })),
-    }));
+  /** Each event's layouts for the room; an event named in `failFirst` fails its first read. */
+  function layouts(byEvent: Record<string, readonly string[]>, failFirst: readonly string[] = []): void {
+    const failing = new Set(failFirst);
+    resolveLayoutsMock.mockImplementation((input: { eventId: string }) => {
+      if (failing.delete(input.eventId)) return Promise.reject(new Error("offline"));
+      return Promise.resolve({
+        eventName: "", roomName: "Grand Hall", unavailableCount: 0,
+        layouts: (byEvent[input.eventId] ?? []).map((configurationId) => ({ configurationId, name: `Layout ${configurationId.slice(-2)}`, spaceName: "Grand Hall" })),
+      });
+    });
+  }
+
+  /** The lunch's eight trestles go back to store; both sheets have plans. */
+  function trestles(count = 8): unknown {
+    return {
+      from: { configId: LUNCH_LAYOUT, name: "Lunch layout", guests: 60, hasPlan: true },
+      to: { configId: DINNER_LAYOUT, name: "Dinner layout", guests: 120, hasPlan: true },
+      items: [{ name: "Trestle", category: "table", phase: "furniture", isAccessory: false, before: count, after: 0, zones: [] }],
+      zonesCompared: true,
+      plan: { staysPut: 0, moved: [], fromStore: [], toStore: [{ name: "Trestle", category: "table", count }], movedIds: [], fromStoreIds: [], toStoreFootprints: [] },
+      tooManyPieces: false,
+    };
+  }
+
+  async function openDinner(): Promise<HTMLElement> {
+    fireEvent.click(await screen.findByRole("button", { name: /^Dinner,/u }));
+    return screen.findByRole("region", { name: "Changeover from Lunch" });
   }
 
   it("lists what goes back to store, what comes from it and what stays, from the lunch's layout to the dinner's", async () => {
@@ -2000,18 +2167,19 @@ describe("DayBoardPage: what moves at a changeover", () => {
       to: { configId: DINNER_LAYOUT, name: "Dinner layout", guests: 120, hasPlan: true },
       items: [
         { name: "Trestle", category: "table", phase: "furniture", isAccessory: false, before: 8, after: 0, zones: [] },
-        { name: "6ft Round Table", category: "table", phase: "furniture", isAccessory: false, before: 0, after: 12, zones: [{ zone: "Centre", before: 0, after: 12 }] },
+        { name: "6ft Round Table", category: "table", phase: "furniture", isAccessory: false, before: 0, after: 12, zones: [] },
       ],
+      zonesCompared: false,
       plan: null,
+      tooManyPieces: false,
     });
     renderBoard();
-    fireEvent.click(await screen.findByRole("button", { name: /^Dinner,/u }));
-    const section = await screen.findByRole("region", { name: "Changeover from Lunch" });
+    const section = await openDinner();
     expect(await within(section).findByText("8 × Trestle")).toBeTruthy();
     expect(within(section).getByText("12 × 6ft Round Table")).toBeTruthy();
     // The lunch's sheet was frozen without a plan: the list says what it can't.
-    expect(within(section).getByText("The sheet for Lunch has no plan, so moves within each part of the room aren’t shown.")).toBeTruthy();
-    expect(changeoverMock).toHaveBeenCalledWith({ from: LUNCH_LAYOUT, to: DINNER_LAYOUT, fromEventId: LUNCH_EVENT, toEventId: DINNER_EVENT });
+    expect(within(section).getByText("The sheet for Lunch has no plan, so what moves within the room isn’t shown.")).toBeTruthy();
+    expect(changeoverMock).toHaveBeenCalledWith({ from: LUNCH_LAYOUT, to: DINNER_LAYOUT });
     // The dinner's layouts are read once, for its sheet link and the changeover.
     expect(resolveLayoutsMock.mock.calls.filter(([input]) => (input as { eventId: string }).eventId === DINNER_EVENT)).toHaveLength(1);
   });
@@ -2025,46 +2193,166 @@ describe("DayBoardPage: what moves at a changeover", () => {
       dinner,
     ] as CalendarResponse["entries"]));
     layouts({ [LUNCH_EVENT]: [LUNCH_LAYOUT], [DINNER_EVENT]: [DINNER_LAYOUT] });
-    changeoverMock.mockResolvedValue({
-      from: { configId: LUNCH_LAYOUT, name: "Lunch layout", guests: 60, hasPlan: true },
-      to: { configId: DINNER_LAYOUT, name: "Dinner layout", guests: 120, hasPlan: true },
-      items: [{ name: "Trestle", category: "table", phase: "furniture", isAccessory: false, before: 8, after: 0, zones: [] }],
-      plan: { staysPut: 0, moved: [], fromStore: [], toStore: [{ name: "Trestle", category: "table", count: 8 }], movedIds: [], fromStoreIds: [], toStoreFootprints: [] },
-    });
+    changeoverMock.mockResolvedValue(trestles());
     renderBoard();
-    fireEvent.click(await screen.findByRole("button", { name: /^Dinner,/u }));
-    const section = await screen.findByRole("region", { name: "Changeover from Lunch" });
+    const section = await openDinner();
     expect(await within(section).findByText("8 × Trestle")).toBeTruthy();
-    expect(changeoverMock).toHaveBeenCalledWith({ from: LUNCH_LAYOUT, to: DINNER_LAYOUT, fromEventId: LUNCH_EVENT, toEventId: DINNER_EVENT });
+    expect(changeoverMock).toHaveBeenCalledWith({ from: LUNCH_LAYOUT, to: DINNER_LAYOUT });
     fireEvent.click(screen.getByRole("button", { name: /^Show-round,/u }));
     await screen.findByRole("region", { name: /Grand Hall: Show-round/u });
     expect(screen.queryByRole("region", { name: /^Changeover/u })).toBeNull();
   });
 
-  it("offers Try again when the layouts could not be checked, and then works it out", async () => {
+  it("offers Try again when the lunch's layouts could not be checked, and then works it out", async () => {
     getCalendarMock.mockResolvedValue(calendarFixture(day()));
-    layouts({ [LUNCH_EVENT]: [LUNCH_LAYOUT], [DINNER_EVENT]: [DINNER_LAYOUT] });
-    resolveLayoutsMock.mockImplementationOnce(() => Promise.reject(new Error("offline")));
-    changeoverMock.mockResolvedValue({
-      from: { configId: LUNCH_LAYOUT, name: "Lunch layout", guests: 60, hasPlan: true },
-      to: { configId: DINNER_LAYOUT, name: "Dinner layout", guests: 120, hasPlan: true },
-      items: [{ name: "Trestle", category: "table", phase: "furniture", isAccessory: false, before: 8, after: 0, zones: [] }],
-      plan: { staysPut: 0, moved: [], fromStore: [], toStore: [{ name: "Trestle", category: "table", count: 8 }], movedIds: [], fromStoreIds: [], toStoreFootprints: [] },
-    });
+    layouts({ [LUNCH_EVENT]: [LUNCH_LAYOUT], [DINNER_EVENT]: [DINNER_LAYOUT] }, [LUNCH_EVENT]);
+    changeoverMock.mockResolvedValue(trestles());
     renderBoard();
-    fireEvent.click(await screen.findByRole("button", { name: /^Dinner,/u }));
-    const section = await screen.findByRole("region", { name: "Changeover from Lunch" });
+    const section = await openDinner();
     expect(await within(section).findByText("What moves could not be worked out just now.")).toBeTruthy();
-    fireEvent.click(within(section).getByRole("button", { name: "Try again" }));
+    // Only the changeover needed the lunch's layouts: the dinner's sheet link stands.
+    expect(await screen.findByRole("link", { name: /Layout c8/u })).toBeTruthy();
+    expect(changeoverMock).not.toHaveBeenCalled();
+    fireEvent.click(within(section).getByRole("button", { name: "Try again to work out what moves" }));
     expect(await within(section).findByText("8 × Trestle")).toBeTruthy();
   });
 
-  it("says nothing moves when the dinner keeps the lunch's layout, without asking", async () => {
+  it("asks again after the changeover itself failed, and keeps focus on its heading while it reads", async () => {
+    getCalendarMock.mockResolvedValue(calendarFixture(day()));
+    layouts({ [LUNCH_EVENT]: [LUNCH_LAYOUT], [DINNER_EVENT]: [DINNER_LAYOUT] });
+    const second = deferred<unknown>();
+    changeoverMock.mockRejectedValueOnce(new ApiError(0, "Network error — check your connection", "NETWORK_ERROR"))
+      .mockReturnValueOnce(second.promise);
+    renderBoard();
+    const section = await openDinner();
+    const retry = await within(section).findByRole("button", { name: "Try again to work out what moves" });
+    retry.focus();
+    fireEvent.click(retry);
+    // While it reads, the button has gone and focus waits on the heading, not the page.
+    expect(await within(section).findByText("Working out what moves…")).toBeTruthy();
+    expect(document.activeElement).toBe(within(section).getByRole("heading", { name: "Changeover" }));
+    await act(async () => { second.resolve(trestles()); await second.promise; });
+    expect(await within(section).findByText("8 × Trestle")).toBeTruthy();
+    expect(changeoverMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("names each Try again for what it reads, and keeps focus in the setup section when the sheet link is tried again", async () => {
+    getCalendarMock.mockResolvedValue(calendarFixture(day()));
+    layouts({ [LUNCH_EVENT]: [LUNCH_LAYOUT], [DINNER_EVENT]: [DINNER_LAYOUT] }, [DINNER_EVENT]);
+    changeoverMock.mockResolvedValue(trestles());
+    renderBoard();
+    const section = await openDinner();
+    // The dinner's layouts serve both its sheet link and its changeover; both say they failed, each its own way.
+    const sheetRetry = await screen.findByRole("button", { name: "Try again to check the setup sheet link" });
+    expect(within(section).getByRole("button", { name: "Try again to work out what moves" })).toBeTruthy();
+    expect(screen.queryAllByRole("button", { name: "Try again" })).toEqual([]);
+    sheetRetry.focus();
+    fireEvent.click(sheetRetry);
+    expect(document.activeElement?.classList.contains("dayboard-slot-sheet")).toBe(true);
+    expect(await screen.findByRole("link", { name: /Layout c8/u })).toBeTruthy();
+    // The one read mended both.
+    expect(await within(section).findByText("8 × Trestle")).toBeTruthy();
+  });
+
+  it("says plainly when the booking before has more than one layout for the room, without asking", async () => {
+    getCalendarMock.mockResolvedValue(calendarFixture(day()));
+    layouts({ [LUNCH_EVENT]: [LUNCH_LAYOUT, "00000000-0000-4000-8000-0000000000c9"], [DINNER_EVENT]: [DINNER_LAYOUT] });
+    renderBoard();
+    const section = await openDinner();
+    expect(await within(section).findByText("Lunch has more than one layout for this room, so what moves can’t be worked out here.")).toBeTruthy();
+    expect(changeoverMock).not.toHaveBeenCalled();
+  });
+
+  it("says a refusal no retry mends, names whose layout it is, and offers no Try again", async () => {
+    const refusals: [ApiError, string][] = [
+      [new ApiError(503, "The approved setup sheet is unavailable.", "APPROVED_SNAPSHOT_UNAVAILABLE", { configIds: [LUNCH_LAYOUT] }),
+        "The approved sheet for Lunch can’t be read, so what moves can’t be worked out. Ask the office to check it."],
+      [new ApiError(404, "Configuration not found", "NOT_FOUND", { configIds: [DINNER_LAYOUT] }),
+        "The layout for Dinner has been removed, so what moves can’t be worked out. Ask the office which layout it uses now."],
+      [new ApiError(409, "A changeover runs between two layouts of one room", "NOT_ONE_ROOM", { configIds: [LUNCH_LAYOUT, DINNER_LAYOUT] }),
+        "The two layouts are for different rooms, so what moves can’t be worked out here."],
+    ];
+    for (const [refusal, words] of refusals) {
+      getCalendarMock.mockResolvedValue(calendarFixture(day()));
+      layouts({ [LUNCH_EVENT]: [LUNCH_LAYOUT], [DINNER_EVENT]: [DINNER_LAYOUT] });
+      changeoverMock.mockReset();
+      changeoverMock.mockRejectedValue(refusal);
+      renderBoard();
+      const section = await openDinner();
+      expect(await within(section).findByText(words)).toBeTruthy();
+      expect(within(section).queryByRole("button")).toBeNull();
+      cleanup();
+    }
+  });
+
+  it("reads the changeover again each minute, keeping the last list on screen while it reads and when a read fails", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"], now: Date.now() });
+    const flush = async (): Promise<void> => {
+      for (let round = 0; round < 5; round += 1) {
+        await act(async () => { await new Promise((resolve) => { setTimeout(resolve, 5); }); });
+      }
+    };
+    try {
+      getCalendarMock.mockResolvedValue(calendarFixture(day()));
+      layouts({ [LUNCH_EVENT]: [LUNCH_LAYOUT], [DINNER_EVENT]: [DINNER_LAYOUT] });
+      const later = deferred<unknown>();
+      changeoverMock.mockResolvedValueOnce(trestles(8)).mockReturnValueOnce(later.promise)
+        .mockRejectedValueOnce(new ApiError(0, "Network error — check your connection", "NETWORK_ERROR"));
+      renderBoard();
+      await flush();
+      const section = await openDinner();
+      await flush();
+      expect(within(section).getByText("8 × Trestle")).toBeTruthy();
+
+      // The planner adds two trestles to the lunch's layout this afternoon.
+      act(() => { vi.advanceTimersByTime(CHANGEOVER_REFRESH_MS); });
+      await flush();
+      expect(changeoverMock).toHaveBeenCalledTimes(2);
+      expect(within(section).getByText("8 × Trestle")).toBeTruthy();
+      expect(within(section).queryByText("Working out what moves…")).toBeNull();
+      await act(async () => { later.resolve(trestles(10)); await later.promise; });
+      await flush();
+      expect(within(section).getByText("10 × Trestle")).toBeTruthy();
+
+      // A read that fails for now keeps the list, and offers nothing to press.
+      act(() => { vi.advanceTimersByTime(CHANGEOVER_REFRESH_MS); });
+      await flush();
+      expect(changeoverMock).toHaveBeenCalledTimes(3);
+      expect(within(section).getByText("10 × Trestle")).toBeTruthy();
+      expect(within(section).queryByRole("button")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps the furniture of a layout two events share, and still has the lunch's linen cleared and the dinner's laid", async () => {
     getCalendarMock.mockResolvedValue(calendarFixture(day()));
     layouts({ [LUNCH_EVENT]: [LUNCH_LAYOUT], [DINNER_EVENT]: [LUNCH_LAYOUT] });
+    changeoverMock.mockResolvedValue({
+      from: { configId: LUNCH_LAYOUT, name: "House rounds", guests: 120, hasPlan: true },
+      to: { configId: LUNCH_LAYOUT, name: "House rounds", guests: 120, hasPlan: true },
+      items: [
+        { name: "6ft Round Table", category: "table", phase: "furniture", isAccessory: false, before: 12, after: 12, zones: [] },
+        { name: "White cloth", category: "linen", phase: "dress", isAccessory: true, before: 12, after: 12, zones: [] },
+      ],
+      zonesCompared: true,
+      plan: { staysPut: 12, moved: [], fromStore: [], toStore: [], movedIds: [], fromStoreIds: [], toStoreFootprints: [] },
+      tooManyPieces: false,
+    });
     renderBoard();
-    fireEvent.click(await screen.findByRole("button", { name: /^Dinner,/u }));
-    expect(await screen.findByText("The same layout as Lunch: nothing moves.")).toBeTruthy();
+    const section = await openDinner();
+    expect(await within(section).findByText("The same layout as Lunch: the furniture stays as it is.")).toBeTruthy();
+    expect(within(section).getByText("White cloth: clear 12, lay 12")).toBeTruthy();
+    expect(changeoverMock).toHaveBeenCalledWith({ from: LUNCH_LAYOUT, to: LUNCH_LAYOUT });
+  });
+
+  it("says nothing moves, without asking, when one event keeps its own layout from one booking to the next", async () => {
+    const [lunch, dinner] = day();
+    getCalendarMock.mockResolvedValue(calendarFixture([lunch, { ...dinner, eventId: LUNCH_EVENT }] as CalendarResponse["entries"]));
+    layouts({ [LUNCH_EVENT]: [LUNCH_LAYOUT] });
+    renderBoard();
+    const section = await openDinner();
+    expect(await within(section).findByText("The same layout as Lunch: nothing moves.")).toBeTruthy();
     expect(changeoverMock).not.toHaveBeenCalled();
   });
 
