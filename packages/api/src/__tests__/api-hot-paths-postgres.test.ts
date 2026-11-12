@@ -865,13 +865,17 @@ describe.skipIf(target === undefined)("API hot paths through real routes and Pos
     // evening ending 21:00 EDT and its 09:00 EDT morning are two New York
     // days, but one London day (02:00 and 14:00 BST): read in London, they
     // would join and a 07:00 show-round between them would be warned.
+    // Review Y3: the same two days in the other room, with no show-round
+    // there, give a signal that does not rest on viewings: an occupancy is
+    // named by its last booking, so the changeover from another client's
+    // reception before the evening names the evening only when the days part.
     it("parts an event's days at the venue's own midnight, not London's", async () => {
       const a = await venue("New York room");
       await db.update(schema.venues).set({ timezone: "America/New_York" }).where(eq(schema.venues.id, a.venueId));
       const staff = await a.actor("staff");
-      const room = a.rooms[0] ?? "";
-      const piece = (title: string, kind: "ink" | "viewing", startsAt: string, hours: number, eventId?: string): typeof schema.bookings.$inferInsert => ({
-        venueId: a.venueId, spaceId: room, kind, title, startsAt: new Date(startsAt),
+      const [room, otherRoom] = [a.rooms[0] ?? "", a.rooms[1] ?? ""];
+      const piece = (title: string, kind: "ink" | "viewing", startsAt: string, hours: number, eventId?: string, spaceId = room): typeof schema.bookings.$inferInsert => ({
+        venueId: a.venueId, spaceId, kind, title, startsAt: new Date(startsAt),
         endsAt: new Date(Date.parse(startsAt) + hours * HOUR), ...(eventId === undefined ? {} : { eventId }),
       });
       // Friday 17 September 2027 18:00-21:00 EDT, then Saturday 09:00-12:00 EDT; a show-round Saturday 07:00 EDT.
@@ -881,13 +885,25 @@ describe.skipIf(target === undefined)("API hot paths through real routes and Pos
         piece("Gala, morning", "ink", "2027-09-18T13:00:00.000Z", 3, evening.eventId),
         piece("Show-round", "viewing", "2027-09-18T11:00:00.000Z", 0.5),
       ]);
+      // The other room: the same evening and morning of a dinner dance, and another client's reception 16:00-17:30 EDT on the Friday.
+      const [danceEvening] = await insertBoundBookings(db, [piece("Dinner dance, evening", "ink", "2027-09-17T22:00:00.000Z", 3, undefined, otherRoom)]);
+      if (danceEvening?.eventId === null || danceEvening?.eventId === undefined) throw new Error("The dinner dance has no event");
+      const [, reception] = await insertBoundBookings(db, [
+        piece("Dinner dance, morning", "ink", "2027-09-18T13:00:00.000Z", 3, danceEvening.eventId, otherRoom),
+        piece("Reception", "ink", "2027-09-17T20:00:00.000Z", 1.5, undefined, otherRoom),
+      ]);
+      if (reception === undefined) throw new Error("The reception was not booked");
+      await db.insert(schema.turnaroundRules).values({ venueId: a.venueId, spaceId: null, eventType: null, name: "House changeover", minutes: 60 });
 
       const response = await server.inject({
         method: "GET", headers: bearer(staff),
         url: `/calendar?venueId=${a.venueId}&from=2027-09-17T04:00:00.000Z&to=2027-09-19T04:00:00.000Z`,
       });
       expect(response.statusCode, response.body).toBe(200);
-      const report = response.json<{ data: { conflicts: { conflicts: { type: string }[] } } }>().data.conflicts;
+      const report = response.json<{ data: { conflicts: { conflicts: { type: string; entryIds: string[] }[] } } }>().data.conflicts;
+      // Read in London (or UTC) the dance's days join and the pair would be [reception, the dance's morning].
+      expect(report.conflicts.filter((conflict) => conflict.type === "insufficient_turnaround").map((conflict) => conflict.entryIds))
+        .toEqual([[reception.id, danceEvening.id]]);
       expect(report.conflicts.filter((conflict) => conflict.type === "viewing_overlap")).toEqual([]);
     });
 
