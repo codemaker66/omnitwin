@@ -282,16 +282,20 @@ export function slateSaveState(input: SlateSaveInput): SlateSaveState {
   if (!input.isOnline) {
     const unsaved = input.isDirty || input.pendingChanges > 0;
     const what = input.pendingChanges > 0 ? changesWord(input.pendingChanges) : "your changes";
+    const dropped: SlateNotice = {
+      heading: "The connection to Venviewer has dropped.",
+      body: "You can keep working. Your changes save as soon as it is back; sending waits until then.",
+      actions: [],
+    };
     return state({
       kind: "offline",
       status: "Offline",
-      detail: unsaved ? `${what} ${keptWhere(input.keptOnDevice)}` : "everything is saved",
+      // A refusal still standing (a refused clear's notice stays until it is
+      // dismissed, ruling R1(b) on #388) is not "everything is saved", and the
+      // connection does not put it away (delta review at 33a8e0ad, T11).
+      detail: unsaved ? `${what} ${keptWhere(input.keptOnDevice)}` : refusal === null ? "everything is saved" : null,
       mark: "offline",
-      notice: {
-        heading: "The connection to Venviewer has dropped.",
-        body: "You can keep working. Your changes save as soon as it is back; sending waits until then.",
-        actions: [],
-      },
+      notice: refusal === null ? dropped : { ...dropped, heading: refusal.heading, actions: refusal.actions },
       sendWaits: true,
     });
   }
