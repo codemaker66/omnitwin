@@ -6,7 +6,7 @@ import { useAuthStore } from "../../../stores/auth-store.js";
 import { useLayoutTimelinePreviewStore } from "../../../stores/layout-timeline-preview-store.js";
 import { ActivityIndicator } from "../../shared/Activity.js";
 import { isLayoutTimelineMutationLocked } from "../../../lib/layout-timeline-preview-lock.js";
-import { NOTE_HELD_CODE } from "../../../lib/guest-plan-notes.js";
+import { refusedOverHeldNote } from "../../../lib/guest-plan-notes.js";
 import { usePlannerVenueIdentity } from "../../../hooks/use-planner-venue-identity.js";
 import { canReadInternalEventData, customerEventPath, isCustomerRole } from "../../../lib/event-access.js";
 import { useOnlineStatus } from "../../../hooks/use-online-status.js";
@@ -47,7 +47,7 @@ export function ReferenceRoomHeader(): ReactElement {
   const saving = useEditorStore((state) => state.isSaving);
   const dirty = useEditorStore((state) => state.isDirty);
   const saveError = useEditorStore((state) => state.saveError);
-  const refusedForHeldNote = useEditorStore((state) => state.saveErrorCode === NOTE_HELD_CODE);
+  const refusedForHeldNote = useEditorStore((state) => refusedOverHeldNote(state.saveErrorCode));
   const saveConflict = useEditorStore((state) => state.saveConflict);
   const configId = useEditorStore((state) => state.configId);
   const auth = useAuthStore();

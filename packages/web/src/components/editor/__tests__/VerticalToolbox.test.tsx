@@ -80,9 +80,11 @@ describe("VerticalToolbox undo buttons", () => {
 
   // A save the API refused because it would change a note this browser is not
   // shown (409 NOTE_HELD): the same save meets the same refusal.
-  it("shows a save refused over a held note in the API's own words, with no Retry", () => {
-    const refusal = "A note on this plan cannot be changed from here, and this save tried to change it. Reload the page, or clear the note you wrote on that piece.";
-    useEditorStore.setState({ configId: "saved", configRevision: 1, isPublicPreview: true, isDirty: true, saveError: refusal, saveErrorCode: "NOTE_HELD" });
+  it.each([
+    ["NOTE_HELD", "A note on this plan cannot be changed from here, and this save tried to change it. Clear the note you wrote on that piece."],
+    ["HELD_PIECE_OMITTED", "Nothing was saved: this save would remove a piece with a note that cannot be shown here. Reload the page to put it back."],
+  ])("shows a save refused over a held note in the API's own words, with no Retry (%s)", (code, refusal) => {
+    useEditorStore.setState({ configId: "saved", configRevision: 1, isPublicPreview: true, isDirty: true, saveError: refusal, saveErrorCode: code });
     renderToolbox();
     const save = screen.getByRole("button", { name: refusal });
     expect(save.textContent).toBe("Unsaved");

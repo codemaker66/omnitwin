@@ -7,7 +7,7 @@ import {
   copyForEditorSaveStatus,
   deriveEditorSaveStatus,
 } from "../../lib/editor-save-status.js";
-import { NOTE_HELD_CODE } from "../../lib/guest-plan-notes.js";
+import { refusedOverHeldNote } from "../../lib/guest-plan-notes.js";
 import { GuestEnquiryModal } from "./GuestEnquiryModal.js";
 import { VisitorPlanPdfSheet } from "./VisitorPlanPdfSheet.js";
 import { prepareLayoutForGuestEnquiry } from "./send-layout-flow.js";
@@ -196,7 +196,7 @@ export function MobilePlannerTopBar({
   // not offered for retry: the same save meets the same refusal. This bar has
   // no room for the API's sentence, which the save notice shows; it says the
   // layout has unsaved changes. A choice between versions keeps its control.
-  const refusedForHeldNote = useEditorStore((s) => s.saveErrorCode === NOTE_HELD_CODE && s.saveConflict === null);
+  const refusedForHeldNote = useEditorStore((s) => refusedOverHeldNote(s.saveErrorCode) && s.saveConflict === null);
   const status = deriveEditorSaveStatus({
     configId,
     isDirty,

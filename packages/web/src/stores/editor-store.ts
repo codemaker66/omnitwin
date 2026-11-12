@@ -1278,8 +1278,13 @@ export const useEditorStore = create<EditorStore>()(withSaveFacts((set, get) => 
       // venueId/spaceId are non-nullable on the wire — no guard needed.
       void get().loadSpace(config.venueId, config.spaceId);
       // Work kept on this device was meant for the server: send it on, unless
-      // it waits for the person's choice.
-      if (restoredDraft !== null && loadConflict === null) requestAutosave();
+      // it waits for the person's choice. Kept work that lacks a piece holding
+      // a note this browser is not shown takes it back now, not at that save:
+      // the API's refusal of such a save says a reload puts the piece back.
+      if (restoredDraft !== null && loadConflict === null) {
+        putBackHeldNotePieces();
+        requestAutosave();
+      }
     } catch (err) {
       if (request !== configurationLoadRequest) return;
       const message = err instanceof Error ? err.message : "Failed to load configuration";

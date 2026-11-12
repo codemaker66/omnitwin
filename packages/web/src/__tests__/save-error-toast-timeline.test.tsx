@@ -31,7 +31,7 @@ describe("SaveErrorToast says where unsaved changes are", () => {
 // toast said "press Retry", and retrying sends the same save to the same
 // refusal. It shows the API's own words instead, as they come.
 describe("SaveErrorToast for a save refused over a note this browser is not shown", () => {
-  const REFUSAL = "A note on this plan cannot be changed from here, and this save tried to change it. Reload the page, or clear the note you wrote on that piece.";
+  const REFUSAL = "A note on this plan cannot be changed from here, and this save tried to change it. Clear the note you wrote on that piece.";
   const ROUND = getCatalogueItemBySlug("round-table-6ft-white")?.id ?? "missing-round";
 
   function table(id: string, label: string, notes = ""): EditorObject {
@@ -73,6 +73,20 @@ describe("SaveErrorToast for a save refused over a note this browser is not show
     const text = screen.getByRole("status").textContent ?? "";
     expect(text).toContain(REFUSAL);
     expect(text).not.toContain(`: ${REFUSAL}`);
+  });
+
+  it("shows the API's words the same way, with no Retry, for a save refused because it leaves out a piece holding such a note", () => {
+    const omitted = "Nothing was saved: this save would remove a piece with a note that cannot be shown here. Reload the page to put it back.";
+    refuseSaveOf([table("t3", "Table 3", "TEST ONLY typed over"), table("t4", "Table 4")]);
+    useEditorStore.setState({ saveError: omitted, saveErrorCode: "HELD_PIECE_OMITTED" });
+    render(<SaveErrorToast message={omitted} isAuthenticated={false} conflict={null} />);
+    const text = screen.getByRole("status").textContent ?? "";
+    expect(text).toContain(omitted);
+    expect(text).not.toMatch(/press Retry|will try again|Couldn't save/u);
+    // This refusal is not about words the person wrote, so no piece is named before it.
+    expect(text).not.toContain("Table 3");
+    expect(screen.queryByRole("button", { name: /Retry/u })).toBeNull();
+    expect(screen.getByRole("button", { name: "Dismiss" })).toBeTruthy();
   });
 
   it("keeps the way to the newer version while a choice between versions waits", () => {

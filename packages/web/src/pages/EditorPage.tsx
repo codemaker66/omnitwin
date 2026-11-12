@@ -6,7 +6,7 @@ import { useAuthStore } from "../stores/auth-store.js";
 import { useCockpitStore } from "../stores/cockpit-store.js";
 import { useLayoutTimelinePreviewStore } from "../stores/layout-timeline-preview-store.js";
 import { isLayoutTimelineMutationLocked } from "../lib/layout-timeline-preview-lock.js";
-import { NOTE_HELD_CODE, pieceNamedForRefusedSave } from "../lib/guest-plan-notes.js";
+import { NOTE_HELD_CODE, pieceNamedForRefusedSave, refusedOverHeldNote } from "../lib/guest-plan-notes.js";
 import { SaveSendPanel } from "../components/editor/SaveSendPanel.js";
 import { MobilePlannerTopBar } from "../components/editor/MobilePlannerTopBar.js";
 import { EventLinkedPlannerBootstrap } from "../components/editor/EventLinkedPlannerBootstrap.js";
@@ -745,10 +745,11 @@ export function SaveErrorToast({
   };
   const dismiss = (): void => { useEditorStore.getState().clearSaveError(); };
   // A save refused because it would change a note this browser is not shown
-  // (409 NOTE_HELD): the API's own words, as they come, before them the piece
-  // when the planner can tell which (lib/guest-plan-notes). Retrying sends the
-  // same save to the same refusal, so it is not offered.
-  const refusedForHeldNote = useEditorStore((s) => s.saveErrorCode === NOTE_HELD_CODE);
+  // (409 NOTE_HELD), or leave out a piece holding one (409 HELD_PIECE_OMITTED):
+  // the API's own words, as they come, before them the piece when the planner
+  // can tell which (lib/guest-plan-notes). Retrying sends the same save to the
+  // same refusal, so it is not offered.
+  const refusedForHeldNote = useEditorStore((s) => refusedOverHeldNote(s.saveErrorCode));
   const refusedPiece = useEditorStore((s) => (s.saveErrorCode === NOTE_HELD_CODE ? pieceNamedForRefusedSave(s) : null));
   const heldNoteRefusal = refusedPiece === null ? message : `${refusedPiece}: ${message}`;
   const failure = conflict === null

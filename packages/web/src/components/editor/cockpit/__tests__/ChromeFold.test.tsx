@@ -404,10 +404,12 @@ describe("spines, marks and the crest's companions", () => {
     expect(trouble?.textContent).toBe("Retry save");
   });
 
-  it("says a save refused over a held note as the header does, with no Retry", () => {
-    const refusal = "A note on this plan cannot be changed from here, and this save tried to change it. Reload the page, or clear the note you wrote on that piece.";
+  it.each([
+    ["NOTE_HELD", "A note on this plan cannot be changed from here, and this save tried to change it. Clear the note you wrote on that piece."],
+    ["HELD_PIECE_OMITTED", "Nothing was saved: this save would remove a piece with a note that cannot be shown here. Reload the page to put it back."],
+  ])("says a save refused over a held note as the header does, with no Retry (%s)", (code, refusal) => {
     useChromePresenceStore.setState({ folded: { ...ALL_OPEN, left: true } });
-    useEditorStore.setState({ isDirty: true, saveError: refusal, saveErrorCode: "NOTE_HELD" });
+    useEditorStore.setState({ isDirty: true, saveError: refusal, saveErrorCode: code });
     render(<ChromeSpine unit="left" />);
     const spine = screen.getByRole("button", { name: "Show On the floor" });
     expect(spine.textContent).toContain(refusal);

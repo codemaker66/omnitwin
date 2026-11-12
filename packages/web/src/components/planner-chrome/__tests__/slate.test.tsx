@@ -90,7 +90,7 @@ describe("the save line", () => {
   // A save the API refused because it would change a note this browser is not
   // shown (409 NOTE_HELD). It did reach Venviewer, and trying again meets the
   // same refusal: the notice is the API's own sentence, with nothing to press.
-  const REFUSAL = "A note on this plan cannot be changed from here, and this save tried to change it. Reload the page, or clear the note you wrote on that piece.";
+  const REFUSAL = "A note on this plan cannot be changed from here, and this save tried to change it. Clear the note you wrote on that piece.";
   const refused: SlateSaveInput = { ...steady, isDirty: true, pendingChanges: 1, keptOnDevice: true, saveError: REFUSAL, refusedForHeldNote: true };
 
   it("says a save refused over a held note in the API's own words, with no Try again", () => {

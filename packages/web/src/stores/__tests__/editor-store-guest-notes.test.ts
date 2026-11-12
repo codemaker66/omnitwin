@@ -3,7 +3,7 @@ import { ApiError } from "../../api/client.js";
 import type { BatchObjectInput, Configuration, ObjectMetadata, PlacedObject } from "../../api/configurations.js";
 import { editorToPlacedItem, flushAutoSave, placedItemToEditor } from "../../components/editor/EditorBridge.js";
 import { persistAnonymousPlannerDraft, readAnonymousPlannerDraft } from "../../lib/anonymous-planner-draft.js";
-import { heldNoteIds, noteHeldOn, ownWordsOverHeldNotes } from "../../lib/guest-plan-notes.js";
+import { heldNoteIds, noteHeldOn, ownWordsOverHeldNotes, refusedOverHeldNote } from "../../lib/guest-plan-notes.js";
 import { useAuthStore } from "../auth-store.js";
 import { useEditorStore, type EditorObject } from "../editor-store.js";
 import { usePlacementNoticeStore } from "../placement-notice-store.js";
@@ -721,6 +721,39 @@ describe("a save of a document that has lost a piece holding a note this browser
     expect(await store().saveToServer(false)).toBe(true);
     expect(saveSent(savesSent() - 1).batch.map((piece) => piece.id)).toEqual([B]);
     expect(notice()).toBeNull();
+  });
+});
+
+describe("a save the API refuses because it leaves out a piece holding a note this browser is not shown", () => {
+  it("is said in the API's own words under its own code, and is not sent again", async () => {
+    await open(plan([placed(A, { noteHeld: true }), placed(B)], false));
+    store().setObjectNotes(B, "TEST ONLY by the window");
+    store().updateObject(B, { positionX: 3 });
+    vi.mocked(configApi.publicBatchSave).mockRejectedValue(new ApiError(409, OMITTED_MESSAGE, "HELD_PIECE_OMITTED"));
+
+    expect(await store().saveToServer(false)).toBe(false);
+    expect(savesSent()).toBe(1);
+    expect(store()).toMatchObject({ saveError: OMITTED_MESSAGE, saveErrorCode: "HELD_PIECE_OMITTED", saveConflict: null, isDirty: true, isSaving: false });
+    expect(refusedOverHeldNote(store().saveErrorCode)).toBe(true);
+    expect(refusedOverHeldNote("NOTE_HELD")).toBe(true);
+    expect(refusedOverHeldNote("RATE_LIMITED")).toBe(false);
+    expect(refusedOverHeldNote(null)).toBe(false);
+  });
+
+  it("is answered by a reload, as its sentence says: work kept on this device takes the piece back as it opens", async () => {
+    const server: PlanOnServer = { revision: 4, notes: new Map([[A, ALLERGY]]) };
+    serveNotesAsTheApiDoes(server);
+    // A page that lost the piece (one loaded before this guard, say) kept its work here.
+    persistAnonymousPlannerDraft({
+      configId: PLAN, spaceId: SPACE, venueId: VENUE, configRevision: 4, isPublicPreview: true,
+      objects: [kept(B, "", 3)], baseObjects: [kept(A), kept(B)], isDirty: true,
+    });
+
+    await open(plan([placed(A, { noteHeld: true, displayLabel: "Table 3" }), placed(B)], false));
+    expect(pieceIds()).toEqual([B, A]);
+    expect(notice()).toBe("Table 3 stayed where it is, because it has a note that cannot be shown here.");
+    expect(await store().saveToServer(false)).toBe(true);
+    expect(server.notes.get(A)).toBe(ALLERGY);
   });
 });
 

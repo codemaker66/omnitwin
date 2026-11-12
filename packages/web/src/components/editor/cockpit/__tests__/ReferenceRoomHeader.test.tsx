@@ -411,10 +411,12 @@ describe("ReferenceRoomHeader", () => {
   // A save the API refused because it would change a note this browser is not
   // shown (409 NOTE_HELD): the same save meets the same refusal, so the header
   // says the API's own sentence and nothing about retrying.
-  it("says a save refused over a held note in the API's own words, with no Retry", () => {
-    const refusal = "A note on this plan cannot be changed from here, and this save tried to change it. Reload the page, or clear the note you wrote on that piece.";
+  it.each([
+    ["NOTE_HELD", "A note on this plan cannot be changed from here, and this save tried to change it. Clear the note you wrote on that piece."],
+    ["HELD_PIECE_OMITTED", "Nothing was saved: this save would remove a piece with a note that cannot be shown here. Reload the page to put it back."],
+  ])("says a save refused over a held note in the API's own words, with no Retry (%s)", (code, refusal) => {
     showHeader();
-    act(() => { useEditorStore.setState({ isSaving: false, isDirty: true, saveError: refusal, saveErrorCode: "NOTE_HELD" }); });
+    act(() => { useEditorStore.setState({ isSaving: false, isDirty: true, saveError: refusal, saveErrorCode: code }); });
     expect(screen.getByRole("status").textContent).toBe(refusal);
     expect(document.body.textContent).not.toMatch(/retry/iu);
     expect(screen.queryByRole("button", { name: /retry/iu })).toBeNull();

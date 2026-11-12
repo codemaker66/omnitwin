@@ -163,6 +163,24 @@ export function namingReplacedNotes(
 export const NOTE_HELD_CODE = "NOTE_HELD";
 
 /**
+ * The API's code for a save refused because it leaves out a piece that holds
+ * a note its sender was not shown (409): the API's own backstop to
+ * heldNotePiecesToPutBack, which keeps such a save from ever being sent.
+ */
+export const HELD_PIECE_OMITTED_CODE = "HELD_PIECE_OMITTED";
+
+/**
+ * Whether a save was refused for a held note, by either code. Every save
+ * surface then says the refusal in the API's own words, as they arrive, and
+ * offers no Retry: the same save meets the same refusal. Only NOTE_HELD is
+ * ever sent again without a recorded note (editor-store
+ * saveLeavingOutOfDateNotes); a save refused for a left-out piece is not.
+ */
+export function refusedOverHeldNote(code: string | null): boolean {
+  return code === NOTE_HELD_CODE || code === HELD_PIECE_OMITTED_CODE;
+}
+
+/**
  * The pieces on which the person's own words stand over a note this browser
  * is not shown (work kept on the device from before the piece held one, or
  * kept over a newer version that put one there). These are what a refused
