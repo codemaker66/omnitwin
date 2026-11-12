@@ -157,3 +157,31 @@ describe("the Trades House leaflet page's frame", () => {
     }
   });
 });
+
+// Review of #405, H2. Once the frame loads, a plain link in the leaflet opens
+// in the frame itself: another site shown inside this page, or a refused frame
+// if that site forbids framing. A link that leaves the site opens a new tab,
+// with no opener and no referrer, and the leaflet stays where it was.
+describe("the leaflet's links to other sites", () => {
+  it("open every one in a new tab, with no opener and no referrer", () => {
+    render(<TradesHouseLeafletPage />);
+    const src = screen.getByTitle("Trades House Glasgow two-sided leaflet").getAttribute("src") ?? "";
+    const html = readFileSync(join(root, "public", ...src.split("/").filter((part) => part !== "")), "utf8");
+    const leaflet = new DOMParser().parseFromString(html, "text/html");
+    // Where the leaflet is served; the host is a stand-in for this site's own.
+    const here = new URL(src, "https://this-site.invalid");
+    const outbound = [...leaflet.querySelectorAll("a[href], area[href]")].filter((link) => {
+      const to = new URL(link.getAttribute("href") ?? "", here);
+      return (to.protocol === "http:" || to.protocol === "https:") && to.origin !== here.origin;
+    });
+    expect(outbound.length, "the leaflet links to the Trades Hall's own website").toBeGreaterThan(0);
+    for (const link of outbound) {
+      const rel = (link.getAttribute("rel") ?? "").toLowerCase().split(/\s+/u);
+      expect({
+        target: link.getAttribute("target"),
+        noopener: rel.includes("noopener"),
+        noreferrer: rel.includes("noreferrer"),
+      }, link.outerHTML.slice(0, 120)).toEqual({ target: "_blank", noopener: true, noreferrer: true });
+    }
+  });
+});
