@@ -174,9 +174,14 @@ export async function proposeWindowCore(
     // Diary move may have overtaken the read above, so whether the window
     // moves, from where, its rank and decision date, and everything moved with
     // it (its phases, the floor's change) come from this row, never from that
-    // read. Locked before the room, in the order a Diary move takes them.
+    // read. Still this proposer's live hold on this event, as it was found: one
+    // the office has moved to another event meanwhile is no longer theirs to
+    // move from here. Locked before the room, in the order a Diary move takes them.
     const lockedHold = mine === undefined ? null : (await tx.select().from(bookings)
-      .where(and(eq(bookings.id, mine.id), eq(bookings.kind, "hold"), eq(bookings.status, "active"), isNull(bookings.deletedAt)))
+      .where(and(
+        eq(bookings.id, mine.id), eq(bookings.eventId, eventId), eq(bookings.createdBy, actor.id),
+        eq(bookings.kind, "hold"), eq(bookings.status, "active"), isNull(bookings.deletedAt),
+      ))
       .for("update"))[0] ?? null;
     if (mine !== undefined && lockedHold === null) return deny(409, "WINDOW_DECIDED", "The office has confirmed this time; ask them to move it.");
     // The room as it stands now, held until this commits, so a room being
@@ -197,7 +202,10 @@ export async function proposeWindowCore(
         : decisionAt;
       [row] = await tx.update(bookings)
         .set({ spaceId: space.id, startsAt, endsAt, rank, decisionAt, nextActionDueAt, updatedAt: now })
-        .where(and(eq(bookings.id, lockedHold.id), eq(bookings.kind, "hold"), eq(bookings.status, "active")))
+        .where(and(
+          eq(bookings.id, lockedHold.id), eq(bookings.eventId, eventId), eq(bookings.createdBy, actor.id),
+          eq(bookings.kind, "hold"), eq(bookings.status, "active"),
+        ))
         .returning();
       if (row === undefined) return deny(409, "WINDOW_DECIDED", "The office has confirmed this time; ask them to move it.");
       changeKind = "booking.updated";
