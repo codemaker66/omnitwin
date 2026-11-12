@@ -202,4 +202,40 @@ describe.skipIf(target === undefined)("the public enquiry route on the migrated 
     );
     expect(rows).toEqual([{ venue_id: liveVenue, space_id: liveRoom, source: "planner", room_chosen: true }]);
   });
+
+  it("keeps the enquiry of a guest who gives no name and an email longer than the name column holds", async () => {
+    // 230 characters: within the email's 255, past the 200 of enquiries.name.
+    const local = `test-only-long-${run}-`;
+    const email = `${local}${"x".repeat(230 - local.length - "@example.test".length)}@example.test`;
+    expect(email).toHaveLength(230);
+    const enquiryId = idOf(await enquire({ venueSlug: liveVenue, source: "website", email, eventType: "wedding" }), "enquiryId");
+
+    // Filed under the email, cut to the column as the person made from it is.
+    const { rows } = await pool.query<{ name: string; email: string; guest_email: string; guest_name: string | null; person: string | null }>(
+      `SELECT e.name, e.email, e.guest_email, e.guest_name, c.name AS person
+         FROM enquiries e LEFT JOIN contacts c ON c.id = e.contact_id WHERE e.id = $1`,
+      [enquiryId],
+    );
+    expect(rows).toEqual([{ name: email.slice(0, 200), email, guest_email: email, guest_name: null, person: email.slice(0, 200) }]);
+  });
+
+  it("refuses an event date no calendar has before anything is written, and keeps a real one", async () => {
+    const email = `test-only-dates-${run}@example.test`;
+    const refused: Record<string, number> = {};
+    for (const eventDate of ["2027-02-29", "2027-04-31", "2027-13-01", "2027-00-10", "0000-01-01"]) {
+      const response = await enquire({ venueSlug: liveVenue, source: "website", email, eventType: "wedding", eventDate });
+      refused[eventDate] = response.statusCode;
+      if (response.statusCode === 400) expect(response.json<{ code: string }>().code).toBe("VALIDATION_ERROR");
+    }
+    expect(refused).toEqual({ "2027-02-29": 400, "2027-04-31": 400, "2027-13-01": 400, "2027-00-10": 400, "0000-01-01": 400 });
+    const { rows: none } = await pool.query<{ count: number }>("SELECT count(*)::int AS count FROM enquiries WHERE email = $1", [email]);
+    expect(none[0]?.count).toBe(0);
+
+    // A leap day that exists is kept exactly.
+    const enquiryId = idOf(await enquire({ venueSlug: liveVenue, source: "website", email, eventType: "wedding", eventDate: "2028-02-29" }), "enquiryId");
+    const { rows } = await pool.query<{ preferred_date: string }>(
+      "SELECT preferred_date::text AS preferred_date FROM enquiries WHERE id = $1", [enquiryId],
+    );
+    expect(rows).toEqual([{ preferred_date: "2028-02-29" }]);
+  });
 });

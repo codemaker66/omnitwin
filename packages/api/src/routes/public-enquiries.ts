@@ -57,6 +57,10 @@ function twinPublicVenueSlugs(): readonly string[] {
  *  18 October 2026). Office staff and admins keep the in-app notice. */
 const ENQUIRY_EMAIL_ROLES = ["sales", "manager", "hallkeeper"] as const;
 
+/** What enquiries.name holds (varchar(200)). An email is ASCII (z.email()),
+ *  so cutting it by code unit never splits a character. */
+const ENQUIRY_NAME_MAX = 200;
+
 /** How a notice says where an enquiry came from, when it names no room. */
 const SOURCE_PHRASE: Readonly<Record<EnquirySource, string>> = {
   website: "from the website",
@@ -249,7 +253,10 @@ export async function publicEnquiryRoutes(
         guestPhone: parsed.data.phone ?? null,
         guestName: parsed.data.name ?? null,
         state: "submitted",
-        name: displayName,
+        // enquiries.name holds 200 characters and an email may be 255: a guest
+        // who gives no name is filed under their email cut to the column, as
+        // the person made from it is (people-link.ts), never refused for it.
+        name: displayName.slice(0, ENQUIRY_NAME_MAX),
         email: parsed.data.email,
         preferredDate: parsed.data.eventDate ?? null,
         eventType: parsed.data.eventType ?? null,
