@@ -2097,6 +2097,17 @@ button.dayboard-rail-item:disabled { cursor: default; }
 /* Marked gone from here: still named, quieter, with Undo beside it. */
 .dayboard-still-in li.is-gone .dayboard-checks-label { color: var(--house-ink-3); }
 
+/* Gone and Undo are tapped at the door on a phone: full-size targets, and
+   the work shown beside the word while a tap is on its way. */
+.dayboard-still-in .dayboard-button,
+.dayboard-still-in .dayboard-checks-change {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+}
+.dayboard-still-in .dayboard-checks-change { padding: 0 10px; }
+
 @media (max-width: 767px) {
   .dayboard-checks-pair { grid-template-columns: minmax(0, 1fr); }
   .dayboard-checks-editor li { grid-template-columns: minmax(0, 1fr) auto auto; }
