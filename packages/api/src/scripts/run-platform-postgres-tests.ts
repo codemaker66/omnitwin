@@ -24,6 +24,8 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   // The bind (migration 0090): zero holds or inks without an event.
   "src/__tests__/booking-event-bind-postgres.test.ts",
   "src/__tests__/enquiry-bookings-postgres.test.ts",
+  // A booking stored with an empty title keeps its venue's Diary range readable (API-9).
+  "src/__tests__/calendar-untitled-booking-postgres.test.ts",
   "src/__tests__/event-mutations-postgres.test.ts",
   // The event-day board: a change needing acknowledgement stays listed however many follow it.
   "src/__tests__/event-day-awaiting-acknowledgement-postgres.test.ts",
