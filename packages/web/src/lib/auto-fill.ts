@@ -1102,8 +1102,10 @@ export function planRoomFill(
     // not on the table, it is said as that chair's place ("a chair at Table 6"):
     // the table's own note panel shows nothing held (lib/guest-plan-notes).
     const chair = holdsUnseenNote(table.id) ? undefined : kept.find((piece) => piece.groupId === table.groupId && holdsUnseenNote(piece.id));
-    const byChair = chair === undefined ? null : heldNotePieceNamed(chair, kept).label;
-    return { label: byChair ?? (label === "" ? null : label), noun: "round" };
+    const byChair = chair === undefined ? null : heldNotePieceNamed(chair, kept);
+    return byChair !== null && byChair.label !== null
+      ? { ...byChair, noun: "round" }
+      : { label: label === "" ? null : label, noun: "round" };
   });
   return plan === null ? { plan, keptForNotes } : { plan, refillIds, keptForNotes };
 }

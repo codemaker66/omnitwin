@@ -435,7 +435,33 @@ describe("a seat taken from a table, when the chair that would go holds a note t
     act(() => { changeSeatsAtSelectedTables(-1); });
 
     expect(placedIds()).toEqual(before);
-    expect(notice()).toBe("A chair at Tables 1 and 2 stayed where they are, because each has a note that cannot be shown here.");
+    // One phrase per table, as ruled (delta review of #388 at 713dc3f1, C1): never "a chair at Tables 1 and 2".
+    expect(notice()).toBe("A chair at Table 1 and a chair at Table 2 stayed where they are, because each has a note that cannot be shown here.");
+  });
+});
+
+describe("Undo of a step that placed rounds whose chairs have since come to hold notes this browser is not shown", () => {
+  it("refuses the step and names each chair by its own table (C1)", async () => {
+    const [first, second] = rounds(2);
+    const firstChair = first?.chairs[2];
+    const secondChair = second?.chairs[5];
+    if (first === undefined || second === undefined || firstChair === undefined || secondChair === undefined) throw new Error("no rounds");
+    await open([], [], "without its notes");
+
+    // Both rounds placed in one step, and saved.
+    act(() => { usePlacementStore.getState().placeSetup([...first.pieces, ...second.pieces]); });
+    expect(tableNames()).toEqual(["Table 1", "Table 2"]);
+    await savedBatch();
+    // The maker then writes a note on a chair at each: the next answer marks them.
+    await savedBatch(new Set([firstChair, secondChair]));
+    const before = placedIds();
+    const stepsBefore = steps();
+
+    act(() => { useEditorStore.getState().undo(); });
+
+    expect(placedIds()).toEqual(before);
+    expect(steps()).toBe(stepsBefore);
+    expect(notice()).toBe("Nothing was undone: a chair at Table 1 and a chair at Table 2 have notes that cannot be shown here.");
   });
 });
 

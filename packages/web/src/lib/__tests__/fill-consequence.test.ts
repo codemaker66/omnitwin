@@ -229,7 +229,7 @@ describe("a fill over rounds that hold a note this browser is not shown", () => 
     if (table6 === undefined || chair === undefined) throw new Error("no Table 6");
     const fill = planOver(placed, 30, (id) => id === chair.id);
     expect(fill.refillIds.has(table6.id)).toBe(false);
-    expect(fill.keptForNotes).toEqual([{ label: "a chair at Table 6", noun: "round" }]);
+    expect(fill.keptForNotes).toEqual([{ label: "a chair at Table 6", noun: "round", asWritten: true }]);
     expect(fillKeptForNotesLine(fill.keptForNotes)).toBe("A chair at Table 6 stayed where it is, because it has a note that cannot be shown here.");
     // When the table holds one too, the round is known by the table.
     const both = planOver(placed, 30, (id) => id === chair.id || id === table6.id);

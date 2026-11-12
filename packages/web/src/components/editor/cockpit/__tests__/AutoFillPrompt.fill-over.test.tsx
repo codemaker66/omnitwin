@@ -132,6 +132,29 @@ describe("Fill's prompt over a layout", () => {
       .toBe("Tables 1, 2 and 3 stayed where they are, because each has a note that cannot be shown here.");
   });
 
+  it("names rounds kept for notes on their chairs one table at a time (C1)", () => {
+    const laid = fiveRounds();
+    const chairAt = (name: string): string | undefined => {
+      const table = laid.find((piece) => piece.label === name);
+      return laid.find((piece) => piece.groupId === table?.groupId && piece.id !== table.id)?.id;
+    };
+    const held = new Set([chairAt("Table 4"), chairAt("Table 5")]);
+    usePlacementStore.setState({ placedItems: laid });
+    useEditorStore.setState({
+      isPublicPreview: true,
+      notesIncluded: false,
+      baseObjects: laid.map((piece) => ({ ...placedItemToEditor(piece, undefined), ...(held.has(piece.id) ? { noteHeld: true } : {}) })),
+    });
+    const onPlaced = vi.fn();
+    render(<AutoFillPrompt style="dinner-rounds" published={PUBLISHED} onPlaced={onPlaced} onCancel={vi.fn()} />);
+    askFor(20);
+    fireEvent.click(screen.getByTestId("auto-fill-place"));
+
+    const said: unknown = onPlaced.mock.calls[0]?.[1];
+    expect(typeof said === "string" ? said.slice(said.indexOf("A chair")) : said)
+      .toBe("A chair at Table 4 and a chair at Table 5 stayed where they are, because each has a note that cannot be shown here.");
+  });
+
   it("says which rounds stay for their notes when they leave it no room, not only that the room has none (KG2)", () => {
     // Three rounds in a row across the middle: unmarked, the fill sets two of them anew for twenty.
     const laid = roundsAt([-6, 0, 6]);

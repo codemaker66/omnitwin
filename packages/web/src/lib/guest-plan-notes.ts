@@ -413,14 +413,16 @@ function tableToFindBy(piece: NamedPiece, pieces: readonly NamedPiece[]): NamedP
  * ("a chair at Table 3": the table's own note panel shows nothing held, so the
  * table's name alone would send them to the wrong piece); otherwise by what
  * it is. A ChangedPiece, so several are said as the planner says changed
- * pieces anywhere (describePieces).
+ * pieces anywhere (describePieces). A piece known by its table is one phrase
+ * per table, never gathered: "a chair at Table 1 and a chair at Table 3"
+ * (delta review of #388 at 713dc3f1, C1).
  */
 export function heldNotePieceNamed(piece: NamedPiece, pieces: readonly NamedPiece[]): ChangedPiece {
   if (ownName(piece) !== "") return { label: ownName(piece), noun: nounOf(piece) };
   const table = tableToFindBy(piece, pieces);
   if (table === undefined) return { label: null, noun: nounOf(piece) };
   const what = describePieces([{ label: null, noun: nounAtTable(piece) }]);
-  return { label: `${what} at ${ownName(table)}`, noun: nounOf(piece) };
+  return { label: `${what} at ${ownName(table)}`, noun: nounOf(piece), asWritten: true };
 }
 
 /** One piece as a line names it: "Table 3", or "a table", "a lectern". */

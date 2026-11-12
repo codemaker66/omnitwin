@@ -19,6 +19,9 @@ export interface ChangedPiece {
   readonly noun: string;
   /** The object's own label ("Table 3") when it has one; never invented. */
   readonly label: string | null;
+  /** The label is a phrase said as it stands ("a chair at Table 3"), never
+   *  gathered with numbered labels into "Tables 3 and 5". */
+  readonly asWritten?: true;
 }
 
 export interface LayoutChangeSummary {

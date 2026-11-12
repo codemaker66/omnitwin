@@ -475,7 +475,7 @@ export function describePieces(pieces: readonly ChangedPiece[]): string {
   const numbered = new Map<string, { numbers: string[] }>();
   const counted = new Map<string, { count: number }>();
   for (const piece of pieces) {
-    const parts = piece.label === null ? null : numberedLabel(piece.label);
+    const parts = piece.label === null || piece.asWritten === true ? null : numberedLabel(piece.label);
     if (piece.label !== null && parts === null) {
       phrases.push({ kind: "label", label: piece.label });
     } else if (parts !== null) {
