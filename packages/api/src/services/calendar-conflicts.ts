@@ -204,7 +204,10 @@ function occupancyOf(eventId: string | null, pieces: readonly OccupancyPiece[]):
  * occupancy, so a set-up phase on the morning of an evening booking is that
  * booking's. An event's pieces on another day are another occupancy, so a
  * two-day event never swallows what sits between its days (T-695
- * api-diary-bookings-7). Bookings without an event stand alone.
+ * api-diary-bookings-7). Pieces that do not touch join only while no other
+ * booking or phase in the room starts between them, so neither an evening
+ * past midnight nor a morning set-up swallows another client's booking
+ * (T-695 review D1, D2). Bookings without an event stand alone.
  */
 function buildOccupancies(
   inks: ReadonlyArray<ConflictBookingInput & { readonly startMs: number; readonly endMs: number }>,
@@ -238,12 +241,22 @@ function buildOccupancies(
   // The venue's calendar day of an instant; a span's day is that of its last
   // occupied instant, as spans are half-open.
   const venueDay = (ms: number): string => rotaLocalDate(ms, timeZone);
+  // Whose each piece in the room is, by its start: an event's two pieces are
+  // one occupancy only while nobody else's starts in the gap between them,
+  // or the event would swallow that booking whatever the day (review D1, D2).
+  const starts = [
+    ...inks.map((ink) => ({ owner: ink.eventId === null ? `booking:${ink.id}` : `event:${ink.eventId}`, startMs: ink.startMs })),
+    ...phases.map((row) => ({ owner: `event:${row.eventId}`, startMs: row.startsAt.getTime() })),
+  ];
+  const someoneElseBetween = (eventId: string, fromMs: number, toMs: number): boolean =>
+    starts.some((start) => start.owner !== `event:${eventId}` && start.startMs >= fromMs && start.startMs < toMs);
   for (const [eventId, pieces] of byEvent) {
     let run: OccupancyPiece[] = [];
     let runEndMs = Number.NEGATIVE_INFINITY;
     for (const piece of [...pieces].sort(chronological)) {
       const joins = run.length > 0
-        && (piece.startMs <= runEndMs || venueDay(piece.startMs) === venueDay(runEndMs - 1));
+        && (piece.startMs <= runEndMs
+          || (venueDay(piece.startMs) === venueDay(runEndMs - 1) && !someoneElseBetween(eventId, runEndMs, piece.startMs)));
       if (!joins && run.length > 0) {
         const held = occupancyOf(eventId, run);
         if (held !== null) occupancies.push(held);

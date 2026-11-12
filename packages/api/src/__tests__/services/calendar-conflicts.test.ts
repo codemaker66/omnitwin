@@ -466,6 +466,59 @@ describe("one event's days in a room", () => {
     expect(report.conflicts.map((c) => c.id)).toEqual(["viewing_overlap:gala:viewing"]);
   });
 
+  // T-695 review D1 (probe P1): an evening that runs past the venue's
+  // midnight belonged to the next day, so it joined the same event's next
+  // evening and swallowed another client's lunch between them.
+  it("measures the changeovers round another client's lunch between two evenings that run past midnight", () => {
+    const friday = booking({ id: "w-fri", title: "Wedding weekend", eventId: "event-w",
+      startsAt: at("2026-09-18T17:00:00.000Z"), endsAt: at("2026-09-19T00:00:00.000Z") });
+    const saturday = booking({ id: "w-sat", title: "Wedding weekend", eventId: "event-w",
+      startsAt: at("2026-09-19T17:00:00.000Z"), endsAt: at("2026-09-20T00:00:00.000Z") });
+    const lunch = booking({ id: "lunch", title: "Lunch", eventId: "event-lunch",
+      startsAt: at("2026-09-19T11:00:00.000Z"), endsAt: at("2026-09-19T14:00:00.000Z") });
+    const viewing = booking({ id: "view", kind: "viewing", title: "Show-round",
+      startsAt: at("2026-09-19T09:00:00.000Z"), endsAt: at("2026-09-19T09:30:00.000Z") });
+    const report = detect({ bookings: [friday, saturday, lunch, viewing], turnaroundRules: [rule({ minutes: 240 })] });
+    expect(report.conflicts.map((c) => c.id)).toEqual(["insufficient_turnaround:lunch:w-sat"]);
+    expect(report.conflicts[0]?.explanation).toContain("Only 180 minutes");
+  });
+
+  it("does the same across the October clock change, the first night ending at 01:00 BST", () => {
+    const saturday = booking({ id: "w-sat", title: "Wedding weekend", eventId: "event-w",
+      startsAt: at("2026-10-24T17:00:00.000Z"), endsAt: at("2026-10-25T00:00:00.000Z") });
+    const sunday = booking({ id: "w-sun", title: "Wedding weekend", eventId: "event-w",
+      startsAt: at("2026-10-25T18:00:00.000Z"), endsAt: at("2026-10-25T23:00:00.000Z") });
+    const lunch = booking({ id: "lunch", title: "Lunch", eventId: "event-lunch",
+      startsAt: at("2026-10-25T12:00:00.000Z"), endsAt: at("2026-10-25T15:00:00.000Z") });
+    const report = detect({ bookings: [saturday, sunday, lunch], turnaroundRules: [rule({ minutes: 240 })] });
+    expect(report.conflicts.map((c) => c.id)).toEqual(["insufficient_turnaround:lunch:w-sun"]);
+  });
+
+  // T-695 review D1 (probe P3b): the spring-forward night, a party from 20:00
+  // GMT to 02:00 BST, then another client's brunch, then the party's Sunday.
+  it("does the same across the March clock change, the party ending at 02:00 BST", () => {
+    const party = booking({ id: "party-sat", title: "Party", eventId: "event-party",
+      startsAt: at("2026-03-28T20:00:00.000Z"), endsAt: at("2026-03-29T01:00:00.000Z") });
+    const brunch = booking({ id: "brunch", title: "Brunch", eventId: "event-brunch",
+      startsAt: at("2026-03-29T10:00:00.000Z"), endsAt: at("2026-03-29T14:00:00.000Z") });
+    const partySunday = booking({ id: "party-sun", title: "Party", eventId: "event-party",
+      startsAt: at("2026-03-29T17:00:00.000Z"), endsAt: at("2026-03-29T22:00:00.000Z") });
+    const report = detect({ bookings: [party, brunch, partySunday], turnaroundRules: [rule({ minutes: 240 })] });
+    expect(report.conflicts.map((c) => c.id)).toEqual(["insufficient_turnaround:brunch:party-sun"]);
+  });
+
+  // T-695 review D2 (probe P5b): the same swallow inside one day.
+  it("measures another client's lunch between one event's morning and evening on the same day", () => {
+    const morning = booking({ id: "sd-am", title: "Gala set", eventId: "event-sd",
+      startsAt: at("2026-09-18T08:00:00.000Z"), endsAt: at("2026-09-18T10:00:00.000Z") });
+    const evening = booking({ id: "sd-pm", title: "Gala", eventId: "event-sd",
+      startsAt: at("2026-09-18T17:00:00.000Z"), endsAt: at("2026-09-18T21:00:00.000Z") });
+    const lunch = booking({ id: "lunch", title: "Lunch", eventId: "event-lunch",
+      startsAt: at("2026-09-18T11:00:00.000Z"), endsAt: at("2026-09-18T15:00:00.000Z") });
+    const report = detect({ bookings: [morning, evening, lunch], turnaroundRules: [rule({ minutes: 180 })] });
+    expect(report.conflicts.map((c) => c.id)).toEqual(["insufficient_turnaround:lunch:sd-pm", "insufficient_turnaround:sd-am:lunch"]);
+  });
+
   it("parts an event's days at the venue's midnight, on either side of the October clock change", () => {
     // Clocks go back at 02:00 BST on Sunday 25 October 2026. A UTC day would
     // join Saturday to the overnight set-up that starts at 00:30 BST on Sunday
