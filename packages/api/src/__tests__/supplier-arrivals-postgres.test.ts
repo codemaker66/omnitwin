@@ -247,6 +247,9 @@ describe.skipIf(target === undefined)("supplier arrivals, on migrated PostgreSQL
   it("keeps planning to the office, refuses an old copy, and lets one of two changes from one copy land", async () => {
     const f = await fixture();
     expect((await call(f, "hallkeeper", "POST", `/venues/${f.venueId}/supplier-arrivals`, arrival(f))).status).toBe(403);
+    // Text PostgreSQL would refuse is refused first, as a 400, not a 500.
+    const nul = await call(f, "admin", "POST", `/venues/${f.venueId}/supplier-arrivals`, arrival(f, { supplierName: "A\u0000B" }));
+    expect([nul.status, nul.code]).toEqual([400, "VALIDATION_ERROR"]);
     const made = (await call(f, "admin", "POST", `/venues/${f.venueId}/supplier-arrivals`, arrival(f))).data as SupplierArrival;
     expect((await call(f, "hallkeeper", "PATCH", `/venues/${f.venueId}/supplier-arrivals/${made.id}`, { expectedRevision: 1, entrance: "front" })).status).toBe(403);
 
