@@ -273,15 +273,40 @@ export function afterLeavingOutOfDateNotes(
 // ---------------------------------------------------------------------------
 
 let heldNotesSource: () => ReadonlySet<string> = () => NONE;
+let carriedNotesSource: () => ReadonlySet<string> = () => NONE;
 
-/** The editor store's reading of heldNoteIds for the open plan. */
-export function registerHeldNotes(read: () => ReadonlySet<string>): void {
+/** The editor store's reading of heldNoteIds, and of carriedNoteIds, for the open plan. */
+export function registerHeldNotes(read: () => ReadonlySet<string>, carried: () => ReadonlySet<string> = () => NONE): void {
   heldNotesSource = read;
+  carriedNotesSource = carried;
 }
 
 /** The pieces of the open plan holding a note this browser is not shown; none when no plan is open. */
 export function currentHeldNoteIds(): ReadonlySet<string> {
   return heldNotesSource();
+}
+
+const carriedIn = new WeakMap<readonly EditorObject[], ReadonlySet<string>>();
+
+/**
+ * Of the pieces counted as holding a note this browser is not shown, those
+ * whose note is its own: carried onto a newer version by "Keep mine" and not
+ * yet confirmed by a save (keepingConfirmedNotes). The person can read that
+ * note, so a refusal says it is still being saved, not that it cannot be
+ * shown (noteStillSavingLine).
+ */
+export function carriedNoteIds(state: Pick<GuestPlanNoteFacts, "isPublicPreview" | "notesIncluded" | "baseObjects">): ReadonlySet<string> {
+  if (heldNoteIds(state).size === 0) return NONE;
+  const known = carriedIn.get(state.baseObjects);
+  if (known !== undefined) return known;
+  const carried = new Set(state.baseObjects.filter((object) => object.noteHeld === true && object.notes !== "").map((object) => object.id));
+  carriedIn.set(state.baseObjects, carried);
+  return carried;
+}
+
+/** Those pieces of the open plan; none when no plan is open. */
+export function currentCarriedNoteIds(): ReadonlySet<string> {
+  return carriedNotesSource();
 }
 
 // ---------------------------------------------------------------------------
@@ -485,6 +510,18 @@ export function nothingFilledLine(name: string): string {
 /** A removal's refusal, when the one piece (or group) asked to go holds such a note. */
 export function nothingRemovedLine(name: string): string {
   return refusedLine("Nothing was removed", name);
+}
+
+/**
+ * A removal's refusal when every note in the way is the person's own, carried
+ * and not yet confirmed (carriedNoteIds): they can read it, so "cannot be
+ * shown here" would contradict the screen. Ruled 12 November 2026.
+ */
+export function noteStillSavingLine(pieces: readonly ChangedPiece[]): string {
+  const names = describePieces(pieces);
+  return pieces.length === 1
+    ? `Nothing was removed: the note on ${names} is still being saved. Try again once it has saved.`
+    : `Nothing was removed: the notes on ${names} are still being saved. Try again once they have saved.`;
 }
 
 /** A seat taken from a table, when the chair that would go holds such a note. */

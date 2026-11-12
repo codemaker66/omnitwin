@@ -634,6 +634,40 @@ describe("removing pieces, several of which hold a note this browser is not show
     expect(notice()).toBe("Table 2 and a chair at Table 4 stayed where they are, because each has a note that cannot be shown here.");
   });
 
+  // Delta review of #388, D7, as ruled on 12 November. Between "Keep mine" and the save that confirms it, a note of the
+  // person's own is carried with its mark: the piece is kept, but they can read the note, so it is not one that "cannot be shown".
+  it("says a note of the person's own that no save has confirmed yet is still being saved, for one piece and for several", async () => {
+    const floor = rounds(3);
+    const [first, second, third] = floor;
+    if (first === undefined || second === undefined || third === undefined) throw new Error("no rounds");
+    await open(floor, [], "without its notes");
+    const before = placedIds();
+    // The document as Keep mine leaves it until its save lands: their notes on Tables 1 and 3, carried, each with its mark.
+    const theirs = new Set([first.table, third.table]);
+    act(() => {
+      useEditorStore.setState((state) => ({
+        baseObjects: state.baseObjects.map((object) => (theirs.has(object.id) ? { ...object, notes: "TEST ONLY by the window", noteHeld: true } : object)),
+        objects: state.objects.map((object) => (theirs.has(object.id) ? { ...object, notes: "TEST ONLY by the window" } : object)),
+      }));
+    });
+
+    useSelectionStore.getState().selectMultiple([first.table]);
+    act(() => { removeSelection(); });
+    expect(notice()).toBe("Nothing was removed: the note on Table 1 is still being saved. Try again once it has saved.");
+    expect(placedIds()).toEqual(before);
+
+    useSelectionStore.getState().selectMultiple([first.table, third.table]);
+    act(() => { removeSelection(); });
+    expect(notice()).toBe("Nothing was removed: the notes on Tables 1 and 3 are still being saved. Try again once they have saved.");
+    expect(placedIds()).toEqual(before);
+
+    // With a piece that can go, it goes, and the one that stays is said in the sentence ruled for that.
+    useSelectionStore.getState().selectMultiple([first.table, second.table]);
+    act(() => { removeSelection(); });
+    expect(notice()).toBe("Table 1 stayed where it is, because it has a note that cannot be shown here.");
+    expect(tableNames()).toEqual(["Table 1", "Table 3"]);
+  });
+
   it("removes a marked piece as ever from a layout that is not a guest plan, where the mark means nothing", async () => {
     const floor = rounds(2);
     const [first, second] = floor;

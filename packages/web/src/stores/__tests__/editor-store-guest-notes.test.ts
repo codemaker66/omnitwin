@@ -1184,6 +1184,28 @@ describe("the notes Keep mine carries onto the newer version, before any save ha
     expect(noteOn(B)).toBe("TEST ONLY by the window");
   });
 
+  it("are said to be still saving when the person asks for such a piece to go: they can read that note", async () => {
+    const server: PlanOnServer = { revision: 4, notes: new Map([[A, ALLERGY]]) };
+    serveNotesAsTheApiDoes(server);
+    await open(plan([placed(A, { noteHeld: true, displayLabel: "Table 3" }), placed(B, { displayLabel: "Table 5" })], false));
+    store().setObjectNotes(B, "TEST ONLY by the window");
+    expect(await store().saveToServer(false)).toBe(true);
+    theyNowHave(server, [placed(A, { noteHeld: true, displayLabel: "Table 3" }, 2), placed(B, { noteHeld: true, displayLabel: "Table 5" })]);
+    store().updateObject(B, { positionX: 3 });
+    expect(await store().saveToServer(false)).toBe(false);
+    vi.mocked(configApi.publicBatchSave).mockRejectedValueOnce(new ApiError(429, "Too many requests — please slow down.", "RATE_LIMITED"));
+    expect(await store().keepMine(false)).toBe(false);
+
+    store().removeObject(B);
+    expect(notice()).toBe("Nothing was removed: the note on Table 5 is still being saved. Try again once it has saved.");
+    expect(pieceIds()).toContain(B);
+    // A note that is kept from this browser is said as it always was.
+    usePlacementNoticeStore.getState().dismiss();
+    store().removeObject(A);
+    expect(notice()).toBe("Nothing was removed: Table 3 has a note that cannot be shown here.");
+    expect(pieceIds()).toContain(A);
+  });
+
   it("are confirmed, and unguarded again, by the save that lands them", async () => {
     const server: PlanOnServer = { revision: 4, notes: new Map() };
     serveNotesAsTheApiDoes(server);

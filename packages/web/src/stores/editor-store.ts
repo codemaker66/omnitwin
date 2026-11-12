@@ -22,6 +22,7 @@ import {
   NOTE_HELD_CODE,
   afterLeavingOutOfDateNotes,
   batchClearingOwnNotesOfRemovedPieces,
+  carriedNoteIds,
   heldNoteIds,
   heldNoteObjectsName,
   heldNoteObjectsNamed,
@@ -29,6 +30,7 @@ import {
   heldNotePiecesToPutBack,
   keepingConfirmedNotes,
   namingReplacedNotes,
+  noteStillSavingLine,
   nothingRedoneLine,
   nothingRemovedLine,
   nothingUndoneLine,
@@ -1495,7 +1497,11 @@ export const useEditorStore = create<EditorStore>()(withSaveFacts((set, get) => 
     const holders = going === undefined ? [] : s.objects.filter((o) => held.has(o.id)
       && (o.id === objectId || (going.groupId !== null && o.groupId === going.groupId)));
     if (holders.length > 0) {
-      postPlacementNotice(nothingRemovedLine(heldNoteObjectsName(holders, s.objects)));
+      // A note of their own that no save has confirmed yet is one they can read: it is still being saved.
+      const carried = carriedNoteIds(s);
+      postPlacementNotice(holders.every((o) => carried.has(o.id))
+        ? noteStillSavingLine(heldNoteObjectsNamed(holders, s.objects))
+        : nothingRemovedLine(heldNoteObjectsName(holders, s.objects)));
       return;
     }
     const after = s.objects.filter((o) => o.id !== objectId);
@@ -2419,7 +2425,7 @@ if (typeof window !== "undefined") window.addEventListener("storage", onPlannerD
 
 // The scene's stores and commands ask which pieces hold a note this browser is
 // not shown without loading this store (lib/guest-plan-notes).
-registerHeldNotes(() => heldNoteIds(useEditorStore.getState()));
+registerHeldNotes(() => heldNoteIds(useEditorStore.getState()), () => carriedNoteIds(useEditorStore.getState()));
 
 // This page holds its lock for its lifetime, so another tab can tell its
 // in-progress drafts from those a closed page left behind.

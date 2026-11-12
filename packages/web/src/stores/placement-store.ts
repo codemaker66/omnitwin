@@ -32,6 +32,7 @@ import {
 import { applySeatShortfallFix, type SeatShortfallFixResult } from "../lib/seat-shortfall.js";
 import { capReachedFor, capReachedLine } from "../lib/placement-cap.js";
 import {
+  currentCarriedNoteIds,
   currentHeldNoteIds,
   danceFloorNotResizedLine,
   heldNotePieceName,
@@ -40,6 +41,7 @@ import {
   noSeatRemovedLine,
   nothingClearedLine,
   nothingFilledLine,
+  noteStillSavingLine,
   nothingRemovedLine,
   nothingReplacedLine,
   stayedForNotesLine,
@@ -358,15 +360,21 @@ function refusedForHeldNote(before: readonly PlacedItem[], after: readonly Place
  * Of the pieces a person asked to remove, those that stay: each piece holding
  * a note this browser is not shown, with the rest of its group, since a table
  * keeps its chairs. `names` has one entry for each such piece or group.
+ * `saving` says every note in the way is the person's own, carried and not
+ * yet confirmed by a save (lib/guest-plan-notes carriedNoteIds): they can read
+ * it, so a refusal says it is still being saved.
  */
 function keptForHeldNotes(removing: readonly PlacedItem[], placedItems: readonly PlacedItem[]): {
   readonly ids: ReadonlySet<string>;
   readonly names: readonly ChangedPiece[];
+  readonly saving: boolean;
 } {
   const held = currentHeldNoteIds();
   const ids = new Set<string>();
   const names: ChangedPiece[] = [];
-  if (held.size === 0) return { ids, names };
+  if (held.size === 0) return { ids, names, saving: false };
+  const carried = currentCarriedNoteIds();
+  let saving = true;
   const units = new Map<string, PlacedItem[]>();
   for (const piece of removing) {
     const key = piece.groupId ?? `piece:${piece.id}`;
@@ -375,12 +383,14 @@ function keptForHeldNotes(removing: readonly PlacedItem[], placedItems: readonly
     else unit.push(piece);
   }
   for (const unit of units.values()) {
-    const holder = heldNotePieceToName(unit.filter((piece) => held.has(piece.id)));
+    const holders = unit.filter((piece) => held.has(piece.id));
+    const holder = heldNotePieceToName(holders);
     if (holder === undefined) continue;
+    if (!holders.every((piece) => carried.has(piece.id))) saving = false;
     for (const piece of unit) ids.add(piece.id);
     names.push(heldNotePieceNamed(holder, placedItems));
   }
-  return { ids, names };
+  return { ids, names, saving: saving && names.length > 0 };
 }
 
 /** New tables take the lowest free numbers (Q-46), behind tableNumbers. */
@@ -514,9 +524,10 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     // The piece stays if it holds such a note, and so does a piece whose group holds one: a table keeps its chairs.
     const going = state.placedItems.find((item) => item.id === id);
     const unit = going === undefined ? [] : state.placedItems.filter((item) => item.id === id || (going.groupId !== null && item.groupId === going.groupId));
-    const [kept] = keptForHeldNotes(unit, state.placedItems).names;
-    if (kept !== undefined) {
-      postPlacementNotice(nothingRemovedLine(describePieces([kept])));
+    const kept = keptForHeldNotes(unit, state.placedItems);
+    const [name] = kept.names;
+    if (name !== undefined) {
+      postPlacementNotice(kept.saving ? noteStillSavingLine([name]) : nothingRemovedLine(describePieces([name])));
       return;
     }
     set({ placedItems: next });
@@ -537,6 +548,11 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     }
     // Someone who cannot see a note never destroys it: those pieces stay, and whatever else was selected goes.
     const going = removing.filter((item) => !kept.ids.has(item.id));
+    // Nothing goes, and every note in the way is their own, still on its way to the server: say that, not "cannot be shown".
+    if (going.length === 0 && kept.saving) {
+      postPlacementNotice(noteStillSavingLine(kept.names));
+      return;
+    }
     const [only] = kept.names;
     if (going.length === 0 && kept.names.length === 1 && only !== undefined) {
       postPlacementNotice(nothingRemovedLine(describePieces([only])));
