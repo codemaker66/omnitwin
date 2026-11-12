@@ -164,6 +164,20 @@ describe("the privacy policy", () => {
     }
   });
 
+  it("says what the opening and lock-up checks keep of the staff who tick them, on what basis, and that the names stay", () => {
+    render(<LegalPage type="privacy" />);
+    const section = (id: string): string => document.getElementById(id)?.textContent ?? "";
+    // What is held: the name and time on each tick and each tick taken back.
+    expect(section("other-information")).toContain("Opening and lock-up checks");
+    expect(section("other-information")).toContain("When a member of its staff ticks a check, or takes a tick back, we record their name and the time with it.");
+    // Its own lawful basis, on the venue's record of who did each check (Blake, 12 November 2026).
+    expect(section("why-we-use-it")).toContain("Opening and lock-up checks");
+    expect(section("why-we-use-it")).toContain("Article 6(1)(f), legitimate interests: keeping the building safe and secure, and keeping the venue's record of who did each opening and lock-up check, and when.");
+    // How long: the names stay after a member of staff's account is deleted.
+    expect(section("how-long")).toContain("Opening and lock-up checks");
+    expect(section("how-long")).toContain("it is the venue's record of who did each check, so it is kept after a member of staff's account is deleted.");
+  });
+
   it("names the ICO with a route to complain", () => {
     const text = textOf("privacy");
     expect(text).toContain("Information Commissioner's Office");

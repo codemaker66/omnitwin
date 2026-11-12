@@ -110,7 +110,9 @@ const ACCESSIBILITY_UPDATED = { text: "8 November 2026", iso: "2026-11-08" } as 
  *  venue staff, that the site serves its own typefaces, and that Resend also
  *  carries the acknowledgement sent to the guest (v1.0 final review); and on
  *  12 November, when it said what the Day Board keeps of suppliers coming to
- *  an event and for how long (T-692; Blake, 12 November 2026). */
+ *  an event and for how long (T-692; Blake, 12 November 2026), and what the
+ *  opening and lock-up checks keep of the staff who tick them, on what basis
+ *  and for how long (T-693; Blake, 12 November 2026). */
 const PRIVACY_UPDATED = { text: "12 November 2026", iso: "2026-11-12" } as const;
 
 /** The allergy note's keeping period, from the one definition the API's
@@ -291,6 +293,15 @@ const PRIVACY: LegalDocument = {
                 + "The venue's staff record when each supplier arrives and leaves, with the name of the person who marked it, and keep a history of those marks, of any mark taken back, and of who removed a supplier from the list. These are seen by the venue's staff.",
             },
             {
+              // The Day Board's opening and lock-up checks (T-693): @omnitwin/types
+              // building-checks.ts and api migration 0110, the general audit log
+              // for a list put in a new order.
+              term: "Opening and lock-up checks",
+              detail:
+                "The venue keeps its own lists of checks for opening the building and locking it up. When a member of its staff ticks a check, or takes a tick back, we record their name and the time with it. "
+                + "We also keep which staff account wrote each check, took one off the list, or put the list in a new order. These are seen by the venue's staff.",
+            },
+            {
               term: "Your signature on a contract",
               detail:
                 "Once you have accepted a proposal, the venue may ask you to sign its contract on your proposal link. You sign by typing your name and ticking the statement \"" + CONTRACT_CONSENT_STATEMENT + "\" "
@@ -350,6 +361,11 @@ const PRIVACY: LegalDocument = {
               term: "Keeping the service secure and working",
               detail:
                 "Article 6(1)(f), legitimate interests: protecting the site from abuse, spam and bulk harvesting, and diagnosing faults so that the service stays available.",
+            },
+            {
+              term: "Opening and lock-up checks",
+              detail:
+                "Article 6(1)(f), legitimate interests: keeping the building safe and secure, and keeping the venue's record of who did each opening and lock-up check, and when. We have weighed this against the interests of the staff concerned: the record holds only their name and the time, and it is kept after their account is deleted because it must still show who did each check.",
             },
             {
               term: "Venue staff accounts",
@@ -527,6 +543,11 @@ const PRIVACY: LegalDocument = {
               detail:
                 `A supplier's contact for the day and the note about them are removed ${String(SUPPLIER_CONTACT_DAYS)} days after the booking ends. `
                 + "The supplier's name, when they were due, and when they arrived and left stay with the booking's records, with the names of the staff who marked them in and out: they are the venue's record of who was in the building, and are kept after a member of staff's account is closed.",
+            },
+            {
+              term: "Opening and lock-up checks",
+              detail:
+                "Each tick, and each tick taken back, is kept with the name of the member of staff who made it and the time, for as long as the venue keeps its records on this service: it is the venue's record of who did each check, so it is kept after a member of staff's account is deleted.",
             },
             {
               term: "Signed contracts and deposit records",
