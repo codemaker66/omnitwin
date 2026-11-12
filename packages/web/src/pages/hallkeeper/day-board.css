@@ -420,6 +420,13 @@ button.dayboard-stage:hover { background: var(--house-plane-hover); }
   line-height: 1.25;
 }
 
+/* What a count covers that its filter cannot show ("1 not on today's
+   bookings"), under its label in the plane's own ink. */
+.dayboard-stage-note {
+  font-size: 12px;
+  line-height: 1.25;
+}
+
 .dayboard-stage[aria-pressed="true"] > span {
   color: var(--house-ink-1);
   font-weight: 600;
@@ -961,6 +968,10 @@ button.dayboard-slab:active { transform: translateY(1px); }
 }
 
 .is-line .dayboard-verb > svg { width: 12px; height: 12px; }
+
+/* A slot named in passing that is short of its turn-round, or at risk, keeps
+   why on a line of its own under its title. */
+.is-line .dayboard-slab-why { flex: 1 0 100%; margin: 2px 0 0; }
 
 /* A finished or later slot that is not breathing needs no dot: its icon
    and words say it. */
@@ -1937,6 +1948,9 @@ button.dayboard-rail-item:disabled { cursor: default; }
 }
 .dayboard[data-register="wall"] .dayboard-plane:only-child { grid-column: 1 / -1; }
 .dayboard[data-register="wall"] .dayboard-stage { min-height: 0; padding-top: 2px; padding-bottom: 2px; }
+/* The wall's counts filter nothing, so they never contradict a filter: the
+   note stays in their spoken words and gives its height to the rooms. */
+.dayboard[data-register="wall"] .dayboard-stage-note { display: none; }
 .dayboard[data-register="wall"] .dayboard-stage b { font-size: clamp(28px, 4vh, 46px); }
 .dayboard[data-register="wall"] .dayboard-stage > span { font-size: clamp(13px, 1.4vh, 16px); }
 
