@@ -139,7 +139,9 @@ export async function rotaRoutes(server: FastifyInstance, opts: { db: Database }
   };
 
   // GET /venues/:venueId/rota/week?start=YYYY-MM-DD — the week holding that
-  // day, on the venue's calendar; this week when no day is given.
+  // day, on the venue's calendar; this week when no day is given. With
+  // view=floor an administrator reads only what the floor reads (the Day
+  // Board on a shared screen): published shifts and the names on them.
   server.get("/week", { preHandler: [authenticate] }, async (request, reply) => {
     reply.header("Cache-Control", "private, no-store");
     const params = VenueParam.safeParse(request.params);
@@ -147,8 +149,9 @@ export async function rotaRoutes(server: FastifyInstance, opts: { db: Database }
     const query = RotaWeekQuerySchema.safeParse(request.query);
     if (!query.success) return invalid(reply, query.error.issues);
     const { venueId } = params.data;
-    const access = rotaAccess(request.user, venueId);
-    if (access === null) return forbidden(reply);
+    const granted = rotaAccess(request.user, venueId);
+    if (granted === null) return forbidden(reply);
+    const access = query.data.view === "floor" && granted === "manage" ? "read" : granted;
     const timeZone = await zoneOf(venueId);
     if (timeZone === null) return venueMissing(reply);
     const weekStart = query.data.start === undefined ? rotaWeekStartOf(Date.now(), timeZone) : rotaMondayOf(query.data.start);

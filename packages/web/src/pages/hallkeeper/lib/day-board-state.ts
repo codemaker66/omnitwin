@@ -154,6 +154,10 @@ export interface DayBoardSlot {
   /** A warning-grade turnaround note that does not escalate the state. */
   readonly turnaroundWarning: string | null;
   readonly gapBefore: LaneGap | null;
+  /** The booking the turn-round runs from, which `gapBefore` measures: what
+   *  the room holds when this setup starts. Null when nothing comes before
+   *  this slot in its room, or the two run at once. */
+  readonly previousBookingId: string | null;
   /** The other rooms this slot's event occupies on the same board. */
   readonly linkedRooms: readonly string[];
   /** The next instant at which this slot's state changes; null when nothing will. */
@@ -745,12 +749,17 @@ export function deriveDayBoard(
         timeZone,
       );
 
-      // What this slot follows. A function follows the last function, past any
-      // viewing in between, so a show-round never hides the changeover between
-      // two functions; a viewing follows whatever came just before it.
-      const previous = entry.kind === "viewing"
-        ? entries[index - 1]
-        : entries.slice(0, index).reverse().find((candidate) => candidate.kind !== "viewing");
+      // What this slot follows: of the bookings before it, the one that ends
+      // last, which leaves the room as this setup finds it. A function follows
+      // the last function, past any viewing in between, so a show-round never
+      // hides the changeover between two functions; a viewing follows
+      // whatever came before it. A talk inside a running exhibition never
+      // hides the exhibition, which still stands after the talk.
+      let previous: (typeof entries)[number] | undefined;
+      for (const candidate of entries.slice(0, index)) {
+        if (entry.kind !== "viewing" && candidate.kind === "viewing") continue;
+        if (previous === undefined || Date.parse(candidate.endsAt) >= Date.parse(previous.endsAt)) previous = candidate;
+      }
       let gapBefore: LaneGap | null = null;
       let changeover: string | null = null;
       let changeoverFromMs: number | null = null;
@@ -809,6 +818,7 @@ export function deriveDayBoard(
         segments,
         timeRange,
         gapBefore,
+        previousBookingId: gapBefore === null ? null : previous?.id ?? null,
         linkedRooms,
         requests: slotRequests,
         requestSignal,
