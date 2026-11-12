@@ -55,7 +55,7 @@ import {
 import { boardFreshness, useBoardClock, useConnectionState } from "./lib/use-board-clock.js";
 import { useVenueClock } from "./lib/use-venue-timezone.js";
 import { deviceZone, zoneNote } from "../../components/hallkeeper/sheet-facts.js";
-import { boardDayAnchorMs, boardDayRange, useDayBoundaryHour } from "./lib/board-day.js";
+import { boardDayAnchorMs, boardDayRange, useDayBoundary } from "./lib/board-day.js";
 import { useWakeLock } from "./lib/use-wake-lock.js";
 import { driftOffset } from "./lib/burn-in-drift.js";
 import { RoomRow, Scale, StateIcon } from "./DayBoardRooms.js";
@@ -339,7 +339,10 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
   const [boundaryMs, setBoundaryMs] = useState<number | null>(null);
   // The venue's day boundary hour (S8). The clock already ticks on every
   // whole minute, and a rollover falls on one, so it needs no boundary of its own.
-  const dayBoundaryHour = useDayBoundaryHour(venueId);
+  // The hour the board's day runs to, and whether it is read yet: a supplier's
+  // time after midnight is placed on the board's night only once it is.
+  const boundary = useDayBoundary(venueId);
+  const dayBoundaryHour = boundary.hour;
   const nowMs = useBoardClock(boundaryMs);
   const corrected = useClockCorrected();
 
@@ -649,6 +652,7 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
           arrivals: suppliers.byBooking.get(selected.slot.bookingId) ?? [],
           boardDate: shownDate,
           dayBoundaryHour,
+          boundary: boundary.state,
           today: browsingToday,
           canPlan: plansSuppliers,
           canMark: marksDoor,

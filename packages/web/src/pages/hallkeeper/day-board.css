@@ -1870,7 +1870,15 @@ button.dayboard-rail-item:disabled { cursor: default; }
   font-size: 14px;
 }
 
-.dayboard-supplier-problem:empty { display: none; }
+/* Empty, a status line takes no room but stays in the accessibility tree, so
+   the words put in it later are heard; display: none would hide them. */
+.dayboard-supplier-problem:empty {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
 
 @media (max-width: 480px) {
   .dayboard-supplier-fields { grid-template-columns: minmax(0, 1fr); }

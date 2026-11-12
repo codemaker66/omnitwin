@@ -1892,7 +1892,7 @@ describe("DayBoardPage: who comes to the building", () => {
     const section = await screen.findByRole("region", { name: "Suppliers" });
     expect(within(section).getByText("Not marked in yet")).toBeTruthy();
     expect(within(section).queryByRole("button", { name: "Add a supplier" })).toBeNull();
-    fireEvent.click(within(section).getByRole("button", { name: "Thistle & Fern Flowers arrived" }));
+    fireEvent.click(within(section).getByRole("button", { name: "Mark Thistle & Fern Flowers arrived" }));
     expect(arrivalsApi.step).toHaveBeenCalledWith(VENUE, FLOWERS, "arrived");
     expect(await within(section).findByText(/^In at \d{2}:\d{2} · Elaine$/u)).toBeTruthy();
   });
@@ -1924,7 +1924,7 @@ describe("DayBoardPage: who comes to the building", () => {
     fireEvent.click(await screen.findByRole("button", { name: /^Awards lunch,/u }));
     const section = await screen.findByRole("region", { name: "Suppliers" });
     expect(await within(section).findByText("Thistle & Fern Flowers")).toBeTruthy();
-    expect(within(section).queryByRole("button", { name: "Thistle & Fern Flowers arrived" })).toBeNull();
+    expect(within(section).queryByRole("button", { name: "Mark Thistle & Fern Flowers arrived" })).toBeNull();
   });
 
   it("says it is reading the suppliers while their first read is on its way", async () => {
@@ -1937,7 +1937,7 @@ describe("DayBoardPage: who comes to the building", () => {
     fireEvent.click(await screen.findByRole("button", { name: /^Dinner,/u }));
     const section = await screen.findByRole("region", { name: "Suppliers" });
     expect(within(section).getByText("Reading the suppliers…")).toBeTruthy();
-    expect(within(section).queryByText("No suppliers are down for this booking.")).toBeNull();
+    expect(within(section).queryByText("No suppliers are due today for this booking.")).toBeNull();
   });
 
   it("keeps a failed tap with its own booking's panel", async () => {
@@ -1952,7 +1952,7 @@ describe("DayBoardPage: who comes to the building", () => {
     renderBoard();
     fireEvent.click(await screen.findByRole("button", { name: /^Dinner,/u }));
     const dinner = await screen.findByRole("region", { name: "Suppliers" });
-    fireEvent.click(within(dinner).getByRole("button", { name: "Thistle & Fern Flowers arrived" }));
+    fireEvent.click(within(dinner).getByRole("button", { name: "Mark Thistle & Fern Flowers arrived" }));
     expect(await within(dinner).findByText("Couldn’t mark that: Network error — check your connection.")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /^Lunch,/u }));
     const lunch = await screen.findByRole("region", { name: "Suppliers" });

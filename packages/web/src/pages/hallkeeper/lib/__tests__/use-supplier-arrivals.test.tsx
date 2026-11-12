@@ -5,7 +5,7 @@ import type { CreateSupplierArrival, SupplierArrival, SupplierArrivalStep, Updat
 import { ApiError } from "../../../../api/client.js";
 import { SuppliersSection } from "../../DayBoardSuppliers.js";
 import type { DayBoardSlot } from "../day-board-state.js";
-import { useSupplierArrivals, type ArrivalOutcome } from "../use-supplier-arrivals.js";
+import { newArrivalKey, useSupplierArrivals, type ArrivalOutcome } from "../use-supplier-arrivals.js";
 
 // ---------------------------------------------------------------------------
 // The board's arrivals: a change answers with the arrival as it now stands
@@ -17,7 +17,7 @@ import { useSupplierArrivals, type ArrivalOutcome } from "../use-supplier-arriva
 
 const api = vi.hoisted(() => ({
   list: vi.fn<(venueId: string, fromMs: number, toMs: number) => Promise<SupplierArrival[]>>(),
-  create: vi.fn<(venueId: string, body: CreateSupplierArrival) => Promise<SupplierArrival>>(),
+  create: vi.fn<(venueId: string, body: CreateSupplierArrival, idempotencyKey: string) => Promise<SupplierArrival>>(),
   update: vi.fn<(venueId: string, id: string, body: UpdateSupplierArrival) => Promise<SupplierArrival>>(),
   remove: vi.fn<(venueId: string, arrival: Pick<SupplierArrival, "id" | "revision">) => Promise<void>>(),
   step: vi.fn<(venueId: string, id: string, step: SupplierArrivalStep) => Promise<SupplierArrival>>(),
@@ -25,7 +25,7 @@ const api = vi.hoisted(() => ({
 }));
 vi.mock("../../../../api/supplier-arrivals.js", () => ({
   listSupplierArrivals: (venueId: string, fromMs: number, toMs: number) => api.list(venueId, fromMs, toMs),
-  createSupplierArrival: (venueId: string, body: CreateSupplierArrival) => api.create(venueId, body),
+  createSupplierArrival: (venueId: string, body: CreateSupplierArrival, idempotencyKey: string) => api.create(venueId, body, idempotencyKey),
   updateSupplierArrival: (venueId: string, id: string, body: UpdateSupplierArrival) => api.update(venueId, id, body),
   removeSupplierArrival: (venueId: string, arrival: Pick<SupplierArrival, "id" | "revision">) => api.remove(venueId, arrival),
   recordSupplierArrivalStep: (venueId: string, id: string, step: SupplierArrivalStep) => api.step(venueId, id, step),
@@ -95,7 +95,9 @@ describe("useSupplierArrivals", () => {
     await waitFor(() => { expect(result.current.status).toBe("ready"); });
     const body = { bookingId: BOOKING, supplierName: "The Kelvin Reelers", category: null, arrivesAt: arrival().arrivesAt, leavesBy: null, entrance: null, contact: null, note: null };
     api.create.mockResolvedValueOnce(arrival());
-    await act(async () => { await result.current.add(body); });
+    await act(async () => { await result.current.add(body, "00000000-0000-4000-8000-00000000ce01"); });
+    // The add's key goes with it, so a resend is the same add on the server.
+    expect(api.create).toHaveBeenCalledWith(VENUE, body, "00000000-0000-4000-8000-00000000ce01");
     expect(result.current.byBooking.get(BOOKING)?.map((item) => item.id)).toEqual([BAND]);
     // Moved to Friday: it leaves Saturday's board at once rather than at the next read.
     api.update.mockResolvedValueOnce(arrival({ arrivesAt: "2026-11-13T11:00:00.000Z", leavesBy: null, revision: 2 }));
@@ -121,6 +123,21 @@ describe("useSupplierArrivals", () => {
     expect(result.current.arrivals[0]?.arrivedAt).toBe(MARKED.arrivedAt);
     await waitFor(() => { expect(api.list).toHaveBeenCalledTimes(3); });
     expect(result.current.arrivals[0]?.arrivedAt).toBe(MARKED.arrivedAt);
+  });
+
+  it("says a change to an arrival gone from the board against its booking, where it is still there to read", async () => {
+    api.list.mockResolvedValueOnce([arrival({ supplierName: "Govan Hire" })]);
+    api.list.mockResolvedValue([]);
+    api.update.mockRejectedValue(new ApiError(404, "That arrival is not on this venue's board.", "ARRIVAL_NOT_FOUND"));
+    const { result } = renderHook(() => useSupplierArrivals(VENUE, SAT, true));
+    await waitFor(() => { expect(result.current.status).toBe("ready"); });
+    let outcome: ArrivalOutcome | null = null;
+    await act(async () => { outcome = await result.current.change(arrival({ supplierName: "Govan Hire" }), 1, { note: "Two vans" }); });
+    expect(outcome).toBe("gone");
+    expect(result.current.failures.get(BAND)).toBeUndefined();
+    expect(result.current.failures.get(newArrivalKey(BOOKING))).toBe("Couldn’t save that: Govan Hire is no longer on the board.");
+    // And the day is read again, so the board loses it too.
+    await waitFor(() => { expect(result.current.arrivals).toEqual([]); });
   });
 
   it("takes a mistaken tap back through the floor's own call", async () => {
@@ -157,7 +174,7 @@ describe("useSupplierArrivals with the panel", () => {
   function Panel(): ReactElement {
     const arrivals = useSupplierArrivals(VENUE, SAT, true);
     return (
-      <SuppliersSection slot={SLOT} arrivals={arrivals.byBooking.get(BOOKING) ?? []} boardDate="2026-11-14" dayBoundaryHour={4}
+      <SuppliersSection slot={SLOT} arrivals={arrivals.byBooking.get(BOOKING) ?? []} boardDate="2026-11-14" dayBoundaryHour={4} boundary="known"
         timeZone="Europe/London" nowMs={Date.parse("2026-11-14T12:00:00.000Z")} today canPlan canMark={false} actions={arrivals} />
     );
   }

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { msToWallInput } from "../../../diary/lib/board-time.js";
 import { nextTickMs } from "../use-board-clock.js";
-import { boardDayAnchorMs, boardDayRange, nextBoardRolloverMs, soonerOf, useDayBoundaryHour } from "../board-day.js";
+import { boardDayAnchorMs, boardDayRange, nextBoardRolloverMs, soonerOf, useDayBoundary, useDayBoundaryHour } from "../board-day.js";
 
 const settings = vi.hoisted(() => ({ get: vi.fn() }));
 vi.mock("../../../../api/operating-settings.js", () => ({
@@ -64,6 +64,21 @@ describe("the board's day", () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
     expect(hook.result.current).toBe(4);
     expect(settings.get).toHaveBeenCalledTimes(2);
+  });
+
+  it("says whether the boundary hour stands yet: reading, then retrying after a failed read, then known", async () => {
+    vi.useFakeTimers();
+    settings.get.mockRejectedValueOnce(new Error("network down")).mockResolvedValueOnce({ dayBoundaryHour: 4 });
+    const hook = renderHook(({ venue }) => useDayBoundary(venue), { initialProps: { venue: "venue-1" } });
+    expect(hook.result.current).toEqual({ hour: 0, state: "reading" });
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    expect(hook.result.current).toEqual({ hour: 0, state: "retrying" });
+    await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+    expect(hook.result.current).toEqual({ hour: 4, state: "known" });
+    // Another venue is read afresh: its night hours do not stand on the first's.
+    settings.get.mockReturnValueOnce(new Promise(() => undefined));
+    hook.rerender({ venue: "venue-2" });
+    expect(hook.result.current.state).toBe("reading");
   });
 
   it("soonerOf takes the earlier instant and tolerates no slot boundary", () => {

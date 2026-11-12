@@ -19,7 +19,13 @@
 // ---------------------------------------------------------------------------
 
 import { useEffect, type ReactElement } from "react";
-import { CONTRACT_CONSENT_STATEMENT, DIETARY_MEMORY_CONSENT, DIETARY_MEMORY_MONTHS_UNUSED, DIETARY_NOTE_RETENTION } from "@omnitwin/types";
+import {
+  CONTRACT_CONSENT_STATEMENT,
+  DIETARY_MEMORY_CONSENT,
+  DIETARY_MEMORY_MONTHS_UNUSED,
+  DIETARY_NOTE_RETENTION,
+  SUPPLIER_ARRIVAL_RETENTION,
+} from "@omnitwin/types";
 import { REMEMBERED_NOTES_PATH } from "../lib/dietary-memory.js";
 import { ROUTE_DOCUMENTS } from "../lib/route-documents.js";
 import "./LegalPage.css";
@@ -102,13 +108,19 @@ const ACCESSIBILITY_UPDATED = { text: "8 November 2026", iso: "2026-11-08" } as 
  *  for deposits, and said what a contract's signature record keeps (Plan 19 L5);
  *  and on 8 November, when it said that clients and planners sign in as well as
  *  venue staff, that the site serves its own typefaces, and that Resend also
- *  carries the acknowledgement sent to the guest (v1.0 final review). */
-const PRIVACY_UPDATED = { text: "8 November 2026", iso: "2026-11-08" } as const;
+ *  carries the acknowledgement sent to the guest (v1.0 final review); and on
+ *  12 November, when it said what the Day Board keeps of suppliers coming to
+ *  an event and for how long (T-692; Blake, 12 November 2026). */
+const PRIVACY_UPDATED = { text: "12 November 2026", iso: "2026-11-12" } as const;
 
 /** The allergy note's keeping period, from the one definition the API's
  *  retention pass and the planner also read. */
 const NOTE_DAYS_AFTER_EVENT = DIETARY_NOTE_RETENTION.daysAfterEvent;
 const NOTE_MONTHS_WITHOUT_EVENT = Math.round(DIETARY_NOTE_RETENTION.daysWithoutEvent / 30.4);
+
+/** How long a supplier's contact and note for the day are kept, from the one
+ *  definition the API's nightly pass also reads. */
+const SUPPLIER_CONTACT_DAYS = SUPPLIER_ARRIVAL_RETENTION.daysAfterBooking;
 
 /** The box beside the note, word for word as the planner shows it. Both
  *  paths are described; the lawful condition for health information is the
@@ -268,6 +280,15 @@ const PRIVACY: LegalDocument = {
               detail:
                 "When an event is planned with the venue, its layout can record how many guests need each kind of meal (vegetarian, vegan, gluten-free, nut-free, halal, kosher) and a short note about other allergies. The note is health information. It is read by the venue's events team and the staff preparing the room, and it is printed on the event sheets they work from. Please give allergens and numbers, not guests' names. The note is kept out of our server logs and error reports. "
                 + `Beside the note, the person planning the event is asked "${REMEMBER_QUESTION}" The box starts unticked. Left unticked, the note stays with that event only. Ticked, we also keep a copy with that person's account, shown to them alone, and fill it in on their next layout with us; we record who ticked the box, when, and the words beside it. They can see and remove that copy at any time.`,
+            },
+            {
+              // The Day Board's supplier arrivals (T-692): @omnitwin/types
+              // supplier-arrivals.ts and api migration 0108. The wall screen
+              // reads none of them (DayBoardPage).
+              term: "Suppliers coming to an event",
+              detail:
+                "When the venue expects a supplier for an event, such as a florist, a band or a caterer, its office records the supplier's name, what they do, when they are due and by which door, and, where the office adds them, a contact for the day and a short note. "
+                + "The venue's staff record when each supplier arrives and leaves, with the name of the person who marked it, and keep a history of those marks, of any mark taken back, and of who removed a supplier from the list. These are seen by the venue's staff.",
             },
             {
               term: "Your signature on a contract",
@@ -500,6 +521,12 @@ const PRIVACY: LegalDocument = {
               term: "An allergy note you asked us to remember",
               detail:
                 `Kept with your account until you remove it, which you can do at any time. If ${String(DIETARY_MEMORY_MONTHS_UNUSED)} months pass without it being saved with a layout, we remove it. Once it is removed, we keep only the record that you agreed, when, the words you agreed to, and when it ended, without the note itself.`,
+            },
+            {
+              term: "Suppliers coming to an event",
+              detail:
+                `A supplier's contact for the day and the note about them are removed ${String(SUPPLIER_CONTACT_DAYS)} days after the booking ends. `
+                + "The supplier's name, when they were due, and when they arrived and left stay with the booking's records, with the names of the staff who marked them in and out: they are the venue's record of who was in the building, and are kept after a member of staff's account is closed.",
             },
             {
               term: "Signed contracts and deposit records",

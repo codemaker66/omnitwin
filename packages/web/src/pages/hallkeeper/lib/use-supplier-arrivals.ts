@@ -22,13 +22,16 @@ import {
 // is read again rather than painted, so it never puts the change back. A
 // change made from an old copy is refused ("stale") and the day is read
 // again. Why a change failed is kept against its arrival (or the booking's
-// add form), for the day it was made on.
+// add form), for the day it was made on; when the arrival itself has left the
+// board meanwhile (removed by a colleague), why is kept against its booking,
+// so it is still there to read once the arrival has gone.
 // ---------------------------------------------------------------------------
 
 export const SUPPLIER_ARRIVALS_INTERVAL_MS = 60_000;
 
-/** What became of a change: made; refused, as someone changed it first; or not made. */
-export type ArrivalOutcome = "saved" | "stale" | "failed";
+/** What became of a change: made; refused, as someone changed it first; the
+ *  arrival is no longer on the board (said against its booking); or not made. */
+export type ArrivalOutcome = "saved" | "stale" | "gone" | "failed";
 
 /** The key a booking's add form keeps its busy state and failure under. */
 export function newArrivalKey(bookingId: string): string {
@@ -49,7 +52,8 @@ export interface SupplierArrivalsApi {
   readonly refresh: () => void;
   readonly step: (arrival: SupplierArrival, step: SupplierArrivalStep) => Promise<ArrivalOutcome>;
   readonly undo: (arrival: SupplierArrival, step: SupplierArrivalStep) => Promise<ArrivalOutcome>;
-  readonly add: (body: CreateSupplierArrival) => Promise<ArrivalOutcome>;
+  /** An add, with the key that names it: the same key on a second Save never adds twice. */
+  readonly add: (body: CreateSupplierArrival, idempotencyKey: string) => Promise<ArrivalOutcome>;
   /** A change, from the revision the form was opened on. */
   readonly change: (arrival: SupplierArrival, openedRevision: number, body: Omit<UpdateSupplierArrival, "expectedRevision">) => Promise<ArrivalOutcome>;
   readonly remove: (arrival: SupplierArrival) => Promise<ArrivalOutcome>;
@@ -63,6 +67,16 @@ function reason(error: unknown): string {
   if (error instanceof ApiError && error.code === "STALE_ARRIVAL") return "someone else changed it meanwhile, so it now shows as it stands";
   const words = error instanceof Error ? error.message.trim().replace(/[.\s]+$/u, "") : "";
   return words.length > 0 ? words : "the server refused it";
+}
+
+/** The server no longer has the arrival on this venue's board: removed, or its booking gone. */
+function isGone(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 404 && error.code === "ARRIVAL_NOT_FOUND";
+}
+
+/** What a change is about: said against its booking if the arrival has gone. */
+function aboutOf(arrival: SupplierArrival): { readonly bookingId: string; readonly name: string } {
+  return { bookingId: arrival.bookingId, name: arrival.supplierName };
 }
 
 function byStart(a: SupplierArrival, b: SupplierArrival): number {
@@ -136,28 +150,34 @@ export function useSupplierArrivals(
     id: string,
     verb: string,
     action: () => Promise<SupplierArrival | null>,
+    about: { readonly bookingId: string; readonly name: string } | null,
     goneId?: string,
   ): Promise<ArrivalOutcome> => {
     if (venueId === null) return "failed";
     const forKey = key;
-    const note = (words: string | null): void => {
+    const note = (at: string, words: string | null): void => {
       setFailures((current) => {
         const byId = new Map(current.key === forKey ? current.byId : NO_FAILURES);
-        if (words === null) byId.delete(id);
-        else byId.set(id, words);
+        if (words === null) byId.delete(at);
+        else byId.set(at, words);
         return { key: forKey, byId };
       });
     };
     setBusy((current) => new Set([...current, id]));
-    note(null);
+    note(id, null);
     try {
       const now = await action();
       landed.current += 1;
       settle(forKey, now, goneId);
       return "saved";
     } catch (error) {
-      note(`Couldn’t ${verb}: ${reason(error)}.`);
       refresh();
+      // Gone from the board meanwhile: said against its booking, which stays.
+      if (about !== null && isGone(error)) {
+        note(newArrivalKey(about.bookingId), `Couldn’t ${verb}: ${about.name} is no longer on the board.`);
+        return "gone";
+      }
+      note(id, `Couldn’t ${verb}: ${reason(error)}.`);
       return error instanceof ApiError && error.status === 409 ? "stale" : "failed";
     } finally {
       setBusy((current) => new Set([...current].filter((item) => item !== id)));
@@ -166,15 +186,15 @@ export function useSupplierArrivals(
 
   const place = venueId ?? "";
   const step = useCallback((arrival: SupplierArrival, which: SupplierArrivalStep) =>
-    run(arrival.id, "mark that", () => recordSupplierArrivalStep(place, arrival.id, which)), [run, place]);
+    run(arrival.id, "mark that", () => recordSupplierArrivalStep(place, arrival.id, which), aboutOf(arrival)), [run, place]);
   const undo = useCallback((arrival: SupplierArrival, which: SupplierArrivalStep) =>
-    run(arrival.id, "take that back", () => undoSupplierArrivalStep(place, arrival.id, which)), [run, place]);
-  const add = useCallback((body: CreateSupplierArrival) =>
-    run(newArrivalKey(body.bookingId), "add that", () => createSupplierArrival(place, body)), [run, place]);
+    run(arrival.id, "take that back", () => undoSupplierArrivalStep(place, arrival.id, which), aboutOf(arrival)), [run, place]);
+  const add = useCallback((body: CreateSupplierArrival, idempotencyKey: string) =>
+    run(newArrivalKey(body.bookingId), "add that", () => createSupplierArrival(place, body, idempotencyKey), null), [run, place]);
   const change = useCallback((arrival: SupplierArrival, openedRevision: number, body: Omit<UpdateSupplierArrival, "expectedRevision">) =>
-    run(arrival.id, "save that", () => updateSupplierArrival(place, arrival.id, { ...body, expectedRevision: openedRevision })), [run, place]);
+    run(arrival.id, "save that", () => updateSupplierArrival(place, arrival.id, { ...body, expectedRevision: openedRevision }), aboutOf(arrival)), [run, place]);
   const remove = useCallback((arrival: SupplierArrival) =>
-    run(arrival.id, "remove that", async () => { await removeSupplierArrival(place, arrival); return null; }, arrival.id), [run, place]);
+    run(arrival.id, "remove that", async () => { await removeSupplierArrival(place, arrival); return null; }, aboutOf(arrival), arrival.id), [run, place]);
 
   const mine = key !== "" && held?.key === key ? held : null;
   const arrivals = mine?.arrivals ?? NONE;

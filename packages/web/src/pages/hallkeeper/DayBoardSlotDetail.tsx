@@ -25,6 +25,7 @@ import { StateIcon } from "./DayBoardRooms.js";
 import { ChangeoverSection } from "./DayBoardChangeover.js";
 import { SuppliersSection } from "./DayBoardSuppliers.js";
 import type { SupplierArrivalsApi } from "./lib/use-supplier-arrivals.js";
+import type { DayBoundary } from "./lib/board-day.js";
 
 // ---------------------------------------------------------------------------
 // The open slot, on the forest decision panel the desks use: the room's
@@ -292,6 +293,8 @@ export function SlotDetail({ slot, room, venueSlug, timeZone, slotRequests: Slot
     /** The board's day (YYYY-MM-DD) and the hour it runs to on the next date. */
     readonly boardDate: string;
     readonly dayBoundaryHour: number;
+    /** Whether that hour is read yet: no supplier's times are saved until it is. */
+    readonly boundary: DayBoundary["state"];
     /** The board shows today. */
     readonly today: boolean;
     readonly canPlan: boolean;
@@ -403,6 +406,7 @@ export function SlotDetail({ slot, room, venueSlug, timeZone, slotRequests: Slot
           arrivals={suppliers.arrivals}
           boardDate={suppliers.boardDate}
           dayBoundaryHour={suppliers.dayBoundaryHour}
+          boundary={suppliers.boundary}
           timeZone={timeZone}
           nowMs={nowMs}
           today={suppliers.today}

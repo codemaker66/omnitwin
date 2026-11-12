@@ -9,7 +9,9 @@ import { msToWallInput, wallInputToMs } from "../../diary/lib/board-time.js";
 // the small hours after it: the DJ in at 00:30 is the next date's 00:30. A
 // leaving time before the arrival is the morning after it. Every time is read
 // on the venue's clock. A time the clock skips (01:30 on the night the clocks
-// go forward) is named, never stored as another time without saying so.
+// go forward) is named, never stored as another time without saying so; a
+// time it reads twice (01:30 on the night they go back) is the second, and
+// is named as that.
 // ---------------------------------------------------------------------------
 
 /** The board's day an instant falls on: before the boundary hour, the date before. */
@@ -24,16 +26,20 @@ export interface SupplierTimes {
   readonly leavesMs: number | null;
   /** A typed time the venue's clock skips that night, and the time it would be stored as. */
   readonly skipped: { readonly field: "arrives" | "leaves"; readonly typed: string; readonly stored: string } | null;
+  /** A typed time the venue's clock reads twice that night: it is kept as the second, after the clocks go back. */
+  readonly repeated: { readonly field: "arrives" | "leaves"; readonly typed: string } | null;
 }
 
 const CLOCK = /^\d{2}:\d{2}$/u;
+const HOUR_MS = 3_600_000;
 
-/** Where a typed "HH:MM" lands on `date`, and what the clock would read there. */
-function onDate(date: string, clock: string, timeZone: string): { readonly ms: number; readonly reads: string } | null {
+/** Where a typed "HH:MM" lands on `date`, what the clock would read there,
+ *  and whether the clock read it an hour before too (the clocks went back). */
+function onDate(date: string, clock: string, timeZone: string): { readonly ms: number; readonly reads: string; readonly second: boolean } | null {
   const ms = wallInputToMs(`${date}T${clock}`, timeZone);
   if (ms === null) return null;
   const wall = msToWallInput(ms, timeZone);
-  return { ms, reads: wall === `${date}T${clock}` ? clock : wall.slice(11, 16) };
+  return { ms, reads: wall === `${date}T${clock}` ? clock : wall.slice(11, 16), second: msToWallInput(ms - HOUR_MS, timeZone) === wall };
 }
 
 /**
@@ -54,10 +60,12 @@ export function supplierTimes(
   const arrival = onDate(date, arrives, timeZone);
   if (arrival === null) return null;
   const arrivalSkipped = arrival.reads === arrives ? null : { field: "arrives" as const, typed: arrives, stored: arrival.reads };
-  if (leaves === "") return { arrivesMs: arrival.ms, leavesMs: null, skipped: arrivalSkipped };
+  const arrivalRepeated = arrival.second ? { field: "arrives" as const, typed: arrives } : null;
+  if (leaves === "") return { arrivesMs: arrival.ms, leavesMs: null, skipped: arrivalSkipped, repeated: arrivalRepeated };
   const sameDate = onDate(date, leaves, timeZone);
   const leaving = sameDate !== null && sameDate.ms > arrival.ms ? sameDate : onDate(addRotaDays(date, 1), leaves, timeZone);
   if (leaving === null) return null;
   const leavingSkipped = leaving.reads === leaves ? null : { field: "leaves" as const, typed: leaves, stored: leaving.reads };
-  return { arrivesMs: arrival.ms, leavesMs: leaving.ms, skipped: arrivalSkipped ?? leavingSkipped };
+  const leavingRepeated = leaving.second ? { field: "leaves" as const, typed: leaves } : null;
+  return { arrivesMs: arrival.ms, leavesMs: leaving.ms, skipped: arrivalSkipped ?? leavingSkipped, repeated: arrivalRepeated ?? leavingRepeated };
 }
