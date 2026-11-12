@@ -125,7 +125,8 @@ const clothedRoundFeet = (radiusM: number): Foot[] => corners("rubber", radiusM 
 /**
  * A covered poseur stands on four folding legs under its stretch cover, whose
  * pockets sit at footReach = 0.98 r on the diagonals (crafted-poseur.ts:43) for
- * a top of radius r. The pockets carry no contact shade on master.
+ * a top of radius r. Each pocket carries a spot of contact shade, so the test
+ * matches these feet to the crafted model's own shade.
  */
 const coveredPoseurFeet = (radiusM: number): Foot[] => {
   const reach = radiusM * 0.98 * Math.SQRT1_2;
@@ -144,7 +145,10 @@ export const SET_DOWN_BODIES: Readonly<Record<CraftedFurnitureSlug, SetDownBody>
   "burgess-turini-18-3": body("burgess-turini-18-3", "chair", 6, on("glide", [-0.1885, -0.2765], [0.1885, -0.2765], [-0.1965, 0.2765], [0.1965, 0.2765]), BANQUET_CHAIR_PARTS, { seatPuff: true }),
   "checked-banquet-chair": body("checked-banquet-chair", "chair", 6, on("glide", [-0.2185, -0.2965], [0.2185, -0.2965], [-0.2265, 0.2965], [0.2265, 0.2965]), BANQUET_CHAIR_PARTS, { seatPuff: true }),
   "gallery-chair-red-gold": body("gallery-chair-red-gold", "chair", 6.5, on("glide", [-0.2035, -0.2115], [0.2035, -0.2115], [-0.2115, 0.2115], [0.2115, 0.2115]), BANQUET_CHAIR_PARTS, { seatPuff: true }),
-  "pink-chair": body("pink-chair", "chair", 6, on("glide", [-0.2035, -0.2115], [0.2035, -0.2115], [-0.2115, 0.2115], [0.2115, 0.2115]), BANQUET_CHAIR_PARTS, { seatPuff: true }),
+  // The pink chair is the Burgess Turini 18/3 (0.42 x 0.58 m, migration 0103), so it stands on that chair's
+  // glides: xs = 0.42 / 2 - 0.0125 - 0.016 - 0.001 = 0.1805, front +0.008 = 0.1885 at z = -0.29 + 0.0105 + 0.003
+  // = -0.2765, rear +0.016 = 0.1965 at z = +0.2765 (crafted-chairs.ts). Mass is an EST and stays at 6 kg.
+  "pink-chair": body("pink-chair", "chair", 6, on("glide", [-0.1885, -0.2765], [0.1885, -0.2765], [-0.1965, 0.2765], [0.1965, 0.2765]), BANQUET_CHAIR_PARTS, { seatPuff: true }),
   "banquet-chair": body("banquet-chair", "chair", 6, on("glide", [-0.2035, -0.2115], [0.2035, -0.2115], [-0.2115, 0.2115], [0.2115, 0.2115]), BANQUET_CHAIR_PARTS, { seatPuff: true }),
 
   // Banqueting rounds: a flat top on a folding steel frame with rubber feet. The clothed rounds hide
@@ -208,7 +212,12 @@ export const SET_DOWN_BODIES: Readonly<Record<CraftedFurnitureSlug, SetDownBody>
   "highchair-white": body("highchair-white", "highchair", 5, corners("glide", 0.22, 0.245), HIGHCHAIR_PARTS),
   "highchair-green": body("highchair-green", "highchair", 5, corners("glide", 0.22, 0.245), HIGHCHAIR_PARTS),
   "highchair-blue": body("highchair-blue", "highchair", 5, corners("glide", 0.22, 0.245), HIGHCHAIR_PARTS),
-  "highchair-wooden": body("highchair-wooden", "highchair", 5, corners("glide", 0.22, 0.245), HIGHCHAIR_PARTS),
+  // The wooden highchair is 0.51 x 0.51 x 0.75 m (migration 0103): its feet are width / 2 - 0.03 = 0.225 in x and
+  // depth / 2 - 0.03 = 0.225 in z (crafted-extras.ts footX, footZ). Its splayed leg runs from (0.225, 0.014, 0.225)
+  // to the seat (0.15, 0.415, 0.1428), 0.417 m against the 0.53 m of the 0.95 m painted chairs that HIGHCHAIR_PARTS
+  // (0.55 m of frame) was written for, so the frame scales to 0.55 x 0.417 / 0.53 = 0.43 m. The 0.32 m seat is unchanged.
+  // Mass is an EST and stays at 5 kg.
+  "highchair-wooden": body("highchair-wooden", "highchair", 5, corners("glide", 0.225, 0.225), [part("beech-frame", 0.43, 0.026, 0.85), part("ply-top", 0.32, 0.026, 0.15)]),
 
   // The folding divider: a castor under every hinge post (nine along the line) and two at each end frame.
   "room-divider": body(

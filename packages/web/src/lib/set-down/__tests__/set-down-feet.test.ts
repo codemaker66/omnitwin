@@ -79,8 +79,6 @@ const NO_CONTACT_SHADE: Readonly<Record<string, string>> = {
   "trestle-6ft-white": "floor-length cloth hides the trestle legs the bare 6 ft trestle shades",
   "trestle-6ft-black": "floor-length cloth hides the trestle legs the bare 6 ft trestle shades",
   "ceremony-table": "skirt to the floor hides legs that trestleLegs would put at the table's width",
-  "poseur-table-white": "the cover's four pockets carry no contact shade on master (#259 adds them)",
-  "poseur-table-black": "the cover's four pockets carry no contact shade on master (#259 adds them)",
   "poseur-table": "one weighted round base with no feet drawn, set down on four points of its rim",
   "bar-counter": "a plinth, not feet",
   "platform": "skirt to the floor hides the deck legs",
@@ -107,18 +105,10 @@ const HIDDEN_FRAME_TWINS: Readonly<Record<string, CraftedFurnitureSlug>> = {
 /** Four feet at the corners of a rectangle about the origin. */
 const rect = (x: number, z: number): Spot[] => [{ x: -x, z: -z }, { x, z: -z }, { x: -x, z }, { x, z }];
 
-/** A covered poseur's pockets sit at 0.98 of its radius on the diagonals (crafted-poseur.ts:43). */
-const coveredPoseur = ({ width, depth }: Size): Spot[] => {
-  const reach = (Math.min(width, depth) / 2) * 0.98 * Math.SQRT1_2;
-  return rect(reach, reach);
-};
-
 /** Where each remaining piece's factory puts its feet, written out from its own formulas. */
 const FORMULA_FEET: Readonly<Record<string, (size: Size) => Spot[]>> = {
   // crafted-tables.ts:103, the clothed round's hidden frame, at the cake table's radius.
   "cake-cutting-table": ({ width }) => rect((width / 2) * 0.55 * 1.04, (width / 2) * 0.4 * 1.1),
-  "poseur-table-white": coveredPoseur,
-  "poseur-table-black": coveredPoseur,
   // crafted-tables.ts barePoseurParts: a weighted foot of 0.72 of the radius, set down on its rim's diagonals.
   "poseur-table": ({ width, depth }) => {
     const reach = (Math.min(width, depth) / 2) * 0.72 * Math.SQRT1_2;
