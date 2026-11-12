@@ -13,8 +13,10 @@ import { SR, clickShare, energy, loudness, setDown } from "./set-down-kit.js";
 // of 48 kHz 16-bit stereo WAVs there (dry, centred, at full direct gain) with
 // figures.json: each piece's peak, K-weighted loudness, length and render
 // time on the Grand Hall's oak, the figures the render tests compare, the
-// click shares, and play-to-play spreads over 200 seeds (500 for the bare
-// poseur and the bare trestle).
+// click shares, play-to-play spreads over 200 seeds (500 for the bare
+// poseur and the bare trestle), and how often the safety limiter above
+// -6 dBFS holds a play, over those plays and the whole catalogue on every
+// surface (ruling R42).
 // ---------------------------------------------------------------------------
 
 const OUT = process.env["SET_DOWN_WAV_DIR"] ?? "";
@@ -63,9 +65,15 @@ function timedMs(slug: string, surface: SurfaceKind): number {
   return times[3] ?? 0;
 }
 
-function spreadOver(slug: string, surface: SurfaceKind, seeds: number): number {
-  const values = Array.from({ length: seeds }, (_, i) => loudness(render(slug, surface, 1000 + i)));
-  return round(Math.max(...values) - Math.min(...values));
+/** How often the safety limiter held these renders, and by how much at most. */
+function limiting(renders: readonly SetDownRender[]): { readonly limited: number; readonly largestLimitDb: number } {
+  return { limited: renders.filter((r) => r.limitDb > 0).length, largestLimitDb: round(Math.max(0, ...renders.map((r) => r.limitDb))) };
+}
+
+function playsOver(slug: string, surface: SurfaceKind, seeds: number): { readonly spreadDb: number; readonly peakMaxDb: number; readonly limited: number; readonly largestLimitDb: number } {
+  const renders = Array.from({ length: seeds }, (_, i) => render(slug, surface, 1000 + i));
+  const values = renders.map(loudness);
+  return { spreadDb: round(Math.max(...values) - Math.min(...values)), peakMaxDb: round(Math.max(...renders.map((r) => r.peakDb))), ...limiting(renders) };
 }
 
 describe.skipIf(OUT === "")("set-down renders for listening (SET_DOWN_WAV_DIR)", () => {
@@ -92,6 +100,7 @@ describe.skipIf(OUT === "")("set-down renders for listening (SET_DOWN_WAV_DIR)",
         lengthMs: round((r.left.length / SR) * 1000, 0),
         brightnessHz: round(brightnessHz(r.left, SR), 0),
         above2kIn50msPct: round(100 * clickShare(r.left, 50, 2000), 2),
+        limitDb: round(r.limitDb),
         medianRenderMs: round(timedMs(slug, "oak-boards-joists"), 2),
       };
     });
@@ -143,9 +152,16 @@ describe.skipIf(OUT === "")("set-down renders for listening (SET_DOWN_WAV_DIR)",
         ["mic-stand", "carpet", 200],
         ["laptop", "table-top", 200],
       ] as const
-    ).map(([slug, surface, seeds]) => ({ slug, surface, seeds, spreadDb: spreadOver(slug, surface, seeds) }));
+    ).map(([slug, surface, seeds]) => ({ slug, surface, seeds, ...playsOver(slug, surface, seeds) }));
+    const everyPiece = CRAFTED_FURNITURE_SLUGS.flatMap((slug) => (Object.keys(SURFACES) as SurfaceKind[]).map((surface) => render(slug, surface)));
+    const catalogue = {
+      renders: everyPiece.length,
+      peakMinDb: round(Math.min(...everyPiece.map((r) => r.peakDb))),
+      peakMaxDb: round(Math.max(...everyPiece.map((r) => r.peakDb))),
+      ...limiting(everyPiece),
+    };
     const surfaces = (Object.keys(SURFACES) as SurfaceKind[]).map((surface) => ({ surface, chiavariMedianRenderMs: round(timedMs("chiavari-chair", surface), 2) }));
-    const figures = { pieces, features, clicks, plays, surfaces };
+    const figures = { pieces, features, clicks, plays, catalogue, surfaces };
     writeFileSync(join(OUT, "figures.json"), JSON.stringify(figures, null, 2));
     expect(pieces.length).toBe(CRAFTED_FURNITURE_SLUGS.length);
   }, 600_000);

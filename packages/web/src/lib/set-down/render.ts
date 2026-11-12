@@ -72,8 +72,8 @@ export interface SetDownRender extends Stereo {
   /**
    * The peak of the pre-pan mono source, dBFS: the direct sound, with any
    * reflection under 1 ms folded in, before it is panned. Centred at full
-   * direct gain it lies in -32..-16 dBFS (a quiet play is turned up to -32,
-   * a loud one limited to -16), and it scales with the direct gain. The pan
+   * direct gain it lies in -32..-6 dBFS (a quiet play is turned up to -32,
+   * a loud one held at -6), and it scales with the direct gain. The pan
    * is equal-power, so loudness is the same at every angle, and a hard pan
    * may put one channel up to 3 dB above this; later reflections may add to
    * either channel.
@@ -86,6 +86,12 @@ export interface SetDownRender extends Stereo {
    * to land.
    */
   readonly onsetSeconds: number;
+  /**
+   * How far the safety limiter held the source's peak down, dB: 0 unless the
+   * loudness rule would have taken the play past -6 dBFS. Past LIMIT_MAX_DB
+   * the play is turned down as a whole, which this does not count.
+   */
+  readonly limitDb: number;
 }
 
 // --- Level ---------------------------------------------------------------------
@@ -93,13 +99,12 @@ export interface SetDownRender extends Stereo {
 /** Loudness is read over the first 400 ms, BS.1770's momentary block, as the tests read it. */
 const LOUDNESS_WINDOW_S = 0.4;
 /**
- * A play the loudness rule would take past -16 dBFS is held there by a
- * look-ahead peak limiter, as broadcast holds R128 loudness under a peak
- * ceiling: the knock that tops a play carries almost none of its energy, so
- * holding it down leaves the play at its loudness (ruling R36's peak window).
- * It takes up to this much off a peak; past that, the whole play is turned
- * down. Over 200 plays a staging deck on oak moved 3.4 dB with 6 dB of it,
- * 2.1 dB with 9 dB and 0.6 dB with 12 dB.
+ * The safety above the ceiling: a play the loudness rule would take past
+ * -6 dBFS is held there by a look-ahead peak limiter, as broadcast holds R128
+ * loudness under a peak ceiling. The knock that tops a play carries almost
+ * none of its energy, so holding it down leaves the play at its loudness. It
+ * takes up to this much off a peak; past that, the whole play is turned down.
+ * (Under the old -16 dBFS ceiling a staging deck needed all 12 dB.)
  */
 const LIMIT_MAX_DB = 12;
 /** The limiter's look-ahead and recovery, each. */
@@ -113,7 +118,13 @@ const LIMIT_SETTLE = 1e-3;
 const K_TAIL_S = 0.1;
 
 const PEAK_FLOOR_DB = -32;
-const PEAK_CEILING_DB = -16;
+/**
+ * The pre-master window's top, on the pre-pan mono source (ruling R42, which
+ * moved it from -16 so the knocks keep their click). The chain has the
+ * headroom: the 0.6 master puts a -6 dBFS source at -10.4 dBFS, against the
+ * registry limiter's -12 dB threshold and 3 ms attack.
+ */
+const PEAK_CEILING_DB = -6;
 const REFERENCE_MASS_KG = 4;
 
 // --- Each play -------------------------------------------------------------------
@@ -308,7 +319,8 @@ function saneSpeed(speed: number): number {
 
 // --- The landing ---------------------------------------------------------------------
 
-interface Landing {
+/** One foot meeting the floor: its index in `body.feet`, seconds after the first contact, and the share of the momentum it stops. */
+export interface FootLanding {
   readonly foot: number;
   readonly time: number;
   readonly share: number;
@@ -319,7 +331,7 @@ interface Landing {
  * foot (or two) touches lightly first, and the rest land together at the end
  * of the spread, over 5-35 ms for light pieces and 3-15 ms for heavy ones.
  */
-function scheduleFeet(count: number, massKg: number, random: () => number): Landing[] {
+function scheduleFeet(count: number, massKg: number, random: () => number): FootLanding[] {
   if (count <= 1) return [{ foot: 0, time: 0, share: 1 }];
   const order = Array.from({ length: count }, (_, i) => i);
   for (let i = count - 1; i > 0; i -= 1) {
@@ -332,7 +344,7 @@ function scheduleFeet(count: number, massKg: number, random: () => number): Land
   const spread = lerp(range, random());
   const first = count >= 4 && random() < PAIR_CHANCE ? 2 : 1;
   const firstShare = lerp(FIRST_SHARE, random());
-  const landings: Landing[] = [];
+  const landings: FootLanding[] = [];
   for (let i = 0; i < first; i += 1) {
     landings.push({ foot: order[i] ?? i, time: i === 0 ? 0 : random() * PAIR_SPREAD * spread, share: firstShare / first });
   }
@@ -389,7 +401,7 @@ function groupFeet(feet: readonly Foot[], surfaces: readonly SurfaceResponse[]):
 /** Every force pulse of the landing: the feet, their chatter, carpet's bottoming out and the castors' roll. */
 function landingPulses(
   piece: Piece,
-  landings: readonly Landing[],
+  landings: readonly FootLanding[],
   groupOf: readonly number[],
   groups: readonly Group[],
   speed: number,
@@ -456,7 +468,7 @@ function landingPulses(
  * at 1.2-3 kHz, each peaking at `peak`, written into `force`, which rings the
  * frames.
  */
-function addRattle(force: Float64Array, landings: readonly Landing[], peak: number, sampleRate: number, random: () => number): void {
+function addRattle(force: Float64Array, landings: readonly FootLanding[], peak: number, sampleRate: number, random: () => number): void {
   const last = Math.max(...landings.map((landing) => landing.time));
   const count = RATTLE_COUNT[0] + Math.floor(random() * (RATTLE_COUNT[1] - RATTLE_COUNT[0] + 1));
   const earliest = last + RATTLE_AFTER_S;
@@ -809,6 +821,59 @@ function onePoleGain(pole: number, hz: number, sampleRate: number): number {
   return (1 - pole) / Math.sqrt(1 - 2 * pole * Math.cos(w) + pole * pole);
 }
 
+// --- The play's start -----------------------------------------------------------------------------
+
+interface PlayStart {
+  /** The play's random stream, already past the speed and the feet. */
+  readonly random: () => number;
+  /** The set-down's own speed, which sets its level. */
+  readonly nominal: number;
+  /** The play's speed, within SPEED_SPREAD of it, which shapes its contacts. */
+  readonly speed: number;
+  readonly landings: FootLanding[];
+}
+
+/** How a play begins: its speed and its feet, the first draws on its seed, in this order. */
+function startPlay(piece: Piece, seed: number, speedMps: number, kind: SetDownInput["kind"]): PlayStart {
+  const random = seededRandom(seed);
+  // The set-down's own speed sets its level; the play's spread of it shapes only its contacts.
+  const nominal = saneSpeed(speedMps) * (kind === "settle" ? SETTLE_SPEED : 1);
+  const speed = nominal * (1 + SPEED_SPREAD * (2 * random() - 1));
+  return { random, nominal, speed, landings: scheduleFeet(piece.feet.length, piece.massKg, random) };
+}
+
+/** Feet that land within this of the one before land together: one contact, as a 1 ms onset block hears it. */
+export const LANDING_GROUP_S = 0.001;
+
+export interface FootSchedule {
+  /** Each foot's landing, in time order: its index in `body.feet`, seconds after the first contact, and the share of the momentum it stops. */
+  readonly landings: readonly FootLanding[];
+  /** The landings that come together, each group at its first foot's time. */
+  readonly groups: readonly { readonly time: number; readonly feet: readonly number[] }[];
+}
+
+/**
+ * When a play's feet meet the floor: the renderer's own schedule for this
+ * body, seed and speed (ruling R43). One foot, or two, lands first and the
+ * rest together, over 5-35 ms (3-15 ms over 15 kg); the chatter after a
+ * landing is part of that landing and is not here.
+ */
+export function footSchedule(body: SetDownBody, seed: number, speedMps: number): FootSchedule {
+  const { landings } = startPlay(pieceOf(body), seed, speedMps, "drop");
+  const ordered = [...landings].sort((a, b) => a.time - b.time);
+  const groups: { time: number; last: number; feet: number[] }[] = [];
+  for (const landing of ordered) {
+    const group = groups[groups.length - 1];
+    if (group !== undefined && landing.time - group.last <= LANDING_GROUP_S) {
+      group.feet.push(landing.foot);
+      group.last = landing.time;
+    } else {
+      groups.push({ time: landing.time, last: landing.time, feet: [landing.foot] });
+    }
+  }
+  return { landings: ordered, groups: groups.map(({ time, feet }) => ({ time, feet })) };
+}
+
 // --- The render ---------------------------------------------------------------------------------
 
 /** The loudness a set-down is set to: the anchor's, plus 3 log10(m / 4 kg) and 10 log10(v / 1 m/s). */
@@ -912,8 +977,8 @@ function kWeightedHeld(head: Float64Array, k: Float64Array, gain: Float64Array, 
 /**
  * The scale that sets the source (`head`, its first 400 ms, and `source`, all
  * of it) to `targetDb` of K-weighted loudness with its peak held to
- * -32..-16 dBFS, and the limiter gain that holds it there (null if none). A
- * quiet play is turned up to -32; a loud one is limited to -16 by up to
+ * -32..-6 dBFS, and the limiter gain that holds it there (null if none). A
+ * quiet play is turned up to -32; a loud one is limited to -6 by up to
  * LIMIT_MAX_DB and turned down past that, its loudness solved again through
  * the limiter until it holds.
  */
@@ -947,22 +1012,17 @@ function levelFor(head: Float64Array, source: Float64Array, length: number, sour
  * + 3 log10(m / 4) + 10 log10(v) of K-weighted loudness (ruling R36), where v
  * is the set-down's own speed (a quarter of it for a settle): the play's
  * +-15 % spread shapes its contacts, not its level. Its peak is then held to
- * -32..-16 dBFS: a quiet play is turned up, and a loud one is held by a
- * look-ahead limiter (by up to LIMIT_MAX_DB, then turned down). A reflection under 1 ms (the floor beneath a piece standing
- * on it) folds into the direct sound, which is still the one set to that
- * level (ruling R35), and later reflections keep their gains against the dry
- * sound. The direct gain scales everything, and the pan keeps the power the
+ * -32..-6 dBFS (ruling R42): a quiet play is turned up, and a loud one is
+ * held by a look-ahead limiter (by up to LIMIT_MAX_DB, then turned down). A
+ * reflection under 1 ms (the floor beneath a piece standing on it) folds into
+ * the direct sound, which is still the one set to that level (ruling R35),
+ * and later reflections keep their gains against the dry sound. The direct gain scales everything, and the pan keeps the power the
  * same at every angle.
  */
 export function renderSetDown(input: SetDownInput): SetDownRender {
   const sampleRate = saneRate(input.sampleRate);
-  const random = seededRandom(input.seed);
   const piece = pieceOf(input.body);
-  // The set-down's own speed sets its level; the play's spread of it shapes only its contacts.
-  const nominal = saneSpeed(input.speed) * (input.kind === "settle" ? SETTLE_SPEED : 1);
-  const speed = nominal * (1 + SPEED_SPREAD * (2 * random() - 1));
-
-  const landings = scheduleFeet(piece.feet.length, piece.massKg, random);
+  const { random, nominal, speed, landings } = startPlay(piece, input.seed, input.speed, input.kind);
   const { groups, of: groupOf } = groupFeet(piece.feet, input.surfaces);
   const pulses = landingPulses(piece, landings, groupOf, groups, speed, input.kind, random);
 
@@ -1094,6 +1154,8 @@ export function renderSetDown(input: SetDownInput): SetDownRender {
   for (let n = 0; n < sourceEnd; n += 1) source[n] = (dry[n] ?? 0) + (swell[n] ?? 0);
   const head = source.subarray(0, Math.min(sourceEnd, Math.round(LOUDNESS_WINDOW_S * sampleRate)));
   let level = 0;
+  // The least gain the limiter applied: 1 unless it held the play.
+  let held = 1;
   if (sourcePeak > 0) {
     const set = levelFor(head, source, sourceEnd, sourcePeak, targetLoudnessDb(piece.massKg, nominal), sampleRate);
     level = set.scale / folded;
@@ -1104,6 +1166,7 @@ export function renderSetDown(input: SetDownInput): SetDownRender {
       for (let n = 0; n < sourceEnd; n += 1) {
         const g = gain[n] ?? 1;
         if (g === 1) continue;
+        held = Math.min(held, g);
         if (n < dry.length) dry[n] = (dry[n] ?? 0) * g;
         if (n < swell.length) swell[n] = (swell[n] ?? 0) * g;
       }
@@ -1166,5 +1229,5 @@ export function renderSetDown(input: SetDownInput): SetDownRender {
     }
   }
 
-  return { left, right, sampleRate, peakDb: gainToDb(direct * sourcePeak), onsetSeconds: onset / sampleRate };
+  return { left, right, sampleRate, peakDb: gainToDb(direct * sourcePeak), onsetSeconds: onset / sampleRate, limitDb: held < 1 ? -gainToDb(held) : 0 };
 }

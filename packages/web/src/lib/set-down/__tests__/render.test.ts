@@ -7,7 +7,7 @@ import { bandEnergy, brightnessHz, octaveBandpassSteep, onsetTimesMs, schroederT
 import { bodyFor, type BodyPart, type PartKind } from "../bodies.js";
 import { LOSS, contactSeconds, knockSeconds, partModes, surfaceModes } from "../modes.js";
 import { earlyReflections, reflectionRoomFor, type Reflection } from "../reflections.js";
-import { SET_DOWN_TOUCH_DB, SET_DOWN_TOUCH_LOUDNESS_DB, renderSetDown, type SetDownInput, type SetDownRender } from "../render.js";
+import { SET_DOWN_TOUCH_DB, SET_DOWN_TOUCH_LOUDNESS_DB, footSchedule, renderSetDown, type SetDownInput, type SetDownRender } from "../render.js";
 import { ROOM_ACOUSTICS } from "../rooms.js";
 import { SURFACES, floorKindForRoom, surfaceResponse, type SurfaceKind } from "../surfaces.js";
 import { SR, clickShare, energy, inputFor, loudness, setDown } from "./set-down-kit.js";
@@ -201,7 +201,7 @@ describe("every crafted piece on every surface", () => {
       expect(finite, `${slug} on ${kind}`).toBe(true);
       expect(clipped, `${slug} on ${kind}`).toBe(false);
       expect(render.peakDb, `${slug} on ${kind}`).toBeGreaterThanOrEqual(-32);
-      expect(render.peakDb, `${slug} on ${kind}`).toBeLessThanOrEqual(-16);
+      expect(render.peakDb, `${slug} on ${kind}`).toBeLessThanOrEqual(-6);
       // Centred with no reflections, both channels are the mono source the peak is read from.
       expect(render.peakDb).toBeCloseTo(peakOf(render), 4);
       const above = bandEnergy(render.left, SR, 14000, SR / 2) / energy(render.left);
@@ -254,15 +254,50 @@ describe("what each surface does to a Chiavari", () => {
     expect(lowShare(reception.left)).toBeLessThan(0.7 * lowShare(hall.left));
   });
 
-  it.each(TEN_SEEDS)("lands its feet as two to four contacts over 5-35 ms (seed %i)", (seed) => {
-    const render = setDown("chiavari-chair", "oak-boards-joists", { seed });
-    expectSounding(render);
-    const onsets = onsetTimesMs(render.left, SR);
-    expect(onsets.length).toBeGreaterThanOrEqual(2);
-    expect(onsets.length).toBeLessThanOrEqual(4);
-    const span = (onsets[onsets.length - 1] ?? 0) - (onsets[0] ?? 0);
-    expect(span).toBeGreaterThanOrEqual(5);
-    expect(span).toBeLessThanOrEqual(35);
+  it("is heard from its first contact, and nothing after its first 50 ms is louder than its landing (seeds 1-100, ruling R43)", () => {
+    const head = Math.round(0.05 * SR);
+    for (let seed = 1; seed <= 100; seed += 1) {
+      const render = setDown("chiavari-chair", "oak-boards-joists", { seed });
+      expect(onsetTimesMs(render.left, SR)[0], `seed ${String(seed)}`).toBe(0);
+      let landing = 0;
+      let after = 0;
+      render.left.forEach((sample, i) => {
+        if (i < head) landing = Math.max(landing, Math.abs(sample));
+        else after = Math.max(after, Math.abs(sample));
+      });
+      expect(after, `seed ${String(seed)}`).toBeLessThan(landing);
+    }
+  });
+});
+
+describe("when the feet meet the floor (ruling R43)", () => {
+  it("lands every crafted piece's feet as 2-4 groups over 5-35 ms, or 3-15 ms over 15 kg, the first at once (seeds 1-100)", () => {
+    for (const slug of CRAFTED_FURNITURE_SLUGS) {
+      const body = bodyFor(slug);
+      const [low, high] = body.massKg > 15 ? [0.003, 0.015] : [0.005, 0.035];
+      for (let seed = 1; seed <= 100; seed += 1) {
+        const { landings, groups } = footSchedule(body, seed, 1);
+        const at = `${slug} seed ${String(seed)}`;
+        expect(landings.length, at).toBe(Math.max(1, body.feet.length));
+        expect(landings.reduce((sum, landing) => sum + landing.share, 0), at).toBeCloseTo(1, 9);
+        expect(groups[0]?.time, at).toBe(0);
+        if (body.feet.length < 2) {
+          expect(groups.length, at).toBe(1);
+          continue;
+        }
+        expect(groups.length, at).toBeGreaterThanOrEqual(2);
+        expect(groups.length, at).toBeLessThanOrEqual(4);
+        const span = groups[groups.length - 1]?.time ?? 0;
+        expect(span, at).toBeGreaterThanOrEqual(low);
+        expect(span, at).toBeLessThanOrEqual(high);
+      }
+    }
+  });
+
+  it("is the same schedule for the same seed at any speed, and another for another seed", () => {
+    const body = bodyFor("chiavari-chair");
+    expect(footSchedule(body, 7, 0.5)).toEqual(footSchedule(body, 7, 2));
+    expect(footSchedule(body, 8, 1)).not.toEqual(footSchedule(body, 7, 1));
   });
 });
 
@@ -328,18 +363,29 @@ describe("levels", () => {
     expect(Math.abs(median(peaks) - SET_DOWN_TOUCH_DB)).toBeLessThan(0.5);
   });
 
-  it("follows mass and speed in loudness, compressed, and holds the peak to -32..-16 dBFS", () => {
+  it("follows mass and speed in loudness, compressed, and holds the peak to -32..-6 dBFS (ruling R42)", () => {
     const chair = setDown("chiavari-chair", "oak-boards-joists");
     const round = setDown("round-table-6ft-white", "oak-boards-joists");
     const faster = setDown("chiavari-chair", "oak-boards-joists", { speed: 2 });
     for (const render of [chair, round, faster]) {
       expect(render.peakDb).toBeGreaterThan(-32);
-      expect(render.peakDb).toBeLessThan(-16);
+      expect(render.peakDb).toBeLessThan(-6);
     }
     expect(loudness(round) - loudness(chair)).toBeCloseTo(3 * Math.log10(30 / 4), 2);
     expect(loudness(faster) - loudness(chair)).toBeCloseTo(10 * Math.log10(2), 2);
-    expect(setDown("bar-counter", "oak-boards-joists", { speed: 3 }).peakDb).toBeCloseTo(-16, 3);
+    expect(setDown("bar-counter", "oak-boards-joists", { speed: 10 }).peakDb).toBeCloseTo(-6, 3);
     expect(setDown("lapel-microphone", "oak-boards-joists", { speed: 0.1 }).peakDb).toBeCloseTo(-32, 3);
+  });
+
+  it("holds a play at -6 dBFS with the safety limiter only when the loudness rule would take it past (ruling R42)", () => {
+    const chair = setDown("chiavari-chair", "oak-boards-joists");
+    expect(chair.limitDb).toBe(0);
+    const slow = setDown("bar-counter", "oak-boards-joists", { speed: 0.3 });
+    expect(slow.limitDb).toBe(0);
+    expect(slow.peakDb).toBeLessThan(-6);
+    const hard = setDown("bar-counter", "oak-boards-joists", { speed: 10 });
+    expect(hard.limitDb).toBeGreaterThan(0);
+    expect(hard.peakDb).toBeCloseTo(-6, 3);
   });
 
   it("settles 6 dB softer than it drops, and darker", () => {
@@ -490,7 +536,7 @@ describe("pieces with no crafted body", () => {
     expectSounding(render);
     for (const sample of render.left) expect(Number.isFinite(sample)).toBe(true);
     expect(render.peakDb).toBeGreaterThanOrEqual(-32);
-    expect(render.peakDb).toBeLessThanOrEqual(-16);
+    expect(render.peakDb).toBeLessThanOrEqual(-6);
   });
 
   it("never throws on a body with no feet, no surfaces or impossible numbers", () => {
