@@ -216,10 +216,20 @@ jobs:
         # host, so an unreachable Ubuntu apt mirror cannot block the production
         # receipt. A missing system library makes the browser fail to start, so
         # the receipt fails rather than passing on a broken browser.
+        #
+        # The apt-get that --with-deps starts runs as root under sudo, so
+        # timeout cannot always stop it, and left running it keeps installing
+        # fonts while the next step starts. It is stopped before going on.
         run: |
           if timeout --kill-after=10 180 pnpm --filter @omnitwin/web exec playwright install --with-deps chromium; then exit 0; fi
           echo "::warning::playwright install --with-deps failed or ran past 180 s; the Ubuntu apt mirror may be unreachable"
+          sudo pkill -TERM -x apt-get || true
+          sudo pkill -TERM -x dpkg || true
+          for _ in $(seq 1 15); do pgrep -x apt-get >/dev/null || pgrep -x dpkg >/dev/null || break; sleep 1; done
+          sudo pkill -KILL -x apt-get || true
+          sudo pkill -KILL -x dpkg || true
           echo "::warning::Installing Chromium without apt; relying on the runner image's own system libraries"
+          echo "Chromium was installed without apt (the Ubuntu mirror was unreachable), so some system fonts may be substituted. This receipt compares no pixels, so its result is unaffected." >> "$GITHUB_STEP_SUMMARY"
           pnpm --filter @omnitwin/web exec playwright install chromium
 
       - name: Run the production route pass
