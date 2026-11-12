@@ -124,6 +124,11 @@ describe("the privacy policy", () => {
     expect(page).toContain("How fast our pages are");
     expect(page).toContain("delete them after 90 days");
     expect(page).toContain("It does not send the address of the page you opened");
+    // Only what is true of the real system (12 November 2026): the host's own
+    // request logs record the address, and Safari clears the stored choice.
+    expect(page).toContain("our own server does not log it; our hosting provider's standard request logs record it");
+    expect(page).not.toContain("we do not keep that with the timings or log it");
+    expect(page).toContain("until the browser clears our site's data (Safari does this after about a week without a visit)");
     const button = screen.getByRole("button", { name: "Don't measure my visits" });
     expect(button.getAttribute("aria-pressed")).toBe("false");
     fireEvent.click(button);

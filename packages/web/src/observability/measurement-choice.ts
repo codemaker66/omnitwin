@@ -2,9 +2,12 @@
 // "Don't measure my visits", the switch on the privacy page (T-685): the way to
 // object to the page-speed timings that works on every browser, including
 // Safari, which sends neither Global Privacy Control nor Do Not Track. The
-// choice is kept on this device, the only thing the measurement ever stores
-// here, so later visits respect it; where storage is unavailable it holds for
-// this visit.
+// choice is kept in this browser on this device, the only thing the
+// measurement ever stores here, so later visits respect it, until the browser
+// clears the site's data: Safari's tracking prevention clears script storage
+// after about seven days without a visit, which the privacy page says. Where
+// storage is unavailable it holds for this visit. The reporter reads it again
+// at every send, so pressing the switch also stops the page load in progress.
 // ---------------------------------------------------------------------------
 
 export const MEASUREMENT_DECLINED_KEY = "venviewer.measurement.declined";

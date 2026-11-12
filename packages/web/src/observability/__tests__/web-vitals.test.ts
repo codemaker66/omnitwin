@@ -370,6 +370,30 @@ describe("starting on a page load", () => {
     }
   });
 
+  // The switch lives on the privacy page, which is itself measured: a visitor
+  // who presses it there must not send that very page load (12 November 2026).
+  it("sends nothing once the visitor chooses \"Don't measure my visits\" while the load is measured", async () => {
+    const send = vi.fn<(body: string) => void>();
+    ordinaryBrowser();
+    const router = fakeRouter(["/privacy"]);
+    try {
+      expect(await startWebVitals({ env: { VITE_WEB_VITALS_SAMPLE_RATE: "1" }, landing: recordLandingRoute(router, new EventTarget()), random: () => 0, send })).toBe(true);
+      for (const [name, entry] of vitals.callbacks) entry.callback(metric(name as Metric["name"], name === "CLS" ? 0.02 : 300));
+      setMeasurementDeclined(true);
+      setVisibility("hidden");
+      expect(send).not.toHaveBeenCalled();
+      // It stops following the route, and a later hide sends nothing either.
+      expect(router.listeners).toBe(0);
+      setVisibility("visible");
+      for (const [name, entry] of vitals.callbacks) entry.callback(metric(name as Metric["name"], 500, "good", `v6-1761650099999-${name}`));
+      setVisibility("hidden");
+      expect(send).not.toHaveBeenCalled();
+    } finally {
+      setVisibility("visible");
+      setMeasurementDeclined(false);
+    }
+  });
+
   it("is loaded only by a build that samples: the entry module never imports the reporter itself", () => {
     const main = readFileSync(resolve("src/main.tsx"), "utf8");
     expect(main).not.toMatch(/^import .*observability\/web-vitals\.js/mu);

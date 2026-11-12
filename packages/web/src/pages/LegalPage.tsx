@@ -257,9 +257,9 @@ const PRIVACY: LegalDocument = {
               term: "How fast our pages are",
               detail:
                 "When you open one of our pages, your browser may measure how quickly it loaded and responded (four timings) and send them to us with the kind of page (for example \"a proposal\") and whether it was opened on a phone, tablet or computer. "
-                + "It does not send the address of the page you opened, anything you typed, or any identifier, and nothing is stored on your device for it. Like any request, it reaches us from your internet address; we do not keep that with the timings or log it. "
+                + "It does not send the address of the page you opened, anything you typed, or any identifier, and nothing is stored on your device for it. Like any request, it reaches us from your internet address. We do not keep that with the timings, and our own server does not log it; our hosting provider's standard request logs record it, as they do for every request (see \"Server and request logs\"). "
                 + "We use these timings only to make the site faster, and delete them after 90 days. "
-                + "If your browser sends Global Privacy Control or Do Not Track, nothing is measured or sent. On any browser you can also turn it off with the \"Don't measure my visits\" switch on this page; that choice is kept on your device so we can respect it.",
+                + "If your browser sends Global Privacy Control or Do Not Track, nothing is measured or sent. On any browser you can also turn it off with the \"Don't measure my visits\" switch on this page. That choice is kept in this browser on this device until the browser clears our site's data (Safari does this after about a week without a visit), so you may need to set it again.",
             },
           ],
         },
