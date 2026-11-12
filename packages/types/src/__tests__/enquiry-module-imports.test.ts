@@ -31,7 +31,7 @@ const SRC = resolve(dirname(fileURLToPath(import.meta.url)), "..");
  * The modules the enquiry schema may reach that import nothing at all, so
  * they can bring nothing else with them. A new one is added here, in this one
  * place, and the test below holds it to importing nothing. occasion.ts holds
- * the occasion words (#407), which enquiry.ts offers again under its own names.
+ * the occasion words (#407), which enquiry.ts re-exports.
  */
 const LEAVES: readonly string[] = ["calendar-date.ts", "occasion.ts"];
 
