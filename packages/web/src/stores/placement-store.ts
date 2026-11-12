@@ -511,7 +511,14 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     if (isLayoutTimelineMutationLocked()) return;
     const state = get();
     const next = state.placedItems.filter((item) => item.id !== id);
-    if (refusedForHeldNote(state.placedItems, next, nothingRemovedLine)) return;
+    // The piece stays if it holds such a note, and so does a piece whose group holds one: a table keeps its chairs.
+    const going = state.placedItems.find((item) => item.id === id);
+    const unit = going === undefined ? [] : state.placedItems.filter((item) => item.id === id || (going.groupId !== null && item.groupId === going.groupId));
+    const [kept] = keptForHeldNotes(unit, state.placedItems).names;
+    if (kept !== undefined) {
+      postPlacementNotice(nothingRemovedLine(describePieces([kept])));
+      return;
+    }
     set({ placedItems: next });
     announceRemoved(state.placedItems.filter((item) => item.id === id));
   },

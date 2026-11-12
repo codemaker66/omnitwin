@@ -576,6 +576,29 @@ describe("removing pieces, several of which hold a note this browser is not show
     expect(notice()).toBe("Nothing was removed: Table 1 has a note that cannot be shown here.");
   });
 
+  it("keeps the held ones, with their chairs, when everything is selected with Ctrl A and then deleted", async () => {
+    setPlannerFeaturesForTesting({ tableSets: true, editingKeys: true });
+    const floor = rounds(4);
+    const [, second, , fourth] = floor;
+    const chair = fourth?.chairs[2];
+    if (second === undefined || fourth === undefined || chair === undefined) throw new Error("no rounds");
+    // Table 2 holds a note on the table, Table 4 on one of its chairs; Tables 1 and 3 hold none.
+    await open(floor, [second.table, chair], "without its notes");
+    const unbind = registerKeyBindings(selectionKeyBindings({
+      invalidate: () => undefined, cancelGesture: () => undefined, screenUp: () => ({ x: 0, z: -1 }),
+    }));
+    try {
+      act(() => { window.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyA", key: "a", ctrlKey: true, bubbles: true, cancelable: true })); });
+      expect(useSelectionStore.getState().selectedIds.size).toBeGreaterThan(0);
+      act(() => { window.dispatchEvent(new KeyboardEvent("keydown", { code: "Delete", key: "Delete", bubbles: true, cancelable: true })); });
+    } finally {
+      unbind();
+    }
+
+    expect(placedIds()).toEqual([...second.pieces, ...fourth.pieces].map((piece) => piece.id));
+    expect(notice()).toBe("Tables 2 and 4 stayed where they are, because each has a note that cannot be shown here.");
+  });
+
   it("removes a marked piece as ever from a layout that is not a guest plan, where the mark means nothing", async () => {
     const floor = rounds(2);
     const [first, second] = floor;
@@ -598,6 +621,12 @@ describe("removing pieces, several of which hold a note this browser is not show
     const before = placedIds();
 
     act(() => { usePlacementStore.getState().removeItem(first.table); });
+    expect(placedIds()).toEqual(before);
+    expect(notice()).toBe("Nothing was removed: Table 1 has a note that cannot be shown here.");
+
+    // Nor a chair of that table: a group holding such a piece stays whole.
+    act(() => { usePlacementNoticeStore.getState().dismiss(); });
+    act(() => { usePlacementStore.getState().removeItem(first.chairs[0] ?? "no chair"); });
     expect(placedIds()).toEqual(before);
     expect(notice()).toBe("Nothing was removed: Table 1 has a note that cannot be shown here.");
 

@@ -22,11 +22,16 @@ import {
   NOTE_HELD_CODE,
   forgettingConfirmedNotes,
   heldNoteIds,
+  heldNoteObjectsName,
+  heldNoteObjectsNamed,
+  heldNotePiecesToPutBack,
   keepingConfirmedNotes,
   namingReplacedNotes,
+  nothingRemovedLine,
   ownWordsOverHeldNotes,
   registerHeldNotes,
   signedInRoutesSuit,
+  stayedForNotesLine,
 } from "../lib/guest-plan-notes.js";
 import { holdPlannerPageLock, isPlannerPageOpen, plannerPageId } from "../lib/planner-page-lock.js";
 import { signedOutOwnerFrom } from "../lib/planner-draft-storage.js";
@@ -57,6 +62,7 @@ import type {
   ObjectFieldPatch,
 } from "../lib/editor-history.js";
 import { useSelectionStore } from "./selection-store.js";
+import { postPlacementNotice } from "./placement-notice-store.js";
 import { useCockpitStore } from "./cockpit-store.js";
 import { useActionLogStore } from "./action-log-store.js";
 import { createActionEmitter } from "../lib/action-log.js";
@@ -1441,6 +1447,16 @@ export const useEditorStore = create<EditorStore>()(withSaveFacts((set, get) => 
   removeObject: (objectId) => {
     if (isLayoutTimelineMutationLocked()) return;
     const s = get();
+    // Someone who cannot see a note never destroys it: the piece stays, and so
+    // does a piece whose group holds one, as a table keeps its chairs.
+    const going = s.objects.find((o) => o.id === objectId);
+    const held = heldNoteIds(s);
+    const holders = going === undefined ? [] : s.objects.filter((o) => held.has(o.id)
+      && (o.id === objectId || (going.groupId !== null && o.groupId === going.groupId)));
+    if (holders.length > 0) {
+      postPlacementNotice(nothingRemovedLine(heldNoteObjectsName(holders, s.objects)));
+      return;
+    }
     const after = s.objects.filter((o) => o.id !== objectId);
     const selectionAfter = captureSelection(s.selectedObjectId).filter((id) => id !== objectId);
     set({
@@ -1766,6 +1782,30 @@ export const useEditorStore = create<EditorStore>()(withSaveFacts((set, get) => 
 })));
 
 /**
+ * Put back the pieces the working document has lost that the confirmed one
+ * says hold a note this browser is not shown, each as the server sent it (its
+ * id, where it stood, its details) and with the rest of its group, and say
+ * that they stayed (lib/guest-plan-notes heldNotePiecesToPutBack). The
+ * timeline forgets them: no step may take them away again, or return them a
+ * second time. True when anything went back.
+ */
+function putBackHeldNotePieces(): boolean {
+  const s = useEditorStore.getState();
+  const back = heldNotePiecesToPutBack(s, s.baseObjects, s.objects);
+  if (back.pieces.length === 0) return false;
+  const objects = [...s.objects, ...back.pieces];
+  useEditorStore.setState({
+    objects,
+    isDirty: true,
+    history: forgetHistoryIds(s.history, new Set(back.pieces.map((piece) => piece.id))),
+  });
+  notifyLocalChange(s.objects, objects);
+  const stayed = stayedForNotesLine(heldNoteObjectsNamed(back.held, s.baseObjects));
+  if (stayed !== null) postPlacementNotice(stayed);
+  return true;
+}
+
+/**
  * The save itself. `keeping` is "Keep mine": it may run while the conflict it
  * settles is pending (every other save waits for the person's choice), and a
  * 409 during it is always reported as a fresh conflict, never rebased, even
@@ -1799,6 +1839,15 @@ async function saveDocument(
     });
     return false;
   }
+
+  // Someone who cannot see a note never destroys it (lib/guest-plan-notes). A
+  // piece left out of a save is removed, and its note with it, and the API
+  // does not refuse that. So no save goes without a piece the confirmed
+  // document says holds a note this browser is not shown, whatever wrote the
+  // working one: this is the one place every path to a save must pass. Such a
+  // piece is put back first and the person is told it stayed; only then is
+  // the document, which now has it, sent.
+  if (putBackHeldNotePieces()) return saveDocument(isAuthenticated, keeping, transport);
 
   // The save path: the signed-in route for a layout someone owns, and for a
   // public preview only when that route answers this person (usesSignedInRoutes).

@@ -32,6 +32,11 @@ import type { ChangedPiece } from "./layout-change-summary.js";
 // not taken by Replace or a fill, nor by a seat fewer, a smaller dance floor
 // or a cleared floor, and it is not removed when the person asks for it to go
 // (currentHeldNoteIds, and the lines at the foot of this file that say why).
+//
+// The API does not refuse a save that leaves such a piece out (final review of
+// #388), so the planner holds that line itself, at the one place every save
+// passes: a document that has lost such a piece takes it back before it is
+// sent, and the planner says the piece stayed (heldNotePiecesToPutBack).
 // ---------------------------------------------------------------------------
 
 /** The parts of the editor's state these read. */
@@ -256,13 +261,68 @@ export function pieceNamedForRefusedSave(state: GuestPlanNoteFacts): string | nu
   const written = ownWordsOverHeldNotes(state);
   const [only] = written;
   if (written.length !== 1 || only === undefined) return null;
-  const asNamed = (object: EditorObject): NamedPiece => ({
+  return heldNotePieceName(asNamed(only), state.objects.map(asNamed));
+}
+
+/** A piece of the document as these lines name pieces. */
+function asNamed(object: EditorObject): NamedPiece {
+  return {
     id: object.id,
     catalogueItemId: object.assetDefinitionId,
     groupId: object.groupId,
     ...(object.label === undefined ? {} : { label: object.label }),
+  };
+}
+
+/**
+ * Pieces of the document as these lines name them, among `among`: one name
+ * for each piece that stands alone and one for each group, since a table and
+ * its chairs stay or go as one and are found under the table's name.
+ */
+export function heldNoteObjectsNamed(pieces: readonly EditorObject[], among: readonly EditorObject[]): readonly ChangedPiece[] {
+  const all = among.map(asNamed);
+  const units = new Map<string, NamedPiece[]>();
+  for (const piece of pieces.map(asNamed)) {
+    const key = piece.groupId ?? `piece:${piece.id}`;
+    const unit = units.get(key);
+    if (unit === undefined) units.set(key, [piece]);
+    else unit.push(piece);
+  }
+  return [...units.values()].flatMap((unit) => {
+    const named = heldNotePieceToName(unit);
+    return named === undefined ? [] : [heldNotePieceNamed(named, all)];
   });
-  return heldNotePieceName(asNamed(only), state.objects.map(asNamed));
+}
+
+/** The same as one phrase: "Table 3", "Tables 3 and 5", "a table". */
+export function heldNoteObjectsName(pieces: readonly EditorObject[], among: readonly EditorObject[]): string {
+  return describePieces(heldNoteObjectsNamed(pieces, among));
+}
+
+/**
+ * What a document must take back before it is saved. `from` is the document
+ * the save is made against (the last one the server confirmed), and a piece
+ * of it left out of the save is removed, with its note. So each piece of
+ * `from` that holds a note this browser is not shown, and that `objects`
+ * lacks, goes back as the server sent it, with the rest of its group that
+ * `objects` lacks too: a table keeps its chairs. `held` are the note holders
+ * among them, to be named. Nothing in a plan read with its notes, or in a
+ * layout that is not a guest plan.
+ */
+export function heldNotePiecesToPutBack(
+  state: Pick<GuestPlanNoteFacts, "isPublicPreview" | "notesIncluded">,
+  from: readonly EditorObject[],
+  objects: readonly EditorObject[],
+): { readonly held: readonly EditorObject[]; readonly pieces: readonly EditorObject[] } {
+  if (signedInRoutesSuit(state)) return { held: [], pieces: [] };
+  const present = new Set(objects.map((object) => object.id));
+  const held = from.filter((object) => object.noteHeld === true && !present.has(object.id));
+  if (held.length === 0) return { held, pieces: held };
+  const holders = new Set(held.map((object) => object.id));
+  const groups = new Set(held.flatMap((object) => (object.groupId === null ? [] : [object.groupId])));
+  const pieces = from.filter((object) => !present.has(object.id)
+    && (holders.has(object.id) || (object.groupId !== null && groups.has(object.groupId))));
+  return { held, pieces };
 }
 
 /** A change that did not happen because of one such piece: "<outcome>: <name> has a note that cannot be shown here." */

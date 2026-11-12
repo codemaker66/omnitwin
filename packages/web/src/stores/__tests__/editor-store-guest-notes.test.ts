@@ -6,6 +6,7 @@ import { persistAnonymousPlannerDraft, readAnonymousPlannerDraft } from "../../l
 import { noteHeldOn, ownWordsOverHeldNotes } from "../../lib/guest-plan-notes.js";
 import { useAuthStore } from "../auth-store.js";
 import { useEditorStore, type EditorObject } from "../editor-store.js";
+import { usePlacementNoticeStore } from "../placement-notice-store.js";
 import { useSelectionStore } from "../selection-store.js";
 
 // ---------------------------------------------------------------------------
@@ -117,6 +118,7 @@ beforeEach(() => {
   localStorage.clear();
   store().reset();
   useSelectionStore.getState().clearSelection();
+  usePlacementNoticeStore.getState().dismiss();
   useAuthStore.getState().setUser(null);
 });
 
@@ -450,7 +452,8 @@ describe("a browser that is not shown the plan's notes", () => {
 // withoutUnsentNotes for the answer), over the notes `stored` holds.
 // ---------------------------------------------------------------------------
 
-const NOTE_HELD_MESSAGE = "A note on this plan cannot be changed from here, and this save tried to change it. Reload the page, or clear the note you wrote on that piece.";
+const NOTE_HELD_MESSAGE = "A note on this plan cannot be changed from here, and this save tried to change it. Clear the note you wrote on that piece.";
+const OMITTED_MESSAGE = "Nothing was saved: this save would remove a piece with a note that cannot be shown here. Reload the page to put it back.";
 
 interface PlanOnServer {
   revision: number;
@@ -458,6 +461,7 @@ interface PlanOnServer {
   readonly notes: Map<string, string>;
 }
 
+/** The API of #389 as a browser without the plan's secret meets it: revision first, then a piece left out, then each note sent. */
 function serveNotesAsTheApiDoes(server: PlanOnServer): void {
   vi.mocked(configApi.publicBatchSave).mockImplementation((_id, batch, expectedRevision) => {
     if (expectedRevision !== server.revision) {
@@ -465,13 +469,18 @@ function serveNotesAsTheApiDoes(server: PlanOnServer): void {
         expectedRevision, currentRevision: server.revision,
       }));
     }
-    const settled: { readonly id: string; readonly x: number; readonly sent: string | null; readonly note: string | null }[] = [];
+    // A save that leaves out a piece holding a note is refused, whoever wrote the note: the API cannot tell.
+    const sentIds = new Set(batch.map((piece) => piece.id));
+    if ([...server.notes.keys()].some((id) => !sentIds.has(id))) return Promise.reject(new ApiError(409, OMITTED_MESSAGE, "HELD_PIECE_OMITTED"));
+    const settled: { readonly id: string; readonly x: number; readonly name: ObjectMetadata; readonly sent: string | null; readonly note: string | null }[] = [];
     for (const piece of batch) {
-      if (piece.id === undefined) throw new Error("these cases place no new piece");
-      const held = server.notes.get(piece.id) ?? null;
+      // A piece sent without an id is placed: it takes a new row, and holds what was sent.
+      const id = piece.id ?? `0c0c0c0c-0000-4000-8000-${String(server.revision).padStart(6, "0")}${String(settled.length).padStart(6, "0")}`;
+      const name: ObjectMetadata = piece.metadata?.displayLabel === undefined ? {} : { displayLabel: piece.metadata.displayLabel };
+      const held = server.notes.get(id) ?? null;
       const sent = piece.metadata?.notes ?? null;
-      if (held === null || sent === held || piece.replacesNote === held) settled.push({ id: piece.id, x: piece.positionX, sent, note: sent });
-      else if (sent === null && piece.replacesNote === undefined) settled.push({ id: piece.id, x: piece.positionX, sent, note: held });
+      if (held === null || sent === held || piece.replacesNote === held) settled.push({ id, x: piece.positionX, name, sent, note: sent });
+      else if (sent === null && piece.replacesNote === undefined) settled.push({ id, x: piece.positionX, name, sent, note: held });
       else return Promise.reject(new ApiError(409, NOTE_HELD_MESSAGE, "NOTE_HELD"));
     }
     server.revision += 1;
@@ -482,7 +491,7 @@ function serveNotesAsTheApiDoes(server: PlanOnServer): void {
     return Promise.resolve({
       revision: server.revision,
       // A note goes back only where this save itself sent that very note.
-      objects: settled.map((piece) => placed(piece.id, piece.note === null ? {} : piece.sent === piece.note ? { notes: piece.note } : { noteHeld: true }, piece.x)),
+      objects: settled.map((piece) => placed(piece.id, { ...piece.name, ...(piece.note === null ? {} : piece.sent === piece.note ? { notes: piece.note } : { noteHeld: true }) }, piece.x)),
     });
   });
 }
@@ -618,5 +627,89 @@ describe("a save refused for a held note the person wrote over", () => {
     expect(sentPiece(sentBefore + 1, B)).toMatchObject({ replacesNote: "TEST ONLY VIP ta", metadata: { notes: "TEST ONLY VIP table" } });
     expect(server.notes.get(A)).toBe(ALLERGY);
     expect(server.notes.get(B)).toBe("TEST ONLY VIP table");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The release lead's final review of #388 and the rulings after it (R-A to
+// R-E; findings F2 to F5, R2, R3, R6). The API does not refuse a save that
+// leaves out a piece holding a note, so someone who cannot see a note never
+// destroys it by any path a document takes to its save: the save takes such a
+// piece back before it goes, and each path that could have dropped one refuses
+// or keeps it in its own words.
+// ---------------------------------------------------------------------------
+
+const C = "0a0a0a0a-0000-4000-8000-00000000000c";
+const D = "0a0a0a0a-0000-4000-8000-00000000000d";
+
+function notice(): string | null {
+  return usePlacementNoticeStore.getState().notice?.text ?? null;
+}
+
+function pieceIds(): readonly string[] {
+  return store().objects.map((object) => object.id);
+}
+
+describe("a save of a document that has lost a piece holding a note this browser is not shown", () => {
+  it("takes the piece back as the server sent it, says it stayed, and only then is sent", async () => {
+    const server: PlanOnServer = { revision: 4, notes: new Map([[A, ALLERGY]]) };
+    serveNotesAsTheApiDoes(server);
+    await open(plan([placed(A, { noteHeld: true, displayLabel: "Table 3" }, 5), placed(B)], false));
+    // The scene's funnel into the document: no guard of the planner's stands on this writer.
+    store().replaceObjectsFromScene(store().objects.filter((object) => object.id !== A));
+
+    expect(await store().saveToServer(false)).toBe(true);
+    expect(notice()).toBe("Table 3 stayed where it is, because it has a note that cannot be shown here.");
+    // The one save that went carried the piece: its row, where it stood, and no word about its note.
+    expect(savesSent()).toBe(1);
+    expect(sentPiece(0, A).positionX).toBeCloseTo(5, 3);
+    expect(sentPiece(0, A).metadata).toMatchObject({ displayLabel: "Table 3" });
+    expect(sentPiece(0, A).metadata?.notes).toBeUndefined();
+    expect(sentPiece(0, A).replacesNote).toBeUndefined();
+    expect(server.notes.get(A)).toBe(ALLERGY);
+    expect(noteHeldOn(store(), A)).toBe(true);
+    // No step of the timeline takes it away again, or returns it a second time.
+    store().undo();
+    expect(pieceIds().filter((id) => id === A)).toHaveLength(1);
+    store().redo();
+    expect(pieceIds().filter((id) => id === A)).toHaveLength(1);
+  });
+
+  it("takes back the rest of its group with it, as a table keeps its chairs, and names several in one sentence", async () => {
+    const server: PlanOnServer = { revision: 4, notes: new Map([[A, ALLERGY], [B, ALLERGY]]) };
+    serveNotesAsTheApiDoes(server);
+    await open(plan([
+      placed(A, { noteHeld: true, displayLabel: "Table 3", groupId: "group-3" }), placed(D, { groupId: "group-3" }),
+      placed(B, { noteHeld: true, displayLabel: "Table 5" }), placed(C),
+    ], false));
+    store().replaceObjectsFromScene(store().objects.filter((object) => object.id === C));
+
+    expect(await store().saveToServer(false)).toBe(true);
+    expect(notice()).toBe("Tables 3 and 5 stayed where they are, because each has a note that cannot be shown here.");
+    expect([...saveSent(0).batch.map((piece) => piece.id)].sort()).toEqual([A, B, C, D].sort());
+    expect(server.notes.get(A)).toBe(ALLERGY);
+    expect(server.notes.get(B)).toBe(ALLERGY);
+  });
+
+  it("does not let the piece be removed from the document by its id, nor a piece of its group", async () => {
+    await open(plan([placed(A, { noteHeld: true, displayLabel: "Table 3", groupId: "group-3" }), placed(D, { groupId: "group-3" }), placed(B)], false));
+
+    store().removeObject(A);
+    expect(notice()).toBe("Nothing was removed: Table 3 has a note that cannot be shown here.");
+    store().removeObject(D);
+    expect(pieceIds()).toEqual([A, D, B]);
+    expect(store().isDirty).toBe(false);
+    store().removeObject(B);
+    expect(pieceIds()).toEqual([A, D]);
+  });
+
+  it.each([true, undefined])("saves a removal as ever in a plan read with its notes, or by an API that marks nothing (notesIncluded %s)", async (notesIncluded) => {
+    await open(plan([placed(A, { notes: ALLERGY }), placed(B)], notesIncluded));
+    store().removeObject(A);
+    vi.mocked(configApi.publicBatchSave).mockResolvedValue({ objects: [placed(B)], revision: 5 });
+
+    expect(await store().saveToServer(false)).toBe(true);
+    expect(saveSent(savesSent() - 1).batch.map((piece) => piece.id)).toEqual([B]);
+    expect(notice()).toBeNull();
   });
 });
