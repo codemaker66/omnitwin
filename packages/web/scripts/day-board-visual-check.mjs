@@ -8,17 +8,19 @@
 //      one, still once owned; the UNOWNED rail and the next-action line;
 //   2. reduced motion: every animation computed to "none" while the verbs
 //      still carry the full meaning;
-//   3. the phone: the sheet wider than the screen and centred on NOW;
+//   3. the phone: every room in one column, the page no wider than the screen;
 //   4. the wall register (?register=wall);
 //   5. an open slot, with the request region mounted;
 //   6. (goal 19 S4) the open slot's conversation: the request card on the
 //      paper register, one tab per thread with the copper badge only on the
 //      thread the client can read, on the office sheet and on the phone.
 // The calendar, requests and conversation APIs are route-mocked with entries
-// relative to Date.now(), so every state is on screen no matter when this runs.
+// relative to one instant, 13:00 today in Glasgow, and the page's clock is
+// fixed there, so every state is on screen, inside the day, whenever this runs.
 // Run from repo root with the web dev server up:
 //   node packages/web/scripts/day-board-visual-check.mjs
-// Env: BASE_URL (default http://localhost:5173), OUT_DIR (screenshot dir).
+// Env: BASE_URL (default http://localhost:5173), OUT_DIR (screenshot dir),
+//   CHROMIUM_PATH (a Chromium binary, when Playwright's own is not installed).
 import { chromium } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
@@ -38,6 +40,16 @@ const ROOMS = [
 ];
 const MIN = 60_000;
 const B = (n) => `00000000-0000-4000-8000-0000000000b${String(n)}`;
+
+/** 13:00 today in Glasgow: late in the evening, a fixture built on the real
+ *  clock put the turnover pair past midnight and off the day. */
+function middayInGlasgow() {
+  const date = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+  const guess = Date.parse(`${date}T13:00:00.000Z`);
+  const hour = Number(new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", hour: "2-digit", hourCycle: "h23" }).format(new Date(guess)));
+  return guess - (hour - 13) * 60 * MIN;
+}
+const NOW = middayInGlasgow();
 const KEEPER = { id: "visual-hallkeeper", email: "visual-hallkeeper@e2e.test", role: "hallkeeper", venueId: VENUE, name: "Visual Hallkeeper" };
 
 function booking(id, spaceId, startOffsetMin, endOffsetMin, title, eventType, now) {
@@ -184,6 +196,7 @@ function messagesFixture(threadId, now) {
 
 async function preparePage(context, path = "/hallkeeper/today") {
   const page = await context.newPage();
+  await page.clock.setFixedTime(NOW);
   await page.addInitScript((seed) => {
     Object.defineProperty(window, "__OMNITWIN_E2E__", { value: true, writable: false });
     Object.defineProperty(window, "__OMNITWIN_SEED_USER__", { value: seed, writable: false });
@@ -192,25 +205,25 @@ async function preparePage(context, path = "/hallkeeper/today") {
   // as **/notifications** also matched Vite's own /src/api/notifications.ts
   // module URL, and a module served as JSON left the shell unable to mount.
   await page.route(`${API}/calendar?*`, (route) => {
-    void route.fulfill({ json: { data: calendarFixture(Date.now()) } });
+    void route.fulfill({ json: { data: calendarFixture(NOW) } });
   });
   await page.route(`${API}/venues/*/requests?*`, (route) => {
-    void route.fulfill({ json: { data: requestsFixture(Date.now()) } });
+    void route.fulfill({ json: { data: requestsFixture(NOW) } });
   });
   // The slot's conversation (goal 19 S4): threads by booking, a page of
   // messages by thread, the floor's handlers, and receipts accepted.
   await page.route(`${API}/venues/*/threads?*`, (route) => {
     const bookingId = new URL(route.request().url()).searchParams.get("bookingId") ?? "";
-    void route.fulfill({ json: { data: threadsFixture(bookingId, Date.now()) } });
+    void route.fulfill({ json: { data: threadsFixture(bookingId, NOW) } });
   });
   await page.route(`${API}/threads/*/messages?*`, (route) => {
     const threadId = new URL(route.request().url()).pathname.split("/")[2] ?? "";
-    void route.fulfill({ json: { data: messagesFixture(threadId, Date.now()) } });
+    void route.fulfill({ json: { data: messagesFixture(threadId, NOW) } });
   });
   await page.route(`${API}/messages/*/receipt`, (route) => {
     void route.fulfill({ json: { data: {
       messageId: "00000000-0000-4000-8000-0000000000e1", recipientUserId: KEEPER.id, recipientName: KEEPER.name,
-      deliveredAt: new Date().toISOString(), readAt: new Date().toISOString(), acknowledgedAt: null,
+      deliveredAt: new Date(NOW).toISOString(), readAt: new Date(NOW).toISOString(), acknowledgedAt: null,
     } } });
   });
   await page.route(`${API}/venues/*/handlers`, (route) => {
@@ -279,7 +292,7 @@ function check(label, ok) {
   if (!ok) failures.push(label);
 }
 
-const browser = await chromium.launch();
+const browser = await chromium.launch(process.env.CHROMIUM_PATH === undefined ? {} : { executablePath: process.env.CHROMIUM_PATH });
 try {
   // ---- Pass 1: motion on -------------------------------------------------
   const motionContext = await browser.newContext({
@@ -291,7 +304,7 @@ try {
   // plaque is laid out on two lines; the words themselves are what matter.
   const text = await page.locator(".dayboard").evaluate((board) => board.textContent ?? "");
 
-  check("live verb", /LIVE · \d+ min elapsed/u.test(text));
+  check("live verb", /LIVE · \d+ (?:min|h(?: \d{2})?) elapsed/u.test(text));
   check("guests-due verb", /Guests · \d+ min/u.test(text));
   check("organisers-due verb", /Organisers · \d+ min/u.test(text));
   check("doors-soon verb", /Doors · \d+ min/u.test(text));
@@ -302,7 +315,8 @@ try {
     "Scheduled", "Organisers due", "Guests due", "Doors soon", "Live", "Clear-down", "Ended", "Changeover at risk",
   ].every((words) => text.includes(words)));
   check("NOW plaque on the ruler", /NOW\d{1,2}:\d{2}/u.test(text));
-  check("short changeovers dimensioned against the rule", (await page.locator(".dayboard-gap.is-short").count()) === 2 && /needs 1 h/u.test(text));
+  const shortGaps = await page.locator(".dayboard-bar-gap").count();
+  check(`short changeovers drawn against the rule on their rooms' bars (${String(shortGaps)})`, shortGaps === 2);
   check("the next action is the urgent request nobody owns", /^Take now:/u.test((await page.locator(".dayboard-next").innerText()).trim()));
   check("UNOWNED rail lists the two requests nobody has", (await page.locator(".dayboard-rail-item").count()) === 2);
 
@@ -352,13 +366,9 @@ try {
   // ---- Pass 3: the phone ---------------------------------------------------
   const phoneContext = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
   const phone = await preparePage(phoneContext);
-  const paged = await phone.locator(".dayboard-lanes").evaluate((lanes) => ({
-    wider: lanes.scrollWidth > lanes.clientWidth,
-    first: lanes.firstElementChild?.getBoundingClientRect().width ?? 0,
-    screen: lanes.clientWidth,
-  }));
-  check("phone: one lane per screen, swiped between rooms (D7)", paged.wider && Math.round(paged.first) === Math.round(paged.screen)
-    && (await phone.locator(".dayboard[data-layout='phone']").count()) === 1 && (await phone.locator(".dayboard-pager button").count()) >= 2);
+  const fits = await phone.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
+  check("phone: every room in one column, the page no wider than the screen", fits
+    && (await phone.locator(".dayboard[data-layout='phone']").count()) === 1 && (await phone.locator(".dayboard-room").count()) >= 2);
   await phone.screenshot({ path: join(OUT, "phone.png"), fullPage: true });
 
   // ---- Pass 4: the wall ----------------------------------------------------
