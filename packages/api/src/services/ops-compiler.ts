@@ -1,4 +1,4 @@
-import { and, desc, eq, isNotNull, isNull } from "drizzle-orm";
+import { and, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import {
   BeoDocumentSchema,
   EventArchitectCandidateSchema,
@@ -66,6 +66,7 @@ import {
   taskGroups,
 } from "../db/schema.js";
 import { parseHallkeeperSnapshotPayload } from "./layout-coordinate-space.js";
+import { newestHandoffPack } from "./newest-handoff-pack.js";
 import {
   EventArchitectOpsReviewEvidenceIntegrityError,
   getEventArchitectOpsReviewGate,
@@ -1061,8 +1062,6 @@ export async function getOpsHandoffPackBundle(
   });
 }
 
-/** Statuses whose pack still stands for its configuration and event. */
-const STANDING_PACK_STATUSES: ReadonlySet<string> = new Set(["compiled", "exported"]);
 
 /**
  * What a pack tells the floor and the suppliers, without its ids, times or
@@ -1131,11 +1130,13 @@ export interface OpsHandoffCompileResult {
 
 /**
  * Compile the configuration's approved snapshot into the event's handoff
- * pack. A compile of the same approved snapshot, for the same configuration
- * and event, that would say exactly what the newest pack says returns that
- * pack: its tasks keep what the floor has marked, and no supplier pass is
- * told the plan changed. A new snapshot, or a change to the event's own plan
- * (its room flips, its name), makes a new pack.
+ * pack. When the pack that stands for the event (newest-handoff-pack.ts) is
+ * already this configuration's, from the same approved snapshot, and says
+ * exactly what this compile would, it is returned: its tasks keep what the
+ * floor has marked, and no supplier pass is told the plan changed. Otherwise
+ * a new pack is made and becomes the event's: a new snapshot, a change to the
+ * event's own plan (its room flips, its name or status, the notes given), or
+ * another layout's pack standing for the event since.
  */
 export async function compileOpsHandoffPackFromConfiguration(
   db: Database,
@@ -1175,31 +1176,30 @@ export async function compileOpsHandoffPackFromConfiguration(
   });
 
   return db.transaction(async (tx): Promise<OpsHandoffCompileResult> => {
-    // One compile of this approved snapshot at a time. The second waits here
-    // and then sees what the first wrote: the pack it may return, and the
-    // version it would otherwise take. NO KEY UPDATE, so rows that only
-    // reference the snapshot (a new pack among them) are not held up.
+    // One compile of this event at a time, whichever of its layouts (with no
+    // event, one of this layout at a time): the second waits here, then reads
+    // the event's newest pack as the first left it.
+    const scopeKey = input.eventId === null ? `configuration:${input.configId}` : `event:${input.eventId}`;
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`ops-handoff:${scopeKey}`}, 0))`);
+    // And one compile of this approved snapshot at a time, whichever event it
+    // is for, as the version below is counted per snapshot. NO KEY UPDATE, so
+    // rows that only reference the snapshot (a new pack among them) are not
+    // held up. Always taken after the event's lock, so the two never cross.
     await tx.select({ id: configurationSheetSnapshots.id })
       .from(configurationSheetSnapshots)
       .where(eq(configurationSheetSnapshots.id, snapshot.id))
       .for("no key update");
 
-    // The newest pack of this configuration for this event, as the Event Day
-    // board and the supplier passes read the event's newest pack.
-    const [newest] = await tx.select({
-      id: handoffPacks.id,
-      snapshotId: handoffPacks.snapshotId,
-      status: handoffPacks.status,
-    })
-      .from(handoffPacks)
-      .where(and(
-        eq(handoffPacks.configId, input.configId),
-        input.eventId === null ? isNull(handoffPacks.eventId) : eq(handoffPacks.eventId, input.eventId),
-      ))
-      .orderBy(desc(handoffPacks.compiledAt), desc(handoffPacks.id))
-      .limit(1);
-    if (newest !== undefined && newest.snapshotId === snapshot.id && STANDING_PACK_STATUSES.has(newest.status)) {
-      const existing = await getOpsHandoffPackBundle(tx, newest.id);
+    // The pack that stands for the event, as the Event Day board, the supplier
+    // passes and a proposal read it (newest-handoff-pack.ts). It is returned
+    // only when it is this layout's, from this snapshot, saying exactly what
+    // this compile would: a pack of another layout, or an older one of this
+    // layout, is not the event's, so the compile makes this layout current.
+    const standing = await newestHandoffPack(tx, input.eventId === null
+      ? { eventId: null, configId: input.configId }
+      : { eventId: input.eventId, venueId: config.venueId });
+    if (standing !== null && standing.configId === input.configId && standing.snapshotId === snapshot.id) {
+      const existing = await getOpsHandoffPackBundle(tx, standing.id);
       if (existing !== null && JSON.stringify(bundleContent(existing)) === JSON.stringify(draftContent(draft))) {
         return { bundle: existing, created: false };
       }

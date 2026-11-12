@@ -59,15 +59,19 @@ describe.skipIf(target === undefined)("compiling an event's handoff pack again, 
   });
   afterAll(async () => { await server?.close(); await pool?.end(); await observer?.end(); });
 
-  /** A venue's approved round table with two chairs, bound to one event. */
-  async function fixture() {
-    const venueId = randomUUID(); const roomId = randomUUID(); const userId = randomUUID();
-    const configId = randomUUID(); const eventId = randomUUID();
-    const tableAssetId = randomUUID(); const chairAssetId = randomUUID(); const tableId = randomUUID();
-    await db.insert(schema.venues).values({ id: venueId, name: "TEST ONLY recompile venue", slug: `recompile-${venueId}`, address: "Disposable fixture" });
-    await db.insert(schema.spaces).values({ id: roomId, venueId, name: "TEST ONLY hall", slug: `hall-${roomId}`, widthM: "12", lengthM: "8", heightM: "6", floorPlanOutline: OUTLINE });
-    await db.insert(schema.users).values({ id: userId, venueId, email: `${userId}@recompile.invalid`, name: "TEST ONLY manager", role: "admin" });
-    await db.insert(schema.configurations).values({ id: configId, venueId, spaceId: roomId, userId, name: "TEST ONLY dinner", layoutStyle: "custom", slug: `dinner-${configId}` });
+  /** Catering, access and special notes, as the planner stores them on a layout. */
+  const INSTRUCTIONS = {
+    specialInstructions: "TEST ONLY keep the top table clear.", dayOfContact: null, phaseDeadlines: [],
+    accessNotes: "TEST ONLY deliveries by the service entrance.", accessibility: null,
+    dietary: { vegetarian: 4, vegan: 2, glutenFree: 1, nutFree: 1, halal: 0, kosher: 0, otherAllergies: "TEST ONLY nut allergy at table 1." },
+    doorSchedule: null,
+  };
+
+  /** One approved layout in the room, a round table with two chairs, linked to the event. */
+  async function layout(input: { venueId: string; roomId: string; userId: string; eventId: string; headers: { authorization: string }; notes?: boolean }) {
+    const configId = randomUUID(); const tableAssetId = randomUUID(); const chairAssetId = randomUUID(); const tableId = randomUUID();
+    await db.insert(schema.configurations).values({ id: configId, venueId: input.venueId, spaceId: input.roomId, userId: input.userId,
+      name: "TEST ONLY dinner", layoutStyle: "custom", slug: `dinner-${configId}`, ...(input.notes === true ? { metadata: { instructions: INSTRUCTIONS } } : {}) });
     await db.insert(schema.assetDefinitions).values([
       { id: tableAssetId, name: "TEST ONLY round table", category: "table", widthM: "1.8", depthM: "1.8", heightM: "0.76", collisionType: "cylinder" },
       { id: chairAssetId, name: "TEST ONLY chair", category: "chair", widthM: "0.45", depthM: "0.45", heightM: "0.9", collisionType: "box" },
@@ -77,13 +81,37 @@ describe.skipIf(target === undefined)("compiling an event's handoff pack again, 
       { configurationId: configId, assetDefinitionId: chairAssetId, positionX: "1", positionY: "0", positionZ: "0", metadata: { groupId: tableId } },
       { configurationId: configId, assetDefinitionId: chairAssetId, positionX: "1", positionY: "0", positionZ: "2", metadata: { groupId: tableId } },
     ].map((object) => ({ ...object, coordinateSpace: "real_m_v1" as const, coordinateWriteToken: randomUUID() })));
+    await db.insert(schema.eventConfigurationLinks).values({ eventId: input.eventId, configurationId: configId, linkType: "source_configuration" });
+    const created = await createSnapshot(db, { configId, createdBy: input.userId, baseUrl: "http://localhost:3009" });
+    await approveSnapshot(db, created.snapshot.id, input.userId);
+    const compile = () => server.inject({ method: "POST", url: `/ops/handoff-packs/from-configuration/${configId}`, headers: input.headers, payload: { eventId: input.eventId } });
+    return { configId, tableId, compile };
+  }
+
+  /** A venue's event with one approved layout; with `roomFlip`, a running order that turns the room round. */
+  async function fixture(options: { notes?: boolean; roomFlip?: boolean } = {}) {
+    const venueId = randomUUID(); const roomId = randomUUID(); const userId = randomUUID(); const eventId = randomUUID();
+    await db.insert(schema.venues).values({ id: venueId, name: "TEST ONLY recompile venue", slug: `recompile-${venueId}`, address: "Disposable fixture" });
+    await db.insert(schema.spaces).values({ id: roomId, venueId, name: "TEST ONLY hall", slug: `hall-${roomId}`, widthM: "12", lengthM: "8", heightM: "6", floorPlanOutline: OUTLINE });
+    await db.insert(schema.users).values({ id: userId, venueId, email: `${userId}@recompile.invalid`, name: "TEST ONLY manager", role: "admin" });
     await db.insert(schema.events).values({ id: eventId, venueId, createdBy: userId, name: "TEST ONLY dinner", startsAt: new Date("2026-12-04T18:00:00.000Z") });
-    await db.insert(schema.eventConfigurationLinks).values({ eventId, configurationId: configId, linkType: "source_configuration" });
-    const created = await createSnapshot(db, { configId, createdBy: userId, baseUrl: "http://localhost:3009" });
-    await approveSnapshot(db, created.snapshot.id, userId);
+    if (options.roomFlip === true) {
+      await db.insert(schema.eventPhases).values([
+        { eventId, spaceId: roomId, name: "Ceremony", sortOrder: 0, durationMinutes: 60 },
+        { eventId, spaceId: roomId, name: "Room flip", templateKey: "room-flip", sortOrder: 1, durationMinutes: 45 },
+        { eventId, spaceId: roomId, name: "Dinner", sortOrder: 2, durationMinutes: 180 },
+      ]);
+    }
     const headers = { authorization: `Bearer ${JSON.stringify({ id: userId, email: `${userId}@recompile.invalid`, role: "admin", platformRole: "none", venueId })}` };
-    const compile = () => server.inject({ method: "POST", url: `/ops/handoff-packs/from-configuration/${configId}`, headers, payload: { eventId } });
-    return { venueId, configId, eventId, userId, roomId, tableId, compile };
+    const first = await layout({ venueId, roomId, userId, eventId, headers, notes: options.notes === true });
+    return { venueId, eventId, userId, roomId, headers, ...first };
+  }
+  type Fixture = Awaited<ReturnType<typeof fixture>>;
+
+  async function board(f: Fixture) {
+    const event = await loadEventForOpsBoard(db, f.eventId);
+    if (event === null) throw new Error("Event fixture missing");
+    return getEventDayOpsBoard(db, event);
   }
 
   async function packsOf(configId: string): Promise<readonly { id: string }[]> {
@@ -188,5 +216,32 @@ describe.skipIf(target === undefined)("compiling an event's handoff pack again, 
     expect(second.statusCode, second.body).toBe(201);
     expect(second.json<PackBody>().data.pack.id).not.toBe(first.json<PackBody>().data.pack.id);
     expect(second.json<PackBody>().data.roomFlipPlans).toHaveLength(1);
+  });
+
+  // Review H1: the board and the supplier passes read the EVENT's newest pack
+  // across its layouts. Recompiling a layout whose pack another layout's has
+  // since displaced must make it the event's pack again, as it did before #400.
+  it("makes a layout's pack the event's again after another layout was compiled for the event", async () => {
+    const f = await fixture();
+    const other = await layout({ venueId: f.venueId, roomId: f.roomId, userId: f.userId, eventId: f.eventId, headers: f.headers });
+    const firstA = await f.compile();
+    expect(firstA.statusCode, firstA.body).toBe(201);
+    const firstB = await other.compile();
+    expect(firstB.statusCode, firstB.body).toBe(201);
+    const packB = firstB.json<PackBody>().data.pack;
+    expect((await board(f)).handoffPack?.pack.id).toBe(packB.id);
+
+    const againA = await f.compile();
+    expect(againA.statusCode, againA.body).toBe(201);
+    const packA = againA.json<PackBody>().data.pack;
+    expect(packA.id).not.toBe(firstA.json<PackBody>().data.pack.id);
+    expect((await board(f)).handoffPack?.pack.id).toBe(packA.id);
+    // The passes built from B's pack are told the plan changed.
+    expect(planChangedAfter(new Date(packB.compiledAt), await latestEventHandoff(db, f.eventId, f.venueId))).not.toBeNull();
+
+    // Now that A's pack stands for the event, compiling A again returns it.
+    const onceMore = await f.compile();
+    expect(onceMore.statusCode, onceMore.body).toBe(200);
+    expect(onceMore.json<PackBody>().data.pack.id).toBe(packA.id);
   });
 });
