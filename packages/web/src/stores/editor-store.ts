@@ -2059,40 +2059,42 @@ async function saveDocument(
   // The save path: the signed-in route for a layout someone owns, and for a
   // public preview only when that route answers this person (usesSignedInRoutes).
   const useAuthPath = usesSignedInRoutes({ isPublicPreview, venueId }, isAuthenticated);
+  // A guest plan's save names the note each changed note replaces, and says
+  // its notes are complete only when this document was read with them
+  // (lib/guest-plan-notes.ts; api/configurations.ts BatchSaveOptions).
+  // The signed-in save stores each piece as sent, so a guest plan read
+  // without its notes never goes that way, whoever has signed in since.
+  const viaSignedIn = useAuthPath && signedInRoutesSuit(get());
+  // A piece the person has removed that carries their own note, in a
+  // browser the plan's notes are kept from: the API cannot tell that note
+  // from one this browser is not shown, and refuses a save that leaves the
+  // piece out. So the note is cleared first, by name, in a save of its own
+  // (lib/guest-plan-notes batchClearingOwnNotesOfRemovedPieces), and the
+  // save that removes the piece follows on the revision that one made.
+  // Only that save's confirmed document and revision are taken: the working
+  // document is untouched, so the piece does not come back on screen.
+  const confirmed = get().baseObjects;
+  const clearing = viaSignedIn || get().notesIncluded ? null : batchClearingOwnNotesOfRemovedPieces(confirmed, objects, editorToBatch);
+  // Never as the page hides or closes: the second save cannot be counted on
+  // to follow the first. Nothing is sent, and nothing on screen changes (a
+  // refusal standing there still stands); the work stays unsaved and on this
+  // device, and the autosave the page's going cancelled is asked for again,
+  // so the two steps go once the page runs again (delta review R9).
+  if (clearing !== null && transport?.keepalive === true) {
+    requestAutosave();
+    return false;
+  }
 
   // savingChanges is captured from pendingChanges here (deriveSaveFacts). A
   // pending conflict stays until this save lands: only then is it settled.
   set({ isSaving: true, saveError: null, saveErrorCode: null, noteClearsRefused: [] });
   try {
-    // A guest plan's save names the note each changed note replaces, and says
-    // its notes are complete only when this document was read with them
-    // (lib/guest-plan-notes.ts; api/configurations.ts BatchSaveOptions).
-    // The signed-in save stores each piece as sent, so a guest plan read
-    // without its notes never goes that way, whoever has signed in since.
-    const viaSignedIn = useAuthPath && signedInRoutesSuit(get());
     const save = viaSignedIn ? configApi.authBatchSave : configApi.publicBatchSave;
     const sending: configApi.BatchSaveOptions | undefined = !viaSignedIn && get().notesIncluded
       ? { ...transport, notesIncluded: true }
       : transport;
-    // A piece the person has removed that carries their own note, in a
-    // browser the plan's notes are kept from: the API cannot tell that note
-    // from one this browser is not shown, and refuses a save that leaves the
-    // piece out. So the note is cleared first, by name, in a save of its own
-    // (lib/guest-plan-notes batchClearingOwnNotesOfRemovedPieces), and the
-    // save that removes the piece follows on the revision that one made.
-    // Only that save's confirmed document and revision are taken: the working
-    // document is untouched, so the piece does not come back on screen.
     let revision = configRevision;
-    const confirmed = get().baseObjects;
-    const clearing = viaSignedIn || get().notesIncluded ? null : batchClearingOwnNotesOfRemovedPieces(confirmed, objects, editorToBatch);
     if (clearing !== null) {
-      // Never as the page hides or closes: the second save cannot be counted
-      // on to follow the first. Nothing is sent; the work is on this device,
-      // and the next open sends it in its two steps.
-      if (transport?.keepalive === true) {
-        set({ isSaving: false });
-        return false;
-      }
       let cleared: configApi.BatchSaveResponse | null = null;
       try {
         cleared = sending === undefined

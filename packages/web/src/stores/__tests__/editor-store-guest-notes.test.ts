@@ -5,7 +5,7 @@ import { editorToPlacedItem, flushAutoSave, placedItemToEditor } from "../../com
 import { persistAnonymousPlannerDraft, readAnonymousPlannerDraft } from "../../lib/anonymous-planner-draft.js";
 import { heldNoteIds, noteHeldOn, ownWordsOverHeldNotes, pieceNamedForRefusedSave, refusedOverHeldNote } from "../../lib/guest-plan-notes.js";
 import { useAuthStore } from "../auth-store.js";
-import { useEditorStore, type EditorObject } from "../editor-store.js";
+import { setEditorAutosaveRequester, useEditorStore, type EditorObject } from "../editor-store.js";
 import { usePlacementNoticeStore } from "../placement-notice-store.js";
 import { useSelectionStore } from "../selection-store.js";
 
@@ -817,6 +817,31 @@ describe("removing a piece whose only note is the person's own, in a browser the
     expect(sentPiece(sentBefore, B).replacesNote).toBe(MINE);
     expect(server.notes.has(B)).toBe(false);
     expect(server.notes.get(A)).toBe(ALLERGY);
+  });
+
+  it("leaves a refusal on screen as the page goes, and asks for the save it could not send again (delta review R9)", async () => {
+    const server: PlanOnServer = { revision: 4, notes: new Map([[A, ALLERGY]]) };
+    await withOwnNoteOnB(server);
+    // A refusal stands: the person's words over A's note, which they cannot see.
+    store().setObjectNotes(A, "TEST ONLY typed over");
+    expect(await store().saveToServer(false)).toBe(false);
+    expect(store().saveErrorCode).toBe("NOTE_HELD");
+    store().removeObject(B);
+    const sentBefore = savesSent();
+    const asked = vi.fn();
+    setEditorAutosaveRequester(asked);
+    asked.mockClear();
+    try {
+      // The page hides: the flush cancels the waiting autosave, and the removal's two saves cannot go now.
+      expect(await flushAutoSave({ keepalive: true })).toBe(false);
+      expect(savesSent()).toBe(sentBefore);
+      expect({ saveErrorCode: store().saveErrorCode, saveError: store().saveError, asked: asked.mock.calls.length })
+        .toEqual({ saveErrorCode: "NOTE_HELD", saveError: NOTE_HELD_MESSAGE, asked: 1 });
+      expect(store()).toMatchObject({ isDirty: true, isSaving: false });
+      expect(server.notes.get(B)).toBe(MINE);
+    } finally {
+      setEditorAutosaveRequester(null);
+    }
   });
 
   it("meets a newer version at the clearing save as any save does: the usual choice is offered, and nothing is lost", async () => {
