@@ -79,4 +79,43 @@ describe("the API's Sentry beforeSend", () => {
     expect(scrubbed.exception.values[0]?.type).toBe("DrizzleQueryError");
     expect(scrubbed.extra.metadata.instructions.dietary).toEqual({ vegetarian: 12, otherAllergies: "[redacted]" });
   });
+
+  it("drops a guest plan's claim secret, which opens the plan's notes to whoever holds it", () => {
+    // The header every anonymous read and save of a plan made in that browser
+    // carries (routes/public-configs.ts), as Node names it and as it is sent.
+    for (const name of ["x-plan-claim-secret", "X-Plan-Claim-Secret"]) {
+      const scrubbed = scrubApiSentryEvent({
+        request: { headers: { [name]: "synthetic-claim-secret-0123456789abcdefghijklmnopq", "user-agent": "test" } },
+      });
+      expect(scrubbed.request.headers).toEqual({ "user-agent": "test" });
+    }
+  });
+
+  it("drops the cookies: the ones the SDK parses into request.cookies and the Cookie header, the session cookie among them", () => {
+    const session = "eyJhbGciOiJSUzI1NiJ9.eyJzaWQiOiJzZXNzX3N5bnRoZXRpYyJ9.c3ludGhldGljLXNpZ25hdHVyZQ";
+    const scrubbed = scrubApiSentryEvent({
+      request: {
+        cookies: { __session: session, vv_returning: "rt_synthetic_returning_visit" },
+        headers: { Cookie: `__session=${session}; vv_returning=rt_synthetic_returning_visit`, "user-agent": "test" },
+      },
+    });
+    expect(scrubbed.request).not.toHaveProperty("cookies");
+    expect(scrubbed.request.headers).toEqual({ "user-agent": "test" });
+    expect(JSON.stringify(scrubbed)).not.toContain(session);
+    expect(JSON.stringify(scrubbed)).not.toContain("rt_synthetic_returning_visit");
+  });
+
+  it.each([
+    ["Stripe-Signature", "t=1794355200,v1=5257a869e7ecebeda32affa62cdca3fa51cad7e77a0e56ff536d0ce8e108d8bd"],
+    ["Svix-Signature", "v1,g0hM9SsE+OTPJTGt/tmIKtSyZlE3uFJELVlNIOLJ1OE="],
+    ["Webhook-Signature", "v1,K5oZfzN95Z9UVu1EsfQmfVNQhnkZ2pj9o9NDN/H/pI4="],
+    ["Mcp-Session-Id", "3f1c9a52-7d4e-4b8a-9e61-0c2b5d8f7a14"],
+    ["Set-Cookie", "__session=synthetic-set-cookie-token; Path=/; HttpOnly"],
+  ])("drops %s, as it is sent and as Node names it", (header, value) => {
+    for (const name of [header, header.toLowerCase()]) {
+      const scrubbed = scrubApiSentryEvent({ request: { headers: { [name]: value, "user-agent": "test" } } });
+      expect(scrubbed.request.headers).toEqual({ "user-agent": "test" });
+      expect(JSON.stringify(scrubbed)).not.toContain(value);
+    }
+  });
 });

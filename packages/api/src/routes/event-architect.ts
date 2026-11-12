@@ -10,6 +10,7 @@ import {
   EventArchitectOpsReviewGateSchema,
   PersistedEventArchitectRunSchema,
   SelectEventArchitectCandidateInputSchema,
+  eventArchitectOpsReviewerAuthorityFor,
   type EventArchitectOpsReviewerAuthority,
 } from "@omnitwin/types";
 import type { Database } from "../db/client.js";
@@ -91,9 +92,10 @@ function requireOpsReviewAuthority(
     void reply.status(404).send({ error: "Event Architect resource not found", code: "NOT_FOUND" });
     return null;
   }
-  if (request.user.role === "admin") return "venue_admin";
-  if (request.user.role === "hallkeeper") return "venue_hallkeeper";
-  if (request.user.role === "staff") return "venue_staff";
+  // The venue's staff, hallkeepers, managers and administrators, each stored
+  // under its own authority; the web offers the form from the same list.
+  const authority = eventArchitectOpsReviewerAuthorityFor(request.user.role);
+  if (authority !== null) return authority;
   void reply.status(403).send({
     error: "Event Architect Ops review requires venue operations authority",
     code: "FORBIDDEN",

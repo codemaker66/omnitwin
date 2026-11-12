@@ -164,6 +164,23 @@ describe("sendViaChannelOrRest", () => {
     expect(rest.mock.calls[0]?.[0]).toBe(seen[0]);
   });
 
+  it("sends the command id it is given, on the channel and on its REST fallback, so a person's retry is the same command (hallkeeper-web-8)", async () => {
+    const given = "00000000-0000-4000-8000-0000000000f8";
+    const seen: string[] = [];
+    setDiaryCommandChannel(((command: { commandId: string }) => {
+      seen.push(command.commandId);
+      return Promise.reject(new ChannelDispatchError(true, "command ack timed out"));
+    }) as never);
+    const rest = vi.fn().mockResolvedValue(BOOKING);
+    await sendViaChannelOrRest(
+      (commandId) => ({ kind: "booking.create", commandId, payload: {} as never }),
+      rest,
+      given,
+    );
+    expect(seen).toEqual([given]);
+    expect(rest.mock.calls[0]?.[0]).toBe(given);
+  });
+
   it("a create the channel provably never dispatched falls back with the same id too", async () => {
     const seen: string[] = [];
     setDiaryCommandChannel(((command: { commandId: string }) => {

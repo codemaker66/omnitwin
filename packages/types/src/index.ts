@@ -2550,6 +2550,7 @@ export * from "./event-mission-control.js";
 export * from "./capture-intake.js";
 export * from "./layout-validator.js";
 export * from "./event-architect.js";
+export * from "./event-architect-ops-reviewers.js";
 export * from "./event-architect-engine.js";
 export * from "./event-brief-draft.js";
 export * from "./reconstruction-release.js";
