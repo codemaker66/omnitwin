@@ -206,6 +206,42 @@ export function pdfPages(buf: Buffer): PdfLine[][] {
   });
 }
 
+export interface PdfRule {
+  /** Left and right ends, PDF points from the page's left. */
+  readonly x: number;
+  readonly x2: number;
+  /** Height, PDF points from the page's bottom (as a text line's baseline). */
+  readonly y: number;
+}
+
+const STRAIGHT_STROKE = /(?<![\w/])([qQ])(?![\w])|(-?[\d.]+) (-?[\d.]+) (-?[\d.]+) (-?[\d.]+) (-?[\d.]+) (-?[\d.]+) cm|(-?[\d.]+) (-?[\d.]+) m\s+(-?[\d.]+) (-?[\d.]+) l\s+(?!-?[\d.]+ -?[\d.]+ l)/gu;
+
+/**
+ * Every horizontal line drawn as one segment, page by page: the sheet's
+ * rules. A segment that carries on into another (a shape's edge) is not one.
+ */
+export function pdfRules(buf: Buffer): PdfRule[][] {
+  const objects = objectsOf(buf);
+  return pageIds(objects).map((id) => {
+    const content = pdfStream(objects.get(refOf(objects.get(id) ?? "", "Contents") ?? "") ?? "");
+    const rules: PdfRule[] = [];
+    let ctm: Matrix = IDENTITY;
+    const saved: Matrix[] = [];
+    for (const op of content.matchAll(STRAIGHT_STROKE)) {
+      if (op[1] === "q") { saved.push(ctm); continue; }
+      if (op[1] === "Q") { ctm = saved.pop() ?? IDENTITY; continue; }
+      if (op[2] !== undefined) {
+        ctm = concat([Number(op[2]), Number(op[3]), Number(op[4]), Number(op[5]), Number(op[6]), Number(op[7])], ctm);
+        continue;
+      }
+      const [x1, y1] = apply(ctm, Number(op[8]), Number(op[9]));
+      const [x2, y2] = apply(ctm, Number(op[10]), Number(op[11]));
+      if (Math.abs(y1 - y2) < 0.01) rules.push({ x: Math.min(x1, x2), x2: Math.max(x1, x2), y: y1 });
+    }
+    return rules;
+  });
+}
+
 /** All text, runs joined by single spaces, as a reader would search it. */
 export function pdfText(buf: Buffer): string {
   return pdfPages(buf).flat().map((line) => line.text).join(" ").replace(/\s+/gu, " ").trim();

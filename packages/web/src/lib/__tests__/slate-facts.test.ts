@@ -33,6 +33,16 @@ describe("the eyebrow", () => {
   it("names only the room without a date", () => {
     expect(slateEyebrow({ startsAt: null, roomName: "Grand Hall" })).toBe("Grand Hall");
   });
+
+  // The day the event's name carries is its venue's (#407 review, B3).
+  it("reads the day on the venue's own clock when the slate knows it, and on the house's when not", () => {
+    // 06:30 UTC on 15 March 2027 is 23:30 on Sunday the 14th in Los Angeles,
+    // and Monday the 15th in London.
+    const startsAt = "2027-03-15T06:30:00Z";
+    expect(slateEyebrow({ startsAt, roomName: "Grand Hall", timeZone: "America/Los_Angeles" })).toBe("Sun 14 Mar 2027 · Grand Hall");
+    expect(slateEyebrow({ startsAt, roomName: "Grand Hall", timeZone: "Europe/London" })).toBe("Mon 15 Mar 2027 · Grand Hall");
+    expect(slateEyebrow({ startsAt, roomName: "Grand Hall", timeZone: null })).toBe("Mon 15 Mar 2027 · Grand Hall");
+  });
 });
 
 describe("the plane", () => {

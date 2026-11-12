@@ -115,6 +115,16 @@ describe("the client's home", () => {
     expect(screen.getByRole("button", { name: "Sign out" })).toBeTruthy();
   });
 
+  it("names an event stored without a name by its occasion and the venue's day, on its card and its plans (the event-name ruling)", async () => {
+    const untitled = { ...event(NEXT_ID, "", "2031-12-05T18:00:00.000Z"), eventType: "wedding" };
+    mocks.getClientHome.mockResolvedValueOnce({ events: [untitled, event(LATER_ID, "Summer ball", "2032-06-05T18:00:00.000Z")], plans: [plan(PLAN_ID, "Rounds of ten", NEXT_ID)], planTotal: 1 });
+    show();
+    const next = await screen.findByRole("region", { name: "Wedding, 5 December 2031" });
+    expect(within(next).getByRole("heading", { level: 2, name: "Wedding, 5 December 2031" })).toBeTruthy();
+    const plans = screen.getByRole("region", { name: "Your room plans" });
+    expect(within(plans).getByText(/For Wedding, 5 December 2031/)).toBeTruthy();
+  });
+
   it("with nothing yet, says what will appear and offers a way forward", async () => {
     mocks.getClientHome.mockResolvedValueOnce({ events: [], plans: [], planTotal: 0 });
     show();
