@@ -23,6 +23,10 @@ import type { FastifyInstance } from "fastify";
 
 const HISTOGRAM_BUCKETS_SECONDS = [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10];
 
+/** The route label of a request no route matched (Fastify's not-found
+ *  handler). Never a path, so it cannot be mistaken for a route's pattern. */
+const UNMATCHED_ROUTE_LABEL = "<unmatched>";
+
 interface Counter {
   readonly kind: "counter";
   readonly value: Map<string, number>;
@@ -149,7 +153,10 @@ export function registerMetrics(server: FastifyInstance, metricsToken: string | 
     const start = request.__startHrTime;
     if (start !== undefined) {
       const durationSeconds = Number(process.hrtime.bigint() - start) / 1_000_000_000;
-      const routeTemplate: string = request.routeOptions.url ?? request.url;
+      // A request no route matched has no pattern. Labelling it with its URL
+      // made every distinct path a series kept for good, so anyone could grow
+      // the API's memory without end; they all share one label instead.
+      const routeTemplate: string = request.routeOptions.url ?? UNMATCHED_ROUTE_LABEL;
       const labels = {
         method: request.method,
         route: routeTemplate,

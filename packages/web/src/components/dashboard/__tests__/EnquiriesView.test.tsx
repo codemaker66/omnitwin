@@ -19,6 +19,8 @@ const { mocks } = vi.hoisted(() => ({
     addToast: vi.fn(),
     aiDraftsAvailable: vi.fn<() => boolean | undefined>(),
     workVenueId: vi.fn<() => string>(() => "venue-1"),
+    workRole: vi.fn<() => string>(() => "staff"),
+    workPlatformRole: vi.fn<() => string>(() => "none"),
     countEnquiryStages: vi.fn(),
     createOpportunityFromEnquiry: vi.fn(),
     getCalendar: vi.fn(),
@@ -61,8 +63,12 @@ vi.mock("../../../stores/toast-store.js", () => ({
 
 vi.mock("../../../stores/auth-store.js", () => ({
   useAuthStore: (
-    selector: (state: { readonly user: { readonly name: string; readonly venueId: string } }) => unknown,
-  ): unknown => selector({ user: { name: "Elaine MacGregor", venueId: mocks.workVenueId() } }),
+    selector: (state: {
+      readonly user: { readonly name: string; readonly venueId: string; readonly role: string; readonly platformRole: string };
+    }) => unknown,
+  ): unknown => selector({
+    user: { name: "Elaine MacGregor", venueId: mocks.workVenueId(), role: mocks.workRole(), platformRole: mocks.workPlatformRole() },
+  }),
 }));
 
 vi.mock("../../ai/AIDraftPanel.js", () => ({
@@ -694,6 +700,46 @@ describe("EnquiriesView decisions", () => {
     // Once approved, the opportunity is the next step.
     expect(screen.getByTestId("create-opportunity-from-enquiry").textContent).toContain("Create opportunity");
     expect(document.querySelector(".enq-panel .enq-chip--stamped")?.textContent).toBe("Approved");
+  });
+
+  // Release audit dash-commercial-2: a planner reads their own enquiries on
+  // this desk and was offered the venue's moves, which PATCH /enquiries/:id/
+  // status refuses; the desk then said the enquiry "had already moved on".
+  it("offers the venue's moves only to the venue's own team, or a platform admin", async () => {
+    wideDesk();
+    const request: Enquiry = {
+      ...enquiry(9), userId: null, guestEmail: "uninvited@example.test", name: "uninvited@example.test", eventType: "venue-access",
+    };
+    mocks.listEnquiryPage.mockResolvedValue(page([enquiry(3), reviewing(), request], {}));
+    const moves = ["Start review", "Start review with a note", "Approve…", "Decline…", "Mark done", "Mark done with a note"];
+    const offered = (): string[] => moves.filter((name) => screen.queryByRole("button", { name }) !== null);
+    const actAs = (role: string, venueId: string, platformRole: string): void => {
+      mocks.workRole.mockReturnValue(role);
+      mocks.workVenueId.mockReturnValue(venueId);
+      mocks.workPlatformRole.mockReturnValue(platformRole);
+    };
+    try {
+      for (const [role, venueId] of [["planner", "venue-1"], ["staff", "venue-2"]] as const) {
+        actAs(role, venueId, "none");
+        render(<EnquiriesView />);
+        fireEvent.click(await screen.findByRole("button", { name: /^Client 3,/u }));
+        expect(offered(), `${role} at ${venueId}, submitted`).toEqual([]);
+        expect(screen.queryByText("Only your team sees this stage. Nothing is sent to the client.")).toBeNull();
+        fireEvent.click(screen.getByRole("button", { name: /^Client 5,/u }));
+        expect(offered(), `${role} at ${venueId}, under review`).toEqual([]);
+        fireEvent.click(screen.getByRole("button", { name: /^uninvited@example\.test,/u }));
+        expect(offered(), `${role} at ${venueId}, a request`).toEqual([]);
+        cleanup();
+      }
+
+      // A platform admin acts for every venue.
+      actAs("admin", "venue-2", "admin");
+      render(<EnquiriesView />);
+      fireEvent.click(await screen.findByRole("button", { name: /^Client 3,/u }));
+      expect(offered()).toEqual(["Start review", "Start review with a note"]);
+    } finally {
+      actAs("staff", "venue-1", "none");
+    }
   });
 
   // A read landing while the confirmation is open (a colleague declined it)

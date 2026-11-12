@@ -51,9 +51,18 @@ const EstimateBody = z.object({
 
 const TierSchema = z.object({ upTo: z.number().positive(), amount: z.number().nonnegative() });
 
-/** A calendar date that exists: "2027-02-30" is refused here, not by Postgres. */
+/**
+ * A calendar date that exists and a PostgreSQL date can hold: "2027-02-30",
+ * "2027-13-01" and year 0000 are refused here with a 400, not by Postgres. An
+ * impossible month or day is an Invalid Date, whose toISOString() throws.
+ */
+function isStorableCalendarDate(value: string): boolean {
+  const at = new Date(`${value}T00:00:00Z`);
+  if (Number.isNaN(at.getTime()) || at.getUTCFullYear() < 1) return false;
+  return at.toISOString().slice(0, 10) === value;
+}
 const CalendarDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
-  .refine((value) => new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value, { message: "Not a calendar date" });
+  .refine(isStorableCalendarDate, { message: "Not a calendar date" });
 
 const CreateRuleBody = z.object({
   spaceId: z.uuid().nullable().optional(),

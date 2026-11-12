@@ -704,6 +704,117 @@ describe("BookingDrawer — extending a hold's decision (roadmap N3)", () => {
 // the viewing's own.
 // ---------------------------------------------------------------------------
 
+// hallkeeper-web-8: a save that failed without the server answering may
+// still have been written. Pressing Save again on the same booking resends
+// the same command id, so the server's ledger replays the first write rather
+// than adding a second hold and event; a new id goes out only when the
+// person asks for something else, or the server has said no.
+describe("BookingDrawer — one booking asked for is one command (hallkeeper-web-8)", () => {
+  const OWNER = "00000000-0000-4000-8000-0000000000aa";
+  const unanswered = (): ApiError => new ApiError(0, "Network error — check your connection", "NETWORK_ERROR");
+
+  function renderCreate(onSaved: SavedSpy = vi.fn<(message: string) => void>()): SavedSpy {
+    render(
+      <BookingDrawer
+        mode={{ kind: "create", spaceId: GRAND_HALL, dayStartMs: Date.parse("2026-09-17T23:00:00.000Z"), ownerUserId: OWNER }}
+        rooms={ROOMS}
+        venueId={VENUE}
+        role="staff"
+        onClose={vi.fn<() => void>()}
+        onSaved={onSaved}
+      />,
+    );
+    fireEvent.change(screen.getByRole("combobox", { name: "Commitment" }), { target: { value: "prospect" } });
+    fireEvent.change(screen.getByLabelText("Title"), { target: { value: "Fraser wedding" } });
+    return onSaved;
+  }
+
+  const save = async (calls: number): Promise<void> => {
+    fireEvent.click(screen.getByRole("button", { name: "Add to the diary" }));
+    await waitFor(() => { expect(createBookingMock).toHaveBeenCalledTimes(calls); });
+    await waitFor(() => { expect(screen.getByRole("button", { name: "Add to the diary" }).hasAttribute("disabled")).toBe(false); });
+  };
+  const commandIds = (): unknown[] => createBookingMock.mock.calls.map((call): unknown => call[1]);
+
+  it("sends the same command id when Save is pressed again after a failure the server never answered", async () => {
+    createBookingMock.mockRejectedValueOnce(unanswered()).mockResolvedValueOnce({ title: "Fraser wedding" });
+    const onSaved = renderCreate();
+    await save(1);
+    expect(screen.getByText("Network error — check your connection")).toBeTruthy();
+    await save(2);
+    const [first, second] = commandIds();
+    expect(first).toMatch(/^[0-9a-f-]{36}$/u);
+    expect(second).toBe(first);
+    expect(createBookingMock.mock.calls[1]?.[0]).toEqual(createBookingMock.mock.calls[0]?.[0]);
+    expect(onSaved).toHaveBeenCalledWith("Added Fraser wedding to the diary.");
+  });
+
+  it("sends a new command id once the booking asked for changes, or the server has refused it", async () => {
+    createBookingMock
+      .mockRejectedValueOnce(unanswered())
+      .mockRejectedValueOnce(new ApiError(409, "This booking changed while you were working — reload the diary and try again.", "STALE_WRITE"))
+      .mockResolvedValueOnce({ title: "Fraser wedding reception" });
+    renderCreate();
+    await save(1);
+    fireEvent.change(screen.getByLabelText("Title"), { target: { value: "Fraser wedding reception" } });
+    await save(2);
+    await save(3);
+    const [first, second, third] = commandIds();
+    expect(second).toMatch(/^[0-9a-f-]{36}$/u);
+    expect(second).not.toBe(first);
+    // Refused outright, nothing was written: asking again is a new request,
+    // never the ledger's replay of the refusal.
+    expect(third).toMatch(/^[0-9a-f-]{36}$/u);
+    expect(third).not.toBe(second);
+  });
+});
+
+// a11y-9: a field's error used to appear in red with nothing said and focus
+// left on the button, so a screen reader heard a Save that did nothing. As
+// the team and proposal forms do, each error is said as it appears and
+// focus moves to the first field in error.
+describe("BookingDrawer — a field in error is said and focused (a11y-9)", () => {
+  const OWNER = "00000000-0000-4000-8000-0000000000aa";
+
+  function renderCreate(): HTMLElement {
+    render(
+      <BookingDrawer
+        mode={{ kind: "create", spaceId: GRAND_HALL, dayStartMs: Date.parse("2026-09-17T23:00:00.000Z"), ownerUserId: OWNER }}
+        rooms={ROOMS}
+        venueId={VENUE}
+        role="staff"
+        onClose={vi.fn<() => void>()}
+        onSaved={vi.fn<(message: string) => void>()}
+      />,
+    );
+    return screen.getByRole("dialog", { name: "New booking" });
+  }
+
+  it("says why the end cannot be saved and puts focus on it", async () => {
+    const drawer = renderCreate();
+    fireEvent.change(within(drawer).getByRole("combobox", { name: "Commitment" }), { target: { value: "prospect" } });
+    fireEvent.change(within(drawer).getByLabelText("Title"), { target: { value: "Fraser wedding" } });
+    const ends = within(drawer).getByLabelText<HTMLInputElement>(/^Ends/u);
+    fireEvent.change(ends, { target: { value: "2026-09-18T09:00" } });
+    fireEvent.click(within(drawer).getByRole("button", { name: "Add to the diary" }));
+
+    const alert = await within(drawer).findByRole("alert");
+    expect(alert.textContent).toBe("It must end after it starts.");
+    await waitFor(() => { expect(document.activeElement).toBe(ends); });
+    expect(ends.getAttribute("aria-invalid")).toBe("true");
+    expect(createBookingMock).not.toHaveBeenCalled();
+  });
+
+  it("puts focus on the first field in error, in the order the form reads", async () => {
+    const drawer = renderCreate();
+    fireEvent.change(within(drawer).getByLabelText("Title"), { target: { value: "Fraser wedding" } });
+    fireEvent.click(within(drawer).getByRole("button", { name: "Add to the diary" }));
+    // A new hold without its decision date, next action or its date.
+    await waitFor(() => { expect(within(drawer).getAllByRole("alert").length).toBeGreaterThanOrEqual(3); });
+    await waitFor(() => { expect(document.activeElement).toBe(within(drawer).getByLabelText(/^Decision date/u)); });
+  });
+});
+
 describe("BookingDrawer — viewings (migration 0100)", () => {
   const OWNER = "00000000-0000-4000-8000-0000000000aa";
   const ENQUIRY_ID = "00000000-0000-4000-8000-0000000000e9";
@@ -754,7 +865,7 @@ describe("BookingDrawer — viewings (migration 0100)", () => {
     expect(createBookingMock).toHaveBeenCalledWith({
       venueId: VENUE, spaceId: GRAND_HALL, kind: "viewing", title: "Law Society viewing",
       startsAt: "2026-09-18T16:00:00.000Z", endsAt: "2026-09-18T22:00:00.000Z", ownerUserId: OWNER,
-    });
+    }, expect.stringMatching(/^[0-9a-f-]{36}$/u));
   });
 
   it("opens an enquiry's drawer on today's hold, unchanged, with a viewing beside it", () => {
