@@ -897,20 +897,31 @@ describe("a save the API refuses because it leaves out a piece holding a note th
     expect(refusedOverHeldNote(null)).toBe(false);
   });
 
-  it("is answered by a reload, as its sentence says: work kept on this device takes the piece back as it opens", async () => {
+  it("is answered by a reload, as its sentence says: the work this page kept takes the piece back as it opens, and then saves", async () => {
     const server: PlanOnServer = { revision: 4, notes: new Map([[A, ALLERGY]]) };
     serveNotesAsTheApiDoes(server);
-    // A page that lost the piece (one loaded before this guard, say) kept its work here.
-    persistAnonymousPlannerDraft({
-      configId: PLAN, spaceId: SPACE, venueId: VENUE, configRevision: 4, isPublicPreview: true,
-      objects: [kept(B, "", 3)], baseObjects: [kept(A), kept(B)], isDirty: true,
-    });
+    // A page that was never told A holds a note (one loaded before the API marked such pieces, say) removes it.
+    await open(plan([placed(A, { displayLabel: "Table 3" }, 5), placed(B)], false));
+    store().removeObject(A);
+    store().updateObject(B, { positionX: 3 });
+    expect(await store().saveToServer(false)).toBe(false);
+    expect(store()).toMatchObject({ saveError: OMITTED_MESSAGE, saveErrorCode: "HELD_PIECE_OMITTED", isDirty: true });
+    expect(savesSent()).toBe(1);
+    expect(draftOnDevice()?.objects.map((object) => object.id)).toEqual([B]);
 
-    await open(plan([placed(A, { noteHeld: true, displayLabel: "Table 3" }), placed(B)], false));
+    // The reload the sentence asks for: the read now says A holds a note, and the work this page kept is restored.
+    store().reset();
+    await open(plan([placed(A, { noteHeld: true, displayLabel: "Table 3" }, 5), placed(B)], false));
     expect(pieceIds()).toEqual([B, A]);
     expect(notice()).toBe("Table 3 stayed where it is, because it has a note that cannot be shown here.");
+    expect(store().objects.find((object) => object.id === B)?.positionX).toBe(3);
+
     expect(await store().saveToServer(false)).toBe(true);
+    expect(savesSent()).toBe(2);
+    expect(sentPiece(1, A).positionX).toBeCloseTo(5, 3);
+    expect(sentPiece(1, A).metadata?.notes).toBeUndefined();
     expect(server.notes.get(A)).toBe(ALLERGY);
+    expect(store()).toMatchObject({ saveError: null, saveErrorCode: null, isDirty: false });
   });
 });
 
