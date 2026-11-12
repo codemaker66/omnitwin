@@ -28,6 +28,12 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/enquiry-bookings-postgres.test.ts",
   // A booking stored with an empty title keeps its venue's Diary range readable (API-9).
   "src/__tests__/calendar-untitled-booking-postgres.test.ts",
+  // ...and its client's schedule and the room's day, which the When ribbon reads.
+  "src/__tests__/client-schedule-untitled-booking-postgres.test.ts",
+  // An event made for an untitled booking is named by its occasion and day, never "" or an email.
+  "src/__tests__/event-name-at-creation-postgres.test.ts",
+  // ...and one stored with no name is read everywhere its name is read, and staff can rename it.
+  "src/__tests__/untitled-event-reads-postgres.test.ts",
   "src/__tests__/event-mutations-postgres.test.ts",
   // The event-day board: a change needing acknowledgement stays listed however many follow it.
   "src/__tests__/event-day-awaiting-acknowledgement-postgres.test.ts",

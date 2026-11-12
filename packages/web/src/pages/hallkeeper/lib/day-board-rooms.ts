@@ -26,11 +26,12 @@ export interface RoomDay {
   readonly earlier: readonly DayBoardSlot[];
   /** What the room is doing now, or the first thing it will do. */
   readonly lead: DayBoardSlot | null;
-  /** The function after the lead. */
+  /** Everything after the lead that is already under way beside it, in
+   *  whatever state (a talk inside a running exhibition, a second option
+   *  clearing down): "Also now", never "Next" or "Later". */
+  readonly alsoNow: readonly DayBoardSlot[];
+  /** The first function after the lead that is not yet under way. */
   readonly next: DayBoardSlot | null;
-  /** How the next is named: "Next", or "Also now" when it is already under
-   *  way beside the lead (a talk inside a running exhibition). */
-  readonly nextLabel: "Next" | "Also now";
   /** Everything after the next. */
   readonly later: readonly DayBoardSlot[];
   /** The room's edge: red while anything still ahead of it is at risk, else
@@ -47,16 +48,20 @@ export function roomDay(lane: DayBoardLane): RoomDay {
   const earlier = lane.slots.filter((slot) => slot.state === "done");
   const ahead = lane.slots.filter((slot) => slot.state !== "done");
   const lead = ahead[0] ?? null;
-  const next = ahead[1] ?? null;
+  const after = ahead.slice(1);
+  // A slot under way is happening now whatever comes after it in time order:
+  // it is never named "Next" or "Later".
+  const alsoNow = after.filter(underWay);
+  const toCome = after.filter((slot) => !underWay(slot));
   const atRisk = ahead.some((slot) => slot.state === "exception");
   return {
     room: lane.room,
     slots: lane.slots,
     earlier,
     lead,
-    next,
-    nextLabel: next !== null && underWay(next) ? "Also now" : "Next",
-    later: ahead.slice(2),
+    alsoNow,
+    next: toCome[0] ?? null,
+    later: toCome.slice(1),
     tone: atRisk ? "red" : lead?.tone ?? (earlier.length > 0 ? "faded" : "quiet"),
   };
 }
@@ -94,23 +99,37 @@ export interface PlaneStage {
   readonly focus: BoardFocus;
   readonly label: string;
   readonly count: number;
+  /** What the count covers that its filter cannot show, or null. */
+  readonly note: string | null;
 }
 
 /** The plane's counts of functions, in the order a day asks for attention.
- *  "Requests waiting" counts the requests nobody has: today every one of
- *  them, as the list beside the rooms and the sentence count them (`waiting`);
- *  another day, those on its own bookings. Its filter shows the rooms they
- *  are on. */
+ *  "Requests waiting" counts the requests nobody has, and its filter shows
+ *  the rooms whose bookings they are on. Today (`waiting` given) it counts
+ *  every one of them, as the list beside the rooms and the sentence do, and
+ *  says how many are on no booking of today's, so a filter that shows fewer
+ *  rooms, or none, never contradicts it. Another day it counts those on
+ *  that day's own bookings and says so, beside a list of today's. */
 export function planeStages(lanes: readonly DayBoardLane[], waiting?: number): readonly PlaneStage[] {
   const slots = lanes.flatMap((lane) => lane.slots);
   const count = (focus: BoardFocus): number => slots.filter((slot) => slotInFocus(slot, focus)).length;
+  const onBookings = slots.reduce((sum, slot) => sum + (slot.attention?.unownedCount ?? 0), 0);
+  const elsewhere = waiting === undefined ? 0 : Math.max(0, waiting - onBookings);
+  const requests: PlaneStage = waiting === undefined
+    ? { focus: "waiting", label: "Waiting this day", count: onBookings, note: null }
+    : {
+      focus: "waiting",
+      label: "Requests waiting",
+      count: waiting,
+      note: elsewhere === 0 ? null : `${String(elsewhere)} not on today’s bookings`,
+    };
   return [
-    { focus: "risk", label: "At risk", count: count("risk") },
-    { focus: "waiting", label: "Requests waiting", count: waiting ?? slots.reduce((sum, slot) => sum + (slot.attention?.unownedCount ?? 0), 0) },
-    { focus: "live", label: "Live", count: count("live") },
-    { focus: "setup", label: "Setting up", count: count("setup") },
-    { focus: "ahead", label: "Still to come", count: count("ahead") },
-    { focus: "all", label: "Bookings", count: slots.length },
+    { focus: "risk", label: "At risk", count: count("risk"), note: null },
+    requests,
+    { focus: "live", label: "Live", count: count("live"), note: null },
+    { focus: "setup", label: "Setting up", count: count("setup"), note: null },
+    { focus: "ahead", label: "Still to come", count: count("ahead"), note: null },
+    { focus: "all", label: "Bookings", count: slots.length, note: null },
   ];
 }
 
@@ -165,9 +184,10 @@ function riskParts(lanes: readonly DayBoardLane[], today: boolean): readonly Sum
   if (rooms.length > 1) {
     const names = listed(rooms.map((lane) => lane.room.name));
     // "Now" only of today: another day's changeover is at risk, not urgent.
+    // The names are rooms, so the count is of rooms.
     return today
       ? [{ strong: `${countWord(rooms.length)} rooms`, tone: "risk" }, ` need you now: ${names}.`]
-      : [{ strong: `${countWord(rooms.length)} changeovers`, tone: "risk" }, ` are at risk: ${names}.`];
+      : [{ strong: `${countWord(rooms.length)} rooms`, tone: "risk" }, ` have a changeover at risk: ${names}.`];
   }
   const overrun = only.slots.some((slot) => slot.exception === "overrun");
   return overrun

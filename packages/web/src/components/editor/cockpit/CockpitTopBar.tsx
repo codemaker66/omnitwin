@@ -1,6 +1,7 @@
 import { type ReactElement } from "react";
 import { useSearchParams } from "react-router-dom";
 import { ShieldQuestion, Layers3, Eye, EyeOff } from "lucide-react";
+import { eventDisplayName } from "@omnitwin/types";
 import { ActivityIndicator, ActivityStatus } from "../../shared/Activity.js";
 import { useEditorStore } from "../../../stores/editor-store.js";
 import { useAuthStore } from "../../../stores/auth-store.js";
@@ -85,8 +86,9 @@ export function CockpitTopBar(): ReactElement {
   const activePhase = linked.graph !== null
     ? (linked.graph.phases.find((phase) => phase.id === selectedPhaseId) ?? linked.graph.phases[0] ?? null)
     : null;
-  const customerEvent: EventCell = { kicker: "Your event", value: customerSchedule.data?.event.name
-    ?? (customerSchedule.status === "loading" ? "Loading event…" : customerSchedule.status === "none" ? "No event linked" : "Event unavailable") };
+  const customerEvent: EventCell = { kicker: "Your event", value: customerSchedule.data !== null
+    ? eventDisplayName(customerSchedule.data.event, customerSchedule.data.venue.timezone)
+    : customerSchedule.status === "loading" ? "Loading event…" : customerSchedule.status === "none" ? "No event linked" : "Event unavailable" };
   const event = !previewActive
     ? customer ? customerEvent : eventCell(linked, activePhase?.name ?? null)
     : previewMode === "schedule-gap" ? {

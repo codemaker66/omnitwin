@@ -40,6 +40,14 @@ describe("ClientHomeSchema", () => {
     expect(ClientHomeSchema.safeParse({ events: [], plans: many, planTotal: many.length }).success).toBe(false);
   });
 
+  it("reads an event stored with no name, so one never fails the person's whole home (the event-name ruling)", () => {
+    const untitled = { ...EVENT, id: "00000000-0000-4000-8000-0000000000e2", name: "" };
+    expect(ClientHomeSchema.parse({ events: [EVENT, untitled], plans: [PLAN], planTotal: 1 }).events.map((event) => event.name))
+      .toEqual(["Winter dinner", ""]);
+    expect(ClientHomeSchema.parse({ events: [{ ...EVENT, name: "   " }], plans: [PLAN], planTotal: 1 }).events[0]?.name).toBe("");
+    expect(ClientHomeSchema.safeParse({ events: [{ ...EVENT, name: "x".repeat(201) }], plans: [], planTotal: 0 }).success).toBe(false);
+  });
+
   it("requires at least one linked layout on an event", () => {
     expect(ClientHomeSchema.safeParse({ events: [{ ...EVENT, layoutCount: 0 }], plans: [], planTotal: 0 }).success).toBe(false);
   });

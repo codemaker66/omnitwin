@@ -30,10 +30,10 @@ const SRC = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 /**
  * The modules the enquiry schema may reach that import nothing at all, so
  * they can bring nothing else with them. A new one is added here, in this one
- * place, and the test below holds it to importing nothing. The next is #407's
- * occasion.ts, which enquiry.ts will import once that lands.
+ * place, and the test below holds it to importing nothing. occasion.ts holds
+ * the occasion words (#407), which enquiry.ts offers again under its own names.
  */
-const LEAVES: readonly string[] = ["calendar-date.ts"];
+const LEAVES: readonly string[] = ["calendar-date.ts", "occasion.ts"];
 
 /** The schemas the enquiry forms need; each imports only zod and the others. */
 const SCHEMAS: readonly string[] = ["configuration.ts", "enquiry-funnel.ts", "enquiry.ts", "space.ts", "user.ts", "venue.ts"];
@@ -167,5 +167,14 @@ describe("the public enquiry schema's module", () => {
     expect(neverOnes(fromBrief).map((line) => line.split(":")[0])).toEqual(
       expect.arrayContaining(["event-architect.ts", "evidence-runtime.ts", "event-brief-draft.ts"]),
     );
+  });
+});
+
+// Every screen that shows an event's name bundles event-name.ts, so it holds
+// to the same rule: the occasion words and the venue clock, nothing more
+// (#407 review, C7). The walk follows what each module brings in turn.
+describe("the event name's module", () => {
+  it("brings only the occasion words and the venue clock", () => {
+    expect(reachedFrom("event-name.ts")).toEqual(["event-name.ts", "occasion.ts", "staff-rota-checks.ts"]);
   });
 });

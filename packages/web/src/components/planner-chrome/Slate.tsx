@@ -424,7 +424,7 @@ export function Slate(): ReactElement {
     <>
       <SlateCard
         crest={crest}
-        eyebrow={slateEyebrow({ startsAt: event?.startsAt ?? null, roomName })}
+        eyebrow={slateEyebrow({ startsAt: event?.startsAt ?? null, roomName, timeZone: event?.timeZone ?? null })}
         title={event?.name ?? roomName}
         hold={staff ? hold : null}
         sample={isTemplate}
