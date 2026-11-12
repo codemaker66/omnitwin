@@ -15,14 +15,28 @@
 // checks it alongside these sets rather than finding it inside them.
 // ---------------------------------------------------------------------------
 
-import { VENUE_TEAM_INVITER_ROLES } from "@omnitwin/types";
+import { VENUE_ADMINISTRATION_ROLES } from "@omnitwin/types/user";
+import { VENUE_TEAM_INVITER_ROLES } from "@omnitwin/types/venue-team";
 
 /** Mirrors `canManageVenue` — the base "works this venue's floor" capability. */
 export const VENUE_FLOOR_ROLES = ["admin", "manager", "staff", "hallkeeper"] as const;
 
-/** Mirrors `canAdministerVenue` — the venue record and its spaces. Pricing-rule
- *  writes are narrower (`PRICING_WRITE_ROLES` below: admin and manager). */
-export const VENUE_ADMIN_ROLES = ["admin", "manager", "staff"] as const;
+/** Mirrors `canAdministerVenue` — the venue record, its spaces and its
+ *  changeover times — from the one list in @omnitwin/types the API reads.
+ *  Pricing-rule writes are narrower (`PRICING_WRITE_ROLES` below: admin and
+ *  manager). */
+export const VENUE_ADMIN_ROLES = VENUE_ADMINISTRATION_ROLES;
+
+/** `canAdministerVenue` itself: a venue administration role at this venue,
+ *  or a Venviewer platform administrator at any. */
+export function administersVenue(
+  user: { readonly role: string; readonly venueId: string | null; readonly platformRole: string } | null,
+  venueId: string | null,
+): boolean {
+  if (user === null || venueId === null) return false;
+  if (user.platformRole === "admin") return true;
+  return user.venueId === venueId && hasRole(VENUE_ADMIN_ROLES, user.role);
+}
 
 /**
  * Mirrors `canManageCommercial` — proposals, quotes, enquiries, revenue.
@@ -47,7 +61,7 @@ export const PRICING_READ_ROLES = COMMERCIAL_ROLES;
  * @omnitwin/types so the two cannot drift. Everyone else on the desk is told
  * who can.
  */
-export { PRICING_WRITE_ROLES } from "@omnitwin/types";
+export { PRICING_WRITE_ROLES } from "@omnitwin/types/pricing-desk";
 
 /**
  * The Analytics tab. What it opens is `ExecutiveAnalyticsView`, whose only
@@ -184,6 +198,54 @@ export function canDraftWithAI(user: { readonly role: string; readonly venueId: 
   if (user === null || user.venueId === null) return false;
   return user.platformRole === "admin" || hasRole(VENUE_MEMBER_ROLES, user.role);
 }
+
+/**
+ * Whether the Ops lens's compile (`POST /ops/handoff-packs/from-configuration/:id`)
+ * would be answered for this person on this layout. The route reads
+ * `canAccessResource`: the layout's owner, the venue floor at the layout's
+ * venue (`canManageVenue`, VENUE_FLOOR_ROLES) or a platform admin. A layout
+ * open through the authenticated load passed that same gate; a shared link's
+ * public preview names no owner, so there only the floor at its venue and a
+ * platform admin compile. Everyone else keeps the lens's setup plan, which the
+ * browser works out, and is told who compiles instead of meeting a 403.
+ */
+export function compilesHandoffPack(
+  user: { readonly role: string; readonly venueId: string | null; readonly platformRole: string } | null,
+  layout: { readonly venueId: string | null; readonly isPublicPreview: boolean },
+): boolean {
+  if (user === null) return false;
+  if (!layout.isPublicPreview || user.platformRole === "admin") return true;
+  return layout.venueId !== null && user.venueId === layout.venueId && hasRole(VENUE_FLOOR_ROLES, user.role);
+}
+
+/**
+ * Whether this person makes the venue's moves on an enquiry at this venue:
+ * starting its review, approving or declining it, marking a request done and
+ * reopening it. `PATCH /enquiries/:id/status` makes them only for the venue's
+ * triage roles (`canTransition`, state-machines/enquiry.ts: the floor and the
+ * commercial team, which are VENUE_MEMBER_ROLES) and, being the venue's moves
+ * and not the customer's, only at the enquiry's own venue (`canManageVenue`
+ * or `canManageCommercial`), which a platform admin passes everywhere. A
+ * planner or client reading their own enquiry is offered none of them.
+ */
+export function movesEnquiry(
+  user: { readonly role: string; readonly venueId: string | null; readonly platformRole: string } | null,
+  enquiryVenueId: string,
+): boolean {
+  if (user === null || !hasRole(VENUE_MEMBER_ROLES, user.role)) return false;
+  return user.platformRole === "admin" || user.venueId === enquiryVenueId;
+}
+
+/**
+ * Who records an Event Architect Ops review at their venue: the API's
+ * `requireOpsReviewAuthority` (routes/event-architect.ts) answers from this
+ * one list in @omnitwin/types, so the two cannot drift. The venue's staff,
+ * hallkeepers, managers and administrators each record under their own
+ * authority (venue_staff, venue_hallkeeper, venue_manager, venue_admin), and
+ * a platform admin at any venue. Managers record reviews too (Blake, 11
+ * November 2026: "Yes, managers too").
+ */
+export { EVENT_ARCHITECT_OPS_REVIEW_ROLES as OPS_REVIEW_ROLES } from "@omnitwin/types/event-architect-ops-reviewers";
 
 // ---------------------------------------------------------------------------
 // The staff rota (T-637 slice B). A block of its own, with its own drift test

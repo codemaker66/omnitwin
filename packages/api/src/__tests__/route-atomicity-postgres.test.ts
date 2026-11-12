@@ -60,6 +60,9 @@ describe.skipIf(testUrl === undefined)("route atomicity on isolated PostgreSQL",
         if (column.name === "id") defaultSql = " primary key default gen_random_uuid()";
         else if (column.name === "created_at" || column.name === "updated_at") defaultSql = " default now()";
         else if (column.name === "revision") defaultSql = " default 1";
+        // As the real column: a layout is a draft until a review begins, and
+        // the public writes read it to hold a plan in review.
+        else if (column.name === "review_status") defaultSql = " not null default 'draft'";
         return `"${column.name}" ${column.getSQLType()}${defaultSql}`;
       });
       await pool.query(`CREATE TABLE "${config.name}" (${columns.join(", ")})`);
@@ -144,7 +147,7 @@ describe.skipIf(testUrl === undefined)("route atomicity on isolated PostgreSQL",
   it("rejects a delayed anonymous thumbnail write once its preview is claimed", async () => {
     await withBlocker(async (client) => {
       await client.query("SELECT id FROM configurations WHERE id = $1 FOR UPDATE", [CONFIG]);
-      const response = server.inject({ method: "POST", url: `/public/configurations/${CONFIG}/thumbnail`, payload: { thumbnailUrl: "data:image/png;base64,YQ==" } }).then((r) => r);
+      const response = server.inject({ method: "POST", url: `/public/configurations/${CONFIG}/thumbnail`, payload: { thumbnailUrl: "data:image/png;base64,iVBORw0KGgo=" } }).then((r) => r);
       await waitForBlockedQueries(1);
       await client.query("UPDATE configurations SET user_id = $1, is_public_preview = false, visibility = 'private' WHERE id = $2", [USER_A, CONFIG]);
       await client.query("COMMIT");

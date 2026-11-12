@@ -158,7 +158,7 @@ test.describe("Public Editor", () => {
         "Undo",
         "Redo",
         "Camera Views",
-        "Laser Diagram",
+        "Draw",
         "Grid Snap",
         "Show All Walls",
         "Events Sheet",

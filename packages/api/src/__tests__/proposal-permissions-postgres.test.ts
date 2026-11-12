@@ -264,6 +264,74 @@ describe.skipIf(target === undefined)("proposal permissions through real routes 
     expect((await remove(f)).statusCode).toBe(204);
   });
 
+  // Release audit proposals-2: the lock on an accepted proposal followed only
+  // its current status, read before the delete without a lock.
+  async function acceptedThenArchived(f: Fixture): Promise<void> {
+    await db.update(schema.proposals).set({ status: "accepted", sentAt: new Date(), currentVersion: 0 }).where(eq(schema.proposals.id, f.proposal.id));
+    await db.insert(schema.proposalStatusHistory).values({ proposalId: f.proposal.id, fromStatus: "sent", toStatus: "accepted", changedBy: null });
+    const archived = await server.inject({ method: "POST", url: `/proposals/${f.proposal.id}/transition`, headers: f.headers,
+      payload: { status: "archived" } });
+    expect(archived.statusCode, archived.body).toBe(200);
+  }
+
+  it("keeps an accepted proposal that was archived first from being deleted", async () => {
+    const f = await fixture("admin");
+    await acceptedThenArchived(f);
+    const refused = await remove(f);
+    expect(refused.statusCode).toBe(422);
+    expect(refused.json<{ code: string }>().code).toBe("PROPOSAL_ACCEPTED_LOCKED");
+    expect((await stored(f)).proposal).toMatchObject({ status: "archived", deletedAt: null });
+  });
+
+  it("still deletes an archived proposal that was never accepted", async () => {
+    const f = await fixture("staff");
+    await db.update(schema.proposals).set({ status: "declined", sentAt: new Date() }).where(eq(schema.proposals.id, f.proposal.id));
+    expect((await server.inject({ method: "POST", url: `/proposals/${f.proposal.id}/transition`, headers: f.headers,
+      payload: { status: "archived" } })).statusCode).toBe(200);
+    expect((await remove(f)).statusCode).toBe(204);
+    expect((await stored(f)).proposal?.deletedAt).toBeInstanceOf(Date);
+  });
+
+  it("keeps the platform admin's override for an accepted proposal archived first", async () => {
+    const f = await fixture("admin");
+    await acceptedThenArchived(f);
+    const platformAdmin = { id: f.actorId, email: `${f.actorId}@proposal.invalid`, role: "admin", venueId: f.otherVenueId, platformRole: "admin" };
+    const removed = await server.inject({ method: "DELETE", url: `/proposals/${f.proposal.id}`,
+      headers: { authorization: `Bearer ${JSON.stringify(platformAdmin)}` } });
+    expect(removed.statusCode).toBe(204);
+  });
+
+  it("refuses a delete that waited on a client's acceptance committing first", async () => {
+    const f = await fixture("staff");
+    await db.update(schema.proposals).set({ status: "sent", sentAt: new Date() }).where(eq(schema.proposals.id, f.proposal.id));
+    const holder = await pool.connect();
+    try {
+      await holder.query("BEGIN");
+      const holderPid = (await holder.query<{ pid: number }>("SELECT pg_backend_pid() AS pid")).rows[0]?.pid;
+      // The client's acceptance, as its route writes it, still uncommitted.
+      await holder.query("SELECT id FROM proposals WHERE id = $1 FOR UPDATE", [f.proposal.id]);
+      await holder.query("UPDATE proposals SET status = 'accepted', updated_at = now() WHERE id = $1", [f.proposal.id]);
+      await holder.query("INSERT INTO proposal_status_history (proposal_id, from_status, to_status) VALUES ($1, 'sent', 'accepted')",
+        [f.proposal.id]);
+      const pending = remove(f);
+      for (let attempt = 0; ; attempt += 1) {
+        await holder.query("SELECT pg_stat_clear_snapshot()");
+        const { rows } = await holder.query<{ pid: number }>(
+          "SELECT pid FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND $1 = ANY(pg_blocking_pids(pid))", [holderPid]);
+        if (rows.length > 0) break;
+        if (attempt >= 400) throw new Error("The delete never waited on the acceptance");
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      await holder.query("COMMIT");
+      const refused = await pending;
+      expect(refused.statusCode, refused.body).toBe(422);
+    } finally {
+      await holder.query("ROLLBACK").catch(() => undefined);
+      holder.release();
+    }
+    expect((await stored(f)).proposal).toMatchObject({ status: "accepted", deletedAt: null });
+  });
+
   it("rejects foreign commercial, enquiry and configuration links for venue-admin writes", async () => {
     const f = await fixture("admin"), roomId = randomUUID(), configId = randomUUID(), enquiryId = randomUUID(), opportunityId = randomUUID();
     await db.insert(schema.spaces).values({ id: roomId, venueId: f.otherVenueId, name: "Other room", slug: "room", widthM: "10", lengthM: "10", heightM: "3",

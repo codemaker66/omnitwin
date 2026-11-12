@@ -9,6 +9,8 @@ import { isLayoutTimelineMutationLocked } from "../../../lib/layout-timeline-pre
 import { usePlannerVenueIdentity } from "../../../hooks/use-planner-venue-identity.js";
 import { canReadInternalEventData, customerEventPath, isCustomerRole } from "../../../lib/event-access.js";
 import { useOnlineStatus } from "../../../hooks/use-online-status.js";
+import { useChromePresenceStore } from "../../../stores/chrome-presence-store.js";
+import { CrestLabel, useCrestLabel } from "./CrestLabel.js";
 
 interface HeaderSaveState {
   readonly configId: string | null;
@@ -53,17 +55,29 @@ export function ReferenceRoomHeader(): ReactElement {
   const online = useOnlineStatus();
   const offlineUnsaved = !online && (dirty || saveError !== null);
   const saveLabel = headerSaveLabel({ configId, saving, dirty, saveError, conflicted: saveConflict !== null, online });
+  // The crest hides and shows the planner's tools; the name beside it is the
+  // way home (Blake, 28 Oct 2026: "Crest hides; name goes home", T-680).
+  const toolsCleared = useChromePresenceStore((state) => state.cleared);
+  const crestLabel = toolsCleared ? "Show the tools" : "Hide the tools";
+  const crestName = useCrestLabel();
   return (
     <header className="reference-room-header" aria-label="Room and save status">
-      <Link to={homePath} className="reference-wordmark" aria-busy={venue.loading} aria-label={`${venue.name} ${homeLabel}`}>
-        {venue.logoUrl !== null && venue.logoUrl !== failedLogo
-          ? <img src={venue.logoUrl} width="32" height="40" alt="" onError={() => { setFailedLogo(venue.logoUrl); }} />
-          : <Building2 className="reference-venue-icon" size={28} aria-hidden="true" />}
-        <span className="reference-venue-copy">
-          <span className="reference-venue-name">{venue.loading && <ActivityIndicator size={12} />}{venue.name}</span>
-          <small>{spaceName}</small>
-        </span>
-      </Link>
+      <div className="reference-identity">
+        <button type="button" className="reference-crest" data-planner-crest aria-label={crestLabel}
+          aria-keyshortcuts={"\\"} {...crestName.handlers}
+          onClick={() => { useChromePresenceStore.getState().toggleCleared(); }}>
+          {venue.logoUrl !== null && venue.logoUrl !== failedLogo
+            ? <img src={venue.logoUrl} width="32" height="40" alt="" onError={() => { setFailedLogo(venue.logoUrl); }} />
+            : <Building2 className="reference-venue-icon" size={28} aria-hidden="true" />}
+          <CrestLabel text={`${crestLabel} · \\`} shown={crestName.shown} />
+        </button>
+        <Link to={homePath} className="reference-wordmark" aria-busy={venue.loading} aria-label={`${venue.name} ${homeLabel}`}>
+          <span className="reference-venue-copy">
+            <span className="reference-venue-name">{venue.loading && <ActivityIndicator size={12} />}{venue.name}</span>
+            <small>{spaceName}</small>
+          </span>
+        </Link>
+      </div>
       <button type="button" className="reference-save" disabled={saving || previewLocked || configId === null}
         aria-label={saveLabel} title={previewLocked ? "Return to the saved plan before saving" : offlineUnsaved ? "The connection has dropped. Press to save once it is back." : saveLabel}
         aria-busy={saving} onClick={() => {

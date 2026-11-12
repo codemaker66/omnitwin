@@ -1,8 +1,17 @@
 import { and, eq, inArray } from "drizzle-orm";
 import type { FastifyBaseLogger } from "fastify";
-import { summariseRequest, type VenueRequest } from "@omnitwin/types";
+import {
+  isClientSideRole,
+  PlatformRoleSchema,
+  summariseRequest,
+  threadAudienceAdmits,
+  type AudienceThread,
+  type Thread,
+  type VenueRequest,
+} from "@omnitwin/types";
 import { requests, users } from "../db/schema.js";
 import type { Database } from "../db/client.js";
+import { clientHoldsEventLink } from "./conversations.js";
 import { sendPush, type PushDeps, type PushSendRecord } from "./push.js";
 
 // ---------------------------------------------------------------------------
@@ -45,21 +54,28 @@ export async function pushForRequestLanded(
   }, deps);
 }
 
+/** An escalation tells its duty admins once per escalation: a request can
+ *  escalate unowned and later again, handed to a relief who never took it,
+ *  so the claim instant is part of the key. A handover names the relief. */
 export async function pushForRequestEscalated(
   db: Database,
   request: VenueRequest,
   recipientUserIds: readonly string[],
   deps: PushDeps = {},
 ): Promise<readonly PushSendRecord[]> {
+  const claimedAt = request.escalatedAt === null ? "unclaimed" : String(Date.parse(request.escalatedAt));
+  const body = request.state === "handed-over"
+    ? `${request.ownerName ?? "A colleague"} handed this to ${request.handoverToName ?? "a colleague"}, who has not taken it yet, ${roomWords(request)}.`
+    : `Nobody has this, ${roomWords(request)}.`;
   return sendPush(db, {
     venueId: request.venueId,
     userIds: recipientUserIds,
     event: "request.escalated",
     title: `Still waiting: ${summariseRequest({ kind: request.kind, quantity: request.quantity, roomName: request.roomName })}`,
-    body: `Nobody has this, ${roomWords(request)}.`,
+    body,
     url: DAY_BOARD_PATH,
     tag: `request:${request.id}`,
-    idempotencyKeyBase: `push:request.escalated:${request.id}`,
+    idempotencyKeyBase: `push:request.escalated:${request.id}:${claimedAt}`,
   }, deps);
 }
 
@@ -69,10 +85,38 @@ export interface ReplyContext {
   readonly authorUserId: string | null;
   readonly authorName: string;
   readonly body: string;
+  /** The thread the reply was written on: its raiser is told only while it still admits them. */
+  readonly thread: AudienceThread & { readonly eventId: string | null };
+}
+
+/**
+ * Whether a thread admits this person as they stand now. A device keeps its
+ * push subscription when its person is moved to another venue or taken off
+ * the floor, so a reply's words are held to the arbiter that would refuse
+ * them the thread itself (threadAudienceAdmits), read at the moment of
+ * sending, as pushForRequestLanded reads its audience.
+ */
+async function threadAdmitsNow(db: Database, userId: string, thread: ReplyContext["thread"]): Promise<boolean> {
+  const [person] = await db
+    .select({ role: users.role, venueId: users.venueId, platformRole: users.platformRole })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+  if (person === undefined) return false;
+  const platformRole = PlatformRoleSchema.safeParse(person.platformRole);
+  const holdsEventLink = isClientSideRole(person.role) && thread.eventId !== null
+    ? await clientHoldsEventLink(db, userId, thread.eventId)
+    : false;
+  return threadAudienceAdmits(
+    { role: person.role, venueId: person.venueId, platformRole: platformRole.success ? platformRole.data : "none" },
+    thread,
+    { holdsEventLink },
+  );
 }
 
 /** A reply on a request's thread tells the person who raised it, when
- *  someone else wrote. The author is never told of their own words. */
+ *  someone else wrote and the thread still admits them. The author is never
+ *  told of their own words. */
 export async function pushForReply(
   db: Database,
   reply: ReplyContext,
@@ -84,6 +128,7 @@ export async function pushForReply(
     .where(eq(requests.id, reply.requestId))
     .limit(1);
   if (request === undefined || request.requestedByUserId === null || request.requestedByUserId === reply.authorUserId) return [];
+  if (!(await threadAdmitsNow(db, request.requestedByUserId, reply.thread))) return [];
   return sendPush(db, {
     venueId: request.venueId,
     userIds: [request.requestedByUserId],
@@ -97,6 +142,26 @@ export async function pushForReply(
     // never shows them (D11), whoever is signed in on it.
     skipDeviceKinds: ["wall"],
   }, deps);
+}
+
+/** A message that has just committed (never a replay) on a request's thread
+ *  tells the person who raised the request. Every door a message comes in by
+ *  calls this: the REST routes and the socket's command path. */
+export function tellOfMessage(
+  db: Database,
+  thread: Pick<Thread, "requestId" | "venueId" | "audience" | "subject" | "eventId">,
+  message: { readonly id: string; readonly authorUserId: string | null; readonly authorName: string; readonly body: string },
+  logger: FastifyBaseLogger | undefined,
+): void {
+  if (thread.requestId === null) return;
+  tell(pushForReply(db, {
+    requestId: thread.requestId,
+    messageId: message.id,
+    authorUserId: message.authorUserId,
+    authorName: message.authorName,
+    body: message.body,
+    thread,
+  }, { logger }), logger, "request.replied");
 }
 
 /** Fire-and-forget at a call site: a push never fails what caused it. */

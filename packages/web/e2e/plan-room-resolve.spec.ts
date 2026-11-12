@@ -7,9 +7,17 @@ import {
   settleCockpit,
   stubPlannerBootstrap,
 } from "./support/plan-bootstrap.js";
+import { attachStageEvidence, readStageTimeline, recordStageTimeline, stageMilestone } from "./support/stage-timeline.js";
 import { test } from "./support/staged-reception.js";
 
-test.use({ launchOptions: captureLaunchOptions });
+// A failing first attempt keeps its trace (the config's on-first-retry traces only a retry, and
+// the browser release gate rejects a case that needed one). Screenshots stay off: the screencast
+// would read back the WebGL stage every frame. Note that a full re-run of a CI run deletes the
+// first attempt's artifacts, this trace with them: download them first.
+test.use({ launchOptions: captureLaunchOptions, trace: { mode: "retain-on-first-failure", screenshots: false } });
+
+/** The existing local first-paint limit for CARD A2, from the start of the navigation. */
+const FIRST_PAINT_LIMIT_MS = 15_000;
 
 // ---------------------------------------------------------------------------
 // E2E: CARD A2 (G1b) — Resolve-over-blueprint load ("the room resolves")
@@ -212,26 +220,33 @@ async function assertCaptureStillLoading(page: Page, totalChunks: number): Promi
 test.describe("CARD A2: the room resolves over the blueprint", () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
-  test("linework first, accessible progress and controls work while capture chunks are pending", async ({ page, stagedReception }, testInfo) => {
+  test("linework first, accessible progress and controls work while capture chunks are pending", async ({ page, stagedReception, workerEventLoop }, testInfo) => {
     test.setTimeout(240_000);
 
+    await recordStageTimeline(page);
     await stubPlannerBootstrap(page);
     await throttleTo50Mbps(page);
 
     const startedAt = Date.now();
-    await page.goto("/plan?capture=1&space=reception-room");
+    // Only the navigation's commit: the document's `load` is not part of first paint.
+    await page.goto("/plan?capture=1&space=reception-room", { waitUntil: "commit" });
 
-    // The canvas and pending resolve state must appear inside the existing
-    // 15 s local limit. This does not claim that no capture bytes have arrived
-    // or qualify the separate reference-device first-paint target.
-    await expect(page.locator("canvas").first()).toBeVisible({ timeout: 15_000 });
-    await expect
-      .poll(() => readPhase(page), { timeout: 15_000, message: "waiting for first resolve attribute" })
-      .toMatch(/ink|developing/);
-    const firstPaintMs = Date.now() - startedAt;
-    expect(firstPaintMs).toBeLessThan(15_000);
+    // The stage's canvas and pending resolve state must appear inside the
+    // existing 15 s local limit, on the page's own clock from the start of the
+    // navigation (support/stage-timeline.ts), so the runner's scheduling and its
+    // wait for `load` are not counted as the page's. The page's clock still
+    // counts a stalled Playwright worker (every request goes through it), so the
+    // worker's own loop delay is printed beside it: CI's one 166 s first paint
+    // (11 Nov 2026) is instrumented here, its cause still unresolved. This does
+    // not claim that no capture bytes have arrived or qualify the separate
+    // reference-device first-paint target.
+    const firstPaintMs = await stageMilestone(page, "firstPaint", FIRST_PAINT_LIMIT_MS);
     // eslint-disable-next-line no-console -- deliberate: CARD-A2 timing evidence in the runner output
-    console.log(`[CARD-A2] first paint (canvas + resolve attribute) in ${String(firstPaintMs)}ms`);
+    console.log(`[CARD-A2] first paint (stage canvas + resolve attribute) ${firstPaintMs === null ? "not recorded" : `at ${String(Math.round(firstPaintMs))}ms`} in the page; the runner waited ${String(Date.now() - startedAt)}ms`);
+    await attachStageEvidence(page, testInfo, "card-a2-first-paint", workerEventLoop);
+    expect(firstPaintMs, `no first paint recorded within ${String(FIRST_PAINT_LIMIT_MS)} ms of the navigation (or the page stopped answering)`).not.toBeNull();
+    expect(firstPaintMs).toBeLessThan(FIRST_PAINT_LIMIT_MS);
+    await expect(page.locator(".cockpit-stage canvas").last()).toBeVisible();
 
     // The develop begins: caption appears with honest chunk progress.
     await expect
@@ -271,8 +286,9 @@ test.describe("CARD A2: the room resolves over the blueprint", () => {
         message: "waiting for resolved phase with the caption exited",
       })
       .toBe("resolved|false");
+    const settledMs = (await readStageTimeline(page))?.settled ?? null;
     // eslint-disable-next-line no-console -- deliberate: CARD-A2 timing evidence in the runner output
-    console.log(`[CARD-A2] resolved ${String(stagedReception.files.length)} chunks in ${String(Date.now() - startedAt)}ms; 50 Mbps configured`);
+    console.log(`[CARD-A2] resolved ${String(stagedReception.files.length)} chunks ${settledMs === null ? "(not recorded)" : `at ${String(Math.round(settledMs))}ms`} in the page (runner ${String(Date.now() - startedAt)}ms); 50 Mbps configured`);
 
     expect([...stagedReception.requestedFiles].sort()).toEqual([...stagedReception.files].sort());
 

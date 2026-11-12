@@ -436,6 +436,75 @@ To publish a changed model, copy the pair into `packages/web/public/rooms/grand-
 and raise the `?r=` revision in `CONTEXT_MODEL_URL` (`hall-context.ts`), for the same reason as
 `HALL_SURVEY_REVISION` above.
 
+**v3, the city round the measured front (`--front-cut`, 4 November 2026).** Where the planner draws Trades
+Hall's own Glassford Street front (`hall-exterior-spec.ts`, `?facade=1`), the city must not draw the DSM's: its
+traced front stands 1.0-1.2 m out from the scanned faces (the LiDAR shadow of a front facing away from the
+aircraft, filled), and its raster stair-steps stood in front of the modelled one. v3 is v2 in v2's frame and
+registration (the hall's E57 scan, matched to the DSM's edges of the walls across Glassford, Garth and Hutcheson
+Streets, puts the planner's origin at local (E 3.018, N 7.981), sigma 0.06 / 0.12 m: in register to about 2 cm;
+`FRONT_CUT_CENTRE_LOCAL` in `build_context.py` carries the number and the evidence), with two changes, both
+recorded in its JSON (`front_cut`, `street_fronts`, the method's v3 paragraph) and its build report:
+
+- the front's footprint plus 2.7 cm at each end (x -15.35..15.30, from z -5.29, 5 mm behind the room's plane, out
+  to z -12), less the hall's unchanged cut, is bare ground at the pavement (y -3.79), its edges on the exact
+  rectangle; the blocks beside it end there in section walls;
+- the neighbours' fronts beside it (|x| 15.3-45, inside the clamp) are straight: 8 band-1 slivers of 0.25-0.75 m²
+  (the wall's foot sharing its cells with the pavement) join their blocks, and each side's run is fitted with the
+  fewest straight segments along the street (within 5°) whose line stays within 0.25 m of the raster boundary
+  averaged over 3 m. South, from the hall: 15.07 m at -0.70°, a 0.63 m step out to a 2.03 m projection, a 0.56 m
+  step back, then 11.79 m at -2.01°; north: 21.51 m at -0.05°, a 0.44 m step back, then 7.62 m at -0.49°. The raw
+  boundary's spread about the segments is 0.14-0.21 m RMS (at most 0.47 m at a staircase corner), its 3 m average
+  at most 0.24 m off, and the written walls stand within 2.4-4.8 mm of their lines (centimetre vertices). The two
+  run ends on the clamp's edge moved onto their lines (south 0.21 m, north 0.07 m), so the full-height blocks'
+  chains start there; every triangle that differs from v2 lies within |x| 47.3, z -25.3..19.5.
+
+Build, bake and check (a few minutes in all on this PC, most of it the renders):
+
+    python3 tools/grand-hall-survey/context/build_context.py <work>/dsm <work>/v3 --date 2026-11-04 --front-cut --keep-work
+    python3 tools/grand-hall-survey/context/bake_street_light.py <work>/v3 --front-cut --work <work>/v3/_work.npz --dsm-dir <work>/dsm --model-dir <work>/v3 --check
+    python3 tools/grand-hall-survey/context/bake_facade_lights.py <work>/tmp --front-cut --model-dir <work>/v3 --check --same-as packages/web/public/rooms/grand-hall/context-2020-lidar/facade-lights-v1.json
+    python3 tools/grand-hall-survey/context/check_render.py <work>/v3 <work>/dsm --name merchant-city-v3
+
+then copy `merchant-city-v3.bin` / `.json`, `street-light-v3.bin` and `street-lamps-v3.json` into the public folder
+(`CONTEXT_MODEL_FRONT_URL`, `STREET_LIGHT_FRONT_URL`, `STREET_LAMPS_FRONT_URL`, all at `?r=1`). The lit openings
+across the street need no v3 file: `--same-as` finds every placement identical to `facade-lights-v1.json` (97
+lights, 7 dropped, 14 clipped), so `FACADE_LIGHTS_FRONT_URL` is v1's, and `hall-facade-lights.test.ts` checks
+that every quad's distances to both models agree. Results on 4 November 2026: the build twice identical
+(`merchant-city-v3.bin` `6e231837…`, 1,246,744 bytes, 69,264 vertices, 69,262 triangles; `.json` `bbaa0b05…`, LF);
+`check_render.py`: all 27,139 caps up, no zero-area triangles, no cracks, open edges only on the rim (454) and the
+site cut (8: the front cut's ground now meets the cut along its front and wings), 2 edges shared by more than two
+triangles, as v2; inside the front cut nothing above y -3.79. The lamp bake (`street-light-v3.bin` `55acaeea…`,
+`street-lamps-v3.json` `a9d6f94a…`, LF) passes every check, with the same cut (24094, 24096, 45116, 45117, 45127)
+and low-wall (8463) lamps as v2. Its two door lanterns hang 0.30 m proud of the modelled podium face (the scan's
+z -7.200), at (-2.486, -0.591, -7.500) and (2.436, -0.591, -7.500): the front draws no lanterns, so the table draws
+them. Trades Hall's own lamp, 24094, a small LED head on a short arm beside the north link's downpipe, hangs where
+photograph A puts it from its solved camera (`front/`, below): u 6.645 along the front, 9.46 m over the pavement,
+0.35 m out from the north pavilion's face, at (-6.670, 5.67, -6.957), still cut (the table's lantern is not this
+one, so only its light is drawn).
+24096, on the straightened front north of the hall, moved 0.42 m; 24091 moved 1.4 cm. With the modified scripts and no
+`--front-cut`, `merchant-city-v2.bin` and `street-light-v2.bin` rebuild byte for byte, `merchant-city-v2.json`
+(LF) and the v2 lamp table in content, and `facade-lights-v1.json` byte for byte (LF).
+
+**The front against a photograph (`front/`).** The modelled front (`hall-exterior-spec.ts`, each number tagged
+with its source) is checked against photograph A (`packages/web/public/images/venue/grand-hall-facade-3.jpg`,
+Arcaid, reference only: 1400 x 990, focal 895 px, a shift lens with its horizon at row 731.1, the camera on the
+axis 4.492 m over the pavement). `front/photomatch.mjs` draws the planner from that camera through its own pose
+and frame loop (a dev server and installed Chrome; the front pinned uncut), and `front/compare.py` turns the frame
+level, frames it as the photograph and lays the two images' edges on each other:
+
+    node tools/grand-hall-survey/front/photomatch.mjs --out <dir> --base http://localhost:5173
+    python tools/grand-hall-survey/front/compare.py <dir>
+
+The camera's distance is solved, not assumed. From 24.01 m in front of the DSM's front line the render's edges
+needed a scale of 1.0305 to lie on the photograph's: the photograph's 24.01 m was measured from the true face, which
+stands 0.85 m behind the DSM's line on this front. From 24.12 m in front of the links' face (planner z -30.432,
+the script's default) the best similarity is 1.0015 with a shift under 1 px. There, on 4 November 2026 (WebGPU,
+Chrome 156, the RTX 4090), the render's edges over the front lie a median 0.95 px from the photograph's (75% within
+1.9 px, 86% within 3 px; 37.1 px a metre at the links' face, so about 2.6 cm), and the skyline's lines sit within
+1-4 px (end bays' balustrade +1, links' +4, the rosette attic -1, the pavilions' parapets -3). The other way, the
+photograph's edges lie a median 2.9 px from the render's, since the stone's joints, the carving, the signs and the
+street have no edges in the model.
+
 Diagnostics, not part of the build: `context/probe.py <dsm>` shows that in the grid's documented
 orientation the dome's crown (24.19 m) is the local maximum at (3.0, 8.0), and that flipped or
 transposed it is not; it also prints the terrain's spread within 260 m. `skyline/skyline.py <dsm>` prints each window's centre

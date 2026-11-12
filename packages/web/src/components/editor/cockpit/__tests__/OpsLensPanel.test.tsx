@@ -79,7 +79,7 @@ beforeEach(() => {
   mocks.getEventPhaseGraph.mockReset();
   mocks.getEventPhaseGraph.mockResolvedValue(eventGraph());
   usePlacementStore.setState({ placedItems: [] });
-  useEditorStore.setState({ configId: null, venueId: VENUE_ID });
+  useEditorStore.setState({ configId: null, venueId: VENUE_ID, isPublicPreview: false });
   useAuthStore.getState().logout();
   useLightingRigStore.getState().clear();
 });
@@ -171,6 +171,44 @@ describe("OpsLensPanel", () => {
     await waitFor(() => {
       expect(screen.getByTestId("ops-error").textContent).toMatch(/separate reviewed guest-flow evidence artifact/i);
     });
+  });
+
+  it("says a refused compile plainly instead of blaming the connection", async () => {
+    signInStaff();
+    useEditorStore.setState({ configId: CONFIG_ID });
+    mocks.compileOpsHandoffPack.mockRejectedValue(new ApiError(403, "Insufficient permissions", "FORBIDDEN"));
+
+    renderPanel();
+    fireEvent.click(screen.getByTestId("ops-compile"));
+
+    await waitFor(() => { expect(screen.getByTestId("ops-error")).toBeTruthy(); });
+    const message = screen.getByTestId("ops-error").textContent ?? "";
+    expect(message).toMatch(/^You don't have permission to compile this layout's handoff pack/u);
+    expect(message).not.toMatch(/connection/iu);
+  });
+
+  it("on a shared link's preview, keeps the venue's sales the setup plan and says who compiles, with no compile to refuse", () => {
+    useAuthStore.getState().setUser({ id: "u3", email: "sales@venue.test", role: "sales", platformRole: "none", venueId: VENUE_ID, name: "Sales" });
+    useEditorStore.setState({ configId: CONFIG_ID, isPublicPreview: true });
+    usePlacementStore.setState({ placedItems: [...place(roundTable(), 6), ...place(chair(), 48)] });
+
+    renderPanel();
+    // The browser's own sections stand: the setup plan and the effort estimate.
+    expect(screen.getByTestId("ops-task-round-tables")).toBeTruthy();
+    expect(screen.getByText("Suggested crew")).toBeTruthy();
+    expect(screen.queryByTestId("ops-compile")).toBeNull();
+    expect(screen.getByTestId("ops-precondition").textContent).toBe(
+      "Only this venue's admins, managers, staff and hallkeepers can compile its handoff pack, so one of them has to do it.",
+    );
+  });
+
+  it("on a shared link's preview, keeps the compile for the venue's floor", () => {
+    signInStaff();
+    useEditorStore.setState({ configId: CONFIG_ID, isPublicPreview: true });
+
+    renderPanel();
+    expect(screen.getByTestId("ops-compile")).toBeTruthy();
+    expect(screen.queryByTestId("ops-precondition")).toBeNull();
   });
 
   it("binds the corridor's event to the saved layout and compiles the pack against it", async () => {

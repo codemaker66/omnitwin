@@ -991,6 +991,9 @@ async function mockEventDayRoutes(page: Page): Promise<void> {
   await page.route(`${API}/events/${EVENT_ID}/change-feed**`, (route) => {
     void route.fulfill({ json: { data: [changeFeedFixture()] } });
   });
+  await page.route(`${API}/events/${EVENT_ID}/changes-awaiting-acknowledgement`, (route) => {
+    void route.fulfill({ json: { data: [changeFeedFixture()] } });
+  });
   // The board reads the room's acknowledgements (none yet, as the API would
   // answer); only the acknowledgement it tries to save fails.
   await page.route(`${API}/events/${EVENT_ID}/change-acknowledgements**`, (route) => {
@@ -1521,7 +1524,7 @@ test.describe("T-469 operational route visual and CDP frame-budget pass", () => 
     await expect(page.getByRole("heading", { name: "Clients & access", exact: true })).toBeVisible();
     await page.locator("summary").filter({ hasText: /^Setup review and billing$/u }).click();
     await expect(page.getByRole("heading", { name: "Setup review", exact: true })).toBeVisible();
-    await page.getByRole("button", { name: "Save project gate for Trades Hall deployment" }).click();
+    await page.getByRole("button", { name: "Save setup review for Trades Hall deployment" }).click();
     const projectError = page.getByRole("alert");
     await expect(projectError).toContainText("t469 project gate failure");
     await projectError.evaluate((element) => { element.scrollIntoView({ block: "center", behavior: "instant" }); });

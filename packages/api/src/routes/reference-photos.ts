@@ -29,7 +29,9 @@ const UpdatePhotoBody = z.object({
 );
 
 const ReorderBody = z.object({
-  photoIds: z.array(z.uuid()).min(1),
+  // A loadout's photos; far above any loadout's count, it refuses a body
+  // built to make the parser work (one issue per element when unbounded).
+  photoIds: z.array(z.uuid()).min(1).max(500),
 }).refine(
   (data) => new Set(data.photoIds).size === data.photoIds.length,
   { message: "photoIds must not contain duplicates" },
@@ -58,6 +60,32 @@ async function verifyLoadoutAccess(
   }
 
   return { venueId: loadout.venueId };
+}
+
+/**
+ * A loadout's photos as the loadout's detail read returns them (GET
+ * /venues/:venueId/spaces/:spaceId/loadouts/:id): each with its file's key,
+ * name and type, which the web draws the picture from. Every write below
+ * answers in this shape. They used to answer with the bare reference_photos
+ * row, which the web could not read, so a photo that had been linked,
+ * captioned or moved was reported as a failure and a retry linked it twice.
+ */
+function photosAsRead(db: Database, loadoutId: string, photoId?: string) {
+  return db.select({
+    id: referencePhotos.id,
+    fileId: referencePhotos.fileId,
+    caption: referencePhotos.caption,
+    sortOrder: referencePhotos.sortOrder,
+    fileKey: files.fileKey,
+    filename: files.filename,
+    contentType: files.contentType,
+  })
+    .from(referencePhotos)
+    .innerJoin(files, eq(referencePhotos.fileId, files.id))
+    .where(photoId === undefined
+      ? eq(referencePhotos.loadoutId, loadoutId)
+      : and(eq(referencePhotos.loadoutId, loadoutId), eq(referencePhotos.id, photoId)))
+    .orderBy(referencePhotos.sortOrder);
 }
 
 // ---------------------------------------------------------------------------
@@ -118,7 +146,11 @@ export async function referencePhotoRoutes(
       }).returning();
     });
 
-    return reply.status(201).send({ data: photo });
+    const [linked] = photo === undefined ? [] : await photosAsRead(db, params.data.loadoutId, photo.id);
+    if (linked === undefined) {
+      return reply.status(500).send({ error: "The photo was not linked", code: "INSERT_FAILED" });
+    }
+    return reply.status(201).send({ data: linked });
   });
 
   // PATCH /loadouts/:loadoutId/photos/:id — update caption/sortOrder
@@ -149,11 +181,15 @@ export async function referencePhotoRoutes(
     if (parsed.data.caption !== undefined) updateData["caption"] = parsed.data.caption;
     if (parsed.data.sortOrder !== undefined) updateData["sortOrder"] = parsed.data.sortOrder;
 
-    const [updated] = await db.update(referencePhotos)
+    await db.update(referencePhotos)
       .set(updateData)
-      .where(eq(referencePhotos.id, params.data.id))
-      .returning();
+      .where(eq(referencePhotos.id, params.data.id));
 
+    const [updated] = await photosAsRead(db, params.data.loadoutId, params.data.id);
+    if (updated === undefined) {
+      // Removed between the check above and the write.
+      return reply.status(404).send({ error: "Photo not found", code: "NOT_FOUND" });
+    }
     return { data: updated };
   });
 
@@ -234,10 +270,8 @@ export async function referencePhotoRoutes(
       }
     });
 
-    // Return updated photos
-    const photos = await db.select().from(referencePhotos)
-      .where(eq(referencePhotos.loadoutId, params.data.loadoutId))
-      .orderBy(referencePhotos.sortOrder);
+    // The loadout's photos in their new order.
+    const photos = await photosAsRead(db, params.data.loadoutId);
 
     return { data: photos };
   });

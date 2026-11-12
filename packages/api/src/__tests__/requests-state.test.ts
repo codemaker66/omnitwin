@@ -121,6 +121,14 @@ describe("which unanswered request is due to escalate", () => {
     expect(selectDueRequestEscalations([{ ...base, state: "resolved" }], now)).toEqual([]);
   });
 
+  it("escalates a reopened request nobody has taken again, past its window, once (supplier-requests-2)", () => {
+    const reopened = { ...base, state: "reopened" as const };
+    expect(selectDueRequestEscalations([reopened], now).map((row) => row.id)).toEqual(["r-1"]);
+    expect(selectDueRequestEscalations([reopened], new Date("2026-09-16T14:02:59.000Z"))).toEqual([]);
+    expect(selectDueRequestEscalations([{ ...reopened, escalatedAt: now }], now)).toEqual([]);
+    expect(selectDueRequestEscalations([{ ...reopened, escalationDueAt: null }], now)).toEqual([]);
+  });
+
   it("escalates every urgency once its own window has passed (goal 19 S7)", () => {
     expect(selectDueRequestEscalations([{ ...base, urgency: "soon" }], now).map((row) => row.id)).toEqual(["r-1"]);
     expect(selectDueRequestEscalations([{ ...base, urgency: "routine" }], now).map((row) => row.id)).toEqual(["r-1"]);

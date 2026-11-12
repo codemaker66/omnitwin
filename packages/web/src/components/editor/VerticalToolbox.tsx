@@ -1,4 +1,4 @@
-import { Suspense, lazy, useState, useCallback, useRef, useEffect, useLayoutEffect, useId, type ReactNode } from "react";
+import { Fragment, Suspense, lazy, useState, useCallback, useRef, useEffect, useLayoutEffect, useId, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { ActivityIndicator, ActivityStatus } from "../shared/Activity.js";
 import { useNavigate } from "react-router-dom";
@@ -26,7 +26,7 @@ import { useCockpitStore } from "../../stores/cockpit-store.js";
 import type { PlannerTool } from "../../lib/planner-tools.js";
 import { useEscapeLayer } from "../../lib/planner-keys.js";
 import { putDownPieceInHand } from "../../lib/planner-keymap.js";
-import { COCKPIT_MODES } from "../../lib/cockpit-modes.js";
+import { useLensRail, useShownLens } from "../../lib/use-lens-rail.js";
 import { ReferenceSceneSettings } from "./cockpit/ReferenceSceneSettings.js";
 import { HallViewSheetControls } from "./cockpit/CanvasLayerControls.js";
 import { useModelledGrandHall } from "../grand-hall/hall-space.js";
@@ -52,6 +52,7 @@ import { isSceneFurniturePlacement } from "../../lib/table-dressing.js";
 import { FloatingWidgetFrame, type FloatingWidgetPlacement } from "../shared/FloatingWidgetFrame.js";
 import { isLayoutTimelineMutationLocked } from "../../lib/layout-timeline-preview-lock.js";
 import { countLabel } from "../../lib/count-label.js";
+import { plannerFeatureEnabled } from "../../lib/planner-features.js";
 
 const LazyAuthModal = lazy(() =>
   import("./AuthModal.js").then((m) => ({ default: m.AuthModal })),
@@ -397,7 +398,7 @@ function MarkupToolPanel({
     <ToolWidgetPortal>
       <FloatingWidgetFrame
         id="planner-markup-panel"
-        title="Laser diagram"
+        title="Draw tools"
         compactLabel={MARKUP_COLOR_META[selectedColor].label}
         strategy="fixed"
         testId="markup-panel"
@@ -411,7 +412,7 @@ function MarkupToolPanel({
         <div data-testid="markup-panel-body" style={markupPanelContentStyle(open, mobileChrome)}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
         <div>
-          <div style={markupPanelEyebrowStyle}>Laser diagram</div>
+          <div style={markupPanelEyebrowStyle}>Draw</div>
           <div style={markupPanelTitleStyle}>{mobileChrome ? "Draw on the floor" : "Draw notes"}</div>
         </div>
         <div style={{
@@ -442,7 +443,7 @@ function MarkupToolPanel({
               <button
                 key={color}
                 type="button"
-                aria-label={`Use ${MARKUP_COLOR_META[color].label} laser ink`}
+                aria-label={`Use ${MARKUP_COLOR_META[color].label} ink`}
                 aria-pressed={active}
                 onClick={() => { useMarkupStore.getState().setColor(color); }}
                 style={{
@@ -478,7 +479,7 @@ function MarkupToolPanel({
         <div style={{ display: "grid", gridTemplateColumns: mobileChrome ? "42px 1fr 42px" : "34px 1fr 34px", gap: mobileChrome ? 8 : 6, alignItems: "center" }}>
           <button
             type="button"
-            aria-label="Make laser stroke thinner"
+            aria-label="Make the line thinner"
             onClick={() => { useMarkupStore.getState().setWidth(selectedWidth - 0.008); }}
             style={markupActionButtonStyle()}
           >
@@ -503,7 +504,7 @@ function MarkupToolPanel({
           </div>
           <button
             type="button"
-            aria-label="Make laser stroke thicker"
+            aria-label="Make the line thicker"
             onClick={() => { useMarkupStore.getState().setWidth(selectedWidth + 0.008); }}
             style={markupActionButtonStyle()}
           >
@@ -854,6 +855,17 @@ interface ToolBtnProps {
   readonly children: React.ReactNode;
 }
 
+/**
+ * The Walls button's hint, as a click on a wall behaves: with `wallClickAlt`
+ * (decision 4) only an Alt-click hides one, Option-click on a Mac, whose
+ * browser says "Macintosh"; without it any click does.
+ */
+function wallsHint(): string {
+  if (!plannerFeatureEnabled("wallClickAlt")) return "Show all walls. Click a wall to toggle it.";
+  const agent = typeof navigator === "undefined" ? "" : navigator.userAgent;
+  return `Show all walls. ${/Macintosh|Mac OS X/u.test(agent) ? "Option" : "Alt"}-click a wall to hide it.`;
+}
+
 function ToolBtn({
   active,
   pressed,
@@ -910,22 +922,23 @@ function ToolBtn({
         {children}
         {subLabel !== undefined && (
           <span data-testid={captionTestId} style={{
-            // Subtle, professional caption — uppercase Inter at 9px with
-            // generous tracking. Active button flips to dark text on the
-            // gold gradient; inactive uses a low-contrast neutral so the
-            // icon stays the dominant visual element.
+            // Subtle, professional caption — Inter at the 11px floor, weight
+            // 600, in title case as the deck's are: uppercase at 11px ran
+            // "FURNITURE" to 64.6px in a 56px button, where "Furniture" is
+            // 50.7px. Active button flips to dark text on the gold gradient;
+            // inactive uses a low-contrast neutral so the icon stays the
+            // dominant visual element.
             display: "block",
             maxWidth: "100%",
-            fontSize: compact ? 8 : subLabel.length >= 8 ? 8.5 : 9,
+            fontSize: 11,
             fontWeight: 600,
-            letterSpacing: compact ? 0.2 : subLabel.length >= 8 ? 0.25 : 0.6,
+            letterSpacing: 0.2,
             lineHeight: 1,
             color: active
               ? "rgba(14,14,14,0.78)"
               : disabled
                 ? "rgba(255,255,255,0.18)"
                 : "rgba(255,255,255,0.42)",
-            textTransform: "uppercase",
             whiteSpace: "nowrap",
             fontFamily: "'Inter', system-ui, sans-serif",
             userSelect: "none",
@@ -1150,6 +1163,9 @@ interface MobileDockAction {
   readonly label: string;
   readonly ariaLabel?: string;
   readonly active?: boolean;
+  /** For a mode or a switch (Select, Draw, Snap, Walls), as on the toolbar's
+   *  ToolBtn: announced pressed or not pressed, so the off state is heard too. */
+  readonly pressed?: boolean;
   readonly disabled?: boolean;
   readonly tone?: "default" | "primary" | "danger" | "quiet";
   readonly onClick: () => void;
@@ -1282,6 +1298,7 @@ function mobileActionStyle(action: MobileDockAction): React.CSSProperties {
 }
 
 function MobileDockButton(action: MobileDockAction): React.ReactElement {
+  // A mode or a switch says both states; a panel opener (Add, View, More) marks only its open one.
   return (
     <button
       type="button"
@@ -1289,7 +1306,7 @@ function MobileDockButton(action: MobileDockAction): React.ReactElement {
       aria-label={action.ariaLabel ?? action.label}
       aria-expanded={action.expanded}
       aria-controls={action.controls}
-      aria-pressed={action.active === true ? true : undefined}
+      aria-pressed={action.pressed ?? (action.active === true ? true : undefined)}
       disabled={action.disabled}
       onClick={action.onClick}
       style={mobileActionStyle(action)}
@@ -1334,7 +1351,8 @@ function MobilePlannerDock({
   onRotateSelected,
   onDeleteSelected,
 }: MobilePlannerDockProps): React.ReactElement {
-  const activeLens = useCockpitStore((state) => state.activeMode);
+  const lensRail = useLensRail();
+  const shownLens = useShownLens();
   const moreButtonRef = useRef<HTMLButtonElement>(null);
   const moreSheetId = useId();
   const dismissMore = (): void => {
@@ -1344,9 +1362,9 @@ function MobilePlannerDock({
   // Esc closes the More sheet and gives focus back to More (the planner's one Escape order).
   useEscapeLayer("panel", { open: moreOpen, onEscape: onDismissMore, returnFocusTo: moreButtonRef });
   const idleActions: readonly MobileDockAction[] = [
-    { label: "Select", active: activeTool === "select", onClick: onSelect, icon: <MousePointer2 size={20} /> },
+    { label: "Select", active: activeTool === "select", pressed: activeTool === "select", onClick: onSelect, icon: <MousePointer2 size={20} /> },
     { label: "Add", active: panelOpen, onClick: onAdd, icon: <Armchair size={20} /> },
-    { label: "Draw", active: activeTool === "draw", onClick: onMarkup, icon: <PenLine size={20} /> },
+    { label: "Draw", active: activeTool === "draw", pressed: activeTool === "draw", onClick: onMarkup, icon: <PenLine size={20} /> },
     { label: "View", active: cameraOpen, onClick: onCamera, icon: <Camera size={20} /> },
     { label: "More", active: moreOpen, expanded: moreOpen, controls: moreOpen ? moreSheetId : undefined, buttonRef: moreButtonRef, onClick: onMore, icon: <MoreHorizontal size={20} /> },
   ];
@@ -1389,23 +1407,29 @@ function MobilePlannerDock({
         <div id={moreSheetId} data-testid="mobile-more-sheet" role="region" aria-label="More planner tools"
           style={{ ...mobileSheetStyle, display: "grid", gap: 8 }}>
           <div style={mobileSheetTitleStyle}>Planner lenses</div>
-          <div className="mobile-planner-lenses" role="group" aria-label="Planner lenses">
-            {COCKPIT_MODES.map((lens) => (
-              <button key={lens.id} type="button" className="mobile-planner-lenses__button"
-                aria-pressed={activeLens === lens.id}
-                onClick={() => {
-                  useCockpitStore.getState().setMode(lens.id);
-                  dismissMore();
-                }}>
-                <span>{lens.label}</span>
-                {activeLens === lens.id && <Check size={18} aria-hidden="true" />}
-              </button>
-            ))}
-          </div>
+          {/* This viewer's lenses (lib/cockpit-lenses.ts): a titled section is the "Venue tools" group. */}
+          {lensRail.sections.map((section) => (
+            <Fragment key={section.label ?? "lenses"}>
+              {section.label !== null && <div style={mobileSheetTitleStyle}>{section.label}</div>}
+              <div className="mobile-planner-lenses" role="group" aria-label={section.label ?? "Planner lenses"}>
+                {section.lenses.map((lens) => (
+                  <button key={lens.id} type="button" className="mobile-planner-lenses__button"
+                    aria-pressed={shownLens === lens.id}
+                    onClick={() => {
+                      useCockpitStore.getState().setMode(lens.id);
+                      dismissMore();
+                    }}>
+                    <span>{lens.label}</span>
+                    {shownLens === lens.id && <Check size={18} aria-hidden="true" />}
+                  </button>
+                ))}
+              </div>
+            </Fragment>
+          ))}
           <div style={mobileSheetTitleStyle}>Tools</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
-            <MobileDockButton label="Snap" active={snapEnabled} onClick={onSnap} icon={<Grid3X3 size={20} />} />
-            <MobileDockButton label="Walls" active={allWallsUp} onClick={onWalls} icon={<Eye size={20} />} />
+            <MobileDockButton label="Snap" active={snapEnabled} pressed={snapEnabled} onClick={onSnap} icon={<Grid3X3 size={20} />} />
+            <MobileDockButton label="Walls" active={allWallsUp} pressed={allWallsUp} onClick={onWalls} icon={<Eye size={20} />} />
             <MobileDockButton label="Undo" disabled={!canUndo} onClick={onUndo} icon={<Undo2 size={20} />} />
             <MobileDockButton label="Redo" disabled={!canRedo} onClick={onRedo} icon={<Redo2 size={20} />} />
             <MobileDockButton label="Sheet" onClick={onGenerateSheet} icon={<FileText size={20} />} />
@@ -1999,7 +2023,7 @@ export function VerticalToolbox({ compactDesktop = false }: { readonly compactDe
           <Camera size={ICON_SIZE} />
         </ToolBtn>
 
-        <ToolBtn active={activeTool === "draw"} pressed={activeTool === "draw"} compact={isNarrow} subLabel="Draw" label="Laser Diagram" description="Draw routes, zones and setup notes." shortcut="D" showShortcut={showDesktopHints} tooltipEnabled={showDesktopHints} onClick={() => { handleToolClick("draw"); }}>
+        <ToolBtn active={activeTool === "draw"} pressed={activeTool === "draw"} compact={isNarrow} subLabel="Draw" label="Draw" description="Draw routes, zones and setup notes." shortcut="D" showShortcut={showDesktopHints} tooltipEnabled={showDesktopHints} onClick={() => { handleToolClick("draw"); }}>
           <PenLine size={ICON_SIZE} />
         </ToolBtn>
 
@@ -2007,7 +2031,7 @@ export function VerticalToolbox({ compactDesktop = false }: { readonly compactDe
           <Grid3X3 size={ICON_SIZE} />
         </ToolBtn>
 
-        <ToolBtn active={allWallsUp} pressed={allWallsUp} compact={isNarrow} subLabel="Walls" label="Show All Walls" description={isTouch ? "Toggle room walls." : "Show all walls. Click a wall to toggle it."} tooltipEnabled={showDesktopHints} onClick={handleToggleAllWalls}>
+        <ToolBtn active={allWallsUp} pressed={allWallsUp} compact={isNarrow} subLabel="Walls" label="Show All Walls" description={isTouch ? "Toggle room walls." : wallsHint()} tooltipEnabled={showDesktopHints} onClick={handleToggleAllWalls}>
           <Eye size={ICON_SIZE} />
         </ToolBtn>
 

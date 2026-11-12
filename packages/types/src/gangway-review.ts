@@ -9,8 +9,10 @@ import { z } from "zod";
 // narrows one of the room's designated gangways under the guidance, the
 // planner derives a review item (packages/web/src/lib/auto-fill.ts,
 // `gangwayReview`), and the venue's staff decide on it. The derived items are
-// the source of truth for what is open; only decisions are stored, joined to
-// items by id.
+// the source of truth for what is open. The planner keeps them with the layout
+// (configurations.metadata.gangwayReview, ConfigurationMetadataSchema), each
+// stored decision laid back over its item by id while it still holds
+// (withGangwayDecisions), so the venue's side and the sheet read them.
 //
 // Written with plain z.object / z.enum / z.array / z.string / z.number /
 // z.literal / z.union so it compiles under zod 3 and zod 4 alike.

@@ -553,7 +553,7 @@ test("the dossier states the venue's own figures at a validated viewpoint", asyn
   );
   expect(stats[STAT_RECEPTION]).toBe(`${String(room.capacities.reception)} standing`);
   expect(stats[STAT_DINNER]).toBe(`${String(room.capacities.dinner)} seated`);
-  // The dome qualifier is the single most-asked fact in the building, and its
+  // The ceiling qualifier says what the height is measured to, and its
   // separator is DOM text — "7 ma further…" is the failure this pins shut.
   const note = dimensions.note;
   expect(stats[STAT_CEILING]).toBe(
@@ -562,9 +562,15 @@ test("the dossier states the venue's own figures at a validated viewpoint", asyn
       : `${metres(dimensions.heightM)} m — ${note}`,
   );
 
-  // Provenance travels with the figures, verbatim — the dossier's footnote IS
-  // this constant, so a reworded claim about someone else's data fails here.
-  await expect(dossier).toContainText(ROOM_TRUTH_PROVENANCE);
+  // Provenance travels with the figures, verbatim — the dossier's footnote ends
+  // with this constant, so a reworded claim about someone else's data fails
+  // here. The room's remark (the Grand Hall's dome, never its height) leads it.
+  const footnote = dossier.locator(".vv-twin-dossier-footnote");
+  await expect(footnote).toContainText(ROOM_TRUTH_PROVENANCE);
+  const remark = dimensions.remark;
+  if (remark !== undefined) {
+    await expect(footnote).toHaveText(`${remark} ${ROOM_TRUTH_PROVENANCE}`);
+  }
 
   expect(errors, "the dossier must not log an error").toEqual([]);
 });
