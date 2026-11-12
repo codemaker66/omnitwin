@@ -2101,6 +2101,8 @@ describe("DayBoardPage: what moves at a changeover", () => {
         "The layout for Dinner has been removed, so what moves can’t be worked out. Ask the office which layout it uses now."],
       [new ApiError(409, "A changeover runs between two layouts of one room", "NOT_ONE_ROOM", { configIds: [LUNCH_LAYOUT, DINNER_LAYOUT] }),
         "The two layouts are for different rooms, so what moves can’t be worked out here."],
+      [new ApiError(403, "Insufficient permissions", "FORBIDDEN", { configIds: [LUNCH_LAYOUT] }),
+        "This board can’t open the layout for Lunch, so what moves can’t be worked out here."],
     ];
     for (const [refusal, words] of refusals) {
       getCalendarMock.mockResolvedValue(calendarFixture(day()));
@@ -2113,6 +2115,22 @@ describe("DayBoardPage: what moves at a changeover", () => {
       expect(within(section).queryByRole("button")).toBeNull();
       cleanup();
     }
+  });
+
+  it("offers Try again, not a removed layout, when the API does not serve the changeover yet", async () => {
+    getCalendarMock.mockResolvedValue(calendarFixture(day()));
+    layouts({ [LUNCH_EVENT]: [LUNCH_LAYOUT], [DINNER_EVENT]: [DINNER_LAYOUT] });
+    // The web can be served before the API that answers it: an API without
+    // the route answers its own not-found, naming no layouts.
+    changeoverMock.mockRejectedValueOnce(new ApiError(404, `Route GET /hallkeeper/changeover?from=${LUNCH_LAYOUT}&to=${DINNER_LAYOUT} not found.`, "NOT_FOUND"))
+      .mockResolvedValueOnce(trestles());
+    renderBoard();
+    const section = await openDinner();
+    expect(await within(section).findByText("What moves could not be worked out just now.")).toBeTruthy();
+    expect(within(section).queryByText(/has been removed/u)).toBeNull();
+    // Once the API serves it, the next read works it out.
+    fireEvent.click(within(section).getByRole("button", { name: "Try again to work out what moves" }));
+    expect(await within(section).findByText("8 × Trestle")).toBeTruthy();
   });
 
   it("reads the changeover again each minute, keeping the last list on screen while it reads and when a read fails", async () => {
