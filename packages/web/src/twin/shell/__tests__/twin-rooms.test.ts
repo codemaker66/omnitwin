@@ -161,21 +161,26 @@ describe("formatRoomDimensions", () => {
     expect(line).toContain(String(truth.heightM));
   });
 
-  it("renders the note when a room carries one", () => {
+  it("renders the note and the remark when a room carries them", () => {
     const truth = publishedDimensions("grand-hall");
     // The Grand Hall is the room carrying a qualifier today: what its height is
-    // measured to, with the dome rising above part of the hall.
+    // measured to, then the remark that the dome rises above part of the hall.
     expect(truth.note).toBeDefined();
+    expect(truth.remark).toBeDefined();
     const note = truth.note ?? "";
+    const remark = truth.remark ?? "";
     expect(formatRoomDimensions("grand-hall")).toBe(
-      `${String(truth.lengthM)} × ${String(truth.widthM)} × ${String(truth.heightM)} m — ${note}`,
+      `${String(truth.lengthM)} × ${String(truth.widthM)} × ${String(truth.heightM)} m — ${note}. ${remark}`,
     );
   });
 
-  it("appends nothing when there is no published note", () => {
+  it("appends nothing when there is no published note or remark", () => {
     const truth = publishedDimensions("reception-room");
     expect(truth.note).toBeUndefined();
-    expect(formatRoomDimensions("reception-room")).not.toContain("—");
+    expect(truth.remark).toBeUndefined();
+    expect(formatRoomDimensions("reception-room")).toBe(
+      `${String(truth.lengthM)} × ${String(truth.widthM)} × ${String(truth.heightM)} m`,
+    );
   });
 
   it("omits dimensions entirely for rooms the venue publishes none for", () => {

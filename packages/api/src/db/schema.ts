@@ -6591,7 +6591,7 @@ export const bookingObservations = pgTable("booking_observations", {
 ]);
 
 // ---------------------------------------------------------------------------
-// Supplier arrivals (T-692, migration 0107) — who comes to the building for a
+// Supplier arrivals (T-692, migration 0108) — who comes to the building for a
 // booking, when, and at which door. The office enters them; the floor marks
 // each one arrived and gone. Arrival and leaving are first-tap-wins facts and
 // never move the revision, which guards the office's own edits.
@@ -6626,7 +6626,7 @@ export const bookingSupplierArrivals = pgTable("booking_supplier_arrivals", {
 ]);
 
 // ---------------------------------------------------------------------------
-// Opening and lock-up (T-693, migration 0108) — the venue's own checks, in its
+// Opening and lock-up (T-693, migration 0109) — the venue's own checks, in its
 // own words, and each day's ticks. A check taken off the list is retired, not
 // deleted, so a day keeps what was ticked on it. A tick is first-tap-wins per
 // check per board day (the venue's day, to its boundary hour).

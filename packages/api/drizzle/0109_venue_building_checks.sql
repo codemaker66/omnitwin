@@ -1,5 +1,5 @@
 -- Opening and lock-up on the Day Board (T-693, 11 November 2026).
--- 0108, after 0107 (supplier arrivals); the release queue confirms the
+-- 0109, after 0108 (supplier arrivals); the release queue confirms the
 -- number at the merge slot. A renumber changes this file's name, this line,
 -- and the journal entry's tag, idx and `when`. Its `when` must be strictly
 -- later than the entry before it: drizzle applies a migration only when its

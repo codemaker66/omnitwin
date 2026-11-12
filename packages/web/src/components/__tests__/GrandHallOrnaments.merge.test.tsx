@@ -294,29 +294,48 @@ const ORACLE_HALL = { width: GRAND_HALL_RENDER_DIMENSIONS.width, length: GRAND_H
 
 const hall = describeGrandHallOrnaments(ORACLE_HALL.width, ORACLE_HALL.length, ORACLE_HALL.height);
 
+/** Window-wall draws the 6.7 m stand-in bakes together (63 today): a floor
+ *  under which "every batch matched" would be passing over nothing. */
+const BAKED_WINDOW_WALL_DRAWS_MIN = 50;
+
+/**
+ * The hall the planner actually draws: the scanned interior at its 6.7 m clear
+ * height, where fitWindowHeight shortens every window's straight run. The
+ * legacy oracle cannot speak for it, so its stand-ins are checked against the
+ * current per-mesh tree at the same height (current against current).
+ */
+const productionHall = describeGrandHallOrnaments(
+  GRAND_HALL_RENDER_DIMENSIONS.width,
+  GRAND_HALL_RENDER_DIMENSIONS.length,
+  GRAND_HALL_RENDER_DIMENSIONS.height,
+);
+
 /**
  * The described draws of a surface name or "chandelier-fittings", by per-mesh
  * draw index. The per-mesh order equals the legacy order (first test), so
  * indices line up with the legacy draws.
  */
-function describedDraws(surface: string): OrnamentDraw[] {
+function describedDraws(surface: string, description = hall): OrnamentDraw[] {
   if (surface === "chandelier-fittings") {
-    return collectOrnamentDraws(hall.chandeliers.map((chandelier) => ({
+    return collectOrnamentDraws(description.chandeliers.map((chandelier) => ({
       kind: "group" as const,
       position: chandelier.placement.position,
       scale: chandelier.placement.scale,
       children: chandelier.fittings,
     })));
   }
-  const found = [...hall.ceiling, ...hall.walls.flatMap((layer) => (layer.kind === "surface" ? [layer] : layer.surfaces)), ...hall.rosette]
-    .find((candidate) => candidate.name === surface);
+  const found = [
+    ...description.ceiling,
+    ...description.walls.flatMap((layer) => (layer.kind === "surface" ? [layer] : layer.surfaces)),
+    ...description.rosette,
+  ].find((candidate) => candidate.name === surface);
   if (found === undefined) throw new Error(`No described surface ${surface}`);
   return collectOrnamentDraws(found.children);
 }
 
 /** Pieces the description keeps on exact draws, by per-mesh draw index. */
-function exactFlags(surface: string): boolean[] {
-  return describedDraws(surface).map((draw) => draw.exact);
+function exactFlags(surface: string, description = hall): boolean[] {
+  return describedDraws(surface, description).map((draw) => draw.exact);
 }
 
 /** The plan three-order rules give for the legacy draws (materials as the legacy JSX declared them). */
@@ -425,6 +444,35 @@ describe("GrandHallOrnaments merged stand-ins", () => {
       baked += expectBatchesMatch(surface, batches, plans, legacyDraws);
     }
     expect(baked).toBeGreaterThan(280);
+  });
+
+  it("bakes the window wall's stand-in at the planner's 6.7 m from exactly the triangles its per-mesh tree draws", () => {
+    // The comparisons above run at the oracle's 7 m, the only height the legacy
+    // windows fit. At the production 6.7 m every window's straight run is
+    // shorter, which moves the frame pieces and can change which of them keep
+    // exact draws, so nothing above covers the stand-in the planner shows.
+    expect(GRAND_HALL_RENDER_DIMENSIONS.height).toBe(6.7);
+    const surface = "window-wall-ornament-cluster";
+    const current = mount(<GrandHallOrnaments />);
+    // As the legacy tree's are in mountPair: read before a frame applies surface opacity.
+    const declared = declaredMaterials(current.scene);
+    frames([current], 2);
+    expect(named(current.scene, `${surface}-opaque-stand-in`).visible).toBe(true);
+
+    const perMesh = perMeshDraws(current.scene, surface);
+    const described = describedDraws(surface, productionHall);
+    expect(perMesh).toHaveLength(described.length);
+    const exact = exactFlags(surface, productionHall);
+    const plans = planOrnamentBatches(perMesh.map((mesh, i) => ({ material: declaredFor(declared, mesh), exact: exact[i] === true })));
+    expect(plans.length).toBeLessThan(perMesh.length);
+
+    const batches = standInDraws(current.scene, surface);
+    if (batches === null) throw new Error(`${surface} has no stand-in at 6.7 m`);
+    // Every per-mesh draw is accounted for once, and each baked batch holds the
+    // same world-space positions, normals, uvs and triangles as its sources.
+    expect(plans.flatMap((plan) => plan.draws).sort((a, b) => a - b)).toEqual(perMesh.map((_, i) => i));
+    const baked = expectBatchesMatch(`${surface} at 6.7 m`, batches, plans, perMesh);
+    expect(baked).toBeGreaterThan(BAKED_WINDOW_WALL_DRAWS_MIN);
   });
 
   it("merges chandelier fittings exactly and keeps blended crystal as separate objects", () => {

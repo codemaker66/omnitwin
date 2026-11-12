@@ -480,6 +480,8 @@ const WINDOW_INSET = 0.04;
 const WINDOW_FRAME_THICKNESS = 0.12;
 /** Least gap between an arch's apex and the underside of the crown moulding. */
 export const WINDOW_CROWN_CLEARANCE = 0.02;
+/** Radius of each window's semicircular head: half the window's width. */
+export const WINDOW_ARCH_RADIUS = WINDOW_WIDTH / 2;
 
 /**
  * Sill-to-apex height of the arched windows on a wall `wallHeight` tall. The
@@ -489,9 +491,15 @@ export const WINDOW_CROWN_CLEARANCE = 0.02;
  * full WINDOW_HEIGHT (apex 6.70 m under a moulding at 6.72 m), exactly as
  * before; on the Grand Hall's scanned 6.7 m wall the apex comes down to 6.40 m
  * rather than running 0.28 m behind the cornice.
+ *
+ * Never less than the arch radius: the straight run is all that gives way, and
+ * below a wall of about 3.675 m it would otherwise go negative and turn the
+ * window's rectangle inside out. On such a wall the head is a bare semicircle
+ * standing on the sill.
  */
 export function fitWindowHeight(wallHeight: number): number {
-  return Math.min(WINDOW_HEIGHT, wallHeight - CROWN_HEIGHT - WINDOW_CROWN_CLEARANCE - WINDOW_SILL_Y);
+  const fitted = Math.min(WINDOW_HEIGHT, wallHeight - CROWN_HEIGHT - WINDOW_CROWN_CLEARANCE - WINDOW_SILL_Y);
+  return Math.max(WINDOW_ARCH_RADIUS, fitted);
 }
 
 interface WindowFrameVerticals<T> {
@@ -550,7 +558,9 @@ function archedWindow(
       { name: "arched-window-daylight-pane-rect", position: [0, WINDOW_SILL_Y + rectHeight / 2, WINDOW_INSET] },
     ),
     mesh(
-      { kind: "plane", args: [WINDOW_WIDTH - 0.22, rectHeight - 0.12] },
+      // Inset 0.12 m from the run, so on a wall low enough to leave almost no
+      // run (fitWindowHeight's floor) it shrinks to nothing rather than flip.
+      { kind: "plane", args: [WINDOW_WIDTH - 0.22, Math.max(0, rectHeight - 0.12)] },
       standard(GLASS_BLUE, 0.08, 0.04, {
         emissive: WINDOW_GLOW,
         emissiveIntensity: 0.12,
