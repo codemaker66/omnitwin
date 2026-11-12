@@ -197,6 +197,33 @@ describe("RotaView", () => {
     await waitFor(() => { expect(mocks.week).toHaveBeenCalledTimes(2); });
   });
 
+  // T-695 review D7, as ruled: last week's overnight draft is published from
+  // last week, so this week's "In draft" leaves it out (it agrees with
+  // Publish), and a line under Publish points to last week.
+  it("leaves last week's overnight draft out of this week's count and points to last week for it", async () => {
+    const overnight = shift({ id: "00000000-0000-4000-8000-0000000000c1", staffMemberId: MORAG, role: "bar",
+      startsAt: "2026-10-04T21:00:00.000Z", endsAt: "2026-10-05T01:00:00.000Z", breakMinutes: 0 });
+    mocks.week.mockResolvedValue(rotaWeek({ shifts: [overnight, UNFILLED_BAR] }));
+    renderView();
+    await screen.findByRole("heading", { name: "Rota", level: 1 });
+    await screen.findByText("Publishes 1 shift, unfilled.");
+    expect(screen.getByText("In draft").nextElementSibling?.textContent).toBe("1");
+
+    const pointer = screen.getByRole("button", { name: "1 overnight draft from last week: publish it from last week." });
+    fireEvent.click(pointer);
+    await waitFor(() => { expect(mocks.week).toHaveBeenLastCalledWith(VENUE, "2026-09-28", expect.any(AbortSignal)); });
+  });
+
+  it("says how many overnight drafts last week has when there are several", async () => {
+    const overnight = (id: string, person: string): RotaShift => shift({ id, staffMemberId: person, role: "bar",
+      startsAt: "2026-10-04T21:00:00.000Z", endsAt: "2026-10-05T01:00:00.000Z", breakMinutes: 0 });
+    mocks.week.mockResolvedValue(rotaWeek({ shifts: [overnight("00000000-0000-4000-8000-0000000000c2", MORAG), overnight("00000000-0000-4000-8000-0000000000c3", JAMIE)] }));
+    renderView();
+    await screen.findByRole("heading", { name: "Rota", level: 1 });
+    expect(await screen.findByRole("button", { name: "2 overnight drafts from last week: publish them from last week." })).toBeDefined();
+    expect(screen.getByText("In draft").nextElementSibling?.textContent).toBe("0");
+  });
+
   it("shows one day at a time on a phone, chosen from day tabs", async () => {
     media.phone = true;
     media.turnTaking = true;

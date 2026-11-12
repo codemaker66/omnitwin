@@ -21,7 +21,7 @@ import { PublishControl } from "./PublishControl.js";
 import { RotaDayList, RotaWeekTable } from "./RotaWeekTable.js";
 import { ShiftEditor, type PanelMessage } from "./ShiftEditor.js";
 import { StaffDrawer } from "./StaffDrawer.js";
-import { functionsByDay, prefillShift, rotaWeekTitle, weekSummary, type ShiftDraft } from "./rota-format.js";
+import { carriedDrafts, functionsByDay, prefillShift, rotaWeekTitle, weekSummary, type ShiftDraft } from "./rota-format.js";
 import "./Rota.css";
 
 // ---------------------------------------------------------------------------
@@ -176,6 +176,9 @@ export function RotaView(): ReactElement {
   const dates = rotaWeekDates(shown.weekStart);
   const day = chosenDay !== null && dates.includes(chosenDay) ? chosenDay : dates.includes(today) ? today : shown.weekStart;
   const summary = weekSummary(shown);
+  // Last week's overnight drafts that run into this week: shown on Monday,
+  // left out of "In draft", and published from last week (T-695 review D7).
+  const carried = carriedDrafts(shown).length;
   const thisWeek = rotaMondayOf(today) === shown.weekStart;
   const records = new Map(shown.records.map((record) => [record.id, record]));
 
@@ -245,7 +248,8 @@ export function RotaView(): ReactElement {
             </div>
           </div>
           {manage && (
-            <PublishControl venueId={venueId} week={shown} onDone={(message) => { setPageMessage(message); refresh(); }} />
+            <PublishControl venueId={venueId} week={shown} onDone={(message) => { setPageMessage(message); refresh(); }}
+              onEarlierWeek={() => { goToWeek(addRotaDays(shown.weekStart, -7)); }} />
           )}
         </header>
 
@@ -269,7 +273,7 @@ export function RotaView(): ReactElement {
           </dl>
         )}
 
-        {manage && summary.drafts > 0 && (
+        {manage && summary.drafts + carried > 0 && (
           <p className="rota-legend">Shifts with a dashed edge are drafts: nobody hears of them until the week is published.</p>
         )}
 

@@ -180,6 +180,7 @@ describe("publishPlan", () => {
 describe("the week in numbers", () => {
   it("counts live shifts, distinct people, unfilled needs and working hours, leaving cancelled shifts out", () => {
     const summary = weekSummary({
+      ...WEEK,
       shifts: [
         shift({ staffMemberId: MORAG, issues: [SHORT_REST] }),
         shift({ staffMemberId: MORAG, startsAt: "2026-10-11T07:00:00.000Z", endsAt: "2026-10-11T11:00:00.000Z", breakMinutes: 0 }),
