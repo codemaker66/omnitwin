@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { ZodType } from "zod";
 import {
   ClientEventScheduleQuerySchema,
   ClientEventScheduleSchema,
@@ -7,7 +8,7 @@ import {
   RoomDaySchema,
   ScheduleSlotSchema,
 } from "../client-event-schedule.js";
-import { UpdateBookingSchema } from "../booking.js";
+import { BookViewingSchema, ConvertEnquirySchema, CreateBookingSchema, UpdateBookingSchema } from "../booking.js";
 
 const VENUE = "00000000-0000-4000-8000-000000000001";
 const EVENT = "00000000-0000-4000-8000-000000000002";
@@ -68,6 +69,27 @@ describe("client event schedule contract", () => {
     expect(ScheduleSlotSchema.safeParse({ ...untitled, title: "x".repeat(201) }).success).toBe(false);
     expect(UpdateBookingSchema.safeParse({ title: "" }).success).toBe(false);
     expect(UpdateBookingSchema.safeParse({ title: "   " }).success).toBe(false);
+  });
+
+  // The reads above take what is stored; no writer stores it. Each input is
+  // otherwise valid, so the title is the one thing refused.
+  const WINDOW = { startsAt: "2026-10-25T18:00:00.000Z", endsAt: "2026-10-25T23:00:00.000Z" };
+  const WRITERS: Array<[string, ZodType, Record<string, unknown>]> = [
+    ["CreateBookingSchema", CreateBookingSchema, { venueId: VENUE, spaceId: ROOM, kind: "ink", title: "Dinner", ...WINDOW }],
+    ["UpdateBookingSchema", UpdateBookingSchema, { title: "Dinner" }],
+    ["ConvertEnquirySchema", ConvertEnquirySchema, {
+      enquiryId: EVENT, title: "Dinner", ...WINDOW, decisionAt: "2026-10-18T12:00:00.000Z", ownerUserId: VENUE,
+      nextAction: "Call the client", nextActionDueAt: "2026-10-16T12:00:00.000Z",
+    }],
+    ["BookViewingSchema", BookViewingSchema, { enquiryId: EVENT, title: "Dinner", ...WINDOW }],
+  ];
+  it.each(WRITERS)("%s still refuses an empty or blank title (API-9)", (_name, writer, input) => {
+    expect(writer.safeParse(input).success).toBe(true);
+    for (const title of ["", "   "]) {
+      const result = writer.safeParse({ ...input, title });
+      expect(result.success, JSON.stringify(title)).toBe(false);
+      expect(result.error?.issues.map((issue) => issue.path.join(".")), JSON.stringify(title)).toEqual(["title"]);
+    }
   });
 
   it("rejects internal material at every projected object boundary", () => {
