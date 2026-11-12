@@ -1,4 +1,5 @@
-import type { Page, TestInfo } from "@playwright/test";
+import { monitorEventLoopDelay } from "node:perf_hooks";
+import { errors, type Page, type TestInfo } from "@playwright/test";
 
 // ---------------------------------------------------------------------------
 // The planner stage's milestones, timed inside the page (CARD A2).
@@ -15,6 +16,13 @@ import type { Page, TestInfo } from "@playwright/test";
 // document's performance.timeOrigin is kept in sessionStorage, so a reload
 // (the dev server's dependency optimiser can reload a page mid-boot) cannot
 // restart the clock and hide the time already spent.
+//
+// The page's clock still counts a stalled Playwright worker: every request
+// the page makes passes through the worker's route handlers. The page clock
+// therefore does not say where that 166 s went, and its cause is unresolved.
+// So the worker's own event-loop delay is recorded too (watchWorkerEventLoop),
+// and printed with the page's evidence: a page that waited on a stalled worker
+// shows a long worker delay, and a page that stalled by itself does not.
 // ---------------------------------------------------------------------------
 
 export type StageMilestone = "firstPaint" | "developing" | "settled";
@@ -121,23 +129,65 @@ export async function recordStageTimeline(page: Page): Promise<void> {
 }
 
 /**
+ * How long past a milestone's own window the runner waits for the page to say
+ * so. Only a page that stopped running (or never installed the recorder) is
+ * still silent then, and it fails there, with its evidence, rather than at the
+ * test's timeout with none.
+ */
+export const RUNNER_BACKSTOP_MS = 60_000;
+
+/** The page gave no answer in the time the runner allowed it. */
+class PageSilent extends Error {}
+
+/**
+ * `work`, or a PageSilent rejection once `ms` have passed on the runner's clock
+ * without it. Playwright's own timeouts do not always fire while the page's
+ * main thread is wedged (a page stuck in a loop held waitForFunction past its
+ * 75 s timeout until the test's own 240 s timeout closed the page).
+ */
+async function answerWithin<T>(work: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => { reject(new PageSilent(`the page did not answer within ${String(ms)} ms`)); }, ms);
+  });
+  // A late answer, or a late failure, is not this case's.
+  work.catch(() => undefined);
+  try {
+    return await Promise.race([work, late]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
  * Waits for `milestone` on the page's own clock: the time it was recorded, or
- * null once `withinMs` have passed since the navigation began without it. There
- * is no runner-side deadline (the runner's clock is what this replaces); the
- * test's own timeout is the backstop for a page that stops running at all.
+ * null once `withinMs` have passed since the navigation began without it. The
+ * runner's clock only backstops a page that stops answering: null also after
+ * `withinMs` + RUNNER_BACKSTOP_MS on the runner's clock, with a line saying so.
  */
 export async function stageMilestone(page: Page, milestone: StageMilestone, withinMs: number): Promise<number | null> {
-  const handle = await page.waitForFunction(([key, limit]) => {
-    const recorder = window.__stageTimeline;
-    if (recorder === undefined) return false;
-    const at = recorder[key];
-    if (at !== null) return { at };
-    return recorder.elapsed() > limit ? { at: null } : false;
-  }, [milestone, withinMs] as const, { timeout: 0, polling: 100 });
-  const value: unknown = await handle.jsonValue();
-  await handle.dispose();
-  if (typeof value !== "object" || value === null || !("at" in value)) throw new Error("The stage timeline returned no time");
-  return typeof value.at === "number" ? value.at : null;
+  const backstopMs = withinMs + RUNNER_BACKSTOP_MS;
+  const recorded = async (): Promise<number | null> => {
+    const handle = await page.waitForFunction(([key, limit]) => {
+      const recorder = window.__stageTimeline;
+      if (recorder === undefined) return false;
+      const at = recorder[key];
+      if (at !== null) return { at };
+      return recorder.elapsed() > limit ? { at: null } : false;
+    }, [milestone, withinMs] as const, { timeout: backstopMs, polling: 100 });
+    const value: unknown = await handle.jsonValue();
+    await handle.dispose();
+    if (typeof value !== "object" || value === null || !("at" in value)) throw new Error("The stage timeline returned no time");
+    return typeof value.at === "number" ? value.at : null;
+  };
+  try {
+    return await answerWithin(recorded(), backstopMs);
+  } catch (error) {
+    if (!(error instanceof PageSilent) && !(error instanceof errors.TimeoutError)) throw error;
+    // eslint-disable-next-line no-console -- deliberate: CARD-A2 failure evidence in the runner output
+    console.log(`[CARD-A2] no ${milestone} from the page within ${String(backstopMs)} ms on the runner's clock: the page stopped answering, or its stage recorder never installed`);
+    return null;
+  }
 }
 
 /** The recorder's state now, without its clock. */
@@ -153,12 +203,75 @@ export async function readStageTimeline(page: Page): Promise<StageTimeline | nul
 }
 
 /**
- * Attaches the stage timeline, the navigation's timing and the ten slowest
- * requests, and prints one line of them: a full re-run deletes the failing
- * attempt's artifacts, and the job log is what survives.
+ * The Playwright worker's own event-loop delay while it was watched, ms. Each
+ * sample is the time between two of the monitor's ticks, so an idle loop reads
+ * about one tick (more on Windows' coarse timers: 25-33 ms here at 20 ms ticks),
+ * and a loop blocked for N ms reads about N (1 000 ms measured as 1 016).
  */
-export async function attachStageEvidence(page: Page, testInfo: TestInfo, label: string): Promise<void> {
-  const evidence = await page.evaluate(() => {
+export interface WorkerLoopDelay {
+  /** The longest the worker's loop ran late: a stalled worker shows here. */
+  readonly maxMs: number;
+  readonly p99Ms: number;
+  readonly meanMs: number;
+  /** Delays sampled (one per resolution tick while the loop ran). */
+  readonly samples: number;
+  /** How long it was watched, ms. */
+  readonly watchedMs: number;
+}
+
+export interface WorkerLoopWatch {
+  /** The delays so far. */
+  readonly read: () => WorkerLoopDelay;
+  /** Stops watching; the delays over the whole watch. */
+  readonly stop: () => WorkerLoopDelay;
+}
+
+/** The worker's loop is sampled this often, ms (Node's default is 10). */
+const LOOP_RESOLUTION_MS = 20;
+
+/** Starts timing the Playwright worker's own event loop (perf_hooks.monitorEventLoopDelay). */
+export function watchWorkerEventLoop(): WorkerLoopWatch {
+  const histogram = monitorEventLoopDelay({ resolution: LOOP_RESOLUTION_MS });
+  const startedAt = performance.now();
+  histogram.enable();
+  const ms = (nanoseconds: number): number => Math.round(nanoseconds / 1e5) / 10;
+  const read = (): WorkerLoopDelay => {
+    const samples = histogram.count;
+    return {
+      maxMs: samples === 0 ? 0 : ms(histogram.max),
+      p99Ms: samples === 0 ? 0 : ms(histogram.percentile(99)),
+      meanMs: samples === 0 ? 0 : ms(histogram.mean),
+      samples,
+      watchedMs: Math.round(performance.now() - startedAt),
+    };
+  };
+  return {
+    read,
+    stop: () => {
+      histogram.disable();
+      return read();
+    },
+  };
+}
+
+/** One line of a worker's loop delay, for the job log. */
+export function describeWorkerLoop(delay: WorkerLoopDelay): string {
+  return `worker loop delay max ${String(delay.maxMs)}ms p99 ${String(delay.p99Ms)}ms mean ${String(delay.meanMs)}ms (${String(delay.samples)} ${String(LOOP_RESOLUTION_MS)} ms ticks over ${String(delay.watchedMs)}ms)`;
+}
+
+/** How long the evidence waits for the page to answer: a page that stopped running must not hide why. */
+const PAGE_ANSWER_MS = 10_000;
+
+/**
+ * Attaches the stage timeline, the navigation's timing, the ten slowest
+ * requests and the worker's own loop delay, and prints one line of them: a
+ * full re-run deletes the failing attempt's artifacts, and the job log is
+ * what survives. It never throws: a page that crashed or stopped answering is
+ * reported as such, and the case's own assertion still says what failed.
+ */
+export async function attachStageEvidence(page: Page, testInfo: TestInfo, label: string, workerLoop?: WorkerLoopWatch): Promise<void> {
+  const loop = workerLoop?.read() ?? null;
+  const answer = await answerWithin(page.evaluate(() => {
     const round = (value: number): number => Math.round(value);
     const recorder = window.__stageTimeline;
     const navigation = performance.getEntriesByType("navigation")[0];
@@ -182,9 +295,27 @@ export async function attachStageEvidence(page: Page, testInfo: TestInfo, label:
       resources: resources.length,
       slowest,
     };
-  });
-  await testInfo.attach(`${label}.timing.json`, { body: JSON.stringify(evidence, null, 2), contentType: "application/json" });
+  }), PAGE_ANSWER_MS).then(
+    (evidence) => ({ evidence, unavailable: null }),
+    (error: unknown) => ({ evidence: null, unavailable: (error instanceof Error ? error.message : String(error)).split("\n")[0] ?? "" }),
+  );
+  try {
+    await testInfo.attach(`${label}.timing.json`, {
+      body: JSON.stringify({ ...(answer.evidence ?? { unavailable: answer.unavailable }), workerEventLoop: loop }, null, 2),
+      contentType: "application/json",
+    });
+  } catch (error) {
+    // eslint-disable-next-line no-console -- deliberate: CARD-A2 timing evidence in the runner output
+    console.log(`[CARD-A2 ${label}] could not attach the evidence: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  const worker = loop === null ? "" : `; ${describeWorkerLoop(loop)}`;
+  const evidence = answer.evidence;
+  if (evidence === null) {
+    // eslint-disable-next-line no-console -- deliberate: CARD-A2 timing evidence in the runner output
+    console.log(`[CARD-A2 ${label}] page unavailable (${answer.unavailable})${worker}`);
+    return;
+  }
   const slow = evidence.slowest.slice(0, 3).map((entry) => `${entry.name.slice(-60)} ${String(entry.duration)}ms@${String(entry.startTime)}`).join(", ");
   // eslint-disable-next-line no-console -- deliberate: CARD-A2 timing evidence in the runner output
-  console.log(`[CARD-A2 ${label}] page ${JSON.stringify(evidence.timeline)} nav ${JSON.stringify(evidence.navigation)} resources ${String(evidence.resources)}; slowest: ${slow}`);
+  console.log(`[CARD-A2 ${label}] page ${JSON.stringify(evidence.timeline)} nav ${JSON.stringify(evidence.navigation)} resources ${String(evidence.resources)}; slowest: ${slow}${worker}`);
 }
