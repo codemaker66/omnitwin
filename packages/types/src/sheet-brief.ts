@@ -370,3 +370,28 @@ export function otherMeals(dietary: DietarySummary | null): string | null {
   ] as const).filter(([count]) => count > 0).map(([count, word]) => `${String(count)} ${word}`);
   return parts.length === 0 ? null : parts.join(" · ");
 }
+
+/** A label as a pattern that matches it only as a whole phrase, in any case. */
+function wholePhrase(label: string): RegExp {
+  const escaped = label.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+  return new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, "iu");
+}
+
+/** The plan's tables the care words name ("Table 5, seat 4: …", "go on table
+ *  3"), by the planner's own labels, so the plan can ring where care is needed.
+ *  The care words are the ones Keep in view shows: the access needs and the
+ *  allergy notes. A label matches only as a whole phrase in any case, so
+ *  "Table 1" never rings because of "Table 10"; only tables are ringed. */
+export function careTables(sheet: HallkeeperSheetV2): ReadonlySet<string> {
+  const ringed = new Set<string>();
+  const plan = sheet.floorPlan ?? null;
+  const instructions = sheet.instructions;
+  const words = [...accessNeeds(instructions?.accessibility ?? null), allergyFacts(instructions?.dietary ?? null)?.notes ?? ""].join("\n");
+  if (plan === null || words.trim().length === 0) return ringed;
+  for (const object of plan.objects) {
+    const label = object.label?.trim() ?? "";
+    if (object.category !== "table" || label.length === 0) continue;
+    if (wholePhrase(label).test(words)) ringed.add(label);
+  }
+  return ringed;
+}

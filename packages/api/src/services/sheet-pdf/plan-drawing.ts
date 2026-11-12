@@ -44,11 +44,22 @@ function tracePath(doc: Doc, points: readonly { readonly x: number; readonly y: 
   doc.closePath();
 }
 
+/** How far a care ring reaches beyond its table's own edge: past the chairs set round it. */
+const RING_REACH_M = 0.7;
+
 /**
- * Draw the plan inside `box`, wall names in a band round it. Returns the
- * scale (for the scale bar) and whether any planner's name was printed.
+ * Draw the plan inside `box`, wall names in a band round it. A table whose
+ * label is in `ringed` (the tables the care words name) wears a brick ring
+ * round it and its chairs. Returns the scale (for the scale bar) and whether
+ * any planner's name was printed.
  */
-export function drawSheetPlan(doc: Doc, plan: HallkeeperFloorPlan, box: PlanViewport, markers: ReadonlyMap<string, number>): { pointsPerMetre: number; named: boolean } {
+export function drawSheetPlan(
+  doc: Doc,
+  plan: HallkeeperFloorPlan,
+  box: PlanViewport,
+  markers: ReadonlyMap<string, number>,
+  ringed: ReadonlySet<string> = new Set(),
+): { pointsPerMetre: number; named: boolean } {
   const drawing = projectHallkeeperFloorPlan(plan, {
     x: box.x + WALL_BAND, y: box.y + WALL_BAND, width: box.width - WALL_BAND * 2, height: box.height - WALL_BAND * 2,
   });
@@ -70,6 +81,13 @@ export function drawSheetPlan(doc: Doc, plan: HallkeeperFloorPlan, box: PlanView
       tracePath(doc, piece.corners);
     }
     doc.fillAndStroke(style.fill, style.stroke).restore();
+  }
+
+  for (const piece of drawing.objects) {
+    const label = piece.object.label?.trim() ?? "";
+    if (piece.object.category !== "table" || !ringed.has(label)) continue;
+    const radius = Math.max(piece.width, piece.depth) / 2 + RING_REACH_M * drawing.pointsPerMetre;
+    doc.save().circle(piece.center.x, piece.center.y, radius).lineWidth(1.1).strokeColor(INK.alert).stroke().restore();
   }
 
   let named = false;

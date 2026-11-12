@@ -5,19 +5,23 @@ import {
   withPrintedAt,
 } from "@omnitwin/types";
 import { incrementCounter, observeHistogram } from "../observability/metrics.js";
-import { brief, facts, footers, header, keepInView, martynsLaw, room, setupSteps, signOff, type CopyMarks } from "./sheet-pdf/blocks.js";
+import { brief, facts, footers, header, martynsLaw, setupPage, signOff, type CopyMarks } from "./sheet-pdf/blocks.js";
 import { Flow, PAGE_OPTIONS } from "./sheet-pdf/flow.js";
 import { registerSheetFonts } from "./sheet-pdf/fonts.js";
 
 // ---------------------------------------------------------------------------
-// The hallkeeper sheet, portrait A4: "the brief, then the room" (design:
-// docs/superpowers/specs/2026-10-18-hallkeeper-sheet-redesign-design.md).
+// The hallkeeper sheet, portrait A4: A, then D (Blake's choice of 6 November
+// 2026; design: docs/superpowers/specs/2026-11-06-hallkeeper-sheet-a-d-f-design.md).
 //
-// Page 1 is the day: when the room must be ready, what to keep in view, the
-// day in order and what to bring from the store, then the planner's words.
-// The room follows, on page 1 when it fits at a readable size: the plan with
-// the planner's table names and numbered notes, then the setup step by step,
-// the sign-off and the Martyn's Law prompts. Every page says which copy it is.
+// Page 1 is the brief with the room: when the room must be ready and when the
+// guests come in, then two columns. One holds the plan, who to call and the
+// day in order; the other holds what to keep in view (care tables ringed on
+// the plan) and what to bring from the store. The planner's words follow when
+// page 1 has room. The setup to tick comes next: under the brief when it fits
+// there whole, otherwise on its own page with a progress rail, the planner's
+// words page 1 had no room for, and the steps beside a rail of what to keep in
+// view. The sign-off and the Martyn's Law prompts close it. Every page says
+// which copy it is.
 //
 // Rendered per signed-in request and never stored (routes/hallkeeper-sheet.ts):
 // the sheet can carry allergy and access notes.
@@ -64,10 +68,8 @@ export async function generateSheetPdfV2(data: HallkeeperSheetV2): Promise<Buffe
       const flow = new Flow(doc);
       header(flow, data, marks);
       facts(flow, data);
-      keepInView(flow, data);
-      brief(flow, data);
-      room(flow, data);
-      setupSteps(flow, data);
+      const plannerNotesLeft = brief(flow, data);
+      setupPage(flow, data, plannerNotesLeft);
       signOff(flow);
       martynsLaw(flow, data);
       footers(doc, data, marks.copyLine);

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import PDFDocument from "pdfkit";
 import { registerSheetFonts } from "../services/sheet-pdf/fonts.js";
-import { TYPE, drawLine, textWidth, wrapLines } from "../services/sheet-pdf/style.js";
+import { TYPE, balancedLines, drawLine, textWidth, wrapLines } from "../services/sheet-pdf/style.js";
 import { pdfPages } from "./helpers/pdf-text.js";
 
 // The sheet wraps its own text, so a planner's pasted link or a paragraph of
@@ -38,6 +38,38 @@ describe("wrapLines on text without spaces", () => {
     const lines = wrapLines(d, TYPE.paragraph, text, 40);
     expect(lines.join("")).toBe(text);
     for (const line of lines) expect(line).not.toMatch(/^[\uDC00-\uDFFF]|[\uD800-\uDBFF]$/u);
+    d.end();
+  });
+});
+
+describe("lines a reader takes in at a glance", () => {
+  it("keeps a middle dot with the word before it, so no line starts with one", () => {
+    const d = doc();
+    const text = "Other meals: 14 vegetarian · 4 vegan · 3 halal · 2 kosher";
+    for (let width = 60; width <= 300; width += 4) {
+      const lines = wrapLines(d, TYPE.bodyDim, text, width);
+      expect(lines.join(" ")).toBe(text);
+      for (const line of lines) expect(line.startsWith("·"), `${String(width)} pt: "${line}"`).toBe(false);
+    }
+    d.end();
+  });
+
+  it("evens out a short last line, keeping the line count and the width", () => {
+    const d = doc();
+    const text = "severe peanut allergy, carries an adrenaline pen.";
+    const plain = wrapLines(d, TYPE.careWords, text, 178);
+    const even = balancedLines(d, TYPE.careWords, text, 178);
+    expect(plain).toHaveLength(2);
+    expect(even).toHaveLength(2);
+    expect(even.join(" ")).toBe(text);
+    expect(textWidth(d, TYPE.careWords, even[1] ?? "")).toBeGreaterThan(textWidth(d, TYPE.careWords, plain[1] ?? ""));
+    for (const line of even) expect(textWidth(d, TYPE.careWords, line)).toBeLessThanOrEqual(178);
+    d.end();
+  });
+
+  it("leaves a single line as it is", () => {
+    const d = doc();
+    expect(balancedLines(d, TYPE.careWords, "two guests coeliac.", 178)).toEqual(["two guests coeliac."]);
     d.end();
   });
 });

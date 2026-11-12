@@ -206,6 +206,12 @@ export function pdfPages(buf: Buffer): PdfLine[][] {
   });
 }
 
+/** Each page's content stream, inflated, as latin1 text: its drawing operators in order. */
+export function pdfPageContents(buf: Buffer): string[] {
+  const objects = objectsOf(buf);
+  return pageIds(objects).map((id) => pdfStream(objects.get(refOf(objects.get(id) ?? "", "Contents") ?? "") ?? ""));
+}
+
 export interface PdfRule {
   /** Left and right ends, PDF points from the page's left. */
   readonly x: number;

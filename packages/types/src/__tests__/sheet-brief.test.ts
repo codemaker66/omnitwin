@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { HallkeeperSheetV2, ManifestRowV2 } from "../hallkeeper-v2.js";
 import type { EventInstructions } from "../hallkeeper-instructions.js";
 import {
+  careTables,
   formatTableLabels,
   accessNeeds,
   allergyFacts,
@@ -296,5 +297,43 @@ describe("sheetSetupSteps: table numbers", () => {
     const [item] = steps[0]?.items ?? [];
     expect(item?.labels).toEqual(["Table 1", "Table 2", "Table 3"]);
     expect(formatTableLabels(item?.labels ?? [])).toBe("Tables 1–3");
+  });
+});
+
+describe("careTables: the tables the care words name, for the plan to ring", () => {
+  const tables = ["Table 1", "Table 3", "Table 5", "Table 9", "Table 10", "Top table"];
+  const plan = (labels: readonly string[]) => ({
+    coordinateSpace: "real_m_v1" as const,
+    outline: [{ x: 0, z: 0 }, { x: 21, z: 0 }, { x: 21, z: 10.5 }, { x: 0, z: 10.5 }],
+    objects: [
+      ...labels.map((label, index) => plannedObject(index + 1, "6ft Round Table", "table", index, 0, { label })),
+      plannedObject(99, "Bar", "bar", 20, 10, { label: "Bar" }),
+    ],
+  });
+  const careSheet = (accessNotes: string, otherAllergies: string, labels: readonly string[] = tables) => sheet({
+    floorPlan: plan(labels),
+    instructions: {
+      ...EMPTY_INSTRUCTIONS,
+      accessibility: { hearingLoopRequired: false, hearingLoopZone: null, wheelchairSpaces: 1, stepFreeRouteRequired: true, signLanguageInterpreter: false, largePrintProgrammes: 0, notes: accessNotes },
+      dietary: { vegetarian: 0, vegan: 0, glutenFree: 0, nutFree: 0, halal: 0, kosher: 0, otherAllergies },
+    },
+  });
+
+  it("rings each table the access and allergy words name, by its planner label", () => {
+    const ringed = careTables(careSheet("Large-print orders of service go on table 3.", "Table 5, seat 4: severe peanut allergy. Table 9: two guests coeliac."));
+    expect([...ringed].sort()).toEqual(["Table 3", "Table 5", "Table 9"]);
+  });
+
+  it("matches a label only as a whole phrase, so Table 10 does not ring Table 1", () => {
+    expect([...careTables(careSheet("", "Table 10: nut allergy at seat 2."))]).toEqual(["Table 10"]);
+  });
+
+  it("rings a named table such as the top table, but never a piece that is not a table", () => {
+    expect([...careTables(careSheet("Bar staff know the top table has a coeliac guest.", ""))]).toEqual(["Top table"]);
+  });
+
+  it("rings nothing without a plan or without care words", () => {
+    expect(careTables(sheet({ floorPlan: plan(tables), instructions: EMPTY_INSTRUCTIONS })).size).toBe(0);
+    expect(careTables({ ...careSheet("", "Table 5: nut allergy."), floorPlan: null }).size).toBe(0);
   });
 });

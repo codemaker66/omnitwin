@@ -27,6 +27,10 @@ export const INK = {
   tableFill: WORKSPACE_COLOURS["sheet-hover"],
   stageFill: WORKSPACE_COLOURS["slate-wash"],
   chairLine: WORKSPACE_COLOURS["slate-dot"],
+  /** Keep in view on page 1: the care panel's wash. */
+  brickWash: WORKSPACE_COLOURS["brick-wash"],
+  /** The rail beside the setup steps. */
+  rail: WORKSPACE_COLOURS.sheet,
 } as const;
 
 export const PAGE = {
@@ -92,6 +96,22 @@ export const TYPE = {
   storeGroup: { face: "Inter-SemiBold", size: 7.6, color: INK.quiet },
   contactName: { face: "Inter-SemiBold", size: 10, color: INK.primary, lineGap: 0.5 },
   phone: { face: "Inter-Medium", size: 11, color: INK.primary, tnum: true },
+  // Keep in view: a care fact's place in ink, its words in brick.
+  carePlace: { face: "Inter-SemiBold", size: 9, color: INK.primary, lineGap: 1 },
+  careWords: { face: "Inter-Regular", size: 9, color: INK.alert, lineGap: 1 },
+  phoneLarge: { face: "Inter-Medium", size: 13, color: INK.primary, tnum: true },
+  // The setup's progress rail (D).
+  railMark: { face: "Inter-SemiBold", size: 9, color: INK.primary, tnum: true },
+  railLabel: { face: "Inter-Medium", size: 8.2, color: INK.secondary },
+  railLabelAccent: { face: "Inter-SemiBold", size: 8.2, color: INK.accent },
+  railTime: { face: "Newsreader-Regular", size: 12, color: INK.accent, tnum: true },
+  railTimeQuiet: { face: "Newsreader-Regular", size: 12, color: INK.quiet, tnum: true },
+  // A setup step's head (D).
+  stepNumeral: { face: "Newsreader-DisplayLight", size: 30, color: INK.accent, tnum: true },
+  stepName: { face: "Newsreader-Regular", size: 15, color: INK.primary },
+  stepDeadline: { face: "Newsreader-Regular", size: 13, color: INK.accent, tnum: true },
+  stepDeadlineAlert: { face: "Newsreader-Regular", size: 13, color: INK.alert, tnum: true },
+  stepReason: { face: "Newsreader-Italic", size: 9.4, color: INK.secondary, lineGap: 0.5 },
 } as const satisfies Record<string, TextStyle>;
 
 /** The string as it prints: upper-cased overlines. */
@@ -210,8 +230,14 @@ export function wrapLines(doc: Doc, style: TextStyle, text: string, width: numbe
   const out: string[] = [];
   const fits = (candidate: string): boolean => textWidth(doc, style, candidate) <= width;
   for (const paragraph of printed(style, text).split(/\r?\n/u)) {
-    let line = "";
+    // A middle dot keeps to the word before it, so no line starts with one.
+    const words: string[] = [];
     for (const word of paragraph.split(/\s+/u).filter((part) => part.length > 0)) {
+      if (word === "·" && words.length > 0) words[words.length - 1] = `${words[words.length - 1] ?? ""} ·`;
+      else words.push(word);
+    }
+    let line = "";
+    for (const word of words) {
       const candidate = line.length === 0 ? word : `${line} ${word}`;
       if (fits(candidate)) { line = candidate; continue; }
       if (line.length > 0) out.push(line);
@@ -224,6 +250,24 @@ export function wrapLines(doc: Doc, style: TextStyle, text: string, width: numbe
   }
   cache.set(key, out);
   return out;
+}
+
+/**
+ * The text wrapped with its lines evened out: the narrowest width that keeps
+ * the line count `width` gives, so a short last word never sits alone. Text
+ * on one line stays as it is.
+ */
+export function balancedLines(doc: Doc, style: TextStyle, text: string, width: number): readonly string[] {
+  const lines = wrapLines(doc, style, text, width);
+  if (lines.length < 2) return lines;
+  let low = width / 2;
+  let high = width;
+  for (let step = 0; step < 8; step++) {
+    const middle = (low + high) / 2;
+    if (wrapLines(doc, style, text, middle).length === lines.length) high = middle;
+    else low = middle;
+  }
+  return wrapLines(doc, style, text, high);
 }
 
 export function blockHeight(doc: Doc, style: TextStyle, text: string, width: number): number {
