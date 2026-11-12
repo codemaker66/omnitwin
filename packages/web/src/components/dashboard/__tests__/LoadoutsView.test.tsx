@@ -391,6 +391,66 @@ describe("LoadoutDetail keeps what is typed and says what a delete does", () => 
     fireEvent.click(screen.getByRole("button", { name: "Remove main.jpg" }));
     fireEvent.click(within(screen.getByRole("dialog", { name: "Remove Photo" })).getByRole("button", { name: "Remove" }));
     await waitFor(() => { expect(mocks.deletePhoto).toHaveBeenCalledWith(LOADOUT_ID, PHOTO_ID); });
+    await waitFor(() => { expect(screen.queryByRole("dialog", { name: "Remove Photo" })).toBeNull(); });
+  });
+
+  // Review of #412 (L1): a confirm already open when another change starts
+  // (here an upload finishing and linking) waits and says so; it is never
+  // dropped by the busy guard.
+  it("holds an open Remove Photo confirm while an upload links, then removes", async () => {
+    let finishLink: (photo: LoadoutPhoto) => void = () => undefined;
+    mocks.addPhoto.mockReturnValueOnce(new Promise<LoadoutPhoto>((resolve) => { finishLink = resolve; }));
+    renderDetail();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Remove main.jpg" }));
+    const dialog = screen.getByRole("dialog", { name: "Remove Photo" });
+    fireEvent.click(screen.getByRole("button", { name: "Mock upload" }));
+    await waitFor(() => { expect(mocks.addPhoto).toHaveBeenCalledTimes(1); });
+
+    const confirm = within(dialog).getByRole<HTMLButtonElement>("button", { name: "Remove" });
+    expect(confirm.disabled).toBe(true);
+    expect(within(dialog).getByRole("status").textContent).toContain("Waiting for the other change to save");
+    expect(within(dialog).getByRole<HTMLButtonElement>("button", { name: "Cancel" }).disabled).toBe(false);
+
+    finishLink(photoFixture({ id: "00000000-0000-4000-8000-000000008007", filename: "uploaded.jpg", sortOrder: 1 }));
+    await waitFor(() => {
+      expect(within(screen.getByRole("dialog", { name: "Remove Photo" })).getByRole<HTMLButtonElement>("button", { name: "Remove" }).disabled).toBe(false);
+    });
+    expect(within(screen.getByRole("dialog", { name: "Remove Photo" })).queryByRole("status")).toBeNull();
+    fireEvent.click(within(screen.getByRole("dialog", { name: "Remove Photo" })).getByRole("button", { name: "Remove" }));
+    await waitFor(() => { expect(mocks.deletePhoto).toHaveBeenCalledWith(LOADOUT_ID, PHOTO_ID); });
+    await waitFor(() => { expect(screen.queryByRole("dialog", { name: "Remove Photo" })).toBeNull(); });
+  });
+
+  it("holds an open Delete Loadout confirm while an upload links, then deletes", async () => {
+    let finishLink: (photo: LoadoutPhoto) => void = () => undefined;
+    mocks.addPhoto.mockReturnValueOnce(new Promise<LoadoutPhoto>((resolve) => { finishLink = resolve; }));
+    const onDeleted = vi.fn();
+    render(
+      <LoadoutDetail
+        venueId={VENUE_ID}
+        spaceId={SPACE_ID}
+        loadoutId={LOADOUT_ID}
+        onBack={() => undefined}
+        onDeleted={onDeleted}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Delete Loadout" }));
+    const dialog = screen.getByRole("dialog", { name: "Delete Loadout" });
+    fireEvent.click(screen.getByRole("button", { name: "Mock upload" }));
+    await waitFor(() => { expect(mocks.addPhoto).toHaveBeenCalledTimes(1); });
+
+    expect(within(dialog).getByRole<HTMLButtonElement>("button", { name: "Delete" }).disabled).toBe(true);
+    expect(within(dialog).getByRole("status").textContent).toContain("Waiting for the other change to save");
+
+    finishLink(photoFixture({ id: "00000000-0000-4000-8000-000000008007", filename: "uploaded.jpg", sortOrder: 1 }));
+    await waitFor(() => {
+      expect(within(screen.getByRole("dialog", { name: "Delete Loadout" })).getByRole<HTMLButtonElement>("button", { name: "Delete" }).disabled).toBe(false);
+    });
+    fireEvent.click(within(screen.getByRole("dialog", { name: "Delete Loadout" })).getByRole("button", { name: "Delete" }));
+    await waitFor(() => { expect(mocks.deleteLoadout).toHaveBeenCalledWith(VENUE_ID, SPACE_ID, LOADOUT_ID); });
+    expect(onDeleted).toHaveBeenCalledTimes(1);
   });
 
   it("says a deleted loadout's photos are kept, not that it cannot be undone", async () => {

@@ -63,6 +63,10 @@ const linkButtonStyle: React.CSSProperties = {
   fontFamily: "inherit",
 };
 
+// Said in a confirm that is open while another change saves (an upload
+// linking, a reorder, a caption): the confirm waits instead of being dropped.
+const OTHER_CHANGE_SAVING = "Waiting for the other change to save";
+
 export function LoadoutDetail({ venueId, spaceId, loadoutId, onBack, onDeleted }: LoadoutDetailProps): React.ReactElement {
   const [loadout, setLoadout] = useState<LoadoutDetailData | null>(null);
   const [loadState, setLoadState] = useState<DetailLoadState>("loading");
@@ -468,6 +472,7 @@ export function LoadoutDetail({ venueId, spaceId, loadoutId, onBack, onDeleted }
           message={`Delete "${loadout.name}"? It stops showing among this room's loadouts. Its photos are kept, not erased.`}
           confirmLabel="Delete"
           inFlight={busyAction === "delete-loadout"}
+          waitingMessage={busyAction !== null && busyAction !== "delete-loadout" ? OTHER_CHANGE_SAVING : null}
           errorMessage={actionError}
           onConfirm={() => { void handleDeleteLoadout(); }}
           onCancel={() => { setShowDelete(false); }}
@@ -480,6 +485,7 @@ export function LoadoutDetail({ venueId, spaceId, loadoutId, onBack, onDeleted }
           message="Remove this photo from the loadout? The file will not be deleted from storage."
           confirmLabel="Remove"
           inFlight={busyAction?.startsWith("delete-photo:") === true}
+          waitingMessage={busyAction !== null && !busyAction.startsWith("delete-photo:") ? OTHER_CHANGE_SAVING : null}
           errorMessage={actionError}
           onConfirm={() => { void handleDeletePhoto(showDeletePhoto); }}
           onCancel={() => { setShowDeletePhoto(null); }}
