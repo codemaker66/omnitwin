@@ -105,7 +105,10 @@ describe("the route error boundary", () => {
     expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
     expect(screen.queryByText(RAW_PAGE)).toBeNull();
     expect(reload).not.toHaveBeenCalled();
-    expect(captureBoundaryErrorMock).toHaveBeenCalledTimes(1);
+    // The fallback reports from an effect, and the lazy import's rejection
+    // commits outside act(), so the screen can be drawn a moment before the
+    // report is sent (#410's CI, 12 Nov 2026). Wait for it; still exactly once.
+    await vi.waitFor(() => { expect(captureBoundaryErrorMock).toHaveBeenCalledTimes(1); }, LOAD_WAIT);
   });
 
   it("reloads again for a later deploy, once the guard is over a minute old", async () => {

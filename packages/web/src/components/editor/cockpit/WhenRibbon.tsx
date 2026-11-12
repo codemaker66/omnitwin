@@ -305,11 +305,13 @@ function ClientWhenRibbon(): ReactElement | null {
   const anchorMs = own?.startMs ?? draft?.startMs ?? null;
   const date = anchorMs === null ? null : rotaLocalDate(anchorMs, timeZone);
   const roomDay = useRoomDay(eventId, room?.id ?? null, date);
+  // A booking of this event stored without a title (API-9) is named by the event.
+  const eventName = data?.event.name ?? "";
   const day = useMemo(
     () => (roomDay.data === null || room === null
       ? null
-      : buildClientRibbonDay({ spans: roomDay.data.spans, space: room, timeZone, turnaroundMinutes: roomDay.data.turnaroundMinutes, own, draft })),
-    [roomDay.data, room, timeZone, own, draft],
+      : buildClientRibbonDay({ spans: roomDay.data.spans, space: room, timeZone, turnaroundMinutes: roomDay.data.turnaroundMinutes, eventName, own, draft })),
+    [roomDay.data, room, timeZone, eventName, own, draft],
   );
   const refreshBoth = useCallback(() => {
     schedule.refresh();
@@ -687,11 +689,10 @@ function RibbonBody({
         const next = moveRibbonDrag(current, day, already + direction * stepMs, event.shiftKey);
         if (next.proposedStartMs !== current.proposedStartMs || next.proposedEndMs !== current.proposedEndMs) tick();
         setKeyboardDrag(next);
+        const wall = day.ghosts.find((ghost) => ghost.exclusion === "hard")?.title ?? "";
         setAnnouncement(
           next.overshootMs !== 0 && next.mode === "move"
-            ? RIBBON_COPY.announceBlocked(
-                day.ghosts.find((ghost) => ghost.exclusion === "hard")?.title ?? "a confirmed booking",
-              )
+            ? RIBBON_COPY.announceBlocked(wall.trim() === "" ? "a confirmed booking" : wall)
             : RIBBON_COPY.announceMove(rangeLabel(next.proposedStartMs, next.proposedEndMs, timeZone)),
         );
         return;

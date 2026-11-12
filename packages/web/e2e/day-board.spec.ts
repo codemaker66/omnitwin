@@ -3,17 +3,19 @@ import { CalendarResponseSchema, EventPhaseGraphSchema, HallkeeperSheetSummarySc
 import { unreadableText } from "./support/readability.js";
 
 // ---------------------------------------------------------------------------
-// E2E: the Day Board (/hallkeeper/today), goal 19 S3.
+// E2E: the Day Board (/hallkeeper/today), goal 19 S3, read room by room in
+// the desks' register (concept C, 10 November 2026).
 //
 // The board breathes only where the attention system says (D3): a dot on a
-// slab whose moment approaches, the live slab's overlay, a copper ring on a
+// slot whose moment approaches, the live slot's glow, a copper ring on a
 // request nobody owns; every breath shares one epoch phase, and nothing else
 // on the page moves. Its legend is worded as the slots are, every label
 // reads at 12 px and 4.5:1 on both registers, a finished booking keeps its
 // words at full strength, the rooms with nothing on share one line, the
-// arrow keys step the day, a tap opens a slot to its sheet, and reduced
-// motion keeps every word and loses every breath. The calendar is
-// intercepted before transport with the clock fixed at 13:00 on the day.
+// arrow keys step the day, a phone reads every room in one column and opens
+// a slot under its own room, and reduced motion keeps every word and loses
+// every breath. The calendar is intercepted before transport with the clock
+// fixed at 13:00 on the day.
 // ---------------------------------------------------------------------------
 
 const API = "http://localhost:3001";
@@ -192,10 +194,12 @@ test.describe("Day Board", () => {
       await expect(legend.getByText(label, { exact: true })).toBeVisible();
     }
 
-    // One ruler with the present on it, the gaps dimensioned, and the next
-    // action the room nearest its moment.
+    // One sentence of the day, the hours across the rooms with the present
+    // on them, the turn-round before each function whose setup is still
+    // ahead, and the next action the room nearest its moment.
+    await expect(page.locator(".dayboard-summary")).toHaveText("One function is live and two are getting ready.");
     await expect(page.locator(".dayboard-now-plaque")).toHaveText("NOW13:00");
-    await expect(page.locator(".dayboard-gap-words")).toHaveText(["1 h 35", "3 h 30"]);
+    await expect(page.locator(".dayboard-gap-words")).toHaveText(["Turn-round 1 h 35", "Turn-round 3 h 30"]);
     await expect(page.locator(".dayboard-next")).toHaveText("Grand Hall · Doors · 5 min");
 
     // A finished booking keeps its words; a room with nothing on is one name.
@@ -225,31 +229,33 @@ test.describe("Day Board", () => {
     expect(running).toBe(0);
   });
 
-  test("shows one room at a time on a phone, the day running down the screen, and opens a slot to its sheet", async ({ page }) => {
+  test("reads the rooms down a phone in one column, the present on their hours, and opens a slot under its own room", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await openBoard(page);
     await expect(page.getByText("Chamber dinner")).toBeVisible();
 
-    // One lane per screen, swiped between rooms (D7): three rooms in use,
-    // each lane as wide as the screen, the day running down it.
+    // Every room in use in one column (concept C), none wider than the
+    // phone, and the page never wider than the screen.
     await expect(page.locator(".dayboard")).toHaveAttribute("data-layout", "phone");
-    await expect(page.locator(".dayboard-pager button")).toHaveCount(3);
-    const lanes = await page.locator(".dayboard-lanes").evaluate((element) => ({
-      wider: element.scrollWidth > element.clientWidth,
-      first: element.firstElementChild?.getBoundingClientRect().width ?? 0,
-      screen: element.clientWidth,
+    await expect(page.locator(".dayboard-room")).toHaveCount(3);
+    const fit = await page.evaluate(() => ({
+      page: document.documentElement.scrollWidth,
+      screen: window.innerWidth,
+      rooms: [...document.querySelectorAll(".dayboard-room")].map((room) => Math.round(room.getBoundingClientRect().right)),
     }));
-    expect(lanes.wider).toBe(true);
-    expect(Math.round(lanes.first)).toBe(Math.round(lanes.screen));
-    const slab = page.locator(".dayboard-slab[data-state='imminent']");
-    expect((await slab.evaluate((element) => (element as HTMLElement).style.top)).endsWith("%")).toBe(true);
-    await expect(page.getByRole("region", { name: "Grand Hall" }).locator(".dayboard-ruler-v .dayboard-now-plaque")).toHaveText("NOW13:00");
+    expect(fit.page).toBeLessThanOrEqual(fit.screen);
+    for (const right of fit.rooms) expect(right).toBeLessThanOrEqual(fit.screen);
+    // The present on the hours above the rooms and on every room's bar.
+    await expect(page.locator(".dayboard-now-plaque")).toHaveText("NOW13:00");
+    await expect(page.locator(".dayboard-bar-now")).toHaveCount(3);
     expect(await unreadableText(page, ".dayboard", "the phone")).toEqual([]);
 
     await linkTheSheet(page);
     await page.reload();
     await page.getByRole("button", { name: /^Chamber dinner,/u }).click();
     const slot = page.getByRole("region", { name: "Grand Hall: Chamber dinner" });
+    // It unfolds under its own room, not at the foot of the page.
+    await expect(page.locator(".dayboard-room-item").filter({ has: page.locator('[aria-label="Grand Hall"]') }).getByRole("region", { name: "Grand Hall: Chamber dinner" })).toBeVisible();
     await expect(slot.getByRole("link", { name: /Open setup sheet/u })).toHaveAttribute("href", `/hallkeeper/${LAYOUT}?eventId=${EVENT}`);
     await expect(slot.getByText("Ready by 16:00 · 12 of 43 checked")).toBeVisible();
     const filled = await slot.locator(".dayboard-slot-progress-bar > span").evaluate((bar) => bar.getBoundingClientRect().width / (bar.parentElement?.getBoundingClientRect().width ?? 1));
