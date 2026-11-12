@@ -8,7 +8,13 @@ import {
   type ReactElement,
 } from "react";
 import { prefersReducedMotion } from "../reduced-motion.js";
-import { lookUpRoom, metres, ROOM_TRUTH_PROVENANCE, type VerifiedRoom } from "./twin-rooms.js";
+import {
+  lookUpRoom,
+  metres,
+  ROOM_TRUTH_PROVENANCE,
+  VERIFIED_ROOM_NODES,
+  type VerifiedRoom,
+} from "./twin-rooms.js";
 import "./room-dossier.css";
 
 // -----------------------------------------------------------------------------
@@ -203,7 +209,10 @@ const STAT_LABEL_DINNER = "Dinner";
 export const STAT_LABEL_CEILING = "Ceiling";
 
 /** A figure, the quiet word for it, and its qualifier where one exists (what
- *  the Grand Hall's measured height is to, with the dome above part of it). */
+ *  the Grand Hall's measured height is to). The qualifier stays a few words:
+ *  the stat column is narrow, and a longer note wrapped to four lines on a
+ *  desktop and was cut through by the landscape-phone fold. The room's remark
+ *  (the Grand Hall's dome) is a sentence, so it leads the footnote instead. */
 interface DossierStat {
   readonly key: string;
   readonly label: string;
@@ -235,7 +244,18 @@ export function allRoomDossierCopy(): readonly string[] {
     STAT_LABEL_CEILING,
     twinDossierActionLabel("Grand Hall"),
     twinDossierArrival("Grand Hall", "Trades Hall Glasgow"),
+    ...roomRemarks(),
   ];
+}
+
+/** Every remark a verified room's footnote can lead with, once each. */
+function roomRemarks(): readonly string[] {
+  const remarks = new Set<string>();
+  for (const nodeId of Object.keys(VERIFIED_ROOM_NODES)) {
+    const remark = lookUpRoom(nodeId)?.dimensions?.remark;
+    if (remark !== undefined) remarks.add(remark);
+  }
+  return [...remarks];
 }
 
 export interface RoomDossierProps {
@@ -474,6 +494,9 @@ export function RoomDossier({
       note: dimensions.note,
     });
   }
+  // The sentence that goes with the figures but not beside them: the Grand
+  // Hall's dome. It leads the footnote, straight under the Ceiling stat.
+  const remark = dimensions?.remark;
 
   const cardClass = [
     "vv-twin-dossier-card",
@@ -589,7 +612,18 @@ export function RoomDossier({
                   </div>
                 ))}
               </dl>
-              <p className="vv-twin-dossier-footnote">{TWIN_DOSSIER_FOOTNOTE}</p>
+              <p className="vv-twin-dossier-footnote">
+                {/* The remark is its own element so the provenance after it
+                    stays the venue-truth constant, verbatim; the space between
+                    them is DOM text for the same reason as the stat note's
+                    separator above. */}
+                {remark !== undefined && (
+                  <>
+                    <span className="vv-twin-dossier-footnote-remark">{remark}</span>{" "}
+                  </>
+                )}
+                {TWIN_DOSSIER_FOOTNOTE}
+              </p>
               {onCompose !== undefined && (
                 <button
                   type="button"

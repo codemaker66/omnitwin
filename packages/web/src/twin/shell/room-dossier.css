@@ -260,8 +260,9 @@
   color: var(--ink, #fbf2df);
 }
 
-/* The venue's own qualifier, e.g. the further height inside the dome. Its
- * leading separator is DOM text, not a margin here — see RoomDossier.tsx. */
+/* The venue's own qualifier, e.g. what the Grand Hall's height is measured to.
+ * Its leading separator is DOM text, not a margin here — see RoomDossier.tsx.
+ * The room's remark (the dome) is not a qualifier: it leads the footnote. */
 .vv-twin-dossier-stat-note {
   color: var(--ink-3, #b9aa8b);
 }
