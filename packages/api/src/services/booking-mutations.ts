@@ -27,6 +27,7 @@ import {
 import { jointlyPromoted, writePromotionNotices, type HoldExit, type PromotionNotice } from "./hold-promotion.js";
 import { bindBookingToEvent, movePhasesWithBooking, syncEventStatus, syncEventStatuses, type BindTarget } from "./event-binding.js";
 import { lockLiveRoom } from "./room-liveness.js";
+import { recordBookingMove } from "./booking-move-feed.js";
 
 // ---------------------------------------------------------------------------
 // Booking mutation cores (T-537; Canon §9) — extracted VERBATIM from the
@@ -564,6 +565,18 @@ async function updateBookingLocked(
       eventId: row.eventId,
       from: { spaceId: row.spaceId, startsAt: row.startsAt, endsAt: row.endsAt },
       to: { spaceId: updated.spaceId, startsAt: updated.startsAt },
+    });
+    // The floor reads the move on the Day Board until someone acknowledges it
+    // (services/booking-move-feed.ts). Recorded with the move, so a moved
+    // booking always carries its change.
+    await recordBookingMove(conn, {
+      bookingId: row.id,
+      eventId: row.eventId,
+      venueId: updated.venueId,
+      actor,
+      before: { spaceId: row.spaceId, startsAt: row.startsAt, endsAt: row.endsAt },
+      after: { spaceId: updated.spaceId, startsAt: updated.startsAt, endsAt: updated.endsAt },
+      now: new Date(),
     });
   }
   if (updated.eventId !== row.eventId || timesChanged) await syncEventStatuses(conn, [row.eventId, updated.eventId]);

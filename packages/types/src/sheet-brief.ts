@@ -182,7 +182,9 @@ export interface SetupStep {
   readonly items: readonly SetupItem[];
 }
 
-const WITH_CHAIRS = /^(.*) with (\d+) chairs?$/u;
+/** A table row the generator folds its seated chairs into: "6ft Round Table
+ *  with 10 chairs" is the table's name and the chairs at each one. */
+export const WITH_CHAIRS = /^(.*) with (\d+) chairs?$/u;
 const NOTE_SEPARATOR = " · ";
 
 interface ItemDraft {

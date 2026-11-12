@@ -191,6 +191,16 @@ function requestParts(lanes: readonly DayBoardLane[], unowned: readonly UnownedR
   ];
 }
 
+/** The rooms with a change nobody on the floor has acknowledged yet: an
+ *  event edit, a phase or a booking moved since anyone looked. */
+function changedParts(rooms: readonly string[]): readonly SummaryPart[] {
+  const only = rooms[0];
+  if (only === undefined) return [];
+  if (rooms.length === 1) return [{ strong: only, tone: "copper" }, " has a change to read."];
+  const names = rooms.length > 3 ? "" : `: ${listed(rooms)}`;
+  return [{ strong: `${countWord(rooms.length)} rooms`, tone: "copper" }, ` have changes to read${names}.`];
+}
+
 /** Functions, as the plane counts them: a room can hold a live function and
  *  the next one getting ready, and both are said. */
 function activityParts(lanes: readonly DayBoardLane[]): readonly SummaryPart[] {
@@ -218,16 +228,20 @@ function sentences(clauses: readonly (readonly SummaryPart[])[]): readonly Summa
 /**
  * One sentence of what matters on the day shown, or null when nothing is
  * booked (the board says that in its own words). Today it names the rooms at
- * risk, the requests nobody has and how many rooms are live or getting
- * ready; another day says how much is booked and anything already at risk.
+ * risk, the rooms with a change to read, the requests nobody has and how
+ * many rooms are live or getting ready; another day says how much is booked,
+ * anything already at risk and any change to read.
  */
 export function boardSummary(input: {
   readonly lanes: readonly DayBoardLane[];
   readonly unowned: readonly UnownedRequest[];
   readonly today: boolean;
   readonly nowMs: number;
+  /** Rooms with a change to read, in the board's order. */
+  readonly changed?: readonly string[];
 }): readonly SummaryPart[] | null {
   const { lanes, unowned, today, nowMs } = input;
+  const changed = changedParts(input.changed ?? []);
   const bookings = lanes.reduce((sum, lane) => sum + lane.slots.length, 0);
   if (bookings === 0) return null;
   const risk = riskParts(lanes, today);
@@ -236,9 +250,10 @@ export function boardSummary(input: {
     return sentences([
       [{ strong: `${countWord(bookings)} ${plural(bookings, "booking", "bookings")}` }, ` across ${countWord(rooms).toLowerCase()} ${plural(rooms, "room", "rooms")}.`],
       risk,
+      changed,
     ]);
   }
-  const parts = sentences([risk, requestParts(lanes, unowned, nowMs), activityParts(lanes)]);
+  const parts = sentences([risk, changed, requestParts(lanes, unowned, nowMs), activityParts(lanes)]);
   return parts.length === 0 ? null : parts;
 }
 

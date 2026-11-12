@@ -59,6 +59,10 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/socket-sign-in-deadline-postgres.test.ts",
   "src/__tests__/public-mcp-postgres.test.ts",
   "src/__tests__/sheet-paper-check-postgres.test.ts",
+  // What changed, for the floor: a Diary move enters the event's change feed, the Day Board reads it, the floor acknowledges it.
+  "src/__tests__/floor-changes-postgres.test.ts",
+  // What moves at a changeover: two layouts of one room through the real sheet pipeline.
+  "src/__tests__/changeover-postgres.test.ts",
   "src/__tests__/ai-usage-postgres.test.ts",
   // A supplier's reply has a limit of its own: twenty an hour from one address, through the whole app.
   "src/__tests__/supplier-reply-limit-postgres.test.ts",

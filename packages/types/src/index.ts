@@ -440,6 +440,10 @@ export {
   CreateHallkeeperAcknowledgementInputSchema,
   HallkeeperAcknowledgementSchema,
   RecordEventPlanChangeInputSchema,
+  AwaitingAcknowledgementQuerySchema,
+  EventAwaitingAcknowledgementSchema,
+  BOOKING_MOVE_TITLES,
+  isBookingMoveTitle,
   type EventPlanChangeId,
   type EventPlanNotificationId,
   type HallkeeperAcknowledgementId,
@@ -459,6 +463,9 @@ export {
   type CreateHallkeeperAcknowledgementInput,
   type HallkeeperAcknowledgement,
   type RecordEventPlanChangeInput,
+  type AwaitingAcknowledgementQuery,
+  type EventAwaitingAcknowledgement,
+  type BookingMoveTitle,
 } from "./event-plan-lifecycle.js";
 
 // --- ASPIRATIONAL: Canonical Layout Snapshot v0 evidence subject ---
@@ -1456,6 +1463,9 @@ export {
 // One Living Record, first slice: a printed sheet states its version in words
 // and its QR answers only "current" or "superseded" (no sign-in, no content).
 export * from "./sheet-paper-check.js";
+
+// What moves at a changeover: from one booking's layout to the next one's in a room.
+export * from "./changeover.js";
 
 // The hallkeeper's brief derived from a sheet (day in order, store list,
 // setup steps, plan markers, keep-in-view facts), shared by paper and screen.

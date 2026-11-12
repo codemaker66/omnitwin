@@ -360,6 +360,9 @@ describe("deriveDayBoard — a viewing is a show-round, not a set-up (migration 
     // The viewing leaves nothing to clear, and does not hide the dinner's
     // changeover: the next function measures from the dinner, past it.
     expect(next?.gapBefore).toEqual({ minutes: 90, neededMinutes: 90, short: false });
+    // Both turn-rounds run from the dinner: the room as it leaves it.
+    expect([show?.previousBookingId, next?.previousBookingId]).toEqual([BOOKING, BOOKING]);
+    expect(dinner?.previousBookingId).toBeNull();
   });
 
   it("does not cut a function's clear-down short at a viewing", () => {
