@@ -233,8 +233,9 @@ declare global {
       arm: (slug: string) => boolean;
       /**
        * The id of the piece a drag carries right now (a touch lift or a mouse
-       * drag), or null when nothing is carried. A lift the planner refused
-       * still reads mode "lift" but carries nothing; this tells them apart.
+       * drag), or null when nothing is carried: which piece a lift took, where
+       * the mode says only that one did. (A lift the planner refuses turns the
+       * finger to the camera, mode "orbit".)
        */
       carrying: () => string | null;
     };
@@ -557,31 +558,45 @@ export function SelectionSystem(): null {
       if (token !== null && historyGesture.current === token && !isDragging.current) closePointerGesture();
     }
 
-    /** A finger held still on a piece: the piece rises above the finger and follows it, as a mouse drag carries it. */
-    function beginTouchLift(): void {
+    /**
+     * The id the pressed piece goes by now, in the history gesture the lift carries it in; null
+     * when no gesture can open (a history preview holds the layout still).
+     */
+    function liftedPieceId(pressed: string): string | null {
+      const editor = useEditorStore.getState();
+      // The press opened this gesture (onTouchDown): a save that landed during the hold gave the
+      // piece the server's id, and the gesture's map knows it.
+      const token = pressGesture !== null && historyGesture.current === pressGesture ? pressGesture : null;
+      const ids = token === null ? null : editor.historyGestureIdMap(token);
+      if (ids !== null) return ids.get(pressed) ?? pressed;
+      // Something ended it during the hold (an edit from the keys, a scrub on the tool pill, a
+      // save whose ids could not be matched): the lift opens its own, on the id pressed, as it did
+      // before the press held one.
+      closePointerGesture();
+      historyGesture.current = editor.beginHistoryGesture();
+      return historyGesture.current === null ? null : pressed;
+    }
+
+    /**
+     * A finger held still on a piece: the piece rises above the finger and follows it, as a mouse
+     * drag carries it. False when it cannot (the piece is gone, or the layout is held still), with
+     * no gesture left open.
+     */
+    function beginTouchLift(): boolean {
       const pressed = pressedPiece;
       const finger = arbiter.finger;
       const pointerId = touchPointer;
-      if (pressed === null || finger === null || pointerId === null) return;
-      // The press opened this gesture (onTouchDown). A save that landed during the hold gave the
-      // piece the server's id, and the gesture's map knows it; a gesture the press could not open,
-      // or one a new document ended, lifts nothing.
-      const token = historyGesture.current !== null && historyGesture.current === pressGesture ? pressGesture : null;
-      const ids = token === null ? null : useEditorStore.getState().historyGestureIdMap(token);
-      if (ids === null) {
-        closePointerGesture();
-        return;
-      }
-      const itemId = ids.get(pressed) ?? pressed;
+      if (pressed === null || finger === null || pointerId === null) return false;
+      const itemId = liftedPieceId(pressed);
       const placedItems = usePlacementStore.getState().placedItems;
       // The placement store takes the server's ids a render after the editor (EditorBridge), so
       // until then the piece is still under the id it was pressed on; the drag follows the new id.
-      const item = placedItems.find((placed) => placed.id === itemId)
-        ?? placedItems.find((placed) => placed.id === pressed);
+      const item = itemId === null ? undefined : (placedItems.find((placed) => placed.id === itemId)
+        ?? placedItems.find((placed) => placed.id === pressed));
       const floorPos = screenToFloor(finger.x, finger.y, cachedRect, camera, raycaster);
-      if (item === undefined || floorPos === null) {
+      if (itemId === null || item === undefined || floorPos === null) {
         closePointerGesture();
-        return;
+        return false;
       }
       // A mid-settle piece is drawn off its truth: drop its springs before measuring the grab.
       for (const gid of getGroupMemberIds(item.id, placedItems)) clearFurnitureSettle(gid);
@@ -601,6 +616,7 @@ export function SelectionSystem(): null {
       haptic(10);
       // It rises above the finger at once, so the finger never hides it.
       moveDragTo(finger.x, finger.y - raise());
+      return true;
     }
 
     /** Acts on what the arbiter decided, once for each change. */
@@ -627,7 +643,8 @@ export function SelectionSystem(): null {
         gesture.setMode("place");
       } else if (mode === "lift") {
         gesture.setMode("lift");
-        beginTouchLift();
+        // A lift that carries nothing must not hold the camera still for nothing: the finger looks round.
+        if (!beginTouchLift()) follow(arbiter.refuseLift());
       }
     }
 

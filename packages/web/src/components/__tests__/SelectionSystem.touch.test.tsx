@@ -16,6 +16,8 @@ import { usePlacementStore } from "../../stores/placement-store.js";
 import { useSelectionStore } from "../../stores/selection-store.js";
 import { useTouchGestureStore } from "../../stores/touch-gesture-store.js";
 import { useLayoutTimelinePreviewStore } from "../../stores/layout-timeline-preview-store.js";
+import { setLayoutTimelineMutationLock } from "../../lib/layout-timeline-preview-lock.js";
+import { asOneUndoStep } from "../../lib/planner-keymap.js";
 import * as configApi from "../../api/configurations.js";
 import { editorToPlacedItem, placedItemToEditor } from "../editor/EditorBridge.js";
 
@@ -180,6 +182,79 @@ function coalescedMoves(samples: readonly (readonly [number, number, number])[])
 /** The screen point over the round of eight. */
 const OVER_TABLE = { x: 298, y: 200 } as const;
 
+/** The layout as loaded: the round and its chairs, unsaved (local ids), in a public draft. */
+function seedUnsavedLayout(): void {
+  useEditorStore.setState({
+    configId: "cfg-touch", spaceId: "space-touch", venueId: "venue-touch", configRevision: 1, isPublicPreview: true,
+    objects: usePlacementStore.getState().placedItems.map((item) => placedItemToEditor(item, undefined)),
+  });
+}
+
+/** The round's id in the editor's document: the server's once its first save has landed. */
+function roundIdInTheEditor(): string {
+  const round = getCatalogueItemBySlug("round-table-6ft");
+  const id = useEditorStore.getState().objects.find((object) => object.assetDefinitionId === round?.id)?.id;
+  if (id === undefined) throw new Error("The round is not in the editor's document");
+  return id;
+}
+
+interface HeldSave {
+  readonly sent: () => boolean;
+  /**
+   * Answers the save as the API does, every insert under a server id. Unless
+   * `redraw` is false, the scene then redraws under those ids (`redraw`).
+   */
+  readonly land: (options?: { readonly redraw?: boolean }) => Promise<boolean>;
+  /** EditorBridge's editor-to-placement effect: the scene redraws under the server's ids. */
+  readonly redraw: () => void;
+}
+
+/** Holds the next save's answer until `land`. */
+function holdTheSave(): HeldSave {
+  let answer: ((value: configApi.BatchSaveResponse) => void) | null = null;
+  let batch: readonly configApi.BatchObjectInput[] = [];
+  vi.mocked(configApi.publicBatchSave).mockImplementationOnce(async (_configId, objects, expectedRevision) => {
+    batch = objects;
+    return new Promise((resolve) => {
+      answer = (value) => { resolve({ ...value, revision: expectedRevision + 1 }); };
+    });
+  });
+  let saving: Promise<boolean> | null = null;
+  act(() => { saving = useEditorStore.getState().saveToServer(false); });
+  const redraw = (): void => {
+    act(() => {
+      usePlacementStore.setState({ placedItems: useEditorStore.getState().objects.map(editorToPlacedItem) });
+    });
+    const furniture = scene.getObjectByName(`furniture-${tableId}`);
+    const round = getCatalogueItemBySlug("round-table-6ft");
+    tableId = usePlacementStore.getState().placedItems.find((item) => item.catalogueItemId === round?.id)?.id ?? tableId;
+    if (furniture !== undefined) furniture.name = `furniture-${tableId}`;
+  };
+  return {
+    sent: () => answer !== null,
+    redraw,
+    land: async ({ redraw: andRedraw = true } = {}) => {
+      if (answer === null || saving === null) throw new Error("No save in flight");
+      const respond = answer;
+      const pending: Promise<boolean> = saving;
+      await act(async () => {
+        respond({
+          revision: 0,
+          objects: batch.map((object, index) => ({
+            ...object, id: object.id ?? `srv-${String(index)}`, configurationId: "cfg-touch",
+            positionX: String(object.positionX), positionY: String(object.positionY), positionZ: String(object.positionZ),
+            rotationX: String(object.rotationX), rotationY: String(object.rotationY), rotationZ: String(object.rotationZ),
+            scale: String(object.scale), metadata: object.metadata ?? null,
+          })),
+        });
+        await pending;
+      });
+      if (andRedraw) redraw();
+      return pending;
+    },
+  };
+}
+
 describe("the touch arbiter", () => {
   it("places exactly one under the finger on a quick tap with a piece in hand", () => {
     useCatalogueStore.getState().selectItem(poseur.id);
@@ -309,57 +384,6 @@ describe("the touch arbiter", () => {
   });
 
   describe("while the layout's save is in flight", () => {
-    /** The layout as loaded: the round and its chairs, unsaved (local ids), in a public draft. */
-    function seedUnsavedLayout(): void {
-      useEditorStore.setState({
-        configId: "cfg-touch", spaceId: "space-touch", venueId: "venue-touch", configRevision: 1, isPublicPreview: true,
-        objects: usePlacementStore.getState().placedItems.map((item) => placedItemToEditor(item, undefined)),
-      });
-    }
-
-    /** Holds the next save's answer; `land` answers it as the API does, every insert under a server id. */
-    function holdTheSave(): { readonly land: () => Promise<boolean>; readonly sent: () => boolean } {
-      let answer: ((value: configApi.BatchSaveResponse) => void) | null = null;
-      let batch: readonly configApi.BatchObjectInput[] = [];
-      vi.mocked(configApi.publicBatchSave).mockImplementationOnce(async (_configId, objects, expectedRevision) => {
-        batch = objects;
-        return new Promise((resolve) => {
-          answer = (value) => { resolve({ ...value, revision: expectedRevision + 1 }); };
-        });
-      });
-      let saving: Promise<boolean> | null = null;
-      act(() => { saving = useEditorStore.getState().saveToServer(false); });
-      return {
-        sent: () => answer !== null,
-        land: async () => {
-          if (answer === null || saving === null) throw new Error("No save in flight");
-          const respond = answer;
-          const pending: Promise<boolean> = saving;
-          await act(async () => {
-            respond({
-              revision: 0,
-              objects: batch.map((object, index) => ({
-                ...object, id: object.id ?? `srv-${String(index)}`, configurationId: "cfg-touch",
-                positionX: String(object.positionX), positionY: String(object.positionY), positionZ: String(object.positionZ),
-                rotationX: String(object.rotationX), rotationY: String(object.rotationY), rotationZ: String(object.rotationZ),
-                scale: String(object.scale), metadata: object.metadata ?? null,
-              })),
-            });
-            await pending;
-          });
-          // EditorBridge's editor-to-placement effect: the scene redraws under the server's ids.
-          act(() => {
-            usePlacementStore.setState({ placedItems: useEditorStore.getState().objects.map(editorToPlacedItem) });
-          });
-          const furniture = scene.getObjectByName(`furniture-${tableId}`);
-          const round = getCatalogueItemBySlug("round-table-6ft");
-          tableId = usePlacementStore.getState().placedItems.find((item) => item.catalogueItemId === round?.id)?.id ?? tableId;
-          if (furniture !== undefined) furniture.name = `furniture-${tableId}`;
-          return pending;
-        },
-      };
-    }
-
     it("lifts the piece held when its first save lands during the hold, under the server's id", async () => {
       seedUnsavedLayout();
       render(<SelectionSystem />);
@@ -386,6 +410,35 @@ describe("the touch arbiter", () => {
       expect(useTouchGestureStore.getState().mode).toBe("idle");
     });
 
+    it("lifts the piece held when its save lands during the hold but the scene has not yet redrawn under the server's id", async () => {
+      seedUnsavedLayout();
+      render(<SelectionSystem />);
+      const localId = tableId;
+      const before = tableAt();
+      const save = holdTheSave();
+      finger("pointerDown", OVER_TABLE.x, OVER_TABLE.y, 1_000);
+      wait(1_100);
+      // The editor holds the server's ids; the scene (EditorBridge's effect, a render later) still has the local one.
+      expect(await save.land({ redraw: false })).toBe(true);
+      const serverId = roundIdInTheEditor();
+      expect(serverId).not.toBe(localId);
+      expect(usePlacementStore.getState().placedItems.some((item) => item.id === localId)).toBe(true);
+      wait(1_000 + LIFT_HOLD_MS + FRAME);
+      // The lift finds the piece under the id it was pressed on, and carries it under the one it is about to take.
+      expect(useTouchGestureStore.getState().mode).toBe("lift");
+      expect(window.__plannerTouch?.carrying()).toBe(serverId);
+      expect(useSelectionStore.getState().selectedIds.has(serverId)).toBe(true);
+      save.redraw();
+      expect(tableId).toBe(serverId);
+      finger("pointerMove", OVER_TABLE.x - 60, OVER_TABLE.y, 1_400);
+      // Above the finger, from where it was grabbed.
+      expect(tableAt().z).toBeLessThan(before.z);
+      finger("pointerUp", OVER_TABLE.x - 60, OVER_TABLE.y, 1_500);
+      expect(tableAt().x).toBeLessThan(before.x - 0.5);
+      expect(window.__plannerTouch?.carrying()).toBeNull();
+      expect(useTouchGestureStore.getState().mode).toBe("idle");
+    });
+
     it.each([
       ["a quick tap", (): void => { finger("pointerUp", OVER_TABLE.x, OVER_TABLE.y, 1_120); }],
       ["a swipe that turns to the camera", (): void => {
@@ -406,6 +459,67 @@ describe("the touch arbiter", () => {
       const save = holdTheSave();
       expect(save.sent()).toBe(true);
       expect(await save.land()).toBe(true);
+    });
+  });
+
+  describe("when the press's gesture, or its piece, is gone by the time of the lift", () => {
+    it.each([
+      // Pressing the tool pill's chip fences the undo timeline: the editor ends every gesture, and says nothing this component hears.
+      ["a scrub on the tool pill", (): void => { useEditorStore.getState().bumpHistoryEpoch(); }],
+      // An edit from the keys is its own undo step: it ends the gesture, and its write tells this component so.
+      ["an edit from the keys", (): void => {
+        asOneUndoStep(() => {
+          const objects = useEditorStore.getState().objects;
+          useEditorStore.getState().replaceObjectsFromScene(objects.map((object) => (object.id === tableId ? object : { ...object, positionX: object.positionX + 0.25 })));
+        });
+      }],
+    ])("still lifts the piece held after %s during the hold, in a gesture of its own", (_name, interrupt) => {
+      seedUnsavedLayout();
+      render(<SelectionSystem />);
+      const before = tableAt();
+      finger("pointerDown", OVER_TABLE.x, OVER_TABLE.y, 1_000);
+      wait(1_100);
+      act(interrupt);
+      wait(1_000 + LIFT_HOLD_MS + FRAME);
+      expect(useTouchGestureStore.getState().mode).toBe("lift");
+      expect(window.__plannerTouch?.carrying()).toBe(tableId);
+      expect(tableAt().z).toBeLessThan(before.z);
+      finger("pointerMove", OVER_TABLE.x - 60, OVER_TABLE.y, 1_400);
+      finger("pointerUp", OVER_TABLE.x - 60, OVER_TABLE.y, 1_500);
+      expect(tableAt().x).toBeLessThan(before.x - 0.5);
+      expect(useTouchGestureStore.getState().mode).toBe("idle");
+      // The lift's own gesture ended with its drop: no save is held back.
+      expect(holdTheSave().sent()).toBe(true);
+    });
+
+    it.each([
+      ["the piece has left the layout", (): void => {
+        usePlacementStore.setState({ placedItems: usePlacementStore.getState().placedItems.filter((item) => item.id !== tableId) });
+      }],
+      // A history preview holds the layout still: no gesture can open on it.
+      ["a history preview holds the layout", (): void => { setLayoutTimelineMutationLock(true); }],
+    ])("hands the finger to the camera, carrying nothing, when %s", (_name, interrupt) => {
+      seedUnsavedLayout();
+      render(<SelectionSystem />);
+      try {
+        finger("pointerDown", OVER_TABLE.x, OVER_TABLE.y, 1_000);
+        wait(1_100);
+        act(interrupt);
+        wait(1_000 + LIFT_HOLD_MS + FRAME);
+        // Nothing is carried, so the finger is not held still for nothing: it looks round.
+        expect(window.__plannerTouch?.carrying()).toBeNull();
+        expect(useTouchGestureStore.getState().mode).toBe("orbit");
+        expect(useTouchGestureStore.getState().cameraHeld).toBe(false);
+        finger("pointerMove", OVER_TABLE.x - 60, OVER_TABLE.y, 1_400);
+        expect(useTouchGestureStore.getState().mode).toBe("orbit");
+        expect(useTouchGestureStore.getState().cameraHeld).toBe(false);
+        finger("pointerUp", OVER_TABLE.x - 60, OVER_TABLE.y, 1_500);
+        expect(useTouchGestureStore.getState().mode).toBe("idle");
+      } finally {
+        setLayoutTimelineMutationLock(false);
+      }
+      // The refused lift left no gesture open: the next save is not held back.
+      expect(holdTheSave().sent()).toBe(true);
     });
   });
 

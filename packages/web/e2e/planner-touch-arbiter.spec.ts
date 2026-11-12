@@ -243,7 +243,8 @@ test.describe("the touch arbiter on a phone", () => {
     await touch("touchStart", [onTable]);
     heldSaves.shift()?.();
     await expect.poll(mode, { timeout: 5_000 }).toBe("lift");
-    // Lifted means carried, and carried means the round: a lift the planner refuses reads "lift" too.
+    // Lifted means carried, and carried means the round, not a piece beside it. (A lift the planner
+    // refuses turns the finger to the camera, so it never reads "lift".)
     await expect.poll(carried, { timeout: 5_000, message: "the lift carries the round" }).toBe("round-table-6ft");
     for (let step = 1; step <= 10; step++) {
       await touch("touchMove", [[onTable[0] + step * 6, onTable[1] - step * 3]]);
