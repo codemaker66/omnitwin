@@ -364,14 +364,28 @@ export function detectCalendarConflicts(input: DetectCalendarConflictsInput): Co
       a.startMs !== b.startMs ? a.startMs - b.startMs : a.id < b.id ? -1 : 1,
     );
 
-    for (let i = 0; i + 1 < occupancies.length; i += 1) {
-      const current = occupancies[i];
-      const next = occupancies[i + 1];
-      if (current === undefined || next === undefined) continue;
-      // An event's own days in the room are not a changeover: its set stays.
-      if (current.eventId !== null && current.eventId === next.eventId) continue;
+    // Each occupancy is measured against the room's last occupants before it:
+    // of those that started before it, the ones with the furthest end. That
+    // need not be its neighbour, as a booking or phase can outlast the
+    // occupancies that start inside it (T-695 review Z2). An occupancy that
+    // starts before that end overlaps it and has no changeover; two confirmed
+    // bookings are reported as a double booking above. When every last
+    // occupant is its own event, its set stays and there is no changeover
+    // either; otherwise it is measured from the last of them that is not.
+    let lastOccupants: Occupancy[] = [];
+    for (const next of occupancies) {
+      const lastEndMs = lastOccupants[0]?.endMs;
+      let current: Occupancy | undefined;
+      if (lastEndMs !== undefined && next.startMs >= lastEndMs) {
+        for (let i = lastOccupants.length - 1; i >= 0 && current === undefined; i -= 1) {
+          const held = lastOccupants[i];
+          if (held !== undefined && (held.eventId === null || held.eventId !== next.eventId)) current = held;
+        }
+      }
+      if (lastEndMs === undefined || next.endMs > lastEndMs) lastOccupants = [next];
+      else if (next.endMs === lastEndMs) lastOccupants.push(next);
+      if (current === undefined) continue;
       const gapMs = next.startMs - current.endMs;
-      if (gapMs < 0) continue; // overlapping occupancies are the overlap checks' domain
       turnaroundPairCount += 1;
       const applicable = resolveTurnaroundRule(input.turnaroundRules, spaceId, next.eventType);
       if (applicable === null) {

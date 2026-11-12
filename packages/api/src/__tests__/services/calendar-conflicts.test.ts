@@ -581,6 +581,75 @@ describe("one event's days in a room", () => {
       "insufficient_turnaround:b-setup:a-pm",
     ]);
   });
+
+  // T-695 review Z2. Which changeovers are measured, as an invariant. The
+  // occupancies are taken in start order, and each is measured against the
+  // room's last occupants before it: of those that started before it, the
+  // ones with the furthest end. It is not measured when it starts before that
+  // end (an overlap) or when every one of those last occupants is its own
+  // event (its set stays). Otherwise it is measured from that end, and named
+  // by the last of them in start order that is not its own event.
+  //
+  // Where each occupancy's neighbour in start order ends at least as late as
+  // everything before it, that neighbour is the room's last occupant, and the
+  // result is what comparing neighbours gave. Every case above this one is of
+  // that kind, and none of their expectations changed with Z2. The cases
+  // below are not: a booking or phase outlasts the occupancy beside the next.
+
+  // Another event's phase spans both of an event's pieces, so the pieces part
+  // (Y1) and the evening sits inside the phase. The after-party follows the
+  // phase, 30 minutes after it ends, not the evening. 7ebc21b8 measured it;
+  // comparing only neighbours, 4aeb7a78 measured the evening's 90 instead.
+  it("measures the changeover after another event's phase that spans both of an event's pieces", () => {
+    const morning = booking({ id: "e-am", title: "Gala rehearsal", eventId: "event-e",
+      startsAt: at("2026-09-18T08:00:00.000Z"), endsAt: at("2026-09-18T10:00:00.000Z") });
+    const evening = booking({ id: "e-pm", title: "Gala", eventId: "event-e",
+      startsAt: at("2026-09-18T14:00:00.000Z"), endsAt: at("2026-09-18T22:00:00.000Z") });
+    const build = phase({ id: "x-build", eventId: "event-x", eventName: "Exhibition",
+      startsAt: at("2026-09-18T09:00:00.000Z"), endsAt: at("2026-09-18T23:00:00.000Z") });
+    const afterParty = booking({ id: "after", title: "After-party",
+      startsAt: at("2026-09-18T23:30:00.000Z"), endsAt: at("2026-09-19T01:00:00.000Z") });
+    const report = detect({ bookings: [morning, evening, afterParty], phases: [build], turnaroundRules: [rule({ minutes: 60 })] });
+    expect(report.conflicts.map((c) => c.id)).toEqual(["insufficient_turnaround:x-build:after"]);
+    expect(report.conflicts[0]?.explanation).toContain("Only 30 minutes");
+  });
+
+  // Another client's booking covers an event's set-up, which parts the set-up
+  // from its wedding (Y1) and sits inside the AGM. The wedding follows the
+  // AGM, 120 minutes after it ends; comparing only neighbours, the set-up and
+  // the wedding were one event's pair and nothing was measured.
+  it("measures the changeover from another booking that covers an event's earlier piece", () => {
+    const agm = booking({ id: "agm", title: "AGM", eventId: "event-agm",
+      startsAt: at("2026-09-19T05:00:00.000Z"), endsAt: at("2026-09-19T12:00:00.000Z") });
+    const setUp = phase({ id: "wedding-setup", eventId: "event-wedding", eventName: "Wedding",
+      startsAt: at("2026-09-19T06:00:00.000Z"), endsAt: at("2026-09-19T11:00:00.000Z") });
+    const wedding = booking({ id: "wedding", title: "Wedding", eventId: "event-wedding",
+      startsAt: at("2026-09-19T14:00:00.000Z"), endsAt: at("2026-09-19T22:00:00.000Z") });
+    const report = detect({ bookings: [agm, wedding], phases: [setUp], turnaroundRules: [rule({ minutes: 180 })] });
+    expect(report.conflicts.map((c) => c.id)).toEqual(["insufficient_turnaround:agm:wedding"]);
+    expect(report.conflicts[0]?.explanation).toContain("Only 120 minutes");
+  });
+
+  // The room's last occupants leave together: another client's dinner and an
+  // event's set-up both end at 23:30 BST, and the event's overnight build
+  // starts at 00:30 on its own day. Its set stays, but the dinner must still
+  // be cleared, so the build is measured from the dinner whichever began first.
+  it("measures the changeover from another booking that leaves as an event's earlier piece does, whichever began first", () => {
+    for (const [dinnerStarts, setUpStarts] of [
+      ["2026-09-18T17:00:00.000Z", "2026-09-18T19:00:00.000Z"],
+      ["2026-09-18T19:00:00.000Z", "2026-09-18T17:00:00.000Z"],
+    ] as const) {
+      const dinner = booking({ id: "dinner", title: "Dinner", eventId: "event-dinner",
+        startsAt: at(dinnerStarts), endsAt: at("2026-09-18T22:30:00.000Z") });
+      const setUp = phase({ id: "fair-setup", eventId: "event-fair", eventName: "Fair",
+        startsAt: at(setUpStarts), endsAt: at("2026-09-18T22:30:00.000Z") });
+      const build = booking({ id: "fair-build", title: "Fair build", eventId: "event-fair",
+        startsAt: at("2026-09-18T23:30:00.000Z"), endsAt: at("2026-09-19T05:00:00.000Z") });
+      const report = detect({ bookings: [dinner, build], phases: [setUp], turnaroundRules: [rule({ minutes: 120 })] });
+      expect(report.conflicts.map((c) => c.id), `dinner from ${dinnerStarts}`).toEqual(["insufficient_turnaround:dinner:fair-build"]);
+      expect(report.conflicts[0]?.explanation).toContain("Only 60 minutes");
+    }
+  });
 });
 
 describe("honesty and determinism", () => {
