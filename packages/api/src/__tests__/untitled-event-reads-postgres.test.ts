@@ -60,6 +60,27 @@ const DAY = "2032-03-14";
 /** What the event is called while it has no name (eventNameFor). */
 const DERIVED = "Wedding, 14 March 2032";
 
+/** Where and when the fixture's wedding is: its venue's zone, its booking and its placed phase. */
+interface Placement {
+  readonly timeZone: string;
+  readonly startsAt: string;
+  readonly endsAt: string;
+  readonly phaseStartsAt: string;
+  readonly phaseMinutes: number;
+}
+/** An evening in Glasgow, where the venue's day is the UTC day. */
+const GLASGOW_EVENING: Placement = {
+  timeZone: "Europe/London", startsAt: `${DAY}T18:00:00.000Z`, endsAt: `${DAY}T23:00:00.000Z`,
+  phaseStartsAt: `${DAY}T19:00:00.000Z`, phaseMinutes: 120,
+};
+/** Half past eleven at night on 14 March in New York (Eastern Daylight Time
+ *  from that morning): 03:30 UTC on the 15th, which is the 15th in London. A
+ *  read that names it on any clock but the venue's says 15 March (R4). */
+const NEW_YORK_LATE: Placement = {
+  timeZone: "America/New_York", startsAt: "2032-03-15T03:30:00.000Z", endsAt: "2032-03-15T07:00:00.000Z",
+  phaseStartsAt: "2032-03-15T03:40:00.000Z", phaseMinutes: 20,
+};
+
 describe.skipIf(target === undefined)("an event stored with no name is read everywhere its name is read", () => {
   let pool: Pool;
   let db: Database;
@@ -90,10 +111,10 @@ describe.skipIf(target === undefined)("an event stored with no name is read ever
   }
 
   /** A venue whose wedding on DAY is stored under `eventName` ("" unless said). */
-  async function fixture(eventName = "") {
+  async function fixture(eventName = "", place: Placement = GLASGOW_EVENING) {
     const venueId = randomUUID();
     await db.insert(schema.venues).values({
-      id: venueId, name: "TEST ONLY untitled event", slug: `untitled-event-${venueId}`, address: "Disposable fixture", timezone: "Europe/London",
+      id: venueId, name: "TEST ONLY untitled event", slug: `untitled-event-${venueId}`, address: "Disposable fixture", timezone: place.timeZone,
     });
     const roomId = randomUUID();
     await db.insert(schema.spaces).values({
@@ -111,18 +132,18 @@ describe.skipIf(target === undefined)("an event stored with no name is read ever
     // table, since every event writer refuses an empty name.
     await db.insert(schema.events).values([
       { id: eventId, venueId, name: eventName, eventType: "wedding", status: "confirmed", createdBy: adminId, guestCount: 80,
-        startsAt: new Date(`${DAY}T18:00:00.000Z`), endsAt: new Date(`${DAY}T23:00:00.000Z`) },
+        startsAt: new Date(place.startsAt), endsAt: new Date(place.endsAt) },
       { id: namedId, venueId, name: "TEST ONLY Spring lunch", eventType: "dinner", status: "confirmed", createdBy: adminId, guestCount: 40,
         startsAt: new Date("2032-03-20T12:00:00.000Z"), endsAt: new Date("2032-03-20T15:00:00.000Z") },
     ]);
     await pool.query(
       "INSERT INTO bookings (venue_id, space_id, event_id, kind, title, event_type, starts_at, ends_at) VALUES ($1, $2, $3, 'ink', '', 'wedding', $4, $5)",
-      [venueId, roomId, eventId, `${DAY}T18:00:00.000Z`, `${DAY}T23:00:00.000Z`],
+      [venueId, roomId, eventId, place.startsAt, place.endsAt],
     );
     // A placed, timed phase: what puts the event on the Diary's lanes and the room's timeline.
     await db.insert(schema.eventPhases).values({
       eventId, spaceId: roomId, name: "Dinner", templateKey: "dinner", sortOrder: 0,
-      startsAt: new Date(`${DAY}T19:00:00.000Z`), durationMinutes: 120,
+      startsAt: new Date(place.phaseStartsAt), durationMinutes: place.phaseMinutes,
     });
     // The client's own plans, one linked to each event.
     const clientPlans = [randomUUID(), randomUUID()] as const;
@@ -248,6 +269,31 @@ describe.skipIf(target === undefined)("an event stored with no name is read ever
     const body = await compiledBeoBody(f);
     expect(body).toContain(`Event: ${DERIVED} (confirmed).`);
     expect(body).not.toContain(email);
+  });
+
+  // The day in the name is the venue's own (R4): each read takes its venue's
+  // zone, not the house's or the server's. NEW_YORK_LATE is the 14th only there.
+  describe("at a venue in New York, late on the 14th by its own clock", () => {
+    it("names the event on the Diary by the venue's day", async () => {
+      const f = await fixture("", NEW_YORK_LATE);
+      const calendar = CalendarResponseSchema.parse(await get(
+        `/calendar?venueId=${f.venueId}&from=${DAY}T00:00:00.000Z&to=2032-03-16T00:00:00.000Z`, f.office,
+      ));
+      expect(calendar.entries.map((entry) => [entry.entryType, entry.eventName])).toEqual([["booking", DERIVED], ["phase", DERIVED]]);
+    });
+
+    it("names it on the room's timeline by the venue's day", async () => {
+      const f = await fixture("", NEW_YORK_LATE);
+      const timeline = RoomLayoutTimelineResponseSchema.parse(await get(
+        `/calendar/layout-timeline?venueId=${f.venueId}&spaceId=${f.roomId}&scope=day&anchorDate=${DAY}`, f.office,
+      ));
+      expect(timeline.frames.map((frame) => [frame.eventId, frame.eventName])).toEqual([[f.eventId, DERIVED]]);
+    });
+
+    it("names it in the handoff pack's document by the venue's day", async () => {
+      const f = await fixture("", NEW_YORK_LATE);
+      expect(await compiledBeoBody(f)).toContain(`Event: ${DERIVED} (confirmed).`);
+    });
   });
 
   it("lets staff give the event a name, and still refuses an empty or blank one", async () => {
