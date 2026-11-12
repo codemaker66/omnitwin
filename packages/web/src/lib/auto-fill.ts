@@ -1013,6 +1013,15 @@ interface Pinch {
 // the jamb is listed with that wall's side, not as a gangway to the unit's
 // east or west.
 //
+// A piece that touches a wall only at one end takes no part in the corner at
+// the wall's other end: it is no candidate for that corner's gap (the way to
+// it along the wall is the wall's own length, not a gangway), it does not make
+// that wall nearer elsewhere for the unit's other pieces, and it does not
+// choose which wall that corner goes with. So a microphone in a Robert Adam
+// Room door recess, touching the bottom wall between the recesses only at its
+// east end, leaves the high chair of its group 3.9 cm from the jamb at that
+// wall's west end listed at 3.9 cm, as the chair is alone.
+//
 // The far corner of a door recess, or of an alcove's mouth: the jamb beyond
 // the opening from where the unit stands. No piece stands in front of either
 // wall that meets there (the recess's short side wall, and the wall beyond
@@ -1629,6 +1638,18 @@ function floorWallPinches(
         ...(there?.atEnds ?? []).filter((piece) => touchesEnd(piece, next, "first")),
       ]);
       const touching = [...reached].filter((piece) => !liesAgainst(piece, wall) && !liesAgainst(piece, next));
+      // A piece that touches one of the corner's two walls only at that wall's other end has reached the corner there,
+      // and takes no part in this one: it is no candidate for this corner's gap, it does not make its wall nearer
+      // elsewhere for the unit's other pieces, and it does not choose the wall this corner goes with.
+      const apart = new Set<MeasuredPiece>([
+        ...(here?.atEnds ?? []).filter((piece) => !reached.has(piece) && !touchesEnd(piece, wall, "last")),
+        ...(there?.atEnds ?? []).filter((piece) => !reached.has(piece) && !touchesEnd(piece, next, "first")),
+      ]);
+      const partaking = apart.size === 0 ? pieces : pieces.filter((piece) => !apart.has(piece));
+      // How near a wall comes to the unit anywhere, from the pieces that take part in this corner.
+      const nearestOf = (one: NonNullable<typeof here>, line: FloorWallM): number => (apart.size === 0
+        ? one.nearM
+        : Math.min(one.widthM, ...one.atEnds.filter((piece) => !apart.has(piece)).map((piece) => pieceToWall(piece, line))));
       // The corner goes with one of its two walls; where the unit stands in front of that wall, the corner is part of
       // the wall's gangway. A piece that touches the corner while it lies against a wall in line with one of the two
       // (set along a wall across a doorway, its end at the far jamb) shuts the corner on that wall's side: the touch
@@ -1636,7 +1657,7 @@ function floorWallPinches(
       const liesInLineWith = (line: FloorWallM): boolean => touching.some((piece) => walls.some((another) => another !== line && inLine(line, another) && liesAgainst(piece, another)));
       const inLineWithWall = liesInLineWith(wall);
       const inLineWithNext = liesInLineWith(next);
-      const withNext = inLineWithWall === inLineWithNext ? cornerGoesWithNext(pieces, wall, next) : inLineWithNext;
+      const withNext = inLineWithWall === inLineWithNext ? cornerGoesWithNext(partaking, wall, next) : inLineWithNext;
       const ownIndex = withNext ? nextIndex : i;
       const own = withNext ? there : here;
       const other = withNext ? here : there;
@@ -1663,7 +1684,7 @@ function floorWallPinches(
       let cornerM = Number.POSITIVE_INFINITY;
       let nearest: MeasuredPiece | null = null;
       const pieceIds: string[] = [];
-      for (const piece of pieces) {
+      for (const piece of partaking) {
         const touches = touching.includes(piece);
         if (reached.has(piece) && !touches) continue;
         const nearestPoint = nearestOfPiece(piece, corner);
@@ -1679,9 +1700,9 @@ function floorWallPinches(
       if (nearest === null) continue;
       // A wall nearer the unit somewhere else (its far end, or from behind) is not nearest it at this corner. The
       // other wall is asked only where the unit does not stand in front of it: there it has its own item.
-      if (own !== null && own.nearM < cornerM - SAME_M) continue;
-      if (other !== null && !other.before && other.nearM < cornerM - SAME_M) continue;
       const taking = withNext ? next : wall;
+      if (own !== null && nearestOf(own, taking) < cornerM - SAME_M) continue;
+      if (other !== null && !other.before && nearestOf(other, withNext ? wall : next) < cornerM - SAME_M) continue;
       const inside = (into: FloorWallM): FloorPoint => ({ x: corner.x + into.intoX * rule.gangwayM, z: corner.z + into.intoZ * rule.gangwayM });
       cornerParts[i] = { order: i + 0.5, side: sideOfWay(taking.intoX, taking.intoZ), widthM: cornerM, placed: nearest.placed, floor: [corner, inside(wall), inside(next)], along: [corner, corner], pieceIds };
     }

@@ -27,6 +27,7 @@ import {
   said,
   setDown,
   SHAPED_ROOMS,
+  sideOf,
   verdictOn,
   type Room,
 } from "./gangway-against-walls.js";
@@ -192,6 +193,43 @@ describe("the gangway review of a chair set flush in a Saloon alcove's corner, b
     const review = gangwayReview(set, r.dims, null);
     expect(GangwayReviewSchema.safeParse({ items: review }).success).toBe(true);
     expect(said(review)).toEqual(sides);
+    expect(faults(r, set)).toEqual(NO_FAULTS);
+  });
+});
+
+describe("the gangway review of a unit with a piece that touches a wall only at that wall's far end, by the fourth review's examples", () => {
+  it("lists the 3.9 cm pinch a high chair leaves at a Robert Adam Room door jamb, though a microphone of its group touches that wall's other end", () => {
+    const r = room("Robert Adam Room");
+    // One group. The microphone stands in the first door recess, flush on its west side wall, x = −2.4, and touches the
+    // bottom wall between the recesses, z = 8.7 from x = −2.4 to −3.3, only at that wall's end (−2.4, 8.7). The high
+    // chair stands 0.0387 m from the second recess's jamb (−3.3, 8.7), that wall's other end, and is nearer the jamb
+    // than any other point of either wall that meets there. The microphone has reached the far end of the wall and
+    // takes no part at the jamb: the pinch is the high chair's, as it is with the microphone gone.
+    const unit = [
+      createPlacedItem(piece("handheld-microphone").id, -2.375, 8.725, Math.PI / 2, "unit-1", 0, "piece-1"),
+      createPlacedItem(piece("highchair-blue").id, -3.626371, 8.557646, 0.666842, "unit-1", 0, "piece-2"),
+    ];
+    const [, highChair] = unit;
+    if (highChair === undefined) throw new Error("no high chair");
+    expect(said(gangwayReview([{ ...highChair, groupId: null }], r.dims, null))).toContainEqual(["xMax", 0.039]);
+    const review = gangwayReview(unit, r.dims, null);
+    expect(GangwayReviewSchema.safeParse({ items: review }).success).toBe(true);
+    expect(said(review)).toEqual([["xMax", 0.039], ["xMin", 0], ["zMax", 0.072]]);
+    expect(Math.abs((review.find((item) => sideOf(item) === "xMax")?.widthM ?? 0) - 0.038722)).toBeLessThan(1e-6);
+    expect(faults(r, unit)).toEqual(NO_FAULTS);
+  });
+
+  it.each([
+    ["west", -5.95 + 0.225, 0.375, [["xMin", 0]]],
+    ["east", 5.95 - 0.225, -0.375, [["xMax", 0]]],
+  ] as const)("lists no gap at the far front corner of the Saloon's %s pier for a chair that touches only its near front corner", (_pier, x, z, sides) => {
+    const r = room("Saloon");
+    // The chair's corner is on the pier's front corner, its sides on the lines of the two walls that meet there: it
+    // touches the pier's 0.3 m face only at that end, and is listed there at 0.00 m. The face's other end is 0.30 m
+    // from the chair along the face. The chair has reached the face's near end and takes no part at its far end: that
+    // corner is no gangway of its own, whether the chair is asked as a candidate there or as making the face nearer.
+    const set = [createPlacedItem(piece("banquet-chair").id, x, z, 0, null, 0, "piece-1")];
+    expect(said(gangwayReview(set, r.dims, null))).toEqual(sides);
     expect(faults(r, set)).toEqual(NO_FAULTS);
   });
 });
