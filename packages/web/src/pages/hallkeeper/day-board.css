@@ -514,6 +514,9 @@ button.dayboard-stage:hover { background: var(--house-plane-hover); }
 
 .dayboard-notice p { margin: 0; }
 .dayboard-notice[role="alert"] { border-left-color: var(--lt-red); color: var(--lt-ink); }
+/* The rota's Try again: its working indicator beside the words, as Got it's. */
+.dayboard-rota-retry { display: inline-flex; align-items: center; gap: 8px; }
+.dayboard-rota-retry[aria-disabled="true"] { cursor: default; }
 
 .dayboard-sheet > .vv-activity-status { margin-top: 18px; }
 

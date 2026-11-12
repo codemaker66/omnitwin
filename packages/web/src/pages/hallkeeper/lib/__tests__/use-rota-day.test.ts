@@ -107,6 +107,23 @@ describe("useRotaDay", () => {
     expect(result.current.readAtMs).not.toBeNull();
   });
 
+  it("says it is reading while a read is under way, a Try again after a failure included, and not once it lands", async () => {
+    let answer: (read: RotaWeek) => void = () => undefined;
+    let refuse: (reason: Error) => void = () => undefined;
+    getRotaWeekMock.mockImplementation(() => new Promise<RotaWeek>((resolve, reject) => { answer = resolve; refuse = reject; }));
+    const { result } = renderHook(() => useRotaDay(VENUE, SATURDAY, TZ, true));
+    expect(result.current).toMatchObject({ status: "loading", reading: true });
+    act(() => { refuse(new Error("offline")); });
+    await waitFor(() => { expect(result.current.status).toBe("error"); });
+    expect(result.current.reading).toBe(false);
+    // Tried again: still the failure on screen, and the read under way.
+    act(() => { result.current.refresh(true); });
+    expect(result.current).toMatchObject({ status: "error", reading: true });
+    act(() => { answer(week("2026-11-09", [shift(A)])); });
+    await waitFor(() => { expect(result.current.status).toBe("ready"); });
+    expect(result.current.reading).toBe(false);
+  });
+
   it("shows no crew to someone who may read only their own shifts", async () => {
     getRotaWeekMock.mockImplementation((_venue, start) => Promise.resolve(week(start ?? "", [shift(A)], "own")));
     const { result } = renderHook(() => useRotaDay(VENUE, SATURDAY, TZ, true));

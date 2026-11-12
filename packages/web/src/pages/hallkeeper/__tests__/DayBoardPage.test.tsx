@@ -2077,7 +2077,7 @@ describe("DayBoardPage: who is on setup for a turn-round", () => {
     expect(sentence()).toContain("Grand Hall’s turn-round has nobody on setup.");
     // Once the rota reads again, the board stops saying so.
     rotaMock.mockImplementation(saloonOnly);
-    fireEvent.click(within(notice.closest(".dayboard-notice") as HTMLElement).getByRole("button", { name: "Try again" }));
+    fireEvent.click(within(notice.closest(".dayboard-notice") as HTMLElement).getByRole("button", { name: "Try again to read the rota" }));
     await waitFor(() => { expect(screen.queryByText(/the rota could not be read/u)).toBeNull(); });
     expect(dinner.textContent).toContain("Turn-round 4 h · nobody on setup");
   });
@@ -2113,6 +2113,34 @@ describe("DayBoardPage: who is on setup for a turn-round", () => {
     expect(await within(section).findByText(/^On setup: Jamie \d{2}:\d{2}–\d{2}:\d{2}\.$/u)).toBeTruthy();
     expect(within(section).queryByText("Reading the rota…")).toBeNull();
     expect(screen.queryByText(/the rota could not be read/u)).toBeNull();
+  });
+
+  it("tries the rota again under a name of its own, shows the read running, and gives the keyboard to the day when the notice goes", async () => {
+    liveConnected.current = false;
+    getCalendarMock.mockResolvedValue(calendarFixture(day()));
+    rotaMock.mockImplementation((_venueId, start) => Promise.resolve(rotaWeek(start ?? "", [{ startsAt: at(-60), endsAt: at(90) }])));
+    renderBoard();
+    await screen.findByRole("button", { name: /^Dinner,.*1 on setup/u });
+    rotaMock.mockImplementation(() => Promise.reject(new Error("offline")));
+    fireEvent.click(screen.getAllByRole("button", { name: "Refresh" })[0] as HTMLElement);
+    // Named apart from the board's other Try agains, which can show beside it when the network drops.
+    const retry = await screen.findByRole("button", { name: "Try again to read the rota" });
+    await waitFor(() => { expect(retry.getAttribute("aria-busy")).toBe("false"); });
+    const read = deferred<unknown>();
+    rotaMock.mockImplementation(() => read.promise);
+    act(() => { retry.focus(); });
+    const reads = rotaMock.mock.calls.length;
+    fireEvent.click(retry);
+    // The press reads the rota, and says so while it does.
+    expect(rotaMock.mock.calls.length).toBeGreaterThan(reads);
+    expect(retry.getAttribute("aria-busy")).toBe("true");
+    expect(retry.getAttribute("aria-disabled")).toBe("true");
+    expect(retry.querySelector(".vv-activity-indicator")).not.toBeNull();
+    // Never disabled: the keyboard keeps its place while the rota is read.
+    expect(document.activeElement).toBe(retry);
+    await act(async () => { read.resolve(rotaWeek(rotaMock.mock.calls.at(-1)?.[1] ?? "", [{ startsAt: at(-60), endsAt: at(90) }])); await Promise.resolve(); });
+    await waitFor(() => { expect(screen.queryByText(/the rota could not be read/u)).toBeNull(); });
+    await waitFor(() => { expect(document.activeElement?.classList.contains("dayboard-summary") === true || document.activeElement?.id === "dayboard-title").toBe(true); });
   });
 });
 

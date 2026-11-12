@@ -15,7 +15,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { ArrowLeft, ArrowRight, Bell, Clock, WifiOff } from "lucide-react";
 import { useAuthStore } from "../../stores/auth-store.js";
 import { formatWallDay, formatWallTime, msToWallInput, shiftRange, wallInputToMs, type BoardRange } from "../diary/lib/board-time.js";
-import { ActivityStatus } from "../../components/shared/Activity.js";
+import { ActivityIndicator, ActivityStatus } from "../../components/shared/Activity.js";
 import { CALENDAR_REUSE_MS, useCalendar } from "../diary/hooks/useCalendar.js";
 import { useDiaryLive } from "../diary/hooks/useDiaryLive.js";
 import { DashboardLayout } from "../../components/dashboard/DashboardLayout.js";
@@ -321,6 +321,55 @@ function dayRefreshFailed(at: string, readAt: string | null): string {
     : `Couldn't refresh at ${at}. Showing the day as it was at ${readAt}.`;
 }
 
+/** The rota could not be read: said above the rooms, with a Try again named
+ *  for what it reads, which shows the read while it runs. When a read lands
+ *  and the notice goes with the keyboard in it, the keyboard goes to the day,
+ *  not to the document. */
+function RotaNotice({ shown, readAt, reading, onRetry, focusAfter }: {
+  readonly shown: boolean;
+  /** When the crew still shown was read; null before any read landed. */
+  readonly readAt: string | null;
+  readonly reading: boolean;
+  readonly onRetry: () => void;
+  /** Where the keyboard goes once the notice it was in has gone. */
+  readonly focusAfter: () => void;
+}): ReactElement | null {
+  const noticeRef = useRef<HTMLDivElement>(null);
+  const hadFocus = useRef(false);
+  useEffect(() => {
+    if (shown) return;
+    // The notice holding the keyboard has gone: focus fell to the document.
+    if (hadFocus.current && (document.activeElement === null || document.activeElement === document.body)) focusAfter();
+    hadFocus.current = false;
+  }, [shown, focusAfter]);
+  if (!shown) return null;
+  return (
+    <div
+      ref={noticeRef}
+      className="dayboard-notice"
+      role="status"
+      onFocus={() => { hadFocus.current = true; }}
+      onBlur={(event) => { hadFocus.current = noticeRef.current?.contains(event.relatedTarget) === true; }}
+    >
+      <p>{readAt === null
+        ? "The rota could not be read, so who is on setup is not shown. The board tries again each minute."
+        : `Who is on setup is as read at ${readAt}; the rota could not be read since. The board tries again each minute.`}</p>
+      {/* Never disabled: a disabled button drops the keyboard's place to the page. */}
+      <button
+        type="button"
+        className="dayboard-button dayboard-rota-retry"
+        aria-label="Try again to read the rota"
+        aria-busy={reading}
+        aria-disabled={reading}
+        onClick={() => { if (!reading) onRetry(); }}
+      >
+        {reading && <ActivityIndicator size={14} />}
+        Try again
+      </button>
+    </div>
+  );
+}
+
 export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactElement {
   const user = useAuthStore((state) => state.user);
   const venueId = user?.venueId ?? null;
@@ -623,13 +672,14 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
   // A rota that could not be read is said above the rooms, as what changed
   // is, on a day with a turn-round: the crew the slots and the sentence still
   // show is as last read, and before any read they show none.
-  const crewNotice = rota.status !== "error" || !anyTurnRound(lanes) ? null : (
-    <div className="dayboard-notice" role="status">
-      <p>{rotaReadAt === null
-        ? "The rota could not be read, so who is on setup is not shown. The board tries again each minute."
-        : `Who is on setup is as read at ${rotaReadAt}; the rota could not be read since. The board tries again each minute.`}</p>
-      <button type="button" className="dayboard-button" onClick={() => { rota.refresh(true); }}>Try again</button>
-    </div>
+  const crewNotice = (
+    <RotaNotice
+      shown={rota.status === "error" && anyTurnRound(lanes)}
+      readAt={rotaReadAt}
+      reading={rota.reading}
+      onRetry={() => { refreshRota(true); }}
+      focusAfter={focusTheDay}
+    />
   );
   const selectedEventId = selected?.slot.eventId ?? null;
   const selectedEntry = selectedEventId === null ? undefined : floor.byEvent.get(selectedEventId);
