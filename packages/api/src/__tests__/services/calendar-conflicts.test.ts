@@ -564,6 +564,23 @@ describe("one event's days in a room", () => {
       "insufficient_turnaround:wedding:after-party",
     ]);
   });
+
+  // T-695 review Y2: "no other booking or phase": another event's phase alone
+  // (a provisional event's set-up, with no confirmed booking of its own) is
+  // in the room between the two pieces, and parts them as a booking would.
+  it("measures the changeovers round another event's phase alone between one event's morning and evening", () => {
+    const morning = booking({ id: "a-am", title: "Gala rehearsal", eventId: "event-a",
+      startsAt: at("2026-09-18T08:00:00.000Z"), endsAt: at("2026-09-18T10:00:00.000Z") });
+    const evening = booking({ id: "a-pm", title: "Gala", eventId: "event-a",
+      startsAt: at("2026-09-18T17:00:00.000Z"), endsAt: at("2026-09-18T21:00:00.000Z") });
+    const otherSetUp = phase({ id: "b-setup", eventId: "event-b", eventName: "Product launch",
+      startsAt: at("2026-09-18T12:00:00.000Z"), endsAt: at("2026-09-18T15:00:00.000Z") });
+    const report = detect({ bookings: [morning, evening], phases: [otherSetUp], turnaroundRules: [rule({ minutes: 180 })] });
+    expect(report.conflicts.map((c) => c.id)).toEqual([
+      "insufficient_turnaround:a-am:b-setup",
+      "insufficient_turnaround:b-setup:a-pm",
+    ]);
+  });
 });
 
 describe("honesty and determinism", () => {
