@@ -32,17 +32,11 @@ function braced(text: string, open: number): string {
   throw new Error("Unbalanced braces in day-board.css");
 }
 
-/** The body of every top-level block whose prelude is `prelude`. */
-function atBlocks(prelude: string): readonly string[] {
-  const bodies: string[] = [];
-  let from = 0;
-  for (;;) {
-    const at = CSS.indexOf(prelude, from);
-    if (at === -1) return bodies;
-    const open = CSS.indexOf("{", at);
-    bodies.push(braced(CSS, open));
-    from = open + 1;
-  }
+/** The body of every block whose prelude matches `prelude`, a pattern that
+ *  allows any whitespace: "@media (max-width:760px)" is the same block. */
+function atBlocks(prelude: RegExp): readonly string[] {
+  return [...CSS.matchAll(new RegExp(prelude.source, "gu"))]
+    .map((match) => braced(CSS, CSS.indexOf("{", match.index)));
 }
 
 /** The plain rules in a block: "a, b { x: y; }". */
@@ -55,7 +49,9 @@ function rules(body: string): readonly Rule[] {
       if (colon === -1) continue;
       declarations.set(declaration.slice(0, colon).trim(), declaration.slice(colon + 1).trim());
     }
-    found.push({ selectors: (match[1] ?? "").split(",").map((selector) => selector.trim()).filter((selector) => selector !== ""), declarations });
+    // A selector's whitespace collapsed, so a selector split over lines is
+    // the selector a test names.
+    found.push({ selectors: (match[1] ?? "").split(",").map((selector) => selector.trim().replaceAll(/\s+/gu, " ")).filter((selector) => selector !== ""), declarations });
   }
   return found;
 }
@@ -127,7 +123,7 @@ function hides(rule: Rule, selector: string): boolean {
 
 describe("the Day Board's stylesheet", () => {
   it("keeps this hallkeeper's next action at the top of a phone while the rooms scroll under it", () => {
-    const phone = atBlocks("@media (max-width: 760px)").flatMap(rules);
+    const phone = atBlocks(/@media\s*\(\s*max-width\s*:\s*760px\s*\)\s*\{/u).flatMap(rules);
     const sticky = cascaded(phone, ".dayboard[data-layout=\"phone\"] .dayboard-next");
     expect(sticky.get("position")).toBe("sticky");
     expect(sticky.get("top")).toBe("0");
@@ -141,7 +137,7 @@ describe("the Day Board's stylesheet", () => {
   });
 
   it("prints every room and every slot in words, hiding only the screen's chrome", () => {
-    const print = atBlocks("@media print").flatMap(rules);
+    const print = atBlocks(/@media\s+print\s*\{/u).flatMap(rules);
     const hidden = new Set(print
       .flatMap((rule) => rule.selectors.filter((selector) => hides(rule, selector)))
       // A pseudo-element is a decoration, not a word.

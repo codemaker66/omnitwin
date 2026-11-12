@@ -8,7 +8,8 @@
 //      one, still once owned; the UNOWNED rail and the next-action line;
 //   2. reduced motion: every animation computed to "none" while the verbs
 //      still carry the full meaning;
-//   3. the phone: every room in one column, the page no wider than the screen;
+//   3. the phone: every room in one column, the page no wider than the screen,
+//      and the next action still at the top after the rooms scroll 900 px;
 //   4. the wall register (?register=wall);
 //   5. an open slot, with the request region mounted;
 //   6. (goal 19 S4) the open slot's conversation: the request card on the
@@ -379,6 +380,31 @@ try {
   check("phone: every room in one column, the page no wider than the screen", fits
     && (await phone.locator(".dayboard[data-layout='phone']").count()) === 1 && (await phone.locator(".dayboard-room").count()) >= 2);
   await phone.screenshot({ path: join(OUT, "phone.png"), fullPage: true });
+
+  // This hallkeeper's next action stays at the top while the rooms scroll
+  // under it (D7), as laid out, not as the stylesheet reads: the wheel
+  // scrolls whatever a hand would, the rooms move up 900 px and the next
+  // action stays at the top of the screen. A wheel's scroll lands over a
+  // few frames, so each position is read until it settles.
+  const top = async (selector) => (await phone.locator(selector).first().boundingBox())?.y ?? Number.NaN;
+  const settle = async (read, want) => {
+    let value = await read();
+    for (let attempt = 0; attempt < 30 && !(Math.abs(value - want) <= 1); attempt += 1) {
+      await phone.waitForTimeout(100);
+      value = await read();
+    }
+    return value;
+  };
+  const roomsAt = await top(".dayboard-rooms");
+  await phone.mouse.move(195, 600);
+  await phone.mouse.wheel(0, 900);
+  const roomsMoved = roomsAt - await settle(() => top(".dayboard-rooms"), roomsAt - 900);
+  const nextAt = await top(".dayboard-next");
+  check(`phone: the next action stays at the top while the rooms scroll 900 px under it (rooms moved ${String(Math.round(roomsMoved))} px, next action at y ${String(Math.round(nextAt))})`,
+    Math.abs(roomsMoved - 900) <= 1 && Math.abs(nextAt) <= 1);
+  await phone.screenshot({ path: join(OUT, "phone-scrolled.png") });
+  await phone.mouse.wheel(0, -900);
+  await settle(() => top(".dayboard-rooms"), roomsAt);
 
   // ---- Pass 4: the wall ----------------------------------------------------
   const wallContext = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
