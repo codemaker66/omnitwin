@@ -202,7 +202,7 @@ describe("OpsLensPanel", () => {
     await waitFor(() => { expect(screen.getByTestId("ops-pack-result")).toBeTruthy(); });
     const result = screen.getByTestId("ops-pack-result");
     expect(result.textContent).toContain("Handoff pack unchanged");
-    expect(result.textContent).toContain("The plan is the same as the last pack, so the floor keeps its progress.");
+    expect(result.textContent).toContain("The approved plan is the same as this pack's, so the floor keeps its progress.");
     expect(result.textContent).not.toContain("Handoff pack compiled");
   });
 

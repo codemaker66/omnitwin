@@ -281,7 +281,7 @@ export function OpsLensPanel(): ReactElement {
           <div className="lens-panel__share-result" data-testid="ops-pack-result">
             <span className="lens-panel__share-result-label">{packCreated ? "Handoff pack compiled" : "Handoff pack unchanged"}</span>
             {!packCreated && (
-              <p className="lens-panel__note" data-testid="ops-pack-unchanged">The plan is the same as the last pack, so the floor keeps its progress.</p>
+              <p className="lens-panel__note" data-testid="ops-pack-unchanged">The approved plan is the same as this pack's, so the floor keeps its progress.</p>
             )}
             <p className="lens-panel__paragraph">{pack.pack.summary}</p>
             <div className="lens-panel__share-buttons">
