@@ -97,6 +97,15 @@ describe("customer planning schedule", () => {
     expect(await screen.findByText("Wedding, 14 March 2027")).toBeTruthy();
   });
 
+  it("names an event stored under the client's email by its occasion and the venue's day, never the address", () => {
+    const filed: ClientEventSchedule = {
+      ...data, event: { ...data.event, name: "guest@example.test — Wedding", eventType: "wedding", startsAt: "2027-03-14T18:00:00.000Z" },
+    };
+    render(<ClientEventHeading data={filed} />);
+    expect(screen.getByRole("heading", { level: 1, name: "Wedding, 14 March 2027" })).toBeTruthy();
+    expect(screen.queryByText(/guest@example\.test/u)).toBeNull();
+  });
+
   it("shows shared activity, clears it on failure, and retries into a populated schedule", async () => {
     useAuthStore.getState().setUser({ id: "owner", role: "client", platformRole: "none", venueId: null, name: "Owner", email: "owner@example.test" });
     let reject: (error: Error) => void = () => undefined;

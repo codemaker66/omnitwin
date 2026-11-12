@@ -89,7 +89,8 @@ describe.skipIf(target === undefined)("an event stored with no name is read ever
     return { authorization: `Bearer ${JSON.stringify({ id, email: `${id}@untitled-event.invalid`, name: `TEST ONLY ${role}`, role, venueId, platformRole: "none" })}` };
   }
 
-  async function fixture() {
+  /** A venue whose wedding on DAY is stored under `eventName` ("" unless said). */
+  async function fixture(eventName = "") {
     const venueId = randomUUID();
     await db.insert(schema.venues).values({
       id: venueId, name: "TEST ONLY untitled event", slug: `untitled-event-${venueId}`, address: "Disposable fixture", timezone: "Europe/London",
@@ -109,7 +110,7 @@ describe.skipIf(target === undefined)("an event stored with no name is read ever
     // As an event made before eventNameFor stands: written straight to the
     // table, since every event writer refuses an empty name.
     await db.insert(schema.events).values([
-      { id: eventId, venueId, name: "", eventType: "wedding", status: "confirmed", createdBy: adminId, guestCount: 80,
+      { id: eventId, venueId, name: eventName, eventType: "wedding", status: "confirmed", createdBy: adminId, guestCount: 80,
         startsAt: new Date(`${DAY}T18:00:00.000Z`), endsAt: new Date(`${DAY}T23:00:00.000Z`) },
       { id: namedId, venueId, name: "TEST ONLY Spring lunch", eventType: "dinner", status: "confirmed", createdBy: adminId, guestCount: 40,
         startsAt: new Date("2032-03-20T12:00:00.000Z"), endsAt: new Date("2032-03-20T15:00:00.000Z") },
@@ -196,8 +197,8 @@ describe.skipIf(target === undefined)("an event stored with no name is read ever
     expect(timeline.frames.map((frame) => [frame.eventId, frame.eventName, frame.phaseName])).toEqual([[f.eventId, DERIVED, "Dinner"]]);
   });
 
-  it("compiles the event's handoff pack, whose document names the event by its occasion and day", async () => {
-    const f = await fixture();
+  /** The handoff pack's document for the fixture's event, compiled from an approved office plan. */
+  async function compiledBeoBody(f: Awaited<ReturnType<typeof fixture>>): Promise<string | undefined> {
     const configId = randomUUID();
     const variantId = randomUUID();
     const approvedAt = new Date("2032-03-01T10:00:00.000Z");
@@ -222,7 +223,31 @@ describe.skipIf(target === undefined)("an event stored with no name is read ever
     });
     await compileOpsHandoffPackFromConfiguration(db, { configId, eventId: f.eventId, actorUserId: f.adminId, clientNotes: null });
     const board = EventDayOpsBoardSchema.parse(await get(`/events/${f.eventId}/ops-board`, f.office));
-    expect(board.handoffPack?.beoDocument.body).toContain(`Event: ${DERIVED} (confirmed).`);
+    return board.handoffPack?.beoDocument.body;
+  }
+
+  it("compiles the event's handoff pack, whose document names the event by its occasion and day", async () => {
+    const f = await fixture();
+    expect(await compiledBeoBody(f)).toContain(`Event: ${DERIVED} (confirmed).`);
+  });
+
+  // A guest who gave no name is filed under their email, and an event made
+  // for them before #407 is stored as "<email> — Wedding" (N4, R7). With no
+  // migration, every read that names it shows its occasion and day instead.
+  it("names an event stored under its client's email by its occasion and day on the Diary, the room's timeline and the handoff pack", async () => {
+    const email = `${randomUUID()}@untitled-event.invalid`;
+    const f = await fixture(`${email} — Wedding`);
+    const calendar = CalendarResponseSchema.parse(await get(
+      `/calendar?venueId=${f.venueId}&from=${DAY}T00:00:00.000Z&to=2032-03-15T00:00:00.000Z`, f.office,
+    ));
+    expect(calendar.entries.map((entry) => entry.eventName)).toEqual([DERIVED, DERIVED]);
+    const timeline = RoomLayoutTimelineResponseSchema.parse(await get(
+      `/calendar/layout-timeline?venueId=${f.venueId}&spaceId=${f.roomId}&scope=day&anchorDate=${DAY}`, f.office,
+    ));
+    expect(timeline.frames.map((frame) => frame.eventName)).toEqual([DERIVED]);
+    const body = await compiledBeoBody(f);
+    expect(body).toContain(`Event: ${DERIVED} (confirmed).`);
+    expect(body).not.toContain(email);
   });
 
   it("lets staff give the event a name, and still refuses an empty or blank one", async () => {

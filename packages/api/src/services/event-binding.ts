@@ -131,27 +131,21 @@ async function createEventFor(conn: BindConn, seed: EventSeed): Promise<string> 
 const BOOKING_TITLE_LENGTH = 200;
 
 /**
- * A booking's title with its enquiry's email taken off, when the email is all
- * the title has to say of who asked. The hold made for an enquiry that gave no
- * name is titled by the enquiry's email, alone or before its occasion
- * ("jane@example.com — Wedding"): the public route files such an enquiry under
- * its email, and older rows hold no name at all (enquiryTitleName in
+ * A booking's title, or "" when it is only its enquiry's email cut short. The
+ * hold made for an enquiry that gave no name is titled by the enquiry's email,
+ * alone or before its occasion ("jane@example.com — Wedding": the public route
+ * files such an enquiry under its email; enquiryTitleName in
  * routes/bookings.ts). That is right for the hold, which staff work from. An
- * event is never named by it: its name travels to the client, the sheet,
- * supplier passes and notifications. What is left, the occasion if there is
- * one, names the event (eventNameFor). Any other title comes back as it was.
+ * event is never named by it: eventNameFor counts a title holding an email
+ * address as no title, at creation and on every screen. The one title it
+ * cannot see is an address long enough to fill the title's 200 characters,
+ * cut there before its domain: only the bind, which reads the enquiry, knows
+ * it is an address.
  */
 export function titleWithoutEnquiryEmail(title: string, email: string): string {
-  const said = title.trim();
-  const address = email.trim();
-  if (address === "") return title;
-  const lowerSaid = said.toLowerCase();
-  const lowerAddress = address.toLowerCase();
-  // An address long enough to fill the title is cut there, and is all of it.
-  if (lowerSaid.length >= BOOKING_TITLE_LENGTH && lowerAddress.startsWith(lowerSaid)) return "";
-  if (!lowerSaid.startsWith(lowerAddress)) return title;
-  const rest = said.slice(address.length);
-  return /^\s*(?:—.*)?$/su.test(rest) ? rest : title;
+  const said = title.trim().toLowerCase();
+  const address = email.trim().toLowerCase();
+  return address !== "" && said.length >= BOOKING_TITLE_LENGTH && address.startsWith(said) ? "" : title;
 }
 
 /**
@@ -159,7 +153,8 @@ export function titleWithoutEnquiryEmail(title: string, email: string): string {
  * already has, or a new one. Call inside the booking write's transaction.
  */
 export async function bindBookingToEvent(conn: BindConn, seed: EventSeed, target: BindTarget): Promise<BindOutcome> {
-  // What a new event is named from: the booking's title, less its enquiry's email.
+  // What a new event is named from: the booking's title, unless it is only
+  // the enquiry's email cut short (eventNameFor sees any other address).
   let named = seed;
   if (target.join === "event") {
     const [row] = await conn.select({ id: events.id, venueId: events.venueId })

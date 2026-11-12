@@ -54,6 +54,24 @@ describe("eventNameFor", () => {
     expect(eventNameFor({ title: " — ", eventType: null, startsAt: MARCH_14, timeZone: LONDON })).toBe("Event, 14 March 2027");
   });
 
+  // A guest who gave no name is filed under their email, and the hold made for
+  // them is titled by it (N4, R7). A title holding an address says who asked,
+  // never what the event is, so it counts as no title; an occasion the title
+  // names after a dash still names it when the event has none of its own.
+  it("treats a title holding an email address as no title", () => {
+    const named = (title: string, eventType: string | null = "wedding"): string =>
+      eventNameFor({ title, eventType, startsAt: MARCH_14, timeZone: LONDON });
+    expect(named("jane.fraser@example.test")).toBe("Wedding, 14 March 2027");
+    expect(named("  Jane.Fraser@Example.TEST — Wedding ")).toBe("Wedding, 14 March 2027");
+    expect(named("jane.fraser@example.test — Drinks reception", null)).toBe("Drinks reception, 14 March 2027");
+    expect(named("Wedding for jane.fraser@example.test")).toBe("Wedding, 14 March 2027");
+    expect(named("jane.fraser@example.test and party", null)).toBe("Event, 14 March 2027");
+    expect(named("jane@example.test — bob@example.test", null)).toBe("Event, 14 March 2027");
+    // An @ that is not an address is somebody's words.
+    expect(named("Drinks @ the Saloon")).toBe("Drinks @ the Saloon");
+    expect(named("Fraser wedding @Saloon")).toBe("Fraser wedding @Saloon");
+  });
+
   it("dates it by the venue's own calendar day, near midnight and across both changes of the clocks", () => {
     const day = (startsAt: string, timeZone = LONDON): string =>
       eventNameFor({ title: "", eventType: null, startsAt, timeZone }).replace("Event, ", "");
@@ -93,5 +111,11 @@ describe("eventDisplayName", () => {
     expect(eventDisplayName({ name: "", eventType: "wedding", startsAt: MARCH_14 }, LONDON)).toBe("Wedding, 14 March 2027");
     expect(eventDisplayName({ name: "— Wedding", eventType: "wedding", startsAt: new Date(MARCH_14) }, LONDON)).toBe("Wedding, 14 March 2027");
     expect(eventDisplayName({ name: "", eventType: null, startsAt: null }, LONDON)).toBe("Event");
+  });
+
+  it("shows an event stored under its client's email by its occasion and day, with no migration", () => {
+    expect(eventDisplayName({ name: "jane.fraser@example.test — Wedding", eventType: "wedding", startsAt: MARCH_14 }, LONDON))
+      .toBe("Wedding, 14 March 2027");
+    expect(eventDisplayName({ name: "jane.fraser@example.test", eventType: null, startsAt: MARCH_14 }, LONDON)).toBe("Event, 14 March 2027");
   });
 });

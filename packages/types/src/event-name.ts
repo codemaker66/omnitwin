@@ -12,7 +12,10 @@ import { resolveRotaTimeZone } from "./staff-rota-checks.js";
 //
 // Only what is known about the event is used, never the enquiry's email or
 // anyone's name: the event's name travels to the client, the hallkeeper's
-// sheet, supplier passes and notifications.
+// sheet, supplier passes and notifications. A title holding an email address
+// counts as no title, when an event is named and when it is shown, so an
+// event already stored as "<email> — Wedding" (a guest who gave no name is
+// filed under their email) shows as "Wedding, <day>" with no migration.
 //
 // The wording is the release lead's default and the owner's to change: it is
 // written here and nowhere else. The API names a new event with it
@@ -29,6 +32,12 @@ const MAX_EVENT_NAME_LENGTH = 200;
 /** The bare " — <occasion>" an enquiry with a blank name gave a title before
  *  #350: an em dash with nothing before it. */
 const BARE_OCCASION_TITLE = /^—\s*(.*)$/su;
+
+/** An email address anywhere in a title. A guest who gave no name is filed
+ *  under their email, and the hold made for them is titled by it ("<email> —
+ *  Wedding"); a title holding an address says who asked, never what the event
+ *  is, so it counts as no title. */
+const EMAIL_ADDRESS = /[^\s@<>()]+@[^\s@<>()]+\.[A-Za-z]{2,}/gu;
 
 const dayFormats = new Map<string, Intl.DateTimeFormat>();
 
@@ -61,14 +70,17 @@ export interface EventNameInput {
 
 /**
  * The name a person reads for an event: the title, trimmed, when it says
- * something; otherwise "<Occasion>, <the venue's day>" ("Wedding, 14 March
- * 2027"), "Event, …" with no occasion, and the occasion alone when the event
- * has no start.
+ * something and holds no email address; otherwise "<Occasion>, <the venue's
+ * day>" ("Wedding, 14 March 2027"), "Event, …" with no occasion, and the
+ * occasion alone when the event has no start. The occasion is the event's
+ * own, else the one a title's " — <occasion>" names.
  */
 export function eventNameFor(input: EventNameInput): string {
   const title = input.title.trim();
-  const bare = BARE_OCCASION_TITLE.exec(title);
-  if (title !== "" && bare === null) return title.slice(0, MAX_EVENT_NAME_LENGTH);
+  // What the title says once any address is taken out of it.
+  const said = title.replace(EMAIL_ADDRESS, "").trim();
+  const bare = BARE_OCCASION_TITLE.exec(said);
+  if (said === title && title !== "" && bare === null) return title.slice(0, MAX_EVENT_NAME_LENGTH);
   const fromTitle = bare?.[1]?.trim() ?? "";
   const occasion = occasionLabel(input.eventType) ?? (fromTitle === "" ? NO_OCCASION : fromTitle);
   const day = venueDay(input.startsAt, input.timeZone);
