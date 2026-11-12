@@ -8,7 +8,10 @@ import { BookingSchema, LAYOUT_STYLES, type Booking } from "@omnitwin/types";
 import type { Database } from "../db/client.js";
 import * as schema from "../db/schema.js";
 import { bookingRoutes } from "../routes/bookings.js";
+import { enquiryRoutes } from "../routes/enquiries.js";
+import { publicEnquiryRoutes } from "../routes/public-enquiries.js";
 import { windowProposalRoutes } from "../routes/window-proposals.js";
+import { __resetResendClientForTests } from "../services/email.js";
 import { insertBoundBookings } from "../services/event-binding.js";
 
 // ---------------------------------------------------------------------------
@@ -62,6 +65,8 @@ describe.skipIf(target === undefined)("an event made for a booking is named so a
     server = Fastify();
     await server.register(bookingRoutes, { db, prefix: "/bookings" });
     await server.register(windowProposalRoutes, { db, prefix: "/events" });
+    await server.register(publicEnquiryRoutes, { db, prefix: "/public" });
+    await server.register(enquiryRoutes, { db, prefix: "/enquiries" });
     await server.ready();
   });
   afterAll(async () => { await server?.close(); await pool?.end(); });
@@ -204,33 +209,73 @@ describe.skipIf(target === undefined)("an event made for a booking is named so a
     expect(await clientName(theirs.eventId)).toBe("TEST ONLY Ailsa Grant");
   });
 
-  // A title holding any email address counts as no title (N4): the enquiry's
-  // email corrected after the guest was filed under the old one, or an
-  // address staff typed into the hold's title.
-  it("never names an event by a title holding an email address, whoever's it is", async () => {
+  // A title holding any email address counts as no title (N4), and a name
+  // holding one is no client name (N7, A4): the enquiry's email corrected
+  // after the guest was filed under the old one, a guest who typed an address
+  // as their name, or an address staff typed into the hold's title. Each
+  // enquiry is filed through the public route, as a guest's is, never written
+  // by hand: a hand-made name is how the first client-name rule missed the
+  // guest the route files under their email.
+  it("never names an event, or its client, by an email address, whoever's it is", async () => {
     const v = await venue("any address");
     const oldAddress = `old-${randomUUID()}@event-name.invalid`;
-    const [corrected, typed] = await db.insert(schema.enquiries).values([
-      { venueId: v.venueId, spaceId: v.rooms[0], state: "under_review", name: oldAddress, email: `${randomUUID()}@event-name.invalid`,
-        eventType: "wedding", preferredDate: "2032-08-21" },
-      { venueId: v.venueId, spaceId: v.rooms[1], state: "under_review", name: "TEST ONLY Fraser", email: `${randomUUID()}@event-name.invalid`,
-        eventType: "wedding", preferredDate: "2032-08-21" },
-    ]).returning({ id: schema.enquiries.id });
-    if (corrected === undefined || typed === undefined) throw new Error("Enquiry fixtures missing");
-    const convert = async (enquiryId: string, spaceId: string, title?: string): Promise<Booking> => {
-      const response = await server.inject({
-        method: "POST", url: "/bookings/from-enquiry", headers: v.headers,
-        payload: { enquiryId, spaceId, title, startsAt: "2032-08-21T16:00:00.000Z", endsAt: "2032-08-21T23:00:00.000Z", ...hygiene(v.adminId) },
-      });
-      expect(response.statusCode, response.body).toBe(201);
-      return BookingSchema.parse(response.json<{ data: unknown }>().data);
-    };
+    const saved = { slugs: process.env["TWIN_PUBLIC_VENUE_SLUGS"], resend: process.env["RESEND_API_KEY"] };
+    // The venue takes enquiries on its slug; nothing is handed to the email
+    // provider (every send is recorded as dev mode).
+    process.env["TWIN_PUBLIC_VENUE_SLUGS"] = `event-name-${v.venueId}`;
+    Reflect.deleteProperty(process.env, "RESEND_API_KEY");
+    __resetResendClientForTests();
+    try {
+      const file = async (guest: { readonly email: string; readonly name?: string }): Promise<string> => {
+        const response = await server.inject({
+          method: "POST", url: "/public/enquiries",
+          payload: { venueSlug: `event-name-${v.venueId}`, eventType: "wedding", eventDate: "2032-08-21", ...guest },
+        });
+        expect(response.statusCode, response.body).toBe(201);
+        return response.json<{ data: { enquiryId: string } }>().data.enquiryId;
+      };
+      const convert = async (enquiryId: string, spaceId: string, title?: string): Promise<Booking> => {
+        const response = await server.inject({
+          method: "POST", url: "/bookings/from-enquiry", headers: v.headers,
+          payload: { enquiryId, spaceId, title, startsAt: "2032-08-21T16:00:00.000Z", endsAt: "2032-08-21T23:00:00.000Z", ...hygiene(v.adminId) },
+        });
+        expect(response.statusCode, response.body).toBe(201);
+        return BookingSchema.parse(response.json<{ data: unknown }>().data);
+      };
 
-    const filed = await convert(corrected.id, v.rooms[0]);
-    expect(filed.title).toBe(`${oldAddress} — Wedding`);
-    expect(await eventName(filed.eventId)).toBe("Wedding, 21 August 2032");
-    const retitled = await convert(typed.id, v.rooms[1], "Wedding for jane.fraser@example.test");
-    expect(await eventName(retitled.eventId)).toBe("Wedding, 21 August 2032");
+      // A guest who gave no name, filed under their email, then corrected
+      // (only a platform admin edits a guest's enquiry once it is sent).
+      const corrected = await file({ email: oldAddress });
+      const platformAdmin = {
+        authorization: `Bearer ${JSON.stringify({ id: v.adminId, email: `${v.adminId}@event-name.invalid`, role: "admin", venueId: v.venueId, platformRole: "admin" })}`,
+      };
+      const edited = await server.inject({
+        method: "PATCH", url: `/enquiries/${corrected}`, headers: platformAdmin, payload: { email: `new-${randomUUID()}@event-name.invalid` },
+      });
+      expect(edited.statusCode, edited.body).toBe(200);
+      const filed = await convert(corrected, v.rooms[0]);
+      expect(filed.title).toBe(`${oldAddress} — Wedding`);
+      expect(await eventName(filed.eventId)).toBe("Wedding, 21 August 2032");
+      expect(await clientName(filed.eventId)).toBeNull();
+
+      // A guest who typed another address as their name.
+      const asName = await convert(await file({ email: `${randomUUID()}@event-name.invalid`, name: `other-${randomUUID()}@event-name.invalid` }), v.rooms[1]);
+      expect(await eventName(asName.eventId)).toBe("Wedding, 21 August 2032");
+      expect(await clientName(asName.eventId)).toBeNull();
+
+      // Staff typed an address into the hold's title; the guest's own name is still theirs.
+      const retitled = await convert(await file({ email: `${randomUUID()}@event-name.invalid`, name: "TEST ONLY Fraser" }), v.rooms[2],
+        "Wedding for jane.fraser@example.test");
+      expect(await eventName(retitled.eventId)).toBe("Wedding, 21 August 2032");
+      expect(await clientName(retitled.eventId)).toBe("TEST ONLY Fraser");
+    } finally {
+      // The provider's client stays as first made, with no key, so an
+      // acknowledgement still on its way is recorded and never sent.
+      for (const [name, value] of [["TWIN_PUBLIC_VENUE_SLUGS", saved.slugs], ["RESEND_API_KEY", saved.resend]] as const) {
+        if (value === undefined) Reflect.deleteProperty(process.env, name);
+        else process.env[name] = value;
+      }
+    }
   });
 
   it("names the event of an untitled row from the seed or an importer the same way", async () => {

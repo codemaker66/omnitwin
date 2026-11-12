@@ -7,6 +7,7 @@ import {
   TransitionBookingSchema,
   UpdateBookingSchema,
   VIEWING_BOOKING_KIND,
+  holdsEmailAddress,
   isBookingEnquiry,
   occasionLabel,
   type DiaryCommand,
@@ -377,7 +378,13 @@ export async function bookingRoutes(
     }
 
     const occasion = occasionLabel(enquiry.eventType);
-    const fallbackTitle = `${enquiryTitleName(enquiry)}${occasion === null ? "" : ` — ${occasion}`}`;
+    const who = enquiryTitleName(enquiry);
+    const fallbackTitle = `${who}${occasion === null ? "" : ` — ${occasion}`}`;
+    // No client name for the event, which the Diary card and the handoff pack
+    // carry, when the enquiry's name is an email address (N7, A4): a guest who
+    // gave no name is filed under their email, and a name can hold another
+    // address (the email corrected since, or an address typed as a name).
+    const clientName = holdsEmailAddress(who) || who.toLowerCase() === enquiry.email.trim().toLowerCase() ? null : enquiry.name;
     const title = input.title ?? fallbackTitle.slice(0, MAX_BOOKING_TITLE_LENGTH);
     // A new event takes the hold's title, less the enquiry's email where that
     // is all it says of who asked (bindBookingToEvent, titleWithoutEnquiryEmail):
@@ -402,9 +409,7 @@ export async function bookingRoutes(
           startsAt,
           endsAt,
           createdBy: request.user.id,
-          // A guest who gave no name is filed under their email: no client
-          // name for the event, which the handoff pack carries (N7).
-          clientName: enquiryTitleName(enquiry).toLowerCase() === enquiry.email.trim().toLowerCase() ? null : enquiry.name,
+          clientName,
         }, { join: "enquiry", enquiryId: enquiry.id });
         // The enquiry was read at this venue above; a mismatch here means it
         // changed meanwhile, and nothing is written.

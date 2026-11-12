@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { eventDisplayName, eventNameFor, eventTitleFor } from "../event-name.js";
+import { eventDisplayName, eventNameFor, eventTitleFor, holdsEmailAddress } from "../event-name.js";
 
 // What an event is called when it has no name of its own (the release lead's
 // ruling of 12 November 2026 on #397): the occasion and the venue's own day
@@ -180,5 +180,29 @@ describe("eventTitleFor", () => {
   it("is the occasion alone for an event with no start", () => {
     expect(eventTitleFor({ name: "", eventType: "wedding", startsAt: null }, LONDON)).toBe("Wedding");
     expect(eventTitleFor({ name: "Wedding", eventType: "wedding", startsAt: null }, LONDON)).toBe("Wedding");
+  });
+});
+
+// A name holding an email address is no client's name either (A4, C2): the
+// enquiry conversion stores no client name then (routes/bookings.ts).
+describe("holdsEmailAddress", () => {
+  it("answers the same however often it is asked, and whatever was asked before", () => {
+    const address = "jane.fraser@example.test";
+    // The rule's expression is global; a global expression's test() starts
+    // where its last match ended, so it would answer false the second time.
+    expect(holdsEmailAddress(address)).toBe(true);
+    expect(holdsEmailAddress(address)).toBe(true);
+    // A long text whose address ends late, then a shorter one.
+    expect(holdsEmailAddress("Wedding for a guest filed as jane.fraser@example.test")).toBe(true);
+    expect(holdsEmailAddress("bob@example.test")).toBe(true);
+    expect(holdsEmailAddress("TEST ONLY Ailsa Grant")).toBe(false);
+    expect(holdsEmailAddress("Old.Address+tag@Example.TEST — Wedding")).toBe(true);
+  });
+
+  it("is the rule a name is read by: whatever holds an address names no event", () => {
+    for (const text of ["jane.fraser@example.test", "Wedding for jane.fraser@example.test", "Drinks @ the Saloon", "Fraser wedding @Saloon", "Ailsa Grant", ""]) {
+      const named = eventNameFor({ title: text, eventType: null, startsAt: MARCH_14, timeZone: LONDON });
+      expect(holdsEmailAddress(text), JSON.stringify(text)).toBe(text !== "" && named !== text);
+    }
   });
 });

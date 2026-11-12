@@ -40,6 +40,15 @@ const BARE_OCCASION_TITLE = /^[—–-]\s*(.*)$/su;
  *  is, so it counts as no title. */
 const EMAIL_ADDRESS = /[^\s@<>()]+@[^\s@<>()]+\.[A-Za-z]{2,}/gu;
 
+/** Whether a text holds an email address, by the rule an event's name is read
+ *  by. A name holding one is nobody's name for the event, nor the client's.
+ *  The expression is global (a title loses every address it holds), so it is
+ *  asked through search(), which always starts at the beginning: test() on a
+ *  global expression starts where its last match ended. */
+export function holdsEmailAddress(text: string): boolean {
+  return text.search(EMAIL_ADDRESS) !== -1;
+}
+
 const dayFormats = new Map<string, Intl.DateTimeFormat>();
 
 /** "14 March 2027": the calendar day of an instant on the venue's clock. A
