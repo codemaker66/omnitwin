@@ -15,7 +15,9 @@ import { TradesHouseLeafletPage } from "../pages/TradesHouseLeafletPage.js";
 // (measured on venviewer.com on 12 November 2026: the leaflet answered DENY).
 //
 // The exception is as narrow as it can be: that one static document may be
-// framed by this site only (SAMEORIGIN); every other path keeps DENY.
+// framed by this site only (SAMEORIGIN, and CSP frame-ancestors 'self', the
+// standard control, which decides wherever a browser supports it); every
+// other path keeps DENY. No other rule sends a CSP on that path.
 //
 // Vercel applies every matching header rule in order, and a later rule's
 // value for a key replaces an earlier one. That is measured, not assumed: on
@@ -90,13 +92,18 @@ function responseHeaders(path: string): ReadonlyMap<string, string> {
   return headers;
 }
 
+/** The sources a path's CSP frame-ancestors names, or undefined when it sends none. */
+function frameAncestors(path: string): readonly string[] | undefined {
+  const policy = responseHeaders(path).get("content-security-policy") ?? "";
+  return /(?:^|;)\s*frame-ancestors\s+([^;]*)/iu.exec(policy)?.[1]?.trim().split(/\s+/u);
+}
+
 /** Whether a page of this site may show `path` in a frame, by X-Frame-Options and CSP frame-ancestors. */
 function sameOriginMayFrame(path: string): boolean {
-  const headers = responseHeaders(path);
-  const frameOptions = headers.get("x-frame-options")?.trim().toUpperCase();
-  const ancestors = /(?:^|;)\s*frame-ancestors\s+([^;]*)/iu.exec(headers.get("content-security-policy") ?? "")?.[1];
+  const frameOptions = responseHeaders(path).get("x-frame-options")?.trim().toUpperCase();
+  const ancestors = frameAncestors(path);
   const byFrameOptions = frameOptions === undefined || frameOptions === "SAMEORIGIN";
-  const byPolicy = ancestors === undefined || /(?:^|\s)'self'(?:\s|$)/u.test(ancestors);
+  const byPolicy = ancestors === undefined || ancestors.includes("'self'");
   return byFrameOptions && byPolicy;
 }
 
@@ -116,7 +123,18 @@ describe("the Trades House leaflet page's frame", () => {
     const frame = screen.getByTitle("Trades House Glasgow two-sided leaflet");
     const src = frame.getAttribute("src") ?? "";
     expect(src.startsWith("/"), "the leaflet is this site's own document").toBe(true);
-    expect(responseHeaders(src).get("x-frame-options"), src).toBe("SAMEORIGIN");
+    // What a browser receives for that path once every matching rule has
+    // applied: the legacy header and the standard one (review of #405, H1),
+    // which decides wherever it is supported and names only this site.
+    const sent = responseHeaders(src);
+    expect({
+      "x-frame-options": sent.get("x-frame-options"),
+      "content-security-policy": sent.get("content-security-policy"),
+    }, src).toEqual({
+      "x-frame-options": "SAMEORIGIN",
+      "content-security-policy": "frame-ancestors 'self'",
+    });
+    expect(frameAncestors(src), src).toEqual(["'self'"]);
     expect(sameOriginMayFrame(src), src).toBe(true);
   });
 
@@ -135,6 +153,7 @@ describe("the Trades House leaflet page's frame", () => {
     expect(others.length).toBeGreaterThan(100);
     for (const path of others) {
       expect(responseHeaders(path).get("x-frame-options"), path).toBe("DENY");
+      expect(frameAncestors(path) ?? [], path).not.toContain("'self'");
     }
   });
 });
