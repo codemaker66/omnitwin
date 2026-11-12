@@ -479,6 +479,23 @@ describe("ops compiler services", () => {
     });
   });
 
+  // T-695 review H3: phases tied on sortOrder came back in whatever order the
+  // database gave, so a room flip's neighbours (its from and to labels) could
+  // differ between two compiles of one plan, and the recompile made a new pack.
+  it("reads a room flip's neighbours the same way whatever order phases tied on sortOrder arrive in", () => {
+    const graph = eventGraph();
+    const [ceremony, flip, dinner] = graph.phases;
+    if (ceremony === undefined || flip === undefined || dinner === undefined) throw new Error("fixture");
+    const drinks = { ...ceremony, id: "00000000-0000-4000-8000-000000000314", templateKey: "drinks", name: "Drinks reception" };
+    const compile = (phases: EventPhaseGraph["phases"]) => compileOpsHandoffDraft({
+      snapshot: snapshot(), previousSnapshot: null, eventGraph: { ...graph, phases }, clientNotes: null,
+    });
+    const one = compile([ceremony, drinks, flip, dinner]);
+    const other = compile([drinks, ceremony, flip, dinner]);
+    expect(other.roomFlipPlans).toEqual(one.roomFlipPlans);
+    expect(other.opsTasks.filter((task) => task.kind === "room_flip")).toEqual(one.opsTasks.filter((task) => task.kind === "room_flip"));
+  });
+
   it("does not mutate the hallkeeper sheet snapshot", () => {
     const original = snapshot();
     const before = JSON.stringify(original);

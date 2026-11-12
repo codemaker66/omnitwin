@@ -714,7 +714,10 @@ function compileSupplierInstructions(snapshot: ConfigurationSheetSnapshot): read
 
 function compileRoomFlipPlans(eventGraph: EventPhaseGraph | null): readonly DraftRoomFlipPlan[] {
   if (eventGraph === null) return [];
-  const phases = [...eventGraph.phases].sort((a, b) => a.sortOrder - b.sortOrder);
+  // Phases can tie on sortOrder (two added at once); the id settles the
+  // order, so a flip's neighbours never depend on the order rows arrive in.
+  const phases = [...eventGraph.phases].sort((a, b) =>
+    a.sortOrder - b.sortOrder || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   const plans: DraftRoomFlipPlan[] = [];
 
   phases.forEach((phase, index) => {
@@ -916,7 +919,7 @@ async function loadEventGraph(db: Database, eventId: string): Promise<EventPhase
   if (eventRow === undefined) throw new OpsHandoffEventNotFoundError(eventId);
 
   const [phaseRows, scenarioRows, variantRows, linkRows, snapshotRows] = await Promise.all([
-    db.select().from(eventPhases).where(eq(eventPhases.eventId, eventId)).orderBy(eventPhases.sortOrder),
+    db.select().from(eventPhases).where(eq(eventPhases.eventId, eventId)).orderBy(eventPhases.sortOrder, eventPhases.id),
     db.select().from(eventScenarios).where(eq(eventScenarios.eventId, eventId)).orderBy(eventScenarios.createdAt),
     db.select().from(layoutVariants).where(eq(layoutVariants.eventId, eventId)).orderBy(layoutVariants.createdAt),
     db.select().from(eventConfigurationLinks).where(eq(eventConfigurationLinks.eventId, eventId)).orderBy(eventConfigurationLinks.createdAt),
