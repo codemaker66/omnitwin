@@ -3,7 +3,7 @@ import { VenueIdSchema } from "./venue.js";
 import { SpaceIdSchema } from "./space.js";
 import { ConfigurationIdSchema } from "./configuration.js";
 import { UserIdSchema } from "./user.js";
-import { isCalendarDate } from "./event-brief-draft.js";
+import { isCalendarDate } from "./calendar-date.js";
 import {
   AcquisitionChannelSchema,
   EnquiryAttributionSchema,
