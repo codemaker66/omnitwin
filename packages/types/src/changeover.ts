@@ -109,13 +109,12 @@ export type Changeover = z.infer<typeof ChangeoverSchema>;
 /**
  * The two layouts. `to` may be `from` again, when the next booking keeps the
  * layout: the furniture then stays, and the dressing is still cleared and
- * laid for a different booking. Unknown keys are dropped, so a page loaded
- * while the route still took each booking's event reads on.
+ * laid for a different booking.
  */
 export const ChangeoverQuerySchema = z.object({
   from: z.uuid(),
   to: z.uuid(),
-});
+}).strict();
 export type ChangeoverQuery = z.infer<typeof ChangeoverQuerySchema>;
 
 /** What stays, what goes back to store and what comes from it, for one item. */
