@@ -149,7 +149,7 @@ describe("the privacy policy", () => {
   });
 
   it("says plainly when the browser would not keep the choice, rather than claiming it was kept", () => {
-    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("QuotaExceededError"); });
+    vi.spyOn(window.localStorage, "setItem").mockImplementation(() => { throw new Error("QuotaExceededError"); });
     try {
       render(<LegalPage type="privacy" />);
       fireEvent.click(screen.getByRole("button", { name: "Don't measure my visits" }));
