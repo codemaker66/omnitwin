@@ -96,6 +96,24 @@ describe("TouchArbiter", () => {
     expect(arbiter.release(FIRST, 600, 160, 380)).toEqual({ kind: "drop" });
   });
 
+  it("turns a lift the planner refused to the camera: the finger looks round and drops nothing", () => {
+    const arbiter = new TouchArbiter();
+    pressed(arbiter, { onPiece: true });
+    expect(arbiter.tick(LIFT_HOLD_MS)).toBe("lift");
+    expect(arbiter.refuseLift()).toBe("orbit");
+    expect(arbiter.move(FIRST, 400, 160, 380)).toBe("orbit");
+    expect(arbiter.release(FIRST, 600, 160, 380)).toEqual({ kind: "none" });
+    expect(arbiter.liftCancelled).toBe(false);
+    expect(arbiter.idle).toBe(true);
+  });
+
+  it("refuses nothing but a lift", () => {
+    const arbiter = new TouchArbiter();
+    pressed(arbiter, { onPiece: true });
+    expect(arbiter.refuseLift()).toBe("pending");
+    expect(arbiter.tick(LIFT_HOLD_MS)).toBe("lift");
+  });
+
   it("returns a lifted piece when a second finger lands", () => {
     const arbiter = new TouchArbiter();
     pressed(arbiter, { onPiece: true });

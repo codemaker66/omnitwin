@@ -1,8 +1,17 @@
 import { and, eq, inArray } from "drizzle-orm";
 import type { FastifyBaseLogger } from "fastify";
-import { summariseRequest, type VenueRequest } from "@omnitwin/types";
+import {
+  isClientSideRole,
+  PlatformRoleSchema,
+  summariseRequest,
+  threadAudienceAdmits,
+  type AudienceThread,
+  type Thread,
+  type VenueRequest,
+} from "@omnitwin/types";
 import { requests, users } from "../db/schema.js";
 import type { Database } from "../db/client.js";
+import { clientHoldsEventLink } from "./conversations.js";
 import { sendPush, type PushDeps, type PushSendRecord } from "./push.js";
 
 // ---------------------------------------------------------------------------
@@ -76,10 +85,38 @@ export interface ReplyContext {
   readonly authorUserId: string | null;
   readonly authorName: string;
   readonly body: string;
+  /** The thread the reply was written on: its raiser is told only while it still admits them. */
+  readonly thread: AudienceThread & { readonly eventId: string | null };
+}
+
+/**
+ * Whether a thread admits this person as they stand now. A device keeps its
+ * push subscription when its person is moved to another venue or taken off
+ * the floor, so a reply's words are held to the arbiter that would refuse
+ * them the thread itself (threadAudienceAdmits), read at the moment of
+ * sending, as pushForRequestLanded reads its audience.
+ */
+async function threadAdmitsNow(db: Database, userId: string, thread: ReplyContext["thread"]): Promise<boolean> {
+  const [person] = await db
+    .select({ role: users.role, venueId: users.venueId, platformRole: users.platformRole })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+  if (person === undefined) return false;
+  const platformRole = PlatformRoleSchema.safeParse(person.platformRole);
+  const holdsEventLink = isClientSideRole(person.role) && thread.eventId !== null
+    ? await clientHoldsEventLink(db, userId, thread.eventId)
+    : false;
+  return threadAudienceAdmits(
+    { role: person.role, venueId: person.venueId, platformRole: platformRole.success ? platformRole.data : "none" },
+    thread,
+    { holdsEventLink },
+  );
 }
 
 /** A reply on a request's thread tells the person who raised it, when
- *  someone else wrote. The author is never told of their own words. */
+ *  someone else wrote and the thread still admits them. The author is never
+ *  told of their own words. */
 export async function pushForReply(
   db: Database,
   reply: ReplyContext,
@@ -91,6 +128,7 @@ export async function pushForReply(
     .where(eq(requests.id, reply.requestId))
     .limit(1);
   if (request === undefined || request.requestedByUserId === null || request.requestedByUserId === reply.authorUserId) return [];
+  if (!(await threadAdmitsNow(db, request.requestedByUserId, reply.thread))) return [];
   return sendPush(db, {
     venueId: request.venueId,
     userIds: [request.requestedByUserId],
@@ -111,7 +149,7 @@ export async function pushForReply(
  *  calls this: the REST routes and the socket's command path. */
 export function tellOfMessage(
   db: Database,
-  thread: { readonly requestId: string | null },
+  thread: Pick<Thread, "requestId" | "venueId" | "audience" | "subject" | "eventId">,
   message: { readonly id: string; readonly authorUserId: string | null; readonly authorName: string; readonly body: string },
   logger: FastifyBaseLogger | undefined,
 ): void {
@@ -122,6 +160,7 @@ export function tellOfMessage(
     authorUserId: message.authorUserId,
     authorName: message.authorName,
     body: message.body,
+    thread,
   }, { logger }), logger, "request.replied");
 }
 

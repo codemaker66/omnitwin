@@ -9,10 +9,12 @@ import { createTableGroup } from "../../lib/table-group.js";
 import { GRAND_HALL_DOOR_CLEAR_SPACES } from "../../lib/door-clear-spaces.js";
 import { doorBlockers } from "../../lib/keep-doors-clear.js";
 
-// The Grand Hall as the planner opens it, 21 × 10.5 m, with its four doors'
-// clear spaces (the main door's x −1.02 to 1.03 from z 3.795; the end
-// door's x 7.97 to 9.67). Snapping is on: a piece set down goes to the 1 m
-// grid, then flush to a wall within 1.5 m of it.
+// A 21 × 10.5 m hall, the Grand Hall's old hand-drawn size (the planner now
+// opens it at its scanned 21.135 × 10.59 m, data/room-geometries.ts), with
+// the Grand Hall's four doors' clear spaces from the survey (the main door's
+// x −1.02 to 1.03 from z 3.795; the end door's x 7.97 to 9.67). Snapping is
+// on: a piece set down goes to the 1 m grid, then flush to a wall within 1.5 m
+// of it.
 
 function id(slug: string): string {
   const item = getCatalogueItemBySlug(slug);

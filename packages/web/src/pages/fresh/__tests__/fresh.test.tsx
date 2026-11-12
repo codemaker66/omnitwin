@@ -255,14 +255,20 @@ describe("the room dossiers", () => {
     );
   });
 
-  it("states the published dimensions for rooms that publish them", () => {
+  it("states the dimensions for rooms that have them, the Grand Hall's as measured", () => {
     render(<FreshPage />);
     const buttons = screen.getAllByRole("button", { name: "Open the room" });
     const first = buttons[0];
-    if (first === undefined) return;
+    if (first === undefined) throw new Error("no room to open");
     fireEvent.click(first);
-    expect(screen.getByText(/21 × 10 m · 7 m high/)).toBeTruthy();
-    expect(screen.getByText(/a further 7 m under the dome/)).toBeTruthy();
+    // The height says what it is measured to; the dome follows as a sentence of
+    // its own and is never given as the room's height.
+    expect(
+      screen.getByText(
+        "21.14 × 10.59 m · 6.7 m high (to the coffered ceiling). The dome rises above part of the hall.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText(/under the dome/)).toBeNull();
   });
 });
 
