@@ -14,14 +14,18 @@
 //   4. Remembered allergy notes unused for the period the client agreed to
 //      (DIETARY_MEMORY_RETENTION). The words beside the "remember" box promise
 //      this removal.
-//   5. Engagement events older than ENGAGEMENT_RETENTION_MONTHS (migration
+//   5. Suppliers' contacts and notes on the Day Board, cleared
+//      SUPPLIER_ARRIVAL_RETENTION.daysAfterBooking days after their booking
+//      ends (clearLapsedSupplierContacts), as the privacy policy says. The
+//      supplier's name, times and door marks stay (Blake, 12 November 2026).
+//   6. Engagement events older than ENGAGEMENT_RETENTION_MONTHS (migration
 //      0100): the enquiry funnel keeps them no longer than the privacy page
 //      keeps an enquiry, whether or not their enquiry or proposal remains.
 //
-// Both note passes run on the schedule, not only when someone calls
-// POST /admin/cleanup, because the product promises them. Their errors carry
-// a SQLSTATE only, never the note: this job's log is public with the
-// repository. Neither touches object storage (PR #130 stopped storing sheet
+// The note and contact passes run on the schedule, not only when someone
+// calls POST /admin/cleanup, because the product promises them. Their errors
+// carry a SQLSTATE only, never the words: this job's log is public with the
+// repository. None touches object storage (PR #130 stopped storing sheet
 // PDFs), so the job needs only DATABASE_URL.
 //
 // Exit codes: 0 = success, 1 = error
@@ -34,6 +38,7 @@ import { cleanupPreviewConfigurations, cleanupOrphanedFiles } from "../services/
 import { removeUnusedRememberedNotes } from "../services/dietary-memory.js";
 import { removeLapsedDietaryNotes } from "../services/dietary-retention.js";
 import { removeExpiredEngagementEvents } from "../services/enquiry-funnel.js";
+import { clearLapsedSupplierContacts } from "../services/supplier-arrival-retention.js";
 
 export interface ScheduledCleanupResult {
   readonly deletedConfigs: number;
@@ -46,6 +51,8 @@ export interface ScheduledCleanupResult {
   /** Layouts whose notes on single pieces passed their retention. */
   readonly lapsedPieceNoteLayouts: number;
   readonly rememberedNotesRemoved: number;
+  /** Supplier arrivals whose contact and note passed their retention. */
+  readonly supplierContactsCleared: number;
   readonly engagementEventsRemoved: number;
 }
 
@@ -67,6 +74,9 @@ export async function runScheduledCleanup(
   const remembered = await removeUnusedRememberedNotes(db);
   log(`[cleanup] Removed ${String(remembered.removed)} remembered allergy note(s) unused for the agreed period`);
 
+  const supplierContacts = await clearLapsedSupplierContacts(db);
+  log(`[cleanup] Cleared the contact and note from ${String(supplierContacts.arrivals)} supplier arrival(s) past their retention`);
+
   const engagementEventsRemoved = await removeExpiredEngagementEvents(db);
   log(`[cleanup] Removed ${String(engagementEventsRemoved)} engagement event(s) past their retention period`);
 
@@ -78,6 +88,7 @@ export async function runScheduledCleanup(
     loggedNotesRemoved: lapsed.actionLog,
     lapsedPieceNoteLayouts: lapsed.pieceNotes.layouts,
     rememberedNotesRemoved: remembered.removed,
+    supplierContactsCleared: supplierContacts.arrivals,
     engagementEventsRemoved,
   };
 }

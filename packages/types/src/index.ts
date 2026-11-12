@@ -441,9 +441,11 @@ export {
   HallkeeperAcknowledgementSchema,
   RecordEventPlanChangeInputSchema,
   AwaitingAcknowledgementQuerySchema,
+  AWAITING_CHANGES_PER_EVENT,
   EventAwaitingAcknowledgementSchema,
   BOOKING_MOVE_TITLES,
-  isBookingMoveTitle,
+  BookingMovePlaceSchema,
+  FloorChangeSchema,
   type EventPlanChangeId,
   type EventPlanNotificationId,
   type HallkeeperAcknowledgementId,
@@ -466,6 +468,8 @@ export {
   type AwaitingAcknowledgementQuery,
   type EventAwaitingAcknowledgement,
   type BookingMoveTitle,
+  type BookingMovePlace,
+  type FloorChange,
 } from "./event-plan-lifecycle.js";
 
 // --- ASPIRATIONAL: Canonical Layout Snapshot v0 evidence subject ---

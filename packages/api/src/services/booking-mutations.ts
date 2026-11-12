@@ -569,12 +569,15 @@ async function updateBookingLocked(
       from: { spaceId: row.spaceId, startsAt: row.startsAt, endsAt: row.endsAt },
       to: { spaceId: updated.spaceId, startsAt: updated.startsAt },
     });
-    // The floor reads the move on the Day Board until someone acknowledges it
-    // (services/booking-move-feed.ts). Recorded with the move, so a moved
-    // booking always carries its change.
+  }
+  // The floor reads the move on the Day Board until someone acknowledges it
+  // (services/booking-move-feed.ts). Recorded with the move, so a moved
+  // booking always carries its change, on the event it is bound to now: one
+  // moved to another event in the same edit is told there, from where it stood.
+  if (updated.eventId !== null && (timesChanged || roomChanged)) {
     await recordBookingMove(conn, {
       bookingId: row.id,
-      eventId: row.eventId,
+      eventId: updated.eventId,
       venueId: updated.venueId,
       actor,
       before: { spaceId: row.spaceId, startsAt: row.startsAt, endsAt: row.endsAt },

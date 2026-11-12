@@ -7,7 +7,7 @@ import {
   events,
   hallkeeperProgress,
 } from "../db/schema.js";
-import { assembleSheetDataV2, ApprovedSnapshotUnavailableError, linkedEventIds } from "../services/hallkeeper-sheet-v2-data.js";
+import { assembleSheetDataV2, ApprovedSnapshotUnavailableError, linkedEventIds, type SheetDataV2Internal } from "../services/hallkeeper-sheet-v2-data.js";
 import { generateSheetPdfV2 } from "../services/hallkeeper-pdf-v2.js";
 import { authenticate } from "../middleware/auth.js";
 import type { JwtUser } from "../middleware/auth.js";
@@ -306,47 +306,64 @@ export async function hallkeeperSheetRoutes(
     return { data: summarizeSheet(params.data.configId, result.payload, marks.map((mark) => mark.rowKey)) };
   });
 
-  // GET /hallkeeper/changeover?from=&to=&fromEventId=&toEventId= — what moves
-  // when a room goes from one booking's layout to the next one's
-  // (lib/changeover.ts): what stays, what goes back to store, what comes from
-  // it, and which pieces move within the room. Both layouts are read as their
-  // sheets are, behind the sheet's own gate, and must be of one room. The
-  // answer carries counts and pieces only, never a sheet's contacts or notes.
+  // GET /hallkeeper/changeover?from=&to= — what moves when a room goes from
+  // one booking's layout to the next one's (lib/changeover.ts): what stays,
+  // what goes back to store, what comes from it, and which pieces move within
+  // the room. Both layouts are read as their sheets are, behind the sheet's
+  // own gate, and must be of one room; `to` may be `from` again, when the
+  // next booking keeps the layout. The answer carries counts and pieces only,
+  // never a sheet's contacts, notes or hours, so the sheets are read without
+  // their hours. A refusal names the layouts it is about (`details.configIds`),
+  // so the floor can say whose sheet to ask the office about.
   server.get("/changeover", { preHandler: [authenticate] }, async (request, reply) => {
     reply.header("Cache-Control", "private, no-store");
     const query = ChangeoverQuerySchema.safeParse(request.query);
     if (!query.success) {
       return reply.status(400).send({ error: "Invalid changeover", code: "VALIDATION_ERROR", details: query.error.issues });
     }
-    const { from, to, fromEventId, toEventId } = query.data;
-    for (const configId of [from, to]) {
+    const { from, to } = query.data;
+    const layouts = from === to ? [from] : [from, to];
+    for (const configId of layouts) {
       const gate = await requireConfigAccess(db, configId, request.user);
-      if (!gate.ok) return reply.status(gate.status).send({ error: gate.error, code: gate.code });
+      if (!gate.ok) return reply.status(gate.status).send({ error: gate.error, code: gate.code, details: { configIds: [configId] } });
     }
     const rooms = await db.select({ id: configurations.id, spaceId: configurations.spaceId })
       .from(configurations)
-      .where(and(inArray(configurations.id, [from, to]), isNull(configurations.deletedAt)));
+      .where(and(inArray(configurations.id, layouts), isNull(configurations.deletedAt)));
     const roomOf = (configId: string): string | undefined => rooms.find((row) => row.id === configId)?.spaceId;
-    if (roomOf(from) === undefined || roomOf(to) === undefined) {
-      return reply.status(404).send({ error: "Configuration not found", code: "NOT_FOUND" });
+    const gone = layouts.filter((configId) => roomOf(configId) === undefined);
+    if (gone.length > 0) {
+      return reply.status(404).send({ error: "Configuration not found", code: "NOT_FOUND", details: { configIds: gone } });
     }
     if (roomOf(from) !== roomOf(to)) {
-      return reply.status(409).send({ error: "A changeover runs between two layouts of one room", code: "NOT_ONE_ROOM" });
+      return reply.status(409).send({ error: "A changeover runs between two layouts of one room", code: "NOT_ONE_ROOM", details: { configIds: [from, to] } });
     }
     const baseUrl = frontendUrl ?? `${request.protocol}://${request.hostname}`;
-    let before;
-    let after;
-    try {
-      [before, after] = await Promise.all([
-        assembleSheetDataV2(db, from, baseUrl, fromEventId ?? null),
-        assembleSheetDataV2(db, to, baseUrl, toEventId ?? null),
-      ]);
-    } catch (error) {
-      if (!(error instanceof ApprovedSnapshotUnavailableError)) throw error;
-      return reply.status(503).send({ error: error.message, code: error.code });
+    const reads = await Promise.allSettled(layouts.map((configId) => assembleSheetDataV2(db, configId, baseUrl, null, { timing: false })));
+    const unreadable: string[] = [];
+    const sheets = new Map<string, SheetDataV2Internal | null>();
+    for (const [index, read] of reads.entries()) {
+      const configId = layouts[index];
+      if (configId === undefined) continue;
+      if (read.status === "fulfilled") sheets.set(configId, read.value);
+      else if (read.reason instanceof ApprovedSnapshotUnavailableError) unreadable.push(configId);
+      else throw read.reason;
     }
+    if (unreadable.length > 0) {
+      const error = new ApprovedSnapshotUnavailableError();
+      return reply.status(503).send({ error: error.message, code: error.code, details: { configIds: unreadable } });
+    }
+    const before = sheets.get(from) ?? null;
+    const after = sheets.get(to) ?? null;
     if (before === null || after === null) {
-      return reply.status(404).send({ error: "Configuration not found", code: "NOT_FOUND" });
+      const missing = layouts.filter((configId) => (sheets.get(configId) ?? null) === null);
+      return reply.status(404).send({ error: "Configuration not found", code: "NOT_FOUND", details: { configIds: missing } });
+    }
+    // As the sibling sheet routes do, gate again on what the assembly read.
+    for (const [configId, sheet] of [[from, before], [to, after]] as const) {
+      if (!canAccessResource(request.user, sheet.authPivot.configUserId, sheet.authPivot.venueId)) {
+        return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN", details: { configIds: [configId] } });
+      }
     }
     return { data: changeoverBetween({ configId: from }, { configId: to }, before.payload, after.payload) };
   });

@@ -4,6 +4,7 @@ import {
   DIETARY_MEMORY_CONSENT,
   DIETARY_MEMORY_MONTHS_UNUSED,
   DIETARY_NOTE_RETENTION,
+  SUPPLIER_ARRIVAL_RETENTION,
   findUnsupportedProposalClaim,
 } from "@omnitwin/types";
 import { LegalPage } from "../LegalPage.js";
@@ -79,12 +80,15 @@ describe("every document", () => {
   it.each(TYPES)("shows a machine-readable last-updated date — %s", (type) => {
     render(<LegalPage type={type} />);
     const time = document.querySelector("time");
-    // Each document carries its own date: the privacy policy and the
-    // accessibility statement changed in the v1.0 final review; the terms
-    // changed on 11 November, when the Grand Hall's dimensions became measured.
+    // Each document carries its own date: the accessibility statement changed
+    // in the v1.0 final review; the terms on 11 November, when the Grand Hall's
+    // dimensions became measured; the privacy policy on 12 November, when it
+    // said what the Day Board keeps of suppliers and for how long.
     const expected = type === "terms"
       ? { iso: "2026-11-11", text: "11 November 2026" }
-      : { iso: "2026-11-08", text: "8 November 2026" };
+      : type === "privacy"
+        ? { iso: "2026-11-12", text: "12 November 2026" }
+        : { iso: "2026-11-08", text: "8 November 2026" };
     expect(time?.getAttribute("datetime")).toBe(expected.iso);
     expect(time?.textContent).toBe(expected.text);
   });
@@ -141,6 +145,16 @@ describe("the privacy policy", () => {
     expect(text).toContain("you can take that back at any time");
     const link = screen.getByRole("link", { name: "See or remove them (sign in first)" });
     expect(link.getAttribute("href")).toBe("/account/allergy-notes");
+  });
+
+  it("says what the Day Board keeps of suppliers, and that only their contact and note go, a year after the booking", () => {
+    const text = textOf("privacy");
+    expect(text).toContain("Suppliers coming to an event");
+    expect(text).toContain("a contact for the day and a short note");
+    // The period comes from the one definition the nightly pass runs on (Blake, 12 November 2026).
+    expect(text).toContain(`removed ${String(SUPPLIER_ARRIVAL_RETENTION.daysAfterBooking)} days after the booking ends`);
+    // The names on the door marks are kept, and the page says so.
+    expect(text).toContain("they are the venue's record of who was in the building, and are kept after a member of staff's account is closed");
   });
 
   it("names no lawful condition for the health note: that is the venue adviser's to confirm", () => {

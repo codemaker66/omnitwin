@@ -63,9 +63,9 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/floor-changes-postgres.test.ts",
   // What moves at a changeover: two layouts of one room through the real sheet pipeline.
   "src/__tests__/changeover-postgres.test.ts",
-  // Supplier arrivals (migration 0108): the office plans them, the floor marks the door, each venue its own.
+  // Supplier arrivals (migration 0109): the office plans them, the floor marks the door, each venue its own.
   "src/__tests__/supplier-arrivals-postgres.test.ts",
-  // Opening and lock-up (migration 0109): the venue's lists, each change from the list seen; one tick a day.
+  // Opening and lock-up (migration 0110): the venue's lists, each change from the list seen; one tick a day.
   "src/__tests__/building-checks-postgres.test.ts",
   "src/__tests__/ai-usage-postgres.test.ts",
   // A supplier's reply has a limit of its own: twenty an hour from one address, through the whole app.

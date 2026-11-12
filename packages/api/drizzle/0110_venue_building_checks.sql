@@ -1,9 +1,10 @@
 -- Opening and lock-up on the Day Board (T-693, 11 November 2026).
--- 0109, after 0108 (supplier arrivals); the release queue confirms the
--- number at the merge slot. A renumber changes this file's name, this line,
--- and the journal entry's tag, idx and `when`. Its `when` must be strictly
--- later than the entry before it: drizzle applies a migration only when its
--- `when` is later than the last one applied, so an equal value is skipped.
+-- 0110 at journal idx 107, after 0109 (supplier arrivals); the release queue
+-- confirms the number at the merge slot. A renumber changes this file's name,
+-- this line, and the journal entry's tag, idx and `when`. Its `when` must be
+-- strictly later than the entry before it: drizzle applies a migration only
+-- when its `when` is later than the last one applied, so an equal value is
+-- skipped.
 --
 -- The venue's own checks for opening the building and locking it up, in its
 -- own words, and each day's ticks. Venviewer writes none: a list it invented

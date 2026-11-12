@@ -5,12 +5,15 @@ import { getRotaFloorWeek } from "../../../api/rota.js";
 // ---------------------------------------------------------------------------
 // The published rota for the day the board shows: the week holding it, or
 // both weeks when the day's late hours run into a Monday. It is the floor's
-// view (`view=floor`): published shifts and the names on them, never the
-// records, leave or warnings an administrator's rota carries. Read when the
-// day changes, and again each time the board asks: as its clock ticks, at
-// most every five minutes, since a rota changes far less often than a room;
-// at once when someone presses Refresh. A failed read keeps what it last knew
-// and says when that was. Only the whole floor's rota counts: someone who may
+// view (`view=floor`) whatever the reader's role: published and cancelled
+// shifts with their notes, and each person's name, employment type and
+// skills; never the records, leave, warnings, drafts or accounts an
+// administrator's rota carries. The board uses the published setup shifts
+// and the names on them. Read when the day changes, and again each time the
+// board asks: as its clock ticks, at most every five minutes, since a rota
+// changes far less often than a room; at once when someone presses Refresh;
+// within a minute after a failure. A failed read keeps what it last knew and
+// says when that was. Only the whole floor's rota counts: someone who may
 // read only their own shifts would see a crew of one, so they see none.
 // ---------------------------------------------------------------------------
 

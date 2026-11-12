@@ -10,13 +10,16 @@ import type { Database } from "../db/client.js";
 // silently) when they cannot run. The job's log is public with the repository.
 // The enquiry funnel's engagement events (migration 0100) are kept no longer
 // than the privacy page keeps an enquiry, so their retention pass runs here too.
+// So does the pass that clears a supplier's contact and note a year after
+// their booking ends, as the privacy page says (Blake, 12 November 2026).
 
-const { previewMock, orphanMock, lapsedMock, rememberedMock, engagementMock } = vi.hoisted(() => ({
+const { previewMock, orphanMock, lapsedMock, rememberedMock, engagementMock, supplierMock } = vi.hoisted(() => ({
   previewMock: vi.fn(),
   orphanMock: vi.fn(),
   lapsedMock: vi.fn(),
   rememberedMock: vi.fn(),
   engagementMock: vi.fn(),
+  supplierMock: vi.fn(),
 }));
 
 vi.mock("../services/cleanup.js", () => ({
@@ -34,10 +37,15 @@ vi.mock("../services/dietary-retention.js", async (importOriginal) => ({
 vi.mock("../services/enquiry-funnel.js", () => ({
   removeExpiredEngagementEvents: engagementMock,
 }));
+vi.mock("../services/supplier-arrival-retention.js", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../services/supplier-arrival-retention.js")>(),
+  clearLapsedSupplierContacts: supplierMock,
+}));
 
 const { runScheduledCleanup } = await import("../scripts/run-cleanup.js");
 const { DietaryMemoryWriteError } = await import("../services/dietary-memory.js");
 const { DietaryRetentionError } = await import("../services/dietary-retention.js");
+const { SupplierContactRetentionError } = await import("../services/supplier-arrival-retention.js");
 
 const db = {} as Database;
 
@@ -49,6 +57,7 @@ beforeEach(() => {
     pieceNotes: { layouts: 2, pieces: 7, revisions: 3, sheets: 1, actionLog: 4, opsTasks: 2 } });
   rememberedMock.mockResolvedValue({ dryRun: false, removed: 3 });
   engagementMock.mockResolvedValue(4);
+  supplierMock.mockResolvedValue({ dryRun: false, arrivals: 7 });
 });
 
 describe("runScheduledCleanup", () => {
@@ -70,6 +79,7 @@ describe("runScheduledCleanup", () => {
       loggedNotesRemoved: 6,
       lapsedPieceNoteLayouts: 2,
       rememberedNotesRemoved: 3,
+      supplierContactsCleared: 7,
       engagementEventsRemoved: 4,
     });
     // Called with the database alone: no dry run, so the notes really go.
@@ -86,8 +96,26 @@ describe("runScheduledCleanup", () => {
       "[cleanup] Removed the allergy note from 4 layout(s) and 5 event sheet(s) past their retention, and from 6 logged change(s)",
       "[cleanup] Removed the notes on single pieces from 2 layout(s) past their retention",
       "[cleanup] Removed 3 remembered allergy note(s) unused for the agreed period",
+      "[cleanup] Cleared the contact and note from 7 supplier arrival(s) past their retention",
       "[cleanup] Removed 4 engagement event(s) past their retention period",
     ]);
+  });
+
+  it("clears suppliers' contacts for real, after the note passes, and fails the job with nothing from a contact in the error", async () => {
+    await runScheduledCleanup(db, () => undefined);
+    // Called with the database alone: no dry run, so the contacts really go.
+    expect(supplierMock).toHaveBeenCalledTimes(1);
+    expect(supplierMock).toHaveBeenCalledWith(db);
+    expect(rememberedMock.mock.invocationCallOrder[0]).toBeLessThan(supplierMock.mock.invocationCallOrder[0] ?? 0);
+
+    const failure = new SupplierContactRetentionError(
+      Object.assign(new Error("Failing row contains (Morven 07700 900123)"), { code: "23514" }),
+    );
+    supplierMock.mockRejectedValue(failure);
+    const lines: string[] = [];
+    await expect(runScheduledCleanup(db, (line) => { lines.push(line); })).rejects.toBe(failure);
+    expect(failure.message).toBe("Supplier contact retention pass failed (SQLSTATE 23514)");
+    expect(lines.join("\n")).not.toContain("07700");
   });
 
   it("runs the engagement retention pass once, last, and fails the job when it cannot run", async () => {

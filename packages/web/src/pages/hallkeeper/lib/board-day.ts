@@ -63,18 +63,37 @@ export function soonerOf(slotBoundaryMs: number | null, rolloverMs: number): num
  *  is tried again this often until it settles; midnight stands meanwhile. */
 export const BOUNDARY_RETRY_MS = 30_000;
 
-/** The venue's day boundary hour from its operating settings; 0 (midnight)
- *  until they arrive, and for a venue that has none. */
-export function useDayBoundaryHour(venueId: string | null): number {
+/** The venue's day boundary hour, and whether it stands yet: "reading" until
+ *  the venue's first answer, "retrying" after a read failed (midnight stands
+ *  meanwhile, and the read is tried again), "known" once read. Whatever
+ *  places a typed time on the board's night waits for "known". */
+export interface DayBoundary {
+  readonly hour: number;
+  readonly state: "reading" | "retrying" | "known";
+}
+
+/** The venue's day boundary hour from its operating settings, and whether it
+ *  is read yet; the hour is 0 (midnight) until it arrives, and for a venue
+ *  that has none. */
+export function useDayBoundary(venueId: string | null): DayBoundary {
   const [hour, setHour] = useState(0);
+  const [settled, setSettled] = useState<{ readonly venueId: string; readonly state: "retrying" | "known" } | null>(null);
   useEffect(() => {
     if (venueId === null) return;
     let disposed = false;
     let retry: ReturnType<typeof setTimeout> | null = null;
     const read = (): void => {
       getOperatingSettings(venueId)
-        .then((settings) => { if (!disposed) setHour(settings === null ? 0 : settings.dayBoundaryHour); })
-        .catch(() => { if (!disposed) retry = setTimeout(read, BOUNDARY_RETRY_MS); });
+        .then((settings) => {
+          if (disposed) return;
+          setHour(settings === null ? 0 : settings.dayBoundaryHour);
+          setSettled({ venueId, state: "known" });
+        })
+        .catch(() => {
+          if (disposed) return;
+          setSettled({ venueId, state: "retrying" });
+          retry = setTimeout(read, BOUNDARY_RETRY_MS);
+        });
     };
     read();
     return () => {
@@ -82,5 +101,10 @@ export function useDayBoundaryHour(venueId: string | null): number {
       if (retry !== null) clearTimeout(retry);
     };
   }, [venueId]);
-  return hour;
+  return { hour, state: settled !== null && settled.venueId === venueId ? settled.state : "reading" };
+}
+
+/** The venue's day boundary hour alone: 0 (midnight) until it arrives. */
+export function useDayBoundaryHour(venueId: string | null): number {
+  return useDayBoundary(venueId).hour;
 }

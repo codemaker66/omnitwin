@@ -27,7 +27,9 @@ import type { RequestActor } from "../services/requests.js";
 // a booking, when, and at which door.
 //
 //   GET    ?from=&to=            the floor reads the arrivals due in a window
-//   POST   /                     the office adds one to a booking
+//   POST   /                     the office adds one to a booking; with the
+//                                house Idempotency-Key header, a resend
+//                                answers with the first add (200, replayed)
 //   PATCH  /:id                  the office changes one, from the revision it saw
 //   DELETE /:id?expectedRevision the office removes one, likewise
 //   POST   /:id/arrived | /left  the floor records the door; first tap wins
@@ -37,9 +39,18 @@ import type { RequestActor } from "../services/requests.js";
 const VenueParam = z.object({ venueId: z.uuid() });
 const ItemParam = z.object({ venueId: z.uuid(), id: z.uuid() });
 const StepParam = ItemParam.extend({ step: SupplierArrivalStepSchema });
+const IdempotencyKeyHeader = z.uuid();
 
 function validationError(reply: FastifyReply, details: unknown): FastifyReply {
   return reply.status(400).send({ error: "Validation failed", code: "VALIDATION_ERROR", details });
+}
+
+/** The add's key: absent, a uuid, or a mistake the client is told about. */
+function idempotencyKeyOf(request: FastifyRequest): { readonly key: string | null } | null {
+  const raw = request.headers["idempotency-key"];
+  if (raw === undefined) return { key: null };
+  const parsed = IdempotencyKeyHeader.safeParse(raw);
+  return parsed.success ? { key: parsed.data } : null;
 }
 
 function sendDeny(reply: FastifyReply, result: ArrivalDeny): FastifyReply {
@@ -74,11 +85,16 @@ export async function supplierArrivalRoutes(server: FastifyInstance, opts: { db:
     reply.header("Cache-Control", "private, no-store");
     const params = VenueParam.safeParse(request.params);
     if (!params.success) return validationError(reply, params.error.issues);
+    const idempotency = idempotencyKeyOf(request);
+    if (idempotency === null) {
+      return validationError(reply, [{ path: ["idempotency-key"], message: "Idempotency-Key must be a uuid" }]);
+    }
     const body = CreateSupplierArrivalSchema.safeParse(request.body ?? {});
     if (!body.success) return validationError(reply, body.error.issues);
-    const result = await createArrival(db, actorOf(request), params.data.venueId, body.data);
+    const result = await createArrival(db, actorOf(request), params.data.venueId, body.data, idempotency.key);
     if (isArrivalDeny(result)) return sendDeny(reply, result);
-    return reply.status(201).send({ data: SupplierArrivalSchema.parse(result) });
+    if (idempotency.key !== null) reply.header("idempotency-replay", String(result.replay));
+    return reply.status(result.replay ? 200 : 201).send({ data: SupplierArrivalSchema.parse(result.arrival) });
   });
 
   server.patch("/:venueId/supplier-arrivals/:id", { preHandler: [authenticate] }, async (request, reply) => {

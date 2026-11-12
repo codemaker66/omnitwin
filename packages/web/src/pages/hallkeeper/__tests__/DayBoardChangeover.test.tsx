@@ -5,8 +5,9 @@ import { ChangeoverList, crewLine } from "../DayBoardChangeover.js";
 
 // ---------------------------------------------------------------------------
 // The move list a crew works a changeover from: what goes back to store,
-// what comes from it (and where it goes), what stays, what the plan says
-// moves within the room, and the dressing each booking lays for itself.
+// what comes from it (and where it goes), what stays in the room (and how
+// much of it the plan moves), what the plan says moves within the room, and
+// the dressing each booking lays for itself.
 // ---------------------------------------------------------------------------
 
 afterEach(() => { cleanup(); });
@@ -25,12 +26,20 @@ function changeover(items: readonly ChangeoverItem[], plan: Changeover["plan"] =
     from: { configId: "00000000-0000-4000-8000-0000000000c1", name: "Wedding", guests: 180, hasPlan: hasPlan.from },
     to: { configId: "00000000-0000-4000-8000-0000000000c2", name: "Conference", guests: 200, hasPlan: hasPlan.to },
     items: [...items],
+    // As the API sends it: parts of the room are compared only with both plans.
+    zonesCompared: hasPlan.from && hasPlan.to,
     plan,
+    tooManyPieces: false,
   };
 }
 
-function list(value: Changeover): void {
-  render(<ChangeoverList changeover={value} fromTitle="Anderson wedding" toTitle="Chamber conference" />);
+/** Both plans, but more pieces than the API pairs one by one: counts and parts of the room only. */
+function tooMany(items: readonly ChangeoverItem[]): Changeover {
+  return { ...changeover(items, null, { from: true, to: true }), tooManyPieces: true };
+}
+
+function list(value: Changeover, sameLayoutAs: string | null = null): void {
+  render(<ChangeoverList changeover={value} fromTitle="Anderson wedding" toTitle="Chamber conference" sameLayoutAs={sameLayoutAs} />);
 }
 
 function group(heading: string): string[] {
@@ -40,7 +49,7 @@ function group(heading: string): string[] {
 }
 
 describe("ChangeoverList", () => {
-  it("lists what goes back to store, what comes from it and where, and what stays", () => {
+  it("lists what goes back to store, what comes from it and where, and what stays in the room", () => {
     list(changeover([
       item("6ft Round Table", 18, 12),
       item("Lectern", 0, 1, { category: "av", zones: [{ zone: "North wall", before: 0, after: 1 }] }),
@@ -51,8 +60,18 @@ describe("ChangeoverList", () => {
     ]));
     expect(group("Back to store")).toEqual(["6 × 6ft Round Table"]);
     expect(group("Bring from store")).toEqual(["1 × Lectern · North wall", "30 × Banquet Chair"]);
-    expect(group("Stays")).toEqual(["12 × 6ft Round Table"]);
+    // Of the twelve tables staying in the room, the plan moves one.
+    expect(group("Stays in the room")).toEqual(["12 × 6ft Round Table · 1 to move"]);
+    expect(screen.queryByRole("heading", { name: "Stays" })).toBeNull();
     expect(screen.getByText("On the plan: 12 pieces stay where they are; 1 × 6ft Round Table moves within the room.")).toBeTruthy();
+  });
+
+  it("says what moves on the plan without a nought, and nothing to move on a line that stays put", () => {
+    list(changeover([item("6ft Round Table", 18, 12), item("Banquet Chair", 180, 120, { category: "chair" })], {
+      ...PLAN, staysPut: 0, moved: [{ name: "6ft Round Table", category: "table", count: 12 }],
+    }));
+    expect(screen.getByText("On the plan: 12 × 6ft Round Table move within the room.")).toBeTruthy();
+    expect(group("Stays in the room")).toEqual(["12 × 6ft Round Table · 12 to move", "120 × Banquet Chair"]);
   });
 
   it("never lists a cloth as staying: the room's is cleared and the next booking's laid", () => {
@@ -63,7 +82,7 @@ describe("ChangeoverList", () => {
     ], { ...PLAN, staysPut: 18, moved: [] }));
     expect(group("Linen and dressing")).toEqual(["Black Round Table Linen: clear 18, lay 12", "Black Poseur Table Linen: lay 6"]);
     expect(screen.getByText("The furniture stays as it is.")).toBeTruthy();
-    expect(screen.queryByRole("heading", { name: "Stays" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Stays in the room" })).toBeNull();
   });
 
   it("says nothing moves when the room is already set as the next booking needs it", () => {
@@ -71,47 +90,92 @@ describe("ChangeoverList", () => {
     expect(screen.getByText("Nothing moves: the room is already set as the next booking needs it.")).toBeTruthy();
   });
 
-  it("without a plan, says which parts of the room change rather than that nothing moves, and why it can say no more", () => {
-    list(changeover([
-      item("6ft Round Table", 18, 18, { zones: [{ zone: "North wall", before: 0, after: 9 }, { zone: "Centre", before: 18, after: 9 }] }),
-    ], null, { from: false, to: true }));
-    expect(screen.queryByText(/^Nothing moves/u)).toBeNull();
-    expect(group("To another part of the room")).toEqual(["9 × 6ft Round Table · North wall"]);
-    expect(screen.getByText("The sheet for Anderson wedding has no plan, so moves within each part of the room aren’t shown.")).toBeTruthy();
+  it("keeps a layout two bookings share, and still clears the one's cloths and lays the other's", () => {
+    const shared = [
+      item("6ft Round Table", 18, 18),
+      item("White cloth", 18, 18, { category: "linen", isAccessory: true, phase: "dress" }),
+    ];
+    list(changeover(shared, { ...PLAN, staysPut: 18, moved: [] }), "Lunch");
+    expect(screen.getByText("The same layout as Lunch: the furniture stays as it is.")).toBeTruthy();
+    expect(group("Linen and dressing")).toEqual(["White cloth: clear 18, lay 18"]);
+    cleanup();
+    list(changeover([item("6ft Round Table", 18, 18)], { ...PLAN, staysPut: 18, moved: [] }), "Lunch");
+    expect(screen.getByText("The same layout as Lunch: nothing moves.")).toBeTruthy();
+  });
+
+  it("with a sheet frozen without a plan, gives the counts and claims nothing about parts of the room", () => {
+    list(changeover([item("6ft Round Table", 18, 14)], null, { from: false, to: true }));
+    expect(group("Back to store")).toEqual(["4 × 6ft Round Table"]);
+    expect(screen.queryByRole("heading", { name: "To another part of the room" })).toBeNull();
+    expect(screen.getByText("The sheet for Anderson wedding has no plan, so what moves within the room isn’t shown.")).toBeTruthy();
   });
 
   it("without a plan or any change, claims only what the counts can show", () => {
     list(changeover([item("6ft Round Table", 18, 18)], null, { from: false, to: false }));
-    expect(screen.getByText("Nothing goes to or from store, and nothing changes part of the room.")).toBeTruthy();
-    expect(screen.getByText("Neither sheet has a plan, so moves within each part of the room aren’t shown.")).toBeTruthy();
+    expect(screen.getByText("Nothing goes to or from store.")).toBeTruthy();
+    expect(screen.getByText("Neither sheet has a plan, so what moves within the room isn’t shown.")).toBeTruthy();
+  });
+
+  it("with too many pieces to pair, says which parts of the room change rather than that nothing moves", () => {
+    list(tooMany([
+      item("6ft Round Table", 18, 18, { zones: [{ zone: "North wall", before: 0, after: 9 }, { zone: "Centre", before: 18, after: 9 }] }),
+    ]));
+    expect(screen.queryByText(/^Nothing moves/u)).toBeNull();
+    expect(group("To another part of the room")).toEqual(["9 × 6ft Round Table · North wall"]);
+    expect(screen.getByText("These layouts have too many pieces to pair one by one, so moves within each part of the room aren’t shown.")).toBeTruthy();
   });
 
   it("counts only the pieces that change part beyond what comes from store", () => {
-    list(changeover([
+    list(tooMany([
       item("6ft Round Table", 10, 12, { zones: [{ zone: "Centre", before: 10, after: 0 }, { zone: "Perimeter", before: 0, after: 12 }] }),
-    ], null, { from: true, to: false }));
+    ]));
     expect(group("Bring from store")).toEqual(["2 × 6ft Round Table · Perimeter"]);
     expect(group("To another part of the room")).toEqual(["10 × 6ft Round Table · Perimeter"]);
-    expect(screen.getByText("The sheet for Chamber conference has no plan, so moves within each part of the room aren’t shown.")).toBeTruthy();
+  });
+
+  it("with too many pieces and no change of part, says so", () => {
+    list(tooMany([item("6ft Round Table", 18, 18)]));
+    expect(screen.getByText("Nothing goes to or from store, and nothing changes part of the room.")).toBeTruthy();
   });
 });
 
 describe("crewLine", () => {
   const ms = (time: string): number => Date.parse(`2026-11-14T${time}:00.000Z`);
   const span = (from: string, to: string) => ({ startsAtMs: ms(from), endsAtMs: ms(to) });
-  const crew = (hands: Parameters<typeof crewLine>[0]["hands"], unfilled = 0) => ({ hands, unfilled, startMs: ms("14:00"), endMs: ms("18:00") });
+  const crew = (hands: Parameters<typeof crewLine>[0]["hands"], unfilled = 0, over = false) => ({ hands, unfilled, startMs: ms("14:00"), endMs: ms("18:00"), over });
+  const room = { kind: "room" } as const;
 
   it("names each person with their shifts as they are, and marks a whole-house shift", () => {
     expect(crewLine(crew([
-      { name: "Jamie", spans: [span("11:00", "12:30"), span("17:30", "19:00")], wholeHouse: false },
-      { name: "Morag", spans: [span("12:00", "20:00")], wholeHouse: true },
+      { name: "Jamie", spans: [span("11:00", "12:30"), span("17:30", "19:00")], rostered: room },
+      { name: "Morag", spans: [span("12:00", "20:00")], rostered: { kind: "house" } },
     ], 1), "Europe/London")).toBe("On setup: Jamie 11:00–12:30 then 17:30–19:00 and Morag 12:00–20:00 (whole house). One more shift is still to fill.");
   });
 
-  it("says plainly when nobody is on, and how many setup shifts are still to fill", () => {
+  it("marks a hand rostered for an event, not a room, as able to be in any of its rooms", () => {
+    expect(crewLine(crew([
+      { name: "Ngozi", spans: [span("12:00", "18:30")], rostered: { kind: "event", eventName: "The MacLeod wedding" } },
+    ]), "Europe/London")).toBe("On setup: Ngozi 12:00–18:30 (for The MacLeod wedding, any room).");
+    expect(crewLine(crew([
+      { name: "Ngozi", spans: [span("12:00", "18:30")], rostered: { kind: "event", eventName: null } },
+    ]), "Europe/London")).toBe("On setup: Ngozi 12:00–18:30 (for the event, any room).");
+  });
+
+  it("says plainly when nobody is on, and how many setup shifts are still to fill, in words", () => {
     expect(crewLine(crew([]), "Europe/London")).toBe("Nobody is on setup for this turn-round.");
-    expect(crewLine(crew([], 2), "Europe/London")).toBe("Nobody is on setup for this turn-round. 2 setup shifts are still to fill.");
-    expect(crewLine(crew([{ name: "Jamie", spans: [span("14:00", "18:00")], wholeHouse: false }], 3), "Europe/London"))
-      .toBe("On setup: Jamie 14:00–18:00. 3 more shifts are still to fill.");
+    expect(crewLine(crew([], 2), "Europe/London")).toBe("Nobody is on setup for this turn-round. Two setup shifts are still to fill.");
+    expect(crewLine(crew([{ name: "Jamie", spans: [span("14:00", "18:00")], rostered: room }], 3), "Europe/London"))
+      .toBe("On setup: Jamie 14:00–18:00. Three more shifts are still to fill.");
+  });
+
+  it("speaks of a turn-round that is over in the past tense", () => {
+    expect(crewLine(crew([], 0, true), "Europe/London")).toBe("Nobody was on setup for this turn-round.");
+    expect(crewLine(crew([], 2, true), "Europe/London")).toBe("Nobody was on setup for this turn-round. Two setup shifts were not filled.");
+    expect(crewLine(crew([{ name: "Jamie", spans: [span("14:00", "18:00")], rostered: room }], 1, true), "Europe/London"))
+      .toBe("Was on setup: Jamie 14:00–18:00. One more shift was not filled.");
+    expect(crewLine(crew([
+      { name: "Jamie", spans: [span("14:00", "18:00")], rostered: room },
+      { name: "Ngozi", spans: [span("15:00", "18:00")], rostered: room },
+    ], 0, true), "Europe/London")).toBe("Were on setup: Jamie 14:00–18:00 and Ngozi 15:00–18:00.");
   });
 });

@@ -26,8 +26,10 @@ export function listSupplierArrivals(venueId: string, fromMs: number, toMs: numb
   return api.get(`${arrivalsPath(venueId)}?from=${from}&to=${to}`, z.array(SupplierArrivalSchema), signal);
 }
 
-export function createSupplierArrival(venueId: string, body: CreateSupplierArrival): Promise<SupplierArrival> {
-  return api.post(arrivalsPath(venueId), body, undefined, SupplierArrivalSchema);
+/** The office adds a supplier. The key names this add: a Save sent again with
+ *  it, after an answer was lost, gets the first add back instead of a second. */
+export function createSupplierArrival(venueId: string, body: CreateSupplierArrival, idempotencyKey: string): Promise<SupplierArrival> {
+  return api.post(arrivalsPath(venueId), body, undefined, SupplierArrivalSchema, { idempotencyKey });
 }
 
 export function updateSupplierArrival(venueId: string, id: string, body: UpdateSupplierArrival): Promise<SupplierArrival> {

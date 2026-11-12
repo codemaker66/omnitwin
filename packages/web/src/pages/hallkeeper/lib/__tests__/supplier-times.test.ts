@@ -29,9 +29,9 @@ describe("boardDayOf", () => {
 
 describe("supplierTimes", () => {
   it("puts a time on the board's date, and one before the boundary on the night after", () => {
-    expect(supplierTimes("11:00", "", "2026-11-14", 4, TZ)).toEqual({ arrivesMs: ms("2026-11-14T11:00:00.000Z"), leavesMs: null, skipped: null });
+    expect(supplierTimes("11:00", "", "2026-11-14", 4, TZ)).toEqual({ arrivesMs: ms("2026-11-14T11:00:00.000Z"), leavesMs: null, skipped: null, repeated: null });
     expect(supplierTimes("00:30", "02:00", "2026-11-14", 4, TZ)).toEqual({
-      arrivesMs: ms("2026-11-15T00:30:00.000Z"), leavesMs: ms("2026-11-15T02:00:00.000Z"), skipped: null,
+      arrivesMs: ms("2026-11-15T00:30:00.000Z"), leavesMs: ms("2026-11-15T02:00:00.000Z"), skipped: null, repeated: null,
     });
     // The boundary hour itself is the board's own morning.
     expect(supplierTimes("04:00", "", "2026-11-14", 4, TZ)?.arrivesMs).toBe(ms("2026-11-14T04:00:00.000Z"));
@@ -46,7 +46,7 @@ describe("supplierTimes", () => {
 
   it("reads summer times on British Summer Time", () => {
     expect(supplierTimes("19:00", "00:30", "2026-06-13", 4, TZ)).toEqual({
-      arrivesMs: ms("2026-06-13T18:00:00.000Z"), leavesMs: ms("2026-06-13T23:30:00.000Z"), skipped: null,
+      arrivesMs: ms("2026-06-13T18:00:00.000Z"), leavesMs: ms("2026-06-13T23:30:00.000Z"), skipped: null, repeated: null,
     });
   });
 
@@ -62,15 +62,21 @@ describe("supplierTimes", () => {
       arrivesMs: ms("2027-03-27T20:00:00.000Z"),
       leavesMs: ms("2027-03-28T01:30:00.000Z"),
       skipped: { field: "leaves", typed: "01:30", stored: "02:30" },
+      repeated: null,
     });
     expect(supplierTimes("01:30", "", "2027-03-27", 4, TZ)?.skipped).toEqual({ field: "arrives", typed: "01:30", stored: "02:30" });
     expect(supplierTimes("20:00", "02:30", "2027-03-27", 4, TZ)?.skipped).toBeNull();
   });
 
-  it("takes the second 01:30 on the night the clocks go back, as the clock reads it", () => {
+  it("takes the second 01:30 on the night the clocks go back, and names it as that", () => {
     // Sunday 25 October 2026: 01:30 happens twice; the second is GMT.
     expect(supplierTimes("20:30", "01:30", "2026-10-24", 4, TZ)).toEqual({
       arrivesMs: ms("2026-10-24T19:30:00.000Z"), leavesMs: ms("2026-10-25T01:30:00.000Z"), skipped: null,
+      repeated: { field: "leaves", typed: "01:30" },
     });
+    expect(supplierTimes("01:15", "", "2026-10-24", 4, TZ)?.repeated).toEqual({ field: "arrives", typed: "01:15" });
+    // Either side of the repeated hour, one reading only.
+    expect(supplierTimes("20:30", "00:59", "2026-10-24", 4, TZ)?.repeated).toBeNull();
+    expect(supplierTimes("20:30", "02:00", "2026-10-24", 4, TZ)?.repeated).toBeNull();
   });
 });
