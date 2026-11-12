@@ -22,7 +22,7 @@ import type { SlotRequestsComponent } from "./lib/slot-requests-contract.js";
 import type { CrewOnPanel } from "./lib/turn-round-crew.js";
 import { StateIcon } from "./DayBoardRooms.js";
 import { ChangeoverSection } from "./DayBoardChangeover.js";
-import { SuppliersSection } from "./DayBoardSuppliers.js";
+import { SuppliersSection, type SupplierForms } from "./DayBoardSuppliers.js";
 import type { SupplierArrivalsApi } from "./lib/use-supplier-arrivals.js";
 import type { DayBoundary } from "./lib/board-day.js";
 import { ChangeList, changeWhen, gotItLabel } from "./DayBoardChanges.js";
@@ -285,6 +285,8 @@ export function SlotDetail({ slot, room, venueSlug, timeZone, slotRequests: Slot
     /** The floor marks the door, on today's board only. */
     readonly canMark: boolean;
     readonly actions: SupplierArrivalsApi;
+    /** The office's open forms, kept above the panel for each board day and booking. */
+    readonly forms: SupplierForms;
   } | null;
 }): ReactElement {
   const occasion = occasionLabel(slot.eventType);
@@ -386,6 +388,9 @@ export function SlotDetail({ slot, room, venueSlug, timeZone, slotRequests: Slot
       {/* Who comes to the building for this booking, and the door. */}
       {suppliers !== null && (
         <SuppliersSection
+          // One panel per board day: a form typed for one day's night never
+          // stands on another's, and is there again on its own day.
+          key={suppliers.boardDate}
           slot={slot}
           arrivals={suppliers.arrivals}
           boardDate={suppliers.boardDate}
@@ -397,6 +402,7 @@ export function SlotDetail({ slot, room, venueSlug, timeZone, slotRequests: Slot
           canPlan={suppliers.canPlan}
           canMark={suppliers.canMark}
           actions={suppliers.actions}
+          forms={suppliers.forms}
         />
       )}
       {/* What the room was seen doing (S5): the latest fact, and the next

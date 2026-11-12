@@ -12,6 +12,8 @@ import { CALENDAR_REUSE_MS } from "../../diary/hooks/useCalendar.js";
 import { SLOT_REQUESTS_UNAVAILABLE, SlotRequestsContext } from "../../../components/requests/requests-context.js";
 import { ApiError } from "../../../api/client.js";
 import { ackEventDayOp, listPendingEventDayOps } from "../../../lib/event-day-offline-queue.js";
+import { BOUNDARY_RETRY_MS } from "../lib/board-day.js";
+import { formatInlineDay } from "../../diary/lib/board-time.js";
 
 // ---------------------------------------------------------------------------
 // Render contract for the Day Board page (goal 19 S3): lanes from the live
@@ -100,11 +102,12 @@ vi.mock("../../../api/changeover.js", async (importOriginal) => ({
 const arrivalsApi = vi.hoisted(() => ({
   list: vi.fn<(venueId: string, fromMs: number, toMs: number) => Promise<unknown[]>>(() => Promise.resolve([])),
   step: vi.fn<(venueId: string, id: string, step: string) => Promise<unknown>>(),
+  create: vi.fn<(venueId: string, body: Record<string, unknown>, idempotencyKey: string) => Promise<unknown>>(),
 }));
 vi.mock("../../../api/supplier-arrivals.js", () => ({
   listSupplierArrivals: (venueId: string, fromMs: number, toMs: number) => arrivalsApi.list(venueId, fromMs, toMs),
   recordSupplierArrivalStep: (venueId: string, id: string, step: string) => arrivalsApi.step(venueId, id, step),
-  createSupplierArrival: () => Promise.reject(new Error("not in this test")),
+  createSupplierArrival: (venueId: string, body: Record<string, unknown>, idempotencyKey: string) => arrivalsApi.create(venueId, body, idempotencyKey),
   updateSupplierArrival: () => Promise.reject(new Error("not in this test")),
   removeSupplierArrival: () => Promise.reject(new Error("not in this test")),
   undoSupplierArrivalStep: () => Promise.reject(new Error("not in this test")),
@@ -315,6 +318,8 @@ beforeEach(() => {
   arrivalsApi.list.mockReset();
   arrivalsApi.list.mockResolvedValue([]);
   arrivalsApi.step.mockReset();
+  arrivalsApi.create.mockReset();
+  arrivalsApi.create.mockRejectedValue(new Error("not in this test"));
   rotaMock.mockReset();
   rotaMock.mockImplementation((_venueId, start) => Promise.resolve(rotaWeek(start ?? "", [])));
   resolveLayoutsMock.mockReset();
@@ -2051,6 +2056,54 @@ describe("DayBoardPage: who comes to the building", () => {
     fireEvent.click(await screen.findByRole("button", { name: /^Dinner,/u }));
     const section = await screen.findByRole("region", { name: "Suppliers" });
     expect(within(section).getByRole("button", { name: "Add a supplier" })).toBeTruthy();
+  });
+
+  it("keeps the office's open form and what is typed in it when the venue's night hours arrive late and the day is read again", async () => {
+    const user = useAuthStore.getState().user;
+    if (user === null) throw new Error("Expected test user");
+    useAuthStore.getState().setUser({ ...user, role: "admin" });
+    // 14:00, with the venue's settings unread: the first read fails, and the
+    // board runs on midnight until the read tried again 30 s on lands at 04:00.
+    vi.useRealTimers();
+    const today = msToWallInput(Date.now(), "Europe/London").slice(0, 10);
+    const midday = wallInputToMs(`${today}T14:00`, "Europe/London") ?? Date.now();
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"], now: midday });
+    settingsMock.get.mockRejectedValueOnce(new ApiError(0, "Network error — check your connection", "NETWORK_ERROR"));
+    settingsMock.get.mockResolvedValue({ dayBoundaryHour: 4 });
+    getCalendarMock.mockResolvedValue(calendarFixture(day()));
+    arrivalsApi.create.mockImplementation((_venueId, body) => Promise.resolve({ ...arrival(FLOWERS, "Night porter", 0), ...body }));
+    const settle = async (): Promise<void> => { for (let round = 0; round < 8; round += 1) await act(async () => { await Promise.resolve(); }); };
+    const tomorrow = new Date(Date.parse(`${today}T12:00:00.000Z`) + 86_400_000).toISOString().slice(0, 10);
+    const tonight = wallInputToMs(`${tomorrow}T00:30`, "Europe/London");
+    if (tonight === null) throw new Error("No 00:30 tonight");
+
+    renderBoard();
+    await settle();
+    fireEvent.click(screen.getByRole("button", { name: /^Dinner,/u }));
+    await settle();
+    fireEvent.click(within(screen.getByRole("region", { name: "Suppliers" })).getByRole("button", { name: "Add a supplier" }));
+    const form = screen.getByRole("form", { name: "Add a supplier" });
+    fireEvent.change(within(form).getByLabelText("Supplier"), { target: { value: "Night porter" } });
+    fireEvent.change(within(form).getByLabelText("Arrives"), { target: { value: "00:30" } });
+    expect(within(form).getByText("The venue’s night hours could not be read yet; trying again.")).toBeTruthy();
+    fireEvent.click(within(form).getByRole("button", { name: "Add" }));
+    expect(within(form).getByText("The venue’s night hours are not read yet, so these times cannot be placed. Save again in a moment.")).toBeTruthy();
+
+    // The read tried again lands: the day runs to 04:00, and is read again to there.
+    await act(async () => { await vi.advanceTimersByTimeAsync(BOUNDARY_RETRY_MS); });
+    await settle();
+    const tomorrowAtFour = wallInputToMs(`${tomorrow}T04:00`, "Europe/London");
+    expect(getCalendarMock.mock.calls.some(([, , to]) => tomorrowAtFour !== null && to === new Date(tomorrowAtFour).toISOString())).toBe(true);
+    // The same form, with what was typed, placed on tonight's night, and no word of hours unread.
+    const kept = screen.getByRole("form", { name: "Add a supplier" });
+    expect(within(kept).getByLabelText<HTMLInputElement>("Supplier").value).toBe("Night porter");
+    expect(within(kept).getByLabelText<HTMLInputElement>("Arrives").value).toBe("00:30");
+    expect(within(kept).getByText(`Due ${formatInlineDay(tonight, Date.now(), "Europe/London")} at 00:30.`)).toBeTruthy();
+    expect(screen.queryByText(/night hours/u)).toBeNull();
+    fireEvent.click(within(kept).getByRole("button", { name: "Add" }));
+    await settle();
+    expect(arrivalsApi.create).toHaveBeenCalledTimes(1);
+    expect(arrivalsApi.create.mock.calls[0]?.[1]).toMatchObject({ supplierName: "Night porter", arrivesAt: new Date(tonight).toISOString() });
   });
 
   it("offers the door only on today's board", async () => {

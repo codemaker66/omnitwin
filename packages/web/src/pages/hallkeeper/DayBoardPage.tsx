@@ -61,6 +61,7 @@ import { useWakeLock } from "./lib/use-wake-lock.js";
 import { driftOffset } from "./lib/burn-in-drift.js";
 import { RoomRow, Scale, StateIcon } from "./DayBoardRooms.js";
 import { SlotDetail } from "./DayBoardSlotDetail.js";
+import { useSupplierForms } from "./DayBoardSuppliers.js";
 import {
   DayBoardSlotRequestsContext,
   type SlotRequestsComponent,
@@ -355,6 +356,10 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
   const [roomId, setRoomIdState] = useState("");
   const [focus, setFocusState] = useState<BoardFocus>("all");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // The office's open supplier forms, kept above the slot's panel: a panel
+  // drawn afresh, when the day is read again once the venue's night hours
+  // arrive, opens its form as it was left.
+  const supplierForms = useSupplierForms();
   const browsingToday = selectedDate === null;
   // A count on the plane and a room from the list are two ways to narrow the
   // rooms; choosing one lets the other go, so the list never comes up empty
@@ -701,6 +706,7 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
           canPlan: plansSuppliers,
           canMark: marksDoor,
           actions: suppliers,
+          forms: supplierForms,
         }}
       />
     </div>
