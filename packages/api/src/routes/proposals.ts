@@ -924,11 +924,12 @@ export async function proposalRoutes(
     return { data: history };
   });
 
-  // GET /proposals/:id/comments — full conversation thread (staff view).
+  // GET /proposals/:id/comments — the conversation thread (staff view).
   //
   // Returns BOTH client posts (made through the share link) and staff
   // replies, in chronological order, so the dashboard timeline shows the
-  // whole conversation, each with the author recorded when it was written.
+  // conversation, each with the author recorded when it was written: the
+  // whole of it, or on a thread past 200 its newest 200.
   server.get("/:id/comments", { preHandler: [authenticate] }, async (request, reply) => {
     const params = IdParam.safeParse(request.params);
     if (!params.success) {
@@ -945,7 +946,9 @@ export async function proposalRoutes(
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 
-    const rows = await db.select({
+    // The newest two hundred, read in order: on a longer thread the oldest
+    // are the ones left out, never the client's latest words.
+    const newest = await db.select({
       id: proposalComments.id,
       kind: proposalComments.kind,
       authorName: proposalComments.authorName,
@@ -955,10 +958,10 @@ export async function proposalRoutes(
       createdAt: proposalComments.createdAt,
     }).from(proposalComments)
       .where(eq(proposalComments.proposalId, params.data.id))
-      .orderBy(proposalComments.createdAt)
+      .orderBy(desc(proposalComments.createdAt))
       .limit(200);
 
-    return { data: rows.map(toStaffCommentView) };
+    return { data: newest.reverse().map(toStaffCommentView) };
   });
 
   // POST /proposals/:id/comments — staff reply to the client conversation.

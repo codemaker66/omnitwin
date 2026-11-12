@@ -5,7 +5,9 @@ import { computeRotatedFootprint, type PlacedItem } from "../placement.js";
 import { createTableGroup } from "../table-group.js";
 import { GRAND_HALL_DOOR_CLEAR_SPACES, doorKeepOuts, footprintInSpace } from "../door-clear-spaces.js";
 
-// One round of ten at (0, −0.75) in the Grand Hall (21 × 10.5 m) and 20
+// One round of ten at (0, −0.75) in a 21 × 10.5 m hall with the Grand Hall's
+// surveyed doors (its old hand-drawn size; the planner now opens it at the
+// scanned 21.135 × 10.59 m, data/room-geometries.ts) and 20
 // guests: the floor is short 10 seats and the round is full, so the fix adds
 // a round. It looks for free floor nearest the middle, on a 0.25 m lattice,
 // 0.6 m from every chair and wall. Worked by hand: the nearest such spot is

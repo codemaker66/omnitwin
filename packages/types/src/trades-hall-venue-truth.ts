@@ -67,21 +67,43 @@ export function isPublishedRoomSlug(slug: string): slug is PublishedRoomSlug {
 }
 
 export interface RoomDimensions {
-  /** Metres, as published on the venue's own website. */
+  /** Metres: the venue's own published figures, except the Grand Hall's,
+   *  which are measured from the hall's laser scan. */
   readonly lengthM: number;
   readonly widthM: number;
   readonly heightM: number;
-  /** Published qualifier, e.g. the Grand Hall's further height under the dome. */
+  /** Qualifier shown with the height, e.g. what the Grand Hall's is measured
+   *  to. A few words, because it sits beside the figure in a narrow stat
+   *  column (the tour's room dossier); anything longer belongs in `remark`. */
   readonly note?: string;
+  /** A full sentence about the room's height that a surface shows apart from
+   *  the figure, in its footnote or secondary line: the Grand Hall's dome.
+   *  Never a height of its own. */
+  readonly remark?: string;
 }
 
-/** Room dimensions as published on the official Trades Hall website —
- *  the four rooms the site lists. The galleries publish no dimensions,
- *  so none are stated for them. */
+/** Room dimensions for the four rooms the official Trades Hall website lists.
+ *  The Saloon, Robert Adam Room and Reception Room are as the venue
+ *  publishes them. The Grand Hall is its panelled interior as the Matterport
+ *  E57 capture of 11 July 2026 measures it, 21.135 m by 10.59 m to about
+ *  2 cm, shown as 21.14 × 10.59 m (Blake, 11 November 2026: "The measured
+ *  21.14 x 10.59 m"); its height is the clear 6.7 m to the underside of the
+ *  coffered ceiling. The dome rises above part of the hall and is never given
+ *  as the room's height: the height's note says what it is measured to, and
+ *  the dome is a separate remark, shown in a footnote rather than beside the
+ *  figure. The planner draws and places in the same interior
+ *  (packages/web/src/components/grand-hall/hall-spec.ts). The galleries
+ *  publish no dimensions, so none are stated for them. */
 export const TRADES_HALL_ROOM_DIMENSIONS: Readonly<
   Partial<Record<PublishedRoomSlug, RoomDimensions>>
 > = {
-  "grand-hall": { lengthM: 21, widthM: 10, heightM: 7, note: "a further 7 m under the dome" },
+  "grand-hall": {
+    lengthM: 21.14,
+    widthM: 10.59,
+    heightM: 6.7,
+    note: "to the coffered ceiling",
+    remark: "The dome rises above part of the hall.",
+  },
   saloon: { lengthM: 12, widthM: 7, heightM: 5.4 },
   "robert-adam-room": { lengthM: 9.7, widthM: 5.6, heightM: 2.18 },
   "reception-room": { lengthM: 13.4, widthM: 11.2, heightM: 3.2 },

@@ -245,9 +245,12 @@ export function contactTimeline(profile: ContactProfile): TimelineMoment[] {
     ...profile.deals.map((deal) => ({
       key: `deal:${deal.id}`, at: deal.updatedAt, sentence: `${deal.title}: ${dealStageWords(deal.stage).toLowerCase()}.`,
     })),
+    // The version last sent, never the current one: a version saved since
+    // (while the client's changes are worked in) has not been sent.
     ...profile.proposals.flatMap((proposal) => proposal.sentAt === null ? [] : [{
       key: `proposal:${proposal.id}`, at: proposal.sentAt,
-      sentence: `${proposal.title} sent (version ${proposal.currentVersion.toLocaleString("en-GB")}).`,
+      sentence: proposal.sentVersion === null ? `${proposal.title} sent.`
+        : `${proposal.title} sent (version ${proposal.sentVersion.toLocaleString("en-GB")}).`,
     }]),
   ];
   return moments.sort((a, b) => Date.parse(b.at) - Date.parse(a.at));

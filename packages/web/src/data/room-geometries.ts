@@ -25,13 +25,32 @@ export interface RoomGeometry {
 }
 
 // ---------------------------------------------------------------------------
-// 1. Grand Hall — 21m × 10.5m with balcony along south wall
-// Rectangular with a raised balcony platform (2m deep, 0.8m high)
-// Has a 7m diameter gilded dome in the ceiling centre
+// 1. Grand Hall — the panelled interior as the hall's laser scan measures it:
+// 21.135 m along x (fireplace wall to end wall) by 10.59 m along z (window
+// wall to door wall), from the Matterport E57 capture of 11 July 2026
+// (HALL_LENGTH and HALL_WIDTH in components/grand-hall/hall-spec.ts; the method
+// is in tools/grand-hall-survey/README.md). The planner draws the hall's walls
+// there, so this outline, which places, snaps and bounds every piece, stands
+// on those walls too. Blake, 11 November 2026: "Use the measurements captured
+// from the lidar /e57 data". It was a hand-drawn 21 m × 10.5 m before.
+//
+// A layout save refuses a piece centred outside the outline the API stores for
+// the room (lib/placement-validation.ts in the API), so that outline must
+// contain this one. It does: production stores the hall as 21.14 × 10.59 m,
+// ±10.57 × ±5.295 m (migration 0106, packages/api/src/db/grand-hall-e57.ts).
+//
+// Its ceiling height is the scan's clear 6.7 m, floor to the underside of the
+// coffered ceiling (HALL_HEIGHT in hall-spec.ts). The gilded dome at the centre
+// of that ceiling springs from a ring 3.32 m in radius, about 6.64 m across
+// (HALL_DOME.footRadius in hall-spec.ts; the procedural RoomMesh draws it at
+// domeRadius 3.5 below); it rises above part of the hall and is never the
+// room's height. The section slider's top reads the height through
+// usePlannerRoomDimensions; the default bookmarks frame the width and length
+// only (computeDefaultBookmarks in lib/camera-animation.ts).
 // ---------------------------------------------------------------------------
 
-const GRAND_HALL_HW = 10.5; // half-width  = 21m / 2
-const GRAND_HALL_HL = 5.25; // half-length = 10.5m / 2
+const GRAND_HALL_HW = 10.5675; // half the x extent = 21.135 m / 2
+const GRAND_HALL_HL = 5.295; // half the z extent = 10.59 m / 2
 
 const grandHallPolygon: readonly (readonly [number, number])[] = [
   [-GRAND_HALL_HW, -GRAND_HALL_HL],
@@ -164,7 +183,7 @@ const robertAdamPolygon: readonly (readonly [number, number])[] = [
 export const roomGeometries: Readonly<Record<string, RoomGeometry>> = {
   "Grand Hall": {
     wallPolygon: grandHallPolygon,
-    ceilingHeight: 7.0,
+    ceilingHeight: 6.7, // hall-spec HALL_HEIGHT: the clear height to the coffered ceiling
     features: grandHallFeatures,
     hasDome: true,
     domeRadius: 3.5,

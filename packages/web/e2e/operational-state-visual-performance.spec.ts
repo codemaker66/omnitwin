@@ -991,6 +991,9 @@ async function mockEventDayRoutes(page: Page): Promise<void> {
   await page.route(`${API}/events/${EVENT_ID}/change-feed**`, (route) => {
     void route.fulfill({ json: { data: [changeFeedFixture()] } });
   });
+  await page.route(`${API}/events/${EVENT_ID}/changes-awaiting-acknowledgement`, (route) => {
+    void route.fulfill({ json: { data: [changeFeedFixture()] } });
+  });
   // The board reads the room's acknowledgements (none yet, as the API would
   // answer); only the acknowledgement it tries to save fails.
   await page.route(`${API}/events/${EVENT_ID}/change-acknowledgements**`, (route) => {

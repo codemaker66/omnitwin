@@ -27,7 +27,9 @@ import {
   currentAuthority,
   readCurrentSocketUser,
   readCurrentSocketUsers,
+  startSignInDeadline,
   type CurrentSocketUser,
+  type SocketSignInOptions,
 } from "./socket-identity.js";
 
 // ---------------------------------------------------------------------------
@@ -636,7 +638,11 @@ async function connectionAuthorityHolds(db: Database, venueId: string, connectio
 
 const ACCESS_CHANGED = "Your access to this venue's diary has changed. Sign in again.";
 
-export async function registerDiaryLive(server: FastifyInstance, db: Database): Promise<void> {
+export async function registerDiaryLive(
+  server: FastifyInstance,
+  db: Database,
+  options: SocketSignInOptions = {},
+): Promise<void> {
   const hub = new DiaryLiveHub();
 
   const unsubscribe = subscribe("diary.changed", {
@@ -732,6 +738,17 @@ export async function registerDiaryLive(server: FastifyInstance, db: Database): 
       // D9: every frame carries the server's clock, direct sends included.
       if (socket.readyState === 1) socket.send(JSON.stringify({ ...payload, serverNowMs: Date.now() }));
     }
+
+    // A socket that has not begun to sign in by the deadline is closed: the
+    // hub's ping and stale sweep reach only sockets that have joined.
+    const cancelSignInDeadline = startSignInDeadline(
+      options,
+      () => connection !== null || authenticating || closed,
+      () => {
+        send({ type: "error", code: "UNAUTHORIZED", message: "Authenticate first" });
+        socket.close();
+      },
+    );
 
     socket.on("message", (raw: Buffer | string) => {
       let data: unknown;
@@ -925,6 +942,7 @@ export async function registerDiaryLive(server: FastifyInstance, db: Database): 
 
     socket.on("close", () => {
       closed = true;
+      cancelSignInDeadline();
       if (connection !== null && venueId !== null) {
         hub.leave(venueId, connection);
         server.log.info(
