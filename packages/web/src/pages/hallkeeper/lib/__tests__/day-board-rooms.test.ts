@@ -232,9 +232,12 @@ describe("the sentence under the title", () => {
 
   it("names the rooms with a change to read, after anything at risk and before the requests", () => {
     const board = deriveDayBoard(response([booking("a", -60, 60)]), NOW, TZ, [request("r1", "a", 7)]);
-    const said = (changed: readonly string[], today = true): string =>
-      summaryText(boardSummary({ lanes: board.lanes, unowned: board.unowned, today, nowMs: NOW, changed }) ?? []);
+    const said = (rooms: readonly string[], today = true, count = 1): string => summaryText(boardSummary({
+      lanes: board.lanes, unowned: board.unowned, today, nowMs: NOW, changed: rooms.map((room) => ({ room, count })),
+    }) ?? []);
     expect(said(["Grand Hall"])).toBe("Grand Hall has a change to read. One request has no one on it, waiting 7 min. One function is live.");
+    // One room holding more than one change says so.
+    expect(said(["Grand Hall"], true, 3)).toBe("Grand Hall has changes to read. One request has no one on it, waiting 7 min. One function is live.");
     expect(said(["Grand Hall", "Saloon"])).toBe("Two rooms have changes to read: Grand Hall and Saloon. One request has no one on it, waiting 7 min. One function is live.");
     // Past three, the rooms are counted, not listed.
     expect(said(["A", "B", "C", "D"])).toMatch(/^Four rooms have changes to read\. /u);

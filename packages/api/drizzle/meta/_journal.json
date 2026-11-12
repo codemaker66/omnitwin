@@ -736,6 +736,13 @@
       "when": 1794369600000,
       "tag": "0107_event_architect_ops_review_managers",
       "breakpoints": true
+    },
+    {
+      "idx": 105,
+      "version": "7",
+      "when": 1794400000000,
+      "tag": "0108_floor_change_move_places",
+      "breakpoints": true
     }
   ]
 }

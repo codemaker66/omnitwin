@@ -138,7 +138,9 @@ export function Slab({ slot, variant, nowMs, selected, onOpen, wall, frozen, cha
   const ring = slot.attention;
   const words = ringWords(slot, nowMs);
   const seen = seenLine(slot);
-  const changedWords = changed === 0 ? null : changed === 1 ? "a change to read" : `${String(changed)} changes to read`;
+  // Spoken with the mark's own word in it ("Changed", "2 changes"), so the
+  // name a voice user reads off the slab opens it (WCAG 2.5.3).
+  const changedWords = changed === 0 ? null : changed === 1 ? "changed, a change to read" : `${String(changed)} changes to read`;
   const label = `${slot.title}, ${slot.timeRange}, ${slot.countdown}${words === null ? "" : `, ${words}`}${changedWords === null ? "" : `, ${changedWords}`}${seen === null ? "" : `, ${seen}`}`;
   const linked = slot.linkedRooms.length > 0 ? `also ${slot.linkedRooms.join(", ")}` : null;
   const why = slot.exceptionDetail ?? slot.turnaroundWarning;
