@@ -80,12 +80,15 @@ describe("every document", () => {
   it.each(TYPES)("shows a machine-readable last-updated date — %s", (type) => {
     render(<LegalPage type={type} />);
     const time = document.querySelector("time");
-    // Each document carries its own date: the privacy policy and the
-    // accessibility statement changed in the v1.0 final review; the terms
-    // changed on 11 November, when the Grand Hall's dimensions became measured.
+    // Each document carries its own date: the accessibility statement changed
+    // in the v1.0 final review; the terms on 11 November, when the Grand Hall's
+    // dimensions became measured; the privacy policy on 12 November, when it
+    // described the page-speed timings and their switch (T-685).
     const expected = type === "terms"
       ? { iso: "2026-11-11", text: "11 November 2026" }
-      : { iso: "2026-11-08", text: "8 November 2026" };
+      : type === "privacy"
+        ? { iso: "2026-11-12", text: "12 November 2026" }
+        : { iso: "2026-11-08", text: "8 November 2026" };
     expect(time?.getAttribute("datetime")).toBe(expected.iso);
     expect(time?.textContent).toBe(expected.text);
   });
