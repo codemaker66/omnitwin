@@ -1716,6 +1716,44 @@ describe("Keep mine refused for notes the maker rewrote, among many notes of the
     expect(store()).toMatchObject({ saveError: null, saveErrorCode: null, isDirty: false });
   });
 
+  // Delta review of #388 at 33a8e0ad, T6. Each save of the halving goes on the
+  // revision the last landed one made and names the rows the first landing
+  // placed: a piece placed after the conflict is placed once, and keeps that
+  // row's id through every later save, in the history and in the selection.
+  it("places a piece placed after the conflict once, under one id, through every save the halving sends", async () => {
+    const server: PlanOnServer = { revision: 4, notes: new Map() };
+    const PLACED_NOTE = "TEST ONLY placed after the conflict";
+    let local = "";
+    const tables = await theyRewrite(server, 9, [6], () => {
+      store().addObject(CHAIR, 11, 0, 0);
+      local = store().objects.at(-1)?.id ?? "";
+      store().setObjectNotes(local, PLACED_NOTE);
+      store().selectObject(local);
+      useSelectionStore.getState().selectMultiple([local]);
+    });
+    expect(local).toMatch(/^local-/u);
+    const sentBefore = savesSent();
+
+    expect(await store().keepMine(false)).toBe(true);
+    // The refused save, the save leaving every note (it places the piece), three halvings and the rest: as for nine notes alone.
+    expect(savesSent() - sentBefore).toBe(6);
+    const holders = [...server.notes].filter(([, note]) => note === PLACED_NOTE).map(([id]) => id);
+    expect(holders).toHaveLength(1);
+    const [row] = holders;
+    // Every save after the first named that row, never a fresh one.
+    for (let n = sentBefore + 2; n < savesSent(); n += 1) {
+      expect(saveSent(n).batch.filter((piece) => piece.id === undefined)).toEqual([]);
+      expect(sentPiece(n, row ?? "").positionX).toBe(sentPiece(sentBefore + 2, row ?? "").positionX);
+    }
+    expect(store().objects.filter((object) => object.notes === PLACED_NOTE).map((object) => object.id)).toEqual([row]);
+    expect(store().selectedObjectId).toBe(row);
+    expect([...useSelectionStore.getState().selectedIds]).toEqual([row]);
+    expect(JSON.stringify(store().history)).not.toContain(local);
+    expect(server.notes.get(tableId(6))).toBe(THEIR_NOTE);
+    ownNotesKept(tables, server, [6]);
+    expect(store()).toMatchObject({ saveError: null, saveErrorCode: null, isDirty: false });
+  });
+
   // Delta review of #388 at 33a8e0ad, S6. Send flushes the work first; when
   // that flush's own save proved a clear refused, the save landed everything
   // else, yet Send stopped on the first press and went on only on a second.
