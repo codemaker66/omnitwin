@@ -197,6 +197,43 @@ describe("buildingDay", () => {
       expect(day.openBy).toEqual({ atMs: ms("17:00", "13"), why: "Burns supper sets up (provisional)" });
       const strike = phase(burns.eventId ?? "", "Burns night", "Strike", ms("23:30", "13"), ms("00:30", "14"), "00000000-0000-4000-8000-0000000000a2");
       expect(buildingDay(lanes(burns), [], FRIDAY, [strike]).lockUpAfter).toEqual({ atMs: ms("00:30", "14"), why: "Burns supper strike ends (provisional)" });
+      // Its event confirmed in another room: the phase is firm, whatever this booking is.
+      expect(buildingDay(lanes(burns), [], FRIDAY, [{ ...strike, eventBooking: "ink" }]).lockUpAfter?.why).toBe("Burns supper strike ends");
+    });
+
+    // The review's case (a): Saturday's wedding is only held.
+    it("says tomorrow's provisional booking is provisional in every sentence its phases tonight make", () => {
+      const WEDDING = "00000000-0000-4000-8000-0000000000eb";
+      const held = (from: number, to: number): CalendarPhaseEntry => ({ ...phase(WEDDING, "Campbell–Rao wedding", "Setup", from, to), eventBooking: "hold" });
+      const night = buildingDay(lanes(lunch), [], FRIDAY, [...lunch.phases, held(ms("22:00", "13"), ms("09:00", "14"))]);
+      expect(night.lockUpAfter).toBeNull();
+      expect(night.heldUntil).toMatchObject({ title: "Campbell–Rao wedding setup", setsUp: false, provisional: true });
+      const evening = buildingDay(lanes(lunch), [], FRIDAY, [held(ms("18:00", "13"), ms("21:00", "13"))]);
+      expect(evening.lockUpAfter).toEqual({ atMs: ms("21:00", "13"), why: "Campbell–Rao wedding setup ends (provisional)" });
+      const morning = buildingDay(lanes(lunch), [], FRIDAY, [held(ms("08:00", "13"), ms("10:00", "13"))]);
+      expect(morning.openBy).toEqual({ atMs: ms("08:00", "13"), why: "Campbell–Rao wedding setup begins (provisional)" });
+      // Running as a day begins (in a room its event has no booking in), it holds the building from before, provisionally.
+      const saturday = buildingDay(lanes(), [], SATURDAY, [held(ms("22:00", "13"), ms("09:00", "14"))]);
+      expect(saturday.heldFrom).toMatchObject({ title: "Campbell–Rao wedding setup", provisional: true });
+    });
+
+    // The review's case (b): an event the board shows nowhere.
+    it("leaves out the phases of an event booked nowhere on the Diary: interest only, or a draft with no booking", () => {
+      const PROSPECT = "00000000-0000-4000-8000-0000000000ec";
+      const unbooked = (from: number, to: number): CalendarPhaseEntry => ({ ...phase(PROSPECT, "Campbell–Rao wedding", "Setup", from, to), eventBooking: null });
+      const morning = buildingDay(lanes(lunch), [], FRIDAY, [...lunch.phases, unbooked(ms("08:00", "13"), ms("11:00", "13"))]);
+      expect(morning.openBy).toEqual({ atMs: ms("11:00", "13"), why: "Friday lunch sets up" });
+      const night = buildingDay(lanes(lunch), [], FRIDAY, [...lunch.phases, unbooked(ms("22:00", "13"), ms("09:00", "14"))]);
+      expect([night.heldUntil, night.lockUpAfter]).toEqual([null, { atMs: ms("17:30", "13"), why: "Friday lunch clears" }]);
+      // Alone on the day, it opens nothing at all.
+      const alone = buildingDay(lanes(), [], FRIDAY, [unbooked(ms("08:00", "13"), ms("11:00", "13"))]);
+      expect([alone.openBy, alone.lockUpAfter, alone.heldFrom, alone.heldUntil]).toEqual([null, null, null, null]);
+    });
+
+    it("reads a phase from an older server, which does not say how its event is booked, as before", () => {
+      const older = phase("00000000-0000-4000-8000-0000000000ed", "Campbell–Rao wedding", "Setup", ms("08:00", "13"), ms("11:00", "13"));
+      expect("eventBooking" in older).toBe(false);
+      expect(buildingDay(lanes(lunch), [], FRIDAY, [...lunch.phases, older]).openBy).toEqual({ atMs: ms("08:00", "13"), why: "Campbell–Rao wedding setup begins" });
     });
   });
 

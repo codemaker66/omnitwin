@@ -510,6 +510,23 @@ describe("Calendar entries and conflicts", () => {
     expect(phase.success).toBe(true);
   });
 
+  it("carries on a phase how firmly its event is booked, and reads an older server's phase without it", () => {
+    const phase = {
+      entryType: "phase", id: "00000000-0000-4000-8000-000000000004", spaceId: SPACE_ID,
+      eventId: "00000000-0000-4000-8000-000000000005", eventName: "Campbell–Rao wedding", name: "Setup",
+      startsAt: "2026-11-13T22:00:00.000Z", endsAt: "2026-11-14T09:00:00.000Z", sortOrder: 0,
+    } as const;
+    for (const eventBooking of ["ink", "hold", null] as const) {
+      expect(CalendarEntrySchema.safeParse({ ...phase, eventBooking }).success, String(eventBooking)).toBe(true);
+    }
+    // Interest only, or a house block, is never what an event is booked as.
+    for (const eventBooking of ["prospect", "internal_block", "viewing", "ink "]) {
+      expect(CalendarEntrySchema.safeParse({ ...phase, eventBooking }).success, eventBooking).toBe(false);
+    }
+    const older = CalendarEntrySchema.parse(phase);
+    expect(older.entryType === "phase" ? older.eventBooking : "not a phase").toBeUndefined();
+  });
+
   it("rejects an unknown entry type", () => {
     expect(
       CalendarEntrySchema.safeParse({ entryType: "note", id: "x" }).success,

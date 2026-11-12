@@ -14,8 +14,9 @@ import type { DayBoardLane, DayBoardSlot } from "./day-board-state.js";
 // day's read carries every phase that falls on the day, whichever day its
 // booking is: a phase whose booking is not on this board (tomorrow's setup
 // tonight, a breakdown after an exhibition that has ended) counts too, under
-// its event's name. Spans that touch are one stretch of use. The board's own
-// day runs from its boundary hour to the next; a stretch is that day's when
+// its event's name, when its event is booked on the Diary, and provisional
+// when it is only held. Spans that touch are one stretch of use. The board's
+// own day runs from its boundary hour to the next; a stretch is that day's when
 // it starts in it, so a night's late lock-up stays with the day it began and
 // never becomes the next morning's. "Open by" is the first stretch the day
 // begins; "Lock up after" is the last one's end, when that comes by the
@@ -149,7 +150,12 @@ function slotNeeds(slot: DayBoardSlot): readonly Need[] {
  * The day's phases that no booking on this board holds: a setup tonight for
  * tomorrow's booking, a breakdown after one that has ended, a phase in a room
  * its event has no booking in. Under the booking's title when its event is on
- * the board in another room; otherwise under the event's own name.
+ * the board in another room; otherwise under the event's own name. Only an
+ * event booked on the Diary needs the building: one with neither a confirmed
+ * booking nor a provisional option live (interest only, or nothing booked) is
+ * the sales pipeline's, so its phases set nothing, and one only held is
+ * provisional. A phase from an older server, which does not say, counts as
+ * before: provisional when its event's booking on the board is.
  */
 function loosePhaseNeeds(slots: readonly DayBoardSlot[], phases: readonly CalendarPhaseEntry[]): readonly Need[] {
   const held = new Set(slots.flatMap((slot) => slot.phases.map((phase) => phase.id)));
@@ -158,8 +164,10 @@ function loosePhaseNeeds(slots: readonly DayBoardSlot[], phases: readonly Calend
   return phases.flatMap((phase) => {
     if (held.has(phase.id) || seen.has(phase.id)) return [];
     seen.add(phase.id);
+    if (phase.eventBooking === null) return [];
     const slot = byEvent.get(phase.eventId);
-    return [phaseNeed(phase, slot?.title ?? phase.eventName, slot?.kind === "hold", null)];
+    const provisional = phase.eventBooking === undefined ? slot?.kind === "hold" : phase.eventBooking === "hold";
+    return [phaseNeed(phase, slot?.title ?? phase.eventName, provisional, null)];
   });
 }
 

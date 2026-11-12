@@ -2019,12 +2019,13 @@ describe("DayBoardPage: the building", () => {
     ] as CalendarResponse["entries"];
   }
 
-  /** Today's lunch, and tomorrow's conference's setup on today's read, as the calendar returns a phase. */
-  function lunchAndSetup(setupFrom: number, setupTo: number): CalendarResponse["entries"] {
+  /** Today's lunch, and tomorrow's conference's setup on today's read, as the calendar returns a phase:
+   *  saying how its event is booked, or, from an older server, not. */
+  function lunchAndSetup(setupFrom: number, setupTo: number, eventBooking?: "ink" | "hold" | null): CalendarResponse["entries"] {
     return [
       { ...liveBooking(), id: "00000000-0000-4000-8000-0000000000b9", title: "Trades lunch", eventId: "00000000-0000-4000-8000-0000000000ea", startsAt: tonight(12), endsAt: tonight(15) },
       { entryType: "phase", id: "00000000-0000-4000-8000-0000000007a1", spaceId: GRAND_HALL, eventId: CONFERENCE_EVENT, eventName: "Trades conference",
-        name: "Setup", startsAt: tonight(setupFrom), endsAt: tonight(setupTo), sortOrder: 0 },
+        name: "Setup", startsAt: tonight(setupFrom), endsAt: tonight(setupTo), sortOrder: 0, ...(eventBooking === undefined ? {} : { eventBooking }) },
     ] as CalendarResponse["entries"];
   }
 
@@ -2081,6 +2082,20 @@ describe("DayBoardPage: the building", () => {
     await line(`Open by ${at(tonight(12))} · Lock up after ${at(tonight(21))}`);
     fireEvent.click(screen.getByText("The building"));
     expect(screen.getByText("· Trades conference setup ends", { exact: false })).toBeTruthy();
+  });
+
+  it("says tomorrow's setup is provisional when its event is only held, and leaves out one booked nowhere", async () => {
+    serveToday(calendarFixture(lunchAndSetup(22, 33, "hold")));
+    renderBoard();
+    await line(`Open by ${at(tonight(12))} · No lock-up tonight`);
+    fireEvent.click(screen.getByText("The building"));
+    expect(screen.getByText("No lock-up tonight: Trades conference setup (provisional) runs through the night.")).toBeTruthy();
+    cleanup();
+    // Interest only, or an event with no booking: its setup keeps nobody in.
+    serveToday(calendarFixture(lunchAndSetup(22, 33, null)));
+    renderBoard();
+    await line(`Open by ${at(tonight(12))} · Lock up after ${at(tonight(15))}`);
+    expect(screen.queryByText(/Trades conference/u)).toBeNull();
   });
 
   it("says on the line when the suppliers could not be read, so its times may leave someone out", async () => {
