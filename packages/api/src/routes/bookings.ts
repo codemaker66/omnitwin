@@ -379,11 +379,9 @@ export async function bookingRoutes(
     const occasion = occasionLabel(enquiry.eventType);
     const fallbackTitle = `${enquiryTitleName(enquiry)}${occasion === null ? "" : ` — ${occasion}`}`;
     const title = input.title ?? fallbackTitle.slice(0, MAX_BOOKING_TITLE_LENGTH);
-    // A new event takes the hold's title, except the enquiry's email when its
-    // name is blank: the event's name reaches the client, the sheet, supplier
-    // passes and notifications. It is then named by its occasion and day
-    // (createEventFor, eventNameFor).
-    const eventTitle = input.title ?? (enquiry.name.trim() === "" ? "" : title);
+    // A new event takes the hold's title, less the enquiry's email where that
+    // is all it says of who asked (bindBookingToEvent, titleWithoutEnquiryEmail):
+    // the event is then named by its occasion and day.
     const eventType = input.eventType ?? enquiry.eventType;
     const startsAt = new Date(input.startsAt);
     const endsAt = new Date(input.endsAt);
@@ -399,7 +397,7 @@ export async function bookingRoutes(
         if (!(await lockLiveRoom(tx, enquiry.venueId, spaceId))) return "room_deleted";
         const bound = await bindBookingToEvent(tx, {
           venueId: enquiry.venueId,
-          title: eventTitle,
+          title,
           eventType,
           startsAt,
           endsAt,

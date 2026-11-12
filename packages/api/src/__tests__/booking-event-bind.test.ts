@@ -11,7 +11,7 @@ import {
   EVENT_STATUSES,
 } from "@omnitwin/types";
 import { bookings, eventBindingReviews, events } from "../db/schema.js";
-import { readBindInvariant } from "../services/event-binding.js";
+import { readBindInvariant, titleWithoutEnquiryEmail } from "../services/event-binding.js";
 
 // ---------------------------------------------------------------------------
 // The bind (migration 0090) without a database: the migration's SQL, the
@@ -136,5 +136,36 @@ describe("readBindInvariant", () => {
     await expect(readBindInvariant(reader([]))).rejects.toThrow("no unbound booking count");
     await expect(readBindInvariant(reader([{ unbound_bookings: "-1", contradicting_events: "0" }]))).rejects.toThrow();
     await expect(readBindInvariant(reader([{ unbound_bookings: "0", contradicting_events: "many" }]))).rejects.toThrow();
+  });
+});
+
+// A hold made for an enquiry that gave no name is titled by the enquiry's
+// email (routes/bookings.ts enquiryTitleName). An event is never named by it.
+describe("titleWithoutEnquiryEmail", () => {
+  const email = "jane.fraser@example.test";
+
+  it("takes the enquiry's email off a title that says nothing else of who asked", () => {
+    expect(titleWithoutEnquiryEmail(email, email)).toBe("");
+    expect(titleWithoutEnquiryEmail(`${email} — Wedding`, email)).toBe(" — Wedding");
+    expect(titleWithoutEnquiryEmail(`  Jane.Fraser@Example.TEST — Drinks reception `, email)).toBe(" — Drinks reception");
+    // Cut at the title's 200 characters, inside the occasion or inside the dash.
+    expect(titleWithoutEnquiryEmail(`${email} — Wed`, email)).toBe(" — Wed");
+    expect(titleWithoutEnquiryEmail(`${email} `, email)).toBe("");
+  });
+
+  it("takes an address that fills the title, cut at its 200 characters, as all of it", () => {
+    const long = `${"x".repeat(215)}@example.test`;
+    expect(long.length).toBeGreaterThan(200);
+    expect(titleWithoutEnquiryEmail(long.slice(0, 200), long)).toBe("");
+    // A short title that only begins the address is somebody's own words.
+    expect(titleWithoutEnquiryEmail("xxx", long)).toBe("xxx");
+  });
+
+  it("leaves any other title as it was", () => {
+    expect(titleWithoutEnquiryEmail("Ailsa Grant — Wedding", email)).toBe("Ailsa Grant — Wedding");
+    expect(titleWithoutEnquiryEmail(`${email}.uk — Wedding`, email)).toBe(`${email}.uk — Wedding`);
+    expect(titleWithoutEnquiryEmail(`${email} and party`, email)).toBe(`${email} and party`);
+    expect(titleWithoutEnquiryEmail("", email)).toBe("");
+    expect(titleWithoutEnquiryEmail("Ailsa Grant — Wedding", "")).toBe("Ailsa Grant — Wedding");
   });
 });

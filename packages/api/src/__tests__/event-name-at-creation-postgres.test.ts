@@ -154,6 +154,39 @@ describe.skipIf(target === undefined)("an event made for a booking is named so a
     expect(name).not.toContain("@");
   });
 
+  // What the public route stores today for a guest who gives no name: the
+  // enquiry is filed under its email (routes/public-enquiries.ts, name =
+  // email), so the hold's title begins with the address and the name is not
+  // blank. An event is never named by it.
+  it("names the event of an enquiry filed under its email by its occasion and day, and a named enquiry's event by the hold's title", async () => {
+    const v = await venue("filed under email");
+    const email = `${randomUUID()}@event-name.invalid`;
+    const [filed, named] = await db.insert(schema.enquiries).values([
+      { venueId: v.venueId, spaceId: v.rooms[0], state: "under_review", name: email, email, eventType: "wedding", preferredDate: "2032-08-07" },
+      { venueId: v.venueId, spaceId: v.rooms[1], state: "under_review", name: "TEST ONLY Ailsa Grant", email: `${randomUUID()}@event-name.invalid`, eventType: "wedding", preferredDate: "2032-08-14" },
+    ]).returning({ id: schema.enquiries.id });
+    if (filed === undefined || named === undefined) throw new Error("Enquiry fixtures missing");
+    const convert = async (enquiryId: string, spaceId: string | undefined, day: string): Promise<Booking> => {
+      const response = await server.inject({
+        method: "POST", url: "/bookings/from-enquiry", headers: v.headers,
+        payload: { enquiryId, spaceId, startsAt: `${day}T16:00:00.000Z`, endsAt: `${day}T23:00:00.000Z`, ...hygiene(v.adminId) },
+      });
+      expect(response.statusCode, response.body).toBe(201);
+      return BookingSchema.parse(response.json<{ data: unknown }>().data);
+    };
+
+    const hold = await convert(filed.id, v.rooms[0], "2032-08-07");
+    // The hold keeps the title staff work from (#350): who asked, and for what.
+    expect(hold.title).toBe(`${email} — Wedding`);
+    const name = await eventName(hold.eventId);
+    expect(name).toBe("Wedding, 7 August 2032");
+    expect(name).not.toContain("@");
+
+    // A guest who gave a name: the event takes the hold's title, as before.
+    const theirs = await convert(named.id, v.rooms[1], "2032-08-14");
+    expect(await eventName(theirs.eventId)).toBe("TEST ONLY Ailsa Grant — Wedding");
+  });
+
   it("names the event of an untitled row from the seed or an importer the same way", async () => {
     const v = await venue("direct writer");
     const rows = await insertBoundBookings(db, [

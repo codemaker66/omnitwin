@@ -126,11 +126,40 @@ async function createEventFor(conn: BindConn, seed: EventSeed): Promise<string> 
   return created.id;
 }
 
+/** bookings.title holds this many characters; a longer title is cut there. */
+const BOOKING_TITLE_LENGTH = 200;
+
+/**
+ * A booking's title with its enquiry's email taken off, when the email is all
+ * the title has to say of who asked. The hold made for an enquiry that gave no
+ * name is titled by the enquiry's email, alone or before its occasion
+ * ("jane@example.com — Wedding"): the public route files such an enquiry under
+ * its email, and older rows hold no name at all (enquiryTitleName in
+ * routes/bookings.ts). That is right for the hold, which staff work from. An
+ * event is never named by it: its name travels to the client, the sheet,
+ * supplier passes and notifications. What is left, the occasion if there is
+ * one, names the event (eventNameFor). Any other title comes back as it was.
+ */
+export function titleWithoutEnquiryEmail(title: string, email: string): string {
+  const said = title.trim();
+  const address = email.trim();
+  if (address === "") return title;
+  const lowerSaid = said.toLowerCase();
+  const lowerAddress = address.toLowerCase();
+  // An address long enough to fill the title is cut there, and is all of it.
+  if (lowerSaid.length >= BOOKING_TITLE_LENGTH && lowerAddress.startsWith(lowerSaid)) return "";
+  if (!lowerSaid.startsWith(lowerAddress)) return title;
+  const rest = said.slice(address.length);
+  return /^\s*(?:—.*)?$/su.test(rest) ? rest : title;
+}
+
 /**
  * The event a hold or ink belongs to: the one named, the one its enquiry
  * already has, or a new one. Call inside the booking write's transaction.
  */
 export async function bindBookingToEvent(conn: BindConn, seed: EventSeed, target: BindTarget): Promise<BindOutcome> {
+  // What a new event is named from: the booking's title, less its enquiry's email.
+  let named = seed;
   if (target.join === "event") {
     const [row] = await conn.select({ id: events.id, venueId: events.venueId })
       .from(events)
@@ -141,7 +170,7 @@ export async function bindBookingToEvent(conn: BindConn, seed: EventSeed, target
   }
 
   if (target.join === "enquiry") {
-    const [enquiry] = await conn.select({ id: enquiries.id, venueId: enquiries.venueId })
+    const [enquiry] = await conn.select({ id: enquiries.id, venueId: enquiries.venueId, email: enquiries.email })
       .from(enquiries)
       .where(eq(enquiries.id, target.enquiryId))
       .limit(1)
@@ -163,9 +192,10 @@ export async function bindBookingToEvent(conn: BindConn, seed: EventSeed, target
       .orderBy(desc(sql`${bookings.status} = 'active'`), desc(bookings.createdAt), desc(bookings.id))
       .limit(1);
     if (joined !== undefined) return { ok: true, eventId: joined.eventId, created: false };
+    named = { ...seed, title: titleWithoutEnquiryEmail(seed.title, enquiry.email) };
   }
 
-  return { ok: true, eventId: await createEventFor(conn, seed), created: true };
+  return { ok: true, eventId: await createEventFor(conn, named), created: true };
 }
 
 interface SpanBooking {
