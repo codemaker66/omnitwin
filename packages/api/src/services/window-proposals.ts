@@ -1,11 +1,12 @@
 import { and, desc, eq, gt, isNull, lt, sql } from "drizzle-orm";
-import type { ClientEventScheduleSlot, PlatformRole, ProposeWindow } from "@omnitwin/types";
+import { eventTitleFor, type ClientEventScheduleSlot, type PlatformRole, type ProposeWindow } from "@omnitwin/types";
 import type { Database } from "../db/client.js";
-import { bookings, diaryCommands, events, spaces, users } from "../db/schema.js";
+import { bookings, diaryCommands, events, spaces, users, venues } from "../db/schema.js";
 import { canProposeWindow, isClientSideRole } from "../utils/query.js";
 import { canWriteBookings, ownerWorksAtVenue, PG_UNIQUE_VIOLATION } from "./booking-mutations.js";
 import { clientHoldsEventLink } from "./conversations.js";
 import { movePhasesWithBooking, syncEventStatus } from "./event-binding.js";
+import { lockLiveRoom } from "./room-liveness.js";
 
 // ---------------------------------------------------------------------------
 // Proposing a window (goal 19 S6; D1, D2, D5).
@@ -107,12 +108,13 @@ function decisionDateFor(startsAt: Date, now: Date): Date {
   return new Date(Math.min(latest, Math.max(now.getTime() + HOUR_MS, preferred)));
 }
 
-async function readSlot(conn: Conn, bookingId: string): Promise<ClientEventScheduleSlot | null> {
+/** A recorded proposal's booking as its slot, with the event it is on. */
+async function readSlot(conn: Conn, bookingId: string): Promise<{ readonly eventId: string | null; readonly slot: ClientEventScheduleSlot } | null> {
   const [found] = await conn.select({ booking: bookings, spaceId: spaces.id, spaceName: spaces.name }).from(bookings)
     .innerJoin(spaces, eq(spaces.id, bookings.spaceId))
     .where(and(eq(bookings.id, bookingId), isNull(bookings.deletedAt))).limit(1);
   if (found === undefined) return null;
-  return slotOf(found.booking, { id: found.spaceId, name: found.spaceName });
+  return { eventId: found.booking.eventId, slot: slotOf(found.booking, { id: found.spaceId, name: found.spaceName }) };
 }
 
 export async function proposeWindowCore(
@@ -123,8 +125,8 @@ export async function proposeWindowCore(
   now: Date = new Date(),
 ): Promise<ProposalOk | ProposalDeny> {
   const [eventRow] = await db
-    .select({ id: events.id, venueId: events.venueId, name: events.name, eventType: events.eventType, createdBy: events.createdBy })
-    .from(events).where(and(eq(events.id, eventId), isNull(events.deletedAt))).limit(1);
+    .select({ id: events.id, venueId: events.venueId, name: events.name, eventType: events.eventType, createdBy: events.createdBy, startsAt: events.startsAt, timeZone: venues.timezone })
+    .from(events).innerJoin(venues, eq(venues.id, events.venueId)).where(and(eq(events.id, eventId), isNull(events.deletedAt))).limit(1);
   if (eventRow === undefined) return deny(404, "EVENT_NOT_FOUND", "That event does not exist.");
 
   const holdsEventLink = isClientSideRole(actor.role) ? await clientHoldsEventLink(db, actor.id, eventId) : false;
@@ -132,10 +134,12 @@ export async function proposeWindowCore(
     return deny(403, "FORBIDDEN", "This event is not linked to your account.");
   }
 
-  // The ledger first: a replayed gesture answers what it answered before.
+  // The ledger first: a replayed gesture answers what it answered before, on
+  // the event it was made on. Access was checked for this event only, so a key
+  // used on another event is refused, not answered with that event's booking.
   const [recorded] = await db.select().from(diaryCommands).where(eq(diaryCommands.commandId, input.idempotencyKey)).limit(1);
   if (recorded !== undefined) {
-    if (recorded.userId !== actor.id || recorded.kind !== COMMAND_KIND) {
+    if (recorded.userId !== actor.id || recorded.kind !== COMMAND_KIND || recorded.venueId !== eventRow.venueId) {
       return deny(409, "IDEMPOTENCY_KEY_REUSED", "That key was already used for something else.");
     }
     if (recorded.outcome !== "applied" || recorded.bookingId === null) {
@@ -143,7 +147,8 @@ export async function proposeWindowCore(
     }
     const replayed = await readSlot(db, recorded.bookingId);
     if (replayed === null) return deny(404, "BOOKING_NOT_FOUND", "That proposal no longer exists.");
-    return { ok: true, status: 200, replay: true, venueId: eventRow.venueId, changeKind: "booking.updated", slot: replayed };
+    if (replayed.eventId !== eventId) return deny(409, "IDEMPOTENCY_KEY_REUSED", "That key was already used for something else.");
+    return { ok: true, status: 200, replay: true, venueId: eventRow.venueId, changeKind: "booking.updated", slot: replayed.slot };
   }
 
   const startsAt = new Date(input.startsAt);
@@ -164,13 +169,24 @@ export async function proposeWindowCore(
   }
 
   return db.transaction(async (tx): Promise<ProposalOk | ProposalDeny> => {
+    // The room as it stands now, held until this commits, so a room being
+    // deleted never takes the proposal (admin-venues-3).
+    if (!(await lockLiveRoom(tx, eventRow.venueId, space.id))) return deny(400, "SPACE_VENUE_MISMATCH", "That room is not at this venue.");
     let row: BookingRow | undefined;
     let changeKind: ProposalOk["changeKind"];
     if (mine !== undefined) {
       const unchanged = mine.spaceId === space.id && mine.startsAt.getTime() === startsAt.getTime() && mine.endsAt.getTime() === endsAt.getTime();
       const rank = unchanged ? mine.rank : await nextRank(tx, space.id, startsAt, endsAt, mine.id);
+      // The decision date stays while it still comes before the window; a
+      // move to a sooner window that it would fall after gets a new one, and
+      // the next action's date with it.
+      const decisionKept = mine.decisionAt !== null && mine.decisionAt.getTime() < startsAt.getTime();
+      const decisionAt = decisionKept && mine.decisionAt !== null ? mine.decisionAt : decisionDateFor(startsAt, now);
+      const nextActionDueAt = decisionKept && mine.nextActionDueAt !== null && mine.nextActionDueAt.getTime() < startsAt.getTime()
+        ? mine.nextActionDueAt
+        : decisionAt;
       [row] = await tx.update(bookings)
-        .set({ spaceId: space.id, startsAt, endsAt, rank, updatedAt: now })
+        .set({ spaceId: space.id, startsAt, endsAt, rank, decisionAt, nextActionDueAt, updatedAt: now })
         .where(and(eq(bookings.id, mine.id), eq(bookings.kind, "hold"), eq(bookings.status, "active")))
         .returning();
       if (row === undefined) return deny(409, "WINDOW_DECIDED", "The office has confirmed this time; ask them to move it.");
@@ -194,10 +210,10 @@ export async function proposeWindowCore(
       const decisionAt = decisionDateFor(startsAt, now);
       [row] = await tx.insert(bookings).values({
         venueId: eventRow.venueId, spaceId: space.id, eventId, kind: "hold", status: "active",
-        title: eventRow.name, eventType: eventRow.eventType, startsAt, endsAt,
+        title: eventTitleFor(eventRow, eventRow.timeZone), eventType: eventRow.eventType, startsAt, endsAt,
         rank: await nextRank(tx, space.id, startsAt, endsAt, null),
         jointFlag: false, decisionAt, ownerUserId,
-        nextAction: `Decide ${actor.name}'s proposed time for ${eventRow.name}`.slice(0, 500),
+        nextAction: `Decide ${actor.name}'s proposed time for ${eventTitleFor(eventRow, eventRow.timeZone)}`.slice(0, 500),
         nextActionDueAt: decisionAt, createdBy: actor.id,
       }).returning();
       if (row === undefined) return deny(500, "BOOKING_CREATE_FAILED", "The proposal could not be kept.");

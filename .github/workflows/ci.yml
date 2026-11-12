@@ -150,6 +150,14 @@ jobs:
           VITE_CLERK_PUBLISHABLE_KEY: pk_live_localbuildcheck
         run: pnpm build
 
+      - name: Check the built web bundle (chunk sizes, chunk membership, retired copy)
+        # These tests read packages/web/dist, which only this job builds, so in
+        # the Test job they skip. REQUIRE_WEB_DIST makes a missing build fail
+        # here instead (T-685).
+        env:
+          REQUIRE_WEB_DIST: "1"
+        run: pnpm --filter @omnitwin/web exec vitest run src/__tests__/twin-chunk-budget.test.ts src/__tests__/public-copy-sweep.test.ts
+
   native-image:
     name: API Native Image
     runs-on: ubuntu-latest
@@ -326,8 +334,8 @@ jobs:
         # hallkeeper-timing-postgres, requests-postgres,
         # protected-premises-postgres, forward-book-postgres,
         # supplier-records-kept-postgres, enquiry-funnel-postgres and
-        # enquiry-funnel-migration-postgres, hallkeeper-progress-postgres and
-        # venue-team-postgres skip without their URLs; each
+        # enquiry-funnel-migration-postgres, hallkeeper-progress-postgres,
+        # venue-team-postgres and the L5 payments suites skip without their URLs; each
         # migrates its own database and names it in its guard. The 0100
         # migration test empties its database first, so it is never shared.
         env:
@@ -344,12 +352,53 @@ jobs:
           --command="CREATE DATABASE venviewer_enquiry_funnel_migration_test"
           --command="CREATE DATABASE venviewer_progress_test"
           --command="CREATE DATABASE venviewer_venue_team_test"
+          --command="CREATE DATABASE venviewer_payments_test"
 
-      - name: Test (Vitest)
-        # Use the same execution policy locally and in CI: serial workspaces
+      - name: Create dedicated pricing guard test database
+        # pricing-public-read-postgres builds the whole API on its own
+        # migrated database and skips without its URL.
+        env:
+          PGPASSWORD: postgres
+        run: >-
+          psql --host=127.0.0.1 --port=55476 --username=postgres --dbname=postgres
+          --no-psqlrc --set=ON_ERROR_STOP=1
+          --command="CREATE DATABASE venviewer_pricing_guard_test"
+
+      - name: Create dedicated test databases for the suites that once skipped
+        # These suites skipped on every run until their databases were made
+        # here (audit api-schema-db-2, 11 November 2026). Each names its
+        # database in its guard and prepares it itself: it migrates it, or
+        # builds a schema (or, for the canonical seed, a database) of its own.
+        env:
+          PGPASSWORD: postgres
+        run: >-
+          psql --host=127.0.0.1 --port=55476 --username=postgres --dbname=postgres
+          --no-psqlrc --set=ON_ERROR_STOP=1
+          --command="CREATE DATABASE venviewer_readiness_test"
+          --command="CREATE DATABASE omnitwin_timeline_0060_ci"
+          --command="CREATE DATABASE venviewer_onboarding_test"
+          --command="CREATE DATABASE venviewer_inventory_ci"
+          --command="CREATE DATABASE venviewer_visitor_plan_test"
+          --command="CREATE DATABASE venviewer_ops_phase_test"
+          --command="CREATE DATABASE venviewer_push_test"
+          --command="CREATE DATABASE venviewer_turini_test"
+          --command="CREATE DATABASE venviewer_pricing_windows_test"
+          --command="CREATE DATABASE venviewer_operating_settings_test"
+          --command="CREATE DATABASE venviewer_reconcile_test"
+          --command="CREATE DATABASE venviewer_s6_test"
+
+      - name: Test (Vitest, every package but the API)
+        # The same execution policy as `pnpm test` locally: serial workspaces
         # avoid contention between heavy suites, while --no-bail ensures a
-        # failed package does not hide later failures. Any failure still
-        # produces a non-zero exit code.
+        # failed package does not hide later failures. The API runs next, on
+        # its own, so its JSON report can show which suites ran.
+        run: pnpm -r --workspace-concurrency=1 --no-bail --filter "!@omnitwin/api" run test
+
+      - name: Test (Vitest, API with its PostgreSQL suites)
+        # Runs even when the step above failed, as --no-bail did. The explicit
+        # reporters keep the default output and annotations and add the JSON
+        # report the next step reads.
+        if: ${{ !cancelled() }}
         env:
           # Ephemeral local fixture only; never load or override DATABASE_URL.
           VENVIEWER_ROUTE_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:55476/venviewer_route_atomicity_test
@@ -363,7 +412,42 @@ jobs:
           VENVIEWER_ENQUIRY_FUNNEL_MIGRATION_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:55476/venviewer_enquiry_funnel_migration_test
           VENVIEWER_PROGRESS_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:55476/venviewer_progress_test
           VENVIEWER_VENUE_TEAM_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:55476/venviewer_venue_team_test
-        run: pnpm test
+          # Plan 19 L5: deposits and contract signatures (helpers/payments-db.ts).
+          VENVIEWER_PAYMENTS_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:55476/venviewer_payments_test
+          VENVIEWER_PRICING_GUARD_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:55476/venviewer_pricing_guard_test
+          # The suites that skipped on every run before 11 November 2026.
+          VENVIEWER_READINESS_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:55476/venviewer_readiness_test
+          VENVIEWER_PHASE_LAYOUT_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:55476/omnitwin_timeline_0060_ci
+          VENVIEWER_ONBOARDING_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:55476/venviewer_onboarding_test
+          VENVIEWER_INVENTORY_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:55476/venviewer_inventory_ci
+          VENVIEWER_VISITOR_PLAN_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:55476/venviewer_visitor_plan_test
+          VENVIEWER_OPS_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:55476/venviewer_ops_phase_test
+          VENVIEWER_PUSH_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:55476/venviewer_push_test
+          VENVIEWER_TURINI_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:55476/venviewer_turini_test
+          VENVIEWER_PRICING_WINDOWS_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:55476/venviewer_pricing_windows_test
+          VENVIEWER_OPERATING_SETTINGS_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:55476/venviewer_operating_settings_test
+          VENVIEWER_RECONCILE_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:55476/venviewer_reconcile_test
+          VENVIEWER_S6_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:55476/venviewer_s6_test
+        run: >-
+          pnpm --filter @omnitwin/api run test
+          --reporter=default --reporter=github-actions --reporter=json
+          --outputFile=.test-results/api-vitest/report.json
+
+      - name: Required PostgreSQL suites ran
+        # Fails when any suite named in REQUIRED_POSTGRES_TEST_FILES is absent
+        # from the report or skipped a test: a database suite skips itself
+        # when its variable is unset, which left `pnpm test` green.
+        if: ${{ !cancelled() }}
+        run: pnpm --filter @omnitwin/api exec tsx src/scripts/check-required-postgres-suites.ts .test-results/api-vitest/report.json
+
+      - name: Upload API Vitest report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-vitest-report-${{ github.run_id }}
+          path: packages/api/.test-results/api-vitest/
+          if-no-files-found: warn
+          retention-days: 7
 
   e2e:
     name: E2E CPU (${{ matrix.shard }}/4)
@@ -434,7 +518,35 @@ jobs:
         # (libgtk, libnss, etc.) in addition to the browser binary itself.
         # Only Chromium is installed because playwright.config.ts defines a
         # single "chromium" project — skipping Firefox/WebKit saves ~300 MB.
-        run: pnpm --filter @omnitwin/web exec playwright install --with-deps chromium
+        #
+        # The system packages come from the runner's Ubuntu apt mirror. When
+        # that mirror is unreachable (11 Nov 2026: "Temporary failure resolving
+        # 'azure.archive.ubuntu.com'" for over an hour), --with-deps fails
+        # before a single test runs. Then this installs the browser alone, from
+        # Playwright's own download host, and relies on the system libraries
+        # the Ubuntu runner image already carries (it ships Google Chrome). If
+        # a library were missing, the browser would fail to start and every
+        # test would fail, so the fallback cannot turn into a pass.
+        #
+        # One capped try, not retries: the step normally takes 20-35 s, but
+        # against an unreachable mirror apt spends about 10 minutes per try
+        # waiting out each fetch, and two tries pushed shards past the job's
+        # 30-minute limit. 180 s is about five times the normal time.
+        #
+        # The apt-get that --with-deps starts runs as root under sudo, so
+        # timeout cannot always stop it, and left running it keeps installing
+        # fonts while the tests start (seen in run 43062420466). It is stopped
+        # before the apt-free install.
+        run: |
+          if timeout --kill-after=10 180 pnpm --filter @omnitwin/web exec playwright install --with-deps chromium; then exit 0; fi
+          echo "::warning::playwright install --with-deps failed or ran past 180 s; the Ubuntu apt mirror may be unreachable"
+          sudo pkill -TERM -x apt-get || true
+          sudo pkill -TERM -x dpkg || true
+          for _ in $(seq 1 15); do pgrep -x apt-get >/dev/null || pgrep -x dpkg >/dev/null || break; sleep 1; done
+          sudo pkill -KILL -x apt-get || true
+          sudo pkill -KILL -x dpkg || true
+          echo "::warning::Installing Chromium without apt; relying on the runner image's own system libraries"
+          pnpm --filter @omnitwin/web exec playwright install chromium
 
       - name: Record the scheduled browser inventory
         run: |
@@ -502,17 +614,31 @@ jobs:
     # what it measures: the renderer, the tour, the benchmark and the toolchain
     # that serves them. .github/gpu/gpu-scope.mjs holds the rules; a change it
     # cannot compare with a base commit is always in scope.
+    # The comparison reads two snapshots, never history (cat-file, diff and show
+    # between base and head), so the job fetches the head and the base commit
+    # alone. A full-history checkout ran past five and then ten minutes on busy
+    # runners (#178's run 40347200904; master's 40723003312 attempt 2 and
+    # 40750668695), and a cancelled scope job skips the GPU run, so the release
+    # gate refuses. A base that cannot be fetched leaves the change in scope.
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     permissions:
       contents: read
     outputs:
       required: ${{ steps.scope.outputs.required }}
     steps:
-      - name: Checkout with the history the comparison needs
+      - name: Checkout the head commit
         uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
+
+      - name: Fetch the base commit the comparison needs
+        env:
+          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if printf '%s' "$BASE_SHA" | grep -Eq '^[0-9a-f]{40}$' && [ "$BASE_SHA" != 0000000000000000000000000000000000000000 ]; then
+            git fetch --no-tags --depth=1 origin "$BASE_SHA" || echo "Base $BASE_SHA could not be fetched; the change stays in GPU scope."
+          else
+            echo "No base commit to compare; the change stays in GPU scope."
+          fi
 
       - name: Setup Node.js
         uses: actions/setup-node@v5

@@ -66,6 +66,12 @@ const LIVE_QUOTE_STATUSES = ["draft", "issued", "accepted"];
  *  history is what a team learns from (roadmap X1). */
 const CLOSING_STAGES: ReadonlySet<OpportunityStage> = new Set<OpportunityStage>(["won", "lost"]);
 
+/** Refused because the deal's stage moved on after the request read it. */
+const STAGE_CHANGED = {
+  error: "The deal changed after this screen read it, so nothing was done. Reload it to see where it stands.",
+  code: "OPPORTUNITY_STAGE_CHANGED",
+} as const;
+
 function isoToDate(value: string | null | undefined): Date | null {
   if (value === undefined || value === null) return null;
   return new Date(value);
@@ -435,6 +441,8 @@ export async function opportunityRoutes(
 
     // Checked here, before the transaction, and answered after the links, as
     // before: a bad link is said first, then a bad stage move, then who won.
+    // The write below holds the stage to this one, so what is checked here is
+    // the move that is written, or nothing is.
     const fromStage = opportunity.stage as OpportunityStage;
     const toStage = parsed.data.stage;
     const lostTo = parsed.data.lostTo;
@@ -482,6 +490,7 @@ export async function opportunityRoutes(
     type Updated =
       | { kind: "refused"; refusal: LinkRefusal }
       | { kind: "stage_refused"; refusal: StageRefusal }
+      | { kind: "stage_changed" }
       | { kind: "not_found" }
       | { kind: "updated"; opportunity: typeof opportunities.$inferSelect };
     // The deal, its stage move and who won are written together, or not at
@@ -493,11 +502,23 @@ export async function opportunityRoutes(
       const refusal = await refuseLinks(tx, opportunity.venueId, parsed.data);
       if (refusal !== null) return { kind: "refused", refusal };
       if (stageRefusal !== null) return { kind: "stage_refused", refusal: stageRefusal };
+      // A stage is written only over the stage it was judged from: a move
+      // that landed since (a colleague's, or the client's acceptance) stands,
+      // and this one writes nothing, neither its history nor who won.
       const [updated] = await tx.update(opportunities)
         .set(updateData)
-        .where(eq(opportunities.id, opportunity.id))
+        .where(and(
+          eq(opportunities.id, opportunity.id),
+          toStage === undefined ? undefined : eq(opportunities.stage, fromStage),
+        ))
         .returning();
-      if (updated === undefined) return { kind: "not_found" };
+      if (updated === undefined) {
+        if (toStage === undefined) return { kind: "not_found" };
+        const [still] = await tx.select({ id: opportunities.id }).from(opportunities)
+          .where(eq(opportunities.id, opportunity.id))
+          .limit(1);
+        return still === undefined ? { kind: "not_found" } : { kind: "stage_changed" };
+      }
 
       if (toStage !== undefined && toStage !== fromStage) {
         const [move] = await tx.insert(opportunityStatusHistory).values({
@@ -535,6 +556,7 @@ export async function opportunityRoutes(
     switch (outcome.kind) {
       case "refused": return reply.status(outcome.refusal.status).send(outcome.refusal.body);
       case "stage_refused": return reply.status(422).send(outcome.refusal);
+      case "stage_changed": return reply.status(409).send(STAGE_CHANGED);
       case "not_found": return reply.status(404).send({ error: "Opportunity not found", code: "NOT_FOUND" });
       case "updated": return { data: outcome.opportunity };
     }

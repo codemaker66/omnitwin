@@ -1,8 +1,9 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import { Link, MemoryRouter, Route, Routes } from "react-router-dom";
 import { HallkeeperSheetV2Schema, type HallkeeperSheetV2 } from "@omnitwin/types";
 import { HallkeeperPage } from "../HallkeeperPage.js";
+import { useAuthStore } from "../../stores/auth-store.js";
 import {
   ackProgress,
   listPendingProgress,
@@ -278,9 +279,13 @@ describe("HallkeeperPage request and offline queue isolation", () => {
     const checkbox = await screen.findByRole("checkbox", { name: /Round table/u });
     fireEvent.click(checkbox);
     fireEvent.click(checkbox);
-    await waitFor(() => { expect(writes).toBe(2); });
+    // One row's writes go out in turn (audit hallkeeper-web-1): the second
+    // tap is already being saved, and is sent once the first has its answer.
+    await waitFor(() => { expect(writes).toBe(1); });
     expect(screen.getByText("Saving shared checks…").closest("[role='status']")?.querySelector("[data-activity-indicator]")).not.toBeNull();
     await act(async () => { first.resolve(jsonResponse({})); await first.promise; });
+    expect(screen.getByText("Saving shared checks…")).toBeTruthy();
+    await waitFor(() => { expect(writes).toBe(2); });
     expect(screen.getByText("Saving shared checks…")).toBeTruthy();
     await act(async () => { second.resolve(new Response(null, { status: 403 })); await second.promise; });
     await waitFor(() => { expect(screen.queryByText("Saving shared checks…")).toBeNull(); });
@@ -655,11 +660,126 @@ describe("HallkeeperPage carries the corridor's event", () => {
     expect(writes).toEqual([expect.stringContaining(`/progress?eventId=${tonight}`)]);
     expect(ackProgress).toHaveBeenCalledWith(CONFIG_A, ROW_KEY, null);
   });
+
+  // The live re-read of the shared checks (#370) fetches its token and this
+  // device's queue before it asks the server. A sheet closed in between has
+  // nobody to show the answer to, so the request is not sent. In a unit test it
+  // landed after the test's own fetch had been put back and was reported as
+  // real traffic against whichever test was running (master at cdb6eb8f).
+  it("sends no re-read for a sheet that was closed while the re-read was getting ready", async () => {
+    const tonight = "00000000-0000-4000-8000-0000000000e1";
+    const fetchMock = vi.fn((input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+      const url = requestUrl(input);
+      if (url.includes(`/${CONFIG_A}/v2`)) return Promise.resolve(jsonResponse(sheet(CONFIG_A, "Shared layout")));
+      if (url.includes(`/progress?eventId=${tonight}`) && init?.method !== "PATCH") {
+        return Promise.resolve(jsonResponse({ configId: CONFIG_A, eventId: tonight, linkedEvents: 2, checked: {} }));
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const reads = (): number => fetchMock.mock.calls.filter(([input]) => requestUrl(input).includes("/progress")).length;
+
+    const view = render(<MemoryRouter initialEntries={[`/hallkeeper/${CONFIG_A}?eventId=${tonight}`]}>
+      <Routes><Route path="/hallkeeper/:configId" element={<HallkeeperPage />} /></Routes>
+    </MemoryRouter>);
+    await screen.findByRole("checkbox", { name: /Round table/u, checked: false });
+    // The page starts listening in an effect, which can run a turn after the row is on screen.
+    await act(async () => { await new Promise((resolve) => { setTimeout(resolve, 0); }); });
+    const whenLoaded = reads();
+
+    // From here every look at this device's queue waits, so the re-read stops between its token and its request.
+    const waiting: (() => void)[] = [];
+    vi.mocked(listPendingProgress).mockImplementation(() => new Promise<readonly QueuedProgressOp[]>((resolve) => {
+      waiting.push(() => { resolve([]); });
+    }));
+    act(() => { window.dispatchEvent(new Event("online")); });
+    await waitFor(() => { expect(waiting.length).toBeGreaterThan(0); });
+
+    view.unmount();
+    for (const goOn of waiting) goOn();
+    await new Promise((resolve) => { setTimeout(resolve, 0); });
+    expect(reads()).toBe(whenLoaded);
+  });
 });
 
 // T-648: the Martyn's Law readiness section renders on every sheet, outside
 // the instructions gate. With nothing entered every line is a prompt ("Not
 // set" / "Not checked"); with entries it shows exactly what was entered.
+// Release audit tenancy-f-2: the checklist is the venue crew's record. The
+// layout's client sees what is ticked and ticks nothing; the API refuses
+// their writes too (hallkeeper-progress-postgres).
+describe("HallkeeperPage keeps the checklist with the venue's team", () => {
+  afterEach(() => { useAuthStore.setState({ user: null }); });
+
+  function signIn(role: string): void {
+    useAuthStore.setState({ user: { id: "00000000-0000-4000-8000-0000000000u1", email: "reader@example.test",
+      role, platformRole: "none", venueId: role === "client" || role === "planner" ? null : "00000000-0000-4000-8000-0000000000v1",
+      name: "Reader" } });
+  }
+
+  function serveTicked(): Mock<(input: string | URL | Request, init?: RequestInit) => Promise<Response>> {
+    const fetchMock = vi.fn((input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+      const url = requestUrl(input);
+      if (url.includes(`/${CONFIG_A}/v2`)) return Promise.resolve(jsonResponse(sheet(CONFIG_A, "Client's layout")));
+      if (url.includes(`/${CONFIG_A}/progress`)) {
+        return Promise.resolve(jsonResponse(init?.method === "PATCH"
+          ? { configId: CONFIG_A, eventId: null, rowKey: ROW_KEY, checked: false }
+          : { configId: CONFIG_A, eventId: null, linkedEvents: 0, checked: { [ROW_KEY]: checkedAt } }));
+      }
+      throw new Error(`Unexpected request: ${init?.method ?? "GET"} ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    return fetchMock;
+  }
+
+  it.each(["client", "planner"])("a %s reads the crew's ticks and cannot change them", async (role) => {
+    signIn(role);
+    const fetchMock = serveTicked();
+    mount();
+
+    const row = await screen.findByRole("checkbox", { name: /Round table/u, checked: true });
+    // Read-only, not disabled: it stays at full contrast and in the tab order.
+    expect(row.getAttribute("aria-readonly")).toBe("true");
+    expect(row).toHaveProperty("disabled", false);
+    fireEvent.click(row);
+    expect(screen.getByRole("checkbox", { name: /Round table/u, checked: true })).toBeDefined();
+    expect(screen.getByText("The venue's team ticks these as they set the room.")).toBeDefined();
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "PATCH")).toHaveLength(0);
+  });
+
+  // The queue is the device's. Sent in a client's name the venue team's
+  // waiting tick could only be refused, and a refused tick is dropped.
+  it("a client's sheet sends none of the venue team's waiting ticks, and drops none", async () => {
+    signIn("client");
+    vi.mocked(listPendingProgress).mockResolvedValue([
+      { configId: CONFIG_A, eventId: null, rowKey: ROW_KEY, desiredChecked: false, queuedAt: checkedAt },
+    ]);
+    const fetchMock = serveTicked();
+    mount();
+
+    await screen.findByRole("checkbox", { name: /Round table/u, checked: true });
+    await act(async () => { await new Promise((resolve) => { setTimeout(resolve, 40); }); });
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "PATCH")).toHaveLength(0);
+    expect(ackProgress).not.toHaveBeenCalled();
+    expect(screen.queryByRole("status", { name: "1 offline edit pending sync" })).toBeNull();
+    // Leave the sheet before this suite signs the reader out: a sheet still
+    // open with nobody signed in is no longer a client's.
+    cleanup();
+  });
+
+  it("the venue's hallkeeper still ticks", async () => {
+    signIn("hallkeeper");
+    const fetchMock = serveTicked();
+    mount();
+    const row = await screen.findByRole("checkbox", { name: /Round table/u, checked: true });
+    expect(row.getAttribute("aria-readonly")).toBeNull();
+    expect(screen.queryByText("The venue's team ticks these as they set the room.")).toBeNull();
+    fireEvent.click(row);
+    expect(await screen.findByRole("checkbox", { name: /Round table/u, checked: false })).toBeDefined();
+    await waitFor(() => { expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "PATCH")).toHaveLength(1); });
+  });
+});
+
 describe("HallkeeperPage Martyn's Law readiness", () => {
   function serve(data: HallkeeperSheetV2): void {
     vi.stubGlobal("fetch", vi.fn((input: string | URL | Request): Promise<Response> => {

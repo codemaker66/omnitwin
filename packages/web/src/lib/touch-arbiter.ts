@@ -12,6 +12,7 @@
 //            unarmed on a piece, held 300 ms        -> lift    the piece rises and follows
 //   place    lifted: placed where the ghost was seen; a second finger places nothing
 //   lift     lifted: dropped; a second finger returns the piece where it was
+//            the planner could not lift the piece   -> orbit   the finger looks round (refuseLift)
 //
 // It is pure: times are the events' own timestamps, so a page too busy to run
 // its timers on time still reads a held press as held. The planner's handlers
@@ -141,6 +142,16 @@ export class TouchArbiter {
     if (ended === "place") return { kind: "place", at };
     if (ended === "lift") return { kind: "drop" };
     return NONE;
+  }
+
+  /**
+   * The planner could not lift the piece held (it left the layout, or the
+   * layout is held still): the finger is the camera's, as a swipe's would be,
+   * rather than held still carrying nothing. Only a lift is refused.
+   */
+  refuseLift(): TouchMode {
+    if (this.current === "lift") this.current = "orbit";
+    return this.current;
   }
 
   /** The browser took the touch away (a cancel, a lost window): nothing placed, a lifted piece returned. */

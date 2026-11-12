@@ -2,18 +2,22 @@
 // Layout Recall (goal 03, S5): a saved layout that opens assembles itself.
 //
 // This small module loads with the planner; the Assembly itself loads only
-// where this device asks for it (flag.ts). It watches the editor store for a
-// saved layout finishing its load and, where the Assembly is asked for, holds
-// the room empty at once (floor/presentation-channel.ts), so the furniture is
-// never seen before it is summoned. The Assembly (GrandAssembly.tsx) takes the
-// hold over once the drawn Grand Hall is there to play in. If the room turns
-// out to be another one, or nothing takes the hold over in time, the
-// furniture is let go as placed: a hold can never hide a layout for good.
+// where it may play (flag.ts: by default, the first time a layout opens on
+// this device). It watches the editor store for a saved layout finishing its
+// load and, unless this device has already seen that layout, holds the room
+// empty at once (floor/presentation-channel.ts), so the furniture is never
+// seen before it is summoned. The Assembly (GrandAssembly.tsx) takes the hold
+// over once the drawn Grand Hall is there to play in. If the room turns out
+// to be another one, or nothing takes the hold over in time, the furniture is
+// let go as placed: a hold can never hide a layout for good. A replay
+// (Present) is asked for only while the Assembly is on its stage, at rest,
+// over a furnished floor: nothing else would take it up.
 // ---------------------------------------------------------------------------
 
 import { useEffect } from "react";
 import { create } from "zustand";
 import { useEditorStore } from "../../stores/editor-store.js";
+import { usePlacementStore } from "../../stores/placement-store.js";
 import {
   currentFurniturePresentation,
   publishFurniturePresentation,
@@ -32,9 +36,46 @@ interface RecallState {
   readonly request: AssemblyRequest | null;
   /** Whether the Assembly is holding the room or playing now. */
   readonly active: boolean;
+  /** Whether the Skip has sped the show up. */
+  readonly fast: boolean;
+  /** Bumped to send the show straight to its end (the Skip's second press). */
+  readonly skipNonce: number;
+  /** When the Assembly last gave the room back (`performance.now()`): the Skip settles from here. */
+  readonly restedAt: number;
+  /** Whether the Assembly is on its stage (mounted over the drawn hall), so a replay asked for now is taken up. */
+  readonly onStage: boolean;
 }
 
-export const useAssemblyRecallStore = create<RecallState>()(() => ({ request: null, active: false }));
+export const useAssemblyRecallStore = create<RecallState>()(() => ({
+  request: null, active: false, fast: false, skipNonce: 0, restedAt: Number.NEGATIVE_INFINITY, onStage: false,
+}));
+
+/** Layouts this device has watched assemble, or furnished itself: the first-open rule passes them by. */
+const SEEN_KEY = "venviewer.assembly.seen";
+/** The most layouts the device remembers (the oldest are forgotten first). */
+const SEEN_LIMIT = 200;
+
+function readSeen(): string[] {
+  try {
+    const raw = window.localStorage.getItem(SEEN_KEY);
+    const parsed: unknown = raw === null ? [] : JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Whether this device has already seen this layout assemble, or furnished it itself. */
+export function hasSeenLayout(configId: string): boolean {
+  return readSeen().includes(configId);
+}
+
+/** Remember that this device has seen this layout: by default it then opens as placed. */
+export function markLayoutSeen(configId: string): void {
+  const seen = readSeen().filter((id) => id !== configId);
+  seen.push(configId);
+  try { window.localStorage.setItem(SEEN_KEY, JSON.stringify(seen.slice(-SEEN_LIMIT))); } catch { /* a convenience only */ }
+}
 
 /** The empty room: every piece hidden while the room is readied. */
 export const EMPTY_ROOM: PresentationFrame = { pieces: new Map(), others: "hidden" };
@@ -58,6 +99,8 @@ let stageComing = false;
 let nonce = 0;
 /** Whether this device asks for the Assembly (set by the planner while it is mounted). */
 let asked = false;
+/** Whether a layout plays on every open here, seen or not (`?assembly=accio`; set by the planner). */
+let playsEveryOpen = false;
 /** The layout last announced, so a reload of the same layout (a save conflict) does not replay it. */
 let announced: string | null = null;
 /** A layout that finished loading before the planner said whether it asks for the Assembly. */
@@ -114,6 +157,8 @@ export function releaseHold(): void {
 function announce(configId: string): void {
   announced = configId;
   unannounced = null;
+  // The first-open rule: a layout this device has already seen opens as placed.
+  if (!playsEveryOpen && hasSeenLayout(configId)) return;
   nonce += 1;
   useAssemblyRecallStore.setState({ request: { nonce, configId, reason: "open" } });
   holdRoomEmpty();
@@ -129,16 +174,58 @@ function layoutOpened(state: EditorState, previous: EditorState): string | null 
 }
 
 useEditorStore.subscribe((state, previous) => {
+  // This device furnished the layout itself (a save of this same layout went through with pieces in it).
+  if (previous.isDirty && !state.isDirty && !previous.isLoading && !state.isLoading
+    && state.configId !== null && state.configId === previous.configId && state.objects.length > 0) {
+    markLayoutSeen(state.configId);
+  }
   const opened = layoutOpened(state, previous);
   if (opened === null || opened === announced) return;
   if (asked) announce(opened);
   else unannounced = opened;
 });
 
-/** Ask for the Assembly again over the layout that is open (the replay control). */
-export function requestAssemblyReplay(): void {
+/**
+ * How long a press is still the show's once the Assembly gives the room back, ms: a hurried show can end under a
+ * press already on its way. The Skip stays this long, fading (AssemblyReplay.tsx), and no replay is asked for
+ * within it: asking for one takes a person longer than this to read and decide.
+ */
+export const REPLAY_SETTLE_MS = 600;
+
+/**
+ * Ask for the Assembly again over the layout that is open (Present). Only the Assembly on its stage takes a
+ * request up, so it is asked for only while the Assembly is there and at rest (a request mid-show starts the show
+ * over, and one within REPLAY_SETTLE_MS of its end came with a press meant for the show) and the floor has
+ * furniture (an empty floor would hold the room for a show with nothing in it). Returns whether it asked.
+ */
+export function requestAssemblyReplay(): boolean {
+  const { onStage, active, request, restedAt } = useAssemblyRecallStore.getState();
+  if (!onStage || active || request !== null || performance.now() - restedAt < REPLAY_SETTLE_MS) return false;
+  if (usePlacementStore.getState().placedItems.length === 0) return false;
   nonce += 1;
   useAssemblyRecallStore.setState({ request: { nonce, configId: useEditorStore.getState().configId, reason: "replay" } });
+  return true;
+}
+
+/** The Skip, first press: the show plays on, at speed. */
+export function speedUpAssembly(): void {
+  if (useAssemblyRecallStore.getState().active) useAssemblyRecallStore.setState({ fast: true });
+}
+
+/** The Skip, second press: the show goes straight to its end. */
+export function skipAssemblyToEnd(): void {
+  useAssemblyRecallStore.setState((state) => ({ skipNonce: state.skipNonce + 1 }));
+}
+
+/**
+ * A press on the Skip, or on Present while the show plays: the first plays it on at speed, a second goes straight
+ * to the end. It reads what the Assembly is doing now, not what the last frame drew: the show can end in between.
+ */
+export function hurryAssembly(): void {
+  const { active, fast } = useAssemblyRecallStore.getState();
+  if (!active) return;
+  if (fast) skipAssemblyToEnd();
+  else speedUpAssembly();
 }
 
 /** The Assembly has taken up (or turned down) this request. */
@@ -151,12 +238,14 @@ export function consumeAssemblyRequest(request: AssemblyRequest): void {
  * Assembly. `stage`: the drawn Grand Hall is there to play in (the Assembly
  * is mounted). `elsewhere`: the open room is known not to be one it plays in.
  * `coming`: the Assembly may still play here, but its stage or its code is
- * still on its way, so a hold waits for it (up to HOLD_CAP_MS).
+ * still on its way, so a hold waits for it (up to HOLD_CAP_MS). `always`: a
+ * layout plays on every open here, seen or not.
  */
-export function useAssemblyRecall(wanted: boolean, stage: boolean, elsewhere: boolean, coming = false): void {
+export function useAssemblyRecall(wanted: boolean, stage: boolean, elsewhere: boolean, coming = false, always = false): void {
   useEffect(() => {
     if (!wanted) return undefined;
     asked = true;
+    playsEveryOpen = always;
     // A layout that finished loading before the planner was told, or before
     // this module was even loaded (the planner's code arrives after the layout).
     const open = useEditorStore.getState();
@@ -165,14 +254,15 @@ export function useAssemblyRecall(wanted: boolean, stage: boolean, elsewhere: bo
     else if (unannounced !== null && unannounced === open.configId) announce(unannounced);
     return () => {
       asked = false;
+      playsEveryOpen = false;
       stageComing = false;
       // Leaving the planner: the next time it opens a layout, that is an opening again.
       announced = null;
       unannounced = null;
       releaseHold();
-      useAssemblyRecallStore.setState({ request: null, active: false });
+      useAssemblyRecallStore.setState({ request: null, active: false, fast: false });
     };
-  }, [wanted]);
+  }, [always, wanted]);
 
   useEffect(() => {
     if (!wanted || stage || !elsewhere) return;
@@ -192,9 +282,13 @@ export function resetAssemblyRecallForTests(): void {
   holdSince = 0;
   stageComing = false;
   asked = false;
+  playsEveryOpen = false;
   announced = null;
   unannounced = null;
   nonce = 0;
+  try { window.localStorage.removeItem(SEEN_KEY); } catch { /* none to forget */ }
   publishFurniturePresentation(null);
-  useAssemblyRecallStore.setState({ request: null, active: false });
+  useAssemblyRecallStore.setState({
+    request: null, active: false, fast: false, skipNonce: 0, restedAt: Number.NEGATIVE_INFINITY, onStage: false,
+  });
 }

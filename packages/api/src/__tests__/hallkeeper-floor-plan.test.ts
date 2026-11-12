@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { inflateSync } from "node:zlib";
 import PDFDocument from "pdfkit";
 import type { HallkeeperFloorPlan } from "@omnitwin/types";
 import { buildHallkeeperFloorPlan, footprintCorners, projectHallkeeperFloorPlan } from "../services/hallkeeper-floor-plan.js";
 import { drawScaleBar, drawSheetPlan, planLabel } from "../services/sheet-pdf/plan-drawing.js";
 import { registerSheetFonts } from "../services/sheet-pdf/fonts.js";
 import { extractEventSheet } from "../services/event-sheet-extractor.js";
+import { pdfStreams } from "./helpers/pdf-text.js";
 
 const objectId = "11111111-1111-4111-8111-111111111111";
 const assetId = "22222222-2222-4222-8222-222222222222";
@@ -84,8 +84,7 @@ describe("frozen floor plan", () => {
     drawScaleBar(doc, pointsPerMetre, 408, 279);
     doc.end();
     const pdf = await done;
-    const streams = [...pdf.toString("latin1").matchAll(/stream\r?\n([\s\S]*?)\r?\nendstream/gu)]
-      .map((match) => inflateSync(Buffer.from(match[1] ?? "", "latin1")).toString("latin1")).join("\n");
+    const streams = pdfStreams(pdf).join("\n");
     if (smallRoom) {
       // 2320 points/metre. A 0.02 m bar uses 46.4 pt, inside its 80 pt allowance.
       expect(streams).toContain("361.6 279 m\n408 279 l");

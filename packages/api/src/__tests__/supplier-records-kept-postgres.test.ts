@@ -216,8 +216,11 @@ describe.skipIf(explicitUrl === undefined)("supplier records outlive every delet
   });
 
   it("lets preview cleanup remove an abandoned preview and keep one a pass was issued from", async () => {
+    // Abandoned means nothing refers to the plan: a handoff pack keeps one,
+    // and so does a sheet version alone (preview-sweep-kept-postgres.test.ts).
     const abandoned = await chain({ pass: false, reply: false, preview: true });
     await pool.query("DELETE FROM handoff_packs WHERE id = $1", [abandoned.handoffId]);
+    await pool.query("DELETE FROM configuration_sheet_snapshots WHERE id = $1", [abandoned.snapshotId]);
     const operational = await chain({ pass: true, reply: true, preview: true });
     const before = await rows(operational);
 

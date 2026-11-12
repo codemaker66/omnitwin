@@ -1152,6 +1152,31 @@ export class HallDetailLayer {
   }
 
   /**
+   * Lets every tile go for good, and the slots' array and staging tile with
+   * them (the graphics device ran out of memory: lib/gpu-memory-pressure.ts).
+   * The walls show their photographs alone, and nothing more is fetched.
+   */
+  releaseAll(): void {
+    if (this.disposed) return;
+    this.stopped = true;
+    for (const controller of this.controllers.values()) controller.abort();
+    this.controllers.clear();
+    this.decoded.clear();
+    this.status.fill(IDLE);
+    this.slot.fill(-1);
+    this.fade.fill(0);
+    this.slotTile.fill(-1);
+    this.indexData.fill(0);
+    this.index.needsUpdate = true;
+    for (const node of this.arrayNodes) node.value = this.standIn;
+    this.array?.dispose();
+    this.array = null;
+    this.staging.dispose();
+    this.stagingUsed = false;
+    this.onChange?.();
+  }
+
+  /**
    * Holds every resident tile that is wanted at `fade` from the next frame
    * (null lets the fades run again): for measuring a cross-fade frame by frame.
    */

@@ -1,5 +1,5 @@
 -- ---------------------------------------------------------------------------
--- 0105 — prepared decisions and their history (goal 09 M1; Plan 19 L6)
+-- 0108 — prepared decisions and their history (goal 09 M1; Plan 19 L6)
 --
 -- A consequential change reaches the venue as a prepared decision: options
 -- with a recommendation, each option's consequences and exact mutations, what
@@ -30,8 +30,10 @@
 -- seconds a lock, then fails the deploy rather than hold them longer. Nothing
 -- here reads production data.
 --
--- Numbered 0105 after the release queue's 0103 (#258) and 0104 (#262); its
--- journal `when` is later than theirs. The queue confirms the number at merge.
+-- Written as 0105 on 27 October; renumbered 0108 (journal idx 105) on 12
+-- November, after master's 0107, with a journal `when` (12 Nov 19:00 UTC) later
+-- than master's and the open #309's. Numbers go by landing order: the queue
+-- confirms this one at merge.
 -- ---------------------------------------------------------------------------
 
 SET LOCAL lock_timeout = '10s';

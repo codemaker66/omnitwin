@@ -63,6 +63,9 @@ export interface CommandRecord {
 export interface DiaryChangedDescriptor {
   readonly kind: "booking.created" | "booking.updated" | "booking.transitioned";
   readonly bookingId: string;
+  /** The booking's venue, whose boards hear of the change: a connection is its
+   *  user's own venue's, and a platform admin may change another venue's. */
+  readonly venueId: string;
   /** Present when a transition made a hold 1st option: the in-app notices
    *  it wrote, for the transport to announce after commit. */
   readonly notices?: readonly PromotionNotice[];
@@ -223,6 +226,7 @@ export async function executeDiaryCommand(
         changed: {
           kind: fresh.changeKind,
           bookingId: fresh.booking.id,
+          venueId: fresh.booking.venueId,
           ...(fresh.promotionNotices !== undefined && fresh.promotionNotices.length > 0
             ? { notices: fresh.promotionNotices }
             : {}),

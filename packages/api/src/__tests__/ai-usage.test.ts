@@ -272,7 +272,7 @@ describe("the most a call can cost, reserved before it is made", () => {
       system: request.system ?? null, messages: request.messages, output_config: request.output_config ?? null, tools: request.tools ?? null,
     }), "utf8") + RESERVATION_FRAMING_TOKENS;
 
-  it("holds a draft's own bytes as tokens and all 16,000 output tokens, for Opus 5.5 and a fallback at Opus 5 or 4.8 rates", () => {
+  it("holds a draft's own bytes as tokens and all 16,000 output tokens, for Opus 5.5 alone: a draft has no fallback", () => {
     const request = buildAnthropicDraftRequest("claude-opus-5-5", {
       useCase: "proposal_draft",
       instructions: buildAIDraftInstructions({ useCase: "proposal_draft", context: {} }),
@@ -281,13 +281,11 @@ describe("the most a call can cost, reserved before it is made", () => {
     });
     const input = promptTokens(request);
     // Opus 5.5: input at its dearest input-side rate ($8, the 1-hour write), 16,000 out at $20.
-    // The fallback (Opus 5 or 4.8): input at $10, 16,000 out at $25.
-    const expected = Math.ceil((input * 8_000_000 + 16_000 * 20_000_000) / 1_000_000)
-      + Math.ceil((input * 10_000_000 + 16_000 * 25_000_000) / 1_000_000);
+    const expected = Math.ceil((input * 8_000_000 + 16_000 * 20_000_000) / 1_000_000);
     expect(reserveForAnthropicRequest(ANTHROPIC_PRICE_TABLE, request)).toBe(expected);
-    // About $0.80, against a typical draft's cents: the reservation is a ceiling.
-    expect(expected).toBeGreaterThan(720_000);
-    expect(expected).toBeLessThan(900_000);
+    // About $0.36, against a typical draft's cents: the reservation is a ceiling.
+    expect(expected).toBeGreaterThan(320_000);
+    expect(expected).toBeLessThan(400_000);
   });
 
   it("is never less than the dearest response the request could bring back", () => {
@@ -375,7 +373,7 @@ describe("what the adapter records for each call", () => {
 
   const ASK = { useCase: "proposal_draft", instructions: "Rules.", prompt: "", context: { clientName: "Morgan" } } as const;
 
-  it("records an answer, a refusal rescued by the fallback, a refusal, a cut-off and a failure, each as it ended", async () => {
+  it("records an answer, a draft another model wrote (no draft), a refusal, a cut-off and a failure, each as it ended", async () => {
     const usage = new TallyAIUsageMeter();
     const fetch = provider(
       { body: reply({ usage: { input_tokens: 1_000, output_tokens: 500 } }) },
@@ -392,7 +390,8 @@ describe("what the adapter records for each call", () => {
     );
     const adapter = adapterOver(fetch, usage);
     await expect(adapter.generateText(ASK, ATTRIBUTION)).resolves.toBe("Dear Morgan, thank you.");
-    await expect(adapter.generateText(ASK, ATTRIBUTION)).resolves.toBe("Dear Morgan, thank you.");
+    // Written by the fallback after Opus 5.5 declined: not the asked model's draft, so none.
+    await expect(adapter.generateText(ASK, ATTRIBUTION)).rejects.toThrow("Another model than the one asked answered");
     await expect(adapter.generateText(ASK, ATTRIBUTION)).rejects.toThrow("Claude declined to write this draft");
     await expect(adapter.generateText(ASK, ATTRIBUTION)).rejects.toThrow("cut off");
     await expect(adapter.generateText(ASK, ATTRIBUTION)).rejects.toBeInstanceOf(Anthropic.InternalServerError);
@@ -400,7 +399,7 @@ describe("what the adapter records for each call", () => {
     expect(usage.entries.map((entry) => [entry.outcome, entry.model, entry.inputTokens, entry.outputTokens, entry.costMicroUsd, entry.requestId]))
       .toEqual([
         ["ok", "claude-opus-5-5", 1_000, 500, 1_000 * 4 + 500 * 20, "req_adapter_200"],
-        ["ok", "claude-opus-5", 800, 300, 400 * 4 + 400 * 5 + 300 * 25, "req_adapter_200"],
+        ["refusal", "claude-opus-5", 800, 300, 400 * 4 + 400 * 5 + 300 * 25, "req_adapter_200"],
         ["refusal", "claude-opus-5-5", 400, 0, 0, "req_adapter_200"],
         ["max_tokens", "claude-opus-5-5", 400, 16_000, 400 * 4 + 16_000 * 20, "req_adapter_200"],
         ["error", "claude-opus-5-5", 0, 0, 0, "req_adapter_500"],

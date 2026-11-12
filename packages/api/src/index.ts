@@ -31,6 +31,7 @@ import { turnaroundRuleRoutes } from "./routes/turnaround-rules.js";
 import { forwardBookRoutes } from "./routes/forward-book.js";
 import { proposalTemplateRoutes } from "./routes/proposal-templates.js";
 import { proposalMessageDraftRoutes } from "./routes/proposal-message-draft.js";
+import { enquirySummaryDraftRoutes } from "./routes/enquiry-summary-draft.js";
 import { decisionRoutes } from "./routes/decisions.js";
 import { rotaRoutes } from "./routes/rota.js";
 import { venueTeamRoutes } from "./routes/venue-team.js";
@@ -50,6 +51,10 @@ import { dietaryMemoryRoutes } from "./routes/dietary-memory.js";
 import { authRoutes } from "./routes/auth.js";
 import { adminRoutes } from "./routes/admin.js";
 import { webhookRoutes } from "./routes/webhooks.js";
+import { stripeWebhookRoutes } from "./routes/stripe-webhook.js";
+import { proposalDepositRoutes, proposalShareDepositRoutes } from "./routes/deposits.js";
+import { proposalContractRoutes, proposalShareContractRoutes } from "./routes/contracts.js";
+import { depositPaymentsFrom } from "./services/payments/deposit-gateway.js";
 import { hallkeeperSheetRoutes } from "./routes/hallkeeper-sheet.js";
 import { configurationReviewRoutes } from "./routes/configuration-reviews.js";
 import { adminAssetRoutes, assetRoutes } from "./routes/assets.js";
@@ -70,6 +75,7 @@ import { opsHandoffRoutes } from "./routes/ops-handoff.js";
 import { supplierCoordinationRoutes, supplierShareRoutes } from "./routes/supplier-coordination.js";
 import { analyticsRoutes, eventRevenueRoutes, revenueScenarioRoutes } from "./routes/revenue-analytics.js";
 import { aiAssistantRoutes } from "./routes/ai-assistant.js";
+import { missingAccessLists } from "./services/ai-access.js";
 import { aiUsageRoutes } from "./routes/ai-usage.js";
 import { venueAllowanceMeter } from "./services/ai-usage.js";
 import { embedConfigRoutes, integrationRoutes, webhookOutboundRoutes } from "./routes/integrations.js";
@@ -246,6 +252,14 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
       code: "RATE_LIMITED",
       retryAfterSeconds: Math.ceil(context.ttl / 1000),
     }),
+  });
+  // The plugin attaches itself to each route as it is added, and Fastify's
+  // not-found handler is not a route, so a path matching no route went
+  // unlimited: anyone could send any number. Such requests draw on the same
+  // budget as the rest, checked at the same point, before any body is read.
+  const limitUnmatched = server.rateLimit();
+  server.addHook("onRequest", async function limitUnmatchedPaths(request, reply) {
+    if (request.is404) await limitUnmatched.call(this, request, reply);
   });
 
   // Response compression. Railway's edge forwards an encoded body as-is but
@@ -515,6 +529,12 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
     prefix: "/admin/reconstruction-foundry/derivative-rights",
   });
   await server.register(webhookRoutes, { db, prefix: "/webhooks" });
+  // Deposits (Plan 19 L5): off without the Stripe variables; refused, with a
+  // logged reason, for any key that is not a test key (env.ts refuses it at
+  // startup first).
+  const depositPayments = depositPaymentsFrom(env);
+  if (depositPayments.status === "refused") server.log.error({ event: "stripe.payments_refused", reason: depositPayments.reason }, "Deposits are refused");
+  await server.register(stripeWebhookRoutes, { db, payments: depositPayments, prefix: "/webhooks" });
   await server.register(hallkeeperSheetRoutes, { db, prefix: "/hallkeeper" });
   await server.register(configurationReviewRoutes, { db, prefix: "/configurations" });
   await server.register(assetRoutes, { db, env, prefix: "/assets" });
@@ -568,12 +588,25 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   await server.register(webhookOutboundRoutes, { db, prefix: "/webhooks" });
   await server.register(revenueScenarioRoutes, { db, prefix: "/revenue-scenarios" });
   await server.register(analyticsRoutes, { db, prefix: "/analytics" });
+  // C1: AI on without its allow lists fails closed (on for no venue). Said
+  // loudly at boot, not refused, so a forgotten variable never blocks a deploy.
+  const missingAiLists = missingAccessLists(env);
+  if (missingAiLists.length > 0) {
+    server.log.warn({ missing: missingAiLists }, `AI_ASSISTANT_ENABLED is true but ${missingAiLists.join(" and ")} ${missingAiLists.length === 1 ? "is" : "are"} unset: AI drafts are off for every venue until set (docs/operations/ai-pilot-switch-on.md)`);
+  }
   await server.register(aiAssistantRoutes, { env, db, aiUsage, prefix: "/ai" });
   await server.register(proposalRoutes, { db, prefix: "/proposals" });
   await server.register(proposalMessageDraftRoutes, { db, env, aiUsage, prefix: "/proposals" });
+  await server.register(enquirySummaryDraftRoutes, { db, env, aiUsage, prefix: "/enquiries" });
   await server.register(decisionRoutes, { db, prefix: "/decisions" });
   await server.register(quoteRoutes, { db, prefix: "/quotes" });
   await server.register(proposalShareRoutes, { db, prefix: "/proposal-share" });
+  // Deposits on an accepted proposal (Plan 19 L5), Stripe test mode only.
+  await server.register(proposalDepositRoutes, { db, payments: depositPayments, prefix: "/proposals" });
+  await server.register(proposalShareDepositRoutes, { db, payments: depositPayments, prefix: "/proposal-share" });
+  // The contract and its simple electronic signature (Plan 19 L5).
+  await server.register(proposalContractRoutes, { db, prefix: "/proposals" });
+  await server.register(proposalShareContractRoutes, { db, prefix: "/proposal-share" });
   await server.register(supplierShareRoutes, { db, prefix: "/supplier-share" });
   await server.register(publicProposalRoutes, { db, prefix: "/public" });
 

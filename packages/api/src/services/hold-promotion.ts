@@ -1,5 +1,5 @@
 import type { FastifyBaseLogger } from "fastify";
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, gt, inArray, isNull, lt, ne } from "drizzle-orm";
 import {
   holdPromotionActionPath,
   PromotionDraftSchema,
@@ -353,6 +353,36 @@ async function recipientFor(
 }
 
 /**
+ * Whether a 1st option shares it with another hold now. The stored joint
+ * flag is not enough: the resequence moves ranks only, so a hold whose joint
+ * partner was released keeps its flag and moves up alone. As in
+ * jointlyPromoted, it takes another active, joint-flagged 1st option in the
+ * same space whose time overlaps.
+ */
+async function sharesFirstOption(
+  db: Database,
+  hold: { readonly id: string; readonly spaceId: string; readonly jointFlag: boolean; readonly startsAt: Date; readonly endsAt: Date },
+): Promise<boolean> {
+  if (!hold.jointFlag) return false;
+  const [partner] = await db
+    .select({ id: bookings.id })
+    .from(bookings)
+    .where(and(
+      eq(bookings.spaceId, hold.spaceId),
+      ne(bookings.id, hold.id),
+      eq(bookings.kind, "hold"),
+      eq(bookings.status, "active"),
+      eq(bookings.rank, 1),
+      eq(bookings.jointFlag, true),
+      isNull(bookings.deletedAt),
+      lt(bookings.startsAt, hold.endsAt),
+      gt(bookings.endsAt, hold.startsAt),
+    ))
+    .limit(1);
+  return partner !== undefined;
+}
+
+/**
  * The drafted email for a hold that is 1st option now. Read by the people
  * who work the pipeline at the hold's venue; composed from the hold as it
  * stands, so a hold that has since moved on says so instead.
@@ -366,7 +396,8 @@ export async function loadPromotionDraft(
   const [hold] = await db
     .select({
       id: bookings.id, venueId: bookings.venueId, kind: bookings.kind, status: bookings.status, rank: bookings.rank,
-      jointFlag: bookings.jointFlag, startsAt: bookings.startsAt, decisionAt: bookings.decisionAt,
+      jointFlag: bookings.jointFlag, spaceId: bookings.spaceId, startsAt: bookings.startsAt, endsAt: bookings.endsAt,
+      decisionAt: bookings.decisionAt,
       eventId: bookings.eventId, enquiryId: bookings.enquiryId, spaceName: spaces.name, venueName: venues.name,
     })
     .from(bookings)
@@ -397,7 +428,7 @@ export async function loadPromotionDraft(
     spaceName: hold.spaceName,
     venueName: hold.venueName,
     venueDay: formatVenueDay(hold.startsAt),
-    joint: hold.jointFlag,
+    joint: await sharesFirstOption(db, hold),
     decisionDay: decisionAhead && hold.decisionAt !== null ? formatVenueDay(hold.decisionAt) : null,
     senderName: sender?.name ?? null,
   });

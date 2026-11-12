@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { addAfterEffect, addEffect, useFrame, useThree } from "@react-three/fiber";
 import { FrameGovernor, SwapSettle, displayRateFrom, governorWarmWindows, rebuildDue, type StepKind } from "../../lib/render-governor.js";
-import { nextQualityRung, rebuildsPipeline, type QualityRung, type RenderProfile } from "../../lib/render-quality.js";
+import { memoryQualityRung, nextQualityRung, rebuildsPipeline, type QualityRung, type RenderProfile } from "../../lib/render-quality.js";
+import { onGpuMemoryPressure } from "../../lib/gpu-memory-pressure.js";
 import { onMainDraw } from "../../lib/main-draw-clock.js";
 import { getNativeRenderer, nativeRendererGpuString } from "../../lib/native-renderer.js";
 import { watchViewHand } from "../../lib/view-hand.js";
@@ -172,6 +173,19 @@ export function RenderGovernor({ profile, baseRatio, enabled }: RenderGovernorPr
         windows: governor.windowsJudged,
       });
     };
+    // A device out of memory frees some at once, whatever the frame rate, the
+    // resolution first (memoryQualityRung): a rung given up now, mid gesture
+    // or not, since a view that has run out of memory may not draw again.
+    const native = getNativeRenderer(gl);
+    const unsubscribeMemory = native === null ? null : onGpuMemoryPressure(native, () => {
+      if (isSoftware()) return;
+      const { profile: current, baseRatio: ratio } = latest.current;
+      const { given, setGiven } = useRenderGovernorStore.getState();
+      const rung = memoryQualityRung(current, ratio, wait.rung === null ? given : [...given, wait.rung]);
+      if (rung === null) return;
+      setGiven([...given, rung]);
+      governor.interrupt();
+    });
     const unsubscribeStart = addEffect(() => { passStartedAt = performance.now(); });
     const unsubscribeEnd = addAfterEffect(() => {
       const passUpdated = updated.current;
@@ -203,6 +217,7 @@ export function RenderGovernor({ profile, baseRatio, enabled }: RenderGovernorPr
       if (get().internal.frames === 0) stoppedSinceDraw = true;
     });
     return () => {
+      unsubscribeMemory?.();
       unsubscribeStart();
       unsubscribeEnd();
       window.clearInterval(stillCheck);

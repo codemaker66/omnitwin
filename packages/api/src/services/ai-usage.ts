@@ -144,8 +144,16 @@ interface AttemptTokens {
 
 const MILLION = 1_000_000n;
 
+/** A model's name without a dated snapshot's suffix: "claude-opus-5-5-20261001"
+ *  is "claude-opus-5-5". The draft's model check and the pricing read the same
+ *  name, so a dated answer is neither refused as another model nor charged the
+ *  table's highest rates. */
+export function undatedModel(model: string): string {
+  return model.replace(/-\d{8}$/u, "");
+}
+
 function ratesFor(prices: PriceTable, attempt: AttemptTokens): { readonly rates: TokenRates; readonly priced: AIUsageAttempt["priced"] } {
-  const price = prices.models[attempt.model];
+  const price = prices.models[attempt.model] ?? prices.models[undatedModel(attempt.model)];
   if (price === undefined) return { rates: ceilingRates(prices), priced: "ceiling" };
   const prompt = attempt.inputTokens + attempt.cacheCreationInputTokens + attempt.cacheReadInputTokens;
   if (price.longPrompt !== undefined && prompt > price.longPrompt.overTokens) return { rates: price.longPrompt.rates, priced: "table" };
@@ -560,14 +568,21 @@ export class PostgresAIUsageMeter implements AIUsageMeter {
         eq(aiUsageReservations.venueId, call.venueId),
         lte(aiUsageReservations.expiresAt, sql`now()`),
       ));
-      const [spent] = await tx.select({ total: sql<number>`coalesce(sum(${aiUsageLedger.costMicroUsd}), 0)`.mapWith(Number) })
-        .from(aiUsageLedger)
-        .where(and(eq(aiUsageLedger.venueId, call.venueId), gte(aiUsageLedger.createdAt, MONTH_START)));
-      const [held] = await tx.select({ total: sql<number>`coalesce(sum(${aiUsageReservations.reservedMicroUsd}), 0)`.mapWith(Number) })
-        .from(aiUsageReservations)
-        .where(and(eq(aiUsageReservations.venueId, call.venueId), gt(aiUsageReservations.expiresAt, sql`now()`)));
-      const spentMicroUsd = spent?.total ?? 0;
-      const heldMicroUsd = held?.total ?? 0;
+      // One statement reads the month's recorded spend and the calls in
+      // flight, so both are of one moment. settle() does not take the venue's
+      // lock: read in two statements, a call that finished between them was
+      // in neither sum (not yet recorded for the first, its reservation gone
+      // by the second) and the next call was let past the allowance.
+      const [usage] = await tx.select({
+        spent: sql<number>`(${tx.select({ total: sql`coalesce(sum(${aiUsageLedger.costMicroUsd}), 0)` })
+          .from(aiUsageLedger)
+          .where(and(eq(aiUsageLedger.venueId, call.venueId), gte(aiUsageLedger.createdAt, MONTH_START)))})`.mapWith(Number),
+        held: sql<number>`(${tx.select({ total: sql`coalesce(sum(${aiUsageReservations.reservedMicroUsd}), 0)` })
+          .from(aiUsageReservations)
+          .where(and(eq(aiUsageReservations.venueId, call.venueId), gt(aiUsageReservations.expiresAt, sql`now()`)))})`.mapWith(Number),
+      }).from(sql`(select 1) as usage_now`);
+      const spentMicroUsd = usage?.spent ?? 0;
+      const heldMicroUsd = usage?.held ?? 0;
       if (spentMicroUsd + heldMicroUsd + call.reserveMicroUsd > this.limitMicroUsd) {
         await tx.insert(aiUsageLedger).values(entryFor(call, null));
         return { kind: "blocked", spentMicroUsd, heldMicroUsd } as const;

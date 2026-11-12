@@ -364,6 +364,12 @@ export function judgeGhost(stamp: readonly PlacedItem[], world: GhostWorld, opti
   return refusal(violationsAt(widened, world, excludeIds, 0, 0), world, margin);
 }
 
+/** The deepest thing in the set's way where it stands, or null when nothing is: what a refusal names. */
+export function obstacleAt(stamp: readonly PlacedItem[], world: GhostWorld, excludeIds: ReadonlySet<string> = NO_EXCLUSIONS): GhostObstacle | null {
+  const worst = deepest(violationsAt(ghostBodies(stamp, 0), world, excludeIds, 0, 0));
+  return worst === undefined ? null : describeObstacle(worst, world);
+}
+
 /** The pieces where the verdict sets them down: pushed clear, or where they stand. */
 export function atVerdict(stamp: readonly PlacedItem[], verdict: GhostVerdict): readonly PlacedItem[] {
   if (verdict.dx === 0 && verdict.dz === 0) return stamp;

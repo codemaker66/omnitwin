@@ -1,4 +1,6 @@
 import type { Breadcrumb, ErrorEvent, NodeOptions } from "@sentry/node";
+import { templateCapabilityPaths, templateCapabilityPathsDeep } from "@omnitwin/types";
+import { PLAN_CLAIM_SECRET_HEADER } from "../services/configuration-claim-secrets.js";
 
 // ---------------------------------------------------------------------------
 // Redaction — keeps query strings out of request logs and error reports.
@@ -13,6 +15,12 @@ import type { Breadcrumb, ErrorEvent, NodeOptions } from "@sentry/node";
 //   3. Sentry transactions: `event.request.url`, plus span attributes the
 //      OpenTelemetry HTTP instrumentation records (`url.full`, `http.url`,
 //      `http.target`, `url.query`).
+//
+// The same three places, and anything else an event, breadcrumb or
+// transaction quotes, also lose the segment after a capability path
+// (/proposal-share/<token>, /public/configurations/<guest layout id> and the
+// rest in @omnitwin/types capability-paths): whoever reads a log or an event
+// could otherwise open the proposal, approve it or overwrite the layout.
 //
 // Everything here is pure and has no runtime dependency on @sentry/node
 // (type imports only), so it can be imported without initialising the SDK.
@@ -66,12 +74,13 @@ function headerValue(value: string | string[] | undefined): string | undefined {
 /**
  * Drop-in replacement for Fastify's default `req` log serializer
  * (fastify@5 lib/logger-pino.js `asReqValue`): the same six fields, with
- * only `url` changed so the query string never reaches the log.
+ * only `url` changed so the query string and a capability path's token never
+ * reach the log.
  */
 export function requestLogSerializer(request: LoggableRequest): SerializedRequest {
   return {
     method: request.method,
-    url: withoutQuery(request.url),
+    url: templateCapabilityPaths(withoutQuery(request.url)),
     version: headerValue(request.headers?.["accept-version"]),
     host: request.host,
     remoteAddress: request.ip,
@@ -196,17 +205,113 @@ export function errorLogSerializer(err: unknown): SerializedError {
  */
 export type ScrubbableTransaction = Parameters<NonNullable<NodeOptions["beforeSendTransaction"]>>[0];
 
-/** Span / trace attribute keys whose value is, or contains, a URL. */
-const URL_ATTRIBUTE_KEYS: readonly string[] = ["url.full", "http.url", "http.target"];
+/** Span / trace attribute keys whose value is, or contains, a URL. The
+ *  Fastify span writes the request url, query included, to `url.path`. */
+const URL_ATTRIBUTE_KEYS: readonly string[] = ["url.full", "http.url", "http.target", "url.path"];
 
-/** Span / trace attribute keys that hold a bare query string. */
-const QUERY_ATTRIBUTE_KEYS: readonly string[] = ["url.query", "http.query"];
+/**
+ * Headers that carry a credential, or something a reader of a report could
+ * use as one:
+ *   - `authorization`: the sign-in token, and the workflow and metrics tokens;
+ *   - `cookie`: the sign-in provider's `__session` cookie, and any other;
+ *   - the claim-secret header: a guest plan's claim secret, whose holder can
+ *     claim the plan and read its notes;
+ *   - `stripe-signature` (routes/stripe-webhook.ts) and `svix-signature`
+ *     (routes/webhooks.ts): a webhook's signature, which with the body would
+ *     replay the call; `webhook-signature` is the Standard Webhooks name for
+ *     the same, read by no route today;
+ *   - `mcp-session-id` (routes/public-mcp.ts, which also sends one back): its
+ *     holder spends that session's budget;
+ *   - `set-cookie`: a response header, listed so that its attribute is
+ *     dropped should the API ever set a cookie.
+ * A header that comes to carry a credential is added here, and every scrubber
+ * drops it: from an event's and a transaction's request headers, and the
+ * attributes the SDK writes for it on the request's span. A route reads its
+ * headers from the live request, never from an event, so none of this
+ * changes what a route sees.
+ */
+export const CREDENTIAL_REQUEST_HEADERS: readonly string[] = [
+  "authorization", "cookie", PLAN_CLAIM_SECRET_HEADER,
+  "stripe-signature", "svix-signature", "webhook-signature",
+  "mcp-session-id", "set-cookie",
+];
+
+/** Request headers that carry a credential or the caller's address. */
+const DROPPED_REQUEST_HEADERS: readonly string[] = [
+  ...CREDENTIAL_REQUEST_HEADERS,
+  "x-forwarded-for", "x-real-ip", "forwarded", "cf-connecting-ip", "true-client-ip",
+];
+
+/** The span attributes the SDK can write for a header (@sentry/core 10.60
+ *  utils/request.js httpHeadersToSpanAttributes): `http.request.header.`, or
+ *  `http.response.header.` for a response header, then the name in lower
+ *  case with dashes as underscores. */
+function headerAttributes(header: string): readonly string[] {
+  const name = header.toLowerCase().replaceAll("-", "_");
+  return [`http.request.header.${name}`, `http.response.header.${name}`];
+}
+
+/** The attributes of every dropped header. */
+const DROPPED_HEADER_ATTRIBUTES: readonly string[] = DROPPED_REQUEST_HEADERS.flatMap(headerAttributes);
+
+/**
+ * Whether a span attribute belongs to a dropped header: the header's own
+ * attribute, or one under it. The SDK writes a Cookie or Set-Cookie header
+ * as one attribute per cookie, `http.request.header.cookie.<cookie name>`,
+ * and masks a value only when the name is on its word list (`__session` is;
+ * most names are not). It masks the sign-in token, the claim secret, the MCP
+ * session id and the address headers only because their names contain
+ * "auth", "secret", "session", "forwarded" or "-ip", and the webhook
+ * signatures not at all. All are dropped here, in any casing, so none of it
+ * rests on the SDK's word list.
+ */
+function isDroppedHeaderAttribute(key: string): boolean {
+  const lower = key.toLowerCase();
+  return DROPPED_HEADER_ATTRIBUTES.some((attribute) => lower === attribute || lower.startsWith(`${attribute}.`));
+}
+
+/** Span / trace attribute keys that hold a bare query string, or the caller's
+ *  address: node-core records the first X-Forwarded-For entry (behind Railway,
+ *  the visitor's IP) as `http.client_ip` whatever `sendDefaultPii` says. */
+const DROPPED_ATTRIBUTE_KEYS: readonly string[] = [
+  "url.query", "http.query",
+  "http.client_ip", "client.address", "net.peer.ip", "network.peer.address", "net.sock.peer.addr",
+];
+
+/** The parts of an event's or a transaction's `request` that can hold a credential. */
+export interface RequestCredentialFields {
+  headers?: Record<string, string>;
+  cookies?: Record<string, string>;
+}
+
+/**
+ * Removes the given headers from a `request`, however each is cased, and
+ * always its `cookies`: the SDK's RequestData integration parses the Cookie
+ * header into names and values there, on error events and transactions alike
+ * (@sentry/core 10.60 integrations/requestdata.js), so dropping the header
+ * alone would leave the sign-in provider's `__session` cookie in the event.
+ */
+function dropRequestCredentials(request: RequestCredentialFields, droppedHeaders: readonly string[]): void {
+  delete request.cookies;
+  const headers = request.headers;
+  if (headers === undefined) return;
+  for (const key of Object.keys(headers)) {
+    // eslint-disable-next-line @typescript-eslint/no-dynamic-delete -- header bags are open-ended records
+    if (droppedHeaders.includes(key.toLowerCase())) delete headers[key];
+  }
+}
+
+/** Removes every credential from a request: the credential headers, however
+ *  each is cased, and the cookies the SDK parsed from the Cookie header. */
+export function dropCredentials(request: RequestCredentialFields): void {
+  dropRequestCredentials(request, CREDENTIAL_REQUEST_HEADERS);
+}
 
 function scrubAttributes(data: Record<string, unknown> | undefined): void {
   if (data === undefined) return;
-  for (const key of QUERY_ATTRIBUTE_KEYS) {
+  for (const key of Object.keys(data)) {
     // eslint-disable-next-line @typescript-eslint/no-dynamic-delete -- attribute bags are open-ended records
-    delete data[key];
+    if (DROPPED_ATTRIBUTE_KEYS.includes(key) || isDroppedHeaderAttribute(key)) delete data[key];
   }
   for (const key of URL_ATTRIBUTE_KEYS) {
     const value = data[key];
@@ -215,9 +320,10 @@ function scrubAttributes(data: Record<string, unknown> | undefined): void {
 }
 
 /**
- * `beforeSend`: strips request bodies, the query string, the authorization
- * and cookie headers, and the query from `request.url`; redacts query
- * parameters from every exception value (the error and its linked causes).
+ * `beforeSend`: strips request bodies, the query string, the cookies, the
+ * credential and address headers, and the query from `request.url`; redacts
+ * query parameters from every exception value (the error and its linked
+ * causes).
  */
 export function scrubErrorEvent(event: ErrorEvent): ErrorEvent {
   for (const exception of event.exception?.values ?? []) {
@@ -231,12 +337,9 @@ export function scrubErrorEvent(event: ErrorEvent): ErrorEvent {
     if (event.request.url !== undefined) {
       event.request.url = withoutQuery(event.request.url);
     }
-    if (event.request.headers !== undefined) {
-      delete event.request.headers["authorization"];
-      delete event.request.headers["cookie"];
-    }
+    dropRequestCredentials(event.request, DROPPED_REQUEST_HEADERS);
   }
-  return event;
+  return templateCapabilityPathsDeep(event);
 }
 
 /** Breadcrumb categories the SDK uses for outgoing http calls. */
@@ -263,13 +366,14 @@ export function scrubBreadcrumb(breadcrumb: Breadcrumb): Breadcrumb {
   if (isHttp && breadcrumb.message !== undefined) {
     breadcrumb.message = withoutQuery(breadcrumb.message);
   }
-  return breadcrumb;
+  return templateCapabilityPathsDeep(breadcrumb);
 }
 
 /**
  * `beforeSendTransaction`: strips the query from `request.url`, removes
- * `request.query_string`, and cleans the URL-bearing attributes on every
- * span and on the trace context.
+ * `request.query_string`, the body, the cookies and the credential and
+ * address headers, and cleans the URL-bearing, address and credential
+ * attributes on every span and on the trace context.
  */
 export function scrubTransaction(event: ScrubbableTransaction): ScrubbableTransaction {
   if (event.request !== undefined) {
@@ -277,10 +381,15 @@ export function scrubTransaction(event: ScrubbableTransaction): ScrubbableTransa
       event.request.url = withoutQuery(event.request.url);
     }
     delete event.request.query_string;
+    // The SDK keeps an incoming request's body on its transaction (the
+    // http integration's maxIncomingRequestBodySize, "medium" by default):
+    // an enquiry's name, email, phone and allergy note.
+    event.request.data = undefined;
+    dropRequestCredentials(event.request, DROPPED_REQUEST_HEADERS);
   }
   scrubAttributes(event.contexts?.trace?.data);
   for (const span of event.spans ?? []) {
     scrubAttributes(span.data);
   }
-  return event;
+  return templateCapabilityPathsDeep(event);
 }

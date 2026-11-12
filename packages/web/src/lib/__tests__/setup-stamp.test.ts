@@ -5,6 +5,7 @@ import type { PlacedItem } from "../placement.js";
 import {
   cardParamsFor,
   danceFloorGrid,
+  drawnDanceFloor,
   pieceCardId,
   resizeDanceFloor,
   stampSetup,
@@ -214,5 +215,35 @@ describe("piece cards", () => {
       expect.objectContaining({ groupId: null, x: 0, z: 0 }),
     ]);
     expect(stampSetup(params(pieceCardId("trestle-6ft")), { x: 0, z: 0 }, 0, ids)).toHaveLength(7);
+  });
+});
+
+describe("a dance floor drawn by press-drag (Q-08a)", () => {
+  const PANEL = 0.91;
+
+  it("is nothing until the drag is half a panel long, so a click stays a click", () => {
+    expect(drawnDanceFloor({ x: 0, z: 0 }, { x: PANEL * 0.4, z: 0 }, 0)).toBeNull();
+  });
+
+  it("draws whole panels from the press, its near corner held there", () => {
+    const drawn = drawnDanceFloor({ x: 1, z: 2 }, { x: 1 + 3 * PANEL, z: 2 + 4 * PANEL }, 0);
+    expect(drawn).toMatchObject({ cols: 3, rows: 4 });
+    expect(drawn?.x).toBeCloseTo(1 + 1.5 * PANEL, 6);
+    expect(drawn?.z).toBeCloseTo(2 + 2 * PANEL, 6);
+  });
+
+  it("draws the way the pointer goes, and keeps to 2 to 12 a side", () => {
+    const back = drawnDanceFloor({ x: 0, z: 0 }, { x: -PANEL * 0.6, z: -20 }, 0);
+    expect(back).toMatchObject({ cols: 2, rows: 12 });
+    expect(back?.x).toBeCloseTo(-PANEL, 6);
+    expect(back?.z).toBeCloseTo(-6 * PANEL, 6);
+  });
+
+  it("measures the drag in the turned floor's own panels", () => {
+    // Turned a quarter, the floor's columns run along -Z (three.js rotationY).
+    const drawn = drawnDanceFloor({ x: 0, z: 0 }, { x: 2 * PANEL, z: -5 * PANEL }, Math.PI / 2);
+    expect(drawn).toMatchObject({ cols: 5, rows: 2 });
+    expect(drawn?.x).toBeCloseTo(PANEL, 6);
+    expect(drawn?.z).toBeCloseTo(-2.5 * PANEL, 6);
   });
 });

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { Loadout, LoadoutDetail as LoadoutDetailData, LoadoutPhoto } from "../../../api/loadouts.js";
 import type { Space } from "../../../api/spaces.js";
 import { LoadoutDetail } from "../LoadoutDetail.js";
@@ -218,12 +218,48 @@ describe("LoadoutsView", () => {
     expect(await screen.findByRole("button", { name: "Open reference loadout Dinner reset reference" })).toBeTruthy();
   });
 
+  it("says a loadout that was made is made, once, even when the list then cannot be read (dash-ops-4)", async () => {
+    mocks.listLoadouts
+      .mockResolvedValueOnce([loadoutFixture()])
+      .mockRejectedValueOnce(new Error("loadouts offline"));
+    render(<LoadoutsView />);
+    fireEvent.click(await screen.findByRole("button", { name: "New loadout" }));
+    fireEvent.change(screen.getByLabelText("Name *"), { target: { value: "Wedding reset" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create" }));
+
+    expect((await screen.findByTestId("loadouts-list-error")).textContent).toContain("loadouts offline");
+    expect(mocks.createLoadout).toHaveBeenCalledTimes(1);
+    expect(mocks.addToast.mock.calls).toEqual([["Loadout created", "success"]]);
+    expect(screen.queryByRole("dialog", { name: "New reference loadout" })).toBeNull();
+  });
+
+  it("never shows a room the loadouts of the room left before they arrived (dash-ops-4)", async () => {
+    const SALOON = "00000000-0000-4000-8000-000000008020";
+    mocks.listSpaces.mockResolvedValue([spaceFixture(), spaceFixture({ id: SALOON, name: "Saloon", slug: "saloon" })]);
+    let answerFirst = (_items: readonly Loadout[]): void => undefined;
+    mocks.listLoadouts.mockImplementation((_venue: string, spaceId: string) => spaceId === SPACE_ID
+      ? new Promise<readonly Loadout[]>((resolve) => { answerFirst = resolve; })
+      : Promise.resolve([loadoutFixture({ id: "00000000-0000-4000-8000-000000008021", name: "Saloon drinks" })]));
+    render(<LoadoutsView />);
+    fireEvent.click(await screen.findByRole("button", { name: "Saloon" }));
+    expect(await screen.findByRole("button", { name: "Open reference loadout Saloon drinks" })).toBeTruthy();
+
+    // The first room's slow answer arrives late, and is not shown.
+    answerFirst([loadoutFixture()]);
+    await new Promise((done) => setTimeout(done, 20));
+    expect(screen.queryByRole("button", { name: "Open reference loadout Dinner reset reference" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Open reference loadout Saloon drinks" })).toBeTruthy();
+  });
+
   it("keeps create-loadout failures inside the modal", async () => {
     mocks.createLoadout.mockRejectedValueOnce(new Error("create rejected"));
 
     render(<LoadoutsView />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "New loadout" }));
+    // The button is drawn at once and works once a room is chosen.
+    const newLoadout = await screen.findByRole("button", { name: "New loadout" });
+    await waitFor(() => { expect(newLoadout).toHaveProperty("disabled", false); });
+    fireEvent.click(newLoadout);
     fireEvent.change(screen.getByLabelText("Name *"), { target: { value: "Wedding reset" } });
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
 
@@ -276,7 +312,8 @@ describe("LoadoutDetail", () => {
     await waitFor(() => {
       expect(mocks.updatePhoto).toHaveBeenCalledWith(LOADOUT_ID, PHOTO_ID, { caption: "Keep main route clear" });
     });
-    const error = screen.getByTestId("loadout-action-error");
+    // Said once the refusal has been drawn.
+    const error = await screen.findByTestId("loadout-action-error");
     expect(error.textContent).toContain("caption write rejected");
   });
 });
@@ -328,6 +365,92 @@ describe("LoadoutDetail keeps what is typed and says what a delete does", () => 
     expect(mocks.updatePhoto).not.toHaveBeenCalled();
     fireEvent.click(save);
     await waitFor(() => { expect(mocks.updatePhoto).toHaveBeenCalledTimes(1); });
+  });
+
+  // Master CI 43218818843 (12 Nov 2026): a photo's Remove stayed live while
+  // a reorder was saving, so its confirm was dropped by the busy guard and the
+  // dialog sat open with nothing sent. Remove now waits like Move Up and Down.
+  it("holds a photo's Remove while another change to the loadout is saving", async () => {
+    const second = photoFixture({ id: "00000000-0000-4000-8000-000000008006", filename: "side.jpg", caption: null, sortOrder: 1 });
+    mocks.getLoadout.mockResolvedValue(detailFixture({ photos: [photoFixture(), second] }));
+    let finishReorder: (photos: LoadoutPhoto[]) => void = () => undefined;
+    mocks.reorderPhotos.mockReturnValueOnce(new Promise<LoadoutPhoto[]>((resolve) => { finishReorder = resolve; }));
+    renderDetail();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Move main.jpg down" }));
+    await waitFor(() => { expect(mocks.reorderPhotos).toHaveBeenCalledTimes(1); });
+    const remove = screen.getByRole<HTMLButtonElement>("button", { name: "Remove main.jpg" });
+    expect(remove.disabled).toBe(true);
+    fireEvent.click(remove);
+    expect(screen.queryByRole("dialog", { name: "Remove Photo" })).toBeNull();
+
+    finishReorder([second, photoFixture({ sortOrder: 1 })]);
+    await waitFor(() => {
+      expect(screen.getByRole<HTMLButtonElement>("button", { name: "Remove main.jpg" }).disabled).toBe(false);
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Remove main.jpg" }));
+    fireEvent.click(within(screen.getByRole("dialog", { name: "Remove Photo" })).getByRole("button", { name: "Remove" }));
+    await waitFor(() => { expect(mocks.deletePhoto).toHaveBeenCalledWith(LOADOUT_ID, PHOTO_ID); });
+    await waitFor(() => { expect(screen.queryByRole("dialog", { name: "Remove Photo" })).toBeNull(); });
+  });
+
+  // Review of #412 (L1): a confirm already open when another change starts
+  // (here an upload finishing and linking) waits and says so; it is never
+  // dropped by the busy guard.
+  it("holds an open Remove Photo confirm while an upload links, then removes", async () => {
+    let finishLink: (photo: LoadoutPhoto) => void = () => undefined;
+    mocks.addPhoto.mockReturnValueOnce(new Promise<LoadoutPhoto>((resolve) => { finishLink = resolve; }));
+    renderDetail();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Remove main.jpg" }));
+    const dialog = screen.getByRole("dialog", { name: "Remove Photo" });
+    fireEvent.click(screen.getByRole("button", { name: "Mock upload" }));
+    await waitFor(() => { expect(mocks.addPhoto).toHaveBeenCalledTimes(1); });
+
+    const confirm = within(dialog).getByRole<HTMLButtonElement>("button", { name: "Remove" });
+    expect(confirm.disabled).toBe(true);
+    expect(within(dialog).getByRole("status").textContent).toContain("Waiting for the other change to save");
+    expect(within(dialog).getByRole<HTMLButtonElement>("button", { name: "Cancel" }).disabled).toBe(false);
+
+    finishLink(photoFixture({ id: "00000000-0000-4000-8000-000000008007", filename: "uploaded.jpg", sortOrder: 1 }));
+    await waitFor(() => {
+      expect(within(screen.getByRole("dialog", { name: "Remove Photo" })).getByRole<HTMLButtonElement>("button", { name: "Remove" }).disabled).toBe(false);
+    });
+    expect(within(screen.getByRole("dialog", { name: "Remove Photo" })).queryByRole("status")).toBeNull();
+    fireEvent.click(within(screen.getByRole("dialog", { name: "Remove Photo" })).getByRole("button", { name: "Remove" }));
+    await waitFor(() => { expect(mocks.deletePhoto).toHaveBeenCalledWith(LOADOUT_ID, PHOTO_ID); });
+    await waitFor(() => { expect(screen.queryByRole("dialog", { name: "Remove Photo" })).toBeNull(); });
+  });
+
+  it("holds an open Delete Loadout confirm while an upload links, then deletes", async () => {
+    let finishLink: (photo: LoadoutPhoto) => void = () => undefined;
+    mocks.addPhoto.mockReturnValueOnce(new Promise<LoadoutPhoto>((resolve) => { finishLink = resolve; }));
+    const onDeleted = vi.fn();
+    render(
+      <LoadoutDetail
+        venueId={VENUE_ID}
+        spaceId={SPACE_ID}
+        loadoutId={LOADOUT_ID}
+        onBack={() => undefined}
+        onDeleted={onDeleted}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Delete Loadout" }));
+    const dialog = screen.getByRole("dialog", { name: "Delete Loadout" });
+    fireEvent.click(screen.getByRole("button", { name: "Mock upload" }));
+    await waitFor(() => { expect(mocks.addPhoto).toHaveBeenCalledTimes(1); });
+
+    expect(within(dialog).getByRole<HTMLButtonElement>("button", { name: "Delete" }).disabled).toBe(true);
+    expect(within(dialog).getByRole("status").textContent).toContain("Waiting for the other change to save");
+
+    finishLink(photoFixture({ id: "00000000-0000-4000-8000-000000008007", filename: "uploaded.jpg", sortOrder: 1 }));
+    await waitFor(() => {
+      expect(within(screen.getByRole("dialog", { name: "Delete Loadout" })).getByRole<HTMLButtonElement>("button", { name: "Delete" }).disabled).toBe(false);
+    });
+    fireEvent.click(within(screen.getByRole("dialog", { name: "Delete Loadout" })).getByRole("button", { name: "Delete" }));
+    await waitFor(() => { expect(mocks.deleteLoadout).toHaveBeenCalledWith(VENUE_ID, SPACE_ID, LOADOUT_ID); });
+    expect(onDeleted).toHaveBeenCalledTimes(1);
   });
 
   it("says a deleted loadout's photos are kept, not that it cannot be undone", async () => {

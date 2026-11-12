@@ -16,7 +16,7 @@ language model never prepares, approves or executes one.
 | Part | File |
 | --- | --- |
 | The object, its classes, who approves | `packages/types/src/decision.ts` |
-| Storage and history | `packages/api/drizzle/0105_decisions.sql`; `decisions`, `decision_events` in `db/schema.ts` |
+| Storage and history | `packages/api/drizzle/0108_decisions.sql`; `decisions`, `decision_events` in `db/schema.ts` |
 | Prepare, decide, withdraw, read | `packages/api/src/services/decisions.ts` |
 | Routes | `packages/api/src/routes/decisions.ts` (`/decisions`) |
 | Tests | `packages/types/src/__tests__/decision.test.ts`; `packages/api/src/__tests__/decisions.test.ts`; `packages/api/src/__tests__/decisions-postgres.test.ts` (platform database gate) |
@@ -147,10 +147,11 @@ null) at any time and nothing else with it. Preparing is limited to 30 a
 minute a person.
 
 **Deploy order.** Drizzle applies only migrations later, by their journal
-time, than the last one applied. `0105_decisions` is later than the release
-queue's 0103 (#258) and 0104 (#262): deployed before them, it would make
-theirs be skipped without an error. Merge it after both, or give it a later
-journal time at its merge slot.
+time, than the last one applied. `0108_decisions` (written as 0105 on 27
+October, renumbered on 12 November) follows master's 0107 at journal idx 105.
+A migration deployed before another with a later journal time makes that one
+be skipped without an error, so whichever open migration lands after another
+takes the next number and a later journal time at its merge slot.
 
 ## The rest of goal 09, as of 27 October 2026
 

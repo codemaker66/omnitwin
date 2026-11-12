@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { INVENTORY_ADJUSTER_ROLES, USER_ROLES, VENUE_TEAM_INVITER_ROLES } from "@omnitwin/types";
+import {
+  EVENT_ARCHITECT_OPS_REVIEW_ROLES,
+  INVENTORY_ADJUSTER_ROLES,
+  USER_ROLES,
+  VENUE_ADMINISTRATION_ROLES,
+  VENUE_TEAM_INVITER_ROLES,
+  eventArchitectOpsReviewerAuthorityFor,
+} from "@omnitwin/types";
 import {
   ANALYTICS_ROLES,
   CLIENT_SEARCH_ROLES,
@@ -10,6 +17,7 @@ import {
   DIARY_WRITE_ROLES,
   EVENT_WRITE_ROLES,
   INVENTORY_WRITE_ROLES,
+  OPS_REVIEW_ROLES,
   PLANNER_ROLES,
   PRICING_READ_ROLES,
   PRICING_WRITE_ROLES,
@@ -18,9 +26,12 @@ import {
   VENUE_DAY_ROLES,
   VENUE_FLOOR_ROLES,
   VENUE_MEMBER_ROLES,
+  VENUE_ADMIN_ROLES,
   WORKSPACE_ROLES,
+  administersVenue,
   awaitsVenue,
   canDraftWithAI,
+  compilesHandoffPack,
   diaryVenueOf,
   hasRole,
 } from "../role-capabilities.js";
@@ -270,6 +281,43 @@ describe("route gates and their landing surfaces agree", () => {
   });
 });
 
+describe("who is offered the Event Architect Ops review form", () => {
+  // requireOpsReviewAuthority (routes/event-architect.ts) answers from the
+  // same list in @omnitwin/types, so the form is offered exactly where the
+  // review is recorded. Managers record reviews too (Blake, 11 November 2026).
+  it("is the API's one list: the venue's staff, hallkeepers, managers and administrators", () => {
+    expect(OPS_REVIEW_ROLES).toBe(EVENT_ARCHITECT_OPS_REVIEW_ROLES);
+    expect([...OPS_REVIEW_ROLES].sort()).toEqual(["admin", "hallkeeper", "manager", "staff"]);
+    for (const role of ALL_ROLES) {
+      expect(hasRole(OPS_REVIEW_ROLES, role), `Ops review for ${String(role)}`)
+        .toBe(role !== null && eventArchitectOpsReviewerAuthorityFor(role) !== null);
+    }
+  });
+
+  it("is offered only to roles that can open the Event Architect page", () => {
+    // The page mounts behind the internal event reader (canAccessInternalEvent).
+    for (const role of OPS_REVIEW_ROLES) expect(hasRole(VENUE_FLOOR_ROLES, role), role).toBe(true);
+  });
+});
+
+describe("venue administration (dash-ops-2)", () => {
+  it("is the API's one list, from @omnitwin/types: admin, manager and staff, never the hallkeeper or sales", () => {
+    expect(VENUE_ADMIN_ROLES).toBe(VENUE_ADMINISTRATION_ROLES);
+    expect([...VENUE_ADMIN_ROLES]).toEqual(["admin", "manager", "staff"]);
+  });
+
+  it("answers as canAdministerVenue does, a platform administrator at any venue included", () => {
+    for (const role of ALL_ROLES) {
+      const at = { role: role ?? "", venueId: "venue-1", platformRole: "none" };
+      expect(administersVenue(at, "venue-1"), `${String(role)} at its venue`).toBe(hasRole(VENUE_ADMINISTRATION_ROLES, role));
+      expect(administersVenue(at, "venue-2"), `${String(role)} elsewhere`).toBe(false);
+    }
+    expect(administersVenue({ role: "planner", venueId: null, platformRole: "admin" }, "venue-2")).toBe(true);
+    expect(administersVenue({ role: "admin", venueId: "venue-1", platformRole: "none" }, null)).toBe(false);
+    expect(administersVenue(null, "venue-1")).toBe(false);
+  });
+});
+
 describe("the capability sets themselves", () => {
   it("keeps every administering role on the venue floor", () => {
     for (const role of ["admin", "manager", "staff"]) {
@@ -389,5 +437,44 @@ describe("who is offered the general AI draft panel", () => {
     expect(canDraftWithAI({ role: "planner", venueId: "venue-1", platformRole: "admin" })).toBe(true);
     expect(canDraftWithAI({ ...placed, role: "planner", platformRole: "operator" })).toBe(false);
     expect(canDraftWithAI(null)).toBe(false);
+  });
+});
+
+describe("who compiles the Ops lens's handoff pack", () => {
+  // POST /ops/handoff-packs/from-configuration/:id reads canAccessResource: the
+  // layout's owner, the venue floor at its venue (canManageVenue) or a platform
+  // admin. A shared link's public preview names no owner.
+  const SHARED_PREVIEW = { venueId: "venue-1", isPublicPreview: true } as const;
+
+  function person(role: string, platformRole = "none", venueId: string | null = "venue-1"): { readonly role: string; readonly platformRole: string; readonly venueId: string | null } {
+    return { role, platformRole, venueId };
+  }
+
+  it.each([
+    { name: "the venue's staff", user: person("staff"), compiles: true },
+    { name: "the venue's manager", user: person("manager"), compiles: true },
+    { name: "the venue's admin", user: person("admin"), compiles: true },
+    { name: "the venue's hallkeeper", user: person("hallkeeper"), compiles: true },
+    { name: "a platform admin with no venue", user: person("planner", "admin", null), compiles: true },
+    { name: "the venue's sales, who are off its floor", user: person("sales"), compiles: false },
+    { name: "another venue's staff", user: person("staff", "none", "venue-2"), compiles: false },
+    { name: "another venue's hallkeeper", user: person("hallkeeper", "none", "venue-2"), compiles: false },
+    { name: "staff still waiting for a venue", user: person("staff", "none", null), compiles: false },
+    { name: "a client", user: person("client", "none", null), compiles: false },
+  ])("on a shared link's preview, answers $name: $compiles", ({ user, compiles }) => {
+    expect(compilesHandoffPack(user, SHARED_PREVIEW)).toBe(compiles);
+  });
+
+  it("answers anyone signed in on a layout open through the authenticated load, which passed the compile's own gate", () => {
+    const own = { venueId: "venue-1", isPublicPreview: false } as const;
+    for (const user of [person("sales"), person("staff", "none", "venue-2"), person("hallkeeper", "none", null)]) {
+      expect(compilesHandoffPack(user, own)).toBe(true);
+    }
+  });
+
+  it("answers nobody signed out, and no venue's floor on a preview whose venue is unknown", () => {
+    expect(compilesHandoffPack(null, { venueId: "venue-1", isPublicPreview: false })).toBe(false);
+    expect(compilesHandoffPack(null, SHARED_PREVIEW)).toBe(false);
+    expect(compilesHandoffPack(person("staff"), { venueId: null, isPublicPreview: true })).toBe(false);
   });
 });
