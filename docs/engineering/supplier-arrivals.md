@@ -38,23 +38,30 @@ arrival is the floor's record of the door.
   goes wholly before or after it, so an add that waited is judged against
   where the move left the booking. A move or a proposal moves the arrivals
   not yet marked by the booking's own shift, in its transaction.
-- **Facts at the door.** First tap wins; a second reads it back. A tap that
-  writes an arrival time must fall between twelve hours before the supplier
-  is due and a day after they were due to leave. Gone for someone already in
-  is never refused for lateness.
+- **Facts at the door.** First tap wins: the arrival is held from the tap's
+  read until it commits, so a second tap waits and reads the first back. A tap
+  that writes an arrival time must fall between twelve hours before the
+  supplier is due and a day after they were due to leave. Gone for someone
+  already in is never refused for lateness.
 - **Once per Save.** An add may carry the house `Idempotency-Key`: a resend
   answers with the first add (200, `idempotency-replay: true`), two at once
   make one, and the key with another booking is refused.
 - **History.** Every mark, mark taken back and removal writes a
-  `booking_supplier_arrival_events` row in the same transaction. Marks carry
-  the person's name; a removal keeps only the account, and its row outlives
-  the arrival.
+  `booking_supplier_arrival_events` row in the same transaction. A Gone for
+  someone nobody marked in marks them in too, and writes both rows, by the
+  same person at the same moment. Marks carry the person's name; a removal
+  keeps only the account, and its row outlives the arrival.
 - **The day's read.** The board reads from the shown date's midnight to the
   next boundary hour, so it holds the small hours of the night before as well.
   The panel lists the board's own day (`boardDayOf`); a supplier from the
   night before shows only while still marked in or late now, with that day
   named. Typed times are placed on the board's night only once the venue's
   boundary hour is read (`useDayBoundary`).
+- **Open forms.** The office's open add or change form, with what is typed in
+  it and an add's key, is kept above the panel for its board day and booking
+  (`useSupplierForms`, held by the page). A panel drawn afresh, as when the
+  day is read again once a late boundary hour arrives, opens it as it was
+  left; Cancel, or a change made, lets it go.
 
 ## Retention (Blake, 12 November 2026)
 
@@ -65,5 +72,7 @@ arrival is the floor's record of the door.
 - The supplier's name, the times, the door and the door marks stay as the
   venue's record. The names of the staff who marked a supplier in or out
   (`arrived_by_name`, `left_by_name`, and the history's names) are kept as the
-  record of who was in the building, after an account is closed too. There
-  is no erasure path for them by design; the privacy policy says so.
+  record of who was in the building, after an account is deleted too. There
+  is no erasure path for them by design; the privacy policy says so, and
+  gives the lawful basis for both: Article 6(1)(f), legitimate interests
+  ("Receiving suppliers at the door").
