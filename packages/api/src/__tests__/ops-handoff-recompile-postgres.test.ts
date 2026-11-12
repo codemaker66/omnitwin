@@ -2,7 +2,7 @@ import Fastify, { type FastifyInstance } from "fastify";
 import { randomUUID } from "node:crypto";
 import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
-import { and, eq } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Database } from "../db/client.js";
 import * as schema from "../db/schema.js";
@@ -300,5 +300,30 @@ describe.skipIf(target === undefined)("compiling an event's handoff pack again, 
     expect(second.statusCode, second.body).toBe(201);
     expect(second.json<PackBody>().data.pack.id).not.toBe(firstPack.id);
     expect((await board(f)).handoffPack?.pack.id).toBe(second.json<PackBody>().data.pack.id);
+  });
+
+  // Review C6, as ruled: a plan frozen before 6 September 2026 has no floor
+  // plan, so the model of the chairs set at its tables was never recorded.
+  // Against it the changes never claim "No furniture count changes".
+  it("says chairs at tables can't be compared with a plan frozen before floor plans, after a chair swap at the tables", async () => {
+    const f = await fixture();
+    const [earlier] = await db.select({ id: schema.configurationSheetSnapshots.id }).from(schema.configurationSheetSnapshots)
+      .where(eq(schema.configurationSheetSnapshots.configurationId, f.configId));
+    if (earlier === undefined) throw new Error("Snapshot fixture missing");
+    // As a plan approved before 466bee60 was stored: no floorPlan key at all.
+    await pool.query("UPDATE configuration_sheet_snapshots SET payload = payload - 'floorPlan' WHERE id = $1", [earlier.id]);
+
+    const banquetId = randomUUID();
+    await db.insert(schema.assetDefinitions).values({ id: banquetId, name: "TEST ONLY banquet chair", category: "chair", widthM: "0.45", depthM: "0.45", heightM: "0.9", collisionType: "box" });
+    await db.update(schema.placedObjects).set({ assetDefinitionId: banquetId, coordinateWriteToken: randomUUID() })
+      .where(and(eq(schema.placedObjects.configurationId, f.configId), ne(schema.placedObjects.id, f.tableId)));
+    const swapped = await createSnapshot(db, { configId: f.configId, createdBy: f.userId, baseUrl: "http://localhost:3009" });
+    expect(swapped.created).toBe(true);
+    await approveSnapshot(db, swapped.snapshot.id, f.userId);
+
+    const compiled = await f.compile();
+    expect(compiled.statusCode, compiled.body).toBe(201);
+    const diff = compiled.json<{ data: { snapshotDiff: { summary: string } } }>().data.snapshotDiff;
+    expect(diff.summary).toBe("Chairs at tables can't be compared with a plan frozen before 6 September 2026.");
   });
 });

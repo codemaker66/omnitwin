@@ -503,6 +503,23 @@ function tableRows(payload: ConfigurationSheetSnapshot["payload"]): readonly Pie
   return payload.totals.entries.filter((entry) => entry.category === "table");
 }
 
+/** A table row with chairs set at it, as the manifest generator names it
+ *  ("Round Table with 10 chairs", manifest-generator-v2.ts generateManifestV2). */
+const SEATED_TABLE_ROW = / with \d+ chairs$/u;
+
+function hasChairsAtTables(payload: ConfigurationSheetSnapshot["payload"]): boolean {
+  return tableRows(payload).some((entry) => SEATED_TABLE_ROW.test(entry.name));
+}
+
+/**
+ * What the changes say instead of a chairs line when either plan has no
+ * floor plan. That is what marks a plan frozen before 6 September 2026
+ * (466bee60 added the floor plan to every approved sheet; the payload schema
+ * leaves it absent in older ones): such a plan counts the chairs at each
+ * table in the table's row name, but never recorded which chairs they were.
+ */
+const CHAIRS_AT_TABLES_NOT_COMPARED = "Chairs at tables can't be compared with a plan frozen before 6 September 2026.";
+
 function compileSnapshotDiff(
   snapshot: ConfigurationSheetSnapshot,
   previousSnapshot: ConfigurationSheetSnapshot | null,
@@ -544,9 +561,16 @@ function compileSnapshotDiff(
   const changedCount = payload.changed.length;
   const addedCount = payload.added.length;
   const removedCount = payload.removed.length;
-  const summary = addedCount + removedCount + changedCount === 0
-    ? "No furniture count changes since the previous approved snapshot."
+  const counted = addedCount + removedCount + changedCount === 0
+    ? null
     : `${String(addedCount)} added, ${String(removedCount)} removed, ${String(changedCount)} quantity changed since the previous approved snapshot.`;
+  // Against a plan frozen without a floor plan, the model of the chairs set
+  // at its tables is unknown, so no comparison can say whether they changed:
+  // say so, never "No furniture count changes" (T-695 review C6).
+  const chairsNotCompared = !piecesOnBoth && (hasChairsAtTables(snapshot.payload) || hasChairsAtTables(previousSnapshot.payload));
+  const summary = chairsNotCompared
+    ? [counted, CHAIRS_AT_TABLES_NOT_COMPARED].filter((part): part is string => part !== null).join(" ")
+    : counted ?? "No furniture count changes since the previous approved snapshot.";
 
   return {
     previousSnapshotHash: previousSnapshot.sourceHash,

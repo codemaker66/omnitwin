@@ -491,13 +491,32 @@ describe("ops compiler services", () => {
       expect(same.snapshotDiff.summary).toBe("No furniture count changes since the previous approved snapshot.");
     });
 
+    // A plan frozen before 6 September 2026 has no floor plan, so the model
+    // of the chairs set at its tables was never recorded. The comparison
+    // stays totals against totals, and (review C6, as ruled) it says chairs
+    // at tables can't be compared rather than "No furniture count changes".
+    const CHAIRS_NOT_COMPARED = "Chairs at tables can't be compared with a plan frozen before 6 September 2026.";
+    const before = (plan: ConfigurationSheetSnapshot): ConfigurationSheetSnapshot =>
+      ({ ...plan, id: PREVIOUS_SNAPSHOT_ID, version: 1, sourceHash: PREVIOUS_HASH, payload: { ...plan.payload, floorPlan: null } });
+
     it("compares a plan frozen before floor plans by its totals on both sides, never totals against pieces", () => {
       const current = frozen("Chiavari Chair", 2);
+      const draft = compileOpsHandoffDraft({ snapshot: current, previousSnapshot: before(current), eventGraph: null, clientNotes: null });
+      expect(draft.snapshotDiff.payload).toEqual({ added: [], removed: [], changed: [] });
+      expect(draft.snapshotDiff.summary).toBe(CHAIRS_NOT_COMPARED);
+    });
+
+    it("keeps the other furniture counts beside the chairs note", () => {
       const draft = compileOpsHandoffDraft({
-        snapshot: current,
-        previousSnapshot: { ...current, id: PREVIOUS_SNAPSHOT_ID, version: 1, sourceHash: PREVIOUS_HASH, payload: { ...current.payload, floorPlan: null } },
-        eventGraph: null,
-        clientNotes: null,
+        snapshot: frozen("Chiavari Chair", 4), previousSnapshot: before(frozen("Chiavari Chair", 2)), eventGraph: null, clientNotes: null,
+      });
+      expect(draft.snapshotDiff.payload.changed).toEqual(["Chiavari Chair: 2 -> 4"]);
+      expect(draft.snapshotDiff.summary).toBe(`0 added, 0 removed, 1 quantity changed since the previous approved snapshot. ${CHAIRS_NOT_COMPARED}`);
+    });
+
+    it("claims no change against an older plan when no table on either has chairs", () => {
+      const draft = compileOpsHandoffDraft({
+        snapshot: frozen("Chiavari Chair", 8, 0), previousSnapshot: before(frozen("Chiavari Chair", 8, 0)), eventGraph: null, clientNotes: null,
       });
       expect(draft.snapshotDiff.summary).toBe("No furniture count changes since the previous approved snapshot.");
     });
