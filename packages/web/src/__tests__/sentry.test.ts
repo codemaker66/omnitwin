@@ -10,9 +10,16 @@ import {
   withoutQuery,
 } from "../observability/sentry.js";
 
-/** A breadcrumb the scrubber keeps (fetch, xhr, navigation and clicks are kept; console ones are dropped). */
+/** A breadcrumb the scrubber keeps (fetch, xhr and navigation are kept, and a click on a known element; console ones are dropped). */
 function kept(breadcrumb: Breadcrumb): Breadcrumb {
   const scrubbed = scrubSentryBreadcrumb(breadcrumb);
+  if (scrubbed === null) throw new Error("The breadcrumb was dropped");
+  return scrubbed;
+}
+
+/** The scrubber's answer for a click or keypress on `target`, as the SDK calls it: with the DOM event as its hint. */
+function scrubSentryBreadcrumbFor(breadcrumb: Breadcrumb, target: Element): Breadcrumb {
+  const scrubbed = scrubSentryBreadcrumb(breadcrumb, { event: { target } });
   if (scrubbed === null) throw new Error("The breadcrumb was dropped");
   return scrubbed;
 }
@@ -136,11 +143,70 @@ describe("browser Sentry breadcrumbs and search terms", () => {
   });
 
   it("leaves a breadcrumb with no url, and the caller's breadcrumb, as they were", () => {
-    const click: Breadcrumb = { category: "ui.click", message: "button.find" };
-    expect(scrubSentryBreadcrumb(click)).toEqual({ category: "ui.click", message: "button.find" });
+    const custom: Breadcrumb = { category: "planner", message: "layout opened" };
+    expect(scrubSentryBreadcrumb(custom)).toEqual({ category: "planner", message: "layout opened" });
     const original: Breadcrumb = { category: "fetch", data: { url: "/clients/search?q=Aileen" } };
     scrubSentryBreadcrumb(original);
     expect(original.data?.["url"]).toBe("/clients/search?q=Aileen");
+  });
+
+  // Final review, PRIVACY-1. The SDK describes a clicked or typed-in element
+  // with its aria-label, title, name and alt, and on the staff pages those hold
+  // a client's name, phone number and email ("Call Aileen Fraser on 07700 900123").
+  describe("clicks and keypresses", () => {
+    const LABEL = "Call Aileen Fraser on 07700 900123";
+    const TITLE = "aileen.fraser@client.invalid";
+
+    function callButton(): HTMLButtonElement {
+      const button = document.createElement("button");
+      button.className = "cw-link primary";
+      button.id = "call-client";
+      button.setAttribute("aria-label", LABEL);
+      button.setAttribute("title", TITLE);
+      button.setAttribute("name", "Aileen Fraser");
+      return button;
+    }
+
+    /** What the SDK writes for that button. */
+    const sdkMessage = `div.panel[title="${TITLE}"] > button#call-client.cw-link.primary[aria-label="${LABEL}"][title="${TITLE}"][name="Aileen Fraser"]`;
+
+    it("describes a clicked element by its tag and classes, and carries nothing the element says", () => {
+      const scrubbed = scrubSentryBreadcrumbFor({ category: "ui.click", message: sdkMessage, level: "info", timestamp: 1_700_000_000 }, callButton());
+      expect(scrubbed).toEqual({ category: "ui.click", message: "button.cw-link.primary", level: "info", timestamp: 1_700_000_000 });
+      for (const said of ["Aileen", "Fraser", "07700", "900123", "client.invalid"]) expect(JSON.stringify(scrubbed)).not.toContain(said);
+    });
+
+    it("does the same for a keypress", () => {
+      const input = document.createElement("input");
+      input.className = "search";
+      input.setAttribute("aria-label", "Notes for Aileen Fraser");
+      const scrubbed = scrubSentryBreadcrumbFor({ category: "ui.input", message: 'input.search[aria-label="Notes for Aileen Fraser"]' }, input);
+      expect(scrubbed).toEqual({ category: "ui.input", message: "input.search" });
+    });
+
+    it("drops one it cannot describe from the element itself, whatever the SDK wrote", () => {
+      expect(scrubSentryBreadcrumb({ category: "ui.click", message: sdkMessage })).toBeNull();
+      expect(scrubSentryBreadcrumb({ category: "ui.click", message: sdkMessage }, { event: { target: "not an element" } })).toBeNull();
+      expect(scrubSentryBreadcrumb({ category: "ui.input", message: sdkMessage }, {})).toBeNull();
+      // Reading an event's target can throw (the SDK guards the same read).
+      const hostile = { get target(): never { throw new Error("Permission denied to access property"); } };
+      expect(scrubSentryBreadcrumb({ category: "ui.click", message: sdkMessage }, { event: hostile })).toBeNull();
+    });
+
+    it("reads the element when the SDK hands it over in place of the event, as its handler allows", () => {
+      // A link's own `target` attribute must not be taken for an event's target.
+      const link = document.createElement("a");
+      link.className = "cw-link";
+      link.setAttribute("target", "_blank");
+      link.setAttribute("title", TITLE);
+      expect(scrubSentryBreadcrumb({ category: "ui.click", message: sdkMessage }, { event: link }))
+        .toEqual({ category: "ui.click", message: "a.cw-link" });
+    });
+
+    it("drops anything the SDK attached to it", () => {
+      const scrubbed = scrubSentryBreadcrumbFor({ category: "ui.click", message: sdkMessage, data: { label: LABEL } }, callButton());
+      expect(scrubbed.data).toBeUndefined();
+    });
   });
 
   it("drops console breadcrumbs, which can quote a layout's own words", () => {

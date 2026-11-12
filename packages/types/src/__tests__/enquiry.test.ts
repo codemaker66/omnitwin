@@ -554,6 +554,18 @@ describe("GuestEnquirySchema", () => {
     expect(GuestEnquirySchema.safeParse({ ...validGuest, eventDate: "2026-09-15" }).success).toBe(true);
   });
 
+  // Review of #404, P1. The route keeps every date the date column stores,
+  // and that column takes years 0001 to 0099: a two-digit year typed in a
+  // desktop date input posts "0027-06-12". Date.UTC reads such a year as
+  // 1927, so a check built on it refused the lot and the enquiry was lost.
+  it("accepts every date a calendar has from year 0001, and refuses the rest", () => {
+    const takes = (eventDate: string): boolean => GuestEnquirySchema.safeParse({ ...validGuest, eventDate }).success;
+    const real = ["0001-01-01", "0027-06-12", "0099-12-31", "0004-02-29", "2028-02-29", "2000-02-29"];
+    const none = ["0000-01-01", "2027-02-29", "2027-02-30", "1900-02-29", "2027-13-01", "2027-00-10"];
+    expect(Object.fromEntries([...real, ...none].map((date) => [date, takes(date)])))
+      .toEqual(Object.fromEntries([...real.map((date) => [date, true]), ...none.map((date) => [date, false])]));
+  });
+
   it("rejects negative guestCount", () => {
     expect(GuestEnquirySchema.safeParse({ ...validGuest, guestCount: -1 }).success).toBe(false);
   });

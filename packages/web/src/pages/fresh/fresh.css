@@ -431,6 +431,15 @@
   margin: 0 auto;
   padding: clamp(64px, 10vh, 120px) clamp(16px, 4vw, 44px) 0;
 }
+/* The composer sits at the foot of the page, and its display italic is the front
+   door's only use of that face. Laid out only as it nears the screen, a first visit
+   no longer fetches the italic while the hero photograph loads (T-685). Nothing in
+   it is drawn outside its box, which the containment would clip; the size holds its
+   place in the page until it has been laid out once. */
+.fr-enquiry {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 1100px;
+}
 /* Adam's ellipse as a drawn divider — one quiet arc, not a decoration set. */
 .fr-arch {
   position: absolute;

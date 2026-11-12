@@ -1,6 +1,6 @@
 import type { FastifyServerOptions } from "fastify";
 import { redactHealthFreeText, redactHealthFreeTextInString } from "@omnitwin/types";
-import { errorLogSerializer, requestLogSerializer } from "./redact.js";
+import { dropCredentials, errorLogSerializer, requestLogSerializer } from "./redact.js";
 
 // ---------------------------------------------------------------------------
 // Guests' allergy notes stay out of the server's logs and error reports
@@ -64,6 +64,7 @@ interface SentryEventLike {
     data?: unknown;
     query_string?: unknown;
     headers?: Record<string, string>;
+    cookies?: Record<string, string>;
   };
 }
 
@@ -76,10 +77,10 @@ export function scrubApiSentryEvent<T extends SentryEventLike>(event: T): T {
   if (event.request !== undefined) {
     event.request.data = undefined;
     event.request.query_string = undefined;
-    if (event.request.headers !== undefined) {
-      delete event.request.headers["authorization"];
-      delete event.request.headers["cookie"];
-    }
+    // The sign-in headers, a guest plan's claim secret and the cookies the
+    // SDK parsed from the Cookie header: one list, shared with the other
+    // scrubbers (redact.ts).
+    dropCredentials(event.request);
   }
   return redactHealthFreeText(event) as T;
 }

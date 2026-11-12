@@ -22,6 +22,8 @@ interface PlannerTouchBridge {
   mode: () => string;
   placed: () => readonly { readonly id: string; readonly slug: string | null; readonly x: number; readonly z: number }[];
   arm: (slug: string) => boolean;
+  /** The id of the piece a drag carries right now, or null. */
+  carrying: () => string | null;
 }
 
 declare global {
@@ -114,7 +116,10 @@ test.describe("the touch arbiter on a phone", () => {
     await page.route(`${API}/venues/${VENUE.id}`, (route) => { void route.fulfill({ json: { data: { ...VENUE, spaces: [GRAND_HALL_SPACE, room] } } }); });
     await page.route(`${API}/venues/${VENUE.id}/spaces`, (route) => { void route.fulfill({ json: { data: [GRAND_HALL_SPACE, room] } }); });
     await page.route(`${API}/venues/${VENUE.id}/spaces/${RECEPTION_ROOM_SPACE.id}`, (route) => { void route.fulfill({ json: { data: room } }); });
-    // Saves succeed, as the API answers them, so no failure notice covers the room.
+    // Saves succeed, as the API answers them, so no failure notice covers the room. One answer can be
+    // held back (holdNextSave) and given when the test chooses: see the lift below.
+    let holdNextSave = false;
+    const heldSaves: (() => void)[] = [];
     await page.route(`${API}/public/configurations/${CONFIG_ID}/objects/batch`, (route) => {
       const body = route.request().postDataJSON() as { readonly expectedRevision: number; readonly objects: readonly BatchObjectInput[] };
       const objects = body.objects.map((object, index) => ({
@@ -123,7 +128,13 @@ test.describe("the touch arbiter on a phone", () => {
         rotationX: String(object.rotationX), rotationY: String(object.rotationY), rotationZ: String(object.rotationZ),
         scale: String(object.scale), metadata: object.metadata ?? null,
       }));
-      void route.fulfill({ json: { data: { objects, revision: body.expectedRevision + 1 } } });
+      const answer = (): void => { void route.fulfill({ json: { data: { objects, revision: body.expectedRevision + 1 } } }); };
+      if (!holdNextSave) {
+        answer();
+        return;
+      }
+      holdNextSave = false;
+      heldSaves.push(answer);
     });
     await page.route("**/splats/**", (route) => { void route.fulfill({ status: 404, body: "not in this spec" }); });
     await page.addInitScript(() => { window.localStorage.setItem("omnitwin_onboarding_seen", "1"); });
@@ -159,6 +170,12 @@ test.describe("the touch arbiter on a phone", () => {
     const placed = (): Promise<readonly { readonly id: string; readonly slug: string | null; readonly x: number; readonly z: number }[]> =>
       page.evaluate(() => window.__plannerTouch?.placed() ?? []);
     const mode = (): Promise<string> => page.evaluate(() => window.__plannerTouch?.mode() ?? "missing");
+    /** What a drag carries: the kind of piece, or its id if the scene does not hold it under that id yet. */
+    const carried = (): Promise<string | null> => page.evaluate(() => {
+      const bridge = window.__plannerTouch;
+      const id = bridge?.carrying() ?? null;
+      return id === null ? null : bridge?.placed().find((item) => item.id === id)?.slug ?? `not placed: ${id}`;
+    });
     const poseurs = async (): Promise<number> => (await placed()).filter((item) => item.slug === "poseur-table").length;
 
     // In the room view, a swipe with a piece in hand looks round and places nothing.
@@ -203,6 +220,12 @@ test.describe("the touch arbiter on a phone", () => {
     const third = await openFloor(page, [spot.floor, second.floor], 2.2);
     const tableId = await page.evaluate(([x, z]) => window.__plannerHands?.placeTable(x, z) ?? null, third.floor);
     expect(tableId).not.toBeNull();
+    // The round's first save (the autosave, 3 s on) is held, and answered once the finger is down on
+    // the round, so the save gives it the server's id while the finger holds still: normally inside
+    // the 300 ms hold. Left to the runner's pace, the answer landed in the hold only now and then, and
+    // the lift then read "lift" and carried nothing (CI, 12 Nov 2026, run 43146695272).
+    holdNextSave = true;
+    await expect.poll(() => heldSaves.length, { timeout: 15_000, message: "waiting for the round's first save" }).toBe(1);
     // The staged round is the only one on the floor: found by kind, since a save gives it the server's id.
     const theRound = async (): Promise<{ readonly x: number; readonly z: number } | undefined> =>
       (await placed()).find((item) => item.slug === "round-table-6ft");
@@ -218,7 +241,11 @@ test.describe("the touch arbiter on a phone", () => {
     if (onTable === null) throw new Error("Cannot find the table on screen");
     const restBeforeLift = await stillCamera(page);
     await touch("touchStart", [onTable]);
+    heldSaves.shift()?.();
     await expect.poll(mode, { timeout: 5_000 }).toBe("lift");
+    // Lifted means carried, and carried means the round, not a piece beside it. (A lift the planner
+    // refuses turns the finger to the camera, so it never reads "lift".)
+    await expect.poll(carried, { timeout: 5_000, message: "the lift carries the round" }).toBe("round-table-6ft");
     for (let step = 1; step <= 10; step++) {
       await touch("touchMove", [[onTable[0] + step * 6, onTable[1] - step * 3]]);
       await page.waitForTimeout(16);

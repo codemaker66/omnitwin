@@ -79,11 +79,12 @@ describe("every document", () => {
   it.each(TYPES)("shows a machine-readable last-updated date — %s", (type) => {
     render(<LegalPage type={type} />);
     const time = document.querySelector("time");
-    // Each document carries its own date: the privacy policy changed when the
-    // dietary note gained its retention rule; the other two did not.
-    const expected = type === "privacy"
-      ? { iso: "2026-10-27", text: "27 October 2026" }
-      : { iso: "2026-08-15", text: "15 August 2026" };
+    // Each document carries its own date: the privacy policy and the
+    // accessibility statement changed in the v1.0 final review; the terms
+    // changed on 11 November, when the Grand Hall's dimensions became measured.
+    const expected = type === "terms"
+      ? { iso: "2026-11-11", text: "11 November 2026" }
+      : { iso: "2026-11-08", text: "8 November 2026" };
     expect(time?.getAttribute("datetime")).toBe(expected.iso);
     expect(time?.textContent).toBe(expected.text);
   });
@@ -181,6 +182,50 @@ describe("the privacy policy", () => {
     expect(text).toContain("nothing it writes is sent to you without a person choosing to send it");
   });
 
+  // v1.0 final review: clients and planners sign in too (/login and /register
+  // are public, and a new account's default role is planner), so no part of
+  // the policy may describe accounts as venue staff's alone.
+  it("says clients and planners sign in, not only venue staff", () => {
+    render(<LegalPage type="privacy" />);
+    const held = document.getElementById("other-information")?.textContent ?? "";
+    expect(held).toContain("Clients, planners and people who work for the venue can have an account on the planning tools.");
+    expect(held).toContain("You do not need an account to send an enquiry.");
+    expect(held).not.toContain("This part of the policy is about them, not about you as a visitor.");
+    const cookies = document.getElementById("cookies")?.textContent ?? "";
+    expect(cookies).toContain("so that clients, planners and venue staff with an account stay signed in");
+    const processors = document.getElementById("who-else")?.textContent ?? "";
+    expect(processors).toContain("It handles sign-in for clients, planners and venue staff");
+    expect(processors).not.toContain("It handles staff sign-in");
+  });
+
+  it("says the site serves its own typefaces, and names the two pages that still use Google Fonts", () => {
+    render(<LegalPage type="privacy" />);
+    const cookies = document.getElementById("cookies")?.textContent ?? "";
+    expect(cookies).toContain("The typefaces used by this site are served by the site itself, not by Google.");
+    expect(cookies).toContain("/amissing-book/");
+    expect(cookies).toContain("/trades-house-media/leaflet.html");
+    // Visitors reach the leaflet at /trades-house/leaflet, which frames the file above.
+    expect(cookies).toContain("the visitor leaflet (/trades-house/leaflet, and its printable copy at /trades-house-media/leaflet.html)");
+    expect(cookies).not.toContain("Two older standalone pages");
+    expect(cookies).not.toContain("The typefaces used by this site are served by Google Fonts.");
+  });
+
+  it("says Resend also carries the acknowledgement sent to the guest", () => {
+    render(<LegalPage type="privacy" />);
+    const processors = document.getElementById("who-else")?.textContent ?? "";
+    expect(processors).toContain("the acknowledgement of your enquiry that is sent to you");
+    // Examples, not a closed list: Resend also sends hold reminders and request escalations.
+    expect(processors).toContain("such as replies to enquiries, layout reviews, date-hold reminders, escalated requests and team invitations");
+  });
+
+  // Platform admins read every enquiry (routes/enquiries.ts), and a client reads an
+  // enquiry made from their own account (canAccessResource), so staff alone is false.
+  it("says who can see enquiry records, including the people who run the service", () => {
+    const text = textOf("privacy");
+    expect(text).toContain("to a client who made the enquiry from their own account, and to the people at Venviewer who run the service");
+    expect(text).not.toContain("visible only to signed-in venue staff who hold the events role");
+  });
+
   it("lists every field the public enquiry endpoint accepts", () => {
     const text = textOf("privacy").toLowerCase();
     for (const field of [
@@ -234,8 +279,28 @@ describe("the terms of service", () => {
 
   it("treats published capacities and rates as subject to confirmation", () => {
     const text = textOf("terms");
-    expect(text).toContain("the venue's own published figures");
+    expect(text).toContain(
+      "The room capacities and rates shown on this site are the venue's own published figures.",
+    );
     expect(text).toContain("subject to confirmation");
+  });
+
+  it("says the Grand Hall's dimensions were measured, not published by the venue", () => {
+    // Blake, 11 November 2026: "The measured 21.14 x 10.59 m". Every page that
+    // gives the Grand Hall's size gives the laser scan's, so the terms may not
+    // call every room dimension the venue's own published figure.
+    const text = textOf("terms");
+    expect(text).toContain(
+      "So are the room dimensions, except the Grand Hall's, which were measured from a laser scan of the hall.",
+    );
+    expect(text).not.toContain("capacities, dimensions and rates shown on this site are the venue's own published figures");
+  });
+
+  it("dates the version in force with the date the page shows", () => {
+    render(<LegalPage type="terms" />);
+    const shown = document.querySelector("time")?.textContent ?? "";
+    expect(shown).toBe("11 November 2026");
+    expect(document.getElementById("changes-to-terms")?.textContent).toContain(`dated ${shown}.`);
   });
 
   it("is governed by the law of Scotland", () => {
@@ -268,6 +333,10 @@ describe("the terms of service", () => {
 });
 
 describe("the accessibility statement", () => {
+  it("still says it was written on 15 August, whatever date the terms carry", () => {
+    expect(textOf("accessibility")).toContain("It was written on 15 August 2026 by the team that builds the site");
+  });
+
   it("makes no conformance claim, and says why", () => {
     const text = textOf("accessibility");
     expect(text).toContain("make no claim that the site conforms");
@@ -281,6 +350,17 @@ describe("the accessibility statement", () => {
     expect(text).toContain("1.92:1");
     expect(text).toContain("2.12:1");
     expect(text).toContain("4.5:1");
+  });
+
+  it("lists the planner's single-key shortcuts and its cut-off tool hints as known problems", () => {
+    render(<LegalPage type="accessibility" />);
+    const known = document.getElementById("known-problems")?.textContent ?? "";
+    expect(known).toContain("Single-key shortcuts in the planner");
+    expect(known).toContain("WCAG success criterion 2.1.4, Character Key Shortcuts");
+    expect(known).toContain("Hints in the planner's tools panel");
+    expect(known).toContain("is cut off at the panel's edge");
+    // On screen the button is a three-dot icon; its name is for screen readers.
+    expect(known).toContain("a button marked with three dots");
   });
 
   it("commits to a response time for access problems", () => {

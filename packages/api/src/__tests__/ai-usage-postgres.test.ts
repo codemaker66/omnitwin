@@ -81,6 +81,74 @@ function recordingLog(): { readonly log: AIUsageLog; readonly lines: LogLine[] }
 
 const quiet: AIUsageLog = { info: () => undefined, warn: () => undefined, error: () => undefined };
 
+type AnyCall = (...args: readonly unknown[]) => unknown;
+
+/**
+ * The same query, with `afterwards` run once its rows are in and before its
+ * caller sees them. Every step of a query builder returns a new builder, so
+ * each thenable step is watched in turn; whatever is not awaited (a subquery
+ * written into another statement) is left exactly as it was.
+ */
+function thenRun<T extends object>(query: T, afterwards: () => Promise<void>): T {
+  return new Proxy(query, {
+    get(target, key) {
+      const value: unknown = Reflect.get(target, key, target);
+      if (typeof value !== "function") return value;
+      const method = value as AnyCall;
+      if (key === "then") {
+        return (onRows?: (rows: unknown) => unknown, onError?: (error: unknown) => unknown): unknown =>
+          Reflect.apply(method, target, [
+            async (rows: unknown) => {
+              await afterwards();
+              return onRows === undefined ? rows : onRows(rows);
+            },
+            onError,
+          ]);
+      }
+      return (...args: readonly unknown[]): unknown => {
+        const result: unknown = Reflect.apply(method, target, args);
+        const awaitable = typeof result === "object" && result !== null && "then" in result;
+        return awaitable ? thenRun(result, afterwards) : result;
+      };
+    },
+  });
+}
+
+/**
+ * A database whose transactions run `afterFirstRead` straight after the first
+ * SELECT they wait for: how a test lands another transaction's commit between
+ * two statements of the one under test.
+ */
+function commitAfterFirstRead(real: Database, afterFirstRead: () => Promise<void>): Database {
+  return new Proxy(real, {
+    get(target, key) {
+      const value: unknown = Reflect.get(target, key, target);
+      if (key !== "transaction") return typeof value === "function" ? (value as AnyCall).bind(target) : value;
+      const transaction: Database["transaction"] = (run, config) => target.transaction((tx) => {
+        let reads = 0;
+        const afterTheFirst = async (): Promise<void> => {
+          reads += 1;
+          if (reads === 1) await afterFirstRead();
+        };
+        const watched = new Proxy(tx, {
+          get(inner, innerKey) {
+            const member: unknown = Reflect.get(inner, innerKey, inner);
+            if (typeof member !== "function") return member;
+            const method = member as AnyCall;
+            return (...args: readonly unknown[]): unknown => {
+              const result: unknown = Reflect.apply(method, inner, args);
+              const isSelect = innerKey === "select" && typeof result === "object" && result !== null;
+              return isSelect ? thenRun(result, afterTheFirst) : result;
+            };
+          },
+        });
+        return run(watched);
+      }, config);
+      return transaction;
+    },
+  });
+}
+
 interface Person { readonly id: string; readonly role: string; readonly venueId: string | null; readonly platformRole: "none" | "admin" }
 
 describe.skipIf(target === undefined)("AI usage ledger and allowance on migrated PostgreSQL", () => {
@@ -459,6 +527,41 @@ describe.skipIf(target === undefined)("AI usage ledger and allowance on migrated
       expect((await pool.query("SELECT count(*)::int AS n FROM ai_usage_reservations WHERE venue_id = $1 AND expires_at <= now()", [venueId])).rows[0])
         .toEqual({ n: 0 });
       await hold.settle(spent(5));
+      expect(await heldFor(venueId)).toBe(0);
+    });
+
+    // Whole-repository audit, api-ai-public-assets-1. The check read the
+    // month's recorded spend and the calls in flight in two statements, each
+    // of its own moment. A call that finished between them was in neither:
+    // not yet recorded for the first, its reservation gone by the second.
+    it("counts a call that finishes while another call's allowance is being checked", async () => {
+      const venueId = await venue();
+      const who = await person("staff", venueId);
+      const limit = 1_000_000;
+      const meter = new PostgresAIUsageMeter(db, { monthlyLimitMicroUsd: limit, log: quiet });
+      // Call A is in flight, holding 600,000 of the 1,000,000 allowance.
+      const inFlight = await meter.hold(call(venueId, who.id, 600_000));
+
+      // Call B is checked on a database where A finishes, costing all it
+      // held, straight after B's check has made its first read.
+      let finished = false;
+      const racing = new PostgresAIUsageMeter(
+        commitAfterFirstRead(db, async () => {
+          if (finished) return;
+          finished = true;
+          await inFlight.settle(spent(600_000));
+        }),
+        { monthlyLimitMicroUsd: limit, log: quiet },
+      );
+
+      // 600,000 is spent or held whichever moment is read, so 600,000 more does not fit.
+      await expect(racing.hold(call(venueId, who.id, 600_000))).rejects.toBeInstanceOf(AIBudgetReachedError);
+      expect(finished).toBe(true);
+      // The month holds A's cost and B's refusal, and nothing is left held.
+      // (B's row is dated from the start of its check, so it sorts first.)
+      const rows = await ledgerFor(venueId);
+      expect(rows.map((row) => `${String(row["outcome"])} ${String(row["cost_micro_usd"])}`).sort())
+        .toEqual(["budget_blocked 0", "ok 600000"]);
       expect(await heldFor(venueId)).toBe(0);
     });
   });
