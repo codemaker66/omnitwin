@@ -117,6 +117,22 @@ describe("the client's When ribbon", () => {
     expect(ingot.querySelector(".when-ribbon__ingot-title")?.textContent).toBe("Fraser dinner");
   });
 
+  it("names the bar by the event's occasion and day when the event and its booking were both stored without a name (the event-name ruling)", async () => {
+    const base = schedule({ kind: "hold" });
+    scheduleState.current = {
+      status: "loaded",
+      data: { ...base, event: { ...base.event, name: "" }, slots: base.slots.map((slot) => ({ ...slot, title: "" })) },
+      refresh: vi.fn(),
+    };
+    const own = { kind: "yours" as const, bookingId: OWN, title: "", startsAt: iso(SIX), endsAt: iso(SIX + 300 * MIN) };
+    getRoomDayMock.mockImplementation((_event: string, query: { day: string }) =>
+      Promise.resolve(roomDay(query.day, query.day === "2030-05-10" ? [BUSY_MORNING, own] : [])));
+    renderRibbon();
+    const ingot = await screen.findByTestId("when-ribbon-ingot");
+    expect(ingot.querySelector(".when-ribbon__ingot-title")?.textContent).toBe("Dinner, 10 May 2030");
+    expect(ingot.getAttribute("aria-label")).toMatch(/^Dinner, 10 May 2030, 18:00 – 23:00\. /u);
+  });
+
   it("names another booking of the client's event stored without a title by the event, on its bar and in its tooltip (API-9)", async () => {
     // The room's day returns every live booking of the event as theirs; one
     // from before #350 can carry "" as its title.
