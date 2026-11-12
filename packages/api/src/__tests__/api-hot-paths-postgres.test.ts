@@ -861,6 +861,36 @@ describe.skipIf(target === undefined)("API hot paths through real routes and Pos
         .toEqual([[friday.id, dinner.id]]);
     });
 
+    // T-695 review D4: the route reads the venue's own zone. A New York
+    // evening ending 21:00 EDT and its 09:00 EDT morning are two New York
+    // days, but one London day (02:00 and 14:00 BST): read in London, they
+    // would join and a 07:00 show-round between them would be warned.
+    it("parts an event's days at the venue's own midnight, not London's", async () => {
+      const a = await venue("New York room");
+      await db.update(schema.venues).set({ timezone: "America/New_York" }).where(eq(schema.venues.id, a.venueId));
+      const staff = await a.actor("staff");
+      const room = a.rooms[0] ?? "";
+      const piece = (title: string, kind: "ink" | "viewing", startsAt: string, hours: number, eventId?: string): typeof schema.bookings.$inferInsert => ({
+        venueId: a.venueId, spaceId: room, kind, title, startsAt: new Date(startsAt),
+        endsAt: new Date(Date.parse(startsAt) + hours * HOUR), ...(eventId === undefined ? {} : { eventId }),
+      });
+      // Friday 17 September 2027 18:00-21:00 EDT, then Saturday 09:00-12:00 EDT; a show-round Saturday 07:00 EDT.
+      const [evening] = await insertBoundBookings(db, [piece("Gala, evening", "ink", "2027-09-17T22:00:00.000Z", 3)]);
+      if (evening?.eventId === null || evening?.eventId === undefined) throw new Error("The gala has no event");
+      await insertBoundBookings(db, [
+        piece("Gala, morning", "ink", "2027-09-18T13:00:00.000Z", 3, evening.eventId),
+        piece("Show-round", "viewing", "2027-09-18T11:00:00.000Z", 0.5),
+      ]);
+
+      const response = await server.inject({
+        method: "GET", headers: bearer(staff),
+        url: `/calendar?venueId=${a.venueId}&from=2027-09-17T04:00:00.000Z&to=2027-09-19T04:00:00.000Z`,
+      });
+      expect(response.statusCode, response.body).toBe(200);
+      const report = response.json<{ data: { conflicts: { conflicts: { type: string }[] } } }>().data.conflicts;
+      expect(report.conflicts.filter((conflict) => conflict.type === "viewing_overlap")).toEqual([]);
+    });
+
     // T-695 api-diary-bookings-5: the owner recorded on a hold may since have
     // moved to another venue or stopped working the Diary. Such a hold is
     // reported as nobody's, as the reminder's own rule says, never emailed.
