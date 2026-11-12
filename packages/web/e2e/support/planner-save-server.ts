@@ -82,6 +82,8 @@ interface BatchObject {
   readonly scale: number;
   readonly sortOrder: number;
   readonly metadata?: Record<string, unknown> | null;
+  /** The note this piece's note replaces, as the sender last had it confirmed. */
+  readonly replacesNote?: string;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -99,6 +101,7 @@ function asBatchObject(value: unknown): BatchObject {
   const asset = value["assetDefinitionId"];
   if (typeof asset !== "string") throw new Error("batch object has no asset");
   const metadata = value["metadata"];
+  const replacesNote = value["replacesNote"];
   return {
     ...(typeof id === "string" ? { id } : {}),
     assetDefinitionId: asset,
@@ -106,7 +109,14 @@ function asBatchObject(value: unknown): BatchObject {
     rotationX: number("rotationX"), rotationY: number("rotationY"), rotationZ: number("rotationZ"),
     scale: number("scale"), sortOrder: number("sortOrder"),
     metadata: isRecord(metadata) ? metadata : null,
+    ...(typeof replacesNote === "string" ? { replacesNote } : {}),
   };
+}
+
+/** The note a batch piece sends, if any. */
+function sentNote(object: BatchObject): string | null {
+  const note = object.metadata?.["notes"];
+  return typeof note === "string" && note !== "" ? note : null;
 }
 
 /** The database keeps positions to the millimetre and turns to 5 places. */
@@ -166,14 +176,18 @@ export class PlannerSaveServer {
     return this.layouts.get(id);
   }
 
-  /** The layout's rows as a reader gets them: `marked`, a held note is only marked; otherwise it is there. */
-  private rows(layout: StoredLayout, marked: boolean): readonly WirePlacedObject[] {
+  /**
+   * The layout's rows as a reader gets them: `marked`, a held note is only
+   * marked, except on the rows in `sentHere`, whose note the answering save
+   * itself sent (the API gives a note back only there); otherwise it is there.
+   */
+  private rows(layout: StoredLayout, marked: boolean, sentHere: ReadonlySet<string> = new Set<string>()): readonly WirePlacedObject[] {
     if (this.heldNotes.size === 0) return layout.objects;
     return layout.objects.map((object) => {
       const note = this.heldNotes.get(object.id);
       if (note === undefined) return object;
       const rest = Object.fromEntries(Object.entries(object.metadata ?? {}).filter(([key]) => key !== "notes"));
-      return { ...object, metadata: marked ? { ...rest, noteHeld: true } : { ...rest, notes: note } };
+      return { ...object, metadata: marked && !sentHere.has(object.id) ? { ...rest, noteHeld: true } : { ...rest, notes: note } };
     });
   }
 
@@ -205,24 +219,54 @@ export class PlannerSaveServer {
         json: { error: "Nothing was saved: this save would remove a piece with a note that cannot be shown here.", code: "HELD_PIECE_OMITTED" },
       };
     }
+    // From such a reader, a stored piece's note is kept when the piece says
+    // nothing of it, and changed or cleared only by a save that names the note
+    // it replaces; any other change is refused (the API's settledNotes).
+    if (marked && batch.some((object) => {
+      const held = object.id === undefined ? undefined : this.heldNotes.get(object.id);
+      if (held === undefined) return false;
+      const note = sentNote(object);
+      return note !== held && object.replacesNote !== held && (note !== null || object.replacesNote !== undefined);
+    })) {
+      return {
+        status: 409,
+        json: { error: "A note on this plan cannot be changed from here, and this save tried to change it. Clear the note you wrote on that piece.", code: "NOTE_HELD" },
+      };
+    }
     const kept = new Set(layout.objects.map((object) => object.id));
     // Updates first, then inserts, each in input order: the API's echo order.
     const updates = batch.filter((object) => object.id !== undefined && kept.has(object.id));
     const inserts = batch.filter((object) => object.id === undefined || !kept.has(object.id));
+    const placed: readonly (readonly [BatchObject, string])[] = [
+      ...updates.map((object) => [object, object.id ?? this.mint("row")] as const),
+      ...inserts.map((object) => [object, this.mint("row")] as const),
+    ];
     const row = (object: BatchObject, id: string): WirePlacedObject => ({
       id, configurationId: layout.id, assetDefinitionId: object.assetDefinitionId,
       positionX: fixed(object.positionX, 3), positionY: fixed(object.positionY, 3), positionZ: fixed(object.positionZ, 3),
       rotationX: fixed(object.rotationX, 5), rotationY: fixed(object.rotationY, 5), rotationZ: fixed(object.rotationZ, 5),
       scale: fixed(object.scale, 3), sortOrder: object.sortOrder, metadata: object.metadata ?? null,
     });
-    layout.objects = [
-      ...updates.map((object) => row(object, object.id ?? this.mint("row"))),
-      ...inserts.map((object) => row(object, this.mint("row"))),
-    ];
+    layout.objects = placed.map(([object, id]) => row(object, id));
+    // Such a reader's notes are the server's to hold like any other: kept from
+    // every reader but the plan's maker, and given back only in the answer to
+    // the save that sent them.
+    const sentHere = new Set<string>();
+    if (marked) {
+      for (const [object, id] of placed) {
+        const note = sentNote(object);
+        if (note !== null) {
+          this.heldNotes.set(id, note);
+          sentHere.add(id);
+        } else if (object.replacesNote !== undefined && object.replacesNote === this.heldNotes.get(id)) {
+          this.heldNotes.delete(id);
+        }
+      }
+    }
     layout.revision += 1;
     layout.updatedAt = new Date().toISOString();
     this.saves.push({ configId: layout.id, expectedRevision, objectCount: batch.length });
-    return { status: 200, json: { data: { objects: this.rows(layout, marked), revision: layout.revision } } };
+    return { status: 200, json: { data: { objects: this.rows(layout, marked, sentHere), revision: layout.revision } } };
   }
 
   private async answer(route: Route): Promise<void> {

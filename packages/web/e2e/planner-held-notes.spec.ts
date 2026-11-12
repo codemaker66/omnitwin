@@ -8,7 +8,10 @@ import { PlannerSaveServer, SAVE_GRAND_HALL, signInAs, type SeedUser } from "./s
 // is told which pieces hold one and nothing of what they say. Such a piece is
 // never destroyed from here: Delete leaves it and says so, "Keep mine" over a
 // newer version keeps a table someone has since written a note on, and Undo
-// will not take away a table that has come to hold one.
+// will not take away a table that has come to hold one. A save the server
+// refuses for leaving such a piece out says the server's sentence and offers
+// no Retry; and a table holding the person's own note still goes when they
+// remove it, in the two saves the planner makes for that.
 //
 // Where the person reads it: today's chrome (v1) shows the planner's
 // placement notice under the room. "Keep mine" is offered only by the new
@@ -32,6 +35,7 @@ interface EditorStateLike {
   beginHistoryGesture(): symbol | null;
   endHistoryGesture(token: symbol): void;
   updateObject(id: string, patch: { positionX: number }): void;
+  setObjectNotes(id: string, notes: string): void;
   undo(): void;
 }
 interface EditorModule { readonly useEditorStore: StoreApi<EditorStateLike> }
@@ -50,6 +54,7 @@ const PLAN = "e2e-held-notes-plan";
 const TABLE_1 = `${PLAN}-table-1`;
 const TABLE_2 = `${PLAN}-table-2`;
 const THEIR_NOTE = "TEST ONLY nut allergy, seat by the door";
+const MY_NOTE = "TEST ONLY by the window";
 /** Signed in and off the venue's floor: a guest plan reaches them by the public route, without its notes. */
 const CLIENT: SeedUser = {
   id: "00000000-0000-4000-8000-000000007101",
@@ -188,6 +193,14 @@ async function undo(page: Page): Promise<void> {
   });
 }
 
+/** Writes a note on a piece, as its note field does. */
+async function writeNote(page: Page, id: string, note: string): Promise<void> {
+  await page.evaluate(async ({ pieceId, words }) => {
+    const editor = await import("/src/stores/editor-store.ts") as EditorModule;
+    editor.useEditorStore.getState().setObjectNotes(pieceId, words);
+  }, { pieceId: id, words: note });
+}
+
 test("v1: Delete leaves a table holding a note this browser is not shown, and the notice under the room names it", async ({ page }) => {
   const server = guestPlan();
   server.heldNotes.set(TABLE_1, THEIR_NOTE);
@@ -202,6 +215,60 @@ test("v1: Delete leaves a table holding a note this browser is not shown, and th
   // Table 2 holds none, and goes as asked.
   await onSelection(page, [TABLE_2], "removeSelection");
   await expect.poll(() => pieceIds(page), { timeout: 10_000 }).toEqual([TABLE_1]);
+});
+
+test("v1: a save refused for leaving out a table holding a note says the server's sentence, and offers no Retry", async ({ page }) => {
+  const server = guestPlan();
+  await server.attach(page);
+  await openPlan(page, "v1");
+
+  // Table 2 holds no note this browser knows of, so it goes as asked.
+  await onSelection(page, [TABLE_2], "removeSelection");
+  await expect.poll(() => pieceIds(page), { timeout: 10_000 }).toEqual([TABLE_1]);
+  // Meanwhile the server has come to hold a note on it, by a write that left the plan's revision as it
+  // was: this browser's copy does not mark it, so only the server can refuse the save that leaves it out.
+  server.heldNotes.set(TABLE_2, THEIR_NOTE);
+  const savesBefore = server.saves.length;
+
+  expect(await saveByHand(page, false)).toBe(false);
+
+  const sentence = "Nothing was saved: this save would remove a piece with a note that cannot be shown here.";
+  await expect(page.getByRole("status").filter({ hasText: sentence }).first()).toBeVisible();
+  await expect(page.getByRole("button", { name: /retry/iu })).toHaveCount(0);
+  await expect(page.getByText(/press Retry|will try again|Couldn't save/u)).toHaveCount(0);
+  // The header's Save button keeps its name, and the sentence describes it.
+  await expect(page.locator(".reference-save")).toHaveAccessibleName("Save layout");
+  await expect(page.locator(".reference-save")).toHaveAccessibleDescription(sentence);
+  // Nothing was stored: Table 2 and its note are on the server as they were.
+  expect(server.saves.length).toBe(savesBefore);
+  expect(storedIds(server)).toContain(TABLE_2);
+  expect(server.heldNotes.get(TABLE_2)).toBe(THEIR_NOTE);
+});
+
+test("v1: a table holding the person's own note goes when they remove it, in the two saves the planner makes for that", async ({ page }) => {
+  const server = guestPlan();
+  await server.attach(page);
+  await openPlan(page, "v1");
+
+  // The person writes a note on Table 2 here, and the save confirms it to this browser.
+  await writeNote(page, TABLE_2, MY_NOTE);
+  expect(await saveByHand(page, false)).toBe(true);
+  expect(server.heldNotes.get(TABLE_2)).toBe(MY_NOTE);
+  expect(await heldIds(page)).toEqual([]);
+
+  // They remove Table 2. The server cannot tell their note from one kept from them, and refuses a save
+  // that leaves out a piece holding a note: the planner clears the note by name first, then removes the piece.
+  await onSelection(page, [TABLE_2], "removeSelection");
+  await expect.poll(() => pieceIds(page), { timeout: 10_000 }).toEqual([TABLE_1]);
+  const savesBefore = server.saves.length;
+  expect(await saveByHand(page, false)).toBe(true);
+
+  expect(server.saves.slice(savesBefore).map((save) => save.objectCount)).toEqual([2, 1]);
+  expect(storedIds(server)).toEqual([TABLE_1]);
+  expect(server.heldNotes.has(TABLE_2)).toBe(false);
+  expect(await pieceIds(page)).toEqual([TABLE_1]);
+  expect(await noticeLine(page)).toBeNull();
+  await expect(page.getByTestId("placement-notice")).toHaveCount(0);
 });
 
 test("v2: Keep mine over a newer version keeps a table someone has since written a note on", async ({ page }) => {
