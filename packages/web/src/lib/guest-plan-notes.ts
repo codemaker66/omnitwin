@@ -198,12 +198,42 @@ export function batchClearingOwnNotesOfRemovedPieces(
   objects: readonly EditorObject[],
   toBatch: (object: EditorObject) => BatchObjectInput,
 ): readonly BatchObjectInput[] | null {
-  const present = new Set(objects.map((object) => object.id));
-  const going = (object: EditorObject): boolean => object.notes !== "" && object.noteHeld !== true && !present.has(object.id);
+  const going = ownNoteRemoved(objects);
   if (!confirmed.some(going)) return null;
   return confirmed.map((object) => {
     if (going(object)) return { ...toBatch({ ...object, notes: "" }), replacesNote: object.notes };
     return object.noteHeld === true ? toBatch({ ...object, notes: "" }) : toBatch(object);
+  });
+}
+
+/** Whether a piece of the confirmed document carries a note the server confirmed to this browser and `objects` has lost it. */
+function ownNoteRemoved(objects: readonly EditorObject[]): (object: EditorObject) => boolean {
+  const present = new Set(objects.map((object) => object.id));
+  return (object) => object.notes !== "" && object.noteHeld !== true && !present.has(object.id);
+}
+
+/**
+ * The confirmed document once the removal of pieces carrying this browser's
+ * own note is given up, because the save that clears those notes
+ * (batchClearingOwnNotesOfRemovedPieces) was refused for the document itself,
+ * not for a newer version: every later save would meet the same refusal
+ * while the removal waited (delta review of #388, R3 and A6). Each such piece
+ * is marked as holding a note this browser is not shown, so the save takes
+ * it back (heldNotePiecesToPutBack) and goes without the clearing step.
+ * `notTheirs`: the refusal was for a held note, so the note on record may no
+ * longer be the one the piece holds, and it is no longer on record. Otherwise
+ * it is still theirs, carried until a save confirms it, as "Keep mine"
+ * carries one (keepingConfirmedNotes).
+ */
+export function givingUpOwnNoteRemoval(
+  confirmed: readonly EditorObject[],
+  objects: readonly EditorObject[],
+  notTheirs: boolean,
+): readonly EditorObject[] {
+  const going = ownNoteRemoved(objects);
+  return confirmed.map((object) => {
+    if (!going(object)) return object;
+    return notTheirs ? { ...object, notes: "", noteHeld: true } : { ...object, noteHeld: true };
   });
 }
 

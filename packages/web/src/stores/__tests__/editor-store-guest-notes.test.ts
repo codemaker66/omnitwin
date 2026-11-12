@@ -874,6 +874,78 @@ describe("removing a piece whose only note is the person's own, in a browser the
     expect(store()).toMatchObject({ saveError: null, isDirty: false, isSaving: false });
   });
 
+  /** A holds a note this browser is not shown; the person writes MINE on B, Table 5, and it is saved. */
+  async function withOwnNoteOnTableFive(server: PlanOnServer): Promise<void> {
+    serveNotesAsTheApiDoes(server);
+    await open(plan([placed(A, { noteHeld: true }), placed(B, { displayLabel: "Table 5" }), placed(C)], false));
+    store().setObjectNotes(B, MINE);
+    expect(await store().saveToServer(false)).toBe(true);
+  }
+
+  it("gives up the removal when the clearing save is refused because the note is not theirs any more, and saves the rest (delta review R3)", async () => {
+    const server: PlanOnServer = { revision: 4, notes: new Map([[A, ALLERGY]]) };
+    await withOwnNoteOnTableFive(server);
+    const sentBefore = savesSent();
+    // Staff change B's note through the single-piece route: no new revision, and this browser is not told.
+    server.notes.set(B, THEIR_NOTE);
+    store().removeObject(B);
+    store().updateObject(C, { positionX: 4 });
+
+    const saved = await store().saveToServer(false);
+    expect({ saved, saveErrorCode: store().saveErrorCode }).toEqual({ saved: true, saveErrorCode: null });
+    // The clearing save was refused; B is back, said to have stayed, and goes with the work, its note left to the server.
+    expect(savesSent()).toBe(sentBefore + 2);
+    expect(sentPiece(sentBefore, B).replacesNote).toBe(MINE);
+    expect(saveSent(sentBefore + 1).batch.map((piece) => piece.id)).toEqual([A, C, B]);
+    expect(sentPiece(sentBefore + 1, B).metadata?.notes).toBeUndefined();
+    expect(sentPiece(sentBefore + 1, B).replacesNote).toBeUndefined();
+    expect(notice()).toBe("Table 5 stayed where it is, because it has a note that cannot be shown here.");
+    expect(server.notes.get(B)).toBe(THEIR_NOTE);
+    expect(server.notes.get(A)).toBe(ALLERGY);
+    expect(noteHeldOn(store(), B)).toBe(true);
+    expect(store().objects.find((object) => object.id === C)?.positionX).toBe(4);
+    expect(store()).toMatchObject({ saveError: null, isDirty: false, isSaving: false });
+
+    // Nothing of the removal is left pending: the next save is the one save.
+    const after = savesSent();
+    store().updateObject(C, { positionX: 5 });
+    expect(await store().saveToServer(false)).toBe(true);
+    expect(savesSent()).toBe(after + 1);
+  });
+
+  it("gives up the removal when the clearing save is refused for the confirmed document itself (422), keeps their note theirs, and saves the rest (delta review A6)", async () => {
+    const server: PlanOnServer = { revision: 4, notes: new Map([[A, ALLERGY]]) };
+    await withOwnNoteOnTableFive(server);
+    const sentBefore = savesSent();
+    // The clearing save is the confirmed document as it stands, and the API refuses it whole.
+    vi.mocked(configApi.publicBatchSave).mockImplementationOnce(() => Promise.reject(new ApiError(
+      422, "One or more placements fall outside the space's floor plan.", "PLACEMENT_OUT_OF_BOUNDS",
+    )));
+    store().removeObject(B);
+    store().updateObject(C, { positionX: 4 });
+
+    const saved = await store().saveToServer(false);
+    expect({ saved, saveErrorCode: store().saveErrorCode }).toEqual({ saved: true, saveErrorCode: null });
+    // B is back with their own note on it, and the work goes with it: that save confirms the note.
+    expect(savesSent()).toBe(sentBefore + 2);
+    expect(saveSent(sentBefore + 1).batch.map((piece) => piece.id)).toEqual([A, C, B]);
+    expect(sentPiece(sentBefore + 1, B).metadata?.notes).toBe(MINE);
+    expect(notice()).toMatch(/Table 5/u);
+    expect(server.notes.get(B)).toBe(MINE);
+    expect(noteOn(B)).toBe(MINE);
+    expect(heldNoteIds(store()).has(B)).toBe(false);
+    expect(store().objects.find((object) => object.id === C)?.positionX).toBe(4);
+    expect(store()).toMatchObject({ saveError: null, isDirty: false, isSaving: false });
+
+    // Asked again, the removal goes in its two saves.
+    usePlacementNoticeStore.getState().dismiss();
+    store().removeObject(B);
+    expect(notice()).toBeNull();
+    expect(await store().saveToServer(false)).toBe(true);
+    expect(server.notes.has(B)).toBe(false);
+    expect(pieceIds()).toEqual([A, C]);
+  });
+
   it("sends the one save for a piece that carries no note", async () => {
     const server: PlanOnServer = { revision: 4, notes: new Map([[A, ALLERGY]]) };
     await withOwnNoteOnB(server);

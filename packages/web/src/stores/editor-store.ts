@@ -23,6 +23,7 @@ import {
   afterLeavingOutOfDateNotes,
   batchClearingOwnNotesOfRemovedPieces,
   carriedNoteIds,
+  givingUpOwnNoteRemoval,
   heldNoteIds,
   heldNoteObjectsName,
   heldNoteObjectsNamed,
@@ -2092,12 +2093,28 @@ async function saveDocument(
         set({ isSaving: false });
         return false;
       }
-      const cleared = sending === undefined
-        ? await save(configId, clearing, revision)
-        : await save(configId, clearing, revision, sending);
-      if (session !== configurationSession || get().configId !== configId) return false;
-      revision = cleared.revision;
-      set({ configRevision: revision, baseObjects: keepingConfirmedNotes(cleared.objects.map(placedObjectToEditor), confirmed) });
+      let cleared: configApi.BatchSaveResponse | null = null;
+      try {
+        cleared = sending === undefined
+          ? await save(configId, clearing, revision)
+          : await save(configId, clearing, revision, sending);
+      } catch (refused) {
+        // Refused for the confirmed document itself: a note in it has changed
+        // since it was read (NOTE_HELD), or a piece in it is no longer
+        // accepted (422). Every later save would meet the same refusal while
+        // the removal waited, so it is given up: the piece is taken back,
+        // with what it holds, and the work goes on its own (lib/guest-plan-notes
+        // givingUpOwnNoteRemoval; delta review R3, A6). A newer version, or a
+        // failure to reach the server, is answered as for any save.
+        if (!(refused instanceof ApiError) || (refused.code !== NOTE_HELD_CODE && refused.status !== 422)) throw refused;
+        if (session !== configurationSession || get().configId !== configId) return false;
+        set({ baseObjects: givingUpOwnNoteRemoval(confirmed, objects, refused.code === NOTE_HELD_CODE) });
+      }
+      if (cleared !== null) {
+        if (session !== configurationSession || get().configId !== configId) return false;
+        revision = cleared.revision;
+        set({ configRevision: revision, baseObjects: keepingConfirmedNotes(cleared.objects.map(placedObjectToEditor), confirmed) });
+      }
       // That answer can say a piece this document has lost holds a note this
       // browser is not shown (one written since by the single-piece route):
       // nothing is sent without it, so it is taken back now, as at the start
