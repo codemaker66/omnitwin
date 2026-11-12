@@ -231,6 +231,12 @@ declare global {
       mode: () => string;
       placed: () => readonly { readonly id: string; readonly slug: string | null; readonly x: number; readonly z: number }[];
       arm: (slug: string) => boolean;
+      /**
+       * The id of the piece a drag carries right now (a touch lift or a mouse
+       * drag), or null when nothing is carried. A lift the planner refused
+       * still reads mode "lift" but carries nothing; this tells them apart.
+       */
+      carrying: () => string | null;
     };
   }
 }
@@ -287,6 +293,7 @@ export function SelectionSystem(): null {
         if (item !== undefined) useCatalogueStore.getState().selectItem(item.id);
         return item !== undefined;
       },
+      carrying: () => (isDragging.current ? dragItemId.current : null),
     };
     window.__plannerTouch = bridge;
     return () => { if (window.__plannerTouch === bridge) delete window.__plannerTouch; };
@@ -489,6 +496,13 @@ export function SelectionSystem(): null {
     let actedMode: TouchMode = "idle";
     let touchPointer: number | null = null;
     let pressedPiece: string | null = null;
+    /**
+     * The history gesture a press on a piece opens, as a mouse press on one
+     * does (onPointerDown): a save that lands during the hold remaps the
+     * piece's id through it, so the lift still finds the piece under the
+     * finger once the layout holds the server's ids.
+     */
+    let pressGesture: symbol | null = null;
     let liftOrigin: { readonly x: number; readonly z: number } | null = null;
     let holdTimer = 0;
     let holdFrame = 0;
@@ -536,24 +550,41 @@ export function SelectionSystem(): null {
       invalidateRef.current();
     }
 
+    /** Ends the gesture a press on a piece opened, unless it became a lift (which ends with its drop). */
+    function releasePress(): void {
+      const token = pressGesture;
+      pressGesture = null;
+      if (token !== null && historyGesture.current === token && !isDragging.current) closePointerGesture();
+    }
+
     /** A finger held still on a piece: the piece rises above the finger and follows it, as a mouse drag carries it. */
     function beginTouchLift(): void {
-      const itemId = pressedPiece;
+      const pressed = pressedPiece;
       const finger = arbiter.finger;
       const pointerId = touchPointer;
-      if (itemId === null || finger === null || pointerId === null) return;
-      closePointerGesture();
-      historyGesture.current = useEditorStore.getState().beginHistoryGesture();
-      if (historyGesture.current === null) return;
+      if (pressed === null || finger === null || pointerId === null) return;
+      // The press opened this gesture (onTouchDown). A save that landed during the hold gave the
+      // piece the server's id, and the gesture's map knows it; a gesture the press could not open,
+      // or one a new document ended, lifts nothing.
+      const token = historyGesture.current !== null && historyGesture.current === pressGesture ? pressGesture : null;
+      const ids = token === null ? null : useEditorStore.getState().historyGestureIdMap(token);
+      if (ids === null) {
+        closePointerGesture();
+        return;
+      }
+      const itemId = ids.get(pressed) ?? pressed;
       const placedItems = usePlacementStore.getState().placedItems;
-      // A mid-settle piece is drawn off its truth: drop its springs before measuring the grab.
-      for (const gid of getGroupMemberIds(itemId, placedItems)) clearFurnitureSettle(gid);
-      const item = placedItems.find((placed) => placed.id === itemId);
+      // The placement store takes the server's ids a render after the editor (EditorBridge), so
+      // until then the piece is still under the id it was pressed on; the drag follows the new id.
+      const item = placedItems.find((placed) => placed.id === itemId)
+        ?? placedItems.find((placed) => placed.id === pressed);
       const floorPos = screenToFloor(finger.x, finger.y, cachedRect, camera, raycaster);
       if (item === undefined || floorPos === null) {
         closePointerGesture();
         return;
       }
+      // A mid-settle piece is drawn off its truth: drop its springs before measuring the grab.
+      for (const gid of getGroupMemberIds(item.id, placedItems)) clearFurnitureSettle(gid);
       dragPointerId.current = pointerId;
       dragItemId.current = itemId;
       dragGrabOffset.current = { x: floorPos.x - item.x, z: floorPos.z - item.z };
@@ -588,6 +619,8 @@ export function SelectionSystem(): null {
         gesture.holdCamera(false);
         if (from === "place") usePlacementStore.getState().clearGhost();
         if (from === "lift") returnLiftedPiece();
+        // A press that turned to the camera before its hold holds no save back.
+        else releasePress();
         gesture.setMode(mode);
       } else if (mode === "place") {
         gesture.setFinger(arbiter.finger);
@@ -642,6 +675,8 @@ export function SelectionSystem(): null {
       window.clearTimeout(holdTimer);
       cancelAnimationFrame(holdFrame);
       hideRing();
+      // A tap or a cancelled hold ends the press's gesture here; a lift's ends with its drop or return.
+      releasePress();
       actedMode = "idle";
       touchPointer = null;
       pressedPiece = null;
@@ -661,6 +696,15 @@ export function SelectionSystem(): null {
       arbitrated.add(event);
       const armed = useCatalogueStore.getState().selectedItemId !== null;
       pressedPiece = armed ? null : interactionTargetAt(event.clientX, event.clientY).itemId;
+      if (pressedPiece !== null) {
+        // As a mouse press on a piece (onPointerDown), the gesture opens at the press, not at the
+        // lift 300 ms later: a save landing in the hold then remaps the piece's id through it (the
+        // editor subscription below, and beginTouchLift) instead of leaving the press on an id the
+        // layout no longer holds. A tap, an orbit or a cancel ends it (releasePress).
+        closePointerGesture();
+        historyGesture.current = useEditorStore.getState().beginHistoryGesture();
+        pressGesture = historyGesture.current;
+      }
       touchPointer = event.pointerId;
       trail.clear();
       trail.record(at, event.clientX, event.clientY);
