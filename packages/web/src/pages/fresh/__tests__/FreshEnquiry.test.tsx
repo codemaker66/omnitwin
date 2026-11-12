@@ -78,6 +78,19 @@ describe("FreshEnquiry — the enquiry it posts", () => {
     expect(phone.maxLength, "Phone").toBe(GUEST_ENQUIRY_LIMITS.phoneLength);
   });
 
+  // public-claims-6: the API checks an email with zod's rule, which wants a
+  // top-level domain of two letters or more and fewer symbols before the @.
+  // The composer took these, the API refused them, and the page could only
+  // say "Try again", which fails the same way every time.
+  it.each(["jane@gmail.c", "o!brien@example.com"])("asks again for an email the API would refuse: %s", (address) => {
+    mocks.submitGuestEnquiry.mockResolvedValue({ enquiryId: "enq-never" });
+    render(<FreshEnquiry />);
+    send(address);
+    expect(mocks.submitGuestEnquiry).not.toHaveBeenCalled();
+    const field = screen.getByRole("textbox", { name: /^Your email/u, description: "Enter a valid email address." });
+    expect(field.getAttribute("aria-invalid")).toBe("true");
+  });
+
   it("keeps the draft and the telephone when the post fails", async () => {
     mocks.submitGuestEnquiry.mockRejectedValueOnce(new Error("offline"));
     render(<FreshEnquiry />);

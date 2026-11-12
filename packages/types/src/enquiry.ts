@@ -191,11 +191,20 @@ export const GUEST_ENQUIRY_LIMITS = {
   guestCount: MAX_GUEST_COUNT,
 } as const;
 
+/**
+ * A guest's email as the public enquiry route takes it. The forms that post
+ * there check an address with this as well as their own typo rules
+ * (packages/web lib/email-validation.ts), so a guest is asked to correct an
+ * address the API would refuse instead of being told only that the enquiry
+ * was not sent.
+ */
+export const GuestEnquiryEmailSchema = z.string().trim().check(z.email()).max(255);
+
 export const GuestEnquirySchema = z
   .object({
     configurationId: ConfigurationIdSchema.optional(),
     venueSlug: z.string().trim().min(1).max(100).optional(),
-    email: z.string().trim().check(z.email()).max(255),
+    email: GuestEnquiryEmailSchema,
     phone: z.string().trim().max(GUEST_ENQUIRY_LIMITS.phoneLength).optional(),
     /** A name that is empty once trimmed is no name: it parses to undefined,
      *  so the enquiry falls back to the email and never stores "" as the name

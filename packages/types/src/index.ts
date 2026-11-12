@@ -1046,6 +1046,7 @@ export {
   EnquirySchema,
   CreateEnquirySchema,
   GuestEnquirySchema,
+  GuestEnquiryEmailSchema,
   GUEST_ENQUIRY_LIMITS,
   GUEST_ENQUIRY_SOURCES,
   ENQUIRY_SOURCES,
