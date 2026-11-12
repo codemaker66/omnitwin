@@ -846,6 +846,34 @@ describe("removing a piece whose only note is the person's own, in a browser the
     expect(server.notes.get(A)).toBe(ALLERGY);
   });
 
+  it("takes back a piece the clearing save's answer says has come to hold a note before the removing save goes (delta review R2)", async () => {
+    const server: PlanOnServer = { revision: 4, notes: new Map([[A, ALLERGY]]) };
+    serveNotesAsTheApiDoes(server);
+    await open(plan([placed(A, { noteHeld: true }), placed(B), placed(C, { displayLabel: "Table 9" }, 6)], false));
+    store().setObjectNotes(B, MINE);
+    expect(await store().saveToServer(false)).toBe(true);
+    const sentBefore = savesSent();
+    // The person removes B, with their own note on it, and C, which holds none.
+    store().removeObject(B);
+    store().removeObject(C);
+    // Before that is saved, staff write a note on C through the single-piece route: no new revision.
+    server.notes.set(C, THEIR_NOTE);
+
+    // The clearing save's answer says C holds a note: C is taken back, said to have stayed, and sent with the removal.
+    const saved = await store().saveToServer(false);
+    expect({ saved, saveErrorCode: store().saveErrorCode }).toEqual({ saved: true, saveErrorCode: null });
+    expect(savesSent()).toBe(sentBefore + 2);
+    expect(saveSent(sentBefore + 1).batch.map((piece) => piece.id)).toEqual([A, C]);
+    expect(sentPiece(sentBefore + 1, C).metadata?.notes).toBeUndefined();
+    expect(notice()).toBe("Table 9 stayed where it is, because it has a note that cannot be shown here.");
+    expect(server.notes.get(C)).toBe(THEIR_NOTE);
+    expect(server.notes.has(B)).toBe(false);
+    expect(server.notes.get(A)).toBe(ALLERGY);
+    expect(pieceIds()).toEqual([A, C]);
+    expect(noteHeldOn(store(), C)).toBe(true);
+    expect(store()).toMatchObject({ saveError: null, isDirty: false, isSaving: false });
+  });
+
   it("sends the one save for a piece that carries no note", async () => {
     const server: PlanOnServer = { revision: 4, notes: new Map([[A, ALLERGY]]) };
     await withOwnNoteOnB(server);

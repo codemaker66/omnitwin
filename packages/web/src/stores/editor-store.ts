@@ -2026,7 +2026,9 @@ async function saveDocument(
   // A mid-drag save would seal an incomplete action-log entry. Release or
   // cancellation schedules the complete transaction through the same bridge.
   if (gestureOwnsCurrentDocument()) return false;
-  const { configId, configRevision, objects, isSaving, isPublicPreview, venueId, saveConflict } = get();
+  const { configId, configRevision, isSaving, isPublicPreview, venueId, saveConflict } = get();
+  // What this save sends; the note-clearing step below may take a piece back into it.
+  let objects = get().objects;
   if (configId === null || isSaving) return false;
   // A conflict waits for the person's choice. Any other save could only meet
   // it again (and, in the live room, merge what they have not chosen).
@@ -2096,6 +2098,11 @@ async function saveDocument(
       if (session !== configurationSession || get().configId !== configId) return false;
       revision = cleared.revision;
       set({ configRevision: revision, baseObjects: keepingConfirmedNotes(cleared.objects.map(placedObjectToEditor), confirmed) });
+      // That answer can say a piece this document has lost holds a note this
+      // browser is not shown (one written since by the single-piece route):
+      // nothing is sent without it, so it is taken back now, as at the start
+      // of every save, and the removing save sends it (delta review R2).
+      if (putBackHeldNotePieces()) objects = get().objects;
     }
     const batch = viaSignedIn
       ? objects.map(editorToBatch)
