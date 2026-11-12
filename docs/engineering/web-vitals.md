@@ -49,17 +49,25 @@ A sampled page load reports the vitals of the page it landed on to
 - **How it is sent:** `fetch` with `keepalive`, `credentials: "omit"` and a
   `text/plain` body, so it needs no preflight and carries no cookie or token.
 - **What is stored:** the API stores one row per vital: page, device, metric, value
-  and rating, with the day it arrived, not the moment (`date_trunc('day', now())`),
-  so no row can be matched to the hosting provider's request log by time. It stores
-  no address, user agent, identifier or session, and nothing is stored on the device.
+  and rating, with only the day it arrived, not the moment
+  (`date_trunc('day', now())`). It stores no address, user agent, identifier or
+  session, and nothing is stored on the device. The day alone does not make a row
+  unmatchable: rows still sit in arrival order and the database's restore history
+  follows arrival, so with the host's request log (below) a row could in principle be
+  paired with the request that brought it. Shuffled batch inserts or daily aggregates
+  would remove that; they are not built.
   Rows go after `WEB_VITAL_RETENTION_DAYS` (90) in the nightly cleanup.
 - **What the server sees:** like any request, the report reaches the API from the
   visitor's internet address. The route writes no access line (`logLevel: "warn"`,
   as `POST /public/quiz-runs`); its rate limiter keys the address by an HMAC under a
   secret held in memory and replaced every ten minutes (`createAddressKey`), so it
-  never holds the address itself; and API tracing leaves the route out
-  (`ignoreTransactions` in `observability/sentry.ts`). An error on the route still
-  reaches the error log and Sentry, with the request id and route only.
+  never holds the address itself (about 60 reports a minute per address, and up to
+  about twice that in the minute a rotation falls in); and API tracing leaves the
+  route out (`ignoreTransactions` in `observability/sentry.ts`). A report carrying a
+  Global Privacy Control or Do Not Track header is answered and not stored, whatever
+  the page did. An error on the route still reaches the error log and Sentry, and a
+  Sentry error event carries the request's URL, method and headers (the user agent
+  among them), as for every route's errors.
 - **What the host sees:** the hosting provider's own request logs (Railway's HTTP
   logs) record every request's address, user agent and path, these included, as they
   do for every request. No code here changes that, so the privacy page says so.
@@ -93,9 +101,15 @@ it is not in this change.
 1. publish the privacy page's line (draft below, through the solicitor) with a way to
    object that works on an iPhone (above);
 2. set `WEB_VITALS_COLLECTION=on` on the API;
-3. build the web with a sample rate **below 1** (0.5 to start): the privacy page and
-   the description the solicitor approved say only a sample of page loads is
-   measured. Measuring every page load needs that description changed first.
+3. build the web with a sample rate **below 1** (0.5 to start): the description the
+   solicitor approved says only a sample of page loads is measured (the page itself
+   says a browser "may" measure). Measuring every page load needs that description
+   changed first.
+4. before switching on any database, check `web_vital_samples` has no
+   `navigation_type` column and that `recorded_at` defaults to
+   `date_trunc('day', now())`: 0108 was edited before landing under the same `when`,
+   so a database that ran #309's earlier 0108 (or its October 0106) keeps the old
+   table and every insert would fail. Production never ran either.
 
 Draft for the privacy page (for the solicitor and Blake; not live):
 

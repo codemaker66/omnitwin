@@ -66,6 +66,12 @@ export async function publicWebVitalsRoutes(
     if (!webVitalsCollectionEnabled()) {
       return reply.status(404).send({ error: "Not found", code: "NOT_FOUND" });
     }
+    // The page checks Global Privacy Control and Do Not Track before measuring;
+    // a report that arrives with either header anyway (an extension, an older
+    // page) is answered and nothing is kept, as the privacy page promises.
+    if (request.headers["sec-gpc"] === "1" || request.headers["dnt"] === "1") {
+      return reply.status(204).send();
+    }
     const parsed = WebVitalsReportSchema.safeParse(readBody(request.body));
     if (!parsed.success) {
       return reply.status(400).send({ error: "Not a web vitals report", code: "VALIDATION_ERROR" });
