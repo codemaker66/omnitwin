@@ -6594,13 +6594,18 @@ export const bookingObservations = pgTable("booking_observations", {
 // Supplier arrivals (T-692, migration 0108) — who comes to the building for a
 // booking, when, and at which door. The office enters them; the floor marks
 // each one arrived and gone. Arrival and leaving are first-tap-wins facts and
-// never move the revision, which guards the office's own edits.
+// never move the revision, which guards the office's own edits. An arrival
+// belongs to its booking's own venue (the composite key), its text is never
+// blank, and an office add may carry its Idempotency-Key. The nightly clean-up
+// clears contact and note a year after the booking ends; the names of the
+// staff who marked the door are kept as the venue's record of who was in the
+// building (Blake, 12 November 2026; SUPPLIER_ARRIVAL_RETENTION).
 // ---------------------------------------------------------------------------
 
 export const bookingSupplierArrivals = pgTable("booking_supplier_arrivals", {
   id: uuid("id").primaryKey().defaultRandom(),
   venueId: uuid("venue_id").notNull().references(() => venues.id, { onDelete: "cascade" }),
-  bookingId: uuid("booking_id").notNull().references(() => bookings.id, { onDelete: "cascade" }),
+  bookingId: uuid("booking_id").notNull(),
   supplierName: varchar("supplier_name", { length: 160 }).notNull(),
   category: varchar("category", { length: 40 }),
   arrivesAt: timestamp("arrives_at", { withTimezone: true }).notNull(),
@@ -6615,14 +6620,57 @@ export const bookingSupplierArrivals = pgTable("booking_supplier_arrivals", {
   leftByUserId: uuid("left_by_user_id").references(() => users.id, { onDelete: "set null" }),
   leftByName: varchar("left_by_name", { length: 160 }),
   createdByUserId: uuid("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  /** The office's Idempotency-Key for the add, when it sent one. */
+  idempotencyKey: uuid("idempotency_key"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   revision: integer("revision").notNull().default(1),
 }, (table) => [
+  foreignKey({
+    columns: [table.bookingId, table.venueId],
+    foreignColumns: [bookings.id, bookings.venueId],
+    name: "booking_supplier_arrivals_booking_venue_fk",
+  }).onDelete("cascade"),
   index("booking_supplier_arrivals_venue_arrives_idx").on(table.venueId, table.arrivesAt),
   index("booking_supplier_arrivals_booking_idx").on(table.bookingId),
+  uniqueIndex("booking_supplier_arrivals_idempotency_idx").on(table.venueId, table.idempotencyKey),
   check("booking_supplier_arrivals_leaves_after", sql`${table.leavesBy} IS NULL OR ${table.leavesBy} > ${table.arrivesAt}`),
   check("booking_supplier_arrivals_left_after_arrived", sql`${table.leftAt} IS NULL OR ${table.arrivedAt} IS NOT NULL`),
+  check("booking_supplier_arrivals_name_not_blank", sql`btrim(${table.supplierName}) <> ''`),
+  check("booking_supplier_arrivals_text_not_blank", sql`(${table.category} IS NULL OR btrim(${table.category}) <> '')
+    AND (${table.entrance} IS NULL OR btrim(${table.entrance}) <> '')
+    AND (${table.contact} IS NULL OR btrim(${table.contact}) <> '')
+    AND (${table.note} IS NULL OR btrim(${table.note}) <> '')`),
+]);
+
+/** What the door's history records: a mark, a mark taken back, a removal. */
+export const SUPPLIER_ARRIVAL_EVENT_ACTIONS = ["arrived", "left", "arrived-undone", "left-undone", "removed"] as const;
+export type SupplierArrivalEventAction = (typeof SUPPLIER_ARRIVAL_EVENT_ACTIONS)[number];
+
+// The door's history (migration 0108): one row per mark, mark taken back and
+// removal, in the same transaction as the change. It outlives a removed
+// arrival, so it has no key onto it. A mark names the person; a removal keeps
+// only the account (booking_supplier_arrival_events_named_at_the_door).
+export const bookingSupplierArrivalEvents = pgTable("booking_supplier_arrival_events", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  venueId: uuid("venue_id").notNull(),
+  bookingId: uuid("booking_id").notNull(),
+  arrivalId: uuid("arrival_id").notNull(),
+  supplierName: varchar("supplier_name", { length: 160 }).notNull(),
+  action: varchar("action", { length: 20 }).$type<SupplierArrivalEventAction>().notNull(),
+  actorUserId: uuid("actor_user_id").references(() => users.id, { onDelete: "set null" }),
+  actorName: varchar("actor_name", { length: 160 }),
+  at: timestamp("at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({
+    columns: [table.bookingId, table.venueId],
+    foreignColumns: [bookings.id, bookings.venueId],
+    name: "booking_supplier_arrival_events_booking_venue_fk",
+  }).onDelete("cascade"),
+  index("booking_supplier_arrival_events_arrival_idx").on(table.arrivalId, table.at),
+  index("booking_supplier_arrival_events_booking_idx").on(table.bookingId),
+  check("booking_supplier_arrival_events_action", sql`${table.action} IN ('arrived', 'left', 'arrived-undone', 'left-undone', 'removed')`),
+  check("booking_supplier_arrival_events_named_at_the_door", sql`(${table.action} = 'removed') = (${table.actorName} IS NULL)`),
 ]);
 
 // ---------------------------------------------------------------------------

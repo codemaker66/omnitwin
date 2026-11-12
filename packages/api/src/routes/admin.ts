@@ -13,6 +13,7 @@ import { runHoldReminderPass } from "../services/hold-reminders.js";
 import { isEmailDeliveryConfigured } from "../services/email.js";
 import { removeLapsedDietaryNotes } from "../services/dietary-retention.js";
 import { removeUnusedRememberedNotes } from "../services/dietary-memory.js";
+import { clearLapsedSupplierContacts } from "../services/supplier-arrival-retention.js";
 import { runPageChecks } from "../services/competitor-watch-data.js";
 import { createHttpsPageFetcher, type PageFetcher } from "../services/page-check.js";
 
@@ -85,8 +86,9 @@ export async function adminRoutes(
   const pageFetcher = opts.pageFetcher ?? createHttpsPageFetcher();
 
   // POST /admin/cleanup — trigger manual cleanup of stale preview configs,
-  // orphaned uploads, guests' allergy notes past their retention, and
-  // remembered allergy notes unused for the period the client agreed to.
+  // orphaned uploads, guests' allergy notes past their retention, remembered
+  // allergy notes unused for the period the client agreed to, and suppliers'
+  // contacts and notes a year after their booking ends.
   server.post("/cleanup", {
     preHandler: [authenticate, authorizePlatformAdmin()],
   }, async () => {
@@ -94,20 +96,29 @@ export async function adminRoutes(
     const deletedFiles = await cleanupOrphanedFiles(db);
     const dietaryNotes = await removeLapsedDietaryNotes(db);
     const rememberedNotes = await removeUnusedRememberedNotes(db);
+    const supplierContacts = await clearLapsedSupplierContacts(db);
     return {
       data: {
         deletedConfigs,
         deletedFiles,
         dietaryNotes,
         rememberedNotes,
+        supplierContacts,
         message: `Cleaned up ${String(deletedConfigs)} stale preview configuration(s) and ${String(deletedFiles)} orphaned file(s); `
           + `removed the allergy note from ${String(dietaryNotes.layouts)} layout(s) and ${String(dietaryNotes.sheets)} event sheet(s)`
           + ` past their retention, and from ${String(dietaryNotes.actionLog)} logged change(s)`
           + `; removed the notes on single pieces from ${String(dietaryNotes.pieceNotes.layouts)} layout(s)`
-          + `; removed ${String(rememberedNotes.removed)} remembered note(s) unused for the agreed period`,
+          + `; removed ${String(rememberedNotes.removed)} remembered note(s) unused for the agreed period`
+          + `; cleared the contact and note from ${String(supplierContacts.arrivals)} supplier arrival(s) past their retention`,
       },
     };
   });
+
+  // POST /admin/retention/supplier-contacts — what the supplier contact pass
+  // would clear now, changing nothing. The rehearsal before a real pass.
+  server.post("/retention/supplier-contacts", {
+    preHandler: [authenticate, authorizePlatformAdmin()],
+  }, async () => ({ data: await clearLapsedSupplierContacts(db, { dryRun: true }) }));
 
   // POST /admin/retention/dietary-notes — what the retention pass would
   // remove now, changing nothing. The rehearsal before a real pass.
