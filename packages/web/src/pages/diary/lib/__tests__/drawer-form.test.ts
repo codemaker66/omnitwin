@@ -274,6 +274,31 @@ describe("initialDrawerForm", () => {
     expect(form.startsAt).toBe("2026-09-19T17:00");
     expect(form.endsAt).toBe("2026-09-19T23:00");
   });
+
+  // time-dst-3: the evening window is 17:00 to 23:00 on the venue's clock
+  // (Europe/London), on a day of 25 hours or 23 hours too. Adding 17 and 23
+  // hours to local midnight opened Sun 25 Oct 2026 at 16:00–22:00 and Sun
+  // 28 Mar 2027 at 18:00–00:00.
+  const DAYS: readonly (readonly [string, string, string])[] = [
+    ["the clocks go back", "2026-10-25", "2026-10-24T23:00:00.000Z"],
+    ["the clocks go forward", "2027-03-28", "2027-03-28T00:00:00.000Z"],
+    ["an ordinary summer day", "2026-10-24", "2026-10-23T23:00:00.000Z"],
+    ["an ordinary winter day", "2027-03-27", "2027-03-27T00:00:00.000Z"],
+  ];
+
+  it.each(DAYS)("opens a new booking on the day %s at 17:00 to 23:00 on the venue's clock", (_day, date, midnightIso) => {
+    const form = initialDrawerForm({ kind: "create", spaceId: SPACE, dayStartMs: Date.parse(midnightIso), ownerUserId: OWNER });
+    expect([form.startsAt, form.endsAt]).toEqual([`${date}T17:00`, `${date}T23:00`]);
+  });
+
+  it.each(DAYS)("holds an enquiry's date on the day %s at 17:00 to 23:00 on the venue's clock", (_day, date) => {
+    const form = initialDrawerForm({
+      kind: "convert",
+      enquiry: { id: ENQUIRY, spaceId: SPACE, name: "Fiona MacLeod", eventType: "wedding", preferredDate: date },
+      ownerUserId: OWNER,
+    });
+    expect([form.startsAt, form.endsAt]).toEqual([`${date}T17:00`, `${date}T23:00`]);
+  });
 });
 
 describe("allowedTransitionTargets", () => {

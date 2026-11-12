@@ -46,12 +46,16 @@ Disallow: /legal/
 Disallow: /proposal/
 Disallow: /proposal-share/
 Disallow: /supplier-share/
+Disallow: /plan-view/
 Disallow: /plan
 Disallow: /blueprint
 Disallow: /v/
+# A staff member's preview of a proposal before it is sent.
+Disallow: /proposal-preview/
 
 # Signed-in, operational and account surfaces.
 Disallow: /hallkeeper/
+Disallow: /events
 Disallow: /diary
 Disallow: /dashboard
 Disallow: /ops/

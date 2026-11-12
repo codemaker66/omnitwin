@@ -1,5 +1,10 @@
-import { and, asc, desc, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
-import { CLIENT_HOME_PLAN_LIMIT, ClientHomeSchema, type ClientHome } from "@omnitwin/types";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, notInArray, or, sql } from "drizzle-orm";
+import {
+  CLIENT_HOME_PLAN_LIMIT,
+  ClientHomeSchema,
+  EVENT_ENDED_STATUSES,
+  type ClientHome,
+} from "@omnitwin/types";
 import type { Database } from "../db/client.js";
 import {
   configurations,
@@ -21,6 +26,10 @@ import {
 // preview, in a live room of the event's venue, linked as the source, an
 // approved snapshot's source, or a live variant of that very event. A card
 // here therefore always opens; a revoked link takes the card with it.
+//
+// An event that ended (cancelled; lost: every option went) will not happen,
+// so it is neither coming up nor a past event that took place: it leaves the
+// list, and the plans it held stand alone. Re-held, it comes back.
 // ---------------------------------------------------------------------------
 
 const GRANTING_LINK_TYPES = ["source_configuration", "variant_configuration", "approved_snapshot_source"] as const;
@@ -54,6 +63,7 @@ export async function loadClientHome(db: Database, userId: string): Promise<Clie
         eq(configurations.isPublicPreview, false),
         isNull(configurations.deletedAt),
         isNull(events.deletedAt),
+        notInArray(events.status, [...EVENT_ENDED_STATUSES]),
         isNull(venues.deletedAt),
         isNull(spaces.deletedAt),
         inArray(eventConfigurationLinks.linkType, [...GRANTING_LINK_TYPES]),

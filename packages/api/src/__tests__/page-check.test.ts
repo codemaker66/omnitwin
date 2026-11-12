@@ -73,6 +73,148 @@ describe("robots.txt (RFC 9309)", () => {
   it("matches the product token whatever its case", () => {
     expect(robotsAllows("User-agent: venviewerpagecheck\nDisallow: /", PAGE_CHECK_PRODUCT_TOKEN, "/weddings/")).toBe(false);
   });
+
+  // Review of #380. A comment was cut with /#.*$/u. `.` stops at U+2028 and
+  // U+2029, `$` then fails, and the search began again at every later `#`:
+  // quadratic on one long line, read from the same site whose page is checked.
+  it.each([
+    ["a line of # ending in a line separator", "#", " "],
+    ["a line of # ending in a paragraph separator", "#", " "],
+    ["rules each followed by a comment, on one line", "Disallow: /a #", " "],
+  ] as const)("reads 2 MB of %s in linear time", (_shape, unit, tail) => {
+    const timed = (bytes: number): number => {
+      const robots = `User-agent: *\n${unit.repeat(Math.ceil(bytes / unit.length))}${tail}`;
+      const started = performance.now();
+      robotsAllows(robots, PAGE_CHECK_PRODUCT_TOKEN, "/weddings/");
+      return performance.now() - started;
+    };
+    // As for the page's text below: 128 KB first, so the old code fails
+    // promptly there instead of hanging on 2 MB.
+    expect(timed(128 * 1024)).toBeLessThan(100);
+    expect(timed(2 * 1024 * 1024)).toBeLessThan(1000);
+  });
+
+  it("takes a comment to the end of its line, whatever the comment holds", () => {
+    // Neither separator ends a robots.txt line (RFC 9309: CR and LF do). The
+    // old expression left such a comment in place, so the rule's path was
+    // garbled and the Disallow was not honoured.
+    const robots = "User-agent: *\nDisallow: /private/ # staff only really\nDisallow: /drafts/ # and these";
+    expect(robotsAllows(robots, PAGE_CHECK_PRODUCT_TOKEN, "/private/rota")).toBe(false);
+    expect(robotsAllows(robots, PAGE_CHECK_PRODUCT_TOKEN, "/drafts/menu")).toBe(false);
+    expect(robotsAllows(robots, PAGE_CHECK_PRODUCT_TOKEN, "/weddings/")).toBe(true);
+  });
+
+  /** robotsAllows on one Disallow rule, with how long it took. */
+  function timedDisallow(pattern: string, path: string): { readonly allowed: boolean; readonly ms: number } {
+    const robots = `User-agent: *\nDisallow: ${pattern}`;
+    const started = performance.now();
+    const allowed = robotsAllows(robots, PAGE_CHECK_PRODUCT_TOKEN, path);
+    return { allowed, ms: performance.now() - started };
+  }
+
+  it("answers a rule full of stars at once, without backtracking", () => {
+    // A competitor's robots.txt can hold such a value. A backtracking regex
+    // takes combinatorial time on it when the path has no Z, stalling the
+    // event loop for every venue. Eight stars already take seconds there, so
+    // that case is checked first: it fails promptly instead of hanging on 32.
+    const short = timedDisallow(`/${"*".repeat(8)}Z`, "/wedding-packages/grand-central/2026-xyz");
+    expect(short.allowed).toBe(true);
+    expect(short.ms).toBeLessThan(50);
+
+    const path = "/wedding-packages/grand-central-hall/2026/summer-menus?page=2";
+    expect(path.length).toBeGreaterThanOrEqual(40);
+    expect(path).not.toContain("Z");
+    const long = timedDisallow(`/${"*".repeat(32)}Z`, path);
+    expect(long.allowed).toBe(true);
+    expect(long.ms).toBeLessThan(50);
+    // And the same rule still matches a path that has the Z.
+    expect(timedDisallow(`/${"*".repeat(32)}Z`, `${path}Z`).allowed).toBe(false);
+  });
+
+  it.each([
+    // * at the start, in the middle and at the end, matching any run including none
+    ["*/private", "/a/private", true],
+    ["*/private", "/a/public", false],
+    ["/a*c", "/abc", true],
+    ["/a*c", "/ac", true],
+    ["/a*c", "/ab", false],
+    ["/a*c", "/xabc", false],
+    ["/a*", "/a", true],
+    ["/a*", "/abc", true],
+    ["/a*", "/b", false],
+    // adjacent stars
+    ["/a**c", "/ac", true],
+    ["/a**c", "/a-b-c", true],
+    ["/a***", "/a", true],
+    ["/a**c", "/a", false],
+    // without the end anchor a prefix is enough
+    ["/rooms", "/rooms/suite", true],
+    ["/rooms", "/room", false],
+    // the end anchor, without stars
+    ["/a$", "/a", true],
+    ["/a$", "/ab", false],
+    ["/a$", "/a?x", false],
+    ["/$", "/", true],
+    ["/$", "/a", false],
+    // the end anchor, with stars
+    ["/*.pdf$", "/x.pdf", true],
+    ["/*.pdf$", "/x.pdf.pdf", true],
+    ["/*.pdf$", "/x.pdf?y", false],
+    ["/a*b$", "/ab", true],
+    ["/a*b$", "/abab", true],
+    ["/a*b$", "/aba", false],
+    ["/ab*b$", "/ab", false],
+    ["/ab*b$", "/abb", true],
+    ["/a*$", "/a", true],
+    ["/a*$", "/abc", true],
+    // a $ anywhere but the very end is an ordinary character
+    ["/a$b", "/a$b", true],
+    ["/a$b", "/a$bc", true],
+    ["/a$b", "/a", false],
+    ["/a$b", "/ab", false],
+    ["/a$$", "/a$", true],
+    ["/a$$", "/a$x", false],
+    ["/price$*/list", "/price$9/list", true],
+    // regex metacharacters are literals
+    ["/a.b", "/a.b", true],
+    ["/a.b", "/axb", false],
+    ["/.*", "/abc", false],
+    ["/.*", "/.abc", true],
+    ["/a?b", "/a?b", true],
+    ["/a?b", "/ab", false],
+    ["/a+", "/a+", true],
+    ["/a+", "/aa", false],
+    ["/(x)", "/(x)", true],
+    ["/(x)", "/x", false],
+    ["/[ab]", "/[ab]", true],
+    ["/[ab]", "/a", false],
+    ["/a|b", "/b", false],
+    ["/a|b", "/a|b", true],
+    ["/^a", "/^a", true],
+    ["/a{2}", "/aa", false],
+    ["/a{2}", "/a{2}", true],
+    ["/a\\d", "/a\\d", true],
+    ["/a\\d", "/a1", false],
+    // the query string is part of the path
+    ["/*?", "/weddings/?date=1", true],
+    ["/*?", "/weddings/", false],
+    ["/search?q=*&page=2", "/search?q=hall&page=2", true],
+    ["/search?q=*&page=2", "/search?q=hall", false],
+    ["/*?sort=$", "/list?sort=", true],
+    ["/*?sort=$", "/list?sort=asc", false],
+  ] as const)("Disallow: %s %s matches: %s", (pattern, path, matches) => {
+    expect(robotsAllows(`User-agent: *\nDisallow: ${pattern}`, PAGE_CHECK_PRODUCT_TOKEN, path)).toBe(!matches);
+  });
+
+  it("still lets the longest matching rule win, and Allow take a tie, with wildcards", () => {
+    const robots = "User-agent: *\nDisallow: /*.php\nAllow: /public/*";
+    expect(robotsAllows(robots, PAGE_CHECK_PRODUCT_TOKEN, "/public/x.php")).toBe(true);
+    expect(robotsAllows(robots, PAGE_CHECK_PRODUCT_TOKEN, "/x.php")).toBe(false);
+    expect(robotsAllows("User-agent: *\nAllow: /*.php\nDisallow: /public/*", PAGE_CHECK_PRODUCT_TOKEN, "/public/x.php")).toBe(false);
+    expect(robotsAllows("User-agent: *\nAllow: /a*c\nDisallow: /ab*", PAGE_CHECK_PRODUCT_TOKEN, "/abc")).toBe(true);
+    expect(robotsAllows("User-agent: *\nDisallow: /ab*\nAllow: /a*c", PAGE_CHECK_PRODUCT_TOKEN, "/abc")).toBe(true);
+    expect(robotsAllows("User-agent: *\nDisallow: /ab*\nAllow: /a*c", PAGE_CHECK_PRODUCT_TOKEN, "/abd")).toBe(false);
+  });
 });
 
 describe("the page's text and its hash", () => {
@@ -89,6 +231,179 @@ describe("the page's text and its hash", () => {
 
   it("decodes entities the same however a page writes them", () => {
     expect(pageText("<body><p>&pound;130&nbsp;&amp;&#163;5&#xA3;</p></body>")).toBe("£130 &£5£");
+  });
+
+  /** A body of `unit` repeated to exactly `size` characters. */
+  function filled(unit: string, size: number): string {
+    return unit.repeat(Math.ceil(size / unit.length)).slice(0, size);
+  }
+
+  /** pageTextHash on a body, with how long it took. */
+  function timedHash(body: string): { readonly hash: string; readonly ms: number } {
+    const started = performance.now();
+    const hash = pageTextHash(body);
+    return { hash, ms: performance.now() - started };
+  }
+
+  it.each([
+    ["nothing but <", "<"],
+    ["comments never closed", "<!--"],
+    ["script tags never ended", "<script"],
+    ["scripts never closed", "<script>"],
+    ["a main block never closed", "<main>"],
+    ["a body never closed", "<body>"],
+    ["navigation never closed", "<nav>"],
+    ["every kind of opener at once", "<!--<script><style><svg><head><main><body><nav><form><"],
+    ["tags never ended", "<a"],
+    ["tags beginning beyond ASCII", "<é"],
+    ["entities never ended", "&#x0"],
+  ] as const)("reads 2 MB of %s in linear time", (_shape, unit) => {
+    // The page comes from a site the check does not control, and 2 MB is the
+    // most the fetcher accepts. A pass that rescans the rest of the page from
+    // every opener takes minutes to an hour on it, with the API's event loop
+    // stalled for every venue. Such a pass already takes from half a second
+    // to ten seconds on 128 KB, so that size is checked first: it fails
+    // promptly there instead of hanging on 2 MB.
+    const small = timedHash(filled(unit, 128 * 1024));
+    expect(small.ms).toBeLessThan(100);
+    const large = timedHash(filled(unit, 2 * 1024 * 1024));
+    expect(large.hash).toMatch(/^[0-9a-f]{64}$/u);
+    expect(large.ms).toBeLessThan(1000);
+  });
+
+  // A watched page must read exactly as it did before the text was taken
+  // without regular expressions: a different reading of the same page would
+  // report every watched competitor page as changed on its next check.
+  const VENUE_PAGE = [
+    "<!DOCTYPE html>",
+    "<html lang=\"en-GB\">",
+    "<head>",
+    "<meta charset=\"UTF-8\">",
+    "<title>Weddings at The Grand Central &#8211; Glasgow</title>",
+    "<link rel=\"stylesheet\" href=\"/wp-content/themes/hotel/style.css?ver=6.4\">",
+    "<script>window.dataLayer = window.dataLayer || []; if (a < b && b > c) { document.write(\"</div>\"); }</script>",
+    "<style>.hero > h1 { color: #333; } /* <main> */</style>",
+    "<!--[if lt IE 9]><script src=\"/html5shiv.js\"></script><![endif]-->",
+    "</head>",
+    "<body class=\"page-template-default page page-id-42\">",
+    "<div id=\"cookie-notice\" role=\"dialog\">We use cookies. <a href=\"/privacy\">Read more</a></div>",
+    "<header class=\"site-header\"><a class=\"logo\" href=\"/\"><svg viewBox=\"0 0 10 10\"><title>Logo</title><path d=\"M0 0h10v10z\"/></svg></a>",
+    "<nav aria-label=\"Primary\"><ul><li><a href=\"/rooms/\">Rooms</a></li><li><a href=\"/weddings/\" aria-current=\"page\">Weddings</a></li></ul></nav></header>",
+    "<main id=\"content\" class=\"site-main\">",
+    "<!-- wp:heading -->",
+    "<h1 class=\"entry-title\">Wedding Packages</h1>",
+    "<p>Our Grand Central Package is &pound;130&nbsp;per person, including a drinks reception &amp; three-course meal.</p>",
+    "<p>Evening buffet from &#163;18.50 &#x2013; minimum 80 guests.</p>",
+    "<ul><li>Exclusive use of the Champagne Bar</li><li>Overnight suite for the couple</li></ul>",
+    "<noscript><iframe src=\"https://www.googletagmanager.com/ns.html?id=GTM-TEST\" height=\"0\" width=\"0\"></iframe></noscript>",
+    "<form class=\"enquiry\" action=\"/enquire\" method=\"post\"><label>Date <input type=\"date\" name=\"date\"></label><button>Enquire</button></form>",
+    "<template id=\"row\"><tr><td>Hidden template row</td></tr></template>",
+    "</main>",
+    "<footer class=\"site-footer\"><p>&copy; 2026 Grand Central Hotel. All rights reserved.</p></footer>",
+    "<script type=\"text/javascript\" src=\"/wp-includes/js/jquery.min.js\"></script>",
+    "</body>",
+    "</html>",
+  ].join("\n");
+  const OLD_CMS_PAGE = [
+    "<HTML><HEAD><TITLE>Function Rooms</TITLE>",
+    "<SCRIPT TYPE=\"text/javascript\">var x = \"<b>\"; </SCRIPT >",
+    "</HEAD>",
+    "<BODY BGCOLOR=\"#FFFFFF\">",
+    "<Nav><A HREF=\"/\">Home</A> | <A HREF=\"/contact\">Contact</A></Nav>",
+    "<TABLE><TR><TD><FONT FACE=\"Arial\"><B>Function Room Hire</B></FONT></TD></TR>",
+    "<TR><TD>Day delegate rate: &pound;45 + VAT<BR>Room hire from &#xA3;250 &mdash; prices < &pound;300 for charities</TD></TR>",
+    "<TR><TD><A HREF=\"/menu.pdf\" TITLE=\"Menus > Download\">Download our menus</A></TD></TR></TABLE>",
+    "<Header>not really a header</Header>",
+    "<P>Call 0141 000 0000 &amp; ask for events.",
+    "</BODY></HTML>",
+    "<!-- generated by an old CMS",
+  ].join("\n");
+  const FRAGMENT = [
+    "<div class=\"widget\"><main-menu data-x=\"1\"><a href=\"/\">Home</a></main-menu>",
+    "<p>Packages from &pound;95.</p></div>",
+    "<nav><nav>Inner</nav>Outer tail</nav>",
+    "<p>Contact &lt;events@example.com&gt; &#39;today&#39;</p>",
+    "<header><h2>Gallery</h2></header><headline>Kept headline</headline>",
+    "<scripted>Kept scripted</scripted>",
+  ].join("\n");
+
+  it.each([
+    [
+      "a venue's page",
+      VENUE_PAGE,
+      "Wedding Packages Our Grand Central Package is £130 per person, including a drinks reception & three-course meal. Evening buffet from £18.50 – minimum 80 guests. Exclusive use of the Champagne Bar Overnight suite for the couple",
+      "f0635551d0014565960b74dfcb1f83946d61e9929e8d3ab7e97e542263ddb1c3",
+    ],
+    [
+      "an old CMS page with capitals, a stray < and a > inside an attribute",
+      OLD_CMS_PAGE,
+      "Function Room Hire Day delegate rate: £45 + VAT Room hire from £250 &mdash; prices Download\">Download our menus Call 0141 000 0000 & ask for events.",
+      "df30e03731756ba98ffb652e05b89616bcb6a4c58bb899688f45a82da39000f7",
+    ],
+    [
+      "a fragment with nested navigation and look-alike tag names",
+      FRAGMENT,
+      "Home Packages from £95. Outer tail Contact <events@example.com> 'today' Kept headline Kept scripted",
+      "ab0ed11fc7ad297cbf54cc37561146ed2aed09f2e1dbe7d8fd4c869f6393e38a",
+    ],
+  ] as const)("reads %s exactly as before", (_page, html, text, hash) => {
+    expect(pageText(html)).toBe(text);
+    expect(pageTextHash(html)).toBe(hash);
+  });
+
+  /** How pageText read a page with regular expressions until November 2026,
+   *  kept as the reference the linear reading must agree with. Only ever
+   *  given short inputs here, where its quadratic cost does not matter. */
+  function regexPageText(html: string): string {
+    const entities: Readonly<Record<string, string>> = { amp: "&", lt: "<", gt: ">", quot: "\"", apos: "'", nbsp: " ", pound: "£" };
+    const codePoint = (code: number): string => (Number.isFinite(code) && code >= 0 && code <= 0x10ffff ? String.fromCodePoint(code) : " ");
+    let text = html.replace(/<!--[\s\S]*?-->/gu, " ");
+    text = text.replace(/<(script|style|noscript|template|svg|iframe|head)\b[^>]*>[\s\S]*?<\/\1\s*>/giu, " ");
+    const main = /<main\b[^>]*>([\s\S]*?)<\/main\s*>/iu.exec(text);
+    const body = /<body\b[^>]*>([\s\S]*?)<\/body\s*>/iu.exec(text);
+    text = main?.[1] ?? body?.[1] ?? text;
+    text = text.replace(/<(nav|header|footer|form)\b[^>]*>[\s\S]*?<\/\1\s*>/giu, " ");
+    text = text.replace(/<[^>]*>/gu, " ");
+    text = text.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/giu, (whole, name: string) => {
+      if (/^#x/iu.test(name)) return codePoint(Number.parseInt(name.slice(2), 16));
+      if (name.startsWith("#")) return codePoint(Number.parseInt(name.slice(1), 10));
+      return entities[name.toLowerCase()] ?? whole;
+    });
+    return text.replace(/\s+/gu, " ").trim();
+  }
+
+  it("reads any page exactly as the regular expressions it replaced did", () => {
+    // Random pages built from the pieces each step reacts to: openers and
+    // closers in every case, unclosed and nested ones, look-alike names
+    // (<headline>, <main-menu>), the long s and Kelvin sign that a
+    // case-insensitive match folds to s and k, odd spacing in closers, and
+    // entities. A fixed seed keeps every run the same.
+    const pieces = [
+      "<", ">", "/", "!", "-", " ", "\n", "\t", " ", "a", "£130", "&", ";", "\"",
+      "<!--", "-->", "<!-->", "--", "</",
+      "<script", "<script>", "</script>", "</script >", "</SCRIPT\n>", "<SCRIPT type=\"x\">", "<ſcript>", "</ſcript>", "<scripted>",
+      "<style>", "</style>", "<svg", "</svg>", "<iframe>", "</iframe>", "<noscript>", "</noscript>", "<template>", "</template>",
+      "<head>", "</head>", "<headline>", "<head-x>",
+      "<main>", "</main>", "</main >", "<MAIN class=a>", "<main-menu>", "<mainx>",
+      "<body>", "</body>", "<BODY x>", "</Body>",
+      "<nav>", "</nav>", "<NAV>", "<navy>", "<header>", "</header>", "<footer>", "</footer>", "<form", "</form\t>", "<formal>",
+      "K", "&amp;", "&pound;", "&#163;", "&#xA3;", "&#x110000;", "&bogus;", "&AMP;",
+    ];
+    let seed = 0x5eed;
+    const random = (): number => {
+      seed = (seed + 0x6d2b79f5) | 0;
+      let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+    const differing: string[] = [];
+    for (let page = 0; page < 5000; page += 1) {
+      let html = "";
+      const length = Math.floor(random() * 40);
+      for (let piece = 0; piece < length; piece += 1) html += pieces[Math.floor(random() * pieces.length)] ?? "";
+      if (pageText(html) !== regexPageText(html)) differing.push(html);
+    }
+    expect(differing.slice(0, 5)).toEqual([]);
   });
 });
 

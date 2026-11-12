@@ -527,8 +527,10 @@ describe("Trades Hall room constants", () => {
     expect(SpaceDimensionsSchema.safeParse(TRADES_HALL_GRAND_HALL_DIMENSIONS).success).toBe(true);
   });
 
-  it("Grand Hall has correct dimensions", () => {
-    expect(TRADES_HALL_GRAND_HALL_DIMENSIONS).toEqual({ width: 21, length: 10.5, height: 7 });
+  it("Grand Hall has its laser-scanned dimensions and clear height", () => {
+    // Blake, 11 November 2026: "The measured 21.14 x 10.59 m"; the height is
+    // the clear 6.7 m to the coffered ceiling, never the dome's.
+    expect(TRADES_HALL_GRAND_HALL_DIMENSIONS).toEqual({ width: 21.14, length: 10.59, height: 6.7 });
   });
 
   it("Robert Adam Room dimensions validate", () => {
@@ -573,14 +575,24 @@ describe("Trades Hall room constants", () => {
     expect(orders).toEqual([0, 1, 2, 3]);
   });
 
-  it("Grand Hall outline corners match dimensions", () => {
+  it("Grand Hall outline corners match dimensions, centred on the origin", () => {
+    // The outline the API stores for the scanned hall: ±10.57 × ±5.295 m.
     const room = TRADES_HALL_ROOMS[0];
     expect(room.floorPlanOutline).toEqual([
-      { x: 0, y: 0 },
-      { x: 21, y: 0 },
-      { x: 21, y: 10.5 },
-      { x: 0, y: 10.5 },
+      { x: -10.57, y: -5.295 },
+      { x: 10.57, y: -5.295 },
+      { x: 10.57, y: 5.295 },
+      { x: -10.57, y: 5.295 },
     ]);
+  });
+
+  it("centres every room's outline on the origin", () => {
+    for (const room of TRADES_HALL_ROOMS) {
+      const xs = room.floorPlanOutline.map((p) => p.x);
+      const ys = room.floorPlanOutline.map((p) => p.y);
+      expect(Math.min(...xs) + Math.max(...xs), room.slug).toBeCloseTo(0, 9);
+      expect(Math.min(...ys) + Math.max(...ys), room.slug).toBeCloseTo(0, 9);
+    }
   });
 
   it("each room has a non-empty name and slug", () => {
@@ -602,7 +614,7 @@ describe("polygonBoundingBox", () => {
     expect(bbox).toEqual({ widthM: 1, lengthM: 1 });
   });
 
-  it("computes bbox of the Grand Hall rectangle (21 x 10.5)", () => {
+  it("computes bbox of a 21 x 10.5 rectangle (the Grand Hall's old hand-drawn size)", () => {
     const bbox = polygonBoundingBox([
       { x: 0, y: 0 },
       { x: 21, y: 0 },
@@ -643,7 +655,7 @@ describe("polygonBoundingBox", () => {
 
   it("produces the same bbox as the Trades Hall seed constants for every room", () => {
     const expected: Record<string, { w: number; l: number }> = {
-      "grand-hall": { w: 21, l: 10.5 },
+      "grand-hall": { w: 21.14, l: 10.59 },
       "robert-adam-room": { w: 9.7, l: 5.6 },
       "reception-room": { w: 13.4, l: 11.2 },
       "saloon": { w: 12, l: 7 },

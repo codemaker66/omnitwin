@@ -36,3 +36,9 @@ interface ImportMeta {
 }
 
 declare const __VENVIEWER_CLERK_PUBLISHABLE_KEY__: string | undefined;
+
+interface Window {
+  /** index.html's planner script (home-route-preload-plugin.ts): fetches the
+   *  planner's code for the next page. Absent in development. */
+  readonly __vvPlannerPrefetch?: () => void;
+}

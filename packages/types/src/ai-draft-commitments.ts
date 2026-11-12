@@ -436,6 +436,13 @@ const PATTERNS: Readonly<Record<AIDraftCommitmentKind, readonly RegExp[]>> = {
     new RegExp(String.raw`\b(?:party|group|wedding|dinner|numbers?)\s+of\s+${COUNT}\s+(?:should|would|will|is|are)\s+(?:be\s+)?(?:no\s+problem|fine|easy|comfortable|manageable|ok|okay)\b|\bno\s+problem\s+(?:fitting|seating|accommodating)\b`, "giu"),
     new RegExp(String.raw`\bwe\s+(?:${MODAL}\s+)?(?:(?:easily|comfortably|happily|just\s+about)\s+)?(?:seat|fit|accommodate|hold|squeeze(?:\s+in)?|fit\s+in|get\s+in|cater\s+for|welcome|take)\s+${ABOUT}${COUNT}${NOT_TIME}${PEOPLE_AFTER}`, "giu"),
     new RegExp(String.raw`\byour\s+${COUNT}\s+(?:guests\s+)?will\s+(?:be\s+)?(?:very\s+|quite\s+|perfectly\s+)?(?:comfortable|fit)\b`, "giu"),
+    // Room enough, said with no number (live evaluation, 5 November 2026): "there is plenty of room in the
+    // Saloon for your dinner", "the room has lots of space for your guests", "ample room for dancing".
+    // Never time or choice: "plenty of time to decide".
+    /\b(?:plenty|lots|loads|heaps)\s+of\s+(?:room|space)\b|\bample\s+(?:room|space)\b/giu,
+    // The whole party fitted, said with no number: "we can fit everyone in the Grand Hall", "the Grand Hall
+    // will fit everybody", "we'll be able to accommodate everyone"; never "everyone's dietary needs".
+    /\b(?:we|i|it|they|(?:the\s+)?(?:[a-z]+\s+)?(?:hall|saloon|room|suite|venue|space))(?:\s+(?:can|could|will|would|should)|'ll|’ll|'d|’d)?\s+(?:all\s+)?(?:be\s+able\s+to\s+)?(?:easily\s+|comfortably\s+|certainly\s+|definitely\s+|happily\s+)?(?:fit|seat|hold|accommodate|take|squeeze(?:\s+in)?|host)\s+(?:in\s+)?(?:everyone|everybody|all\s+of\s+(?:you|them|your\s+guests))\b(?!'|’)/giu,
   ],
 };
 
