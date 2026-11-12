@@ -3,7 +3,7 @@ import { ApiError } from "../../api/client.js";
 import type { BatchObjectInput, Configuration, ObjectMetadata, PlacedObject } from "../../api/configurations.js";
 import { editorToPlacedItem, flushAutoSave, placedItemToEditor } from "../../components/editor/EditorBridge.js";
 import { persistAnonymousPlannerDraft, readAnonymousPlannerDraft } from "../../lib/anonymous-planner-draft.js";
-import { deriveEditorSaveStatus, leftBehindWords } from "../../lib/editor-save-status.js";
+import { deriveEditorSaveStatus, leftBehindWords, slateSaveState, type EditorSaveStatus, type SlateSaveKind } from "../../lib/editor-save-status.js";
 import { heldNoteIds, noteHeldOn, ownWordsOverHeldNotes, pieceNamedForRefusedSave, refusedOverHeldNote } from "../../lib/guest-plan-notes.js";
 import { NOTE_HELD_MESSAGE, OMITTED_MESSAGE, serveNotesAsTheApiDoes as serveTheApi, type PlanOnServer } from "../../test/guest-plan-api.js";
 import { useAuthStore } from "../auth-store.js";
@@ -109,6 +109,39 @@ function sentPiece(n: number, id: string): BatchObjectInput {
   const piece = saveSent(n).batch.find((candidate) => candidate.id === id);
   if (piece === undefined) throw new Error(`Save ${String(n)} did not send ${id}`);
   return piece;
+}
+
+/**
+ * What the planner says of saving, from the store as it stands: the status
+ * every surface but the slate derives (header, toolbox, phone bar, 2D view),
+ * and the slate's kind as signed-in staff see it (a guest's slate says Draft
+ * whatever happens). Ruling R1(b) on #388: neither says saved while a refused
+ * clear's notice stands (delta review at 33a8e0ad, T3 and S4).
+ */
+function saveStatusesNow(): { readonly status: EditorSaveStatus; readonly slate: SlateSaveKind } {
+  const s = store();
+  const refusedForHeldNote = refusedOverHeldNote(s.saveErrorCode) && s.saveConflict === null;
+  return {
+    status: deriveEditorSaveStatus({ ...s, refusedForHeldNote }),
+    slate: slateSaveState({
+      hasLayout: s.configId !== null, guest: false, isSaving: s.isSaving, isDirty: s.isDirty,
+      pendingChanges: s.pendingChanges, savingChanges: s.savingChanges, isOnline: s.isOnline, keptOnDevice: s.keptOnDevice,
+      saveError: s.saveError, refusedForHeldNote, refusedClear: s.noteClearsRefused.length > 0,
+      conflict: null, lockReason: s.lockReason, lastSavedAt: s.lastSavedAt,
+    }).kind,
+  };
+}
+
+/** A refused clear's notice stands: said, nothing left unsaved, and nothing says saved. Then the person dismisses it, and both say saved. */
+function refusedClearStandsUntilDismissed(sentence: string | RegExp, cleared: readonly string[]): void {
+  expect(store()).toMatchObject({ saveErrorCode: "NOTE_HELD", isDirty: false, noteClearsRefused: cleared });
+  if (typeof sentence === "string") expect(store().saveError).toBe(sentence);
+  else expect(store().saveError).toMatch(sentence);
+  expect(store().lastSavedAt).not.toBeNull();
+  expect(saveStatusesNow()).toEqual({ status: "unsaved", slate: "not-saved" });
+  store().dismissRefusedClears();
+  expect(store()).toMatchObject({ saveError: null, saveErrorCode: null, noteClearsRefused: [] });
+  expect(saveStatusesNow()).toEqual({ status: "saved", slate: "saved" });
 }
 
 function draftOnDevice(): ReturnType<typeof readAnonymousPlannerDraft> {
@@ -551,6 +584,13 @@ describe("a save refused for a held note, after keeping this version over a newe
     expect(store().objects.find((object) => object.id === A)?.positionX).toBe(3);
     expect(server.notes.get(B)).toBe(THEIRS);
     expect(noteHeldOn(store(), B)).toBe(true);
+
+    // The notice stands through the next save that lands; nothing says saved until the person dismisses it.
+    expect(saveStatusesNow()).toEqual({ status: "unsaved", slate: "not-saved" });
+    store().updateObject(A, { positionX: 5 });
+    expect(await store().saveToServer(false)).toBe(true);
+    refusedClearStandsUntilDismissed(/^A .+'s note was not removed: it was changed somewhere else, and that note cannot be shown here\.$/u, [B]);
+    expect(server.notes.get(B)).toBe(THEIRS);
   });
 
   it("goes on with a note nobody else touched, in one save", async () => {
@@ -1411,6 +1451,13 @@ describe("Keep mine refused for a note the maker rewrote, with other notes of th
     // Nothing is left unsaved: the refused clear is said, in its own sentence, not waiting to be sent (rulings R1(b), C3).
     expect(store()).toMatchObject({ saveErrorCode: "NOTE_HELD", saveConflict: null, isDirty: false, noteClearsRefused: [B] });
     expect(store().saveError).toMatch(/'s note was not removed: it was changed somewhere else, and that note cannot be shown here\.$/u);
+
+    // The notice stands through the next save that lands; nothing says saved until the person dismisses it.
+    expect(saveStatusesNow()).toEqual({ status: "unsaved", slate: "not-saved" });
+    store().updateObject(A, { positionX: 5 });
+    expect(await store().saveToServer(false)).toBe(true);
+    refusedClearStandsUntilDismissed(/'s note was not removed: it was changed somewhere else, and that note cannot be shown here\.$/u, [B]);
+    expect(server.notes.get(B)).toBe(THEIR_NOTE);
   });
 
   it("saves a change the person was making to their other note, and keeps that note theirs to go on with", async () => {
@@ -1575,16 +1622,16 @@ describe("Keep mine refused for notes the maker rewrote, among many notes of the
     ownNotesKept(tables, server, [6]);
     expect(store().objects.find((object) => object.id === A)?.positionX).toBe(3);
 
+    expect(saveStatusesNow()).toEqual({ status: "unsaved", slate: "not-saved" });
+
     // The note on Table 7 is not theirs to clear, so the next save leaves it to the server, as the piece now shows.
     const sentBefore = savesSent();
     expect(await store().saveToServer(false)).toBe(true);
     expect(sentPiece(sentBefore, tableId(6)).metadata?.notes).toBeUndefined();
     expect(sentPiece(sentBefore, tableId(6)).replacesNote).toBeUndefined();
     expect(server.notes.get(tableId(6))).toBe(THEIR_NOTE);
-    // That save does not put the refusal away: the person does (ruling R1(b) on #388).
-    expect(store()).toMatchObject({ saveErrorCode: "NOTE_HELD", saveError: TABLE_7_NOT_REMOVED, noteClearsRefused: [tableId(6)], isDirty: false });
-    store().dismissRefusedClears();
-    expect(store()).toMatchObject({ saveErrorCode: null, saveError: null, noteClearsRefused: [] });
+    // That save does not put the refusal away, and nothing says saved while it stands: the person puts it away (ruling R1(b) on #388).
+    refusedClearStandsUntilDismissed(TABLE_7_NOT_REMOVED, [tableId(6)]);
     expect(noteHeldOn(store(), tableId(6))).toBe(true);
   });
 

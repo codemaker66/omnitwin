@@ -88,6 +88,33 @@ describe("MobilePlannerTopBar activity", () => {
     expect(region.textContent).toBe("");
   });
 
+  // A refused clear of a note leaves nothing unsaved while its notice stands,
+  // and the saves made since land (ruling R1(b) on #388): the bar never says
+  // the layout saved until the person dismisses it (delta review at 33a8e0ad, T3).
+  it("never says the layout saved while a refused clear's notice stands, across a save that lands", () => {
+    const refusedClear = "Table 7's note was not removed: it was changed somewhere else, and that note cannot be shown here.";
+    const cleared = useEditorStore.getState().objects[0]?.id ?? "";
+    useEditorStore.setState({
+      isDirty: false, isSaving: false, lastSavedAt: new Date(Date.now() - 60_000),
+      saveError: refusedClear, saveErrorCode: "NOTE_HELD", noteClearsRefused: [cleared],
+    });
+    render(<MobilePlannerTopBar mode="3d" onModeChange={vi.fn()} />);
+    const status = screen.getByRole("status");
+    const seen = [status.textContent ?? ""];
+    const observer = new MutationObserver(() => { seen.push(status.textContent ?? ""); });
+    observer.observe(status, { subtree: true, childList: true, characterData: true });
+
+    // A save of other work goes out and lands; the clear's notice stands, as the store keeps it.
+    act(() => { useEditorStore.setState({ isSaving: true }); });
+    act(() => { useEditorStore.setState({ isSaving: false, lastSavedAt: new Date() }); });
+    observer.disconnect();
+    expect(seen.filter((text) => /saved/iu.test(text) && !/unsaved/iu.test(text))).toEqual([]);
+    expect(status.textContent).toBe("Unsaved changes");
+
+    act(() => { useEditorStore.getState().dismissRefusedClears(); });
+    expect(screen.getByRole("status").textContent).toBe("Layout saved");
+  });
+
   it.each(["ready", "blocked", "error"] as const)("stops send activity when preparation is %s", async outcome => {
     let resolveRequest: ((value: boolean) => void) | undefined;
     let rejectRequest: ((error: Error) => void) | undefined;

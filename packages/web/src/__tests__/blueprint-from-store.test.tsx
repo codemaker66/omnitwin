@@ -109,6 +109,31 @@ describe("BlueprintFromStore save status", () => {
     act(() => { useEditorStore.setState({ saveError: "Failed", saveErrorCode: "NETWORK_ERROR" }); });
     expect(chrome()).toContain("Save failed - retry");
   });
+
+  // A refused clear of a note leaves nothing unsaved while its notice stands,
+  // and the saves made since land (ruling R1(b) on #388): the 2D view never
+  // says the layout saved until the person dismisses it (delta review at 33a8e0ad, T3).
+  it("never says the layout saved while a refused clear's notice stands, across a save that lands", () => {
+    useEditorStore.getState().replaceObjectsFromScene([object("table-7", "round-table-6ft", null)]);
+    useEditorStore.setState({
+      configId: "saved-layout", isDirty: false, isSaving: false, lastSavedAt: new Date(Date.now() - 120_000),
+      saveError: "Table 7's note was not removed: it was changed somewhere else, and that note cannot be shown here.",
+      saveErrorCode: "NOTE_HELD", noteClearsRefused: ["table-7"],
+    });
+    const { container } = render(<BlueprintPage source="editor-store" />);
+    const chrome = (): string => container.querySelector(".bp-chrome")?.textContent ?? "";
+    const seen = [chrome()];
+    act(() => { useEditorStore.setState({ isSaving: true }); });
+    seen.push(chrome());
+    act(() => { useEditorStore.setState({ isSaving: false, lastSavedAt: new Date() }); });
+    seen.push(chrome());
+    expect(seen.filter((text) => /\bsaved\b/iu.test(text) && !/unsaved/iu.test(text))).toEqual([]);
+    expect(chrome()).toContain("Unsaved changes");
+
+    act(() => { useEditorStore.getState().dismissRefusedClears(); });
+    expect(chrome()).toContain("Saved");
+    expect(chrome()).not.toContain("Unsaved");
+  });
 });
 
 describe("BlueprintFromStore seating and guests", () => {
