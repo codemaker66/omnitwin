@@ -39,7 +39,8 @@ import {
 // ---------------------------------------------------------------------------
 // The staff rota, version 1 (T-637 slice B)
 //
-//   /venues/:venueId/rota/week          the week: people, shifts, warnings
+//   /venues/:venueId/rota/week          the week: people, shifts, warnings;
+//                                       view=floor reads it as the floor does
 //   /venues/:venueId/rota/shifts        add, change, remove a draft, cancel,
 //                                       keep a warning with a reason
 //   /venues/:venueId/rota/publish       publish the drafts that were shown
@@ -138,10 +139,14 @@ export async function rotaRoutes(server: FastifyInstance, opts: { db: Database }
     return stored === null ? null : resolveRotaTimeZone(stored);
   };
 
-  // GET /venues/:venueId/rota/week?start=YYYY-MM-DD — the week holding that
-  // day, on the venue's calendar; this week when no day is given. With
-  // view=floor an administrator reads only what the floor reads (the Day
-  // Board on a shared screen): published shifts and the names on them.
+  // GET /venues/:venueId/rota/week?start=YYYY-MM-DD[&view=floor] — the week
+  // holding that day, on the venue's calendar; this week when no day is
+  // given. With view=floor an administrator reads only what the floor reads
+  // (the Day Board on a shared screen): published and cancelled shifts, with
+  // their notes and who last changed them, and each person's name,
+  // employment type and skills (the active team, and anyone else on a shift
+  // that week); never records, leave, warnings, drafts, rooms or accounts.
+  // It never widens what a reader may see.
   server.get("/week", { preHandler: [authenticate] }, async (request, reply) => {
     reply.header("Cache-Control", "private, no-store");
     const params = VenueParam.safeParse(request.params);

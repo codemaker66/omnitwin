@@ -283,7 +283,7 @@ const PRIVACY: LegalDocument = {
             },
             {
               // The Day Board's supplier arrivals (T-692): @omnitwin/types
-              // supplier-arrivals.ts and api migration 0108. The wall screen
+              // supplier-arrivals.ts and api migration 0109. The wall screen
               // reads none of them (DayBoardPage).
               term: "Suppliers coming to an event",
               detail:

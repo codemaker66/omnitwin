@@ -82,6 +82,22 @@ describe("useRotaDay", () => {
     expect(getRotaWeekMock).toHaveBeenCalledTimes(2);
   });
 
+  it("tries a failed read again within the minute by itself, as the board says it does", async () => {
+    vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] });
+    vi.setSystemTime(Date.parse("2026-11-14T10:00:00Z"));
+    getRotaWeekMock.mockImplementation(() => Promise.reject(new Error("offline")));
+    const { result } = renderHook(() => useRotaDay(VENUE, SATURDAY, TZ, true));
+    const settle = async (): Promise<void> => { for (let tick = 0; tick < 5; tick += 1) await Promise.resolve(); };
+    await act(settle);
+    expect(result.current.status).toBe("error");
+    expect(getRotaWeekMock).toHaveBeenCalledTimes(1);
+    getRotaWeekMock.mockImplementation((_venue, start) => Promise.resolve(week(start ?? "", [shift(A)])));
+    await act(async () => { vi.advanceTimersByTime(60_000); await settle(); });
+    expect(getRotaWeekMock).toHaveBeenCalledTimes(2);
+    expect(result.current.status).toBe("ready");
+    expect(result.current.shifts.map((item) => item.id)).toEqual([A]);
+  });
+
   it("reads at once when asked to, whenever it last read", async () => {
     getRotaWeekMock.mockImplementation((_venue, start) => Promise.resolve(week(start ?? "", [shift(A)])));
     const { result } = renderHook(() => useRotaDay(VENUE, SATURDAY, TZ, true));

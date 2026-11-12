@@ -1,5 +1,6 @@
 import {
   ChangeFeedItemSchema,
+  FloorChangeSchema,
   HallkeeperAcknowledgementSchema,
   NotificationSchema,
   RecordEventPlanChangeInputSchema,
@@ -7,6 +8,7 @@ import {
   type EventPlanAudienceRole,
   type EventPlanNotificationSeverity,
   type EventPlanRiskLevel,
+  type FloorChange,
   type HallkeeperAcknowledgement,
   type Notification,
   type RecordEventPlanChangeInput,
@@ -61,6 +63,15 @@ export function serializeEventPlanChange(row: ChangeRow): ChangeFeedItem {
     requiresHallkeeperAcknowledgement: row.requiresHallkeeperAcknowledgement,
     createdAt: toIso(row.createdAt),
   });
+}
+
+/** A change as the floor reads it: for a Diary move, also where it put the
+ *  booking (the place is whole or absent, as the table's CHECK keeps it). */
+export function serializeFloorChange(row: ChangeRow): FloorChange {
+  const movedTo = row.moveToSpaceId !== null && row.moveToStartsAt !== null && row.moveToEndsAt !== null
+    ? { spaceId: row.moveToSpaceId, startsAt: toIso(row.moveToStartsAt), endsAt: toIso(row.moveToEndsAt) }
+    : null;
+  return FloorChangeSchema.parse({ ...serializeEventPlanChange(row), movedTo });
 }
 
 export function serializeNotification(row: NotificationRow, readAt: Date | null): Notification {
@@ -119,6 +130,15 @@ export async function recordEventPlanChange(
       audienceRoles,
       riskLevel: parsed.riskLevel,
       requiresHallkeeperAcknowledgement: parsed.requiresHallkeeperAcknowledgement,
+      ...(parsed.bookingMove === undefined ? {} : {
+        moveKnownSpaceId: parsed.bookingMove.known.spaceId,
+        moveKnownStartsAt: parsed.bookingMove.known.startsAt,
+        moveKnownEndsAt: parsed.bookingMove.known.endsAt,
+        moveToSpaceId: parsed.bookingMove.to.spaceId,
+        moveToStartsAt: parsed.bookingMove.to.startsAt,
+        moveToEndsAt: parsed.bookingMove.to.endsAt,
+        moveChainId: parsed.bookingMove.chainId,
+      }),
     }).returning();
 
     if (change === undefined) {

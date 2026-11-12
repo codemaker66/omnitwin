@@ -5,14 +5,13 @@ import {
   describeObservationKind,
   nextObservationKinds,
   occasionLabel,
-  isBookingMoveTitle,
   type EventAwaitingAcknowledgement,
   type SupplierArrival,
   type HallkeeperSheetSummary,
   type ObservationKind,
 } from "@omnitwin/types";
 import { getSheetSummary } from "../../api/hallkeeper-summary.js";
-import { formatWallDay, formatWallTime } from "../diary/lib/board-time.js";
+import { formatWallTime } from "../diary/lib/board-time.js";
 import { ActivityIndicator, ActivityStatus } from "../../components/shared/Activity.js";
 import { roomPhoto } from "../../components/dashboard/enquiries/enquiry-room-photo.js";
 import { isQueuedObservation, type RecordOutcome, type SlotObservationsApi } from "./lib/use-slot-observations.js";
@@ -20,12 +19,13 @@ import { sheetProgressLine } from "./lib/day-board-sheet.js";
 import { useSlotSheet, type SlotSheetResult } from "./lib/use-slot-sheet.js";
 import type { DayBoardSlot } from "./lib/day-board-state.js";
 import type { SlotRequestsComponent } from "./lib/slot-requests-contract.js";
-import type { TurnRoundCrew } from "./lib/turn-round-crew.js";
+import type { CrewOnPanel } from "./lib/turn-round-crew.js";
 import { StateIcon } from "./DayBoardRooms.js";
 import { ChangeoverSection } from "./DayBoardChangeover.js";
 import { SuppliersSection } from "./DayBoardSuppliers.js";
 import type { SupplierArrivalsApi } from "./lib/use-supplier-arrivals.js";
 import type { DayBoundary } from "./lib/board-day.js";
+import { ChangeList, changeWhen, gotItLabel } from "./DayBoardChanges.js";
 
 // ---------------------------------------------------------------------------
 // The open slot, on the forest decision panel the desks use: the room's
@@ -101,9 +101,17 @@ function SlotSheetLink({ result, roomName, timeZone }: {
   readonly roomName: string;
   readonly timeZone: string;
 }): ReactElement {
+  // Every state below is this one box, so Try again, which leaves the page
+  // while the link is checked again, hands focus here rather than to the page.
+  const box = useRef<HTMLDivElement>(null);
+  const retry = (): void => {
+    box.current?.focus();
+    result.retry();
+  };
+
   if (result.status === "loading") {
     return (
-      <div className="dayboard-slot-sheet">
+      <div className="dayboard-slot-sheet" ref={box} tabIndex={-1}>
         <ActivityStatus>Finding this room’s setup sheet…</ActivityStatus>
       </div>
     );
@@ -111,16 +119,16 @@ function SlotSheetLink({ result, roomName, timeZone }: {
 
   if (result.status === "error" || result.state === null) {
     return (
-      <div className="dayboard-slot-sheet">
+      <div className="dayboard-slot-sheet" ref={box} tabIndex={-1}>
         <p className="dayboard-slot-sheet-note">{result.error ?? "The setup sheet link could not be checked."}</p>
-        <button type="button" className="dayboard-seen-button" onClick={result.retry}>Try again</button>
+        <button type="button" className="dayboard-seen-button" onClick={retry} aria-label="Try again to check the setup sheet link">Try again</button>
       </div>
     );
   }
 
   const state = result.state;
   return (
-    <div className="dayboard-slot-sheet">
+    <div className="dayboard-slot-sheet" ref={box} tabIndex={-1}>
       {state.kind === "one" && (
         <>
           <Link className="dayboard-open-sheet" to={state.href}>
@@ -163,21 +171,17 @@ function seenStatus(kind: ObservationKind, outcome: RecordOutcome | "sending" | 
   return `Couldn’t record ${what.toLowerCase()}: ${outcome.message}`;
 }
 
-/** When a change was made: the time today, the day and time before that. */
-function changeWhen(atMs: number, nowMs: number, timeZone: string): string {
-  const time = formatWallTime(atMs, timeZone);
-  return formatWallDay(atMs, timeZone) === formatWallDay(nowMs, timeZone) ? time : `${formatWallDay(atMs, timeZone)}, ${time}`;
-}
-
 /** Who last acknowledged a change here, while it is still today's news. */
 const SEEN_BY_FOR_MS = 12 * 60 * 60 * 1000;
 
 /**
- * What changed on the slot's event since the floor last looked: each change
- * with its words before and after, and one "Got it" for all of them, which
- * puts them in hand for the whole floor.
+ * What changed on the slot since the floor last looked: each change with its
+ * words before and after, and one "Got it" for all of them, which puts them in
+ * hand for the whole floor. With nothing waiting, who last acknowledged a
+ * change to the event, said of the event: the change may have been another
+ * room's.
  */
-function WhatChanged({ changes, timeZone, nowMs, onAcknowledge, sending, failure, unread }: {
+function WhatChanged({ changes, timeZone, nowMs, onAcknowledge, sending, note, unread }: {
   readonly changes: EventAwaitingAcknowledgement;
   /** The last read of what changed failed: what shows is as last read. */
   readonly unread: boolean;
@@ -186,7 +190,8 @@ function WhatChanged({ changes, timeZone, nowMs, onAcknowledge, sending, failure
   /** Null where nothing may be acknowledged (the wall, a role that only reads). */
   readonly onAcknowledge: (() => void) | null;
   readonly sending: boolean;
-  readonly failure: string | null;
+  /** What the last Got it here came to, when that needs saying. */
+  readonly note: string | null;
 }): ReactElement | null {
   const waiting = changes.changes;
   const seenRef = useRef<HTMLParagraphElement>(null);
@@ -208,36 +213,14 @@ function WhatChanged({ changes, timeZone, nowMs, onAcknowledge, sending, failure
     if (last === null || nowMs - Date.parse(last.at) > SEEN_BY_FOR_MS) return unreadLine;
     return (
       <p ref={seenRef} className="dayboard-changes-seen" tabIndex={-1}>
-        Changes seen by {last.by}, {changeWhen(Date.parse(last.at), nowMs, timeZone)}.
+        {last.by} last acknowledged a change to this event, {changeWhen(Date.parse(last.at), nowMs, timeZone)}.
       </p>
     );
   }
   return (
     <section className="dayboard-changes dayboard-detail-section" aria-label="What changed">
       <h3 className="dayboard-detail-heading">What changed</h3>
-      <ol className="dayboard-changes-list">
-        {waiting.map((change) => {
-          const fromTo = change.beforeSummary !== null && change.afterSummary !== null && change.beforeSummary !== change.afterSummary;
-          // Said once: a Diary move's Was and Now carry its room and exact
-          // hours, so its sentence would only repeat them. Every other change
-          // keeps its sentence, whatever its Was and Now happen to hold.
-          const saysMore = !fromTo || !isBookingMoveTitle(change.title);
-          return (
-            <li key={change.id} className="dayboard-change">
-              <p className="dayboard-change-title">
-                {change.title}<span className="dayboard-change-when"> · {changeWhen(Date.parse(change.createdAt), nowMs, timeZone)}</span>
-              </p>
-              {saysMore && <p className="dayboard-change-summary">{change.summary}</p>}
-              {fromTo && (
-                <dl className="dayboard-change-fromto">
-                  <div><dt>Was</dt><dd>{change.beforeSummary}</dd></div>
-                  <div><dt>Now</dt><dd>{change.afterSummary}</dd></div>
-                </dl>
-              )}
-            </li>
-          );
-        })}
-      </ol>
+      <ChangeList changes={waiting} timeZone={timeZone} nowMs={nowMs} />
       {onAcknowledge !== null && (
         // Never disabled: a disabled button drops the keyboard's place to the
         // page, and on a failed send nothing would bring it back.
@@ -249,19 +232,17 @@ function WhatChanged({ changes, timeZone, nowMs, onAcknowledge, sending, failure
           onClick={() => { if (!sending) onAcknowledge(); }}
         >
           {sending && <ActivityIndicator size={14} />}
-          {waiting.length === 1 ? "Got it" : `Got all ${String(waiting.length)}`}
+          {gotItLabel(waiting.length)}
         </button>
       )}
-      <p className="dayboard-changes-status" aria-live="polite">
-        {failure === null ? "" : `Couldn’t send that: ${failure}. Try again.`}
-      </p>
+      <p className="dayboard-changes-status" aria-live="polite">{note ?? ""}</p>
       {unreadLine}
     </section>
   );
 }
 
 /** The open slot: its sheet, its event, its phases and its requests. */
-export function SlotDetail({ slot, room, venueSlug, timeZone, slotRequests: SlotRequests, observations, onClose, closeLabel, changes = null, nowMs = Date.now(), onAcknowledge = null, acknowledging = false, acknowledgeFailure = null, changesUnread = false, previous = null, crew = null, crewNote = null, suppliers = null }: {
+export function SlotDetail({ slot, room, venueSlug, timeZone, slotRequests: SlotRequests, observations, onClose, closeLabel, changes = null, nowMs = Date.now(), onAcknowledge = null, acknowledging = false, acknowledgeNote = null, changesUnread = false, previous = null, crew = null, crewNote = null, suppliers = null }: {
   readonly slot: DayBoardSlot;
   readonly room: { readonly id: string; readonly name: string; readonly slug: string };
   readonly venueSlug: string | null;
@@ -272,19 +253,22 @@ export function SlotDetail({ slot, room, venueSlug, timeZone, slotRequests: Slot
   readonly onClose: () => void;
   /** What closing does, in words: back to the requests, or back to the room. */
   readonly closeLabel: string;
-  /** What changed on the slot's event since the floor last looked. */
+  /** What changed on the slot since the floor last looked, and who last
+   *  acknowledged a change to its event. */
   readonly changes?: EventAwaitingAcknowledgement | null;
   readonly nowMs?: number;
   /** Acknowledge the waiting changes for the floor; null where none may. */
   readonly onAcknowledge?: (() => void) | null;
+  /** This slot's Got it is being sent. */
   readonly acknowledging?: boolean;
-  readonly acknowledgeFailure?: string | null;
+  /** What this slot's last Got it came to, when that needs saying. */
+  readonly acknowledgeNote?: string | null;
   /** The last read of what changed failed. */
   readonly changesUnread?: boolean;
   /** The booking this one's turn-round runs from, when there is one. */
   readonly previous?: DayBoardSlot | null;
-  /** Who is on setup for that turn-round, when the rota plans setup. */
-  readonly crew?: TurnRoundCrew | null;
+  /** Who is on setup for that turn-round, when the rota plans setup; or that the rota is being read, or could not be. */
+  readonly crew?: CrewOnPanel | null;
   /** When the crew was read, if the rota could not be read since. */
   readonly crewNote?: string | null;
   /** Who comes to the building for this booking; null on the wall. */
@@ -391,7 +375,7 @@ export function SlotDetail({ slot, room, venueSlug, timeZone, slotRequests: Slot
           nowMs={nowMs}
           onAcknowledge={onAcknowledge}
           sending={acknowledging}
-          failure={acknowledgeFailure}
+          note={acknowledgeNote}
           unread={changesUnread}
         />
       ) : changesUnread && slot.eventId !== null ? (
