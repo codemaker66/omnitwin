@@ -613,10 +613,11 @@ export function RoomDossier({
                 ))}
               </dl>
               <p className="vv-twin-dossier-footnote">
-                {/* The remark is its own element so the provenance after it
-                    stays the venue-truth constant, verbatim; the space between
-                    them is DOM text for the same reason as the stat note's
-                    separator above. */}
+                {/* The remark is its own element, set on a line of its own by
+                    room-dossier.css, so the provenance after it stays the
+                    venue-truth constant, verbatim, and wraps as it does in a
+                    room with no remark. The space between them is DOM text for
+                    the same reason as the stat note's separator above. */}
                 {remark !== undefined && (
                   <>
                     <span className="vv-twin-dossier-footnote-remark">{remark}</span>{" "}

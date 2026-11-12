@@ -276,9 +276,15 @@
   font-size: 10.5px;
   line-height: 1.45;
   color: var(--ink-3, #b9aa8b);
-  /* The footnote leads with a room's remark (the Grand Hall's dome) before the
-   * provenance; no word is left alone on its last line. */
-  text-wrap: pretty;
+}
+
+/* A room's remark (the Grand Hall's dome) leads the footnote on a line of its
+ * own, straight under the Ceiling stat it belongs to. Run in with the
+ * provenance, it pushed that sentence's breaks along and split its date across
+ * two lines ("2026-" / "07-09") in the phone card; on its own line the
+ * provenance wraps exactly as it does in a room with no remark. */
+.vv-twin-dossier-footnote-remark {
+  display: block;
 }
 
 .vv-twin-dossier-action {
