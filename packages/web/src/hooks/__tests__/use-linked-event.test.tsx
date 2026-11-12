@@ -138,6 +138,37 @@ describe("useLinkedEvent", () => {
       await waitFor(() => { expect(result.current.status).toBe("loaded"); });
       expect(result.current.eventName).toBe("Wedding, 15 March 2027");
     });
+
+    // The venue read is a second wait after the graph arrives, so the request
+    // is checked again after it (B2, C4). Without that check, this event's
+    // venue answer landing after the planner moved to another event would
+    // replace the newer event's answer, and the hook would stay on loading.
+    it("keeps the newer event when its venue read lands after the address moved to another event", async () => {
+      const autumn: EventPhaseGraph = { ...fakeGraph, event: { ...fakeGraph.event, id: "99999999-9999-4999-8999-999999999999", name: "Autumn Gala" } };
+      const venueRead = deferred<VenueDetail>();
+      eventsApi.getEventPhaseGraph.mockResolvedValueOnce(unnamed).mockResolvedValueOnce(autumn);
+      spacesApi.getVenue.mockImplementationOnce(() => venueRead.promise);
+      const { result } = renderHook(() => ({ linked: useLinkedEvent(), navigate: useNavigate() }), {
+        wrapper: wrapperFor(`/plan/cfg-1?eventId=${fakeGraph.event.id}`),
+      });
+      // The unnamed event's graph is in, and its venue is being read.
+      await waitFor(() => { expect(spacesApi.getVenue).toHaveBeenCalledWith(fakeGraph.event.venueId); });
+      expect(result.current.linked.status).toBe("loading");
+
+      act(() => { void result.current.navigate(`/plan/cfg-1?eventId=${autumn.event.id}`); });
+      await waitFor(() => { expect(result.current.linked.status).toBe("loaded"); });
+      expect(result.current.linked.eventName).toBe("Autumn Gala");
+
+      // Now the first event's venue answers; a timer tick runs every await it releases.
+      await act(async () => {
+        venueRead.resolve(venueIn("America/New_York"));
+        await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
+      });
+      expect(result.current.linked.status).toBe("loaded");
+      expect(result.current.linked.graph?.event.id).toBe(autumn.event.id);
+      expect(result.current.linked.eventName).toBe("Autumn Gala");
+      expect(spacesApi.getVenue).toHaveBeenCalledTimes(1);
+    });
   });
 
   it("reports 'error' and no event name when the fetch fails", async () => {
