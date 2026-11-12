@@ -142,14 +142,19 @@ export function Slab({ slot, variant, nowMs, selected, onOpen, wall, frozen }: {
   // facts seen, no other rooms named; the ring in its short words on what
   // it shows, so a request nobody has still breathes there (D3). A slot
   // named in passing on a line (Earlier, Later) says its turn-round only
-  // when that is short, and why it is at risk, so a short changeover is
-  // never only the red rule on the bar, which nothing reads aloud.
+  // when that is short, so a short changeover is never only the red rule
+  // on the bar, which nothing reads aloud.
   const shortGap = slot.gapBefore?.short === true;
   const gap = wall || (variant === "line" && !shortGap) ? null : turnRound(slot, nowMs);
-  const shownWhy = variant === "line" && !shortGap && slot.exception === null ? null : why;
-  // A screen reader hears the slot by its label, so the label carries every
-  // word the slot shows.
-  const label = `${slot.title}, ${slot.timeRange}, ${slot.countdown}${words === null ? "" : `, ${words}`}${gap === null ? "" : `, ${gap}`}${shownWhy === null ? "" : `, ${shownWhy}`}${seen === null ? "" : `, ${seen}`}`;
+  // On a line it says why only when it is at risk. A turnaround warning is
+  // the Diary's advice on a pair, copied to both of its bookings and kept
+  // after they end, so on a line it would speak of the wrong changeover, or
+  // one already over; the opened slot gives it in full.
+  const shownWhy = variant === "line" ? slot.exceptionDetail : why;
+  // A screen reader hears the slot by its label, which stands in for
+  // everything inside it, so the label says every word the slot shows.
+  const spokenLinked = linked !== null && !wall ? `, ${linked}` : "";
+  const label = `${slot.title}, ${slotFacts(slot)}${spokenLinked}, ${slot.countdown}${words === null ? "" : `, ${words}`}${gap === null ? "" : `, ${gap}`}${shownWhy === null ? "" : `, ${shownWhy}`}${seen === null ? "" : `, ${seen}`}`;
   const shownSeen = wall ? null : seen;
   const shownWords = wall ? wallRingWords(slot, nowMs) : words;
   const ringed = ring !== null && shownWords !== null
@@ -328,9 +333,14 @@ export function RoomRow({ day, view, plaque, nowMs, venueSlug, selectedId, onOpe
       frozen={frozen}
     />
   );
-  // The wall reads the room, what it is doing and what is next (D11).
+  // The wall reads the room, what it is doing and what is next (D11), with
+  // one line after the lead so six rooms fit a 720-line screen: the first
+  // thing also under way when there is one, else what comes next. The
+  // office and the phone show every line.
   const earlier = wall ? [] : day.earlier;
   const later = wall ? [] : day.later;
+  const alsoNow = wall ? day.alsoNow.slice(0, 1) : day.alsoNow;
+  const next = wall && day.alsoNow.length > 0 ? null : day.next;
   return (
     <li className="dayboard-room-item">
       <section className="dayboard-room" aria-label={day.room.name} data-room={day.room.id} data-tone={day.tone}>
@@ -362,18 +372,18 @@ export function RoomRow({ day, view, plaque, nowMs, venueSlug, selectedId, onOpe
           )}
           {day.lead !== null && slab(day.lead, "lead")}
           {day.lead === null && day.slots.length > 0 && <p className="dayboard-line is-free">Done for the day.</p>}
-          {/* What else the room is doing now (a talk inside a running
-              exhibition), on the wall too: it is what the room is doing. */}
-          {day.alsoNow.length > 0 && (
+          {/* What else the room is doing now: a talk inside a running
+              exhibition, a second option clearing down. */}
+          {alsoNow.length > 0 && (
             <div className="dayboard-line is-next is-also">
               <span className="dayboard-line-label">Also now</span>
-              <span className="dayboard-line-items">{day.alsoNow.map((slot) => slab(slot, "next"))}</span>
+              <span className="dayboard-line-items">{alsoNow.map((slot) => slab(slot, "next"))}</span>
             </div>
           )}
-          {day.next !== null && (
+          {next !== null && (
             <div className="dayboard-line is-next">
               <span className="dayboard-line-label">Next</span>
-              <span className="dayboard-line-items">{slab(day.next, "next")}</span>
+              <span className="dayboard-line-items">{slab(next, "next")}</span>
             </div>
           )}
           {later.length > 0 && (

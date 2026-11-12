@@ -60,30 +60,53 @@ function rules(body: string): readonly Rule[] {
   return found;
 }
 
-/** The class an element selector ends on: its last compound's last class. */
-function targetClass(selector: string): string | null {
+/** What an element selector hides: the last class of its last compound, or
+ *  the whole selector when that compound names no class (`> *`, a tag, an
+ *  attribute), so no hiding rule can slip past the lists below unnamed. */
+function hiddenTarget(selector: string): string {
   const compound = selector.split(/\s+|>|\+|~/u).filter((part) => part !== "").pop() ?? "";
   const classes = [...compound.matchAll(/\.([\w-]+)/gu)].map((match) => match[1] ?? "");
-  return classes.pop() ?? null;
+  return classes.pop() ?? selector;
+}
+
+/** The declarations a selector ends with in a block, later rules winning. */
+function cascaded(block: readonly Rule[], selector: string): ReadonlyMap<string, string> {
+  const merged = new Map<string, string>();
+  for (const rule of block) {
+    if (!rule.selectors.includes(selector)) continue;
+    for (const [property, value] of rule.declarations) merged.set(property, value);
+  }
+  return merged;
+}
+
+function hides(rule: Rule): boolean {
+  return rule.declarations.get("display")?.startsWith("none") === true
+    || rule.declarations.get("visibility")?.startsWith("hidden") === true;
 }
 
 describe("the Day Board's stylesheet", () => {
   it("keeps this hallkeeper's next action at the top of a phone while the rooms scroll under it", () => {
     const phone = atBlocks("@media (max-width: 760px)").flatMap(rules);
-    const sticky = phone.find((rule) => rule.selectors.includes(".dayboard[data-layout=\"phone\"] .dayboard-next"));
-    expect(sticky?.declarations.get("position")).toBe("sticky");
-    expect(sticky?.declarations.get("top")).toBe("0");
+    const sticky = cascaded(phone, ".dayboard[data-layout=\"phone\"] .dayboard-next");
+    expect(sticky.get("position")).toBe("sticky");
+    expect(sticky.get("top")).toBe("0");
+    // Nothing elsewhere in the sheet takes it back (rules() reads every
+    // rule, inside a media block or not).
+    expect(rules(CSS).filter((rule) => rule.selectors.includes(".dayboard[data-layout=\"phone\"] .dayboard-next"))).toHaveLength(1);
+  });
+
+  it("gives the wall's height to its rooms, not to a note on counts that filter nothing", () => {
+    expect(cascaded(rules(CSS), ".dayboard[data-register=\"wall\"] .dayboard-stage-note").get("display")).toBe("none");
   });
 
   it("prints every room and every slot in words, hiding only the screen's chrome", () => {
     const print = atBlocks("@media print").flatMap(rules);
     const hidden = new Set(print
-      .filter((rule) => rule.declarations.get("display")?.startsWith("none") === true)
+      .filter(hides)
       .flatMap((rule) => rule.selectors)
       // A pseudo-element is a decoration, not a word.
       .filter((selector) => !selector.includes("::"))
-      .map(targetClass)
-      .filter((name): name is string => name !== null));
+      .map(hiddenTarget));
     const operational = [
       "dayboard-rooms", "dayboard-room-item", "dayboard-room", "dayboard-room-main", "dayboard-room-head",
       "dayboard-room-name", "dayboard-room-count", "dayboard-slab", "dayboard-slab-head", "dayboard-slab-title",

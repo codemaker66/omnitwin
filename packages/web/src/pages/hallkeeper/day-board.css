@@ -1948,6 +1948,9 @@ button.dayboard-rail-item:disabled { cursor: default; }
 }
 .dayboard[data-register="wall"] .dayboard-plane:only-child { grid-column: 1 / -1; }
 .dayboard[data-register="wall"] .dayboard-stage { min-height: 0; padding-top: 2px; padding-bottom: 2px; }
+/* The wall's counts filter nothing, so they never contradict a filter: the
+   note stays in their spoken words and gives its height to the rooms. */
+.dayboard[data-register="wall"] .dayboard-stage-note { display: none; }
 .dayboard[data-register="wall"] .dayboard-stage b { font-size: clamp(28px, 4vh, 46px); }
 .dayboard[data-register="wall"] .dayboard-stage > span { font-size: clamp(13px, 1.4vh, 16px); }
 

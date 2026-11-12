@@ -338,10 +338,13 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
   const nowMs = useBoardClock(boundaryMs);
   const corrected = useClockCorrected();
 
-  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [chosenDate, setSelectedDate] = useState<string | null>(null);
   const [roomId, setRoomIdState] = useState("");
   const [focus, setFocusState] = useState<BoardFocus>("all");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // The wall shows today, whatever day this screen had stepped to before it
+  // became the wall: it has no day controls to come back with.
+  const selectedDate = wall ? null : chosenDate;
   const browsingToday = selectedDate === null;
   // A count on the plane and a room from the list are two ways to narrow the
   // rooms; choosing one lets the other go, so the list never comes up empty
@@ -649,7 +652,7 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
           plaque={plaque}
           nowMs={nowMs}
           venueSlug={venue.slug}
-          selectedId={selectedId}
+          selectedId={wall ? null : selectedId}
           onOpen={openSlot}
           wall={wall}
           frozen={frozen}
