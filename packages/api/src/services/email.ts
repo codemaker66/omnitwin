@@ -21,7 +21,8 @@ import { scrubErrorMessage } from "../observability/redact.js";
 //      provider again. The hold-reminder pass replays by design. A send
 //      may also keep a limit (SendLimit): it is decided under the limit's
 //      advisory lock in the transaction that writes its row, and one the
-//      limit refuses is recorded as "suppressed" and never sent.
+//      limit refuses is recorded as "suppressed" and never sent. A replay
+//      that reclaims a failed row is decided under the limit again.
 //
 //   2. Bounded retry with exponential backoff. Network errors, 5xx and
 //      429 responses retry (250, 500, 1000, 2000 ms). 4xx responses are
@@ -84,8 +85,9 @@ export type EmailTransaction = Parameters<Parameters<Database["transaction"]>[0]
  * transaction first takes the advisory lock on `lockKey`'s hash, so two sends
  * under one key are decided one after the other and the second sees the
  * first's row; `allows` then reads, under that lock, whether this one may go.
- * One it refuses is recorded as "suppressed" and handed to no provider. The
- * key is hashed, never stored or logged; it holds nothing the row does not.
+ * One it refuses is recorded as "suppressed" and handed to no provider. A
+ * replay that takes over a send that failed is decided again, the same way.
+ * The key is hashed, never stored or logged; it holds nothing the row does not.
  */
 export interface SendLimit {
   readonly lockKey: string;
@@ -265,15 +267,13 @@ export async function sendEmail(
       }, "email.audit_insert_failed");
       return false;
     }
-    // Sent, still in flight or recorded in dev mode: already handled. A send
-    // that failed is the one state a replay may take over, and only one
-    // replay can: the status is part of the UPDATE's own WHERE.
-    let reclaimed: readonly { id: string }[];
+    // Sent, still in flight, held back by its limit or recorded in dev mode:
+    // already handled. A send that failed is the one state a replay may take
+    // over, and only one replay can: the status is part of the UPDATE's own
+    // WHERE. Under a limit the replay is decided again (reclaimFailedSend).
+    let reclaimed: RecordedAs | null;
     try {
-      reclaimed = await db.update(emailSends)
-        .set({ status: "pending", recipient: payload.to, subject: payload.subject, lastError: null, updatedAt: new Date() })
-        .where(and(eq(emailSends.idempotencyKey, idempotencyKey), eq(emailSends.status, "failed")))
-        .returning({ id: emailSends.id });
+      reclaimed = await reclaimFailedSend(db, payload, idempotencyKey, options.limit);
     } catch (reclaimError) {
       logger.error({
         event: "email.audit_insert_failed",
@@ -282,17 +282,20 @@ export async function sendEmail(
       }, "email.audit_insert_failed");
       return false;
     }
-    if (reclaimed.length === 0) {
+    if (reclaimed === null) {
       logger.info({
         event: "email.dedup_skip",
         idempotencyKey,
       }, "email.dedup_skip");
       return true;
     }
-    logger.info({
-      event: "email.retry_after_failure",
-      idempotencyKey,
-    }, "email.retry_after_failure");
+    recorded = reclaimed;
+    if (reclaimed === "pending") {
+      logger.info({
+        event: "email.retry_after_failure",
+        idempotencyKey,
+      }, "email.retry_after_failure");
+    }
   }
   if (recorded === "suppressed") {
     logger.info({
@@ -432,10 +435,41 @@ async function recordSend(
     return "pending";
   }
   return db.transaction(async (tx) => {
-    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${limit.lockKey}, 0))`);
-    const status: RecordedAs = await limit.allows(tx) ? "pending" : "suppressed";
+    const status = await decidedUnder(limit, tx);
     await tx.insert(emailSends).values(row(status));
     return status;
+  });
+}
+
+/** Whether a send may go, decided under its limit's lock: "pending" when it
+ *  may, "suppressed" when the limit refuses it. The lock lasts until the
+ *  transaction ends, so the row written next is seen by the next to ask. */
+async function decidedUnder(limit: SendLimit, tx: EmailTransaction): Promise<RecordedAs> {
+  await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${limit.lockKey}, 0))`);
+  return await limit.allows(tx) ? "pending" : "suppressed";
+}
+
+/** Takes over a send that failed, for a replay of its key: the row becomes
+ *  "pending" again, or, when the send keeps a limit that now refuses it,
+ *  "suppressed" (decided under the limit's lock, as a first send is). Null
+ *  when the row is in any other state: another attempt owns it. */
+async function reclaimFailedSend(
+  db: Database,
+  payload: EmailPayload,
+  idempotencyKey: string,
+  limit: SendLimit | undefined,
+): Promise<RecordedAs | null> {
+  const failed = and(eq(emailSends.idempotencyKey, idempotencyKey), eq(emailSends.status, "failed"));
+  const taken = (status: RecordedAs): Partial<typeof emailSends.$inferInsert> =>
+    ({ status, recipient: payload.to, subject: payload.subject, lastError: null, updatedAt: new Date() });
+  if (limit === undefined) {
+    const rows = await db.update(emailSends).set(taken("pending")).where(failed).returning({ id: emailSends.id });
+    return rows.length === 0 ? null : "pending";
+  }
+  return db.transaction(async (tx) => {
+    const status = await decidedUnder(limit, tx);
+    const rows = await tx.update(emailSends).set(taken(status)).where(failed).returning({ id: emailSends.id });
+    return rows.length === 0 ? null : status;
   });
 }
 

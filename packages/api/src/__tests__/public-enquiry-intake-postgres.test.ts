@@ -7,7 +7,7 @@ import * as schema from "../db/schema.js";
 import { publicConfigRoutes } from "../routes/public-configs.js";
 import { publicEnquiryRoutes } from "../routes/public-enquiries.js";
 import { notifyCommercialTeam } from "../services/commercial-notifications.js";
-import { __resetResendClientForTests } from "../services/email.js";
+import { __resetResendClientForTests, sendEmail, type SendLimit } from "../services/email.js";
 
 // ---------------------------------------------------------------------------
 // What the public enquiry route takes from anyone, and what it sends back
@@ -491,6 +491,33 @@ describe.skipIf(target === undefined)("the public enquiry route on the migrated 
       expect([lapsed, recent, held, undelivered, elsewhere].map(handedCount)).toEqual([1, 0, 1, 1, 1]);
     } finally {
       await pool.query("DELETE FROM email_sends WHERE idempotency_key = ANY($1::text[])", [[...earlier, otherEmail].map((row) => row.key)]);
+    }
+  });
+
+  // Review of #414, X7: a send that failed may be taken over by a replay of
+  // its key. Under a limit the replay is decided again, as a first send is.
+  it("decides a replay of a failed send under its limit again", async () => {
+    const db = drizzle(pool, { schema });
+    const to = `test-only-replay-${run}@example.test`;
+    const heldBack = `test-only-replay-held-${randomUUID()}`;
+    const letGo = `test-only-replay-let-${randomUUID()}`;
+    const limit = (allowed: boolean): SendLimit => ({ lockKey: `test-only-replay:${to}`, allows: () => Promise.resolve(allowed) });
+    const payload = { to, subject: "TEST ONLY replayed send", html: "<p>TEST ONLY</p>" };
+    try {
+      await pool.query(
+        `INSERT INTO email_sends (idempotency_key, recipient, subject, status)
+         VALUES ($1, $3, 'TEST ONLY failed send', 'failed'), ($2, $3, 'TEST ONLY failed send', 'failed')`,
+        [heldBack, letGo, to],
+      );
+      expect(await sendEmail(payload, { db, idempotencyKey: heldBack, limit: limit(false) })).toBe(true);
+      expect(await sendEmail(payload, { db, idempotencyKey: letGo, limit: limit(true) })).toBe(true);
+      const { rows } = await pool.query<{ idempotency_key: string; status: string }>(
+        "SELECT idempotency_key, status FROM email_sends WHERE idempotency_key = ANY($1::text[])", [[heldBack, letGo]],
+      );
+      expect(Object.fromEntries(rows.map((row) => [row.idempotency_key, row.status]))).toEqual({ [heldBack]: "suppressed", [letGo]: "sent" });
+      expect(handedCount(to)).toBe(1);
+    } finally {
+      await pool.query("DELETE FROM email_sends WHERE idempotency_key = ANY($1::text[])", [[heldBack, letGo]]);
     }
   });
 
