@@ -222,14 +222,18 @@ describe("a fill over rounds that hold a note this browser is not shown", () => 
     expect(tables.every((table) => Math.hypot(table.x - table6.x, table.z - table6.z) > 2)).toBe(true);
   });
 
-  it("keeps the round for a note held on one of its chairs", () => {
+  it("keeps the round for a note held on one of its chairs, and says the chair is at that table", () => {
     const placed = rounds(6);
     const table6 = placed.find((piece) => piece.label === "Table 6");
     const chair = placed.find((piece) => piece.groupId === table6?.groupId && piece.id !== table6?.id);
     if (table6 === undefined || chair === undefined) throw new Error("no Table 6");
     const fill = planOver(placed, 30, (id) => id === chair.id);
     expect(fill.refillIds.has(table6.id)).toBe(false);
-    expect(fill.keptForNotes).toEqual([{ label: "Table 6", noun: "round" }]);
+    expect(fill.keptForNotes).toEqual([{ label: "a chair at Table 6", noun: "round" }]);
+    expect(fillKeptForNotesLine(fill.keptForNotes)).toBe("A chair at Table 6 stayed where it is, because it has a note that cannot be shown here.");
+    // When the table holds one too, the round is known by the table.
+    const both = planOver(placed, 30, (id) => id === chair.id || id === table6.id);
+    expect(both.keptForNotes).toEqual([{ label: "Table 6", noun: "round" }]);
   });
 
   it("says so once laid: one round by its name, several in one sentence that lists them", () => {

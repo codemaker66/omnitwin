@@ -34,7 +34,7 @@ import { footprintInKeepOut } from "./door-clear-spaces.js";
 import { placedFootprint } from "./keep-doors-clear.js";
 import { isDiningTableItem } from "./furniture-semantics.js";
 import { countLabel } from "./count-label.js";
-import { stayedForNotesLine } from "./guest-plan-notes.js";
+import { heldNotePieceNamed, stayedForNotesLine } from "./guest-plan-notes.js";
 import type { ChangedPiece } from "./layout-change-summary.js";
 import type { PublishedCapacityAnswer, PublishedFormat } from "./planner-truth.js";
 
@@ -1088,7 +1088,12 @@ export function planRoomFill(
   const plan = planGangwayFill({ ...input, keepOuts: fillKeepOuts(placedItems, refillIds, input.rule.betweenTablesM) });
   const keptForNotes = refilledRounds(kept, keptIds).oldTables.map((table): ChangedPiece => {
     const label = (table.label ?? "").trim();
-    return { label: label === "" ? null : label, noun: "round" };
+    // A round is known by its table. When the note is on one of its chairs and
+    // not on the table, it is said as that chair's place ("a chair at Table 6"):
+    // the table's own note panel shows nothing held (lib/guest-plan-notes).
+    const chair = holdsUnseenNote(table.id) ? undefined : kept.find((piece) => piece.groupId === table.groupId && holdsUnseenNote(piece.id));
+    const byChair = chair === undefined ? null : heldNotePieceNamed(chair, kept).label;
+    return { label: byChair ?? (label === "" ? null : label), noun: "round" };
   });
   return plan === null ? null : { plan, refillIds, keptForNotes };
 }

@@ -244,7 +244,7 @@ describe("Replace, on a selection with a piece that holds a note this browser is
     let long: ReturnType<typeof replaceSelection> | null = null;
     act(() => { long = replaceSelection(card("long-table")); });
     expect((long as ReturnType<typeof replaceSelection> | null)?.ok).toBe(false);
-    expect(notice()).toMatch(/^Nothing was replaced: .+ has a note that cannot be shown here\.$/u);
+    expect(notice()).toBe("Nothing was replaced: a chair at Table 2 has a note that cannot be shown here.");
     expect(placedIds()).toEqual(before);
   });
 

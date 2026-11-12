@@ -242,13 +242,13 @@ describe("a selection with a piece whose note this browser is not shown", () => 
     expect(planReplace(new Set(tables), params("long-table"), world(room), { newId: ids }).ok).toBe(true);
   });
 
-  it("names a chair's table, and a piece nobody named by what it is", () => {
+  it("names a chair by the table it is at, and a piece nobody named by what it is", () => {
     const named = round(0, 0, "Table 7");
     const chair = named[3];
     const [table] = named;
     if (chair === undefined || table === undefined) throw new Error("no round");
     const byChair = planReplace(new Set([table.id]), params("round", { seats: 8 }), world(named), { newId: ids, holdsUnseenNote: (id) => id === chair.id });
-    expect(byChair.ok ? "" : byChair.reason).toBe("Nothing was replaced: Table 7 has a note that cannot be shown here.");
+    expect(byChair.ok ? "" : byChair.reason).toBe("Nothing was replaced: a chair at Table 7 has a note that cannot be shown here.");
 
     const unnamed = round(0, 0, "");
     const [bare] = unnamed;
