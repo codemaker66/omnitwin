@@ -26,6 +26,15 @@ describe("eventNameFor", () => {
     expect(eventNameFor({ title: "", eventType: " Charity gala ", startsAt: MARCH_14, timeZone: LONDON })).toBe("Charity gala, 14 March 2027");
   });
 
+  // A venue's stored zone can be one no clock knows. The name is read on the
+  // house's clock then, as the rota reads such a zone, and never throws: it is
+  // made inside the Diary's read, the room's timeline and a booking's save.
+  it("reads a venue zone no clock knows as the house's, and never throws for it", () => {
+    expect(eventNameFor({ title: "", eventType: "wedding", startsAt: MARCH_14, timeZone: "Nowhere/Never_Land" })).toBe("Wedding, 14 March 2027");
+    expect(eventNameFor({ title: "", eventType: null, startsAt: MARCH_14, timeZone: "" })).toBe("Event, 14 March 2027");
+    expect(eventDisplayName({ name: "", eventType: "dinner", startsAt: MARCH_14 }, "Not/AZone")).toBe("Dinner, 14 March 2027");
+  });
+
   it("calls it an event when there is no occasion either", () => {
     for (const eventType of [null, undefined, "", "   "]) {
       expect(eventNameFor({ title: "", eventType, startsAt: MARCH_14, timeZone: LONDON }), String(eventType)).toBe("Event, 14 March 2027");

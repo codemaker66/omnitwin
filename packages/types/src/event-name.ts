@@ -1,4 +1,5 @@
 import { occasionLabel } from "./enquiry.js";
+import { resolveRotaTimeZone } from "./staff-rota-checks.js";
 
 // ---------------------------------------------------------------------------
 // What an event is called (the release lead's ruling of 12 November 2026 on
@@ -31,14 +32,17 @@ const BARE_OCCASION_TITLE = /^—\s*(.*)$/su;
 
 const dayFormats = new Map<string, Intl.DateTimeFormat>();
 
-/** "14 March 2027": the calendar day of an instant on the venue's clock. */
+/** "14 March 2027": the calendar day of an instant on the venue's clock. A
+ *  stored zone no clock knows is read as the house's, as the rota reads it
+ *  (resolveRotaTimeZone), so naming an event never throws: the name is made
+ *  inside the Diary's read, the room's timeline and a booking's save. */
 function venueDay(startsAt: Date | string | null, timeZone: string): string | null {
   if (startsAt === null) return null;
   const instant = typeof startsAt === "string" ? Date.parse(startsAt) : startsAt.getTime();
   if (!Number.isFinite(instant)) return null;
   let format = dayFormats.get(timeZone);
   if (format === undefined) {
-    format = new Intl.DateTimeFormat("en-GB", { timeZone, day: "numeric", month: "long", year: "numeric" });
+    format = new Intl.DateTimeFormat("en-GB", { timeZone: resolveRotaTimeZone(timeZone), day: "numeric", month: "long", year: "numeric" });
     dayFormats.set(timeZone, format);
   }
   return format.format(instant);
