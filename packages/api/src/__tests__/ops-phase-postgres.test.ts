@@ -2,12 +2,11 @@ import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Pool as PgPool } from "pg";
-import { Pool, neonConfig } from "@neondatabase/serverless";
-import { drizzle } from "drizzle-orm/neon-serverless";
 import { drizzle as nodeDrizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { eq } from "drizzle-orm";
 import type { HallkeeperSheetV2 } from "@omnitwin/types";
+import { createDbConnection, type Database, type DatabaseConnection } from "../db/client.js";
 import * as schema from "../db/schema.js";
 import { OpsHandoffEventBindingRequiredError, compileOpsHandoffPackFromConfiguration } from "../services/ops-compiler.js";
 import { getEventDayOpsBoard } from "../services/event-day-ops.js";
@@ -15,7 +14,8 @@ import { createSnapshot, approveSnapshot } from "../services/sheet-snapshot.js";
 import { assembleSheetDataV2 } from "../services/hallkeeper-sheet-v2-data.js";
 
 // Never reads DATABASE_URL/.env. Opt in with a separately provisioned, disposable
-// local database and the normal local Neon WebSocket bridge (port 54331).
+// loopback database; the suite migrates it and queries it through the API's own
+// client (db/client.ts), which reaches a loopback URL over plain TCP.
 const explicitUrl = process.env["VENVIEWER_OPS_TEST_DATABASE_URL"];
 function assertTestTarget(raw: string): void {
   const url = new URL(raw);
@@ -34,26 +34,29 @@ describe("Ops PostgreSQL target guard", () => {
 });
 
 describe.skipIf(explicitUrl === undefined)("persisted event phases in Ops", () => {
-  let pool: Pool;
+  let connection: DatabaseConnection | undefined;
   let migrationPool: PgPool;
-  let db: ReturnType<typeof drizzle<typeof schema>>;
+  let db: Database;
   beforeAll(async () => {
     if (explicitUrl === undefined) throw new Error("Explicit test URL required");
     assertTestTarget(explicitUrl);
     migrationPool = new PgPool({ connectionString: explicitUrl });
-    const target = await migrationPool.query<{ database: string; host: string }>(
+    const target = await migrationPool.query<{ database: string; host: string | null }>(
       "SELECT current_database() AS database, host(inet_server_addr()) AS host",
     );
-    expect(target.rows).toEqual([{ database: "venviewer_ops_phase_test", host: "127.0.0.1" }]);
+    expect(target.rows[0]?.database).toBe("venviewer_ops_phase_test");
+    // The guard above admitted only the loopback URL. A Docker port forward
+    // (CI's service container) keeps that endpoint, but PostgreSQL reports its
+    // container address rather than 127.0.0.1, as db-client-local.test.ts notes.
+    expect(target.rows[0]?.host).toBeTypeOf("string");
     await migrate(nodeDrizzle(migrationPool), { migrationsFolder: resolve(import.meta.dirname, "../../drizzle") });
-    neonConfig.wsProxy = (host) => `${host}:54331/v1`;
-    neonConfig.useSecureWebSocket = false;
-    neonConfig.pipelineTLS = false;
-    neonConfig.pipelineConnect = false;
-    pool = new Pool({ connectionString: explicitUrl });
-    db = drizzle(pool, { schema });
+    // The production client, on its loopback branch: the same drizzle queries
+    // the API sends. The Neon WebSocket bridge this suite once needed (54331)
+    // stopped being the API's local path when db/client.ts gained that branch.
+    connection = createDbConnection(explicitUrl);
+    db = connection.db;
   }, 120000);
-  afterAll(async () => { await pool?.end(); await migrationPool?.end(); });
+  afterAll(async () => { await connection?.close(); await migrationPool?.end(); });
 
   it.each([true, false])("compiles and reopens a real phase with room assigned=%s", async (assigned) => {
     const venueId = randomUUID(); const roomId = randomUUID(); const userId = randomUUID();

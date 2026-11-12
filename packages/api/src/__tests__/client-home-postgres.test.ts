@@ -5,7 +5,13 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { eq } from "drizzle-orm";
 import { getTableConfig, type PgTable } from "drizzle-orm/pg-core";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { ClientHomeSchema, type ClientHome } from "@omnitwin/types";
+import {
+  ClientHomeSchema,
+  EVENT_ENDED_STATUSES,
+  EVENT_STATUSES,
+  type ClientHome,
+  type EventStatus,
+} from "@omnitwin/types";
 import * as schema from "../db/schema.js";
 import type { JwtUser } from "../middleware/auth.js";
 import { clientHomeRoutes } from "../routes/client-home.js";
@@ -257,6 +263,29 @@ describe.skipIf(testUrl === undefined)("the client's own home on isolated Postgr
     expect(data.events.map((event) => event.id)).toEqual([EVENT_PLANNER_LATER]);
     expect(data.plans.some((plan) => plan.id === PLAN_LINKED)).toBe(false);
   });
+
+  // An event that ended (cancelled, or lost when every option went) will not
+  // happen: it is not "coming up", nor a past event that took place. The
+  // client keeps the plan they saved, now standing alone.
+  const endedStatuses: ReadonlySet<EventStatus> = new Set(EVENT_ENDED_STATUSES);
+  it.each(EVENT_STATUSES.map((status) => [status, endedStatuses.has(status)] as const))(
+    "lists an event that is %s (ended: %s) only while it has not ended",
+    async (status, ended) => {
+      await db.update(schema.events).set({ status }).where(eq(schema.events.id, EVENT_PLANNER));
+      const response = await server.inject({ method: "GET", url: "/client-home", headers: headers(PLANNER) });
+      expect(response.statusCode, response.body).toBe(200);
+      const data = ClientHomeSchema.parse(response.json<{ data: unknown }>().data);
+      const linked = data.plans.find((plan) => plan.id === PLAN_LINKED);
+      if (ended) {
+        expect(data.events.map((event) => event.id)).toEqual([EVENT_PLANNER_LATER]);
+        expect(response.body).not.toContain("Winter dinner");
+        expect(linked?.eventId).toBeNull();
+      } else {
+        expect(data.events.map((event) => event.id)).toEqual([EVENT_PLANNER, EVENT_PLANNER_LATER]);
+        expect(linked?.eventId).toBe(EVENT_PLANNER);
+      }
+    },
+  );
 
   it("answers a person with nothing yet with empty lists, not an error", async () => {
     const data = await home(NEWCOMER);

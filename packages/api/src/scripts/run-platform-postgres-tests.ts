@@ -29,6 +29,8 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   // ...and its client's schedule and the room's day, which the When ribbon reads.
   "src/__tests__/client-schedule-untitled-booking-postgres.test.ts",
   "src/__tests__/event-mutations-postgres.test.ts",
+  // The event-day board: a change needing acknowledgement stays listed however many follow it.
+  "src/__tests__/event-day-awaiting-acknowledgement-postgres.test.ts",
   "src/__tests__/db-client-local.test.ts",
   "src/__tests__/sheet-snapshot-retention-postgres.test.ts",
   "src/__tests__/dietary-retention-postgres.test.ts",
@@ -42,12 +44,22 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/configuration-review-loop-postgres.test.ts",
   // A signed-in person's new plan: refused unclaimed, theirs once claimed (batch C).
   "src/__tests__/claim-new-draft-postgres.test.ts",
+  // An anonymous save: what one piece, one save and one address may store.
+  "src/__tests__/guest-save-limits-postgres.test.ts",
+  // ...and how often: the planner's own pace through the whole app's rate limiter.
+  "src/__tests__/guest-save-pace-postgres.test.ts",
+  // Who can find and read a guest's plan: code lookups, and notes kept to the browser that made it.
+  "src/__tests__/guest-plan-privacy-postgres.test.ts",
   "src/__tests__/role-vocabulary-postgres.test.ts",
   // An open socket acts with its person's current role: /ws/configurations saves and /ws/diary commands.
   "src/__tests__/socket-identity-postgres.test.ts",
+  // A socket that never signs in is closed at a deadline, on both socket routes.
+  "src/__tests__/socket-sign-in-deadline-postgres.test.ts",
   "src/__tests__/public-mcp-postgres.test.ts",
   "src/__tests__/sheet-paper-check-postgres.test.ts",
   "src/__tests__/ai-usage-postgres.test.ts",
+  // A supplier's reply has a limit of its own: twenty an hour from one address, through the whole app.
+  "src/__tests__/supplier-reply-limit-postgres.test.ts",
   // The People Book (migration 0098): the operator's read-only check of the backfill.
   "src/__tests__/check-people-book-postgres.test.ts",
   // Possible duplicates, and the marks that keep two people apart through merges.
@@ -70,6 +82,14 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/chair-sizes-migration-postgres.test.ts",
   // Migration 0105: product writes share the foundry's global lock; the kill switch still excludes them (T-677).
   "src/__tests__/foundry-product-lock-postgres.test.ts",
+  // The Grand Hall at its E57 interior and clear height (0106): one row, inert on replay, stops named, a chair against a long wall saves.
+  "src/__tests__/grand-hall-e57-migration-postgres.test.ts",
+  // The Truth Mode summary answers a layout's owner and venue floor only, and counts only their layouts.
+  "src/__tests__/truth-mode-summary-tenancy-postgres.test.ts",
+  // A pricing rule's dates are real calendar dates a date column holds: an impossible one is a 400, not a 500.
+  "src/__tests__/pricing-rule-dates-postgres.test.ts",
+  // Migration 0107: a venue manager's Ops review is stored as venue_manager; other roles and venues stay refused.
+  "src/__tests__/event-architect-ops-review-postgres.test.ts",
 ] as const;
 
 /**
