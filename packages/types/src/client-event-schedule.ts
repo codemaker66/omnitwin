@@ -36,7 +36,12 @@ export const ClientEventScheduleSchema = z.object({
   event: z.object({
     id: EventIdSchema,
     venueId: VenueIdSchema,
-    name: z.string().trim().min(1).max(200),
+    // As stored, trimmed (a blank name reads as ""): events made before
+    // eventNameFor named every new one can hold "" (an untitled booking's).
+    // Screens show such an event as eventDisplayName names it; refusing it
+    // here failed the client's whole schedule. Writers refuse an empty name
+    // (CreateEventSchema, UpdateEventSchema).
+    name: z.string().trim().max(200),
     eventType: z.string().trim().max(80).nullable(),
     status: EventStatusSchema,
     startsAt: z.iso.datetime().nullable(),

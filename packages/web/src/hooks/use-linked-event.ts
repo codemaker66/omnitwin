@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import type { EventPhaseGraph } from "@omnitwin/types";
+import { eventDisplayName, type EventPhaseGraph } from "@omnitwin/types";
 import { getEventPhaseGraph } from "../api/events.js";
+import { VENUE_TIME_ZONE } from "../pages/diary/lib/board-time.js";
 import { useAuthStore } from "../stores/auth-store.js";
 import { canReadInternalEventData } from "../lib/event-access.js";
 
@@ -14,6 +15,7 @@ export type LinkedEventStatus = "none" | "loading" | "loaded" | "error";
 
 export interface LinkedEvent {
   readonly status: LinkedEventStatus;
+  /** The event's name as shown (eventDisplayName); `graph` keeps it as stored. */
   readonly eventName: string | null;
   readonly graph: EventPhaseGraph | null;
 }
@@ -88,7 +90,10 @@ export function useLinkedEvent(expectedVenueId?: string | null): LinkedEvent {
   }
   return {
     status: result.status,
-    eventName: result.graph?.event.name ?? null,
+    // The name people read: an event stored without one (made before
+    // eventNameFor named every new event) is called by its occasion and the
+    // venue's day. The graph keeps the name as stored.
+    eventName: result.graph === null ? null : eventDisplayName(result.graph.event, VENUE_TIME_ZONE),
     graph: result.graph,
   };
 }

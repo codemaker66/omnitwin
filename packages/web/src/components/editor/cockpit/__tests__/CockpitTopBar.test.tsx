@@ -1,10 +1,16 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
+import type { ClientEventSchedule, EventPhaseGraph } from "@omnitwin/types";
 import { useEditorStore } from "../../../../stores/editor-store.js";
 import { useAuthStore } from "../../../../stores/auth-store.js";
 import { useCockpitStore } from "../../../../stores/cockpit-store.js";
 import { CockpitTopBar } from "../CockpitTopBar.js";
+
+// The event reads, for the cases that link one; the rest link none and read nothing.
+const mocks = vi.hoisted(() => ({ getEventPhaseGraph: vi.fn(), getClientEventSchedule: vi.fn() }));
+vi.mock("../../../../api/events.js", () => ({ getEventPhaseGraph: mocks.getEventPhaseGraph }));
+vi.mock("../../../../api/client-event-schedule.js", () => ({ getClientEventSchedule: mocks.getClientEventSchedule }));
 
 function renderTopBar(): void {
   render(
@@ -68,5 +74,52 @@ describe("CockpitTopBar", () => {
     expect(useCockpitStore.getState().overlayVisibility.densityHeatmap).toBe(true);
     fireEvent.click(within(menu).getByRole("menuitemcheckbox", { name: /density heatmap/i }));
     expect(useCockpitStore.getState().overlayVisibility.densityHeatmap).toBe(false);
+  });
+});
+
+describe("CockpitTopBar with an event stored without a name (the event-name ruling)", () => {
+  const VENUE = "00000000-0000-4000-8000-0000000000f1";
+  const EVENT = "00000000-0000-4000-8000-0000000000e1";
+  const STARTS = "2027-03-14T18:00:00.000Z";
+  const stored = { id: EVENT, venueId: VENUE, name: "", eventType: "wedding", startsAt: STARTS, endsAt: null, guestCount: 80 };
+
+  function renderLinked(): void {
+    // A settled sign-in: the event reads wait while the session is checked.
+    useAuthStore.setState({ isLoading: false });
+    render(
+      <MemoryRouter initialEntries={[`/plan/cfg-1?eventId=${EVENT}`]}>
+        <CockpitTopBar />
+      </MemoryRouter>,
+    );
+  }
+
+  it("names it by its occasion and day for the venue's staff", async () => {
+    useEditorStore.setState({ venueId: VENUE });
+    useAuthStore.setState({
+      user: { id: "user-2", email: "s@example.com", role: "staff", platformRole: "none", venueId: VENUE, name: "Isla Staff" },
+      isAuthenticated: true,
+    });
+    const graph: EventPhaseGraph = {
+      event: { ...stored, createdBy: null, status: "confirmed", clientName: null, notes: null, createdAt: STARTS, updatedAt: STARTS },
+      phases: [], scenarios: [], layoutVariants: [], configurationLinks: [], phaseLayoutSnapshots: [],
+    };
+    mocks.getEventPhaseGraph.mockResolvedValue(graph);
+    renderLinked();
+    expect(await screen.findByText("Wedding, 14 March 2027")).toBeTruthy();
+  });
+
+  it("names it by its occasion and day for the client", async () => {
+    const CONFIG = "00000000-0000-4000-8000-0000000000c1";
+    useEditorStore.setState({ venueId: VENUE, configId: CONFIG });
+    const schedule: ClientEventSchedule = {
+      event: { ...stored, status: "confirmed" },
+      venue: { id: VENUE, name: "Trades Hall", timezone: "Europe/London" },
+      scheduleState: "working", phases: [],
+      layouts: [{ id: CONFIG, name: "Dinner layout", space: { id: "00000000-0000-4000-8000-0000000000a1", name: "Grand Hall" } }],
+      slots: [],
+    };
+    mocks.getClientEventSchedule.mockResolvedValue(schedule);
+    renderLinked();
+    expect(await screen.findByText("Wedding, 14 March 2027")).toBeTruthy();
   });
 });

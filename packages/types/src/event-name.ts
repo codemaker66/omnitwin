@@ -70,3 +70,19 @@ export function eventNameFor(input: EventNameInput): string {
   const day = venueDay(input.startsAt, input.timeZone);
   return (day === null ? occasion : `${occasion}, ${day}`).slice(0, MAX_EVENT_NAME_LENGTH);
 }
+
+/** The fields of a stored event its shown name is made from. */
+export interface NamedEvent {
+  readonly name: string;
+  readonly eventType: string | null;
+  readonly startsAt: Date | string | null;
+}
+
+/**
+ * The name to show for a stored event: its own, or eventNameFor's when it was
+ * stored without one. For display only: the stored name stays as it is (reads
+ * carry it as stored), and only a person gives the event a name.
+ */
+export function eventDisplayName(event: NamedEvent, timeZone: string): string {
+  return eventNameFor({ title: event.name, eventType: event.eventType, startsAt: event.startsAt, timeZone });
+}

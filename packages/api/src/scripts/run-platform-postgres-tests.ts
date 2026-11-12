@@ -30,6 +30,8 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/client-schedule-untitled-booking-postgres.test.ts",
   // An event made for an untitled booking is named by its occasion and day, never "" or an email.
   "src/__tests__/event-name-at-creation-postgres.test.ts",
+  // ...and one stored with no name is read everywhere its name is read, and staff can rename it.
+  "src/__tests__/untitled-event-reads-postgres.test.ts",
   "src/__tests__/event-mutations-postgres.test.ts",
   // The event-day board: a change needing acknowledgement stays listed however many follow it.
   "src/__tests__/event-day-awaiting-acknowledgement-postgres.test.ts",

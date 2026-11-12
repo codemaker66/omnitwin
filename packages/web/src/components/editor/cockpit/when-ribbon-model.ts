@@ -115,9 +115,11 @@ function occupancySpan(
 }
 
 /** What the ribbon calls a booking (API-9): its title when it has one, else
- *  its event's name, else the side's own word for an untitled booking. Rows
- *  written before #350 can carry an empty title, and GET /calendar keeps a
- *  blank one as stored, so a blank title counts as none. */
+ *  its event's name as shown everywhere (eventDisplayName: GET /calendar
+ *  sends it so, and the client's side names it so from the schedule), else
+ *  the side's own word for an untitled booking. Rows written before #350
+ *  can carry an empty title, and GET /calendar keeps a blank one as stored,
+ *  so a blank title counts as none. */
 export function ribbonBookingTitle(
   title: string,
   eventName: string | null | undefined,
@@ -719,8 +721,9 @@ export interface ClientRibbonDayInput {
   readonly space: { readonly id: string; readonly name: string };
   readonly timeZone: string;
   readonly turnaroundMinutes: number;
-  /** The event's name: what the bar calls a booking of this event stored
-   *  without a title (see ribbonBookingTitle). */
+  /** The event's name as shown (eventDisplayName: its occasion and day when
+   *  it was stored without one): what the bar calls a booking of this event
+   *  stored without a title (see ribbonBookingTitle). */
   readonly eventName: string;
   /** The client's own booking in this room, when the house holds one. */
   readonly own: ClientOwnSlot | null;

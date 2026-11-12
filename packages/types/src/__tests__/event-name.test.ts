@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { eventNameFor } from "../event-name.js";
+import { eventDisplayName, eventNameFor } from "../event-name.js";
 
 // What an event is called when it has no name of its own (the release lead's
 // ruling of 12 November 2026 on #397): the occasion and the venue's own day
@@ -75,5 +75,14 @@ describe("eventNameFor", () => {
 
   it("never gives a name longer than an event's name may be", () => {
     expect(eventNameFor({ title: "x".repeat(250), eventType: null, startsAt: MARCH_14, timeZone: LONDON })).toHaveLength(200);
+  });
+});
+
+describe("eventDisplayName", () => {
+  it("shows a stored event's own name, or the same name eventNameFor gives when it was stored without one", () => {
+    expect(eventDisplayName({ name: "Fraser wedding", eventType: "wedding", startsAt: MARCH_14 }, LONDON)).toBe("Fraser wedding");
+    expect(eventDisplayName({ name: "", eventType: "wedding", startsAt: MARCH_14 }, LONDON)).toBe("Wedding, 14 March 2027");
+    expect(eventDisplayName({ name: "— Wedding", eventType: "wedding", startsAt: new Date(MARCH_14) }, LONDON)).toBe("Wedding, 14 March 2027");
+    expect(eventDisplayName({ name: "", eventType: null, startsAt: null }, LONDON)).toBe("Event");
   });
 });
