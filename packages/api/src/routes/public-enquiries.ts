@@ -12,7 +12,7 @@ import {
   type EnquiryAttributionRecord,
   type EnquirySource,
 } from "@omnitwin/types";
-import { eq, and, isNull, asc, inArray, like, ne, sql } from "drizzle-orm";
+import { eq, and, isNull, asc, inArray, like, notInArray, sql } from "drizzle-orm";
 import { enquiries, enquiryStatusHistory, configurations, emailSends, spaces, users, venues } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { resolveEmailReplyTo, sendEmailAsync, type SendLimit } from "../services/email.js";
@@ -86,9 +86,11 @@ const ACKNOWLEDGEMENT_KEY = "enquiry-acknowledged:";
  * confirmed, so without this anyone could have the venue mail a stranger as
  * often as they liked. Counted from the acknowledgements email_sends holds for
  * the address, lower-cased, recorded in the 24 hours before this one is
- * decided; one this limit held back ("suppressed") does not count. Decided
- * under a transaction-scoped advisory lock on the address, so of two sent at
- * once one goes. The enquiry is kept and the team told whatever it decides.
+ * decided. One that reached nobody does not count: one this limit held back
+ * ("suppressed"), or one the provider did not take ("failed"), whose guest
+ * may well ask again because no reply came. Decided under a
+ * transaction-scoped advisory lock on the address, so of two sent at once
+ * one goes. The enquiry is kept and the team told whatever it decides.
  */
 function oneAcknowledgementADay(recipient: string): SendLimit {
   const address = recipient.toLowerCase();
@@ -100,7 +102,7 @@ function oneAcknowledgementADay(recipient: string): SendLimit {
         .where(and(
           like(emailSends.idempotencyKey, `${ACKNOWLEDGEMENT_KEY}%`),
           sql`lower(${emailSends.recipient}) = ${address}`,
-          ne(emailSends.status, "suppressed"),
+          notInArray(emailSends.status, ["suppressed", "failed"]),
           sql`${emailSends.createdAt} > now() - interval '24 hours'`,
         ))
         .limit(1);
