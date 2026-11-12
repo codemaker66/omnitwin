@@ -7,7 +7,11 @@ import {
   type KeyboardEvent,
   type ReactElement,
 } from "react";
-import { GUEST_ENQUIRY_LIMITS, TRADES_HALL_ENQUIRY_VENUE_SLUG } from "@omnitwin/types/enquiry";
+import {
+  GUEST_ENQUIRY_LATEST_EVENT_DATE,
+  GUEST_ENQUIRY_LIMITS,
+  TRADES_HALL_ENQUIRY_VENUE_SLUG,
+} from "@omnitwin/types/enquiry";
 import { ActivityIndicator } from "../components/shared/Activity.js";
 import { submitGuestEnquiry } from "../api/configurations.js";
 import { useFocusTrap } from "../lib/use-focus-trap.js";
@@ -264,6 +268,7 @@ export function TwinEnquiryModal({
               <input
                 id="tw-enq-date"
                 type="date"
+                max={GUEST_ENQUIRY_LATEST_EVENT_DATE}
                 className="vv-twin-enq-input"
                 value={eventDate}
                 onChange={(event) => {

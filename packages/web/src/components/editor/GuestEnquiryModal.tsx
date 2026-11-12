@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from "react";
-import { GUEST_ENQUIRY_LIMITS } from "@omnitwin/types";
+import { GUEST_ENQUIRY_LATEST_EVENT_DATE, GUEST_ENQUIRY_LIMITS } from "@omnitwin/types";
 import { ActivityIndicator } from "../shared/Activity.js";
 import { submitGuestEnquiry } from "../../api/configurations.js";
 import { usePlacementStore } from "../../stores/placement-store.js";
@@ -618,6 +618,7 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
               <input
                 id="ge-date"
                 type="date"
+                max={GUEST_ENQUIRY_LATEST_EVENT_DATE}
                 className="omni-enq-input"
                 value={eventDate}
                 onChange={(e) => { setEventDate(e.target.value); }}

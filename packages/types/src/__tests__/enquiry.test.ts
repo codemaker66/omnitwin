@@ -9,6 +9,7 @@ import {
   CreateEnquirySchema,
   GuestEnquirySchema,
   GUEST_ENQUIRY_LIMITS,
+  GUEST_ENQUIRY_LATEST_EVENT_DATE,
   GUEST_ENQUIRY_SOURCES,
   ENQUIRY_SOURCES,
   occasionLabel,
@@ -565,6 +566,19 @@ describe("GuestEnquirySchema", () => {
     const none = ["0000-01-01", "2027-02-29", "2027-02-30", "1900-02-29", "2027-13-01", "2027-00-10"];
     expect(Object.fromEntries([...real, ...none].map((date) => [date, takes(date)])))
       .toEqual(Object.fromEntries([...real.map((date) => [date, true]), ...none.map((date) => [date, false])]));
+  });
+
+  // Review of #405, F2. A date input with no max takes a year of five or six
+  // digits ("20277-05-01"), which this schema refuses, so all three forms set
+  // this bound as their date field's max. It is the schema's own last date.
+  it("takes GUEST_ENQUIRY_LATEST_EVENT_DATE, the forms' last date, and no date after it", () => {
+    const takes = (eventDate: string): boolean => GuestEnquirySchema.safeParse({ ...validGuest, eventDate }).success;
+    expect(GUEST_ENQUIRY_LATEST_EVENT_DATE).toBe("9999-12-31");
+    expect({
+      [GUEST_ENQUIRY_LATEST_EVENT_DATE]: takes(GUEST_ENQUIRY_LATEST_EVENT_DATE),
+      "10000-01-01": takes("10000-01-01"),
+      "20277-05-01": takes("20277-05-01"),
+    }).toEqual({ "9999-12-31": true, "10000-01-01": false, "20277-05-01": false });
   });
 
   it("rejects negative guestCount", () => {

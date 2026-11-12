@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { findUnsupportedProposalClaim, GUEST_ENQUIRY_LIMITS } from "@omnitwin/types";
+import { findUnsupportedProposalClaim, GUEST_ENQUIRY_LATEST_EVENT_DATE, GUEST_ENQUIRY_LIMITS } from "@omnitwin/types";
 import type { VenueDetail } from "../../../api/spaces.js";
 
 const mocks = vi.hoisted(() => ({ getVenue: vi.fn(), submit: vi.fn(), createLink: vi.fn(), listLinks: vi.fn(), flush: vi.fn() }));
@@ -315,6 +315,15 @@ describe("GuestEnquiryModal takes no more than the API accepts", () => {
       ["Anything else?", GUEST_ENQUIRY_LIMITS.messageLength],
       ["Guest count", GUEST_ENQUIRY_LIMITS.guestCount],
     ]);
+  });
+
+  // Review of #405, F2: a date field with no max takes a year of five digits
+  // (a doubled key), which the API refuses as "Validation failed".
+  it("takes no year in the date field that the API refuses", async () => {
+    await open();
+    const date = screen.getByLabelText<HTMLInputElement>("Event date");
+    expect(date.type).toBe("date");
+    expect(date.max).toBe(GUEST_ENQUIRY_LATEST_EVENT_DATE);
   });
 
   it("does not post a guest count past what the API accepts", async () => {

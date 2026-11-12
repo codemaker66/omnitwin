@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { GUEST_ENQUIRY_LIMITS, TRADES_HALL_ENQUIRY_VENUE_SLUG } from "@omnitwin/types";
+import { GUEST_ENQUIRY_LATEST_EVENT_DATE, GUEST_ENQUIRY_LIMITS, TRADES_HALL_ENQUIRY_VENUE_SLUG } from "@omnitwin/types";
 
 const mocks = vi.hoisted(() => ({
   submitGuestEnquiry: vi.fn<(input: unknown) => Promise<unknown>>(),
@@ -10,6 +10,7 @@ vi.mock("../../../api/configurations.js", () => ({ submitGuestEnquiry: mocks.sub
 const { FreshEnquiry } = await import("../FreshEnquiry.js");
 const {
   FRESH_ENQUIRY_CRAFT_PREFIX,
+  FRESH_ENQUIRY_DATE_LABEL,
   FRESH_ENQUIRY_EMAIL_INVALID,
   FRESH_ENQUIRY_EMAIL_REQUIRED,
   FRESH_ENQUIRY_SENT_LINE,
@@ -82,6 +83,17 @@ describe("FreshEnquiry — the enquiry it posts", () => {
     const phone = screen.getByRole<HTMLInputElement>("textbox", { name: /^Phone/u });
     expect(name.maxLength, "Your name").toBe(GUEST_ENQUIRY_LIMITS.nameLength);
     expect(phone.maxLength, "Phone").toBe(GUEST_ENQUIRY_LIMITS.phoneLength);
+  });
+
+  // Review of #405, F2: a date field with no max takes a year of five digits
+  // (a doubled key), which the API refuses, and the page can only say "Try
+  // again". The form sets noValidate, so this max bounds the year a browser
+  // lets the guest type rather than refusing a Send.
+  it("takes no year in the date field that the API refuses", () => {
+    render(<FreshEnquiry />);
+    const date = screen.getByLabelText<HTMLInputElement>(FRESH_ENQUIRY_DATE_LABEL);
+    expect(date.type).toBe("date");
+    expect(date.max).toBe(GUEST_ENQUIRY_LATEST_EVENT_DATE);
   });
 
   // public-claims-6: the API checks an email with zod's rule, which wants a

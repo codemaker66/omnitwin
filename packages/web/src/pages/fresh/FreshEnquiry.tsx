@@ -7,7 +7,11 @@ import {
   type FormEvent,
   type ReactElement,
 } from "react";
-import { GUEST_ENQUIRY_LIMITS, TRADES_HALL_ENQUIRY_VENUE_SLUG } from "@omnitwin/types";
+import {
+  GUEST_ENQUIRY_LATEST_EVENT_DATE,
+  GUEST_ENQUIRY_LIMITS,
+  TRADES_HALL_ENQUIRY_VENUE_SLUG,
+} from "@omnitwin/types";
 import { ActivityIndicator } from "../../components/shared/Activity.js";
 import { submitGuestEnquiry } from "../../api/configurations.js";
 import { isValidEmail } from "../../lib/email-validation.js";
@@ -271,6 +275,7 @@ export function FreshEnquiry(): ReactElement {
             <input
               type="date"
               min={today}
+              max={GUEST_ENQUIRY_LATEST_EVENT_DATE}
               value={dateISO}
               onChange={(event) => {
                 setDateISO(event.target.value);

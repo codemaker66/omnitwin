@@ -193,6 +193,13 @@ export const GUEST_ENQUIRY_LIMITS = {
 } as const;
 
 /**
+ * The last event date GuestEnquirySchema takes, which the three forms set as
+ * their date field's max: a date input with no max takes a year of five or
+ * six digits ("20277-05-01"), and the schema reads a year of four.
+ */
+export const GUEST_ENQUIRY_LATEST_EVENT_DATE = "9999-12-31";
+
+/**
  * A guest's email as the public enquiry route takes it. The forms that post
  * there check an address with this as well as their own typo rules
  * (packages/web lib/email-validation.ts), so a guest is asked to correct an

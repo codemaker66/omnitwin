@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { GUEST_ENQUIRY_LIMITS, TRADES_HALL_ENQUIRY_VENUE_SLUG } from "@omnitwin/types";
+import { GUEST_ENQUIRY_LATEST_EVENT_DATE, GUEST_ENQUIRY_LIMITS, TRADES_HALL_ENQUIRY_VENUE_SLUG } from "@omnitwin/types";
 import { TwinEnquiryModal } from "../TwinEnquiryModal.js";
 
 // -----------------------------------------------------------------------------
@@ -83,6 +83,15 @@ describe("TwinEnquiryModal", () => {
       ["Anything else?", GUEST_ENQUIRY_LIMITS.messageLength],
       ["Guests", GUEST_ENQUIRY_LIMITS.guestCount],
     ]);
+  });
+
+  // Review of #405, F2: a date field with no max takes a year of five digits
+  // (a doubled key), which the API refuses as "Validation failed".
+  it("takes no year in the date field that the API refuses", () => {
+    renderModal();
+    const date = screen.getByLabelText<HTMLInputElement>("Event date");
+    expect(date.type).toBe("date");
+    expect(date.max).toBe(GUEST_ENQUIRY_LATEST_EVENT_DATE);
   });
 
   it("does not post a guest count past what the API accepts", () => {
