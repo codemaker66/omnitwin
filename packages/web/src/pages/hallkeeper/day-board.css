@@ -911,6 +911,35 @@ button.dayboard-slab:active { transform: translateY(1px); }
   color: var(--house-ink-3);
 }
 
+/* A change nobody on the floor has acknowledged yet: the word stays ink, the
+   copper is in its rule and its dot (text is never tinted by state). */
+.dayboard-slab-changed {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--lt-ring);
+  border-radius: 999px;
+  background: var(--lt-raised);
+  color: var(--lt-ink);
+  font: 600 12px/1 var(--house-sans);
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.dayboard-slab-changed-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--lt-ring);
+}
+
+@media print {
+  .dayboard-slab-changed { border-color: #000; background: #fff; color: #000; }
+  .dayboard-slab-changed-dot { background: #000; }
+}
+
 /* Why a slot is at risk, in its own words. */
 .dayboard-slab-why {
   max-width: 64ch;
@@ -1557,6 +1586,296 @@ button.dayboard-rail-item:disabled { cursor: default; }
 
 .dayboard-seen-status:empty { display: none; }
 
+/* What changed since the floor last looked, and its one "Got it". */
+.dayboard-changes-list {
+  display: grid;
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dayboard-change + .dayboard-change {
+  padding-top: 14px;
+  border-top: 1px solid var(--house-forest-rule);
+}
+
+.dayboard-change-title {
+  margin: 0;
+  font: 600 15px/1.35 var(--house-sans);
+}
+
+.dayboard-change-when {
+  color: var(--house-forest-ink-2);
+  font-weight: 400;
+}
+
+.dayboard-change-summary {
+  margin: 4px 0 0;
+  font: 400 17px/1.4 var(--house-serif);
+}
+
+.dayboard-change-fromto {
+  display: grid;
+  gap: 4px;
+  margin: 8px 0 0;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.dayboard-change-fromto > div {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 8px;
+}
+
+.dayboard-change-fromto dt {
+  color: var(--house-forest-ink-3);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  line-height: 1.6;
+}
+
+.dayboard-change-fromto dd { margin: 0; }
+
+.dayboard-changes-ack { margin-top: 16px; }
+
+.dayboard-changes-status {
+  margin: 10px 0 0;
+  color: var(--house-forest-ink-1);
+  font-size: 13.5px;
+}
+
+.dayboard-changes-status:empty { display: none; }
+
+.dayboard-changes-seen {
+  margin: 18px 0 0;
+  color: var(--house-forest-ink-2);
+  font-size: 13.5px;
+}
+
+.dayboard-changes-unread {
+  margin: 12px 0 0;
+  color: var(--house-forest-ink-2);
+  font-size: 13.5px;
+}
+
+.dayboard-changes-ack[aria-disabled="true"] { opacity: 0.55; cursor: default; }
+
+.dayboard-changes-seen:focus { outline: none; }
+.dayboard-changes-seen:focus-visible { outline: 2px solid var(--house-cream); outline-offset: 4px; }
+
+/* What moves at a changeover: short lists the crew works from. */
+.dayboard-changeover-from {
+  margin: 0 0 10px;
+  font: 400 17px/1.35 var(--house-serif);
+}
+
+.dayboard-changeover-crew {
+  margin: 0 0 12px;
+  color: var(--house-forest-ink-2);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.dayboard-changeover-lists {
+  display: grid;
+  gap: 14px;
+}
+
+.dayboard-changeover-heading {
+  margin: 0 0 4px;
+  color: var(--house-forest-ink-3);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.dayboard-changeover-group ul {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+
+.dayboard-changeover-where,
+.dayboard-changeover-note,
+.dayboard-changeover-plan {
+  color: var(--house-forest-ink-2);
+}
+
+.dayboard-changeover-note,
+.dayboard-changeover-plan {
+  margin: 0;
+  font-size: 14px;
+}
+
+.dayboard-changeover-failed {
+  display: grid;
+  justify-items: start;
+  gap: 10px;
+}
+
+/* Who comes to the building for the booking, and the door. */
+.dayboard-supplier-list {
+  display: grid;
+  gap: 14px;
+  margin: 0 0 12px;
+  padding: 0;
+  list-style: none;
+}
+
+.dayboard-supplier {
+  display: grid;
+  gap: 2px;
+  padding-left: 12px;
+  border-left: 1px solid var(--house-forest-rule);
+}
+
+.dayboard-supplier p { margin: 0; }
+
+.dayboard-supplier-name {
+  font: 400 17px/1.35 var(--house-serif);
+}
+
+.dayboard-supplier-name strong { font-weight: 500; }
+
+.dayboard-supplier-kind,
+.dayboard-supplier-when,
+.dayboard-supplier-note {
+  color: var(--house-forest-ink-2);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.dayboard-supplier-door {
+  color: var(--house-forest-ink-1);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Late at the door: a word in copper, never a tint on the row. */
+.dayboard-supplier-door.is-late { color: #f0b68f; }
+
+.dayboard-supplier-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  margin-top: 8px;
+}
+
+.dayboard-supplier-confirm {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  color: var(--house-forest-ink-1);
+  font-size: 14px;
+}
+
+/* A quiet action on forest: words that read as a link, a full touch target. */
+.dayboard-text-button {
+  min-height: 44px;
+  padding: 0 2px;
+  border: 0;
+  background: none;
+  color: var(--house-forest-ink-1);
+  font: 500 14px/1.2 var(--house-sans);
+  text-decoration: underline;
+  text-decoration-color: var(--house-forest-edge);
+  text-underline-offset: 4px;
+  cursor: pointer;
+}
+
+.dayboard-text-button:focus-visible { outline: 2px solid var(--house-cream); outline-offset: 2px; }
+
+@media (hover: hover) and (pointer: fine) {
+  .dayboard-text-button:hover { text-decoration-color: currentColor; }
+}
+
+.dayboard-supplier-add { justify-self: start; }
+
+.dayboard-supplier-form {
+  display: grid;
+  gap: 12px;
+  margin: 0 0 12px;
+  padding: 14px;
+  border: 1px solid var(--house-forest-rule);
+  border-radius: 3px;
+  background: var(--house-forest-deep);
+}
+
+.dayboard-supplier-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 12px;
+}
+
+.dayboard-supplier-fields label {
+  display: grid;
+  gap: 4px;
+  color: var(--house-forest-ink-2);
+  font-size: 13px;
+}
+
+.dayboard-supplier-fields label.is-wide { grid-column: 1 / -1; }
+
+.dayboard-supplier-fields input,
+.dayboard-supplier-fields textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 1px solid var(--house-forest-edge);
+  border-radius: 3px;
+  background: var(--house-forest-field);
+  color: var(--house-forest-ink-1);
+  font: 400 15px/1.3 var(--house-sans);
+  color-scheme: dark;
+}
+
+.dayboard-supplier-fields textarea { resize: vertical; }
+
+.dayboard-supplier-fields input:focus-visible,
+.dayboard-supplier-fields textarea:focus-visible {
+  outline: 2px solid var(--house-cream);
+  outline-offset: 1px;
+}
+
+/* What the form will save, with its date: the small hours are the night after. */
+.dayboard-supplier-form-when {
+  grid-column: 1 / -1;
+  margin: -2px 0 0;
+  color: var(--house-forest-ink-2);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.dayboard-supplier-form-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.dayboard-supplier-problem {
+  margin: 0;
+  color: #ffcdb7;
+  font-size: 14px;
+}
+
+.dayboard-supplier-problem:empty { display: none; }
+
+@media (max-width: 480px) {
+  .dayboard-supplier-fields { grid-template-columns: minmax(0, 1fr); }
+}
+
 /* --- the setup sheet, the event, the phases --------------------------------- */
 
 .dayboard-slot-sheet {
@@ -2020,7 +2339,10 @@ button.dayboard-rail-item:disabled { cursor: default; }
    counts every request and the next action names the first), all of which
    the office view and the phone give in full. */
 @media (max-height: 820px) {
-  .dayboard[data-register="wall"] :is(.dayboard-legend, .dayboard-slab-why, .dayboard-room-photo, .is-next .dayboard-ring) { display: none; }
+  /* A short wall spares the legend, the photographs, the reason a changeover
+     is at risk, the next function's ring and the changed mark (read on the
+     office view) rather than cut a room. */
+  .dayboard[data-register="wall"] :is(.dayboard-legend, .dayboard-slab-why, .dayboard-room-photo, .is-next .dayboard-ring, .dayboard-slab-changed) { display: none; }
   .dayboard[data-register="wall"] .dayboard-room { grid-template-columns: minmax(0, 1fr); }
   /* Seven rooms or more on a short screen: each keeps what it is doing and
      its day's bar; what comes next is a step away on the office view. */
