@@ -95,6 +95,8 @@ describe("the More sheet offers this viewer's lenses (Blake's decision 5)", () =
   });
 
   it("lists all eleven, as today, with both keys off", () => {
+    // #329 turns lensesByRole on by default; this case is about it off.
+    setPlannerFeaturesForTesting({ lensesByRole: false, lensesDivider: false });
     render(<Planner />);
     fireEvent.click(screen.getByRole("button", { name: "More" }));
     expect(lensesIn("Planner lenses")).toHaveLength(11);
@@ -109,7 +111,7 @@ describe("the More sheet offers this viewer's lenses (Blake's decision 5)", () =
   });
 
   it("puts the technical seven under a titled Venue tools group under lensesDivider", () => {
-    setPlannerFeaturesForTesting({ lensesDivider: true });
+    setPlannerFeaturesForTesting({ lensesDivider: true, lensesByRole: false });
     render(<Planner />);
     fireEvent.click(screen.getByRole("button", { name: "More" }));
     expect(lensesIn("Planner lenses")).toEqual(["Design", "Guests", "Costs", "Share"]);

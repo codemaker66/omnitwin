@@ -762,19 +762,26 @@ describe("the register is enforced by value, not by name", () => {
     const tooSmall: string[] = [];
     for (const [path, text] of await readSrcFiles()) {
       if (TYPE_FLOOR_EXEMPT.some((rule) => rule.test(path))) continue;
-      text.split("\n").forEach((line, index) => {
-        const at = `${path}:${String(index + 1)}`;
-        const record = (size: string, syntax: string): void => {
-          if (Number(size) < TYPE_FLOOR_PX) tooSmall.push(`${at} ${syntax} ${size}px`);
-        };
-        if (path.endsWith(".css")) {
-          for (const m of line.matchAll(/font-size:\s*([0-9.]+)px/g)) record(m[1] ?? "0", "font-size");
+      const record = (line: number, size: string, syntax: string): void => {
+        if (Number(size) < TYPE_FLOOR_PX) tooSmall.push(`${path}:${String(line)} ${syntax} ${size}px`);
+      };
+      if (path.endsWith(".css")) {
+        text.split("\n").forEach((line, index) => {
+          for (const m of line.matchAll(/font-size:\s*([0-9.]+)px/g)) record(index + 1, m[1] ?? "0", "font-size");
           // The shorthand is the syntax the first pass never searched.
-          for (const m of line.matchAll(/font:[^;{}]*?\b([0-9.]+)px/g)) record(m[1] ?? "0", "font: shorthand");
-        } else {
-          for (const m of line.matchAll(/fontSize:\s*"?([0-9.]+)(?:px)?"?/g)) record(m[1] ?? "0", "inline fontSize");
+          for (const m of line.matchAll(/font:[^;{}]*?\b([0-9.]+)px/g)) record(index + 1, m[1] ?? "0", "font: shorthand");
+        });
+      } else {
+        // Every numeric literal in the value counts, up to the next `,` or `}`
+        // (or a type annotation's `;`), across lines: reading only the literal
+        // after `fontSize:` let `compact ? 8 : 9` hide behind its condition.
+        for (const m of text.matchAll(/fontSize:([^,;}]*)/g)) {
+          const line = text.slice(0, m.index).split("\n").length;
+          for (const size of (m[1] ?? "").matchAll(/(?<![\w.$-])([0-9]*\.?[0-9]+)/g)) {
+            record(line, size[1] ?? "0", "inline fontSize");
+          }
         }
-      });
+      }
     }
     expect([...tooSmall].sort()).toEqual([...PX_FLOOR_HANDOFF].sort());
   });

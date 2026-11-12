@@ -182,3 +182,17 @@ describe("email palette", () => {
     expect(html).toContain("reply to this message");
   });
 });
+
+// The acknowledgement speaks for the venue to every public enquirer. It
+// promises no reply time: the venue has not said what it keeps to
+// (questionnaire Q28, roadmap A6; trust check, 28 October 2026).
+describe("the enquiry acknowledgement's promises", () => {
+  it("says a person will reply, and promises no time for it", async () => {
+    const { html } = await enquiryAcknowledgement({
+      venueName: "Trades Hall Glasgow", roomName: "Grand Hall", organiserName: "Jane Smith", eventType: "Wedding",
+      eventDate: "2027-05-14", guestCount: 120, replyToEmail: "events@example.test",
+    });
+    expect(html).toContain("one of us will come back to you personally.");
+    expect(html).not.toMatch(/working day|within \d+|within (one|a|two|three|24|48)\b|\bhours?\b|same day|tomorrow/iu);
+  });
+});

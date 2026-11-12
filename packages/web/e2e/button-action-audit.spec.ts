@@ -1686,6 +1686,10 @@ async function mockEventDayRoutes(page: Page): Promise<{
   await page.route(`${API}/events/${EVENT_ID}/change-feed**`, (route) => {
     void route.fulfill({ json: { data: [changeFeedFixture()] } });
   });
+  // The board asks for the changes still awaiting acknowledgement.
+  await page.route(`${API}/events/${EVENT_ID}/changes-awaiting-acknowledgement`, (route) => {
+    void route.fulfill({ json: { data: [changeFeedFixture()] } });
+  });
   await page.route(`${API}/events/${EVENT_ID}/change-acknowledgements**`, (route) => {
     // The board reads what the room has already acknowledged: the ones this
     // spec has saved, as the API would list them.
@@ -2130,6 +2134,9 @@ test.describe("SS++ button and action inventory", () => {
 
 test.describe("SS++ representative button behavior", () => {
   test("planner cockpit controls update visible state", async ({ page }) => {
+    // The shell alone may take 20 s on a busy CPU runner, so 30 s left the seven
+    // controls after it ~10 s: runs took 14 s on a quiet runner and timed out at 30 s on a busy one.
+    test.setTimeout(45_000);
     await mockPlannerRoutes(page);
     // The cockpit's controls are under test, Flow among them, not who may open
     // which lens: with lensesByRole on, an anonymous visitor sees four lenses.
@@ -2570,6 +2577,9 @@ test.describe("SS++ deep modal, drawer, role, disabled, and error states", () =>
       void route.fulfill({ json: { data: missingHandoffEventDayBoardFixture() } });
     });
     await page.route(`${API}/events/${EVENT_ID}/change-feed**`, (route) => {
+      void route.fulfill({ json: { data: [] } });
+    });
+    await page.route(`${API}/events/${EVENT_ID}/changes-awaiting-acknowledgement`, (route) => {
       void route.fulfill({ json: { data: [] } });
     });
     await page.route(`${API}/events/${EVENT_ID}/change-acknowledgements**`, (route) => {

@@ -35,6 +35,11 @@ export const AI_USAGE_READ_ROLES = ["admin", "manager"] as const;
 /** The code an AI request is answered with once the venue's allowance for the month is used. */
 export const AI_BUDGET_REACHED = "AI_BUDGET_REACHED";
 
+/** The code (with 503) an AI request is answered with when the provider takes no
+ *  calls for want of credit: the platform's included credit is used, or it is
+ *  the gap before the next grant. Staff write by hand until it returns. */
+export const AI_DRAFTS_UNAVAILABLE = "AI_DRAFTS_UNAVAILABLE";
+
 /**
  * One attempt within a call, as a ledger row keeps it: the requested model,
  * or the model a server-side fallback ran after a refusal. A row's token

@@ -42,7 +42,7 @@ export const PLANNER_FEATURE_SPECS = {
    */
   setupCards: { lane: "E", item: "Q-08a", on: false },
   /** The ghost is the whole set, refused before the drop with its reason, pushed clear by up to 0.15 m. */
-  truthfulGhost: { lane: "E", item: "Q-05", on: false },
+  truthfulGhost: { lane: "E", item: "Q-05", on: true },
   /** Every dining table placed is "Table N", the lowest free number. */
   tableNumbers: { lane: "E", item: "Q-46", on: false },
   /** Ctrl D duplicates, Ctrl C and Ctrl V copy and paste, Ctrl A selects all. */
@@ -55,6 +55,12 @@ export const PLANNER_FEATURE_SPECS = {
   storeCounts: { lane: "E", item: "Q-14", on: false },
   /** A piece released on the rail goes back in store. */
   putBack: { lane: "E", item: "Q-15", on: false },
+  /**
+   * A plain click passes through a wall to the floor, so a deselect never takes
+   * a wall down; Alt-click hides one (decision 4). Off, any click that meets a
+   * wall first hides it.
+   */
+  wallClickAlt: { lane: "E", item: "D4", on: true },
   /** Line up puts several pieces' centres on one line. */
   lineUp: { lane: "E", item: "Q-18", on: false },
   /** Move on the caption, then a tap on the destination. */
@@ -69,11 +75,11 @@ export const PLANNER_FEATURE_SPECS = {
   /** The 450 ms drape everywhere, Present and the showcase too: no spiral. Wins over clothDrape. */
   clothDrapeOnly: { lane: "planner-qol", item: "PQ-7", on: false },
   /** Each role sees its own lenses, named: clients and guests four, the hallkeeper four, the venue team all eleven. */
-  lensesByRole: { lane: "planner-qol", item: "PQ-11", on: false },
+  lensesByRole: { lane: "planner-qol", item: "PQ-11", on: true },
   /** The technical lenses sit below a "Venue tools" divider, for whoever sees them. */
   lensesDivider: { lane: "planner-qol", item: "PQ-11", on: false },
   /** A wall's brick-down takes 450 ms, not 5 s, and under reduced motion the wall goes at once. */
-  wallsQuick: { lane: "planner-qol", item: "PQ-15", on: false },
+  wallsQuick: { lane: "planner-qol", item: "PQ-15", on: true },
 } as const satisfies Readonly<Record<string, PlannerFeatureSpec>>;
 
 export type PlannerFeature = keyof typeof PLANNER_FEATURE_SPECS;

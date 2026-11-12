@@ -25,6 +25,7 @@ import {
   type CirculationOverlaySegment,
 } from "../lib/circulation-scene.js";
 import { floorLightOutput } from "./editor/floor-light-output.js";
+import { CIRCULATION_OVERLAY_GROUP } from "../lib/layout-timeline-capture.js";
 
 export const MAX_RENDERED_CIRCULATION_SEGMENTS = 8;
 export const CIRCULATION_OVERLAY_MIN_VIEWPORT_WIDTH = 1100;
@@ -210,7 +211,7 @@ function CirculationSegment({
             <div
               style={{
                 ...basePill,
-                fontSize: primary ? 11 : 10,
+                fontSize: 11,
                 padding: primary ? "3px 9px" : "2px 7px",
                 opacity: primary ? 1 : 0.82,
               }}
@@ -272,7 +273,7 @@ export function CirculationOverlay(): React.ReactElement | null {
   if (!renderOverlay || segments.length === 0) return null;
 
   return (
-    <group name="circulation-overlay" renderOrder={3}>
+    <group name={CIRCULATION_OVERLAY_GROUP} renderOrder={3}>
       {segments.map((seg, index) => (
         <CirculationSegment
           key={`${String(seg.from[0])},${String(seg.from[2])}-${String(seg.to[0])},${String(seg.to[2])}`}

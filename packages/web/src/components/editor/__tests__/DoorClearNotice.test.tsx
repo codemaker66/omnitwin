@@ -65,9 +65,24 @@ afterEach(() => {
 });
 
 describe("the notice on a layout with a table in front of a door", () => {
-  it("is one of the chrome's surfaces, which fold away together when the chrome is cleared (T-680)", () => {
+  // Delta review, 5 Nov (A11Y-337-1): the card folds away with the chrome when
+  // it is cleared, but the status region and its voice stay in the tree, so a
+  // screen reader still hears a table nudged into a door's clear space.
+  it("folds its card with the chrome, and keeps speaking while the chrome is cleared (T-680)", () => {
+    usePlacementStore.setState({ placedItems: createTableGroup(ROUND, 0, 3, 0, 10).map((piece) => (
+      piece.catalogueItemId === ROUND ? { ...piece, label: "Table 4" } : piece
+    )) });
     render(<DoorClearNotice />);
-    expect(screen.getByTestId("door-clear-notice-region").hasAttribute("data-chrome-surface")).toBe(true);
+    const region = screen.getByTestId("door-clear-notice-region");
+    const card = screen.getByTestId("door-clear-notice");
+    const voice = screen.getByTestId("door-clear-notice-voice");
+    expect(region.getAttribute("role")).toBe("status");
+    expect(region.hasAttribute("data-chrome-surface")).toBe(false);
+    expect(card.hasAttribute("data-chrome-surface")).toBe(true);
+    expect(region.contains(voice) && !card.contains(voice)).toBe(true);
+    expect(voice.textContent).toBe("Table 4 is in front of the main door.");
+    act(() => { usePlacementStore.setState({ placedItems: [...createTableGroup(ROUND, 0, -1, 0, 10)] }); });
+    expect(screen.getByTestId("door-clear-notice-voice").textContent).toBe("");
   });
 
   it("says nothing while every door is clear", () => {

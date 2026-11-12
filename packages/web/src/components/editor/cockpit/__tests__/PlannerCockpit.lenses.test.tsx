@@ -13,7 +13,11 @@ import { useCockpitStore } from "../../../../stores/cockpit-store.js";
 const renders = vi.hoisted(() => ({ rigging: 0, costs: 0, ops: 0 }));
 
 vi.mock("../../../../App.js", () => ({ App: () => <div data-testid="mock-editor-3d" /> }));
-vi.mock("../ReferenceRoomHeader.js", () => ({ ReferenceRoomHeader: () => <header data-testid="reference-room-header-mock" /> }));
+// The header's save line (headerSaveLabel) stays real: the chrome's save word speaks it (T-680).
+vi.mock("../ReferenceRoomHeader.js", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../ReferenceRoomHeader.js")>(),
+  ReferenceRoomHeader: () => <header data-testid="reference-room-header-mock" />,
+}));
 vi.mock("../CockpitBottom.js", () => ({ CockpitBottom: () => <footer data-testid="cockpit-bottom-mock" /> }));
 vi.mock("../WhenRibbon.js", () => ({ WhenRibbon: () => <aside data-testid="when-ribbon-mock" /> }));
 vi.mock("../../../../lib/reduced-motion.js", () => ({ prefersReducedMotion: () => true }));
@@ -134,6 +138,8 @@ describe("PlannerCockpit: a lens the viewer cannot see (lensesByRole)", () => {
 
 describe("PlannerCockpit with both keys off", () => {
   it("leaves every lens open to everyone, as today", () => {
+    // #329 turns lensesByRole on by default; this case is about it off.
+    setPlannerFeaturesForTesting({ lensesByRole: false, lensesDivider: false });
     signIn("client");
     useCockpitStore.setState({ activeMode: "rigging" });
     render(<PlannerCockpit />);

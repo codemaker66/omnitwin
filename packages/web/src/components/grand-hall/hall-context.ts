@@ -24,7 +24,7 @@
 // ---------------------------------------------------------------------------
 
 import { BufferAttribute, BufferGeometry, FrontSide, Sphere, Vector3 } from "three";
-import { MeshBasicNodeMaterial } from "three/webgpu";
+import { MeshBasicNodeMaterial, type Node } from "three/webgpu";
 import {
   Fn, If, abs, cameraPosition, cross, dFdx, dFdy, dot, float, floor, fract, fwidth, hash, length, max, mix, normalize,
   positionWorld, sign, smoothstep, step, vec2, vec3, vec4,
@@ -41,6 +41,13 @@ export const CONTEXT_MODEL_URL = "/rooms/grand-hall/context-2020-lidar/merchant-
 
 /** The model's reach from the hall's centre, metres. */
 export const CONTEXT_RADIUS = 260;
+
+/**
+ * The model drawn round the measured front (`?facade=1`, HallExterior): the
+ * same city with Trades Hall's Glassford Street front cut away, where the
+ * modelled front stands instead (build_context.py --front-cut).
+ */
+export const CONTEXT_MODEL_FRONT_URL = "/rooms/grand-hall/context-2020-lidar/merchant-city-v3.bin?r=1";
 
 /**
  * The model's cut-out for the hall (build_context.py rect_half_x, rect_front_z,
@@ -164,6 +171,40 @@ const WASH_HEIGHT = 7;
 const linear = (c: number): number => (c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
 const card = (rgb: readonly [number, number, number]) => vec3(linear(rgb[0]), linear(rgb[1]), linear(rgb[2]));
 
+/**
+ * The street lamps' light at `p` after dusk (to be worked out inside a branch
+ * on the sun's altitude, as cityColor's), each lamp lit at its own altitude:
+ * `pool`, its pool's light, for the ground it lies on (`aboveFoot` from that
+ * ground), and `onWall`, for a wall facing `n`, the scallop under each lantern
+ * (where its full cut-off cone, 60° each side of straight down, meets the
+ * wall) and a little of the pool's light up the wall's foot. The city's walls
+ * and the modelled front (hall-exterior-material.ts) take the same light.
+ */
+export function streetLampLight(maps: StreetLightMaps, p: Node<"vec3">, n: Node<"vec3">) {
+  const look = streetLookUniforms;
+  const light = streetLightAt(maps, p);
+  const aboveFoot = p.y.sub(light.poolFoot);
+  const pool = poolLight(light.rho);
+  // Seen from high over the city the pools calm, as the lanterns' halos do,
+  // so the hall stays the brightest thing in an overview.
+  const overview = mix(float(1), float(POOL_OVERVIEW), smoothstep(8, 24, cameraPosition.y.sub(p.y)));
+  const poolLit = max(pool.color.sub(POOL_AMBIENT), 0).mul(pool.mask).mul(overview).mul(light.poolStrength).mul(lampOn(light.poolSwitch));
+  const below = light.head.y.sub(p.y);
+  const toHead = light.head.sub(p);
+  const across = length(vec2(toHead.x, toHead.z));
+  const coneEdge = below.mul(Math.tan(SCALLOP_HALF_ANGLE)).sub(across);
+  const coneWidth = fwidth(coneEdge).mul(0.75).add(0.03);
+  const cone = smoothstep(coneWidth.negate(), coneWidth, coneEdge);
+  const reach = length(toHead).div(look.scallopReach);
+  const facing = smoothstep(0.0, 0.35, dot(vec2(n.x, n.z), vec2(toHead.x, toHead.z).div(max(across, 1e-3))));
+  const scallop = look.scallop.mul(cone).mul(float(1).div(reach.mul(reach).add(1))).mul(facing).mul(light.hasHead).mul(lampOn(light.headSwitch));
+  // The pool's light up the foot of the walls beside it, from its own ground.
+  const washFade = max(float(1).sub(aboveFoot.div(WASH_HEIGHT)), 0);
+  const spill = poolLit.mul(smoothstep(SPILL_HEIGHT, 0, aboveFoot).mul(SPILL).add(washFade.mul(washFade).mul(WASH)))
+    .mul(smoothstep(-0.3, 0, aboveFoot));
+  return { pool: poolLit, aboveFoot, onWall: scallop.add(spill) };
+}
+
 /** The city's colour: lit card under the real sky, windows and street lamps at night, haze with distance. */
 function cityColor(sun: HallSun, maps: StreetLightMaps) {
   return Fn(() => {
@@ -225,34 +266,12 @@ function cityColor(sun: HallSun, maps: StreetLightMaps) {
       const surveyed = float(1).sub(surveyedWall(p));
       lit.addAssign(tint.mul(glow).mul(wall).mul(step(0, cellV)).mul(u.night).mul(surveyed));
 
-      // The street lamps, each lit at its own sun altitude: pools on the ground
-      // each lamp stands on (never a roof or the site's cut), a scallop on the
-      // wall under each lantern (where its full cut-off cone, 60° each side of
-      // straight down, meets the wall), and a little of each pool's light up
-      // the foot of the walls beside it.
-      const light = streetLightAt(maps, p);
-      const aboveFoot = p.y.sub(light.poolFoot);
-      const street = cap.mul(float(1).sub(section)).mul(smoothstep(POOL_LEVEL, POOL_LEVEL * 0.6, abs(aboveFoot)));
-      const pool = poolLight(light.rho);
-      // Seen from high over the city the pools calm, as the lanterns' halos do,
-      // so the hall stays the brightest thing in an overview.
-      const overview = mix(float(1), float(POOL_OVERVIEW), smoothstep(8, 24, cameraPosition.y.sub(p.y)));
-      const poolLit = max(pool.color.sub(POOL_AMBIENT), 0).mul(pool.mask).mul(overview).mul(light.poolStrength).mul(lampOn(light.poolSwitch));
-      const below = light.head.y.sub(p.y);
-      const toHead = light.head.sub(p);
-      const across = length(vec2(toHead.x, toHead.z));
-      const coneEdge = below.mul(Math.tan(SCALLOP_HALF_ANGLE)).sub(across);
-      const coneWidth = fwidth(coneEdge).mul(0.75).add(0.03);
-      const cone = smoothstep(coneWidth.negate(), coneWidth, coneEdge);
-      const reach = length(toHead).div(look.scallopReach);
-      const facing = smoothstep(0.0, 0.35, dot(vec2(n.x, n.z), vec2(toHead.x, toHead.z).div(max(across, 1e-3))));
+      // The street lamps (streetLampLight): pools on the ground each lamp
+      // stands on (never a roof or the site's cut), and their light on the walls.
+      const lamps = streetLampLight(maps, p, n);
+      const street = cap.mul(float(1).sub(section)).mul(smoothstep(POOL_LEVEL, POOL_LEVEL * 0.6, abs(lamps.aboveFoot)));
       const wallSide = float(1).sub(cap);
-      const scallop = look.scallop.mul(cone).mul(float(1).div(reach.mul(reach).add(1))).mul(facing).mul(light.hasHead).mul(lampOn(light.headSwitch));
-      // The pool's light up the foot of the walls beside it, from its own ground.
-      const washFade = max(float(1).sub(aboveFoot.div(WASH_HEIGHT)), 0);
-      const spill = poolLit.mul(smoothstep(SPILL_HEIGHT, 0, aboveFoot).mul(SPILL).add(washFade.mul(washFade).mul(WASH)))
-        .mul(smoothstep(-0.3, 0, aboveFoot));
-      lit.addAssign(albedo.mul(poolLit.mul(street).add(scallop.add(spill).mul(wallSide))));
+      lit.addAssign(albedo.mul(lamps.pool.mul(street).add(lamps.onWall.mul(wallSide))));
     });
 
     // The air between the eye and each block: it fills with the sky's

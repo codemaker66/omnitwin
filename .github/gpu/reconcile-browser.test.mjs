@@ -60,7 +60,7 @@ function rejected(title, mutate, pattern) {
   test(title, () => { const input = fixture(); mutate(input); assert.throws(() => reconcileBrowser(input), pattern); });
 }
 
-test('full411 union requires406 CPU and all5 GPU with original54 skips and4 executed expected failures', () => {
+test('full421 union requires416 CPU and all5 GPU with original54 skips and4 executed expected failures', () => {
   const result = reconcileBrowser(fixture());
   assert.equal(result.verdict, 'complete-browser-gate-passed');
   assert.deepEqual(result.gpuScope, { required: true, cases: 5, executed: 5 });
@@ -103,7 +103,7 @@ const approvedSheetAdditions = [
   'd04ac5b0eb52f15c1dda-3381bf636d92993e3b62',
 ];
 test('the approved-sheet inventory admission adds exactly three ordinary Hallkeeper cases', () => {
-  assert.equal(baseline.inventoryAdmissions.length, 54);
+  assert.equal(baseline.inventoryAdmissions.length, 55);
   assert.deepEqual(baseline.inventoryAdmissions[0].caseIds, [...approvedSheetAdditions].sort());
   for (const id of approvedSheetAdditions) {
     const row = baseline.cases.find((entry) => entry.id === id);
@@ -481,7 +481,7 @@ test('the Day Board progress admission added one ordinary case to its spec, sinc
   assert.equal(baseline.cases.length, BROWSER_POLICY.total);
 });
 rejected('the retired Day Board progress identity cannot come back', (input) => {
-  specs(input.inventory).find((row) => row.id === '1b07f1b6eeb3a7bdbe8c-0ea22414db33ce2b5918').id = sheetProgressAddition;
+  specs(input.inventory).find((row) => row.id === '1b07f1b6eeb3a7bdbe8c-63ca41fae157497f7f90').id = sheetProgressAddition;
 }, /missing or extra/);
 const offlineAddition = '02e2c49c5135f0c0642b-6b5e71904176cd01affe';
 test('the event-day offline admission adds exactly one ordinary case in its own spec', () => {
@@ -912,6 +912,10 @@ const livingTimetableAdditions = [
   '1b07f1b6eeb3a7bdbe8c-efe6e715638c5ecf202e',
 ];
 const livingTimetableRetirements = ['1b07f1b6eeb3a7bdbe8c-1030efa1e1333500384f', '1b07f1b6eeb3a7bdbe8c-542cfb6aca0a4807d9ce'];
+// The phone's case, restated one for one on 10 November 2026 when the board
+// became the rooms (the fifty-fifth admission).
+const roomsPhoneRetired = '1b07f1b6eeb3a7bdbe8c-0ea22414db33ce2b5918';
+const roomsPhoneCase = '1b07f1b6eeb3a7bdbe8c-63ca41fae157497f7f90';
 test("the living-timetable admission restates the Day Board's two cases one for one and adds two", () => {
   const admission = baseline.inventoryAdmissions[38];
   assert.equal(admission.date, '2026-10-09');
@@ -921,6 +925,11 @@ test("the living-timetable admission restates the Day Board's two cases one for 
   assert.deepEqual(admission.caseIds, livingTimetableAdditions);
   for (const id of livingTimetableAdditions) {
     const row = baseline.cases.find((entry) => entry.id === id);
+    if (id === roomsPhoneRetired) {
+      // Restated one for one on 10 November 2026: the identity is retired.
+      assert.equal(row, undefined);
+      continue;
+    }
     assert.equal(row?.file, 'day-board.spec.ts');
     assert.equal(row?.expectedStatus, 'passed');
   }
@@ -1011,7 +1020,8 @@ for (const id of diaryAnswerCases) {
     spec.tests[0].status = 'skipped';
   }, /policy changed/);
 }
-for (const id of livingTimetableAdditions) {
+// The restated phone case is held by the rooms admission's own rejection.
+for (const id of livingTimetableAdditions.filter((candidate) => candidate !== roomsPhoneRetired)) {
   rejected(`new Day Board case ${id} cannot become a skip`, (input) => {
     const spec = input.cpuShards.flatMap((shard) => specs(shard.results)).find((row) => row.id === id);
     spec.tests[0].expectedStatus = 'skipped';
@@ -1403,3 +1413,34 @@ test('the offline request step admission adds two ordinary cases', () => {
     BROWSER_POLICY.total - BROWSER_POLICY.skipped - BROWSER_POLICY.expectedFailures);
   assert.equal(baseline.cases.length, BROWSER_POLICY.total);
 });
+// The Day Board in the desks' register (concept C, 10 November 2026): the
+// phone's case restated one for one, every room in one column.
+test("the rooms admission restates the Day Board phone case one for one", () => {
+  const admission = baseline.inventoryAdmissions[54];
+  assert.equal(admission.date, '2026-11-10');
+  assert.equal(admission.sourceFile, 'packages/web/e2e/day-board.spec.ts');
+  assert.equal(admission.retiredSourceFile, 'packages/web/e2e/day-board.spec.ts');
+  assert.match(admission.sourceBaseCommit, /^[0-9a-f]{40}$/u);
+  assert.match(admission.sourceFileSha256, /^[0-9a-f]{64}$/u);
+  assert.match(admission.retiredSourceFileGitBlobSha256, /^[0-9a-f]{64}$/u);
+  assert.match(admission.inventorySha256, /^[0-9a-f]{64}$/u);
+  assert.equal(admission.expectedStatus, 'passed');
+  assert.deepEqual(admission.caseIds, [roomsPhoneCase]);
+  assert.deepEqual(admission.retiredCaseIds, [roomsPhoneRetired]);
+  const row = baseline.cases.find((entry) => entry.id === roomsPhoneCase);
+  assert.equal(row?.file, 'day-board.spec.ts');
+  assert.deepEqual(row?.suitePath, ['day-board.spec.ts', 'Day Board']);
+  assert.equal(row?.expectedStatus, 'passed');
+  assert.equal(baseline.cases.some((entry) => entry.id === roomsPhoneRetired), false);
+  assert.equal(baseline.cases.filter((entry) => entry.file === 'day-board.spec.ts').length, 4);
+  assert.equal(baseline.cases.length, BROWSER_POLICY.total);
+});
+rejected('the retired Day Board phone identity cannot come back', (input) => {
+  specs(input.inventory).find((row) => row.id === roomsPhoneCase).id = roomsPhoneRetired;
+}, /missing or extra/);
+rejected('the restated Day Board phone case cannot become a skip', (input) => {
+  const spec = input.cpuShards.flatMap((shard) => specs(shard.results)).find((row) => row.id === roomsPhoneCase);
+  spec.tests[0].expectedStatus = 'skipped';
+  spec.tests[0].results[0].status = 'skipped';
+  spec.tests[0].status = 'skipped';
+}, /policy changed/);
