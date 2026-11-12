@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { useEditorStore } from "../../../stores/editor-store.js";
+import { useEditorStore, type EditorObject } from "../../../stores/editor-store.js";
 import { flushAutoSave, scheduleAutoSave, watchReconnectAutosave } from "../EditorBridge.js";
 
 // ---------------------------------------------------------------------------
@@ -107,6 +107,60 @@ describe("a conflict waiting for the person's choice", () => {
     expect(saveToServer).not.toHaveBeenCalled();
 
     setStore({ saveConflict: null });
+    scheduleAutoSave(false);
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(saveToServer).toHaveBeenCalledTimes(1);
+  });
+});
+
+// Delta review of #388, D5. A save the API refused because the person's words
+// stand over a note this browser is not shown (409 NOTE_HELD) is refused again
+// until those words come off. Each edit used to send it anyway: a request per
+// edit, the refusal raised each time, and a guest's save allowance spent on it.
+describe("a save refused because the person's words stand over a note this browser is not shown", () => {
+  const REFUSAL = "A note on this plan cannot be changed from here, and this save tried to change it. Clear the note you wrote on that piece.";
+
+  function piece(id: string, notes: string, noteHeld?: true): EditorObject {
+    return {
+      id, assetDefinitionId: "banquet-chair", positionX: 0, positionY: 0, positionZ: 0, rotationX: 0, rotationY: 0, rotationZ: 0,
+      scale: 1, sortOrder: 0, clothed: false, clothStyle: null, tableSetting: null, chairStyle: null, centerpiece: null, groupId: null,
+      notes, ...(noteHeld === true ? { noteHeld } : {}),
+    };
+  }
+
+  afterEach(() => {
+    setStore({ objects: [], baseObjects: [], saveError: null, saveErrorCode: null, isPublicPreview: false, notesIncluded: false });
+  });
+
+  it("spends no autosave tick while those words stand, however many edits follow, and saves once they are off", async () => {
+    const saveToServer = vi.fn(() => Promise.resolve(true));
+    setStore({
+      isDirty: true, saveToServer, isPublicPreview: true, notesIncluded: false,
+      baseObjects: [piece("t3", "", true), piece("t4", "")],
+      objects: [piece("t3", "TEST ONLY typed over"), piece("t4", "")],
+      saveError: REFUSAL, saveErrorCode: "NOTE_HELD",
+    });
+    for (let edit = 0; edit < 3; edit += 1) {
+      scheduleAutoSave(false);
+      await vi.advanceTimersByTimeAsync(3000);
+    }
+    expect(saveToServer).not.toHaveBeenCalled();
+
+    // Their words come off the piece: the save can land now, and goes at the next tick.
+    setStore({ objects: [piece("t3", ""), piece("t4", "")] });
+    scheduleAutoSave(false);
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(saveToServer).toHaveBeenCalledTimes(1);
+  });
+
+  it("goes on saving after such a refusal that no words of theirs explain", async () => {
+    const saveToServer = vi.fn(() => Promise.resolve(true));
+    setStore({
+      isDirty: true, saveToServer, isPublicPreview: true, notesIncluded: false,
+      baseObjects: [piece("t3", "", true), piece("t4", "")],
+      objects: [piece("t3", ""), piece("t4", "")],
+      saveError: REFUSAL, saveErrorCode: "NOTE_HELD",
+    });
     scheduleAutoSave(false);
     await vi.advanceTimersByTimeAsync(3000);
     expect(saveToServer).toHaveBeenCalledTimes(1);

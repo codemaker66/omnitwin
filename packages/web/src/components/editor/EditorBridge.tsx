@@ -13,6 +13,7 @@ import { usePlacementStore } from "../../stores/placement-store.js";
 import { useSelectionStore } from "../../stores/selection-store.js";
 import { useAuthStore } from "../../stores/auth-store.js";
 import type { PlacedItem } from "../../lib/placement.js";
+import { NOTE_HELD_CODE, ownWordsOverHeldNotes } from "../../lib/guest-plan-notes.js";
 import { normalizeFurnitureScale } from "../../lib/furniture-scale.js";
 import { scheduleGangwayReviewRecord } from "../../lib/gangway-review-record.js";
 import { seededNote } from "../../lib/note-seeds.js";
@@ -426,6 +427,12 @@ function attemptAutoSave(isAuthenticated: boolean): void {
   // could only meet it again: a request per edit, the conflict refetched and
   // re-raised each time, and a guest's hourly save allowance spent on it.
   if (state.saveConflict !== null) return;
+  // A save the API refused because the person's own words stand over a note
+  // this browser is not shown (409 NOTE_HELD) is refused again until those
+  // words come off: a request per edit, the refusal raised each time, and the
+  // save allowance spent on it. It goes at the first tick after they are off;
+  // the Save control still sends it by hand (lib/guest-plan-notes).
+  if (state.saveErrorCode === NOTE_HELD_CODE && ownWordsOverHeldNotes(state).length > 0) return;
   if (state.isDirty && state.configId !== null) {
     void state.saveToServer(isAuthenticated);
   }
