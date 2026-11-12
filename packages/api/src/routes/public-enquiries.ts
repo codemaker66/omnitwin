@@ -32,11 +32,12 @@ const GuestEnquiryBody = GuestEnquirySchema;
  * Venues whose public twin is published and may therefore receive walkthrough
  * enquiries. This is the venue-path's OPT-IN GATE (2026-07 security review): a
  * venue slug is public and guessable, so without a gate any tenant would be
- * enumerable and spammable by slug. The config path does not read this list:
- * anyone may make a public plan in any live venue's room (POST
- * /public/configurations, as the planner at /v/:venueSlug/plan does), so a
- * plan's id is no secret and that path reaches every live venue (audit
- * public-surface-7, left for a decision). The allowlist mirrors how the twin
+ * enumerable and spammable by slug. The config path reads it too (Blake, 12
+ * November 2026, "Gate it like the form"; audit public-surface-7): anyone may
+ * make a public plan in any live venue's room (POST /public/configurations, as
+ * the planner at /v/:venueSlug/plan does), so a plan's id is no secret, and a
+ * plan whose venue is not on this list answers the venue path's 404. A guest
+ * may still plan in such a venue's room. The allowlist mirrors how the twin
  * bundle is actually deployed (manually, per venue, to R2); env-overridable so new
  * twins are enabled without a code change, defaulting to the flagship so the
  * live twin works with no extra deploy step. The default is the DATABASE slug
@@ -143,7 +144,9 @@ export async function publicEnquiryRoutes(
       // The plan's room and venue, while the venue is live: a deleted venue
       // takes no enquiry here, as it takes none on the venue path below.
       // Deleting a venue leaves its rooms and its guests' plans as they were.
-      const [planned] = await db.select({ spaceId: spaces.id, venueId: spaces.venueId, roomName: spaces.name })
+      const [planned] = await db.select({
+        spaceId: spaces.id, venueId: spaces.venueId, roomName: spaces.name, venueSlug: venues.slug,
+      })
         .from(configurations)
         .innerJoin(spaces, eq(spaces.id, configurations.spaceId))
         .innerJoin(venues, eq(venues.id, spaces.venueId))
@@ -156,6 +159,11 @@ export async function publicEnquiryRoutes(
         .limit(1);
       if (planned === undefined) {
         return reply.status(404).send({ error: "Configuration not found", code: "NOT_FOUND" });
+      }
+      // The venue path's gate, and its answer: a venue whose walkthrough is
+      // not published takes no enquiry by either path.
+      if (!twinPublicVenueSlugs().includes(planned.venueSlug)) {
+        return reply.status(404).send({ error: "Venue not found", code: "NOT_FOUND" });
       }
       anchor = {
         venueId: planned.venueId,

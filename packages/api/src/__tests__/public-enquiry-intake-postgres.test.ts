@@ -70,9 +70,13 @@ describe.skipIf(target === undefined)("the public enquiry route on the migrated 
   let server: FastifyInstance;
   const liveVenue = randomUUID();
   const closedVenue = randomUUID();
+  // A live venue whose walkthrough is not published: its slug is not on the list.
+  const unlistedVenue = randomUUID();
   const liveRoom = randomUUID();
   const closedRoom = randomUUID();
-  const venues: readonly string[] = [liveVenue, closedVenue];
+  const unlistedRoom = randomUUID();
+  const published: readonly string[] = [liveVenue, closedVenue];
+  const venues: readonly string[] = [...published, unlistedVenue];
   // Guest leads and people are found by email, so each address is this run's own.
   const run = randomUUID().slice(0, 8);
   const saved = new Map(SET_HERE.map((name) => [name, process.env[name]]));
@@ -86,17 +90,18 @@ describe.skipIf(target === undefined)("the public enquiry route on the migrated 
     expect((await pool.query<{ name: string }>("SELECT current_database() AS name")).rows[0]?.name).toBe("venviewer_platform_test");
     await pool.query(
       `INSERT INTO venues (id, name, slug, address) VALUES ($1::uuid, 'TEST ONLY Intake Hall', $1::text, 'Test only'),
-        ($2::uuid, 'TEST ONLY Closed Hall', $2::text, 'Test only')`,
-      [liveVenue, closedVenue],
+        ($2::uuid, 'TEST ONLY Closed Hall', $2::text, 'Test only'), ($3::uuid, 'TEST ONLY Unlisted Hall', $3::text, 'Test only')`,
+      [liveVenue, closedVenue, unlistedVenue],
     );
     await pool.query(
       `INSERT INTO spaces (id, venue_id, name, slug, width_m, length_m, height_m, floor_plan_outline)
-       VALUES ($1, $2, 'TEST ONLY Saloon', 'saloon', 10, 10, 3, '[]'), ($3, $4, 'TEST ONLY Saloon', 'saloon', 10, 10, 3, '[]')`,
-      [liveRoom, liveVenue, closedRoom, closedVenue],
+       VALUES ($1, $2, 'TEST ONLY Saloon', 'saloon', 10, 10, 3, '[]'), ($3, $4, 'TEST ONLY Saloon', 'saloon', 10, 10, 3, '[]'),
+         ($5, $6, 'TEST ONLY Saloon', 'saloon', 10, 10, 3, '[]')`,
+      [liveRoom, liveVenue, closedRoom, closedVenue, unlistedRoom, unlistedVenue],
     );
-    // Both venues publish their walkthrough (their slug is their id), so the
-    // venue path's own gate lets each through to the lookup.
-    process.env["TWIN_PUBLIC_VENUE_SLUGS"] = venues.join(",");
+    // Two venues publish their walkthrough (their slug is their id), so the
+    // venue path's own gate lets each through to the lookup; the third does not.
+    process.env["TWIN_PUBLIC_VENUE_SLUGS"] = published.join(",");
     // A test value: the provider's client above is a stand-in, so nothing leaves the process.
     process.env["RESEND_API_KEY"] = "re_test_only_not_a_key";
     delete process.env["ENQUIRY_FALLBACK_EMAIL"];
@@ -221,6 +226,31 @@ describe.skipIf(target === undefined)("the public enquiry route on the migrated 
       "SELECT venue_id, space_id, source, room_chosen FROM enquiries WHERE id = $1", [enquiryId],
     );
     expect(rows).toEqual([{ venue_id: liveVenue, space_id: liveRoom, source: "planner", room_chosen: true }]);
+  });
+
+  // Blake, 12 November 2026, "Gate it like the form": a plan's id is no
+  // secret, since anyone may make one in any live venue's room, so the planner
+  // path takes an enquiry only for a venue the website's form would take one for.
+  it("takes a planner enquiry only for a venue whose walkthrough is published, as the venue path does", async () => {
+    const guest = { email: `test-only-unlisted-${run}@example.test`, name: "TEST ONLY Unlisted Guest", eventType: "wedding" };
+    // A guest may still plan in an unlisted venue's room; the enquiry is what is refused.
+    const unlistedPlan = idOf(await newPlan(unlistedRoom), "id");
+    const fromPlan = await enquire({ configurationId: unlistedPlan, ...guest });
+    const fromWebsite = await enquire({ venueSlug: unlistedVenue, source: "website", ...guest });
+    // The venue path's own answer, so the two paths cannot be told apart.
+    expect([fromPlan.statusCode, fromPlan.json()]).toEqual([404, { error: "Venue not found", code: "NOT_FOUND" }]);
+    expect(fromPlan.json()).toEqual(fromWebsite.json());
+    expect(await enquiriesAt(unlistedVenue)).toBe(0);
+    const { rows: kept } = await pool.query<{ leads: number; people: number }>(
+      `SELECT (SELECT count(*)::int FROM guest_leads WHERE email = $1) AS leads,
+              (SELECT count(*)::int FROM contacts WHERE venue_id = $2) AS people`,
+      [guest.email, unlistedVenue],
+    );
+    expect(kept).toEqual([{ leads: 0, people: 0 }]);
+
+    // A published venue's plan still files its enquiry.
+    const listedPlan = idOf(await newPlan(liveRoom), "id");
+    idOf(await enquire({ configurationId: listedPlan, ...guest, email: `test-only-listed-${run}@example.test` }), "enquiryId");
   });
 
   it("keeps the enquiry of a guest who gives no name and an email longer than the name column holds", async () => {
