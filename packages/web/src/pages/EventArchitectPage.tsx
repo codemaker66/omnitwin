@@ -578,8 +578,9 @@ export function EventArchitectPage(): ReactElement {
   const selectedCandidate = persisted?.run.candidates.find(
     (candidate) => candidate.candidateId === selectedCandidateId,
   ) ?? null;
-  // Mirrors the review route's own gate (requireOpsReviewAuthority), not the
-  // floor's: a manager reads the run and its gate but cannot record a review.
+  // Mirrors the review route's own gate (requireOpsReviewAuthority), which
+  // answers from the same list: the venue's staff, hallkeepers, managers and
+  // administrators, and a platform admin.
   const canRecordOpsReview = user?.platformRole === "admin"
     || hasRole(OPS_REVIEW_ROLES, user?.role);
 

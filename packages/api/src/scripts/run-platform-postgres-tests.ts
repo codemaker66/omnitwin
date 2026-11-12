@@ -86,6 +86,8 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/truth-mode-summary-tenancy-postgres.test.ts",
   // A pricing rule's dates are real calendar dates a date column holds: an impossible one is a 400, not a 500.
   "src/__tests__/pricing-rule-dates-postgres.test.ts",
+  // Migration 0107: a venue manager's Ops review is stored as venue_manager; other roles and venues stay refused.
+  "src/__tests__/event-architect-ops-review-postgres.test.ts",
 ] as const;
 
 /**
