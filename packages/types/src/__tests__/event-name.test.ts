@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { eventDisplayName, eventNameFor } from "../event-name.js";
 
@@ -102,6 +104,15 @@ describe("eventNameFor", () => {
   it("names the occasion alone when the event has no start", () => {
     expect(eventNameFor({ title: "", eventType: "wedding", startsAt: null, timeZone: LONDON })).toBe("Wedding");
     expect(eventNameFor({ title: "", eventType: null, startsAt: "not a date", timeZone: LONDON })).toBe("Event");
+  });
+
+  // Every screen that shows an event's name bundles this module, so it reads
+  // the occasion words from a module that imports nothing, never enquiry.ts.
+  it("imports only the occasion words and the venue clock", async () => {
+    const source = async (file: string): Promise<string> => readFile(resolve(import.meta.dirname, "..", file), "utf8");
+    expect([...(await source("event-name.ts")).matchAll(/^import .* from "(.+)";\r?$/gmu)].map((found) => found[1]))
+      .toEqual(["./occasion.js", "./staff-rota-checks.js"]);
+    expect(await source("occasion.ts")).not.toMatch(/^import /mu);
   });
 
   it("never gives a name longer than an event's name may be", () => {

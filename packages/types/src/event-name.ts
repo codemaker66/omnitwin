@@ -1,4 +1,4 @@
-import { occasionLabel } from "./enquiry.js";
+import { occasionLabel } from "./occasion.js";
 import { resolveRotaTimeZone } from "./staff-rota-checks.js";
 
 // ---------------------------------------------------------------------------
