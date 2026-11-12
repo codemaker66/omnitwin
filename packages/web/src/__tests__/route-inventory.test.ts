@@ -265,6 +265,24 @@ describe("titled documents for crawlers", () => {
   });
 });
 
+describe("the sitemap", () => {
+  const sitemap = readFileSync(join(root, "public", "sitemap.xml"), "utf8");
+  const listed = [...sitemap.matchAll(/<loc>https:\/\/venviewer\.com([^<]*)<\/loc>/gu)].map((match) => match[1] ?? "/");
+
+  it("lists the public pages", () => {
+    expect(listed).toContain("/");
+    expect(listed.length).toBeGreaterThan(4);
+  });
+
+  // A redirected entry is a coverage warning in Search Console; a link someone
+  // is sent must never be offered to search (route-documents.ts, unlisted).
+  it.each(listed.map((path) => [path] as const))("lists %s, which is served as a page, not redirected", (path) => {
+    const served = serve(path);
+    expect(served.kind === "file" || served.kind === "rewrite", `${path}: ${JSON.stringify(served)}`).toBe(true);
+    expect(ROUTE_DOCUMENTS.some((document) => document.unlisted === true && document.paths.includes(path))).toBe(false);
+  });
+});
+
 describe("the edge's 404 page", () => {
   const html = readFileSync(join(root, "public", "404.html"), "utf8");
 

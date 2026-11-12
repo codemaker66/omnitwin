@@ -1,7 +1,7 @@
 # Browser release verification
 
-The reviewed browser inventory has 405 cases. Four hosted CPU shards execute
-400 cases; the five Twin performance cases execute on the existing RTX 4090
+The reviewed browser inventory has 421 cases. Four hosted CPU shards execute
+416 cases; the five Twin performance cases execute on the existing RTX 4090
 through WSL D3D12. The final hosted job reconciles every case against the
 reviewed inventory, including the original skips and expected failures.
 
@@ -182,8 +182,16 @@ goes as the same step under the same key when the connection is back, and when
 someone else took it first the slot says so by name and the press is put away
 (`living-timetable-offline-steps.spec.ts`); this changes the inventory from
 419 to 421 and the CPU partition from 414 to 416.
-The next, on 6 November 2026, adds one ordinary case for the new chrome cleared
-away (T-680 in T-671's chrome, behind `?chrome=v2`): `\` and the slate's crest
+On 10 November 2026 Blake chose concept C for the Day Board, the rooms in the
+desks' register, so its phone case is restated one for one: it no longer shows
+one room at a time with the day running down the screen, and now proves every
+room in one column no wider than the phone, the present on the hours above the
+rooms and on every room's bar, and a slot opened under its own room to its sheet
+(`day-board.spec.ts`). The other three Day Board cases keep their identities.
+The totals are unchanged.
+
+After it, a case written on 6 November 2026 adds one ordinary case for the new
+chrome cleared away (T-680 in T-671's chrome, behind `?chrome=v2`): `\` and the slate's crest
 hide every zone but the crest, which stays where it stood; one Esc brings the
 tools back; the room takes the pointer where the chrome has gone; and L and `/`
 open their panels with the tools back (`planner-chrome-v2-clear.spec.ts`); this

@@ -11,8 +11,10 @@ import { GRAND_HALL_DOOR_CLEAR_SPACES } from "../door-clear-spaces.js";
 import { doorBlockers, placedFootprint } from "../keep-doors-clear.js";
 import { moveDoorBlockersClear } from "../door-clear-actions.js";
 
-// The Grand Hall, 21 × 10.5 m, with its four doors' clear spaces (the main
-// door's x −1.02 to 1.03 from z 3.795 to the wall).
+// A 21 × 10.5 m hall, the Grand Hall's old hand-drawn size (the planner now
+// opens it at its scanned 21.135 × 10.59 m, data/room-geometries.ts), with
+// the Grand Hall's four doors' clear spaces from the survey (the main door's
+// x −1.02 to 1.03 from z 3.795 to the wall).
 
 function id(slug: string): string {
   const item = getCatalogueItemBySlug(slug);

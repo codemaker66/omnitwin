@@ -867,6 +867,26 @@
       "limits": "This is reviewed inventory admission, not execution evidence. These two cases were absent from sourceRunId, sourceReports and the earlier admissions; they intercept the API before transport and drop the press as a lost signal, so they prove the slab's waiting state, the reload over real IndexedDB, the one key per press and the honest refusal, not the ledger, which requests-offline-replay-postgres.test.ts proves against PostgreSQL; every current case still requires execution in the hosted browser gate. The listing covers this one spec file, so a re-listing reproduces these identities, not this hash."
     },
     {
+      "date": "2026-11-10",
+      "reason": "The Day Board in the desks' register (Blake chose concept C, the rooms, on 10 November 2026): the board reads room by room, every room in use in one column on a phone, each with its day in words and a bar of the whole day under it, and an opened slot unfolds under its own room. The phone's case is restated one for one: it no longer shows one room at a time with the day running down the screen, so it now proves every room in one column no wider than the phone, the present on the hours above the rooms and on every room's bar, every label at 12 px and 4.5:1, and the slot opened under its own room to its sheet, ready-by line and progress. The other three Day Board cases keep their identities with their bodies brought to the rooms.",
+      "sourceBaseCommit": "f7b383c6628de40f5d0480a6d0233546fd685874",
+      "sourceState": "Reviewed working-tree source based on sourceBaseCommit; sourceFileSha256 binds the actual E2E bytes. This admission does not claim the restated case already existed in that base commit.",
+      "sourceFile": "packages/web/e2e/day-board.spec.ts",
+      "sourceFileSha256": "1b7ad9a830b7db7f3feae081173f2909b5817209daa3e2ebc26a28e67d006ef7",
+      "retiredSourceFile": "packages/web/e2e/day-board.spec.ts",
+      "retiredSourceFileGitBlobSha256": "2e18eca9849c39f4c38d962bc4fa81294266bd8a07b78a218cf9d6553c657989",
+      "inventoryCommand": "pnpm --filter @omnitwin/web exec playwright test --list --project=chromium --update-snapshots=none --reporter=json",
+      "inventorySha256": "a0cd21e967ace60211961daae04f0df5995fb04ef02280c668c5bfa39cb4bb13",
+      "caseIds": [
+        "1b07f1b6eeb3a7bdbe8c-63ca41fae157497f7f90"
+      ],
+      "retiredCaseIds": [
+        "1b07f1b6eeb3a7bdbe8c-0ea22414db33ce2b5918"
+      ],
+      "expectedStatus": "passed",
+      "limits": "This is reviewed inventory admission, not execution evidence. The case replaces the retired identity 1b07f1b6eeb3a7bdbe8c-0ea22414db33ce2b5918 one for one, so the totals are unchanged; it was absent from sourceRunId, sourceReports and the earlier admissions, and every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
+      },
+      {
       "date": "2026-11-06",
       "reason": "The new chrome cleared away (T-680 in T-671’s chrome, behind ?chrome=v2), route-mocked: \\ and the slate’s crest hide every zone but the crest, which stays exactly where it stood, with the first-use note’s words beside it; once nothing else is under way one Esc brings the tools back; the room takes the pointer where the slate’s words and the door notice’s card were while the crest keeps it; L and / open Lay out and the catalogue’s search with the tools back, and what is typed goes into the search; the painted chrome is measured both ways.",
       "sourceCommit": "206225f9579bf3bcee86c47b4018e724890f535b",
@@ -4154,9 +4174,9 @@
       "expectedStatus": "passed"
     },
     {
-      "id": "1b07f1b6eeb3a7bdbe8c-0ea22414db33ce2b5918",
+      "id": "1b07f1b6eeb3a7bdbe8c-63ca41fae157497f7f90",
       "file": "day-board.spec.ts",
-      "title": "shows one room at a time on a phone, the day running down the screen, and opens a slot to its sheet",
+      "title": "reads the rooms down a phone in one column, the present on their hours, and opens a slot under its own room",
       "suitePath": [
         "day-board.spec.ts",
         "Day Board"

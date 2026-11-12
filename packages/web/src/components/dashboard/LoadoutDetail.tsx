@@ -63,6 +63,10 @@ const linkButtonStyle: React.CSSProperties = {
   fontFamily: "inherit",
 };
 
+// Said in a confirm that is open while another change saves (an upload
+// linking, a reorder, a caption): the confirm waits instead of being dropped.
+const OTHER_CHANGE_SAVING = "Waiting for the other change to save";
+
 export function LoadoutDetail({ venueId, spaceId, loadoutId, onBack, onDeleted }: LoadoutDetailProps): React.ReactElement {
   const [loadout, setLoadout] = useState<LoadoutDetailData | null>(null);
   const [loadState, setLoadState] = useState<DetailLoadState>("loading");
@@ -439,8 +443,11 @@ export function LoadoutDetail({ venueId, spaceId, loadoutId, onBack, onDeleted }
                     style={{ fontSize: 11, color: idx === loadout.photos.length - 1 ? "rgba(246,241,232,0.34)" : "#68d8d2", background: "none", border: "none", cursor: idx === loadout.photos.length - 1 || busyAction !== null ? "default" : "pointer", padding: 0 }}>
                     Move Down
                   </button>
-                  <button type="button" aria-label={`Remove ${p.filename}`} onClick={() => { setShowDeletePhoto(p.id); }}
-                    style={{ fontSize: 11, color: "#ff8a75", background: "none", border: "none", cursor: "pointer", padding: 0, marginLeft: "auto" }}>
+                  {/* Held while another change saves, like Move Up and Down:
+                      handleDeletePhoto drops a confirm made mid-save. */}
+                  <button type="button" disabled={busyAction !== null}
+                    aria-label={`Remove ${p.filename}`} onClick={() => { setShowDeletePhoto(p.id); }}
+                    style={{ fontSize: 11, color: "#ff8a75", background: "none", border: "none", cursor: busyAction !== null ? "default" : "pointer", padding: 0, marginLeft: "auto" }}>
                     Remove
                   </button>
                 </div>
@@ -465,6 +472,7 @@ export function LoadoutDetail({ venueId, spaceId, loadoutId, onBack, onDeleted }
           message={`Delete "${loadout.name}"? It stops showing among this room's loadouts. Its photos are kept, not erased.`}
           confirmLabel="Delete"
           inFlight={busyAction === "delete-loadout"}
+          waitingMessage={busyAction !== null && busyAction !== "delete-loadout" ? OTHER_CHANGE_SAVING : null}
           errorMessage={actionError}
           onConfirm={() => { void handleDeleteLoadout(); }}
           onCancel={() => { setShowDelete(false); }}
@@ -477,6 +485,7 @@ export function LoadoutDetail({ venueId, spaceId, loadoutId, onBack, onDeleted }
           message="Remove this photo from the loadout? The file will not be deleted from storage."
           confirmLabel="Remove"
           inFlight={busyAction?.startsWith("delete-photo:") === true}
+          waitingMessage={busyAction !== null && !busyAction.startsWith("delete-photo:") ? OTHER_CHANGE_SAVING : null}
           errorMessage={actionError}
           onConfirm={() => { void handleDeletePhoto(showDeletePhoto); }}
           onCancel={() => { setShowDeletePhoto(null); }}

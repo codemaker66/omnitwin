@@ -232,7 +232,8 @@ describe("the Grand Hall's figures follow the event's chair", () => {
     const business = planAutoFill("theatre", 0, HALL.roomWidthM, HALL.roomLengthM, "burgess-turini-18-3");
     expect(wedding?.style === "theatre" ? wedding.chairItemId : null).toBe(getCatalogueItemBySlug("chiavari-chair")?.id);
     expect(business?.style === "theatre" ? business.chairItemId : null).toBe(getCatalogueItemBySlug("burgess-turini-18-3")?.id);
-    // The rows are laid out by planTheatreLayout's own spacing, whichever chair sits in them.
+    // Rows share planTheatreLayout's own pitch and spacing; the row count follows the first chair's
+    // depth only through the rear walkway (#410), and these two chairs fit the same rows here.
     expect(wedding?.roomForSeats).toBe(business?.roomForSeats);
   });
 });

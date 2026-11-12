@@ -1,9 +1,13 @@
 import { describe, it, expect } from "vitest";
 import * as roomCapacity from "../room-capacity.js";
 import { roomStyleEstimates } from "../room-capacity.js";
+import { HALL_LENGTH, HALL_WIDTH } from "../../components/grand-hall/hall-spec.js";
 
-// The Grand Hall's floor: 21 m × 10.5 m = 220.5 m² (redteam fix-first 1).
+// The Grand Hall's floor as the red team quoted it, at its old hand-drawn
+// 21 m × 10.5 m = 220.5 m² (redteam fix-first 1). The planner now opens the
+// hall at its scanned 21.135 m × 10.59 m = 223.8 m² (SCANNED_GRAND_HALL).
 const GRAND_HALL = 220.5;
+const SCANNED_GRAND_HALL = HALL_LENGTH * HALL_WIDTH;
 
 describe("roomStyleEstimates", () => {
   it("gives floor area ÷ generic spacing for every style, most to fewest", () => {
@@ -21,6 +25,16 @@ describe("roomStyleEstimates", () => {
     expect(byStyle.get("cocktail")).toBe(339); // 220.5 / 0.65
     expect(byStyle.get("dinner-rounds")).toBe(147); // 220.5 / 1.5
     expect(byStyle.get("theatre")).toBe(275); // 220.5 / 0.8
+  });
+
+  it("gives the scanned hall's arithmetic room-capacity.ts states: 344 standing, never 497", () => {
+    const rows = roomStyleEstimates(SCANNED_GRAND_HALL);
+    const byStyle = new Map(rows.map((row) => [row.style, row.estimate]));
+    expect(byStyle.get("cocktail")).toBe(344); // 223.82 / 0.65
+    expect(byStyle.get("dinner-rounds")).toBe(149); // 223.82 / 1.5
+    expect(byStyle.get("theatre")).toBe(279); // 223.82 / 0.8
+    // 497 standing at the 0.45 m² minimum is not produced here either.
+    expect(rows.some((row) => row.estimate === 497)).toBe(false);
   });
 
   it("carries no verdict and no count at the minimum allowance", () => {
