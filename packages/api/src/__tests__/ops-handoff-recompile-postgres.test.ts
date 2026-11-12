@@ -46,6 +46,8 @@ describe.skipIf(target === undefined)("compiling an event's handoff pack again, 
   let db: Database;
   let server: FastifyInstance;
   const applicationName = `ops-recompile-${randomUUID()}`;
+  /** What the route logs at warn and above, one JSON line each. */
+  const logLines: string[] = [];
 
   beforeAll(async () => {
     if (target === undefined) throw new Error("Explicit target required");
@@ -54,7 +56,7 @@ describe.skipIf(target === undefined)("compiling an event's handoff pack again, 
     expect((await observer.query<{ database: string }>("SELECT current_database() AS database")).rows[0]?.database)
       .toBe("venviewer_platform_test");
     db = drizzle(pool, { schema });
-    server = Fastify();
+    server = Fastify({ logger: { level: "warn", stream: { write: (line: string) => { logLines.push(line); } } } });
     await server.register(opsHandoffRoutes, { db, prefix: "/ops" });
     await server.ready();
   });
@@ -301,6 +303,21 @@ describe.skipIf(target === undefined)("compiling an event's handoff pack again, 
     expect(second.statusCode, second.body).toBe(201);
     expect(second.json<PackBody>().data.pack.id).not.toBe(firstPack.id);
     expect((await board(f)).handoffPack?.pack.id).toBe(second.json<PackBody>().data.pack.id);
+
+    // Review K3: the replacement is not silent. The warning names the pack
+    // and where the schema refused it, never what the pack says; the audit
+    // row of the new pack names the one it replaced.
+    const warnings = logLines.filter((line) => line.includes(firstPack.id));
+    expect(warnings).toHaveLength(1);
+    expect(JSON.parse(warnings[0] ?? "{}")).toEqual(expect.objectContaining({
+      msg: "ops_handoff.stored_pack_unreadable", handoffPackId: firstPack.id, issuePaths: [expect.stringContaining("body")],
+    }));
+    expect(warnings[0]).not.toMatch(/certified safe|TEST ONLY/iu);
+    const audits = await db.select({ metadata: schema.generalAuditLog.metadata }).from(schema.generalAuditLog)
+      .where(and(eq(schema.generalAuditLog.action, "ops_handoff.compiled"), eq(schema.generalAuditLog.targetId, second.json<PackBody>().data.pack.id)));
+    expect(audits).toEqual([{ metadata: expect.objectContaining({
+      replacedUnreadablePackId: firstPack.id, unreadableIssuePaths: [expect.stringContaining("body")],
+    }) }]);
   });
 
   // Review C6, as ruled: a plan frozen before 6 September 2026 has no floor

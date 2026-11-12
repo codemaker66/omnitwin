@@ -99,6 +99,7 @@ export async function opsHandoffRoutes(server: FastifyInstance, opts: { db: Data
         eventId,
         clientNotes: body.data.clientNotes ?? null,
         actorUserId: request.user.id,
+        logger: request.log,
       });
       return reply.status(created ? 201 : 200).send({ data: bundle, created });
     } catch (err) {

@@ -1,3 +1,4 @@
+import type { FastifyBaseLogger } from "fastify";
 import { and, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import { ZodError } from "zod";
 import {
@@ -1176,19 +1177,27 @@ function bundleContent(bundle: OpsHandoffPackBundle): HandoffContent {
   };
 }
 
+/** A stored pack as read for comparison: the pack (null if not found), or,
+ *  when the current schema no longer reads it, where the schema refused it. */
+type StoredPackRead =
+  | { readonly readable: true; readonly bundle: OpsHandoffPackBundle | null }
+  | { readonly readable: false; readonly issuePaths: readonly string[] };
+
 /**
- * A stored pack for comparison, or null when the current schema no longer
- * reads it (a phrase since refused, a limit since tightened). Such a pack
- * cannot be what this compile would write, and the compile replaces it: if
- * the read threw instead, every recompile of the plan would fail with it,
- * where a recompile is the way to a pack the board can read again (T-695
- * review H8).
+ * A stored pack for comparison, or the paths the current schema refuses in
+ * it (a phrase since refused, a limit since tightened). Such a pack cannot be
+ * what this compile would write, and the compile replaces it: if the read
+ * threw instead, every recompile of the plan would fail with it, where a
+ * recompile is the way to a pack the board can read again (T-695 review H8).
+ * The paths name fields, never their contents.
  */
-async function readStoredPack(db: Database, handoffPackId: string): Promise<OpsHandoffPackBundle | null> {
+async function readStoredPack(db: Database, handoffPackId: string): Promise<StoredPackRead> {
   try {
-    return await getOpsHandoffPackBundle(db, handoffPackId);
+    return { readable: true, bundle: await getOpsHandoffPackBundle(db, handoffPackId) };
   } catch (error: unknown) {
-    if (error instanceof ZodError) return null;
+    if (error instanceof ZodError) {
+      return { readable: false, issuePaths: error.issues.map((issue) => issue.path.map(String).join(".")) };
+    }
     throw error;
   }
 }
@@ -1216,6 +1225,8 @@ export async function compileOpsHandoffPackFromConfiguration(
     readonly eventId: string | null;
     readonly clientNotes: string | null;
     readonly actorUserId: string | null;
+    /** The request's logger: told when an unreadable stored pack is replaced. */
+    readonly logger?: FastifyBaseLogger;
   },
 ): Promise<OpsHandoffCompileResult> {
   const [config] = await db.select({
@@ -1246,7 +1257,10 @@ export async function compileOpsHandoffPackFromConfiguration(
     clientNotes: input.clientNotes,
   });
 
-  return db.transaction(async (tx): Promise<OpsHandoffCompileResult> => {
+  const { result, replaced } = await db.transaction(async (tx): Promise<{
+    readonly result: OpsHandoffCompileResult;
+    readonly replaced: { readonly packId: string; readonly issuePaths: readonly string[] } | null;
+  }> => {
     // One compile of this event at a time, whichever of its layouts (with no
     // event, one of this layout at a time): the second waits here, then reads
     // the event's newest pack as the first left it.
@@ -1269,10 +1283,15 @@ export async function compileOpsHandoffPackFromConfiguration(
     const standing = await newestHandoffPack(tx, input.eventId === null
       ? { eventId: null, configId: input.configId }
       : { eventId: input.eventId, venueId: config.venueId });
+    // A standing pack the schema no longer reads is replaced, and said so in
+    // the log and the new pack's audit row (review K3).
+    let replaced: { readonly packId: string; readonly issuePaths: readonly string[] } | null = null;
     if (standing !== null && standing.configId === input.configId && standing.snapshotId === snapshot.id) {
-      const existing = await readStoredPack(tx, standing.id);
-      if (existing !== null && JSON.stringify(bundleContent(existing)) === JSON.stringify(draftContent(draft))) {
-        return { bundle: existing, created: false };
+      const stored = await readStoredPack(tx, standing.id);
+      if (!stored.readable) {
+        replaced = { packId: standing.id, issuePaths: stored.issuePaths };
+      } else if (stored.bundle !== null && JSON.stringify(bundleContent(stored.bundle)) === JSON.stringify(draftContent(draft))) {
+        return { result: { bundle: stored.bundle, created: false }, replaced: null };
       }
     }
 
@@ -1414,11 +1433,21 @@ export async function compileOpsHandoffPackFromConfiguration(
         eventId: input.eventId,
         snapshotId: snapshot.id,
         digest: draft.digest,
+        ...(replaced === null ? {} : { replacedUnreadablePackId: replaced.packId, unreadableIssuePaths: replaced.issuePaths }),
       },
     });
 
     const bundle = await getOpsHandoffPackBundle(tx, pack.id);
     if (bundle === null) throw new Error("Handoff pack bundle could not be loaded after insertion.");
-    return { bundle, created: true };
+    return { result: { bundle, created: true }, replaced };
   });
+  // Told once the new pack is kept: the pack's id and the paths the schema
+  // refused, never what the pack says (review K3).
+  if (replaced !== null) {
+    input.logger?.warn(
+      { handoffPackId: replaced.packId, replacedBy: result.bundle.pack.id, issuePaths: replaced.issuePaths },
+      "ops_handoff.stored_pack_unreadable",
+    );
+  }
+  return result;
 }
