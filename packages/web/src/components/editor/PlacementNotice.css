@@ -40,6 +40,21 @@
   animation: placementNoticeIn var(--house-motion-deliberate, 240ms) ease-out;
 }
 
+/* In the new chrome: in the zone above the dock, under the door line, drawn
+   with that chrome's own notice; the same quiet arrival. */
+.placement-notice.is-zoned {
+  position: static;
+  left: auto;
+  bottom: auto;
+  max-width: min(520px, 100%);
+  transform: none;
+}
+
+.placement-notice__drawn {
+  animation: placementNoticeIn var(--house-motion-deliberate, 240ms) ease-out;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .placement-notice__line { animation: none; }
+  .placement-notice__line,
+  .placement-notice__drawn { animation: none; }
 }

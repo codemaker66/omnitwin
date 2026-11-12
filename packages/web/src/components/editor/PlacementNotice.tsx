@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactElement } from "react";
+import { useEffect, useRef, useState, type ReactElement, type ReactNode } from "react";
 import { usePlacementNoticeStore } from "../../stores/placement-notice-store.js";
 import { useCatalogueStore } from "../../stores/catalogue-store.js";
 import "./PlacementNotice.css";
@@ -13,9 +13,21 @@ import "./PlacementNotice.css";
 // (polite, never interrupting). The line clears itself after a few seconds,
 // or as soon as the piece being placed is put down or another is chosen.
 // Under reduced motion it simply appears.
+//
+// In the new chrome it sits in the zone above the dock (`zoned`), under the
+// door line, and `line` draws it with that chrome's own notice (ruling C2 on
+// #388); the rules above are the same there.
 // ---------------------------------------------------------------------------
 
-export function PlacementNotice({ mobile = false }: { readonly mobile?: boolean }): ReactElement {
+export interface PlacementNoticeProps {
+  readonly mobile?: boolean;
+  /** In the new chrome's zone above the dock, not fixed near the floor. */
+  readonly zoned?: boolean;
+  /** How the line is drawn; a plain line when not given. */
+  readonly line?: (text: string) => ReactNode;
+}
+
+export function PlacementNotice({ mobile = false, zoned = false, line }: PlacementNoticeProps): ReactElement {
   const notice = usePlacementNoticeStore((state) => state.notice);
   const dismiss = usePlacementNoticeStore((state) => state.dismiss);
   const selectedItemId = useCatalogueStore((state) => state.selectedItemId);
@@ -37,16 +49,20 @@ export function PlacementNotice({ mobile = false }: { readonly mobile?: boolean 
 
   return (
     <div
-      className={mobile ? "placement-notice is-mobile" : "placement-notice"}
+      className={zoned ? "placement-notice is-zoned" : mobile ? "placement-notice is-mobile" : "placement-notice"}
       role="status"
       aria-live="polite"
       data-testid="placement-notice-region"
     >
-      {inPage && notice !== null && (
+      {inPage && notice !== null && (line === undefined ? (
         <p key={notice.id} className="placement-notice__line" data-testid="placement-notice">
           {notice.text}
         </p>
-      )}
+      ) : (
+        <div key={notice.id} className="placement-notice__drawn" data-testid="placement-notice">
+          {line(notice.text)}
+        </div>
+      ))}
     </div>
   );
 }
