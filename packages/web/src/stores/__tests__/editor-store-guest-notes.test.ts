@@ -863,10 +863,11 @@ describe("removing a piece whose only note is the person's own, in a browser the
     expect(pieceIds()).toEqual([A, C]);
 
     // Keeping this version: B's note can no longer be vouched for across the versions, so B stays, with its note.
+    // The person can read that note: it is still being saved, not one that cannot be shown here (delta review R4).
     expect(await store().keepMine(false)).toBe(true);
     expect(store()).toMatchObject({ saveConflict: null, saveError: null, isDirty: false });
     expect(pieceIds()).toContain(B);
-    expect(notice()).toMatch(/ stayed where it is, because it has a note that cannot be shown here\.$/u);
+    expect(notice()).toMatch(/^Nothing was removed: the note on .+ is still being saved\. Try again once it has saved\.$/u);
     expect(server.notes.get(B)).toBe(MINE);
     expect(server.notes.get(A)).toBe(ALLERGY);
   });
@@ -955,7 +956,8 @@ describe("removing a piece whose only note is the person's own, in a browser the
     expect(savesSent()).toBe(sentBefore + 2);
     expect(saveSent(sentBefore + 1).batch.map((piece) => piece.id)).toEqual([A, C, B]);
     expect(sentPiece(sentBefore + 1, B).metadata?.notes).toBe(MINE);
-    expect(notice()).toMatch(/Table 5/u);
+    // Their note, carried until that save confirms it: still being saved (delta review R4).
+    expect(notice()).toBe("Nothing was removed: the note on Table 5 is still being saved. Try again once it has saved.");
     expect(server.notes.get(B)).toBe(MINE);
     expect(noteOn(B)).toBe(MINE);
     expect(heldNoteIds(store()).has(B)).toBe(false);
@@ -969,6 +971,24 @@ describe("removing a piece whose only note is the person's own, in a browser the
     expect(await store().saveToServer(false)).toBe(true);
     expect(server.notes.has(B)).toBe(false);
     expect(pieceIds()).toEqual([A, C]);
+  });
+
+  it("says the note is still being saved when Keep mine takes back the person's own removed piece, whose note they can read (delta review R4)", async () => {
+    const server: PlanOnServer = { revision: 4, notes: new Map([[A, ALLERGY]]) };
+    await withOwnNoteOnTableFive(server);
+    // Another device moves C before this browser's removal of Table 5 is saved.
+    theyNowHave(server, [placed(A, { noteHeld: true }), placed(B, { noteHeld: true, displayLabel: "Table 5" }), placed(C, {}, 6)]);
+    store().removeObject(B);
+    expect(await store().saveToServer(false)).toBe(false);
+    usePlacementNoticeStore.getState().dismiss();
+
+    expect(await store().keepMine(false)).toBe(true);
+    expect(pieceIds()).toContain(B);
+    expect(notice()).toBe("Nothing was removed: the note on Table 5 is still being saved. Try again once it has saved.");
+    // Its panel shows their words, and the save that kept their version has confirmed them.
+    expect(noteOn(B)).toBe(MINE);
+    expect(noteHeldOn(store(), B)).toBe(false);
+    expect(server.notes.get(B)).toBe(MINE);
   });
 
   it("sends the one save for a piece that carries no note", async () => {

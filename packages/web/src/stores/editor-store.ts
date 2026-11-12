@@ -1900,8 +1900,15 @@ function putBackHeldNotePieces(): boolean {
   });
   notifyLocalChange(s.objects, objects);
   const insertedIds = new Set(inserted.map((piece) => piece.id));
-  const stayed = stayedForNotesLine(heldNoteObjectsNamed(back.held.filter((piece) => insertedIds.has(piece.id)), s.baseObjects));
-  if (stayed !== null) postPlacementNotice(stayed);
+  const returned = back.held.filter((piece) => insertedIds.has(piece.id));
+  if (returned.length === 0) return true;
+  // A note of their own that no save has confirmed yet ("Keep mine" carries
+  // it) is one they can read: it is still being saved, as removeObject says
+  // it, never one that cannot be shown here (delta review R4).
+  const carried = carriedNoteIds(s);
+  const named = heldNoteObjectsNamed(returned, s.baseObjects);
+  const line = returned.every((piece) => carried.has(piece.id)) ? noteStillSavingLine(named) : stayedForNotesLine(named);
+  if (line !== null) postPlacementNotice(line);
   return true;
 }
 
