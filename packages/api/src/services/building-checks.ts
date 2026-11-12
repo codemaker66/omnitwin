@@ -7,7 +7,7 @@ import {
   type BuildingCheckKind,
   type BuildingChecksDay,
 } from "@omnitwin/types";
-import { venueBuildingCheckMarks, venueBuildingChecks, venueSettings, venues } from "../db/schema.js";
+import { generalAuditLog, venueBuildingCheckMarks, venueBuildingChecks, venueSettings, venues } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { canAdministerVenue, canManageVenue, canRecordObservation } from "../utils/query.js";
 import type { RequestActor } from "./requests.js";
@@ -27,7 +27,8 @@ import type { RequestActor } from "./requests.js";
 // unique index over live ticks decides two ticks at once, and the second
 // reads the first back. A tick is taken back only by whoever made it, or by
 // the office, and stays on record with who took it back. Who wrote and
-// retired each check is kept too.
+// retired each check is kept too, and who put a list in a new order, when,
+// in the general audit log.
 // ---------------------------------------------------------------------------
 
 export interface CheckDeny {
@@ -51,11 +52,19 @@ type MarkRow = typeof venueBuildingCheckMarks.$inferSelect;
 /** The column holding who ticked: a longer name is clipped, never refused. */
 const NAME_MAX = 160;
 
-/** The name a tick is recorded under: the account's own, or "Someone" when it has none. */
+/**
+ * The name a tick is recorded under: the account's own, or "Someone" when it
+ * has none. Clipped by characters, as the column counts them, never through
+ * one (a character JavaScript holds as two code units would otherwise be cut
+ * in half and stored as a replacement character).
+ */
 function tickName(actor: RequestActor): string {
-  const name = actor.name.trim().slice(0, NAME_MAX).trim();
+  const name = Array.from(actor.name.trim()).slice(0, NAME_MAX).join("").trim();
   return name.length > 0 ? name : "Someone";
 }
+
+/** The general audit log's record of a list put in a new order. */
+export const BUILDING_CHECKS_REORDERED = "building_checks.reordered";
 
 /** The venue's clock: its time zone, and the hour its board's day rolls (midnight without settings, as the board). */
 interface VenueClock {
@@ -156,6 +165,21 @@ export async function replaceBuildingChecks(
     }
     // A check keeps its id while its words stand; reworded, it is retired.
     const kept = new Set(body.items.flatMap((item) => (item.id !== undefined && byId.get(item.id)?.label === item.label ? [item.id] : [])));
+    // A move changes no check, so it is recorded on its own: who put the list
+    // in a new order, when, and the order before and after. An addition,
+    // a check taken off or reworded leaves the others' order as it was.
+    const orderBefore = current.flatMap((check) => (kept.has(check.id) ? [check.id] : []));
+    const orderAfter = body.items.flatMap((item) => (item.id !== undefined && kept.has(item.id) ? [item.id] : []));
+    if (orderBefore.some((id, index) => id !== orderAfter[index])) {
+      await tx.insert(generalAuditLog).values({
+        actorUserId: actor.id,
+        action: BUILDING_CHECKS_REORDERED,
+        targetType: "venue_building_checks",
+        targetId: `${venueId}:${kind}`,
+        summary: `${kind === "opening" ? "Opening" : "Lock-up"} checks put in a new order.`,
+        metadata: { venueId, kind, before: orderBefore, after: orderAfter },
+      });
+    }
     const retire = current.filter((check) => !kept.has(check.id)).map((check) => check.id);
     if (retire.length > 0) {
       await tx.update(venueBuildingChecks).set({ retiredAt: sql`clock_timestamp()`, retiredByUserId: actor.id })

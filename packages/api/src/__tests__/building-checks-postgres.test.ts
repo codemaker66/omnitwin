@@ -377,6 +377,54 @@ describe.skipIf(target === undefined)("opening and lock-up, on migrated PostgreS
     expect(response.json<{ data: BuildingCheck }>().data.mark?.doneByName).toHaveLength(160);
   });
 
+  it("clips a long name by characters, never through one, on a tick and on a tick taken back", async () => {
+    const f = await fixture();
+    const [alarm] = (await call(f, "admin", "PUT", `/venues/${f.venueId}/building-checks/opening`, { expected: [], items: [{ label: "Alarm unset" }] })).data as BuildingCheck[];
+    const url = `/venues/${f.venueId}/building-checks/${alarm?.id ?? ""}/marks`;
+    // The 160th character is one that JavaScript holds as two code units.
+    const name = `${"J".repeat(159)}🔑 MacLeod`;
+    const as = (id: string) => ({ authorization: `Bearer ${JSON.stringify({ id, email: `${id}@checks.invalid`, name, role: "hallkeeper", platformRole: "none", venueId: f.venueId })}` });
+    const ticked = await server.inject({ method: "POST", url, payload: { day: TODAY }, headers: as(f.people.hallkeeper) });
+    expect(ticked.statusCode).toBe(200);
+    expect(ticked.json<{ data: BuildingCheck }>().data.mark?.doneByName).toBe(`${"J".repeat(159)}🔑`);
+    expect((await server.inject({ method: "DELETE", url: `${url}?day=${TODAY}`, headers: as(f.people.hallkeeper) })).statusCode).toBe(200);
+    const kept = await pool.query<{ done_by_name: string; undone_by_name: string }>(
+      "SELECT done_by_name, undone_by_name FROM venue_building_check_marks WHERE check_id = $1",
+      [alarm?.id],
+    );
+    expect(kept.rows).toEqual([{ done_by_name: `${"J".repeat(159)}🔑`, undone_by_name: `${"J".repeat(159)}🔑` }]);
+  });
+
+  it("records who put a list in a new order, and when, since a move changes no check", async () => {
+    const f = await fixture();
+    const lockup = `/venues/${f.venueId}/building-checks/lockup`;
+    const moves = async () => (await pool.query<{ actor: string | null; action: string; metadata: unknown; at: Date }>(
+      `SELECT actor_user_id AS actor, action, metadata, created_at AS at FROM general_audit_log
+        WHERE target_type = 'venue_building_checks' AND target_id = $1 ORDER BY created_at`,
+      [`${f.venueId}:lockup`],
+    )).rows;
+    const written = (await call(f, "admin", "PUT", lockup, { expected: [], items: [{ label: "Fire doors shut" }, { label: "Alarm set" }] })).data as BuildingCheck[];
+    const [doors, alarm] = written.map((check) => ({ id: check.id, label: check.label }));
+    if (doors === undefined || alarm === undefined) throw new Error("List fixture missing");
+    // Writing a list, adding to it, rewording and taking a check off move nothing.
+    const added = (await call(f, "admin", "PUT", lockup, { expected: [doors.id, alarm.id], items: [doors, alarm, { label: "Keys in the safe" }] })).data as BuildingCheck[];
+    const keys = { id: added[2]?.id ?? "", label: "Keys in the safe" };
+    const reworded = (await call(f, "admin", "PUT", lockup, { expected: [doors.id, alarm.id, keys.id], items: [doors, { id: alarm.id, label: "Alarm set, all zones" }, keys] })).data as BuildingCheck[];
+    const zones = { id: reworded[1]?.id ?? "", label: "Alarm set, all zones" };
+    expect((await call(f, "admin", "PUT", lockup, { expected: [doors.id, zones.id, keys.id], items: [zones, keys] })).status).toBe(200);
+    expect(await moves()).toEqual([]);
+    // Fiona puts the keys first.
+    const before = Date.now();
+    expect((await call(f, "staff", "PUT", lockup, { expected: [zones.id, keys.id], items: [keys, zones] })).status).toBe(200);
+    const [move] = await moves();
+    expect(await moves()).toHaveLength(1);
+    expect(move).toMatchObject({
+      actor: f.people.staff, action: "building_checks.reordered",
+      metadata: { venueId: f.venueId, kind: "lockup", before: [zones.id, keys.id], after: [keys.id, zones.id] },
+    });
+    expect(move?.at.getTime()).toBeGreaterThanOrEqual(before - 1000);
+  });
+
   it("keeps each venue to its own lists and ticks", async () => {
     const f = await fixture();
     const [alarm] = (await call(f, "admin", "PUT", `/venues/${f.venueId}/building-checks/opening`, { expected: [], items: [{ label: "Alarm unset" }] })).data as BuildingCheck[];
