@@ -24,6 +24,12 @@ import { useRoomDimensionsStore } from "../stores/room-dimensions-store.js";
 // metadata, so the review goes to the venue with it. The stored review is
 // read again just before each write, so the venue's latest decisions are kept.
 // A guest's preview stores nothing; its review is derived wherever it opens.
+//
+// An item's location, where it is a polygon, is the floor of its pinch, in
+// real metres (lib/auto-fill gangwayFloor). Whoever draws it fills it by the
+// nonzero rule: in a room with its own floor its parts may overlap, so the
+// outline can wind twice round some floor, and its shoelace area can be more
+// than the floor it covers. Every spot it winds round is the room's floor.
 // ---------------------------------------------------------------------------
 
 /** How long the pinches must stay still before the review is written, ms: a drag writes once, after it ends. */

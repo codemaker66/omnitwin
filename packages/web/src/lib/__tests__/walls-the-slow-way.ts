@@ -21,12 +21,13 @@ function wallsOf(walls: Walls): readonly (readonly [number, number, number, numb
 }
 
 /**
- * Whether a point is inside the walls: they wind round it. Counted wall by
- * wall, +1 for a wall crossing the point's level upward with the point on its
- * left, −1 for one crossing it downward with the point on its right; a point
- * outside comes to nought.
+ * How many times walls wind round a point. Counted wall by wall, +1 for a
+ * wall crossing the point's level upward with the point on its left, −1 for
+ * one crossing it downward with the point on its right: a point outside comes
+ * to nought, one inside a room's walls to ±1, and one inside a drawn outline
+ * that goes round it twice to ±2.
  */
-export function insideWalls(walls: Walls, x: number, z: number): boolean {
+export function windingOf(walls: Walls, x: number, z: number): number {
   let winding = 0;
   for (const [ax, az, bx, bz] of wallsOf(walls)) {
     const side = (bx - ax) * (z - az) - (x - ax) * (bz - az);
@@ -36,7 +37,12 @@ export function insideWalls(walls: Walls, x: number, z: number): boolean {
       winding -= 1;
     }
   }
-  return winding !== 0;
+  return winding;
+}
+
+/** Whether a point is inside the walls: they wind round it (windingOf), once or more. */
+export function insideWalls(walls: Walls, x: number, z: number): boolean {
+  return windingOf(walls, x, z) !== 0;
 }
 
 /**

@@ -3,10 +3,16 @@
 // two points, which the API refuses, so the layout could not be submitted: two parts of no length, in line,
 // drawn as their hull. So the parts here are the worst that could be handed over, and thousands made at random.
 import { GangwayReviewSchema, type FloorPoint } from "@omnitwin/types";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+import { GRAND_HALL_RENDER_DIMENSIONS } from "../../constants/scale.js";
 import { roomGeometries } from "../../data/room-geometries.js";
-import { gangwayFloor, type FloorPart } from "../auto-fill.js";
-import { areaOf, floorClaims, insideWalls, straightWalls, type Walls } from "./walls-the-slow-way.js";
+import { useCatalogueStore } from "../../stores/catalogue-store.js";
+import { useChairDialogStore } from "../../stores/chair-dialog-store.js";
+import { usePlacementStore } from "../../stores/placement-store.js";
+import { useRoomDimensionsStore } from "../../stores/room-dimensions-store.js";
+import { gangwayFloor, gangwayReview, type FloorPart } from "../auto-fill.js";
+import { floorOf, GUIDANCE, piece, room, setDown, sideOf } from "./gangway-against-walls.js";
+import { areaOf, floorClaims, insideWalls, onOrInside, straightWalls, TOUCHING, windingOf, type Walls } from "./walls-the-slow-way.js";
 
 /** The least floor a location may be drawn on, square metres: a centimetre of wall, the guidance deep. */
 const REAL_FLOOR_M2 = 0.01;
@@ -149,5 +155,59 @@ describe("the floor a pinch is drawn on, whatever its parts", () => {
   it("leaves one part that lies wholly in the room exactly as it was handed over", () => {
     const stretch = [point(5.95, -3.0), point(5.95, -1.95), point(4.85, -1.95), point(4.85, -3.0)];
     expect(gangwayFloor([{ floor: stretch, along: [point(5.95, -3.0), point(5.95, -1.95)] }], saloonOutline)).toEqual(stretch);
+  });
+});
+
+// Where two parts of a pinch share floor (a wall's stretch and a corner's triangle, or two stretches), the outline
+// goes round each whole and so winds twice round the floor they share (fourth review of the branch, finding 3). It
+// is to be filled by the nonzero rule, as gangwayFloor and the record say: all of it is the room's floor.
+describe("the floor a pinch is drawn on where its parts overlap, filled by the nonzero rule", () => {
+  afterEach(() => {
+    useCatalogueStore.getState().clearSelection();
+    usePlacementStore.setState({ placedItems: [], ghostPosition: null, ghostRotation: 0, ghostValid: false, ghostInvalidReason: null, snapEnabled: true });
+    useChairDialogStore.getState().clearDialog();
+    useRoomDimensionsStore.getState().setDimensions(GRAND_HALL_RENDER_DIMENSIONS);
+  });
+
+  it("winds only round the room's floor within the guidance of its east walls for a chair turned 15° before the Saloon's east pier", () => {
+    const r = room("Saloon");
+    useRoomDimensionsStore.getState().setDimensions(r.dims);
+    // Grid on, turned 15°: the click sets the banquet chair 2.4 mm off the east pier's face, x = 5.95, at z = 0.
+    const set = setDown(piece("banquet-chair"), 0, 5.4768, 0.2973, Math.PI / 12, true);
+    const [chair] = set ?? [];
+    if (set === null || chair === undefined) throw new Error("nothing was set down");
+    expect(chair.x).toBeCloseTo(5.674432, 6);
+    expect(chair.z).toBeCloseTo(0, 9);
+    const east = gangwayReview(set, r.dims, null).find((item) => sideOf(item) === "xMax");
+    const floor = east === undefined ? null : floorOf(east);
+    if (east === undefined || floor === null) throw new Error("the east gangway is not drawn as floor");
+    const eastWalls = r.straight.filter((_, i) => r.sides[i] === "xMax");
+    expect(floorClaims(r.walls, eastWalls, floor, GUIDANCE, TOUCHING)).toMatchObject({ offTheFloor: 0, beyondReach: 0 });
+    // Every spot of a 200 by 200 grid over it that it winds round, once or more, is the room's floor.
+    const xs = floor.map(([x]) => x);
+    const zs = floor.map(([, z]) => z);
+    const [minX, maxX, minZ, maxZ] = [Math.min(...xs), Math.max(...xs), Math.min(...zs), Math.max(...zs)];
+    const cell = ((maxX - minX) / 200) * ((maxZ - minZ) / 200);
+    let wound = 0;
+    let twice = 0;
+    let off = 0;
+    for (let i = 0; i < 200; i += 1) {
+      for (let j = 0; j < 200; j += 1) {
+        const x = minX + ((maxX - minX) * (i + 0.5)) / 200;
+        const z = minZ + ((maxZ - minZ) * (j + 0.5)) / 200;
+        const winding = windingOf(floor, x, z);
+        if (winding === 0) continue;
+        wound += 1;
+        if (Math.abs(winding) >= 2) twice += 1;
+        if (!onOrInside(r.walls, x, z, TOUCHING)) off += 1;
+      }
+    }
+    expect(off).toBe(0);
+    expect(wound * cell).toBeGreaterThan(0.6);
+    // Here the gangway inside the north-east alcove's back wall and the triangle at the pier's front corner (5.95, 0.15)
+    // both cover the floor before the alcove's mouth: some of it is wound round twice, and the outline's shoelace area is
+    // more than the floor it covers. A union of the parts would end that; until then the nonzero rule draws it rightly.
+    expect(twice * cell).toBeGreaterThan(0.01);
+    expect(areaOf(floor)).toBeGreaterThan(wound * cell);
   });
 });

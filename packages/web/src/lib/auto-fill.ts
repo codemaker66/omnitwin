@@ -1467,6 +1467,16 @@ function cornersBetween(from: FloorPoint, to: FloorPoint, outline: readonly Floo
  * along the walls and round no floor: the mouth of an alcove or a door recess
  * that the unit does not narrow, and open floor far from any wall, are not
  * claimed, and no line of it leaves the room.
+ *
+ * The outline is to be filled by the nonzero rule, and its parts may overlap.
+ * Where a wall's stretch and a corner's triangle, or two stretches, share
+ * floor (a chair turned before a Saloon pier: the gangway inside the back
+ * wall of the alcove beside the pier and the triangle at the pier's front
+ * corner both cover the floor before the alcove's mouth), each part is gone
+ * round whole, so the outline winds twice round the floor they share. Every spot it winds round, once or more, is the room's floor
+ * no further than the guidance from a wall the pinch is drawn for. Filled by
+ * the even-odd rule it would show a hole where the parts overlap, and its
+ * shoelace area can be more than the floor it covers.
  */
 export function gangwayFloor(parts: readonly [FloorPart, ...FloorPart[]], outline: readonly FloorPoint[]): readonly FloorPoint[] {
   const [only, ...others] = parts;
@@ -1750,10 +1760,12 @@ function floorWallPinches(
  * of it: its width is the unit's gap, the least from any of its pieces, to
  * the nearest of the walls on that side it stands in front of and the corners
  * it is nearest there, and its location is the gangway floor inside each of
- * them, one polygon of real floor within the room (gangwayFloor): a set
- * standing along a wall with alcoves in it is drawn on every stretch of the
- * wall it narrows, and not across the alcoves' mouths. A middle gangway is
- * the design's, as in any room.
+ * them, one polygon of real floor within the room (gangwayFloor), to be
+ * filled by the nonzero rule: its parts may overlap, and its shoelace area
+ * can be more than the floor it covers. A set standing along a wall with
+ * alcoves in it is drawn on every stretch of the wall it narrows, and not
+ * across the alcoves' mouths. A middle gangway is the design's, as in any
+ * room.
  */
 export function gangwayReview(
   placedItems: readonly PlacedItem[],
