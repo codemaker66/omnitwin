@@ -74,8 +74,10 @@ planner's words. The build keeps every fact and changes the arrangement:
   first step.", vague.
 - **The rail's contact** shows the name, role and phone a crew calls; the email stays with the contact on page 1.
 - **Next (not in PR 1):** study D sets the chairs as their own tick line in Furniture ("120 Chiavari chairs · 110
-  at the rounds · 10 at the top table"). Both page 2 re-testers asked for a chair total. The setup rules fold
-  seated chairs into their tables and are shared with the screen's setup list, so the line changes both.
+  at the rounds · 10 at the top table"). Both page 2 re-testers asked for a chair total. The setup rule (the
+  paper's own; the screen keeps its list) folds seated chairs into their tables, and a seated chair's note reaches
+  no row, so "Notes on the plan" holds seat notes today. The chairs line would carry them where the crew sets the
+  chairs.
 - **Notes on the plan** that no setup line carries are listed after the last step under their numbers, so every
   number on the plan can still be looked up (the old legend's guarantee). The manifest normally carries each note
   under its item.
