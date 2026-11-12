@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactElement } from "react";
 import { useSearchParams } from "react-router-dom";
-import { addRotaDays, rotaInstant, rotaLocalDate, type ClientEventSchedule, type EventPhase } from "@omnitwin/types";
+import { addRotaDays, eventDisplayName, rotaInstant, rotaLocalDate, type ClientEventSchedule, type EventPhase } from "@omnitwin/types";
 import { ActivityStatus } from "../../shared/Activity.js";
 import { ApiError } from "../../../api/client.js";
 import { moveBooking, transitionBooking } from "../../../api/diary.js";
@@ -294,19 +294,22 @@ function ClientWhenRibbon(): ReactElement | null {
     if (slot === undefined) return null;
     return { bookingId: slot.bookingId, kind: slot.kind, title: slot.title, startMs: Date.parse(slot.startsAt), endMs: Date.parse(slot.endsAt) };
   }, [data, room]);
+  // The event's name as shown everywhere (eventDisplayName): an event stored
+  // without one is called by its occasion and the venue's day. A booking of
+  // this event stored without a title (API-9) is named by it
+  // (ribbonBookingTitle), and so is the bar before any proposal.
+  const eventName = data === null ? "" : eventDisplayName(data.event, timeZone);
   const draft = useMemo(() => {
     if (data === null) return null;
     const planned = data.event.startsAt === null ? null : Date.parse(data.event.startsAt);
     const startMs = planned ?? eveningStart(Date.now(), timeZone);
     const plannedEnd = data.event.endsAt === null ? null : Date.parse(data.event.endsAt);
     const endMs = plannedEnd !== null && plannedEnd > startMs ? plannedEnd : startMs + DEFAULT_WINDOW_MS;
-    return { startMs, endMs, title: data.event.name };
-  }, [data, timeZone]);
+    return { startMs, endMs, title: eventName };
+  }, [data, timeZone, eventName]);
   const anchorMs = own?.startMs ?? draft?.startMs ?? null;
   const date = anchorMs === null ? null : rotaLocalDate(anchorMs, timeZone);
   const roomDay = useRoomDay(eventId, room?.id ?? null, date);
-  // A booking of this event stored without a title (API-9) is named by the event.
-  const eventName = data?.event.name ?? "";
   const day = useMemo(
     () => (roomDay.data === null || room === null
       ? null
@@ -689,10 +692,11 @@ function RibbonBody({
         const next = moveRibbonDrag(current, day, already + direction * stepMs, event.shiftKey);
         if (next.proposedStartMs !== current.proposedStartMs || next.proposedEndMs !== current.proposedEndMs) tick();
         setKeyboardDrag(next);
-        const wall = day.ghosts.find((ghost) => ghost.exclusion === "hard")?.title ?? "";
+        // A ghost's title is never blank (ribbonBookingTitle, the client's span words): only a day with no wall falls back.
+        const wall = day.ghosts.find((ghost) => ghost.exclusion === "hard")?.title ?? "a confirmed booking";
         setAnnouncement(
           next.overshootMs !== 0 && next.mode === "move"
-            ? RIBBON_COPY.announceBlocked(wall.trim() === "" ? "a confirmed booking" : wall)
+            ? RIBBON_COPY.announceBlocked(wall)
             : RIBBON_COPY.announceMove(rangeLabel(next.proposedStartMs, next.proposedEndMs, timeZone)),
         );
         return;
