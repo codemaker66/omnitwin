@@ -80,6 +80,8 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/deal-stage-race-postgres.test.ts",
   // POST /public/enquiries against real constraints, on its own database (below).
   "src/__tests__/public-enquiry-venue-slug-postgres.test.ts",
+  // ...and on the platform database: a deleted venue takes no enquiry (audit public-surface-7).
+  "src/__tests__/public-enquiry-intake-postgres.test.ts",
   // The reference loadouts list: photo count and cover subqueries name their loadout (VENVIEWER-API-1).
   "src/__tests__/reference-loadouts-postgres.test.ts",
   // The chair sizes migration (0103): rewrites only from 0074's sizes, stops named, never blocks a layout save.

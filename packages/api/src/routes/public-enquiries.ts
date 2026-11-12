@@ -29,11 +29,14 @@ const GuestEnquiryBody = GuestEnquirySchema;
 
 /**
  * Venues whose public twin is published and may therefore receive walkthrough
- * enquiries. This is the venue-path's OPT-IN GATE (2026-07 security review): the
- * config path is protected by `isPublicPreview` + an unguessable UUID, but a
+ * enquiries. This is the venue-path's OPT-IN GATE (2026-07 security review): a
  * venue slug is public and guessable, so without a gate any tenant would be
- * enumerable and spammable by slug. The allowlist mirrors how the twin bundle
- * is actually deployed (manually, per venue, to R2); env-overridable so new
+ * enumerable and spammable by slug. The config path does not read this list:
+ * anyone may make a public plan in any live venue's room (POST
+ * /public/configurations, as the planner at /v/:venueSlug/plan does), so a
+ * plan's id is no secret and that path reaches every live venue (audit
+ * public-surface-7, left for a decision). The allowlist mirrors how the twin
+ * bundle is actually deployed (manually, per venue, to R2); env-overridable so new
  * twins are enabled without a code change, defaulting to the flagship so the
  * live twin works with no extra deploy step. The default is the DATABASE slug
  * (TRADES_HALL_ENQUIRY_VENUE_SLUG), not the asset slug: this gate is checked
@@ -118,29 +121,28 @@ export async function publicEnquiryRoutes(
     };
 
     if (parsed.data.configurationId !== undefined) {
-      const [config] = await db.select({ spaceId: configurations.spaceId })
+      // The plan's room and venue, while the venue is live: a deleted venue
+      // takes no enquiry here, as it takes none on the venue path below.
+      // Deleting a venue leaves its rooms and its guests' plans as they were.
+      const [planned] = await db.select({ spaceId: spaces.id, venueId: spaces.venueId, roomName: spaces.name })
         .from(configurations)
+        .innerJoin(spaces, eq(spaces.id, configurations.spaceId))
+        .innerJoin(venues, eq(venues.id, spaces.venueId))
         .where(and(
           eq(configurations.id, parsed.data.configurationId),
           eq(configurations.isPublicPreview, true),
           isNull(configurations.deletedAt),
+          isNull(venues.deletedAt),
         ))
         .limit(1);
-      if (config === undefined) {
+      if (planned === undefined) {
         return reply.status(404).send({ error: "Configuration not found", code: "NOT_FOUND" });
       }
-      const [space] = await db.select({ id: spaces.id, venueId: spaces.venueId, name: spaces.name })
-        .from(spaces)
-        .where(eq(spaces.id, config.spaceId))
-        .limit(1);
-      if (space === undefined) {
-        return reply.status(500).send({ error: "Space not found for configuration", code: "INTERNAL_ERROR" });
-      }
       anchor = {
-        venueId: space.venueId,
-        spaceId: config.spaceId,
+        venueId: planned.venueId,
+        spaceId: planned.spaceId,
         configurationId: parsed.data.configurationId,
-        roomName: space.name,
+        roomName: planned.roomName,
         venuePath: false,
         venueSlug: null,
       };
