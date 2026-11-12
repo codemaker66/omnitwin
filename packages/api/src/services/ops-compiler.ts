@@ -1,4 +1,5 @@
 import { and, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
+import { ZodError } from "zod";
 import {
   BeoDocumentSchema,
   EventArchitectCandidateSchema,
@@ -1122,6 +1123,23 @@ function bundleContent(bundle: OpsHandoffPackBundle): HandoffContent {
   };
 }
 
+/**
+ * A stored pack for comparison, or null when the current schema no longer
+ * reads it (a phrase since refused, a limit since tightened). Such a pack
+ * cannot be what this compile would write, and the compile replaces it: if
+ * the read threw instead, every recompile of the plan would fail with it,
+ * where a recompile is the way to a pack the board can read again (T-695
+ * review H8).
+ */
+async function readStoredPack(db: Database, handoffPackId: string): Promise<OpsHandoffPackBundle | null> {
+  try {
+    return await getOpsHandoffPackBundle(db, handoffPackId);
+  } catch (error: unknown) {
+    if (error instanceof ZodError) return null;
+    throw error;
+  }
+}
+
 export interface OpsHandoffCompileResult {
   readonly bundle: OpsHandoffPackBundle;
   /** False when the event's newest pack already said this and was returned. */
@@ -1199,7 +1217,7 @@ export async function compileOpsHandoffPackFromConfiguration(
       ? { eventId: null, configId: input.configId }
       : { eventId: input.eventId, venueId: config.venueId });
     if (standing !== null && standing.configId === input.configId && standing.snapshotId === snapshot.id) {
-      const existing = await getOpsHandoffPackBundle(tx, standing.id);
+      const existing = await readStoredPack(tx, standing.id);
       if (existing !== null && JSON.stringify(bundleContent(existing)) === JSON.stringify(draftContent(draft))) {
         return { bundle: existing, created: false };
       }

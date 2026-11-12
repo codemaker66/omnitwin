@@ -244,4 +244,20 @@ describe.skipIf(target === undefined)("compiling an event's handoff pack again, 
     expect(onceMore.statusCode, onceMore.body).toBe(200);
     expect(onceMore.json<PackBody>().data.pack.id).toBe(packA.id);
   });
+
+  // Review H8: a stored pack the current schema no longer reads (here a BEO
+  // carrying a phrase SafeOpsTextSchema now refuses) cannot be what this
+  // compile would write; the recompile makes a fresh pack instead of failing.
+  it("makes a fresh pack when the event's stored pack no longer reads, rather than failing every recompile", async () => {
+    const f = await fixture();
+    const first = await f.compile();
+    expect(first.statusCode, first.body).toBe(201);
+    const firstPack = first.json<PackBody>().data.pack;
+    await pool.query("UPDATE beo_documents SET body = body || ' Certified safe.' WHERE handoff_pack_id = $1", [firstPack.id]);
+
+    const second = await f.compile();
+    expect(second.statusCode, second.body).toBe(201);
+    expect(second.json<PackBody>().data.pack.id).not.toBe(firstPack.id);
+    expect((await board(f)).handoffPack?.pack.id).toBe(second.json<PackBody>().data.pack.id);
+  });
 });
