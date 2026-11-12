@@ -206,4 +206,32 @@ describe("what the slate says about work that outlived its page", () => {
     openSlate();
     expect(document.body.textContent).toContain("Your changes to the Grand Hall layout are kept on this device and save when you open it again.");
   });
+
+  // Delta review of #388 at 33a8e0ad, S1: a switch over a refused clear goes
+  // on, and the clear's sentence goes with it into the next layout's note,
+  // which stands until the person dismisses it (ruling R1(b)).
+  const NOT_REMOVED = "Table 7's note was not removed: it was changed somewhere else, and that note cannot be shown here.";
+
+  it("goes on when every change saved but a clear of a note was refused", async () => {
+    useEditorStore.setState({ isDirty: false, pendingChanges: 0 });
+    openSlate();
+    chooseSaloon();
+    await settle("clear-refused");
+    await waitFor(() => { expect(where()).toBe("/plan?space=saloon&chrome=v2"); });
+  });
+
+  it("says, in the next layout, the clear the last one refused, with nothing else, until the person dismisses it", async () => {
+    useEditorStore.setState({
+      isDirty: false,
+      pendingChanges: 0,
+      leftBehind: { configId: "cfg-other", roomName: "Grand Hall", kept: null, savesOnReturn: false, notRemoved: NOT_REMOVED },
+    });
+    openSlate();
+    const note = screen.getAllByRole("status").find((region) => region.classList.contains("pc-notice"));
+    expect(note?.textContent).toContain(NOT_REMOVED);
+    expect(note?.textContent).not.toContain("Your changes");
+    fireEvent.click(within(note ?? document.body).getByRole("button", { name: "Dismiss" }));
+    await waitFor(() => { expect(document.body.textContent).not.toContain(NOT_REMOVED); });
+    expect(useEditorStore.getState().leftBehind).toBeNull();
+  });
 });

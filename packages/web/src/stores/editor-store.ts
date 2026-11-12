@@ -339,15 +339,23 @@ export interface RestoredWork {
   readonly editedAt: Date;
 }
 
-/** A layout whose unsaved work stayed behind when another one opened. */
+/** A layout whose unsaved work, or a clear of a note it refused, stayed behind when another one opened. */
 export interface LeftBehindWork {
   readonly configId: string;
   /** Its room, as the venue names it; null when not known. */
   readonly roomName: string | null;
-  /** The work is kept on this device (false: it is lost, and the note says so). */
-  readonly kept: boolean;
+  /** The work is kept on this device (false: it is lost, and the note says so;
+   *  null: every change reached the server, and only `notRemoved` is said). */
+  readonly kept: boolean | null;
   /** Opening the layout again sends it: no conflict or review lock waits. */
   readonly savesOnReturn: boolean;
+  /**
+   * The sentence of a clear the API refused whose notice still stood
+   * (noteClearsRefused, lib/guest-plan-notes refusedClearsLine): it goes with
+   * the switch, and stands in the next layout's note until the person
+   * dismisses it (delta review of #388 at 33a8e0ad, S1). Absent for none.
+   */
+  readonly notRemoved?: string;
 }
 
 interface EditorActions {
@@ -1074,7 +1082,8 @@ function settledNotices(previous: EditorStore, next: EditorStore, patch: Partial
   if (timelineTop(next.history) === timelineTop(previous.history)) return {};
   return {
     ...("restoredFromDevice" in patch ? {} : { restoredFromDevice: null }),
-    ...("leftBehind" in patch ? {} : { leftBehind: null }),
+    // A refused clear's sentence stands until the person dismisses it (ruling R1(b) on #388).
+    ...("leftBehind" in patch || next.leftBehind?.notRemoved !== undefined ? {} : { leftBehind: null }),
   };
 }
 
@@ -1206,7 +1215,7 @@ export const useEditorStore = create<EditorStore>()(withSaveFacts((set, get) => 
       // is told. A save that landed after the outgoing check had looked (the
       // route unmounting flushes too) means nothing was lost after all.
       const stillUnsaved = get().configId === leaving && get().isDirty;
-      const lostOnLeaving = outgoingOutcome === "not-kept" && stillUnsaved ? leftBehindFor(get(), false) : null;
+      const lostOnLeaving = outgoingOutcome !== null && lostWithTheSwitch(outgoingOutcome) && stillUnsaved ? leftBehindFor(get(), false) : null;
       // Unsaved work this device kept (another open page's stays that page's).
       const keptDraft = await draftNotHeldElsewhere(draftForLoad(config, isAuthenticated));
       if (request !== configurationLoadRequest) return;
@@ -2417,7 +2426,7 @@ async function saveDocument(
         : standingRefusal(refusal)),
       reviewLockRefused: false,
       // Its work arrived after all: nothing of it is waiting here.
-      ...(latest.leftBehind?.configId === configId ? { leftBehind: null } : {}),
+      ...workArrived(latest.leftBehind, configId),
     });
     conflictServerCopy = null;
     // Same configuration, so the log's scope is unchanged and its unsent
@@ -2552,7 +2561,7 @@ function adoptAsSaved(theirs: configApi.Configuration, sent: readonly EditorObje
     ...standingRefusal(latest),
     saveConflict: null,
     reviewLockRefused: false,
-    ...(latest.leftBehind?.configId === theirs.id ? { leftBehind: null } : {}),
+    ...workArrived(latest.leftBehind, theirs.id),
   });
   conflictServerCopy = null;
   liveHooks?.onSaved(theirs.revision, idMap);
@@ -2578,9 +2587,30 @@ function restoreStep(base: readonly EditorObject[], kept: readonly EditorObject[
 /** How long another layout waits for the open one's unsaved work. */
 export const LAYOUT_CHANGE_SAVE_MS = 2_000;
 
-/** Where the open layout's work stands as another one opens: on the server,
- *  kept on this device (the note says so), or neither. */
-export type LayoutChangeOutcome = "saved" | "kept" | "not-kept";
+/**
+ * Where the open layout's work stands as another one opens: on the server;
+ * on the server but for a clear of a note the API refused, whose notice still
+ * stands ("clear-refused": never "saved" then, ruling R1(b) on #388; the note
+ * the next layout shows says it, delta review at 33a8e0ad S1); kept on this
+ * device (the note says so); or neither.
+ */
+export type LayoutChangeOutcome = "saved" | "clear-refused" | "kept" | "not-kept";
+
+/** Whether work the outgoing layout could neither save nor keep is lost with a switch that goes on regardless (a load). */
+function lostWithTheSwitch(outcome: LayoutChangeOutcome): boolean {
+  switch (outcome) {
+    case "not-kept":
+      return true;
+    case "saved":
+    case "clear-refused":
+    case "kept":
+      return false;
+    default: {
+      const exhausted: never = outcome;
+      throw new Error(`Unhandled layout change outcome ${String(exhausted)}`);
+    }
+  }
+}
 
 /** The last try for one document, so the slate's wait and the load after it
  *  do not try twice for work nobody has changed since. */
@@ -2590,14 +2620,35 @@ let layoutChangeAttempt: {
   readonly outcome: Promise<LayoutChangeOutcome>;
 } | null = null;
 
-function leftBehindFor(state: EditorState, kept: boolean): LeftBehindWork | null {
+/** The note the next layout shows about this one: its unsaved work (`kept`; null for none) and a refused clear still standing. */
+function leftBehindFor(state: EditorState, kept: boolean | null): LeftBehindWork | null {
   if (state.configId === null) return null;
+  const notRemoved = refusedClearsLine(state);
   return {
     configId: state.configId,
     roomName: state.space?.name ?? null,
     kept,
-    savesOnReturn: kept && state.lockReason === null && state.saveConflict === null,
+    savesOnReturn: kept === true && state.lockReason === null && state.saveConflict === null,
+    ...(notRemoved === null ? {} : { notRemoved }),
   };
+}
+
+/**
+ * A save of the layout a note was left about has landed: none of its work is
+ * waiting here after all. A refused clear's sentence in the note still stands
+ * until the person dismisses it.
+ */
+function workArrived(note: LeftBehindWork | null, configId: string): Partial<Pick<EditorState, "leftBehind">> {
+  if (note?.configId !== configId) return {};
+  return { leftBehind: note.notRemoved === undefined ? null : { ...note, kept: null, savesOnReturn: false } };
+}
+
+/** Nothing is left unsaved: "saved", unless a refused clear's notice stands, whose sentence then goes in the next layout's note. */
+function settledWithNothingUnsaved(state: EditorState): LayoutChangeOutcome {
+  const note = leftBehindFor(state, null);
+  if (note?.notRemoved === undefined) return "saved";
+  useEditorStore.setState({ leftBehind: note });
+  return "clear-refused";
 }
 
 /** Resolve once no save is in flight for this session (or it has ended). */
@@ -2637,7 +2688,7 @@ async function settleOutgoingWork(session: number, timeoutMs: number, keptAtStar
   // Another load replaced the document meanwhile: its copy here is as it was.
   if (session !== configurationSession) return keptAtStart ? "kept" : "not-kept";
   const state = useEditorStore.getState();
-  if (!state.isDirty) return "saved";
+  if (!state.isDirty) return settledWithNothingUnsaved(state);
   if (!state.keptOnDevice) return "not-kept";
   useEditorStore.setState({ leftBehind: leftBehindFor(state, true) });
   return "kept";
@@ -2646,14 +2697,17 @@ async function settleOutgoingWork(session: number, timeoutMs: number, keptAtStar
 /**
  * Before another layout replaces the open one in this page: its unsaved work
  * gets up to `timeoutMs` to reach the server (a save in flight first). Resolves
- * "saved" when nothing is left unsaved; "kept" when the work stays on this
- * device, noting it for the next layout to say; "not-kept" when it is neither,
- * so the caller decides (the slate holds the switch; a load goes on and says
- * the work is lost). Never rejects.
+ * "saved" when nothing is left unsaved; "clear-refused" when nothing is but a
+ * refused clear's notice stands, noting its sentence for the next layout to
+ * say (the switch goes on); "kept" when the work stays on this device, noting
+ * it (and any such sentence) for the next layout to say; "not-kept" when it is
+ * neither, so the caller decides (the slate holds the switch; a load goes on
+ * and says the work is lost). Never rejects.
  */
 export function saveBeforeLayoutChange(timeoutMs: number = LAYOUT_CHANGE_SAVE_MS): Promise<LayoutChangeOutcome> {
   const state = useEditorStore.getState();
-  if (state.configId === null || !state.isDirty) return Promise.resolve("saved");
+  if (state.configId === null) return Promise.resolve("saved");
+  if (!state.isDirty) return Promise.resolve(settledWithNothingUnsaved(state));
   const session = configurationSession;
   if (layoutChangeAttempt?.session === session && layoutChangeAttempt.objects === state.objects) {
     return layoutChangeAttempt.outcome;

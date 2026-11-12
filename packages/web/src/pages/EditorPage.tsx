@@ -304,8 +304,21 @@ export function EditorPage(): React.ReactElement {
     }
     let cancelled = false;
     void saveBeforeLayoutChange().then((outcome) => {
-      if (cancelled || outcome === "not-kept" || useEditorStore.getState().configId !== leavingLayout) return;
-      closeLayout();
+      if (cancelled || useEditorStore.getState().configId !== leavingLayout) return;
+      switch (outcome) {
+        // A refused clear's sentence, like kept work, goes in the note the room shows.
+        case "saved":
+        case "clear-refused":
+        case "kept":
+          closeLayout();
+          return;
+        case "not-kept":
+          return;
+        default: {
+          const exhausted: never = outcome;
+          throw new Error(`Unhandled layout change outcome ${String(exhausted)}`);
+        }
+      }
     });
     return () => { cancelled = true; };
   }, [leavingLayout, roomSwitchApproval, requestedEventId, storeConfigId, urlConfigId]);

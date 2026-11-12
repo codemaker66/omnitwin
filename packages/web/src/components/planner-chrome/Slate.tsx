@@ -43,10 +43,10 @@ const LazyClerkRouteProvider = lazy(() => import("../auth/ClerkRouteProvider.js"
 // layout. Status is always words; dots, the tick and colour repeat them.
 // ---------------------------------------------------------------------------
 
-export type SlateActionId = "try-again" | "show-theirs" | "keep-mine" | "sign-in" | "leave-anyway" | "dismiss";
+export type SlateActionId = "try-again" | "show-theirs" | "keep-mine" | "sign-in" | "leave-anyway" | "dismiss" | "dismiss-note";
 
-/** A way forward that runs a while (Dismiss is done at once). */
-type SlateBusyId = Exclude<SlateActionId, "dismiss">;
+/** A way forward that runs a while (Dismiss is done at once: a refused clear's notice, or the note carrying one here). */
+type SlateBusyId = Exclude<SlateActionId, "dismiss" | "dismiss-note">;
 
 /** What each way forward is doing while it runs: the words the other keys wait on. */
 const BUSY_WORDS: Readonly<Record<SlateBusyId, string>> = {
@@ -351,9 +351,10 @@ export function Slate(): ReactElement {
   /**
    * Open another room or layout in this page once this layout's unsaved work
    * has had up to 2 s to save (QoL D-X3); the line says "Saving" meanwhile.
-   * Work that stays on this device goes with a note the next layout shows.
-   * Work this device cannot keep holds the switch, with the choice to wait
-   * for it or to go without it.
+   * Work that stays on this device goes with a note the next layout shows,
+   * and so does a refused clear's sentence still standing here. Work this
+   * device cannot keep holds the switch, with the choice to wait for it or to
+   * go without it.
    */
   const leaveFor = (destination: string, go: () => void): void => {
     if (leaving) return;
@@ -361,8 +362,20 @@ export function Slate(): ReactElement {
     setLeaving(true);
     void saveBeforeLayoutChange().then((outcome) => {
       setLeaving(false);
-      if (outcome === "not-kept") setHeld({ destination, go });
-      else go();
+      switch (outcome) {
+        case "saved":
+        case "clear-refused":
+        case "kept":
+          go();
+          return;
+        case "not-kept":
+          setHeld({ destination, go });
+          return;
+        default: {
+          const exhausted: never = outcome;
+          throw new Error(`Unhandled layout change outcome ${String(exhausted)}`);
+        }
+      }
     });
   };
 
@@ -379,6 +392,10 @@ export function Slate(): ReactElement {
     }
     if (id === "dismiss") {
       useEditorStore.getState().dismissRefusedClears();
+      return;
+    }
+    if (id === "dismiss-note") {
+      useEditorStore.setState({ leftBehind: null });
       return;
     }
     const editor = useEditorStore.getState();

@@ -3,10 +3,11 @@ import { ApiError } from "../../api/client.js";
 import type { BatchObjectInput, Configuration, ObjectMetadata, PlacedObject } from "../../api/configurations.js";
 import { editorToPlacedItem, flushAutoSave, placedItemToEditor } from "../../components/editor/EditorBridge.js";
 import { persistAnonymousPlannerDraft, readAnonymousPlannerDraft } from "../../lib/anonymous-planner-draft.js";
+import { deriveEditorSaveStatus, leftBehindWords } from "../../lib/editor-save-status.js";
 import { heldNoteIds, noteHeldOn, ownWordsOverHeldNotes, pieceNamedForRefusedSave, refusedOverHeldNote } from "../../lib/guest-plan-notes.js";
 import { NOTE_HELD_MESSAGE, OMITTED_MESSAGE, serveNotesAsTheApiDoes as serveTheApi, type PlanOnServer } from "../../test/guest-plan-api.js";
 import { useAuthStore } from "../auth-store.js";
-import { setEditorAutosaveRequester, useEditorStore, type EditorObject } from "../editor-store.js";
+import { saveBeforeLayoutChange, setEditorAutosaveRequester, useEditorStore, type EditorObject } from "../editor-store.js";
 import { usePlacementNoticeStore } from "../placement-notice-store.js";
 import { useSelectionStore } from "../selection-store.js";
 
@@ -1665,6 +1666,73 @@ describe("Keep mine refused for notes the maker rewrote, among many notes of the
     expect(noteHeldOn(store(), tableId(6))).toBe(true);
     ownNotesKept(tables, server, [3, 6]);
     expect(store()).toMatchObject({ saveError: null, saveErrorCode: null, isDirty: false });
+  });
+
+  // Delta review of #388 at 33a8e0ad, S1. A layout switch waits for the open
+  // layout's work, and answered "saved" when nothing was left unsaved, though
+  // a clear it refused still stood: the next layout's load then wiped the
+  // notice before anyone had seen it. Ruled: never "saved" while a refused
+  // clear stands; the switch goes ahead, and the clear's sentence goes with
+  // it, in the note the next layout shows, until the person dismisses it.
+  const OTHER_PLAN = "0f0f0f0f-0000-4000-8000-000000000002";
+
+  async function openAnotherLayout(): Promise<void> {
+    vi.mocked(configApi.getPublicConfig).mockResolvedValue({ ...plan([placed(D)], false), id: OTHER_PLAN, revision: 1 });
+    await store().loadConfiguration(OTHER_PLAN, false);
+    expect(store().configId).toBe(OTHER_PLAN);
+  }
+
+  it("never says a switch saved the work over a clear Keep mine refused, and the next layout says it (probe P3)", async () => {
+    const server: PlanOnServer = { revision: 4, notes: new Map() };
+    await theyRewrite(server, 9, [6], () => { store().setObjectNotes(tableId(6), ""); });
+
+    // Keep mine, and in the same moment another layout is asked for: the switch waits for Keep mine's saves.
+    const keeping = store().keepMine(false);
+    const leaving = saveBeforeLayoutChange();
+    expect(await keeping).toBe(false);
+    expect(await leaving).toBe("clear-refused");
+    expect(store()).toMatchObject({ isDirty: false, noteClearsRefused: [tableId(6)], saveError: TABLE_7_NOT_REMOVED });
+    // The status never reads saved while the clear's notice stands (ruling R1(b)).
+    expect(deriveEditorSaveStatus({ ...store(), refusedForHeldNote: refusedOverHeldNote(store().saveErrorCode) })).not.toBe("saved");
+
+    // The switch goes ahead; the next layout carries the clear's sentence, and nothing else.
+    await openAnotherLayout();
+    expect(store().leftBehind).toMatchObject({ configId: PLAN, kept: null, notRemoved: TABLE_7_NOT_REMOVED });
+    const note = store().leftBehind;
+    expect(note === null ? null : leftBehindWords(note)).toBe(TABLE_7_NOT_REMOVED);
+    // The person's next change there does not put it away: they do (ruling R1(b)).
+    store().updateObject(D, { positionX: 2 });
+    expect(store().leftBehind).toMatchObject({ notRemoved: TABLE_7_NOT_REMOVED });
+    expect(server.notes.get(tableId(6))).toBe(THEIR_NOTE);
+  });
+
+  it("carries a refused clear that already stands into the next layout's note when another layout opens", async () => {
+    const server: PlanOnServer = { revision: 4, notes: new Map() };
+    await theyRewrite(server, 9, [6], () => { store().setObjectNotes(tableId(6), ""); });
+    expect(await store().keepMine(false)).toBe(false);
+    expect(store()).toMatchObject({ isDirty: false, noteClearsRefused: [tableId(6)] });
+
+    // Nothing is unsaved, but the notice stands: a switch is not "saved".
+    expect(await saveBeforeLayoutChange()).toBe("clear-refused");
+    await openAnotherLayout();
+    expect(store()).toMatchObject({ noteClearsRefused: [], saveError: null });
+    expect(store().leftBehind).toMatchObject({ configId: PLAN, notRemoved: TABLE_7_NOT_REMOVED });
+  });
+
+  it("lets Show their version put a standing refused clear away: the person chose the other version (a decision on record)", async () => {
+    const server: PlanOnServer = { revision: 4, notes: new Map() };
+    const tables = await theyRewrite(server, 9, [6], () => { store().setObjectNotes(tableId(6), ""); });
+    expect(await store().keepMine(false)).toBe(false);
+    expect(store().noteClearsRefused).toEqual([tableId(6)]);
+
+    // Someone saves again; the person's next save meets their version, and they take it.
+    theyNowHave(server, [placed(A), ...tables.map((id, index) => placed(id, { displayLabel: `Table ${String(index + 1)}`, noteHeld: true }, index + 1))]);
+    store().updateObject(A, { positionX: 4 });
+    expect(await store().saveToServer(false)).toBe(false);
+    expect(store().saveConflict).not.toBeNull();
+    await store().showTheirVersion(false);
+    expect(store()).toMatchObject({ noteClearsRefused: [], saveError: null, saveConflict: null, leftBehind: null });
+    expect(server.notes.get(tableId(6))).toBe(THEIR_NOTE);
   });
 });
 

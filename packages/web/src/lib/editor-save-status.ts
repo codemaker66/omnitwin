@@ -388,12 +388,21 @@ export function restoreReceipt(input: RestoreReceiptInput): RestoreReceipt {
 
 export interface LeftBehindInput {
   readonly roomName: string | null;
-  readonly kept: boolean;
+  /** The changes are kept on this device; false: lost; null: every one reached the server. */
+  readonly kept: boolean | null;
   readonly savesOnReturn: boolean;
+  /** A refused clear's sentence, carried from that layout until the person dismisses it (store LeftBehindWork). */
+  readonly notRemoved?: string;
 }
 
-/** The note left when another layout opened before this one's changes arrived. */
+/** The note left when another layout opened before this one's changes arrived, or over a clear of a note it refused. */
 export function leftBehindWords(input: LeftBehindInput): string {
+  const changes = leftBehindChanges(input);
+  return [changes, input.notRemoved ?? null].filter((said): said is string => said !== null).join(" ");
+}
+
+function leftBehindChanges(input: LeftBehindInput): string | null {
+  if (input.kept === null) return null;
   const room = input.roomName?.trim().replace(/^the\s+/iu, "") ?? "";
   const layout = room.length === 0 ? "that layout" : `the ${room} layout`;
   if (!input.kept) return `Your changes to ${layout} did not reach Venviewer, and this browser could not keep them.`;
@@ -423,7 +432,7 @@ export function heldLayoutChange(destination: string): HeldLayoutChange {
 export interface SlateAside {
   readonly heading: string;
   readonly body: string | null;
-  readonly actions: readonly SlateAction<"try-again" | "leave-anyway">[];
+  readonly actions: readonly SlateAction<"try-again" | "leave-anyway" | "dismiss-note">[];
   /** Needs the person now (a held switch, lost work): an alert, ahead of the save state's notice. */
   readonly urgent: boolean;
 }
@@ -442,7 +451,9 @@ export function slateAside(input: SlateAsideInput): SlateAside | null {
     return { heading: held.heading, body: held.body, actions: held.actions, urgent: true };
   }
   if (input.leftBehind !== null) {
-    return { heading: leftBehindWords(input.leftBehind), body: null, actions: [], urgent: !input.leftBehind.kept };
+    // A refused clear's sentence stands until the person puts it away (ruling R1(b) on #388).
+    const actions = input.leftBehind.notRemoved === undefined ? [] : [{ id: "dismiss-note" as const, label: "Dismiss" }];
+    return { heading: leftBehindWords(input.leftBehind), body: null, actions, urgent: input.leftBehind.kept === false };
   }
   if (input.restored !== null) {
     const receipt = restoreReceipt(input.restored);
