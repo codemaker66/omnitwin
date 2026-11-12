@@ -58,6 +58,29 @@ export interface RoomPlan {
 export const UNCALIBRATED: BandValues = [1, 1, 1, 1, 1, 1, 1];
 
 /**
+ * Each room's calibration, fitted to the offline ray tracer (T-677, Task 7):
+ * per band, the tracer's empty T20 over Eyring's empty time, clamped to
+ * 0.7-1.3 and rounded to 3 decimals. From tools/set-down-acoustics/results.json,
+ * traced on 28 Oct 2026 with seeds 1 and 2 (200,000 rays a band; 2,000,000 in
+ * the galleries, which share one trace). The 125 Hz factor is 1 wherever the
+ * room's Schroeder frequency is above that octave's lower edge, where rays say
+ * nothing about a modal response (ruling R39): every room but the Grand Hall.
+ * The galleries' 1-8 kHz bands sit at the clamp: their tracer reads 1.35-1.57 x
+ * Eyring there, an upper bound for an unsurveyed attic section (README.md,
+ * "Difference explained"). After any change to a room's surfaces, export,
+ * retrace and refit; the tests fail until rooms.json, results.json and these
+ * agree.
+ */
+const TRACER_CALIBRATION: Readonly<Record<RoomSlug, BandValues>> = {
+  "grand-hall": [1.041, 1.03, 1.02, 1.009, 1.007, 1.008, 1.006],
+  saloon: [1, 1.023, 1.019, 1.012, 1.008, 1.008, 1.004],
+  "robert-adam-room": [1, 1.076, 1.07, 1.05, 1.044, 1.041, 1.031],
+  "reception-room": [1, 1.007, 0.996, 0.99, 0.987, 0.987, 0.983],
+  "north-gallery": [1, 1.068, 1.198, 1.3, 1.3, 1.3, 1.3],
+  "south-gallery": [1, 1.068, 1.198, 1.3, 1.3, 1.3, 1.3],
+};
+
+/**
  * A door the survey has not sized is taken as the Saloon's, 1.6 x 2.6 m (EST):
  * it is the only door the plan measures, and the house's doors are pairs of
  * that order. A door is a few m2 of a room's hundreds, so the error is small.
@@ -169,7 +192,7 @@ function grandHall(): RoomAcoustics {
       surface("timber-door", doorArea, "opening"),
       surface("velour-drape", curtains, "wall"),
     ],
-    calibration: UNCALIBRATED,
+    calibration: TRACER_CALIBRATION["grand-hall"],
     source:
       "hall-spec.ts (scan of 11 July 2026): plan, ceiling, HALL_OPENINGS windows and HALL_DOORS doors; the scanned dome (HALL_DOME, domeHeightAt), integrated; dado to the scanned 1.95 m cap rail; curtains 2 x 0.9 m a window (EST)",
   };
@@ -200,7 +223,7 @@ function saloon(): RoomAcoustics {
       surface("leaded-glass", windows, "opening"),
       surface("timber-door", door, "opening"),
     ],
-    calibration: UNCALIBRATED,
+    calibration: TRACER_CALIBRATION.saloon,
     source:
       "survey: 11.8 x 7.1 x 5.7 m; walls 70 % panelling; three 2.0 x 3.5 m leaded windows; marble 2 m2; one 1.6 x 2.6 m door",
   };
@@ -235,7 +258,7 @@ function robertAdamRoom(): RoomAcoustics {
       surface("timber-door", doors, "opening"),
       surface("velour-drape", 2 * 2.2, "wall"),
     ],
-    calibration: UNCALIBRATED,
+    calibration: TRACER_CALIBRATION["robert-adam-room"],
     source:
       "survey: 11.2 x 7.6 x 2.9 m open to 9.8 x 5.6 x 2.2 m; three 1.6 x 2.0 m windows; a 2 x 2.2 m velour curtain at the arch; two doors of 1.6 x 2.6 m (EST)",
   };
@@ -276,7 +299,7 @@ function receptionRoom(): RoomAcoustics {
       surface("sheer-curtain", 4 * 2.4 * 2.4, "wall"),
       surface("velour-drape", 4 * 2 * 1.2 * 2.6, "wall"),
     ],
-    calibration: UNCALIBRATED,
+    calibration: TRACER_CALIBRATION["reception-room"],
     source:
       "survey: an L of 100 m2 (the room-geometries.ts trace, scaled), 2.8 m mean ceiling; four 1.2 x 2.4 m windows with sheers and velour drapes; two glazed doors of 1.6 x 2.6 m (EST)",
   };
@@ -305,7 +328,7 @@ function gallery(slug: "north-gallery" | "south-gallery"): RoomAcoustics {
       surface("sash-glazing", windows, "opening"),
       surface("timber-door", door, "opening"),
     ],
-    calibration: UNCALIBRATED,
+    calibration: TRACER_CALIBRATION[slug],
     source:
       "survey: 11.5 x 4.1 x 2.8 m; plasterboard walls and ceiling of the 2003 attic fit-out (EST); two 1.0 x 1.6 m sashes and a 2.0 x 1.6 m front window; one door of 1.6 x 2.6 m (EST)",
   };
