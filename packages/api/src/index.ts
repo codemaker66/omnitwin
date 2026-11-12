@@ -67,6 +67,8 @@ import { eventPlanLifecycleRoutes, notificationRoutes } from "./routes/event-pla
 import { requestRoutes, venueRequestRoutes } from "./routes/requests.js";
 import { pushRoutes } from "./routes/push.js";
 import { venueObservationRoutes } from "./routes/observations.js";
+import { supplierArrivalRoutes } from "./routes/supplier-arrivals.js";
+import { buildingCheckRoutes } from "./routes/building-checks.js";
 import { clientConversationRoutes, messageRoutes, threadRoutes, venueThreadRoutes } from "./routes/conversations.js";
 import { evidenceItemRoutes, evidencePackRoutes, reviewGateRoutes, truthModeRoutes } from "./routes/evidence-runtime.js";
 import { eventDayEventRoutes, eventDayOpsTaskRoutes } from "./routes/event-day-ops.js";
@@ -566,6 +568,10 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   await server.register(venueRequestRoutes, { db, prefix: "/venues" });
   await server.register(requestRoutes, { db, prefix: "/requests" });
   await server.register(venueObservationRoutes, { db, prefix: "/venues" });
+  // Supplier arrivals on the Day Board: the office enters them, the floor marks the door (T-692).
+  await server.register(supplierArrivalRoutes, { db, prefix: "/venues" });
+  // Opening and lock-up: the venue's own checks, ticked each day on the Day Board (T-693).
+  await server.register(buildingCheckRoutes, { db, prefix: "/venues" });
   await server.register(venueThreadRoutes, { db, prefix: "/venues" });
   await server.register(aiUsageRoutes, { db, env, prefix: "/venues" });
   await server.register(threadRoutes, { db, prefix: "/threads" });

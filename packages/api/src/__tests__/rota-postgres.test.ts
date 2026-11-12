@@ -203,6 +203,22 @@ describe.skipIf(testUrl === undefined)("the staff rota on isolated PostgreSQL", 
         expect(body?.records.length, role).toBe(4);
       }
 
+      // The Day Board asks for the floor's view whatever the reader's role:
+      // an administrator's board carries no records, leave, warnings or
+      // accounts, and no draft.
+      for (const role of ["admin", "manager", "staff", "hallkeeper"]) {
+        const res = await server.inject({ method: "GET", url: `/venues/${VENUE}/rota/week?start=${WEEK}&view=floor`, headers: as(role) });
+        expect(res.statusCode, role).toBe(200);
+        const board = RotaWeekSchema.parse((JSON.parse(res.body) as { data: unknown }).data);
+        expect(board.access, role).toBe("read");
+        expect([board.shifts, board.records, board.unavailability, board.accounts, board.rooms], role).toEqual([[], [], [], [], []]);
+      }
+      // It never widens what a reader may see.
+      const ownFloor = await server.inject({ method: "GET", url: `/venues/${VENUE}/rota/week?start=${WEEK}&view=floor`, headers: as("sales") });
+      expect(RotaWeekSchema.parse((JSON.parse(ownFloor.body) as { data: unknown }).data).access).toBe("own");
+      const otherView = await server.inject({ method: "GET", url: `/venues/${VENUE}/rota/week?start=${WEEK}&view=everything`, headers: as("admin") });
+      expect(otherView.statusCode).toBe(400);
+
       const floor = await week("hallkeeper");
       expect(floor.body?.access).toBe("read");
       // A draft is the manager's until it is published; the floor sees no

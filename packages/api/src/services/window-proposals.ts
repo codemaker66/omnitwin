@@ -6,6 +6,8 @@ import { canProposeWindow, isClientSideRole } from "../utils/query.js";
 import { canWriteBookings, ownerWorksAtVenue, PG_UNIQUE_VIOLATION } from "./booking-mutations.js";
 import { clientHoldsEventLink } from "./conversations.js";
 import { movePhasesWithBooking, syncEventStatus } from "./event-binding.js";
+import { recordBookingMove } from "./booking-move-feed.js";
+import { moveArrivalsWithBooking } from "./supplier-arrivals.js";
 import { lockLiveRoom } from "./room-liveness.js";
 
 // ---------------------------------------------------------------------------
@@ -201,6 +203,17 @@ export async function proposeWindowCore(
           to: { spaceId: space.id, startsAt },
         });
         await syncEventStatus(tx, eventId);
+        await moveArrivalsWithBooking(tx, mine.id, startsAt.getTime() - mine.startsAt.getTime());
+        // And the floor is told, as it is of a Diary move (booking-move-feed.ts).
+        await recordBookingMove(tx, {
+          bookingId: mine.id,
+          eventId,
+          venueId: eventRow.venueId,
+          actor,
+          before: { spaceId: mine.spaceId, startsAt: mine.startsAt, endsAt: mine.endsAt },
+          after: { spaceId: space.id, startsAt, endsAt },
+          now,
+        });
       }
     } else {
       // The office owns its own proposal, as it owns a hold it pencils on the

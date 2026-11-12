@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { eq, and, isNull } from "drizzle-orm";
+import { eq, and, inArray, isNull } from "drizzle-orm";
 import type { Database } from "../db/client.js";
 import {
   configurations,
@@ -15,6 +15,8 @@ import { canAccessResource, canManageVenue } from "../utils/query.js";
 import { resolveProgressMutation, checkedStateAfter, progressEventFor } from "../lib/hallkeeper-progress.js";
 import { summarizeSheet } from "../lib/hallkeeper-summary.js";
 import { buildSheetPaperCheck } from "../services/sheet-paper-check.js";
+import { changeoverBetween } from "../lib/changeover.js";
+import { ChangeoverQuerySchema } from "@omnitwin/types";
 
 // ---------------------------------------------------------------------------
 // Hallkeeper sheet routes — v2 end-to-end
@@ -25,6 +27,7 @@ import { buildSheetPaperCheck } from "../services/sheet-paper-check.js";
 //   GET   /hallkeeper/:configId/summary   → ready-by time and rows checked
 //   GET   /hallkeeper/:configId/progress  → checked row keys
 //   PATCH /hallkeeper/:configId/progress  → set or toggle a row's check state
+//   GET   /hallkeeper/changeover?from=&to= → what moves between two layouts of one room
 //
 // SECURITY: these endpoints expose PII (contact name, email, phone,
 // event details). Access is granted to:
@@ -301,6 +304,51 @@ export async function hallkeeperSheetRoutes(
       .where(progressScope(params.data.configId, eventId));
 
     return { data: summarizeSheet(params.data.configId, result.payload, marks.map((mark) => mark.rowKey)) };
+  });
+
+  // GET /hallkeeper/changeover?from=&to=&fromEventId=&toEventId= — what moves
+  // when a room goes from one booking's layout to the next one's
+  // (lib/changeover.ts): what stays, what goes back to store, what comes from
+  // it, and which pieces move within the room. Both layouts are read as their
+  // sheets are, behind the sheet's own gate, and must be of one room. The
+  // answer carries counts and pieces only, never a sheet's contacts or notes.
+  server.get("/changeover", { preHandler: [authenticate] }, async (request, reply) => {
+    reply.header("Cache-Control", "private, no-store");
+    const query = ChangeoverQuerySchema.safeParse(request.query);
+    if (!query.success) {
+      return reply.status(400).send({ error: "Invalid changeover", code: "VALIDATION_ERROR", details: query.error.issues });
+    }
+    const { from, to, fromEventId, toEventId } = query.data;
+    for (const configId of [from, to]) {
+      const gate = await requireConfigAccess(db, configId, request.user);
+      if (!gate.ok) return reply.status(gate.status).send({ error: gate.error, code: gate.code });
+    }
+    const rooms = await db.select({ id: configurations.id, spaceId: configurations.spaceId })
+      .from(configurations)
+      .where(and(inArray(configurations.id, [from, to]), isNull(configurations.deletedAt)));
+    const roomOf = (configId: string): string | undefined => rooms.find((row) => row.id === configId)?.spaceId;
+    if (roomOf(from) === undefined || roomOf(to) === undefined) {
+      return reply.status(404).send({ error: "Configuration not found", code: "NOT_FOUND" });
+    }
+    if (roomOf(from) !== roomOf(to)) {
+      return reply.status(409).send({ error: "A changeover runs between two layouts of one room", code: "NOT_ONE_ROOM" });
+    }
+    const baseUrl = frontendUrl ?? `${request.protocol}://${request.hostname}`;
+    let before;
+    let after;
+    try {
+      [before, after] = await Promise.all([
+        assembleSheetDataV2(db, from, baseUrl, fromEventId ?? null),
+        assembleSheetDataV2(db, to, baseUrl, toEventId ?? null),
+      ]);
+    } catch (error) {
+      if (!(error instanceof ApprovedSnapshotUnavailableError)) throw error;
+      return reply.status(503).send({ error: error.message, code: error.code });
+    }
+    if (before === null || after === null) {
+      return reply.status(404).send({ error: "Configuration not found", code: "NOT_FOUND" });
+    }
+    return { data: changeoverBetween({ configId: from }, { configId: to }, before.payload, after.payload) };
   });
 
   // -------------------------------------------------------------------------

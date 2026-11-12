@@ -35,6 +35,12 @@ export function getRotaWeek(venueId: string, weekStart: string | null, signal?: 
   return api.get(`${rotaPath(venueId)}/week${query}`, RotaWeekSchema, signal);
 }
 
+/** The floor's view of the week holding `weekStart`: published shifts and the
+ *  names on them, whatever the reader's role (the Day Board). */
+export function getRotaFloorWeek(venueId: string, weekStart: string, signal?: AbortSignal): Promise<RotaWeek> {
+  return api.get(`${rotaPath(venueId)}/week?start=${encodeURIComponent(weekStart)}&view=floor`, RotaWeekSchema, signal);
+}
+
 export function createRotaShift(venueId: string, body: CreateRotaShift): Promise<RotaShift> {
   return api.post(`${rotaPath(venueId)}/shifts`, body, undefined, RotaShiftSchema);
 }

@@ -6591,6 +6591,75 @@ export const bookingObservations = pgTable("booking_observations", {
 ]);
 
 // ---------------------------------------------------------------------------
+// Supplier arrivals (T-692, migration 0108) — who comes to the building for a
+// booking, when, and at which door. The office enters them; the floor marks
+// each one arrived and gone. Arrival and leaving are first-tap-wins facts and
+// never move the revision, which guards the office's own edits.
+// ---------------------------------------------------------------------------
+
+export const bookingSupplierArrivals = pgTable("booking_supplier_arrivals", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  venueId: uuid("venue_id").notNull().references(() => venues.id, { onDelete: "cascade" }),
+  bookingId: uuid("booking_id").notNull().references(() => bookings.id, { onDelete: "cascade" }),
+  supplierName: varchar("supplier_name", { length: 160 }).notNull(),
+  category: varchar("category", { length: 40 }),
+  arrivesAt: timestamp("arrives_at", { withTimezone: true }).notNull(),
+  leavesBy: timestamp("leaves_by", { withTimezone: true }),
+  entrance: varchar("entrance", { length: 100 }),
+  contact: varchar("contact", { length: 160 }),
+  note: varchar("note", { length: 500 }),
+  arrivedAt: timestamp("arrived_at", { withTimezone: true }),
+  arrivedByUserId: uuid("arrived_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  arrivedByName: varchar("arrived_by_name", { length: 160 }),
+  leftAt: timestamp("left_at", { withTimezone: true }),
+  leftByUserId: uuid("left_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  leftByName: varchar("left_by_name", { length: 160 }),
+  createdByUserId: uuid("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  revision: integer("revision").notNull().default(1),
+}, (table) => [
+  index("booking_supplier_arrivals_venue_arrives_idx").on(table.venueId, table.arrivesAt),
+  index("booking_supplier_arrivals_booking_idx").on(table.bookingId),
+  check("booking_supplier_arrivals_leaves_after", sql`${table.leavesBy} IS NULL OR ${table.leavesBy} > ${table.arrivesAt}`),
+  check("booking_supplier_arrivals_left_after_arrived", sql`${table.leftAt} IS NULL OR ${table.arrivedAt} IS NOT NULL`),
+]);
+
+// ---------------------------------------------------------------------------
+// Opening and lock-up (T-693, migration 0109) — the venue's own checks, in its
+// own words, and each day's ticks. A check taken off the list is retired, not
+// deleted, so a day keeps what was ticked on it. A tick is first-tap-wins per
+// check per board day (the venue's day, to its boundary hour).
+// ---------------------------------------------------------------------------
+
+export const venueBuildingChecks = pgTable("venue_building_checks", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  venueId: uuid("venue_id").notNull().references(() => venues.id, { onDelete: "cascade" }),
+  kind: varchar("kind", { length: 10 }).$type<"opening" | "lockup">().notNull(),
+  label: varchar("label", { length: 200 }).notNull(),
+  sortOrder: integer("sort_order").notNull().default(0),
+  retiredAt: timestamp("retired_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("venue_building_checks_venue_kind_idx").on(table.venueId, table.kind, table.sortOrder),
+  check("venue_building_checks_kind", sql`${table.kind} IN ('opening', 'lockup')`),
+]);
+
+export const venueBuildingCheckMarks = pgTable("venue_building_check_marks", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  venueId: uuid("venue_id").notNull().references(() => venues.id, { onDelete: "cascade" }),
+  checkId: uuid("check_id").notNull().references(() => venueBuildingChecks.id, { onDelete: "cascade" }),
+  /** The venue's day the board shows, to its boundary hour. */
+  boardDay: date("board_day", { mode: "string" }).notNull(),
+  doneAt: timestamp("done_at", { withTimezone: true }).defaultNow().notNull(),
+  doneByUserId: uuid("done_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  doneByName: varchar("done_by_name", { length: 160 }).notNull(),
+}, (table) => [
+  uniqueIndex("venue_building_check_marks_check_day_unique").on(table.checkId, table.boardDay),
+  index("venue_building_check_marks_venue_day_idx").on(table.venueId, table.boardDay),
+]);
+
+// ---------------------------------------------------------------------------
 // AI usage (T-656, migration 0091) — one append-only row per model call, or
 // per call the venue's monthly allowance refused, with its tokens and its
 // cost in integer micro-USD from the versioned price table
