@@ -285,9 +285,9 @@ describe("adaptEditorStateToBlueprintScene — chair grouping", () => {
       expect(room.widthM).toBeCloseTo(11.4, 9);
       expect(room.lengthM).toBeCloseTo(12.7, 9);
       expect(room.originM).toEqual({ x: -5.7, z: -3.7 });
-      // And the Grand Hall, stored as 21 m by 10 m, keeps its drawn 21 m by 10.5 m, centred.
+      // And the Grand Hall, stored as 21 m by 10 m, keeps its drawn walls, the scan's 21.135 m by 10.59 m (#391), centred.
       const hall = { name: "Grand Hall", widthM: "21.00", lengthM: "10.00", floorPlanOutline: corners(-10.5, -5, 10.5, 5) };
-      expect(adaptEditorStateToBlueprintScene({ space: hall, objects: [], lastSavedAt: null }).room).toEqual({ widthM: 21, lengthM: 10.5 });
+      expect(adaptEditorStateToBlueprintScene({ space: hall, objects: [], lastSavedAt: null }).room).toEqual({ widthM: 21.135, lengthM: 10.59 });
     });
 
     it("falls back to the stored size, centred, with no outline to draw from", () => {

@@ -42,8 +42,9 @@ function floorOf(outline: Polygon): RoomFloor {
 describe("which rooms carry a floor", () => {
   it("gives the Grand Hall none: its walls are the rectangle its dimensions already say", () => {
     expect(roomFloorOf(wallsOf("Grand Hall"))).toBeUndefined();
-    expect(plannerRoomOf(wallsOf("Grand Hall"), 7)).toStrictEqual({ width: 21, length: 10.5, height: 7 });
-    expect(plannerRoomOf(wallsOf("Grand Hall"), 7)).toStrictEqual(GRAND_HALL_RENDER_DIMENSIONS);
+    // The laser scan's 21.135 m by 10.59 m, 6.7 m high (#391).
+    expect(plannerRoomOf(wallsOf("Grand Hall"), 6.7)).toStrictEqual({ width: 21.135, length: 10.59, height: 6.7 });
+    expect(plannerRoomOf(wallsOf("Grand Hall"), 6.7)).toStrictEqual(GRAND_HALL_RENDER_DIMENSIONS);
   });
 
   it("gives none to any rectangle centred on the origin, whichever corner it starts from and whichever way round", () => {
@@ -125,7 +126,7 @@ describe("a footprint on a floor", () => {
 
 describe("the floor's rules on a centred rectangle are the rectangle's own", () => {
   // The Grand Hall never carries a floor. Given one all the same, the walls' rule must say what the rectangle's says.
-  const plain: PlannerRoomDimensions = { width: 21, length: 10.5, height: 7 };
+  const plain: PlannerRoomDimensions = plannerRoomOf(wallsOf("Grand Hall"), 6.7);
   const walled: PlannerRoomDimensions = { ...plain, floor: floorOf(wallsOf("Grand Hall")) };
   const poses = [
     { item: piece("burgess-turini-18-3"), rotationY: 0 },
@@ -171,7 +172,7 @@ describe("the floor's rules on a centred rectangle are the rectangle's own", () 
     for (let x = -11.4; x <= 11.4; x += 0.19) {
       for (let z = -6.2; z <= 6.2; z += 0.17) {
         // Within a thousandth of a millimetre of a wall the two rules may round differently.
-        if (Math.abs(Math.abs(x) + halfW - 10.5) < 1e-5 || Math.abs(Math.abs(z) + halfD - 5.25) < 1e-5) continue;
+        if (Math.abs(Math.abs(x) + halfW - plain.width / 2) < 1e-5 || Math.abs(Math.abs(z) + halfD - plain.length / 2) < 1e-5) continue;
         const stamp = [createPlacedItem(chair.id, x, z)];
         const a = judgeGhost(stamp, was);
         const b = judgeGhost(stamp, now);

@@ -90,8 +90,8 @@ afterEach(() => {
 });
 
 describe("the Grand Hall, a rectangle centred on the origin", () => {
-  it("opens as the plain 21 × 10.5 × 7 m room, exactly as before", () => {
-    expect(openRoom("Grand Hall")).toStrictEqual({ width: 21, length: 10.5, height: 7 });
+  it("opens as the plain 21.135 × 10.59 × 6.7 m room of the hall's scan (#391), with no floor of its own", () => {
+    expect(openRoom("Grand Hall")).toStrictEqual({ width: 21.135, length: 10.59, height: 6.7 });
   });
 });
 
