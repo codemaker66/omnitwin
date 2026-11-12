@@ -399,7 +399,7 @@ function MarkupToolPanel({
     <ToolWidgetPortal>
       <FloatingWidgetFrame
         id="planner-markup-panel"
-        title="Laser diagram"
+        title="Draw tools"
         compactLabel={MARKUP_COLOR_META[selectedColor].label}
         strategy="fixed"
         testId="markup-panel"
@@ -413,7 +413,7 @@ function MarkupToolPanel({
         <div data-testid="markup-panel-body" style={markupPanelContentStyle(open, mobileChrome)}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
         <div>
-          <div style={markupPanelEyebrowStyle}>Laser diagram</div>
+          <div style={markupPanelEyebrowStyle}>Draw</div>
           <div style={markupPanelTitleStyle}>{mobileChrome ? "Draw on the floor" : "Draw notes"}</div>
         </div>
         <div style={{
@@ -444,7 +444,7 @@ function MarkupToolPanel({
               <button
                 key={color}
                 type="button"
-                aria-label={`Use ${MARKUP_COLOR_META[color].label} laser ink`}
+                aria-label={`Use ${MARKUP_COLOR_META[color].label} ink`}
                 aria-pressed={active}
                 onClick={() => { useMarkupStore.getState().setColor(color); }}
                 style={{
@@ -480,7 +480,7 @@ function MarkupToolPanel({
         <div style={{ display: "grid", gridTemplateColumns: mobileChrome ? "42px 1fr 42px" : "34px 1fr 34px", gap: mobileChrome ? 8 : 6, alignItems: "center" }}>
           <button
             type="button"
-            aria-label="Make laser stroke thinner"
+            aria-label="Make the line thinner"
             onClick={() => { useMarkupStore.getState().setWidth(selectedWidth - 0.008); }}
             style={markupActionButtonStyle()}
           >
@@ -505,7 +505,7 @@ function MarkupToolPanel({
           </div>
           <button
             type="button"
-            aria-label="Make laser stroke thicker"
+            aria-label="Make the line thicker"
             onClick={() => { useMarkupStore.getState().setWidth(selectedWidth + 0.008); }}
             style={markupActionButtonStyle()}
           >
@@ -1186,6 +1186,9 @@ interface MobileDockAction {
   readonly label: string;
   readonly ariaLabel?: string;
   readonly active?: boolean;
+  /** For a mode or a switch (Select, Draw, Snap, Walls), as on the toolbar's
+   *  ToolBtn: announced pressed or not pressed, so the off state is heard too. */
+  readonly pressed?: boolean;
   readonly disabled?: boolean;
   readonly tone?: "default" | "primary" | "danger" | "quiet";
   readonly onClick: () => void;
@@ -1318,6 +1321,7 @@ function mobileActionStyle(action: MobileDockAction): React.CSSProperties {
 }
 
 function MobileDockButton(action: MobileDockAction): React.ReactElement {
+  // A mode or a switch says both states; a panel opener (Add, View, More) marks only its open one.
   return (
     <button
       type="button"
@@ -1325,7 +1329,7 @@ function MobileDockButton(action: MobileDockAction): React.ReactElement {
       aria-label={action.ariaLabel ?? action.label}
       aria-expanded={action.expanded}
       aria-controls={action.controls}
-      aria-pressed={action.active === true ? true : undefined}
+      aria-pressed={action.pressed ?? (action.active === true ? true : undefined)}
       disabled={action.disabled}
       onClick={action.onClick}
       style={mobileActionStyle(action)}
@@ -1381,9 +1385,9 @@ function MobilePlannerDock({
   // Esc closes the More sheet and gives focus back to More (the planner's one Escape order).
   useEscapeLayer("panel", { open: moreOpen, onEscape: onDismissMore, returnFocusTo: moreButtonRef });
   const idleActions: readonly MobileDockAction[] = [
-    { label: "Select", active: activeTool === "select", onClick: onSelect, icon: <MousePointer2 size={20} /> },
+    { label: "Select", active: activeTool === "select", pressed: activeTool === "select", onClick: onSelect, icon: <MousePointer2 size={20} /> },
     { label: "Add", active: panelOpen, onClick: onAdd, icon: <Armchair size={20} /> },
-    { label: "Draw", active: activeTool === "draw", onClick: onMarkup, icon: <PenLine size={20} /> },
+    { label: "Draw", active: activeTool === "draw", pressed: activeTool === "draw", onClick: onMarkup, icon: <PenLine size={20} /> },
     { label: "View", active: cameraOpen, onClick: onCamera, icon: <Camera size={20} /> },
     { label: "More", active: moreOpen, expanded: moreOpen, controls: moreOpen ? moreSheetId : undefined, buttonRef: moreButtonRef, onClick: onMore, icon: <MoreHorizontal size={20} /> },
   ];
@@ -1447,8 +1451,8 @@ function MobilePlannerDock({
           ))}
           <div style={mobileSheetTitleStyle}>Tools</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
-            <MobileDockButton label="Snap" active={snapEnabled} onClick={onSnap} icon={<Grid3X3 size={20} />} />
-            <MobileDockButton label="Walls" active={allWallsUp} onClick={onWalls} icon={<Eye size={20} />} />
+            <MobileDockButton label="Snap" active={snapEnabled} pressed={snapEnabled} onClick={onSnap} icon={<Grid3X3 size={20} />} />
+            <MobileDockButton label="Walls" active={allWallsUp} pressed={allWallsUp} onClick={onWalls} icon={<Eye size={20} />} />
             <MobileDockButton label="Undo" disabled={!canUndo} onClick={onUndo} icon={<Undo2 size={20} />} />
             <MobileDockButton label="Redo" disabled={!canRedo} onClick={onRedo} icon={<Redo2 size={20} />} />
             <MobileDockButton label="Sheet" onClick={onGenerateSheet} icon={<FileText size={20} />} />
@@ -2042,7 +2046,7 @@ export function VerticalToolbox({ compactDesktop = false }: { readonly compactDe
           <Camera size={ICON_SIZE} />
         </ToolBtn>
 
-        <ToolBtn active={activeTool === "draw"} pressed={activeTool === "draw"} compact={isNarrow} subLabel="Draw" label="Laser Diagram" description="Draw routes, zones and setup notes." shortcut="D" showShortcut={showDesktopHints} tooltipEnabled={showDesktopHints} onClick={() => { handleToolClick("draw"); }}>
+        <ToolBtn active={activeTool === "draw"} pressed={activeTool === "draw"} compact={isNarrow} subLabel="Draw" label="Draw" description="Draw routes, zones and setup notes." shortcut="D" showShortcut={showDesktopHints} tooltipEnabled={showDesktopHints} onClick={() => { handleToolClick("draw"); }}>
           <PenLine size={ICON_SIZE} />
         </ToolBtn>
 

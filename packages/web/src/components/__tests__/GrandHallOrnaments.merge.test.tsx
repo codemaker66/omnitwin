@@ -23,6 +23,7 @@ import {
   type OrnamentMaterial,
 } from "../../lib/ornament-batching.js";
 import { GRAND_HALL_RENDER_DIMENSIONS } from "../../constants/scale.js";
+import { setPlannerFeaturesForTesting } from "../../lib/planner-features.js";
 import { useVisibilityStore } from "../../stores/visibility-store.js";
 import { useXrayStore } from "../../stores/xray-store.js";
 import { useSectionStore } from "../../stores/section-store.js";
@@ -75,6 +76,7 @@ afterEach(() => {
   useVisibilityStore.setState(initialVisibility, true);
   useXrayStore.setState(initialXray, true);
   useSectionStore.setState(initialSection, true);
+  setPlannerFeaturesForTesting(null);
 });
 
 // ---------------------------------------------------------------------------
@@ -280,7 +282,29 @@ function declaredFor(declared: ReadonlyMap<Material, OrnamentMaterial>, mesh: Me
   return spec;
 }
 
-const hall = describeGrandHallOrnaments(
+/**
+ * The hall both trees are compared in: the planner's floor on the 7 m wall the
+ * pre-merge JSX was written for. There the description must still draw
+ * exactly what the legacy tree drew, arched windows included, and the section
+ * heights below (6.8, 6.88, 7) straddle its ceiling-ornament cut. On a lower
+ * wall the description fits the window heads under the crown moulding
+ * (fitWindowHeight), which the fixed-height legacy windows never did.
+ */
+const ORACLE_HALL = { width: GRAND_HALL_RENDER_DIMENSIONS.width, length: GRAND_HALL_RENDER_DIMENSIONS.length, height: 7 } as const;
+
+const hall = describeGrandHallOrnaments(ORACLE_HALL.width, ORACLE_HALL.length, ORACLE_HALL.height);
+
+/** Window-wall draws the 6.7 m stand-in bakes together (63 today): a floor
+ *  under which "every batch matched" would be passing over nothing. */
+const BAKED_WINDOW_WALL_DRAWS_MIN = 50;
+
+/**
+ * The hall the planner actually draws: the scanned interior at its 6.7 m clear
+ * height, where fitWindowHeight shortens every window's straight run. The
+ * legacy oracle cannot speak for it, so its stand-ins are checked against the
+ * current per-mesh tree at the same height (current against current).
+ */
+const productionHall = describeGrandHallOrnaments(
   GRAND_HALL_RENDER_DIMENSIONS.width,
   GRAND_HALL_RENDER_DIMENSIONS.length,
   GRAND_HALL_RENDER_DIMENSIONS.height,
@@ -291,24 +315,27 @@ const hall = describeGrandHallOrnaments(
  * draw index. The per-mesh order equals the legacy order (first test), so
  * indices line up with the legacy draws.
  */
-function describedDraws(surface: string): OrnamentDraw[] {
+function describedDraws(surface: string, description = hall): OrnamentDraw[] {
   if (surface === "chandelier-fittings") {
-    return collectOrnamentDraws(hall.chandeliers.map((chandelier) => ({
+    return collectOrnamentDraws(description.chandeliers.map((chandelier) => ({
       kind: "group" as const,
       position: chandelier.placement.position,
       scale: chandelier.placement.scale,
       children: chandelier.fittings,
     })));
   }
-  const found = [...hall.ceiling, ...hall.walls.flatMap((layer) => (layer.kind === "surface" ? [layer] : layer.surfaces)), ...hall.rosette]
-    .find((candidate) => candidate.name === surface);
+  const found = [
+    ...description.ceiling,
+    ...description.walls.flatMap((layer) => (layer.kind === "surface" ? [layer] : layer.surfaces)),
+    ...description.rosette,
+  ].find((candidate) => candidate.name === surface);
   if (found === undefined) throw new Error(`No described surface ${surface}`);
   return collectOrnamentDraws(found.children);
 }
 
 /** Pieces the description keeps on exact draws, by per-mesh draw index. */
-function exactFlags(surface: string): boolean[] {
-  return describedDraws(surface).map((draw) => draw.exact);
+function exactFlags(surface: string, description = hall): boolean[] {
+  return describedDraws(surface, description).map((draw) => draw.exact);
 }
 
 /** The plan three-order rules give for the legacy draws (materials as the legacy JSX declared them). */
@@ -331,8 +358,8 @@ interface MountedPair {
 
 /** Legacy and current ornaments at rest: first frame warms the per-mesh trees, second shows stand-ins. */
 function mountPair(): MountedPair {
-  const legacy = mount(<LegacyGrandHallOrnaments />);
-  const current = mount(<GrandHallOrnaments />);
+  const legacy = mount(<LegacyGrandHallOrnaments {...ORACLE_HALL} />);
+  const current = mount(<GrandHallOrnaments {...ORACLE_HALL} />);
   const declared = declaredMaterials(legacy.scene);
   frames([legacy, current], 2);
   return { legacy, current, declared };
@@ -349,6 +376,25 @@ describe("GrandHallOrnaments merged stand-ins", () => {
       const legacyDraws = drawObjects(named(legacy.scene, surface));
       const currentDraws = perMeshDraws(current.scene, surface);
       expect(currentDraws.map(meshSignature), surface).toEqual(legacyDraws.map(meshSignature));
+    }
+  });
+
+  it("changes only the window wall at the planner's own ceiling height", () => {
+    // The default hall (GRAND_HALL_RENDER_DIMENSIONS, the scanned 6.7 m): every
+    // other surface is the pre-merge tree; the window heads are fitted.
+    const legacy = mount(<LegacyGrandHallOrnaments />);
+    const current = mount(<GrandHallOrnaments />);
+    frames([legacy, current], 2);
+    expect(GRAND_HALL_RENDER_DIMENSIONS.height).toBeLessThan(ORACLE_HALL.height);
+    for (const surface of SURFACES) {
+      const legacyDraws = drawObjects(named(legacy.scene, surface)).map(meshSignature);
+      const currentDraws = perMeshDraws(current.scene, surface).map(meshSignature);
+      if (surface === "window-wall-ornament-cluster") {
+        expect(currentDraws).toHaveLength(legacyDraws.length);
+        expect(currentDraws, surface).not.toEqual(legacyDraws);
+      } else {
+        expect(currentDraws, surface).toEqual(legacyDraws);
+      }
     }
   });
 
@@ -398,6 +444,35 @@ describe("GrandHallOrnaments merged stand-ins", () => {
       baked += expectBatchesMatch(surface, batches, plans, legacyDraws);
     }
     expect(baked).toBeGreaterThan(280);
+  });
+
+  it("bakes the window wall's stand-in at the planner's 6.7 m from exactly the triangles its per-mesh tree draws", () => {
+    // The comparisons above run at the oracle's 7 m, the only height the legacy
+    // windows fit. At the production 6.7 m every window's straight run is
+    // shorter, which moves the frame pieces and can change which of them keep
+    // exact draws, so nothing above covers the stand-in the planner shows.
+    expect(GRAND_HALL_RENDER_DIMENSIONS.height).toBe(6.7);
+    const surface = "window-wall-ornament-cluster";
+    const current = mount(<GrandHallOrnaments />);
+    // As the legacy tree's are in mountPair: read before a frame applies surface opacity.
+    const declared = declaredMaterials(current.scene);
+    frames([current], 2);
+    expect(named(current.scene, `${surface}-opaque-stand-in`).visible).toBe(true);
+
+    const perMesh = perMeshDraws(current.scene, surface);
+    const described = describedDraws(surface, productionHall);
+    expect(perMesh).toHaveLength(described.length);
+    const exact = exactFlags(surface, productionHall);
+    const plans = planOrnamentBatches(perMesh.map((mesh, i) => ({ material: declaredFor(declared, mesh), exact: exact[i] === true })));
+    expect(plans.length).toBeLessThan(perMesh.length);
+
+    const batches = standInDraws(current.scene, surface);
+    if (batches === null) throw new Error(`${surface} has no stand-in at 6.7 m`);
+    // Every per-mesh draw is accounted for once, and each baked batch holds the
+    // same world-space positions, normals, uvs and triangles as its sources.
+    expect(plans.flatMap((plan) => plan.draws).sort((a, b) => a - b)).toEqual(perMesh.map((_, i) => i));
+    const baked = expectBatchesMatch(`${surface} at 6.7 m`, batches, plans, perMesh);
+    expect(baked).toBeGreaterThan(BAKED_WINDOW_WALL_DRAWS_MIN);
   });
 
   it("merges chandelier fittings exactly and keeps blended crystal as separate objects", () => {
@@ -580,11 +655,16 @@ describe("GrandHallOrnaments fades, clicked walls, x-ray and sections", () => {
     expect(drawnGlass()).toEqual(Array.from({ length: 3 }, () => [0.42, 0.38, 0.34, 0.34]).flat());
   });
 
-  it("animates a clicked-open wall frame for frame like the pre-merge ornaments", () => {
+  it.each([
+    { clock: "the 5 s brick-down", wallsQuick: false, delta: 0.05 },
+    { clock: "the 450 ms brick-down (wallsQuick)", wallsQuick: true, delta: 0.03 },
+  ])("animates a clicked-open wall frame for frame like the pre-merge ornaments, on $clock", ({ wallsQuick, delta }) => {
+    setPlannerFeaturesForTesting({ wallsQuick });
     const { legacy, current } = mountPair();
     act(() => { useVisibilityStore.getState().toggleWall("wall-front"); });
+    // Twelve frames stay inside either clock's brick-down: 0.6 s of 5 s, 0.36 s of 0.45 s.
     for (let step = 0; step < 12; step++) {
-      frames([legacy, current], 1, 0.05);
+      frames([legacy, current], 1, delta);
       expect(drawnRepresentation(current.scene, "opposite-long-wall-three-door-cluster")).toBe("per-mesh");
       expectSameDrawing(legacy, current);
     }

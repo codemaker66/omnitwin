@@ -36,7 +36,7 @@ vi.mock("../CockpitRightDock.js", () => {
 
 const { LensSheet } = await import("../LensSheet.js");
 
-function chooseLens(mode: "guests" | "costs" | "flow" | "design"): void {
+function chooseLens(mode: "guests" | "costs" | "share" | "design"): void {
   act(() => { useCockpitStore.getState().setMode(mode); });
 }
 
@@ -130,8 +130,9 @@ describe("LensSheet", () => {
 
   it("closes with Escape and returns the planner to Design", () => {
     render(<LensSheet />);
-    chooseLens("flow");
-    fireEvent.keyDown(screen.getByRole("dialog", { name: "Flow" }), { key: "Escape" });
+    // A lens every viewer is offered (Blake's decision 5); Flow is the venue team's.
+    chooseLens("share");
+    fireEvent.keyDown(screen.getByRole("dialog", { name: "Share" }), { key: "Escape" });
     expect(useCockpitStore.getState().activeMode).toBe("design");
     expect(screen.queryByRole("dialog")).toBeNull();
   });

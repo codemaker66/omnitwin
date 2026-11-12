@@ -1686,6 +1686,10 @@ async function mockEventDayRoutes(page: Page): Promise<{
   await page.route(`${API}/events/${EVENT_ID}/change-feed**`, (route) => {
     void route.fulfill({ json: { data: [changeFeedFixture()] } });
   });
+  // The board asks for the changes still awaiting acknowledgement.
+  await page.route(`${API}/events/${EVENT_ID}/changes-awaiting-acknowledgement`, (route) => {
+    void route.fulfill({ json: { data: [changeFeedFixture()] } });
+  });
   await page.route(`${API}/events/${EVENT_ID}/change-acknowledgements**`, (route) => {
     // The board reads what the room has already acknowledged: the ones this
     // spec has saved, as the API would list them.
@@ -2573,6 +2577,9 @@ test.describe("SS++ deep modal, drawer, role, disabled, and error states", () =>
       void route.fulfill({ json: { data: missingHandoffEventDayBoardFixture() } });
     });
     await page.route(`${API}/events/${EVENT_ID}/change-feed**`, (route) => {
+      void route.fulfill({ json: { data: [] } });
+    });
+    await page.route(`${API}/events/${EVENT_ID}/changes-awaiting-acknowledgement`, (route) => {
       void route.fulfill({ json: { data: [] } });
     });
     await page.route(`${API}/events/${EVENT_ID}/change-acknowledgements**`, (route) => {

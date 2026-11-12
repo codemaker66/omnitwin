@@ -46,6 +46,10 @@ export function DoorClearNotice({ mobile = false, zoned = false }: { readonly mo
   const shown = blockers.length > 0;
   const stuck = stuckOn === placedItems;
   const many = blockers.length > 1;
+  const line = shown ? doorBlockedLine(blockers, spaces) : "";
+  const stuckLine = many
+    ? "There is no free floor near them. Make room beside them, or move them by hand."
+    : "There is no free floor near it. Make room beside it, or move it by hand.";
 
   const moveClear = (): void => {
     moveDoorBlockersClear();
@@ -59,21 +63,22 @@ export function DoorClearNotice({ mobile = false, zoned = false }: { readonly mo
       role="status"
       aria-live="polite"
       data-testid="door-clear-notice-region"
-      // Folds with the planner's chrome when it is cleared (T-680), and returns on restore; the floor's gold glow stays.
-      data-chrome-surface=""
     >
+      {/* What a screen reader hears. It stays in the region when the card
+          folds away with the planner's chrome (T-680, 5 Nov review); the
+          card's own words are for the eye. */}
+      <span className="vv-sr-only" data-testid="door-clear-notice-voice">{shown ? (stuck ? `${line} ${stuckLine}` : line) : ""}</span>
       {shown && (
-        <div className="door-clear-notice__card" data-testid="door-clear-notice">
+        <div
+          className="door-clear-notice__card"
+          data-testid="door-clear-notice"
+          // Folds with the planner's chrome when it is cleared (T-680), and returns on restore; the floor's gold glow stays.
+          data-chrome-surface=""
+        >
           <DoorOpen className="door-clear-notice__mark" size={16} strokeWidth={1.5} aria-hidden="true" />
-          <div className="door-clear-notice__words">
-            <p className="door-clear-notice__line" id={lineId} data-testid="door-clear-notice-line">{doorBlockedLine(blockers, spaces)}</p>
-            {stuck && (
-              <p className="door-clear-notice__stuck" data-testid="door-clear-notice-stuck">
-                {many
-                  ? "There is no free floor near them. Make room beside them, or move them by hand."
-                  : "There is no free floor near it. Make room beside it, or move it by hand."}
-              </p>
-            )}
+          <div className="door-clear-notice__words" aria-hidden="true">
+            <p className="door-clear-notice__line" id={lineId} data-testid="door-clear-notice-line">{line}</p>
+            {stuck && <p className="door-clear-notice__stuck" data-testid="door-clear-notice-stuck">{stuckLine}</p>}
           </div>
           {!stuck && (
             <button

@@ -101,7 +101,8 @@ describe("CockpitNavRail with lensesByRole", () => {
 
 describe("CockpitNavRail with lensesDivider", () => {
   it.each<Viewer>(["anonymous", "client", "hallkeeper", "staff"])("gives %s the client's four, then Venue tools, all named", (viewer) => {
-    withKeys({ lensesDivider: true });
+    // lensesByRole is on by default from #329; the divider alone shows every viewer the full rail.
+    withKeys({ lensesDivider: true, lensesByRole: false });
     viewAs(viewer);
     render(<CockpitNavRail />);
     expect(lensNames()).toEqual([...CLIENT_FOUR, ...VENUE_TOOLS]);

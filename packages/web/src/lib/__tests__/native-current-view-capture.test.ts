@@ -1,4 +1,5 @@
 import { PerspectiveCamera, RenderTarget, Scene, Vector2 } from "three";
+import { mrt, output as passOutput, vec4 } from "three/tsl";
 import { WebGPURenderer } from "three/webgpu";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { captureNativeCurrentView } from "../native-current-view-capture.js";
@@ -102,6 +103,22 @@ describe("native current-view poster capture", () => {
     expect(fixture.renderer.xr.enabled).toBe(true);
     expect(fixture.encode).not.toHaveBeenCalled();
     expect(dispose).toHaveBeenCalledOnce();
+    fixture.unregister();
+  });
+
+  it.each([false, true])("draws without the outputs a precompile job holds, and hands them back (draw fails: %s)", async (fails) => {
+    // As the plan snapshot (native-ortho-capture.test.ts): this target names none of the job's outputs.
+    const fixture = captureFixture();
+    const held = mrt({ output: passOutput, normal: vec4(0, 0, 0, 1) });
+    fixture.renderer.setMRT(held);
+    fixture.renderer.render.mockImplementation(() => {
+      expect(fixture.renderer.getMRT()).toBeNull();
+      if (fails) throw new Error("GPU failure");
+    });
+    const capture = captureNativeCurrentView(fixture.scene, fixture.camera);
+    if (fails) await expect(capture).rejects.toThrow("GPU failure");
+    else await expect(capture).resolves.toMatchObject({ width: 2, height: 2 });
+    expect(fixture.renderer.getMRT()).toBe(held);
     fixture.unregister();
   });
 
