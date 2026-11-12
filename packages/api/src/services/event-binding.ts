@@ -301,8 +301,9 @@ export async function movePhasesWithBooking(conn: BindConn, move: BookingMove): 
  * A name createEventFor made carries the day the event started on then
  * ("Wedding, 14 March 2027"), so it moves with the start, under the same
  * lock: when the stored name is exactly what eventNameFor makes for the old
- * start, it is made again for the new one. A name a person gave is never
- * touched, nor one made before the event had a start.
+ * start, it is made again for the new one. A name a person gave is left as
+ * it is, unless it is word for word the name made for the old start, which
+ * cannot be told from one; so is a name made before the event had a start.
  */
 export async function syncEventStatus(conn: BindConn, eventId: string): Promise<EventStatusChange | null> {
   const [event] = await conn.select({

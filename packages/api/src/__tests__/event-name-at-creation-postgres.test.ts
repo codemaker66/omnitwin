@@ -32,7 +32,8 @@ import { insertBoundBookings } from "../services/event-binding.js";
 // A name made that way carries the event's day, so it follows the event when
 // its start moves (syncEventStatus): a hold moved on the Diary, a client
 // moving their proposed time, an enquiry's rows written at once whose
-// earliest is not the first. A name a person gave is never touched.
+// earliest is not the first. A name a person gave is left as it is (one typed
+// word for word as the made name cannot be told from it, and follows too).
 //
 // Runs on the disposable platform database only; the platform database is
 // shared and never truncated, so every test makes its own venue.

@@ -386,9 +386,10 @@ export async function bookingRoutes(
     // address (the email corrected since, or an address typed as a name).
     const clientName = holdsEmailAddress(who) || who.toLowerCase() === enquiry.email.trim().toLowerCase() ? null : enquiry.name;
     const title = input.title ?? fallbackTitle.slice(0, MAX_BOOKING_TITLE_LENGTH);
-    // A new event takes the hold's title, less the enquiry's email where that
-    // is all it says of who asked (bindBookingToEvent, titleWithoutEnquiryEmail):
-    // the event is then named by its occasion and day.
+    // A new event takes the hold's title unless it holds an email address,
+    // which eventNameFor counts as no title (the bind itself drops only an
+    // address cut at 200 characters, titleWithoutEnquiryEmail): the event is
+    // then named by its occasion and day.
     const eventType = input.eventType ?? enquiry.eventType;
     const startsAt = new Date(input.startsAt);
     const endsAt = new Date(input.endsAt);

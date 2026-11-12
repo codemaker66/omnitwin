@@ -73,3 +73,13 @@ describe("the public enquiry schema's module", () => {
     );
   });
 });
+
+// Every screen that shows an event's name bundles event-name.ts, so it holds
+// to the same rule: the occasion words and the venue clock, nothing more. The
+// walk sees what a one-line import check cannot (#407 review, C7): an import
+// over several lines, an `export … from`, and what each module brings in turn.
+describe("the event name's module", () => {
+  it("brings only the occasion words and the venue clock", () => {
+    expect(reachedFrom("event-name.ts")).toEqual(["event-name.ts", "occasion.ts", "staff-rota-checks.ts"]);
+  });
+});
