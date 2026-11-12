@@ -87,13 +87,12 @@ interface BookingWindow {
 
 async function bookingOfVenue(db: Database, venueId: string, bookingId: string): Promise<BookingWindow | null> {
   const [booking] = await db
-    .select({ id: bookings.id, venueId: bookings.venueId, startsAt: bookings.startsAt, endsAt: bookings.endsAt, deletedAt: bookings.deletedAt, status: bookings.status })
+    .select({ id: bookings.id, venueId: bookings.venueId, startsAt: bookings.startsAt, endsAt: bookings.endsAt, deletedAt: bookings.deletedAt })
     .from(bookings)
     .where(eq(bookings.id, bookingId))
     .limit(1);
-  // Another venue's booking reads as absent: the Diary is tenancy-scoped. So
-  // does one released, cancelled or lost: nobody comes for it.
-  if (booking === undefined || booking.venueId !== venueId || booking.deletedAt !== null || booking.status !== "active") return null;
+  // Another venue's booking reads as absent: the Diary is tenancy-scoped.
+  if (booking === undefined || booking.venueId !== venueId || booking.deletedAt !== null) return null;
   return booking;
 }
 
@@ -125,7 +124,6 @@ export async function listArrivals(
       eq(bookingSupplierArrivals.venueId, venueId),
       eq(bookings.venueId, venueId),
       isNull(bookings.deletedAt),
-      eq(bookings.status, "active"),
       gte(bookingSupplierArrivals.arrivesAt, new Date(query.from)),
       lt(bookingSupplierArrivals.arrivesAt, new Date(query.to)),
     ))
@@ -241,12 +239,12 @@ export async function removeArrival(
   return STALE();
 }
 
-/** An arrival of a booking still on the venue's Diary, and still going ahead. */
+/** An arrival of a booking still on the venue's Diary. */
 async function liveArrival(db: Database, venueId: string, id: string): Promise<ArrivalRow | null> {
   const [row] = await db.select({ arrival: bookingSupplierArrivals })
     .from(bookingSupplierArrivals)
     .innerJoin(bookings, eq(bookings.id, bookingSupplierArrivals.bookingId))
-    .where(and(eq(bookingSupplierArrivals.id, id), eq(bookingSupplierArrivals.venueId, venueId), isNull(bookings.deletedAt), eq(bookings.status, "active")))
+    .where(and(eq(bookingSupplierArrivals.id, id), eq(bookingSupplierArrivals.venueId, venueId), isNull(bookings.deletedAt)))
     .limit(1);
   return row?.arrival ?? null;
 }
