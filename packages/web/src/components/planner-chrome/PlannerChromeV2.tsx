@@ -20,9 +20,9 @@ import { Notice } from "./Surfaces.js";
 // is said here and nowhere else.
 // ---------------------------------------------------------------------------
 
-/** The placement line, in this chrome's own notice. */
+/** The placement line, in this chrome's own notice: PlacementNotice's region, always there, says it. */
 function placementLine(text: string): ReactElement {
-  return <Notice lead={text} urgency="status" />;
+  return <Notice lead={text} urgency="status" live={false} />;
 }
 
 export function PlannerChromeV2(): ReactElement {

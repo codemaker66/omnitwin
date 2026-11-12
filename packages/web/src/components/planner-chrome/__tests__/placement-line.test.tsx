@@ -166,6 +166,10 @@ function saidOnceInTheNotice(line: string): void {
   expect(only?.closest(".pc-notice")).not.toBeNull();
   expect(lineRegion().contains(only ?? null)).toBe(true);
   expect(document.querySelectorAll("[data-testid='placement-notice-region']")).toHaveLength(1);
+  // One live region says it, the one that was there before it: never a second one nested inside it (delta review of #388 at 33a8e0ad, U2).
+  const voices = [...document.querySelectorAll("[aria-live], [role='status'], [role='alert']")]
+    .filter((element) => element.textContent.includes(line));
+  expect(voices).toEqual([lineRegion()]);
 }
 
 beforeEach(() => {

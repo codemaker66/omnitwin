@@ -48,13 +48,24 @@ export interface NoticeProps {
   readonly body?: ReactNode;
   /** status for a state that arrives quietly; alert for one that needs the person now. */
   readonly urgency?: "status" | "alert";
+  /**
+   * The notice is its own live region (the default). False when it is put
+   * inside a region that is always there and says its words already: a live
+   * region inside another may be read twice, or not at all (delta review of
+   * #388 at 33a8e0ad, U2).
+   */
+  readonly live?: boolean;
   readonly actions?: ReactNode;
   readonly className?: string;
 }
 
-export function Notice({ lead, body, urgency = "status", actions, className }: NoticeProps): ReactElement {
+export function Notice({ lead, body, urgency = "status", live = true, actions, className }: NoticeProps): ReactElement {
   return (
-    <div className={["pc-lacquer pc-notice", className ?? ""].filter(Boolean).join(" ")} role={urgency} aria-live={urgency === "alert" ? "assertive" : "polite"}>
+    <div
+      className={["pc-lacquer pc-notice", className ?? ""].filter(Boolean).join(" ")}
+      role={live ? urgency : undefined}
+      aria-live={live ? (urgency === "alert" ? "assertive" : "polite") : undefined}
+    >
       <b className="pc-notice__lead">{lead}</b>
       {body !== undefined ? <p className="pc-notice__body">{body}</p> : null}
       {actions !== undefined ? <div className="pc-notice__actions">{actions}</div> : null}
