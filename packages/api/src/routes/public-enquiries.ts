@@ -450,7 +450,8 @@ export async function publicEnquiryRoutes(
       const acknowledgement = await enquiryAcknowledgement({
         venueName,
         roomName,
-        organiserName: parsed.data.name ?? parsed.data.email,
+        // Greeted by only when it reads as a name; never the address it goes to.
+        organiserName: parsed.data.name ?? null,
         eventType: offeredOccasionLabel(parsed.data.eventType),
         eventDate: parsed.data.eventDate ?? null,
         guestCount: parsed.data.guestCount ?? null,

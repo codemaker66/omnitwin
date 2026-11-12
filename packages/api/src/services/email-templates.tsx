@@ -451,8 +451,9 @@ export interface EnquiryAcknowledgementData {
   /** The room the guest chose; null when they named none, so the reply never
    *  tells them they asked for the room the enquiry is filed under. */
   readonly roomName: string | null;
-  /** The organiser's own name, as they gave it. */
-  readonly organiserName: string;
+  /** The organiser's own name, as they gave it, or null when they gave none.
+   *  Greeted by only when it reads as a name (greetingFor). */
+  readonly organiserName: string | null;
   readonly eventType: string | null;
   /** Stored calendar date, YYYY-MM-DD. */
   readonly eventDate: string | null;
@@ -460,6 +461,20 @@ export interface EnquiryAcknowledgementData {
   /** The monitored address a reply reaches. Rendered as well as set as the
    *  Reply-To header, so the organiser can see where their reply goes. */
   readonly replyToEmail: string | null;
+}
+
+/**
+ * A name the acknowledgement greets by (Blake, 12 November 2026, "Name if it
+ * looks real"): at most 60 characters, all of them letters and their marks,
+ * spaces, hyphens, straight or curly apostrophes and full stops, a letter
+ * among them. The reply goes in the venue's name to an address nobody has
+ * confirmed, so a "name" holding digits, '@', '/' or ':' (a phone number, an
+ * address, a link) is never repeated to it.
+ */
+const GREETABLE_NAME = /^(?=[^\p{L}]*\p{L})[\p{L}\p{M} '’.-]{1,60}$/u;
+
+function greetingFor(name: string | null): string {
+  return name !== null && GREETABLE_NAME.test(name) ? `Dear ${name},` : "Hello,";
 }
 
 export function EnquiryAcknowledgementEmail(props: EnquiryAcknowledgementData): ReactElement {
@@ -472,7 +487,7 @@ export function EnquiryAcknowledgementEmail(props: EnquiryAcknowledgementData): 
       preview={`${props.venueName} has your enquiry`}
     >
       <Heading style={h2Style()}>Thank you — we have your enquiry</Heading>
-      <Text style={paragraphStyle}>Dear {props.organiserName},</Text>
+      <Text style={paragraphStyle}>{greetingFor(props.organiserName)}</Text>
       <Text style={paragraphStyle}>
         Thank you for thinking of {props.venueName}. Your enquiry
         {props.roomName === null ? null : <>{" about "}<strong>{props.roomName}</strong></>}

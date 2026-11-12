@@ -200,6 +200,11 @@ describe.skipIf(target === undefined)("the public enquiry route on the migrated 
     return html.replaceAll("<!-- -->", "");
   }
 
+  /** The acknowledgement's greeting: the first paragraph under its heading. */
+  function greetingOf(html: string): string | undefined {
+    return /<\/h[1-6]>\s*<p[^>]*>([\s\S]*?)<\/p>/u.exec(readable(html))?.[1];
+  }
+
   async function enquiriesAt(venueId: string): Promise<number> {
     const { rows } = await pool.query<{ count: number }>("SELECT count(*)::int AS count FROM enquiries WHERE venue_id = $1", [venueId]);
     return rows[0]?.count ?? -1;
@@ -326,5 +331,31 @@ describe.skipIf(target === undefined)("the public enquiry route on the migrated 
     const offered = readable((await handedTo(guest)).html);
     expect(offered).toContain("Occasion");
     expect(offered).toContain("Wedding");
+  });
+
+  // Blake, 12 November 2026, "Name if it looks real": the same reply greets
+  // by the name given only when it reads as a person's name, and otherwise
+  // says "Hello,", never the address it is sent to.
+  it("greets by name only a name that reads as one, and everyone else with Hello", async () => {
+    const lure = "URGENT payment notice - call 0800 000 000";
+    const given: Record<string, string | undefined> = { lure, accented: "Siobhán O’Neill-Smith", none: undefined };
+    const greetings: Record<string, string | undefined> = {};
+    const bodies = new Map<string, string>();
+    for (const [label, name] of Object.entries(given)) {
+      const email = `test-only-greet-${label}-${run}@example.test`;
+      idOf(await enquire({
+        venueSlug: liveVenue, source: "website", email, eventType: "wedding", ...(name === undefined ? {} : { name }),
+      }), "enquiryId");
+      const words = readable((await handedTo(email)).html);
+      greetings[label] = greetingOf(words);
+      bodies.set(email, words);
+    }
+    expect(greetings).toEqual({ lure: "Hello,", accented: "Dear Siobhán O’Neill-Smith,", none: "Hello," });
+    // Nowhere else in the email either: not the lure, and not the address.
+    for (const [email, words] of bodies) {
+      expect(words).not.toContain("URGENT");
+      expect(words).not.toContain("0800 000 000");
+      expect(words).not.toContain(email);
+    }
   });
 });
