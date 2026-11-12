@@ -724,6 +724,127 @@ describe("a save of a document that has lost a piece holding a note this browser
   });
 });
 
+describe("removing a piece whose only note is the person's own, in a browser the plan's notes are kept from", () => {
+  const MINE = "TEST ONLY by the window";
+
+  /** A holds a note this browser is not shown; the person writes MINE on B and it is saved. */
+  async function withOwnNoteOnB(server: PlanOnServer): Promise<void> {
+    serveNotesAsTheApiDoes(server);
+    await open(plan([placed(A, { noteHeld: true }), placed(B), placed(C)], false));
+    store().setObjectNotes(B, MINE);
+    expect(await store().saveToServer(false)).toBe(true);
+    expect(server.notes.get(B)).toBe(MINE);
+  }
+
+  it("clears their note by name first and then removes the piece: nothing is refused, and nothing else is touched", async () => {
+    const server: PlanOnServer = { revision: 4, notes: new Map([[A, ALLERGY]]) };
+    await withOwnNoteOnB(server);
+    const sentBefore = savesSent();
+
+    store().removeObject(B);
+    expect(notice()).toBeNull();
+    expect(await store().saveToServer(false)).toBe(true);
+
+    // The API cannot tell their note from one kept from them, and would refuse a save that only left B out.
+    expect(savesSent()).toBe(sentBefore + 2);
+    expect(saveSent(sentBefore).batch.map((piece) => piece.id)).toEqual([A, B, C]);
+    expect(sentPiece(sentBefore, B).replacesNote).toBe(MINE);
+    expect(sentPiece(sentBefore, B).metadata?.notes).toBeUndefined();
+    expect(sentPiece(sentBefore, A).replacesNote).toBeUndefined();
+    expect(sentPiece(sentBefore, A).metadata?.notes).toBeUndefined();
+    expect(saveSent(sentBefore + 1).batch.map((piece) => piece.id)).toEqual([A, C]);
+    expect(server.notes.has(B)).toBe(false);
+    expect(server.notes.get(A)).toBe(ALLERGY);
+    expect(pieceIds()).toEqual([A, C]);
+    expect(store()).toMatchObject({ saveError: null, saveErrorCode: null, isDirty: false, isSaving: false, configRevision: server.revision });
+  });
+
+  it("does the same when the piece goes by a step back past its placing, and keeps the person's other note theirs", async () => {
+    const server: PlanOnServer = { revision: 4, notes: new Map([[A, ALLERGY]]) };
+    serveNotesAsTheApiDoes(server);
+    await open(plan([placed(A, { noteHeld: true }), placed(B)], false));
+    store().setObjectNotes(B, MINE);
+    store().replaceObjectsFromScene([...store().objects, { ...kept("local-placed-own", "", 2), label: "Table 7" }]);
+    expect(await store().saveToServer(false)).toBe(true);
+    const own = pieceIds().find((id) => id !== A && id !== B);
+    if (own === undefined) throw new Error("nothing placed");
+    store().setObjectNotes(own, "TEST ONLY wheelchair space");
+    expect(await store().saveToServer(false)).toBe(true);
+
+    // Back past the note and the placing: the table goes, with the note they wrote on it.
+    store().undo();
+    store().undo();
+    expect(pieceIds()).toEqual([A, B]);
+    expect(await store().saveToServer(false)).toBe(true);
+    expect(server.notes.has(own)).toBe(false);
+    expect(server.notes.get(B)).toBe(MINE);
+    expect(noteOn(B)).toBe(MINE);
+    expect(heldNoteIds(store()).has(B)).toBe(false);
+    expect(server.notes.get(A)).toBe(ALLERGY);
+  });
+
+  it("sends the one save for a piece that carries no note", async () => {
+    const server: PlanOnServer = { revision: 4, notes: new Map([[A, ALLERGY]]) };
+    await withOwnNoteOnB(server);
+    const sentBefore = savesSent();
+
+    store().removeObject(C);
+    expect(await store().saveToServer(false)).toBe(true);
+    expect(savesSent()).toBe(sentBefore + 1);
+    expect(saveSent(sentBefore).batch.map((piece) => piece.id)).toEqual([A, B]);
+    expect(server.notes.get(B)).toBe(MINE);
+  });
+
+  it("leaves the piece with its note cleared if the removing save fails, and removes it at the next save without putting it back", async () => {
+    const server: PlanOnServer = { revision: 4, notes: new Map([[A, ALLERGY]]) };
+    await withOwnNoteOnB(server);
+    const api = vi.mocked(configApi.publicBatchSave).getMockImplementation();
+    if (api === undefined) throw new Error("no API model");
+    const sentBefore = savesSent();
+    // The clearing save lands; the removing save, the second sent from here on, does not.
+    vi.mocked(configApi.publicBatchSave).mockImplementation((...sent) => (savesSent() === sentBefore + 2
+      ? Promise.reject(new ApiError(429, "Too many requests — please slow down.", "RATE_LIMITED"))
+      : api(...sent)));
+
+    store().removeObject(B);
+    expect(await store().saveToServer(false)).toBe(false);
+    expect(store()).toMatchObject({ saveErrorCode: "RATE_LIMITED", isDirty: true, isSaving: false, configRevision: server.revision });
+    // What the person asked for, as far as it got: the piece is still the server's, its note gone.
+    expect(server.notes.has(B)).toBe(false);
+    expect(store().baseObjects.find((object) => object.id === B)).toMatchObject({ notes: "" });
+    expect(heldNoteIds(store()).has(B)).toBe(false);
+    expect(pieceIds()).toEqual([A, C]);
+
+    // The confirmed document no longer says B holds a note, so the next save does not take it back: it removes it.
+    expect(await store().saveToServer(false)).toBe(true);
+    expect(savesSent()).toBe(sentBefore + 3);
+    expect(saveSent(sentBefore + 2).batch.map((piece) => piece.id)).toEqual([A, C]);
+    expect(notice()).toBeNull();
+    expect(pieceIds()).toEqual([A, C]);
+    expect(server.notes.get(A)).toBe(ALLERGY);
+  });
+
+  it("refuses the removal once that note is hidden from them too, after a reload, and sends nothing", async () => {
+    const server: PlanOnServer = { revision: 4, notes: new Map([[A, ALLERGY]]) };
+    serveNotesAsTheApiDoes(server);
+    await open(plan([placed(A, { noteHeld: true }), placed(B, { displayLabel: "Table 5" }), placed(C)], false));
+    store().setObjectNotes(B, MINE);
+    expect(await store().saveToServer(false)).toBe(true);
+    // A reload: the read keeps every note from this browser, the one it wrote included.
+    store().reset();
+    await open({ ...plan([placed(A, { noteHeld: true }), placed(B, { noteHeld: true, displayLabel: "Table 5" }), placed(C)], false), revision: server.revision });
+    expect(noteHeldOn(store(), B)).toBe(true);
+    const sentBefore = savesSent();
+
+    store().removeObject(B);
+    expect(notice()).toBe("Nothing was removed: Table 5 has a note that cannot be shown here.");
+    expect(pieceIds()).toEqual([A, B, C]);
+    expect(store().isDirty).toBe(false);
+    expect(savesSent()).toBe(sentBefore);
+    expect(server.notes.get(B)).toBe(MINE);
+  });
+});
+
 describe("a save the API refuses because it leaves out a piece holding a note this browser is not shown", () => {
   it("is said in the API's own words under its own code, and is not sent again", async () => {
     await open(plan([placed(A, { noteHeld: true }), placed(B)], false));

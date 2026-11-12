@@ -21,6 +21,7 @@ import {
 import {
   NOTE_HELD_CODE,
   afterLeavingOutOfDateNotes,
+  batchClearingOwnNotesOfRemovedPieces,
   heldNoteIds,
   heldNoteObjectsName,
   heldNoteObjectsNamed,
@@ -1953,16 +1954,33 @@ async function saveDocument(
     // The signed-in save stores each piece as sent, so a guest plan read
     // without its notes never goes that way, whoever has signed in since.
     const viaSignedIn = useAuthPath && signedInRoutesSuit(get());
-    const batch = viaSignedIn
-      ? objects.map(editorToBatch)
-      : namingReplacedNotes(objects.map(editorToBatch), objects, get().baseObjects);
     const save = viaSignedIn ? configApi.authBatchSave : configApi.publicBatchSave;
     const sending: configApi.BatchSaveOptions | undefined = !viaSignedIn && get().notesIncluded
       ? { ...transport, notesIncluded: true }
       : transport;
+    // A piece the person has removed that carries their own note, in a
+    // browser the plan's notes are kept from: the API cannot tell that note
+    // from one this browser is not shown, and refuses a save that leaves the
+    // piece out. So the note is cleared first, by name, in a save of its own
+    // (lib/guest-plan-notes batchClearingOwnNotesOfRemovedPieces), and the
+    // save that removes the piece follows on the revision that one made.
+    let revision = configRevision;
+    const confirmed = get().baseObjects;
+    const clearing = viaSignedIn || get().notesIncluded ? null : batchClearingOwnNotesOfRemovedPieces(confirmed, objects, editorToBatch);
+    if (clearing !== null) {
+      const cleared = sending === undefined
+        ? await save(configId, clearing, revision)
+        : await save(configId, clearing, revision, sending);
+      if (session !== configurationSession || get().configId !== configId) return false;
+      revision = cleared.revision;
+      set({ configRevision: revision, baseObjects: keepingConfirmedNotes(cleared.objects.map(placedObjectToEditor), confirmed) });
+    }
+    const batch = viaSignedIn
+      ? objects.map(editorToBatch)
+      : namingReplacedNotes(objects.map(editorToBatch), objects, get().baseObjects);
     const send = (pieces: readonly BatchObjectInput[]): ReturnType<typeof save> => sending === undefined
-      ? save(configId, pieces, configRevision)
-      : save(configId, pieces, configRevision, sending);
+      ? save(configId, pieces, revision)
+      : save(configId, pieces, revision, sending);
     // A save refused for a held note, though no words of the person's stand
     // over one, was refused for a note this browser has on record that is out
     // of date: "Keep mine" carries the notes confirmed at one revision onto a

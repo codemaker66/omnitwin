@@ -181,6 +181,33 @@ export function refusedOverHeldNote(code: string | null): boolean {
 }
 
 /**
+ * The save that goes before one which removes a piece carrying this browser's
+ * own note, where the plan's notes are kept from it. The API cannot tell that
+ * note from one this browser is not shown, and refuses a save that leaves the
+ * piece out (HELD_PIECE_OMITTED). The person can read the note and has removed
+ * the piece, so the note is cleared first, by name, as they could by hand:
+ * this is the confirmed document as the server holds it, with the note taken
+ * off each such piece and nothing else changed. A piece that holds a note this
+ * browser is not shown, or a note carried unconfirmed, says nothing of its
+ * note here, which keeps it; such a piece is never among the removed
+ * (heldNotePiecesToPutBack). Null when no removed piece carries a note the
+ * server confirmed to this browser.
+ */
+export function batchClearingOwnNotesOfRemovedPieces(
+  confirmed: readonly EditorObject[],
+  objects: readonly EditorObject[],
+  toBatch: (object: EditorObject) => BatchObjectInput,
+): readonly BatchObjectInput[] | null {
+  const present = new Set(objects.map((object) => object.id));
+  const going = (object: EditorObject): boolean => object.notes !== "" && object.noteHeld !== true && !present.has(object.id);
+  if (!confirmed.some(going)) return null;
+  return confirmed.map((object) => {
+    if (going(object)) return { ...toBatch({ ...object, notes: "" }), replacesNote: object.notes };
+    return object.noteHeld === true ? toBatch({ ...object, notes: "" }) : toBatch(object);
+  });
+}
+
+/**
  * The pieces on which the person's own words stand over a note this browser
  * is not shown (work kept on the device from before the piece held one, or
  * kept over a newer version that put one there). These are what a refused
