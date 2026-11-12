@@ -27,7 +27,7 @@ import { useSlotRequests } from "../../components/requests/requests-context.js";
 import { listensForFloorRequests } from "../../lib/requests-live.js";
 import { useSlotObservations } from "./lib/use-slot-observations.js";
 import { floorChangesBySlot, useFloorChanges } from "./lib/use-floor-changes.js";
-import { crewBySlot, unstaffedTurnRounds, UNSTAFFED_HORIZON_MS } from "./lib/turn-round-crew.js";
+import { anyTurnRound, crewBySlot, crewOnPanel, turnRoundFrom, unstaffedTurnRounds, UNSTAFFED_HORIZON_MS } from "./lib/turn-round-crew.js";
 import { useRotaDay } from "./lib/use-rota-day.js";
 import { ChimeToggle } from "../../components/requests/ChimeToggle.js";
 import { ShiftHandover } from "../../components/requests/ShiftHandover.js";
@@ -587,9 +587,27 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
     : lanes.find((candidate) => candidate.room.id === selected.room.id)?.slots
       .find((candidate) => candidate.bookingId === previousId) ?? null;
   // A crew kept from an earlier read says when it was read.
-  const crewNote = rota.status === "error" && rota.readAtMs !== null
-    ? `As read at ${formatWallTime(correctedNowMs(rota.readAtMs), timeZone)}; the rota could not be read since.`
+  const rotaReadAt = rota.readAtMs === null ? null : formatWallTime(correctedNowMs(rota.readAtMs), timeZone);
+  const crewNote = rota.status === "error" && rotaReadAt !== null
+    ? `As read at ${rotaReadAt}; the rota could not be read since.`
     : null;
+  // The open function's panel: who is on setup for its turn-round, or, before
+  // the rota's first read lands, that it is being read or could not be.
+  const selectedLane = selected === null ? undefined : lanes.find((lane) => lane.room.id === selected.room.id);
+  const panelCrew = selected === null || selectedLane === undefined || turnRoundFrom(selectedLane, selected.slot) === null
+    ? null
+    : crewOnPanel(crew.get(selected.slot.bookingId), rota);
+  // A rota that could not be read is said above the rooms, as what changed
+  // is, on a day with a turn-round: the crew the slots and the sentence still
+  // show is as last read, and before any read they show none.
+  const crewNotice = rota.status !== "error" || !anyTurnRound(lanes) ? null : (
+    <div className="dayboard-notice" role="status">
+      <p>{rotaReadAt === null
+        ? "The rota could not be read, so who is on setup is not shown. The board tries again each minute."
+        : `Who is on setup is as read at ${rotaReadAt}; the rota could not be read since. The board tries again each minute.`}</p>
+      <button type="button" className="dayboard-button" onClick={() => { rota.refresh(true); }}>Try again</button>
+    </div>
+  );
   const selectedEventId = selected?.slot.eventId ?? null;
   const selectedEntry = selectedEventId === null ? undefined : floor.byEvent.get(selectedEventId);
   const selectedLast = selectedEntry?.lastAcknowledgement ?? null;
@@ -624,7 +642,7 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
         acknowledgeFailure={selectedEventId === null ? null : floor.failures.get(selectedEventId) ?? null}
         changesUnread={floor.failedSinceMs !== null}
         previous={previousSlot}
-        crew={crew.get(selected.slot.bookingId) ?? null}
+        crew={panelCrew}
         crewNote={crewNote}
       />
     </div>
@@ -716,6 +734,7 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
           </button>
         </div>
       ) : null}
+      {crewNotice}
       {status !== "error" && board !== null && busyLanes === 0 && roomId === "" ? (
         <p className="dayboard-notice">{selectedDate === null ? "Nothing scheduled today." : "Nothing scheduled on this day."}</p>
       ) : null}

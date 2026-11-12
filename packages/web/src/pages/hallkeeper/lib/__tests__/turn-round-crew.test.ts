@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { CalendarResponse, RotaPerson, RotaShift } from "@omnitwin/types";
-import { boardRange } from "../../../diary/lib/board-time.js";
+import { boardRange, wallInputToMs } from "../../../diary/lib/board-time.js";
+import { boardDayRange } from "../board-day.js";
 import { deriveDayBoard } from "../day-board-state.js";
 import { boardSummary, summaryText } from "../day-board-rooms.js";
 import {
@@ -57,9 +58,9 @@ describe("turnRoundCrew", () => {
       shift({ staffMemberId: JAMIE, startsAt: at("12:00"), endsAt: at("16:00") }),
     ], PEOPLE, EARLY);
     expect(crew).toEqual({ hands: [
-      { name: "Jamie", spans: [{ startsAtMs: ms("12:00"), endsAtMs: ms("16:00") }], wholeHouse: false },
-      { name: "Ngozi", spans: [{ startsAtMs: ms("14:00"), endsAtMs: ms("18:00") }], wholeHouse: false },
-    ], unfilled: 0, startMs: ms("13:35"), endMs: ms("15:30") });
+      { name: "Jamie", spans: [{ startsAtMs: ms("12:00"), endsAtMs: ms("16:00") }], rostered: { kind: "room" } },
+      { name: "Ngozi", spans: [{ startsAtMs: ms("14:00"), endsAtMs: ms("18:00") }], rostered: { kind: "room" } },
+    ], unfilled: 0, startMs: ms("13:35"), endMs: ms("15:30"), over: false });
     expect(crewWords(crew)).toBe("2 on setup");
   });
 
@@ -67,10 +68,42 @@ describe("turnRoundCrew", () => {
     const crew = turnRoundCrew(WINDOW, [
       // The wedding's crew in the Saloon is not on the Grand Hall's turn-round.
       shift({ staffMemberId: KOFI, spaceId: SALOON, eventId: DINNER }),
-      shift({ staffMemberId: JAMIE, spaceId: null, eventId: DINNER }),
+      shift({ staffMemberId: JAMIE, spaceId: null, eventId: DINNER, eventName: "The MacLeod wedding" }),
       shift({ staffMemberId: NGOZI, spaceId: null, eventId: null }),
     ], PEOPLE, EARLY);
-    expect(crew.hands.map((hand) => [hand.name, hand.wholeHouse])).toEqual([["Jamie", false], ["Ngozi", true]]);
+    expect(crew.hands.map((hand) => [hand.name, hand.rostered])).toEqual([
+      ["Jamie", { kind: "event", eventName: "The MacLeod wedding" }],
+      ["Ngozi", { kind: "house" }],
+    ]);
+  });
+
+  it("counts a hand rostered for an event, not a room, on each of its turn-rounds at once, and says so", () => {
+    // The wedding's ceremony leaves the Saloon at 15:00 as the Grand Hall
+    // turns from the lunch into the wedding dinner: Ngozi, on the wedding
+    // with no room, is on both, though she can be in only one.
+    const wedding = shift({ staffMemberId: NGOZI, spaceId: null, eventId: DINNER, eventName: "The MacLeod wedding", startsAt: at("12:00"), endsAt: at("18:30") });
+    const hall = turnRoundCrew({ roomId: HALL, eventIds: [OTHER, DINNER], startMs: ms("15:00"), endMs: ms("17:00") }, [wedding], PEOPLE, EARLY);
+    const saloon = turnRoundCrew({ roomId: SALOON, eventIds: [DINNER, null], startMs: ms("15:00"), endMs: ms("17:00") }, [wedding], PEOPLE, EARLY);
+    for (const crew of [hall, saloon]) {
+      expect(crew.hands).toEqual([{
+        name: "Ngozi", spans: [{ startsAtMs: ms("12:00"), endsAtMs: ms("18:30") }], rostered: { kind: "event", eventName: "The MacLeod wedding" },
+      }]);
+    }
+  });
+
+  it("holds a hand to the narrowest of their shifts on the turn-round, and leaves an event without a name unnamed", () => {
+    const crew = turnRoundCrew({ ...WINDOW, startMs: ms("11:00"), endMs: ms("19:00") }, [
+      // In the room for one shift, on the event for the other: in the room.
+      shift({ staffMemberId: JAMIE, startsAt: at("11:00"), endsAt: at("12:30") }),
+      shift({ staffMemberId: JAMIE, spaceId: null, eventId: DINNER, eventName: "The MacLeod wedding", startsAt: at("17:30"), endsAt: at("19:00") }),
+      // On the whole house, then on the event: on the event.
+      shift({ staffMemberId: NGOZI, spaceId: null, eventId: null, startsAt: at("11:00"), endsAt: at("13:00") }),
+      shift({ staffMemberId: NGOZI, spaceId: null, eventId: DINNER, eventName: "  ", startsAt: at("13:00"), endsAt: at("16:00") }),
+    ], PEOPLE, EARLY);
+    expect(crew.hands.map((hand) => [hand.name, hand.rostered])).toEqual([
+      ["Jamie", { kind: "room" }],
+      ["Ngozi", { kind: "event", eventName: null }],
+    ]);
   });
 
   it("leaves out bar shifts, drafts, cancellations and shifts that miss the window", () => {
@@ -95,9 +128,9 @@ describe("turnRoundCrew", () => {
     ], PEOPLE, EARLY);
     expect(crew.unfilled).toBe(1);
     expect(crew.hands).toEqual([
-      { name: "Jamie", spans: [{ startsAtMs: ms("11:00"), endsAtMs: ms("12:30") }, { startsAtMs: ms("17:30"), endsAtMs: ms("19:00") }], wholeHouse: false },
+      { name: "Jamie", spans: [{ startsAtMs: ms("11:00"), endsAtMs: ms("12:30") }, { startsAtMs: ms("17:30"), endsAtMs: ms("19:00") }], rostered: { kind: "room" } },
       // Two shifts end to end are one stretch.
-      { name: "Ngozi", spans: [{ startsAtMs: ms("12:00"), endsAtMs: ms("16:00") }], wholeHouse: false },
+      { name: "Ngozi", spans: [{ startsAtMs: ms("12:00"), endsAtMs: ms("16:00") }], rostered: { kind: "room" } },
     ]);
   });
 
@@ -111,9 +144,13 @@ describe("turnRoundCrew", () => {
     // Ahead of it: Jamie leaves as it starts, Kofi comes in as it ends.
     expect(turnRoundCrew(window, shifts, PEOPLE, EARLY).hands.map((hand) => hand.name)).toEqual(["Ngozi"]);
     // At 16:00 Ngozi has gone home.
-    expect(crewWords(turnRoundCrew(window, shifts, PEOPLE, ms("16:00")))).toBe("nobody on setup");
-    // Once it is over, everyone who was on is listed.
-    expect(turnRoundCrew(window, shifts, PEOPLE, ms("19:00")).hands.map((hand) => hand.name)).toEqual(["Jamie", "Ngozi", "Kofi"]);
+    const during = turnRoundCrew(window, shifts, PEOPLE, ms("16:00"));
+    expect(crewWords(during)).toBe("nobody on setup");
+    expect(during.over).toBe(false);
+    // Once it is over, everyone who was on is listed, and it says it is over.
+    const after = turnRoundCrew(window, shifts, PEOPLE, ms("19:00"));
+    expect(after.hands.map((hand) => hand.name)).toEqual(["Jamie", "Ngozi", "Kofi"]);
+    expect(after.over).toBe(true);
   });
 
   it("reads a turn-round with no time to it as whoever is on at that moment", () => {
@@ -241,5 +278,23 @@ describe("rotaWeeksFor", () => {
     expect(rotaWeeksFor(Date.parse("2026-11-15T04:00:00Z"), Date.parse("2026-11-16T04:00:00Z"), tz)).toEqual(["2026-11-09", "2026-11-16"]);
     // Sunday to midnight exactly is still one week.
     expect(rotaWeeksFor(Date.parse("2026-11-15T00:00:00Z"), Date.parse("2026-11-16T00:00:00Z"), tz)).toEqual(["2026-11-09"]);
+  });
+
+  it("reads the right weeks on the Sundays the clocks change, as the board's own day runs", () => {
+    const tz = "Europe/London";
+    const weeksOf = (date: string, boundaryHour: number): readonly string[] => {
+      const day = boardDayRange(wallInputToMs(`${date}T12:00`, tz) ?? Number.NaN, boundaryHour, tz);
+      return rotaWeeksFor(day.fromMs, day.toMs, tz);
+    };
+    // Sunday 29 March 2026 has 23 hours: to Monday's 04:00 it runs into the
+    // next week; to midnight it does not.
+    expect(weeksOf("2026-03-29", 4)).toEqual(["2026-03-23", "2026-03-30"]);
+    expect(weeksOf("2026-03-29", 0)).toEqual(["2026-03-23"]);
+    // Sunday 25 October 2026 has 25 hours.
+    expect(weeksOf("2026-10-25", 4)).toEqual(["2026-10-19", "2026-10-26"]);
+    expect(weeksOf("2026-10-25", 0)).toEqual(["2026-10-19"]);
+    // The Saturdays before them stay in their own week.
+    expect(weeksOf("2026-03-28", 4)).toEqual(["2026-03-23"]);
+    expect(weeksOf("2026-10-24", 4)).toEqual(["2026-10-19"]);
   });
 });

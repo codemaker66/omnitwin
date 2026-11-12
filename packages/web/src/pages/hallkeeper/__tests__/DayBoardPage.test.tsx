@@ -1906,6 +1906,69 @@ describe("DayBoardPage: who is on setup for a turn-round", () => {
     const section = await screen.findByRole("region", { name: "Changeover from Lunch" });
     expect(within(section).queryByText(/on setup/u)).toBeNull();
   });
+
+  it("keeps what a failed re-read leaves on the slot and in the sentence, and says above the rooms when it was read", async () => {
+    liveConnected.current = false;
+    getCalendarMock.mockResolvedValue(calendarFixture(day()));
+    // Setup is planned in the Saloon only: the dinner's turn-round has nobody.
+    const saloonOnly = (_venueId: string, start: string | null): Promise<unknown> => Promise.resolve(rotaWeek(start ?? "", [
+      { spaceId: SALOON, spaceName: "Saloon", startsAt: at(-60), endsAt: at(90) },
+    ]));
+    rotaMock.mockImplementation(saloonOnly);
+    renderBoard();
+    const dinner = await screen.findByRole("button", { name: /^Dinner,/u });
+    await waitFor(() => { expect(dinner.textContent).toContain("Turn-round 4 h · nobody on setup"); });
+    const sentence = (): string => document.querySelector(".dayboard-summary")?.textContent ?? "";
+    expect(sentence()).toContain("Grand Hall’s turn-round has nobody on setup.");
+    expect(screen.queryByText(/the rota could not be read/u)).toBeNull();
+    const reads = rotaMock.mock.calls.length;
+    rotaMock.mockImplementation(() => Promise.reject(new Error("offline")));
+    fireEvent.click(screen.getAllByRole("button", { name: "Refresh" })[0] as HTMLElement);
+    await waitFor(() => { expect(rotaMock.mock.calls.length).toBeGreaterThan(reads); });
+    // The slot and the sentence still say what the rota said when last read,
+    // and the board says when that was.
+    const notice = await screen.findByText(/^Who is on setup is as read at \d{2}:\d{2}; the rota could not be read since\. The board tries again each minute\.$/u);
+    expect(dinner.textContent).toContain("Turn-round 4 h · nobody on setup");
+    expect(sentence()).toContain("Grand Hall’s turn-round has nobody on setup.");
+    // Once the rota reads again, the board stops saying so.
+    rotaMock.mockImplementation(saloonOnly);
+    fireEvent.click(within(notice.closest(".dayboard-notice") as HTMLElement).getByRole("button", { name: "Try again" }));
+    await waitFor(() => { expect(screen.queryByText(/the rota could not be read/u)).toBeNull(); });
+    expect(dinner.textContent).toContain("Turn-round 4 h · nobody on setup");
+  });
+
+  it("shows the rota being read in the slot's panel, then says on the board and in the panel when it could not be read at all", async () => {
+    getCalendarMock.mockResolvedValue(calendarFixture(day()));
+    const read = deferred<unknown>();
+    rotaMock.mockImplementation(() => read.promise);
+    renderBoard();
+    const dinner = await screen.findByRole("button", { name: /^Dinner,/u });
+    fireEvent.click(dinner);
+    const section = await screen.findByRole("region", { name: "Changeover from Lunch" });
+    expect(within(section).getByText("Reading the rota…")).toBeTruthy();
+    expect(screen.queryByText(/the rota could not be read/u)).toBeNull();
+    await act(async () => { read.reject(new Error("offline")); await Promise.resolve(); });
+    expect(await within(section).findByText("Who is on setup could not be read just now.")).toBeTruthy();
+    expect(within(section).queryByText("Reading the rota…")).toBeNull();
+    expect(screen.getByText("The rota could not be read, so who is on setup is not shown. The board tries again each minute.")).toBeTruthy();
+    // Nothing read, nothing said of a crew on the slot.
+    expect(dinner.textContent).toContain("Turn-round 4 h");
+    expect(dinner.textContent).not.toContain("on setup");
+  });
+
+  it("shows the rota being read in the slot's panel until it lands", async () => {
+    getCalendarMock.mockResolvedValue(calendarFixture(day()));
+    const read = deferred<unknown>();
+    rotaMock.mockImplementation(() => read.promise);
+    renderBoard();
+    fireEvent.click(await screen.findByRole("button", { name: /^Dinner,/u }));
+    const section = await screen.findByRole("region", { name: "Changeover from Lunch" });
+    expect(within(section).getByText("Reading the rota…")).toBeTruthy();
+    await act(async () => { read.resolve(rotaWeek(rotaMock.mock.calls[0]?.[1] ?? "", [{ startsAt: at(-60), endsAt: at(90) }])); await Promise.resolve(); });
+    expect(await within(section).findByText(/^On setup: Jamie \d{2}:\d{2}–\d{2}:\d{2}\.$/u)).toBeTruthy();
+    expect(within(section).queryByText("Reading the rota…")).toBeNull();
+    expect(screen.queryByText(/the rota could not be read/u)).toBeNull();
+  });
 });
 
 describe("DayBoardPage: what moves at a changeover", () => {

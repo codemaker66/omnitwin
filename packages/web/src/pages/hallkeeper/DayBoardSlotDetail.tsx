@@ -19,7 +19,7 @@ import { sheetProgressLine } from "./lib/day-board-sheet.js";
 import { useSlotSheet, type SlotSheetResult } from "./lib/use-slot-sheet.js";
 import type { DayBoardSlot } from "./lib/day-board-state.js";
 import type { SlotRequestsComponent } from "./lib/slot-requests-contract.js";
-import type { TurnRoundCrew } from "./lib/turn-round-crew.js";
+import type { CrewOnPanel } from "./lib/turn-round-crew.js";
 import { StateIcon } from "./DayBoardRooms.js";
 import { ChangeoverSection } from "./DayBoardChangeover.js";
 
@@ -279,8 +279,8 @@ export function SlotDetail({ slot, room, venueSlug, timeZone, slotRequests: Slot
   readonly changesUnread?: boolean;
   /** The booking this one's turn-round runs from, when there is one. */
   readonly previous?: DayBoardSlot | null;
-  /** Who is on setup for that turn-round, when the rota plans setup. */
-  readonly crew?: TurnRoundCrew | null;
+  /** Who is on setup for that turn-round, when the rota plans setup; or that the rota is being read, or could not be. */
+  readonly crew?: CrewOnPanel | null;
   /** When the crew was read, if the rota could not be read since. */
   readonly crewNote?: string | null;
 }): ReactElement {

@@ -4,7 +4,8 @@ import { getChangeover } from "../../api/changeover.js";
 import { ActivityStatus } from "../../components/shared/Activity.js";
 import { formatWallTime } from "../diary/lib/board-time.js";
 import type { DayBoardSlot } from "./lib/day-board-state.js";
-import type { TurnRoundCrew } from "./lib/turn-round-crew.js";
+import { countWord } from "./lib/day-board-rooms.js";
+import type { CrewOnPanel, HandRostered, TurnRoundCrew } from "./lib/turn-round-crew.js";
 import { useSlotSheet, type SlotSheetResult } from "./lib/use-slot-sheet.js";
 
 // ---------------------------------------------------------------------------
@@ -184,20 +185,57 @@ function joined(words: readonly string[]): string {
   return `${words.slice(0, -1).join(", ")} and ${words[words.length - 1] ?? ""}`;
 }
 
+/** Where a hand may be, when not held to this room: one person is not in
+ *  every room an event or the house turns at once. */
+function rosteredWords(rostered: HandRostered): string {
+  switch (rostered.kind) {
+    case "room": return "";
+    case "event": return ` (for ${rostered.eventName ?? "the event"}, any room)`;
+    case "house": return " (whole house)";
+  }
+}
+
+/** Setup shifts nobody fills, as a sentence: "Two more shifts are still to fill." */
+function unfilledWords(unfilled: number, more: boolean, over: boolean): string {
+  const one = unfilled === 1;
+  const shifts = more ? (one ? "more shift" : "more shifts") : (one ? "setup shift" : "setup shifts");
+  const state = over ? (one ? "was not filled" : "were not filled") : (one ? "is still to fill" : "are still to fill");
+  return `${countWord(unfilled)} ${shifts} ${state}.`;
+}
+
 /** Who is on setup for the turn-round, from the published rota: each
- *  person's shifts as they are ("11:00–12:30 then 17:30–19:00"), and a
- *  whole-house shift marked as such, since one person is not in every room. */
+ *  person's shifts as they are ("11:00–12:30 then 17:30–19:00"), and a hand
+ *  rostered for an event or the whole house marked as such, since one person
+ *  is not in every room. A turn-round that is over is told in the past. */
 export function crewLine(crew: TurnRoundCrew, timeZone: string): string {
   const time = (ms: number): string => formatWallTime(ms, timeZone);
-  const open = crew.unfilled === 0 ? "" : crew.hands.length === 0
-    ? ` ${crew.unfilled === 1 ? "One setup shift is" : `${String(crew.unfilled)} setup shifts are`} still to fill.`
-    : ` ${crew.unfilled === 1 ? "One more shift is" : `${String(crew.unfilled)} more shifts are`} still to fill.`;
-  if (crew.hands.length === 0) return `Nobody is on setup for this turn-round.${open}`;
+  const count = crew.hands.length;
+  const open = crew.unfilled === 0 ? "" : ` ${unfilledWords(crew.unfilled, count > 0, crew.over)}`;
+  if (count === 0) return `Nobody ${crew.over ? "was" : "is"} on setup for this turn-round.${open}`;
   const hand = (person: TurnRoundCrew["hands"][number]): string => {
     const spans = person.spans.map((span) => `${time(span.startsAtMs)}–${time(span.endsAtMs)}`).join(" then ");
-    return `${person.name} ${spans}${person.wholeHouse ? " (whole house)" : ""}`;
+    return `${person.name} ${spans}${rosteredWords(person.rostered)}`;
   };
-  return `On setup: ${joined(crew.hands.map(hand))}.${open}`;
+  const lead = !crew.over ? "On setup" : count === 1 ? "Was on setup" : "Were on setup";
+  return `${lead}: ${joined(crew.hands.map(hand))}.${open}`;
+}
+
+/** The panel's word on the crew: who is on, as last read (and when, if the
+ *  rota could not be read since); the rota being read; or not read at all. */
+function CrewWords({ crew, note, timeZone }: {
+  readonly crew: CrewOnPanel | null;
+  readonly note: string | null;
+  readonly timeZone: string;
+}): ReactElement | null {
+  if (crew === null) return null;
+  switch (crew.kind) {
+    case "read":
+      return <p className="dayboard-changeover-crew">{crewLine(crew.crew, timeZone)}{note === null ? "" : ` ${note}`}</p>;
+    case "reading":
+      return <p className="dayboard-changeover-crew"><ActivityStatus>Reading the rota…</ActivityStatus></p>;
+    case "unread":
+      return <p className="dayboard-changeover-crew">Who is on setup could not be read just now.</p>;
+  }
 }
 
 /** Why one side has no single layout to compare, as a whole sentence. */
@@ -218,8 +256,9 @@ export function ChangeoverSection({ previous, slot, room, after, crew = null, cr
   readonly room: { readonly slug: string; readonly name: string };
   /** The open slot's own layouts, which the panel reads once for its sheet link too. */
   readonly after: SlotSheetResult;
-  /** Who is on setup for the turn-round, when the rota plans setup. */
-  readonly crew?: TurnRoundCrew | null;
+  /** Who is on setup for the turn-round, when the rota plans setup; or,
+   *  before the rota's first read lands, that it is being read or could not be. */
+  readonly crew?: CrewOnPanel | null;
   /** When the crew was read, if the rota could not be read since. */
   readonly crewNote?: string | null;
   readonly timeZone: string;
@@ -258,7 +297,7 @@ export function ChangeoverSection({ previous, slot, room, after, crew = null, cr
     <section className="dayboard-changeover dayboard-detail-section" aria-label={`Changeover from ${previous.title}`}>
       <h3 className="dayboard-detail-heading">Changeover</h3>
       <p className="dayboard-changeover-from">From {previous.title}</p>
-      {crew !== null && <p className="dayboard-changeover-crew">{crewLine(crew, timeZone)}{crewNote === null ? "" : ` ${crewNote}`}</p>}
+      <CrewWords crew={crew} note={crewNote} timeZone={timeZone} />
       {body}
     </section>
   );

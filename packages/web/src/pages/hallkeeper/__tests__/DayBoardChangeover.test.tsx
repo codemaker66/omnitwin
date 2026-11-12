@@ -99,19 +99,40 @@ describe("ChangeoverList", () => {
 describe("crewLine", () => {
   const ms = (time: string): number => Date.parse(`2026-11-14T${time}:00.000Z`);
   const span = (from: string, to: string) => ({ startsAtMs: ms(from), endsAtMs: ms(to) });
-  const crew = (hands: Parameters<typeof crewLine>[0]["hands"], unfilled = 0) => ({ hands, unfilled, startMs: ms("14:00"), endMs: ms("18:00") });
+  const crew = (hands: Parameters<typeof crewLine>[0]["hands"], unfilled = 0, over = false) => ({ hands, unfilled, startMs: ms("14:00"), endMs: ms("18:00"), over });
+  const room = { kind: "room" } as const;
 
   it("names each person with their shifts as they are, and marks a whole-house shift", () => {
     expect(crewLine(crew([
-      { name: "Jamie", spans: [span("11:00", "12:30"), span("17:30", "19:00")], wholeHouse: false },
-      { name: "Morag", spans: [span("12:00", "20:00")], wholeHouse: true },
+      { name: "Jamie", spans: [span("11:00", "12:30"), span("17:30", "19:00")], rostered: room },
+      { name: "Morag", spans: [span("12:00", "20:00")], rostered: { kind: "house" } },
     ], 1), "Europe/London")).toBe("On setup: Jamie 11:00–12:30 then 17:30–19:00 and Morag 12:00–20:00 (whole house). One more shift is still to fill.");
   });
 
-  it("says plainly when nobody is on, and how many setup shifts are still to fill", () => {
+  it("marks a hand rostered for an event, not a room, as able to be in any of its rooms", () => {
+    expect(crewLine(crew([
+      { name: "Ngozi", spans: [span("12:00", "18:30")], rostered: { kind: "event", eventName: "The MacLeod wedding" } },
+    ]), "Europe/London")).toBe("On setup: Ngozi 12:00–18:30 (for The MacLeod wedding, any room).");
+    expect(crewLine(crew([
+      { name: "Ngozi", spans: [span("12:00", "18:30")], rostered: { kind: "event", eventName: null } },
+    ]), "Europe/London")).toBe("On setup: Ngozi 12:00–18:30 (for the event, any room).");
+  });
+
+  it("says plainly when nobody is on, and how many setup shifts are still to fill, in words", () => {
     expect(crewLine(crew([]), "Europe/London")).toBe("Nobody is on setup for this turn-round.");
-    expect(crewLine(crew([], 2), "Europe/London")).toBe("Nobody is on setup for this turn-round. 2 setup shifts are still to fill.");
-    expect(crewLine(crew([{ name: "Jamie", spans: [span("14:00", "18:00")], wholeHouse: false }], 3), "Europe/London"))
-      .toBe("On setup: Jamie 14:00–18:00. 3 more shifts are still to fill.");
+    expect(crewLine(crew([], 2), "Europe/London")).toBe("Nobody is on setup for this turn-round. Two setup shifts are still to fill.");
+    expect(crewLine(crew([{ name: "Jamie", spans: [span("14:00", "18:00")], rostered: room }], 3), "Europe/London"))
+      .toBe("On setup: Jamie 14:00–18:00. Three more shifts are still to fill.");
+  });
+
+  it("speaks of a turn-round that is over in the past tense", () => {
+    expect(crewLine(crew([], 0, true), "Europe/London")).toBe("Nobody was on setup for this turn-round.");
+    expect(crewLine(crew([], 2, true), "Europe/London")).toBe("Nobody was on setup for this turn-round. Two setup shifts were not filled.");
+    expect(crewLine(crew([{ name: "Jamie", spans: [span("14:00", "18:00")], rostered: room }], 1, true), "Europe/London"))
+      .toBe("Was on setup: Jamie 14:00–18:00. One more shift was not filled.");
+    expect(crewLine(crew([
+      { name: "Jamie", spans: [span("14:00", "18:00")], rostered: room },
+      { name: "Ngozi", spans: [span("15:00", "18:00")], rostered: room },
+    ], 0, true), "Europe/London")).toBe("Were on setup: Jamie 14:00–18:00 and Ngozi 15:00–18:00.");
   });
 });
