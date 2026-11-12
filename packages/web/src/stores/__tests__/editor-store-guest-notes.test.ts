@@ -543,8 +543,10 @@ describe("a save refused for a held note, after keeping this version over a newe
     expect(sentPiece(sentBefore + 1, B).replacesNote).toBeUndefined();
     expect(sentPiece(sentBefore + 1, B).metadata?.notes).toBeUndefined();
     // Refused, and nothing left unsaved: B is as the server has it, holding the note it is shown to hold (ruling R1(b)).
-    expect(store()).toMatchObject({ saveError: NOTE_HELD_MESSAGE, saveErrorCode: "NOTE_HELD", saveConflict: null, isDirty: false });
-    expect(pieceNamedForRefusedSave(store())).not.toBeNull();
+    expect(store()).toMatchObject({ saveErrorCode: "NOTE_HELD", saveConflict: null, isDirty: false, noteClearsRefused: [B] });
+    // Said in its own sentence, which names the piece (ruling C3), not in the API's, which would ask them to clear it.
+    expect(store().saveError).toMatch(/^A .+'s note was not removed: it was changed somewhere else, and that note cannot be shown here\.$/u);
+    expect(pieceNamedForRefusedSave(store())).toBeNull();
     expect(store().objects.find((object) => object.id === A)?.positionX).toBe(3);
     expect(server.notes.get(B)).toBe(THEIRS);
     expect(noteHeldOn(store(), B)).toBe(true);
@@ -1405,8 +1407,9 @@ describe("Keep mine refused for a note the maker rewrote, with other notes of th
     expect(server.notes.has(C)).toBe(false);
     expect(server.notes.get(B)).toBe(THEIR_NOTE);
     expect(noteHeldOn(store(), B)).toBe(true);
-    // Nothing is left unsaved: the refused clear is said, not waiting to be sent (ruling R1(b)).
-    expect(store()).toMatchObject({ saveErrorCode: "NOTE_HELD", saveError: NOTE_HELD_MESSAGE, saveConflict: null, isDirty: false });
+    // Nothing is left unsaved: the refused clear is said, in its own sentence, not waiting to be sent (rulings R1(b), C3).
+    expect(store()).toMatchObject({ saveErrorCode: "NOTE_HELD", saveConflict: null, isDirty: false, noteClearsRefused: [B] });
+    expect(store().saveError).toMatch(/'s note was not removed: it was changed somewhere else, and that note cannot be shown here\.$/u);
   });
 
   it("saves a change the person was making to their other note, and keeps that note theirs to go on with", async () => {
@@ -1491,6 +1494,9 @@ function tableId(index: number): string {
   return `0b0b0b0b-0000-4000-8000-${String(index + 1).padStart(12, "0")}`;
 }
 
+/** A refused clear of Table 7's note, said (ruling C3 on #388). */
+const TABLE_7_NOT_REMOVED = "Table 7's note was not removed: it was changed somewhere else, and that note cannot be shown here.";
+
 /** What the person wrote on table `index`; Table 4's is a health note. */
 function ownNote(index: number): string {
   return index === 3 ? ALLERGY : `TEST ONLY own note for Table ${String(index + 1)}`;
@@ -1559,8 +1565,9 @@ describe("Keep mine refused for notes the maker rewrote, among many notes of the
     const saved = await store().keepMine(false);
     // Nothing is left unsaved (the clear cannot be made from here), and the refusal is said (ruling R1(b)).
     expect({ saved, isDirty: store().isDirty, saveErrorCode: store().saveErrorCode }).toEqual({ saved: false, isDirty: false, saveErrorCode: "NOTE_HELD" });
-    expect(store()).toMatchObject({ saveError: NOTE_HELD_MESSAGE, saveConflict: null, isSaving: false, configRevision: server.revision });
-    expect(pieceNamedForRefusedSave(store())).toBe("Table 7");
+    // The piece is named in the clear's own sentence (ruling C3), not before the API's.
+    expect(store()).toMatchObject({ saveError: TABLE_7_NOT_REMOVED, saveConflict: null, isSaving: false, configRevision: server.revision });
+    expect(pieceNamedForRefusedSave(store())).toBeNull();
     // Nothing of the maker's is touched; every other note of the person's is still theirs; the move is saved.
     expect(server.notes.get(tableId(6))).toBe(THEIR_NOTE);
     expect(noteHeldOn(store(), tableId(6))).toBe(true);
@@ -1574,7 +1581,7 @@ describe("Keep mine refused for notes the maker rewrote, among many notes of the
     expect(sentPiece(sentBefore, tableId(6)).replacesNote).toBeUndefined();
     expect(server.notes.get(tableId(6))).toBe(THEIR_NOTE);
     // That save does not put the refusal away: the person does (ruling R1(b) on #388).
-    expect(store()).toMatchObject({ saveErrorCode: "NOTE_HELD", saveError: NOTE_HELD_MESSAGE, noteClearsRefused: [tableId(6)], isDirty: false });
+    expect(store()).toMatchObject({ saveErrorCode: "NOTE_HELD", saveError: TABLE_7_NOT_REMOVED, noteClearsRefused: [tableId(6)], isDirty: false });
     store().dismissRefusedClears();
     expect(store()).toMatchObject({ saveErrorCode: null, saveError: null, noteClearsRefused: [] });
     expect(noteHeldOn(store(), tableId(6))).toBe(true);

@@ -38,6 +38,8 @@ import {
   nothingUndoneLine,
   ownWordsOverHeldNotes,
   recordedNotes,
+  refusedClearsLine,
+  refusedOverHeldNote,
   registerHeldNotes,
   signedInRoutesSuit,
   stayedForNotesLine,
@@ -1728,9 +1730,14 @@ export const useEditorStore = create<EditorStore>()(withSaveFacts((set, get) => 
   dismissRefusedClears: () => {
     const s = get();
     if (s.noteClearsRefused.length === 0) return;
-    refusedClearWords = null;
+    // Another refusal or failure on the line stands on, without the clear's sentence beside it.
     const standsOn = s.saveErrorCode !== NOTE_HELD_CODE || ownWordsOverHeldNotes(s).length > 0;
-    set({ noteClearsRefused: [], ...(standsOn ? {} : { saveError: null, saveErrorCode: null }) });
+    const clear = refusedClearsLine(s);
+    const rest = clear !== null && s.saveError?.endsWith(clear) === true ? s.saveError.slice(0, -clear.length).trimEnd() : s.saveError;
+    set({
+      noteClearsRefused: [],
+      ...(standsOn && rest !== null && rest !== "" ? { saveError: rest } : { saveError: null, saveErrorCode: null }),
+    });
   },
 
   adoptServerConfiguration: (config, options = {}) => {
@@ -2147,20 +2154,23 @@ async function saveLeavingOutOfDateNotes(
   return { saved: landed.saved, left: onRecord(outOfDate), unsettled: new Map(), stoppedBy: null };
 }
 
-/** The words of the refusal that refused the clears in noteClearsRefused, as it came. */
-let refusedClearWords: string | null = null;
-
 /**
  * What the save line says when nothing else is to be said: a refused clear's
- * notice while it stands (noteClearsRefused), or nothing. Every save that ends
- * without a refusal of its own, and every failure put away, leaves this: the
- * notice stays until the person dismisses it, and no save says the layout
- * saved while it does (ruling R1(b) on #388). The autosave goes on meanwhile.
+ * notice while it stands (noteClearsRefused), in its own sentence
+ * (lib/guest-plan-notes refusedClearsLine, ruling C3), or nothing. Every save
+ * that ends without a refusal of its own, and every failure put away, leaves
+ * this: the notice stays until the person dismisses it, and no save says the
+ * layout saved while it does (ruling R1(b) on #388). The autosave goes on.
  */
-function standingRefusal(state: Pick<EditorState, "noteClearsRefused">): Pick<EditorState, "saveError" | "saveErrorCode"> {
-  return state.noteClearsRefused.length === 0 || refusedClearWords === null
-    ? { saveError: null, saveErrorCode: null }
-    : { saveError: refusedClearWords, saveErrorCode: NOTE_HELD_CODE };
+function standingRefusal(state: Pick<EditorState, "noteClearsRefused" | "objects">): Pick<EditorState, "saveError" | "saveErrorCode"> {
+  const said = refusedClearsLine(state);
+  return said === null ? { saveError: null, saveErrorCode: null } : { saveError: said, saveErrorCode: NOTE_HELD_CODE };
+}
+
+/** A refusal's words and a refused clear's sentence beside them, as one notice; null for neither. */
+function saidTogether(...words: readonly (string | null)[]): string | null {
+  const said = words.filter((one): one is string => one !== null && one !== "");
+  return said.length === 0 ? null : said.join(" ");
 }
 
 /**
@@ -2365,19 +2375,22 @@ async function saveDocument(
       ...get().noteClearsRefused,
       ...refusedNotes.filter((object) => object.notes === "").map((object) => object.id),
     ])];
-    if (noteRefused && clearsRefused.length > 0) refusedClearWords = refusedWords;
     // A note the saves stopped short of vouching for stays on record, carried
     // as "Keep mine" carries one (keepingConfirmedNotes), with the person's
     // words on the piece: the next save sends it again.
     const theirWords = new Map(latest.objects.map((object) => [object.id, object.notes]));
     const nextObjects = afterLeavingOutOfDateNotes(answered, latest.objects, outOfDate)
       .map((object) => (unsettled.has(object.id) ? { ...object, notes: theirWords.get(object.id) ?? object.notes } : object));
+    // A yielded object stays the server's: never resend an older local copy.
+    const objectsAfter = snapYieldedToBase(nextObjects, serverObjects);
     const base = unsettled.size === 0
       ? serverObjects
       : keepingConfirmedNotes(serverObjects, sentBase.filter((object) => unsettled.has(object.id)), true);
+    // The API's sentence is for words over a held note; a refused clear has its
+    // own (ruling C3 on #388), and both stand in one notice when both are refused.
+    const refusal = { objects: objectsAfter, noteClearsRefused: noteRefused ? clearsRefused : get().noteClearsRefused };
     set({
-      // A yielded object stays the server's: never resend an older local copy.
-      objects: snapYieldedToBase(nextObjects, serverObjects),
+      objects: objectsAfter,
       baseObjects: base,
       history: aligned ? remapHistoryIds(latest.history, idMap) : emptyHistory<EditorObject>(),
       selectedObjectId: latest.selectedObjectId === null
@@ -2390,9 +2403,13 @@ async function saveDocument(
       lastSavedAt: new Date(),
       saveConflict: null,
       ...(noteRefused
-        ? { saveError: refusedWords, saveErrorCode: NOTE_HELD_CODE, noteClearsRefused: clearsRefused }
+        ? {
+            saveError: saidTogether(wordsRefused ? refusedWords : null, refusedClearsLine(refusal)),
+            saveErrorCode: NOTE_HELD_CODE,
+            noteClearsRefused: clearsRefused,
+          }
         // Nothing refused this time: a refused clear's notice still stands.
-        : standingRefusal(get())),
+        : standingRefusal(refusal)),
       reviewLockRefused: false,
       // Its work arrived after all: nothing of it is waiting here.
       ...(latest.leftBehind?.configId === configId ? { leftBehind: null } : {}),
@@ -2488,7 +2505,8 @@ async function saveDocument(
     // doesn't lose their in-progress layout.
     set({
       isSaving: false,
-      saveError: message,
+      // A refusal for a held note says, beside it, a refused clear still standing.
+      saveError: refusedOverHeldNote(code) ? saidTogether(message, refusedClearsLine(get())) : message,
       saveErrorCode: code,
       ...(code === "CONFIG_LOCKED" ? { reviewLockRefused: true } : {}),
     });

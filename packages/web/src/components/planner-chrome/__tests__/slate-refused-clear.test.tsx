@@ -59,8 +59,8 @@ const TABLE_7 = "0b0b0b0b-0000-4000-8000-000000000007";
 const CHAIR = "banquet-chair";
 const MINE = "TEST ONLY by the window";
 const THEIRS = "TEST ONLY nut allergy, table by the door";
-/** What the slate says of the clear the API refused. */
-const REFUSED_CLEAR = NOTE_HELD_MESSAGE;
+/** What the slate says of the clear the API refused: the web's own sentence, ruled 12 November 2026 (C3). */
+const REFUSED_CLEAR = "Table 7's note was not removed: it was changed somewhere else, and that note cannot be shown here.";
 
 function store(): ReturnType<typeof useEditorStore.getState> {
   return useEditorStore.getState();
@@ -200,6 +200,8 @@ describe("the slate's notice of a refused clear of a note (ruling R1(b) on #388)
     expect({ kept, sent }).toEqual({ kept: false, sent: true });
     expect(lastSent(A)?.positionX).toBe(toRealWorld(5));
     expect(within(screen.getByRole("alert")).getByText(REFUSED_CLEAR)).toBeTruthy();
+    // The API's sentence asks the person to clear what they wrote: it is for words over a held note, not this.
+    expect(screen.queryByText(NOTE_HELD_MESSAGE)).toBeNull();
 
     await moveAndAutosave(7);
     line.stop();

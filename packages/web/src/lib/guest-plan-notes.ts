@@ -439,22 +439,38 @@ export function heldNotePieceToName<T extends NamedPiece>(held: readonly T[]): T
 }
 
 /**
- * The piece a refused save can be said to be about: the one piece on which
- * the person's own words stand over a held note, or whose note they cleared
- * after someone else had rewritten it (`noteClearsRefused`, editor-store
- * saveLeavingOutOfDateNotes), by name. Null when there is none, or more than
- * one: the API does not say which piece it refused.
+ * The piece a save refused for a held note (the API's own sentence) can be
+ * said to be about: the one piece on which the person's own words stand over
+ * a held note, by name. Null when there is none, or more than one: the API
+ * does not say which piece it refused. A refused clear says its piece in its
+ * own sentence (refusedClearsLine).
  */
-export function pieceNamedForRefusedSave(state: GuestPlanNoteFacts & { readonly noteClearsRefused: readonly string[] }): string | null {
-  const written = [
-    ...ownWordsOverHeldNotes(state),
-    ...state.objects.filter((object) => object.notes === "" && state.noteClearsRefused.includes(object.id)),
-  ];
+export function pieceNamedForRefusedSave(state: GuestPlanNoteFacts): string | null {
+  const written = ownWordsOverHeldNotes(state);
   const [only] = written;
   if (written.length !== 1 || only === undefined) return null;
   // It leads its line: "A chair at Table 3: ...".
-  const name = heldNotePieceName(asNamed(only), state.objects.map(asNamed));
+  return leading(heldNotePieceName(asNamed(only), state.objects.map(asNamed)));
+}
+
+/** A piece's name where it starts a sentence: "A chair at Table 3". */
+function leading(name: string): string {
   return `${name.charAt(0).toUpperCase()}${name.slice(1)}`;
+}
+
+/**
+ * What the planner says of the person's clear of a note the API refused,
+ * because someone else had rewritten that note (editor-store
+ * noteClearsRefused): one sentence a piece, each named as these lines name a
+ * piece ("A chair at Table 1's note was not removed: ..."). Null for none.
+ */
+export function refusedClearsLine(state: { readonly objects: readonly EditorObject[]; readonly noteClearsRefused: readonly string[] }): string | null {
+  if (state.noteClearsRefused.length === 0) return null;
+  const among = state.objects.map(asNamed);
+  const said = state.objects
+    .filter((object) => state.noteClearsRefused.includes(object.id))
+    .map((object) => noteNotRemovedLine(leading(heldNotePieceName(asNamed(object), among))));
+  return said.length === 0 ? null : said.join(" ");
 }
 
 /** A piece of the document as these lines name pieces. */
@@ -579,6 +595,16 @@ export function noteStillSavingLine(pieces: readonly ChangedPiece[]): string {
   return pieces.length === 1
     ? `Nothing was removed: the note on ${names} is still being saved. Try again once it has saved.`
     : `Nothing was removed: the notes on ${names} are still being saved. Try again once they have saved.`;
+}
+
+/**
+ * A clear of the person's own note that was not made, because someone else
+ * had changed that note since (a save refused for a held note: the API's own
+ * sentence would ask them to clear what they have cleared). Ruled 12 November
+ * 2026 (C3 on #388). `name` leads: "Table 3", "A chair at Table 1".
+ */
+export function noteNotRemovedLine(name: string): string {
+  return `${name}'s note was not removed: it was changed somewhere else, and that note cannot be shown here.`;
 }
 
 /** A seat taken from a table, when the chair that would go holds such a note. */
