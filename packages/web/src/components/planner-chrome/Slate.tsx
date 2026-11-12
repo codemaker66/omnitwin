@@ -43,10 +43,13 @@ const LazyClerkRouteProvider = lazy(() => import("../auth/ClerkRouteProvider.js"
 // layout. Status is always words; dots, the tick and colour repeat them.
 // ---------------------------------------------------------------------------
 
-export type SlateActionId = "try-again" | "show-theirs" | "keep-mine" | "sign-in" | "leave-anyway";
+export type SlateActionId = "try-again" | "show-theirs" | "keep-mine" | "sign-in" | "leave-anyway" | "dismiss";
+
+/** A way forward that runs a while (Dismiss is done at once). */
+type SlateBusyId = Exclude<SlateActionId, "dismiss">;
 
 /** What each way forward is doing while it runs: the words the other keys wait on. */
-const BUSY_WORDS: Readonly<Record<SlateActionId, string>> = {
+const BUSY_WORDS: Readonly<Record<SlateBusyId, string>> = {
   "try-again": "Saving",
   "show-theirs": "Opening the other version",
   "keep-mine": "Keeping your version",
@@ -82,7 +85,7 @@ export interface SlateCardProps {
   readonly onMenu: () => void;
   readonly onAction: (id: SlateActionId) => void;
   /** The way forward now running, or null. */
-  readonly busy: SlateActionId | null;
+  readonly busy: SlateBusyId | null;
 }
 
 function SaveMark({ mark }: { readonly mark: SlateSaveMark }): ReactElement | null {
@@ -95,7 +98,7 @@ function ActionKey({ id, label, primary, busy, onAction }: {
   readonly id: SlateActionId;
   readonly label: string;
   readonly primary: boolean;
-  readonly busy: SlateActionId | null;
+  readonly busy: SlateBusyId | null;
   readonly onAction: (id: SlateActionId) => void;
 }): ReactElement {
   const running = busy === id;
@@ -255,6 +258,7 @@ export function Slate(): ReactElement {
     keptOnDevice: state.keptOnDevice,
     saveError: state.saveError,
     saveErrorCode: state.saveErrorCode,
+    refusedClear: state.noteClearsRefused.length > 0,
     saveConflict: state.saveConflict,
     lockReason: state.lockReason,
     lastSavedAt: state.lastSavedAt,
@@ -270,7 +274,7 @@ export function Slate(): ReactElement {
   const previewing = useLayoutTimelinePreviewStore((state) => state.mode !== "inactive");
   const menu = usePopoverState();
   const freeze = useFreezePhaseLayoutSnapshot();
-  const [busy, setBusy] = useState<SlateActionId | null>(null);
+  const [busy, setBusy] = useState<SlateBusyId | null>(null);
   const [signingIn, setSigningIn] = useState(false);
   const [failedLogo, setFailedLogo] = useState<string | null>(null);
   const [actBusy, setActBusy] = useState<string | null>(null);
@@ -294,6 +298,7 @@ export function Slate(): ReactElement {
     keptOnDevice: facts.keptOnDevice,
     saveError: facts.saveError,
     refusedForHeldNote: refusedOverHeldNote(facts.saveErrorCode),
+    refusedClear: facts.refusedClear,
     conflict: conflict === null ? null : {
       changedByName: conflict.changedBy?.name ?? null,
       byYou: conflict.byYou,
@@ -370,6 +375,10 @@ export function Slate(): ReactElement {
       const going = held;
       setHeld(null);
       going?.go();
+      return;
+    }
+    if (id === "dismiss") {
+      useEditorStore.getState().dismissRefusedClears();
       return;
     }
     const editor = useEditorStore.getState();

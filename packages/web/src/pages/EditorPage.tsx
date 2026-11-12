@@ -765,10 +765,19 @@ export function SaveErrorToast({
   // refusal still stands, so the header, toolbox and slate go on saying it:
   // cleared, they would read "Save layout" and "Saving" with nothing in flight
   // and the same save sure to be refused. The next save starts it afresh (the
-  // page mounts this notice per failure). Any other failure is cleared.
+  // page mounts this notice per failure). A refused clear of a note, which
+  // stands until it is dismissed, goes for good: nothing the person does can
+  // make that clear, and the save line then says where saving stands (ruling
+  // R1(b) on #388). Any other failure is cleared, and a refused clear's
+  // notice beneath it comes back.
   const dismiss = (): void => {
-    if (refusedForHeldNote) setPutAway(true);
-    else useEditorStore.getState().clearSaveError();
+    const editor = useEditorStore.getState();
+    if (!refusedForHeldNote) {
+      editor.clearSaveError();
+      return;
+    }
+    editor.dismissRefusedClears();
+    setPutAway(true);
   };
   const refusedPiece = useEditorStore((s) => (s.saveErrorCode === NOTE_HELD_CODE ? pieceNamedForRefusedSave(s) : null));
   const heldNoteRefusal = refusedPiece === null ? message : `${refusedPiece}: ${message}`;

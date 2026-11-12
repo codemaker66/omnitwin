@@ -31,7 +31,9 @@ export function deriveEditorSaveStatus(input: EditorSaveStatusInput): EditorSave
   if (input.isSaving) return "saving";
   if (input.saveError !== null && input.refusedForHeldNote !== true) return "failed";
   if (input.isOnline === false) return "offline";
-  if (input.isDirty) return "unsaved";
+  // A refusal still standing is a change not saved, whatever has landed since
+  // (a refused clear's notice stands until it is dismissed: ruling R1(b) on #388).
+  if (input.isDirty || input.saveError !== null) return "unsaved";
   if (input.lastSavedAt !== null) return "saved";
   if (input.configId !== undefined && input.configId !== null) return "saved";
   return "idle";
@@ -132,6 +134,12 @@ export interface SlateSaveInput {
    * reach Venviewer, and trying again meets the same refusal.
    */
   readonly refusedForHeldNote?: boolean;
+  /**
+   * That refusal is of a note the person cleared after someone else had
+   * rewritten it (editor-store noteClearsRefused). Nothing they can do makes
+   * it, and its notice stands until they dismiss it (ruling R1(b) on #388).
+   */
+  readonly refusedClear?: boolean;
   readonly conflict: SlateConflict | null;
   readonly lockReason: "phase-preview" | "in-review" | null;
   readonly lastSavedAt: Date | null;
@@ -152,7 +160,7 @@ export interface SlateAction<Id extends string> {
 export interface SlateNotice {
   readonly heading: string;
   readonly body: string;
-  readonly actions: readonly SlateAction<"try-again" | "show-theirs" | "keep-mine">[];
+  readonly actions: readonly SlateAction<"try-again" | "show-theirs" | "keep-mine" | "dismiss">[];
 }
 
 export interface SlateSaveState {
@@ -240,9 +248,15 @@ export function slateSaveState(input: SlateSaveInput): SlateSaveState {
   // A save refused over a note this browser is not shown: the API's sentence,
   // where the work is, and nothing to try again. A guest is told too (their
   // slate otherwise says only Draft), and so is someone whose "Keep mine" was
-  // the save refused, above the two versions they still choose between.
+  // the save refused, above the two versions they still choose between. A
+  // refused clear's notice is the person's to put away: Dismiss, as the save
+  // notice of today's chrome has.
   const refusal: SlateNotice | null = input.saveError !== null && input.refusedForHeldNote === true
-    ? { heading: input.saveError, body: keptSentence(input.keptOnDevice), actions: [] }
+    ? {
+        heading: input.saveError,
+        body: keptSentence(input.keptOnDevice),
+        actions: input.refusedClear === true ? [{ id: "dismiss", label: "Dismiss" }] : [],
+      }
     : null;
   if (input.guest) {
     return state({

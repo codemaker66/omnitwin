@@ -4,6 +4,7 @@ import type { BatchObjectInput, Configuration, ObjectMetadata, PlacedObject } fr
 import { editorToPlacedItem, flushAutoSave, placedItemToEditor } from "../../components/editor/EditorBridge.js";
 import { persistAnonymousPlannerDraft, readAnonymousPlannerDraft } from "../../lib/anonymous-planner-draft.js";
 import { heldNoteIds, noteHeldOn, ownWordsOverHeldNotes, pieceNamedForRefusedSave, refusedOverHeldNote } from "../../lib/guest-plan-notes.js";
+import { NOTE_HELD_MESSAGE, OMITTED_MESSAGE, serveNotesAsTheApiDoes as serveTheApi, type PlanOnServer } from "../../test/guest-plan-api.js";
 import { useAuthStore } from "../auth-store.js";
 import { setEditorAutosaveRequester, useEditorStore, type EditorObject } from "../editor-store.js";
 import { usePlacementNoticeStore } from "../placement-notice-store.js";
@@ -452,48 +453,9 @@ describe("a browser that is not shown the plan's notes", () => {
 // withoutUnsentNotes for the answer), over the notes `stored` holds.
 // ---------------------------------------------------------------------------
 
-const NOTE_HELD_MESSAGE = "A note on this plan cannot be changed from here, and this save tried to change it. Clear the note you wrote on that piece.";
-const OMITTED_MESSAGE = "Nothing was saved: this save would remove a piece with a note that cannot be shown here. Reload the page to put it back.";
-
-interface PlanOnServer {
-  revision: number;
-  /** The note each piece holds. */
-  readonly notes: Map<string, string>;
-}
-
-/** The API of #389 as a browser without the plan's secret meets it: revision first, then a piece left out, then each note sent. */
+/** The API of #389 as a browser without the plan's secret meets it (src/test/guest-plan-api.ts), over this file's pieces. */
 function serveNotesAsTheApiDoes(server: PlanOnServer): void {
-  vi.mocked(configApi.publicBatchSave).mockImplementation((_id, batch, expectedRevision) => {
-    if (expectedRevision !== server.revision) {
-      return Promise.reject(new ApiError(409, "Layout changed on the server. Reload before saving again.", "REVISION_CONFLICT", {
-        expectedRevision, currentRevision: server.revision,
-      }));
-    }
-    // A save that leaves out a piece holding a note is refused, whoever wrote the note: the API cannot tell.
-    const sentIds = new Set(batch.map((piece) => piece.id));
-    if ([...server.notes.keys()].some((id) => !sentIds.has(id))) return Promise.reject(new ApiError(409, OMITTED_MESSAGE, "HELD_PIECE_OMITTED"));
-    const settled: { readonly id: string; readonly x: number; readonly name: ObjectMetadata; readonly sent: string | null; readonly note: string | null }[] = [];
-    for (const piece of batch) {
-      // A piece sent without an id is placed: it takes a new row, and holds what was sent.
-      const id = piece.id ?? `0c0c0c0c-0000-4000-8000-${String(server.revision).padStart(6, "0")}${String(settled.length).padStart(6, "0")}`;
-      const name: ObjectMetadata = piece.metadata?.displayLabel === undefined ? {} : { displayLabel: piece.metadata.displayLabel };
-      const held = server.notes.get(id) ?? null;
-      const sent = piece.metadata?.notes ?? null;
-      if (held === null || sent === held || piece.replacesNote === held) settled.push({ id, x: piece.positionX, name, sent, note: sent });
-      else if (sent === null && piece.replacesNote === undefined) settled.push({ id, x: piece.positionX, name, sent, note: held });
-      else return Promise.reject(new ApiError(409, NOTE_HELD_MESSAGE, "NOTE_HELD"));
-    }
-    server.revision += 1;
-    server.notes.clear();
-    for (const piece of settled) {
-      if (piece.note !== null) server.notes.set(piece.id, piece.note);
-    }
-    return Promise.resolve({
-      revision: server.revision,
-      // A note goes back only where this save itself sent that very note.
-      objects: settled.map((piece) => placed(piece.id, { ...piece.name, ...(piece.note === null ? {} : piece.sent === piece.note ? { notes: piece.note } : { noteHeld: true }) }, piece.x)),
-    });
-  });
+  serveTheApi(server, placed);
 }
 
 /** How many saves have been sent. */
@@ -580,7 +542,8 @@ describe("a save refused for a held note, after keeping this version over a newe
     expect(sentPiece(sentBefore, B).replacesNote).toBe(MINE);
     expect(sentPiece(sentBefore + 1, B).replacesNote).toBeUndefined();
     expect(sentPiece(sentBefore + 1, B).metadata?.notes).toBeUndefined();
-    expect(store()).toMatchObject({ saveError: NOTE_HELD_MESSAGE, saveErrorCode: "NOTE_HELD", saveConflict: null, isDirty: true });
+    // Refused, and nothing left unsaved: B is as the server has it, holding the note it is shown to hold (ruling R1(b)).
+    expect(store()).toMatchObject({ saveError: NOTE_HELD_MESSAGE, saveErrorCode: "NOTE_HELD", saveConflict: null, isDirty: false });
     expect(pieceNamedForRefusedSave(store())).not.toBeNull();
     expect(store().objects.find((object) => object.id === A)?.positionX).toBe(3);
     expect(server.notes.get(B)).toBe(THEIRS);
@@ -1442,7 +1405,8 @@ describe("Keep mine refused for a note the maker rewrote, with other notes of th
     expect(server.notes.has(C)).toBe(false);
     expect(server.notes.get(B)).toBe(THEIR_NOTE);
     expect(noteHeldOn(store(), B)).toBe(true);
-    expect(store()).toMatchObject({ saveErrorCode: "NOTE_HELD", saveError: NOTE_HELD_MESSAGE, saveConflict: null, isDirty: true });
+    // Nothing is left unsaved: the refused clear is said, not waiting to be sent (ruling R1(b)).
+    expect(store()).toMatchObject({ saveErrorCode: "NOTE_HELD", saveError: NOTE_HELD_MESSAGE, saveConflict: null, isDirty: false });
   });
 
   it("saves a change the person was making to their other note, and keeps that note theirs to go on with", async () => {
@@ -1588,12 +1552,13 @@ describe("Keep mine refused for notes the maker rewrote, among many notes of the
     expect(savesSent() - sentBefore).toBe(6);
   });
 
-  it("refuses the clear of a note the maker rewrote: the save is not said to have landed, the piece is named, and the work stays unsaved", async () => {
+  it("refuses the clear of a note the maker rewrote: the save is not said to have landed, the piece is named, and the refusal stands through the next save", async () => {
     const server: PlanOnServer = { revision: 4, notes: new Map() };
     const tables = await theyRewrite(server, 9, [6], () => { store().setObjectNotes(tableId(6), ""); });
 
     const saved = await store().keepMine(false);
-    expect({ saved, isDirty: store().isDirty, saveErrorCode: store().saveErrorCode }).toEqual({ saved: false, isDirty: true, saveErrorCode: "NOTE_HELD" });
+    // Nothing is left unsaved (the clear cannot be made from here), and the refusal is said (ruling R1(b)).
+    expect({ saved, isDirty: store().isDirty, saveErrorCode: store().saveErrorCode }).toEqual({ saved: false, isDirty: false, saveErrorCode: "NOTE_HELD" });
     expect(store()).toMatchObject({ saveError: NOTE_HELD_MESSAGE, saveConflict: null, isSaving: false, configRevision: server.revision });
     expect(pieceNamedForRefusedSave(store())).toBe("Table 7");
     // Nothing of the maker's is touched; every other note of the person's is still theirs; the move is saved.
@@ -1608,6 +1573,11 @@ describe("Keep mine refused for notes the maker rewrote, among many notes of the
     expect(sentPiece(sentBefore, tableId(6)).metadata?.notes).toBeUndefined();
     expect(sentPiece(sentBefore, tableId(6)).replacesNote).toBeUndefined();
     expect(server.notes.get(tableId(6))).toBe(THEIR_NOTE);
+    // That save does not put the refusal away: the person does (ruling R1(b) on #388).
+    expect(store()).toMatchObject({ saveErrorCode: "NOTE_HELD", saveError: NOTE_HELD_MESSAGE, noteClearsRefused: [tableId(6)], isDirty: false });
+    store().dismissRefusedClears();
+    expect(store()).toMatchObject({ saveErrorCode: null, saveError: null, noteClearsRefused: [] });
+    expect(noteHeldOn(store(), tableId(6))).toBe(true);
   });
 
   it("keeps words the person put on a rewritten note among nine refused and named, and saves the rest", async () => {

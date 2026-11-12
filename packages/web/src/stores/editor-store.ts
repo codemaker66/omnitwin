@@ -274,7 +274,9 @@ interface EditorState {
   /** Pieces whose note the person had cleared in a save refused for a held
    *  note (NOTE_HELD), where someone else had rewritten that note: the clear
    *  was not made, and the refusal names the piece (lib/guest-plan-notes
-   *  pieceNamedForRefusedSave). Empty otherwise; each save starts it afresh. */
+   *  pieceNamedForRefusedSave). Its notice stands until the person dismisses
+   *  it (dismissRefusedClears): no later save says the layout saved while it
+   *  does (ruling R1(b) on #388). Empty otherwise, and for each layout opened. */
   readonly noteClearsRefused: readonly string[];
   readonly saveConflict: EditorSaveConflict | null;
   /** How many objects differ from `baseObjects` right now: changed, placed
@@ -447,8 +449,13 @@ interface EditorActions {
    */
   readonly yieldObjectsToRemote: (ids: readonly string[]) => void;
   /** Dismiss the current save-error toast. A conflict is not dismissed with
-   *  it: only the person's choice (keepMine, showTheirVersion) ends one. */
+   *  it: only the person's choice (keepMine, showTheirVersion) ends one, and
+   *  a refused clear's notice beneath it comes back (noteClearsRefused). */
   readonly clearSaveError: () => void;
+  /** The person dismisses a refused clear's notice (noteClearsRefused): it
+   *  goes, and the save line says where saving stands. A refusal of their own
+   *  words over a held note, or of a left-out piece, stands on. */
+  readonly dismissRefusedClears: () => void;
   readonly reset: () => void;
   /**
    * Replace the document from the 3D scene funnel (EditorBridge), recording
@@ -1292,6 +1299,7 @@ export const useEditorStore = create<EditorStore>()(withSaveFacts((set, get) => 
         isSaving: false,
         saveError: loadConflict === null ? null : CONFLICT_SAVE_ERROR,
         saveErrorCode: loadConflict === null ? null : "REVISION_CONFLICT",
+        noteClearsRefused: [],
         lastSavedAt: config.updatedAt === undefined ? null : new Date(config.updatedAt),
         space: get().space?.id === config.spaceId && get().space?.venueId === config.venueId ? get().space : null,
         isLoading: false,
@@ -1393,6 +1401,7 @@ export const useEditorStore = create<EditorStore>()(withSaveFacts((set, get) => 
         isSaving: false,
         saveError: null,
         saveErrorCode: null,
+        noteClearsRefused: [],
         reviewStatus: null,
         reviewLockRefused: false,
         lastSavedAt: config.updatedAt === undefined ? null : new Date(config.updatedAt),
@@ -1714,7 +1723,15 @@ export const useEditorStore = create<EditorStore>()(withSaveFacts((set, get) => 
     });
   },
 
-  clearSaveError: () => { set({ saveError: null, saveErrorCode: null }); },
+  clearSaveError: () => { set(standingRefusal(get())); },
+
+  dismissRefusedClears: () => {
+    const s = get();
+    if (s.noteClearsRefused.length === 0) return;
+    refusedClearWords = null;
+    const standsOn = s.saveErrorCode !== NOTE_HELD_CODE || ownWordsOverHeldNotes(s).length > 0;
+    set({ noteClearsRefused: [], ...(standsOn ? {} : { saveError: null, saveErrorCode: null }) });
+  },
 
   adoptServerConfiguration: (config, options = {}) => {
     const s = get();
@@ -2130,6 +2147,22 @@ async function saveLeavingOutOfDateNotes(
   return { saved: landed.saved, left: onRecord(outOfDate), unsettled: new Map(), stoppedBy: null };
 }
 
+/** The words of the refusal that refused the clears in noteClearsRefused, as it came. */
+let refusedClearWords: string | null = null;
+
+/**
+ * What the save line says when nothing else is to be said: a refused clear's
+ * notice while it stands (noteClearsRefused), or nothing. Every save that ends
+ * without a refusal of its own, and every failure put away, leaves this: the
+ * notice stays until the person dismisses it, and no save says the layout
+ * saved while it does (ruling R1(b) on #388). The autosave goes on meanwhile.
+ */
+function standingRefusal(state: Pick<EditorState, "noteClearsRefused">): Pick<EditorState, "saveError" | "saveErrorCode"> {
+  return state.noteClearsRefused.length === 0 || refusedClearWords === null
+    ? { saveError: null, saveErrorCode: null }
+    : { saveError: refusedClearWords, saveErrorCode: NOTE_HELD_CODE };
+}
+
 /**
  * The save itself. `keeping` is "Keep mine": it may run while the conflict it
  * settles is pending (every other save waits for the person's choice), and a
@@ -2207,7 +2240,7 @@ async function saveDocument(
 
   // savingChanges is captured from pendingChanges here (deriveSaveFacts). A
   // pending conflict stays until this save lands: only then is it settled.
-  set({ isSaving: true, saveError: null, saveErrorCode: null, noteClearsRefused: [] });
+  set({ isSaving: true, ...standingRefusal(get()) });
   try {
     const save = viaSignedIn ? configApi.authBatchSave : configApi.publicBatchSave;
     const sending: configApi.BatchSaveOptions | undefined = !viaSignedIn && get().notesIncluded
@@ -2323,6 +2356,16 @@ async function saveDocument(
     // is now about that one (pieceNamedForRefusedSave).
     const refusedNotes = notesRefusedOnLeaving(latest.objects, outOfDate);
     const noteRefused = refusedNotes.length > 0;
+    // A refused clear leaves nothing unsaved: the piece is as the server has
+    // it, holding the note it is shown to hold. Words the person put in a
+    // note's place are unsaved, and stay so until they take them off.
+    const wordsRefused = refusedNotes.some((object) => object.notes !== "");
+    // Clears refused before, whose notice still stands, and these.
+    const clearsRefused = [...new Set([
+      ...get().noteClearsRefused,
+      ...refusedNotes.filter((object) => object.notes === "").map((object) => object.id),
+    ])];
+    if (noteRefused && clearsRefused.length > 0) refusedClearWords = refusedWords;
     // A note the saves stopped short of vouching for stays on record, carried
     // as "Keep mine" carries one (keepingConfirmedNotes), with the person's
     // words on the piece: the next save sends it again.
@@ -2341,18 +2384,15 @@ async function saveDocument(
         ? null
         : idMap.get(latest.selectedObjectId) ?? latest.selectedObjectId,
       configRevision: saved.revision,
-      isDirty: editedInFlight || noteRefused || unsettled.size > 0,
+      isDirty: editedInFlight || wordsRefused || unsettled.size > 0,
       // Saves stopped by a failure are answered by it, below.
       isSaving: stoppedBy !== null,
       lastSavedAt: new Date(),
       saveConflict: null,
       ...(noteRefused
-        ? {
-            saveError: refusedWords,
-            saveErrorCode: NOTE_HELD_CODE,
-            noteClearsRefused: refusedNotes.filter((object) => object.notes === "").map((object) => object.id),
-          }
-        : { saveErrorCode: null }),
+        ? { saveError: refusedWords, saveErrorCode: NOTE_HELD_CODE, noteClearsRefused: clearsRefused }
+        // Nothing refused this time: a refused clear's notice still stands.
+        : standingRefusal(get())),
       reviewLockRefused: false,
       // Its work arrived after all: nothing of it is waiting here.
       ...(latest.leftBehind?.configId === configId ? { leftBehind: null } : {}),
@@ -2433,7 +2473,7 @@ async function saveDocument(
     if (code === "NETWORK_ERROR" && (!get().isOnline || !browserSaysOnline())) {
       // Offline, not failed: the work stays unsaved (and on this device);
       // coming back online saves it. isOnline follows the browser's event.
-      set({ isSaving: false, saveError: null, saveErrorCode: null });
+      set({ isSaving: false, ...standingRefusal(get()) });
       return false;
     }
     const message = err instanceof Error ? err.message : "Save failed";
@@ -2486,8 +2526,7 @@ function adoptAsSaved(theirs: configApi.Configuration, sent: readonly EditorObje
     isDirty: false,
     isSaving: false,
     lastSavedAt: theirs.updatedAt === undefined ? new Date() : new Date(theirs.updatedAt),
-    saveError: null,
-    saveErrorCode: null,
+    ...standingRefusal(latest),
     saveConflict: null,
     reviewLockRefused: false,
     ...(latest.leftBehind?.configId === theirs.id ? { leftBehind: null } : {}),
@@ -2641,7 +2680,7 @@ subscribeOnlineStatus((online) => {
   const explainedByOffline = !online && state.saveErrorCode === "NETWORK_ERROR";
   useEditorStore.setState({
     isOnline: online,
-    ...(explainedByOffline ? { saveError: null, saveErrorCode: null } : {}),
+    ...(explainedByOffline ? standingRefusal(state) : {}),
   });
 });
 if (useEditorStore.getState().isOnline !== readOnlineStatus()) {
