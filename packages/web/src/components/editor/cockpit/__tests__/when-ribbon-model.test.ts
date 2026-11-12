@@ -12,6 +12,7 @@ import {
   moveRibbonDrag,
   moveRibbonHandle,
   resolveTurnaroundGuideline,
+  ribbonBookingTitle,
   ribbonPhaseWrites,
   ribbonSlotWrite,
   typedRibbonDrag,
@@ -166,6 +167,25 @@ describe("buildRibbonDay", () => {
     expect(day?.self.id).toBe(SELF);
     expect(day?.range.fromMs).toBeLessThanOrEqual(NOON);
     expect(day?.range.toMs).toBeGreaterThan(NOON + 120 * MIN);
+  });
+
+  it("names a booking stored without a title by its event, else as untitled, the bar and every ghost alike (API-9)", () => {
+    const day = buildRibbonDay(
+      response(
+        [
+          selfBooking(NOON, NOON + 60 * MIN, { title: "", eventName: "Chamber dinner" }),
+          booking(GHOST, NOON + 120 * MIN, NOON + 180 * MIN, { title: "   ", eventName: " Burns supper " }),
+          booking(GHOST_2, NOON + 240 * MIN, NOON + 300 * MIN, { title: "", eventName: "  " }),
+        ],
+        HOUSE_RULES,
+      ),
+      EVENT,
+    );
+    expect(day?.self.title).toBe("Chamber dinner");
+    expect(day?.ghosts.map((ghost) => ghost.title)).toEqual(["Burns supper", "Untitled booking"]);
+    // A title, even beside an event name, is the booking's own.
+    expect(ribbonBookingTitle("Speeches", "Chamber dinner", "Untitled booking")).toBe("Speeches");
+    expect(ribbonBookingTitle("", undefined, "Untitled booking")).toBe("Untitled booking");
   });
 
   it("no booking carries the plan's eventId → null (the not-in-the-Diary state)", () => {
@@ -846,7 +866,7 @@ describe("the client's day (goal 19 S6)", () => {
     { kind: "busy" as const, startsAt: "not a date", endsAt: iso(T("10:00")) },
   ];
   const own = { bookingId: OWN_ID, kind: "hold" as const, title: "Our dinner", startMs: T("17:00"), endMs: T("22:00") };
-  const base = { spans, space: ROOM_S6, timeZone: "Europe/London", turnaroundMinutes: 90, own, draft: null };
+  const base = { spans, space: ROOM_S6, timeZone: "Europe/London", turnaroundMinutes: 90, eventName: "Our dinner", own, draft: null };
 
   it("places the client's own slot, shows the rest of the room anonymously, and drops what is not on the day", () => {
     const day = buildClientRibbonDay(base);
@@ -862,6 +882,12 @@ describe("the client's day (goal 19 S6)", () => {
       ["Held", "hold", "none", T("14:00")],
     ]);
     expect(JSON.stringify(day)).not.toContain("not a date");
+  });
+
+  it("names the client's own booking stored without a title by its event, and as theirs when the event has no name (API-9)", () => {
+    expect(buildClientRibbonDay({ ...base, own: { ...own, title: "" }, eventName: "Fraser dinner" })?.self.title).toBe("Fraser dinner");
+    expect(buildClientRibbonDay({ ...base, own: { ...own, title: "   " }, eventName: "" })?.self.title).toBe("Your booking");
+    expect(buildClientRibbonDay({ ...base, own: null, draft: { startMs: T("18:00"), endMs: T("23:00"), title: "" }, eventName: "" })?.self.title).toBe("Your booking");
   });
 
   it("draws the venue's turnaround on both sides of every booked span, and none when the venue has no guideline", () => {
