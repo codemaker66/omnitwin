@@ -84,10 +84,13 @@ export function useLinkedEvent(expectedVenueId?: string | null): LinkedEvent {
     }
 
     let cancelled = false;
+    // Read afresh at each step: an answer can arrive after the request it
+    // answers was replaced or left.
+    const stale = (): boolean => cancelled || requestGenerationRef.current !== generation;
     setResult({ requestKey, status: "loading", graph: null, timeZone: VENUE_TIME_ZONE });
     void getEventPhaseGraph(requestedEventId)
       .then(async (loaded) => {
-        if (cancelled || requestGenerationRef.current !== generation) return;
+        if (stale()) return;
         if (
           loaded.event.id !== requestedEventId
           || (expectedVenueId !== undefined && loaded.event.venueId !== expectedVenueId)
@@ -99,11 +102,11 @@ export function useLinkedEvent(expectedVenueId?: string | null): LinkedEvent {
         // Loaded once its name can be read on the venue's own clock, so the
         // name never shows one day and then another.
         const timeZone = await nameTimeZone(loaded.event);
-        if (cancelled || requestGenerationRef.current !== generation) return;
+        if (stale()) return;
         setResult({ requestKey, status: "loaded", graph: loaded, timeZone });
       })
       .catch(() => {
-        if (cancelled || requestGenerationRef.current !== generation) return;
+        if (stale()) return;
         setResult({ requestKey, status: "error", graph: null, timeZone: VENUE_TIME_ZONE });
       });
     return () => { cancelled = true; };
