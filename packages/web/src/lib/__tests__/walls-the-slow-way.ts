@@ -235,6 +235,20 @@ export function onOrInside(outline: Walls, x: number, z: number, slack: number):
   return wallsOf(outline).some(([ax, az, bx, bz]) => pointToStretch(x, z, ax, az, bx, bz) <= slack);
 }
 
+/**
+ * Whether the straight way between two places keeps to the floor: walked a
+ * millimetre at a time, end to end, each step inside the walls or within
+ * `slack` of one. A way along a wall keeps to the floor; a way through one of
+ * the Saloon's 0.3 m piers does not, however short.
+ */
+export function wayKeepsToFloor(walls: Walls, ax: number, az: number, bx: number, bz: number, slack: number): boolean {
+  const steps = Math.max(1, Math.ceil(Math.hypot(bx - ax, bz - az) / 0.001));
+  for (let s = 0; s <= steps; s += 1) {
+    if (!onOrInside(walls, ax + ((bx - ax) * s) / steps, az + ((bz - az) * s) / steps, slack)) return false;
+  }
+  return true;
+}
+
 /** The floor an outline encloses, square metres. */
 export function areaOf(outline: Walls): number {
   let twice = 0;

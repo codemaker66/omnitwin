@@ -15,7 +15,11 @@
 //     where the piece lies against a wall in one line with one of those two
 //     only, that one is the wall on its side), and it is drawn where that is;
 //   - it is drawn on real floor, inside the room, no further than the guidance
-//     from a wall on its side.
+//     from a wall on its side;
+//   - wider than nothing, its width is a gap the unit leaves, to within a
+//     millimetre, to a wall or a corner on its side where it is drawn, by a
+//     straight way that keeps to the floor (fourth review of the branch: a
+//     corner's gap was measured through a Saloon pier, and no judge asked).
 // And the other way about: every wall a piece lies against, and every corner
 // one only touches, has an item at 0.00 m.
 // ---------------------------------------------------------------------------
@@ -35,11 +39,13 @@ import {
   floorClaims,
   inOneLine,
   nearestBetweenEnds,
+  nearestOnShape,
   onOrInside,
   reaches,
   sideOfWall,
   straightWalls,
   TOUCHING,
+  wayKeepsToFloor,
   type Shape,
   type Side,
   type Wall,
@@ -147,6 +153,8 @@ export interface Verdict {
   readonly offTheFloor: number;
   /** Items at 0.00 m for no wall on their side the unit lies against and no corner there it only touches. */
   readonly falseZero: number;
+  /** Items wider than nothing whose width is no gap of the unit's, by a way on the floor, to a wall or a corner on their side where they are drawn. */
+  readonly falseGap: number;
   /** Items rightly at 0.00 m for a corner a piece only touches, with no wall on that side lain against. */
   readonly cornerZero: number;
   /** Of those, the ones whose unit lies against a wall on another side. */
@@ -160,6 +168,53 @@ function endsAt(wall: Wall, x: number, z: number): boolean {
   return Math.hypot(wall[0] - x, wall[1] - z) < 1e-9 || Math.hypot(wall[2] - x, wall[3] - z) < 1e-9;
 }
 
+/** A millimetre: how far an item's width may be from the slow way's gap, and the step the slow way walks a wall by. */
+const MM = 0.001;
+
+/**
+ * Whether a width is a gap the unit leaves, by a way on the floor, to a wall
+ * on `side` where `floor` is drawn, or to a corner of one: some piece of the
+ * unit stands that far, to within a millimetre, from a millimetre's step of
+ * such a wall (its ends are the corners) that is on or inside the drawn
+ * floor, and the straight way from the step to the piece's nearest point
+ * keeps to the floor (wayKeepsToFloor). So 0.30 m from a corner straight
+ * through a Saloon pier is no gap. Only walls that reach the drawn floor's
+ * bounds are walked, and of those only the stretches where a piece's gap can
+ * be that near the width: every tenth step first, as unitToWall does, since a
+ * gap moves no more than a millimetre from one step to the next.
+ */
+function gapWhereDrawn(r: Room, shapes: readonly Shape[], side: Side, floor: Walls, widthM: number): boolean {
+  const xs = floor.map(([x]) => x);
+  const zs = floor.map(([, z]) => z);
+  const [minX, maxX, minZ, maxZ] = [Math.min(...xs) - MM, Math.max(...xs) + MM, Math.min(...zs) - MM, Math.max(...zs) + MM];
+  return r.straight.some((wall, i) => {
+    const [ax, az, bx, bz] = wall;
+    if (r.sides[i] !== side || Math.max(ax, bx) < minX || Math.min(ax, bx) > maxX || Math.max(az, bz) < minZ || Math.min(az, bz) > maxZ) return false;
+    const steps = Math.max(1, Math.ceil(Math.hypot(bx - ax, bz - az) / MM));
+    const at = (s: number): readonly [number, number] => [ax + ((bx - ax) * s) / steps, az + ((bz - az) * s) / steps];
+    const walked = new Set<number>();
+    for (let s = 0; s < steps + 10; s += 10) {
+      const tenth = Math.min(s, steps);
+      const [x, z] = at(tenth);
+      // The ten steps either side are within a centimetre: a tenth step further than that outside the bounds leads nowhere.
+      if (x < minX - 0.011 || x > maxX + 0.011 || z < minZ - 0.011 || z > maxZ + 0.011) continue;
+      let offBy = Number.POSITIVE_INFINITY;
+      for (const shape of shapes) offBy = Math.min(offBy, Math.abs(nearestOnShape(shape, x, z).gap - widthM));
+      if (offBy > 0.01 + MM) continue;
+      for (let k = Math.max(0, tenth - 10); k <= Math.min(steps, tenth + 10); k += 1) walked.add(k);
+    }
+    for (const s of [...walked].sort((a, b) => a - b)) {
+      const [x, z] = at(s);
+      if (x < minX || x > maxX || z < minZ || z > maxZ || !onOrInside(floor, x, z, MM)) continue;
+      for (const shape of shapes) {
+        const near = nearestOnShape(shape, x, z);
+        if (Math.abs(near.gap - widthM) <= MM && wayKeepsToFloor(r.walls, x, z, near.x, near.z, TOUCHING)) return true;
+      }
+    }
+    return false;
+  });
+}
+
 export function verdictOn(r: Room, unit: readonly PlacedItem[]): Verdict {
   const shapes = unit.map(shapeOf);
   const review = gangwayReview(unit, r.dims, null);
@@ -168,6 +223,7 @@ export function verdictOn(r: Room, unit: readonly PlacedItem[]): Verdict {
   let withoutFloor = 0;
   let offTheFloor = 0;
   let falseZero = 0;
+  let falseGap = 0;
   let cornerZero = 0;
   let cornerZeroBesideAWall = 0;
   let unsaid = 0;
@@ -216,7 +272,13 @@ export function verdictOn(r: Room, unit: readonly PlacedItem[]): Verdict {
         faults.push(`${what} claims floor it should not (${String(claims.offTheFloor)} spots outside the room, ${String(claims.beyondReach)} beyond the guidance, of ${String(claims.spots)}): ${claims.first ?? ""}`);
       }
     }
-    if (item.widthM > TOUCHING) continue;
+    if (item.widthM > TOUCHING) {
+      if (floor !== null && !gapWhereDrawn(r, shapes, side, floor, item.widthM)) {
+        falseGap += 1;
+        faults.push(`${what} is no gap the unit leaves, by a way on the floor, to a wall or a corner on that side where it is drawn ${drawn}`);
+      }
+      continue;
+    }
     // The places on that side's walls where the unit leaves no gap: where a piece lies against one, and a corner one only touches.
     const places: (readonly [number, number])[] = [];
     const alongAWall = r.straight.some((_, i) => r.sides[i] === side && lainAgainst[i] === true);
@@ -266,6 +328,7 @@ export function verdictOn(r: Room, unit: readonly PlacedItem[]): Verdict {
     withoutFloor,
     offTheFloor,
     falseZero,
+    falseGap,
     cornerZero,
     cornerZeroBesideAWall,
     unsaid,
@@ -282,6 +345,7 @@ export interface Tally {
   withoutFloor: number;
   offTheFloor: number;
   falseZero: number;
+  falseGap: number;
   /** Items rightly at 0.00 m for a corner only touched: not a fault. */
   cornerZero: number;
   cornerZeroBesideAWall: number;
@@ -291,7 +355,7 @@ export interface Tally {
 }
 
 export function emptyTally(): Tally {
-  return { units: 0, againstAWall: 0, items: 0, refused: 0, withoutFloor: 0, offTheFloor: 0, falseZero: 0, cornerZero: 0, cornerZeroBesideAWall: 0, unsaid: 0, first: [] };
+  return { units: 0, againstAWall: 0, items: 0, refused: 0, withoutFloor: 0, offTheFloor: 0, falseZero: 0, falseGap: 0, cornerZero: 0, cornerZeroBesideAWall: 0, unsaid: 0, first: [] };
 }
 
 export function count(tally: Tally, verdict: Verdict, at: string): void {
@@ -302,6 +366,7 @@ export function count(tally: Tally, verdict: Verdict, at: string): void {
   tally.withoutFloor += verdict.withoutFloor;
   tally.offTheFloor += verdict.offTheFloor;
   tally.falseZero += verdict.falseZero;
+  tally.falseGap += verdict.falseGap;
   tally.cornerZero += verdict.cornerZero;
   tally.cornerZeroBesideAWall += verdict.cornerZeroBesideAWall;
   tally.unsaid += verdict.unsaid;
@@ -318,19 +383,20 @@ export function addUp(into: Tally, tally: Tally): void {
   into.withoutFloor += tally.withoutFloor;
   into.offTheFloor += tally.offTheFloor;
   into.falseZero += tally.falseZero;
+  into.falseGap += tally.falseGap;
   into.cornerZero += tally.cornerZero;
   into.cornerZeroBesideAWall += tally.cornerZeroBesideAWall;
   into.unsaid += tally.unsaid;
 }
 
 /** What a tally found wrong, for one assertion that shows it all. */
-export function faultsOf(tally: Tally): { readonly refused: number; readonly withoutFloor: number; readonly offTheFloor: number; readonly falseZero: number; readonly unsaid: number; readonly first: readonly string[] } {
-  return { refused: tally.refused, withoutFloor: tally.withoutFloor, offTheFloor: tally.offTheFloor, falseZero: tally.falseZero, unsaid: tally.unsaid, first: tally.first };
+export function faultsOf(tally: Tally): { readonly refused: number; readonly withoutFloor: number; readonly offTheFloor: number; readonly falseZero: number; readonly falseGap: number; readonly unsaid: number; readonly first: readonly string[] } {
+  return { refused: tally.refused, withoutFloor: tally.withoutFloor, offTheFloor: tally.offTheFloor, falseZero: tally.falseZero, falseGap: tally.falseGap, unsaid: tally.unsaid, first: tally.first };
 }
 
-export const NO_FAULTS = { refused: 0, withoutFloor: 0, offTheFloor: 0, falseZero: 0, unsaid: 0, first: [] } as const;
+export const NO_FAULTS = { refused: 0, withoutFloor: 0, offTheFloor: 0, falseZero: 0, falseGap: 0, unsaid: 0, first: [] } as const;
 
 /** A tally in a line, for a test's own report of what it swept. */
 export function inWords(tally: Tally): string {
-  return `judged ${String(tally.units)}, against a wall ${String(tally.againstAWall)}, items ${String(tally.items)}, refused ${String(tally.refused)}, without floor ${String(tally.withoutFloor)}, off the floor ${String(tally.offTheFloor)}, false 0.00 ${String(tally.falseZero)}, unsaid ${String(tally.unsaid)}, rightly 0.00 at a corner only touched ${String(tally.cornerZero)} (${String(tally.cornerZeroBesideAWall)} of them beside a wall lain against)`;
+  return `judged ${String(tally.units)}, against a wall ${String(tally.againstAWall)}, items ${String(tally.items)}, refused ${String(tally.refused)}, without floor ${String(tally.withoutFloor)}, off the floor ${String(tally.offTheFloor)}, false 0.00 ${String(tally.falseZero)}, false gap ${String(tally.falseGap)}, unsaid ${String(tally.unsaid)}, rightly 0.00 at a corner only touched ${String(tally.cornerZero)} (${String(tally.cornerZeroBesideAWall)} of them beside a wall lain against)`;
 }

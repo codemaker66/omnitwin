@@ -16,6 +16,7 @@ import {
   onOrInside,
   straightWalls,
   unitToWall,
+  wayKeepsToFloor,
   type NearestOnWall,
   type Shape,
   type Wall,
@@ -147,10 +148,11 @@ function judge(r: Room, unit: readonly PlacedItem[], at: string): Judgement | nu
       continue;
     }
     if (areaOf(floor) < 1e-4) wrong.push(`${said} is drawn on no floor at all`);
-    // Its width is the unit's gap to a wall it is drawn at.
+    // Its width is the unit's gap to a wall it is drawn at, by a straight way from that place on the wall to the
+    // piece that keeps to the floor: a gap measured through one of the Saloon's piers is no gap.
     let error = Number.POSITIVE_INFINITY;
     for (const one of nearest) {
-      if (onOrInside(floor, one.x, one.z, MM)) error = Math.min(error, Math.abs(one.gap - item.widthM));
+      if (onOrInside(floor, one.x, one.z, MM) && wayKeepsToFloor(r.walls, one.x, one.z, one.pieceX, one.pieceZ, MM)) error = Math.min(error, Math.abs(one.gap - item.widthM));
     }
     if (error > MM) wrong.push(`${said} is the unit's gap to no wall where it is drawn`);
     else worstM = Math.max(worstM, error);

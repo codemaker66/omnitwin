@@ -22,6 +22,7 @@ import {
   unitToPoint,
   unitToWall,
   unitToWallEveryStep,
+  wayKeepsToFloor,
   type Shape,
   type Walls,
 } from "./walls-the-slow-way.js";
@@ -81,6 +82,23 @@ describe("the slow way round the Saloon and the Reception Room", () => {
     expect(footprintInsideWalls(walls, 6.2, 0.4, 0.2, 0.6, 0)).toBe(false);
     // Wholly in the alcove north of it.
     expect(footprintInsideWalls(walls, 6.2, 1.05, 0.2, 0.5, 0)).toBe(true);
+  });
+
+  it("knows a straight way that keeps to the floor from one through a pier or behind a wall", () => {
+    const saloon = wallsOf("Saloon");
+    // The east pier, z from −0.15 to 0.15, is solid from its face at x = 5.95 back to x = 6.55, where the alcoves either side end.
+    expect(wayKeepsToFloor(saloon, 6.55, 0.15, 6.55, -0.15, 1e-6)).toBe(false);
+    expect(wayKeepsToFloor(saloon, 6.3, -0.5, 6.3, 0.5, 1e-6)).toBe(false);
+    // Along the pier's face, along an alcove's back wall, and through the room's corner at the alcove's mouth, it keeps to the floor.
+    expect(wayKeepsToFloor(saloon, 5.95, 0.15, 5.95, -0.15, 1e-6)).toBe(true);
+    expect(wayKeepsToFloor(saloon, 6.55, -1.95, 6.55, -0.15, 1e-6)).toBe(true);
+    expect(wayKeepsToFloor(saloon, 6.25, -0.45, 5.65, 0.15, 1e-6)).toBe(true);
+    // A way of no length.
+    expect(wayKeepsToFloor(saloon, 6.55, 0.15, 6.55, 0.15, 1e-6)).toBe(true);
+    // The Robert Adam Room's curve bows in to x = −4.5 at z = 6.2: x = −4.8 is the room's floor at both ends of the way and behind the curve between.
+    const robertAdam = wallsOf("Robert Adam Room");
+    expect(wayKeepsToFloor(robertAdam, -4.8, 8.0, -4.8, 4.4, 1e-6)).toBe(false);
+    expect(wayKeepsToFloor(robertAdam, -4.0, 8.0, -4.0, 4.4, 1e-6)).toBe(true);
   });
 
   it("knows the Reception Room's stepped-in corners", () => {

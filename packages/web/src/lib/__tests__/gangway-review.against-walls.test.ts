@@ -30,7 +30,7 @@ import {
   verdictOn,
   type Room,
 } from "./gangway-against-walls.js";
-import { insideWalls, squareIntoRoom, type Wall } from "./walls-the-slow-way.js";
+import { insideWalls, nearestOnShape, onOrInside, squareIntoRoom, TOUCHING, type Shape, type Wall } from "./walls-the-slow-way.js";
 
 const CHAIR = piece("burgess-turini-18-3");
 const TRESTLE = piece("trestle-6ft");
@@ -174,6 +174,93 @@ describe("the gangway review of the third review's two examples no click reaches
     expect(said(review)).toEqual([["xMax", 0]]);
     expect(faults(r, set)).toEqual(NO_FAULTS);
   });
+});
+
+describe("the gangway review of a chair set flush in a Saloon alcove's corner, by the fourth review's examples", () => {
+  // Grid on, turned 0. The click pulls the banquet chair flush into the alcove's corner beside the pier: against the
+  // alcove's back wall, x = ±6.55, and the pier's side wall, z = ±0.15. The next alcove's corner on the far side of
+  // the pier is 0.30 m away straight through the solid pier, and some 1.05 m round its face: no gap of 0.30 m.
+  it.each([
+    ["the south-east alcove's north-east corner", [6.2104, -0.6471], [6.325, -0.375], [["xMax", 0], ["zMax", 0]]],
+    ["the north-east alcove's south-east corner", [6.2104, 0.6471], [6.325, 0.375], [["xMax", 0], ["zMin", 0]]],
+    ["the south-west alcove's north-west corner", [-6.2104, -0.6471], [-6.325, -0.375], [["xMin", 0], ["zMax", 0]]],
+    ["the north-west alcove's south-west corner", [-6.2104, 0.6471], [-6.325, 0.375], [["xMin", 0], ["zMin", 0]]],
+  ] as const)("lists the two walls of %s at 0.00 m and no gap through the pier", (_corner, pointer, at, sides) => {
+    const r = room("Saloon");
+    const set = clicked(r, piece("banquet-chair"), pointer, 0, true);
+    expect(spot(set)).toEqual(at);
+    const review = gangwayReview(set, r.dims, null);
+    expect(GangwayReviewSchema.safeParse({ items: review }).success).toBe(true);
+    expect(said(review)).toEqual(sides);
+    expect(faults(r, set)).toEqual(NO_FAULTS);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Lone chairs set all through the Saloon's four alcoves and the floor before
+// their mouths, every 3 cm from flush against the back wall and flush against
+// the side wall beside the pier, turned 0, 15, 30 and 45 degrees: wholly on the
+// floor, against a wall or clear of it. Where a chair's gap to a corner beyond
+// the pier is measured through the pier, the judge says so (falseGap).
+// ---------------------------------------------------------------------------
+
+/** Whether a box stands wholly on the floor: every corner inside the walls or on one, and no corner of the walls inside it. */
+function wholeOnTheFloor(r: Room, shape: Shape & { readonly kind: "box" }): boolean {
+  const cos = Math.cos(shape.turn);
+  const sin = Math.sin(shape.turn);
+  const corners = ([[-1, -1], [1, -1], [1, 1], [-1, 1]] as const).map(([sx, sz]) => [
+    shape.x + sx * shape.halfW * cos + sz * shape.halfD * sin,
+    shape.z - sx * shape.halfW * sin + sz * shape.halfD * cos,
+  ] as const);
+  if (!corners.every(([x, z]) => onOrInside(r.walls, x, z, 1e-9))) return false;
+  const within = { ...shape, halfW: shape.halfW - 1e-6, halfD: shape.halfD - 1e-6 };
+  return r.walls.every(([x, z]) => nearestOnShape(within, x, z).gap > 0);
+}
+
+describe("lone chairs set through the Saloon's alcoves", () => {
+  const CHAIR_IN_ALCOVES = piece("banquet-chair");
+
+  it.each([0, 15, 30, 45])("turned %i°: no gap measured through a pier, and nothing else the slow way finds wrong", (degrees) => {
+    const r = room("Saloon");
+    const turn = (degrees * Math.PI) / 180;
+    const halfW = CHAIR_IN_ALCOVES.width / 2;
+    const halfD = CHAIR_IN_ALCOVES.depth / 2;
+    // How far the turned chair reaches from its middle along x and along z.
+    const reachX = halfW * Math.abs(Math.cos(turn)) + halfD * Math.abs(Math.sin(turn));
+    const reachZ = halfW * Math.abs(Math.sin(turn)) + halfD * Math.abs(Math.cos(turn));
+    const tally = emptyTally();
+    // A chair that comes within a millimetre of a corner of the walls without touching it (turned, its corner a fraction
+    // of a millimetre from a pier's front corner) is in the band the fourth review's finding 4 names, between the
+    // planner's 1 µm and 1 mm, left as it is this round: counted here, not judged.
+    let inTheBand = 0;
+    // Each alcove by the way into it from the room (east +1, west −1) and the way from its pier along it (north +1, south −1).
+    for (const east of [1, -1]) {
+      for (const north of [1, -1]) {
+        for (let i = 0; i <= 30; i += 1) {
+          for (let j = 0; j <= 60; j += 1) {
+            // From flush against the back wall, x = ±6.55, out past the mouth; from flush against the pier's side wall, z = ±0.15, along the alcove.
+            const x = east * (6.55 - reachX - 0.03 * i);
+            const z = north * (0.15 + reachZ + 0.03 * j);
+            const chair = createPlacedItem(CHAIR_IN_ALCOVES.id, x, z, turn, null, 0, "chair-1");
+            const shape = { kind: "box" as const, x, z, halfW, halfD, turn };
+            if (!wholeOnTheFloor(r, shape)) continue;
+            const toAnEnd = Math.min(...r.walls.map(([wx, wz]) => nearestOnShape(shape, wx, wz).gap));
+            if (toAnEnd > TOUCHING && toAnEnd <= 0.001) {
+              inTheBand += 1;
+              continue;
+            }
+            count(tally, verdictOn(r, [chair]), `turned ${String(degrees)}° at (${x.toFixed(3)}, ${z.toFixed(3)})`);
+          }
+        }
+      }
+    }
+    console.log(`alcoves | chairs turned ${String(degrees)}°: ${inWords(tally)}; within a millimetre of a corner of the walls, not judged ${String(inTheBand)}`);
+    // Six at 15° and six at 30°, of some six thousand each.
+    expect(inTheBand).toBeLessThanOrEqual(6);
+    expect(tally.units).toBeGreaterThan(4000);
+    expect(tally.againstAWall).toBeGreaterThan(100);
+    expect(faultsOf(tally)).toEqual(NO_FAULTS);
+  }, 600_000);
 });
 
 describe("recording the review of a piece set against a wall", () => {

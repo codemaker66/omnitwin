@@ -979,6 +979,14 @@ interface Pinch {
 // past the corner; a unit that reaches in front of both walls of a corner has
 // an item on each side, each the gangway of the wall on that side.
 //
+// A corner's gap is a way a person has between the corner and a piece only
+// where the straight way from one to the other keeps to the room's floor
+// (wayKeepsToFloor). A chair flush in the corner of a Saloon alcove beside a
+// pier is 0.30 m from the corner of the next alcove straight through the
+// solid pier, and a metre and more round its face: that is no gap of the
+// chair's, and the corner beyond the pier is not listed for it. A wall's gap
+// is kept from the same by standsBefore.
+//
 // One gap under two ids, and meant. A unit that stands in front of both walls
 // of a corner and is nearest each of them at the corner itself has two items
 // of one width, one on each side: the gap between the unit and the corner.
@@ -1178,6 +1186,56 @@ function nearestOnOutline(points: readonly FloorPoint[], point: FloorPoint): Flo
     }
   });
   return nearest;
+}
+
+/** Whether a place is on the room's floor: inside its walls, or on one of them (within AGAINST_M). */
+function onRoomFloor(point: FloorPoint, outline: readonly FloorPoint[]): boolean {
+  let inside = false;
+  for (const [i, from] of outline.entries()) {
+    const to = outline[(i + 1) % outline.length] ?? from;
+    if (pointSegmentDistance(point, from, to) <= AGAINST_M) return true;
+    if ((from.z > point.z) !== (to.z > point.z) && point.x < from.x + ((to.x - from.x) * (point.z - from.z)) / (to.z - from.z)) inside = !inside;
+  }
+  return inside;
+}
+
+/**
+ * Whether the straight way between two places keeps to the room's floor,
+ * exactly, not by samples. The way is cut at every place it meets a wall:
+ * where it crosses one, and at a wall's end that stands on it. A stretch
+ * between two cuts crosses no wall, so it is all on the floor or all off it,
+ * and its middle speaks for all of it: inside the walls, or on one of them
+ * (AGAINST_M). A way along a wall, or through a corner of the room, keeps to
+ * the floor; a way through one of the Saloon's piers does not, however short.
+ * A way of no length keeps to the floor.
+ */
+function wayKeepsToFloor(from: FloorPoint, to: FloorPoint, outline: readonly FloorPoint[]): boolean {
+  const dx = to.x - from.x;
+  const dz = to.z - from.z;
+  const length = Math.hypot(dx, dz);
+  if (length === 0) return true;
+  const cuts = [0, 1];
+  for (const [i, start] of outline.entries()) {
+    const end = outline[(i + 1) % outline.length] ?? start;
+    // A wall's end that stands on the way: within AGAINST_M of it, between the way's ends.
+    const at = ((start.x - from.x) * dx + (start.z - from.z) * dz) / (length * length);
+    if (at > 0 && at < 1 && Math.abs((start.x - from.x) * dz - (start.z - from.z) * dx) / length <= AGAINST_M) cuts.push(at);
+    // Where the way crosses the wall. A wall that runs the same way never crosses it; its ends are cut above.
+    const ex = end.x - start.x;
+    const ez = end.z - start.z;
+    const across = dx * ez - dz * ex;
+    if (across === 0) continue;
+    const onWay = ((start.x - from.x) * ez - (start.z - from.z) * ex) / across;
+    const onWall = ((start.x - from.x) * dz - (start.z - from.z) * dx) / across;
+    if (onWay > 0 && onWay < 1 && onWall >= 0 && onWall <= 1) cuts.push(onWay);
+  }
+  cuts.sort((a, b) => a - b);
+  return cuts.every((cut, k) => {
+    const next = cuts[k + 1];
+    if (next === undefined) return true;
+    const middle = (cut + next) / 2;
+    return onRoomFloor({ x: from.x + dx * middle, z: from.z + dz * middle }, outline);
+  });
 }
 
 /**
@@ -1473,9 +1531,11 @@ interface WallPinch {
  * wall some piece stands in front of under the guidance, or lies against, is
  * a gangway the unit narrows, on the side its normal gives; a corner the unit
  * is nearest with no piece in front of either of its walls is one too, on the
- * side of the wall the unit is nearer to standing in front of. For each unit
- * and each side that carries a gangway in the room's design (`layout`): the
- * narrowest of them, drawn on the floor of each (gangwayFloor).
+ * side of the wall the unit is nearer to standing in front of, measured only
+ * to pieces whose straight way from the corner keeps to the floor
+ * (wayKeepsToFloor). For each unit and each side that carries a gangway in
+ * the room's design (`layout`): the narrowest of them, drawn on the floor of
+ * each (gangwayFloor).
  */
 function floorWallPinches(
   measured: readonly MeasuredPiece[],
@@ -1609,6 +1669,9 @@ function floorWallPinches(
         const nearestPoint = nearestOfPiece(piece, corner);
         const distance = touches ? 0 : Math.hypot(nearestPoint.x - corner.x, nearestPoint.z - corner.z);
         if (!underGuidance(distance, rule)) continue;
+        // A gap to the corner is a way a person has only where the straight way from the corner to the piece keeps to
+        // the floor: not through one of the Saloon's piers to the corner of the alcove beyond it.
+        if (!touches && !wayKeepsToFloor(corner, nearestPoint, outline)) continue;
         if (nearest === null || distance < cornerM - SAME_M) nearest = piece;
         cornerM = Math.min(cornerM, distance);
         pieceIds.push(piece.placed.id);

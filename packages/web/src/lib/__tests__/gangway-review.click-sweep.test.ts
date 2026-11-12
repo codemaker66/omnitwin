@@ -109,6 +109,6 @@ describe("the gangway review of what a click sets down, in all three rooms", () 
     if (sweeps < SHAPED_ROOMS.length * IN_HAND.length) return;
     expect(inAll.units).toBeGreaterThan(100_000);
     expect(inAll.againstAWall).toBeGreaterThan(30_000);
-    expect({ refused: inAll.refused, withoutFloor: inAll.withoutFloor, offTheFloor: inAll.offTheFloor, falseZero: inAll.falseZero, unsaid: inAll.unsaid }).toEqual({ refused: 0, withoutFloor: 0, offTheFloor: 0, falseZero: 0, unsaid: 0 });
+    expect({ refused: inAll.refused, withoutFloor: inAll.withoutFloor, offTheFloor: inAll.offTheFloor, falseZero: inAll.falseZero, falseGap: inAll.falseGap, unsaid: inAll.unsaid }).toEqual({ refused: 0, withoutFloor: 0, offTheFloor: 0, falseZero: 0, falseGap: 0, unsaid: 0 });
   });
 });
