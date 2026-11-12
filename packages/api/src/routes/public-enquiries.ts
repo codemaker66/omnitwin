@@ -109,6 +109,17 @@ function oneAcknowledgementADay(recipient: string): SendLimit {
   };
 }
 
+/** The venue's first room in use (lowest sortOrder, then the oldest): where
+ *  an enquiry that names no room is filed. */
+async function flagshipRoom(db: Database, venueId: string): Promise<{ id: string; name: string } | undefined> {
+  const [flagship] = await db.select({ id: spaces.id, name: spaces.name })
+    .from(spaces)
+    .where(and(eq(spaces.venueId, venueId), isNull(spaces.deletedAt)))
+    .orderBy(asc(spaces.sortOrder), asc(spaces.createdAt))
+    .limit(1);
+  return flagship;
+}
+
 /** How a notice says where an enquiry came from, when it names no room. */
 const SOURCE_PHRASE: Readonly<Record<EnquirySource, string>> = {
   website: "from the website",
@@ -177,7 +188,7 @@ export async function publicEnquiryRoutes(
       // takes no enquiry here, as it takes none on the venue path below.
       // Deleting a venue leaves its rooms and its guests' plans as they were.
       const [planned] = await db.select({
-        spaceId: spaces.id, venueId: spaces.venueId, roomName: spaces.name, venueSlug: venues.slug,
+        spaceId: spaces.id, venueId: spaces.venueId, roomName: spaces.name, roomRemovedAt: spaces.deletedAt, venueSlug: venues.slug,
       })
         .from(configurations)
         .innerJoin(spaces, eq(spaces.id, configurations.spaceId))
@@ -197,11 +208,23 @@ export async function publicEnquiryRoutes(
       if (!twinPublicVenueSlugs().includes(planned.venueSlug)) {
         return reply.status(404).send({ error: "Venue not found", code: "NOT_FOUND" });
       }
+      // Taking a room out of use leaves the plans guests made in it (review
+      // of #404, P5). An enquiry from one is filed as the venue path files
+      // one naming no room: against the venue's first room in use, or the
+      // plan's own when none is left, since the enquiry matters more than the room.
+      let filedIn: { spaceId: string; roomName: string | null } = { spaceId: planned.spaceId, roomName: planned.roomName };
+      if (planned.roomRemovedAt !== null) {
+        request.log.warn(
+          { event: "enquiry.room_removed", venueId: planned.venueId, configurationId: parsed.data.configurationId },
+          "enquiry came from a plan whose room was taken out of use",
+        );
+        filedIn = { spaceId: (await flagshipRoom(db, planned.venueId))?.id ?? planned.spaceId, roomName: null };
+      }
       anchor = {
         venueId: planned.venueId,
-        spaceId: planned.spaceId,
+        spaceId: filedIn.spaceId,
         configurationId: parsed.data.configurationId,
-        roomName: planned.roomName,
+        roomName: filedIn.roomName,
         venuePath: false,
         venueSlug: null,
       };
@@ -224,11 +247,7 @@ export async function publicEnquiryRoutes(
       if (venue === undefined) {
         return reply.status(404).send({ error: "Venue not found", code: "NOT_FOUND" });
       }
-      const [flagship] = await db.select({ id: spaces.id, name: spaces.name })
-        .from(spaces)
-        .where(and(eq(spaces.venueId, venue.id), isNull(spaces.deletedAt)))
-        .orderBy(asc(spaces.sortOrder), asc(spaces.createdAt))
-        .limit(1);
+      const flagship = await flagshipRoom(db, venue.id);
       // A published venue with no space is a real onboarding state, not an
       // internal error — collapse it into the same 404 (not a 500 that would
       // leak "this venue exists but is unconfigured").

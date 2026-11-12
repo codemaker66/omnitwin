@@ -73,10 +73,15 @@ describe.skipIf(target === undefined)("the public enquiry route on the migrated 
   const closedVenue = randomUUID();
   // A live venue whose walkthrough is not published: its slug is not on the list.
   const unlistedVenue = randomUUID();
+  // A published venue with one room, which a test takes out of use.
+  const bareVenue = randomUUID();
   const liveRoom = randomUUID();
   const closedRoom = randomUUID();
   const unlistedRoom = randomUUID();
-  const published: readonly string[] = [liveVenue, closedVenue];
+  const bareRoom = randomUUID();
+  // The live venue's second room (after liveRoom in its order), which a test takes out of use.
+  const removedRoom = randomUUID();
+  const published: readonly string[] = [liveVenue, closedVenue, bareVenue];
   const venues: readonly string[] = [...published, unlistedVenue];
   // Guest leads and people are found by email, so each address is this run's own.
   const run = randomUUID().slice(0, 8);
@@ -93,17 +98,19 @@ describe.skipIf(target === undefined)("the public enquiry route on the migrated 
     expect((await pool.query<{ name: string }>("SELECT current_database() AS name")).rows[0]?.name).toBe("venviewer_platform_test");
     await pool.query(
       `INSERT INTO venues (id, name, slug, address) VALUES ($1::uuid, 'TEST ONLY Intake Hall', $1::text, 'Test only'),
-        ($2::uuid, 'TEST ONLY Closed Hall', $2::text, 'Test only'), ($3::uuid, 'TEST ONLY Unlisted Hall', $3::text, 'Test only')`,
-      [liveVenue, closedVenue, unlistedVenue],
+        ($2::uuid, 'TEST ONLY Closed Hall', $2::text, 'Test only'), ($3::uuid, 'TEST ONLY Unlisted Hall', $3::text, 'Test only'),
+        ($4::uuid, 'TEST ONLY Bare Hall', $4::text, 'Test only')`,
+      [liveVenue, closedVenue, unlistedVenue, bareVenue],
     );
     await pool.query(
-      `INSERT INTO spaces (id, venue_id, name, slug, width_m, length_m, height_m, floor_plan_outline)
-       VALUES ($1, $2, 'TEST ONLY Saloon', 'saloon', 10, 10, 3, '[]'), ($3, $4, 'TEST ONLY Saloon', 'saloon', 10, 10, 3, '[]'),
-         ($5, $6, 'TEST ONLY Saloon', 'saloon', 10, 10, 3, '[]')`,
-      [liveRoom, liveVenue, closedRoom, closedVenue, unlistedRoom, unlistedVenue],
+      `INSERT INTO spaces (id, venue_id, name, slug, width_m, length_m, height_m, floor_plan_outline, sort_order)
+       VALUES ($1, $2, 'TEST ONLY Saloon', 'saloon', 10, 10, 3, '[]', 0), ($3, $4, 'TEST ONLY Saloon', 'saloon', 10, 10, 3, '[]', 0),
+         ($5, $6, 'TEST ONLY Saloon', 'saloon', 10, 10, 3, '[]', 0), ($7, $8, 'TEST ONLY Bare Room', 'bare', 10, 10, 3, '[]', 0),
+         ($9, $2, 'TEST ONLY Removed Room', 'removed', 10, 10, 3, '[]', 5)`,
+      [liveRoom, liveVenue, closedRoom, closedVenue, unlistedRoom, unlistedVenue, bareRoom, bareVenue, removedRoom],
     );
-    // Two venues publish their walkthrough (their slug is their id), so the
-    // venue path's own gate lets each through to the lookup; the third does not.
+    // Three venues publish their walkthrough (their slug is their id), so the
+    // venue path's own gate lets each through to the lookup; the fourth does not.
     process.env["TWIN_PUBLIC_VENUE_SLUGS"] = published.join(",");
     // A test value: the provider's client above is a stand-in, so nothing leaves the process.
     process.env["RESEND_API_KEY"] = "re_test_only_not_a_key";
@@ -285,6 +292,32 @@ describe.skipIf(target === undefined)("the public enquiry route on the migrated 
     // A published venue's plan still files its enquiry.
     const listedPlan = idOf(await newPlan(liveRoom), "id");
     idOf(await enquire({ configurationId: listedPlan, ...guest, email: `test-only-listed-${run}@example.test` }), "enquiryId");
+  });
+
+  // Review of #404, P5: taking a room out of use leaves the plans guests made
+  // in it, and an enquiry sent from one is the guest's all the same.
+  it("files an enquiry from a plan whose room was taken out of use as naming no room, and keeps it", async () => {
+    const plan = idOf(await newPlan(removedRoom), "id");
+    const barePlan = idOf(await newPlan(bareRoom), "id");
+    // Taken out of use as DELETE /spaces/:id takes a room: its plans stay.
+    await pool.query("UPDATE spaces SET deleted_at = now() WHERE id = ANY($1::uuid[])", [[removedRoom, bareRoom]]);
+
+    const email = `test-only-removed-${run}@example.test`;
+    const fromRemoved = idOf(await enquire({ configurationId: plan, email, name: "TEST ONLY Ailsa Grant", eventType: "wedding" }), "enquiryId");
+    const fromBare = idOf(await enquire({ configurationId: barePlan, email: `test-only-bare-${run}@example.test`, eventType: "wedding" }), "enquiryId");
+    const { rows } = await pool.query<{ id: string; space_id: string; configuration_id: string; source: string; room_chosen: boolean }>(
+      "SELECT id, space_id, configuration_id, source, room_chosen FROM enquiries WHERE id = ANY($1::uuid[]) ORDER BY created_at",
+      [[fromRemoved, fromBare]],
+    );
+    expect(rows).toEqual([
+      // Filed as the venue path files an enquiry naming no room: against the
+      // venue's first room in use, from the planner, with its plan.
+      { id: fromRemoved, space_id: liveRoom, configuration_id: plan, source: "planner", room_chosen: false },
+      // A venue with no room left in use still keeps it, against the plan's own room, naming none.
+      { id: fromBare, space_id: bareRoom, configuration_id: barePlan, source: "planner", room_chosen: false },
+    ]);
+    // The reply does not name the room either.
+    expect(readable((await handedTo(email)).html)).not.toContain("TEST ONLY Removed Room");
   });
 
   it("keeps the enquiry of a guest who gives no name and an email longer than the name column holds", async () => {
