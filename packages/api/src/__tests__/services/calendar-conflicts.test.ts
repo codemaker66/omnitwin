@@ -544,6 +544,26 @@ describe("one event's days in a room", () => {
     expect(report.conflicts.map((c) => c.id)).toEqual(["insufficient_turnaround:y-dinner:x-sun"]);
     expect(report.conflicts[0]?.explanation).toContain("Only 0 minutes");
   });
+
+  // T-695 review Y1: another client's booking that began under the event's
+  // set-up and runs on into the gap is in the room between the event's
+  // pieces, though it does not start there; it must part them too, or the
+  // changeovers on either side of the evening are never measured.
+  it("parts an event's pieces round another client's booking that runs on into the gap between them", () => {
+    const setUp = phase({ id: "wedding-setup", eventId: "event-wedding", eventName: "Wedding",
+      startsAt: at("2026-09-19T06:00:00.000Z"), endsAt: at("2026-09-19T11:00:00.000Z") });
+    const wedding = booking({ id: "wedding", title: "Wedding", eventId: "event-wedding",
+      startsAt: at("2026-09-19T14:00:00.000Z"), endsAt: at("2026-09-19T22:00:00.000Z") });
+    const agm = booking({ id: "agm", title: "AGM", eventId: "event-agm",
+      startsAt: at("2026-09-19T10:00:00.000Z"), endsAt: at("2026-09-19T12:00:00.000Z") });
+    const afterParty = booking({ id: "after-party", title: "After-party", eventId: "event-after-party",
+      startsAt: at("2026-09-19T22:30:00.000Z"), endsAt: at("2026-09-20T00:00:00.000Z") });
+    const report = detect({ bookings: [wedding, agm, afterParty], phases: [setUp], turnaroundRules: [rule({ minutes: 180 })] });
+    expect(report.conflicts.map((c) => c.id)).toEqual([
+      "insufficient_turnaround:agm:wedding",
+      "insufficient_turnaround:wedding:after-party",
+    ]);
+  });
 });
 
 describe("honesty and determinism", () => {

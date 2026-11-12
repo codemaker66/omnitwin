@@ -205,7 +205,7 @@ function occupancyOf(eventId: string | null, pieces: readonly OccupancyPiece[]):
  * booking's. An event's pieces on another day are another occupancy, so a
  * two-day event never swallows what sits between its days (T-695
  * api-diary-bookings-7). Pieces that do not touch join only while no other
- * booking or phase in the room starts between them, so neither an evening
+ * booking or phase is in the room between them, so neither an evening
  * past midnight nor a morning set-up swallows another client's booking
  * (T-695 review D1, D2). Bookings without an event stand alone.
  */
@@ -241,15 +241,19 @@ function buildOccupancies(
   // The venue's calendar day of an instant; a span's day is that of its last
   // occupied instant, as spans are half-open.
   const venueDay = (ms: number): string => rotaLocalDate(ms, timeZone);
-  // Whose each piece in the room is, by its start: an event's two pieces are
-  // one occupancy only while nobody else's starts in the gap between them,
-  // or the event would swallow that booking whatever the day (review D1, D2).
-  const starts = [
-    ...inks.map((ink) => ({ owner: ink.eventId === null ? `booking:${ink.id}` : `event:${ink.eventId}`, startMs: ink.startMs })),
-    ...phases.map((row) => ({ owner: `event:${row.eventId}`, startMs: row.startsAt.getTime() })),
+  // Whose each piece in the room is, and when: an event's two pieces are one
+  // occupancy only while nobody else's is in the room for any of the gap
+  // between them, or the event would swallow that booking whatever the day
+  // (review D1, D2). A piece that began before the gap and runs on into it
+  // counts as much as one that starts there (review Y1).
+  const spans = [
+    ...inks.map((ink) => ({
+      owner: ink.eventId === null ? `booking:${ink.id}` : `event:${ink.eventId}`, startMs: ink.startMs, endMs: ink.endMs,
+    })),
+    ...phases.map((row) => ({ owner: `event:${row.eventId}`, startMs: row.startsAt.getTime(), endMs: row.endsAt.getTime() })),
   ];
   const someoneElseBetween = (eventId: string, fromMs: number, toMs: number): boolean =>
-    starts.some((start) => start.owner !== `event:${eventId}` && start.startMs >= fromMs && start.startMs < toMs);
+    spans.some((span) => span.owner !== `event:${eventId}` && span.startMs < toMs && span.endMs > fromMs);
   for (const [eventId, pieces] of byEvent) {
     let run: OccupancyPiece[] = [];
     let runEndMs = Number.NEGATIVE_INFINITY;
