@@ -68,6 +68,8 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/ai-usage-postgres.test.ts",
   // A supplier's reply has a limit of its own: twenty an hour from one address, through the whole app.
   "src/__tests__/supplier-reply-limit-postgres.test.ts",
+  // Prepared decisions (goal 09 M1, migration 0108): scope, stale approval, duplicate execution, partial failure, the review's cases.
+  "src/__tests__/decisions-postgres.test.ts",
   // The People Book (migration 0098): the operator's read-only check of the backfill.
   "src/__tests__/check-people-book-postgres.test.ts",
   // Possible duplicates, and the marks that keep two people apart through merges.
@@ -106,6 +108,8 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/pricing-rule-dates-postgres.test.ts",
   // Migration 0107: a venue manager's Ops review is stored as venue_manager; other roles and venues stay refused.
   "src/__tests__/event-architect-ops-review-postgres.test.ts",
+  // A 200-character account name on the floor: taps, requests and their steps, the handover picker and the request's thread keep 160, never refuse.
+  "src/__tests__/floor-long-names-postgres.test.ts",
 ] as const;
 
 /**

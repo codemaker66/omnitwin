@@ -2638,3 +2638,4 @@ export * from "./crowded-day.js";
 export * from "./deposits.js";
 export * from "./contracts.js";
 export * from "./reference-loadouts.js";
+export * from "./decision.js";
