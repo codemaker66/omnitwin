@@ -288,8 +288,11 @@ describe("the cards' pictures (Q-21)", () => {
     const top = art(/^Top table/u);
     expect(top).toMatch(new RegExp(`^/models/furniture/setup-top-table/${SETUP_PREVIEW_VERSION}/[a-z]+-(one|set)-(turini|chiavari)\\.webp$`, "u"));
     expect(art(/^Stage/u)).not.toContain("/setup-");
-    // Every picture a card shows is one the release ships.
-    for (const src of [round, top]) expect(existsSync(resolve("public", `.${src}`)), src).toBe(true);
+    // Every setup card's picture is one the release ships: the round, the
+    // top and long tables and the dance floor.
+    const setupPictures = Array.from(rail().querySelectorAll("img"), (img) => img.getAttribute("src") ?? "").filter((src) => src.includes("/setup-"));
+    expect(setupPictures.length).toBeGreaterThanOrEqual(4);
+    for (const src of setupPictures) expect(existsSync(resolve("public", `.${src}`)), src).toBe(true);
   });
 
   it("follows the look in hand: a black Round of 10 shows black", () => {

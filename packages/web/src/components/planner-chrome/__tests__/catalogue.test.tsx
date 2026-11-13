@@ -1,3 +1,5 @@
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
 import { StrictMode } from "react";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -404,5 +406,10 @@ describe("the cards' pictures (Q-21)", () => {
     const art = (prefix: string): string => cardButtons().find((face) => face.getAttribute("aria-label")?.startsWith(prefix) === true)?.querySelector("img")?.getAttribute("src") ?? "";
     expect(art("Round of 10,")).toMatch(new RegExp(`^/models/furniture/setup-round/${SETUP_PREVIEW_VERSION}/(white|black|bare)-(turini|chiavari)\\.webp$`, "u"));
     expect(art("Round 6 ft,")).not.toContain("/setup-");
+    // Every setup card's picture on the open tab is one the release ships
+    // (the rail's case covers all four setups).
+    const setupPictures = cardButtons().map((face) => face.querySelector("img")?.getAttribute("src") ?? "").filter((src) => src.includes("/setup-"));
+    expect(setupPictures.length).toBeGreaterThan(0);
+    for (const src of setupPictures) expect(existsSync(resolve("public", `.${src}`)), src).toBe(true);
   });
 });
