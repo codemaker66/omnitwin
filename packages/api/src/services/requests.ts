@@ -31,6 +31,7 @@ import {
 } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { isPlatformAdmin, type JwtUser } from "../middleware/auth.js";
+import { clipName } from "../utils/clip-name.js";
 import { canHandleRequests, canManageVenue } from "../utils/query.js";
 import { clientHoldsEventLink, createRequestThread, postSystemMessage } from "./conversations.js";
 import { sendEmail, type EmailPayload, type SendOptions } from "./email.js";
@@ -268,6 +269,9 @@ async function insertRequest(db: Database, actor: RequestActor, seed: RequestSee
   const settings = await readOperatingSettings(db, seed.venueId);
   const audienceRoles = audienceForNewRequest();
   const now = new Date();
+  // The asker's name as the request, its history and its thread keep it:
+  // a name longer than their columns is kept to them, never refused.
+  const actorName = clipName(actor.name);
   const escalationDueAt = settings === null
     ? null
     : new Date(now.getTime() + escalationWindowSeconds(settings, seed.urgency) * 1000);
@@ -285,7 +289,7 @@ async function insertRequest(db: Database, actor: RequestActor, seed: RequestSee
         urgency: seed.urgency,
         detail: seed.detail,
         requestedByUserId: actor.id,
-        requestedByName: actor.name,
+        requestedByName: actorName,
         requestedByRole: actor.role,
         audienceRoles,
         state: "sent",
@@ -314,7 +318,7 @@ async function insertRequest(db: Database, actor: RequestActor, seed: RequestSee
       fromState: null,
       toState: "sent",
       actorUserId: actor.id,
-      actorName: actor.name,
+      actorName,
       actorRole: actor.role,
       note: null,
       at: now,
@@ -339,7 +343,7 @@ async function insertRequest(db: Database, actor: RequestActor, seed: RequestSee
       bookingId: fresh.bookingId,
       eventId: fresh.eventId,
       title,
-      author: { userId: actor.id, name: actor.name, role: actor.role },
+      author: { userId: actor.id, name: actorName, role: actor.role },
       body: requestOpeningBody(fresh),
       idempotencyKey: seed.idempotencyKey,
     });
@@ -584,6 +588,9 @@ export async function transitionRequestCore(
   }
 
   const now = new Date();
+  // Who took the step, as the request and its history keep it: a name longer
+  // than their columns is kept to them, never refused.
+  const actorName = clipName(actor.name);
   const patch: Partial<typeof requests.$inferInsert> = { state: transition.to, updatedAt: now };
   switch (transition.to) {
     case "acknowledged":
@@ -592,7 +599,7 @@ export async function transitionRequestCore(
     case "accepted":
       patch.acceptedAt = now;
       patch.ownerUserId = actor.id;
-      patch.ownerName = actor.name;
+      patch.ownerName = actorName;
       patch.handoverToUserId = null;
       patch.handoverToName = null;
       patch.handoverDueAt = null;
@@ -603,7 +610,7 @@ export async function transitionRequestCore(
     case "handed-over": {
       patch.handedOverAt = now;
       patch.handoverToUserId = target?.id ?? null;
-      patch.handoverToName = target?.name ?? null;
+      patch.handoverToName = target === null ? null : clipName(target.name);
       // The relief has the venue's window to take it, or it escalates (S7);
       // a venue with no settings row sets no deadline, as with every window.
       const settings = await readOperatingSettings(db, row.venueId);
@@ -623,7 +630,7 @@ export async function transitionRequestCore(
       patch.handoverDueAt = null;
       if (row.ownerUserId === null) {
         patch.ownerUserId = actor.id;
-        patch.ownerName = actor.name;
+        patch.ownerName = actorName;
       }
       break;
     case "reopened": {
@@ -671,7 +678,7 @@ export async function transitionRequestCore(
       fromState: row.state,
       toState: transition.to,
       actorUserId: actor.id,
-      actorName: actor.name,
+      actorName,
       actorRole: actor.role,
       outcome: transition.to === "resolved" ? transition.outcome : null,
       note: transition.to === "resolved" || transition.to === "reopened" ? transition.note ?? null : null,
@@ -841,7 +848,9 @@ export async function listRequestHandlers(
     const role = UserRoleSchema.safeParse(row.role);
     if (!role.success) continue;
     if (!canHandleRequests({ role: role.data, venueId, platformRole: "none" }, venueId)) continue;
-    handlers.push({ id: row.id, name: row.name, role: role.data });
+    // Kept to the picker's 160, as a handover keeps it: one long name must
+    // not refuse the whole list.
+    handlers.push({ id: row.id, name: clipName(row.name), role: role.data });
   }
   return handlers;
 }
