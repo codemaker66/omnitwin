@@ -442,9 +442,11 @@ function weighedApart(world: Neighbourhood, booking: BookingRow, carried: readon
   ];
   const from = Math.min(...block.map((entry) => entry.startsAt.getTime()));
   const until = Math.max(...block.map((entry) => entry.endsAt.getTime()));
-  // A phase of the event wholly inside the block adds no time to it, and
-  // apart it would end the block early for the engine, which reads each
-  // block against the next to start.
+  // A phase of the event wholly inside the block adds no time to it, so it
+  // is left out. Kept apart it would be an arrival of its own: one that
+  // begins with the block would be measured from whoever left before, beside
+  // the block's own arrival (measuredChangeovers passes over one that begins
+  // later, as the block is then in the room).
   const inside = (phase: ConflictPhaseInput): boolean =>
     block.length > 0 && keys.has(phase.id) && phase.startsAt.getTime() >= from && phase.endsAt.getTime() <= until;
   const apart = <T extends { readonly id: string; readonly eventId: string | null }>(entry: T): T => {
