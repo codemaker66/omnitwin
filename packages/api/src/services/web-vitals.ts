@@ -187,7 +187,7 @@ export interface WebVitalsBatchOptions {
 }
 
 /** Fisher-Yates, in place: every order equally likely, given a fair draw. */
-export function shuffleInPlace<T>(items: T[], randomInt: (bound: number) => number): void {
+export function shuffleInPlace(items: unknown[], randomInt: (bound: number) => number): void {
   for (let index = items.length - 1; index > 0; index -= 1) {
     const other = randomInt(index + 1);
     const item = items[index];
