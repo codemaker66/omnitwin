@@ -2,11 +2,16 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type FormEvent,
   type ReactElement,
 } from "react";
-import { TRADES_HALL_ENQUIRY_VENUE_SLUG } from "@omnitwin/types";
+import {
+  GUEST_ENQUIRY_LATEST_EVENT_DATE,
+  GUEST_ENQUIRY_LIMITS,
+  TRADES_HALL_ENQUIRY_VENUE_SLUG,
+} from "@omnitwin/types";
 import { ActivityIndicator } from "../../components/shared/Activity.js";
 import { submitGuestEnquiry } from "../../api/configurations.js";
 import { isValidEmail } from "../../lib/email-validation.js";
@@ -100,6 +105,26 @@ export function FreshEnquiry(): ReactElement {
   const [phone, setPhone] = useState("");
   const [emailTouched, setEmailTouched] = useState(false);
   const [sendState, setSendState] = useState<EnquirySendState>("idle");
+  /** Counts the sends that found no usable address since the guest last
+   *  edited it; each takes focus to the field and says the problem again. */
+  const [emailFocusRequests, setEmailFocusRequests] = useState(0);
+  const emailRef = useRef<HTMLInputElement>(null);
+  const sentRef = useRef<HTMLDivElement>(null);
+
+  // The form sets noValidate, so the browser neither focuses nor announces a
+  // missing or invalid email: Send does it here (a11y-2). Focus moves once the
+  // field has rendered as invalid with its problem attached, so a screen reader
+  // reads the label, the invalid state and the problem together.
+  useEffect(() => {
+    if (emailFocusRequests > 0) emailRef.current?.focus();
+  }, [emailFocusRequests]);
+
+  // A sent enquiry replaces the Send button that held focus. Focus goes to the
+  // confirmation, which is named by its own title, rather than falling to the
+  // page with nothing said.
+  useEffect(() => {
+    if (sendState === "sent") sentRef.current?.focus();
+  }, [sendState]);
 
   /**
    * The Craft the Trades House quiz drew, arriving as `?craft=`.
@@ -157,6 +182,7 @@ export function FreshEnquiry(): ReactElement {
       if (composed === null || guests === null) return;
       if (emailProblem !== null) {
         setEmailTouched(true);
+        setEmailFocusRequests((count) => count + 1);
         return;
       }
       setSendState("sending");
@@ -250,6 +276,7 @@ export function FreshEnquiry(): ReactElement {
             <input
               type="date"
               min={today}
+              max={GUEST_ENQUIRY_LATEST_EVENT_DATE}
               value={dateISO}
               onChange={(event) => {
                 setDateISO(event.target.value);
@@ -265,6 +292,7 @@ export function FreshEnquiry(): ReactElement {
             <input
               type="text"
               autoComplete="name"
+              maxLength={GUEST_ENQUIRY_LIMITS.nameLength}
               value={name}
               onChange={(event) => {
                 setName(event.target.value);
@@ -274,6 +302,7 @@ export function FreshEnquiry(): ReactElement {
           <label className="fr-enq-field">
             <span>{FRESH_ENQUIRY_EMAIL_LABEL}</span>
             <input
+              ref={emailRef}
               type="email"
               autoComplete="email"
               inputMode="email"
@@ -285,13 +314,24 @@ export function FreshEnquiry(): ReactElement {
               }
               onChange={(event) => {
                 setEmail(event.target.value);
+                setEmailFocusRequests(0);
               }}
               onBlur={() => {
                 setEmailTouched(true);
               }}
             />
+            {/* Spoken when Send finds it (review of #405, F1): Enter in this
+                field sends with focus already here, so moving focus says
+                nothing. Each Send makes a new alert, so a repeat is heard
+                again; once the guest edits, it is a plain line again and
+                their typing is not interrupted. */}
             {emailTouched && emailProblem !== null && (
-              <small className="fr-enq-problem" id="fr-enq-email-problem">
+              <small
+                key={emailFocusRequests}
+                className="fr-enq-problem"
+                id="fr-enq-email-problem"
+                role={emailFocusRequests > 0 ? "alert" : undefined}
+              >
                 {emailProblem}
               </small>
             )}
@@ -303,6 +343,7 @@ export function FreshEnquiry(): ReactElement {
             <input
               type="tel"
               autoComplete="tel"
+              maxLength={GUEST_ENQUIRY_LIMITS.phoneLength}
               value={phone}
               onChange={(event) => {
                 setPhone(event.target.value);
@@ -336,8 +377,14 @@ export function FreshEnquiry(): ReactElement {
             {craftNote === null ? composed.body : `${composed.body}\n\n${craftNote}`}
           </pre>
           {sendState === "sent" ? (
-            <div className="fr-enq-sent" role="status">
-              <p className="fr-enq-sent-title">{FRESH_ENQUIRY_SENT_TITLE}</p>
+            <div
+              className="fr-enq-sent"
+              role="status"
+              ref={sentRef}
+              tabIndex={-1}
+              aria-labelledby="fr-enq-sent-title"
+            >
+              <p className="fr-enq-sent-title" id="fr-enq-sent-title">{FRESH_ENQUIRY_SENT_TITLE}</p>
               <p className="fr-enq-sent-line">{FRESH_ENQUIRY_SENT_LINE}</p>
               <span className="fr-enq-call">
                 {FRESH_ENQUIRY_OR_CALL}{" "}
