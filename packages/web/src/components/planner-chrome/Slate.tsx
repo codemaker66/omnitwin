@@ -171,7 +171,15 @@ export function SlateCard({
       ? null
       : { ...save.notice, urgent: save.kind === "not-saved" || save.kind === "changed-elsewhere" };
   return (
-    <section className="pc-slate" aria-label={title} data-save={save.kind} data-plane={plane === null ? "none" : "joined"} data-pc-popover-anchor>
+    <section
+      className="pc-slate"
+      aria-label={title}
+      data-save={save.kind}
+      data-plane={plane === null ? "none" : "joined"}
+      // With no event the eyebrow is the room, and so is the title: a dress that lays them on one line can say it once.
+      data-eyebrow={eyebrow === title ? "same" : undefined}
+      data-pc-popover-anchor
+    >
       <div className="pc-lacquer pc-slate__plate">
         {crest !== null ? <span className="pc-slate__crest" aria-hidden="true">{crest}</span> : null}
         <div className="pc-slate__words">

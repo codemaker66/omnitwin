@@ -315,3 +315,8 @@ body:has(.hud-root) .pc-slate-menu .pc-meta {
 .hud-root .ghost-set .ghost-set__subline-mark {
   color: var(--hud-ink-2);
 }
+
+/* With no event the eyebrow only repeats the title beside it (the room's name): said once. */
+.hud-root .pc-slate[data-eyebrow="same"] .pc-slate__eyebrow {
+  display: none;
+}
