@@ -358,6 +358,31 @@ describe("VerticalToolbox tool words, for the keyboard and a screen reader", () 
     expect(card.getAttribute("aria-hidden")).toBe("true");
   });
 
+  it("draws the card outside the toolbar, which scrolls and so clips, and takes it down when its tool scrolls out of view", async () => {
+    renderToolbox();
+    const toolbar = screen.getByTestId("planner-toolbar");
+    const walls = screen.getByRole("button", { name: "Show All Walls" });
+    act(() => { walls.focus(); });
+    const card = screen.getByTestId("toolbox-tooltip");
+    expect(toolbar.contains(card)).toBe(false);
+    expect(card.style.position).toBe("fixed");
+
+    // The toolbar, 70 px down the screen, scrolls the tool wholly above its view.
+    vi.spyOn(toolbar, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 70, 68, 400));
+    vi.spyOn(walls, "getBoundingClientRect").mockReturnValue(new DOMRect(6, 0, 56, 56));
+    act(() => { toolbar.dispatchEvent(new Event("scroll")); });
+    await waitFor(() => { expect(screen.queryByTestId("toolbox-tooltip")).toBeNull(); });
+  });
+
+  it("shows one card at a time: a card that opens takes the last one down at once, not over its fading exit", () => {
+    renderToolbox();
+    act(() => { screen.getByRole("button", { name: "Show All Walls" }).focus(); });
+    act(() => { screen.getByRole("button", { name: "Rotate" }).focus(); });
+    const cards = screen.getAllByTestId("toolbox-tooltip");
+    expect(cards).toHaveLength(1);
+    expect(cards[0]?.textContent).toContain("Rotate selected furniture");
+  });
+
   it("goes on Escape, and that Escape does nothing else", async () => {
     const cleared = vi.fn();
     const release = registerEscapeLayer({ kind: "selection", isOpen: () => true, escape: cleared });

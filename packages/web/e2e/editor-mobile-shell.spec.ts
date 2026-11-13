@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import type { Camera, Mesh, Scene, WebGLRenderer } from "three";
 import type { BatchObjectInput } from "../src/api/configurations.js";
 
@@ -108,6 +108,49 @@ function expectWithinViewport(box: Box | null, viewport: ViewportCase): void {
   expect(box.y).toBeGreaterThanOrEqual(-1);
   expect(box.x + box.width).toBeLessThanOrEqual(viewport.width + 1);
   expect(box.y + box.height).toBeLessThanOrEqual(viewport.height + 1);
+}
+
+/** Presses Tab until `target` has focus, the way a keyboard user reaches it. */
+async function tabTo(page: Page, target: Locator, maxPresses = 80): Promise<void> {
+  for (let press = 0; press < maxPresses; press += 1) {
+    if (await target.evaluate((element) => element === document.activeElement)) return;
+    await page.keyboard.press("Tab");
+  }
+  await expect(target).toBeFocused();
+}
+
+/** One tool's card shows, wholly on screen, and covers none of the toolbar's tools. */
+async function expectCardBesideToolbar(card: Locator, toolbar: Locator): Promise<void> {
+  // Tab ran through other tools on its way; their cards are gone, not stacked with this
+  // one (that they go at once is the unit test's: "shows one card at a time").
+  await expect(card).toHaveCount(1);
+  await expect(card).toBeInViewport({ ratio: 1 });
+  const cardBox = await card.boundingBox();
+  const barBox = await toolbar.boundingBox();
+  expect(cardBox).not.toBeNull();
+  expect(barBox).not.toBeNull();
+  if (cardBox === null || barBox === null) return;
+  const clear = cardBox.x >= barBox.x + barBox.width || cardBox.x + cardBox.width <= barBox.x;
+  expect(clear, `card ${JSON.stringify(cardBox)} overlaps toolbar ${JSON.stringify(barBox)}`).toBe(true);
+}
+
+/**
+ * A button's description in Chromium's own accessibility tree, the one a screen reader is
+ * given. Searched within one test id's element: the tool pill has a Rotate button too.
+ */
+async function chromiumDescription(page: Page, withinTestId: string, name: string): Promise<string | null> {
+  const cdp = await page.context().newCDPSession(page);
+  try {
+    const { root } = await cdp.send("DOM.getDocument", { depth: 0 });
+    const { nodeId } = await cdp.send("DOM.querySelector", { nodeId: root.nodeId, selector: `[data-testid="${withinTestId}"]` });
+    const { nodes } = await cdp.send("Accessibility.queryAXTree", { nodeId, accessibleName: name, role: "button" });
+    const exposed = nodes.filter((node) => !node.ignored);
+    expect(exposed, `exposed buttons named ${name}`).toHaveLength(1);
+    const value: unknown = exposed[0]?.description?.value;
+    return typeof value === "string" ? value : null;
+  } finally {
+    await cdp.detach();
+  }
 }
 
 function expectOutsideSceneCenter(box: Box | null, viewport: ViewportCase): void {
@@ -306,14 +349,44 @@ test.describe("3D planner mobile shell", () => {
     const consoleErrors = await openPlanner(page, desktop);
 
     await expectNoHorizontalOverflow(page);
-    await page.getByRole("button", { name: "More planner tools", exact: true }).click();
-    const rotate = page.getByTestId("planner-toolbar").getByRole("button", { name: "Rotate", exact: true });
+    const more = page.getByRole("button", { name: "More planner tools", exact: true });
+    await more.click();
+    const toolbar = page.getByTestId("planner-toolbar");
+    const rotate = toolbar.getByRole("button", { name: "Rotate", exact: true });
+    const spoken = "Rotate selected furniture in 15° steps. Shortcut: Q / E.";
     await rotate.hover();
     // The card, not each tool's hidden description, which says "Shortcut: Q / E." for a screen reader.
     const card = page.getByTestId("toolbox-tooltip");
     await expect(card.getByText("SHORTCUT", { exact: true })).toBeVisible();
-    await expect(card.getByText("Q / E", { exact: true })).toBeVisible();
-    await expect(rotate).toHaveAccessibleDescription("Rotate selected furniture in 15° steps. Shortcut: Q / E.");
+    // Visible is not readable: in the scrolling panel the card was cut off at its edge. An
+    // IntersectionObserver counts an ancestor's clip, so the whole badge must be on screen.
+    await expect(card.getByText("Q / E", { exact: true })).toBeInViewport({ ratio: 1 });
+    await expectCardBesideToolbar(card, toolbar);
+    // Playwright's own accessible-description computation, run in Chromium...
+    await expect(rotate).toHaveAccessibleDescription(spoken);
+    // ...and Chromium's accessibility tree, which is what a screen reader is given.
+    expect(await chromiumDescription(page, "planner-toolbar", "Rotate")).toBe(spoken);
+
+    // A keyboard user: Tab onto Rotate and its whole card shows at once.
+    await page.mouse.move(640, 760);
+    await expect(card).toHaveCount(0);
+    await tabTo(page, rotate);
+    await expect(card.getByText("Q / E", { exact: true })).toBeInViewport({ ratio: 1 });
+    await expectCardBesideToolbar(card, toolbar);
+    // Escape takes the card down and nothing else: the panel stays open, the tool keeps focus.
+    await page.keyboard.press("Escape");
+    await expect(card).toHaveCount(0);
+    await expect(toolbar).toBeVisible();
+    await expect(more).toHaveAttribute("aria-expanded", "true");
+    await expect(rotate).toBeFocused();
+
+    // A click's focus shows no card.
+    const snap = toolbar.getByRole("button", { name: "Grid Snap", exact: true });
+    const snapWas = await snap.getAttribute("aria-pressed");
+    await snap.click();
+    await expect(snap).not.toHaveAttribute("aria-pressed", snapWas ?? "");
+    await page.waitForTimeout(600);
+    await expect(card).toHaveCount(0);
     expect(consoleErrors).toEqual([]);
   });
 });
