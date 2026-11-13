@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { BufferGeometry } from "three";
-import { buildHallFront, FRONT_DETAIL_FULL } from "../hall-exterior.js";
+import { buildHallFront, FRONT_DETAIL_FULL, FRONT_DETAIL_LIGHT, LET_IN } from "../hall-exterior.js";
+import { CUT_EYEWARD, CUT_EYEWARD_MAX } from "../hall-exterior-material.js";
 import { buildWallBody } from "../hall-wall-body.js";
 
 // The front stands against the window wall's body. A face of the front lying on one of the body's planes,
@@ -100,9 +101,12 @@ function frontOnBody(front: BufferGeometry, body: BufferGeometry): { readonly at
   return found;
 }
 
+/** Both builds the planner draws: a computer's, and a phone's with fewer segments to its round things. */
+const DETAILS = [{ name: "full", detail: FRONT_DETAIL_FULL }, { name: "light, as phones draw it", detail: FRONT_DETAIL_LIGHT }];
+
 describe("the measured front against the window wall's body", () => {
-  it("keeps every face off the body's planes where the two overlap", () => {
-    const overlaps = frontOnBody(buildHallFront(FRONT_DETAIL_FULL).geometry, buildWallBody().geometry);
+  it.each(DETAILS)("keeps every face off the body's planes where the two overlap ($name)", ({ detail }) => {
+    const overlaps = frontOnBody(buildHallFront(detail).geometry, buildWallBody().geometry);
     expect(overlaps.slice(0, 5)).toEqual([]);
   });
 });
@@ -145,10 +149,19 @@ function frontOnItself(front: BufferGeometry): { readonly backToBack: number; re
 }
 
 describe("the measured front's own solids", () => {
-  it("meet one another back to back or flush in one material, never two materials on one plane", () => {
-    const { backToBack, mixedFlush } = frontOnItself(buildHallFront(FRONT_DETAIL_FULL).geometry);
+  it.each(DETAILS)("meet one another back to back or flush in one material, never two materials on one plane ($name)", ({ detail }) => {
+    const { backToBack, mixedFlush } = frontOnItself(buildHallFront(detail).geometry);
     expect(mixedFlush.slice(0, 5)).toEqual([]);
     // The touching pairs whose ties the cut pass wins (hall-exterior-material.ts CUT_EYEWARD): many, all inside the stone.
     expect(backToBack).toBeGreaterThan(0);
+  });
+});
+
+describe("the cut's tie-break against the pieces let into their holders", () => {
+  it("draws the cut toward the eye by at most half a let-in, a share of its distance out to 10 m", () => {
+    // A piece's end let LET_IN into its holder lies that far behind the holder's own face, and the thinnest
+    // glass is 12 mm thick: the cut, drawn at most CUT_EYEWARD_MAX toward the eye, never reaches either.
+    expect(CUT_EYEWARD_MAX).toBeLessThanOrEqual(LET_IN / 2);
+    expect(CUT_EYEWARD * 10).toBeCloseTo(CUT_EYEWARD_MAX, 9);
   });
 });

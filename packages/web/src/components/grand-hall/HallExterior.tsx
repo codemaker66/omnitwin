@@ -84,8 +84,9 @@ export function HallExterior({ sun, lightMaps, onFailed }: HallExteriorProps): R
   }, [caster, materials]);
 
   if (geometry === null) return null;
-  // The outside, then the cut (hall-exterior-material.ts) once the scene's depth
-  // is down, so the depth test turns its hidden faces away before they are shaded.
+  // The outside, then the cut (hall-exterior-material.ts) after the scene's own
+  // opaque pieces (render order 0), so the depth test can turn its hidden faces
+  // away before they are shaded. Its ties are its own whatever the order.
   return (
     <group name="grand-hall-front">
       <mesh geometry={geometry} material={materials.outside} frustumCulled={false} raycast={() => undefined} />

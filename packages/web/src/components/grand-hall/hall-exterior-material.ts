@@ -18,10 +18,10 @@
 // in the section's colour and lit from above as the cut's top, by the sun
 // with no shadow as the hall's cut is, so the front reads as masonry cut
 // through, as the wall behind it does. They are a pass of their own, drawn a
-// hair toward the eye (CUT_EYEWARD): where two blocks touch, one block's face
-// seen from inside and its neighbour's outer face lie on one plane, and the
-// cut, which is what a section shows there, wins that tie every frame instead
-// of the two taking turns. Normals come from the geometry's own attribute (it
+// hair toward the eye (CUT_EYEWARD, CUT_EYEWARD_MAX): where two blocks touch,
+// one block's face seen from inside and its neighbour's outer face lie on one
+// plane, and the cut, which is what a section shows there, wins that tie every
+// frame instead of the two taking turns. Normals come from the geometry's own attribute (it
 // is built in world space), never normalWorld, which the section's unlit
 // materials keep out of the pass's normal target (hall-section.ts).
 // ---------------------------------------------------------------------------
@@ -29,8 +29,8 @@
 import { BackSide, Color, FrontSide, SRGBColorSpace, type Side } from "three";
 import { MeshBasicNodeMaterial, type Node } from "three/webgpu";
 import {
-  Discard, Fn, If, attribute, cameraProjectionMatrix, float, frontFacing, mix, normalize, positionView, positionWorld, select,
-  smoothstep, vec3, vec4,
+  Discard, Fn, If, attribute, cameraProjectionMatrix, float, frontFacing, length, min, mix, normalize, positionView, positionWorld,
+  select, smoothstep, vec3, vec4,
 } from "three/tsl";
 import { cardHaze, cardLight, nightDither, type StreetLightMaps } from "./hall-street-light.js";
 import { NIGHT_WORK_BELOW, streetLampLight } from "./hall-context.js";
@@ -38,7 +38,7 @@ import { hallSkyUniforms as sky } from "./hall-sky-runtime.js";
 import { hallFrontCut } from "./hall-exterior-cut.js";
 import type { SectionPresetName } from "./hall-section.js";
 import type { HallSun } from "./hall-sun.js";
-import { FRONT_PART, type FrontPartName } from "./hall-exterior.js";
+import { FRONT_PART, LET_IN, type FrontPartName } from "./hall-exterior.js";
 import { FRONT_LEVELS, FRONT_PAVEMENT_Y } from "./hall-exterior-spec.js";
 
 type Palette = Readonly<Record<FrontPartName, string>> & { readonly cut: string };
@@ -89,12 +89,25 @@ function partColour(part: Node<"float">, palette: Palette): Node<"vec3"> {
 
 /**
  * How far the cut's faces are drawn toward the eye, as a share of their
- * distance from it: a quarter of a millimetre a metre. That is more than ten
- * steps of the depth buffer out to 30 m (near plane 0.1 m), enough to win
- * every tie with a face on the same plane. At a solid's own edge, where its
- * outside and inside meet, it shows across well under a pixel.
+ * distance from it: a quarter of a millimetre a metre, up to CUT_EYEWARD_MAX.
+ * Within 10 m that is at least 40 steps of the depth buffer (near plane
+ * 0.1 m), enough to win every tie with a face on the same plane. At a
+ * right-angled edge, where a solid's outside and inside meet, the cut shows
+ * across about a tenth of a pixel on a 900-pixel-high canvas, scaling with
+ * the canvas's height (about a quarter at 2,000 pixels).
  */
 export const CUT_EYEWARD = 2.5e-4;
+
+/**
+ * The most the cut is drawn toward the eye, metres: half the let-in
+ * (LET_IN). Farther off, a share of the distance would reach a face let into
+ * its holder, and past about 48 m the far face of the thinnest glass
+ * (12 mm), drawing a solid's inside in front of its own outside. The cap
+ * holds from 10 m: about ten depth steps at 20 m, five at 30 m and two at the
+ * farthest the orbit reaches (about 47 m), where the front's touching faces
+ * are a pixel or two across.
+ */
+export const CUT_EYEWARD_MAX = LET_IN / 2;
 
 /** The front as drawn, two passes over one geometry: its outside, and its cut (each solid seen from inside). */
 export interface FrontMaterials {
@@ -109,11 +122,13 @@ export interface FrontMaterials {
 export function createFrontMaterials(sun: HallSun, maps: StreetLightMaps, preset: SectionPresetName): FrontMaterials {
   const outside = frontPass(sun, maps, preset, FrontSide);
   const cut = frontPass(sun, maps, preset, BackSide);
-  // Each inside face is drawn as though a hair nearer the eye. A point moved straight toward the eye
-  // projects where it did, so the cut covers the same pixels and is lit and coloured at its own place,
-  // but every tie with a face on its plane is its own. Depth is set per vertex, never per fragment,
-  // so the depth test still turns hidden faces away before they are shaded.
-  cut.vertexNode = cameraProjectionMatrix.mul(vec4(positionView.mul(1 - CUT_EYEWARD), 1));
+  // Each inside face is drawn as though nearer the eye by a share of its distance, at most
+  // CUT_EYEWARD_MAX. A point moved straight toward the eye projects where it did, so the cut covers
+  // the same pixels and is lit and coloured at its own place, but every tie with a face on its plane
+  // is its own. Depth is set per vertex, never per fragment, so the depth test still turns hidden
+  // faces away before they are shaded.
+  const share = min(float(CUT_EYEWARD), float(CUT_EYEWARD_MAX).div(length(positionView)));
+  cut.vertexNode = cameraProjectionMatrix.mul(vec4(positionView.mul(float(1).sub(share)), 1));
   cut.name = "grand-hall-front-cut";
   return { outside, cut };
 }
