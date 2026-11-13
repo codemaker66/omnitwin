@@ -135,7 +135,7 @@ export async function runScheduledCleanup(
   const lapsedPeople = await pass("24-month people", async () => {
     const result = await eraseLapsedPeople(db);
     const deferred = result.deferred.people + result.deferred.enquiries;
-    log(`[cleanup] Erased ${String(result.people)} person(s) and ${String(result.enquiries)} enquiry(ies) 24 months after the last contact; kept ${String(result.keptForBooking)} person(s) for a booking; left ${String(deferred)} for the next night`);
+    log(`[cleanup] Erased ${String(result.people)} person(s) and ${String(result.enquiries)} enquiry(ies) 24 months after the last contact; kept ${String(result.keptForBooking)} person(s) for a booking; left ${String(deferred)} for the next night${result.outOfTime ? " (its time ran out)" : ""}`);
     if (result.failed > 0) {
       // Counts and SQLSTATEs only; the people pass already rolled each one back.
       log(`[cleanup] ${String(result.failed)} person or enquiry step(s) failed (SQLSTATE ${[...new Set(result.failedStates)].join(", ")}); the next night tries them again`);

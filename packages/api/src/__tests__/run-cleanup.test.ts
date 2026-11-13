@@ -49,7 +49,7 @@ const { PeopleRetentionError } = await import("../services/people-retention.js")
 function peopleResult(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     dryRun: false, people: 1, keptForBooking: 2, inTouch: 0, enquiries: 3, failed: 0, failedStates: [],
-    deferred: { people: 0, enquiries: 0 }, kept: [], ...overrides,
+    deferred: { people: 0, enquiries: 0 }, outOfTime: false, kept: [], ...overrides,
   };
 }
 

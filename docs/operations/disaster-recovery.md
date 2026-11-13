@@ -52,7 +52,9 @@ measurement at the next drill.
   3. Copy back the rows that were lost; or, when the damage is wide, finalize the restore so the restored branch
      takes production's place (same endpoint, so the API's `DATABASE_URL` does not change).
 - **Before the service reopens:** run the retention pass (`POST /admin/cleanup`), which also redoes the nightly
-  24-month erasures, and repeat **every** erasure in the private erasure log since the restore point, whether it was
+  24-month erasures. One run erases at most 100 people and 200 enquiries and starts no new one after two and a
+  half minutes, so **repeat it until `data.people.deferred` is 0 for both**, and write each run's counts and
+  deferred numbers in the recovery record. Then repeat **every** erasure in the private erasure log since the restore point, whether it was
   done through the erase route or by hand ([erasure requests](erasure-requests.md)). The route's own
   `people.erased` audit rows live in the same database and are lost with it, so the log is the record. The
   privacy page promises that anything deleted since a backup is deleted again before the service reopens.

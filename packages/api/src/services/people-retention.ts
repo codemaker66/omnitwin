@@ -32,12 +32,14 @@ import type { PeopleTx } from "./people-records.js";
 //   - deletes each enquiry linked to nobody, sent from an address no live
 //     person at its venue holds, last in touch 24 months ago and never
 //     booked, with what hangs off it (its guest lead included).
-// The 24 months are calendar months, counted by the database
-// (now() - interval '24 months'), not 730 days.
+// The 24 months are calendar months: the run's time (the app's clock, or
+// the time a test gives) minus 24 months, counted by the database
+// (`interval '1 month'` times 24), not 730 days.
 //
-// Who is looked at is decided in SQL from their own records (linked
-// enquiries, deals, the events of those and of the organisations and
-// households they lead or belong to): someone in touch through those, and
+// Who is looked at is decided in SQL from their own records (their
+// enquiries, linked or sent from an address only they hold, their deals, the
+// events of those and of the organisations and households they lead or
+// belong to): someone in touch through those, and
 // someone kept for a booking or a contract with nothing left to remove, is
 // never a candidate, so they cannot crowd the front of the queue night after
 // night. The step then checks everything of theirs (lastInTouch, keptRecord),
@@ -46,7 +48,8 @@ import type { PeopleTx } from "./people-records.js";
 // One person or enquiry failing is counted (its SQLSTATE only) and the rest
 // go on; the next night tries it again. A night acts on at most
 // PEOPLE_PASS_LIMITS people and lone enquiries, oldest first, looks at no more
-// than `examined` of each, and reports what it left for the next.
+// than `examined` of each, starts no step after PEOPLE_PASS_BUDGET_MS, and
+// reports what it left for the next.
 //
 // A dry run does every step in one transaction, each in its own savepoint,
 // and rolls the whole of it back: the later steps see the earlier ones, as
@@ -64,6 +67,11 @@ export const PEOPLE_RETENTION_MONTHS = 24;
  *  2028) finishes over several nights instead of overrunning the job. */
 export const PEOPLE_PASS_LIMITS = { people: 100, enquiries: 200, examined: 500 } as const;
 
+/** No new step starts after this long, so the nightly job (cleanup.yml stops
+ *  it at five minutes) keeps time for the passes after this one. Measured on
+ *  the public run 43398620096: about 6 s an erasure, 3 s a look. */
+export const PEOPLE_PASS_BUDGET_MS = 150_000;
+
 export interface PeopleRetentionLimits {
   readonly people: number;
   readonly enquiries: number;
@@ -74,6 +82,8 @@ export interface PeopleRetentionOptions {
   readonly now?: Date;
   readonly dryRun?: boolean;
   readonly limits?: Partial<PeopleRetentionLimits>;
+  /** Milliseconds after which no new step starts (PEOPLE_PASS_BUDGET_MS). */
+  readonly budgetMs?: number;
 }
 
 export interface KeptPerson {
@@ -87,8 +97,10 @@ export interface PeopleRetentionResult {
   readonly people: number;
   /** People past the 24 months who are kept for a booking or a contract. */
   readonly keptForBooking: number;
-  /** People whose record is older than 24 months, still in touch through
-   *  something of theirs. */
+  /** People looked at and found in touch by the full check (lastInTouch: the
+   *  records merged into them, a deal made from their enquiry, an event of
+   *  their proposal's layout). Those in touch by their own records are never
+   *  looked at, and not counted here. */
   readonly inTouch: number;
   /** Enquiries deleted with a person, of a kept person, or on their own. */
   readonly enquiries: number;
@@ -96,8 +108,10 @@ export interface PeopleRetentionResult {
   readonly failed: number;
   /** Their SQLSTATEs, nothing else: this result reaches the public log. */
   readonly failedStates: readonly string[];
-  /** Due, and left for the next night by the limits. */
+  /** Due, and left for the next night by the limits or the time budget. */
   readonly deferred: { readonly people: number; readonly enquiries: number };
+  /** The time budget ran out before every due step was looked at. */
+  readonly outOfTime: boolean;
   /** Who was kept for a booking or a contract (ids only). */
   readonly kept: readonly KeptPerson[];
 }
@@ -144,10 +158,33 @@ function liveBooking(alias: string): SQL {
   return sql.raw(`${alias}."deleted_at" is null and (${alias}."kind" = 'ink' or (${alias}."kind" = 'hold' and ${alias}."status" = 'active'))`);
 }
 
-/** The person's own records, from the outer `contacts` row. */
+/** A live person (not deleted, merged away or erased), by alias. */
+function livePerson(alias: string): SQL {
+  return sql.raw(`${alias}."deleted_at" is null and ${alias}."merged_into_id" is null and ${alias}."erased_at" is null`);
+}
+
+/** The person's own records, from the outer `contacts` row, as
+ *  findPersonRecords finds them: their enquiries are those linked to them and
+ *  those linked to nobody from an address only they hold at the venue (on
+ *  their record, among their emails, or on an enquiry linked to them). The
+ *  records merged into them are left to the step, which follows the chain. */
 function ownRecords(): { linked: SQL; deals: SQL; events: SQL; proposals: SQL } {
   const id = outerColumn(contacts.id);
-  const linked = sql`select e."id" from "enquiries" as e where e."contact_id" = ${id}`;
+  const venue = outerColumn(contacts.venueId);
+  const addresses = sql`select own."address" from (
+      select lower(oc."email") as "address" from "contacts" as oc where oc."id" = ${id}
+      union select lower(op."value") from "contact_points" as op where op."contact_id" = ${id} and op."kind" = 'email'
+      union select lower(oe."email") from "enquiries" as oe where oe."contact_id" = ${id}
+      union select lower(og."guest_email") from "enquiries" as og where og."contact_id" = ${id}
+    ) as own
+    where own."address" is not null
+      and not exists (select 1 from "contacts" as rc where rc."venue_id" = ${venue} and rc."id" <> ${id} and ${livePerson("rc")}
+        and lower(rc."email") = own."address")
+      and not exists (select 1 from "contact_points" as rp join "contacts" as rpc on rpc."id" = rp."contact_id"
+        where rp."venue_id" = ${venue} and rp."kind" = 'email' and rp."contact_id" <> ${id} and ${livePerson("rpc")}
+          and lower(rp."value") = own."address")`;
+  const linked = sql`select e."id" from "enquiries" as e where e."venue_id" = ${venue} and (e."contact_id" = ${id}
+    or (e."contact_id" is null and (lower(e."email") in (${addresses}) or lower(e."guest_email") in (${addresses}))))`;
   const deals = sql`select o."id" from "opportunities" as o where o."primary_contact_id" = ${id}`;
   const accounts = sql`select ca."id" from "client_accounts" as ca where ca."primary_contact_id" = ${id}
     union select m."client_account_id" from "account_memberships" as m
@@ -169,10 +206,11 @@ function keptByOwnRecords(): SQL {
   )`;
 }
 
-/** A linked enquiry of theirs that never became a booking or a contract. */
+/** An enquiry of theirs (linked to them, or unlinked from their own
+ *  address) that never became a booking or a contract. */
 function spareEnquiry(): SQL {
   return sql`exists (
-    select 1 from "enquiries" as se where se."contact_id" = ${outerColumn(contacts.id)}
+    select 1 from "enquiries" as se where se."id" in (${ownRecords().linked})
       and not exists (select 1 from "bookings" as sb where sb."enquiry_id" = se."id" and ${liveBooking("sb")})
       and not exists (select 1 from "bookings" as sb0 join "bookings" as sb1 on sb1."event_id" = sb0."event_id"
         where sb0."enquiry_id" = se."id" and ${liveBooking("sb1")})
@@ -188,8 +226,8 @@ function ownLastContact(): SQL {
   const own = ownRecords();
   const id = outerColumn(contacts.id);
   return sql`greatest(
-    coalesce(${contacts.lastContactAt}, ${contacts.createdAt}),
-    (select max(greatest(e2."created_at", e2."updated_at")) from "enquiries" as e2 where e2."contact_id" = ${id}),
+    coalesce(${outerColumn(contacts.lastContactAt)}, ${outerColumn(contacts.createdAt)}),
+    (select max(greatest(e2."created_at", e2."updated_at")) from "enquiries" as e2 where e2."id" in (${own.linked})),
     (select max(greatest(o2."created_at", o2."updated_at")) from "opportunities" as o2 where o2."primary_contact_id" = ${id}),
     (select max(a."created_at") from "activities" as a where a."opportunity_id" in (${own.deals})),
     (select max(greatest(p2."created_at", p2."updated_at", p2."sent_at")) from "proposals" as p2 where p2."id" in (${own.proposals})),
@@ -205,7 +243,7 @@ function personDue(cutoff: Date): SQL {
   return and(
     isNull(contacts.erasedAt),
     isNull(contacts.mergedIntoId),
-    before(sql`coalesce(${contacts.lastContactAt}, ${contacts.createdAt})`, cutoff),
+    before(sql`coalesce(${outerColumn(contacts.lastContactAt)}, ${outerColumn(contacts.createdAt)})`, cutoff),
   ) ?? sql`false`;
 }
 
@@ -240,7 +278,7 @@ function loneEnquiryDue(cutoff: Date): SQL {
   return and(
     isNull(enquiries.contactId),
     before(sql`greatest(
-      ${enquiries.createdAt}, ${enquiries.updatedAt},
+      ${outerColumn(enquiries.createdAt)}, ${outerColumn(enquiries.updatedAt)},
       (select max(greatest(lb."created_at", lb."updated_at")) from "bookings" as lb where lb."enquiry_id" = ${id}),
       (select max(greatest(lq."created_at", lq."updated_at", lq."sent_at")) from "proposals" as lq where lq."enquiry_id" = ${id}),
       (select max(lc."created_at") from "proposal_comments" as lc where lc."proposal_id" in (${itsProposals}))
@@ -254,13 +292,13 @@ function loneEnquiryDue(cutoff: Date): SQL {
     sql`not exists (select 1 from "proposal_deposit_requests" as ldr where ldr."proposal_id" in (${itsProposals}))`,
     sql`not exists (
       select 1 from "contacts" as holder
-      where holder."venue_id" = ${outerColumn(enquiries.venueId)} and holder."erased_at" is null
+      where holder."venue_id" = ${outerColumn(enquiries.venueId)} and ${livePerson("holder")}
         and lower(holder."email") in ${asked}
     )`,
     sql`not exists (
       select 1 from "contact_points" as point join "contacts" as holder on holder."id" = point."contact_id"
       where point."venue_id" = ${outerColumn(enquiries.venueId)} and point."kind" = 'email'
-        and holder."erased_at" is null and lower(point."value") in ${asked}
+        and ${livePerson("holder")} and lower(point."value") in ${asked}
     )`,
   ) ?? sql`false`;
 }
@@ -287,12 +325,13 @@ async function runPass(db: Database, options: PeopleRetentionOptions): Promise<P
   const dryRun = options.dryRun ?? false;
   const limits: PeopleRetentionLimits = { ...PEOPLE_PASS_LIMITS, ...options.limits };
   const cutoff = await cutoffFor(db, now);
-  if (!dryRun) return runSteps({ db, outer: null, cutoff, now, limits, dryRun });
+  const deadline = Date.now() + (options.budgetMs ?? PEOPLE_PASS_BUDGET_MS);
+  if (!dryRun) return runSteps({ db, outer: null, cutoff, now, limits, dryRun, deadline });
 
   const rehearsed: { result: PeopleRetentionResult | null } = { result: null };
   try {
     await db.transaction(async (outer) => {
-      rehearsed.result = await runSteps({ db, outer, cutoff, now, limits, dryRun });
+      rehearsed.result = await runSteps({ db, outer, cutoff, now, limits, dryRun, deadline });
       throw new Rehearsal();
     });
   } catch (error) {
@@ -310,8 +349,20 @@ async function runSteps(input: {
   readonly now: Date;
   readonly limits: PeopleRetentionLimits;
   readonly dryRun: boolean;
+  /** Date.now() after which no new step starts. */
+  readonly deadline: number;
 }): Promise<PeopleRetentionResult> {
-  const { db, outer, cutoff, now, limits } = input;
+  const { db, outer, cutoff, now, limits, deadline } = input;
+  let outOfTime = false;
+  /** Whether another step may start: within the limits and the time. */
+  const mayGoOn = (actedOn: number, actLimit: number, looked: number): boolean => {
+    if (actedOn >= actLimit || looked >= limits.examined) return false;
+    if (Date.now() >= deadline) {
+      outOfTime = true;
+      return false;
+    }
+    return true;
+  };
   let people = 0;
   let keptForBooking = 0;
   let inTouch = 0;
@@ -358,11 +409,11 @@ async function runSteps(input: {
     .orderBy(asc(contacts.venueId), asc(contacts.id)));
   const duePeople = await candidates((reader) => reader.select({ id: contacts.id }).from(contacts)
     .where(personCandidate(cutoff))
-    .orderBy(asc(sql`coalesce(${contacts.lastContactAt}, ${contacts.createdAt})`), asc(contacts.id)));
+    .orderBy(asc(sql`coalesce(${outerColumn(contacts.lastContactAt)}, ${outerColumn(contacts.createdAt)})`), asc(contacts.id)));
   let peopleActedOn = 0;
   let peopleLooked = 0;
   for (const candidate of duePeople) {
-    if (peopleActedOn >= limits.people || peopleLooked >= limits.examined) break;
+    if (!mayGoOn(peopleActedOn, limits.people, peopleLooked)) break;
     peopleLooked += 1;
     const acted = await step(async (tx) => {
       // Locked and read again: someone may have written to them meanwhile.
@@ -377,7 +428,7 @@ async function runSteps(input: {
       // Kept for a booking or a contract: what never became one still goes.
       let removed = 0;
       for (const enquiry of records.enquiries) {
-        const one = await findEnquiryRecords(tx, enquiry, { reword: false });
+        const one = await findEnquiryRecords(tx, enquiry, { reword: false, writers: records.ids });
         if ((await keptRecord(tx, one)) !== null) continue;
         removed += (await removeEnquiryRecords(tx, one)).enquiries;
       }
@@ -388,11 +439,11 @@ async function runSteps(input: {
 
   const dueEnquiries = await candidates((reader) => reader.select({ id: enquiries.id }).from(enquiries)
     .where(loneEnquiryDue(cutoff))
-    .orderBy(asc(sql`greatest(${enquiries.createdAt}, ${enquiries.updatedAt})`), asc(enquiries.id)));
+    .orderBy(asc(sql`greatest(${outerColumn(enquiries.createdAt)}, ${outerColumn(enquiries.updatedAt)})`), asc(enquiries.id)));
   let enquiriesActedOn = 0;
   let enquiriesLooked = 0;
   for (const candidate of dueEnquiries) {
-    if (enquiriesActedOn >= limits.enquiries || enquiriesLooked >= limits.examined) break;
+    if (!mayGoOn(enquiriesActedOn, limits.enquiries, enquiriesLooked)) break;
     enquiriesLooked += 1;
     const acted = await step(async (tx) => {
       const [enquiry] = await tx.select(ENQUIRY_FIELDS).from(enquiries)
@@ -419,6 +470,7 @@ async function runSteps(input: {
       people: duePeople.length - peopleLooked,
       enquiries: dueEnquiries.length - enquiriesLooked,
     },
+    outOfTime,
     kept: [...kept, ...keptAlready],
   };
 }
