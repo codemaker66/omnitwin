@@ -248,7 +248,7 @@ One table, `jobs`. Each row is one piece of work.
 | `payload` | Ids only, never names, addresses or amounts; checked by Zod when written and again when run, and limited in size by the database |
 | `run_at` | When it is due |
 | `state` | `queued`, `running`, `done`, `dead` (gave up; a person is told) or `abandoned` (a person closed it, with a note) |
-| `attempts`, `max_attempts`, `lost_claims`, `last_error` | The tries so far; how often a server took it and never answered; and the last reason, with personal details scrubbed by the existing `scrubErrorMessage` |
+| `attempts`, `max_attempts`, `lost_claims`, `last_error` | The tries so far; how often a server took it and never answered; and the last reason, scrubbed the way a send's error already is: query parameters and any email address removed (`services/email.ts:204-212`) |
 | `claim_token`, `claimed_by`, `claim_expires_at` | A fresh token for each time it is taken, which server took it, and until when |
 | `resolved_by`, `resolved_at`, `resolution` | Who closed a dead job, when, and their note |
 
@@ -516,12 +516,13 @@ version of the master key scrambled it. One row for each venue and purpose.
   becomes `dead`, a lost claim, a venue that has fallen back to "via Venviewer", the email allowance nearly or
   fully used, and a worker that cannot reach the database. Each carries the kind, the job and the venue, never
   an address. Who is rung, and how, is settled with the trust pack (piece J). These alerts need Sentry to be
-  switched on in production; the page and the release check below do not.
+  switched on in production; the page and the daily check below do not.
 - **A check from outside**, because a list that has stopped cannot report itself. A daily job tells Sentry each
   time it has run, and Sentry alerts if a day passes without hearing. A route beside the health routes reports
   from the server's memory whether the worker is alive, when it last finished a pass, and whether it is stuck in
   a handler, without waking the database.
-- **A check at every release** (section 7, last row).
+- **A daily check that nothing is stuck unseen** (section 7, last row), written to the log whether or not Sentry
+  is on.
 
 ### 5.8 What it leaves alone
 
@@ -579,7 +580,7 @@ beside the code: from now on the list owns timing, and the code owns being safe 
 | One domain, one venue | `unique (domain)` | A second venue claiming it is refused |
 | A notice is handled once; a message is stored once | Unique ids, written first | The replay test in section 8 |
 | One key for each venue and purpose | `unique (venue_id, purpose)`; scrambled columns `NOT NULL` | A row moved to another venue will not open |
-| Nothing is stuck unseen | A read that runs in CI and after each release, as the bind's does. It finds: no job due for more than two hours; no `running` job whose claim ran out an hour ago; no `queued` send more than a day old; no queued job of a kind or version the released code cannot read; no stored key whose master key the server lacks. It looks only at rows the list wrote, so old "pending" sends from before do not trip it | It fails the release check and raises the alert |
+| Nothing is stuck unseen | A read that runs in CI, once by hand after the first deploy as the bind's did, and every day inside production from the list's own daily job. It finds: no job due for more than two hours; no `running` job whose claim ran out an hour ago; no `queued` send more than a day old; no queued job of a kind or version the released code cannot read; no stored key whose master key the server lacks. It looks only at rows the list wrote, so old "pending" sends from before do not trip it | It fails CI on a test database, and in production it raises the alert |
 
 ## 8. Tests first
 
@@ -736,7 +737,7 @@ lock or a compare-and-set.
   would not have worked as written, and asked five questions. Each is answered in the text above: the old and new
   sending paths (5.3); the provider's "in progress" answer (5.3); time limits that could not be enforced, and a
   token for each claim (5.1); deploy overlap and roll-back (5.1); a job that takes its server down (4.5, 5.1);
-  matching a reply by its headers, which is dropped (5.5); the release check tripping on old rows (section 7);
+  matching a reply by its headers, which is dropped (5.5); the stuck-work check tripping on old rows (section 7);
   the undo for stage 1 (section 9); the clean-up as one long job (section 6); where replies show before piece F
   (5.5); what production sends as today (5.4); when the sender is fixed (5.3); who sees what (5.7); and what the
   hourly plan costs (5.1).
