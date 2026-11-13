@@ -36,6 +36,65 @@ export const WEB_VITAL_P75_TARGETS: Readonly<Record<WebVitalName, number>> = {
  *  of a release, then gone (the nightly cleanup). */
 export const WEB_VITAL_RETENTION_DAYS = 90;
 
+export type WebVitalRating = (typeof WEB_VITAL_RATINGS)[number];
+
+/**
+ * The step each vital is kept to, in the browser before it is sent and on the
+ * server before it is held (the release lead's B1, 13 November 2026). A
+ * value's precision is its browser's clock: Chromium's is a tenth of a
+ * millisecond, WebKit's and Gecko's a millisecond, and a browser resisting
+ * fingerprinting (Firefox and Tor Browser since Firefox 103) clocks to 1/60 s.
+ * Kept as sent, a fractional TTFB among whole ones would be the one Chromium
+ * report of its batch. On a 10 ms step every engine's values share one grid,
+ * and a 1/60 s clock's land on steps that most ordinary values share too.
+ * Event timing is already rounded to 8 ms in every engine. CLS comes only from
+ * Chromium and is a score of how far things moved, not a clock's reading, and
+ * a shift's score follows the screen's own size, which an in-app browser's
+ * user agent can name. In hundredths a shift gives about half as many
+ * distinct values across screens as in thousandths; one whose score sits near
+ * a step's edge still splits ordinary screens, so a CLS value can stand alone
+ * in its group (docs/engineering/web-vitals.md names it among the residuals).
+ * Each step is still far finer than goal 07's targets (CLS 0.1).
+ */
+export const WEB_VITAL_STEPS: Readonly<Record<WebVitalName, number>> = {
+  LCP: 10,
+  INP: 10,
+  CLS: 0.01,
+  TTFB: 10,
+};
+
+/** web-vitals' own rating bounds (6.2.3): "good" up to the first,
+ *  "needs-improvement" up to the second, "poor" above it. */
+export const WEB_VITAL_RATING_BOUNDS: Readonly<Record<WebVitalName, readonly [number, number]>> = {
+  LCP: [2_500, 4_000],
+  INP: [200, 500],
+  CLS: [0.1, 0.25],
+  TTFB: [800, 1_800],
+};
+
+/** A value on its vital's step (WEB_VITAL_STEPS). CLS is counted in
+ *  hundredths, so equal steps are the same number exactly. */
+export function stepWebVitalValue(name: WebVitalName, value: number): number {
+  if (name === "CLS") return Math.round(value * 100) / 100;
+  return Math.round(value / WEB_VITAL_STEPS[name]) * WEB_VITAL_STEPS[name];
+}
+
+/** The rating a value earns, as web-vitals rates it. */
+export function rateWebVital(name: WebVitalName, value: number): WebVitalRating {
+  const [good, poor] = WEB_VITAL_RATING_BOUNDS[name];
+  if (value > poor) return "poor";
+  return value > good ? "needs-improvement" : "good";
+}
+
+/** A sample as it may be sent and kept: its value on the vital's step, and
+ *  the rating that value earns, so neither says more than the step does. */
+export function stepWebVitalSample<Name extends WebVitalName>(
+  sample: { readonly name: Name; readonly value: number },
+): { readonly name: Name; readonly value: number; readonly rating: WebVitalRating } {
+  const value = stepWebVitalValue(sample.name, sample.value);
+  return { name: sample.name, value, rating: rateWebVital(sample.name, value) };
+}
+
 /**
  * The pages a report may name: the pattern of every route src/router.tsx
  * serves in production, and "/*" for any other (a dev fixture, the 404). A
@@ -147,3 +206,22 @@ export const WebVitalsReportSchema = z.object({
     .refine((metrics) => new Set(metrics.map((metric) => metric.name)).size === metrics.length, { message: "Each vital once" }),
 }).strict();
 export type WebVitalsReport = z.infer<typeof WebVitalsReportSchema>;
+
+/**
+ * Every report crosses the wire at exactly this many bytes (#309's round-4
+ * review, 13 November 2026). The host's request log records each request's
+ * size, and a report's length would otherwise follow what it carries: how
+ * many vitals, their digits and their ratings ("needs-improvement" is longer
+ * than "good"), its page and its device class. The browser pads every report
+ * with trailing spaces to this size, which JSON ignores, and the API refuses
+ * any other. The longest report the browser sends is about 320 bytes, and any
+ * the schema accepts stays under 400.
+ */
+export const WEB_VITALS_REPORT_BYTES = 512;
+
+/** A report's JSON padded with spaces to WEB_VITALS_REPORT_BYTES, or null if
+ *  it is longer, or holds anything but printable ASCII (one byte each). */
+export function padWebVitalsReport(json: string): string | null {
+  if (json.length > WEB_VITALS_REPORT_BYTES || !/^[\x20-\x7e]*$/u.test(json)) return null;
+  return json + " ".repeat(WEB_VITALS_REPORT_BYTES - json.length);
+}

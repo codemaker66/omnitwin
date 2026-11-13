@@ -23,6 +23,10 @@
   --fr-ochre: #c98a5b;
   --fr-rule: #d5cbb6;
   --fr-arc: #c6b795;
+  /* The composer's problem words and an invalid field's underline: 5.9:1 on
+     --fr-paper, 5.4:1 on --fr-paper-2. Dark paper takes the ochre instead
+     (a11y-3: this rust there was 2.44:1). */
+  --fr-alert: #9a3412;
   color-scheme: light;
   --fr-display: "Fraunces", "Georgia", serif;
   --fr-body: "Newsreader", "Georgia", serif;
@@ -62,6 +66,9 @@
     --fr-green-soft: rgba(143, 195, 168, 0.16);
     --fr-ochre: #c98a5b;
     --fr-rule: #3a332a;
+    /* The nearest existing token to the light theme's rust that reads on dark
+       paper: 6.2:1 on --fr-paper, 5.7:1 on --fr-paper-2. */
+    --fr-alert: var(--fr-ochre);
     /* Against dark paper the drawn arch needs warmth to read at all. */
     --fr-arc: rgba(201, 138, 91, 0.55);
     --fr-toplight: rgba(255, 250, 238, 0.06);
@@ -78,6 +85,7 @@
   --fr-green-soft: rgba(143, 195, 168, 0.16);
   --fr-ochre: #c98a5b;
   --fr-rule: #3a332a;
+  --fr-alert: var(--fr-ochre);
   --fr-arc: rgba(201, 138, 91, 0.55);
   --fr-toplight: rgba(255, 250, 238, 0.06);
   --fr-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.035 0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23g)'/%3E%3C/svg%3E");
@@ -1445,14 +1453,14 @@
   margin-top: 6px;
   font-family: var(--fr-ui);
   font-size: 13px;
-  color: var(--fr-alert, #9a3412);
+  color: var(--fr-alert);
 }
 .fr-enq-problem-send {
   margin: 0 0 14px;
   max-width: 52ch;
 }
 .fr-enq-field input[aria-invalid="true"] {
-  border-bottom-color: var(--fr-alert, #9a3412);
+  border-bottom-color: var(--fr-alert);
 }
 /* The mailto is no longer the primary action — it is the fallback, and it
    should read as one without becoming hard to find. */

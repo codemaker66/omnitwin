@@ -40,7 +40,7 @@ vi.mock("../services/web-vitals.js", () => ({
   removeExpiredWebVitalSamples: vitalsMock,
 }));
 
-const { runScheduledCleanup } = await import("../scripts/run-cleanup.js");
+const { describeFailure, runScheduledCleanup } = await import("../scripts/run-cleanup.js");
 const { DietaryMemoryWriteError } = await import("../services/dietary-memory.js");
 const { DietaryRetentionError } = await import("../services/dietary-retention.js");
 
@@ -170,5 +170,21 @@ describe("runScheduledCleanup", () => {
     expect(outcome).toBeInstanceOf(AggregateError);
     expect((outcome as AggregateError).errors).toEqual([first, second]);
     expect(vitalsMock).toHaveBeenCalledTimes(1);
+  });
+
+  // The release lead's M2 (13 November 2026), as #247 prints it: the job's
+  // last line is in a public log, and a database error's message quotes the
+  // query's parameters.
+  it("prints a failed job's errors by name and SQLSTATE only, never their messages", () => {
+    const driver = Object.assign(
+      new Error("Failed query: update \"configurations\" set \"dietary_note\" = null\nparams: Severe walnut allergy"),
+      { code: "57014" },
+    );
+    const failure = new DietaryRetentionError(driver);
+    expect(describeFailure(failure)).toBe("DietaryRetentionError (SQLSTATE 57014)");
+    expect(describeFailure(driver)).toBe("Error (SQLSTATE 57014)");
+    expect(describeFailure(new AggregateError([failure, new Error("params: jane.smith@example.test")])))
+      .toBe("DietaryRetentionError (SQLSTATE 57014); Error");
+    expect(describeFailure("a string")).toBe("string");
   });
 });

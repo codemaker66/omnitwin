@@ -6912,11 +6912,13 @@ export const decisionEvents = pgTable("decision_events", {
 // Migration 0109: field web vitals (goal 07).
 //
 // One row per vital of a sampled page load: the route's pattern (never an
-// address), a device class, the value and its rating; not how the page was
-// reached. Nothing about the visitor. Only the UTC day it arrived, not the
-// moment, and written in shuffled hourly batches (createWebVitalsBatch), so
-// neither row order, xmin nor restore history pairs a row with a host's
-// request log. Kept WEB_VITAL_RETENTION_DAYS, then removed by the nightly
+// address), a device class, the value on its vital's step (WEB_VITAL_STEPS, so
+// its precision names no browser) and the rating it earns; not how the page
+// was reached. Nothing about the visitor. Only the UTC day it arrived, not the
+// moment, and written in shuffled hourly batches of at least ten samples of
+// one vital, page, device class and day (createWebVitalsBatch), so neither row
+// order, xmin nor restore history pairs a row with a host's request log. Kept
+// WEB_VITAL_RETENTION_DAYS, then removed by the nightly
 // cleanup. Written only by routes/public-web-vitals.ts, through its batch.
 // ---------------------------------------------------------------------------
 

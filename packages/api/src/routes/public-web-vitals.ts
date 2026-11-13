@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { WebVitalsReportSchema } from "@omnitwin/types";
+import { WEB_VITALS_REPORT_BYTES, WebVitalsReportSchema } from "@omnitwin/types";
 import type { Database } from "../db/client.js";
 import {
   WEB_VITALS_ADDRESS_KEY_ROTATION_MS,
@@ -29,11 +29,13 @@ import {
 // minutes (createAddressKey), so it never holds the address itself, and API
 // tracing leaves this route out (observability/sentry.ts).
 //
-// A report is not written when it arrives: it is held, without anything
-// about who sent it, and written on the hour once its group (page, device
-// class, day and set of vitals) holds ten, in a shuffled batch
-// (createWebVitalsBatch), so a stored row can be narrowed only to the ten or
-// more reports of its group, never to the one request that brought it.
+// A report is not written when it arrives: its samples are held, each on its
+// vital's step and without anything about who sent it, and written on the
+// hour once their group (one vital of one page, device class and day) holds
+// ten, in a shuffled batch (createWebVitalsBatch). Every report is sent at one
+// size, so the host's log of its size says nothing of what it carries. On
+// what a row and that log share, a row then narrows only to its group of ten
+// or more, short of the residuals docs/engineering/web-vitals.md names.
 // ---------------------------------------------------------------------------
 
 /** A report is a few hundred bytes; anything far larger is not one. */
@@ -53,9 +55,9 @@ export interface PublicWebVitalsOptions {
   dailyReportCeiling?: number;
   /** The limiter's key for an address; tests pass one to see it is used. */
   addressKey?: AddressKey;
-  /** Where reports wait to be written; tests pass one to write on demand. */
+  /** Where samples wait to be written; tests pass one to write on demand. */
   batch?: WebVitalsBatch;
-  /** How often the held reports are written (hourly). */
+  /** How often the held samples are written (hourly). */
   flushEveryMs?: number;
 }
 
@@ -71,8 +73,11 @@ export async function publicWebVitalsRoutes(server: FastifyInstance, opts: Publi
     try {
       await batch.flush({ closing });
     } catch (error) {
-      // Nothing of any visitor is in this line: the batch never holds one.
-      server.log.error({ err: error }, "Web vitals: a batch could not be written and is dropped");
+      // Nothing of any visitor is in this line: the batch never holds one. The
+      // error says which: the database refused the batch (dropped), the write
+      // was unfinished at its bound (it may still be stored), the write before
+      // was still unfinished, or a close had too little time left to write.
+      server.log.error({ err: error }, "Web vitals: a batch write failed or was given up on");
     }
   };
   const writing = setInterval(() => { void write(false); }, opts.flushEveryMs ?? WEB_VITALS_BATCH_EVERY_MS);
@@ -83,15 +88,22 @@ export async function publicWebVitalsRoutes(server: FastifyInstance, opts: Publi
     await write(true);
   });
 
+  // In this route's scope only, a JSON body arrives as its text, as a beacon's
+  // does, so the route can measure what was sent before reading it.
+  server.removeContentTypeParser("application/json");
+  server.addContentTypeParser("application/json", { parseAs: "string" }, (_request, text, done) => {
+    done(null, text);
+  });
+
   server.post("/web-vitals", {
     bodyLimit: REPORT_BODY_LIMIT_BYTES,
     // No per-request access line: it would carry remoteAddress, and the
     // notice says the address is not kept with the measurement. Errors still
     // log (as POST /public/quiz-runs).
     logLevel: "warn",
-    // A page load sends one report, and another if it is restored from the
-    // back/forward cache; an office shares one address. Keyed without the
-    // address itself (createAddressKey).
+    // A page load sends one report, and another for a vital first measured
+    // after a hide; an office shares one address. Keyed without the address
+    // itself (createAddressKey).
     config: { rateLimit: { max: 60, timeWindow: "1 minute", keyGenerator: (request) => addressKey.keyFor(request.ip) } },
   }, async (request, reply) => {
     reply.header("Cache-Control", "no-store");
@@ -104,7 +116,15 @@ export async function publicWebVitalsRoutes(server: FastifyInstance, opts: Publi
     if (request.headers["sec-gpc"] === "1" || request.headers["dnt"] === "1") {
       return reply.status(204).send();
     }
-    const parsed = WebVitalsReportSchema.safeParse(readBody(request.body));
+    // Every report is sent at one size (WEB_VITALS_REPORT_BYTES): the host's
+    // request log records each request's size, which would otherwise follow
+    // what the report carries. One of any other length is refused. The body
+    // itself is measured, not its Content-Length, which a proxy may drop.
+    const body: unknown = request.body;
+    if (typeof body !== "string" || Buffer.byteLength(body) !== WEB_VITALS_REPORT_BYTES) {
+      return reply.status(400).send({ error: "Not a web vitals report", code: "VALIDATION_ERROR" });
+    }
+    const parsed = WebVitalsReportSchema.safeParse(readBody(body));
     if (!parsed.success) {
       return reply.status(400).send({ error: "Not a web vitals report", code: "VALIDATION_ERROR" });
     }

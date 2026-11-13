@@ -38,6 +38,7 @@ import { removeUnusedRememberedNotes } from "../services/dietary-memory.js";
 import { removeLapsedDietaryNotes } from "../services/dietary-retention.js";
 import { removeExpiredEngagementEvents } from "../services/enquiry-funnel.js";
 import { removeExpiredWebVitalSamples } from "../services/web-vitals.js";
+import { sqlStateOf } from "../utils/sql-state.js";
 
 export interface ScheduledCleanupResult {
   readonly deletedConfigs: number;
@@ -52,6 +53,27 @@ export interface ScheduledCleanupResult {
   readonly rememberedNotesRemoved: number;
   readonly engagementEventsRemoved: number;
   readonly webVitalSamplesRemoved: number;
+}
+
+/** The SQLSTATE a failure carries: its own (the retention errors keep it on
+ *  `sqlState`), the driver's, or its cause's. */
+function stateOf(failure: unknown): string | null {
+  if (typeof failure === "object" && failure !== null && "sqlState" in failure && typeof failure.sqlState === "string") {
+    return failure.sqlState;
+  }
+  return sqlStateOf(failure);
+}
+
+/** What a failure may say in this public log: each error's name and SQLSTATE,
+ *  never its message (a database error's message carries the query's
+ *  parameters: the notes, names and addresses a pass was removing). */
+export function describeFailure(failure: unknown): string {
+  const failures: readonly unknown[] = failure instanceof AggregateError ? (failure.errors as unknown[]) : [failure];
+  return failures.map((one) => {
+    const name = one instanceof Error ? one.name : typeof one;
+    const state = stateOf(one);
+    return state === null ? name : `${name} (SQLSTATE ${state})`;
+  }).join("; ");
 }
 
 /**
@@ -150,7 +172,8 @@ async function main(): Promise<void> {
 const entry = process.argv[1];
 if (entry !== undefined && import.meta.url === pathToFileURL(resolve(entry)).href) {
   main().catch((err: unknown) => {
-    console.error("[cleanup] Fatal error:", err);
+    // Never the error itself: its message can quote what a pass was removing.
+    console.error(`[cleanup] Fatal error: ${describeFailure(err)}`);
     process.exit(1);
   });
 }
