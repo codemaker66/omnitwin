@@ -218,9 +218,11 @@ export interface PdfRule {
   readonly x2: number;
   /** Height, PDF points from the page's bottom (as a text line's baseline). */
   readonly y: number;
+  /** The stroke's width when set right after the segment (a rule's own), else null. */
+  readonly weight: number | null;
 }
 
-const STRAIGHT_STROKE = /(?<![\w/])([qQ])(?![\w])|(-?[\d.]+) (-?[\d.]+) (-?[\d.]+) (-?[\d.]+) (-?[\d.]+) (-?[\d.]+) cm|(-?[\d.]+) (-?[\d.]+) m\s+(-?[\d.]+) (-?[\d.]+) l\s+(?!-?[\d.]+ -?[\d.]+ l)/gu;
+const STRAIGHT_STROKE = /(?<![\w/])([qQ])(?![\w])|(-?[\d.]+) (-?[\d.]+) (-?[\d.]+) (-?[\d.]+) (-?[\d.]+) (-?[\d.]+) cm|(-?[\d.]+) (-?[\d.]+) m\s+(-?[\d.]+) (-?[\d.]+) l\s+(?!-?[\d.]+ -?[\d.]+ l)(?:([\d.]+) w)?/gu;
 
 /**
  * Every horizontal line drawn as one segment, page by page: the sheet's
@@ -242,7 +244,7 @@ export function pdfRules(buf: Buffer): PdfRule[][] {
       }
       const [x1, y1] = apply(ctm, Number(op[8]), Number(op[9]));
       const [x2, y2] = apply(ctm, Number(op[10]), Number(op[11]));
-      if (Math.abs(y1 - y2) < 0.01) rules.push({ x: Math.min(x1, x2), x2: Math.max(x1, x2), y: y1 });
+      if (Math.abs(y1 - y2) < 0.01) rules.push({ x: Math.min(x1, x2), x2: Math.max(x1, x2), y: y1, weight: op[12] === undefined ? null : Number(op[12]) });
     }
     return rules;
   });

@@ -244,9 +244,13 @@ export function wrapLines(doc: Doc, style: TextStyle, text: string, width: numbe
       if (fits(candidate)) { line = candidate; continue; }
       if (line.length > 0) out.push(line);
       if (fits(word)) { line = word; continue; }
-      const broken = breakWord(doc, style, word, width);
+      // A word too long for the line breaks between characters; a middle dot
+      // kept with it stays on its last piece, so it cannot start a line.
+      const dotted = word.endsWith(" ·");
+      const bare = dotted ? word.slice(0, -2) : word;
+      const broken = breakWord(doc, style, bare, dotted ? Math.max(1, width - textWidth(doc, style, " ·")) : width);
       out.push(...broken.lines);
-      line = broken.rest;
+      line = dotted ? `${broken.rest} ·` : broken.rest;
     }
     out.push(line);
   }
@@ -256,17 +260,20 @@ export function wrapLines(doc: Doc, style: TextStyle, text: string, width: numbe
 
 /**
  * The text wrapped with its lines evened out: the narrowest width that keeps
- * the line count `width` gives, so a short last word never sits alone. Text
- * on one line stays as it is.
+ * the line count `width` gives, and every word as `width` keeps it, so a short
+ * last word never sits alone and no word is broken to even the lines. Text on
+ * one line stays as it is.
  */
 export function balancedLines(doc: Doc, style: TextStyle, text: string, width: number): readonly string[] {
   const lines = wrapLines(doc, style, text, width);
   if (lines.length < 2) return lines;
+  const words = lines.join(" ");
+  const keeps = (trial: readonly string[]): boolean => trial.length === lines.length && trial.join(" ") === words;
   let low = width / 2;
   let high = width;
   for (let step = 0; step < 8; step++) {
     const middle = (low + high) / 2;
-    if (wrapLines(doc, style, text, middle).length === lines.length) high = middle;
+    if (keeps(wrapLines(doc, style, text, middle))) high = middle;
     else low = middle;
   }
   return wrapLines(doc, style, text, high);

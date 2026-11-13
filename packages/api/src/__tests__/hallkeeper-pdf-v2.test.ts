@@ -211,16 +211,27 @@ describe("section rules", () => {
     return done;
   }
 
-  /** A rule across the page heads what follows it: never above the top margin, never alone at a foot. */
+  /**
+   * Every rule heads what follows it, in its own span: never above the top
+   * margin, never alone at a foot, whether it crosses the page, a column or a
+   * step. A setup line's own rule (0.4 pt) closes the line above it instead.
+   * The plan's scale bar, 80 pt at most, is not a rule.
+   */
   function expectRulesHeadText(buf: Buffer): void {
     const text = pdfPages(buf);
+    let checked = 0;
     for (const [index, rules] of pdfRules(buf).entries()) {
-      for (const rule of rules.filter((candidate) => candidate.x <= MARGIN + 0.5 && candidate.x2 >= PAGE_W - MARGIN - 0.5)) {
-        const where = `page ${String(index + 1)}, rule ${rule.y.toFixed(1)} pt up`;
+      for (const rule of rules.filter((candidate) => candidate.x2 - candidate.x > 90)) {
+        const where = `page ${String(index + 1)}, rule ${rule.x.toFixed(1)}–${rule.x2.toFixed(1)} at ${rule.y.toFixed(1)} pt up`;
+        const inSpan = (line: PdfLine): boolean => line.x2 > rule.x && line.x < rule.x2;
         expect(rule.y, where).toBeLessThanOrEqual(PAGE_H - MARGIN);
-        expect(text[index]?.some((line) => line.y < rule.y) ?? false, where).toBe(true);
+        const closes = rule.weight === 0.4;
+        const near = text[index]?.some((line) => inSpan(line) && (closes ? line.y > rule.y && line.y - rule.y < 40 : line.y < rule.y)) ?? false;
+        expect(near, `${where}: ${closes ? "closes no line above" : "heads nothing below"}`).toBe(true);
+        checked += 1;
       }
     }
+    expect(checked).toBeGreaterThan(0);
   }
 
   it("heads the planner's notes wherever they run: under the day, below it, or before the setup", async () => {
@@ -435,7 +446,8 @@ describe("times are the venue's", () => {
     const text = await factsOf("Europe/London");
     expect(text).toMatch(/READY BY 17:00/u);
     expect(text).toMatch(/GUESTS IN 18:30/u);
-    expect(text).toContain("90 min before the start");
+    // Measured from when guests come in, the fact beside it, not a "start" the sheet no longer names.
+    expect(text).toContain("90 min before guests come in");
   });
 
   it("prints a different venue's wall clock for the same instant and names its zone", async () => {
@@ -449,7 +461,7 @@ describe("times are the venue's", () => {
     const text = pdfText(await generateSheetPdfV2({ ...BASE_SHEET, timing: { eventStart: "2026-06-15T17:30:00.000Z", setupBy: null, bufferMinutes: null } }));
     expect(text).toContain("No changeover time for this room");
     expect(text).toMatch(/GUESTS IN 18:30/u);
-    expect(text).not.toContain("min before the start");
+    expect(text).not.toContain("min before guests come in");
   });
 
   it("says the times are not set rather than leaving a silent gap", async () => {
@@ -695,6 +707,11 @@ describe("A, then D (T-696): the brief with the room, then the setup to tick", (
     expect(first.indexOf("Keep the north aisle clear for the photographer.")).toBeGreaterThan(first.indexOf("THE DAY, IN ORDER"));
     expect(first).toContain("Florist unloads at the service door.");
     expect(first).not.toContain("above the setup's steps");
+    // In the left column, under the day, not across the page.
+    const words = (pages[0] ?? []).find((line) => line.text === "Keep the north aisle clear for the photographer.");
+    if (words === undefined) throw new Error("page 1 should carry the planner's words on a line of their own");
+    expect(words.x).toBeCloseTo(MARGIN, 0);
+    expect(words.x2).toBeLessThanOrEqual(MARGIN + Math.round((PAGE_W - 2 * MARGIN) * 0.6));
   });
 
   it("opens the setup with the planner's words when page 1 is full, and page 1 says where they are", async () => {
@@ -725,7 +742,8 @@ describe("A, then D (T-696): the brief with the room, then the setup to tick", (
   it("lists the plan's numbered notes that no setup line carries, after the steps", async () => {
     const text = pdfText(await generateSheetPdfV2(withSeatNotes(2)));
     const listed = text.indexOf("NOTES ON THE PLAN");
-    expect(listed).toBeGreaterThan(text.indexOf("Final touches"));
+    // The last "Final touches" is the final step's head; the first is the rail's station.
+    expect(listed).toBeGreaterThan(text.lastIndexOf("Final touches"));
     expect(text.indexOf("Seat 1: guest needs the aisle side", listed)).toBeGreaterThan(listed);
     expect(text.indexOf("Seat 2: guest needs the aisle side", listed)).toBeGreaterThan(listed);
   });
@@ -749,5 +767,233 @@ describe("A, then D (T-696): the brief with the room, then the setup to tick", (
     const next = second.find((line) => line.text === "Cake Cutting Table");
     if (lastNote === undefined || next === undefined) throw new Error("page 2 should carry the round tables' notes and the cake table");
     expect(lastNote.y - next.y).toBeLessThan(30);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// What #415's review found (12 November 2026): care facts that carry a clock
+// time, the planner's words when page 1 is full or nothing is placed, the
+// rail's times, the plan's names and rings, and the branches the first tests
+// left out.
+// ---------------------------------------------------------------------------
+
+/** An instant on the wedding's own clock: BST on Saturday 24 October 2026, or `dayOffset` days away. */
+function bst(hour: number, minute = 0, dayOffset = 0): string {
+  return new Date(Date.UTC(2026, 9, 24 + dayOffset, hour - 1, minute)).toISOString();
+}
+
+/** The wedding with its instructions changed. */
+function weddingWith(change: (instructions: EventInstructions) => EventInstructions): HallkeeperSheetV2 {
+  const base = weddingSheet();
+  return { ...base, instructions: change(base.instructions ?? EMPTY_INSTRUCTIONS) };
+}
+
+/** The wedding with `count` more door times in its day. */
+function weddingWithDoorTimes(count: number): HallkeeperSheetV2 {
+  return weddingWith((instructions) => ({ ...instructions, doorSchedule: { entries: [
+    ...(instructions.doorSchedule?.entries ?? []),
+    { label: "Saloon door", events: Array.from({ length: count }, (_, n) => ({
+      at: bst(15 + Math.floor(n / 2), (n % 2) * 30), kind: n % 2 === 0 ? "open" as const : "lock" as const, note: "" })) },
+  ] } }));
+}
+
+/** The wedding with `count` more allergy sentences, each a line of its own in Keep in view. */
+function weddingWithAllergies(count: number): HallkeeperSheetV2 {
+  return weddingWith((instructions) => {
+    const dietary = instructions.dietary;
+    if (dietary === null) throw new Error("the wedding records its dietary needs");
+    const more = Array.from({ length: count }, (_, n) => `Table ${String((n % 11) + 1)}: one guest avoids sesame.`).join(" ");
+    return { ...instructions, dietary: { ...dietary, otherAllergies: `${dietary.otherAllergies} ${more}` } };
+  });
+}
+
+describe("what #415's review found (T-696)", () => {
+  /** A care ring as pdfkit writes it: a move to its left edge, four curves, then a brick stroke. */
+  const BRICK_RING = /(-?[\d.]+) (-?[\d.]+) m\n(?:-?[\d.]+ ){5}-?[\d.]+ c\n(?:-?[\d.]+ ){4}(-?[\d.]+) -?[\d.]+ c\n(?:[-\d. ]+ c\n){2}h\n[\d.]+ w\n\/DeviceRGB CS\n0\.5411764705882353 0\.20784313725490197 0\.13333333333333333 SCN\nS/gu;
+  const pagesOf = async (sheet: HallkeeperSheetV2): Promise<PdfLine[][]> => pdfPages(await generateSheetPdfV2(await withPaperCheck(sheet, true)));
+  const PLANNER = "Petals only on the stairs";
+  const LEFT_W = Math.round((PAGE_W - 2 * MARGIN) * 0.6);
+
+  it("keeps a clock time and a link whole in a care fact, setting a place apart only at its colon", async () => {
+    const sheet = weddingWith((instructions) => ({
+      ...instructions,
+      dietary: instructions.dietary === null ? null : { ...instructions.dietary,
+        otherAllergies: "Table 5, seat 4: severe peanut allergy. Nut-free desserts go out at 21:15 with the cake." },
+      accessibility: instructions.accessibility === null ? null : { ...instructions.accessibility,
+        notes: "Wheelchair user arrives 14:15, needs the lift. Route map at https://t.co/x1." },
+    }));
+    const pages = await pagesOf(sheet);
+    for (const [index, page] of pages.slice(0, 2).entries()) {
+      const text = textOf(page);
+      for (const words of ["Nut-free desserts go out at 21:15 with the cake.", "Wheelchair user arrives 14:15, needs the lift.", "Route map at https://t.co/x1."]) {
+        expect(text, `page ${String(index + 1)}: ${words}`).toContain(words);
+      }
+    }
+    expect((pages[0] ?? []).map((line) => line.text)).toContain("Table 5, seat 4");
+  });
+
+  it("dates a rail time due on another day, and marks one due after the room is ready", async () => {
+    const sheet = weddingWith((instructions) => ({ ...instructions, phaseDeadlines: instructions.phaseDeadlines.map((deadline) =>
+      deadline.phase === "structure" ? { ...deadline, deadline: bst(16, 0, -1) }
+        : deadline.phase === "final" ? { ...deadline, deadline: bst(13, 45) } : deadline) }));
+    const second = textOf((await pagesOf(sheet))[1] ?? []);
+    const rail = second.slice(second.indexOf("SETUP, IN ORDER"), second.indexOf("Guests in"));
+    expect(rail).toContain("Structure Fri 16:00");
+    expect(rail).toContain("Furniture 11:00");
+    expect(rail).toContain("Final touches 13:45 late");
+    expect(rail).not.toContain("11:00 late");
+  });
+
+  it("prints the planner's words under the columns when nothing is placed, and points nowhere", async () => {
+    const words = "Keep the north aisle clear for the photographer between courses and check the candles before service. ".repeat(12).trim();
+    for (const keepPlan of [true, false]) {
+      const base = weddingWith((instructions) => ({ ...instructions, specialInstructions: words }));
+      const sheet: HallkeeperSheetV2 = { ...base, phases: [], totals: { entries: [], totalRows: 0, totalItems: 0 }, ...(keepPlan ? {} : { floorPlan: null }) };
+      const text = textOf((await pagesOf(sheet)).flat());
+      const where = keepPlan ? "with a plan" : "with no plan";
+      expect(text.split("FROM THE PLANNER").length - 1, where).toBe(1);
+      expect(text, where).not.toContain("above the setup's steps");
+      expect(text, where).not.toContain("With the setup, above its steps.");
+      expect(text.lastIndexOf("before service."), where).toBeLessThan(text.indexOf("Nothing is placed in this layout yet."));
+    }
+  });
+
+  it("answers every number on the plan even when nothing is set out in steps", async () => {
+    const text = textOf((await pagesOf({ ...weddingSheet(), phases: [] })).flat());
+    const listed = text.indexOf("NOTES ON THE PLAN");
+    expect(listed).toBeGreaterThan(text.indexOf("Nothing is placed in this layout yet."));
+    for (const note of ["Table 5: severe peanut allergy at seat 4, catering has the card", "Highchair for table 6", "Cash bar from 21:00"]) {
+      expect(text.indexOf(note, listed), note).toBeGreaterThan(listed);
+    }
+  });
+
+  it("never leaves the planner's words after the setup's rail unless page 1 says where they are", async () => {
+    for (const [name, sheet] of [["two more door times", weddingWithDoorTimes(2)], ["four more", weddingWithDoorTimes(4)],
+      ["twelve more", weddingWithDoorTimes(12)], ["six more allergy notes", weddingWithAllergies(6)]] as const) {
+      const pages = (await pagesOf(sheet)).map((page) => textOf(page));
+      const all = pages.join(" ");
+      const named = /FROM THE PLANNER On page (\d+), above the setup's steps\./u.exec(pages[0] ?? "")?.[1];
+      const withSetup = (pages[0] ?? "").includes("FROM THE PLANNER With the setup, above its steps.");
+      const beforeRail = all.indexOf(PLANNER) < all.indexOf("SETUP, IN ORDER");
+      expect(named !== undefined || withSetup || beforeRail, name).toBe(true);
+      expect(named === undefined || (pages[Number(named) - 1] ?? "").includes(PLANNER), name).toBe(true);
+      expect(all.split(PLANNER).length - 1, name).toBe(1);
+    }
+  });
+
+  it("leads the setup page with the planner's words, under its head, when page 1 has no room even to point to them", async () => {
+    // Structure the day before and final touches after the ready-by time: the late line stacks, one line taller.
+    const dayBefore = weddingWith((instructions) => ({ ...instructions, phaseDeadlines: instructions.phaseDeadlines.map((deadline) =>
+      deadline.phase === "structure" ? { ...deadline, deadline: bst(16, 0, -1) } : deadline.phase === "final" ? { ...deadline, deadline: bst(13, 45) } : deadline) }));
+    for (const [name, sheet] of [["two more door times", weddingWithDoorTimes(2)], ["structure the day before, final touches late", dayBefore]] as const) {
+      const pages = (await pagesOf(sheet)).map((page) => textOf(page));
+      expect(pages[0], name).not.toContain("FROM THE PLANNER");
+      const second = pages[1] ?? "";
+      let at = 0;
+      for (const words of ["Mackenzie–Ross wedding breakfast", "Approved by Fiona Grant", "FROM THE PLANNER", PLANNER, "SETUP, IN ORDER", "Guests in", "Staging Deck"]) {
+        const found = second.indexOf(words, at);
+        expect(found, `${name}: ${words}`).toBeGreaterThanOrEqual(at);
+        at = found + words.length;
+      }
+    }
+  });
+
+  it("names the top table on page 1's plan, beside its piece when the name is wider than the piece", async () => {
+    const first = (await pagesOf(weddingSheet()))[0] ?? [];
+    const at = (text: string): PdfLine => {
+      const line = first.find((candidate) => candidate.text === text);
+      if (line === undefined) throw new Error(`page 1 should carry "${text}"`);
+      return line;
+    };
+    const name = at("Top table");
+    expect(name.y).toBeLessThan(at("NORTH WALL").y);
+    expect(name.y).toBeGreaterThan(at("SOUTH WALL").y);
+    expect(name.x).toBeGreaterThanOrEqual(MARGIN);
+    expect(name.x2).toBeLessThanOrEqual(MARGIN + LEFT_W);
+  });
+
+  it("sets a name too wide for its piece beside it, on clear floor inside the plan", async () => {
+    const base = weddingSheet();
+    const plan = base.floorPlan;
+    if (plan === null || plan === undefined) throw new Error("wedding fixture has a plan");
+    const objects = plan.objects.map((object) => (Math.abs(object.x - 3) < 0.01 && Math.abs(object.z - 4.2) < 0.01 ? { ...object, label: "Cake" } : object));
+    const first = (await pagesOf({ ...base, floorPlan: { ...plan, objects } }))[0] ?? [];
+    const at = (text: string): PdfLine => {
+      const line = first.find((candidate) => candidate.text === text);
+      if (line === undefined) throw new Error(`page 1 should carry "${text}"`);
+      return line;
+    };
+    const name = at("Cake");
+    expect(name.y).toBeLessThan(at("NORTH WALL").y);
+    expect(name.y).toBeGreaterThan(at("SOUTH WALL").y);
+    expect(name.x).toBeGreaterThanOrEqual(MARGIN);
+    expect(name.x2).toBeLessThanOrEqual(MARGIN + LEFT_W);
+    expect(textOf(first)).not.toContain("Too small to name here");
+  });
+
+  it("names under the plan's caption a piece it has no room to name on the drawing", async () => {
+    const base = weddingSheet();
+    const plan = base.floorPlan;
+    if (plan === null || plan === undefined) throw new Error("wedding fixture has a plan");
+    const objects = plan.objects.map((object) => (Math.abs(object.x - 3) < 0.01 && Math.abs(object.z - 4.2) < 0.01
+      ? { ...object, label: "Gift table for the cards and presents" } : object));
+    expect(objects.filter((object) => object.label === "Gift table for the cards and presents")).toHaveLength(1);
+    const first = textOf((await pagesOf({ ...base, floorPlan: { ...plan, objects } }))[0] ?? []);
+    expect(first).toContain("Too small to name here: Gift table for the cards and presents.");
+  });
+
+  it("rings tables 3, 5 and 9 on page 1's plan, each ring round its own table", async () => {
+    const buf = await generateSheetPdfV2(await withPaperCheck(weddingSheet(), true));
+    const [content] = pdfPageContents(buf);
+    const first = pdfPages(buf)[0] ?? [];
+    const ringed = [...(content ?? "").matchAll(BRICK_RING)].map((match) => {
+      const cx = (Number(match[1]) + Number(match[3])) / 2;
+      const cy = Number(match[2]);
+      return first.find((line) => Math.abs((line.x + line.x2) / 2 - cx) < 1 && Math.abs(PAGE_H - line.y - cy) < 9)?.text;
+    });
+    expect(ringed).toHaveLength(3);
+    expect(new Set(ringed)).toEqual(new Set(["3", "5", "9"]));
+  });
+
+  it("keeps the contact's email with page 1 and off the setup's rail", async () => {
+    const sheet = weddingWith((instructions) => ({ ...instructions,
+      dayOfContact: instructions.dayOfContact === null ? null : { ...instructions.dayOfContact, email: "kirsty@example.com" } }));
+    const [first, second] = (await pagesOf(sheet)).map((page) => textOf(page));
+    expect(first).toContain("kirsty@example.com");
+    expect(second).toContain("07700 900412");
+    expect(second).not.toContain("kirsty@example.com");
+  });
+
+  it("runs the planner's words full width under both columns when they fit there but not beside the day", async () => {
+    const words = "Keep the north aisle clear for the photographer between courses and check the candles before service. ".repeat(22).trim();
+    const pages = await pagesOf({ ...BASE_SHEET, instructions: { ...EMPTY_INSTRUCTIONS, specialInstructions: words } });
+    const lines = (pages[0] ?? []).filter((line) => line.text.includes("photographer"));
+    expect(lines.length).toBeGreaterThan(10);
+    expect(Math.min(...lines.map((line) => line.x))).toBeCloseTo(MARGIN, 0);
+    expect(Math.max(...lines.map((line) => line.x2))).toBeGreaterThan(PAGE_W * 0.75);
+    const store = (pages[0] ?? []).find((line) => line.text === "FROM THE STORE");
+    if (store === undefined) throw new Error("page 1 should carry the store");
+    expect(Math.max(...lines.map((line) => line.y))).toBeLessThan(store.y);
+  });
+
+  it("points from page 1's right column to words that open the setup, when the left column runs on", async () => {
+    const events = Array.from({ length: 40 }, (_, n) => ({
+      at: new Date(Date.UTC(2026, 5, 15, 6 + Math.floor(n / 4), (n % 4) * 15)).toISOString(), kind: "open" as const, note: "" }));
+    const words = "Keep the north aisle clear for the photographer between courses and check the candles before service. ".repeat(10).trim();
+    const pages = await pagesOf({ ...BASE_SHEET, instructions: { ...EMPTY_INSTRUCTIONS, specialInstructions: words,
+      doorSchedule: { entries: [{ label: "Service door", events }] } } });
+    const pointer = (pages[0] ?? []).find((line) => line.text === "With the setup, above its steps.");
+    if (pointer === undefined) throw new Error("page 1 should say where the planner's words are");
+    expect(pointer.x).toBeGreaterThan(PAGE_W * 0.6);
+    const all = pages.map((page) => textOf(page)).join(" ");
+    expect(all.indexOf("Keep the north aisle clear")).toBeGreaterThan(all.indexOf("SETUP, IN ORDER"));
+  });
+
+  it("opens the setup on a fresh page, with its head, after a brief that filled most of page 2", async () => {
+    const pages = (await pagesOf(weddingWithAllergies(24))).map((page) => textOf(page));
+    expect(pages[1]).not.toContain("SETUP, IN ORDER");
+    const third = pages[2] ?? "";
+    expect(third.indexOf("Mackenzie–Ross wedding breakfast")).toBeGreaterThanOrEqual(0);
+    expect(third.indexOf("Mackenzie–Ross wedding breakfast")).toBeLessThan(third.indexOf("SETUP, IN ORDER"));
   });
 });

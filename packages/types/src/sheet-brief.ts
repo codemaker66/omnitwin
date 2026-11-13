@@ -390,22 +390,27 @@ export function otherMeals(dietary: DietarySummary | null): string | null {
   return parts.length === 0 ? null : parts.join(" · ");
 }
 
-/** A label as a pattern that matches it only as a whole phrase, in any case. */
+/** A label as a pattern that matches it only as a whole phrase, in any case.
+ *  A label of digits or of one character ("12", "A") counts only after
+ *  "table" or "tables", so "2 guests" or "a wheelchair" never names one. */
 function wholePhrase(label: string): RegExp {
   const escaped = label.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
-  return new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, "iu");
+  const bare = /^\p{N}+$/u.test(label) || label.length < 2;
+  return new RegExp(`(?<![\\p{L}\\p{N}])${bare ? "tables?\\s+" : ""}${escaped}(?![\\p{L}\\p{N}])`, "iu");
 }
 
 /** The plan's tables the care words name ("Table 5, seat 4: …", "go on table
  *  3"), by the planner's own labels, so the plan can ring where care is needed.
- *  The care words are the ones Keep in view shows: the access needs and the
- *  allergy notes. A label matches only as a whole phrase in any case, so
- *  "Table 1" never rings because of "Table 10"; only tables are ringed. */
+ *  The care words are the planner's own access and allergy notes, not the
+ *  counts Keep in view adds to them. A label matches only as a whole phrase in
+ *  any case, so "Table 1" never rings because of "Table 10"; only tables are
+ *  ringed. */
 export function careTables(sheet: HallkeeperSheetV2): ReadonlySet<string> {
   const ringed = new Set<string>();
   const plan = sheet.floorPlan ?? null;
   const instructions = sheet.instructions;
-  const words = [...accessNeeds(instructions?.accessibility ?? null), allergyFacts(instructions?.dietary ?? null)?.notes ?? ""].join("\n");
+  // The planner's own words only: "1 wheelchair space" is the sheet's count, not a table.
+  const words = [instructions?.accessibility?.notes ?? "", allergyFacts(instructions?.dietary ?? null)?.notes ?? ""].join("\n");
   if (plan === null || words.trim().length === 0) return ringed;
   for (const object of plan.objects) {
     const label = object.label?.trim() ?? "";

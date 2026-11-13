@@ -80,8 +80,9 @@ describe("pdf text helper", () => {
     });
     const pages = pdfRules(buf);
     expect(pages).toHaveLength(2);
-    expect(pages[0]).toEqual([{ x: 40, x2: 555.28, y: expect.closeTo(841.89 - 120, 2) as number }]);
-    expect(pages[1]).toEqual([{ x: 40, x2: 555.28, y: expect.closeTo(841.89 - 32, 2) as number }]);
+    // A rule's own width when it sets one; none when it strokes at the default.
+    expect(pages[0]).toEqual([{ x: 40, x2: 555.28, y: expect.closeTo(841.89 - 120, 2) as number, weight: 0.6 }]);
+    expect(pages[1]).toEqual([{ x: 40, x2: 555.28, y: expect.closeTo(841.89 - 32, 2) as number, weight: null }]);
   });
 
   // A compressed stream ends in its zlib checksum, whose last byte is as good as

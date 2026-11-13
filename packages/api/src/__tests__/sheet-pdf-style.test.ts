@@ -72,6 +72,37 @@ describe("lines a reader takes in at a glance", () => {
     expect(balancedLines(d, TYPE.careWords, "two guests coeliac.", 178)).toEqual(["two guests coeliac."]);
     d.end();
   });
+
+  it("never breaks a word to even the lines out, where plain wrapping kept it whole", () => {
+    const d = doc();
+    // The page 2 rail's inner width, then page 1's Keep in view.
+    for (const width of [127, 166]) {
+      for (const [style, text] of [
+        [TYPE.careWords, "anaphylaxis-sufferer carries two pens."],
+        [TYPE.careWords, "immunocompromised guest, keep apart."],
+        [TYPE.careWords, "gluten-free/dairy-free meals needed."],
+        [TYPE.careWords, "Wheelchair-accessible table near the door."],
+        [TYPE.contactName, "Montgomery-Fitzwilliam Alexandria"],
+      ] as const) {
+        const plain = wrapLines(d, style, text, width);
+        const even = balancedLines(d, style, text, width);
+        expect(even.join(" "), `${text} at ${String(width)} pt`).toBe(plain.join(" "));
+        expect(even).toHaveLength(plain.length);
+      }
+    }
+    d.end();
+  });
+
+  it("keeps a middle dot off a line's start after a word too long for the line", () => {
+    const d = doc();
+    const text = "alexandria.montgomery-fitzwilliam@example.co.uk · Bride's sister";
+    for (let width = 30; width <= 240; width += 1) {
+      for (const line of wrapLines(d, TYPE.bodyDim, text, width)) {
+        expect(line.trimStart().startsWith("·"), `${String(width)} pt: "${line}"`).toBe(false);
+      }
+    }
+    d.end();
+  });
 });
 
 describe("characters no House face sets", () => {

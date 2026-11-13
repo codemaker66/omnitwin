@@ -40,7 +40,7 @@ planner's words. The build keeps every fact and changes the arrangement:
   view, so neither column leaves a gap.
 - **The planner's words** follow the day when that keeps the page no longer, or run full width below when they
   fit there. When page 1 has no room for them (the full wedding), they open the setup page, across it and before
-  the first step, and page 1 says where they are: "Printed with the setup, before its first step."
+  the first step, and page 1 says where they are: "On page 2, above the setup's steps." (see page 2's As built).
 - **The day** sets a line's date and detail after its title ("Service door opens · Suppliers and band load-in")
   when the whole line fits; otherwise it keeps the stacked form.
 - **Spacing:** care lines and store lines sit a little closer. The plan's caption reads "Drawn from the saved
@@ -83,6 +83,29 @@ planner's words. The build keeps every fact and changes the arrangement:
   under its item.
 - **A setup line's height** is its item column (name, chairs, notes) or its place column, whichever runs longer.
   Notes no longer start below a long place.
+
+### As built: the review of #415 (12 to 13 November)
+
+The release lead's review (three lenses, about 90 rendered variants, three skeptics per finding) held one blocker and
+five majors. Each fix has a test that failed first:
+
+- **A care fact's place** is set apart only at a colon a space follows ("Table 5, seat 4: …"). A clock time
+  ("desserts go out at 21:15") or a link stays whole; before, it split at the time's colon and lost it.
+- **The planner's words are never buried.** When page 1 has no room for them and the setup has steps, they open the
+  setup page: after its rail when a page 1 column has room for the pointer (worded from where it stands: the page
+  when both columns end on page 1, else "With the setup, above its steps."), otherwise first, under the setup's head
+  and above its rail, so they are the next words after page 1 and the setup page keeps its head. With nothing
+  placed there is no setup page to open, so they run on full width below the columns.
+- **The progress rail** gives a time on another day its weekday ("Fri 16:00") and marks a step due after the room's
+  ready-by time in brick with the word "late", which a mono print keeps.
+- **The plan's names:** a name sits on its piece when it fits; else along the row of pieces it stands in, end to end
+  (the top table's three trestles), clear of the copper numbers; else just beside its piece on clear floor; else the
+  caption names it ("Too small to name here: …"). The 60% plan had dropped "Top table".
+- **Rings** come from the planner's own access and allergy notes, never the sheet's counts ("1 wheelchair space").
+  A label of digits or one character rings only after "table" or "tables".
+- **Balanced panel lines** never break a word that plain wrapping kept whole ("dairy-fr / ee meals").
+- With nothing set out in steps, the plan's numbered notes print under "Nothing is placed in this layout yet.".
+- The ready-by caption reads "60 min before guests come in", matching Guests in beside it.
 
 ## F: the day at the venue (its own PR, after A and D)
 

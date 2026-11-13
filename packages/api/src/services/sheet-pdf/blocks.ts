@@ -18,7 +18,7 @@ import {
   type StoreGroup,
 } from "@omnitwin/types";
 import { paragraphUnits, type Flow, type Unit } from "./flow.js";
-import { WALL_BAND, drawMarker, drawScaleBar, drawSheetPlan } from "./plan-drawing.js";
+import { WALL_BAND, drawMarker, drawScaleBar, drawSheetPlan, planNamesLeftOff } from "./plan-drawing.js";
 import {
   INK, PAGE, TYPE,
   balancedLines, blockHeight, drawBlock, drawLine, hairline, lineHeight, textWidth, upright, wrapLines,
@@ -144,7 +144,7 @@ function factsOf(sheet: HallkeeperSheetV2): Fact[] {
     ? { label: "Ready by", value: "—", caption: "No booking holds this room yet", tone: "alert" }
     : timing.setupBy === null
       ? { label: "Ready by", value: "—", caption: "No changeover time for this room", tone: "alert" }
-      : { label: "Ready by", value: clock(timing.setupBy, timeZone), caption: timing.bufferMinutes === null ? "" : `${String(timing.bufferMinutes)} min before the start`, tone: "accent" };
+      : { label: "Ready by", value: clock(timing.setupBy, timeZone), caption: timing.bufferMinutes === null ? "" : `${String(timing.bufferMinutes)} min before guests come in`, tone: "accent" };
   return [
     ready,
     timing === null
@@ -198,15 +198,16 @@ function sentences(text: string): string[] {
   return text.split(/(?<=[.!?])\s+(?=[\p{Lu}\p{N}])/u).map((part) => part.trim()).filter((part) => part.length > 0);
 }
 
-/** "Table 5, seat 4: severe peanut allergy." as its place and its words; a sentence with no short place before a colon stays whole. */
+/**
+ * "Table 5, seat 4: severe peanut allergy." as its place and its words. Only a
+ * colon that ends a short place, a space after it, sets the place apart; a
+ * clock time ("out at 21:15") or a link ("https://") keeps the sentence whole.
+ */
 function careLine(sentence: string): CareLine {
-  const colon = sentence.indexOf(":");
-  if (colon > 0 && colon <= 40) {
-    const place = sentence.slice(0, colon).trim();
-    const words = sentence.slice(colon + 1).trim();
-    if (place.length > 0 && words.length > 0) return { place, words };
-  }
-  return { place: null, words: sentence };
+  const split = /^(.{1,40}?):\s+(\S.*)$/su.exec(sentence);
+  const place = split?.[1]?.trim() ?? "";
+  const words = split?.[2]?.trim() ?? "";
+  return place.length > 0 && words.length > 0 ? { place, words } : { place: null, words: sentence };
 }
 
 interface CareFacts {
@@ -538,16 +539,45 @@ function notesPointerUnit(doc: Doc, parts: BriefParts, x: number, width: number,
   };
 }
 
+/** A column of page 1: where it stands and how tall its units run. */
+interface Column { readonly x: number; readonly width: number; readonly height: number }
+
+/**
+ * Page 1's word on where the planner's notes went, in the first column that
+ * still has room for it on this page, or null when neither has. It names the
+ * page when both columns end on this one, since the setup then opens the next.
+ */
+function notesPointer(doc: Doc, parts: BriefParts, room: number, columns: readonly [Column, Column]): { readonly lane: 0 | 1; readonly unit: Unit } | null {
+  const next = doc.bufferedPageRange().count + 1;
+  for (const lane of [0, 1] as const) {
+    const own = columns[lane];
+    const other = columns[lane === 0 ? 1 : 0];
+    const unit = notesPointerUnit(doc, parts, own.x, own.width, other.height <= room ? next : null);
+    if (own.height + unitsHeight([unit]) <= room) return { lane, unit };
+  }
+  return null;
+}
+
+/**
+ * Where the planner's notes still have to print once page 1 is set: nowhere
+ * ("none": page 1 printed them, or there are none); after the setup's rail,
+ * where page 1 says they are ("after-rail"); or leading the setup page under
+ * its head, the first words after page 1, when page 1 had no room even to
+ * say where they went ("leading").
+ */
+export type PlannerNotesLeft = "none" | "after-rail" | "leading";
+
 /**
  * Page 1 under the facts (A), two columns that each run on by themselves:
  * the room, who to call and who is on duty, then the day in order; beside
  * them what to keep in view, then what to bring from the store. The
  * planner's notes follow the day when that keeps the page no longer, or run
  * full width below when they fit there. When this page has no room for them
- * they open the setup instead, and page 1 says so. Returns whether they
- * still need that place.
+ * they open the setup page instead: after its rail when a column here has
+ * room to say so, else leading it. A layout with nothing placed has no setup
+ * page to open, so its notes run on below the columns.
  */
-export function brief(flow: Flow, sheet: HallkeeperSheetV2): boolean {
+export function brief(flow: Flow, sheet: HallkeeperSheetV2): PlannerNotesLeft {
   const { doc } = flow;
   const parts = briefParts(sheet);
   const leftW = Math.round(W * PLAN_SHARE);
@@ -560,22 +590,15 @@ export function brief(flow: Flow, sheet: HallkeeperSheetV2): boolean {
   const rightH = unitsHeight(right);
   const notes = notesUnits(doc, parts, X, leftW);
   const beside = notes.length > 0 && leftH + unitsHeight(notes) <= Math.max(rightH, flow.room);
-  const below = notes.length > 0 && !beside && Math.max(leftH, rightH) + 14 + notesFlowingHeight(doc, parts) <= flow.room;
-  const deferred = notes.length > 0 && !beside && !below;
+  const fitsBelow = notes.length > 0 && !beside && Math.max(leftH, rightH) + 14 + notesFlowingHeight(doc, parts) <= flow.room;
+  const deferred = notes.length > 0 && !beside && !fitsBelow && sheetSetupSteps(sheet).length > 0;
+  const pointer = deferred ? notesPointer(doc, parts, flow.room, [{ x: X, width: leftW, height: leftH }, { x: rightX, width: rightW, height: rightH }]) : null;
   if (beside) left.push(...notes);
-  if (deferred) {
-    // When both columns end on this page, the setup opens the next one. The
-    // pointer takes whichever column still has room for it on this page.
-    const next = doc.bufferedPageRange().count + 1;
-    const pointerH = unitsHeight([notesPointerUnit(doc, parts, X, leftW, next)]);
-    const page = Math.max(leftH + pointerH, rightH) <= flow.room ? next : null;
-    if (leftH + pointerH <= flow.room) left.push(notesPointerUnit(doc, parts, X, leftW, page));
-    else if (rightH + pointerH <= flow.room) right.push(notesPointerUnit(doc, parts, rightX, rightW, page));
-  }
+  if (pointer !== null) (pointer.lane === 0 ? left : right).push(pointer.unit);
   flow.lanes([left, right]);
   flow.y += 14;
-  if (below) notesFlowing(flow, parts);
-  return deferred;
+  if (notes.length > 0 && !beside && !deferred) notesFlowing(flow, parts);
+  return !deferred ? "none" : pointer !== null ? "after-rail" : "leading";
 }
 
 /**
@@ -587,13 +610,13 @@ function ruleAbove(flow: Flow): void {
   if (flow.y > flow.top) hairline(flow.doc, X, flow.y - 8, X + W);
 }
 
-/** The planner's notes full width, a paragraph free to cross pages. */
-function notesFlowing(flow: Flow, parts: BriefParts): void {
+/** The planner's notes full width, a paragraph free to cross pages; `rule` sets a rule over them unless something above already closes. */
+function notesFlowing(flow: Flow, parts: BriefParts, rule = true): void {
   const { doc } = flow;
   if (parts.notes.length === 0) return;
   for (const [index, [heading, text]] of parts.notes.entries()) {
     flow.ensure(13 + lineHeight(doc, TYPE.paragraph) * Math.min(2, wrapLines(doc, TYPE.paragraph, text, W).length));
-    if (index === 0) ruleAbove(flow);
+    if (index === 0 && rule) ruleAbove(flow);
     drawLine(doc, TYPE.overline, heading, X, flow.y);
     flow.y += 13;
     flow.paragraph(TYPE.paragraph, text, X, W);
@@ -635,12 +658,17 @@ function planHeight(sheet: HallkeeperSheetV2, width: number, max: number): numbe
   return Math.min((width - WALL_BAND * 2) * (span.length / span.width), max) + WALL_BAND * 2;
 }
 
-/** What the plan shows, in words: where it comes from and what its marks mean. Table numbers explain themselves. */
-function planCaption(notes: boolean, rings: boolean): string {
+/**
+ * What the plan shows, in words: where it comes from and what its marks mean,
+ * then any planner's name the drawing had no room for. Table numbers explain
+ * themselves.
+ */
+function planCaption(notes: boolean, rings: boolean, leftOff: readonly string[]): string {
   return [
     "Drawn from the saved layout, looking down.",
     notes ? "Copper numbers: notes, with the setup." : null,
     rings ? "Brick rings: keep in view." : null,
+    leftOff.length > 0 ? `Too small to name here: ${leftOff.join(", ")}.` : null,
   ].filter((part): part is string => part !== null).join(" ");
 }
 
@@ -655,7 +683,8 @@ function roomUnit(doc: Doc, sheet: HallkeeperSheetV2, x: number, width: number):
   const markers = sheetNoteMarkers(sheet);
   const ringed = careTables(sheet);
   const planH = plan !== null || diagram !== null ? planHeight(sheet, width, PLAN_MAX_H) : NO_PLAN_H;
-  const caption = plan === null ? null : planCaption(markers.size > 0, ringed.size > 0);
+  const leftOff = plan === null ? [] : planNamesLeftOff(doc, plan, width, planH, markers);
+  const caption = plan === null ? null : planCaption(markers.size > 0, ringed.size > 0, leftOff);
   const captionW = width - 96;
   const captionH = caption === null ? 0 : Math.max(14, blockHeight(doc, TYPE.small, caption, captionW)) + 4;
   return {
@@ -674,7 +703,7 @@ function roomUnit(doc: Doc, sheet: HallkeeperSheetV2, x: number, width: number):
         }
       }
       if (!pictured && plan !== null) {
-        const drawn = drawSheetPlan(doc, plan, box, markers, ringed);
+        const drawn = drawSheetPlan(doc, plan, box, markers, ringed, true);
         if (caption !== null) {
           const top = box.y + planH + 6;
           drawScaleBar(doc, drawn.pointsPerMetre, x + width, top + 6);
@@ -862,17 +891,30 @@ function stepUnits(doc: Doc, sheet: HallkeeperSheetV2, steps: readonly SetupStep
   ];
 }
 
-interface Station { readonly kind: "step" | "ready" | "guests"; readonly mark: string; readonly label: string; readonly time: string }
+/** A ring on the setup's rail: its mark, its name, its time, and whether that time is after the room's ready-by time. */
+interface Station { readonly kind: "step" | "ready" | "guests"; readonly mark: string; readonly label: string; readonly time: string; readonly late: boolean }
+
+/** A step's time on the rail, as its head gives it: with the weekday when it falls on another day ("Fri 16:00"). */
+function railTime(deadline: NonNullable<SetupStep["deadline"]>, timeZone: string): string {
+  const day = deadline.otherDay ? `${new Date(deadline.at).toLocaleDateString("en-GB", { weekday: "short", timeZone })} ` : "";
+  return `${day}${clock(deadline.at, timeZone)}`;
+}
 
 function railStations(sheet: HallkeeperSheetV2, steps: readonly SetupStep[]): Station[] {
   const timeZone = sheet.venue.timezone;
   const timing = sheet.timing;
   return [
-    ...steps.map((step, index): Station => ({ kind: "step", mark: String(index + 1), label: step.label, time: step.deadline === null ? "" : clock(step.deadline.at, timeZone) })),
-    { kind: "ready", mark: "", label: "Room ready", time: timing === null || timing.setupBy === null ? "—" : clock(timing.setupBy, timeZone) },
-    { kind: "guests", mark: "", label: "Guests in", time: timing === null ? "—" : clock(timing.eventStart, timeZone) },
+    ...steps.map((step, index): Station => ({
+      kind: "step", mark: String(index + 1), label: step.label,
+      time: step.deadline === null ? "" : railTime(step.deadline, timeZone), late: step.deadline?.late === true,
+    })),
+    { kind: "ready", mark: "", label: "Room ready", time: timing === null || timing.setupBy === null ? "—" : clock(timing.setupBy, timeZone), late: false },
+    { kind: "guests", mark: "", label: "Guests in", time: timing === null ? "—" : clock(timing.eventStart, timeZone), late: false },
   ];
 }
+
+/** A step due after the room's ready-by time: its rail time in brick, and the word, which a mono print keeps. */
+const RAIL_TIME_LATE: TextStyle = { ...TYPE.railTime, color: INK.alert };
 
 const RAIL_H = 80;
 
@@ -894,7 +936,11 @@ function progressRail(flow: Flow, sheet: HallkeeperSheetV2, steps: readonly Setu
     if (station.mark.length > 0) drawLine(doc, TYPE.railMark, station.mark, cx - span / 2, lineY - 6.2, { width: span, to: "center" });
     const labelStyle = station.kind === "ready" ? TYPE.railLabelAccent : TYPE.railLabel;
     drawLine(doc, labelStyle, oneLine(doc, labelStyle, station.label, span - 6), cx - span / 2, lineY + 17, { width: span, to: "center" });
-    if (station.time.length > 0) drawLine(doc, station.kind === "guests" ? TYPE.railTimeQuiet : TYPE.railTime, station.time, cx - span / 2, lineY + 29, { width: span, to: "center" });
+    if (station.time.length > 0) {
+      const style = station.late ? RAIL_TIME_LATE : station.kind === "guests" ? TYPE.railTimeQuiet : TYPE.railTime;
+      const time = oneLine(doc, style, station.late ? `${station.time} late` : station.time, span - 4);
+      drawLine(doc, style, time, cx - span / 2, lineY + 29, { width: span, to: "center" });
+    }
   }
   hairline(doc, X, top + RAIL_H - 8, X + W, INK.rule, 0.5);
   flow.y = top + RAIL_H;
@@ -915,15 +961,6 @@ function railPlanUnit(doc: Doc, sheet: HallkeeperSheetV2, x: number, width: numb
 const SPILL_SHARE = 0.4;
 
 /**
- * Page 2 (D): the setup to tick. A setup that fits whole under the brief on
- * page 1 stays there, its steps full width, Keep in view already in sight.
- * Otherwise it opens a page, so the crew can be handed the setup alone: the
- * progress rail, then the steps beside a rail of what to keep in view, who to
- * call and the small plan. When the brief itself ran on overleaf and left
- * most of that page empty, the setup starts there instead of a page later. A
- * layout with nothing placed says so where it stands instead.
- */
-/**
  * The head of the setup's own page, for the crew handed it alone: which
  * event, when, where and for how many, and whether this copy is approved.
  * Page 1 keeps the paper check's code; every page's footer names the copy.
@@ -940,20 +977,37 @@ function setupHeader(flow: Flow, sheet: HallkeeperSheetV2, copyLine: string): vo
   flow.y = y + 20;
 }
 
-export function setupPage(flow: Flow, sheet: HallkeeperSheetV2, copyLine: string, plannerNotes = false): void {
+/**
+ * Page 2 (D): the setup to tick. A setup that fits whole under the brief on
+ * page 1 stays there, its steps full width, Keep in view already in sight.
+ * Otherwise it opens a page, so the crew can be handed the setup alone: its
+ * head, the progress rail, then the steps beside a rail of what to keep in
+ * view, who to call and the small plan. The planner's notes page 1 had no
+ * room for come after the rail where page 1 points to them, or first, under
+ * the head, when page 1 could not point. When the brief itself ran on
+ * overleaf and left most of that page empty, the setup starts there instead
+ * of a page later. A layout with nothing placed says so where it stands.
+ */
+export function setupPage(flow: Flow, sheet: HallkeeperSheetV2, copyLine: string, plannerNotes: PlannerNotesLeft = "none"): void {
   const { doc } = flow;
   const steps = sheetSetupSteps(sheet);
   if (steps.length === 0) {
-    if (plannerNotes) notesFlowing(flow, briefParts(sheet));
+    if (plannerNotes !== "none") notesFlowing(flow, briefParts(sheet));
     flow.ensure(40);
     ruleAbove(flow);
     drawLine(doc, TYPE.overline, "Setup, in order", X, flow.y);
     drawLine(doc, TYPE.bodyQuiet, "Nothing is placed in this layout yet.", X, flow.y + 14);
     flow.y += 40;
+    // The plan's numbers still need their words when no line carries them.
+    const loose = planNoteUnits(doc, [], sheetNoteMarkers(sheet), { left: X, right: X + W, nameX: X, nameW: W, whereX: X + W, whereW: 0 });
+    if (loose.length > 0) {
+      flow.lanes([loose]);
+      flow.y += 12;
+    }
     return;
   }
   const whole = stepUnits(doc, sheet, steps, X, W);
-  if (!plannerNotes && doc.bufferedPageRange().count === 1 && flow.y + RAIL_H + unitsHeight(whole) <= flow.bottom) {
+  if (plannerNotes === "none" && doc.bufferedPageRange().count === 1 && flow.y + RAIL_H + unitsHeight(whole) <= flow.bottom) {
     ruleAbove(flow);
     progressRail(flow, sheet, steps);
     flow.lanes([whole]);
@@ -967,16 +1021,24 @@ export function setupPage(flow: Flow, sheet: HallkeeperSheetV2, copyLine: string
     if (flow.y > flow.top) flow.newPage();
     setupHeader(flow, sheet, copyLine);
   }
-  progressRail(flow, sheet, steps);
-  // The planner's notes page 1 had no room for: across the page, before the first step.
-  if (plannerNotes) notesFlowing(flow, briefParts(sheet));
   const railW = Math.round(W * RAIL_SHARE);
   const gutter = 16;
   const stepsW = W - railW - gutter;
   const railX = X + stepsW + gutter;
+  const stepsLane = stepUnits(doc, sheet, steps, X, stepsW);
+  if (plannerNotes === "leading") {
+    // Page 1 had no room to say where the planner's notes went, so they come
+    // first here, under the head; the rail then keeps with the first step.
+    notesFlowing(flow, briefParts(sheet), false);
+    flow.ensure(RAIL_H + (stepsLane[0]?.need ?? stepsLane[0]?.height ?? 0));
+    ruleAbove(flow);
+  }
+  progressRail(flow, sheet, steps);
+  // The planner's notes page 1 pointed to: across the page, before the first step.
+  if (plannerNotes === "after-rail") notesFlowing(flow, briefParts(sheet));
   const railPlan = railPlanUnit(doc, sheet, railX, railW);
   flow.lanes([
-    stepUnits(doc, sheet, steps, X, stepsW),
+    stepsLane,
     [
       ...careUnits(doc, sheet, RAIL_PANEL, railX, railW),
       ...contactUnits(doc, sheet, RAIL_PANEL, railX, railW),

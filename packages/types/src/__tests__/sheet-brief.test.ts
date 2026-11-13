@@ -381,4 +381,20 @@ describe("careTables: the tables the care words name, for the plan to ring", () 
     expect(careTables(sheet({ floorPlan: plan(tables), instructions: EMPTY_INSTRUCTIONS })).size).toBe(0);
     expect(careTables({ ...careSheet("", "Table 5: nut allergy."), floorPlan: null }).size).toBe(0);
   });
+
+  it("counts a bare number or a single letter as a table only after the word table", () => {
+    const labels = ["1", "2", "4", "10", "12", "A"];
+    expect([...careTables(careSheet("A wheelchair user sits near the door.", "Seat 4 at table 12 is coeliac. 2 guests with nut allergy; cake at 10:30.", labels))]).toEqual(["12"]);
+    expect([...careTables(careSheet("", "Tables 4 and 5 are nut-free.", labels))]).toEqual(["4"]);
+    expect([...careTables(careSheet("", "Table A: one guest avoids sesame.", labels))]).toEqual(["A"]);
+  });
+
+  it("reads only the planner's own words, never the counts the sheet adds", () => {
+    const base = careSheet("", "", ["1", "4"]);
+    const access = base.instructions?.accessibility;
+    if (access === undefined || access === null) throw new Error("the care sheet records access needs");
+    // "1 wheelchair space" and "4 large-print programmes" are the sheet's own lines.
+    const counted = { ...base, instructions: { ...EMPTY_INSTRUCTIONS, ...base.instructions, accessibility: { ...access, largePrintProgrammes: 4 } } };
+    expect(careTables(counted).size).toBe(0);
+  });
 });
