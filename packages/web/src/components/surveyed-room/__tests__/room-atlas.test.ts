@@ -18,6 +18,7 @@ const GRAND_HALL_ATLAS: SurveyAtlas = {
   ppm: WALL_ATLAS_PPM,
   vRange: [WALL_ATLAS_V_MIN, WALL_ATLAS_V_MAX],
   row: WALL_ATLAS_ROW,
+  files: ["walls-4096.webp", "walls-2048.webp"],
 };
 
 describe("surveyed room atlas", () => {
@@ -41,7 +42,7 @@ describe("surveyed room atlas", () => {
   });
 
   it("puts a strip's corners where the record says, on a non-square atlas", () => {
-    const atlas: SurveyAtlas = { size: [4096, 2304], ppm: 200, vRange: [-0.02, 5.535], row: 1111 };
+    const atlas: SurveyAtlas = { size: [4096, 2304], ppm: 200, vRange: [-0.02, 5.535], row: 1111, files: ["walls-4096.webp"] };
     const rear = { atlas: [0, 1119, 1421, 1111] as [number, number, number, number] };
     // The top of the strip (v = vMax) is image row 1119, counted down.
     const [u0, top] = roomAtlasUv(atlas, rear, 0, 5.535);

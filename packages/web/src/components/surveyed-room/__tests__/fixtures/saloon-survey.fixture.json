@@ -1,5 +1,5 @@
 {
-  "note": "Hand-built survey.json (schema version 2) for the Saloon, for tests only. The outline, wall ids, lengths and relief ids follow tools/surveyed-rooms/saloon.room.json; the atlas strips follow the tools' atlas plan. Every bytes and sha256 value is a PLACEHOLDER: no file has been published yet.",
+  "note": "Hand-built survey.json (schema version 2) for the Saloon, for tests only. The outline, wall ids, lengths and relief ids follow tools/surveyed-rooms/saloon.room.json; the atlas strips follow the tools' atlas plan; the image names follow its survey.outputs, largest first; the floor's extent is the outline's bounds, as the ceiling's is. Every bytes and sha256 value is a PLACEHOLDER: no file has been published yet.",
   "schemaVersion": 2,
   "slug": "saloon",
   "revision": 1,
@@ -30,7 +30,8 @@
     "ppm": 200,
     "vRange": [-0.02, 5.535],
     "row": 1111,
-    "alpha": "255 - 127 * glass"
+    "alpha": "255 - 127 * glass",
+    "files": ["walls-4096.webp", "walls-2048.webp"]
   },
   "walls": [
     { "id": "front", "reliefId": "front", "length": 7.008, "height": 5.515, "kind": "solid", "atlas": [0, 0, 1402, 1111] },
@@ -64,6 +65,8 @@
     }
   },
   "floor": {
+    "extent": { "x": [-6.096, 6.095], "z": [-3.734, 3.739] },
+    "orientation": "columns planner +x, rows from planner +z",
     "files": ["floor-1463.webp", "floor-732.webp"]
   },
   "files": {

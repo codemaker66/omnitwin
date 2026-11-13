@@ -1,17 +1,20 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { parseSurveyRecord, SurveyRecordError, type SurveyRecord } from "../survey-record.js";
+import { OVERHEAD_ORIENTATION, parseSurveyRecord, SurveyRecordError, type SurveyRecord } from "../survey-record.js";
 
 /** The hand-built Saloon record, as raw JSON a test may change. */
+interface RawExtent { x: number[]; z: number[] }
+
 interface RawRecord {
   [key: string]: unknown;
   room: { outline: [number, number][]; [key: string]: unknown };
+  atlas: { files?: string[]; [key: string]: unknown };
   walls: { id: string; reliefId: string; length: number; atlas: number[]; [key: string]: unknown }[];
   relief: { file: string; order: string[]; [key: string]: unknown };
-  ceiling: { files: string[]; relief?: { file: string; [key: string]: unknown }; [key: string]: unknown };
-  floor: { files: string[] };
-  files: Record<string, unknown>;
+  ceiling: { files: string[]; orientation?: string; relief?: { file: string; [key: string]: unknown }; [key: string]: unknown };
+  floor: { files: string[]; extent?: RawExtent; orientation?: string };
+  files: Record<string, { bytes: number; sha256: string }>;
 }
 
 const FIXTURE_TEXT = readFileSync(path.resolve("src/components/surveyed-room/__tests__/fixtures/saloon-survey.fixture.json"), "utf-8");
@@ -50,7 +53,13 @@ describe("survey.json, schema version 2", () => {
       [0, 1119, 1421], [1429, 1119, 440], [1877, 1119, 36], [1921, 1119, 1557], [3486, 1119, 46], [3540, 1119, 442],
     ]);
     expect(record.ceiling.relief?.id).toBe("ceiling");
+    expect(record.atlas.files).toEqual(["walls-4096.webp", "walls-2048.webp"]);
+    expect(record.ceiling.files).toEqual(["ceiling-1829.webp", "ceiling-915.webp"]);
     expect(record.floor.files).toEqual(["floor-1463.webp", "floor-732.webp"]);
+    expect(record.floor.extent).toEqual({ x: [-6.096, 6.095], z: [-3.734, 3.739] });
+    expect(record.floor.extent).toEqual(record.ceiling.extent);
+    expect(record.ceiling.orientation).toBe(OVERHEAD_ORIENTATION);
+    expect(record.floor.orientation).toBe(OVERHEAD_ORIENTATION);
     expect(Object.keys(record.files)).toHaveLength(8);
     expect("methodRevision" in record).toBe(false);
     expect("configSha256" in record).toBe(false);
@@ -178,6 +187,7 @@ describe("survey.json, schema version 2", () => {
   });
 
   it.each([
+    ["an atlas image", "walls-2048.webp", "atlas.files[1]"],
     ["the walls' relief", "walls-relief.bin", "relief.file"],
     ["a ceiling image", "ceiling-915.webp", "ceiling.files[1]"],
     ["a floor image", "floor-1463.webp", "floor.files[0]"],
@@ -198,5 +208,64 @@ describe("survey.json, schema version 2", () => {
     const record: Record<string, unknown> = saloon();
     delete record.room;
     expect(faults(record)).toContainEqual(expect.stringMatching(/^room: /));
+  });
+
+  it("refuses a record without the atlas's images", () => {
+    const missing = saloon();
+    delete missing.atlas.files;
+    expect(faults(missing)).toContainEqual(expect.stringMatching(/^atlas\.files: /));
+    const empty = saloon();
+    empty.atlas.files = [];
+    expect(faults(empty)).toEqual(["atlas.files: must name at least one atlas image"]);
+  });
+
+  it("refuses a floor without the extent its photograph covers, or with one that does not increase", () => {
+    const missing = saloon();
+    delete missing.floor.extent;
+    expect(faults(missing)).toContainEqual(expect.stringMatching(/^floor\.extent: /));
+    const backwards = saloon();
+    backwards.floor.extent = { x: [6.095, -6.096], z: [-3.734, 3.739] };
+    expect(faults(backwards)).toEqual(["floor.extent.x: must increase ([low, high])"]);
+  });
+
+  it("accepts a ceiling and a floor that publish no photograph, and one size of each image", () => {
+    const bare = saloon();
+    bare.ceiling.files = [];
+    bare.floor.files = [];
+    expect(parseSurveyRecord(bare).floor.files).toEqual([]);
+    const single = saloon();
+    single.atlas.files = ["walls-4096.webp"];
+    single.floor.files = ["floor-1463.webp"];
+    expect(parseSurveyRecord(single).atlas.files).toEqual(["walls-4096.webp"]);
+  });
+
+  it.each(["atlas", "ceiling", "floor"] as const)("refuses %s images listed smallest first, by their byte counts", (part) => {
+    const record = saloon();
+    const [larger, smaller] = record[part].files ?? [];
+    if (larger === undefined || smaller === undefined) throw new Error("the fixture lists two sizes");
+    const zero = "0".repeat(64);
+    record.files[larger] = { bytes: 900_000, sha256: zero };
+    record.files[smaller] = { bytes: 240_000, sha256: zero };
+    expect(() => parseSurveyRecord(record)).not.toThrow();
+    record[part].files = [smaller, larger];
+    expect(faults(record)).toEqual([
+      `${part}.files[1]: must list the largest image first, but "${larger}" (900000 bytes) follows the smaller "${smaller}" (240000 bytes)`,
+    ]);
+  });
+
+  it("refuses an image listed twice", () => {
+    const record = saloon();
+    record.floor.files = ["floor-1463.webp", "floor-1463.webp"];
+    expect(faults(record)).toEqual(['floor.files: names "floor-1463.webp" twice']);
+  });
+
+  it("refuses an overhead photograph laid any other way than the tools lay one", () => {
+    const record = saloon();
+    record.floor.orientation = "columns planner +z, rows from planner +x";
+    expect(faults(record)).toEqual([`floor.orientation: must be "${OVERHEAD_ORIENTATION}" (the only orientation this reader draws)`]);
+    const unstated = saloon();
+    delete unstated.floor.orientation;
+    delete unstated.ceiling.orientation;
+    expect(() => parseSurveyRecord(unstated)).not.toThrow();
   });
 });

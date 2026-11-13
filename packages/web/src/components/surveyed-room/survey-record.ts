@@ -2,13 +2,24 @@
 // A surveyed room's record: survey.json, schema version 2
 //
 // tools/surveyed-rooms publishes survey.json beside a room's photographs and
-// reliefs (roombuild/publish.py). Version 2 is version 1 with a `room` block:
-// the room's name, venue, ceiling height and measured outline. Everything a
-// room-driven renderer needs to place the published files comes from here, so
-// the record is checked as a whole before anything is drawn from it: the
-// outline frames a room, each wall matches its segment, the atlas strips fit
-// and do not overlap, the relief order names exactly the walls, and every file
-// the record points at is one it lists.
+// reliefs (roombuild/publish.py). Version 2 is version 1 with a `room` block
+// (the room's name, venue, ceiling height and measured outline), the wall
+// atlas's images (`atlas.files`) and the floor photograph's extent
+// (`floor.extent`). Everything a room-driven renderer needs to place the
+// published files comes from here, so the record is checked as a whole before
+// anything is drawn from it: the outline frames a room, each wall matches its
+// segment, the atlas strips fit and do not overlap, the relief order names
+// exactly the walls, and every file the record points at is one it lists.
+//
+// Each list of images (`atlas.files`, `ceiling.files`, `floor.files`) is the
+// same photograph at several sizes, largest first: a device takes the first
+// or, with less memory, a later one (room-photos.ts). The record carries no
+// pixel sizes, so the order is checked against each file's byte count.
+//
+// The ceiling and floor photographs cover their `extent` with columns along
+// planner +x and rows from planner +z (the image's top row is the extent's
+// highest z). The tools state that as `orientation`; where a record states
+// one, it must be that one, since it is the only one drawn.
 //
 // Keys the web does not use (tools, glassScan, openings, linkedInputs,
 // configSha256, methodRevision, the atlas's packing, the relief's meshing
@@ -45,11 +56,22 @@ const RoomSchema = z.object({
   }),
 });
 
+/** How an overhead photograph lies over its extent: the only way the tools write one. */
+export const OVERHEAD_ORIENTATION = "columns planner +x, rows from planner +z";
+
+const Orientation = z.literal(OVERHEAD_ORIENTATION, {
+  error: `must be "${OVERHEAD_ORIENTATION}" (the only orientation this reader draws)`,
+});
+/** The planner rectangle a photograph covers. */
+const Extent = z.object({ x: Increasing, z: Increasing });
+
 const AtlasSchema = z.object({
   size: z.tuple([PositiveInt, PositiveInt]),
   ppm: z.number().positive(),
   vRange: Increasing,
   row: PositiveInt,
+  /** The atlas image at each published size, largest first. */
+  files: z.array(FileName).min(1, "must name at least one atlas image"),
 });
 
 const WallSchema = z.object({
@@ -77,9 +99,18 @@ const CeilingReliefSchema = z.object({
 });
 
 const CeilingSchema = z.object({
-  extent: z.object({ x: Increasing, z: Increasing }),
+  extent: Extent,
+  orientation: Orientation.optional(),
+  /** The ceiling photograph at each published size, largest first; none for a ceiling without one. */
   files: z.array(FileName),
   relief: CeilingReliefSchema.optional(),
+});
+
+const FloorSchema = z.object({
+  extent: Extent,
+  orientation: Orientation.optional(),
+  /** The floor photograph at each published size, largest first; none for a floor without one. */
+  files: z.array(FileName),
 });
 
 const FileEntrySchema = z.object({
@@ -97,7 +128,7 @@ const SurveyRecordShape = z.object({
   walls: z.array(WallSchema),
   relief: ReliefSchema,
   ceiling: CeilingSchema,
-  floor: z.object({ files: z.array(FileName) }),
+  floor: FloorSchema,
   files: z.record(FileName, FileEntrySchema),
 });
 
@@ -190,6 +221,7 @@ function crossChecks(record: Shape): Issue[] {
 
   const listed = (name: string): boolean => Object.hasOwn(record.files, name);
   const references: { readonly path: readonly (string | number)[]; readonly name: string }[] = [
+    ...record.atlas.files.map((name, i) => ({ path: ["atlas", "files", i], name })),
     { path: ["relief", "file"], name: record.relief.file },
     ...record.ceiling.files.map((name, i) => ({ path: ["ceiling", "files", i], name })),
     ...record.floor.files.map((name, i) => ({ path: ["floor", "files", i], name })),
@@ -197,6 +229,26 @@ function crossChecks(record: Shape): Issue[] {
   ];
   for (const reference of references) {
     if (!listed(reference.name)) issues.push({ path: reference.path, message: `names "${reference.name}", which is missing from files` });
+  }
+
+  const sizes: readonly (readonly [string, readonly string[]])[] = [
+    ["atlas", record.atlas.files], ["ceiling", record.ceiling.files], ["floor", record.floor.files],
+  ];
+  for (const [part, names] of sizes) {
+    for (const name of duplicates(names)) issues.push({ path: [part, "files"], message: `names "${name}" twice` });
+    for (let i = 1; i < names.length; i++) {
+      const larger = names[i - 1];
+      const smaller = names[i];
+      if (larger === undefined || smaller === undefined) continue;
+      const before = record.files[larger]?.bytes;
+      const after = record.files[smaller]?.bytes;
+      if (before !== undefined && after !== undefined && after > before) {
+        issues.push({
+          path: [part, "files", i],
+          message: `must list the largest image first, but "${smaller}" (${String(after)} bytes) follows the smaller "${larger}" (${String(before)} bytes)`,
+        });
+      }
+    }
   }
   return issues;
 }
@@ -211,6 +263,9 @@ export type SurveyAtlas = SurveyRecord["atlas"];
 export type SurveyWall = SurveyRecord["walls"][number];
 export type SurveyWallKind = SurveyWall["kind"];
 export type SurveyCeiling = SurveyRecord["ceiling"];
+export type SurveyFloor = SurveyRecord["floor"];
+/** The planner rectangle a ceiling or floor photograph covers. */
+export type SurveyExtent = SurveyCeiling["extent"];
 
 /** A survey.json that cannot be used, with every fault found. */
 export class SurveyRecordError extends Error {
