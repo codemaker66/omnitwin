@@ -93,7 +93,8 @@ interface Occupancy {
   readonly eventId: string | null;
   readonly startMs: number;
   readonly endMs: number;
-  /** The booking and phase ids merged into it. */
+  /** The booking and phase ids merged into it, in the order they come into
+   *  the room (by start, then id). */
   readonly members: readonly string[];
 }
 
@@ -112,6 +113,15 @@ interface OccupancyPiece {
  *  and phase ids of the occupancy on either side of it. */
 export interface UncoveredTurnaroundGap {
   readonly spaceId: string;
+  readonly before: readonly string[];
+  readonly after: readonly string[];
+}
+
+/** A changeover the turnaround check found too short, by its conflict's id,
+ *  with the booking and phase ids of the occupancy on either side of it, each
+ *  in the order they came into the room. */
+export interface ShortTurnaround {
+  readonly conflictId: string;
   readonly before: readonly string[];
   readonly after: readonly string[];
 }
@@ -413,14 +423,17 @@ export function detectCalendarConflicts(input: DetectCalendarConflictsInput): Co
   return detectCalendarConflictsInDetail(input).report;
 }
 
-/** The report, and which gaps its turnaround check counted as not covered,
- *  for a caller that needs to know whose gaps those are. */
+/** The report, which gaps its turnaround check counted as not covered, and
+ *  which pieces stand either side of each turnaround it found short, for a
+ *  caller that needs to know whose gaps those are. */
 export function detectCalendarConflictsInDetail(input: DetectCalendarConflictsInput): {
   readonly report: ConflictReport;
   readonly uncoveredGaps: readonly UncoveredTurnaroundGap[];
+  readonly shortTurnarounds: readonly ShortTurnaround[];
 } {
   const conflicts: CalendarConflict[] = [];
   const uncoveredGaps: UncoveredTurnaroundGap[] = [];
+  const shortTurnarounds: ShortTurnaround[] = [];
 
   const liveBookings = input.bookings.filter(isLive);
   const inks = liveBookings.filter((row) => row.kind === "ink");
@@ -521,8 +534,10 @@ export function detectCalendarConflictsInDetail(input: DetectCalendarConflictsIn
       }
       const gapMinutes = Math.round(gapMs / MS_PER_MINUTE);
       if (gapMinutes >= applicable.minutes) continue;
+      const conflictId = `insufficient_turnaround:${current.id}:${next.id}`;
+      shortTurnarounds.push({ conflictId, before: current.members, after: next.members });
       conflicts.push({
-        id: `insufficient_turnaround:${current.id}:${next.id}`,
+        id: conflictId,
         type: "insufficient_turnaround",
         severity: "warning",
         spaceId,
@@ -620,7 +635,7 @@ export function detectCalendarConflictsInDetail(input: DetectCalendarConflictsIn
       },
     },
   };
-  return { report, uncoveredGaps };
+  return { report, uncoveredGaps, shortTurnarounds };
 }
 
 export type { ConflictReport, CalendarConflict, ConflictSeverity };

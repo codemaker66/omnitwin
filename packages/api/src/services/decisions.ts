@@ -41,6 +41,7 @@ import {
   type ConflictBookingInput,
   type ConflictPhaseInput,
   type ConflictTurnaroundRuleInput,
+  type ShortTurnaround,
 } from "./calendar-conflicts.js";
 import { realDiaryCommandDeps } from "./diary-commands.js";
 import { phaseMovesWithBooking } from "./event-binding.js";
@@ -378,12 +379,23 @@ function listed(found: readonly DecisionConsequence[], limit: number): DecisionC
 /** Which conflicts are the same before and after the move. A turnaround is
  *  the arrival's, after the gap: its guideline is that booking's, so the same
  *  arrival with a shorter gap is worse whatever comes before it, and an
- *  arrival on the other side of its neighbour is a new one. Every other
- *  conflict is its pair's, in either order. */
-function conflictKey(conflict: CalendarConflict): string {
+ *  arrival on the other side of its neighbour is a new one. An arrival is
+ *  known by the first of its pieces into the room (`firstIn`, by conflict
+ *  id), not by the name the engine gives it: the engine holds an event's
+ *  pieces as one stay or several, by the venue's days and by who is between
+ *  them, and names each by its last booking, so a move can rename an arrival
+ *  that is still the same (T-695 review of #400, Y2). Every other conflict is
+ *  its pair's, in either order. */
+function conflictKey(conflict: CalendarConflict, firstIn: ReadonlyMap<string, string>): string {
   return conflict.type === "insufficient_turnaround"
-    ? `${conflict.type}|${conflict.entryIds[1]}`
+    ? `${conflict.type}|${firstIn.get(conflict.id) ?? conflict.entryIds[1]}`
     : `${conflict.type}|${[...conflict.entryIds].sort().join(",")}`;
+}
+
+/** The first piece into the room of each short turnaround's arrival, by conflict id. */
+function firstInOf(found: { readonly shortTurnarounds: readonly ShortTurnaround[] }): ReadonlyMap<string, string> {
+  return new Map(found.shortTurnarounds.flatMap((turnaround) =>
+    turnaround.after[0] === undefined ? [] : [[turnaround.conflictId, turnaround.after[0]] as const]));
 }
 
 /**
@@ -417,8 +429,10 @@ function apartKeysOf(world: Neighbourhood, booking: BookingRow, carried: readonl
 }
 
 /** The room with the moved booking's block of time as only the booking and
- *  the phases it carries; the rest of its event apart, the same way before
- *  and after the move, so a block is named by the same entries in both. */
+ *  the phases it carries; the rest of its event apart, under the same keys
+ *  before and after the move. The engine may still hold the block as one
+ *  stay or several, by the venue's days, and name them differently before
+ *  and after, so conflictKey knows an arrival by its first piece. */
 function weighedApart(world: Neighbourhood, booking: BookingRow, carried: readonly ConflictPhaseInput[], keys: ReadonlyMap<string, string>): Neighbourhood {
   if (keys.size === 0) return world;
   const carriedIds = new Set(carried.map((phase) => phase.id));
@@ -463,8 +477,10 @@ export function moveConsequences(world: Neighbourhood, booking: BookingRow, to: 
   // Diary has it (T-695 review of #400, Y1).
   const eventOfKey = new Map<string, string>();
   if (booking.eventId !== null) for (const key of keys.values()) eventOfKey.set(key, booking.eventId);
-  const before = detectCalendarConflictsInDetail({ bookings: now.bookings, phases: now.phases, turnaroundRules: now.rules, timeZone: now.timeZone, eventOfKey }).report;
+  const before = detectCalendarConflictsInDetail({ bookings: now.bookings, phases: now.phases, turnaroundRules: now.rules, timeZone: now.timeZone, eventOfKey });
   const after = detectCalendarConflictsInDetail({ bookings: then.bookings, phases: then.phases, turnaroundRules: then.rules, timeZone: then.timeZone, eventOfKey });
+  const firstInBefore = firstInOf(before);
+  const firstInAfter = firstInOf(after);
   // The event's own entries need no turnaround between them: the engine never weighs that gap.
   const ownEvent = new Set(booking.eventId === null ? [booking.id] : [
     ...world.bookings.filter((entry) => entry.eventId === booking.eventId).map((entry) => entry.id),
@@ -472,12 +488,12 @@ export function moveConsequences(world: Neighbourhood, booking: BookingRow, to: 
   ]);
   const withinEvent = (ids: readonly string[]): boolean => ids.every((id) => ownEvent.has(id));
   const weighed = (conflict: CalendarConflict): boolean => conflict.type !== "insufficient_turnaround" || !withinEvent(conflict.entryIds);
-  const had = new Map(before.conflicts.filter(weighed).map((conflict) => [conflictKey(conflict), conflict]));
+  const had = new Map(before.report.conflicts.filter(weighed).map((conflict) => [conflictKey(conflict, firstInBefore), conflict]));
   const ours = new Set([booking.id, ...carried.map((phase) => phase.id)]);
   const found: DecisionConsequence[] = [];
   for (const conflict of after.report.conflicts) {
     if (!weighed(conflict)) continue;
-    const prior = had.get(conflictKey(conflict));
+    const prior = had.get(conflictKey(conflict, firstInAfter));
     let wasMinutes: number | null = null;
     if (prior !== undefined) {
       const was = gapMinutes(prior);

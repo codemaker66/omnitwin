@@ -146,3 +146,46 @@ describe("a move beside its own event's other pieces (T-695 review of #400, Y1)"
     expect(diary(held([lunch, { ...ceremony, startsAt: day(12, 13), endsAt: day(12, 16) }], [setUp], 120))).toEqual([]);
   });
 });
+
+describe("a turnaround the move makes longer, under another name (T-695 review of #400, Y2)", () => {
+  // The engine holds an event's pieces as one stay or several, by the
+  // venue's days and by who is between them, and names each stay by its last
+  // booking. A move can change both, so the decision reads an arrival by the
+  // piece that comes into the room first.
+  it("lists nothing when a set-up the evening before moves past midnight and joins the wedding's day", () => {
+    const dinner = bookingRow("dinner", "dinner-event", day(9, 18), day(9, 21, 30));
+    const wedding = bookingRow("wedding", "wedding-event", day(10, 10), day(10, 16));
+    const setUp = timedPhase("set-up", "wedding-event", day(9, 22), day(9, 23, 30));
+    const before = held([dinner, wedding], [setUp], 120);
+    // An hour later: 90 minutes after dinner, up from 30.
+    expect(moveConsequences(before, wedding, { startsAt: day(10, 11), endsAt: day(10, 17) })).toEqual([]);
+    expect(diary(before)).toEqual(["dinner>set-up 30"]);
+    expect(diary(held([dinner, { ...wedding, startsAt: day(10, 11), endsAt: day(10, 17) }],
+      [{ ...setUp, startsAt: day(9, 23), endsAt: day(10, 0, 30) }], 120))).toEqual(["dinner>wedding 90"]);
+  });
+
+  it("lists nothing when the move leaves from between another event's morning and afternoon, which become one stay", () => {
+    const breakfast = bookingRow("breakfast", "breakfast-event", day(10, 7), day(10, 8, 30));
+    const morning = bookingRow("morning", "conference", day(10, 9), day(10, 10));
+    const press = bookingRow("press", "press-event", day(10, 11), day(10, 12));
+    const afternoon = bookingRow("afternoon", "conference", day(10, 13), day(10, 14));
+    const before = held([breakfast, morning, press, afternoon], [], 120);
+    expect(moveConsequences(before, press, { startsAt: day(11, 11), endsAt: day(11, 12) })).toEqual([]);
+    // The conference's 30 minutes after breakfast were there before the move.
+    expect(diary(before)).toEqual(["breakfast>morning 30", "morning>press 60", "press>afternoon 60"]);
+    expect(diary(held([breakfast, morning, { ...press, startsAt: day(11, 11), endsAt: day(11, 12) }, afternoon], [], 120)))
+      .toEqual(["breakfast>afternoon 30"]);
+  });
+
+  it("still lists the wedding's own turnaround made short when its set-up the evening before already had one", () => {
+    const dinner = bookingRow("dinner", "dinner-event", day(10, 16), day(10, 18, 30));
+    const setUp = timedPhase("set-up", "wedding-event", day(10, 19), day(10, 21));
+    const breakfast = bookingRow("breakfast", "breakfast-event", day(11, 7), day(11, 8, 30));
+    const wedding = bookingRow("wedding", "wedding-event", day(11, 10), day(11, 16));
+    const before = held([dinner, breakfast, wedding], [setUp], 60);
+    const found = moveConsequences(before, wedding, { startsAt: day(11, 9), endsAt: day(11, 15) });
+    expect(found).toHaveLength(1);
+    expect(found[0]?.summary).toMatch(/^Only 30 minutes next to the room's use \(Mon, 11 Mar 2030, 07:00 .*\); the turnaround guideline is 60 minutes\.$/u);
+    expect(diary(before)).toEqual(["dinner>set-up 30"]);
+  });
+});
