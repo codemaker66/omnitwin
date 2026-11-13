@@ -210,7 +210,8 @@ describe("what the slate says about work that outlived its page", () => {
   // Delta review of #388 at 33a8e0ad, S1: a switch over a refused clear goes
   // on, and the clear's sentence goes with it into the next layout's note,
   // which stands until the person dismisses it (ruling R1(b)).
-  const NOT_REMOVED = "Table 7's note was not removed: it was changed somewhere else, and that note cannot be shown here.";
+  // Carried into another layout, it names the layout it is about (delta review X3, approved by the owner).
+  const NOT_REMOVED = "In the Grand Hall layout, Table 7's note was not removed: it was changed somewhere else, and that note cannot be shown here.";
 
   it("goes on when every change saved but a clear of a note was refused", async () => {
     useEditorStore.setState({ isDirty: false, pendingChanges: 0 });

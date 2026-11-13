@@ -5,7 +5,7 @@ import { editorToPlacedItem, flushAutoSave, placedItemToEditor } from "../../com
 import { prepareLayoutForGuestEnquiry } from "../../components/editor/send-layout-flow.js";
 import { persistAnonymousPlannerDraft, readAnonymousPlannerDraft } from "../../lib/anonymous-planner-draft.js";
 import { deriveEditorSaveStatus, leftBehindWords, slateSaveState, type EditorSaveStatus, type SlateSaveKind } from "../../lib/editor-save-status.js";
-import { heldNoteIds, noteHeldOn, ownWordsOverHeldNotes, pieceNamedForRefusedSave, refusedOverHeldNote } from "../../lib/guest-plan-notes.js";
+import { heldNoteIds, noteHeldOn, ownWordsOverHeldNotes, pieceNamedForRefusedSave, refusedClearsLine, refusedOverHeldNote } from "../../lib/guest-plan-notes.js";
 import { NOTE_HELD_MESSAGE, OMITTED_MESSAGE, serveNotesAsTheApiDoes as serveTheApi, type PlanOnServer } from "../../test/guest-plan-api.js";
 import { useAuthStore } from "../auth-store.js";
 import { saveBeforeLayoutChange, setEditorAutosaveRequester, useEditorStore, type EditorObject } from "../editor-store.js";
@@ -50,6 +50,7 @@ vi.mock("../../api/action-log.js", () => ({
 }));
 
 const configApi = await import("../../api/configurations.js");
+const spacesApi = await import("../../api/spaces.js");
 
 const PLAN = "0f0f0f0f-0000-4000-8000-000000000001";
 const SPACE = "0f0f0f0f-0000-4000-8000-00000000005a";
@@ -1849,6 +1850,45 @@ describe("Keep mine refused for notes the maker rewrote, among many notes of the
     await store().showTheirVersion(false);
     expect(store()).toMatchObject({ noteClearsRefused: [], saveError: null, saveConflict: null, leftBehind: null });
     expect(server.notes.get(tableId(6))).toBe(THEIR_NOTE);
+  });
+
+  // Delta review of #388 at 7a51b6e4, X3, approved by the owner on 13 November
+  // 2026: carried into another layout, the sentence names the layout it is
+  // about, as the note's sentence about kept work does ("the Grand Hall
+  // layout", from the room's name). In its own layout it stays as it is.
+  it("names the layout the refused clear was made in, in the next layout's note, and only there", async () => {
+    const server: PlanOnServer = { revision: 4, notes: new Map() };
+    await theyRewrite(server, 9, [6], () => { store().setObjectNotes(tableId(6), ""); });
+    vi.mocked(spacesApi.getSpace).mockResolvedValueOnce({
+      id: SPACE, venueId: VENUE, name: "Grand Hall", slug: "grand-hall", widthM: "21", lengthM: "10.5", heightM: "7",
+      floorPlanOutline: [{ x: 0, y: 0 }, { x: 21, y: 0 }, { x: 21, y: 10.5 }, { x: 0, y: 10.5 }],
+    });
+    await store().loadSpace(VENUE, SPACE);
+    expect(store().space?.name).toBe("Grand Hall");
+    expect(await store().keepMine(false)).toBe(false);
+    expect(store().saveError).toBe(TABLE_7_NOT_REMOVED);
+
+    expect(await saveBeforeLayoutChange()).toBe("clear-refused");
+    await openAnotherLayout();
+    const note = store().leftBehind;
+    expect(note === null ? null : leftBehindWords(note)).toBe(`In the Grand Hall layout, ${TABLE_7_NOT_REMOVED}`);
+  });
+
+  it("says the layout before the maker's shorter sentence, and before a piece named in lower case, in the approved form", () => {
+    const table7 = { ...kept(B, "TEST ONLY staff rewrite"), label: "Table 7" };
+    // The maker's browser shows the note that stands on the piece (X8).
+    expect(refusedClearsLine({ objects: [table7], baseObjects: [table7], noteClearsRefused: [B] }, "the Grand Hall layout"))
+      .toBe("In the Grand Hall layout, Table 7's note was not removed: it was changed somewhere else.");
+    // Any other browser holds it: the last clause stays, after the same words.
+    const held = { ...table7, notes: "" };
+    expect(refusedClearsLine({ objects: [held], baseObjects: [{ ...held, noteHeld: true }], noteClearsRefused: [B] }, "the Grand Hall layout"))
+      .toBe(`In the Grand Hall layout, ${TABLE_7_NOT_REMOVED}`);
+    // A piece with no name of its own is named as the lines name it, mid-sentence.
+    const chair = kept(C);
+    expect(refusedClearsLine({ objects: [chair], baseObjects: [{ ...chair, noteHeld: true }], noteClearsRefused: [C] }, "the Grand Hall layout"))
+      .toMatch(/^In the Grand Hall layout, a [^:]+'s note was not removed: it was changed somewhere else, and that note cannot be shown here\.$/u);
+    // Not carried, it is as it was.
+    expect(refusedClearsLine({ objects: [held], baseObjects: [{ ...held, noteHeld: true }], noteClearsRefused: [B] })).toBe(TABLE_7_NOT_REMOVED);
   });
 });
 

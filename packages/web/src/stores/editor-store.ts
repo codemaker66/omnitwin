@@ -50,6 +50,7 @@ import {
 import { holdPlannerPageLock, isPlannerPageOpen, plannerPageId } from "../lib/planner-page-lock.js";
 import { signedOutOwnerFrom } from "../lib/planner-draft-storage.js";
 import { summariseLayoutChange, type ChangedPiece, type LayoutChangeSummary } from "../lib/layout-change-summary.js";
+import { layoutNamed } from "../lib/editor-save-status.js";
 import { browserSaysOnline, readOnlineStatus, subscribeOnlineStatus } from "../lib/online-status.js";
 import { useAuthStore, type AuthUser } from "./auth-store.js";
 import { hasRole, VENUE_FLOOR_ROLES } from "../lib/role-capabilities.js";
@@ -2639,10 +2640,13 @@ let layoutChangeAttempt: {
 /** The note the next layout shows about this one: its unsaved work (`kept`; null for none) and a refused clear still standing. */
 function leftBehindFor(state: EditorState, kept: boolean | null): LeftBehindWork | null {
   if (state.configId === null) return null;
-  const notRemoved = refusedClearsLine(state);
+  const roomName = state.space?.name ?? null;
+  // Shown in the next layout, the sentence says which layout it is about, by
+  // the room's name as the note's own sentence names it (delta review X3).
+  const notRemoved = refusedClearsLine(state, layoutNamed(roomName));
   return {
     configId: state.configId,
-    roomName: state.space?.name ?? null,
+    roomName,
     kept,
     savesOnReturn: kept === true && state.lockReason === null && state.saveConflict === null,
     ...(notRemoved === null ? {} : { notRemoved }),

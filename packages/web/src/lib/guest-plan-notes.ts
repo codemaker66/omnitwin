@@ -579,12 +579,18 @@ function leading(name: string): string {
  * because someone else had rewritten that note (editor-store
  * noteClearsRefused): one sentence a piece, each named as these lines name a
  * piece ("A chair at Table 1's note was not removed: ..."). Null for none.
+ *
+ * `inLayout` ("the Grand Hall layout", editor-save-status layoutNamed): the
+ * sentences are carried into another layout's note, so the first says which
+ * layout they are about ("In the Grand Hall layout, a chair at Table 1's note
+ * ..."; delta review of #388 at 7a51b6e4, X3, approved by the owner). Where
+ * they are not carried, or the room has no name, they are as they were.
  */
 export function refusedClearsLine(state: {
   readonly objects: readonly EditorObject[];
   readonly baseObjects: readonly EditorObject[];
   readonly noteClearsRefused: readonly string[];
-}): string | null {
+}, inLayout: string | null = null): string | null {
   if (state.noteClearsRefused.length === 0) return null;
   const among = state.objects.map(asNamed);
   // This browser is shown the note that now stands on such a piece when the
@@ -592,7 +598,10 @@ export function refusedClearsLine(state: {
   const shown = new Set(state.baseObjects.filter((object) => object.notes !== "" && object.noteHeld !== true).map((object) => object.id));
   const said = state.objects
     .filter((object) => state.noteClearsRefused.includes(object.id))
-    .map((object) => noteNotRemovedLine(leading(heldNotePieceName(asNamed(object), among)), shown.has(object.id)));
+    .map((object, index) => {
+      const name = heldNotePieceName(asNamed(object), among);
+      return noteNotRemovedLine(index === 0 && inLayout !== null ? `In ${inLayout}, ${name}` : leading(name), shown.has(object.id));
+    });
   return said.length === 0 ? null : said.join(" ");
 }
 

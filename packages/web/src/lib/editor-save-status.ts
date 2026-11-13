@@ -409,10 +409,18 @@ export function leftBehindWords(input: LeftBehindInput): string {
   return [changes, input.notRemoved ?? null].filter((said): said is string => said !== null).join(" ");
 }
 
+/**
+ * A layout left behind as these notes name it, from its room's name: "the
+ * Grand Hall layout" (never "the the Saloon layout"). Null without a name.
+ */
+export function layoutNamed(roomName: string | null): string | null {
+  const room = roomName?.trim().replace(/^the\s+/iu, "") ?? "";
+  return room.length === 0 ? null : `the ${room} layout`;
+}
+
 function leftBehindChanges(input: LeftBehindInput): string | null {
   if (input.kept === null) return null;
-  const room = input.roomName?.trim().replace(/^the\s+/iu, "") ?? "";
-  const layout = room.length === 0 ? "that layout" : `the ${room} layout`;
+  const layout = layoutNamed(input.roomName) ?? "that layout";
   if (!input.kept) return `Your changes to ${layout} did not reach Venviewer, and this browser could not keep them.`;
   return input.savesOnReturn
     ? `Your changes to ${layout} are kept on this device and save when you open it again.`
