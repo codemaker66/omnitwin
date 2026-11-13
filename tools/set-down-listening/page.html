@@ -1,0 +1,344 @@
+<title>Set-down sound</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Newsreader:opsz,wght@6..72,300;6..72,400;6..72,500&display=swap">
+<style>
+  /* The house's workspace register (packages/web/src/styles/house-tokens.css): the ivory sheet on the
+     sage ground, the copper plane for the numbers that matter, the forest panel for the decisions. */
+  :root {
+    --ground: #819087;
+    --sheet: #f2eddd;
+    --paper: #faf8f1;
+    --edge: #747f6f;
+    --ink-1: #14302a;
+    --ink-2: #42584e;
+    --chip-on: #264337;
+    --chip-on-ink: #efe7cf;
+    --plane: #deb599;
+    --plane-ink: #3e3528;
+    --plane-number: #14302a;
+    --plane-track: #3e35281f;
+    --plane-ghost: #3e352873;
+    --forest: #264337;
+    --forest-ink-1: #f2eee1;
+    --forest-ink-2: #d0d9cd;
+    --forest-edge: #86a192;
+    --cream: #efe7cf;
+    --cream-press: #e2d8bb;
+    --cream-ink: #14302a;
+    --key-press: #efe7cf26;
+    --focus: #14302a;
+    --focus-forest: #efe7cf;
+    --shadow: 0 1px 0 #14302a0f, 0 14px 36px #18372a24;
+    --serif: "Newsreader", Georgia, "Times New Roman", serif;
+    --sans: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --press: 120ms;
+    --ease: cubic-bezier(0.23, 1, 0.32, 1);
+    color-scheme: light;
+  }
+  /* The night version of the same materials: a forest-deep ground, ivory ink, a deeper copper plane. */
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #1f3a2f;
+      --sheet: #264337;
+      --paper: #2b4a3d;
+      --edge: #86a192;
+      --ink-1: #f2eee1;
+      --ink-2: #d0d9cd;
+      --chip-on: #efe7cf;
+      --chip-on-ink: #14302a;
+      --plane: #cf9f7f;
+      --plane-ink: #3e3528;
+      --plane-number: #14302a;
+      --plane-track: #3e352826;
+      --plane-ghost: #3e35288c;
+      --forest: #13261e;
+      --forest-ink-1: #f2eee1;
+      --forest-ink-2: #d0d9cd;
+      --forest-edge: #86a192;
+      --cream: #efe7cf;
+      --cream-press: #e2d8bb;
+      --cream-ink: #14302a;
+      --key-press: #efe7cf26;
+      --focus: #efe7cf;
+      --focus-forest: #efe7cf;
+      --shadow: 0 1px 0 #0000001f, 0 14px 36px #00000052;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #1f3a2f;
+    --sheet: #264337;
+    --paper: #2b4a3d;
+    --edge: #86a192;
+    --ink-1: #f2eee1;
+    --ink-2: #d0d9cd;
+    --chip-on: #efe7cf;
+    --chip-on-ink: #14302a;
+    --plane: #cf9f7f;
+    --plane-ink: #3e3528;
+    --plane-number: #14302a;
+    --plane-track: #3e352826;
+    --plane-ghost: #3e35288c;
+    --forest: #13261e;
+    --forest-ink-1: #f2eee1;
+    --forest-ink-2: #d0d9cd;
+    --forest-edge: #86a192;
+    --cream: #efe7cf;
+    --cream-press: #e2d8bb;
+    --cream-ink: #14302a;
+    --key-press: #efe7cf26;
+    --focus: #efe7cf;
+    --focus-forest: #efe7cf;
+    --shadow: 0 1px 0 #0000001f, 0 14px 36px #00000052;
+    color-scheme: dark;
+  }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink-1);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.45;
+    -webkit-text-size-adjust: 100%;
+  }
+  .page, .page * { box-sizing: border-box; }
+  .page {
+    max-width: 1120px;
+    margin: 0 auto;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-block: 24px 20px;
+  }
+
+  /* The ground never carries text: the page's name sits on the forest. */
+  .masthead { margin: 0 0 16px; padding: 20px 22px; border-radius: 10px; background: var(--forest); box-shadow: var(--shadow); }
+  .masthead h1 {
+    margin: 0;
+    font-family: var(--serif);
+    font-weight: 400;
+    font-size: clamp(34px, 6vw, 46px);
+    line-height: 1.05;
+    letter-spacing: -0.01em;
+    color: var(--forest-ink-1);
+  }
+  .masthead p { margin: 8px 0 0; max-width: 62ch; color: var(--forest-ink-2); }
+
+  .layout { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr); }
+  @media (min-width: 920px) {
+    .layout { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; }
+    .sheet { grid-row: span 2; }
+  }
+
+  .sheet, .plane, .panel { border-radius: 10px; box-shadow: var(--shadow); min-width: 0; }
+  .sheet { background: var(--sheet); padding: 22px 22px 24px; }
+  .plane { background: var(--plane); color: var(--plane-ink); padding: 22px 22px 20px; }
+  .panel { background: var(--forest); color: var(--forest-ink-1); padding: 16px; }
+
+  .field { margin-top: 20px; }
+  .field:first-child { margin-top: 0; }
+  .label, .field label {
+    display: block;
+    font-size: 12.5px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--ink-2);
+    margin-bottom: 8px;
+  }
+  .plane .field label { color: var(--plane-ink); }
+  .hint { margin: 8px 0 0; font-size: 13.5px; color: var(--ink-2); }
+
+  .room-name {
+    margin: 18px 0 2px;
+    font-family: var(--serif);
+    font-weight: 400;
+    font-size: clamp(28px, 4.6vw, 36px);
+    line-height: 1.1;
+  }
+  .room-facts { margin: 0; color: var(--ink-2); font-size: 14px; }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip {
+    font: inherit;
+    font-size: 14px;
+    font-weight: 500;
+    min-height: 40px;
+    padding: 8px 14px;
+    border-radius: 999px;
+    border: 1px solid var(--edge);
+    background: var(--paper);
+    color: var(--ink-1);
+    cursor: pointer;
+    touch-action: manipulation;
+    transition: transform var(--press) var(--ease), background-color var(--press) var(--ease);
+  }
+  .chip[aria-checked="true"] { background: var(--chip-on); border-color: var(--chip-on); color: var(--chip-on-ink); }
+  .chip:active { transform: translateY(1px) scale(0.98); }
+
+  select {
+    font: inherit;
+    width: 100%;
+    min-height: 44px;
+    padding: 8px 12px;
+    border-radius: 3px;
+    border: 1px solid var(--edge);
+    background: var(--paper);
+    color: var(--ink-1);
+  }
+  .range-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 4px; }
+  .range-head label { margin: 0; }
+  output { font-variant-numeric: tabular-nums; font-size: 14px; }
+  input[type="range"] { width: 100%; min-height: 36px; margin: 0; accent-color: var(--chip-on); background: transparent; }
+  .plane input[type="range"] { accent-color: var(--plane-number); }
+
+  .rt-hero { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
+  /* Not upper case: the readout keeps the room's own vernacular, "RT 1 kHz". */
+  .rt-hero h2 { margin: 0; font-size: 14px; font-weight: 600; letter-spacing: 0.01em; }
+  .rt-number {
+    margin: 0;
+    font-family: var(--serif);
+    font-weight: 300;
+    font-size: clamp(54px, 11vw, 76px);
+    line-height: 0.95;
+    color: var(--plane-number);
+    font-variant-numeric: lining-nums tabular-nums;
+  }
+  .rt-number small { font-size: 0.42em; font-weight: 400; margin-left: 4px; }
+  .rt-caption { margin: 6px 0 0; font-size: 13.5px; }
+
+  .chart { margin-top: 16px; display: grid; gap: 7px; }
+  .band { display: grid; grid-template-columns: 54px minmax(0, 1fr) 54px; align-items: center; gap: 10px; font-size: 13px; font-variant-numeric: tabular-nums; }
+  .band .hz { text-align: right; }
+  .band .value { font-weight: 600; color: var(--plane-number); }
+  .track { position: relative; height: 12px; border-radius: 2px; background: var(--plane-track); overflow: hidden; }
+  /* Each band drawn as its own decay: full at the strike, gone at its reverberation time. */
+  .bar { position: absolute; top: 0; bottom: 0; left: 0; background: linear-gradient(90deg, var(--plane-number) 0%, var(--plane-number) 15%, #14302a00 100%); }
+  .ghost { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--plane-ghost); }
+  .axis { position: relative; height: 18px; margin: 4px 64px 0 64px; font-size: 11.5px; }
+  .axis span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+  .plane-note { margin: 12px 0 0; font-size: 13.5px; }
+
+  .actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .key {
+    font: inherit;
+    font-size: 14.5px;
+    font-weight: 600;
+    line-height: 1.2;
+    min-height: 52px;
+    padding: 8px 10px;
+    border-radius: 4px;
+    border: 1px solid var(--forest-edge);
+    background: transparent;
+    color: var(--forest-ink-1);
+    cursor: pointer;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    transition: transform var(--press) var(--ease), background-color var(--press) var(--ease);
+  }
+  .key.primary { background: var(--cream); border-color: var(--cream); color: var(--cream-ink); }
+  .key:active { transform: translateY(1px) scale(0.97); background: var(--key-press); }
+  .key.primary:active { background: var(--cream-press); }
+  .figures { display: flex; flex-wrap: wrap; gap: 4px 18px; margin: 12px 0 0; font-size: 13px; color: var(--forest-ink-2); }
+  .figures div { display: flex; gap: 6px; }
+  .figures dt, .figures dd { margin: 0; }
+  .figures dd { color: var(--forest-ink-1); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .figures [hidden] { display: none; }
+
+  /* On a phone the three keys stay under the thumb. */
+  @media (max-width: 919px) {
+    .panel { position: sticky; bottom: max(8px, env(safe-area-inset-bottom, 0px)); z-index: 2; }
+  }
+
+  .notes { margin-top: 16px; background: var(--sheet); border-radius: 10px; padding: 14px 22px; font-size: 13.5px; color: var(--ink-2); }
+  .notes p { margin: 0; }
+  .notes p + p { margin-top: 6px; }
+
+  :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+  .panel :focus-visible { outline-color: var(--focus-forest); }
+
+  /* Reduced motion: a press still shows, by colour alone. */
+  @media (prefers-reduced-motion: reduce) {
+    .chip, .key { transition: none; }
+    .chip:active, .key:active { transform: none; }
+  }
+</style>
+
+<div class="page" id="page" data-audio="none" data-voices="0">
+  <header class="masthead">
+    <h1>Set-down sound</h1>
+    <p>Each piece set down by the planner's own engine, on its surface, in its room. Listen on laptop speakers, on earbuds and on a phone.</p>
+  </header>
+
+  <div class="layout">
+    <section class="sheet" aria-labelledby="room-name">
+      <div class="field">
+        <span class="label" id="room-label">Room</span>
+        <div class="chips" id="rooms" role="radiogroup" aria-labelledby="room-label"></div>
+      </div>
+      <h2 class="room-name" id="room-name">The Grand Hall</h2>
+      <p class="room-facts" id="room-facts"></p>
+
+      <div class="field">
+        <span class="label" id="surface-label">What it lands on</span>
+        <div class="chips" id="surfaces" role="radiogroup" aria-labelledby="surface-label"></div>
+      </div>
+
+      <div class="field">
+        <label for="piece">Piece</label>
+        <select id="piece"></select>
+        <p class="hint" id="piece-facts"></p>
+      </div>
+
+      <div class="field">
+        <div class="range-head">
+          <label for="distance">Distance</label>
+          <output id="distance-value" for="distance">3.0 m</output>
+        </div>
+        <input type="range" id="distance" min="2" max="6" step="0.5" value="3">
+        <p class="hint">From where you stand to where it lands.</p>
+      </div>
+    </section>
+
+    <section class="plane" aria-labelledby="rt-title">
+      <div class="rt-hero">
+        <h2 id="rt-title">RT 1 kHz</h2>
+        <p class="rt-number" id="rt-hero"></p>
+      </div>
+      <p class="rt-caption" id="rt-caption"></p>
+      <div class="chart" id="rt-chart" role="list" aria-label="Reverberation time by band"></div>
+      <div class="axis" id="rt-axis" aria-hidden="true"></div>
+      <div class="field">
+        <div class="range-head">
+          <label for="dressing">Dressing</label>
+          <output id="dressing-value" for="dressing"></output>
+        </div>
+        <input type="range" id="dressing" min="0" max="100" step="1" value="0">
+      </div>
+      <p class="plane-note" id="tail-level"></p>
+    </section>
+
+    <section class="panel" aria-label="Play">
+      <div class="actions">
+        <button type="button" class="key primary" id="set-down">Set it down</button>
+        <button type="button" class="key" id="move">Move it</button>
+        <button type="button" class="key" id="lay-out">Lay out a dinner</button>
+      </div>
+      <dl class="figures" aria-live="polite">
+        <div><dt>Set-down render</dt><dd id="render-ms">&mdash;</dd></div>
+        <div><dt>Peak, full level</dt><dd id="peak-db">&mdash;</dd></div>
+        <div id="limit-row" hidden><dt>Limiter</dt><dd id="limit-db"></dd></div>
+        <div><dt>Tail render</dt><dd id="tail-ms">&mdash;</dd></div>
+      </dl>
+    </section>
+  </div>
+
+  <footer class="notes">
+    <p id="save-status" role="status"></p>
+    <p>Sound starts with your first tap. On an iPhone the ring switch silences this page, as it will the planner.</p>
+  </footer>
+</div>
+
+<script>/*__PAGE_SCRIPT__*/</script>
