@@ -1150,17 +1150,24 @@ describe("the changeover rule, read plainly, against the engine", () => {
 
   it("reads the review's arrangements as the engine's report does", () => {
     const at = (iso: string): number => new Date(iso).getTime();
+    // T-695 review of #400, Z11: the engine is asked too, not only the plain reading.
+    const engine = (held: readonly Held[]): string[] =>
+      measuredChangeovers(held).map(({ before, after }) => `${before.id}>${after.id}`).sort();
     // The near-tie: the dinner leaves at 22:25Z, the fair's set-up at 22:30Z.
-    expect(plainChangeovers([
+    const nearTie: Held[] = [
       { id: "fair-setup", eventId: "event-fair", startMs: at("2026-09-18T17:00:00Z"), endMs: at("2026-09-18T22:30:00Z") },
       { id: "dinner", eventId: "event-dinner", startMs: at("2026-09-18T19:00:00Z"), endMs: at("2026-09-18T22:25:00Z") },
       { id: "fair-build", eventId: "event-fair", startMs: at("2026-09-18T23:30:00Z"), endMs: at("2026-09-19T05:00:00Z") },
-    ]).changeovers).toEqual(["dinner>fair-build"]);
+    ];
+    expect(plainChangeovers(nearTie).changeovers).toEqual(["dinner>fair-build"]);
+    expect(engine(nearTie)).toEqual(["dinner>fair-build"]);
     // Two clients back to back inside another event's build.
-    expect(plainChangeovers([
+    const insideBuild: Held[] = [
       { id: "x-build", eventId: "event-x", startMs: at("2026-09-18T07:00:00Z"), endMs: at("2026-09-18T22:00:00Z") },
       { id: "conf", eventId: "event-a", startMs: at("2026-09-18T08:00:00Z"), endMs: at("2026-09-18T11:00:00Z") },
       { id: "ceremony", eventId: "event-b", startMs: at("2026-09-18T11:15:00Z"), endMs: at("2026-09-18T17:00:00Z") },
-    ]).changeovers).toEqual(["conf>ceremony"]);
+    ];
+    expect(plainChangeovers(insideBuild).changeovers).toEqual(["conf>ceremony"]);
+    expect(engine(insideBuild)).toEqual(["conf>ceremony"]);
   });
 });
