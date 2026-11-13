@@ -266,15 +266,25 @@ export async function peopleRoutes(
     if (!params.success) return reply.status(400).send(INVALID_ID);
     const actor = request.user;
 
-    const outcome = await db.transaction(async (tx) => {
-      const lock = await lockPerson(tx, scope.venueId, params.data.personId);
-      if (lock.state === "merged") return { kind: "merged", mergedIntoId: lock.mergedIntoId } as const;
-      if (lock.state !== "live") return { kind: "not_found" } as const;
-      if (!canErasePeople(actor, lock.row.venueId)) return { kind: "forbidden" } as const;
-      const erased = await eraseLockedPerson(tx, lock.row, { actorUserId: actor.id, now: new Date() });
-      if (!erased.ok) return { kind: erased.refusal } as const;
-      return { kind: "erased", personId: lock.row.id, counts: erased.counts } as const;
-    });
+    let outcome;
+    try {
+      outcome = await db.transaction(async (tx) => {
+        const lock = await lockPerson(tx, scope.venueId, params.data.personId);
+        if (lock.state === "merged") return { kind: "merged", mergedIntoId: lock.mergedIntoId } as const;
+        if (lock.state !== "live") return { kind: "not_found" } as const;
+        if (!canErasePeople(actor, lock.row.venueId)) return { kind: "forbidden" } as const;
+        const erased = await eraseLockedPerson(tx, lock.row, { actorUserId: actor.id, now: new Date() });
+        if (!erased.ok) return { kind: erased.refusal } as const;
+        return { kind: "erased", personId: lock.row.id, counts: erased.counts } as const;
+      });
+    } catch (error) {
+      // A deadlock or serialisation failure (with a merge, a hold or a
+      // contract written at the same moment) rolled the whole erasure back.
+      const pgCode = lockConflictOf(error);
+      if (pgCode === null) throw error;
+      request.log.warn({ event: "people.erase.retry", personId: params.data.personId, pgCode }, "erasure met a lock conflict");
+      return reply.status(409).send(RETRY_ANSWER);
+    }
 
     switch (outcome.kind) {
       case "not_found": return reply.status(404).send(PERSON_NOT_FOUND);
@@ -285,6 +295,11 @@ export async function peopleRoutes(
         return reply.status(409).send({
           error: "This person has a booking the venue keeps for six years after the event, so they cannot be erased here",
           code: "PERSON_HAS_BOOKING",
+        });
+      case "has_contract":
+        return reply.status(409).send({
+          error: "This person has a contract or a deposit the venue keeps with its booking records, so they cannot be erased here",
+          code: "PERSON_HAS_CONTRACT",
         });
       case "erased":
         request.log.info({ event: "people.erased", personId: outcome.personId, ...outcome.counts }, "person erased");

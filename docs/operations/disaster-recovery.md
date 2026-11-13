@@ -51,9 +51,11 @@ measurement at the next drill.
   2. Compare it with production.
   3. Copy back the rows that were lost; or, when the damage is wide, finalize the restore so the restored branch
      takes production's place (same endpoint, so the API's `DATABASE_URL` does not change).
-- **Before the service reopens:** run the retention pass (`POST /admin/cleanup`) and repeat any erasure done by hand
-  since the restore point. The privacy page promises that anything deleted since a backup is deleted again before
-  the service reopens.
+- **Before the service reopens:** run the retention pass (`POST /admin/cleanup`), which also redoes the nightly
+  24-month erasures, and repeat **every** erasure in the private erasure log since the restore point, whether it was
+  done through the erase route or by hand ([erasure requests](erasure-requests.md)). The route's own
+  `people.erased` audit rows live in the same database and are lost with it, so the log is the record. The
+  privacy page promises that anything deleted since a backup is deleted again before the service reopens.
 - **RTO:** 64 seconds to verified data in the 25 October drill (*measured*); about 15 minutes with the comparison
   and the copy-back (estimate). **RPO:** to the second, within 7 days.
 

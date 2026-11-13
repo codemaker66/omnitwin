@@ -123,8 +123,11 @@ export async function adminRoutes(
     return { data: { ...layoutNotes, rememberedNotes } };
   });
 
-  // POST /admin/retention/people — who the 24-month pass would erase now,
-  // changing nothing: each step runs and is rolled back.
+  // POST /admin/retention/people — what the 24-month pass would do now,
+  // changing nothing: every step runs inside one transaction that is rolled
+  // back, so the counts are exactly the night's. It also lists, by id only,
+  // the people kept for a booking or a contract (the six-year rule is done by
+  // hand, docs/operations/erasure-requests.md); the nightly log carries counts.
   server.post("/retention/people", {
     preHandler: [authenticate, authorizePlatformAdmin()],
   }, async () => ({ data: await eraseLapsedPeople(db, { dryRun: true }) }));

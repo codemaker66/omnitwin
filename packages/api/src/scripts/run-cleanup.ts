@@ -14,15 +14,20 @@
 //   4. Remembered allergy notes unused for the period the client agreed to
 //      (DIETARY_MEMORY_RETENTION). The words beside the "remember" box promise
 //      this removal.
-//   5. Engagement events older than ENGAGEMENT_RETENTION_MONTHS (migration
+//   5. People and lone enquiries 24 months after our last contact
+//      (eraseLapsedPeople, services/people-retention.ts), as the privacy page
+//      promises.
+//   6. Engagement events older than ENGAGEMENT_RETENTION_MONTHS (migration
 //      0100): the enquiry funnel keeps them no longer than the privacy page
 //      keeps an enquiry, whether or not their enquiry or proposal remains.
 //
-// Both note passes run on the schedule, not only when someone calls
-// POST /admin/cleanup, because the product promises them. Their errors carry
-// a SQLSTATE only, never the note: this job's log is public with the
-// repository. Neither touches object storage (PR #130 stopped storing sheet
-// PDFs), so the job needs only DATABASE_URL.
+// The note passes and the people pass run on the schedule, not only when
+// someone calls POST /admin/cleanup, because the product promises them. Their
+// errors carry a SQLSTATE only, never the note or the person: this job's log
+// is public with the repository. None touches object storage (PR #130 stopped
+// storing sheet PDFs), so the job needs only DATABASE_URL.
+//
+// Each pass runs even when an earlier one fails, and the job then exits 1.
 //
 // Exit codes: 0 = success, 1 = error
 // ---------------------------------------------------------------------------
@@ -35,6 +40,7 @@ import { removeUnusedRememberedNotes } from "../services/dietary-memory.js";
 import { removeLapsedDietaryNotes } from "../services/dietary-retention.js";
 import { removeExpiredEngagementEvents } from "../services/enquiry-funnel.js";
 import { eraseLapsedPeople } from "../services/people-retention.js";
+import { sqlStateOf } from "../utils/sql-state.js";
 
 export interface ScheduledCleanupResult {
   readonly deletedConfigs: number;
@@ -51,45 +57,117 @@ export interface ScheduledCleanupResult {
   readonly peopleErased: number;
   readonly peopleKeptForBooking: number;
   readonly enquiriesErased: number;
+  /** People and lone enquiries due but left for the next night. */
+  readonly peopleDeferred: number;
+  /** Person or enquiry steps that failed, to be tried again next night. */
+  readonly peopleStepsFailed: number;
   readonly engagementEventsRemoved: number;
 }
 
-/** Every scheduled pass, in order. Each log line carries counts only. */
+/** The SQLSTATE a failure carries: its own (the retention errors keep it on
+ *  `sqlState`), the driver's, or its cause's. */
+function stateOf(failure: unknown): string | null {
+  if (typeof failure === "object" && failure !== null && "sqlState" in failure && typeof failure.sqlState === "string") {
+    return failure.sqlState;
+  }
+  return sqlStateOf(failure);
+}
+
+/** What a failure may say in this public log: each error's name and SQLSTATE,
+ *  never its message (a database error's message carries the query's
+ *  parameters: the notes, names and addresses a pass was removing). */
+export function describeFailure(failure: unknown): string {
+  const failures: readonly unknown[] = failure instanceof AggregateError ? (failure.errors as unknown[]) : [failure];
+  return failures.map((one) => {
+    const name = one instanceof Error ? one.name : typeof one;
+    const state = stateOf(one);
+    return state === null ? name : `${name} (SQLSTATE ${state})`;
+  }).join("; ");
+}
+
+/**
+ * Every scheduled pass, in order. Each log line carries counts only. A pass
+ * runs even when one before it failed, so one broken pass never holds back
+ * another's retention promise; the job still fails, after the last pass, with
+ * the failure (or, when several failed, an AggregateError of them all).
+ */
 export async function runScheduledCleanup(
   db: Database,
   log: (line: string) => void = (line) => { console.log(line); },
 ): Promise<ScheduledCleanupResult> {
-  const deletedConfigs = await cleanupPreviewConfigurations(db);
-  log(`[cleanup] Deleted ${String(deletedConfigs)} stale preview configuration(s)`);
+  const failures: unknown[] = [];
+  async function pass<T>(name: string, run: () => Promise<T>): Promise<T | undefined> {
+    try {
+      return await run();
+    } catch (error) {
+      failures.push(error);
+      // The pass's name only: an error may hold what it was removing.
+      log(`[cleanup] The ${name} pass failed; the passes after it still run`);
+      return undefined;
+    }
+  }
 
-  const deletedFiles = await cleanupOrphanedFiles(db);
-  log(`[cleanup] Deleted ${String(deletedFiles)} orphaned file(s)`);
+  const deletedConfigs = await pass("stale preview configuration", async () => {
+    const count = await cleanupPreviewConfigurations(db);
+    log(`[cleanup] Deleted ${String(count)} stale preview configuration(s)`);
+    return count;
+  });
 
-  const lapsed = await removeLapsedDietaryNotes(db);
-  log(`[cleanup] Removed the allergy note from ${String(lapsed.layouts)} layout(s) and ${String(lapsed.sheets)} event sheet(s) past their retention, and from ${String(lapsed.actionLog)} logged change(s)`);
-  log(`[cleanup] Removed the notes on single pieces from ${String(lapsed.pieceNotes.layouts)} layout(s) past their retention`);
+  const deletedFiles = await pass("orphaned file", async () => {
+    const count = await cleanupOrphanedFiles(db);
+    log(`[cleanup] Deleted ${String(count)} orphaned file(s)`);
+    return count;
+  });
 
-  const remembered = await removeUnusedRememberedNotes(db);
-  log(`[cleanup] Removed ${String(remembered.removed)} remembered allergy note(s) unused for the agreed period`);
+  const lapsed = await pass("allergy note retention", async () => {
+    const result = await removeLapsedDietaryNotes(db);
+    log(`[cleanup] Removed the allergy note from ${String(result.layouts)} layout(s) and ${String(result.sheets)} event sheet(s) past their retention, and from ${String(result.actionLog)} logged change(s)`);
+    log(`[cleanup] Removed the notes on single pieces from ${String(result.pieceNotes.layouts)} layout(s) past their retention`);
+    return result;
+  });
 
-  const lapsedPeople = await eraseLapsedPeople(db);
-  log(`[cleanup] Erased ${String(lapsedPeople.people)} person(s) and ${String(lapsedPeople.enquiries)} enquiry(ies) 24 months after the last contact; kept ${String(lapsedPeople.keptForBooking)} person(s) for a booking`);
+  const remembered = await pass("remembered allergy note", async () => {
+    const result = await removeUnusedRememberedNotes(db);
+    log(`[cleanup] Removed ${String(result.removed)} remembered allergy note(s) unused for the agreed period`);
+    return result;
+  });
 
-  const engagementEventsRemoved = await removeExpiredEngagementEvents(db);
-  log(`[cleanup] Removed ${String(engagementEventsRemoved)} engagement event(s) past their retention period`);
+  const lapsedPeople = await pass("24-month people", async () => {
+    const result = await eraseLapsedPeople(db);
+    const deferred = result.deferred.people + result.deferred.enquiries;
+    log(`[cleanup] Erased ${String(result.people)} person(s) and ${String(result.enquiries)} enquiry(ies) 24 months after the last contact; kept ${String(result.keptForBooking)} person(s) for a booking; left ${String(deferred)} for the next night`);
+    if (result.failed > 0) {
+      // Counts and SQLSTATEs only; the people pass already rolled each one back.
+      log(`[cleanup] ${String(result.failed)} person or enquiry step(s) failed (SQLSTATE ${[...new Set(result.failedStates)].join(", ")}); the next night tries them again`);
+      failures.push(new Error(`${String(result.failed)} people step(s) failed`));
+    }
+    return result;
+  });
 
+  const engagementEventsRemoved = await pass("engagement event retention", async () => {
+    const count = await removeExpiredEngagementEvents(db);
+    log(`[cleanup] Removed ${String(count)} engagement event(s) past their retention period`);
+    return count;
+  });
+
+  if (failures.length === 1) throw failures[0];
+  if (failures.length > 1) throw new AggregateError(failures, `${String(failures.length)} cleanup passes failed`);
+
+  // Every pass ran, so every count is here.
   return {
-    deletedConfigs,
-    deletedFiles,
-    lapsedNoteLayouts: lapsed.layouts,
-    lapsedNoteSheets: lapsed.sheets,
-    loggedNotesRemoved: lapsed.actionLog,
-    lapsedPieceNoteLayouts: lapsed.pieceNotes.layouts,
-    rememberedNotesRemoved: remembered.removed,
-    peopleErased: lapsedPeople.people,
-    peopleKeptForBooking: lapsedPeople.keptForBooking,
-    enquiriesErased: lapsedPeople.enquiries,
-    engagementEventsRemoved,
+    deletedConfigs: deletedConfigs ?? 0,
+    deletedFiles: deletedFiles ?? 0,
+    lapsedNoteLayouts: lapsed?.layouts ?? 0,
+    lapsedNoteSheets: lapsed?.sheets ?? 0,
+    loggedNotesRemoved: lapsed?.actionLog ?? 0,
+    lapsedPieceNoteLayouts: lapsed?.pieceNotes.layouts ?? 0,
+    rememberedNotesRemoved: remembered?.removed ?? 0,
+    peopleErased: lapsedPeople?.people ?? 0,
+    peopleKeptForBooking: lapsedPeople?.keptForBooking ?? 0,
+    enquiriesErased: lapsedPeople?.enquiries ?? 0,
+    peopleDeferred: (lapsedPeople?.deferred.people ?? 0) + (lapsedPeople?.deferred.enquiries ?? 0),
+    peopleStepsFailed: lapsedPeople?.failed ?? 0,
+    engagementEventsRemoved: engagementEventsRemoved ?? 0,
   };
 }
 
@@ -112,7 +190,8 @@ async function main(): Promise<void> {
 const entry = process.argv[1];
 if (entry !== undefined && import.meta.url === pathToFileURL(resolve(entry)).href) {
   main().catch((err: unknown) => {
-    console.error("[cleanup] Fatal error:", err);
+    // Never the error itself: its message can quote what a pass was removing.
+    console.error(`[cleanup] Fatal error: ${describeFailure(err)}`);
     process.exit(1);
   });
 }
