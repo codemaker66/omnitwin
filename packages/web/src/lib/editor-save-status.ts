@@ -295,7 +295,11 @@ export function slateSaveState(input: SlateSaveInput): SlateSaveState {
       // connection does not put it away (delta review at 33a8e0ad, T11).
       detail: unsaved ? `${what} ${keptWhere(input.keptOnDevice)}` : refusal === null ? "everything is saved" : null,
       mark: "offline",
-      notice: refusal === null ? dropped : { ...dropped, heading: refusal.heading, actions: refusal.actions },
+      // The refusal takes the heading; the connection's sentence leads the body,
+      // so "as soon as it is back" still says what "it" is (delta review X7).
+      notice: refusal === null
+        ? dropped
+        : { heading: refusal.heading, body: `${dropped.heading} ${dropped.body}`, actions: refusal.actions },
       sendWaits: true,
     });
   }

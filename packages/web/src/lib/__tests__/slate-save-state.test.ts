@@ -61,9 +61,10 @@ describe("the slate's save states", () => {
     const refusedClear = "Table 7's note was not removed: it was changed somewhere else, and that note cannot be shown here.";
     const offline = slateSaveState({ ...steady, isOnline: false, saveError: refusedClear, refusedForHeldNote: true, refusedClear: true });
     expect(offline).toMatchObject({ kind: "offline", status: "Offline", detail: null, mark: "offline", sendWaits: true });
+    // The connection's own sentence stays in the body, so its "it" still has something to mean (delta review X7).
     expect(offline.notice).toEqual({
       heading: refusedClear,
-      body: "You can keep working. Your changes save as soon as it is back; sending waits until then.",
+      body: "The connection to Venviewer has dropped. You can keep working. Your changes save as soon as it is back; sending waits until then.",
       actions: [{ id: "dismiss", label: "Dismiss" }],
     });
   });
