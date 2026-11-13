@@ -1,12 +1,12 @@
 # The plumbing: work that happens later, and once
 
-Design, 13 November 2026. Status: **draft for Blake's approval. No product code is written until he approves.**
+Design, 13 November 2026. Status: **approved by Blake on 13 November 2026.** His four decisions are in section 10.
 Piece 0 of the platform plan (`docs/superpowers/specs/2026-11-13-platform-plan-design.md`, pull request #421;
 ledger row T-702). Branch `claude/platform-plumbing-design`. Every code fact below was read on master `85a17749`.
 Prices were read on the providers' own pricing pages on 13 November 2026. Section 13 says how the design itself
 was tested.
 
-**Blake: section 1 is everything you need to decide. Sections 2 to 13 are for whoever builds and reviews it.**
+**Section 1 is the one screen Blake decided from. Sections 2 to 13 are for whoever builds and reviews it.**
 
 ## 1. On one screen
 
@@ -31,21 +31,22 @@ servers run side by side, one reminder arrives once, and a reply sent from your 
 
 | Thing | Cost | When |
 |---|---|---|
-| Email out and in (Resend, which we already use) | $20 a month for the Pro plan: 50,000 emails a month, ten domains, no daily cap. The free plan (3,000 a month, 100 a day, three domains) is enough while we build | From the first real booking's sends |
+| Email out and in (Resend, which we already use) | Nothing for now. Blake chose to stay on the free plan (3,000 emails a month, 100 a day, three domains, mail in counted) and to look at more options when needed. The Pro plan is $20 a month: 50,000 a month, ten domains, no daily cap | The question comes back when the cap comes near (section 10) |
 | The list of work | Nothing new. It asks the database only when something is due, and once an hour, so it adds at most about $2 to $3 a month of database time | From its first merge |
 | A second server | About $3 a month at today's use (Railway charges $10 a month for each gigabyte of memory; ours uses about a quarter of one) | Your decision; see below |
 | Watching that the list is alive | Nothing, or under $1 a month: Sentry includes one such check on every plan, and a further one is $0.78 a month | From its first merge |
 | Storing mail and attachments | Nothing at this size: R2's first 10 GB a month are free, then $0.015 a gigabyte | When mail comes in |
 | Encrypted keys | Nothing as recommended. A cloud key service would be about $1 a month and a new supplier | When piece E or the accounting push needs a key |
 
-**What only you decide** (section 10): this design; staying with Resend at $20 a month; when a second server is
-added; and what we ask the Hall's email administrator for.
+**What only Blake decides, and decided on 13 November** (section 10): this design, approved; the email plan,
+free for now; a second server, with the trust pack; and what we ask the Hall's email administrator for, a
+sub-name and four records.
 
 **The honest limit.** "Exactly once" cannot be promised by any system that talks to another one. What can be built
 is: every piece of work is tried until it succeeds or a person is told, and doing it twice changes nothing.
 Section 5.2 names, for each kind of work, the key that makes a repeat harmless.
 
-**Two things you should know before choosing.**
+**Two things Blake was told before choosing.**
 
 - *The second server.* The live plan editing and the Diary's live updates keep their rooms in one server's
   memory. A second server would split a room in half without saying so. That is written in the code today and is
@@ -191,7 +192,8 @@ stops a double send; one supplier covers out and in; and a venue's domain can be
 Postmark is ruled out by the two bold cells. SES is the cheapest and has a London region, but mail in would mean
 building on three more AWS services and an approval step, for a saving of about $19 a month; it is worth a second
 look only at a volume we do not have. Ten domains is nine venues and ourselves; the next step is $90 a month for a
-thousand.
+thousand. Blake's decision of 13 November: stay on Resend's free plan for now, and look at more options when
+needed (section 10 says what "needed" is watched by).
 
 ### 4.3 The venue's address
 
@@ -343,6 +345,9 @@ For email, the caller writes the `email_sends` row and its job together.
   so `dead` at once with that reason. A refused address: `not_sent` at once. Too many requests, a provider fault,
   or no answer: retried on the list's times. A refused key or an unverified domain: retried, with an alert,
   because the fault is ours to fix and not the message's.
+- **The day's or the month's allowance used up.** Resend says so plainly, and the day's resets at midnight UTC.
+  The send waits for the reset and goes then, if its own time limit still allows; otherwise it says Not sent. An
+  alert is raised at once, because the remedy is Blake's: a paid plan takes effect straight away.
 - **One thing Resend's page does not say:** what its key does after a first try that failed. Its wording ("has
   already been sent") suggests a failed try does not use the key up. The rehearsal proves this against Resend
   itself before any caller moves: a send refused for too many requests, then tried again with the same key, must
@@ -455,9 +460,17 @@ data. This piece sends nothing to a model itself.
 
 **Never answering by itself.** Nothing here replies automatically, so two systems cannot get into a loop.
 
-**One risk to name.** Resend counts every message it receives against the month's allowance, including junk sent
-to an address that does not exist, which we then drop. On the free plan that also eats the cap of 100 a day. So
-the count of dropped mail is watched, with an alert, and it is one more reason for the Pro plan before real use.
+**The free plan and mail in.** Resend counts every message it receives against the allowance, including junk sent
+to an address that does not exist, which we then drop. On the free plan that eats the cap of 100 a day. Worse, a
+message that arrives after the allowance is used up cannot be fetched at all: Resend's own error list says so. We
+would know only who it was from and its subject. So, with Blake's choice of the free plan for now:
+
+- such a message is listed on Stuck work as arrived and unreadable, with its sender, so a person can ask for it
+  again;
+- sends and mail in are counted together against the day and the month, from our own rows, with an alert at 60
+  of the 100 and at 2,000 of the 3,000;
+- a rehearsal uses a Resend account of its own, so it cannot use up production's allowance;
+- and mail in is not switched on for production until the plan has been put to Blake again (section 10).
 
 **Production's replies do not move in this piece.** Today's Reply-To, the inbox the Hall watches, stays on every
 real send until piece F ships the screen that shows replies. Reply addresses are made and proved on test events.
@@ -497,10 +510,10 @@ version of the master key scrambled it. One row for each venue and purpose.
   message, and a count of old sends whose outcome was never recorded. For each: what kind it is, whose venue,
   when, and the scrubbed reason. Two buttons: Try again, and Close with a note.
 - **An alert.** Background failures do not reach Sentry today, so the worker reports to it directly: a job that
-  becomes `dead`, a lost claim, a venue that has fallen back to "via Venviewer", and a worker that cannot reach
-  the database. Each carries the kind, the job and the venue, never an address. Who is rung, and how, is settled
-  with the trust pack (piece J). These alerts need Sentry to be switched on in production; the page and the
-  release check below do not.
+  becomes `dead`, a lost claim, a venue that has fallen back to "via Venviewer", the email allowance nearly or
+  fully used, and a worker that cannot reach the database. Each carries the kind, the job and the venue, never
+  an address. Who is rung, and how, is settled with the trust pack (piece J). These alerts need Sentry to be
+  switched on in production; the page and the release check below do not.
 - **A check from outside**, because a list that has stopped cannot report itself. A daily job tells Sentry each
   time it has run, and Sentry alerts if a day passes without hearing. A route beside the health routes reports
   from the server's memory whether the worker is alive, when it last finished a pass, and whether it is stuck in
@@ -604,14 +617,16 @@ skipped. These are the first things built.
     nothing. Today's path gives the provider the key.
 14. **The provider's answers.** "In progress" is retried and never Not sent. "Different contents" is `dead` with
     its reason. A refused address is Not sent at once. A send a day old is not sent late. A notice that arrives
-    before the provider's answer is recorded still marks its send. And once, against Resend itself: the same key
-    after a refused first try (5.3).
+    before the provider's answer is recorded still marks its send. The day's allowance used up: the send waits
+    for the reset and goes, or says Not sent if its time has passed, and the alert is raised once. And once,
+    against Resend itself: the same key after a refused first try (5.3).
 
 **Mail in.**
 
 15. **A replayed notice.** The same notice twice, and twice at the same moment: one record, one job, one stored
     message. A bad signature and a stale one are refused and store nothing. A message the notice never told us
-    about is found by the daily job.
+    about is found by the daily job. One that arrived over the allowance is listed as unreadable, with its
+    sender.
 16. **Venues kept apart.** A token of venue A arriving at venue B's sub-name is refused. A reply address cannot
     be pointed at another venue's event. A venue's mail is stored under its own prefix. Stuck work opens for
     platform admins only.
@@ -645,20 +660,28 @@ Stage 4 can land whenever its first user needs it. Stages 2 and 3 need the Hall'
 Hall's name: the first three for sending, the fourth for replies. Both are built and rehearsed on our own domain
 first.
 
-## 10. What only Blake decides
+## 10. What only Blake decides, and what he decided
 
-1. **This design.**
-2. **The provider and its cost.** Recommended: stay with Resend, and move to its Pro plan at $20 a month when
-   the first real booking's emails begin. The free plan's cap of 100 a day counts mail in too, junk included,
-   which is the wrong risk to carry on a busy day.
-3. **When a second server is added.** Recommended: with the trust pack (piece J), once the live rooms can be
-   shared between servers, which is a small piece of its own with its own cost. This piece is proved with two
-   servers in rehearsal from its first merge. About $3 a month when it comes.
-4. **What we ask the Hall's email administrator for.** Recommended: a sub-name of the Hall's domain and four
-   records (4.3 A). It is one of the three things the plan asks of the venue by 1 December.
+Asked by button on 13 November 2026. His answers are given word for word.
 
-Already decided, and not asked again: the hold-reminder schedule stays off until the dry run; real money moves
-only on Blake's explicit yes.
+1. **This design.** "Approve it (Recommended)".
+2. **The provider and its cost.** The recommendation was Resend's Pro plan at $20 a month from the first real
+   booking's emails. His answer: "Stay on free plan for now but look into more options when needed". So we stay
+   with Resend on its free plan, and the question goes back to him, with options and prices, at the first of
+   these:
+   - sends and mail in together pass 60 in a day or 2,000 in a month;
+   - before piece F moves production's replies, because mail in counts against the cap and a message that
+     arrives over it cannot be read (5.5);
+   - a fourth domain is needed, since the free plan allows three.
+3. **When a second server is added.** "With the trust pack (Recommended)": production stays on one server until
+   the live rooms can be shared between servers, which is a small piece of its own under piece J. This piece is
+   proved with two servers in rehearsal from its first merge. About $3 a month when it comes.
+4. **What we ask the Hall's email administrator for.** "A sub-name, four records (Recommended)" (4.3 A). A
+   one-page note is prepared for Blake to send. It is one of the three things the plan asks of the venue by
+   1 December.
+
+Already decided before this design, and not asked again: the hold-reminder schedule stays off until the dry run;
+real money moves only on Blake's explicit yes.
 
 ## 11. Done when
 
@@ -681,6 +704,8 @@ F's first reply use it.
 - The retry times, the two-lost-claims rule, the hourly plan and the 90-day tidy (5.1). A job is closed by a
   person as `abandoned`, never deleted.
 - A send not started within a day is not sent late by itself (5.3).
+- The lines at which the email allowance is put back to Blake: 60 in a day, 2,000 in a month (section 10). A
+  rehearsal uses a Resend account of its own (5.5).
 - The team invitation's screen gains one phrase, for a send that is still being tried (5.3).
 - No virus scan of attachments in this piece: they are only ever downloaded, never displayed, and the types are
   limited. A scan can be added if the venue's own rules ask for one.
