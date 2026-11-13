@@ -22,6 +22,7 @@ This checklist records what production monitoring must show before a release is 
 - Web env: `VITE_SENTRY_DSN`, optional source-map upload env from `packages/web/src/lib/production-env.ts`.
 - Missing-env status is acceptable in local/dev, but production should show configured status before real client data is handled.
 - Events must scrub request bodies, auth headers, cookies, query strings, and planner/client free text.
+- API timing records (transactions) go for a sample of requests whether or not anything fails (`SENTRY_TRACES_SAMPLE_RATE`, 0.1 unless set). `scrubTransaction` (`packages/api/src/observability/redact.ts`) sends them with no request header, so no user agent or language, and with no address, query string, body or capability token. The privacy page says so and names "about one request in ten" (Blake, 13 November 2026: "Strip browser details, say so"): change the rate and the page together.
 - Alert policy: immediate alert for unhandled production exceptions; warning when sustained error rate exceeds 1 percent for 5 minutes.
 
 Evidence to record:

@@ -534,6 +534,53 @@ describe("scrubTransaction", () => {
     expect(serialised).not.toContain("0141");
   });
 
+  // Blake, 13 November 2026 ("Strip browser details, say so"): the privacy
+  // page says the API's timing records carry no address, identifier or
+  // browser details.
+  it("keeps no browser details: no request header, and no user agent in either convention, on the trace or any span", () => {
+    const out = scrubTransaction({
+      type: "transaction",
+      request: {
+        url: "https://api.example.test/venues/0f0f0f0f-0000-4000-8000-000000000001",
+        method: "GET",
+        headers: { "User-Agent": "ProbeBrowser/9.9", "accept-language": "gd-GB", referer: "https://example.test/plan", accept: "application/json" },
+      },
+      contexts: {
+        trace: {
+          trace_id: "00000000000000000000000000000001",
+          span_id: "0000000000000001",
+          data: {
+            "user_agent.original": "ProbeBrowser/9.9",
+            "http.user_agent": "ProbeBrowser/9.9",
+            "http.request.header.accept_language": "gd-GB",
+            "HTTP.REQUEST.HEADER.USER_AGENT": "ProbeBrowser/9.9",
+            "http.response.header.content_type": "application/json",
+            "http.method": "GET",
+            "http.route": "/venues/:id",
+          },
+        },
+      },
+      spans: [{
+        trace_id: "00000000000000000000000000000001",
+        span_id: "0000000000000002",
+        start_timestamp: 1,
+        data: { "User_Agent.Original": "ProbeBrowser/9.9", "http.request.header.referer": "https://example.test/plan", "db.system": "postgresql" },
+      }],
+    });
+    expect(out.request?.headers).toBeUndefined();
+    expect(out.request?.method).toBe("GET");
+    expect(out.request?.url).toBe("https://api.example.test/venues/0f0f0f0f-0000-4000-8000-000000000001");
+    expect(out.contexts?.trace?.data).toEqual({
+      "http.response.header.content_type": "application/json",
+      "http.method": "GET",
+      "http.route": "/venues/:id",
+    });
+    expect(out.spans?.[0]?.data).toEqual({ "db.system": "postgresql" });
+    const text = JSON.stringify(out);
+    expect(text).not.toContain("ProbeBrowser");
+    expect(text).not.toContain("gd-GB");
+  });
+
   it("drops the request body, the caller's address and credentials, and the query in url.path", () => {
     const out = scrubTransaction({
       type: "transaction",
@@ -558,7 +605,7 @@ describe("scrubTransaction", () => {
       }],
     });
     expect(out.request?.data).toBeUndefined();
-    expect(out.request?.headers).toEqual({ "user-agent": "test" });
+    expect(out.request?.headers).toBeUndefined();
     expect(out.contexts?.trace?.data).toEqual({ "http.method": "POST" });
     expect(out.spans?.[0]?.data).toEqual({ "url.path": "/people/search?[redacted]" });
     const serialised = JSON.stringify(out);
@@ -633,9 +680,10 @@ describe("a guest plan's claim secret", () => {
         data: { "http.request.header.x_plan_claim_secret": CLAIM_SECRET, "http.request.header.user_agent": "vitest" },
       }],
     });
-    expect(out.request?.headers).toEqual({ "user-agent": "vitest" });
+    // A transaction keeps no request header at all (browser details included).
+    expect(out.request?.headers).toBeUndefined();
     expect(out.contexts?.trace?.data).toEqual({ "http.method": "POST" });
-    expect(out.spans?.[0]?.data).toEqual({ "http.request.header.user_agent": "vitest" });
+    expect(out.spans?.[0]?.data).toEqual({});
     expect(JSON.stringify(out)).not.toContain(CLAIM_SECRET);
   });
 });
@@ -669,10 +717,16 @@ describe("the credential request headers' span attributes", () => {
   });
 
   it("drops the attribute of every header in the list, on the trace and on every span", () => {
-    const attributes = Object.fromEntries(CREDENTIAL_REQUEST_HEADERS.map((header) => [sdkHeaderAttribute(header), `value-of-${header}`]));
-    const out = scrubTransaction(transactionWithHeaderAttributes({ ...attributes, "http.request.header.user_agent": "vitest" }));
-    expect(out.contexts?.trace?.data).toEqual({ "http.request.header.user_agent": "vitest", "http.method": "GET" });
-    expect(out.spans?.[0]?.data).toEqual({ "http.request.header.user_agent": "vitest", "db.system": "postgresql" });
+    // As a request header every attribute goes (a transaction keeps no browser
+    // details); as a response header only the list's do, which is what this
+    // checks: content_type, beside them, stays.
+    const attributes = Object.fromEntries(CREDENTIAL_REQUEST_HEADERS.flatMap((header) => [
+      [sdkHeaderAttribute(header), `value-of-${header}`],
+      [`http.response.header.${header.replaceAll("-", "_")}`, `value-of-${header}`],
+    ]));
+    const out = scrubTransaction(transactionWithHeaderAttributes({ ...attributes, "http.response.header.content_type": "application/json" }));
+    expect(out.contexts?.trace?.data).toEqual({ "http.response.header.content_type": "application/json", "http.method": "GET" });
+    expect(out.spans?.[0]?.data).toEqual({ "http.response.header.content_type": "application/json", "db.system": "postgresql" });
     expect(JSON.stringify(out)).not.toContain("value-of-");
   });
 
@@ -752,23 +806,25 @@ describe("cookies", () => {
       }],
     });
     expect(out.request).not.toHaveProperty("cookies");
-    expect(out.request?.headers).toEqual({ "user-agent": "vitest" });
+    expect(out.request?.headers).toBeUndefined();
     expect(out.contexts?.trace?.data).toEqual({ "http.method": "GET" });
-    expect(out.spans?.[0]?.data).toEqual({ "http.request.header.user_agent": "vitest" });
+    expect(out.spans?.[0]?.data).toEqual({});
     const text = JSON.stringify(out);
     expect(text).not.toContain(SESSION_TOKEN);
     expect(text).not.toContain(OTHER_COOKIE_VALUE);
   });
 
   it("leaves another header whose name only begins like a credential header's", () => {
-    // A cookie's attribute sits under `cookie.`; `cookie_consent` is a header of its own.
+    // A cookie's attribute sits under `cookie.`; `cookie_consent` is a header of
+    // its own. Checked on response headers: a request header's attribute goes
+    // whatever its name, as a transaction keeps no browser details.
     const out = scrubTransaction(transactionWithHeaderAttributes({
-      "http.request.header.cookie_consent": "granted",
-      "http.request.header.authorization_hint": "none",
+      "http.response.header.cookie_consent": "granted",
+      "http.response.header.authorization_hint": "none",
     }));
     expect(out.contexts?.trace?.data).toEqual({
-      "http.request.header.cookie_consent": "granted",
-      "http.request.header.authorization_hint": "none",
+      "http.response.header.cookie_consent": "granted",
+      "http.response.header.authorization_hint": "none",
       "http.method": "GET",
     });
   });
@@ -829,7 +885,7 @@ describe.each(Object.entries(FURTHER_CREDENTIALS))("the %s header", (header, val
         data: { [`HTTP.REQUEST.HEADER.${name.toUpperCase()}`]: value, [`http.response.header.${name}.__session`]: value, "db.system": "postgresql" },
       }],
     });
-    expect(out.request?.headers).toEqual({ "user-agent": "vitest" });
+    expect(out.request?.headers).toBeUndefined();
     expect(out.contexts?.trace?.data).toEqual({ "http.method": "POST" });
     expect(out.spans?.[0]?.data).toEqual({ "db.system": "postgresql" });
     expect(JSON.stringify(out)).not.toContain(value);

@@ -223,10 +223,15 @@ script's failure falls to its own import (a route's to the route boundary, which
 reloads on it); a stylesheet that will not preload still takes the reload.
 
 **Why both are off.** Reading the browser's performance timings and sending them is
-access to information on the visitor's device. PECR Schedule A1 paragraph 5 allows it
-without consent only with clear information and a simple, free way to object. Blake's
-decision of 19 October 2026 for the enquiry funnel's browser signals applies here
-too: keep nothing until the privacy page describes it.
+access to information on the visitor's device. PECR Schedule A1 paragraph 5 (in force
+since 5 February 2026) allows it without consent only when its sole purpose is to
+collect statistics about how the site is used with a view to improving it, the
+information is shared with no one except to help with that, the visitor is given clear
+and comprehensive information about the purpose and a simple, free means of objecting,
+and does not object; paragraph 5(3) asks for the information and the means of
+objecting at the first use. Blake's decision of 19 October 2026 for the enquiry
+funnel's browser signals applies here too: keep nothing until the privacy page
+describes it.
 
 **The way to object** (T-685, 6 November 2026). Global Privacy Control and Do Not
 Track are honoured, but Safari, and so every browser on an iPhone, sends neither. The
@@ -234,16 +239,19 @@ privacy page therefore carries a "Don't measure my visits" switch
 (`observability/measurement-choice.ts`, rendered in `LegalPage.tsx`). The choice is
 kept in the browser under `venviewer.measurement.declined`, and
 `shouldReportWebVitals` refuses while it is set. A browser that will not let the site
-read its storage at all counts as declined and is never measured; one that will not
-keep the choice (storage full) keeps it in memory until the site is next loaded afresh
-(a reload, or a return from another site), and the switch says so rather than
-claiming it was kept. The switch reads what holds from the choice itself
+read its storage at all counts as declined and is never measured. What the browser
+keeps is the choice that holds, in every tab: when another tab changes it (a press,
+or a script there clearing the site's storage), every tab follows at once, whether or
+not it shows the switch (the `storage` event, heard once for the module), its reporter
+included. A press the browser will not keep (storage full) is held in memory in that
+tab only, until the tab is reloaded or leaves the site, or another tab's press changes
+what the browser keeps; it reaches no other tab, and the switch says it holds only in
+this tab. The switch reads what holds from the choice itself
 (`measurementChoiceState`, through `useSyncExternalStore`), so a return to the page
-cannot reset what it says, and a press in another tab of the same browser shows there
-too (the `storage` event; the latest press holds). The reporter reads the choice again
-before every send, so pressing the switch also stops the page load in progress (the
-privacy page is itself measured), and so does a press in another tab before this one
-is hidden. Safari's tracking prevention clears script
+cannot reset what it says. The reporter reads the choice again before every send, so
+pressing the switch also stops the page load in progress (the privacy page is itself
+measured), and so does a press that the browser keeps in another tab, before this
+one is hidden. Safari's tracking prevention clears script
 storage after about seven days without a visit, so there the choice can lapse; the
 paragraph says so, and the page's storage list names the choice ("Your page-speed
 choice"). Blake chose the switch's place: on the privacy page, which every public
@@ -259,8 +267,12 @@ page links to, not in every footer.
 2. merge #355, the privacy page's paragraph ("How fast our pages are", below) and the
    "Don't measure my visits" switch, a way to object that works on an iPhone
    (above), re-dating the policy to the day it goes live;
-3. set `WEB_VITALS_COLLECTION=on` on the API;
-4. build the web with a sample rate **below 1** (0.5 to start): the page says a
+3. have the solicitor's reply (Blake, 13 November 2026: "Wait for their reply
+   (Recommended)"): their confirmation of our reading of PECR Schedule A1 paragraph 5,
+   and their answer on whether a visitor's first page may be measured before they can
+   reach the switch. The note for them promises the measurement stays off until then;
+4. set `WEB_VITALS_COLLECTION=on` on the API;
+5. build the web with a sample rate **below 1** (0.5 to start): the page says a
    browser "may" measure a page load, so only a sample of them is measured, and the
    code treats 1 or more as off. Measuring every page load needs that description
    changed first.
@@ -288,7 +300,19 @@ also approved naming the Regulations' statistics exemption in the cookies sectio
 ("Turn sessions off (Recommended)"): browser Sentry sent a session for every page
 load and navigation, which neither "no third-party analytics product" nor the switch's
 "not measured" would have survived (`observability/sentry.ts` now drops its
-`BrowserSession` integration). The paragraph now reads:
+`BrowserSession` integration). Two more reviews that evening (the switch's code and
+tests; every claim against the code and PECR's text) led to four more of Blake's
+answers. "Strip browser details, say so (Recommended)": the API sent Sentry a timing
+record (a transaction) for about one request in ten, whether or not anything failed,
+with the request's headers and the user agent; `scrubTransaction`
+(`packages/api/src/observability/redact.ts`) now keeps no request header, and both of
+the page's Sentry entries say what such a record carries. "Wait for their reply
+(Recommended)": switching on waits for the solicitor (step 3 above). "Change both
+(Recommended)": the switch says where the browser would not keep the choice that "it
+holds only in this tab, until you reload or leave the site", and where the browser
+blocks storage that "your visits in this browser are never measured", and why. "Name
+every condition (Recommended)": the cookies section names each of paragraph 5's
+conditions, not a part of them. The paragraph now reads:
 
 > **How fast our pages are.** When you open one of our pages, your browser may measure
 > how quickly it loaded and responded, and how much its content shifted while it was

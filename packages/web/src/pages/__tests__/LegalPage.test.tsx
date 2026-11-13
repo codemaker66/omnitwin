@@ -56,12 +56,15 @@ function textOf(type: (typeof TYPES)[number]): string {
 
 afterEach(() => {
   cleanup();
+  // The choice's own memory too, so one test's press never reaches the next.
+  setMeasurementDeclined(false);
   window.localStorage.clear();
 });
 
 /** The switch's status lines: measured, and declined where the browser would not keep it. */
 const MEASURED = "Your visits may be measured, as described above.";
-const NOT_KEPT = "This browser would not let us keep your choice, so it holds only until you leave this page.";
+const NOT_KEPT = "This browser would not let us keep your choice, so it holds only in this tab, until you reload or leave the site.";
+const STORAGE_REFUSED = "This browser blocks our site's storage, so your visits in this browser are never measured.";
 
 /** Runs with a storage that reads but will not write (storage full), and puts
  *  the real one back after: a spy on happy-dom's localStorage is not restored
@@ -176,7 +179,14 @@ describe("the privacy policy", () => {
     expect(page).not.toContain("with only the day it arrived");
     expect(page).toContain("Page-speed measurements");
     expect(page).toContain("Deleted 90 days after the day they arrived.");
-    expect(page).toContain("Nor is consent required for measuring how fast our pages are: the same Regulations allow it when it is done only to collect statistics that help improve the site, you are told about it, and you can object free of charge");
+    // Later on 13 November (Blake: "Name every condition"): PECR Schedule A1
+    // paragraph 5(1)(b) to (e), not a part of them.
+    expect(page).toContain("Nor is consent required for measuring how fast our pages are: the same Regulations allow it when it is done only to collect statistics about how the site is used so that we can improve it, the information is shared with no one except to help us improve the site, you are given clear information about its purpose, and you have a simple, free way to object and have not used it, such as the \"Don't measure my visits\" switch (see \"How fast our pages are\").");
+    expect(page).not.toContain("you are told about it");
+    // And (Blake: "Strip browser details, say so"): the error monitor's timing
+    // records, sent whether or not anything failed, in both places it is named.
+    expect(page).toContain("Our server also sends it a timing record for about one request in ten, saying which kind of request it was and how long it took, with no address, identifier or browser details.");
+    expect(page).toContain("Error monitoring. It records technical diagnostics when something in the site fails, so that we can fix it, and a timing record for about one request in ten, with no address, identifier or browser details.");
     expect(page).toContain("your visit is not measured, and anything that arrives with either signal is discarded");
     expect(page).not.toContain("nothing is measured or sent");
     expect(page).toContain("Measuring how fast our pages are");
@@ -221,6 +231,33 @@ describe("the privacy policy", () => {
     });
   });
 
+  // #355's verification (13 November): the switch must follow another tab's
+  // press made while this tab was away from the page, and undo a choice kept
+  // from an earlier visit.
+  it("shows another tab's press made while the visitor was away from the page", () => {
+    const first = render(<LegalPage type="privacy" />);
+    fireEvent.click(screen.getByRole("button", { name: "Don't measure my visits" }));
+    first.unmount();
+    // Another tab turns it back off while this one is on another page.
+    window.localStorage.removeItem(MEASUREMENT_DECLINED_KEY);
+    fireEvent(window, new StorageEvent("storage", { key: MEASUREMENT_DECLINED_KEY, oldValue: "1", newValue: null }));
+    render(<LegalPage type="privacy" />);
+    expect(screen.getByRole("button", { name: "Don't measure my visits" }).getAttribute("aria-pressed")).toBe("false");
+    expect(screen.getByRole("status").textContent).toBe(MEASURED);
+  });
+
+  it("undoes a choice kept from an earlier visit", () => {
+    window.localStorage.setItem(MEASUREMENT_DECLINED_KEY, "1");
+    render(<LegalPage type="privacy" />);
+    const button = screen.getByRole("button", { name: "Don't measure my visits" });
+    expect(button.getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("status").textContent).toBe("Your visits in this browser are not measured.");
+    fireEvent.click(button);
+    expect(button.getAttribute("aria-pressed")).toBe("false");
+    expect(screen.getByRole("status").textContent).toBe(MEASURED);
+    expect(measurementDeclined()).toBe(false);
+  });
+
   // #355's code review: a press in another tab of this browser shows here too.
   it("shows a choice made in another tab of this browser", () => {
     render(<LegalPage type="privacy" />);
@@ -238,8 +275,9 @@ describe("the privacy policy", () => {
 
   // #355's review (13 November 2026): where the browser refuses its storage
   // altogether, the visitor is never measured, whatever they press, so the
-  // status must not say the choice lasts only until they leave.
-  it("says a browser that refuses its storage is not measured, whatever is pressed", () => {
+  // status must not say the choice lasts only until they leave; and it says
+  // why the press changes nothing (Blake, 13 November: "Change both").
+  it("says a browser that refuses its storage is never measured, and why, whatever is pressed", () => {
     const real = window.localStorage;
     const refuse = (): never => { throw new Error("blocked"); };
     Object.defineProperty(window, "localStorage", {
@@ -250,9 +288,10 @@ describe("the privacy policy", () => {
       render(<LegalPage type="privacy" />);
       const button = screen.getByRole("button", { name: "Don't measure my visits" });
       expect(button.getAttribute("aria-pressed")).toBe("true");
+      expect(screen.getByRole("status").textContent).toBe(STORAGE_REFUSED);
       fireEvent.click(button);
       expect(button.getAttribute("aria-pressed")).toBe("true");
-      expect(screen.getByRole("status").textContent).toBe("Your visits in this browser are not measured.");
+      expect(screen.getByRole("status").textContent).toBe(STORAGE_REFUSED);
     } finally {
       Object.defineProperty(window, "localStorage", { configurable: true, value: real });
       setMeasurementDeclined(false);

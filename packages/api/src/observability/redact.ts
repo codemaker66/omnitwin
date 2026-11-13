@@ -370,10 +370,35 @@ export function scrubBreadcrumb(breadcrumb: Breadcrumb): Breadcrumb {
 }
 
 /**
+ * Whether a span attribute describes the visitor's browser: any request
+ * header's attribute (`http.request.header.<name>`, the user agent's and the
+ * language's among them), and the user agent as the OpenTelemetry HTTP
+ * instrumentation records it (`user_agent.original`, and `http.user_agent` in
+ * its older conventions).
+ */
+function isBrowserDetailAttribute(key: string): boolean {
+  const lower = key.toLowerCase();
+  return lower.startsWith("http.request.header.") || lower.startsWith("user_agent.") || lower === "http.user_agent";
+}
+
+function dropBrowserDetails(data: Record<string, unknown> | undefined): void {
+  if (data === undefined) return;
+  for (const key of Object.keys(data)) {
+    // eslint-disable-next-line @typescript-eslint/no-dynamic-delete -- attribute bags are open-ended records
+    if (isBrowserDetailAttribute(key)) delete data[key];
+  }
+}
+
+/**
  * `beforeSendTransaction`: strips the query from `request.url`, removes
- * `request.query_string`, the body, the cookies and the credential and
- * address headers, and cleans the URL-bearing, address and credential
- * attributes on every span and on the trace context.
+ * `request.query_string`, the body, the cookies and every request header, and
+ * cleans the URL-bearing, address and credential attributes and every
+ * attribute that describes the browser on every span and on the trace
+ * context. A transaction is the timing record the API sends for a sample of
+ * requests whether or not anything failed, and the privacy page says it
+ * carries no address, identifier or browser details (Blake, 13 November
+ * 2026: "Strip browser details, say so"): none of a request's headers is
+ * kept, the user agent included.
  */
 export function scrubTransaction(event: ScrubbableTransaction): ScrubbableTransaction {
   if (event.request !== undefined) {
@@ -386,10 +411,11 @@ export function scrubTransaction(event: ScrubbableTransaction): ScrubbableTransa
     // an enquiry's name, email, phone and allergy note.
     event.request.data = undefined;
     dropRequestCredentials(event.request, DROPPED_REQUEST_HEADERS);
+    delete event.request.headers;
   }
-  scrubAttributes(event.contexts?.trace?.data);
-  for (const span of event.spans ?? []) {
-    scrubAttributes(span.data);
+  for (const data of [event.contexts?.trace?.data, ...(event.spans ?? []).map((span) => span.data)]) {
+    scrubAttributes(data);
+    dropBrowserDetails(data);
   }
   return templateCapabilityPathsDeep(event);
 }

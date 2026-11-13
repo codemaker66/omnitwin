@@ -93,6 +93,13 @@ describe("the measurement choice", () => {
     expect(measurementChoiceState()).toBe("declined");
     setMeasurementDeclined(false);
     expect(measurementChoiceState()).toBe("measured");
+    // A kept press leaves nothing in memory: what the browser keeps holds, so
+    // when its own settings clear the site's data (no event in this tab), the
+    // next read sees that, and nothing claims the browser refused the press.
+    setMeasurementDeclined(true);
+    window.localStorage.removeItem(MEASUREMENT_DECLINED_KEY);
+    expect(measurementChoiceState()).toBe("measured");
+    expect(measurementDeclined()).toBe(false);
     // Kept from an earlier visit.
     window.localStorage.setItem(MEASUREMENT_DECLINED_KEY, "1");
     expect(measurementChoiceState()).toBe("declined");
@@ -123,33 +130,34 @@ describe("the measurement choice", () => {
     });
   });
 
-  // #355's code review: a switch on the page shows a press made in another tab,
-  // and the latest press in this browser is the one that holds.
+  // #355's code review: what the browser keeps is the choice that holds, so a
+  // switch on the page, and the reporter, follow another tab's press.
   it("tells whoever shows the choice of a press here or in another tab, and stops when asked", () => {
     const seen: string[] = [];
     const stop = subscribeMeasurementChoice(() => { seen.push(measurementChoiceState()); });
     try {
       setMeasurementDeclined(true);
       expect(seen).toEqual(["declined"]);
-      // Another tab undoes it: this tab follows, its own press in memory included.
+      // Another tab undoes it: this tab follows.
       window.localStorage.removeItem(MEASUREMENT_DECLINED_KEY);
       window.dispatchEvent(new StorageEvent("storage", { key: MEASUREMENT_DECLINED_KEY, oldValue: "1", newValue: null }));
       expect(seen).toEqual(["declined", "measured"]);
       expect(measurementDeclined()).toBe(false);
-      // Another tab declines.
+      // Another tab declines: this tab follows, its reporter included.
       window.localStorage.setItem(MEASUREMENT_DECLINED_KEY, "1");
       window.dispatchEvent(new StorageEvent("storage", { key: MEASUREMENT_DECLINED_KEY, oldValue: null, newValue: "1" }));
       expect(seen.at(-1)).toBe("declined");
+      expect(measurementDeclined()).toBe(true);
       // Another key is nothing to tell.
       window.dispatchEvent(new StorageEvent("storage", { key: "venviewer.something-else", newValue: "x" }));
       expect(seen).toHaveLength(3);
-      // Something clears all the site's storage: told, and this tab's own
-      // press in memory still holds (it can only measure less).
-      setMeasurementDeclined(true);
+      // A script in another tab clears all the site's storage: followed, as
+      // when the browser clears the site's data (the page says the choice
+      // lasts until then).
       window.localStorage.clear();
       window.dispatchEvent(new StorageEvent("storage", { key: null }));
-      expect(seen.at(-1)).toBe("declined-this-visit");
-      expect(measurementDeclined()).toBe(true);
+      expect(seen.at(-1)).toBe("measured");
+      expect(measurementDeclined()).toBe(false);
     } finally {
       stop();
     }
@@ -157,5 +165,28 @@ describe("the measurement choice", () => {
     setMeasurementDeclined(false);
     window.dispatchEvent(new StorageEvent("storage", { key: MEASUREMENT_DECLINED_KEY, newValue: "1" }));
     expect(seen).toHaveLength(told);
+  });
+
+  // The press this tab could not keep (storage full) holds only here, and
+  // gives way to whatever another tab then has the browser keep.
+  it("holds a press the browser would not keep in this tab only, until another tab's press replaces it", () => {
+    const kept = new Map<string, string>();
+    withStorage({
+      getItem: (key) => kept.get(key) ?? null,
+      setItem: () => { throw new Error("QuotaExceededError"); },
+      removeItem: (key) => { kept.delete(key); },
+    }, () => {
+      setMeasurementDeclined(true);
+      expect(measurementChoiceState()).toBe("declined-this-visit");
+      expect(measurementDeclined()).toBe(true);
+      // Another tab, with room by then, declines and then undoes it.
+      kept.set(MEASUREMENT_DECLINED_KEY, "1");
+      window.dispatchEvent(new StorageEvent("storage", { key: MEASUREMENT_DECLINED_KEY, newValue: "1" }));
+      expect(measurementChoiceState()).toBe("declined");
+      kept.delete(MEASUREMENT_DECLINED_KEY);
+      window.dispatchEvent(new StorageEvent("storage", { key: MEASUREMENT_DECLINED_KEY, oldValue: "1", newValue: null }));
+      expect(measurementChoiceState()).toBe("measured");
+      expect(measurementDeclined()).toBe(false);
+    });
   });
 });
