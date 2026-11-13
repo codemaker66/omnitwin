@@ -17,7 +17,8 @@ interface PlannerFeatureSpec {
   readonly lane: "E" | "P" | "planner-qol" | "hud";
   /**
    * The quality-of-life item it delivers: Q-NN in design/qol-pass.md, PQ-N in
-   * planner-qol's own list, or D-N for one of Blake's decisions.
+   * planner-qol's own list, or D-N for one of Blake's decisions. The HUD's
+   * lane names its task's row in docs/state/tasks.md (T-NNN).
    */
   readonly item: string;
   /** Whether everyone has it. */
@@ -85,9 +86,9 @@ export const PLANNER_FEATURE_SPECS = {
    * its nearest neighbour and the reason a clearance fails. The planner HUD turns
    * them off, because its shelf says each of them once.
    */
-  roomCallouts: { lane: "hud", item: "stage", on: true },
+  roomCallouts: { lane: "hud", item: "T-721", on: true },
   /** A thin line on the floor round what is chosen (lib/chosen-mark.ts): the planner HUD's mark, in the plate's place. */
-  chosenMark: { lane: "hud", item: "stage", on: false },
+  chosenMark: { lane: "hud", item: "T-721", on: false },
 } as const satisfies Readonly<Record<string, PlannerFeatureSpec>>;
 
 export type PlannerFeature = keyof typeof PLANNER_FEATURE_SPECS;
