@@ -86,6 +86,8 @@ interface Occupancy {
   readonly eventId: string | null;
   readonly startMs: number;
   readonly endMs: number;
+  /** The booking and phase ids merged into it. */
+  readonly members: readonly string[];
 }
 
 /** A booking or phase that makes up an occupancy. */
@@ -97,6 +99,14 @@ interface OccupancyPiece {
   readonly endMs: number;
   /** A confirmed booking names its occupancy; a phase only where none does. */
   readonly booking: boolean;
+}
+
+/** A changeover in a room that no turnaround rule covers, with the booking
+ *  and phase ids of the occupancy on either side of it. */
+export interface UncoveredTurnaroundGap {
+  readonly spaceId: string;
+  readonly before: readonly string[];
+  readonly after: readonly string[];
 }
 
 const MS_PER_MINUTE = 60_000;
@@ -195,6 +205,7 @@ function occupancyOf(eventId: string | null, pieces: readonly OccupancyPiece[]):
     eventId,
     startMs: Math.min(...pieces.map((piece) => piece.startMs)),
     endMs: Math.max(...pieces.map((piece) => piece.endMs)),
+    members: pieces.map((piece) => piece.id),
   };
 }
 
@@ -280,7 +291,17 @@ function buildOccupancies(
  * input (in any order) yields the same report, conflicts sorted by id.
  */
 export function detectCalendarConflicts(input: DetectCalendarConflictsInput): ConflictReport {
+  return detectCalendarConflictsInDetail(input).report;
+}
+
+/** The report, and which gaps its turnaround check counted as not covered,
+ *  for a caller that needs to know whose gaps those are. */
+export function detectCalendarConflictsInDetail(input: DetectCalendarConflictsInput): {
+  readonly report: ConflictReport;
+  readonly uncoveredGaps: readonly UncoveredTurnaroundGap[];
+} {
   const conflicts: CalendarConflict[] = [];
+  const uncoveredGaps: UncoveredTurnaroundGap[] = [];
 
   const liveBookings = input.bookings.filter(isLive);
   const inks = liveBookings.filter((row) => row.kind === "ink");
@@ -390,6 +411,7 @@ export function detectCalendarConflicts(input: DetectCalendarConflictsInput): Co
       const applicable = resolveTurnaroundRule(input.turnaroundRules, spaceId, next.eventType);
       if (applicable === null) {
         turnaroundUncoveredCount += 1;
+        uncoveredGaps.push({ spaceId, before: current.members, after: next.members });
         continue;
       }
       const gapMinutes = Math.round(gapMs / MS_PER_MINUTE);
@@ -481,7 +503,7 @@ export function detectCalendarConflicts(input: DetectCalendarConflictsInput): Co
           ? `${String(turnaroundUncoveredCount)} of ${String(turnaroundPairCount)} consecutive occupancy pairs have no applicable turnaround rule — those gaps are not checked.`
           : `No active turnaround rule covers these spaces yet — ${String(turnaroundPairCount)} occupancy gaps are not checked.`;
 
-  return {
+  const report: ConflictReport = {
     conflicts,
     checks: {
       inkDoubleBook: { status: "checked" },
@@ -493,6 +515,7 @@ export function detectCalendarConflicts(input: DetectCalendarConflictsInput): Co
       },
     },
   };
+  return { report, uncoveredGaps };
 }
 
 export type { ConflictReport, CalendarConflict, ConflictSeverity };
