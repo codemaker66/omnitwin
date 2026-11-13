@@ -39,7 +39,10 @@ export type SentryOptionsEnv = Pick<Env, "SENTRY_DSN" | "SENTRY_ENVIRONMENT" | "
  *   - beforeSend: request bodies, credentials, query strings and the
  *     query parameters in exception values (`./redact.ts`), then any guest
  *     allergy note left in a message or breadcrumb (`./health-redaction.ts`);
- *   - beforeSendTransaction: the query in request urls and span attributes;
+ *   - beforeSendTransaction: the timing records carry no address, identifier
+ *     or browser details (`scrubTransaction`: no request header, no query,
+ *     body or token, and record ids in URLs replaced), as the privacy page
+ *     says;
  *   - beforeBreadcrumb: the query in http breadcrumbs.
  */
 export function buildSentryOptions(env: SentryOptionsEnv): NodeOptions {
@@ -47,11 +50,16 @@ export function buildSentryOptions(env: SentryOptionsEnv): NodeOptions {
     dsn: env.SENTRY_DSN,
     environment: env.SENTRY_ENVIRONMENT ?? env.NODE_ENV,
     tracesSampleRate: env.SENTRY_TRACES_SAMPLE_RATE,
+    // The rate decides alone: a request that arrives with a sampled
+    // sentry-trace header is not traced for that, so a caller cannot make
+    // every one of its requests a timing record, and the privacy page's
+    // "about one request in ten" holds (#355's verification, 13 November 2026).
+    tracesSampler: () => env.SENTRY_TRACES_SAMPLE_RATE,
     // A page-speed report is traced by no one: the privacy page says the
-    // server keeps only the timings and logs nothing for them, and a trace
-    // would carry the visitor's user agent (T-685, 12 November 2026). A
-    // string here matches any transaction whose name contains it; a failure
-    // still reaches Sentry through the error normaliser's capture.
+    // server keeps only the timings and logs nothing for them (T-685,
+    // 12 November 2026); before #355 a trace also carried the visitor's user
+    // agent. A string here matches any transaction whose name contains it; a
+    // failure still reaches Sentry through the error normaliser's capture.
     ignoreTransactions: [WEB_VITALS_TRANSACTION],
     beforeSend: (event) => scrubApiSentryEvent(scrubErrorEvent(event)),
     beforeSendTransaction: scrubTransaction,

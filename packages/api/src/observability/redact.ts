@@ -389,6 +389,53 @@ function dropBrowserDetails(data: Record<string, unknown> | undefined): void {
   }
 }
 
+/** A URL or path, split into its origin (scheme and host, if any), its path,
+ *  and the rest (a query or fragment, or the marker left for one). */
+const URL_PARTS = /^([a-z][a-z\d+.-]*:\/\/[^/?#]*)?([^?#]*)([\s\S]*)$/iu;
+
+/**
+ * A path segment that names one record rather than a kind of thing: a UUID,
+ * a token of six or more characters with a digit in it (a share code, a
+ * provider's id such as Clerk's `user_…` or Stripe's `pi_…`, a date), or one
+ * of twenty or more letters, digits, dashes and underscores. The route's own
+ * words ("venues", "payment_intents", "v1") and placeholders (":id") stay.
+ */
+const RECORD_SEGMENT = /^(?:[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}|(?=[^/]*\d)[\w.~%-]{6,}|[\w-]{20,})$/iu;
+
+/** Replaces each path segment that names one record with `:id`, keeping the
+ *  origin, the route's words, and anything after the path. */
+export function withoutIdentifiers(url: string): string {
+  const parts = URL_PARTS.exec(url);
+  if (parts === null) return url;
+  const [, origin = "", path = "", rest = ""] = parts;
+  return `${origin}${path.split("/").map((segment) => (RECORD_SEGMENT.test(segment) ? ":id" : segment)).join("/")}${rest}`;
+}
+
+/** The URL or path with its path replaced by the route's pattern. */
+function onRoute(url: string, route: string): string {
+  const parts = URL_PARTS.exec(url);
+  if (parts === null) return url;
+  const [, origin = "", , rest = ""] = parts;
+  return `${origin}${route}${rest}`;
+}
+
+/** Every URL or path in a span's description or a transaction's name: a
+ *  token that starts with "/" or holds "://". */
+function withoutIdentifiersIn(text: string): string {
+  return text.replace(/\S*:\/\/\S+|(?<=^|\s)\/\S*/gu, (url) => withoutIdentifiers(url));
+}
+
+/** The URL-bearing attributes, on the route's pattern where it is known (the
+ *  request this transaction times), and otherwise with each record's segment
+ *  replaced (an outgoing call, say to Clerk's users/<id>). */
+function templateUrlAttributes(data: Record<string, unknown> | undefined, route: string | undefined): void {
+  if (data === undefined) return;
+  for (const key of URL_ATTRIBUTE_KEYS) {
+    const value = data[key];
+    if (typeof value === "string") data[key] = route === undefined ? withoutIdentifiers(value) : onRoute(value, route);
+  }
+}
+
 /**
  * `beforeSendTransaction`: strips the query from `request.url`, removes
  * `request.query_string`, the body, the cookies and every request header, and
@@ -398,12 +445,18 @@ function dropBrowserDetails(data: Record<string, unknown> | undefined): void {
  * requests whether or not anything failed, and the privacy page says it
  * carries no address, identifier or browser details (Blake, 13 November
  * 2026: "Strip browser details, say so"): none of a request's headers is
- * kept, the user agent included.
+ * kept, the user agent included, and no URL names a record: the request's
+ * own URL shows its route's pattern (`http.route`, as Fastify matched it),
+ * and every other URL, a span's description and the name of a transaction
+ * no route matched lose each segment that names one record.
  */
 export function scrubTransaction(event: ScrubbableTransaction): ScrubbableTransaction {
+  const routeAttribute = event.contexts?.trace?.data?.["http.route"];
+  const route = typeof routeAttribute === "string" && routeAttribute.startsWith("/") ? routeAttribute : undefined;
   if (event.request !== undefined) {
     if (event.request.url !== undefined) {
-      event.request.url = withoutQuery(event.request.url);
+      const url = withoutQuery(event.request.url);
+      event.request.url = route === undefined ? withoutIdentifiers(url) : onRoute(url, route);
     }
     delete event.request.query_string;
     // The SDK keeps an incoming request's body on its transaction (the
@@ -413,9 +466,15 @@ export function scrubTransaction(event: ScrubbableTransaction): ScrubbableTransa
     dropRequestCredentials(event.request, DROPPED_REQUEST_HEADERS);
     delete event.request.headers;
   }
-  for (const data of [event.contexts?.trace?.data, ...(event.spans ?? []).map((span) => span.data)]) {
-    scrubAttributes(data);
-    dropBrowserDetails(data);
+  scrubAttributes(event.contexts?.trace?.data);
+  dropBrowserDetails(event.contexts?.trace?.data);
+  templateUrlAttributes(event.contexts?.trace?.data, route);
+  for (const span of event.spans ?? []) {
+    scrubAttributes(span.data);
+    dropBrowserDetails(span.data);
+    templateUrlAttributes(span.data, undefined);
+    if (span.description !== undefined) span.description = withoutIdentifiersIn(span.description);
   }
+  if (event.transaction !== undefined) event.transaction = withoutIdentifiersIn(event.transaction);
   return templateCapabilityPathsDeep(event);
 }

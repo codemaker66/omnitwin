@@ -87,6 +87,17 @@ describe("the API's Sentry options", () => {
     expect(options.ignoreTransactions).toEqual([WEB_VITALS_TRANSACTION]);
   });
 
+  // #355's verification (13 November 2026): a caller's sampled sentry-trace
+  // header must not make its requests timing records; the rate decides alone,
+  // so the privacy page's "about one request in ten" holds.
+  it("sample at the configured rate whatever an incoming trace decided", () => {
+    type SamplingContext = Parameters<NonNullable<typeof options.tracesSampler>>[0];
+    const sampled: SamplingContext = { name: "GET /venues/:id", parentSampled: true, inheritOrSampleWith: () => 1 };
+    const notSampled: SamplingContext = { name: "GET /venues/:id", parentSampled: false, inheritOrSampleWith: () => 0 };
+    expect(options.tracesSampler?.(sampled)).toBe(0.1);
+    expect(options.tracesSampler?.(notSampled)).toBe(0.1);
+  });
+
   it("name SENTRY_ENVIRONMENT over NODE_ENV when it is set", () => {
     expect(buildSentryOptions({ NODE_ENV: "production", SENTRY_ENVIRONMENT: "staging", SENTRY_TRACES_SAMPLE_RATE: 0 }).environment)
       .toBe("staging");

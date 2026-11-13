@@ -56,35 +56,42 @@ function textOf(type: (typeof TYPES)[number]): string {
 
 afterEach(() => {
   cleanup();
-  // The choice's own memory too, so one test's press never reaches the next.
+  // The choice's own memory and the tab's copy too, so one test's press never reaches the next.
   setMeasurementDeclined(false);
   window.localStorage.clear();
+  window.sessionStorage.clear();
 });
 
-/** The switch's status lines: measured, and declined where the browser would not keep it. */
+/** The switch's status lines: measured, and declined where the browser would
+ *  not keep it (kept for the tab, or for this page only). */
 const MEASURED = "Your visits may be measured, as described above.";
-const NOT_KEPT = "This browser would not let us keep your choice, so it holds only in this tab, until you reload or leave the site.";
+const NOT_KEPT_TAB = "This browser would not let us keep your choice, so it holds only in this tab, until you close it.";
+const NOT_KEPT_PAGE = "This browser would not let us keep your choice, so it holds only until you leave this page.";
 const STORAGE_REFUSED = "This browser blocks our site's storage, so your visits in this browser are never measured.";
 
-/** Runs with a storage that reads but will not write (storage full), and puts
- *  the real one back after: a spy on happy-dom's localStorage is not restored
- *  and leaks into later tests. */
-function withFullStorage(run: () => void): void {
-  const real = window.localStorage;
+/** A storage that reads but will not write (full), over the given map. */
+const fullStorage = (kept: Map<string, string>): Pick<Storage, "getItem" | "setItem" | "removeItem"> => ({
+  getItem: (key: string) => kept.get(key) ?? null,
+  setItem: () => { throw new Error("QuotaExceededError"); },
+  removeItem: (key: string) => { kept.delete(key); },
+});
+
+/** Runs with a browser storage that will not write (full), over a map the
+ *  test can change as another tab would, and puts the real one back after: a
+ *  spy on happy-dom's storage is not restored and leaks into later tests.
+ *  With `tabFull`, this tab's session storage is full too. */
+function withFullStorage(run: (kept: Map<string, string>) => void, tabFull = false): void {
+  const realLocal = window.localStorage;
+  const realSession = window.sessionStorage;
   const kept = new Map<string, string>();
-  Object.defineProperty(window, "localStorage", {
-    configurable: true,
-    value: {
-      getItem: (key: string) => kept.get(key) ?? null,
-      setItem: () => { throw new Error("QuotaExceededError"); },
-      removeItem: (key: string) => { kept.delete(key); },
-    },
-  });
+  Object.defineProperty(window, "localStorage", { configurable: true, value: fullStorage(kept) });
+  if (tabFull) Object.defineProperty(window, "sessionStorage", { configurable: true, value: fullStorage(new Map()) });
   try {
-    run();
+    run(kept);
   } finally {
-    Object.defineProperty(window, "localStorage", { configurable: true, value: real });
     setMeasurementDeclined(false);
+    Object.defineProperty(window, "localStorage", { configurable: true, value: realLocal });
+    Object.defineProperty(window, "sessionStorage", { configurable: true, value: realSession });
   }
 }
 
@@ -181,7 +188,7 @@ describe("the privacy policy", () => {
     expect(page).toContain("Deleted 90 days after the day they arrived.");
     // Later on 13 November (Blake: "Name every condition"): PECR Schedule A1
     // paragraph 5(1)(b) to (e), not a part of them.
-    expect(page).toContain("Nor is consent required for measuring how fast our pages are: the same Regulations allow it when it is done only to collect statistics about how the site is used so that we can improve it, the information is shared with no one except to help us improve the site, you are given clear information about its purpose, and you have a simple, free way to object and have not used it, such as the \"Don't measure my visits\" switch (see \"How fast our pages are\").");
+    expect(page).toContain("Nor is consent required for measuring how fast our pages are: the same Regulations allow it when it is done only to collect statistics about how the site is used so that we can improve it, the information is shared with no one except to help us improve the site, you are given clear and comprehensive information about its purpose, and you have a simple, free way to object and have not used it, such as the \"Don't measure my visits\" switch (see \"How fast our pages are\").");
     expect(page).not.toContain("you are told about it");
     // And (Blake: "Strip browser details, say so"): the error monitor's timing
     // records, sent whether or not anything failed, in both places it is named.
@@ -209,12 +216,22 @@ describe("the privacy policy", () => {
     expect(screen.getByRole("status").textContent).toBe(MEASURED);
   });
 
-  it("says plainly when the browser would not keep the choice, rather than claiming it was kept", () => {
+  // Blake, 13 November 2026 ("Keep it for the tab"): kept for the tab, and said so.
+  it("says plainly when the browser would not keep the choice, and that it holds for this tab", () => {
     withFullStorage(() => {
       render(<LegalPage type="privacy" />);
       fireEvent.click(screen.getByRole("button", { name: "Don't measure my visits" }));
-      expect(screen.getByRole("status").textContent).toBe(NOT_KEPT);
+      expect(screen.getByRole("status").textContent).toBe(NOT_KEPT_TAB);
     });
+  });
+
+  it("says it holds only on this page where the tab will not keep it either", () => {
+    withFullStorage(() => {
+      render(<LegalPage type="privacy" />);
+      fireEvent.click(screen.getByRole("button", { name: "Don't measure my visits" }));
+      expect(screen.getByRole("button", { name: "Don't measure my visits" }).getAttribute("aria-pressed")).toBe("true");
+      expect(screen.getByRole("status").textContent).toBe(NOT_KEPT_PAGE);
+    }, true);
   });
 
   // #355's reviews (13 November 2026): the switch read once, when shown, so a
@@ -223,27 +240,33 @@ describe("the privacy policy", () => {
     withFullStorage(() => {
       const first = render(<LegalPage type="privacy" />);
       fireEvent.click(screen.getByRole("button", { name: "Don't measure my visits" }));
-      expect(screen.getByRole("status").textContent).toBe(NOT_KEPT);
+      expect(screen.getByRole("status").textContent).toBe(NOT_KEPT_TAB);
       first.unmount();
       render(<LegalPage type="privacy" />);
       expect(screen.getByRole("button", { name: "Don't measure my visits" }).getAttribute("aria-pressed")).toBe("true");
-      expect(screen.getByRole("status").textContent).toBe(NOT_KEPT);
+      expect(screen.getByRole("status").textContent).toBe(NOT_KEPT_TAB);
     });
   });
 
-  // #355's verification (13 November): the switch must follow another tab's
-  // press made while this tab was away from the page, and undo a choice kept
-  // from an earlier visit.
+  // #355's verifications (13 November): the switch must follow another tab's
+  // press made while this tab was away from the page, even over this tab's
+  // own press that the browser would not keep, and undo a choice kept from an
+  // earlier visit.
   it("shows another tab's press made while the visitor was away from the page", () => {
-    const first = render(<LegalPage type="privacy" />);
-    fireEvent.click(screen.getByRole("button", { name: "Don't measure my visits" }));
-    first.unmount();
-    // Another tab turns it back off while this one is on another page.
-    window.localStorage.removeItem(MEASUREMENT_DECLINED_KEY);
-    fireEvent(window, new StorageEvent("storage", { key: MEASUREMENT_DECLINED_KEY, oldValue: "1", newValue: null }));
-    render(<LegalPage type="privacy" />);
-    expect(screen.getByRole("button", { name: "Don't measure my visits" }).getAttribute("aria-pressed")).toBe("false");
-    expect(screen.getByRole("status").textContent).toBe(MEASURED);
+    withFullStorage((kept) => {
+      const first = render(<LegalPage type="privacy" />);
+      fireEvent.click(screen.getByRole("button", { name: "Don't measure my visits" }));
+      expect(screen.getByRole("status").textContent).toBe(NOT_KEPT_TAB);
+      first.unmount();
+      // Another tab, with room by then, turns it on and then off while this one is on another page.
+      kept.set(MEASUREMENT_DECLINED_KEY, "1");
+      fireEvent(window, new StorageEvent("storage", { key: MEASUREMENT_DECLINED_KEY, oldValue: null, newValue: "1" }));
+      kept.delete(MEASUREMENT_DECLINED_KEY);
+      fireEvent(window, new StorageEvent("storage", { key: MEASUREMENT_DECLINED_KEY, oldValue: "1", newValue: null }));
+      render(<LegalPage type="privacy" />);
+      expect(screen.getByRole("button", { name: "Don't measure my visits" }).getAttribute("aria-pressed")).toBe("false");
+      expect(screen.getByRole("status").textContent).toBe(MEASURED);
+    });
   });
 
   it("undoes a choice kept from an earlier visit", () => {

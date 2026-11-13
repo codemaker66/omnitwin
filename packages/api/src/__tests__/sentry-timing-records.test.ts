@@ -21,10 +21,12 @@ import { initSentry } from "../observability/sentry.js";
 
 const MARKED_AGENT = "ProbeBrowser/9.9 (timing-record-marker-5ad1)";
 const MARKED_LANGUAGE = "gd-GB";
+/** A record's id in the request's path. */
+const VENUE = "0f0f0f0f-0000-4000-8000-000000000001";
 
 interface SentTransaction {
   readonly transaction?: unknown;
-  readonly request?: { readonly headers?: unknown };
+  readonly request?: { readonly headers?: unknown; readonly url?: unknown };
 }
 
 /** The transactions in one envelope (newline-delimited JSON: the envelope's
@@ -94,8 +96,8 @@ describe("the API's timing records (the real SDK and server)", () => {
     await new Promise<void>((resolve) => { ingest?.close(() => { resolve(); }); });
   });
 
-  it("sends a sampled request's timing with no request header, no user agent and no language", async () => {
-    const response = await fetch(`${base}/venues/0f0f0f0f-0000-4000-8000-000000000001`, {
+  it("sends a sampled request's timing with no request header, no user agent, no language and no record's id", async () => {
+    const response = await fetch(`${base}/venues/${VENUE}`, {
       headers: { "user-agent": MARKED_AGENT, "accept-language": MARKED_LANGUAGE },
     });
     await response.arrayBuffer();
@@ -106,12 +108,19 @@ describe("the API's timing records (the real SDK and server)", () => {
       sent = envelopes.flatMap(transactionsIn).filter((event) => event.transaction === "GET /venues/:id");
       expect(sent).toHaveLength(1);
     }, { timeout: 10_000 });
-    // The SDK did record the browser's details: without the scrubber they would be sent.
-    expect(built.filter((event) => event.includes("timing-record-marker-5ad1"))).not.toEqual([]);
-    // None of them was sent: no header, and neither marker anywhere in what reached the ingest.
+    // The SDK did record the browser's details and the record's id: without
+    // the scrubber they would be sent.
+    const builtVenue = built.filter((event) => event.includes(VENUE));
+    expect(builtVenue).not.toEqual([]);
+    expect(builtVenue.some((event) => event.includes("timing-record-marker-5ad1"))).toBe(true);
+    expect(builtVenue.some((event) => event.includes(MARKED_LANGUAGE))).toBe(true);
+    // None of them was sent: no header, the route's pattern in place of the
+    // path, and no marker or id anywhere in what reached the ingest.
     expect(sent[0]?.request?.headers).toBeUndefined();
+    expect(sent[0]?.request?.url).toBe(`${base}/venues/:id`);
     const everything = envelopes.join("\n");
     expect(everything).not.toContain("timing-record-marker-5ad1");
     expect(everything).not.toContain(MARKED_LANGUAGE);
+    expect(everything).not.toContain(VENUE);
   }, 30_000);
 });

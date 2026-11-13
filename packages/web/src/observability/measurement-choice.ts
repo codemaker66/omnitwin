@@ -7,26 +7,28 @@
 // clears the site's data: Safari's tracking prevention clears script storage
 // after about seven days without a visit, which the privacy page says.
 //
-// What the browser keeps is the choice that holds, in every tab. A browser
-// that will not let the site read its storage at all is never measured,
-// whatever is pressed. A press the browser would not keep (storage full) is
-// held in memory in the tab where it was made, until that tab is reloaded or
-// leaves the site, or another tab's press changes what the browser keeps; it
-// reaches no other tab, and the switch says it holds only in this tab. When
-// another tab changes what the browser keeps (its press, or a script there
-// clearing the site's storage), every other tab follows it at once, whether
-// or not it shows the switch (the storage event, heard once for the module).
-// The reporter reads the choice before every send, so a press stops the page
-// load in progress too. The switch shows the choice as it stands
-// (measurementChoiceState, read through useSyncExternalStore).
+// What the browser keeps (localStorage) is the choice that holds, in every
+// tab. A browser that will not let the site read it at all is never measured,
+// whatever is pressed. A press to decline that the browser will not keep
+// there (storage full) is kept for this tab instead, in its session storage,
+// which outlasts the site's own links and reloads until the tab is closed
+// (Blake, 13 November 2026: "Keep it for the tab"); where the browser refuses
+// that too, it is held in this page's memory only, until the next page load.
+// Neither reaches another tab, and the switch says how long it holds. When
+// another tab presses the switch, every other tab follows at once, whether or
+// not it shows the switch (the storage event, heard once for the module); a
+// script there clearing all the site's storage changes what the browser
+// keeps, but leaves this tab's own objection standing. The reporter reads the
+// choice before every send, so a press stops the page load in progress too.
+// The switch shows the choice as it stands (measurementChoiceState, read
+// through useSyncExternalStore).
 // ---------------------------------------------------------------------------
 
 export const MEASUREMENT_DECLINED_KEY = "venviewer.measurement.declined";
 
-/** A press to decline that the browser would not keep (storage full): held
- *  in this tab's memory only, for as long as this load of the site lasts,
- *  or until another tab changes what the browser keeps. */
-let declinedThisVisit = false;
+/** A press to decline that neither the browser nor this tab's session storage
+ *  would keep: held for this page load only. */
+let declinedThisPage = false;
 
 /** Whoever shows the choice. */
 const listeners = new Set<() => void>();
@@ -52,51 +54,94 @@ function storedChoice(): boolean {
   return readStoredChoice() ?? true;
 }
 
+/** Whether this tab keeps a press the browser would not (session storage). */
+function readTabChoice(): boolean {
+  try {
+    return window.sessionStorage.getItem(MEASUREMENT_DECLINED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+/** Keeps a press for this tab, or forgets it; returns whether the tab now
+ *  keeps it as asked. */
+function writeTabChoice(declined: boolean): boolean {
+  try {
+    if (declined) window.sessionStorage.setItem(MEASUREMENT_DECLINED_KEY, "1");
+    else window.sessionStorage.removeItem(MEASUREMENT_DECLINED_KEY);
+  } catch {
+    // Session storage is full or blocked too: the read-back says what holds.
+  }
+  return readTabChoice() === declined;
+}
+
+/** Whether an event is about this tab's own session storage, which a frame
+ *  of this tab could change: the choice the browser keeps is another matter. */
+function isSessionStorageEvent(event: StorageEvent): boolean {
+  try {
+    return event.storageArea !== null && event.storageArea === window.sessionStorage;
+  } catch {
+    return false;
+  }
+}
+
 /**
- * Another tab of this browser changed what the browser keeps: a press there,
- * or a script there clearing all of the site's storage (key null). That is
- * now the choice that holds here too, so a press this tab could not keep
- * gives way to it. A browser fires this only in its other tabs, and not at
+ * Another tab of this browser changed what the browser keeps. A press there
+ * (this key) is the visitor's latest choice, so this tab follows it and
+ * forgets its own objection; a script there clearing all of the site's
+ * storage (key null) changes what the browser keeps, but this tab's own
+ * objection stands. A browser fires this only in its other tabs, and not at
  * all when its own settings clear the site's data (the next read sees that).
  */
 function onStorage(event: StorageEvent): void {
+  if (isSessionStorageEvent(event)) return;
   if (event.key !== null && event.key !== MEASUREMENT_DECLINED_KEY) return;
-  declinedThisVisit = false;
+  if (event.key === MEASUREMENT_DECLINED_KEY) {
+    declinedThisPage = false;
+    writeTabChoice(false);
+  }
   notify();
 }
 
-// Heard once for the module, so every tab follows, whether or not it shows the switch.
-if (typeof window !== "undefined") window.addEventListener("storage", onStorage);
+if (typeof window !== "undefined") {
+  // Heard once for the module, so every tab follows, whether or not it shows the switch.
+  window.addEventListener("storage", onStorage);
+  // A page restored from the back/forward cache missed the events of its time
+  // away: whoever shows the choice reads it again.
+  window.addEventListener("pageshow", (event) => { if (event.persisted) notify(); });
+}
 
 /** Whether the visitor has said not to measure their visits in this browser. */
 export function measurementDeclined(): boolean {
-  return declinedThisVisit || storedChoice();
+  return declinedThisPage || readTabChoice() || storedChoice();
 }
 
 /**
  * What the switch shows: measured; declined and kept in this browser;
- * declined only in this tab's memory, as the browser would not keep this
- * tab's press (storage full); or never measured, as the browser refuses the
- * site its storage. Only a press the browser would not keep leads to
- * "declined-this-visit": what the browser keeps is otherwise what holds.
+ * declined for this tab only (session storage), or for this page load only
+ * (memory), as the browser would not keep this tab's press; or never
+ * measured, as the browser refuses the site its storage. Only a press the
+ * browser would not keep leads to either of the tab's own states: what the
+ * browser keeps is otherwise what holds.
  */
-export type MeasurementChoiceState = "measured" | "declined" | "declined-this-visit" | "storage-refused";
+export type MeasurementChoiceState = "measured" | "declined" | "declined-this-tab" | "declined-this-page" | "storage-refused";
 
 export function measurementChoiceState(): MeasurementChoiceState {
   const stored = readStoredChoice();
   if (stored === null) return "storage-refused";
   if (stored) return "declined";
-  return declinedThisVisit ? "declined-this-visit" : "measured";
+  if (readTabChoice()) return "declined-this-tab";
+  return declinedThisPage ? "declined-this-page" : "measured";
 }
 
 /**
- * Records the visitor's press, in this browser where it will keep it and in
- * this tab's memory where it will not, and tells whoever shows the choice.
- * Returns whether the choice now in force holds on later visits too (written,
- * then read back). A press not to decline that the browser would not keep
- * leaves its stored "declined" in force; where the browser refuses its
- * storage altogether, the visitor stays declined whatever they press, on
- * this visit and every later one: that holds.
+ * Records the visitor's press: in this browser where it will keep it; else,
+ * for a press to decline, in this tab's session storage, else in this page's
+ * memory. Tells whoever shows the choice. Returns whether the choice now in
+ * force holds on later visits too (written, then read back). A press not to
+ * decline that the browser would not keep leaves its stored "declined" in
+ * force; where the browser refuses its storage altogether, the visitor stays
+ * declined whatever they press, on this visit and every later one: that holds.
  */
 export function setMeasurementDeclined(declined: boolean): boolean {
   try {
@@ -105,14 +150,17 @@ export function setMeasurementDeclined(declined: boolean): boolean {
   } catch {
     // Storage is full or blocked; the read-back below says what holds.
   }
-  declinedThisVisit = declined && readStoredChoice() === false;
+  const notKept = declined && readStoredChoice() === false;
+  const keptForTab = writeTabChoice(notKept) && notKept;
+  declinedThisPage = notKept && !keptForTab;
   notify();
   return storedChoice() === measurementDeclined();
 }
 
 /** Calls `onChange` whenever the choice may have changed: a press in this
- *  tab, or another tab changing what the browser keeps. For React's
- *  useSyncExternalStore; returns the way to stop. */
+ *  tab, another tab changing what the browser keeps, or a return to this page
+ *  from the back/forward cache. For React's useSyncExternalStore; returns the
+ *  way to stop. */
 export function subscribeMeasurementChoice(onChange: () => void): () => void {
   listeners.add(onChange);
   return () => { listeners.delete(onChange); };

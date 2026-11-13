@@ -240,13 +240,18 @@ privacy page therefore carries a "Don't measure my visits" switch
 kept in the browser under `venviewer.measurement.declined`, and
 `shouldReportWebVitals` refuses while it is set. A browser that will not let the site
 read its storage at all counts as declined and is never measured. What the browser
-keeps is the choice that holds, in every tab: when another tab changes it (a press,
-or a script there clearing the site's storage), every tab follows at once, whether or
-not it shows the switch (the `storage` event, heard once for the module), its reporter
-included. A press the browser will not keep (storage full) is held in memory in that
-tab only, until the tab is reloaded or leaves the site, or another tab's press changes
-what the browser keeps; it reaches no other tab, and the switch says it holds only in
-this tab. The switch reads what holds from the choice itself
+keeps is the choice that holds, in every tab: when another tab presses the switch,
+every tab follows at once, whether or not it shows the switch (the `storage` event,
+heard once for the module), and a reporter still running reads it before its next
+send. A press to decline that the browser will not keep (storage full) is kept for the
+tab instead, in its session storage, which outlasts the site's own links (plain links,
+each a fresh page load) and reloads until the tab is closed (Blake, 13 November 2026:
+"Keep it for the tab (Recommended)"); where the browser refuses that too, it is held in
+that page's memory only, until the next page load. Neither reaches another tab, and
+the switch says how long it holds ("only in this tab, until you close it"; "only
+until you leave this page"). Another tab's press replaces it; a script there clearing
+all of the site's storage does not. A page restored from the back/forward cache reads
+the choice again. The switch reads what holds from the choice itself
 (`measurementChoiceState`, through `useSyncExternalStore`), so a return to the page
 cannot reset what it says. The reporter reads the choice again before every send, so
 pressing the switch also stops the page load in progress (the privacy page is itself
@@ -308,11 +313,22 @@ with the request's headers and the user agent; `scrubTransaction`
 (`packages/api/src/observability/redact.ts`) now keeps no request header, and both of
 the page's Sentry entries say what such a record carries. "Wait for their reply
 (Recommended)": switching on waits for the solicitor (step 3 above). "Change both
-(Recommended)": the switch says where the browser would not keep the choice that "it
-holds only in this tab, until you reload or leave the site", and where the browser
-blocks storage that "your visits in this browser are never measured", and why. "Name
-every condition (Recommended)": the cookies section names each of paragraph 5's
-conditions, not a part of them. The paragraph now reads:
+(Recommended)": the switch says where the browser blocks storage that "your visits in
+this browser are never measured", and why. "Name every condition (Recommended)": the
+cookies section names each of paragraph 5's conditions, not a part of them. A second
+verification that night (five lenses, three skeptics a finding) found three more
+things. Record ids in the timing records' URLs (user, event and booking ids in the
+request's path, provider ids in outgoing calls): the record "with no address,
+identifier or browser details" Blake approved needs none, so the request's own URL now
+shows its route's pattern and every other URL loses each segment that names a record;
+and the rate alone decides what is sampled, whatever an incoming trace header says,
+so "about one request in ten" holds. A press held only in memory was lost at the next
+page load, which the page's own links are, though the line said it held until a reload
+or leaving the site: Blake chose "Keep it for the tab (Recommended)", with the lines
+"…holds only in this tab, until you close it." and, where the tab will not keep it
+either, "…holds only until you leave this page.". And paragraph 5(1)(d)'s "clear and
+comprehensive information": Blake chose "Use the statute's words (Recommended)". The
+paragraph now reads:
 
 > **How fast our pages are.** When you open one of our pages, your browser may measure
 > how quickly it loaded and responded, and how much its content shifted while it was

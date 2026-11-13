@@ -394,7 +394,7 @@ const PRIVACY: LegalDocument = {
       blocks: [
         {
           kind: "p",
-          text: "There is no cookie consent banner on this site, because there is nothing here to consent to: we set no analytics cookies and no advertising cookies. Under the Privacy and Electronic Communications Regulations, consent is not required for storage that is strictly necessary to provide the service you asked for. Nor is consent required for measuring how fast our pages are: the same Regulations allow it when it is done only to collect statistics about how the site is used so that we can improve it, the information is shared with no one except to help us improve the site, you are given clear information about its purpose, and you have a simple, free way to object and have not used it, such as the \"Don't measure my visits\" switch (see \"How fast our pages are\"). What the site does use is listed below.",
+          text: "There is no cookie consent banner on this site, because there is nothing here to consent to: we set no analytics cookies and no advertising cookies. Under the Privacy and Electronic Communications Regulations, consent is not required for storage that is strictly necessary to provide the service you asked for. Nor is consent required for measuring how fast our pages are: the same Regulations allow it when it is done only to collect statistics about how the site is used so that we can improve it, the information is shared with no one except to help us improve the site, you are given clear and comprehensive information about its purpose, and you have a simple, free way to object and have not used it, such as the \"Don't measure my visits\" switch (see \"How fast our pages are\"). What the site does use is listed below.",
         },
         {
           kind: "defs",
@@ -1112,7 +1112,8 @@ function storedTheme(): "dark" | "light" | undefined {
 const MEASUREMENT_CHOICE_STATUS: Readonly<Record<MeasurementChoiceState, string>> = {
   measured: "Your visits may be measured, as described above.",
   declined: "Your visits in this browser are not measured.",
-  "declined-this-visit": "This browser would not let us keep your choice, so it holds only in this tab, until you reload or leave the site.",
+  "declined-this-tab": "This browser would not let us keep your choice, so it holds only in this tab, until you close it.",
+  "declined-this-page": "This browser would not let us keep your choice, so it holds only until you leave this page.",
   "storage-refused": "This browser blocks our site's storage, so your visits in this browser are never measured.",
 };
 
