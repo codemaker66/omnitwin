@@ -30,6 +30,7 @@ import { useVisitorPlanPdf } from "../../../hooks/use-visitor-plan-pdf.js";
 import { useVisitorPlanLinks } from "../../../hooks/use-visitor-plan-links.js";
 import { VisitorPlanPdfActions } from "../VisitorPlanPdfActions.js";
 import { VisitorPlanLinkActions } from "../VisitorPlanLinkActions.js";
+import { flushAutoSave } from "../EditorBridge.js";
 
 // ---------------------------------------------------------------------------
 // ShareLensPanel — hand this layout off to a client as a shareable proposal
@@ -193,6 +194,12 @@ function StaffShareLens(): ReactElement {
     }
 
     const run = async (): Promise<void> => {
+      // The server draws the version's layout from the layout as saved
+      // (routes/proposals.ts, takenAtSave) and takes its words from this
+      // draft, read from the layout on screen. So the changes the autosave is
+      // still waiting to send go first, as on every other send path, and
+      // nothing is frozen or sent unless they landed (audit web-lib-state-2).
+      if (!await flushAutoSave()) throw new Error("The layout's latest changes did not save.");
       const proposal = await createProposal({ venueId, title: draft.title, configurationId: configId });
       await createProposalVersion(proposal.id, parsed.data);
       await transitionProposal(proposal.id, "sent");
