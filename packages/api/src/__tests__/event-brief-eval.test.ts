@@ -1,4 +1,8 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import Anthropic from "@anthropic-ai/sdk";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   EVENT_BRIEF_DESCRIPTION_MAX_LENGTH,
   EventBriefDraftValuesSchema,
@@ -14,12 +18,14 @@ import {
   summariseEventBriefEval,
 } from "../evals/event-brief-scoring.js";
 import { runEventBriefEval } from "../scripts/run-event-brief-eval.js";
+import type { AnthropicDraftSend } from "../services/anthropic-draft-adapter.js";
 import { scrubContactDetails } from "../services/proposal-message-draft.js";
 
 // ---------------------------------------------------------------------------
 // The typed-brief evaluation (T-650) without a model: the set is well formed,
 // the scoring is right, and the live script refuses to run in CI or without a
-// key. Accuracy itself is only measured by the script against a real key.
+// key file, takes its key only from that file, and keeps to its spending
+// stop. Accuracy itself is only measured by the script against a real key.
 // ---------------------------------------------------------------------------
 
 const ABSENT = { value: null, source: "absent", words: null, basis: null } as const;
@@ -137,18 +143,91 @@ describe("scoring a reading", () => {
 });
 
 describe("the live evaluation script", () => {
-  afterEach(() => { vi.unstubAllEnvs(); vi.restoreAllMocks(); });
+  // Built from pieces so no key-shaped literal sits in the repository. It is not a key.
+  const FAKE_KEY = ["sk", "ant", "test-only-not-a-real-key-0000"].join("-");
+  let dir = "";
+  beforeEach(async () => { dir = await mkdtemp(join(tmpdir(), "brief-eval-")); });
+  afterEach(async () => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+    await rm(dir, { recursive: true, force: true });
+  });
 
-  it("never runs in CI, and sends nothing without a key", async () => {
+  /** A provider that answers every read with an empty brief, counting the reads. */
+  function fakeProvider(): { readonly send: AnthropicDraftSend; readonly calls: () => number } {
+    let calls = 0;
+    const fakeFetch = vi.fn((): Promise<Response> => {
+      calls += 1;
+      return Promise.resolve(new Response(JSON.stringify({
+        id: "msg_eval", type: "message", role: "assistant", model: "claude-opus-5-5",
+        content: [{ type: "text", text: JSON.stringify({
+          fields: {
+            eventName: ABSENT, eventType: ABSENT, guestCount: ABSENT, layoutStyle: ABSENT, budgetGbp: ABSENT,
+            preferredDate: ABSENT, startTime: ABSENT, endTime: ABSENT, serviceModel: ABSENT, planningEmphasis: ABSENT,
+          },
+          accessibility: [],
+          unsupported: [],
+        }), citations: null }],
+        stop_reason: "end_turn", stop_sequence: null, stop_details: null,
+        usage: { input_tokens: 1000, output_tokens: 200 },
+      }), { status: 200, headers: { "content-type": "application/json" } }));
+    });
+    const client = new Anthropic({ apiKey: FAKE_KEY, baseURL: "https://api.anthropic.com", fetch: fakeFetch, maxRetries: 0 });
+    return {
+      send: (request, sendOptions) => client.beta.messages.create(request, { signal: sendOptions?.signal ?? null }),
+      calls: () => calls,
+    };
+  }
+
+  it("never runs in CI, and sends nothing without a key file, whatever the environment holds", async () => {
     const fetch = vi.spyOn(globalThis, "fetch");
     const said = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const keyFile = join(dir, "batch.key");
+    await writeFile(keyFile, FAKE_KEY);
     vi.stubEnv("CI", "true");
-    vi.stubEnv("AI_ASSISTANT_API_KEY", "test-key-not-real");
-    expect(await runEventBriefEval([])).toBe(2);
+    expect(await runEventBriefEval(["--key-file", keyFile])).toBe(2);
     vi.stubEnv("CI", undefined);
-    vi.stubEnv("AI_ASSISTANT_API_KEY", "");
+    // The key is never taken from the environment.
+    vi.stubEnv("AI_ASSISTANT_API_KEY", FAKE_KEY);
     expect(await runEventBriefEval([])).toBe(2);
+    expect(await runEventBriefEval(["--key-file", join(dir, "absent.key")])).toBe(2);
     expect(fetch).not.toHaveBeenCalled();
-    expect(said.mock.calls.flat().join(" ")).not.toContain("test-key-not-real");
+    expect(said.mock.calls.flat().join(" ")).toContain("--key-file");
+    expect(said.mock.calls.flat().join(" ")).not.toContain(FAKE_KEY);
+  });
+
+  it("reads with the key from the file, as many runs as asked, and writes what it read and used", async () => {
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+    vi.stubEnv("CI", undefined);
+    const keyFile = join(dir, "batch.key");
+    await writeFile(keyFile, `${FAKE_KEY}\n`);
+    const provider = fakeProvider();
+    const ids = EVENT_BRIEF_EVAL_CASES.slice(0, 2).map((candidate) => candidate.id);
+    const out = join(dir, "out");
+    // Empty briefs miss fields, so the run reads but scores misses: exit 0 means every case was read.
+    expect(await runEventBriefEval(["--key-file", keyFile, "--runs", "2", "--out", out, ...ids], { send: provider.send })).toBe(0);
+    expect(provider.calls()).toBe(4);
+    const results = JSON.parse(await readFile(join(out, "results.json"), "utf8")) as {
+      runs: number; cases: string[]; readings: { run: number; id: string; error: string | null }[];
+      totals: { calls: number; inputTokens: number; outputTokens: number; costUsd: number };
+    };
+    expect(results.runs).toBe(2);
+    expect(results.cases).toEqual(ids);
+    expect(results.readings.map((reading) => [reading.run, reading.id])).toEqual([[1, ids[0]], [1, ids[1]], [2, ids[0]], [2, ids[1]]]);
+    expect(results.readings.every((reading) => reading.error === null)).toBe(true);
+    expect(results.totals).toMatchObject({ calls: 4, inputTokens: 4000, outputTokens: 800 });
+    expect(results.totals.costUsd).toBeGreaterThan(0);
+    expect(JSON.stringify(results)).not.toContain(FAKE_KEY);
+  });
+
+  it("stops, with nothing more sent, once the next read could pass the spending stop", async () => {
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+    vi.stubEnv("CI", undefined);
+    const keyFile = join(dir, "batch.key");
+    await writeFile(keyFile, FAKE_KEY);
+    const provider = fakeProvider();
+    // One cent cannot hold a single read's worst case, so nothing is sent at all.
+    expect(await runEventBriefEval(["--key-file", keyFile, "--max-usd", "0.01"], { send: provider.send })).toBe(1);
+    expect(provider.calls()).toBe(0);
   });
 });

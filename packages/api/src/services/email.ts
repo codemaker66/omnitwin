@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { Resend } from "resend";
 import { emailSends } from "../db/schema.js";
 import type { Database } from "../db/client.js";
@@ -18,7 +18,11 @@ import { scrubErrorMessage } from "../observability/redact.js";
 //      second send is a no-op. Survives process restarts. The exception is
 //      a send that failed: a replay reclaims its row (compare-and-set from
 //      "failed" to "pending", so one concurrent replay wins) and tries the
-//      provider again. The hold-reminder pass replays by design.
+//      provider again. The hold-reminder pass replays by design. A send
+//      may also keep a limit (SendLimit): it is decided under the limit's
+//      advisory lock in the transaction that writes its row, and one the
+//      limit refuses is recorded as "suppressed" and never sent. A replay
+//      that reclaims a failed row is decided under the limit again.
 //
 //   2. Bounded retry with exponential backoff. Network errors, 5xx and
 //      429 responses retry (250, 500, 1000, 2000 ms). 4xx responses are
@@ -39,7 +43,10 @@ import { scrubErrorMessage } from "../observability/redact.js";
 // Known gaps (documented rather than hidden):
 //   - If a process crashes between the INSERT and the Resend call, the
 //     row stays at status="pending". No future attempt will retry it;
-//     a human has to inspect and requeue. A durable worker with
+//     a human has to inspect and requeue. The same holds when the provider
+//     accepts the email and recording "sent" fails: the row stays pending
+//     and `email.sent_unrecorded` is logged, so it is never sent twice.
+//     A durable worker with
 //     pending-row timeouts is the next evolution — out of scope for the
 //     first shipping version.
 //   - If a concurrent duplicate arrives mid-flight (before the first
@@ -70,11 +77,30 @@ const NOOP_LOGGER: EmailLogger = {
   error: () => { /* noop */ },
 };
 
+/** The transaction a send's limit reads in. */
+export type EmailTransaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
+
+/**
+ * A limit a send keeps, decided in the transaction that records the send. The
+ * transaction first takes the advisory lock on `lockKey`'s hash, so two sends
+ * under one key are decided one after the other and the second sees the
+ * first's row; `allows` then reads, under that lock, whether this one may go.
+ * One it refuses is recorded as "suppressed" and handed to no provider. A
+ * replay that takes over a send that failed is decided again, the same way.
+ * The key is hashed, never stored or logged; it holds nothing the row does not.
+ */
+export interface SendLimit {
+  readonly lockKey: string;
+  readonly allows: (tx: EmailTransaction) => Promise<boolean>;
+}
+
 export interface SendOptions {
   readonly db: Database;
   /** Stable key deduping business-level duplicates. See module comment. */
   readonly idempotencyKey: string;
   readonly logger?: EmailLogger;
+  /** A limit this send keeps (SendLimit); none when absent. */
+  readonly limit?: SendLimit;
   /** Test hook — override the retry sleep so tests don't burn real ms. */
   readonly sleep?: (ms: number) => Promise<void>;
 }
@@ -227,14 +253,11 @@ export async function sendEmail(
   const logger = options.logger ?? NOOP_LOGGER;
   const sleep = options.sleep ?? defaultSleep;
 
-  // 1. Atomic dedup via the UNIQUE(idempotency_key) constraint.
+  // 1. Atomic dedup via the UNIQUE(idempotency_key) constraint. A send under
+  // a limit is decided and recorded in one transaction (SendLimit).
+  let recorded: RecordedAs = "pending";
   try {
-    await db.insert(emailSends).values({
-      idempotencyKey,
-      recipient: payload.to,
-      subject: payload.subject,
-      status: "pending",
-    });
+    recorded = await recordSend(db, payload, idempotencyKey, options.limit);
   } catch (err) {
     if (!isUniqueViolation(err)) {
       logger.error({
@@ -244,15 +267,13 @@ export async function sendEmail(
       }, "email.audit_insert_failed");
       return false;
     }
-    // Sent, still in flight or recorded in dev mode: already handled. A send
-    // that failed is the one state a replay may take over, and only one
-    // replay can: the status is part of the UPDATE's own WHERE.
-    let reclaimed: readonly { id: string }[];
+    // Sent, still in flight, held back by its limit or recorded in dev mode:
+    // already handled. A send that failed is the one state a replay may take
+    // over, and only one replay can: the status is part of the UPDATE's own
+    // WHERE. Under a limit the replay is decided again (reclaimFailedSend).
+    let reclaimed: RecordedAs | null;
     try {
-      reclaimed = await db.update(emailSends)
-        .set({ status: "pending", recipient: payload.to, subject: payload.subject, lastError: null, updatedAt: new Date() })
-        .where(and(eq(emailSends.idempotencyKey, idempotencyKey), eq(emailSends.status, "failed")))
-        .returning({ id: emailSends.id });
+      reclaimed = await reclaimFailedSend(db, payload, idempotencyKey, options.limit);
     } catch (reclaimError) {
       logger.error({
         event: "email.audit_insert_failed",
@@ -261,17 +282,27 @@ export async function sendEmail(
       }, "email.audit_insert_failed");
       return false;
     }
-    if (reclaimed.length === 0) {
+    if (reclaimed === null) {
       logger.info({
         event: "email.dedup_skip",
         idempotencyKey,
       }, "email.dedup_skip");
       return true;
     }
+    recorded = reclaimed;
+    if (reclaimed === "pending") {
+      logger.info({
+        event: "email.retry_after_failure",
+        idempotencyKey,
+      }, "email.retry_after_failure");
+    }
+  }
+  if (recorded === "suppressed") {
     logger.info({
-      event: "email.retry_after_failure",
+      event: "email.suppressed",
       idempotencyKey,
-    }, "email.retry_after_failure");
+    }, "email.suppressed");
+    return true;
   }
 
   // 2. Dev mode — no API key set. Audit row records a clear "dev_mode"
@@ -302,10 +333,17 @@ export async function sendEmail(
 
   // 3. Retry loop. `attempt` runs 0..N where N = RETRY_DELAYS_MS.length;
   // the loop exits either on success, permanent failure, or exhaustion.
-  let lastError = "";
+  // Only the provider call is retried. Recording its outcome is a database
+  // write whose failure says nothing about the provider: a database error
+  // has no HTTP status, so classifying it would read it as a network fault
+  // and send an email the provider had already accepted a second time.
   for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
+    let result: unknown;
+    let providerError: unknown;
+    let failed = false;
+    let event: "email.send_exception" | "email.send_attempt_failed" = "email.send_attempt_failed";
     try {
-      const result = await client.emails.send({
+      result = await client.emails.send({
         from: emailFrom,
         to: payload.to,
         subject: payload.subject,
@@ -314,35 +352,36 @@ export async function sendEmail(
         // (replies go to From) rather than receiving an empty header.
         ...(replyTo === null ? {} : { replyTo }),
       });
-
       // Resend's SDK returns `{ data, error }` — inspect error first.
-      const resendErr = (result as { error?: unknown }).error;
-      if (resendErr !== null && resendErr !== undefined) {
-        lastError = errorMessage(resendErr);
-        const transient = isTransientError(resendErr);
-        logger.warn({
-          event: "email.send_attempt_failed",
-          idempotencyKey,
-          attempt,
-          transient,
-          error: lastError,
-        }, "email.send_attempt_failed");
-        if (!transient || attempt >= RETRY_DELAYS_MS.length) {
-          await markFailed(db, idempotencyKey, lastError, attempt + 1);
-          logger.error({
-            event: "email.send_failed",
-            idempotencyKey,
-            attempt,
-            error: lastError,
-          }, "email.send_failed");
-          return false;
-        }
-        const delay = RETRY_DELAYS_MS[attempt];
-        if (delay !== undefined) await sleep(delay);
-        continue;
-      }
+      providerError = (result as { error?: unknown }).error;
+      failed = providerError !== null && providerError !== undefined;
+    } catch (err) {
+      providerError = err;
+      failed = true;
+      event = "email.send_exception";
+    }
 
-      const messageId = (result as { data?: { id?: string } | null }).data?.id ?? null;
+    if (failed) {
+      const lastError = errorMessage(providerError);
+      const transient = isTransientError(providerError);
+      logger.warn({
+        event,
+        idempotencyKey,
+        attempt,
+        transient,
+        error: lastError,
+      }, event);
+      if (!transient || attempt >= RETRY_DELAYS_MS.length) {
+        await recordFailure(db, logger, idempotencyKey, lastError, attempt);
+        return false;
+      }
+      const delay = RETRY_DELAYS_MS[attempt];
+      if (delay !== undefined) await sleep(delay);
+      continue;
+    }
+
+    const messageId = (result as { data?: { id?: string } | null }).data?.id ?? null;
+    try {
       await db.update(emailSends)
         .set({
           status: "sent",
@@ -352,51 +391,115 @@ export async function sendEmail(
           updatedAt: new Date(),
         })
         .where(eq(emailSends.idempotencyKey, idempotencyKey));
-      logger.info({
-        event: "email.sent",
+    } catch (recordError) {
+      // Delivered but not recorded. The row stays "pending", which no replay
+      // takes over, so the email is never sent twice; someone reconciles it
+      // from this record (see "Known gaps" above).
+      logger.error({
+        event: "email.sent_unrecorded",
         idempotencyKey,
         attempt,
         providerMessageId: messageId,
-      }, "email.sent");
+        error: errorMessage(recordError),
+      }, "email.sent_unrecorded");
       return true;
-    } catch (err) {
-      lastError = errorMessage(err);
-      const transient = isTransientError(err);
-      logger.warn({
-        event: "email.send_exception",
-        idempotencyKey,
-        attempt,
-        transient,
-        error: lastError,
-      }, "email.send_exception");
-      if (!transient || attempt >= RETRY_DELAYS_MS.length) {
-        await markFailed(db, idempotencyKey, lastError, attempt + 1);
-        logger.error({
-          event: "email.send_failed",
-          idempotencyKey,
-          attempt,
-          error: lastError,
-        }, "email.send_failed");
-        return false;
-      }
-      const delay = RETRY_DELAYS_MS[attempt];
-      if (delay !== undefined) await sleep(delay);
     }
+    logger.info({
+      event: "email.sent",
+      idempotencyKey,
+      attempt,
+      providerMessageId: messageId,
+    }, "email.sent");
+    return true;
   }
 
   // Unreachable — every iteration either returns or continues.
   return false;
 }
 
-async function markFailed(
+/** How a send's row was first written. */
+type RecordedAs = "pending" | "suppressed";
+
+/** Writes the send's row before any provider is called: "pending", or, for a
+ *  send its limit refuses, "suppressed" (decided under the limit's lock). */
+async function recordSend(
   db: Database,
+  payload: EmailPayload,
+  idempotencyKey: string,
+  limit: SendLimit | undefined,
+): Promise<RecordedAs> {
+  const row = (status: RecordedAs): typeof emailSends.$inferInsert =>
+    ({ idempotencyKey, recipient: payload.to, subject: payload.subject, status });
+  if (limit === undefined) {
+    await db.insert(emailSends).values(row("pending"));
+    return "pending";
+  }
+  return db.transaction(async (tx) => {
+    const status = await decidedUnder(limit, tx);
+    await tx.insert(emailSends).values(row(status));
+    return status;
+  });
+}
+
+/** Whether a send may go, decided under its limit's lock: "pending" when it
+ *  may, "suppressed" when the limit refuses it. The lock lasts until the
+ *  transaction ends, so the row written next is seen by the next to ask. */
+async function decidedUnder(limit: SendLimit, tx: EmailTransaction): Promise<RecordedAs> {
+  await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${limit.lockKey}, 0))`);
+  return await limit.allows(tx) ? "pending" : "suppressed";
+}
+
+/** Takes over a send that failed, for a replay of its key: the row becomes
+ *  "pending" again, or, when the send keeps a limit that now refuses it,
+ *  "suppressed" (decided under the limit's lock, as a first send is). Null
+ *  when the row is in any other state: another attempt owns it. */
+async function reclaimFailedSend(
+  db: Database,
+  payload: EmailPayload,
+  idempotencyKey: string,
+  limit: SendLimit | undefined,
+): Promise<RecordedAs | null> {
+  const failed = and(eq(emailSends.idempotencyKey, idempotencyKey), eq(emailSends.status, "failed"));
+  const taken = (status: RecordedAs): Partial<typeof emailSends.$inferInsert> =>
+    ({ status, recipient: payload.to, subject: payload.subject, lastError: null, updatedAt: new Date() });
+  if (limit === undefined) {
+    const rows = await db.update(emailSends).set(taken("pending")).where(failed).returning({ id: emailSends.id });
+    return rows.length === 0 ? null : "pending";
+  }
+  return db.transaction(async (tx) => {
+    const status = await decidedUnder(limit, tx);
+    const rows = await tx.update(emailSends).set(taken(status)).where(failed).returning({ id: emailSends.id });
+    return rows.length === 0 ? null : status;
+  });
+}
+
+/** The provider did not take the email. Mark the row failed so a replay may
+ *  try again; if even that write fails, say so rather than throw. */
+async function recordFailure(
+  db: Database,
+  logger: EmailLogger,
   idempotencyKey: string,
   lastError: string,
-  attemptCount: number,
+  attempt: number,
 ): Promise<void> {
-  await db.update(emailSends)
-    .set({ status: "failed", lastError, attemptCount, updatedAt: new Date() })
-    .where(eq(emailSends.idempotencyKey, idempotencyKey));
+  try {
+    await db.update(emailSends)
+      .set({ status: "failed", lastError, attemptCount: attempt + 1, updatedAt: new Date() })
+      .where(eq(emailSends.idempotencyKey, idempotencyKey));
+  } catch (recordError) {
+    logger.error({
+      event: "email.failure_unrecorded",
+      idempotencyKey,
+      attempt,
+      error: errorMessage(recordError),
+    }, "email.failure_unrecorded");
+  }
+  logger.error({
+    event: "email.send_failed",
+    idempotencyKey,
+    attempt,
+    error: lastError,
+  }, "email.send_failed");
 }
 
 // ---------------------------------------------------------------------------

@@ -417,8 +417,9 @@ describe.skipIf(target === undefined)("API hot paths through real routes and Pos
     await db.insert(schema.enquiries).values(Array.from({ length: 4 }, (_, index) => ({
       venueId: a.venueId, spaceId: roomOne, name: `Enquiry ${String(index)}`, email: "d@hot-paths.invalid",
     })));
-    // Utilisation reads the diary over the route's 90-day window from today's
-    // UTC midnight: active confirmed ("ink") days, with prospects and holds
+    // Utilisation reads the diary over the route's 90 venue days (04:00 to
+    // 04:00, Europe/London) from the venue's operational today: active
+    // confirmed ("ink") days, with prospects and holds
     // beside them as demand. Released, cancelled, deleted and out-of-window
     // bookings are none of these.
     const now = new Date();

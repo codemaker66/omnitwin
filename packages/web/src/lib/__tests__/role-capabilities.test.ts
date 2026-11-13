@@ -1,7 +1,14 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { INVENTORY_ADJUSTER_ROLES, USER_ROLES, VENUE_ADMINISTRATION_ROLES, VENUE_TEAM_INVITER_ROLES } from "@omnitwin/types";
+import {
+  EVENT_ARCHITECT_OPS_REVIEW_ROLES,
+  INVENTORY_ADJUSTER_ROLES,
+  USER_ROLES,
+  VENUE_ADMINISTRATION_ROLES,
+  VENUE_TEAM_INVITER_ROLES,
+  eventArchitectOpsReviewerAuthorityFor,
+} from "@omnitwin/types";
 import {
   ANALYTICS_ROLES,
   CLIENT_SEARCH_ROLES,
@@ -12,6 +19,7 @@ import {
   DIARY_WRITE_ROLES,
   EVENT_WRITE_ROLES,
   INVENTORY_WRITE_ROLES,
+  OPS_REVIEW_ROLES,
   PLANNER_ROLES,
   PRICING_READ_ROLES,
   PRICING_WRITE_ROLES,
@@ -273,6 +281,25 @@ describe("route gates and their landing surfaces agree", () => {
     ]) {
       expect(canReadInternalEventData(auth)).toBe(false);
     }
+  });
+});
+
+describe("who is offered the Event Architect Ops review form", () => {
+  // requireOpsReviewAuthority (routes/event-architect.ts) answers from the
+  // same list in @omnitwin/types, so the form is offered exactly where the
+  // review is recorded. Managers record reviews too (Blake, 11 November 2026).
+  it("is the API's one list: the venue's staff, hallkeepers, managers and administrators", () => {
+    expect(OPS_REVIEW_ROLES).toBe(EVENT_ARCHITECT_OPS_REVIEW_ROLES);
+    expect([...OPS_REVIEW_ROLES].sort()).toEqual(["admin", "hallkeeper", "manager", "staff"]);
+    for (const role of ALL_ROLES) {
+      expect(hasRole(OPS_REVIEW_ROLES, role), `Ops review for ${String(role)}`)
+        .toBe(role !== null && eventArchitectOpsReviewerAuthorityFor(role) !== null);
+    }
+  });
+
+  it("is offered only to roles that can open the Event Architect page", () => {
+    // The page mounts behind the internal event reader (canAccessInternalEvent).
+    for (const role of OPS_REVIEW_ROLES) expect(hasRole(VENUE_FLOOR_ROLES, role), role).toBe(true);
   });
 });
 

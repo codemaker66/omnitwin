@@ -114,13 +114,31 @@ function occupancySpan(
   return { occStartMs, occEndMs };
 }
 
+/** What the ribbon calls a booking (API-9): its title when it has one, else
+ *  its event's name as shown everywhere (eventDisplayName: GET /calendar
+ *  sends it so, and the client's side names it so from the schedule), else
+ *  the side's own word for an untitled booking. Rows written before #350
+ *  can carry an empty title, and GET /calendar keeps a blank one as stored,
+ *  so a blank title counts as none and a title is shown without the spaces
+ *  either side of it. Never blank. */
+export function ribbonBookingTitle(
+  title: string,
+  eventName: string | null | undefined,
+  untitled: string,
+): string {
+  const own = title.trim();
+  if (own !== "") return own;
+  const name = eventName?.trim() ?? "";
+  return name !== "" ? name : untitled;
+}
+
 function toSlot(
   entry: CalendarBookingEntry,
   phases: readonly CalendarPhaseEntry[],
 ): RibbonSlot {
   return {
     id: entry.id,
-    title: entry.title,
+    title: ribbonBookingTitle(entry.title, entry.eventName, RIBBON_COPY.untitledBooking),
     kind: entry.kind,
     eventType: entry.eventType,
     startMs: Date.parse(entry.startsAt),
@@ -705,6 +723,10 @@ export interface ClientRibbonDayInput {
   readonly space: { readonly id: string; readonly name: string };
   readonly timeZone: string;
   readonly turnaroundMinutes: number;
+  /** The event's name as shown (eventDisplayName: its occasion and day when
+   *  it was stored without one): what the bar calls a booking of this event
+   *  stored without a title (see ribbonBookingTitle). */
+  readonly eventName: string;
   /** The client's own booking in this room, when the house holds one. */
   readonly own: ClientOwnSlot | null;
   /** Where the bar rests before any proposal: the event's planned window. */
@@ -722,10 +744,12 @@ function slotOf(id: string, title: string, kind: BookingKind, startMs: number, e
  *  world, or null when there is nothing to place yet. */
 export function buildClientRibbonDay(input: ClientRibbonDayInput): RibbonDay | null {
   const own = input.own;
+  const named = (title: string): string =>
+    ribbonBookingTitle(title, input.eventName, RIBBON_COPY.clientUntitledBooking);
   const self = own !== null
-    ? slotOf(own.bookingId, own.title, own.kind, own.startMs, own.endMs)
+    ? slotOf(own.bookingId, named(own.title), own.kind, own.startMs, own.endMs)
     : input.draft !== null
-      ? slotOf(CLIENT_DRAFT_SLOT_ID, input.draft.title, "hold", input.draft.startMs, input.draft.endMs)
+      ? slotOf(CLIENT_DRAFT_SLOT_ID, named(input.draft.title), "hold", input.draft.startMs, input.draft.endMs)
       : null;
   if (self === null) return null;
   const range = boardRange(self.startMs, "day", input.timeZone);
@@ -737,7 +761,7 @@ export function buildClientRibbonDay(input: ClientRibbonDayInput): RibbonDay | n
     if (!overlapsHalfOpen(startMs, endMs, range.fromMs, range.toMs)) return;
     if (span.kind === "yours") {
       if (own !== null && span.bookingId === own.bookingId) return;
-      ghosts.push({ ...slotOf(span.bookingId, span.title, "hold", startMs, endMs), exclusion: "none" });
+      ghosts.push({ ...slotOf(span.bookingId, named(span.title), "hold", startMs, endMs), exclusion: "none" });
       return;
     }
     ghosts.push(

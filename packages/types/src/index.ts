@@ -311,6 +311,7 @@ export {
   SupplierCoordinationItemKindSchema,
   SupplierAcknowledgementStatusSchema,
   SupplierCoordinationTextSchema,
+  SupplierAuthoredTextSchema,
   SupplierCoordinationPackSchema,
   SupplierCoordinationPackItemSchema,
   SupplierCoordinationShareTokenSchema,
@@ -355,6 +356,7 @@ export {
   type SupplierCoordinationItemKind,
   type SupplierAcknowledgementStatus,
   type SupplierCoordinationText,
+  type SupplierAuthoredText,
   type SupplierCoordinationPack,
   type SupplierCoordinationPackItem,
   type SupplierCoordinationShareToken,
@@ -1064,6 +1066,8 @@ export {
   type GuestEnquirySource,
   type EnquirySource,
 } from "./enquiry.js";
+
+export { eventDisplayName, eventNameFor, eventTitleFor, holdsEmailAddress, type EventNameInput, type NamedEvent } from "./event-name.js";
 
 export {
   PricingRuleIdSchema,
@@ -2538,6 +2542,7 @@ export * from "./event-mission-control.js";
 export * from "./capture-intake.js";
 export * from "./layout-validator.js";
 export * from "./event-architect.js";
+export * from "./event-architect-ops-reviewers.js";
 export * from "./event-architect-engine.js";
 export * from "./event-brief-draft.js";
 export * from "./reconstruction-release.js";

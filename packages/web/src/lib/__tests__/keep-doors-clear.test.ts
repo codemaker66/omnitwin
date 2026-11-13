@@ -14,7 +14,9 @@ import {
   placedFootprint,
 } from "../keep-doors-clear.js";
 
-// The Grand Hall (21 × 10.5 m) with its four doors' clear spaces: the main
+// A 21 × 10.5 m hall (the Grand Hall's old hand-drawn size; the planner now
+// opens it at its scanned 21.135 × 10.59 m, data/room-geometries.ts) with the
+// Grand Hall's four doors' clear spaces from the survey: the main
 // door's from z 3.795 to the wall, x −1.02 to 1.03; the end door's x 7.97 to
 // 9.67; the fire exit's x to −9.0675, z −4.065 to −2.405 (hall-spec).
 

@@ -99,7 +99,7 @@ const HallkeeperRoomPlansPage = lazyWithPreload(() =>
 );
 // The board with the requests provider around it (DayBoardRoute.tsx).
 const DayBoardRoute = lazyWithPreload(() =>
-  import("./pages/hallkeeper/DayBoardRoute.js").then((m) => ({ default: m.DayBoardRoute })),
+  cockpitImport(() => import("./pages/hallkeeper/DayBoardRoute.js").then((m) => ({ default: m.DayBoardRoute }))),
 );
 const HallkeeperWalkthroughPage = lazyWithPreload(() =>
   cockpitImport(() => import("./pages/hallkeeper/HallkeeperWalkthroughPage.js").then((m) => ({ default: m.HallkeeperWalkthroughPage }))),

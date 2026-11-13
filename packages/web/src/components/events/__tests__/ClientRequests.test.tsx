@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ClientEventScheduleSlot, ConversationSnapshot, Message, VenueRequest } from "@omnitwin/types";
+import type { ClientEventScheduleSlot, ConversationSnapshot, Message, Thread, VenueRequest } from "@omnitwin/types";
 import { ApiError } from "../../../api/client.js";
 import { useAuthStore, type AuthUser } from "../../../stores/auth-store.js";
 import {
@@ -18,7 +18,9 @@ import {
 // the ask is one gesture on the slot that is live or next; the state shown is
 // the house's own, read from the poll; a request that could not be sent keeps
 // its draft and its key, so sending again is the same request; a revoked link
-// closes the composer at once, in one sentence.
+// closes the composer at once, in one sentence. And what the house writes for
+// the client to read is on the page: the poll fetching a message is what tells
+// its sender "Delivered", so nothing fetched may go unshown (client-pages-1).
 // ---------------------------------------------------------------------------
 
 const mocks = vi.hoisted(() => ({
@@ -51,9 +53,9 @@ const past = slot("00000000-0000-4000-8000-0000000000b1", SALOON, new Date(NOW -
 const live = slot("00000000-0000-4000-8000-0000000000b2", HALL, new Date(NOW - hour).toISOString(), new Date(NOW + hour).toISOString());
 const later = slot("00000000-0000-4000-8000-0000000000b3", HALL, new Date(NOW + 3 * hour).toISOString(), new Date(NOW + 5 * hour).toISOString());
 
-function snapshot(messages: readonly Message[] = []): ConversationSnapshot {
+function snapshot(messages: readonly Message[] = [], threads: readonly Thread[] = []): ConversationSnapshot {
   const last = messages[messages.length - 1];
-  return { eventId: EVENT, threads: [], messages: [...messages], cursor: last?.cursor ?? 0, serverNowMs: Date.now() };
+  return { eventId: EVENT, threads: [...threads], messages: [...messages], cursor: last?.cursor ?? 0, serverNowMs: Date.now() };
 }
 
 function made(input: { bookingId: string; kind: VenueRequest["kind"]; quantity: number | null; urgency: VenueRequest["urgency"]; detail: string | null }): VenueRequest {
@@ -70,6 +72,14 @@ function made(input: { bookingId: string; kind: VenueRequest["kind"]; quantity: 
 const step = (body: string, cursor: number): Message => ({
   id: `00000000-0000-4000-8000-0000000000e${String(cursor)}`, threadId: THREAD, cursor, kind: "system", authorUserId: null,
   authorName: "Venviewer", authorRole: "system", body, createdAt: new Date().toISOString(), receipts: [],
+});
+
+/** Words a person at the house typed into a thread the client can read, at
+ *  14:02 in Glasgow on Saturday 10 October 2026. */
+const said = (body: string, cursor: number, threadId: string = THREAD): Message => ({
+  id: `00000000-0000-4000-8000-0000000000f${String(cursor)}`, threadId, cursor, kind: "text",
+  authorUserId: "00000000-0000-4000-8000-0000000000ab", authorName: "Elaine", authorRole: "hallkeeper", body,
+  createdAt: "2026-10-10T13:02:00.000Z", receipts: [],
 });
 
 let requestsNow: readonly VenueRequest[] = [];
@@ -172,6 +182,83 @@ describe("asking the house", () => {
     const region = screen.getByRole("region", { name: "Requests" });
     expect(within(region).getByText("The house has not held a slot for this event yet, so there is nothing to ask about.")).toBeTruthy();
     expect(within(region).queryByRole("button", { name: "Ask for something" })).toBeNull();
+  });
+});
+
+describe("reading what the house wrote", () => {
+  const chairs = (): VenueRequest => made({ bookingId: live.bookingId, kind: "chairs", quantity: 10, urgency: "soon", detail: null });
+
+  it("shows a reply from the floor under the request it answers, with who wrote it and when", async () => {
+    requestsNow = [chairs()];
+    conversationNow = snapshot([step("Elaine has seen this.", 1), said("We can only spare 6. Is that all right?", 2)]);
+    renderRequests();
+
+    const list = await screen.findByRole("list", { name: "Your requests" });
+    const request = within(list).getByText("Chairs × 10").closest("li") as HTMLElement;
+    const messages = await within(request).findByRole("list", { name: "Messages about Chairs × 10" });
+    expect(within(messages).getByText("We can only spare 6. Is that all right?")).toBeTruthy();
+    expect(within(messages).getByText("Elaine")).toBeTruthy();
+    expect(within(messages).getByText("Sat 10 Oct · 14:02")).toBeTruthy();
+    // Words are not a step: the line above still reads the house's latest step.
+    expect(within(request).getByText("Elaine has seen this.")).toBeTruthy();
+  });
+
+  it("says once that a message has come, when it arrives on a later poll", async () => {
+    requestsNow = [chairs()];
+    renderRequests();
+    const region = screen.getByRole("region", { name: "Requests" });
+    await within(region).findByRole("list", { name: "Your requests" });
+    await waitFor(() => { expect(mocks.conversation).toHaveBeenCalled(); });
+    expect(within(region).getByRole("status").textContent).toBe("");
+
+    conversationNow = snapshot([said("We can only spare 6. Is that all right?", 2)]);
+    expect(await within(region).findByText("We can only spare 6. Is that all right?")).toBeTruthy();
+    await waitFor(() => { expect(within(region).getByRole("status").textContent).toBe("Chairs × 10: new message from Elaine"); });
+  });
+
+  it("does not announce what was already written when the page opened", async () => {
+    requestsNow = [chairs()];
+    conversationNow = snapshot([said("We can only spare 6. Is that all right?", 2)]);
+    renderRequests();
+    const region = screen.getByRole("region", { name: "Requests" });
+    await within(region).findByText("We can only spare 6. Is that all right?");
+    const polls = mocks.conversation.mock.calls.length;
+    await waitFor(() => { expect(mocks.conversation.mock.calls.length).toBeGreaterThan(polls + 1); });
+    expect(within(region).getByRole("status").textContent).toBe("");
+  });
+
+  it("does not repeat the ask itself as a message", async () => {
+    const request = chairs();
+    requestsNow = [request];
+    const ask: Message = { ...said("Chairs × 10", 1), kind: "request", authorUserId: morag.id, authorName: "Morag", authorRole: "client" };
+    conversationNow = snapshot([ask]);
+    renderRequests();
+    const list = await screen.findByRole("list", { name: "Your requests" });
+    await waitFor(() => { expect(mocks.conversation).toHaveBeenCalled(); });
+    await waitFor(() => { expect(mocks.list.mock.calls.length).toBeGreaterThan(1); });
+    expect(within(list).queryByRole("list")).toBeNull();
+    expect(within(list).getAllByText("Chairs × 10")).toHaveLength(1);
+  });
+
+  it("shows a message in a thread that is not one of this person's requests, under the thread's own name", async () => {
+    const OTHER_THREAD = "00000000-0000-4000-8000-00000000c002";
+    const thread: Thread = {
+      id: OTHER_THREAD, venueId: "00000000-0000-4000-8000-00000000a001", audience: "client-facing", subject: "request",
+      bookingId: live.bookingId, eventId: EVENT, requestId: "00000000-0000-4000-8000-0000000000d2", subjectUserId: null,
+      title: "Tables × 2 · Grand Hall", createdByUserId: null, messageCount: 2, lastMessageAt: "2026-10-10T13:02:00.000Z",
+      lastCursor: 5, createdAt: "2026-10-10T12:50:00.000Z",
+    };
+    requestsNow = [chairs()];
+    conversationNow = snapshot([said("Two more tables are on their way.", 5, OTHER_THREAD)], [thread]);
+    renderRequests();
+
+    const region = screen.getByRole("region", { name: "Requests" });
+    const others = await within(region).findByRole("list", { name: "Other messages about this event" });
+    expect(within(others).getByText("Tables × 2 · Grand Hall")).toBeTruthy();
+    expect(within(others).getByText("Two more tables are on their way.")).toBeTruthy();
+    // It is not filed under a request it does not answer.
+    const mine = within(region).getByRole("list", { name: "Your requests" });
+    expect(within(mine).queryByText("Two more tables are on their way.")).toBeNull();
   });
 });
 

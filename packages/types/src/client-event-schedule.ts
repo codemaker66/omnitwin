@@ -18,7 +18,17 @@ const ScheduleSpaceSchema = z.object({
 export const ScheduleSlotSchema = z.object({
   bookingId: z.uuid(),
   kind: BookingKindSchema,
-  title: z.string().trim().min(1).max(200),
+  // As stored, trimmed (a blank title reads as ""): rows written before #350
+  // took a public enquiry's blank name as their title (API-9). Unlike
+  // CalendarBookingEntrySchema, which keeps a blank title as it is, this read
+  // trims. The API's routes no longer store an empty or blank title: the
+  // Create, Update, ConvertEnquiry and BookViewing schemas refuse one, and a
+  // client's proposal takes its event's title (eventTitleFor: the name a
+  // person gave it, else its occasion), never blank. The direct writer the
+  // seed and importers share (insertBoundBookings) does not check a title.
+  // Refusing it here failed the client's whole schedule, and a proposal's
+  // reply after the move had landed.
+  title: z.string().trim().max(200),
   space: ScheduleSpaceSchema,
   startsAt: z.iso.datetime(),
   endsAt: z.iso.datetime(),
@@ -30,7 +40,12 @@ export const ClientEventScheduleSchema = z.object({
   event: z.object({
     id: EventIdSchema,
     venueId: VenueIdSchema,
-    name: z.string().trim().min(1).max(200),
+    // As stored, trimmed (a blank name reads as ""): events made before
+    // eventNameFor named every new one can hold "" (an untitled booking's).
+    // Screens show such an event as eventDisplayName names it; refusing it
+    // here failed the client's whole schedule. Writers refuse an empty name
+    // (CreateEventSchema, UpdateEventSchema).
+    name: z.string().trim().max(200),
     eventType: z.string().trim().max(80).nullable(),
     status: EventStatusSchema,
     startsAt: z.iso.datetime().nullable(),
@@ -127,7 +142,10 @@ export const RoomDaySpanSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("yours"),
     bookingId: z.uuid(),
-    title: z.string().trim().min(1).max(200),
+    // As stored, trimmed (a blank title reads as ""; see ScheduleSlotSchema,
+    // API-9); refusing it here left the ribbon unable to read the room's day
+    // at all.
+    title: z.string().trim().max(200),
     ...RoomDayInstants,
   }).strict(),
   z.object({ kind: z.literal("held"), ...RoomDayInstants }).strict(),
