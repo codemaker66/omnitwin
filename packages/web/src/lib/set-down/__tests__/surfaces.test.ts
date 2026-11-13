@@ -70,7 +70,7 @@ describe("surface responses", () => {
     }
   });
 
-  it("keeps every kind's own number in the research ranges", () => {
+  it("pins every kind's own numbers: hardness, banks, thump and cavity, as surfaces.ts states and sources them", () => {
     const boards = SURFACES["oak-boards-joists"];
     expect(boards.hardness).toBe(1);
     expect(boards.boards).toEqual({ lowHz: 150, highHz: 300, count: 24, eta: 0.07, gainDb: 0 });
@@ -78,7 +78,8 @@ describe("surface responses", () => {
     expect(boards.highCutHz).toBe(16000);
     expect(SURFACES["oak-parquet"].boards).toEqual({ lowHz: 220, highHz: 480, count: 20, eta: 0.09, gainDb: 0 });
     expect(SURFACES["oak-parquet"].thump).toEqual({ hz: 16, zeta: 0.04 });
-    expect(SURFACES["timber-on-slab"].hardness).toBe(1.1);
+    // Oak's face on a slab is as hard as on joists (ruling R47); every use of hardness holds it to 1 anyway.
+    expect(SURFACES["timber-on-slab"].hardness).toBe(1);
     expect(SURFACES["timber-on-slab"].boards).toEqual({ lowHz: 400, highHz: 900, count: 12, eta: 0.12, gainDb: 0 });
     expect(SURFACES["timber-on-slab"].thump).toBeNull();
     expect(SURFACES.carpet.hardness).toBe(0.05);

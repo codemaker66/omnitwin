@@ -150,11 +150,21 @@ describe("contact times", () => {
     expect(contactSeconds("steel", oak, 1.25, 0.3)).toBeLessThan(0.0023);
   });
 
-  it("follows Hertz: longer for more mass, shorter for more speed and on a stiffer slab", () => {
+  it("follows Hertz: longer for more mass, shorter for more speed", () => {
     const base = contactSeconds("steel", oak, 2, 0.5);
     expect(contactSeconds("steel", oak, 4, 0.5) / base).toBeCloseTo(2 ** 0.4, 6);
     expect(contactSeconds("steel", oak, 2, 1) / base).toBeCloseTo(2 ** -0.2, 6);
-    expect(contactSeconds("steel", SURFACES["timber-on-slab"], 2, 0.5)).toBeLessThan(base);
+  });
+
+  it("strikes the same timber face on a slab as on joists: a hard contact's stress never reaches the slab (ruling R47)", () => {
+    // The slab is heard in its own board bank and in having no joists to heave (the low-body test below), not in its contact.
+    const slab = SURFACES["timber-on-slab"];
+    for (const cap of ["glide", "steel", "panel-edge"] as const) {
+      for (const [mass, speed] of [[0.25, 0.3], [1.25, 1], [5, 2]] as const) {
+        expect(contactSeconds(cap, slab, mass, speed), `${cap} ${String(mass)} kg ${String(speed)} m/s`).toBe(contactSeconds(cap, oak, mass, speed));
+      }
+      expect(knockSeconds(cap, slab, 1), cap).toBe(knockSeconds(cap, oak, 1));
+    }
   });
 
   it("springs a rubber foot for pi root(m / k), holds felt at 12 ms and every foot on carpet at 45 ms", () => {

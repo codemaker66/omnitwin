@@ -4,9 +4,10 @@
 // A set-down is the piece's own resonant parts struck through its feet, heard
 // through the surface under them: a bank of board modes, sometimes a low
 // joist thump or a hollow cavity, and a high cut-off where a soft surface
-// swallows the top. The numbers come from the research notes' sections
-// 4.1–4.3; task 6's modal renderer reads the resolved responses from
-// surfaceResponse and nothing else.
+// swallows the top. A number with a source cites it beside it; the rest are
+// marked EST (an estimate) or CALC (worked out here) with their basis, and
+// the ear test judges them. Task 6's modal renderer reads the resolved
+// responses from surfaceResponse and nothing else.
 // ---------------------------------------------------------------------------
 
 import { getCatalogueItemBySlug } from "../catalogue.js";
@@ -47,11 +48,37 @@ export interface SurfaceResponse {
   readonly beneath: ModeBank | null;
 }
 
+/** A hard surface cuts nothing the renderer's ceiling (a 14 kHz low-pass) passes (EST). */
 const HARD_CUT_HZ = 16000;
 
 const bank = (lowHz: number, highHz: number, count: number, eta: number): ModeBank => ({ lowHz, highHz, count, eta, gainDb: 0 });
 
-/** The base definitions. A surface that sits on the room's floor has `beneath` null here and gains it in surfaceResponse. */
+/**
+ * The base definitions. A surface that sits on the room's floor has `beneath`
+ * null here and gains it in surfaceResponse. Each bank's count and loss
+ * factor, and each hardness below oak's 1, are EST.
+ * - Oak boards on joists: a 22 mm oak board simply supported over a 0.40 m or
+ *   0.45 m joist spacing rings first at f = (pi / 2 L^2) h root(E / 12 rho),
+ *   262 Hz or 207 Hz with northern red oak's 12.5 GPa and specific gravity
+ *   0.63 (about 700 kg/m3 at 12 % moisture; Kretschmann 2010, Wood Handbook
+ *   FPL-GTR-190, ch. 5, Table 5-3a, p. 5-5) (CALC), so the bank spans
+ *   150-300 Hz (EST). The thump is the floor's fundamental, 14 Hz, inside the
+ *   9.96-18.70 Hz measured on 13 timber floors, whose impulse tests gave a
+ *   mean damping ratio of 5.05 % (Xiong, Kang and Lu 2011, J. Asian Archit.
+ *   Build. Eng. 10(2):407-412, abstract); its 3 % is EST, under that mean.
+ * - Oak parquet: short glued pieces on a sub-floor ring higher and die faster
+ *   than boards (EST); its thump, 16 Hz, sits in the same measured range.
+ * - Timber on a slab: a board bonded to a slab rings higher and dies faster
+ *   still, and has no joists to heave (EST: the spec's "hard click with
+ *   almost no low body").
+ * - Carpet: no modes of its own (its floor's, beneath it) and a 2.5 kHz cut
+ *   (EST); its 45 ms contact (modes.ts) is what dulls it, and at that length
+ *   the cut removes almost nothing more.
+ * - Stage deck: its boards (EST), and the air under a 6 x 4 ft deck, whose
+ *   first modes along and across it are c / 2L, 94 Hz and 141 Hz (CALC), so
+ *   the cavity spans 90-160 Hz.
+ * - Dance floor and table top: their panels' banks (EST).
+ */
 export const SURFACES: Readonly<Record<SurfaceKind, SurfaceResponse>> = {
   "oak-boards-joists": {
     kind: "oak-boards-joists",
@@ -73,7 +100,7 @@ export const SURFACES: Readonly<Record<SurfaceKind, SurfaceResponse>> = {
   },
   "timber-on-slab": {
     kind: "timber-on-slab",
-    hardness: 1.1,
+    hardness: 1,
     boards: bank(400, 900, 12, 0.12),
     thump: null,
     cavity: null,
@@ -154,7 +181,8 @@ function deepened(source: ModeBank | null, db: number): ModeBank | null {
 }
 
 function beneathBank(kind: SurfaceKind, roomSlug: string | null): ModeBank | null {
-  // Carpet's sub-floor is always oak-boards-joists: the galleries' attic floor is timber.
+  // Carpet's sub-floor is always oak-boards-joists: the galleries' attic floor is timber. The levels heard
+  // through a covering, -18 dB under carpet and -10 dB under a dance floor, are EST.
   if (kind === "carpet") return deepened(SURFACES["oak-boards-joists"].boards, -18);
   if (kind === "dance-floor") return deepened(SURFACES[timberUnder(roomSlug)].boards, -10);
   return null;

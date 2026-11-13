@@ -6,10 +6,10 @@
 // from its size and material: a frame is free-free Euler-Bernoulli beams, a
 // top or panel a dense bank of plate modes. Its decays come from the
 // material's as-built loss factor, which rises with frequency, because that is
-// how material is heard (Klatzky, Pai and Krotkov 2000). A foot's contact time
-// is Hertz's for a hard cap and a spring's for a soft one. Every number not
-// cited here is from section 4 of the research notes
-// (D:/claude/furniture-sound-20261027/research/acoustic-data.md).
+// how material is heard (Klatzky, Pai and Krotkov 2000, Presence 9(4):399-410). A
+// foot's contact time is Hertz's for a hard cap and a spring's for a soft one.
+// Each number gives its source beside it; one no source gives is marked EST
+// (an estimate) or CALC (worked out here), with its basis.
 //
 // A piece keeps its own modes from play to play: where each mode sits is
 // seeded by the part itself, and the per-play `random` only moves each one by
@@ -38,9 +38,12 @@ export interface Mode {
 }
 
 /**
- * As-built loss factors (research 4.1: glued joints, welds and feet, not the
- * intrinsic material): eta(f) = eta x (1 + viscous x f / 1000), so every
- * material's high modes die faster, viscoelastic ones fastest.
+ * As-built loss factors, eta(f) = eta x (1 + viscous x f / 1000), so every
+ * material's high modes die faster, viscoelastic ones fastest. All EST: no
+ * measured loss factor for jointed furniture is known to us. Each stands for
+ * the piece as built (glued joints, welds, its feet on the floor), well above
+ * its material's own damping, and is chosen for the decay it gives
+ * (T60 = 2.2 / (f eta)); the ear test judges them.
  */
 export const LOSS: Readonly<Record<PartKind, { readonly eta: number; readonly viscous: number }>> = {
   "beech-frame": { eta: 0.03, viscous: 0.6 },
@@ -112,11 +115,18 @@ type Shape = "square-beam" | "tube" | "round-bar" | "plate";
 
 /**
  * Each part kind's longitudinal wave speed sqrt(E / rho) in m/s and how it
- * vibrates. Plate speeds for ply, MDF and chipboard are those that give the
- * research's modal densities (0.071, 0.087 and 0.067 modes/Hz for a 1.83 m top).
+ * vibrates. The metals', glass's and ABS's E and density are nominal values
+ * for those materials (EST: no single source is cited). Beech is the Wood
+ * Handbook's American beech at 12 % moisture: 11.9 GPa in bending, about
+ * 13.1 GPa along the grain with the 10 % the table's note adds for shear,
+ * and specific gravity 0.64, about 720 kg/m3 at 12 % (Kretschmann 2010, Wood
+ * Handbook FPL-GTR-190, ch. 5, Table 5-3a, p. 5-4); 12.5 GPa lies between. The
+ * plate speeds for ply and chipboard are EST: those that give a 1.83 m round
+ * top 0.071 modes/Hz at 18 mm and 0.067 at 30 mm by a thin plate's modal
+ * density n = root 3 A / (h c) (CALC).
  */
 const MATERIAL: Readonly<Record<PartKind, { readonly waveSpeed: number; readonly shape: Shape }>> = {
-  "beech-frame": { waveSpeed: 4170, shape: "square-beam" }, // E 12.5 GPa, rho 720 (research 4.1)
+  "beech-frame": { waveSpeed: 4170, shape: "square-beam" }, // E 12.5 GPa, rho 720 (Wood Handbook, above)
   "steel-tube-frame": { waveSpeed: 5170, shape: "tube" }, // E 210 GPa, rho 7850
   "cast-base": { waveSpeed: 3910, shape: "round-bar" }, // grey iron, E 110 GPa, rho 7200
   // A deck's or a laptop's aluminium is thin-walled: its thickness is a wall's, so it rings as a shell.
@@ -148,7 +158,7 @@ const GYRATION: Readonly<Record<Exclude<Shape, "plate">, number>> = {
   "round-bar": 0.25,
 };
 
-/** A free plate's lowest mode is about h c / L^2 (research 4.1: about 15 Hz for a 1.83 m, 25 mm MDF top). */
+/** A free plate's lowest mode is about h c / L^2 (EST, its order of magnitude: 15 Hz for a 1.83 m, 25 mm MDF top, CALC). */
 const PLATE_FIRST = 1;
 const PLATE_LOW_HZ = 60;
 const PLATE_MODES_PER_OCTAVE = 4;
@@ -209,11 +219,11 @@ function plateFrequencies(part: BodyPart, waveSpeed: number, structure: () => nu
  * modes are struck equally (each has an antinode at the foot), but a slender
  * member is a compact radiator, far smaller than the wavelength, whose
  * efficiency rises with frequency: its amplitude is taken to rise as f until
- * ka = 1 (a the member's half-thickness), where it stops being compact. So a
- * thin tube barely sounds its lowest bending modes, as research 4.1 notes of
- * free rails. A plate's stand-in mode carries a band as wide as its frequency,
- * so its amplitude grows as root f; below coincidence a plate also radiates
- * less, by root (f / f_c), with f_c = c^2 / (1.8 c_L h).
+ * ka = 1 (a the member's half-thickness), where it stops being compact (EST).
+ * So a thin tube barely sounds its lowest bending modes. A plate's stand-in
+ * mode carries a band as wide as its frequency, so its amplitude grows as
+ * root f; below coincidence a plate also radiates less, by root (f / f_c),
+ * with f_c = c^2 / (1.8 c_L h).
  */
 function shapeGain(part: BodyPart, hz: number): number {
   const { waveSpeed, shape } = MATERIAL[part.kind];
@@ -286,18 +296,30 @@ export function surfaceModes(surface: SurfaceResponse, random: () => number): re
 
 // --- Contact -----------------------------------------------------------------------
 
-/** Hertz's sphere-on-flat contact time: t = 2.87 (m^2 / (R E*^2 v))^(1/5). */
+/**
+ * Hertz's sphere-on-flat contact time, t = 2.87 (m^2 / (R E*^2 v))^(1/5)
+ * (Sunday et al. 2016, Rev. Sci. Instrum. 87:084504, eq. 5). Its E* is
+ * 1 / ((1 - nu1^2) / E1 + (1 - nu2^2) / E2) (their eq. 6); contactSeconds
+ * leaves the Poisson factors out, which makes every hard contact 4-7 % longer
+ * than with nu 0.3-0.4 on both sides (CALC; kept, as tuned).
+ */
 const HERTZ_CONSTANT = 2.87;
+/** A cap's tip radius, 10 mm (EST). */
 const CAP_RADIUS_M = 0.01;
-/** A rubber foot (20 mm, 5 mm thick, E 6 MPa) is a spring of 1.1 MN/m: t = pi root(m / k). */
+/**
+ * A rubber foot (20 mm across, 5 mm thick, E 6 MPa, about three times as
+ * stiff in compression at a shape factor of 1) is a spring of
+ * 3 E A / t = 1.1 MN/m (CALC from EST sizes): t = pi root(m / k).
+ */
 const RUBBER_STIFFNESS_N_PER_M = 1.1e6;
+/** A felt pad presses for 12 ms (EST, inside the 9-18 ms a 20 mm, 4 mm pad of 0.5-2 MPa gives as a spring at 1.25 kg, CALC). */
 const FELT_SECONDS = 0.012;
-/** Any foot sinks into carpet pile for about 45 ms (40 on an underlay, 55 without). */
+/** Any foot sinks into carpet pile for about 45 ms (EST, under the 55 ms a 15 mm pile of 0.2 MPa gives a 3 cm2 foot at 1.25 kg as a spring, CALC). */
 const CARPET_SECONDS = 0.045;
 
 type HardCap = Exclude<FootCap, "rubber" | "felt" | "castor">;
 
-/** The elastic modulus of each hard cap, Pa: a nylon glide, a steel foot, a deck's or plinth's edge (EST). */
+/** The elastic modulus of each hard cap, Pa: a nylon glide 3 GPa, a steel foot 210 GPa, a deck's or plinth's edge 10 GPa (EST, nominal values). */
 const CAP_MODULUS_PA: Readonly<Record<HardCap, number>> = {
   glide: 3e9,
   steel: 2.1e11,
@@ -305,15 +327,28 @@ const CAP_MODULUS_PA: Readonly<Record<HardCap, number>> = {
 };
 
 /**
- * The modulus of each surface a hard cap meets, Pa: oak and parquet across the
- * grain 1.5 GPa, timber on a slab 11 GPa (research 4.2); the panels and tops,
- * which the research does not give, at their hardness times oak's (EST).
- * Carpet's is the floor its pile bottoms out on.
+ * The modulus of each surface a hard cap meets, Pa. A floor's face is loaded
+ * across the grain. The Wood Handbook gives oak's across-grain moduli as
+ * ratios to the along-grain E_L: E_T / E_L 0.082 and E_R / E_L 0.154 for red
+ * oak, 0.072 and 0.163 for white oak, at about 12 % moisture (Kretschmann
+ * 2010, Wood Handbook FPL-GTR-190, ch. 5, Table 5-1, p. 5-2), with E_L the
+ * bending modulus plus 10 % (its note a): 12.5 GPa for northern red oak and
+ * 12.3 GPa for white oak at 12 % (Table 5-3a, pp. 5-5 and 5-6). So E_T is
+ * 1.0-1.1 GPa and E_R 2.1-2.2 GPa, and oak and parquet take 1.5 GPa, between
+ * them (EST: a board's face is tangential or radial as it was sawn).
+ * Timber on a slab is the same timber face (ruling R47): a hard foot's Hertz
+ * contact is about 2 mm in radius and its stress lies within about 5 mm of
+ * the face, inside a board of 20 mm or more (the Reception Room's board is
+ * not surveyed), so the slab beneath cannot stiffen it. The slab is heard
+ * where it arises: in its own stiffer board bank and in having no joists to
+ * heave (surfaces.ts). The panels and tops, which no source gives, are at
+ * their hardness times oak's (EST). Carpet's is the floor its pile bottoms
+ * out on.
  */
 const SURFACE_MODULUS_PA: Readonly<Record<SurfaceKind, number>> = {
   "oak-boards-joists": 1.5e9,
   "oak-parquet": 1.5e9,
-  "timber-on-slab": 1.1e10,
+  "timber-on-slab": 1.5e9,
   carpet: 1.5e9,
   "stage-deck": 0.9 * 1.5e9,
   "dance-floor": 1.5e9,
