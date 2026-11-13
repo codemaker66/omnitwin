@@ -439,6 +439,19 @@ export interface SlateAside {
   readonly actions: readonly SlateAction<"try-again" | "leave-anyway" | "dismiss-note">[];
   /** Needs the person now (a held switch, lost work): an alert, ahead of the save state's notice. */
   readonly urgent: boolean;
+  /**
+   * Said as an alert when it shows: every urgent aside, and a refused clear's
+   * sentence carried from a layout left behind. That note is created already
+   * holding the sentence, and it is the refusal's one lasting voice, so a
+   * polite region might never be heard; it still waits for the save state's
+   * own notice (delta review of #388 at 7a51b6e4, X2, as U4 for a guest).
+   */
+  readonly alert: boolean;
+}
+
+/** Whether a note about a layout left behind is said as an alert: lost work, or a refused clear's sentence. */
+export function leftBehindIsAlert(input: LeftBehindInput): boolean {
+  return input.kept === false || input.notRemoved !== undefined;
 }
 
 export interface SlateAsideInput {
@@ -452,16 +465,19 @@ export interface SlateAsideInput {
 export function slateAside(input: SlateAsideInput): SlateAside | null {
   if (input.held !== null) {
     const held = heldLayoutChange(input.held);
-    return { heading: held.heading, body: held.body, actions: held.actions, urgent: true };
+    return { heading: held.heading, body: held.body, actions: held.actions, urgent: true, alert: true };
   }
   if (input.leftBehind !== null) {
     // A refused clear's sentence stands until the person puts it away (ruling R1(b) on #388).
     const actions = input.leftBehind.notRemoved === undefined ? [] : [{ id: "dismiss-note" as const, label: "Dismiss" }];
-    return { heading: leftBehindWords(input.leftBehind), body: null, actions, urgent: input.leftBehind.kept === false };
+    return {
+      heading: leftBehindWords(input.leftBehind), body: null, actions,
+      urgent: input.leftBehind.kept === false, alert: leftBehindIsAlert(input.leftBehind),
+    };
   }
   if (input.restored !== null) {
     const receipt = restoreReceipt(input.restored);
-    return { heading: receipt.lead, body: receipt.status, actions: [], urgent: false };
+    return { heading: receipt.lead, body: receipt.status, actions: [], urgent: false, alert: false };
   }
   return null;
 }

@@ -227,7 +227,9 @@ describe("what the slate says about work that outlived its page", () => {
       leftBehind: { configId: "cfg-other", roomName: "Grand Hall", kept: null, savesOnReturn: false, notRemoved: NOT_REMOVED },
     });
     openSlate();
-    const note = screen.getAllByRole("status").find((region) => region.classList.contains("pc-notice"));
+    // Said as an alert: the note is created already holding the sentence, and it is
+    // the refusal's one lasting voice, so a polite region might never be heard (delta review X2).
+    const note = screen.getAllByRole("alert").find((region) => region.classList.contains("pc-notice"));
     expect(note?.textContent).toContain(NOT_REMOVED);
     expect(note?.textContent).not.toContain("Your changes");
     fireEvent.click(within(note ?? document.body).getByRole("button", { name: "Dismiss" }));

@@ -176,9 +176,11 @@ export function SlateCard({
   // it comes first; a quiet one waits for the save state's own notice to clear.
   // A guest's draft has a notice only for a save refused over a held note, the
   // one voice of it on a line that says Draft whatever happens: an alert, as
-  // a signed-in viewer's is (delta review of #388 at 33a8e0ad, U4).
+  // a signed-in viewer's is (delta review of #388 at 33a8e0ad, U4). So is a
+  // refused clear's sentence carried from a layout left behind, which waits
+  // like any quiet aside (SlateAside.alert; delta review at 7a51b6e4, X2).
   const notice = aside !== null && (aside.urgent || save.notice === null)
-    ? { heading: aside.heading, body: aside.body ?? undefined, actions: aside.actions, urgent: aside.urgent }
+    ? { heading: aside.heading, body: aside.body ?? undefined, actions: aside.actions, urgent: aside.alert }
     : save.notice === null
       ? null
       : { ...save.notice, urgent: save.kind === "not-saved" || save.kind === "changed-elsewhere" || save.kind === "draft" };

@@ -54,6 +54,24 @@ describe("the v1 planner's notes about work that outlived its page", () => {
     expect(useEditorStore.getState().leftBehind).toBeNull();
   });
 
+  // Delta review of #388 at 7a51b6e4, X2. A refused clear carried from the
+  // layout left behind is that refusal's one lasting voice, and the note is
+  // created already holding it: an alert, as the slate says it, not a polite
+  // region that might never be heard.
+  it("says a refused clear carried from the layout left behind as an alert, until dismissed", () => {
+    const notRemoved = "Table 7's note was not removed: it was changed somewhere else, and that note cannot be shown here.";
+    useEditorStore.setState({
+      restoredFromDevice: null,
+      leftBehind: { configId: "cfg-0", roomName: "Grand Hall", kept: null, savesOnReturn: false, notRemoved },
+    });
+    render(<PlannerLeavingNotes />);
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(screen.getByRole("alert").textContent).toBe(notRemoved);
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(useEditorStore.getState().leftBehind).toBeNull();
+  });
+
   it("leaves the spot to the save-error toast", () => {
     useEditorStore.setState({ saveError: "Server error" });
     render(<PlannerLeavingNotes />);
