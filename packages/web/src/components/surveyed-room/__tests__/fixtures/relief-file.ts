@@ -10,6 +10,7 @@ export interface ReliefEntrySource {
 }
 
 const align = (offset: number): number => (offset + 3) & ~3;
+const UNIT: [number, number] = [0, 1];
 
 /** The lowest and highest value on one axis, widened where they coincide (a range must increase). */
 function axisRange(positions: readonly number[], axis: number): [number, number] {
@@ -44,7 +45,7 @@ export function encodeReliefFile(entries: readonly ReliefEntrySource[]): ArrayBu
     const vertices = new Uint8Array(align(entry.positions.length * 2));
     const quantised = new Uint16Array(vertices.buffer, 0, entry.positions.length);
     entry.positions.forEach((value, i) => {
-      const [lo, hi] = ranges[i % 3] ?? [0, 1];
+      const [lo, hi] = ranges[i % 3] ?? UNIT;
       quantised[i] = Math.round(((value - lo) / (hi - lo)) * 65535);
     });
     chunks.push(vertices);

@@ -12,12 +12,14 @@ const FRAME = buildRoomFrame(SALOON.room.outline);
 const HEIGHT = SALOON.room.ceilingHeight;
 const IDS = SALOON.walls.map((wall) => wall.id);
 
+const ORIGIN: PlanPoint = [0, 0];
+
 /** Whether (x, z) lies inside an outline, by counting crossings of a ray along +x. */
 function inside(outline: readonly PlanPoint[], x: number, z: number): boolean {
   let within = false;
   for (let i = 0; i < outline.length; i++) {
-    const [x0, z0] = outline[i] ?? [0, 0];
-    const [x1, z1] = outline[(i + 1) % outline.length] ?? [0, 0];
+    const [x0, z0] = outline[i] ?? ORIGIN;
+    const [x1, z1] = outline[(i + 1) % outline.length] ?? ORIGIN;
     if ((z0 > z) !== (z1 > z) && x < x0 + ((z - z0) / (z1 - z0)) * (x1 - x0)) within = !within;
   }
   return within;

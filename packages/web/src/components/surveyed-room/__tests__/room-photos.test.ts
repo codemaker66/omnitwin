@@ -86,8 +86,9 @@ describe("RoomPhotos", () => {
     const photos = new RoomPhotos();
     for (const kind of ["walls", "ceiling", "floor"] as const) {
       const texture = photos.sample(kind, uv()).value;
-      expect(Array.from(texture.image.data as Uint8Array)).toEqual([...ROOM_PLACEHOLDER_TONE, 255]);
-      expect([texture.image.width, texture.image.height]).toEqual([1, 1]);
+      const image = texture.image as { readonly data: Uint8Array; readonly width: number; readonly height: number };
+      expect(Array.from(image.data)).toEqual([...ROOM_PLACEHOLDER_TONE, 255]);
+      expect([image.width, image.height]).toEqual([1, 1]);
       // Nearest filtering would bind it without a sampler, and the walls' biased sample would not compile.
       expect(texture.magFilter).toBe(LinearFilter);
       expect(texture.minFilter).toBe(LinearFilter);

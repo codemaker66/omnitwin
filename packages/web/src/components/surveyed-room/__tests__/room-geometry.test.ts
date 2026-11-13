@@ -60,12 +60,15 @@ function triangles(surface: Pick<SurfaceGeometry, "positions" | "indices">, star
   return out;
 }
 
+const ORIGIN: PlanPoint = [0, 0];
+const NO_STRIP: readonly [number, number, number, number] = [0, 0, 0, 0];
+
 /** Whether (x, z) lies inside an outline, by counting crossings of a ray along +x. */
 function inside(outline: readonly PlanPoint[], x: number, z: number): boolean {
   let within = false;
   for (let i = 0; i < outline.length; i++) {
-    const [x0, z0] = outline[i] ?? [0, 0];
-    const [x1, z1] = outline[(i + 1) % outline.length] ?? [0, 0];
+    const [x0, z0] = outline[i] ?? ORIGIN;
+    const [x1, z1] = outline[(i + 1) % outline.length] ?? ORIGIN;
     if ((z0 > z) !== (z1 > z) && x < x0 + ((z - z0) / (z1 - z0)) * (x1 - x0)) within = !within;
   }
   return within;
@@ -145,7 +148,7 @@ describe("a surveyed room's flat walls (no relief)", () => {
     expect(v1).toBeCloseTo(row(5.515), 6);
     // Every wall's texels stay inside its own strip.
     walls.runs.forEach((run) => {
-      const [x, y, w, h] = SALOON.walls[run.wall]?.atlas ?? [0, 0, 0, 0];
+      const [x, y, w, h] = SALOON.walls[run.wall]?.atlas ?? NO_STRIP;
       for (let i = 0; i < run.vertexCount; i++) {
         const [s, t] = uvAt(walls, run.vertexStart + i);
         expect(s * 4096, run.id).toBeGreaterThanOrEqual(x - 1e-3);
@@ -284,7 +287,7 @@ describe("a surveyed room's floor", () => {
     expect(s).toBe(1);
     expect(t).toBeCloseTo(1 - 0.225 / 7.473, 6);
     for (let i = 0; i < 12; i++) {
-      const [x, z] = SALOON.room.outline[i] ?? [0, 0];
+      const [x, z] = SALOON.room.outline[i] ?? ORIGIN;
       expect(uvAt(floor, i)).toEqual(overheadUv(extent, x, z).map(Math.fround));
       expect(uvAt(floor, i)[0]).toBeGreaterThanOrEqual(0);
       expect(uvAt(floor, i)[0]).toBeLessThanOrEqual(1);
