@@ -7,14 +7,21 @@
 // the default and deletes v1, by changing DEFAULT_PLANNER_CHROME alone.
 // ---------------------------------------------------------------------------
 
-export type PlannerChrome = "v1" | "v2";
+//
+// `?chrome=hud` is the third: one screen of five stations with the furniture
+// as a hand of cards (docs/superpowers/specs/2026-11-13-planner-hud-design.md),
+// the redesign Blake asked for on 13 Nov 2026. It becomes the default by the
+// same one-line change.
+// ---------------------------------------------------------------------------
+
+export type PlannerChrome = "v1" | "v2" | "hud";
 
 export const PLANNER_CHROME_STORAGE_KEY = "venviewer.planner-chrome";
 
 const DEFAULT_PLANNER_CHROME: PlannerChrome = "v1";
 
 function isPlannerChrome(value: string | null): value is PlannerChrome {
-  return value === "v1" || value === "v2";
+  return value === "v1" || value === "v2" || value === "hud";
 }
 
 /** The chrome this device asks for, from the address or the last choice here. */

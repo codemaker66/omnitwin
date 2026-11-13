@@ -1,0 +1,273 @@
+/* ---------------------------------------------------------------------------
+ * THE PLANNER HUD'S SKINS (docs/superpowers/specs/2026-11-13-planner-hud-design.md).
+ *
+ * A skin is one block of values. hud.css draws every station from them and
+ * nothing else, so a look changes here and nowhere else. Blake chooses the
+ * default from these five (13 Nov 2026); `?skin=` tries one on.
+ *
+ * The gilt in these skins is a warm antique gilt at hue 35 or below, beside
+ * the house copper: the register keeps gold-family literals (hue 36 to 70) out
+ * of the chrome (src/__tests__/house-tokens.test.ts), and the hall's own gold
+ * leaf, seen by candlelight, sits at this warmer end.
+ *
+ * Each skin also re-points the house tokens the reused plaque reads
+ * (components/planner-chrome/Slate.tsx), so the plaque wears the same look.
+ * ------------------------------------------------------------------------- */
+
+.hud-root {
+  --hud-font-display: var(--house-serif);
+  --hud-font-text: var(--house-sans);
+  --hud-linen-ivory: #f1e9d6;
+  --hud-linen-black: #16110d;
+  --hud-linen-bare: #a9773f;
+}
+
+/* The plaque's own figures are the hand's seat line here. */
+.hud-root .pc-plane {
+  display: none;
+}
+
+/* == E. The Honours Board: the hall's mahogany boards, lettered in gilt ===== */
+
+.hud-root[data-hud-skin="honours"] {
+  --hud-ground-top: rgb(58 22 19 / 0.96);
+  --hud-ground-bottom: rgb(31 12 10 / 0.97);
+  --hud-edge: rgb(143 95 46 / 0.78);
+  --hud-edge-lit: rgb(240 198 140 / 0.3);
+  --hud-moulding: 1px solid rgb(217 162 94 / 0.26);
+  --hud-rule: rgb(217 162 94 / 0.3);
+  --hud-shadow: 0 18px 40px -16px rgb(0 0 0 / 0.8), 0 2px 8px rgb(0 0 0 / 0.4);
+  --hud-ink: #f6ead2;
+  --hud-ink-quiet: #d3bd9e;
+  --hud-on-room: #f6ead2;
+  --hud-on-room-accent: #f0c68c;
+  --hud-accent: #d9a25e;
+  --hud-accent-bright: #f0c68c;
+  --hud-accent-deep: #8f5f2e;
+  --hud-on-accent: #2a110d;
+  --hud-key-ground: rgb(74 29 24 / 0.92);
+  --hud-key-ground-hover: rgb(94 38 31 / 0.96);
+  --hud-make-ground: linear-gradient(160deg, rgb(104 41 33), rgb(60 23 19));
+  --hud-make-ink: #f0c68c;
+  --hud-card-ground: rgb(43 16 14 / 0.96);
+  --hud-mat: #efe6d2;
+  --hud-mat-edge: rgb(143 95 46 / 0.9);
+  --hud-track: rgb(246 234 210 / 0.14);
+  --hud-wash: rgb(240 198 140 / 0.09);
+  --hud-lit: rgb(244 200 142 / 0.6);
+  --hud-attention: #f0a184;
+  --hud-seal-rim: rgb(143 95 46 / 0.9);
+  --hud-seal-face: rgb(36 13 11);
+  --hud-seal-shape: polygon(50% 0, 93% 25%, 93% 75%, 50% 100%, 7% 75%, 7% 25%);
+  --hud-radius-panel: 6px;
+  --hud-radius-key: 5px;
+  --hud-radius-card: 5px;
+  --hud-caps: all-small-caps;
+  --hud-caps-spacing: 0.05em;
+
+  --house-lacquer-top: rgb(58 22 19 / 0.96);
+  --house-lacquer-bottom: rgb(31 12 10 / 0.97);
+  --house-forest-ink-1: #f6ead2;
+  --house-forest-ink-2: #e0cdb0;
+  --house-forest-ink-3: #c9b190;
+  --house-forest-edge: #b98a52;
+  --house-forest-rule: rgb(143 95 46 / 0.6);
+  --house-cream: #f0c68c;
+  --house-cream-hover: #f6d6a8;
+}
+
+/* == A. The Gilded Table: midnight enamel and gilt ========================== */
+
+.hud-root[data-hud-skin="gilded"] {
+  --hud-ground-top: rgb(22 33 62 / 0.96);
+  --hud-ground-bottom: rgb(11 18 37 / 0.97);
+  --hud-edge: rgb(154 116 64 / 0.85);
+  --hud-edge-lit: rgb(240 198 140 / 0.3);
+  --hud-moulding: 1px solid rgb(217 162 94 / 0.32);
+  --hud-rule: rgb(217 162 94 / 0.32);
+  --hud-shadow: 0 18px 40px -16px rgb(0 0 0 / 0.8), 0 2px 8px rgb(0 0 0 / 0.4);
+  --hud-ink: #f3e8cf;
+  --hud-ink-quiet: #c8c3b4;
+  --hud-on-room: #f3e8cf;
+  --hud-on-room-accent: #f0c68c;
+  --hud-accent: #d9a25e;
+  --hud-accent-bright: #f0c68c;
+  --hud-accent-deep: #8f5f2e;
+  --hud-on-accent: #101a33;
+  --hud-key-ground: rgb(28 42 78 / 0.92);
+  --hud-key-ground-hover: rgb(36 54 98 / 0.96);
+  --hud-make-ground: linear-gradient(160deg, rgb(46 92 204), rgb(22 54 142));
+  --hud-make-ink: #f6ead2;
+  --hud-card-ground: rgb(15 24 48 / 0.96);
+  --hud-mat: #e9e4d6;
+  --hud-mat-edge: rgb(154 116 64 / 0.9);
+  --hud-track: rgb(243 232 207 / 0.14);
+  --hud-wash: rgb(240 198 140 / 0.09);
+  --hud-lit: rgb(244 200 142 / 0.6);
+  --hud-attention: #f2a58a;
+  --hud-seal-rim: rgb(154 116 64 / 0.95);
+  --hud-seal-face: rgb(13 21 43);
+  --hud-seal-shape: polygon(50% 0, 93% 25%, 93% 75%, 50% 100%, 7% 75%, 7% 25%);
+  --hud-radius-panel: 4px;
+  --hud-radius-key: 4px;
+  --hud-radius-card: 4px;
+  --hud-caps: all-small-caps;
+  --hud-caps-spacing: 0.06em;
+
+  --house-lacquer-top: rgb(22 33 62 / 0.96);
+  --house-lacquer-bottom: rgb(11 18 37 / 0.97);
+  --house-forest-ink-1: #f3e8cf;
+  --house-forest-ink-2: #d8d2c2;
+  --house-forest-ink-3: #b9b6ab;
+  --house-forest-edge: #b98a52;
+  --house-forest-rule: rgb(154 116 64 / 0.6);
+  --house-cream: #f0c68c;
+  --house-cream-hover: #f6d6a8;
+}
+
+/* == B. Candlelit Lacquer: near-black, one hairline of gilt ================= */
+
+.hud-root[data-hud-skin="lacquer"] {
+  --hud-ground-top: rgb(27 21 16 / 0.95);
+  --hud-ground-bottom: rgb(14 11 9 / 0.96);
+  --hud-edge: rgb(143 118 80 / 0.5);
+  --hud-edge-lit: rgb(202 165 122 / 0.55);
+  --hud-moulding: none;
+  --hud-rule: rgb(202 165 122 / 0.22);
+  --hud-shadow: 0 22px 48px -18px rgb(0 0 0 / 0.85), 0 2px 8px rgb(0 0 0 / 0.4);
+  --hud-ink: #f0e4cc;
+  --hud-ink-quiet: #cfc2aa;
+  --hud-on-room: #f0e4cc;
+  --hud-on-room-accent: #edc594;
+  --hud-accent: #d6a868;
+  --hud-accent-bright: #edc594;
+  --hud-accent-deep: #7a5a34;
+  --hud-on-accent: #17110b;
+  --hud-key-ground: rgb(23 17 11 / 0.92);
+  --hud-key-ground-hover: rgb(38 29 20 / 0.96);
+  --hud-make-ground: rgb(23 17 11 / 0.92);
+  --hud-make-ink: #f0e4cc;
+  --hud-card-ground: rgb(18 14 10 / 0.96);
+  --hud-mat: #ebe3d3;
+  --hud-mat-edge: rgb(0 0 0 / 0.4);
+  --hud-track: rgb(240 228 204 / 0.14);
+  --hud-wash: rgb(240 228 204 / 0.07);
+  --hud-lit: rgb(237 197 148 / 0.55);
+  --hud-attention: #e39a80;
+  --hud-seal-rim: rgb(143 118 80 / 0.7);
+  --hud-seal-face: rgb(14 11 9);
+  --hud-seal-shape: circle(50%);
+  --hud-radius-panel: 14px;
+  --hud-radius-key: 12px;
+  --hud-radius-card: 12px;
+  --hud-caps: normal;
+  --hud-caps-spacing: 0;
+
+  --house-lacquer-top: rgb(27 21 16 / 0.95);
+  --house-lacquer-bottom: rgb(14 11 9 / 0.96);
+  --house-forest-ink-1: #f0e4cc;
+  --house-forest-ink-2: #d8ccb4;
+  --house-forest-ink-3: #b9ad96;
+  --house-forest-edge: #a08c6a;
+  --house-forest-rule: rgb(143 118 80 / 0.45);
+  --house-cream: #edc594;
+  --house-cream-hover: #f4d5ac;
+}
+
+/* == C. Ivory and Forest: the admin side's register ========================= */
+
+.hud-root[data-hud-skin="ivory"] {
+  --hud-ground-top: rgb(248 243 229 / 0.97);
+  --hud-ground-bottom: rgb(238 230 210 / 0.97);
+  --hud-edge: rgb(169 98 47 / 0.42);
+  --hud-edge-lit: rgb(255 255 255 / 0.7);
+  --hud-moulding: none;
+  --hud-rule: rgb(169 98 47 / 0.3);
+  --hud-shadow: 0 20px 44px -18px rgb(0 0 0 / 0.7), 0 2px 8px rgb(0 0 0 / 0.25);
+  --hud-ink: #1b3a2f;
+  --hud-ink-quiet: #4c6055;
+  --hud-on-room: #f6efe0;
+  --hud-on-room-accent: #f0b68f;
+  --hud-accent: #264337;
+  --hud-accent-bright: #2f5a47;
+  --hud-accent-deep: #1b3a2f;
+  --hud-on-accent: #f2eddd;
+  --hud-key-ground: #fbf8ee;
+  --hud-key-ground-hover: #ffffff;
+  --hud-make-ground: #fbf8ee;
+  --hud-make-ink: #1b3a2f;
+  --hud-card-ground: #fbf8ee;
+  --hud-mat: #f4efdf;
+  --hud-mat-edge: rgb(169 98 47 / 0.25);
+  --hud-track: rgb(27 58 47 / 0.14);
+  --hud-wash: rgb(27 58 47 / 0.07);
+  --hud-lit: rgb(143 174 139 / 0.7);
+  --hud-attention: #8e3a2c;
+  --hud-seal-rim: rgb(169 98 47 / 0.7);
+  --hud-seal-face: #fbf8ee;
+  --hud-seal-shape: circle(50%);
+  --hud-radius-panel: 16px;
+  --hud-radius-key: 12px;
+  --hud-radius-card: 12px;
+  --hud-caps: normal;
+  --hud-caps-spacing: 0;
+
+  --house-lacquer-top: rgb(248 243 229 / 0.97);
+  --house-lacquer-bottom: rgb(238 230 210 / 0.97);
+  --house-forest-ink-1: #1b3a2f;
+  --house-forest-ink-2: #42584e;
+  --house-forest-ink-3: #55655c;
+  --house-forest-edge: #747f6f;
+  --house-forest-rule: #d9d4c2;
+  --house-cream: #264337;
+  --house-cream-hover: #2f5a47;
+}
+
+/* == D. Oculus: glass and light ============================================= */
+
+.hud-root[data-hud-skin="oculus"] {
+  --hud-ground-top: rgb(46 32 20 / 0.5);
+  --hud-ground-bottom: rgb(22 15 9 / 0.62);
+  --hud-edge: rgb(240 198 140 / 0.42);
+  --hud-edge-lit: rgb(255 240 214 / 0.4);
+  --hud-moulding: none;
+  --hud-rule: rgb(240 198 140 / 0.25);
+  --hud-shadow: 0 0 34px -10px rgb(244 200 142 / 0.35), 0 18px 40px -18px rgb(0 0 0 / 0.7);
+  --hud-ink: #fff3dd;
+  --hud-ink-quiet: #e3d2b8;
+  --hud-on-room: #fff3dd;
+  --hud-on-room-accent: #f0c68c;
+  --hud-accent: #e5b377;
+  --hud-accent-bright: #f6d3a2;
+  --hud-accent-deep: #a5733a;
+  --hud-on-accent: #24160b;
+  --hud-key-ground: rgb(255 240 214 / 0.07);
+  --hud-key-ground-hover: rgb(255 240 214 / 0.14);
+  --hud-make-ground: rgb(255 240 214 / 0.09);
+  --hud-make-ink: #fff3dd;
+  --hud-card-ground: rgb(40 27 16 / 0.55);
+  --hud-mat: #f2ead9;
+  --hud-mat-edge: rgb(240 198 140 / 0.5);
+  --hud-track: rgb(255 243 221 / 0.18);
+  --hud-wash: rgb(255 240 214 / 0.1);
+  --hud-lit: rgb(246 211 162 / 0.75);
+  --hud-attention: #ffb59c;
+  --hud-seal-rim: rgb(240 198 140 / 0.55);
+  --hud-seal-face: rgb(30 20 12 / 0.9);
+  --hud-seal-shape: circle(50%);
+  --hud-radius-panel: 18px;
+  --hud-radius-key: 14px;
+  --hud-radius-card: 14px;
+  --hud-caps: normal;
+  --hud-caps-spacing: 0;
+
+  --house-lacquer-top: rgb(46 32 20 / 0.5);
+  --house-lacquer-bottom: rgb(22 15 9 / 0.62);
+  --house-forest-ink-1: #fff3dd;
+  --house-forest-ink-2: #e3d2b8;
+  --house-forest-ink-3: #cdbb9f;
+  --house-forest-edge: #c9a878;
+  --house-forest-rule: rgb(240 198 140 / 0.3);
+  --house-cream: #f6d3a2;
+  --house-cream-hover: #fbe2bd;
+}

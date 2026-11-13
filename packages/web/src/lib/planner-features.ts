@@ -118,11 +118,28 @@ export function formatPlannerFeatureList(overrides: PlannerFeatureOverrides): st
     .join(",");
 }
 
-/** The switches in force: everyone's, then these overrides on top. */
+/**
+ * The switches the chrome on screen turns on for itself while it is mounted:
+ * the card hand's own (its set cards, seats on the card, table numbers), which
+ * stay off under a chrome with no cards to choose them from.
+ */
+let chromeDefaults: PlannerFeatureOverrides = {};
+
+/** The switches in force: everyone's, then the mounted chrome's own, then these overrides on top. */
 export function resolvePlannerFeatures(overrides: PlannerFeatureOverrides): PlannerFeatures {
   const features = {} as Record<PlannerFeature, boolean>;
-  for (const name of FEATURE_NAMES) features[name] = overrides[name] ?? PLANNER_FEATURE_SPECS[name].on;
+  for (const name of FEATURE_NAMES) features[name] = overrides[name] ?? chromeDefaults[name] ?? PLANNER_FEATURE_SPECS[name].on;
   return features;
+}
+
+/**
+ * A chrome's own switches, set as it mounts and cleared (with `{}`) as it
+ * leaves. A device's `?pf=` still wins, so one of them can be turned off
+ * again on a device that shows a problem.
+ */
+export function setPlannerChromeFeatures(overrides: PlannerFeatureOverrides): void {
+  chromeDefaults = overrides;
+  cached = null;
 }
 
 /** This device's overrides: from the address when it names any, else the last ones remembered here. */
