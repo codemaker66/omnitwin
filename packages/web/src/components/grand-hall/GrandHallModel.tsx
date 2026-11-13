@@ -439,8 +439,13 @@ export function GrandHallModel({ mood, view, finish: finishOverride, overviewCha
     raycastDoorLeaves(this, raycaster, intersects, (door) => doorSwing.current.angle(door), (wall) => cutState.current[wall] ?? HALL_CUTS.none);
   }, []);
   const cutsEasing = useRef(false);
-  // The cuts ease in the frame loop, which draws on demand: the stage coming or going asks for a frame.
-  useEffect(() => { invalidate(); }, [invalidate, stage]);
+  // The cuts ease in the frame loop, which draws on demand: the stage coming or going asks for a frame. Where no
+  // screen shows the hall as a stage, this asks for none.
+  useEffect(() => {
+    if (!stage) return undefined;
+    invalidate();
+    return () => { invalidate(); };
+  }, [invalidate, stage]);
   const resolvedView = useRef<Exclude<HallView, "auto">>(view === "auto" ? "overview" : view);
   const chandelierGroup = useRef<import("three").Group | null>(null);
   const chandeliersShown = useRef(false);
