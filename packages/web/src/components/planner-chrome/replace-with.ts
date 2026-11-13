@@ -1,7 +1,7 @@
 import { storeShortfall, storeShortfallWords } from "../../lib/card-stock.js";
 import { createGhostWorld } from "../../lib/ghost-truth.js";
 import type { PlacedItem } from "../../lib/placement.js";
-import { replaceSelection } from "../../lib/planner-keymap.js";
+import { replaceSelection } from "../../lib/planner-edit-commands.js";
 import { planReplace, type ReplaceOptions } from "../../lib/replace.js";
 import { requestScreenAnchorFrame } from "../../lib/screen-anchors.js";
 import { cardParamsFor, type CardId, type CardParams, type CardParamsRequest } from "../../lib/setup-cards.js";

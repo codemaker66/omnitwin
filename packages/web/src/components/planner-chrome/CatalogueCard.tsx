@@ -2,8 +2,8 @@ import { forwardRef, useRef, type FocusEvent, type ReactElement } from "react";
 import { Armchair } from "lucide-react";
 import type { CatalogueCard, VariantColour } from "../../lib/card-defaults.js";
 import type { CatalogueItem } from "../../lib/catalogue.js";
-import { setupCardPreviewUrl } from "../../lib/crafted-furniture.js";
 import { prefersReducedMotion } from "../../lib/reduced-motion.js";
+import { setupCardPreviewUrl } from "../../lib/setup-card-previews.js";
 import {
   CARD_COLOURWAYS,
   cardMainItem,

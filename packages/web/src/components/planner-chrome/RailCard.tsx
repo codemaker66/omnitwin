@@ -1,7 +1,7 @@
 import { type PointerEvent as ReactPointerEvent, type ReactElement } from "react";
 import { catalogueIcon } from "../../lib/catalogue.js";
-import { setupCardPreviewUrl } from "../../lib/crafted-furniture.js";
 import { railName } from "../../lib/card-defaults.js";
+import { setupCardPreviewUrl } from "../../lib/setup-card-previews.js";
 import { cardMainItem, cardParamsFor, describeCard, type CardId } from "../../lib/setup-cards.js";
 import { useCatalogueStore } from "../../stores/catalogue-store.js";
 import type { StoreFace } from "./store-figures.js";
