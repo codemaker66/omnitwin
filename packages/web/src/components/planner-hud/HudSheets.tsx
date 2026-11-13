@@ -23,6 +23,7 @@ import { usePlannerEventStore, type PlannerEventKind } from "../../stores/planne
 import { usePlannerHudStore, type HudSheet } from "../../stores/planner-hud-store.js";
 import { useToolStore } from "../../stores/tool-store.js";
 import { setWallsFull, useVisibilityStore } from "../../stores/visibility-store.js";
+import { useModelledGrandHall } from "../grand-hall/hall-space.js";
 import { useHudFacts } from "./hud-facts.js";
 import { CloseGlyph, MinusGlyph, PlusGlyph } from "./glyphs.js";
 
@@ -248,7 +249,7 @@ function SendSheet(): ReactElement {
       {!hasPieces ? (
         <p className="hud-sheet__lede">There is nothing in the room yet. Set down a table, or lay the room out, and it can go to the events team.</p>
       ) : !guestDraft || configId === null ? (
-        <p className="hud-sheet__lede">This plan is saved to an account, so it goes to the venue for approval rather than as an enquiry. Use Submit for approval on the earlier screen for now.</p>
+        <p className="hud-sheet__lede">This plan is saved to an account, so it goes to the venue for approval rather than as an enquiry. Submit for approval is not on this screen yet: it is on the standard planner.</p>
       ) : (
         <>
           <p className="hud-sheet__lede">The events team receives this layout with your contact details, and replies with what happens next. Nothing is booked by sending it.</p>
@@ -336,6 +337,8 @@ function chooseSound(mode: PlannerSoundMode): void {
 
 function ToolsSheet(): ReactElement {
   const wallsFull = useVisibilityStore((state) => state.mode === "manual");
+  // The drawn Grand Hall lowers its own walls by where the camera stands; only the other rooms' walls are put up or cut by hand.
+  const wallsByHand = !useModelledGrandHall();
   const snap = usePlacementStore((state) => state.snapEnabled);
   const sound = usePlannerSoundSettings().mode;
   const tool = (name: "measure" | "draw"): void => {
@@ -349,7 +352,9 @@ function ToolsSheet(): ReactElement {
       <div className="hud-sheet__row">
         <button type="button" className="hud-key" onClick={() => { tool("measure"); }} title="Two clicks lay a tape, in metres (M)">Measure</button>
         <button type="button" className="hud-key" onClick={() => { tool("draw"); }} title="Draw a note on the floor (D)">Draw a note</button>
-        <button type="button" className="hud-key" aria-pressed={wallsFull} onClick={() => { setWallsFull(!wallsFull); }}>{wallsFull ? "Cut the near walls away" : "Show every wall"}</button>
+        {wallsByHand ? (
+          <button type="button" className="hud-key" aria-pressed={wallsFull} onClick={() => { setWallsFull(!wallsFull); }}>{wallsFull ? "Cut the near walls away" : "Show every wall"}</button>
+        ) : null}
         <button type="button" className="hud-key" aria-pressed={snap} onClick={() => { usePlacementStore.getState().toggleSnap(); }} title="G">{snap ? "Snapping to the grid" : "Placing freely"}</button>
       </div>
       <div className="hud-sheet__section">
