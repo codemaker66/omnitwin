@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { WebVitalsReportSchema } from "@omnitwin/types";
+import { WEB_VITALS_REPORT_BYTES, WebVitalsReportSchema } from "@omnitwin/types";
 import type { Database } from "../db/client.js";
 import {
   WEB_VITALS_ADDRESS_KEY_ROTATION_MS,
@@ -32,9 +32,10 @@ import {
 // A report is not written when it arrives: its samples are held, each on its
 // vital's step and without anything about who sent it, and written on the
 // hour once their group (one vital of one page, device class and day) holds
-// ten, in a shuffled batch (createWebVitalsBatch), so a stored row can be
-// narrowed only to the ten or more samples of its group, never to the one
-// request that brought it.
+// ten, in a shuffled batch (createWebVitalsBatch). Every report is sent at one
+// size, so the host's log of its size says nothing of what it carries. On
+// what a row and that log share, a row then narrows only to its group of ten
+// or more, short of the residuals docs/engineering/web-vitals.md names.
 // ---------------------------------------------------------------------------
 
 /** A report is a few hundred bytes; anything far larger is not one. */
@@ -73,9 +74,9 @@ export async function publicWebVitalsRoutes(server: FastifyInstance, opts: Publi
       await batch.flush({ closing });
     } catch (error) {
       // Nothing of any visitor is in this line: the batch never holds one. The
-      // error says whether the database refused the batch (dropped) or the
+      // error says whether the database refused the batch (dropped), or the
       // write was unfinished at its bound (it may still be stored).
-      server.log.error({ err: error }, "Web vitals: a batch was not written");
+      server.log.error({ err: error }, "Web vitals: a batch write failed or was given up on");
     }
   };
   const writing = setInterval(() => { void write(false); }, opts.flushEveryMs ?? WEB_VITALS_BATCH_EVERY_MS);
@@ -106,6 +107,12 @@ export async function publicWebVitalsRoutes(server: FastifyInstance, opts: Publi
     // page) is answered and nothing is kept, as the privacy page promises.
     if (request.headers["sec-gpc"] === "1" || request.headers["dnt"] === "1") {
       return reply.status(204).send();
+    }
+    // Every report is sent at one size (WEB_VITALS_REPORT_BYTES): the host's
+    // request log records each request's size, which would otherwise follow
+    // what the report carries. One of any other length is refused.
+    if (request.headers["content-length"] !== String(WEB_VITALS_REPORT_BYTES)) {
+      return reply.status(400).send({ error: "Not a web vitals report", code: "VALIDATION_ERROR" });
     }
     const parsed = WebVitalsReportSchema.safeParse(readBody(request.body));
     if (!parsed.success) {

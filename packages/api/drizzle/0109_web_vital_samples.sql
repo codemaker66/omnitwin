@@ -18,8 +18,9 @@
 -- and the database's restore history following arrival, so the API writes rows
 -- in shuffled hourly batches, one transaction each, of groups of at least ten
 -- samples of one vital, page, device class and day, each value on its vital's
--- step (createWebVitalsBatch), and no row can be paired with a hosting
--- provider's request log. Rows go
+-- step and every report sent at one size (createWebVitalsBatch), so a row
+-- shares with a hosting provider's request log only what its group shares,
+-- short of the residuals docs/engineering/web-vitals.md names. Rows go
 -- after 90 days (the nightly cleanup); the index beside the key, on the day,
 -- serves that cleanup and the p75 report.
 --

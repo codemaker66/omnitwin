@@ -121,21 +121,24 @@ export function createAddressKey(secret: () => Buffer = () => randomBytes(32)): 
  * roughly which. The day: each row keeps it. The vital: CLS comes only from
  * Chromium, so a lone Android phone's CLS among iPhones' samples would be its
  * batch's only CLS row. Below its vital's step a value says nothing
- * (WEB_VITAL_STEPS: a clock's precision names its engine). With at least this
- * many in every group written, a row can be narrowed only to that many
- * samples, never to one. A row carries nothing that joins it to the other
- * vitals of its report, so a report's samples may be written apart. Samples,
- * not people: one visitor's repeated loads, or reports posted on purpose to
- * fill a group, count as many.
+ * (WEB_VITAL_STEPS: a clock's precision names its engine), and every report
+ * is sent at one size (WEB_VITALS_REPORT_BYTES), so the log's byte counts say
+ * nothing either. With at least this many in every group written, a row can
+ * be narrowed, on what it shares with that log, only to that many samples,
+ * short of the residuals docs/engineering/web-vitals.md names (values rare in
+ * their group, which values go together). A row carries nothing that joins it
+ * to the other vitals of its report, so a report's samples may be written
+ * apart. Samples, not people: one visitor's repeated loads, or reports posted
+ * on purpose to fill a group, count as many.
  */
 export const WEB_VITALS_BATCH_MIN_SAMPLES = 10;
 
 /** How often the route writes the held samples (and once more as it closes). */
 export const WEB_VITALS_BATCH_EVERY_MS = 60 * 60_000;
 
-/** How long a flush waits for one batch's write, and the database's bound on
- *  each statement and on a transaction whose client has gone quiet: well
- *  inside the API's 25-second shutdown grace. */
+/** How long a flush waits for the write before it, and for its own, and the
+ *  database's bound on each statement: well inside the API's 25-second
+ *  shutdown grace. */
 export const WEB_VITALS_BATCH_WRITE_TIMEOUT_MS = 15_000;
 
 /** Rows per insert statement: PostgreSQL takes at most 65,535 bind
@@ -187,11 +190,12 @@ export interface WebVitalsBatch {
    * inserting transaction's id (xmin) follows arrival. A group of today with
    * fewer waits for a later write; one of an earlier day can no longer grow
    * and is dropped, as is every group short of the minimum when closing.
-   * One write at a time: a flush first waits for the write under way (a
-   * closing one only within its bound, then drops what is held). Resolves to
-   * how many samples were written. Rejects when the database refuses the
-   * batch, which is then dropped, or when the write is unfinished after its
-   * bound: it may still be stored, and is never tried again.
+   * One write at a time: a flush first waits, within its bound, for the write
+   * under way. If it is still unfinished, an hourly flush writes nothing but
+   * drops an earlier day's groups, and a closing one drops all it holds.
+   * Resolves to how many samples were written. Rejects when the database
+   * refuses the batch, which is then dropped, or when the write is unfinished
+   * after its bound: it may still be stored, and is never tried again.
    */
   readonly flush: (options?: { readonly closing?: boolean }) => Promise<number>;
   /** How many samples are held now. */
@@ -245,8 +249,11 @@ async function settlesWithin(promise: Promise<unknown>, ms: number): Promise<boo
  * its precision: it keeps only the UTC day it arrived. A group short of the
  * minimum waits, for the rest of its day if it must, and a restart (every
  * deploy) drops what is held, so a page opened only a few times a day may
- * never be written. At most the day's ceiling of reports is held per process,
- * up to four samples each.
+ * never be written. At most one day's ceiling of reports is held per process,
+ * up to four samples each, even while a write is stuck. A write stuck on a
+ * stalled connection of the server's own pool still holds that connection:
+ * the close gives up waiting at its bound, and the pool's own close then waits
+ * until the API's 25-second stop ends the process.
  */
 export function createWebVitalsBatch(db: Database, options: WebVitalsBatchOptions = {}): WebVitalsBatch {
   const minSamples = options.minSamples ?? WEB_VITALS_BATCH_MIN_SAMPLES;
@@ -289,10 +296,10 @@ export function createWebVitalsBatch(db: Database, options: WebVitalsBatchOption
     async function run(): Promise<number> {
       try {
         await db.transaction(async (tx) => {
-          // The database ends a statement, or a transaction whose client has
-          // gone quiet, past the bound, and rolls the whole batch back.
+          // The database ends a statement past the bound and rolls the whole
+          // batch back. (Not idle_in_transaction_session_timeout: it ends the
+          // session, and a checked-out client's error would end the process.)
           await tx.execute(sql.raw(`SET LOCAL statement_timeout = ${bound}`));
-          await tx.execute(sql.raw(`SET LOCAL idle_in_transaction_session_timeout = ${bound}`));
           for (let start = 0; start < rows.length; start += rowsPerInsert) {
             await tx.insert(webVitalSamples).values(rows.slice(start, start + rowsPerInsert));
           }
@@ -332,17 +339,27 @@ export function createWebVitalsBatch(db: Database, options: WebVitalsBatchOption
       const started = Date.now();
       // A closing flush has one bound for its waiting and its write together.
       const left = (): number => (closing ? writeTimeoutMs - (Date.now() - started) : writeTimeoutMs);
-      // One write at a time: a later flush takes what is held once the write
-      // under way has settled. Closing waits only within its bound: a write
-      // stuck on a stalled connection must not hold the server's close.
+      // One write at a time, and a flush waits for the one under way only
+      // within its bound: a write stuck on a stalled connection may never
+      // settle, and must hold neither the server's close nor the day's
+      // housekeeping. Nothing is ever written beside it.
       while (inFlight !== null) {
-        if (!closing) {
-          await inFlight;
-        } else if (!(await settlesWithin(inFlight, left()))) {
+        if (await settlesWithin(inFlight, left())) continue;
+        if (closing) {
           for (const group of held.values()) drop(group);
           held.clear();
           throw new Error(`A web vitals batch was still being written ${String(writeTimeoutMs)} ms into closing: what is held is dropped`);
         }
+        // An earlier day's groups can no longer grow and still go, so what is
+        // held stays within one day's ceiling for as long as the write is stuck.
+        const day = Math.floor(now() / DAY_MS);
+        for (const [key, group] of held) {
+          if (group.day < day) {
+            drop(group);
+            held.delete(key);
+          }
+        }
+        throw new Error(`The web vitals batch before was still being written after ${String(writeTimeoutMs)} ms: nothing is written this hour`);
       }
       const today = Math.floor(now() / DAY_MS);
       const batch: HeldSample[] = [];
@@ -358,6 +375,12 @@ export function createWebVitalsBatch(db: Database, options: WebVitalsBatchOption
       }
       if (batch.length === 0) return 0;
       const boundMs = left();
+      if (closing && boundMs < writeTimeoutMs / 10) {
+        // Too little of the close's bound is left to start a write and wait
+        // for it: what it would have written is dropped.
+        for (const sample of batch) settle(sample.from, false);
+        throw new Error(`A web vitals closing write had ${String(Math.max(0, Math.trunc(boundMs)))} ms of its bound left: what it held is dropped`);
+      }
       const written = write(batch, boundMs);
       if (await settlesWithin(written, boundMs)) return await written;
       throw new Error(`A web vitals batch was unfinished after ${String(Math.trunc(boundMs))} ms: it may still be stored, and is never tried again`);

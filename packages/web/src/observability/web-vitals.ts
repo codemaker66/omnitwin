@@ -3,6 +3,7 @@ import {
   WEB_VITAL_NAMES,
   WebVitalsReportSchema,
   isWebVitalPage,
+  padWebVitalsReport,
   stepWebVitalSample,
   type WebVitalDeviceClass,
   type WebVitalName,
@@ -82,6 +83,11 @@ function isReported(name: Metric["name"]): name is WebVitalName {
   return (WEB_VITAL_NAMES as readonly string[]).includes(name);
 }
 
+/** Loads that are not measured: restored from the back/forward cache,
+ *  prerendered, or restored after the browser discarded the page. Their TTFB
+ *  is 0 and their LCP a frame or two, values no ordinary load has. */
+const UNMEASURED_LOADS: ReadonlySet<Metric["navigationType"]> = new Set<Metric["navigationType"]>(["back-forward-cache", "prerender", "restore"]);
+
 export interface WebVitalsReporter {
   readonly add: (metric: Metric) => void;
   /** The landing page turned out to be a redirect: report under its target. */
@@ -98,7 +104,8 @@ export interface WebVitalsReporter {
  * measurement (the library's metric id) is sent once: the library reports CLS
  * and INP again after a page is shown and hidden again, and a second row for
  * one page load would weigh that visitor twice in the p75. A page restored
- * from the back/forward cache is a new measurement with new ids.
+ * from the back/forward cache, prerendered or restored is not measured
+ * (UNMEASURED_LOADS). Each report is sent padded to one size.
  */
 export function createWebVitalsReporter(landingPage: string, device: WebVitalDeviceClass, send: (body: string) => void): WebVitalsReporter {
   const held = new Map<WebVitalName, { readonly id: string; readonly sample: WebVitalSample }>();
@@ -109,6 +116,11 @@ export function createWebVitalsReporter(landingPage: string, device: WebVitalDev
     add: (metric) => {
       if (!isReported(metric.name) || sent.has(metric.id)) return;
       if (left && metric.name !== "TTFB") return;
+      // A page restored from the back/forward cache, or prerendered, or
+      // restored after the browser discarded it, reports a TTFB of 0 and an
+      // LCP of a frame or two: values no ordinary load has, which would tie
+      // its rows to each other and to its request (#309's round-4 review).
+      if (UNMEASURED_LOADS.has(metric.navigationType)) return;
       held.set(metric.name, {
         id: metric.id,
         // Only what the privacy page names: the vital, its value and rating,
@@ -127,7 +139,11 @@ export function createWebVitalsReporter(landingPage: string, device: WebVitalDev
       const report = { v: 1, page, device, metrics: entries.map((entry) => entry.sample) };
       // Never send what the server would refuse.
       if (!WebVitalsReportSchema.safeParse(report).success) return;
-      send(JSON.stringify(report));
+      // One size for every report: the host's request log records each
+      // request's size, which would otherwise follow what it carries.
+      const body = padWebVitalsReport(JSON.stringify(report));
+      if (body === null) return;
+      send(body);
     },
   };
 }

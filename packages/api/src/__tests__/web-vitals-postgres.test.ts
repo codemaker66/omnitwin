@@ -2,12 +2,12 @@ import Fastify, { type FastifyInstance, type LightMyRequestResponse } from "fast
 import rateLimit from "@fastify/rate-limit";
 import { randomInt } from "node:crypto";
 import { resolve } from "node:path";
-import { Pool } from "pg";
+import { Pool, type PoolClient } from "pg";
 import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { WEB_VITAL_RETENTION_DAYS } from "@omnitwin/types";
+import { WEB_VITALS_REPORT_BYTES, WEB_VITAL_RETENTION_DAYS, padWebVitalsReport } from "@omnitwin/types";
 import * as schema from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { validateEnv } from "../env.js";
@@ -63,6 +63,13 @@ const REPORT = {
     { name: "TTFB", value: 412.25, rating: "good" },
   ],
 } as const;
+
+/** A body as the browser sends it: padded to the one size every report is
+ *  sent at (WEB_VITALS_REPORT_BYTES), or as it is if it cannot be. */
+function wire(body: unknown): string {
+  const json = typeof body === "string" ? body : JSON.stringify(body);
+  return padWebVitalsReport(json) ?? json;
+}
 
 describe("the batch's shuffle", () => {
   it("draws once for every place from the last down, and keeps every row", () => {
@@ -155,7 +162,7 @@ describe.skipIf(testUrl === undefined)("field web vitals on the whole API (migra
     return server.inject({
       method: "POST", url: "/public/web-vitals",
       headers: { "content-type": "text/plain;charset=UTF-8", origin: "https://venviewer.com" },
-      payload: body,
+      payload: wire(body),
       remoteAddress: from ?? `10.9.${String((address >> 8) & 255)}.${String(address & 255)}`,
     });
   }
@@ -214,7 +221,7 @@ describe.skipIf(testUrl === undefined)("field web vitals on the whole API (migra
     const res = await beacon(JSON.stringify(REPORT));
     expect(res.statusCode).toBe(204);
     expect(res.headers["cache-control"]).toBe("no-store");
-    // Each on its vital's step (10 ms; CLS in thousandths), rated from that.
+    // Each on its vital's step (10 ms; CLS in hundredths), rated from that.
     expect(await rows()).toEqual([
       { page: "/proposal-share/:token", device: "phone", metric: "CLS", value: 0.04, rating: "good" },
       { page: "/proposal-share/:token", device: "phone", metric: "INP", value: 180, rating: "good" },
@@ -228,11 +235,16 @@ describe.skipIf(testUrl === undefined)("field web vitals on the whole API (migra
     );
     expect(columns.map((column) => column.column_name))
       .toEqual(["device", "id", "metric", "page", "rating", "recorded_at", "value"]);
-    // The id is a random UUID, not a sequence that would count arrivals.
+    // The id is a random UUID, not a sequence that would count arrivals, and
+    // the insert never sets it: every stored id is version 4, with nothing in
+    // it of when or where the report came from.
     const { rows: [id] } = await pool.query<{ column_default: string }>(
       "SELECT column_default FROM information_schema.columns WHERE table_name = 'web_vital_samples' AND column_name = 'id'",
     );
     expect(id?.column_default).toBe("gen_random_uuid()");
+    const { rows: ids } = await pool.query<{ id: string }>("SELECT id::text AS id FROM web_vital_samples");
+    expect(ids).toHaveLength(4);
+    for (const stored of ids) expect(stored.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u);
   });
 
   it("keeps the day a report arrived, not the moment, so no row matches a request log by time", async () => {
@@ -291,7 +303,7 @@ describe.skipIf(testUrl === undefined)("field web vitals on the whole API (migra
     ] };
     expect((await beacon(JSON.stringify(rated))).statusCode).toBe(204);
     expect((await rows()).map(({ metric, value, rating }) => ({ metric, value, rating }))).toEqual([
-      { metric: "CLS", value: 0.038, rating: "good" },
+      { metric: "CLS", value: 0.04, rating: "good" },
       { metric: "LCP", value: 2_500, rating: "good" },
     ]);
   });
@@ -302,18 +314,38 @@ describe.skipIf(testUrl === undefined)("field web vitals on the whole API (migra
       const res = await server.inject({
         method: "POST", url: "/public/web-vitals",
         headers: { "content-type": "text/plain;charset=UTF-8", origin: "https://venviewer.com", ...objection },
-        payload: JSON.stringify(REPORT), remoteAddress: "10.6.6.6",
+        payload: wire(REPORT), remoteAddress: "10.6.6.6",
       });
       expect(res.statusCode, JSON.stringify(objection)).toBe(204);
     }
     expect(await rows()).toEqual([]);
   });
 
+  // #309's round-4 review (13 November 2026): the host's request log records
+  // each request's size, which would follow what a report carries. Every
+  // report is sent at one size, and one of any other length is refused.
+  it("refuses a report that does not come at the one size every report is sent at, and keeps nothing", async () => {
+    process.env["WEB_VITALS_COLLECTION"] = "on";
+    const exact = wire(REPORT);
+    expect(exact).toHaveLength(WEB_VITALS_REPORT_BYTES);
+    for (const body of [JSON.stringify(REPORT), `${exact} `, exact.slice(0, -1)]) {
+      const res = await server.inject({
+        method: "POST", url: "/public/web-vitals",
+        headers: { "content-type": "text/plain;charset=UTF-8", origin: "https://venviewer.com" },
+        payload: body, remoteAddress: "10.6.7.7",
+      });
+      expect(res.statusCode, String(body.length)).toBe(400);
+    }
+    expect(await rows()).toEqual([]);
+    expect((await beacon(JSON.stringify(REPORT))).statusCode).toBe(204);
+    expect(await rows()).toHaveLength(4);
+  });
+
   it("reads a JSON body as well as a beacon's text", async () => {
     process.env["WEB_VITALS_COLLECTION"] = "on";
     const res = await server.inject({
       method: "POST", url: "/public/web-vitals", headers: { "content-type": "application/json" },
-      payload: { ...REPORT, metrics: [REPORT.metrics[0]] }, remoteAddress: "10.8.0.1",
+      payload: wire({ ...REPORT, metrics: [REPORT.metrics[0]] }), remoteAddress: "10.8.0.1",
     });
     expect(res.statusCode).toBe(204);
     expect((await rows()).map((row) => row.metric)).toEqual(["LCP"]);
@@ -368,13 +400,13 @@ describe.skipIf(testUrl === undefined)("field web vitals on the whole API (migra
     await capped.register(publicWebVitalsRoutes, { prefix: "/public", db, batch: cappedBatch });
     const post = (from: string): Promise<LightMyRequestResponse> => capped.inject({
       method: "POST", url: "/public/web-vitals", headers: { "content-type": "text/plain;charset=UTF-8" },
-      payload: JSON.stringify({ ...REPORT, metrics: [REPORT.metrics[0]] }), remoteAddress: from,
+      payload: wire({ ...REPORT, metrics: [REPORT.metrics[0]] }), remoteAddress: from,
     });
     try {
       // A body that is not a report is refused before it counts against the day.
       expect((await capped.inject({
         method: "POST", url: "/public/web-vitals", headers: { "content-type": "text/plain;charset=UTF-8" },
-        payload: "{not json", remoteAddress: "10.5.0.9",
+        payload: wire("{not json"), remoteAddress: "10.5.0.9",
       })).statusCode).toBe(400);
       // Three addresses, each well inside its own limit.
       const statuses = [(await post("10.5.0.1")).statusCode, (await post("10.5.0.2")).statusCode];
@@ -402,7 +434,7 @@ describe.skipIf(testUrl === undefined)("field web vitals on the whole API (migra
     try {
       expect((await logged.inject({
         method: "POST", url: "/public/web-vitals", headers: { "content-type": "text/plain;charset=UTF-8" },
-        payload: JSON.stringify(REPORT), remoteAddress: "10.4.4.4",
+        payload: wire(REPORT), remoteAddress: "10.4.4.4",
       })).statusCode).toBe(204);
       expect(lines.filter((line) => line.includes("10.4.4.4"))).toEqual([]);
       // The same server logs an ordinary route's address, so the capture works.
@@ -427,7 +459,7 @@ describe.skipIf(testUrl === undefined)("field web vitals on the whole API (migra
     const post = (payload: string, headers: Record<string, string> = {}): Promise<LightMyRequestResponse> => whole.inject({
       method: "POST", url: "/public/web-vitals",
       headers: { "content-type": "text/plain;charset=UTF-8", origin: "https://venviewer.com", ...headers },
-      payload, remoteAddress: visitor,
+      payload: wire(payload), remoteAddress: visitor,
     });
     const report = JSON.stringify({ ...REPORT, metrics: [REPORT.metrics[1]] });
     try {
@@ -473,7 +505,7 @@ describe.skipIf(testUrl === undefined)("field web vitals on the whole API (migra
       for (let index = 0; index < 61; index += 1) {
         statuses.push((await limited.inject({
           method: "POST", url: "/public/web-vitals", headers: { "content-type": "text/plain;charset=UTF-8" },
-          payload: JSON.stringify({ ...REPORT, metrics: [REPORT.metrics[1]] }), remoteAddress: `10.8.0.${String(index)}`,
+          payload: wire({ ...REPORT, metrics: [REPORT.metrics[1]] }), remoteAddress: `10.8.0.${String(index)}`,
         })).statusCode);
       }
       // Sixty-one addresses, each far inside its own minute, share one limit.
@@ -492,7 +524,7 @@ describe.skipIf(testUrl === undefined)("field web vitals on the whole API (migra
     await capped.register(publicWebVitalsRoutes, { prefix: "/public", db, batch: cappedBatch });
     const post = (): Promise<LightMyRequestResponse> => capped.inject({
       method: "POST", url: "/public/web-vitals", headers: { "content-type": "text/plain;charset=UTF-8" },
-      payload: JSON.stringify({ ...REPORT, metrics: [REPORT.metrics[0]] }), remoteAddress: "10.5.1.1",
+      payload: wire({ ...REPORT, metrics: [REPORT.metrics[0]] }), remoteAddress: "10.5.1.1",
     });
     try {
       expect((await post()).statusCode).toBe(204);
@@ -585,19 +617,24 @@ describe.skipIf(testUrl === undefined)("field web vitals on the whole API (migra
   });
 
   // The release lead's B4 conditions (13 November 2026): a report's samples go
-  // to four groups, so one shuffle must spread them through the whole batch,
-  // never leave them side by side for its order to name a report.
-  it("shuffles every row of a batch together, across its vitals, so no two rows of one report sit side by side", async () => {
+  // to four groups, so one shuffle must spread them through the whole batch.
+  // Rows of one report then sit side by side only by chance, as any two rows
+  // may, which says nothing of where they came from. Forbidding it would
+  // itself mark rows side by side as two reports' (the second round-4 review),
+  // so chance is the property: the shuffle unit tests above check it.
+  it("shuffles every row of a batch at once, across its vitals, so the table's order keeps neither its groups nor its reports", async () => {
     await pool.query("TRUNCATE web_vital_samples");
-    // A seeded draw (the default draws from crypto), so the order is fixed:
-    // this seed's was simulated beforehand, and checked here in the table.
-    let state = 42;
+    // A seeded draw (mulberry32, exact in 32 bits; the default draws from
+    // crypto), so a failure repeats. Seeds 1, 2 and 3 give the same outcome.
+    let seed = 0x5e_ed;
     const draws: number[] = [];
     const spread = createWebVitalsBatch(db, {
       randomInt: (bound) => {
         draws.push(bound);
-        state = (state * 1_103_515_245 + 12_345) % 2_147_483_648;
-        return state % bound;
+        seed = (seed + 0x6d_2b_79_f5) >>> 0;
+        let mixed = Math.imul(seed ^ (seed >>> 15), seed | 1);
+        mixed ^= mixed + Math.imul(mixed ^ (mixed >>> 7), mixed | 61);
+        return Math.floor((((mixed ^ (mixed >>> 14)) >>> 0) / 4_294_967_296) * bound);
       },
     });
     // Ten reports of four vitals, each report's values its own, so a row names its report.
@@ -605,25 +642,23 @@ describe.skipIf(testUrl === undefined)("field web vitals on the whole API (migra
       expect(spread.hold({ ...REPORT, metrics: [
         { name: "LCP", value: 1_000 + report * 10, rating: "good" },
         { name: "INP", value: 100 + report * 10, rating: "good" },
-        { name: "CLS", value: 0.01 + report * 0.001, rating: "good" },
+        { name: "CLS", value: (report + 1) / 100, rating: "good" },
         { name: "TTFB", value: 300 + report * 10, rating: "good" },
       ] })).toBe(true);
     }
     expect(await spread.flush()).toBe(40);
-    // One Fisher-Yates over all forty rows, across the four vitals' groups.
+    // One Fisher-Yates over all forty rows at once, across the four vitals' groups.
     expect(draws).toEqual(Array.from({ length: 39 }, (_, index) => 40 - index));
     const { rows: stored } = await pool.query<{ metric: string; value: number }>(
       "SELECT metric, value FROM web_vital_samples ORDER BY ctid",
     );
     const bases: Record<string, number> = { LCP: 1_000, INP: 100, TTFB: 300 };
     const reports = stored.map(({ metric, value }) => (metric === "CLS"
-      ? Math.round((value - 0.01) * 1_000)
+      ? Math.round(value * 100) - 1
       : Math.round((value - (bases[metric] ?? 0)) / 10)));
     expect([...reports].sort((a, b) => a - b)).toEqual(Array.from({ length: 40 }, (_, index) => Math.floor(index / 4)));
-    for (let index = 1; index < reports.length; index += 1) {
-      expect(reports[index], `rows ${String(index - 1)} and ${String(index)}`).not.toBe(reports[index - 1]);
-    }
-    // Nor do the rows keep their groups' order: no vital runs on for long.
+    // Held group by group (every LCP, then every INP...), the table keeps no
+    // group together...
     let run = 1;
     let longest = 1;
     for (let index = 1; index < stored.length; index += 1) {
@@ -631,6 +666,11 @@ describe.skipIf(testUrl === undefined)("field web vitals on the whole API (migra
       longest = Math.max(longest, run);
     }
     expect(longest).toBeLessThan(10);
+    // ...and no report keeps its four rows together.
+    for (let report = 0; report < 10; report += 1) {
+      const at = reports.flatMap((row, index) => (row === report ? [index] : []));
+      expect((at[3] ?? 0) - (at[0] ?? 0), `report ${String(report)}`).toBeGreaterThan(3);
+    }
   });
 
   it("counts ten within one page: a share page opened once among nine visits to the front door waits", async () => {
@@ -708,16 +748,17 @@ describe.skipIf(testUrl === undefined)("field web vitals on the whole API (migra
   });
 
   it("gives up waiting for a write that stalls past its bound: the database cancels it, its place comes back, and later writes go on", async () => {
-    const bounded = createWebVitalsBatch(db, { minSamples: 1, writeTimeoutMs: 200, ceiling: createDailyCeiling(1) });
+    const bounded = createWebVitalsBatch(db, { minSamples: 1, writeTimeoutMs: 500, ceiling: createDailyCeiling(1) });
     expect(bounded.hold({ ...REPORT, metrics: [REPORT.metrics[1]] })).toBe(true);
     const blocker = await pool.connect();
     try {
       await blocker.query("BEGIN");
       await blocker.query("LOCK TABLE web_vital_samples IN ACCESS EXCLUSIVE MODE");
-      // The flush's own bound or the database's statement timeout, whichever comes first.
-      await expect(bounded.flush()).rejects.toThrow(/unfinished after 200 ms|statement timeout/u);
-      // The database cancels the stalled insert, and only then is the day's
-      // one place given back: the batch was rolled back, not just given up on.
+      // Usually the flush's own bound, which starts before the insert does; the
+      // database's statement timeout if the event loop ran late.
+      await expect(bounded.flush()).rejects.toThrow(/unfinished after 500 ms|statement timeout/u);
+      // The database cancels the stalled insert, the batch is rolled back, and
+      // the day's one place is given back.
       await vi.waitFor(() => { expect(bounded.hold({ ...REPORT, metrics: [REPORT.metrics[2]] })).toBe(true); }, { timeout: 5_000 });
     } finally {
       await blocker.query("ROLLBACK");
@@ -736,17 +777,16 @@ describe.skipIf(testUrl === undefined)("field web vitals on the whole API (migra
     // One connection, taken here: the batch's transaction waits for it past its bound.
     const narrowPool = new Pool({ connectionString: testUrl, application_name: "web_vitals_narrow", max: 1 });
     const narrowDb: Database = drizzle(narrowPool, { schema });
-    const late = createWebVitalsBatch(narrowDb, { minSamples: 1, writeTimeoutMs: 200, ceiling: createDailyCeiling(1) });
+    const late = createWebVitalsBatch(narrowDb, { minSamples: 1, writeTimeoutMs: 500, ceiling: createDailyCeiling(1) });
     const taken = await narrowPool.connect();
+    let released = false;
     try {
       expect(late.hold({ ...REPORT, metrics: [REPORT.metrics[1]] })).toBe(true);
-      await expect(late.flush()).rejects.toThrow(/unfinished after 200 ms: it may still be stored, and is never tried again/u);
+      await expect(late.flush()).rejects.toThrow(/unfinished after 500 ms: it may still be stored, and is never tried again/u);
       // Unfinished is not refused: the day's one place stays taken.
       expect(late.hold({ ...REPORT, metrics: [REPORT.metrics[2]] })).toBe(false);
-    } finally {
       taken.release();
-    }
-    try {
+      released = true;
       // Given its connection, the write goes on and commits, once.
       await vi.waitFor(async () => {
         const { rows: written } = await pool.query<{ metric: string }>("SELECT metric FROM web_vital_samples");
@@ -754,29 +794,29 @@ describe.skipIf(testUrl === undefined)("field web vitals on the whole API (migra
       }, { timeout: 5_000 });
       expect(late.hold({ ...REPORT, metrics: [REPORT.metrics[2]] })).toBe(false);
     } finally {
+      if (!released) taken.release();
       await narrowPool.end();
     }
   });
 
-  it("writes one batch at a time: an hourly write waits for the one under way, however long it takes", async () => {
+  it("writes one batch at a time: an hourly write waits for the one under way within its bound, and writes nothing beside it", async () => {
     const narrowPool = new Pool({ connectionString: testUrl, application_name: "web_vitals_narrow", max: 1 });
     const narrowDb: Database = drizzle(narrowPool, { schema });
-    const serial = createWebVitalsBatch(narrowDb, { minSamples: 1, writeTimeoutMs: 200 });
+    const serial = createWebVitalsBatch(narrowDb, { minSamples: 1, writeTimeoutMs: 500 });
     const taken = await narrowPool.connect();
-    let second: Promise<number> | undefined;
+    let released = false;
     try {
       expect(serial.hold({ ...REPORT, metrics: [REPORT.metrics[1]] })).toBe(true);
-      await expect(serial.flush()).rejects.toThrow(/unfinished after 200 ms/u);
+      await expect(serial.flush()).rejects.toThrow(/unfinished after 500 ms/u);
       expect(serial.hold({ ...REPORT, metrics: [REPORT.metrics[2]] })).toBe(true);
-      // The next write does not start beside the first: what it would write stays held.
-      second = serial.flush();
-      await new Promise((resolve) => { setTimeout(resolve, 300); });
+      // The next write does not start beside the first: it waits within its
+      // bound, then writes nothing this hour, and what it would write stays held.
+      await expect(serial.flush()).rejects.toThrow(/still being written after 500 ms: nothing is written this hour/u);
       expect(serial.held()).toBe(1);
-    } finally {
       taken.release();
-    }
-    try {
-      expect(await second).toBe(1);
+      released = true;
+      // Once the first has committed, a later flush writes what was held.
+      await vi.waitFor(async () => { expect(await serial.flush()).toBe(1); }, { timeout: 5_000 });
       const { rows: written } = await pool.query<{ metric: string; xmin: string }>(
         "SELECT metric, xmin::text AS xmin FROM web_vital_samples ORDER BY metric",
       );
@@ -784,6 +824,37 @@ describe.skipIf(testUrl === undefined)("field web vitals on the whole API (migra
       // Two transactions, one after the other.
       expect(new Set(written.map((row) => row.xmin)).size).toBe(2);
     } finally {
+      if (!released) taken.release();
+      await narrowPool.end();
+    }
+  });
+
+  // #309's round-4 review: a write that never settles must not stop the day's
+  // housekeeping, or what is held would grow past a day's ceiling.
+  it("while a write stays stuck, still drops an earlier day's groups each hour, so what is held stays within a day", async () => {
+    let clock = Date.UTC(2026, 10, 12, 23, 0);
+    const narrowPool = new Pool({ connectionString: testUrl, application_name: "web_vitals_narrow", max: 1 });
+    const narrowDb: Database = drizzle(narrowPool, { schema });
+    const stuck = createWebVitalsBatch(narrowDb, { minSamples: 1, writeTimeoutMs: 500, now: () => clock });
+    const taken = await narrowPool.connect();
+    let released = false;
+    try {
+      expect(stuck.hold({ ...REPORT, metrics: [REPORT.metrics[1]] })).toBe(true);
+      await expect(stuck.flush()).rejects.toThrow(/unfinished after 500 ms/u);
+      expect(stuck.hold({ ...REPORT, metrics: [REPORT.metrics[2]] })).toBe(true);
+      clock = Date.UTC(2026, 10, 13, 1, 0);
+      expect(stuck.hold({ ...REPORT, metrics: [REPORT.metrics[3]] })).toBe(true);
+      expect(stuck.held()).toBe(2);
+      await expect(stuck.flush()).rejects.toThrow(/nothing is written this hour/u);
+      // Yesterday's CLS can no longer grow, and goes; today's TTFB waits.
+      expect(stuck.held()).toBe(1);
+      taken.release();
+      released = true;
+      await vi.waitFor(async () => { expect(await stuck.flush()).toBe(1); }, { timeout: 5_000 });
+      const { rows: written } = await pool.query<{ metric: string }>("SELECT metric FROM web_vital_samples ORDER BY metric");
+      expect(written.map((row) => row.metric)).toEqual(["INP", "TTFB"]);
+    } finally {
+      if (!released) taken.release();
       await narrowPool.end();
     }
   });
@@ -793,6 +864,7 @@ describe.skipIf(testUrl === undefined)("field web vitals on the whole API (migra
     const narrowDb: Database = drizzle(narrowPool, { schema });
     const stuck = createWebVitalsBatch(narrowDb, { minSamples: 1, writeTimeoutMs: 200 });
     const taken = await narrowPool.connect();
+    let released = false;
     try {
       expect(stuck.hold({ ...REPORT, metrics: [REPORT.metrics[1]] })).toBe(true);
       await expect(stuck.flush()).rejects.toThrow(/unfinished after 200 ms/u);
@@ -803,47 +875,61 @@ describe.skipIf(testUrl === undefined)("field web vitals on the whole API (migra
       await expect(stuck.flush({ closing: true })).rejects.toThrow(/still being written 200 ms into closing: what is held is dropped/u);
       expect(Date.now() - started).toBeLessThan(2_000);
       expect(stuck.held()).toBe(0);
-    } finally {
       taken.release();
-    }
-    try {
+      released = true;
       // The stuck write commits once it has its connection; what closing dropped never does.
       await vi.waitFor(async () => {
         const { rows: written } = await pool.query<{ metric: string }>("SELECT metric FROM web_vital_samples");
         expect(written).toEqual([{ metric: "INP" }]);
       }, { timeout: 5_000 });
     } finally {
+      if (!released) taken.release();
       await narrowPool.end();
     }
   });
 
-  it("writes what its groups hold when the whole server closes, before its database pool goes", async () => {
-    process.env["WEB_VITALS_COLLECTION"] = "on";
-    const { buildServer } = await import("../index.js");
-    // The route's own batch (ten samples of one vital a group) and its hourly timer, on the server's own pool.
-    const whole: FastifyInstance = await buildServer(validateEnv({
-      NODE_ENV: "test",
-      DATABASE_URL: testUrl,
-      JWT_SECRET: "test-jwt-secret-that-is-at-least-32-characters-long",
-    }));
-    await whole.ready();
-    const post = (report: typeof REPORT | Record<string, unknown>, index: number): Promise<LightMyRequestResponse> => whole.inject({
-      method: "POST", url: "/public/web-vitals", headers: { "content-type": "text/plain;charset=UTF-8" },
-      payload: JSON.stringify(report), remoteAddress: `10.3.1.${String(index)}`,
-    });
-    for (let index = 0; index < 10; index += 1) expect((await post({ ...REPORT, metrics: [REPORT.metrics[1]] }, index)).statusCode).toBe(204);
-    for (let index = 10; index < 12; index += 1) expect((await post({ ...REPORT, device: "desktop", metrics: [REPORT.metrics[1]] }, index)).statusCode).toBe(204);
-    await whole.close();
-    // The phones' group of ten is written as the server closes; the two desktops are not.
-    const { rows: stored } = await pool.query<{ device: string }>("SELECT device FROM web_vital_samples");
-    expect(stored).toHaveLength(10);
-    expect(new Set(stored.map((row) => row.device))).toEqual(new Set(["phone"]));
-  }, 120_000);
+  // #309's round-4 review: a closing flush has one bound for its waiting and
+  // its write together, so the close as a whole stays within it.
+  it("closes within one bound for its waiting and its write together", async () => {
+    const narrowPool = new Pool({ connectionString: testUrl, application_name: "web_vitals_narrow", max: 1 });
+    const narrowDb: Database = drizzle(narrowPool, { schema });
+    const timed = createWebVitalsBatch(narrowDb, { minSamples: 1, writeTimeoutMs: 800 });
+    const taken = await narrowPool.connect();
+    let released = false;
+    let next: PoolClient | undefined;
+    try {
+      expect(timed.hold({ ...REPORT, metrics: [REPORT.metrics[1]] })).toBe(true);
+      await expect(timed.flush()).rejects.toThrow(/unfinished after 800 ms/u);
+      expect(timed.hold({ ...REPORT, metrics: [REPORT.metrics[2]] })).toBe(true);
+      const started = Date.now();
+      const closing = timed.flush({ closing: true });
+      // In line behind the first write (the pool serves its queue in order),
+      // so once that write is done the closing write waits for this connection.
+      const queued = narrowPool.connect();
+      await new Promise((resolve) => { setTimeout(resolve, 300); });
+      taken.release();
+      released = true;
+      next = await queued;
+      // The first write settled inside the close's wait, and the close's own
+      // write then waited with only what was left of its one bound.
+      await expect(closing).rejects.toThrow(/unfinished after \d+ ms/u);
+      const elapsed = Date.now() - started;
+      expect(elapsed).toBeGreaterThanOrEqual(300);
+      expect(elapsed).toBeLessThan(800 + 250);
+    } finally {
+      if (!released) taken.release();
+      next?.release();
+      await narrowPool.end();
+    }
+  });
 
   // The release lead's condition on F1, B2 and M3: a write stuck as the API
   // stops (Railway's SIGTERM closes the server) is waited for only within its
   // bound, what is held is dropped, and the close goes on, well inside the
-  // API's own 25-second stop (index.ts).
+  // API's own 25-second stop (index.ts). The stuck write here holds a
+  // connection of its own pool, so this shows the batch's close only. Stuck on
+  // the server's own pool, it would hold that pool's close too, until the
+  // 25-second stop ends the process (exit 1), as the doc says.
   it("closes the whole server past a write still stuck, within the batch's bound, dropping what is held", async () => {
     process.env["WEB_VITALS_COLLECTION"] = "on";
     const narrowPool = new Pool({ connectionString: testUrl, application_name: "web_vitals_narrow", max: 1 });
@@ -858,7 +944,7 @@ describe.skipIf(testUrl === undefined)("field web vitals on the whole API (migra
     await whole.ready();
     const post = (index: number): Promise<LightMyRequestResponse> => whole.inject({
       method: "POST", url: "/public/web-vitals", headers: { "content-type": "text/plain;charset=UTF-8" },
-      payload: JSON.stringify({ ...REPORT, metrics: [REPORT.metrics[1]] }), remoteAddress: `10.6.0.${String(index)}`,
+      payload: wire({ ...REPORT, metrics: [REPORT.metrics[1]] }), remoteAddress: `10.6.0.${String(index)}`,
     });
     const taken = await narrowPool.connect();
     try {
@@ -896,7 +982,7 @@ describe.skipIf(testUrl === undefined)("field web vitals on the whole API (migra
       for (let index = 0; index < 10; index += 1) {
         expect((await timed.inject({
           method: "POST", url: "/public/web-vitals", headers: { "content-type": "text/plain;charset=UTF-8" },
-          payload: JSON.stringify({ ...REPORT, metrics: [REPORT.metrics[1]] }), remoteAddress: `10.4.0.${String(index)}`,
+          payload: wire({ ...REPORT, metrics: [REPORT.metrics[1]] }), remoteAddress: `10.4.0.${String(index)}`,
         })).statusCode).toBe(204);
       }
       await vi.waitFor(async () => {

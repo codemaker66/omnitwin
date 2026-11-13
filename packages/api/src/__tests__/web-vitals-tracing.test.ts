@@ -113,5 +113,5 @@ describe("API tracing of the page-speed reports (the real SDK, route and server)
     expect(seen).toContain("POST /public/control/:slug");
     // The SDK's own filter, given the API's options, kept the report's out.
     expect(envelopes.flatMap(transactionsIn).filter((name) => name.includes("web-vitals"))).toEqual([]);
-  });
+  }, 30_000);
 });

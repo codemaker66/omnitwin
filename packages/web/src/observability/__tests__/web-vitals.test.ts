@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Metric } from "web-vitals";
+import { WEB_VITALS_REPORT_BYTES, WEB_VITAL_RATING_BOUNDS } from "@omnitwin/types";
 import { webVitalsSampleRate } from "../web-vitals-rate.js";
 import { recordLandingRoute, type AppRoutes, type LandingRoute } from "../landing-route.js";
 import {
@@ -153,7 +154,7 @@ describe("the reporter", () => {
       v: 1,
       page: "/plan/:code",
       device: "phone",
-      // Each on its vital's step: 10 ms, CLS in thousandths.
+      // Each on its vital's step: 10 ms, CLS in hundredths.
       metrics: [
         { name: "TTFB", value: 410, rating: "good" },
         { name: "LCP", value: 5_230, rating: "poor" },
@@ -179,7 +180,7 @@ describe("the reporter", () => {
     expect(sentReports(send)[0]?.metrics).toEqual([
       { name: "TTFB", value: 310, rating: "good" },
       { name: "LCP", value: 2_500, rating: "good" },
-      { name: "CLS", value: 0.038, rating: "good" },
+      { name: "CLS", value: 0.04, rating: "good" },
     ]);
   });
 
@@ -195,7 +196,7 @@ describe("the reporter", () => {
     reporter.add(metric("LCP", 1_800));
     reporter.flush();
     expect(sentReports(send).map((report) => report.metrics.map((sample) => [sample.name, sample.value]))).toEqual([
-      [["TTFB", 300], ["LCP", 1_800], ["CLS", 0.093]],
+      [["TTFB", 300], ["LCP", 1_800], ["CLS", 0.09]],
     ]);
     // INP first measured after the first hide is still that load's only INP.
     reporter.add(metric("INP", 96));
@@ -203,18 +204,45 @@ describe("the reporter", () => {
     expect(sentReports(send)[1]?.metrics).toEqual([{ name: "INP", value: 100, rating: "good" }]);
   });
 
-  it("measures a page restored from the back/forward cache as a new page load", () => {
+  // #309's round-4 review (13 November 2026): a restored or prerendered load's
+  // TTFB of 0 and LCP of a frame or two are values no ordinary load has, which
+  // would tie its rows to each other and to its request.
+  it("does not measure a page restored from the back/forward cache, prerendered, or restored", () => {
     const send = vi.fn<(body: string) => void>();
     const reporter = createWebVitalsReporter("/", "desktop", send);
     reporter.add(metric("LCP", 1_200));
     reporter.flush();
     reporter.add(metric("LCP", 40, "good", "v6-1761650009999-LCP", "back-forward-cache"));
+    reporter.add(metric("TTFB", 0, "good", "v6-1761650009999-TTFB", "back-forward-cache"));
+    reporter.flush();
+    reporter.add(metric("TTFB", 0, "good", "v6-1761650019999-TTFB", "prerender"));
+    reporter.add(metric("LCP", 30, "good", "v6-1761650029999-LCP", "restore"));
     reporter.flush();
     expect(sentReports(send).map((report) => report.metrics)).toEqual([
       [{ name: "LCP", value: 1_200, rating: "good" }],
-      [{ name: "LCP", value: 40, rating: "good" }],
     ]);
-    expect(send.mock.calls[1]?.[0]).not.toContain("back-forward");
+  });
+
+  it("sends every report at one size, whatever it carries", () => {
+    const send = vi.fn<(body: string) => void>();
+    const reporter = createWebVitalsReporter("/venues/:venueSlug/captures/:roomSlug", "desktop", send);
+    reporter.add(metric("TTFB", 40));
+    reporter.flush();
+    reporter.add(metric("LCP", 6_000, "poor", "v6-1761650000001-LCP"));
+    reporter.add(metric("INP", 300, "needs-improvement", "v6-1761650000001-INP"));
+    reporter.add(metric("CLS", 0.3, "poor", "v6-1761650000001-CLS"));
+    reporter.flush();
+    expect(send.mock.calls.map((call) => call[0]?.length)).toEqual([WEB_VITALS_REPORT_BYTES, WEB_VITALS_REPORT_BYTES]);
+  });
+
+  it("rates each vital by the very bounds web-vitals uses", async () => {
+    const actual = await vi.importActual<typeof import("web-vitals")>("web-vitals");
+    expect(WEB_VITAL_RATING_BOUNDS).toEqual({
+      LCP: actual.LCPThresholds,
+      INP: actual.INPThresholds,
+      CLS: actual.CLSThresholds,
+      TTFB: actual.TTFBThresholds,
+    });
   });
 
   it("stops the landing page's vitals when the visitor moves on, keeping its first byte", () => {
