@@ -34,6 +34,23 @@ each section's own floor (Z -3.574 and -2.981); the config gives every height ab
 | `13_outline_picture.py` | the outline drawn over the sections | a picture to look at |
 | `views.py` | panoramas, pinhole views and plane crops from the cube faces | windows, doors, chandeliers, the steps |
 
+`06_elev.py` and `views.py` take their subject on the command line. The rasters made (`06_elev.py make
+<name> <axis> <face> <side> <along0> <along1> <z0> <z1> [res] [front]`, heights in E57 Z):
+
+    street Y -10.5  + -6.2  6.7  -3.65 -0.25 0.02 0.3      back  Y -1.485 - -6.2  6.7 -3.65 -0.25
+    west   X -5.924 + -11.5 -3.0 -3.65 -0.25               east  X 6.564  - -11.5 -1.2 -3.65 -0.25 0.02 1.4
+    upE    X 0.11   - 2.9  10.0  -3.05 -0.6  0.02 0.35     upN   Y 11.29  - -5.6  1.75 -3.05 -0.6 0.02 0.35
+    upW1   X -5.49  + 5.7  11.4  -3.05 -0.6  0.02 0.4      upW2  X -4.07  + -0.1  5.9  -3.05 -0.6 0.02 0.4
+    upS    Y 1.455  + -4.2 -1.2  -3.05 -0.6  0.02 0.3      loWd  X -4.768 + -3.4 -1.4 -3.65 -0.3  0.02 0.3
+    lobby  X 5.269  - -6.0 -3.7  -3.65 -0.3  0.02 0.3
+
+The photographs re-projected (`views.py plane`, or `ralib.crop_plane`, at 4-5 mm per pixel): the west
+window on Y -11.32 from station 108, the east window on Y -11.126 from 95, the entrance screen on Y -11.43
+from 104; the double door on X 0.11 from 117, the north doors on Y 11.31 from 119 and Y 11.25 from 118, the
+timber door on X -4.768 from 100, the lobby door on X 5.269 from 96; each chandelier on the plane Y = its
+axis from 107, 103 and 94; the step alcove on the levels Z -3.428, -3.290, -3.147 (from 113) and -2.985
+(from 112). Pinhole views (`views.py persp`) from 103 and 109 settled the beams and from 119 the nook.
+
 ## The room, in words
 
 A lower hall on the Glassford Street front and, four risers up at its back, a low upper section under the
