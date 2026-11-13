@@ -50,9 +50,12 @@ Read from origin/master `85a17749` on 13 November 2026.
 | Roles | Eight, among them `client` and `planner`. Both land on `/events`, their own events and saved plans. But `planner` is also admitted to the venue's desk and room pages | `schema.ts:232`; `packages/web/src/lib/role-routing.ts:19-27`; `role-capabilities.ts:115, 128-134` |
 | The client's home | `/events` lists the signed-in person's own events and plans, read by their id alone; `/events/:eventId` is one event | `router.tsx:580-600`; `packages/api/src/routes/client-home.ts:6-17` |
 | The view-only link | A link to look at a plan and not change it: 32 random bytes kept only as a hash, 30 days, five at once, never cached or indexed. It exists only for anonymous plans and stops when the plan is claimed | `packages/api/src/routes/public-plan-views.ts:14-50, 60-125`; `services/plan-view-links.ts:44-48, 76, 111`; `packages/types/src/plan-view.ts:21-24`; `router.tsx:747` |
+| Signing in takes sharing away | Once a plan is claimed, its link and its one-page PDF stop, and a signed-in planner with no venue is told "Sign in as venue staff to create a client share link." | `plan-view-links.ts:76, 111`; `packages/web/src/components/editor/cockpit/ShareLensPanel.tsx:291` |
 | Paper | One A4 page: the room, a scale bar, counts of what is placed and the line "Drawn by a visitor; not reviewed by the venue." No prices, no capacity verdict | `packages/api/src/services/visitor-plan-pdf.ts:9-27`; `public-configs.ts:533` |
-| Guests | Nothing. No table holds a guest, a seat, a household or a reply. A plan holds a guest count; a placed piece has no number or label | `schema.ts` (table names searched: guest, seat, rsvp, household, attendee); `schema.ts:551, 743-768` |
-| Rooms | Every room is a venue's record with a size and an outline. The Grand Hall is measured by laser scan, 21.14 m by 10.59 m; the other Trades Hall rooms are the venue's published sizes drawn as plain shapes. A save is refused if a piece lies outside the room's stored outline | `schema.ts:181-202`; `packages/api/src/db/grand-hall-e57.ts:36`; `db/seed.ts:73-90`; `routes/placed-objects.ts:181-188, 250-256, 355-359` |
+| Sending a plan to the venue | An unsaved plan can be sent to Trades Hall's events team. It arrives as an enquiry in the venue's own list | `packages/api/src/routes/public-enquiries.ts:196-203` |
+| Guests | Nothing. No table holds a guest, a seat, a household or a reply. A plan holds a guest count. A placed piece can carry a label of up to 80 characters; numbering the tables is built but switched off; a table's seats come from the furniture catalogue | `schema.ts` (table names searched: guest, seat, rsvp, household, attendee); `schema.ts:388, 551, 743-768`; `packages/types/src/hallkeeper-instructions.ts:170`; `packages/web/src/stores/placement-store.ts:325-330` |
+| Diets and access on a plan | A plan's own details can already hold a count for each diet, a free-text allergy line and access needs, which print on the hallkeeper's sheet. They describe the event, not a named guest | `packages/types/src/hallkeeper-instructions.ts:103-109`; `packages/types/src/event-requirements.ts:110-116` |
+| Rooms | Every room is a venue's record with a size and an outline. The Grand Hall is measured by laser scan, 21.14 m by 10.59 m; the other Trades Hall rooms are the venue's published sizes drawn as plain shapes. A save is refused if a piece lies outside the room's stored outline | `schema.ts:181-202`; `packages/api/src/db/grand-hall-e57.ts:36`; `db/seed.ts:73-90`; `routes/placed-objects.ts:181-188, 250-256, 355-359`; `routes/public-configs.ts:308-309` |
 | The list of venues | A constant holding Trades Hall alone | `packages/api/src/services/public-discovery.ts:65` |
 | Limits on a free visitor | 100 requests a minute, 2 MB a request, and the per-route limits above | `packages/api/src/index.ts:168, 227-229` |
 | What the privacy page promises | Accounts for "clients, planners and people who work for the venue"; "please do not put health information" in a message; backups hold seven days of history and a daily copy for 14 days | `packages/web/src/pages/LegalPage.tsx:245, 291, 517` |
@@ -113,17 +116,21 @@ is a target counted on the mock-up, not on a built product.
 
 - **With no account:** open the planner, pick or draw a room, lay it out, paste a guest list, seat it, print.
   The plan is kept as today (72 hours unless saved). **The guests' names stay in that browser, on that device,
-  and are never sent to Venviewer.**
+  and are never sent to Venviewer.** Today's view-only link to an unsaved plan stays as it is; it shows the room
+  and never a name.
 - **A free account** (an email address, confirmed by the sign-in provider) is for three things: keeping the
-  work, opening it on another device, and sharing it. The planner makes it themselves. Today that is impossible
-  (section 2), so stage 1 opens sign-up.
+  work, opening it on another device, and sharing a list. The planner makes it themselves. Today that is
+  impossible (section 2), so stage 1 builds sign-up, behind a switch (section 5.8).
+- **One owner.** A planner's event has one owner, and nobody else can change it. A couple share one sign-in, or
+  one of them looks through the client's link. Co-planners would need their own design.
 - **A self-made account belongs to no venue and can reach nothing of any venue's**: only its own events, plans
   and guests. The `planner` role is today admitted to the venue's pages, so a self-made account is given the
   least-privileged role, and a test walks every venue's route as one and expects a refusal.
 - **Limits that stop abuse of a free service** (my calls, section 9): 20 live events an account; 600 guests an
   event; 12 working links an event; a name of at most 80 characters, shown as plain text; the request limits
-  that exist today; no file uploads; **and the product sends no email to anyone on a planner's behalf**, which
-  removes the one real route for spam. Shared pages are never indexed, and each carries a way to report it.
+  that exist today; no file uploads; **and in stages 1 and 2 the product emails nobody but the account's own
+  holder**, which removes the one real route for spam. Shared pages are never indexed, and each carries a way
+  to report it.
 
 ### 5.3 A room at any venue
 
@@ -172,9 +179,13 @@ code and not on a second drawing tool.
   - When a table disappears, its guests go back to "to seat", visibly. Nothing is moved silently.
   - The guest count is the planner's to apply. The list only proposes it.
   - No name appears in the room unless the canvas's owner decides it should.
-- In stage 1 the kit keeps its own short record of each table (number, name, seats) and shows a line when it
-  disagrees with the room ("the room has 17 tables; your list has 18"). The two join by the table's id once the
-  planner gives every table an id that never repeats, which its owner is fixing.
+- **Stage 1 builds against the planner that is in the product today**, where numbering the tables is built but
+  switched off. So the kit keeps its own short record of each table (a number, a name, and seats taken from the
+  furniture catalogue), a guest is bound to that record, and the kit only counts the plan's tables, to show a
+  line when the two disagree ("the room has 17
+  tables; your list has 18"). The list belongs to one plan of the event, which becomes "Dinner" when T-687's
+  planner is in the product. That planner's table id is then added to the kit's record. No guest has to be
+  moved, because guests are bound to the kit's record and never to the plan.
 
 ### 5.5 Share and print
 
@@ -183,9 +194,12 @@ code and not on a second drawing tool.
 | The door | The table plan, A to Z and by table; place cards | Yes, on paper | |
 | The client (the couple, the society) | A link to look at the plan and the list, not change them | Yes: they are their own guests | None needed |
 | The caterer | Covers by table | No | None needed |
-| The venue | The room plan, the tables and chairs by number, the set-by time | No | None needed |
+| The venue | The room plan, how many tables and chairs, the set-by time | No | None needed |
 
 - Every sheet carries its version and date. A plan changed since it was printed says so on the event page.
+- Sharing a list needs an account, because without one the names are only on the planner's own device. Today's
+  view-only link stops when its plan is claimed at sign-up (section 2). The kit's links belong to the planner's
+  event, so they do not; at sign-up the planner is told the old link has stopped and is offered a new one.
 - The table plan is lists, never a drawing of the room, so it does not touch the open question of whether
   guests are ever shown a drawn plan. The room plan a venue receives is the planner's own drawing (T-687's), not
   a second one made by the kit.
@@ -198,13 +212,16 @@ code and not on a second drawing tool.
 - **How.** The planner makes the venue's link and sends it themselves, from their own email, with a few drafted
   lines to copy. A note from a planner the venue knows is more likely to be opened than one from a platform it
   does not, and nothing waits on the plumbing lane.
-- **What the venue sees.** The room plan to scale, the tables and chairs by number, the set-by time, the planner's
+- **What the venue sees.** The room plan to scale, how many tables and chairs, the set-by time, the planner's
   name as typed, and a plain statement of whose measurements these are. No guests' names.
-- **What the venue can do, with no account:** print it; correct a size, with their name on the correction; reply
-  to the planner.
-- **To take the event in** (stage 3): where the venue is on Venviewer, a signed-in member of its staff opens the
-  same link and takes the event into the Diary. From then it is an event of the venue's like any other, with the
-  planner named on it. Where the venue is not on Venviewer, the page ends with one line about what Venviewer does
+- **What the venue can do, with no account:** print it, or suggest a corrected size with their name on it. A
+  suggestion changes nothing until the planner accepts it. If accepting would leave a piece outside the room,
+  the planner is shown which, and nothing is moved for them. Replies go to the planner's own email, where the
+  link came from; the product stores no messages.
+- **To take the event in** (stage 3): where the venue is on Venviewer, the plan reaches it the way a plan does
+  today, as an enquiry in the venue's own list; the kit builds no second way in. A signed-in member of its staff
+  then takes the event into the Diary. From then it is an event of the venue's like any other, with the planner
+  named on it. Where the venue is not on Venviewer, the page ends with one line about what Venviewer does
   for venues. How a new venue starts, and at what price, is not decided here.
 - **The honest reason a venue adopts.** A plan to scale and the numbers arrive without anyone re-keying them, and
   the venue need do nothing to use them. If it joins, the same plan sits in its own Diary on its own measured
@@ -220,17 +237,24 @@ Names are ordinary personal data, not special-category data. The rules are built
 | Why | To make that event's table plan. Nothing else: no marketing, no matching across events, no use by Venviewer for its own purposes, never sent to an AI model |
 | Who sees a name | The planner; whoever the planner gives a client's link. Never the venue or the caterer through their links, never another planner, never Venviewer's staff as routine |
 | With no account | Names never leave the planner's device |
-| How long | Until 30 days after the event (the period the draft impact assessment gives guest records), or 90 days after the last change when no date is set. The event page says so a week before |
+| How long | Until 30 days after the event (the period the draft impact assessment gives guest records), or 90 days after the last change when no date is set. On that day the names and their seats are deleted; the tables, the plan and the counts stay while the account does. The planner is warned a week before, on the event page and by an email to their own address |
 | Taking it out, and deleting | The planner downloads the list or deletes it at any time. Deleted names leave the backups as those expire (14 days, by the privacy page) |
+| A forgotten account | An account nobody has signed in to for 24 months is deleted with everything in it: the period the privacy page already uses for enquiries, for the solicitor to confirm |
+| Names on Venviewer's servers | Only from a signed-in owner who has accepted the planner's terms, and not before those terms and the page for guests exist and the solicitor has read them |
 | Kept out of other places | No name in an address, a log, an error report or an email. A test with a made-up "canary" guest proves it on every change |
 | Guests are told | A public page, "If your name is on a table plan", and the planner's own duty in the terms |
 
 **Where diets and access needs go later.** Not in the list, and not typed by the planner. When the venue's
 impact assessment is signed, each guest gives their own, with their own consent, and they are held apart from
-the names and destroyed 14 days after the event, as the draft says. Until then the caterer's sheet says plainly:
-"Diets and allergies: not held here." T-687's owner and this lane agreed that nothing is asked twice: when
-guests give their own needs, the planner's letter prints counts without names, and asks its own question only
-when there is no list.
+the names and destroyed 14 days after the event, as the draft says. Until then the caterer's sheet says plainly
+that it holds covers only. T-687's owner and this lane agreed that nothing is asked twice: when guests give
+their own needs, the planner's letter prints counts without names, and asks its own question only when there is
+no list.
+
+**What a plan already holds.** A plan's own details can hold diet counts, a free-text allergy line and access
+needs today (section 2). The kit adds nothing to them and never shows them on its links or sheets. For a plan in
+a planner's own room they are not offered and the server refuses them, because no venue is there to answer for
+them. For a plan in a Venviewer venue's room they stay as they are, under that venue's own rules.
 
 **Who is responsible for the names when no venue is involved.** This is for the solicitor, not decided here.
 The position put to them: the planner decides who is on the list and why, so the planner is responsible for it
@@ -251,9 +275,9 @@ sign-up. The clearest rival says exactly this. Questions for the solicitor:
 
 | Stage | What ships | Needs from others |
 |---|---|---|
-| 1. The list and the paper | Sign up alone; a guest list; names on seats; the table plan, place cards and covers; on this device with no account, kept with one. In any room the planner opens today | Nothing |
-| 2. Any venue | Draw your own room; the venue's name as the planner's label; links by kind; the venue's page with print and correction | The planner must open a room whose outline the plan carries (a small seam with the planner's owners). L-shapes wait for the outline work in pull request #411 |
-| 3. Joined up | A venue on Venviewer takes the event into its Diary. Messages the product sends itself: the deletion warning, an invitation | L1: an event to join, and an outside planner as a named party on it (put to the spine lane on 13 November; not yet answered). L2: the queue and the sends |
+| 1. The list and the paper | A guest list; names on seats; the table plan, place cards and covers. All of it works on the planner's own device with no account, in any room the planner opens today. Sign-up is built behind a switch that is off for the public. Keeping names on Venviewer's servers opens only when the planner's terms and the page for guests exist and the solicitor has read them | Nothing from other lanes. The terms and the guests' page are drafted in plain words with this stage, for the solicitor to read. Before the switch opens to everyone, the sign-in provider's own settings (open sign-up, protection against robots) are checked |
+| 2. Any venue | Draw your own room; the venue's name as the planner's label; links by kind; the venue's page with print and a suggested correction | The planner must open a room whose outline the plan carries (a small seam with the planner's owners). L-shapes wait for the outline work in pull request #411 |
+| 3. Joined up | A venue on Venviewer takes the event into its Diary. The deletion job moves onto the plumbing's queue. An invitation sent by the product itself, only if Blake wants one, with daily limits | L1: an event to join, and an outside planner as a named party on it (put to the spine lane on 13 November; not yet answered). L2: the queue and the sends |
 | Later, each with its own design | Guests' own needs; invitations and replies | The signed impact assessment; wave 2 |
 
 The guest list here is the first slice of wave 2's, so wave 2 extends it and does not rebuild it.
@@ -276,8 +300,10 @@ The guest list here is the first slice of wave 2's, so wave 2 extends it and doe
 - **Stage 2, an own room**: the outline, the ceiling height, the labels, who entered them and when, held on the
   plan itself. Because a plan's room and venue are required columns, one fixed "no venue" row and one fixed
   "own room" row are seeded as their anchor; they hold no planner's data. The saved-outline check
-  (`placed-objects.ts:182, 250, 355`) reads the plan's own outline when there is one. Considered instead: making
-  the two columns optional, which is more honest but changes types across files that other lanes own.
+  (`placed-objects.ts:182, 250, 355`, and the anonymous save at `public-configs.ts:308-309`) reads the plan's
+  own outline when there is one, and a plan in an own room refuses the diet and access fields. Considered
+  instead: making the two columns optional, which is more honest but changes types across files that other
+  lanes own.
 
 **Routes and screens.** Sign-up for a new person. `/events` gains the planner's own events. A planner's event
 page (list, tables, paper, links). Print pages for the table plan, place cards and covers. The linked pages for
@@ -286,12 +312,17 @@ a client, a caterer and a venue. In stage 2, "Where is it?" before the planner o
 **Left alone.** The canvas, its controls and chrome; venues' rooms; the venue's `events`, bookings and Diary;
 enquiries; the hallkeeper sheet; pricing; the assistant.
 
+**Counting the limits.** Today's request limits are counted inside each server process (no shared store is
+set, `packages/api/src/index.ts:227-230`). The kit's own limits (events, guests, links) are counted in the
+database, so a second server does not double them.
+
 **The rules in the database, and the check that proves each.**
 
 | Rule | In the database | Proved by |
 |---|---|---|
 | A guest belongs to exactly one planner's event and goes when it goes | A required link that deletes with its event | A test that deleting an event leaves no guest |
-| One seat, one guest | The seat is a column on the guest, unique for each table and seat | Two editors take the same seat at once: one succeeds, the other is told |
+| One seat, one guest | The seat is a column on the guest, unique for each table and seat | The same owner, on two devices, takes the same seat at once: one succeeds, the other is told |
+| Names reach the server only with the terms accepted | The owner's acceptance, with its date and the version of the terms, is on the account | A route test that a list is refused without it |
 | A guest record can hold only a name, a party, a table and a seat | No other columns exist; lengths capped | A schema test; an import test that the dropped columns never reach the network |
 | One planner never reads another's guests | Every read is by the owner's id or a link's hash | A cross-planner leak test, gating every release, as piece B's cross-client test does |
 | A venue's or caterer's link never returns a name | Answers built from a fixed list of fields for each kind | Route tests with a canary name, also searched for in logs and error reports |
@@ -314,8 +345,9 @@ that exists, and moves to the plumbing's queue when that lands.
 1. **This design**, and approach B.
 2. **The look**: the mock-up of four screens.
 3. **The "done when"** in section 8, since the plan has none for this lane.
-4. **Who gets it first.** Recommended: five invited planners behind a switch; open to everyone once the solicitor
-   has read the planner's terms and the page for guests.
+4. **Who gets it first, and when names may be kept on Venviewer's servers.** Recommended: five invited planners
+   first, working on their own devices, where no name reaches us; accounts that keep names, and sign-up for
+   everyone, once the solicitor has read the planner's terms and the page for guests.
 5. When they are built, the words on the venue's page about Venviewer for venues.
 
 Two notes from T-687's owner also wait on him, with that work and not with this: whether guests are ever shown a
@@ -329,7 +361,8 @@ typed fields; and one venue that is not on Venviewer opens a planner's link and 
 help.
 
 It fails if a planner needs help, or a count is exceeded: that step is redesigned before the kit is opened to
-everyone. Nothing is claimed as "better" until those five have been watched.
+everyone. Nothing is claimed as "better" until those five have been watched. The first half can be met with no
+name ever leaving a planner's own device.
 
 ## 9. Calls made here, for Blake to check
 
@@ -339,7 +372,11 @@ everyone. Nothing is claimed as "better" until those five have been watched.
 - The venue's link is sent by the planner, not by the product.
 - What planners type about venues is never used to approach those venues.
 - A rectangle first; one drawn room for each plan.
-- Seating from the list; the kit's own short record of each table in stage 1.
+- Seating from the list; stage 1 built against today's planner, with the kit's own short record of each table.
+- One owner for each planner's event; no co-planners yet.
+- On the deletion day only the names and seats go; a forgotten account goes after 24 months.
+- A venue's correction is a suggestion the planner accepts; the product stores no messages.
+- The diet and access fields a plan already has are refused for a plan in a planner's own room.
 - The planner is responsible for the names and Venviewer keeps them on instruction, as the position put to the
   solicitor.
 
