@@ -25,6 +25,7 @@ import { calculatePrice, type PricingRuleInput } from "../services/price-calcula
 import { sendEmailAsync } from "../services/email.js";
 import { enquiryApproved, enquiryRejected } from "../services/email-templates.js";
 import { lockFirstResponse, stampFirstResponse } from "../services/enquiry-funnel.js";
+import { outerColumn } from "../utils/outer-column.js";
 
 // ---------------------------------------------------------------------------
 // Zod schemas
@@ -585,10 +586,11 @@ export async function enquiryRoutes(
     }
     const thresholdHours = ENQUIRY_REPLY_ALARM_DEFAULT_HOURS;
     // The enquiry reached the venue when it was sent (as the report route reads
-    // it). Spelled out with qualified names: in a select list Drizzle writes a
-    // column bare, and a bare "id" inside the subquery would be the history's.
+    // it). The outer row is named with its table: in a select list Drizzle
+    // writes a column bare, and a bare "id" inside the subquery would be the
+    // history's.
     const arrivedAt = sql`coalesce((SELECT min(h.created_at) FROM enquiry_status_history h
-      WHERE h.enquiry_id = "enquiries"."id" AND h.to_status = 'submitted'), "enquiries"."created_at")`
+      WHERE h.enquiry_id = ${outerColumn(enquiries.id)} AND h.to_status = 'submitted'), ${outerColumn(enquiries.createdAt)})`
       .mapWith(enquiries.createdAt);
     const cutoff = sql`now() - make_interval(hours => ${thresholdHours})`;
     const waiting = and(
@@ -601,7 +603,9 @@ export async function enquiryRoutes(
     );
     const overdue = and(waiting, sql`${arrivedAt} <= ${cutoff}`);
 
-    // One read-only transaction, so every statement reads the same now().
+    // One read-only snapshot, so every statement reads the same now() and the
+    // same rows: the count, the list, the longest and the next agree even
+    // while a colleague records a reply or makes a decision.
     const data = await db.transaction(async (tx): Promise<ReplyAlarm> => {
       const [clock] = await tx.select({ now: sql`now()`.mapWith(enquiries.createdAt) }).from(sql`(SELECT 1) AS clock`);
       const flagged = await tx.select({ id: enquiries.id, arrivedAt, total: sql<number>`count(*) OVER ()`.mapWith(Number) })
@@ -628,7 +632,7 @@ export async function enquiryRoutes(
         enquiries: flagged.map((row) => ({ id: row.id, arrivedAt: row.arrivedAt.toISOString() })),
         nextDueAt: next === undefined ? null : new Date(next.arrivedAt.getTime() + thresholdHours * 3_600_000).toISOString(),
       };
-    }, { accessMode: "read only" });
+    }, { isolationLevel: "repeatable read", accessMode: "read only" });
     return { data };
   });
 

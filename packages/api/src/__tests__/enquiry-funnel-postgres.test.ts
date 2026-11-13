@@ -1,19 +1,21 @@
 import Fastify, { type FastifyInstance } from "fastify";
 import { createHash, randomUUID } from "node:crypto";
 import { resolve } from "node:path";
-import { Pool } from "pg";
+import { Pool, type PoolClient, type QueryConfig, type QueryResult, type QueryResultRow } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   ENQUIRY_REPLY_ALARM_DEFAULT_HOURS,
   ENQUIRY_REPLY_ALARM_FROM,
+  ENQUIRY_REPLY_ALARM_LIST_LIMIT,
   PROPOSAL_VERSION_PAYLOAD_SCHEMA_VERSION,
   TRADES_HALL_ENQUIRY_VENUE_SLUG,
   VENUE_ACCESS_ENQUIRY_TYPE,
   VENVIEWER_PRICING_ENQUIRY_TYPE,
   proposalVersionPayloadDigest,
   type ProposalVersionPayload,
+  type ReplyAlarm,
 } from "@omnitwin/types";
 import * as schema from "../db/schema.js";
 import type { Database } from "../db/client.js";
@@ -657,6 +659,109 @@ describe.skipIf(testUrl === undefined)("the enquiry funnel on migrated PostgreSQ
       // The default start is the release that brought the desk's reply control.
       expect(ENQUIRY_REPLY_ALARM_FROM).toBe("2026-10-29T00:00:00.000Z");
     });
+
+    /** A venue of its own, with a room and one of its staff, so a case counts
+     *  only the enquiries it makes. */
+    async function venueOfItsOwn(label: string): Promise<{
+      readonly at: { readonly venueId: string; readonly spaceId: string };
+      readonly staff: string;
+      readonly headers: Record<string, string>;
+    }> {
+      const venueId = randomUUID();
+      const spaceId = randomUUID();
+      const staff = randomUUID();
+      await db.insert(schema.venues).values({
+        id: venueId, name: `TEST ONLY reply alarm ${label}`, slug: `funnel-alarm-${label}-${run}`, address: "Disposable fixture", timezone: "Europe/London",
+      });
+      await db.insert(schema.spaces).values({
+        id: spaceId, venueId, name: "Alarm Hall", slug: "alarm-hall", sortOrder: 0, widthM: "10.00", lengthM: "10.00", heightM: "4.00",
+        floorPlanOutline: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }],
+      });
+      await db.insert(schema.users).values({
+        id: staff, venueId, role: "staff", platformRole: "none", name: `staff alarm ${label} ${run}`, email: `staff-alarm-${staff.slice(0, 8)}@example.test`,
+      });
+      return { at: { venueId, spaceId }, staff, headers: as("staff", venueId, staff) };
+    }
+
+    it("counts every overdue enquiry past the list's limit, lists the most recent, and names the longest beyond them", async () => {
+      const own = await venueOfItsOwn("many");
+      const count = ENQUIRY_REPLY_ALARM_LIST_LIMIT + 1;
+      // One an hour, from 25 hours ago back: every one past the mark, no two at once.
+      const { rows } = await pool.query<{ id: string; created_at: Date }>(
+        `INSERT INTO enquiries (id, venue_id, space_id, state, name, email, created_at, updated_at, room_chosen, source)
+         SELECT gen_random_uuid(), $1, $2, 'submitted', 'Fixture guest', 'guest@example.test', arrival.at, arrival.at, true, 'website'
+         FROM (SELECT now() - make_interval(hours => 24 + g) AS at FROM generate_series(1, $3::int) AS g) AS arrival
+         RETURNING id, created_at`,
+        [own.at.venueId, own.at.spaceId, count],
+      );
+      expect(rows).toHaveLength(count);
+      const newestFirst = [...rows].sort((a, b) => b.created_at.getTime() - a.created_at.getTime());
+      const oldest = newestFirst[newestFirst.length - 1];
+      if (oldest === undefined) throw new Error("no enquiries made");
+
+      const res = await alarmOf(own.headers);
+      expect(res.status).toBe(200);
+      const alarm = res.body["data"] as ReplyAlarm;
+      // The count covers them all; the list stops at the limit, the most recent first.
+      expect(alarm.overdue).toBe(count);
+      expect(alarm.enquiries).toHaveLength(ENQUIRY_REPLY_ALARM_LIST_LIMIT);
+      expect(alarm.enquiries).toEqual(newestFirst.slice(0, ENQUIRY_REPLY_ALARM_LIST_LIMIT)
+        .map((row) => ({ id: row.id, arrivedAt: row.created_at.toISOString() })));
+      // The longest is the oldest of them all, which the list leaves out.
+      expect(alarm.longest).toEqual({ id: oldest.id, arrivedAt: oldest.created_at.toISOString() });
+      expect(alarm.enquiries.map((flagged) => flagged.id)).not.toContain(oldest.id);
+      expect(alarm.nextDueAt).toBeNull();
+    }, 60_000);
+
+    it("reads the count, the list and the longest as they stood at one moment, while a colleague replies", async () => {
+      const own = await venueOfItsOwn("snapshot");
+      const waiting = await newEnquiry({ ...own.at, createdAt: hoursAgo(30) });
+      // The alarm reads through a pool whose connections let a colleague's
+      // reply land between its list and its longest, as one can at any moment.
+      let listed = false;
+      let reply: Awaited<ReturnType<typeof stampFirstResponse>> | null = null;
+      const beforeStatement = async (text: string): Promise<void> => {
+        if (listed && reply === null) {
+          reply = await stampFirstResponse(db, { enquiryId: waiting, venueId: own.at.venueId, at: "now", byUserId: own.staff, channel: "phone" });
+        }
+        if (text.includes("count(*) OVER ()")) listed = true;
+      };
+      const hooked = new Pool({ connectionString: testUrl, application_name: `enquiry_funnel_${run}_snapshot`, max: 2 });
+      const watched = new Proxy(hooked, {
+        get(pool, property, receiver): unknown {
+          if (property !== "connect") return Reflect.get(pool, property, receiver);
+          return async (): Promise<PoolClient> => {
+            const client = await pool.connect();
+            return new Proxy(client, {
+              get(connection, name, connectionReceiver): unknown {
+                if (name !== "query") return Reflect.get(connection, name, connectionReceiver);
+                return async (config: QueryConfig<unknown[]>, values?: unknown[]): Promise<QueryResult<QueryResultRow>> => {
+                  await beforeStatement(config.text);
+                  return connection.query<QueryResultRow, unknown[]>(config, values);
+                };
+              },
+            });
+          };
+        },
+      });
+      const reader = Fastify();
+      await reader.register(enquiryRoutes, { db: drizzle(watched, { schema }), prefix: "/enquiries", replyAlarmFrom: "2000-01-01T00:00:00.000Z" });
+      await reader.ready();
+      try {
+        const res = await reader.inject({ method: "GET", url: "/enquiries/reply-alarm", headers: own.headers });
+        expect(res.statusCode).toBe(200);
+        // The reply landed after the list was read and before the longest was.
+        expect(reply).toMatchObject({ changed: true });
+        // One snapshot: the enquiry the alarm counts and lists is its longest.
+        const alarm = (JSON.parse(res.body) as { data: ReplyAlarm }).data;
+        expect(alarm).toMatchObject({ overdue: 1, enquiries: [{ id: waiting }], longest: { id: waiting } });
+      } finally {
+        await reader.close();
+        await hooked.end();
+      }
+      // The next read sees the reply.
+      expect((await alarmOf(own.headers)).body["data"]).toMatchObject({ overdue: 0, enquiries: [], longest: null });
+    }, 60_000);
 
     it("is the same alarm for each of the venue's commercial team", async () => {
       const reads = await Promise.all((["admin", "manager", "staff", "sales"] as const).map((role) => alarmOf(asAlarm(role))));

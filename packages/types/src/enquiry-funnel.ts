@@ -112,8 +112,9 @@ export type RecordFirstResponseResult = z.infer<typeof RecordFirstResponseResult
 // A booking enquiry still waiting for its first reply this long after it was
 // sent is flagged on the Enquiries desk. The venue's operating settings hold
 // no reply threshold yet, so every venue uses this default until one is added
-// there. It counts wall-clock hours, weekends and nights included: business
-// hours need the venue's staffed hours, which Venviewer does not hold yet.
+// there. It counts elapsed hours, weekends and nights included (across a clock
+// change that is 23 or 25 hours on the venue's clock): business hours need the
+// venue's staffed hours, which Venviewer does not hold yet.
 // ---------------------------------------------------------------------------
 
 export const ENQUIRY_REPLY_ALARM_DEFAULT_HOURS = 24;

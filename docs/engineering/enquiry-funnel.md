@@ -82,8 +82,10 @@ section for the venue's commercial team (`replyVenueOf` in
 `lib/role-capabilities.ts`, mirroring `isVenueCommercialMember`): it says when and
 how the venue first replied, and *Record a reply* posts to the route above with the
 channel chosen (never assumed) and either no time ("Just now") or a venue-local
-wall time ("Earlier"); once a reply is recorded only an earlier time is offered,
-since a later one can never replace it. A report no earlier than the reply held is
+wall time ("Earlier"); once a reply is recorded the time is asked for, never assumed,
+and only a minute before the one the recorded reply shows is taken, since a later
+one can never replace it (a decision's or a proposal's reply is stamped to the
+second, so its own minute is not earlier). A report no earlier than the reply held is
 answered with the reply that stands, and the panel says so. A save that fails after
 the person has moved to another enquiry is said in a toast. Who replied is the
 person recording it; naming a colleague is the API's (`respondedBy`), not yet the
@@ -91,12 +93,14 @@ desk's. Nothing is sent to the client.
 
 **The reply-time alarm.** `GET /enquiries/reply-alarm` answers the caller's venue's
 booking enquiries still in `submitted` or `under_review` with no first reply
-`ENQUIRY_REPLY_ALARM_DEFAULT_HOURS` (24) wall-clock hours after they arrived (their
+`ENQUIRY_REPLY_ALARM_DEFAULT_HOURS` (24) elapsed hours after they arrived (their
 first move to `submitted`, else creation): how many, the one waiting longest
 (`longest`), the most recently flagged first (at most `ENQUIRY_REPLY_ALARM_LIST_LIMIT`,
 200, as the desk lists them newest first), `nextDueAt` (when the next waiting one
-will pass the mark) and `asOf` (the database's clock), all read in one read-only
-transaction so they share one `now()`. Requests (access, Venviewer), seed fixtures
+will pass the mark) and `asOf` (the database's clock), all read in one read-only,
+repeatable-read transaction so they share one `now()` and one snapshot: a reply
+recorded meanwhile cannot leave the count and the longest disagreeing. Requests
+(access, Venviewer), seed fixtures
 and enquiries that arrived before `ENQUIRY_REPLY_ALARM_FROM` (29 October 2026, the
 release that let the desk record an outside reply) are left out: before it no
 outside reply could be recorded, and most such enquiries could no longer be cleared
@@ -253,7 +257,9 @@ venue and computes both. Days to a decision on a hold read `booking_status_histo
   the funnel fields, visit counting (concurrent openings, unknown links), engagement
   (one subject, composite keys, cascade, retention), the reply-time alarm (who is
   flagged and who is not, arrival from submission, a recorded reply or decision
-  clearing it, its readers and refusals), a replayed report answered with the same
+  clearing it, a count past the list's limit with the longest beyond it, one
+  snapshot while a colleague replies, its readers and refusals), a replayed report
+  answered with the same
   reply, attribution (hostile referrers,
   the shape check, forgiving input) and the switch, viewings (booked once, refused
   for drafts and requests, never a commitment) and lost reasons.
