@@ -237,12 +237,19 @@ async function startBrowserSentry(config: BrowserSentryConfig): Promise<void> {
     sendDefaultPii: false,
     beforeSend: scrubSentryErrorEvent,
     beforeBreadcrumb: scrubSentryBreadcrumb,
+    // No sessions: the SDK's browser-session integration sends one on every
+    // page load and every move between pages ("akin to page views", its own
+    // source says). The privacy page says we run no third-party analytics, so
+    // Sentry hears from a browser only when something goes wrong (Blake,
+    // 13 November 2026: "Turn sessions off").
     // The SDK wraps every animation frame callback and event listener to tag
     // what they throw: 1.5-2 % of the planner's main thread on a slowed phone
     // (perf study, 25 Oct 2026). The global error handler still reports them.
-    integrations: (defaults) => defaults.map((integration) => (integration.name === "BrowserApiErrors"
-      ? Sentry.browserApiErrorsIntegration({ requestAnimationFrame: false, eventTarget: false })
-      : integration)),
+    integrations: (defaults) => defaults
+      .filter((integration) => integration.name !== "BrowserSession")
+      .map((integration) => (integration.name === "BrowserApiErrors"
+        ? Sentry.browserApiErrorsIntegration({ requestAnimationFrame: false, eventTarget: false })
+        : integration)),
   });
   initialized = true;
 }

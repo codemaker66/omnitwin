@@ -272,9 +272,9 @@ const PRIVACY: LegalDocument = {
             {
               term: "How fast our pages are",
               detail:
-                "When you open one of our pages, your browser may measure how quickly it loaded and responded, and how much its content shifted as it loaded (four measurements, each rated good, needs improvement or poor), and send them to us with the kind of page (for example \"a proposal\") and whether it was opened on a phone, tablet or computer. "
+                "When you open one of our pages, your browser may measure how quickly it loaded and responded, and how much its content shifted while it was open (four measurements, each rated good, needs improvement or poor), and send them to us with the kind of page (for example \"a proposal\") and whether it was opened on a phone, tablet or computer. "
                 + "It does not send the address of the page you opened, anything you typed, or any identifier, and nothing is stored on your device for it. Like any request, it reaches us from your internet address. We do not keep that with the measurements, and our own server does not log it; our hosting provider's standard request logs record it, as they do for every request (see \"Server and request logs\"). "
-                + "We keep each measurement with only the day it arrived, use them only to make the site faster, and delete them after 90 days. "
+                + "We keep each measurement with only the kind of page, the kind of device and the day it arrived (not the time). We use them only to make the site faster, and delete them after 90 days. "
                 + "If your browser sends Global Privacy Control or Do Not Track, your visit is not measured, and anything that arrives with either signal is discarded. On any browser you can also turn it off with the \"Don't measure my visits\" switch on this page. That choice is kept in this browser on this device until the browser clears our site's data (Safari does this after about a week without a visit), so you may need to set it again.",
             },
           ],
@@ -385,7 +385,7 @@ const PRIVACY: LegalDocument = {
       blocks: [
         {
           kind: "p",
-          text: "There is no cookie consent banner on this site, because there is nothing here to consent to: we set no analytics cookies and no advertising cookies. Under the Privacy and Electronic Communications Regulations, consent is not required for storage that is strictly necessary to provide the service you asked for. What the site does use is listed below.",
+          text: "There is no cookie consent banner on this site, because there is nothing here to consent to: we set no analytics cookies and no advertising cookies. Under the Privacy and Electronic Communications Regulations, consent is not required for storage that is strictly necessary to provide the service you asked for. Nor is consent required for measuring how fast our pages are: the same Regulations allow it when it is done only to collect statistics that help improve the site, you are told about it, and you can object free of charge, as you can with the \"Don't measure my visits\" switch (see \"How fast our pages are\"). What the site does use is listed below.",
         },
         {
           kind: "defs",
@@ -535,6 +535,10 @@ const PRIVACY: LegalDocument = {
               term: "Signed contracts and deposit records",
               detail:
                 "Kept with the booking's records: for the life of the booking and for six years after the end of the financial year in which the event took place, the same period as a booking, because they are the record of what was agreed and paid. A contract you did not sign is kept on the same rule.",
+            },
+            {
+              term: "Page-speed measurements",
+              detail: "Deleted 90 days after the day they arrived.",
             },
             {
               term: "Logs and error diagnostics",
@@ -1098,7 +1102,8 @@ function storedTheme(): "dark" | "light" | undefined {
 /** "Don't measure my visits" (observability/measurement-choice.ts). */
 function MeasurementChoice(): ReactElement {
   const [declined, setDeclined] = useState(measurementDeclined);
-  // Whether the browser kept the last choice for later visits.
+  // Whether the choice in force holds on later visits too
+  // (setMeasurementDeclined): where it does not, the status says so.
   const [kept, setKept] = useState(true);
   const toggle = (): void => {
     setKept(setMeasurementDeclined(!declined));

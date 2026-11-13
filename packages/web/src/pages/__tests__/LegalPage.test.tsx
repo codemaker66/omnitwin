@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { measurementDeclined, setMeasurementDeclined } from "../../observability/measurement-choice.js";
@@ -132,7 +134,9 @@ describe("the privacy policy", () => {
     // Only what is true of the real system (12 November 2026): one of the four
     // is a layout score, not a time; the host's own request logs record the
     // address; and Safari clears the stored choice.
-    expect(page).toContain("how much its content shifted as it loaded (four measurements, each rated good, needs improvement or poor)");
+    // CLS is followed until the page is hidden, not only while it loads (13 November).
+    expect(page).toContain("how much its content shifted while it was open (four measurements, each rated good, needs improvement or poor)");
+    expect(page).not.toContain("shifted as it loaded");
     expect(page).not.toContain("four timings");
     expect(page).toContain("our own server does not log it; our hosting provider's standard request logs record it");
     expect(page).not.toContain("we do not keep that with the timings or log it");
@@ -140,7 +144,13 @@ describe("the privacy policy", () => {
     // 13 November (Blake: "Apply all three"): what is kept, the GPC and DNT
     // sentence as the code keeps it (a signal only the server sees discards
     // the report), and a lawful basis, with no claim of running no analytics.
-    expect(page).toContain("We keep each measurement with only the day it arrived");
+    // Later on 13 November (Blake: "Apply all three", "Add the sentence"): all
+    // a row keeps beside the measurement, how long, and why no consent.
+    expect(page).toContain("We keep each measurement with only the kind of page, the kind of device and the day it arrived (not the time). We use them only to make the site faster, and delete them after 90 days.");
+    expect(page).not.toContain("with only the day it arrived");
+    expect(page).toContain("Page-speed measurements");
+    expect(page).toContain("Deleted 90 days after the day they arrived.");
+    expect(page).toContain("Nor is consent required for measuring how fast our pages are: the same Regulations allow it when it is done only to collect statistics that help improve the site, you are told about it, and you can object free of charge");
     expect(page).toContain("your visit is not measured, and anything that arrives with either signal is discarded");
     expect(page).not.toContain("nothing is measured or sent");
     expect(page).toContain("Measuring how fast our pages are");
@@ -180,6 +190,42 @@ describe("the privacy policy", () => {
     } finally {
       Object.defineProperty(window, "localStorage", { configurable: true, value: real });
       setMeasurementDeclined(false);
+    }
+  });
+
+  // #355's review (13 November 2026): where the browser refuses its storage
+  // altogether, the visitor is never measured, whatever they press, so the
+  // status must not say the choice lasts only until they leave.
+  it("says a browser that refuses its storage is not measured, whatever is pressed", () => {
+    const real = window.localStorage;
+    const refuse = (): never => { throw new Error("blocked"); };
+    Object.defineProperty(window, "localStorage", {
+      configurable: true,
+      value: { getItem: refuse, setItem: refuse, removeItem: refuse },
+    });
+    try {
+      render(<LegalPage type="privacy" />);
+      const button = screen.getByRole("button", { name: "Don't measure my visits" });
+      expect(button.getAttribute("aria-pressed")).toBe("true");
+      fireEvent.click(button);
+      expect(button.getAttribute("aria-pressed")).toBe("true");
+      expect(screen.getByRole("status").textContent).toBe("Your visits in this browser are not measured.");
+    } finally {
+      Object.defineProperty(window, "localStorage", { configurable: true, value: real });
+      setMeasurementDeclined(false);
+    }
+  });
+
+  // The sitemap tells search engines when each policy last changed; a policy
+  // re-dated without its sitemap entry would say otherwise (13 November 2026).
+  it("dates each policy in the sitemap as the page dates itself", () => {
+    const sitemap = readFileSync(resolve("public/sitemap.xml"), "utf8");
+    for (const [type, path] of [["privacy", "/privacy"], ["terms", "/terms"], ["accessibility", "/accessibility"]] as const) {
+      const { unmount } = render(<LegalPage type={type} />);
+      const iso = document.querySelector("time")?.getAttribute("datetime") ?? "";
+      const entry = new RegExp(`<loc>https://venviewer\\.com${path}</loc>\\s*<lastmod>([0-9-]+)</lastmod>`, "u").exec(sitemap);
+      expect(entry?.[1], path).toBe(iso);
+      unmount();
     }
   });
 

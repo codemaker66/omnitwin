@@ -24,12 +24,16 @@ import { webVitalsSampleRate, type WebVitalsEnv } from "./web-vitals-rate.js";
 // id cannot travel), a device class and the four numbers. The vitals stop at
 // the first move to another page in the app, so a room walk's interactions are
 // never credited to the front door. No cookie, credential or referrer rides
-// with it, nothing is stored on the device, and nothing identifies or follows
-// the visitor. It is off unless the build sets VITE_WEB_VITALS_SAMPLE_RATE to
-// a decimal below 1 (web-vitals-rate.ts), off in tests and under automation,
-// off where the browser asks not to be tracked (Global Privacy Control, Do Not
-// Track), and the server keeps nothing unless WEB_VITALS_COLLECTION=on, which
-// waits for the privacy page (docs/engineering/web-vitals.md).
+// with it, nothing about the measurement is stored on the device (only the
+// visitor's own "Don't measure my visits" choice is), and nothing identifies
+// or follows the visitor. It is off unless the build sets
+// VITE_WEB_VITALS_SAMPLE_RATE to a decimal below 1 (web-vitals-rate.ts), off
+// in tests and under automation, off where the browser asks not to be tracked
+// (Global Privacy Control, Do Not Track), off where the visitor chose "Don't
+// measure my visits" or the browser will not let the site read its storage
+// (measurement-choice.ts), and the server keeps nothing unless
+// WEB_VITALS_COLLECTION=on, which waits for the privacy page
+// (docs/engineering/web-vitals.md).
 // ---------------------------------------------------------------------------
 
 /** What a browser says of its visitor's wishes and its own driver. */
@@ -202,10 +206,7 @@ export async function startWebVitals(options: StartWebVitalsOptions): Promise<bo
   const reporter = createWebVitalsReporter(
     routePattern(options.landing.paths),
     deviceClass(Math.min(window.screen.width, window.screen.height), coarse),
-    // The visitor may press "Don't measure my visits" while this load is
-    // measured, on the privacy page itself, or in another tab before this one
-    // is hidden: from then on nothing is sent, this load's values included.
-    (body) => { if (!measurementDeclined()) send(body); },
+    send,
   );
   followLandingPage(options.landing, reporter);
   const { onCLS, onINP, onLCP, onTTFB } = await import("web-vitals");
@@ -215,8 +216,11 @@ export async function startWebVitals(options: StartWebVitalsOptions): Promise<bo
   onCLS(reporter.add, { reportAllChanges: true });
   onTTFB(reporter.add);
   // The library settles its vitals when the page is hidden, which is also the
-  // last moment a phone reliably runs anything; send then. Once the visitor has
-  // said not to measure, stop listening and stop following the route.
+  // last moment a phone reliably runs anything; send then, and only then. The
+  // visitor may have pressed "Don't measure my visits" while this load was
+  // measured (on the privacy page itself) or in another tab: the choice is
+  // read again here, before the only send, and from then on nothing is sent,
+  // this load's values included, and the route is no longer followed.
   const onHidden = (): void => {
     if (document.visibilityState !== "hidden") return;
     if (measurementDeclined()) {

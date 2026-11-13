@@ -359,19 +359,37 @@ describe("browser Sentry loading", () => {
     }));
   });
 
-  it("stops wrapping animation frames and event listeners, and keeps every other default", async () => {
+  it("stops wrapping animation frames and event listeners, sends no sessions, and keeps every other default", async () => {
     const { sentry, sdk } = await loadWithSdk();
 
     await sentry.initBrowserSentry({ MODE: "production", VITE_SENTRY_DSN: DSN });
 
     const options = sdk.init.mock.calls[0]?.[0] as { integrations: (defaults: { name: string }[]) => { name: string }[] };
-    const defaults = [{ name: "InboundFilters" }, { name: "BrowserApiErrors" }, { name: "Breadcrumbs" }];
+    const defaults = [{ name: "InboundFilters" }, { name: "BrowserApiErrors" }, { name: "Breadcrumbs" }, { name: "BrowserSession" }];
     const chosen = options.integrations(defaults);
     expect(chosen.map((integration) => integration.name)).toEqual(["InboundFilters", "BrowserApiErrors", "Breadcrumbs"]);
     expect(sdk.browserApiErrorsIntegration).toHaveBeenCalledWith({ requestAnimationFrame: false, eventTarget: false });
     expect(chosen[1]).toBe(sdk.browserApiErrorsIntegration.mock.results[0]?.value);
     expect(chosen[0]).toBe(defaults[0]);
     expect(chosen[2]).toBe(defaults[2]);
+  });
+
+  // The privacy page says we run no third-party analytics product, and the
+  // SDK's browser sessions are page views by another name (13 November 2026).
+  // The SDK's own default list, not a copy of it: a renamed integration would
+  // fail here rather than quietly start sending sessions.
+  it("leaves out the session the SDK would send on every page load and every move between pages", async () => {
+    const { getDefaultIntegrations } = await import("@sentry/react");
+    const real = getDefaultIntegrations({});
+    expect(real.map((integration) => integration.name)).toContain("BrowserSession");
+    const { sentry, sdk } = await loadWithSdk();
+
+    await sentry.initBrowserSentry({ MODE: "production", VITE_SENTRY_DSN: DSN });
+
+    const options = sdk.init.mock.calls[0]?.[0] as { integrations: (defaults: { name: string }[]) => { name: string }[] };
+    const chosen = options.integrations(real);
+    expect(chosen.map((integration) => integration.name)).not.toContain("BrowserSession");
+    expect(chosen).toHaveLength(real.length - 1);
   });
 
   it("reports boundary errors with a trimmed component stack", async () => {

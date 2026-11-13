@@ -13,8 +13,8 @@ import {
 // Field web vitals (goal 07) from the browser: a route's pattern, a device
 // class and four numbers leave a sampled page load, each measurement once and
 // only for the page it landed on, and nothing else ever does. Off unless
-// sampled; off in tests, under automation and where the browser asks not to
-// be tracked.
+// sampled; off in tests, under automation, where the browser asks not to be
+// tracked, and where the visitor chose "Don't measure my visits".
 // ---------------------------------------------------------------------------
 
 interface Registered { readonly callback: (metric: Metric) => void; readonly reportAllChanges: boolean }
@@ -392,8 +392,10 @@ describe("starting on a page load", () => {
       setMeasurementDeclined(true);
       setVisibility("hidden");
       expect(send).not.toHaveBeenCalled();
-      // It stops following the route, and a later hide sends nothing either.
+      // It stops following the route and stops listening: a later hide sends
+      // nothing, even once the choice is undone, as this load is over.
       expect(router.listeners).toBe(0);
+      setMeasurementDeclined(false);
       setVisibility("visible");
       for (const [name, entry] of vitals.callbacks) entry.callback(metric(name as Metric["name"], 500, "good", `v6-1761650099999-${name}`));
       setVisibility("hidden");
@@ -415,6 +417,7 @@ describe("starting on a page load", () => {
       window.localStorage.setItem(MEASUREMENT_DECLINED_KEY, "1");
       setVisibility("hidden");
       expect(send).not.toHaveBeenCalled();
+      expect(router.listeners).toBe(0);
     } finally {
       setVisibility("visible");
       window.localStorage.removeItem(MEASUREMENT_DECLINED_KEY);

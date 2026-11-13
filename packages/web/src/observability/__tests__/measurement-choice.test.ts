@@ -60,6 +60,18 @@ describe("the measurement choice", () => {
     });
   });
 
+  // #355's review (13 November 2026): pressing the switch there must not
+  // claim the choice lasts only for this visit. The visitor stays declined,
+  // on this visit and every later one, whatever they press.
+  it("keeps a browser that refuses its storage declined, and says that holds, whatever is pressed", () => {
+    withStorage({ getItem: refuse, setItem: refuse, removeItem: refuse }, () => {
+      expect(setMeasurementDeclined(false)).toBe(true);
+      expect(measurementDeclined()).toBe(true);
+      expect(setMeasurementDeclined(true)).toBe(true);
+      expect(measurementDeclined()).toBe(true);
+    });
+  });
+
   it("says when the browser would not keep the choice (storage full): it holds for this visit only", () => {
     const kept = new Map<string, string>();
     withStorage({
