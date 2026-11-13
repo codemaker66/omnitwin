@@ -8,10 +8,12 @@
 // two channels are independent noise, so the echo is wide.
 //
 // It is synthesised by short-time overlap-add, so no band leaks into another:
-// each 2,048-point frame is a spectrum of seeded random phases whose amplitude
-// in every bin is that bin's decay at the frame's centre, exp(-6.91 t / T(f)).
-// The inverse transform of each frame is Hann-windowed and overlap-added at a
-// hop of 512, where the windows' squares sum to a constant, so independent
+// each frame is a spectrum of seeded random phases whose amplitude in every
+// bin is that bin's decay at the frame's centre, exp(-6.91 t / T(f)). The
+// frame is 2,048 points at 44.1 and 48 kHz and scales with the rate, so its
+// bins are 21.5-23.4 Hz wide at every common rate (ruling R46). The inverse
+// transform of each frame is Hann-windowed and overlap-added at a hop of a
+// quarter frame, where the windows' squares sum to a constant, so independent
 // frames add to a steady level.
 //
 // It is rendered in small steps so it can be driven in idle slices: no step
@@ -40,26 +42,69 @@ const DECAY_PER_RT = 6.91;
 /** The buffer runs this many times the longest reverberation time, to -72 dB, so T20 is never truncated. */
 const LENGTH_PER_RT = 1.2;
 const FADE_IN_S = 0.01;
-/** The tail's two channels together stay within 2 MB. */
-const MAX_BYTES = 2_000_000;
+/**
+ * The tail runs this long at most, however long the room rings: a cap in
+ * time, so it cuts every rate at the same point of the decay (ruling R46).
+ * Every surveyed room in every state needs less (tail.test.ts works out the
+ * longest at test time); the plain plaster box a space with no survey gets
+ * rings longer, and is cut here about 46 dB down its longest band. A 5 s tail
+ * is 1.76 MB of two channels at 44.1 kHz, 1.92 MB at 48 kHz, 3.84 MB at
+ * 96 kHz and 7.68 MB at 192 kHz.
+ */
+const MAX_SECONDS = 5;
 /** A band time below this (or not a number) is treated as this, so the decay stays finite. */
 const MIN_RT_S = 0.05;
 /** Half the mulberry32 period apart, so the right channel's noise never repeats the left's. */
 const RIGHT_SEED_OFFSET = 0x80000000;
 
-const FRAME = 2048;
-const HOP = 512;
-/** Frames per step: their hops cover 1,024 samples of each channel, well inside the step limit. */
-const FRAMES_PER_STEP = 2;
+/** The synthesis frame at 48 kHz: 2,048 points, bins 23.4 Hz wide. */
+const FRAME_AT_48K = 2048;
+const FRAME_RATE_HZ = 48000;
+/** The frame is held to 2^-3 to 2^3 times its 48 kHz size (256 to 16,384 points), whatever the rate. */
+const FRAME_OCTAVES = [-3, 3] as const;
+/** Four hops to a frame: Hann windows a quarter frame apart have squares that sum to a constant. */
+const HOPS_PER_FRAME = 4;
+/** Each step's hops cover about this many samples of each channel (two hops at 44.1 and 48 kHz, one at 96 kHz), well inside the step limit. */
+const SAMPLES_PER_STEP = 1024;
 /** Phases are drawn from this many equal steps around the circle, so a phase walk is integer arithmetic. */
 const PHASES = 4096;
-/** How far each bin's phase turns in one hop at its own frequency, in phase steps per bin index. */
-const PHASE_PER_BIN_PER_HOP = (PHASES * HOP) / FRAME;
 /**
  * The transition from one band's time to the next, beyond the shorter band's
  * guard, in octaves. Narrow, so each octave holds its own time.
  */
 const RAMP_OCTAVES = 0.05;
+
+/** How a tail is framed at one rate, worked out once per render. */
+interface Framing {
+  readonly frame: number;
+  readonly hop: number;
+  /** How far each bin's phase turns in one hop at its own frequency, in phase steps per bin index. */
+  readonly phasePerBinPerHop: number;
+  readonly framesPerStep: number;
+  /** Half the Hann main lobe, two bins, in hertz: how far a bin's energy spreads into its neighbours. */
+  readonly smearHz: number;
+}
+
+/**
+ * The synthesis frame at `sampleRate` (ruling R46): 2,048 x 2^round(log2(sr /
+ * 48 kHz)) points, so 1,024 at 22.05 kHz, 2,048 at 44.1 and 48, 4,096 at 88.2
+ * and 96 and 8,192 at 192 kHz, each bin 21.5-23.4 Hz wide, and a quarter of
+ * it per hop. A frame fixed at 2,048 points made the bins 46.9 Hz wide at
+ * 96 kHz; the guard between bands (timeAtFrequency) grew with them, until the
+ * 250 Hz octave held none of its own time.
+ */
+function framing(sampleRate: number): Framing {
+  const octaves = Number.isFinite(sampleRate) && sampleRate > 0 ? Math.round(Math.log2(sampleRate / FRAME_RATE_HZ)) : 0;
+  const frame = FRAME_AT_48K * 2 ** Math.min(FRAME_OCTAVES[1], Math.max(FRAME_OCTAVES[0], octaves));
+  const hop = frame / HOPS_PER_FRAME;
+  return {
+    frame,
+    hop,
+    phasePerBinPerHop: (PHASES * hop) / frame,
+    framesPerStep: Math.max(1, Math.round(SAMPLES_PER_STEP / hop)),
+    smearHz: (2 * sampleRate) / frame,
+  };
+}
 
 /** Where the late tail begins: the mean free path 4V/S over the speed of sound, clamped to 12-80 ms. */
 export function tailOnsetSeconds(room: RoomAcoustics): number {
@@ -94,14 +139,17 @@ function phases(): { readonly cos: Float64Array; readonly sin: Float64Array } {
  *
  * Each band keeps its own time across its octave. Where two bands meet, the
  * shorter one keeps its time past the shared edge by the frame's spectral
- * smear (half the Hann main lobe, 2 bins), and the time then rises over
- * 1/20 octave to the longer band's. A longer decay leaking into a shorter
- * band would take over that band's late decay; a shorter one leaking into a
- * longer band dies early and barely moves it.
+ * smear (half the Hann main lobe, 2 bins of the frame at `sampleRate`), and
+ * the time then rises over 1/20 octave to the longer band's. A longer decay
+ * leaking into a shorter band would take over that band's late decay; a
+ * shorter one leaking into a longer band dies early and barely moves it.
  */
 export function timeAtFrequency(hz: number, times: BandValues, sampleRate: number): number {
+  return timeWithSmear(hz, times, framing(sampleRate).smearHz);
+}
+
+function timeWithSmear(hz: number, times: BandValues, smearHz: number): number {
   const octave = Math.log2(hz / OCTAVE_BANDS_HZ[0]);
-  const smearHz = (2 * sampleRate) / FRAME;
   let shortest = Infinity;
   for (let band = 0; band < OCTAVE_BANDS_HZ.length; band += 1) {
     const time = times[band] ?? MIN_RT_S;
@@ -140,36 +188,38 @@ function* synthesisSteps(
   times: BandValues,
   seed: number,
   sampleRate: number,
+  framed: Framing,
 ): Generator<number, void> {
   const { cos, sin } = phases();
-  const bins = FRAME / 2;
+  const { frame, hop, phasePerBinPerHop, framesPerStep, smearHz } = framed;
+  const bins = frame / 2;
   const randomLeft = seededRandom(seed);
   const randomRight = seededRandom((seed + RIGHT_SEED_OFFSET) >>> 0);
-  const window = new Float64Array(FRAME);
-  for (let n = 0; n < FRAME; n += 1) window[n] = 0.5 - 0.5 * Math.cos((2 * Math.PI * n) / FRAME);
+  const window = new Float64Array(frame);
+  for (let n = 0; n < frame; n += 1) window[n] = 0.5 - 0.5 * Math.cos((2 * Math.PI * n) / frame);
   // Frames start one frame less a hop before the onset, so the overlap is full from the onset on.
-  const firstFrame = start - FRAME + HOP;
-  const firstCentre = (firstFrame + FRAME / 2 - start) / sampleRate;
+  const firstFrame = start - frame + hop;
+  const firstCentre = (firstFrame + frame / 2 - start) / sampleRate;
   const amplitude = new Float64Array(bins);
   const decayPerHop = new Float64Array(bins);
   const phaseLeft = new Int32Array(bins);
   const phaseRight = new Int32Array(bins);
   for (let k = 1; k < bins; k += 1) {
-    const rate = DECAY_PER_RT / timeAtFrequency((k * sampleRate) / FRAME, times, sampleRate);
+    const rate = DECAY_PER_RT / timeWithSmear((k * sampleRate) / frame, times, smearHz);
     amplitude[k] = Math.exp(-rate * firstCentre);
-    decayPerHop[k] = Math.exp((-rate * HOP) / sampleRate);
+    decayPerHop[k] = Math.exp((-rate * hop) / sampleRate);
     phaseLeft[k] = Math.floor(randomLeft() * PHASES);
     phaseRight[k] = Math.floor(randomRight() * PHASES);
   }
-  const re = new Float64Array(FRAME);
-  const im = new Float64Array(FRAME);
+  const re = new Float64Array(frame);
+  const im = new Float64Array(frame);
   const length = left.length;
   let framesInStep = 0;
-  for (let frameStart = firstFrame; frameStart < length; frameStart += HOP) {
+  for (let frameStart = firstFrame; frameStart < length; frameStart += hop) {
     re.fill(0);
     im.fill(0);
     for (let k = 1; k < bins; k += 1) {
-      const turn = (k * PHASE_PER_BIN_PER_HOP) % PHASES;
+      const turn = (k * phasePerBinPerHop) % PHASES;
       const l = (phaseLeft[k] = ((phaseLeft[k] ?? 0) + turn + (randomLeft() < 0.5 ? PHASES / 4 : (3 * PHASES) / 4)) % PHASES);
       const r = (phaseRight[k] = ((phaseRight[k] ?? 0) + turn + (randomRight() < 0.5 ? PHASES / 4 : (3 * PHASES) / 4)) % PHASES);
       const a = amplitude[k] ?? 0;
@@ -181,12 +231,12 @@ function* synthesisSteps(
       // the right (each scaled by N, which the normalising removes).
       re[k] = lr - ri;
       im[k] = -(li + rr);
-      re[FRAME - k] = lr + ri;
-      im[FRAME - k] = li - rr;
+      re[frame - k] = lr + ri;
+      im[frame - k] = li - rr;
       amplitude[k] = a * (decayPerHop[k] ?? 0);
     }
     fft(re, im);
-    for (let n = 0; n < FRAME; n += 1) {
+    for (let n = 0; n < frame; n += 1) {
       const i = frameStart + n;
       if (i < start || i >= length) continue;
       const w = window[n] ?? 0;
@@ -194,12 +244,12 @@ function* synthesisSteps(
       right[i] = (right[i] ?? 0) - (im[n] ?? 0) * w;
     }
     framesInStep += 1;
-    if (framesInStep === FRAMES_PER_STEP) {
-      yield framesInStep * HOP;
+    if (framesInStep === framesPerStep) {
+      yield framesInStep * hop;
       framesInStep = 0;
     }
   }
-  if (framesInStep > 0) yield framesInStep * HOP;
+  if (framesInStep > 0) yield framesInStep * hop;
 }
 
 /** Fades the first 10 ms after the onset in, then scales `channel` to unit energy, a step at a time. */
@@ -237,13 +287,12 @@ export function* tailSlices(
   const { sampleRate } = options;
   const times = bandMap(rt, safeTime);
   const onset = Number.isFinite(options.onsetSeconds) ? Math.max(0, options.onsetSeconds) : 0;
-  const maxSamples = Math.floor(MAX_BYTES / (2 * Float32Array.BYTES_PER_ELEMENT));
-  const length = Math.min(maxSamples, Math.floor((onset + LENGTH_PER_RT * Math.max(...times)) * sampleRate));
+  const length = Math.min(Math.floor(MAX_SECONDS * sampleRate), Math.floor((onset + LENGTH_PER_RT * Math.max(...times)) * sampleRate));
   // The first sample at or after the onset, so everything before it is silent.
   const start = Math.ceil(onset * sampleRate);
   const left = new Float32Array(length);
   const right = new Float32Array(length);
-  yield* synthesisSteps(left, right, start, times, options.seed, sampleRate);
+  yield* synthesisSteps(left, right, start, times, options.seed, sampleRate, framing(sampleRate));
   yield* finishSteps(left, start, sampleRate);
   yield* finishSteps(right, start, sampleRate);
   return { left, right, sampleRate };
