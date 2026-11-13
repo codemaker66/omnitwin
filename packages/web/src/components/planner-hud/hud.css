@@ -9,7 +9,7 @@
  * shelf grown upward; nothing else is a surface.
  *
  * Every measure is a token in the first block below, so it can be tuned in
- * one place; the colours are the grounds' (hud-skins.css). The rules that hold
+ * one place; the colours are the ground's (hud-ground.css). The rules that hold
  * everywhere: a 4 px grid and an 8 px unit; radius 0, circles only for round
  * glyph keys; lines 1 px and the chosen outline 2 px; no shadow, glow, blur,
  * filter or gradient; one sans in two weights at four sizes, the event's name
@@ -1006,7 +1006,7 @@ body.hud-dragging-card * {
 
 @media (max-width: 767px) {
   .hud-root {
-    --hud-card-col: 72px;
+    --hud-card-col: 96px;       /* a name and its count on one line; the row slides */
     --hud-card-w: 48px;
     --hud-shelf-h: 236px;        /* as laid out below, for the risen sheet's measure */
     --hud-shelf-columns: minmax(0, 1fr) auto;
@@ -1019,6 +1019,15 @@ body.hud-dragging-card * {
     grid-template-columns: minmax(0, 1fr) auto;
     height: calc(var(--hud-bar-h) + env(safe-area-inset-top, 0px));
     padding: env(safe-area-inset-top, 0px) max(var(--hud-gutter), env(safe-area-inset-right, 0px)) 0 max(var(--hud-gutter), env(safe-area-inset-left, 0px));
+  }
+
+  /*
+   * The phone's shelf is as tall as what it holds (a status line that wraps, a
+   * notch below), so the room's canvas runs a little way under it: no gap can
+   * open between the hall and the shelf, whatever the shelf's height.
+   */
+  .hud-room .venviewer-planner-shell {
+    bottom: calc(var(--hud-shelf-h) - 40px);
   }
 
   .hud-steps {

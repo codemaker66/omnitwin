@@ -287,3 +287,31 @@ body:has(.hud-root) .pc-slate-menu .pc-meta {
     width: calc(100vw - var(--hud-gutter) * 2);
   }
 }
+
+/* -- Marks on the floor: the words at the pointer while a piece is in hand -----
+ * (what it is, whether it fits, what letting go does). The second chrome's
+ * pills, set in the HUD's own measure: square, on the ground, one size. A
+ * refusal takes the accent, the one colour for something to look at.
+ */
+.hud-root .pc-mark {
+  padding: var(--hud-u) var(--hud-gap);
+  border-radius: var(--hud-radius);
+  background: var(--hud-ground);
+  box-shadow: none;
+  color: var(--hud-ink);
+  font: var(--hud-medium) var(--hud-s) / var(--hud-s-lh) var(--hud-sans);
+}
+
+.hud-root :is(.pc-mark--copper, .pc-mark--sage) {
+  box-shadow: none;
+  color: var(--hud-ink);
+}
+
+.hud-root :is(.pc-mark--amber, .pc-mark--brick) {
+  box-shadow: none;
+  color: var(--hud-accent);
+}
+
+.hud-root .ghost-set .ghost-set__subline-mark {
+  color: var(--hud-ink-2);
+}

@@ -46,7 +46,7 @@ export const STAGE_CHANDELIER_CEILING_M = 12.5;
 const FOOT_LIP_M = 0.03;
 /** Plan: the walls are cut here (HALL_CUTS.plan), and the hall keeps this much dark round it. */
 const PLAN_WALL_TOP_M = 3.12;
-const PLAN_MARGIN_M = 1.5;
+const PLAN_MARGIN_M = 2.2;
 /** Plan's lens: long, so the cut walls barely lean, and near enough for the orbit's reach. */
 const PLAN_FOV_DEG = 36;
 /** Plan looks from just inside the orbit's steepest angle (MIN_POLAR_ANGLE, 0.1). */

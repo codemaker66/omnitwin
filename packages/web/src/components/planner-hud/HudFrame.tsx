@@ -1,7 +1,6 @@
 import { useEffect, useState, type ReactElement, type ReactNode } from "react";
 import { setPlannerChromeFeatures, type PlannerFeatureOverrides } from "../../lib/planner-features.js";
 import { useHallViewStore } from "../../stores/hall-view-store.js";
-import { hudSkinRequested, type HudSkin } from "../../stores/planner-hud-store.js";
 import { FirstOpen, useFirstOpenShowing } from "./FirstOpen.js";
 import { Hand } from "./Hand.js";
 import { HudFactsProvider } from "./hud-facts.js";
@@ -9,7 +8,7 @@ import { Journey } from "./Journey.js";
 import { useHudSound } from "./use-hud-sound.js";
 import { ViewStation } from "./ViewStation.js";
 import "./hud.css";
-import "./hud-skins.css";
+import "./hud-ground.css";
 import "./hud-plaque.css";
 
 // ---------------------------------------------------------------------------
@@ -34,6 +33,10 @@ const HUD_FEATURES: PlannerFeatureOverrides = {
   tableNumbers: true,
   editingKeys: true,
   fillKeepOuts: true,
+  // The shelf names the chosen table and the narrowest aisle once; nothing floats over the hall to say them again.
+  roomCallouts: false,
+  // What is chosen is marked in the hall itself: a line on the floor round it.
+  chosenMark: true,
 };
 
 export interface HudFrameProps {
@@ -57,10 +60,10 @@ const HUD_STAGE = { skyPx: 48 } as const;
 export function HudFrame({ room, plaque, eventGuests, sheets }: HudFrameProps): ReactElement {
   // Set before the first child renders: the hand reads its cards' ranges from
   // these switches, and the room opens on the stage in its first frame.
-  const [skin] = useState(() => {
+  useState(() => {
     setPlannerChromeFeatures(HUD_FEATURES);
     useHallViewStore.getState().setStage(HUD_STAGE);
-    return hudSkinRequested(window.location.search);
+    return null;
   });
   useEffect(() => {
     setPlannerChromeFeatures(HUD_FEATURES);
@@ -75,21 +78,17 @@ export function HudFrame({ room, plaque, eventGuests, sheets }: HudFrameProps): 
   // The facts sit outside the root: whether the first screen shows is one of them, and the root says so.
   return (
     <HudFactsProvider eventGuests={eventGuests}>
-      <HudRoot skin={skin} room={room} plaque={plaque} sheets={sheets} />
+      <HudRoot room={room} plaque={plaque} sheets={sheets} />
     </HudFactsProvider>
   );
 }
 
-interface HudRootProps extends Omit<HudFrameProps, "eventGuests"> {
-  readonly skin: HudSkin;
-}
-
-function HudRoot({ skin, room, plaque, sheets }: HudRootProps): ReactElement {
+function HudRoot({ room, plaque, sheets }: Omit<HudFrameProps, "eventGuests">): ReactElement {
   const firstOpen = useFirstOpenShowing();
   // Held on the stage, the top bar's words stand on the night above the walls; otherwise on a scrim (hud.css).
   const stagePhase = useHallViewStore((state) => state.stagePhase);
   return (
-    <div className="hud-root" data-hud-skin={skin} data-stage={stagePhase} data-first-open={firstOpen ? "true" : undefined} data-testid="planner-hud">
+    <div className="hud-root" data-stage={stagePhase} data-first-open={firstOpen ? "true" : undefined} data-testid="planner-hud">
       <main id="main-content" className="hud-room" aria-label="The room">{room}</main>
       <div className="hud-bar">
         <div className="hud-bar__plaque">{plaque}</div>

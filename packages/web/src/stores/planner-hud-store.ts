@@ -3,42 +3,9 @@ import type { JourneyStepId } from "../lib/hud/journey.js";
 
 // ---------------------------------------------------------------------------
 // The planner HUD's own state (docs/superpowers/specs/2026-11-13-planner-hud-design.md):
-// which sheet is open (one at a time), whether this plan has been sent, and
-// the ground the screen wears. Everything about the layout itself stays in the
-// planner's existing stores.
+// which sheet is open (one at a time) and whether this plan has been sent.
+// Everything about the layout itself stays in the planner's existing stores.
 // ---------------------------------------------------------------------------
-
-/**
- * The grounds the HUD can wear (D:/claude/planner-hud-20261113/DOCTRINE.md):
- * bone with the hall's mahogany as its one accent, blanc with none, noir.
- * They share every other measure; Blake chooses between them.
- */
-export type HudSkin = "bone" | "blanc" | "noir";
-
-export const HUD_SKINS: readonly HudSkin[] = ["bone", "blanc", "noir"];
-
-export const HUD_SKIN_STORAGE_KEY = "venviewer.planner-hud-skin";
-
-const DEFAULT_HUD_SKIN: HudSkin = "bone";
-
-function isHudSkin(value: string | null): value is HudSkin {
-  return HUD_SKINS.some((skin) => skin === value);
-}
-
-/** The skin this device asks for: `?skin=` (remembered here), else the last one chosen, else the default. */
-export function hudSkinRequested(search: string): HudSkin {
-  const asked = new URLSearchParams(search).get("skin");
-  if (isHudSkin(asked)) {
-    try { window.localStorage.setItem(HUD_SKIN_STORAGE_KEY, asked); } catch { /* a convenience only */ }
-    return asked;
-  }
-  try {
-    const remembered = window.localStorage.getItem(HUD_SKIN_STORAGE_KEY);
-    return isHudSkin(remembered) ? remembered : DEFAULT_HUD_SKIN;
-  } catch {
-    return DEFAULT_HUD_SKIN;
-  }
-}
 
 /** A journey step's sheet, the whole catalogue, or the view station's further tools. */
 export type HudSheet = JourneyStepId | "more" | "tools";

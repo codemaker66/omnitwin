@@ -14,7 +14,7 @@
 
 interface PlannerFeatureSpec {
   /** The lane that builds it and decides when it is green. */
-  readonly lane: "E" | "P" | "planner-qol";
+  readonly lane: "E" | "P" | "planner-qol" | "hud";
   /**
    * The quality-of-life item it delivers: Q-NN in design/qol-pass.md, PQ-N in
    * planner-qol's own list, or D-N for one of Blake's decisions.
@@ -80,6 +80,14 @@ export const PLANNER_FEATURE_SPECS = {
   lensesDivider: { lane: "planner-qol", item: "PQ-11", on: false },
   /** A wall's brick-down takes 450 ms, not 5 s, and under reduced motion the wall goes at once. */
   wallsQuick: { lane: "planner-qol", item: "PQ-15", on: true },
+  /**
+   * The words that float over the room for a chosen table: its plate, the gap to
+   * its nearest neighbour and the reason a clearance fails. The planner HUD turns
+   * them off, because its shelf says each of them once.
+   */
+  roomCallouts: { lane: "hud", item: "stage", on: true },
+  /** A thin line on the floor round what is chosen (lib/chosen-mark.ts): the planner HUD's mark, in the plate's place. */
+  chosenMark: { lane: "hud", item: "stage", on: false },
 } as const satisfies Readonly<Record<string, PlannerFeatureSpec>>;
 
 export type PlannerFeature = keyof typeof PLANNER_FEATURE_SPECS;

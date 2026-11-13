@@ -46,6 +46,7 @@ import { MarqueeSelect } from "../MarqueeSelect.js";
 import { SnapGuides } from "../SnapGuides.js";
 import { CirculationOverlay } from "../CirculationOverlay.js";
 import { ClearanceRings } from "./ClearanceRings.js";
+import { ChosenMarks } from "./ChosenMarks.js";
 import { DoorClearSpaceLayer } from "./DoorClearSpaceLayer.js";
 import { FurnitureMotion } from "./FurnitureMotion.js";
 import { MarkupLayer } from "../MarkupLayer.js";
@@ -729,6 +730,7 @@ export function PlannerScene(): ReactElement {
           </>}
           <group name="planner-furniture-frame" position={timelinePreviewActive && frozenRoom !== null ? [...frozenRoom.furnitureOffset] : [0, 0, 0]}>
             {!timelinePreviewActive && <FurnitureContactShadows />}
+            {!timelinePreviewActive && plannerFeatureEnabled("chosenMark") && <ChosenMarks />}
             {!timelinePreviewActive && hallDrawn && <TableCandles />}
             <PlacedFurniture />
           </group>
