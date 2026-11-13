@@ -46,7 +46,7 @@ Read from origin/master `85a17749` on 13 November 2026.
 | A plan must have a venue's room | A plan's room and venue are both required, so no plan can exist for a room that is not a venue's | `packages/api/src/db/schema.ts:530-531` |
 | Unsaved plans | An anonymous plan nobody saved, claimed, linked or shared is deleted after 72 hours, by a nightly job at 02:00 | `packages/api/src/services/cleanup.ts:77-88`; `.github/workflows/cleanup.yml:23-24` |
 | Claiming a plan | An account takes an anonymous plan only with the secret the creating browser was given; a plan already in the venue's work can never be claimed | `packages/api/src/routes/claim-config.ts:23-35, 49` |
-| Accounts | **Nobody can sign up alone.** A first sign-in makes an account only if the address has a pending invitation or is on an approved domain | `packages/api/src/middleware/auth.ts:308-312, 112-124` |
+| Accounts | **Nobody can sign up alone.** A first sign-in makes an account only if the address has a pending invitation or is on an approved domain; the sign-up page says "Use the email address your venue invited." The goal file says accounts are by invitation only, and that outside users wait until the pilot's gates close | `packages/api/src/middleware/auth.ts:308-312, 112-124`; `packages/web/src/pages/RegisterPage.tsx:41`; `GOAL.md:15` |
 | Roles | Eight, among them `client` and `planner`. Both land on `/events`, their own events and saved plans. But `planner` is also admitted to the venue's desk and room pages | `schema.ts:232`; `packages/web/src/lib/role-routing.ts:19-27`; `role-capabilities.ts:115, 128-134` |
 | The client's home | `/events` lists the signed-in person's own events and plans, read by their id alone; `/events/:eventId` is one event | `router.tsx:580-600`; `packages/api/src/routes/client-home.ts:6-17` |
 | The view-only link | A link to look at a plan and not change it: 32 random bytes kept only as a hash, 30 days, five at once, never cached or indexed. It exists only for anonymous plans and stops when the plan is claimed | `packages/api/src/routes/public-plan-views.ts:14-50, 60-125`; `services/plan-view-links.ts:44-48, 76, 111`; `packages/types/src/plan-view.ts:21-24`; `router.tsx:747` |
@@ -121,6 +121,10 @@ is a target counted on the mock-up, not on a built product.
 - **A free account** (an email address, confirmed by the sign-in provider) is for three things: keeping the
   work, opening it on another device, and sharing a list. The planner makes it themselves. Today that is
   impossible (section 2), so stage 1 builds sign-up, behind a switch (section 5.8).
+- **The standing rule on accounts is kept.** The goal file says accounts are by invitation only and outside
+  users wait until the pilot's gates close (section 2). Stage 1 respects that: the first five planners need no
+  account at all. Sign-up for everyone therefore waits for two things, the solicitor's read (Blake, 13 November)
+  and those gates, and the goal file is amended on the day the switch opens, not before.
 - **One owner.** A planner's event has one owner, and nobody else can change it. A couple share one sign-in, or
   one of them looks through the client's link. Co-planners would need their own design.
 - **A self-made account belongs to no venue and can reach nothing of any venue's**: only its own events, plans
