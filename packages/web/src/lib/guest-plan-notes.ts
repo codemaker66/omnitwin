@@ -580,12 +580,19 @@ function leading(name: string): string {
  * noteClearsRefused): one sentence a piece, each named as these lines name a
  * piece ("A chair at Table 1's note was not removed: ..."). Null for none.
  */
-export function refusedClearsLine(state: { readonly objects: readonly EditorObject[]; readonly noteClearsRefused: readonly string[] }): string | null {
+export function refusedClearsLine(state: {
+  readonly objects: readonly EditorObject[];
+  readonly baseObjects: readonly EditorObject[];
+  readonly noteClearsRefused: readonly string[];
+}): string | null {
   if (state.noteClearsRefused.length === 0) return null;
   const among = state.objects.map(asNamed);
+  // This browser is shown the note that now stands on such a piece when the
+  // confirmed piece carries it unmarked: the maker's, answered with every note (X8).
+  const shown = new Set(state.baseObjects.filter((object) => object.notes !== "" && object.noteHeld !== true).map((object) => object.id));
   const said = state.objects
     .filter((object) => state.noteClearsRefused.includes(object.id))
-    .map((object) => noteNotRemovedLine(leading(heldNotePieceName(asNamed(object), among))));
+    .map((object) => noteNotRemovedLine(leading(heldNotePieceName(asNamed(object), among)), shown.has(object.id)));
   return said.length === 0 ? null : said.join(" ");
 }
 
@@ -718,9 +725,14 @@ export function noteStillSavingLine(pieces: readonly ChangedPiece[]): string {
  * had changed that note since (a save refused for a held note: the API's own
  * sentence would ask them to clear what they have cleared). Ruled 12 November
  * 2026 (C3 on #388). `name` leads: "Table 3", "A chair at Table 1".
+ * `shown`: the piece shows that note (the plan's maker is answered with every
+ * note, so the piece takes it), and the sentence ends at "somewhere else"
+ * (delta review of #388 at 7a51b6e4, X8).
  */
-export function noteNotRemovedLine(name: string): string {
-  return `${name}'s note was not removed: it was changed somewhere else, and that note cannot be shown here.`;
+export function noteNotRemovedLine(name: string, shown = false): string {
+  return shown
+    ? `${name}'s note was not removed: it was changed somewhere else.`
+    : `${name}'s note was not removed: it was changed somewhere else, and that note cannot be shown here.`;
 }
 
 /** A seat taken from a table, when the chair that would go holds such a note. */

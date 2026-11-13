@@ -2174,7 +2174,7 @@ async function saveLeavingOutOfDateNotes(
  * this: the notice stays until the person dismisses it, and no save says the
  * layout saved while it does (ruling R1(b) on #388). The autosave goes on.
  */
-function standingRefusal(state: Pick<EditorState, "noteClearsRefused" | "objects">): Pick<EditorState, "saveError" | "saveErrorCode"> {
+function standingRefusal(state: Pick<EditorState, "noteClearsRefused" | "objects" | "baseObjects">): Pick<EditorState, "saveError" | "saveErrorCode"> {
   const said = refusedClearsLine(state);
   return said === null ? { saveError: null, saveErrorCode: null } : { saveError: said, saveErrorCode: NOTE_HELD_CODE };
 }
@@ -2418,7 +2418,7 @@ async function saveDocument(
     );
     // The API's sentence is for words over a held note; a refused clear has its
     // own (ruling C3 on #388), and both stand in one notice when both are refused.
-    const refusal = { objects: shownAfter, noteClearsRefused: noteRefused ? clearsRefused : get().noteClearsRefused };
+    const refusal = { objects: shownAfter, baseObjects: base, noteClearsRefused: noteRefused ? clearsRefused : get().noteClearsRefused };
     set({
       objects: shownAfter,
       baseObjects: base,

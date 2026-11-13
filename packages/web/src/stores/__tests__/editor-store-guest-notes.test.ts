@@ -1936,7 +1936,7 @@ describe("the maker's browser, when a note it saved without the notes' word is c
     ["leaves B's note as it was", (): void => undefined],
     ["clears B's note", (): void => { store().setObjectNotes(B, ""); }],
     ["writes their own words on B", (): void => { store().setObjectNotes(B, "TEST ONLY by the stage"); }],
-  ])("never names words it did not show on a piece whose note it left to the server, when the person %s", async (_what, change) => {
+  ])("never names words it did not show on a piece whose note it left to the server, when the person %s", async (what, change) => {
     const server: PlanOnServer = { revision: 4, notes: new Map([[B, OLD], [C, OLD_C]]) };
     await staffRewriteUnderTheMaker(server, B);
     change();
@@ -1946,6 +1946,11 @@ describe("the maker's browser, when a note it saved without the notes' word is c
     // Refused; every recorded note left (lands); B sent (refused: out of date); C sent and B left (lands).
     expect({ sent: savesSent() - saves.firstSave, revision: server.revision }).toEqual({ sent: 4, revision: 6 });
     expect(server.notes.get(B)).toBe(STAFF);
+    if (what === "clears B's note") {
+      // B shows the note the answer gave it, so the refused clear is not said to be of a note that cannot be shown here (delta review X8).
+      expect(noteOn(B)).toBe(STAFF);
+      expect(store().saveError).toMatch(/^A [^:]+'s note was not removed: it was changed somewhere else\.$/u);
+    }
     const shownSince = new Set<string | null>([shownOn(B)]);
     const leftAt = savesSent();
     for (const x of [6, 7]) {
