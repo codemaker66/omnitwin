@@ -157,6 +157,90 @@ describe("the measured front's own solids", () => {
   });
 });
 
+/**
+ * Each triangle's solid: triangles joined along shared edges, their corners welded to a micrometre. A closed
+ * solid's faces meet edge to edge; two solids that touch, or are let into each other, do not.
+ */
+function solidsOf(list: readonly Triangle[]): number[] {
+  const parent = list.map((_, i) => i);
+  const find = (i: number): number => {
+    let root = i;
+    while (parent[root] !== root) root = parent[root] ?? root;
+    for (let node = i; parent[node] !== root;) {
+      const next = parent[node] ?? root;
+      parent[node] = root;
+      node = next;
+    }
+    return root;
+  };
+  const weld = (p: V3): string => p.map((x) => Math.round(x * 1e6)).join(",");
+  const owner = new Map<string, number>();
+  list.forEach((t, i) => {
+    const keys = t.corners.map(weld);
+    for (let e = 0; e < 3; e++) {
+      const a = keys[e] ?? "";
+      const b = keys[(e + 1) % 3] ?? "";
+      const edge = a < b ? `${a}|${b}` : `${b}|${a}`;
+      const other = owner.get(edge);
+      if (other === undefined) owner.set(edge, i);
+      else parent[find(i)] = find(other);
+    }
+  });
+  return list.map((_, i) => find(i));
+}
+
+/**
+ * Where one of the front's solids is thinner than `least`: two of its faces, parallel and overlapping, facing
+ * away from each other with the solid between them, closer than that. Faces on one plane are left out: those
+ * are two solids touching (frontOnItself).
+ */
+function thinSolids(front: BufferGeometry, least: number): { readonly mm: number; readonly at: readonly number[]; readonly part: number }[] {
+  const part = front.getAttribute("aPart");
+  const list = triangles(front);
+  const solid = solidsOf(list);
+  const byNormal = new Map<string, number[]>();
+  list.forEach((t, i) => {
+    const key = t.normal.map((x) => Math.round(x * 200)).join(",");
+    const bucket = byNormal.get(key);
+    if (bucket === undefined) byNormal.set(key, [i]); else bucket.push(i);
+  });
+  const found: { mm: number; at: readonly number[]; part: number }[] = [];
+  for (const bucket of byNormal.values()) {
+    const sorted = [...bucket].sort((i, j) => (list[i]?.offset ?? 0) - (list[j]?.offset ?? 0));
+    for (let x = 0; x < sorted.length; x++) {
+      const i = sorted[x] ?? 0;
+      const a = list[i];
+      if (a === undefined || dot(a.facing, a.normal) > 0) continue;
+      for (let y = x + 1; y < sorted.length; y++) {
+        const j = sorted[y] ?? 0;
+        const b = list[j];
+        if (b === undefined) continue;
+        const gap = b.offset - a.offset;
+        // Positions are single precision: a hundredth of a millimetre either way is the same thickness.
+        if (gap >= least - 1e-5) break;
+        if (gap < 1e-4 || solid[i] !== solid[j] || dot(b.facing, b.normal) < 0 || dot(a.normal, b.normal) < 0.99995 || sharedArea(a, b) <= 1e-6) continue;
+        const [p, q, r] = a.corners;
+        found.push({
+          mm: Math.round(gap * 1e4) / 10,
+          at: [p[0] + q[0] + r[0], p[1] + q[1] + r[1], p[2] + q[2] + r[2]].map((v) => Math.round((v / 3) * 1000) / 1000),
+          part: Math.round(part.getX(a.vertex)),
+        });
+      }
+    }
+  }
+  return found;
+}
+
+describe("the measured front's solids against the cut's pull", () => {
+  it.each(DETAILS)("are each at least twice as thick as the cut is drawn toward the eye ($name)", ({ detail }) => {
+    // The cut pass draws each solid's far side up to CUT_EYEWARD_MAX toward the eye (hall-exterior-material.ts).
+    // A solid thinner than that would show its far side, in the cut's colour, over its own near side. At twice
+    // the pull it keeps half its thickness in hand against the depth buffer's rounding far off. (The pediment's
+    // raking cornice, cut as one ring round the tympanum, had a millimetre's sliver along its foot.)
+    expect(thinSolids(buildHallFront(detail).geometry, 2 * CUT_EYEWARD_MAX).slice(0, 5)).toEqual([]);
+  });
+});
+
 describe("the cut's tie-break against the pieces let into their holders", () => {
   it("draws the cut toward the eye by at most half a let-in, a share of its distance out to 10 m", () => {
     // A piece's end let LET_IN into its holder lies that far behind the holder's own face, and the thinnest

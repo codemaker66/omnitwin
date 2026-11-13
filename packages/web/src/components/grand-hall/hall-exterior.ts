@@ -918,11 +918,11 @@ export function* hallFrontSteps(detail: HallFrontDetail = FRONT_DETAIL_FULL): St
   for (const u of [-t.columnU[3], t.columnU[3]]) front.disc(u, 10.502, t.entablatureProud, t.entablatureProud + 0.03, 0.18, 12);
   const ph = t.pedimentHalfWidth;
   front.slab([[-ph + 0.3, t.entablatureTop], [ph - 0.3, t.entablatureTop], [0, t.pedimentApex - t.rakingCorniceDepth]], [], SKIN_GAP, t.entablatureProud - 0.04);
-  front.slab(
-    [[-ph, t.entablatureTop], [ph, t.entablatureTop], [0, t.pedimentApex]],
-    [[[-ph + 0.42, t.entablatureTop + 0.001], [ph - 0.42, t.entablatureTop + 0.001], [0, t.pedimentApex - t.rakingCorniceDepth]]],
-    SKIN_GAP, t.pedimentCorniceProud,
-  );
+  // The raking cornices, one up each side to the apex, standing on the entablature's cornice (the pediment's
+  // level member). Cut as one ring round the tympanum, the ring's foot was a millimetre's sliver, thinner than
+  // the cut's pull toward the eye (hall-exterior-material.ts CUT_EYEWARD_MAX): its underside drew over its top.
+  front.slab([[-ph, t.entablatureTop], [-ph + 0.42, t.entablatureTop], [0, t.pedimentApex - t.rakingCorniceDepth], [0, t.pedimentApex]], [], SKIN_GAP, t.pedimentCorniceProud);
+  front.slab([[ph - 0.42, t.entablatureTop], [ph, t.entablatureTop], [0, t.pedimentApex], [0, t.pedimentApex - t.rakingCorniceDepth]], [], SKIN_GAP, t.pedimentCorniceProud);
   front.box(-t.atticHalfWidth, t.atticHalfWidth, t.atticBottom, t.atticCorniceBottom, -0.2, 0.02);
   front.box(-t.atticHalfWidth - 0.04, t.atticHalfWidth + 0.04, t.atticBottom, t.atticBaseTop, -0.2, 0.08);
   front.run(-t.atticHalfWidth - 0.08, t.atticHalfWidth + 0.08, corniceProfile(0.02, t.atticCorniceBottom, t.atticTop, 0.14, -0.2));

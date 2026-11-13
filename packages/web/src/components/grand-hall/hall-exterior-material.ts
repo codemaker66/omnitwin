@@ -100,12 +100,17 @@ export const CUT_EYEWARD = 2.5e-4;
 
 /**
  * The most the cut is drawn toward the eye, metres: half the let-in
- * (LET_IN). Farther off, a share of the distance would reach a face let into
- * its holder, and past about 48 m the far face of the thinnest glass
- * (12 mm), drawing a solid's inside in front of its own outside. The cap
- * holds from 10 m: about ten depth steps at 20 m, five at 30 m and two at the
- * farthest the orbit reaches (about 47 m), where the front's touching faces
- * are a pixel or two across.
+ * (LET_IN), and at most half the thinnest of the front's solids
+ * (hall-exterior-skin.test.ts). Farther off, a share of the distance would
+ * reach a face let into its holder, and past about 48 m, face-on, the far face
+ * of the thinnest glass (12 mm), drawing a solid's inside in front of its own
+ * outside. The cap holds from 10 m: about ten depth steps at 20 m, five at
+ * 30 m and one at about 60 m, the farthest the cut is seen from (the front's
+ * far end, along the street from beyond the orbit's far corner), where the
+ * front's touching faces are a pixel or two across. One is enough: the cut
+ * draws after the outside and the depth test passes equal depths (three's
+ * LessEqualDepth), so an exact tie is the cut's whatever its pull, which only
+ * has to outlast the rounding.
  */
 export const CUT_EYEWARD_MAX = LET_IN / 2;
 
