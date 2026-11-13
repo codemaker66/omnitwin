@@ -1,6 +1,8 @@
 # The spine: design
 
 Design, 13 November 2026. Status: **draft for Blake's approval. No product code is written until he approves.**
+A builder's check was done on 13 November by a fresh reader with the code open; its nine questions and four
+corrections are answered in the text.
 Piece B of the platform plan (`docs/superpowers/specs/2026-11-13-platform-plan-design.md`, section 5.2), ledger row
 T-704. Branch `claude/platform-spine-design`. Code was read at master `85a17749`; every line reference is to that
 commit.
@@ -99,7 +101,16 @@ All paths are under `packages/`. "schema" is `api/src/db/schema.ts`.
 - **Events without a booking already exist:** `POST /events` makes one (routes/events.ts:411). The count above
   ignores them, because it only looks at events that have bookings (event-binding.ts:532-534).
 - **A first-reply stamp exists** on the enquiry (schema:806-809, written by
-  `api/src/services/enquiry-funnel.ts:82-109`). A hold, a viewing, a deal and a proposal do not set it.
+  `api/src/services/enquiry-funnel.ts:82-109`). Three things set it: a reply a member of staff reports, a
+  proposal being sent (`api/src/routes/proposals.ts:1524-1535`), and a decision on the enquiry, whether it says
+  yes or turns it down (`api/src/routes/enquiries.ts:376-385`). Making a hold, a viewing, a deal or a draft
+  proposal does not.
+- **A proposal can be made from a plan alone**, with no deal and no enquiry (`api/src/routes/proposals.ts:595-620`).
+  A deal can be made with no enquiry (`api/src/routes/opportunities.ts:216-258`). A quote's proposal is optional
+  (schema:2684). One enquiry can have two open deals: nothing in the database stops it (schema:1073, 1091).
+- **Deploys:** Railway builds and releases the server by itself and migrates before it promotes the new one
+  (`railway.json:23`). The repository's deploy workflow only migrates, as an audited second pass; it neither
+  releases nor blocks a release (`.github/workflows/deploy.yml:1-20`).
 - **Deposits** are a card-checkout record that the database keeps in test mode
   (`deposit_payments_test_mode_only`, 0104:135), for one venue named in the server's settings. It cannot hold a
   payment by bank or by hand (schema:2788-2816).
@@ -145,11 +156,26 @@ record the plan is folding away.
   `(event_id, venue_id)` to `events (id, venue_id)`, refusing deletion, as bookings have.
 - A deal's link is unique among open deals: an event has at most one deal that is not lost, archived or deleted.
   Old lost deals may still point at the event as history. (My call: the brief says "unique"; a strict
-  one-deal-ever rule would stop a client who comes back after a lost deal.)
+  one-deal-ever rule would stop a client who comes back after a lost deal.) From the first release, making a
+  second open deal on an event is refused with a message that names the first. The unique index itself is added
+  in the second migration, after old collisions have been settled on the review list.
 - First, `opportunities` gains `unique (id, venue_id)`. `client_accounts` already has it (schema:920). Then the
   event's `client_account_id` key is rebuilt to include the venue, before anything writes it.
-- Quotes and agreements carry no event of their own. They reach it through their proposal. Agreements cannot be
-  changed, so they could not be backfilled or moved in a merge anyway.
+- **Which records must have an event** (one definition, used by the writers, the backfill and the count):
+  - a proposal that is not deleted and has been sent (sent, changes requested or accepted), or has an agreement,
+    or has a deposit request in force, or is a draft made for a deal or an enquiry;
+  - a deal that is not deleted, lost or archived;
+  - an enquiry that has been worked (section 5.2) and is not rejected, withdrawn or archived; or that any held
+    date, booking, deal or proposal with an event points at.
+- **Where each gets it.** A proposal takes the event of its deal, or else of its enquiry, when it is made. A
+  draft made from a plan alone has none until it is sent; then it takes the one event its plan is linked to, or
+  a new one. (The plan allows a sketch that joins an event later; a draft price on that sketch is the same.) A
+  deal takes its enquiry's event, or a new one when it has no enquiry. Changing a proposal's deal or enquiry
+  moves its event with it in the same transaction, and is refused once the proposal has an agreement or a
+  deposit request in force.
+- Agreements carry no event of their own: they reach it through their proposal. They cannot be changed, so they
+  could not be backfilled or moved in a merge anyway. A quote reaches its event through its proposal, or else
+  its deal, or else its enquiry. A quote tied to nothing but a room is a price check, not business, and has none.
 - The deposit request keeps its existing `event_id` column for now. Today it is filled once, from the lookup,
   read before the transaction opens, and nothing reads it back (`api/src/routes/deposits.ts:152-178`). After
   this it is copied from its proposal inside the transaction, under the proposal's lock. The count checks the
@@ -171,8 +197,8 @@ record the plan is folding away.
 Recommended: **when someone first works it.** Until then it is only an enquiry, and opens as the Enquiries panel.
 Working it means the first of:
 
-- a reply is recorded (by email, phone, in person, or a proposal sent), except a reply that turns the enquiry
-  down;
+- a reply is recorded (by email, phone, in person, a proposal sent, or a decision that says yes). A decision
+  that turns the enquiry down is not working it and makes no event;
 - a date is held or booked for it (as today);
 - the venue books a viewing for it;
 - a price is made for it: a deal, a quote or a proposal;
@@ -215,21 +241,35 @@ event.
   an event's timings to a client or planner only if they may see that event.
 - Linking a plan stops being a decision about access, so the reason for refusing to link a client's own plan
   goes. Whether to lift that refusal is left to the builder, with its tests.
+- The rule answers one question: may this person see this event. Each page keeps its own choice of what to
+  list. The client's home still leaves out events that are lost or cancelled; the schedule still lists only
+  plans whose room exists.
 - **What ships here and what does not.** The table, the rule, the helper, the leak test, and a staff route to add
   and remove a person. No button: it arrives with the event page (piece C), and Blake sees it first, because it
-  decides what a client can open. Until then no client gains or loses anything. Anyone who can see an event
-  today, by the strictest of the three rules, is given a row by the backfill.
+  decides what a client can open.
+- **Nobody loses a door.** The backfill gives a row to everyone who passes the loosest of today's three rules.
+  Someone who today passes the loose rule and fails the strict one would gain the schedule page for an event
+  they can already message about. Few or none are expected: no route can make the link today.
 - Lane L4 (planners) will use the same table when a planner invites a venue onto an event. This design leaves
   room for it and builds nothing for it.
 
 ### 5.4 The stage, the status and the dates
 
 - **The stage is one pure function** in `@omnitwin/types`, worked out each time it is read and stored nowhere.
-  It reads the event's bookings, its stored status and whether its date has passed:
-  no held date gives "enquiry"; a live hold and nothing confirmed gives "provisional"; a live confirmed booking
-  gives "confirmed", or "done" once it is over; and the two closed stages, "lost" and "cancelled", as the status
-  already has them. The words shown to people are chosen later by the first-click test; the code uses plain
-  keys.
+  It reads three things: the stored status, whether the event has a live hold, and whether it is over.
+
+  | Stored status | Stage |
+  |---|---|
+  | draft or proposed, with no live hold | enquiry |
+  | draft or proposed, with a live hold | provisional |
+  | confirmed, in planning or ready for ops, not yet over | confirmed |
+  | executed or closed, or any of the three above once the date has passed | done |
+  | lost | lost |
+  | cancelled | cancelled |
+
+  Every stored status has a stage, including an event made by hand with no bookings, so the function can never
+  disagree with the status. The words shown to people are chosen later by the first-click test; the code uses
+  plain keys.
 - The rank of a held date (1st option, 2nd option) stays on the held date. One event can hold a confirmed room
   and an option on another, so the stage never tries to say it.
 - "Accepted", "signed" and "deposit received" are not stages. They are read from the proposal, the agreement and
@@ -241,31 +281,55 @@ event.
   overwritten by the next Diary write (`api/src/services/event-mutations.ts:71-162`). After this, an edit to the
   dates of an event that has a live held date or booking is refused with a plain message that says to move the
   booking, the same way a status that disagrees with the Diary is refused today.
-- **The lock order is kept and extended:** bookings first, then the enquiry, then the deal, then the proposal,
-  then the event, and the event only ever with the lighter lock the status sync uses. A payment notice or an
-  acceptance writes its own rows and never locks an event before reading bookings.
+- **The lock order is the one the code already keeps, written down in full:** bookings, then the proposal, then
+  the enquiry, then the deal, then the event. The bind locks bookings, the enquiry, then the event
+  (event-binding.ts:41-45). Sending a proposal locks the proposal and then writes to its enquiry
+  (`api/src/routes/proposals.ts:856-877`). Saving a version locks the proposal and then writes to its deal
+  (proposals.ts:1219-1272). The People Book's merge writes enquiries before deals. Every new writer follows the
+  same order. `ensureEnquiryEvent` locks the enquiry and then the event, so it fits when called from a send.
+- New writers take the event with the lighter lock the status sync uses. The one heavier lock that exists, an
+  edit of the event itself, stays as it is: it takes the event alone and only reads bookings.
+- A payment notice or an acceptance writes its own rows and never needs the event, because nothing about them
+  is stored on it.
 
 ### 5.5 Merge and split
 
 Events will now be made earlier, so two enquiries about the same occasion will sometimes become two events. Merge
 has to exist before that starts.
 
-- **Merge** folds one event into another at the same venue. A named person does it and gives a reason. In one
-  transaction every record that points at the losing event moves to the survivor: held dates and bookings (the
-  survivor's status and dates are then worked out afresh), the enquiry, deal and proposal links, deposit
-  requests, floor-plan links, who may see it, the timetable, sheets, passes, tasks and messages. The loser is
-  kept, closed, and marked as merged into the survivor. Every move is logged, and the merge can be undone for 30
-  days, the same promise the People Book makes for a merged person.
+- **Merge** folds one event into another at the same venue. A named person does it and gives a reason. It is one
+  transaction, and it takes its locks in the order of section 5.4, the two events last and lower id first.
+- **What moves to the survivor:** held dates and bookings (the survivor's status and dates are then worked out
+  afresh), the enquiry, deal and proposal links, deposit requests, plan links, who may see it, passes, packs,
+  tasks, shifts and the plumbing's mail rows. Where the survivor already holds the same thing (the same plan
+  linked the same way, the same person given sight), the duplicate is folded into one.
+- **What stays on the loser:** its history. Its message threads (an event has one thread for each audience, by
+  a rule of the database, schema:6518-6523), its feed of changes and its notices stay where they are. A page that shows an
+  event's Story also reads the events merged into it. Its timetable stays too, unless a person has worked on it:
+  every event is born with the same eight empty phases (event-binding.ts:126), and moving those would give the
+  survivor two timetables. Phases someone has given a room or a time do move, for a person to tidy.
+- **The loser is kept, never deleted.** It is marked as merged into the survivor by a new pointer and by the
+  soft-delete date events already have. Its status word is not changed, and no new status word is stored.
+- **A write that arrives on a merged event follows it.** A booking or a link written onto the loser at the same
+  moment as the merge is re-pointed to the survivor by the writer itself, in the place every writer already
+  passes (the status sync, and `ensureEnquiryEvent`). The count has a line that proves none is left behind.
+- **Undo, for 30 days,** the same promise and the same rules as the People Book's merge
+  (`api/src/services/people-merge.ts`): every move is logged; undo moves back only the rows that are still where
+  the merge put them and names the rest in a report; a later merge of the same survivor must be undone first.
 - Merge refuses when both events have an open deal, and says so: a person closes one as a duplicate first.
 - **The guard that keeps merge honest:** a test reads the database's own list of every table that points at
-  events, and fails if merge does not either move that table or name it as deliberately left. A new table that
-  points at events breaks the test until merge knows about it.
+  events, and fails if merge does not say, for each one, which of three things it does: move the rows; move them
+  and fold duplicates (the same person given sight of both events becomes one row); or leave them, with the
+  reason written down. A new table that points at events breaks the test until merge knows about it.
 - **Split** is designed here and built with the event page (piece C), which is where a person would do it. A
   person picks the held dates, proposals and plans that leave; a new event is made for them and remembers which
-  event it came from, so the Story is kept. A held date that an agreement names cannot be split away from that
-  agreement.
-- Moving a single record between events on the review list (section 5.6) is the small version of the same
-  operation and is built now.
+  event it came from, so the Story is kept. After a split the enquiry stays with the first event, so a deal or a
+  proposal may rightly sit on a different event from its enquiry; the count allows that. A signed agreement is
+  never separated from the held dates it was signed for. Until agreements name their bookings (section 8.2,
+  built by piece E) that means an event with a signed agreement cannot be split.
+- Moving records between events on the review list (section 5.6) is the small version of the same operation and
+  is built now. A deal and its proposals move together, because a proposal prices its deal's occasion. A
+  proposal with no deal moves alone. The enquiry's own link is a separate question on the list.
 
 ### 5.6 The list of joins to check, and its screen
 
@@ -331,27 +395,31 @@ treats 0 as "not stated", never as a fact. Piece C shows them.
 
 ## 6. The rule in the database, and the check that proves it
 
+The definition of which records must have an event is in section 5.1. There is one.
+
 **The rules, once tightened (second migration):**
 
-- A proposal that is live (draft, sent, changes requested or accepted) must have an event: a check on the table,
-  like the one bookings have.
-- An open deal must have an event: the same.
+- A proposal that has been sent, or is a draft for a deal or an enquiry, must have an event: a check on the
+  table, like the one bookings have.
+- An open deal must have an event: the same. At most one open deal for each event: a unique index.
 - A deposit request in force must have an event.
 - Every link is pinned to its venue by its key. A link cannot be emptied.
-- Agreements need no rule of their own: an agreement can only be prepared for a proposal, and that proposal's
-  link cannot be emptied.
+- The parts of the definition a single table's check cannot see are held by the other rules together. A
+  proposal has always been sent before it can have an agreement or a deposit request, so it already has its
+  event by then, and the link cannot be emptied afterwards. The count proves it.
 
 **The count** (`readBindInvariant`, extended). Every number must be zero:
 
 | Count | What it finds |
 |---|---|
 | Unbound bookings; events that contradict their bookings | As today |
-| Live proposals without an event | A proposal that is live, or has an agreement, or has a deposit request in force, and no event |
+| Proposals without an event | A proposal that must have one (section 5.1) and has none |
 | Agreements without an event | An agreement whose proposal has no event |
 | Deposit requests without an event | In force, and no event |
 | Open deals without an event; worked enquiries without an event | The same rule for the other two links |
-| Links that disagree | A proposal and its deal on different events; a deposit request and its proposal on different events |
-| Links to a closed event | A live record pointing at a deleted or merged-away event |
+| Events with two open deals | Held by the unique index once tightened |
+| Links that disagree | A proposal and its deal on different events; a deposit request and its proposal on different events. A deal or proposal on a different event from its enquiry is allowed: that is what a split leaves |
+| Links to a closed event | A record that must have an event pointing at a deleted or merged-away one |
 | The event's `opportunity_id` in use | Must stay empty until it is dropped |
 
 **Where it runs:**
@@ -359,12 +427,15 @@ treats 0 as "not stated", never as a fact. Piece C shows them.
 - **On every change:** in CI, in the required database test job, on a throwaway database. Counts that the
   database makes impossible are asserted across the whole test database; the rest for the test's own venue,
   because that database is shared between tests.
-- **In production:** twice. In the deploy workflow straight after migrations, so a release that breaks the rule
-  fails. And nightly, in the scheduled workflow that already runs against production
-  (`.github/workflows/cleanup.yml`), so drift between releases is caught. Both run the existing read-only script.
-  When the plumbing's job list exists (piece 0) the nightly run moves there and can raise an alert to a phone.
-- Until the list of joins to check is empty, production's count will not be zero. The release note states the
-  number, and the deploy gate is switched on the day it reaches zero. The second migration cannot run before.
+- **In production:** twice, both with the existing read-only script. After every release, as a step of the
+  deploy workflow following its migrations. And nightly, in the scheduled workflow that already runs against
+  production (`.github/workflows/cleanup.yml`), so drift between releases is caught. A count above zero turns
+  the run red and is reported. When the plumbing's job list exists (piece 0) the nightly run moves there and can
+  raise an alert to a phone.
+- **It reports; it does not block a release.** Railway releases by itself, and the count is deliberately not put
+  in its pre-release step: a fault in the data must never be able to block the release that fixes it. (My call.)
+- Until the list of joins to check is empty, production's count will not be zero. Each run states the number,
+  and it must fall, never rise. The second migration cannot run before it reaches zero.
 
 ## 7. The backfill, the migration and the rollback
 
@@ -377,20 +448,22 @@ guessing:
 1. A record whose enquiry's held dates all sit in one event joins that event.
 2. Otherwise, a record whose floor plan is linked to exactly one event joins that event.
 3. Otherwise, a proposal whose deal's enquiry leads to exactly one event joins that event.
-4. A live record that no path reaches gets a new event of its own, as a booking with no event did in October.
+4. A record that must have an event (section 5.1) and that no path reaches gets a new event of its own, as a
+   booking with no event did in October. A closed enquiry with nothing live pointing at it gets none.
 5. A record that paths place in more than one event, or that two paths place in different events, is not joined.
-   It goes on the list of joins to check.
+   It goes on the list of joins to check. So do two open deals that would land on one event: neither is joined
+   until a person closes one or gives it its own event.
 
 Then it gives a row of sight to anyone who can see an event today by the strictest of the three rules, so nobody
 loses access on the day. Few or none are expected, since no route can grant it today.
 
 - **The mapping table** records every join the step made: the record, the event, which path, and whether the
   event was made by the step. Migration 0090 kept none; this is what makes the step reversible.
-- **The step is one repeatable database function.** It runs in the migration, and again after each deploy until
-  the second migration, to pick up anything written by the old server in the minutes before the new one takes
-  over. Running it twice changes nothing.
+- **The step is one repeatable database function.** It runs in the migration. Until the second migration, the
+  deploy workflow and the nightly workflow each run it again before they count, to pick up anything the old
+  server wrote in the minutes around a release. Running it twice changes nothing.
 - **The second migration tightens:** it runs the step once more, refuses to continue unless the count is zero,
-  then adds the checks of section 6 and drops the retired column.
+  then adds the checks and the unique index of section 6 and drops the retired column.
 
 **Rollback.** The project has no down migrations; its rule is additive changes, a hand-written undo, and the
 database backup as the last resort.
@@ -482,29 +555,45 @@ Written before the code they test. Database tests run on real PostgreSQL with an
   gets the same answer at every door.
 - **Becoming an event:** each act in section 5.2 makes exactly one event; a turned-down enquiry makes none; two
   acts at the same moment on one enquiry make one event, not two; the first hold on a worked enquiry joins its
-  event.
-- **Concurrent writes and the lock order:** a payment notice, an acceptance and a booking write on the same event
-  at once finish without a deadlock; two merges that cross finish or one is refused cleanly.
-- **The stage:** for every pairing of stored status and bookings that the count accepts, the function gives a
-  stage, and the stage agrees with the status. A structural test fails if a stage column is ever added.
+  event. A draft made from a plan alone has no event until it is sent. A second open deal on an event is
+  refused. Changing a proposal's deal moves its event; with an agreement in place it is refused.
+- **Concurrent writes and the lock order:** a proposal being sent, a hold being placed and a merge, all on the
+  same enquiry and event at once, finish without a deadlock; so do a payment notice, an acceptance and a booking
+  write; two merges that cross finish or one is refused cleanly.
+- **The stage:** every stored status gives a stage, with and without a live hold, before and after the date. For
+  every pairing of status and bookings that the count accepts, the stage agrees with the status. A structural
+  test fails if a stage column is ever added.
 - **Dates:** an edit to the dates of an event with a live booking is refused; one with none is accepted.
 - **The backfill:** a database written before the migration, with one case for each path and each kind of doubt;
   the real migrator; the expected joins, new events and review rows; then a second run that changes nothing.
 - **The backfill's rollback:** after the undo, the touched tables match what was there before, row for row; a
   link a person changed in between is left and reported.
-- **Merge:** every table that points at events is moved or named; the undo restores; a merge of two open deals
-  is refused.
+- **Merge:** every table that points at events is moved, folded or named as left; a duplicate plan link and a
+  person with sight of both become one row; untouched default phases stay behind and worked ones move; a booking
+  written onto the loser during the merge ends on the survivor; the undo restores what is still where the merge
+  put it and reports the rest; a merge of two open deals is refused.
 - **Hold promotion:** both branches of the addressee, fixed.
 - **The count:** each line of the table in section 6 has a test that makes it non-zero and sees it counted.
 
 ## 10. Neighbours
 
-- **Lane L2, the plumbing:** owns the job list, the outbox and the encrypted store. Its message rows will carry
-  the event or the enquiry; a staff reply calls `ensureEnquiryEvent`; its tables that point at events are picked
-  up by the merge guard.
+- **Lane L2, the plumbing** (agreed by message, 13 November): it owns the job list, the outbox and the encrypted
+  store. A follow-up is queued inside this piece's own transaction. Jobs carry ids and read the record again when
+  they run. Its message rows carry the event, the enquiry or both, and never drop the enquiry once the event is
+  set; mail on an enquiry nobody has worked reaches its event later through the enquiry's link. The act that
+  records a staff reply (piece F) calls `ensureEnquiryEvent`. Its keys to events are pinned to the venue, refuse
+  deletion and stay changeable, so merge can move them; where two events each hold a reply address for the same
+  person, both addresses stay alive on the survivor. Its job runner opens no transaction around a handler, and
+  its handlers follow the lock order of section 5.4.
 - **Lane L3, the Diary:** imports bookings through `insertBoundBookings`, unchanged. It is the likely first
   writer of the event's client account, under the rule in section 5.8.
-- **Lane L4, planners:** will use `event_participants`.
+- **Lane L4, planners** (agreed by message, 13 November, subject to Blake): a planner's own event is the
+  planner's record and is never a row in a venue's events. It points at the venue's event once the venue takes
+  it in; the pointer sits on the planner's side, refuses deletion and stays changeable for merge. Taking it in is
+  the venue working an enquiry that arrived from the planner, so there is one door into a venue's Events list.
+  The planner is then added to `event_participants` by that act. L4 needs the refusal to link a planner's own
+  plan lifted (section 5.3), so that is no longer only the builder's choice: it is lifted when L4's piece is
+  built, with its tests.
 - **#247, erase a person; the People Book's merge:** section 5.8.
 - **Piece C** builds the event page, split, owners and the stage words on top of this. **Piece D** builds People
   on the enquiry and deal links. **Piece E** builds the ledger of section 8. **Piece G** owns the numbers.
@@ -528,8 +617,16 @@ deposit request without its event, and a test fails if one client can see anothe
 
 ## 13. Calls made in this design, for Blake to check while reading
 
-- One open deal for each event, with lost deals kept as history, in place of one deal ever.
+- One open deal for each event, with lost deals kept as history, in place of one deal ever. A second open deal
+  on the same event is refused.
 - A viewing the venue books counts as working an enquiry; a reply that turns it down does not.
+- A draft proposal made from a plan alone has no event until it is sent. Every other proposal has one from the
+  moment it is made.
+- The production check reports and turns red; it does not block a release.
+- In a merge, the loser's messages, change feed and untouched timetable stay on the loser and are read through
+  it; everything else moves.
+- Everyone who can reach any client door of an event today keeps it (the backfill uses the loosest of today's
+  three rules).
 - Sight of an event is given only by a member of staff adding the person, and lasts until a person removes it.
   It no longer depends on a floor plan. The button for it waits for the event page and Blake's eye.
 - A plan's owner stops reading an event's timings by owning the plan alone.
