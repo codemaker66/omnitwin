@@ -328,13 +328,15 @@ describe.skipIf(testUrl === undefined)("field web vitals on the whole API (migra
     process.env["WEB_VITALS_COLLECTION"] = "on";
     const exact = wire(REPORT);
     expect(exact).toHaveLength(WEB_VITALS_REPORT_BYTES);
-    for (const body of [JSON.stringify(REPORT), `${exact} `, exact.slice(0, -1)]) {
-      const res = await server.inject({
-        method: "POST", url: "/public/web-vitals",
-        headers: { "content-type": "text/plain;charset=UTF-8", origin: "https://venviewer.com" },
-        payload: body, remoteAddress: "10.6.7.7",
-      });
-      expect(res.statusCode, String(body.length)).toBe(400);
+    for (const contentType of ["text/plain;charset=UTF-8", "application/json"]) {
+      for (const body of [JSON.stringify(REPORT), `${exact} `, exact.slice(0, -1)]) {
+        const res = await server.inject({
+          method: "POST", url: "/public/web-vitals",
+          headers: { "content-type": contentType, origin: "https://venviewer.com" },
+          payload: body, remoteAddress: "10.6.7.7",
+        });
+        expect(res.statusCode, `${contentType} ${String(body.length)}`).toBe(400);
+      }
     }
     expect(await rows()).toEqual([]);
     expect((await beacon(JSON.stringify(REPORT))).statusCode).toBe(204);

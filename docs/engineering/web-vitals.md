@@ -77,7 +77,8 @@ trailing spaces to the same 512 bytes (`WEB_VITALS_REPORT_BYTES`, below):
   digits and ratings ("needs-improvement" is longer than "good"), its page and device
   class (#309's round-4 review). The browser pads every report with trailing spaces,
   which JSON ignores, to `WEB_VITALS_REPORT_BYTES` (512; the longest report the schema
-  allows is about 330), and the API refuses a report of any other length.
+  allows is about 330), and the API refuses a report of any other length, measuring
+  the body it received rather than its Content-Length, which a proxy may drop.
 - **The four vitals** are measured by Google's `web-vitals` library (6.2.3): LCP,
   INP, CLS and TTFB, each with its rating. LCP, INP and CLS are taken at every
   change, so the values held are current when the visitor moves on. The library's

@@ -87,15 +87,22 @@ export async function publicWebVitalsRoutes(server: FastifyInstance, opts: Publi
     await write(true);
   });
 
+  // In this route's scope only, a JSON body arrives as its text, as a beacon's
+  // does, so the route can measure what was sent before reading it.
+  server.removeContentTypeParser("application/json");
+  server.addContentTypeParser("application/json", { parseAs: "string" }, (_request, text, done) => {
+    done(null, text);
+  });
+
   server.post("/web-vitals", {
     bodyLimit: REPORT_BODY_LIMIT_BYTES,
     // No per-request access line: it would carry remoteAddress, and the
     // notice says the address is not kept with the measurement. Errors still
     // log (as POST /public/quiz-runs).
     logLevel: "warn",
-    // A page load sends one report, and another if it is restored from the
-    // back/forward cache; an office shares one address. Keyed without the
-    // address itself (createAddressKey).
+    // A page load sends one report, and another for a vital first measured
+    // after a hide; an office shares one address. Keyed without the address
+    // itself (createAddressKey).
     config: { rateLimit: { max: 60, timeWindow: "1 minute", keyGenerator: (request) => addressKey.keyFor(request.ip) } },
   }, async (request, reply) => {
     reply.header("Cache-Control", "no-store");
@@ -110,11 +117,13 @@ export async function publicWebVitalsRoutes(server: FastifyInstance, opts: Publi
     }
     // Every report is sent at one size (WEB_VITALS_REPORT_BYTES): the host's
     // request log records each request's size, which would otherwise follow
-    // what the report carries. One of any other length is refused.
-    if (request.headers["content-length"] !== String(WEB_VITALS_REPORT_BYTES)) {
+    // what the report carries. One of any other length is refused. The body
+    // itself is measured, not its Content-Length, which a proxy may drop.
+    const body: unknown = request.body;
+    if (typeof body !== "string" || Buffer.byteLength(body) !== WEB_VITALS_REPORT_BYTES) {
       return reply.status(400).send({ error: "Not a web vitals report", code: "VALIDATION_ERROR" });
     }
-    const parsed = WebVitalsReportSchema.safeParse(readBody(request.body));
+    const parsed = WebVitalsReportSchema.safeParse(readBody(body));
     if (!parsed.success) {
       return reply.status(400).send({ error: "Not a web vitals report", code: "VALIDATION_ERROR" });
     }
