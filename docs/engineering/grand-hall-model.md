@@ -296,9 +296,15 @@ filtered) and installed as the scene's environment before the room's first frame
 (`HallEnvironmentCapture.prepare`), and every capture refills it: installing a new texture with the
 first capture made three rebuild every material of the scene pass once more, a 2.2-3.0 s
 main-thread task at 4x CPU on the phone profile, on master as on the branch (review R2). `HallEnvironment` stands in only
-while the room is not drawn. The canvas uses Khronos PBR Neutral tone mapping for the
-photographed room (`lib/capture-display.ts`), which keeps the photographs' mid-tones, after the
-planner's pipeline grades each mood ([planner rendering](planner-rendering.md)).
+while the room is not drawn. The canvas draws the photographed room through Khronos PBR Neutral
+with its toe as a number (`lib/film-toe.ts`, chosen in `lib/capture-display.ts` and
+`CaptureToneMapping`), after the planner's pipeline grades each mood
+([planner rendering](planner-rendering.md)). Neutral's toe takes up to 0.04 from every channel to
+cancel the mirror reflection of a lit material; a photograph has none, so at that toe the wall
+atlas shows 11 levels darker per channel on average and its texels under L* 10 rise from 8.4 % to
+14.9 % (simulated on `walls-4096.webp`, 13 November 2026). The default toe is still Neutral's
+0.04, value for value; at 0 a colour under the shoulder leaves as it arrived, so Daylight is the
+photograph. `?toe=0` to `?toe=0.04` in the page address draws with another toe for comparison.
 
 ## The real sky (`?sky=1`)
 
