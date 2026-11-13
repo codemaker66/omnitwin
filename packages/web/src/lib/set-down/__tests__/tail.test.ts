@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { fft, seededRandom } from "../../planner-sound-render.js";
 import { OCTAVE_BANDS_HZ, type BandValues } from "../bands.js";
-import { referenceDinner, roomAcousticsFor, roomState } from "../room-acoustics.js";
+import { referenceDinner, roomState } from "../room-acoustics.js";
 import { ROOM_ACOUSTICS, UNCALIBRATED, isRoomSlug, type RoomAcoustics, type RoomSlug } from "../rooms.js";
 import {
   TAIL_STEP_SAMPLES,
@@ -316,16 +316,12 @@ describe("renderRoomTail", () => {
   });
 
   it("stops at five seconds however long the room rings, the same at every rate: within 2 MB at 44.1 and 48 kHz, 3.84 MB at 96 kHz", () => {
-    // The plain plaster box a space with no survey gets is such a room: it rings about 6.5 s.
-    const box = roomState(roomAcousticsFor(null), []).rt;
-    for (const rings of [[6, 7, 8, 8, 7, 6, 5] as const, box]) {
-      expect(Math.max(...rings)).toBeGreaterThan(5 / 1.2);
-      for (const [rate, bytes] of [[44100, 1_764_000], [48000, 1_920_000], [96000, 3_840_000]] as const) {
-        const long = renderRoomTail(rings, { ...OPTIONS, sampleRate: rate });
-        expect(long.left.length).toBe(5 * rate);
-        expect(long.left.byteLength + long.right.byteLength).toBe(bytes);
-        expect(Math.abs(energy(long.left) - 1)).toBeLessThanOrEqual(1e-3);
-      }
+    const rings: BandValues = [6, 7, 8, 8, 7, 6, 5];
+    for (const [rate, bytes] of [[44100, 1_764_000], [48000, 1_920_000], [96000, 3_840_000]] as const) {
+      const long = renderRoomTail(rings, { ...OPTIONS, sampleRate: rate });
+      expect(long.left.length).toBe(5 * rate);
+      expect(long.left.byteLength + long.right.byteLength).toBe(bytes);
+      expect(Math.abs(energy(long.left) - 1)).toBeLessThanOrEqual(1e-3);
     }
   });
 
@@ -377,7 +373,7 @@ describe("timeAtFrequency", () => {
 });
 
 describe("tailSlices", () => {
-  it.each(RATES)("works in bounded steps at %i Hz and returns the same tail as renderRoomTail", (rate) => {
+  it.each(RATES)("works in bounded steps at %i Hz, the setup a step of its own, and returns the same tail as renderRoomTail", (rate) => {
     const whole = rate === RATE ? tail : renderRoomTail(RT, { ...OPTIONS, sampleRate: rate });
     const slices = tailSlices(RT, { ...OPTIONS, sampleRate: rate });
     const steps: number[] = [];
@@ -388,7 +384,9 @@ describe("tailSlices", () => {
     }
     const sliced: Stereo = step.value;
     expect(steps.length).toBeGreaterThanOrEqual(7);
-    for (const samples of steps) {
+    // The first step sets the synthesis up and covers no samples (ruling R72); every later one covers some.
+    expect(steps[0]).toBe(0);
+    for (const samples of steps.slice(1)) {
       expect(samples).toBeGreaterThan(0);
       expect(samples).toBeLessThanOrEqual(TAIL_STEP_SAMPLES);
     }

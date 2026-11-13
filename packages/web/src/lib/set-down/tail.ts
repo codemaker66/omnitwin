@@ -213,6 +213,9 @@ function* synthesisSteps(
   }
   const re = new Float64Array(frame);
   const im = new Float64Array(frame);
+  // The setup (the window, each bin's decay and phases) is a step of its own and covers no samples: at 192 kHz it
+  // and the first frame together took longer than an idle slice (ruling R72).
+  yield 0;
   const length = left.length;
   let framesInStep = 0;
   for (let frameStart = firstFrame; frameStart < length; frameStart += hop) {
@@ -274,11 +277,12 @@ function* finishSteps(channel: Float32Array, start: number, sampleRate: number):
 }
 
 /**
- * Renders the tail in steps, so it can be driven in idle slices. Each step
- * covers at most TAIL_STEP_SAMPLES samples of each channel (a few frames, or
- * a chunk of the normalising) and yields how many it covered. The number of
- * steps grows with the tail's length. The last call returns the finished
- * tail, identical to `renderRoomTail`'s for the same options.
+ * Renders the tail in steps, so it can be driven in idle slices. The first
+ * step is the synthesis's setup and covers no samples; each later one covers
+ * at most TAIL_STEP_SAMPLES samples of each channel (a few frames, or a chunk
+ * of the normalising) and yields how many it covered. The number of steps
+ * grows with the tail's length. The last call returns the finished tail,
+ * identical to `renderRoomTail`'s for the same options.
  */
 export function* tailSlices(
   rt: BandValues,

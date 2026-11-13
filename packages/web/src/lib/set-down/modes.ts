@@ -331,11 +331,13 @@ const CAP_MODULUS_PA: Readonly<Record<HardCap, number>> = {
  * across the grain. The Wood Handbook gives oak's across-grain moduli as
  * ratios to the along-grain E_L: E_T / E_L 0.082 and E_R / E_L 0.154 for red
  * oak, 0.072 and 0.163 for white oak, at about 12 % moisture (Kretschmann
- * 2010, Wood Handbook FPL-GTR-190, ch. 5, Table 5-1, p. 5-2), with E_L the
- * bending modulus plus 10 % (its note a): 12.5 GPa for northern red oak and
- * 12.3 GPa for white oak at 12 % (Table 5-3a, pp. 5-5 and 5-6). So E_T is
- * 1.0-1.1 GPa and E_R 2.1-2.2 GPa, and oak and parquet take 1.5 GPa, between
- * them (EST: a board's face is tangential or radial as it was sawn).
+ * 2010, Wood Handbook FPL-GTR-190, ch. 5, Table 5-1, p. 5-2; the 2021 edition,
+ * FPL-GTR-282, could not be reached on 13 Nov 2026). The bending modulus (MOE)
+ * at 12 % is 12.5 GPa for northern red oak and 12.3 GPa for white oak (Table
+ * 5-3a, pp. 5-5 and 5-6), and E_L is about 1.1 x MOE (Table 5-1's note a),
+ * about 13.75 and 13.5 GPa. So E_T is 1.0-1.1 GPa and E_R 2.1-2.2 GPa, and oak
+ * and parquet take 1.5 GPa, between them (EST: a board's face is tangential or
+ * radial as it was sawn).
  * Timber on a slab is the same timber face (ruling R47): a hard foot's Hertz
  * contact is about 2 mm in radius and its stress lies within about 5 mm of
  * the face, inside a board of 20 mm or more (the Reception Room's board is
