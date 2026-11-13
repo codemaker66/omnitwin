@@ -1327,8 +1327,10 @@ export const useEditorStore = create<EditorStore>()(withSaveFacts((set, get) => 
           changes: changedBetween(restoreBase, restoredDraft.objects).size,
           editedAt: new Date(restoredDraft.updatedAtMs),
         },
-        // Opening the layout left behind is what its note asked for.
-        leftBehind: leftBehind?.configId === config.id ? null : leftBehind,
+        // Opening the layout left behind is what its note asked for about its
+        // changes; a refused clear's sentence stands until the person
+        // dismisses it (ruling R1(b) on #388; delta review X6).
+        leftBehind: leftBehind?.configId === config.id ? sentenceStanding(leftBehind) : leftBehind,
       });
       // G4: config boundary — seal any open gesture from the previous
       // config's timeline, ship its unsent tail (the flush snapshots the
@@ -2643,7 +2645,10 @@ function leftBehindFor(state: EditorState, kept: boolean | null): LeftBehindWork
   const roomName = state.space?.name ?? null;
   // Shown in the next layout, the sentence says which layout it is about, by
   // the room's name as the note's own sentence names it (delta review X3).
-  const notRemoved = refusedClearsLine(state, layoutNamed(roomName));
+  // One carried from an earlier layout and not yet dismissed goes on beside
+  // it: a new note does not put it away (delta review X6).
+  const said = [refusedClearsLine(state, layoutNamed(roomName)), state.leftBehind?.notRemoved ?? null];
+  const notRemoved = saidTogether(...new Set(said));
   return {
     configId: state.configId,
     roomName,
@@ -2660,14 +2665,19 @@ function leftBehindFor(state: EditorState, kept: boolean | null): LeftBehindWork
  */
 function workArrived(note: LeftBehindWork | null, configId: string): Partial<Pick<EditorState, "leftBehind">> {
   if (note?.configId !== configId) return {};
-  return { leftBehind: note.notRemoved === undefined ? null : { ...note, kept: null, savesOnReturn: false } };
+  return { leftBehind: sentenceStanding(note) };
 }
 
-/** Nothing is left unsaved: "saved", unless a refused clear's notice stands, whose sentence then goes in the next layout's note. */
+/** What a note about a layout still says once none of its work waits: a refused clear's sentence, until it is dismissed; else nothing. */
+function sentenceStanding(note: LeftBehindWork): LeftBehindWork | null {
+  return note.notRemoved === undefined ? null : { ...note, kept: null, savesOnReturn: false };
+}
+
+/** Nothing is left unsaved: "saved", unless a refused clear's notice stands here, whose sentence then goes in the next layout's note. */
 function settledWithNothingUnsaved(state: EditorState): LayoutChangeOutcome {
-  const note = leftBehindFor(state, null);
-  if (note?.notRemoved === undefined) return "saved";
-  useEditorStore.setState({ leftBehind: note });
+  // A sentence carried from an earlier layout goes on in the note it is in.
+  if (refusedClearsLine(state) === null) return "saved";
+  useEditorStore.setState({ leftBehind: leftBehindFor(state, null) });
   return "clear-refused";
 }
 

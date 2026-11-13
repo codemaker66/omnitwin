@@ -154,6 +154,10 @@ beforeEach(() => {
   vi.clearAllMocks();
   localStorage.clear();
   store().reset();
+  // A note about a layout left behind outlives a reset, as it outlives a switch
+  // (closeLayout), and since X6 reopening its layout does not put it away: no
+  // test inherits the last one's.
+  useEditorStore.setState({ leftBehind: null });
   useSelectionStore.getState().clearSelection();
   usePlacementNoticeStore.getState().dismiss();
   useAuthStore.getState().setUser(null);
@@ -1890,6 +1894,49 @@ describe("Keep mine refused for notes the maker rewrote, among many notes of the
     // Not carried, it is as it was.
     expect(refusedClearsLine({ objects: [held], baseObjects: [{ ...held, noteHeld: true }], noteClearsRefused: [B] })).toBe(TABLE_7_NOT_REMOVED);
   });
+
+  // Delta review of #388 at 7a51b6e4, X6. The carried sentence stands until
+  // the person dismisses it (ruling R1(b)), but going back to the layout it is
+  // about dropped it, and the next layout's own note replaced it.
+  async function refusedThenSwitched(): Promise<readonly string[]> {
+    const server: PlanOnServer = { revision: 4, notes: new Map() };
+    const tables = await theyRewrite(server, 9, [6], () => { store().setObjectNotes(tableId(6), ""); });
+    expect(await store().keepMine(false)).toBe(false);
+    expect(await saveBeforeLayoutChange()).toBe("clear-refused");
+    await openAnotherLayout();
+    expect(store().leftBehind).toMatchObject({ configId: PLAN, notRemoved: TABLE_7_NOT_REMOVED });
+    vi.mocked(configApi.getPublicConfig).mockResolvedValue({
+      ...plan([placed(A), ...tables.map((id, index) => placed(id, { displayLabel: `Table ${String(index + 1)}`, noteHeld: true }, index + 1))], false),
+      revision: server.revision,
+    });
+    return tables;
+  }
+
+  it("keeps the carried sentence, undismissed, when the person goes back to the layout it is about", async () => {
+    await refusedThenSwitched();
+    await store().loadConfiguration(PLAN, false);
+    expect(store().configId).toBe(PLAN);
+    expect(store().leftBehind).toMatchObject({ configId: PLAN, kept: null, savesOnReturn: false, notRemoved: TABLE_7_NOT_REMOVED });
+    // Leaving it again with nothing unsaved and nothing newly refused is "saved"; the sentence goes on with the person.
+    expect(await saveBeforeLayoutChange()).toBe("saved");
+    await openAnotherLayout();
+    expect(store().leftBehind).toMatchObject({ notRemoved: TABLE_7_NOT_REMOVED });
+  });
+
+  it("carries the earlier layout's sentence on in the note the next layout leaves behind", async () => {
+    await refusedThenSwitched();
+    // In the other layout the person moves a piece offline, and opens a third: that work is kept on this device.
+    const wasOnline = store().isOnline;
+    useEditorStore.setState({ isOnline: false });
+    try {
+      store().updateObject(D, { positionX: 2 });
+      expect(await saveBeforeLayoutChange()).toBe("kept");
+      expect(store().leftBehind).toMatchObject({ configId: OTHER_PLAN, kept: true, notRemoved: TABLE_7_NOT_REMOVED });
+    } finally {
+      // The connection outlives a reset too.
+      useEditorStore.setState({ isOnline: wasOnline });
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -2234,6 +2281,7 @@ describe("no save names words this browser has not shown the person, over seeded
     vi.clearAllMocks();
     localStorage.clear();
     store().reset();
+    useEditorStore.setState({ leftBehind: null });
     useSelectionStore.getState().clearSelection();
     usePlacementNoticeStore.getState().dismiss();
     useAuthStore.getState().setUser(null);
