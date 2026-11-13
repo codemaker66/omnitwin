@@ -7,6 +7,7 @@ import {
   copyForEditorSaveStatus,
   deriveEditorSaveStatus,
 } from "../../lib/editor-save-status.js";
+import { NOTE_HELD_CODE, pieceNamedForRefusedSave, refusedOverHeldNote } from "../../lib/guest-plan-notes.js";
 import { GuestEnquiryModal } from "./GuestEnquiryModal.js";
 import { VisitorPlanPdfSheet } from "./VisitorPlanPdfSheet.js";
 import { prepareLayoutForGuestEnquiry } from "./send-layout-flow.js";
@@ -191,6 +192,11 @@ export function MobilePlannerTopBar({
     };
   }, []);
 
+  // A save refused over a note this browser is not shown (409 NOTE_HELD) is
+  // not offered for retry: the same save meets the same refusal. This bar has
+  // no room for the API's sentence, which the save notice shows; it says the
+  // layout has unsaved changes. A choice between versions keeps its control.
+  const refusedForHeldNote = useEditorStore((s) => refusedOverHeldNote(s.saveErrorCode) && s.saveConflict === null);
   const status = deriveEditorSaveStatus({
     configId,
     isDirty,
@@ -198,8 +204,17 @@ export function MobilePlannerTopBar({
     saveError,
     lastSavedAt,
     isOnline: online,
+    refusedForHeldNote,
   });
   const saveCopy = copyForEditorSaveStatus(status);
+  // The sentence itself, as the save notice shows it (EditorPage SaveErrorToast),
+  // for a screen reader: that notice is inserted already holding it, which is
+  // not reliably announced, and a phone has no room header whose status says it
+  // (delta review of #388 at 713dc3f1, C5). It goes into a region that stays.
+  const refusedPiece = useEditorStore((s) => (s.saveErrorCode === NOTE_HELD_CODE ? pieceNamedForRefusedSave(s) : null));
+  const refusalSaid = refusedForHeldNote && saveError !== null
+    ? refusedPiece === null ? saveError : `${refusedPiece}: ${saveError}`
+    : "";
 
   const retrySave = (): void => {
     if (timelinePreviewActive || isLayoutTimelineMutationLocked()) return;
@@ -265,6 +280,7 @@ export function MobilePlannerTopBar({
               {saveCopy.label}
             </div>
           )}
+          <p className="vv-sr-only" aria-live="polite" data-testid="mobile-planner-save-refusal">{refusalSaid}</p>
         </div>
 
         <div style={segmentStyle} role="group" aria-label="View mode">

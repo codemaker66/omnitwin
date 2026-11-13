@@ -221,3 +221,39 @@ describe("chairs and anything else", () => {
     expect(result.plan.add[0]).toMatchObject({ x: 4, z: 1 });
   });
 });
+
+// A guest plan's notes go only to the browser that made it; any other is told
+// which pieces hold one and cannot read them (lib/guest-plan-notes). Such a
+// note cannot be carried to a new table, and a piece that goes takes it along.
+describe("a selection with a piece whose note this browser is not shown", () => {
+  it("is refused before any plan is made, naming the piece, whatever the card", () => {
+    setPlannerFeaturesForTesting({ tableSets: true });
+    const room = block();
+    const tables = [...tableIds(room)];
+    const table2 = room.find((piece) => piece.label === "Table 2");
+    if (table2 === undefined) throw new Error("no Table 2");
+    const holdsUnseenNote = (id: string): boolean => id === table2.id;
+
+    for (const card of [params("long-table"), params("round", { seats: 8 }), params(pieceCardId("bar-counter"))]) {
+      const result = planReplace(new Set(tables), card, world(room), { newId: ids, hasNote: () => false, holdsUnseenNote });
+      expect(result).toEqual({ ok: false, obstacle: null, reason: "Nothing was replaced: Table 2 has a note that cannot be shown here." });
+    }
+    // The same selection without the mark is planned as ever.
+    expect(planReplace(new Set(tables), params("long-table"), world(room), { newId: ids }).ok).toBe(true);
+  });
+
+  it("names a chair by the table it is at, and a piece nobody named by what it is", () => {
+    const named = round(0, 0, "Table 7");
+    const chair = named[3];
+    const [table] = named;
+    if (chair === undefined || table === undefined) throw new Error("no round");
+    const byChair = planReplace(new Set([table.id]), params("round", { seats: 8 }), world(named), { newId: ids, holdsUnseenNote: (id) => id === chair.id });
+    expect(byChair.ok ? "" : byChair.reason).toBe("Nothing was replaced: a chair at Table 7 has a note that cannot be shown here.");
+
+    const unnamed = round(0, 0, "");
+    const [bare] = unnamed;
+    if (bare === undefined) throw new Error("no round");
+    const byTable = planReplace(new Set([bare.id]), params("round", { seats: 8 }), world(unnamed), { newId: ids, holdsUnseenNote: (id) => id === bare.id });
+    expect(byTable.ok ? "" : byTable.reason).toBe("Nothing was replaced: a table has a note that cannot be shown here.");
+  });
+});

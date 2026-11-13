@@ -5,6 +5,7 @@ import { BlueprintPage } from "../pages/BlueprintPage.js";
 import { MobilePlannerTopBar } from "../components/editor/MobilePlannerTopBar.js";
 import { useEditorStore, type EditorObject } from "../stores/editor-store.js";
 import { useCockpitStore } from "../stores/cockpit-store.js";
+import { usePlacementNoticeStore } from "../stores/placement-notice-store.js";
 import { GuestsLensPanel } from "../components/editor/cockpit/GuestsLensPanel.js";
 import { MAX_GUEST_FLOW_AGENTS } from "../lib/guest-flow-layout-input.js";
 
@@ -90,6 +91,48 @@ describe("BlueprintFromStore save status", () => {
     expect(chrome()).toContain("Layout saved");
     expect(mobile()).toContain("Layout saved");
     expect(chrome()).not.toContain("Not saved");
+  });
+
+  // A save the API refused over a note this browser is not shown is unsaved
+  // work, not a save to retry: the same save meets the same refusal (delta
+  // review of #388, D8). The save notice carries the API's sentence.
+  it.each([
+    ["NOTE_HELD", "A note on this plan cannot be changed from here, and this save tried to change it. Clear the note you wrote on that piece."],
+    ["HELD_PIECE_OMITTED", "Nothing was saved: this save would remove a piece with a note that cannot be shown here. Reload the page to put it back."],
+  ])("calls a save refused over a held note unsaved changes, and offers no retry (%s)", (code, refusal) => {
+    useEditorStore.setState({ configId: "saved-layout", lastSavedAt: new Date(Date.now() - 120_000), isDirty: true, saveError: refusal, saveErrorCode: code });
+    const { container } = render(<BlueprintPage source="editor-store" />);
+    const chrome = (): string => container.querySelector(".bp-chrome")?.textContent ?? "";
+    expect(chrome()).toContain("Unsaved changes");
+    expect(chrome()).not.toMatch(/retry/iu);
+    // Any other failed save still reads as one to retry.
+    act(() => { useEditorStore.setState({ saveError: "Failed", saveErrorCode: "NETWORK_ERROR" }); });
+    expect(chrome()).toContain("Save failed - retry");
+  });
+
+  // A refused clear of a note leaves nothing unsaved while its notice stands,
+  // and the saves made since land (ruling R1(b) on #388): the 2D view never
+  // says the layout saved until the person dismisses it (delta review at 33a8e0ad, T3).
+  it("never says the layout saved while a refused clear's notice stands, across a save that lands", () => {
+    useEditorStore.getState().replaceObjectsFromScene([object("table-7", "round-table-6ft", null)]);
+    useEditorStore.setState({
+      configId: "saved-layout", isDirty: false, isSaving: false, lastSavedAt: new Date(Date.now() - 120_000),
+      saveError: "Table 7's note was not removed: it was changed somewhere else, and that note cannot be shown here.",
+      saveErrorCode: "NOTE_HELD", noteClearsRefused: ["table-7"],
+    });
+    const { container } = render(<BlueprintPage source="editor-store" />);
+    const chrome = (): string => container.querySelector(".bp-chrome")?.textContent ?? "";
+    const seen = [chrome()];
+    act(() => { useEditorStore.setState({ isSaving: true }); });
+    seen.push(chrome());
+    act(() => { useEditorStore.setState({ isSaving: false, lastSavedAt: new Date() }); });
+    seen.push(chrome());
+    expect(seen.filter((text) => /\bsaved\b/iu.test(text) && !/unsaved/iu.test(text))).toEqual([]);
+    expect(chrome()).toContain("Unsaved changes");
+
+    act(() => { useEditorStore.getState().dismissRefusedClears(); });
+    expect(chrome()).toContain("Saved");
+    expect(chrome()).not.toContain("Unsaved");
   });
 });
 
@@ -222,6 +265,31 @@ describe("BlueprintFromStore undo toolbar", () => {
 
     fireEvent.click(redo);
     expect(useEditorStore.getState().objects).toHaveLength(1);
+  });
+});
+
+// The planner's placement notices (Undo's and Redo's refusals, the line that
+// says a piece stayed) were posted only to the notice the 3D view mounts, so in
+// the 2D view a refused Undo did nothing and said nothing (delta review of
+// #388 at 713dc3f1, C2). The 2D view shows them in the same polite status.
+describe("BlueprintFromStore placement notices", () => {
+  beforeEach(() => { usePlacementNoticeStore.getState().dismiss(); });
+
+  it("says why its Undo did nothing, when the step would take a piece that has come to hold a note this browser is not shown", () => {
+    const table: EditorObject = { ...object("held-table", "round-table-6ft", null), label: "Table 3" };
+    // A guest plan read without its notes: the person placed Table 3 and saved it.
+    useEditorStore.setState({ configId: "guest-plan", configRevision: 2, isPublicPreview: true, notesIncluded: false });
+    act(() => { useEditorStore.getState().replaceObjectsFromScene([table]); });
+    // Since then the maker has written a note on it, and the confirmed copy says it holds one.
+    act(() => { useEditorStore.setState({ baseObjects: [{ ...table, noteHeld: true }], isDirty: false }); });
+    render(<BlueprintPage source="editor-store" />);
+
+    fireEvent.click(screen.getByTitle("Undo (⌘Z)"));
+
+    expect(useEditorStore.getState().objects.map((piece) => piece.id)).toEqual(["held-table"]);
+    const region = screen.getByTestId("placement-notice-region");
+    expect(region.getAttribute("role")).toBe("status");
+    expect(region.textContent).toBe("Nothing was undone: Table 3 has a note that cannot be shown here.");
   });
 });
 

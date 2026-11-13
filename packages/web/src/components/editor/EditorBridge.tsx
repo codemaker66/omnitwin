@@ -13,6 +13,7 @@ import { usePlacementStore } from "../../stores/placement-store.js";
 import { useSelectionStore } from "../../stores/selection-store.js";
 import { useAuthStore } from "../../stores/auth-store.js";
 import type { PlacedItem } from "../../lib/placement.js";
+import { NOTE_HELD_CODE, ownWordsOverHeldNotes } from "../../lib/guest-plan-notes.js";
 import { normalizeFurnitureScale } from "../../lib/furniture-scale.js";
 import { scheduleGangwayReviewRecord } from "../../lib/gangway-review-record.js";
 import { seededNote } from "../../lib/note-seeds.js";
@@ -126,6 +127,10 @@ export function placedItemToEditor(item: PlacedItem, existing: EditorObject | un
     groupId: item.groupId,
     // A note an edit hands the piece in this write (Replace, lib/note-seeds), so piece and note are one undo step.
     notes: seededNote(item.id) ?? existing?.notes ?? "",
+    // The server's mark that the piece holds a note this browser is not shown
+    // is the piece's, not the scene's: it passes through unchanged, or the
+    // history would record every rebuild as taking it off.
+    ...(existing?.noteHeld === true ? { noteHeld: true } : {}),
   };
   const label = (item.label ?? "").trim();
   return label.length > 0 ? { ...base, label } : base;
@@ -422,6 +427,12 @@ function attemptAutoSave(isAuthenticated: boolean): void {
   // could only meet it again: a request per edit, the conflict refetched and
   // re-raised each time, and a guest's hourly save allowance spent on it.
   if (state.saveConflict !== null) return;
+  // A save the API refused because the person's own words stand over a note
+  // this browser is not shown (409 NOTE_HELD) is refused again until those
+  // words come off: a request per edit, the refusal raised each time, and the
+  // save allowance spent on it. It goes at the first tick after they are off;
+  // the Save control still sends it by hand (lib/guest-plan-notes).
+  if (state.saveErrorCode === NOTE_HELD_CODE && ownWordsOverHeldNotes(state).length > 0) return;
   if (state.isDirty && state.configId !== null) {
     void state.saveToServer(isAuthenticated);
   }
@@ -496,6 +507,13 @@ export function watchPlannerPageLeave(): () => void {
  * enquiry and review flows the venue holds the latest layout while newer
  * objects had never been pushed — reporting success over a stale layout is an
  * unfounded claim, not merely a bug.
+ *
+ * A save that landed everything but a clear of a note the API refused is its
+ * own outcome (landedButForRefusedClears): saveToServer answers false, as no
+ * change of the person's may be said to have saved over a clear it refused,
+ * yet nothing of the document is left to send, as the next flush would find.
+ * The flush answers true then, so Send goes on, on its first press, beside the
+ * clear's notice, which stands (ruling R1(b) on #388; delta review S6).
  */
 export async function flushAutoSave(transport?: BatchSaveTransport): Promise<boolean> {
   if (bridgeSaveTimer !== null) {
@@ -511,7 +529,13 @@ export async function flushAutoSave(transport?: BatchSaveTransport): Promise<boo
     const saved = transport === undefined
       ? await state.saveToServer(authenticated)
       : await state.saveToServer(authenticated, transport);
-    return saved && isCurrentEditorSession(session);
+    if (!isCurrentEditorSession(session)) return false;
+    return saved || landedButForRefusedClears(useEditorStore.getState());
   }
   return true;
+}
+
+/** After a save answered false: it landed, and only clears of notes were refused, whose notice stands. */
+function landedButForRefusedClears(state: Pick<ReturnType<typeof useEditorStore.getState>, "isDirty" | "isSaving" | "saveConflict" | "noteClearsRefused">): boolean {
+  return !state.isDirty && !state.isSaving && state.saveConflict === null && state.noteClearsRefused.length > 0;
 }

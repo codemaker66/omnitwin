@@ -11,6 +11,7 @@ import { RENDER_SCALE } from "../../../constants/scale.js";
 import { MAX_GUEST_FLOW_AGENTS } from "../../../lib/guest-flow-layout-input.js";
 import { getCatalogueItemBySlug } from "../../../lib/catalogue.js";
 import { DEFAULT_PLANNER_ROUND_TABLE_SLUG, plannerChairSlug } from "../../../lib/furniture-defaults.js";
+import { heldNoteIds } from "../../../lib/guest-plan-notes.js";
 import { plannerFeatureEnabled } from "../../../lib/planner-features.js";
 import { banquetSeatsPerTable } from "../../../lib/table-group.js";
 import { guestsAbovePublished, type PublishedCapacityAnswer } from "../../../lib/planner-truth.js";
@@ -18,9 +19,11 @@ import {
   FILL_AISLE_RULE,
   autoFillActionLabel,
   autoFillBasis,
+  autoFillPlacedLine,
   autoFillStyleOption,
   fillConsequence,
   fillConsequenceLine,
+  fillKeptForNotesLine,
   fillOverActionLabel,
   fillOverDoneLine,
   planAutoFill,
@@ -31,6 +34,7 @@ import {
   roomExits,
   type AutoFillPlan,
   type AutoFillStyle,
+  type NoRoomFill,
   type RoomFill,
 } from "../../../lib/auto-fill.js";
 import "./AutoFill.css";
@@ -93,29 +97,32 @@ export function AutoFillPrompt({ style, published, onPlaced, onCancel }: AutoFil
   const placedItems = usePlacementStore((state) => (fillsOver ? state.placedItems : null));
   const roomSlug = useEditorStore((state) => state.space?.slug ?? null);
   const objects = useEditorStore((state) => state.objects);
+  // A round with a note this browser is not shown stays where it stands: the preview is given what the store reads.
+  const heldNotes = useEditorStore((state) => heldNoteIds(state));
   const exits = useMemo(() => roomExits(roomSlug), [roomSlug]);
   // A round's seats are the event's chair as well (its table group reads it), so both plans follow the event.
-  const preview = useMemo((): { readonly plan: AutoFillPlan; readonly fill: RoomFill | null } | null => {
+  const preview = useMemo((): { readonly plan: AutoFillPlan | null; readonly fill: RoomFill | NoRoomFill | null } | null => {
     if (guests === null) return null;
     const widthM = dimensions.width / RENDER_SCALE;
     const lengthM = dimensions.length / RENDER_SCALE;
     const keepOuts = doorKeepOuts(doorSpaces);
     const table = getCatalogueItemBySlug(DEFAULT_PLANNER_ROUND_TABLE_SLUG);
     if (fillsOver && placedItems !== null && table !== undefined) {
-      const fill = planRoomFill({ table, seatsPerTable: banquetSeatsPerTable(table), guests, roomWidthM: widthM, roomLengthM: lengthM, exits, rule: FILL_AISLE_RULE, doorSpaces: keepOuts }, placedItems);
-      return fill === null ? null : { plan: fill.plan, fill };
+      const fill = planRoomFill({ table, seatsPerTable: banquetSeatsPerTable(table), guests, roomWidthM: widthM, roomLengthM: lengthM, exits, rule: FILL_AISLE_RULE, doorSpaces: keepOuts }, placedItems, (id) => heldNotes.has(id));
+      return { plan: fill.plan, fill };
     }
-    const planned = planAutoFill(style, guests, widthM, lengthM, eventChair, { doorSpaces: keepOuts });
-    return planned === null ? null : { plan: planned, fill: null };
-  }, [guests, style, dimensions, fillsOver, placedItems, exits, eventChair, doorSpaces]);
+    return { plan: planAutoFill(style, guests, widthM, lengthM, eventChair, { doorSpaces: keepOuts }), fill: null };
+  }, [guests, style, dimensions, fillsOver, placedItems, exits, eventChair, doorSpaces, heldNotes]);
   const plan = preview?.plan ?? null;
   // What a fill over a laid floor does to the rounds already there, said before it is pressed (planner-qol C-02).
   const consequence = useMemo(() => {
     const fill = preview?.fill ?? null;
-    if (fill === null || placedItems === null) return null;
+    if (fill === null || fill.plan === null || placedItems === null) return null;
     const noted = new Set(objects.filter((object) => object.notes.trim() !== "").map((object) => object.id));
     return fillConsequence(placedItems, fill.refillIds, fill.plan, (id) => noted.has(id));
   }, [preview, placedItems, objects]);
+  // Rounds left where they stand for their notes can be what leaves the fill no room: said beside the room's line (review of #388, KG2).
+  const keptWithoutRoom = plan === null && preview !== null && preview.fill !== null ? fillKeptForNotesLine(preview.fill.keptForNotes) : null;
   const figure = publishedFigureFor(published, option.format);
   const short = plan === null ? null : roomAtSpacingLine(plan, figure);
   // Only when the room takes them: above the published figure is its own fact.
@@ -137,7 +144,10 @@ export function AutoFillPrompt({ style, published, onPlaced, onCancel }: AutoFil
       if (chair !== undefined) placed = placement.autoArrangeTheatre(chair.id, guests);
     }
     if (placed === null) return;
-    onPlaced(placed, consequence !== null && placed.style === "dinner-rounds" ? fillOverDoneLine(placed, consequence) : null);
+    const done = consequence !== null && placed.style === "dinner-rounds" ? fillOverDoneLine(placed, consequence) : null;
+    // Rounds the fill left where they stood for a note that cannot be shown here: the lens says so after what it did.
+    const stayed = fillKeptForNotesLine(preview?.fill?.keptForNotes ?? []);
+    onPlaced(placed, stayed === null ? done : `${done ?? autoFillPlacedLine(placed)} ${stayed}`);
   };
 
   const describedBy = [figure !== null ? hintId : null, plan !== null ? basisId : null]
@@ -187,6 +197,9 @@ export function AutoFillPrompt({ style, published, onPlaced, onCancel }: AutoFil
       )}
       {guests !== null && plan === null && (
         <p className="auto-fill__note" data-testid="auto-fill-no-room">There is no room for this layout at this spacing.</p>
+      )}
+      {keptWithoutRoom !== null && (
+        <p className="auto-fill__note" data-testid="auto-fill-kept-for-notes">{keptWithoutRoom}</p>
       )}
       {plan !== null && (
         <p className="auto-fill__basis" id={basisId} data-testid="auto-fill-basis">{autoFillBasis(plan)}</p>

@@ -10,6 +10,15 @@ export interface EditorSaveStatusInput {
   /** Present only after a configuration has been loaded or created on the server. */
   readonly configId?: string | null;
   readonly isOnline?: boolean;
+  /**
+   * The save was refused because it would change a note this browser is not
+   * shown (the API's 409 NOTE_HELD; lib/guest-plan-notes NOTE_HELD_CODE), and
+   * `saveError` is the API's own sentence. The same save meets the same
+   * refusal, so this is not "failed", whose words say retry: the layout has
+   * unsaved changes, and a surface with room says the sentence
+   * (copyForRefusedSave).
+   */
+  readonly refusedForHeldNote?: boolean;
 }
 
 export interface EditorSaveStatusCopy {
@@ -20,9 +29,11 @@ export interface EditorSaveStatusCopy {
 
 export function deriveEditorSaveStatus(input: EditorSaveStatusInput): EditorSaveStatus {
   if (input.isSaving) return "saving";
-  if (input.saveError !== null) return "failed";
+  if (input.saveError !== null && input.refusedForHeldNote !== true) return "failed";
   if (input.isOnline === false) return "offline";
-  if (input.isDirty) return "unsaved";
+  // A refusal still standing is a change not saved, whatever has landed since
+  // (a refused clear's notice stands until it is dismissed: ruling R1(b) on #388).
+  if (input.isDirty || input.saveError !== null) return "unsaved";
   if (input.lastSavedAt !== null) return "saved";
   if (input.configId !== undefined && input.configId !== null) return "saved";
   return "idle";
@@ -69,6 +80,19 @@ export function copyForEditorSaveStatus(status: EditorSaveStatus): EditorSaveSta
   }
 }
 
+/**
+ * The words for a save the API refused and explained itself (409 NOTE_HELD: it
+ * would have changed a note this browser is not shown): the API's own
+ * sentence as the description, and nothing that says retry. The control is
+ * still named for the unsaved layout it saves: named by the refusal, which can
+ * say "Reload the page", it was announced as something it does not do, and
+ * lost its visible caption from its name (delta review of #388 at 713dc3f1, C4).
+ */
+export function copyForRefusedSave(refusal: string): EditorSaveStatusCopy {
+  const unsaved = copyForEditorSaveStatus("unsaved");
+  return { label: unsaved.label, shortLabel: unsaved.shortLabel, description: refusal };
+}
+
 // ---------------------------------------------------------------------------
 // The slate's honest save machine (T-671 slice 7; spec 6.1, sheet 17): what
 // happened and what is safe, in plain words. Saving is automatic, so "Save
@@ -104,6 +128,18 @@ export interface SlateSaveInput {
   /** The unsaved work is stored on this device, not only in this tab. */
   readonly keptOnDevice: boolean;
   readonly saveError: string | null;
+  /**
+   * The save was refused because it would change a note this browser is not
+   * shown (409 NOTE_HELD), and `saveError` is the API's own sentence. It did
+   * reach Venviewer, and trying again meets the same refusal.
+   */
+  readonly refusedForHeldNote?: boolean;
+  /**
+   * That refusal is of a note the person cleared after someone else had
+   * rewritten it (editor-store noteClearsRefused). Nothing they can do makes
+   * it, and its notice stands until they dismiss it (ruling R1(b) on #388).
+   */
+  readonly refusedClear?: boolean;
   readonly conflict: SlateConflict | null;
   readonly lockReason: "phase-preview" | "in-review" | null;
   readonly lastSavedAt: Date | null;
@@ -124,7 +160,7 @@ export interface SlateAction<Id extends string> {
 export interface SlateNotice {
   readonly heading: string;
   readonly body: string;
-  readonly actions: readonly SlateAction<"try-again" | "show-theirs" | "keep-mine">[];
+  readonly actions: readonly SlateAction<"try-again" | "show-theirs" | "keep-mine" | "dismiss">[];
 }
 
 export interface SlateSaveState {
@@ -160,6 +196,11 @@ function changesWord(count: number): string {
 /** Where the work waits: on the device only when the device truly holds it. */
 function keptWhere(keptOnDevice: boolean): string {
   return keptOnDevice ? "kept on this device" : "kept in this tab";
+}
+
+/** Where unsaved work is, as a sentence of a notice. */
+function keptSentence(keptOnDevice: boolean): string {
+  return keptOnDevice ? "Your changes are kept on this device." : "Your changes are kept in this tab until it closes.";
 }
 
 function state(partial: Partial<SlateSaveState> & Pick<SlateSaveState, "kind" | "status" | "mark">): SlateSaveState {
@@ -204,38 +245,61 @@ export function slateSaveState(input: SlateSaveInput): SlateSaveState {
   if (input.lockReason !== null) {
     return state({ kind: "view-only", status: "View only", detail: LOCK_REASONS[input.lockReason], mark: "none" });
   }
+  // A save refused over a note this browser is not shown: the API's sentence,
+  // where the work is, and nothing to try again. A guest is told too (their
+  // slate otherwise says only Draft), and so is someone whose "Keep mine" was
+  // the save refused, above the two versions they still choose between. A
+  // refused clear's notice is the person's to put away: Dismiss, as the save
+  // notice of today's chrome has.
+  const refusal: SlateNotice | null = input.saveError !== null && input.refusedForHeldNote === true
+    ? {
+        heading: input.saveError,
+        body: keptSentence(input.keptOnDevice),
+        actions: input.refusedClear === true ? [{ id: "dismiss", label: "Dismiss" }] : [],
+      }
+    : null;
   if (input.guest) {
     return state({
       kind: "draft",
       status: "Draft",
       detail: input.keptOnDevice ? keptWhere(true) : input.isDirty ? keptWhere(false) : null,
       mark: "draft",
+      notice: refusal,
       lineAction: { id: "sign-in", label: "Sign in to keep it" },
     });
   }
   if (input.conflict !== null) {
+    const choice = conflictNotice(input.conflict, timeZone);
     return state({
       kind: "changed-elsewhere",
       status: "Not saved",
       detail: "changed elsewhere",
       mark: "problem",
-      notice: conflictNotice(input.conflict, timeZone),
+      notice: refusal === null ? choice : { ...choice, heading: refusal.heading },
       sendWaits: true,
     });
   }
   if (!input.isOnline) {
     const unsaved = input.isDirty || input.pendingChanges > 0;
     const what = input.pendingChanges > 0 ? changesWord(input.pendingChanges) : "your changes";
+    const dropped: SlateNotice = {
+      heading: "The connection to Venviewer has dropped.",
+      body: "You can keep working. Your changes save as soon as it is back; sending waits until then.",
+      actions: [],
+    };
     return state({
       kind: "offline",
       status: "Offline",
-      detail: unsaved ? `${what} ${keptWhere(input.keptOnDevice)}` : "everything is saved",
+      // A refusal still standing (a refused clear's notice stays until it is
+      // dismissed, ruling R1(b) on #388) is not "everything is saved", and the
+      // connection does not put it away (delta review at 33a8e0ad, T11).
+      detail: unsaved ? `${what} ${keptWhere(input.keptOnDevice)}` : refusal === null ? "everything is saved" : null,
       mark: "offline",
-      notice: {
-        heading: "The connection to Venviewer has dropped.",
-        body: "You can keep working. Your changes save as soon as it is back; sending waits until then.",
-        actions: [],
-      },
+      // The refusal takes the heading; the connection's sentence leads the body,
+      // so "as soon as it is back" still says what "it" is (delta review X7).
+      notice: refusal === null
+        ? dropped
+        : { heading: refusal.heading, body: `${dropped.heading} ${dropped.body}`, actions: refusal.actions },
       sendWaits: true,
     });
   }
@@ -245,9 +309,9 @@ export function slateSaveState(input: SlateSaveInput): SlateSaveState {
       status: "Not saved",
       detail: keptWhere(input.keptOnDevice),
       mark: "problem",
-      notice: {
+      notice: refusal ?? {
         heading: "The last save did not reach Venviewer.",
-        body: input.keptOnDevice ? "Your changes are kept on this device." : "Your changes are kept in this tab until it closes.",
+        body: keptSentence(input.keptOnDevice),
         actions: [{ id: "try-again", label: "Try again" }],
       },
       sendWaits: true,
@@ -332,14 +396,31 @@ export function restoreReceipt(input: RestoreReceiptInput): RestoreReceipt {
 
 export interface LeftBehindInput {
   readonly roomName: string | null;
-  readonly kept: boolean;
+  /** The changes are kept on this device; false: lost; null: every one reached the server. */
+  readonly kept: boolean | null;
   readonly savesOnReturn: boolean;
+  /** A refused clear's sentence, carried from that layout until the person dismisses it (store LeftBehindWork). */
+  readonly notRemoved?: string;
 }
 
-/** The note left when another layout opened before this one's changes arrived. */
+/** The note left when another layout opened before this one's changes arrived, or over a clear of a note it refused. */
 export function leftBehindWords(input: LeftBehindInput): string {
-  const room = input.roomName?.trim().replace(/^the\s+/iu, "") ?? "";
-  const layout = room.length === 0 ? "that layout" : `the ${room} layout`;
+  const changes = leftBehindChanges(input);
+  return [changes, input.notRemoved ?? null].filter((said): said is string => said !== null).join(" ");
+}
+
+/**
+ * A layout left behind as these notes name it, from its room's name: "the
+ * Grand Hall layout" (never "the the Saloon layout"). Null without a name.
+ */
+export function layoutNamed(roomName: string | null): string | null {
+  const room = roomName?.trim().replace(/^the\s+/iu, "") ?? "";
+  return room.length === 0 ? null : `the ${room} layout`;
+}
+
+function leftBehindChanges(input: LeftBehindInput): string | null {
+  if (input.kept === null) return null;
+  const layout = layoutNamed(input.roomName) ?? "that layout";
   if (!input.kept) return `Your changes to ${layout} did not reach Venviewer, and this browser could not keep them.`;
   return input.savesOnReturn
     ? `Your changes to ${layout} are kept on this device and save when you open it again.`
@@ -367,9 +448,22 @@ export function heldLayoutChange(destination: string): HeldLayoutChange {
 export interface SlateAside {
   readonly heading: string;
   readonly body: string | null;
-  readonly actions: readonly SlateAction<"try-again" | "leave-anyway">[];
+  readonly actions: readonly SlateAction<"try-again" | "leave-anyway" | "dismiss-note">[];
   /** Needs the person now (a held switch, lost work): an alert, ahead of the save state's notice. */
   readonly urgent: boolean;
+  /**
+   * Said as an alert when it shows: every urgent aside, and a refused clear's
+   * sentence carried from a layout left behind. That note is created already
+   * holding the sentence, and it is the refusal's one lasting voice, so a
+   * polite region might never be heard; it still waits for the save state's
+   * own notice (delta review of #388 at 7a51b6e4, X2, as U4 for a guest).
+   */
+  readonly alert: boolean;
+}
+
+/** Whether a note about a layout left behind is said as an alert: lost work, or a refused clear's sentence. */
+export function leftBehindIsAlert(input: LeftBehindInput): boolean {
+  return input.kept === false || input.notRemoved !== undefined;
 }
 
 export interface SlateAsideInput {
@@ -383,14 +477,19 @@ export interface SlateAsideInput {
 export function slateAside(input: SlateAsideInput): SlateAside | null {
   if (input.held !== null) {
     const held = heldLayoutChange(input.held);
-    return { heading: held.heading, body: held.body, actions: held.actions, urgent: true };
+    return { heading: held.heading, body: held.body, actions: held.actions, urgent: true, alert: true };
   }
   if (input.leftBehind !== null) {
-    return { heading: leftBehindWords(input.leftBehind), body: null, actions: [], urgent: !input.leftBehind.kept };
+    // A refused clear's sentence stands until the person puts it away (ruling R1(b) on #388).
+    const actions = input.leftBehind.notRemoved === undefined ? [] : [{ id: "dismiss-note" as const, label: "Dismiss" }];
+    return {
+      heading: leftBehindWords(input.leftBehind), body: null, actions,
+      urgent: input.leftBehind.kept === false, alert: leftBehindIsAlert(input.leftBehind),
+    };
   }
   if (input.restored !== null) {
     const receipt = restoreReceipt(input.restored);
-    return { heading: receipt.lead, body: receipt.status, actions: [], urgent: false };
+    return { heading: receipt.lead, body: receipt.status, actions: [], urgent: false, alert: false };
   }
   return null;
 }
@@ -431,12 +530,13 @@ type PiecePhrase =
   | { readonly kind: "numbered"; readonly word: string; readonly numbers: string[] }
   | { readonly kind: "counted"; readonly noun: string; count: number };
 
-function describePieces(pieces: readonly ChangedPiece[]): string {
+/** Pieces in a phrase: "Tables 3 and 4", "Table 3 and a lectern", "2 tables and a chair". */
+export function describePieces(pieces: readonly ChangedPiece[]): string {
   const phrases: PiecePhrase[] = [];
   const numbered = new Map<string, { numbers: string[] }>();
   const counted = new Map<string, { count: number }>();
   for (const piece of pieces) {
-    const parts = piece.label === null ? null : numberedLabel(piece.label);
+    const parts = piece.label === null || piece.asWritten === true ? null : numberedLabel(piece.label);
     if (piece.label !== null && parts === null) {
       phrases.push({ kind: "label", label: piece.label });
     } else if (parts !== null) {

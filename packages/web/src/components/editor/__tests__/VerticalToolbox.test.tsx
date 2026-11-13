@@ -78,6 +78,25 @@ describe("VerticalToolbox undo buttons", () => {
     expect(screen.getByRole("button", { name: "Reload layout" })).toBeTruthy();
   });
 
+  // A save the API refused because it would change a note this browser is not
+  // shown (409 NOTE_HELD): the same save meets the same refusal.
+  it.each([
+    ["NOTE_HELD", "A note on this plan cannot be changed from here, and this save tried to change it. Clear the note you wrote on that piece."],
+    ["HELD_PIECE_OMITTED", "Nothing was saved: this save would remove a piece with a note that cannot be shown here. Reload the page to put it back."],
+  ])("shows a save refused over a held note in the API's own words, with no Retry (%s)", (code, refusal) => {
+    useEditorStore.setState({ configId: "saved", configRevision: 1, isPublicPreview: true, isDirty: true, saveError: refusal, saveErrorCode: code });
+    renderToolbox();
+    // Named for the state its caption shows, so the name holds the visible "Unsaved" (WCAG 2.5.3), and described by
+    // the refusal (delta review of #388 at 713dc3f1, C4): the button saves, whatever the refusal says to do.
+    const save = screen.getByRole("button", { name: "Unsaved changes", description: refusal });
+    expect(save.textContent).toBe("Unsaved");
+    expect(screen.queryByRole("button", { name: /retry/iu })).toBeNull();
+    expect(document.body.textContent).not.toMatch(/retry/iu);
+    // Any other failed save reads as it did.
+    act(() => { useEditorStore.setState({ saveError: "Network failed", saveErrorCode: "NETWORK_ERROR" }); });
+    expect(screen.getByRole("button", { name: "Save failed - retry" })).toBeTruthy();
+  });
+
   it("renders the first-visit planner coach as a movable widget with a real catalogue action", async () => {
     renderToolbox();
 

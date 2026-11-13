@@ -34,8 +34,10 @@ import { FurnitureCataloguePreview } from "../shared/FurnitureCataloguePreview.j
 import type { FurnitureCategory } from "@omnitwin/types";
 import {
   copyForEditorSaveStatus,
+  copyForRefusedSave,
   deriveEditorSaveStatus,
 } from "../../lib/editor-save-status.js";
+import { refusedOverHeldNote } from "../../lib/guest-plan-notes.js";
 import {
   PLANNER_TOOLBAR_COMMAND_EVENT,
   readPlannerToolbarCommand,
@@ -851,6 +853,9 @@ interface ToolBtnProps {
   readonly compact?: boolean;
   readonly showShortcut?: boolean;
   readonly tooltipEnabled?: boolean;
+  /** The description also describes the button to assistive technology, for
+   *  words that stand while it shows, as a save's refusal does. */
+  readonly describe?: boolean;
   readonly onClick: () => void;
   readonly children: React.ReactNode;
 }
@@ -877,9 +882,11 @@ function ToolBtn({
   compact = false,
   showShortcut = true,
   tooltipEnabled = true,
+  describe = false,
   onClick,
   children,
 }: ToolBtnProps): React.ReactElement {
+  const descriptionId = useId();
   const [showTooltip, setShowTooltip] = useState(false);
   const [exiting, setExiting] = useState(false);
   const enterTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -911,9 +918,11 @@ function ToolBtn({
       onMouseEnter={tooltipEnabled ? onEnter : undefined}
       onMouseLeave={tooltipEnabled ? onLeave : undefined}
     >
+      {describe && <span id={descriptionId} hidden>{description}</span>}
       <button
         type="button"
         aria-label={label}
+        aria-describedby={describe ? descriptionId : undefined}
         aria-pressed={pressed}
         style={btnStyle(active, disabled, compact)}
         onClick={handleClick}
@@ -1538,8 +1547,11 @@ export function VerticalToolbox({ compactDesktop = false }: { readonly compactDe
   const savedConfigId = useEditorStore((s) => s.configId);
   const wallMode = useVisibilityStore((s) => s.mode);
   const allWallsUp = wallMode === "manual";
-  const saveStatus = deriveEditorSaveStatus({ configId: savedConfigId, isDirty, isSaving, saveError, lastSavedAt });
-  const baseSaveCopy = copyForEditorSaveStatus(saveStatus);
+  // A save refused over a note this browser is not shown (409 NOTE_HELD): the API's own sentence, and nothing that says retry.
+  const refusedForHeldNote = useEditorStore((s) => refusedOverHeldNote(s.saveErrorCode));
+  const saveStatus = deriveEditorSaveStatus({ configId: savedConfigId, isDirty, isSaving, saveError, lastSavedAt, refusedForHeldNote });
+  const refusalStands = refusedForHeldNote && saveError !== null && !isSaving;
+  const baseSaveCopy = refusalStands ? copyForRefusedSave(saveError) : copyForEditorSaveStatus(saveStatus);
   const saveCopy = saveConflict === null
     ? baseSaveCopy
     : {
@@ -1997,7 +2009,7 @@ export function VerticalToolbox({ compactDesktop = false }: { readonly compactDe
           <RotateCw size={ICON_SIZE} />
         </ToolBtn>
 
-        <ToolBtn active={saveStatus === "saved"} compact={isNarrow} subLabel={saveCopy.shortLabel} disabled={isSaving} label={saveCopy.label} description={saveCopy.description} tooltipEnabled={showDesktopHints} onClick={handleSave}>
+        <ToolBtn active={saveStatus === "saved"} compact={isNarrow} subLabel={saveCopy.shortLabel} disabled={isSaving} label={saveCopy.label} description={saveCopy.description} describe={refusalStands && saveConflict === null} tooltipEnabled={showDesktopHints} onClick={handleSave}>
           {isSaving ? <ActivityIndicator size={ICON_SIZE} /> : <Save size={ICON_SIZE} />}
         </ToolBtn>
 

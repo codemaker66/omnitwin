@@ -77,6 +77,10 @@ interface RequestOptions {
    *  keepalive body over 64 KiB, so a larger one is sent as an ordinary
    *  request: it still goes while the page stays, and not after. */
   readonly keepalive?: boolean;
+  /** The secret this browser was given when it made a guest plan, sent as
+   *  `X-Plan-Claim-Secret`: the API returns such a plan's notes only to its
+   *  maker. A header, never the address, so it stays out of logs and history. */
+  readonly planClaimSecret?: string;
 }
 
 /** Under the 64 KiB browsers allow all pending keepalive bodies together. */
@@ -113,6 +117,10 @@ async function request<T>(opts: RequestOptions, schema?: ResponseSchema<T>): Pro
 
   if (opts.idempotencyKey !== undefined) {
     headers["Idempotency-Key"] = opts.idempotencyKey;
+  }
+
+  if (opts.planClaimSecret !== undefined) {
+    headers["X-Plan-Claim-Secret"] = opts.planClaimSecret;
   }
 
   if (opts.skipAuth !== true) {
@@ -200,8 +208,13 @@ async function request<T>(opts: RequestOptions, schema?: ResponseSchema<T>): Pro
 // ---------------------------------------------------------------------------
 
 export const api = {
-  get: <T>(path: string, schema?: ResponseSchema<T>, signal?: AbortSignal): Promise<T> =>
-    request<T>({ method: "GET", path, signal }, schema),
+  get: <T>(
+    path: string,
+    schema?: ResponseSchema<T>,
+    signal?: AbortSignal,
+    options?: { planClaimSecret?: string },
+  ): Promise<T> =>
+    request<T>({ method: "GET", path, signal, ...options }, schema),
 
   /** GET validated as the whole `{ data, meta }` envelope; the schema is required. */
   getEnvelope: <T>(path: string, schema: ResponseSchema<T>, signal?: AbortSignal): Promise<T> =>
@@ -212,7 +225,7 @@ export const api = {
     body?: unknown,
     skipAuth?: boolean,
     schema?: ResponseSchema<T>,
-    options?: { idempotencyKey?: string; signal?: AbortSignal; keepEnvelope?: boolean; keepalive?: boolean },
+    options?: { idempotencyKey?: string; signal?: AbortSignal; keepEnvelope?: boolean; keepalive?: boolean; planClaimSecret?: string },
   ): Promise<T> =>
     request<T>({ method: "POST", path, body, skipAuth, ...options }, schema),
 

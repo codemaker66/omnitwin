@@ -14,12 +14,43 @@ import {
   persistAnonymousPlannerDraft,
   plannerDraftBaseObjects,
   plannerDraftKeyFor,
+  plannerDraftWithUnreadNotes,
   readAnonymousPlannerDraft,
   type AnonymousPlannerDraft,
 } from "../lib/anonymous-planner-draft.js";
+import {
+  NOTE_HELD_CODE,
+  afterLeavingOutOfDateNotes,
+  batchClearingOwnNotesOfRemovedPieces,
+  carriedNoteIds,
+  confirmedAfterLeaving,
+  givingUpOwnNoteRemoval,
+  heldNoteIds,
+  heldNoteObjectsName,
+  heldNoteObjectsNamed,
+  heldNotePiecesDropped,
+  heldNotePiecesToPutBack,
+  keepingConfirmedNotes,
+  namingReplacedNotes,
+  noteStillSavingLine,
+  notesRefusedOnLeaving,
+  notesSentIn,
+  nothingRedoneLine,
+  nothingRemovedLine,
+  nothingUndoneLine,
+  ownWordsOverHeldNotes,
+  recordedNotes,
+  refusedClearsLine,
+  refusedOverHeldNote,
+  registerHeldNotes,
+  signedInRoutesSuit,
+  stayedForNotesLine,
+  takingNotesKeptUnsent,
+} from "../lib/guest-plan-notes.js";
 import { holdPlannerPageLock, isPlannerPageOpen, plannerPageId } from "../lib/planner-page-lock.js";
 import { signedOutOwnerFrom } from "../lib/planner-draft-storage.js";
-import { summariseLayoutChange, type LayoutChangeSummary } from "../lib/layout-change-summary.js";
+import { summariseLayoutChange, type ChangedPiece, type LayoutChangeSummary } from "../lib/layout-change-summary.js";
+import { layoutNamed } from "../lib/editor-save-status.js";
 import { browserSaysOnline, readOnlineStatus, subscribeOnlineStatus } from "../lib/online-status.js";
 import { useAuthStore, type AuthUser } from "./auth-store.js";
 import { hasRole, VENUE_FLOOR_ROLES } from "../lib/role-capabilities.js";
@@ -46,6 +77,7 @@ import type {
   ObjectFieldPatch,
 } from "../lib/editor-history.js";
 import { useSelectionStore } from "./selection-store.js";
+import { postPlacementNotice } from "./placement-notice-store.js";
 import { useCockpitStore } from "./cockpit-store.js";
 import { useActionLogStore } from "./action-log-store.js";
 import { createActionEmitter } from "../lib/action-log.js";
@@ -95,6 +127,13 @@ export interface EditorObject {
    * when no note is attached.
    */
   readonly notes: string;
+  /**
+   * The server's word, in place of `notes`, that this piece holds a note this
+   * browser is not shown (a guest plan's notes go only to the browser that
+   * made it). Set from the server's copy and read from `baseObjects`
+   * (lib/guest-plan-notes.ts); never sent back.
+   */
+  readonly noteHeld?: boolean;
 }
 
 /**
@@ -139,6 +178,7 @@ export function placedObjectToEditor(p: PlacedObject): EditorObject {
         : null,
     groupId: typeof meta.groupId === "string" ? meta.groupId : null,
     notes: typeof meta.notes === "string" ? meta.notes : "",
+    ...(meta.noteHeld === true ? { noteHeld: true } : {}),
   };
   return displayLabel.length > 0
     ? { ...editorObject, label: displayLabel }
@@ -203,6 +243,14 @@ interface EditorState {
    *  until another load: surfaces stop showing a working state for it. */
   readonly spaceLoadFailed: boolean;
   readonly isPublicPreview: boolean;
+  /**
+   * The open plan was read with its notes: the public read said so (a guest
+   * plan's notes go only to the browser that made it), and any work restored
+   * from this device said so too. It is a fact about this document, not about
+   * the browser: only then does a save declare its notes complete, and it is
+   * kept with the copy on this device. False for every other read.
+   */
+  readonly notesIncluded: boolean;
   readonly objects: readonly EditorObject[];
   /**
    * The last document the server confirmed for this configuration (load,
@@ -229,6 +277,13 @@ interface EditorState {
    *  (NETWORK_ERROR, UNAUTHORIZED, CONFIG_LOCKED, REVISION_CONFLICT, ...);
    *  null when there is none or the failure was not an API error. */
   readonly saveErrorCode: string | null;
+  /** Pieces whose note the person had cleared in a save refused for a held
+   *  note (NOTE_HELD), where someone else had rewritten that note: the clear
+   *  was not made, and its own sentence names the piece (lib/guest-plan-notes
+   *  refusedClearsLine). Its notice stands until the person dismisses
+   *  it (dismissRefusedClears): no later save says the layout saved while it
+   *  does (ruling R1(b) on #388). Empty otherwise, and for each layout opened. */
+  readonly noteClearsRefused: readonly string[];
   readonly saveConflict: EditorSaveConflict | null;
   /** How many objects differ from `baseObjects` right now: changed, placed
    *  or removed (objects, not edits). Kept live with every change. */
@@ -287,15 +342,23 @@ export interface RestoredWork {
   readonly editedAt: Date;
 }
 
-/** A layout whose unsaved work stayed behind when another one opened. */
+/** A layout whose unsaved work, or a clear of a note it refused, stayed behind when another one opened. */
 export interface LeftBehindWork {
   readonly configId: string;
   /** Its room, as the venue names it; null when not known. */
   readonly roomName: string | null;
-  /** The work is kept on this device (false: it is lost, and the note says so). */
-  readonly kept: boolean;
+  /** The work is kept on this device (false: it is lost, and the note says so;
+   *  null: every change reached the server, and only `notRemoved` is said). */
+  readonly kept: boolean | null;
   /** Opening the layout again sends it: no conflict or review lock waits. */
   readonly savesOnReturn: boolean;
+  /**
+   * The sentence of a clear the API refused whose notice still stood
+   * (noteClearsRefused, lib/guest-plan-notes refusedClearsLine): it goes with
+   * the switch, and stands in the next layout's note until the person
+   * dismisses it (delta review of #388 at 33a8e0ad, S1). Absent for none.
+   */
+  readonly notRemoved?: string;
 }
 
 interface EditorActions {
@@ -367,6 +430,19 @@ interface EditorActions {
    * offline state or the save error says why).
    */
   readonly keepMine: (isAuthenticated?: boolean) => Promise<boolean>;
+  /**
+   * A guest plan opened before the sign-in resolved was read the public way,
+   * without its notes, so it saves that way (lib/guest-plan-notes
+   * signedInRoutesSuit). Once the person is known and the signed-in routes
+   * answer them (the venue's own staff, a platform admin), the plan is read
+   * again through those routes, once, so their saves go that way as #373 has
+   * them (delta review of #388, B2). Only a document with nothing unsaved is
+   * read again: unsaved work goes first, the way the plan was read, and the
+   * read waits for it. A read that comes back to a document changed while it
+   * was out is dropped, and asked for again once that change is saved. True
+   * when the plan was taken from the signed-in read.
+   */
+  readonly readAgainForSignedInRoutes: () => Promise<boolean>;
   /** The review state the review panel read or set for this layout. */
   readonly setReviewStatus: (configId: string, status: ConfigurationReviewStatus | null) => void;
   /**
@@ -387,8 +463,13 @@ interface EditorActions {
    */
   readonly yieldObjectsToRemote: (ids: readonly string[]) => void;
   /** Dismiss the current save-error toast. A conflict is not dismissed with
-   *  it: only the person's choice (keepMine, showTheirVersion) ends one. */
+   *  it: only the person's choice (keepMine, showTheirVersion) ends one, and
+   *  a refused clear's notice beneath it comes back (noteClearsRefused). */
   readonly clearSaveError: () => void;
+  /** The person dismisses a refused clear's notice (noteClearsRefused): it
+   *  goes, and the save line says where saving stands. A refusal of their own
+   *  words over a held note, or of a left-out piece, stands on. */
+  readonly dismissRefusedClears: () => void;
   readonly reset: () => void;
   /**
    * Replace the document from the 3D scene funnel (EditorBridge), recording
@@ -454,6 +535,15 @@ let conflictPolicy: "report" | "rebase" = "report";
 let rebaseRetryDepth = 0;
 /** Objects a later remote write owns; kept equal to base until re-edited. */
 const yieldedIds = new Set<string>();
+/**
+ * Rows a step back or forward returned under a fresh local id (historyIdsFor
+ * heals every row while a save is in flight): original id to that id. If that
+ * save did not remove the row, and it has since come to hold a note this
+ * browser is not shown, the copy is that very row: it takes its id back
+ * rather than stand beside the row the put-back returns (putBackHeldNotePieces;
+ * delta review R7).
+ */
+const healedCopies = new Map<string, string>();
 
 /** Hooks are present only while in the live room. */
 export function setEditorLiveHooks(hooks: EditorLiveHooks | null): void {
@@ -532,6 +622,19 @@ const EDITOR_HISTORY_IDS: HistoryIdAdapter = {
   makeLocalId: generatePlacedId,
   isLocalId: (id) => id.startsWith("local-"),
 };
+
+/**
+ * The ids for a step back or forward. A row the confirmed document still
+ * holds has been removed by no save, so the step returns the row itself, with
+ * whatever note the server keeps on it (lib/editor-history isStored). While a
+ * save is in flight that save may be the one removing the row, so every
+ * returned row is healed, as before.
+ */
+function historyIdsFor(state: Pick<EditorState, "baseObjects" | "isSaving">): HistoryIdAdapter {
+  if (state.isSaving) return EDITOR_HISTORY_IDS;
+  const stored = new Set(state.baseObjects.map((object) => object.id));
+  return { ...EDITOR_HISTORY_IDS, isStored: (id) => stored.has(id) };
+}
 
 // G4 Slice 1: every sealed gesture ALSO lands in the append-only action log
 // (fire-and-forget — the undo timeline itself is unchanged). Actor/surface
@@ -728,6 +831,26 @@ function historyStepPatch(step: HistoryStep<EditorObject>): Partial<EditorState>
   };
 }
 
+/**
+ * A step back or forward is refused whole when its result would lack a piece
+ * that holds a note this browser is not shown (lib/guest-plan-notes): the
+ * piece would be gone, and its note with it at the next save. A piece the
+ * person placed can come to hold one: the newer version they kept theirs
+ * over, or took as already saved, put a note on it, and the history outlives
+ * both. The reason is posted in `words`; the document and the history stay as
+ * they are, and no step is added.
+ */
+function stepRefusedForHeldNote(
+  state: EditorState,
+  result: readonly EditorObject[],
+  words: (pieces: readonly ChangedPiece[]) => string,
+): boolean {
+  const dropped = heldNotePiecesDropped(state, result);
+  if (dropped.length === 0) return false;
+  postPlacementNotice(words(heldNoteObjectsNamed(dropped, state.objects)));
+  return true;
+}
+
 // ---------------------------------------------------------------------------
 // Store
 // ---------------------------------------------------------------------------
@@ -742,6 +865,7 @@ const INITIAL_STATE: EditorState = {
   space: null,
   spaceLoadFailed: false,
   isPublicPreview: false,
+  notesIncluded: false,
   objects: [],
   baseObjects: [],
   selectedObjectId: null,
@@ -752,6 +876,7 @@ const INITIAL_STATE: EditorState = {
   error: null,
   saveError: null,
   saveErrorCode: null,
+  noteClearsRefused: [],
   saveConflict: null,
   pendingChanges: 0,
   savingChanges: null,
@@ -835,6 +960,14 @@ let conflictServerCopy: {
 /** A "Keep mine" is under way (reading their version or saving): one at a time. */
 let keepMineInFlight = false;
 
+/** The open plan the signed-in routes were asked to read again, and for whom: once each (readAgainForSignedInRoutes). */
+let signedInReadAsked: string | null = null;
+
+/** Nothing on screen waits to be saved, and no save or conflict is under way. */
+function nothingUnsaved(state: EditorState): boolean {
+  return !state.isDirty && !state.isSaving && state.saveConflict === null;
+}
+
 /** The sign-in another tab ended (forgetting its drafts): while this tab still
  *  holds that very sign-in, it keeps nothing of theirs on this device. A new
  *  sign-in is a new user object (ClerkAuthBridge), so it keeps work again. */
@@ -851,7 +984,7 @@ function draftOwner(): string | null {
 }
 
 const DRAFT_FIELDS = [
-  "configId", "spaceId", "venueId", "configRevision", "isPublicPreview", "objects", "baseObjects", "isDirty",
+  "configId", "spaceId", "venueId", "configRevision", "isPublicPreview", "notesIncluded", "objects", "baseObjects", "isDirty",
 ] as const satisfies readonly (keyof EditorState)[];
 
 function keepWorkOnDevice(state: EditorState): boolean {
@@ -867,6 +1000,9 @@ function keepWorkOnDevice(state: EditorState): boolean {
     isDirty: state.isDirty,
     ownerUserId: draftOwner(),
     writerPageId: plannerPageId(),
+    // The copy says what it was read with, so restoring it elsewhere cannot
+    // pass a document read without the plan's notes off as the whole of them.
+    notesIncluded: state.notesIncluded,
   });
 }
 
@@ -949,7 +1085,8 @@ function settledNotices(previous: EditorStore, next: EditorStore, patch: Partial
   if (timelineTop(next.history) === timelineTop(previous.history)) return {};
   return {
     ...("restoredFromDevice" in patch ? {} : { restoredFromDevice: null }),
-    ...("leftBehind" in patch ? {} : { leftBehind: null }),
+    // A refused clear's sentence stands until the person dismisses it (ruling R1(b) on #388).
+    ...("leftBehind" in patch || next.leftBehind?.notRemoved !== undefined ? {} : { leftBehind: null }),
   };
 }
 
@@ -1029,7 +1166,10 @@ async function readLayoutToOpen(
 /** The server's current copy of the layout, or null when it cannot be read. */
 async function readServerCopy(configId: string, useAuthPath: boolean): Promise<configApi.Configuration | null> {
   try {
-    const config = useAuthPath ? await configApi.getConfig(configId) : await configApi.getPublicConfig(configId);
+    // A guest plan read without its notes is only ever compared with, and
+    // kept over, a copy read the same way (lib/guest-plan-notes.ts).
+    const signedIn = useAuthPath && signedInRoutesSuit(useEditorStore.getState());
+    const config = signedIn ? await configApi.getConfig(configId) : await configApi.getPublicConfig(configId);
     return config.id === configId ? config : null;
   } catch {
     return null;
@@ -1078,9 +1218,9 @@ export const useEditorStore = create<EditorStore>()(withSaveFacts((set, get) => 
       // is told. A save that landed after the outgoing check had looked (the
       // route unmounting flushes too) means nothing was lost after all.
       const stillUnsaved = get().configId === leaving && get().isDirty;
-      const lostOnLeaving = outgoingOutcome === "not-kept" && stillUnsaved ? leftBehindFor(get(), false) : null;
+      const lostOnLeaving = outgoingOutcome !== null && lostWithTheSwitch(outgoingOutcome) && stillUnsaved ? leftBehindFor(get(), false) : null;
       // Unsaved work this device kept (another open page's stays that page's).
-      const localDraft = await draftNotHeldElsewhere(draftForLoad(config, isAuthenticated));
+      const keptDraft = await draftNotHeldElsewhere(draftForLoad(config, isAuthenticated));
       if (request !== configurationLoadRequest) return;
       // A GET may have captured its row before a concurrent save was accepted.
       // Reloading cannot roll an acknowledged revision (or newer local edits)
@@ -1090,7 +1230,23 @@ export const useEditorStore = create<EditorStore>()(withSaveFacts((set, get) => 
         set({ isLoading: false });
         return;
       }
-      const serverObjects = (config.objects ?? []).map(placedObjectToEditor);
+      const readObjects = (config.objects ?? []).map(placedObjectToEditor);
+      // A guest plan's notes go only to the browser that made it, so this read
+      // says whether it carries them. Work kept by a page that read the plan
+      // without them holds every piece without its note: opened here with the
+      // notes, it takes the ones it never read from this copy, or restoring it
+      // would clear them all (review of #375).
+      const notesRead = config.notesIncluded === true;
+      const localDraft = keptDraft !== null && notesRead && keptDraft.notesIncluded !== true
+        ? plannerDraftWithUnreadNotes(keptDraft, readObjects)
+        : keptDraft;
+      // The other way about: a read without the notes hides the ones this
+      // browser wrote. Work kept here at this very revision knows which notes
+      // the server had confirmed to it, so the person can go on with theirs.
+      const confirmedHere = localDraft !== null && !notesRead && localDraft.baseRevision === config.revision
+        ? plannerDraftBaseObjects(localDraft)
+        : null;
+      const serverObjects = confirmedHere === null ? readObjects : keepingConfirmedNotes(readObjects, confirmedHere);
       // One edited from this revision restores as it is. One edited from any
       // other revision restores onto the base it was edited from, at that
       // revision, as a conflict the person settles before anything is saved:
@@ -1137,6 +1293,7 @@ export const useEditorStore = create<EditorStore>()(withSaveFacts((set, get) => 
       const leftBehind = lostOnLeaving ?? get().leftBehind;
       configurationSession += 1;
       yieldedIds.clear();
+      healedCopies.clear();
       conflictServerCopy = loadConflict === null
         ? null
         : { session: configurationSession, configId: config.id, revision: config.revision, objects: serverObjects };
@@ -1148,12 +1305,16 @@ export const useEditorStore = create<EditorStore>()(withSaveFacts((set, get) => 
         venueId: config.venueId,
         configRevision: loadConflict === null ? config.revision : loadConflict.expectedRevision,
         isPublicPreview: config.isPublicPreview,
+        // Restored work that does not say it was read with the notes is not
+        // the whole truth about them, whichever browser restores it.
+        notesIncluded: notesRead && (restoredDraft === null || restoredDraft.notesIncluded === true),
         objects,
         baseObjects: staleDraftBase ?? serverObjects,
         isDirty: restoredDraft !== null,
         isSaving: false,
         saveError: loadConflict === null ? null : CONFLICT_SAVE_ERROR,
         saveErrorCode: loadConflict === null ? null : "REVISION_CONFLICT",
+        noteClearsRefused: [],
         lastSavedAt: config.updatedAt === undefined ? null : new Date(config.updatedAt),
         space: get().space?.id === config.spaceId && get().space?.venueId === config.venueId ? get().space : null,
         isLoading: false,
@@ -1166,8 +1327,10 @@ export const useEditorStore = create<EditorStore>()(withSaveFacts((set, get) => 
           changes: changedBetween(restoreBase, restoredDraft.objects).size,
           editedAt: new Date(restoredDraft.updatedAtMs),
         },
-        // Opening the layout left behind is what its note asked for.
-        leftBehind: leftBehind?.configId === config.id ? null : leftBehind,
+        // Opening the layout left behind is what its note asked for about its
+        // changes; a refused clear's sentence stands until the person
+        // dismisses it (ruling R1(b) on #388; delta review X6).
+        leftBehind: leftBehind?.configId === config.id ? sentenceStanding(leftBehind) : leftBehind,
       });
       // G4: config boundary — seal any open gesture from the previous
       // config's timeline, ship its unsent tail (the flush snapshots the
@@ -1182,8 +1345,13 @@ export const useEditorStore = create<EditorStore>()(withSaveFacts((set, get) => 
       // venueId/spaceId are non-nullable on the wire — no guard needed.
       void get().loadSpace(config.venueId, config.spaceId);
       // Work kept on this device was meant for the server: send it on, unless
-      // it waits for the person's choice.
-      if (restoredDraft !== null && loadConflict === null) requestAutosave();
+      // it waits for the person's choice. Kept work that lacks a piece holding
+      // a note this browser is not shown takes it back now, not at that save:
+      // the API's refusal of such a save says a reload puts the piece back.
+      if (restoredDraft !== null && loadConflict === null) {
+        putBackHeldNotePieces();
+        requestAutosave();
+      }
     } catch (err) {
       if (request !== configurationLoadRequest) return;
       const message = err instanceof Error ? err.message : "Failed to load configuration";
@@ -1232,6 +1400,7 @@ export const useEditorStore = create<EditorStore>()(withSaveFacts((set, get) => 
       if (request !== configurationLoadRequest || shouldOpen?.() === false) throw new Error("A different layout was opened while this draft was being created.");
       configurationSession += 1;
       yieldedIds.clear();
+      healedCopies.clear();
       conflictServerCopy = null;
       set({
         configId: config.id,
@@ -1241,12 +1410,15 @@ export const useEditorStore = create<EditorStore>()(withSaveFacts((set, get) => 
         venueId: config.venueId,
         configRevision: config.revision,
         isPublicPreview: true,
+        // A new plan holds no note, so its creating answer says they are all here.
+        notesIncluded: config.notesIncluded === true,
         objects: [],
         baseObjects: [],
         isDirty: false,
         isSaving: false,
         saveError: null,
         saveErrorCode: null,
+        noteClearsRefused: [],
         reviewStatus: null,
         reviewLockRefused: false,
         lastSavedAt: config.updatedAt === undefined ? null : new Date(config.updatedAt),
@@ -1384,6 +1556,20 @@ export const useEditorStore = create<EditorStore>()(withSaveFacts((set, get) => 
   removeObject: (objectId) => {
     if (isLayoutTimelineMutationLocked()) return;
     const s = get();
+    // Someone who cannot see a note never destroys it: the piece stays, and so
+    // does a piece whose group holds one, as a table keeps its chairs.
+    const going = s.objects.find((o) => o.id === objectId);
+    const held = heldNoteIds(s);
+    const holders = going === undefined ? [] : s.objects.filter((o) => held.has(o.id)
+      && (o.id === objectId || (going.groupId !== null && o.groupId === going.groupId)));
+    if (holders.length > 0) {
+      // A note of their own that no save has confirmed yet is one they can read: it is still being saved.
+      const carried = carriedNoteIds(s);
+      postPlacementNotice(holders.every((o) => carried.has(o.id))
+        ? noteStillSavingLine(heldNoteObjectsNamed(holders, s.objects))
+        : nothingRemovedLine(heldNoteObjectsName(holders, s.objects)));
+      return;
+    }
     const after = s.objects.filter((o) => o.id !== objectId);
     const selectionAfter = captureSelection(s.selectedObjectId).filter((id) => id !== objectId);
     set({
@@ -1471,12 +1657,19 @@ export const useEditorStore = create<EditorStore>()(withSaveFacts((set, get) => 
       if ([...selection.selectedIds].some((id) => rekeyed.has(id))) {
         selection.selectMultiple([...selection.selectedIds].map((id) => rekeyed.get(id) ?? id));
       }
+      // Their version read without the plan's notes hides the ones this
+      // browser wrote: the notes confirmed here stay known, so the person
+      // can go on with theirs. They were confirmed at the older revision,
+      // and their version may hold other words on such a piece. So each is
+      // carried with its mark (keepingConfirmedNotes): nothing takes the
+      // piece until a save has confirmed the note, and a save refused for a
+      // held note drops the record rather than name a wrong note for ever.
       // The newer revision becomes this document's base: the full-sync save
       // replaces it with this document, and pendingChanges (so savingChanges)
       // counts exactly what that save changes on the server.
       set({
         configRevision: conflict.currentRevision,
-        baseObjects: theirs,
+        baseObjects: keepingConfirmedNotes(theirs, current.baseObjects, true),
         objects: kept,
         history: remapHistoryIds(current.history, rekeyed),
         selectedObjectId: current.selectedObjectId === null ? null : rekeyed.get(current.selectedObjectId) ?? current.selectedObjectId,
@@ -1489,6 +1682,56 @@ export const useEditorStore = create<EditorStore>()(withSaveFacts((set, get) => 
     }
   },
 
+  readAgainForSignedInRoutes: async () => {
+    const s = get();
+    const configId = s.configId;
+    if (configId === null || s.isLoading || signedInRoutesSuit(s) || !nothingUnsaved(s)) return false;
+    if (!usesSignedInRoutes(s, useAuthStore.getState().isAuthenticated)) return false;
+    const key = JSON.stringify([configurationSession, configId, draftOwner()]);
+    if (signedInReadAsked === key) return false;
+    signedInReadAsked = key;
+    const session = configurationSession;
+    let config: configApi.Configuration;
+    try {
+      config = await configApi.getConfig(configId);
+    } catch {
+      // Refused or not arrived: the plan stays on the public routes it was opened by.
+      return false;
+    }
+    const now = get();
+    if (session !== configurationSession || now.configId !== configId || signedInRoutesSuit(now)) return false;
+    // A change made while the read was out is the person's: nothing is read
+    // over it. The read is asked for again once the change is saved.
+    if (now.objects !== s.objects || now.baseObjects !== s.baseObjects || now.configRevision !== s.configRevision
+      || !nothingUnsaved(now) || gestureOwnsCurrentDocument()) {
+      if (signedInReadAsked === key) signedInReadAsked = null;
+      return false;
+    }
+    if (config.id !== configId || config.notesIncluded !== true || now.configRevision === null || config.revision < now.configRevision) return false;
+    const server = (config.objects ?? []).map(placedObjectToEditor);
+    // As a newer copy is taken over a document with nothing unsaved
+    // (adoptServerConfiguration): undo never replays an older value over a
+    // piece the read changed. Here that is each piece the public read kept a
+    // note from, whose steps hold it without the note; replayed and saved by
+    // the signed-in route, which stores each piece as sent, they would clear it.
+    actionEmitter.flush(now.history);
+    yieldedIds.clear();
+    conflictServerCopy = null;
+    set({
+      isPublicPreview: config.isPublicPreview,
+      notesIncluded: true,
+      objects: server,
+      baseObjects: server,
+      history: forgetHistoryIds(now.history, changedBetween(now.baseObjects, server)),
+      configName: config.name,
+      configRevision: config.revision,
+      reviewStatus: config.reviewStatus ?? now.reviewStatus,
+      ...(config.reviewStatus !== undefined && isPlannerEditable(config.reviewStatus) ? { reviewLockRefused: false } : {}),
+      lastSavedAt: config.updatedAt === undefined ? now.lastSavedAt : new Date(config.updatedAt),
+    });
+    return true;
+  },
+
   setReviewStatus: (configId, status) => {
     if (get().configId !== configId) return;
     set({
@@ -1497,7 +1740,20 @@ export const useEditorStore = create<EditorStore>()(withSaveFacts((set, get) => 
     });
   },
 
-  clearSaveError: () => { set({ saveError: null, saveErrorCode: null }); },
+  clearSaveError: () => { set(standingRefusal(get())); },
+
+  dismissRefusedClears: () => {
+    const s = get();
+    if (s.noteClearsRefused.length === 0) return;
+    // Another refusal or failure on the line stands on, without the clear's sentence beside it.
+    const standsOn = s.saveErrorCode !== NOTE_HELD_CODE || ownWordsOverHeldNotes(s).length > 0;
+    const clear = refusedClearsLine(s);
+    const rest = clear !== null && s.saveError?.endsWith(clear) === true ? s.saveError.slice(0, -clear.length).trimEnd() : s.saveError;
+    set({
+      noteClearsRefused: [],
+      ...(standsOn && rest !== null && rest !== "" ? { saveError: rest } : { saveError: null, saveErrorCode: null }),
+    });
+  },
 
   adoptServerConfiguration: (config, options = {}) => {
     const s = get();
@@ -1610,6 +1866,7 @@ export const useEditorStore = create<EditorStore>()(withSaveFacts((set, get) => 
     activeHistoryGesture = null;
     interactionEpoch++;
     yieldedIds.clear();
+    healedCopies.clear();
     useCockpitStore.getState().setPlannedGuestCount(null);
     conflictServerCopy = null;
     layoutChangeAttempt = null;
@@ -1640,10 +1897,12 @@ export const useEditorStore = create<EditorStore>()(withSaveFacts((set, get) => 
     if (isLayoutTimelineMutationLocked()) return;
     activeHistoryGesture = null;
     const s = get();
-    const step = performUndo(s.history, s.objects, EDITOR_HISTORY_IDS);
+    const step = performUndo(s.history, s.objects, historyIdsFor(s));
     if (step === null) return;
+    if (stepRefusedForHeldNote(s, step.objects, nothingUndoneLine)) return;
     actionEmitter.afterUndo(s.history); // G4: seals the popped gesture + logs history.undo
     interactionEpoch++;
+    for (const [original, copy] of step.healed) healedCopies.set(original, copy);
     set(historyStepPatch(step));
     notifyLocalChange(s.objects, step.objects);
     useSelectionStore.getState().selectMultiple(step.selection);
@@ -1654,10 +1913,12 @@ export const useEditorStore = create<EditorStore>()(withSaveFacts((set, get) => 
     if (isLayoutTimelineMutationLocked()) return;
     activeHistoryGesture = null;
     const s = get();
-    const step = performRedo(s.history, s.objects, EDITOR_HISTORY_IDS);
+    const step = performRedo(s.history, s.objects, historyIdsFor(s));
     if (step === null) return;
+    if (stepRefusedForHeldNote(s, step.objects, nothingRedoneLine)) return;
     actionEmitter.afterRedo(step.history); // G4: logs history.redo
     interactionEpoch++;
+    for (const [original, copy] of step.healed) healedCopies.set(original, copy);
     set(historyStepPatch(step));
     notifyLocalChange(s.objects, step.objects);
     useSelectionStore.getState().selectMultiple(step.selection);
@@ -1703,6 +1964,231 @@ export const useEditorStore = create<EditorStore>()(withSaveFacts((set, get) => 
 })));
 
 /**
+ * Put back the pieces the working document has lost that the confirmed one
+ * says hold a note this browser is not shown, each as the server sent it (its
+ * id, where it stood, its details) and with the rest of its group, and say
+ * that they stayed (lib/guest-plan-notes heldNotePiecesToPutBack). The
+ * timeline forgets them: no step may take them away again, or return them a
+ * second time. True when anything went back.
+ */
+function putBackHeldNotePieces(): boolean {
+  const s = useEditorStore.getState();
+  const back = heldNotePiecesToPutBack(s, s.baseObjects, s.objects);
+  if (back.pieces.length === 0) return false;
+  // A piece the person brought back with Undo or Redo while a save was in
+  // flight stands under a fresh id (healedCopies): it is that piece, so it
+  // takes its own id back instead of a second one being returned beside it.
+  const present = new Set(s.objects.map((object) => object.id));
+  const returning = new Map<string, string>();
+  for (const piece of back.pieces) {
+    const copy = healedCopies.get(piece.id);
+    if (copy !== undefined && present.has(copy)) {
+      returning.set(copy, piece.id);
+      healedCopies.delete(piece.id);
+    }
+  }
+  const comingBack = new Set(returning.values());
+  const inserted = back.pieces.filter((piece) => !comingBack.has(piece.id));
+  const objects = [
+    ...(returning.size === 0 ? s.objects : s.objects.map((object) => {
+      const id = returning.get(object.id);
+      return id === undefined ? object : { ...object, id };
+    })),
+    ...inserted,
+  ];
+  if (returning.size > 0) {
+    const selection = useSelectionStore.getState();
+    if ([...selection.selectedIds].some((id) => returning.has(id))) {
+      selection.selectMultiple([...selection.selectedIds].map((id) => returning.get(id) ?? id));
+    }
+  }
+  useEditorStore.setState({
+    objects,
+    isDirty: true,
+    history: forgetHistoryIds(remapHistoryIds(s.history, returning), new Set(inserted.map((piece) => piece.id))),
+    ...(s.selectedObjectId !== null && returning.has(s.selectedObjectId) ? { selectedObjectId: returning.get(s.selectedObjectId) } : {}),
+  });
+  notifyLocalChange(s.objects, objects);
+  const insertedIds = new Set(inserted.map((piece) => piece.id));
+  const returned = back.held.filter((piece) => insertedIds.has(piece.id));
+  if (returned.length === 0) return true;
+  // A note of their own that no save has confirmed yet ("Keep mine" carries
+  // it) is one they can read: it is still being saved, as removeObject says
+  // it, never one that cannot be shown here (delta review R4).
+  const carried = carriedNoteIds(s);
+  const named = heldNoteObjectsNamed(returned, s.baseObjects);
+  const line = returned.every((piece) => carried.has(piece.id)) ? noteStillSavingLine(named) : stayedForNotesLine(named);
+  if (line !== null) postPlacementNotice(line);
+  return true;
+}
+
+/**
+ * The ids the server gave the pieces a save placed: the local ids it sent
+ * (batch order) zipped with the rows it inserted (echoed updates first, then
+ * inserts, each in input order). Null when they cannot be aligned.
+ */
+function placedIdsOf(sent: readonly EditorObject[], answer: readonly PlacedObject[]): Map<string, string> | null {
+  const sentLocalIds = sent.map((o) => o.id).filter((id) => EDITOR_HISTORY_IDS.isLocalId(id));
+  const sentServerIds = new Set(sent.map((o) => o.id).filter((id) => !EDITOR_HISTORY_IDS.isLocalId(id)));
+  const insertedIds = answer.map((p) => p.id).filter((id) => !sentServerIds.has(id));
+  if (sentLocalIds.length !== insertedIds.length) return null;
+  const idMap = new Map<string, string>();
+  sentLocalIds.forEach((localId, i) => {
+    const serverId = insertedIds[i];
+    if (serverId !== undefined) idMap.set(localId, serverId);
+  });
+  return idMap;
+}
+
+/** What the saves sent after a refusal for an out-of-date note came to. */
+interface OutOfDateNotesSettled {
+  /** The answer to the last of them that landed. */
+  readonly saved: configApi.BatchSaveResponse;
+  /** The notes that save left to the server that are out of date: piece id to the words on record. */
+  readonly left: ReadonlyMap<string, string>;
+  /**
+   * The notes it left that no save has yet shown to be either, because the
+   * saves stopped early: still this browser's record, carried until a save
+   * confirms them. Empty when they finished.
+   */
+  readonly unsettled: ReadonlyMap<string, string>;
+  /** What stopped them early, after one had landed; null when they finished. */
+  readonly stoppedBy: { readonly failure: unknown } | null;
+}
+
+/**
+ * A save the API refused for a held note without saying which piece, when no
+ * words of the person's stand over one: a note this browser has on record is
+ * out of date. Only the pieces the refusal can be about are tried, the ones
+ * sent with a recorded note. A piece whose note is left to the server goes
+ * with no word about its note, which keeps whatever it holds; a save lands
+ * exactly when every out-of-date note is among those it leaves.
+ *
+ * The save is sent first leaving them all. It lands unless the refusal was for
+ * something else, and the rest of the work is then saved at once. The notes
+ * out of date are then found by halving (delta review of #388 at 713dc3f1,
+ * R1): each save sends the notes known to be in date and the first half of
+ * those still in question as the person has them, and leaves the rest; it
+ * lands only if none it sends is out of date, which settles those it sends,
+ * and is refused otherwise. So a recorded note is never left to the server
+ * unless it is out of date, and a note the person cleared or changed is
+ * cleared or changed. With k of n notes out of date that is at most
+ * 2 + k (ceil(log2 n) + 1) saves, the refused one included: never one a note.
+ * Each save goes on the revision the last one that landed made, and names the
+ * rows the first one placed, so nothing is placed twice.
+ *
+ * Null when nothing lands, or the plan is no longer the open one; a failure
+ * before anything lands is thrown. A failure after that stops the saves, and
+ * what landed is kept (`stoppedBy`, `unsettled`).
+ */
+async function saveLeavingOutOfDateNotes(
+  objects: readonly EditorObject[],
+  batch: readonly BatchObjectInput[],
+  recorded: ReadonlyMap<string, string>,
+  revision: number,
+  send: (pieces: readonly BatchObjectInput[], revision: number) => Promise<configApi.BatchSaveResponse>,
+  stillOpen: () => boolean,
+): Promise<OutOfDateNotesSettled | null> {
+  const sent = objects.flatMap((object) => (recorded.has(object.id) ? [object.id] : []));
+  if (sent.length === 0 || !stillOpen()) return null;
+  const onRecord = (ids: Iterable<string>): ReadonlyMap<string, string> => new Map([...ids].map((id) => [id, recorded.get(id) ?? ""]));
+  let placedAs: ReadonlyMap<string, string> = new Map<string, string>();
+  let current = revision;
+  /** The save leaving these notes to the server: its answer, or its refusal for a held note. Any other failure is thrown. */
+  const leaving = async (left: ReadonlySet<string>): Promise<configApi.BatchSaveResponse | ApiError> => {
+    const pieces = batch.map((piece, index) => {
+      const object = objects[index];
+      if (object === undefined) return piece;
+      const going = left.has(object.id) ? editorToBatch({ ...object, notes: "" }) : piece;
+      const id = placedAs.get(object.id);
+      return id === undefined ? going : { ...going, id };
+    });
+    try {
+      const answer = await send(pieces, current);
+      current = answer.revision;
+      return answer;
+    } catch (err) {
+      if (err instanceof ApiError && err.code === NOTE_HELD_CODE) return err;
+      throw err;
+    }
+  };
+
+  const everyNote: ReadonlySet<string> = new Set(sent);
+  const first = await leaving(everyNote);
+  if (first instanceof ApiError) return null;
+  let landed: { readonly saved: configApi.BatchSaveResponse; readonly left: ReadonlySet<string> } = { saved: first, left: everyNote };
+  // Rows that cannot be matched to the pieces placed would be placed again by a later save: what landed stands.
+  const placed = placedIdsOf(objects, first.objects);
+  if (placed === null) return { saved: first, left: onRecord(everyNote), unsettled: new Map(), stoppedBy: null };
+  placedAs = placed;
+
+  const outOfDate: string[] = [];
+  // Still in question, in the document's order; at least one of them is out of date.
+  let open: readonly string[] = sent;
+  try {
+    for (;;) {
+      // The first one out of date: everything before it is in date.
+      let low = 0;
+      let high = open.length - 1;
+      while (low < high) {
+        if (!stillOpen()) return null;
+        const middle = Math.floor((low + high) / 2);
+        const left = new Set([...outOfDate, ...open.slice(middle + 1)]);
+        const answer = await leaving(left);
+        if (answer instanceof ApiError) {
+          high = middle;
+        } else {
+          landed = { saved: answer, left };
+          low = middle + 1;
+        }
+      }
+      const found = open[low];
+      if (found !== undefined) outOfDate.push(found);
+      open = open.slice(low + 1);
+      if (open.length === 0 && landed.left.size === outOfDate.length && outOfDate.every((id) => landed.left.has(id))) break;
+      // The rest, sent as the person has them: all in date, or another one is out of date.
+      if (!stillOpen()) return null;
+      const rest = new Set(outOfDate);
+      const answer = await leaving(rest);
+      if (!(answer instanceof ApiError)) {
+        landed = { saved: answer, left: rest };
+        break;
+      }
+      // Every note left is out of date already: the same save can only be refused again.
+      if (open.length === 0) throw answer;
+    }
+  } catch (failure) {
+    const proven = new Set(outOfDate);
+    return {
+      saved: landed.saved,
+      left: onRecord([...landed.left].filter((id) => proven.has(id))),
+      unsettled: onRecord([...landed.left].filter((id) => !proven.has(id))),
+      stoppedBy: { failure },
+    };
+  }
+  return { saved: landed.saved, left: onRecord(outOfDate), unsettled: new Map(), stoppedBy: null };
+}
+
+/**
+ * What the save line says when nothing else is to be said: a refused clear's
+ * notice while it stands (noteClearsRefused), in its own sentence
+ * (lib/guest-plan-notes refusedClearsLine, ruling C3), or nothing. Every save
+ * that ends without a refusal of its own, and every failure put away, leaves
+ * this: the notice stays until the person dismisses it, and no save says the
+ * layout saved while it does (ruling R1(b) on #388). The autosave goes on.
+ */
+function standingRefusal(state: Pick<EditorState, "noteClearsRefused" | "objects" | "baseObjects">): Pick<EditorState, "saveError" | "saveErrorCode"> {
+  const said = refusedClearsLine(state);
+  return said === null ? { saveError: null, saveErrorCode: null } : { saveError: said, saveErrorCode: NOTE_HELD_CODE };
+}
+
+/** A refusal's words and a refused clear's sentence beside them, as one notice; null for neither. */
+function saidTogether(...words: readonly (string | null)[]): string | null {
+  const said = words.filter((one): one is string => one !== null && one !== "");
+  return said.length === 0 ? null : said.join(" ");
+}
+
+/**
  * The save itself. `keeping` is "Keep mine": it may run while the conflict it
  * settles is pending (every other save waits for the person's choice), and a
  * 409 during it is always reported as a fresh conflict, never rebased, even
@@ -1719,7 +2205,9 @@ async function saveDocument(
   // A mid-drag save would seal an incomplete action-log entry. Release or
   // cancellation schedules the complete transaction through the same bridge.
   if (gestureOwnsCurrentDocument()) return false;
-  const { configId, configRevision, objects, isSaving, isPublicPreview, venueId, saveConflict } = get();
+  const { configId, configRevision, isSaving, isPublicPreview, venueId, saveConflict } = get();
+  // What this save sends; the note-clearing step below may take a piece back into it.
+  let objects = get().objects;
   if (configId === null || isSaving) return false;
   // A conflict waits for the person's choice. Any other save could only meet
   // it again (and, in the live room, merge what they have not chosen).
@@ -1737,41 +2225,126 @@ async function saveDocument(
     return false;
   }
 
+  // Someone who cannot see a note never destroys it (lib/guest-plan-notes). A
+  // piece left out of a save is removed, and its note with it, and the API
+  // does not refuse that. So no save goes without a piece the confirmed
+  // document says holds a note this browser is not shown, whatever wrote the
+  // working one: this is the one place every path to a save must pass. Such a
+  // piece is put back first and the person is told it stayed; only then is
+  // the document, which now has it, sent.
+  if (putBackHeldNotePieces()) return saveDocument(isAuthenticated, keeping, transport);
+
   // The save path: the signed-in route for a layout someone owns, and for a
   // public preview only when that route answers this person (usesSignedInRoutes).
   const useAuthPath = usesSignedInRoutes({ isPublicPreview, venueId }, isAuthenticated);
+  // A guest plan's save names the note each changed note replaces, and says
+  // its notes are complete only when this document was read with them
+  // (lib/guest-plan-notes.ts; api/configurations.ts BatchSaveOptions).
+  // The signed-in save stores each piece as sent, so a guest plan read
+  // without its notes never goes that way, whoever has signed in since.
+  const viaSignedIn = useAuthPath && signedInRoutesSuit(get());
+  // A piece the person has removed that carries their own note, in a
+  // browser the plan's notes are kept from: the API cannot tell that note
+  // from one this browser is not shown, and refuses a save that leaves the
+  // piece out. So the note is cleared first, by name, in a save of its own
+  // (lib/guest-plan-notes batchClearingOwnNotesOfRemovedPieces), and the
+  // save that removes the piece follows on the revision that one made.
+  // Only that save's confirmed document and revision are taken: the working
+  // document is untouched, so the piece does not come back on screen.
+  const confirmed = get().baseObjects;
+  const clearing = viaSignedIn || get().notesIncluded ? null : batchClearingOwnNotesOfRemovedPieces(confirmed, objects, editorToBatch);
+  // Never as the page hides or closes: the second save cannot be counted on
+  // to follow the first. Nothing is sent, and nothing on screen changes (a
+  // refusal standing there still stands); the work stays unsaved and on this
+  // device, and the autosave the page's going cancelled is asked for again,
+  // so the two steps go once the page runs again (delta review R9).
+  if (clearing !== null && transport?.keepalive === true) {
+    requestAutosave();
+    return false;
+  }
 
   // savingChanges is captured from pendingChanges here (deriveSaveFacts). A
   // pending conflict stays until this save lands: only then is it settled.
-  set({ isSaving: true, saveError: null, saveErrorCode: null });
+  set({ isSaving: true, ...standingRefusal(get()) });
   try {
-    const batch = objects.map(editorToBatch);
-    const save = useAuthPath ? configApi.authBatchSave : configApi.publicBatchSave;
-    const saved = transport === undefined
-      ? await save(configId, batch, configRevision)
-      : await save(configId, batch, configRevision, transport);
+    const save = viaSignedIn ? configApi.authBatchSave : configApi.publicBatchSave;
+    const sending: configApi.BatchSaveOptions | undefined = !viaSignedIn && get().notesIncluded
+      ? { ...transport, notesIncluded: true }
+      : transport;
+    let revision = configRevision;
+    if (clearing !== null) {
+      let cleared: configApi.BatchSaveResponse | null = null;
+      try {
+        cleared = sending === undefined
+          ? await save(configId, clearing, revision)
+          : await save(configId, clearing, revision, sending);
+      } catch (refused) {
+        // Refused for the confirmed document itself: a note in it has changed
+        // since it was read (NOTE_HELD), or a piece in it is no longer
+        // accepted (422). Every later save would meet the same refusal while
+        // the removal waited, so it is given up: the piece is taken back,
+        // with what it holds, and the work goes on its own (lib/guest-plan-notes
+        // givingUpOwnNoteRemoval; delta review R3, A6). A newer version, or a
+        // failure to reach the server, is answered as for any save.
+        if (!(refused instanceof ApiError) || (refused.code !== NOTE_HELD_CODE && refused.status !== 422)) throw refused;
+        if (session !== configurationSession || get().configId !== configId) return false;
+        set({ baseObjects: givingUpOwnNoteRemoval(confirmed, objects, refused.code === NOTE_HELD_CODE) });
+      }
+      if (cleared !== null) {
+        if (session !== configurationSession || get().configId !== configId) return false;
+        revision = cleared.revision;
+        // A note its answer holds that it did not send is one this browser
+        // has not shown, and the working document is not touched here: it is
+        // held, never named by the save that follows (delta review X1).
+        const answered = takingNotesKeptUnsent(objects, cleared.objects.map(placedObjectToEditor), notesSentIn(clearing), null).confirmed;
+        set({ configRevision: revision, baseObjects: keepingConfirmedNotes(answered, confirmed) });
+      }
+      // That answer can say a piece this document has lost holds a note this
+      // browser is not shown (one written since by the single-piece route):
+      // nothing is sent without it, so it is taken back now, as at the start
+      // of every save, and the removing save sends it (delta review R2).
+      if (putBackHeldNotePieces()) objects = get().objects;
+    }
+    const batch = viaSignedIn
+      ? objects.map(editorToBatch)
+      : namingReplacedNotes(objects.map(editorToBatch), objects, get().baseObjects);
+    const send = (pieces: readonly BatchObjectInput[], at: number): ReturnType<typeof save> => sending === undefined
+      ? save(configId, pieces, at)
+      : save(configId, pieces, at, sending);
+    // A save refused for a held note, though no words of the person's stand
+    // over one, was refused for a note this browser has on record that is out
+    // of date: "Keep mine" carries the notes confirmed at one revision onto a
+    // newer one, where someone else may have rewritten them. It is sent again
+    // until the notes out of date are found and left to the server
+    // (saveLeavingOutOfDateNotes), and isSaving stays true throughout: a
+    // caller waiting on this save is answered once, when it has settled.
+    const sentBase = get().baseObjects;
+    let saved: Awaited<ReturnType<typeof save>>;
+    let outOfDate: ReadonlyMap<string, string> = new Map<string, string>();
+    let unsettled: ReadonlyMap<string, string> = new Map<string, string>();
+    let stoppedBy: { readonly failure: unknown } | null = null;
+    let refusedWords: string | null = null;
+    try {
+      saved = await send(batch, revision);
+    } catch (refused) {
+      if (viaSignedIn || !(refused instanceof ApiError) || refused.code !== NOTE_HELD_CODE
+        || ownWordsOverHeldNotes({ ...get(), objects, baseObjects: sentBase }).length > 0) throw refused;
+      const stale = await saveLeavingOutOfDateNotes(objects, batch, recordedNotes(sentBase), revision, send,
+        () => session === configurationSession && get().configId === configId);
+      if (stale === null) throw refused;
+      ({ saved, left: outOfDate, unsettled, stoppedBy } = stale);
+      refusedWords = refused.message;
+    }
     // The server may have accepted the old document. It no longer owns this
     // editor, its revision/history/selection, or its caller's saved feedback.
     if (session !== configurationSession || get().configId !== configId) return false;
     const serverObjects = saved.objects.map(placedObjectToEditor);
-    // Whole-history id remap: zip the local ids we sent (batch order)
-    // with the rows the server inserted (echoed updates-first, then
-    // inserts, each in input order). If they cannot be aligned the
-    // timeline can no longer be trusted — clear it rather than risk
-    // undo resurrecting rows under dead ids.
-    const sentLocalIds = objects.map((o) => o.id).filter((id) => EDITOR_HISTORY_IDS.isLocalId(id));
-    const sentServerIds = new Set(objects.map((o) => o.id).filter((id) => !EDITOR_HISTORY_IDS.isLocalId(id)));
-    const insertedIds = saved.objects.map((p) => p.id).filter((id) => !sentServerIds.has(id));
-    const idMap = new Map<string, string>();
-    const aligned = sentLocalIds.length === insertedIds.length;
-    if (aligned) {
-      sentLocalIds.forEach((localId, i) => {
-        const serverId = insertedIds[i];
-        if (serverId !== undefined) {
-          idMap.set(localId, serverId);
-        }
-      });
-    }
+    // Whole-history id remap (placedIdsOf). If the rows cannot be aligned the
+    // timeline can no longer be trusted — clear it rather than risk undo
+    // resurrecting rows under dead ids.
+    const placedIds = placedIdsOf(objects, saved.objects);
+    const aligned = placedIds !== null;
+    const idMap = placedIds ?? new Map<string, string>();
     // The user may have kept editing while the request was in flight —
     // remap the latest state, not the snapshot captured before the await.
     const latest = get();
@@ -1798,29 +2371,81 @@ async function saveDocument(
     // happened. The asymmetry is deliberate — a false positive costs one
     // redundant save, a false negative silently loses the operator's work.
     const editedInFlight = latest.objects !== objects;
-    const nextObjects = editedInFlight
+    const answered = editedInFlight
       ? latest.objects.map((object) => {
           const serverId = idMap.get(object.id);
           return serverId === undefined ? object : { ...object, id: serverId };
         })
       : serverObjects;
+    // A note this save left to the server is no longer this browser's: its
+    // record went with the answer, and its words come off the piece. A change
+    // the person had made to it was not made: words they had put in its place
+    // stay there, unsaved, and a note they had cleared stays cleared. Either
+    // is refused, never said to be saved, and the refusal that named no piece
+    // is now about that one: the API's sentence names words over a held note
+    // (pieceNamedForRefusedSave), and a refused clear has its own (refusedClearsLine).
+    const refusedNotes = notesRefusedOnLeaving(latest.objects, outOfDate);
+    const noteRefused = refusedNotes.length > 0;
+    // A refused clear leaves nothing unsaved: the piece is as the server has
+    // it, holding the note it is shown to hold. Words the person put in a
+    // note's place are unsaved, and stay so until they take them off.
+    const wordsRefused = refusedNotes.some((object) => object.notes !== "");
+    // Clears refused before, whose notice still stands, and these.
+    const clearsRefused = [...new Set([
+      ...get().noteClearsRefused,
+      ...refusedNotes.filter((object) => object.notes === "").map((object) => object.id),
+    ])];
+    // A note the saves stopped short of vouching for stays on record, carried
+    // as "Keep mine" carries one (keepingConfirmedNotes), with the person's
+    // words on the piece: the next save sends it again.
+    const theirWords = new Map(latest.objects.map((object) => [object.id, object.notes]));
+    const nextObjects = afterLeavingOutOfDateNotes(answered, latest.objects, outOfDate, serverObjects)
+      .map((object) => (unsettled.has(object.id) ? { ...object, notes: theirWords.get(object.id) ?? object.notes } : object));
+    // A yielded object stays the server's: never resend an older local copy.
+    const objectsAfter = snapYieldedToBase(nextObjects, serverObjects);
+    // A note left to the server is never named by a later save unless this
+    // browser shows it (delta review of #388 at 33a8e0ad, S2).
+    const confirmedAnswer = confirmedAfterLeaving(serverObjects, objectsAfter, outOfDate, unsettled);
+    const answeredBase = unsettled.size === 0
+      ? confirmedAnswer
+      : keepingConfirmedNotes(confirmedAnswer, sentBase.filter((object) => unsettled.has(object.id)), true);
+    // Nor, after any save that lands, a note the server kept that this save
+    // did not send: the piece shows it if the person has not touched its note
+    // since the save went, and holds it otherwise (delta review of #388 at
+    // 7a51b6e4, X1). No save from this browser ever names, as the note a
+    // piece's note replaces, words this browser has not shown on that piece.
+    const theirNotes = new Map(latest.objects.map((object) => [idMap.get(object.id) ?? object.id, object.notes]));
+    const leftToTheServer = new Set([...outOfDate.keys(), ...unsettled.keys()]);
+    const { objects: shownAfter, confirmed: base } = takingNotesKeptUnsent(
+      objectsAfter, answeredBase, notesSentIn(batch, leftToTheServer), theirNotes,
+    );
+    // The API's sentence is for words over a held note; a refused clear has its
+    // own (ruling C3 on #388), and both stand in one notice when both are refused.
+    const refusal = { objects: shownAfter, baseObjects: base, noteClearsRefused: noteRefused ? clearsRefused : get().noteClearsRefused };
     set({
-      // A yielded object stays the server's: never resend an older local copy.
-      objects: snapYieldedToBase(nextObjects, serverObjects),
-      baseObjects: serverObjects,
+      objects: shownAfter,
+      baseObjects: base,
       history: aligned ? remapHistoryIds(latest.history, idMap) : emptyHistory<EditorObject>(),
       selectedObjectId: latest.selectedObjectId === null
         ? null
         : idMap.get(latest.selectedObjectId) ?? latest.selectedObjectId,
       configRevision: saved.revision,
-      isDirty: editedInFlight,
-      isSaving: false,
+      isDirty: editedInFlight || wordsRefused || unsettled.size > 0,
+      // Saves stopped by a failure are answered by it, below.
+      isSaving: stoppedBy !== null,
       lastSavedAt: new Date(),
       saveConflict: null,
-      saveErrorCode: null,
+      ...(noteRefused
+        ? {
+            saveError: saidTogether(wordsRefused ? refusedWords : null, refusedClearsLine(refusal)),
+            saveErrorCode: NOTE_HELD_CODE,
+            noteClearsRefused: clearsRefused,
+          }
+        // Nothing refused this time: a refused clear's notice still stands.
+        : standingRefusal(refusal)),
       reviewLockRefused: false,
       // Its work arrived after all: nothing of it is waiting here.
-      ...(latest.leftBehind?.configId === configId ? { leftBehind: null } : {}),
+      ...workArrived(latest.leftBehind, configId),
     });
     conflictServerCopy = null;
     // Same configuration, so the log's scope is unchanged and its unsent
@@ -1835,7 +2460,10 @@ async function saveDocument(
     // endpoint is authenticated, and public-preview planning stays local.
     if (useAuthPath) flushActionLogToServer(saved.revision);
     liveHooks?.onSaved(saved.revision, idMap);
-    return true;
+    // What landed is kept; the failure that stopped the saves is said as any is.
+    if (stoppedBy !== null) throw stoppedBy.failure;
+    // Saved, but not a change the person made to a note someone else had rewritten.
+    return !noteRefused;
   } catch (err) {
     if (session !== configurationSession || get().configId !== configId) return false;
     const conflict = parseRevisionConflict(err);
@@ -1895,7 +2523,7 @@ async function saveDocument(
     if (code === "NETWORK_ERROR" && (!get().isOnline || !browserSaysOnline())) {
       // Offline, not failed: the work stays unsaved (and on this device);
       // coming back online saves it. isOnline follows the browser's event.
-      set({ isSaving: false, saveError: null, saveErrorCode: null });
+      set({ isSaving: false, ...standingRefusal(get()) });
       return false;
     }
     const message = err instanceof Error ? err.message : "Save failed";
@@ -1910,7 +2538,8 @@ async function saveDocument(
     // doesn't lose their in-progress layout.
     set({
       isSaving: false,
-      saveError: message,
+      // A refusal for a held note says, beside it, a refused clear still standing.
+      saveError: refusedOverHeldNote(code) ? saidTogether(message, refusedClearsLine(get())) : message,
       saveErrorCode: code,
       ...(code === "CONFIG_LOCKED" ? { reviewLockRefused: true } : {}),
     });
@@ -1948,11 +2577,10 @@ function adoptAsSaved(theirs: configApi.Configuration, sent: readonly EditorObje
     isDirty: false,
     isSaving: false,
     lastSavedAt: theirs.updatedAt === undefined ? new Date() : new Date(theirs.updatedAt),
-    saveError: null,
-    saveErrorCode: null,
+    ...standingRefusal(latest),
     saveConflict: null,
     reviewLockRefused: false,
-    ...(latest.leftBehind?.configId === theirs.id ? { leftBehind: null } : {}),
+    ...workArrived(latest.leftBehind, theirs.id),
   });
   conflictServerCopy = null;
   liveHooks?.onSaved(theirs.revision, idMap);
@@ -1978,9 +2606,30 @@ function restoreStep(base: readonly EditorObject[], kept: readonly EditorObject[
 /** How long another layout waits for the open one's unsaved work. */
 export const LAYOUT_CHANGE_SAVE_MS = 2_000;
 
-/** Where the open layout's work stands as another one opens: on the server,
- *  kept on this device (the note says so), or neither. */
-export type LayoutChangeOutcome = "saved" | "kept" | "not-kept";
+/**
+ * Where the open layout's work stands as another one opens: on the server;
+ * on the server but for a clear of a note the API refused, whose notice still
+ * stands ("clear-refused": never "saved" then, ruling R1(b) on #388; the note
+ * the next layout shows says it, delta review at 33a8e0ad S1); kept on this
+ * device (the note says so); or neither.
+ */
+export type LayoutChangeOutcome = "saved" | "clear-refused" | "kept" | "not-kept";
+
+/** Whether work the outgoing layout could neither save nor keep is lost with a switch that goes on regardless (a load). */
+function lostWithTheSwitch(outcome: LayoutChangeOutcome): boolean {
+  switch (outcome) {
+    case "not-kept":
+      return true;
+    case "saved":
+    case "clear-refused":
+    case "kept":
+      return false;
+    default: {
+      const exhausted: never = outcome;
+      throw new Error(`Unhandled layout change outcome ${String(exhausted)}`);
+    }
+  }
+}
 
 /** The last try for one document, so the slate's wait and the load after it
  *  do not try twice for work nobody has changed since. */
@@ -1990,14 +2639,46 @@ let layoutChangeAttempt: {
   readonly outcome: Promise<LayoutChangeOutcome>;
 } | null = null;
 
-function leftBehindFor(state: EditorState, kept: boolean): LeftBehindWork | null {
+/** The note the next layout shows about this one: its unsaved work (`kept`; null for none) and a refused clear still standing. */
+function leftBehindFor(state: EditorState, kept: boolean | null): LeftBehindWork | null {
   if (state.configId === null) return null;
+  const roomName = state.space?.name ?? null;
+  // Shown in the next layout, the sentence says which layout it is about, by
+  // the room's name as the note's own sentence names it (delta review X3).
+  // One carried from an earlier layout and not yet dismissed goes on beside
+  // it: a new note does not put it away (delta review X6).
+  const said = [refusedClearsLine(state, layoutNamed(roomName)), state.leftBehind?.notRemoved ?? null];
+  const notRemoved = saidTogether(...new Set(said));
   return {
     configId: state.configId,
-    roomName: state.space?.name ?? null,
+    roomName,
     kept,
-    savesOnReturn: kept && state.lockReason === null && state.saveConflict === null,
+    savesOnReturn: kept === true && state.lockReason === null && state.saveConflict === null,
+    ...(notRemoved === null ? {} : { notRemoved }),
   };
+}
+
+/**
+ * A save of the layout a note was left about has landed: none of its work is
+ * waiting here after all. A refused clear's sentence in the note still stands
+ * until the person dismisses it.
+ */
+function workArrived(note: LeftBehindWork | null, configId: string): Partial<Pick<EditorState, "leftBehind">> {
+  if (note?.configId !== configId) return {};
+  return { leftBehind: sentenceStanding(note) };
+}
+
+/** What a note about a layout still says once none of its work waits: a refused clear's sentence, until it is dismissed; else nothing. */
+function sentenceStanding(note: LeftBehindWork): LeftBehindWork | null {
+  return note.notRemoved === undefined ? null : { ...note, kept: null, savesOnReturn: false };
+}
+
+/** Nothing is left unsaved: "saved", unless a refused clear's notice stands here, whose sentence then goes in the next layout's note. */
+function settledWithNothingUnsaved(state: EditorState): LayoutChangeOutcome {
+  // A sentence carried from an earlier layout goes on in the note it is in.
+  if (refusedClearsLine(state) === null) return "saved";
+  useEditorStore.setState({ leftBehind: leftBehindFor(state, null) });
+  return "clear-refused";
 }
 
 /** Resolve once no save is in flight for this session (or it has ended). */
@@ -2037,7 +2718,7 @@ async function settleOutgoingWork(session: number, timeoutMs: number, keptAtStar
   // Another load replaced the document meanwhile: its copy here is as it was.
   if (session !== configurationSession) return keptAtStart ? "kept" : "not-kept";
   const state = useEditorStore.getState();
-  if (!state.isDirty) return "saved";
+  if (!state.isDirty) return settledWithNothingUnsaved(state);
   if (!state.keptOnDevice) return "not-kept";
   useEditorStore.setState({ leftBehind: leftBehindFor(state, true) });
   return "kept";
@@ -2046,14 +2727,17 @@ async function settleOutgoingWork(session: number, timeoutMs: number, keptAtStar
 /**
  * Before another layout replaces the open one in this page: its unsaved work
  * gets up to `timeoutMs` to reach the server (a save in flight first). Resolves
- * "saved" when nothing is left unsaved; "kept" when the work stays on this
- * device, noting it for the next layout to say; "not-kept" when it is neither,
- * so the caller decides (the slate holds the switch; a load goes on and says
- * the work is lost). Never rejects.
+ * "saved" when nothing is left unsaved; "clear-refused" when nothing is but a
+ * refused clear's notice stands, noting its sentence for the next layout to
+ * say (the switch goes on); "kept" when the work stays on this device, noting
+ * it (and any such sentence) for the next layout to say; "not-kept" when it is
+ * neither, so the caller decides (the slate holds the switch; a load goes on
+ * and says the work is lost). Never rejects.
  */
 export function saveBeforeLayoutChange(timeoutMs: number = LAYOUT_CHANGE_SAVE_MS): Promise<LayoutChangeOutcome> {
   const state = useEditorStore.getState();
-  if (state.configId === null || !state.isDirty) return Promise.resolve("saved");
+  if (state.configId === null) return Promise.resolve("saved");
+  if (!state.isDirty) return Promise.resolve(settledWithNothingUnsaved(state));
   const session = configurationSession;
   if (layoutChangeAttempt?.session === session && layoutChangeAttempt.objects === state.objects) {
     return layoutChangeAttempt.outcome;
@@ -2103,7 +2787,7 @@ subscribeOnlineStatus((online) => {
   const explainedByOffline = !online && state.saveErrorCode === "NETWORK_ERROR";
   useEditorStore.setState({
     isOnline: online,
-    ...(explainedByOffline ? { saveError: null, saveErrorCode: null } : {}),
+    ...(explainedByOffline ? standingRefusal(state) : {}),
   });
 });
 if (useEditorStore.getState().isOnline !== readOnlineStatus()) {
@@ -2146,6 +2830,10 @@ export function onPlannerDraftStorageChange(event: Pick<StorageEvent, "key" | "n
 }
 
 if (typeof window !== "undefined") window.addEventListener("storage", onPlannerDraftStorageChange);
+
+// The scene's stores and commands ask which pieces hold a note this browser is
+// not shown without loading this store (lib/guest-plan-notes).
+registerHeldNotes(() => heldNoteIds(useEditorStore.getState()), () => carriedNoteIds(useEditorStore.getState()));
 
 // This page holds its lock for its lifetime, so another tab can tell its
 // in-progress drafts from those a closed page left behind.

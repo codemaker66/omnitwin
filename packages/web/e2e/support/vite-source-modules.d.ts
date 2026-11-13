@@ -7,3 +7,5 @@ declare module "/src/stores/*";
 // (planner-work-survives). Only a wildcard pattern matches a rooted name like
 // these: an exact declaration of "/src/.../EditorBridge.tsx" never does (TS2307).
 declare module "/src/components/editor/*";
+// The planner's commands and the lines it reads a held note by (planner-held-notes).
+declare module "/src/lib/*";

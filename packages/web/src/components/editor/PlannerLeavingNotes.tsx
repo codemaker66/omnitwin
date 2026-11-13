@@ -1,6 +1,6 @@
 import { type ReactElement } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { leftBehindWords, restoreReceipt } from "../../lib/editor-save-status.js";
+import { leftBehindIsAlert, leftBehindWords, restoreReceipt } from "../../lib/editor-save-status.js";
 import { useEditorStore } from "../../stores/editor-store.js";
 import { ActivityIndicator } from "../shared/Activity.js";
 
@@ -35,6 +35,9 @@ export function PlannerLeavingNotes(): ReactElement | null {
   });
   const note = facts.leftBehind === null ? null : leftBehindWords(facts.leftBehind);
   if (receipt === null && note === null) return null;
+  // Lost work, or a refused clear's sentence carried from the layout left
+  // behind: an alert, as the slate says it (delta review of #388 at 7a51b6e4, X2).
+  const alert = facts.leftBehind !== null && leftBehindIsAlert(facts.leftBehind);
   const dismiss = (): void => { useEditorStore.setState({ restoredFromDevice: null, leftBehind: null }); };
   return (
     <div
@@ -55,7 +58,7 @@ export function PlannerLeavingNotes(): ReactElement | null {
       }}
     >
       {/* The words alone are the live region: the dismiss key is not news. */}
-      <span role="status" aria-live="polite" style={{ flex: 1, display: "flex", flexDirection: "column", gap: 4 }}>
+      <span role={alert ? "alert" : "status"} aria-live={alert ? "assertive" : "polite"} style={{ flex: 1, display: "flex", flexDirection: "column", gap: 4 }}>
         {note !== null ? <span>{note}</span> : null}
         {receipt !== null ? (
           <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
