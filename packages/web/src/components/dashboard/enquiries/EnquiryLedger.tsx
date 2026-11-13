@@ -160,7 +160,7 @@ function LedgerRow({ enquiry, selected, tabbable, nowMs, year, roomName, stampKe
       : date === null ? "event date to be confirmed" : `event ${date.full}${passed ? ", date has passed" : ""}`,
     ...details,
     age === null ? null : `received ${age}`,
-    waiting === null ? null : `no reply after ${waiting}`,
+    waiting === null ? null : `no reply recorded after ${waiting}`,
   ].filter((part): part is string => part !== null).join(", ");
 
   return (

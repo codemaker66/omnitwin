@@ -119,14 +119,37 @@ describe("useReplyAlarm", () => {
     expect(getReplyAlarm).toHaveBeenCalledTimes(2);
   });
 
-  it("stops waiting when the desk closes", async () => {
-    getReplyAlarm.mockResolvedValue(alarm({ nextDueAt: iso(NOW + MINUTE) }));
-    const { unmount } = renderHook(() => useReplyAlarm("venue-1", 0));
+  it("knows when the longest-waiting arrived, though the alarm's capped list leaves it out", async () => {
+    const longest = { id: "e-oldest", arrivedAt: iso(NOW - 90 * HOUR) };
+    getReplyAlarm.mockResolvedValue(alarm({ overdue: 201, longest, enquiries: [{ id: "e-1", arrivedAt: iso(NOW - 30 * HOUR) }] }));
+    const { result } = renderHook(() => useReplyAlarm("venue-1", 0));
     await flush();
-    unmount();
-    await advance(10 * MINUTE);
-    setVisibility("visible");
-    expect(getReplyAlarm).toHaveBeenCalledTimes(1);
-    expect(getReplyAlarm.mock.calls[0]?.[0]?.aborted).toBe(true);
+    expect(result.current.overdueSince.get("e-oldest")).toBe(NOW - 90 * HOUR);
+    expect(result.current.overdueSince.get("e-1")).toBe(NOW - 30 * HOUR);
+    expect(result.current.overdueSince.size).toBe(2);
+  });
+
+  it("stops waiting when the desk closes: the read, the timer and the listener all end", async () => {
+    getReplyAlarm.mockResolvedValue(alarm({ nextDueAt: iso(NOW + MINUTE) }));
+    const added = vi.spyOn(document, "addEventListener");
+    const removed = vi.spyOn(document, "removeEventListener");
+    try {
+      const { unmount } = renderHook(() => useReplyAlarm("venue-1", 0));
+      await flush();
+      // The read landed and the next one is waited for.
+      expect(vi.getTimerCount()).toBe(1);
+      const listened = added.mock.calls.filter(([type]) => type === "visibilitychange").map(([, listener]) => listener);
+      expect(listened).toHaveLength(1);
+      unmount();
+      expect(vi.getTimerCount()).toBe(0);
+      expect(removed.mock.calls.filter(([type]) => type === "visibilitychange").map(([, listener]) => listener)).toEqual(listened);
+      await advance(10 * MINUTE);
+      setVisibility("visible");
+      expect(getReplyAlarm).toHaveBeenCalledTimes(1);
+      expect(getReplyAlarm.mock.calls[0]?.[0]?.aborted).toBe(true);
+    } finally {
+      added.mockRestore();
+      removed.mockRestore();
+    }
   });
 });

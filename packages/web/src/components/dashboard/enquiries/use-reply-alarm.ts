@@ -91,9 +91,15 @@ export function useReplyAlarm(replyVenueId: string | null, version: number): Rep
     return () => { document.removeEventListener("visibilitychange", onVisible); };
   }, [replyVenueId]);
 
-  const overdueSince = useMemo(() => new Map((alarm?.enquiries ?? [])
-    .map((enquiry) => [enquiry.id, Date.parse(enquiry.arrivedAt)] as const)
-    .filter(([, ms]) => Number.isFinite(ms))), [alarm]);
+  // The list names at most ENQUIRY_REPLY_ALARM_LIST_LIMIT, the most recent
+  // first, so beyond it the longest-waiting is not in the list; the alarm's
+  // own button opens that one, and its panel must say it is past the mark.
+  const overdueSince = useMemo(() => {
+    const flagged = alarm === null ? [] : alarm.longest === null ? alarm.enquiries : [...alarm.enquiries, alarm.longest];
+    return new Map(flagged
+      .map((enquiry) => [enquiry.id, Date.parse(enquiry.arrivedAt)] as const)
+      .filter(([, ms]) => Number.isFinite(ms)));
+  }, [alarm]);
 
   return { alarm, overdueSince };
 }

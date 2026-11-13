@@ -95,10 +95,12 @@ export function EnquiryReply({ enquiry, canRecord, overdueSinceMs, thresholdHour
   );
 }
 
+const MINUTE_MS = 60_000;
+
 function ReplyForm({ enquiry, recordedAt, onDone }: {
   readonly enquiry: Enquiry;
   /** The reply already recorded, if any: only an earlier one can replace it,
-   *  so "Just now" is not offered and the time starts from it. */
+   *  so "Just now" is not offered and the time is asked for, never assumed. */
   readonly recordedAt: string | null;
   readonly onDone: (result: RecordFirstResponseResult | null) => void;
 }): ReactElement {
@@ -107,9 +109,18 @@ function ReplyForm({ enquiry, recordedAt, onDone }: {
   const firstChoiceRef = useRef<HTMLInputElement>(null);
   const addToast = useToastStore((state) => state.addToast);
   const recordedMs = recordedAt === null ? null : Date.parse(recordedAt);
+  // The box holds whole minutes and the recorded reply is shown to the minute,
+  // so only a minute before the one shown is earlier. A decision or a proposal
+  // stamps its reply with seconds: the minute it shows is not earlier, and
+  // letting it through would swap that reply's channel and person for this
+  // one's. Venue offsets are whole hours, so the minute is the venue's too.
+  const recordedMinuteMs = recordedMs === null ? null : Math.floor(recordedMs / MINUTE_MS) * MINUTE_MS;
   const [channel, setChannel] = useState<ReportedResponseChannel | null>(null);
   const [when, setWhen] = useState<"now" | "earlier">(recordedMs === null ? "now" : "earlier");
-  const [earlier, setEarlier] = useState(() => msToWallInput(recordedMs ?? Date.now()));
+  // Replacing a recorded reply needs a time the person gives; with none yet
+  // recorded, "Earlier" starts from now and is adjusted back.
+  const [earlier, setEarlier] = useState(() => recordedMs === null ? msToWallInput(Date.now()) : "");
+  const latestMs = recordedMinuteMs === null ? Date.now() : Math.min(Date.now(), recordedMinuteMs - MINUTE_MS);
   const [saving, setSaving] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   // A save still on its way when the person moves on still says how it ended.
@@ -138,7 +149,7 @@ function ReplyForm({ enquiry, recordedAt, onDone }: {
         setFailure("A reply cannot be later than now.");
         return;
       }
-      if (recordedMs !== null && ms >= recordedMs) {
+      if (recordedMinuteMs !== null && ms >= recordedMinuteMs) {
         setFailure("Choose a time earlier than the reply already recorded.");
         return;
       }
@@ -199,7 +210,7 @@ function ReplyForm({ enquiry, recordedAt, onDone }: {
         {when === "earlier" && (
           <label className="enq-reply__time" htmlFor={whenId}>
             <span>Day and time (venue time)</span>
-            <input id={whenId} type="datetime-local" value={earlier} max={msToWallInput(Date.now())}
+            <input id={whenId} type="datetime-local" value={earlier} max={msToWallInput(latestMs)}
               onChange={(event) => { setEarlier(event.target.value); setFailure(null); }} />
           </label>
         )}

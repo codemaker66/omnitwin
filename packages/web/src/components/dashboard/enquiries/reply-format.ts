@@ -56,8 +56,9 @@ export function waitedFor(arrivedAtMs: number, nowMs: number): string {
 }
 
 /** The alarm's sentence under the desk's summary, or null when nothing is
- *  past the threshold: "2 enquiries have waited more than 24 hours for a
- *  first reply; the longest, 3 days." */
+ *  past the threshold: "2 enquiries have waited more than 24 hours with no
+ *  reply recorded; the longest, 3 days." Recorded, because a reply nobody
+ *  recorded (a call, the venue's own mailbox) is one Venviewer cannot see. */
 export function replyAlarmSummary(input: {
   readonly overdue: number;
   readonly thresholdHours: number;
@@ -70,7 +71,7 @@ export function replyAlarmSummary(input: {
   const longest = longestArrivedAtMs === null || overdue === 1 ? [] : ["; the longest, ", { strong: waitedFor(longestArrivedAtMs, nowMs) }];
   return [
     { strong: noun, tone: "alarm" },
-    ` ${overdue === 1 ? "has" : "have"} waited more than ${String(thresholdHours)} hours for a first reply`,
+    ` ${overdue === 1 ? "has" : "have"} waited more than ${String(thresholdHours)} hours with no reply recorded`,
     ...longest,
     ".",
   ];

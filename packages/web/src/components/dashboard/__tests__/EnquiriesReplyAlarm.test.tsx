@@ -46,9 +46,15 @@ vi.mock("../../../stores/toast-store.js", () => ({
   useToastStore: (selector: (state: { readonly addToast: typeof mocks.addToast }) => unknown): unknown => selector({ addToast: mocks.addToast }),
 }));
 
+// The desk is read as one of the venue's commercial team, the people who
+// record replies: the panel's own gates (movesEnquiry for the moves) read the
+// same person, so a test of the desk never runs as nobody.
 vi.mock("../../../stores/auth-store.js", () => ({
-  useAuthStore: (selector: (state: { readonly user: { readonly id: string; readonly name: string } }) => unknown): unknown =>
-    selector({ user: { id: "user-elaine", name: "Elaine MacGregor" } }),
+  useAuthStore: (
+    selector: (state: {
+      readonly user: { readonly id: string; readonly name: string; readonly role: string; readonly venueId: string; readonly platformRole: string };
+    }) => unknown,
+  ): unknown => selector({ user: { id: "user-elaine", name: "Elaine MacGregor", role: "staff", venueId: "venue-1", platformRole: "none" } }),
 }));
 
 vi.mock("../../ai/AIDraftPanel.js", () => ({ AIDraftPanel: () => <div>AI draft</div> }));
@@ -168,10 +174,10 @@ describe("the reply-time alarm on the Enquiries desk", () => {
     render(<EnquiriesView replyVenueId="venue-1" />);
 
     const alarm = await screen.findByTestId("reply-alarm");
-    expect(alarm.querySelector("p")?.textContent).toBe("2 enquiries have waited more than 24 hours for a first reply; the longest, 3 days.");
+    expect(alarm.querySelector("p")?.textContent).toBe("2 enquiries have waited more than 24 hours with no reply recorded; the longest, 3 days.");
     // The flagged row says so, in its mark and in what is read out; the others do not.
     expect(within(row("Client 3")).getByTestId("reply-alarm-mark").textContent).toBe("No reply · 30 hours");
-    expect(row("Client 3").getAttribute("aria-label")).toContain("no reply after 30 hours");
+    expect(row("Client 3").getAttribute("aria-label")).toContain("no reply recorded after 30 hours");
     expect(within(row("Client 1")).queryByTestId("reply-alarm-mark")).toBeNull();
     expect(within(row("Client 5")).queryByTestId("reply-alarm-mark")).toBeNull();
 
@@ -199,6 +205,34 @@ describe("the reply-time alarm on the Enquiries desk", () => {
     expect(screen.queryByRole("heading", { name: "Client 9", level: 2 })).toBeNull();
     expect(mocks.addToast).not.toHaveBeenCalled();
     expect(within(alarm).getByRole("button", { name: "Open the longest unanswered" }).getAttribute("aria-busy")).toBe("false");
+  });
+
+  it("marks the longest unanswered as past the mark when the alarm's capped list leaves it out", async () => {
+    // More than ENQUIRY_REPLY_ALARM_LIST_LIMIT are flagged: the list holds the
+    // most recent, and the longest-waiting is not among them.
+    mocks.getReplyAlarm.mockResolvedValue({ ...ALARM, overdue: 201, enquiries: ALARM.enquiries.filter((flagged) => flagged.id !== "enquiry-9") });
+    mocks.getEnquiry.mockResolvedValue(enquiry(9, { createdAt: new Date(NOW - 90 * HOUR).toISOString() }));
+    render(<EnquiriesView replyVenueId="venue-1" />);
+    const alarm = await screen.findByTestId("reply-alarm");
+    fireEvent.click(within(alarm).getByRole("button", { name: "Open the longest unanswered" }));
+    await screen.findByRole("heading", { name: "Client 9", level: 2 });
+    const reply = screen.getByRole("region", { name: "First reply" });
+    expect(reply.getAttribute("data-tone")).toBe("alarm");
+    expect(replyLine(reply)).toBe("No reply recorded after 3 days, past the 24-hour mark.");
+  });
+
+  it("says so when the longest unanswered cannot be read, and leaves the desk as it was", async () => {
+    mocks.getEnquiry.mockRejectedValue(new ApiError(500, "Internal", "SERVER_ERROR"));
+    render(<EnquiriesView replyVenueId="venue-1" />);
+    const alarm = await screen.findByTestId("reply-alarm");
+    fireEvent.click(within(alarm).getByRole("button", { name: "Open the longest unanswered" }));
+    expect(within(alarm).getByRole("button", { name: "Open the longest unanswered" }).getAttribute("aria-busy")).toBe("true");
+    await waitFor(() => { expect(mocks.addToast).toHaveBeenCalledWith("Failed to load enquiry", "error"); });
+    expect(mocks.getEnquiry).toHaveBeenCalledWith("enquiry-9", expect.any(AbortSignal));
+    const button = within(alarm).getByRole<HTMLButtonElement>("button", { name: "Open the longest unanswered" });
+    await waitFor(() => { expect(button.getAttribute("aria-busy")).toBe("false"); });
+    expect(button.disabled).toBe(false);
+    expect(screen.queryByRole("heading", { name: "Client 9", level: 2 })).toBeNull();
   });
 
   it("says nothing, and reads no alarm, for someone who does not record replies", async () => {
@@ -260,7 +294,7 @@ describe("recording a reply made outside Venviewer", () => {
     expect(within(row("Client 3")).queryByTestId("reply-alarm-mark")).toBeNull();
     await act(async () => { reread.resolve({ ...ALARM, overdue: 1, enquiries: ALARM.enquiries.filter((flagged) => flagged.id !== "enquiry-3") }); await reread.promise; });
     expect((await screen.findByTestId("reply-alarm")).querySelector("p")?.textContent)
-      .toBe("1 enquiry has waited more than 24 hours for a first reply.");
+      .toBe("1 enquiry has waited more than 24 hours with no reply recorded.");
   });
 
   it("records an earlier reply at the venue's wall time", async () => {
@@ -280,6 +314,35 @@ describe("recording a reply made outside Venviewer", () => {
     expect(await within(reply).findByText("By email · Thu 24 Sep, 09:30 · by you")).toBeDefined();
   });
 
+  it("records an earlier reply at the venue's wall time in winter, when Glasgow keeps UTC", async () => {
+    // Friday 20 November 2026, 09:30 in Glasgow (GMT).
+    const november = Date.parse("2026-11-20T09:30:00.000Z");
+    vi.setSystemTime(november);
+    const arrivedAt = new Date(november - 30 * HOUR).toISOString();
+    mocks.listEnquiryPage.mockResolvedValue(page([enquiry(3, { createdAt: arrivedAt })]));
+    mocks.getReplyAlarm.mockResolvedValue({
+      ...ALARM, asOf: new Date(november).toISOString(), overdue: 1, longest: { id: "enquiry-3", arrivedAt }, enquiries: [{ id: "enquiry-3", arrivedAt }],
+    });
+    mocks.recordFirstResponse.mockResolvedValue(recorded("enquiry-3", { at: "2026-11-20T08:15:00.000Z", channel: "email", recordedAt: new Date(november).toISOString() }));
+    render(<EnquiriesView replyVenueId="venue-1" />);
+    const reply = await openClient(3);
+    expect(replyLine(reply)).toBe("No reply recorded after 30 hours, past the 24-hour mark.");
+    fireEvent.click(within(reply).getByRole("button", { name: "Record a reply" }));
+    const form = within(reply).getByRole("group", { name: "Record a reply" });
+    fireEvent.click(within(form).getByRole("radio", { name: "Email" }));
+    fireEvent.click(within(form).getByRole("radio", { name: "Earlier" }));
+    const time = within(form).getByLabelText<HTMLInputElement>("Day and time (venue time)");
+    expect(time.value).toBe("2026-11-20T09:30");
+    expect(time.max).toBe("2026-11-20T09:30");
+    // 08:15 in Glasgow in November is 08:15 UTC; in September it was an hour earlier.
+    fireEvent.change(time, { target: { value: "2026-11-20T08:15" } });
+    fireEvent.click(within(form).getByRole("button", { name: "Record reply" }));
+    await waitFor(() => {
+      expect(mocks.recordFirstResponse).toHaveBeenCalledWith("enquiry-3", { channel: "email", respondedAt: "2026-11-20T08:15:00.000Z" });
+    });
+    expect(await within(reply).findByText("By email · Fri 20 Nov, 08:15 · by you")).toBeDefined();
+  });
+
   it("refuses a time later than now before sending anything", async () => {
     render(<EnquiriesView replyVenueId="venue-1" />);
     const reply = await openClient(3);
@@ -293,6 +356,40 @@ describe("recording a reply made outside Venviewer", () => {
     expect(mocks.recordFirstResponse).not.toHaveBeenCalled();
   });
 
+  it("never takes the minute a recorded reply shows as earlier, though the stamp has seconds after it", async () => {
+    // Approved at 10:05:37 in Glasgow: the decision stamps its reply to the
+    // second, and the panel shows the minute.
+    const answered = enquiry(1, { firstResponseAt: "2026-09-24T09:05:37.412Z", firstResponseBy: "user-colleague", firstResponseChannel: "decision" });
+    mocks.listEnquiryPage.mockResolvedValue(page([answered]));
+    render(<EnquiriesView replyVenueId="venue-1" />);
+    const reply = await openClient(1);
+    expect(within(reply).getByText("With the decision email · Thu 24 Sep, 10:05")).toBeDefined();
+    fireEvent.click(within(reply).getByRole("button", { name: "Record an earlier reply" }));
+    const form = within(reply).getByRole("group", { name: "Record an earlier reply" });
+    // No time is assumed: the latest offered is the minute before the one shown.
+    const time = within(form).getByLabelText<HTMLInputElement>("Day and time (venue time)");
+    expect(time.value).toBe("");
+    expect(time.max).toBe("2026-09-24T10:04");
+    fireEvent.click(within(form).getByRole("radio", { name: "Phone call" }));
+    fireEvent.click(within(form).getByRole("button", { name: "Record reply" }));
+    expect(within(form).getByRole("alert").textContent).toBe("Enter the day and time of the reply.");
+    // 10:05 sends 09:05:00, before the stamp's 09:05:37: the server would take
+    // it, and a phone call by this person would replace the decision.
+    fireEvent.change(time, { target: { value: "2026-09-24T10:05" } });
+    fireEvent.click(within(form).getByRole("button", { name: "Record reply" }));
+    expect(within(form).getByRole("alert").textContent).toBe("Choose a time earlier than the reply already recorded.");
+    expect(mocks.recordFirstResponse).not.toHaveBeenCalled();
+
+    // The minute before is earlier, and is recorded.
+    mocks.recordFirstResponse.mockResolvedValue(recorded("enquiry-1", { at: "2026-09-24T09:04:00.000Z", channel: "phone" }));
+    fireEvent.change(time, { target: { value: "2026-09-24T10:04" } });
+    fireEvent.click(within(form).getByRole("button", { name: "Record reply" }));
+    await waitFor(() => {
+      expect(mocks.recordFirstResponse).toHaveBeenCalledWith("enquiry-1", { channel: "phone", respondedAt: "2026-09-24T09:04:00.000Z" });
+    });
+    expect(await within(reply).findByText("By phone · Thu 24 Sep, 10:04 · by you")).toBeDefined();
+  });
+
   it("asks only for an earlier time once a reply is recorded, and says when an earlier one already stands", async () => {
     const answered = enquiry(1, { firstResponseAt: "2026-09-24T09:05:00.000Z", firstResponseBy: "user-colleague", firstResponseChannel: "email" });
     mocks.listEnquiryPage.mockResolvedValue(page([answered]));
@@ -304,8 +401,9 @@ describe("recording a reply made outside Venviewer", () => {
     // "Just now" can never be earlier than a reply already recorded.
     expect(within(form).queryByRole("radio", { name: "Just now" })).toBeNull();
     const time = within(form).getByLabelText<HTMLInputElement>("Day and time (venue time)");
-    expect(time.value).toBe("2026-09-24T10:05");
     fireEvent.click(within(form).getByRole("radio", { name: "Phone call" }));
+    // The minute shown is the reply recorded, not one before it.
+    fireEvent.change(time, { target: { value: "2026-09-24T10:05" } });
     fireEvent.click(within(form).getByRole("button", { name: "Record reply" }));
     expect(within(form).getByRole("alert").textContent).toBe("Choose a time earlier than the reply already recorded.");
     expect(mocks.recordFirstResponse).not.toHaveBeenCalled();
@@ -319,6 +417,60 @@ describe("recording a reply made outside Venviewer", () => {
     });
     expect(await within(reply).findByText("An earlier reply is already recorded, so it stands.")).toBeDefined();
     expect(within(reply).getByText("In person · Thu 24 Sep, 09:40")).toBeDefined();
+  });
+
+  /** Opens Client 3's form, chooses a phone call and presses Record reply. */
+  async function recordACall(): Promise<{ readonly reply: HTMLElement; readonly form: HTMLElement }> {
+    render(<EnquiriesView replyVenueId="venue-1" />);
+    const reply = await openClient(3);
+    fireEvent.click(within(reply).getByRole("button", { name: "Record a reply" }));
+    const form = within(reply).getByRole("group", { name: "Record a reply" });
+    fireEvent.click(within(form).getByRole("radio", { name: "Phone call" }));
+    fireEvent.click(within(form).getByRole("button", { name: "Record reply" }));
+    return { reply, form };
+  }
+
+  /** Whether the form's questions, Record reply and Cancel are all held while the reply is recorded. */
+  function heldWhileRecording(form: HTMLElement): boolean[] {
+    return [
+      within(form).getByRole<HTMLFieldSetElement>("group", { name: "How did you reply?" }).disabled,
+      within(form).getByRole<HTMLFieldSetElement>("group", { name: "When?" }).disabled,
+      within(form).getByRole<HTMLButtonElement>("button", { name: /^(Record reply|Recording…)$/u }).disabled,
+      within(form).getByRole<HTMLButtonElement>("button", { name: "Cancel" }).disabled,
+    ];
+  }
+
+  it("shows the reply being recorded, then what was recorded", async () => {
+    const saving = deferred<RecordFirstResponseResult>();
+    mocks.recordFirstResponse.mockReturnValue(saving.promise);
+    const { reply, form } = await recordACall();
+
+    const busy = await within(form).findByRole("button", { name: "Recording…" });
+    expect(busy.getAttribute("aria-busy")).toBe("true");
+    expect(heldWhileRecording(form)).toEqual([true, true, true, true]);
+
+    await act(async () => { saving.resolve(recorded("enquiry-3")); await saving.promise; });
+    expect(await within(reply).findByText("By phone · Thu 24 Sep, 15:00 · by you")).toBeDefined();
+    expect(within(reply).getByText("Reply recorded.")).toBeDefined();
+    expect(within(reply).queryByRole("group", { name: "Record a reply" })).toBeNull();
+    expect(mocks.addToast).not.toHaveBeenCalled();
+  });
+
+  it("shows the reply being recorded, then why it was not, with the form ready to try again", async () => {
+    const saving = deferred<RecordFirstResponseResult>();
+    mocks.recordFirstResponse.mockReturnValue(saving.promise);
+    const { reply, form } = await recordACall();
+
+    expect((await within(form).findByRole("button", { name: "Recording…" })).getAttribute("aria-busy")).toBe("true");
+    expect(heldWhileRecording(form)).toEqual([true, true, true, true]);
+
+    await act(async () => { saving.reject(new ApiError(503, "Unavailable", "SERVICE_UNAVAILABLE")); await saving.promise.catch(() => undefined); });
+    expect((await within(form).findByRole("alert")).textContent).toBe("The reply could not be recorded. Nothing was changed; try again.");
+    expect(within(form).getByRole("button", { name: "Record reply" }).getAttribute("aria-busy")).toBe("false");
+    expect(heldWhileRecording(form)).toEqual([false, false, false, false]);
+    expect(within(form).getByRole<HTMLInputElement>("radio", { name: "Phone call" }).checked).toBe(true);
+    expect(replyLine(reply)).toBe("No reply recorded after 30 hours, past the 24-hour mark.");
+    expect(mocks.addToast).not.toHaveBeenCalled();
   });
 
   it("says so when a reply on its way fails after the desk has moved on", async () => {

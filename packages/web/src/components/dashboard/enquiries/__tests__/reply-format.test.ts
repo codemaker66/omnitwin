@@ -47,9 +47,9 @@ describe("the alarm's sentence", () => {
 
   it("counts the waiting enquiries, says the mark, and the longest wait when there are several", () => {
     const one = replyAlarmSummary({ overdue: 1, thresholdHours: 24, longestArrivedAtMs: NOW - 30 * HOUR, nowMs: NOW });
-    expect(one === null ? null : summaryText(one)).toBe("1 enquiry has waited more than 24 hours for a first reply.");
+    expect(one === null ? null : summaryText(one)).toBe("1 enquiry has waited more than 24 hours with no reply recorded.");
     const several = replyAlarmSummary({ overdue: 3, thresholdHours: 24, longestArrivedAtMs: NOW - 80 * HOUR, nowMs: NOW });
-    expect(several === null ? null : summaryText(several)).toBe("3 enquiries have waited more than 24 hours for a first reply; the longest, 3 days.");
+    expect(several === null ? null : summaryText(several)).toBe("3 enquiries have waited more than 24 hours with no reply recorded; the longest, 3 days.");
     expect(several?.[0]).toEqual({ strong: "3 enquiries", tone: "alarm" });
   });
 });
