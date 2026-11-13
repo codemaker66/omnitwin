@@ -396,6 +396,59 @@ function seatOnFloor(floor: RoomFloor, kinds: readonly ChairSupply[], seat: Thea
 }
 
 /**
+ * Whether a theatre seat's chair has the rear walkway behind it on a room's
+ * own floor: the strip straight behind the chair, its own width wide, from
+ * its back edge to the walkway's depth (THEATRE_SPACING.rearWalkwayM), stands
+ * wholly inside the walls. Rows face −Z (turned 0) or −X (a quarter turn),
+ * so behind a chair is +Z or +X.
+ */
+function walkwayBehindOnFloor(floor: RoomFloor, chair: CatalogueItem, seat: TheatreSeatPlacement): boolean {
+  const { halfW, halfD } = computeRotatedFootprint(chair, seat.rotationY);
+  const half = toRenderSpace(THEATRE_SPACING.rearWalkwayM) / 2;
+  const x = toRenderSpace(seat.xM);
+  const z = toRenderSpace(seat.zM);
+  const backX = Math.sin(seat.rotationY);
+  const backZ = Math.cos(seat.rotationY);
+  return Math.abs(backZ) >= Math.abs(backX)
+    ? rectWithinFloor(floor, x, z + Math.sign(backZ) * (halfD + half), halfW, half)
+    : rectWithinFloor(floor, x + Math.sign(backX) * (halfW + half), z, half, halfD);
+}
+
+/**
+ * Sets `rows` (front first) as seatRowsFromSupply does, with the rear walkway
+ * kept behind the last row set on a room's own floor (#410; Blake, 12 Nov
+ * 2026: "Keep a rear walkway"). There the wall behind the rows need not be
+ * one straight line, and the walls, the doors, the guests asked for and the
+ * chairs in store, not the plan, decide which row is set last. So the walkway
+ * is measured straight behind each chair of the last row set, with the chair
+ * that row is set with, to the room's own walls (walkwayBehindOnFloor). A
+ * seat of that row whose chair has not got it is left out, a row so cut to
+ * fewer than FLOOR_ROW_MIN_SEATS is no row, and the rows are set again, until
+ * the last row set has the walkway behind every chair. Each pass leaves out
+ * at least one seat, so this ends. A seat left out while its row was the last
+ * stays out if the guests still to seat then take a row behind it: it had a
+ * wall nearer behind it than the walkway.
+ */
+function setWithRearWalkway(
+  floor: RoomFloor,
+  rows: readonly (readonly TheatreSeatPlacement[])[],
+  supply: readonly ChairSupply[],
+  target: number | null,
+): { readonly set: ReturnType<typeof seatRowsFromSupply>; readonly rows: readonly (readonly TheatreSeatPlacement[])[] } {
+  let kept = rows;
+  for (;;) {
+    const set = seatRowsFromSupply(kept, supply, target);
+    const last = kept[set.rows - 1];
+    // Each row is one kind of chair, so the last seat set names the last row's.
+    const chair = supply.find((kind) => kind.item.id === set.seats[set.seats.length - 1]?.chairItemId)?.item;
+    if (last === undefined || chair === undefined) return { set, rows: kept };
+    const clear = last.filter((seat) => walkwayBehindOnFloor(floor, chair, seat));
+    if (clear.length === last.length) return { set, rows: kept };
+    kept = [...kept.slice(0, set.rows - 1), ...(clear.length >= FLOOR_ROW_MIN_SEATS ? [clear] : []), ...kept.slice(set.rows)];
+  }
+}
+
+/**
  * A chair's depth front to back, metres. Theatre rows face the stage with the
  * chair's own front, so this is its depth whatever way the room runs.
  */
@@ -443,7 +496,10 @@ function planWithRearWalkway<T extends { readonly set: { readonly seats: readonl
  * chairs in `options.chairSupply`, each row one kind in the hall's order, as
  * many as the hall has. A seat in a door's clear space (`options.doorSpaces`)
  * for any of those chairs is left out, and rows are taken whole from the front
- * until the guests are seated or the chairs run out.
+ * until the guests are seated or the chairs run out. The rear walkway is held
+ * behind the last row set: by the plan in a room the dimensions alone
+ * describe, and on a room's own floor (`options.floor`) to the walls behind
+ * that row's chairs as well (setWithRearWalkway).
  */
 export function planTheatreFill(
   chair: CatalogueItem,
@@ -498,7 +554,19 @@ export function planTheatreFill(
     const clearRows = onFloor
       .map((row) => row.filter((seat) => !supply.some((kind) => seatInSpaces(kind.item, seat, doorSpaces))))
       .filter((row) => row.length > 0);
-    return { set: seatRowsFromSupply(clearRows, supply, target), room: planned, rows: clearRows, standing: onFloor };
+    if (floor === undefined) return { set: seatRowsFromSupply(clearRows, supply, target), room: planned, rows: clearRows, standing: onFloor };
+    // On a floor the walkway is held behind the last row set, to the walls behind it. The room's seats at this
+    // spacing are counted as the plan counts them, every row for the chair in the last row set, here with the
+    // walkway held behind the last of them as well.
+    const kept = setWithRearWalkway(floor, clearRows, supply, target);
+    const lastChair = supply.find((kind) => kind.item.id === kept.set.seats[kept.set.seats.length - 1]?.chairItemId)?.item ?? chair;
+    const asPlanned: readonly ChairSupply[] = [{ item: lastChair, inStore: null }];
+    return {
+      set: kept.set,
+      room: planned,
+      rows: setWithRearWalkway(floor, clearRows, asPlanned, null).rows,
+      standing: setWithRearWalkway(floor, onFloor, asPlanned, null).rows,
+    };
   });
   if (set.seats.length === 0) return null;
   return {
