@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { findUnsupportedProposalClaim } from "@omnitwin/types";
+import {
+  findUnsupportedProposalClaim,
+  GUEST_ENQUIRY_LATEST_EVENT_DATE,
+  GUEST_ENQUIRY_LIMITS,
+  GuestEnquirySchema,
+} from "@omnitwin/types";
 import type { VenueDetail } from "../../../api/spaces.js";
 
 const mocks = vi.hoisted(() => ({ getVenue: vi.fn(), submit: vi.fn(), createLink: vi.fn(), listLinks: vi.fn(), flush: vi.fn() }));
@@ -17,6 +22,7 @@ vi.mock("../EditorBridge.js", async (importOriginal) => ({
 }));
 
 const { GuestEnquiryModal } = await import("../GuestEnquiryModal.js");
+import { pressEnterIn } from "../../../test/implicit-submit.js";
 import { useEditorStore } from "../../../stores/editor-store.js";
 import { usePlacementStore } from "../../../stores/placement-store.js";
 import { useRoomDimensionsStore } from "../../../stores/room-dimensions-store.js";
@@ -275,6 +281,159 @@ describe("GuestEnquiryModal shares a view-only link after sending", () => {
 // planner-qol E-08, E-X1 and E-X6: what the guest types survives a close,
 // the form cannot be closed while the enquiry is on its way, and the answer
 // takes focus and is announced.
+// enquiries-crm-2: the API refuses a long name, telephone or message, or a
+// guest count past its limit, as "Validation failed", which this form then
+// shows with no field named. The fields take no more than the API accepts.
+describe("GuestEnquiryModal takes no more than the API accepts", () => {
+  const rooms: VenueDetail = {
+    id: "venue-limits", name: "Limit Rooms", slug: "limit-rooms", address: "1 Example Street",
+    logoUrl: null, brandColour: null, spaces: [],
+  };
+
+  beforeEach(() => {
+    resetStores();
+    for (const mock of Object.values(mocks)) mock.mockReset();
+    mocks.getVenue.mockResolvedValue(rooms);
+    useEditorStore.setState({ configId: "cfg-1", venueId: rooms.id, isPublicPreview: false });
+  });
+  afterEach(() => {
+    cleanup();
+    resetStores();
+    useEditorStore.getState().reset();
+  });
+
+  async function open(): Promise<void> {
+    render(<GuestEnquiryModal configId="cfg-1" onClose={() => { /* noop */ }} />);
+    await screen.findByText("Your details are shared only with the Limit Rooms events team.");
+  }
+
+  // The message is held at Send instead (below).
+  it("limits every field to the shared enquiry limits", async () => {
+    await open();
+    const limits: readonly [string, number][] = [
+      ["Your name", screen.getByRole<HTMLInputElement>("textbox", { name: "Your name" }).maxLength],
+      ["Phone", screen.getByRole<HTMLInputElement>("textbox", { name: /^Phone/u }).maxLength],
+      ["Guest count", Number(screen.getByRole<HTMLInputElement>("spinbutton", { name: "Guest count" }).max)],
+    ];
+    expect(limits).toEqual([
+      ["Your name", GUEST_ENQUIRY_LIMITS.nameLength],
+      ["Phone", GUEST_ENQUIRY_LIMITS.phoneLength],
+      ["Guest count", GUEST_ENQUIRY_LIMITS.guestCount],
+    ]);
+  });
+
+  // Review of #405, F5. A maxlength message field cut a longer paste at the
+  // API's limit without a word, and the events team got a brief that stopped
+  // mid-sentence. The field keeps everything; Send holds the enquiry, says
+  // why in the alert the email's problem uses, and takes the guest there.
+  it("keeps a long pasted message and holds Send, saying how long it is", async () => {
+    await open();
+    fireEvent.change(screen.getByLabelText(/email/iu), { target: { value: "guest@example.test" } });
+    const message = screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Anything else?" });
+    expect(message.hasAttribute("maxlength"), "a maxlength field cuts a paste without a word").toBe(false);
+    const brief = "b".repeat(3214);
+    fireEvent.change(message, { target: { value: brief } });
+    fireEvent.click(screen.getByRole("button", { name: "Send to Events Team" }));
+    expect(mocks.submit).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert").textContent).toBe("Messages can be up to 2,000 characters. Yours is 3,214.");
+    expect(document.activeElement, "focus after Send").toBe(message);
+    expect(message.value).toBe(brief);
+  });
+
+  // Counted as the API counts, or a message one past the limit is sent and
+  // refused, or one at it is held for nothing: what is posted (trimmed), in
+  // Unicode code points, as zod 4 reads a string's length. An emoji outside
+  // the basic plane is one, though it is two UTF-16 units.
+  it("holds a message one past the API's limit and sends one at it, counting as the API does", async () => {
+    mocks.submit.mockResolvedValue({});
+    const limit = GUEST_ENQUIRY_LIMITS.messageLength;
+    const onePast = `${"a".repeat(limit)}🎻`;
+    const atLimit = ` \n${"a".repeat(limit - 1)}🎻\n `;
+    expect(atLimit.trim().length, "UTF-16 units: a count of these would hold it").toBe(limit + 1);
+    const apiTakes = (text: string): boolean => GuestEnquirySchema.safeParse({
+      venueSlug: rooms.slug, email: "guest@example.test", message: text,
+    }).success;
+    await open();
+    fireEvent.change(screen.getByLabelText(/email/iu), { target: { value: "guest@example.test" } });
+    const message = screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Anything else?" });
+    const send = screen.getByRole("button", { name: "Send to Events Team" });
+
+    fireEvent.change(message, { target: { value: onePast } });
+    fireEvent.click(send);
+    expect(mocks.submit).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert").textContent).toBe("Messages can be up to 2,000 characters. Yours is 2,001.");
+    expect(apiTakes(onePast.trim()), "the API refuses it too").toBe(false);
+
+    fireEvent.change(message, { target: { value: atLimit } });
+    fireEvent.click(send);
+    await waitFor(() => {
+      expect(mocks.submit).toHaveBeenCalledWith(expect.objectContaining({ message: atLimit.trim() }));
+    });
+    expect(apiTakes(atLimit.trim()), "the API takes it").toBe(true);
+  });
+
+  // Review of #405, F2: a date field with no max takes a year of five digits
+  // (a doubled key), which the API refuses as "Validation failed".
+  it("takes no year in the date field that the API refuses", async () => {
+    await open();
+    const date = screen.getByLabelText<HTMLInputElement>("Event date");
+    expect(date.type).toBe("date");
+    expect(date.max).toBe(GUEST_ENQUIRY_LATEST_EVENT_DATE);
+  });
+
+  it("does not post a guest count past what the API accepts", async () => {
+    await open();
+    fireEvent.change(screen.getByLabelText(/email/iu), { target: { value: "guest@example.test" } });
+    const guests = screen.getByRole<HTMLInputElement>("spinbutton", { name: "Guest count" });
+    fireEvent.change(guests, { target: { value: String(GUEST_ENQUIRY_LIMITS.guestCount + 1) } });
+    fireEvent.click(screen.getByRole("button", { name: "Send to Events Team" }));
+    expect(mocks.submit).not.toHaveBeenCalled();
+    expect(guests.checkValidity()).toBe(false);
+  });
+});
+
+// Review of #405, F1. Enter in the email field sends the form with focus
+// already there, so only the alert says what Send found. It is a new alert
+// each Send, so a repeated Enter is heard again, for the email's problem and
+// the message's alike.
+describe("GuestEnquiryModal says again what each Send finds", () => {
+  const rooms: VenueDetail = {
+    id: "venue-said", name: "Said Rooms", slug: "said-rooms", address: "1 Example Street",
+    logoUrl: null, brandColour: null, spaces: [],
+  };
+
+  beforeEach(() => {
+    resetStores();
+    for (const mock of Object.values(mocks)) mock.mockReset();
+    mocks.getVenue.mockResolvedValue(rooms);
+    useEditorStore.setState({ configId: "cfg-1", venueId: rooms.id, isPublicPreview: false });
+  });
+  afterEach(() => {
+    cleanup();
+    resetStores();
+    useEditorStore.getState().reset();
+  });
+
+  it.each([
+    ["an email the API refuses", "jane@gmail.c", "", "We need a valid email so the events team can reach you"],
+    ["a message over the limit", "guest@example.test", "b".repeat(3214), "Messages can be up to 2,000 characters. Yours is 3,214."],
+  ])("says %s again on each Enter in the email field", async (_case, address, brief, problem) => {
+    render(<GuestEnquiryModal configId="cfg-1" onClose={() => { /* noop */ }} />);
+    await screen.findByText("Your details are shared only with the Said Rooms events team.");
+    const field = screen.getByLabelText<HTMLInputElement>(/email/iu);
+    fireEvent.change(field, { target: { value: address } });
+    if (brief !== "") fireEvent.change(screen.getByRole("textbox", { name: "Anything else?" }), { target: { value: brief } });
+    pressEnterIn(field);
+    const first = screen.getByRole("alert");
+    expect(first.textContent).toBe(problem);
+    pressEnterIn(field);
+    const again = screen.getByRole("alert");
+    expect(again.textContent).toBe(problem);
+    expect(again, "a new alert, so a screen reader hears it again").not.toBe(first);
+    expect(mocks.submit).not.toHaveBeenCalled();
+  });
+});
+
 describe("GuestEnquiryModal keeps the guest's work", () => {
   const rooms: VenueDetail = {
     id: "venue-keep", name: "Keep Rooms", slug: "keep-rooms", address: "1 Example Street",
@@ -311,6 +470,24 @@ describe("GuestEnquiryModal keeps the guest's work", () => {
     await open();
     expect(screen.getByLabelText<HTMLInputElement>(/email/iu).value).toBe("guest@example.test");
     expect(screen.getByLabelText<HTMLInputElement>("Guest count").value).toBe("120");
+  });
+
+  // Review of #405, F5: a long message is kept whole, and that holds across
+  // a close. Restoring the draft cut it at 2,000 without a word, and the next
+  // Send went out with the brief stopping mid-sentence.
+  it("keeps a long message whole when the form is closed and opened again, and still holds it", async () => {
+    await open();
+    fireEvent.change(screen.getByLabelText(/email/iu), { target: { value: "guest@example.test" } });
+    const brief = "b".repeat(3214);
+    fireEvent.change(screen.getByRole("textbox", { name: "Anything else?" }), { target: { value: brief } });
+    fireEvent.click(screen.getByRole("dialog"));
+    cleanup();
+
+    await open();
+    expect(screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Anything else?" }).value).toBe(brief);
+    fireEvent.click(screen.getByRole("button", { name: "Send to Events Team" }));
+    expect(mocks.submit).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert").textContent).toBe("Messages can be up to 2,000 characters. Yours is 3,214.");
   });
 
   it("starts the next send from the contact details given last time, with the sent draft gone", async () => {
