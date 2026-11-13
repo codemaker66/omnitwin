@@ -1,13 +1,15 @@
 import { useMemo } from "react";
-import { RAIL_SLOTS } from "../../lib/card-defaults.js";
+import { railSlots } from "../../lib/card-defaults.js";
+import { plannerChairSlug } from "../../lib/furniture-defaults.js";
 import { KEY_PRIORITY, usePlannerKeyBindings, type KeyBinding } from "../../lib/planner-keys.js";
 import type { CardId } from "../../lib/setup-cards.js";
 import { useCardsStore } from "../../stores/cards-store.js";
 import { useCatalogueStore } from "../../stores/catalogue-store.js";
 import { useCockpitStore } from "../../stores/cockpit-store.js";
+import { usePlannerEventStore } from "../../stores/planner-event-store.js";
 import { useSelectionStore } from "../../stores/selection-store.js";
 import { replaceWith } from "./replace-with.js";
-import { storeRefusalFor } from "./store-figures.js";
+import { refuseFromStore } from "./store-figures.js";
 
 // ---------------------------------------------------------------------------
 // The cards' keys (T-671 slice 12′; card-dock spec §7.1, §12; Blake's B7):
@@ -28,13 +30,7 @@ export function armOrCancel(card: CardId): boolean {
     return false;
   }
   // B2 hard: a card the store has none left of does not arm, and the hint says why.
-  const refusal = useCatalogueStore.getState().armedCardId === card ? null : storeRefusalFor(card);
-  if (refusal !== null) {
-    cards.setHintFor(null);
-    cards.setRefusal({ card, text: refusal });
-    return false;
-  }
-  cards.setRefusal(null);
+  if (refuseFromStore(card)) return false;
   const armed = useCatalogueStore.getState().toggleCard(card);
   if (!armed) {
     cards.setHintFor(null);
@@ -45,13 +41,20 @@ export function armOrCancel(card: CardId): boolean {
   return true;
 }
 
-export function useCardKeys(): void {
+/** The rail's eight, for its style and the event's chair. */
+export function useRailSlots(): readonly CardId[] {
   const style = useCardsStore((state) => state.style);
-  const bindings = useMemo((): KeyBinding[] => RAIL_SLOTS[style].map((card, index): KeyBinding => ({
+  const chair = usePlannerEventStore((state) => plannerChairSlug(state.eventKind));
+  return useMemo(() => railSlots(style, chair), [style, chair]);
+}
+
+export function useCardKeys(): void {
+  const slots = useRailSlots();
+  const bindings = useMemo((): KeyBinding[] => slots.map((card, index): KeyBinding => ({
     keys: [{ code: `Digit${String(index + 1)}` }],
     priority: KEY_PRIORITY.planner,
     when: () => !useCockpitStore.getState().walkMode,
     run: () => { armOrCancel(card); },
-  })), [style]);
+  })), [slots]);
   usePlannerKeyBindings(bindings);
 }

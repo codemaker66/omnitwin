@@ -22,6 +22,9 @@ const { useNothingOutOfSight } = await import("../nothing-out-of-sight.js");
 const { ChromePresence } = await import("../../editor/cockpit/ChromeFold.js");
 const { usePlannerToolKeys } = await import("../../../lib/planner-keymap.js");
 const { useCardsStore } = await import("../../../stores/cards-store.js");
+const { useCatalogueStore } = await import("../../../stores/catalogue-store.js");
+const { cardNeeds } = await import("../../../lib/card-stock.js");
+const { cardParamsFor } = await import("../../../lib/setup-cards.js");
 const { useChromePresenceStore } = await import("../../../stores/chrome-presence-store.js");
 const { usePlannerChromeStore } = await import("../../../stores/planner-chrome-store.js");
 const { useToolStore } = await import("../../../stores/tool-store.js");
@@ -139,5 +142,50 @@ describe("Replace… and the cleared tools", () => {
     act(() => { useCardsStore.getState().startReplacing("Replace Table 8 with…"); });
     expect(useCardsStore.getState().replacing).toBe("Replace Table 8 with…");
     expect(cleared()).toBe(false);
+  });
+});
+
+// #357 V9: the digits armed cards while the tools were cleared, and the hint, or the store's
+// refusal, went to the hidden rail, so on screen nothing happened.
+describe("a card asked for by its digit while the tools are cleared", () => {
+  function digit(n: number): void {
+    act(() => { window.dispatchEvent(new KeyboardEvent("keydown", { key: String(n), code: `Digit${String(n)}`, bubbles: true, cancelable: true })); });
+  }
+
+  beforeEach(() => { useCatalogueStore.getState().disarm(); });
+
+  it("is put in hand with the tools back, so its hint is seen", () => {
+    render(<Planner />);
+    press("\\");
+    expect(cleared()).toBe(true);
+    digit(1);
+    expect(useCatalogueStore.getState().armedCardId).toBe("round");
+    expect(cleared()).toBe(false);
+    expect(screen.getByTestId("planner-dock-stack").textContent).toContain("Click the floor to set it down");
+  });
+
+  it("refused by the store, brings the tools back to say why", () => {
+    render(<Planner />);
+    const params = cardParamsFor("round", {});
+    if (params === null) throw new Error("no round card");
+    // After the dock's own stock read has run (none for a guest), as staff with none left.
+    act(() => { useCardsStore.getState().setStock(new Map([...cardNeeds(params)].map(([id]) => [id, 0]))); });
+    press("\\");
+    digit(1);
+    expect(useCatalogueStore.getState().armedCardId).toBeNull();
+    expect(cleared()).toBe(false);
+    expect(screen.getByTestId("planner-dock-stack").textContent).toContain("None left in store");
+  });
+});
+
+// #357 V7: Lay out's line was inserted already holding its words.
+describe("Lay out's voice", () => {
+  it("is there, empty, from the moment the panel opens", () => {
+    render(<Planner />);
+    press("l");
+    const panel = screen.getByTestId("lay-out-panel");
+    const voice = panel.querySelector("[role='status']");
+    expect(voice).not.toBeNull();
+    expect(voice?.textContent).toBe("");
   });
 });

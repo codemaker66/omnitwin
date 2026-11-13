@@ -1,3 +1,4 @@
+import type { ReactElement } from "react";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Receipt, RECEIPT_MS } from "../Receipt.js";
@@ -56,6 +57,55 @@ describe("a receipt", () => {
     render(<Receipt />);
     act(() => { usePlannerChromeStore.getState().postReceipt("Saved", { undo: false }); });
     expect(screen.queryByRole("button", { name: /^Undo/u })).toBeNull();
+  });
+});
+
+// #357 V7: the line went after 5 s even while its Undo had focus or the pointer, and focus fell to the page.
+describe("a receipt someone is holding", () => {
+  /** The dock's own Undo, where focus goes back to. */
+  function WithDock(): ReactElement {
+    return (
+      <>
+        <button type="button" data-dock-undo="">Dock undo</button>
+        <Receipt />
+      </>
+    );
+  }
+
+  it("stays while its Undo has focus, and has five seconds again once focus leaves", () => {
+    render(<WithDock />);
+    act(() => { usePlannerChromeStore.getState().postReceipt("Table 7 put back in store", { undo: true }); });
+    act(() => { screen.getByRole("button", { name: /^Undo/u }).focus(); });
+    act(() => { vi.advanceTimersByTime(RECEIPT_MS * 3); });
+    expect(screen.queryByText(/put back in store/u)).not.toBeNull();
+    act(() => { screen.getByRole("button", { name: "Dock undo" }).focus(); });
+    act(() => { vi.advanceTimersByTime(RECEIPT_MS - 1); });
+    expect(screen.queryByText(/put back in store/u)).not.toBeNull();
+    act(() => { vi.advanceTimersByTime(1); });
+    expect(screen.queryByText(/put back in store/u)).toBeNull();
+  });
+
+  it("stays while the pointer is on it", () => {
+    render(<WithDock />);
+    act(() => { usePlannerChromeStore.getState().postReceipt("Table 7 put back in store", { undo: true }); });
+    const line = screen.getByText(/put back in store/u).closest("p") as HTMLElement;
+    fireEvent.pointerEnter(line);
+    act(() => { vi.advanceTimersByTime(RECEIPT_MS * 2); });
+    expect(screen.queryByText(/put back in store/u)).not.toBeNull();
+    fireEvent.pointerLeave(line);
+    act(() => { vi.advanceTimersByTime(RECEIPT_MS); });
+    expect(screen.queryByText(/put back in store/u)).toBeNull();
+  });
+
+  it("hands focus to the dock's Undo when it goes with focus in it", () => {
+    vi.spyOn(useEditorStore.getState(), "undo").mockImplementation(() => undefined);
+    render(<WithDock />);
+    act(() => { usePlannerChromeStore.getState().postReceipt("Table 7 put back in store", { undo: true }); });
+    const undo = screen.getByRole("button", { name: /^Undo/u });
+    act(() => { undo.focus(); });
+    fireEvent.click(undo);
+    expect(screen.queryByText(/put back in store/u)).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Dock undo" }));
   });
 });
 

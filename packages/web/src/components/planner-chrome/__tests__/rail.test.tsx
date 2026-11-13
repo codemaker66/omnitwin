@@ -6,7 +6,10 @@ import { Rail } from "../Rail.js";
 import { armOrCancel } from "../card-keys.js";
 import { cardNeeds, type UsableStock } from "../../../lib/card-stock.js";
 import { SETUP_PREVIEW_VERSION } from "../../../lib/crafted-furniture.js";
-import { cardParamsFor } from "../../../lib/setup-cards.js";
+import { createPlacedItem } from "../../../lib/placement.js";
+import { setPlannerFeaturesForTesting } from "../../../lib/planner-features.js";
+import { cardParamsFor, stampSetup } from "../../../lib/setup-cards.js";
+import { placedCount, roomCounts } from "../card-counts.js";
 import { useCardsStore } from "../../../stores/cards-store.js";
 import { useCatalogueStore } from "../../../stores/catalogue-store.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
@@ -30,8 +33,12 @@ beforeEach(() => {
   useCockpitStore.getState().setWalkMode(false);
   usePlacementStore.getState().clearAll();
   useRailDropStore.getState().reset();
+  useSelectionStore.getState().clearSelection();
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  setPlannerFeaturesForTesting(null);
+});
 
 function rail(): HTMLElement {
   return screen.getByRole("toolbar", { name: "Furniture cards" });
@@ -86,6 +93,77 @@ describe("arming", () => {
     expect(more.getAttribute("aria-expanded")).toBe("true");
     fireEvent.click(more);
     expect(useCardsStore.getState().catalogueOpen).toBe(false);
+  });
+});
+
+describe("the ×N in the room (#357 V4: the rail counts as the catalogue does)", () => {
+  function pip(name: RegExp): string | null {
+    return within(rail()).getByRole("button", { name }).querySelector(".pc-railcard__pip")?.textContent ?? null;
+  }
+
+  it("counts rounds in any cloth: twenty black rounds read ×20", () => {
+    const black = getCatalogueItemBySlug("round-table-6ft-black")?.id ?? "";
+    usePlacementStore.setState({ placedItems: Array.from({ length: 20 }, (_, n) => createPlacedItem(black, n * 3, 0, 0, null)) });
+    render(<Rail />);
+    expect(pip(/^Round of 10/u)).toBe("×20");
+    expect(within(rail()).getByRole("button", { name: /^Round of 10/u }).getAttribute("aria-label")).toContain("20 in the room");
+    expect(placedCount("round", roomCounts(usePlacementStore.getState().placedItems))).toBe(20);
+  });
+
+  it("tells a Top table from a Long table, and counts sets, not trestles", () => {
+    // Sets of four trestles each (Q-08b), bound by their setId.
+    setPlannerFeaturesForTesting({ tableSets: true });
+    const top = cardParamsFor("top-table", { colourway: "white" });
+    const long = cardParamsFor("long-table", { colourway: "white" });
+    if (top === null || long === null) throw new Error("no trestle cards");
+    usePlacementStore.setState({ placedItems: [
+      ...stampSetup(top, { x: 0, z: -8 }, 0),
+      ...stampSetup(long, { x: 0, z: 0 }, 0),
+      ...stampSetup(long, { x: 0, z: 8 }, 0),
+    ] });
+    render(<Rail />);
+    expect(pip(/^Top table/u)).toBe("×1");
+    expect(pip(/^Long table/u)).toBe("×2");
+  });
+
+  it("counts a lone trestle with no chairs as neither", () => {
+    const trestle = getCatalogueItemBySlug("trestle-6ft-white")?.id ?? "";
+    usePlacementStore.setState({ placedItems: [createPlacedItem(trestle, 0, 0, 0, null)] });
+    render(<Rail />);
+    expect(pip(/^Top table/u)).toBeNull();
+    expect(pip(/^Long table/u)).toBeNull();
+  });
+});
+
+describe("its voice and its keys (#357 V7)", () => {
+  it("keeps one status line, empty at rest, that a refusal's words arrive in", () => {
+    const params = cardParamsFor("round", {});
+    if (params === null) throw new Error("no round card");
+    useCardsStore.getState().setStock(new Map([...cardNeeds(params)].map(([id]) => [id, 0])));
+    render(<Rail />);
+    const line = screen.getByRole("status");
+    expect(line.textContent).toBe("");
+    fireEvent.click(within(rail()).getByRole("button", { name: /^Round of 10/u }));
+    expect(screen.getByRole("status")).toBe(line);
+    expect(line.textContent).toContain("None left in store");
+  });
+
+  it("is one Tab stop, the arrows, Home and End moving between its cards and More", () => {
+    render(<Rail />);
+    const keys = (): HTMLElement[] => Array.from(rail().querySelectorAll<HTMLElement>(".pc-rail__cards > button, .pc-rail__more"));
+    expect(keys()).toHaveLength(9);
+    expect(keys().filter((key) => key.tabIndex === 0)).toEqual([keys()[0]]);
+    act(() => { keys()[0]?.focus(); });
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: "ArrowRight", code: "ArrowRight" });
+    expect(document.activeElement).toBe(keys()[1]);
+    expect(keys().filter((key) => key.tabIndex === 0)).toEqual([keys()[1]]);
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: "End", code: "End" });
+    expect(document.activeElement).toBe(keys()[8]);
+    expect(document.activeElement?.classList.contains("pc-rail__more")).toBe(true);
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: "ArrowRight", code: "ArrowRight" });
+    expect(document.activeElement).toBe(keys()[8]);
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: "Home", code: "Home" });
+    expect(document.activeElement).toBe(keys()[0]);
   });
 });
 
@@ -171,6 +249,31 @@ describe("replace mode (the caption's Replace…)", () => {
     expect(useCardsStore.getState().pointedCard).toBe("long-table");
     expect(screen.getByRole("status").textContent).toMatch(/^Replace /u);
     fireEvent.keyDown(window, { key: "Escape", code: "Escape" });
+    expect(useCardsStore.getState().replacing).toBeNull();
+  });
+
+  // #357 V5: it outlived its selection, and the next press replaced whatever was selected then.
+  it("ends when another piece is selected, so the next press arms instead of replacing it", () => {
+    selectARound();
+    const bar = createPlacedItem(getCatalogueItemBySlug("bar-counter")?.id ?? "", 6, 0, 0, null);
+    usePlacementStore.setState({ placedItems: [...usePlacementStore.getState().placedItems, bar] });
+    render(<Rail />);
+    act(() => { useCardsStore.getState().startReplacing("Replace Table 8 with…"); });
+    act(() => { useSelectionStore.getState().select(bar.id); });
+    expect(useCardsStore.getState().replacing).toBeNull();
+    expect(screen.getByRole("status").textContent).not.toContain("Replace Table 8");
+    fireEvent.keyDown(window, { key: "3", code: "Digit3" });
+    expect(useCatalogueStore.getState().armedCardId).toBe("long-table");
+    expect(usePlacementStore.getState().placedItems.some((piece) => piece.id === bar.id)).toBe(true);
+  });
+
+  it("ends when the selection is cleared, and keeps going while it is the same", () => {
+    selectARound();
+    render(<Rail />);
+    act(() => { useCardsStore.getState().startReplacing("Replace Table 8 with…"); });
+    act(() => { useSelectionStore.getState().select("t8"); });
+    expect(useCardsStore.getState().replacing).toBe("Replace Table 8 with…");
+    act(() => { useSelectionStore.getState().clearSelection(); });
     expect(useCardsStore.getState().replacing).toBeNull();
   });
 });

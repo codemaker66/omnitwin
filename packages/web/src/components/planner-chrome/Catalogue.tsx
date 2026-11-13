@@ -14,7 +14,6 @@ import {
 import { Search } from "lucide-react";
 import { CARD_TABS, CATALOGUE_CARDS, searchCatalogue, type CardTab, type CatalogueCard } from "../../lib/card-defaults.js";
 import { placedCounts } from "../../lib/card-stock.js";
-import { getCatalogueItem } from "../../lib/catalogue.js";
 import { KEY_PRIORITY, lastInputWasKeys, useEscapeLayer, usePlannerKeyBindings } from "../../lib/planner-keys.js";
 import { cardMainItem, cardParamsFor, pieceCardId, type CardId } from "../../lib/setup-cards.js";
 import { SPRING_PRESETS } from "../../lib/springs.js";
@@ -22,9 +21,10 @@ import { useSpringValue } from "../../lib/use-spring-value.js";
 import { useCardsStore } from "../../stores/cards-store.js";
 import { useCatalogueStore } from "../../stores/catalogue-store.js";
 import { usePlacementStore } from "../../stores/placement-store.js";
-import { cardFaceNow, FullCard, isCardArmed, placedCount, type CardChoice } from "./CatalogueCard.js";
-import { replaceWith } from "./replace-with.js";
-import { NONE_LEFT_IN_STORE, storeFace } from "./store-figures.js";
+import { placedCount, roomCounts } from "./card-counts.js";
+import { cardFaceNow, FullCard, isCardArmed, type CardChoice } from "./CatalogueCard.js";
+import { replacePreview, replaceWith } from "./replace-with.js";
+import { NONE_LEFT_IN_STORE, refuseFromStore, storeFace } from "./store-figures.js";
 import { Kbd } from "./Kbd.js";
 import { Key } from "./Keys.js";
 import "./chrome.css";
@@ -70,16 +70,6 @@ export function nothingFoundLine(query: string): string {
   return `Nothing called “${query.trim()}” in the catalogue`;
 }
 
-/** The pieces in the room, counted by slug. */
-function countBySlug(placed: readonly { readonly catalogueItemId: string }[]): ReadonlyMap<string, number> {
-  const counts = new Map<string, number>();
-  for (const item of placed) {
-    const slug = getCatalogueItem(item.catalogueItemId)?.slug;
-    if (slug !== undefined) counts.set(slug, (counts.get(slug) ?? 0) + 1);
-  }
-  return counts;
-}
-
 /** While replacing, notes which catalogue card the pointer or focus is on. */
 function pointAtCatalogueCard(target: EventTarget): void {
   if (useCardsStore.getState().replacing === null || !(target instanceof Element)) return;
@@ -98,7 +88,20 @@ function pressCard(card: CatalogueCard): void {
   const store = useCatalogueStore.getState();
   // The card in hand again puts it down, whichever of its pieces is in hand.
   const target = isCardArmed(card, store.armedCardId) && store.armedCardId !== null ? store.armedCardId : card.id;
+  // B2 hard, as on the rail: none left in store, nothing arms, and the rail's line says why.
+  if (refuseFromStore(target)) return;
   if (store.toggleCard(target)) useCardsStore.getState().noteArm(target);
+}
+
+/**
+ * Why a card the store has none left of cannot go down. Arming, the store's
+ * word. Replacing, the replacement's own plan: a swap can give back what it
+ * takes, so it is judged as the rail's line judges it (replacePreview).
+ */
+function storeReason(card: CatalogueCard, replacing: boolean): string | undefined {
+  if (!replacing) return NONE_LEFT_IN_STORE;
+  const preview = replacePreview(card.id);
+  return preview === null || preview.ok ? undefined : preview.text;
 }
 
 /** A swatch or a size: that piece in hand. A setup in hand keeps its seats and changes only its cloth. */
@@ -214,8 +217,9 @@ function CatalogueSheet({ sheetRef, open, searchRef, wantsSearch, disabledReason
   const armedCardId = useCatalogueStore((state) => state.armedCardId);
   const cardParams = useCatalogueStore((state) => state.cardParams);
   const placedItems = usePlacementStore((state) => state.placedItems);
-  const placedBySlug = useMemo(() => countBySlug(placedItems), [placedItems]);
+  const counts = useMemo(() => roomCounts(placedItems), [placedItems]);
   const stock = useCardsStore((state) => state.stock);
+  const replacing = useCardsStore((state) => state.replacing !== null);
   const stockCounts = useMemo(() => placedCounts(placedItems), [placedItems]);
   const ids = useId();
   const tabsRef = useRef(new Map<CardTab, HTMLButtonElement>());
@@ -340,6 +344,8 @@ function CatalogueSheet({ sheetRef, open, searchRef, wantsSearch, disabledReason
   const panelId = `${ids}-cards`;
   const tabId = (name: CardTab): string => `${ids}-tab-${name}`;
   const rowLabel = searching ? `Results for “${query.trim()}”` : `${tab} cards`;
+  // What the search found, said in one voice that is there from the moment the sheet opens.
+  const found = cards.length === 0 ? nothingFoundLine(query) : searching ? `${String(cards.length)} in the catalogue` : "";
 
   return (
     <section
@@ -402,9 +408,7 @@ function CatalogueSheet({ sheetRef, open, searchRef, wantsSearch, disabledReason
         aria-labelledby={searching ? undefined : tabId(tab)}
         aria-label={searching ? rowLabel : undefined}
       >
-        {cards.length === 0 ? (
-          <p className="pc-meta pc-catalogue__empty" role="status">{nothingFoundLine(query)}</p>
-        ) : (
+        {cards.length === 0 ? null : (
           <div
             className="pc-catalogue__cards"
             role="toolbar"
@@ -430,9 +434,9 @@ function CatalogueSheet({ sheetRef, open, searchRef, wantsSearch, disabledReason
                   card={card}
                   face={face}
                   armed={armed}
-                  placed={placedCount(card, placedBySlug)}
+                  placed={placedCount(card.id, counts)}
                   tabIndex={card.id === stop ? 0 : -1}
-                  disabledReason={reasonFor(card) ?? (store?.refused === true ? NONE_LEFT_IN_STORE : undefined)}
+                  disabledReason={reasonFor(card) ?? (store?.refused === true ? storeReason(card, replacing) : undefined)}
                   store={store}
                   onPress={() => { pressCard(card); }}
                   onChoose={(choice) => { chooseOnCard(card, choice); }}
@@ -442,9 +446,8 @@ function CatalogueSheet({ sheetRef, open, searchRef, wantsSearch, disabledReason
             })}
           </div>
         )}
-        {searching && cards.length > 0 ? (
-          <span className="vv-sr-only" role="status">{`${String(cards.length)} in the catalogue`}</span>
-        ) : null}
+        {/* Seen when nothing is found; otherwise only heard. */}
+        <p className={cards.length === 0 ? "pc-meta pc-catalogue__empty" : "vv-sr-only"} role="status">{found}</p>
       </div>
     </section>
   );

@@ -1,4 +1,5 @@
 import { storeShortfall, storeShortfallWords } from "../../lib/card-stock.js";
+import { captionModel } from "../../lib/caption-model.js";
 import { createGhostWorld } from "../../lib/ghost-truth.js";
 import type { PlacedItem } from "../../lib/placement.js";
 import { replaceSelection } from "../../lib/planner-edit-commands.js";
@@ -36,8 +37,23 @@ function paramsFor(card: CardId, chosen: CardParamsRequest): CardParams | null {
   return cardParamsFor(card, chosen, useCatalogueStore.getState().rememberedSeats);
 }
 
+/**
+ * Whether the selection is still one Replace… swaps: every piece a dining
+ * table, the caption's own rule for offering it (the switch aside: replace
+ * mode was entered through it).
+ */
+function stillReplaceable(): boolean {
+  const offered = captionModel(useSelectionStore.getState().selectedIds, usePlacementStore.getState().placedItems, (feature) => feature === "replace");
+  return offered?.verbs.includes("replace") === true;
+}
+
 /** Replaces the selection with this card (or one of its pieces): true when it did. */
 export function replaceWith(card: CardId, chosen: CardParamsRequest = {}): boolean {
+  // Replace mode belongs to the tables it was asked on; with those gone, it ends rather than replace anything else.
+  if (!stillReplaceable()) {
+    useCardsStore.getState().stopReplacing();
+    return false;
+  }
   const params = paramsFor(card, chosen);
   if (params === null) return false;
   const store = storeWord();

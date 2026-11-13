@@ -1,5 +1,5 @@
 import { memo, useEffect, useRef, useState, useCallback, useMemo } from "react";
-import { plannerChromeRequested } from "../lib/planner-chrome-flag.js";
+import { useCaptionPresenceStore } from "../stores/caption-presence-store.js";
 import { useFrame, useThree } from "@react-three/fiber";
 import {
   CanvasTexture,
@@ -866,9 +866,10 @@ export function PlacedFurniture(): React.ReactElement {
   // One plate, for the piece in hand (primaryNameplateId), and none while a
   // marquee sweeps: a plate over every labelled table covers the very layout
   // it describes, and the layers list names every table. A camera reference
-  // keeps its plate whenever the camera rests. Under the new chrome the
-  // caption speaks for the piece in hand, so it gets no plate (T-671 slice 11′).
-  const chromeV2 = useMemo(() => plannerChromeRequested(window.location.search) === "v2", []);
+  // keeps its plate whenever the camera rests. While the new chrome's
+  // caption is on screen it names the piece in hand, so that piece gets no
+  // plate (T-671 slice 11′); where the caption steps aside, the plate is back.
+  const captionShown = useCaptionPresenceStore((s) => s.shown);
   const primaryNameplateItemId = useMemo(
     () => primaryNameplateId(selectedIds, placedItems),
     [placedItems, selectedIds],
@@ -877,9 +878,9 @@ export function PlacedFurniture(): React.ReactElement {
     !cameraInteractionActive
     && (
       cameraReferenceItemIds.has(placedId)
-      || (!chromeV2 && !marqueeActive && placedId === primaryNameplateItemId)
+      || (!captionShown && !marqueeActive && placedId === primaryNameplateItemId)
     )
-  ), [cameraInteractionActive, cameraReferenceItemIds, chromeV2, marqueeActive, primaryNameplateItemId]);
+  ), [cameraInteractionActive, cameraReferenceItemIds, captionShown, marqueeActive, primaryNameplateItemId]);
 
   const activeReferenceItemId = useMemo(() => {
     if (activeReferenceId === null) return null;
