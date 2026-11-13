@@ -57,7 +57,7 @@ import { getNativeRenderer } from "../../lib/native-renderer.js";
 import { nativeFramePrecompile } from "../../lib/native-frame-composer.js";
 import { requestNativePrecompile } from "../../lib/native-precompile.js";
 import { HALL_CAPTURE_POINT, HallEnvironmentCapture } from "./hall-capture.js";
-import { STAGE_CHANDELIER_CEILING_M, STAGE_NEAR_CUT_M } from "./hall-stage.js";
+import { STAGE_CHANDELIER_CEILING_M, STAGE_NEAR_CUT_M } from "./hall-stage-cuts.js";
 import { createHallSection, parseSectionPreset, SECTION_PRESETS, sectionRoomLine, type HallSection, type SectionPreset } from "./hall-section.js";
 import { hallFrontCut } from "./hall-exterior-cut.js";
 import { sectionCapGeometry } from "./hall-relief-section.js";

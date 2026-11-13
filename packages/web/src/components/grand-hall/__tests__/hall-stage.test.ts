@@ -3,10 +3,8 @@ import { PerspectiveCamera, Vector3 } from "three";
 import { computeDistanceLimits } from "../../../lib/camera-rig.js";
 import { setLensShift } from "../../../lib/lens-shift.js";
 import { HALL_HALF_LENGTH, HALL_HALF_WIDTH, HALL_HEIGHT, HALL_LENGTH, HALL_WIDTH } from "../hall-spec.js";
-import {
-  hallStageFraming, mixLens, PLAN_MAX_HEIGHT_M, STAGE_CHANDELIER_CEILING_M, STAGE_NEAR_CUT_M, STAGE_PICTURE_RATIO, stageLens, stagePoseAt,
-  type HallStageFraming, type StageLens,
-} from "../hall-stage.js";
+import { hallStageFraming, mixLens, PLAN_MAX_HEIGHT_M, STAGE_PICTURE_RATIO, stageLens, stagePoseAt, type HallStageFraming, type StageLens } from "../hall-stage.js";
+import { STAGE_CHANDELIER_CEILING_M, STAGE_NEAR_CUT_M } from "../hall-stage-cuts.js";
 
 type Vec3 = readonly [number, number, number];
 

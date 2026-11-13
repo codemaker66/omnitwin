@@ -99,7 +99,7 @@ afterEach(() => {
   cleanup();
   scene().controls.dispose();
   scene().gl.domElement.remove();
-  useHallViewStore.setState({ stage: null, stagePhase: "off", activePreset: "room" });
+  useHallViewStore.setState({ stage: null, stagePhase: "off", stagePoses: null, activePreset: "room" });
 });
 
 describe("the stage's hold on the camera", () => {
@@ -115,6 +115,15 @@ describe("the stage's hold on the camera", () => {
     expect(lensShift(camera).y).toBeCloseTo(lens.shiftY, 9);
     expect(lens.shiftY).toBeGreaterThan(0.3);
     expect(useHallViewStore.getState().stagePhase).toBe("held");
+  });
+
+  it("says where its camera stands for Room and for Plan, for the views' director to send it there", () => {
+    render(<HallStage />);
+    const framing = stage();
+    expect(useHallViewStore.getState().stagePoses).toEqual({
+      room: { position: framing.position, target: framing.freeTarget },
+      plan: { position: framing.plan.position, target: framing.plan.target },
+    });
   });
 
   it("stays level through the orbit's own settling, whose limit stops short of level", () => {
@@ -398,6 +407,8 @@ describe("the stage's hold on the camera", () => {
     expect(lensShift(camera)).toEqual({ x: 0, y: 0 });
     expect(controls.maxPolarAngle).toBe(MAX_POLAR_ANGLE);
     expect(useHallViewStore.getState().stagePhase).toBe("off");
+    // No stage here, so the views are the ordinary ones.
+    expect(useHallViewStore.getState().stagePoses).toBeNull();
   });
 
   it("hands back an ordinary orbit and the plain lens when the screen that asked for it leaves", () => {
@@ -410,5 +421,6 @@ describe("the stage's hold on the camera", () => {
     expect(controls.maxPolarAngle).toBe(MAX_POLAR_ANGLE);
     expectAt(controls.target, stage().freeTarget);
     expect(useHallViewStore.getState().stagePhase).toBe("off");
+    expect(useHallViewStore.getState().stagePoses).toBeNull();
   });
 });

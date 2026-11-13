@@ -99,8 +99,18 @@ The repo bans gold-family colour literals and type under 11 px (`__tests__/house
 - Save state and its notices: `components/planner-chrome/Slate.tsx`, reused whole and dressed from outside
   (`hud-plaque.css`). Saving is automatic.
 - Send: `components/editor/send-layout-flow.ts`, `GuestEnquiryModal`.
-- Keys and Escape: only through `lib/planner-keys.ts`. Motion: `lib/springs.ts`. Sound: `lib/sound-registry.ts`,
-  Quiet by default. Working states: `components/shared/Activity.tsx`.
+- Keys and Escape: only through `lib/planner-keys.ts`. Motion: `lib/springs.ts`. Working states:
+  `components/shared/Activity.tsx`.
+
+## Behind its flag, and nothing more
+
+Until this screen is the default, a planner that does not ask for it downloads none of it. The screen is one lazy
+import from `pages/EditorPage.tsx`. Its parts of the room's scene (`HallStage` with its measurements and lens, and
+`ChosenMarks`) are one module, `components/planner-hud/hud-scene.ts`, which `PlannerScene` fetches only where a
+screen has asked for the stage or the mark. `HallStage` says where its camera stands through `hall-view-store`
+(`stagePoses`), so the views' director needs none of the stage's code, and the two heights the hall's model needs
+are a module of their own (`hall-stage-cuts.ts`). `src/__tests__/bundle-splitting.test.ts` fails on a static import
+of any of the screen's modules from anywhere else.
 
 ## Honest numbers
 
@@ -114,6 +124,10 @@ door with something standing in its space. See `docs/engineering/planner-honest-
   is in hand.
 - The card photographs as one matching set in 2:3 (today's are the square studio renders).
 - Send for signed-in plans (`SubmitForReviewPanel`), and venue staff's tools behind the "more" glyph.
+- Sound: a card lifting, a set landing, and the setting in More tools (Quiet unless chosen). The controls of the
+  planner's sound engine live in `lib/sound-registry.ts`, which every planner and the landing page download, so
+  wiring them to a screen behind a flag would grow that download for everyone. It follows once the engine's
+  controls can be fetched on their own.
 - `/plan?chrome=hud` checked against a running API.
 
 ## Delivery

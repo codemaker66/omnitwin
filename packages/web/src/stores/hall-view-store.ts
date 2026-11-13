@@ -27,6 +27,20 @@ export interface HallStageRequest {
 
 export type HallStagePhase = "off" | "arriving" | "held";
 
+/** A camera's place and what it looks at, metres. */
+export interface HallCameraPose {
+  readonly position: readonly [number, number, number];
+  readonly target: readonly [number, number, number];
+}
+
+/** Where the stage puts the camera for the canvas it is held on. */
+export interface HallStagePoses {
+  /** Room: the stage's camera, tilted at the middle of the floor. HallStage squares it up as it lands. */
+  readonly room: HallCameraPose;
+  /** Plan: from above, the hall filling the stage's picture. */
+  readonly plan: HallCameraPose;
+}
+
 interface HallViewState {
   readonly mood: HallMoodName;
   readonly viewRequest: HallViewRequest | null;
@@ -42,8 +56,16 @@ interface HallViewState {
   readonly stage: HallStageRequest | null;
   /** Where the stage is: not in use, the camera on its way to it, or held. */
   readonly stagePhase: HallStagePhase;
+  /**
+   * Where Room and Plan send the camera while a stage is held: said by
+   * HallStage for its canvas, so the views' director needs none of the stage's
+   * measurements. Null wherever no stage is held: another screen, a canvas too
+   * narrow for one, or the moment before the stage's code has arrived.
+   */
+  readonly stagePoses: HallStagePoses | null;
   readonly setStage: (stage: HallStageRequest | null) => void;
   readonly setStagePhase: (phase: HallStagePhase) => void;
+  readonly setStagePoses: (poses: HallStagePoses | null) => void;
   readonly setMood: (mood: HallMoodName) => void;
   readonly requestView: (preset: HallViewPreset) => void;
   readonly clearViewRequest: (nonce: number) => void;
@@ -72,11 +94,15 @@ export const useHallViewStore = create<HallViewState>()((set, get) => ({
   surfaces: null,
   stage: null,
   stagePhase: "off",
+  stagePoses: null,
   setStage: (stage) => {
-    if (get().stage?.skyPx !== stage?.skyPx) set(stage === null ? { stage, stagePhase: "off" } : { stage });
+    if (get().stage?.skyPx !== stage?.skyPx) set(stage === null ? { stage, stagePhase: "off", stagePoses: null } : { stage });
   },
   setStagePhase: (stagePhase) => {
     if (get().stagePhase !== stagePhase) set({ stagePhase });
+  },
+  setStagePoses: (stagePoses) => {
+    if (get().stagePoses !== stagePoses) set({ stagePoses });
   },
   setMood: (mood) => {
     try { window.localStorage.setItem(MOOD_STORAGE_KEY, mood); } catch { /* storage is a convenience */ }

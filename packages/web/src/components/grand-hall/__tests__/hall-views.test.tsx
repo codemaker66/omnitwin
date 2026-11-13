@@ -3,13 +3,14 @@ import { act, cleanup, render } from "@testing-library/react";
 import { PerspectiveCamera, Vector3 } from "three";
 import { useBookmarkStore } from "../../../stores/bookmark-store.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
-import { useHallViewStore } from "../../../stores/hall-view-store.js";
+import { useHallViewStore, type HallStagePoses } from "../../../stores/hall-view-store.js";
 import { HALL_CUTS, resolveHallView, wallCutHeight } from "../GrandHallModel.js";
 import { HALL_MAX_FRAME_STEP, hallFrameStep } from "../hall-mood.js";
 import { HALL_ELEVATION, HALL_HALF_WIDTH, HALL_HEIGHT, hallWall } from "../hall-spec.js";
-import { hallStageFraming, STAGE_NEAR_CUT_M } from "../hall-stage.js";
+import { hallStageFraming } from "../hall-stage.js";
+import { STAGE_NEAR_CUT_M } from "../hall-stage-cuts.js";
 
-const three = vi.hoisted(() => ({ state: null as null | { camera: unknown; controls: unknown; invalidate: () => void; size?: { width: number; height: number } } }));
+const three = vi.hoisted(() => ({ state: null as null | { camera: unknown; controls: unknown; invalidate: () => void } }));
 vi.mock("@react-three/fiber", () => ({
   useThree: (select: (state: unknown) => unknown) => select(three.state),
 }));
@@ -104,14 +105,16 @@ describe("the director where the hall is held as a stage", () => {
     if (framing === null) throw new Error("no stage");
     return framing;
   };
-  beforeEach(() => {
-    if (three.state !== null) three.state = { ...three.state, size: { width: 1440, height: 748 } };
-    useHallViewStore.setState({ stage: { skyPx: 48 }, stagePhase: "off" });
+  /** What HallStage says of its camera while it holds the stage on that canvas. */
+  const poses = (): HallStagePoses => ({
+    room: { position: stage().position, target: stage().freeTarget },
+    plan: { position: stage().plan.position, target: stage().plan.target },
   });
-  afterEach(() => { useHallViewStore.setState({ stage: null, stagePhase: "off" }); });
+  beforeEach(() => { useHallViewStore.setState({ stagePoses: poses(), stagePhase: "off" }); });
+  afterEach(() => { useHallViewStore.setState({ stagePoses: null, stagePhase: "off" }); });
 
   it("glides Room to the stage's camera, tilted at the floor, and says it is on its way", () => {
-    render(<HallViewDirector stage />);
+    render(<HallViewDirector />);
     act(() => { useHallViewStore.getState().requestView("room"); });
     const glide = useBookmarkStore.getState().transition;
     expect(glide?.toPosition).toEqual(stage().position);
@@ -121,7 +124,7 @@ describe("the director where the hall is held as a stage", () => {
   });
 
   it("leaves the camera alone when Room is asked for on the stage or on the way to it", () => {
-    render(<HallViewDirector stage />);
+    render(<HallViewDirector />);
     for (const phase of ["held", "arriving"] as const) {
       act(() => { useHallViewStore.setState({ stagePhase: phase }); });
       act(() => { useHallViewStore.getState().requestView("room"); });
@@ -132,7 +135,7 @@ describe("the director where the hall is held as a stage", () => {
   });
 
   it("leaves the stage for Plan, which fills the picture, and for a walk", () => {
-    render(<HallViewDirector stage />);
+    render(<HallViewDirector />);
     act(() => { useHallViewStore.setState({ stagePhase: "held" }); });
     act(() => { useHallViewStore.getState().requestView("plan"); });
     expect(useHallViewStore.getState().stagePhase).toBe("off");
@@ -145,24 +148,28 @@ describe("the director where the hall is held as a stage", () => {
 
   it("comes back to the stage from a walk", () => {
     useCockpitStore.setState({ walkMode: true });
-    render(<HallViewDirector stage />);
+    render(<HallViewDirector />);
     act(() => { useHallViewStore.getState().requestView("room"); });
     expect(useCockpitStore.getState().walkMode).toBe(false);
     expect(useBookmarkStore.getState().transition?.toPosition).toEqual(stage().position);
     expect(useHallViewStore.getState().stagePhase).toBe("arriving");
   });
 
-  it("keeps the ordinary views where no stage is mounted or the canvas cannot hold one", () => {
-    const view = render(<HallViewDirector />);
+  it("keeps the ordinary views wherever no stage is held: no screen asked, the canvas is too narrow, or its code has not come", () => {
+    useHallViewStore.setState({ stagePoses: null });
+    render(<HallViewDirector />);
     act(() => { useHallViewStore.getState().requestView("room"); });
     expect(useBookmarkStore.getState().transition?.toPosition).toEqual(HALL_VIEW_POSES.room.position);
     expect(useHallViewStore.getState().stagePhase).toBe("off");
-    view.unmount();
-    useBookmarkStore.setState({ transition: null });
-    if (three.state !== null) three.state = { ...three.state, size: { width: 390, height: 560 } };
-    render(<HallViewDirector stage />);
-    act(() => { useHallViewStore.getState().requestView("room"); });
-    expect(useBookmarkStore.getState().transition?.toPosition).toEqual(HALL_VIEW_POSES.room.position);
+    act(() => { useHallViewStore.getState().requestView("plan"); });
+    expect(useBookmarkStore.getState().transition?.toPosition).toEqual(HALL_VIEW_POSES.plan.position);
+    expect(useHallViewStore.getState().stagePhase).toBe("off");
+  });
+
+  it("forgets the stage's places when the screen that asked for the stage leaves", () => {
+    useHallViewStore.setState({ stage: { skyPx: 48 }, stagePhase: "held" });
+    useHallViewStore.getState().setStage(null);
+    expect(useHallViewStore.getState().stagePoses).toBeNull();
     expect(useHallViewStore.getState().stagePhase).toBe("off");
   });
 

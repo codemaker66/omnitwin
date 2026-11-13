@@ -6,7 +6,6 @@ import { FirstOpen, useFirstOpenShowing } from "./FirstOpen.js";
 import { Hand } from "./Hand.js";
 import { HudFactsProvider } from "./hud-facts.js";
 import { Journey } from "./Journey.js";
-import { useHudSound } from "./use-hud-sound.js";
 import { ViewStation } from "./ViewStation.js";
 import "./hud.css";
 import "./hud-ground.css";
@@ -60,7 +59,8 @@ const HUD_STAGE = { skyPx: 48 } as const;
 
 export function HudFrame({ room, plaque, eventGuests, sheets }: HudFrameProps): ReactElement {
   // Set before the first child renders: the hand reads its cards' ranges from
-  // these switches, and the room opens on the stage in its first frame.
+  // these switches, and the room's scene fetches the stage's code as it mounts,
+  // so the room opens on the stage.
   useState(() => {
     setPlannerChromeFeatures(HUD_FEATURES);
     useHallViewStore.getState().setStage(HUD_STAGE);
@@ -76,7 +76,6 @@ export function HudFrame({ room, plaque, eventGuests, sheets }: HudFrameProps): 
       usePlannerHudStore.getState().closeSheet();
     };
   }, []);
-  useHudSound();
 
   // The facts sit outside the root: whether the first screen shows is one of them, and the root says so.
   return (

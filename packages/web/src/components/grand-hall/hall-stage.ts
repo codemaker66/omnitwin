@@ -15,6 +15,10 @@ import { HALL_HALF_LENGTH, HALL_HALF_WIDTH, HALL_HEIGHT, HALL_WIDTH } from "./ha
 // it draws. The camera is level and looks through a lens moved down across it
 // (lib/lens-shift.ts); the same picture seen by an ordinary camera, tilted, is
 // what the orbit is handed when someone takes hold of the room.
+//
+// Fetched with the screen that holds the stage (components/planner-hud/
+// hud-scene.ts), so nothing every planner loads may import it: the two heights
+// the hall's own model needs are in hall-stage-cuts.ts.
 // ---------------------------------------------------------------------------
 
 type Vec3 = readonly [number, number, number];
@@ -34,14 +38,6 @@ export const STAGE_MAX_PICTURE_ASPECT = 3;
 const NEAR_EDGE_SLOPE = 1;
 /** What the picture's top edge meets: the wall's coping, a hand above the ceiling line. */
 const WALL_TOP_M = HALL_HEIGHT + 0.12;
-/**
- * Walls the camera stands behind are lowered to this on the stage
- * (GrandHallModel): under the floor, so nothing of the fourth wall, its doors
- * or its section is left standing along the picture's foot.
- */
-export const STAGE_NEAR_CUT_M = -1;
-/** The chandeliers show in the overview below this camera height on the stage: above every stage camera (the highest stands near 11.1 m). */
-export const STAGE_CHANDELIER_CEILING_M = 12.5;
 /** The picture's foot stands this far above the floor's near edge, clear of the skirting's line. */
 const FOOT_LIP_M = 0.03;
 /** Plan: the walls are cut here (HALL_CUTS.plan), and the hall keeps this much dark round it. */

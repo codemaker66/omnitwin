@@ -163,7 +163,7 @@
   transition: color var(--hud-press-ms) var(--hud-ease), scale var(--hud-press-ms) var(--hud-ease);
 }
 
-/* A choice among words (the view, the light, the sound): the one chosen at full ink and underlined. */
+/* A choice among words (the view, the light): the one chosen at full ink and underlined. */
 .hud-option,
 .hud-step {
   display: inline-flex;
@@ -1045,7 +1045,7 @@ body.hud-dragging-card * {
     display: none;
   }
 
-  /* How the room is looked at and lit stays with wider screens. The tools do not: the sound's only setting is among them. */
+  /* How the room is looked at and lit stays with wider screens. The tools do not: Measure, Draw and snapping are a phone's too. */
   .hud-view__switch,
   .hud-view > .hud-option {
     display: none;

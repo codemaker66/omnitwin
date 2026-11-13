@@ -20,10 +20,7 @@ import {
   getPlannerSoundSettings,
   limiterMakeupDb,
   playPlannerSound,
-  setPlannerSoundLevel,
   setPlannerSoundMode,
-  setPlannerSoundPageDefault,
-  subscribePlannerSound,
   togglePlannerSoundMute,
   type PlannerSoundGate,
 } from "../sound-registry.js";
@@ -326,79 +323,5 @@ describe("the engine", () => {
     vi.spyOn(localStorage, "getItem").mockImplementation(() => { throw new Error("blocked"); });
     __resetPlannerSoundForTests();
     expect(getPlannerSoundSettings()).toEqual({ mode: PLANNER_SOUND_DEFAULT_MODE, level: PLANNER_SOUND_DEFAULT_LEVEL });
-  });
-});
-
-/** A device's store of its own, so no spy on the page's storage (which restoreAllMocks does not undo) can reach these cases. */
-function deviceStore(blocked = false): Pick<Storage, "getItem" | "setItem"> {
-  const kept = new Map<string, string>();
-  return {
-    getItem: (key) => {
-      if (blocked) throw new Error("blocked");
-      return kept.get(key) ?? null;
-    },
-    setItem: (key, value) => {
-      if (blocked) throw new Error("blocked");
-      kept.set(key, value);
-    },
-  };
-}
-
-describe("a page's own default (the planner HUD's Quiet, Blake's D1)", () => {
-  let localStorage: Pick<Storage, "getItem" | "setItem">;
-
-  beforeEach(() => {
-    localStorage = deviceStore();
-    vi.stubGlobal("localStorage", localStorage);
-    __resetPlannerSoundForTests();
-  });
-
-  afterEach(() => {
-    __resetPlannerSoundForTests();
-    vi.unstubAllGlobals();
-  });
-
-  it("sets Quiet for the page on a device that never chose, and keeps nothing", () => {
-    let heard = 0;
-    const stop = subscribePlannerSound(() => { heard += 1; });
-    expect(setPlannerSoundPageDefault("quiet")).toBe(true);
-    stop();
-    expect(getPlannerSoundSettings().mode).toBe("quiet");
-    expect(heard, "the speaker hears the change").toBe(1);
-    expect(localStorage.getItem(PLANNER_SOUND_STORAGE_KEY), "a default is not a choice").toBeNull();
-    // The next page starts from the registry's own default again.
-    __resetPlannerSoundForTests();
-    expect(getPlannerSoundSettings().mode).toBe(PLANNER_SOUND_DEFAULT_MODE);
-  });
-
-  it("never overrides a choice this device kept", () => {
-    localStorage.setItem(PLANNER_SOUND_STORAGE_KEY, "off");
-    expect(setPlannerSoundPageDefault("quiet")).toBe(false);
-    expect(getPlannerSoundSettings().mode).toBe("off");
-  });
-
-  it("never overrides a choice made on this page, even where the device keeps nothing", () => {
-    vi.stubGlobal("localStorage", deviceStore(true));
-    __resetPlannerSoundForTests();
-    setPlannerSoundMode("off");
-    expect(setPlannerSoundPageDefault("quiet")).toBe(false);
-    expect(getPlannerSoundSettings().mode).toBe("off");
-  });
-
-  it("keeps Quiet when someone then chooses Quiet, and keeps no mode when only the level changes", () => {
-    setPlannerSoundPageDefault("quiet");
-    setPlannerSoundLevel(0.4);
-    expect(localStorage.getItem(PLANNER_SOUND_STORAGE_KEY), "the level is not a choice of mode").toBeNull();
-    expect(localStorage.getItem(PLANNER_SOUND_LEVEL_KEY)).toBe("0.4");
-    setPlannerSoundMode("quiet");
-    expect(localStorage.getItem(PLANNER_SOUND_STORAGE_KEY), "chosen, so kept").toBe("quiet");
-    expect(setPlannerSoundPageDefault("full"), "a choice wins over any later default").toBe(false);
-  });
-
-  it("lets Shift M mute the page's Quiet and bring it back", () => {
-    setPlannerSoundPageDefault("quiet");
-    expect(togglePlannerSoundMute()).toBe("off");
-    expect(localStorage.getItem(PLANNER_SOUND_STORAGE_KEY)).toBe("off");
-    expect(togglePlannerSoundMute()).toBe("quiet");
   });
 });

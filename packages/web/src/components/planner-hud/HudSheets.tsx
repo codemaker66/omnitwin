@@ -1,7 +1,6 @@
 import { useLayoutEffect, useRef, useState, type ReactElement, type ReactNode } from "react";
 import { GuestEnquiryModal } from "../editor/GuestEnquiryModal.js";
 import { AutoFillPrompt } from "../editor/cockpit/AutoFillPrompt.js";
-import { SOUND_MODE_LINES } from "../planner-chrome/SoundControl.js";
 import { prepareLayoutForGuestEnquiry } from "../editor/send-layout-flow.js";
 import { ActivityIndicator } from "../shared/Activity.js";
 import { usePlannerTruth } from "../../hooks/use-planner-truth.js";
@@ -12,7 +11,6 @@ import { MAX_GUEST_FLOW_AGENTS } from "../../lib/guest-flow-layout-input.js";
 import { JOURNEY_LABELS } from "../../lib/hud/journey.js";
 import { asOneUndoStep } from "../../lib/planner-keymap.js";
 import { useEscapeLayer } from "../../lib/planner-keys.js";
-import { armPlannerSound, setPlannerSoundMode, usePlannerSoundSettings, type PlannerSoundMode } from "../../lib/sound-registry.js";
 import { isTableDressingApplicatorSlug } from "../../lib/table-dressing.js";
 import { useCatalogueStore } from "../../stores/catalogue-store.js";
 import { useCockpitStore } from "../../stores/cockpit-store.js";
@@ -341,30 +339,15 @@ function MoreSheet(): ReactElement {
 
 // -- More tools --------------------------------------------------------------
 
-const SOUND_HEADING_ID = "hud-sheet-sound";
-
-const SOUND_MODES: readonly { readonly mode: PlannerSoundMode; readonly label: string }[] = [
-  { mode: "off", label: "Off" },
-  { mode: "quiet", label: "Quiet" },
-  { mode: "full", label: "Full" },
-];
-
-/**
- * The planner's sound, Quiet unless chosen (Blake's D1), and only here, in the
- * view's More tools. A choice is kept on this device; Quiet or Full is itself
- * a deliberate press, so it makes the sound ready at once.
- */
-function chooseSound(mode: PlannerSoundMode): void {
-  setPlannerSoundMode(mode);
-  if (mode !== "off") armPlannerSound();
-}
+// The planner's sound is not on this screen yet. Its engine's controls live in a module every planner downloads, so
+// wiring them here would grow that download for a screen behind a flag; the sound and its setting (Quiet unless
+// chosen, Blake's D1, kept in this sheet) follow once that engine can be fetched on its own.
 
 function ToolsSheet(): ReactElement {
   const wallsFull = useVisibilityStore((state) => state.mode === "manual");
   // The drawn Grand Hall lowers its own walls by where the camera stands; only the other rooms' walls are put up or cut by hand.
   const wallsByHand = !useModelledGrandHall();
   const snap = usePlacementStore((state) => state.snapEnabled);
-  const sound = usePlannerSoundSettings().mode;
   const tool = (name: "measure" | "draw"): void => {
     useToolStore.getState().setTool(name);
     close();
@@ -380,26 +363,6 @@ function ToolsSheet(): ReactElement {
           <button type="button" className="hud-key" aria-pressed={wallsFull} onClick={() => { setWallsFull(!wallsFull); }}>{wallsFull ? "Cut the near walls away" : "Show every wall"}</button>
         ) : null}
         <button type="button" className="hud-key" aria-pressed={snap} onClick={() => { usePlacementStore.getState().toggleSnap(); }} title="G">{snap ? "Snapping to the grid" : "Placing freely"}</button>
-      </div>
-      <div className="hud-sheet__section">
-        <h3 className="hud-sheet__heading" id={SOUND_HEADING_ID}>Sound</h3>
-        <div className="hud-sheet__row">
-          <div className="hud-view__switch" role="radiogroup" aria-labelledby={SOUND_HEADING_ID}>
-            {SOUND_MODES.map((option) => (
-              <button
-                key={option.mode}
-                type="button"
-                role="radio"
-                className="hud-option"
-                aria-checked={sound === option.mode}
-                onClick={() => { chooseSound(option.mode); }}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
-        </div>
-        <p className="hud-sheet__note">{SOUND_MODE_LINES[sound]}</p>
       </div>
     </>
   );

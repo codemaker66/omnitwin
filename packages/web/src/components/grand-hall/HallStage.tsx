@@ -2,7 +2,8 @@
 // HallStage — holds the Grand Hall as one picture (hall-stage.ts)
 //
 // Mounted after the camera rig, for a planner screen that asked for the stage
-// (hall-view-store `stage`). It owns three things the rig does not: the lens
+// (hall-view-store `stage`), and fetched only then (components/planner-hud/
+// hud-scene.ts). It owns three things the rig does not: the lens
 // (its field of view and its fall across the camera, lib/lens-shift.ts), the
 // camera squaring itself up as it comes to rest on the stage, and letting go
 // the instant a hand takes the room.
@@ -251,8 +252,12 @@ export function HallStage(): null {
       invalidate();
     });
 
-    // The stage for this canvas.
+    // The stage for this canvas, and where it puts the camera: the views' director sends Room and Plan there.
     const stage = skyPx === null ? null : hallStageFraming(width, height, skyPx);
+    useHallViewStore.getState().setStagePoses(stage === null ? null : {
+      room: { position: stage.position, target: stage.freeTarget },
+      plan: { position: stage.plan.position, target: stage.plan.target },
+    });
     const walking = useCockpitStore.getState().walkMode;
     const bookmarks = useBookmarkStore.getState();
     if (stage === null) {
@@ -291,8 +296,9 @@ export function HallStage(): null {
     };
   }, [own, camera, controls, canvas, invalidate, width, height, skyPx]);
 
-  // Leaving the screen that asked for the stage: an ordinary orbit through the plain lens again.
+  // Leaving the screen that asked for the stage: an ordinary orbit through the plain lens again, and the ordinary views.
   useEffect(() => () => {
+    useHallViewStore.getState().setStagePoses(null);
     const last = own.rig;
     if (last === null) return;
     if (own.mode !== "walk") letGo(own, last.camera, last.orbit);

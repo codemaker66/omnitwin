@@ -46,7 +46,6 @@ import { MarqueeSelect } from "../MarqueeSelect.js";
 import { SnapGuides } from "../SnapGuides.js";
 import { CirculationOverlay } from "../CirculationOverlay.js";
 import { ClearanceRings } from "./ClearanceRings.js";
-import { ChosenMarks } from "./ChosenMarks.js";
 import { DoorClearSpaceLayer } from "./DoorClearSpaceLayer.js";
 import { FurnitureMotion } from "./FurnitureMotion.js";
 import { MarkupLayer } from "../MarkupLayer.js";
@@ -81,7 +80,6 @@ import { CockpitPlanningCamera } from "./CockpitPlanningCamera.js";
 import { readNativePlannerPixelRatio, serverPlannerPixelRatio, subscribeNativePlannerPixelRatio } from "../../lib/planner-resolution-policy.js";
 import { GrandHallModel } from "../grand-hall/GrandHallModel.js";
 import { HallViewDirector, HALL_VIEW_POSES, HALL_WALK } from "../grand-hall/HallViewDirector.js";
-import { HallStage } from "../grand-hall/HallStage.js";
 import { HALL_HEIGHT } from "../grand-hall/hall-spec.js";
 import { HallLightRig } from "../grand-hall/HallLightRig.js";
 import { HallSky } from "../grand-hall/HallSky.js";
@@ -99,6 +97,11 @@ import { AssemblyReplay } from "../../floor/assembly/AssemblyReplay.js";
 // may play, and fetched as soon as it may.
 const loadGrandAssembly = () => import("../../floor/assembly/GrandAssembly.js");
 const GrandAssembly = lazy(loadGrandAssembly);
+
+// The planner HUD's parts of this scene (the stage's hold on the camera, the line round what is chosen): one module,
+// fetched only where a screen has asked for them, so the planner without the HUD downloads none of it.
+type HudScene = typeof import("../planner-hud/hud-scene.js");
+const loadHudScene = (): Promise<HudScene> => import("../planner-hud/hud-scene.js");
 
 /**
  * Computes render dimensions from room geometry polygon data.
@@ -513,6 +516,16 @@ export function PlannerScene(): ReactElement {
   const [assemblyCamera, setAssemblyCamera] = useState(false);
   // The stage holds the live camera of the drawn hall (never drawn under the frozen preview), and not an assembling one.
   const hallStage = hallStageAsked && hallDrawn && !assemblyCamera;
+  // The HUD's parts of the scene arrive as soon as a screen asks for either of them. Should the fetch fail, the room
+  // is left an ordinary orbit with the planner's other marks, and nothing else of it is disturbed.
+  const hudSceneAsked = hallStageAsked || plannerFeatureEnabled("chosenMark");
+  const [hudScene, setHudScene] = useState<HudScene | null>(null);
+  useEffect(() => {
+    if (!hudSceneAsked) return undefined;
+    let current = true;
+    void loadHudScene().then((parts) => { if (current) setHudScene(parts); }, () => undefined);
+    return () => { current = false; };
+  }, [hudSceneAsked]);
   // A room known not to be the drawn Grand Hall lets a held layout go at once.
   const assemblyElsewhere = space !== null && !realHall;
   // The Assembly's code is fetched as soon as it may play here (the Grand Hall,
@@ -730,18 +743,18 @@ export function PlannerScene(): ReactElement {
           </>}
           <group name="planner-furniture-frame" position={timelinePreviewActive && frozenRoom !== null ? [...frozenRoom.furnitureOffset] : [0, 0, 0]}>
             {!timelinePreviewActive && <FurnitureContactShadows />}
-            {!timelinePreviewActive && plannerFeatureEnabled("chosenMark") && <ChosenMarks />}
+            {!timelinePreviewActive && hudScene !== null && plannerFeatureEnabled("chosenMark") && <hudScene.ChosenMarks />}
             {!timelinePreviewActive && hallDrawn && <TableCandles />}
             <PlacedFurniture />
           </group>
-          {realHall && !timelinePreviewActive && <HallViewDirector stage={hallStage} />}
+          {realHall && !timelinePreviewActive && <HallViewDirector />}
           <CockpitPlanningCamera suspended={timelinePreviewActive || assemblyCamera} />
           <CameraRig dimensions={dimensions} smoothControls={smoothCameraControls} suspended={timelinePreviewActive || assemblyCamera}
             defaultPose={realHall ? HALL_VIEW_POSES.room : null}
             onOpeningPose={realHall ? markHallOpeningPose : undefined}
             captureUnavailableKey={captureFailed && captureInUse ? `${arrivalKey ?? "unassigned"}:${splatUrls.join("|")}` : null} />
           {/* After the rig: it sets the lens and squares the camera up once the rig has moved it. */}
-          {hallStage && <HallStage />}
+          {hallStage && hudScene !== null && <hudScene.HallStage />}
           {walkMode && interiorWalk !== null && !walkCameraDisabled && (!captureFailed || !captureInUse) && (
             <InteriorCamera
               key={`${roomSlug ?? "walk"}:${interiorWalk === hallWalkData ? "model" : "capture"}`}
