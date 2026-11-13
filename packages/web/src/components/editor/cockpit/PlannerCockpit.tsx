@@ -17,7 +17,6 @@ import { useLayoutTimelinePreviewStore } from "../../../stores/layout-timeline-p
 import { SceneOutliner } from "./SceneOutliner.js";
 import { ReferenceRoomHeader } from "./ReferenceRoomHeader.js";
 import { ChromeClearHint, ChromeFoldControls, ChromeFoldMark, ChromePresence, ChromeSaveWord, ChromeSpine, PhoneChromeSeal } from "./ChromeFold.js";
-import { EventKindPicker } from "../../planner-chrome/EventKindPicker.js";
 import "./PlannerCockpit.css";
 import "./ReferenceViewer.css";
 
@@ -121,8 +120,6 @@ export function PlannerCockpit({ mobile = false, hasLinkedEvent = false }: { rea
       {/* Phones and tablets have no right dock: a chosen lens rises as a
           bottom sheet instead (it portals itself above the planner chrome). */}
       {mobile ? <LensSheet key="lens-sheet" /> : null}
-      {/* "What are you planning?" on a new layout's first open (T-674); it portals itself into the top layer. */}
-      <EventKindPicker key="event-kind" eventLinked={hasLinkedEvent} />
       {mobile ? <PhoneChromeSeal key="phone-seal" /> : null}
       <ChromeClearHint key="clear-hint" />
       <ChromeSaveWord key="save-word" mobile={mobile} />

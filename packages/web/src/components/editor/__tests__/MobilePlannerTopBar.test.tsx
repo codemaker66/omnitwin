@@ -4,6 +4,7 @@ import { MobilePlannerTopBar } from "../MobilePlannerTopBar.js";
 import { useEditorStore } from "../../../stores/editor-store.js";
 import { useAuthStore } from "../../../stores/auth-store.js";
 import { useLayoutTimelinePreviewStore } from "../../../stores/layout-timeline-preview-store.js";
+import { openLayoutEventKind, resetEventKindQuestionForTesting, useEventKindQuestion } from "../../../lib/event-kind-record.js";
 
 const mocks = vi.hoisted(() => ({ prepare: vi.fn(), listLinks: vi.fn() }));
 vi.mock("../send-layout-flow.js", () => ({ prepareLayoutForGuestEnquiry: mocks.prepare }));
@@ -163,5 +164,16 @@ describe("MobilePlannerTopBar identity", () => {
     useEditorStore.setState({ space: RECEPTION, configId: null, configName: null });
     render(<MobilePlannerTopBar mode="3d" onModeChange={vi.fn()} />);
     expect(screen.getByTestId("mobile-planner-layout-name").textContent).toBe("Unsaved layout");
+  });
+
+  it("names the event in the 2D plan as in 3D, in the copper meant for its ivory bar (T-674)", () => {
+    resetEventKindQuestionForTesting();
+    openLayoutEventKind({ configId: "cfg-activity", isPublicPreview: false, search: "", metadata: { eventKind: "wedding" }, floorEmptyAtOpen: false });
+    render(<MobilePlannerTopBar mode="2d" onModeChange={vi.fn()} />);
+    const name = screen.getByRole("button", { name: "The event: Wedding. Change it" });
+    expect(name.classList.contains("is-phone")).toBe(true);
+    fireEvent.click(name);
+    expect(useEventKindQuestion.getState().changing).toBe(true);
+    resetEventKindQuestionForTesting();
   });
 });

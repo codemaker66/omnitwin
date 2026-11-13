@@ -14,6 +14,7 @@ import { PlannerLeavingNotes } from "../components/editor/PlannerLeavingNotes.js
 import { EditorBridge } from "../components/editor/EditorBridge.js";
 import { LayoutLiveLayer } from "../components/editor/LayoutLiveLayer.js";
 import { PlannerCockpit } from "../components/editor/cockpit/PlannerCockpit.js";
+import { EventKindPicker } from "../components/planner-chrome/EventKindPicker.js";
 import { ObjectNotePanel } from "../components/editor/ObjectNotePanel.js";
 import { EventDetailsPanel } from "../components/editor/EventDetailsPanel.js";
 import { TruthModeIndicator } from "../components/truth/TruthModeIndicator.js";
@@ -25,6 +26,7 @@ import {
 } from "../lib/truth-mode-summary.js";
 import { getConfig, getPublicConfig, type Configuration } from "../api/configurations.js";
 import { claimTrackedDraft } from "../lib/planner-claim.js";
+import { layoutClaimedEventKind } from "../lib/event-kind-record.js";
 import { usePlannerDraftClaim } from "../hooks/use-planner-draft-claim.js";
 import { useIsCoarsePointer, useIsNarrowViewport } from "../hooks/use-media-query.js";
 import { prefetchPlannerVenue } from "../hooks/use-planner-venue-identity.js";
@@ -400,6 +402,8 @@ export function EditorPage(): React.ReactElement {
         if (isAuthenticated && ownsRoute() && await claimOwnDraft(newConfigId)
           && ownsRoute() && useEditorStore.getState().configId === newConfigId) {
           useEditorStore.setState({ isPublicPreview: false });
+          // The event's answer, given while it was a guest's draft, now belongs with the layout (T-674).
+          layoutClaimedEventKind(newConfigId);
         }
         // Committing this draft changes storeConfigId and cleans up the effect.
         // That self-settlement may still navigate, but only for the same route,
@@ -614,6 +618,7 @@ function PlannerCommsLayer(): React.ReactElement {
   // the config is claimed; the panel itself renders a sign-in hint if it
   // ever opens in that state (defense-in-depth).
   const canEditEventDetails = configId !== null && !isPublicPreview;
+  const hasLinkedEvent = (searchParams.get("eventId")?.trim().length ?? 0) > 0;
   const mobile = isNarrow || isTouch;
   const showStandaloneTruthIndicator = !timelinePreviewActive
     && truthModeEnabled
@@ -665,7 +670,7 @@ function PlannerCommsLayer(): React.ReactElement {
       >
         {viewMode === "3d" ? (
           <PlannerWorkContext.Provider value={plannerWork}>
-            <PlannerCockpit mobile={mobile} hasLinkedEvent={(searchParams.get("eventId")?.trim().length ?? 0) > 0} />
+            <PlannerCockpit mobile={mobile} hasLinkedEvent={hasLinkedEvent} />
           </PlannerWorkContext.Provider>
         ) : (
           <BlueprintPage source="editor-store" />
@@ -681,6 +686,9 @@ function PlannerCommsLayer(): React.ReactElement {
           previewLocked={timelinePreviewActive}
         />
       )}
+      {/* "What are you planning?" on a new layout's first open (T-674). Beside the 3D and 2D views, not in
+          either, so the room's name opens it in both; it portals itself into the top layer. */}
+      <EventKindPicker eventLinked={hasLinkedEvent} />
       <div className={mobile ? "mobile-planner-utilities" : undefined}>
       {mobile && showStandaloneTruthIndicator && <TruthModeIndicator summary={truthSummary} embedded />}
       {canEditEventDetails && viewMode === "3d" && !timelinePreviewActive && (

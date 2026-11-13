@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { ApiError } from "../api/client.js";
 import { patchConfigMetadata } from "../api/configurations.js";
 import { usePlannerEventStore, type PlannerEventKind } from "../stores/planner-event-store.js";
-import { subscribeOnlineStatus } from "./online-status.js";
+import { readOnlineStatus, subscribeOnlineStatus } from "./online-status.js";
 import type { AutoFillStyle } from "./auto-fill.js";
 
 // ---------------------------------------------------------------------------
@@ -11,15 +11,18 @@ import type { AutoFillStyle } from "./auto-fill.js";
 // The planner asks it once, when a new layout first opens ("What are you
 // planning?"), keeps the answer with the layout, and reads it back whenever
 // the layout opens again. The answer chooses the chair a new seat gets
-// (lib/furniture-defaults) and the shape Lay out starts with.
+// (lib/furniture-defaults) and the shape Lay out starts with. Only a layout
+// that was new when it opened is asked: nothing stood on its floor, and
+// nothing has since. A layout someone has worked on is never interrupted,
+// however empty its floor later becomes.
 //
 // A signed-in layout keeps it in configurations.metadata.eventKind; the PATCH
 // merges top-level keys, so the write never touches the layout's other
 // metadata. A guest's draft has no metadata route, so this device keeps its
-// answer, as it keeps the draft's claim secret; once the draft is someone's,
-// the device's answer is written to the layout the first time it opens
-// signed in. An absent answer means never asked; null means asked and
-// skipped, which is never asked again.
+// answer, as it keeps the draft's claim secret; the moment the draft becomes
+// the person's (its claim lands), the answer is written to the layout. An
+// absent answer means never asked; null means asked and skipped, which is
+// never asked again.
 // ---------------------------------------------------------------------------
 
 export const PLANNER_EVENT_KINDS: readonly PlannerEventKind[] = ["wedding", "corporate", "other"];
@@ -132,7 +135,9 @@ export function rememberDeviceEventKind(configId: string, kind: EventKindAnswer)
 /**
  * Whether this device asks. `?event-question=off` stops it asking here and
  * `?event-question=on` starts it again; either is remembered on the device,
- * as `?assembly=off` is for the Assembly.
+ * as `?assembly=off` is for the Assembly. It is for the venue's demo laptop
+ * and automated runs; any planner address carrying it changes the device
+ * that opens it, so it belongs in no link given to a customer.
  */
 export function deviceAsksEventKind(search: string): boolean {
   const asked = new URLSearchParams(search).get("event-question");
@@ -150,6 +155,8 @@ export function deviceAsksEventKind(search: string): boolean {
 export interface EventKindQuestionFacts {
   /** The layout can be changed now: no review lock, no frozen phase, no timeline preview. */
   readonly editable: boolean;
+  /** The layout was new when it opened (nothing stood on its floor), and nothing has stood on it since. */
+  readonly askable: boolean;
   /** Nothing is on the floor. */
   readonly floorEmpty: boolean;
   /** The layout was opened from an event (`?eventId=`), whose people already know what it is. */
@@ -162,9 +169,9 @@ export interface EventKindQuestionFacts {
   readonly deviceAsks: boolean;
 }
 
-/** Asks only a new, empty layout that nothing has answered for, and never over someone's work. */
+/** Asks only a layout that was new when it opened and is still empty, that nothing has answered for, and never over someone's work. */
 export function shouldAskEventKind(facts: EventKindQuestionFacts): boolean {
-  return facts.deviceAsks && facts.editable && facts.floorEmpty && !facts.eventLinked
+  return facts.deviceAsks && facts.editable && facts.askable && facts.floorEmpty && !facts.eventLinked
     && facts.known && facts.answer === undefined;
 }
 
@@ -186,7 +193,12 @@ export interface EventKindWords {
   readonly layOut: string;
 }
 
-/** Every word is true of the planner: the chair is lib/furniture-defaults' PLANNER_CHAIR_BY_EVENT, the shape layOutStyleFor. */
+/**
+ * Every word is true of the planner: the chair is lib/furniture-defaults'
+ * PLANNER_CHAIR_BY_EVENT, the shape layOutStyleFor. A panel offers a choice
+ * ("Something else"); the header names the event the choice made ("Other
+ * event").
+ */
 export const EVENT_KIND_WORDS: Readonly<Record<PlannerEventKind, EventKindWords>> = {
   wedding: {
     title: "Wedding",
@@ -218,8 +230,8 @@ export const EVENT_KIND_WORDS: Readonly<Record<PlannerEventKind, EventKindWords>
 /**
  * Where the layout's answer is kept:
  *   kept       on the layout (for a guest's draft, on this device), or there is nothing to keep;
- *   retrying   a write found no network (or a server error) and is tried again once the browser is back online;
- *   this-visit the layout or the device refused it (no permission to write, full storage): it holds in this tab only.
+ *   retrying   a write found no network, a server error or a busy moment, and is tried again;
+ *   this-visit the layout or the device refused it (no permission to write, a locked layout, full storage): it holds in this tab only.
  */
 export type EventKindSave = "kept" | "retrying" | "this-visit";
 
@@ -232,6 +244,12 @@ export interface EventKindQuestionState {
   readonly known: boolean;
   /** The layout's answer; undefined while unread or never asked. */
   readonly answer: EventKindAnswer | undefined;
+  /**
+   * The layout was new when it opened: nothing stood on its floor. Only such
+   * a layout is asked. Once anything stands on it, it never is again, and
+   * nothing makes it new again: a reload of the same layout can only clear it.
+   */
+  readonly askable: boolean;
   readonly save: EventKindSave;
   /** The picker is open to change the answer, from the room's name or the receipt. */
   readonly changing: boolean;
@@ -244,6 +262,7 @@ const INITIAL: EventKindQuestionState = {
   guest: false,
   known: false,
   answer: undefined,
+  askable: false,
   save: "kept",
   changing: false,
   receipt: null,
@@ -268,11 +287,32 @@ export interface OpenedLayout {
   readonly search: string;
   /** The layout's metadata as its load returned it; null when it has none. */
   readonly metadata: unknown;
+  /** Nothing stood on the floor as the layout opened: neither in the copy it opened with nor in the server's. */
+  readonly floorEmptyAtOpen: boolean;
+}
+
+/**
+ * How long to wait before each new try of an unsent answer while the browser
+ * is online, ms. A busy moment or a refreshed session passes in seconds; after
+ * the last wait, only coming back online or the next answer tries again.
+ */
+export const EVENT_KIND_RETRY_MS: readonly number[] = [2_000, 5_000, 15_000, 30_000, 60_000];
+
+/** One answer given for a layout; a later answer is a new entry, even one with the same kind. */
+interface UnsentAnswer {
+  readonly answer: EventKindAnswer;
 }
 
 let receiptSeq = 0;
 let writing: Promise<void> = Promise.resolve();
-let stopRetry: (() => void) | null = null;
+/** Each layout's newest answer this tab gave and has not yet seen kept: tried again whichever layout is open. */
+const unsent = new Map<string, UnsentAnswer>();
+/** Writes queued or under way, by layout, so a retry never doubles one. */
+const writesQueued = new Map<string, number>();
+let retryDeps: EventKindRecordDeps = DEFAULT_DEPS;
+let retryTimer: ReturnType<typeof setTimeout> | null = null;
+let retryAttempts = 0;
+let stopOnlineRetry: (() => void) | null = null;
 
 /** The first answer given: null (a skipped question) counts as an answer; only undefined does not. */
 function firstAnswer(...answers: readonly (EventKindAnswer | undefined)[]): EventKindAnswer | undefined {
@@ -289,28 +329,30 @@ function applyAnswer(configId: string, guest: boolean, answer: EventKindAnswer |
  * Sets the planner's kind for a layout as it opens, from what its load
  * returned (editor-store's loadConfiguration and createPublicConfig call
  * this), before any seat can be placed. A different layout first forgets the
- * last one's kind.
+ * last one's kind, and is askable only if its floor was empty as it opened.
  *
  * - A guest's draft takes this device's answer. The address (`?event=`) answers
  *   only a draft nothing has answered yet: the link it came by started the
  *   plan. That answer is kept on the device.
- * - A signed-in layout takes the answer it holds. An answer this tab is still
- *   waiting to write stands over it, and is written again. Otherwise the layout
- *   takes an answer this tab holds for this visit, or the one this device kept
- *   for it as a guest's draft (claimed since), which is written to the layout.
- *   Opening writes nothing else: the address never answers a signed-in layout,
- *   so a link cannot change a layout's event, and a viewer who may not write is
- *   not made to try.
+ * - A signed-in layout takes the answer it holds. An answer this tab gave and
+ *   has not seen kept stands over it, and is written again. Otherwise the
+ *   layout takes an answer this tab holds for this visit, or the one this
+ *   device kept for it as a guest's draft (claimed since), which is written to
+ *   the layout. Opening writes nothing else: the address never answers a
+ *   signed-in layout, so a link cannot change a layout's event, and a viewer
+ *   who may not write is not made to try.
  */
 export function openLayoutEventKind(layout: OpenedLayout, deps: Partial<EventKindRecordDeps> = {}): void {
   const current = useEventKindQuestion.getState();
   const sameLayout = current.configId === layout.configId && current.known;
   if (current.configId !== layout.configId) {
-    useEventKindQuestion.setState({ ...INITIAL, configId: layout.configId, guest: layout.isPublicPreview });
+    useEventKindQuestion.setState({ ...INITIAL, configId: layout.configId, guest: layout.isPublicPreview, askable: layout.floorEmptyAtOpen });
     usePlannerEventStore.getState().setEventKind(null);
+  } else if (current.askable && !layout.floorEmptyAtOpen) {
+    useEventKindQuestion.setState({ askable: false });
   }
-  // What this tab holds for the layout and has not seen kept (a write still to go, or refused).
-  const held = sameLayout && current.save !== "kept" ? current.answer : undefined;
+  // An answer this tab holds for the layout that its owner refused to keep.
+  const held = sameLayout && current.save === "this-visit" ? current.answer : undefined;
   const onDevice = deviceEventKind(layout.configId);
   if (layout.isPublicPreview) {
     const answer = firstAnswer(onDevice, held, eventKindFromSearch(layout.search));
@@ -321,9 +363,10 @@ export function openLayoutEventKind(layout: OpenedLayout, deps: Partial<EventKin
     return;
   }
   const use: EventKindRecordDeps = { ...DEFAULT_DEPS, ...deps };
-  if (held !== undefined && current.save === "retrying") {
-    applyAnswer(layout.configId, false, held, "retrying");
-    void writeAnswer(layout.configId, held, use);
+  const waiting = unsent.get(layout.configId);
+  if (waiting !== undefined) {
+    applyAnswer(layout.configId, false, waiting.answer, "retrying");
+    if (!writesQueued.has(layout.configId)) void writeAnswer(layout.configId, waiting, use);
     return;
   }
   const stored = storedEventKind(layout.metadata);
@@ -336,7 +379,25 @@ export function openLayoutEventKind(layout: OpenedLayout, deps: Partial<EventKin
     return;
   }
   applyAnswer(layout.configId, false, onDevice, "kept");
-  if (onDevice !== undefined) void writeAnswer(layout.configId, onDevice, use);
+  if (onDevice !== undefined) queueAnswer(layout.configId, onDevice, use);
+}
+
+/**
+ * The open guest draft has just become the signed-in person's (its claim
+ * landed): its answer, held here and on this device, now belongs with the
+ * layout and is written there at once. The planner calls this beside
+ * isPublicPreview: false, for a new plan (EditorPage) and for a draft claimed
+ * as its guest signs in (use-planner-draft-claim).
+ */
+export function layoutClaimedEventKind(configId: string, deps: Partial<EventKindRecordDeps> = {}): void {
+  const state = useEventKindQuestion.getState();
+  if (state.configId !== configId || !state.guest) return;
+  useEventKindQuestion.setState({ guest: false });
+  if (!state.known) return;
+  const answer = firstAnswer(state.answer, deviceEventKind(configId));
+  if (answer === undefined) return;
+  if (state.answer === undefined) applyAnswer(configId, false, answer, "kept");
+  queueAnswer(configId, answer, { ...DEFAULT_DEPS, ...deps });
 }
 
 /** The person's answer (a kind, or null for "Not sure yet"): set at once, then kept with the layout. */
@@ -344,56 +405,109 @@ export function answerEventKind(answer: EventKindAnswer, deps: Partial<EventKind
   const { configId, guest } = useEventKindQuestion.getState();
   if (configId === null) return;
   receiptSeq += 1;
-  useEventKindQuestion.setState({ known: true, answer, changing: false, save: "kept", receipt: { answer, seq: receiptSeq } });
+  useEventKindQuestion.setState({ known: true, answer, askable: false, changing: false, save: "kept", receipt: { answer, seq: receiptSeq } });
   usePlannerEventStore.getState().setEventKind(answer);
   if (guest) {
     useEventKindQuestion.setState({ save: rememberDeviceEventKind(configId, answer) ? "kept" : "this-visit" });
     return;
   }
-  void writeAnswer(configId, answer, { ...DEFAULT_DEPS, ...deps });
-}
-
-/** A refusal (the server answered 4xx: no permission, a locked layout) is final for this visit. */
-function refused(error: unknown): boolean {
-  return error instanceof ApiError && error.status >= 400 && error.status < 500;
+  queueAnswer(configId, answer, { ...DEFAULT_DEPS, ...deps });
 }
 
 /**
- * Writes a signed-in layout's answer, one write at a time. A refused write
- * leaves the answer held for this visit. Any other failed write leaves it
- * waiting, tried again when the browser comes back online with whatever the
- * answer is by then. Only the answer still in hand is marked.
+ * A refusal no new try can change: the request is wrong, not allowed, or for
+ * a layout that is gone or locked for review. An expired session (401, after
+ * the client has asked for a fresh token), a timeout (408), too many requests
+ * (429), the route's own "try again" (409 RETRY) and a server error all pass.
  */
-function writeAnswer(configId: string, answer: EventKindAnswer, deps: EventKindRecordDeps): Promise<void> {
+function refusedForGood(error: unknown): boolean {
+  if (!(error instanceof ApiError)) return false;
+  if (error.status === 401 || error.status === 408 || error.status === 429) return false;
+  if (error.status === 409) return error.code !== "RETRY";
+  return error.status >= 400 && error.status < 500;
+}
+
+/** Marks the open layout's save, only while the answer it is about is still the one in hand. */
+function markSave(configId: string, answer: EventKindAnswer, save: EventKindSave): void {
+  const state = useEventKindQuestion.getState();
+  if (state.configId === configId && state.answer === answer) useEventKindQuestion.setState({ save });
+}
+
+/** Keeps a signed-in layout's newest answer until it is seen kept, and writes it. */
+function queueAnswer(configId: string, answer: EventKindAnswer, deps: EventKindRecordDeps): void {
+  const entry: UnsentAnswer = { answer };
+  unsent.set(configId, entry);
+  retryAttempts = 0;
+  void writeAnswer(configId, entry, deps);
+}
+
+/**
+ * Writes a signed-in layout's answer, one write at a time. Only the layout's
+ * newest answer settles anything: an older write that lands or fails changes
+ * nothing, because the newer one is written after it. A write refused for good
+ * leaves the answer held for this visit. Any other failed write keeps the
+ * answer unsent, whichever layout is open by then, and tries it again: at once
+ * when the browser comes back online, and after a growing wait while it is
+ * online.
+ */
+function writeAnswer(configId: string, entry: UnsentAnswer, deps: EventKindRecordDeps): Promise<void> {
+  writesQueued.set(configId, (writesQueued.get(configId) ?? 0) + 1);
   writing = writing.then(async () => {
     try {
-      await deps.writeMetadata(configId, answer);
-      const state = useEventKindQuestion.getState();
-      if (state.configId === configId && state.answer === answer) useEventKindQuestion.setState({ save: "kept" });
+      await deps.writeMetadata(configId, entry.answer);
+      retryAttempts = 0;
+      if (unsent.get(configId) !== entry) return;
+      unsent.delete(configId);
+      markSave(configId, entry.answer, "kept");
     } catch (error) {
-      const state = useEventKindQuestion.getState();
-      if (state.configId !== configId || state.answer !== answer) return;
-      if (refused(error)) {
-        useEventKindQuestion.setState({ save: "this-visit" });
+      if (unsent.get(configId) !== entry) return;
+      if (refusedForGood(error)) {
+        unsent.delete(configId);
+        markSave(configId, entry.answer, "this-visit");
         return;
       }
-      useEventKindQuestion.setState({ save: "retrying" });
-      retryWhenOnline(configId, deps);
+      markSave(configId, entry.answer, "retrying");
+      retryLater(deps);
+    } finally {
+      const left = (writesQueued.get(configId) ?? 1) - 1;
+      if (left > 0) writesQueued.set(configId, left);
+      else writesQueued.delete(configId);
+      if (unsent.size === 0) stopRetrying();
     }
   });
   return writing;
 }
 
-function retryWhenOnline(configId: string, deps: EventKindRecordDeps): void {
-  stopRetry?.();
-  const unsubscribe = subscribeOnlineStatus((online) => {
-    if (!online) return;
-    unsubscribe();
-    if (stopRetry === unsubscribe) stopRetry = null;
-    const state = useEventKindQuestion.getState();
-    if (state.configId === configId && state.save === "retrying" && state.answer !== undefined) void writeAnswer(configId, state.answer, deps);
-  });
-  stopRetry = unsubscribe;
+function retryLater(deps: EventKindRecordDeps): void {
+  retryDeps = deps;
+  stopOnlineRetry ??= subscribeOnlineStatus((online) => { if (online) retryUnsent(); });
+  if (retryTimer !== null || retryAttempts >= EVENT_KIND_RETRY_MS.length || !readOnlineStatus()) return;
+  const wait = EVENT_KIND_RETRY_MS[retryAttempts] ?? 0;
+  retryAttempts += 1;
+  retryTimer = setTimeout(() => {
+    retryTimer = null;
+    retryUnsent();
+  }, wait);
+}
+
+function retryUnsent(): void {
+  for (const [configId, entry] of [...unsent]) {
+    if (!writesQueued.has(configId)) void writeAnswer(configId, entry, retryDeps);
+  }
+}
+
+function stopRetrying(): void {
+  if (retryTimer !== null) clearTimeout(retryTimer);
+  retryTimer = null;
+  stopOnlineRetry?.();
+  stopOnlineRetry = null;
+  retryAttempts = 0;
+}
+
+/** Something stands on the open layout's floor: it is no longer new, and is never asked again (EventKindPicker). */
+export function eventKindFloorTaken(configId: string): void {
+  const state = useEventKindQuestion.getState();
+  if (state.configId === configId && state.askable) useEventKindQuestion.setState({ askable: false });
 }
 
 /** Opens the picker to change the answer (the room's name, the receipt's Change). */
@@ -412,10 +526,18 @@ export function dismissEventKindReceipt(seq: number): void {
   if (useEventKindQuestion.getState().receipt?.seq === seq) useEventKindQuestion.setState({ receipt: null });
 }
 
+/** The picker has gone with the planner: a change or a receipt in hand goes with it, so neither returns unasked. */
+export function settleEventKindQuestion(): void {
+  const { changing, receipt } = useEventKindQuestion.getState();
+  if (changing || receipt !== null) useEventKindQuestion.setState({ changing: false, receipt: null });
+}
+
 /** Forgets every answer and write in flight (tests). */
 export function resetEventKindQuestionForTesting(): void {
-  stopRetry?.();
-  stopRetry = null;
+  stopRetrying();
+  unsent.clear();
+  writesQueued.clear();
+  retryDeps = DEFAULT_DEPS;
   receiptSeq = 0;
   writing = Promise.resolve();
   useEventKindQuestion.setState(INITIAL);

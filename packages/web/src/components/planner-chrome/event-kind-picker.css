@@ -17,7 +17,8 @@
   max-width: none;
   max-height: none;
   margin: 0;
-  padding: clamp(16px, 4vh, 48px) 16px;
+  /* The page is drawn under a notch and rounded corners (viewport-fit=cover): a landscape phone's panels keep clear of both. */
+  padding: clamp(16px, 4vh, 48px) max(16px, env(safe-area-inset-right)) clamp(16px, 4vh, 48px) max(16px, env(safe-area-inset-left));
   border: 0;
   background: transparent;
   color: var(--house-text-1);
@@ -287,7 +288,7 @@
 /* Phones: three wide panels, stacked, the drawing to the right of the words, over a veil the top card cannot show through. */
 @media (max-width: 767px) {
   .ekp {
-    padding: max(20px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
+    padding: max(20px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
   }
 
   /* A phone shows little of the room behind; the question takes the whole screen, as a profile picker does. */
@@ -358,6 +359,17 @@
   font: 500 11px / 1.3 var(--house-sans);
   letter-spacing: 0.03em;
   cursor: pointer;
+}
+
+/* The phone's top bar is ivory: copper text, not the bright copper drawn on the dark header (about 5.8:1, not 2:1). */
+.ekp-name.is-phone {
+  color: var(--house-copper-text);
+}
+
+/* Held empty until the answer is read, and while the layout is locked or previewing, so nothing below it moves. */
+.ekp-name.is-reserved {
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .ekp-name:hover span {

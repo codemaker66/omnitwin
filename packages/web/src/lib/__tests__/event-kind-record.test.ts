@@ -2,18 +2,22 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../api/client.js";
 import {
   DEVICE_RECORD_LIMIT,
+  EVENT_KIND_RETRY_MS,
   EVENT_KIND_WORDS,
   answerEventKind,
   changeEventKind,
   deviceAsksEventKind,
   deviceEventKind,
+  eventKindFloorTaken,
   eventKindFromSearch,
   keepEventKind,
   layOutStyleFor,
+  layoutClaimedEventKind,
   openLayoutEventKind,
   readDeviceRecord,
   rememberDeviceEventKind,
   resetEventKindQuestionForTesting,
+  settleEventKindQuestion,
   shouldAskEventKind,
   storedEventKind,
   useEventKindQuestion,
@@ -46,14 +50,25 @@ function refuseStorage(): void {
 const question = (): ReturnType<typeof useEventKindQuestion.getState> => useEventKindQuestion.getState();
 const plannerKind = (): ReturnType<typeof usePlannerEventStore.getState>["eventKind"] => usePlannerEventStore.getState().eventKind;
 
-/** A guest's draft as editor-store's load hands it over. */
-function openDraft(configId = "draft", search = ""): void {
-  openLayoutEventKind({ configId, isPublicPreview: true, search, metadata: null });
+/** A guest's draft as editor-store's load hands it over (new unless something stood on its floor). */
+function openDraft(configId = "draft", search = "", floorEmptyAtOpen = true): void {
+  openLayoutEventKind({ configId, isPublicPreview: true, search, metadata: null, floorEmptyAtOpen });
 }
 
 /** A signed-in layout as editor-store's load hands it over, with the metadata it holds. */
-function openOwn(configId: string, metadata: unknown, write?: (configId: string, answer: unknown) => Promise<unknown>, search = ""): void {
-  openLayoutEventKind({ configId, isPublicPreview: false, search, metadata }, write === undefined ? {} : { writeMetadata: write });
+function openOwn(
+  configId: string,
+  metadata: unknown,
+  write?: (configId: string, answer: unknown) => Promise<unknown>,
+  search = "",
+  floorEmptyAtOpen = true,
+): void {
+  openLayoutEventKind({ configId, isPublicPreview: false, search, metadata, floorEmptyAtOpen }, write === undefined ? {} : { writeMetadata: write });
+}
+
+/** Lets the one write queue and its promises run (fake timers hold no microtasks back). */
+async function settleWrites(): Promise<void> {
+  for (let turn = 0; turn < 12; turn += 1) await Promise.resolve();
 }
 
 beforeEach(() => {
@@ -132,7 +147,7 @@ describe("this device's record", () => {
 });
 
 describe("when the planner asks, and what an answer sets", () => {
-  const ask: EventKindQuestionFacts = { editable: true, floorEmpty: true, eventLinked: false, known: true, answer: undefined, deviceAsks: true };
+  const ask: EventKindQuestionFacts = { editable: true, askable: true, floorEmpty: true, eventLinked: false, known: true, answer: undefined, deviceAsks: true };
 
   it("asks a new, empty layout that nothing has answered for", () => {
     expect(shouldAskEventKind(ask)).toBe(true);
@@ -140,6 +155,7 @@ describe("when the planner asks, and what an answer sets", () => {
 
   it.each<[string, Partial<EventKindQuestionFacts>]>([
     ["the layout is locked or previewing a phase", { editable: false }],
+    ["the layout was not new as it opened, or something has stood on it since", { askable: false }],
     ["something is on the floor", { floorEmpty: false }],
     ["it was opened from an event", { eventLinked: true }],
     ["its answer is still being read", { known: false }],
@@ -206,13 +222,15 @@ describe("a signed-in layout as it opens", () => {
   it("opens a layout skipped elsewhere without asking: answered, with no kind, writing nothing", () => {
     const write = vi.fn(() => Promise.resolve());
     openOwn("skipped", { eventKind: null, instructions: {} }, write);
-    expect(question()).toMatchObject({ guest: false, known: true, answer: null });
-    expect(shouldAskEventKind({ editable: true, floorEmpty: true, eventLinked: false, known: true, answer: question().answer, deviceAsks: true })).toBe(false);
+    expect(question()).toMatchObject({ guest: false, known: true, answer: null, askable: true });
+    expect(shouldAskEventKind({
+      editable: true, askable: question().askable, floorEmpty: true, eventLinked: false, known: true, answer: question().answer, deviceAsks: true,
+    })).toBe(false);
     expect(plannerKind()).toBeNull();
     expect(write).not.toHaveBeenCalled();
   });
 
-  it("is set before the load returns: no seat can take another event's chair in between", () => {
+  it("sets each layout's kind as it opens, forgetting the last layout's first", () => {
     rememberDeviceEventKind("before", "wedding");
     openDraft("before");
     expect(plannerKind()).toBe("wedding");
@@ -263,6 +281,210 @@ describe("a signed-in layout as it opens", () => {
     expect(question()).toMatchObject({ answer: "wedding", save: "this-visit" });
     openOwn("theirs", { eventKind: "corporate" });
     expect(question()).toMatchObject({ answer: "corporate", save: "kept" });
+  });
+});
+
+describe("which layouts are new", () => {
+  it("is new only when nothing stood on its floor as it opened", () => {
+    openOwn("empty", {});
+    expect(question().askable).toBe(true);
+    openOwn("furnished", {}, undefined, "", false);
+    expect(question()).toMatchObject({ configId: "furnished", known: true, answer: undefined, askable: false });
+  });
+
+  it("never becomes new again: not on a reload of an empty copy, nor once something has stood on it", () => {
+    openOwn("worked", {}, undefined, "", false);
+    openOwn("worked", {});
+    expect(question().askable).toBe(false);
+    openDraft("fresh");
+    expect(question().askable).toBe(true);
+    eventKindFloorTaken("fresh");
+    expect(question().askable).toBe(false);
+    openDraft("fresh");
+    expect(question().askable).toBe(false);
+  });
+
+  it("hears about another layout's floor without effect", () => {
+    openDraft("open");
+    eventKindFloorTaken("elsewhere");
+    expect(question().askable).toBe(true);
+  });
+});
+
+describe("a guest's draft as it becomes the person's", () => {
+  it("writes the answer given as a guest to the layout the moment the claim lands", async () => {
+    openDraft("claimed");
+    answerEventKind("wedding");
+    const write = vi.fn(() => Promise.resolve());
+    layoutClaimedEventKind("claimed", { writeMetadata: write });
+    expect(question()).toMatchObject({ configId: "claimed", guest: false, answer: "wedding" });
+    await vi.waitFor(() => { expect(write).toHaveBeenCalledWith("claimed", "wedding"); });
+    await vi.waitFor(() => { expect(question().save).toBe("kept"); });
+  });
+
+  it("writes each later answer to the layout, not to this device", async () => {
+    openDraft("claimed");
+    layoutClaimedEventKind("claimed");
+    const write = vi.fn(() => Promise.resolve());
+    answerEventKind("corporate", { writeMetadata: write });
+    await vi.waitFor(() => { expect(write).toHaveBeenCalledWith("claimed", "corporate"); });
+    expect(deviceEventKind("claimed")).toBeUndefined();
+  });
+
+  it("writes a skip as a skip, and nothing for a question never answered", async () => {
+    openDraft("skipped");
+    answerEventKind(null);
+    const write = vi.fn(() => Promise.resolve());
+    layoutClaimedEventKind("skipped", { writeMetadata: write });
+    await vi.waitFor(() => { expect(write).toHaveBeenCalledWith("skipped", null); });
+    openDraft("unasked");
+    const none = vi.fn(() => Promise.resolve());
+    layoutClaimedEventKind("unasked", { writeMetadata: none });
+    await settleWrites();
+    expect(none).not.toHaveBeenCalled();
+    expect(question()).toMatchObject({ configId: "unasked", guest: false, answer: undefined });
+  });
+
+  it("keeps on the layout an answer this device could not keep", async () => {
+    openDraft("full");
+    refuseStorage();
+    answerEventKind("other");
+    expect(question().save).toBe("this-visit");
+    layoutClaimedEventKind("full", { writeMetadata: () => Promise.resolve() });
+    await vi.waitFor(() => { expect(question().save).toBe("kept"); });
+  });
+
+  it("leaves alone a layout that is not the one open, and one already signed in", async () => {
+    openDraft("open");
+    answerEventKind("wedding");
+    const write = vi.fn(() => Promise.resolve());
+    layoutClaimedEventKind("another", { writeMetadata: write });
+    expect(question().guest).toBe(true);
+    openOwn("own", { eventKind: "corporate" });
+    layoutClaimedEventKind("own", { writeMetadata: write });
+    await settleWrites();
+    expect(write).not.toHaveBeenCalled();
+  });
+});
+
+describe("an answer still to be written when another layout opens", () => {
+  it("is written once the browser is back online, whichever layout is open by then", async () => {
+    openOwn("first", {});
+    setOnline(false);
+    window.dispatchEvent(new Event("offline"));
+    const write = vi.fn<(configId: string, answer: unknown) => Promise<unknown>>()
+      .mockRejectedValueOnce(new ApiError(0, "Network error", "NETWORK_ERROR"))
+      .mockResolvedValue({});
+    answerEventKind("wedding", { writeMetadata: write });
+    await vi.waitFor(() => { expect(question().save).toBe("retrying"); });
+    openOwn("second", { eventKind: "corporate" });
+    setOnline(true);
+    window.dispatchEvent(new Event("online"));
+    await vi.waitFor(() => { expect(write).toHaveBeenCalledTimes(2); });
+    expect(write).toHaveBeenLastCalledWith("first", "wedding");
+    expect(question()).toMatchObject({ configId: "second", answer: "corporate", save: "kept" });
+  });
+
+  it("stands over the layout's own copy when the layout opens again before it is written, so it is answered and not asked", async () => {
+    openOwn("first", {});
+    setOnline(false);
+    window.dispatchEvent(new Event("offline"));
+    const write = vi.fn<(configId: string, answer: unknown) => Promise<unknown>>()
+      .mockRejectedValue(new ApiError(0, "Network error", "NETWORK_ERROR"));
+    answerEventKind("wedding", { writeMetadata: write });
+    await vi.waitFor(() => { expect(question().save).toBe("retrying"); });
+    openOwn("second", {});
+    openOwn("first", {}, write);
+    expect(question()).toMatchObject({ configId: "first", answer: "wedding", save: "retrying" });
+    expect(plannerKind()).toBe("wedding");
+    await vi.waitFor(() => { expect(write).toHaveBeenCalledTimes(2); });
+  });
+
+  it("lets only the newest answer settle a layout: an older write of the same kind landing never clears it", async () => {
+    openOwn("mine", {});
+    const calls: string[] = [];
+    // Wedding, then corporate, then wedding again; only the last write fails.
+    const write = vi.fn((_configId: string, answer: unknown): Promise<unknown> => {
+      calls.push(String(answer));
+      return calls.length === 3 ? Promise.reject(new ApiError(0, "Network error", "NETWORK_ERROR")) : Promise.resolve();
+    });
+    answerEventKind("wedding", { writeMetadata: write });
+    answerEventKind("corporate", { writeMetadata: write });
+    answerEventKind("wedding", { writeMetadata: write });
+    await vi.waitFor(() => { expect(question().save).toBe("retrying"); });
+    expect(calls).toEqual(["wedding", "corporate", "wedding"]);
+    setOnline(false);
+    window.dispatchEvent(new Event("offline"));
+    setOnline(true);
+    window.dispatchEvent(new Event("online"));
+    await vi.waitFor(() => { expect(calls).toEqual(["wedding", "corporate", "wedding", "wedding"]); });
+    await vi.waitFor(() => { expect(question()).toMatchObject({ answer: "wedding", save: "kept" }); });
+  });
+});
+
+describe("trying an unsent answer again", () => {
+  afterEach(() => { vi.useRealTimers(); });
+
+  it.each<[string, ApiError]>([
+    ["the layout's own try-again (a save held it at that moment)", new ApiError(409, "Someone else changed this at the same moment. Please try again.", "RETRY")],
+    ["a timeout", new ApiError(408, "Request timeout", "REQUEST_TIMEOUT")],
+    ["too many requests", new ApiError(429, "Too many requests", "RATE_LIMITED")],
+    ["an expired session (the client asks for a fresh token each time)", new ApiError(401, "Session expired - please sign in again", "UNAUTHORIZED")],
+    ["a server error", new ApiError(503, "Service unavailable", "SERVICE_UNAVAILABLE")],
+  ])("tries again after %s, while the browser stays online", async (_, error) => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    openOwn("mine", {});
+    const write = vi.fn<(configId: string, answer: unknown) => Promise<unknown>>().mockRejectedValueOnce(error).mockResolvedValue({});
+    answerEventKind("wedding", { writeMetadata: write });
+    await settleWrites();
+    expect(question().save).toBe("retrying");
+    await vi.advanceTimersByTimeAsync(EVENT_KIND_RETRY_MS[0] ?? 0);
+    await settleWrites();
+    expect(write).toHaveBeenCalledTimes(2);
+    expect(question().save).toBe("kept");
+  });
+
+  it.each<[string, ApiError]>([
+    ["the layout is locked for review", new ApiError(409, "This plan is with the venue for review, so it cannot be changed now.", "CONFIG_LOCKED")],
+    ["there is no permission to write", new ApiError(403, "Insufficient permissions", "FORBIDDEN")],
+    ["the layout is gone", new ApiError(404, "Configuration not found", "NOT_FOUND")],
+    ["the answer is refused", new ApiError(400, "Validation failed", "VALIDATION_ERROR")],
+  ])("holds the answer for this visit when %s, and never tries again", async (_, error) => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    openOwn("mine", {});
+    const write = vi.fn<(configId: string, answer: unknown) => Promise<unknown>>().mockRejectedValue(error);
+    answerEventKind("other", { writeMetadata: write });
+    await settleWrites();
+    expect(question().save).toBe("this-visit");
+    await vi.advanceTimersByTimeAsync(EVENT_KIND_RETRY_MS.reduce((sum, wait) => sum + wait, 0));
+    expect(write).toHaveBeenCalledTimes(1);
+  });
+
+  it("waits longer before each try, then only for the browser to come back online", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    openOwn("mine", {});
+    const write = vi.fn<(configId: string, answer: unknown) => Promise<unknown>>()
+      .mockRejectedValue(new ApiError(503, "Service unavailable", "SERVICE_UNAVAILABLE"));
+    answerEventKind("wedding", { writeMetadata: write });
+    await settleWrites();
+    let calls = 1;
+    for (const wait of EVENT_KIND_RETRY_MS) {
+      await vi.advanceTimersByTimeAsync(wait - 1);
+      expect(write).toHaveBeenCalledTimes(calls);
+      await vi.advanceTimersByTimeAsync(1);
+      await settleWrites();
+      calls += 1;
+      expect(write).toHaveBeenCalledTimes(calls);
+    }
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    expect(write).toHaveBeenCalledTimes(calls);
+    expect(question().save).toBe("retrying");
+    setOnline(false);
+    window.dispatchEvent(new Event("offline"));
+    setOnline(true);
+    window.dispatchEvent(new Event("online"));
+    await settleWrites();
+    expect(write).toHaveBeenCalledTimes(calls + 1);
   });
 });
 
@@ -347,5 +569,16 @@ describe("answering", () => {
     expect(question()).toMatchObject({ changing: true, receipt: null, answer: "other" });
     keepEventKind();
     expect(question()).toMatchObject({ changing: false, answer: "other" });
+  });
+
+  it("lets a change or a receipt in hand go with the planner, so neither comes back unasked", () => {
+    openDraft();
+    answerEventKind("other");
+    expect(question().receipt).not.toBeNull();
+    settleEventKindQuestion();
+    expect(question()).toMatchObject({ receipt: null, answer: "other" });
+    changeEventKind();
+    settleEventKindQuestion();
+    expect(question()).toMatchObject({ changing: false, receipt: null, answer: "other" });
   });
 });

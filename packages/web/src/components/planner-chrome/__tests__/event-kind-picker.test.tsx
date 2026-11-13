@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { useLayoutEffect, type ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { EventKindName, EventKindPicker } from "../EventKindPicker.js";
+import { EVENT_KIND_RECEIPT_MS, EventKindName, EventKindPicker } from "../EventKindPicker.js";
 import {
   deviceEventKind,
   openLayoutEventKind,
@@ -59,7 +59,16 @@ function openDraft(options: { readonly furnished?: boolean; readonly inReview?: 
     objects: options.furnished === true ? [TABLE] : [],
     reviewStatus: options.inReview === true ? "submitted" : null,
   });
-  openLayoutEventKind({ configId: CONFIG, isPublicPreview: true, search: "", metadata: null });
+  openLayoutEventKind({ configId: CONFIG, isPublicPreview: true, search: "", metadata: null, floorEmptyAtOpen: options.furnished !== true });
+}
+
+/** The arrival's welcome, or any other dialog the page holds, as the browser shows it. */
+function otherDialog(): HTMLDialogElement {
+  const dialog = document.createElement("dialog");
+  dialog.setAttribute("aria-label", "Opening the Grand Hall");
+  document.body.append(dialog);
+  dialog.showModal();
+  return dialog;
 }
 
 /** The room's name and the question, as the cockpit mounts them (it says whether the layout came from an event). */
@@ -107,12 +116,12 @@ describe("the first open of a new layout", () => {
     fireEvent.click(within(question()).getByRole("button", { name: /^Corporate event/u }));
     expect(usePlannerEventStore.getState().eventKind).toBe("corporate");
     expect(deviceEventKind(CONFIG)).toBe("corporate");
-    expect(screen.getByText("Set up for a corporate event: rows of seats and the venue's pink chairs.")).toBeTruthy();
     await waitFor(() => { expect(screen.queryByRole("dialog")).toBeNull(); });
+    expect(await screen.findByText("Set up for a corporate event: rows of seats and the venue's pink chairs.")).toBeTruthy();
     expect(screen.getByRole("button", { name: "The event: Corporate event. Change it" })).toBeTruthy();
   });
 
-  it("answers to 1, 2 and 3, and the planner's own keys never hear them", () => {
+  it("answers to 1, 2 and 3", () => {
     openDraft();
     renderPlanner();
     const plannerKey = vi.fn();
@@ -134,20 +143,21 @@ describe("the first open of a new layout", () => {
     expect(document.activeElement).toBe(within(dialog).getByRole("button", { name: /^Something else/u }));
   });
 
-  it("skips on Escape, says where to answer later, and never asks that layout again", () => {
+  it("skips on Escape, says where to answer later, and never asks that layout again", async () => {
     openDraft();
     renderPlanner();
     fireEvent(question(), new Event("cancel", { cancelable: true }));
     expect(useEventKindQuestion.getState().answer).toBeNull();
     expect(deviceEventKind(CONFIG)).toBeNull();
-    expect(screen.getByText("Noted. You can say what the event is any time, from the room's name.")).toBeTruthy();
     expect(screen.queryByRole("dialog")).toBeNull();
+    expect(await screen.findByText("Noted. You can add the event any time, by the room's name.")).toBeTruthy();
     cleanup();
     resetEventKindQuestionForTesting();
     openDraft();
     renderPlanner();
     expect(screen.queryByRole("dialog")).toBeNull();
-    expect(screen.getByRole("button", { name: "Say what the event is" })).toBeTruthy();
+    // Unanswered, the name is its visible words, so a voice saying them finds it.
+    expect(screen.getByRole("button", { name: "Add the event" })).toBeTruthy();
   });
 
   it("skips on Not sure yet in the same way", () => {
@@ -175,6 +185,26 @@ describe("never over someone's work", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
+  it("never asks a layout that was furnished as it opened, however empty its floor becomes", () => {
+    openDraft({ furnished: true });
+    renderPlanner();
+    // Select all and Delete, the last table deleted, or a co-editor clearing the room.
+    act(() => { useEditorStore.setState({ objects: [] }); });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getByRole("button", { name: "Add the event" })).toBeTruthy();
+  });
+
+  it("stops asking a new layout once something has stood on it, even after the floor is cleared", () => {
+    openDraft();
+    // Opened from an event, so not asked; then furnished, and cleared again.
+    const { rerender } = render(<><EventKindName /><EventKindPicker eventLinked /></>);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    act(() => { useEditorStore.setState({ objects: [TABLE] }); });
+    act(() => { useEditorStore.setState({ objects: [] }); });
+    rerender(<><EventKindName /><EventKindPicker eventLinked={false} /></>);
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
   it("does not ask a layout opened from an event", () => {
     openDraft();
     renderPlanner(true);
@@ -185,7 +215,7 @@ describe("never over someone's work", () => {
     openDraft({ inReview: true });
     renderPlanner();
     expect(screen.queryByRole("dialog")).toBeNull();
-    expect(screen.queryByRole("button", { name: "Say what the event is" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Add the event" })).toBeNull();
   });
 
   it("does not ask on a device told not to", () => {
@@ -199,7 +229,17 @@ describe("never over someone's work", () => {
     useEditorStore.setState({ configId: CONFIG, isPublicPreview: false, objects: [], reviewStatus: null });
     renderPlanner();
     expect(screen.queryByRole("dialog")).toBeNull();
-    expect(screen.queryByRole("button", { name: "Say what the event is" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Add the event" })).toBeNull();
+  });
+
+  it("keeps the name's row while it is hidden, so nothing below it moves as the layout opens", () => {
+    useEditorStore.setState({ configId: CONFIG, isPublicPreview: false, objects: [], reviewStatus: null });
+    const { container } = render(<EventKindName />);
+    const reserved = container.querySelector(".ekp-name.is-reserved");
+    expect(reserved?.getAttribute("aria-hidden")).toBe("true");
+    act(() => { openLayoutEventKind({ configId: CONFIG, isPublicPreview: false, search: "", metadata: { eventKind: "wedding" }, floorEmptyAtOpen: true }); });
+    expect(container.querySelector(".ekp-name.is-reserved")).toBeNull();
+    expect(screen.getByRole("button", { name: "The event: Wedding. Change it" })).toBeTruthy();
   });
 });
 
@@ -281,7 +321,143 @@ describe("changing the answer", () => {
     fireEvent.click(within(question()).getByRole("button", { name: /^Corporate event/u }));
     expect(deviceEventKind(CONFIG)).toBe("corporate");
     await waitFor(() => { expect(screen.queryByRole("dialog")).toBeNull(); });
-    fireEvent.click(screen.getByRole("button", { name: "Change" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Change" }));
     expect(within(question()).getByRole("button", { name: /^Corporate event.*chosen now$/u })).toBeTruthy();
+  });
+
+  it("hands focus back to the event's name after a change opened from the receipt, whose button went as it opened", async () => {
+    reducedMotion(true);
+    openDraft();
+    renderPlanner();
+    fireEvent.click(within(question()).getByRole("button", { name: /^Wedding/u }));
+    const change = await screen.findByRole("button", { name: "Change" });
+    act(() => { change.focus(); });
+    fireEvent.click(change);
+    fireEvent.click(within(question()).getByRole("button", { name: "Keep it as it is" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "The event: Wedding. Change it" }));
+  });
+});
+
+describe("the receipt", () => {
+  afterEach(() => { vi.useRealTimers(); });
+
+  it("speaks only once no dialog holds the page, so its words are read out", async () => {
+    reducedMotion(true);
+    const welcome = otherDialog();
+    openDraft();
+    renderPlanner();
+    fireEvent.click(within(question()).getByRole("button", { name: /^Wedding/u }));
+    expect(screen.queryByRole("dialog", { name: "What are you planning?" })).toBeNull();
+    await new Promise((resolve) => { window.setTimeout(resolve, 60); });
+    // The welcome still holds the page: everything outside it is inert.
+    expect(screen.queryByTestId("event-kind-receipt")).toBeNull();
+    act(() => {
+      welcome.close();
+      welcome.dispatchEvent(new Event("close"));
+    });
+    expect(await screen.findByText("Set up for a wedding: round tables and gold Chiavari chairs.")).toBeTruthy();
+    welcome.remove();
+  });
+
+  it("stays while a pointer is over it or focus is in it, and goes once neither is", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "requestAnimationFrame", "cancelAnimationFrame"] });
+    reducedMotion(true);
+    openDraft();
+    renderPlanner();
+    fireEvent.click(within(question()).getByRole("button", { name: /^Wedding/u }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(50); });
+    const receipt = screen.getByTestId("event-kind-receipt");
+    fireEvent.pointerEnter(receipt);
+    await act(async () => { await vi.advanceTimersByTimeAsync(EVENT_KIND_RECEIPT_MS * 2); });
+    expect(screen.getByTestId("event-kind-receipt")).toBe(receipt);
+    act(() => { within(receipt).getByRole("button", { name: "Change" }).focus(); });
+    fireEvent.pointerLeave(receipt);
+    await act(async () => { await vi.advanceTimersByTimeAsync(EVENT_KIND_RECEIPT_MS * 2); });
+    expect(screen.getByTestId("event-kind-receipt")).toBe(receipt);
+    act(() => { within(receipt).getByRole("button", { name: "Change" }).blur(); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(EVENT_KIND_RECEIPT_MS - 1); });
+    expect(screen.getByTestId("event-kind-receipt")).toBe(receipt);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(screen.queryByTestId("event-kind-receipt")).toBeNull();
+  });
+});
+
+describe("Escape, and the welcome above it", () => {
+  it("stays when a press reached the welcome above it first, and shows itself again if the browser closed it anyway", () => {
+    openDraft();
+    renderPlanner();
+    const asking = question() as HTMLDialogElement;
+    const welcome = otherDialog();
+    // One press reaches every dialog opened together, the top one first, in one task.
+    act(() => {
+      welcome.dispatchEvent(new Event("cancel", { cancelable: false }));
+      fireEvent(asking, new Event("cancel", { cancelable: false }));
+    });
+    expect(useEventKindQuestion.getState().answer).toBeUndefined();
+    // On a page nobody has touched yet, the browser closes both regardless.
+    act(() => {
+      asking.close();
+      fireEvent(asking, new Event("close"));
+    });
+    expect(asking.open).toBe(true);
+    expect(useEventKindQuestion.getState().answer).toBeUndefined();
+    expect(document.activeElement).toBe(within(asking).getByRole("button", { name: /^Wedding/u }));
+    welcome.remove();
+  });
+
+  it("skips on a press of its own once the welcome's press is over", async () => {
+    openDraft();
+    renderPlanner();
+    const asking = question() as HTMLDialogElement;
+    const welcome = otherDialog();
+    act(() => { welcome.dispatchEvent(new Event("cancel", { cancelable: false })); });
+    await new Promise((resolve) => { window.setTimeout(resolve, 0); });
+    act(() => { fireEvent(asking, new Event("cancel", { cancelable: true })); });
+    expect(useEventKindQuestion.getState().answer).toBeNull();
+    welcome.remove();
+  });
+});
+
+describe("the planner's keys while it asks", () => {
+  it.each<[string, { readonly key: string; readonly code: string; readonly ctrlKey?: boolean }]>([
+    ["a tool's letter", { key: "t", code: "KeyT" }],
+    ["Delete", { key: "Delete", code: "Delete" }],
+    ["undo", { key: "z", code: "KeyZ", ctrlKey: true }],
+  ])("keeps %s from the planner's keymap, pressed and let go", (_, press) => {
+    openDraft();
+    renderPlanner();
+    const run = vi.fn();
+    const release = vi.fn();
+    // Bound to run even under a dialog: only the question's own keys stop it hearing them.
+    const stop = registerKeyBindings([{ keys: [{ code: press.code, mod: press.ctrlKey === true }], run, release, duringModal: true }]);
+    fireEvent.keyDown(question(), press);
+    fireEvent.keyUp(question(), press);
+    stop();
+    expect(run).not.toHaveBeenCalled();
+    expect(release).not.toHaveBeenCalled();
+  });
+
+  it("holds the keymap while it is the dialog on top, wherever focus has gone, and an Escape there skips", () => {
+    openDraft();
+    renderPlanner();
+    const plannerKey = vi.fn();
+    const stop = registerKeyBindings([{ keys: [{ code: "KeyM" }], run: plannerKey }]);
+    act(() => { (document.activeElement as HTMLElement | null)?.blur(); });
+    fireEvent.keyDown(document.body, { key: "m", code: "KeyM" });
+    expect(plannerKey).not.toHaveBeenCalled();
+    fireEvent.keyDown(document.body, { key: "Escape", code: "Escape" });
+    stop();
+    expect(useEventKindQuestion.getState().answer).toBeNull();
+  });
+
+  it("lets the welcome above it have its own Escape", () => {
+    openDraft();
+    renderPlanner();
+    const welcome = otherDialog();
+    act(() => { (document.activeElement as HTMLElement | null)?.blur(); });
+    fireEvent.keyDown(document.body, { key: "Escape", code: "Escape" });
+    expect(useEventKindQuestion.getState().answer).toBeUndefined();
+    welcome.remove();
   });
 });
