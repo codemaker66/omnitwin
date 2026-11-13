@@ -1,34 +1,34 @@
 import type { Metric } from "web-vitals";
 import {
   WEB_VITAL_NAMES,
-  WEB_VITAL_PAGE_PATTERN,
   WebVitalsReportSchema,
+  isWebVitalPage,
   type WebVitalDeviceClass,
   type WebVitalName,
   type WebVitalSample,
-  type WebVitalsReport,
 } from "@omnitwin/types";
-import { API_URL } from "../config/env.js";
 import type { LandingRoute } from "./landing-route.js";
 import { webVitalsSampleRate, type WebVitalsEnv } from "./web-vitals-rate.js";
 
 // ---------------------------------------------------------------------------
 // Field web vitals (goal 07): a sampled page load reports the LCP, INP, CLS
 // and TTFB of the page it landed on, as Google's web-vitals library measures
-// them, to POST /public/web-vitals: each vital once, when the page is first
-// hidden, and again only for a page restored from the back/forward cache.
+// them, to POST /public/web-vitals: each vital once, sent when the page is
+// next hidden after it is measured (so usually one request, and another for a
+// vital first measured after a hide), and measured again for a page restored
+// from the back/forward cache.
 //
 // What leaves the browser is the landing route's pattern (the router's own
 // "/proposal-share/:token", never the address, so a share token or a layout's
 // id cannot travel), a device class and the four numbers. The vitals stop at
 // the first move to another page in the app, so a room walk's interactions are
-// never credited to the front door. No cookie or credential rides with it,
-// nothing is stored on the device, and nothing identifies or follows the
-// visitor. It is off unless the build sets VITE_WEB_VITALS_SAMPLE_RATE above
-// 0, off in tests and under automation, off where the browser asks not to be
-// tracked (Global Privacy Control, Do Not Track), and the server keeps nothing
-// unless WEB_VITALS_COLLECTION=on, which waits for the privacy page
-// (docs/engineering/web-vitals.md).
+// never credited to the front door. No cookie, credential or referrer rides
+// with it, nothing is stored on the device, and nothing identifies or follows
+// the visitor. It is off unless the build sets VITE_WEB_VITALS_SAMPLE_RATE to
+// a decimal below 1 (web-vitals-rate.ts), off in tests and under automation,
+// off where the browser asks not to be tracked (Global Privacy Control, Do Not
+// Track), and the server keeps nothing unless WEB_VITALS_COLLECTION=on, which
+// waits for the privacy page (docs/engineering/web-vitals.md).
 // ---------------------------------------------------------------------------
 
 /** What a browser says of its visitor's wishes and its own driver. */
@@ -47,13 +47,14 @@ export function shouldReportWebVitals(rate: number, browser: ReportingBrowser, r
   return random() < rate;
 }
 
-/** A page whose pattern cannot be reported (a path the rule refuses). */
+/** A page that is not one of the router's production routes (a dev fixture,
+ *  the 404). */
 const UNREPORTABLE_PAGE = "/*";
 
 /**
  * The route pattern a page load landed on, from the router's matched routes'
  * paths, outermost first: "/venues/:venueSlug/twin". An optional parameter
- * keeps its name; a path the page rule refuses reads as "/*".
+ * keeps its name; a pattern outside the list of pages reads as "/*".
  */
 export function routePattern(paths: readonly (string | undefined)[]): string {
   let pattern = "";
@@ -64,7 +65,7 @@ export function routePattern(paths: readonly (string | undefined)[]): string {
   }
   const trimmed = pattern.replace(/\/+$/u, "");
   const page = trimmed === "" ? "/" : trimmed;
-  return WEB_VITAL_PAGE_PATTERN.test(page) ? page : UNREPORTABLE_PAGE;
+  return isWebVitalPage(page) ? page : UNREPORTABLE_PAGE;
 }
 
 /** The hardware, not the window: a touch-first device is a phone when its
@@ -120,7 +121,7 @@ export function createWebVitalsReporter(landingPage: string, device: WebVitalDev
       const entries = [...held.values()];
       held.clear();
       for (const entry of entries) sent.add(entry.id);
-      const report: WebVitalsReport = { v: 1, page, device, metrics: entries.map((entry) => entry.sample) };
+      const report = { v: 1, page, device, metrics: entries.map((entry) => entry.sample) };
       // Never send what the server would refuse.
       if (!WebVitalsReportSchema.safeParse(report).success) return;
       send(JSON.stringify(report));
@@ -150,14 +151,22 @@ export function followLandingPage(landing: LandingRoute, reporter: WebVitalsRepo
   });
 }
 
-/** Sends a report as plain text (no preflight), without cookies or credentials,
- *  and lets it outlive the page. */
+/** The API's address, as config/env.ts reads it. Read here, not imported:
+ *  importing that module from this chunk split it out of the API client's
+ *  chunk, one more request on the front door for everyone. */
+const API_URL: string = import.meta.env.VITE_API_URL ?? "http://localhost:3001";
+
+/** Sends a report as plain text (no preflight), without cookies, credentials
+ *  or the address of the page it was sent from, and lets it outlive the page. */
 export function sendWebVitals(body: string, endpoint: string = `${API_URL}/public/web-vitals`): void {
   void fetch(endpoint, {
     method: "POST",
     body,
     keepalive: true,
     credentials: "omit",
+    // The page's address names a share token or a plan's code; the report
+    // names only the route's pattern, whatever the site's Referrer-Policy.
+    referrerPolicy: "no-referrer",
     headers: { "content-type": "text/plain;charset=UTF-8" },
   }).catch(() => undefined);
 }

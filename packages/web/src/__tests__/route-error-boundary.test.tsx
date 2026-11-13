@@ -16,6 +16,7 @@ const {
   RouteErrorFallback,
   installStaleChunkReload,
   isChunkLoadError,
+  loadOptional,
   stalePage,
   underRouteErrorBoundary,
 } = await import("../route-error-boundary.js");
@@ -141,6 +142,44 @@ describe("Vite's preload failure", () => {
     target.dispatchEvent(second);
     expect(reload).toHaveBeenCalledTimes(1);
     expect(second.defaultPrevented).toBe(false);
+  });
+
+  /** Vite's event: its helper puts the failure in `payload`, then throws it
+   *  unless a listener prevents the default. */
+  function preloadError(payload: Error): Event {
+    return Object.assign(new Event("vite:preloadError", { cancelable: true }), { payload });
+  }
+
+  it("reloads nothing for optional code that will not load: its import just rejects", async () => {
+    const target = new EventTarget() as Window;
+    installStaleChunkReload(target);
+    const blocked = new TypeError("Failed to fetch dynamically imported module: https://venviewer.com/assets/web-vitals-3f9a1c.js");
+    const during = preloadError(blocked);
+    // As Vite's preload helper does when a chunk will not load: the event, then the rejection.
+    const load = loadOptional(() => {
+      target.dispatchEvent(during);
+      return Promise.reject(blocked);
+    });
+    await expect(load).rejects.toBe(blocked);
+    expect(during.defaultPrevented).toBe(false);
+    expect(reload).not.toHaveBeenCalled();
+
+    // Once it has settled, a failed preload is a stale chunk again.
+    target.dispatchEvent(preloadError(new TypeError("Importing a module script failed.")));
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  it("still reloads for a stylesheet that will not preload while optional code loads: the route boundary does not know that error", async () => {
+    const target = new EventTarget() as Window;
+    installStaleChunkReload(target);
+    let settle: () => void = () => undefined;
+    const load = loadOptional(() => new Promise<void>((resolve) => { settle = resolve; }));
+    const css = preloadError(new Error("Unable to preload CSS for /assets/RoomsHomePage-3f9a1c.css"));
+    target.dispatchEvent(css);
+    expect(css.defaultPrevented).toBe(true);
+    expect(reload).toHaveBeenCalledTimes(1);
+    settle();
+    await load;
   });
 });
 

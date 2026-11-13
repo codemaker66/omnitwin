@@ -8,6 +8,7 @@ import {
   createDailyCeiling,
   recordWebVitals,
   webVitalsCollectionEnabled,
+  type AddressKey,
 } from "../services/web-vitals.js";
 
 // ---------------------------------------------------------------------------
@@ -20,11 +21,11 @@ import {
 // address). A browser sends it as text with fetch's keepalive, which needs no
 // CORS preflight; JSON is read either way. Off (404) unless
 // WEB_VITALS_COLLECTION=on. Anyone can post a number here, so the limiter
-// bounds an address, a daily ceiling bounds everyone together, and the p75 is
-// read as a measure, never as a guarantee. The limiter keys an address by an
-// HMAC under a secret replaced every ten minutes (createAddressKey), so it
-// never holds the address itself, and API tracing leaves this route out
-// (observability/sentry.ts).
+// bounds an address, a daily ceiling (this process's) bounds everyone
+// together, and the p75 is read as a measure, never as a guarantee. The
+// limiter keys an address by an HMAC under a secret replaced every ten
+// minutes (createAddressKey), so it never holds the address itself, and API
+// tracing leaves this route out (observability/sentry.ts).
 // ---------------------------------------------------------------------------
 
 /** A report is a few hundred bytes; anything far larger is not one. */
@@ -41,11 +42,16 @@ function readBody(body: unknown): unknown {
 
 export async function publicWebVitalsRoutes(
   server: FastifyInstance,
-  opts: { db: Database; dailyReportCeiling?: number },
+  opts: {
+    db: Database;
+    dailyReportCeiling?: number;
+    /** The limiter's key for an address; tests pass one to see it is used. */
+    addressKey?: AddressKey;
+  },
 ): Promise<void> {
   const { db } = opts;
   const ceiling = createDailyCeiling(opts.dailyReportCeiling ?? WEB_VITALS_DAILY_REPORT_CEILING);
-  const addressKey = createAddressKey();
+  const addressKey = opts.addressKey ?? createAddressKey();
   // On a timer, not on the next request: a quiet hour must not keep the secret.
   const rotation = setInterval(addressKey.rotate, WEB_VITALS_ADDRESS_KEY_ROTATION_MS);
   rotation.unref();
@@ -76,10 +82,17 @@ export async function publicWebVitalsRoutes(
     if (!parsed.success) {
       return reply.status(400).send({ error: "Not a web vitals report", code: "VALIDATION_ERROR" });
     }
-    if (!ceiling.admit()) {
+    const place = ceiling.admit();
+    if (place === null) {
       return reply.status(429).send({ error: "Enough reports for today", code: "WEB_VITALS_DAILY_CEILING" });
     }
-    await recordWebVitals(db, parsed.data);
+    try {
+      await recordWebVitals(db, parsed.data);
+    } catch (error) {
+      // A report that was not kept leaves the day's allowance as it was.
+      ceiling.release(place);
+      throw error;
+    }
     return reply.status(204).send();
   });
 }

@@ -279,7 +279,11 @@ describe("the request slab travels with the Day Board (T-623)", () => {
 // ---------------------------------------------------------------------------
 
 /** Every module `entry` reaches through static imports (type-only imports
- *  aside), as source paths. */
+ *  aside), as source paths. A relative specifier is followed whether it names
+ *  `.js` or no extension at all (TypeScript's "bundler" resolution and Vite
+ *  accept both), and one that resolves to no source file fails the walk rather
+ *  than drop out of it unseen. Other files (CSS, images, `?inline`) are not
+ *  modules of the graph. */
 async function staticImportClosure(entry: string): Promise<ReadonlySet<string>> {
   const fs = await import("node:fs/promises");
   const path = await import("node:path");
@@ -293,17 +297,24 @@ async function staticImportClosure(entry: string): Promise<ReadonlySet<string>> 
     const code = (await fs.readFile(file, "utf-8")).replace(/\/\*[\s\S]*?\*\//gu, "").replace(/\/\/[^\n]*/gu, "");
     const specifiers = [...code.matchAll(runtimeImport), ...code.matchAll(sideEffectImport)].map((match) => match[1] ?? "");
     for (const specifier of specifiers) {
-      if (!specifier.endsWith(".js")) continue;
-      const base = path.resolve(path.dirname(file), specifier.slice(0, -".js".length));
-      for (const candidate of [`${base}.tsx`, `${base}.ts`]) {
+      const named = specifier.endsWith(".js");
+      if (!named && /\.[A-Za-z0-9]+(?:\?.*)?$/u.test(specifier)) continue;
+      const base = path.resolve(path.dirname(file), named ? specifier.slice(0, -".js".length) : specifier);
+      const candidates = named
+        ? [`${base}.tsx`, `${base}.ts`]
+        : [`${base}.tsx`, `${base}.ts`, path.join(base, "index.tsx"), path.join(base, "index.ts")];
+      let found: string | undefined;
+      for (const candidate of candidates) {
         try {
           await fs.access(candidate);
-          queue.push(candidate);
+          found = candidate;
           break;
         } catch {
-          // Not this extension.
+          // Not this one.
         }
       }
+      if (found === undefined) throw new Error(`${path.relative(path.resolve("."), file)}: cannot resolve ${specifier}`);
+      queue.push(found);
     }
   }
   return seen;
@@ -322,6 +333,51 @@ describe("the staff shell stays out of the entry script", () => {
     const relative = [...reached].map((file) => path.relative(path.resolve("."), file).split(path.sep).join("/"));
     expect(relative.filter((file) => file.startsWith("src/components/dashboard/"))).toEqual(["src/components/dashboard/staff-shell.ts"]);
     expect(relative.filter((file) => file.startsWith("src/api/"))).toEqual(["src/api/auth-bridge.ts"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Field web vitals stay out of the entry script (T-685)
+//
+// The reporter and the web-vitals library load only in a build that samples
+// page loads, by the entry's one dynamic import. The entry itself carries two
+// small modules for it (the landing-route recorder and the sample rate), and
+// they must stay that small: no imports of their own, so nothing rides in
+// with them. A source regex missed an import written across lines; the
+// closure walk does not, nor one written without an extension.
+// ---------------------------------------------------------------------------
+
+describe("field web vitals stay out of the entry script", () => {
+  it("never reaches the reporter from the entry, and the two modules the entry keeps import nothing", async () => {
+    const path = await import("node:path");
+    const fs = await import("node:fs/promises");
+    const reached = await staticImportClosure("src/main.tsx");
+    expect(reached.has(path.resolve("src/observability/web-vitals.ts"))).toBe(false);
+    for (const file of ["src/observability/landing-route.ts", "src/observability/web-vitals-rate.ts"]) {
+      expect(reached.has(path.resolve(file)), file).toBe(true);
+      const code = (await fs.readFile(file, "utf-8")).replace(/\/\*[\s\S]*?\*\//gu, "").replace(/\/\/[^\n]*/gu, "");
+      // Any runtime import at all, static, bare or dynamic, of this app or of
+      // a package; `import type` is erased.
+      expect(code, file).not.toMatch(/(?:^|[;\n])\s*(?:import|export)\s+(?!type\s)[^;]*?\bfrom\s+["']|(?:^|[;\n])\s*import\s*["']|\bimport\s*\(/u);
+    }
+  });
+
+  it("walks an import however it is written: across lines, without an extension, or re-exported", async () => {
+    const os = await import("node:os");
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "closure-"));
+    try {
+      await fs.writeFile(path.join(dir, "entry.ts"), "import {\n  a,\n} from \"./a.js\";\nimport { b } from \"./b\";\nexport { c } from \"./c.js\";\nimport \"./style.css\";\n");
+      for (const name of ["a", "b", "c"]) await fs.writeFile(path.join(dir, `${name}.ts`), `export const ${name} = 1;\n`);
+      const reached = await staticImportClosure(path.join(dir, "entry.ts"));
+      expect([...reached].map((file) => path.basename(file)).sort()).toEqual(["a.ts", "b.ts", "c.ts", "entry.ts"]);
+      // A specifier that resolves to no source file fails the walk, rather than drop out of it.
+      await fs.writeFile(path.join(dir, "entry.ts"), "import { gone } from \"./gone\";\n");
+      await expect(staticImportClosure(path.join(dir, "entry.ts"))).rejects.toThrow(/cannot resolve \.\/gone/u);
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
   });
 });
 

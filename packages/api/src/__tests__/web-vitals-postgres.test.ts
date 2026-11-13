@@ -1,6 +1,8 @@
 import Fastify, { type FastifyInstance, type LightMyRequestResponse } from "fastify";
+import rateLimit from "@fastify/rate-limit";
 import { resolve } from "node:path";
 import { Pool } from "pg";
+import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
@@ -8,7 +10,7 @@ import { WEB_VITAL_RETENTION_DAYS } from "@omnitwin/types";
 import * as schema from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { validateEnv } from "../env.js";
-import { createAddressKey, createDailyCeiling, removeExpiredWebVitalSamples, webVitalsP75 } from "../services/web-vitals.js";
+import { createAddressKey, createDailyCeiling, removeExpiredWebVitalSamples, webVitalsP75, webVitalsWindowStart, type AddressKey } from "../services/web-vitals.js";
 import { publicWebVitalsRoutes } from "../routes/public-web-vitals.js";
 import { formatP75Line } from "../scripts/web-vitals-report.js";
 
@@ -171,14 +173,31 @@ describe.skipIf(testUrl === undefined)("field web vitals on the whole API (migra
   it("keeps the day a report arrived, not the moment, so no row matches a request log by time", async () => {
     process.env["WEB_VITALS_COLLECTION"] = "on";
     expect((await beacon(JSON.stringify(REPORT))).statusCode).toBe(204);
-    // Today or, if the run crosses midnight, yesterday: a whole day either way.
+    // Today or, if the run crosses midnight, yesterday: a whole UTC day either way.
     const { rows: [day] } = await pool.query<{ rows: string; whole_days: boolean; recent: boolean }>(
       `SELECT count(*)::text AS rows,
-              bool_and(recorded_at = date_trunc('day', recorded_at)) AS whole_days,
-              bool_and(recorded_at >= date_trunc('day', now()) - interval '1 day') AS recent
+              bool_and(recorded_at = date_trunc('day', recorded_at, 'UTC')) AS whole_days,
+              bool_and(recorded_at >= date_trunc('day', now(), 'UTC') - interval '1 day') AS recent
          FROM web_vital_samples`,
     );
     expect(day).toEqual({ rows: "4", whole_days: true, recent: true });
+  });
+
+  it("keeps the UTC day whatever the session's time zone, as the daily ceiling and retention count it", async () => {
+    const client = await pool.connect();
+    try {
+      // UTC+14: this zone's midnight is never UTC's, so a day truncated in the
+      // session's zone would not be a UTC day.
+      await client.query("SET TIME ZONE 'Pacific/Kiritimati'");
+      await client.query("INSERT INTO web_vital_samples (page, device, metric, value, rating) VALUES ('/', 'phone', 'LCP', 1, 'good')");
+      const { rows: [kept] } = await client.query<{ utc_midnight: boolean }>(
+        "SELECT recorded_at = date_trunc('day', recorded_at, 'UTC') AS utc_midnight FROM web_vital_samples",
+      );
+      expect(kept).toEqual({ utc_midnight: true });
+    } finally {
+      await client.query("RESET TIME ZONE");
+      client.release();
+    }
   });
 
   it("keeps nothing from a browser that sends Global Privacy Control or Do Not Track", async () => {
@@ -271,9 +290,9 @@ describe.skipIf(testUrl === undefined)("field web vitals on the whole API (migra
     }
     let clock = Date.UTC(2026, 9, 28, 23, 59);
     const ceiling = createDailyCeiling(1, () => clock);
-    expect([ceiling.admit(), ceiling.admit()]).toEqual([true, false]);
+    expect([ceiling.admit() !== null, ceiling.admit()]).toEqual([true, null]);
     clock = Date.UTC(2026, 9, 29, 0, 1);
-    expect(ceiling.admit()).toBe(true);
+    expect(ceiling.admit()).not.toBeNull();
   });
 
   it("writes no access line, which would carry the visitor's address", async () => {
@@ -293,6 +312,131 @@ describe.skipIf(testUrl === undefined)("field web vitals on the whole API (migra
       expect(lines.some((line) => line.includes("10.3.3.3"))).toBe(true);
     } finally {
       await logged.close();
+    }
+  });
+
+  it("logs no line holding the visitor's address on any answer (404, 204, 400, 415, 413, 500, the limiter's 429), through the whole server's production logger", async () => {
+    const lines: string[] = [];
+    const { buildServer } = await import("../index.js");
+    const whole: FastifyInstance = await buildServer(validateEnv({
+      NODE_ENV: "test",
+      DATABASE_URL: testUrl,
+      JWT_SECRET: "test-jwt-secret-that-is-at-least-32-characters-long",
+    }), { logStream: { write: (line) => { lines.push(line); } } });
+    await whole.ready();
+    const visitor = "198.51.100.77";
+    const post = (payload: string, headers: Record<string, string> = {}): Promise<LightMyRequestResponse> => whole.inject({
+      method: "POST", url: "/public/web-vitals",
+      headers: { "content-type": "text/plain;charset=UTF-8", origin: "https://venviewer.com", ...headers },
+      payload, remoteAddress: visitor,
+    });
+    const report = JSON.stringify({ ...REPORT, metrics: [REPORT.metrics[1]] });
+    try {
+      delete process.env["WEB_VITALS_COLLECTION"];
+      expect((await post(report)).statusCode).toBe(404);
+      process.env["WEB_VITALS_COLLECTION"] = "on";
+      expect((await post(report)).statusCode).toBe(204);
+      expect((await post(report, { "sec-gpc": "1" })).statusCode).toBe(204);
+      expect((await post("{not json")).statusCode).toBe(400);
+      expect((await post("<report/>", { "content-type": "application/xml" })).statusCode).toBe(415);
+      expect((await post(" ".repeat(5_000))).statusCode).toBe(413);
+      // A database that fails: the error is logged, without the address.
+      await pool.query("ALTER TABLE web_vital_samples RENAME TO web_vital_samples_away");
+      try {
+        expect((await post(report)).statusCode).toBe(500);
+      } finally {
+        await pool.query("ALTER TABLE web_vital_samples_away RENAME TO web_vital_samples");
+      }
+      let status = 0;
+      for (let sent = 0; sent < 61 && status !== 429; sent += 1) status = (await post(report)).statusCode;
+      expect(status).toBe(429);
+
+      expect(lines.some((line) => line.includes("\"level\":50"))).toBe(true);
+      expect(lines.filter((line) => line.includes(visitor))).toEqual([]);
+      // The same logger writes an ordinary route's address, so the capture works.
+      await whole.inject({ method: "GET", url: "/health/live", remoteAddress: visitor });
+      expect(lines.some((line) => line.includes(visitor))).toBe(true);
+    } finally {
+      await whole.close();
+    }
+  }, 120_000);
+
+  it("keys the per-address limit by the route's own key, never by the address", async () => {
+    process.env["WEB_VITALS_COLLECTION"] = "on";
+    const asked: string[] = [];
+    // One key for every address: only the route's keyGenerator can join them.
+    const oneBucket: AddressKey = { keyFor: (address) => { asked.push(address); return "web-vitals:one"; }, rotate: () => undefined };
+    const limited = Fastify();
+    await limited.register(rateLimit, { global: false });
+    await limited.register(publicWebVitalsRoutes, { prefix: "/public", db, addressKey: oneBucket });
+    try {
+      const statuses: number[] = [];
+      for (let index = 0; index < 61; index += 1) {
+        statuses.push((await limited.inject({
+          method: "POST", url: "/public/web-vitals", headers: { "content-type": "text/plain;charset=UTF-8" },
+          payload: JSON.stringify({ ...REPORT, metrics: [REPORT.metrics[1]] }), remoteAddress: `10.8.0.${String(index)}`,
+        })).statusCode);
+      }
+      // Sixty-one addresses, each far inside its own minute, share one limit.
+      expect(statuses.slice(0, 60).every((status) => status === 204)).toBe(true);
+      expect(statuses[60]).toBe(429);
+      expect(new Set(asked)).toEqual(new Set(Array.from({ length: 61 }, (_, index) => `10.8.0.${String(index)}`)));
+    } finally {
+      await limited.close();
+    }
+  });
+
+  it("gives a report's place under the day's ceiling back when it is not kept", async () => {
+    process.env["WEB_VITALS_COLLECTION"] = "on";
+    const capped = Fastify();
+    await capped.register(publicWebVitalsRoutes, { prefix: "/public", db, dailyReportCeiling: 1 });
+    const post = (): Promise<LightMyRequestResponse> => capped.inject({
+      method: "POST", url: "/public/web-vitals", headers: { "content-type": "text/plain;charset=UTF-8" },
+      payload: JSON.stringify({ ...REPORT, metrics: [REPORT.metrics[0]] }), remoteAddress: "10.5.1.1",
+    });
+    try {
+      await pool.query("ALTER TABLE web_vital_samples RENAME TO web_vital_samples_away");
+      try {
+        expect((await post()).statusCode).toBe(500);
+      } finally {
+        await pool.query("ALTER TABLE web_vital_samples_away RENAME TO web_vital_samples");
+      }
+      // The failed report used none of the day's one place.
+      expect([(await post()).statusCode, (await post()).statusCode]).toEqual([204, 429]);
+      expect(await rows()).toHaveLength(1);
+    } finally {
+      await capped.close();
+    }
+    // Across midnight: a report takes yesterday's last place, another takes
+    // today's, and then the first one's insert fails. Giving yesterday's
+    // place back frees none of today's.
+    let clock = Date.UTC(2026, 10, 12, 23, 59, 59);
+    const ceiling = createDailyCeiling(1, () => clock);
+    const yesterdays = ceiling.admit();
+    clock = Date.UTC(2026, 10, 13, 0, 0, 1);
+    const todays = ceiling.admit();
+    expect([yesterdays, todays].every((place) => place !== null)).toBe(true);
+    if (yesterdays !== null) ceiling.release(yesterdays);
+    expect(ceiling.admit()).toBeNull();
+    // Today's own place, given back, is free again.
+    if (todays !== null) ceiling.release(todays);
+    expect(ceiling.admit()).not.toBeNull();
+    expect(ceiling.admit()).toBeNull();
+  });
+
+  it("starts the report's window at a UTC midnight, whatever the session's time zone, across a change of clocks", async () => {
+    const client = await pool.connect();
+    try {
+      // London's clocks went forward on 29 March 2026: 27 days of the
+      // session's calendar before 10 April 00:00 UTC is 14 March 01:00 UTC,
+      // an hour past that day's rows. The window must start at its midnight.
+      await client.query("SET TIME ZONE 'Europe/London'");
+      const start = webVitalsWindowStart(28, sql`'2026-04-10 12:00:00+00'::timestamptz`);
+      const { rows: [found] } = await drizzle(client).execute<{ epoch: string }>(sql`SELECT extract(epoch FROM ${start})::text AS epoch`);
+      expect(Number(found?.epoch)).toBe(Date.UTC(2026, 2, 14) / 1000);
+    } finally {
+      await client.query("RESET TIME ZONE");
+      client.release();
     }
   });
 
@@ -330,5 +474,21 @@ describe.skipIf(testUrl === undefined)("field web vitals on the whole API (migra
     const plan = p75.find((row) => row.page === "/plan/:code");
     expect(plan === undefined ? null : formatP75Line(plan))
       .toBe("LCP  phone   /plan/:code                      p75    650 ms  target 2500 ms  meets  n=3");
+  });
+
+  it("reads the last N days as today and the N-1 whole UTC days before it", async () => {
+    // Rows at UTC midnights, as the column's default stores them. Days counted
+    // in hours: '27 days' would follow the session's time zone, and in a
+    // zone that changed its clocks meanwhile land an hour off midnight.
+    await pool.query(
+      `INSERT INTO web_vital_samples (page, device, metric, value, rating, recorded_at) VALUES
+         ('/', 'tablet', 'INP', 100, 'good', date_trunc('day', now(), 'UTC')),
+         ('/', 'tablet', 'INP', 200, 'good', date_trunc('day', now(), 'UTC') - interval '648 hours'),
+         ('/', 'tablet', 'INP', 900, 'poor', date_trunc('day', now(), 'UTC') - interval '672 hours')`,
+    );
+    const samples = async (days: number): Promise<number | undefined> =>
+      (await webVitalsP75(db, days)).find((row) => row.metric === "INP" && row.page === null)?.samples;
+    expect(await samples(28)).toBe(2);
+    expect(await samples(1)).toBe(1);
   });
 });

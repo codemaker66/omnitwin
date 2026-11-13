@@ -105,7 +105,7 @@ import { registerAutoSave } from "./ws/auto-save.js";
 import { registerDiaryLive } from "./ws/diary-live.js";
 import websocket from "@fastify/websocket";
 import { initSentry, buildSentryCapture } from "./observability/sentry.js";
-import { apiLoggerOptions } from "./observability/health-redaction.js";
+import { apiLoggerOptions, type LogLineStream } from "./observability/health-redaction.js";
 import { registerDefaultSubscribers } from "./observability/subscribers.js";
 import { registerSecurityHeaders } from "./middleware/security-headers.js";
 import { registerRequestId } from "./middleware/request-id.js";
@@ -116,10 +116,16 @@ import { registerMetrics } from "./observability/metrics.js";
 // OMNITWIN API — Fastify server entry point
 // ---------------------------------------------------------------------------
 
+export interface BuildServerOptions {
+  /** Tests only: the production logger, writing its lines here, so a test
+   *  reads what the server would log in production (no logger otherwise). */
+  readonly logStream?: LogLineStream;
+}
+
 /** Builds and configures the Fastify instance (exported for testing).
  *  Accepts a pre-validated Env so the direct-run entry point can validate
  *  once and pass the result in, avoiding the double-validation on startup. */
-export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<typeof Fastify>> {
+export async function buildServer(env: Env = validateEnv(), options: BuildServerOptions = {}): Promise<ReturnType<typeof Fastify>> {
 
   // Initialise Sentry BEFORE Fastify so its HTTP instrumentation
   // patches the global fetch/http layer before any request handler
@@ -164,7 +170,9 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
     // logs request urls without their query string (a client's name, email or
     // phone on the search routes) and errors without query parameters or pg
     // `detail`/`where` (observability/health-redaction.ts and redact.ts).
-    logger: apiLoggerOptions(isDev ? "development" : isTest ? "test" : "production"),
+    logger: options.logStream === undefined
+      ? apiLoggerOptions(isDev ? "development" : isTest ? "test" : "production")
+      : apiLoggerOptions("production", options.logStream),
     bodyLimit: 2_000_000,
     connectionTimeout: 30_000,
     requestTimeout: 60_000,

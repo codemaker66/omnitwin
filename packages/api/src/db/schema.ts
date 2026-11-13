@@ -6858,16 +6858,16 @@ export const venueEngagementEvents = pgTable("venue_engagement_events", {
 //
 // One row per vital of a sampled page load: the route's pattern (never an
 // address), a device class, the value and its rating; not how the page was
-// reached. Nothing about the visitor. Only the day it arrived, not the moment
-// (row order and the database's restore history still follow arrival, so this
-// alone does not stop a match with a host's request log). Kept
-// WEB_VITAL_RETENTION_DAYS, then removed by the nightly cleanup.
+// reached. Nothing about the visitor. Only the UTC day it arrived, not the
+// moment (row order, xmin and the database's restore history still follow
+// arrival, so this alone does not stop a match with a host's request log).
+// Kept WEB_VITAL_RETENTION_DAYS, then removed by the nightly cleanup.
 // Written only by routes/public-web-vitals.ts.
 // ---------------------------------------------------------------------------
 
 export const webVitalSamples = pgTable("web_vital_samples", {
   id: uuid("id").primaryKey().defaultRandom(),
-  recordedAt: timestamp("recorded_at", { withTimezone: true }).default(sql`date_trunc('day', now())`).notNull(),
+  recordedAt: timestamp("recorded_at", { withTimezone: true }).default(sql`date_trunc('day', now(), 'UTC')`).notNull(),
   page: varchar("page", { length: 160 }).notNull(),
   device: varchar("device", { length: 10 }).$type<WebVitalDeviceClass>().notNull(),
   metric: varchar("metric", { length: 8 }).$type<WebVitalName>().notNull(),
@@ -6879,5 +6879,6 @@ export const webVitalSamples = pgTable("web_vital_samples", {
   check("web_vital_samples_metric_check", sql`${table.metric} IN ('LCP', 'INP', 'CLS', 'TTFB')`),
   check("web_vital_samples_rating_check", sql`${table.rating} IN ('good', 'needs-improvement', 'poor')`),
   check("web_vital_samples_value_check", sql`${table.value} >= 0`),
-  index("web_vital_samples_metric_recorded_idx").on(table.metric, table.recordedAt),
+  // The cleanup and the p75 report both read by day alone.
+  index("web_vital_samples_recorded_idx").on(table.recordedAt),
 ]);

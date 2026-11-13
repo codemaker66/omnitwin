@@ -10,18 +10,20 @@
 -- the address opened, so no share token or layout id), a device class, the
 -- value and its rating. How the page was reached is not kept (dropped on
 -- 12 November: the privacy page does not mention it). Nothing names or follows
--- the visitor. A row keeps only the day it arrived, not the moment. That
--- removes the exact time, but row order and the database's restore history
--- still follow arrival, so on its own it does not stop a row being matched to
--- a hosting provider's request log. Rows go after 90 days (the nightly
--- cleanup).
+-- the visitor. A row keeps only the day it arrived (the UTC day, whatever the
+-- session's time zone), not the moment. That removes the exact time, but row
+-- order, each row's inserting transaction id (xmin, which any reader of the
+-- table can see) and the database's restore history still follow arrival, so
+-- on its own it does not stop a row being matched to a hosting provider's
+-- request log. Rows go after 90 days (the nightly cleanup); the index beside the key,
+-- on the day, serves that cleanup and the p75 report.
 --
 -- Additive only: one new table, no change to existing rows. The file is one
 -- transaction; a failed statement leaves the database as it was.
 
 CREATE TABLE IF NOT EXISTS "web_vital_samples" (
   "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-  "recorded_at" timestamp with time zone NOT NULL DEFAULT date_trunc('day', now()),
+  "recorded_at" timestamp with time zone NOT NULL DEFAULT date_trunc('day', now(), 'UTC'),
   "page" varchar(160) NOT NULL,
   "device" varchar(10) NOT NULL,
   "metric" varchar(8) NOT NULL,
@@ -34,4 +36,4 @@ CREATE TABLE IF NOT EXISTS "web_vital_samples" (
   CONSTRAINT "web_vital_samples_value_check" CHECK ("value" >= 0)
 );
 --> statement-breakpoint
-CREATE INDEX IF NOT EXISTS "web_vital_samples_metric_recorded_idx" ON "web_vital_samples" USING btree ("metric", "recorded_at");
+CREATE INDEX IF NOT EXISTS "web_vital_samples_recorded_idx" ON "web_vital_samples" USING btree ("recorded_at");

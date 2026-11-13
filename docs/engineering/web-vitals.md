@@ -13,7 +13,10 @@ recorded field vitals before this.
 ## What is sent, and what never is
 
 A sampled page load reports the vitals of the page it landed on to
-`POST /public/web-vitals`, in one request when the page is first hidden:
+`POST /public/web-vitals`: each vital once, sent when the page is next hidden after it
+is measured. That is usually one request; a vital first measured after a hide (an INP
+from a tap after the visitor came back) sends another, and a page restored from the
+back/forward cache is measured again:
 
 ```json
 { "v": 1, "page": "/proposal-share/:token", "device": "phone",
@@ -22,10 +25,14 @@ A sampled page load reports the vitals of the page it landed on to
 
 - **The page is the route's pattern**, read from the router's matched routes when the
   page loaded. The address the visitor opened is never read, so a share token, a plan
-  code or a layout id cannot travel. `WEB_VITAL_PAGE_PATTERN` (in `@omnitwin/types`)
-  allows only lowercase words, `:params` and `*`, with no digits, and is checked in the
-  browser, by the API's schema and by a database check. A pattern that fails reads
-  as `/*`.
+  code or a layout id cannot travel. A page must be one of `WEB_VITAL_PAGES` (in
+  `@omnitwin/types`): every production route's pattern, and `/*` for any other page (a
+  dev fixture, the 404). The browser sends nothing else and the API's schema accepts
+  nothing else, so not even a hand-made report can store an address, a code or a
+  name as a page; `route-inventory.test.ts` holds the list equal to the router, so a
+  new route fails it until the list has it. The database checks only the shape
+  (`WEB_VITAL_PAGE_PATTERN`: lowercase words, `:params` and `*`, no digits), which
+  refuses ids, dates and long tokens but not every short code spelled in letters.
 - **The landing page only.** The vitals stop at the visitor's first move to another
   route in the app (a room card from `/` to the walk), so the walk's interactions
   are never credited to the front door; only the landing page's TTFB may still
@@ -35,7 +42,11 @@ A sampled page load reports the vitals of the page it landed on to
 - **Each measurement once.** The library reports CLS and INP again whenever a page
   is shown and hidden again; the reporter sends each of its metric ids once, so one
   page load is one row per vital and a tab-switcher is not weighed twice in the p75.
-  A page restored from the back/forward cache is measured again, as a new load.
+  A page restored from the back/forward cache is measured again, as a new load. The
+  cost: CLS and INP are kept at their values when the page is first hidden, and what
+  happens after a visitor returns to the tab is not counted. Chrome's field data
+  (CrUX) follows a page's whole life, so these two p75s read lower than CrUX's for the
+  same visits.
 - **The device class** is the hardware, not the window: touch-first
   (`pointer: coarse`) is a phone when the screen's shorter side is under 600 CSS px
   and a tablet otherwise, however it is held or split; mouse-first is a desktop,
@@ -45,17 +56,28 @@ A sampled page load reports the vitals of the page it landed on to
   change, so the values held are current when the visitor moves on. The library's
   metric id (used only to send each once), its performance entries and how the page
   was reached (`navigationType`, which the privacy page does not name; dropped on
-  12 November 2026) never leave the browser.
-- **How it is sent:** `fetch` with `keepalive`, `credentials: "omit"` and a
-  `text/plain` body, so it needs no preflight and carries no cookie or token.
+  12 November 2026) never leave the browser. Not every browser reports every vital.
+  CLS comes only from Chromium browsers (the library's README, "Browser Support"), so
+  never from an iPhone (every iOS browser is WebKit), Safari or Firefox. The library
+  measures LCP and INP only where the browser has the Largest Contentful Paint and
+  Event Timing APIs, which WebKit shipped in Safari 26.2 on 12 December 2025 (web.dev,
+  "LCP and INP are now Baseline Newly available"), so no iPhone before iOS 26.2 sends
+  either. A phone's CLS p75 is Android's alone, and its LCP and INP leave out older
+  iPhones; read each line's count.
+- **How it is sent:** `fetch` with `keepalive`, `credentials: "omit"`,
+  `referrerPolicy: "no-referrer"` and a `text/plain` body, so it needs no preflight and
+  carries no cookie, token or `Referer` (the page's address names a share token or a
+  plan's code), whatever the site's Referrer-Policy.
 - **What is stored:** the API stores one row per vital: page, device, metric, value
-  and rating, with only the day it arrived, not the moment
-  (`date_trunc('day', now())`). It stores no address, user agent, identifier or
-  session, and nothing is stored on the device. The day alone does not make a row
-  unmatchable: rows still sit in arrival order and the database's restore history
+  and rating, with only the UTC day it arrived, not the moment
+  (`date_trunc('day', now(), 'UTC')`, whatever the session's time zone). It stores no
+  address, user agent, identifier or session, and nothing is stored on the device.
+  The day alone does not make a row unmatchable: rows still sit in arrival order,
+  each carries the id of the transaction that inserted it (`xmin`, which anyone who
+  can read the table can see, rising with time), and the database's restore history
   follows arrival, so with the host's request log (below) a row could in principle be
-  paired with the request that brought it. Shuffled batch inserts or daily aggregates
-  would remove that; they are not built.
+  paired with the request that brought it. A once-a-day shuffled insert in one
+  transaction, or daily aggregates, would remove that; neither is built.
   Rows go after `WEB_VITAL_RETENTION_DAYS` (90) in the nightly cleanup.
 - **What the server sees:** like any request, the report reaches the API from the
   visitor's internet address. The route writes no access line (`logLevel: "warn"`,
@@ -76,13 +98,23 @@ A sampled page load reports the vitals of the page it landed on to
 
 | Where | Switch | Default |
 | --- | --- | --- |
-| Web build | `VITE_WEB_VITALS_SAMPLE_RATE` (0 to 1): the share of page loads that measure at all | unset = 0 |
-| API | `WEB_VITALS_COLLECTION=on`: whether the route keeps anything (otherwise 404) | off |
+| Web build | `VITE_WEB_VITALS_SAMPLE_RATE`, a decimal below 1 such as `0.5`: the share of page loads that measure at all. `1` or more, or anything not written as a decimal (`1e-1`, `0x1`), is off | unset = off |
+| API | `WEB_VITALS_COLLECTION=on`: whether the route keeps anything (otherwise 404); only `on` turns it on | off |
 
-**When nothing runs:** with the rate at 0 the browser never fetches the reporter or
-the library. Otherwise the reporter runs for a sampled page load, except in tests
-(`MODE=test`), under automation (`navigator.webdriver`, so e2e runs are never counted),
-or where the browser sends Global Privacy Control or Do Not Track.
+**When nothing runs:** a build without the rate has none of this: the entry's
+condition (`import.meta.env.VITE_WEB_VITALS_SAMPLE_RATE !== undefined`) is a build-time
+constant, Vite writes an unset variable as `undefined`, and the bundler drops the
+branch, the reporter's import and the two small modules it uses. (Set at all, even to
+`0`, the code stays in the entry and reads the rate as off; leave it unset.) A build
+with a rate records every page load's landing route and fetches the reporter (a small
+chunk), which draws the sample; only a sampled load fetches the library and measures,
+except in tests (`MODE=test`), under automation (`navigator.webdriver`, so e2e runs
+are never counted), or where the browser sends Global Privacy Control or Do Not Track.
+Both chunks load as optional code (`loadOptional` in `route-error-boundary.tsx`): one
+that fails to load (a blocker, offline, a deploy in between) stops the measurement
+and never reloads the page, as a failed page chunk would. While they load, any
+script's failure falls to its own import (a route's to the route boundary, which
+reloads on it); a stylesheet that will not preload still takes the reload.
 
 **Why both are off.** Reading the browser's performance timings and sending them is
 access to information on the visitor's device. PECR Schedule A1 paragraph 5 allows it
@@ -95,40 +127,39 @@ honoured, but Safari, and so every browser on an iPhone, sends neither, so most 
 visitors would have no way to object. Before switching on, the privacy page needs one
 that works everywhere, for example a "Don't measure my visits" control whose stored
 choice `shouldReportWebVitals` checks. That is for the solicitor and Blake to settle;
-it is not in this change.
+it is not in this change (#355 adds it).
 
 **To switch on**, in one release:
-1. publish the privacy page's line (draft below, through the solicitor) with a way to
-   object that works on an iPhone (above);
-2. set `WEB_VITALS_COLLECTION=on` on the API;
-3. build the web with a sample rate **below 1** (0.5 to start): the description the
-   solicitor approved says only a sample of page loads is measured (the page itself
-   says a browser "may" measure). Measuring every page load needs that description
+1. check the database first: `web_vital_samples` has no `navigation_type` column,
+   `recorded_at` defaults to `date_trunc('day', now(), 'UTC')`, and its index beside
+   the primary key is `web_vital_samples_recorded_idx` on `recorded_at`. The migration
+   was edited before landing under the same `when`, so a database that ran an earlier
+   copy of #309 (or its October 0106) keeps the old table. Production never ran any
+   of them;
+2. merge #355, which adds the privacy page's paragraph ("How fast our pages are", the
+   wording approved on 12 November 2026) and the "Don't measure my visits" switch, a
+   way to object that works on an iPhone (above);
+3. set `WEB_VITALS_COLLECTION=on` on the API;
+4. build the web with a sample rate **below 1** (0.5 to start): the page says a
+   browser "may" measure a page load, so only a sample of them is measured, and the
+   code treats 1 or more as off. Measuring every page load needs that description
    changed first.
-4. before switching on any database, check `web_vital_samples` has no
-   `navigation_type` column and that `recorded_at` defaults to
-   `date_trunc('day', now())`: 0108 was edited before landing under the same `when`,
-   so a database that ran #309's earlier 0108 (or its October 0106) keeps the old
-   table and every insert would fail. Production never ran either.
 
-Draft for the privacy page (for the solicitor and Blake; not live):
-
-> **How fast our pages are.** When you open one of our pages, your browser may measure
-> how quickly it loaded and responded (four timings) and send them to us with the kind
-> of page (for example "a proposal") and whether it was opened on a phone, tablet or
-> computer. It does not send the address of the page you opened, anything you typed,
-> or any identifier, and nothing is stored on your device for it. Like any request,
-> it reaches us from your internet address; we do not keep that with the timings or
-> log it. We use these timings only to make the site faster and delete them after 90
-> days. If your browser sends Global Privacy Control or Do Not Track, nothing is
-> measured or sent. [The way to object on any browser goes here.]
+The privacy page's wording is #355's (`LegalPage.tsx`). The October draft that stood
+here said the address was not logged, which is untrue: the host's request logs
+record it (above).
 
 **Limits.** Anyone can post a report, so the limiter bounds an address to 60 a minute
-and a daily ceiling (`WEB_VITALS_DAILY_REPORT_CEILING`, 5,000 reports from everyone,
-per server, reset at midnight UTC) bounds the table; the p75 is read as a measure, not
-a guarantee. Pages reached by moving inside the app are not measured; each figure
-belongs to the page a load landed on. The limiter keys IPv6 per address, as the whole
-API does; keying it by /64 is an app-wide change, not this one's.
+and a daily ceiling (`WEB_VITALS_DAILY_REPORT_CEILING`, 5,000 reports from everyone)
+bounds the table; the p75 is read as a measure, not a guarantee. The ceiling is each
+server process's own count from midnight UTC: a restart (every deploy) starts it
+again and each replica keeps its own, so a day keeps up to 5,000 reports for every
+process that ran that day. A report that fails to store gives its place back. Pages
+reached by moving inside the app are not measured; each figure belongs to the page a
+load landed on. The limiter keys IPv6 per address, as the whole API does; keying it
+by /64 is an app-wide change, not this one's. What the figures leave out (CLS and INP
+after a return to the tab, CLS from every iPhone, LCP and INP from older iPhones) is
+under "What is sent", above.
 
 ## Reading p75
 
@@ -136,9 +167,12 @@ API does; keying it by /64 is an app-wide change, not this one's.
 DATABASE_URL=<read access> pnpm --filter @omnitwin/api web-vitals:report 28
 ```
 
-The command prints each vital's p75 over the last 28 days. It gives one line per device
-class across every page, then one line per page, each beside goal 07's target, with
-the sample count. TTFB is judged against web.dev's 800 ms "good" bound. It only reads.
+The command prints each vital's p75 over the last 28 days: today and the 27 whole UTC
+days before it (a row keeps only its day). It gives one line per device class across
+every page, then one line per page, each beside goal 07's target, with the sample
+count (`n=`). Read the count before the figure: a phone's CLS line holds Android
+phones only, and its LCP and INP lines leave out older iPhones (above). TTFB is
+judged against web.dev's 800 ms "good" bound. It only reads.
 
 ## The two-minute phone enquiry
 
@@ -168,8 +202,9 @@ A machine cannot time a person, so the result has two shares:
   - 20 s to read down to the form.
 
 The run fails above 120 s for the two together. The enquiry is never sent: the script
-answers `POST /public/enquiries` itself, so no venue is emailed and no lead is
-created, wherever `--base` points.
+answers `POST /public/enquiries` itself, and blocks service workers so that no request
+can pass that answer, so no venue is emailed and no lead is created, wherever
+`--base` points. The date it picks is about seven months ahead of the day it runs.
 
 ```
 pnpm exec vite build --mode budget && pnpm exec vite preview --mode budget

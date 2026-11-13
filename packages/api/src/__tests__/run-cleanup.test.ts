@@ -143,4 +143,32 @@ describe("runScheduledCleanup", () => {
     expect(failure.message).toBe("Remembered dietary note write failed (SQLSTATE 23514)");
     expect(lines.join("\n")).not.toContain("sesame");
   });
+
+  it("runs every later pass when one fails, then fails the job with that failure", async () => {
+    const failure = new DietaryRetentionError(
+      Object.assign(new Error("Failing row contains (Two guests: sesame)"), { code: "23514" }),
+    );
+    lapsedMock.mockRejectedValue(failure);
+    const lines: string[] = [];
+
+    await expect(runScheduledCleanup(db, (line) => { lines.push(line); })).rejects.toBe(failure);
+    // One broken pass holds back no other's retention promise: the 90-day
+    // web vitals deletion, and every pass between, still ran.
+    for (const later of [rememberedMock, engagementMock, vitalsMock]) expect(later).toHaveBeenCalledTimes(1);
+    expect(lines).toContain("[cleanup] The allergy note retention pass failed; the passes after it still run");
+    expect(lines).toContain("[cleanup] Removed 6 web vital sample(s) past their retention period");
+    expect(lines.join("\n")).not.toContain("sesame");
+  });
+
+  it("names every failure when more than one pass fails", async () => {
+    const first = new Error("connection terminated");
+    const second = new Error("canceling statement due to statement timeout");
+    previewMock.mockRejectedValue(first);
+    engagementMock.mockRejectedValue(second);
+
+    const outcome = await runScheduledCleanup(db, () => undefined).then(() => undefined, (error: unknown) => error);
+    expect(outcome).toBeInstanceOf(AggregateError);
+    expect((outcome as AggregateError).errors).toEqual([first, second]);
+    expect(vitalsMock).toHaveBeenCalledTimes(1);
+  });
 });

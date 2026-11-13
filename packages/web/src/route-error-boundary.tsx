@@ -18,7 +18,9 @@ import { captureBoundaryError } from "./observability/sentry.js";
 //   - any other error reaches Sentry once and shows AppErrorBoundary's
 //     recovery screen.
 //
-// Vite's own preload failure (`vite:preloadError`) takes the same one reload.
+// Vite's own preload failure (`vite:preloadError`) takes the same one reload,
+// except a script's failure while optional code loads (loadOptional): a
+// measurement that will not load costs only itself.
 // ---------------------------------------------------------------------------
 
 const CHUNK_LOAD_FAILURE = /dynamically imported module|Importing a module script failed|error loading dynamically imported module/iu;
@@ -53,9 +55,36 @@ export function claimStaleChunkReload(now: number = Date.now()): boolean {
   }
 }
 
-/** Vite's preload failure: the same one reload, before the import rejects. */
+/** How many loads of optional code are under way. */
+let optionalLoads = 0;
+
+/**
+ * Loads code the page can do without (the field web vitals reporter and its
+ * library, never a page): if it will not load (a blocker, offline, a deploy
+ * in between), the promise rejects and the page stays as it is.
+ *
+ * While it loads, a script that will not load (the browser's module error)
+ * takes no reload here, since the listener cannot tell whose import failed:
+ * it falls to the import's own handler. For a route that is the route
+ * boundary, which reloads on that same error; for this optional code it is
+ * the caller's catch. A stylesheet that will not preload ("Unable to preload
+ * CSS") reloads as ever: only a route's chunk has one, and the route boundary
+ * does not recognise that error.
+ */
+export async function loadOptional<T>(load: () => Promise<T>): Promise<T> {
+  optionalLoads += 1;
+  try {
+    return await load();
+  } finally {
+    optionalLoads -= 1;
+  }
+}
+
+/** Vite's preload failure: the same one reload, before the import rejects,
+ *  except a script's failure while optional code loads (loadOptional). */
 export function installStaleChunkReload(target: Window = window): void {
   target.addEventListener("vite:preloadError", (event) => {
+    if (optionalLoads > 0 && isChunkLoadError(event.payload)) return;
     if (!claimStaleChunkReload()) return;
     event.preventDefault();
     stalePage.reload();

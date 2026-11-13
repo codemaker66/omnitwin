@@ -79,13 +79,17 @@ afterEach(() => {
 });
 
 describe("the sample rate", () => {
-  it("is off unless a build sets a share from 0 to 1, and always off in tests", () => {
+  it("is off unless a build sets a decimal share below 1, and always off in tests", () => {
     expect(webVitalsSampleRate({})).toBe(0);
     expect(webVitalsSampleRate({ VITE_WEB_VITALS_SAMPLE_RATE: "" })).toBe(0);
+    expect(webVitalsSampleRate({ VITE_WEB_VITALS_SAMPLE_RATE: "0" })).toBe(0);
     expect(webVitalsSampleRate({ VITE_WEB_VITALS_SAMPLE_RATE: "0.25" })).toBe(0.25);
-    expect(webVitalsSampleRate({ VITE_WEB_VITALS_SAMPLE_RATE: "1" })).toBe(1);
-    for (const raw of ["2", "-0.1", "half", "NaN"]) expect(webVitalsSampleRate({ VITE_WEB_VITALS_SAMPLE_RATE: raw }), raw).toBe(0);
-    expect(webVitalsSampleRate({ MODE: "test", VITE_WEB_VITALS_SAMPLE_RATE: "1" })).toBe(0);
+    expect(webVitalsSampleRate({ VITE_WEB_VITALS_SAMPLE_RATE: " .5 " })).toBe(0.5);
+    // Never every page load: the privacy page says the browser "may" measure one.
+    for (const raw of ["1", "1.0", "2", "0.99999999999999999", "-0.1", "half", "NaN", "Infinity", "0x1", "1e-1", "0.5.1"]) {
+      expect(webVitalsSampleRate({ VITE_WEB_VITALS_SAMPLE_RATE: raw }), raw).toBe(0);
+    }
+    expect(webVitalsSampleRate({ MODE: "test", VITE_WEB_VITALS_SAMPLE_RATE: "0.5" })).toBe(0);
   });
 
   it("reports a page load only when sampled in, never under a driver or against the browser's wish", () => {
@@ -108,8 +112,11 @@ describe("what a report says of the page and the device", () => {
     [[], "/"],
     [["*"], "/*"],
     [["/plan/:code", ""], "/plan/:code"],
-    // A pattern the page rule refuses is never sent as itself.
+    // A pattern outside the list of pages is never sent as itself: a dev
+    // fixture, or a path with the shape of a page that is not one.
     [["/dev/fixture-v2"], "/*"],
+    [["/dev/planner-lab"], "/*"],
+    [["/plan/kxbmtq"], "/*"],
   ] as const)("reads %j as %s", (paths, expected) => {
     expect(routePattern(paths)).toBe(expected);
   });
@@ -240,6 +247,7 @@ describe("the reporter", () => {
       body: "{\"v\":1}",
       keepalive: true,
       credentials: "omit",
+      referrerPolicy: "no-referrer",
       headers: { "content-type": "text/plain;charset=UTF-8" },
     });
   });
@@ -314,7 +322,7 @@ describe("starting on a page load", () => {
     vi.spyOn(window.screen, "height", "get").mockReturnValue(844);
     ordinaryBrowser();
     const started = await startWebVitals({
-      env: { VITE_WEB_VITALS_SAMPLE_RATE: "1" },
+      env: { VITE_WEB_VITALS_SAMPLE_RATE: "0.5" },
       landing: recordLandingRoute(fakeRouter([undefined, "/proposal-share/:token"]), new EventTarget()),
       random: () => 0,
       send,
@@ -339,10 +347,10 @@ describe("starting on a page load", () => {
   });
 
   it.each([
-    ["in tests", { MODE: "test", VITE_WEB_VITALS_SAMPLE_RATE: "1" }, 0, {}],
+    ["in tests", { MODE: "test", VITE_WEB_VITALS_SAMPLE_RATE: "0.5" }, 0, {}],
     ["unsampled", { VITE_WEB_VITALS_SAMPLE_RATE: "0.1" }, 0.5, {}],
-    ["where the browser objects", { VITE_WEB_VITALS_SAMPLE_RATE: "1" }, 0, { globalPrivacyControl: true }],
-    ["under a driver", { VITE_WEB_VITALS_SAMPLE_RATE: "1" }, 0, { webdriver: true }],
+    ["where the browser objects", { VITE_WEB_VITALS_SAMPLE_RATE: "0.5" }, 0, { globalPrivacyControl: true }],
+    ["under a driver", { VITE_WEB_VITALS_SAMPLE_RATE: "0.5" }, 0, { webdriver: true }],
   ] as const)("measures nothing %s, and stops recording the route", async (_case, env, draw, browser) => {
     const send = vi.fn<(body: string) => void>();
     ordinaryBrowser(browser);
@@ -353,13 +361,18 @@ describe("starting on a page load", () => {
     expect(send).not.toHaveBeenCalled();
   });
 
-  it("is loaded only by a build that samples: the entry module never imports the reporter itself", () => {
+  it("is in no build that does not sample: the entry's condition is one the bundler can decide", () => {
+    // That the entry never imports the reporter itself is bundle-splitting.test.ts's.
     const main = readFileSync(resolve("src/main.tsx"), "utf8");
-    expect(main).not.toMatch(/^import .*observability\/web-vitals\.js/mu);
-    expect(main).toContain("import(\"./observability/web-vitals.js\")");
-    // \r?\n: a Windows checkout with core.autocrlf reads the file with CRLF.
-    expect(main).toMatch(/if \(webVitalsSampleRate\(import\.meta\.env\) > 0\) \{\r?\n {2}const landing = recordLandingRoute\(router\);/u);
-    // A chunk that fails to load stops the recording and raises nothing.
-    expect(main).toContain(".catch(() => { landing.stop(); })");
+    // Vite writes an unset VITE_ variable as `undefined`, so the bundler drops
+    // the branch and everything only it uses. A call such as
+    // webVitalsSampleRate(import.meta.env) would keep them in every build.
+    // \r?: a Windows checkout with core.autocrlf reads the file with CRLF.
+    expect(main).toMatch(/^if \(import\.meta\.env\.VITE_WEB_VITALS_SAMPLE_RATE !== undefined\) \{\r?$/mu);
+    expect(main).toContain("await import(\"./observability/web-vitals.js\")");
+    // Optional code: a chunk that fails to load stops the recording, raises
+    // nothing and reloads nothing (route-error-boundary.test.tsx).
+    expect(main).toContain("void loadOptional(async () => {");
+    expect(main).toContain("}).catch(() => { landing.stop(); });");
   });
 });

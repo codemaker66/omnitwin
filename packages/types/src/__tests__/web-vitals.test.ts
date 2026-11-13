@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { WEB_VITAL_PAGE_PATTERN, WebVitalsReportSchema } from "../web-vitals.js";
+import { WEB_VITAL_PAGES, WEB_VITAL_PAGE_PATTERN, WebVitalsReportSchema, isWebVitalPage } from "../web-vitals.js";
 
 // ---------------------------------------------------------------------------
 // A field-vitals report carries a route's pattern and four numbers, and
@@ -23,15 +23,21 @@ describe("a web vitals report", () => {
     expect(WebVitalsReportSchema.parse(report)).toEqual(report);
   });
 
-  it.each(["/", "/plan/:code", "/v/:venueSlug/plan", "/venues/:venueSlug/twin", "/diary", "/amissing-book", "/dev/*"])(
-    "takes the route pattern %s",
-    (page) => { expect(WEB_VITAL_PAGE_PATTERN.test(page)).toBe(true); },
-  );
+  it("takes each of the router's pages, every one of which the database's shape check also takes", () => {
+    for (const page of WEB_VITAL_PAGES) {
+      expect(WEB_VITAL_PAGE_PATTERN.test(page), page).toBe(true);
+      expect(WebVitalsReportSchema.safeParse({ ...report, page }).success, page).toBe(true);
+    }
+  });
 
   it.each([
     "/proposal-share/tok_SECRET123",
     "/plan/2b9f1c3e-5d8a-4c1b-9e7f-0a1b2c3d4e5f",
     "/proposal/AB12CD",
+    // About 1 plan code in 6 has no digit: the shape of a page, but not one.
+    "/plan/kxbmtq",
+    "/proposal-share/qwertyuiopasdf",
+    "/jo-smith/elm-street-flat",
     "/diary?date=2026-10-28",
     "/plan-view/abcdefABCDEF0123456789",
     "https://venviewer.com/",
@@ -39,9 +45,10 @@ describe("a web vitals report", () => {
     "",
     "diary",
     "/diary/",
+    "/amissing-book",
     `/${"a".repeat(41)}`,
-  ])("refuses %j as a page: an address, an id or a token is never one", (page) => {
-    expect(WEB_VITAL_PAGE_PATTERN.test(page)).toBe(false);
+  ])("refuses %j as a page: an address, an id, a code or a name is never one", (page) => {
+    expect(isWebVitalPage(page)).toBe(false);
     expect(WebVitalsReportSchema.safeParse({ ...report, page }).success).toBe(false);
   });
 

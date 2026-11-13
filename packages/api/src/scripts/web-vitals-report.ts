@@ -5,15 +5,23 @@
 // Usage:
 //   DATABASE_URL=<connection-string> pnpm --filter @omnitwin/api web-vitals:report [days]
 //
-// Prints each vital's 75th percentile over the last `days` (default 28), by
-// device class across every page and by page, beside goal 07's target. It
-// reads web_vital_samples only and writes nothing.
+// Prints each vital's 75th percentile over the last `days` (default 28: today
+// and the 27 whole UTC days before it), by device class across every page and
+// by page, beside goal 07's target and the sample count, and says first what
+// the figures leave out (docs/engineering/web-vitals.md). It reads
+// web_vital_samples only and writes nothing.
 // ---------------------------------------------------------------------------
 
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { createDbConnection } from "../db/client.js";
 import { webVitalsP75, type WebVitalP75 } from "../services/web-vitals.js";
+
+/** What the figures leave out, printed above them (docs/engineering/web-vitals.md). */
+export const WEB_VITALS_REPORT_CAVEATS = [
+  "CLS comes only from Chromium browsers (never an iPhone, Safari or Firefox), and no iPhone before iOS 26.2 sends LCP or INP: read each line's n.",
+  "CLS and INP stop at the page's first hide, so they read lower than Chrome's field data (CrUX) for visitors who return to the tab.",
+] as const;
 
 export function formatP75Line(row: WebVitalP75): string {
   const value = row.metric === "CLS" ? row.p75.toFixed(3) : `${String(Math.round(row.p75))} ms`;
@@ -35,7 +43,8 @@ async function main(): Promise<void> {
   const connection = createDbConnection(databaseUrl);
   try {
     const rows = await webVitalsP75(connection.db, days);
-    console.log(`[web-vitals] p75 over the last ${String(days)} day(s); ${String(rows.length)} line(s)`);
+    console.log(`[web-vitals] p75 over the last ${String(days)} day(s), today included (UTC); ${String(rows.length)} line(s)`);
+    for (const caveat of WEB_VITALS_REPORT_CAVEATS) console.log(`[web-vitals] ${caveat}`);
     for (const row of rows) console.log(formatP75Line(row));
   } finally {
     await connection.close();

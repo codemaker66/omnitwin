@@ -1,5 +1,5 @@
 import { createHmac, randomBytes } from "node:crypto";
-import { sql } from "drizzle-orm";
+import { sql, type SQL } from "drizzle-orm";
 import {
   WEB_VITAL_P75_TARGETS,
   WEB_VITAL_RETENTION_DAYS,
@@ -28,7 +28,7 @@ export function webVitalsCollectionEnabled(env: NodeJS.ProcessEnv = process.env)
 }
 
 /**
- * The most reports the server keeps in a day (UTC), from every source
+ * The most reports one server process keeps in a day (UTC), from every source
  * together. Anyone can post a report, and the per-address limit alone would
  * let a handful of addresses fill the table for the 90 days it is kept. Set
  * well above what sampling one venue's pages should need; when it is reached
@@ -36,26 +36,47 @@ export function webVitalsCollectionEnabled(env: NodeJS.ProcessEnv = process.env)
  */
 export const WEB_VITALS_DAILY_REPORT_CEILING = 5_000;
 
+/** A place under the day's ceiling: the UTC day it was taken on. */
+export type CeilingPlace = number;
+
 export interface DailyCeiling {
-  /** Counts one more report today; false once the day's ceiling is reached. */
-  readonly admit: () => boolean;
+  /** Takes one of today's places for a report: the place, or null once they
+   *  are all taken. */
+  readonly admit: () => CeilingPlace | null;
+  /** Gives back the place of a report that was not kept (its insert failed).
+   *  A place taken on an earlier day went with that day's count. */
+  readonly release: (place: CeilingPlace) => void;
 }
 
-/** One server's count of the day's reports; it starts again at midnight UTC
- *  (and on a restart, which only ever lets fewer through in a day than two). */
+/**
+ * This process's count of the day's reports, from midnight UTC. Each process
+ * counts for itself and from nothing: a restart (every deploy) starts the
+ * day's count again, and each replica keeps its own, so a day can keep up to
+ * the ceiling once for every process that ran that day. A report holds its
+ * place only if it is kept: a failed insert gives it back.
+ */
 export function createDailyCeiling(limit: number, now: () => number = Date.now): DailyCeiling {
   let day = Number.NaN;
   let count = 0;
+  const rollOver = (): void => {
+    const today = Math.floor(now() / 86_400_000);
+    if (today !== day) {
+      day = today;
+      count = 0;
+    }
+  };
   return {
     admit: () => {
-      const today = Math.floor(now() / 86_400_000);
-      if (today !== day) {
-        day = today;
-        count = 0;
-      }
-      if (count >= limit) return false;
+      rollOver();
+      if (count >= limit) return null;
       count += 1;
-      return true;
+      return day;
+    },
+    release: (place) => {
+      rollOver();
+      // Yesterday's place went with yesterday's count: giving it back after
+      // midnight must free none of today's.
+      if (place === day && count > 0) count -= 1;
     },
   };
 }
@@ -123,9 +144,22 @@ export interface WebVitalP75 {
 }
 
 /**
- * The 75th percentile of each vital over the last `days`, by device class
- * across every page and by device class and page, as goal 07 judges them.
- * Read-only; the samples are a measure, not a guarantee (anyone can post one).
+ * Where a window of the last `days` UTC days begins, today included: the UTC
+ * midnight `days - 1` days before today's. Counted in hours: an interval of
+ * days follows the session's time zone, so across a change of clocks it would
+ * start an hour off midnight and drop (or add) a whole day of rows, which are
+ * stored at UTC midnight.
+ */
+export function webVitalsWindowStart(days: number, now: SQL = sql`now()`): SQL {
+  return sql`date_trunc('day', ${now}, 'UTC') - make_interval(hours => ${24 * (days - 1)})`;
+}
+
+/**
+ * The 75th percentile of each vital over the last `days` UTC days, today
+ * included (a row keeps only its day, so a window of "the last 28 days" is
+ * today and the 27 whole days before it), by device class across every page
+ * and by device class and page, as goal 07 judges them. Read-only; the
+ * samples are a measure, not a guarantee (anyone can post one).
  */
 export async function webVitalsP75(db: Database, days: number): Promise<WebVitalP75[]> {
   const v = webVitalSamples;
@@ -138,7 +172,7 @@ export async function webVitalsP75(db: Database, days: number): Promise<WebVital
     p75: sql<number>`percentile_cont(0.75) WITHIN GROUP (ORDER BY ${v.value})`.mapWith(Number),
   })
     .from(v)
-    .where(sql`${v.recordedAt} >= now() - make_interval(days => ${days})`)
+    .where(sql`${v.recordedAt} >= ${webVitalsWindowStart(days)}`)
     .groupBy(sql`GROUPING SETS ((${v.metric}, ${v.device}), (${v.metric}, ${v.device}, ${v.page}))`)
     .orderBy(v.metric, v.device, sql`${v.page} NULLS FIRST`);
   return rows.map((row) => {

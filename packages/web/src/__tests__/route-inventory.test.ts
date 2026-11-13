@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { WEB_VITAL_PAGES } from "@omnitwin/types";
 import { matchPath } from "react-router-dom";
 import { describe, expect, it } from "vitest";
 import { ROUTE_DOCUMENTS, routeDocumentFile } from "../lib/route-documents.js";
@@ -305,5 +306,18 @@ describe("the edge's 404 page", () => {
     for (const font of html.matchAll(/url\("([^"]+)"\)/gu)) {
       expect(existsSync(join(root, "public", ...(font[1] ?? "").split("/").filter(Boolean))), font[1]).toBe(true);
     }
+  });
+});
+
+// --- The pages a web vitals report may name (T-685) -------------------------
+// A field web vitals report names its page from a list in @omnitwin/types,
+// which the API holds every report to, so no address, code or name can be
+// stored as a page. The list is the router's production patterns, an
+// optional segment without its "?" (as the reporter reads it), and "/*" for
+// any other page: a new route fails here until the list has it.
+describe("the pages a web vitals report may name", () => {
+  it("are the router's production routes, and /* for any other", () => {
+    const patterns = ROUTER_PATHS.map((path) => path.replace(/\?(?=\/|$)/gu, ""));
+    expect([...WEB_VITAL_PAGES].sort()).toEqual([...new Set([...patterns, "/*"])].sort());
   });
 });
