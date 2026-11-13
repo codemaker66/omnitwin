@@ -63,6 +63,8 @@ export function TwinEnquiryModal({
   const [emailTouched, setEmailTouched] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  /** Counts Sends; the alert below is a new one each Send (review of #405, F1). */
+  const [sends, setSends] = useState(0);
   const emailRef = useRef<HTMLInputElement>(null);
   const messageRef = useRef<HTMLTextAreaElement>(null);
   const trapRef = useFocusTrap<HTMLDivElement>();
@@ -83,6 +85,7 @@ export function TwinEnquiryModal({
     (event: FormEvent): void => {
       event.preventDefault();
       setError(null);
+      setSends((count) => count + 1);
       if (!emailValid) {
         setEmailTouched(true);
         setError(TWIN_ENQUIRE_EMAIL_INVALID);
@@ -203,8 +206,11 @@ export function TwinEnquiryModal({
         </h2>
         <p className="vv-twin-enq-sub">{TWIN_ENQUIRE_SUBHEAD}</p>
 
+        {/* What Send found, spoken even when focus does not move (Enter in
+            the email field). A new alert each Send, so the same problem
+            found again is heard again (review of #405, F1). */}
         {error !== null && (
-          <div role="alert" className="vv-twin-enq-error">
+          <div key={sends} role="alert" className="vv-twin-enq-error">
             {error}
           </div>
         )}

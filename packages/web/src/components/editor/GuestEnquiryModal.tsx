@@ -264,6 +264,8 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [emailTouched, setEmailTouched] = useState(false);
+  /** Counts Sends; the alert below is a new one each Send (review of #405, F1). */
+  const [sends, setSends] = useState(0);
   // A view-only link, never the planner address (planner-qol E-10): /plan/<id>
   // is an anonymous plan's edit capability, so whoever was sent it could
   // change the layout the venue is reading.
@@ -314,6 +316,7 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
   const handleSubmit = useCallback(async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
     setError(null);
+    setSends((count) => count + 1);
 
     if (!emailValid) {
       setEmailTouched(true);
@@ -537,8 +540,11 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
           {layoutSummary}
         </div>
 
+        {/* What Send found, spoken even when focus does not move (Enter in
+            the email field). A new alert each Send, so the same problem
+            found again is heard again (review of #405, F1). */}
         {error !== null && (
-          <div role="alert" style={{
+          <div key={sends} role="alert" style={{
             padding: "10px 14px", borderRadius: 10, marginBottom: 16,
             background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)",
             fontSize: 13, color: "#f87171", lineHeight: 1.4,

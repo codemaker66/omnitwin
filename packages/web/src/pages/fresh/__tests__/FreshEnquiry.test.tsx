@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { GUEST_ENQUIRY_LATEST_EVENT_DATE, GUEST_ENQUIRY_LIMITS, TRADES_HALL_ENQUIRY_VENUE_SLUG } from "@omnitwin/types";
+import { pressEnterIn } from "../../../test/implicit-submit.js";
 
 const mocks = vi.hoisted(() => ({
   submitGuestEnquiry: vi.fn<(input: unknown) => Promise<unknown>>(),
@@ -139,6 +140,37 @@ describe("FreshEnquiry — what a keyboard and a screen reader are told", () => 
     const field = screen.getByRole("textbox", { name: /^Your email/u, description: problem });
     expect(document.activeElement, "focus after Send").toBe(field);
     expect(field.getAttribute("aria-invalid")).toBe("true");
+  });
+
+  // Review of #405, F1. Enter in the email field sends the form with focus
+  // already in that field, so moving focus there says nothing. The problem
+  // line is an alert when Send finds it, a new one each Send, so a repeated
+  // Enter is heard again.
+  it("says the email's problem when Enter in the field finds it, and again on the next Enter", () => {
+    render(<FreshEnquiry />);
+    const field = screen.getByLabelText<HTMLInputElement>("Your email");
+    pressEnterIn(field);
+    expect(mocks.submitGuestEnquiry).not.toHaveBeenCalled();
+    expect(document.activeElement, "focus stays in the field").toBe(field);
+    const first = screen.getByRole("alert");
+    expect(first.textContent).toBe(FRESH_ENQUIRY_EMAIL_REQUIRED);
+    pressEnterIn(field);
+    const again = screen.getByRole("alert");
+    expect(again.textContent).toBe(FRESH_ENQUIRY_EMAIL_REQUIRED);
+    expect(again, "a new alert, so a screen reader hears it again").not.toBe(first);
+  });
+
+  it("does not interrupt: the problem is no alert when the guest leaves the field, or types again after Send", () => {
+    render(<FreshEnquiry />);
+    const field = screen.getByLabelText<HTMLInputElement>("Your email");
+    fireEvent.blur(field);
+    expect(screen.getByText(FRESH_ENQUIRY_EMAIL_REQUIRED)).toBeTruthy();
+    expect(screen.queryByRole("alert"), "on leaving the field").toBeNull();
+    pressEnterIn(field);
+    expect(screen.getByRole("alert").textContent).toBe(FRESH_ENQUIRY_EMAIL_REQUIRED);
+    fireEvent.change(field, { target: { value: "jane@" } });
+    expect(screen.getByText(FRESH_ENQUIRY_EMAIL_INVALID)).toBeTruthy();
+    expect(screen.queryByRole("alert"), "while typing after Send").toBeNull();
   });
 
   it("takes focus to the confirmation once the enquiry is sent, named by the words on it", async () => {

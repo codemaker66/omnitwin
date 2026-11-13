@@ -22,6 +22,7 @@ vi.mock("../EditorBridge.js", async (importOriginal) => ({
 }));
 
 const { GuestEnquiryModal } = await import("../GuestEnquiryModal.js");
+import { pressEnterIn } from "../../../test/implicit-submit.js";
 import { useEditorStore } from "../../../stores/editor-store.js";
 import { usePlacementStore } from "../../../stores/placement-store.js";
 import { useRoomDimensionsStore } from "../../../stores/room-dimensions-store.js";
@@ -388,6 +389,48 @@ describe("GuestEnquiryModal takes no more than the API accepts", () => {
     fireEvent.click(screen.getByRole("button", { name: "Send to Events Team" }));
     expect(mocks.submit).not.toHaveBeenCalled();
     expect(guests.checkValidity()).toBe(false);
+  });
+});
+
+// Review of #405, F1. Enter in the email field sends the form with focus
+// already there, so only the alert says what Send found. It is a new alert
+// each Send, so a repeated Enter is heard again, for the email's problem and
+// the message's alike.
+describe("GuestEnquiryModal says again what each Send finds", () => {
+  const rooms: VenueDetail = {
+    id: "venue-said", name: "Said Rooms", slug: "said-rooms", address: "1 Example Street",
+    logoUrl: null, brandColour: null, spaces: [],
+  };
+
+  beforeEach(() => {
+    resetStores();
+    for (const mock of Object.values(mocks)) mock.mockReset();
+    mocks.getVenue.mockResolvedValue(rooms);
+    useEditorStore.setState({ configId: "cfg-1", venueId: rooms.id, isPublicPreview: false });
+  });
+  afterEach(() => {
+    cleanup();
+    resetStores();
+    useEditorStore.getState().reset();
+  });
+
+  it.each([
+    ["an email the API refuses", "jane@gmail.c", "", "We need a valid email so the events team can reach you"],
+    ["a message over the limit", "guest@example.test", "b".repeat(3214), "Messages can be up to 2,000 characters. Yours is 3,214."],
+  ])("says %s again on each Enter in the email field", async (_case, address, brief, problem) => {
+    render(<GuestEnquiryModal configId="cfg-1" onClose={() => { /* noop */ }} />);
+    await screen.findByText("Your details are shared only with the Said Rooms events team.");
+    const field = screen.getByLabelText<HTMLInputElement>(/email/iu);
+    fireEvent.change(field, { target: { value: address } });
+    if (brief !== "") fireEvent.change(screen.getByRole("textbox", { name: "Anything else?" }), { target: { value: brief } });
+    pressEnterIn(field);
+    const first = screen.getByRole("alert");
+    expect(first.textContent).toBe(problem);
+    pressEnterIn(field);
+    const again = screen.getByRole("alert");
+    expect(again.textContent).toBe(problem);
+    expect(again, "a new alert, so a screen reader hears it again").not.toBe(first);
+    expect(mocks.submit).not.toHaveBeenCalled();
   });
 });
 

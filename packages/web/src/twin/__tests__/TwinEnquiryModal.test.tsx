@@ -7,6 +7,8 @@ import {
   TRADES_HALL_ENQUIRY_VENUE_SLUG,
 } from "@omnitwin/types";
 import { TwinEnquiryModal } from "../TwinEnquiryModal.js";
+import { TWIN_ENQUIRE_EMAIL_INVALID } from "../twin-copy.js";
+import { pressEnterIn } from "../../test/implicit-submit.js";
 
 // -----------------------------------------------------------------------------
 // TwinEnquiryModal — the one-click, stay-in-the-twin enquiry (finding [2]).
@@ -69,6 +71,28 @@ describe("TwinEnquiryModal", () => {
     fireEvent.submit(screen.getByTestId("twin-enquiry-form"));
     expect(submitMock).not.toHaveBeenCalled();
     expect(screen.getByRole("alert")).toBeTruthy();
+  });
+
+  // Review of #405, F1. Enter in the email field sends the form with focus
+  // already there, so only the alert says what Send found. It is a new alert
+  // each Send, so a repeated Enter is heard again, for the email's problem and
+  // the message's alike.
+  it.each([
+    ["an email the API refuses", "jane@gmail.c", "", TWIN_ENQUIRE_EMAIL_INVALID],
+    ["a message over the limit", "guest@example.com", "b".repeat(3214), "Messages can be up to 2,000 characters. Yours is 3,214."],
+  ])("says %s again on each Enter in the email field", (_case, address, brief, problem) => {
+    renderModal();
+    const field = screen.getByLabelText<HTMLInputElement>(/^email/i);
+    fireEvent.change(field, { target: { value: address } });
+    if (brief !== "") fireEvent.change(screen.getByRole("textbox", { name: "Anything else?" }), { target: { value: brief } });
+    pressEnterIn(field);
+    const first = screen.getByRole("alert");
+    expect(first.textContent).toBe(problem);
+    pressEnterIn(field);
+    const again = screen.getByRole("alert");
+    expect(again.textContent).toBe(problem);
+    expect(again, "a new alert, so a screen reader hears it again").not.toBe(first);
+    expect(submitMock).not.toHaveBeenCalled();
   });
 
   // enquiries-crm-2: the API refuses a long name, telephone or message, or a

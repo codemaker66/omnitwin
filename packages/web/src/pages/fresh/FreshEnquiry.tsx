@@ -105,7 +105,8 @@ export function FreshEnquiry(): ReactElement {
   const [phone, setPhone] = useState("");
   const [emailTouched, setEmailTouched] = useState(false);
   const [sendState, setSendState] = useState<EnquirySendState>("idle");
-  /** Counts the sends that found no usable address; each takes focus to the field. */
+  /** Counts the sends that found no usable address since the guest last
+   *  edited it; each takes focus to the field and says the problem again. */
   const [emailFocusRequests, setEmailFocusRequests] = useState(0);
   const emailRef = useRef<HTMLInputElement>(null);
   const sentRef = useRef<HTMLDivElement>(null);
@@ -313,13 +314,24 @@ export function FreshEnquiry(): ReactElement {
               }
               onChange={(event) => {
                 setEmail(event.target.value);
+                setEmailFocusRequests(0);
               }}
               onBlur={() => {
                 setEmailTouched(true);
               }}
             />
+            {/* Spoken when Send finds it (review of #405, F1): Enter in this
+                field sends with focus already here, so moving focus says
+                nothing. Each Send makes a new alert, so a repeat is heard
+                again; once the guest edits, it is a plain line again and
+                their typing is not interrupted. */}
             {emailTouched && emailProblem !== null && (
-              <small className="fr-enq-problem" id="fr-enq-email-problem">
+              <small
+                key={emailFocusRequests}
+                className="fr-enq-problem"
+                id="fr-enq-email-problem"
+                role={emailFocusRequests > 0 ? "alert" : undefined}
+              >
                 {emailProblem}
               </small>
             )}
