@@ -3,7 +3,7 @@ import { moveDoorBlockersClear } from "../../lib/door-clear-actions.js";
 import { journeySteps, nextMove, type NextMove } from "../../lib/hud/journey.js";
 import type { RoomFacts } from "../../lib/hud/room-seals.js";
 import { postPlacementNotice } from "../../stores/placement-notice-store.js";
-import { usePlannerHudStore } from "../../stores/planner-hud-store.js";
+import { usePlanSent, usePlannerHudStore } from "../../stores/planner-hud-store.js";
 import { useSelectionStore } from "../../stores/selection-store.js";
 import { useHudFacts } from "./hud-facts.js";
 import { TickGlyph } from "./glyphs.js";
@@ -39,7 +39,7 @@ function carryOut(move: NextMove, facts: RoomFacts): void {
 /** The four steps, top centre: the current one underlined, those done ticked, the rest standing back. */
 export function Journey(): ReactElement {
   const facts = useHudFacts();
-  const sent = usePlannerHudStore((state) => state.sent);
+  const sent = usePlanSent();
   const sheet = usePlannerHudStore((state) => state.sheet);
   const eventKnown = facts.plane.guests !== null && facts.plane.guests > 0;
   const steps = useMemo(
@@ -78,7 +78,7 @@ export function Journey(): ReactElement {
  */
 export function NextMoveKey(): ReactElement {
   const facts = useHudFacts();
-  const sent = usePlannerHudStore((state) => state.sent);
+  const sent = usePlanSent();
   const sheet = usePlannerHudStore((state) => state.sheet);
   const move = useMemo(() => nextMove(facts, sent), [facts, sent]);
   return (

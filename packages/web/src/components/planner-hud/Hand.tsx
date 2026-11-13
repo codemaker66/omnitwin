@@ -92,6 +92,11 @@ function CardKey({ card, index, armed, locked, previewRef, onDragChange }: CardK
     };
     function onMove(move: PointerEvent): void {
       if (move.pointerId !== pointerId) return;
+      if (dragging && move.buttons === 0) {
+        // The button came up where no release was heard (outside the window): the card is put back.
+        onCancel(move);
+        return;
+      }
       if (!dragging && Math.hypot(move.clientX - startX, move.clientY - startY) >= DRAG_THRESHOLD_PX) {
         dragging = true;
         suppressClick.current = true;

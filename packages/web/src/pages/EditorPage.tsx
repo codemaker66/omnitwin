@@ -561,7 +561,7 @@ function PlannerChrome(): React.ReactElement {
  */
 const NO_2D_VIEW: PlannerWork = { continueIn2d: null };
 
-/** The HUD (13 Nov 2026: one room, five stations), loaded only behind `?chrome=hud`. */
+/** The HUD (13 Nov 2026: the hall as one picture, and one shelf), loaded only behind `?chrome=hud`. */
 const PlannerHud = lazy(async () => {
   const module = await import("../components/planner-hud/PlannerHud.js");
   return { default: module.PlannerHud };

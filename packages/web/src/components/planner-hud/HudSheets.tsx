@@ -1,4 +1,4 @@
-import { useState, type ReactElement } from "react";
+import { useLayoutEffect, useRef, useState, type ReactElement, type ReactNode } from "react";
 import { GuestEnquiryModal } from "../editor/GuestEnquiryModal.js";
 import { AutoFillPrompt } from "../editor/cockpit/AutoFillPrompt.js";
 import { SOUND_MODE_LINES } from "../planner-chrome/SoundControl.js";
@@ -20,7 +20,7 @@ import { captureEditorSession, isCurrentEditorSession, useEditorStore } from "..
 import { useLayoutTimelinePreviewStore } from "../../stores/layout-timeline-preview-store.js";
 import { usePlacementStore } from "../../stores/placement-store.js";
 import { usePlannerEventStore, type PlannerEventKind } from "../../stores/planner-event-store.js";
-import { usePlannerHudStore, type HudSheet } from "../../stores/planner-hud-store.js";
+import { usePlanSent, usePlannerHudStore, type HudSheet } from "../../stores/planner-hud-store.js";
 import { useToolStore } from "../../stores/tool-store.js";
 import { setWallsFull, useVisibilityStore } from "../../stores/visibility-store.js";
 import { useModelledGrandHall } from "../grand-hall/hall-space.js";
@@ -39,6 +39,31 @@ const TITLE_ID = "hud-sheet-title";
 
 function close(): void {
   usePlannerHudStore.getState().closeSheet();
+}
+
+/**
+ * A sheet's title, and the keyboard's way in and out of the sheet. A sheet
+ * opens a long way, in the page's order, from the step, card or key that
+ * opened it. So focus goes to its title as it opens: the next Tab is its first
+ * control, and a screen reader says where it is. When it shuts with focus
+ * still inside it (Escape, its own Close) focus goes back to what opened it;
+ * shut from outside (the step again, a card taken), focus stays where it is.
+ */
+function SheetTitle({ children }: { readonly children: ReactNode }): ReactElement {
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  useLayoutEffect(() => {
+    const title = titleRef.current;
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    title?.focus({ preventScroll: true });
+    return () => {
+      // Read before the sheet leaves the page: this runs while its title is still in it.
+      const sheet = title?.closest(".hud-sheet") ?? null;
+      if (sheet === null || opener === null || !sheet.contains(document.activeElement)) return;
+      // Given back once the screen has settled: the opener may be the primary key, which stands aside while its own sheet is open.
+      queueMicrotask(() => { if (opener.isConnected) opener.focus({ preventScroll: true }); });
+    };
+  }, []);
+  return <h2 ref={titleRef} className="hud-sheet__title" id={TITLE_ID} tabIndex={-1}>{children}</h2>;
 }
 
 // -- Your event --------------------------------------------------------------
@@ -60,7 +85,7 @@ function EventSheet(): ReactElement {
   };
   return (
     <>
-      <h2 className="hud-sheet__title" id={TITLE_ID}>{JOURNEY_LABELS.event}</h2>
+      <SheetTitle>{JOURNEY_LABELS.event}</SheetTitle>
       <p className="hud-sheet__lede">Two things shape the room: what the day is, and how many are coming. Both can change later.</p>
       <div className="hud-choices" role="radiogroup" aria-label="What are you planning?">
         {KINDS.map((option) => (
@@ -115,7 +140,7 @@ function LayoutSheet(): ReactElement {
   const [style, setStyle] = useState<AutoFillStyle>("dinner-rounds");
   return (
     <>
-      <h2 className="hud-sheet__title" id={TITLE_ID}>{JOURNEY_LABELS.layout}</h2>
+      <SheetTitle>{JOURNEY_LABELS.layout}</SheetTitle>
       <p className="hud-sheet__lede">Say how many, and the room is laid for you, clear of the doors. Nothing moves until you press, and Undo takes it all back.</p>
       <div className="hud-choices" role="radiogroup" aria-label="How to lay the room">
         {AUTO_FILL_STYLES.map((option) => {
@@ -199,7 +224,7 @@ function FinishingSheet(): ReactElement {
   const none = plane.tables === 0;
   return (
     <>
-      <h2 className="hud-sheet__title" id={TITLE_ID}>{JOURNEY_LABELS.finishing}</h2>
+      <SheetTitle>{JOURNEY_LABELS.finishing}</SheetTitle>
       <p className="hud-sheet__lede">
         {none ? "Once there are tables in the room, dress them all here at a stroke." : "Dress every table at a stroke. One table on its own is changed from its card, when you choose it."}
       </p>
@@ -229,7 +254,7 @@ function SendSheet(): ReactElement {
   const guestDraft = useEditorStore((state) => state.isPublicPreview);
   const hasPieces = usePlacementStore((state) => state.placedItems.length > 0);
   const previewing = useLayoutTimelinePreviewStore((state) => state.mode !== "inactive");
-  const sent = usePlannerHudStore((state) => state.sent);
+  const sent = usePlanSent();
   const [preparing, setPreparing] = useState(false);
   const [asking, setAsking] = useState(false);
 
@@ -245,7 +270,7 @@ function SendSheet(): ReactElement {
 
   return (
     <>
-      <h2 className="hud-sheet__title" id={TITLE_ID}>Send to the events team</h2>
+      <SheetTitle>Send to the events team</SheetTitle>
       {!hasPieces ? (
         <p className="hud-sheet__lede">There is nothing in the room yet. Set down a table, or lay the room out, and it can go to the events team.</p>
       ) : !guestDraft || configId === null ? (
@@ -262,10 +287,9 @@ function SendSheet(): ReactElement {
           {asking ? (
             <GuestEnquiryModal
               configId={configId}
-              onClose={() => {
-                setAsking(false);
-                usePlannerHudStore.getState().markSent();
-              }}
+              // Sent is said only when the enquiry has arrived: putting the form away unsent leaves the plan unsent.
+              onSubmitted={() => { usePlannerHudStore.getState().markSent(configId); }}
+              onClose={() => { setAsking(false); }}
             />
           ) : null}
         </>
@@ -297,7 +321,7 @@ function CataloguePiece({ item }: { readonly item: CatalogueItem }): ReactElemen
 function MoreSheet(): ReactElement {
   return (
     <>
-      <h2 className="hud-sheet__title" id={TITLE_ID}>Everything the hall has</h2>
+      <SheetTitle>Everything the hall has</SheetTitle>
       <p className="hud-sheet__lede">Take any piece, then click the floor to set it down.</p>
       {CATALOGUE_CATEGORIES.map((category) => {
         const pieces = getCatalogueByCategory(category).filter((item) => !isTableDressingApplicatorSlug(item.slug));
@@ -347,7 +371,7 @@ function ToolsSheet(): ReactElement {
   };
   return (
     <>
-      <h2 className="hud-sheet__title" id={TITLE_ID}>More tools</h2>
+      <SheetTitle>More tools</SheetTitle>
       <p className="hud-sheet__lede">The things used now and then.</p>
       <div className="hud-sheet__row">
         <button type="button" className="hud-key" onClick={() => { tool("measure"); }} title="Two clicks lay a tape, in metres (M)">Measure</button>

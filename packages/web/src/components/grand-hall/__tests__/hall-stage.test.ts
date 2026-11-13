@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { PerspectiveCamera, Vector3 } from "three";
+import { computeDistanceLimits } from "../../../lib/camera-rig.js";
 import { setLensShift } from "../../../lib/lens-shift.js";
-import { HALL_HALF_LENGTH, HALL_HALF_WIDTH, HALL_HEIGHT } from "../hall-spec.js";
+import { HALL_HALF_LENGTH, HALL_HALF_WIDTH, HALL_HEIGHT, HALL_LENGTH, HALL_WIDTH } from "../hall-spec.js";
 import {
-  hallStageFraming, mixLens, STAGE_CHANDELIER_CEILING_M, STAGE_NEAR_CUT_M, STAGE_PICTURE_RATIO, stageLens, stagePoseAt,
+  hallStageFraming, mixLens, PLAN_MAX_HEIGHT_M, STAGE_CHANDELIER_CEILING_M, STAGE_NEAR_CUT_M, STAGE_PICTURE_RATIO, stageLens, stagePoseAt,
   type HallStageFraming, type StageLens,
 } from "../hall-stage.js";
 
@@ -11,6 +12,11 @@ type Vec3 = readonly [number, number, number];
 
 /** Canvases the planner's stage is drawn on: laptops, desktops and a wide one, with the shelf's height already off. */
 const CANVASES: readonly (readonly [number, number])[] = [[1440, 748], [1920, 928], [1366, 616], [2560, 1288], [3440, 1288], [1180, 668]];
+/**
+ * Squarer windows (a 5:4 or 4:3 monitor, a browser kept narrow): the picture is a smaller share of a taller canvas,
+ * and Plan's long lens would stand its camera beyond the orbit's reach.
+ */
+const TALL_CANVASES: readonly (readonly [number, number])[] = [[1280, 872], [1600, 1048], [1366, 872], [1000, 800]];
 const SKY = 48;
 
 function cameraAt(width: number, height: number, position: Vec3, target: Vec3, lens: StageLens): PerspectiveCamera {
@@ -138,7 +144,7 @@ describe("the hall as a stage", () => {
     expect(stagePoseAt(framing, 2)).toEqual(levelled);
   });
 
-  it.each(CANVASES)("fits the plan's cut walls in the picture, under the night (%i x %i)", (width, height) => {
+  it.each([...CANVASES, ...TALL_CANVASES])("fits the plan's cut walls in the picture, under the night (%i x %i)", (width, height) => {
     const framing = framed(width, height);
     const camera = cameraAt(width, height, framing.plan.position, framing.plan.target, framing.plan.lens);
     // HALL_CUTS.plan, and the walls' thickness beyond the floor on each long side.
@@ -150,6 +156,24 @@ describe("the hall as a stage", () => {
     // The hall's middle stands at the picture's middle, not the canvas's.
     const middle = framing.picture.top + framing.picture.height / 2;
     expect(Math.abs(drawn(camera, width, height, [0, 0, 0]).y - middle)).toBeLessThan(1);
+  });
+
+  it.each([...CANVASES, ...TALL_CANVASES])("stands Plan's camera inside the orbit's reach (%i x %i)", (width, height) => {
+    const { plan } = framed(width, height);
+    // The reach the rig gives the orbit for a room of the hall's size: the orbit pulls a farther camera in to it.
+    const reach = computeDistanceLimits({ width: HALL_WIDTH, length: HALL_LENGTH, height: HALL_HEIGHT }).maxDistance;
+    expect(Math.hypot(plan.position[0] - plan.target[0], plan.position[1] - plan.target[1], plan.position[2] - plan.target[2])).toBeLessThan(reach - 1);
+    expect(plan.position[1]).toBeLessThanOrEqual(PLAN_MAX_HEIGHT_M);
+    // The long lens wherever it reaches, and a wider one only where it would not.
+    expect(plan.lens.fov).toBeGreaterThanOrEqual(36);
+    expect(plan.lens.fov).toBeLessThan(60);
+  });
+
+  it("keeps Plan's long lens on a laptop and widens it on a squarer window", () => {
+    expect(framed(1440, 748).plan.lens.fov).toBe(36);
+    expect(framed(1920, 928).plan.lens.fov).toBe(36);
+    expect(framed(1280, 872).plan.lens.fov).toBeGreaterThan(40);
+    expect(framed(1280, 872).plan.position[1]).toBe(PLAN_MAX_HEIGHT_M);
   });
 
   it("offers no stage on an upright canvas, a sliver, or none at all", () => {

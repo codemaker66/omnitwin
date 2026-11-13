@@ -65,7 +65,7 @@ export function ViewStation(): ReactElement {
         className="hud-glyph-key"
         aria-label="More tools"
         aria-expanded={toolsOpen}
-        title="Measure, draw, walls, sound and your account"
+        title={hall ? "Measure, draw, snapping and sound" : "Measure, draw, walls, snapping and sound"}
         onClick={() => { usePlannerHudStore.getState().toggleSheet("tools"); }}
       >
         <MoreGlyph />

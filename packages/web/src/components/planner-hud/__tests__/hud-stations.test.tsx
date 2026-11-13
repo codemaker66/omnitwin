@@ -9,6 +9,7 @@ import { cardParamsFor, stampSetup, type CardId, type CardParamsRequest } from "
 import { useCatalogueStore } from "../../../stores/catalogue-store.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
 import { useDoorClearSpaceStore } from "../../../stores/door-clear-space-store.js";
+import { useEditorStore } from "../../../stores/editor-store.js";
 import { usePlacementNoticeStore } from "../../../stores/placement-notice-store.js";
 import { usePlacementStore } from "../../../stores/placement-store.js";
 import { usePlannerEventStore } from "../../../stores/planner-event-store.js";
@@ -156,7 +157,8 @@ afterEach(() => {
   useCockpitStore.getState().setPlannedGuestCount(null);
   useDoorClearSpaceStore.getState().setRoomSpaces(null);
   usePlacementNoticeStore.getState().dismiss();
-  usePlannerHudStore.getState().reset();
+  usePlannerHudStore.setState({ sheet: null, sentLayoutId: null });
+  useEditorStore.setState({ configId: null });
   usePlannerEventStore.getState().setEventKind(null);
   setPlannerFeaturesForTesting(null);
   setPlannerChromeFeatures({});
@@ -474,11 +476,34 @@ describe("the one primary key", () => {
     renderHud();
     setGuests(30);
     setPlaced(rounds(3));
-    act(() => { usePlannerHudStore.getState().markSent(); });
+    act(() => {
+      useEditorStore.setState({ configId: "layout-a" });
+      usePlannerHudStore.getState().markSent("layout-a");
+    });
     expect(primaryKey().textContent).toBe("Sent to the events team");
     expect(primaryKey().getAttribute("data-move")).toBe("sent");
     fireEvent.click(primaryKey());
     expect(usePlannerHudStore.getState().sheet).toBe("send");
+  });
+
+  it("does not call another layout sent because one was", () => {
+    renderHud();
+    setGuests(30);
+    setPlaced(rounds(3));
+    act(() => {
+      useEditorStore.setState({ configId: "layout-a" });
+      usePlannerHudStore.getState().markSent("layout-a");
+    });
+    expect(stepKey("send").getAttribute("data-state")).toBe("done");
+    // Another layout is opened on the same page (the planner asks a new layout its guests afresh): it has gone nowhere.
+    act(() => { useEditorStore.setState({ configId: "layout-b" }); });
+    setGuests(30);
+    expect(primaryKey().getAttribute("data-move")).toBe("send");
+    expect(stepKey("send").getAttribute("data-state")).toBe("current");
+    // And the one that went is still the one that went.
+    act(() => { useEditorStore.setState({ configId: "layout-a" }); });
+    setGuests(30);
+    expect(primaryKey().getAttribute("data-move")).toBe("sent");
   });
 });
 
@@ -554,6 +579,38 @@ describe("the journey and its sheets", () => {
     fireEvent.click(stepKey("event"));
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("hands the keyboard into a sheet as it opens, and back to what opened it when Escape shuts it", async () => {
+    renderHud();
+    const step = stepKey("event");
+    step.focus();
+    fireEvent.click(step);
+    const sheet = screen.getByRole("dialog", { name: "Your event" });
+    expect(document.activeElement).toBe(within(sheet).getByRole("heading", { name: "Your event" }));
+    press("Escape");
+    await waitFor(() => { expect(document.activeElement).toBe(step); });
+  });
+
+  it("leaves focus where it is when a sheet is shut from outside it", () => {
+    renderHud();
+    const step = stepKey("finishing");
+    step.focus();
+    fireEvent.click(step);
+    expect(screen.getByRole("dialog", { name: "Finishing touches" })).toBeTruthy();
+    // The same step again shuts it: the press put focus on the step, not in the sheet.
+    step.focus();
+    fireEvent.click(step);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.activeElement).toBe(step);
+  });
+
+  it("closes the sheet as the screen leaves, so its next showing opens with the shelf down", () => {
+    renderHud();
+    fireEvent.click(stepKey("event"));
+    expect(usePlannerHudStore.getState().sheet).toBe("event");
+    cleanup();
+    expect(usePlannerHudStore.getState().sheet).toBeNull();
   });
 
   it("lets Escape through to nothing when no sheet is open", () => {

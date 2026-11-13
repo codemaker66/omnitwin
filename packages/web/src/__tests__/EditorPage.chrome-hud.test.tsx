@@ -91,7 +91,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   window.localStorage.removeItem(PLANNER_CHROME_STORAGE_KEY);
-  usePlannerHudStore.getState().reset();
+  usePlannerHudStore.setState({ sheet: null, sentLayoutId: null });
   setPlannerFeaturesForTesting(null);
   setPlannerChromeFeatures({});
 });

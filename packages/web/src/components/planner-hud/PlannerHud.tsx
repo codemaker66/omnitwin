@@ -10,9 +10,8 @@ import { HudFrame } from "./HudFrame.js";
 import { HudSheets } from "./HudSheets.js";
 
 // ---------------------------------------------------------------------------
-// The planner in the HUD (docs/superpowers/specs/2026-11-13-planner-hud-design.md;
-// its look, docs/superpowers/specs/2026-11-13-planner-hud-design.md), loaded only behind
-// `?chrome=hud` until it becomes the default.
+// The planner in the HUD (docs/superpowers/specs/2026-11-13-planner-hud-design.md),
+// loaded only behind `?chrome=hud` until it becomes the default.
 //
 // The layout keeps syncing, saving and its live room exactly as before. The
 // plaque is the slate the second chrome already built, whole: the event's name

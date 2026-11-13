@@ -14,6 +14,8 @@
 //   - A wheel, a drag or a pan lets go. The camera is tilted back at the
 //     middle of the floor through the lens that shows the same picture, in
 //     that one frame, so the hand finds an ordinary orbit and nothing jumps.
+//     A click of the right button is not a drag: it puts the card in hand
+//     down (lib/right-click-put-down.ts), and the picture does not stir.
 //
 // The orbit's own limits are left alone but one: level is past its lowest
 // angle, so that limit is opened while the stage is held and closed again as
@@ -26,6 +28,7 @@ import { PerspectiveCamera, type Vector3 } from "three";
 import { MAX_POLAR_ANGLE } from "../../lib/camera-rig.js";
 import { clearLensShift, lensShift, setLensShift } from "../../lib/lens-shift.js";
 import { prefersReducedMotion } from "../../lib/reduced-motion.js";
+import { DRAG_THRESHOLD_PX, screenDistance } from "../../lib/selection.js";
 import { isSpringSettled, SPRING_PRESETS, stepSpring, type SpringState } from "../../lib/springs.js";
 import { useBookmarkStore } from "../../stores/bookmark-store.js";
 import { useCockpitStore } from "../../stores/cockpit-store.js";
@@ -67,6 +70,8 @@ const LEVEL_POLAR = Math.PI / 2 + 1e-4;
 const IN_PLACE_M = 1e-3;
 /** The longest step the squaring takes in one frame, seconds. */
 const MAX_STEP_S = 1 / 30;
+/** MouseEvent.buttons for the buttons that turn or slide the camera: the right and the middle. */
+const CAMERA_BUTTONS = 2 | 4;
 
 function near(point: Vector3, at: Vec3): boolean {
   return Math.abs(point.x - at[0]) < IN_PLACE_M && Math.abs(point.y - at[1]) < IN_PLACE_M && Math.abs(point.z - at[2]) < IN_PLACE_M;
@@ -124,8 +129,11 @@ function hold(state: StageState, camera: PerspectiveCamera, orbit: Orbit, stage:
 function letGo(state: StageState, camera: PerspectiveCamera, orbit: Orbit): void {
   const stage = state.framing;
   if (holding(state.mode) && stage !== null) {
-    // Level still, the camera may have been panned (the arrow keys move it and what it looks at together): keep that move.
-    if (Math.abs(orbit.target.y - camera.position.y) < IN_PLACE_M) {
+    // Squaring up, the camera is part-way level; held, it is level, and may have been panned (the arrow keys move it
+    // and what it looks at together). Either way it is aimed at the floor again from where it stands, keeping any such
+    // move: through the tilted lens, that is the picture it was showing. A camera something else has turned keeps its aim.
+    const level = Math.abs(orbit.target.y - camera.position.y) < IN_PLACE_M;
+    if (state.mode === "squaring" || level) {
       const dx = camera.position.x - stage.position[0];
       const dz = camera.position.z - stage.position[2];
       setPose(camera, orbit, null, [stage.freeTarget[0] + dx, stage.freeTarget[1], stage.freeTarget[2] + dz]);
@@ -163,12 +171,37 @@ export function HallStage(): null {
       if (hall.activePreset !== null && !useCockpitStore.getState().walkMode) hall.setActivePreset(null);
     };
     const onWheel = (event: WheelEvent): void => { if (event.target === canvas) hand(); };
+
+    // A press of a button that turns or slides the camera is not yet a hand on it: a right click with no drag puts
+    // the card in hand down, and the picture must not stir for that. It is a hand once it has travelled a drag's
+    // distance. Until then the orbit is kept from following it, so the held picture does not turn by a hair; the
+    // orbit saw the press begin, and catches up from there once the drag is let through.
+    let press: { readonly pointerId: number; readonly x: number; readonly y: number } | null = null;
     const onPointerDown = (event: PointerEvent): void => {
       // A finger is the touch arbiter's to read, and the left button selects.
-      if (event.target === canvas && event.pointerType !== "touch" && event.button !== 0) hand();
+      press = event.target === canvas && event.pointerType !== "touch" && event.button !== 0
+        ? { pointerId: event.pointerId, x: event.clientX, y: event.clientY }
+        : null;
+    };
+    const onPointerMove = (event: PointerEvent): void => {
+      if (press === null || event.pointerId !== press.pointerId) return;
+      // The button came up where no release was heard (outside the window).
+      if ((event.buttons & CAMERA_BUTTONS) === 0) { press = null; return; }
+      if (screenDistance(press.x, press.y, event.clientX, event.clientY) <= DRAG_THRESHOLD_PX) {
+        if (holding(own.mode)) event.stopPropagation();
+        return;
+      }
+      press = null;
+      hand();
+    };
+    const onPointerEnd = (event: PointerEvent): void => {
+      if (press !== null && event.pointerId === press.pointerId) press = null;
     };
     window.addEventListener("wheel", onWheel, { capture: true, passive: true });
     window.addEventListener("pointerdown", onPointerDown, { capture: true });
+    window.addEventListener("pointermove", onPointerMove, { capture: true });
+    window.addEventListener("pointerup", onPointerEnd, { capture: true });
+    window.addEventListener("pointercancel", onPointerEnd, { capture: true });
     const offTouch = useTouchGestureStore.subscribe((next, previous) => {
       if ((next.mode === "orbit" || next.mode === "two") && next.mode !== previous.mode) hand();
     });
@@ -226,6 +259,8 @@ export function HallStage(): null {
       // No stage on this canvas (held upright, say): an ordinary orbit through the plain lens.
       if (own.mode !== "walk") letGo(own, camera, orbit);
       own.framing = null;
+      // A glide still under way lands through the plain lens too.
+      own.trip = null;
       if (!walking) setLens(camera, PLAIN_LENS);
     } else {
       const standing = holding(own.mode) || own.mode === "arriving";
@@ -246,6 +281,9 @@ export function HallStage(): null {
     return () => {
       window.removeEventListener("wheel", onWheel, { capture: true });
       window.removeEventListener("pointerdown", onPointerDown, { capture: true });
+      window.removeEventListener("pointermove", onPointerMove, { capture: true });
+      window.removeEventListener("pointerup", onPointerEnd, { capture: true });
+      window.removeEventListener("pointercancel", onPointerEnd, { capture: true });
       offTouch();
       offHall();
       offGlide();
@@ -282,6 +320,10 @@ export function HallStage(): null {
       if (near(camera.position, carried.toPosition)) setLens(camera, carried.to);
     }
     if (glide !== null || stage === null) return;
+
+    // The director calls the stage "arriving" before its glide begins, and leaves Room alone until the stage is "off"
+    // again. With no glide under way and nothing held or arriving here, nobody is on the way: say so, or Room is dead.
+    if (own.mode === "free" || own.mode === "walk") useHallViewStore.getState().setStagePhase("off");
 
     if (own.walkEnded) {
       own.walkEnded = false;

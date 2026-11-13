@@ -758,6 +758,11 @@ body.hud-dragging-card * {
   line-height: var(--hud-xl-lh);
 }
 
+/* The title takes focus as its sheet opens, to hand the keyboard on (HudSheets.tsx); it is not a control, so it wears no ring. */
+.hud-root .hud-sheet__title:focus-visible {
+  outline: none;
+}
+
 .hud-sheet__lede {
   max-width: 60ch;
   margin: 0;
@@ -1015,9 +1020,10 @@ body.hud-dragging-card * {
     --hud-shelf-areas: "status words" "cards cards" "act act";
   }
 
-  /* The top bar: the name, and the step you are on. */
+  /* The top bar: the name, the step you are on, and the way to the tools. */
   .hud-bar {
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    column-gap: var(--hud-gap-wide);
     height: calc(var(--hud-bar-h) + env(safe-area-inset-top, 0px));
     padding: env(safe-area-inset-top, 0px) max(var(--hud-gutter), env(safe-area-inset-right, 0px)) 0 max(var(--hud-gutter), env(safe-area-inset-left, 0px));
   }
@@ -1039,7 +1045,9 @@ body.hud-dragging-card * {
     display: none;
   }
 
-  .hud-view {
+  /* How the room is looked at and lit stays with wider screens. The tools do not: the sound's only setting is among them. */
+  .hud-view__switch,
+  .hud-view > .hud-option {
     display: none;
   }
 

@@ -885,6 +885,9 @@ export function SelectionSystem(): null {
     }
 
     function openCameraReferenceDraft(clientX: number, clientY: number): void {
+      // Only the first chrome mounts the composer that names a viewpoint and puts its draft away (App.tsx). Under
+      // the others an opened draft would be shown by nothing, and would hold the camera's keys until the room changed.
+      if (plannerChromeRequested(window.location.search) !== "v1") return;
       if (useMarkupStore.getState().active) return;
       if (useBookmarkStore.getState().activeReferenceId !== null) return;
       if (useCatalogueStore.getState().selectedItemId !== null) return;
@@ -1296,8 +1299,8 @@ export function SelectionSystem(): null {
       const catItem = getCatalogueItem(item.catalogueItemId);
       if (catItem === undefined) return;
 
-      if (isDiningTableItem(catItem) && catItem.tableShape !== null && plannerChromeRequested(window.location.search) === "v2") {
-        // v2 mounts no chair dialog: the table is selected, and its caption holds its seats (QoL B-01).
+      if (isDiningTableItem(catItem) && catItem.tableShape !== null && plannerChromeRequested(window.location.search) !== "v1") {
+        // v2 and the HUD mount no chair dialog: the table is selected, and the chrome holds its seats (v2's caption, QoL B-01; the HUD's shelf).
         useSelectionStore.getState().select(placedId);
         invalidateRef.current();
       } else if (isDiningTableItem(catItem) && catItem.tableShape !== null) {

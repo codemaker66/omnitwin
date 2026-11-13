@@ -8,8 +8,8 @@
 // ---------------------------------------------------------------------------
 
 //
-// `?chrome=hud` is the third: one screen of five stations with the furniture
-// as a hand of cards (docs/superpowers/specs/2026-11-13-planner-hud-design.md),
+// `?chrome=hud` is the third: the hall as one picture over one shelf, with the
+// furniture as a hand of cards (docs/superpowers/specs/2026-11-13-planner-hud-design.md),
 // the redesign Blake asked for on 13 Nov 2026. It becomes the default by the
 // same one-line change.
 // ---------------------------------------------------------------------------

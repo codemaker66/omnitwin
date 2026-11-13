@@ -47,8 +47,17 @@ const FOOT_LIP_M = 0.03;
 /** Plan: the walls are cut here (HALL_CUTS.plan), and the hall keeps this much dark round it. */
 const PLAN_WALL_TOP_M = 3.12;
 const PLAN_MARGIN_M = 2.2;
-/** Plan's lens: long, so the cut walls barely lean, and near enough for the orbit's reach. */
+/** Plan's lens: long, so the cut walls barely lean. */
 const PLAN_FOV_DEG = 36;
+/**
+ * Plan's camera stands no higher than this. The orbit holds every camera to
+ * its own reach (lib/camera-rig.ts, computeDistanceLimits: 1.6 times the
+ * hall's length, 33.8 m), and a camera asked to stand beyond it is pulled in
+ * short of where its glide was going. Where the picture is a small share of a
+ * tall canvas the long lens would ask for more height than that, so the lens
+ * widens instead and the hall still fills the picture.
+ */
+export const PLAN_MAX_HEIGHT_M = 32;
 /** Plan looks from just inside the orbit's steepest angle (MIN_POLAR_ANGLE, 0.1). */
 const PLAN_LEAN = Math.tan(0.107);
 
@@ -105,10 +114,16 @@ export function hallStageFraming(widthPx: number, heightPx: number, skyPx: numbe
 
   // Plan: a long lens whose axis stands at the picture's centre on the canvas
   // (half the night's height below the canvas's own centre), from as high as
-  // the cut walls' outline needs to fill the picture's height.
+  // the cut walls' outline needs to fill the picture's height, or from the
+  // orbit's reach through a wider lens where that is nearer.
   const night = heightPx - pictureHeight;
-  const planTan = 2 * Math.tan((PLAN_FOV_DEG * Math.PI) / 360) * (pictureHeight / heightPx);
-  const planHeight = PLAN_WALL_TOP_M + (HALL_WIDTH + 2 * PLAN_MARGIN_M) / planTan;
+  const share = pictureHeight / heightPx;
+  const planSpan = HALL_WIDTH + 2 * PLAN_MARGIN_M;
+  const longLensHeight = PLAN_WALL_TOP_M + planSpan / (2 * Math.tan((PLAN_FOV_DEG * Math.PI) / 360) * share);
+  const planHeight = Math.min(longLensHeight, PLAN_MAX_HEIGHT_M);
+  const planFov = longLensHeight <= PLAN_MAX_HEIGHT_M
+    ? PLAN_FOV_DEG
+    : (2 * Math.atan(planSpan / (2 * share * (planHeight - PLAN_WALL_TOP_M))) * 180) / Math.PI;
 
   return {
     position: [0, height, z],
@@ -121,7 +136,7 @@ export function hallStageFraming(widthPx: number, heightPx: number, skyPx: numbe
     plan: {
       position: [0, planHeight, planHeight * PLAN_LEAN],
       target: [0, 0, 0],
-      lens: { fov: PLAN_FOV_DEG, shiftY: -night / (2 * heightPx) },
+      lens: { fov: planFov, shiftY: -night / (2 * heightPx) },
     },
   };
 }

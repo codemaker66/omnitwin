@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactElement, type ReactNode } from "react";
 import { setPlannerChromeFeatures, type PlannerFeatureOverrides } from "../../lib/planner-features.js";
 import { useHallViewStore } from "../../stores/hall-view-store.js";
+import { usePlannerHudStore } from "../../stores/planner-hud-store.js";
 import { FirstOpen, useFirstOpenShowing } from "./FirstOpen.js";
 import { Hand } from "./Hand.js";
 import { HudFactsProvider } from "./hud-facts.js";
@@ -71,6 +72,8 @@ export function HudFrame({ room, plaque, eventGuests, sheets }: HudFrameProps): 
     return () => {
       setPlannerChromeFeatures({});
       useHallViewStore.getState().setStage(null);
+      // The screen's next showing opens with the shelf down.
+      usePlannerHudStore.getState().closeSheet();
     };
   }, []);
   useHudSound();
