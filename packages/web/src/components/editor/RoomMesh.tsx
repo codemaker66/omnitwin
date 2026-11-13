@@ -1,7 +1,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
-import { Shape, DoubleSide, BufferGeometry, Float32BufferAttribute, type Group } from "three";
+import { DoubleSide, BufferGeometry, Float32BufferAttribute, type Group } from "three";
 import { raycastDescendants, skipDescendantRaycast } from "../../lib/raycast-gate.js";
+import { roomOutlineShape } from "../../lib/room-outline-shape.js";
 import { toRenderSpace } from "../../constants/scale.js";
 import type { RoomGeometry, RoomFeature } from "../../data/room-geometries.js";
 import { FLOOR_COLOR, GRID_COLOR, DOME_COLOR, WALL_COLOR } from "../../constants/colors.js";
@@ -41,21 +42,6 @@ export function shouldRenderGrandHallOrnaments({
 
 export function shouldUseLeanPlannerRoomShell(viewportWidth: number): boolean {
   return viewportWidth < DETAILED_ROOM_SHELL_MIN_VIEWPORT_WIDTH;
-}
-
-function polygonToShape(polygon: readonly (readonly [number, number])[]): Shape {
-  const shape = new Shape();
-  const first = polygon[0];
-  if (first === undefined) return shape;
-  shape.moveTo(toRenderSpace(first[0]), toRenderSpace(first[1]));
-  for (let i = 1; i < polygon.length; i++) {
-    const pt = polygon[i];
-    if (pt !== undefined) {
-      shape.lineTo(toRenderSpace(pt[0]), toRenderSpace(pt[1]));
-    }
-  }
-  shape.closePath();
-  return shape;
 }
 
 // ---------------------------------------------------------------------------
@@ -163,7 +149,7 @@ function CameraWallDriver({ active }: { readonly active: boolean }): null {
 // ---------------------------------------------------------------------------
 
 function FeatureMesh({ feature }: { readonly feature: RoomFeature }): React.ReactElement {
-  const shape = useMemo(() => polygonToShape(feature.polygon), [feature.polygon]);
+  const shape = useMemo(() => roomOutlineShape(feature.polygon), [feature.polygon]);
   return (
     <mesh
       name={`feature-${feature.label.toLowerCase().replace(/\s+/g, "-")}`}
@@ -312,7 +298,7 @@ export function shouldUseRoomMeshLeanShell(
 export function RoomMesh({ geometry, variant = "generic", detail = "auto", includeLighting = true }: RoomMeshProps): React.ReactElement {
   const { size } = useThree();
   const cameraInteractionActive = useCockpitStore((state) => state.cameraInteractionActive);
-  const floorShape = useMemo(() => polygonToShape(geometry.wallPolygon), [geometry.wallPolygon]);
+  const floorShape = useMemo(() => roomOutlineShape(geometry.wallPolygon), [geometry.wallPolygon]);
   const walls = useMemo(() => computeWallSegments(geometry.wallPolygon), [geometry.wallPolygon]);
   const bounds = useMemo(() => computeRenderBounds(geometry.wallPolygon), [geometry.wallPolygon]);
   const { ceilingHeight } = geometry;
