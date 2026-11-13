@@ -90,8 +90,10 @@ const TERMS_UPDATED = { text: "11 November 2026", iso: "2026-11-11" } as const;
 
 /** The accessibility statement's own date: it changed on 8 November, when it
  *  listed the planner's single-key shortcuts and the hints cut off in its
- *  "More planner tools" panel (v1.0 final review). */
-const ACCESSIBILITY_UPDATED = { text: "8 November 2026", iso: "2026-11-08" } as const;
+ *  "More planner tools" panel (v1.0 final review), and on 13 November, when
+ *  those hints were drawn outside the panel, read in full, and left the list
+ *  (planner lane E, E23). */
+const ACCESSIBILITY_UPDATED = { text: "13 November 2026", iso: "2026-11-13" } as const;
 
 /** The privacy policy's own date: it changed when the dietary note gained its
  *  retention rule (fix-first item 18) and, the same day, the choice to have
@@ -948,13 +950,6 @@ const ACCESSIBILITY: LegalDocument = {
               term: "Single-key shortcuts in the planner",
               detail:
                 "With a keyboard, the planner acts on single letter keys pressed on their own, such as V to select and A to add furniture. There is no way to turn these shortcuts off, which fails WCAG success criterion 2.1.4, Character Key Shortcuts. That can get in the way of people who use speech input, or who press keys by accident.",
-            },
-            // The panel is 238px wide and scrolls (ReferenceViewer.css); each
-            // hint opens 58px to the right of its tool (VerticalToolbox.tsx).
-            {
-              term: "Hints in the planner's tools panel",
-              detail:
-                "On a computer, the planner keeps some of its tools in a panel behind a button marked with three dots, named \"More planner tools\" for screen readers. The hint that appears beside each tool in that panel is cut off at the panel's edge, so it cannot be read in full.",
             },
             {
               term: "Untested areas",

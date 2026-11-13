@@ -79,12 +79,15 @@ describe("every document", () => {
   it.each(TYPES)("shows a machine-readable last-updated date — %s", (type) => {
     render(<LegalPage type={type} />);
     const time = document.querySelector("time");
-    // Each document carries its own date: the privacy policy and the
-    // accessibility statement changed in the v1.0 final review; the terms
-    // changed on 11 November, when the Grand Hall's dimensions became measured.
+    // Each document carries its own date: the privacy policy changed in the
+    // v1.0 final review; the terms on 11 November, when the Grand Hall's
+    // dimensions became measured; the accessibility statement on 13 November,
+    // when the tool hints its More panel cut off left its known problems.
     const expected = type === "terms"
       ? { iso: "2026-11-11", text: "11 November 2026" }
-      : { iso: "2026-11-08", text: "8 November 2026" };
+      : type === "accessibility"
+        ? { iso: "2026-11-13", text: "13 November 2026" }
+        : { iso: "2026-11-08", text: "8 November 2026" };
     expect(time?.getAttribute("datetime")).toBe(expected.iso);
     expect(time?.textContent).toBe(expected.text);
   });
@@ -352,15 +355,15 @@ describe("the accessibility statement", () => {
     expect(text).toContain("4.5:1");
   });
 
-  it("lists the planner's single-key shortcuts and its cut-off tool hints as known problems", () => {
+  it("lists the planner's single-key shortcuts as a known problem, and no longer the tool hints its panel cut off", () => {
     render(<LegalPage type="accessibility" />);
     const known = document.getElementById("known-problems")?.textContent ?? "";
     expect(known).toContain("Single-key shortcuts in the planner");
     expect(known).toContain("WCAG success criterion 2.1.4, Character Key Shortcuts");
-    expect(known).toContain("Hints in the planner's tools panel");
-    expect(known).toContain("is cut off at the panel's edge");
-    // On screen the button is a three-dot icon; its name is for screen readers.
-    expect(known).toContain("a button marked with three dots");
+    // E23 draws each hint outside the More planner tools panel, where it reads
+    // in full (e2e: "desktop keeps keyboard shortcut hints").
+    expect(known).not.toContain("Hints in the planner's tools panel");
+    expect(known).not.toContain("cut off");
   });
 
   it("commits to a response time for access problems", () => {

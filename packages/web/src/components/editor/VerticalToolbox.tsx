@@ -53,6 +53,8 @@ import { FloatingWidgetFrame, type FloatingWidgetPlacement } from "../shared/Flo
 import { isLayoutTimelineMutationLocked } from "../../lib/layout-timeline-preview-lock.js";
 import { countLabel } from "../../lib/count-label.js";
 import { plannerFeatureEnabled } from "../../lib/planner-features.js";
+import { focusedByKeyboard } from "../../lib/focused-by-keyboard.js";
+import { placeToolCard, toolScrolledOut, type ToolCardPlacement } from "../../lib/tool-card-placement.js";
 
 const LazyAuthModal = lazy(() =>
   import("./AuthModal.js").then((m) => ({ default: m.AuthModal })),
@@ -800,7 +802,15 @@ if (typeof document !== "undefined" && document.getElementById(ONBOARDING_ANIM_I
 
 const ONBOARDING_KEY = "omni-onboarding-dismissed";
 
-const TOOLTIP_ANIM_ID = "omni-tooltip-anims-v2";
+/**
+ * One tool's card at a time, as the planner chrome's tooltips (one host). The
+ * cards share a place beside the toolbar, so a card that opens takes the last
+ * one down at once, rather than over its fading exit (Tab runs through tools).
+ */
+let closeShownToolCard: (() => void) | null = null;
+
+// v3 adds the -left keyframes, for a card that opens to the left of its toolbar.
+const TOOLTIP_ANIM_ID = "omni-tooltip-anims-v3";
 if (typeof document !== "undefined" && document.getElementById(TOOLTIP_ANIM_ID) === null) {
   const s = document.createElement("style");
   s.id = TOOLTIP_ANIM_ID;
@@ -825,6 +835,20 @@ if (typeof document !== "undefined" && document.getElementById(TOOLTIP_ANIM_ID) 
     }
     @keyframes omni-tt-arrow {
       0% { opacity: 0; transform: translateY(-50%) translateX(-4px); }
+      100% { opacity: 1; transform: translateY(-50%) translateX(0); }
+    }
+    @keyframes omni-tt-enter-left {
+      0% { opacity: 0; transform: translateX(16px) scale(0.85); filter: blur(6px); }
+      60% { transform: translateX(-6px) scale(1.03); filter: blur(0); }
+      100% { opacity: 1; transform: translateX(0) scale(1); }
+    }
+    @keyframes omni-tt-pop-out-left {
+      0% { opacity: 1; transform: translateX(0) scale(1); filter: blur(0); }
+      40% { transform: translateX(-4px) scale(1.08); }
+      100% { opacity: 0; transform: translateX(12px) scale(0.7); filter: blur(6px); }
+    }
+    @keyframes omni-tt-arrow-left {
+      0% { opacity: 0; transform: translateY(-50%) translateX(4px); }
       100% { opacity: 1; transform: translateY(-50%) translateX(0); }
     }
     @keyframes omni-tt-badge {
@@ -858,12 +882,13 @@ interface ToolBtnProps {
 /**
  * The Walls button's hint, as a click on a wall behaves: with `wallClickAlt`
  * (decision 4) only an Alt-click hides one, Option-click on a Mac, whose
- * browser says "Macintosh"; without it any click does.
+ * browser says "Macintosh"; without it any click does. It follows the
+ * button's name, "Show All Walls", so it does not say it again.
  */
 function wallsHint(): string {
-  if (!plannerFeatureEnabled("wallClickAlt")) return "Show all walls. Click a wall to toggle it.";
+  if (!plannerFeatureEnabled("wallClickAlt")) return "Click a wall to toggle it.";
   const agent = typeof navigator === "undefined" ? "" : navigator.userAgent;
-  return `Show all walls. ${/Macintosh|Mac OS X/u.test(agent) ? "Option" : "Alt"}-click a wall to hide it.`;
+  return `${/Macintosh|Mac OS X/u.test(agent) ? "Option" : "Alt"}-click a wall to hide it.`;
 }
 
 function ToolBtn({
@@ -884,11 +909,25 @@ function ToolBtn({
   const [exiting, setExiting] = useState(false);
   const enterTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const exitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The card's words, its shortcut with them, are the button's description for
+  // a screen reader. Their span is hidden, so a reader's browse mode or swipe
+  // never lands on it: the words are said once, with the button.
+  const descriptionId = useId();
+  const spoken = shortcut !== undefined && showShortcut ? `${description} Shortcut: ${shortcut}.` : description;
 
-  const onEnter = (): void => {
+  const cancelExit = (): void => {
     if (exitTimer.current !== null) { clearTimeout(exitTimer.current); exitTimer.current = null; }
     setExiting(false);
+  };
+  const onEnter = (): void => {
+    cancelExit();
     enterTimer.current = setTimeout(() => { setShowTooltip(true); }, 200);
+  };
+  const onFocus = (event: React.FocusEvent<HTMLButtonElement>): void => {
+    // Keyboard focus shows the card at once; a click's focus does not.
+    if (!focusedByKeyboard(event.currentTarget)) return;
+    cancelExit();
+    setShowTooltip(true);
   };
   const dismiss = (): void => {
     if (enterTimer.current !== null) { clearTimeout(enterTimer.current); enterTimer.current = null; }
@@ -897,6 +936,64 @@ function ToolBtn({
     exitTimer.current = setTimeout(() => { setShowTooltip(false); setExiting(false); }, 250);
   };
   const onLeave = (): void => { dismiss(); };
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
+  const dismissRef = useRef(dismiss);
+  dismissRef.current = dismiss;
+  const closeNow = (): void => {
+    if (enterTimer.current !== null) { clearTimeout(enterTimer.current); enterTimer.current = null; }
+    if (exitTimer.current !== null) { clearTimeout(exitTimer.current); exitTimer.current = null; }
+    setShowTooltip(false);
+    setExiting(false);
+  };
+  const closeNowRef = useRef(closeNow);
+  closeNowRef.current = closeNow;
+  // The card is the first layer of the planner's one Escape order: Escape takes
+  // it down and does nothing else (WCAG 1.4.13).
+  useEscapeLayer("tooltip", { open: showTooltip && !exiting, onEscape: dismiss, element: cardRef });
+
+  // The card is drawn in a portal, fixed to the viewport, so the toolbar's own
+  // scrolling never clips it (it did, in the More planner tools panel). It is
+  // placed beside the toolbar before it paints, follows its tool while the
+  // toolbar scrolls or the window resizes, and goes when its tool scrolls out.
+  const cardOpen = showTooltip && !disabled && tooltipEnabled;
+  const [placement, setPlacement] = useState<ToolCardPlacement | null>(null);
+  useLayoutEffect(() => {
+    if (!cardOpen) return;
+    const closeMine = (): void => { closeNowRef.current(); };
+    closeShownToolCard?.();
+    closeShownToolCard = closeMine;
+    const place = (): void => {
+      const button = buttonRef.current;
+      const card = cardRef.current;
+      if (button === null || card === null) return;
+      const tool = button.getBoundingClientRect();
+      const toolbar = (button.closest("[data-testid='planner-toolbar']") ?? button).getBoundingClientRect();
+      if (toolScrolledOut(tool, toolbar)) {
+        dismissRef.current();
+        return;
+      }
+      const next = placeToolCard(tool, toolbar, { width: card.offsetWidth, height: card.offsetHeight }, { width: window.innerWidth, height: window.innerHeight });
+      setPlacement((was) => (
+        was?.left === next.left && was.top === next.top && was.side === next.side && was.arrowTop === next.arrowTop ? was : next
+      ));
+    };
+    place();
+    let frame = 0;
+    const follow = (): void => {
+      if (frame !== 0) return;
+      frame = window.requestAnimationFrame(() => { frame = 0; place(); });
+    };
+    window.addEventListener("scroll", follow, { capture: true, passive: true });
+    window.addEventListener("resize", follow);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("scroll", follow, { capture: true });
+      window.removeEventListener("resize", follow);
+      if (closeShownToolCard === closeMine) closeShownToolCard = null;
+      setPlacement(null);
+    };
+  }, [cardOpen]);
   const handleClick = (): void => {
     dismiss();
     onClick();
@@ -912,11 +1009,15 @@ function ToolBtn({
       onMouseLeave={tooltipEnabled ? onLeave : undefined}
     >
       <button
+        ref={buttonRef}
         type="button"
         aria-label={label}
         aria-pressed={pressed}
+        aria-describedby={descriptionId}
         style={btnStyle(active, disabled, compact)}
         onClick={handleClick}
+        onFocus={tooltipEnabled ? onFocus : undefined}
+        onBlur={tooltipEnabled ? onLeave : undefined}
         disabled={disabled}
       >
         {children}
@@ -948,28 +1049,34 @@ function ToolBtn({
           </span>
         )}
       </button>
-      {showTooltip && !disabled && tooltipEnabled && (
-        <div style={{
-          position: "absolute",
-          left: 58,
-          top: "50%",
-          transform: "translateY(-50%)",
-          zIndex: 100,
+      <span id={descriptionId} hidden>{spoken}</span>
+      {cardOpen && createPortal(
+        <div ref={cardRef} data-testid="toolbox-tooltip" data-side={placement?.side} aria-hidden="true" style={{
+          position: "fixed",
+          left: placement?.left ?? 0,
+          top: placement?.top ?? 0,
+          // With the planner chrome's tooltips (.pc-tooltip), over the toolbar's 50.
+          zIndex: 60,
           pointerEvents: "none",
-          animation: exiting
-            ? "omni-tt-pop-out 0.18s cubic-bezier(0.55, 0, 1, 0.45) forwards"
-            : "omni-tt-enter 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards",
+          // Measured unseen, then placed before the first paint.
+          visibility: placement === null ? "hidden" : "visible",
+          animation: placement === null
+            ? "none"
+            : `${exiting ? "omni-tt-pop-out" : "omni-tt-enter"}${placement.side === "left" ? "-left" : ""} ${exiting
+              ? "0.18s cubic-bezier(0.55, 0, 1, 0.45)"
+              : "0.2s cubic-bezier(0.16, 1, 0.3, 1)"} forwards`,
         }}>
-          {/* Arrow — large, gold-tinted */}
+          {/* Arrow — large, gold-tinted, level with the tool, pointing at the toolbar */}
           <div style={{
             position: "absolute",
-            left: -10,
-            top: "50%",
+            ...(placement?.side === "left"
+              ? { right: -10, borderLeft: "11px solid #141414" }
+              : { left: -10, borderRight: "11px solid #141414" }),
+            top: placement?.arrowTop ?? "50%",
             width: 0, height: 0,
             borderTop: "11px solid transparent",
             borderBottom: "11px solid transparent",
-            borderRight: "11px solid #141414",
-            animation: "omni-tt-arrow 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards",
+            animation: `omni-tt-arrow${placement?.side === "left" ? "-left" : ""} 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards`,
           }} />
           {/* Card */}
           <div style={{
@@ -1034,7 +1141,8 @@ function ToolBtn({
               </div>
             )}
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );

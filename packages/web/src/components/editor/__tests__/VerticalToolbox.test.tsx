@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as configurationApi from "../../../api/configurations.js";
@@ -11,6 +11,7 @@ import { useToolStore } from "../../../stores/tool-store.js";
 import { useMarkupStore } from "../../../stores/markup-store.js";
 import { usePlannerToolKeys } from "../../../lib/planner-keymap.js";
 import { setPlannerFeaturesForTesting } from "../../../lib/planner-features.js";
+import { registerEscapeLayer } from "../../../lib/planner-keys.js";
 
 /** The editor page's tool keys (A, D, M, V and the tools' Escapes), which reach the toolbox through the tool store. */
 function ToolKeys(): null {
@@ -290,26 +291,110 @@ describe("VerticalToolbox Delete and the V shortcut", () => {
 describe("VerticalToolbox walls hint", () => {
   afterEach(() => { setPlannerFeaturesForTesting(null); });
 
+  /** The hint is the Walls button's accessible description, as a browser computes it, and its card's words. */
   async function hoverWalls(hint: string): Promise<void> {
     renderToolbox();
-    const walls = screen.getByRole("button", { name: "Show All Walls" });
+    const walls = screen.getByRole("button", { name: "Show All Walls", description: hint });
     fireEvent.mouseEnter(walls.parentElement ?? walls);
-    expect(await screen.findByText(hint)).toBeTruthy();
+    expect((await screen.findByTestId("toolbox-tooltip")).textContent).toContain(hint);
   }
 
   it("says a click on a wall toggles it while any click hides one", async () => {
     setPlannerFeaturesForTesting({ wallClickAlt: false });
-    await hoverWalls("Show all walls. Click a wall to toggle it.");
+    await hoverWalls("Click a wall to toggle it.");
   });
 
   it("says Alt-click once only an Alt-click hides a wall (decision 4)", async () => {
     setPlannerFeaturesForTesting({ wallClickAlt: true });
-    await hoverWalls("Show all walls. Alt-click a wall to hide it.");
+    await hoverWalls("Alt-click a wall to hide it.");
   });
 
   it("says Option-click on a Mac", async () => {
     setPlannerFeaturesForTesting({ wallClickAlt: true });
     vi.spyOn(navigator, "userAgent", "get").mockReturnValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 14_6) AppleWebKit/605.1.15 (KHTML, like Gecko)");
-    await hoverWalls("Show all walls. Option-click a wall to hide it.");
+    await hoverWalls("Option-click a wall to hide it.");
+  });
+});
+
+describe("VerticalToolbox tool words, for the keyboard and a screen reader", () => {
+  const WALLS_HINT = "Click a wall to toggle it.";
+
+  beforeEach(() => { setPlannerFeaturesForTesting({ wallClickAlt: false }); });
+  afterEach(() => { setPlannerFeaturesForTesting(null); });
+
+  it("describes each tool by its card's words, with its shortcut when the card shows one, said once", () => {
+    renderToolbox();
+    const undo = screen.getByRole("button", { name: "Undo", description: "Undo the last change. Shortcut: Ctrl+Z." });
+    screen.getByRole("button", { name: "Show All Walls", description: WALLS_HINT });
+    // The words' span is hidden, so a reader's browse mode or swipe never reads them a second time.
+    expect(document.getElementById(undo.getAttribute("aria-describedby") ?? "")?.hidden).toBe(true);
+  });
+
+  it("never says a tool's name again as a sentence of its words", () => {
+    renderToolbox();
+    const described = screen.getAllByRole("button").filter((button) => button.hasAttribute("aria-describedby"));
+    expect(described.length).toBeGreaterThan(5);
+    for (const button of described) {
+      const name = (button.getAttribute("aria-label") ?? "").toLowerCase();
+      const words = document.getElementById(button.getAttribute("aria-describedby") ?? "")?.textContent ?? "";
+      const sentences = words.toLowerCase().split(/(?<=\.)\s+/u).map((sentence) => sentence.replace(/\.$/u, ""));
+      expect(sentences, name).not.toContain(name);
+    }
+  });
+
+  it("shows the card at once when the keyboard brings focus, not for a click's focus, and hides it from a screen reader", () => {
+    renderToolbox();
+    const walls = screen.getByRole("button", { name: "Show All Walls" });
+    // A click's focus is not :focus-visible.
+    const byClick = vi.spyOn(walls, "matches").mockReturnValue(false);
+    act(() => { walls.focus(); });
+    expect(screen.queryByTestId("toolbox-tooltip")).toBeNull();
+    act(() => { walls.blur(); });
+    byClick.mockRestore();
+
+    act(() => { walls.focus(); });
+    const card = screen.getByTestId("toolbox-tooltip");
+    expect(card.textContent).toContain(WALLS_HINT);
+    expect(card.getAttribute("aria-hidden")).toBe("true");
+  });
+
+  it("draws the card outside the toolbar, which scrolls and so clips, and takes it down when its tool scrolls out of view", async () => {
+    renderToolbox();
+    const toolbar = screen.getByTestId("planner-toolbar");
+    const walls = screen.getByRole("button", { name: "Show All Walls" });
+    act(() => { walls.focus(); });
+    const card = screen.getByTestId("toolbox-tooltip");
+    expect(toolbar.contains(card)).toBe(false);
+    expect(card.style.position).toBe("fixed");
+
+    // The toolbar, 70 px down the screen, scrolls the tool wholly above its view.
+    vi.spyOn(toolbar, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 70, 68, 400));
+    vi.spyOn(walls, "getBoundingClientRect").mockReturnValue(new DOMRect(6, 0, 56, 56));
+    act(() => { toolbar.dispatchEvent(new Event("scroll")); });
+    await waitFor(() => { expect(screen.queryByTestId("toolbox-tooltip")).toBeNull(); });
+  });
+
+  it("shows one card at a time: a card that opens takes the last one down at once, not over its fading exit", () => {
+    renderToolbox();
+    act(() => { screen.getByRole("button", { name: "Show All Walls" }).focus(); });
+    act(() => { screen.getByRole("button", { name: "Rotate" }).focus(); });
+    const cards = screen.getAllByTestId("toolbox-tooltip");
+    expect(cards).toHaveLength(1);
+    expect(cards[0]?.textContent).toContain("Rotate selected furniture");
+  });
+
+  it("goes on Escape, and that Escape does nothing else", async () => {
+    const cleared = vi.fn();
+    const release = registerEscapeLayer({ kind: "selection", isOpen: () => true, escape: cleared });
+    try {
+      renderToolbox();
+      act(() => { screen.getByRole("button", { name: "Show All Walls" }).focus(); });
+      expect(screen.getByTestId("toolbox-tooltip")).toBeTruthy();
+      fireEvent.keyDown(document.body, { key: "Escape" });
+      await waitFor(() => { expect(screen.queryByTestId("toolbox-tooltip")).toBeNull(); });
+      expect(cleared).not.toHaveBeenCalled();
+    } finally {
+      release();
+    }
   });
 });
