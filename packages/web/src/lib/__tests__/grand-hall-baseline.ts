@@ -21,15 +21,17 @@ import { useDoorClearSpaceStore } from "../../stores/door-clear-space-store.js";
 // What the planner decides in the Grand Hall, written down whole: where a
 // piece may stand, where the walls pull it, what the ghost says, and every
 // table, chair and seat the automatic layouts set. The figures in
-// fixtures/grand-hall-placement-baseline.json are master's: taken on 12 Nov
-// 2026 from the planner code of origin/master cdb6eb8f, which has no room
+// fixtures/grand-hall-placement-baseline.json are master's: taken on 13 Nov
+// 2026 from the planner code of origin/master c85f60ac, which has no room
 // outline of its own, at the Grand Hall's size there (the laser scan's
 // 21.135 × 10.59 m, 6.7 m high, since #391), by this file's code copied with
-// its imports pointed at a worktree whose 45 planner files this file reaches
-// were byte for byte cdb6eb8f's; taken twice, the same both times. The test
-// beside this file holds the Grand Hall, a rectangle centred on the origin,
-// to exactly those figures. (The first record, 21 × 10.5 × 7 m, was taken on
-// 11 Nov 2026 at origin/master 9fdb57a6.)
+// its imports pointed at a `git archive` of c85f60ac's packages/web/src, whose
+// 46 files this file reaches were each c85f60ac's own blob; taken twice, the
+// same both times. The test beside this file holds the Grand Hall, a
+// rectangle centred on the origin, to exactly those figures. (The first
+// record, 21 × 10.5 × 7 m, was taken on 11 Nov 2026 at origin/master
+// 9fdb57a6; the second, at the scan's size, on 12 Nov 2026 at cdb6eb8f,
+// before #410's rear walkway changed the theatre fills.)
 //
 // TO REGENERATE the fixture, only to record a change to the Grand Hall that is
 // meant, or to check the record. It is this file's own output: one line of

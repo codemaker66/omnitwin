@@ -14,12 +14,16 @@ import { computeGrandHallBaseline } from "./grand-hall-baseline.js";
 // figures master's own planner code gives (grand-hall-baseline.ts).
 //
 // Since #391 the hall is the laser scan's 21.135 by 10.59 m, 6.7 m high.
-// The figures in the fixture were taken on 12 November 2026 from master's
-// planner code at origin/master cdb6eb8f, at that size, not from this
-// branch: the helper copied with its imports pointed at a worktree whose
-// planner files (the 45 the helper reaches) were byte for byte cdb6eb8f's,
-// taken twice, the same both times. So the test proves that this branch
-// decides the Grand Hall exactly as master does.
+// The figures in the fixture were taken on 13 November 2026 from master's
+// planner code at origin/master c85f60ac, at that size, not from this
+// branch: the helper copied with its imports pointed at a `git archive` of
+// c85f60ac's packages/web/src (the 46 planner files the helper reaches, each
+// checked against c85f60ac's own blob), taken twice, the same both times.
+// From the record before it (cdb6eb8f's) only the theatre fills changed, as
+// #410's rear walkway explains: 20 rows and 280 seats where there were 21 and
+// 294, 268 where 280 with the doors kept clear, and the planner's own theatre
+// fill likewise; every other section is byte for byte the same. So the test
+// proves that this branch decides the Grand Hall exactly as master does.
 // ---------------------------------------------------------------------------
 
 function recorded(): Record<string, unknown> {
