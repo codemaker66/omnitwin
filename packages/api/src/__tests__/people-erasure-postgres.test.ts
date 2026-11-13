@@ -377,6 +377,11 @@ describe.skipIf(PLATFORM_TARGET === undefined)("erasing a person on the migrated
     // Sent from an address only the partner holds, but filed under the other:
     // an enquiry linked to someone is theirs, whatever its address.
     const filedUnderOther = await enquiry({ email: ownAddress, contactId: other });
+    // A deleted duplicate holding her own address is nobody to share it with.
+    const deletedDuplicate = await f.addPerson({ name: "Ailsa Duplicate", emails: [ownAddress] });
+    await f.pool.query("UPDATE contacts SET deleted_at = now() WHERE id = $1", [deletedDuplicate]);
+    peopleIds.push(deletedDuplicate);
+    const unlinkedOwn = await enquiry({ email: ownAddress });
     // The other's live hold is theirs, not the partner's: it does not hold the erasure back.
     await bookedEvent({ enquiryId: ofOther, kind: "hold" });
     const offered = await proposal({ enquiryId: ofOther });
@@ -386,12 +391,29 @@ describe.skipIf(PLATFORM_TARGET === undefined)("erasing a person on the migrated
     const erased = await post(`/people/${partner}/erase`, "admin");
     expect(erased.statusCode, erased.body).toBe(200);
     expect(erased.json<{ data: { counts: { enquiries: number; comments: number; guestLeads: number } } }>().data.counts)
-      .toMatchObject({ enquiries: 1, comments: 0, guestLeads: 0 });
-    expect(await count("enquiries WHERE id = $1", [ofPartner])).toBe(0);
+      .toMatchObject({ enquiries: 2, comments: 0, guestLeads: 0 });
+    expect(await count("enquiries WHERE id = ANY($1::uuid[])", [[ofPartner, unlinkedOwn]])).toBe(0);
     expect(await count("enquiries WHERE id = ANY($1::uuid[])", [[ofOther, unlinked, filedUnderOther]])).toBe(3);
     expect(await count("proposal_comments WHERE id = $1", [theirWords])).toBe(1);
     expect(await count("contacts WHERE id = $1 AND erased_at IS NULL AND email = $2", [other, shared])).toBe(1);
     expect(await count("guest_leads WHERE email = $1", [shared])).toBe(1);
+  });
+
+  it("hands a household shared with a live partner over to them, taking only the erased person's name out of it", async () => {
+    const household = await f.addOrganisation({ name: "Ailsa Hearth's household", kind: "household" });
+    await f.pool.query("UPDATE client_accounts SET address = '3 Shared Wynd', notes = 'TEST ONLY Ailsa Hearth prefers mornings' WHERE id = $1",
+      [household]);
+    const leaving = await f.addPerson({ name: "Ailsa Hearth", emails: [`ailsa.hearth-${randomUUID().slice(0, 8)}@example.test`], organisations: [household] });
+    const staying = await f.addPerson({ name: "Brodie Hearth", emails: [`brodie.hearth-${randomUUID().slice(0, 8)}@example.test`], organisations: [household] });
+    await f.pool.query("UPDATE client_accounts SET primary_contact_id = $1 WHERE id = $2", [leaving, household]);
+    peopleIds.push(leaving, staying);
+
+    const erased = await post(`/people/${leaving}/erase`, "admin");
+    expect(erased.statusCode, erased.body).toBe(200);
+    expect(erased.json<{ data: { counts: { households: number } } }>().data.counts.households).toBe(1);
+    expect(await value(`SELECT row_to_json(a) AS value FROM (SELECT name, address, notes, primary_contact_id FROM client_accounts WHERE id = $1) a`,
+      [household])).toEqual({ name: "Erased's household", address: "3 Shared Wynd", notes: "TEST ONLY Erased prefers mornings", primary_contact_id: staying });
+    expect(await count("contacts WHERE id = $1 AND erased_at IS NULL", [staying])).toBe(1);
   });
 
   it("takes the person out of what the venue keeps: household, deal, proposal, Diary, change feed and notices", async () => {
@@ -410,20 +432,25 @@ describe.skipIf(PLATFORM_TARGET === undefined)("erasing a person on the migrated
     await f.db.insert(schema.guestLeads).values({ email: old, name: "Isla Erasable", phone: "+44 7700 900222" });
 
     const deal = only(await f.db.insert(schema.opportunities).values({ venueId: f.venueId, title: "Wedding — Isla Erasable",
-      primaryContactId: person, sourceEnquiryId: asked, nextAction: "Call Isla about the menus" })
+      primaryContactId: person, sourceEnquiryId: asked, nextAction: "Call Isla Erasable about the menus" })
       .returning({ id: schema.opportunities.id }), "deal");
-    await f.db.insert(schema.activities).values({ opportunityId: deal.id, body: "Isla asked about the Saloon", createdBy: f.users.staff });
+    await f.db.insert(schema.activities).values({ opportunityId: deal.id, body: "Isla Erasable asked about the Saloon", createdBy: f.users.staff });
     const offered = await proposal({ opportunityId: deal.id, title: "Isla Erasable's wedding", acceptedName: "Isla Erasable" });
+    await f.pool.query("INSERT INTO proposal_versions (proposal_id, version, payload, source_hash) VALUES ($1, 1, $2::jsonb, $3)",
+      [offered, JSON.stringify({ title: "Isla Erasable's wedding", clientMessage: "Dear Isla Erasable, here is your proposal." }), "d".repeat(64)]);
+    await f.pool.query("INSERT INTO proposal_share_tokens (proposal_id, token_hash, token_prefix) VALUES ($1, $2, 'TESTONLY')",
+      [offered, randomUUID().replaceAll("-", "").padEnd(64, "0")]);
     const fromLink = await comment(offered, { authorEmail: current, authorName: "Isla Erasable", body: "Our son has a nut allergy" });
     const unsigned = await comment(offered, { authorName: "Isla", body: "Could we move the date?" });
-    const staffWords = await comment(offered, { authorType: "staff", authorName: "TEST ONLY staff", body: "Spoke to Isla on the phone" });
+    const staffWords = await comment(offered, { authorType: "staff", authorName: "TEST ONLY staff", body: "Spoke to Isla Erasable on the phone" });
+    // On someone else's proposal, from her old address: that client's record, kept without her.
     const otherOffer = await proposal({ title: "TEST ONLY someone else's proposal" });
-    const fromOldAddress = await comment(otherOffer, { authorEmail: old, body: "TEST ONLY a question from her old address" });
+    const fromOldAddress = await comment(otherOffer, { authorEmail: old, authorName: "Isla Erasable", body: "TEST ONLY Isla Erasable agrees to the change" });
     const elsewhereOffer = await proposal({ venueId: f.otherVenueId, title: "TEST ONLY another venue's proposal" });
     const elsewhereWords = await comment(elsewhereOffer, { authorEmail: current, body: "TEST ONLY another venue's to erase" });
     await f.db.insert(schema.proposalStatusHistory).values([
       { proposalId: offered, fromStatus: "sent", toStatus: "changes_requested", changedBy: null, note: "Our son has a nut allergy" },
-      { proposalId: offered, fromStatus: "draft", toStatus: "sent", changedBy: f.users.staff, note: "Sent to Isla" },
+      { proposalId: offered, fromStatus: "draft", toStatus: "sent", changedBy: f.users.staff, note: "Sent to Isla Erasable" },
     ]);
 
     const eventId = await bookedEvent({ enquiryId: asked, opportunityId: deal.id, kind: "hold", status: "released",
@@ -440,6 +467,9 @@ describe.skipIf(PLATFORM_TARGET === undefined)("erasing a person on the migrated
       actionPath: "/dashboard?view=enquiries", createdAt: arrived });
     const someoneElse = await notice({ body: "Ruth Kept enquired about TEST ONLY Saloon. Open Enquiries to respond.",
       actionPath: "/dashboard?view=enquiries", createdAt: arrived });
+    // Another enquirer whose name begins with hers is not her.
+    const longerName = await notice({ body: "Isla Erasable Brown enquired about TEST ONLY Saloon. Open Enquiries to respond.",
+      actionPath: "/dashboard?view=enquiries", createdAt: arrived });
     const promotion = await notice({ body: "Isla Erasable — Wedding has moved up to first in line.",
       actionPath: `/dashboard?view=diary&day=2027-01-01&booking=${hold.id}` });
 
@@ -447,7 +477,7 @@ describe.skipIf(PLATFORM_TARGET === undefined)("erasing a person on the migrated
     expect(erased.statusCode, erased.body).toBe(200);
     expect(erased.json<{ data: { counts: unknown } }>().data.counts).toEqual({
       people: 1, contactPoints: 1, mergeSnapshots: 0, households: 1,
-      enquiries: 1, guestLeads: 1, emailReceipts: 0, comments: 3, changeCopies: 2, notices: 2, proposals: 1, reworded: 7,
+      enquiries: 1, guestLeads: 1, emailReceipts: 0, comments: 2, changeCopies: 2, notices: 2, proposals: 1, reworded: 8,
     });
 
     // Her household keeps its row, without her.
@@ -459,6 +489,13 @@ describe.skipIf(PLATFORM_TARGET === undefined)("erasing a person on the migrated
     expect(await value("SELECT body AS value FROM activities WHERE opportunity_id = $1", [deal.id])).toBe("Erased asked about the Saloon");
     expect(await value("SELECT row_to_json(p) AS value FROM (SELECT title, accepted_name FROM proposals WHERE id = $1) p", [offered]))
       .toEqual({ title: "Erased's wedding", accepted_name: null });
+    // The version the client was sent loses her name, its digest made again;
+    // her link no longer opens it.
+    expect(await value("SELECT row_to_json(v) AS value FROM (SELECT payload, source_hash <> repeat('d', 64) AS rehashed FROM proposal_versions WHERE proposal_id = $1) v", [offered]))
+      .toEqual({ payload: { title: "Erased's wedding", clientMessage: "Dear Erased, here is your proposal." }, rehashed: true });
+    expect(await count("proposal_share_tokens WHERE proposal_id = $1 AND revoked_at IS NULL", [offered])).toBe(0);
+    expect(await value("SELECT row_to_json(c) AS value FROM (SELECT author_name, author_email, body FROM proposal_comments WHERE id = $1) c", [fromOldAddress]))
+      .toEqual({ author_name: null, author_email: null, body: "TEST ONLY Erased agrees to the change" });
     expect(await value("SELECT title AS value FROM bookings WHERE id = $1", [hold.id])).toBe("Erased — Wedding");
     expect(await value("SELECT row_to_json(e) AS value FROM (SELECT name, client_name FROM events WHERE id = $1) e", [eventId]))
       .toEqual({ name: "Erased — Wedding", client_name: "Erased" });
@@ -470,12 +507,12 @@ describe.skipIf(PLATFORM_TARGET === undefined)("erasing a person on the migrated
       .toBe("Erased — Wedding has moved up to first in line.");
 
     // What she wrote, and every copy of it, is gone; another venue's is not ours to erase.
-    expect(await count("proposal_comments WHERE id = ANY($1::uuid[])", [[fromLink, unsigned, fromOldAddress]])).toBe(0);
+    expect(await count("proposal_comments WHERE id = ANY($1::uuid[])", [[fromLink, unsigned]])).toBe(0);
     expect(await count("proposal_comments WHERE id = $1", [elsewhereWords])).toBe(1);
     expect(await count("event_plan_changes WHERE event_id = $1", [eventId])).toBe(0);
     expect(await count("event_plan_notifications WHERE event_id = $1", [eventId])).toBe(0);
     expect(await count("event_plan_notifications WHERE id = ANY($1::uuid[])", [[proposalNotice, enquiryNotice]])).toBe(0);
-    expect(await count("event_plan_notifications WHERE id = $1", [someoneElse])).toBe(1);
+    expect(await count("event_plan_notifications WHERE id = ANY($1::uuid[])", [[someoneElse, longerName]])).toBe(2);
     expect(await count("enquiries WHERE id = $1", [asked])).toBe(0);
     expect(await count("guest_leads WHERE email = $1", [old])).toBe(0);
   });
@@ -522,6 +559,12 @@ describe.skipIf(PLATFORM_TARGET === undefined)("erasing a person on the migrated
     await f.pool.query("UPDATE bookings SET created_at = $2, updated_at = $2 WHERE event_id = $1", [bookedEventId, lapsedAt]);
     const bookedSpare = await enquiry({ email: booked.email, contactId: booked.person });
     await aged("enquiries", bookedSpare, lapsedAt);
+    // Kept for a booking with nothing left to remove, and older than everyone:
+    // listed, never looked at, so it cannot hold the queue up.
+    const longKeptAt = new Date(lapsedAt.getTime() - 30 * dayMs);
+    const longKept = await personWithEnquiry("LongKept", longKeptAt);
+    const longKeptEventId = await bookedEvent({ enquiryId: longKept.asked });
+    await f.pool.query("UPDATE bookings SET created_at = $2, updated_at = $2 WHERE event_id = $1", [longKeptEventId, longKeptAt]);
     // A record merged into a recent person is never taken on its own.
     const tombstone = await f.addPerson({ name: "Old Tombstone", emails: [`tomb-${randomUUID().slice(0, 8)}@example.test`] });
     peopleIds.push(tombstone);
@@ -547,9 +590,18 @@ describe.skipIf(PLATFORM_TARGET === undefined)("erasing a person on the migrated
 
     // A night's limits leave the rest for the next night, and say so.
     const capped = await eraseLapsedPeople(f.db, { now, dryRun: true, limits: { people: 0, enquiries: 0 } });
+    // Those in touch through their own records, and the booked lone enquiry,
+    // are never candidates: only the lapsed and the booked person, and the
+    // lone enquiry, wait.
     expect(capped).toMatchObject({ people: 0, enquiries: 0, failed: 0 });
-    expect(capped.deferred.people).toBeGreaterThanOrEqual(4);
-    expect(capped.deferred.enquiries).toBeGreaterThanOrEqual(2);
+    expect(capped.deferred.people).toBeGreaterThanOrEqual(2);
+    expect(capped.deferred.enquiries).toBeGreaterThanOrEqual(1);
+    expect(capped.kept).toContainEqual({ venueId: f.venueId, personId: longKept.person });
+    // One look tonight goes to a candidate, never to the person kept already.
+    const narrow = await eraseLapsedPeople(f.db, { now, dryRun: true, limits: { people: 1, enquiries: 0, examined: 1 } });
+    expect(narrow.deferred.people).toBe(capped.deferred.people - 1);
+    expect(narrow.people + narrow.enquiries).toBeGreaterThanOrEqual(1);
+    expect(narrow.kept).toContainEqual({ venueId: f.venueId, personId: longKept.person });
 
     // The rehearsal changes nothing at all.
     const rehearsal = await eraseLapsedPeople(f.db, { now, dryRun: true });
@@ -574,13 +626,15 @@ describe.skipIf(PLATFORM_TARGET === undefined)("erasing a person on the migrated
     // Inside the 24 months, in touch through a deal or a proposal, or kept for
     // a booking: nothing of theirs goes beyond what never became a booking.
     expect(await count("contacts WHERE id = ANY($1::uuid[]) AND erased_at IS NULL",
-      [[recent.person, working.person, proposed.person, booked.person, tombstone]])).toBe(5);
+      [[recent.person, working.person, proposed.person, booked.person, longKept.person, tombstone]])).toBe(6);
     expect(await count("enquiries WHERE id = ANY($1::uuid[])",
-      [[recent.asked, working.asked, proposed.asked, booked.asked, loneRecent, loneBooked]])).toBe(6);
+      [[recent.asked, working.asked, proposed.asked, booked.asked, longKept.asked, loneRecent, loneBooked]])).toBe(7);
 
-    // A second night finds nothing more of theirs: still one audit row.
+    // A second night finds nothing more of theirs: still one audit row. The
+    // booked person, with nothing left to remove, is listed and not looked at.
     const again = await eraseLapsedPeople(f.db, { now });
     expect(again.failed).toBe(0);
+    expect(again.kept).toContainEqual({ venueId: f.venueId, personId: booked.person });
     expect(await count("general_audit_log WHERE target_id = $1", [lapsed.person])).toBe(1);
   });
 });

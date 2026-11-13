@@ -4,10 +4,15 @@ import { namesToErase, withoutNames } from "../services/people-erasure-text.js";
 describe("taking an erased person's names out of kept text", () => {
   const morag = namesToErase(["Morag Smith", "Morag", "Smith", "morag@example.test"]);
 
-  it("replaces the whole name, its parts and the address, case-insensitively", () => {
+  it("replaces the whole name and its parts as written, and the address in any case", () => {
     expect(withoutNames("Wedding — Morag Smith", morag)).toBe("Wedding — Erased");
-    expect(withoutNames("MORAG SMITH — Dinner", morag)).toBe("Erased — Dinner");
     expect(withoutNames("morag@example.test — Dinner", morag)).toBe("Erased — Dinner");
+    expect(withoutNames("MORAG@Example.TEST — Dinner", morag)).toBe("Erased — Dinner");
+    // A name is matched with its capitals: other words that spell it stay.
+    expect(withoutNames("MORAG SMITH — Dinner", morag)).toBe("MORAG SMITH — Dinner");
+    const will = namesToErase(["Will Smith", "Will", "May"]);
+    expect(withoutNames("will call back on 12 may", will)).toBe("will call back on 12 may");
+    expect(withoutNames("Will Smith will call back", will)).toBe("Erased will call back");
     expect(withoutNames("Call Morag about the Saloon", morag)).toBe("Call Erased about the Saloon");
     expect(withoutNames("Smith, Morag", morag)).toBe("Erased");
     expect(withoutNames("Morag  Smith's wedding", morag)).toBe("Erased's wedding");

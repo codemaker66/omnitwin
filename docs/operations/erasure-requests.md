@@ -39,14 +39,14 @@ not the address, and leave what is the other person's.
 | `contacts` | name, email, phone, given/family name, job title, role, postal address, notes, import ids | `venue_id = :venue_id and lower(email) = :email`, plus every tombstone whose `merged_into_id` chain leads to it (a merged-away person keeps its details) | cleared, row kept |
 | `contact_points` | emails and phones | by `contact_id` | deleted |
 | `account_memberships` | role label | by `contact_id` | cleared |
-| `client_accounts` | a household's name, address, notes | the person's own household: they are its only live member or its main contact | cleared, row kept |
+| `client_accounts` | a household's name, address, notes | the person's own household (they are its only live member); one they lead with another live member | their own: cleared, row kept. Shared: handed to the other member, their name taken out |
 | `record_merges.snapshot` | a full copy of a merged person, their contact points, fields copied between records | `survivor_id` or `merged_id` in the person's ids | the copy cleared |
 | `enquiries` (and `enquiry_status_history`) | name, email, guest name/email/phone, message | linked to them (`contact_id`), or linked to nobody and sent from an address only they hold | deleted |
 | `guest_leads` | email, phone, name | `lower(email)` = one of their addresses or their enquiries'. No venue: kept while any enquiry anywhere uses the address | deleted |
 | `email_sends` | recipient, subject | receipts about their enquiries (the key carries the enquiry id); others by `lower(recipient) = :email` | enquiry receipts deleted; others **by hand** |
 | `event_plan_notifications` | an enquiry's in-app notice ("Morag Smith enquired about …"); notices about their proposals and their Diary holds | the venue's notices around the enquiry's arrival, or pointing at their proposal or booking | deleted, or their name taken out |
-| `proposals` | accepted name, title | by their enquiry or deal | accepted name cleared, name taken out of the title |
-| `proposal_comments` | what the client wrote: author name, email, words | on their proposals, or signed with an address only they hold | client comments deleted; staff comments lose the name |
+| `proposals`, `proposal_versions`, `proposal_share_tokens` | accepted name, title; each version's title and message to the client; the client's link | by their enquiry or deal | accepted name cleared, name taken out of titles and messages (the version's digest made again), links revoked |
+| `proposal_comments` | what the client wrote: author name, email, words | on their proposals, or signed with an address only they hold | on their proposals: client comments deleted, staff comments lose the name. On someone else's proposal: kept for that client, without their name and address |
 | `proposal_status_history` | notes, including the client's words when they asked for changes or accepted | on their proposals | client notes cleared; staff notes lose the name |
 | `event_plan_changes` | the client's name and words copied into the event's change feed | `source_kind` `proposal_comment` (the comment's id) or `proposal_response` (the proposal's id); other changes on their events | the copies deleted; others lose the name |
 | `opportunities`, `activities` | deal title ("Wedding — Morag Smith"), next action, activity notes | by `primary_contact_id` or `source_enquiry_id` | name taken out |
@@ -79,7 +79,8 @@ keeps the erased person past the privacy page's promise that backups lose them w
     merge involving them can no longer be undone (`ERASED`).
 - **Their contact points:** delete them. **Their membership role labels:** set to null.
 - **Their own household:** set `name = 'Erased'`, and `address`, `notes`, `website`, `source_system` and
-  `source_id` to null. Leave a household shared with another live member alone unless they are its main contact.
+  `source_id` to null. A household another live member stays in is that member's: make them its main contact
+  and take only the erased person's name out of its name and notes.
 - **Merge snapshots that mention them:**
   - in `person`, keep `id` and the timestamps, and set the other fields to null or `'Erased'`;
   - set `contactPoints` and `survivorFilled` to `[]`, and each membership's `roleLabel` to null.
@@ -114,18 +115,22 @@ record merged into someone else answers `MERGED` with who to erase instead) eras
 - the person and every record merged into them: every personal field above cleared, the rows kept;
 - their contact points and membership role labels;
 - the merge snapshots that copy them;
-- their own household's name, address and notes;
+- their own household's name, address and notes. A household they lead with another live member passes to that
+  member, and only their name leaves its name and notes;
 - their enquiries at the venue: linked to them, or linked to nobody and sent from an address only they hold. An
   address another live person at the venue holds finds nothing: the other person's enquiries, comments and lead
   stay. Each enquiry goes with its status history, the venue's email receipts for it and its in-app notice;
 - the guest lead of each of their addresses, and of the addresses their enquiries came from, when no other
   enquiry uses it;
-- what the client wrote on their proposals (comments and answers, signed or not, and those signed from an address
-  only they hold on the venue's other proposals), every copy of those words in the change feed and its notices,
-  the client's status notes, and the name typed to accept;
-- their name, given name and addresses, wherever they appear as whole words in the text the venue keeps: deal
-  titles and next actions, activity notes, Diary bookings and their events (name, client name, notes), proposal
-  titles, staff comments and status notes, change feed entries and notices.
+- what the client wrote on their proposals (comments and answers, signed or not), every copy of those words in the
+  change feed and its notices, the client's status notes, and the name typed to accept; their share links are
+  revoked. What they signed from an address only they hold on **someone else's** proposal is that client's record
+  (a change asked for on a booked event, and the hallkeeper's acknowledgement of it): it stays, without their name
+  and address;
+- their full name and addresses, wherever they appear as whole words in the text the venue keeps: deal titles and
+  next actions, activity notes, Diary bookings and their events (name, client name, notes), proposal titles and
+  the versions sent (title and message), staff comments and status notes, change feed entries and notices. A name
+  matches as written, capitals and all; an address in any case.
 
 It answers with the counts and writes a `people.erased` row to `general_audit_log` with them (no names).
 
@@ -141,8 +146,11 @@ Then erase by hand what the booking or the contract does not need (section 3).
 
 **Still by hand after the route:** an account (step 3's last item); email receipts sent to their address that are
 not about one of their enquiries (`email_sends` by recipient: a planner account's review emails, for example);
-`quotes` and `follow_up_tasks` text; and any staff text that names them in words other than their name or address
-(a nickname, "the bride"). Read the step 2 stores' text before replying.
+`quotes` and `follow_up_tasks` text; any staff text that names them in words other than their full name or address
+(their first name on its own, which the route leaves because "Will", "May" or "Rose" are words in other sentences
+too; a nickname; "the bride"); and a **deleted** record of theirs (a duplicate deleted instead of merged): the
+route does not treat it as theirs, the 24-month pass erases it in time, or erase it by hand. Read the step 2
+stores' text before replying.
 
 ## The 24-month pass
 
@@ -156,14 +164,17 @@ The nightly cleanup (`scripts/run-cleanup.ts`, `services/people-retention.ts`) r
 - for every enquiry linked to nobody, sent from an address no live person at its venue holds, last touched more
   than 24 months ago and never booked or contracted, with its receipts, notices and guest lead.
 
-A night handles at most 100 people and 200 lone enquiries, oldest first, and leaves the rest for the next night
-(the People Book's backfill falls due together in 2028, so expect a few nights of catching up then). One person or
-enquiry failing is rolled back, counted with its SQLSTATE only, and tried again the next night; the job then fails,
-after every pass has run. The log carries counts only.
+Who is looked at is decided from their own records first: someone in touch through those, or kept for a booking or
+a contract with nothing left to remove, is never a candidate, so they cannot hold the queue up night after night.
+A night acts on at most 100 people and 200 lone enquiries, looks at no more than 500 of each, oldest first, and
+leaves the rest for the next night (the People Book's backfill falls due together in 2028, so expect a few nights of
+catching up then). One person or enquiry failing is rolled back, counted with its SQLSTATE only, and tried again
+the next night; the job then fails, after every pass has run. The log carries counts only.
 
 `POST /admin/retention/people` (platform admins) runs every step in one transaction and rolls it back, so its counts
-are exactly what the night would do now; it holds the rows it touches until it finishes, so run it out of hours. It
-also lists, by id only, **who is kept for a booking or a contract**: those people wait for the six-year rule, which
-is done by hand (sections 2 to 4) once the booking's financial year is six years past. Each erasure writes a
+are exactly what the night would do now. A step that changes nothing is rolled back at once; the erasures it
+rehearses hold their rows until it finishes, so run it out of hours. It also lists, by id only, **who is kept for a
+booking or a contract**: those people wait for the six-year rule, which is done by hand (sections 2 to 4) once the
+booking's financial year is six years past. Each erasure writes a
 `people.erased` row to `general_audit_log`, with "24 months after the last contact" as its summary and no actor.
 The first production record falls due in 2028.

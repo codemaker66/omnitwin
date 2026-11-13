@@ -1,5 +1,5 @@
 import { and, eq, inArray, isNotNull, isNull, max, notInArray, or, sql, type SQL, type SQLWrapper } from "drizzle-orm";
-import type { RecordMergeSnapshot } from "@omnitwin/types";
+import { proposalVersionPayloadDigest, type RecordMergeSnapshot } from "@omnitwin/types";
 import {
   accountMemberships,
   activities,
@@ -19,12 +19,14 @@ import {
   proposalContractVersions,
   proposalDepositRequests,
   proposals,
+  proposalShareTokens,
   proposalStatusHistory,
+  proposalVersions,
   recordMerges,
 } from "../db/schema.js";
 import { outerColumn } from "../utils/outer-column.js";
 import { ERASED_TEXT, namesToErase, withoutNames } from "./people-erasure-text.js";
-import type { PeopleTx } from "./people-records.js";
+import { liveContact, type PeopleTx } from "./people-records.js";
 
 // ---------------------------------------------------------------------------
 // Erasure of one person at one venue (release audit people-privacy-5).
@@ -69,19 +71,23 @@ import type { PeopleTx } from "./people-records.js";
 //     undone (ERASED). Their emails and phones are deleted, their membership
 //     role labels cleared, and the merge snapshots that copy them lose the
 //     copy;
-//   - their own household (they are its only live member or its main
-//     contact) keeps its row and loses its name, address and notes;
+//   - their own household (they are its only live member) keeps its row and
+//     loses its name, address and notes; a household they lead with another
+//     live member passes to that member and loses only their name;
 //   - their enquiries are deleted, with each one's status history, the
 //     venue's email receipts for it and its in-app notices; the guest lead
 //     goes too unless an enquiry, anywhere, still uses the address;
 //   - what the client wrote on their proposals (comments, answers, the words
-//     copied into the event's change feed and into notices) is deleted, and
-//     the name they typed to accept is cleared;
+//     copied into the event's change feed and into notices) is deleted, the
+//     name they typed to accept is cleared, and the share links stop working.
+//     What they wrote from an address of theirs on someone else's proposal
+//     is that client's record: it stays, without their name and address;
 //   - the rows the venue keeps as its own record of the work (deals and their
 //     activity notes, released holds and viewings in the Diary, events,
-//     proposals, staff comments and status notes, change feed entries and
-//     notices) keep their row and lose the person's name and addresses from
-//     their text (services/people-erasure-text.ts).
+//     proposals and their versions, staff comments and status notes, change
+//     feed entries and notices) keep their row and lose the person's full
+//     name and addresses from their text (services/people-erasure-text.ts).
+//     A first name alone is left: "Will" and "May" are words too.
 // Other venues' records of the same person are theirs to erase: nothing here
 // crosses the venue, except the guest lead, which has no venue.
 // ---------------------------------------------------------------------------
@@ -156,8 +162,11 @@ export interface ErasureRecords {
   readonly bookingIds: readonly string[];
   /** Organisations they lead and households they belong to (the booking guard). */
   readonly accountIds: readonly string[];
-  /** Their own households: they are its only live member or its main contact. */
+  /** Their own households: no other live member is left. */
   readonly householdIds: readonly string[];
+  /** Households they are the main contact of, with another live member to
+   *  take over: the household stays that member's. */
+  readonly handedOver: readonly { readonly householdId: string; readonly to: string }[];
   /** Their names and addresses, to take out of the text of kept rows; none
    *  when only lapsed enquiries of a person the venue keeps are removed. */
   readonly names: readonly string[];
@@ -251,9 +260,11 @@ export async function heldByOthers(
   addressList: readonly string[],
 ): Promise<ReadonlySet<string>> {
   if (addressList.length === 0) return new Set();
+  // Live only: a record deleted, merged away or erased is nobody's to share
+  // an address with (a deleted duplicate must not shield the person).
   const onRecord = await tx.select({ address: sql<string>`lower(${contacts.email})` }).from(contacts).where(allOf(
     eq(contacts.venueId, venueId),
-    isNull(contacts.erasedAt),
+    liveContact(),
     notAmong(contacts.id, exclude),
     inArray(lower(contacts.email), [...addressList]),
   ));
@@ -262,31 +273,48 @@ export async function heldByOthers(
     .where(allOf(
       eq(contactPoints.venueId, venueId),
       eq(contactPoints.kind, "email"),
-      isNull(contacts.erasedAt),
+      liveContact(),
       notAmong(contactPoints.contactId, exclude),
       inArray(lower(contactPoints.value), [...addressList]),
     ));
   return new Set([...onRecord, ...asPoint].map((row) => row.address));
 }
 
-/** The households among the accounts that are theirs to empty: they are the
- *  main contact, or no live member outside their records is left. */
-async function ownHouseholds(tx: PeopleTx, ids: readonly string[], accountIds: readonly string[]): Promise<readonly string[]> {
-  if (accountIds.length === 0) return [];
+/** Among the accounts, the households that are theirs alone (no other live
+ *  member), and those they are the main contact of while another live member
+ *  stays, who takes it over (the primary member first). */
+async function ownHouseholds(
+  tx: PeopleTx,
+  ids: readonly string[],
+  accountIds: readonly string[],
+): Promise<Pick<ErasureRecords, "householdIds" | "handedOver">> {
+  const none = { householdIds: [], handedOver: [] };
+  if (accountIds.length === 0) return none;
   const households = await tx.select({ id: clientAccounts.id, primaryContactId: clientAccounts.primaryContactId })
     .from(clientAccounts)
     .where(allOf(inArray(clientAccounts.id, [...accountIds]), eq(clientAccounts.kind, "household")))
     .for("update");
-  if (households.length === 0) return [];
-  const members = await tx.select({ accountId: accountMemberships.clientAccountId, contactId: accountMemberships.contactId })
+  if (households.length === 0) return none;
+  const theirs = new Set(ids);
+  const others = await tx.select({ accountId: accountMemberships.clientAccountId, contactId: accountMemberships.contactId })
     .from(accountMemberships)
     .innerJoin(contacts, eq(contacts.id, accountMemberships.contactId))
-    .where(allOf(inArray(accountMemberships.clientAccountId, households.map((row) => row.id)), isNull(contacts.erasedAt)));
-  const theirs = new Set(ids);
-  return households
-    .filter((household) => (household.primaryContactId !== null && theirs.has(household.primaryContactId))
-      || members.every((member) => member.accountId !== household.id || theirs.has(member.contactId)))
-    .map((household) => household.id);
+    .where(allOf(
+      inArray(accountMemberships.clientAccountId, households.map((row) => row.id)),
+      liveContact(),
+      notAmong(accountMemberships.contactId, ids),
+    ))
+    .orderBy(sql`${accountMemberships.isPrimary} desc`, accountMemberships.createdAt, accountMemberships.contactId);
+  const householdIds: string[] = [];
+  const handedOver: { householdId: string; to: string }[] = [];
+  for (const household of households) {
+    const successor = others.find((member) => member.accountId === household.id);
+    if (successor === undefined) householdIds.push(household.id);
+    else if (household.primaryContactId !== null && theirs.has(household.primaryContactId)) {
+      handedOver.push({ householdId: household.id, to: successor.contactId });
+    }
+  }
+  return { householdIds, handedOver };
 }
 
 type RecordsBase = Omit<ErasureRecords, "dealIds" | "proposalIds" | "eventIds" | "bookingIds">;
@@ -366,12 +394,12 @@ export async function findPersonRecords(tx: PeopleTx, person: ContactRow): Promi
     .where(allOf(inArray(accountMemberships.contactId, ids), eq(clientAccounts.kind, "household")));
   const accountIds = distinct([...led, ...households].map((row) => row.id));
 
-  // A family name on its own stays: a partner shares it. The full name, the
-  // given name and the addresses go.
+  // Their full names and their own addresses. A first or family name on its
+  // own stays: a partner shares the family name, and "Will", "May" or "Rose"
+  // are words in other people's sentences too.
   const names = namesToErase([
     ...people.flatMap((row) => [
       row.name,
-      row.givenName,
       row.givenName !== null && row.familyName !== null ? `${row.givenName} ${row.familyName}` : null,
     ]),
     ...theirEnquiries.flatMap((row) => [row.name, row.guestName]),
@@ -384,7 +412,7 @@ export async function findPersonRecords(tx: PeopleTx, person: ContactRow): Promi
     addresses: own,
     enquiries: theirEnquiries,
     accountIds,
-    householdIds: await ownHouseholds(tx, ids, accountIds),
+    ...await ownHouseholds(tx, ids, accountIds),
     names,
   });
 }
@@ -403,6 +431,7 @@ export async function findEnquiryRecords(
     enquiries: [enquiry],
     accountIds: [],
     householdIds: [],
+    handedOver: [],
     names: options.reword ? namesToErase([enquiry.name, enquiry.guestName, enquiry.email, enquiry.guestEmail]) : [],
   });
 }
@@ -502,6 +531,27 @@ async function reword(tx: PeopleTx, target: Reword, names: readonly string[]): P
   return changed;
 }
 
+/** Their names out of each version's title and message to the client, with
+ *  the version's digest made again: the digest is the version's identity for
+ *  a contract or a deposit, and neither can exist here (keptRecord refused
+ *  them). Returns the proposals whose versions changed. */
+async function rewordVersions(tx: PeopleTx, proposalIds: readonly string[], names: readonly string[]): Promise<readonly string[]> {
+  if (names.length === 0 || proposalIds.length === 0) return [];
+  const versions = await tx.select({ id: proposalVersions.id, proposalId: proposalVersions.proposalId, payload: proposalVersions.payload })
+    .from(proposalVersions).where(inArray(proposalVersions.proposalId, [...proposalIds])).for("update");
+  const changed = new Set<string>();
+  for (const version of versions) {
+    const title = withoutNames(version.payload.title, names) ?? version.payload.title;
+    const clientMessage = withoutNames(version.payload.clientMessage, names);
+    if (title === version.payload.title && clientMessage === version.payload.clientMessage) continue;
+    const payload = { ...version.payload, title, clientMessage };
+    await tx.update(proposalVersions).set({ payload, sourceHash: proposalVersionPayloadDigest(payload) })
+      .where(eq(proposalVersions.id, version.id));
+    changed.add(version.proposalId);
+  }
+  return [...changed];
+}
+
 // ---------------------------------------------------------------------------
 // Removing a set of enquiries and what hangs off them
 // ---------------------------------------------------------------------------
@@ -515,25 +565,27 @@ export async function removeEnquiryRecords(tx: PeopleTx, records: ErasureRecords
   const { venueId, names } = records;
   const enquiryIds = records.enquiries.map((row) => row.id);
 
-  // What the client wrote on their proposals, unless it was signed with an
-  // address another live person holds; and, for a person, what they wrote
-  // from an address of theirs on the venue's other proposals.
+  // What the client wrote on their proposals goes, unless it was signed with
+  // an address another live person holds. What a person signed from an
+  // address of theirs on someone else's proposal is that client's record (a
+  // change they asked for on a booked wedding, a hallkeeper's acknowledgement
+  // of it): it stays, without their name and address.
   const onTheirs = await tx.select({ id: proposalComments.id, authorEmail: proposalComments.authorEmail })
     .from(proposalComments)
     .where(allOf(among(proposalComments.proposalId, records.proposalIds), eq(proposalComments.authorType, "client")));
   const others = await heldByOthers(tx, venueId, records.ids, addresses(onTheirs.map((row) => row.authorEmail)));
-  const elsewhere = records.ids.length === 0 || records.addresses.length === 0 ? [] : await tx.select({ id: proposalComments.id })
+  const signedElsewhere = records.ids.length === 0 || records.addresses.length === 0 ? [] : (await tx.select({ id: proposalComments.id })
     .from(proposalComments)
     .innerJoin(proposals, eq(proposals.id, proposalComments.proposalId))
     .where(allOf(
       eq(proposals.venueId, venueId),
+      notAmong(proposals.id, records.proposalIds),
       eq(proposalComments.authorType, "client"),
       inArray(lower(proposalComments.authorEmail), [...records.addresses]),
-    ));
-  const commentIds = distinct([
-    ...onTheirs.filter((row) => row.authorEmail === null || !others.has(row.authorEmail.trim().toLowerCase())).map((row) => row.id),
-    ...elsewhere.map((row) => row.id),
-  ]);
+    ))).map((row) => row.id);
+  const commentIds = onTheirs
+    .filter((row) => row.authorEmail === null || !others.has(row.authorEmail.trim().toLowerCase()))
+    .map((row) => row.id);
 
   // Their copies in the change feed go first (each change's notices go with
   // it), then the notices of a proposal without an event.
@@ -553,6 +605,10 @@ export async function removeEnquiryRecords(tx: PeopleTx, records: ErasureRecords
   const comments = commentIds.length === 0 ? [] : await tx.delete(proposalComments)
     .where(inArray(proposalComments.id, [...commentIds]))
     .returning({ id: proposalComments.id });
+  const anonymised = signedElsewhere.length === 0 ? [] : await tx.update(proposalComments)
+    .set({ authorName: null, authorEmail: null })
+    .where(inArray(proposalComments.id, [...signedElsewhere]))
+    .returning({ id: proposalComments.id });
 
   // A status note written from the share link quotes the client; staff notes
   // stay, without the names.
@@ -567,6 +623,12 @@ export async function removeEnquiryRecords(tx: PeopleTx, records: ErasureRecords
   )).returning({ id: proposals.id });
   const retitled = await reword(tx, { table: "proposals", columns: { title: 200 },
     where: among(proposals.id, records.proposalIds) }, names);
+  const reversioned = await rewordVersions(tx, records.proposalIds, names);
+  // The client's share links stop working: the page they open is theirs.
+  await tx.update(proposalShareTokens).set({ revokedAt: sql`now()` }).where(allOf(
+    among(proposalShareTokens.proposalId, records.proposalIds),
+    isNull(proposalShareTokens.revokedAt),
+  ));
 
   const receipts = await tx.delete(emailSends).where(receiptsFor(enquiryIds)).returning({ id: emailSends.id });
 
@@ -575,9 +637,11 @@ export async function removeEnquiryRecords(tx: PeopleTx, records: ErasureRecords
   // the enquiry arrived (routes/public-enquiries.ts).
   let enquiryNotices = 0;
   for (const enquiry of records.enquiries) {
+    // The notice opens "<name or email> enquired …" or "… asked …": the whole
+    // opening, so "Jo" never matches "Jo Smith enquired".
     const shownAs = distinct([enquiry.guestName, enquiry.email].flatMap((value) => {
       const shown = value?.trim() ?? "";
-      return shown.length > 0 ? [`${shown} `] : [];
+      return shown.length > 0 ? [`${shown} enquired `, `${shown} asked `] : [];
     }));
     if (shownAs.length === 0) continue;
     const arrived = enquiry.createdAt.toISOString();
@@ -602,10 +666,17 @@ export async function removeEnquiryRecords(tx: PeopleTx, records: ErasureRecords
     { table: "proposal_comments", columns: { body: null },
       where: allOf(among(proposalComments.proposalId, records.proposalIds), eq(proposalComments.authorType, "staff")) },
     { table: "proposal_status_history", columns: { note: null }, where: among(proposalStatusHistory.proposalId, records.proposalIds) },
-    { table: "event_plan_changes", columns: { actor_label: 160, title: 180, summary: null, before_summary: null, after_summary: null },
+    { table: "proposal_comments", columns: { body: null }, where: among(proposalComments.id, signedElsewhere) },
+    // Never the actor label: on a change the venue keeps, that is a member
+    // of staff, and their own address could hold the person's name.
+    { table: "event_plan_changes", columns: { title: 180, summary: null, before_summary: null, after_summary: null },
       where: allOf(
         eq(eventPlanChanges.venueId, venueId),
-        or(among(eventPlanChanges.eventId, records.eventIds), among(eventPlanChanges.proposalId, records.proposalIds)) ?? sql`false`,
+        or(
+          among(eventPlanChanges.eventId, records.eventIds),
+          among(eventPlanChanges.proposalId, records.proposalIds),
+          allOf(eq(eventPlanChanges.sourceKind, "proposal_comment"), among(eventPlanChanges.sourceId, signedElsewhere)),
+        ) ?? sql`false`,
       ) },
     { table: "event_plan_notifications", columns: { title: 180, body: 1000 },
       where: allOf(
@@ -613,8 +684,9 @@ export async function removeEnquiryRecords(tx: PeopleTx, records: ErasureRecords
         or(among(eventPlanNotifications.eventId, records.eventIds), holdsAnyId(eventPlanNotifications.actionPath, records.bookingIds)) ?? sql`false`,
       ) },
   ];
-  let reworded = 0;
-  for (const target of kept) reworded += (await reword(tx, target, names)).length;
+  const changed = new Set<string>(anonymised.map((row) => `proposal_comments:${row.id}`));
+  for (const target of kept) for (const id of await reword(tx, target, names)) changed.add(`${target.table}:${id}`);
+  const reworded = changed.size;
 
   const deleted = enquiryIds.length === 0 ? [] : await tx.delete(enquiries)
     .where(inArray(enquiries.id, enquiryIds))
@@ -645,7 +717,7 @@ export async function removeEnquiryRecords(tx: PeopleTx, records: ErasureRecords
     comments: comments.length,
     changeCopies: changeCopies.length,
     notices: proposalNotices.length + enquiryNotices,
-    proposals: distinct([...accepted.map((row) => row.id), ...retitled]).length,
+    proposals: distinct([...accepted.map((row) => row.id), ...retitled, ...reversioned]).length,
     reworded,
   };
 }
@@ -710,6 +782,15 @@ export async function eraseFoundPerson(
     sourceId: null,
     updatedAt: input.now,
   }).where(inArray(clientAccounts.id, [...records.householdIds])).returning({ id: clientAccounts.id });
+  // A household another live member stays in is theirs now: they become its
+  // main contact, and only the erased person's name leaves its text.
+  for (const handover of records.handedOver) {
+    await tx.update(clientAccounts).set({ primaryContactId: handover.to, updatedAt: input.now })
+      .where(eq(clientAccounts.id, handover.householdId));
+  }
+  const handedOverIds = records.handedOver.map((handover) => handover.householdId);
+  const renamed = await reword(tx, { table: "client_accounts", columns: { name: 200, notes: null },
+    where: among(clientAccounts.id, handedOverIds) }, records.names);
 
   const removedPoints = await tx.delete(contactPoints).where(inArray(contactPoints.contactId, ids))
     .returning({ id: contactPoints.id });
@@ -735,8 +816,9 @@ export async function eraseFoundPerson(
     people: people.length,
     contactPoints: removedPoints.length,
     mergeSnapshots: scrubbed.length,
-    households: households.length,
+    households: households.length + handedOverIds.length,
     ...removed,
+    reworded: removed.reworded + renamed.length,
   };
   await tx.insert(generalAuditLog).values({
     actorUserId: input.actorUserId,

@@ -37,19 +37,31 @@ export function namesToErase(values: readonly (string | null | undefined)[]): re
   return [...seen.values()].sort((a, b) => b.length - a.length);
 }
 
+function wholeWords(names: readonly string[], flags: string): RegExp | null {
+  if (names.length === 0) return null;
+  const alternatives = names.map((name) => escapeForPattern(name).replace(/ /gu, "\\s+")).join("|");
+  return new RegExp(`${WORD_EDGE_BEFORE}(?:${alternatives})${WORD_EDGE_AFTER}`, flags);
+}
+
 /**
  * The text with every whole-word occurrence of the names replaced by
- * "Erased", case-insensitively, and runs of "Erased" left by a name in parts
- * ("Morag" then "Smith") joined into one. Null and text without a name come
- * back unchanged (the same string), so callers can tell nothing changed.
+ * "Erased", and runs of "Erased" left by a name in parts joined into one.
+ * A name matches as written (capitals and all), so a client called "Will
+ * Smith" never touches "will call back"; an address matches in any case.
+ * Null and text without a name come back unchanged (the same string), so
+ * callers can tell nothing changed.
  */
 export function withoutNames(text: string | null, names: readonly string[]): string | null {
   if (text === null || names.length === 0) return text;
-  const alternatives = names.map((name) => escapeForPattern(name).replace(/ /gu, "\\s+")).join("|");
-  const pattern = new RegExp(`${WORD_EDGE_BEFORE}(?:${alternatives})${WORD_EDGE_AFTER}`, "giu");
-  if (!pattern.test(text)) return text;
-  pattern.lastIndex = 0;
-  return text
-    .replace(pattern, ERASED_TEXT)
-    .replace(new RegExp(`${ERASED_TEXT}(?:[\\s,&]+${ERASED_TEXT})+`, "gu"), ERASED_TEXT);
+  const patterns = [
+    wholeWords(names.filter((name) => !name.includes("@")), "gu"),
+    wholeWords(names.filter((name) => name.includes("@")), "giu"),
+  ].flatMap((pattern) => (pattern === null ? [] : [pattern]));
+  if (!patterns.some((pattern) => pattern.test(text))) return text;
+  let rewritten = text;
+  for (const pattern of patterns) {
+    pattern.lastIndex = 0;
+    rewritten = rewritten.replace(pattern, ERASED_TEXT);
+  }
+  return rewritten.replace(new RegExp(`${ERASED_TEXT}(?:[\\s,&]+${ERASED_TEXT})+`, "gu"), ERASED_TEXT);
 }
