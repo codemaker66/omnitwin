@@ -28,7 +28,7 @@ import { useHudFacts } from "./hud-facts.js";
 import { CloseGlyph, MinusGlyph, PlusGlyph } from "./glyphs.js";
 
 // ---------------------------------------------------------------------------
-// The sheets: what each step of the journey opens (DOCTRINE.md, "Sheets are
+// The sheets: what each step of the journey opens (the HUD's design note, "Sheets are
 // the shelf, grown"). A sheet is the shelf rising, to at most 60 % of the
 // screen: the same surface, with the status line, the cards and the one
 // primary key still under it, so the hand stays in reach. One is open at a

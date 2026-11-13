@@ -12,11 +12,11 @@ import "./hud-ground.css";
 import "./hud-plaque.css";
 
 // ---------------------------------------------------------------------------
-// The HUD's frame (D:/claude/planner-hud-20261113/DOCTRINE.md, "letterbox"):
-// the hall, full screen, and two bars of one ground over it, like the bars of
-// a wide film frame. The top bar holds the plaque, the four steps and the
-// view; the shelf at the bottom holds everything the hand does. Nothing else
-// is a surface: a sheet and the first screen are the shelf grown upward.
+// The HUD's frame (docs/superpowers/specs/2026-11-13-planner-hud-design.md):
+// the hall as one picture, the top bar's words on the night above its walls
+// (the plaque, the four steps, the view), and the shelf at the bottom, which
+// holds everything the hand does. The shelf is the only surface: a sheet and
+// the first screen are the shelf grown upward.
 // The planner mounts it over its own room and plaque (PlannerHud); the lab
 // mounts it over the bare scene, with no backend.
 // ---------------------------------------------------------------------------

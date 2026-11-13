@@ -18,7 +18,7 @@ import { HudFrame } from "../HudFrame.js";
 import { HudSheets } from "../HudSheets.js";
 
 // ---------------------------------------------------------------------------
-// The HUD over the real stores (DOCTRINE.md, "letterbox"): the top bar's
+// The HUD over the real stores (the HUD's design note): the top bar's
 // steps, the shelf's seat line and status line, the hand, the one primary
 // key, the chosen piece's verbs, the sheets and the first screen. Nothing here
 // mocks a store; the keys are pressed as a browser sends them, to the one

@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // ---------------------------------------------------------------------------
 // The HUD behind its flag (docs/superpowers/specs/2026-11-13-planner-hud-design.md;
-// its look, D:/claude/planner-hud-20261113/DOCTRINE.md). With `?chrome=hud` the
+// its look, docs/superpowers/specs/2026-11-13-planner-hud-design.md). With `?chrome=hud` the
 // planner is the room, full bleed, between the HUD's two bars (the top bar
 // and the shelf), and none of v1's surfaces (the cockpit and its docks, the
 // 3D/2D switch, the Event details button, the floating panels). The layout

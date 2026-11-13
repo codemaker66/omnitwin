@@ -13,7 +13,7 @@ import { floorCounts, type FloorCounts } from "./hand-cards.js";
 
 // ---------------------------------------------------------------------------
 // The room as it stands: the facts the shelf's one status line reads
-// (13 Nov 2026; D:/claude/planner-hud-20261113/DOCTRINE.md, "letterbox").
+// (13 Nov 2026; docs/superpowers/specs/2026-11-13-planner-hud-design.md).
 //
 // The line says how many are seated, and then only what needs saying: whether
 // the doors are clear and the narrowest aisle. Something to look at is marked

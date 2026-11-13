@@ -20,7 +20,7 @@ import { NextMoveKey } from "./Journey.js";
 import { PIECE_TITLE_ID, PieceVerbs, useChosenPiece, type Chosen } from "./PieceCard.js";
 
 // ---------------------------------------------------------------------------
-// The shelf: the one surface under the hall (DOCTRINE.md, "letterbox").
+// The shelf: the one surface under the hall (the HUD's design note).
 //
 // Its top edge is the seat line, a hairline that fills left to right as
 // guests are seated. Under it one status line: the seats, then only what needs

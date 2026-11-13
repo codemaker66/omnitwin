@@ -11,7 +11,7 @@ import { HudSheets } from "./HudSheets.js";
 
 // ---------------------------------------------------------------------------
 // The planner in the HUD (docs/superpowers/specs/2026-11-13-planner-hud-design.md;
-// its look, D:/claude/planner-hud-20261113/DOCTRINE.md), loaded only behind
+// its look, docs/superpowers/specs/2026-11-13-planner-hud-design.md), loaded only behind
 // `?chrome=hud` until it becomes the default.
 //
 // The layout keeps syncing, saving and its live room exactly as before. The

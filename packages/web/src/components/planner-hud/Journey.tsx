@@ -9,7 +9,7 @@ import { useHudFacts } from "./hud-facts.js";
 import { TickGlyph } from "./glyphs.js";
 
 // ---------------------------------------------------------------------------
-// The journey (DOCTRINE.md, "letterbox"): four steps as four words in the
+// The journey (the HUD's design note): four steps as four words in the
 // centre of the top bar, each opening its own sheet, and the ONE primary key
 // at the right of the shelf, whose words are always the next best move.
 // Pressing it does the move where one press can, and otherwise opens the step

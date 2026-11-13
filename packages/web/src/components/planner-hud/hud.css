@@ -1,12 +1,13 @@
 /* ---------------------------------------------------------------------------
- * THE PLANNER HUD: two bars and the hall
- * (D:/claude/planner-hud-20261113/DOCTRINE.md, "letterbox").
+ * THE PLANNER HUD: the hall, words on the night, and one shelf
+ * (docs/superpowers/specs/2026-11-13-planner-hud-design.md).
  *
- * The hall fills the screen. Two opaque bars of one ground sit over it, like
- * the bars of a wide film frame: the top bar (the plaque, the four steps, the
- * view) and the shelf (the seat line, the status line, the quiet words, the
- * hand of cards and the one primary key). A sheet and the first screen are the
- * shelf grown upward; nothing else is a surface.
+ * The hall is one picture that fills the screen above the shelf (the stage:
+ * grand-hall/hall-stage.ts). The top bar is not a surface: the plaque, the four
+ * steps and the view stand on the night above the hall's walls. The shelf is
+ * the one surface: the seat line, the status line, the quiet words, the hand of
+ * cards and the one primary key. A sheet and the first screen are the shelf
+ * grown upward.
  *
  * Every measure is a token in the first block below, so it can be tuned in
  * one place; the colours are the ground's (hud-ground.css). The rules that hold

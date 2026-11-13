@@ -20,7 +20,7 @@ import "./hud-first-open.css";
 // hall empty for someone who would rather begin with their own hands. Either
 // way it is not asked again on this page.
 //
-// It is the shelf, risen (DOCTRINE.md, "Sheets are the shelf, grown"): the
+// It is the shelf, risen (the HUD's design note, "Sheets are the shelf, grown"): the
 // same surface over the shelf's own contents, which stand aside while it
 // shows (the frame's data-first-open, hud-first-open.css). The top bar stays,
 // so the screen still says where you are and what follows.

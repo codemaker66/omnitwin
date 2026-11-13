@@ -11,7 +11,7 @@ import { useSelectionStore } from "../../stores/selection-store.js";
 import { MinusGlyph, PlusGlyph } from "./glyphs.js";
 
 // ---------------------------------------------------------------------------
-// The chosen piece's verbs (DOCTRINE.md, "letterbox"). When something is
+// The chosen piece's verbs (the HUD's design note). When something is
 // chosen the cards give way, in the same shelf, to the few things to do with
 // it: a table's seats, its cloth, a turn, a copy, and back off the floor. The
 // piece's name stands where the status line's first words were (Hand.tsx);
