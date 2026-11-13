@@ -97,6 +97,12 @@ export function EnquiryReply({ enquiry, canRecord, overdueSinceMs, thresholdHour
 
 const MINUTE_MS = 60_000;
 
+const NO_TIME = "Enter the day and time of the reply.";
+const FUTURE_TIME = "A reply cannot be later than now.";
+const NOT_EARLIER = "Choose a time earlier than the reply already recorded.";
+/** The refusals that are about the time box, which is then marked invalid. */
+const TIME_FAILURES: ReadonlySet<string> = new Set([NO_TIME, FUTURE_TIME, NOT_EARLIER]);
+
 function ReplyForm({ enquiry, recordedAt, onDone }: {
   readonly enquiry: Enquiry;
   /** The reply already recorded, if any: only an earlier one can replace it,
@@ -106,6 +112,7 @@ function ReplyForm({ enquiry, recordedAt, onDone }: {
 }): ReactElement {
   const legendId = useId();
   const whenId = useId();
+  const errorId = useId();
   const firstChoiceRef = useRef<HTMLInputElement>(null);
   const addToast = useToastStore((state) => state.addToast);
   const recordedMs = recordedAt === null ? null : Date.parse(recordedAt);
@@ -142,15 +149,15 @@ function ReplyForm({ enquiry, recordedAt, onDone }: {
     if (when === "earlier") {
       const ms = wallInputToMs(earlier);
       if (ms === null) {
-        setFailure("Enter the day and time of the reply.");
+        setFailure(NO_TIME);
         return;
       }
       if (ms > Date.now()) {
-        setFailure("A reply cannot be later than now.");
+        setFailure(FUTURE_TIME);
         return;
       }
       if (recordedMinuteMs !== null && ms >= recordedMinuteMs) {
-        setFailure("Choose a time earlier than the reply already recorded.");
+        setFailure(NOT_EARLIER);
         return;
       }
       respondedAt = new Date(ms).toISOString();
@@ -210,7 +217,9 @@ function ReplyForm({ enquiry, recordedAt, onDone }: {
         {when === "earlier" && (
           <label className="enq-reply__time" htmlFor={whenId}>
             <span>Day and time (venue time)</span>
-            <input id={whenId} type="datetime-local" value={earlier} max={msToWallInput(latestMs)}
+            <input id={whenId} type="datetime-local" value={earlier} max={msToWallInput(latestMs)} required
+              aria-invalid={failure !== null && TIME_FAILURES.has(failure) ? true : undefined}
+              aria-describedby={failure === null ? undefined : errorId}
               onChange={(event) => { setEarlier(event.target.value); setFailure(null); }} />
           </label>
         )}
@@ -222,7 +231,7 @@ function ReplyForm({ enquiry, recordedAt, onDone }: {
         </button>
         <button type="button" className="enq-quiet" onClick={() => { onDone(null); }} disabled={saving}>Cancel</button>
       </div>
-      {failure !== null && <p className="enq-confirm__error" role="alert">{failure}</p>}
+      {failure !== null && <p className="enq-confirm__error" id={errorId} role="alert">{failure}</p>}
     </div>
   );
 }

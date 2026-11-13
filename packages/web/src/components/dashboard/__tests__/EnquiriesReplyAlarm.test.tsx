@@ -370,9 +370,16 @@ describe("recording a reply made outside Venviewer", () => {
     const time = within(form).getByLabelText<HTMLInputElement>("Day and time (venue time)");
     expect(time.value).toBe("");
     expect(time.max).toBe("2026-09-24T10:04");
+    expect(time.required).toBe(true);
+    expect(time.getAttribute("aria-invalid")).toBeNull();
+    expect(time.getAttribute("aria-describedby")).toBeNull();
     fireEvent.click(within(form).getByRole("radio", { name: "Phone call" }));
     fireEvent.click(within(form).getByRole("button", { name: "Record reply" }));
-    expect(within(form).getByRole("alert").textContent).toBe("Enter the day and time of the reply.");
+    const missing = within(form).getByRole("alert");
+    expect(missing.textContent).toBe("Enter the day and time of the reply.");
+    // The refusal is the box's: it is marked invalid and names the words.
+    expect(time.getAttribute("aria-invalid")).toBe("true");
+    expect(time.getAttribute("aria-describedby")).toBe(missing.id);
     // 10:05 sends 09:05:00, before the stamp's 09:05:37: the server would take
     // it, and a phone call by this person would replace the decision.
     fireEvent.change(time, { target: { value: "2026-09-24T10:05" } });
