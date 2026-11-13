@@ -1670,10 +1670,14 @@ export function VerticalToolbox({ compactDesktop = false }: { readonly compactDe
 
   // Your Account (desktop) and Account (the phone's More sheet): the person's
   // own place, never a route that refuses their role (lib/role-routing.ts).
+  // This toolbox is the planner's own, so a person whose own place is the
+  // planner (a caterer) is there already: the control stays put rather than
+  // drop the plan's code and ?eventId from the address (#418 C2).
   const handleAuth = useCallback(() => {
     const { isAuthenticated: signedIn, user } = useAuthStore.getState();
     if (signedIn && user !== null) {
-      void navigate(accountRoute(user.role, user.platformRole));
+      const destination = accountRoute(user.role, user.platformRole);
+      if (destination !== "/plan") void navigate(destination);
     } else {
       setShowAuth(true);
     }

@@ -21,6 +21,7 @@ vi.mock("../../../hooks/use-media-query.js", () => ({
 vi.mock("../../../hooks/use-trades-hall-venue.js", () => ({ useTradesHallVenue: () => true }));
 
 const PLAN = "/plan/11111111-1111-4111-8111-111111111111";
+const EVENT_PLAN = `${PLAN}?eventId=22222222-2222-4222-8222-222222222222`;
 
 function signIn(role: string): void {
   const user: AuthUser = { id: "u1", email: "person@example.test", role, platformRole: "none", venueId: null, name: "Person" };
@@ -29,13 +30,14 @@ function signIn(role: string): void {
 
 /** Where the router stands once the control has been pressed. */
 function Where(): ReactElement {
-  return <output data-testid="where">{useLocation().pathname}</output>;
+  const { pathname, search } = useLocation();
+  return <output data-testid="where">{`${pathname}${search}`}</output>;
 }
 
 /** The toolbox as the live planner renders it, on a plan's own address. */
-function renderPlannerToolbox(): void {
+function renderPlannerToolbox(address: string = PLAN): void {
   render(
-    <MemoryRouter initialEntries={[PLAN]}>
+    <MemoryRouter initialEntries={[address]}>
       <Routes>
         <Route path="*" element={<><VerticalToolbox compactDesktop /><Where /></>} />
       </Routes>
@@ -68,14 +70,26 @@ afterEach(() => {
 });
 
 describe("the planner's account control", () => {
-  it.each([
-    { role: "client", home: "/events" },
-    { role: "caterer", home: "/plan" },
-  ])("takes a signed-in $role to their own home, never to the venue's desk", ({ role, home }) => {
-    signIn(role);
+  it("takes a signed-in client to their own home, never to the venue's desk", () => {
+    signIn("client");
     renderPlannerToolbox();
     pressDesktopAccount();
-    expect(screen.getByTestId("where").textContent).toBe(home);
+    expect(screen.getByTestId("where").textContent).toBe("/events");
+  });
+
+  // #418 C2: a caterer's own home is the planner, where they already are.
+  // Going to /plan would drop the plan's code and its ?eventId, and a reload
+  // or a copied link would then open a fresh draft instead of this plan.
+  it.each([
+    { device: "desktop", narrow: false, press: pressDesktopAccount },
+    { device: "phone", narrow: true, press: pressPhoneAccount },
+  ])("keeps a caterer, whose own home is the planner, on the plan's address ($device)", ({ narrow, press }) => {
+    media.narrow = narrow;
+    media.coarse = narrow;
+    signIn("caterer");
+    renderPlannerToolbox(EVENT_PLAN);
+    press();
+    expect(screen.getByTestId("where").textContent).toBe(EVENT_PLAN);
   });
 
   it("takes a client on a phone to their own home too", () => {
