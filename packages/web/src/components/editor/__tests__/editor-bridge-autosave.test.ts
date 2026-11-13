@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { useEditorStore } from "../../../stores/editor-store.js";
-import { flushAutoSave, scheduleAutoSave } from "../EditorBridge.js";
+import { flushAutoSave, scheduleAutoSave, watchReconnectAutosave } from "../EditorBridge.js";
 
 // ---------------------------------------------------------------------------
 // The autosave contract, tested by behaviour rather than by source text.
@@ -44,6 +44,72 @@ beforeEach(() => {
     configRevision: 1,
     isDirty: false,
     isSaving: false,
+    isOnline: true,
+    saveConflict: null,
+  });
+});
+
+describe("offline and back", () => {
+  it("does not spend the autosave tick on a save that can only fail offline", async () => {
+    const saveToServer = vi.fn(() => Promise.resolve(true));
+    setStore({ isDirty: true, isOnline: false, saveToServer });
+    scheduleAutoSave(true);
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(saveToServer).not.toHaveBeenCalled();
+  });
+
+  it("saves again when the browser comes back online with unsaved work", async () => {
+    const saveToServer = vi.fn(() => Promise.resolve(true));
+    setStore({ isDirty: true, isOnline: false, saveToServer });
+    const stop = watchReconnectAutosave(() => true);
+    try {
+      setStore({ isOnline: true });
+      await vi.advanceTimersByTimeAsync(999);
+      expect(saveToServer).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(saveToServer).toHaveBeenCalledTimes(1);
+      expect(saveToServer).toHaveBeenCalledWith(true);
+    } finally {
+      stop();
+    }
+  });
+
+  it("leaves a conflict for the person to decide, and has nothing to send when nothing is unsaved", async () => {
+    const saveToServer = vi.fn(() => Promise.resolve(true));
+    const stop = watchReconnectAutosave(() => true);
+    try {
+      setStore({ isDirty: true, isOnline: false, saveToServer, saveConflict: {
+        expectedRevision: 1, currentRevision: 2, message: "changed",
+        changedBy: null, changedAt: null, byYou: false, theirChange: null,
+      } });
+      setStore({ isOnline: true });
+      setStore({ isOnline: false, saveConflict: null, isDirty: false });
+      setStore({ isOnline: true });
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(saveToServer).not.toHaveBeenCalled();
+    } finally {
+      stop();
+    }
+  });
+});
+
+describe("a conflict waiting for the person's choice", () => {
+  it("spends no autosave tick on it, however many edits follow, and saves again once it is settled", async () => {
+    const saveToServer = vi.fn(() => Promise.resolve(true));
+    setStore({ isDirty: true, saveToServer, saveConflict: {
+      expectedRevision: 1, currentRevision: 2, message: "changed",
+      changedBy: null, changedAt: null, byYou: false, theirChange: null,
+    } });
+    for (let edit = 0; edit < 3; edit += 1) {
+      scheduleAutoSave(false);
+      await vi.advanceTimersByTimeAsync(3000);
+    }
+    expect(saveToServer).not.toHaveBeenCalled();
+
+    setStore({ saveConflict: null });
+    scheduleAutoSave(false);
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(saveToServer).toHaveBeenCalledTimes(1);
   });
 });
 

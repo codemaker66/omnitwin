@@ -58,8 +58,8 @@ describe("collectFloorPlanMarkers", () => {
               isAccessory: false,
               notes: "",
               positions: [
-                { objectId: "00000000-0000-0000-0000-00000000000a", x: 0, z: 0, rotationY: 0 },
-                { objectId: "00000000-0000-0000-0000-00000000000b", x: 5, z: 2, rotationY: 1.5 },
+                { objectId: "00000000-0000-4000-8000-00000000000a", x: 0, z: 0, rotationY: 0 },
+                { objectId: "00000000-0000-4000-8000-00000000000b", x: 5, z: 2, rotationY: 1.5 },
               ],
             },
             {
@@ -71,7 +71,7 @@ describe("collectFloorPlanMarkers", () => {
               isAccessory: false,
               notes: "",
               positions: [
-                { objectId: "00000000-0000-0000-0000-00000000000c", x: -5, z: -3, rotationY: 0 },
+                { objectId: "00000000-0000-4000-8000-00000000000c", x: -5, z: -3, rotationY: 0 },
               ],
             },
           ],

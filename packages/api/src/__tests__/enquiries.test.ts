@@ -19,10 +19,10 @@ function signToken(payload: { id: string; email: string; role: string; venueId: 
   return JSON.stringify(payload);
 }
 
-const VENUE_ID = "00000000-0000-0000-0000-000000000001";
-const SPACE_ID = "00000000-0000-0000-0000-000000000010";
-const CONFIG_ID = "00000000-0000-0000-0000-000000000020";
-const ENQUIRY_ID = "00000000-0000-0000-0000-000000000030";
+const VENUE_ID = "00000000-0000-4000-8000-000000000001";
+const SPACE_ID = "00000000-0000-4000-8000-000000000010";
+const CONFIG_ID = "00000000-0000-4000-8000-000000000020";
+const ENQUIRY_ID = "00000000-0000-4000-8000-000000000030";
 const clientToken = (): string => signToken({ id: "u1", email: "client@test.com", role: "client", venueId: null });
 const adminToken = (): string => signToken({ id: "u3", email: "admin@test.com", role: "admin", venueId: VENUE_ID });
 

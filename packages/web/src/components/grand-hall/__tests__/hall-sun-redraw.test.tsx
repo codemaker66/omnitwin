@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { act } from "@testing-library/react";
 import { advance } from "@react-three/fiber";
 import { DirectionalLight, type LightShadow, type Object3D } from "three";
@@ -9,8 +11,20 @@ import { usePlacementStore } from "../../../stores/placement-store.js";
 import { mountInStubRoot, type StubRoot } from "../../__tests__/stub-r3f-root.js";
 import { FurnitureMotion } from "../../editor/FurnitureMotion.js";
 import { HallContext } from "../HallContext.js";
-import { HallSunLight, MOTION_REDRAW_MS } from "../HallSunLight.js";
+import { CONTEXT_MODEL_URL } from "../hall-context.js";
+import { STREET_LAMPS_URL, STREET_LIGHT_URL } from "../hall-street-light.js";
+import { HallSunLight, MOON_INTENSITY, MOTION_REDRAW_MS } from "../HallSunLight.js";
+import { hallSkyAt } from "../hall-sky.js";
+import { hallSkyState, hallSkyUniforms, publishHallSky } from "../hall-sky-runtime.js";
 import { createSunCaster, requestHallSunRedraw, withoutSunMapDraw } from "../hall-sun.js";
+import { FULL_HALL_FINISH, type HallFinish } from "../hall-finish.js";
+
+/** The device's finish as the hall reads it: a computer's unless a test says a phone's. */
+const finish = vi.hoisted(() => ({ current: null as HallFinish | null }));
+vi.mock("../hall-finish.js", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../hall-finish.js")>();
+  return { ...original, useHallFinish: (): HallFinish => finish.current ?? original.FULL_HALL_FINISH };
+});
 
 let mounted: StubRoot | null = null;
 afterEach(() => {
@@ -20,6 +34,7 @@ afterEach(() => {
   publishFurnitureSettleFrame([]);
   usePlacementStore.setState({ placedItems: [] });
   vi.unstubAllGlobals();
+  finish.current = null;
 });
 
 /** The hall's sun as HallSunLight puts it in the scene. */
@@ -230,5 +245,71 @@ describe("the city arriving round the hall", () => {
     await act(async () => { await new Promise((resolve) => { setTimeout(resolve, 0); }); });
     expect(mounted.scene.getObjectByName("grand-hall-city")).toBeDefined();
     expect(shadow.needsUpdate).toBe(true);
+  });
+
+  /** The published street lamps' map and table, and the one-triangle city, each at its own address. */
+  function stubCityFiles(lampsOk: boolean): void {
+    const city = cityModel();
+    const read = (url: string): Buffer => readFileSync(path.resolve("public", url.replace(/^\//u, "").replace(/\?.*$/u, "")));
+    const light = read(STREET_LIGHT_URL);
+    const table: unknown = JSON.parse(read(STREET_LAMPS_URL).toString("utf8"));
+    vi.stubGlobal("fetch", vi.fn((url: string) => {
+      if (url === CONTEXT_MODEL_URL) return Promise.resolve({ ok: true, status: 200, arrayBuffer: () => Promise.resolve(city) });
+      if (!lampsOk) return Promise.resolve({ ok: false, status: 404 });
+      if (url === STREET_LIGHT_URL) {
+        return Promise.resolve({ ok: true, status: 200, arrayBuffer: () => Promise.resolve(light.buffer.slice(light.byteOffset, light.byteOffset + light.byteLength)) });
+      }
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(table) });
+    }));
+  }
+
+  it("draws the council's street lamps once their map and table arrive", async () => {
+    stubCityFiles(true);
+    mounted = mountInStubRoot(<HallContext />);
+    await act(async () => { await new Promise((resolve) => { setTimeout(resolve, 0); }); });
+    const city = mounted.scene.getObjectByName("grand-hall-city");
+    expect(city?.getObjectByName("grand-hall-street-lamps")).toBeDefined();
+    expect(city?.getObjectByName("grand-hall-street-beams")).toBeDefined();
+    expect(city?.getObjectByName("grand-hall-street-halos")).toBeDefined();
+  });
+
+  it("draws no cones of light on a phone, only the fittings and halos", async () => {
+    finish.current = { ...FULL_HALL_FINISH, photoQuality: 0.5 };
+    stubCityFiles(true);
+    mounted = mountInStubRoot(<HallContext />);
+    await act(async () => { await new Promise((resolve) => { setTimeout(resolve, 0); }); });
+    const city = mounted.scene.getObjectByName("grand-hall-city");
+    expect(city?.getObjectByName("grand-hall-street-lamps")).toBeDefined();
+    expect(city?.getObjectByName("grand-hall-street-halos")).toBeDefined();
+    expect(city?.getObjectByName("grand-hall-street-beams")).toBeUndefined();
+  });
+
+  it("stands the city without its lamps when they cannot load", async () => {
+    stubCityFiles(false);
+    mounted = mountInStubRoot(<HallContext />);
+    await act(async () => { await new Promise((resolve) => { setTimeout(resolve, 0); }); });
+    expect(mounted.scene.getObjectByName("grand-hall-city")).toBeDefined();
+    expect(mounted.scene.getObjectByName("grand-hall-street-lamps")).toBeUndefined();
+  });
+});
+
+describe("the moon in the room (Blake, 22 October 2026: a faint wash)", () => {
+  it("adds under 0.05 of the baked light to a level floor at the full moon of 26 October, a tenth of what it did", () => {
+    mounted = mountInStubRoot(<HallSunLight />);
+    // 20:30 GMT, the moon nearly full and well up over Glassford Street.
+    const sky = hallSkyAt(Date.parse("2026-10-26T20:30:00Z"));
+    expect(sky.moon.strength).toBeGreaterThan(0.05);
+    try {
+      act(() => { publishHallSky(sky, false); advance(1, true); });
+      const radiance = hallSkyUniforms.lightRadiance.value;
+      const onFloor = (0.2126 * radiance.r + 0.7152 * radiance.g + 0.0722 * radiance.b) * Math.max(sky.moon.direction[1], 0);
+      // As it was (1.1 on the room), 0.42: more than the floor's whole night light (median 0.38), and it read white.
+      expect(onFloor).toBeLessThan(0.05);
+      expect(onFloor).toBeGreaterThan(0.02);
+      expect(hallSunLight(mounted.scene).intensity).toBeCloseTo(sky.moon.strength * MOON_INTENSITY / 0.07, 6);
+    } finally {
+      hallSkyState.sky = null;
+      hallSkyUniforms.lightRadiance.value.setRGB(0, 0, 0);
+    }
   });
 });

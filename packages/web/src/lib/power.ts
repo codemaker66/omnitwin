@@ -64,7 +64,9 @@ export interface DistroPlan {
   readonly totalKva: number;
   /** (max − min) ÷ max across phases, percent; 0 for single-phase. */
   readonly imbalancePercent: number;
-  readonly perPhaseBreakerA: number;
+  /** The venue supply's breaker per phase; null when nobody has recorded it,
+   *  in which case no phase is said to be over (or under) anything. */
+  readonly perPhaseBreakerA: number | null;
   /** Rating of each protected circuit (distro way) fed from a phase. */
   readonly circuitBreakerA: number;
   /** Total protected circuits (distro ways) needed across all phases. */
@@ -78,7 +80,8 @@ export interface DistroPlan {
 
 export interface DistroOptions {
   readonly phaseCount?: 1 | 3;
-  readonly perPhaseBreakerA?: number;
+  /** Omitted → the planning default; null → not recorded (no breaker warnings). */
+  readonly perPhaseBreakerA?: number | null;
   readonly circuitBreakerA?: number;
   readonly voltage?: number;
   readonly powerFactor?: number;
@@ -134,9 +137,11 @@ export function buildDistroPlan(fixtureWatts: readonly number[], options: Distro
   const phaseCount: 1 | 3 = options.phaseCount === 1 ? 1 : 3;
   const voltage = options.voltage !== undefined && options.voltage > 0 ? options.voltage : PHASE_VOLTAGE;
   const powerFactor = options.powerFactor !== undefined && options.powerFactor > 0 ? options.powerFactor : DEFAULT_POWER_FACTOR;
-  const perPhaseBreakerA = options.perPhaseBreakerA !== undefined && options.perPhaseBreakerA > 0
-    ? options.perPhaseBreakerA
-    : DEFAULT_PER_PHASE_BREAKER_A;
+  const perPhaseBreakerA = options.perPhaseBreakerA === null
+    ? null
+    : options.perPhaseBreakerA !== undefined && options.perPhaseBreakerA > 0
+      ? options.perPhaseBreakerA
+      : DEFAULT_PER_PHASE_BREAKER_A;
   const circuitBreakerA = options.circuitBreakerA !== undefined && options.circuitBreakerA > 0
     ? options.circuitBreakerA
     : DEFAULT_CIRCUIT_BREAKER_A;
@@ -177,9 +182,11 @@ export function buildDistroPlan(fixtureWatts: readonly number[], options: Distro
     ?? STANDARD_SUPPLY_RATINGS_A[STANDARD_SUPPLY_RATINGS_A.length - 1] ?? DEFAULT_PER_PHASE_BREAKER_A;
 
   const warnings: string[] = [];
-  for (const phase of phases) {
-    if (phase.amps > perPhaseBreakerA) {
-      warnings.push(`${phase.phase} ~${phase.amps.toFixed(0)} A exceeds the ${String(perPhaseBreakerA)} A breaker`);
+  if (perPhaseBreakerA !== null) {
+    for (const phase of phases) {
+      if (phase.amps > perPhaseBreakerA) {
+        warnings.push(`${phase.phase} ~${phase.amps.toFixed(0)} A exceeds the ${String(perPhaseBreakerA)} A breaker`);
+      }
     }
   }
   for (const phase of phases) {

@@ -30,8 +30,15 @@ export interface TheatreLayoutOptions {
   readonly aisleM?: number;
   /** Clear zone kept at the stage (front) end, metres. */
   readonly stageDepthM?: number;
-  /** Clear band kept from the walls, metres. */
+  /** Clear band kept from the side walls, metres (the end walls use rearWalkwayM). */
   readonly wallClearanceM?: number;
+  /**
+   * Clear walkway kept behind the last row, metres, from the back edge of its
+   * chairs to the back wall (Blake, 12 Nov 2026): not from the row's centre.
+   */
+  readonly rearWalkwayM?: number;
+  /** Depth of a chair front to back, metres: the real chair's when the caller has it. */
+  readonly seatDepthM?: number;
   /** Hard cap on total seats. */
   readonly maxSeats?: number;
 }
@@ -53,6 +60,21 @@ const DEFAULT_ROW_PITCH_M = 0.9;
 const DEFAULT_AISLE_M = 1.1;
 const DEFAULT_STAGE_DEPTH_M = 2.4;
 const DEFAULT_WALL_CLEARANCE_M = 0.7;
+const DEFAULT_REAR_WALKWAY_M = 1.2;
+/** The pink Burgess Turini 18/3, the chair Fill sets unless the event names another (catalogue depth 0.58 m). */
+const DEFAULT_SEAT_DEPTH_M = 0.58;
+/** Absorbs float error so a row that fits exactly (a walkway of exactly the minimum) is kept. */
+const ROW_FIT_EPSILON = 1e-9;
+
+/** The default theatre spacing, metres, so the planner can say what it used. */
+export const THEATRE_SPACING = {
+  seatPitchM: DEFAULT_SEAT_PITCH_M,
+  rowPitchM: DEFAULT_ROW_PITCH_M,
+  aisleM: DEFAULT_AISLE_M,
+  stageDepthM: DEFAULT_STAGE_DEPTH_M,
+  wallClearanceM: DEFAULT_WALL_CLEARANCE_M,
+  rearWalkwayM: DEFAULT_REAR_WALKWAY_M,
+} as const;
 
 /**
  * Plan a theatre seating block for a room. Pure. The stage sits at one end of
@@ -70,6 +92,8 @@ export function planTheatreLayout(
   const aisleM = options.aisleM ?? DEFAULT_AISLE_M;
   const stageDepthM = options.stageDepthM ?? DEFAULT_STAGE_DEPTH_M;
   const wallClearanceM = options.wallClearanceM ?? DEFAULT_WALL_CLEARANCE_M;
+  const rearWalkwayM = options.rearWalkwayM ?? DEFAULT_REAR_WALKWAY_M;
+  const seatDepthM = options.seatDepthM ?? DEFAULT_SEAT_DEPTH_M;
 
   const width = Math.max(0, roomWidthM);
   const length = Math.max(0, roomLengthM);
@@ -84,9 +108,11 @@ export function planTheatreLayout(
   const seatsPerRow = 2 * seatsPerBlock;
 
   const frontD = -depthM / 2 + stageDepthM;
-  const backD = depthM / 2 - wallClearanceM;
+  // The last row's centre stops a walkway plus half a chair short of the back wall,
+  // so the walkway is measured from the chairs' back edge, not from the row centre.
+  const backD = depthM / 2 - rearWalkwayM - seatDepthM / 2;
   const usableDepthM = backD - frontD;
-  const roomRows = usableDepthM >= 0 ? Math.floor(usableDepthM / rowPitchM) + 1 : 0;
+  const roomRows = usableDepthM >= -ROW_FIT_EPSILON ? Math.floor(usableDepthM / rowPitchM + ROW_FIT_EPSILON) + 1 : 0;
 
   const base = { seatsPerRow, seatsPerBlock, aisleM, stageDepthM, alongLength };
   if (seatsPerRow === 0 || roomRows === 0) {

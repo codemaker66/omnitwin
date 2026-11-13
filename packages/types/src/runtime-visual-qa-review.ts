@@ -130,7 +130,7 @@ export const RuntimeVisualQaCheckSchema = z
   .superRefine((check, ctx) => {
     if (check.status === "passed" && check.evidenceRefs.length === 0) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["evidenceRefs"],
         message: "Passed visual QA checks need at least one evidence reference.",
       });
@@ -144,8 +144,8 @@ export const RuntimeVisualQaReviewV0Schema = z
     reviewId: z.string().trim().min(1).max(160).regex(REVIEW_ID),
     venueSlug: RuntimeSlugSchema,
     roomSlug: TradesHallRuntimeRoomSlugSchema,
-    runtimePackageId: z.string().uuid(),
-    reviewedAt: z.string().datetime({ offset: true }),
+    runtimePackageId: z.uuid(),
+    reviewedAt: z.iso.datetime({ offset: true }),
     recordedBy: z.string().trim().min(1).max(160),
     reviewerKind: RuntimeVisualQaReviewerKindSchema,
     reviewerRole: z.string().trim().min(1).max(120),
@@ -178,7 +178,7 @@ export const RuntimeVisualQaReviewV0Schema = z
     for (const requiredCheck of RUNTIME_VISUAL_QA_CHECK_KEYS) {
       if (!seenChecks.has(requiredCheck)) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["checks"],
           message: `Runtime visual QA review is missing required check ${requiredCheck}.`,
         });
@@ -190,7 +190,7 @@ export const RuntimeVisualQaReviewV0Schema = z
     );
     if (duplicateCheck !== undefined) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["checks"],
         message: `Runtime visual QA review has duplicate check ${duplicateCheck.checkKey}.`,
       });
@@ -201,7 +201,7 @@ export const RuntimeVisualQaReviewV0Schema = z
       review.signedTransformArtifactId !== null
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["signedTransformArtifactId"],
         message: "Unsigned visual QA reviews must not cite a signed transform artifact.",
       });
@@ -212,7 +212,7 @@ export const RuntimeVisualQaReviewV0Schema = z
       review.signedTransformArtifactId === null
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["signedTransformArtifactId"],
         message: "Signed visual QA reviews must cite a signed transform artifact.",
       });
@@ -226,7 +226,7 @@ export const RuntimeVisualQaReviewV0Schema = z
       signedTransformCheck?.status === "passed"
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["checks"],
         message: "Unsigned visual QA reviews cannot pass the signed transform check.",
       });
@@ -240,7 +240,7 @@ export const RuntimeVisualQaReviewV0Schema = z
       humanReviewCheck?.status !== "passed"
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["checks"],
         message: "Human-reviewed visual QA dispositions require a passed human review check.",
       });
@@ -251,7 +251,7 @@ export const RuntimeVisualQaReviewV0Schema = z
       review.assetEvidenceStatus !== "human_reviewed"
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["publicExposureDisposition"],
         message: "Approved public visual exposure requires human-reviewed asset evidence.",
       });
@@ -262,7 +262,7 @@ export const RuntimeVisualQaReviewV0Schema = z
       review.transformDisposition !== "signed_transform_verified"
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["publicExposureDisposition"],
         message: "Approved public visual exposure requires a signed transform.",
       });
@@ -287,7 +287,7 @@ export const RuntimeVisualQaReviewV0Schema = z
       )
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["checks"],
         message: "Approved public visual exposure requires passed human, scale, floor/wall, and exposure checks.",
       });
@@ -298,7 +298,7 @@ export const RuntimeVisualQaReviewV0Schema = z
       review.blockers.length > 0
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["blockers"],
         message: "Approved public visual exposure cannot retain open blockers.",
       });
@@ -309,7 +309,7 @@ export const RuntimeVisualQaReviewV0Schema = z
       review.requiredBeforeApproval.length === 0
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["requiredBeforeApproval"],
         message: "Non-public visual QA reviews must list requirements before approval.",
       });
@@ -320,7 +320,7 @@ export const RuntimeVisualQaReviewV0Schema = z
       review.blockers.length === 0
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["blockers"],
         message: "Blocked visual QA reviews must list at least one blocker.",
       });

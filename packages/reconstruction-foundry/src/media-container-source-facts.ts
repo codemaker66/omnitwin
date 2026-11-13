@@ -181,7 +181,7 @@ const BMFF_HEIF_AVIF_BRANDS = new Set([
 ]);
 const DecimalIntegerSchema = z.string().regex(DECIMAL_INTEGER).max(40);
 const ContainerSchema = z.object({
-  sourceSizeBytes: z.number().int().safe().positive().max(FOUNDRY_MEDIA_CONTAINER_SOURCE_MAX_BYTES),
+  sourceSizeBytes: z.number().int().int().positive().max(FOUNDRY_MEDIA_CONTAINER_SOURCE_MAX_BYTES),
   exactFileLengthVerified: z.literal(true),
   trailingBytes: z.literal(0),
 }).strict();
@@ -191,7 +191,7 @@ const DimensionsSchema = z.object({
   pixelCount: z.number().int().positive().max(FOUNDRY_MEDIA_CONTAINER_PIXEL_COUNT_MAX),
 }).strict().superRefine((value, ctx) => {
   if (value.pixelCount !== value.width * value.height) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["pixelCount"], message: "pixel count must equal width times height" });
+    ctx.addIssue({ code: "custom", path: ["pixelCount"], message: "pixel count must equal width times height" });
   }
 });
 const LimitationsSchema = z.tuple([
@@ -217,14 +217,14 @@ const JpegFactsSchema = z.object({
     markerCount: z.number().int().positive().max(FOUNDRY_MEDIA_CONTAINER_JPEG_MARKER_MAX_COUNT),
     appSegmentCount: z.number().int().nonnegative().max(FOUNDRY_MEDIA_CONTAINER_JPEG_MARKER_MAX_COUNT),
     commentSegmentCount: z.number().int().nonnegative().max(FOUNDRY_MEDIA_CONTAINER_JPEG_MARKER_MAX_COUNT),
-    metadataPayloadBytes: z.number().int().safe().nonnegative().max(FOUNDRY_MEDIA_CONTAINER_JPEG_METADATA_MAX_BYTES),
-    eoiOffsetBytes: z.number().int().safe().positive().max(FOUNDRY_MEDIA_CONTAINER_SOURCE_MAX_BYTES),
+    metadataPayloadBytes: z.number().int().int().nonnegative().max(FOUNDRY_MEDIA_CONTAINER_JPEG_METADATA_MAX_BYTES),
+    eoiOffsetBytes: z.number().int().int().positive().max(FOUNDRY_MEDIA_CONTAINER_SOURCE_MAX_BYTES),
   }).strict(),
   container: ContainerSchema,
   limitations: LimitationsSchema,
 }).strict().superRefine((facts, ctx) => {
   if (facts.structure.eoiOffsetBytes + 2 !== facts.container.sourceSizeBytes) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["structure", "eoiOffsetBytes"], message: "JPEG EOI must end at exact file length" });
+    ctx.addIssue({ code: "custom", path: ["structure", "eoiOffsetBytes"], message: "JPEG EOI must end at exact file length" });
   }
 });
 
@@ -242,9 +242,9 @@ const PngFactsSchema = z.object({
   chunks: z.object({
     count: z.number().int().min(3).max(FOUNDRY_MEDIA_CONTAINER_PNG_CHUNK_MAX_COUNT),
     idatCount: z.number().int().positive().max(FOUNDRY_MEDIA_CONTAINER_PNG_CHUNK_MAX_COUNT),
-    idatPayloadBytes: z.number().int().safe().positive().max(FOUNDRY_MEDIA_CONTAINER_SOURCE_MAX_BYTES),
+    idatPayloadBytes: z.number().int().int().positive().max(FOUNDRY_MEDIA_CONTAINER_SOURCE_MAX_BYTES),
     ancillaryCount: z.number().int().nonnegative().max(FOUNDRY_MEDIA_CONTAINER_PNG_CHUNK_MAX_COUNT),
-    ancillaryPayloadBytes: z.number().int().safe().nonnegative().max(FOUNDRY_MEDIA_CONTAINER_PNG_ANCILLARY_MAX_BYTES),
+    ancillaryPayloadBytes: z.number().int().int().nonnegative().max(FOUNDRY_MEDIA_CONTAINER_PNG_ANCILLARY_MAX_BYTES),
     paletteEntries: z.number().int().min(1).max(256).nullable(),
     transparencyDeclared: z.boolean(),
     allCrcsVerified: z.literal(true),
@@ -269,37 +269,37 @@ const PngFactsSchema = z.object({
   } as const;
   const colorType = facts.image.colorType;
   if (facts.image.channelCount !== expectedChannels[colorType]) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["image", "channelCount"], message: "PNG channel count contradicts color type" });
+    ctx.addIssue({ code: "custom", path: ["image", "channelCount"], message: "PNG channel count contradicts color type" });
   }
   if (!(legalBitDepths[colorType] as readonly number[]).includes(facts.image.bitDepth)) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["image", "bitDepth"], message: "PNG bit depth contradicts color type" });
+    ctx.addIssue({ code: "custom", path: ["image", "bitDepth"], message: "PNG bit depth contradicts color type" });
   }
   if (colorType === "indexed") {
     if (facts.chunks.paletteEntries === null || facts.chunks.paletteEntries > 2 ** facts.image.bitDepth) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["chunks", "paletteEntries"], message: "indexed PNG facts require a legal palette" });
+      ctx.addIssue({ code: "custom", path: ["chunks", "paletteEntries"], message: "indexed PNG facts require a legal palette" });
     }
   } else if (
     (colorType === "grayscale" || colorType === "grayscale_alpha") &&
     facts.chunks.paletteEntries !== null
   ) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["chunks", "paletteEntries"], message: "grayscale PNG facts cannot declare a palette" });
+    ctx.addIssue({ code: "custom", path: ["chunks", "paletteEntries"], message: "grayscale PNG facts cannot declare a palette" });
   }
   if (
     (colorType === "grayscale_alpha" || colorType === "truecolor_alpha") &&
     facts.chunks.transparencyDeclared
   ) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["chunks", "transparencyDeclared"], message: "alpha PNG color types cannot also declare tRNS" });
+    ctx.addIssue({ code: "custom", path: ["chunks", "transparencyDeclared"], message: "alpha PNG color types cannot also declare tRNS" });
   }
   const expectedChunkCount = 2 + facts.chunks.idatCount + facts.chunks.ancillaryCount +
     (facts.chunks.paletteEntries === null ? 0 : 1);
   if (facts.chunks.count !== expectedChunkCount) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["chunks", "count"], message: "PNG chunk counts are inconsistent" });
+    ctx.addIssue({ code: "custom", path: ["chunks", "count"], message: "PNG chunk counts are inconsistent" });
   }
   if (facts.chunks.transparencyDeclared && facts.chunks.ancillaryCount === 0) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["chunks", "ancillaryCount"], message: "PNG tRNS declaration requires an ancillary chunk" });
+    ctx.addIssue({ code: "custom", path: ["chunks", "ancillaryCount"], message: "PNG tRNS declaration requires an ancillary chunk" });
   }
   if (facts.chunks.ancillaryCount === 0 && facts.chunks.ancillaryPayloadBytes !== 0) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["chunks", "ancillaryPayloadBytes"], message: "PNG ancillary bytes require an ancillary chunk" });
+    ctx.addIssue({ code: "custom", path: ["chunks", "ancillaryPayloadBytes"], message: "PNG ancillary bytes require an ancillary chunk" });
   }
 });
 
@@ -310,7 +310,7 @@ const BmffSampleDescriptionSchema = z.object({
   height: z.number().int().positive().max(FOUNDRY_MEDIA_CONTAINER_DIMENSION_MAX),
 }).strict().superRefine((value, ctx) => {
   if (value.width * value.height > FOUNDRY_MEDIA_CONTAINER_PIXEL_COUNT_MAX) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["width"], message: "sample-description pixel count exceeds the profile limit" });
+    ctx.addIssue({ code: "custom", path: ["width"], message: "sample-description pixel count exceeds the profile limit" });
   }
 });
 
@@ -318,8 +318,8 @@ const BmffVideoTrackSchema = z.object({
   ordinal: z.number().int().nonnegative().max(FOUNDRY_MEDIA_CONTAINER_BMFF_TRACK_MAX_COUNT - 1),
   trackId: z.number().int().positive().max(0xffff_ffff),
   enabled: z.boolean(),
-  trackWidthPixels: z.number().finite().nonnegative().max(FOUNDRY_MEDIA_CONTAINER_DIMENSION_MAX),
-  trackHeightPixels: z.number().finite().nonnegative().max(FOUNDRY_MEDIA_CONTAINER_DIMENSION_MAX),
+  trackWidthPixels: z.number().nonnegative().max(FOUNDRY_MEDIA_CONTAINER_DIMENSION_MAX),
+  trackHeightPixels: z.number().nonnegative().max(FOUNDRY_MEDIA_CONTAINER_DIMENSION_MAX),
   mediaTimescale: z.number().int().positive().max(0xffff_ffff),
   mediaDurationUnits: DecimalIntegerSchema,
   sampleDescriptions: z.array(BmffSampleDescriptionSchema).min(1).max(
@@ -327,7 +327,7 @@ const BmffVideoTrackSchema = z.object({
   ),
 }).strict().superRefine((track, ctx) => {
   if (track.sampleDescriptions.some((entry, index) => entry.ordinal !== index)) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["sampleDescriptions"], message: "sample-description ordinals must be contiguous" });
+    ctx.addIssue({ code: "custom", path: ["sampleDescriptions"], message: "sample-description ordinals must be contiguous" });
   }
 });
 
@@ -350,7 +350,7 @@ const IsoBmffFactsSchema = z.object({
     topLevelCount: z.number().int().min(3).max(FOUNDRY_MEDIA_CONTAINER_BMFF_BOX_MAX_COUNT),
     extendedSizeCount: z.number().int().nonnegative().max(FOUNDRY_MEDIA_CONTAINER_BMFF_BOX_MAX_COUNT),
     mdatCount: z.number().int().positive().max(FOUNDRY_MEDIA_CONTAINER_BMFF_BOX_MAX_COUNT),
-    mdatPayloadBytes: z.number().int().safe().nonnegative().max(FOUNDRY_MEDIA_CONTAINER_SOURCE_MAX_BYTES),
+    mdatPayloadBytes: z.number().int().int().nonnegative().max(FOUNDRY_MEDIA_CONTAINER_SOURCE_MAX_BYTES),
   }).strict(),
   tracks: z.object({
     count: z.number().int().positive().max(FOUNDRY_MEDIA_CONTAINER_BMFF_TRACK_MAX_COUNT),
@@ -364,16 +364,16 @@ const IsoBmffFactsSchema = z.object({
     [facts.fileType.majorBrand, ...facts.fileType.compatibleBrands]
       .some((brand) => BMFF_HEIF_AVIF_BRANDS.has(brand))
   ) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["fileType"], message: "HEIF and AVIF brands are outside the ISO movie-video declaration profile" });
+    ctx.addIssue({ code: "custom", path: ["fileType"], message: "HEIF and AVIF brands are outside the ISO movie-video declaration profile" });
   }
   if (facts.tracks.videoCount !== facts.tracks.video.length || facts.tracks.videoCount > facts.tracks.count) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["tracks"], message: "BMFF track counts are inconsistent" });
+    ctx.addIssue({ code: "custom", path: ["tracks"], message: "BMFF track counts are inconsistent" });
   }
   if (facts.tracks.video.some((track, index) => track.ordinal >= facts.tracks.count || (index > 0 && track.ordinal <= (facts.tracks.video[index - 1]?.ordinal ?? -1)))) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["tracks", "video"], message: "video-track ordinals must preserve unique track order" });
+    ctx.addIssue({ code: "custom", path: ["tracks", "video"], message: "video-track ordinals must preserve unique track order" });
   }
   if (new Set(facts.tracks.video.map((track) => track.trackId)).size !== facts.tracks.video.length) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["tracks", "video"], message: "video-track identifiers must be unique" });
+    ctx.addIssue({ code: "custom", path: ["tracks", "video"], message: "video-track identifiers must be unique" });
   }
   if (
     facts.boxes.topLevelCount > facts.boxes.count ||
@@ -382,7 +382,7 @@ const IsoBmffFactsSchema = z.object({
     facts.boxes.mdatPayloadBytes > facts.container.sourceSizeBytes ||
     facts.tracks.count > facts.boxes.count
   ) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["boxes"], message: "BMFF box, media-data, and track counts are inconsistent" });
+    ctx.addIssue({ code: "custom", path: ["boxes"], message: "BMFF box, media-data, and track counts are inconsistent" });
   }
 });
 

@@ -63,6 +63,9 @@ export interface DragEnv {
   readonly laneOrder: readonly string[];
   readonly inksByLane: ReadonlyMap<string, readonly InkSpan[]>;
   readonly isInk: boolean;
+  /** A viewing (migration 0100) under a confirmed booking is warned in its
+   *  own words: it is never confirmed, so "cannot be confirmed" is untrue. */
+  readonly isViewing?: boolean;
 }
 
 export interface MovePatch {
@@ -97,6 +100,12 @@ export function ghostValidity(
         return {
           kind: "blocked",
           reason: `Overlaps "${ink.title}" — two confirmed bookings cannot share a room.`,
+        };
+      }
+      if (env.isViewing === true) {
+        return {
+          kind: "warning",
+          reason: `Falls during "${ink.title}" — the room is in use then. Choose another time, or let the guest know.`,
         };
       }
       return {

@@ -130,6 +130,7 @@ describe("Evidence lens · Change history", () => {
     await waitFor(() => {
       expect(getActionLogMock).toHaveBeenCalledTimes(2);
     });
-    expect((await screen.findAllByTestId("change-history-row")).length).toBeGreaterThan(100);
+    // The first page's rows are already drawn; wait for the earlier page's.
+    await waitFor(() => { expect(screen.getAllByTestId("change-history-row").length).toBeGreaterThan(100); });
   });
 });

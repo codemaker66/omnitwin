@@ -1,8 +1,18 @@
 import type { HallkeeperFloorPlan } from "@omnitwin/types";
 import { projectHallkeeperFloorPlan, type PlanViewport } from "./hallkeeper-floor-plan.js";
 
+/** The words drawn above the plan. The hallkeeper sheet keeps its own default. */
+export interface FloorPlanDrawingOptions {
+  readonly heading?: string;
+}
+
 /** A vector drawing of frozen catalogue footprints, not a captured room image. */
-export function renderHallkeeperFloorPlan(doc: PDFKit.PDFDocument, plan: HallkeeperFloorPlan, box: PlanViewport): void {
+export function renderHallkeeperFloorPlan(
+  doc: PDFKit.PDFDocument,
+  plan: HallkeeperFloorPlan,
+  box: PlanViewport,
+  options: FloorPlanDrawingOptions = {},
+): void {
   const drawing = projectHallkeeperFloorPlan(plan, { x: box.x + 16, y: box.y + 24, width: box.width - 32, height: box.height - 52 });
   const line = (points: readonly { readonly x: number; readonly y: number }[]) => {
     for (const [index, point] of points.entries()) {
@@ -14,7 +24,7 @@ export function renderHallkeeperFloorPlan(doc: PDFKit.PDFDocument, plan: Hallkee
   doc.save();
   doc.rect(box.x, box.y, box.width, box.height).lineWidth(0.5).strokeColor("#dddddd").stroke();
   doc.font("Helvetica-Bold").fontSize(8).fillColor("#333333");
-  doc.text("FLOOR PLAN · CATALOGUE FOOTPRINTS", box.x + 10, box.y + 8, { width: box.width - 20, height: 11 });
+  doc.text(options.heading ?? "FLOOR PLAN · CATALOGUE FOOTPRINTS", box.x + 10, box.y + 8, { width: box.width - 20, height: 11 });
   line(drawing.outline);
   doc.lineWidth(0.8).fillAndStroke("#faf9f6", "#777777");
   // Source ordering is stable. Individual chairs remain independent of tables.
@@ -35,7 +45,8 @@ export function renderHallkeeperFloorPlan(doc: PDFKit.PDFDocument, plan: Hallkee
   const chairCount = plan.objects.filter((object) => object.category === "chair").length;
   const otherCount = plan.objects.length - tableCount - chairCount;
   doc.font("Helvetica").fontSize(7).fillColor("#555555");
-  doc.text(`${String(tableCount)} tables · ${String(chairCount)} chairs${otherCount > 0 ? ` · ${String(otherCount)} other objects` : ""}`, box.x + 10, box.y + box.height - 20, { width: box.width / 2, height: 10 });
+  const counted = (count: number, one: string, many: string): string => `${String(count)} ${count === 1 ? one : many}`;
+  doc.text(`${counted(tableCount, "table", "tables")} · ${counted(chairCount, "chair", "chairs")}${otherCount > 0 ? ` · ${counted(otherCount, "other object", "other objects")}` : ""}`, box.x + 10, box.y + box.height - 20, { width: box.width / 2, height: 10 });
   // A hallkeeper reads a plan, not an axis convention. "+X right, +Z down"
   // is the renderer's vocabulary and means nothing on a printed sheet.
   doc.text("Plan drawn looking down on the room", box.x + 10, box.y + box.height - 10, { width: box.width / 2, height: 9 });

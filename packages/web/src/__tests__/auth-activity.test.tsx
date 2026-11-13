@@ -1,6 +1,7 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { StrictMode, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ApiError } from "../api/client.js";
 import { AuthModal } from "../components/editor/AuthModal.js";
 import { OAuthConsentPage } from "../pages/OAuthConsentPage.js";
 import { useAuthStore } from "../stores/auth-store.js";
@@ -34,6 +35,14 @@ vi.mock("@clerk/react", () => ({
   OAuthConsent: () => <div>Consent controls</div>,
 }));
 
+/** The tracked drafts this browser created, each with the claim secret the
+ *  create route gave it (stores/editor-store.ts writes the real list). */
+function trackDraftsCreatedHere(...configIds: readonly string[]): void {
+  localStorage.setItem("omnitwin_my_configs", JSON.stringify(configIds.map((configId) => ({
+    configId, createdAt: "2026-10-25T20:00:00.000Z", claimSecret: `secret-for-${configId}-0123456789abcdef`,
+  }))));
+}
+
 function deferred() {
   let resolve!: () => void;
   let reject!: (error: Error) => void;
@@ -47,6 +56,7 @@ beforeEach(() => {
   mocks.clerk = "loading";
   useAuthStore.setState({ isAuthenticated: true });
   useEditorStore.setState({ configId: "layout-a", isPublicPreview: true });
+  trackDraftsCreatedHere("layout-a", "layout-b", "layout-c");
 });
 afterEach(cleanup);
 
@@ -125,6 +135,52 @@ describe("authentication activity lifecycles", () => {
     expect(useEditorStore.getState().isPublicPreview).toBe(false);
     expect(mocks.save).toHaveBeenCalledTimes(1);
     expect(close).not.toHaveBeenCalled();
+  });
+
+  it("claims with the secret this browser was given for the layout", async () => {
+    mocks.claim.mockResolvedValue(undefined);
+    render(<AuthModal onClose={vi.fn()} />);
+    await act(async () => { await Promise.resolve(); });
+    expect(mocks.claim).toHaveBeenCalledWith("layout-a", "secret-for-layout-a-0123456789abcdef");
+  });
+
+  // Release audit public-surface-1: a signed-in partner who opens a guest's
+  // shared /plan/<id> link must not take the guest's layout.
+  it("never claims a layout this browser did not create, and says so without offering a retry", async () => {
+    localStorage.removeItem("omnitwin_my_configs");
+    const close = vi.fn();
+    render(<AuthModal onClose={close} />);
+    await act(async () => { await Promise.resolve(); });
+    expect(mocks.claim).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert").textContent).toContain("started in another browser");
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+    expect(useEditorStore.getState().isPublicPreview).toBe(true);
+    expect(mocks.save).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Return to layout" }));
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  // The commonest path (auditor's verifiers, 26 Oct): a member of the venue's
+  // staff opens a guest's /plan link from an enquiry, presses Sign In, and must
+  // not silently take the guest's plan.
+  it("does not take a guest's plan when a member of staff signs in on its link", async () => {
+    useAuthStore.setState({ isAuthenticated: true, user: { id: "staff-1", email: "staff@example.test", name: "Staff", role: "staff", platformRole: "none", venueId: "venue-1" } });
+    useEditorStore.setState({ configId: "guest-plan", isPublicPreview: true });
+    render(<AuthModal onClose={vi.fn()} />);
+    await act(async () => { await Promise.resolve(); });
+    expect(mocks.claim).not.toHaveBeenCalled();
+    expect(useEditorStore.getState().isPublicPreview).toBe(true);
+    expect(mocks.save).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert").textContent).toContain("started in another browser");
+  });
+
+  it("explains a layout the venue already uses for an event, without offering a retry", async () => {
+    mocks.claim.mockRejectedValue(new ApiError(409, "In venue work", "CONFIGURATION_IN_VENUE_WORK"));
+    render(<AuthModal onClose={vi.fn()} />);
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    expect(screen.getByRole("alert").textContent).toContain("stays with the venue");
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+    expect(mocks.save).not.toHaveBeenCalled();
   });
 
   it("keeps the idle sign-in form still", () => {

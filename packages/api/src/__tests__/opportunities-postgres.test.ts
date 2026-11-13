@@ -67,6 +67,8 @@ describe.skipIf(testUrl === undefined)("opportunities on isolated PostgreSQL", (
     schema.opportunities, schema.followUpTasks, schema.activities,
     schema.opportunityStatusHistory, schema.proposals,
     schema.users, schema.contacts, schema.clientAccounts, schema.enquiries, schema.spaces, schema.quotes,
+    // A deal timeline reads who won a lost deal (the competitor watch).
+    schema.competitorVenues, schema.competitorLosses,
   ];
 
   beforeAll(async () => {
@@ -95,7 +97,7 @@ describe.skipIf(testUrl === undefined)("opportunities on isolated PostgreSQL", (
   }, 120_000);
 
   beforeEach(async () => {
-    await pool.query("TRUNCATE opportunities, follow_up_tasks, activities, opportunity_status_history, proposals, users, contacts, client_accounts, enquiries, spaces, quotes");
+    await pool.query("TRUNCATE opportunities, follow_up_tasks, activities, opportunity_status_history, proposals, users, contacts, client_accounts, enquiries, spaces, quotes, competitor_venues, competitor_losses");
     for (let index = 1; index <= 4; index += 1) {
       await pool.query(
         `INSERT INTO opportunities (id, venue_id, title, stage, estimated_value_minor, currency, next_action, created_at, updated_at)

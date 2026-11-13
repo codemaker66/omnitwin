@@ -30,9 +30,8 @@ export function isHumanPovPointerButton(button: number): boolean {
   return button === 2;
 }
 
-export function isHumanPovExitKey(code: string): boolean {
-  return code === "Escape";
-}
+// Esc leaves the person's-eye view through the planner's one Escape order
+// (CameraRig's camera layer, lib/planner-keys.ts).
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));

@@ -2,7 +2,7 @@
 // Price calculator — pure functions, no DB access
 // ---------------------------------------------------------------------------
 
-import type { PricingType, LineItem, Modifier } from "@omnitwin/types";
+import { standingRates, type PricingType, type LineItem, type Modifier } from "@omnitwin/types";
 import {
   poundsToMinor,
   minorToMajor,
@@ -106,10 +106,13 @@ function isRuleForSpace(rule: PricingRuleInput, spaceId: string): boolean {
 // ---------------------------------------------------------------------------
 // Windows (goal 19 S6). A rule that states its time of day applies only when
 // the requested span lies inside it. Where several windowed rules for the
-// SAME room (the same spaceId) hold the span, they are the price sheet's
-// alternatives for one booking ("Half Day" inside "Full Day"), so only the
-// narrowest applies; rules of other rooms, venue-wide rules and rules with
-// no window are not alternatives of it and are judged on their own. A span
+// SAME room (the same spaceId) and the SAME way of charging (the same type)
+// hold the span, they are the price sheet's alternatives for one booking
+// ("Half Day" inside "Full Day"), so only the narrowest applies. Rules of
+// other rooms, venue-wide rules, rules with no window and rules charged
+// another way are not alternatives of it and are judged on their own: a
+// drinks package at £10 a head from 19:00 to 21:00 is charged as well as the
+// evening's room hire, never instead of it (release audit dash-ops-1). A span
 // no window holds earns no slot line: the sheet has no slot for it.
 // ---------------------------------------------------------------------------
 
@@ -146,26 +149,33 @@ export function windowHolds(window: RuleWindow, startTime: string, endTime: stri
   return crossesMidnight && start + MINUTES_PER_DAY >= window.fromMinute && end + MINUTES_PER_DAY <= window.untilMinute;
 }
 
+/** Which windowed rules are alternatives of one another: one room (or the
+ *  whole venue), one way of charging. */
+function alternativesKey(rule: Pick<PricingRuleInput, "spaceId" | "type">): string {
+  return `${rule.spaceId ?? "*"}|${rule.type}`;
+}
+
 /** The rules that apply to the span: every rule without a window, and for
- *  each room the narrowest window that holds the span. */
+ *  each room and way of charging the narrowest window that holds the span. */
 export function applicableRules(
   rules: readonly PricingRuleInput[],
   startTime: string,
   endTime: string,
 ): readonly PricingRuleInput[] {
-  const narrowest = new Map<string | null, number>();
+  const narrowest = new Map<string, number>();
   for (const rule of rules) {
     const window = ruleWindow(rule);
     if (window === null || !windowHolds(window, startTime, endTime)) continue;
     const span = window.untilMinute - window.fromMinute;
-    const best = narrowest.get(rule.spaceId);
-    if (best === undefined || span < best) narrowest.set(rule.spaceId, span);
+    const key = alternativesKey(rule);
+    const best = narrowest.get(key);
+    if (best === undefined || span < best) narrowest.set(key, span);
   }
   return rules.filter((rule) => {
     const window = ruleWindow(rule);
     if (window === null) return true;
     if (!windowHolds(window, startTime, endTime)) return false;
-    return window.untilMinute - window.fromMinute === narrowest.get(rule.spaceId);
+    return window.untilMinute - window.fromMinute === narrowest.get(alternativesKey(rule));
   });
 }
 
@@ -192,7 +202,10 @@ export function calculatePrice(input: PriceCalculationInput): PriceResult {
   const currency = rules[0]?.currency ?? "GBP";
 
   const inScope = rules.filter((rule) => isRuleValidForDate(rule, eventDate) && isRuleForSpace(rule, spaceId));
-  for (const rule of applicableRules(inScope, startTime, endTime)) {
+  // A rate for particular dates takes the place of the everyday rate for the
+  // same room, time and way of charging on those dates (@omnitwin/types
+  // standingRates), so a dated rate is charged instead of, not as well as.
+  for (const rule of standingRates(applicableRules(inScope, startTime, endTime))) {
 
     let amountMinor: Minor = 0;
     let description = "";

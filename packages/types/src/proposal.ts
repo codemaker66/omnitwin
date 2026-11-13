@@ -32,16 +32,16 @@ import {
 // IDs — UUID v4
 // ---------------------------------------------------------------------------
 
-export const ProposalIdSchema = z.string().uuid();
+export const ProposalIdSchema = z.uuid();
 export type ProposalId = z.infer<typeof ProposalIdSchema>;
 
-export const ProposalVersionIdSchema = z.string().uuid();
+export const ProposalVersionIdSchema = z.uuid();
 export type ProposalVersionId = z.infer<typeof ProposalVersionIdSchema>;
 
-export const QuoteIdSchema = z.string().uuid();
+export const QuoteIdSchema = z.uuid();
 export type QuoteId = z.infer<typeof QuoteIdSchema>;
 
-export const QuoteLineItemIdSchema = z.string().uuid();
+export const QuoteLineItemIdSchema = z.uuid();
 export type QuoteLineItemId = z.infer<typeof QuoteLineItemIdSchema>;
 
 // ---------------------------------------------------------------------------
@@ -226,7 +226,7 @@ function lineTotalIsExact(
 ): void {
   if (item.lineTotalMinor !== item.unitAmountMinor * item.quantity) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["lineTotalMinor"],
       message: "lineTotalMinor must equal unitAmountMinor × quantity exactly",
     });
@@ -244,7 +244,7 @@ export type QuoteLineItem = z.infer<typeof QuoteLineItemSchema>;
 export const QuoteSchema = z.object({
   id: QuoteIdSchema,
   venueId: VenueIdSchema,
-  opportunityId: z.string().uuid().nullable(),
+  opportunityId: z.uuid().nullable(),
   proposalId: ProposalIdSchema.nullable(),
   enquiryId: EnquiryIdSchema.nullable(),
   spaceId: SpaceIdSchema.nullable(),
@@ -257,9 +257,9 @@ export const QuoteSchema = z.object({
   supersededByQuoteId: QuoteIdSchema.nullable(),
   notes: z.string().max(MAX_NOTES_LENGTH).nullable(),
   createdBy: UserIdSchema.nullable(),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
-  deletedAt: z.string().datetime().nullable(),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
+  deletedAt: z.iso.datetime().nullable(),
 });
 
 export type Quote = z.infer<typeof QuoteSchema>;
@@ -274,7 +274,7 @@ export const QuoteWithLineItemsSchema = QuoteSchema.extend({
   }
   if (quote.subtotalMinor !== sum) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["subtotalMinor"],
       message: "subtotalMinor must equal the exact sum of line item totals",
     });
@@ -299,7 +299,7 @@ export type CreateQuoteLineItem = z.infer<typeof CreateQuoteLineItemSchema>;
 
 export const CreateQuoteSchema = z.object({
   venueId: VenueIdSchema,
-  opportunityId: z.string().uuid().nullable().optional(),
+  opportunityId: z.uuid().nullable().optional(),
   proposalId: ProposalIdSchema.nullable().optional(),
   enquiryId: EnquiryIdSchema.nullable().optional(),
   spaceId: SpaceIdSchema.nullable().optional(),
@@ -347,7 +347,7 @@ export const QuoteSnapshotSchema = z
     }
     if (snapshot.subtotalMinor !== sum) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["subtotalMinor"],
         message: "subtotalMinor must equal the exact sum of line item totals",
       });
@@ -379,18 +379,18 @@ export const ProposalLayoutItemSchema = z.object({
   shape: ProposalLayoutItemShapeSchema,
   kind: ProposalLayoutItemKindSchema,
   /** Footprint centre relative to the room origin (0 ≤ xM ≤ roomWidthM). */
-  xM: z.number().finite().nonnegative(),
+  xM: z.number().nonnegative(),
   /** Footprint centre relative to the room origin (0 ≤ zM ≤ roomLengthM). */
-  zM: z.number().finite().nonnegative(),
-  widthM: z.number().finite().positive(),
-  depthM: z.number().finite().positive(),
-  rotationDeg: z.number().finite(),
+  zM: z.number().nonnegative(),
+  widthM: z.number().positive(),
+  depthM: z.number().positive(),
+  rotationDeg: z.number(),
 });
 export type ProposalLayoutItem = z.infer<typeof ProposalLayoutItemSchema>;
 
 export const ProposalLayoutSnapshotSchema = z.object({
-  roomWidthM: z.number().finite().positive(),
-  roomLengthM: z.number().finite().positive(),
+  roomWidthM: z.number().positive(),
+  roomLengthM: z.number().positive(),
   items: z.array(ProposalLayoutItemSchema).max(MAX_PROPOSAL_LAYOUT_ITEMS),
 });
 export type ProposalLayoutSnapshot = z.infer<typeof ProposalLayoutSnapshotSchema>;
@@ -439,7 +439,7 @@ export const ProposalVersionPayloadSchema = z
       const claim = findUnsupportedProposalClaim(text);
       if (claim !== null) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: [field],
           message: `Unsupported claim phrase "${claim}" is not allowed in client-facing proposal text`,
         });
@@ -492,25 +492,25 @@ export type ProposalNextVersion = z.infer<typeof ProposalNextVersionSchema>;
 export const ProposalSchema = z.object({
   id: ProposalIdSchema,
   venueId: VenueIdSchema,
-  opportunityId: z.string().uuid().nullable(),
+  opportunityId: z.uuid().nullable(),
   enquiryId: EnquiryIdSchema.nullable(),
   configurationId: ConfigurationIdSchema.nullable(),
   title: z.string().trim().min(1).max(MAX_TITLE_LENGTH),
   status: ProposalStatusSchema,
   currentVersion: z.number().int().nonnegative(),
   shareCode: ShortCodeSchema.nullable(),
-  sentAt: z.string().datetime().nullable(),
+  sentAt: z.iso.datetime().nullable(),
   createdBy: UserIdSchema.nullable(),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
-  deletedAt: z.string().datetime().nullable(),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
+  deletedAt: z.iso.datetime().nullable(),
 });
 
 export type Proposal = z.infer<typeof ProposalSchema>;
 
 export const CreateProposalSchema = z.object({
   venueId: VenueIdSchema,
-  opportunityId: z.string().uuid().nullable().optional(),
+  opportunityId: z.uuid().nullable().optional(),
   enquiryId: EnquiryIdSchema.nullable().optional(),
   configurationId: ConfigurationIdSchema.nullable().optional(),
   title: z.string().trim().min(1).max(MAX_TITLE_LENGTH),
@@ -531,7 +531,7 @@ export const ProposalVersionSchema = z.object({
   payload: ProposalVersionPayloadSchema,
   sourceHash: Sha256HexSchema,
   createdBy: UserIdSchema.nullable(),
-  createdAt: z.string().datetime(),
+  createdAt: z.iso.datetime(),
 });
 
 export type ProposalVersion = z.infer<typeof ProposalVersionSchema>;
@@ -542,7 +542,7 @@ export type ProposalVersion = z.infer<typeof ProposalVersionSchema>;
 // three the same way.
 // ---------------------------------------------------------------------------
 
-export const ProposalStatusHistoryEntryIdSchema = z.string().uuid();
+export const ProposalStatusHistoryEntryIdSchema = z.uuid();
 export type ProposalStatusHistoryEntryId = z.infer<typeof ProposalStatusHistoryEntryIdSchema>;
 
 export const ProposalStatusHistoryEntrySchema = z.object({
@@ -552,7 +552,7 @@ export const ProposalStatusHistoryEntrySchema = z.object({
   toStatus: ProposalStatusSchema,
   changedBy: UserIdSchema.nullable(),
   note: z.string().max(MAX_NOTES_LENGTH).nullable(),
-  createdAt: z.string().datetime(),
+  createdAt: z.iso.datetime(),
 });
 
 export type ProposalStatusHistoryEntry = z.infer<typeof ProposalStatusHistoryEntrySchema>;

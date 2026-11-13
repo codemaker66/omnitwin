@@ -1,6 +1,5 @@
 import { CylinderGeometry, Matrix4, type BufferGeometry } from "three";
 import {
-  gatheredSkirt,
   lathe,
   normalizeAttributes,
   post,
@@ -10,6 +9,8 @@ import {
 } from "./crafted-geometry.js";
 import type { CraftedMaterialId } from "./crafted-materials.js";
 import type { CraftedPart } from "./crafted-model.js";
+import { aoBox, aoRod, occlude, STANDING_FLOOR } from "./crafted-ao.js";
+import { casterGeometry, contactSpots } from "./crafted-shadow.js";
 
 // ---------------------------------------------------------------------------
 // Crafted cabinets and staging
@@ -147,7 +148,23 @@ export function barCounterParts(size: CabinetSize): CraftedPart[] {
   parts.push({ material: "stainless", geometry: roundedBox([wellW + 0.04, 0.012, 0.03], 0.004, [wellX, wellTop, innerZ + wellD / 2 + 0.015], { segments: 1 }) });
   parts.push({ material: "stainless", geometry: roundedBox([wellW, 0.07, 0.05], 0.006, [wellX, wellTop - 0.13, depth / 2 - 0.07], { segments: 1 }) });
   parts.push({ material: "stainless", geometry: roundedBox([half - 0.01, 0.018, innerD], 0.003, [wellX, plinth + 0.2, innerZ], { segments: 1 }) });
-  return parts;
+  // The counter's own shade: under the top's overhang, and deep in the
+  // service side between its walls; the sun's shadow from its outline.
+  const boxes = [
+    aoBox([width, topThickness, depth], [0, height - topThickness / 2, 0]),
+    aoBox([bodyW, bodyH, board], [0, bodyY, -(bodyD - board) / 2]),
+    aoBox([board, bodyH, bodyD], [-(bodyW - board) / 2, bodyY, 0]),
+    aoBox([board, bodyH, bodyD], [(bodyW - board) / 2, bodyY, 0]),
+  ];
+  const baked = parts.map((part) => ({ material: part.material, geometry: occlude(part.geometry, { boxes, floor: STANDING_FLOOR, strength: 0.7 }) }));
+  baked.push({
+    material: "shadow-caster",
+    geometry: casterGeometry([
+      aoBox([width, topThickness + 0.1, depth], [0, height - (topThickness + 0.1) / 2, 0]),
+      aoBox([bodyW, corniceBottom, bodyD], [0, corniceBottom / 2, 0]),
+    ], { inset: 0.004 }),
+  });
+  return baked;
 }
 
 /** The servery: two doors to the staff (-z), a brass lattice and three panels to the room (+z), on castors. */
@@ -205,32 +222,23 @@ export function serveryParts(size: CabinetSize): CraftedPart[] {
   for (let i = -1; i <= 1; i += 1) room.push(...raisedPanel(panelW, panelH, [i * (panelW + panelGap), (panelTop + panelBottom) / 2], wood));
   parts.push(...onFace(room, Math.PI, bodyD / 2));
   // Six brass castors.
+  const wheels: [number, number][] = [];
   for (const x of [-(bodyW / 2 - 0.07), 0, bodyW / 2 - 0.07]) {
-    for (const z of [-(bodyD / 2 - 0.06), bodyD / 2 - 0.06]) parts.push(...castor(x, z, "brass", "rubber", 0.026));
+    for (const z of [-(bodyD / 2 - 0.06), bodyD / 2 - 0.06]) {
+      parts.push(...castor(x, z, "brass", "rubber", 0.026));
+      wheels.push([x, z]);
+    }
   }
-  return parts;
-}
-
-/** A staging platform: a felt deck with a pleated black skirt to the floor. */
-export function platformParts(size: CabinetSize): CraftedPart[] {
-  const { width, depth, height } = size;
+  // Its own shade under the top's overhang and over the castors; the sun's
+  // shadow from its top and body; each castor's on the floor.
+  const boxes = [
+    aoBox([width, topThickness + 0.025, depth], [0, height - (topThickness + 0.025) / 2, 0]),
+    aoBox([bodyW, bodyH, bodyD], [0, bodyY, 0]),
+  ];
   return [
-    { material: "stage-felt", geometry: roundedBox([width, 0.022, depth], 0.006, [0, height - 0.011, 0], { segments: 2, grain: "x" }) },
-    {
-      material: "stage-skirt",
-      geometry: gatheredSkirt({
-        width: width - 0.012,
-        depth: depth - 0.012,
-        top: height - 0.004,
-        pinned: 0.014,
-        hem: 0.004,
-        offset: 0.002,
-        spacing: 0.05,
-        foldDepth: 0.006,
-        emergeOver: 0.03,
-        seed: 41,
-      }),
-    },
+    ...parts.map((part) => ({ material: part.material, geometry: occlude(part.geometry, { boxes, floor: STANDING_FLOOR, strength: 0.7 }) })),
+    { material: "contact", geometry: contactSpots(wheels.map(([x, z]) => ({ x, z, radius: 0.04 }))) },
+    { material: "shadow-caster", geometry: casterGeometry([...boxes, aoBox([bodyW - 0.1, castorTop, bodyD - 0.1], [0, castorTop / 2, 0])], { inset: 0.004 }) },
   ];
 }
 
@@ -245,6 +253,7 @@ export function roomDividerParts(size: CabinetSize): CraftedPart[] {
   const panelTop = height - 0.05;
   const panelH = panelTop - panelBottom;
   const parts: CraftedPart[] = [];
+  const wheels: [number, number][] = [];
   for (let i = 0; i < panels; i += 1) {
     const x = -panelSpan / 2 + pitch * (i + 0.5);
     parts.push({ material: "divider-fabric", geometry: roundedBox([pitch - 0.016, panelH, 0.032], 0.01, [x, panelBottom + panelH / 2, 0], { segments: 2, grain: "y" }) });
@@ -254,6 +263,7 @@ export function roomDividerParts(size: CabinetSize): CraftedPart[] {
     const x = -panelSpan / 2 + pitch * i;
     parts.push({ material: "steel-black", geometry: roundedBox([0.014, panelH + 0.01, 0.026], 0.005, [x, panelBottom + panelH / 2, 0], { segments: 1 }) });
     parts.push(...castor(x, 0, "chrome", "rubber", 0.022, panelBottom - 0.004));
+    wheels.push([x, 0]);
   }
   // The end frames: an upright with a foot across the line, castors at its ends.
   const footHalf = depth / 2 - 0.03;
@@ -266,12 +276,26 @@ export function roomDividerParts(size: CabinetSize): CraftedPart[] {
     for (const z of [-1, 1]) {
       parts.push({ material: "chrome", geometry: tube({ points: [[x, 0.075, z * footHalf * 0.75], [x, 0.3, z * footHalf * 0.3], [x, 0.5, 0]], radius: 0.01, tension: 0.4, segmentsPerMetre: 30, radialSegments: 10 }) });
     }
-    for (const z of [-footHalf, footHalf]) parts.push(...castor(x, z, "chrome", "rubber", 0.022));
+    for (const z of [-footHalf, footHalf]) {
+      parts.push(...castor(x, z, "chrome", "rubber", 0.022));
+      wheels.push([x, z]);
+    }
     // Clamps from the end post to the upright.
     const postX = side * (panelSpan / 2);
     for (const y of [panelBottom + 0.12, (panelBottom + panelTop) / 2, panelTop - 0.12]) {
       parts.push({ material: "chrome", geometry: tube({ points: [[postX, y, 0], [x, y, 0]], radius: 0.008, tension: 0, segmentsPerMetre: 4, radialSegments: 8 }) });
     }
   }
-  return parts;
+  // The panels' own shade at their foot and between the frames; the sun's
+  // shadow from the screen and its two end frames; each castor's on the floor.
+  const screen = aoBox([panelSpan + 0.014, panelH + 0.01, 0.032], [0, panelBottom + panelH / 2, 0]);
+  const ends = [-1, 1].flatMap((side) => {
+    const x = side * (width / 2 - frameInset / 2);
+    return [aoRod([x, 0.075, 0], [x, panelTop + 0.02, 0], 0.028), aoRod([x, 0.075, -footHalf], [x, 0.075, footHalf], 0.028)];
+  });
+  return [
+    ...parts.map((part) => ({ material: part.material, geometry: occlude(part.geometry, { boxes: [screen], floor: STANDING_FLOOR, strength: 0.6 }) })),
+    { material: "contact", geometry: contactSpots(wheels.map(([x, z]) => ({ x, z, radius: 0.035 }))) },
+    { material: "shadow-caster", geometry: casterGeometry([screen, ...ends], { inset: 0.003, minimum: 0.012 }) },
+  ];
 }

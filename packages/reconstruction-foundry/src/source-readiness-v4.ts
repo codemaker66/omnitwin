@@ -206,7 +206,7 @@ const InspectionSchema = z
       (inspection.category === "established")
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["category"],
         message: "inspection state and category must agree",
       });
@@ -226,7 +226,7 @@ const DuplicateSchema = z.discriminatedUnion("status", [
 const ReadinessFileSchema = z
   .object({
     path: FoundryRelativePathSchema,
-    sizeBytes: z.number().int().safe().nonnegative(),
+    sizeBytes: z.number().int().int().nonnegative(),
     sha256: z.string().regex(SHA256_HEX),
     duplicate: DuplicateSchema,
     detection: FoundryFileDetectionSchema,
@@ -259,7 +259,7 @@ const ReadinessFileSchema = z
     const expectedLaneIds = canonicalLaneIds(file.laneIds);
     if (JSON.stringify(file.laneIds) !== JSON.stringify(expectedLaneIds)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["laneIds"],
         message: "file lane identifiers must be unique and canonically ordered",
       });
@@ -275,7 +275,7 @@ const ReadinessFileSchema = z
       )
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["unknowns"],
         message: "file unknowns must have unique, canonically ordered codes",
       });
@@ -287,7 +287,7 @@ const ReadinessFileSchema = z
     ]);
     if (JSON.stringify(file.decisiveNextTests) !== JSON.stringify(expectedTests)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["decisiveNextTests"],
         message: "file decisive tests must be derived from its unknown facts",
       });
@@ -297,7 +297,7 @@ const ReadinessFileSchema = z
       file.duplicate.groupSha256 !== file.sha256
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["duplicate", "groupSha256"],
         message: "duplicate group digest must equal the file digest",
       });
@@ -356,7 +356,7 @@ const LaneSchema = z
       descriptor.meaning !== lane.meaning
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["heading"],
         message: "lane heading and meaning must match its canonical identifier",
       });
@@ -364,28 +364,28 @@ const LaneSchema = z
     const expectedReason = reasonForLaneStatus(lane.status);
     if (lane.reasonCode !== expectedReason) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["reasonCode"],
         message: "lane reason code must match its status",
       });
     }
     if (lane.counts.observedFileCount !== lane.representedSources.length) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["counts", "observedFileCount"],
         message: "lane observed count must equal its represented-source count",
       });
     }
     if (!isSortedUnique(lane.representedSources.map((source) => source.path))) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["representedSources"],
         message: "represented sources must be unique and canonically ordered",
       });
     }
     if (!isSortedUnique(lane.unknowns.map((unknown) => unknown.code))) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["unknowns"],
         message: "lane unknowns must have unique, canonically ordered codes",
       });
@@ -393,7 +393,7 @@ const LaneSchema = z
     for (const [index, unknown] of lane.unknowns.entries()) {
       if (!isSortedUnique(unknown.sourcePaths)) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["unknowns", index, "sourcePaths"],
           message: "unknown source paths must be unique and canonically ordered",
         });
@@ -404,7 +404,7 @@ const LaneSchema = z
       JSON.stringify(uniqueSorted(lane.decisiveNextTests))
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["decisiveNextTests"],
         message: "lane decisive tests must be unique and canonically ordered",
       });
@@ -431,14 +431,14 @@ const GapSchema = z
   .superRefine((gap, ctx) => {
     if (JSON.stringify(gap.laneIds) !== JSON.stringify(canonicalLaneIds(gap.laneIds))) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["laneIds"],
         message: "gap lane identifiers must be unique and canonically ordered",
       });
     }
     if (!isSortedUnique(gap.sourcePaths)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["sourcePaths"],
         message: "gap source paths must be unique and canonically ordered",
       });
@@ -491,7 +491,7 @@ const LimitationsSchema = z.tuple([
 const AffectedSourceSchema = z
   .object({
     path: FoundryRelativePathSchema,
-    sizeBytes: z.number().int().safe().nonnegative(),
+    sizeBytes: z.number().int().int().nonnegative(),
     sha256: z.string().regex(SHA256_HEX),
     inputType: z.literal("xgrids_xbin"),
   })
@@ -666,7 +666,7 @@ function validateFileEvidenceState(
     (file.inputType !== null && file.format !== null && file.inspection !== null)
   ) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["inspection"],
       message: "Source Facts identity and inspection fields must agree with file status",
     });
@@ -679,7 +679,7 @@ function validateFileEvidenceState(
         : "facts_not_established";
     if (file.inspection?.state !== expectedInspectionState) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["inspection", "state"],
         message: "inspection state must agree with file status",
       });
@@ -690,7 +690,7 @@ function validateFileEvidenceState(
         JSON.stringify(canonicalLaneIds(INPUT_TYPE_LANES[file.inputType]))
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["laneIds"],
         message: "Source Facts input type must be authoritative for its lanes",
       });
@@ -714,7 +714,7 @@ function validateFileEvidenceState(
       (file.format === "spz" && file.inputType === "spz");
     if (!formatMatches) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["format"],
         message: "Source Facts format and authoritative input type disagree",
       });
@@ -729,7 +729,7 @@ function validateFileEvidenceState(
       (isEstablishedMediaFormat && file.status !== "facts_established")
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["format"],
         message:
           "media_container is reserved for facts-not-established while exact media formats require established facts",
@@ -763,14 +763,14 @@ function validateFileEvidenceState(
       !establishedMediaRefinement
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["detection", "candidates"],
         message: "Source Facts input type must remain present in receipt detection evidence or be an established byte-supported Gaussian or media-container refinement",
       });
     }
     if (file.detection.status === "unknown") {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["detection", "status"],
         message: "a Source Facts target cannot carry an unknown receipt detection state",
       });
@@ -779,7 +779,7 @@ function validateFileEvidenceState(
   }
   if (file.unknowns.length > 0) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["unknowns"],
       message: "files outside Source Facts V4 cannot claim format unknowns",
     });
@@ -792,7 +792,7 @@ function validateFileEvidenceState(
         : "outside_source_facts_v4";
   if (file.status !== expectedStatus) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["status"],
       message: "untargeted status must match the receipt detection state",
     });
@@ -802,7 +802,7 @@ function validateFileEvidenceState(
     JSON.stringify(lanesForDetection(file.detection))
   ) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["laneIds"],
       message: "untargeted lanes must preserve all receipt detection candidates",
     });
@@ -1037,7 +1037,7 @@ function validateArtifact(
     JSON.stringify(FOUNDRY_SOURCE_READINESS_LANE_IDS)
   ) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["lanes"],
       message: "lanes must use the fixed canonical order",
     });
@@ -1045,7 +1045,7 @@ function validateArtifact(
   if (value.state === "available") {
     if (!isSortedUnique(value.files.map((file) => file.path))) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["files"],
         message: "files must be unique and canonically ordered",
       });
@@ -1054,7 +1054,7 @@ function validateArtifact(
       const expectedDuplicate = expectedDuplicateForFile(value.files, file);
       if (JSON.stringify(file.duplicate) !== JSON.stringify(expectedDuplicate)) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["files", index, "duplicate"],
           message: "file duplicate status contradicts the complete readiness file set",
         });
@@ -1065,7 +1065,7 @@ function validateArtifact(
       expectedLanes = buildLanes(value.files, "available");
     } catch {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["lanes"],
         message: "file unknown facts contain contradictory definitions",
       });
@@ -1079,21 +1079,21 @@ function validateArtifact(
     );
     if (JSON.stringify(value.lanes) !== JSON.stringify(expectedLanes)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["lanes"],
         message: "lanes contradict the canonical aggregation of files",
       });
     }
     if (JSON.stringify(value.gaps) !== JSON.stringify(expectedGaps)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["gaps"],
         message: "gaps contradict the canonical aggregation of files and lanes",
       });
     }
     if (JSON.stringify(value.summary) !== JSON.stringify(expectedSummary)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["summary"],
         message: "summary contradicts the canonical file aggregation",
       });
@@ -1106,14 +1106,14 @@ function validateArtifact(
     );
     if (JSON.stringify(value.lanes) !== JSON.stringify(expectedLanes)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["lanes"],
         message: "blocked lanes must expose no partial references or evidence",
       });
     }
     if (!isSortedUnique(value.blockedReason.affectedSources.map((source) => source.path))) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["blockedReason", "affectedSources"],
         message: "affected sources must be unique and canonically ordered",
       });
@@ -1123,14 +1123,14 @@ function validateArtifact(
       value.blockedReason.affectedSources.length
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["summary", "receiptFileCount"],
         message: "blocked receipt count cannot be smaller than its affected-source count",
       });
     }
     if (JSON.stringify(value.summary) !== JSON.stringify(expectedSummary)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["summary"],
         message: "blocked summary contradicts affected sources",
       });
@@ -1138,7 +1138,7 @@ function validateArtifact(
   }
   if (value.readinessSha256 !== artifactDigest(value)) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["readinessSha256"],
       message: "readiness digest does not match the canonical payload",
     });

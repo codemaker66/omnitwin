@@ -1,10 +1,12 @@
 import {
+  BookViewingSchema,
   ConvertEnquirySchema,
   CreateBookingSchema,
   TransitionHoldSchema,
   UpdateBookingSchema,
   VALID_BOOKING_TRANSITIONS,
   occasionLabel,
+  type BookViewingInput,
   type BookingKind,
   type BookingState,
   type CalendarBookingEntry,
@@ -86,6 +88,17 @@ const HOUR_MS = 3_600_000;
 const DEFAULT_START_HOUR_OFFSET = 17;
 const DEFAULT_END_HOUR_OFFSET = 23;
 
+/** The default evening on a venue day ("YYYY-MM-DD"), 17:00 to 23:00 on the
+ *  venue's clock through board-time's wall-clock helpers: on the days the
+ *  clocks change, local midnight plus 17 hours is 16:00 or 18:00
+ *  (time-dst-3). Null for a day that is not a date. */
+function eveningOn(day: string): { readonly startMs: number; readonly endMs: number } | null {
+  const at = (hour: number): number | null => wallInputToMs(`${day}T${String(hour).padStart(2, "0")}:00`);
+  const startMs = at(DEFAULT_START_HOUR_OFFSET);
+  const endMs = at(DEFAULT_END_HOUR_OFFSET);
+  return startMs === null || endMs === null ? null : { startMs, endMs };
+}
+
 function emptyToUndefined(value: string): string | undefined {
   const trimmed = value.trim();
   return trimmed.length === 0 ? undefined : trimmed;
@@ -121,15 +134,12 @@ export function initialDrawerForm(mode: DrawerMode): DrawerForm {
   if (mode.kind === "convert") {
     const { enquiry } = mode;
     const occasion = occasionLabel(enquiry.eventType);
-    const dayStart =
-      enquiry.preferredDate === null
-        ? null
-        : wallInputToMs(`${enquiry.preferredDate}T00:00`);
+    const evening = enquiry.preferredDate === null ? null : eveningOn(enquiry.preferredDate);
     const startMs =
-      mode.drop?.startMs ?? (dayStart ?? Date.now()) + DEFAULT_START_HOUR_OFFSET * HOUR_MS;
+      mode.drop?.startMs ?? evening?.startMs ?? Date.now() + DEFAULT_START_HOUR_OFFSET * HOUR_MS;
     const endMs =
       mode.drop === undefined
-        ? (dayStart ?? Date.now()) + DEFAULT_END_HOUR_OFFSET * HOUR_MS
+        ? evening?.endMs ?? Date.now() + DEFAULT_END_HOUR_OFFSET * HOUR_MS
         : mode.drop.startMs + (DEFAULT_END_HOUR_OFFSET - DEFAULT_START_HOUR_OFFSET) * HOUR_MS;
     return {
       kind: "hold",
@@ -151,8 +161,9 @@ export function initialDrawerForm(mode: DrawerMode): DrawerForm {
   // A clicked position wins over the day's default evening window: the
   // coordinator pointed at a time, so the drawer opens at that time and keeps
   // the default window's length as the duration.
-  const createStartMs = mode.startMs ?? mode.dayStartMs + DEFAULT_START_HOUR_OFFSET * HOUR_MS;
-  const createEndMs = createStartMs + (DEFAULT_END_HOUR_OFFSET - DEFAULT_START_HOUR_OFFSET) * HOUR_MS;
+  const evening = mode.startMs === undefined ? eveningOn(msToWallInput(mode.dayStartMs).slice(0, 10)) : null;
+  const createStartMs = mode.startMs ?? evening?.startMs ?? mode.dayStartMs + DEFAULT_START_HOUR_OFFSET * HOUR_MS;
+  const createEndMs = evening?.endMs ?? createStartMs + (DEFAULT_END_HOUR_OFFSET - DEFAULT_START_HOUR_OFFSET) * HOUR_MS;
   return {
     kind: "hold",
     spaceId: mode.spaceId,
@@ -198,7 +209,7 @@ function mapTimes(form: DrawerForm, fields: readonly (keyof DrawerForm)[]): Time
 
 interface SchemaIssue {
   readonly code: string;
-  readonly path: readonly (string | number)[];
+  readonly path: readonly PropertyKey[];
   readonly message: string;
 }
 
@@ -275,20 +286,24 @@ export function formToCreatePayload(
   // hold defaults (rank "1", the signed-in owner); switching kind hides the
   // hygiene fieldset, so its values must leave the payload too — otherwise
   // the schema rejects on fields the user cannot see (found live, T-518).
+  // A viewing hides the event type too: it is a show-round, never part of an
+  // event. Its host is the signed-in coordinator, as POST /bookings/viewings
+  // defaults it.
   const isHold = form.kind === "hold";
+  const isViewing = form.kind === "viewing";
   const rank = isHold ? emptyToUndefined(form.rank) : undefined;
   const candidate = {
     venueId,
     spaceId: form.spaceId,
     kind: form.kind,
     title: form.title,
-    eventType: emptyToUndefined(form.eventType),
+    eventType: isViewing ? undefined : emptyToUndefined(form.eventType),
     startsAt: times.values["startsAt"],
     endsAt: times.values["endsAt"],
     rank: rank === undefined ? undefined : Number(rank),
     jointFlag: (isHold && form.jointFlag) || undefined,
     decisionAt: isHold ? times.values["decisionAt"] : undefined,
-    ownerUserId: isHold ? emptyToUndefined(form.ownerUserId) : undefined,
+    ownerUserId: isHold || isViewing ? emptyToUndefined(form.ownerUserId) : undefined,
     nextAction: isHold ? emptyToUndefined(form.nextAction) : undefined,
     nextActionDueAt: isHold ? times.values["nextActionDueAt"] : undefined,
     notes: emptyToUndefined(form.notes),
@@ -380,6 +395,58 @@ export function formToConvertPayload(
   const parsed = ConvertEnquirySchema.safeParse(candidate);
   if (!parsed.success) return { ok: false, fieldErrors: issuesToFieldErrors(parsed.error.issues) };
   return { ok: true, payload: parsed.data, changed: true };
+}
+
+/** A viewing booked for the enquiry (migration 0100): the room, title,
+ *  times, host and note the visible form carries, and nothing of a hold's.
+ *  The room is the form's own, so an enquiry whose guest named none asks for
+ *  one, exactly as its hold does (ConvertSource.roomChosen). */
+export function formToViewingPayload(
+  form: DrawerForm,
+  enquiryId: string,
+): FormResult<BookViewingInput> {
+  const times = mapTimes(form, ["startsAt", "endsAt"]);
+  if (Object.keys(times.errors).length > 0) return { ok: false, fieldErrors: times.errors };
+
+  const candidate = {
+    enquiryId,
+    spaceId: form.spaceId,
+    title: emptyToUndefined(form.title),
+    startsAt: times.values["startsAt"],
+    endsAt: times.values["endsAt"],
+    ownerUserId: emptyToUndefined(form.ownerUserId),
+    notes: emptyToUndefined(form.notes),
+  };
+  const parsed = BookViewingSchema.safeParse(candidate);
+  if (!parsed.success) return { ok: false, fieldErrors: issuesToFieldErrors(parsed.error.issues) };
+  return { ok: true, payload: parsed.data, changed: true };
+}
+
+/** What the drawer opened from an enquiry books. */
+export type ConvertKind = "hold" | "viewing";
+
+/** How long each opens for: a hold the evening's function, a viewing an
+ *  hour's show-round. Both are only where the form starts; the booker sets
+ *  the times. */
+const CONVERT_DEFAULT_MS: Readonly<Record<ConvertKind, number>> = {
+  hold: (DEFAULT_END_HOUR_OFFSET - DEFAULT_START_HOUR_OFFSET) * HOUR_MS,
+  viewing: HOUR_MS,
+};
+
+/** The convert form as the other choice: the kind changes, and so does the
+ *  end while the times are still the other choice's default length. Times
+ *  the booker set are left as they are. */
+export function withConvertKind(form: DrawerForm, kind: ConvertKind): DrawerForm {
+  if (form.kind === kind) return form;
+  const startMs = wallInputToMs(form.startsAt);
+  const endMs = wallInputToMs(form.endsAt);
+  const other: ConvertKind = kind === "hold" ? "viewing" : "hold";
+  const untouched = startMs !== null && endMs !== null && endMs - startMs === CONVERT_DEFAULT_MS[other];
+  return {
+    ...form,
+    kind,
+    endsAt: untouched ? msToWallInput(startMs + CONVERT_DEFAULT_MS[kind]) : form.endsAt,
+  };
 }
 
 /** What making an interest-only booking provisional asks for (roadmap N3):

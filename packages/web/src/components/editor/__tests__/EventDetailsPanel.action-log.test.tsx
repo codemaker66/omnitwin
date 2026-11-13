@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { emptyEventInstructions } from "@omnitwin/types";
+import { emptyDietarySummary, emptyEventInstructions } from "@omnitwin/types";
 import { EventDetailsPanel } from "../EventDetailsPanel.js";
 import { useEditorStore } from "../../../stores/editor-store.js";
 import { useActionLogStore } from "../../../stores/action-log-store.js";
@@ -114,6 +114,31 @@ describe("event details save actions", () => {
     expect(loggedIntents()).toEqual([]); // B's log carries no fabricated A-record
   });
 
+  it("a save that lands after the sheet is closed and reopened logs what the server held before it, not nothing", async () => {
+    let releasePatch: (() => void) | undefined;
+    patchMock.mockImplementationOnce(
+      () => new Promise<object>((resolve) => { releasePatch = () => { resolve({}); }; }),
+    );
+    const { rerender } = render(<EventDetailsPanel open onClose={() => undefined} />);
+    const textarea = await screen.findByDisplayValue("Old text");
+
+    fireEvent.change(textarea, { target: { value: "New text" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => { expect(patchMock).toHaveBeenCalledTimes(1); });
+
+    // Escape and Close work during a save; reopening starts a fresh read,
+    // which is still in flight when the PATCH lands.
+    getConfigMock.mockImplementationOnce(() => new Promise(() => undefined));
+    rerender(<EventDetailsPanel open={false} onClose={() => undefined} />);
+    rerender(<EventDetailsPanel open onClose={() => undefined} />);
+
+    if (releasePatch === undefined) throw new Error("patch was never started");
+    releasePatch();
+    await waitFor(() => { expect(loggedIntents()).toEqual(["event.details.update"]); });
+    const inverse = useActionLogStore.getState().entries[0]?.inverse as { instructions: { specialInstructions: string } | null };
+    expect(inverse.instructions?.specialInstructions).toBe("Old text");
+  });
+
   it("a failed save logs nothing", async () => {
     patchMock.mockRejectedValueOnce(new Error("server down"));
     const textarea = await openPanelAndAwaitHydration();
@@ -154,5 +179,31 @@ describe("event details keep unsaved edits", () => {
     fireEvent.change(await screen.findByDisplayValue("Old text"), { target: { value: "New text" } });
     fireEvent.click(screen.getAllByRole("button", { name: "Close" })[0] ?? document.body);
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});
+
+// Release audit people-privacy-3: the guests' allergy note went into the
+// log's payload and inverse, and from there into the audit trail for good.
+// The layout's PATCH carries it; the log records only that it changed.
+describe("event details log no allergy note", () => {
+  it("saves the new note but logs neither it nor the one it replaced", async () => {
+    getConfigMock.mockResolvedValue({
+      metadata: {
+        instructions: { ...emptyEventInstructions(), dietary: { ...emptyDietarySummary(), vegan: 2, otherAllergies: "OLD-SHELLFISH seat 4" } },
+      },
+    });
+    render(<EventDetailsPanel open onClose={() => undefined} />);
+    fireEvent.change(await screen.findByDisplayValue("OLD-SHELLFISH seat 4"), { target: { value: "NEW-COELIAC seat 12" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => { expect(loggedIntents()).toEqual(["event.details.update"]); });
+    const patched = (patchMock.mock.calls[0] as unknown[] | undefined)?.[1] as { instructions: { dietary: { otherAllergies: string } } };
+    expect(patched.instructions.dietary.otherAllergies).toBe("NEW-COELIAC seat 12");
+    const logged = JSON.stringify(useActionLogStore.getState().entries);
+    expect(logged).not.toContain("SHELLFISH");
+    expect(logged).not.toContain("COELIAC");
+    const entry = useActionLogStore.getState().entries[0];
+    const dietary = (entry?.payload as { instructions: { dietary: Record<string, unknown> } }).instructions.dietary;
+    expect(dietary).toMatchObject({ vegan: 2, otherAllergies: "", otherAllergiesRedacted: true });
   });
 });

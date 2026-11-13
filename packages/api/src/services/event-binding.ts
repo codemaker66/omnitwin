@@ -1,0 +1,519 @@
+import { and, desc, eq, isNull, sql, type SQL } from "drizzle-orm";
+import {
+  EVENT_BOUND_BOOKING_KINDS,
+  EVENT_CONFIRMED_STATUSES,
+  EVENT_PIPELINE_STATUSES,
+  EventStatusSchema,
+  bookingKindNeedsEvent,
+  defaultEventPhaseInputs,
+  deriveEventStatus,
+  eventNameFor,
+  summariseEventBookings,
+  type EventStatus,
+} from "@omnitwin/types";
+import type { Database } from "../db/client.js";
+import { bookings, enquiries, eventPhases, events, venues } from "../db/schema.js";
+
+// ---------------------------------------------------------------------------
+// The bind (event-spine Phase A; migration 0090).
+//
+// Every writer of a hold or an ink calls bindBookingToEvent inside the SAME
+// transaction as its booking write, then syncEventStatus once the booking is
+// written. The writers today: createBookingCore, updateBookingCore and
+// transitionBookingCore (services/booking-mutations.ts, which the REST routes
+// and the /ws/diary commands share), the enquiry conversion
+// (routes/bookings.ts POST /from-enquiry) and the client's proposed window
+// (services/window-proposals.ts). Rows written straight into the table (the
+// seed's demo week, database fixtures, and the switching-day importer when
+// it lands) go through insertBoundBookings below, which binds the same way.
+// The bookings_bound_to_event CHECK refuses a hold or ink that skipped both.
+//
+// Joining is never a guess. A booking joins:
+//   - the event its writer names (checked to be at the booking's venue), or
+//   - the event its enquiry's other bookings already have (the enquiry row is
+//     locked first, so two holds pencilled at once from one enquiry join one
+//     event rather than making two);
+// otherwise a new event is made from the booking: its title (without one,
+// its occasion and day: eventNameFor in @omnitwin/types, a day that follows
+// the event's start in syncEventStatus), type and times, a draft until
+// syncEventStatus derives its status from the bookings.
+//
+// Lock order: a booking path locks its bookings first, then the enquiry, then
+// the event (syncEventStatus, FOR NO KEY UPDATE so it never waits on another
+// writer's foreign-key share of the same event). updateEventCore locks the
+// event and only reads bookings, so the two never wait on each other in a
+// cycle.
+// ---------------------------------------------------------------------------
+
+/** The database or a transaction on it (nesting makes a savepoint). */
+export type BindConn = Database | Parameters<Parameters<Database["transaction"]>[0]>[0];
+
+/** What a new event takes from the booking that brings it into being. */
+export interface EventSeed {
+  readonly venueId: string;
+  readonly title: string;
+  readonly eventType: string | null;
+  readonly startsAt: Date;
+  readonly endsAt: Date;
+  readonly createdBy: string | null;
+  /** The client's name where the booking came from an enquiry. */
+  readonly clientName?: string | null;
+  /** Set only by the seed, as on its bookings (migration 0073). */
+  readonly fixtureSource?: string | null;
+}
+
+export type BindTarget =
+  /** Join the event the writer names. */
+  | { readonly join: "event"; readonly eventId: string }
+  /** Join the event the enquiry's bookings already have, else make one. */
+  | { readonly join: "enquiry"; readonly enquiryId: string }
+  /** Make a new event. */
+  | { readonly join: "new" };
+
+export type BindOutcome =
+  | { readonly ok: true; readonly eventId: string; readonly created: boolean }
+  | { readonly ok: false; readonly code: "EVENT_VENUE_MISMATCH" | "ENQUIRY_VENUE_MISMATCH" };
+
+export interface EventStatusChange {
+  readonly eventId: string;
+  readonly from: EventStatus;
+  readonly to: EventStatus;
+}
+
+/** The default phases a new event starts with, as POST /events gives them:
+ *  no room and no time yet, and every evidence field honestly "not checked". */
+export function defaultEventPhaseRows(eventId: string): (typeof eventPhases.$inferInsert)[] {
+  return defaultEventPhaseInputs().map((phase, index) => ({
+    eventId,
+    templateKey: phase.templateKey,
+    name: phase.name,
+    sortOrder: index,
+    startsAt: null,
+    durationMinutes: phase.durationMinutes,
+    guestCount: null,
+    opsTasksCount: phase.opsTasksCount,
+    reviewGatesCount: phase.reviewGatesCount,
+    densityStatus: "not_checked",
+    densityLabel: "Density not checked",
+    staffConflictsStatus: "not_checked",
+    staffConflictsLabel: "Staff conflicts not checked",
+    notes: phase.notes,
+  }));
+}
+
+/** A new event for a booking. Headcounts stay unknown (0 and null) until
+ *  someone enters them; nothing is copied that nobody stated. It is named by
+ *  the booking's title, or, when the booking has none it can use, by its
+ *  occasion and the venue's own day of its start (eventNameFor): an event
+ *  named "" failed every read of its name, the client's schedule and home,
+ *  the Diary range and the room's timeline among them. */
+async function createEventFor(conn: BindConn, seed: EventSeed): Promise<string> {
+  const [venue] = await conn.select({ timeZone: venues.timezone }).from(venues).where(eq(venues.id, seed.venueId)).limit(1);
+  if (venue === undefined) throw new Error("A new event's venue is missing");
+  const [created] = await conn.insert(events).values({
+    venueId: seed.venueId,
+    createdBy: seed.createdBy,
+    name: eventNameFor({ title: seed.title, eventType: seed.eventType, startsAt: seed.startsAt, timeZone: venue.timeZone }),
+    eventType: seed.eventType,
+    status: "draft",
+    startsAt: seed.startsAt,
+    endsAt: seed.endsAt,
+    guestCount: 0,
+    clientName: seed.clientName ?? null,
+    fixtureSource: seed.fixtureSource ?? null,
+  }).returning({ id: events.id });
+  if (created === undefined) throw new Error("Event insert returned no row");
+  await conn.insert(eventPhases).values(defaultEventPhaseRows(created.id));
+  return created.id;
+}
+
+/** bookings.title holds this many characters; a longer title is cut there. */
+const BOOKING_TITLE_LENGTH = 200;
+
+/**
+ * A booking's title, or "" when it is only its enquiry's email cut short. The
+ * hold made for an enquiry that gave no name is titled by the enquiry's email,
+ * alone or before its occasion ("jane@example.com — Wedding": the public route
+ * files such an enquiry under its email; enquiryTitleName in
+ * routes/bookings.ts). That is right for the hold, which staff work from. An
+ * event is never named by it: eventNameFor counts a title holding an email
+ * address as no title, at creation and on every screen. The one title it
+ * cannot see is an address long enough to fill the title's 200 characters,
+ * cut there before its domain: only the bind, which reads the enquiry, knows
+ * it is an address.
+ */
+export function titleWithoutEnquiryEmail(title: string, email: string): string {
+  const said = title.trim().toLowerCase();
+  const address = email.trim().toLowerCase();
+  return address !== "" && said.length >= BOOKING_TITLE_LENGTH && address.startsWith(said) ? "" : title;
+}
+
+/**
+ * The event a hold or ink belongs to: the one named, the one its enquiry
+ * already has, or a new one. Call inside the booking write's transaction.
+ */
+export async function bindBookingToEvent(conn: BindConn, seed: EventSeed, target: BindTarget): Promise<BindOutcome> {
+  // What a new event is named from: the booking's title, unless it is only
+  // the enquiry's email cut short (eventNameFor sees any other address).
+  let named = seed;
+  if (target.join === "event") {
+    const [row] = await conn.select({ id: events.id, venueId: events.venueId })
+      .from(events)
+      .where(and(eq(events.id, target.eventId), isNull(events.deletedAt)))
+      .limit(1);
+    if (row === undefined || row.venueId !== seed.venueId) return { ok: false, code: "EVENT_VENUE_MISMATCH" };
+    return { ok: true, eventId: row.id, created: false };
+  }
+
+  if (target.join === "enquiry") {
+    const [enquiry] = await conn.select({ id: enquiries.id, venueId: enquiries.venueId, email: enquiries.email })
+      .from(enquiries)
+      .where(eq(enquiries.id, target.enquiryId))
+      .limit(1)
+      .for("update");
+    if (enquiry === undefined || enquiry.venueId !== seed.venueId) return { ok: false, code: "ENQUIRY_VENUE_MISMATCH" };
+    // The enquiry's event: a live booking's first, then the newest.
+    const [joined] = await conn.select({ eventId: events.id })
+      .from(bookings)
+      .innerJoin(events, and(
+        eq(events.id, bookings.eventId),
+        eq(events.venueId, seed.venueId),
+        isNull(events.deletedAt),
+      ))
+      .where(and(
+        eq(bookings.enquiryId, enquiry.id),
+        eq(bookings.venueId, seed.venueId),
+        isNull(bookings.deletedAt),
+      ))
+      .orderBy(desc(sql`${bookings.status} = 'active'`), desc(bookings.createdAt), desc(bookings.id))
+      .limit(1);
+    if (joined !== undefined) return { ok: true, eventId: joined.eventId, created: false };
+    named = { ...seed, title: titleWithoutEnquiryEmail(seed.title, enquiry.email) };
+  }
+
+  return { ok: true, eventId: await createEventFor(conn, named), created: true };
+}
+
+interface SpanBooking {
+  readonly kind: string;
+  readonly status: string;
+  readonly deletedAt: Date | null;
+  readonly startsAt: Date;
+  readonly endsAt: Date;
+}
+
+/**
+ * When an event happens, as its Diary bookings say (release audit
+ * events-diary-1): from the first live confirmed booking's start to the last
+ * one's end, or, before anything is confirmed, across its live options. Null
+ * when nothing is live, and the event keeps the dates it last had. The event's
+ * dates are what clients see, what supplier passes and the client schedule
+ * read, and what allergy-note retention counts from, so they must move when
+ * the booking moves.
+ */
+export function eventSpanFromBookings(rows: readonly SpanBooking[]): { readonly startsAt: Date; readonly endsAt: Date } | null {
+  const live = rows.filter((row) => row.deletedAt === null && row.status === "active");
+  const inks = live.filter((row) => row.kind === "ink");
+  const spanning = inks.length > 0 ? inks : live.filter((row) => row.kind === "hold");
+  if (spanning.length === 0) return null;
+  return {
+    startsAt: new Date(Math.min(...spanning.map((row) => row.startsAt.getTime()))),
+    endsAt: new Date(Math.max(...spanning.map((row) => row.endsAt.getTime()))),
+  };
+}
+
+/** A booking's day, as the sheet's set-up deadline reads it (resolveTiming in
+ *  hallkeeper-sheet-v2-data.ts): from a day before it starts to its end. */
+const BOOKING_DAY_LEAD_MS = 24 * 60 * 60_000;
+
+export interface BookingMove {
+  readonly bookingId: string;
+  readonly eventId: string;
+  readonly from: { readonly spaceId: string; readonly startsAt: Date; readonly endsAt: Date };
+  readonly to: { readonly spaceId: string; readonly startsAt: Date };
+}
+
+/**
+ * The event's timed phases follow a booking that moves (release audit
+ * events-diary-3): every phase of the event in the booking's room on the
+ * booking's day shifts by the same amount and goes to its new room, so the
+ * Day Board, the sheet's set-up deadline and the conflict engine read where
+ * and when the work now is. A phase inside another live booking of the same
+ * event in that room belongs to that booking and stays. The shift is in
+ * absolute time, as the booking's is, so a phase keeps its place relative to
+ * the booking across midnight and a change of the clocks.
+ *
+ * Locks the event first (lock order: the booking, then the event), the lock
+ * the phase editor takes too, so a phase edit and a move never write over
+ * each other. Call inside the booking write's transaction, after it.
+ */
+export async function movePhasesWithBooking(conn: BindConn, move: BookingMove): Promise<number> {
+  const deltaMs = move.to.startsAt.getTime() - move.from.startsAt.getTime();
+  if (deltaMs === 0 && move.to.spaceId === move.from.spaceId) return 0;
+  await conn.select({ id: events.id }).from(events).where(eq(events.id, move.eventId)).limit(1).for("no key update");
+  const dayBefore = new Date(move.from.startsAt.getTime() - BOOKING_DAY_LEAD_MS);
+  // Qualified by hand: inside the subquery a bare starts_at would be the
+  // booking's, not the phase's (PostgreSQL takes the innermost name).
+  const phaseStart = sql`"event_phases"."starts_at"`;
+  const moved = await conn.update(eventPhases)
+    .set({
+      startsAt: sql`${phaseStart} + (${deltaMs}::bigint * interval '1 millisecond')`,
+      spaceId: move.to.spaceId,
+      updatedAt: new Date(),
+    })
+    .where(and(
+      eq(eventPhases.eventId, move.eventId),
+      eq(eventPhases.spaceId, move.from.spaceId),
+      sql`${phaseStart} is not null`,
+      sql`${phaseStart} >= ${dayBefore}`,
+      sql`${phaseStart} < ${move.from.endsAt}`,
+      sql`not exists (
+        select 1 from "bookings" as other
+        where other."event_id" = ${move.eventId}
+          and other."space_id" = ${move.from.spaceId}
+          and other."id" <> ${move.bookingId}
+          and other."status" = 'active'
+          and other."deleted_at" is null
+          and ${phaseStart} >= other."starts_at"
+          and ${phaseStart} < other."ends_at"
+      )`,
+    ))
+    .returning({ id: eventPhases.id });
+  return moved.length;
+}
+
+/**
+ * Re-derive one event's status from its bookings (deriveEventStatus in
+ * @omnitwin/types) and store it when it changed. Locks the event row, then
+ * reads its bookings in a later statement, so a concurrent writer's committed
+ * booking is always seen: two holds of one event released at once leave it
+ * lost, never draft. Returns the change, or null when the event is missing.
+ * The event's dates follow its live bookings in the same step
+ * (eventSpanFromBookings), so every booking writer moves them with it.
+ *
+ * The lock is FOR NO KEY UPDATE, not FOR UPDATE. Every booking written or
+ * moved onto an event takes FOR KEY SHARE on it through the foreign key, and
+ * FOR UPDATE conflicts with that: two writers adding bookings to one event at
+ * once would each hold a key share and wait for the other's, a deadlock.
+ * FOR NO KEY UPDATE still serialises the syncs with each other and with
+ * updateEventCore's FOR UPDATE, which is all the status needs.
+ *
+ * A name createEventFor made carries the day the event started on then
+ * ("Wedding, 14 March 2027"), so it moves with the start, under the same
+ * lock: when the stored name is exactly what eventNameFor makes for the old
+ * start, it is made again for the new one. A name a person gave is left as
+ * it is, unless it is word for word the name made for the old start, which
+ * cannot be told from one; so is a name made before the event had a start.
+ */
+export async function syncEventStatus(conn: BindConn, eventId: string): Promise<EventStatusChange | null> {
+  const [event] = await conn.select({
+    id: events.id,
+    venueId: events.venueId,
+    status: events.status,
+    name: events.name,
+    eventType: events.eventType,
+    startsAt: events.startsAt,
+    endsAt: events.endsAt,
+  })
+    .from(events)
+    .where(eq(events.id, eventId))
+    .limit(1)
+    .for("no key update");
+  if (event === undefined) return null;
+  const from = EventStatusSchema.parse(event.status);
+  const rows = await conn.select({
+    kind: bookings.kind,
+    status: bookings.status,
+    deletedAt: bookings.deletedAt,
+    startsAt: bookings.startsAt,
+    endsAt: bookings.endsAt,
+  })
+    .from(bookings)
+    .where(eq(bookings.eventId, eventId));
+  const to = deriveEventStatus(from, summariseEventBookings(rows));
+  const span = eventSpanFromBookings(rows);
+  const spanMoved = span !== null && (event.startsAt?.getTime() !== span.startsAt.getTime()
+    || event.endsAt?.getTime() !== span.endsAt.getTime());
+  if (to !== from || spanMoved) {
+    const name = spanMoved ? await nameForMovedStart(conn, event, span.startsAt) : null;
+    await conn.update(events).set({
+      status: to,
+      ...(spanMoved ? { startsAt: span.startsAt, endsAt: span.endsAt } : {}),
+      ...(name === null ? {} : { name }),
+      updatedAt: new Date(),
+    }).where(eq(events.id, eventId));
+  }
+  return { eventId, from, to };
+}
+
+/** The name an event takes when its start moves: eventNameFor's for the new
+ *  start when the stored name is eventNameFor's for the old one, else null
+ *  (the name stays). The venue's zone is read as createEventFor reads it. */
+async function nameForMovedStart(
+  conn: BindConn,
+  event: { readonly venueId: string; readonly name: string; readonly eventType: string | null; readonly startsAt: Date | null },
+  startsAt: Date,
+): Promise<string | null> {
+  if (event.startsAt === null) return null;
+  const [venue] = await conn.select({ timeZone: venues.timezone }).from(venues).where(eq(venues.id, event.venueId)).limit(1);
+  if (venue === undefined) return null;
+  const made = (at: Date): string => eventNameFor({ title: "", eventType: event.eventType, startsAt: at, timeZone: venue.timeZone });
+  if (event.name !== made(event.startsAt)) return null;
+  const renamed = made(startsAt);
+  return renamed === event.name ? null : renamed;
+}
+
+/** syncEventStatus for each distinct event, in id order (a stable lock order). */
+export async function syncEventStatuses(
+  conn: BindConn,
+  eventIds: Iterable<string | null>,
+): Promise<EventStatusChange[]> {
+  const ids = [...new Set([...eventIds].filter((id): id is string => id !== null))].sort();
+  const changes: EventStatusChange[] = [];
+  for (const id of ids) {
+    const change = await syncEventStatus(conn, id);
+    if (change !== null) changes.push(change);
+  }
+  return changes;
+}
+
+type BookingInsert = typeof bookings.$inferInsert;
+type BookingSelect = typeof bookings.$inferSelect;
+
+/** A direct writer named an event or an enquiry of another venue. Thrown, so
+ *  the whole batch rolls back and nothing is half written. */
+export class BookingBindError extends Error {
+  constructor(title: string, code: "EVENT_VENUE_MISMATCH" | "ENQUIRY_VENUE_MISMATCH") {
+    super(`${code}: "${title}" names an event or enquiry of another venue`);
+    this.name = "BookingBindError";
+  }
+}
+
+/**
+ * Bookings written straight into the table rather than through the API's
+ * cores: the seed's demo week, the switching-day importer when it lands, and
+ * database test fixtures. Each hold or ink without an event joins its
+ * enquiry's event or gets its own, exactly as the cores bind; a named event
+ * is checked to be the booking's venue's. Everything happens in one
+ * transaction with the insert, then every event touched takes the status its
+ * bookings give it. A new event carries its booking's fixture marker, so the
+ * seed's events stay identifiable as the seed's.
+ */
+export async function insertBoundBookings(
+  conn: BindConn,
+  rows: readonly BookingInsert[],
+): Promise<BookingSelect[]> {
+  if (rows.length === 0) return [];
+  return conn.transaction(async (tx) => {
+    const bound: BookingInsert[] = [];
+    // One enquiry's rows in this batch share one event, as the migration
+    // groups them: the rows are not in the table yet when the next is bound.
+    const enquiryEvents = new Map<string, string>();
+    for (const row of rows) {
+      const named = row.eventId ?? null;
+      if (named === null && !bookingKindNeedsEvent(row.kind)) {
+        bound.push(row);
+        continue;
+      }
+      const enquiryId = row.enquiryId ?? null;
+      const batchEvent = enquiryId === null ? undefined : enquiryEvents.get(enquiryId);
+      const target: BindTarget = named !== null
+        ? { join: "event", eventId: named }
+        : batchEvent !== undefined
+          ? { join: "event", eventId: batchEvent }
+          : enquiryId !== null
+            ? { join: "enquiry", enquiryId }
+            : { join: "new" };
+      const outcome = await bindBookingToEvent(tx, {
+        venueId: row.venueId,
+        title: row.title,
+        eventType: row.eventType ?? null,
+        startsAt: row.startsAt,
+        endsAt: row.endsAt,
+        createdBy: row.createdBy ?? null,
+        fixtureSource: row.fixtureSource ?? null,
+      }, target);
+      if (!outcome.ok) throw new BookingBindError(row.title, outcome.code);
+      if (named === null && enquiryId !== null) enquiryEvents.set(enquiryId, outcome.eventId);
+      bound.push({ ...row, eventId: outcome.eventId });
+    }
+    const inserted = await tx.insert(bookings).values(bound).returning();
+    await syncEventStatuses(tx, inserted.map((row) => row.eventId));
+    return inserted;
+  });
+}
+
+// ---------------------------------------------------------------------------
+// The read-only invariant (CI's platform database; once against production).
+//
+//   unboundBookings      holds and inks with no event. The
+//                        bookings_bound_to_event CHECK makes this zero; the
+//                        count proves the CHECK is in place and holding.
+//   contradictingEvents  live events whose stored status disagrees with
+//                        their Diary bookings: a live confirmed booking
+//                        under an event that is not confirmed or later,
+//                        live options (and no confirmed booking) under an
+//                        event outside the pipeline, or nothing live and the
+//                        event not closed as cancelled (a confirmed booking
+//                        ended) or lost (only options ended). The same table
+//                        as deriveEventStatus, stated as a check rather than
+//                        as a rule, so the two can disagree and be caught.
+//
+// Both must read zero. Pass a venue to scope the count to one venue.
+// ---------------------------------------------------------------------------
+
+/** What the invariant needs of a connection: one read. */
+export interface InvariantReader {
+  execute(query: SQL): Promise<{ readonly rows: readonly Record<string, unknown>[] }>;
+}
+
+export interface BindInvariant {
+  readonly unboundBookings: number;
+  readonly contradictingEvents: number;
+}
+
+function countFrom(value: unknown, label: string): number {
+  const count = typeof value === "string" ? Number(value) : value;
+  if (typeof count !== "number" || !Number.isSafeInteger(count) || count < 0) {
+    throw new Error(`The bind invariant returned no ${label} count`);
+  }
+  return count;
+}
+
+/** A list of string values as SQL parameters, for IN (...). */
+function sqlList(values: readonly string[]): SQL {
+  return sql.join(values.map((value) => sql`${value}`), sql`, `);
+}
+
+export async function readBindInvariant(conn: InvariantReader, venueId: string | null = null): Promise<BindInvariant> {
+  const bookingVenue = venueId === null ? sql`true` : sql`b.venue_id = ${venueId}`;
+  const eventVenue = venueId === null ? sql`true` : sql`e.venue_id = ${venueId}`;
+  // The status sets come from @omnitwin/types, the same constants
+  // deriveEventStatus reads, so the check and the rule cannot drift apart.
+  const result = await conn.execute(sql`
+    SELECT
+      (SELECT count(*) FROM bookings b
+        WHERE b.kind IN (${sqlList(EVENT_BOUND_BOOKING_KINDS)}) AND b.event_id IS NULL AND ${bookingVenue})::text AS unbound_bookings,
+      (SELECT count(*) FROM (
+        SELECT e.status,
+          bool_or(b.kind = 'ink' AND b.status = 'active') AS live_ink,
+          bool_or(b.kind IN ('hold', 'prospect') AND b.status = 'active') AS live_option,
+          bool_or(b.kind = 'ink' AND b.status <> 'active') AS ended_ink,
+          bool_or(b.kind = 'hold' AND b.status <> 'active') AS ended_hold
+        FROM events e
+        JOIN bookings b ON b.event_id = e.id AND b.deleted_at IS NULL
+        WHERE e.deleted_at IS NULL AND ${eventVenue}
+        GROUP BY e.id, e.status
+      ) f WHERE
+        (f.live_ink AND f.status NOT IN (${sqlList(EVENT_CONFIRMED_STATUSES)}))
+        OR (NOT f.live_ink AND f.live_option AND f.status NOT IN (${sqlList(EVENT_PIPELINE_STATUSES)}))
+        OR (NOT f.live_ink AND NOT f.live_option AND f.ended_ink AND f.status <> 'cancelled')
+        OR (NOT f.live_ink AND NOT f.live_option AND NOT f.ended_ink AND f.ended_hold AND f.status <> 'lost')
+      )::text AS contradicting_events
+  `);
+  const row = result.rows[0];
+  return {
+    unboundBookings: countFrom(row?.["unbound_bookings"], "unbound booking"),
+    contradictingEvents: countFrom(row?.["contradicting_events"], "contradicting event"),
+  };
+}

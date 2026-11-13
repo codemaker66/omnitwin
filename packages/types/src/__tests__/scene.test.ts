@@ -12,9 +12,9 @@ import {
 // Test fixtures
 // ---------------------------------------------------------------------------
 
-const VALID_SPACE_UUID = "c3d4e5f6-a7b8-4c9d-0e1f-2a3b4c5d6e7f";
+const VALID_SPACE_UUID = "c3d4e5f6-a7b8-4c9d-8e1f-2a3b4c5d6e7f";
 const VALID_OBJECT_UUID = "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d";
-const VALID_CONFIG_UUID = "d4e5f6a7-b8c9-4d0e-1f2a-3b4c5d6e7f80";
+const VALID_CONFIG_UUID = "d4e5f6a7-b8c9-4d0e-9f2a-3b4c5d6e7f80";
 
 const validCamera = {
   position: { x: 0, y: 15, z: 20 },

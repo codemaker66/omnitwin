@@ -142,6 +142,14 @@
   color: rgba(244, 239, 230, 0.55);
 }
 
+/* A viewing (migration 0100): a show-round that never holds the room, so it
+   is drawn as an outline only, dotted apart from a hold's dashes. */
+.when-ribbon__ghost--viewing {
+  background: transparent;
+  border: 1px dotted rgba(244, 239, 230, 0.35);
+  color: rgba(244, 239, 230, 0.55);
+}
+
 /* The snapped landing — where a release will settle. */
 .when-ribbon__shadow {
   position: absolute;

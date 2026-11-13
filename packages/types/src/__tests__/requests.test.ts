@@ -79,6 +79,10 @@ describe("the ladder", () => {
     expect(nextRequestState("handed-over", "accepted").ok).toBe(true);
     expect(nextRequestState("handed-over", "resolved").ok).toBe(true);
     expect(nextRequestState("handed-over", "underway").ok).toBe(false);
+    // The owner of record hands it on again when the relief never came (S7);
+    // every other step still refuses to repeat itself.
+    expect(nextRequestState("handed-over", "handed-over").ok).toBe(true);
+    expect(nextRequestState("accepted", "accepted")).toEqual({ ok: false, reason: "This request is already marked “Someone is on it”." });
   });
 
   it("reopens only a finished request, and a reopened one climbs again", () => {
@@ -108,6 +112,14 @@ describe("what may be sent to move a request", () => {
     expect(RequestTransitionSchema.safeParse({ to: "reopened", note: "Still only eight chairs" }).success).toBe(true);
     expect(RequestTransitionSchema.safeParse({ to: "resolved", outcome: "substituted", note: "Benches instead" }).success).toBe(true);
     expect(RequestTransitionSchema.safeParse({ to: "resolved" }).success).toBe(false);
+  });
+
+  it("carries the state and owner a kept step was pressed against, the owner a person or nobody", () => {
+    const kept = { to: "resolved", outcome: "done", expectedState: "accepted", expectedOwnerUserId: UUID };
+    expect(RequestTransitionSchema.safeParse(kept).success).toBe(true);
+    expect(RequestTransitionSchema.safeParse({ to: "accepted", expectedState: "sent", expectedOwnerUserId: null }).success).toBe(true);
+    expect(RequestTransitionSchema.safeParse({ to: "accepted", expectedOwnerUserId: "Elaine" }).success).toBe(false);
+    expect(RequestTransitionSchema.safeParse({ to: "accepted", expectedState: "lost" }).success).toBe(false);
   });
 
   it("refuses to carry a time, a layout or an audience", () => {

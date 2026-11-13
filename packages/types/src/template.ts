@@ -13,7 +13,7 @@ import { LayoutStyleSchema, PlacedObjectSchema } from "./configuration.js";
 // Layout Template ID — UUID v4
 // ---------------------------------------------------------------------------
 
-export const LayoutTemplateIdSchema = z.string().uuid();
+export const LayoutTemplateIdSchema = z.uuid();
 
 export type LayoutTemplateId = z.infer<typeof LayoutTemplateIdSchema>;
 
@@ -37,9 +37,9 @@ export const LayoutTemplateSchema = z.object({
     .int("Guest capacity must be an integer")
     .min(MIN_GUEST_COUNT, `Guest capacity must be at least ${String(MIN_GUEST_COUNT)}`)
     .max(MAX_GUEST_COUNT, `Guest capacity must be at most ${String(MAX_GUEST_COUNT)}`),
-  thumbnailUrl: z.string().url("Thumbnail URL must be a valid URL").nullable(),
-  createdAt: z.string().datetime({ message: "createdAt must be an ISO 8601 datetime string" }),
-  updatedAt: z.string().datetime({ message: "updatedAt must be an ISO 8601 datetime string" }),
+  thumbnailUrl: z.url("Thumbnail URL must be a valid URL").nullable(),
+  createdAt: z.iso.datetime({ message: "createdAt must be an ISO 8601 datetime string" }),
+  updatedAt: z.iso.datetime({ message: "updatedAt must be an ISO 8601 datetime string" }),
 });
 
 export type LayoutTemplate = z.infer<typeof LayoutTemplateSchema>;
@@ -60,7 +60,7 @@ export const CreateLayoutTemplateSchema = z.object({
     .int("Guest capacity must be an integer")
     .min(MIN_GUEST_COUNT, `Guest capacity must be at least ${String(MIN_GUEST_COUNT)}`)
     .max(MAX_GUEST_COUNT, `Guest capacity must be at most ${String(MAX_GUEST_COUNT)}`),
-  thumbnailUrl: z.string().url("Thumbnail URL must be a valid URL").nullable(),
+  thumbnailUrl: z.url("Thumbnail URL must be a valid URL").nullable(),
 });
 
 export type CreateLayoutTemplate = z.infer<typeof CreateLayoutTemplateSchema>;

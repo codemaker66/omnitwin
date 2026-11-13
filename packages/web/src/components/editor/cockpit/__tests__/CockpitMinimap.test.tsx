@@ -20,9 +20,17 @@ vi.mock("../../../../hooks/use-cockpit-replay.js", () => ({ useCockpitReplay: vi
 
 const mockReplay = vi.mocked(useCockpitReplay);
 
-const REAL_ARTIFACT: GuestFlowReplayArtifact = GuestFlowReplayArtifactSchema.parse(
+// The demo input names its doors but carries no door provenance; these suites
+// exercise the markers, so the fixture records its doors as surveyed. Doors
+// placed mid-wall by assumption draw no marker (redteam fix-first 2).
+const SURVEYED_DOORS = { key: "door_positions", label: "Door positions", value: "surveyed (provided door positions)", source: "caller-provided" };
+const ASSUMED_ARTIFACT: GuestFlowReplayArtifact = GuestFlowReplayArtifactSchema.parse(
   runGuestFlowReplayV0(TRADES_HALL_GUEST_FLOW_REPLAY_INPUT),
 );
+const REAL_ARTIFACT: GuestFlowReplayArtifact = {
+  ...ASSUMED_ARTIFACT,
+  assumptions: [...ASSUMED_ARTIFACT.assumptions, SURVEYED_DOORS],
+};
 
 function reviewConflict(): RouteConflict {
   const { minX, minY, maxX, maxY } = REAL_ARTIFACT.navmesh.roomBounds;
@@ -124,5 +132,17 @@ describe("CockpitMinimap", () => {
     const { container } = render(<CockpitMinimap />);
     expect(container.querySelectorAll(".cockpit-minimap__conflict")).toHaveLength(1);
     expect(screen.getByText(/1 simulated review marker · click to recentre/)).toBeTruthy();
+  });
+
+  it("plots no review marker from doors placed mid-wall", () => {
+    mockReplay.mockReturnValue({
+      artifact: { ...ASSUMED_ARTIFACT, routeConflicts: [reviewConflict()] },
+      bounds: ASSUMED_ARTIFACT.navmesh.roomBounds,
+      status: "ready",
+    });
+    useCockpitStore.getState().setMode("evidence");
+    const { container } = render(<CockpitMinimap />);
+    expect(container.querySelectorAll(".cockpit-minimap__conflict")).toHaveLength(0);
+    expect(screen.getByText(/Planning overview · click to recentre/)).toBeTruthy();
   });
 });

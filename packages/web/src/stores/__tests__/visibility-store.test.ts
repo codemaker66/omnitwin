@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import {
   useVisibilityStore,
   isSurfaceVisible,
@@ -9,6 +9,8 @@ import {
   MAX_LERP_DELTA,
   AUTO_2_EDGES,
   AUTO_3_EDGES,
+  WALL_KEYS,
+  setWallsFull,
   type WallKey,
 } from "../visibility-store.js";
 import type { SpaceDimensions } from "@omnitwin/types";
@@ -408,6 +410,45 @@ describe("useVisibilityStore", () => {
     for (const key of ["wall-front", "wall-back", "wall-left", "wall-right"] as WallKey[]) {
       expect(wallOpacity[key]).toBeCloseTo(targets[key], 1);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Walls: Cut or Full (the slate's menu and the toolbox name them alike)
+// ---------------------------------------------------------------------------
+
+describe("setWallsFull", () => {
+  beforeEach(() => {
+    useVisibilityStore.setState({
+      mode: "auto-2",
+      walls: { "wall-front": false, "wall-back": true, "wall-left": true, "wall-right": false },
+      wallOpacity: { "wall-front": 0, "wall-back": 1, "wall-left": 1, "wall-right": 0 },
+      wallLocks: { "wall-front": true, "wall-back": false, "wall-left": false, "wall-right": false },
+    });
+  });
+
+  afterEach(() => {
+    useVisibilityStore.setState({
+      mode: "auto-2",
+      wallLocks: { "wall-front": false, "wall-back": false, "wall-left": false, "wall-right": false },
+    });
+  });
+
+  it("stands every wall up, at full opacity, with the locks cleared", () => {
+    setWallsFull(true);
+    const state = useVisibilityStore.getState();
+    expect(state.mode).toBe("manual");
+    for (const key of WALL_KEYS) {
+      expect(state.walls[key]).toBe(true);
+      expect(state.wallOpacity[key]).toBe(1);
+      expect(state.wallLocks[key]).toBe(false);
+    }
+  });
+
+  it("hands the walls back to the camera when cut", () => {
+    setWallsFull(true);
+    setWallsFull(false);
+    expect(useVisibilityStore.getState().mode).toBe("auto-3");
   });
 });
 

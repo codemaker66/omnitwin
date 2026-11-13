@@ -58,13 +58,18 @@ function grid(b: MeshBuilder, columns: number, rows: number, at: (i: number, j: 
 
 /**
  * The flat ceiling as a ring from the dome's foot circle out to the walls,
- * so both edges are exact.
+ * so both edges are exact. The ring's outer edge runs straight between its
+ * points on the walls, so at each corner of the room, where two of them
+ * stand on neighbouring walls, it cut the corner off: a hole 64 cm by 8 cm
+ * that the sun and moon shone through onto the floor (hall-sun.ts). A
+ * triangle from those two points to the corner fills it.
  */
 function buildCeilingField(b: MeshBuilder): void {
   const segments = 192;
   const rings = 16;
   const y = HALL_HEIGHT;
   const radius = HALL_DOME.footRadius;
+  const step = (Math.PI * 2) / segments;
   const point = (i: number, k: number): V3 => {
     const theta = (i / segments) * Math.PI * 2;
     const dx = Math.cos(theta);
@@ -77,6 +82,21 @@ function buildCeilingField(b: MeshBuilder): void {
     const position = point(i, k);
     return { position, normal: DOWN, uv: ceilingUv(position[0], position[2]) };
   }, () => DOWN);
+  for (const [sx, sz] of [[1, 1], [-1, 1], [-1, -1], [1, -1]] as const) {
+    const corner: V3 = [sx * HALL_HALF_LENGTH, y, sz * HALL_HALF_WIDTH];
+    const theta = (Math.atan2(corner[2], corner[0]) + Math.PI * 2) % (Math.PI * 2);
+    const i = Math.floor(theta / step);
+    // A corner on one of the ring's own angles is already one of its points.
+    if (theta - i * step < 1e-9) continue;
+    const before = point(i, rings);
+    const after = point(i + 1, rings);
+    const a = b.vertex(before, DOWN, ceilingUv(before[0], before[2]));
+    const c = b.vertex(corner, DOWN, ceilingUv(corner[0], corner[2]));
+    const d = b.vertex(after, DOWN, ceilingUv(after[0], after[2]));
+    const winding = vec.cross(vec.sub(corner, before), vec.sub(after, before));
+    if (winding[1] <= 0) b.triangle(a, c, d);
+    else b.triangle(a, d, c);
+  }
 }
 
 // ---------------------------------------------------------------------------

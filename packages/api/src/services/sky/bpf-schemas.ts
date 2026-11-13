@@ -52,9 +52,9 @@ export const EdrInstancesSchema = z.object({
   instances: z.array(z.object({
     id: z.string().min(1),
     extent: z.object({
-      temporal: z.object({ interval: TemporalIntervalSchema.optional() }).passthrough().optional(),
-    }).passthrough().optional(),
-  }).passthrough()),
+      temporal: z.object({ interval: TemporalIntervalSchema.optional() }).loose().optional(),
+    }).loose().optional(),
+  }).loose()),
 });
 export type EdrInstances = z.infer<typeof EdrInstancesSchema>;
 
@@ -72,12 +72,12 @@ const NdArraySchema = z.object({
   values: z.array(z.number().nullable()),
 }).superRefine((array, ctx) => {
   if (array.shape.length !== array.axisNames.length) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["shape"], message: "shape and axisNames differ in length" });
+    ctx.addIssue({ code: "custom", path: ["shape"], message: "shape and axisNames differ in length" });
     return;
   }
   const size = array.shape.reduce((product, n) => product * n, 1);
   if (size !== array.values.length) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["values"], message: "values length is not the product of shape" });
+    ctx.addIssue({ code: "custom", path: ["values"], message: "values length is not the product of shape" });
   }
 });
 export type NdArray = z.infer<typeof NdArraySchema>;
@@ -88,13 +88,13 @@ const UnitSchema = z.object({
 });
 
 const ParameterSchema = z.object({ unit: UnitSchema.optional() });
-const ParametersSchema = z.record(ParameterSchema);
+const ParametersSchema = z.record(z.string(), ParameterSchema);
 
 const CoverageSchema = z.object({
   type: z.literal("Coverage"),
-  domain: z.object({ axes: z.record(AxisSchema) }),
+  domain: z.object({ axes: z.record(z.string(), AxisSchema) }),
   parameters: ParametersSchema.optional(),
-  ranges: z.record(NdArraySchema),
+  ranges: z.record(z.string(), NdArraySchema),
 });
 export type Coverage = z.infer<typeof CoverageSchema>;
 

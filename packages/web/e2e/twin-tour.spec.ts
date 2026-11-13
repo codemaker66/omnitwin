@@ -252,6 +252,25 @@ async function openTour(page: Page, query = ""): Promise<void> {
 }
 
 /**
+ * Wait until a click on the stage walks from `nodeId`.
+ *
+ * The HUD is React DOM and paints in the viewer's first commit; the scene that
+ * turns a click into a hop mounts later, because R3F renders its children only
+ * once it has measured the canvas (a frame and a 50 ms debounce at the least).
+ * A click in between reaches no listener and is dropped, and on CI's starved
+ * CPU shard that gap rejected the release gate seven times from 21 Oct, the URL
+ * held at the first viewpoint for the whole HOP_MS. TravelControls states the
+ * moment its click listener is armed as `data-walk-ready` on the canvas, beside
+ * the listener itself, and this waits for exactly that — not for a timeout.
+ */
+async function waitForWalkableStage(page: Page, nodeId: string): Promise<void> {
+  await expect(
+    page.getByTestId("twin-stage").locator("canvas[data-walk-ready]"),
+    `a click must walk from ${nodeId} before the test clicks`,
+  ).toHaveAttribute("data-walk-ready", nodeId, { timeout: READY_MS });
+}
+
+/**
  * The stage is not merely present — it is holding a live WebGL context with a
  * non-empty drawing buffer.
  *
@@ -360,6 +379,7 @@ test("a click on the stage walks to the next viewpoint and relabels the HUD", as
   await expect(page.getByTestId("twin-node-label")).toHaveText(
     twinNodeLabel("scan_000", VENUE_NAME),
   );
+  await waitForWalkableStage(page, "scan_000");
 
   const box = await page.getByTestId("twin-stage").boundingBox();
   expect(box, "the stage must have a box to click in").not.toBeNull();
@@ -533,7 +553,7 @@ test("the dossier states the venue's own figures at a validated viewpoint", asyn
   );
   expect(stats[STAT_RECEPTION]).toBe(`${String(room.capacities.reception)} standing`);
   expect(stats[STAT_DINNER]).toBe(`${String(room.capacities.dinner)} seated`);
-  // The dome qualifier is the single most-asked fact in the building, and its
+  // The ceiling qualifier says what the height is measured to, and its
   // separator is DOM text — "7 ma further…" is the failure this pins shut.
   const note = dimensions.note;
   expect(stats[STAT_CEILING]).toBe(
@@ -542,9 +562,15 @@ test("the dossier states the venue's own figures at a validated viewpoint", asyn
       : `${metres(dimensions.heightM)} m — ${note}`,
   );
 
-  // Provenance travels with the figures, verbatim — the dossier's footnote IS
-  // this constant, so a reworded claim about someone else's data fails here.
-  await expect(dossier).toContainText(ROOM_TRUTH_PROVENANCE);
+  // Provenance travels with the figures, verbatim — the dossier's footnote ends
+  // with this constant, so a reworded claim about someone else's data fails
+  // here. The room's remark (the Grand Hall's dome, never its height) leads it.
+  const footnote = dossier.locator(".vv-twin-dossier-footnote");
+  await expect(footnote).toContainText(ROOM_TRUTH_PROVENANCE);
+  const remark = dimensions.remark;
+  if (remark !== undefined) {
+    await expect(footnote).toHaveText(`${remark} ${ROOM_TRUTH_PROVENANCE}`);
+  }
 
   expect(errors, "the dossier must not log an error").toEqual([]);
 });

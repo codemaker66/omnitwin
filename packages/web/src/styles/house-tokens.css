@@ -238,3 +238,31 @@
   --house-ease-standard: cubic-bezier(0.2, 0, 0, 1);
   --house-ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
 }
+
+/* ---------------------------------------------------------------------------
+ * THE PLANNER'S CHROME — T-671 (the final direction Blake chose on 20 Oct
+ * 2026, "Build this design": the Gallery, lit by the evening).
+ *
+ * Everything at rest over the planner's room is forest lacquer: the Enquiries
+ * desk's forest at night, 95 % opaque and never blurred (the cockpit shell
+ * turns backdrop-filter and filter off on every element as a GPU guard), so
+ * its words keep their contrast whatever the room behind them is doing. The
+ * copper plane, the paper and the cream key are the workspace values above.
+ * house-tokens.test.ts audits the lacquer's inks over a white day room and a
+ * black night room; components/planner-chrome/ consumes nothing but these.
+ * ------------------------------------------------------------------------- */
+
+:root {
+  /* The chrome's one ground, top to bottom. */
+  --house-lacquer-top: rgba(24, 38, 31, 0.95);
+  --house-lacquer-bottom: rgba(14, 23, 18, 0.95);
+  /* An RGB triple, so a veil states its own alpha: rgb(var(--house-scrim-room) / 0.46)
+     behind the command line, a 0.78 → 0 ramp under Present's title card. */
+  --house-scrim-room: 5 9 7;
+  /* The one surface radius: plates, panels, the caption, the dock. */
+  --house-radius-surface: 10px;
+  /* Two elevations. e1 rests on the room; e2 is a panel, a sheet, the caption
+     or the command line, lifted above it. */
+  --house-shadow-e1: inset 0 1px 0 rgba(255, 250, 240, 0.05), 0 14px 34px -14px rgba(0, 0, 0, 0.62), 0 2px 6px rgba(0, 0, 0, 0.24);
+  --house-shadow-e2: inset 0 1px 0 rgba(255, 250, 240, 0.06), 0 28px 64px -22px rgba(0, 0, 0, 0.74), 0 4px 14px rgba(0, 0, 0, 0.28);
+}

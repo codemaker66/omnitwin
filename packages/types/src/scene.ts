@@ -30,7 +30,6 @@ export const CameraStateSchema = z.object({
   target: Vec3Schema,
   fov: z
     .number()
-    .finite("FOV must be finite")
     .min(MIN_FOV, `FOV must be at least ${String(MIN_FOV)} degrees`)
     .max(MAX_FOV, `FOV must be at most ${String(MAX_FOV)} degrees`),
 });

@@ -311,6 +311,7 @@ export {
   SupplierCoordinationItemKindSchema,
   SupplierAcknowledgementStatusSchema,
   SupplierCoordinationTextSchema,
+  SupplierAuthoredTextSchema,
   SupplierCoordinationPackSchema,
   SupplierCoordinationPackItemSchema,
   SupplierCoordinationShareTokenSchema,
@@ -324,7 +325,29 @@ export {
   SupplierSafeAcknowledgementSchema,
   SupplierSafeChangeSummarySchema,
   SupplierSafePackViewSchema,
+  SupplierPassChangesSchema,
+  SupplierPassContactSchema,
+  SupplierPassDetailsSchema,
+  SupplierPassLinkSchema,
+  SupplierPassSummarySchema,
+  SupplierPassScopeItemSchema,
+  SupplierPassDirectoryEntrySchema,
+  SupplierPassBoardSchema,
+  SUPPLIER_PASS_GRACE_DAYS,
+  SUPPLIER_PASS_MAX_DAYS_AFTER_EVENT,
+  defaultSupplierPassExpiry,
+  latestSupplierPassExpiry,
+  checkSupplierPassExpiry,
   supplierCoordinationPayloadDigest,
+  type SupplierPassChanges,
+  type SupplierPassContact,
+  type SupplierPassDetails,
+  type SupplierPassLink,
+  type SupplierPassSummary,
+  type SupplierPassScopeItem,
+  type SupplierPassDirectoryEntry,
+  type SupplierPassBoard,
+  type SupplierPassExpiryCheck,
   type SupplierCoordinationPackId,
   type SupplierCoordinationPackItemId,
   type SupplierCoordinationShareTokenId,
@@ -333,6 +356,7 @@ export {
   type SupplierCoordinationItemKind,
   type SupplierAcknowledgementStatus,
   type SupplierCoordinationText,
+  type SupplierAuthoredText,
   type SupplierCoordinationPack,
   type SupplierCoordinationPackItem,
   type SupplierCoordinationShareToken,
@@ -908,6 +932,7 @@ export {
   UserIdSchema,
   USER_ROLES,
   UserRoleSchema,
+  VENUE_ADMINISTRATION_ROLES,
   PLATFORM_ROLES,
   PlatformRoleSchema,
   EmailSchema,
@@ -1042,6 +1067,8 @@ export {
   type EnquirySource,
 } from "./enquiry.js";
 
+export { eventDisplayName, eventNameFor, eventTitleFor, holdsEmailAddress, type EventNameInput, type NamedEvent } from "./event-name.js";
+
 export {
   PricingRuleIdSchema,
   SUPPORTED_CURRENCIES,
@@ -1161,13 +1188,13 @@ export {
   AIDraftSendStateSchema,
   AIDraftContextSchema,
   CreateAIDraftRequestSchema,
+  MAX_AI_DRAFT_CONTEXT_CHARACTERS,
   AIAssistantStatusSchema,
   AIDraftSchema,
   ProposalMessageDraftSchema,
   findUnsafeAIDraftClaims,
   sanitizeAIDraftText,
   aiDraftDigest,
-  createReviewGatedAIDraft,
   type AIDraftUseCase,
   type AIDraftProvenance,
   type AIDraftEvidenceStatus,
@@ -1178,6 +1205,13 @@ export {
   type AIDraft,
   type ProposalMessageDraft,
 } from "./ai-assistant.js";
+
+export {
+  AI_DRAFT_COMMITMENT_KINDS,
+  AIDraftCommitmentKindSchema,
+  type AIDraftCommitmentKind,
+} from "./ai-draft-commitment-kinds.js";
+// The filter and createReviewGatedAIDraft: @omnitwin/types/ai-draft-review.
 
 export {
   COMMERCIAL_SPINE_SCHEMA_VERSION,
@@ -1421,6 +1455,18 @@ export {
   type HallkeeperSheetSummary,
 } from "./hallkeeper-v2.js";
 
+// One Living Record, first slice: a printed sheet states its version in words
+// and its QR answers only "current" or "superseded" (no sign-in, no content).
+export * from "./sheet-paper-check.js";
+
+// The hallkeeper's brief derived from a sheet (day in order, store list,
+// setup steps, plan markers, keep-in-view facts), shared by paper and screen.
+export * from "./sheet-brief.js";
+
+// Share tokens and guest layout ids templated out of error reports, spans and
+// request logs, in the browser and the API alike.
+export * from "./capability-paths.js";
+
 export {
   DayOfContactSchema,
   PhaseDeadlineSchema,
@@ -1476,9 +1522,13 @@ export {
 
 export {
   CANONICAL_ASSETS,
+  assetDisplayName,
   getCanonicalAssetById,
   getCanonicalAssetBySlug,
+  seatBaseSlug,
+  seatsFor,
   type CanonicalAsset,
+  type SeatRange,
   type TableShape,
 } from "./asset-catalogue.js";
 
@@ -1498,6 +1548,12 @@ export {
   emptyDietarySummary,
   dietaryTotal,
   hasDietaryContent,
+  DIETARY_NOTE_RETENTION,
+  HEALTH_FREE_TEXT_KEYS,
+  REDACTED_HEALTH_TEXT,
+  redactHealthFreeText,
+  redactHealthFreeTextInString,
+  redactAllergyNote,
   emptyDoorSchedule,
   hasDoorScheduleContent,
   type AccessibilityRequirements,
@@ -2486,6 +2542,7 @@ export * from "./event-mission-control.js";
 export * from "./capture-intake.js";
 export * from "./layout-validator.js";
 export * from "./event-architect.js";
+export * from "./event-architect-ops-reviewers.js";
 export * from "./event-architect-engine.js";
 export * from "./event-brief-draft.js";
 export * from "./reconstruction-release.js";
@@ -2500,6 +2557,14 @@ export * from "./omnitwin-foundry-intake-admission.js";
 export * from "./omnitwin-foundry-phase1.js";
 export * from "./omnitwin-foundry-offline-review.js";
 export * from "./booking.js";
+// Fix-first item 8: the promoted 2nd option's notice and drafted email.
+export * from "./hold-promotion.js";
+// The forward book on the Diary, room by room: what lets the public read a
+// room's dates (Blake, 17 October 2026, "hide date status until checked").
+export * from "./forward-book.js";
+// The bind (event-spine Phase A): every hold and ink has its event, whose
+// status follows its bookings.
+export * from "./event-binding.js";
 export * from "./diary-command.js";
 export * from "./room-layout-timeline.js";
 // T-637 slice B: the staff rota and its working-time checks.
@@ -2517,11 +2582,18 @@ export * from "./venue-inventory-availability.js";
 export * from "./venue-inventory-adjustment.js";
 export * from "./inventory-reservations.js";
 export * from "./client-event-schedule.js";
+export * from "./client-home.js";
 
 // Ship Friday slice 10: the one-tap request from the floor and its ladder.
 export * from "./requests.js";
 export * from "./conversations.js";
 export * from "./observations.js";
+// Goal 19 S7: the venue's windows, quiet hours, duty admin and wall settings.
+export * from "./venue-operating-settings.js";
+
+// T-656: every model call attributed to a venue and a feature, priced, and
+// held to the venue's monthly allowance (migration 0089).
+export * from "./ai-usage.js";
 
 // T-635 X1: proposal templates by room and occasion (migration 0085).
 export * from "./proposal-template.js";
@@ -2533,3 +2605,36 @@ export * from "./venue-sky.js";
 // read by the web pages, their schema.org description and the API's public
 // discovery endpoint. Moved here from packages/web/src/lib.
 export * from "./trades-hall-venue-truth.js";
+
+// T-665 slice 1: the People Book's records, matching and merges.
+export * from "./people.js";
+// The Pricing desk (17 Oct 2026): who sets a price, which rate stands on a
+// date beside a rate for particular dates, and the suggestions' contract.
+export * from "./pricing-desk.js";
+// Fix-first item 11 (16 Oct 2026 brief): a visitor's plan seen through a
+// view-only link (migration configuration_view_tokens).
+export * from "./plan-view.js";
+// Remembered allergy notes (Blake, 17 October 2026: "ask once, then
+// remember"): the opt-in wording, its period and the API shapes.
+export * from "./dietary-memory.js";
+// Live co-editing v1: presence and live ops on /ws/configurations/:configId.
+export * from "./layout-live.js";
+// The competitor watch (17 Oct 2026): the comp set, dated price captures,
+// who a lost deal went to and the page-change check. Context, never a price input.
+export * from "./competitor-watch.js";
+// The enquiry funnel (migration 0100): first replies, where enquiries come from,
+// proposal link visits, and engagement attached to an enquiry or a proposal.
+export * from "./enquiry-funnel.js";
+// The gangway review (25 Oct 2026): pinches under the 1.1 m guidance, for the venue to decide.
+export * from "./gangway-review.js";
+// The venue team (Plan 19 L1): venue admins invite their own staff; Blake
+// decided on 24 October 2026 that venue administrators invite any role.
+export * from "./venue-team.js";
+// A crowded Trades Hall day (Plan 19 L9): one deterministic Saturday in all
+// six published rooms, for tests and local demos; invented people only.
+export * from "./crowded-day.js";
+// Plan 19 L5 (goal 06 S6): deposits through Stripe Checkout in test mode, and
+// the contract's simple electronic signature with its audit record.
+export * from "./deposits.js";
+export * from "./contracts.js";
+export * from "./reference-loadouts.js";

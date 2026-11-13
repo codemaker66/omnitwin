@@ -33,13 +33,13 @@ import { useSelectionStore } from "../selection-store.js";
 // reason, which is worse than no test at all.
 // ---------------------------------------------------------------------------
 
+vi.mock("../../api/configuration-conflict.js", () => ({ parseRevisionConflict: vi.fn(() => null) }));
 vi.mock("../../api/configurations.js", () => ({
   getConfig: vi.fn(),
   getPublicConfig: vi.fn(),
   createPublicConfig: vi.fn(),
   authBatchSave: vi.fn(),
   publicBatchSave: vi.fn(),
-  parseRevisionConflict: vi.fn(() => null),
   updatePublicThumbnail: vi.fn(),
   claimConfig: vi.fn(),
   patchConfigMetadata: vi.fn(),

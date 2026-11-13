@@ -12,6 +12,7 @@ import { compileOpsHandoffPack } from "../../../api/ops-handoff.js";
 import { linkEventConfiguration } from "../../../api/events.js";
 import { useLinkedEvent } from "../../../hooks/use-linked-event.js";
 import { ApiError } from "../../../api/client.js";
+import { compilesHandoffPack } from "../../../lib/role-capabilities.js";
 
 // ---------------------------------------------------------------------------
 // OpsLensPanel — run-of-show setup planning (Epic 0, fifth real lens panel).
@@ -22,8 +23,11 @@ import { ApiError } from "../../../api/client.js";
 // (compileOpsHandoffPack) on the SAVED configuration to produce the full handoff
 // pack — task groups, pick lists, load-in/breakdown sequences, a BEO — opened at
 // /ops/handoff/:id. Staff sign-in + a saved layout are required; both gated
-// honestly. SAFE: effort figures are planning-grade estimates, not a guaranteed
-// schedule — the footer keeps that visible.
+// honestly. On a shared link's preview only the venue's floor and a platform
+// admin compile (compilesHandoffPack): anyone else keeps the setup plan and is
+// told who compiles, instead of meeting a 403. SAFE: effort figures are
+// planning-grade estimates, not a guaranteed schedule — the footer keeps that
+// visible.
 //
 // THE EVENT CHAIN: when the planner was opened from an event link (?eventId),
 // the compiled pack must carry that event or the Event Day board has nothing to
@@ -53,9 +57,17 @@ const ACTIONABLE_OPS_ERROR_CODES = new Set([
   "SOURCE_EVIDENCE_INVALID",
 ]);
 
+/** Shown, instead of the compile, to someone the compile's gate would refuse. */
+const OPS_COMPILE_NOT_YOURS =
+  "Only this venue's admins, managers, staff and hallkeepers can compile its handoff pack, so one of them has to do it.";
+
 function opsCompilationErrorMessage(error: unknown): string {
   if (error instanceof ApiError && ACTIONABLE_OPS_ERROR_CODES.has(error.code)) {
     return error.message;
+  }
+  if (error instanceof ApiError && error.status === 403) {
+    // A refusal, not a connection fault: say who can compile.
+    return "You don't have permission to compile this layout's handoff pack, so one of this venue's admins, managers, staff or hallkeepers has to do it.";
   }
   return "Couldn't compile the handoff pack. Check the connection and try again, or use Ops in your dashboard.";
 }
@@ -105,6 +117,8 @@ export function OpsLensPanel(): ReactElement {
   const configId = useEditorStore((state) => state.configId);
   const venueId = useEditorStore((state) => state.venueId);
   const isSignedIn = useAuthStore((state) => state.isAuthenticated);
+  const user = useAuthStore((state) => state.user);
+  const isPublicPreview = useEditorStore((state) => state.isPublicPreview);
   const linkedEvent = useLinkedEvent(venueId);
   const linkedEventId = linkedEvent.status === "loaded" ? linkedEvent.graph?.event.id ?? null : null;
   const linkedEventName = linkedEvent.status === "loaded" ? linkedEvent.eventName : null;
@@ -122,7 +136,9 @@ export function OpsLensPanel(): ReactElement {
     () => buildOpsSetupPlan(placedItems, { lightingFixtures }),
     [placedItems, lightingFixtures],
   );
-  const canCompile = isSignedIn && configId !== null;
+  // The setup plan above is anyone's; only the compile asks the API.
+  const mayCompile = isSignedIn && compilesHandoffPack(user, { venueId, isPublicPreview });
+  const canCompile = mayCompile && configId !== null;
   const compiling = phase === "compiling";
 
   // The binding belongs to one (event, configuration) pair; a different pair
@@ -223,11 +239,19 @@ export function OpsLensPanel(): ReactElement {
           </p>
         )}
 
+        {/* A visitor has no pack to compile: the venue makes it from a plan it
+            has been sent. Say who does the work and how to reach them (fix-first
+            item 11), instead of asking an organiser to be venue staff. */}
         {!canCompile && (
-          <p className="lens-panel__note lens-panel__note--warn" data-testid="ops-precondition">
+          <p
+            className={isSignedIn ? "lens-panel__note lens-panel__note--warn" : "lens-panel__note"}
+            data-testid="ops-precondition"
+          >
             {!isSignedIn
-              ? "Sign in as venue staff to compile an ops handoff pack."
-              : "Save this layout first to compile an ops handoff pack."}
+              ? "The events team prepares the setup pack once they have your plan. To send it to them, use Send to Events Team."
+              : !mayCompile
+                ? OPS_COMPILE_NOT_YOURS
+                : "Save this layout first to compile an ops handoff pack."}
           </p>
         )}
 

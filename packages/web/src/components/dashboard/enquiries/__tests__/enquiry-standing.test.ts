@@ -204,6 +204,52 @@ describe("the enquiry's own bookings", () => {
   });
 });
 
+describe("the enquiry's own viewing (migration 0100)", () => {
+  /** A show-round for this enquiry: Saturday 10 April 2027, 14:00–15:00 BST. */
+  function show(overrides: Partial<CalendarBookingEntry> = {}): CalendarBookingEntry {
+    return entry({
+      kind: "viewing", state: "viewing", title: "Smith wedding", eventType: null,
+      startsAt: "2027-04-10T13:00:00.000Z", endsAt: "2027-04-10T14:00:00.000Z", ...overrides,
+    });
+  }
+
+  it("reads as a viewing booked for its time and room, and never stands for the date asked for", () => {
+    const viewing = show();
+    const standing = standingFor({ own: [own(viewing)] });
+    expect([standing.fact, standing.mark]).toEqual(["Free", "free"]);
+    expect(standing.approve).toBe("The Grand Hall is free that day. Nothing holds it for this enquiry yet.");
+    expect(standing.elsewhere).toEqual([
+      { key: viewing.id, text: "Viewing for this enquiry: Grand Hall, Sat 10 Apr 2027, 14:00–15:00" },
+    ]);
+  });
+
+  it("on the day and in the room asked for, leaves the room free: a show-round holds nothing", () => {
+    const viewing = show({ startsAt: "2027-05-14T09:00:00.000Z", endsAt: "2027-05-14T10:00:00.000Z" });
+    const standing = standingFor({ entries: [viewing], own: [own(viewing)] });
+    expect([standing.fact, standing.mark]).toEqual(["Free", "free"]);
+    expect(standing.rooms[0]?.lines).toEqual([{ key: "free", kind: "free", text: "Free", own: false }]);
+    expect(standing.elsewhere.map((line) => line.text))
+      .toEqual(["Viewing for this enquiry: Grand Hall, Fri 14 May 2027, 10:00–11:00"]);
+  });
+
+  it("lets the enquiry's hold lead, and is counted among those below", () => {
+    const hold = entry({ kind: "hold", state: "hold", rank: 1, title: "Smith wedding", decisionAt: "2026-12-01T12:00:00.000Z" });
+    const viewing = show();
+    const standing = standingFor({ entries: [hold], own: [own(viewing), own(hold)] });
+    expect([standing.fact, standing.mark]).toEqual(["1st option for this enquiry, decides Tue 1 Dec · 1 more below", "own"]);
+    expect(standing.approve).toBe("The Diary holds the Grand Hall for this enquiry: 1st option, decides Tue 1 Dec.");
+    expect(standing.elsewhere.map((line) => line.text))
+      .toEqual(["Viewing for this enquiry: Grand Hall, Sat 10 Apr 2027, 14:00–15:00"]);
+  });
+
+  it("of a closed enquiry holds nothing, and is still listed", () => {
+    const viewing = show();
+    const standing = standingFor({ enquiry: { state: "rejected" }, own: [own(viewing)], noDay: true });
+    expect([standing.fact, standing.mark]).toEqual(["Nothing held for this enquiry", "none"]);
+    expect(standing.elsewhere).toHaveLength(1);
+  });
+});
+
 describe("no room chosen", () => {
   const roomless = { roomChosen: false };
 

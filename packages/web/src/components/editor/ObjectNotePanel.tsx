@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useCockpitStore } from "../../stores/cockpit-store.js";
 import { useEditorStore } from "../../stores/editor-store.js";
@@ -10,10 +10,13 @@ import { useLayoutTimelinePreviewStore } from "../../stores/layout-timeline-prev
 import { getCatalogueItem } from "../../lib/catalogue.js";
 import { canApplyTableLinenToItem, isDiningTableItem } from "../../lib/furniture-semantics.js";
 import { GOLD, BORDER, CARD_BG, TEXT_SEC, TEXT_MUT } from "../../constants/ui-palette.js";
+import { ActivityStatus } from "../shared/Activity.js";
+import { useOnlineStatus } from "../../hooks/use-online-status.js";
+import type { EditorObject } from "../../stores/editor-store.js";
 
 // ---------------------------------------------------------------------------
-// ObjectNotePanel — floating input for attaching a planner note to the
-// currently-selected placed object.
+// ObjectNotePanel — the note for the hallkeeper on the selected table (or
+// the one piece selected), with the table's dressing.
 //
 // The note propagates through the editor store → auto-save batch →
 // placed_objects.metadata.notes → manifest row notes → PDF + tablet
@@ -21,11 +24,21 @@ import { GOLD, BORDER, CARD_BG, TEXT_SEC, TEXT_MUT } from "../../constants/ui-pa
 // hallkeeper on the day of the event ("this table is VIP", "HDMI
 // cable routes through here", "keep chair at exact angle").
 //
-// Only renders when exactly one object is selected; multi-select or
-// zero-select hides the panel to keep the viewport clean.
+// The note is never lost (approved spec 4.5, QoL B-04/C-14): it saves as you
+// type, 400 ms after the last keystroke, and at once on blur, on a change of
+// selection and on unmount. With several pieces selected it belongs to the
+// table of the selection's unit, never to whichever id came first (often a
+// chair); with several tables, or none, the panel says so and takes no note.
+//
+// Privacy: the note is written only through the editor store's
+// setObjectNotes, the one recorded path. That path also lands the text in the
+// layout's action log, as it did before; the redaction the log still needs
+// lives outside this file (T-674 v1-hardening report).
 // ---------------------------------------------------------------------------
 
 const MAX_NOTE = 500;
+/** Typing pause after which the note is written into the layout. */
+export const NOTE_SAVE_DELAY_MS = 400;
 const MAX_CHAIR_STYLE = 40;
 const MAX_CENTERPIECE = 80;
 
@@ -175,17 +188,76 @@ function DressingSection({ objectId }: { readonly objectId: string }): React.Rea
   );
 }
 
+type NoteTarget =
+  | { readonly kind: "piece"; readonly id: string }
+  | { readonly kind: "many-tables" }
+  | { readonly kind: "no-table" };
+
+/**
+ * Which piece the note belongs to. The tables in the selection, or in the
+ * group of anything selected, are counted by unit (a table group, or a set of
+ * trestles sharing one group). One unit: its table, the one already holding a
+ * note first. Several units: no target. No table: the one piece selected, or
+ * no target when several are.
+ */
+export function noteTargetFor(
+  objects: readonly Pick<EditorObject, "id" | "assetDefinitionId" | "groupId" | "notes">[],
+  selectedIds: ReadonlySet<string>,
+): NoteTarget | null {
+  const selected = objects.filter((object) => selectedIds.has(object.id));
+  if (selected.length === 0) return null;
+  const groups = new Set(selected.flatMap((object) => object.groupId === null ? [] : [object.groupId]));
+  const tables = objects.filter((object) => getCatalogueItem(object.assetDefinitionId)?.category === "table"
+    && (selectedIds.has(object.id) || (object.groupId !== null && groups.has(object.groupId))));
+  const units = new Set(tables.map((table) => table.groupId ?? table.id));
+  if (units.size > 1) return { kind: "many-tables" };
+  const table = tables.find((candidate) => candidate.notes.trim().length > 0) ?? tables[0];
+  if (table !== undefined) return { kind: "piece", id: table.id };
+  const only = selected.length === 1 ? selected[0] : undefined;
+  return only === undefined ? { kind: "no-table" } : { kind: "piece", id: only.id };
+}
+
+function targetCode(target: NoteTarget | null): string {
+  return target === null ? "" : target.kind === "piece" ? `piece:${target.id}` : target.kind;
+}
+
+function targetFromCode(code: string): NoteTarget | null {
+  if (code === "") return null;
+  if (code === "many-tables" || code === "no-table") return { kind: code };
+  return { kind: "piece", id: code.slice("piece:".length) };
+}
+
+interface PendingNote {
+  readonly id: string;
+  readonly text: string;
+}
+
+/** Writes the note into the layout unless it already holds that text.
+ *  False while a frozen phase preview refuses writes. */
+function writeNote(pending: PendingNote): boolean {
+  if (isLayoutTimelineMutationLocked()) return false;
+  const editor = useEditorStore.getState();
+  const object = editor.objects.find((candidate) => candidate.id === pending.id);
+  if (object === undefined) return true;
+  const text = pending.text.trim();
+  if (text !== object.notes) editor.setObjectNotes(pending.id, text);
+  return true;
+}
+
 export function ObjectNotePanel({ embedded = false, mobile = false, viewMode = "3d" }: {
   readonly embedded?: boolean;
   readonly mobile?: boolean;
   readonly viewMode?: "3d" | "2d";
 }): React.ReactElement | null {
   const selectedIds = useSelectionStore((s) => s.selectedIds);
-  // Group selection order is not its semantic primary: saved batches may
-  // list a chair first. The mobile table sheet and its note use the table.
-  const selectedId = useEditorStore((s) => mobile
-    ? s.objects.find((object) => selectedIds.has(object.id) && getCatalogueItem(object.assetDefinitionId)?.category === "table")?.id ?? s.selectedObjectId
-    : s.selectedObjectId);
+  // A primitive code keeps the subscription stable across store ticks. The
+  // 2D drawing may hold its one selection on the editor store only.
+  const code = useEditorStore((s) => targetCode(noteTargetFor(
+    s.objects,
+    selectedIds.size > 0 || s.selectedObjectId === null ? selectedIds : new Set([s.selectedObjectId]),
+  )));
+  const target = targetFromCode(code);
+  const selectedId = target?.kind === "piece" ? target.id : null;
   const activeMode = useCockpitStore((s) => s.activeMode);
   const placingItemId = useCatalogueStore((s) => mobile ? s.selectedItemId : null);
   const timelinePreviewActive = useLayoutTimelinePreviewStore((state) => state.mode !== "inactive");
@@ -194,63 +266,90 @@ export function ObjectNotePanel({ embedded = false, mobile = false, viewMode = "
     setDockHost(mobile && viewMode === "3d"
       ? document.getElementById("mobile-object-notes")
       : embedded ? document.getElementById("reference-object-notes") : null);
-  }, [embedded, mobile, viewMode, selectedId, activeMode, timelinePreviewActive, placingItemId]);
-  // Subscribe to the notes primitive only, not the whole object. `.find()`
-  // returns a fresh reference on every mutation to the selected object
-  // (drag, rotate, autosave round-trip that replaces `objects` wholesale),
-  // so selecting the whole object would rebuild this component's view
-  // constantly. Subscribing to a primitive is Object.is-stable until the
-  // note string actually changes, which is what we care about.
+  }, [embedded, mobile, viewMode, code, activeMode, timelinePreviewActive, placingItemId]);
+  // Subscribe to the notes primitive only, not the whole object: `.find()`
+  // returns a fresh reference on every mutation (drag, rotate, autosave), and
+  // the string is Object.is-stable until the note itself changes.
   const savedNotes = useEditorStore((s) => {
     if (selectedId === null) return null;
     const o = s.objects.find((x) => x.id === selectedId);
     return o === undefined ? null : o.notes;
   });
-  const setObjectNotes = useEditorStore((s) => s.setObjectNotes);
+  const layoutDirty = useEditorStore((s) => s.isDirty);
+  const layoutSaving = useEditorStore((s) => s.isSaving);
+  const layoutSaveFailed = useEditorStore((s) => s.saveError !== null);
+  const online = useOnlineStatus();
 
   const [draft, setDraft] = useState("");
-  const [dirty, setDirty] = useState(false);
+  const [waiting, setWaiting] = useState(false);
+  const pending = useRef<PendingNote | null>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Re-sync the draft ONLY when the selection changes. Depending on the
-  // object identity (or savedNotes directly) would silently wipe an
-  // in-progress draft on every store tick that touches the selected
-  // object — autosave round-trip, drag, rotate all trigger new object
-  // references even though the planner hasn't moved on. Keep dirty
-  // drafts sacrosanct; only reset when the user picks a different
-  // object or deselects.
+  const flush = useCallback((): void => {
+    if (timer.current !== null) { clearTimeout(timer.current); timer.current = null; }
+    const note = pending.current;
+    if (note === null) return;
+    // A frozen phase preview refuses writes; the note waits for it to end.
+    if (!writeNote(note)) return;
+    pending.current = null;
+    setWaiting(false);
+  }, []);
+
+  // A new target: the previous target's typing is written first (the effect's
+  // cleanup, which also runs on unmount), then the field shows the new note.
+  // Store ticks that only touch the object never re-seed an open draft.
   useEffect(() => {
-    // savedNotes read through a ref-free closure: read the current store
-    // state directly so this effect doesn't fire on note-string changes.
-    const current = useEditorStore.getState().objects.find((o) => o.id === selectedId);
+    const current = selectedId === null ? undefined : useEditorStore.getState().objects.find((o) => o.id === selectedId);
     setDraft(current?.notes ?? "");
-    setDirty(false);
-  }, [selectedId]);
+    return flush;
+  }, [selectedId, flush]);
+
+  useEffect(() => {
+    if (!timelinePreviewActive) flush();
+  }, [timelinePreviewActive, flush]);
+
+  const onType = (next: string): void => {
+    if (selectedId === null) return;
+    setDraft(next);
+    pending.current = { id: selectedId, text: next };
+    setWaiting(true);
+    if (timer.current !== null) clearTimeout(timer.current);
+    timer.current = setTimeout(flush, NOTE_SAVE_DELAY_MS);
+  };
 
   // Keep the component mounted so an in-progress note draft survives a
   // preview, but remove its editing surface while the scene is read-only.
-  if (timelinePreviewActive || selectedId === null || savedNotes === null) return null;
-
-  const handleSave = (): void => {
-    if (isLayoutTimelineMutationLocked()) return;
-    setObjectNotes(selectedId, draft.trim());
-    setDirty(false);
-  };
+  if (timelinePreviewActive || target === null) return null;
+  if (target.kind === "piece" && savedNotes === null) return null;
 
   const handleClear = (): void => {
-    if (isLayoutTimelineMutationLocked()) return;
+    if (selectedId === null || isLayoutTimelineMutationLocked()) return;
+    if (timer.current !== null) { clearTimeout(timer.current); timer.current = null; }
+    pending.current = null;
+    setWaiting(false);
     setDraft("");
-    setObjectNotes(selectedId, "");
-    setDirty(false);
+    useEditorStore.getState().setObjectNotes(selectedId, "");
   };
 
-  const hasNote = savedNotes.length > 0;
+  const hasNote = (savedNotes ?? "").length > 0;
   const charsLeft = MAX_NOTE - draft.length;
   const inDisclosure = embedded || mobile;
+  const unsent = waiting || layoutDirty || layoutSaving;
+  const status = !hasNote && !waiting
+    ? <>Prints on the function sheet</>
+    : !online && unsent
+      ? <>Offline · not saved yet</>
+      : layoutSaveFailed && unsent
+        ? <>Not saved yet</>
+        : unsent
+          // The 400 ms pause, then the layout's own autosave: work under way.
+          ? <ActivityStatus>Saving…</ActivityStatus>
+          : <>Saved · prints on the function sheet</>;
 
   const content = (
     <section
       role="region"
-      aria-label="Selected object dressing and note"
+      aria-label="Dressing and note for the hallkeeper"
       style={{
         position: inDisclosure ? "static" : "fixed",
         bottom: 20, right: 20,
@@ -264,87 +363,68 @@ export function ObjectNotePanel({ embedded = false, mobile = false, viewMode = "
         fontFamily: "'Inter', system-ui, sans-serif",
       }}
     >
-      <DressingSection objectId={selectedId} />
+      {selectedId !== null && <DressingSection objectId={selectedId} />}
 
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-        <div>
-          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", color: GOLD, textTransform: "uppercase" }}>
-            Planner Note
-          </div>
-          <div style={{ fontSize: 11, color: TEXT_SEC, marginTop: 1 }}>
-            Surfaced on the hallkeeper sheet
-          </div>
-        </div>
-        {hasNote && (
-          <span
-            style={{ fontSize: 11, color: GOLD, fontWeight: 700, background: "rgba(201, 138, 91,0.12)", padding: "2px 6px", borderRadius: 4 }}
-            aria-label="This object has a saved note"
-          >
-            SAVED
-          </span>
-        )}
+      <div id="object-note-label" style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", color: GOLD, textTransform: "uppercase", marginBottom: 8 }}>
+        Note for the hallkeeper
       </div>
 
-      <textarea
-        aria-label="Planner note"
-        value={draft}
-        onChange={(e) => {
-          const next = e.target.value.slice(0, MAX_NOTE);
-          setDraft(next);
-          setDirty(next !== savedNotes);
-        }}
-        placeholder="e.g. VIP table, needs HDMI run, keep exit clear…"
-        rows={3}
-        style={{
-          width: "100%", boxSizing: "border-box",
-          padding: 8, borderRadius: 6,
-          background: "#111", color: "#eee",
-          border: `1px solid ${BORDER}`,
-          fontSize: 13, fontFamily: "inherit",
-          resize: "vertical", minHeight: 60,
-        }}
-      />
-
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 8 }}>
-        <div style={{ fontSize: 11, color: charsLeft < 40 ? GOLD : TEXT_MUT }}>
-          {charsLeft} characters left
-        </div>
-        <div style={{ display: "flex", gap: 6 }}>
-          {hasNote && (
-            <button
-              type="button"
-              onClick={handleClear}
-              style={{
-                padding: "6px 10px", fontSize: 11,
-                background: "transparent", color: TEXT_SEC,
-                border: `1px solid ${BORDER}`, borderRadius: 6,
-                cursor: "pointer", fontFamily: "inherit",
-              }}
-            >
-              Clear
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={!dirty}
+      {target.kind !== "piece" ? (
+        <p role="status" data-testid="object-note-refusal" style={{ margin: 0, fontSize: 12, color: TEXT_SEC, lineHeight: 1.5 }}>
+          {target.kind === "many-tables"
+            ? "Several tables are selected. Select one table to write its note."
+            : "There is no table in this selection. Select a table to write its note."}
+        </p>
+      ) : (
+        <>
+          <textarea
+            aria-labelledby="object-note-label"
+            aria-describedby="object-note-status"
+            value={draft}
+            onChange={(e) => { onType(e.target.value.slice(0, MAX_NOTE)); }}
+            onBlur={flush}
+            placeholder="e.g. VIP table, needs HDMI run, keep exit clear…"
+            rows={3}
             style={{
-              padding: "6px 14px", fontSize: 12, fontWeight: 600,
-              background: dirty ? GOLD : "#2a2824",
-              color: dirty ? "#111" : TEXT_MUT,
-              border: "none", borderRadius: 6,
-              cursor: dirty ? "pointer" : "default",
-              fontFamily: "inherit",
+              width: "100%", boxSizing: "border-box",
+              padding: 8, borderRadius: 6,
+              background: "#111", color: "#eee",
+              border: `1px solid ${BORDER}`,
+              fontSize: 13, fontFamily: "inherit",
+              resize: "vertical", minHeight: 60,
             }}
-          >
-            {dirty ? "Save Note" : hasNote ? "Note saved" : "No note"}
-          </button>
-        </div>
-      </div>
+          />
+
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginTop: 8 }}>
+            <div id="object-note-status" data-testid="object-note-status" aria-live="polite" style={{ fontSize: 11, color: TEXT_SEC }}>
+              {status}
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ fontSize: 11, color: charsLeft < 40 ? GOLD : TEXT_MUT }}>
+                {charsLeft} left
+              </span>
+              {(hasNote || draft.length > 0) && (
+                <button
+                  type="button"
+                  onClick={handleClear}
+                  style={{
+                    padding: "6px 10px", fontSize: 11,
+                    background: "transparent", color: TEXT_SEC,
+                    border: `1px solid ${BORDER}`, borderRadius: 6,
+                    cursor: "pointer", fontFamily: "inherit",
+                  }}
+                >
+                  Clear note
+                </button>
+              )}
+            </div>
+          </div>
+        </>
+      )}
     </section>
   );
   if (mobile) {
-    const disclosure = <details className="mobile-object-notes"><summary>Notes and styling details{dirty ? " · unsaved" : ""}</summary>{content}</details>;
+    const disclosure = <details className="mobile-object-notes"><summary>Notes and styling details{waiting ? " · saving" : ""}</summary>{content}</details>;
     // The component remains mounted through view changes, preserving its
     // draft. The 2D view has no 3D action sheet, so it owns a compact fallback.
     if (viewMode === "2d") return <div className="mobile-object-notes-fallback">{disclosure}</div>;

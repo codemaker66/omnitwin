@@ -42,6 +42,15 @@ is never multisampled (the tests pin this). On the RTX 4090, through the lab:
 desktop profile at 3200x1800, with 88-180 guests. No phone or tablet has been
 measured yet.
 
+Sharpening the desktop's frame further was measured at Blake's Grand Hall poses
+on 22 October 2026 (T-652, S4c; [session log](../sessions/2026-10-22.md)) and
+not adopted: 32 or 45 convergence frames instead of 16, a -0.5 mip bias on the
+hall's wall photographs while TRAA draws, and RCAS (three's `SharpenNode`) after
+tone mapping. None read the deacon boards more than about a point better; the
+bias and the extra frames sharpened edges at the still by under 5% at night;
+the only RCAS that reached 5% at night (full strength) moved the image 0.02-0.03
+SSIM away from the photograph and overshot edges by over 5% by day.
+
 ## Holding the frame rate
 
 A profile is a starting point; `RenderGovernor` (`components/scene/`) gives up

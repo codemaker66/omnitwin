@@ -20,9 +20,9 @@ export type { LineItem };
 // undefined, never as none, so nothing is priced without it.
 const PricingTiersSchema = z.array(z.object({ upTo: z.number().positive(), amount: z.number().nonnegative() }))
   .nullable().optional().catch(undefined);
-const PricingModifiersSchema = z.record(z.number().positive()).nullable().optional().catch(undefined);
+const PricingModifiersSchema = z.record(z.string(), z.number().positive()).nullable().optional().catch(undefined);
 
-const PricingRuleResponseSchema = z.object({
+export const PricingRuleResponseSchema = z.object({
   id: z.string(),
   venueId: z.string(),
   spaceId: z.string().nullable(),
@@ -63,6 +63,40 @@ export interface CreatePricingRuleInput {
   readonly currency?: string;
   readonly spaceId?: string | null;
   readonly isActive?: boolean;
+  /** The time of day the rule is for, "HH:MM" each, both or neither; both
+   *  null (or absent) applies at any time. The API refuses one side alone. */
+  readonly appliesFrom?: string | null;
+  readonly appliesUntil?: string | null;
+  /** The dates the rate is for, "YYYY-MM-DD" each; null is open on that side.
+   *  A rate for particular dates takes the place of the everyday rate for the
+   *  same room, time and way of charging on those dates. */
+  readonly validFrom?: string | null;
+  readonly validTo?: string | null;
+  readonly minHours?: number | null;
+  readonly minGuests?: number | null;
+  /** Day-of-week and month multipliers ("saturday": 1.2), applied on top of
+   *  the price. The Pricing desk only carries them, from the rate a new one
+   *  is based on. */
+  readonly dayOfWeekModifiers?: Readonly<Record<string, number>> | null;
+  readonly seasonalModifiers?: Readonly<Record<string, number>> | null;
+  /** The Pricing desk suggestion this rate follows, kept in the change's record. */
+  readonly adviceKey?: string | null;
+}
+
+/** A change to a rule. Fields left out stay as they are. */
+export interface UpdatePricingRuleInput {
+  readonly name?: string;
+  readonly type?: z.infer<typeof PricingTypeSchema>;
+  readonly amount?: number;
+  readonly spaceId?: string | null;
+  readonly isActive?: boolean;
+  readonly appliesFrom?: string | null;
+  readonly appliesUntil?: string | null;
+  readonly validFrom?: string | null;
+  readonly validTo?: string | null;
+  readonly minHours?: number | null;
+  readonly minGuests?: number | null;
+  readonly adviceKey?: string | null;
 }
 
 export interface PriceEstimateInput {
@@ -83,6 +117,10 @@ export async function listPricingRules(venueId: string): Promise<PricingRule[]> 
 
 export async function createPricingRule(venueId: string, data: CreatePricingRuleInput): Promise<PricingRule> {
   return api.post(`/venues/${venueId}/pricing`, data, undefined, PricingRuleResponseSchema);
+}
+
+export async function updatePricingRule(venueId: string, ruleId: string, data: UpdatePricingRuleInput): Promise<PricingRule> {
+  return api.patch(`/venues/${venueId}/pricing/${ruleId}`, data, PricingRuleResponseSchema);
 }
 
 export async function deletePricingRule(venueId: string, ruleId: string): Promise<void> {

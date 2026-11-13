@@ -362,7 +362,7 @@ describe("register-capture-control-source script", () => {
 
     expect(inspection.status).toBe("invalid_report");
     expect(inspection.liveRegistrationReady).toBe(false);
-    expect(inspection.blockers).toContain("generatedAt: Required");
+    expect(inspection.blockers).toContain("generatedAt: Invalid input: expected string, received undefined");
     expect(inspection.messages).toEqual([
       "Report failed CaptureControlRegistrationReportSchema validation.",
     ]);

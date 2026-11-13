@@ -1,0 +1,56 @@
+/* VisitorPlanLinkActions — "Copy a view-only link" beside the PDF (fix-first
+   item 11). Shares the visitor-pdf structure (44 px targets, the hidden live
+   region, both tones) and adds the link field and the list of working links.
+   Colours only from house-tokens.css. */
+
+.visitor-link { display: grid; gap: 10px; }
+
+/* The link itself, shown once: selectable, never editable. */
+.visitor-link__url {
+  width: 100%;
+  min-width: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font: 500 13px/1.4 ui-monospace, "Cascadia Code", "SFMono-Regular", Menlo, monospace;
+  text-overflow: ellipsis;
+}
+.visitor-link--dock .visitor-link__url {
+  border: 1px solid var(--house-hairline-hover);
+  background: var(--house-bg-2);
+  color: var(--house-text-1);
+}
+.visitor-link--sheet .visitor-link__url {
+  border: 1px solid var(--vv-rule);
+  background: var(--vv-ivory-3);
+  color: var(--vv-forest);
+}
+.visitor-link__url:focus-visible { outline: var(--vv-focus-ring); outline-offset: var(--vv-focus-ring-offset); }
+
+.visitor-link__list-wrap { display: grid; gap: 8px; }
+.visitor-link__list { display: grid; margin: 0; padding: 0; list-style: none; }
+.visitor-link__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 0;
+}
+.visitor-link--dock .visitor-link__row { border-top: 1px solid var(--house-hairline); }
+.visitor-link--sheet .visitor-link__row { border-top: 1px solid var(--vv-rule); }
+.visitor-link__row-text { font-size: 14px; line-height: 1.4; }
+.visitor-link--dock .visitor-link__row-text { color: var(--house-text-1); }
+.visitor-link--sheet .visitor-link__row-text { color: var(--vv-forest); }
+
+/* A stop button never shrinks below a thumb's width. */
+.visitor-link__stop { min-width: 76px; justify-content: center; gap: 6px; }
+.visitor-link__stop:disabled { cursor: default; opacity: 0.6; }
+
+/* On the ivory sheet the PDF is the filled action; the link sits beside it
+   as its quiet, outlined equal. */
+.visitor-pdf__button.visitor-link__button--quiet {
+  border: 1px solid var(--vv-forest);
+  background: transparent;
+  color: var(--vv-forest);
+}
+.visitor-pdf__button.visitor-link__button--quiet:hover:not(:disabled) { background: var(--vv-ivory-2); }
+.visitor-pdf__button.visitor-link__button--quiet[aria-busy="true"] { background: var(--vv-ivory-2); }

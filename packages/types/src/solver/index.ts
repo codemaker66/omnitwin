@@ -36,7 +36,7 @@ const STRATEGY_MAP: Readonly<
  * Generates a furniture layout for the given room and event parameters.
  *
  * @param input  - Room polygon, dimensions, event type, guest count, fire exits.
- * @param config - Optional solver configuration (defaults to UK building regs).
+ * @param config - Optional solver configuration (defaults to planning settings, not regulations).
  * @returns Solved layout with placed objects, capacity, and compliance report.
  * @throws {Error} If the event type is "custom" (not auto-solvable).
  * @throws {z.ZodError} If input fails schema validation.

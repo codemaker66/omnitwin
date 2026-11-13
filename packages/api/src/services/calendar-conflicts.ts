@@ -15,7 +15,9 @@ import {
 // slice: ink double-book (blocking; the DB constraint normally prevents it,
 // the engine still reports it if present in data), hold overlap (advisory —
 // the option ladder is overlap BY DESIGN, so hold-over-hold is info and
-// hold-under-ink is a warning), and insufficient turnaround gap (warning).
+// hold-under-ink is a warning), insufficient turnaround gap (warning), and
+// viewing overlap (migration 0100: a show-round during a confirmed booking's
+// occupancy or a venue block is a warning, two show-rounds at once are info).
 //
 // Honesty pattern (Canon §4, house `not_checked` convention): occupancy pairs
 // with no applicable turnaround rule are counted and reported not_checked /
@@ -221,6 +223,8 @@ export function detectCalendarConflicts(input: DetectCalendarConflictsInput): Co
   const liveBookings = input.bookings.filter(isLive);
   const inks = liveBookings.filter((row) => row.kind === "ink");
   const holds = liveBookings.filter((row) => row.kind === "hold");
+  const viewings = liveBookings.filter((row) => row.kind === "viewing");
+  const blocks = liveBookings.filter((row) => row.kind === "internal_block");
 
   const spaceIds = [
     ...new Set([
@@ -320,6 +324,64 @@ export function detectCalendarConflicts(input: DetectCalendarConflictsInput): Co
         entryIds: [current.id, next.id],
         explanation: `Only ${String(gapMinutes)} minutes between "${current.title}" and "${next.title}" in this space — the applicable turnaround guideline is ${String(applicable.minutes)} minutes (${applicable.name}). Planning support only; the team judges what is workable.`,
       });
+    }
+
+    // --- viewing overlap (migration 0100) ------------------------------------
+    // A show-round needs the room to be seen: one during an occupancy (a
+    // confirmed booking or an event's timed phases in this room, set-up and
+    // clearing included, as the occupancies merge them; the turnaround
+    // check's entries, so a phase id where an event has no booking here) or a
+    // venue closure is a warning; two at once in one room is worth knowing.
+    const spaceViewings = viewings
+      .filter((row) => row.spaceId === spaceId)
+      .map((row) => ({ ...row, startMs: row.startsAt.getTime(), endMs: row.endsAt.getTime() }))
+      .sort(chronological);
+    const spaceBlocks = blocks
+      .filter((row) => row.spaceId === spaceId)
+      .map((row) => ({ ...row, startMs: row.startsAt.getTime(), endMs: row.endsAt.getTime() }));
+    const pairId = (a: { readonly id: string; readonly startMs: number }, b: { readonly id: string; readonly startMs: number }): [string, string] =>
+      chronological(a, b) <= 0 ? [a.id, b.id] : [b.id, a.id];
+    for (const viewing of spaceViewings) {
+      for (const occupied of occupancies) {
+        if (!overlaps(viewing.startMs, viewing.endMs, occupied.startMs, occupied.endMs)) continue;
+        const entryIds = pairId(viewing, occupied);
+        conflicts.push({
+          id: `viewing_overlap:${entryIds[0]}:${entryIds[1]}`,
+          type: "viewing_overlap",
+          severity: "warning",
+          spaceId,
+          entryIds,
+          explanation: `The viewing "${viewing.title}" overlaps "${occupied.title}", which has this room at that time, set-up and clearing included. Move the viewing, or let the guest know the room will be in use.`,
+        });
+      }
+      for (const block of spaceBlocks) {
+        if (!overlaps(viewing.startMs, viewing.endMs, block.startMs, block.endMs)) continue;
+        const entryIds = pairId(viewing, block);
+        conflicts.push({
+          id: `viewing_overlap:${entryIds[0]}:${entryIds[1]}`,
+          type: "viewing_overlap",
+          severity: "warning",
+          spaceId,
+          entryIds,
+          explanation: `The viewing "${viewing.title}" falls during "${block.title}", when the venue has closed this room.`,
+        });
+      }
+    }
+    for (let i = 0; i < spaceViewings.length; i += 1) {
+      for (let j = i + 1; j < spaceViewings.length; j += 1) {
+        const a = spaceViewings[i];
+        const b = spaceViewings[j];
+        if (a === undefined || b === undefined) continue;
+        if (!overlaps(a.startMs, a.endMs, b.startMs, b.endMs)) continue;
+        conflicts.push({
+          id: `viewing_overlap:${a.id}:${b.id}`,
+          type: "viewing_overlap",
+          severity: "info",
+          spaceId,
+          entryIds: [a.id, b.id],
+          explanation: `Two viewings are booked in this room at overlapping times: "${a.title}" and "${b.title}".`,
+        });
+      }
     }
   }
 

@@ -63,7 +63,7 @@ const StagingFileSchema = z
       "exclusion_ledger",
       "ingest_manifest",
     ]),
-    sizeBytes: z.number().int().safe().nonnegative(),
+    sizeBytes: z.number().int().int().nonnegative(),
     sha256: z.string().regex(SHA256_HEX),
   })
   .strict()
@@ -74,7 +74,7 @@ const StagingFileSchema = z
         : "";
       if (!FoundryRelativePathSchema.safeParse(sourcePath).success) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["path"],
           message: "staged source entries must be rooted below source/",
         });
@@ -83,7 +83,7 @@ const StagingFileSchema = z
     }
     if (file.path !== STAGING_ARTIFACT_PATH_BY_ROLE[file.role]) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["path"],
         message: `${file.role} must use its canonical staging artifact path`,
       });
@@ -99,7 +99,7 @@ const StagingIndexPayloadSchema = z
     manifestSha256: z.string().regex(/^sha256:[a-f0-9]{64}$/u),
     stagedAssetCount: z.number().int().positive().max(100_000),
     indexedFileCount: z.number().int().positive().max(100_006),
-    totalBytes: z.number().int().safe().positive(),
+    totalBytes: z.number().int().int().positive(),
     files: z.array(StagingFileSchema).min(6).max(100_006),
     authority: z.literal("none"),
     capabilities: z
@@ -120,14 +120,14 @@ const StagingIndexPayloadSchema = z
     const sorted = [...paths].sort();
     if (new Set(paths).size !== paths.length || paths.some((path, position) => path !== sorted[position])) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["files"],
         message: "staging files must have unique paths in sorted order",
       });
     }
     if (index.indexedFileCount !== index.files.length) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["indexedFileCount"],
         message: "indexed file count must match the file ledger",
       });
@@ -135,7 +135,7 @@ const StagingIndexPayloadSchema = z
     const total = index.files.reduce((sum, file) => sum + file.sizeBytes, 0);
     if (!Number.isSafeInteger(total) || total !== index.totalBytes) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["totalBytes"],
         message: "staging byte total must match the file ledger",
       });
@@ -143,7 +143,7 @@ const StagingIndexPayloadSchema = z
     const stagedSources = index.files.filter((file) => file.role === "staged_source");
     if (stagedSources.length !== index.stagedAssetCount) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["stagedAssetCount"],
         message: "staged asset count must match staged source entries",
       });
@@ -157,7 +157,7 @@ const StagingIndexPayloadSchema = z
     ] as const) {
       if (index.files.filter((file) => file.role === requiredRole).length !== 1) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["files"],
           message: `staging index requires exactly one ${requiredRole} artifact`,
         });
@@ -175,7 +175,7 @@ export const FoundryIntakeStagingIndexV0Schema = z
     manifestSha256: z.string().regex(/^sha256:[a-f0-9]{64}$/u),
     stagedAssetCount: z.number().int().positive().max(100_000),
     indexedFileCount: z.number().int().positive().max(100_006),
-    totalBytes: z.number().int().safe().positive(),
+    totalBytes: z.number().int().int().positive(),
     files: z.array(StagingFileSchema).min(6).max(100_006),
     authority: z.literal("none"),
     capabilities: z
@@ -196,12 +196,12 @@ export const FoundryIntakeStagingIndexV0Schema = z
     const { stagingSha256: _stagingSha256, ...payload } = index;
     const parsedPayload = StagingIndexPayloadSchema.safeParse(payload);
     if (!parsedPayload.success) {
-      for (const issue of parsedPayload.error.issues) ctx.addIssue(issue);
+      for (const issue of parsedPayload.error.issues) ctx.addIssue({ ...issue });
       return;
     }
     if (index.stagingSha256 !== stagingPayloadSha256(parsedPayload.data)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["stagingSha256"],
         message: "staging digest must match its canonical payload",
       });

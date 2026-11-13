@@ -1,17 +1,20 @@
 import type { FastifyInstance } from "fastify";
 import { and, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
-import { isProposalEditable, type ProposalStatus } from "@omnitwin/types";
+import { AI_BUDGET_REACHED, AI_DRAFTS_UNAVAILABLE, isProposalEditable, type ProposalStatus } from "@omnitwin/types";
 import type { Database } from "../db/client.js";
 import { proposals } from "../db/schema.js";
 import type { Env } from "../env.js";
 import { authenticate, isPlatformAdmin } from "../middleware/auth.js";
+import { AIAccessPolicy } from "../services/ai-access.js";
 import {
   AIAssistantDisabledError,
+  AIDraftsUnavailableError,
   createAIGenerationAdapterFromEnv,
   generateAIDraft,
   type AIGenerationAdapter,
 } from "../services/ai-assistant.js";
+import { AIBudgetReachedError, venueAllowanceMeter, type AIUsageMeter } from "../services/ai-usage.js";
 import { messageDraftContext } from "../services/proposal-message-draft.js";
 import { canManageCommercial } from "../utils/query.js";
 
@@ -25,16 +28,35 @@ import { canManageCommercial } from "../utils/query.js";
 // enquiry or words from the client) it is refused rather than invented. The
 // answer says what the AI drew on. The draft is review-gated and never sent:
 // the composer shows it, and the booker chooses to use it.
+//
+// The call is the proposal's venue's (T-656): it is held to that venue's
+// monthly AI allowance (429 AI_BUDGET_REACHED once it is used, and nothing is
+// sent) and recorded in the AI usage ledger with what it cost.
+//
+// Only a venue the environment switches on for proposal drafts may ask (C1,
+// services/ai-access.ts); any other is told AI is off before its proposal is
+// read. When the provider takes no calls for want of credit, the answer is
+// 503 AI_DRAFTS_UNAVAILABLE and the booker writes the message by hand.
 // ---------------------------------------------------------------------------
 
-const IdParam = z.object({ id: z.string().uuid() });
+const IdParam = z.object({ id: z.uuid() });
 
 export async function proposalMessageDraftRoutes(
   server: FastifyInstance,
-  opts: { readonly db: Database; readonly env: Env; readonly adapter?: AIGenerationAdapter },
+  opts: {
+    readonly db: Database;
+    readonly env: Env;
+    readonly adapter?: AIGenerationAdapter;
+    /** Holds each call to its venue's allowance and records it; the venue allowance meter unless given. */
+    readonly aiUsage?: AIUsageMeter;
+    /** Which venues and drafts are switched on; the environment's unless a test names one. */
+    readonly access?: AIAccessPolicy;
+  },
 ): Promise<void> {
   const { db } = opts;
-  const adapter = opts.adapter ?? createAIGenerationAdapterFromEnv(opts.env);
+  const adapter = opts.adapter
+    ?? createAIGenerationAdapterFromEnv(opts.env, opts.aiUsage ?? venueAllowanceMeter(db, opts.env, server.log));
+  const access = opts.access ?? AIAccessPolicy.fromEnv(opts.env);
 
   server.post("/:id/message-draft", { preHandler: [authenticate] }, async (request, reply) => {
     const params = IdParam.safeParse(request.params);
@@ -53,9 +75,10 @@ export async function proposalMessageDraftRoutes(
     if (!isPlatformAdmin(request.user) && !isProposalEditable(proposal.status as ProposalStatus)) {
       return reply.status(422).send({ error: "Proposal content is frozen in its current status", code: "NOT_EDITABLE" });
     }
-    if (!adapter.status.configured) {
+    const status = access.statusFor(adapter.status, proposal.venueId, "proposal_draft");
+    if (!status.configured) {
       return reply.status(503).send({
-        error: adapter.status.disabledReason ?? "AI assistant is not configured",
+        error: status.disabledReason ?? "AI assistant is not configured",
         code: "AI_ASSISTANT_DISABLED",
       });
     }
@@ -67,11 +90,21 @@ export async function proposalMessageDraftRoutes(
       });
     }
     try {
-      const draft = await generateAIDraft(adapter, { useCase: "proposal_draft", context });
+      const draft = await generateAIDraft(
+        adapter,
+        { useCase: "proposal_draft", context },
+        { venueId: proposal.venueId, userId: request.user.id },
+      );
       return { data: { draft, drewOn } };
     } catch (err) {
       if (err instanceof AIAssistantDisabledError) {
         return reply.status(503).send({ error: err.message, code: "AI_ASSISTANT_DISABLED" });
+      }
+      if (err instanceof AIDraftsUnavailableError) {
+        return reply.status(503).send({ error: err.message, code: AI_DRAFTS_UNAVAILABLE });
+      }
+      if (err instanceof AIBudgetReachedError) {
+        return reply.status(429).send({ error: err.message, code: AI_BUDGET_REACHED });
       }
       request.log.error({ err }, "Proposal message draft failed");
       return reply.status(502).send({ error: "AI draft generation failed", code: "AI_DRAFT_GENERATION_FAILED" });

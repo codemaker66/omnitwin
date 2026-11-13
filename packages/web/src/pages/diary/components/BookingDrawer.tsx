@@ -1,17 +1,25 @@
 import { Fragment, useEffect, useId, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, KeyboardEvent as ReactKeyboardEvent, ReactElement } from "react";
-import type { BookingKind, BookingState, CalendarBookingEntry, CalendarRoom } from "@omnitwin/types";
+import {
+  BOOKING_LOST_REASONS,
+  BookingLostReasonSchema,
+  type BookingKind,
+  type BookingLostReason,
+  type BookingState,
+  type CalendarBookingEntry,
+  type CalendarRoom,
+} from "@omnitwin/types";
 import { ApiError } from "../../../api/client.js";
 import {
+  bookViewing,
   convertEnquiry,
   createBooking,
   transitionBooking,
   updateBooking,
 } from "../../../api/diary.js";
-import { createEvent } from "../../../api/events.js";
 import { BOARD_COPY } from "../board-copy.js";
 import { ActivityStatus } from "../../../components/shared/Activity.js";
-import { DIARY_WRITE_ROLES, hasRole } from "../../../lib/role-capabilities.js";
+import { DIARY_WRITE_ROLES, PLANNER_ROLES, hasRole } from "../../../lib/role-capabilities.js";
 import { formatInlineDay, formatWallDay, formatWallTime, msToWallInput, wallInputToMs } from "../lib/board-time.js";
 import { bookingStateLabel, bookingTimeLabel } from "../lib/board-overview.js";
 import { extendedDecisionMs } from "../lib/extend-decision.js";
@@ -19,10 +27,12 @@ import { isEndingTransition, ladderAfterExit, type EndingTransition } from "../l
 import type { LadderPlace } from "../lib/ladder-place.js";
 
 /**
- * The planner link for an attached plan: the event the planner binds from,
- * and the booking's own room, because the planner's bootstrap opens its
- * default room when no `space` is given. A room the board does not know
- * (a space row the calendar lacks) is simply left to the planner's default.
+ * The planner link for a booking's event (every provisional and confirmed
+ * booking has one since the bind, migration 0090): the event the planner
+ * binds from, and the booking's own room, because the planner's bootstrap
+ * opens its default room when no `space` is given. A room the board does not
+ * know (a space row the calendar lacks) is simply left to the planner's
+ * default.
  */
 function planHref(eventId: string, spaceId: string, rooms: readonly CalendarRoom[]): string {
   const base = `/plan?eventId=${encodeURIComponent(eventId)}`;
@@ -34,10 +44,13 @@ import {
   formToConvertPayload,
   formToCreatePayload,
   formToUpdatePayload,
+  formToViewingPayload,
   hiddenFieldError,
   initialDrawerForm,
   initialPromotionForm,
   promotionPayload,
+  withConvertKind,
+  type ConvertKind,
   type DrawerForm,
   type DrawerMode,
   type FieldErrors,
@@ -139,7 +152,16 @@ function endingConsequence(
   return sentences.join(" ");
 }
 
-const KIND_OPTIONS: readonly BookingKind[] = ["hold", "ink", "internal_block", "prospect"];
+const KIND_OPTIONS: readonly BookingKind[] = ["hold", "ink", "internal_block", "prospect", "viewing"];
+
+const CONVERT_KINDS: readonly ConvertKind[] = ["hold", "viewing"];
+
+/** A lifecycle move's words on its button. A viewing's one exit is being
+ *  called off, said as the viewing, never as "the booking". */
+function transitionLabel(target: BookingState, booking: CalendarBookingEntry | null): string {
+  if (target === "cancelled" && booking?.kind === "viewing") return BOARD_COPY.ending.cancelViewing;
+  return BOARD_COPY.transitions[target];
+}
 
 /** A detail is only worth a line when it carries a value: the calendar marks
  *  these optional AND nullable, and a blank string says no more than either. */
@@ -149,9 +171,19 @@ function detailOrNull(value: string | null | undefined): string | null {
   return trimmed.length === 0 ? null : trimmed;
 }
 
-function drawerTitle(mode: DrawerMode): string {
+/** Whether the server answered a failed save with its own refusal: nothing
+ *  was written, so asking again is a new request. A failure it never
+ *  answered (the network, a 5xx, a reply this client could not read) may
+ *  have been written, so pressing Save again on the same booking keeps its
+ *  command id and the server's ledger replays the first write instead of
+ *  making a second hold (hallkeeper-web-8). */
+function refusedOutright(caught: unknown): boolean {
+  return caught instanceof ApiError && caught.status >= 400 && caught.status < 500;
+}
+
+function drawerTitle(mode: DrawerMode, kind: BookingKind): string {
   if (mode.kind === "edit") return BOARD_COPY.drawer.editTitle;
-  if (mode.kind === "convert") return BOARD_COPY.drawer.convertTitle;
+  if (mode.kind === "convert") return kind === "viewing" ? BOARD_COPY.drawer.viewingTitle : BOARD_COPY.drawer.convertTitle;
   return BOARD_COPY.drawer.createTitle;
 }
 
@@ -172,19 +204,33 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [stepError, setStepError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // The create this form last sent, as asked, and its command id: kept while
+  // its outcome is unknown, so Save again on the same booking is the same
+  // command (hallkeeper-web-8).
+  const pendingCreateRef = useRef<{ readonly asked: string; readonly commandId: string } | null>(null);
+  // a11y-9: each refused save moves focus to the first field in error, as
+  // the team and proposal forms do; the count asks for it after the render
+  // that marks the fields.
+  const formRef = useRef<HTMLFormElement | null>(null);
+  const [errorFocus, setErrorFocus] = useState(0);
+  useEffect(() => {
+    if (errorFocus === 0) return;
+    formRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
+  }, [errorFocus]);
   const titleRef = useRef<HTMLInputElement | null>(null);
   const closeRef = useRef<HTMLButtonElement | null>(null);
-  /** An event created by startPlan whose link has not landed yet — so a
-   *  retry finishes the job instead of orphaning another plan. */
-  const startedEventRef = useRef<string | null>(null);
   // Ending a booking's claim on its date is confirmed first (roadmap N3);
   // its failure is said beside it, not above the form's Save.
   const [ending, setEnding] = useState<EndingTransition | null>(null);
   const [endingNote, setEndingNote] = useState("");
+  // Why a booking marked lost was lost (migration 0100): optional, so a loss
+  // with no reason chosen is still marked lost.
+  const [lostReason, setLostReason] = useState<BookingLostReason | null>(null);
   const [endingError, setEndingError] = useState<string | null>(null);
   const endingQuestionId = useId();
   const endingQuestionRef = useRef<HTMLParagraphElement | null>(null);
   const endingNoteRef = useRef<HTMLTextAreaElement | null>(null);
+  const lostReasonRef = useRef<HTMLSelectElement | null>(null);
   const transitionsRef = useRef<HTMLDivElement | null>(null);
   /** The change whose button opened the confirmation "Keep it" closed. */
   const endingReturnRef = useRef<EndingTransition | null>(null);
@@ -220,16 +266,21 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
       if (target !== null) transitionsRef.current?.querySelector<HTMLButtonElement>(`[data-transition="${target}"]`)?.focus();
       return;
     }
-    // A precise pointer goes straight to the reason; on touch the keyboard
-    // would cover the question, so focus lands on the question instead.
+    // A precise pointer goes straight to the reason (a loss's own, from its
+    // list, first); on touch the keyboard would cover the question, so focus
+    // lands on the question instead.
     const finePointer = typeof window.matchMedia === "function" && window.matchMedia("(pointer: fine)").matches;
-    (finePointer ? endingNoteRef.current : endingQuestionRef.current)?.focus();
+    const reasonField = ending === "lost" ? lostReasonRef.current : endingNoteRef.current;
+    (finePointer ? reasonField : endingQuestionRef.current)?.focus();
   }, [ending]);
 
   // The same gate the API applies to diary writes (DIARY_WRITE_ROLES): the
   // hallkeeper reads the diary but never edits it, so a read-only role is
   // never offered a control whose every path ends in a 403.
   const canWriteDiary = hasRole(DIARY_WRITE_ROLES, role);
+  // Opening the plan writes nothing: whoever the planner admits may follow
+  // the link (the dashboard's own rule for the Plan tab).
+  const canOpenPlan = hasRole(PLANNER_ROLES, role);
   // Where a live hold's decision can move to (roadmap N3's Extend): a week
   // on, never past the day before its event; null when there is no later day.
   const extendTo = canWriteDiary && mode.kind === "edit" && decisionMs !== null && mode.booking.decisionAt !== null
@@ -246,10 +297,21 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
   );
 
   const isHold = form.kind === "hold";
+  // A viewing (migration 0100) is a show-round: no hold's hygiene, no option
+  // and no event, so no event type either.
+  const isViewing = form.kind === "viewing";
   const place = followsLadder !== undefined && isHold ? formPlace(form, followsLadder) : null;
   // COUPLED to drawer-form.ts ERROR_SLOTTED_HOLD: the hygiene fieldset is
   // exactly the set of hold-only inline error slots.
   const showHygiene = isHold;
+
+  /** The enquiry's drawer books a hold or a viewing. The form keeps what was
+   *  typed; a field the other choice hides no longer says it is wrong. */
+  function chooseConvertKind(kind: ConvertKind): void {
+    setForm((previous) => withConvertKind(previous, kind));
+    setFieldErrors({});
+    setSubmitError(null);
+  }
 
   function set<Key extends keyof DrawerForm>(key: Key, value: DrawerForm[Key]): void {
     setForm((previous) => {
@@ -286,6 +348,9 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
     // An error keyed to a field with no inline slot (e.g. hidden hygiene
     // fields) must still be seen — a silent return is a dead submit button.
     setSubmitError(hiddenFieldError(errors, isHold));
+    // ...and heard: each inline error is an alert, and focus goes to the
+    // first field in error (a11y-9).
+    setErrorFocus((count) => count + 1);
   }
 
   function submit(): void {
@@ -299,9 +364,35 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
       }
       setFieldErrors({});
       setBusy(true);
-      createBooking(result.payload)
+      const asked = JSON.stringify(result.payload);
+      const previous = pendingCreateRef.current;
+      const attempt = previous !== null && previous.asked === asked ? previous : { asked, commandId: crypto.randomUUID() };
+      pendingCreateRef.current = attempt;
+      createBooking(result.payload, attempt.commandId)
         .then((booking) => {
+          pendingCreateRef.current = null;
           onSaved(BOARD_COPY.drawer.created(booking.title));
+        })
+        .catch((caught: unknown) => {
+          if (refusedOutright(caught)) pendingCreateRef.current = null;
+          failure(caught);
+        })
+        .finally(() => {
+          setBusy(false);
+        });
+      return;
+    }
+    if (mode.kind === "convert" && isViewing) {
+      const result = formToViewingPayload(form, mode.enquiry.id);
+      if (!result.ok) {
+        rejectWithVisibleErrors(result.fieldErrors);
+        return;
+      }
+      setFieldErrors({});
+      setBusy(true);
+      bookViewing(result.payload)
+        .then((booking) => {
+          onSaved(BOARD_COPY.drawer.viewingBooked(booking.title));
         })
         .catch(failure)
         .finally(() => {
@@ -367,9 +458,10 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
     }
     setStepError(null);
     setBusy(true);
-    transitionBooking(mode.booking.id, toState)
+    const moved = mode.booking;
+    transitionBooking(moved.id, toState)
       .then(({ booking }) => {
-        onSaved(BOARD_COPY.drawer.transitioned(booking.title, BOARD_COPY.transitions[toState]));
+        onSaved(BOARD_COPY.drawer.transitioned(booking.title, transitionLabel(toState, moved)));
       })
       .catch(stepFailure)
       .finally(() => {
@@ -423,10 +515,15 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
   function confirmEnding(): void {
     if (mode.kind !== "edit" || ending === null) return;
     const toState = ending;
-    const note = endingNote.trim();
+    const trimmed = endingNote.trim();
+    const note = trimmed.length === 0 ? undefined : trimmed;
+    // Only a loss carries its reason, and only when one was chosen.
+    const reason = toState === "lost" ? lostReason : null;
     setEndingError(null);
     setBusy(true);
-    transitionBooking(mode.booking.id, toState, note.length === 0 ? undefined : note)
+    (reason === null
+      ? transitionBooking(mode.booking.id, toState, note)
+      : transitionBooking(mode.booking.id, toState, note, undefined, reason))
       .then(({ booking, promotedToFirst }) => {
         // The closing line says who now stands first: from the API's own
         // resequence when a hold left. A confirmed booking leaving moves no
@@ -441,75 +538,6 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
         // The reason typed so far stays; the failure is said beside it.
         setEndingError(caught instanceof ApiError ? caught.message : BOARD_COPY.drawer.saveFailed);
       })
-      .finally(() => {
-        setBusy(false);
-      });
-  }
-
-  // The corridor between the Diary and the planner. The API has always
-  // accepted `eventId` on a booking (updateBookingCore checks the event
-  // belongs to the booking's venue); nothing in the client ever sent it, so
-  // a coordinator had no way to say "this booking is the thing I am planning".
-  // Starting a plan seeds the event from the booking it belongs to, then
-  // links the two — the id is what /plan?eventId= reads.
-  function startPlan(): void {
-    if (mode.kind !== "edit") return;
-    const booking = mode.booking;
-    setSubmitError(null);
-    setBusy(true);
-    // Starting a plan is TWO writes that cannot be one transaction: create the
-    // event, then link it. If the link fails the event is already committed,
-    // and there is no endpoint that can list or delete it — so a naive retry
-    // would mint a second orphan every time. Remembering the id makes the
-    // retry FINISH the operation instead of repeating its first half.
-    const existing = startedEventRef.current;
-    const eventIdPromise =
-      existing === null ? createEvent({
-        venueId,
-        name: booking.title,
-        eventType: booking.eventType,
-        // Honest defaults: a plan begun from a booking is a draft, and the
-        // headcount is genuinely unknown until someone enters it.
-        status: "draft",
-        guestCount: 0,
-        startsAt: booking.startsAt,
-        endsAt: booking.endsAt,
-      }).then((graph) => {
-        startedEventRef.current = graph.event.id;
-        return graph.event.id;
-      })
-      : Promise.resolve(existing);
-
-    eventIdPromise
-      .then((eventId) => updateBooking(booking.id, { eventId }))
-      .then((saved) => {
-        startedEventRef.current = null;
-        onSaved(BOARD_COPY.drawer.planStarted(saved.title));
-      })
-      .catch((caught: unknown) => {
-        // Which half failed decides what is true to say. Once the plan
-        // exists, "the booking is unchanged" would hide it.
-        if (startedEventRef.current !== null) {
-          setSubmitError(BOARD_COPY.drawer.planLinkFailed);
-          return;
-        }
-        setSubmitError(caught instanceof ApiError ? caught.message : BOARD_COPY.drawer.planFailed);
-      })
-      .finally(() => {
-        setBusy(false);
-      });
-  }
-
-  function detachPlan(): void {
-    if (mode.kind !== "edit") return;
-    const booking = mode.booking;
-    setSubmitError(null);
-    setBusy(true);
-    updateBooking(booking.id, { eventId: null })
-      .then((saved) => {
-        onSaved(BOARD_COPY.drawer.planDetached(saved.title));
-      })
-      .catch(failure)
       .finally(() => {
         setBusy(false);
       });
@@ -532,7 +560,7 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
     const message = fieldErrors[key];
     if (message === undefined) return null;
     return (
-      <span className="diary-field-error" id={`diary-field-${key}-error`}>
+      <span className="diary-field-error" id={`diary-field-${key}-error`} role="alert">
         {message}
       </span>
     );
@@ -542,12 +570,12 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
     <aside
       className="diary-drawer"
       role="dialog"
-      aria-label={drawerTitle(mode)}
+      aria-label={drawerTitle(mode, form.kind)}
       aria-busy={busy}
       onKeyDown={onKeyDown}
     >
       <header className="diary-drawer-header">
-        <h2 className="diary-drawer-title">{drawerTitle(mode)}</h2>
+        <h2 className="diary-drawer-title">{drawerTitle(mode, form.kind)}</h2>
         <button ref={closeRef} type="button" className="diary-button" onClick={onClose} disabled={busy}>
           {BOARD_COPY.drawer.close}
         </button>
@@ -556,7 +584,9 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
       {busy ? <ActivityStatus>Updating this booking…</ActivityStatus> : null}
 
       {mode.kind === "convert" ? (
-        <p className="diary-drawer-note">{BOARD_COPY.drawer.convertNote(mode.enquiry.name)}</p>
+        <p className="diary-drawer-note">
+          {isViewing ? BOARD_COPY.drawer.viewingNote(mode.enquiry.name) : BOARD_COPY.drawer.convertNote(mode.enquiry.name)}
+        </p>
       ) : null}
 
       {/* "Booking summary", not "Booking details": the drawer itself answers
@@ -680,11 +710,33 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
       ) : transitions.length > 0 && ending !== null && mode.kind === "edit" ? (
         <div className="diary-drawer-transitions">
           <h3 className="diary-checks-title">{BOARD_COPY.drawer.transitionsTitle}</h3>
-          <div className="diary-consequence" role="group" aria-labelledby={endingQuestionId} data-tone={ending === "cancelled" ? "brick" : "amber"}>
+          {/* Brick for cancelling a confirmed booking; a viewing called off
+              is the lighter copper, as a hold's end is. */}
+          <div className="diary-consequence" role="group" aria-labelledby={endingQuestionId}
+            data-tone={ending === "cancelled" && mode.booking.kind !== "viewing" ? "brick" : "amber"}>
             <p className="diary-consequence-question" id={endingQuestionId} ref={endingQuestionRef} tabIndex={-1}>
               {BOARD_COPY.ending.question[ending](mode.booking.title)}
             </p>
             <p className="diary-consequence-line">{endingConsequence(mode.booking, rooms, contested, ladderRead)}</p>
+            {ending === "lost" ? (
+              <label className="diary-field">
+                {BOARD_COPY.ending.lostReason.label}
+                <select
+                  ref={lostReasonRef}
+                  value={lostReason ?? ""}
+                  disabled={busy}
+                  onChange={(event) => {
+                    const parsed = BookingLostReasonSchema.safeParse(event.target.value);
+                    setLostReason(parsed.success ? parsed.data : null);
+                  }}
+                >
+                  <option value="">{BOARD_COPY.ending.lostReason.none}</option>
+                  {BOOKING_LOST_REASONS.map((reason) => (
+                    <option key={reason} value={reason}>{BOARD_COPY.ending.lostReason.words[reason]}</option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
             <label className="diary-field">
               {BOARD_COPY.ending.noteLabel}
               <textarea
@@ -698,7 +750,9 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
             </label>
             <div className="diary-drawer-actions">
               <button type="button" className="diary-button is-primary" onClick={confirmEnding} disabled={busy} aria-busy={busy}>
-                {busy ? BOARD_COPY.ending.saving[ending] : BOARD_COPY.ending.confirm[ending]}
+                {busy ? BOARD_COPY.ending.saving[ending]
+                  : ending === "cancelled" && mode.booking.kind === "viewing" ? BOARD_COPY.ending.cancelViewing
+                    : BOARD_COPY.ending.confirm[ending]}
               </button>
               <button type="button" className="diary-button" onClick={keepBooking} disabled={busy}>
                 {BOARD_COPY.ending.keep}
@@ -723,7 +777,7 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
                   disabled={busy}
                 >
                   {/* "…": this one asks first. */}
-                  {BOARD_COPY.transitions[target]}{isEndingTransition(target) || (target === "hold" && mode.kind === "edit" && mode.booking.kind === "prospect") ? "…" : ""}
+                  {transitionLabel(target, mode.kind === "edit" ? mode.booking : null)}{isEndingTransition(target) || (target === "hold" && mode.kind === "edit" && mode.booking.kind === "prospect") ? "…" : ""}
                 </button>
                 {/* Confirm, Extend, Release: the day it moves to is on the
                     button, so it needs no question of its own. */}
@@ -740,6 +794,7 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
       ) : null}
 
       <form
+        ref={formRef}
         className="diary-drawer-form"
         onSubmit={(event) => {
           event.preventDefault();
@@ -747,6 +802,28 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
         }}
       >
         <fieldset className="diary-form-fields" disabled={!canWriteDiary}>
+        {/* From an enquiry: hold its date, as always, or book it a viewing
+            (migration 0100). One choice, above everything it changes. */}
+        {mode.kind === "convert" ? (
+          <fieldset className="diary-choice">
+            <legend>{BOARD_COPY.drawer.convertChoice.legend}</legend>
+            <div className="diary-choice-options">
+              {CONVERT_KINDS.map((kind) => (
+                <label key={kind} className="diary-choice-option">
+                  <input
+                    type="radio"
+                    name="diary-convert-kind"
+                    value={kind}
+                    checked={form.kind === kind}
+                    onChange={() => { chooseConvertKind(kind); }}
+                  />
+                  <span>{BOARD_COPY.drawer.convertChoice[kind]}</span>
+                </label>
+              ))}
+            </div>
+          </fieldset>
+        ) : null}
+
         {mode.kind === "create" ? (
           <label className="diary-field">
             {BOARD_COPY.drawer.fields.kind}
@@ -793,10 +870,12 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
           {fieldError("title")}
         </label>
 
-        <label className="diary-field">
-          {BOARD_COPY.drawer.fields.eventType}
-          <input type="text" value={form.eventType} onChange={onText("eventType")} />
-        </label>
+        {isViewing ? null : (
+          <label className="diary-field">
+            {BOARD_COPY.drawer.fields.eventType}
+            <input type="text" value={form.eventType} onChange={onText("eventType")} />
+          </label>
+        )}
 
         <div className="diary-field-row is-times">
           <label className="diary-field">
@@ -820,6 +899,12 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
             {fieldError("endsAt")}
           </label>
         </div>
+
+        {/* Whoever books a viewing hosts it; an existing one names its
+            owner in the summary above. */}
+        {isViewing && mode.kind !== "edit" ? (
+          <p className="diary-drawer-note">{BOARD_COPY.drawer.viewingOwnerNote}</p>
+        ) : null}
 
         {showHygiene ? (
           <fieldset className="diary-hygiene">
@@ -915,7 +1000,7 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
 
         <div className="diary-drawer-actions">
           {canWriteDiary ? <button type="submit" className="diary-button is-primary" disabled={busy}>
-            {BOARD_COPY.drawer.submit[mode.kind]}
+            {mode.kind === "convert" && isViewing ? BOARD_COPY.drawer.submit.viewing : BOARD_COPY.drawer.submit[mode.kind]}
           </button> : null}
           <button type="button" className="diary-button" onClick={onClose} disabled={busy}>
             {BOARD_COPY.drawer.cancel}
@@ -923,46 +1008,27 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
         </div>
       </form>
 
-      {mode.kind === "edit" && canWriteDiary ? (
+      {/* The plan is the booking's event (the bind, migration 0090): a
+          provisional or confirmed date always has one, made with it, so the
+          link simply opens it. Interest only gets its event once it is made
+          provisional or confirmed; a house block never has a plan. */}
+      {mode.kind === "edit" && canOpenPlan && (mode.booking.eventId !== null || mode.booking.kind === "prospect") ? (
         <div className="diary-drawer-plan">
           <h3 className="diary-checks-title">{BOARD_COPY.drawer.planTitle}</h3>
           {mode.booking.eventId === null ? (
-            <>
-              <p className="diary-drawer-note">{BOARD_COPY.drawer.planNone}</p>
-              <div className="diary-drawer-actions">
-                <button
-                  type="button"
-                  className="diary-button"
-                  onClick={startPlan}
-                  disabled={busy}
-                >
-                  {BOARD_COPY.drawer.planStart}
-                </button>
-              </div>
-            </>
+            <p className="diary-drawer-note">{BOARD_COPY.drawer.planWhenHeld}</p>
           ) : (
-            <>
-              <p className="diary-drawer-note">{BOARD_COPY.drawer.planAttached}</p>
-              <div className="diary-drawer-actions">
-                {/* A real link, not a router push: the planner is a heavy 3D
-                    route and a deliberate context switch, and an anchor keeps
-                    this drawer testable without a router. */}
-                <a
-                  className="diary-button is-primary"
-                  href={planHref(mode.booking.eventId, mode.booking.spaceId, rooms)}
-                >
-                  {BOARD_COPY.drawer.planOpen}
-                </a>
-                <button
-                  type="button"
-                  className="diary-button"
-                  onClick={detachPlan}
-                  disabled={busy}
-                >
-                  {BOARD_COPY.drawer.planDetach}
-                </button>
-              </div>
-            </>
+            <div className="diary-drawer-actions">
+              {/* A real link, not a router push: the planner is a heavy 3D
+                  route and a deliberate context switch, and an anchor keeps
+                  this drawer testable without a router. */}
+              <a
+                className="diary-button is-primary"
+                href={planHref(mode.booking.eventId, mode.booking.spaceId, rooms)}
+              >
+                {BOARD_COPY.drawer.planOpen}
+              </a>
+            </div>
           )}
         </div>
       ) : null}

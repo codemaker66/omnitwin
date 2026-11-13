@@ -67,6 +67,7 @@ export function SaveSendPanel({
 }: SaveSendPanelProps = {}): React.ReactElement | null {
   const hasObjects = useEditorStore((s) => s.objects.length > 0);
   const configId = useEditorStore((s) => s.configId);
+  const isPublicPreview = useEditorStore((s) => s.isPublicPreview);
   const isNarrow = useIsNarrowViewport();
   const isTouch = useIsCoarsePointer();
   const cameraInteractionActive = useCockpitStore((state) => state.cameraInteractionActive);
@@ -83,6 +84,11 @@ export function SaveSendPanel({
   }, []);
 
   if (!hasObjects || configId === null) return null;
+  // The guest enquiry (POST /public/enquiries) accepts only a guest's draft. A
+  // plan saved to an account, a client's or staff's, goes to the venue through
+  // its review (SubmitForReviewPanel) or the share lens, so this button could
+  // only fail for it, after the whole form was filled in (QoL E-01).
+  if (!isPublicPreview) return null;
   if (isNarrow || isTouch) return null;
 
   const handleSend = (): void => {

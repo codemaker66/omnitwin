@@ -7,7 +7,7 @@ import {
   TWIN_PREPARING_LINE,
   TWIN_RETRY_LABEL,
   TWIN_TITLE,
-  TWIN_WORK_IN_PROGRESS,
+  TWIN_TOUR_LABEL,
 } from "../twin/twin-copy.js";
 import { TwinViewer } from "../twin/TwinViewer.js";
 import {
@@ -73,7 +73,7 @@ export function TwinPage(): ReactElement {
         <h1 className="vv-sr-only">{TWIN_TITLE}</h1>
 
         {manifest.state !== "ready" && (
-          <p className="vv-twin-work-in-progress">{TWIN_WORK_IN_PROGRESS}</p>
+          <p className="vv-twin-work-in-progress">{TWIN_TOUR_LABEL}</p>
         )}
 
         {manifest.state === "loading" && (

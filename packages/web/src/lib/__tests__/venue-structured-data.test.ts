@@ -20,8 +20,8 @@ import { VENUE_STRUCTURED_DATA_MARKER, injectVenueStructuredData } from "../venu
 
 const VocabularySchema = z.object({
   version: z.string(),
-  types: z.record(z.object({ ancestors: z.array(z.string()), properties: z.array(z.string()) })),
-  ranges: z.record(z.array(z.string())),
+  types: z.record(z.string(), z.object({ ancestors: z.array(z.string()), properties: z.array(z.string()) })),
+  ranges: z.record(z.string(), z.array(z.string())),
 });
 // Read from the package root, as index.html is below: under happy-dom,
 // import.meta.url is not a file: URL.

@@ -6,13 +6,20 @@
 // rules-of-thumb, this module answers "what is the occupant load, and does the
 // room have enough exit width and acceptable travel distance?" using the
 // published prescriptive factors from:
-//   - UK Approved Document B (ADB) Vol 2 — Appendix D floor-space factors,
-//     Table 2.1 travel distances, horizontal-escape exit widths, merging flow.
-//   - NFPA 101 (2018) — Table 7.3.1.2 occupant-load factors, Table 7.3.3.1
-//     egress width factors, assembly travel distance.
+//   - England's Approved Document B (ADB) Vol 2 — Appendix D floor-space
+//     factors, Table 2.1 travel distances, horizontal-escape exit widths,
+//     merging flow.
+//   - the US NFPA 101 (2018) — Table 7.3.1.2 occupant-load factors, Table
+//     7.3.3.1 egress width factors, assembly travel distance.
 //
-// It is the shared backbone of the Flow lens (occupant load seeds agent counts)
-// and the Evidence lens (occupancy + exit-capacity + travel-distance checks).
+// JURISDICTION — read before using any of it on a screen. Neither code
+// applies to a building in Scotland: Trades Hall is in Glasgow, where the
+// Building (Scotland) Regulations, their Technical Handbooks and the venue's
+// own fire risk assessment govern. Nothing from this module may be shown to a
+// user as evidence about a Scottish building (redteam fix-first 2). The
+// Evidence lens no longer imports it; it shows escape routes and the room's
+// maximum as "not recorded", with the hallkeeper to ask. Kept as reference
+// arithmetic until a fire engineer supplies the Scottish basis.
 //
 // SAFE LANGUAGE — non-negotiable: every output here is an INDICATIVE PLANNING
 // estimate under stated assumptions. It is NOT a code-compliance determination,

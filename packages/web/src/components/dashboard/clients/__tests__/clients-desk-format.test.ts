@@ -1,10 +1,20 @@
 import { describe, expect, it } from "vitest";
 import type { ContactProfile } from "../../../../api/clients.js";
 import {
-  clientRefFromSearchValue, clientRefToSearchValue, contactFacts, dealStageWords, initials, proposalStatusWords, sameClient,
+  clientRefFromSearchValue, clientRefToSearchValue, contactFacts, contactTimeline, dealStageWords, groupResults, initials, proposalStatusWords, sameClient,
 } from "../clients-desk-format.js";
 
 const ID = "00000000-0000-4000-8000-00000000A001";
+
+describe("a person with no email", () => {
+  it("lists a person with no email under their organisation alone", () => {
+    const groups = groupResults({
+      users: [], guestLeads: [], configurations: [], accounts: [], deals: [], proposals: [],
+      contacts: [{ id: ID, name: "Ailsa Henderson", email: null, phone: null, accountName: "Henderson Family" }],
+    });
+    expect(groups[0]?.rows[0]).toMatchObject({ kind: "contact", title: "Ailsa Henderson", detail: "Henderson Family" });
+  });
+});
 
 describe("the client in the address", () => {
   it("reads ?client=kind:uuid, and nothing else", () => {
@@ -40,6 +50,32 @@ describe("words", () => {
     expect(dealStageWords("something_new")).toBe("In the pipeline");
     expect(proposalStatusWords("changes_requested")).toBe("Changes asked for");
     expect(proposalStatusWords("something_new")).toBe("Proposal");
+  });
+});
+
+// Release audit dash-commercial-7: the timeline named the current version as
+// the one sent, though a version can be saved after a send (changes asked for).
+describe("a contact's timeline", () => {
+  function sent(proposal: { currentVersion: number; sentVersion: number | null }): ContactProfile {
+    return {
+      contact: {
+        id: ID, venueId: "venue", name: "Ailsa Henderson", email: null, phone: null, roleLabel: null,
+        sourceEnquiryId: null, createdAt: "2026-01-01T00:00:00.000Z", account: null,
+      },
+      deals: [],
+      proposals: [{
+        id: "proposal-1", opportunityId: null, title: "Wedding proposal", status: "changes_requested",
+        sentAt: "2026-10-10T09:00:00.000Z", ...proposal,
+      }],
+    };
+  }
+
+  it("names the version that was sent, not one saved since", () => {
+    expect(contactTimeline(sent({ currentVersion: 3, sentVersion: 2 }))[0]?.sentence).toBe("Wedding proposal sent (version 2).");
+  });
+
+  it("names no version when it is not known which was sent", () => {
+    expect(contactTimeline(sent({ currentVersion: 3, sentVersion: null }))[0]?.sentence).toBe("Wedding proposal sent.");
   });
 });
 

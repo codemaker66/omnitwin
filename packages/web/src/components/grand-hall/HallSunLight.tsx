@@ -25,9 +25,16 @@ import { hallSkyState, hallSkyUniforms } from "./hall-sky-runtime.js";
 const SUN_INTENSITY = 5.2;
 /** The same sun on the room's photographed surfaces, in their baked-light units. */
 const SUN_ROOM_RADIANCE = 2.4;
-/** Full moonlight (sky strength 0.07) on furniture and room. */
-const MOON_INTENSITY = 2.4;
-const MOON_ROOM_RADIANCE = 1.1;
+/**
+ * Full moonlight (sky strength 0.07) on furniture and room: a faint wash
+ * (Blake, 22 October 2026). Real full moonlight under event lighting adds
+ * about 0.1% and could not be seen; at 2.4 and 1.1 it was 72% of the late
+ * October noon sun on the floor, and a moonlit patch read white (+0.25 floor
+ * luma in the end view at 26 Oct 21:30 GMT). A tenth of that, +0.03, is seen
+ * as a cool wash where the windows let it in. The sky's own moon is unchanged.
+ */
+export const MOON_INTENSITY = 0.24;
+export const MOON_ROOM_RADIANCE = 0.11;
 /** The sun counts as up while its light is above this share of the overhead sun. */
 const SUN_UP = 0.0005;
 /** While furniture moves, the map is redrawn at most this often, milliseconds. */

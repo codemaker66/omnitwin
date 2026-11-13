@@ -4,6 +4,13 @@
 # Runs daily at 02:00 UTC to remove:
 #   1. Stale preview configurations (unclaimed, >72h old, no enquiry)
 #   2. Orphaned file rows (loadout context, >24h old, no photo link)
+#   3. Guests' allergy notes past their retention (30 days after the event),
+#      from layouts and their event sheets, as the privacy policy promises
+#   4. Remembered allergy notes unused for the period the client agreed to
+#
+# The log is public with the repository: every line carries counts only, and
+# the note passes' errors carry a SQLSTATE only (packages/api/src/scripts/
+# run-cleanup.ts).
 #
 # Can also be triggered manually from the GitHub Actions UI (workflow_dispatch).
 #

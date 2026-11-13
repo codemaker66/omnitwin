@@ -1,3 +1,10 @@
+import {
+  AI_USAGE_READ_ROLES as AI_USAGE_READERS,
+  FORWARD_BOOK_RECORD_ROLES,
+  PRICING_WRITE_ROLES as PRICE_SETTER_ROLES,
+  VENUE_ADMINISTRATION_ROLES,
+  VENUE_TEAM_INVITER_ROLES,
+} from "@omnitwin/types";
 import { isPlatformAdmin, type JwtUser } from "../middleware/auth.js";
 
 // ---------------------------------------------------------------------------
@@ -103,8 +110,17 @@ export function canWriteEvents(
 // precedent already set by canManageVenue above).
 // ---------------------------------------------------------------------------
 
-/** Editing the venue record, its spaces and its pricing rules. */
-const VENUE_ADMINISTRATION_ROLES: ReadonlySet<string> = new Set(["admin", "manager", "staff"]);
+/** Editing the venue record and its spaces. Prices are narrower: see
+ *  PRICING_WRITE_ROLES. */
+const VENUE_ADMINISTRATION_ROLE_SET: ReadonlySet<string> = new Set(VENUE_ADMINISTRATION_ROLES);
+
+/**
+ * Who may set a price: create, change, delete or restore a pricing rule.
+ * people-matrix.md records "A price change: admin; manager if Blake says so".
+ * Whether manager stays is Blake's call, so it is one line, in
+ * @omnitwin/types (pricing-desk.ts), which the web's controls read too.
+ */
+export const PRICING_WRITE_ROLES: ReadonlySet<string> = new Set(PRICE_SETTER_ROLES);
 
 /** Enquiries, opportunities, CRM, proposals, quotes and revenue. */
 const COMMERCIAL_ROLES: ReadonlySet<string> = new Set(["admin", "manager", "staff", "sales"]);
@@ -114,6 +130,12 @@ const INVENTORY_READ_ROLES: ReadonlySet<string> = new Set(["admin", "manager", "
 
 /** Adjusting counted stock. Narrow on purpose: this moves real numbers. */
 const INVENTORY_WRITE_ROLES: ReadonlySet<string> = new Set(["admin", "manager"]);
+
+/** Who invites the venue's team (canManageVenueTeam). */
+const VENUE_TEAM_INVITER_ROLE_SET: ReadonlySet<string> = new Set(VENUE_TEAM_INVITER_ROLES);
+
+/** Reading what the venue's AI use has cost (T-656): money, so its managers and admins. */
+const AI_USAGE_READ_ROLES: ReadonlySet<string> = new Set<string>(AI_USAGE_READERS);
 
 function holdsVenueRole(
   user: Pick<JwtUser, "role" | "venueId" | "platformRole">,
@@ -125,7 +147,7 @@ function holdsVenueRole(
 }
 
 /**
- * Venue administration: the venue record, its spaces, its pricing rules.
+ * Venue administration: the venue record and its spaces.
  * Hallkeepers run the room; they do not edit the venue's commercial record
  * (goal 18 §6 decision 6b), so they are deliberately absent here while
  * canManageVenue still admits them for read and room-state surfaces.
@@ -134,7 +156,16 @@ export function canAdministerVenue(
   user: Pick<JwtUser, "role" | "venueId" | "platformRole">,
   venueId: string,
 ): boolean {
-  return holdsVenueRole(user, venueId, VENUE_ADMINISTRATION_ROLES);
+  return holdsVenueRole(user, venueId, VENUE_ADMINISTRATION_ROLE_SET);
+}
+
+/** Setting a price at this venue (PRICING_WRITE_ROLES). Reading one is the
+ *  wider commercial team's (canManageCommercial), never the public's. */
+export function canWritePricing(
+  user: Pick<JwtUser, "role" | "venueId" | "platformRole">,
+  venueId: string,
+): boolean {
+  return holdsVenueRole(user, venueId, PRICING_WRITE_ROLES);
 }
 
 /**
@@ -150,6 +181,20 @@ export function canManageCommercial(
 }
 
 /**
+ * Whether someone is on the venue's own commercial team: the roles
+ * canManageCommercial admits, at this venue, without its pass for a Venviewer
+ * platform admin. These are the people who answer a venue's guests, so the
+ * enquiry funnel records a first reply as theirs (migration 0100) and lets
+ * only them report one.
+ */
+export function isVenueCommercialMember(
+  person: Pick<JwtUser, "role" | "venueId">,
+  venueId: string,
+): boolean {
+  return COMMERCIAL_ROLES.has(person.role) && person.venueId === venueId;
+}
+
+/**
  * Reading the Diary: the venue floor, and sales, who pencils the holds. The
  * same people as DIARY_READ_ROLES on the live channel (ws/diary-live.ts), and
  * every role booking-mutations.ts lets write; a writer who could not read the
@@ -160,6 +205,53 @@ export function canReadDiary(
   venueId: string,
 ): boolean {
   return canManageVenue(user, venueId) || canManageCommercial(user, venueId);
+}
+
+/**
+ * Reading the Clients desk (search, recent and upcoming lists, the client and
+ * guest-lead profiles): the venue floor, and sales, who works the clients
+ * (People Book design §6.7, approved 18 October 2026). Hallkeepers keep exactly
+ * the access they had. The commercial record inside the desk, and the contact
+ * profile, stay with `canManageCommercial` alone.
+ */
+export function canReadClients(
+  user: Pick<JwtUser, "role" | "venueId" | "platformRole">,
+  venueId: string,
+): boolean {
+  return canManageVenue(user, venueId) || canManageCommercial(user, venueId);
+}
+
+/**
+ * The venue's team: seeing who has access, inviting people and cancelling an
+ * invitation. Venue administrators only (Blake, 24 October 2026), any role
+ * including another administrator; VENUE_TEAM_INVITER_ROLES in @omnitwin/types
+ * is that decision, read by the web's Team tab too.
+ */
+export function canManageVenueTeam(
+  user: Pick<JwtUser, "role" | "venueId" | "platformRole">,
+  venueId: string,
+): boolean {
+  return holdsVenueRole(user, venueId, VENUE_TEAM_INVITER_ROLE_SET);
+}
+
+/**
+ * The venue a general AI draft is charged to (T-656): the asker's own, where
+ * they work on its floor or its commercial team; null for anyone else (an
+ * account with no venue, a client, a planner, an event-scoped caterer), who
+ * cannot spend a venue's allowance.
+ */
+export function aiDraftVenue(user: Pick<JwtUser, "role" | "venueId" | "platformRole">): string | null {
+  const venueId = user.venueId;
+  if (venueId === null) return null;
+  return canManageVenue(user, venueId) || canManageCommercial(user, venueId) ? venueId : null;
+}
+
+/** Reading the venue's AI usage and spend (T-656): its managers and admins. */
+export function canReadAIUsage(
+  user: Pick<JwtUser, "role" | "venueId" | "platformRole">,
+  venueId: string,
+): boolean {
+  return holdsVenueRole(user, venueId, AI_USAGE_READ_ROLES);
 }
 
 /** Reading venue inventory levels. Never a price. */
@@ -176,6 +268,24 @@ export function canWriteInventory(
   venueId: string,
 ): boolean {
   return holdsVenueRole(user, venueId, INVENTORY_WRITE_ROLES);
+}
+
+const FORWARD_BOOK_RECORD_ROLE_SET: ReadonlySet<string> = new Set<string>(FORWARD_BOOK_RECORD_ROLES);
+
+/**
+ * Recording, or clearing, that a room's whole forward book is on the Diary:
+ * the record that lets AI assistants and the website say whether the room has
+ * bookings on a date (Blake, 17 October 2026, "hide date status until
+ * checked"). It is the venue's own word about its own book, so only the
+ * venue's admin or manager makes it. Unlike the capabilities above there is
+ * no platform-admin shortcut: a Venviewer administrator who is not that
+ * venue's admin or manager does not know its paper diary.
+ */
+export function canRecordForwardBook(
+  user: Pick<JwtUser, "role" | "venueId">,
+  venueId: string,
+): boolean {
+  return FORWARD_BOOK_RECORD_ROLE_SET.has(user.role) && user.venueId === venueId;
 }
 
 // ---------------------------------------------------------------------------

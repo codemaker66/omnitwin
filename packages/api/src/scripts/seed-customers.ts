@@ -35,7 +35,7 @@ import { users, venues } from "../db/schema.js";
 
 
 const CustomerSchema = z.object({
-  email: z.string().email("email must be a valid address"),
+  email: z.email("email must be a valid address"),
   name: z.string().min(1).max(200),
   role: UserRoleSchema,
   username: UsernameSchema.optional(),

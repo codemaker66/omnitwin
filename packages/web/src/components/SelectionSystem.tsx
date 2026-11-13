@@ -14,9 +14,11 @@ import { useCameraReferenceStore } from "../stores/camera-reference-store.js";
 import { useBookmarkStore } from "../stores/bookmark-store.js";
 import { useMarkupStore } from "../stores/markup-store.js";
 import { useLayoutTimelinePreviewStore } from "../stores/layout-timeline-preview-store.js";
-import { getCatalogueItem } from "../lib/catalogue.js";
+import { useCockpitStore } from "../stores/cockpit-store.js";
+import { useTouchGestureStore } from "../stores/touch-gesture-store.js";
+import { getCatalogueItem, getCatalogueItemBySlug } from "../lib/catalogue.js";
 import { isDiningTableItem } from "../lib/furniture-semantics.js";
-import { dragMovingIds, expandIdsToGroupMembers, getGroupMemberIds, snapPositionToGrid } from "../lib/placement.js";
+import { dragMovingIds, getGroupMemberIds, snapPositionToGrid } from "../lib/placement.js";
 import { computeFluidFurnitureDragFrame } from "../lib/furniture-drag.js";
 import { isSceneFurniturePlacement } from "../lib/table-dressing.js";
 import { useToolStore } from "../stores/tool-store.js";
@@ -38,9 +40,25 @@ import {
 import { prefersReducedMotion } from "../lib/reduced-motion.js";
 import { normalizeFurnitureScale } from "../lib/furniture-scale.js";
 import { intersectSelectable } from "../lib/raycast-gate.js";
+import { plannerChromeRequested } from "../lib/planner-chrome-flag.js";
+import { plannerFeatureEnabled } from "../lib/planner-features.js";
+import { judgesCard } from "../lib/setup-cards.js";
+import { placePieceInHand } from "../lib/place-in-hand.js";
+import { useDoorClearSpaceStore } from "../stores/door-clear-space-store.js";
+import { placementFloorPoint } from "../lib/planner-interaction-floor.js";
 import {
-  snapRotation,
-  ROTATION_SNAP_RAD,
+  FingerTrail,
+  LIFT_HOLD_MS,
+  LIFT_OFF_JITTER_MS,
+  PLACE_HOLD_MS,
+  TouchArbiter,
+  ghostRaisePx,
+  type TouchMode,
+  type TouchOutcome,
+} from "../lib/touch-arbiter.js";
+import { useEscapeLayer, usePlannerKeyBindings } from "../lib/planner-keys.js";
+import { selectionKeyBindings, type FloorDirection } from "../lib/planner-keymap.js";
+import {
   DRAG_THRESHOLD_PX,
   screenDistance,
   computeMarqueeRect,
@@ -77,6 +95,52 @@ function screenToFloor(
   return { x: hit.x, z: hit.z };
 }
 
+/** A short buzz where the phone has one (Android; Safari on iOS has no vibration). */
+function haptic(ms: number): void {
+  const nav = navigator as { vibrate?: (pattern: number | number[]) => boolean };
+  if (typeof nav.vibrate === "function") nav.vibrate(ms);
+}
+
+/** The 56 px ring that fills while a finger holds a piece, until the piece lifts (spec-card-dock §10.1). */
+function createHoldRing(): HTMLDivElement {
+  const ring = document.createElement("div");
+  ring.setAttribute("aria-hidden", "true");
+  ring.dataset["testid"] = "touch-hold-ring";
+  const style = ring.style;
+  style.position = "fixed";
+  style.width = "56px";
+  style.height = "56px";
+  style.margin = "-28px 0 0 -28px";
+  style.borderRadius = "50%";
+  style.pointerEvents = "none";
+  style.zIndex = "40";
+  style.display = "none";
+  // A 4 px band: a conic gradient fills it, the centre is masked away.
+  const band = "radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 4px))";
+  style.setProperty("mask", band);
+  style.setProperty("-webkit-mask", band);
+  return ring;
+}
+
+/** A progress indicator, not a motion: it fills 1:1 with time and is never gated. */
+function paintHoldRing(ring: HTMLDivElement, progress: number): void {
+  ring.style.background = `conic-gradient(var(--house-cream, #efe7cf) ${String(progress * 360)}deg, rgba(20, 18, 14, 0.28) 0deg)`;
+}
+
+const _screenForward = new Vector3();
+const _screenUp = new Vector3();
+
+/**
+ * The floor direction that runs up the screen: the camera's view and its own
+ * up, laid flat. Their sum never vanishes, looking straight down (Plan) or
+ * straight ahead (Walk), so an arrow always has a way to go.
+ */
+function screenUpOnFloor(cam: Camera): FloorDirection {
+  cam.getWorldDirection(_screenForward);
+  _screenUp.setFromMatrixColumn(cam.matrixWorld, 1);
+  return { x: _screenForward.x + _screenUp.x, z: _screenForward.z + _screenUp.z };
+}
+
 // ---------------------------------------------------------------------------
 // SelectionSystem — handles click, drag-move, marquee, rotation, delete
 // ---------------------------------------------------------------------------
@@ -87,12 +151,10 @@ function screenToFloor(
  * - Left-click on furniture: select (Shift+click: toggle additive)
  * - Left-click on empty + drag: marquee box select
  * - Drag selected furniture: move on floor plane
- * - Q / E: rotate selected items by ±15°
- * - R key: rotate selected 15° clockwise (legacy, kept for compat)
- * - Ctrl/Cmd+G: group or ungroup selected items
- * - G key: toggle grid snap
- * - Delete/Backspace: remove selected items
- * - Escape: clear selection
+ * - Keys (lib/planner-keymap.ts): Q / E turn 15° either way, R a quarter
+ *   turn; arrows nudge 10 cm (Shift 1 m, Alt 1 cm); + / − seats; C cloth;
+ *   Ctrl G groups, Ctrl Shift G ungroups; G grid snap; Delete removes
+ * - Escape: stops a drag or box in progress
  *
  * Must be inside the R3F Canvas.
  */
@@ -117,16 +179,6 @@ function isPlacedItemId(id: string): boolean {
 
 const WALL_KEYS_SET = new Set<string>(["wall-front", "wall-back", "wall-left", "wall-right"]);
 
-function selectedItemsAreOneWholeGroup(ids: ReadonlySet<string>): boolean {
-  if (ids.size < 2) return false;
-  const placedItems = usePlacementStore.getState().placedItems;
-  const expandedIds = expandIdsToGroupMembers(ids, placedItems);
-  const expandedItems = placedItems.filter((item) => expandedIds.has(item.id));
-  if (expandedItems.length < 2) return false;
-  const groupIds = new Set(expandedItems.map((item) => item.groupId));
-  return groupIds.size === 1 && !groupIds.has(null);
-}
-
 /** Walk the parent chain looking for a wall name or click-plane name. */
 function findWallKey(obj: Object3D): WallKey | null {
   let current: Object3D | null = obj;
@@ -140,6 +192,18 @@ function findWallKey(obj: Object3D): WallKey | null {
     current = current.parent;
   }
   return null;
+}
+
+/**
+ * The wall a click or tap that met `wallKey` first takes down, if any. With
+ * `wallClickAlt` (decision 4) only an Alt-click does: a plain click passes
+ * through to the floor as a click on empty floor, so a deselect near a wall
+ * never takes it down, and the camera hides walls in the way. A finger has no
+ * Alt, so a tap never does.
+ */
+function wallToHide(wallKey: WallKey | null, altKey: boolean): WallKey | null {
+  if (wallKey === null) return null;
+  return altKey || !plannerFeatureEnabled("wallClickAlt") ? wallKey : null;
 }
 
 export function findFurnitureItemId(obj: Object3D): string | null {
@@ -158,6 +222,24 @@ export function findFurnitureItemId(obj: Object3D): string | null {
     current = parent;
   }
   return null;
+}
+
+declare global {
+  interface Window {
+    /** The touch arbiter's state and a hand in, for the phone e2e (development builds). */
+    __plannerTouch?: {
+      mode: () => string;
+      placed: () => readonly { readonly id: string; readonly slug: string | null; readonly x: number; readonly z: number }[];
+      arm: (slug: string) => boolean;
+      /**
+       * The id of the piece a drag carries right now (a touch lift or a mouse
+       * drag), or null when nothing is carried: which piece a lift took, where
+       * the mode says only that one did. (A lift the planner refuses turns the
+       * finger to the camera, mode "orbit".)
+       */
+      carrying: () => string | null;
+    };
+  }
 }
 
 export function SelectionSystem(): null {
@@ -200,6 +282,24 @@ export function SelectionSystem(): null {
   const invalidateRef = useRef(invalidate);
   invalidateRef.current = invalidate;
 
+  useEffect(() => {
+    if (!import.meta.env.DEV) return undefined;
+    const bridge: NonNullable<Window["__plannerTouch"]> = {
+      mode: () => useTouchGestureStore.getState().mode,
+      placed: () => usePlacementStore.getState().placedItems.map((item) => ({
+        id: item.id, slug: getCatalogueItem(item.catalogueItemId)?.slug ?? null, x: item.x, z: item.z,
+      })),
+      arm: (slug) => {
+        const item = getCatalogueItemBySlug(slug);
+        if (item !== undefined) useCatalogueStore.getState().selectItem(item.id);
+        return item !== undefined;
+      },
+      carrying: () => (isDragging.current ? dragItemId.current : null),
+    };
+    window.__plannerTouch = bridge;
+    return () => { if (window.__plannerTouch === bridge) delete window.__plannerTouch; };
+  }, []);
+
   // Invalidate only when selected IDs change (not marquee/guides)
   useEffect(() => {
     let prev = useSelectionStore.getState().selectedIds;
@@ -211,108 +311,42 @@ export function SelectionSystem(): null {
     });
   }, []);
 
-  // Keyboard handlers
+  // Keys (T-671 slice 5): the keymap's selection keys through the planner's one
+  // keyboard owner, and Esc for a drag or a box in progress. Esc stops a drag
+  // where it is (one undo step, as a cancelled pointer always has); the next
+  // press clears the selection (lib/planner-keymap.ts).
+  // The pointer's last place over the canvas, so Ctrl V pastes under it (Q-11).
+  const lastPointer = useRef<{ readonly x: number; readonly y: number } | null>(null);
   useEffect(() => {
-    function onKeyDown(event: KeyboardEvent): void {
-      const target = event.target;
-      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) return;
-      if (useMarkupStore.getState().active) return;
-
-      const selectedIds = useSelectionStore.getState().selectedIds;
-
-      // Undo/redo shortcuts live in useUndoRedoShortcuts (EditorPage shell),
-      // driving the editor-store history shared by the 3D and 2D views.
-
-      // Delete / Backspace — remove selected items
-      if (event.code === "Delete" || event.code === "Backspace") {
-        if (selectedIds.size === 0) return;
-        cancelPointerGesture.current();
-        usePlacementStore.getState().removeItems(selectedIds);
-        useSelectionStore.getState().clearSelection();
-        invalidateRef.current();
-        return;
-      }
-
-      // Escape — back out one layer at a time: a non-Select hand returns to
-      // Select first; a second press clears the selection. The measure hand
-      // defers to MeasurementTool's pending-point cancel, then puts the tape
-      // away.
-      if (event.code === "Escape") {
-        cancelPointerGesture.current();
-        const toolStore = useToolStore.getState();
-        if (toolStore.activeTool === "measure") {
-          if (useMeasurementStore.getState().pendingPoint === null) {
-            toolStore.setTool("select");
-          }
-          return;
-        }
-        if (toolStore.activeTool !== "select") {
-          toolStore.setTool("select");
-          return;
-        }
-        if (selectedIds.size > 0) {
-          useSelectionStore.getState().clearSelection();
-          invalidateRef.current();
-        }
-        return;
-      }
-
-      // Q — rotate selected counter-clockwise | E — same | R — clockwise (legacy)
-      // Batch rotation: update all items in a single set() call to avoid
-      // N separate React batches for N selected items.
-      if ((event.code === "KeyQ" || event.code === "KeyE" || event.code === "KeyR") && !event.ctrlKey && !event.metaKey) {
-        if (selectedIds.size === 0) return;
-        cancelPointerGesture.current();
-        const delta = event.code === "KeyR" ? ROTATION_SNAP_RAD : -ROTATION_SNAP_RAD;
-        const store = usePlacementStore.getState();
-        usePlacementStore.setState({
-          placedItems: store.placedItems.map((item) => {
-            if (!selectedIds.has(item.id) || !isSceneFurniturePlacement(item)) return item;
-            return { ...item, rotationY: snapRotation(item.rotationY + delta) };
-          }),
-        });
-        invalidateRef.current();
-        return;
-      }
-
-      // Ctrl/Cmd+G — group selected items, or ungroup a complete selected group.
-      if (event.code === "KeyG" && (event.ctrlKey || event.metaKey)) {
-        if (selectedIds.size < 2) return;
-        cancelPointerGesture.current();
-        event.preventDefault();
-        const placement = usePlacementStore.getState();
-        const expandedIds = expandIdsToGroupMembers(selectedIds, placement.placedItems);
-        if (selectedItemsAreOneWholeGroup(selectedIds)) {
-          placement.ungroupItems(expandedIds);
-        } else {
-          placement.groupItems(expandedIds);
-        }
-        useSelectionStore.getState().selectMultiple([...expandedIds]);
-        invalidateRef.current();
-        return;
-      }
-
-      // G — toggle grid snap
-      if (event.code === "KeyG" && !event.ctrlKey && !event.metaKey) {
-        usePlacementStore.getState().toggleSnap();
-        return;
-      }
-
-      // C — toggle cloth on selected tables
-      if (event.code === "KeyC" && !event.ctrlKey && !event.metaKey) {
-        if (selectedIds.size === 0) return;
-        cancelPointerGesture.current();
-        for (const id of selectedIds) {
-          usePlacementStore.getState().toggleCloth(id);
-        }
-        invalidateRef.current();
-        return;
-      }
-    }
-
-    window.addEventListener("keydown", onKeyDown);
-    return () => { window.removeEventListener("keydown", onKeyDown); };
-  }, []);
+    const canvasEl = gl.domElement;
+    const remember = (event: PointerEvent): void => { lastPointer.current = { x: event.clientX, y: event.clientY }; };
+    // Off the canvas, there is no place under the pointer to paste at.
+    const forget = (): void => { lastPointer.current = null; };
+    canvasEl.addEventListener("pointermove", remember, { passive: true });
+    canvasEl.addEventListener("pointerleave", forget);
+    return () => {
+      canvasEl.removeEventListener("pointermove", remember);
+      canvasEl.removeEventListener("pointerleave", forget);
+    };
+  }, [gl]);
+  usePlannerKeyBindings(selectionKeyBindings({
+    invalidate: () => { invalidateRef.current(); },
+    cancelGesture: () => { cancelPointerGesture.current(); },
+    screenUp: () => screenUpOnFloor(camera),
+    pointerFloor: () => {
+      const at = lastPointer.current;
+      // A panel since opened over the place the pointer rests is not the floor.
+      if (at === null || document.elementFromPoint(at.x, at.y) !== gl.domElement) return null;
+      return placementFloorPoint(scene, camera, raycaster, gl.domElement.getBoundingClientRect(), at.x, at.y);
+    },
+  }));
+  useEscapeLayer("operation", {
+    open: () => isDragging.current || isMarquee.current,
+    onEscape: () => {
+      cancelPointerGesture.current();
+      invalidateRef.current();
+    },
+  });
 
   // Pointer handlers for click-select, drag-move, and marquee
   useEffect(() => {
@@ -377,10 +411,397 @@ export function SelectionSystem(): null {
       if (touchGesture.current !== null) touchGesture.current = "camera";
       useToolStore.getState().setLiveValue(null);
       useSelectionStore.getState().setActiveGuides([]);
+      useDoorClearSpaceStore.getState().setCarrying(false);
     }
     cancelPointerGesture.current = closePointerGesture;
 
+    /**
+     * One frame of a move drag: the pieces follow the floor point under
+     * (`clientX`, `clientY`), found on a math plane rather than the floor mesh
+     * so a drag works whatever the room's outline.
+     */
+    function moveDragTo(clientX: number, clientY: number): void {
+      const floorHit = screenToFloor(clientX, clientY, cachedRect, camera, raycaster);
+      const primaryId = dragItemId.current;
+      if (floorHit === null || primaryId === null) return;
+      const selectedIds = useSelectionStore.getState().selectedIds;
+      // Read placed items once for the entire handler — consistent snapshot
+      const placedItems = usePlacementStore.getState().placedItems;
+      // Selected items plus their groups, seeded from the dragged item.
+      const allMovingIds = dragMovingIds(primaryId, selectedIds, placedItems);
+      // Move all items in the moving set (selected + group members)
+      const primary = placedItems.find((p) => p.id === primaryId);
+      if (primary === undefined) return;
+      const frame = computeFluidFurnitureDragFrame(
+        primary,
+        { x: floorHit.x, z: floorHit.z },
+        dragGrabOffset.current,
+        placedItems,
+        allMovingIds,
+      );
+      usePlacementStore.getState().moveItemsByDelta(allMovingIds, frame.dx, frame.dz);
+      useSelectionStore.getState().setActiveGuides(frame.guides);
+      lastMovingIds.current = allMovingIds;
+      // Carried pieces lean a little back from the way they travel.
+      if (!prefersReducedMotion()) {
+        carry.current = measureCarry(carry.current, frame.dx, frame.dz, performance.now());
+        if (carry.current.measured) carryFurniture(allMovingIds, carry.current.vx, carry.current.vz);
+      }
+      invalidateRef.current();
+    }
+
+    /** The end of a drag: a move settles onto the grid and the pieces set their weight down. */
+    function settleDrop(): void {
+      if (gestureKind.current === "move" && dragItemId.current !== null) {
+        // Release settle: write the SNAPPED position as truth immediately
+        // (undo, autosave and every footprint engine see the final value),
+        // then let the visual offset decay through the gridSettle spring.
+        // The whole formation takes the primary's snap delta — snapping
+        // each member separately would shear a table ring apart.
+        const placement = usePlacementStore.getState();
+        const primary = placement.placedItems.find((p) => p.id === dragItemId.current);
+        if (placement.snapEnabled && primary !== undefined && lastMovingIds.current.size > 0) {
+          const snapped = snapPositionToGrid(primary.x, primary.z);
+          const settleDx = snapped[0] - primary.x;
+          const settleDz = snapped[2] - primary.z;
+          if (settleDx !== 0 || settleDz !== 0) {
+            placement.moveItemsByDelta(lastMovingIds.current, settleDx, settleDz);
+            if (!prefersReducedMotion()) {
+              for (const id of lastMovingIds.current) {
+                beginFurnitureSettle(id, -settleDx, -settleDz);
+              }
+            }
+            invalidateRef.current();
+          }
+        }
+        // Let go: the pieces swing upright and set their weight down. A hand
+        // that rested let the loop sleep, so the release must wake it.
+        if (!prefersReducedMotion() && lastMovingIds.current.size > 0) {
+          releaseFurniture(lastMovingIds.current);
+          invalidateRef.current();
+        }
+        lastMovingIds.current = new Set();
+      } else {
+        useToolStore.getState().setLiveValue(null);
+      }
+    }
+
+    // The touch arbiter (lib/touch-arbiter.ts), behind `touchArbiter`: it, not
+    // the camera nor the ghost, decides what a finger on the room is. Its
+    // listeners sit on the window's capture phase, ahead of the orbit's and of
+    // this component's canvas handlers, which skip every event it took.
+    const arbiter = new TouchArbiter();
+    const trail = new FingerTrail();
+    const arbitrated = new WeakSet<Event>();
+    /** The arbiter's decision last acted on. */
+    let actedMode: TouchMode = "idle";
+    let touchPointer: number | null = null;
+    let pressedPiece: string | null = null;
+    /**
+     * The history gesture a press on a piece opens, as a mouse press on one
+     * does (onPointerDown): a save that lands during the hold remaps the
+     * piece's id through it, so the lift still finds the piece under the
+     * finger once the layout holds the server's ids.
+     */
+    let pressGesture: symbol | null = null;
+    let liftOrigin: { readonly x: number; readonly z: number } | null = null;
+    let holdTimer = 0;
+    let holdFrame = 0;
+    let ringFrame = 0;
+    const ring = createHoldRing();
+
+    const raise = (): number => ghostRaisePx(window.innerHeight);
+    const takesTouch = (event: PointerEvent): boolean => event.pointerType === "touch" && plannerFeatureEnabled("touchArbiter");
+
+    function hideRing(): void {
+      cancelAnimationFrame(ringFrame);
+      ring.style.display = "none";
+    }
+
+    function tendRing(): void {
+      const progress = arbiter.holdProgress(performance.now());
+      if (progress !== null) {
+        paintHoldRing(ring, progress);
+        ring.style.display = "block";
+      }
+      if (arbiter.mode === "pending") ringFrame = requestAnimationFrame(tendRing);
+      else hideRing();
+    }
+
+    function showRing(x: number, y: number): void {
+      ring.style.left = `${String(x)}px`;
+      ring.style.top = `${String(y)}px`;
+      if (ring.parentElement === null) document.body.appendChild(ring);
+      ringFrame = requestAnimationFrame(tendRing);
+    }
+
+    /** Takes a lifted piece back where it was: a second finger landed, or the browser cancelled the touch. */
+    function returnLiftedPiece(): void {
+      const origin = liftOrigin;
+      liftOrigin = null;
+      if (origin !== null && isDragging.current && dragItemId.current !== null) {
+        const placement = usePlacementStore.getState();
+        const primary = placement.placedItems.find((placed) => placed.id === dragItemId.current);
+        if (primary !== undefined && lastMovingIds.current.size > 0) {
+          placement.moveItemsByDelta(lastMovingIds.current, origin.x - primary.x, origin.z - primary.z);
+          if (!prefersReducedMotion()) releaseFurniture(lastMovingIds.current);
+        }
+      }
+      closePointerGesture();
+      invalidateRef.current();
+    }
+
+    /** Ends the gesture a press on a piece opened, unless it became a lift (which ends with its drop). */
+    function releasePress(): void {
+      const token = pressGesture;
+      pressGesture = null;
+      if (token !== null && historyGesture.current === token && !isDragging.current) closePointerGesture();
+    }
+
+    /**
+     * The id the pressed piece goes by now, in the history gesture the lift carries it in; null
+     * when no gesture can open (a history preview holds the layout still).
+     */
+    function liftedPieceId(pressed: string): string | null {
+      const editor = useEditorStore.getState();
+      // The press opened this gesture (onTouchDown): a save that landed during the hold gave the
+      // piece the server's id, and the gesture's map knows it.
+      const token = pressGesture !== null && historyGesture.current === pressGesture ? pressGesture : null;
+      const ids = token === null ? null : editor.historyGestureIdMap(token);
+      if (ids !== null) return ids.get(pressed) ?? pressed;
+      // Something ended it during the hold (an edit from the keys, a scrub on the tool pill, a
+      // save whose ids could not be matched): the lift opens its own, on the id pressed, as it did
+      // before the press held one.
+      closePointerGesture();
+      historyGesture.current = editor.beginHistoryGesture();
+      return historyGesture.current === null ? null : pressed;
+    }
+
+    /**
+     * A finger held still on a piece: the piece rises above the finger and follows it, as a mouse
+     * drag carries it. False when it cannot (the piece is gone, or the layout is held still), with
+     * no gesture left open.
+     */
+    function beginTouchLift(): boolean {
+      const pressed = pressedPiece;
+      const finger = arbiter.finger;
+      const pointerId = touchPointer;
+      if (pressed === null || finger === null || pointerId === null) return false;
+      const itemId = liftedPieceId(pressed);
+      const placedItems = usePlacementStore.getState().placedItems;
+      // The placement store takes the server's ids a render after the editor (EditorBridge), so
+      // until then the piece is still under the id it was pressed on; the drag follows the new id.
+      const item = itemId === null ? undefined : (placedItems.find((placed) => placed.id === itemId)
+        ?? placedItems.find((placed) => placed.id === pressed));
+      const floorPos = screenToFloor(finger.x, finger.y, cachedRect, camera, raycaster);
+      if (itemId === null || item === undefined || floorPos === null) {
+        closePointerGesture();
+        return false;
+      }
+      // A mid-settle piece is drawn off its truth: drop its springs before measuring the grab.
+      for (const gid of getGroupMemberIds(item.id, placedItems)) clearFurnitureSettle(gid);
+      dragPointerId.current = pointerId;
+      dragItemId.current = itemId;
+      dragGrabOffset.current = { x: floorPos.x - item.x, z: floorPos.z - item.z };
+      gestureKind.current = "move";
+      liftOrigin = { x: item.x, z: item.z };
+      try {
+        canvasEl.setPointerCapture(pointerId);
+      } catch {
+        // The browser may have taken the touch already; the window still hears it.
+      }
+      isDragging.current = true;
+      useDoorClearSpaceStore.getState().setCarrying(true);
+      if (!useSelectionStore.getState().selectedIds.has(itemId)) useSelectionStore.getState().select(itemId);
+      haptic(10);
+      // It rises above the finger at once, so the finger never hides it.
+      moveDragTo(finger.x, finger.y - raise());
+      return true;
+    }
+
+    /** Acts on what the arbiter decided, once for each change. */
+    function follow(mode: TouchMode): void {
+      const from = actedMode;
+      if (mode === from) return;
+      actedMode = mode;
+      const gesture = useTouchGestureStore.getState();
+      if (mode !== "pending") {
+        window.clearTimeout(holdTimer);
+        cancelAnimationFrame(holdFrame);
+        hideRing();
+      }
+      if (mode === "orbit" || mode === "two") {
+        // The orbit takes the finger from here (CameraRig), the pinch the pair.
+        gesture.holdCamera(false);
+        if (from === "place") usePlacementStore.getState().clearGhost();
+        if (from === "lift") returnLiftedPiece();
+        // A press that turned to the camera before its hold holds no save back.
+        else releasePress();
+        gesture.setMode(mode);
+      } else if (mode === "place") {
+        gesture.setFinger(arbiter.finger);
+        gesture.setMode("place");
+      } else if (mode === "lift") {
+        gesture.setMode("lift");
+        // A lift that carries nothing must not hold the camera still for nothing: the finger looks round.
+        if (!beginTouchLift()) follow(arbiter.refuseLift());
+      }
+    }
+
+    /** Sets the piece in hand down under (`x`, `y`): its ghost goes there first, as a click's does. */
+    function placeInHandAt(x: number, y: number, pieceUnderPointer: string | null = null): void {
+      const itemId = useCatalogueStore.getState().selectedItemId;
+      const hit = itemId === null ? null : placementFloorPoint(scene, camera, raycaster, canvasEl.getBoundingClientRect(), x, y);
+      if (itemId !== null && hit !== null) {
+        usePlacementStore.getState().updateGhost(hit.x, hit.z, itemId);
+        placePieceInHand(() => { invalidateRef.current(); }, { pieceUnderPointer });
+      }
+      // A finger leaves no hover: the ghost goes once the piece is down.
+      usePlacementStore.getState().clearGhost();
+    }
+
+    /** What a finished touch comes to. */
+    function settleTouch(outcome: TouchOutcome, ended: TouchMode): void {
+      if (outcome.kind === "tap") {
+        if (outcome.armed) {
+          // On a placed piece where the card's set could not stand, the tap picks the piece instead (Q-05; lib/place-in-hand).
+          const card = useCatalogueStore.getState().cardParams;
+          placeInHandAt(outcome.x, outcome.y, card !== null && judgesCard(card) ? interactionTargetAt(outcome.x, outcome.y).itemId : null);
+        } else {
+          const found = interactionTargetAt(outcome.x, outcome.y);
+          const wall = wallToHide(found.wallKey, false);
+          if (found.itemId !== null) useSelectionStore.getState().select(found.itemId);
+          else if (wall !== null) useVisibilityStore.getState().toggleWall(wall);
+          else useSelectionStore.getState().clearSelection();
+        }
+      } else if (outcome.kind === "place") {
+        // Where the ghost was seen: a finger rolls as it leaves the glass.
+        const finger = trail.at(outcome.at - LIFT_OFF_JITTER_MS);
+        if (finger !== null) placeInHandAt(finger.x, finger.y - raise());
+      } else if (outcome.kind === "drop") {
+        liftOrigin = null;
+        if (isDragging.current) settleDrop();
+        closePointerGesture();
+      } else if (ended === "place") {
+        usePlacementStore.getState().clearGhost();
+      }
+      invalidateRef.current();
+    }
+
+    function forgetTouch(): void {
+      window.clearTimeout(holdTimer);
+      cancelAnimationFrame(holdFrame);
+      hideRing();
+      // A tap or a cancelled hold ends the press's gesture here; a lift's ends with its drop or return.
+      releasePress();
+      actedMode = "idle";
+      touchPointer = null;
+      pressedPiece = null;
+    }
+
+    function onTouchDown(event: PointerEvent): void {
+      if (!takesTouch(event) || event.target !== canvasEl) return;
+      const at = event.timeStamp;
+      if (!arbiter.idle) {
+        arbitrated.add(event);
+        follow(arbiter.press({ pointerId: event.pointerId, at, x: event.clientX, y: event.clientY, armed: false, onPiece: false }));
+        return;
+      }
+      // Tools with gestures of their own, Walk's look and a history preview keep the finger as before.
+      if (useMarkupStore.getState().active || useMeasurementStore.getState().active || useGuidelineStore.getState().active
+        || useCockpitStore.getState().walkMode || useLayoutTimelinePreviewStore.getState().mode !== "inactive") return;
+      arbitrated.add(event);
+      const armed = useCatalogueStore.getState().selectedItemId !== null;
+      pressedPiece = armed ? null : interactionTargetAt(event.clientX, event.clientY).itemId;
+      if (pressedPiece !== null) {
+        // As a mouse press on a piece (onPointerDown), the gesture opens at the press, not at the
+        // lift 300 ms later: a save landing in the hold then remaps the piece's id through it (the
+        // editor subscription below, and beginTouchLift) instead of leaving the press on an id the
+        // layout no longer holds. A tap, an orbit or a cancel ends it (releasePress).
+        closePointerGesture();
+        historyGesture.current = useEditorStore.getState().beginHistoryGesture();
+        pressGesture = historyGesture.current;
+      }
+      touchPointer = event.pointerId;
+      trail.clear();
+      trail.record(at, event.clientX, event.clientY);
+      actedMode = arbiter.press({ pointerId: event.pointerId, at, x: event.clientX, y: event.clientY, armed, onPiece: pressedPiece !== null });
+      useTouchGestureStore.getState().setMode(actedMode);
+      const hold = armed ? PLACE_HOLD_MS : pressedPiece !== null ? LIFT_HOLD_MS : null;
+      // The hold is judged a frame after its timer: a page too busy to run the timer on time
+      // may still hold the finger's moves, and the browser hands queued moves over before a
+      // frame's callbacks, so a swipe it was late to deliver is read as the swipe it was.
+      if (hold !== null) holdTimer = window.setTimeout(() => { holdFrame = requestAnimationFrame(() => { follow(arbiter.tick(performance.now())); }); }, hold);
+      if (pressedPiece !== null) showRing(event.clientX, event.clientY);
+    }
+
+    function onTouchMove(event: PointerEvent): void {
+      if (arbiter.idle || !takesTouch(event)) return;
+      arbitrated.add(event);
+      const token = historyGesture.current;
+      if (actedMode === "lift" && token !== null && !useEditorStore.getState().isHistoryGestureCurrent(token)) {
+        // The save that carried this drag was replaced: stop where it is, as a mouse drag does.
+        onTouchCancel(event);
+        return;
+      }
+      // A busy page hands a frame's moves over as one event reporting the last: each
+      // sample is read at its own time, so a swipe made before the hold is a swipe.
+      const coalesced = typeof event.getCoalescedEvents === "function" ? event.getCoalescedEvents() : [];
+      let mode = arbiter.mode;
+      for (const sample of coalesced.length > 0 ? coalesced : [event]) {
+        follow(arbiter.move(event.pointerId, sample.timeStamp, sample.clientX, sample.clientY));
+        // Following can change the arbiter's mind: a lift that carries nothing is refused to the
+        // orbit (follow), and the camera below must not then be held for the lift that never was.
+        mode = arbiter.mode;
+        if (event.pointerId === touchPointer && (mode === "pending" || mode === "place" || mode === "lift")) {
+          trail.record(sample.timeStamp, sample.clientX, sample.clientY);
+        }
+      }
+      if (mode !== "pending" && mode !== "place" && mode !== "lift") return;
+      const gesture = useTouchGestureStore.getState();
+      // The orbit must not turn the room while the finger may yet place, lift or tap.
+      gesture.holdCamera(true);
+      if (event.pointerId !== touchPointer) return;
+      const finger = arbiter.finger;
+      if (finger === null) return;
+      if (mode === "place") gesture.setFinger(finger);
+      else if (mode === "lift" && isDragging.current) moveDragTo(finger.x, finger.y - raise());
+    }
+
+    function onTouchUp(event: PointerEvent): void {
+      if (arbiter.idle || !takesTouch(event)) return;
+      arbitrated.add(event);
+      const ended = actedMode;
+      const outcome = arbiter.release(event.pointerId, event.timeStamp, event.clientX, event.clientY);
+      // The gesture ends with its last finger.
+      if (arbiter.fingers > 0) return;
+      forgetTouch();
+      settleTouch(outcome, ended);
+      useTouchGestureStore.getState().end(event.timeStamp);
+    }
+
+    function onTouchCancel(event?: Event): void {
+      if (arbiter.idle) return;
+      if (event !== undefined) arbitrated.add(event);
+      const ended = actedMode;
+      arbiter.cancel();
+      forgetTouch();
+      if (ended === "lift") returnLiftedPiece();
+      else if (ended === "place") usePlacementStore.getState().clearGhost();
+      useTouchGestureStore.getState().end(performance.now());
+      invalidateRef.current();
+    }
+
+    function onTouchCancelEvent(event: PointerEvent): void {
+      if (takesTouch(event)) onTouchCancel(event);
+    }
+
+    function onTouchBlur(): void {
+      onTouchCancel();
+    }
+
     function onPointerDown(event: PointerEvent): void {
+      if (arbitrated.has(event)) return;
       // A second finger never starts a gesture of its own; with the first
       // finger the camera's, the pair is its pinch.
       if (event.pointerType === "touch" && !event.isPrimary) {
@@ -424,7 +845,8 @@ export function SelectionSystem(): null {
       // Raycast to find if we clicked on a placed furniture item
       const found = interactionTargetAt(event.clientX, event.clientY);
       dragItemId.current = found.itemId;
-      wallClickKey.current = found.wallKey;
+      // A plain press on a wall is a press on the floor under it when Alt-click hides walls.
+      wallClickKey.current = wallToHide(found.wallKey, event.altKey);
       dragGrabOffset.current = { x: 0, z: 0 };
       if (found.itemId !== null) {
         // Track accepted INSERT IDs from the press, including the interval
@@ -536,6 +958,7 @@ export function SelectionSystem(): null {
     }
 
     function onPointerMove(event: PointerEvent): void {
+      if (arbitrated.has(event)) return;
       const token = historyGesture.current;
       if (token !== null && (!useEditorStore.getState().isHistoryGestureCurrent(token) || !selectionToolsAreIdle())) {
         closePointerGesture();
@@ -591,6 +1014,7 @@ export function SelectionSystem(): null {
           if (!useSelectionStore.getState().selectedIds.has(dragItemId.current)) {
             useSelectionStore.getState().select(dragItemId.current);
           }
+          if (gestureKind.current === "move") useDoorClearSpaceStore.getState().setCarrying(true);
           // Rotate/Scale sweep from each item's value at drag start.
           if (gestureKind.current !== "move") {
             const placedItems = usePlacementStore.getState().placedItems;
@@ -722,43 +1146,7 @@ export function SelectionSystem(): null {
         return;
       }
 
-      if (isDragging.current && dragItemId.current !== null) {
-        // Drag-move furniture — use math plane intersection (not floor mesh raycast)
-        // so dragging works regardless of floor polygon shape
-        const floorHit = screenToFloor(event.clientX, event.clientY, cachedRect, camera, raycaster);
-        if (floorHit !== null) {
-          const hit = { point: { x: floorHit.x, z: floorHit.z } };
-          {
-            const selectedIds = useSelectionStore.getState().selectedIds;
-            // Read placed items once for the entire handler — consistent snapshot
-            const placedItems = usePlacementStore.getState().placedItems;
-            // Selected items plus their groups, seeded from the dragged item.
-            const primaryId = dragItemId.current;
-            const allMovingIds = dragMovingIds(primaryId, selectedIds, placedItems);
-
-            // Move all items in the moving set (selected + group members)
-            const primary = placedItems.find((p) => p.id === primaryId);
-            if (primary !== undefined) {
-              const frame = computeFluidFurnitureDragFrame(
-                primary,
-                hit.point,
-                dragGrabOffset.current,
-                placedItems,
-                allMovingIds,
-              );
-              usePlacementStore.getState().moveItemsByDelta(allMovingIds, frame.dx, frame.dz);
-              useSelectionStore.getState().setActiveGuides(frame.guides);
-              lastMovingIds.current = allMovingIds;
-              // Carried pieces lean a little back from the way they travel.
-              if (!prefersReducedMotion()) {
-                carry.current = measureCarry(carry.current, frame.dx, frame.dz, performance.now());
-                if (carry.current.measured) carryFurniture(allMovingIds, carry.current.vx, carry.current.vz);
-              }
-              invalidateRef.current();
-            }
-          }
-        }
-      }
+      if (isDragging.current && dragItemId.current !== null) moveDragTo(event.clientX, event.clientY);
     }
 
     function onMouseMove(event: MouseEvent): void {
@@ -790,6 +1178,7 @@ export function SelectionSystem(): null {
     }
 
     function onPointerUp(event: PointerEvent): void {
+      if (arbitrated.has(event)) return;
       if (historyGesture.current !== null) {
         if (event.pointerId !== dragPointerId.current) return;
         if (!selectionToolsAreIdle() || !useEditorStore.getState().isHistoryGestureCurrent(historyGesture.current)) {
@@ -808,10 +1197,11 @@ export function SelectionSystem(): null {
         if (touchGesture.current !== "tap") return;
         touchGesture.current = null;
         const found = interactionTargetAt(event.clientX, event.clientY);
+        const wall = wallToHide(found.wallKey, event.altKey);
         if (found.itemId !== null) {
           useSelectionStore.getState().select(found.itemId);
-        } else if (found.wallKey !== null) {
-          useVisibilityStore.getState().toggleWall(found.wallKey);
+        } else if (wall !== null) {
+          useVisibilityStore.getState().toggleWall(wall);
         } else {
           useSelectionStore.getState().clearSelection();
         }
@@ -851,40 +1241,7 @@ export function SelectionSystem(): null {
 
       // Clear snap guides when interaction ends
       useSelectionStore.getState().setActiveGuides([]);
-      if (isDragging.current) {
-        if (gestureKind.current === "move" && dragItemId.current !== null) {
-          // Release settle: write the SNAPPED position as truth immediately
-          // (undo, autosave and every footprint engine see the final value),
-          // then let the visual offset decay through the gridSettle spring.
-          // The whole formation takes the primary's snap delta — snapping
-          // each member separately would shear a table ring apart.
-          const placement = usePlacementStore.getState();
-          const primary = placement.placedItems.find((p) => p.id === dragItemId.current);
-          if (placement.snapEnabled && primary !== undefined && lastMovingIds.current.size > 0) {
-            const snapped = snapPositionToGrid(primary.x, primary.z);
-            const settleDx = snapped[0] - primary.x;
-            const settleDz = snapped[2] - primary.z;
-            if (settleDx !== 0 || settleDz !== 0) {
-              placement.moveItemsByDelta(lastMovingIds.current, settleDx, settleDz);
-              if (!prefersReducedMotion()) {
-                for (const id of lastMovingIds.current) {
-                  beginFurnitureSettle(id, -settleDx, -settleDz);
-                }
-              }
-              invalidateRef.current();
-            }
-          }
-          // Let go: the pieces swing upright and set their weight down. A hand
-          // that rested let the loop sleep, so the release must wake it.
-          if (!prefersReducedMotion() && lastMovingIds.current.size > 0) {
-            releaseFurniture(lastMovingIds.current);
-            invalidateRef.current();
-          }
-          lastMovingIds.current = new Set();
-        } else {
-          useToolStore.getState().setLiveValue(null);
-        }
-      }
+      if (isDragging.current) settleDrop();
       // Clicks close the pending token too; grid settle above belongs to the
       // same transaction as pointer frames when an actual drag occurred.
       closePointerGesture();
@@ -899,12 +1256,14 @@ export function SelectionSystem(): null {
     }
 
     function onOutsidePointerUp(event: PointerEvent): void {
+      if (arbitrated.has(event)) return;
       if (event.target === canvasEl || event.pointerId !== dragPointerId.current) return;
       if (isDragging.current) onPointerUp(event);
       else closePointerGesture();
     }
 
     function onPointerCancel(event: PointerEvent): void {
+      if (arbitrated.has(event)) return;
       if (event.pointerId === dragPointerId.current) closePointerGesture();
     }
 
@@ -937,7 +1296,11 @@ export function SelectionSystem(): null {
       const catItem = getCatalogueItem(item.catalogueItemId);
       if (catItem === undefined) return;
 
-      if (isDiningTableItem(catItem) && catItem.tableShape !== null) {
+      if (isDiningTableItem(catItem) && catItem.tableShape !== null && plannerChromeRequested(window.location.search) === "v2") {
+        // v2 mounts no chair dialog: the table is selected, and its caption holds its seats (QoL B-01).
+        useSelectionStore.getState().select(placedId);
+        invalidateRef.current();
+      } else if (isDiningTableItem(catItem) && catItem.tableShape !== null) {
         // Double-click on table in a group → edit chair count
         useChairDialogStore.getState().showDialog({
           catalogueItemId: item.catalogueItemId,
@@ -955,6 +1318,11 @@ export function SelectionSystem(): null {
       }
     }
 
+    window.addEventListener("pointerdown", onTouchDown, true);
+    window.addEventListener("pointermove", onTouchMove, true);
+    window.addEventListener("pointerup", onTouchUp, true);
+    window.addEventListener("pointercancel", onTouchCancelEvent, true);
+    window.addEventListener("blur", onTouchBlur);
     canvasEl.addEventListener("pointerdown", onPointerDown);
     canvasEl.addEventListener("mousedown", onMouseDown);
     canvasEl.addEventListener("pointermove", onPointerMove);
@@ -987,6 +1355,13 @@ export function SelectionSystem(): null {
     return () => {
       unsubscribeEditor();
       unsubscribePreview();
+      onTouchCancel();
+      ring.remove();
+      window.removeEventListener("pointerdown", onTouchDown, true);
+      window.removeEventListener("pointermove", onTouchMove, true);
+      window.removeEventListener("pointerup", onTouchUp, true);
+      window.removeEventListener("pointercancel", onTouchCancelEvent, true);
+      window.removeEventListener("blur", onTouchBlur);
       closePointerGesture();
       cancelPointerGesture.current = () => undefined;
       cancelAnimationFrame(marqueeRafId.current);

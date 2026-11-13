@@ -54,7 +54,7 @@ export type ConfigSearchResult = z.infer<typeof ConfigSearchResultSchema>;
 const ContactSearchResultSchema = z.object({
   id: z.string(),
   name: z.string(),
-  email: z.string(),
+  email: z.string().nullable(),
   phone: z.string().nullable(),
   accountName: z.string().nullable(),
 });
@@ -104,7 +104,7 @@ const ContactProfileSchema = z.object({
     id: z.string(),
     venueId: z.string(),
     name: z.string(),
-    email: z.string(),
+    email: z.string().nullable(),
     phone: z.string().nullable(),
     roleLabel: z.string().nullable(),
     sourceEnquiryId: z.string().nullable(),
@@ -128,6 +128,9 @@ const ContactProfileSchema = z.object({
     status: z.string(),
     currentVersion: z.number(),
     sentAt: z.string().nullable(),
+    /** The version the client was last sent; one saved since has not been.
+     *  Null when not known (an API from before it said). */
+    sentVersion: z.number().nullable().default(null),
   })),
 });
 export type ContactProfile = z.infer<typeof ContactProfileSchema>;

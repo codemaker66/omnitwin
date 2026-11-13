@@ -50,7 +50,7 @@ export const ExposureMetadataV0Schema = z
     ownerClientScope: z.string().trim().min(1).max(160).regex(SAFE_SCOPE).nullable(),
     subjectRefs: z.array(ArtifactReferenceSchema).default([]),
     allowedAudience: z.array(ExposureAllowedAudienceSchema).min(1),
-    expiresAt: z.string().datetime({ offset: true }).nullable(),
+    expiresAt: z.iso.datetime({ offset: true }).nullable(),
     claimReviewStatus: ExposureClaimReviewStatusSchema,
     approvalRefs: z.array(ArtifactReferenceSchema).default([]),
     sourceArtifactRefs: z.array(ArtifactReferenceSchema).default([]),
@@ -64,7 +64,7 @@ export const ExposureMetadataV0Schema = z
       metadata.allowedAudience.includes("public")
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["allowedAudience"],
         message: "Non-public exposure tiers cannot include public audience.",
       });
@@ -76,7 +76,7 @@ export const ExposureMetadataV0Schema = z
       !metadata.allowedAudience.includes("public")
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["allowedAudience"],
         message: "Public-facing exposure tiers must include public audience.",
       });
@@ -87,7 +87,7 @@ export const ExposureMetadataV0Schema = z
       metadata.exportSafety === "safe_for_public_marketing"
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["exportSafety"],
         message: "Internal-only exposure cannot be safe for public marketing.",
       });
@@ -99,7 +99,7 @@ export const ExposureMetadataV0Schema = z
       metadata.exportSafety !== "safe_for_public_marketing"
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["exportSafety"],
         message:
           "Public-facing exposure metadata requires public-marketing export safety.",
@@ -112,7 +112,7 @@ export const ExposureMetadataV0Schema = z
       metadata.claimReviewStatus !== "reviewed_current"
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["claimReviewStatus"],
         message: "Public-facing exposure metadata requires current claim review.",
       });
@@ -120,7 +120,7 @@ export const ExposureMetadataV0Schema = z
 
     if (metadata.exposureTier === "published_case_study" && metadata.approvalRefs.length === 0) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["approvalRefs"],
         message: "Published case studies require approval references.",
       });
@@ -128,7 +128,7 @@ export const ExposureMetadataV0Schema = z
 
     if (metadata.exposureTier === "partner_preview" && metadata.expiresAt === null) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["expiresAt"],
         message: "Partner-preview exposure metadata needs an expiry.",
       });
@@ -140,7 +140,7 @@ export const ExposureMetadataV0Schema = z
       metadata.ownerClientScope === null
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["ownerClientScope"],
         message:
           "Authenticated-client exposure metadata needs venue or client scope.",

@@ -45,8 +45,9 @@ export type SetupPhase = z.infer<typeof SetupPhaseSchema>;
 /**
  * Shared display metadata for each setup phase — label, icon, ordinal.
  * Single source of truth for every renderer (tablet page, PDF,
- * event-details form, instructions banner). Ordinal is 1-based to
- * match how the PDF numbers phases ("Phase 1 — Structure").
+ * event-details form, instructions banner). Ordinal is 1-based and fixes
+ * the build order; the printed sheet numbers only the phases a layout uses,
+ * 1, 2, 3 in that order, and writes labels in sentence case (sheet-brief.ts).
  */
 export const PHASE_METADATA: Readonly<Record<SetupPhase, {
   readonly label: string;

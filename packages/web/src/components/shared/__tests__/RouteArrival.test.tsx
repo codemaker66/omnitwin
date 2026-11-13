@@ -26,6 +26,17 @@ describe("route arrival", () => {
     },
   );
 
+  it.each(["/tour", "/venues/trades-hall/twin"])(
+    "names the panorama tour, not a workspace, while its code arrives: %s", (route) => {
+      const { container } = render(<MemoryRouter initialEntries={[route]}><RouteArrival /></MemoryRouter>);
+      expect(screen.getByRole("heading", { name: "Panorama tour" })).toBeTruthy();
+      expect(screen.queryByText("Workspace")).toBeNull();
+      expect(screen.getByRole("status").textContent).toContain("Opening the tour…");
+      expect(container.querySelector('[data-activity-indicator="particles"]')).not.toBeNull();
+      expect(container.querySelector("img")).toBeNull();
+    },
+  );
+
   it("retains work status and an escape route if the optional image fails", () => {
     const { container } = render(<MemoryRouter initialEntries={["/plan?space=grand-hall"]}><RouteArrival /></MemoryRouter>);
     const image = container.querySelector("img");

@@ -515,9 +515,7 @@ export const FoundryRightsSchema = z
     modelTrainingUse: z.enum(["allowed", "requires_review", "prohibited", "unknown"]),
     redistribution: z.enum(["allowed", "restricted", "prohibited", "unknown"]),
     termsReviewedAt: FoundryUtcInstantSchema.nullable(),
-    termsReference: z
-      .string()
-      .url()
+    termsReference: z.url()
       .refine((value) => value.toLowerCase().startsWith("https://"), "terms reference must use HTTPS")
       .nullable(),
     restrictions: z.array(z.string().trim().min(1).max(500)).max(50),
@@ -548,7 +546,7 @@ export const FoundryCrsDefinitionSchema = z
     ]),
     horizontalDatum: z.string().trim().min(1).max(160),
     verticalDatum: z.string().trim().min(1).max(160).nullable(),
-    coordinateEpoch: z.number().finite().min(1800).max(2200).nullable(),
+    coordinateEpoch: z.number().min(1800).max(2200).nullable(),
   })
   .strict();
 
@@ -577,14 +575,14 @@ export const FoundryCoordinateFrameSchema = z
     if (frame.authority === "measured") {
       if (frame.units === "unitless" || frame.provenanceAssetIds.length === 0) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["authority"],
           message: "measured frames require declared units and provenance evidence",
         });
       }
       if (frame.handedness === "unknown" || frame.upAxis === "unknown") {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["authority"],
           message: "measured frames require known handedness and up axis",
         });
@@ -592,7 +590,7 @@ export const FoundryCoordinateFrameSchema = z
     }
     if (frame.kind === "geodetic" && (frame.units !== "degrees" || frame.crs === null)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["crs"],
         message: "geodetic frames require degree units and a CRS definition",
       });
@@ -603,7 +601,7 @@ export const FoundryCoordinateFrameSchema = z
       !["longitude_latitude", "latitude_longitude"].includes(frame.crs.axisOrder)
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["crs", "axisOrder"],
         message: "geodetic CRS axis order must be longitude/latitude or latitude/longitude",
       });
@@ -613,7 +611,7 @@ export const FoundryCoordinateFrameSchema = z
       (frame.units === "degrees" || frame.units === "unitless" || frame.crs === null)
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["crs"],
         message: "projected frames require linear units and a CRS definition",
       });
@@ -624,14 +622,14 @@ export const FoundryCoordinateFrameSchema = z
       !["easting_northing", "northing_easting"].includes(frame.crs.axisOrder)
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["crs", "axisOrder"],
         message: "projected CRS axis order must be easting/northing or northing/easting",
       });
     }
     if (frame.kind !== "geodetic" && frame.kind !== "projected" && frame.crs !== null) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["crs"],
         message: "only geodetic and projected frames carry a CRS definition in v0",
       });
@@ -659,7 +657,7 @@ export const FoundryAssetInspectionSchema = z
   .superRefine((inspection, ctx) => {
     if (new Set(inspection.metadataKeys).size !== inspection.metadataKeys.length) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["metadataKeys"],
         message: "inspection metadata keys must be unique",
       });
@@ -673,7 +671,7 @@ export const FoundryInputAssetSchema = z
     relativePath: FoundryRelativePathSchema,
     inputType: FoundryInputTypeSchema,
     mediaType: z.string().trim().min(1).max(160),
-    sizeBytes: z.number().int().safe().nonnegative(),
+    sizeBytes: z.number().int().int().nonnegative(),
     sha256: RuntimeSha256Schema,
     immutable: z.literal(true),
     captureState: z.enum(["raw_capture", "official_export", "derived", "reference"]),
@@ -692,7 +690,7 @@ export const FoundryInputAssetSchema = z
   .superRefine((asset, ctx) => {
     if (asset.captureState === "raw_capture" && asset.provenanceClass !== "captured") {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["provenanceClass"],
         message: "raw captures must use captured provenance",
       });
@@ -702,7 +700,7 @@ export const FoundryInputAssetSchema = z
       (asset.parentAssetIds.length !== 0 || asset.accessState !== "direct")
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["captureState"],
         message: "raw captures must be direct sources with no parent assets",
       });
@@ -713,21 +711,21 @@ export const FoundryInputAssetSchema = z
       asset.parentAssetIds.length === 0
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["parentAssetIds"],
         message: "generated assets must identify at least one parent or conditioning asset",
       });
     }
     if (new Set(asset.evidenceKinds).size !== asset.evidenceKinds.length) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["evidenceKinds"],
         message: "asset evidence kinds must be unique",
       });
     }
     if (asset.inputType === "evidence_record" && asset.evidenceKinds.length === 0) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["evidenceKinds"],
         message: "evidence records require at least one typed evidence kind",
       });
@@ -753,7 +751,7 @@ export const FoundryTransformEdgeSchema = z
   .superRefine((edge, ctx) => {
     if (edge.sourceFrameId === edge.targetFrameId) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["targetFrameId"],
         message: "transform endpoints must differ",
       });
@@ -765,7 +763,7 @@ export const FoundryTransformEdgeSchema = z
         edge.reviewerAttestationAssetId === null)
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["transformArtifactAssetId"],
         message: "reviewed transforms require TransformArtifact, residual, and reviewer-attestation assets",
       });
@@ -774,7 +772,7 @@ export const FoundryTransformEdgeSchema = z
       (edge.operationKind === "affine_similarity") !== (edge.matrix !== null)
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["matrix"],
         message: "affine operations require a matrix; CRS projections must not use one",
       });
@@ -784,7 +782,7 @@ export const FoundryTransformEdgeSchema = z
       edge.projectionArtifactAssetId === null
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["projectionArtifactAssetId"],
         message: "CRS projections require a typed projection-operation asset",
       });
@@ -794,7 +792,7 @@ export const FoundryTransformEdgeSchema = z
       edge.projectionArtifactAssetId !== null
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["projectionArtifactAssetId"],
         message: "affine operations cannot ambiguously include a CRS projection",
       });
@@ -807,7 +805,7 @@ export const FoundryTransformEdgeSchema = z
     ].filter((value): value is string => value !== null);
     if (new Set(evidenceIds).size !== evidenceIds.length) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["transformArtifactAssetId"],
         message: "transform evidence references must be distinct",
       });
@@ -850,7 +848,7 @@ function addDuplicateIdIssue(
 ): void {
   const ids = values.map((value) => value.id);
   if (new Set(ids).size !== ids.length) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: [path], message: `${path} IDs must be unique` });
+    ctx.addIssue({ code: "custom", path: [path], message: `${path} IDs must be unique` });
   }
 }
 
@@ -934,7 +932,7 @@ export const FoundryIngestManifestV0Schema = z
     );
     if (new Set(assetLocators).size !== assetLocators.length) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["assets"],
         message: "a source root and relative path may be declared only once",
       });
@@ -943,7 +941,7 @@ export const FoundryIngestManifestV0Schema = z
     for (const [index, frame] of manifest.coordinateFrames.entries()) {
       if (frame.provenanceAssetIds.some((id) => !assetIds.has(id))) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["coordinateFrames", index, "provenanceAssetIds"],
           message: "frame provenance must reference declared assets",
         });
@@ -953,14 +951,14 @@ export const FoundryIngestManifestV0Schema = z
     for (const [index, asset] of manifest.assets.entries()) {
       if (!rootIds.has(asset.sourceRootId)) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["assets", index, "sourceRootId"],
           message: "asset sourceRootId must reference a declared source root",
         });
       }
       if (asset.coordinateFrameId !== null && !frameIds.has(asset.coordinateFrameId)) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["assets", index, "coordinateFrameId"],
           message: "asset coordinateFrameId must reference a declared coordinate frame",
         });
@@ -968,7 +966,7 @@ export const FoundryIngestManifestV0Schema = z
       for (const referenceId of [...asset.calibrationAssetIds, ...asset.parentAssetIds]) {
         if (!assetIds.has(referenceId) || referenceId === asset.id) {
           ctx.addIssue({
-            code: z.ZodIssueCode.custom,
+            code: "custom",
             path: ["assets", index],
             message: "asset references must point to other declared assets",
           });
@@ -979,7 +977,7 @@ export const FoundryIngestManifestV0Schema = z
         new Set(asset.parentAssetIds).size !== asset.parentAssetIds.length
       ) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["assets", index],
           message: "asset calibration and parent references must be unique",
         });
@@ -989,14 +987,14 @@ export const FoundryIngestManifestV0Schema = z
     for (const [index, transform] of manifest.transforms.entries()) {
       if (!frameIds.has(transform.sourceFrameId) || !frameIds.has(transform.targetFrameId)) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["transforms", index],
           message: "transform endpoints must reference declared coordinate frames",
         });
       }
       if (transform.provenanceAssetIds.some((id) => !assetIds.has(id))) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["transforms", index, "provenanceAssetIds"],
           message: "transform provenance must reference declared assets",
         });
@@ -1009,7 +1007,7 @@ export const FoundryIngestManifestV0Schema = z
       ].filter((value): value is string => value !== null);
       if (evidenceIds.some((id) => !assetIds.has(id))) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["transforms", index],
           message: "transform evidence must reference declared assets",
         });
@@ -1028,7 +1026,7 @@ export const FoundryIngestManifestV0Schema = z
           assetsById.get(assetId)?.evidenceKinds.includes(evidenceKind) !== true
         ) {
           ctx.addIssue({
-            code: z.ZodIssueCode.custom,
+            code: "custom",
             path: ["transforms", index],
             message: `transform evidence asset must be typed ${evidenceKind}`,
           });
@@ -1041,7 +1039,7 @@ export const FoundryIngestManifestV0Schema = z
         (sourceFrame?.kind === "geodetic" || targetFrame?.kind === "geodetic")
       ) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["transforms", index, "operationKind"],
           message: "geodetic conversion must be a separate CRS projection operation",
         });
@@ -1052,7 +1050,7 @@ export const FoundryIngestManifestV0Schema = z
         !(endpointKinds.has("geodetic") && endpointKinds.has("projected"))
       ) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["transforms", index, "operationKind"],
           message: "CRS projection operations must connect geodetic and projected frames",
         });
@@ -1062,21 +1060,21 @@ export const FoundryIngestManifestV0Schema = z
     for (const [index, edge] of manifest.provenanceEdges.entries()) {
       if (!assetIds.has(edge.outputAssetId) || edge.inputAssetIds.some((id) => !assetIds.has(id))) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["provenanceEdges", index],
           message: "provenance edge assets must be declared",
         });
       }
       if (edge.inputAssetIds.includes(edge.outputAssetId)) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["provenanceEdges", index, "outputAssetId"],
           message: "a provenance operation cannot overwrite one of its input assets",
         });
       }
       if (new Set(edge.inputAssetIds).size !== edge.inputAssetIds.length) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["provenanceEdges", index, "inputAssetIds"],
           message: "provenance inputs must be unique",
         });
@@ -1096,7 +1094,7 @@ export const FoundryIngestManifestV0Schema = z
     }
     if (hasAssetParentCycle(manifest.assets)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["assets"],
         message: "asset parent lineage must be acyclic",
       });
@@ -1105,28 +1103,28 @@ export const FoundryIngestManifestV0Schema = z
       const assetProducer = producers.get(asset.id);
       if ((assetProducer?.count ?? 0) > 1) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["assets", index],
           message: "an immutable asset may have at most one producing operation",
         });
       }
       if (asset.captureState === "derived" && assetProducer?.count !== 1) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["assets", index, "captureState"],
           message: "derived assets require exactly one producing provenance edge",
         });
       }
       if (asset.captureState === "raw_capture" && assetProducer !== undefined) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["assets", index, "captureState"],
           message: "raw captures cannot have a producing provenance operation",
         });
       }
       if (assetProducer !== undefined && asset.captureState !== "derived") {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["assets", index, "captureState"],
           message: "operation-produced assets must use the derived capture state",
         });
@@ -1134,7 +1132,7 @@ export const FoundryIngestManifestV0Schema = z
       const producer = assetProducer?.first;
       if (producer !== undefined && !sameStringSet(asset.parentAssetIds, producer.inputAssetIds)) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["assets", index, "parentAssetIds"],
           message: "asset parents must exactly match the producing operation inputs",
         });
@@ -1145,7 +1143,7 @@ export const FoundryIngestManifestV0Schema = z
         asset.captureState !== "derived"
       ) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["assets", index, "captureState"],
           message: "generated assets must be declared as derived",
         });
@@ -1160,7 +1158,7 @@ export const FoundryIngestManifestV0Schema = z
           Math.min(...parentTruthfulness)
       ) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["assets", index, "provenanceClass"],
           message:
             "derived assets cannot claim a more truthful provenance class than their least truthful parent",
@@ -1172,7 +1170,7 @@ export const FoundryIngestManifestV0Schema = z
       const references = [region.outputAssetId, region.maskAssetId, ...region.sourceAssetIds];
       if (references.some((id) => !assetIds.has(id))) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["generatedRegions", index],
           message: "generated-region assets must be declared",
         });
@@ -1181,14 +1179,14 @@ export const FoundryIngestManifestV0Schema = z
       const mask = assetsById.get(region.maskAssetId);
       if (output !== undefined && output.provenanceClass !== region.provenanceClass) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["generatedRegions", index, "provenanceClass"],
           message: "generated-region provenance must match its output asset",
         });
       }
       if (mask !== undefined && !mask.evidenceKinds.includes("mask")) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["generatedRegions", index, "maskAssetId"],
           message: "generated-region masks must reference assets typed as masks",
         });
@@ -1200,7 +1198,7 @@ export const FoundryIngestManifestV0Schema = z
         region.sourceAssetIds.includes(region.maskAssetId)
       ) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["generatedRegions", index],
           message: "generated output, mask, and unique source assets must be distinct",
         });
@@ -1212,7 +1210,7 @@ export const FoundryIngestManifestV0Schema = z
         )
       ) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["generatedRegions", index],
           message: "generated region sources and mask must be declared output parents",
         });
@@ -1232,7 +1230,7 @@ export const FoundryIngestManifestV0Schema = z
         asset.provenanceClass === "concept_imagination";
       if (generated && generatedRegionCounts.get(asset.id) === undefined) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["assets", index],
           message: "every generated asset requires at least one generated-region record",
         });
@@ -1247,7 +1245,7 @@ export const FoundryIngestManifestV0Schema = z
     );
     if (requiresLegalReview && manifest.legalReviewState === "approved") {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["legalReviewState"],
         message: "manifest cannot be approved while an asset has restricted, prohibited, or unknown rights",
       });
@@ -1263,7 +1261,7 @@ export const FoundryIngestManifestV0Schema = z
       )
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["legalReviewState"],
         message: "approved manifests require a dated HTTPS rights record and no legally blocked asset",
       });
@@ -1304,7 +1302,7 @@ export const FoundryQualityRequirementSchema = z
     dimension: FoundryQualityDimensionSchema,
     metric: z.string().trim().min(1).max(160),
     comparison: z.enum(["lte", "gte", "eq"]),
-    threshold: z.number().finite(),
+    threshold: z.number(),
     unit: z.string().trim().min(1).max(80),
     required: z.boolean(),
     scope: z.string().trim().min(1).max(200),
@@ -1329,7 +1327,7 @@ export const FoundryQualityContractV0Schema = z
     addDuplicateIdIssue(contract.requirements, "requirements", ctx);
     if (new Set(contract.requiredHumanReviews).size !== contract.requiredHumanReviews.length) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["requiredHumanReviews"],
         message: "required human review kinds must be unique",
       });
@@ -1350,14 +1348,14 @@ export const FoundryQualityContractV0Schema = z
     );
     if (requiredDimensions.some((dimension) => !declaredRequiredDimensions.has(dimension))) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["requirements"],
         message: "quality profile omits a mandatory required dimension",
       });
     }
     if (contract.profile !== "research" && contract.requiredHumanReviews.length === 0) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["requiredHumanReviews"],
         message: "non-research quality profiles require at least one human review",
       });
@@ -1368,7 +1366,7 @@ export type FoundryQualityContractV0 = z.infer<typeof FoundryQualityContractV0Sc
 export const FoundryQualityMeasurementSchema = z
   .object({
     requirementId: RuntimeManifestKeySchema,
-    value: z.number().finite().nullable(),
+    value: z.number().nullable(),
     status: z.enum(["passed", "failed", "not_measured", "not_applicable"]),
     evidenceAssetIds: z.array(RuntimeManifestKeySchema).max(1_000),
     evidenceKinds: z.array(FoundryEvidenceKindSchema).max(12),
@@ -1378,7 +1376,7 @@ export const FoundryQualityMeasurementSchema = z
   .superRefine((measurement, ctx) => {
     if ((measurement.status === "passed" || measurement.status === "failed") !== (measurement.value !== null)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["value"],
         message: "passed or failed measurements require a value; other statuses require null",
       });
@@ -1388,7 +1386,7 @@ export const FoundryQualityMeasurementSchema = z
       (measurement.evidenceAssetIds.length === 0 || measurement.evidenceKinds.length === 0)
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["evidenceAssetIds"],
         message: "measured pass or failure requires evidence assets and evidence kinds",
       });
@@ -1398,7 +1396,7 @@ export const FoundryQualityMeasurementSchema = z
       new Set(measurement.evidenceKinds).size !== measurement.evidenceKinds.length
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["evidenceKinds"],
         message: "measurement evidence references and kinds must be unique",
       });
@@ -1408,7 +1406,7 @@ export const FoundryQualityMeasurementSchema = z
       measurement.caveat === null
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["caveat"],
         message: "unmeasured or inapplicable requirements need a caveat",
       });
@@ -1444,14 +1442,14 @@ export const FoundryQualityReportV0Schema = z
     const measurementIds = report.measurements.map((item) => item.requirementId);
     if (new Set(report.subjectAssetIds).size !== report.subjectAssetIds.length) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["subjectAssetIds"],
         message: "quality report subject assets must be unique",
       });
     }
     if (new Set(measurementIds).size !== measurementIds.length) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["measurements"],
         message: "each quality requirement may be measured at most once",
       });
@@ -1460,7 +1458,7 @@ export const FoundryQualityReportV0Schema = z
       const requirement = requirements.get(measurement.requirementId);
       if (requirement === undefined) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["measurements", index, "requirementId"],
           message: "measurement must reference a contract requirement",
         });
@@ -1475,7 +1473,7 @@ export const FoundryQualityReportV0Schema = z
               : measurement.value === requirement.threshold;
         if ((measurement.status === "passed") !== actuallyPassed) {
           ctx.addIssue({
-            code: z.ZodIssueCode.custom,
+            code: "custom",
             path: ["measurements", index, "status"],
             message: "measurement status does not match its threshold comparison",
           });
@@ -1487,7 +1485,7 @@ export const FoundryQualityReportV0Schema = z
         requirement.evidenceRequired.some((kind) => !suppliedEvidenceKinds.has(kind))
       ) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["measurements", index, "evidenceKinds"],
           message: "measurement must supply every evidence kind required by the contract",
         });
@@ -1497,7 +1495,7 @@ export const FoundryQualityReportV0Schema = z
     for (const [index, review] of report.humanReviews.entries()) {
       if (Date.parse(review.reviewedAt) > evaluatedAt) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["humanReviews", index, "reviewedAt"],
           message: "human review cannot postdate report evaluation",
         });
@@ -1507,7 +1505,7 @@ export const FoundryQualityReportV0Schema = z
       const byId = new Map(report.measurements.map((item) => [item.requirementId, item]));
       if (report.contract.requirements.some((item) => item.required && byId.get(item.id)?.status !== "passed")) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["outcome"],
           message: "passed reports require every required metric to pass",
         });
@@ -1519,14 +1517,14 @@ export const FoundryQualityReportV0Schema = z
       );
       if (report.contract.requiredHumanReviews.some((kind) => !reviewKinds.has(kind))) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["outcome"],
           message: "passed reports require every contract human review",
         });
       }
       if (report.humanReviews.some((review) => review.decision === "rejected")) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["outcome"],
           message: "a passed report cannot contain a rejected human review",
         });
@@ -1567,7 +1565,7 @@ export const FoundryQualityEvidenceCatalogSchema = z
     for (const [index, asset] of catalog.assets.entries()) {
       if (new Set(asset.evidenceKinds).size !== asset.evidenceKinds.length) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["assets", index, "evidenceKinds"],
           message: "catalog evidence kinds must be unique",
         });
@@ -1578,7 +1576,7 @@ export const FoundryQualityEvidenceCatalogSchema = z
       catalog.generatedRegionOutputAssetIds.length
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["generatedRegionOutputAssetIds"],
         message: "generated-region output IDs must be unique",
       });
@@ -1588,7 +1586,7 @@ export const FoundryQualityEvidenceCatalogSchema = z
     );
     if (new Set(profileKeys).size !== profileKeys.length) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["profileDefinitions"],
         message: "profile registry entries must be unique by profile and definition ID",
       });
@@ -1765,14 +1763,14 @@ export const FoundryJobStageSchema = z
   .superRefine((stage, ctx) => {
     if (stage.gpuCount === 0 && stage.minimumGpuVramGiB !== 0) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["minimumGpuVramGiB"],
         message: "CPU stages cannot request GPU VRAM",
       });
     }
     if (stage.resumable && stage.checkpoint === "none") {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["checkpoint"],
         message: "resumable stages require checkpoints",
       });
@@ -1784,7 +1782,7 @@ export const FoundryJobStageSchema = z
       new Set(stage.rightsPurposes).size !== stage.rightsPurposes.length
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         message: "stage dependencies, inputs, outputs, and rights purposes must not contain duplicates",
       });
     }
@@ -1821,13 +1819,13 @@ export const FoundryComputeApprovalSchema = z
     approvedBy: FoundryCanonicalActorSchema,
     approvedAt: FoundryUtcInstantSchema,
     expiresAt: FoundryUtcInstantSchema,
-    maximumCostUsd: z.number().finite().positive(),
+    maximumCostUsd: z.number().positive(),
   })
   .strict()
   .superRefine((approval, ctx) => {
     if (Date.parse(approval.approvedAt) >= Date.parse(approval.expiresAt)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["expiresAt"],
         message: "compute approval must expire after it is granted",
       });
@@ -1847,7 +1845,7 @@ export const FoundryExecutionConfirmationSchema = z
   .superRefine((confirmation, ctx) => {
     if (Date.parse(confirmation.confirmedAt) >= Date.parse(confirmation.expiresAt)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["expiresAt"],
         message: "execution confirmation must expire after it is recorded",
       });
@@ -1867,8 +1865,8 @@ export const FoundryJobSpecV0Schema = z
     objectStorageProfile: RuntimeManifestKeySchema.nullable(),
     sourceMountMode: z.literal("read_only"),
     outputPrefix: FoundryRelativePathSchema,
-    estimatedCostUsd: z.number().finite().nonnegative(),
-    budgetCapUsd: z.number().finite().nonnegative(),
+    estimatedCostUsd: z.number().nonnegative(),
+    budgetCapUsd: z.number().nonnegative(),
     killSwitchEnabled: z.literal(true),
     computeApprovalId: RuntimeManifestKeySchema.nullable(),
     createdAt: FoundryUtcInstantSchema,
@@ -1880,7 +1878,7 @@ export const FoundryJobSpecV0Schema = z
     for (const [index, stage] of job.stages.entries()) {
       if (stage.dependsOn.includes(stage.id) || stage.dependsOn.some((id) => !stageIds.has(id))) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["stages", index, "dependsOn"],
           message: "stage dependencies must reference other declared stages",
         });
@@ -1888,28 +1886,28 @@ export const FoundryJobSpecV0Schema = z
     }
     if (hasStageDependencyCycle(job.stages)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["stages"],
         message: "job stage dependencies must be acyclic",
       });
     }
     if (job.estimatedCostUsd > job.budgetCapUsd) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["estimatedCostUsd"],
         message: "estimated cost must not exceed the budget cap",
       });
     }
     if (foundryUsdNumberToMicroUsd(job.estimatedCostUsd) === null) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["estimatedCostUsd"],
         message: "estimated cost must be exactly representable as integer micro-USD",
       });
     }
     if (foundryUsdNumberToMicroUsd(job.budgetCapUsd) === null) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["budgetCapUsd"],
         message: "budget cap must be exactly representable as integer micro-USD",
       });
@@ -1918,7 +1916,7 @@ export const FoundryJobSpecV0Schema = z
     if (job.executionIntent === "execute" && remote) {
       if (job.computeApprovalId === null) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["computeApprovalId"],
           message: "remote execution requires a trusted compute-approval reference",
         });
@@ -1926,14 +1924,14 @@ export const FoundryJobSpecV0Schema = z
     }
     if (job.executionIntent === "execute" && !remote && job.computeApprovalId !== null) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["computeApprovalId"],
         message: "local execution uses explicit operator confirmation, not a remote approval",
       });
     }
     if (job.executionIntent === "plan_only" && job.computeApprovalId !== null) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["computeApprovalId"],
         message: "plan-only jobs do not consume an execution approval",
       });
@@ -1944,7 +1942,7 @@ export const FoundryJobSpecV0Schema = z
       job.stages.some((stage) => stage.rightsPurposes.includes("model_training"))
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["providerKind"],
         message: "D-016 requires model-training execution to use an approved remote provider",
       });
@@ -1984,7 +1982,7 @@ export const FoundryRightsApprovalSchema = z
   .superRefine((approval, ctx) => {
     if (Date.parse(approval.decidedAt) >= Date.parse(approval.expiresAt)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["expiresAt"],
         message: "rights approval must expire after the decision",
       });
@@ -2012,7 +2010,7 @@ export const FoundryRightsPolicyDefinitionV0Schema = z
       Date.parse(policy.revokedAt) <= Date.parse(policy.effectiveAt)
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["revokedAt"],
         message: "rights-policy revocation must follow its effective instant",
       });
@@ -2360,7 +2358,7 @@ export const FoundryProviderPlanSchema = z
     providerKind: FoundryProviderKindSchema,
     providerAdapterId: RuntimeManifestKeySchema,
     jobSpecSha256: RuntimeSha256Schema,
-    estimatedCostUsd: z.number().finite().nonnegative(),
+    estimatedCostUsd: z.number().nonnegative(),
     stagePlans: z.array(FoundryProviderStagePlanSchema).min(1).max(1_000),
   })
   .strict()
@@ -2368,7 +2366,7 @@ export const FoundryProviderPlanSchema = z
     const stageIds = plan.stagePlans.map((stage) => stage.stageId);
     if (new Set(stageIds).size !== stageIds.length) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["stagePlans"],
         message: "provider stage plans must be unique",
       });
@@ -2474,7 +2472,7 @@ export const FoundryPackageRepresentationSchema = z
     ]);
     if (measuredRoles.has(representation.role) && representation.provenanceClass !== "captured") {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["provenanceClass"],
         message: "metric geometry roles must remain captured truth",
       });
@@ -2485,7 +2483,7 @@ export const FoundryPackageRepresentationSchema = z
       representation.provenanceClass !== "concept_imagination"
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["provenanceClass"],
         message: "generated derivatives must carry a generated provenance class",
       });
@@ -2495,14 +2493,14 @@ export const FoundryPackageRepresentationSchema = z
       representation.provenanceClass === "concept_imagination";
     if (generated && representation.role !== "generated_derivative") {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["role"],
         message: "generated provenance is allowed only in generated-derivative roles",
       });
     }
     if (!FOUNDRY_FORMATS_BY_ROLE[representation.role].has(representation.format)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["format"],
         message: "representation format is not valid for its declared role",
       });
@@ -2528,7 +2526,7 @@ export const FoundryRoomPackageSchema = z
       )
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["representations"],
         message: "each room requires a captured metric or planning geometry representation",
       });
@@ -2540,7 +2538,7 @@ export const FoundryRoomPackageSchema = z
     ] as const) {
       if (!roles.has(requiredRole)) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["representations"],
           message: `each room requires a ${requiredRole} representation`,
         });
@@ -2570,7 +2568,7 @@ export const FoundryCanonicalVenuePackageV0Schema = z
     );
     if (representationCount > 100_000) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["rooms"],
         message: "venue packages may contain at most 100,000 representations in aggregate",
       });
@@ -2580,7 +2578,7 @@ export const FoundryCanonicalVenuePackageV0Schema = z
     const representationIds = representations.map((representation) => representation.id);
     if (new Set(representationIds).size !== representationIds.length) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["rooms"],
         message: "representation IDs must be unique across the venue package",
       });
@@ -2596,7 +2594,7 @@ export const FoundryCanonicalVenuePackageV0Schema = z
     for (const assetId of generatedRepresentationAssetIds) {
       if (!generatedRegionAssetIds.has(assetId)) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["generatedRegions"],
           message: "every generated representation requires generated-region provenance",
         });
@@ -2605,7 +2603,7 @@ export const FoundryCanonicalVenuePackageV0Schema = z
     for (const assetId of generatedRegionAssetIds) {
       if (!generatedRepresentationAssetIds.has(assetId)) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["generatedRegions"],
           message: "generated-region outputs must be packaged as generated derivatives",
         });
@@ -2649,7 +2647,7 @@ export const FoundryPackageReferenceCatalogSchema = z
     addDuplicateIdIssue(catalog.qualityReports, "qualityReports", ctx);
     if (new Set(catalog.coordinateFrameIds).size !== catalog.coordinateFrameIds.length) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["coordinateFrameIds"],
         message: "coordinateFrameIds must contain unique IDs",
       });
@@ -2657,7 +2655,7 @@ export const FoundryPackageReferenceCatalogSchema = z
     for (const [index, asset] of catalog.assets.entries()) {
       if (new Set(asset.evidenceKinds).size !== asset.evidenceKinds.length) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["assets", index, "evidenceKinds"],
           message: "catalog evidence kinds must be unique",
         });

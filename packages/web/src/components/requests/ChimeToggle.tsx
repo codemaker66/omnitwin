@@ -1,6 +1,6 @@
 import { useSyncExternalStore, type ReactElement } from "react";
 import { Bell, BellOff } from "lucide-react";
-import { isChimeEnabled, playArrivalChime, setChimeEnabled, subscribeChime, unlockChime } from "./arrival-chime.js";
+import { isChimeEnabled, playArrivalChime, setChimeEnabled, subscribeChime, unlockChime } from "../../lib/sound-registry.js";
 import "./slot-requests.css";
 
 const NEVER_ON = (): boolean => false;

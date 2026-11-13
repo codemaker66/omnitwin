@@ -22,6 +22,11 @@ export const EVENT_STATUSES = [
   "executed",
   "closed",
   "cancelled",
+  // Every option on the event went (released, lapsed or lost) and none was
+  // confirmed: the event closed as lost business (the bind, migration 0090).
+  // Kept as a record; ops views and revenue never show it. The rule that
+  // sets it is deriveEventStatus in event-binding.ts.
+  "lost",
 ] as const;
 
 export const EventStatusSchema = z.enum(EVENT_STATUSES);
@@ -65,12 +70,12 @@ export const DEFAULT_EVENT_PHASE_TEMPLATE: readonly DefaultEventPhaseTemplateEnt
   { key: "breakdown", label: "Breakdown", defaultDurationMinutes: 45 },
 ] as const;
 
-export const EventIdSchema = z.string().uuid();
-export const EventPhaseIdSchema = z.string().uuid();
-export const EventScenarioIdSchema = z.string().uuid();
-export const LayoutVariantIdSchema = z.string().uuid();
-export const EventConfigurationLinkIdSchema = z.string().uuid();
-export const PhaseLayoutSnapshotIdSchema = z.string().uuid();
+export const EventIdSchema = z.uuid();
+export const EventPhaseIdSchema = z.uuid();
+export const EventScenarioIdSchema = z.uuid();
+export const LayoutVariantIdSchema = z.uuid();
+export const EventConfigurationLinkIdSchema = z.uuid();
+export const PhaseLayoutSnapshotIdSchema = z.uuid();
 
 export type EventId = z.infer<typeof EventIdSchema>;
 export type EventPhaseId = z.infer<typeof EventPhaseIdSchema>;
@@ -108,16 +113,22 @@ export const EventSchema = z.object({
   id: EventIdSchema,
   venueId: VenueIdSchema,
   createdBy: UserIdSchema.nullable(),
-  name: z.string().trim().min(1).max(200),
+  // As stored, trimmed (a blank name reads as ""): events made before
+  // eventNameFor named every new one can hold "". Screens show such an event
+  // as eventDisplayName names it; refusing it here made the event's own
+  // record, its phase graph and its event-day board unreadable, and with them
+  // the API route that renames it (PATCH /events/:id; no screen yet). Writers
+  // refuse an empty name (CreateEventSchema and UpdateEventSchema below).
+  name: z.string().trim().max(200),
   eventType: z.string().trim().max(80).nullable(),
   status: EventStatusSchema,
-  startsAt: z.string().datetime().nullable(),
-  endsAt: z.string().datetime().nullable(),
+  startsAt: z.iso.datetime().nullable(),
+  endsAt: z.iso.datetime().nullable(),
   guestCount: z.number().int().nonnegative(),
   clientName: z.string().trim().max(200).nullable(),
   notes: z.string().max(4000).nullable(),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
 });
 export type Event = z.infer<typeof EventSchema>;
 
@@ -128,7 +139,7 @@ export const EventPhaseSchema = z.object({
   templateKey: EventPhaseTemplateKeySchema.nullable(),
   name: z.string().trim().min(1).max(100),
   sortOrder: z.number().int().nonnegative(),
-  startsAt: z.string().datetime().nullable(),
+  startsAt: z.iso.datetime().nullable(),
   durationMinutes: z.number().int().nonnegative(),
   guestCount: z.number().int().nonnegative().nullable(),
   opsTasksCount: z.number().int().nonnegative(),
@@ -138,8 +149,8 @@ export const EventPhaseSchema = z.object({
   staffConflictsStatus: PhaseEvidencePlaceholderSchema,
   staffConflictsLabel: z.string().trim().min(1).max(120),
   notes: z.string().max(2000).nullable(),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
 });
 export type EventPhase = z.infer<typeof EventPhaseSchema>;
 
@@ -149,10 +160,10 @@ export const EventScenarioSchema = z.object({
   phaseId: EventPhaseIdSchema.nullable(),
   name: z.string().trim().min(1).max(160),
   status: EventScenarioStatusSchema,
-  assumptions: z.record(z.unknown()),
+  assumptions: z.record(z.string(), z.unknown()),
   seed: z.number().int().nonnegative().nullable(),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
 });
 export type EventScenario = z.infer<typeof EventScenarioSchema>;
 
@@ -164,8 +175,8 @@ export const LayoutVariantSchema = z.object({
   status: LayoutVariantStatusSchema,
   guestCount: z.number().int().nonnegative().nullable(),
   notes: z.string().max(2000).nullable(),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
 });
 export type LayoutVariant = z.infer<typeof LayoutVariantSchema>;
 
@@ -175,7 +186,7 @@ export const EventConfigurationLinkSchema = z.object({
   configurationId: ConfigurationIdSchema,
   layoutVariantId: LayoutVariantIdSchema.nullable(),
   linkType: EventConfigurationLinkTypeSchema,
-  createdAt: z.string().datetime(),
+  createdAt: z.iso.datetime(),
 });
 export type EventConfigurationLink = z.infer<typeof EventConfigurationLinkSchema>;
 
@@ -188,9 +199,9 @@ export const PhaseLayoutSnapshotSchema = z.object({
   status: PhaseLayoutSnapshotStatusSchema,
   objectCount: z.number().int().nonnegative(),
   guestCount: z.number().int().nonnegative().nullable(),
-  payload: z.record(z.unknown()).nullable(),
-  createdAt: z.string().datetime(),
-  frozenAt: z.string().datetime().nullable(),
+  payload: z.record(z.string(), z.unknown()).nullable(),
+  createdAt: z.iso.datetime(),
+  frozenAt: z.iso.datetime().nullable(),
 });
 export type PhaseLayoutSnapshot = z.infer<typeof PhaseLayoutSnapshotSchema>;
 
@@ -199,8 +210,8 @@ export const CreateEventSchema = z.object({
   name: z.string().trim().min(1).max(200),
   eventType: z.string().trim().max(80).nullable().optional(),
   status: EventStatusSchema.default("draft"),
-  startsAt: z.string().datetime().nullable().optional(),
-  endsAt: z.string().datetime().nullable().optional(),
+  startsAt: z.iso.datetime().nullable().optional(),
+  endsAt: z.iso.datetime().nullable().optional(),
   guestCount: z.number().int().nonnegative().default(0),
   clientName: z.string().trim().max(200).nullable().optional(),
   notes: z.string().max(4000).nullable().optional(),
@@ -211,8 +222,8 @@ export const UpdateEventSchema = z.object({
   name: z.string().trim().min(1).max(200).optional(),
   eventType: z.string().trim().max(80).nullable().optional(),
   status: EventStatusSchema.optional(),
-  startsAt: z.string().datetime().nullable().optional(),
-  endsAt: z.string().datetime().nullable().optional(),
+  startsAt: z.iso.datetime().nullable().optional(),
+  endsAt: z.iso.datetime().nullable().optional(),
   guestCount: z.number().int().nonnegative().optional(),
   clientName: z.string().trim().max(200).nullable().optional(),
   notes: z.string().max(4000).nullable().optional(),
@@ -223,7 +234,7 @@ export const CreateEventPhaseSchema = z.object({
   templateKey: EventPhaseTemplateKeySchema.nullable().optional(),
   spaceId: SpaceIdSchema.nullable().optional(),
   name: z.string().trim().min(1).max(100),
-  startsAt: z.string().datetime().nullable().optional(),
+  startsAt: z.iso.datetime().nullable().optional(),
   durationMinutes: z.number().int().nonnegative().default(30),
   guestCount: z.number().int().nonnegative().nullable().optional(),
   opsTasksCount: z.number().int().nonnegative().default(0),
@@ -235,7 +246,7 @@ export type CreateEventPhase = z.infer<typeof CreateEventPhaseSchema>;
 export const UpdateEventPhaseSchema = z.object({
   spaceId: SpaceIdSchema.nullable().optional(),
   name: z.string().trim().min(1).max(100).optional(),
-  startsAt: z.string().datetime().nullable().optional(),
+  startsAt: z.iso.datetime().nullable().optional(),
   durationMinutes: z.number().int().nonnegative().optional(),
   guestCount: z.number().int().nonnegative().nullable().optional(),
   opsTasksCount: z.number().int().nonnegative().optional(),
@@ -252,7 +263,7 @@ export const CreateEventScenarioSchema = z.object({
   phaseId: EventPhaseIdSchema.nullable().optional(),
   name: z.string().trim().min(1).max(160),
   status: EventScenarioStatusSchema.default("draft"),
-  assumptions: z.record(z.unknown()).default({}),
+  assumptions: z.record(z.string(), z.unknown()).default({}),
   seed: z.number().int().nonnegative().nullable().optional(),
 });
 export type CreateEventScenario = z.infer<typeof CreateEventScenarioSchema>;

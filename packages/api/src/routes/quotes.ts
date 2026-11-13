@@ -25,7 +25,7 @@ import { multiplyMinor, sumMinor } from "../services/money.js";
 // the referential shape.
 // ---------------------------------------------------------------------------
 
-const IdParam = z.object({ id: z.string().uuid() });
+const IdParam = z.object({ id: z.uuid() });
 
 const UpdateQuoteBody = z.object({
   name: z.string().trim().min(1).max(200).optional(),
@@ -36,12 +36,12 @@ const UpdateQuoteBody = z.object({
 const TransitionBody = z.object({
   status: z.enum(QUOTE_STATES),
   note: z.string().max(1000).nullable().optional(),
-  supersededByQuoteId: z.string().uuid().optional(),
+  supersededByQuoteId: z.uuid().optional(),
 });
 
 const ListQuery = z.object({
   status: z.enum(QUOTE_STATES).optional(),
-  proposalId: z.string().uuid().optional(),
+  proposalId: z.uuid().optional(),
   limit: z.coerce.number().int().min(1).max(100).default(20),
   offset: z.coerce.number().int().min(0).default(0),
 });
@@ -61,21 +61,22 @@ async function validateOpportunityLink(db: Database, opportunityId: string | nul
 }
 
 /** A line priced from the price list names the entry it came from, which must
- *  be one of the quote's own venue's: a removed entry is gone, and another
- *  venue's is refused like any other link across venues. */
+ *  be a live entry of the quote's own venue. Another venue's entry is looked
+ *  for only at this venue, so it is not found, exactly like a removed or
+ *  unknown one: answering it differently would let one venue's staff learn
+ *  which ids are in use at another venue. */
 async function validatePricingRuleLinks(
   db: Database,
   lines: readonly { readonly pricingRuleId?: string | null }[],
   venueId: string,
-): Promise<"ok" | "missing" | "mismatch"> {
+): Promise<"ok" | "missing"> {
   // An id is one entry however its letters are cased, as PostgreSQL reads it.
   const ids = [...new Set(lines.flatMap((line) => line.pricingRuleId === undefined || line.pricingRuleId === null ? [] : [line.pricingRuleId.toLowerCase()]))];
   if (ids.length === 0) return "ok";
-  const rules = await db.select({ venueId: pricingRules.venueId })
+  const rules = await db.select({ id: pricingRules.id })
     .from(pricingRules)
-    .where(and(inArray(pricingRules.id, ids), isNull(pricingRules.deletedAt)));
-  if (rules.length !== ids.length) return "missing";
-  return rules.every((rule) => rule.venueId === venueId) ? "ok" : "mismatch";
+    .where(and(inArray(pricingRules.id, ids), eq(pricingRules.venueId, venueId), isNull(pricingRules.deletedAt)));
+  return rules.length === ids.length ? "ok" : "missing";
 }
 
 export async function quoteRoutes(
@@ -202,12 +203,8 @@ export async function quoteRoutes(
         return reply.status(422).send({ error: "Space belongs to a different venue", code: "VENUE_MISMATCH" });
       }
     }
-    const pricingStatus = await validatePricingRuleLinks(db, parsed.data.lineItems, parsed.data.venueId);
-    if (pricingStatus === "missing") {
+    if (await validatePricingRuleLinks(db, parsed.data.lineItems, parsed.data.venueId) === "missing") {
       return reply.status(404).send({ error: "Price list entry not found", code: "NOT_FOUND" });
-    }
-    if (pricingStatus === "mismatch") {
-      return reply.status(422).send({ error: "Price list entry belongs to a different venue", code: "VENUE_MISMATCH" });
     }
 
     // Quote + line items in one transaction — no orphan headers.
@@ -374,12 +371,8 @@ export async function quoteRoutes(
       return reply.status(422).send({ error: "Only draft quotes can be edited — supersede an issued quote instead", code: "NOT_EDITABLE" });
     }
 
-    const pricingStatus = await validatePricingRuleLinks(db, [parsed.data], quote.venueId);
-    if (pricingStatus === "missing") {
+    if (await validatePricingRuleLinks(db, [parsed.data], quote.venueId) === "missing") {
       return reply.status(404).send({ error: "Price list entry not found", code: "NOT_FOUND" });
-    }
-    if (pricingStatus === "mismatch") {
-      return reply.status(422).send({ error: "Price list entry belongs to a different venue", code: "VENUE_MISMATCH" });
     }
 
     const created = await db.transaction(async (tx) => {
@@ -395,7 +388,12 @@ export async function quoteRoutes(
       const existingLines = await tx.select().from(quoteLineItems)
         .where(eq(quoteLineItems.quoteId, quote.id))
         .orderBy(quoteLineItems.sortOrder);
+      // Held to the ceiling before the write, as POST /quotes is: a line past
+      // it can be past what the integer line_total_minor column holds, and
+      // the database would refuse the insert with a server error.
       const lineTotalMinor = multiplyMinor(parsed.data.unitAmountMinor, parsed.data.quantity);
+      const subtotalMinor = sumMinor([...existingLines.map((item) => item.lineTotalMinor), lineTotalMinor]);
+      if (subtotalMinor > MAX_MINOR_UNIT_AMOUNT) return "QUOTE_TOTAL_EXCEEDS_LIMIT" as const;
       const [lineItem] = await tx.insert(quoteLineItems).values({
         quoteId: quote.id,
         pricingRuleId: parsed.data.pricingRuleId ?? null,
@@ -408,19 +406,12 @@ export async function quoteRoutes(
       if (lineItem === undefined) throw new Error("quote line item insert returned no row");
 
       const lineItems = [...existingLines, lineItem];
-      const subtotalMinor = sumMinor(lineItems.map((item) => item.lineTotalMinor));
-      if (subtotalMinor > MAX_MINOR_UNIT_AMOUNT) {
-        throw new Error("QUOTE_TOTAL_EXCEEDS_LIMIT");
-      }
       const [updatedQuote] = await tx.update(quotes)
         .set({ subtotalMinor, totalMinor: subtotalMinor, updatedAt: new Date() })
         .where(eq(quotes.id, quote.id))
         .returning();
       if (updatedQuote === undefined) throw new Error("quote update returned no row");
       return { quote: updatedQuote, lineItems };
-    }).catch((err: unknown) => {
-      if (err instanceof Error && err.message === "QUOTE_TOTAL_EXCEEDS_LIMIT") return "QUOTE_TOTAL_EXCEEDS_LIMIT" as const;
-      throw err;
     });
 
     if (created === "QUOTE_TOTAL_EXCEEDS_LIMIT") {
@@ -514,7 +505,7 @@ export async function quoteRoutes(
     if (!canManageCommercial(request.user, quote.venueId)) {
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
-    if (!canTransitionQuote(quote.status, parsed.data.status, request.user.role)) {
+    if (!canTransitionQuote(quote.status, parsed.data.status, request.user.role, isPlatformAdmin(request.user))) {
       return reply.status(422).send({
         error: `Cannot transition from '${quote.status}' to '${parsed.data.status}' with role '${request.user.role}'`,
         code: "INVALID_TRANSITION",

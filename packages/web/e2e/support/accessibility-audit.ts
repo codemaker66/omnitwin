@@ -72,6 +72,20 @@ export interface AccessibilityAuditOptions {
   readonly viewport?: AccessibilityViewport;
   readonly requireSingleNamedMain?: boolean;
   readonly maxFocusSteps?: number;
+  /**
+   * "standard" (the default) is WCAG AA: 4.5:1 for body text and 3:1 for
+   * large text. "client" is the bar goals/01 sets for what clients, couples
+   * and suppliers read: 7:1 for body text and 4.5:1 for large text (WCAG AAA
+   * 1.4.6). Large means 24 px, or 18.66 px at weight 700, as before.
+   */
+  readonly contrastTarget?: ContrastTarget;
+}
+
+export type ContrastTarget = "standard" | "client";
+
+/** The two contrast floors for a target: body text and large text. */
+export function contrastThresholds(target: ContrastTarget): { readonly body: number; readonly large: number } {
+  return target === "client" ? { body: 7, large: 4.5 } : { body: 4.5, large: 3 };
 }
 
 export function watchPageProblems(page: Page): AccessibilityPageProblems {
@@ -432,8 +446,11 @@ async function collectMotionOffenders(page: Page): Promise<MotionOffender[]> {
   });
 }
 
-async function collectContrastOffenders(page: Page): Promise<ContrastOffender[]> {
-  return page.evaluate(() => {
+async function collectContrastOffenders(
+  page: Page,
+  thresholds: { readonly body: number; readonly large: number },
+): Promise<ContrastOffender[]> {
+  return page.evaluate(({ body: bodyThreshold, large: largeThreshold }) => {
     interface Rgba {
       readonly r: number;
       readonly g: number;
@@ -691,7 +708,7 @@ async function collectContrastOffenders(page: Page): Promise<ContrastOffender[]>
         const blendedForeground = blend(foreground, background);
         const fontSize = Number.parseFloat(style.fontSize);
         const fontWeight = Number.parseInt(style.fontWeight, 10);
-        const threshold = fontSize >= 24 || (fontSize >= 18.66 && fontWeight >= 700) ? 3 : 4.5;
+        const threshold = fontSize >= 24 || (fontSize >= 18.66 && fontWeight >= 700) ? largeThreshold : bodyThreshold;
         const ratio = contrastRatio(blendedForeground, background);
         return {
           selector: selectorFor(element),
@@ -704,7 +721,7 @@ async function collectContrastOffenders(page: Page): Promise<ContrastOffender[]>
       })
       .filter((item): item is ContrastOffender => item !== null && item.ratio + 0.05 < item.threshold)
       .slice(0, 50);
-  });
+  }, thresholds);
 }
 
 export async function collectAccessibilityAudit(page: Page, options: AccessibilityAuditOptions): Promise<AccessibilityAuditResult> {
@@ -712,7 +729,10 @@ export async function collectAccessibilityAudit(page: Page, options: Accessibili
   const unnamedControls = await collectUnnamedControls(page);
   const focusIssues = await collectFocusIssues(page, options.maxFocusSteps ?? 18);
   const motionOffenders = await collectMotionOffenders(page);
-  const contrastOffenders = await collectContrastOffenders(page);
+  const contrastOffenders = await collectContrastOffenders(
+    page,
+    contrastThresholds(options.contrastTarget ?? "standard"),
+  );
 
   return {
     name: options.name,

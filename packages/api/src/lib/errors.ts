@@ -1,4 +1,4 @@
-import type { ZodIssue } from "zod";
+import type { z } from "zod";
 
 // ---------------------------------------------------------------------------
 // Standardised API error shape
@@ -67,7 +67,7 @@ export function apiError<C extends ApiErrorCode>(
 /** 400 — malformed request body or params. */
 export function validationError(
   message: string,
-  issues?: readonly ZodIssue[],
+  issues?: readonly z.core.$ZodIssue[],
 ): ApiErrorBody<"VALIDATION_ERROR"> {
   return apiError("VALIDATION_ERROR", message, issues);
 }

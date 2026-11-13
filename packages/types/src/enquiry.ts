@@ -3,12 +3,19 @@ import { VenueIdSchema } from "./venue.js";
 import { SpaceIdSchema } from "./space.js";
 import { ConfigurationIdSchema } from "./configuration.js";
 import { UserIdSchema } from "./user.js";
+import { isCalendarDate } from "./calendar-date.js";
+import {
+  AcquisitionChannelSchema,
+  EnquiryAttributionSchema,
+  EnquiryEngagementSchema,
+  FirstResponseChannelSchema,
+} from "./enquiry-funnel.js";
 
 // ---------------------------------------------------------------------------
 // Enquiry ID — UUID v4
 // ---------------------------------------------------------------------------
 
-export const EnquiryIdSchema = z.string().uuid();
+export const EnquiryIdSchema = z.uuid();
 
 export type EnquiryId = z.infer<typeof EnquiryIdSchema>;
 
@@ -62,12 +69,17 @@ export function isValidEnquiryTransition(
 //
 // The walkthrough (the twin's own enquiry form), the website's enquiry form,
 // the planner (a guest who laid out a room), or a telephone call or email the
-// staff enter themselves. An enquiry whose source is not known has none:
-// before 26 September the website's form wrote the walkthrough's note too, so
-// older enquiries cannot be told apart and are never given a guessed source.
+// staff enter themselves. Migration 0100 adds a listing site's own enquiry
+// form ("listing": Hitched or Bridebook passing the lead on) and an AI
+// assistant ("assistant": an enquiry an assistant made for the person). This
+// is the touchpoint; where the person found the venue before it is the
+// acquisition channel (enquiry-funnel.ts). An enquiry whose source is not
+// known has none: before 26 September the website's form wrote the
+// walkthrough's note too, so older enquiries cannot be told apart and are
+// never given a guessed source.
 // ---------------------------------------------------------------------------
 
-export const ENQUIRY_SOURCES = ["website", "walkthrough", "planner", "phone", "email"] as const;
+export const ENQUIRY_SOURCES = ["website", "walkthrough", "planner", "phone", "email", "listing", "assistant"] as const;
 
 export const EnquirySourceSchema = z.enum(ENQUIRY_SOURCES);
 
@@ -87,13 +99,13 @@ export const EnquirySchema = z.object({
   configurationId: ConfigurationIdSchema.nullable(),
   userId: UserIdSchema.nullable(),
   name: z.string().trim().min(1).max(200),
-  email: z.string().trim().email().max(255),
+  email: z.string().trim().check(z.email()).max(255),
   eventType: z.string().trim().max(100).nullable(),
   preferredDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
   estimatedGuests: z.number().int().nonnegative().max(MAX_GUEST_COUNT).nullable(),
   message: z.string().max(MAX_MESSAGE_LENGTH).nullable(),
   state: EnquiryStatusSchema,
-  guestEmail: z.string().email().nullable(),
+  guestEmail: z.email().nullable(),
   guestPhone: z.string().max(30).nullable(),
   guestName: z.string().max(200).nullable(),
   /** How it reached the venue; null where that is not known. */
@@ -101,8 +113,21 @@ export const EnquirySchema = z.object({
   /** False when the guest named no room: spaceId is then only where the
    *  enquiry is filed (the venue's first room), never what they asked for. */
   roomChosen: z.boolean(),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
+  // Migration 0100 (the enquiry funnel). Optional so a reader newer than the
+  // API it talks to still parses an older API's enquiries.
+  /** The earliest reply Venviewer knows of; all four null until there is one. */
+  firstResponseAt: z.iso.datetime().nullable().optional(),
+  firstResponseBy: UserIdSchema.nullable().optional(),
+  firstResponseChannel: FirstResponseChannelSchema.nullable().optional(),
+  firstResponseRecordedAt: z.iso.datetime().nullable().optional(),
+  /** Where the person came from; null when nothing was captured. */
+  referrerHost: z.string().max(253).nullable().optional(),
+  utmSource: z.string().max(100).nullable().optional(),
+  utmMedium: z.string().max(100).nullable().optional(),
+  utmCampaign: z.string().max(100).nullable().optional(),
+  acquisitionChannel: AcquisitionChannelSchema.nullable().optional(),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
 });
 
 export type Enquiry = z.infer<typeof EnquirySchema>;
@@ -116,7 +141,7 @@ export const CreateEnquirySchema = z.object({
   venueId: VenueIdSchema,
   spaceId: SpaceIdSchema,
   name: z.string().trim().min(1).max(200),
-  email: z.string().trim().email().max(255),
+  email: z.string().trim().check(z.email()).max(255),
   eventType: z.string().trim().max(100).nullable().optional(),
   preferredDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
   estimatedGuests: z.number().int().nonnegative().max(MAX_GUEST_COUNT).nullable().optional(),
@@ -156,15 +181,32 @@ export const GuestEnquirySchema = z
   .object({
     configurationId: ConfigurationIdSchema.optional(),
     venueSlug: z.string().trim().min(1).max(100).optional(),
-    email: z.string().trim().email().max(255),
+    email: z.string().trim().check(z.email()).max(255),
     phone: z.string().trim().max(30).optional(),
-    name: z.string().trim().max(200).optional(),
-    eventDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    /** A name that is empty once trimmed is no name: it parses to undefined,
+     *  so the enquiry falls back to the email and never stores "" as the name
+     *  a hold's title is later built from (booking titles need a character). */
+    name: z
+      .string()
+      .trim()
+      .max(200)
+      .transform((name) => (name === "" ? undefined : name))
+      .optional(),
+    /** A day the calendar has: it is stored in a date column, which refuses
+     *  "2027-02-30", "2027-13-01" and year 0000 (audit enquiries-crm-6). */
+    eventDate: z.string().refine(isCalendarDate, "Not a calendar date").optional(),
     eventType: z.string().trim().max(100).optional(),
     guestCount: z.number().int().nonnegative().max(MAX_GUEST_COUNT).optional(),
     message: z.string().max(MAX_MESSAGE_LENGTH).optional(),
     source: z.enum(GUEST_ENQUIRY_SOURCES).optional(),
     roomSlug: z.string().trim().min(1).max(100).optional(),
+    /** Where the person came from (migration 0100). No page sends it until
+     *  the privacy notice describes it; see enquiry-funnel.ts. Never costs
+     *  the guest their enquiry: attribution that cannot be read is dropped. */
+    attribution: EnquiryAttributionSchema.optional().catch(undefined),
+    /** What happened before they sent it, e.g. a 30-second walk of the twin
+     *  (migration 0100), held under the same rule as `attribution`. */
+    engagement: EnquiryEngagementSchema.optional().catch(undefined),
   })
   .refine(
     (value) => (value.configurationId === undefined) !== (value.venueSlug === undefined),
@@ -184,55 +226,12 @@ export const GuestEnquirySchema = z
 export type GuestEnquiry = z.infer<typeof GuestEnquirySchema>;
 
 // ---------------------------------------------------------------------------
-// Occasions — what an enquiry is for, in words a person reads
-//
-// The venue's forms send short slugs: the walkthrough and the planner send
-// wedding, corporate, ceremony, concert, private or other, and the website's
-// form wedding, dinner, conference or reception. Staff read them as words,
-// never as slugs. An occasion typed in free (older rows, other senders) is
-// shown as it was typed.
+// Occasions — what an enquiry is for, in words a person reads. They live in
+// occasion.ts, which imports nothing, so naming an event (event-name.ts)
+// never bundles these schemas; they are offered here under the same names.
 // ---------------------------------------------------------------------------
 
-interface OccasionWords {
-  /** "Corporate event": on its own, as a fact. */
-  readonly label: string;
-  /** "a corporate event": inside a sentence, after "for". */
-  readonly phrase: string;
-}
-
-const ENQUIRY_OCCASIONS: Readonly<Record<string, OccasionWords>> = {
-  wedding: { label: "Wedding", phrase: "a wedding" },
-  dinner: { label: "Dinner", phrase: "a dinner" },
-  conference: { label: "Conference", phrase: "a conference" },
-  reception: { label: "Drinks reception", phrase: "a drinks reception" },
-  corporate: { label: "Corporate event", phrase: "a corporate event" },
-  ceremony: { label: "Ceremony", phrase: "a ceremony" },
-  concert: { label: "Concert or performance", phrase: "a concert or performance" },
-  private: { label: "Private celebration", phrase: "a private celebration" },
-  other: { label: "Other occasion", phrase: "another occasion" },
-};
-
-/** The occasions the venue names, in the order it offers them. */
-export const ENQUIRY_OCCASION_KEYS: readonly string[] = Object.keys(ENQUIRY_OCCASIONS);
-
-function occasionWords(eventType: string | null | undefined): { readonly typed: string; readonly known: OccasionWords | undefined } | null {
-  const typed = eventType?.trim() ?? "";
-  if (typed === "") return null;
-  const key = typed.toLowerCase();
-  return { typed, known: Object.hasOwn(ENQUIRY_OCCASIONS, key) ? ENQUIRY_OCCASIONS[key] : undefined };
-}
-
-/** "Wedding", "Corporate event"; an occasion typed in free as typed; null for none. */
-export function occasionLabel(eventType: string | null | undefined): string | null {
-  const words = occasionWords(eventType);
-  return words === null ? null : words.known?.label ?? words.typed;
-}
-
-/** "a wedding", "another occasion", to follow "for"; an occasion typed in free as typed; null for none. */
-export function occasionPhrase(eventType: string | null | undefined): string | null {
-  const words = occasionWords(eventType);
-  return words === null ? null : words.known?.phrase ?? words.typed;
-}
+export { ENQUIRY_OCCASION_KEYS, occasionLabel, occasionPhrase } from "./occasion.js";
 
 // ---------------------------------------------------------------------------
 // Venue slug namespaces — the enquiry anchor

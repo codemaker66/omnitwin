@@ -109,14 +109,14 @@ export function verifyReplayable(entries: readonly AuditLogEntry[]): ReplayVerdi
 export type ReplayObject = { readonly id: string } & Record<string, unknown>;
 
 const ReplayPlacedSchema = z.object({
-  object: z.object({ id: z.string() }).passthrough(),
+  object: z.object({ id: z.string() }).loose(),
   index: z.number().int().nonnegative(),
 });
 
 const ReplayPatchSchema = z.object({
   id: z.string(),
-  before: z.record(z.unknown()),
-  after: z.record(z.unknown()),
+  before: z.record(z.string(), z.unknown()),
+  after: z.record(z.string(), z.unknown()),
 });
 
 /** Exported so reverse-replay parses deltas with the SAME shape as forward

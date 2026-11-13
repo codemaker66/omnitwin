@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { CalendarBookingEntry, CalendarRoom } from "@omnitwin/types";
 import { ApiError } from "../../../../api/client.js";
 import { BookingDrawer } from "../BookingDrawer.js";
@@ -7,12 +7,12 @@ import { BookingDrawer } from "../BookingDrawer.js";
 // ---------------------------------------------------------------------------
 // The Diary→planner corridor (the "Floor plan" section of the booking drawer).
 //
-// The API has always accepted `eventId` on a booking — UpdateBookingSchema
-// declares it and updateBookingCore verifies the event belongs to the
-// booking's venue — but nothing in the client ever sent it, so a coordinator
-// had no way to say "this booking is the thing I am planning". Nothing pinned
-// that behaviour either, which is why reading the route adapter alone makes
-// the link look broken. These tests pin the client half.
+// Since the bind (migration 0090) every provisional and confirmed booking is
+// written together with its event, in one transaction, so the drawer no
+// longer starts, attaches or detaches a plan: that two-write path could
+// orphan an event. The section opens the event's plan; interest only is told
+// when its plan starts. events.js stays mocked so any call to create an
+// event from the drawer would be caught.
 // ---------------------------------------------------------------------------
 
 const {
@@ -20,12 +20,14 @@ const {
   updateBookingMock,
   transitionBookingMock,
   convertEnquiryMock,
+  bookViewingMock,
   createEventMock,
 } = vi.hoisted(() => ({
   createBookingMock: vi.fn(),
   updateBookingMock: vi.fn(),
   transitionBookingMock: vi.fn(),
   convertEnquiryMock: vi.fn(),
+  bookViewingMock: vi.fn(),
   createEventMock: vi.fn(),
 }));
 
@@ -34,6 +36,7 @@ vi.mock("../../../../api/diary.js", () => ({
   updateBooking: updateBookingMock,
   transitionBooking: transitionBookingMock,
   convertEnquiry: convertEnquiryMock,
+  bookViewing: bookViewingMock,
 }));
 
 vi.mock("../../../../api/events.js", () => ({
@@ -103,46 +106,14 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe("BookingDrawer — floor plan section", () => {
-  it.each(["resolve", "reject"] as const)("keeps activity through both plan writes and stops when the link %ss", async (settlement) => {
-    let resolveCreate: ((value: { event: { id: string } }) => void) | undefined;
-    let resolveLink: ((value: CalendarBookingEntry) => void) | undefined;
-    let rejectLink: ((reason: Error) => void) | undefined;
-    const createResponse = new Promise<{ event: { id: string } }>((resolve) => { resolveCreate = resolve; });
-    const linkResponse = new Promise<CalendarBookingEntry>((resolve, reject) => { resolveLink = resolve; rejectLink = reject; });
-    createEventMock.mockReturnValue(createResponse);
-    updateBookingMock.mockReturnValue(linkResponse);
-    renderEdit(booking());
-    fireEvent.click(screen.getByRole("button", { name: "Start a floor plan" }));
-    expect(screen.getByRole("status").textContent).toBe("Updating this booking…");
-    expect(screen.getByRole("dialog").getAttribute("aria-busy")).toBe("true");
-    await act(async () => { resolveCreate?.({ event: { id: EVENT_ID } }); await createResponse; });
-    expect(updateBookingMock).toHaveBeenCalledWith(BOOKING_ID, { eventId: EVENT_ID });
-    expect(screen.getByRole("status").querySelector("[data-activity-indicator]")).not.toBeNull();
-    await act(async () => {
-      if (settlement === "resolve") resolveLink?.(booking({ eventId: EVENT_ID }));
-      else rejectLink?.(new Error("Link unavailable"));
-      await linkResponse.catch(() => undefined);
-    });
-    expect(screen.queryByRole("status")).toBeNull();
-    expect(screen.getByRole("dialog").getAttribute("aria-busy")).toBe("false");
-    if (settlement === "reject") expect(screen.getByRole("alert").textContent).toContain("created but not attached");
-  });
-  it("offers to start a plan when the booking has none", () => {
-    renderEdit(booking());
-    expect(screen.getByRole("button", { name: "Start a floor plan" })).toBeTruthy();
-    expect(screen.queryByRole("link", { name: "Open the plan" })).toBeNull();
-  });
-
-  it("links an attached plan into the planner at the id the planner reads, in the booking's own room", () => {
+describe("BookingDrawer — floor plan section (the bind)", () => {
+  it("opens the event's plan directly, at the id the planner reads, in the booking's own room", () => {
     renderEdit(booking({ eventId: EVENT_ID }));
     const link = screen.getByRole("link", { name: "Open the plan" });
     // /plan?eventId= is precisely what use-linked-event.ts binds from, and
     // &space= is what EditorPage's bootstrap opens; without it the planner
     // opens its default room, not the booking's.
     expect(link.getAttribute("href")).toBe(`/plan?eventId=${EVENT_ID}&space=grand-hall`);
-    expect(screen.queryByRole("button", { name: "Start a floor plan" })).toBeNull();
-    expect(screen.getByRole("button", { name: "Detach" })).toBeTruthy();
   });
 
   it("omits the room from the plan link when the booking's space is not on the board", () => {
@@ -151,105 +122,40 @@ describe("BookingDrawer — floor plan section", () => {
     expect(link.getAttribute("href")).toBe(`/plan?eventId=${EVENT_ID}`);
   });
 
-  it("seeds the new event from the booking, then links the two", async () => {
-    createEventMock.mockResolvedValue({ event: { id: EVENT_ID } });
-    updateBookingMock.mockResolvedValue(booking({ eventId: EVENT_ID }));
-    const { onSaved } = renderEdit(booking());
-
-    fireEvent.click(screen.getByRole("button", { name: "Start a floor plan" }));
-
-    await waitFor(() => {
-      expect(createEventMock).toHaveBeenCalledTimes(1);
-    });
-    // The event inherits the booking's identity and window — a coordinator
-    // should never retype what the Diary already knows.
-    expect(createEventMock).toHaveBeenCalledWith({
-      venueId: VENUE,
-      name: "Chamber dinner",
-      eventType: "dinner",
-      status: "draft",
-      guestCount: 0,
-      startsAt: "2026-09-18T17:00:00.000Z",
-      endsAt: "2026-09-18T22:00:00.000Z",
-    });
-    await waitFor(() => {
-      expect(updateBookingMock).toHaveBeenCalledWith(BOOKING_ID, { eventId: EVENT_ID });
-    });
-    await waitFor(() => {
-      expect(onSaved).toHaveBeenCalledWith("Started a floor plan for Chamber dinner.");
-    });
-  });
-
-  it("detaching sends an explicit null, not an omitted field", async () => {
-    updateBookingMock.mockResolvedValue(booking());
-    const { onSaved } = renderEdit(booking({ eventId: EVENT_ID }));
-
-    fireEvent.click(screen.getByRole("button", { name: "Detach" }));
-
-    await waitFor(() => {
-      expect(updateBookingMock).toHaveBeenCalledWith(BOOKING_ID, { eventId: null });
-    });
-    await waitFor(() => {
-      expect(onSaved).toHaveBeenCalledWith("Detached the floor plan from Chamber dinner.");
-    });
-  });
-
-  it("never links a booking to a plan that failed to commit", async () => {
-    createEventMock.mockRejectedValue(new Error("network"));
-    const { onSaved } = renderEdit(booking());
-
-    fireEvent.click(screen.getByRole("button", { name: "Start a floor plan" }));
-
-    await waitFor(() => {
-      expect(screen.getByRole("alert").textContent).toContain("could not be started");
-    });
-    // The booking must be untouched — a half-made link is worse than none.
+  it("has no start, attach or detach step: the plan is made with the booking, in one write", () => {
+    for (const entry of [booking({ eventId: EVENT_ID }), booking({ kind: "hold", state: "hold", rank: 1, eventId: EVENT_ID })]) {
+      renderEdit(entry);
+      expect(screen.queryByRole("button", { name: /floor plan|Detach/u })).toBeNull();
+      expect(screen.queryByText(/attached|Start a floor plan/u)).toBeNull();
+      cleanup();
+    }
+    // Nothing in the drawer writes an event or a booking's link on its own.
+    expect(createEventMock).not.toHaveBeenCalled();
     expect(updateBookingMock).not.toHaveBeenCalled();
-    expect(onSaved).not.toHaveBeenCalled();
   });
 
-  it("a failed LINK is reported honestly — the plan exists, and is not claimed otherwise", async () => {
-    createEventMock.mockResolvedValue({ event: { id: EVENT_ID } });
-    updateBookingMock.mockRejectedValue(new Error("network"));
-    const { onSaved } = renderEdit(booking());
-
-    fireEvent.click(screen.getByRole("button", { name: "Start a floor plan" }));
-
-    await waitFor(() => {
-      const alert = screen.getByRole("alert").textContent ?? "";
-      expect(alert).toContain("created but not attached");
-      // "the booking is unchanged" would hide the plan that now exists.
-      expect(alert).not.toContain("unchanged");
-    });
-    expect(onSaved).not.toHaveBeenCalled();
+  it("tells interest only when its plan starts, and offers no control for it", () => {
+    renderEdit(booking({ kind: "prospect", state: "prospect", eventId: null }));
+    expect(screen.getByText("Floor plan")).toBeTruthy();
+    expect(screen.getByText("The floor plan starts when this date is made provisional or confirmed.")).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "Open the plan" })).toBeNull();
   });
 
-  it("retrying after a failed link finishes the job instead of orphaning a second plan", async () => {
-    createEventMock.mockResolvedValue({ event: { id: EVENT_ID } });
-    updateBookingMock.mockRejectedValueOnce(new Error("network"));
-    renderEdit(booking());
-
-    fireEvent.click(screen.getByRole("button", { name: "Start a floor plan" }));
-    await waitFor(() => {
-      expect(screen.getByRole("alert")).toBeTruthy();
-    });
-
-    updateBookingMock.mockResolvedValue(booking({ eventId: EVENT_ID }));
-    fireEvent.click(screen.getByRole("button", { name: "Start a floor plan" }));
-
-    await waitFor(() => {
-      expect(updateBookingMock).toHaveBeenCalledTimes(2);
-    });
-    // The retry must NOT mint a second event — nothing can list or delete
-    // orphans, so every stray one is invisible litter forever.
-    expect(createEventMock).toHaveBeenCalledTimes(1);
-    expect(updateBookingMock).toHaveBeenLastCalledWith(BOOKING_ID, { eventId: EVENT_ID });
+  it("shows no plan section for a house block, which never has one", () => {
+    renderEdit(booking({ kind: "internal_block", state: "internal_block", eventId: null }));
+    expect(screen.queryByText("Floor plan")).toBeNull();
   });
 
-  it("offers no plan control to a read-only role", () => {
+  it("lets a manager open the plan, though the manager does not write the Diary", () => {
+    renderEdit(booking({ eventId: EVENT_ID }), vi.fn<(message: string) => void>(), "manager");
+    expect(screen.getByRole("link", { name: "Open the plan" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
+  });
+
+  it("offers no plan to a role the planner does not admit", () => {
     render(
       <BookingDrawer
-        mode={{ kind: "edit", booking: booking() }}
+        mode={{ kind: "edit", booking: booking({ eventId: EVENT_ID }) }}
         rooms={ROOMS}
         venueId={VENUE}
         role="hallkeeper"
@@ -258,7 +164,7 @@ describe("BookingDrawer — floor plan section", () => {
       />,
     );
     expect(screen.queryByText("Floor plan")).toBeNull();
-    expect(screen.queryByRole("button", { name: "Start a floor plan" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Open the plan" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
     expect(screen.getByRole("textbox", { name: "Title" }).closest("fieldset")?.disabled).toBe(true);
     fireEvent.submit(document.querySelector("form") as HTMLFormElement);
@@ -278,7 +184,6 @@ describe("BookingDrawer — floor plan section", () => {
       />,
     );
     expect(screen.queryByText("Floor plan")).toBeNull();
-    expect(screen.queryByRole("button", { name: "Start a floor plan" })).toBeNull();
   });
 });
 
@@ -789,5 +694,287 @@ describe("BookingDrawer — extending a hold's decision (roadmap N3)", () => {
     cleanup();
     renderHold(GUILD, vi.fn<(message: string) => void>(), "hallkeeper");
     expect(screen.queryByRole("button", { name: /^Extend to/u })).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Viewings (migration 0100; Blake, 19 October 2026): a show-round is booked
+// from the Diary drawer, and from an enquiry's drawer beside its hold. It
+// carries no hold's hygiene, option or event, and its one exit is said as
+// the viewing's own.
+// ---------------------------------------------------------------------------
+
+// hallkeeper-web-8: a save that failed without the server answering may
+// still have been written. Pressing Save again on the same booking resends
+// the same command id, so the server's ledger replays the first write rather
+// than adding a second hold and event; a new id goes out only when the
+// person asks for something else, or the server has said no.
+describe("BookingDrawer — one booking asked for is one command (hallkeeper-web-8)", () => {
+  const OWNER = "00000000-0000-4000-8000-0000000000aa";
+  const unanswered = (): ApiError => new ApiError(0, "Network error — check your connection", "NETWORK_ERROR");
+
+  function renderCreate(onSaved: SavedSpy = vi.fn<(message: string) => void>()): SavedSpy {
+    render(
+      <BookingDrawer
+        mode={{ kind: "create", spaceId: GRAND_HALL, dayStartMs: Date.parse("2026-09-17T23:00:00.000Z"), ownerUserId: OWNER }}
+        rooms={ROOMS}
+        venueId={VENUE}
+        role="staff"
+        onClose={vi.fn<() => void>()}
+        onSaved={onSaved}
+      />,
+    );
+    fireEvent.change(screen.getByRole("combobox", { name: "Commitment" }), { target: { value: "prospect" } });
+    fireEvent.change(screen.getByLabelText("Title"), { target: { value: "Fraser wedding" } });
+    return onSaved;
+  }
+
+  const save = async (calls: number): Promise<void> => {
+    fireEvent.click(screen.getByRole("button", { name: "Add to the diary" }));
+    await waitFor(() => { expect(createBookingMock).toHaveBeenCalledTimes(calls); });
+    await waitFor(() => { expect(screen.getByRole("button", { name: "Add to the diary" }).hasAttribute("disabled")).toBe(false); });
+  };
+  const commandIds = (): unknown[] => createBookingMock.mock.calls.map((call): unknown => call[1]);
+
+  it("sends the same command id when Save is pressed again after a failure the server never answered", async () => {
+    createBookingMock.mockRejectedValueOnce(unanswered()).mockResolvedValueOnce({ title: "Fraser wedding" });
+    const onSaved = renderCreate();
+    await save(1);
+    expect(screen.getByText("Network error — check your connection")).toBeTruthy();
+    await save(2);
+    const [first, second] = commandIds();
+    expect(first).toMatch(/^[0-9a-f-]{36}$/u);
+    expect(second).toBe(first);
+    expect(createBookingMock.mock.calls[1]?.[0]).toEqual(createBookingMock.mock.calls[0]?.[0]);
+    expect(onSaved).toHaveBeenCalledWith("Added Fraser wedding to the diary.");
+  });
+
+  it("sends a new command id once the booking asked for changes, or the server has refused it", async () => {
+    createBookingMock
+      .mockRejectedValueOnce(unanswered())
+      .mockRejectedValueOnce(new ApiError(409, "This booking changed while you were working — reload the diary and try again.", "STALE_WRITE"))
+      .mockResolvedValueOnce({ title: "Fraser wedding reception" });
+    renderCreate();
+    await save(1);
+    fireEvent.change(screen.getByLabelText("Title"), { target: { value: "Fraser wedding reception" } });
+    await save(2);
+    await save(3);
+    const [first, second, third] = commandIds();
+    expect(second).toMatch(/^[0-9a-f-]{36}$/u);
+    expect(second).not.toBe(first);
+    // Refused outright, nothing was written: asking again is a new request,
+    // never the ledger's replay of the refusal.
+    expect(third).toMatch(/^[0-9a-f-]{36}$/u);
+    expect(third).not.toBe(second);
+  });
+});
+
+// a11y-9: a field's error used to appear in red with nothing said and focus
+// left on the button, so a screen reader heard a Save that did nothing. As
+// the team and proposal forms do, each error is said as it appears and
+// focus moves to the first field in error.
+describe("BookingDrawer — a field in error is said and focused (a11y-9)", () => {
+  const OWNER = "00000000-0000-4000-8000-0000000000aa";
+
+  function renderCreate(): HTMLElement {
+    render(
+      <BookingDrawer
+        mode={{ kind: "create", spaceId: GRAND_HALL, dayStartMs: Date.parse("2026-09-17T23:00:00.000Z"), ownerUserId: OWNER }}
+        rooms={ROOMS}
+        venueId={VENUE}
+        role="staff"
+        onClose={vi.fn<() => void>()}
+        onSaved={vi.fn<(message: string) => void>()}
+      />,
+    );
+    return screen.getByRole("dialog", { name: "New booking" });
+  }
+
+  it("says why the end cannot be saved and puts focus on it", async () => {
+    const drawer = renderCreate();
+    fireEvent.change(within(drawer).getByRole("combobox", { name: "Commitment" }), { target: { value: "prospect" } });
+    fireEvent.change(within(drawer).getByLabelText("Title"), { target: { value: "Fraser wedding" } });
+    const ends = within(drawer).getByLabelText<HTMLInputElement>(/^Ends/u);
+    fireEvent.change(ends, { target: { value: "2026-09-18T09:00" } });
+    fireEvent.click(within(drawer).getByRole("button", { name: "Add to the diary" }));
+
+    const alert = await within(drawer).findByRole("alert");
+    expect(alert.textContent).toBe("It must end after it starts.");
+    await waitFor(() => { expect(document.activeElement).toBe(ends); });
+    expect(ends.getAttribute("aria-invalid")).toBe("true");
+    expect(createBookingMock).not.toHaveBeenCalled();
+  });
+
+  it("puts focus on the first field in error, in the order the form reads", async () => {
+    const drawer = renderCreate();
+    fireEvent.change(within(drawer).getByLabelText("Title"), { target: { value: "Fraser wedding" } });
+    fireEvent.click(within(drawer).getByRole("button", { name: "Add to the diary" }));
+    // A new hold without its decision date, next action or its date.
+    await waitFor(() => { expect(within(drawer).getAllByRole("alert").length).toBeGreaterThanOrEqual(3); });
+    await waitFor(() => { expect(document.activeElement).toBe(within(drawer).getByLabelText(/^Decision date/u)); });
+  });
+});
+
+describe("BookingDrawer — viewings (migration 0100)", () => {
+  const OWNER = "00000000-0000-4000-8000-0000000000aa";
+  const ENQUIRY_ID = "00000000-0000-4000-8000-0000000000e9";
+
+  function renderConvert(roomChosen: boolean, onSaved: SavedSpy = vi.fn<(message: string) => void>()): SavedSpy {
+    render(
+      <BookingDrawer
+        mode={{
+          kind: "convert",
+          enquiry: { id: ENQUIRY_ID, spaceId: SALOON, roomChosen, name: "Elaine Fraser", eventType: "wedding", preferredDate: "2026-09-18" },
+          ownerUserId: OWNER,
+        }}
+        rooms={ROOMS}
+        venueId={VENUE}
+        role="staff"
+        onClose={vi.fn<() => void>()}
+        onSaved={onSaved}
+      />,
+    );
+    return onSaved;
+  }
+
+  it("offers Viewing when adding a booking, with no hold hygiene, option or event type", async () => {
+    createBookingMock.mockResolvedValue({ title: "Law Society viewing" });
+    const onSaved = vi.fn<(message: string) => void>();
+    render(
+      <BookingDrawer
+        mode={{ kind: "create", spaceId: GRAND_HALL, dayStartMs: Date.parse("2026-09-17T23:00:00.000Z"), ownerUserId: OWNER }}
+        rooms={ROOMS}
+        venueId={VENUE}
+        role="staff"
+        onClose={vi.fn<() => void>()}
+        onSaved={onSaved}
+      />,
+    );
+    const commitment = screen.getByRole<HTMLSelectElement>("combobox", { name: "Commitment" });
+    expect(Array.from(commitment.options).map((option) => option.textContent))
+      .toEqual(["Provisional", "Confirmed", "House block", "Interest only", "Viewing"]);
+    fireEvent.change(commitment, { target: { value: "viewing" } });
+    expect(screen.queryByRole("spinbutton", { name: "Option" })).toBeNull();
+    expect(screen.queryByLabelText("Decision date")).toBeNull();
+    expect(screen.queryByLabelText("Event type")).toBeNull();
+    expect(screen.getByText("You will host this viewing.")).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText("Title"), { target: { value: "Law Society viewing" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add to the diary" }));
+    await waitFor(() => { expect(onSaved).toHaveBeenCalledWith("Added Law Society viewing to the diary."); });
+    expect(createBookingMock).toHaveBeenCalledWith({
+      venueId: VENUE, spaceId: GRAND_HALL, kind: "viewing", title: "Law Society viewing",
+      startsAt: "2026-09-18T16:00:00.000Z", endsAt: "2026-09-18T22:00:00.000Z", ownerUserId: OWNER,
+    }, expect.stringMatching(/^[0-9a-f-]{36}$/u));
+  });
+
+  it("opens an enquiry's drawer on today's hold, unchanged, with a viewing beside it", () => {
+    renderConvert(true);
+    expect(screen.getByRole("dialog", { name: "Hold a date for this enquiry" })).toBeTruthy();
+    const choice = screen.getByRole("group", { name: "For this enquiry" });
+    expect(within(choice).getByRole<HTMLInputElement>("radio", { name: "Hold a date" }).checked).toBe(true);
+    expect(within(choice).getByRole<HTMLInputElement>("radio", { name: "Book a viewing" }).checked).toBe(false);
+    expect(screen.getByText("A provisional date for Elaine Fraser. The enquiry stays in review.")).toBeTruthy();
+    expect(screen.getByRole("spinbutton", { name: "Option" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Hold the date" })).toBeTruthy();
+  });
+
+  it("books a viewing for the enquiry: an hour from the same start, its own words, and no hold", async () => {
+    bookViewingMock.mockResolvedValue({ title: "Elaine Fraser — Wedding" });
+    const onSaved = renderConvert(true);
+    fireEvent.click(screen.getByRole("radio", { name: "Book a viewing" }));
+
+    expect(screen.getByRole("dialog", { name: "Book a viewing for this enquiry" })).toBeTruthy();
+    expect(screen.getByText("A viewing of a room for Elaine Fraser. It does not hold the date, and the enquiry stays in review.")).toBeTruthy();
+    expect(screen.queryByRole("spinbutton", { name: "Option" })).toBeNull();
+    expect(screen.queryByLabelText("Decision date")).toBeNull();
+    expect(screen.queryByLabelText("Event type")).toBeNull();
+    expect(screen.getByRole<HTMLInputElement>("textbox", { name: "Title" }).value).toBe("Elaine Fraser — Wedding");
+    expect(screen.getByLabelText<HTMLInputElement>("Ends").value).toBe("2026-09-18T18:00");
+
+    fireEvent.click(screen.getByRole("button", { name: "Book the viewing" }));
+    await waitFor(() => { expect(onSaved).toHaveBeenCalledWith("Booked a viewing: Elaine Fraser — Wedding."); });
+    expect(bookViewingMock).toHaveBeenCalledWith({
+      enquiryId: ENQUIRY_ID, spaceId: SALOON, title: "Elaine Fraser — Wedding",
+      startsAt: "2026-09-18T16:00:00.000Z", endsAt: "2026-09-18T17:00:00.000Z", ownerUserId: OWNER,
+    });
+    expect(convertEnquiryMock).not.toHaveBeenCalled();
+  });
+
+  it("asks for a room for a viewing when the guest named none, as the hold does", () => {
+    renderConvert(false);
+    fireEvent.click(screen.getByRole("radio", { name: "Book a viewing" }));
+    expect(screen.getByRole<HTMLSelectElement>("combobox", { name: "Room" }).value).toBe("");
+    fireEvent.click(screen.getByRole("button", { name: "Book the viewing" }));
+    expect(screen.getByText("Choose a room.")).toBeTruthy();
+    expect(bookViewingMock).not.toHaveBeenCalled();
+  });
+
+  it("says a viewing as a viewing, and calls it off in its own words", async () => {
+    transitionBookingMock.mockResolvedValue({ booking: { title: "Fraser viewing" }, promotedToFirst: [] });
+    const onSaved = vi.fn<(message: string) => void>();
+    renderEdit(booking({ kind: "viewing", state: "viewing", title: "Fraser viewing", eventType: null }), onSaved);
+    expect(within(screen.getByLabelText("Booking summary")).getByText("Viewing")).toBeTruthy();
+    expect(screen.queryByText("Floor plan")).toBeNull();
+    expect(screen.queryByLabelText("Event type")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Cancel the booking…" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel the viewing…" }));
+    const question = screen.getByRole("group", { name: "Cancel Fraser viewing?" });
+    expect(question.getAttribute("data-tone")).toBe("amber");
+    expect(within(question).getByText("Grand Hall, Fri 18 Sept 18:00–23:00: the viewing ends. Nothing is sent to the client.")).toBeTruthy();
+    expect(within(question).queryByLabelText("Why it was lost (optional)")).toBeNull();
+    fireEvent.click(within(question).getByRole("button", { name: "Cancel the viewing" }));
+    await waitFor(() => { expect(onSaved).toHaveBeenCalledWith("Cancelled Fraser viewing."); });
+    expect(transitionBookingMock).toHaveBeenCalledWith(BOOKING_ID, "cancelled", undefined);
+  });
+});
+
+describe("BookingDrawer — why a booking was lost (migration 0100)", () => {
+  const hold = booking({ kind: "hold", state: "hold", title: "MacLeod wedding", rank: 2, decisionAt: "2026-09-10T11:00:00.000Z" });
+
+  function openLost(): HTMLElement {
+    renderEdit(hold);
+    fireEvent.click(screen.getByRole("button", { name: "Mark lost…" }));
+    return screen.getByRole("group", { name: "Mark MacLeod wedding lost?" });
+  }
+
+  it("offers the reasons in plain words, none chosen until one is, beside the note", () => {
+    const question = openLost();
+    const reason = within(question).getByRole<HTMLSelectElement>("combobox", { name: "Why it was lost (optional)" });
+    expect(Array.from(reason.options).map((option) => option.textContent)).toEqual([
+      "No reason chosen", "Price", "Date taken by someone else", "Room or capacity didn't suit", "Chose another venue",
+      "Plans changed or cancelled", "Stopped replying", "Other",
+    ]);
+    expect(reason.value).toBe("");
+    expect(within(question).getByLabelText("Reason (optional, kept with this change)")).toBeTruthy();
+  });
+
+  it("sends the reason chosen with the loss, and the note with it", async () => {
+    transitionBookingMock.mockResolvedValue({ booking: { title: "MacLeod wedding" }, promotedToFirst: [] });
+    const question = openLost();
+    fireEvent.change(within(question).getByLabelText("Why it was lost (optional)"), { target: { value: "chose_elsewhere" } });
+    fireEvent.change(within(question).getByLabelText("Reason (optional, kept with this change)"), { target: { value: "Went to the Corinthian." } });
+    fireEvent.click(within(question).getByRole("button", { name: "Mark lost" }));
+    await waitFor(() => {
+      expect(transitionBookingMock).toHaveBeenCalledWith(BOOKING_ID, "lost", "Went to the Corinthian.", undefined, "chose_elsewhere");
+    });
+  });
+
+  it("still marks it lost when no reason is chosen, and sends none", async () => {
+    transitionBookingMock.mockResolvedValue({ booking: { title: "MacLeod wedding" }, promotedToFirst: [] });
+    const question = openLost();
+    const reason = within(question).getByLabelText("Why it was lost (optional)");
+    fireEvent.change(reason, { target: { value: "price" } });
+    fireEvent.change(reason, { target: { value: "" } });
+    fireEvent.click(within(question).getByRole("button", { name: "Mark lost" }));
+    await waitFor(() => { expect(transitionBookingMock).toHaveBeenCalledWith(BOOKING_ID, "lost", undefined); });
+  });
+
+  it("asks no reason of any other ending", () => {
+    renderEdit(hold);
+    fireEvent.click(screen.getByRole("button", { name: "Release…" }));
+    expect(screen.getByRole("group", { name: "Release MacLeod wedding?" })).toBeTruthy();
+    expect(screen.queryByLabelText("Why it was lost (optional)")).toBeNull();
   });
 });

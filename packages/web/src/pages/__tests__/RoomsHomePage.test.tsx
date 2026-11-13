@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
-import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { ROOM_CARD_SIZES, RoomsHomePage } from "../RoomsHomePage.js";
 import {
@@ -24,6 +24,21 @@ function mount(): void {
 }
 
 describe("RoomsHomePage", () => {
+  // The accessibility statement (LegalPage) says "a skip link takes you
+  // straight to the main content of a page"; the front door had none.
+  it("offers the promised skip link first in the tab order, reaching the main content", () => {
+    mount();
+    const focusable = document.querySelectorAll("a[href], button, input, select, textarea, [tabindex]:not([tabindex='-1'])");
+    const skip = focusable[0];
+    expect(skip?.textContent).toBe("Skip to main content");
+    expect(skip?.getAttribute("href")).toBe("#main-content");
+    expect(skip?.classList.contains("vv-skip-link")).toBe(true);
+    const main = screen.getByRole("main");
+    expect(main.id).toBe("main-content");
+    // Focusable by script only, so the skip link moves focus, not just scroll.
+    expect(main.getAttribute("tabindex")).toBe("-1");
+  });
+
   // T-616: Dashboard, Diary and Hallkeeper each bounced an anonymous visitor
   // into a login wall. They are gone from the public nav; planning, the
   // composer and Log in (which takes staff to their workspace) remain.
@@ -65,6 +80,45 @@ describe("RoomsHomePage", () => {
     for (const poster of posters) {
       expect(poster.getAttribute("srcset"), poster.getAttribute("alt") ?? "").toMatch(/\.webp 480w/u);
       expect(poster.getAttribute("sizes")).toBe(ROOM_CARD_SIZES);
+    }
+  });
+
+  // T-685: on a phone every byte in flight shares the link with the hero, the
+  // page's largest paint, so the rail's posters (off-screen there) wait for it.
+  it.each(["load", "error"] as const)("holds the rail's photographs until the hero's %s", (outcome) => {
+    // A real browser's hero is still downloading when the page mounts.
+    const complete = vi.spyOn(HTMLImageElement.prototype, "complete", "get").mockReturnValue(false);
+    try {
+      mount();
+      const posters = (): Element[] => [...document.querySelectorAll("img.rooms__poster")];
+      expect(posters()).toHaveLength(0);
+      // The plates keep their place and ground meanwhile.
+      expect(screen.getAllByTestId(/^room-card-/u).length).toBeGreaterThan(0);
+      const hero = document.querySelector("img.rooms__heroPoster");
+      if (hero === null) throw new Error("Missing hero image");
+      fireEvent[outcome](hero);
+      expect(posters().length).toBeGreaterThan(0);
+    } finally {
+      complete.mockRestore();
+    }
+  });
+
+  it("lays the enquiry composer out only as it nears the screen, so its italic stays off the first load", () => {
+    const css = readFileSync("src/pages/fresh/fresh.css", "utf8");
+    expect(css).toMatch(/\.fr-enquiry \{\s*content-visibility: auto;\s*contain-intrinsic-size: auto \d+px;\s*\}/u);
+  });
+
+  // T-685: reaching for either Plan link fetches the planner's code for the next page.
+  it("fetches the planner's code when someone reaches for a Plan link", () => {
+    const prefetch = vi.fn();
+    Object.defineProperty(window, "__vvPlannerPrefetch", { configurable: true, value: prefetch });
+    try {
+      mount();
+      fireEvent.focus(within(screen.getByRole("navigation", { name: "Primary" })).getByRole("link", { name: "Plan an event" }));
+      fireEvent.pointerDown(within(screen.getByRole("region", { name: "Grand Hall" })).getByRole("link", { name: "Plan Grand Hall" }), { pointerType: "touch" });
+      expect(prefetch).toHaveBeenCalledTimes(2);
+    } finally {
+      Reflect.deleteProperty(window, "__vvPlannerPrefetch");
     }
   });
 

@@ -29,11 +29,11 @@ import {
 } from "./assets.js";
 
 const PreviewPackageParamsSchema = z.object({
-  runtimePackageId: z.string().uuid(),
+  runtimePackageId: z.uuid(),
 }).strict();
 
 const PreviewAssetParamsSchema = PreviewPackageParamsSchema.extend({
-  assetVersionId: z.string().uuid(),
+  assetVersionId: z.uuid(),
   fileName: z.string().trim().min(1).max(255),
 }).strict();
 

@@ -38,6 +38,11 @@ vi.mock("../../../api/proposals.js", async (importOriginal) => ({
   createProposal: mocks.createProposal,
 }));
 
+// Who won a lost deal is chosen from the venue's competitor set (the
+// competitor watch); its names come from here.
+const competitorNames = vi.hoisted(() => vi.fn());
+vi.mock("../../../api/competitor-watch.js", () => ({ getCompetitorNames: competitorNames }));
+
 const authState = vi.hoisted(() => ({
   user: { id: "u1", role: "staff", platformRole: "none" as const, venueId: "v1" as string | null, email: "staff@test.com", name: "Catherine Tait" },
 }));
@@ -148,6 +153,11 @@ beforeEach(() => {
   vi.setSystemTime(NOW);
   mocks.getPipeline.mockResolvedValue(pipeline());
   mocks.getOpportunity.mockResolvedValue(detail());
+  competitorNames.mockReset();
+  competitorNames.mockResolvedValue([
+    { id: "aaaaaaaa-1111-4111-8111-000000000001", name: "voco Grand Central" },
+    { id: "aaaaaaaa-1111-4111-8111-000000000002", name: "The Merchants House of Glasgow" },
+  ]);
   wideDesk();
 });
 
@@ -226,6 +236,38 @@ describe("the ledger", () => {
     fireEvent.click(within(alert).getByRole("button", { name: "Try again" }));
     await waitFor(() => row(/^Henderson wedding/u));
     expect(screen.getByRole("complementary", { name: "Pipeline overview" }).textContent).not.toContain("once the pipeline is read");
+  });
+
+  // Release audit dash-commercial-4: the desk took "now" once, as it opened,
+  // so a desk left open past midnight grouped yesterday's deals while the
+  // sentence above it, read again from the server, counted today's.
+  it("turns the day at the venue's midnight while open, and reads the pipeline again so its sentence counts the same day", async () => {
+    vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
+    // 23:58:30 in Glasgow on Tuesday 14 July 2026 (BST): still 22:58 in UTC,
+    // so the day turns at the venue's midnight, an hour before UTC's.
+    vi.setSystemTime("2026-07-14T22:58:30.000Z");
+    const rows = [
+      deal({ id: "o1", title: "Kerr dinner", nextActionDueAt: "2026-07-14T11:00:00.000Z" }),
+      deal({ id: "o2", title: "Lindsay lunch", nextActionDueAt: "2026-07-15T09:00:00.000Z" }),
+    ];
+    mocks.getPipeline
+      .mockResolvedValueOnce(pipeline({ opportunities: rows, todayTasks: [], due: { overdue: 0, today: 1 } }))
+      .mockResolvedValue(pipeline({ opportunities: rows, todayTasks: [], due: { overdue: 1, today: 1 } }));
+    render(<PipelineDesk />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(groupLabels()).toEqual(["Due today", "This week"]);
+    expect(row(/^Lindsay lunch/u).getAttribute("aria-label")).toContain("due tomorrow");
+    expect(screen.getByTestId("pipeline-summary").textContent).toMatch(/^1 deal has a step due today\./u);
+    expect(screen.getByText("Tuesday 14 July")).toBeDefined();
+
+    // Two minutes on: 00:00:30 on Wednesday 15 July in Glasgow.
+    await act(async () => { await vi.advanceTimersByTimeAsync(120_000); });
+    expect(mocks.getPipeline).toHaveBeenCalledTimes(2);
+    expect(groupLabels()).toEqual(["Overdue", "Due today"]);
+    expect(row(/^Kerr dinner/u).getAttribute("aria-label")).toContain("due yesterday");
+    expect(row(/^Lindsay lunch/u).getAttribute("aria-label")).toContain("due today");
+    expect(screen.getByTestId("pipeline-summary").textContent).toMatch(/^1 deal has a step due today, and 1 is overdue\./u);
+    expect(screen.getByText("Wednesday 15 July")).toBeDefined();
   });
 });
 
@@ -321,6 +363,62 @@ describe("the open deal", () => {
     expect(await screen.findByText("Henderson wedding is now won.")).toBeDefined();
   });
 
+  it("marks a deal lost with who won and any figure the client gave, kept as theirs, unverified", async () => {
+    mocks.getOpportunity.mockResolvedValue(detail({}, { stage: "proposal_sent" }));
+    mocks.updateOpportunity.mockResolvedValue(deal({ stage: "lost", closedAt: NOW }));
+    render(<PipelineDesk />);
+    const panel = within(await openDeal());
+    fireEvent.click(panel.getByRole("button", { name: "Mark lost…" }));
+    const confirm = within(await screen.findByTestId("deal-confirm-lost"));
+    fireEvent.click(confirm.getByRole("button", { name: "Chose another venue" }));
+    // Saying who won is optional: Not said is where it starts.
+    expect(confirm.getByRole("button", { name: "Not said" }).getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(await confirm.findByRole("button", { name: "voco Grand Central" }));
+    expect(confirm.getByText("Kept on this deal as the client's figure, unverified. It is never added to that venue's prices.")).toBeDefined();
+    fireEvent.change(confirm.getByLabelText("Their figure, if the client gave one (optional)"), { target: { value: "11,500" } });
+    fireEvent.click(confirm.getByRole("button", { name: "Mark lost" }));
+    await waitFor(() => {
+      expect(mocks.updateOpportunity).toHaveBeenCalledWith("opp1", {
+        stage: "lost", note: "Chose another venue",
+        lostTo: { competitorId: "aaaaaaaa-1111-4111-8111-000000000001", otherName: null, clientFigureMinor: 1_150_000, clientFigureBasis: "fixed" },
+      });
+    });
+    expect(competitorNames).toHaveBeenCalledWith("v1", expect.any(AbortSignal));
+  });
+
+  it("asks for another venue's name, and marks a deal lost without a winner when none was said", async () => {
+    mocks.getOpportunity.mockResolvedValue(detail({}, { stage: "proposal_sent" }));
+    mocks.updateOpportunity.mockResolvedValue(deal({ stage: "lost", closedAt: NOW }));
+    competitorNames.mockRejectedValue(new Error("Unavailable"));
+    render(<PipelineDesk />);
+    const panel = within(await openDeal());
+    fireEvent.click(panel.getByRole("button", { name: "Mark lost…" }));
+    const confirm = within(await screen.findByTestId("deal-confirm-lost"));
+    expect(await confirm.findByText("The competitor set could not be read. Name the venue instead.")).toBeDefined();
+    fireEvent.click(confirm.getByRole("button", { name: "Over budget" }));
+    fireEvent.click(confirm.getByRole("button", { name: "Another venue" }));
+    const mark = confirm.getByRole("button", { name: "Mark lost" });
+    expect((mark as HTMLButtonElement).disabled).toBe(true);
+    expect(confirm.getByRole("alert").textContent).toBe("Give the other venue's name, or choose Not said.");
+    fireEvent.click(confirm.getByRole("button", { name: "Not said" }));
+    expect((mark as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(mark);
+    await waitFor(() => { expect(mocks.updateOpportunity).toHaveBeenCalledWith("opp1", { stage: "lost", note: "Over budget" }); });
+  });
+
+  it("tells who won in the timeline, with the client's figure labelled as theirs", async () => {
+    mocks.getOpportunity.mockResolvedValue(detail({
+      history: [{
+        id: "m1", fromStage: "proposal_sent", toStage: "lost", note: "Chose another venue", changedByName: "Catherine Tait",
+        createdAt: "2026-10-01T10:00:00.000Z",
+        lostTo: { name: "voco Grand Central", competitorId: null, clientFigureMinor: 1_150_000, clientFigureBasis: "fixed", currency: "GBP" },
+      }],
+    }, { stage: "lost", closedAt: "2026-10-01T10:00:00.000Z" }));
+    render(<PipelineDesk />);
+    await openDeal();
+    expect(await screen.findByText("Lost to voco Grand Central. Client's figure, unverified: £11,500 in total.")).toBeDefined();
+  });
+
   it("keeps it open when Keep it open is chosen, and says so plainly when the move is refused", async () => {
     mocks.updateOpportunity.mockRejectedValue(new ApiError(422, "Cannot transition", "INVALID_TRANSITION"));
     render(<PipelineDesk />);
@@ -332,6 +430,18 @@ describe("the open deal", () => {
 
     fireEvent.click(panel.getByRole("button", { name: "Mark qualified" }));
     expect(await screen.findByText("That move is not open from this stage any more. The deal has been read again.")).toBeDefined();
+  });
+
+  it("reads the deal again and says so when a colleague's move landed first", async () => {
+    mocks.updateOpportunity.mockRejectedValue(new ApiError(409, "The deal changed after this screen read it", "OPPORTUNITY_STAGE_CHANGED"));
+    render(<PipelineDesk />);
+    const panel = within(await openDeal());
+    const reads = mocks.getOpportunity.mock.calls.length;
+
+    fireEvent.click(panel.getByRole("button", { name: "Mark qualified" }));
+
+    expect(await screen.findByText("That move is not open from this stage any more. The deal has been read again.")).toBeDefined();
+    await waitFor(() => { expect(mocks.getOpportunity.mock.calls.length).toBeGreaterThan(reads); });
   });
 
   it("drafts a proposal from a qualified deal and moves it on, and never offers a second draft when only the move failed", async () => {
@@ -476,6 +586,32 @@ describe("the open deal", () => {
     expect(screen.queryByTestId("deal-confirm-won")).toBeNull();
   });
 
+  it("holds every other change while one saves, so a press is never taken and dropped", async () => {
+    // The desk makes one change at a time. Done stayed pressable while a
+    // follow-up was being added, and the press did nothing at all.
+    let added: (task: unknown) => void = () => undefined;
+    mocks.addFollowUpTask.mockReturnValue(new Promise((resolve) => { added = resolve; }));
+    mocks.updateFollowUpTaskStatus.mockResolvedValue(followUp({ status: "done" }));
+    render(<PipelineDesk />);
+    const panel = within(await openDeal());
+    fireEvent.change(panel.getByLabelText("Add a note"), { target: { value: "Wants the piper at seven." } });
+    fireEvent.change(panel.getByLabelText("A follow-up"), { target: { value: "Book the piper" } });
+    fireEvent.click(panel.getByRole("button", { name: "Add" }));
+    expect(await panel.findByRole("button", { name: "Adding…" })).toBeDefined();
+    const done = panel.getByRole("button", { name: "Mark “Send the menu” done" });
+    expect(done).toHaveProperty("disabled", true);
+    expect(panel.getByRole("button", { name: "Add the note" })).toHaveProperty("disabled", true);
+    // The note's words stay editable meanwhile.
+    expect(panel.getByLabelText("Add a note")).toHaveProperty("disabled", false);
+    fireEvent.click(done);
+    expect(mocks.updateFollowUpTaskStatus).not.toHaveBeenCalled();
+    await act(async () => { added(followUp({ id: "task2", title: "Book the piper" })); await Promise.resolve(); });
+    await waitFor(() => { expect(panel.getByRole("button", { name: "Mark “Send the menu” done" })).toHaveProperty("disabled", false); });
+    expect(panel.getByRole("button", { name: "Add the note" })).toHaveProperty("disabled", false);
+    fireEvent.click(panel.getByRole("button", { name: "Mark “Send the menu” done" }));
+    await waitFor(() => { expect(mocks.updateFollowUpTaskStatus).toHaveBeenCalledWith("opp1", "task1", "done"); });
+  });
+
   it("adds a follow-up with its day, marks one done, and keeps a note's words when it fails", async () => {
     mocks.addFollowUpTask.mockResolvedValue(followUp({ id: "task2", title: "Book the piper" }));
     mocks.updateFollowUpTaskStatus.mockResolvedValue(followUp({ status: "done" }));
@@ -488,6 +624,8 @@ describe("the open deal", () => {
     fireEvent.change(panel.getAllByLabelText("Due on").at(-1) as HTMLElement, { target: { value: "2026-10-05" } });
     fireEvent.click(panel.getByRole("button", { name: "Add" }));
     await waitFor(() => { expect(mocks.addFollowUpTask).toHaveBeenCalledWith("opp1", "Book the piper", "2026-10-05T12:00:00.000Z"); });
+    // One change at a time: Done waits while the follow-up is added.
+    expect(await panel.findByText("Follow-up added: Book the piper.")).toBeDefined();
 
     fireEvent.click(panel.getByRole("button", { name: "Mark “Send the menu” done" }));
     await waitFor(() => { expect(mocks.updateFollowUpTaskStatus).toHaveBeenCalledWith("opp1", "task1", "done"); });

@@ -44,7 +44,7 @@ const ProviderCommandKindSchema = z.enum([
 
 const ProviderSubmitLineageSchema = z
   .object({
-    submitCommandId: z.string().uuid(),
+    submitCommandId: z.uuid(),
     executionSubjectSha256: RuntimeSha256Schema,
     providerIdempotencyKey: RuntimeManifestKeySchema,
     providerRequestSha256: RuntimeSha256Schema,
@@ -62,7 +62,7 @@ const ProviderCommandPayloadSchema = z
     maximumApiCallSeconds: z.number().int().positive().max(300),
     providerCommandRef: FoundryProviderCommandRefSchema.nullable(),
     submitLineage: ProviderSubmitLineageSchema.nullable(),
-    stopIntentId: z.string().uuid().nullable(),
+    stopIntentId: z.uuid().nullable(),
   })
   .strict()
   .superRefine((payload, ctx) => {
@@ -71,7 +71,7 @@ const ProviderCommandPayloadSchema = z
       digestFoundryProviderRequest(payload.providerRequest)
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["providerRequestSha256"],
         message: "provider request digest does not match its exact canonical JSON",
       });
@@ -86,7 +86,7 @@ const ProviderCommandPayloadSchema = z
         payload.maximumApiCallSeconds
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["providerRequest"],
         message: "closed provider authorization lost its exact command, subject, request identity, or runtime binding",
       });
@@ -101,7 +101,7 @@ const ProviderCommandPayloadSchema = z
       )
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["stageIds"],
         message: "provider command stages must equal the closed authorization stage set",
       });
@@ -111,7 +111,7 @@ const ProviderCommandPayloadSchema = z
       payload.providerCommandRef
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["providerCommandRef"],
         message: "provider command reference must equal the closed authorization action",
       });
@@ -121,7 +121,7 @@ const ProviderCommandPayloadSchema = z
       payload.providerCommandRef !== null
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["providerCommandRef"],
         message: "provider submit forbids an existing provider command reference",
       });
@@ -133,7 +133,7 @@ const ProviderCommandPayloadSchema = z
       payload.providerCommandRef === null
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["providerCommandRef"],
         message: "poll, checkpoint, and stop require an exact provider command reference",
       });
@@ -141,7 +141,7 @@ const ProviderCommandPayloadSchema = z
     if (payload.commandKind === "provider_reconcile") {
       if (payload.submitLineage === null) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["submitLineage"],
           message: "provider reconciliation requires immutable original-submit lineage",
         });
@@ -151,7 +151,7 @@ const ProviderCommandPayloadSchema = z
           payload.executionSubjectSha256
         ) {
           ctx.addIssue({
-            code: z.ZodIssueCode.custom,
+            code: "custom",
             path: ["submitLineage", "executionSubjectSha256"],
             message: "reconciliation lineage must bind the same execution subject",
           });
@@ -161,7 +161,7 @@ const ProviderCommandPayloadSchema = z
           payload.providerIdempotencyKey
         ) {
           ctx.addIssue({
-            code: z.ZodIssueCode.custom,
+            code: "custom",
             path: ["submitLineage", "providerIdempotencyKey"],
             message: "reconciliation lineage must bind the original provider idempotency key",
           });
@@ -171,7 +171,7 @@ const ProviderCommandPayloadSchema = z
           payload.providerRequestSha256
         ) {
           ctx.addIssue({
-            code: z.ZodIssueCode.custom,
+            code: "custom",
             path: ["submitLineage", "providerRequestSha256"],
             message: "reconciliation lineage must bind the original submit request, not the reconciliation request",
           });
@@ -185,7 +185,7 @@ const ProviderCommandPayloadSchema = z
             payload.submitLineage.providerRequestSha256
         ) {
           ctx.addIssue({
-            code: z.ZodIssueCode.custom,
+            code: "custom",
             path: ["submitLineage"],
             message: "reconciliation lineage must equal the closed authorization action lineage",
           });
@@ -193,7 +193,7 @@ const ProviderCommandPayloadSchema = z
       }
     } else if (payload.submitLineage !== null) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["submitLineage"],
         message: "only provider reconciliation may carry original-submit lineage",
       });
@@ -201,7 +201,7 @@ const ProviderCommandPayloadSchema = z
     if (payload.commandKind === "provider_stop") {
       if (payload.stopIntentId === null) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["stopIntentId"],
           message: "provider stop requires one exact immutable stop intent",
         });
@@ -210,14 +210,14 @@ const ProviderCommandPayloadSchema = z
         payload.providerRequest.action.stopIntentId !== payload.stopIntentId
       ) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["stopIntentId"],
           message: "provider stop intent must equal the closed authorization action causation",
         });
       }
     } else if (payload.stopIntentId !== null) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["stopIntentId"],
         message: "only provider stop may carry a stop intent",
       });
@@ -228,7 +228,7 @@ const ProviderCommandPayloadSchema = z
       payload.stageIds.some((stageId, index) => stageId !== sorted[index])
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["stageIds"],
         message: "provider command stage IDs must be unique and sorted",
       });
@@ -242,9 +242,9 @@ export const FoundryClaimedProviderCommandV0Schema = z
   .object({
     schemaVersion: z.literal(FOUNDRY_CLAIMED_PROVIDER_COMMAND_V0),
     commandKind: ProviderCommandKindSchema,
-    commandId: z.string().uuid(),
-    executionId: z.string().uuid(),
-    attemptId: z.string().uuid(),
+    commandId: z.uuid(),
+    executionId: z.uuid(),
+    attemptId: z.uuid(),
     projectId: RuntimeManifestKeySchema,
     jobId: RuntimeManifestKeySchema,
     executionEnvelopeSha256: RuntimeSha256Schema,
@@ -261,7 +261,7 @@ export const FoundryClaimedProviderCommandV0Schema = z
     fencingToken: PositiveFenceSchema,
     commandSequence: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
     claimedBy: FoundryCanonicalActorSchema,
-    claimToken: z.string().uuid(),
+    claimToken: z.uuid(),
     claimedAt: FoundryUtcInstantSchema,
     claimExpiresAt: FoundryUtcInstantSchema,
     payload: ProviderCommandPayloadSchema,
@@ -271,21 +271,21 @@ export const FoundryClaimedProviderCommandV0Schema = z
   .superRefine((claim, ctx) => {
     if (claim.commandKind !== claim.payload.commandKind) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["payload", "commandKind"],
         message: "top-level command kind must exactly match the immutable payload command kind",
       });
     }
     if (Date.parse(claim.claimedAt) >= Date.parse(claim.claimExpiresAt)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["claimExpiresAt"],
         message: "provider command claim must expire after it was acquired",
       });
     }
     if (claim.payloadSha256 !== digestFoundryProviderCommandPayload(claim.payload)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["payloadSha256"],
         message: "provider command payload digest does not match its exact content",
       });
@@ -321,7 +321,7 @@ export const FoundryClaimedProviderCommandV0Schema = z
         claim.providerRequestProfileSha256
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["payload", "providerRequest"],
         message: "closed provider authorization does not bind the exact durable claim scope",
       });
@@ -336,7 +336,7 @@ export const FoundryClaimedProviderCommandV0Schema = z
         deriveFoundryProviderClientRequestId(claim.commandKind, claim.commandId)
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["payload", "providerRequest", "requestIdentity"],
         message: "provider request identities are not deterministically derived from the exact attempt and command",
       });
@@ -346,7 +346,7 @@ export const FoundryClaimedProviderCommandV0Schema = z
       claim.payload.submitLineage?.submitCommandId === claim.commandId
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["payload", "submitLineage", "submitCommandId"],
         message: "reconciliation cannot claim itself as the original submit command",
       });
@@ -403,7 +403,7 @@ export const FoundryProviderAdapterClaimBindingsV0Schema = z
       keys.some((key, index) => key !== sorted[index])
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         message: "provider adapter claim bindings must be unique and canonically sorted",
       });
     }
@@ -491,14 +491,14 @@ export const FoundryProviderAdapterOutcomeV0Schema = z.discriminatedUnion(
 ).superRefine((outcome, ctx) => {
   if (outcome.status === "uncertain" && outcome.providerLifecycle !== "unknown") {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["providerLifecycle"],
       message: "an uncertain provider effect must have unknown normalized lifecycle",
     });
   }
   if (outcome.status !== "succeeded" && outcome.verifiedCheckpoint !== undefined) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["verifiedCheckpoint"],
       message: "only a successful checkpoint command may carry verified checkpoint evidence",
     });
@@ -709,10 +709,10 @@ export function validateFoundryProviderOutcomeForCommand(
 const FoundryProviderCommandOutcomePayloadV0Schema = z
   .object({
     schemaVersion: z.literal(FOUNDRY_PROVIDER_COMMAND_OUTCOME_V0),
-    commandId: z.string().uuid(),
-    executionId: z.string().uuid(),
-    attemptId: z.string().uuid(),
-    claimToken: z.string().uuid(),
+    commandId: z.uuid(),
+    executionId: z.uuid(),
+    attemptId: z.uuid(),
+    claimToken: z.uuid(),
     fencingToken: PositiveFenceSchema,
     status: z.enum(["succeeded", "failed", "uncertain"]),
     outcomeCode: ProviderOutcomeCodeSchema,
@@ -733,7 +733,7 @@ const FoundryProviderCommandOutcomePayloadV0Schema = z
       outcome.providerLifecycle !== "unknown"
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["providerLifecycle"],
         message: "an uncertain durable outcome must have unknown normalized lifecycle",
       });
@@ -1019,7 +1019,7 @@ export function computeFoundryProviderCommandInternalEvidenceSha256(
   commandId: string,
 ): string {
   const outcomeCode = ProviderOutcomeCodeSchema.parse(code);
-  return internalEvidence(outcomeCode, z.string().uuid().parse(commandId));
+  return internalEvidence(outcomeCode, z.uuid().parse(commandId));
 }
 
 function normalizeAdapterOutcomeForCommand(

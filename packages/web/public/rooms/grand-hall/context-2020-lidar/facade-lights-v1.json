@@ -1,0 +1,2724 @@
+{
+ "schema": "venviewer.facade-lights.v1",
+ "title": "Lit windows, shopfronts and signs across Glassford Street and along Garth Street, on the city model, for the Grand Hall at night",
+ "frame": "the planner hall frame of merchant-city-v2.json (metres, y up)",
+ "licence": {
+  "panoramas": "Trades Hall Glasgow's public 8K panoramas (twin.venviewer.com/trades-hall, our own capture, 11 July 2026); every station used is checked against the manifest's SHA-256",
+  "model": "placed on the city model merchant-city-v2 (Contains LiDAR data: Crown copyright Scottish Government and Fugro (2020), OGL v3.0)",
+  "note": "No third-party data. What is lit at night is art direction: the panoramas show the bars' and shops' lights at blue hour and the offices dark; which windows light is the planner's choice, by a hash of each opening's id."
+ },
+ "method": "Lit windows, shopfronts and signs across Glassford Street, placed on the city model for the Grand Hall at night.\n\nWhat the Grand Hall's windows look onto at night is the frontage across Glassford Street and the length of Garth\nStreet (facade-survey.json, \"sight\"). The city model carries their massing but no openings, so through the glass\nthey read as dark blocks. This bake places the openings our own panoramas show on those walls, so the planner can\nlight them:\n\nInputs\n  facade-survey.json             the openings, shopfronts and signs, each read from our public 8K panoramas\n                                 rectified onto its wall (the survey says which stations, at what resolution)\n  merchant-city-v2.bin / .json   the published city model (build_context.py), whose walls carry them\n\nSteps\n  1. each feature is a rectangle on its wall: u along the wall (x for a wall of constant z, z for one of constant\n     x), h above the pavement (y = ground_y + h)\n  2. its depth from the model: a grid of rays over the rectangle, at most sample_m apart and at least 3 x 3 (the\n     LiDAR walls jog between samples further apart), each from 4 m in front of the wall's survey\n     plane straight at it, against the model's triangles. Every ray must meet the model within depth_tolerance_m of\n     the plane, at least facing_share of them on a surface facing the street (normal within 45 degrees of the\n     wall's: the LiDAR walls jog by a few centimetres), and the hits may spread at most spread_m (a band of the\n     model set back above a window's head drops it); a feature that fails is left out and listed under \"dropped\"\n     with the reason. Its quad stands offset_m in front of the frontmost hit, so the model's own face never\n     covers it. A sign or shopfront longer than segment_m follows the wall's jogs in pieces (id:1, id:2, ...),\n     each placed so, each carrying its span (where it starts along the whole, and the whole's length) so the\n     planner draws one sign across them. The model's wall steps at its 3 m band edges, so a sign or shopfront\n     whose top crosses one keeps the part below it if that is at least clip_keep of it (each piece listed under\n     \"clipped\")\n  3. a shopfront or a lit door also lights the pavement in front of it: a quad on the model's ground (a ray down\n     spill_probe_m in front of the feature), spill_reach_m deep and spill_widen_m wider each side\n  4. a blind window (rendered or stoned over, as the panoramas show) is surveyed but never lit: listed, not placed\n  5. each feature carries two numbers from a hash of its id (SHA-256), seed and variant, both in [0, 1): the\n     planner lights a window when its seed is under the night look's share for its use, and the variant chooses\n     its curtains or blinds and, on a lit office floor, the odd room left dark, so a look changes how many are\n     lit, never which come first. An office's seed is its floor's (the id up to the window's position: offices\n     light a floor at a time); a home's, a shop's or a sign's is its own\n  6. write facade-lights-v1.json: every quad as a centre and two half-extent vectors (along the wall and up it, or\n     along and out across the pavement for a spill), millimetre rounded, with the survey's provenance\n\nUsage\n  python bake_facade_lights.py <out-dir> [--survey facade-survey.json] [--model-dir ...] [--check]\n  --check  bakes again into a temporary folder and asserts byte-identical output\nRequires numpy.",
+ "parameters": {
+  "probe_m": 4.0,
+  "depth_tolerance_m": 1.0,
+  "spread_m": 0.45,
+  "offset_m": 0.03,
+  "facing_cos": 0.7071,
+  "facing_share": 0.66,
+  "near_m": 12.0,
+  "spill_reach_m": 3.5,
+  "spill_widen_m": 0.6,
+  "spill_probe_m": 1.5,
+  "spill_lift_m": 0.02,
+  "grid": 3,
+  "sample_m": 0.4,
+  "segment_m": 1.1,
+  "clip_keep": 0.6
+ },
+ "inputs": {
+  "survey": {
+   "file": "facade-survey.json",
+   "sha256": "f152eef9d93c8c9652d742d47ea0c27af4f6d0ea59b24d47697407214465689a"
+  },
+  "model": {
+   "file": "merchant-city-v2.bin",
+   "sha256": "3a0461aee8925d08ef8a27e6e437171c81022c2ea302488771ae64adc5d78a84"
+  }
+ },
+ "counts": {
+  "window": 52,
+  "shop": 14,
+  "door": 4,
+  "sign": 20,
+  "spill": 7,
+  "lights": 97,
+  "dropped": 7,
+  "blind": 9,
+  "clipped": 14
+ },
+ "dropped": [
+  {
+   "id": "76-glassford:f3-x7.44",
+   "reason": "the model's wall lies 6.74 m from the survey's plane"
+  },
+  {
+   "id": "76-glassford:f3-x14.72",
+   "reason": "the model's wall lies 3.30 m from the survey's plane"
+  },
+  {
+   "id": "74-glassford:f3-x17.34",
+   "reason": "the model's wall lies 1.70 m from the survey's plane"
+  },
+  {
+   "id": "south-of-74:f3-x19.70",
+   "reason": "the model's wall lies 1.77 m from the survey's plane"
+  },
+  {
+   "id": "south-of-74:f3-x22.20",
+   "reason": "the model's wall lies 1.84 m from the survey's plane"
+  },
+  {
+   "id": "bacchus:corner-sign",
+   "reason": "the model's wall lies 1.69 m from the survey's plane"
+  },
+  {
+   "id": "garth-block:f4-z-35.6",
+   "reason": "no wall behind it"
+  }
+ ],
+ "blind": [
+  "76-glassford:f3-x9.88",
+  "bacchus:f1-x-16.9",
+  "bacchus:f2-x-16.9",
+  "bacchus:f1-x-14.1",
+  "bacchus:f2-x-14.1",
+  "bacchus:f1-x-11.4",
+  "bacchus:f2-x-11.4",
+  "bacchus:f1-x-8.6",
+  "bacchus:f2-x-8.6"
+ ],
+ "clipped": [
+  {
+   "id": "blane-valley:fascia:1",
+   "top": 3.785
+  },
+  {
+   "id": "blane-valley:fascia:2",
+   "top": 3.785
+  },
+  {
+   "id": "blane-valley:fascia:3",
+   "top": 3.785
+  },
+  {
+   "id": "blane-valley:fascia:4",
+   "top": 3.785
+  },
+  {
+   "id": "blane-valley:fascia:5",
+   "top": 3.785
+  },
+  {
+   "id": "blane-valley:fascia:6",
+   "top": 3.785
+  },
+  {
+   "id": "blane-valley:fascia:7",
+   "top": 3.785
+  },
+  {
+   "id": "blane-valley:fascia:8",
+   "top": 3.785
+  },
+  {
+   "id": "blane-valley:fascia:9",
+   "top": 3.785
+  },
+  {
+   "id": "blane-valley:fascia:10",
+   "top": 3.785
+  },
+  {
+   "id": "bacchus:letters:1",
+   "top": 3.785
+  },
+  {
+   "id": "bacchus:letters:2",
+   "top": 3.785
+  },
+  {
+   "id": "bacchus:letters:3",
+   "top": 3.785
+  },
+  {
+   "id": "bacchus:letters:4",
+   "top": 3.785
+  }
+ ],
+ "lights": [
+  {
+   "id": "76-glassford:f1-x7.44",
+   "kind": "window",
+   "light": "office",
+   "use": "office",
+   "seed": 0.8535,
+   "variant": 0.2024,
+   "centre": [
+    7.44,
+    1.51,
+    -24.712
+   ],
+   "along": [
+    0.49,
+    0.0,
+    0.0
+   ],
+   "up": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "span": [
+    0.0,
+    0.98
+   ]
+  },
+  {
+   "id": "76-glassford:f2-x7.44",
+   "kind": "window",
+   "light": "office",
+   "use": "office",
+   "seed": 0.471,
+   "variant": 0.9682,
+   "centre": [
+    7.44,
+    5.075,
+    -24.712
+   ],
+   "along": [
+    0.49,
+    0.0,
+    0.0
+   ],
+   "up": [
+    0.0,
+    1.015,
+    0.0
+   ],
+   "span": [
+    0.0,
+    0.98
+   ]
+  },
+  {
+   "id": "76-glassford:f1-x9.88",
+   "kind": "window",
+   "light": "office",
+   "use": "office",
+   "seed": 0.8535,
+   "variant": 0.0848,
+   "centre": [
+    9.88,
+    1.51,
+    -24.819
+   ],
+   "along": [
+    0.5,
+    0.0,
+    0.0
+   ],
+   "up": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "span": [
+    0.0,
+    1.0
+   ]
+  },
+  {
+   "id": "76-glassford:f2-x9.88",
+   "kind": "window",
+   "light": "office",
+   "use": "office",
+   "seed": 0.471,
+   "variant": 0.6601,
+   "centre": [
+    9.88,
+    5.075,
+    -24.819
+   ],
+   "along": [
+    0.5,
+    0.0,
+    0.0
+   ],
+   "up": [
+    0.0,
+    1.015,
+    0.0
+   ],
+   "span": [
+    0.0,
+    1.0
+   ]
+  },
+  {
+   "id": "76-glassford:f1-x12.25",
+   "kind": "window",
+   "light": "office",
+   "use": "office",
+   "seed": 0.8535,
+   "variant": 0.4373,
+   "centre": [
+    12.25,
+    1.51,
+    -24.793
+   ],
+   "along": [
+    0.5,
+    0.0,
+    0.0
+   ],
+   "up": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "span": [
+    0.0,
+    1.0
+   ]
+  },
+  {
+   "id": "76-glassford:f2-x12.25",
+   "kind": "window",
+   "light": "office",
+   "use": "office",
+   "seed": 0.471,
+   "variant": 0.0379,
+   "centre": [
+    12.25,
+    5.075,
+    -24.793
+   ],
+   "along": [
+    0.5,
+    0.0,
+    0.0
+   ],
+   "up": [
+    0.0,
+    1.015,
+    0.0
+   ],
+   "span": [
+    0.0,
+    1.0
+   ]
+  },
+  {
+   "id": "76-glassford:f3-x12.25",
+   "kind": "window",
+   "light": "office",
+   "use": "office",
+   "seed": 0.9423,
+   "variant": 0.9953,
+   "centre": [
+    12.25,
+    8.685,
+    -24.793
+   ],
+   "along": [
+    0.5,
+    0.0,
+    0.0
+   ],
+   "up": [
+    0.0,
+    1.025,
+    0.0
+   ],
+   "span": [
+    0.0,
+    1.0
+   ]
+  },
+  {
+   "id": "76-glassford:f1-x14.72",
+   "kind": "window",
+   "light": "office",
+   "use": "office",
+   "seed": 0.8535,
+   "variant": 0.4698,
+   "centre": [
+    14.725,
+    1.51,
+    -24.854
+   ],
+   "along": [
+    0.475,
+    0.0,
+    0.0
+   ],
+   "up": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "span": [
+    0.0,
+    0.95
+   ]
+  },
+  {
+   "id": "76-glassford:f2-x14.72",
+   "kind": "window",
+   "light": "office",
+   "use": "office",
+   "seed": 0.471,
+   "variant": 0.9184,
+   "centre": [
+    14.725,
+    5.075,
+    -24.854
+   ],
+   "along": [
+    0.475,
+    0.0,
+    0.0
+   ],
+   "up": [
+    0.0,
+    1.015,
+    0.0
+   ],
+   "span": [
+    0.0,
+    0.95
+   ]
+  },
+  {
+   "id": "74-glassford:f1-x17.34",
+   "kind": "window",
+   "light": "home",
+   "use": "home",
+   "seed": 0.6473,
+   "variant": 0.5925,
+   "centre": [
+    17.34,
+    1.46,
+    -24.943
+   ],
+   "along": [
+    0.46,
+    0.0,
+    0.0
+   ],
+   "up": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "span": [
+    0.0,
+    0.92
+   ]
+  },
+  {
+   "id": "74-glassford:f2-x17.34",
+   "kind": "window",
+   "light": "home",
+   "use": "home",
+   "seed": 0.2286,
+   "variant": 0.5749,
+   "centre": [
+    17.34,
+    5.025,
+    -24.943
+   ],
+   "along": [
+    0.46,
+    0.0,
+    0.0
+   ],
+   "up": [
+    0.0,
+    1.015,
+    0.0
+   ],
+   "span": [
+    0.0,
+    0.92
+   ]
+  },
+  {
+   "id": "south-of-74:f1-x19.70",
+   "kind": "window",
+   "light": "home",
+   "use": "home",
+   "seed": 0.965,
+   "variant": 0.8626,
+   "centre": [
+    19.7,
+    1.66,
+    -24.985
+   ],
+   "along": [
+    0.4,
+    0.0,
+    0.0
+   ],
+   "up": [
+    0.0,
+    0.95,
+    0.0
+   ],
+   "span": [
+    0.0,
+    0.8
+   ]
+  },
+  {
+   "id": "south-of-74:f2-x19.70",
+   "kind": "window",
+   "light": "home",
+   "use": "home",
+   "seed": 0.3893,
+   "variant": 0.2154,
+   "centre": [
+    19.7,
+    5.31,
+    -24.985
+   ],
+   "along": [
+    0.4,
+    0.0,
+    0.0
+   ],
+   "up": [
+    0.0,
+    0.9,
+    0.0
+   ],
+   "span": [
+    0.0,
+    0.8
+   ]
+  },
+  {
+   "id": "south-of-74:f1-x22.20",
+   "kind": "window",
+   "light": "home",
+   "use": "home",
+   "seed": 0.2055,
+   "variant": 0.7288,
+   "centre": [
+    22.2,
+    1.66,
+    -25.04
+   ],
+   "along": [
+    0.4,
+    0.0,
+    0.0
+   ],
+   "up": [
+    0.0,
+    0.95,
+    0.0
+   ],
+   "span": [
+    0.0,
+    0.8
+   ]
+  },
+  {
+   "id": "south-of-74:f2-x22.20",
+   "kind": "window",
+   "light": "home",
+   "use": "home",
+   "seed": 0.9546,
+   "variant": 0.29,
+   "centre": [
+    22.2,
+    5.31,
+    -25.04
+   ],
+   "along": [
+    0.4,
+    0.0,
+    0.0
+   ],
+   "up": [
+    0.0,
+    0.9,
+    0.0
+   ],
+   "span": [
+    0.0,
+    0.8
+   ]
+  },
+  {
+   "id": "blane-valley:fascia:1",
+   "kind": "sign",
+   "light": "sign-teal",
+   "seed": 0.4845,
+   "variant": 0.0974,
+   "centre": [
+    6.15,
+    -0.197,
+    -24.984
+   ],
+   "along": [
+    0.55,
+    0.0,
+    0.0
+   ],
+   "up": [
+    0.0,
+    0.193,
+    0.0
+   ],
+   "span": [
+    0.0,
+    11.0
+   ]
+  },
+  {
+   "id": "blane-valley:fascia:2",
+   "kind": "sign",
+   "light": "sign-teal",
+   "seed": 0.4845,
+   "variant": 0.0747,
+   "centre": [
+    7.25,
+    -0.197,
+    -24.663
+   ],
+   "along": [
+    0.55,
+    0.0,
+    0.0
+   ],
+   "up": [
+    0.0,
+    0.193,
+    0.0
+   ],
+   "span": [
+    1.1,
+    11.0
+   ]
+  },
+  {
+   "id": "blane-valley:fascia:3",
+   "kind": "sign",
+   "light": "sign-teal",
+   "seed": 0.4845,
+   "variant": 0.3238,
+   "centre": [
+    8.35,
+    -0.197,
+    -24.912
+   ],
+   "along": [
+    0.55,
+    0.0,
+    0.0
+   ],
+   "up": [
+    0.0,
+    0.193,
+    0.0
+   ],
+   "span": [
+    2.2,
+    11.0
+   ]
+  },
+  {
+   "id": "blane-valley:fascia:4",
+   "kind": "sign",
+   "light": "sign-teal",
+   "seed": 0.4845,
+   "variant": 0.1035,
+   "centre": [
+    9.45,
+    -0.197,
+    -24.655
+   ],
+   "along": [
+    0.55,
+    0.0,
+    0.0
+   ],
+   "up": [
+    0.0,
+    0.193,
+    0.0
+   ],
+   "span": [
+    3.3,
+    11.0
+   ]
+  },
+  {
+   "id": "blane-valley:fascia:5",
+   "kind": "sign",
+   "light": "sign-teal",
+   "seed": 0.4845,
+   "variant": 0.4003,
+   "centre": [
+    10.55,
+    -0.197,
+    -24.824
+   ],
+   "along": [
+    0.55,
+    0.0,
+    0.0
+   ],
+   "up": [
+    0.0,
+    0.193,
+    0.0
+   ],
+   "span": [
+    4.4,
+    11.0
+   ]
+  },
+  {
+   "id": "blane-valley:fascia:6",
+   "kind": "sign",
+   "light": "sign-teal",
+   "seed": 0.4845,
+   "variant": 0.0709,
+   "centre": [
+    11.65,
+    -0.197,
+    -24.74
+   ],
+   "along": [
+    0.55,
+    0.0,
+    0.0
+   ],
+   "up": [
+    0.0,
+    0.193,
+    0.0
+   ],
+   "span": [
+    5.5,
+    11.0
+   ]
+  },
+  {
+   "id": "blane-valley:fascia:7",
+   "kind": "sign",
+   "light": "sign-teal",
+   "seed": 0.4845,
+   "variant": 0.5212,
+   "centre": [
+    12.75,
+    -0.197,
+    -24.835
+   ],
+   "along": [
+    0.55,
+    0.0,
+    0.0
+   ],
+   "up": [
+    0.0,
+    0.193,
+    0.0
+   ],
+   "span": [
+    6.6,
+    11.0
+   ]
+  },
+  {
+   "id": "blane-valley:fascia:8",
+   "kind": "sign",
+   "light": "sign-teal",
+   "seed": 0.4845,
+   "variant": 0.7275,
+   "centre": [
+    13.85,
+    -0.197,
+    -24.813
+   ],
+   "along": [
+    0.55,
+    0.0,
+    0.0
+   ],
+   "up": [
+    0.0,
+    0.193,
+    0.0
+   ],
+   "span": [
+    7.7,
+    11.0
+   ]
+  },
+  {
+   "id": "blane-valley:fascia:9",
+   "kind": "sign",
+   "light": "sign-teal",
+   "seed": 0.4845,
+   "variant": 0.8403,
+   "centre": [
+    14.95,
+    -0.197,
+    -24.646
+   ],
+   "along": [
+    0.55,
+    0.0,
+    0.0
+   ],
+   "up": [
+    0.0,
+    0.193,
+    0.0
+   ],
+   "span": [
+    8.8,
+    11.0
+   ]
+  },
+  {
+   "id": "blane-valley:fascia:10",
+   "kind": "sign",
+   "light": "sign-teal",
+   "seed": 0.4845,
+   "variant": 0.8843,
+   "centre": [
+    16.05,
+    -0.197,
+    -24.186
+   ],
+   "along": [
+    0.55,
+    0.0,
+    0.0
+   ],
+   "up": [
+    0.0,
+    0.193,
+    0.0
+   ],
+   "span": [
+    9.9,
+    11.0
+   ]
+  },
+  {
+   "id": "blane-valley:arch-1:1",
+   "kind": "shop",
+   "light": "pub",
+   "seed": 0.0604,
+   "variant": 0.4629,
+   "centre": [
+    7.025,
+    -1.79,
+    -24.626
+   ],
+   "along": [
+    0.425,
+    0.0,
+    0.0
+   ],
+   "up": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "span": [
+    0.0,
+    1.7
+   ]
+  },
+  {
+   "id": "blane-valley:arch-1:2",
+   "kind": "shop",
+   "light": "pub",
+   "seed": 0.0604,
+   "variant": 0.9126,
+   "centre": [
+    7.875,
+    -1.79,
+    -24.819
+   ],
+   "along": [
+    0.425,
+    0.0,
+    0.0
+   ],
+   "up": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "span": [
+    0.85,
+    1.7
+   ]
+  },
+  {
+   "id": "blane-valley:arch-1:spill",
+   "kind": "spill",
+   "light": "pub",
+   "seed": 0.0604,
+   "variant": 0.4463,
+   "centre": [
+    7.45,
+    -3.77,
+    -22.876
+   ],
+   "along": [
+    1.45,
+    0.0,
+    0.0
+   ],
+   "up": [
+    0.0,
+    0.0,
+    1.75
+   ],
+   "span": [
+    0.0,
+    2.9
+   ]
+  },
+  {
+   "id": "blane-valley:arch-2:1",
+   "kind": "shop",
+   "light": "pub",
+   "seed": 0.9302,
+   "variant": 0.1106,
+   "centre": [
+    9.425,
+    -1.79,
+    -24.664
+   ],
+   "along": [
+    0.425,
+    0.0,
+    0.0
+   ],
+   "up": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "span": [
+    0.0,
+    1.7
+   ]
+  },
+  {
+   "id": "blane-valley:arch-2:2",
+   "kind": "shop",
+   "light": "pub",
+   "seed": 0.9302,
+   "variant": 0.4257,
+   "centre": [
+    10.275,
+    -1.79,
+    -24.858
+   ],
+   "along": [
+    0.425,
+    0.0,
+    0.0
+   ],
+   "up": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "span": [
+    0.85,
+    1.7
+   ]
+  },
+  {
+   "id": "blane-valley:arch-2:spill",
+   "kind": "spill",
+   "light": "pub",
+   "seed": 0.9302,
+   "variant": 0.4558,
+   "centre": [
+    9.85,
+    -3.77,
+    -22.914
+   ],
+   "along": [
+    1.45,
+    0.0,
+    0.0
+   ],
+   "up": [
+    0.0,
+    0.0,
+    1.75
+   ],
+   "span": [
+    0.0,
+    2.9
+   ]
+  },
+  {
+   "id": "blane-valley:door:1",
+   "kind": "door",
+   "light": "pub",
+   "seed": 0.821,
+   "variant": 0.2556,
+   "centre": [
+    11.975,
+    -2.49,
+    -24.739
+   ],
+   "along": [
+    0.375,
+    0.0,
+    0.0
+   ],
+   "up": [
+    0.0,
+    1.3,
+    0.0
+   ],
+   "span": [
+    0.0,
+    1.5
+   ]
+  },
+  {
+   "id": "blane-valley:door:2",
+   "kind": "door",
+   "light": "pub",
+   "seed": 0.821,
+   "variant": 0.5271,
+   "centre": [
+    12.725,
+    -2.49,
+    -24.837
+   ],
+   "along": [
+    0.375,
+    0.0,
+    0.0
+   ],
+   "up": [
+    0.0,
+    1.3,
+    0.0
+   ],
+   "span": [
+    0.75,
+    1.5
+   ]
+  },
+  {
+   "id": "blane-valley:door:spill",
+   "kind": "spill",
+   "light": "pub",
+   "seed": 0.821,
+   "variant": 0.771,
+   "centre": [
+    12.35,
+    -3.77,
+    -22.989
+   ],
+   "along": [
+    1.35,
+    0.0,
+    0.0
+   ],
+   "up": [
+    0.0,
+    0.0,
+    1.75
+   ],
+   "span": [
+    0.0,
+    2.7
+   ]
+  },
+  {
+   "id": "blane-valley:arch-4:1",
+   "kind": "shop",
+   "light": "pub",
+   "seed": 0.5431,
+   "variant": 0.9147,
+   "centre": [
+    14.3,
+    -1.79,
+    -24.812
+   ],
+   "along": [
+    0.4,
+    0.0,
+    0.0
+   ],
+   "up": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "span": [
+    0.0,
+    1.6
+   ]
+  },
+  {
+   "id": "blane-valley:arch-4:2",
+   "kind": "shop",
+   "light": "pub",
+   "seed": 0.5431,
+   "variant": 0.412,
+   "centre": [
+    15.1,
+    -1.79,
+    -24.599
+   ],
+   "along": [
+    0.4,
+    0.0,
+    0.0
+   ],
+   "up": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "span": [
+    0.8,
+    1.6
+   ]
+  },
+  {
+   "id": "blane-valley:arch-4:spill",
+   "kind": "spill",
+   "light": "pub",
+   "seed": 0.5431,
+   "variant": 0.401,
+   "centre": [
+    14.7,
+    -3.77,
+    -22.849
+   ],
+   "along": [
+    1.4,
+    0.0,
+    0.0
+   ],
+   "up": [
+    0.0,
+    0.0,
+    1.75
+   ],
+   "span": [
+    0.0,
+    2.8
+   ]
+  },
+  {
+   "id": "bacchus:letters:1",
+   "kind": "sign",
+   "light": "sign-violet",
+   "seed": 0.3025,
+   "variant": 0.8143,
+   "centre": [
+    -10.05,
+    -0.348,
+    -24.734
+   ],
+   "along": [
+    0.55,
+    0.0,
+    0.0
+   ],
+   "up": [
+    0.0,
+    0.343,
+    0.0
+   ],
+   "span": [
+    0.0,
+    4.4
+   ]
+  },
+  {
+   "id": "bacchus:letters:2",
+   "kind": "sign",
+   "light": "sign-violet",
+   "seed": 0.3025,
+   "variant": 0.2526,
+   "centre": [
+    -8.95,
+    -0.348,
+    -24.648
+   ],
+   "along": [
+    0.55,
+    0.0,
+    0.0
+   ],
+   "up": [
+    0.0,
+    0.343,
+    0.0
+   ],
+   "span": [
+    1.1,
+    4.4
+   ]
+  },
+  {
+   "id": "bacchus:letters:3",
+   "kind": "sign",
+   "light": "sign-violet",
+   "seed": 0.3025,
+   "variant": 0.9412,
+   "centre": [
+    -7.85,
+    -0.348,
+    -24.778
+   ],
+   "along": [
+    0.55,
+    0.0,
+    0.0
+   ],
+   "up": [
+    0.0,
+    0.343,
+    0.0
+   ],
+   "span": [
+    2.2,
+    4.4
+   ]
+  },
+  {
+   "id": "bacchus:letters:4",
+   "kind": "sign",
+   "light": "sign-violet",
+   "seed": 0.3025,
+   "variant": 0.8033,
+   "centre": [
+    -6.75,
+    -0.348,
+    -25.0
+   ],
+   "along": [
+    0.55,
+    0.0,
+    0.0
+   ],
+   "up": [
+    0.0,
+    0.343,
+    0.0
+   ],
+   "span": [
+    3.3,
+    4.4
+   ]
+  },
+  {
+   "id": "bacchus:doors:1",
+   "kind": "door",
+   "light": "bar",
+   "seed": 0.9803,
+   "variant": 0.5203,
+   "centre": [
+    -15.175,
+    -2.315,
+    -24.654
+   ],
+   "along": [
+    0.375,
+    0.0,
+    0.0
+   ],
+   "up": [
+    0.0,
+    1.225,
+    0.0
+   ],
+   "span": [
+    0.0,
+    1.5
+   ]
+  },
+  {
+   "id": "bacchus:doors:2",
+   "kind": "door",
+   "light": "bar",
+   "seed": 0.9803,
+   "variant": 0.9804,
+   "centre": [
+    -14.425,
+    -2.315,
+    -24.827
+   ],
+   "along": [
+    0.375,
+    0.0,
+    0.0
+   ],
+   "up": [
+    0.0,
+    1.225,
+    0.0
+   ],
+   "span": [
+    0.75,
+    1.5
+   ]
+  },
+  {
+   "id": "bacchus:doors:spill",
+   "kind": "spill",
+   "light": "bar",
+   "seed": 0.9803,
+   "variant": 0.0183,
+   "centre": [
+    -14.8,
+    -3.77,
+    -22.904
+   ],
+   "along": [
+    1.35,
+    0.0,
+    0.0
+   ],
+   "up": [
+    0.0,
+    0.0,
+    1.75
+   ],
+   "span": [
+    0.0,
+    2.7
+   ]
+  },
+  {
+   "id": "bacchus:green-glazing:1",
+   "kind": "shop",
+   "light": "glass-green",
+   "seed": 0.1137,
+   "variant": 0.7926,
+   "centre": [
+    -9.858,
+    -2.14,
+    -24.722
+   ],
+   "along": [
+    0.392,
+    0.0,
+    0.0
+   ],
+   "up": [
+    0.0,
+    1.25,
+    0.0
+   ],
+   "span": [
+    0.0,
+    2.35
+   ]
+  },
+  {
+   "id": "bacchus:green-glazing:2",
+   "kind": "shop",
+   "light": "glass-green",
+   "seed": 0.1137,
+   "variant": 0.6383,
+   "centre": [
+    -9.075,
+    -2.14,
+    -24.643
+   ],
+   "along": [
+    0.392,
+    0.0,
+    0.0
+   ],
+   "up": [
+    0.0,
+    1.25,
+    0.0
+   ],
+   "span": [
+    0.783,
+    2.35
+   ]
+  },
+  {
+   "id": "bacchus:green-glazing:3",
+   "kind": "shop",
+   "light": "glass-green",
+   "seed": 0.1137,
+   "variant": 0.56,
+   "centre": [
+    -8.292,
+    -2.14,
+    -24.692
+   ],
+   "along": [
+    0.392,
+    0.0,
+    0.0
+   ],
+   "up": [
+    0.0,
+    1.25,
+    0.0
+   ],
+   "span": [
+    1.567,
+    2.35
+   ]
+  },
+  {
+   "id": "bacchus:green-glazing:spill",
+   "kind": "spill",
+   "light": "glass-green",
+   "seed": 0.1137,
+   "variant": 0.6896,
+   "centre": [
+    -9.075,
+    -3.77,
+    -22.893
+   ],
+   "along": [
+    1.775,
+    0.0,
+    0.0
+   ],
+   "up": [
+    0.0,
+    0.0,
+    1.75
+   ],
+   "span": [
+    0.0,
+    3.55
+   ]
+  },
+  {
+   "id": "garth-block:f1-z-50.4",
+   "kind": "window",
+   "light": "office",
+   "use": "office",
+   "seed": 0.9953,
+   "variant": 0.9388,
+   "centre": [
+    -5.099,
+    2.16,
+    -50.4
+   ],
+   "along": [
+    0.0,
+    0.0,
+    0.5
+   ],
+   "up": [
+    0.0,
+    0.95,
+    0.0
+   ],
+   "span": [
+    0.0,
+    1.0
+   ]
+  },
+  {
+   "id": "garth-block:f2-z-50.4",
+   "kind": "window",
+   "light": "office",
+   "use": "office",
+   "seed": 0.7695,
+   "variant": 0.8028,
+   "centre": [
+    -5.099,
+    4.96,
+    -50.4
+   ],
+   "along": [
+    0.0,
+    0.0,
+    0.5
+   ],
+   "up": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "span": [
+    0.0,
+    1.0
+   ]
+  },
+  {
+   "id": "garth-block:f3-z-50.4",
+   "kind": "window",
+   "light": "office",
+   "use": "office",
+   "seed": 0.1188,
+   "variant": 0.4631,
+   "centre": [
+    -5.099,
+    8.035,
+    -50.4
+   ],
+   "along": [
+    0.0,
+    0.0,
+    0.5
+   ],
+   "up": [
+    0.0,
+    1.075,
+    0.0
+   ],
+   "span": [
+    0.0,
+    1.0
+   ]
+  },
+  {
+   "id": "garth-block:f4-z-50.4",
+   "kind": "window",
+   "light": "office",
+   "use": "office",
+   "seed": 0.7111,
+   "variant": 0.6615,
+   "centre": [
+    -5.099,
+    10.96,
+    -50.4
+   ],
+   "along": [
+    0.0,
+    0.0,
+    0.5
+   ],
+   "up": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "span": [
+    0.0,
+    1.0
+   ]
+  },
+  {
+   "id": "garth-block:f1-z-47.5",
+   "kind": "window",
+   "light": "office",
+   "use": "office",
+   "seed": 0.9953,
+   "variant": 0.0792,
+   "centre": [
+    -5.177,
+    2.16,
+    -47.5
+   ],
+   "along": [
+    0.0,
+    0.0,
+    0.5
+   ],
+   "up": [
+    0.0,
+    0.95,
+    0.0
+   ],
+   "span": [
+    0.0,
+    1.0
+   ]
+  },
+  {
+   "id": "garth-block:f2-z-47.5",
+   "kind": "window",
+   "light": "office",
+   "use": "office",
+   "seed": 0.7695,
+   "variant": 0.4649,
+   "centre": [
+    -5.177,
+    4.96,
+    -47.5
+   ],
+   "along": [
+    0.0,
+    0.0,
+    0.5
+   ],
+   "up": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "span": [
+    0.0,
+    1.0
+   ]
+  },
+  {
+   "id": "garth-block:f3-z-47.5",
+   "kind": "window",
+   "light": "office",
+   "use": "office",
+   "seed": 0.1188,
+   "variant": 0.8362,
+   "centre": [
+    -5.177,
+    8.035,
+    -47.5
+   ],
+   "along": [
+    0.0,
+    0.0,
+    0.5
+   ],
+   "up": [
+    0.0,
+    1.075,
+    0.0
+   ],
+   "span": [
+    0.0,
+    1.0
+   ]
+  },
+  {
+   "id": "garth-block:f4-z-47.5",
+   "kind": "window",
+   "light": "office",
+   "use": "office",
+   "seed": 0.7111,
+   "variant": 0.1786,
+   "centre": [
+    -5.177,
+    10.96,
+    -47.5
+   ],
+   "along": [
+    0.0,
+    0.0,
+    0.5
+   ],
+   "up": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "span": [
+    0.0,
+    1.0
+   ]
+  },
+  {
+   "id": "garth-block:f1-z-44.5",
+   "kind": "window",
+   "light": "office",
+   "use": "office",
+   "seed": 0.9953,
+   "variant": 0.2545,
+   "centre": [
+    -5.258,
+    2.16,
+    -44.5
+   ],
+   "along": [
+    0.0,
+    0.0,
+    0.5
+   ],
+   "up": [
+    0.0,
+    0.95,
+    0.0
+   ],
+   "span": [
+    0.0,
+    1.0
+   ]
+  },
+  {
+   "id": "garth-block:f2-z-44.5",
+   "kind": "window",
+   "light": "office",
+   "use": "office",
+   "seed": 0.7695,
+   "variant": 0.808,
+   "centre": [
+    -5.258,
+    4.96,
+    -44.5
+   ],
+   "along": [
+    0.0,
+    0.0,
+    0.5
+   ],
+   "up": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "span": [
+    0.0,
+    1.0
+   ]
+  },
+  {
+   "id": "garth-block:f3-z-44.5",
+   "kind": "window",
+   "light": "office",
+   "use": "office",
+   "seed": 0.1188,
+   "variant": 0.0527,
+   "centre": [
+    -5.258,
+    8.035,
+    -44.5
+   ],
+   "along": [
+    0.0,
+    0.0,
+    0.5
+   ],
+   "up": [
+    0.0,
+    1.075,
+    0.0
+   ],
+   "span": [
+    0.0,
+    1.0
+   ]
+  },
+  {
+   "id": "garth-block:f4-z-44.5",
+   "kind": "window",
+   "light": "office",
+   "use": "office",
+   "seed": 0.7111,
+   "variant": 0.2961,
+   "centre": [
+    -5.258,
+    10.96,
+    -44.5
+   ],
+   "along": [
+    0.0,
+    0.0,
+    0.5
+   ],
+   "up": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "span": [
+    0.0,
+    1.0
+   ]
+  },
+  {
+   "id": "garth-block:f1-z-41.5",
+   "kind": "window",
+   "light": "office",
+   "use": "office",
+   "seed": 0.9953,
+   "variant": 0.0185,
+   "centre": [
+    -5.338,
+    2.16,
+    -41.5
+   ],
+   "along": [
+    0.0,
+    0.0,
+    0.5
+   ],
+   "up": [
+    0.0,
+    0.95,
+    0.0
+   ],
+   "span": [
+    0.0,
+    1.0
+   ]
+  },
+  {
+   "id": "garth-block:f2-z-41.5",
+   "kind": "window",
+   "light": "office",
+   "use": "office",
+   "seed": 0.7695,
+   "variant": 0.7664,
+   "centre": [
+    -5.338,
+    4.96,
+    -41.5
+   ],
+   "along": [
+    0.0,
+    0.0,
+    0.5
+   ],
+   "up": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "span": [
+    0.0,
+    1.0
+   ]
+  },
+  {
+   "id": "garth-block:f3-z-41.5",
+   "kind": "window",
+   "light": "office",
+   "use": "office",
+   "seed": 0.1188,
+   "variant": 0.1776,
+   "centre": [
+    -5.338,
+    8.035,
+    -41.5
+   ],
+   "along": [
+    0.0,
+    0.0,
+    0.5
+   ],
+   "up": [
+    0.0,
+    1.075,
+    0.0
+   ],
+   "span": [
+    0.0,
+    1.0
+   ]
+  },
+  {
+   "id": "garth-block:f4-z-41.5",
+   "kind": "window",
+   "light": "office",
+   "use": "office",
+   "seed": 0.7111,
+   "variant": 0.2137,
+   "centre": [
+    -5.338,
+    10.96,
+    -41.5
+   ],
+   "along": [
+    0.0,
+    0.0,
+    0.5
+   ],
+   "up": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "span": [
+    0.0,
+    1.0
+   ]
+  },
+  {
+   "id": "garth-block:f1-z-38.6",
+   "kind": "window",
+   "light": "office",
+   "use": "office",
+   "seed": 0.9953,
+   "variant": 0.8914,
+   "centre": [
+    -5.416,
+    2.16,
+    -38.6
+   ],
+   "along": [
+    0.0,
+    0.0,
+    0.5
+   ],
+   "up": [
+    0.0,
+    0.95,
+    0.0
+   ],
+   "span": [
+    0.0,
+    1.0
+   ]
+  },
+  {
+   "id": "garth-block:f2-z-38.6",
+   "kind": "window",
+   "light": "office",
+   "use": "office",
+   "seed": 0.7695,
+   "variant": 0.5342,
+   "centre": [
+    -5.416,
+    4.96,
+    -38.6
+   ],
+   "along": [
+    0.0,
+    0.0,
+    0.5
+   ],
+   "up": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "span": [
+    0.0,
+    1.0
+   ]
+  },
+  {
+   "id": "garth-block:f3-z-38.6",
+   "kind": "window",
+   "light": "office",
+   "use": "office",
+   "seed": 0.1188,
+   "variant": 0.6406,
+   "centre": [
+    -5.416,
+    8.035,
+    -38.6
+   ],
+   "along": [
+    0.0,
+    0.0,
+    0.5
+   ],
+   "up": [
+    0.0,
+    1.075,
+    0.0
+   ],
+   "span": [
+    0.0,
+    1.0
+   ]
+  },
+  {
+   "id": "garth-block:f4-z-38.6",
+   "kind": "window",
+   "light": "office",
+   "use": "office",
+   "seed": 0.7111,
+   "variant": 0.1424,
+   "centre": [
+    -5.416,
+    10.96,
+    -38.6
+   ],
+   "along": [
+    0.0,
+    0.0,
+    0.5
+   ],
+   "up": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "span": [
+    0.0,
+    1.0
+   ]
+  },
+  {
+   "id": "garth-block:f1-z-35.6",
+   "kind": "window",
+   "light": "office",
+   "use": "office",
+   "seed": 0.9953,
+   "variant": 0.156,
+   "centre": [
+    -6.054,
+    2.16,
+    -35.6
+   ],
+   "along": [
+    0.0,
+    0.0,
+    0.5
+   ],
+   "up": [
+    0.0,
+    0.95,
+    0.0
+   ],
+   "span": [
+    0.0,
+    1.0
+   ]
+  },
+  {
+   "id": "garth-block:f2-z-35.6",
+   "kind": "window",
+   "light": "office",
+   "use": "office",
+   "seed": 0.7695,
+   "variant": 0.3002,
+   "centre": [
+    -6.054,
+    4.96,
+    -35.6
+   ],
+   "along": [
+    0.0,
+    0.0,
+    0.5
+   ],
+   "up": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "span": [
+    0.0,
+    1.0
+   ]
+  },
+  {
+   "id": "garth-block:f3-z-35.6",
+   "kind": "window",
+   "light": "office",
+   "use": "office",
+   "seed": 0.1188,
+   "variant": 0.0123,
+   "centre": [
+    -6.054,
+    8.035,
+    -35.6
+   ],
+   "along": [
+    0.0,
+    0.0,
+    0.5
+   ],
+   "up": [
+    0.0,
+    1.075,
+    0.0
+   ],
+   "span": [
+    0.0,
+    1.0
+   ]
+  },
+  {
+   "id": "garth-block:teal-sign:1",
+   "kind": "sign",
+   "light": "sign-teal",
+   "seed": 0.5881,
+   "variant": 0.1153,
+   "centre": [
+    -5.558,
+    0.51,
+    -56.283
+   ],
+   "along": [
+    0.0,
+    0.0,
+    0.517
+   ],
+   "up": [
+    0.0,
+    0.3,
+    0.0
+   ],
+   "span": [
+    0.0,
+    6.2
+   ]
+  },
+  {
+   "id": "garth-block:teal-sign:2",
+   "kind": "sign",
+   "light": "sign-teal",
+   "seed": 0.5881,
+   "variant": 0.8976,
+   "centre": [
+    -5.443,
+    0.51,
+    -55.25
+   ],
+   "along": [
+    0.0,
+    0.0,
+    0.517
+   ],
+   "up": [
+    0.0,
+    0.3,
+    0.0
+   ],
+   "span": [
+    1.033,
+    6.2
+   ]
+  },
+  {
+   "id": "garth-block:teal-sign:3",
+   "kind": "sign",
+   "light": "sign-teal",
+   "seed": 0.5881,
+   "variant": 0.7752,
+   "centre": [
+    -5.202,
+    0.51,
+    -54.217
+   ],
+   "along": [
+    0.0,
+    0.0,
+    0.517
+   ],
+   "up": [
+    0.0,
+    0.3,
+    0.0
+   ],
+   "span": [
+    2.067,
+    6.2
+   ]
+  },
+  {
+   "id": "garth-block:teal-sign:4",
+   "kind": "sign",
+   "light": "sign-teal",
+   "seed": 0.5881,
+   "variant": 0.4949,
+   "centre": [
+    -5.031,
+    0.51,
+    -53.183
+   ],
+   "along": [
+    0.0,
+    0.0,
+    0.517
+   ],
+   "up": [
+    0.0,
+    0.3,
+    0.0
+   ],
+   "span": [
+    3.1,
+    6.2
+   ]
+  },
+  {
+   "id": "garth-block:teal-sign:5",
+   "kind": "sign",
+   "light": "sign-teal",
+   "seed": 0.5881,
+   "variant": 0.7116,
+   "centre": [
+    -5.052,
+    0.51,
+    -52.15
+   ],
+   "along": [
+    0.0,
+    0.0,
+    0.517
+   ],
+   "up": [
+    0.0,
+    0.3,
+    0.0
+   ],
+   "span": [
+    4.133,
+    6.2
+   ]
+  },
+  {
+   "id": "garth-block:teal-sign:6",
+   "kind": "sign",
+   "light": "sign-teal",
+   "seed": 0.5881,
+   "variant": 0.9352,
+   "centre": [
+    -5.08,
+    0.51,
+    -51.117
+   ],
+   "along": [
+    0.0,
+    0.0,
+    0.517
+   ],
+   "up": [
+    0.0,
+    0.3,
+    0.0
+   ],
+   "span": [
+    5.167,
+    6.2
+   ]
+  },
+  {
+   "id": "garth-block:shop:1",
+   "kind": "shop",
+   "light": "pub",
+   "seed": 0.3906,
+   "variant": 0.5136,
+   "centre": [
+    -5.503,
+    -1.99,
+    -55.5
+   ],
+   "along": [
+    0.0,
+    0.0,
+    0.5
+   ],
+   "up": [
+    0.0,
+    1.2,
+    0.0
+   ],
+   "span": [
+    0.0,
+    5.0
+   ]
+  },
+  {
+   "id": "garth-block:shop:2",
+   "kind": "shop",
+   "light": "pub",
+   "seed": 0.3906,
+   "variant": 0.6617,
+   "centre": [
+    -5.27,
+    -1.99,
+    -54.5
+   ],
+   "along": [
+    0.0,
+    0.0,
+    0.5
+   ],
+   "up": [
+    0.0,
+    1.2,
+    0.0
+   ],
+   "span": [
+    1.0,
+    5.0
+   ]
+  },
+  {
+   "id": "garth-block:shop:3",
+   "kind": "shop",
+   "light": "pub",
+   "seed": 0.3906,
+   "variant": 0.8249,
+   "centre": [
+    -5.037,
+    -1.99,
+    -53.5
+   ],
+   "along": [
+    0.0,
+    0.0,
+    0.5
+   ],
+   "up": [
+    0.0,
+    1.2,
+    0.0
+   ],
+   "span": [
+    2.0,
+    5.0
+   ]
+  },
+  {
+   "id": "garth-block:shop:4",
+   "kind": "shop",
+   "light": "pub",
+   "seed": 0.3906,
+   "variant": 0.4673,
+   "centre": [
+    -5.043,
+    -1.99,
+    -52.5
+   ],
+   "along": [
+    0.0,
+    0.0,
+    0.5
+   ],
+   "up": [
+    0.0,
+    1.2,
+    0.0
+   ],
+   "span": [
+    3.0,
+    5.0
+   ]
+  },
+  {
+   "id": "garth-block:shop:5",
+   "kind": "shop",
+   "light": "pub",
+   "seed": 0.3906,
+   "variant": 0.6267,
+   "centre": [
+    -5.07,
+    -1.99,
+    -51.5
+   ],
+   "along": [
+    0.0,
+    0.0,
+    0.5
+   ],
+   "up": [
+    0.0,
+    1.2,
+    0.0
+   ],
+   "span": [
+    4.0,
+    5.0
+   ]
+  },
+  {
+   "id": "garth-block:shop:spill",
+   "kind": "spill",
+   "light": "pub",
+   "seed": 0.3906,
+   "variant": 0.0609,
+   "centre": [
+    -3.287,
+    -3.77,
+    -53.5
+   ],
+   "along": [
+    0.0,
+    0.0,
+    3.1
+   ],
+   "up": [
+    1.75,
+    0.0,
+    0.0
+   ],
+   "span": [
+    0.0,
+    6.2
+   ]
+  },
+  {
+   "id": "garth-end:f1-x-7.5",
+   "kind": "window",
+   "light": "office",
+   "use": "office",
+   "seed": 0.3554,
+   "variant": 0.6014,
+   "centre": [
+    -7.5,
+    3.01,
+    -82.835
+   ],
+   "along": [
+    0.55,
+    0.0,
+    0.0
+   ],
+   "up": [
+    0.0,
+    1.6,
+    0.0
+   ],
+   "span": [
+    0.0,
+    1.1
+   ]
+  },
+  {
+   "id": "garth-end:f2-x-7.5",
+   "kind": "window",
+   "light": "office",
+   "use": "office",
+   "seed": 0.6209,
+   "variant": 0.2508,
+   "centre": [
+    -7.5,
+    8.11,
+    -82.835
+   ],
+   "along": [
+    0.55,
+    0.0,
+    0.0
+   ],
+   "up": [
+    0.0,
+    1.7,
+    0.0
+   ],
+   "span": [
+    0.0,
+    1.1
+   ]
+  },
+  {
+   "id": "garth-end:f1-x-5.5",
+   "kind": "window",
+   "light": "office",
+   "use": "office",
+   "seed": 0.3554,
+   "variant": 0.5301,
+   "centre": [
+    -5.5,
+    3.01,
+    -82.892
+   ],
+   "along": [
+    0.55,
+    0.0,
+    0.0
+   ],
+   "up": [
+    0.0,
+    1.6,
+    0.0
+   ],
+   "span": [
+    0.0,
+    1.1
+   ]
+  },
+  {
+   "id": "garth-end:f2-x-5.5",
+   "kind": "window",
+   "light": "office",
+   "use": "office",
+   "seed": 0.6209,
+   "variant": 0.5503,
+   "centre": [
+    -5.5,
+    8.11,
+    -82.892
+   ],
+   "along": [
+    0.55,
+    0.0,
+    0.0
+   ],
+   "up": [
+    0.0,
+    1.7,
+    0.0
+   ],
+   "span": [
+    0.0,
+    1.1
+   ]
+  },
+  {
+   "id": "garth-end:f1-x-3.0",
+   "kind": "window",
+   "light": "office",
+   "use": "office",
+   "seed": 0.3554,
+   "variant": 0.0079,
+   "centre": [
+    -3.0,
+    3.01,
+    -82.963
+   ],
+   "along": [
+    0.55,
+    0.0,
+    0.0
+   ],
+   "up": [
+    0.0,
+    1.6,
+    0.0
+   ],
+   "span": [
+    0.0,
+    1.1
+   ]
+  },
+  {
+   "id": "garth-end:f2-x-3.0",
+   "kind": "window",
+   "light": "office",
+   "use": "office",
+   "seed": 0.6209,
+   "variant": 0.145,
+   "centre": [
+    -3.0,
+    8.11,
+    -82.963
+   ],
+   "along": [
+    0.55,
+    0.0,
+    0.0
+   ],
+   "up": [
+    0.0,
+    1.7,
+    0.0
+   ],
+   "span": [
+    0.0,
+    1.1
+   ]
+  },
+  {
+   "id": "garth-end:f1-x-0.4",
+   "kind": "window",
+   "light": "office",
+   "use": "office",
+   "seed": 0.3554,
+   "variant": 0.3134,
+   "centre": [
+    -0.4,
+    3.01,
+    -82.935
+   ],
+   "along": [
+    0.55,
+    0.0,
+    0.0
+   ],
+   "up": [
+    0.0,
+    1.6,
+    0.0
+   ],
+   "span": [
+    0.0,
+    1.1
+   ]
+  },
+  {
+   "id": "garth-end:f2-x-0.4",
+   "kind": "window",
+   "light": "office",
+   "use": "office",
+   "seed": 0.6209,
+   "variant": 0.2734,
+   "centre": [
+    -0.4,
+    8.11,
+    -82.935
+   ],
+   "along": [
+    0.55,
+    0.0,
+    0.0
+   ],
+   "up": [
+    0.0,
+    1.7,
+    0.0
+   ],
+   "span": [
+    0.0,
+    1.1
+   ]
+  },
+  {
+   "id": "garth-end:f1-x2.2",
+   "kind": "window",
+   "light": "office",
+   "use": "office",
+   "seed": 0.3554,
+   "variant": 0.5207,
+   "centre": [
+    2.2,
+    3.01,
+    -83.019
+   ],
+   "along": [
+    0.55,
+    0.0,
+    0.0
+   ],
+   "up": [
+    0.0,
+    1.6,
+    0.0
+   ],
+   "span": [
+    0.0,
+    1.1
+   ]
+  },
+  {
+   "id": "garth-end:f2-x2.2",
+   "kind": "window",
+   "light": "office",
+   "use": "office",
+   "seed": 0.6209,
+   "variant": 0.3077,
+   "centre": [
+    2.2,
+    8.11,
+    -83.019
+   ],
+   "along": [
+    0.55,
+    0.0,
+    0.0
+   ],
+   "up": [
+    0.0,
+    1.7,
+    0.0
+   ],
+   "span": [
+    0.0,
+    1.1
+   ]
+  },
+  {
+   "id": "garth-end:f1-x4.6",
+   "kind": "window",
+   "light": "office",
+   "use": "office",
+   "seed": 0.3554,
+   "variant": 0.0566,
+   "centre": [
+    4.6,
+    3.01,
+    -82.941
+   ],
+   "along": [
+    0.55,
+    0.0,
+    0.0
+   ],
+   "up": [
+    0.0,
+    1.6,
+    0.0
+   ],
+   "span": [
+    0.0,
+    1.1
+   ]
+  },
+  {
+   "id": "garth-end:f2-x4.6",
+   "kind": "window",
+   "light": "office",
+   "use": "office",
+   "seed": 0.6209,
+   "variant": 0.5317,
+   "centre": [
+    4.6,
+    8.11,
+    -82.941
+   ],
+   "along": [
+    0.55,
+    0.0,
+    0.0
+   ],
+   "up": [
+    0.0,
+    1.7,
+    0.0
+   ],
+   "span": [
+    0.0,
+    1.1
+   ]
+  },
+  {
+   "id": "garth-end:f1-x7.1",
+   "kind": "window",
+   "light": "office",
+   "use": "office",
+   "seed": 0.3554,
+   "variant": 0.5354,
+   "centre": [
+    7.1,
+    3.01,
+    -82.75
+   ],
+   "along": [
+    0.55,
+    0.0,
+    0.0
+   ],
+   "up": [
+    0.0,
+    1.6,
+    0.0
+   ],
+   "span": [
+    0.0,
+    1.1
+   ]
+  },
+  {
+   "id": "garth-end:f2-x7.1",
+   "kind": "window",
+   "light": "office",
+   "use": "office",
+   "seed": 0.6209,
+   "variant": 0.2828,
+   "centre": [
+    7.1,
+    8.11,
+    -82.75
+   ],
+   "along": [
+    0.55,
+    0.0,
+    0.0
+   ],
+   "up": [
+    0.0,
+    1.7,
+    0.0
+   ],
+   "span": [
+    0.0,
+    1.1
+   ]
+  }
+ ]
+}

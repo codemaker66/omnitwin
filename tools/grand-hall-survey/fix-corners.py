@@ -7,7 +7,9 @@ that starts within 0.35 m of the corner and ends before 0.42 m is such a fin:
 its texels move back onto this wall (the row's depth just beyond it), are
 re-projected there from the panoramas, and the corrected positions are saved
 for wall-depth.py (out-walls/<view>.fixed.f32).
-Usage (in the work directory): python3 $SURVEY/fix-corners.py"""
+With --positions-only it only writes the corrected positions: the best-view build colours the
+fins itself, from those positions (label-views.py, project-walls.py --labels).
+Usage (in the work directory): python3 $SURVEY/fix-corners.py [--positions-only]"""
 import os
 import json, sys
 import numpy as np
@@ -20,6 +22,7 @@ PLANES = {'window': (1, YC - W / 2, 1.0), 'door': (1, YC + W / 2, -1.0), 'end': 
 NORMALS = {'window': (0, 1, 0), 'door': (0, -1, 0), 'end': (1, 0, 0), 'fire': (-1, 0, 0)}
 PPM = 200.0
 REACH, CLEAR, REF = 0.35, 0.42, (0.45, 0.55)
+POSITIONS_ONLY = '--positions-only' in sys.argv[1:]
 
 views = load_views('views-walls.json')
 for wall in ['window', 'door', 'end', 'fire']:
@@ -55,7 +58,7 @@ for wall in ['window', 'door', 'end', 'fire']:
     pts = P[idx][:, :3].astype(np.float64)
     pts[:, axis] = plane + sign * target[idx]
     nrm = np.tile(np.array([NORMALS[wall]], float), (len(pts), 1))
-    if len(pts):
+    if len(pts) and not POSITIONS_ONLY:
         rgb, ws = project(pts, nrm, stations())
     # Write corrected positions per tile and patch the projected colours.
     offset = 0
@@ -67,6 +70,9 @@ for wall in ['window', 'door', 'end', 'fire']:
         r, c = np.nonzero(tile_fin)
         Pt[r, c, axis] = plane + sign * target[:, sl][r, c]
         Pt[::-1].astype(np.float32).tofile(f"out-walls/{v['name']}.fixed.f32")
+        if POSITIONS_ONLY:
+            offset += w
+            continue
         npz = dict(np.load(f"proj/{v['name']}.npz"))
         if len(r):
             sel = np.isin(np.ravel_multi_index(idx, D.shape), np.ravel_multi_index((r, c + offset), D.shape))
@@ -77,4 +83,4 @@ for wall in ['window', 'door', 'end', 'fire']:
             npz['weight'][r, c] = ws[order]
         np.savez_compressed(f"proj/{v['name']}.npz", **npz)
         offset += w
-    print(wall, 'reprojected', len(pts), flush=True)
+    print(wall, 'moved' if POSITIONS_ONLY else 'reprojected', len(pts), flush=True)

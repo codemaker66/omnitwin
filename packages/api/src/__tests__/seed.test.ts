@@ -10,7 +10,7 @@ import {
 // Seed data validation — verify seed objects pass @omnitwin/types Zod schemas
 // ---------------------------------------------------------------------------
 
-const UUID = "00000000-0000-0000-0000-000000000001";
+const UUID = "00000000-0000-4000-8000-000000000001";
 
 describe("seed venue passes CreateVenueSchema", () => {
   it("validates the Trades Hall venue", () => {

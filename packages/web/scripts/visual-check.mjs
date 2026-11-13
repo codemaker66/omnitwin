@@ -318,12 +318,17 @@ try {
     }
   }
 
-  // --- Floating tool widget: Laser Diagram must be movable/minimizable and never sit on cockpit chrome. ---
+  // --- Floating tool widget: Draw tools must be movable/minimizable and never sit on cockpit chrome. ---
   try {
-    await page.getByRole("button", { name: "Laser Diagram" }).click();
+    // At the default desktop size the toolbar sits behind "More planner tools"
+    // (compactDesktop), so open it first, as editor.spec.ts does.
+    const moreTools = page.getByRole("button", { name: "More planner tools" });
+    if (await moreTools.count() > 0 && await moreTools.getAttribute("aria-expanded") !== "true") await moreTools.click();
+    // Exact: the command deck's "Draw on the floor" also contains "Draw".
+    await page.getByTestId("planner-toolbar").getByRole("button", { name: "Draw", exact: true }).click();
     await page.getByTestId("markup-panel").waitFor({ timeout: 5000 });
     await page.waitForTimeout(600);
-    await page.screenshot({ path: join(OUT, "planner-laser-widget.png") });
+    await page.screenshot({ path: join(OUT, "planner-draw-widget.png") });
     report.markupChrome = await page.evaluate(() => {
       const snapshot = (selector) => {
         const element = document.querySelector(selector);
@@ -362,7 +367,7 @@ try {
     });
     const markup = report.markupChrome.markup;
     if (markup === null) {
-      report.errors.push("laser diagram widget did not render as a floating widget");
+      report.errors.push("draw tools widget did not render as a floating widget");
     } else {
       const viewport = report.markupChrome.viewport;
       if (
@@ -371,7 +376,7 @@ try {
         || markup.right > viewport.right
         || markup.bottom > viewport.bottom
       ) {
-        report.errors.push("laser diagram widget is clipped by the viewport");
+        report.errors.push("draw tools widget is clipped by the viewport");
       }
       const blockedSurfaces = [
         ["top bar", report.markupChrome.topbar],
@@ -387,13 +392,13 @@ try {
       ];
       for (const [name, rect] of blockedSurfaces) {
         if (rectsOverlap(markup, rect)) {
-          report.errors.push(`laser diagram widget overlaps ${name}`);
+          report.errors.push(`draw tools widget overlaps ${name}`);
         }
       }
     }
-    report.steps.push("laser widget captured");
+    report.steps.push("draw tools widget captured");
   } catch (e) {
-    report.steps.push(`SKIP laser widget: ${String(e).slice(0, 120)}`);
+    report.steps.push(`SKIP draw tools widget: ${String(e).slice(0, 120)}`);
   }
 
   // --- Slices 2/3/4/7: import a .gdtf, preview its 3D model, add it to the rig ---
@@ -476,9 +481,13 @@ try {
     report.steps.push(`SKIP roombystyle: ${String(e).slice(0, 90)}`);
   }
 
-  // --- Feature: one-click Theatre layout (blank floor + count 150 from above) ---
+  // --- Feature: Theatre layout (blank floor + count 150 from above). It asks
+  // "How many guests?" first, prefilled with the 150. ---
   try {
     await page.getByTestId("guests-build-theatre").click();
+    await page.waitForTimeout(300);
+    await page.getByTestId("guests-lens-panel").screenshot({ path: join(OUT, "guests-autofill-question.png") });
+    await page.getByTestId("auto-fill-place").click();
     await page.waitForTimeout(800);
     await clickLens(page, "Design");
     await page.waitForTimeout(3000);
@@ -534,7 +543,10 @@ try {
     const autoFill = page.getByTestId("planner-command-action-auto-fill");
     report.autoFillLabel = (await autoFill.count()) ? (await autoFill.textContent()) : null;
     if (await autoFill.count()) {
+      // Auto-fill opens the Guests lens with the question asked; answer it.
       await autoFill.click();
+      await page.getByTestId("auto-fill-place").click();
+      await clickLens(page, "Design");
       await page.waitForTimeout(2800);
       await page.screenshot({ path: join(OUT, "planner-autofill-150.png") });
       const placed = await page.evaluate(() => {

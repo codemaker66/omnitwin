@@ -76,7 +76,7 @@ export const FOUNDRY_OFFLINE_NORMALIZE_MESH_GLB_PREVIEW_EXECUTION_BOUNDARY_V0 =
 const SHA256 = /^sha256:[a-f0-9]{64}$/u;
 const OPAQUE_ID = /^[A-Za-z0-9][A-Za-z0-9._:@-]{0,159}$/u;
 const KEY_ID = /^[A-Za-z0-9][A-Za-z0-9._:@-]{0,127}$/u;
-const UTC_INSTANT = z.string().datetime({ offset: true, precision: 3 });
+const UTC_INSTANT = z.iso.datetime({ offset: true, precision: 3 });
 const ACKNOWLEDGEMENT_DOMAIN =
   "OMNITWIN_FOUNDRY_OFFLINE_NORMALIZE_MESH_GLB_PREVIEW_ACKNOWLEDGEMENT_V0";
 const INVOCATION_DOMAIN =
@@ -110,7 +110,7 @@ function issue(
   path: readonly (string | number)[],
   message: string,
 ): void {
-  ctx.addIssue({ code: z.ZodIssueCode.custom, path: [...path], message });
+  ctx.addIssue({ code: "custom", path: [...path], message });
 }
 
 const SourceSchema = z
@@ -121,7 +121,7 @@ const SourceSchema = z
     sizeBytes: z
       .number()
       .int()
-      .safe()
+      .int()
       .positive()
       .max(FOUNDRY_NORMALIZE_MESH_GLB_MAX_BYTES),
     sha256: z.string().regex(SHA256),
@@ -284,7 +284,7 @@ export const FoundryOfflineNormalizeMeshGlbPreviewOperatorAcknowledgementV0Schem
         acknowledgement;
       const parsed = OperatorAcknowledgementPayloadSchema.safeParse(payload);
       if (!parsed.success) {
-        for (const entry of parsed.error.issues) ctx.addIssue(entry);
+        for (const entry of parsed.error.issues) ctx.addIssue({ ...entry });
         return;
       }
       if (
@@ -436,7 +436,7 @@ const ReportPayloadSchema = z
         sizeBytes: z
           .number()
           .int()
-          .safe()
+          .int()
           .positive()
           .max(FOUNDRY_NORMALIZE_MESH_GLB_MAX_BYTES),
         sha256: z.string().regex(SHA256),
@@ -496,7 +496,7 @@ export const FoundryOfflineNormalizeMeshGlbPreviewReportV0Schema =
       const { reportSha256: _reportSha256, ...payload } = report;
       const parsed = ReportPayloadSchema.safeParse(payload);
       if (!parsed.success) {
-        for (const entry of parsed.error.issues) ctx.addIssue(entry);
+        for (const entry of parsed.error.issues) ctx.addIssue({ ...entry });
         return;
       }
       if (

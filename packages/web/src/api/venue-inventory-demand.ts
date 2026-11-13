@@ -1,4 +1,4 @@
-import type { ZodType, ZodTypeDef } from "zod";
+import type { ZodType } from "zod";
 import {
   InventoryAssessmentResponseSchema, InventoryReservationMutationResponseSchema, InventoryRemedyPrepareResponseSchema,
   InventoryRemedyApproveResponseSchema, InventoryRemedyResponseSchema, InventoryReservationHistoryResponseSchema,
@@ -18,7 +18,7 @@ function assertScope(matches: boolean): void {
 function sameWindow(a: InventoryWindow, b: InventoryWindow): boolean {
   return Date.parse(a.startsAt) === Date.parse(b.startsAt) && Date.parse(a.endsAt) === Date.parse(b.endsAt);
 }
-async function action<T>(path: string, input: unknown, schema: ZodType<T, ZodTypeDef, unknown>): Promise<T> {
+async function action<T>(path: string, input: unknown, schema: ZodType<T>): Promise<T> {
   const controller = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_resolve, reject) => {

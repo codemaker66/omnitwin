@@ -1,6 +1,6 @@
 import { z } from "zod";
-import type { EventInstructions, GuestEnquiry } from "@omnitwin/types";
-import { ApiError, api } from "./client.js";
+import { ConfigurationReviewStatusSchema, type EventInstructions, type GangwayReview, type GuestEnquiry } from "@omnitwin/types";
+import { api } from "./client.js";
 
 // ---------------------------------------------------------------------------
 // Response schemas — Zod validation at the API boundary
@@ -37,7 +37,7 @@ export interface ObjectMetadata {
   readonly notes?: string;
 }
 
-const ObjectMetadataResponseSchema = z.object({
+export const ObjectMetadataResponseSchema = z.object({
   clothed: z.boolean().optional(),
   clothStyle: z.enum(["black", "white"]).nullable().optional(),
   tableSetting: z.enum(["dinner"]).nullable().optional(),
@@ -75,7 +75,7 @@ const ConfigurationResponseSchema = z.object({
   revision: z.number().int().min(1),
   // Keep the server timestamp for saved-state display after a clean reopen.
   // Older responses may omit it; never substitute the browser's load time.
-  updatedAt: z.string().datetime({ offset: true }).optional(),
+  updatedAt: z.iso.datetime({ offset: true }).optional(),
   objects: z.array(PlacedObjectResponseSchema).optional(),
   // Event-level metadata (special instructions, day-of contact, phase
   // deadlines, access notes). Absent on legacy rows, null on cleared rows,
@@ -86,9 +86,25 @@ const ConfigurationResponseSchema = z.object({
   // field, Zod's default object mode strips metadata entirely and the
   // Event Details panel loads blank on every reopen.
   metadata: z.unknown().optional(),
+  // The review workflow's state (authenticated reads return the whole row).
+  // A value this client does not know reads as absent rather than failing
+  // the layout's load: the editor only needs to know when edits are refused.
+  reviewStatus: ConfigurationReviewStatusSchema.optional().catch(undefined),
+  // One of the venue's sample layouts (the row's is_template). Optional, and
+  // anything but a boolean reads as absent: a label never fails a load.
+  isTemplate: z.boolean().optional().catch(undefined),
 });
 
 export type Configuration = z.infer<typeof ConfigurationResponseSchema>;
+
+// A new public plan comes back with the secret that lets this browser, and
+// only this browser, claim it into an account later (migration 0102). An API
+// from before 0102 sends none, and the plan then stays a public draft.
+const CreatedPublicConfigurationSchema = ConfigurationResponseSchema.extend({
+  claimSecret: z.string().min(16).optional(),
+});
+
+export type CreatedPublicConfiguration = z.infer<typeof CreatedPublicConfigurationSchema>;
 
 const PlacedObjectArraySchema = z.array(PlacedObjectResponseSchema);
 
@@ -124,12 +140,6 @@ export interface BatchObjectInput {
   readonly metadata?: ObjectMetadata | null;
 }
 
-export interface RevisionConflict {
-  readonly expectedRevision: number;
-  readonly currentRevision: number;
-  readonly message: string;
-}
-
 /** Re-export the canonical guest enquiry input type from @omnitwin/types. */
 export type GuestEnquiryInput = GuestEnquiry;
 
@@ -137,20 +147,28 @@ export type GuestEnquiryInput = GuestEnquiry;
 // Public endpoints (no auth)
 // ---------------------------------------------------------------------------
 
-export async function createPublicConfig(spaceId: string, name?: string): Promise<Configuration> {
-  return api.post("/public/configurations", { spaceId, name }, true, ConfigurationResponseSchema);
+export async function createPublicConfig(spaceId: string, name?: string): Promise<CreatedPublicConfiguration> {
+  return api.post("/public/configurations", { spaceId, name }, true, CreatedPublicConfigurationSchema);
+}
+
+/** How a batch save travels: `keepalive` lets one sent as the page hides or
+ *  closes finish after the page has gone, when its body is small enough. */
+export interface BatchSaveTransport {
+  readonly keepalive?: boolean;
 }
 
 export async function publicBatchSave(
   configId: string,
   objects: readonly BatchObjectInput[],
   expectedRevision: number,
+  transport?: BatchSaveTransport,
 ): Promise<BatchSaveResponse> {
   return api.post(
     `/public/configurations/${configId}/objects/batch`,
     { expectedRevision, objects },
     true,
     BatchSaveResponseSchema,
+    transport?.keepalive === true ? { keepalive: true } : undefined,
   );
 }
 
@@ -160,7 +178,8 @@ export async function getPublicConfig(configId: string, signal?: AbortSignal): P
 
 /**
  * Set the floor plan thumbnail on a public preview config.
- * Accepts a PNG data URL from the orthographic capture.
+ * Accepts a PNG or JPEG data URL of at most 270,000 characters; the planner
+ * sends PLAN_THUMBNAIL's JPEG (lib/ortho-capture.ts).
  */
 export async function updatePublicThumbnail(configId: string, thumbnailUrl: string): Promise<Configuration> {
   return api.post(`/public/configurations/${configId}/thumbnail`, { thumbnailUrl }, true, ConfigurationResponseSchema);
@@ -190,38 +209,25 @@ export async function getConfigSummaries(configIds: readonly string[]): Promise<
   return api.get(`/configurations/summaries?ids=${ids}`, z.array(ConfigurationSummarySchema));
 }
 
-export async function claimConfig(configId: string): Promise<Configuration> {
-  return api.post(`/configurations/${configId}/claim`, undefined, undefined, ConfigurationResponseSchema);
+/** Claims a public plan into the signed-in account with the secret its
+ *  creating browser was given; lib/planner-claim.ts is the caller. */
+export async function claimConfig(configId: string, claimSecret: string): Promise<Configuration> {
+  return api.post(`/configurations/${configId}/claim`, { claimSecret }, undefined, ConfigurationResponseSchema);
 }
 
 export async function authBatchSave(
   configId: string,
   objects: readonly BatchObjectInput[],
   expectedRevision: number,
+  transport?: BatchSaveTransport,
 ): Promise<BatchSaveResponse> {
   return api.post(
     `/configurations/${configId}/objects/batch`,
     { expectedRevision, objects },
     undefined,
     BatchSaveResponseSchema,
+    transport?.keepalive === true ? { keepalive: true } : undefined,
   );
-}
-
-const RevisionConflictDetailsSchema = z.object({
-  expectedRevision: z.number().int().min(1),
-  currentRevision: z.number().int().min(1),
-});
-
-export function parseRevisionConflict(err: unknown): RevisionConflict | null {
-  if (!(err instanceof ApiError)) return null;
-  if (err.status !== 409 || err.code !== "REVISION_CONFLICT") return null;
-  const parsed = RevisionConflictDetailsSchema.safeParse(err.details);
-  if (!parsed.success) return null;
-  return {
-    expectedRevision: parsed.data.expectedRevision,
-    currentRevision: parsed.data.currentRevision,
-    message: err.message,
-  };
 }
 
 // ---------------------------------------------------------------------------
@@ -229,14 +235,19 @@ export function parseRevisionConflict(err: unknown): RevisionConflict | null {
 //
 // The planner's human layer: special instructions, day-of contact, per-
 // phase deadlines, access notes. Persists to the configurations.metadata
-// JSONB column via the auth PATCH endpoint. Pass null to clear.
+// JSONB column via the auth PATCH endpoint. Each key sent replaces the stored
+// one whole and the others are kept (a shallow merge on the server). No single
+// key can be removed: the server refuses null for these keys, and only a null
+// for the whole value clears the column, every key with it.
 // ---------------------------------------------------------------------------
 
 export interface ConfigMetadataInput {
-  readonly instructions?: EventInstructions | null;
+  readonly instructions?: EventInstructions;
+  /** The layout's gangway review, as lib/gangway-review-record writes it. */
+  readonly gangwayReview?: GangwayReview;
 }
 
-const PatchConfigResponseSchema = z.object({ id: z.string() }).passthrough();
+const PatchConfigResponseSchema = z.object({ id: z.string() }).loose();
 
 export async function patchConfigMetadata(
   configId: string,

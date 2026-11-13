@@ -1,16 +1,19 @@
 import { Scene } from "three";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { ApiError } from "../../../api/client.js";
 import type { BatchSaveResponse } from "../../../api/configurations.js";
 import { useEditorStore } from "../../../stores/editor-store.js";
 import { useLayoutTimelinePreviewStore } from "../../../stores/layout-timeline-preview-store.js";
 import { prepareLayoutForGuestEnquiry } from "../send-layout-flow.js";
 
+vi.mock("../../../api/configuration-conflict.js", () => ({ parseRevisionConflict: vi.fn(() => null) }));
 vi.mock("../../../api/configurations.js", () => ({
   getPublicConfig: vi.fn(), publicBatchSave: vi.fn(), updatePublicThumbnail: vi.fn(),
-  parseRevisionConflict: vi.fn(() => null),
 }));
 vi.mock("../../../api/spaces.js", () => ({ getSpace: vi.fn() }));
-vi.mock("../../../lib/ortho-capture.js", () => ({ captureOrthographic: vi.fn() }));
+vi.mock("../../../lib/ortho-capture.js", () => ({ captureOrthographic: vi.fn(), PLAN_THUMBNAIL: { width: 800, height: 533 } }));
+const reports = vi.hoisted(() => ({ reportFailure: vi.fn() }));
+vi.mock("../../../observability/failure-reports.js", () => reports);
 const configApi = vi.mocked(await import("../../../api/configurations.js"));
 const spacesApi = vi.mocked(await import("../../../api/spaces.js"));
 const captureApi = vi.mocked(await import("../../../lib/ortho-capture.js"));
@@ -109,5 +112,62 @@ describe("save-to-enquiry request ownership", () => {
     await open("A");
     configApi.updatePublicThumbnail.mockRejectedValueOnce(new Error("thumbnail unavailable"));
     expect(await prepareLayoutForGuestEnquiry("A")).toBe(true);
+  });
+});
+
+// Production refused the Grand Hall's plan (an 800×533 PNG over the route's
+// cap) and nobody saw it: the send went on and said nothing.
+describe("a plan image that did not reach the layout", () => {
+  it("is reported by the API's status alone, and the enquiry still goes", async () => {
+    await open("A");
+    configApi.updatePublicThumbnail.mockRejectedValueOnce(
+      new ApiError(400, "Must be a PNG or JPEG data URL whose bytes match its type", "VALIDATION_ERROR"),
+    );
+    expect(await prepareLayoutForGuestEnquiry("A")).toBe(true);
+    expect(reports.reportFailure).toHaveBeenCalledWith("plan-image-failed", { stage: "upload", status: 400 });
+  });
+
+  it("is reported as a network failure when the upload never reached the API", async () => {
+    await open("A");
+    configApi.updatePublicThumbnail.mockRejectedValueOnce(new ApiError(0, "Network error — check your connection", "NETWORK_ERROR"));
+    expect(await prepareLayoutForGuestEnquiry("A")).toBe(true);
+    expect(reports.reportFailure).toHaveBeenCalledWith("plan-image-failed", { stage: "upload", status: "network" });
+  });
+
+  it("is reported as an unreadable reply when the API answered in a shape the client cannot read", async () => {
+    await open("A");
+    configApi.updatePublicThumbnail.mockRejectedValueOnce(
+      new ApiError(0, "Server returned an unexpected response shape for POST /public/configurations/A/thumbnail", "RESPONSE_VALIDATION_ERROR"),
+    );
+    expect(await prepareLayoutForGuestEnquiry("A")).toBe(true);
+    expect(reports.reportFailure).toHaveBeenCalledWith("plan-image-failed", { stage: "upload", status: "response-shape" });
+  });
+
+  it("is reported when there was no image to attach, and nothing is uploaded", async () => {
+    await open("A");
+    captureApi.captureOrthographic.mockResolvedValueOnce(null);
+    expect(await prepareLayoutForGuestEnquiry("A")).toBe(true);
+    expect(configApi.updatePublicThumbnail).not.toHaveBeenCalled();
+    expect(reports.reportFailure).toHaveBeenCalledWith("plan-image-failed", { stage: "capture" });
+  });
+
+  it("is reported even when the layout changed while the API refused it, and the send stops", async () => {
+    await open("A");
+    const upload = deferred<Awaited<ReturnType<typeof configApi.updatePublicThumbnail>>>();
+    const started = deferred<undefined>();
+    configApi.updatePublicThumbnail.mockImplementationOnce(() => { started.resolve(undefined); return upload.promise; });
+    const preparing = prepareLayoutForGuestEnquiry("A");
+    await started.promise;
+    await open("B");
+    upload.reject(new ApiError(400, "Must be a PNG or JPEG data URL whose bytes match its type", "VALIDATION_ERROR"));
+    expect(await preparing).toBe(false);
+    expect(reports.reportFailure).toHaveBeenCalledWith("plan-image-failed", { stage: "upload", status: 400 });
+  });
+
+  it("is not reported when the plan arrives", async () => {
+    await open("A");
+    expect(await prepareLayoutForGuestEnquiry("A")).toBe(true);
+    expect(configApi.updatePublicThumbnail).toHaveBeenCalledWith("A", "data:image/png;base64,layout-A");
+    expect(reports.reportFailure).not.toHaveBeenCalled();
   });
 });

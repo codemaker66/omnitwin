@@ -114,11 +114,33 @@ export interface HallSky {
   };
   readonly palette: SkyPalette;
   readonly mood: HallMoodSpec;
+  /**
+   * Where the city's night light comes from, a horizontal unit vector in the
+   * hall's frame: the moon once it stands about 5° up, otherwise George
+   * Square, 342° true and some 190 m away, the densest cluster of the
+   * council's street lamps round the hall.
+   */
+  readonly nightGlow: readonly [number, number, number];
 }
 
 /** Moonlight: cool, and far fainter than sun, lifted for the dark-adapted eye. */
 const MOON_COLOR: Rgb = [0.62, 0.72, 0.9];
 const MOON_STRENGTH = 0.07;
+
+/** True bearing of George Square from the hall, degrees. */
+const SQUARE_BEARING = 342;
+
+/** The night glow's direction: George Square, giving way to the moon as it rises from 3° to 7°. */
+export function nightGlowDirection(moonAzimuth: number, moonAltitude: number): [number, number, number] {
+  const square = hallDirection(SQUARE_BEARING, 0, [0, 0, 0]);
+  const moon = hallDirection(moonAzimuth, 0, [0, 0, 0]);
+  const t = smoothstep(3, 7, moonAltitude);
+  const x = square[0] + (moon[0] - square[0]) * t;
+  const z = square[2] + (moon[2] - square[2]) * t;
+  const length = Math.hypot(x, z);
+  // Opposite bearings pass through zero half-way: keep the square's then.
+  return length < 1e-6 ? square : [x / length, 0, z / length];
+}
 
 /** Where the sun and moon are and how the hall is lit at epoch milliseconds `at`. */
 export function hallSkyAt(at: number): HallSky {
@@ -153,5 +175,6 @@ export function hallSkyAt(at: number): HallSky {
     },
     palette: skyPalette(sun.trueAltitude),
     mood: hallMoodForSun(sun.trueAltitude),
+    nightGlow: nightGlowDirection(moon.azimuth, moon.altitude),
   };
 }

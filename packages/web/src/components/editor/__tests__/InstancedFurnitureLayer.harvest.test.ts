@@ -219,7 +219,7 @@ describe("imported furniture harvest", () => {
       .toEqual([metalnessMap, second.metalnessMap]);
     expect(variant.groups.reduce((sum, group) => sum + (group.geometry.index?.count ?? 0), 0)).toBe(36);
     expect([...variant.shadowsByKey.values()]).toEqual([
-      { castShadow: true, receiveShadow: true }, { castShadow: true, receiveShadow: true },
+      { castShadow: true, receiveShadow: true, layers: 1 }, { castShadow: true, receiveShadow: true, layers: 1 },
     ]);
     const cachedGeometryDispose = vi.spyOn(geometry, "dispose");
     const cachedMaterialDispose = vi.spyOn(first, "dispose");

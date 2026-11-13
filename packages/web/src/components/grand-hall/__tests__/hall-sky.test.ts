@@ -2,7 +2,29 @@ import { describe, expect, it } from "vitest";
 import { Color } from "three";
 import { HALL_MOODS } from "../hall-mood.js";
 import { HALL_WINDOW_BEARING, compassPoint, hallBearing, hallDirection } from "../hall-site.js";
-import { hallMoodForSun, hallSkyAt } from "../hall-sky.js";
+import { hallMoodForSun, hallSkyAt, nightGlowDirection } from "../hall-sky.js";
+
+describe("where the city's night light comes from", () => {
+  it("is George Square, 342° true, until the moon stands some 5° up, then the moon", () => {
+    const square = nightGlowDirection(120, -10);
+    expect(hallBearing(square[0], square[2])).toBeCloseTo(342, 6);
+    expect(square[1]).toBe(0);
+    const moon = nightGlowDirection(200, 12);
+    expect(hallBearing(moon[0], moon[2])).toBeCloseTo(200, 6);
+    // Half-way through the change, a unit vector between the two.
+    const between = nightGlowDirection(30, 5);
+    expect(Math.hypot(between[0], between[2])).toBeCloseTo(1, 9);
+    const bearing = hallBearing(between[0], between[2]);
+    expect(bearing > 342 || bearing < 30).toBe(true);
+    // Opposite the square, half-way, it keeps the square's.
+    expect(nightGlowDirection(162, 5)).toEqual(square);
+  });
+
+  it("is published with the sky", () => {
+    const sky = hallSkyAt(Date.UTC(2026, 9, 18, 20, 30));
+    expect(Math.hypot(sky.nightGlow[0], sky.nightGlow[2])).toBeCloseTo(1, 9);
+  });
+});
 
 describe("the hall's bearings", () => {
   it("points the window wall's outward normal (−z) to 101.1° true, and +x along Glassford Street", () => {

@@ -354,11 +354,11 @@ test.describe("Grand Hall public blank draft", () => {
 
     const inspector = page.getByRole("complementary", { name: "Furniture inspector" });
     await expect(inspector).toBeVisible();
-    for (const label of ["Tables", "Placed chairs", "Objects"]) {
-      await expect(inspector.locator("dl > div").filter({ has: page.getByText(label, { exact: true }) })
-        .locator("dd")).toHaveText("0");
-    }
-    await expect(inspector.getByRole("button", { name: "Add furniture", exact: true })).toBeEnabled();
+    // An empty floor says once where to start, with no zeros (QoL A-15).
+    await expect(inspector.getByText("Nothing on the floor yet. Add a table, or lay out for your guests.")).toBeVisible();
+    await expect(inspector.locator("dl")).toHaveCount(0);
+    await expect(inspector.getByRole("button", { name: "Add a table", exact: true })).toBeEnabled();
+    await expect(inspector.getByRole("button", { name: "Lay out tables and seats for your guests", exact: true })).toBeEnabled();
     await expect(page.getByTestId("save-send-panel")).not.toBeAttached();
   });
 });
@@ -444,6 +444,9 @@ const placedObjectsTest = test.extend({ launchOptions: captureLaunchOptions });
 
 placedObjectsTest.describe("Editor with placed objects", () => {
   placedObjectsTest.beforeEach(async ({ page }) => {
+    // The planner at rest: the Grand Assembly, which plays a furnished Grand Hall layout the first time it opens
+    // on a device with the chrome stepped back (grand-assembly.spec.ts), is turned off on this one (flag.ts).
+    await page.addInitScript(() => { window.localStorage.setItem("venviewer.assembly", "off"); });
     await mockConfigLoad(page, MOCK_CONFIG_WITH_OBJECTS);
   });
 
@@ -455,10 +458,10 @@ placedObjectsTest.describe("Editor with placed objects", () => {
   // close only by the Escape under test; then fail them, as before.
   const grandHallTile = (url: URL): boolean => url.pathname.startsWith("/splats/trades-hall/grand-hall/");
 
-  async function openPlacedLayout(page: Page): Promise<void> {
+  async function openPlacedLayout(page: Page, search = ""): Promise<void> {
     const heldTiles: Route[] = [];
     await page.route(grandHallTile, (route) => { heldTiles.push(route); });
-    await page.goto(`/plan/${CONFIG_ID}`);
+    await page.goto(`/plan/${CONFIG_ID}${search}`);
     await waitForPlannerReady(page);
     // The welcome explicitly supports native Escape to enter while the room loads.
     const welcome = page.getByRole("dialog", { name: "Opening the Grand Hall", exact: true });
@@ -494,7 +497,9 @@ placedObjectsTest.describe("Editor with placed objects", () => {
   placedObjectsTest("Layout evidence keeps long recommendation copy inside the panel", async ({ page }) => {
     await page.setViewportSize({ width: 1493, height: 1053 });
     await mockConfigLoad(page, { ...MOCK_CONFIG_EMPTY, objects: mockSeatedRoundTables(18, 8) });
-    await openPlacedLayout(page);
+    // The Evidence panel's layout is under test, not who may open it: with
+    // lensesByRole on, an anonymous visitor sees four lenses, Evidence not one.
+    await openPlacedLayout(page, "?pf=-lensesByRole");
     await page.getByRole("navigation", { name: "Planner lenses" })
       .getByRole("button", { name: "Evidence", exact: true }).click();
     const panel = page.getByTestId("evidence-lens-panel");
@@ -504,10 +509,11 @@ placedObjectsTest.describe("Editor with placed objects", () => {
     const copy = await recommendations.allTextContents();
     expect(copy.some((text) => text.length > 100)).toBe(true);
     await expectPanelCopyContained(panel, ['[data-testid^="evidence-check-"] .lens-panel__row-meta', ".lens-panel__footer"]);
-    await expect(panel.locator(".lens-panel__footer")).toContainText("human review");
+    // No pass chip and no foreign code: the footer names whose document decides.
+    await expect(panel.locator(".lens-panel__footer")).toContainText("fire risk assessment");
   });
 
-  placedObjectsTest("Plan navigation and capacity controls clear the event schedule and command deck", async ({ page }, testInfo) => {
+  placedObjectsTest("Plan navigation and capacity controls clear the view mode and command deck", async ({ page }, testInfo) => {
     await page.setViewportSize({ width: 1493, height: 1053 });
     await mockConfigLoad(page, { ...MOCK_CONFIG_EMPTY, objects: mockSeatedRoundTables(18, 8) });
     await openPlacedLayout(page);
@@ -520,9 +526,10 @@ placedObjectsTest.describe("Editor with placed objects", () => {
     await expect(minimap.getByRole("complementary", { name: "Plan view minimap" })).toBeVisible();
     await minimap.scrollIntoViewIfNeeded();
     const viewMode = page.getByRole("group", { name: "View mode", exact: true });
-    const schedule = page.getByRole("contentinfo", { name: "Your event schedule" });
+    // A signed-out visitor with no event link has no schedule card to clear.
+    await expect(page.getByRole("contentinfo", { name: "Your event schedule" })).toHaveCount(0);
     const commandDeck = page.getByRole("region", { name: "Planner command deck" });
-    await expectClearPairs([[tools, viewMode], [tools, schedule], [tools, commandDeck]]);
+    await expectClearPairs([[tools, viewMode], [tools, commandDeck]]);
     await tools.getByText("Recorded evidence", { exact: true }).click();
     const truth = page.getByTestId("cockpit-truth-rail");
     await truth.scrollIntoViewIfNeeded();
@@ -542,9 +549,9 @@ placedObjectsTest.describe("Editor with placed objects", () => {
     await expect(capacity).toBeVisible();
     const seats = capacity.locator(".lens-panel__metric").filter({ hasText: "Seats placed" });
     await expect(seats.locator(".lens-panel__metric-value")).toHaveText("144");
-    await expectClearPairs([[capacity, commandDeck], [capacity, schedule], [capacity, viewMode]]);
+    await expectClearPairs([[capacity, commandDeck], [capacity, viewMode]]);
     await expectPanelCopyContained(capacity, [".lens-panel__metric", ".lens-panel__footer"]);
-    await expect(capacity.locator(".lens-panel__footer")).toContainText("Not occupancy or fire limits");
+    await expect(capacity.locator(".lens-panel__footer")).toContainText("confirmed by the events team");
     await testInfo.attach("capacity-controls-clear", {
       body: await page.screenshot({ path: testInfo.outputPath("capacity-controls-clear.png") }),
       contentType: "image/png",

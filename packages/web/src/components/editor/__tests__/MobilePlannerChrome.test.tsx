@@ -106,10 +106,13 @@ describe("mobile planner chrome", () => {
     expect(container.querySelector("textarea")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.getByTestId("mobile-object-sheet")).toBeTruthy();
-    expect(container.querySelector("#mobile-object-notes textarea")?.getAttribute("aria-label")).toBe("Planner note");
-    expect(container.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe("Keep this table draft after cancel");
+    const field = screen.getByRole("textbox", { name: "Note for the hallkeeper", hidden: true });
+    expect(field.closest("#mobile-object-notes")).not.toBeNull();
+    expect((field as HTMLTextAreaElement).value).toBe("Keep this table draft after cancel");
     expect([...useSelectionStore.getState().selectedIds]).toEqual(selection);
-    expect(useEditorStore.getState().objects.every((item) => item.notes === "")).toBe(true);
+    fireEvent.blur(field);
+    const tableId = usePlacementStore.getState().placedItems.at(-1)?.id;
+    expect(useEditorStore.getState().objects.find((item) => item.id === tableId)?.notes).toBe("Keep this table draft after cancel");
   });
 
   it("keeps the nine-object group labelled as its table with eight placed chairs and notes inside the action sheet", () => {
@@ -117,7 +120,7 @@ describe("mobile planner chrome", () => {
     const sheet = screen.getByTestId("mobile-object-sheet");
     expect(within(sheet).getByText(getCatalogueItemBySlug("round-table-6ft")?.name ?? "")).toBeTruthy();
     expect(within(sheet).getByText("8 chairs placed · 9 objects selected")).toBeTruthy();
-    const note = screen.getByRole("region", { name: "Selected object dressing and note", hidden: true });
+    const note = screen.getByRole("region", { name: "Dressing and note for the hallkeeper", hidden: true });
     expect(note.closest("#mobile-object-notes")).not.toBeNull();
     expect(note.style.position).toBe("static");
     expect(container.querySelectorAll("textarea")).toHaveLength(1);
@@ -131,7 +134,7 @@ describe("mobile planner chrome", () => {
     const input = container.querySelector("textarea");
     if (input === null) throw new Error("Missing note input");
     fireEvent.change(input, { target: { value: "Table for the speakers" } });
-    fireEvent.click(screen.getByText("Save Note"));
+    fireEvent.blur(input);
     const tableId = usePlacementStore.getState().placedItems.at(-1)?.id;
     expect(useEditorStore.getState().objects.find((item) => item.id === tableId)?.notes).toBe("Table for the speakers");
     expect(useEditorStore.getState().objects.filter((item) => item.id !== tableId).every((item) => item.notes === "")).toBe(true);
@@ -146,7 +149,9 @@ describe("mobile planner chrome", () => {
     fireEvent.change(note, { target: { value: "Keep the table draft" } });
     rerender(<Fixture view="2d" />);
     expect(container.querySelector("textarea")?.value).toBe("Keep the table draft");
-    act(() => { useCockpitStore.getState().setMode("flow"); });
+    // Guests, which every viewer is offered, so the lens really changes before the note is checked.
+    act(() => { useCockpitStore.getState().setMode("guests"); });
+    expect(useCockpitStore.getState().activeMode).toBe("guests");
     rerender(<Fixture />);
     expect(container.querySelector("textarea")?.value).toBe("Keep the table draft");
     act(() => { useLayoutTimelinePreviewStore.getState().showPending("Reading phase"); });
@@ -154,13 +159,16 @@ describe("mobile planner chrome", () => {
     expect(screen.queryByTestId("mobile-object-sheet")).toBeNull();
     act(() => { useLayoutTimelinePreviewStore.getState().clear(); });
     expect(container.querySelector("textarea")?.value).toBe("Keep the table draft");
-    expect(useEditorStore.getState().objects.every((item) => item.notes === "")).toBe(true);
+    // Never lost: the draft is written into its table once the preview ends.
+    const tableId = usePlacementStore.getState().placedItems.at(-1)?.id;
+    expect(useEditorStore.getState().objects.find((item) => item.id === tableId)?.notes).toBe("Keep the table draft");
   });
 
   it.each([
     { label: "fresh narrow phone", narrow: true, coarse: false },
     { label: "fresh wide coarse-pointer screen", narrow: false, coarse: true },
-  ])("opens Flow from More on a $label without changing the plan or camera mode", ({ narrow, coarse }) => {
+  ])("opens Guests from More on a $label without changing the plan or camera mode", ({ narrow, coarse }) => {
+    // Guests is a lens every viewer is offered (Blake's decision 5); Flow is the venue team's.
     media.narrow = narrow; media.coarse = coarse;
     useSelectionStore.getState().clearSelection();
     useCockpitStore.getState().setWalkMode(true);
@@ -175,10 +183,10 @@ describe("mobile planner chrome", () => {
     expect(more.getAttribute("aria-expanded")).toBe("true");
     const lenses = screen.getByRole("group", { name: "Planner lenses" });
     expect(within(lenses).getByRole("button", { name: "Design" }).getAttribute("aria-pressed")).toBe("true");
-    const flow = within(lenses).getByRole("button", { name: "Flow" });
-    expect(flow.getAttribute("aria-pressed")).toBe("false");
-    fireEvent.click(flow);
-    expect(useCockpitStore.getState().activeMode).toBe("flow");
+    const guests = within(lenses).getByRole("button", { name: "Guests" });
+    expect(guests.getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(guests);
+    expect(useCockpitStore.getState().activeMode).toBe("guests");
     expect(useCockpitStore.getState().walkMode).toBe(true);
     expect(useCockpitStore.getState().layerMode).toBe("splat");
     expect(usePlacementStore.getState().placedItems).toBe(placements);
@@ -189,8 +197,9 @@ describe("mobile planner chrome", () => {
     expect(more.getAttribute("aria-expanded")).toBe("false");
     expect(document.activeElement).toBe(more);
     fireEvent.click(more);
-    expect(screen.getByRole("button", { name: "Flow" }).getAttribute("aria-pressed")).toBe("true");
-    expect(screen.getByRole("button", { name: "Design" }).getAttribute("aria-pressed")).toBe("false");
+    const reopened = screen.getByRole("group", { name: "Planner lenses" });
+    expect(within(reopened).getByRole("button", { name: "Guests" }).getAttribute("aria-pressed")).toBe("true");
+    expect(within(reopened).getByRole("button", { name: "Design" }).getAttribute("aria-pressed")).toBe("false");
   });
 
   it("closes the lens choices with Escape and restores More focus without choosing a lens", () => {
@@ -198,9 +207,9 @@ describe("mobile planner chrome", () => {
     render(<Fixture />);
     const more = screen.getByRole("button", { name: "More" });
     fireEvent.click(more);
-    const flow = screen.getByRole("button", { name: "Flow" });
-    flow.focus();
-    fireEvent.keyDown(flow, { key: "Escape" });
+    const guests = within(screen.getByRole("group", { name: "Planner lenses" })).getByRole("button", { name: "Guests" });
+    guests.focus();
+    fireEvent.keyDown(guests, { key: "Escape" });
     expect(screen.queryByTestId("mobile-more-sheet")).toBeNull();
     expect(document.activeElement).toBe(more);
     expect(useCockpitStore.getState().activeMode).toBe("design");
@@ -212,7 +221,7 @@ describe("mobile planner chrome", () => {
     fireEvent.click(screen.getByRole("button", { name: "Draw" }));
     expect(useMarkupStore.getState().active).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "More" }));
-    fireEvent.click(screen.getByRole("button", { name: "Flow" }));
+    fireEvent.click(within(screen.getByRole("group", { name: "Planner lenses" })).getByRole("button", { name: "Guests" }));
     expect(useMarkupStore.getState().active).toBe(true);
     expect(screen.getByRole("button", { name: "Draw" }).getAttribute("aria-pressed")).toBe("true");
   });

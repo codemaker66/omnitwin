@@ -37,3 +37,32 @@ Where Emil's rules touch existing project feedback, **project feedback wins**:
   exempts from the 300ms budget.
 - Springs-over-tweens for object animation (memory: `feedback_spring_physics.md`)
   aligns with Emil's spring guidance — no conflict.
+
+## Neon skills (vendored)
+
+Source: https://github.com/neondatabase/agent-skills
+Installed at commit `51c7d594` (2026-10-16) with
+`npx neon@latest skills -s neon -s neon-postgres -y`; content hashes are in the root
+`skills-lock.json`. License: Apache-2.0 — see `LICENSE-neon-agent-skills`.
+
+| Skill | What it does | Invocation |
+| --- | --- | --- |
+| `neon` | Neon overview: CLI and MCP setup, branch-first workflow, Auth, object storage, Functions, AI Gateway, Realtime | Auto-discoverable |
+| `neon-postgres` | Postgres on Neon: pooled vs direct connections, migrations, branching, autoscaling, scale-to-zero, restore, search | Auto-discoverable |
+
+To update: rerun the install command from the repo root. It needs Node.js 22.20.0 or
+newer, above the repo's 22.18.0 floor; with an older system Node, run the installer
+under a temporary newer one (`npx -p node@22` and call `neon/dist/cli.js` with it).
+
+### Project database rules
+
+Where the Neon skills give general advice, **root `AGENTS.md` and project feedback win**:
+
+- Never point tests or experiments at an ambient production `DATABASE_URL`. Database
+  tests use an explicit disposable target.
+- Every running compute, including one on a new branch, spends the plan's compute
+  hours. Production ran out of compute on 18 Oct 2026, so treat new branches and
+  computes as a compute-budget decision.
+- Auth stays on Clerk and data access on Drizzle (`pg` and `@neondatabase/serverless`).
+  Adopting Neon Auth, Functions, object storage or the AI Gateway is new product
+  scope, not a default.

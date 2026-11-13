@@ -31,6 +31,8 @@ import { publicEnquiryRoutes } from "../routes/public-enquiries.js";
 //
 // It skips unless VENVIEWER_PUBLIC_ENQUIRY_TEST_DATABASE_URL names its own
 // explicit disposable loopback database on the platform test cluster's port.
+// The platform gate (scripts/run-platform-postgres-tests.ts) creates that
+// database and sets the variable, and fails the run if this file skips.
 // It never reads DATABASE_URL, never loads .env, and creates and drops its own
 // schema, so it cannot reach an ambient or production database by accident.
 // ---------------------------------------------------------------------------
@@ -89,7 +91,9 @@ describe.skipIf(databaseUrl === undefined)("POST /public/enquiries on isolated P
   beforeEach(async () => {
     sendEmailAsyncSpy.mockClear();
     notifyCommercialTeamSpy.mockClear();
-    await pool.query("TRUNCATE guest_leads, enquiry_status_history, enquiries, configurations, spaces, users, venues CASCADE");
+    await pool.query(
+      "TRUNCATE guest_leads, enquiry_status_history, contact_points, account_memberships, contacts, client_accounts, enquiries, configurations, spaces, users, venues CASCADE",
+    );
     await pool.query(
       "INSERT INTO venues(id, name, slug, address) VALUES ($1, 'Trades Hall fixture', $2, '85 Glassford Street')",
       [VENUE, TRADES_HALL_ENQUIRY_VENUE_SLUG],
@@ -209,9 +213,11 @@ describe.skipIf(databaseUrl === undefined)("POST /public/enquiries on isolated P
 
     const enquiries = await pool.query("SELECT id FROM enquiries");
     expect(enquiries.rowCount).toBe(2);
+    // A lead is written once and never overwritten: it keeps what the first
+    // enquiry said (T-665).
     const leads = await pool.query<{ phone: string | null }>("SELECT phone FROM guest_leads");
     expect(leads.rowCount).toBe(1);
-    expect(leads.rows[0]?.phone).toBe("0141 999 9999");
+    expect(leads.rows[0]?.phone).toBe("0141 000 0000");
   });
 
   it("404s the asset slug, and stores nothing when it does", async () => {
@@ -254,5 +260,72 @@ describe.skipIf(databaseUrl === undefined)("POST /public/enquiries on isolated P
     expect(notifyCommercialTeamSpy.mock.calls[0]?.[1]).toMatchObject({
       venueId: VENUE, actionPath: "/dashboard?view=enquiries",
     });
+  });
+
+  /** The new-enquiry notices the route asked to send, as [recipient, key], in recipient order. */
+  function enquiryNotices(): [string, string][] {
+    return sendEmailAsyncSpy.mock.calls
+      .map((call) => call as [{ to: string }, { idempotencyKey: string }])
+      .filter(([, options]) => options.idempotencyKey.startsWith("enquiry-new:"))
+      .map(([message, options]): [string, string] => [message.to, options.idempotencyKey])
+      .sort(([a], [b]) => a.localeCompare(b));
+  }
+
+  // Blake, 18 October 2026: the people who sell hear of a web lead the moment
+  // it lands. Hallkeepers keep the email they had; office staff and admins
+  // keep the in-app notice only.
+  it("emails the venue's sales and manager accounts as well as its hallkeeper, once each, and nobody else", async () => {
+    const SALES = randomUUID();
+    const MANAGER = randomUUID();
+    await pool.query(
+      `INSERT INTO users(id, email, name, role, venue_id) VALUES
+        ($1, 'sales@example.test', 'Fixture seller', 'sales', $3),
+        ($2, 'manager@example.test', 'Fixture manager', 'manager', $3),
+        ($4, 'staff@example.test', 'Fixture office', 'staff', $3),
+        ($5, 'admin@example.test', 'Fixture admin', 'admin', $3),
+        ($6, 'client@example.test', 'Fixture client', 'client', $3)`,
+      [SALES, MANAGER, VENUE, randomUUID(), randomUUID(), randomUUID()],
+    );
+    // A seller at another venue never hears of this venue's leads.
+    const OTHER_VENUE = randomUUID();
+    await pool.query("INSERT INTO venues(id, name, slug, address) VALUES ($1, 'Elsewhere', 'elsewhere', 'Test only')", [OTHER_VENUE]);
+    await pool.query("INSERT INTO users(id, email, name, role, venue_id) VALUES ($1, 'other-sales@example.test', 'Other seller', 'sales', $2)", [randomUUID(), OTHER_VENUE]);
+
+    const response = await server.inject({ method: "POST", url: "/public/enquiries", payload: payload() });
+    expect(response.statusCode, response.body).toBe(201);
+    const { enquiryId } = (JSON.parse(response.body) as { data: { enquiryId: string } }).data;
+
+    expect(enquiryNotices()).toEqual([
+      ["hallkeeper@example.test", `enquiry-new:${enquiryId}:${HALLKEEPER}`],
+      ["manager@example.test", `enquiry-new:${enquiryId}:${MANAGER}`],
+      ["sales@example.test", `enquiry-new:${enquiryId}:${SALES}`],
+    ]);
+  });
+
+  it("uses the fallback address only when the venue has no seller, manager or hallkeeper to tell", async () => {
+    const saved = process.env["ENQUIRY_FALLBACK_EMAIL"];
+    process.env["ENQUIRY_FALLBACK_EMAIL"] = "events@example.test";
+    try {
+      // A seller and no hallkeeper: the seller, not the fallback.
+      await pool.query("DELETE FROM users");
+      const SALES = randomUUID();
+      await pool.query("INSERT INTO users(id, email, name, role, venue_id) VALUES ($1, 'sales@example.test', 'Fixture seller', 'sales', $2)", [SALES, VENUE]);
+      const first = await server.inject({ method: "POST", url: "/public/enquiries", payload: payload() });
+      expect(first.statusCode, first.body).toBe(201);
+      const firstId = (JSON.parse(first.body) as { data: { enquiryId: string } }).data.enquiryId;
+      expect(enquiryNotices()).toEqual([["sales@example.test", `enquiry-new:${firstId}:${SALES}`]]);
+
+      // Only office staff: nobody the email goes to, so the fallback.
+      sendEmailAsyncSpy.mockClear();
+      await pool.query("DELETE FROM users");
+      await pool.query("INSERT INTO users(id, email, name, role, venue_id) VALUES ($1, 'staff@example.test', 'Fixture office', 'staff', $2)", [randomUUID(), VENUE]);
+      const second = await server.inject({ method: "POST", url: "/public/enquiries", payload: payload({ email: "second@example.test" }) });
+      expect(second.statusCode, second.body).toBe(201);
+      const secondId = (JSON.parse(second.body) as { data: { enquiryId: string } }).data.enquiryId;
+      expect(enquiryNotices()).toEqual([["events@example.test", `enquiry-new:${secondId}:fallback`]]);
+    } finally {
+      if (saved === undefined) delete process.env["ENQUIRY_FALLBACK_EMAIL"];
+      else process.env["ENQUIRY_FALLBACK_EMAIL"] = saved;
+    }
   });
 });

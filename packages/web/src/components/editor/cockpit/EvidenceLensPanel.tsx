@@ -1,46 +1,75 @@
 import { useMemo, type ReactElement } from "react";
-import { ShieldCheck } from "lucide-react";
+import { ClipboardList } from "lucide-react";
 import { ActivityIndicator, ActivityStatus } from "../../shared/Activity.js";
 import { LensPanel, LensPanelSection } from "./LensPanel.js";
+import { NotRecorded } from "./NotRecorded.js";
 import { usePlacementStore } from "../../../stores/placement-store.js";
 import { useRoomDimensionsStore } from "../../../stores/room-dimensions-store.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
 import { useEditorStore } from "../../../stores/editor-store.js";
 import { RENDER_SCALE } from "../../../constants/scale.js";
-import { buildEvidencePack, type EvidenceStatus } from "../../../lib/cockpit-evidence-model.js";
+import { buildEvidencePack, type EvidenceCheck } from "../../../lib/cockpit-evidence-model.js";
 import { changeHistoryRows } from "../../../lib/change-history-model.js";
 import { useChangeHistory } from "../../../hooks/use-change-history.js";
+import { usePlannerTruth, type PlannerTruth } from "../../../hooks/use-planner-truth.js";
 import { TimeMachinePanel } from "../TimeMachinePanel.js";
 
 // ---------------------------------------------------------------------------
-// EvidenceLensPanel — the Layout Evidence Pack (Epic 0 Evidence lens panel).
+// EvidenceLensPanel — the Layout Evidence Pack (Evidence lens panel).
 //
-// A purpose-fit check list built live from the layout (seating provision, room
-// comfort, egress reference), each with an honest status. Composes the same
-// Guests capacity model + egress engine the rest of the app uses. SAFE: every
-// figure is a planning-grade estimate for human review — the egress check states
-// what guidance INDICATES for the headcount, never a verification of the room's
-// real exits, and nothing here is a fire/occupancy/compliance determination.
+// Each row says what is recorded about the layout, who stated it and when,
+// and names the person to ask for what is not. There is no "Pass" chip: a
+// tick is only honest for something a named person checked. Capacity reads
+// the venue's published figure; escape routes and the room's maximum belong
+// to the venue's fire risk assessment, so they show "Not recorded" with the
+// hallkeeper to ask, never another country's code (redteam fix-first 2).
 // ---------------------------------------------------------------------------
 
-const STATUS_TONE: Record<EvidenceStatus, string> = {
-  pass: "ok",
-  attention: "attention",
-  review: "review",
-  info: "info",
-};
-
-const STATUS_LABEL: Record<EvidenceStatus, string> = {
-  pass: "Pass",
-  attention: "Attention",
-  review: "Review",
-  info: "Info",
-};
+function EvidenceRow({ check, truth }: { readonly check: EvidenceCheck; readonly truth: PlannerTruth }): ReactElement {
+  if (check.status === "not-recorded" && check.ask !== null) {
+    return (
+      <NotRecorded
+        label={check.label}
+        detail={check.detail}
+        ask={truth.ask(check.ask)}
+        testId={`evidence-check-${check.id}`}
+      />
+    );
+  }
+  if (check.status === "reading") {
+    return (
+      <div className="lens-panel__row lens-panel__row--info" data-testid={`evidence-check-${check.id}`}>
+        <span className="lens-panel__row-title">{check.label}</span>
+        <ActivityStatus className="lens-panel__row-meta">Reading the venue&apos;s published figures…</ActivityStatus>
+      </div>
+    );
+  }
+  const review = check.status === "review";
+  const ask = check.ask !== null ? truth.ask(check.ask) : null;
+  return (
+    <div className={`lens-panel__row lens-panel__row--${review ? "review" : "info"}`} data-testid={`evidence-check-${check.id}`}>
+      <div className="lens-panel__row-head">
+        <span className="lens-panel__row-title">{check.label}</span>
+        <span className={`lens-panel__chip lens-panel__chip--${review ? "review" : "info"}`} data-testid={`evidence-status-${check.id}`}>
+          {review ? "Review" : "Noted"}
+        </span>
+      </div>
+      <div className="lens-panel__row-meta">{check.detail}</div>
+      {check.source !== null && <p className="lens-panel__stated" data-testid={`evidence-source-${check.id}`}>{check.source}</p>}
+      {ask !== null && (ask.href !== null ? (
+        <a className="lens-panel__ask" href={ask.href} data-testid={`evidence-ask-${check.id}`}>{ask.label}</a>
+      ) : (
+        <span className="lens-panel__unrecorded-hint">{ask.fallback}</span>
+      ))}
+    </div>
+  );
+}
 
 export function EvidenceLensPanel(): ReactElement {
   const placedItems = usePlacementStore((state) => state.placedItems);
   const dimensions = useRoomDimensionsStore((state) => state.dimensions);
   const plannedGuestCount = useCockpitStore((state) => state.plannedGuestCount);
+  const truth = usePlannerTruth();
 
   const pack = useMemo(
     () => buildEvidencePack({
@@ -48,48 +77,34 @@ export function EvidenceLensPanel(): ReactElement {
       roomWidthM: dimensions.width / RENDER_SCALE,
       roomLengthM: dimensions.length / RENDER_SCALE,
       guestCount: plannedGuestCount,
+      published: truth.published,
     }),
-    [placedItems, dimensions, plannedGuestCount],
+    [placedItems, dimensions, plannedGuestCount, truth.published],
   );
 
-  const needsAttention = pack.reviewCount + pack.attentionCount;
-  const source = needsAttention === 0 ? "Pack clear" : `${String(needsAttention)} to review`;
+  const source = pack.reviewCount > 0
+    ? `${String(pack.reviewCount)} to review`
+    : pack.notRecordedCount > 0 ? `${String(pack.notRecordedCount)} not recorded` : "Noted";
 
   return (
     <LensPanel
       title="Layout evidence"
-      icon={<ShieldCheck size={18} />}
+      icon={<ClipboardList size={18} />}
       source={source}
       testId="evidence-lens-panel"
-      footer="Planning-grade checks for human review — purpose-fit draft, not a fire, occupancy, or compliance determination. The egress reference is what guidance indicates for the headcount; confirm the room's real exits with the venue."
+      footer="Each row says what is recorded and who stated it. The venue's fire risk assessment sets each room's maximum and escape routes."
     >
-      <LensPanelSection label="Purpose-fit checks">
+      <LensPanelSection label="What is recorded">
         <div className="lens-panel__chips" data-testid="evidence-summary">
-          {pack.passCount > 0 && (
-            <span className="lens-panel__chip lens-panel__chip--ok"><strong>{pack.passCount}</strong> pass</span>
-          )}
-          {pack.attentionCount > 0 && (
-            <span className="lens-panel__chip lens-panel__chip--attention"><strong>{pack.attentionCount}</strong> attention</span>
-          )}
           {pack.reviewCount > 0 && (
-            <span className="lens-panel__chip lens-panel__chip--review"><strong>{pack.reviewCount}</strong> review</span>
+            <span className="lens-panel__chip lens-panel__chip--review"><strong>{pack.reviewCount}</strong> to review</span>
           )}
-          {needsAttention === 0 && pack.passCount === 0 && (
-            <span className="lens-panel__chip lens-panel__chip--info">Add a guest count to assess</span>
+          {pack.notRecordedCount > 0 && (
+            <span className="lens-panel__chip lens-panel__chip--info"><strong>{pack.notRecordedCount}</strong> not recorded</span>
           )}
         </div>
 
-        {pack.checks.map((check) => (
-          <div key={check.id} className={`lens-panel__row lens-panel__row--${check.status === "pass" ? "pass" : check.status}`} data-testid={`evidence-check-${check.id}`}>
-            <div className="lens-panel__row-head">
-              <span className="lens-panel__row-title">{check.label}</span>
-              <span className={`lens-panel__chip lens-panel__chip--${STATUS_TONE[check.status]}`} data-testid={`evidence-status-${check.id}`}>
-                {STATUS_LABEL[check.status]}
-              </span>
-            </div>
-            <div className="lens-panel__row-meta">{check.detail}</div>
-          </div>
-        ))}
+        {pack.checks.map((check) => <EvidenceRow key={check.id} check={check} truth={truth} />)}
       </LensPanelSection>
 
       <ChangeHistorySection />

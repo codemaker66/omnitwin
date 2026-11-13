@@ -163,7 +163,7 @@ export const CaptureFileSignatureSchema = z
   .superRefine((signature, ctx) => {
     if ((signature.format === "e57") !== (signature.e57Header !== null)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["e57Header"],
         message: "e57Header must be present exactly when format is e57",
       });
@@ -186,7 +186,7 @@ export const CaptureFileClassificationSchema = z
       classification.role !== "vendor_control"
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["disposition"],
         message: "only primary captures and vendor controls may be staged",
       });
@@ -198,7 +198,7 @@ export const CaptureInventoryFileSchema = z
   .object({
     relativePath: CaptureRelativePathSchema,
     sizeBytes: z.number().int().nonnegative(),
-    modifiedAtUtc: z.string().datetime({ offset: true }),
+    modifiedAtUtc: z.iso.datetime({ offset: true }),
     extension: z.string().max(32),
     signature: CaptureFileSignatureSchema,
     sha256: CaptureSha256Schema.nullable(),
@@ -208,7 +208,7 @@ export const CaptureInventoryFileSchema = z
   .superRefine((file, ctx) => {
     if (file.classification.disposition === "stage" && file.sha256 === null) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["sha256"],
         message: "staged files require a sha256 digest",
       });
@@ -254,16 +254,16 @@ function validateInventoryTotals(
   ctx: z.RefinementCtx,
 ): void {
   if (inspection.fileCount !== inspection.files.length) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["fileCount"], message: "fileCount mismatch" });
+    ctx.addIssue({ code: "custom", path: ["fileCount"], message: "fileCount mismatch" });
   }
   const totalBytes = inspection.files.reduce((sum, file) => sum + file.sizeBytes, 0);
   if (inspection.totalBytes !== totalBytes) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["totalBytes"], message: "totalBytes mismatch" });
+    ctx.addIssue({ code: "custom", path: ["totalBytes"], message: "totalBytes mismatch" });
   }
   const hashed = inspection.files.filter((file) => file.sha256 !== null).length;
   if (inspection.hashedFileCount !== hashed) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["hashedFileCount"],
       message: "hashedFileCount mismatch",
     });
@@ -289,14 +289,14 @@ function validateCopyPlan(
       file.classification.role !== entry.role
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["copyPlan", index],
         message: "copy plan entry does not match its staged inventory file",
       });
     }
     if (targets.has(entry.targetRelativePath)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["copyPlan", index, "targetRelativePath"],
         message: "copy plan targets must be unique",
       });
@@ -308,7 +308,7 @@ function validateCopyPlan(
   ).length;
   if (stagedCount !== inspection.copyPlan.length) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["copyPlan"],
       message: "copy plan must contain every staged inventory file",
     });
@@ -333,11 +333,11 @@ export const CaptureIntakeInspectionSchema = z
     validateInventoryTotals(inspection, ctx);
     validateCopyPlan(inspection, ctx);
     if (!isStrictlySorted(inspection.files.map((file) => file.relativePath))) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["files"], message: "files must be sorted" });
+      ctx.addIssue({ code: "custom", path: ["files"], message: "files must be sorted" });
     }
     if (!isStrictlySorted(inspection.copyPlan.map((entry) => entry.sourceRelativePath))) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["copyPlan"],
         message: "copy plan must be sorted",
       });
@@ -357,14 +357,14 @@ export const CaptureStageManifestSchema = z
   .strict()
   .superRefine((manifest, ctx) => {
     if (manifest.fileCount !== manifest.files.length) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["fileCount"], message: "fileCount mismatch" });
+      ctx.addIssue({ code: "custom", path: ["fileCount"], message: "fileCount mismatch" });
     }
     const totalBytes = manifest.files.reduce((sum, file) => sum + file.sizeBytes, 0);
     if (manifest.totalBytes !== totalBytes) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["totalBytes"], message: "totalBytes mismatch" });
+      ctx.addIssue({ code: "custom", path: ["totalBytes"], message: "totalBytes mismatch" });
     }
     if (!isStrictlySorted(manifest.files.map((file) => file.sourceRelativePath))) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["files"], message: "files must be sorted" });
+      ctx.addIssue({ code: "custom", path: ["files"], message: "files must be sorted" });
     }
   });
 export type CaptureStageManifest = z.infer<typeof CaptureStageManifestSchema>;

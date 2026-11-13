@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   CameraReferenceComposer,
   clampCameraReferenceDialogPosition,
@@ -8,6 +8,7 @@ import {
 import { useBookmarkStore } from "../../stores/bookmark-store.js";
 import { useCameraReferenceStore, type CameraReferenceDraft } from "../../stores/camera-reference-store.js";
 import { usePlacementStore } from "../../stores/placement-store.js";
+import { registerEscapeLayer } from "../../lib/planner-keys.js";
 
 const BASE_DRAFT: CameraReferenceDraft = {
   screenX: 200,
@@ -181,6 +182,23 @@ describe("CameraReferenceComposer dialog placement", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Add + view" }));
     expect(useBookmarkStore.getState().bookmarks[0]?.reference?.source).toBe("floor");
+  });
+
+  it("discards the draft on Escape, typed in its name field, before the selection steps back", () => {
+    const clearSelection = vi.fn();
+    const stopSelectionLayer = registerEscapeLayer({ kind: "selection", isOpen: () => true, escape: clearSelection });
+    try {
+      openComposer();
+      const name = screen.getByLabelText<HTMLInputElement>("Name");
+      name.focus();
+      fireEvent.keyDown(name, { key: "Escape", code: "Escape" });
+      expect(useCameraReferenceStore.getState().draft).toBeNull();
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(clearSelection).not.toHaveBeenCalled();
+      expect(useBookmarkStore.getState().bookmarks).toHaveLength(0);
+    } finally {
+      stopSelectionLayer();
+    }
   });
 
   it("blocks native browser text drag and drop inside the dialog inputs", () => {

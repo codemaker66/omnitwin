@@ -11,15 +11,17 @@ import { listensForFloorRequests, subscribeRequestsLive } from "../../lib/reques
 import { ActivityStatus } from "../shared/Activity.js";
 import { InventoryExitBoundary, useInventoryExit } from "./inventory/InventoryNavigationGuard.js";
 import { useSignOutWords } from "./proposals/sign-out-words.js";
+import { useSignOutLayouts } from "../auth/sign-out-layouts.js";
 import { SignOutAskContext, StaffShellContext, useInStaffShell, useShellFrame, type AskBeforeSignOut, type ShellFrame, type StaffShell } from "./staff-shell.js";
 import { FindPalette } from "./find/FindPalette.js";
 import type { FindPlace, FindSource, FindTarget } from "./find/find-model.js";
 import { isE2EAuthBypassEnabled } from "../../lib/e2e-auth-bypass.js";
+import { forgetPushAlertsThen } from "../../lib/push-alerts.js";
 import { getDefaultRoute } from "../../lib/role-routing.js";
 import {
   ANALYTICS_ROLES, awaitsVenue, CLIENT_SEARCH_ROLES, COMMERCIAL_ROLES, CRM_PIPELINE_ROLES,
-  DIARY_ROLES, diaryVenueOf, EVENT_SCOPED_ROLES, hasRole, INVENTORY_WRITE_ROLES, PLANNER_ROLES,
-  REVIEW_QUEUE_ROLES, ROTA_TAB_ROLES, VENUE_DAY_ROLES, WORKSPACE_ROLES,
+  diaryVenueOf, EVENT_SCOPED_ROLES, hasRole, INVENTORY_WRITE_ROLES, opensDiary, PLANNER_ROLES,
+  PRICING_READ_ROLES, REVIEW_QUEUE_ROLES, ROTA_TAB_ROLES, TEAM_TAB_ROLES, VENUE_DAY_ROLES, WORKSPACE_ROLES,
 } from "../../lib/role-capabilities.js";
 import "./DashboardLayout.css";
 
@@ -27,7 +29,7 @@ import "./DashboardLayout.css";
 // DashboardLayout — shared venue navigation and a single workspace landmark
 // ---------------------------------------------------------------------------
 
-type DashboardView = "enquiries" | "pipeline" | "reviews" | "analytics" | "proposals" | "search" | "loadouts" | "settings" | "inventory" | "rota" | "onboarding" | "admin";
+type DashboardView = "enquiries" | "pipeline" | "reviews" | "analytics" | "proposals" | "pricing" | "search" | "loadouts" | "settings" | "team" | "inventory" | "rota" | "onboarding" | "admin";
 
 interface DashboardLayoutProps {
   /** Present only on /dashboard, which owns the view switch itself. Every
@@ -43,11 +45,15 @@ interface DashboardLayoutProps {
   readonly mainLabel?: string;
   /** A view that paints its own full-bleed workspace asks for it here: a
    *  desk (Enquiries, Pending reviews, Clients) on the sage ground, or the
-   *  Rota; everything else keeps the padded forest ground. */
+   *  Rota and the Team, which draw their own sheet on it; everything else
+   *  keeps the padded forest ground. */
   readonly surface?: "desk" | "rota";
   /** What the page adds to Find while it shows (the Diary's board). It must
    *  keep its identity across the page's renders. */
   readonly findSource?: FindSource;
+  /** "none" draws the page alone: no header, nav or account menu (the wall
+   *  display, goal 19 S8, which a passer-by in a corridor can touch). */
+  readonly chrome?: "full" | "none";
   readonly children: ReactNode;
 }
 
@@ -57,7 +63,7 @@ interface DashboardLayoutProps {
 // that answers 403.
 type NavCapability =
   | "workspace" | "commercial" | "crmPipeline" | "analytics" | "clientSearch"
-  | "reviewQueue" | "venueAdmin" | "rota" | "platformAdmin";
+  | "reviewQueue" | "venueAdmin" | "rota" | "pricing" | "team" | "platformAdmin";
 
 const NAV_ITEMS: readonly { view: DashboardView; label: string; capability: NavCapability }[] = [
   { view: "enquiries", label: "Enquiries", capability: "workspace" },
@@ -70,11 +76,19 @@ const NAV_ITEMS: readonly { view: DashboardView; label: string; capability: NavC
   // Proposals is ProposalsDesk, which reads api/proposals.js — already on
   // canManageCommercial, so the whole commercial set can open it.
   { view: "proposals", label: "Proposals", capability: "commercial" },
+  // Pricing is PricingDesk, reading api/pricing-desk.js — routes/pricing-desk.ts
+  // answers the commercial team; its edit controls and suggestions are for
+  // PRICING_WRITE_ROLES alone, and the desk says who to ask otherwise.
+  { view: "pricing", label: "Pricing", capability: "pricing" },
   // Clients is the Clients desk, reading api/clients.js — its search and
   // lists gate on canManageVenue, so sales and planner are refused.
   { view: "search", label: "Clients", capability: "clientSearch" },
   { view: "loadouts", label: "Reference loadouts", capability: "workspace" },
   { view: "settings", label: "Venue settings", capability: "workspace" },
+  // The Team is TeamView, reading api/venue-team.js — routes/venue-team.ts
+  // gates on canManageVenueTeam: the venue's administrators, and platform
+  // admins as at every venue gate.
+  { view: "team", label: "Team", capability: "team" },
   { view: "inventory", label: "Inventory", capability: "venueAdmin" },
   // The Rota is RotaView, reading api/rota.js — routes/rota.ts answers the
   // venue's whole team: the week for the floor, their own shifts for sales.
@@ -131,6 +145,8 @@ export function canShowNavItem(
   if (item.capability === "clientSearch") return hasRole(CLIENT_SEARCH_ROLES, role);
   if (item.capability === "reviewQueue") return hasRole(REVIEW_QUEUE_ROLES, role);
   if (item.capability === "rota") return hasRole(ROTA_TAB_ROLES, role);
+  if (item.capability === "pricing") return hasRole(PRICING_READ_ROLES, role);
+  if (item.capability === "team") return hasRole(TEAM_TAB_ROLES, role);
   return hasRole(WORKSPACE_ROLES, role);
 }
 
@@ -144,7 +160,11 @@ interface SignOutButtonProps {
 function ClerkSignOutButton(props: SignOutButtonProps): React.ReactElement {
   const { signOut } = useClerk();
   const handleSignOut = (): void => {
-    props.askFirst(() => { props.onLocalSignOut(); void signOut(); });
+    // This device's alerts are forgotten first, while the token still works;
+    // the sign-out itself never waits on that for long.
+    props.askFirst(() => {
+      forgetPushAlertsThen(() => { props.onLocalSignOut(); void signOut(); });
+    });
   };
 
   return (
@@ -175,7 +195,7 @@ function anotherDialogOpen(): boolean {
   return document.querySelector('[aria-modal="true"], [role="alertdialog"]') !== null;
 }
 
-function DashboardLayoutShell({ activeView, onViewChange, mainLabel, surface, findSource, children }: DashboardLayoutProps): React.ReactElement {
+function DashboardLayoutShell({ activeView, onViewChange, mainLabel, surface, findSource, chrome, children }: DashboardLayoutProps): React.ReactElement {
   const user = useAuthStore((s) => s.user);
   const logoutLocal = useAuthStore((s) => s.logout);
   const navigate = useNavigate();
@@ -346,7 +366,12 @@ function DashboardLayoutShell({ activeView, onViewChange, mainLabel, surface, fi
   const requestExit = useInventoryExit();
   const signOutWords = useSignOutWords(user?.id ?? null, () => { accountButtonRef.current?.focus(); });
   const askWords = signOutWords.askFirst;
-  const askBeforeSignOut = useCallback<AskBeforeSignOut>((signOut) => { requestExit(() => { askWords(signOut); }); }, [requestExit, askWords]);
+  // Then about layout changes kept on this device, which signing out removes.
+  const signOutLayouts = useSignOutLayouts(user?.id ?? null, () => { accountButtonRef.current?.focus(); });
+  const askLayouts = signOutLayouts.askFirst;
+  const askBeforeSignOut = useCallback<AskBeforeSignOut>((signOut) => {
+    requestExit(() => { askWords(() => { askLayouts(signOut); }); });
+  }, [requestExit, askWords, askLayouts]);
   const handleLocalSignOut = (): void => {
     setOpenMenu(null);
     // Whoever signs in next on this browser reads their own venue afresh.
@@ -453,7 +478,7 @@ function DashboardLayoutShell({ activeView, onViewChange, mainLabel, surface, fi
   // /hallkeeper have different gates, and a single canSchedule offered the
   // Hallkeeper link to sales, which /hallkeeper/today then refused.
   const canPlan = platformRole === "admin" || hasRole(PLANNER_ROLES, user?.role);
-  const canOpenDiary = platformRole === "admin" || hasRole(DIARY_ROLES, user?.role);
+  const canOpenDiary = opensDiary(user);
   const canOpenHallkeeperDay = platformRole === "admin" || hasRole(VENUE_DAY_ROLES, user?.role);
   // Venue stock is written by venue administration only, and the platform
   // admin's own tools never grant it (pinned by DashboardLayout.test.tsx).
@@ -489,6 +514,14 @@ function DashboardLayoutShell({ activeView, onViewChange, mainLabel, surface, fi
   const nameInitials = user?.name.trim().split(/\s+/).slice(0, 2).map((part) => part.charAt(0)).join("") ?? "";
   const initials = (nameInitials.length > 0 ? nameInitials : "V").toLocaleUpperCase("en-GB");
   const roleLabel = platformRole === "admin" ? "Platform admin" : ROLE_LABELS[user?.role ?? ""] ?? "Workspace member";
+
+  if (chrome === "none") {
+    return (
+      <main className="dashboard-layout-content dashboard-layout-content--bare" id="dashboard-main" tabIndex={-1} aria-label={workspaceName}>
+        <SignOutAskContext.Provider value={askBeforeSignOut}>{children}</SignOutAskContext.Provider>
+      </main>
+    );
+  }
 
   return (
     <>
@@ -598,6 +631,7 @@ function DashboardLayoutShell({ activeView, onViewChange, mainLabel, surface, fi
 
       <ToastContainer />
       {signOutWords.question}
+      {signOutLayouts.question}
     </>
   );
 }

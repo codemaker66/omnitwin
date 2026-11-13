@@ -44,6 +44,14 @@ describe("usePlannerVenueIdentity", () => {
     expect(spacesApi.getVenue.mock.calls).toEqual([["venue-other"], [cityRooms.id]]);
   });
 
+  // Integration check, 17 Oct 2026: the header read "TRADE'S HALL OF GLASGOW".
+  it("names Trades Hall exactly as the venue publishes itself", async () => {
+    spacesApi.getVenue.mockResolvedValue({ ...cityRooms, id: "venue-trades", name: "Trades Hall Glasgow", slug: "trades-hall-glasgow" });
+    render(<Identity venueId="venue-trades" />);
+    expect(await screen.findByText("Trades Hall of Glasgow")).toBeTruthy();
+    expect(screen.queryByText(/Trade's/)).toBeNull();
+  });
+
   it("shows the unavailable state when the venue cannot be read", async () => {
     spacesApi.getVenue.mockRejectedValue(new Error("offline"));
     prefetchPlannerVenue(cityRooms.id);

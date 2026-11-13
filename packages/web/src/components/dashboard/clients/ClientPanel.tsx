@@ -53,17 +53,22 @@ export function ClientPanel(props: ClientPanelProps): ReactElement {
   const [state, setState] = useState<PanelState>({ status: "loading" });
   const [attempt, setAttempt] = useState(0);
 
+  // Read by who the client is, not by the reference's identity: the page
+  // reads the reference back from the address whenever the address changes
+  // (a search settling), and the same client is not read, or shown as
+  // opening, again.
+  const { kind, id } = client;
   useEffect(() => {
     let current = true;
     setState({ status: "loading" });
-    load(client)
+    load({ kind, id })
       .then((loaded) => { if (current) setState({ status: "ready", loaded }); })
       .catch((error: unknown) => {
         if (!current) return;
         setState(error instanceof ApiError && error.status === 404 ? { status: "missing" } : { status: "error" });
       });
     return () => { current = false; };
-  }, [client, attempt]);
+  }, [kind, id, attempt]);
 
   // One heading throughout, so the focus a reader was given as the client
   // opened stays on it while it loads, and reads its name once it has.
@@ -112,7 +117,7 @@ interface Who {
   readonly eyebrow: string;
   readonly name: string;
   readonly organisation: string | null;
-  readonly email: string;
+  readonly email: string | null;
   readonly phone: string | null;
   readonly since: string;
 }
@@ -153,7 +158,7 @@ function Profile(props: ClientPanelProps & { readonly loaded: Loaded; readonly w
     <>
       {who.organisation !== null && <p className="cl-organisation">{who.organisation}</p>}
       <div className="enq-contact cl-reach">
-        <a href={`mailto:${who.email}`}>{who.email}</a>
+        {who.email !== null && <a href={`mailto:${who.email}`}>{who.email}</a>}
         {who.phone !== null && who.phone.trim() !== "" && <a href={`tel:${who.phone.replace(/[^\d+]/gu, "")}`}>{who.phone}</a>}
         {loaded.kind === "lead" && loaded.data.lead.convertedToUserId !== null
           && <span className="enq-contact__note">Now has a Venviewer account</span>}

@@ -1,0 +1,48 @@
+/* Paper that knows its version — the stamp at the foot of a printed sheet
+ * (PaperCopyStamp.tsx). Printed in ink only: it must read the same from a
+ * mono laser printer, so nothing here relies on colour. The QR is 26 mm,
+ * comfortably readable by a phone held over a clipboard. */
+
+.hk-paper-copy {
+  display: flex;
+  align-items: center;
+  gap: 4mm;
+  margin-top: 6mm;
+  padding-top: 3mm;
+  border-top: 0.3mm solid var(--house-ink-1);
+  break-inside: avoid;
+  color: var(--house-ink-1);
+  font-family: var(--house-sans);
+}
+
+.hk-paper-copy__qr {
+  flex: none;
+  width: 26mm;
+  height: 26mm;
+}
+
+.hk-paper-copy__text p {
+  margin: 0;
+}
+
+.hk-paper-copy__line {
+  font-size: 12pt;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.hk-paper-copy__caption {
+  margin-top: 1mm !important;
+  font-size: 9pt;
+  line-height: 1.35;
+  color: var(--house-ink-2);
+}
+
+/* The same line at the head of the printed sheet, where the eye lands first. */
+.hk-print-version {
+  margin: 1mm 0 3mm;
+  font-family: var(--house-sans);
+  font-size: 12pt;
+  font-weight: 700;
+  color: var(--house-ink-1);
+}

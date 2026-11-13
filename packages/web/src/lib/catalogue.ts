@@ -51,7 +51,10 @@ function canonicalToCatalogue(a: CanonicalAsset): CatalogueItem {
   return {
     id: a.id,
     slug: a.slug,
-    name: a.name,
+    // The planner shows a guest's words; a maker's model reference ("Burgess
+    // Turini 18/3") moves to the subtitle, where staff still find and search
+    // it. The visitor's PDF and view-only link print the same name.
+    name: a.plainName ?? a.name,
     category: a.category,
     width: a.widthM,
     height: a.heightM,
@@ -60,7 +63,7 @@ function canonicalToCatalogue(a: CanonicalAsset): CatalogueItem {
     color: a.color,
     tableShape: a.tableShape,
     maxCount: a.maxCount,
-    subtitle: a.subtitle,
+    subtitle: a.plainName === undefined ? a.subtitle : `${a.name} · ${a.subtitle}`,
     meshUrl: a.meshUrl ?? null,
     // Crafted pieces show their own render, not the supplied model's.
     thumbnailUrl: craftedFurniturePreviewUrl(a.slug) ?? a.thumbnailUrl ?? null,

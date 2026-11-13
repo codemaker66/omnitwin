@@ -165,3 +165,68 @@ describe("planBanquetLayout — circulation cross-validation (closed loop)", () 
     expect(report.tightestGapM ?? 0).toBeGreaterThanOrEqual(2.0 - 1e-6);
   });
 });
+
+describe("planBanquetLayout — round groups and staggered rows", () => {
+  // The Grand Hall's interior with 6 ft rounds of ten Turini chairs: a circle
+  // of radius ≈ 1.559 m, 0.6 m clear between circles and to the walls.
+  const hall = (overrides: Partial<BanquetLayoutOptions> = {}): BanquetLayoutOptions => ({
+    roomWidthM: 21,
+    roomLengthM: 10.5,
+    tableWidthM: 3.09,
+    tableDepthM: 3.09,
+    tableRadiusM: 1.559,
+    seatsPerTable: 10,
+    aisleM: 0.6,
+    wallClearanceM: 0.6,
+    ...overrides,
+  });
+
+  it("holds more rounds staggered than on the square grid", () => {
+    const grid = planBanquetLayout({ ...hall(), tableRadiusM: undefined, tableWidthM: 3.118, tableDepthM: 3.118 });
+    const rounds = planBanquetLayout(hall());
+    expect(grid.tableCount).toBe(10);
+    expect(rounds.tableCount).toBe(14);
+    expect(rounds.capacityTables).toBe(14);
+    expect(rounds.pattern).not.toBe("grid");
+  });
+
+  it("keeps every pair of circles and every wall at least the aisle apart", () => {
+    const plan = planBanquetLayout(hall());
+    for (const [i, a] of plan.tables.entries()) {
+      expect(21 / 2 - Math.abs(a.xM) - 1.559).toBeGreaterThanOrEqual(0.6 - 1e-9);
+      expect(10.5 / 2 - Math.abs(a.zM) - 1.559).toBeGreaterThanOrEqual(0.6 - 1e-9);
+      for (const b of plan.tables.slice(i + 1)) {
+        expect(Math.hypot(a.xM - b.xM, a.zM - b.zM)).toBeGreaterThanOrEqual(2 * 1.559 + 0.6 - 1e-9);
+      }
+    }
+  });
+
+  it("uses the straight grid whenever it already holds what is asked for", () => {
+    const plan = planBanquetLayout(hall({ targetGuests: 100 }));
+    expect(plan.pattern).toBe("grid");
+    expect(plan.tableCount).toBe(10);
+    expect(plan.capacityTables).toBe(14);
+    expect(plan.meetsTarget).toBe(true);
+  });
+
+  it("reports what the room holds at this spacing when the target is out of reach", () => {
+    const plan = planBanquetLayout(hall({ targetGuests: 220 }));
+    expect(plan.tableCount).toBe(14);
+    expect(plan.seatsPlanned).toBe(140);
+    expect(plan.capacityTables).toBe(14);
+    expect(plan.meetsTarget).toBe(false);
+  });
+
+  it("keeps keep-outs clear in staggered rows too", () => {
+    const stage: LayoutRect = { cx: 0, cz: 0, width: 4, depth: 2 };
+    const plan = planBanquetLayout(hall({ keepOuts: [stage] }));
+    for (const t of plan.tables) {
+      expect(rectsOverlap({ cx: t.xM, cz: t.zM, width: 3.118, depth: 3.118 }, stage)).toBe(false);
+    }
+    expect(plan.tableCount).toBeLessThan(14);
+  });
+
+  it("is deterministic", () => {
+    expect(planBanquetLayout(hall({ targetGuests: 90 }))).toEqual(planBanquetLayout(hall({ targetGuests: 90 })));
+  });
+});

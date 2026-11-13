@@ -472,3 +472,81 @@ describe("honesty and determinism", () => {
     expect([...ids].sort()).toEqual(ids);
   });
 });
+
+describe("viewing overlap (migration 0100)", () => {
+  const at = (iso: string): Date => new Date(iso);
+
+  it("warns when a viewing falls during a confirmed booking, its set-up included", () => {
+    const ink = booking({ kind: "ink", eventId: "event-gala", title: "Gala dinner" });
+    const setup = phase({ eventId: "event-gala", eventName: "Gala dinner" });
+    // 16:00 to 16:45: before the dinner, during its 15:00 set-up.
+    const viewing = booking({ kind: "viewing", title: "Crawford viewing", startsAt: at("2026-09-18T16:00:00.000Z"), endsAt: at("2026-09-18T16:45:00.000Z") });
+    const report = detect({ bookings: [ink, viewing], phases: [setup] });
+    const overlaps = report.conflicts.filter((conflict) => conflict.type === "viewing_overlap");
+    expect(overlaps).toHaveLength(1);
+    expect(overlaps[0]).toMatchObject({ severity: "warning", spaceId: SPACE_A });
+    expect(overlaps[0]?.entryIds).toContain(viewing.id);
+    expect(overlaps[0]?.explanation).toContain("Crawford viewing");
+    expect(overlaps[0]?.explanation).toContain("set-up and clearing included");
+  });
+
+  it("warns, in words that claim no confirmation, when a viewing falls in an event's phase alone", () => {
+    // An event whose set-up is timed in this room, with no confirmed booking here.
+    const setup = phase({ eventId: "event-hold-only", eventName: "Provisional dinner" });
+    const viewing = booking({ kind: "viewing", title: "Ahmed viewing", startsAt: at("2026-09-18T15:30:00.000Z"), endsAt: at("2026-09-18T16:00:00.000Z") });
+    const [conflict] = detect({ bookings: [viewing], phases: [setup] }).conflicts;
+    expect(conflict).toMatchObject({ type: "viewing_overlap", severity: "warning" });
+    // The occupancy's entry is the phase, as the turnaround check's are.
+    expect(conflict?.entryIds).toEqual([setup.id, viewing.id]);
+    expect(conflict?.explanation).toContain("has this room at that time");
+    expect(conflict?.explanation).not.toContain("confirmed");
+  });
+
+  it("warns when a viewing falls during a house block", () => {
+    const block = booking({ kind: "internal_block", title: "Floor varnish" });
+    const viewing = booking({ kind: "viewing", title: "Ahmed viewing", startsAt: at("2026-09-18T19:00:00.000Z"), endsAt: at("2026-09-18T19:30:00.000Z") });
+    const [conflict] = detect({ bookings: [block, viewing] }).conflicts;
+    expect(conflict).toMatchObject({ type: "viewing_overlap", severity: "warning" });
+    expect(conflict?.explanation).toContain("closed this room");
+  });
+
+  it("notes two viewings at once in one room, and ignores another room's", () => {
+    const first = booking({ kind: "viewing", startsAt: at("2026-09-18T10:00:00.000Z"), endsAt: at("2026-09-18T11:00:00.000Z") });
+    const second = booking({ kind: "viewing", startsAt: at("2026-09-18T10:30:00.000Z"), endsAt: at("2026-09-18T11:15:00.000Z") });
+    const elsewhere = booking({ kind: "viewing", spaceId: SPACE_B, startsAt: at("2026-09-18T10:30:00.000Z"), endsAt: at("2026-09-18T11:15:00.000Z") });
+    const conflicts = detect({ bookings: [first, second, elsewhere] }).conflicts;
+    expect(conflicts).toEqual([expect.objectContaining({
+      type: "viewing_overlap", severity: "info", entryIds: [first.id, second.id], spaceId: SPACE_A,
+    })]);
+  });
+
+  it("says nothing of a viewing beside a booking, under a hold, called off, or merely touching", () => {
+    const ink = booking({ kind: "ink" });
+    const touching = booking({ kind: "viewing", startsAt: at("2026-09-18T17:15:00.000Z"), endsAt: at("2026-09-18T18:00:00.000Z") });
+    const hold = booking({ kind: "hold", rank: 1, startsAt: at("2026-09-19T18:00:00.000Z"), endsAt: at("2026-09-19T23:00:00.000Z") });
+    const underHold = booking({ kind: "viewing", startsAt: at("2026-09-19T19:00:00.000Z"), endsAt: at("2026-09-19T19:30:00.000Z") });
+    const cancelled = booking({ kind: "viewing", status: "cancelled", startsAt: at("2026-09-18T19:00:00.000Z"), endsAt: at("2026-09-18T19:30:00.000Z") });
+    const conflicts = detect({ bookings: [ink, touching, hold, underHold, cancelled] }).conflicts;
+    expect(conflicts.filter((conflict) => conflict.type === "viewing_overlap")).toEqual([]);
+  });
+
+  it("never counts a viewing as an occupancy for turnaround", () => {
+    const ink = booking({ kind: "ink", eventType: "wedding" });
+    const viewing = booking({ kind: "viewing", startsAt: at("2026-09-18T23:10:00.000Z"), endsAt: at("2026-09-18T23:40:00.000Z") });
+    const report = detect({ bookings: [ink, viewing], turnaroundRules: [rule({ minutes: 120 })] });
+    expect(report.conflicts.filter((conflict) => conflict.type === "insufficient_turnaround")).toEqual([]);
+    expect(report.checks.turnaround.status).toBe("checked");
+  });
+
+  it("reports the same overlaps whatever order the bookings arrive in", () => {
+    const rows = [
+      booking({ kind: "ink" }),
+      booking({ kind: "viewing", startsAt: at("2026-09-18T20:00:00.000Z"), endsAt: at("2026-09-18T20:30:00.000Z") }),
+      booking({ kind: "viewing", startsAt: at("2026-09-18T20:15:00.000Z"), endsAt: at("2026-09-18T20:45:00.000Z") }),
+      booking({ kind: "internal_block", startsAt: at("2026-09-18T20:00:00.000Z"), endsAt: at("2026-09-18T21:00:00.000Z") }),
+    ];
+    const forward = detect({ bookings: rows });
+    expect(detect({ bookings: [...rows].reverse() })).toEqual(forward);
+    expect(forward.conflicts.filter((conflict) => conflict.type === "viewing_overlap")).toHaveLength(5);
+  });
+});

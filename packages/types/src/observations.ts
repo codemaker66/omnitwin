@@ -18,8 +18,8 @@ import { VenueIdSchema } from "./venue.js";
 // schedule; they do not edit it (D1).
 // ---------------------------------------------------------------------------
 
-const UUID = z.string().uuid();
-const IsoInstant = z.string().datetime({ offset: true });
+const UUID = z.uuid();
+const IsoInstant = z.iso.datetime({ offset: true });
 
 /** In the order a room's day runs. Flipping is the room being turned
  *  between two phases of one booking (ceremony to dinner) and starts the

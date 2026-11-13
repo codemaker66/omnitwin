@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { BufferAttribute, BufferGeometry, Group, Matrix4, Object3D, OrthographicCamera, PerspectiveCamera, RenderTarget, Scene, Vector3, type Material, type Mesh, type InstancedBufferGeometry } from "three";
+import { BufferAttribute, BufferGeometry, Group, Matrix4, Object3D, OrthographicCamera, PerspectiveCamera, RenderTarget, Scene, Sphere, Vector3, type Material, type Mesh, type InstancedBufferGeometry } from "three";
 import { WebGPURenderer } from "three/webgpu";
 import { NativeSplatScene } from "../native-splat-scene.js";
 import { withNativeRenderScope } from "../native-renderer.js";
@@ -331,6 +331,114 @@ describe("native complete draw lifecycle", () => {
     expect(source.rendered).not.toHaveBeenCalled();
     state.render(); await vi.advanceTimersByTimeAsync(16);
     expect(source.rendered).toHaveBeenCalledOnce();
+  });
+
+  it("rebuilds its draw for a replacement renderer attached in the commit that detached the lost one", async () => {
+    const state = setup(), source = state.add(2);
+    await vi.advanceTimersByTimeAsync(50); state.render(); await vi.advanceTimersByTimeAsync(16);
+    expect(source.rendered).toHaveBeenCalledOnce();
+    expect(state.runtime.capturePending(state.renderer)).toBe(false);
+    const built = evidence.created, released = evidence.disposed;
+    const replacement = new WebGPURenderer({ forceWebGL: true });
+    const compile = vi.spyOn(replacement, "compileAsync").mockResolvedValue(undefined);
+    vi.spyOn(replacement, "getContext").mockReturnValue(state.gpu);
+
+    // A graphics reset hands R3F a new renderer: React runs every cleanup of
+    // that commit before its setups, so the lost renderer's host has detached
+    // and its deferred teardown has not run yet.
+    state.detach();
+    expect(() => state.runtime.attach(replacement, state.camera, state.invalidate)).not.toThrow();
+    expect(evidence.disposed).toBeGreaterThan(released);
+    // The capture is not back until the new device draws its own snapshot.
+    expect(state.runtime.capturePending(replacement)).toBe(true);
+    await vi.advanceTimersByTimeAsync(50);
+    // From the source it still holds: nothing is decoded again.
+    expect(evidence.created).toBeGreaterThan(built);
+    expect(compile).toHaveBeenCalled();
+    expect(state.runtime.capturePending(replacement)).toBe(false);
+  });
+
+  it("reports each source it still holds as drawn again once a replacement renderer draws it", async () => {
+    const state = setup(), source = state.add(2);
+    await vi.advanceTimersByTimeAsync(50); state.render(); await vi.advanceTimersByTimeAsync(16);
+    expect(source.rendered).toHaveBeenCalledOnce();
+    const replacement = new WebGPURenderer({ forceWebGL: true });
+    vi.spyOn(replacement, "compileAsync").mockResolvedValue(undefined);
+    vi.spyOn(replacement, "getContext").mockReturnValue(state.gpu);
+    state.detach();
+    state.runtime.attach(replacement, state.camera, state.invalidate);
+    await vi.advanceTimersByTimeAsync(50);
+    const object = state.draw();
+    if (object === undefined) throw new Error("Expected the replacement's draw");
+    withNativeRenderScope(replacement, state.scene, state.camera, () => {
+      Reflect.apply(object.onAfterRender.bind(object), object, [replacement, state.scene, state.camera, object.geometry, object.material, new Group()]);
+    });
+    await vi.advanceTimersByTimeAsync(16);
+    // The view counts arrivals afresh for a new renderer (hooks/use-chunk-arrivals.ts).
+    expect(source.rendered).toHaveBeenCalledTimes(2);
+  });
+
+  it("builds a replacement renderer's draw from the merge and bounds it made before the loss", async () => {
+    const state = setup();
+    state.add(2);
+    await vi.advanceTimersByTimeAsync(50);
+    const before = state.draw();
+    const merged = evidence.inputs.at(-1);
+    // The sort bounds every splat the first time it runs; the mock leaves that to the test.
+    Reflect.set(before ?? {}, "boundingSphere", new Sphere(new Vector3(1, 2, 3), 4));
+    const replacement = new WebGPURenderer({ forceWebGL: true });
+    vi.spyOn(replacement, "compileAsync").mockResolvedValue(undefined);
+    vi.spyOn(replacement, "getContext").mockReturnValue(state.gpu);
+    state.detach();
+    state.runtime.attach(replacement, state.camera, state.invalidate);
+    await vi.advanceTimersByTimeAsync(50);
+    const after = state.draw();
+    expect(after).not.toBe(before);
+    expect(evidence.inputs.at(-1), "the sources are not merged again").toBe(merged);
+    const bounds: unknown = Reflect.get(after ?? {}, "boundingSphere");
+    expect(bounds instanceof Sphere ? [bounds.center.toArray(), bounds.radius] : null, "nor their splats bounded again").toEqual([[1, 2, 3], 4]);
+  });
+
+  it("merges again for a replacement renderer once a source has changed", async () => {
+    const state = setup();
+    const source = state.add(2);
+    await vi.advanceTimersByTimeAsync(50);
+    const merged = evidence.inputs.at(-1);
+    const replacement = new WebGPURenderer({ forceWebGL: true });
+    vi.spyOn(replacement, "compileAsync").mockResolvedValue(undefined);
+    vi.spyOn(replacement, "getContext").mockReturnValue(state.gpu);
+    state.detach();
+    source.setGeometry(geometry(3));
+    state.runtime.attach(replacement, state.camera, state.invalidate);
+    await vi.advanceTimersByTimeAsync(50);
+    expect(evidence.inputs.at(-1)).not.toBe(merged);
+    expect(Reflect.get(state.draw() ?? {}, "splatCount")).toBe(3);
+  });
+
+  it("stops expecting the capture on a replacement whose rebuild failed, and while nothing is selected", async () => {
+    const state = setup(), source = state.add(2);
+    await vi.advanceTimersByTimeAsync(50); state.render(); await vi.advanceTimersByTimeAsync(16);
+    expect(source.rendered).toHaveBeenCalledOnce();
+    const replacement = new WebGPURenderer({ forceWebGL: true });
+    vi.spyOn(replacement, "compileAsync").mockRejectedValue(new Error("Pipeline creation failed"));
+    vi.spyOn(replacement, "getContext").mockReturnValue(state.gpu);
+    state.detach();
+    state.runtime.attach(replacement, state.camera, state.invalidate);
+    expect(state.runtime.capturePending(replacement)).toBe(true);
+    await vi.advanceTimersByTimeAsync(50);
+    // The planner falls back to its drawn room; a cover must not wait on a capture that cannot come.
+    expect(source.error).toHaveBeenCalled();
+    expect(state.runtime.capturePending(replacement)).toBe(false);
+    // A renderer the scene is not attached to still has its capture to come.
+    expect(state.runtime.capturePending(new WebGPURenderer({ forceWebGL: true }))).toBe(true);
+    source.dispose();
+    expect(state.runtime.capturePending(new WebGPURenderer({ forceWebGL: true }))).toBe(false);
+  });
+
+  it("still refuses a second renderer while the first one is attached", () => {
+    const state = setup();
+    expect(() => state.runtime.attach(new WebGPURenderer({ forceWebGL: true }), state.camera, state.invalidate))
+      .toThrow("A native splat scene must have one active renderer");
   });
 
   it("wakes demand rendering when another source becomes eligible during the pending fence", async () => {
@@ -700,12 +808,12 @@ describe("native complete draw lifecycle", () => {
   });
 });
 
-describe("native presentation (T-639)", () => {
-  it("draws captured sources without anti-aliasing opacity compensation", async () => {
+describe("native presentation (T-639, T-658)", () => {
+  it("draws captured sources with the anti-aliasing opacity compensation on", async () => {
     const state = setup();
     state.add(3);
     await vi.advanceTimersByTimeAsync(20);
-    expect(evidence.antialias).toEqual([false]);
+    expect(evidence.antialias).toEqual([true]);
     state.detach(); await vi.advanceTimersByTimeAsync(0);
   });
 });

@@ -3,18 +3,30 @@ import { useLocation } from "react-router-dom";
 import { ActivityIndicator } from "./Activity.js";
 import "./RouteArrival.css";
 
+/** The public panorama tour's addresses (router: /tour and /venues/:slug/twin). */
+const TOUR_PATH = /^\/(?:tour|venues\/[^/]+\/twin)\/?$/u;
+
 /** A route's real pending state. Never waits for the photograph or a timer. */
 export function RouteArrival(): ReactElement {
   const { pathname, search } = useLocation();
   const isGrandHall = pathname === "/room/grand-hall"
     || (/^\/plan(?:\/[^/]+)?$/.test(pathname)
       && new URLSearchParams(search).get("space") === "grand-hall");
+  // A visitor opening the tour is not opening a "Workspace": name the page
+  // they asked for and what is happening, as the tour's own stages do.
+  if (TOUR_PATH.test(pathname)) {
+    return <ArrivalArtwork isGrandHall={false} heading="Panorama tour" working="Opening the tour…" />;
+  }
   return <ArrivalArtwork isGrandHall={isGrandHall} />;
 }
 
-export function ArrivalArtwork({ isGrandHall, onEnter }: {
+export function ArrivalArtwork({ isGrandHall, onEnter, heading, working = "Opening…" }: {
   readonly isGrandHall: boolean;
   readonly onEnter?: () => void;
+  /** Overrides the heading; by default "Grand Hall" or "Workspace". */
+  readonly heading?: string;
+  /** The work being done, in words. */
+  readonly working?: string;
 }): ReactElement {
   const [imageFailed, setImageFailed] = useState(false);
   const showPhotograph = isGrandHall && !imageFailed;
@@ -33,10 +45,10 @@ export function ArrivalArtwork({ isGrandHall, onEnter }: {
         {isGrandHall && <span>TRADES HALL · GLASGOW</span>}
       </header>
       <section className="vv-arrival__welcome" role="status" aria-live="polite" aria-atomic="true">
-        <h1>{isGrandHall ? "Grand Hall" : "Workspace"}</h1>
+        <h1>{heading ?? (isGrandHall ? "Grand Hall" : "Workspace")}</h1>
         <div className="vv-arrival__working">
           <ActivityIndicator size={42} />
-          <span>Opening…</span>
+          <span>{working}</span>
         </div>
         {onEnter !== undefined && (
           <button type="button" className="vv-arrival__enter" onClick={onEnter}>

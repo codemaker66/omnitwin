@@ -23,20 +23,37 @@ describe("legTensionKg", () => {
 });
 
 describe("assessRigging", () => {
-  it("reports headroom and stays clean within WLL", () => {
+  it("reports the arithmetic against an entered WLL, with no pass verdict", () => {
     const a = assessRigging(base);
     expect(a.legTensionKg).toBe(200);
     expect(a.utilizationPercent).toBe(40); // 200 / 500
     expect(a.headroomKg).toBe(300);
-    expect(a.withinWll).toBe(true);
+    expect(a.overWll).toBe(false);
     expect(a.warnings).toHaveLength(0);
+    // There is no "within" field to render: a typed WLL is nobody's check.
+    expect(Object.keys(a)).not.toContain("withinWll");
   });
 
   it("warns and flags over-WLL when tension exceeds the point limit", () => {
     const a = assessRigging({ ...base, suspendedLoadKg: 600 });
-    expect(a.withinWll).toBe(false);
+    expect(a.overWll).toBe(true);
     expect(a.headroomKg).toBe(-100);
     expect(a.warnings.some((w) => /exceeds the point WLL/.test(w))).toBe(true);
+  });
+
+  it("states no utilisation, headroom or verdict when no WLL is recorded", () => {
+    const a = assessRigging({ ...base, pointWllKg: null, suspendedLoadKg: 5000 });
+    expect(a.legTensionKg).toBe(5000);
+    expect(a.pointWllKg).toBeNull();
+    expect(a.utilizationPercent).toBeNull();
+    expect(a.headroomKg).toBeNull();
+    expect(a.overWll).toBe(false);
+    expect(a.warnings).toHaveLength(0);
+  });
+
+  it("raises no rating warning when the point's rating is not recorded", () => {
+    const a = assessRigging({ ...base, permittedUse: null, loadKind: "power-hoist" });
+    expect(a.warnings).toHaveLength(0);
   });
 
   it("warns on a shallow bridle angle", () => {

@@ -323,7 +323,7 @@ describe("register-runtime-transform-artifact script", () => {
 
     expect(inspection.status).toBe("invalid_report");
     expect(inspection.liveTransformRegistrationReady).toBe(false);
-    expect(inspection.blockers).toContain("generatedAt: Required");
+    expect(inspection.blockers).toContain("generatedAt: Invalid input: expected string, received undefined");
     expect(inspection.messages).toEqual([
       "Report failed RuntimeTransformArtifactRegistrationReportSchema validation.",
     ]);

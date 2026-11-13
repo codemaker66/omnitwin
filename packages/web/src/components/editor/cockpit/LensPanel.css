@@ -244,7 +244,6 @@
 .lens-panel__row--review { border-left-color: rgba(216, 120, 86, 0.7); }
 .lens-panel__row--attention { border-left-color: rgba(143, 174, 139, 0.7); }
 .lens-panel__row--info { border-left-color: rgba(116, 168, 208, 0.6); }
-.lens-panel__row--pass { border-left-color: rgba(116, 208, 140, 0.7); }
 .lens-panel__row-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .lens-panel__row-title { color: #f6efe0; font-size: 15px; font-weight: 600; line-height: 1.3; }
 .lens-panel__row-meta { color: rgba(244, 239, 230, 0.56); font-size: 13px; }
@@ -477,4 +476,102 @@
   width: 64px;
   text-align: right;
   font-variant-numeric: tabular-nums;
+}
+
+/* -------------------------------------------------------------------------
+   Honest numbers (redteam fix-first 1-3). A figure is shown with who stated
+   it and when; a building fact nobody recorded is a person to ask, never a
+   verdict on an assumed input. Tokens only: no new hue enters the register.
+   ------------------------------------------------------------------------- */
+
+/* The venue's published figures: the numbers that matter, in the display
+   serif's light numerals; the layout on the floor sits on a copper wash. */
+.lens-panel__published { display: grid; gap: 7px; margin: 0; padding: 0; list-style: none; }
+.lens-panel__published-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 2px 12px;
+  min-height: 44px;
+  padding: 8px 13px;
+  border: 1px solid var(--house-hairline);
+  border-radius: 11px;
+}
+.lens-panel__published-row.is-on-floor {
+  border-color: var(--house-accent-copper);
+  background: rgba(201, 138, 91, 0.1);
+}
+.lens-panel__published-format { display: grid; gap: 1px; color: var(--house-text-1); font-size: 14.5px; font-weight: 600; }
+.lens-panel__published-format small { color: var(--house-text-2); font-size: 12.5px; font-weight: 500; }
+/* Copper stays at display sizes; the small mark is ivory, set apart by its
+   letter-spacing and the row's copper outline. */
+.lens-panel__published-mark { color: var(--house-text-1); font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+.lens-panel__published-figure {
+  justify-self: end;
+  color: var(--house-text-0);
+  font-family: var(--house-serif);
+  font-size: 30px;
+  font-weight: 300;
+  line-height: 1;
+  font-variant-numeric: lining-nums tabular-nums;
+}
+/* Who stated a figure, and when: always beside the figure, never a tooltip. */
+.lens-panel__stated { margin: 0; color: var(--house-text-2); font-size: 13px; font-weight: 600; letter-spacing: 0.02em; }
+
+/* Staff-only arithmetic, kept visibly apart from the venue's figures. */
+.lens-panel__estimates { display: grid; gap: 5px; margin: 0; padding: 0; list-style: none; }
+.lens-panel__estimate {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  padding: 6px 2px;
+  border-bottom: 1px dashed var(--house-hairline);
+  color: var(--house-text-2);
+  font-size: 14px;
+}
+.lens-panel__estimate:last-child { border-bottom: 0; }
+.lens-panel__estimate-figure { color: var(--house-text-1); font-weight: 650; font-variant-numeric: tabular-nums; }
+
+/* A fact nobody recorded: the register's "missing" outline (a dashed
+   hairline, no hue), the words "Not recorded", and the person to ask. */
+.lens-panel__unrecorded {
+  display: grid;
+  gap: 8px;
+  padding: 11px 13px;
+  border: 1px dashed var(--house-hairline-hover);
+  border-radius: 11px;
+}
+.lens-panel__unrecorded-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.lens-panel__unrecorded-label { color: var(--house-text-1); font-size: 14.5px; font-weight: 650; }
+.lens-panel__unrecorded-value { color: var(--house-text-2); font-size: 13px; font-weight: 600; letter-spacing: 0.02em; white-space: nowrap; }
+.lens-panel__unrecorded-hint { color: var(--house-text-2); font-size: 12.5px; line-height: 1.4; }
+.lens-panel__ask {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid var(--house-accent-copper);
+  border-radius: 999px;
+  background: transparent;
+  /* Ivory words on a copper outline: copper is kept for display sizes. */
+  color: var(--house-text-1);
+  font-size: 14px;
+  font-weight: 650;
+  text-decoration: none;
+  transition: background-color var(--house-motion-hover) var(--house-ease-out), transform var(--house-motion-press) var(--house-ease-out);
+}
+.lens-panel__ask:hover { background: rgba(201, 138, 91, 0.12); }
+.lens-panel__ask:active { transform: translateY(1px) scale(0.98); }
+.lens-panel__ask:focus-visible { outline: var(--vv-focus-ring); outline-offset: var(--vv-focus-ring-offset); }
+
+/* The way to a real price: one sentence and one action, nothing priced. */
+.lens-panel__quote { display: grid; gap: 12px; }
+
+/* An entered figure says who stated it: the person at the keyboard. */
+.lens-panel__entered { color: var(--house-text-2); font-size: 12.5px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .lens-panel__ask { transition: none; }
+  .lens-panel__ask:active { transform: none; }
 }

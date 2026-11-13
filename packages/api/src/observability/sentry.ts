@@ -1,5 +1,8 @@
 import type { FastifyRequest } from "fastify";
+import type { NodeOptions, fastifyIntegration } from "@sentry/node";
 import type { Env } from "../env.js";
+import { scrubApiSentryEvent } from "./health-redaction.js";
+import { scrubBreadcrumb, scrubErrorEvent, scrubTransaction } from "./redact.js";
 
 // ---------------------------------------------------------------------------
 // Sentry — error tracking + tracing for Fastify
@@ -10,10 +13,68 @@ import type { Env } from "../env.js";
 //      without Sentry stay behaviourally identical.
 //   2. Init BEFORE Fastify routes register so the instrumentation
 //      patches the HTTP layer before any handler runs.
-//   3. Scrub PII — we never send `request.user.email` or planner
-//      notes to Sentry. The beforeSend hook strips request bodies
-//      and query/path params that might carry sensitive values.
+//   3. Scrub PII — we never send `request.user.email`, the caller's IP
+//      address or planner notes to Sentry. Request bodies are dropped from
+//      error events and transactions; query strings, capability tokens and
+//      the caller's address are scrubbed everywhere (error events,
+//      breadcrumbs, transactions and their spans), because the search
+//      routes carry a name, email or phone in `?q=` and a share link's
+//      token opens what it shares.
+//   4. One capture path: the error normaliser's 5xx hook. The SDK's own
+//      Fastify integration keeps tracing and captures nothing.
 // ---------------------------------------------------------------------------
+
+/** The settings the Sentry options are built from. */
+export type SentryOptionsEnv = Pick<Env, "SENTRY_DSN" | "SENTRY_ENVIRONMENT" | "NODE_ENV" | "SENTRY_TRACES_SAMPLE_RATE">;
+
+/**
+ * The options `initSentry` hands to `Sentry.init`. Pure, so a test can
+ * assert the redaction hooks without initialising the SDK.
+ *
+ * Redact anything that could carry PII before the event leaves the
+ * process. Sentry's default `sendDefaultPii` is false but we go further:
+ *   - beforeSend: request bodies, credentials, query strings and the
+ *     query parameters in exception values (`./redact.ts`), then any guest
+ *     allergy note left in a message or breadcrumb (`./health-redaction.ts`);
+ *   - beforeSendTransaction: the query in request urls and span attributes;
+ *   - beforeBreadcrumb: the query in http breadcrumbs.
+ */
+export function buildSentryOptions(env: SentryOptionsEnv): NodeOptions {
+  return {
+    dsn: env.SENTRY_DSN,
+    environment: env.SENTRY_ENVIRONMENT ?? env.NODE_ENV,
+    tracesSampleRate: env.SENTRY_TRACES_SAMPLE_RATE,
+    beforeSend: (event) => scrubApiSentryEvent(scrubErrorEvent(event)),
+    beforeSendTransaction: scrubTransaction,
+    beforeBreadcrumb: scrubBreadcrumb,
+  };
+}
+
+/** One of the SDK's integrations (@sentry/core's type, which @sentry/node does not re-export). */
+type Integration = ReturnType<typeof fastifyIntegration>;
+
+/** The options the SDK's own Fastify integration is rebuilt with. */
+export interface FastifyIntegrationOptions {
+  readonly shouldHandleError: () => boolean;
+}
+
+/**
+ * One capture path. With tracing on, the SDK's own Fastify integration also
+ * captures what a route handler throws, judged before the error handler has
+ * set the status (still 200 then). It captured each 5xx first, so the SDK
+ * dropped the normaliser hook's capture of the same error and the stored
+ * event lacked the hook's route tags (seen 18 Oct 2026); and it captured the
+ * errors that answer 400 or 404, which the normaliser keeps out on purpose.
+ * The normaliser's 5xx hook (`buildSentryCapture`) is the API's one capture
+ * path; the integration keeps its tracing and captures nothing.
+ */
+export function withOneCapturePath(
+  makeFastifyIntegration: (options: FastifyIntegrationOptions) => Integration,
+): (defaults: Integration[]) => Integration[] {
+  return (defaults) => defaults.map((integration) => (integration.name === "Fastify"
+    ? makeFastifyIntegration({ shouldHandleError: () => false })
+    : integration));
+}
 
 /**
  * Initialise the Sentry Node SDK if SENTRY_DSN is configured.
@@ -21,32 +82,12 @@ import type { Env } from "../env.js";
  *
  * Dynamic import keeps the cold-start cost off dev / CI boots.
  */
-export async function initSentry(env: Env): Promise<void> {
+export async function initSentry(env: SentryOptionsEnv): Promise<void> {
   if (env.SENTRY_DSN === undefined) return;
 
   const Sentry = await import("@sentry/node");
 
-  Sentry.init({
-    dsn: env.SENTRY_DSN,
-    environment: env.SENTRY_ENVIRONMENT ?? env.NODE_ENV,
-    tracesSampleRate: env.SENTRY_TRACES_SAMPLE_RATE,
-
-    // Redact anything that could carry PII before the event leaves
-    // the process. Sentry's default `sendDefaultPii` is false but we
-    // go further and actively scrub request bodies + headers, since
-    // our routes include planner notes and email addresses.
-    beforeSend(event) {
-      if (event.request !== undefined) {
-        event.request.data = undefined;
-        event.request.query_string = undefined;
-        if (event.request.headers !== undefined) {
-          delete event.request.headers["authorization"];
-          delete event.request.headers["cookie"];
-        }
-      }
-      return event;
-    },
-  });
+  Sentry.init({ ...buildSentryOptions(env), integrations: withOneCapturePath(Sentry.fastifyIntegration) });
 }
 
 /**
@@ -61,7 +102,7 @@ export async function initSentry(env: Env): Promise<void> {
  * Sentry.
  */
 export async function buildSentryCapture(
-  env: Env,
+  env: Pick<Env, "SENTRY_DSN">,
 ): Promise<((error: unknown, request: FastifyRequest) => void) | undefined> {
   if (env.SENTRY_DSN === undefined) return undefined;
 
@@ -74,9 +115,10 @@ export async function buildSentryCapture(
       // — much better for Sentry grouping than the raw URL.
       const routeUrl: string = request.routeOptions.url ?? request.url;
       scope.setTag("route.url", routeUrl);
+      // The request id joins the event to its log line. Never the caller's
+      // IP address: it is personal data, and the id already finds the line.
       scope.setContext("request", {
         id: request.id,
-        ip: request.ip,
       });
       Sentry.captureException(error);
     });

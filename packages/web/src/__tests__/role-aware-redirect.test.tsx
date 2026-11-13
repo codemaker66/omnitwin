@@ -65,14 +65,14 @@ describe("RoleAwareRedirect", () => {
     expect(container.textContent).toBe("Navigate->/hallkeeper/today(replace)");
   });
 
-  it("redirects a planner straight to /dashboard", () => {
+  it("sends an invited planner to their own events, not the venue's dashboard (fix-first 12)", () => {
     setAuth({
       isAuthenticated: true,
       isLoading: false,
       user: { id: "u3", email: "p@x.com", role: "planner", platformRole: "none", venueId: "v1", name: "Plan" },
     });
     const { container } = render(<RoleAwareRedirect />);
-    expect(container.textContent).toBe("Navigate->/dashboard(replace)");
+    expect(container.textContent).toBe("Navigate->/events(replace)");
   });
 
   it("redirects a staff user straight to /dashboard", () => {
@@ -105,14 +105,14 @@ describe("RoleAwareRedirect", () => {
     expect(container.textContent).toBe("Navigate->/plan(replace)");
   });
 
-  it("sends a logged-in client to /plan (their working surface)", () => {
+  it("sends a logged-in client to their own events (fix-first 12)", () => {
     setAuth({
       isAuthenticated: true,
       isLoading: false,
       user: { id: "u4", email: "c@x.com", role: "client", platformRole: "none", venueId: null, name: "Client" },
     });
     const { container } = render(<RoleAwareRedirect />);
-    expect(container.textContent).toBe("Navigate->/plan(replace)");
+    expect(container.textContent).toBe("Navigate->/events(replace)");
   });
 
   it("treats isAuthenticated=true with user=null defensively (anon path)", () => {

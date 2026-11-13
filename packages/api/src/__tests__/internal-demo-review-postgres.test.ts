@@ -4,18 +4,17 @@ import { resolve } from "node:path";
 import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import * as schema from "../db/schema.js";
 import { configurationReviewRoutes } from "../routes/configuration-reviews.js";
+import { configurationRoutes } from "../routes/configurations.js";
 import { hallkeeperSheetRoutes } from "../routes/hallkeeper-sheet.js";
-import { validateEnv } from "../env.js";
 import { InternalDemoNameSchema } from "../services/internal-demo-review.js";
 import { assembleSheetDataV2 } from "../services/hallkeeper-sheet-v2-data.js";
 
 const email = vi.hoisted(() => vi.fn());
 vi.mock("../services/email.js", () => ({ sendEmailAsync: email }));
-vi.mock("../services/pdf-prerender.js", () => ({ schedulePrerender: vi.fn() }));
 
 const target = process.env["VENVIEWER_INTERNAL_DEMO_TEST_DATABASE_URL"];
 if (target !== undefined) {
@@ -48,8 +47,8 @@ describe.skipIf(target === undefined)("supported internal review routes on dispo
     db = drizzle(pool, { schema });
     await migrate(db, { migrationsFolder: resolve(import.meta.dirname, "../../drizzle") });
     server = Fastify();
-    await server.register(configurationReviewRoutes, { db, prefix: "/configurations",
-      env: validateEnv({ NODE_ENV: "test", DATABASE_URL: target }) });
+    await server.register(configurationRoutes, { db, prefix: "/configurations" });
+    await server.register(configurationReviewRoutes, { db, prefix: "/configurations" });
     await server.register(hallkeeperSheetRoutes, { db, prefix: "/hallkeeper" });
     await server.ready();
   }, 120000);
@@ -84,8 +83,11 @@ describe.skipIf(target === undefined)("supported internal review routes on dispo
   async function state(f: Fixture) {
     const [config] = await db.select().from(schema.configurations).where(eq(schema.configurations.id, f.configId));
     const snapshots = await db.select().from(schema.configurationSheetSnapshots).where(eq(schema.configurationSheetSnapshots.configurationId, f.configId));
-    const history = await db.select().from(schema.configurationReviewHistory).where(eq(schema.configurationReviewHistory.configurationId, f.configId));
-    const audit = await db.select().from(schema.generalAuditLog).where(eq(schema.generalAuditLog.targetId, f.configId));
+    // In the order written: without an order, PostgreSQL may return rows in any.
+    const history = await db.select().from(schema.configurationReviewHistory).where(eq(schema.configurationReviewHistory.configurationId, f.configId))
+      .orderBy(asc(schema.configurationReviewHistory.createdAt));
+    const audit = await db.select().from(schema.generalAuditLog).where(eq(schema.generalAuditLog.targetId, f.configId))
+      .orderBy(asc(schema.generalAuditLog.createdAt));
     return { config, snapshots, history, audit };
   }
 
@@ -113,11 +115,100 @@ describe.skipIf(target === undefined)("supported internal review routes on dispo
     expect(saved.config?.reviewStatus).toBe("approved");
     expect(saved.snapshots).toHaveLength(1);
     expect(saved.snapshots[0]?.approvedBy).toBe(f.userId);
+    // Approval stores no PDF anywhere, so no public URL is ever recorded.
+    expect(saved.snapshots[0]?.pdfUrl).toBeNull();
     expect(saved.history.map(row => row.toStatus)).toEqual(["submitted", "under_review", "approved"]);
     expect(saved.audit).toHaveLength(2);
     expect(saved.audit[1]).toMatchObject({ actorUserId: f.userId, metadata: { notifyTeam: false, eventIds: [f.eventId], transition: "approved" } });
     expect((await assembleSheetDataV2(db, f.configId, "http://127.0.0.1"))?.payload.floorPlan?.objects).toHaveLength(1);
     expect(email).not.toHaveBeenCalled();
+  });
+
+  it("freezes the layout's gangway review into the submitted snapshot, as the venue's reviewer reads it (QoL E-03)", async () => {
+    const f = await fixture();
+    const pinch = {
+      id: "gangway:zMin:group-1+wall:zMin",
+      widthM: 0.95,
+      guidance: { thresholdM: 1.1, source: "Scottish Government, Practical fire safety guidance for existing non-residential premises, ch. 7" },
+      gangway: "the window wall",
+      location: { kind: "segment", from: { x: -1, z: -5 }, to: { x: 1, z: -5 } },
+      pieceIds: ["p-1"],
+      sides: ["the window wall", "Table 4's chairs"],
+      status: "open",
+    };
+    await db.update(schema.configurations).set({ metadata: { gangwayReview: { items: [pinch] } } })
+      .where(eq(schema.configurations.id, f.configId));
+    expect((await post(f, "submit", { notifyTeam: false })).statusCode).toBe(200);
+    // A later change to the live layout's review leaves what was submitted as it was.
+    await db.update(schema.configurations).set({ metadata: { gangwayReview: { items: [] } } })
+      .where(eq(schema.configurations.id, f.configId));
+    const [snapshot] = (await state(f)).snapshots;
+    const frozen = snapshot?.payload as { readonly gangwayReview?: { readonly items: readonly unknown[] } | null } | undefined;
+    expect(frozen?.gangwayReview?.items).toEqual([pinch]);
+  });
+
+  /** The fixture's layout, owned instead by someone on another venue's team.
+   *  Anyone may plan in a venue's room, so another venue's team can. */
+  async function ownedElsewhere(f: Fixture, role: string): Promise<Fixture> {
+    const elsewhere = randomUUID(), owner = randomUUID();
+    await db.insert(schema.venues).values({ id: elsewhere, name: "Another venue", slug: elsewhere, address: "Test only" });
+    await db.insert(schema.users).values({ id: owner, venueId: elsewhere, name: "Another team", email: `${owner}@demo.invalid`, role });
+    await db.update(schema.configurations).set({ userId: owner }).where(eq(schema.configurations.id, f.configId));
+    const token = { id: owner, name: "Another team", email: `${owner}@demo.invalid`, role, venueId: elsewhere };
+    return { ...f, userId: owner, headers: { authorization: `Bearer ${JSON.stringify(token)}` } };
+  }
+
+  it.each(["staff", "manager", "admin", "hallkeeper", "sales"])("leaves the venue's side of a review to the venue when another venue's %s owns the layout", async role => {
+    const venue = await fixture();
+    const owner = await ownedElsewhere(venue, role);
+    // The owner submits as its planner; taking it into review, deciding and
+    // archiving are the venue's.
+    expect((await post(owner, "submit")).statusCode).toBe(200);
+    expect((await post(owner, "start-review")).statusCode).toBe(409);
+    expect((await post(venue, "start-review")).statusCode).toBe(200);
+    for (const [action, payload] of [["approve", {}], ["reject", { note: "Not this one." }], ["request-changes", { note: "Move the bar." }]] as const) {
+      expect((await post(owner, action, payload)).statusCode, action).toBe(409);
+    }
+    expect((await post(venue, "approve")).statusCode).toBe(200);
+    expect((await post(owner, "archive")).statusCode).toBe(409);
+    const saved = await state(venue);
+    expect(saved.config?.reviewStatus).toBe("approved");
+    expect(saved.snapshots[0]?.approvedBy).toBe(venue.userId);
+    expect(saved.history.map(row => [row.toStatus, row.changedBy])).toEqual([
+      ["submitted", owner.userId], ["under_review", venue.userId], ["approved", venue.userId],
+    ]);
+  });
+
+  it("shows the venue's manager the plan submitted for the review they decide", async () => {
+    const f = await fixture();
+    expect((await post(f, "submit")).statusCode).toBe(200);
+    const manager = randomUUID();
+    const token = { id: manager, name: "Test manager", email: `${manager}@demo.invalid`, role: "manager", venueId: f.venueId };
+    const latest = await server.inject({ method: "GET", url: `/configurations/${f.configId}/snapshot/latest`,
+      headers: { authorization: `Bearer ${JSON.stringify(token)}` } });
+    expect(latest.statusCode).toBe(200);
+    expect(latest.json<{ data: { version: number; approvedAt: string | null } }>().data).toMatchObject({ version: 1, approvedAt: null });
+  });
+
+  it("holds a submitted layout against another venue's admin who owns it, and leaves this venue's admin its fix", async () => {
+    const venue = await fixture();
+    const owner = await ownedElsewhere(venue, "admin");
+    expect((await post(owner, "submit")).statusCode).toBe(200);
+    const rename = (who: Fixture, name: string) => server.inject({ method: "PATCH", url: `/configurations/${venue.configId}`, headers: who.headers, payload: { name } });
+    const held = await rename(owner, "Changed behind the review");
+    expect(held.statusCode).toBe(409);
+    expect(held.json()).toMatchObject({ code: "CONFIG_LOCKED", reviewStatus: "submitted" });
+    // Someone with no part in the layout is refused, and not told its state.
+    for (const role of ["admin", "staff"]) {
+      const stranger = randomUUID();
+      const token = { id: stranger, name: "Stranger", email: `${stranger}@demo.invalid`, role, venueId: randomUUID() };
+      const refused = await rename({ ...venue, headers: { authorization: `Bearer ${JSON.stringify(token)}` } }, "Not theirs");
+      expect(refused.statusCode, role).toBe(403);
+      expect(refused.body, role).not.toContain("submitted");
+    }
+    // This venue's admin can still make an emergency fix.
+    expect((await rename(venue, "Fixed by the venue")).statusCode).toBe(200);
+    expect((await state(venue)).config?.name).toBe("Fixed by the venue");
   });
 
   async function approvedFixture() {
@@ -145,6 +236,8 @@ describe.skipIf(target === undefined)("supported internal review routes on dispo
     const pdf = await server.inject({ method: "GET", url: `/hallkeeper/${f.configId}/sheet?download=true`, headers: f.headers });
     expect(pdf.statusCode).toBe(200);
     expect(pdf.headers["content-type"]).toBe("application/pdf");
+    expect(pdf.headers["cache-control"]).toBe("private, no-store");
+    expect(pdf.headers["location"]).toBeUndefined();
     expect(pdf.rawPayload.subarray(0, 5).toString()).toBe("%PDF-");
     expect(pdf.headers["content-disposition"]).not.toContain("UNREVIEWED");
   });
@@ -197,7 +290,7 @@ describe.skipIf(target === undefined)("supported internal review routes on dispo
     expect((await state(f)).snapshots[0]?.payload).toEqual(payload);
   });
 
-  it("binds the PDF redirect and content to the latest approved version, ignoring newer unapproved snapshots", async () => {
+  it("binds the PDF and its paper check to the latest approved version, ignoring newer unapproved snapshots", async () => {
     const f = await approvedFixture();
     await db.update(schema.configurationSheetSnapshots).set({ pdfUrl: "https://example.invalid/v1.pdf" })
       .where(eq(schema.configurationSheetSnapshots.id, f.snapshot.id));
@@ -213,9 +306,16 @@ describe.skipIf(target === undefined)("supported internal review routes on dispo
       .where(eq(schema.configurations.id, f.configId));
     const json = await server.inject({ method: "GET", url: `/hallkeeper/${f.configId}/v2`, headers: f.headers });
     expect(json.json()).toMatchObject({ data: { config: { name: "Approved second version" }, approval: { version: 2 } } });
+    // The printout's QR names v2 by its own fingerprint, never the unapproved v3.
+    expect(json.json<{ data: { paperCheck: { url: string } } }>().data.paperCheck.url)
+      .toMatch(/\/sheet-check\?s=[0-9a-f-]{36}&v=2&h=2{16}$/u);
+    // Each copy is rendered on request so it can print its own time; the
+    // approval-time copy in R2 is no longer served (hallkeeper-sheet.ts).
     const pdf = await server.inject({ method: "GET", url: `/hallkeeper/${f.configId}/sheet`, headers: f.headers });
-    expect(pdf.statusCode).toBe(302);
-    expect(pdf.headers["location"]).toBe("https://example.invalid/v2.pdf");
+    expect(pdf.statusCode).toBe(200);
+    expect(pdf.headers["location"]).toBeUndefined();
+    expect(pdf.headers["content-type"]).toBe("application/pdf");
+    expect(pdf.rawPayload.subarray(0, 5).toString()).toBe("%PDF-");
   });
 
   it.each(["deleted", "cleared"])("does not fall back to an older approval when the current snapshot is %s", async defect => {
@@ -261,10 +361,11 @@ describe.skipIf(target === undefined)("supported internal review routes on dispo
     const rows = f.frozen.phases.flatMap((phase) => phase.zones.flatMap((zone) => zone.rows));
     const [first] = rows;
     if (first === undefined) throw new Error("The approved fixture must have a row");
-    // One mark on the approved sheet's row, one left on a row it does not have.
+    // One mark on the approved sheet's row, one left on a row it does not have,
+    // both for the event the Day Board asks about (ticks belong to an event).
     await db.insert(schema.hallkeeperProgress).values([
-      { configId: f.configId, rowKey: first.key, checkedBy: f.userId },
-      { configId: f.configId, rowKey: "furniture|Centre|Removed trestle|0", checkedBy: f.userId },
+      { configId: f.configId, eventId: f.eventId, rowKey: first.key, checkedBy: f.userId },
+      { configId: f.configId, eventId: f.eventId, rowKey: "furniture|Centre|Removed trestle|0", checkedBy: f.userId },
     ]);
     const response = await server.inject({ method: "GET", url: `/hallkeeper/${f.configId}/summary?eventId=${f.eventId}`, headers: f.headers });
     expect(response.statusCode).toBe(200);

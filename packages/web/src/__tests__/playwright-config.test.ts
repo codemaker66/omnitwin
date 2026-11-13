@@ -11,9 +11,10 @@ const snapshotSchema = z.object({
     command: z.string(),
     url: z.string(),
     reuseExistingServer: z.boolean(),
+    stdout: z.enum(["pipe", "ignore"]).optional(),
   }).nullable(),
 });
-const resultsSchema = z.record(z.union([snapshotSchema, z.object({ error: z.string() })]));
+const resultsSchema = z.record(z.string(), z.union([snapshotSchema, z.object({ error: z.string() })]));
 const invalidPorts = ["", "0", "65536", "-1", "5199.5", "abc", "5199 && echo injected"];
 const environments: Readonly<Record<string, Readonly<Record<string, string>>>> = {
   default: {},
@@ -128,5 +129,10 @@ describe("Playwright server configuration", () => {
 
   it("keeps CI from reusing an existing server", () => {
     expect(snapshot("ci").webServer?.reuseExistingServer).toBe(false);
+  });
+
+  it("sends the dev server's own output to the CI job log, and leaves it out locally", () => {
+    expect(snapshot("ci").webServer?.stdout).toBe("pipe");
+    expect(snapshot("selected").webServer?.stdout).toBeUndefined();
   });
 });

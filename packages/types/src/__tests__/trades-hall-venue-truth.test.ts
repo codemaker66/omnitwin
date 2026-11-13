@@ -6,12 +6,15 @@ import {
   TRADES_HALL_PUBLIC_PROFILE,
   TRADES_HALL_PUBLISHED_ROOM_NAMES,
   TRADES_HALL_ROOM_CAPACITIES,
+  TRADES_HALL_ROOM_DIMENSIONS,
   TRADES_HALL_WEDDING_PRICING,
   VENUE_TRUTH_PROVENANCE,
+  VENUE_TRUTH_STATEMENTS,
   formatPriceGBP,
   formatPublishedAddress,
   isPublishedRoomSlug,
   publishedRoomCapacity,
+  venueTruthStatementLabel,
 } from "../trades-hall-venue-truth.js";
 
 // ---------------------------------------------------------------------------
@@ -139,6 +142,40 @@ describe("public profile — what the venue already publishes", () => {
   });
 });
 
+describe("room dimensions", () => {
+  it("gives the Grand Hall's interior as its laser scan measures it", () => {
+    // Blake, 11 November 2026: "The measured 21.14 x 10.59 m". The height is the
+    // clear 6.7 m to the underside of the coffered ceiling, never the dome's.
+    // The note says only what the height is measured to, short enough to sit
+    // beside the figure; the dome is a remark of its own, for a footnote.
+    expect(TRADES_HALL_ROOM_DIMENSIONS["grand-hall"]).toEqual({
+      lengthM: 21.14,
+      widthM: 10.59,
+      heightM: 6.7,
+      note: "to the coffered ceiling",
+      remark: "The dome rises above part of the hall.",
+    });
+  });
+
+  it("states no figure in a height's note or remark, so the only height shown is heightM", () => {
+    // The dome is never given as the room's height, and a number in either
+    // string would be a second height for a surface to print.
+    const texts = Object.values(TRADES_HALL_ROOM_DIMENSIONS)
+      .flatMap((d) => [d?.note, d?.remark])
+      .filter((text): text is string => text !== undefined);
+    expect(texts.length).toBeGreaterThan(0);
+    for (const text of texts) expect(text).not.toMatch(/\d/);
+  });
+
+  it("keeps the other rooms at the venue's published figures", () => {
+    expect(TRADES_HALL_ROOM_DIMENSIONS.saloon).toEqual({ lengthM: 12, widthM: 7, heightM: 5.4 });
+    expect(TRADES_HALL_ROOM_DIMENSIONS["robert-adam-room"]).toEqual({ lengthM: 9.7, widthM: 5.6, heightM: 2.18 });
+    expect(TRADES_HALL_ROOM_DIMENSIONS["reception-room"]).toEqual({ lengthM: 13.4, widthM: 11.2, heightM: 3.2 });
+    expect(TRADES_HALL_ROOM_DIMENSIONS["north-gallery"]).toBeUndefined();
+    expect(TRADES_HALL_ROOM_DIMENSIONS["south-gallery"]).toBeUndefined();
+  });
+});
+
 describe("claim safety", () => {
   it("every public string passes the proposal claim guard", () => {
     const strings = [
@@ -148,6 +185,9 @@ describe("claim safety", () => {
       ...TRADES_HALL_WEDDING_PRICING.seasons.flatMap((s) => s.rates.map((r) => r.packageName)),
       ...CAPACITY_FORMATS.flatMap((f) => [f.label, f.description]),
       ...Object.values(TRADES_HALL_PUBLISHED_ROOM_NAMES),
+      ...Object.values(TRADES_HALL_ROOM_DIMENSIONS)
+        .flatMap((d) => [d?.note, d?.remark])
+        .filter((text): text is string => text !== undefined),
     ];
     for (const s of strings) {
       expect(findUnsupportedProposalClaim(s), `claim guard tripped on: ${s}`).toBeNull();
@@ -157,5 +197,28 @@ describe("claim safety", () => {
   it("provenance names its date and source", () => {
     expect(VENUE_TRUTH_PROVENANCE.capacities).toContain("2026-07-09");
     expect(VENUE_TRUTH_PROVENANCE.pricing).toContain("2026-07-09");
+  });
+
+  it("keeps the provenance sentences word for word while writing them from the statements", () => {
+    expect(VENUE_TRUTH_PROVENANCE.capacities).toBe(
+      "Capacity figures confirmed by the Trades Hall team, 2026-07-09 — a planning guide; final numbers depend on your layout.",
+    );
+    expect(VENUE_TRUTH_PROVENANCE.pricing).toBe(
+      "Room-hire rates provided by the Trades Hall team, 2026-07-09. Catering and services are quoted separately by the events team.",
+    );
+    expect(VENUE_TRUTH_PROVENANCE.capacities).toContain(VENUE_TRUTH_STATEMENTS.capacities.statedOn);
+    expect(VENUE_TRUTH_PROVENANCE.pricing).toContain(VENUE_TRUTH_STATEMENTS.pricing.statedOn);
+  });
+
+  it("labels a figure with who stated it and when, in plain words", () => {
+    expect(venueTruthStatementLabel(VENUE_TRUTH_STATEMENTS.capacities)).toBe("Published guide · Trades Hall · 9 Jul 2026");
+    expect(venueTruthStatementLabel(VENUE_TRUTH_STATEMENTS.pricing)).toBe("Published rates · Trades Hall · 9 Jul 2026");
+  });
+
+  it("shows a malformed date as written instead of guessing a day", () => {
+    expect(venueTruthStatementLabel({ kind: "Published guide", statedBy: "A venue", statedOn: "July 2026" }))
+      .toBe("Published guide · A venue · July 2026");
+    expect(venueTruthStatementLabel({ kind: "Published guide", statedBy: "A venue", statedOn: "2026-13-45" }))
+      .toBe("Published guide · A venue · 2026-13-45");
   });
 });

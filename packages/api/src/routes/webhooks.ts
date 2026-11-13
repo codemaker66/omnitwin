@@ -2,25 +2,29 @@ import type { FastifyInstance } from "fastify";
 import { eq } from "drizzle-orm";
 import { Webhook } from "svix";
 import { z } from "zod";
-import { users } from "../db/schema.js";
+import { generalAuditLog, users } from "../db/schema.js";
 import type { Database } from "../db/client.js";
-import { getUserByClerkId, normalizeAuthEmail } from "../middleware/auth.js";
+import { CLERK_ACCOUNT_DELETED, clerkAccountDeleted, getUserByClerkId, lockClerkAccount, normalizeAuthEmail } from "../middleware/auth.js";
 import { evictClerkEmailCacheEntry } from "../middleware/clerk-email.js";
 
 const ClerkEmailAddressSchema = z.object({
-  email_address: z.string().email(),
+  email_address: z.email(),
   id: z.string().min(1),
   verification: z.object({ status: z.string().optional() }).nullable().optional(),
 });
 
+// A bound lets zod stop at an over-long list instead of reporting every bad
+// entry in it (GHSA-mrhx-c7xc-m3w5); no Clerk account comes near it.
+const CLERK_LIST_MAX = 100;
+
 const ClerkUserDataSchema = z.object({
   id: z.string().min(1),
-  email_addresses: z.array(ClerkEmailAddressSchema),
+  email_addresses: z.array(ClerkEmailAddressSchema).max(CLERK_LIST_MAX),
   primary_email_address_id: z.string().nullable(),
   first_name: z.string().nullable(),
   last_name: z.string().nullable(),
-  phone_numbers: z.array(z.object({ phone_number: z.string() })),
-  public_metadata: z.record(z.unknown()),
+  phone_numbers: z.array(z.object({ phone_number: z.string() })).max(CLERK_LIST_MAX),
+  public_metadata: z.record(z.string(), z.unknown()),
   username: z.string().nullable().optional(),
 });
 
@@ -38,7 +42,8 @@ const SupportedClerkWebhookEventSchema = z.discriminatedUnion("type", [
 
 const ClerkWebhookEnvelopeSchema = z.object({
   type: z.string().min(1),
-  data: z.unknown(),
+  // Optional as under zod 3: an event type we ignore is ignored, data or not.
+  data: z.unknown().optional(),
 });
 
 type ClerkUserData = z.infer<typeof ClerkUserDataSchema>;
@@ -47,7 +52,7 @@ export type SupportedClerkWebhookEvent = z.infer<typeof SupportedClerkWebhookEve
 export type ParsedClerkWebhookPayload =
   | { readonly kind: "supported"; readonly event: SupportedClerkWebhookEvent }
   | { readonly kind: "ignored"; readonly type: string }
-  | { readonly kind: "invalid"; readonly issues: readonly z.ZodIssue[] };
+  | { readonly kind: "invalid"; readonly issues: readonly z.core.$ZodIssue[] };
 
 export interface ClerkUserUpdate {
   readonly email?: string;
@@ -95,9 +100,12 @@ function getVerifiedPrimaryEmail(data: ClerkUserData): string | null {
   return normalizeAuthEmail(candidate.email_address);
 }
 
-function getFullName(data: ClerkUserData): string {
-  const parts = [data.first_name, data.last_name].filter((part): part is string => part !== null && part.length > 0);
-  return parts.length > 0 ? parts.join(" ") : "User";
+/** The name Clerk holds, or null when it holds none (a person who signed up with an email and a code has neither part). */
+function getFullName(data: ClerkUserData): string | null {
+  const parts = [data.first_name, data.last_name]
+    .map((part) => part?.trim() ?? "")
+    .filter((part) => part.length > 0);
+  return parts.length > 0 ? parts.join(" ") : null;
 }
 
 export function parseClerkWebhookPayload(payload: unknown): ParsedClerkWebhookPayload {
@@ -117,11 +125,13 @@ export function parseClerkWebhookPayload(payload: unknown): ParsedClerkWebhookPa
 }
 
 function profileUpdate(data: ClerkUserData, updatedAt: Date, email?: string): ClerkUserUpdate {
+  // With no name at Clerk the account keeps the name it has: the one made at
+  // first sign-in, or an earlier Clerk name. A placeholder is never written
+  // over it.
   const name = getFullName(data);
   return {
     ...(email === undefined ? {} : { email }),
-    name,
-    displayName: name,
+    ...(name === null ? {} : { name, displayName: name }),
     phone: data.phone_numbers[0]?.phone_number ?? null,
     username: normaliseUsername(data.username),
     updatedAt,
@@ -157,7 +167,7 @@ export async function processClerkWebhookEvent(
   return { status: "processed", clerkId: event.data.id };
 }
 
-function databasePersistence(db: Database): ClerkWebhookPersistence {
+export function databasePersistence(db: Database): ClerkWebhookPersistence {
   return {
     resolveCreatedUser: async (clerkId, email) => {
       const user = await getUserByClerkId(db, clerkId, email);
@@ -170,7 +180,15 @@ function databasePersistence(db: Database): ClerkWebhookPersistence {
       await db.update(users).set(values).where(eq(users.clerkId, clerkId));
     },
     unlinkUser: async (clerkId, updatedAt) => {
-      await db.update(users).set({ clerkId: null, updatedAt }).where(eq(users.clerkId, clerkId));
+      // One transaction: the row is never unlinked without the record that
+      // keeps the deleted account from linking it again (auth.ts).
+      await db.transaction(async (tx) => {
+        await lockClerkAccount(tx, clerkId);
+        await tx.update(users).set({ clerkId: null, updatedAt }).where(eq(users.clerkId, clerkId));
+        if (await clerkAccountDeleted(tx, clerkId)) return;
+        await tx.insert(generalAuditLog).values({ ...CLERK_ACCOUNT_DELETED, actorUserId: null, targetId: clerkId,
+          summary: "Clerk deleted this account; its user was unlinked and cannot be linked to it again.", metadata: null });
+      });
     },
   };
 }

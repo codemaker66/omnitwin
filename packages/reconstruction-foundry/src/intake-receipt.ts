@@ -119,7 +119,7 @@ const FoundryIntakeQuarantineItemSchema = z
   .superRefine((item, ctx) => {
     if (item.nextAction !== FOUNDRY_QUARANTINE_NEXT_ACTIONS[item.reason]) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["nextAction"],
         message: "quarantine reason must carry its canonical plain-language next action",
       });
@@ -144,8 +144,8 @@ const FoundryIntakeDuplicateSchema = z.discriminatedUnion("status", [
 const FoundryIntakeFileBaseSchema = z
   .object({
     path: FoundryRelativePathSchema,
-    sizeBytes: z.number().int().safe().nonnegative(),
-    modifiedAt: z.string().datetime(),
+    sizeBytes: z.number().int().int().nonnegative(),
+    modifiedAt: z.iso.datetime(),
     sha256: z.string().regex(SHA256_HEX),
     detection: FoundryFileDetectionSchema,
     inspection: z
@@ -169,7 +169,7 @@ export const FoundryUniversalIntakeFileSchema = FoundryIntakeFileBaseSchema.exte
   .superRefine((file, ctx) => {
     if (JSON.stringify(file.quarantine) !== JSON.stringify(quarantineFor(file.detection))) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["quarantine"],
         message: "quarantine reasons must match format, rights, and provenance evidence",
       });
@@ -180,7 +180,7 @@ export type FoundryUniversalIntakeFile = z.infer<typeof FoundryUniversalIntakeFi
 export const FoundryIntakeDuplicateGroupSchema = z
   .object({
     sha256: z.string().regex(SHA256_HEX),
-    sizeBytes: z.number().int().safe().nonnegative(),
+    sizeBytes: z.number().int().int().nonnegative(),
     paths: z.array(FoundryRelativePathSchema).min(2).max(FOUNDRY_INTAKE_MAX_FILE_COUNT),
   })
   .strict();
@@ -209,7 +209,7 @@ const FoundryUniversalIntakeReceiptBaseSchema = z
     summary: z
       .object({
         fileCount: z.number().int().min(0).max(FOUNDRY_INTAKE_MAX_FILE_COUNT),
-        totalBytes: z.number().int().safe().nonnegative(),
+        totalBytes: z.number().int().int().nonnegative(),
         quarantinedCount: z.number().int().min(0).max(FOUNDRY_INTAKE_MAX_FILE_COUNT),
         unknownFormatCount: z.number().int().min(0).max(FOUNDRY_INTAKE_MAX_FILE_COUNT),
         ambiguousFormatCount: z.number().int().min(0).max(FOUNDRY_INTAKE_MAX_FILE_COUNT),
@@ -307,25 +307,25 @@ function validateReceiptConsistency(
   const sortedPaths = receipt.files.map((file) => file.path).sort(compareText);
   if (new Set(sortedPaths).size !== sortedPaths.length ||
       sortedPaths.some((path, index) => path !== receipt.files[index]?.path)) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["files"], message: "file paths must be unique and sorted" });
+    ctx.addIssue({ code: "custom", path: ["files"], message: "file paths must be unique and sorted" });
   }
   const expectedGroups = buildDuplicateGroups(receipt.files);
   const expectedFiles = addDuplicateStatus(receipt.files, expectedGroups);
   const expected = expectedSummary(expectedFiles, expectedGroups);
   if (JSON.stringify(receipt.summary) !== JSON.stringify(expected)) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["summary"], message: "receipt summary does not match files" });
+    ctx.addIssue({ code: "custom", path: ["summary"], message: "receipt summary does not match files" });
   }
   if (JSON.stringify(receipt.duplicateGroups) !== JSON.stringify(expectedGroups)) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["duplicateGroups"], message: "duplicate groups do not match file hashes" });
+    ctx.addIssue({ code: "custom", path: ["duplicateGroups"], message: "duplicate groups do not match file hashes" });
   }
   if (receipt.files.some((file, index) =>
     JSON.stringify(file.duplicate) !== JSON.stringify(expectedFiles[index]?.duplicate)
   )) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["files"], message: "file duplicate status is inconsistent" });
+    ctx.addIssue({ code: "custom", path: ["files"], message: "file duplicate status is inconsistent" });
   }
   const { receiptSha256: _receiptSha256, ...payload } = receipt;
   if (receipt.receiptSha256 !== receiptPayloadSha256(payload)) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["receiptSha256"], message: "receipt digest does not match its canonical payload" });
+    ctx.addIssue({ code: "custom", path: ["receiptSha256"], message: "receipt digest does not match its canonical payload" });
   }
 }
 

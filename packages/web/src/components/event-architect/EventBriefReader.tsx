@@ -9,6 +9,8 @@ import {
 } from "react";
 import { Check, CircleAlert, Quote, Sparkles } from "lucide-react";
 import {
+  AI_BUDGET_REACHED,
+  AI_DRAFTS_UNAVAILABLE,
   EVENT_BRIEF_DESCRIPTION_MAX_LENGTH,
   type EventArchitectAccessibilityRequirement,
   type EventBriefDraft,
@@ -76,7 +78,8 @@ type Step =
   | { readonly kind: "filled"; readonly draft: EventBriefDraft; readonly readFor: ReadFor }
   | { readonly kind: "failed" }
   | { readonly kind: "refused" }
-  | { readonly kind: "gone" };
+  // Off, or (outOfCredit) the provider takes no calls until the next grant (C1).
+  | { readonly kind: "gone"; readonly outOfCredit?: boolean };
 
 const FIELD_LABELS: Readonly<Record<EventBriefDraftField, string>> = {
   eventName: "Event name",
@@ -222,7 +225,7 @@ interface EventBriefReaderProps {
 }
 
 export function EventBriefReader({ venueId, spaceId, roomName, onFill }: EventBriefReaderProps): ReactElement | null {
-  const available = useEventBriefReaderAvailable();
+  const available = useEventBriefReaderAvailable(venueId);
   const [description, setDescription] = useState("");
   const [step, setStep] = useState<Step>({ kind: "idle" });
   const [values, setValues] = useState<PreviewValues | null>(null);
@@ -297,11 +300,18 @@ export function EventBriefReader({ venueId, spaceId, roomName, onFill }: EventBr
         if (askNumber.current !== mine) return;
         controllerRef.current = null;
         setSaid("");
-        // Only the server's own word that AI is off takes the feature away
-        // for the visit; a proxy's 503 is a failure to try again.
-        if (error instanceof ApiError && error.status === 503 && error.code === "AI_ASSISTANT_DISABLED") {
+        // Only the server's own word takes the feature away for the visit:
+        // that AI is off, or that the venue's AI allowance for the month is
+        // used (T-656). A proxy's 503 is a failure to try again.
+        if (error instanceof ApiError && ((error.status === 503 && error.code === "AI_ASSISTANT_DISABLED")
+          || (error.status === 429 && error.code === AI_BUDGET_REACHED))) {
           markEventBriefReaderUnavailable();
           setStep({ kind: "gone" });
+          return;
+        }
+        if (error instanceof ApiError && error.status === 503 && error.code === AI_DRAFTS_UNAVAILABLE) {
+          markEventBriefReaderUnavailable();
+          setStep({ kind: "gone", outOfCredit: true });
           return;
         }
         // Refused as it stands (a room no longer there, a description it will
@@ -381,7 +391,9 @@ export function EventBriefReader({ venueId, spaceId, roomName, onFill }: EventBr
 
       {step.kind === "gone" ? (
         <p className="ea-reader__quiet-note" data-testid="brief-reader-gone">
-          Reading briefs is not available now. The request form below works as before.
+          {step.outOfCredit === true
+            ? "Reading briefs is unavailable just now and returns on its own. Fill in the request form below by hand; your description is unchanged."
+            : "Reading briefs is not available now. The request form below works as before."}
         </p>
       ) : (
         <>

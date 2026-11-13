@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { createPublicKey } from "node:crypto";
-import { UserRoleSchema } from "@omnitwin/types";
+import { AIUsageFeatureSchema, UserRoleSchema } from "@omnitwin/types";
+import { isStripeTestSecretKey } from "./services/payments/stripe-mode.js";
 
 // ---------------------------------------------------------------------------
 // Zod-validated environment variables — fail fast on startup if missing
@@ -12,6 +13,16 @@ import { UserRoleSchema } from "@omnitwin/types";
 // them ONLY when NODE_ENV === "production". This is the "fail fast in
 // prod, permissive in dev" pattern.
 // ---------------------------------------------------------------------------
+
+/** A comma-separated list of at least one `item`; spaces around each are
+ *  ignored and repeats are dropped. An empty list is refused, not read as "none". */
+function commaList<T extends z.ZodType<unknown, string>>(item: T) {
+  return z.string()
+    .transform((text) => text.split(",").map((part) => part.trim()).filter((part) => part !== ""))
+    .pipe(z.array(item).min(1, "must list at least one value, separated by commas"))
+    // After each value is read, so "A" and "a" are one id once both are lower case.
+    .transform((values) => [...new Set(values)]);
+}
 
 const EnvSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
@@ -25,13 +36,19 @@ const EnvSchema = z.object({
   // users remain the primary access path.
   VENVIEWER_APPROVED_AUTH_DOMAINS: z.string().min(1).optional(),
   VENVIEWER_APPROVED_AUTH_DOMAIN_ROLE: UserRoleSchema.default("planner"),
-  VENVIEWER_APPROVED_AUTH_DOMAIN_VENUE_ID: z.string().uuid().optional(),
+  VENVIEWER_APPROVED_AUTH_DOMAIN_VENUE_ID: z.uuid().optional(),
   // Email — Resend (optional — logs to console if not set)
   RESEND_API_KEY: z.string().min(1).optional(),
+  // Web push — VAPID (goal 19 S7). All three or push is off, the way email
+  // is off without a Resend key. The subject must be a real mailto: address:
+  // Apple's push service refuses a placeholder.
+  VAPID_PUBLIC_KEY: z.string().min(1).optional(),
+  VAPID_PRIVATE_KEY: z.string().min(1).optional(),
+  VAPID_SUBJECT: z.string().regex(/^(mailto:[^@\s]+@[^@\s]+|https:\/\/\S+)$/u).optional(),
   // Where a public enquiry goes when the venue has no hallkeeper user yet.
   // Without this, an enquiry with no hallkeeper is stored and silently never
   // announced — the guest sees success and the lead reaches nobody.
-  ENQUIRY_FALLBACK_EMAIL: z.string().email().optional(),
+  ENQUIRY_FALLBACK_EMAIL: z.email().optional(),
   EMAIL_FROM: z.string().min(1).default("VenViewer <notifications@venviewer.com>"),
   // CORS — comma-separated allowed origins (defaults to localhost for dev)
   CORS_ORIGINS: z.string().default("http://localhost:5173,http://localhost:5174"),
@@ -40,7 +57,7 @@ const EnvSchema = z.object({
   R2_ACCESS_KEY_ID: z.string().min(1).optional(),
   R2_SECRET_ACCESS_KEY: z.string().min(1).optional(),
   R2_BUCKET_NAME: z.string().min(1).optional(),
-  R2_PUBLIC_URL: z.string().url().optional(),
+  R2_PUBLIC_URL: z.url().optional(),
   // Reviewed runtime profiles — private, API-mediated storage only. These
   // credentials must be scoped to this one private bucket. Deliberately no
   // public URL exists: anonymous bytes are released only through API gates.
@@ -55,19 +72,19 @@ const EnvSchema = z.object({
   FOUNDRY_R2_SECRET_ACCESS_KEY: z.string().min(1).optional(),
   FOUNDRY_R2_CANDIDATE_BUCKET: z.string().regex(/^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/u).optional(),
   FOUNDRY_R2_RELEASE_BUCKET: z.string().regex(/^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/u).optional(),
-  FOUNDRY_R2_PUBLIC_URL: z.string().url().optional(),
+  FOUNDRY_R2_PUBLIC_URL: z.url().optional(),
   // JSON object mapping a stable key id to an Ed25519 SPKI public key encoded
   // as base64 DER. The API verifies DSSE; it never holds a signing private key.
   FOUNDRY_ED25519_PUBLIC_KEYS_JSON: z.string().min(1).optional(),
   // Frontend URL for email links (defaults to localhost)
-  FRONTEND_URL: z.string().url().optional(),
+  FRONTEND_URL: z.url().optional(),
   // Canonical public API origin used to construct anonymous reviewed-profile
   // member URLs. Never derive public content URLs from Host/forwarded headers.
-  PUBLIC_API_ORIGIN: z.string().url().optional(),
+  PUBLIC_API_ORIGIN: z.url().optional(),
   // Sentry — error tracking. DSN is optional (disabled if unset); the
   // SDK import itself is lazy so dev/test environments without Sentry
   // configured don't pay the cold-start cost.
-  SENTRY_DSN: z.string().url().optional(),
+  SENTRY_DSN: z.url().optional(),
   SENTRY_ENVIRONMENT: z.string().optional(),
   SENTRY_TRACES_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(0.1),
   // AI assistant — disabled unless explicitly enabled and fully configured.
@@ -76,10 +93,34 @@ const EnvSchema = z.object({
   AI_ASSISTANT_ENABLED: z.enum(["true", "false"]).default("false"),
   AI_ASSISTANT_PROVIDER: z.string().min(1).max(80).optional(),
   AI_ASSISTANT_MODEL: z.string().min(1).max(120).optional(),
-  AI_ASSISTANT_BASE_URL: z.string().url().optional(),
+  AI_ASSISTANT_BASE_URL: z.url().optional(),
   AI_ASSISTANT_API_KEY: z.string().min(1).optional(),
   // Anthropic only: the Console workspace for a key not scoped to one.
   AI_ASSISTANT_WORKSPACE_ID: z.string().regex(/^wrkspc_[A-Za-z0-9]+$/u).optional(),
+  // T-656: each venue's AI allowance for a UTC calendar month, in US dollars.
+  // Every model call reserves its worst-case cost against it before it is
+  // made, and is refused with AI_BUDGET_REACHED when the month's recorded
+  // spend, the calls in flight and that reservation would pass it. Unset, it
+  // is $50 (DEFAULT_AI_VENUE_MONTHLY_BUDGET_USD in services/ai-usage.ts):
+  // over a thousand drafts or briefs a venue a month at today's prices, and a
+  // hard ceiling on what one venue can cost. AI_ASSISTANT_ENABLED stays the
+  // global switch. A value that is not a number from 0.01 to 100,000 stops the
+  // API at boot rather than run unbounded.
+  AI_VENUE_MONTHLY_BUDGET_USD: z.coerce.number()
+    .min(0.01, "AI_VENUE_MONTHLY_BUDGET_USD must be at least 0.01 (US dollars)")
+    .max(100_000, "AI_VENUE_MONTHLY_BUDGET_USD must be at most 100000 (US dollars)")
+    .optional(),
+  // C1, the Trades Hall pilot: which venues have AI drafts, and which drafts.
+  // Comma-separated venue ids and draft names (proposal_draft,
+  // enquiry_summary, event_brief, ...). With AI_ASSISTANT_ENABLED=true and
+  // either list unset, AI is on for no venue and no draft: the API starts,
+  // warns at boot and says why in /ai/status (services/ai-access.ts), so a
+  // forgotten variable never blocks a deploy and turning AI on can never give
+  // drafts to every venue. A list that is set but malformed stops the boot.
+  // There is no "every venue" value.
+  AI_ASSISTANT_VENUE_IDS: commaList(z.guid("AI_ASSISTANT_VENUE_IDS must hold venue ids separated by commas")
+    .transform((id) => id.toLowerCase())).optional(),
+  AI_ASSISTANT_FEATURES: commaList(AIUsageFeatureSchema).optional(),
   // Venue sky (T-647) — Met Office Weather DataHub key for the Site-Specific
   // Blended Probabilistic Forecast v2 API, sent as the `apikey` header. A
   // DataHub key belongs to one product subscription, so a key for another
@@ -104,6 +145,23 @@ const EnvSchema = z.object({
   // weak value that slips through review is caught here at startup. It must
   // be byte-identical to the GitHub Actions secret of the same name.
   DIARY_CRON_TOKEN: z.string().min(32).optional(),
+  // Service token for the competitor watch's page-check workflow, its own
+  // secret so the reminder token cannot run it. Unset: only a signed-in
+  // platform administrator reaches POST /admin/competitor-watch/page-checks.
+  COMPETITOR_WATCH_CRON_TOKEN: z.string().min(32).optional(),
+  // Deposits through Stripe Checkout (Plan 19 L5). All three or deposits are
+  // off, the way uploads are off without R2. TEST MODE ONLY: the API refuses
+  // to start with a secret key that is not a test key (sk_test_…) unless
+  // STRIPE_LIVE_PAYMENTS_ALLOWED is "true", which nothing in this lane sets,
+  // and every payment route refuses it again (services/payments). The webhook
+  // secret is the signing secret of the endpoint at /webhooks/stripe. The
+  // slug names the one venue whose Stripe account the key belongs to: another
+  // venue's proposals offer no deposit, so no client pays into another
+  // venue's account. Never logged and never returned to a client.
+  STRIPE_SECRET_KEY: z.string().trim().min(1).optional(),
+  STRIPE_WEBHOOK_SECRET: z.string().trim().min(1).optional(),
+  STRIPE_DEPOSIT_VENUE_SLUG: z.string().trim().max(100).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/u, "must be a venue slug").optional(),
+  STRIPE_LIVE_PAYMENTS_ALLOWED: z.enum(["true", "false"]).optional(),
 }).superRefine((env, ctx) => {
   // Punch list #5: in production, CLERK_WEBHOOK_SECRET MUST be set so
   // the webhook route can verify signatures. The route itself also fails
@@ -111,35 +169,35 @@ const EnvSchema = z.object({
   if (env.NODE_ENV === "production") {
     if (process.env["VITEST"] !== undefined) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["NODE_ENV"],
         message: "VITEST must not be set in production (test auth bypasses must stay disabled)",
       });
     }
     if (env.CLERK_WEBHOOK_SECRET === undefined || env.CLERK_WEBHOOK_SECRET === "") {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["CLERK_WEBHOOK_SECRET"],
         message: "CLERK_WEBHOOK_SECRET is required in production (webhook signature verification cannot be skipped)",
       });
     }
     if (env.CLERK_SECRET_KEY === undefined || env.CLERK_SECRET_KEY === "") {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["CLERK_SECRET_KEY"],
         message: "CLERK_SECRET_KEY is required in production (auth tokens cannot be verified without it)",
       });
     }
     if (env.FRONTEND_URL === undefined) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["FRONTEND_URL"],
         message: "FRONTEND_URL is required in production (email links will point to localhost without it)",
       });
     }
     if (env.PUBLIC_API_ORIGIN === undefined) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["PUBLIC_API_ORIGIN"],
         message: "PUBLIC_API_ORIGIN is required in production (public runtime URLs must not trust request Host headers)",
       });
@@ -152,7 +210,7 @@ const EnvSchema = z.object({
     ] as const) {
       if (env[field] === undefined) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: [field],
           message: `${field} is required in production (reviewed runtime bytes require dedicated private storage)`,
         });
@@ -171,7 +229,7 @@ const EnvSchema = z.object({
       url.hash !== ""
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["PUBLIC_API_ORIGIN"],
         message: "PUBLIC_API_ORIGIN must be a clean HTTPS origin without credentials, path, query, or fragment",
       });
@@ -185,7 +243,7 @@ const EnvSchema = z.object({
   const r2Set = r2Fields.filter((f) => f !== undefined).length;
   if (r2Set > 0 && r2Set < 5) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["R2_ACCOUNT_ID"],
       message: "R2 configuration is incomplete — set all of R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME, R2_PUBLIC_URL or none",
     });
@@ -200,7 +258,7 @@ const EnvSchema = z.object({
   const runtimeProfileR2Set = runtimeProfileR2Fields.filter((field) => field !== undefined).length;
   if (runtimeProfileR2Set > 0 && runtimeProfileR2Set < runtimeProfileR2Fields.length) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["RUNTIME_PROFILE_R2_PRIVATE_BUCKET"],
       message: "Runtime-profile R2 configuration is incomplete — set RUNTIME_PROFILE_R2_ACCOUNT_ID, RUNTIME_PROFILE_R2_ACCESS_KEY_ID, RUNTIME_PROFILE_R2_SECRET_ACCESS_KEY, and RUNTIME_PROFILE_R2_PRIVATE_BUCKET together or none",
     });
@@ -215,7 +273,7 @@ const EnvSchema = z.object({
     ].includes(env.RUNTIME_PROFILE_R2_PRIVATE_BUCKET)
   ) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["RUNTIME_PROFILE_R2_PRIVATE_BUCKET"],
       message: "Reviewed runtime profiles require a dedicated private bucket distinct from the legacy upload and Foundry buckets",
     });
@@ -232,7 +290,7 @@ const EnvSchema = z.object({
   const foundrySet = foundryFields.filter((field) => field !== undefined).length;
   if (foundrySet > 0 && foundrySet < foundryFields.length) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["FOUNDRY_R2_CANDIDATE_BUCKET"],
       message: "Foundry R2 configuration is incomplete — set the three FOUNDRY_R2 credential fields, candidate/release buckets, and public URL together or none",
     });
@@ -245,7 +303,7 @@ const EnvSchema = z.object({
     )
   ) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["FOUNDRY_R2_CANDIDATE_BUCKET"],
       message: "Foundry candidates require a dedicated private bucket distinct from every public release bucket",
     });
@@ -255,7 +313,7 @@ const EnvSchema = z.object({
     env.FOUNDRY_R2_RELEASE_BUCKET === env.R2_BUCKET_NAME
   ) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["FOUNDRY_R2_RELEASE_BUCKET"],
       message: "Foundry releases require a dedicated immutable public bucket distinct from the legacy upload bucket",
     });
@@ -270,7 +328,7 @@ const EnvSchema = z.object({
       url.hash !== ""
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["FOUNDRY_R2_PUBLIC_URL"],
         message: "FOUNDRY_R2_PUBLIC_URL must be a clean HTTPS base URL without credentials, query, or fragment",
       });
@@ -285,7 +343,7 @@ const EnvSchema = z.object({
       ).safeParse(parsed);
       if (!keys.success || Object.keys(keys.data).length === 0) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["FOUNDRY_ED25519_PUBLIC_KEYS_JSON"],
           message: "FOUNDRY_ED25519_PUBLIC_KEYS_JSON must be a non-empty JSON object mapping key ids to base64 SPKI public keys",
         });
@@ -300,7 +358,7 @@ const EnvSchema = z.object({
             if (!canonicalDer.equals(der)) throw new Error("non-canonical SPKI DER");
           } catch {
             ctx.addIssue({
-              code: z.ZodIssueCode.custom,
+              code: "custom",
               path: ["FOUNDRY_ED25519_PUBLIC_KEYS_JSON", keyId],
               message: "Foundry verification keys must be canonical base64 Ed25519 SPKI DER public keys",
             });
@@ -309,11 +367,37 @@ const EnvSchema = z.object({
       }
     } catch {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["FOUNDRY_ED25519_PUBLIC_KEYS_JSON"],
         message: "FOUNDRY_ED25519_PUBLIC_KEYS_JSON must contain valid JSON",
       });
     }
+  }
+
+  const stripeFields = [env.STRIPE_SECRET_KEY, env.STRIPE_WEBHOOK_SECRET, env.STRIPE_DEPOSIT_VENUE_SLUG];
+  const stripeSet = stripeFields.filter((field) => field !== undefined).length;
+  if (stripeSet > 0 && stripeSet < stripeFields.length) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["STRIPE_SECRET_KEY"],
+      message: "Stripe deposit configuration is incomplete — set STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET and STRIPE_DEPOSIT_VENUE_SLUG together or none",
+    });
+  }
+  // The key itself is never echoed: only whether it is a test key.
+  if (env.STRIPE_SECRET_KEY !== undefined && !isStripeTestSecretKey(env.STRIPE_SECRET_KEY)
+    && env.STRIPE_LIVE_PAYMENTS_ALLOWED !== "true") {
+    ctx.addIssue({
+      code: "custom",
+      path: ["STRIPE_SECRET_KEY"],
+      message: "STRIPE_SECRET_KEY is not a Stripe test-mode secret key (sk_test_…). Deposits take no real money, so the API will not start with any other key",
+    });
+  }
+  if (env.STRIPE_WEBHOOK_SECRET !== undefined && !env.STRIPE_WEBHOOK_SECRET.startsWith("whsec_")) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["STRIPE_WEBHOOK_SECRET"],
+      message: "STRIPE_WEBHOOK_SECRET must be the endpoint's signing secret (whsec_…)",
+    });
   }
 
   if (env.AI_ASSISTANT_ENABLED === "true") {
@@ -327,7 +411,7 @@ const EnvSchema = z.object({
     if (env.AI_ASSISTANT_API_KEY === undefined) missingAiFields.push("AI_ASSISTANT_API_KEY");
     if (missingAiFields.length > 0) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["AI_ASSISTANT_ENABLED"],
         message: `AI assistant is enabled but missing required provider configuration: ${missingAiFields.join(", ")}`,
       });

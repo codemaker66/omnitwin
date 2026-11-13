@@ -51,7 +51,12 @@ export function registerSecurityHeaders(server: FastifyInstance): void {
     reply.header("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload");
     reply.header("X-Content-Type-Options", "nosniff");
     reply.header("X-Frame-Options", "DENY");
-    reply.header("Referrer-Policy", "strict-origin-when-cross-origin");
+    // A route may only tighten this: a view-only plan link
+    // (routes/public-plan-views.ts) answers with no-referrer, so its token
+    // never travels on as a referrer. Anything else gets the default.
+    if (reply.getHeader("Referrer-Policy") !== "no-referrer") {
+      reply.header("Referrer-Policy", "strict-origin-when-cross-origin");
+    }
     reply.header(
       "Permissions-Policy",
       "camera=(), microphone=(), geolocation=(), payment=(), usb=(), magnetometer=(), gyroscope=()",

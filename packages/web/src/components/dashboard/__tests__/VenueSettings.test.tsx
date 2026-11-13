@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { Venue, VenueDetail } from "../../../api/spaces.js";
+import { ApiError } from "../../../api/client.js";
 import { VenueSettings } from "../VenueSettings.js";
 
 const VENUE_ID = "00000000-0000-4000-8000-000000005001";
@@ -28,13 +29,30 @@ vi.mock("../../../api/spaces.js", () => ({
 
 // The Changeovers section below the form has its own tests
 // (changeovers/__tests__); here it only needs a venue with no rules.
-vi.mock("../../../api/turnaround-rules.js", () => ({
+vi.mock("../../../api/turnaround-rules.js", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../../../api/turnaround-rules.js")>(),
   listTurnaroundRules: vi.fn().mockResolvedValue({ rules: [], rooms: [], eventTypes: [] }),
   createTurnaroundRule: vi.fn(),
   updateTurnaroundRule: vi.fn(),
   retireTurnaroundRule: vi.fn(),
   ruleFromRefusal: vi.fn().mockReturnValue(null),
 }));
+
+// The section on dates for assistants and the website has its own tests
+// (forward-book/__tests__); here it only needs one room nobody has checked.
+const forwardBookMocks = vi.hoisted(() => ({
+  list: vi.fn(),
+}));
+vi.mock("../../../api/forward-book.js", () => ({
+  listForwardBook: forwardBookMocks.list,
+  recordForwardBook: vi.fn(),
+  clearForwardBook: vi.fn(),
+  checkFromRefusal: vi.fn().mockReturnValue(null),
+}));
+
+// The venue's AI use (T-656; L6): its own section, read by admin and manager.
+const aiUsageMocks = vi.hoisted(() => ({ get: vi.fn() }));
+vi.mock("../../../api/ai-usage.js", () => ({ getAIUsage: aiUsageMocks.get }));
 
 vi.mock("../../../stores/auth-store.js", () => ({
   useAuthStore: (selector: (state: typeof mocks.authState) => unknown): unknown =>
@@ -83,6 +101,9 @@ function updatedVenueFixture(overrides: Partial<Venue> = {}): Venue {
 }
 
 beforeEach(() => {
+  aiUsageMocks.get.mockReset();
+  // Never answered unless a test answers it: no section waits on the network.
+  aiUsageMocks.get.mockReturnValue(new Promise(() => undefined));
   mocks.getVenue.mockReset();
   mocks.updateVenue.mockReset();
   mocks.addToast.mockReset();
@@ -96,6 +117,10 @@ beforeEach(() => {
   };
   mocks.getVenue.mockResolvedValue(venueFixture());
   mocks.updateVenue.mockResolvedValue(updatedVenueFixture());
+  forwardBookMocks.list.mockReset();
+  forwardBookMocks.list.mockResolvedValue({
+    rooms: [{ spaceId: "00000000-0000-4000-8000-000000005003", name: "Reception Room", current: null, previous: null }],
+  });
 });
 
 afterEach(() => {
@@ -143,6 +168,39 @@ describe("VenueSettings", () => {
     expect(mocks.updateVenue).not.toHaveBeenCalled();
   });
 
+  it.each(["hallkeeper", "sales"])("shows a %s the venue's details with nothing to change, and says who sets them (dash-ops-2)", async (role) => {
+    mocks.authState.user = { ...mocks.authState.user, role };
+    render(<VenueSettings />);
+    expect(await screen.findByRole("heading", { name: "Venue settings" })).toBeTruthy();
+    expect(screen.getByText("The venue's administrators, managers and office staff set these details.")).toBeTruthy();
+    expect(screen.getByText("Trades Hall Glasgow", { selector: "dd" })).toBeTruthy();
+    expect(screen.queryByRole("textbox")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
+    expect(screen.queryByText("Saved")).toBeNull();
+    expect(await screen.findByText("The venue's administrators, managers and office staff set changeover times.")).toBeTruthy();
+    expect(screen.queryByText("Add a changeover time")).toBeNull();
+    expect(mocks.updateVenue).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { label: "staff", user: { role: "staff", platformRole: "none" } },
+    { label: "a platform administrator", user: { role: "planner", platformRole: "admin" } },
+  ])("offers $label the venue's details to change", async ({ user }) => {
+    mocks.authState.user = { ...mocks.authState.user, ...user };
+    render(<VenueSettings />);
+    expect(await screen.findByLabelText("Venue name")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Save changes" })).toBeTruthy();
+    expect(await screen.findByText("Add a changeover time")).toBeTruthy();
+  });
+
+  it("says who sets the details, not a bare failure, when the API refuses the save (dash-ops-2)", async () => {
+    mocks.updateVenue.mockRejectedValue(new ApiError(403, "Insufficient permissions", "FORBIDDEN"));
+    render(<VenueSettings />);
+    fireEvent.change(await screen.findByLabelText("Venue name"), { target: { value: "Trades Hall" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    expect((await screen.findByRole("alert")).textContent).toBe("The venue's administrators, managers and office staff set these details. Nothing has changed.");
+  });
+
   it("surfaces load failures with a retry action", async () => {
     mocks.getVenue
       .mockRejectedValueOnce(new Error("Registry unavailable"))
@@ -155,6 +213,52 @@ describe("VenueSettings", () => {
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(await screen.findByRole("heading", { name: "Venue settings" })).toBeTruthy();
     expect(mocks.getVenue).toHaveBeenCalledTimes(2);
+  });
+
+  it("offers the venue's admin the check that lets assistants and the website show a room's dates", async () => {
+    render(<VenueSettings />);
+    expect(await screen.findByRole("heading", { name: "Dates for assistants and the website" })).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "Record the check for the Reception Room" })).toBeTruthy();
+    expect(forwardBookMocks.list).toHaveBeenCalledWith(VENUE_ID, expect.any(AbortSignal));
+  });
+
+  it("shows staff where each room stands, and who records the check, without offering it", async () => {
+    mocks.authState.user = { ...mocks.authState.user, role: "staff" };
+    render(<VenueSettings />);
+    expect(await screen.findByText("Not checked yet")).toBeTruthy();
+    expect(screen.getByText("The venue’s admin or a manager records these checks.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Record the check/u })).toBeNull();
+  });
+
+  it("does not show the section to someone who does not read the Diary", async () => {
+    mocks.authState.user = { ...mocks.authState.user, role: "planner" };
+    render(<VenueSettings />);
+    expect(await screen.findByRole("heading", { name: "Venue settings" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Dates for assistants and the website" })).toBeNull();
+    expect(forwardBookMocks.list).not.toHaveBeenCalled();
+  });
+
+  // Plan 19, L6 "metering live": what the venue's AI use has cost, for the
+  // people the API lets read it (canReadAIUsage): the venue's admin and manager.
+  it.each(["admin", "manager"])("shows the venue's %s what its AI use has cost", async (role) => {
+    mocks.authState.user = { ...mocks.authState.user, role };
+    aiUsageMocks.get.mockResolvedValue({
+      venueId: VENUE_ID, currency: "USD", priceTableVersion: "anthropic-2026-10-13",
+      allowance: { month: "2026-10", limitMicroUsd: 50_000_000, spentMicroUsd: 1_250_000, heldMicroUsd: 0, remainingMicroUsd: 48_750_000 },
+      months: [{ month: "2026-10", calls: 0, costMicroUsd: 0, features: [] }],
+    });
+    render(<VenueSettings />);
+    expect(await screen.findByRole("heading", { name: "AI drafting" })).toBeTruthy();
+    expect((await screen.findByTestId("ai-usage-allowance")).textContent).toContain("US$1.25 of US$50.00 in October 2026");
+    expect(aiUsageMocks.get).toHaveBeenCalledWith(VENUE_ID, 3, expect.any(AbortSignal));
+  });
+
+  it.each(["staff", "sales", "hallkeeper", "planner"])("shows no AI cost to the venue's %s, and never asks for it", async (role) => {
+    mocks.authState.user = { ...mocks.authState.user, role };
+    render(<VenueSettings />);
+    expect(await screen.findByRole("heading", { name: "Venue settings" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "AI drafting" })).toBeNull();
+    expect(aiUsageMocks.get).not.toHaveBeenCalled();
   });
 
   it("fails closed when the signed-in user has no venue assignment", async () => {

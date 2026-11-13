@@ -119,7 +119,7 @@ export function latestRuntimePackageEndpoint(
   return `${apiUrl.replace(/\/+$/u, "")}/assets/runtime-packages/latest?${params.toString()}`;
 }
 
-function formatValidationIssues(issues: readonly z.ZodIssue[]): string {
+function formatValidationIssues(issues: readonly z.core.$ZodIssue[]): string {
   return issues
     .map((issue) => {
       const path = issue.path.length === 0 ? "<root>" : issue.path.map(String).join(".");

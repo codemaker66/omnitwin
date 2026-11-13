@@ -1,14 +1,17 @@
 import { useCallback, useEffect } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useTwinSearchParams } from "./twin-search-params.js";
 
 // -----------------------------------------------------------------------------
 // useTwinMode — the walk ⇄ dollhouse ⇄ plan mode machine (Phase 2, Task 5).
 //
 // The URL (?mode=) is the machine's single source of truth: mode is DERIVED
-// from useSearchParams on every render, never mirrored into component state,
-// so this hook can never fight useTwinWalk's ?node= writes — both sides use
-// the functional setSearchParams form and copy the previous params, so each
-// preserves the other's key.
+// from the search params on every render, never mirrored into component
+// state. It shares the query with useTwinWalk's ?node=, and both write
+// through useTwinSearchParams, which edits the address as the router holds it
+// at that moment, so neither write can drop the other's key. (React Router's
+// functional setSearchParams form cannot promise that: its updater sees the
+// params of the render that made the setter, which T-674 measured going
+// stale under a hop landing and the dive.)
 //
 // History contract: entering or leaving dollhouse pushes exactly one entry
 // (the browser back button is the natural "surface from the dollhouse");
@@ -33,7 +36,7 @@ function parseMode(param: string | null, hasMesh: boolean): TwinMode {
 }
 
 export function useTwinMode(hasMesh: boolean): TwinModeState {
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams, editSearchParams] = useTwinSearchParams();
   const param = searchParams.get("mode");
   const mode = parseMode(param, hasMesh);
 
@@ -42,39 +45,39 @@ export function useTwinMode(hasMesh: boolean): TwinModeState {
   // without adding history, preserving every other param (?node= included).
   useEffect(() => {
     if (param !== null && parseMode(param, hasMesh) === "walk") {
-      setSearchParams(
-        (previous) => {
-          const next = new URLSearchParams(previous);
-          next.delete("mode");
-          return next;
-        },
-        { replace: true },
-      );
+      editSearchParams((params) => {
+        const now = params.get("mode");
+        if (now === null || parseMode(now, hasMesh) !== "walk") {
+          return null; // the address moved on before this ran
+        }
+        params.delete("mode");
+        return { replace: true };
+      });
     }
-  }, [param, hasMesh, setSearchParams]);
+  }, [param, hasMesh, editSearchParams]);
 
+  // Decided from the address as it stands when the visitor asks, not from
+  // the last render: two quick presses must not both read the old mode, which
+  // would replace the first press's history entry or push a second one.
   const setMode = useCallback(
     (next: TwinMode) => {
-      if (next === mode || (!hasMesh && next !== "walk")) {
-        return;
-      }
-      // Crossing the dollhouse boundary is a navigation (push once); every
-      // other switch is a view tweak (replace).
-      const crossesDollhouse = (mode === "dollhouse") !== (next === "dollhouse");
-      setSearchParams(
-        (previous) => {
-          const params = new URLSearchParams(previous);
-          if (next === "walk") {
-            params.delete("mode");
-          } else {
-            params.set("mode", next);
-          }
-          return params;
-        },
-        { replace: !crossesDollhouse },
-      );
+      editSearchParams((params) => {
+        const now = parseMode(params.get("mode"), hasMesh);
+        if (next === now || (!hasMesh && next !== "walk")) {
+          return null;
+        }
+        if (next === "walk") {
+          params.delete("mode");
+        } else {
+          params.set("mode", next);
+        }
+        // Crossing the dollhouse boundary is a navigation (push once); every
+        // other switch is a view tweak (replace).
+        const crossesDollhouse = (now === "dollhouse") !== (next === "dollhouse");
+        return { replace: !crossesDollhouse };
+      });
     },
-    [mode, hasMesh, setSearchParams],
+    [hasMesh, editSearchParams],
   );
 
   return { mode, setMode };

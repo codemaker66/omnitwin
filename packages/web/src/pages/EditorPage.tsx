@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { useParams, useNavigate, useSearchParams } from "react-router-dom";
+import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useLocation, useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { ActivityIndicator } from "../components/shared/Activity.js";
-import { handOffPublicConfiguration, prefetchPlannerSpace, useEditorStore } from "../stores/editor-store.js";
+import { closeLayout, handOffPublicConfiguration, prefetchPlannerSpace, saveBeforeLayoutChange, useEditorStore } from "../stores/editor-store.js";
 import { useAuthStore } from "../stores/auth-store.js";
 import { useCockpitStore } from "../stores/cockpit-store.js";
 import { useLayoutTimelinePreviewStore } from "../stores/layout-timeline-preview-store.js";
@@ -10,7 +10,9 @@ import { SaveSendPanel } from "../components/editor/SaveSendPanel.js";
 import { MobilePlannerTopBar } from "../components/editor/MobilePlannerTopBar.js";
 import { EventLinkedPlannerBootstrap } from "../components/editor/EventLinkedPlannerBootstrap.js";
 import { SubmitForReviewPanel } from "../components/editor/SubmitForReviewPanel.js";
+import { PlannerLeavingNotes } from "../components/editor/PlannerLeavingNotes.js";
 import { EditorBridge } from "../components/editor/EditorBridge.js";
+import { LayoutLiveLayer } from "../components/editor/LayoutLiveLayer.js";
 import { PlannerCockpit } from "../components/editor/cockpit/PlannerCockpit.js";
 import { ObjectNotePanel } from "../components/editor/ObjectNotePanel.js";
 import { EventDetailsPanel } from "../components/editor/EventDetailsPanel.js";
@@ -21,10 +23,13 @@ import {
   buildPlannerTruthSummary,
   isTruthModeUiEnabled,
 } from "../lib/truth-mode-summary.js";
-import { getPublicConfig, type Configuration } from "../api/configurations.js";
+import { getConfig, getPublicConfig, type Configuration } from "../api/configurations.js";
+import { claimTrackedDraft } from "../lib/planner-claim.js";
+import { usePlannerDraftClaim } from "../hooks/use-planner-draft-claim.js";
 import { useIsCoarsePointer, useIsNarrowViewport } from "../hooks/use-media-query.js";
 import { prefetchPlannerVenue } from "../hooks/use-planner-venue-identity.js";
-import { useUndoRedoShortcuts } from "../hooks/use-undo-redo-shortcuts.js";
+import { usePlannerToolKeys } from "../lib/planner-keymap.js";
+import { plannerChromeRequested } from "../lib/planner-chrome-flag.js";
 import { registerReplayBridge } from "../lib/action-log-replay-bridge.js";
 import {
   resolvePlannerVenue,
@@ -32,20 +37,26 @@ import {
 } from "../lib/planner-venue-resolution.js";
 import * as spacesApi from "../api/spaces.js";
 import { recordPlannerArrivalChoice } from "../lib/planner-room-arrival.js";
+import { roomSwitchFrom, takeRoomSwitchApproval } from "../lib/planner-room-switch.js";
+import { PlannerWorkContext, type PlannerWork } from "../components/scene/planner-work.js";
 import "../components/editor/MobilePlannerChrome.css";
 
-// CARD A1 (G1a): the Reception Room owns the default /plan experience — it is
-// the one room with a built runtime package (splat), so first-visit planners
-// land in captured reality rather than a procedural-only hall. Venues seeded
-// without it degrade through the legacy default, then the first space.
-const DEFAULT_SPACE_SLUG = "reception-room";
-const LEGACY_DEFAULT_SPACE_SLUG = "grand-hall";
+// The Grand Hall owns the default /plan experience (Blake, 26 Oct 2026,
+// superseding CARD A1's Reception Room): the drawn hall, the Grand Assembly and
+// the card dock live there. Venues seeded without it fall back to the Reception
+// Room, then the first space.
+const DEFAULT_SPACE_SLUG = "grand-hall";
+const FALLBACK_SPACE_SLUG = "reception-room";
 const TRACKED_CONFIGS_KEY = "omnitwin_my_configs";
 const MAX_REUSABLE_CONFIG_PROBES = 5;
+/** How long an empty plan of one's own is offered again before a fresh one. */
+const OWN_EMPTY_PLAN_REUSE_MS = 7 * 24 * 60 * 60_000;
 
 interface TrackedPlannerConfig {
   readonly configId: string;
   readonly createdAt: string;
+  /** Present on drafts this browser created since migration 0102. */
+  readonly claimSecret?: unknown;
 }
 
 type PlannerBootstrapBlocker =
@@ -96,7 +107,14 @@ function isTrackedPlannerConfig(value: unknown): value is TrackedPlannerConfig {
     && typeof candidate["createdAt"] === "string";
 }
 
-function readReusableConfigCandidates(): readonly string[] {
+interface ReuseCandidate {
+  readonly configId: string;
+  /** This browser holds the draft's claim secret: an unclaimed draft of its own. */
+  readonly claimable: boolean;
+}
+
+/** The drafts this browser made, newest first. */
+function readReuseCandidates(): readonly ReuseCandidate[] {
   if (typeof window === "undefined") return [];
   let raw: string | null;
   try {
@@ -118,33 +136,69 @@ function readReusableConfigCandidates(): readonly string[] {
     .filter(isTrackedPlannerConfig)
     .slice(-MAX_REUSABLE_CONFIG_PROBES)
     .reverse()
-    .map((entry) => entry.configId);
+    .map((entry) => ({ configId: entry.configId, claimable: typeof entry.claimSecret === "string" }));
 }
+
+/** A draft the bootstrap can open instead of making another: a public draft
+ *  (claimed first when a signed-in person opens it), or an empty plan the
+ *  signed-in person already owns. */
+type ReusableDraft =
+  | { readonly kind: "public"; readonly config: Configuration }
+  | { readonly kind: "own"; readonly config: Configuration };
 
 /**
  * Look up every tracked draft at once. A lookup needs only the local list,
  * not the venue or room it must match, so the bootstrap starts them all
  * beside those requests instead of one after another at the end.
+ *
+ * A signed-in person's claimed drafts are private, so the public read cannot
+ * see them; those are read as theirs (planner-qol A-X3). Without that, every
+ * visit to /plan made and claimed another empty plan, filling their list.
  */
-function probeReusablePublicConfigs(signal: AbortSignal): readonly Promise<Configuration | null>[] {
-  return readReusableConfigCandidates().map((configId) =>
-    // Ignore stale, claimed, or unreachable local entries.
-    getPublicConfig(configId, signal).catch(() => null));
+function probeReusableDrafts(signal: AbortSignal, signedIn: boolean): readonly Promise<ReusableDraft | null>[] {
+  return readReuseCandidates().map((candidate) =>
+    // Ignore stale, unreachable or someone else's entries.
+    signedIn && !candidate.claimable
+      ? getConfig(candidate.configId).then((config): ReusableDraft => ({ kind: "own", config })).catch(() => null)
+      : getPublicConfig(candidate.configId, signal).then((config): ReusableDraft => ({ kind: "public", config })).catch(() => null));
 }
 
-/** The newest tracked draft for this room: answers are read in the list's order. */
-async function findReusablePublicConfig(
-  probes: readonly Promise<Configuration | null>[],
+/** The newest tracked draft that may open for this room and person: answers
+ *  are read in the list's order. An owned plan is offered again only while it
+ *  is empty and recent; one with pieces stays in the person's list. */
+async function findReusableDraft(
+  probes: readonly Promise<ReusableDraft | null>[],
   spaceId: string,
+  viewerId: string | null,
   isCurrent: () => boolean,
-): Promise<Configuration | null> {
+): Promise<ReusableDraft | null> {
   for (const probe of probes) {
     if (!isCurrent()) return null;
-    const config = await probe;
+    const draft = await probe;
     if (!isCurrent()) return null;
-    if (config !== null && config.isPublicPreview && config.spaceId === spaceId) return config;
+    if (draft === null || draft.config.spaceId !== spaceId) continue;
+    if (draft.kind === "public" && draft.config.isPublicPreview) return draft;
+    if (draft.kind === "own" && isOwnEmptyRecentPlan(draft.config, viewerId)) return draft;
   }
   return null;
+}
+
+function isOwnEmptyRecentPlan(config: Configuration, viewerId: string | null): boolean {
+  if (viewerId === null || config.userId !== viewerId || config.isPublicPreview) return false;
+  if ((config.objects ?? []).length > 0 || config.updatedAt === undefined) return false;
+  return Date.now() - Date.parse(config.updatedAt) < OWN_EMPTY_PLAN_REUSE_MS;
+}
+
+/** Makes a draft this browser created the signed-in person's own, with the
+ *  claim secret it was given (release audit, batch C). False, with the draft
+ *  left a public draft, when this browser holds no secret for it or the claim
+ *  is refused or does not arrive. */
+async function claimOwnDraft(configId: string): Promise<boolean> {
+  try {
+    return await claimTrackedDraft(configId) === "claimed";
+  } catch {
+    return false;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -162,8 +216,11 @@ export function EditorPage(): React.ReactElement {
   const urlConfigId = params.configId ?? params.code;
   const routeVenueSlug = params.venueSlug;
   const [searchParams] = useSearchParams();
+  const location = useLocation();
   const requestedEventId = searchParams.get("eventId");
   const carriedSearch = searchParams.toString();
+  // "Start a new plan" asks for a fresh plan, never a reused one (A-X3).
+  const startNew = searchParams.get("new") === "1";
   const navigate = useNavigate();
   const storeConfigId = useEditorStore((s) => s.configId);
   const isLoading = useEditorStore((s) => s.isLoading);
@@ -209,6 +266,38 @@ export function EditorPage(): React.ReactElement {
     }
   }, [urlConfigId, storeConfigId, isAuthenticated]);
 
+  // A signed-in person's own draft, open at its address, becomes theirs. The
+  // page asks, not only the sign-in dialog: signing in sends the person back
+  // here or remounts this page inside Clerk's provider, and either way the
+  // dialog is gone before the account is known (audit web-auth-routing-2).
+  // A plan still being started below is claimed there, before it has an address.
+  usePlannerDraftClaim(urlConfigId !== undefined && urlConfigId === storeConfigId);
+
+  // The slate's room switch (QoL D-X3) leaves this page on /plan?space=<room>
+  // with the layout it left still open, and the bootstrap below opens a room
+  // only when none is. Closing exactly that layout lets the bootstrap open the
+  // room; the note about anything left behind survives. The slate settled the
+  // layout's work before navigating; arriving at that entry any other way
+  // (Back, then Forward) gives the work its chance first, and a layout whose
+  // work could be neither saved nor kept stays open.
+  const roomSwitch = roomSwitchFrom(location.state);
+  const leavingLayout = roomSwitch?.leavingLayout ?? null;
+  const roomSwitchApproval = roomSwitch?.approval ?? "";
+  useEffect(() => {
+    if (urlConfigId !== undefined || requestedEventId !== null) return;
+    if (leavingLayout === null || storeConfigId !== leavingLayout) return;
+    if (takeRoomSwitchApproval({ leavingLayout, approval: roomSwitchApproval })) {
+      closeLayout();
+      return;
+    }
+    let cancelled = false;
+    void saveBeforeLayoutChange().then((outcome) => {
+      if (cancelled || outcome === "not-kept" || useEditorStore.getState().configId !== leavingLayout) return;
+      closeLayout();
+    });
+    return () => { cancelled = true; };
+  }, [leavingLayout, roomSwitchApproval, requestedEventId, storeConfigId, urlConfigId]);
+
   // DEV-only session-replay bridge (G4 slice 4, the __venPerf pattern):
   // window.__venReplay() replays the open config's audit trail and diffs
   // the reconstruction against the live document. Never in production.
@@ -248,7 +337,7 @@ export function EditorPage(): React.ReactElement {
       try {
         // The venue lookup leads the critical path, so it is requested first.
         const venuesRequest = spacesApi.listVenues();
-        const reusableDrafts = probeReusablePublicConfigs(draftLookups.signal);
+        const reusableDrafts = startNew ? [] : probeReusableDrafts(draftLookups.signal, isAuthenticated);
         const venues = await venuesRequest;
         if (!isCurrent()) return;
         const venueResolution = resolvePlannerVenue(venues, routeVenueSlug, venueAccessUser);
@@ -274,7 +363,7 @@ export function EditorPage(): React.ReactElement {
         const space =
           spaces.find((s) => s.slug === wantedSpaceSlug)
           ?? spaces.find((s) => s.slug === DEFAULT_SPACE_SLUG)
-          ?? spaces.find((s) => s.slug === LEGACY_DEFAULT_SPACE_SLUG)
+          ?? spaces.find((s) => s.slug === FALLBACK_SPACE_SLUG)
           ?? spaces[0];
         if (space === undefined) { setAutoCreateBlocker({ kind: "empty" }); return; }
         setOpeningRoomName(space.name);
@@ -282,17 +371,36 @@ export function EditorPage(): React.ReactElement {
         prefetchPlannerSpace(space.venueId, space.id);
         // Preserve generic planner options on the canonical draft route.
         // Event-linked entry is resolved separately above.
-        const carried = carriedSearch;
+        const carriedParams = new URLSearchParams(carriedSearch);
+        carriedParams.delete("new");
+        const carried = carriedParams.toString();
         const search = carried.length === 0 ? "" : `?${carried}`;
-        const reusableConfig = await findReusablePublicConfig(reusableDrafts, space.id, isCurrent);
+        const reusable = await findReusableDraft(reusableDrafts, space.id, isAuthenticated ? authUserId : null, isCurrent);
         if (!isCurrent()) return;
-        if (reusableConfig !== null) {
+        if (reusable !== null) {
+          const reusableConfig = reusable.config;
           // A guest's page loads it through the public endpoint just read.
           if (!isAuthenticated) handOffPublicConfiguration(reusableConfig);
+          // A signed-in person's page reads and saves through the authenticated
+          // routes, which refuse a plan nobody owns to anyone off the venue
+          // floor, so a public draft becomes theirs before it opens. An empty
+          // plan of their own simply opens.
+          else if (reusable.kind === "public") await claimOwnDraft(reusableConfig.id);
+          if (!isCurrent()) return;
           void navigate({ pathname: `/plan/${reusableConfig.id}`, search }, { replace: true });
           return;
         }
         const newConfigId = await useEditorStore.getState().createPublicConfig(space.id, isCurrent);
+        // The same for a new plan: created through the public route, it is
+        // claimed at once, so it saves to the person's account and is never
+        // left ownerless for the preview sweep. A failed claim leaves it a
+        // public draft, exactly as before. Committing the draft has already
+        // cleaned up this effect, so the guard is the same route and account
+        // (ownsRoute), as for the navigation below.
+        if (isAuthenticated && ownsRoute() && await claimOwnDraft(newConfigId)
+          && ownsRoute() && useEditorStore.getState().configId === newConfigId) {
+          useEditorStore.setState({ isPublicPreview: false });
+        }
         // Committing this draft changes storeConfigId and cleans up the effect.
         // That self-settlement may still navigate, but only for the same route,
         // account and exact created document; superseding contexts cannot.
@@ -320,6 +428,7 @@ export function EditorPage(): React.ReactElement {
     navigate,
     routeVenueSlug,
     requestedEventId,
+    startNew,
     storeConfigId,
     urlConfigId,
     venueAccessUser,
@@ -412,9 +521,51 @@ export function EditorPage(): React.ReactElement {
   }
 
   return (
-    <PlannerCommsLayer />
+    <PlannerChrome />
   );
 }
+
+/**
+ * The planner in today's chrome or the new one (T-671), never both: the new
+ * chrome is behind `?chrome=v2`, remembered on this device, until slice 21.
+ * Either way the planner's keys (A, M, D, V, undo and redo, and the tools'
+ * Escapes) are the keymap's, on the one keyboard owner.
+ */
+function PlannerChrome(): React.ReactElement {
+  usePlannerToolKeys();
+  const location = useLocation();
+  const chrome = useMemo(() => plannerChromeRequested(location.search), [location.search]);
+  if (chrome === "v1") return <PlannerCommsLayer />;
+  return (
+    <Suspense
+      fallback={(
+        <div className="vv-route-state">
+          <section className="vv-state-panel" role="status" aria-live="polite">
+            <ActivityIndicator size={64} />
+            <h1>Opening the planner</h1>
+          </section>
+        </div>
+      )}
+    >
+      <PlannerWorkContext.Provider value={NO_2D_VIEW}>
+        <PlannerChromeV2 />
+      </PlannerWorkContext.Provider>
+    </Suspense>
+  );
+}
+
+/**
+ * The new chrome's layout, with no 2D view of it yet.
+ * TODO(#219): once lane C wires Plan's Drawing, pass its in-place switch
+ * (PlanDrawingSwitch) here so the cards offer "Continue in the drawing".
+ */
+const NO_2D_VIEW: PlannerWork = { continueIn2d: null };
+
+/** The new chrome (T-671), loaded only behind its flag. */
+const PlannerChromeV2 = lazy(async () => {
+  const module = await import("../components/planner-chrome/PlannerChromeV2.js");
+  return { default: module.PlannerChromeV2 };
+});
 
 /**
  * Groups the 3D editor with the planner-authored comms layer:
@@ -429,7 +580,6 @@ export function EditorPage(): React.ReactElement {
  * re-render on every UI state flip.
  */
 function PlannerCommsLayer(): React.ReactElement {
-  useUndoRedoShortcuts();
   const [eventDetailsOpen, setEventDetailsOpen] = useState(false);
   const [viewMode, setViewMode] = useState<"3d" | "2d">("3d");
   const [searchParams] = useSearchParams();
@@ -473,9 +623,15 @@ function PlannerCommsLayer(): React.ReactElement {
     recordPlannerArrivalChoice();
     setViewMode(nextMode);
   }, [timelinePreviewActive]);
+  // A 3D view that cannot draw continues in this layout's 2D view, in place.
+  const plannerWork = useMemo<PlannerWork>(() => ({
+    continueIn2d: timelinePreviewActive ? null : () => { changeViewMode("2d"); },
+  }), [changeViewMode, timelinePreviewActive]);
   return (
     <>
       <EditorBridge />
+      {/* Live co-editing v1: presence and other people's live changes. */}
+      <LayoutLiveLayer mobile={mobile} />
       {/* T-615: the planner had no <main> and no skip link. The landmark does
           NOT go on this shell: a <main> ancestor strips the implicit
           `banner` role off the room header and `contentinfo` off the event
@@ -508,7 +664,9 @@ function PlannerCommsLayer(): React.ReactElement {
         }}
       >
         {viewMode === "3d" ? (
-          <PlannerCockpit mobile={mobile} hasLinkedEvent={(searchParams.get("eventId")?.trim().length ?? 0) > 0} />
+          <PlannerWorkContext.Provider value={plannerWork}>
+            <PlannerCockpit mobile={mobile} hasLinkedEvent={(searchParams.get("eventId")?.trim().length ?? 0) > 0} />
+          </PlannerWorkContext.Provider>
         ) : (
           <BlueprintPage source="editor-store" />
         )}
@@ -555,7 +713,7 @@ function PlannerCommsLayer(): React.ReactElement {
       {!mobile && showStandaloneTruthIndicator && <TruthModeIndicator summary={truthSummary} />}
       {saveError !== null ? (
         <SaveErrorToast message={saveError} isAuthenticated={authState} conflict={saveConflict} />
-      ) : null}
+      ) : <PlannerLeavingNotes />}
     </>
   );
 }

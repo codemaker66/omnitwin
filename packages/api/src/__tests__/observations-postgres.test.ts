@@ -8,6 +8,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { ConversationCommand, RecordObservation } from "@omnitwin/types";
 import * as schema from "../db/schema.js";
 import { executeConversationCommand } from "../services/conversation-commands.js";
+import { insertBoundBookings } from "../services/event-binding.js";
 import { listObservationsForVenue, recordObservationCore } from "../services/observations.js";
 import type { RequestActor } from "../services/requests.js";
 
@@ -96,14 +97,14 @@ describe.skipIf(target === undefined)("observations on migrated PostgreSQL", () 
         id: person.id, venueId: person.venueId, name: person.name, email: `${person.id}@s5.invalid`, role: person.role,
       });
     }
-    await db.insert(schema.bookings).values({
+    // Confirmed bookings are written with their events (the bind).
+    await insertBoundBookings(db, [{
       id: bookingId, venueId, spaceId: roomId, kind: "ink", title: "Fixture dinner", createdBy: people.hallkeeper.id,
       startsAt: new Date(BOOKING_START), endsAt: new Date(BOOKING_END),
-    });
-    await db.insert(schema.bookings).values({
+    }, {
       id: otherBookingId, venueId: otherVenueId, spaceId: otherRoomId, kind: "ink", title: "Elsewhere's dinner", createdBy: people.outsider.id,
       startsAt: new Date(BOOKING_START), endsAt: new Date(BOOKING_END),
-    });
+    }]);
     const actor = (person: { readonly id: string; readonly role: string; readonly venueId: string | null; readonly name: string }): RequestActor => ({
       id: person.id, name: person.name, role: person.role, venueId: person.venueId, platformRole: "none",
     });

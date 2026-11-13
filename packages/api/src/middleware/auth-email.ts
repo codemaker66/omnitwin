@@ -7,7 +7,7 @@ import { z } from "zod";
 // auth.ts re-exports everything here, so existing importers are unaffected.
 // ---------------------------------------------------------------------------
 
-const AuthEmailSchema = z.string().trim().toLowerCase().email();
+const AuthEmailSchema = z.string().trim().toLowerCase().check(z.email());
 
 export type VerifiedEmailResolution =
   | { readonly ok: true; readonly email: string }

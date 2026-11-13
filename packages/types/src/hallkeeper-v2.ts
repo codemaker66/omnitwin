@@ -2,8 +2,10 @@ import { z } from "zod";
 import { ConfigurationIdSchema, LayoutStyleSchema } from "./configuration.js";
 import { SetupPhaseSchema } from "./hallkeeper-accessories.js";
 import { EventInstructionsSchema } from "./hallkeeper-instructions.js";
+import { GangwayReviewSchema } from "./gangway-review.js";
 import { TimezoneSchema, DEFAULT_VENUE_TIMEZONE } from "./venue.js";
 import { ZONES, ZoneSchema, type Zone } from "./zone.js";
+import { SheetPaperCheckSchema } from "./sheet-paper-check.js";
 
 // Re-export the Zone primitives so existing import paths through
 // hallkeeper-v2 (including the `index.ts` re-export block) continue to
@@ -51,7 +53,7 @@ export type { Zone };
 
 export const RowPositionSchema = z.object({
   /** Source placed-object UUID — lets the tablet link back to the 3D scene. */
-  objectId: z.string().uuid(),
+  objectId: z.uuid(),
   /** X in metres, floor-plan frame. */
   x: z.number(),
   /** Z in metres, floor-plan frame. */
@@ -83,16 +85,30 @@ export const ManifestRowV2Schema = z.object({
   isAccessory: z.boolean(),
   /**
    * Planner-authored notes from the union of placed-object `notes`
-   * fields that aggregate into this row. Empty string when no source
-   * placement carried a note.
+   * fields that aggregate into this row, joined with " · ". Empty string
+   * when no source placement carried a note.
+   *
+   * No length cap of its own: a row gathers every distinct note of its
+   * pieces (eight tables' notes, and the linen each table takes), so its
+   * length grows with the room. The bound is each piece's note (500, the
+   * planner's limit); the phone shows the row's notes in full and the paper
+   * carries them across pages. A fixed cap here made one detailed wedding
+   * fail the whole sheet and every submit (audit hallkeeper-ops-5).
    */
-  notes: z.string().max(2000).default(""),
+  notes: z.string().default(""),
   /**
    * Floor-plan coordinates for every placement that aggregates into
    * this row. Empty for accessory rows — accessories don't have their
    * own coordinates, they follow their parent's.
    */
   positions: z.array(RowPositionSchema).default([]),
+  /**
+   * The planner's names for the pieces in this row ("Table 1", "Table 2"),
+   * from placed_objects.metadata.displayLabel, so the crew sets the right
+   * linen at the right number. Absent on rows (and frozen sheets) that
+   * carry none; formatTableLabels prints them.
+   */
+  labels: z.array(z.string().min(1).max(80)).max(500).optional(),
 });
 
 export type ManifestRowV2 = z.infer<typeof ManifestRowV2Schema>;
@@ -119,7 +135,7 @@ export type Phase = z.infer<typeof PhaseSchema>;
 
 export const TimingSchema = z.object({
   /** ISO-8601 datetime the event is scheduled to begin. */
-  eventStart: z.string().datetime(),
+  eventStart: z.iso.datetime(),
   /**
    * ISO-8601 datetime setup must be complete, or null when the venue has not
    * recorded a turnaround rule for this room and the planner has scheduled no
@@ -128,7 +144,7 @@ export const TimingSchema = z.object({
    * Widening from required to nullable is backward compatible — every stored
    * snapshot still validates.
    */
-  setupBy: z.string().datetime().nullable(),
+  setupBy: z.iso.datetime().nullable(),
   /** Real minutes between setupBy and eventStart; null whenever setupBy is. */
   bufferMinutes: z.number().int().nonnegative().nullable(),
 });
@@ -150,7 +166,7 @@ export const SheetApprovalSchema = z.object({
   /** Snapshot version — starts at 1, increments on each new approval. */
   version: z.number().int().min(1),
   /** ISO-8601 datetime the approval was recorded. */
-  approvedAt: z.string().datetime(),
+  approvedAt: z.iso.datetime(),
   /** Display name of the approving staff user (email fallback). */
   approverName: z.string().min(1).max(200),
 });
@@ -164,19 +180,24 @@ export type SheetApproval = z.infer<typeof SheetApprovalSchema>;
  * including chairs folded into their table's operational manifest row. */
 export const HallkeeperFloorPlanSchema = z.object({
   coordinateSpace: z.literal("real_m_v1"),
-  outline: z.array(z.object({ x: z.number().finite(), z: z.number().finite() })).min(3),
+  outline: z.array(z.object({ x: z.number(), z: z.number() })).min(3),
   objects: z.array(z.object({
-    objectId: z.string().uuid(),
-    assetDefinitionId: z.string().uuid(),
+    objectId: z.uuid(),
+    assetDefinitionId: z.uuid(),
     name: z.string(),
     category: z.string(),
-    x: z.number().finite(),
-    z: z.number().finite(),
-    rotationY: z.number().finite(),
-    scale: z.number().finite().positive(),
-    widthM: z.number().finite().positive(),
-    depthM: z.number().finite().positive(),
+    x: z.number(),
+    z: z.number(),
+    rotationY: z.number(),
+    scale: z.number().positive(),
+    widthM: z.number().positive(),
+    depthM: z.number().positive(),
     collisionType: z.enum(["box", "cylinder"]),
+    /** The planner's name for this piece ("Table 5"), printed on the plan.
+     *  Absent in plans frozen before 18 Oct 2026. */
+    label: z.string().min(1).max(80).optional(),
+    /** The planner's note on this piece, marked on the printed plan. */
+    note: z.string().min(1).max(500).optional(),
   })),
 }).refine((plan) => {
   const xs = plan.outline.map((point) => point.x);
@@ -219,6 +240,14 @@ export const HallkeeperSheetV2Schema = z.object({
    * stub.
    */
   instructions: EventInstructionsSchema.nullable(),
+  /**
+   * The layout's gangway review as it stood when the sheet was assembled
+   * (configurations.metadata.gangwayReview, written by the planner): every
+   * pinch under the guidance, with the venue's decisions. Frozen with a
+   * submitted or approved snapshot, so the venue reviews what was sent.
+   * Null when the layout has none; absent from older snapshots.
+   */
+  gangwayReview: GangwayReviewSchema.nullable().optional(),
   phases: z.array(PhaseSchema),
   totals: z.object({
     /** One entry per distinct item name, summed across phases + zones. */
@@ -236,7 +265,7 @@ export const HallkeeperSheetV2Schema = z.object({
   /** Absent in legacy snapshots; never reconstruct approved geometry from live rows. */
   floorPlan: HallkeeperFloorPlanSchema.nullable().optional(),
   webViewUrl: z.string(),
-  generatedAt: z.string().datetime(),
+  generatedAt: z.iso.datetime(),
   /**
    * Approval audit metadata. Set when the configuration is `approved`
    * AND a sheet snapshot exists; null otherwise. Consumers render an
@@ -245,6 +274,12 @@ export const HallkeeperSheetV2Schema = z.object({
    * not carry the visual authority of an approval stamp.
    */
   approval: SheetApprovalSchema.nullable(),
+  /**
+   * How a printout of this sheet can be checked as current without signing
+   * in (sheet-paper-check.ts). Added when the sheet is served, never stored
+   * in a frozen snapshot; absent from snapshots and older servers.
+   */
+  paperCheck: SheetPaperCheckSchema.optional(),
 });
 
 export type HallkeeperSheetV2 = z.infer<typeof HallkeeperSheetV2Schema>;
@@ -259,11 +294,11 @@ export type HallkeeperSheetV2 = z.infer<typeof HallkeeperSheetV2Schema>;
 // ---------------------------------------------------------------------------
 
 export const HallkeeperSheetSummarySchema = z.object({
-  configId: z.string().uuid(),
+  configId: z.uuid(),
   /** When setup must be complete, or null when no changeover rule sets it. */
-  readyBy: z.string().datetime().nullable(),
+  readyBy: z.iso.datetime().nullable(),
   /** When the event begins, or null when the sheet has no timing. */
-  eventStart: z.string().datetime().nullable(),
+  eventStart: z.iso.datetime().nullable(),
   /** The sheet's rows. */
   total: z.number().int().nonnegative(),
   /** Of those rows, how many are checked. */

@@ -136,6 +136,22 @@ describe("dayAnswer, over time and with other events", () => {
     expect(room(answer, "r3")).toMatchObject({ free: true, lines: [{ kind: "free", text: "Free from 00:30" }] });
     expect(room(answer, "r4")).toMatchObject({ free: true, lines: [{ kind: "free", text: "Free" }] });
   });
+
+  it("never words a viewing as a hold: a room with only a show-round is free, with no option or decision", () => {
+    const entries = [
+      booking("v1", "r1", "viewing", "Fraser viewing", "2026-11-14T11:00:00.000Z", "2026-11-14T12:00:00.000Z"),
+      booking("v2", "r2", "viewing", "Late viewing", "2026-11-13T23:30:00.000Z", "2026-11-14T00:30:00.000Z"),
+      booking("b2", "r3", "ink", "Guild dinner", "2026-11-14T18:00:00.000Z", "2026-11-14T22:00:00.000Z"),
+      booking("v3", "r3", "viewing", "Viewing before dinner", "2026-11-14T15:00:00.000Z", "2026-11-14T16:00:00.000Z"),
+    ];
+    const answer = dayAnswer(entries, ROOMS, DAY, NOW);
+    expect(room(answer, "r1")).toMatchObject({ free: true, lines: [{ kind: "free", bookingId: null, text: "Free" }] });
+    expect(room(answer, "r2")).toMatchObject({ free: true, lines: [{ kind: "free", text: "Free" }] });
+    expect(room(answer, "r3")?.lines.map((line) => line.text)).toEqual(["Confirmed, Guild dinner, 18:00–22:00"]);
+    const words = answer.flatMap((each) => each.lines.map((line) => line.text)).join(" ");
+    expect(words).not.toMatch(/option|Provisional|decides|viewing/iu);
+    expect(freeRoomsSaid(answer, false)).toBe("6 of 7 rooms free");
+  });
 });
 
 describe("freeRoomsSaid", () => {

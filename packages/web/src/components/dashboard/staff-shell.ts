@@ -17,6 +17,9 @@ export interface ShellFrame {
   readonly onViewChange?: (view: DashboardView) => void;
   readonly mainLabel?: string;
   readonly surface?: "desk" | "rota";
+  /** "none": the page is the whole screen, no header, nav or account menu
+   *  (the hallkeeper wall display, goal 19 S8); "full" (the default) draws them. */
+  readonly chrome?: "full" | "none";
   /** What the page adds to Find while it shows (the Diary's board). */
   readonly findSource?: FindSource;
 }
@@ -58,16 +61,17 @@ export function useShellFrame(frame: ShellFrame): void {
   const switchesViews = frame.onViewChange !== undefined;
   // A page's Find source keeps its identity across its renders (FindSource),
   // so handing it up does not re-render the header on every page render.
-  const { activeView, mainLabel, surface, findSource } = frame;
+  const { activeView, mainLabel, surface, findSource, chrome } = frame;
   useLayoutEffect(() => {
     if (shell === null) return;
     shell.hold(owner, {
       ...(activeView === undefined ? {} : { activeView }),
       ...(mainLabel === undefined ? {} : { mainLabel }),
       ...(surface === undefined ? {} : { surface }),
+      ...(chrome === undefined ? {} : { chrome }),
       ...(findSource === undefined ? {} : { findSource }),
       ...(switchesViews ? { onViewChange: (view: DashboardView) => { viewChange.current?.(view); } } : {}),
     });
-  }, [activeView, findSource, mainLabel, owner, shell, surface, switchesViews]);
+  }, [activeView, chrome, findSource, mainLabel, owner, shell, surface, switchesViews]);
   useLayoutEffect(() => (shell === null ? undefined : () => { shell.release(owner); }), [owner, shell]);
 }

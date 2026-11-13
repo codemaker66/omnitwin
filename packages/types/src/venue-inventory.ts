@@ -5,10 +5,10 @@ import { z } from "zod";
 // not themselves persist stock, reserve a booking or grant a user's authority.
 // PostgreSQL UUID identity is case-insensitive and serializes in lowercase.
 // Normalize before constructing command identities or comparing audit snapshots.
-export const InventoryIdSchema = z.string().uuid().transform((value) => value.toLowerCase());
+export const InventoryIdSchema = z.uuid().transform((value) => value.toLowerCase());
 const Id = InventoryIdSchema;
 export const InventoryQuantitySchema = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
-export const InventoryInstantSchema = z.string().datetime({ offset: true })
+export const InventoryInstantSchema = z.iso.datetime({ offset: true })
   .transform((value) => new Date(value).toISOString());
 const WindowFields = { startsAt: InventoryInstantSchema, endsAt: InventoryInstantSchema };
 
@@ -44,11 +44,11 @@ export function validateInventoryStockCounts(
 ): void {
   if (value.damagedQuantity > value.ownedQuantity ||
       value.unavailableQuantity > value.ownedQuantity - value.damagedQuantity) {
-    context.addIssue({ code: z.ZodIssueCode.custom, path: ["unavailableQuantity"],
+    context.addIssue({ code: "custom", path: ["unavailableQuantity"],
       message: "Damaged and other unavailable units cannot exceed owned stock" });
   }
   if (new Set(value.hires.map((hire) => hire.id)).size !== value.hires.length) {
-    context.addIssue({ code: z.ZodIssueCode.custom, path: ["hires"], message: "INVENTORY_DUPLICATE_ID" });
+    context.addIssue({ code: "custom", path: ["hires"], message: "INVENTORY_DUPLICATE_ID" });
   }
 }
 
@@ -124,7 +124,7 @@ export const InventoryAdjustmentReceiptSchema = z.object({
       command.expectedRevision !== before.revision || receipt.reason !== command.reason ||
       Date.parse(receipt.recordedAt) < Date.parse(before.effectiveAt) ||
       JSON.stringify(expectedAfter) !== JSON.stringify(after)) {
-    context.addIssue({ code: z.ZodIssueCode.custom, message: "INVENTORY_RECEIPT_INTEGRITY" });
+    context.addIssue({ code: "custom", message: "INVENTORY_RECEIPT_INTEGRITY" });
   }
 });
 export type InventoryAdjustmentReceipt = z.infer<typeof InventoryAdjustmentReceiptSchema>;

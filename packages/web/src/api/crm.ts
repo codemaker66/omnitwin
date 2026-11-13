@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { DealLostToSchema, type OpportunityLostTo } from "@omnitwin/types";
 import { api } from "./client.js";
 import { StaffProposalSchema } from "./proposals.js";
 
@@ -82,7 +83,7 @@ const ContactSchema = z.object({
   venueId: z.string(),
   clientAccountId: z.string().nullable(),
   name: z.string(),
-  email: z.string(),
+  email: z.string().nullable(),
   phone: z.string().nullable(),
   roleLabel: z.string().nullable(),
   sourceEnquiryId: z.string().nullable(),
@@ -108,11 +109,11 @@ export type PipelineTask = z.infer<typeof PipelineTaskSchema>;
 const PipelineSchema = z.object({
   opportunities: z.array(PipelineOpportunitySchema),
   todayTasks: z.array(PipelineTaskSchema),
-  stageCounts: z.record(z.number().int()),
+  stageCounts: z.record(z.string(), z.number().int()),
   // What each stage's deals are estimated at, and how many open deals have a
   // step due today or already past it, over the whole pipeline (roadmap X1).
   // Optional, as below, for a web build briefly ahead of the API.
-  stageValues: z.record(z.number().int()).optional(),
+  stageValues: z.record(z.string(), z.number().int()).optional(),
   due: z.object({ overdue: z.number().int(), today: z.number().int() }).optional(),
   // Served by the API, never summed from `opportunities` here: that array is
   // one PAGE of the board, and a page total is not a pipeline total. It is
@@ -167,6 +168,9 @@ export const StageMoveSchema = z.object({
   note: z.string().nullable(),
   changedByName: z.string().nullable(),
   createdAt: z.string(),
+  /** Who won, on a move to lost where it was said (the competitor watch);
+   *  absent from an API from before it. */
+  lostTo: DealLostToSchema.nullable().optional(),
 });
 
 export type StageMove = z.infer<typeof StageMoveSchema>;
@@ -174,7 +178,7 @@ export type StageMove = z.infer<typeof StageMoveSchema>;
 export const DealContactSchema = z.object({
   id: z.string(),
   name: z.string(),
-  email: z.string(),
+  email: z.string().nullable(),
   phone: z.string().nullable(),
   accountName: z.string().nullable(),
 });
@@ -260,7 +264,12 @@ export async function getOpportunity(id: string): Promise<OpportunityDetail> {
   return api.get(`/opportunities/${id}`, OpportunityDetailSchema);
 }
 
-export async function updateOpportunity(id: string, input: Partial<CreateOpportunityInput> & { readonly stage?: string; readonly note?: string | null }): Promise<Opportunity> {
+export async function updateOpportunity(id: string, input: Partial<CreateOpportunityInput> & {
+  readonly stage?: string;
+  readonly note?: string | null;
+  /** Who won, said only as the deal is marked lost. */
+  readonly lostTo?: OpportunityLostTo;
+}): Promise<Opportunity> {
   return api.patch(`/opportunities/${id}`, input, OpportunitySchema);
 }
 

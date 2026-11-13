@@ -28,6 +28,7 @@ import {
 } from "../lib/blueprint/geometry.js";
 import type { LayerRow } from "../lib/blueprint/geometry.js";
 import { useEscapeToClose, useFocusTrap } from "../lib/use-focus-trap.js";
+import { useEscapeLayer, usePlannerKeyBindings, type KeyBinding, type KeyChord } from "../lib/planner-keys.js";
 import type {
   BlueprintItem,
   BlueprintScene,
@@ -170,90 +171,44 @@ function BlueprintDemo(): ReactElement {
     return () => { clearInterval(t); };
   }, []);
 
-  useEffect(() => {
-    function onKey(e: KeyboardEvent): void {
-      const target = e.target as HTMLElement | null;
-      if (target !== null && isTypingTarget(target)) return;
-      const cmd = e.metaKey || e.ctrlKey;
-      if (cmd && e.key.toLowerCase() === "z") {
-        e.preventDefault();
-        dispatch({ type: e.shiftKey ? "redo" : "undo" });
-        return;
-      }
-      if (cmd && e.key.toLowerCase() === "d") {
-        e.preventDefault();
-        const seed = nextIdRef.current;
-        nextIdRef.current += 10;
-        dispatch({ type: "duplicate-selected", idSeed: seed });
-        return;
-      }
-      if (cmd && e.key.toLowerCase() === "a") {
-        e.preventDefault();
-        dispatch({ type: "select-all" });
-        return;
-      }
-      // Zoom — `+` / `=` in / `-` out / `0` reset (desktop companions
-      // to the pinch gesture on touch).
-      if (e.key === "+" || e.key === "=") {
-        e.preventDefault();
-        setZoom((z) => Math.min(4, z + 0.25));
-        return;
-      }
-      if (e.key === "-" || e.key === "_") {
-        e.preventDefault();
-        setZoom((z) => Math.max(0.5, z - 0.25));
-        return;
-      }
-      if (e.key === "0" && !cmd) {
-        e.preventDefault();
-        setZoom(() => 1);
-        return;
-      }
-      if (e.key === "?" || (e.shiftKey && e.key === "/")) {
-        e.preventDefault();
-        setHelpOpen((v) => !v);
-        return;
-      }
-      if (e.key === "Escape") {
-        setHelpOpen(false);
-        dispatch({ type: "select", id: null });
-        return;
-      }
-      if (e.key === "Delete" || e.key === "Backspace") {
-        e.preventDefault();
-        dispatch({ type: "remove-selected" });
-        return;
-      }
-      if (e.key.toLowerCase() === "r") {
-        dispatch({ type: "rotate-selected", deltaDeg: ROTATE_STEP_DEG });
-        return;
-      }
-      // Lock toggle — ⌘L / Ctrl+L (Figma-style).
-      if (cmd && e.key.toLowerCase() === "l") {
-        e.preventDefault();
-        dispatch({ type: "toggle-lock" });
-        return;
-      }
-      // Z-order — ] raise / [ lower; ⌘⇧ to send to extremes.
-      if (e.key === "]") {
-        e.preventDefault();
-        dispatch({ type: cmd ? "raise-to-top" : "raise-selected" });
-        return;
-      }
-      if (e.key === "[") {
-        e.preventDefault();
-        dispatch({ type: cmd ? "lower-to-bottom" : "lower-selected" });
-        return;
-      }
-      const step = e.shiftKey ? NUDGE_STEP_BIG_M : NUDGE_STEP_M;
-      if (e.key === "ArrowUp")    { e.preventDefault(); dispatch({ type: "nudge-selected", dx: 0, dy: -step }); return; }
-      if (e.key === "ArrowDown")  { e.preventDefault(); dispatch({ type: "nudge-selected", dx: 0, dy: step });  return; }
-      if (e.key === "ArrowLeft")  { e.preventDefault(); dispatch({ type: "nudge-selected", dx: -step, dy: 0 }); return; }
-      if (e.key === "ArrowRight") { e.preventDefault(); dispatch({ type: "nudge-selected", dx: step, dy: 0 });  return; }
-    }
-    document.addEventListener("keydown", onKey);
-    return () => { document.removeEventListener("keydown", onKey); };
-  }, []);
+  // The demo's keys, through the planner's one keyboard owner. As before,
+  // they answer while the shortcuts sheet is open (? closes it again), with
+  // the modifiers the old listener ignored, and on a held key; a focused form
+  // control keeps every key for itself.
+  const step = (e: KeyboardEvent): number => (e.shiftKey ? NUDGE_STEP_BIG_M : NUDGE_STEP_M);
+  usePlannerKeyBindings([
+    demoKey(looseChord({ code: "KeyZ", mod: true }), (e) => { dispatch({ type: e.shiftKey ? "redo" : "undo" }); }),
+    demoKey(looseChord({ code: "KeyD", mod: true }), () => {
+      const seed = nextIdRef.current;
+      nextIdRef.current += 10;
+      dispatch({ type: "duplicate-selected", idSeed: seed });
+    }),
+    demoKey(looseChord({ code: "KeyA", mod: true }), () => { dispatch({ type: "select-all" }); }),
+    // Zoom — `+` / `=` in / `-` out / `0` reset (desktop companions
+    // to the pinch gesture on touch).
+    demoKey([...looseChord({ key: "+" }, true), ...looseChord({ key: "=" }, true)], () => { setZoom((z) => Math.min(4, z + 0.25)); }),
+    demoKey([...looseChord({ key: "-" }, true), ...looseChord({ key: "_" }, true)], () => { setZoom((z) => Math.max(0.5, z - 0.25)); }),
+    demoKey(looseChord({ key: "0" }), () => { setZoom(() => 1); }),
+    demoKey([...looseChord({ key: "?" }, true), ...looseChord({ key: "/", shift: true }, true)], () => { setHelpOpen((v) => !v); }),
+    demoKey([...looseChord({ code: "Delete" }, true), ...looseChord({ code: "Backspace" }, true)], () => { dispatch({ type: "remove-selected" }); }),
+    // Ctrl/⌘ R stays the browser's reload.
+    demoKey(looseChord({ code: "KeyR" }), () => { dispatch({ type: "rotate-selected", deltaDeg: ROTATE_STEP_DEG }); }),
+    // Lock toggle — ⌘L / Ctrl+L (Figma-style).
+    demoKey(looseChord({ code: "KeyL", mod: true }), () => { dispatch({ type: "toggle-lock" }); }),
+    // Z-order — ] raise / [ lower; ⌘⇧ to send to extremes.
+    demoKey(looseChord({ key: "]" }, true), (e) => { dispatch({ type: e.metaKey || e.ctrlKey ? "raise-to-top" : "raise-selected" }); }),
+    demoKey(looseChord({ key: "[" }, true), (e) => { dispatch({ type: e.metaKey || e.ctrlKey ? "lower-to-bottom" : "lower-selected" }); }),
+    demoKey(looseChord({ code: "ArrowUp" }, true), (e) => { dispatch({ type: "nudge-selected", dx: 0, dy: -step(e) }); }),
+    demoKey(looseChord({ code: "ArrowDown" }, true), (e) => { dispatch({ type: "nudge-selected", dx: 0, dy: step(e) }); }),
+    demoKey(looseChord({ code: "ArrowLeft" }, true), (e) => { dispatch({ type: "nudge-selected", dx: -step(e), dy: 0 }); }),
+    demoKey(looseChord({ code: "ArrowRight" }, true), (e) => { dispatch({ type: "nudge-selected", dx: step(e), dy: 0 }); }),
+  ]);
+  // Esc deselects, last in the order: the shortcuts sheet and an item's menu
+  // close first. Escape in a form control stays the control's.
+  useEscapeLayer("selection", {
+    open: () => state.selectedIds.length > 0 && !isTypingTarget(document.activeElement),
+    onEscape: () => { dispatch({ type: "select", id: null }); },
+  });
 
   const selectedItem = useMemo<BlueprintItem | null>(() => {
     if (state.selectedId === null) return null;
@@ -704,9 +659,30 @@ function halfExtentH(item: BlueprintItem): number {
   return item.lengthM / 2;
 }
 
-function isTypingTarget(el: HTMLElement): boolean {
+function isTypingTarget(el: EventTarget | null): boolean {
+  if (!(el instanceof HTMLElement)) return false;
   const tag = el.tagName.toLowerCase();
   return tag === "input" || tag === "textarea" || tag === "select" || el.isContentEditable;
+}
+
+/** A chord that, like the demo's old listener, ignores Alt and (for a named key) Shift, and optionally Ctrl/⌘ too. */
+function looseChord(chord: KeyChord, orWithCtrl = false): KeyChord[] {
+  const loose: KeyChord = { ...chord, shift: chord.shift ?? "any", alt: "any" };
+  return orWithCtrl ? [loose, { ...loose, mod: true }] : [loose];
+}
+
+/** One of the demo's keys: held keys repeat, the shortcuts sheet does not silence it, and any form control keeps it. */
+function demoKey(keys: readonly KeyChord[], act: (e: KeyboardEvent) => void): KeyBinding {
+  return {
+    keys,
+    run: (e) => {
+      if (isTypingTarget(e.target)) return false;
+      act(e);
+    },
+    repeat: true,
+    inFields: true,
+    duringModal: true,
+  };
 }
 
 /**
@@ -1693,11 +1669,8 @@ function CanvasPane(props: CanvasPaneProps): ReactElement {
 
 function ItemContextMenu(props: { clientX: number; clientY: number; onRotate: () => void; onRemove: () => void; onClose: () => void }): ReactElement {
   const { clientX, clientY, onRotate, onRemove, onClose } = props;
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => { if (e.key === "Escape") onClose(); };
-    document.addEventListener("keydown", onKey);
-    return () => { document.removeEventListener("keydown", onKey); };
-  }, [onClose]);
+  // Esc closes the menu, one step before it would deselect the item.
+  useEscapeLayer("popover", { open: true, onEscape: onClose });
   return (
     <>
       <div

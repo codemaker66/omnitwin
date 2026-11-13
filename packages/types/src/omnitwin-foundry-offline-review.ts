@@ -52,7 +52,7 @@ export const FoundryOfflineReviewArtifactV0Schema = z
     kind: FoundryOfflineReviewArtifactKindSchema,
     relativePath: FoundryRelativePathSchema,
     sha256: RuntimeSha256Schema,
-    byteLength: z.number().int().safe().positive(),
+    byteLength: z.number().int().int().positive(),
     mediaType: z.string().trim().min(1).max(160),
   })
   .strict();
@@ -142,7 +142,7 @@ function validateFoundryOfflineReviewPackageMaterial(
   const ids = reviewPackage.artifacts.map((artifact) => artifact.id);
   if (new Set(ids).size !== ids.length) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["artifacts"],
       message: "offline review artifact IDs must be unique",
     });
@@ -151,7 +151,7 @@ function validateFoundryOfflineReviewPackageMaterial(
   const paths = reviewPackage.artifacts.map((artifact) => artifact.relativePath);
   if (new Set(paths).size !== paths.length) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["artifacts"],
       message: "offline review artifact paths must be unique",
     });
@@ -159,7 +159,7 @@ function validateFoundryOfflineReviewPackageMaterial(
   const caseFoldedPaths = paths.map((path) => path.toLocaleLowerCase("en-US"));
   if (new Set(caseFoldedPaths).size !== caseFoldedPaths.length) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["artifacts"],
       message: "offline review artifact paths must be unique without case ambiguity",
     });
@@ -167,7 +167,7 @@ function validateFoundryOfflineReviewPackageMaterial(
   const sortedPaths = [...paths].sort((left, right) => left.localeCompare(right, "en-US"));
   if (paths.some((path, index) => path !== sortedPaths[index])) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["artifacts"],
       message: "offline review artifacts must be sorted by relativePath",
     });
@@ -178,7 +178,7 @@ function validateFoundryOfflineReviewPackageMaterial(
   );
   if (subjects.length !== 1) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["subjectArtifactId"],
       message: "subjectArtifactId must resolve to exactly one indexed artifact",
     });
@@ -188,7 +188,7 @@ function validateFoundryOfflineReviewPackageMaterial(
   if (subject === undefined) return;
   if (subject.kind !== "phase1_bundle" && subject.kind !== "release_manifest") {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["subjectArtifactId"],
       message: "offline review subject must be a phase-one bundle or release manifest",
     });
@@ -202,7 +202,7 @@ function validateFoundryOfflineReviewPackageMaterial(
   for (const requiredKind of requiredKinds) {
     if (!availableKinds.has(requiredKind)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["artifacts"],
         message: `evidence-review-ready ${subject.kind} package requires ${requiredKind}`,
       });
@@ -258,7 +258,7 @@ export const FoundryOfflineReviewPackageV0Schema = z
     };
     if (reviewPackage.packageSha256 !== digestFoundryOfflineReviewPackageMaterial(material)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["packageSha256"],
         message: "packageSha256 must bind the exact offline review material",
       });

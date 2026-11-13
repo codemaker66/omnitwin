@@ -1,5 +1,5 @@
 import type { CalendarBookingEntry, CalendarEntry, CalendarPhaseEntry } from "@omnitwin/types";
-import { ordinal } from "../board-copy.js";
+import { BOARD_COPY, ordinal } from "../board-copy.js";
 import { dayColumns, formatWallTime, msToWallInput, VENUE_TIME_ZONE, type BoardRange, type DayColumn } from "./board-time.js";
 
 type DayWindow = Pick<DayColumn, "startMs" | "endMs">;
@@ -41,6 +41,8 @@ export function bookingStateLabel(entry: CalendarBookingEntry): string {
   if (entry.kind === "ink") return "Confirmed";
   if (entry.kind === "internal_block") return "House block";
   if (entry.kind === "prospect") return "Interest only";
+  // A show-round, never a hold: no option and no decision date.
+  if (entry.kind === "viewing") return BOARD_COPY.legend.viewing;
   if (entry.rank === null) return "Provisional";
   if (entry.rank === 1 && entry.jointFlag) return "Provisional · Joint 1st";
   return `Provisional · ${ordinal(entry.rank)} option`;

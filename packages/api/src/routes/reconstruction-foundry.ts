@@ -28,13 +28,13 @@ import {
   type ReconstructionFoundryServiceApi,
 } from "../services/reconstruction-foundry.js";
 
-const ReleaseParamsSchema = z.object({ releaseId: z.string().uuid() }).strict();
+const ReleaseParamsSchema = z.object({ releaseId: z.uuid() }).strict();
 const ReleaseListQuerySchema = z.object({
   venueSlug: RuntimeSlugSchema,
   releaseKind: ReconstructionReleaseKindSchema.default("venue_twin_v1"),
 }).strict();
 const ChannelQuerySchema = ReleaseListQuerySchema;
-const SigningPayloadQuerySchema = z.object({ reviewId: z.string().uuid() }).strict();
+const SigningPayloadQuerySchema = z.object({ reviewId: z.uuid() }).strict();
 const VisualEvidenceQuerySchema = z.object({
   path: ReconstructionReleaseObjectPathSchema,
 }).strict();
@@ -55,7 +55,7 @@ function extendFoundryRequestTimeout(request: FastifyRequest): void {
   }
 }
 
-function validationError(reply: FastifyReply, issues: readonly z.ZodIssue[]): FastifyReply {
+function validationError(reply: FastifyReply, issues: readonly z.core.$ZodIssue[]): FastifyReply {
   return reply.status(400).send({
     error: "Request validation failed.",
     code: "VALIDATION_ERROR",

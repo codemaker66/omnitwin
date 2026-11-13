@@ -337,8 +337,12 @@ describe("booking mutation cores — source contract (extracted T-537, invariant
   it("validates a cross-lane move's target space against the venue (the Board)", async () => {
     const source = await readFile(resolve("src/services/booking-mutations.ts"), "utf-8");
     expect(source).toContain("patch.spaceId !== undefined");
-    expect(source).toContain("eq(spaces.id, patch.spaceId)");
+    // The target is read live at the booking's venue, under the room's lock
+    // (admin-venues-3); room-delete-writers-postgres proves the behaviour.
+    expect(source).toContain("lockLiveRoom(conn, row.venueId, patch.spaceId ?? row.spaceId)");
     expect(source).toContain("spaceId: patch.spaceId ?? row.spaceId");
+    const liveness = await readFile(resolve("src/services/room-liveness.ts"), "utf-8");
+    expect(liveness).toContain("eq(spaces.id, spaceId), eq(spaces.venueId, venueId), isNull(spaces.deletedAt)");
   });
 
   it("scopes diary writes to the roles that ink the diary while reads keep the shared venue policy", async () => {
@@ -387,15 +391,15 @@ describe("booking mutation cores — source contract (extracted T-537, invariant
 });
 
 // ---------------------------------------------------------------------------
-// The booking → plan link (`bookings.event_id`).
+// The booking → event link (`bookings.event_id`): the bind, migration 0090.
 //
-// This behaviour has existed since the T-537 core extraction, but NOTHING
-// pinned it — and the only literal `eventId` in routes/bookings.ts is the
-// deliberate `null` of the enquiry conversion. Reading the route adapter
-// alone therefore makes the link look discarded; it is not. These pins state
-// the contract so the next reader does not have to infer it from the adapter.
+// Every hold and ink is written together with its event, in the booking's
+// own transaction (services/event-binding.ts), and the database refuses one
+// without (bookings_bound_to_event). These pins state the shape of the
+// writers so the next reader does not have to infer it; the behaviour itself
+// is proven on PostgreSQL in booking-event-bind-postgres.test.ts.
 // ---------------------------------------------------------------------------
-describe("booking → plan link (bookings.event_id)", () => {
+describe("booking → event link (bookings.event_id, the bind)", () => {
   it("rejects a malformed eventId at the schema boundary", async () => {
     const res = await server.inject({
       method: "POST",
@@ -409,38 +413,68 @@ describe("booking → plan link (bookings.event_id)", () => {
     expect(body.details.flatMap((issue) => issue.path)).toContain("eventId");
   });
 
-  it("create verifies the event belongs to the venue BEFORE inserting, then persists it", async () => {
+  it("create binds the event, checked to be this venue's, BEFORE inserting, in the same transaction", async () => {
     const source = await readFile(resolve("src/services/booking-mutations.ts"), "utf-8");
-    const guard = source.indexOf("input.eventId !== undefined");
-    const write = source.indexOf("eventId: input.eventId ?? null");
-    expect(guard).toBeGreaterThan(-1);
-    expect(write).toBeGreaterThan(-1);
+    const create = source.slice(source.indexOf("export async function createBookingCore"), source.indexOf("export async function updateBookingCore"));
+    const transaction = create.indexOf("conn.transaction(");
+    const bind = create.indexOf("bindBookingToEvent(tx,");
+    const write = create.indexOf(".insert(bookings)");
+    expect(transaction).toBeGreaterThan(-1);
     // Tenant safety: the venue check must precede the write, never follow it.
-    expect(guard).toBeLessThan(write);
-    expect(source).toContain("EVENT_VENUE_MISMATCH");
+    expect(transaction).toBeLessThan(bind);
+    expect(bind).toBeLessThan(write);
+    expect(create).toContain("if (!bound.ok) return EVENT_VENUE_MISMATCH;");
+    const binding = await readFile(resolve("src/services/event-binding.ts"), "utf-8");
+    expect(binding).toContain("row.venueId !== seed.venueId");
   });
 
-  it("update can attach a plan and can detach one — an explicit null must survive the merge", async () => {
+  it("update may move a booking to another event of its venue; a hold or ink is never parted from its event", async () => {
     const source = await readFile(resolve("src/services/booking-mutations.ts"), "utf-8");
-    // `patch.eventId !== null` in the guard is what lets a detach through
-    // without being re-validated as a foreign event.
-    expect(source).toContain("patch.eventId !== undefined && patch.eventId !== null");
-    // undefined means "not supplied" (keep it); null means "detach". `??`
-    // would collapse those two, so the `=== undefined` test is load-bearing.
+    expect(source).toContain("if (patch.eventId === null && bookingKindNeedsEvent(row.kind)) return EVENT_REQUIRED;");
+    expect(source).toContain("patch.eventId !== undefined && patch.eventId !== null && patch.eventId !== row.eventId");
+    // undefined means "not supplied" (keep it); null detaches interest only.
+    // `??` would collapse those two, so the `=== undefined` test is load-bearing.
     expect(source).toContain("eventId: patch.eventId === undefined ? row.eventId : patch.eventId");
   });
 
-  it("the enquiry conversion's null event is deliberate, not a dropped field", async () => {
+  it("the enquiry conversion writes its hold with the event it binds, in one transaction", async () => {
     const source = await readFile(resolve("src/routes/bookings.ts"), "utf-8");
     const conversion = source.slice(source.indexOf('server.post("/from-enquiry"'));
-    expect(conversion).toContain("eventId: null");
-    // Canon §1: the commitment axis and the enquiry axis stay independent —
-    // a pencilled-in enquiry has no plan yet, by design.
+    expect(conversion).not.toContain("eventId: null");
+    const transaction = conversion.indexOf("db.transaction(");
+    const bind = conversion.indexOf("bindBookingToEvent(tx,");
+    const write = conversion.indexOf(".insert(bookings)");
+    expect(transaction).toBeGreaterThan(-1);
+    expect(transaction).toBeLessThan(bind);
+    expect(bind).toBeLessThan(write);
+    expect(conversion).toContain('{ join: "enquiry", enquiryId: enquiry.id }');
+    expect(conversion).toContain("eventId: bound.eventId");
+    // Canon §1 still holds: the enquiry's own lifecycle is untouched.
     expect(source).toContain("enquiry axis stay independent");
   });
 
   it("the serializer carries the link, so the board sees it without a second fetch", async () => {
     const source = await readFile(resolve("src/services/booking-mutations.ts"), "utf-8");
     expect(source).toContain("eventId: row.eventId");
+  });
+});
+
+describe("a hold's title from an enquiry with a blank name (blank-enquiry-name)", () => {
+  it("names the hold after the enquiry's email when its stored name is blank", async () => {
+    const { enquiryTitleName } = await import("../routes/bookings.js");
+    expect(enquiryTitleName({ name: "", email: "ada@example.com" })).toBe("ada@example.com");
+    expect(enquiryTitleName({ name: "   ", email: "ada@example.com" })).toBe("ada@example.com");
+    expect(enquiryTitleName({ name: " Ada Lovelace ", email: "ada@example.com" })).toBe("Ada Lovelace");
+  });
+
+  it("uses that name for both the conversion and the viewing titles, kept to 200 characters", async () => {
+    const source = await readFile(resolve("src/routes/bookings.ts"), "utf-8");
+    const conversion = source.slice(source.indexOf('server.post("/from-enquiry"'), source.indexOf('server.post("/viewings"'));
+    const viewing = source.slice(source.indexOf('server.post("/viewings"'));
+    expect(conversion).toContain("enquiryTitleName(enquiry)");
+    expect(conversion).toContain("fallbackTitle.slice(0, MAX_BOOKING_TITLE_LENGTH)");
+    expect(viewing).toContain("email: enquiries.email");
+    expect(viewing).toContain("enquiryTitleName(enquiry).slice(0, MAX_BOOKING_TITLE_LENGTH)");
+    expect(source).not.toContain("enquiry.name.slice(");
   });
 });

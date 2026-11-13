@@ -89,7 +89,7 @@ test("every Ask about a date reaches the composer, from the front door and from 
   // The designed not-found page sends a visitor to the same form; the front
   // door loads after the hash was read, so it must find the form itself.
   await page.goto("/an-old-link-that-has-moved");
-  await expect(page.getByRole("heading", { level: 1, name: "That link has expired or moved" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "There is no page at this address" })).toBeVisible();
   await page.getByRole("link", { name: "Ask about a date" }).click();
   await expect(page).toHaveURL((url) => url.pathname === "/" && url.hash === "#enquire");
   await expect(page.getByTestId("enquiry-composer")).toBeInViewport();

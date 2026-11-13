@@ -9,7 +9,10 @@ import { ActivityIndicator } from "../components/shared/Activity.js";
 //
 // Design intent: dark, premium, expressive — a single dominant Pro tier
 // card centred as the hero, followed by scalable add-ons, professional
-// scanning services, a founder bundle, competitor comparison, and FAQ.
+// scanning services, a founder bundle, and FAQ. The page names no other
+// company and quotes no one else's prices (fix-first item 7, 16 October
+// 2026): an unsourced table of other vendors' prices is counter-marketing,
+// and its figures could not be shown to be true.
 // Visual language: the house serif (Newsreader) for display, oxblood accent,
 // cream on near-black.
 //
@@ -724,74 +727,6 @@ export function PricingPage(): React.ReactElement {
         </div>
       </section>
 
-      {/* === Comparison === */}
-      <section style={{ position: "relative", zIndex: 2, padding: "80px 48px", maxWidth: 900, margin: "0 auto" }}>
-        <div style={{ textAlign: "center", marginBottom: 48 }}>
-          <div style={{ fontSize: 12, letterSpacing: 4, color: GOLD, textTransform: "uppercase", marginBottom: 12, fontWeight: 600 }}>
-            What you pay elsewhere
-          </div>
-          <h2 style={{ ...SERIF_TYPE, fontSize: 40, margin: 0, fontWeight: 400, letterSpacing: 0 }}>
-            The same job, <em style={{ color: GOLD, fontStyle: "italic" }}>one-tenth the cost.</em>
-          </h2>
-        </div>
-
-        <div
-          style={{
-            background: BG_PANEL,
-            border: "1px solid rgba(255,255,255,0.06)",
-            borderRadius: 20,
-            overflow: "hidden",
-          }}
-        >
-          {[
-            { name: "Cvent Event Diagramming", price: "$500–2,000/mo", context: "Bundled only, enterprise sales calls" },
-            { name: "Prismm (formerly AllSeated)", price: "$99–299/mo", context: "Planner only, no 3D walkthrough" },
-            { name: "Matterport hosting (per space)", price: "$70–500/mo", context: "Walkthrough only, no planner" },
-            { name: "Cvent + Matterport combined", price: "~$400+/mo", context: "Two tools, two invoices, two onboardings" },
-          ].map((row, idx) => (
-            <div
-              key={row.name}
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr auto",
-                padding: "22px 32px",
-                borderBottom: idx === 3 ? "none" : "1px solid rgba(255,255,255,0.04)",
-                gap: 24,
-                alignItems: "center",
-              }}
-            >
-              <div>
-                <div style={{ fontSize: 15, fontWeight: 600, color: CREAM }}>{row.name}</div>
-                <div style={{ fontSize: 12, color: CREAM_FAINT, marginTop: 4 }}>{row.context}</div>
-              </div>
-              <div style={{ fontSize: 17, ...SERIF_TYPE, color: CREAM_MUT }}>{row.price}</div>
-            </div>
-          ))}
-
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "1fr auto",
-              padding: "26px 32px",
-              background: `linear-gradient(90deg, rgba(201, 138, 91,0.08), rgba(201, 138, 91,0.02))`,
-              borderTop: "1px solid rgba(201, 138, 91,0.2)",
-              gap: 24,
-              alignItems: "center",
-            }}
-          >
-            <div>
-              <div style={{ fontSize: 15, fontWeight: 700, color: GOLD, letterSpacing: 0.5 }}>Venviewer · all-in-one</div>
-              <div style={{ fontSize: 12, color: CREAM_MUT, marginTop: 4 }}>Planner + 3D walkthrough + enquiry pipeline</div>
-            </div>
-            <div style={{ fontSize: 22, ...SERIF_TYPE, color: GOLD, fontWeight: 500 }}>£47.99/mo</div>
-          </div>
-        </div>
-
-        <p style={{ textAlign: "center", fontSize: 13, color: CREAM_FAINT, marginTop: 20, fontStyle: "italic" }}>
-          Prices above are industry estimates from public reviews; verify with each vendor.
-        </p>
-      </section>
-
       {/* === FAQ === */}
       <section style={{ position: "relative", zIndex: 2, padding: "80px 48px", maxWidth: 760, margin: "0 auto" }}>
         <h2 style={{ ...SERIF_TYPE, fontSize: 40, margin: "0 0 40px", fontWeight: 400, textAlign: "center", letterSpacing: 0 }}>
@@ -800,7 +735,7 @@ export function PricingPage(): React.ReactElement {
 
         {[
           {
-            q: "Do I need to buy a Matterport camera?",
+            q: "Do I need to buy a scanning camera?",
             a: "No. We come to your venue with our own lidar + photogrammetry rig, scan everything, and deliver the 3D model as part of our scanning service. No hardware purchase, no separate hosting fees.",
           },
           {

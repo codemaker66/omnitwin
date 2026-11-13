@@ -1,12 +1,14 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { useEffect, useRef, useState } from "react";
 import { createMemoryRouter, MemoryRouter, RouterProvider, useLocation } from "react-router-dom";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAuthStore, type AuthUser } from "../../../stores/auth-store.js";
 import { DashboardLayout, forgetKnownVenueNames, type DashboardView } from "../DashboardLayout.js";
 import { InventoryNavigationGuard } from "../inventory/InventoryNavigationGuard.js";
 import { ProtectedRoute } from "../../auth/ProtectedRoute.js";
 import { forgetProposalMemory, proposalsWithWords, recallDraft, rememberDraft, updateKept } from "../proposals/proposal-memory.js";
+import { PLATFORM_ROLES, USER_ROLES } from "@omnitwin/types";
+import { opensDiary } from "../../../lib/role-capabilities.js";
 
 const mocks = vi.hoisted(() => ({
   venue: vi.fn(), signOut: vi.fn(), bypass: vi.fn(), unreadCount: vi.fn(), subscribe: vi.fn(),
@@ -72,6 +74,19 @@ function CurrentRoute(): React.ReactElement {
   return <output aria-label="Current route">{location.pathname}{location.search}</output>;
 }
 
+describe("a bare shell for the wall display (goal 19 S8)", () => {
+  it("draws no header, no nav and no account menu around a page that asks for none", () => {
+    render(<MemoryRouter initialEntries={["/hallkeeper/today?register=wall"]}><DashboardLayout chrome="none">
+      <h1>The Day Board</h1>
+    </DashboardLayout></MemoryRouter>);
+    expect(screen.getByRole("heading", { level: 1, name: "The Day Board" })).toBeTruthy();
+    expect(screen.queryByRole("banner")).toBeNull();
+    expect(screen.queryByRole("link", { name: "Diary" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Sign Out/iu })).toBeNull();
+    expect(screen.getByRole("main")).toBeTruthy();
+  });
+});
+
 function renderShell({ path = "/dashboard?view=inventory", onViewChange }: {
   readonly path?: string;
   readonly onViewChange?: (view: DashboardView) => void;
@@ -79,6 +94,17 @@ function renderShell({ path = "/dashboard?view=inventory", onViewChange }: {
   render(<MemoryRouter initialEntries={[path]}><DashboardLayout activeView="inventory" onViewChange={onViewChange}>
     <h1>Inventory workspace</h1><button type="button">Workspace action</button><CurrentRoute />
   </DashboardLayout></MemoryRouter>);
+}
+
+// A refusal's "Use another account" is a lazy chunk (ProtectedRoute.tsx);
+// until it arrives the screen shows a disabled, busy stand-in. Load the chunk
+// before any spec, and find the real button by `busy: false`, so no spec can
+// click the stand-in while a busy machine is still transforming the module.
+beforeAll(async () => { await import("../../auth/ClerkExitButton.js"); });
+
+/** The refusal's real exit button, never the stand-in shown while it loads. */
+function findRefusalExit(): Promise<HTMLElement> {
+  return screen.findByRole("button", { name: "Use another account", busy: false });
 }
 
 beforeEach(() => {
@@ -179,9 +205,9 @@ describe("DashboardLayout navigation", () => {
     expect(screen.getByRole("button", { name: "Proposals" })).toBeDefined();
     expect(screen.getByRole("button", { name: "Pipeline" })).toBeDefined();
     expect(screen.getByRole("button", { name: "Executive analytics" })).toBeDefined();
-    // The Clients desk reads /clients, which gates on canManageVenue — sales
-    // is refused there, so the tab is not offered.
-    expect(screen.queryByRole("button", { name: "Clients" })).toBeNull();
+    // The Clients desk reads /clients, which gates on canReadClients — the
+    // venue floor and sales (People Book design §6.7) — so the tab is offered.
+    expect(screen.getByRole("button", { name: "Clients" })).toBeDefined();
     // The pending-review queue takes the review state machine's role set.
     expect(screen.queryByRole("button", { name: "Pending reviews" })).toBeNull();
   });
@@ -296,6 +322,35 @@ describe("DashboardLayout navigation", () => {
     expect(proposalsWithWords("admin-1")).toBe(0);
   });
 
+  it("asks before signing out with layout changes kept on this device, and takes them off it on Discard", async () => {
+    const mine = "venviewer:planner-draft:admin-1:cfg-1";
+    const theirs = "venviewer:planner-draft:someone-else:cfg-9";
+    localStorage.setItem(mine, JSON.stringify({ version: 1, updatedAtMs: Date.now(), hasUnsavedLocalChanges: true }));
+    localStorage.setItem(theirs, JSON.stringify({ version: 1, updatedAtMs: Date.now(), hasUnsavedLocalChanges: true }));
+    try {
+      renderShell();
+      await screen.findByText("Trades Hall");
+      fireEvent.click(screen.getByRole("button", { name: "Account: Elaine Campbell" }));
+      fireEvent.click(screen.getByRole("button", { name: "Sign Out" }));
+      const question = await screen.findByRole("dialog", { name: "Sign out with layout changes not saved?" });
+      expect(question.textContent).toContain("Your changes to one layout are not saved yet. They are kept on this device; signing out removes them.");
+      fireEvent.click(within(question).getByRole("button", { name: "Cancel" }));
+      expect(localStorage.getItem(mine)).not.toBeNull();
+      expect(mocks.signOut).not.toHaveBeenCalled();
+
+      fireEvent.click(screen.getByRole("button", { name: "Account: Elaine Campbell" }));
+      fireEvent.click(screen.getByRole("button", { name: "Sign Out" }));
+      fireEvent.click(await screen.findByRole("button", { name: "Discard and sign out" }));
+      await waitFor(() => { expect(mocks.signOut).toHaveBeenCalledOnce(); });
+      expect(localStorage.getItem(mine)).toBeNull();
+      // Only this person's: whoever else uses this browser keeps theirs.
+      expect(localStorage.getItem(theirs)).not.toBeNull();
+    } finally {
+      localStorage.removeItem(mine);
+      localStorage.removeItem(theirs);
+    }
+  });
+
   it("returns to the account button on Cancel when the click left focus on the page, as Safari's does", async () => {
     rememberDraft("admin-1", "p1", { composer: 1, start: 1, draft: { message: "Words not yet saved.", capacityNote: "", lines: [] } });
     renderShell();
@@ -349,7 +404,7 @@ describe("DashboardLayout navigation", () => {
       <ProtectedRoute allowedRoles={["hallkeeper"]}><h1>Hallkeeper page</h1></ProtectedRoute>
     </DashboardLayout></MemoryRouter>);
     await screen.findByText("Trades Hall");
-    const other = screen.getByRole("button", { name: "Use another account" });
+    const other = await findRefusalExit();
     other.focus();
     fireEvent.click(other);
     const question = await screen.findByRole("dialog", { name: "Sign out with proposal words not saved?" });
@@ -370,7 +425,7 @@ describe("DashboardLayout navigation", () => {
     mocks.bypass.mockReturnValue(localFixture);
     rememberDraft("admin-1", "p1", { composer: 1, start: 1, draft: { message: "Words not yet saved.", capacityNote: "", lines: [] } });
     render(<MemoryRouter initialEntries={["/hallkeeper/config-1"]}><ProtectedRoute allowedRoles={["hallkeeper"]}><h1>Sheet</h1></ProtectedRoute></MemoryRouter>);
-    fireEvent.click(screen.getByRole("button", { name: "Use another account" }));
+    fireEvent.click(await findRefusalExit());
     await waitFor(() => { expect(useAuthStore.getState().user).toBeNull(); });
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(mocks.signOut).toHaveBeenCalledTimes(localFixture ? 0 : 1);
@@ -658,5 +713,32 @@ describe("DashboardLayout orientation", () => {
     render(<MemoryRouter initialEntries={["/hallkeeper/today"]}><DashboardLayout mainLabel="The Day Board"><h1>Today</h1></DashboardLayout></MemoryRouter>);
     await screen.findByText("Trades Hall");
     expect(screen.getByRole("link", { name: "Venviewer" }).getAttribute("href")).toBe("/hallkeeper/today");
+  });
+});
+
+// The route admits whoever opensDiary admits (router.tsx); the header link and
+// Find must offer the Diary to exactly those people, or a platform admin with a
+// planner role is let in but never shown the way (#295's review, D1).
+describe("the Diary is offered exactly to whom its route admits", () => {
+  const cases = USER_ROLES.flatMap((role) => PLATFORM_ROLES.map((platformRole) => ({
+    role, platformRole, offered: opensDiary({ role, platformRole }),
+  })));
+
+  it("covers both answers, including a planner who is a platform admin", () => {
+    expect(cases.some((c) => c.offered) && cases.some((c) => !c.offered)).toBe(true);
+    expect(cases.find((c) => c.role === "planner" && c.platformRole === "admin")?.offered).toBe(true);
+    expect(cases.find((c) => c.role === "planner" && c.platformRole === "none")?.offered).toBe(false);
+  });
+
+  it.each(cases)("$role with platform role $platformRole: offered $offered", async ({ role, platformRole, offered }) => {
+    useAuthStore.getState().setUser({ ...admin, role, platformRole });
+    renderShell();
+    await screen.findByText(/Trades Hall|Venviewer Platform/u);
+    expect(screen.queryByRole("link", { name: "Diary" }) !== null).toBe(offered);
+    fireEvent.click(screen.getByRole("button", { name: "Find" }));
+    // Find lists a page as "<name>, page, <note>"; with nothing to offer it draws no list.
+    const find = await screen.findByRole("dialog", { name: "Find" });
+    const found = within(find).queryByRole("listbox", { name: "Found" });
+    expect(found !== null && within(found).queryByRole("option", { name: /^Diary, page/u }) !== null).toBe(offered);
   });
 });

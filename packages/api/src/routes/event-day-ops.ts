@@ -1,7 +1,8 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, isNull, notExists, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
+  ChangeFeedItemSchema,
   CreateEventDayIssueInputSchema,
   EventDayChangesSinceLastHandoffSchema,
   toEventPlanAudienceRole,
@@ -12,8 +13,9 @@ import {
   UpdateOpsTaskStatusInputSchema,
 } from "@omnitwin/types";
 import type { Database } from "../db/client.js";
-import { eventPhases, events, handoffPacks, opsTasks } from "../db/schema.js";
+import { eventPhases, eventPlanChangeAcknowledgements, eventPlanChanges, events, handoffPacks, opsTasks } from "../db/schema.js";
 import { authenticate } from "../middleware/auth.js";
+import { outerColumn } from "../utils/outer-column.js";
 import { canAccessInternalEvent } from "../utils/query.js";
 import {
   EVENT_DAY_ISSUE_AUDIENCE,
@@ -25,11 +27,15 @@ import {
   updateEventDayIssue,
   updateOpsTaskStatus,
 } from "../services/event-day-ops.js";
-import { recordEventPlanChange } from "../services/event-plan-lifecycle.js";
+import { recordEventPlanChange, serializeEventPlanChange } from "../services/event-plan-lifecycle.js";
 
-const EventIdParam = z.object({ id: z.string().uuid() });
-const IssueParam = z.object({ id: z.string().uuid(), issueId: z.string().uuid() });
-const OpsTaskIdParam = z.object({ id: z.string().uuid() });
+/** More than a floor ever has waiting. A list cut here is still not empty, so
+ *  the board can never be told nothing waits when something does. */
+const AWAITING_ACKNOWLEDGEMENT_LIMIT = 200;
+
+const EventIdParam = z.object({ id: z.uuid() });
+const IssueParam = z.object({ id: z.uuid(), issueId: z.uuid() });
+const OpsTaskIdParam = z.object({ id: z.uuid() });
 
 type FastifyRequestUser = Parameters<typeof canAccessInternalEvent>[0];
 type EventRow = typeof events.$inferSelect;
@@ -131,6 +137,44 @@ export async function eventDayEventRoutes(server: FastifyInstance, opts: { db: D
 
     const board = await getEventDayOpsBoard(db, eventRow);
     return { data: EventDayChangesSinceLastHandoffSchema.parse(board.changesSinceLastHandoff) };
+  });
+
+  // The changes to this event that ask for a hallkeeper's acknowledgement and
+  // have none yet, newest first.
+  //
+  // The board used to find these by reading the newest 25 changes of every
+  // kind (GET /:eventId/change-feed) and filtering in the browser. Every task
+  // move and every issue is a change too, so on a busy set-up an unacknowledged
+  // guest-count change fell off that page and the board said nothing was
+  // waiting. This asks the question the board means, so no number of later
+  // changes can hide one. One acknowledgement by anybody on the floor settles a
+  // change for the room, which is how the board has always read them.
+  server.get("/:id/changes-awaiting-acknowledgement", { preHandler: [authenticate] }, async (request, reply) => {
+    reply.header("Cache-Control", "private, no-store");
+    const params = EventIdParam.safeParse(request.params);
+    if (!params.success) return validationError(reply, params.error.issues);
+
+    const eventRow = await requireEventAccess(db, request, reply, params.data.id);
+    if (eventRow === null) return;
+
+    const waiting = await db
+      .select()
+      .from(eventPlanChanges)
+      .where(and(
+        eq(eventPlanChanges.eventId, eventRow.id),
+        eq(eventPlanChanges.requiresHallkeeperAcknowledgement, true),
+        notExists(
+          db.select({ one: sql`1` })
+            .from(eventPlanChangeAcknowledgements)
+            // The change's id, named with its table: a bare "id" here would be
+            // the acknowledgement's own (utils/outer-column.ts).
+            .where(eq(eventPlanChangeAcknowledgements.changeId, outerColumn(eventPlanChanges.id))),
+        ),
+      ))
+      .orderBy(desc(eventPlanChanges.createdAt))
+      .limit(AWAITING_ACKNOWLEDGEMENT_LIMIT);
+
+    return { data: z.array(ChangeFeedItemSchema).parse(waiting.map(serializeEventPlanChange)) };
   });
 
   server.post("/:id/issues", { preHandler: [authenticate] }, async (request, reply) => {

@@ -5,7 +5,7 @@ import { VenueIdSchema } from "./venue.js";
 // User ID — UUID v4
 // ---------------------------------------------------------------------------
 
-export const UserIdSchema = z.string().uuid();
+export const UserIdSchema = z.uuid();
 
 export type UserId = z.infer<typeof UserIdSchema>;
 
@@ -34,6 +34,16 @@ export const UserRoleSchema = z.enum(USER_ROLES);
 
 export type UserRole = z.infer<typeof UserRoleSchema>;
 
+/**
+ * Who administers a venue: its record (name, address, brand) and its rooms,
+ * and the times the Diary keeps between functions. The API's
+ * `canAdministerVenue` reads this list, and so do the web's controls, so the
+ * two cannot drift: a hallkeeper runs the room and does not edit the venue's
+ * record, and sales does not either. A Venviewer platform administrator
+ * passes at every venue, on its own axis (PlatformRole below).
+ */
+export const VENUE_ADMINISTRATION_ROLES = ["admin", "manager", "staff"] as const satisfies readonly UserRole[];
+
 // ---------------------------------------------------------------------------
 // Platform Role — Venviewer operating-company authority
 //
@@ -58,7 +68,7 @@ export const EmailSchema = z
   .trim()
   .min(1, "Email must not be empty")
   .max(320, "Email must be at most 320 characters")
-  .email("Email must be a valid email address");
+  .check(z.email("Email must be a valid email address"));
 
 // ---------------------------------------------------------------------------
 // User — the full persisted entity (matches DB columns)
@@ -78,8 +88,8 @@ export const UserSchema = z.object({
   role: UserRoleSchema,
   platformRole: PlatformRoleSchema.default("none"),
   venueId: VenueIdSchema.nullable(),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
 });
 
 export type User = z.infer<typeof UserSchema>;

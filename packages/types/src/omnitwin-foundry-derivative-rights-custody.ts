@@ -55,9 +55,7 @@ export const FOUNDRY_DERIVATIVE_RIGHTS_REGISTRY_ATTESTATION_REVIEW_DECISIONS =
 const LOWERCASE_RFC_UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 
-export const FoundryDerivativeRightsCanonicalUuidV1Schema = z
-  .string()
-  .uuid()
+export const FoundryDerivativeRightsCanonicalUuidV1Schema = z.uuid()
   .regex(LOWERCASE_RFC_UUID, "UUID must use canonical lowercase RFC form");
 
 function boundedUnpaddedText(maxLength: number, label: string) {
@@ -96,7 +94,7 @@ const RationaleSchema = boundedUnpaddedText(2_000, "rationale");
 const SizeBytesSchema = z
   .number()
   .int()
-  .safe()
+  .int()
   .min(1)
   .max(FOUNDRY_DERIVATIVE_TERMS_EVIDENCE_MAX_INLINE_BYTES_V1);
 
@@ -183,7 +181,7 @@ export const FoundryDerivativeTermsEvidenceCustodyReceiptMaterialV1Schema =
       });
     if (receipt.registrationRequestSha256 !== expectedRequestSha256) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["registrationRequestSha256"],
         message:
           "custody receipt must bind the exact server-derived registration request material",
@@ -191,7 +189,7 @@ export const FoundryDerivativeTermsEvidenceCustodyReceiptMaterialV1Schema =
     }
     if (Date.parse(receipt.capturedAt) > Date.parse(receipt.verifiedAt)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["capturedAt"],
         message: "capturedAt must not be later than verifiedAt",
       });
@@ -239,7 +237,7 @@ export const FoundryDerivativeTermsEvidenceCustodyReceiptV1Schema = z
         material,
       );
     if (!parsedMaterial.success) {
-      for (const issue of parsedMaterial.error.issues) ctx.addIssue(issue);
+      for (const issue of parsedMaterial.error.issues) ctx.addIssue({ ...issue });
       return;
     }
     const expectedReceiptSha256 = domainSeparatedDigest(
@@ -248,7 +246,7 @@ export const FoundryDerivativeTermsEvidenceCustodyReceiptV1Schema = z
     );
     if (receipt.custodyReceiptSha256 !== expectedReceiptSha256) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["custodyReceiptSha256"],
         message:
           "custody receipt digest must bind its exact canonical material",
@@ -350,7 +348,7 @@ export const FoundryDerivativeRightsRegistryAttestationReviewReceiptMaterialV1Sc
       });
     if (receipt.reviewRequestSha256 !== expectedRequestSha256) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["reviewRequestSha256"],
         message:
           "registry-attestation review receipt must bind the exact server-resolved review request material",
@@ -402,7 +400,7 @@ export const FoundryDerivativeRightsRegistryAttestationReviewReceiptV1Schema = z
         material,
       );
     if (!parsedMaterial.success) {
-      for (const issue of parsedMaterial.error.issues) ctx.addIssue(issue);
+      for (const issue of parsedMaterial.error.issues) ctx.addIssue({ ...issue });
       return;
     }
     const expectedReceiptSha256 = domainSeparatedDigest(
@@ -411,7 +409,7 @@ export const FoundryDerivativeRightsRegistryAttestationReviewReceiptV1Schema = z
     );
     if (receipt.reviewReceiptSha256 !== expectedReceiptSha256) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["reviewReceiptSha256"],
         message:
           "registry-attestation review receipt digest must bind its exact canonical material",

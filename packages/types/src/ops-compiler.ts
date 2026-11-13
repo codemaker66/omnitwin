@@ -9,7 +9,7 @@ import { UserIdSchema } from "./user.js";
 export const OPS_COMPILER_SCHEMA_VERSION = "ops_compiler.v1";
 export const OPS_HANDOFF_DIGEST_DOMAIN_PREFIX = "venviewer.ops_handoff.v1\n";
 
-const UUID = z.string().uuid();
+const UUID = z.uuid();
 const SHA256_HEX = /^[a-f0-9]{64}$/;
 
 export const HandoffPackIdSchema = UUID;
@@ -67,7 +67,7 @@ export const SafeOpsTextSchema = z.string().trim().min(1).max(4000).superRefine(
   const unsafe = /\b(fire approved|certified safe|legally compliant|survey-grade|approved for occupancy|guaranteed accessible|Black Label|production ready|photoreal digital twin)\b/iu.exec(text);
   if (unsafe !== null) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       message: `Unsafe public/client claim phrase "${unsafe[1] ?? unsafe[0]}" is not allowed.`,
     });
   }
@@ -84,8 +84,8 @@ export const HandoffPackSchema = z.object({
   sourceLabel: z.string().trim().min(1).max(200),
   summary: SafeOpsTextSchema,
   createdBy: UserIdSchema.nullable(),
-  compiledAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
+  compiledAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
 }).strict();
 export type HandoffPack = z.infer<typeof HandoffPackSchema>;
 
@@ -95,7 +95,7 @@ export const TaskGroupSchema = z.object({
   title: z.string().trim().min(1).max(200),
   kind: TaskGroupKindSchema,
   sortOrder: z.number().int().nonnegative(),
-  createdAt: z.string().datetime(),
+  createdAt: z.iso.datetime(),
 }).strict();
 export type TaskGroup = z.infer<typeof TaskGroupSchema>;
 
@@ -111,8 +111,8 @@ export const OpsTaskSchema = z.object({
   sortOrder: z.number().int().nonnegative(),
   dueLabel: z.string().trim().min(1).max(120).nullable(),
   sourceRef: z.string().trim().min(1).max(300).nullable(),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
 }).strict();
 export type OpsTask = z.infer<typeof OpsTaskSchema>;
 
@@ -121,7 +121,7 @@ export const FurniturePickListSchema = z.object({
   handoffPackId: HandoffPackIdSchema,
   title: z.string().trim().min(1).max(200),
   totalItems: z.number().int().nonnegative(),
-  createdAt: z.string().datetime(),
+  createdAt: z.iso.datetime(),
 }).strict();
 export type FurniturePickList = z.infer<typeof FurniturePickListSchema>;
 
@@ -135,7 +135,7 @@ export const PickListItemSchema = z.object({
   sourceZone: z.string().trim().min(1).max(80).nullable(),
   notes: SafeOpsTextSchema.nullable(),
   sortOrder: z.number().int().nonnegative(),
-  createdAt: z.string().datetime(),
+  createdAt: z.iso.datetime(),
 }).strict();
 export type PickListItem = z.infer<typeof PickListItemSchema>;
 
@@ -145,11 +145,11 @@ export const SupplierSchema = z.object({
   name: z.string().trim().min(1).max(200),
   category: z.string().trim().min(1).max(80),
   contactName: z.string().trim().max(160).nullable(),
-  email: z.string().email().max(255).nullable(),
+  email: z.email().max(255).nullable(),
   phone: z.string().trim().max(40).nullable(),
   notes: SafeOpsTextSchema.nullable(),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
 }).strict();
 export type Supplier = z.infer<typeof SupplierSchema>;
 
@@ -163,7 +163,7 @@ export const SupplierInstructionSchema = z.object({
   arrivalWindow: z.string().trim().min(1).max(120).nullable(),
   sourceRef: z.string().trim().min(1).max(300).nullable(),
   sortOrder: z.number().int().nonnegative(),
-  createdAt: z.string().datetime(),
+  createdAt: z.iso.datetime(),
 }).strict();
 export type SupplierInstruction = z.infer<typeof SupplierInstructionSchema>;
 
@@ -175,7 +175,7 @@ export const OpsSequenceStepSchema = z.object({
   title: z.string().trim().min(1).max(200),
   detail: SafeOpsTextSchema,
   sortOrder: z.number().int().nonnegative(),
-  createdAt: z.string().datetime(),
+  createdAt: z.iso.datetime(),
 }).strict();
 export type OpsSequenceStep = z.infer<typeof OpsSequenceStepSchema>;
 
@@ -189,7 +189,7 @@ export const RoomFlipPlanSchema = z.object({
   taskCount: z.number().int().nonnegative(),
   reviewGateCount: z.number().int().nonnegative(),
   notes: SafeOpsTextSchema,
-  createdAt: z.string().datetime(),
+  createdAt: z.iso.datetime(),
 }).strict();
 export type RoomFlipPlan = z.infer<typeof RoomFlipPlanSchema>;
 
@@ -200,7 +200,7 @@ export const BeoDocumentSchema = z.object({
   body: SafeOpsTextSchema,
   sourceSnapshotHash: z.string().regex(SHA256_HEX),
   safeStatus: z.literal("internal_operations_handoff"),
-  createdAt: z.string().datetime(),
+  createdAt: z.iso.datetime(),
 }).strict();
 export type BeoDocument = z.infer<typeof BeoDocumentSchema>;
 
@@ -221,7 +221,7 @@ export const SnapshotDiffSchema = z.object({
   changedCount: z.number().int().nonnegative(),
   summary: SafeOpsTextSchema,
   payload: SnapshotDiffPayloadSchema,
-  createdAt: z.string().datetime(),
+  createdAt: z.iso.datetime(),
 }).strict();
 export type SnapshotDiff = z.infer<typeof SnapshotDiffSchema>;
 

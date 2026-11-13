@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ACTION_MAX_DEPTH, jsonDepth } from "./action-log-batch.js";
 import {
   AssetDefinitionIdSchema,
   ConfigurationIdSchema,
@@ -35,12 +36,41 @@ export const CanonicalJsonValueSchema: z.ZodType<CanonicalJsonValue> = z.lazy(()
   z.union([
     z.null(),
     z.boolean(),
-    z.number().finite(),
+    z.number(),
     z.string(),
     z.array(CanonicalJsonValueSchema),
-    z.record(CanonicalJsonValueSchema),
+    z.record(z.string(), CanonicalJsonValueSchema),
   ]),
 );
+
+/**
+ * A free-form JSON object a client sends with a request (an AI draft's
+ * context, an integration's config, a webhook test payload), refused above
+ * `maxBytes` serialized or `ACTION_MAX_DEPTH` deep before any of its values is
+ * parsed: zod reports one issue per bad element of an unbounded array, so a
+ * 2 MB body of them costs hundreds of megabytes of heap
+ * (.claude/gotchas/zod4-semantics.md), and the recursive parse would overflow
+ * the stack on deep nesting.
+ */
+export function boundedJsonObjectSchema(maxBytes: number) {
+  return z.preprocess((input, ctx) => {
+    let serialized: string | undefined;
+    try {
+      serialized = JSON.stringify(input);
+    } catch {
+      serialized = undefined;
+    }
+    if (serialized === undefined || serialized.length > maxBytes) {
+      ctx.addIssue({ code: "too_big", origin: "string", maximum: maxBytes, inclusive: true, input, message: `must be at most ${String(maxBytes)} bytes as JSON` });
+      return z.NEVER;
+    }
+    if (jsonDepth(input) > ACTION_MAX_DEPTH) {
+      ctx.addIssue({ code: "custom", input, message: `must be at most ${String(ACTION_MAX_DEPTH)} levels deep` });
+      return z.NEVER;
+    }
+    return input;
+  }, z.record(z.string(), CanonicalJsonValueSchema));
+}
 
 export const LayoutSnapshotSourceStateSchema = z.enum([
   "saved_configuration",
@@ -119,7 +149,7 @@ export const LayoutSnapshotPlacedObjectSchema = z.object({
   scale: z.number().positive().max(100),
   sortOrder: z.number().int().nonnegative(),
   groupId: z.string().trim().min(1).max(120).nullable(),
-  metadata: z.record(CanonicalJsonValueSchema).nullable(),
+  metadata: z.record(z.string(), CanonicalJsonValueSchema).nullable(),
 }).strict();
 export type LayoutSnapshotPlacedObject = z.infer<typeof LayoutSnapshotPlacedObjectSchema>;
 
@@ -166,8 +196,8 @@ export const LayoutSnapshotPolicyBundleReferenceSchema = z.object({
   policyBundleId: z.string().trim().min(1).max(160),
   policyBundleDigest: z.string().regex(SHA256_HEX).nullable(),
   policyBundleVersion: z.string().trim().min(1).max(80),
-  effectiveFrom: z.string().datetime().nullable(),
-  effectiveTo: z.string().datetime().nullable(),
+  effectiveFrom: z.iso.datetime().nullable(),
+  effectiveTo: z.iso.datetime().nullable(),
   jurisdiction: z.string().trim().min(1).max(160),
   venueRuleSet: z.string().trim().min(1).max(160),
   humanReviewRequiredFor: z.array(z.string().trim().min(1).max(160)),
@@ -183,7 +213,7 @@ export const LayoutSnapshotGeneratorProvenanceSchema = z.object({
   promptDigest: z.string().regex(SHA256_HEX).nullable(),
   sourceTemplateId: z.string().trim().min(1).max(160).nullable(),
   humanEditedAfterGeneration: z.boolean(),
-  generatedAt: z.string().datetime().nullable(),
+  generatedAt: z.iso.datetime().nullable(),
 }).strict();
 export type LayoutSnapshotGeneratorProvenance = z.infer<
   typeof LayoutSnapshotGeneratorProvenanceSchema
@@ -198,9 +228,9 @@ export const CanonicalLayoutSnapshotV0Schema = z.object({
   layoutStyle: LayoutStyleSchema,
   visibility: VisibilitySchema,
   guestCount: z.number().int().nonnegative(),
-  createdFromConfigurationUpdatedAt: z.string().datetime(),
+  createdFromConfigurationUpdatedAt: z.iso.datetime(),
   createdBy: UserIdSchema.nullable(),
-  snapshotCreatedAt: z.string().datetime(),
+  snapshotCreatedAt: z.iso.datetime(),
   sourceState: LayoutSnapshotSourceStateSchema,
   units: LayoutSnapshotUnitsSchema,
   tolerancePolicy: LayoutSnapshotTolerancePolicySchema,

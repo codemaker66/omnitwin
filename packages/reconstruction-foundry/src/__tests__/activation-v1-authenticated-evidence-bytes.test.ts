@@ -104,8 +104,8 @@ const vectorSchemaDocumentSchema = z.object({
   type: z.literal("object"),
   additionalProperties: z.literal(false),
   required: z.array(z.string()).min(1),
-  properties: z.record(z.unknown()),
-  $defs: z.record(z.unknown()),
+  properties: z.record(z.string(), z.unknown()),
+  $defs: z.record(z.string(), z.unknown()),
 }).strict();
 
 const vectorUrl = new URL(

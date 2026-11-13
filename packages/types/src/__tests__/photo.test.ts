@@ -15,7 +15,7 @@ import {
 
 const VALID_UUID = "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d";
 const VALID_CONFIG_UUID = "b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e";
-const VALID_USER_UUID = "c3d4e5f6-a7b8-4c9d-0e1f-2a3b4c5d6e7f";
+const VALID_USER_UUID = "c3d4e5f6-a7b8-4c9d-8e1f-2a3b4c5d6e7f";
 const VALID_DATETIME = "2025-01-15T10:30:00.000Z";
 
 const validPhoto = {
@@ -366,7 +366,7 @@ describe("LegacyPhotoUploadResponseSchema", () => {
 describe("ReferencePhotoSchema", () => {
   const VALID_UUID = "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d";
   const VALID_LOADOUT_UUID = "b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e";
-  const VALID_FILE_UUID = "c3d4e5f6-a7b8-4c9d-0e1f-2a3b4c5d6e7f";
+  const VALID_FILE_UUID = "c3d4e5f6-a7b8-4c9d-8e1f-2a3b4c5d6e7f";
   const VALID_DATETIME = "2026-01-15T10:30:00.000Z";
 
   const validReferencePhoto = {

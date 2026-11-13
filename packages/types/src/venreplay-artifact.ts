@@ -247,7 +247,7 @@ export const VenreplayManifestV0BaseSchema = z.object({
   simulatorHash: z.string().regex(SHA256_HEX).nullable(),
   seed: ScenarioInstanceSeedRefSchema,
   seedCount: z.number().int().nonnegative(),
-  generatedAt: z.string().datetime(),
+  generatedAt: z.iso.datetime(),
   assumptions: z.array(ScenarioInstanceAssumptionRefSchema).min(1),
   limitations: z.array(z.string().trim().min(1).max(1000)).min(1),
   fileHashes: z.array(VenreplayFileHashSchema).min(VENREPLAY_REQUIRED_PAYLOAD_FILE_PATHS.length),
@@ -256,7 +256,7 @@ export const VenreplayManifestV0BaseSchema = z.object({
   metricsShape: z.array(VenreplayMetricsShapeSchema).min(1),
   witnessCompatibility: z.array(VenreplayWitnessCompatibilityRequirementSchema).min(1),
   exposureTier: VenreplayExposureTierSchema,
-  manifestExtension: z.record(CanonicalJsonValueSchema).optional(),
+  manifestExtension: z.record(z.string(), CanonicalJsonValueSchema).optional(),
 }).strict();
 
 export const VenreplayManifestDigestIdentitySchema =
@@ -282,7 +282,7 @@ export const VenreplayManifestV0Schema = VenreplayManifestV0BaseSchema.superRefi
   for (const fileHash of manifest.fileHashes) {
     if (filePaths.has(fileHash.path)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["fileHashes"],
         message: `Duplicate venreplay file hash for ${fileHash.path}.`,
       });
@@ -293,7 +293,7 @@ export const VenreplayManifestV0Schema = VenreplayManifestV0BaseSchema.superRefi
     const expectedRole = VENREPLAY_FILE_ROLE_BY_PATH[fileHash.path];
     if (fileHash.role !== expectedRole) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["fileHashes"],
         message: `${fileHash.path} must use role ${expectedRole}.`,
       });
@@ -302,7 +302,7 @@ export const VenreplayManifestV0Schema = VenreplayManifestV0BaseSchema.superRefi
     const expectedRequired = REQUIRED_PAYLOAD_FILE_PATH_SET.has(fileHash.path);
     if (fileHash.required !== expectedRequired) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["fileHashes"],
         message: `${fileHash.path} required flag must be ${String(expectedRequired)}.`,
       });
@@ -312,7 +312,7 @@ export const VenreplayManifestV0Schema = VenreplayManifestV0BaseSchema.superRefi
   for (const path of VENREPLAY_REQUIRED_PAYLOAD_FILE_PATHS) {
     if (!filePaths.has(path)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["fileHashes"],
         message: `Missing required venreplay file hash for ${path}.`,
       });
@@ -321,7 +321,7 @@ export const VenreplayManifestV0Schema = VenreplayManifestV0BaseSchema.superRefi
 
   if (manifest.scenarioInstance.lifecycleState !== "replay_ready") {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["scenarioInstance", "lifecycleState"],
       message: "Venreplay manifests require a replay-ready scenario instance.",
     });
@@ -329,7 +329,7 @@ export const VenreplayManifestV0Schema = VenreplayManifestV0BaseSchema.superRefi
 
   if (manifest.scenarioInstance.witnessBlockRef === null) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["scenarioInstance", "witnessBlockRef"],
       message: "Venreplay manifests require a witness block reference.",
     });
@@ -337,7 +337,7 @@ export const VenreplayManifestV0Schema = VenreplayManifestV0BaseSchema.superRefi
 
   if (manifest.scenarioInstanceId !== manifest.scenarioInstance.instanceId) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["scenarioInstanceId"],
       message: "Manifest scenarioInstanceId must match scenarioInstance.instanceId.",
     });
@@ -345,7 +345,7 @@ export const VenreplayManifestV0Schema = VenreplayManifestV0BaseSchema.superRefi
 
   if (manifest.scenarioTemplateId !== manifest.scenarioInstance.templateId) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["scenarioTemplateId"],
       message: "Manifest scenarioTemplateId must match scenarioInstance.templateId.",
     });
@@ -353,7 +353,7 @@ export const VenreplayManifestV0Schema = VenreplayManifestV0BaseSchema.superRefi
 
   if (manifest.scenarioTemplateVersion !== manifest.scenarioInstance.templateVersion) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["scenarioTemplateVersion"],
       message: "Manifest scenarioTemplateVersion must match scenarioInstance.templateVersion.",
     });
@@ -361,7 +361,7 @@ export const VenreplayManifestV0Schema = VenreplayManifestV0BaseSchema.superRefi
 
   if (manifest.layoutSnapshotHash !== manifest.scenarioInstance.layoutSnapshotDigest) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["layoutSnapshotHash"],
       message: "Manifest layoutSnapshotHash must match scenarioInstance.layoutSnapshotDigest.",
     });
@@ -369,7 +369,7 @@ export const VenreplayManifestV0Schema = VenreplayManifestV0BaseSchema.superRefi
 
   if (manifest.runtimePackageId !== manifest.scenarioInstance.runtimePackageId) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["runtimePackageId"],
       message: "Manifest runtimePackageId must match scenarioInstance.runtimePackageId.",
     });
@@ -377,7 +377,7 @@ export const VenreplayManifestV0Schema = VenreplayManifestV0BaseSchema.superRefi
 
   if (manifest.runtimePackageHash !== manifest.scenarioInstance.runtimePackageHash) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["runtimePackageHash"],
       message: "Manifest runtimePackageHash must match scenarioInstance.runtimePackageHash.",
     });
@@ -385,7 +385,7 @@ export const VenreplayManifestV0Schema = VenreplayManifestV0BaseSchema.superRefi
 
   if (manifest.policyBundleDigest !== manifest.scenarioInstance.policyBundle.policyBundleDigest) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["policyBundleDigest"],
       message: "Manifest policyBundleDigest must match scenarioInstance.policyBundle.",
     });
@@ -394,14 +394,14 @@ export const VenreplayManifestV0Schema = VenreplayManifestV0BaseSchema.superRefi
   const simulator = manifest.scenarioInstance.simulator;
   if (simulator === null) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["scenarioInstance", "simulator"],
       message: "Venreplay manifests require simulator metadata.",
     });
   } else {
     if (manifest.simulatorName !== simulator.simulatorName) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["simulatorName"],
         message: "Manifest simulatorName must match scenarioInstance.simulator.",
       });
@@ -409,7 +409,7 @@ export const VenreplayManifestV0Schema = VenreplayManifestV0BaseSchema.superRefi
 
     if (manifest.simulatorVersion !== simulator.simulatorVersion) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["simulatorVersion"],
         message: "Manifest simulatorVersion must match scenarioInstance.simulator.",
       });
@@ -417,7 +417,7 @@ export const VenreplayManifestV0Schema = VenreplayManifestV0BaseSchema.superRefi
 
     if (manifest.simulatorHash !== simulator.simulatorHash) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["simulatorHash"],
         message: "Manifest simulatorHash must match scenarioInstance.simulator.",
       });
@@ -426,7 +426,7 @@ export const VenreplayManifestV0Schema = VenreplayManifestV0BaseSchema.superRefi
 
   if (!seedRefsEqual(manifest.seed, manifest.scenarioInstance.seed)) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["seed"],
       message: "Manifest seed must match scenarioInstance.seed.",
     });
@@ -434,7 +434,7 @@ export const VenreplayManifestV0Schema = VenreplayManifestV0BaseSchema.superRefi
 
   if (manifest.seedCount !== venreplaySeedCount(manifest.seed)) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["seedCount"],
       message: "seedCount must match seed policy.",
     });
@@ -680,7 +680,7 @@ function validateAssumptionRefs(
 
   if (manifestKeys.size !== manifestAssumptions.length) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["assumptions"],
       message: "Manifest assumptions must not contain duplicates.",
     });
@@ -688,7 +688,7 @@ function validateAssumptionRefs(
 
   if (manifestKeys.size !== instanceKeys.size) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["assumptions"],
       message: "Manifest assumptions must exactly match scenarioInstance.assumptionRefs.",
     });
@@ -697,7 +697,7 @@ function validateAssumptionRefs(
   for (const key of instanceKeys) {
     if (!manifestKeys.has(key)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["assumptions"],
         message: "Manifest assumptions must include every scenario instance assumption.",
       });
@@ -716,7 +716,7 @@ function validateCsvContracts(
   for (const contract of contracts) {
     if (contractNames.has(contract.contract)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["csvColumnContracts"],
         message: `Duplicate CSV contract ${contract.contract}.`,
       });
@@ -724,7 +724,7 @@ function validateCsvContracts(
 
     if (filePaths.has(contract.filePath)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["csvColumnContracts"],
         message: `Duplicate CSV file contract for ${contract.filePath}.`,
       });
@@ -733,7 +733,7 @@ function validateCsvContracts(
     const expectedFilePath = VENREPLAY_CSV_CONTRACT_FILE_PATH[contract.contract];
     if (contract.filePath !== expectedFilePath) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["csvColumnContracts"],
         message: `${contract.contract} must describe ${expectedFilePath}.`,
       });
@@ -748,7 +748,7 @@ function validateCsvContracts(
     const columns = columnsByContract.get(contract);
     if (columns === undefined) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["csvColumnContracts"],
         message: `Missing CSV contract ${contract}.`,
       });
@@ -758,7 +758,7 @@ function validateCsvContracts(
     for (const requiredColumn of VENREPLAY_CSV_REQUIRED_COLUMNS[contract]) {
       if (!columns.includes(requiredColumn)) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["csvColumnContracts"],
           message: `${contract} missing required column ${requiredColumn}.`,
         });
@@ -780,7 +780,7 @@ function validateGeojsonContracts(
   for (const contract of contracts) {
     if (filePaths.has(contract.filePath)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["geojsonFeatureContracts"],
         message: `Duplicate GeoJSON contract for ${contract.filePath}.`,
       });
@@ -794,7 +794,7 @@ function validateGeojsonContracts(
     const requirements = requirementsByPath.get(filePath);
     if (requirements === undefined) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["geojsonFeatureContracts"],
         message: `Missing GeoJSON contract for ${filePath}.`,
       });
@@ -804,7 +804,7 @@ function validateGeojsonContracts(
     for (const requirement of VENREPLAY_GEOJSON_FEATURE_REQUIREMENTS) {
       if (!requirements.includes(requirement)) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["geojsonFeatureContracts"],
           message: `${filePath} missing GeoJSON requirement ${requirement}.`,
         });
@@ -819,7 +819,7 @@ function validateWitnessCompatibility(
 ): void {
   if (new Set(requirements).size !== requirements.length) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["witnessCompatibility"],
       message: "Witness compatibility requirements must not contain duplicates.",
     });
@@ -828,7 +828,7 @@ function validateWitnessCompatibility(
   for (const requirement of VENREPLAY_WITNESS_COMPATIBILITY_REQUIREMENTS) {
     if (!requirements.includes(requirement)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["witnessCompatibility"],
         message: `Missing witness compatibility requirement ${requirement}.`,
       });
@@ -849,7 +849,7 @@ function validateMetricsShape(
   for (const metric of metricsShape) {
     if (metricsByName.has(metric.metricName)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["metricsShape"],
         message: `Duplicate metric shape ${metric.metricName}.`,
       });
@@ -862,7 +862,7 @@ function validateMetricsShape(
     const metricShape = metricsByName.get(metricSummary.metricName);
     if (metricShape === undefined) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["metricsShape"],
         message: `metricsShape must include scenario metric ${metricSummary.metricName}.`,
       });
@@ -871,7 +871,7 @@ function validateMetricsShape(
 
     if (metricShape.dataSufficiency !== metricSummary.dataSufficiency) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["metricsShape"],
         message: `${metricSummary.metricName} data sufficiency must match scenario metrics.`,
       });

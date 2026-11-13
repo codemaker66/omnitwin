@@ -45,23 +45,28 @@ vi.mock("../../../api/conversations.js", async (importOriginal) => ({
 // The staff tools sit under the persistent shell's route, which is kept, so
 // the shell they really open under is part of what is checked.
 const WANTED = ["/event-architect", "/event-architect/runs/:runId", "/events/:eventId", "/login"];
-const routes = router.routes.flatMap((route): RouteObject[] => {
-  if (WANTED.includes(route.path ?? "")) return [route];
-  if (route.index === true) return [];
-  const children = route.children?.filter((child) => WANTED.includes(child.path ?? "")) ?? [];
-  return children.length === 0 ? [] : [{ ...route, children }];
-});
+// Pruned at any depth: the routes sit under the root route that carries the
+// route error boundary, and the staff tools under the shell beneath it.
+function keepWanted(table: readonly RouteObject[]): RouteObject[] {
+  return table.flatMap((route): RouteObject[] => {
+    if (WANTED.includes(route.path ?? "")) return [route];
+    if (route.index === true) return [];
+    const children = keepWanted(route.children ?? []);
+    return children.length === 0 ? [] : [{ ...route, children }];
+  });
+}
+const routes = keepWanted(router.routes);
 const mountedRouters: ReturnType<typeof createMemoryRouter>[] = [];
 const paths = ["/event-architect", "/event-architect/runs/00000000-0000-4000-8000-000000000001"];
 const browserSettings = window.happyDOM.settings as typeof window.happyDOM.settings
-  & Pick<HappyWindow["happyDOM"]["settings"], "disableCSSFileLoading" | "handleDisabledFileLoadingAsSuccess">;
-const previousCssLoading = browserSettings.disableCSSFileLoading;
+  & Pick<HappyWindow["happyDOM"]["settings"], "enableCSSFileLoading" | "handleDisabledFileLoadingAsSuccess">;
+const previousCssLoading = browserSettings.enableCSSFileLoading;
 const previousDisabledLoading = browserSettings.handleDisabledFileLoadingAsSuccess;
 
 // The real router attaches a font stylesheet on lazy arrival; network fonts
 // are unrelated to route admission and must not escape this isolated test.
 beforeAll(async () => {
-  browserSettings.disableCSSFileLoading = true;
+  browserSettings.enableCSSFileLoading = false;
   browserSettings.handleDisabledFileLoadingAsSuccess = true;
   // Preload the real lazy page, and the staff shell the tools open under, so
   // initial module transformation does not consume the assertion window for
@@ -137,7 +142,7 @@ describe("client event page route admission", () => {
 });
 afterAll(() => {
   router.dispose();
-  browserSettings.disableCSSFileLoading = previousCssLoading;
+  browserSettings.enableCSSFileLoading = previousCssLoading;
   browserSettings.handleDisabledFileLoadingAsSuccess = previousDisabledLoading;
 });
 

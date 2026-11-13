@@ -1,8 +1,9 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import { Link, MemoryRouter, Route, Routes } from "react-router-dom";
 import { HallkeeperSheetV2Schema, type HallkeeperSheetV2 } from "@omnitwin/types";
 import { HallkeeperPage } from "../HallkeeperPage.js";
+import { useAuthStore } from "../../stores/auth-store.js";
 import {
   ackProgress,
   listPendingProgress,
@@ -278,9 +279,13 @@ describe("HallkeeperPage request and offline queue isolation", () => {
     const checkbox = await screen.findByRole("checkbox", { name: /Round table/u });
     fireEvent.click(checkbox);
     fireEvent.click(checkbox);
-    await waitFor(() => { expect(writes).toBe(2); });
+    // One row's writes go out in turn (audit hallkeeper-web-1): the second
+    // tap is already being saved, and is sent once the first has its answer.
+    await waitFor(() => { expect(writes).toBe(1); });
     expect(screen.getByText("Saving shared checks…").closest("[role='status']")?.querySelector("[data-activity-indicator]")).not.toBeNull();
     await act(async () => { first.resolve(jsonResponse({})); await first.promise; });
+    expect(screen.getByText("Saving shared checks…")).toBeTruthy();
+    await waitFor(() => { expect(writes).toBe(2); });
     expect(screen.getByText("Saving shared checks…")).toBeTruthy();
     await act(async () => { second.resolve(new Response(null, { status: 403 })); await second.promise; });
     await waitFor(() => { expect(screen.queryByText("Saving shared checks…")).toBeNull(); });
@@ -411,9 +416,9 @@ describe("HallkeeperPage request and offline queue isolation", () => {
     vi.stubGlobal("fetch", fetchMock);
     mount();
     await screen.findByText("First dinner", { exact: true, selector: "p" });
-    await waitFor(() => { expect(ackProgress).toHaveBeenCalledWith(CONFIG_A, ROW_KEY); });
+    await waitFor(() => { expect(ackProgress).toHaveBeenCalledWith(CONFIG_A, ROW_KEY, null); });
 
-    expect(ackProgress).not.toHaveBeenCalledWith(CONFIG_B, otherRowKey);
+    expect(ackProgress).not.toHaveBeenCalledWith(CONFIG_B, otherRowKey, null);
     expect(queued).toEqual([
       { configId: CONFIG_B, rowKey: otherRowKey, desiredChecked: false, queuedAt: checkedAt },
     ]);
@@ -463,16 +468,16 @@ describe("HallkeeperPage request and offline queue isolation", () => {
     await screen.findByRole("status", { name: "1 offline edit pending sync" });
     await waitFor(() => { expect(replayStarted).toHaveBeenCalledWith(CONFIG_B); });
     expect(screen.getByText("Syncing saved checks…")).toBeTruthy();
-    expect(ackProgress).not.toHaveBeenCalledWith(CONFIG_A, ROW_KEY);
+    expect(ackProgress).not.toHaveBeenCalledWith(CONFIG_A, ROW_KEY, null);
 
     await act(async () => {
       secondReplay.resolve(jsonResponse({ configId: CONFIG_B, rowKey: ROW_KEY, checked: true }));
       await secondReplay.promise;
     });
-    await waitFor(() => { expect(ackProgress).toHaveBeenCalledWith(CONFIG_B, ROW_KEY); });
+    await waitFor(() => { expect(ackProgress).toHaveBeenCalledWith(CONFIG_B, ROW_KEY, null); });
     await waitFor(() => { expect(screen.queryByRole("status", { name: "1 offline edit pending sync" })).toBeNull(); });
     expect(screen.queryByText("Syncing saved checks…")).toBeNull();
-    expect(ackProgress).not.toHaveBeenCalledWith(CONFIG_A, ROW_KEY);
+    expect(ackProgress).not.toHaveBeenCalledWith(CONFIG_A, ROW_KEY, null);
     expect(queued).toEqual([
       { configId: CONFIG_A, rowKey: ROW_KEY, desiredChecked: true, queuedAt: checkedAt },
     ]);
@@ -481,7 +486,7 @@ describe("HallkeeperPage request and offline queue isolation", () => {
       firstReplay.resolve(jsonResponse({ configId: CONFIG_A, rowKey: ROW_KEY, checked: true }));
       await firstReplay.promise;
     });
-    await waitFor(() => { expect(ackProgress).toHaveBeenCalledWith(CONFIG_A, ROW_KEY); });
+    await waitFor(() => { expect(ackProgress).toHaveBeenCalledWith(CONFIG_A, ROW_KEY, null); });
     expect(queued).toEqual([]);
     expect(screen.getByText("Second dinner", { exact: true, selector: "p" })).toBeTruthy();
     expect(screen.queryByRole("status", { name: "1 offline edit pending sync" })).toBeNull();
@@ -511,11 +516,270 @@ describe("HallkeeperPage carries the corridor's event", () => {
       .find((url) => url.includes("/v2"));
     expect(sheetUrl).toContain(`?eventId=${eventId}`);
   });
+
+  // Ticks belong to an event: a layout reused from an earlier event must not
+  // arrive already ticked, so the sheet reads and writes its own event's ticks.
+  it("reads and writes the ticks of the event the hallkeeper arrived from", async () => {
+    const eventId = "00000000-0000-4000-8000-0000000000e1";
+    const fetchMock = vi.fn((input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+      const url = requestUrl(input);
+      if (url.includes(`/${CONFIG_A}/v2`)) return Promise.resolve(jsonResponse(sheet(CONFIG_A, "Shared layout")));
+      if (url.includes(`/${CONFIG_A}/progress`)) {
+        return Promise.resolve(jsonResponse(init?.method === "PATCH"
+          ? { configId: CONFIG_A, eventId, rowKey: ROW_KEY, checked: true }
+          : { configId: CONFIG_A, eventId, checked: {} }));
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<MemoryRouter initialEntries={[`/hallkeeper/${CONFIG_A}?eventId=${eventId}`]}>
+      <Routes><Route path="/hallkeeper/:configId" element={<HallkeeperPage />} /></Routes>
+    </MemoryRouter>);
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: /Round table/u, checked: false }));
+    await waitFor(() => { expect(fetchMock.mock.calls.some(([, init]) => init?.method === "PATCH")).toBe(true); });
+
+    const progressCalls = fetchMock.mock.calls.filter(([input]) => requestUrl(input).includes("/progress"));
+    expect(progressCalls.length).toBeGreaterThanOrEqual(2);
+    for (const [input] of progressCalls) {
+      expect(requestUrl(input)).toContain(`/hallkeeper/${CONFIG_A}/progress?eventId=${eventId}`);
+    }
+  });
+
+  it("replays ticks queued offline into the event each was made for", async () => {
+    const tonight = "00000000-0000-4000-8000-0000000000e1";
+    const lastNight = "00000000-0000-4000-8000-0000000000e0";
+    let queued: readonly QueuedProgressOp[] = [
+      { configId: CONFIG_A, eventId: tonight, rowKey: ROW_KEY, desiredChecked: true, queuedAt: checkedAt },
+      { configId: CONFIG_A, eventId: lastNight, rowKey: ROW_KEY, desiredChecked: false, queuedAt: checkedAt },
+    ];
+    vi.mocked(listPendingProgress).mockImplementation(() => Promise.resolve(queued));
+    vi.mocked(ackProgress).mockImplementation((configId, rowKey, eventId) => {
+      queued = queued.filter((op) => op.configId !== configId || op.rowKey !== rowKey || (op.eventId ?? null) !== (eventId ?? null));
+      return Promise.resolve();
+    });
+    const fetchMock = vi.fn((input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+      const url = requestUrl(input);
+      if (url.includes(`/${CONFIG_A}/v2`)) return Promise.resolve(jsonResponse(sheet(CONFIG_A, "Shared layout")));
+      if (url.includes(`/${CONFIG_A}/progress`) && init?.method === "PATCH") return Promise.resolve(jsonResponse({ checked: true }));
+      // Last night's tick is still on the server; tonight's never reached it.
+      if (url.includes(`/progress?eventId=${lastNight}`)) return Promise.resolve(jsonResponse({ checked: { [ROW_KEY]: checkedAt } }));
+      if (url.includes(`/progress?eventId=${tonight}`)) return Promise.resolve(jsonResponse({ checked: {} }));
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<MemoryRouter initialEntries={[`/hallkeeper/${CONFIG_A}?eventId=${tonight}`]}>
+      <Routes><Route path="/hallkeeper/:configId" element={<HallkeeperPage />} /></Routes>
+    </MemoryRouter>);
+    await screen.findByText("Shared layout", { exact: true, selector: "p" });
+    await waitFor(() => { expect(queued).toEqual([]); });
+
+    const writes = fetchMock.mock.calls
+      .filter(([, init]) => init?.method === "PATCH")
+      .map(([input, init]) => [requestUrl(input), init?.body]);
+    expect(writes).toEqual(expect.arrayContaining([
+      [expect.stringContaining(`/progress?eventId=${tonight}`), JSON.stringify({ rowKey: ROW_KEY, checked: true })],
+      [expect.stringContaining(`/progress?eventId=${lastNight}`), JSON.stringify({ rowKey: ROW_KEY, checked: false })],
+    ]));
+    expect(writes).toHaveLength(2);
+    expect(ackProgress).toHaveBeenCalledWith(CONFIG_A, ROW_KEY, tonight);
+    expect(ackProgress).toHaveBeenCalledWith(CONFIG_A, ROW_KEY, lastNight);
+  });
+
+  function openWithoutEvent(progressBody: Record<string, unknown>) {
+    const fetchMock = vi.fn((input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+      const url = requestUrl(input);
+      if (url.includes(`/${CONFIG_A}/v2`)) return Promise.resolve(jsonResponse(sheet(CONFIG_A, "Shared layout")));
+      if (url.includes(`/${CONFIG_A}/progress`)) {
+        return Promise.resolve(jsonResponse(init?.method === "PATCH" ? { checked: true } : { configId: CONFIG_A, ...progressBody }));
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<MemoryRouter initialEntries={[`/hallkeeper/${CONFIG_A}`]}>
+      <Routes><Route path="/hallkeeper/:configId" element={<HallkeeperPage />} /></Routes>
+    </MemoryRouter>);
+    return fetchMock;
+  }
+
+  // A link added to the layout mid-setup must not move the ticks: the sheet
+  // writes to the event the server said its ticks belong to.
+  it("pins its writes to the event the server keeps its ticks in", async () => {
+    const only = "00000000-0000-4000-8000-0000000000e1";
+    const fetchMock = openWithoutEvent({ eventId: only, linkedEvents: 1, checked: {} });
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: /Round table/u, checked: false }));
+    await waitFor(() => { expect(fetchMock.mock.calls.some(([, init]) => init?.method === "PATCH")).toBe(true); });
+    const write = fetchMock.mock.calls.find(([, init]) => init?.method === "PATCH");
+    expect(requestUrl(write?.[0] ?? "")).toContain(`/hallkeeper/${CONFIG_A}/progress?eventId=${only}`);
+    expect(screen.queryByText(/won't count on Today's rooms/u)).toBeNull();
+  });
+
+  it("says when its checks count on no Day Board: a reused layout opened without an event", async () => {
+    openWithoutEvent({ eventId: null, linkedEvents: 2, checked: {} });
+
+    const notice = await screen.findByText(/won't count on Today's rooms/u);
+    expect(within(notice).getByRole("link", { name: "Today's rooms" }).getAttribute("href")).toBe("/hallkeeper/today");
+  });
+
+  it("says nothing of the kind for a layout no event uses", async () => {
+    openWithoutEvent({ eventId: null, linkedEvents: 0, checked: {} });
+
+    await screen.findByRole("checkbox", { name: /Round table/u, checked: false });
+    expect(screen.queryByText(/won't count on Today's rooms/u)).toBeNull();
+  });
+
+  it("replays a tick queued before ticks carried an event into this sheet's event, and clears it by its old key", async () => {
+    const tonight = "00000000-0000-4000-8000-0000000000e1";
+    let queued: readonly QueuedProgressOp[] = [
+      { configId: CONFIG_A, rowKey: ROW_KEY, desiredChecked: true, queuedAt: checkedAt },
+    ];
+    vi.mocked(listPendingProgress).mockImplementation(() => Promise.resolve(queued));
+    vi.mocked(ackProgress).mockImplementation((configId, rowKey, eventId) => {
+      if (eventId === null || eventId === undefined) queued = queued.filter((op) => op.configId !== configId || op.rowKey !== rowKey);
+      return Promise.resolve();
+    });
+    const fetchMock = vi.fn((input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+      const url = requestUrl(input);
+      if (url.includes(`/${CONFIG_A}/v2`)) return Promise.resolve(jsonResponse(sheet(CONFIG_A, "Shared layout")));
+      if (url.includes(`/progress?eventId=${tonight}`)) {
+        return Promise.resolve(jsonResponse(init?.method === "PATCH" ? { checked: true } : { configId: CONFIG_A, eventId: tonight, linkedEvents: 2, checked: {} }));
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<MemoryRouter initialEntries={[`/hallkeeper/${CONFIG_A}?eventId=${tonight}`]}>
+      <Routes><Route path="/hallkeeper/:configId" element={<HallkeeperPage />} /></Routes>
+    </MemoryRouter>);
+    await waitFor(() => { expect(queued).toEqual([]); });
+
+    const writes = fetchMock.mock.calls.filter(([, init]) => init?.method === "PATCH").map(([input]) => requestUrl(input));
+    expect(writes).toEqual([expect.stringContaining(`/progress?eventId=${tonight}`)]);
+    expect(ackProgress).toHaveBeenCalledWith(CONFIG_A, ROW_KEY, null);
+  });
+
+  // The live re-read of the shared checks (#370) fetches its token and this
+  // device's queue before it asks the server. A sheet closed in between has
+  // nobody to show the answer to, so the request is not sent. In a unit test it
+  // landed after the test's own fetch had been put back and was reported as
+  // real traffic against whichever test was running (master at cdb6eb8f).
+  it("sends no re-read for a sheet that was closed while the re-read was getting ready", async () => {
+    const tonight = "00000000-0000-4000-8000-0000000000e1";
+    const fetchMock = vi.fn((input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+      const url = requestUrl(input);
+      if (url.includes(`/${CONFIG_A}/v2`)) return Promise.resolve(jsonResponse(sheet(CONFIG_A, "Shared layout")));
+      if (url.includes(`/progress?eventId=${tonight}`) && init?.method !== "PATCH") {
+        return Promise.resolve(jsonResponse({ configId: CONFIG_A, eventId: tonight, linkedEvents: 2, checked: {} }));
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const reads = (): number => fetchMock.mock.calls.filter(([input]) => requestUrl(input).includes("/progress")).length;
+
+    const view = render(<MemoryRouter initialEntries={[`/hallkeeper/${CONFIG_A}?eventId=${tonight}`]}>
+      <Routes><Route path="/hallkeeper/:configId" element={<HallkeeperPage />} /></Routes>
+    </MemoryRouter>);
+    await screen.findByRole("checkbox", { name: /Round table/u, checked: false });
+    // The page starts listening in an effect, which can run a turn after the row is on screen.
+    await act(async () => { await new Promise((resolve) => { setTimeout(resolve, 0); }); });
+    const whenLoaded = reads();
+
+    // From here every look at this device's queue waits, so the re-read stops between its token and its request.
+    const waiting: (() => void)[] = [];
+    vi.mocked(listPendingProgress).mockImplementation(() => new Promise<readonly QueuedProgressOp[]>((resolve) => {
+      waiting.push(() => { resolve([]); });
+    }));
+    act(() => { window.dispatchEvent(new Event("online")); });
+    await waitFor(() => { expect(waiting.length).toBeGreaterThan(0); });
+
+    view.unmount();
+    for (const goOn of waiting) goOn();
+    await new Promise((resolve) => { setTimeout(resolve, 0); });
+    expect(reads()).toBe(whenLoaded);
+  });
 });
 
 // T-648: the Martyn's Law readiness section renders on every sheet, outside
 // the instructions gate. With nothing entered every line is a prompt ("Not
 // set" / "Not checked"); with entries it shows exactly what was entered.
+// Release audit tenancy-f-2: the checklist is the venue crew's record. The
+// layout's client sees what is ticked and ticks nothing; the API refuses
+// their writes too (hallkeeper-progress-postgres).
+describe("HallkeeperPage keeps the checklist with the venue's team", () => {
+  afterEach(() => { useAuthStore.setState({ user: null }); });
+
+  function signIn(role: string): void {
+    useAuthStore.setState({ user: { id: "00000000-0000-4000-8000-0000000000u1", email: "reader@example.test",
+      role, platformRole: "none", venueId: role === "client" || role === "planner" ? null : "00000000-0000-4000-8000-0000000000v1",
+      name: "Reader" } });
+  }
+
+  function serveTicked(): Mock<(input: string | URL | Request, init?: RequestInit) => Promise<Response>> {
+    const fetchMock = vi.fn((input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+      const url = requestUrl(input);
+      if (url.includes(`/${CONFIG_A}/v2`)) return Promise.resolve(jsonResponse(sheet(CONFIG_A, "Client's layout")));
+      if (url.includes(`/${CONFIG_A}/progress`)) {
+        return Promise.resolve(jsonResponse(init?.method === "PATCH"
+          ? { configId: CONFIG_A, eventId: null, rowKey: ROW_KEY, checked: false }
+          : { configId: CONFIG_A, eventId: null, linkedEvents: 0, checked: { [ROW_KEY]: checkedAt } }));
+      }
+      throw new Error(`Unexpected request: ${init?.method ?? "GET"} ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    return fetchMock;
+  }
+
+  it.each(["client", "planner"])("a %s reads the crew's ticks and cannot change them", async (role) => {
+    signIn(role);
+    const fetchMock = serveTicked();
+    mount();
+
+    const row = await screen.findByRole("checkbox", { name: /Round table/u, checked: true });
+    // Read-only, not disabled: it stays at full contrast and in the tab order.
+    expect(row.getAttribute("aria-readonly")).toBe("true");
+    expect(row).toHaveProperty("disabled", false);
+    fireEvent.click(row);
+    expect(screen.getByRole("checkbox", { name: /Round table/u, checked: true })).toBeDefined();
+    expect(screen.getByText("The venue's team ticks these as they set the room.")).toBeDefined();
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "PATCH")).toHaveLength(0);
+  });
+
+  // The queue is the device's. Sent in a client's name the venue team's
+  // waiting tick could only be refused, and a refused tick is dropped.
+  it("a client's sheet sends none of the venue team's waiting ticks, and drops none", async () => {
+    signIn("client");
+    vi.mocked(listPendingProgress).mockResolvedValue([
+      { configId: CONFIG_A, eventId: null, rowKey: ROW_KEY, desiredChecked: false, queuedAt: checkedAt },
+    ]);
+    const fetchMock = serveTicked();
+    mount();
+
+    await screen.findByRole("checkbox", { name: /Round table/u, checked: true });
+    await act(async () => { await new Promise((resolve) => { setTimeout(resolve, 40); }); });
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "PATCH")).toHaveLength(0);
+    expect(ackProgress).not.toHaveBeenCalled();
+    expect(screen.queryByRole("status", { name: "1 offline edit pending sync" })).toBeNull();
+    // Leave the sheet before this suite signs the reader out: a sheet still
+    // open with nobody signed in is no longer a client's.
+    cleanup();
+  });
+
+  it("the venue's hallkeeper still ticks", async () => {
+    signIn("hallkeeper");
+    const fetchMock = serveTicked();
+    mount();
+    const row = await screen.findByRole("checkbox", { name: /Round table/u, checked: true });
+    expect(row.getAttribute("aria-readonly")).toBeNull();
+    expect(screen.queryByText("The venue's team ticks these as they set the room.")).toBeNull();
+    fireEvent.click(row);
+    expect(await screen.findByRole("checkbox", { name: /Round table/u, checked: false })).toBeDefined();
+    await waitFor(() => { expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "PATCH")).toHaveLength(1); });
+  });
+});
+
 describe("HallkeeperPage Martyn's Law readiness", () => {
   function serve(data: HallkeeperSheetV2): void {
     vi.stubGlobal("fetch", vi.fn((input: string | URL | Request): Promise<Response> => {
@@ -584,5 +848,140 @@ describe("HallkeeperPage Martyn's Law readiness", () => {
     // Martyn's Law entries alone are not a planner brief: the sheet still
     // says that no planner instructions or contact were supplied.
     expect(within(screen.getByRole("dialog", { name: "Brief & contacts" })).getByText("No planner instructions or day-of contact supplied on this sheet.")).toBeTruthy();
+  });
+});
+
+describe("HallkeeperPage reloading checks keeps the sheet in hand", () => {
+  it("reloads only the checks, shows the work on the button, and a failed reload leaves the sheet and says so", async () => {
+    let sheetRequests = 0;
+    let progressRequests = 0;
+    let nextProgress: Promise<Response> | null = null;
+    vi.stubGlobal("fetch", vi.fn((input: string | URL | Request): Promise<Response> => {
+      const url = requestUrl(input);
+      if (url.includes("/v2")) {
+        sheetRequests += 1;
+        // Only the first read of the sheet succeeds: a second one would fail
+        // and, before this fix, take the sheet off the screen with it.
+        return Promise.resolve(sheetRequests === 1
+          ? jsonResponse(sheet(CONFIG_A, "First dinner"))
+          : new Response(null, { status: 502 }));
+      }
+      if (url.endsWith("/progress")) {
+        progressRequests += 1;
+        return nextProgress ?? Promise.resolve(new Response(null, { status: 503 }));
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    }));
+    mount();
+    await screen.findByText(/Shared checks could not be loaded/u);
+
+    const pending = deferred<Response>();
+    nextProgress = pending.promise;
+    const reload = screen.getByRole("button", { name: "Reload checks" });
+    fireEvent.click(reload);
+    // The button stays where the focus is, busy, with the shared indicator.
+    const busy = await screen.findByRole("button", { name: "Reloading checks…" });
+    expect(busy).toBe(reload);
+    expect(busy.getAttribute("aria-busy")).toBe("true");
+    expect((busy as HTMLButtonElement).disabled).toBe(true);
+    expect(busy.querySelector("[data-activity-indicator]")).not.toBeNull();
+
+    await act(async () => {
+      pending.resolve(new Response(null, { status: 503 }));
+      await pending.promise;
+    });
+    expect(await screen.findByRole("button", { name: "Reload checks" })).toBe(reload);
+    expect(screen.getByText(/Shared checks still could not be loaded/u)).toBeTruthy();
+    expect(screen.getByText("First dinner", { exact: true, selector: "p" })).toBeTruthy();
+    expect(sheetRequests).toBe(1);
+
+    nextProgress = Promise.resolve(jsonResponse({ checked: { [ROW_KEY]: checkedAt } }));
+    fireEvent.click(screen.getByRole("button", { name: "Reload checks" }));
+    await screen.findByRole("checkbox", { name: /Round table/u, checked: true });
+    expect(screen.queryByText(/could not be loaded/u)).toBeNull();
+    expect(screen.getByText("First dinner", { exact: true, selector: "p" })).toBeTruthy();
+    expect(sheetRequests).toBe(1);
+    expect(progressRequests).toBe(3);
+  });
+
+  it("never puts a reload's checks on a sheet opened since", async () => {
+    const pending = deferred<Response>();
+    let firstSheetProgress = 0;
+    vi.stubGlobal("fetch", vi.fn((input: string | URL | Request): Promise<Response> => {
+      const url = requestUrl(input);
+      if (url.endsWith(`/${CONFIG_A}/v2`)) return Promise.resolve(jsonResponse(sheet(CONFIG_A, "First dinner")));
+      if (url.endsWith(`/${CONFIG_B}/v2`)) return Promise.resolve(jsonResponse(sheet(CONFIG_B, "Second dinner")));
+      if (url.endsWith(`/${CONFIG_A}/progress`)) {
+        firstSheetProgress += 1;
+        return firstSheetProgress === 2 ? pending.promise : Promise.resolve(new Response(null, { status: 503 }));
+      }
+      if (url.endsWith(`/${CONFIG_B}/progress`)) return Promise.resolve(new Response(null, { status: 503 }));
+      throw new Error(`Unexpected request: ${url}`);
+    }));
+    mount();
+    await screen.findByText(/Shared checks could not be loaded/u);
+    fireEvent.click(screen.getByRole("button", { name: "Reload checks" }));
+    await waitFor(() => { expect(firstSheetProgress).toBe(2); });
+
+    // Away and back while the reload is still out: a fresh open of the first
+    // sheet, whose own read of the checks fails again.
+    fireEvent.click(screen.getByRole("link", { name: "Open second sheet" }));
+    await screen.findByText("Second dinner", { exact: true, selector: "p" });
+    fireEvent.click(screen.getByRole("link", { name: "Open first sheet" }));
+    await screen.findByText("First dinner", { exact: true, selector: "p" });
+    await screen.findByText(/Shared checks could not be loaded/u);
+    expect(firstSheetProgress).toBe(3);
+
+    await act(async () => {
+      pending.resolve(jsonResponse({ checked: { [ROW_KEY]: checkedAt } }));
+      await pending.promise;
+    });
+
+    expect(screen.getByText(/Shared checks could not be loaded/u)).toBeTruthy();
+    expect(screen.getByRole("checkbox", { name: /Round table/u }).getAttribute("aria-checked")).toBe("false");
+  });
+});
+
+describe("HallkeeperPage paper that knows its version", () => {
+  function serve(data: HallkeeperSheetV2): void {
+    vi.stubGlobal("fetch", vi.fn((input: string | URL | Request): Promise<Response> => {
+      const url = requestUrl(input);
+      if (url.includes("/v2")) return Promise.resolve(jsonResponse(data));
+      return Promise.resolve(jsonResponse({ checked: {} }));
+    }));
+  }
+
+  afterEach(() => { vi.useRealTimers(); });
+
+  it("prints the version in words and a code that checks the copy, stamped when printing starts", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-17T05:02:00.000Z"));
+    const qr = { size: 21, rows: Array.from({ length: 21 }, (_, row) => row === 0 ? `1111111${"0".repeat(14)}` : "0".repeat(21)) };
+    serve(HallkeeperSheetV2Schema.parse({
+      ...sheet(CONFIG_A, "Smith wedding"),
+      approval: { version: 7, approvedAt: "2026-10-16T13:02:00.000Z", approverName: "Duty manager" },
+      paperCheck: { url: `https://venviewer.com/sheet-check?c=${CONFIG_A}`, qr },
+    }));
+    mount();
+    const stamp = await screen.findByTestId("paper-copy-stamp");
+    expect(stamp.textContent).toContain("v7, issued 16 Oct 14:02, printed 17 Oct 06:02");
+    expect(stamp.textContent).toContain("Scan to check this copy is current.");
+    expect(stamp.querySelector("svg path")?.getAttribute("d")).toBe("M4 4h7v1h-7z");
+    expect(document.querySelector(".hk-print-version")?.textContent).toBe("v7, issued 16 Oct 14:02, printed 17 Oct 06:02");
+    vi.setSystemTime(new Date("2026-10-17T06:15:00.000Z"));
+    act(() => { window.dispatchEvent(new Event("beforeprint")); });
+    expect(stamp.textContent).toContain("printed 17 Oct 07:15");
+    expect(document.querySelector(".hk-print-version")?.textContent).toBe("v7, issued 16 Oct 14:02, printed 17 Oct 07:15");
+  });
+
+  it("calls a sheet printed before approval a draft and keeps the venue's clock", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-17T05:02:00.000Z"));
+    serve(sheet(CONFIG_A, "Smith wedding"));
+    mount();
+    const stamp = await screen.findByTestId("paper-copy-stamp");
+    expect(stamp.textContent).toContain("Draft, printed 17 Oct 06:02");
+    expect(stamp.querySelector("svg")).toBeNull();
+    expect(stamp.textContent).toContain("Europe/London");
   });
 });

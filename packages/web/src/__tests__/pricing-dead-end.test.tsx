@@ -38,6 +38,17 @@ describe("PricingPage", () => {
     }
   });
 
+  it("names no other company and quotes no one else's prices (fix-first item 7)", () => {
+    show();
+    const page = document.body.textContent ?? "";
+    for (const name of [/Cvent/iu, /Prismm/iu, /AllSeated/iu, /Matterport/iu, /Salesforce/iu, /Tripleseat/iu, /Social Tables/iu]) {
+      expect(page).not.toMatch(name);
+    }
+    expect(page).not.toMatch(/What you pay elsewhere|one-tenth the cost|industry estimates/iu);
+    // Every price on the page is in pounds: Venviewer's own.
+    expect(page).not.toMatch(/\$\s?\d/u);
+  });
+
   it("keeps the surfaces the public route is identified by", () => {
     show();
     expect(screen.getByRole("heading", { level: 1, name: "Pricing" })).toBeDefined();

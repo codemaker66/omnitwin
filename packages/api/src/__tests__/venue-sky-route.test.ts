@@ -148,7 +148,11 @@ describe("GET /venues/:venueId/sky — the committed normals", () => {
   });
 
   it("answers a far date with the month's HadUK-Grid normals for the Trades Hall cell", async () => {
-    const at = "2027-01-15T18:00:00Z";
+    // Next year's 15 January, so the date stays ahead of the clock. A fixed
+    // 2027 date would turn into a past one on 15 January 2027, which the
+    // service rightly answers as before the forecast window (a clock sweep
+    // found it on 18 October 2026).
+    const at = `${String(new Date().getUTCFullYear() + 1)}-01-15T18:00:00Z`;
     const response = await server.inject({ method: "GET", url: `/venues/${LOCATED}/sky?at=${encodeURIComponent(at)}` });
     expect(response.statusCode).toBe(200);
     expect(response.headers["cache-control"]).toBe("public, max-age=3600");

@@ -10,7 +10,7 @@ import { VenueIdSchema } from "./venue.js";
 export const EVENT_MISSION_SCHEMA_VERSION = "venviewer.event-mission.v0";
 export const EVENT_MISSION_BASELINE_HASH_DOMAIN = "venviewer.event-mission.baseline.v0\n";
 
-const UUID = z.string().uuid();
+const UUID = z.uuid();
 const SHA256 = z.string().regex(/^[a-f0-9]{64}$/u);
 const IDEMPOTENCY_KEY = z.string().trim().min(8).max(160);
 const REVISION = z.number().int().positive();
@@ -56,8 +56,8 @@ export const EventMissionSpatialAnchorSchema = z.object({
   configurationId: ConfigurationIdSchema,
   snapshotId: UUID,
   objectId: UUID.nullable(),
-  xM: z.number().finite(),
-  zM: z.number().finite(),
+  xM: z.number(),
+  zM: z.number(),
   floorLabel: z.string().trim().min(1).max(120).nullable(),
   label: z.string().trim().min(1).max(200),
   source: z.enum(["frozen_snapshot", "task_anchor", "operator_pin"]),
@@ -74,11 +74,11 @@ export const EventMissionSchema = z.object({
   baselineHash: SHA256,
   lastSequence: SEQUENCE,
   createdBy: UserIdSchema.nullable(),
-  startedAt: z.string().datetime(),
-  completedAt: z.string().datetime().nullable(),
-  cancelledAt: z.string().datetime().nullable(),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
+  startedAt: z.iso.datetime(),
+  completedAt: z.iso.datetime().nullable(),
+  cancelledAt: z.iso.datetime().nullable(),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
 }).strict();
 export type EventMission = z.infer<typeof EventMissionSchema>;
 
@@ -91,11 +91,11 @@ export const EventMissionPhaseSchema = z.object({
   sortOrder: z.number().int().nonnegative(),
   status: EventMissionPhaseStatusSchema,
   revision: REVISION,
-  actualStartedAt: z.string().datetime().nullable(),
-  actualEndedAt: z.string().datetime().nullable(),
+  actualStartedAt: z.iso.datetime().nullable(),
+  actualEndedAt: z.iso.datetime().nullable(),
   updatedBy: UserIdSchema.nullable(),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
 }).strict();
 export type EventMissionPhase = z.infer<typeof EventMissionPhaseSchema>;
 
@@ -114,11 +114,11 @@ export const EventMissionTaskSchema = z.object({
   assignedTo: UserIdSchema.nullable(),
   assigneeLabel: z.string().trim().min(1).max(160).nullable(),
   spatialAnchors: z.array(EventMissionSpatialAnchorSchema).max(500),
-  actualStartedAt: z.string().datetime().nullable(),
-  actualEndedAt: z.string().datetime().nullable(),
+  actualStartedAt: z.iso.datetime().nullable(),
+  actualEndedAt: z.iso.datetime().nullable(),
   updatedBy: UserIdSchema.nullable(),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
 }).strict();
 export type EventMissionTask = z.infer<typeof EventMissionTaskSchema>;
 
@@ -136,9 +136,9 @@ export const EventMissionIncidentSchema = z.object({
   assignedTo: UserIdSchema.nullable(),
   reportedBy: UserIdSchema.nullable(),
   revision: REVISION,
-  resolvedAt: z.string().datetime().nullable(),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
+  resolvedAt: z.iso.datetime().nullable(),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
 }).strict();
 export type EventMissionIncident = z.infer<typeof EventMissionIncidentSchema>;
 
@@ -150,7 +150,7 @@ export const EventMissionAcknowledgementSchema = z.object({
   acknowledgedBy: UserIdSchema,
   acknowledgedByRole: EventPlanAudienceRoleSchema,
   note: SafeOpsTextSchema.nullable(),
-  createdAt: z.string().datetime(),
+  createdAt: z.iso.datetime(),
 }).strict();
 export type EventMissionAcknowledgement = z.infer<typeof EventMissionAcknowledgementSchema>;
 
@@ -163,7 +163,7 @@ export const EventMissionPresenceSchema = z.object({
   activePhaseId: EventPhaseIdSchema.nullable(),
   activeTaskId: EventMissionTaskIdSchema.nullable(),
   view: z.enum(["board", "map", "timeline", "replay"]),
-  lastSeenAt: z.string().datetime(),
+  lastSeenAt: z.iso.datetime(),
 }).strict();
 export type EventMissionPresence = z.infer<typeof EventMissionPresenceSchema>;
 
@@ -248,11 +248,11 @@ export const EventMissionEventSchema = z.object({
   idempotencyKey: IDEMPOTENCY_KEY,
   requiresAcknowledgement: z.boolean(),
   payload: EventMissionEventPayloadSchema,
-  occurredAt: z.string().datetime(),
-  createdAt: z.string().datetime(),
+  occurredAt: z.iso.datetime(),
+  createdAt: z.iso.datetime(),
 }).strict().superRefine((event, ctx) => {
   if (event.kind !== event.payload.kind) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["payload", "kind"], message: "Event kind must match payload kind." });
+    ctx.addIssue({ code: "custom", path: ["payload", "kind"], message: "Event kind must match payload kind." });
   }
 });
 export type EventMissionEvent = z.infer<typeof EventMissionEventSchema>;
@@ -265,7 +265,7 @@ export const EventMissionBaselineSchema = z.object({
   handoffPackId: HandoffPackIdSchema,
   sourceSnapshotHash: SHA256,
   missionStatus: EventMissionStatusSchema,
-  startedAt: z.string().datetime(),
+  startedAt: z.iso.datetime(),
   phases: z.array(EventMissionPhaseSchema),
   tasks: z.array(EventMissionTaskSchema),
 }).strict();

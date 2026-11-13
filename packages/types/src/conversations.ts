@@ -2,6 +2,7 @@ import { z } from "zod";
 import {
   CreateVenueRequestSchema,
   RequestOutcomeSchema,
+  RequestStateSchema,
   STAFF_AUDIENCE_ROLES,
   VenueRequestSchema,
 } from "./requests.js";
@@ -29,8 +30,8 @@ import { RecordObservationSchema, SlotObservationSchema } from "./observations.j
 // their screen said so, acknowledged when they pressed.
 // ---------------------------------------------------------------------------
 
-const UUID = z.string().uuid();
-const IsoInstant = z.string().datetime({ offset: true });
+const UUID = z.uuid();
+const IsoInstant = z.iso.datetime({ offset: true });
 
 export const THREAD_AUDIENCES = ["staff-private", "client-facing"] as const;
 export const ThreadAudienceSchema = z.enum(THREAD_AUDIENCES);
@@ -218,25 +219,34 @@ const NoPayload = z.object({}).strict();
 export const ConversationCommandSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("message.send"), commandId: UUID, threadId: UUID, payload: SendMessageSchema }),
   z.object({ kind: z.literal("request.create"), commandId: UUID, payload: CreateVenueRequestSchema }),
-  z.object({ kind: z.literal("request.acknowledge"), commandId: UUID, requestId: UUID, payload: NoPayload }),
-  z.object({ kind: z.literal("request.accept"), commandId: UUID, requestId: UUID, payload: NoPayload }),
-  z.object({ kind: z.literal("request.underway"), commandId: UUID, requestId: UUID, payload: NoPayload }),
+  // A request step may carry the state and the owner it was pressed against
+  // (L9): one replayed from the offline queue is refused once the request
+  // has moved on or changed hands.
+  z.object({ kind: z.literal("request.acknowledge"), commandId: UUID, requestId: UUID, expectedState: RequestStateSchema.optional(), expectedOwnerUserId: UUID.nullable().optional(), payload: NoPayload }),
+  z.object({ kind: z.literal("request.accept"), commandId: UUID, requestId: UUID, expectedState: RequestStateSchema.optional(), expectedOwnerUserId: UUID.nullable().optional(), payload: NoPayload }),
+  z.object({ kind: z.literal("request.underway"), commandId: UUID, requestId: UUID, expectedState: RequestStateSchema.optional(), expectedOwnerUserId: UUID.nullable().optional(), payload: NoPayload }),
   z.object({
     kind: z.literal("request.handover"),
     commandId: UUID,
     requestId: UUID,
+    expectedState: RequestStateSchema.optional(),
+    expectedOwnerUserId: UUID.nullable().optional(),
     payload: z.object({ toUserId: UUID }).strict(),
   }),
   z.object({
     kind: z.literal("request.resolve"),
     commandId: UUID,
     requestId: UUID,
+    expectedState: RequestStateSchema.optional(),
+    expectedOwnerUserId: UUID.nullable().optional(),
     payload: z.object({ outcome: RequestOutcomeSchema, note: z.string().trim().min(1).max(500).nullish() }).strict(),
   }),
   z.object({
     kind: z.literal("request.reopen"),
     commandId: UUID,
     requestId: UUID,
+    expectedState: RequestStateSchema.optional(),
+    expectedOwnerUserId: UUID.nullable().optional(),
     payload: z.object({ note: z.string().trim().min(1).max(500).nullish() }).strict(),
   }),
   // Goal 19 S5: a fact about the room, on the same ledger, so a tap that left

@@ -28,8 +28,8 @@ const JournalSchema = z.object({
     idx: z.number().int().nonnegative(),
     when: z.number().int().positive(),
     tag: z.string().regex(/^\d{4}_[a-z0-9_]+$/),
-  }).passthrough()),
-}).passthrough();
+  }).loose()),
+}).loose();
 
 export interface JournalEntry {
   readonly tag: string;

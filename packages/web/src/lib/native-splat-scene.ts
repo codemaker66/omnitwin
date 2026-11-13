@@ -1,4 +1,4 @@
-import { DataTexture, Matrix4, NearestFilter, Object3D, RedFormat, Scene, UnsignedByteType, Vector2, Vector3, SRGBColorSpace, type BufferGeometry, type Camera } from "three";
+import { DataTexture, Matrix4, NearestFilter, Object3D, RedFormat, Scene, UnsignedByteType, Vector2, Vector3, SRGBColorSpace, type Box3, type BufferGeometry, type Camera, type Sphere } from "three";
 import { StorageBufferAttribute, type UniformNode, type WebGPURenderer } from "three/webgpu";
 import { GaussianSplat } from "three/addons/objects/GaussianSplat.js";
 import { Fn, If, float, length, max, min, storage, texture, uniform, uniformArray, vec3, vec4 } from "three/tsl";
@@ -36,9 +36,28 @@ interface Source extends NativeSourceRegistration {
 }
 interface ReadySource extends Source { geometry: BufferGeometry }
 
+type MergedSplats = ReturnType<typeof mergeNativeSplatSources>;
+
+/**
+ * What a draw is built from that no device holds: its sources merged, and the
+ * bounds of their splats. The splat sort bounds every splat again the first
+ * time it sorts (GaussianSplat.computeBoundingSphere). For a 6 M-splat capture
+ * these took about 2.5 s of a graphics reset's restore on desktop (L3c's
+ * profile, 26 Oct 2026), so they are kept for the next renderer's build.
+ */
+interface CarriedBuild {
+  readonly key: string;
+  readonly storageLimit: number | null;
+  readonly merged: MergedSplats;
+  readonly boundingBox: Box3 | null;
+  readonly boundingSphere: Sphere | null;
+}
+
 interface Snapshot {
   readonly key: string;
   readonly mesh: NativeGaussianObject;
+  readonly merged: MergedSplats;
+  readonly storageLimit: number | null;
   readonly geometry: BufferGeometry;
   readonly tileAttribute: StorageBufferAttribute;
   readonly sources: readonly ReadySource[];
@@ -100,6 +119,8 @@ export class NativeSplatScene {
   private desiredKey = "";
   private building = false;
   private generation = 0;
+  /** The last draw's device-free build, kept through a renderer's loss for the next one's build of the same sources. */
+  private carried: CarriedBuild | null = null;
   private gpuCompletion: { snapshot: Snapshot; controller: AbortController } | null = null;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private lastFrame = -1;
@@ -133,6 +154,20 @@ export class NativeSplatScene {
     };
   }
 
+  /**
+   * Whether this renderer's capture is still to come: after a graphics reset
+   * the replacement's own snapshot must be built before the room is back (a
+   * snapshot of the lost device never counts: teardown cleared it, and stale
+   * builds are rejected). Not pending once it draws, once its build failed
+   * (the planner falls back to its drawn room), or while nothing is selected.
+   */
+  capturePending(renderer: object): boolean {
+    if (this.renderer !== renderer) return this.sources.size > 0;
+    if ((this.perfStats(0)?.splats ?? 0) > 0) return false;
+    const selected = this.selectedSources();
+    return selected.length > 0 && !this.failedKeys.has(this.key(selected));
+  }
+
   /** Splats the active draw keeps after GPU culling. WebGPU reads the sort's
    * indirect arguments back; WebGL has no culling and draws every loaded splat. */
   async drawnSplats(renderer: WebGPURenderer): Promise<number | null> {
@@ -145,7 +180,14 @@ export class NativeSplatScene {
   }
 
   attach(renderer: WebGPURenderer, camera: Camera, invalidate: () => void): () => void {
-    if (this.renderer !== null && this.renderer !== renderer) throw new Error("A native splat scene must have one active renderer");
+    if (this.renderer !== null && this.renderer !== renderer) {
+      if (this.hosts !== 0) throw new Error("A native splat scene must have one active renderer");
+      // A graphics reset hands the canvas a replacement renderer in the same
+      // React commit that detached the lost one, before that host's deferred
+      // teardown has run. Release the lost device's snapshots now; the next
+      // build compiles them for the new device from the sources still held.
+      this.teardown();
+    }
     // The first host after a full teardown finds exclusionTexture disposed (see below); its
     // mask data survives on the JS side, but the GPU-side storage must be re-created.
     if (this.hosts === 0 && this.renderer === null) this.exclusionTexture.needsUpdate = true;
@@ -158,20 +200,33 @@ export class NativeSplatScene {
       this.hosts--;
       // React StrictMode immediately attaches again; do not dispose shared resources between those effects.
       queueMicrotask(() => {
-        if (this.hosts !== 0) return;
-        this.generation++;
-        if (this.timer !== null) clearTimeout(this.timer);
-        this.timer = null;
-        this.clearSnapshots();
-        this.cpuSortPool?.dispose();
-        this.cpuSortPool = null;
-        // Safe here, not earlier: every snapshot sampling this shared mask was just cleared above, and StrictMode's immediate re-attach already had its chance to return early before this point runs.
-        this.exclusionTexture.dispose();
-        this.renderer = null;
-        this.camera = null;
-        this.desiredKey = "";
+        if (this.hosts !== 0 || this.renderer !== renderer) return;
+        this.teardown();
       });
     };
+  }
+
+  private teardown(): void {
+    this.generation++;
+    if (this.timer !== null) clearTimeout(this.timer);
+    this.timer = null;
+    const active = this.active;
+    this.carried = active === null ? null : {
+      key: active.key, storageLimit: active.storageLimit, merged: active.merged,
+      boundingBox: active.mesh.boundingBox?.clone() ?? null, boundingSphere: active.mesh.boundingSphere?.clone() ?? null,
+    };
+    this.clearSnapshots();
+    // The sources stay held for the next renderer, which must draw each of
+    // them again before it counts as drawn: the view's arrival counts afresh
+    // for a replacement renderer (hooks/use-chunk-arrivals.ts).
+    for (const source of this.sources.values()) source.renderedOnce = false;
+    this.cpuSortPool?.dispose();
+    this.cpuSortPool = null;
+    // Safe here, not earlier: every snapshot sampling this shared mask was just cleared above, and StrictMode's immediate re-attach already had its chance to return early before this point runs.
+    this.exclusionTexture.dispose();
+    this.renderer = null;
+    this.camera = null;
+    this.desiredKey = "";
   }
 
   configure(kernelRadius: number | undefined, minSortIntervalMs: number | undefined): void {
@@ -195,11 +250,13 @@ export class NativeSplatScene {
         registration.anchor.updateWorldMatrix(true, false);
         source.matrix.multiplyMatrices(this.inverseSceneMatrix, registration.anchor.matrixWorld);
         source.version++;
+        this.carried = null;
         this.schedule();
         this.invalidate();
       },
       dispose: () => {
         disposed = true;
+        this.carried = null;
         if (this.sources.get(key) === source) this.sources.delete(key);
         if (this.active !== null && this.active.sources.every((member) => this.sources.get(member.anchor.uuid) !== member)) {
           // A new room/URL must never inherit the previous room's draw while it loads or fails.
@@ -379,7 +436,11 @@ export class NativeSplatScene {
 
   private createSnapshot(sources: readonly ReadySource[], key: string, renderer: WebGPURenderer): Snapshot {
     const storageLimit = nativeRendererStorageLimit(renderer);
-    const merged = mergeNativeSplatSources(sources.map((source) => ({ geometry: source.geometry, matrix: source.matrix, maxSh: source.maxSh() })), storageLimit);
+    // The same sources on a device of the same limits: built before the loss.
+    const carried = this.carried !== null && this.carried.key === key && this.carried.storageLimit === storageLimit ? this.carried : null;
+    if (carried !== null) this.carried = null;
+    const merged = carried?.merged
+      ?? mergeNativeSplatSources(sources.map((source) => ({ geometry: source.geometry, matrix: source.matrix, maxSh: source.maxSh() })), storageLimit);
     const tileAttribute = new StorageBufferAttribute(merged.tileIndices, 1);
     const tileIds = storage(tileAttribute, "uint", merged.tileIndices.length).toReadOnly();
     if ("isWebGLBackend" in renderer.backend && renderer.backend.isWebGLBackend === true) tileIds.setPBO(true);
@@ -401,9 +462,14 @@ export class NativeSplatScene {
         kernelRadius: this.kernelRadius,
         minSortIntervalMs: this.minSortIntervalMs,
         colorSpace: SRGBColorSpace,
-        // Every native source is non-anti-aliased: the SOG and SPZ loaders refuse
-        // mip-anti-aliased assets. Upstream's always-on compensation dimmed them (T-639).
-        antialias: false,
+        // The SOG and SPZ loaders refuse mip-anti-aliased assets; the draw's own
+        // compensation (each splat's opacity scaled by the share of its footprint
+        // left after the screen-space low-pass) stays on. Measured on the twelve
+        // production Grand Hall tiles (T-658, 17 October 2026): at DPR 1 and 0.5
+        // it is 3-7 dB closer to a supersampled reference and keeps gilt
+        // lettering and frames from blowing out at phone scale, at under 1.5 %
+        // less brightness at DPR 1; at 4K it cannot be seen.
+        antialias: true,
         sphericalHarmonicsDirectionNode: (index, direction) => inverseMatrices.element(tileIds.element(index)).mul(direction),
         opacityNode: (index, position) => Fn(() => {
           const opacity = opacities.element(tileIds.element(index)).toVar();
@@ -430,6 +496,10 @@ export class NativeSplatScene {
     }
     mesh.name = "Native Gaussian splats (global sort)";
     mesh.frustumCulled = false;
+    if (carried !== null) {
+      mesh.boundingBox = carried.boundingBox;
+      mesh.boundingSphere = carried.boundingSphere;
+    }
     mesh.material.toneMapped = false;
     mesh.raycast = () => undefined;
     let cpuSort: NativeCpuSortHandle | null = null;
@@ -471,7 +541,7 @@ export class NativeSplatScene {
       }
     }
     const snapshot: Snapshot = {
-      key, mesh, geometry: merged.geometry, tileAttribute, sources, opacityValues,
+      key, mesh, merged, storageLimit, geometry: merged.geometry, tileAttribute, sources, opacityValues,
       center, halfExtent, softEdge, clipEnabled,
       exclusionEnabled, exclusionMatrix, exclusionBand,
       completionFailed: false, cpuSort, sortFailed: false,
@@ -620,7 +690,7 @@ export class NativeSplatScene {
     }
   }
 
-  private invalidateSnapshots(): void { this.generation++; this.failedKeys.clear(); this.removeStaleSnapshots(); this.schedule(); }
+  private invalidateSnapshots(): void { this.generation++; this.failedKeys.clear(); this.carried = null; this.removeStaleSnapshots(); this.schedule(); }
   private clearSnapshots(): void {
     for (const snapshot of this.snapshots.values()) snapshot.dispose();
     this.snapshots.clear(); this.active = null; this.failedKeys.clear();
@@ -631,6 +701,11 @@ const runtimes = new WeakMap<Scene, NativeSplatScene>();
 /** Profiling must never construct a native runtime for an unrelated scene. */
 export function nativeScenePerfStats(scene: Scene, now: number): NativeScenePerfStats | null {
   return runtimes.get(scene)?.perfStats(now) ?? null;
+}
+
+/** Whether the scene's capture is still to come on `renderer` (a recovered view's cover waits for it). */
+export function nativeSceneCapturePending(scene: Scene, renderer: object): boolean {
+  return runtimes.get(scene)?.capturePending(renderer) ?? false;
 }
 
 /** Profiler only: splats the active draw keeps after GPU culling. */

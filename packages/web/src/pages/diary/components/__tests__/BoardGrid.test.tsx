@@ -275,6 +275,35 @@ describe("BoardGrid holds and conflicts", () => {
     expect([chip("second"), chip("joint"), chip("open")]).toEqual(["2nd option", "Joint 1st", "Provisional, no option yet"]);
   });
 
+  it("says a viewing on its face and once to a screen reader, never counts it as booked, and tells the drag (migration 0100)", () => {
+    const handlersFor = vi.fn<(block: DragBlockDescriptor) => BlockDragHandlers>(() => HANDLERS);
+    render(<BoardGrid {...props} drag={dragOf(handlersFor, null, null)} conflictSeverity={new Map()}
+      entries={[at("show", ROOM_A, { kind: "viewing", state: "viewing", title: "Fraser show-round" })]} />);
+    const block = document.getElementById("diary-block-show");
+    expect(block?.classList.contains("is-viewing")).toBe(true);
+    expect(block?.querySelector(".diary-block-chip")?.textContent).toBe("Viewing");
+    const label = block?.getAttribute("aria-label") ?? "";
+    expect(label.startsWith("Fraser show-round — Viewing, ")).toBe(true);
+    expect(label.match(/Viewing/gu)).toHaveLength(1);
+    expect(handlersFor).toHaveBeenCalledWith(expect.objectContaining({ id: "show", isInk: false, isViewing: true }));
+    // The lane's counts and booked share leave a show-round out.
+    const rail = document.querySelector(`[data-diary-lane="${ROOM_A}"]`)?.closest(".diary-lane-row");
+    expect(rail?.querySelector(".diary-rail-counts")?.textContent).toBe("0 confirmed0 provisional");
+    expect(rail?.querySelector(".diary-rail-utilisation")?.textContent).toBe("0%");
+  });
+
+  it("keeps an hour's viewing titled, its word on the face's second line", () => {
+    // An hour at 96 px, the viewing's usual length: beside the title, the
+    // word left the title three letters.
+    render(<BoardGrid {...props} conflictSeverity={new Map()} entries={[
+      booking("hour", ROOM_A, "2026-09-10T17:00:00Z", "2026-09-10T18:00:00Z", { kind: "viewing", state: "viewing", title: "Fraser show-round" }),
+    ]} />);
+    const block = document.getElementById("diary-block-hour");
+    expect(block?.querySelector(".diary-block-main .diary-block-title")?.textContent).toBe("Fraser show-round");
+    expect(block?.querySelector(".diary-block-main .diary-block-chip")).toBeNull();
+    expect(block?.querySelector(".diary-block-note .diary-block-chip")?.textContent).toBe("Viewing");
+  });
+
   it("gives every conflict edge its word", () => {
     render(<BoardGrid {...props} entries={[at("clash", ROOM_A), at("review", ROOM_B), at("clear", ROOM_C)]}
       conflictSeverity={new Map<string, ConflictSeverity>([["clash", "blocking"], ["review", "warning"]])} />);

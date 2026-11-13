@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { TRADES_HALL_PUBLIC_PROFILE } from "@omnitwin/types";
 import { getVenue, type Venue, type VenueDetail } from "../api/spaces.js";
 import { createOneShotHandoff } from "../lib/one-shot-handoff.js";
 
@@ -51,9 +52,11 @@ export function usePlannerVenueIdentity(venueId: string | null): {
   // Hide the previous venue on the first render after selection changes.
   const selected = venueId !== null && result?.venueId === venueId ? result : null;
   const venue = selected?.venue ?? null;
-  const tradesHall = venue?.slug === "trades-hall-glasgow";
+  const tradesHall = venue?.slug === TRADES_HALL_PUBLIC_PROFILE.dbSlug;
   return {
-    name: tradesHall ? "Trade's Hall of Glasgow" : venue?.name ?? (selected === null ? "Venue planner" : "Venue unavailable"),
+    // The venue's own name as it publishes itself (venue truth, the front
+    // door): "Trades Hall of Glasgow", never a hand-typed variant.
+    name: tradesHall ? TRADES_HALL_PUBLIC_PROFILE.name : venue?.name ?? (selected === null ? "Venue planner" : "Venue unavailable"),
     logoUrl: tradesHall ? "/images/venues/trades-hall-glasgow-crest-200.webp" : venue?.logoUrl ?? null,
     loading: venueId !== null && selected === null,
     known: venue !== null,

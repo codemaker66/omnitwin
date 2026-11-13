@@ -67,21 +67,43 @@ export function isPublishedRoomSlug(slug: string): slug is PublishedRoomSlug {
 }
 
 export interface RoomDimensions {
-  /** Metres, as published on the venue's own website. */
+  /** Metres: the venue's own published figures, except the Grand Hall's,
+   *  which are measured from the hall's laser scan. */
   readonly lengthM: number;
   readonly widthM: number;
   readonly heightM: number;
-  /** Published qualifier, e.g. the Grand Hall's further height under the dome. */
+  /** Qualifier shown with the height, e.g. what the Grand Hall's is measured
+   *  to. A few words, because it sits beside the figure in a narrow stat
+   *  column (the tour's room dossier); anything longer belongs in `remark`. */
   readonly note?: string;
+  /** A full sentence about the room's height that a surface shows apart from
+   *  the figure, in its footnote or secondary line: the Grand Hall's dome.
+   *  Never a height of its own. */
+  readonly remark?: string;
 }
 
-/** Room dimensions as published on the official Trades Hall website —
- *  the four rooms the site lists. The galleries publish no dimensions,
- *  so none are stated for them. */
+/** Room dimensions for the four rooms the official Trades Hall website lists.
+ *  The Saloon, Robert Adam Room and Reception Room are as the venue
+ *  publishes them. The Grand Hall is its panelled interior as the Matterport
+ *  E57 capture of 11 July 2026 measures it, 21.135 m by 10.59 m to about
+ *  2 cm, shown as 21.14 × 10.59 m (Blake, 11 November 2026: "The measured
+ *  21.14 x 10.59 m"); its height is the clear 6.7 m to the underside of the
+ *  coffered ceiling. The dome rises above part of the hall and is never given
+ *  as the room's height: the height's note says what it is measured to, and
+ *  the dome is a separate remark, shown in a footnote rather than beside the
+ *  figure. The planner draws and places in the same interior
+ *  (packages/web/src/components/grand-hall/hall-spec.ts). The galleries
+ *  publish no dimensions, so none are stated for them. */
 export const TRADES_HALL_ROOM_DIMENSIONS: Readonly<
   Partial<Record<PublishedRoomSlug, RoomDimensions>>
 > = {
-  "grand-hall": { lengthM: 21, widthM: 10, heightM: 7, note: "a further 7 m under the dome" },
+  "grand-hall": {
+    lengthM: 21.14,
+    widthM: 10.59,
+    heightM: 6.7,
+    note: "to the coffered ceiling",
+    remark: "The dome rises above part of the hall.",
+  },
   saloon: { lengthM: 12, widthM: 7, heightM: 5.4 },
   "robert-adam-room": { lengthM: 9.7, widthM: 5.6, heightM: 2.18 },
   "reception-room": { lengthM: 13.4, widthM: 11.2, heightM: 3.2 },
@@ -129,12 +151,48 @@ export const TRADES_HALL_WEDDING_PRICING = {
   seasons: readonly WeddingSeason[];
 };
 
+/** Who stated a set of venue figures, what kind of statement it is, and on
+ *  which day, as data rather than a sentence, so a surface can label a figure
+ *  "Published guide · Trades Hall · 9 Jul 2026" without parsing prose. */
+export interface VenueTruthStatement {
+  /** What the figures are, in plain words: "Published guide". */
+  readonly kind: string;
+  /** Who stated them. */
+  readonly statedBy: string;
+  /** The day they were stated, ISO 8601 (YYYY-MM-DD). */
+  readonly statedOn: string;
+}
+
+/** The statements behind the figures in this module. VENUE_TRUTH_PROVENANCE
+ *  is written from these, so a short label and the sentence cannot disagree. */
+export const VENUE_TRUTH_STATEMENTS = {
+  capacities: { kind: "Published guide", statedBy: "Trades Hall", statedOn: "2026-07-09" },
+  pricing: { kind: "Published rates", statedBy: "Trades Hall", statedOn: "2026-07-09" },
+} as const satisfies Readonly<Record<"capacities" | "pricing", VenueTruthStatement>>;
+
+const statementDay = new Intl.DateTimeFormat("en-GB", {
+  day: "numeric",
+  month: "short",
+  year: "numeric",
+  timeZone: "UTC",
+});
+
+/** "Published guide · Trades Hall · 9 Jul 2026": who stated a figure and when,
+ *  in plain words. A malformed date is shown as written rather than guessed. */
+export function venueTruthStatementLabel(statement: VenueTruthStatement): string {
+  const ms = /^\d{4}-\d{2}-\d{2}$/.test(statement.statedOn)
+    ? Date.parse(`${statement.statedOn}T00:00:00Z`)
+    : Number.NaN;
+  const day = Number.isFinite(ms) ? statementDay.format(ms) : statement.statedOn;
+  return `${statement.kind} · ${statement.statedBy} · ${day}`;
+}
+
 /** Where each figure came from, and when — rendered wherever the numbers are. */
 export const VENUE_TRUTH_PROVENANCE = {
   capacities:
-    "Capacity figures confirmed by the Trades Hall team, 2026-07-09 — a planning guide; final numbers depend on your layout.",
+    `Capacity figures confirmed by the ${VENUE_TRUTH_STATEMENTS.capacities.statedBy} team, ${VENUE_TRUTH_STATEMENTS.capacities.statedOn} — a planning guide; final numbers depend on your layout.`,
   pricing:
-    "Room-hire rates provided by the Trades Hall team, 2026-07-09. Catering and services are quoted separately by the events team.",
+    `Room-hire rates provided by the ${VENUE_TRUTH_STATEMENTS.pricing.statedBy} team, ${VENUE_TRUTH_STATEMENTS.pricing.statedOn}. Catering and services are quoted separately by the events team.`,
 } as const;
 
 /** A postal address in schema.org's PostalAddress vocabulary. */

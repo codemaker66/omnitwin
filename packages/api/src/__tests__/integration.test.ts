@@ -1223,7 +1223,7 @@ describe.skipIf(!IS_REAL_DB)("Integration: end-to-end against Neon", () => {
   it("49. /v2 returns 404 for non-existent config", async () => {
     const res = await server.inject({
       method: "GET",
-      url: "/hallkeeper/00000000-0000-0000-0000-ffffffffffff/v2",
+      url: "/hallkeeper/00000000-0000-4000-8000-ffffffffffff/v2",
       headers: auth(plannerToken),
     });
     expect(res.statusCode).toBe(404);

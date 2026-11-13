@@ -16,12 +16,22 @@ const ScheduleSpaceSchema = z.object({
  *  No notes, no ladder position, no owner, no decision date: the client reads
  *  their when, never the Diary's internals. */
 export const ScheduleSlotSchema = z.object({
-  bookingId: z.string().uuid(),
+  bookingId: z.uuid(),
   kind: BookingKindSchema,
-  title: z.string().trim().min(1).max(200),
+  // As stored, trimmed (a blank title reads as ""): rows written before #350
+  // took a public enquiry's blank name as their title (API-9). Unlike
+  // CalendarBookingEntrySchema, which keeps a blank title as it is, this read
+  // trims. The API's routes no longer store an empty or blank title: the
+  // Create, Update, ConvertEnquiry and BookViewing schemas refuse one, and a
+  // client's proposal takes its event's title (eventTitleFor: the name a
+  // person gave it, else its occasion), never blank. The direct writer the
+  // seed and importers share (insertBoundBookings) does not check a title.
+  // Refusing it here failed the client's whole schedule, and a proposal's
+  // reply after the move had landed.
+  title: z.string().trim().max(200),
   space: ScheduleSpaceSchema,
-  startsAt: z.string().datetime(),
-  endsAt: z.string().datetime(),
+  startsAt: z.iso.datetime(),
+  endsAt: z.iso.datetime(),
 }).strict();
 export type ClientEventScheduleSlot = z.infer<typeof ScheduleSlotSchema>;
 
@@ -30,11 +40,16 @@ export const ClientEventScheduleSchema = z.object({
   event: z.object({
     id: EventIdSchema,
     venueId: VenueIdSchema,
-    name: z.string().trim().min(1).max(200),
+    // As stored, trimmed (a blank name reads as ""): events made before
+    // eventNameFor named every new one can hold "" (an untitled booking's).
+    // Screens show such an event as eventDisplayName names it; refusing it
+    // here failed the client's whole schedule. Writers refuse an empty name
+    // (CreateEventSchema, UpdateEventSchema).
+    name: z.string().trim().max(200),
     eventType: z.string().trim().max(80).nullable(),
     status: EventStatusSchema,
-    startsAt: z.string().datetime().nullable(),
-    endsAt: z.string().datetime().nullable(),
+    startsAt: z.iso.datetime().nullable(),
+    endsAt: z.iso.datetime().nullable(),
     guestCount: z.number().int().nonnegative(),
   }).strict(),
   venue: z.object({
@@ -48,7 +63,7 @@ export const ClientEventScheduleSchema = z.object({
   phases: z.array(z.object({
     id: EventPhaseIdSchema,
     name: z.string().trim().min(1).max(100),
-    startsAt: z.string().datetime().nullable(),
+    startsAt: z.iso.datetime().nullable(),
     durationMinutes: z.number().int().nonnegative(),
     space: ScheduleSpaceSchema.nullable(),
   }).strict()),
@@ -92,10 +107,10 @@ export type ClientEventScheduleQuery = z.infer<typeof ClientEventScheduleQuerySc
 
 export const ProposeWindowSchema = z.object({
   spaceId: SpaceIdSchema,
-  startsAt: z.string().datetime(),
-  endsAt: z.string().datetime(),
+  startsAt: z.iso.datetime(),
+  endsAt: z.iso.datetime(),
   /** Minted once per gesture; a resend after a dropped answer replays. */
-  idempotencyKey: z.string().uuid(),
+  idempotencyKey: z.uuid(),
 }).strict().refine((window) => Date.parse(window.endsAt) > Date.parse(window.startsAt), {
   message: "endsAt must be after startsAt — a window occupies a real interval.",
   path: ["endsAt"],
@@ -121,13 +136,16 @@ export const RoomDayQuerySchema = z.object({
 }).strict();
 export type RoomDayQuery = z.infer<typeof RoomDayQuerySchema>;
 
-const RoomDayInstants = { startsAt: z.string().datetime(), endsAt: z.string().datetime() };
+const RoomDayInstants = { startsAt: z.iso.datetime(), endsAt: z.iso.datetime() };
 
 export const RoomDaySpanSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("yours"),
-    bookingId: z.string().uuid(),
-    title: z.string().trim().min(1).max(200),
+    bookingId: z.uuid(),
+    // As stored, trimmed (a blank title reads as ""; see ScheduleSlotSchema,
+    // API-9); refusing it here left the ribbon unable to read the room's day
+    // at all.
+    title: z.string().trim().max(200),
     ...RoomDayInstants,
   }).strict(),
   z.object({ kind: z.literal("held"), ...RoomDayInstants }).strict(),

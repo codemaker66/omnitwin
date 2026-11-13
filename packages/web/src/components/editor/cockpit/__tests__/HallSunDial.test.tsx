@@ -243,8 +243,9 @@ describe("HallSunDial", () => {
     expect(input.value).toBe("2027-06-21");
   });
 
-  it("carries the LiDAR survey's credit at its foot, with the licence a link away", () => {
-    const credit = "Contains LiDAR data: Crown copyright Scottish Government and Fugro (2020), OGL v3.0";
+  it("carries the LiDAR survey's and the council's street lighting credits at its foot, with the licence a link away", () => {
+    const credit = "Contains LiDAR data: Crown copyright Scottish Government and Fugro (2020). "
+      + "Street lighting: Glasgow City Council. Contains OS data © Crown copyright and database right 2026, OGL v3.0";
     const { rerender } = render(<HallSunDial />);
     for (const inline of [false, true]) {
       rerender(<HallSunDial inline={inline} />);

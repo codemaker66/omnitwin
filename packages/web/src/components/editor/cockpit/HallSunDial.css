@@ -139,7 +139,7 @@
 }
 .hall-sun-dial__now.is-active {
   border-color: rgba(255, 239, 177, 0.6);
-  background: linear-gradient(145deg, #dca475 0%, #c98a5b 44%, #7e4620 100%);
+  background: linear-gradient(145deg, var(--house-accent-copper-bright) 0%, var(--house-accent-copper) 44%, var(--house-accent-copper-deep) 100%);
   color: #14110b;
 }
 .hall-sun-dial__date:active,
@@ -186,7 +186,7 @@
   stroke-dasharray: 2 3;
 }
 .hall-sun-dial__floor-bar {
-  fill: #d6a650;
+  fill: var(--house-accent-copper-bright);
 }
 .hall-sun-dial__sun {
   filter: drop-shadow(0 0 5px rgba(255, 224, 160, 0.75));
@@ -205,7 +205,7 @@
   height: 15px;
   margin-top: 6px;
   color: rgba(246, 238, 220, 0.55);
-  font-size: 10px;
+  font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
 .hall-sun-dial__marks span {
@@ -229,7 +229,7 @@
   width: 14px;
   height: 3px;
   border-radius: 2px;
-  background: #d6a650;
+  background: var(--house-accent-copper-bright);
 }
 
 .hall-sun-dial__presets {
@@ -259,7 +259,7 @@
 .hall-sun-dial__credit {
   margin: 10px 0 0;
   color: rgba(246, 238, 220, 0.55);
-  font-size: 10px;
+  font-size: 11px;
   line-height: 1.4;
   letter-spacing: 0.01em;
 }

@@ -49,7 +49,7 @@ describe("web startup guardrails", () => {
     // trip to two more hosts before first paint. The same files are served from
     // src/styles/fonts (self-hosted-font-files.test.ts pins them to Google's).
     const html = await readFile(resolve("index.html"), "utf-8");
-    expect(html).toContain('<link rel="stylesheet" href="/src/styles/fonts/site.css" />');
+    expect(html).toContain('<link rel="stylesheet" href="/src/styles/fonts/site-slim.css" />');
     expect(html).not.toMatch(/rel=["']preconnect["']/u);
     const files = [...await sourceFiles(resolve("src"), [".ts", ".tsx", ".css", ".html"]), resolve("index.html")]
       .filter((file) => !/[\\/]__tests__[\\/]/u.test(file));

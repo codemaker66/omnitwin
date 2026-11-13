@@ -18,7 +18,10 @@
 //   - Every processor named below is one actually in use.
 // ---------------------------------------------------------------------------
 
-import type { ReactElement } from "react";
+import { useEffect, type ReactElement } from "react";
+import { CONTRACT_CONSENT_STATEMENT, DIETARY_MEMORY_CONSENT, DIETARY_MEMORY_MONTHS_UNUSED, DIETARY_NOTE_RETENTION } from "@omnitwin/types";
+import { REMEMBERED_NOTES_PATH } from "../lib/dietary-memory.js";
+import { ROUTE_DOCUMENTS } from "../lib/route-documents.js";
 import "./LegalPage.css";
 
 interface LegalPageProps {
@@ -57,6 +60,9 @@ interface LegalSection {
 interface LegalDocument {
   readonly title: string;
   readonly standfirst: string;
+  /** When this document last changed: each document carries its own, so a
+   *  change to one does not re-date the others. */
+  readonly updated: { readonly text: string; readonly iso: string };
   readonly sections: readonly LegalSection[];
 }
 
@@ -71,9 +77,43 @@ const VENUE_EMAIL = "info@tradeshallglasgow.co.uk";
 const VENUE_PHONE = "+44 141 552 2418";
 const VENUE_PHONE_HREF = "tel:+441415522418";
 
-/** The date these documents were written. Shown on every page, and the only
- *  place it is written down. */
-const LAST_UPDATED = "15 August 2026";
+/** The date the terms and the accessibility statement were written. The
+ *  accessibility statement says it was written then; each document carries
+ *  its own date for when it last changed. */
+const FIRST_WRITTEN = "15 August 2026";
+
+/** The terms' own date: it changed on 11 November, when the Grand Hall's
+ *  dimensions became the ones measured from its laser scan, so "Capacities,
+ *  dimensions and rates" stopped calling every room dimension the venue's own
+ *  published figure (Blake, 11 November 2026: "The measured 21.14 x 10.59 m"). */
+const TERMS_UPDATED = { text: "11 November 2026", iso: "2026-11-11" } as const;
+
+/** The accessibility statement's own date: it changed on 8 November, when it
+ *  listed the planner's single-key shortcuts and the hints cut off in its
+ *  "More planner tools" panel (v1.0 final review). */
+const ACCESSIBILITY_UPDATED = { text: "8 November 2026", iso: "2026-11-08" } as const;
+
+/** The privacy policy's own date: it changed when the dietary note gained its
+ *  retention rule (fix-first item 18) and, the same day, the choice to have
+ *  it remembered ("ask once, then remember"); on 26 October, when it said
+ *  how long deleted data stays in the database's backups (T-068); and on 27
+ *  October, when it named Anthropic, which writes the events team's AI
+ *  drafts (release audit ai-1), before AI drafting is switched on, and Stripe
+ *  for deposits, and said what a contract's signature record keeps (Plan 19 L5);
+ *  and on 8 November, when it said that clients and planners sign in as well as
+ *  venue staff, that the site serves its own typefaces, and that Resend also
+ *  carries the acknowledgement sent to the guest (v1.0 final review). */
+const PRIVACY_UPDATED = { text: "8 November 2026", iso: "2026-11-08" } as const;
+
+/** The allergy note's keeping period, from the one definition the API's
+ *  retention pass and the planner also read. */
+const NOTE_DAYS_AFTER_EVENT = DIETARY_NOTE_RETENTION.daysAfterEvent;
+const NOTE_MONTHS_WITHOUT_EVENT = Math.round(DIETARY_NOTE_RETENTION.daysWithoutEvent / 30.4);
+
+/** The box beside the note, word for word as the planner shows it. Both
+ *  paths are described; the lawful condition for health information is the
+ *  venue's adviser's to confirm, so none is named for it here. */
+const REMEMBER_QUESTION = DIETARY_MEMORY_CONSENT.question;
 
 // T-616 / gate line 4 replaced every "Enquire" mailto on the public site with
 // the composer, because a mailto leaves no row in `enquiries` and the events
@@ -109,6 +149,7 @@ const PRIVACY: LegalDocument = {
   title: "Privacy Policy",
   standfirst:
     "How the Trades House of Glasgow handles the personal information you send through this site, why we hold it, how long we keep it, and what you can ask us to do with it.",
+  updated: PRIVACY_UPDATED,
   sections: [
     {
       id: "who-we-are",
@@ -223,9 +264,31 @@ const PRIVACY: LegalDocument = {
                 "When something goes wrong in the browser or on the server, our error-monitoring service records technical details about the failure. That can include the page you were on and the technical state of the application at the time.",
             },
             {
-              term: "Venue staff accounts",
+              term: "Dietary and allergy notes for an event",
               detail:
-                "People who work for the venue have accounts on the planning tools. For them we hold a name, an email address and a role. This part of the policy is about them, not about you as a visitor.",
+                "When an event is planned with the venue, its layout can record how many guests need each kind of meal (vegetarian, vegan, gluten-free, nut-free, halal, kosher) and a short note about other allergies. The note is health information. It is read by the venue's events team and the staff preparing the room, and it is printed on the event sheets they work from. Please give allergens and numbers, not guests' names. The note is kept out of our server logs and error reports. "
+                + `Beside the note, the person planning the event is asked "${REMEMBER_QUESTION}" The box starts unticked. Left unticked, the note stays with that event only. Ticked, we also keep a copy with that person's account, shown to them alone, and fill it in on their next layout with us; we record who ticked the box, when, and the words beside it. They can see and remove that copy at any time.`,
+            },
+            {
+              term: "Your signature on a contract",
+              detail:
+                "Once you have accepted a proposal, the venue may ask you to sign its contract on your proposal link. You sign by typing your name and ticking the statement \"" + CONTRACT_CONSENT_STATEMENT + "\" "
+                + "We keep a record of that signature: the name you typed; the email address of the client the venue addressed the proposal to, which the contract itself names; the date and time; a fingerprint (a SHA-256 hash) of the exact version of the contract you signed; the statement you agreed to, word for word; the description your browser gives of itself (its user-agent string); and which of the proposal's links you signed through, by its first characters. "
+                + "We do not keep your network (IP) address with it. The record cannot be changed after you sign. If the contract changes, you are asked to sign the new version, and your earlier signature stays with the version you signed.",
+            },
+            {
+              term: "Deposit payments",
+              detail:
+                "If the venue asks for a deposit, you pay it on Stripe's own payment page, not on ours. Your card or bank details go to Stripe and never reach us. From Stripe we keep the amount, Stripe's reference for the payment, and what Stripe reports: paid, still settling, declined (with Stripe's own words for why), refunded, or not the amount asked for. While the venue uses Stripe's test mode, no real money is taken.",
+            },
+            {
+              // Who signs in: /login and /register are public (router.tsx), a
+              // new account's default role is planner (@omnitwin/types user.ts),
+              // and the Clerk webhook copies name, phone and username into the
+              // account (api routes/webhooks.ts profileUpdate).
+              term: "Accounts",
+              detail:
+                "Clients, planners and people who work for the venue can have an account on the planning tools. For each account we hold a name, an email address and a role, and a phone number and a username where the account has them. You do not need an account to send an enquiry.",
             },
             {
               term: "Preferences kept in your browser",
@@ -242,7 +305,7 @@ const PRIVACY: LegalDocument = {
       blocks: [
         {
           kind: "p",
-          text: "UK GDPR requires a lawful basis for every use of personal information. Ours are set out below. We do not rely on consent for anything on the public site — nothing here is consent-based, so nothing here hides behind a consent box.",
+          text: `UK GDPR requires a lawful basis for every use of personal information. Ours are set out below. We do not rely on consent for any of them, so nothing here hides behind a consent box. The one thing on this site that waits for a tick is keeping an allergy note for your next event ("${REMEMBER_QUESTION}", described under "Dietary and allergy notes for an event"): it happens only if you ask for it.`,
         },
         {
           kind: "defs",
@@ -256,6 +319,11 @@ const PRIVACY: LegalDocument = {
               term: "Keeping a record of enquiries and contacts",
               detail:
                 "Article 6(1)(f), legitimate interests: running an events business properly, giving consistent answers, and being able to show what was said and when. We have weighed this against your interests; the information involved is ordinary business contact information, and you can object at any time.",
+            },
+            {
+              term: "Contracts, signatures and deposits",
+              detail:
+                "Article 6(1)(b): entering into and performing the contract for your event. Keeping the signature record and the payment records afterwards is Article 6(1)(c), the venue's legal obligation to keep accounting records, and Article 6(1)(f), our legitimate interest in being able to show what was agreed, by whom and when.",
             },
             {
               term: "Keeping the service secure and working",
@@ -300,7 +368,7 @@ const PRIVACY: LegalDocument = {
             {
               term: "Authentication cookies",
               detail:
-                "Our authentication provider sets strictly necessary cookies so that venue staff stay signed in to the planning tools. They exist to hold a session together, not to follow anybody around the web.",
+                "Our authentication provider sets strictly necessary cookies so that clients, planners and venue staff with an account stay signed in to the planning tools. They exist to hold a session together, not to follow anybody around the web.",
             },
             {
               term: "Local storage preferences",
@@ -308,9 +376,13 @@ const PRIVACY: LegalDocument = {
                 "Your light or dark theme choice, and similar view preferences, are stored by your browser on your own device. They are not transmitted to us and are not used to identify you.",
             },
             {
+              // Self-hosted since 777e3985 (index.html, src/styles/fonts). The
+              // two pages named here are standalone HTML in public/ that still
+              // link Google's hosted font stylesheet. (startup-guardrails.test.ts
+              // bans the hostname anywhere under src/, comments included.)
               term: "Web fonts",
               detail:
-                "The typefaces used by this site are served by Google Fonts. Loading them means Google receives the network address of the device making the request. No advertising or analytics identifier is involved, but the request does leave our own servers, and we would rather say so than imply the page is entirely self-contained.",
+                "The typefaces used by this site are served by the site itself, not by Google. Two standalone pages, The Amissing Book (/amissing-book/) and the visitor leaflet (/trades-house/leaflet, and its printable copy at /trades-house-media/leaflet.html), still load their typefaces from Google Fonts. Opening either page means Google receives the network address of the device making the request. No advertising or analytics identifier is involved, but the request does leave our own servers, and we would rather say so than imply those pages are self-contained.",
             },
           ],
         },
@@ -345,12 +417,12 @@ const PRIVACY: LegalDocument = {
             {
               term: "Resend",
               detail:
-                "Transactional email delivery. It carries the notification of your enquiry to the venue's events team.",
+                "Transactional email delivery. It carries the notification of your enquiry to the venue's events team, the acknowledgement of your enquiry that is sent to you, and the service's other emails, such as replies to enquiries, layout reviews, date-hold reminders, escalated requests and team invitations.",
             },
             {
               term: "Clerk",
               detail:
-                "Authentication for venue staff accounts. It handles staff sign-in; it does not sign in visitors sending enquiries.",
+                "Authentication for accounts. It handles sign-in for clients, planners and venue staff; it does not sign in visitors sending enquiries.",
             },
             {
               term: "Sentry",
@@ -361,6 +433,19 @@ const PRIVACY: LegalDocument = {
               term: "Cloudflare R2",
               detail:
                 "Object storage for the venue's imagery and for the 3D capture of its rooms.",
+            },
+            // What is sent is read from the code that builds it:
+            // services/enquiry-summary-draft.ts, proposal-message-draft.ts
+            // and event-brief-draft.ts (the planner's brief reader, T-650).
+            {
+              term: "Anthropic",
+              detail:
+                "AI help for the venue's events team, used only when a member of the team asks for it: a summary of your enquiry, the wording of a message to you about a proposal, or reading a description of your event that the team has typed into the planner. Anthropic's Claude is sent what that piece of work needs: the details of your event (such as the occasion, date, guest count and room), where your enquiry stands and the day it arrived, and the words of your enquiry and of your messages about the proposal, or the team's own description of your event. Email addresses and phone numbers it can recognise in those words are taken out first; anything else written there, such as a name, is sent as written. A message to you is also sent your name, so that it can address you. The email address and phone number you gave in the enquiry form's own fields are not sent. A member of the events team reads everything it writes and decides what to use; nothing it writes is sent to you without a person choosing to send it.",
+            },
+            {
+              term: "Stripe",
+              detail:
+                "Payment processing for deposits, when the venue asks for one. You pay on Stripe's own page; Stripe receives your card or bank details, the amount, the title of the proposal the deposit is for (often your event's name), our references for it, and the email address the venue holds for you (for Stripe's receipt), and tells us whether the payment succeeded. For its own fraud prevention and legal duties Stripe also acts on its own account, under its own privacy policy.",
             },
           ],
         },
@@ -407,15 +492,41 @@ const PRIVACY: LegalDocument = {
                 "Your email address, name and phone number held as a single contact record: deleted on the same 24-month rule, counted from our last contact with you.",
             },
             {
+              term: "The allergy note on an event's layout",
+              detail:
+                `Removed from the layout, and from the event sheets and their stored copies, ${String(NOTE_DAYS_AFTER_EVENT)} days after the event. A layout with no event date loses the note ${String(NOTE_MONTHS_WITHOUT_EVENT)} months after it last changed. The counts per meal, which do not identify anyone, stay with the layout and its event sheets.`,
+            },
+            {
+              term: "An allergy note you asked us to remember",
+              detail:
+                `Kept with your account until you remove it, which you can do at any time. If ${String(DIETARY_MEMORY_MONTHS_UNUSED)} months pass without it being saved with a layout, we remove it. Once it is removed, we keep only the record that you agreed, when, the words you agreed to, and when it ended, without the note itself.`,
+            },
+            {
+              term: "Signed contracts and deposit records",
+              detail:
+                "Kept with the booking's records: for the life of the booking and for six years after the end of the financial year in which the event took place, the same period as a booking, because they are the record of what was agreed and paid. A contract you did not sign is kept on the same rule.",
+            },
+            {
               term: "Logs and error diagnostics",
               detail:
                 "Kept only for as long as our hosting and error-monitoring providers retain them under their standard settings. We do not take separate copies of them.",
+            },
+            {
+              term: "Backups",
+              detail:
+                "The database keeps a seven-day history it can be restored from and a daily copy that is kept for 14 days, so that a mistake or a failure does not lose anyone's booking. Something deleted under these rules is gone from the backups 14 days later. If the service is ever restored from a backup, anything deleted since that backup is deleted again before the service reopens.",
             },
           ],
         },
         {
           kind: "p",
           text: "You can ask us to delete your enquiry sooner. We will do that unless we still need it for a live booking or to meet a legal obligation, and if we cannot delete something we will tell you why.",
+        },
+        {
+          kind: "links",
+          items: [
+            { label: "Allergy notes you asked us to remember", text: "See or remove them (sign in first)", href: REMEMBERED_NOTES_PATH, external: false },
+          ],
         },
       ],
     },
@@ -427,7 +538,7 @@ const PRIVACY: LegalDocument = {
           kind: "list",
           items: [
             "Everything you send travels over an encrypted connection (HTTPS).",
-            "Enquiry records are visible only to signed-in venue staff who hold the events role. They are not public, and they are not reachable without an account.",
+            "Enquiry records are visible only to signed-in members of the venue's team who work its enquiries, to a client who made the enquiry from their own account, and to the people at Venviewer who run the service. They are not public, and they are not reachable without an account.",
             "The public enquiry form is rate-limited to ten submissions an hour from one source, which limits both abuse and bulk harvesting.",
             "Database access is restricted to the application itself and to the people who maintain it.",
             "No system is perfectly secure. If we become aware of a breach of your personal information that is likely to put you at risk, we will tell you, and we will report it to the Information Commissioner's Office where the law requires.",
@@ -479,7 +590,7 @@ const PRIVACY: LegalDocument = {
             {
               term: "Withdrawing consent",
               detail:
-                "We do not rely on consent for anything on the public site, so there is nothing here to withdraw. If we ever ask for consent, you will be able to withdraw it at any time, and doing so will not affect anything done before you withdrew it.",
+                `If you ticked "${REMEMBER_QUESTION}" beside an allergy note, you can take that back at any time: remove the note on your remembered notes page, or untick the box and save. The copy kept with your account is removed at once, and that does not undo anything done before. Nothing else on this site waits for a tick, so there is nothing else to withdraw.`,
             },
           ],
         },
@@ -526,7 +637,7 @@ const PRIVACY: LegalDocument = {
       blocks: [
         {
           kind: "p",
-          text: `The version in force is the one on this page, dated ${LAST_UPDATED}. If we change it, that date changes with it, and where a change directly affects people who have already sent us an enquiry we will tell them.`,
+          text: `The version in force is the one on this page, dated ${PRIVACY_UPDATED.text}. If we change it, that date changes with it, and where a change directly affects people who have already sent us an enquiry we will tell them.`,
         },
       ],
     },
@@ -553,6 +664,7 @@ const TERMS: LegalDocument = {
   title: "Terms of Service",
   standfirst:
     "The terms on which you may use this site and the planning tools on it — what the service is, what it is not, and what happens when you send an enquiry.",
+  updated: TERMS_UPDATED,
   sections: [
     {
       id: "these-terms",
@@ -610,7 +722,7 @@ const TERMS: LegalDocument = {
       blocks: [
         {
           kind: "p",
-          text: "The room capacities, dimensions and rates shown on this site are the venue's own published figures.",
+          text: "The room capacities and rates shown on this site are the venue's own published figures. So are the room dimensions, except the Grand Hall's, which were measured from a laser scan of the hall.",
         },
         {
           kind: "p",
@@ -674,6 +786,10 @@ const TERMS: LegalDocument = {
           text: "The city drawn round the Grand Hall in the planner, and the rooftop heights used to work out when the sun reaches its windows, are made from the Scottish Government's open LiDAR survey. Contains LiDAR data: Crown copyright Scottish Government and Fugro (2020), OGL v3.0. That data is published under the Open Government Licence v3.0, and its reuse is governed by that licence, not by these terms.",
         },
         {
+          kind: "p",
+          text: "The street lamps drawn round the hall at night stand where Glasgow City Council's open street lighting data places them. Contains public sector information licensed under the Open Government Licence v3.0. Street lighting: Glasgow City Council. Contains OS data © Crown copyright and database right 2026.",
+        },
+        {
           kind: "links",
           items: [
             {
@@ -724,7 +840,7 @@ const TERMS: LegalDocument = {
       blocks: [
         {
           kind: "p",
-          text: `We may change these terms. The version in force is the one on this page, dated ${LAST_UPDATED}. Continuing to use the site after a change means you accept the version then published.`,
+          text: `We may change these terms. The version in force is the one on this page, dated ${TERMS_UPDATED.text}. Continuing to use the site after a change means you accept the version then published.`,
         },
       ],
     },
@@ -761,6 +877,7 @@ const ACCESSIBILITY: LegalDocument = {
   title: "Accessibility Statement",
   standfirst:
     "What we have done to make this site usable, what we know is still wrong with it, and how to reach a person if something here blocks you.",
+  updated: ACCESSIBILITY_UPDATED,
   sections: [
     {
       id: "scope",
@@ -768,7 +885,7 @@ const ACCESSIBILITY: LegalDocument = {
       blocks: [
         {
           kind: "p",
-          text: `This statement covers the public pages of the Trades House of Glasgow's Venviewer site: the room pages, the enquiry form, the virtual walkthrough and the planning tools reached from them. It was written on ${LAST_UPDATED} by the team that builds the site, and it reflects our own testing.`,
+          text: `This statement covers the public pages of the Trades House of Glasgow's Venviewer site: the room pages, the enquiry form, the virtual walkthrough and the planning tools reached from them. It was written on ${FIRST_WRITTEN} by the team that builds the site, and it reflects our own testing.`,
         },
       ],
     },
@@ -824,6 +941,20 @@ const ACCESSIBILITY: LegalDocument = {
               term: "The 3D walkthrough and the planner",
               detail:
                 "These are visual by nature. There is no equivalent non-visual experience of the 3D view itself, and the planner's drag-and-drop arrangement has not been tested with assistive technology. Everything those views convey — room sizes, capacities, layouts, photographs and prices — is available as text and photography elsewhere on the site, and the events team will talk any of it through with you.",
+            },
+            // lib/planner-keymap.ts binds bare letters (A, F, M, D, V, Q, E, R)
+            // and nothing turns them off.
+            {
+              term: "Single-key shortcuts in the planner",
+              detail:
+                "With a keyboard, the planner acts on single letter keys pressed on their own, such as V to select and A to add furniture. There is no way to turn these shortcuts off, which fails WCAG success criterion 2.1.4, Character Key Shortcuts. That can get in the way of people who use speech input, or who press keys by accident.",
+            },
+            // The panel is 238px wide and scrolls (ReferenceViewer.css); each
+            // hint opens 58px to the right of its tool (VerticalToolbox.tsx).
+            {
+              term: "Hints in the planner's tools panel",
+              detail:
+                "On a computer, the planner keeps some of its tools in a panel behind a button marked with three dots, named \"More planner tools\" for screen readers. The hint that appears beside each tool in that panel is cut off at the panel's edge, so it cannot be read in full.",
             },
             {
               term: "Untested areas",
@@ -979,6 +1110,14 @@ function LegalBlockView({ block }: { readonly block: LegalBlock }): ReactElement
 
 export function LegalPage({ type }: LegalPageProps): ReactElement {
   const doc = DOCUMENTS[type];
+  // The same title the crawler-readable copy of index.html carries for this
+  // address (lib/route-documents.ts), kept when moving here inside the app.
+  const title = ROUTE_DOCUMENTS.find((entry) => entry.name === type)?.title ?? doc.title;
+  useEffect(() => {
+    const previous = document.title;
+    document.title = title;
+    return () => { document.title = previous; };
+  }, [title]);
   const theme = storedTheme();
   const others = SIBLING_ORDER.filter((key) => key !== type);
 
@@ -1003,7 +1142,7 @@ export function LegalPage({ type }: LegalPageProps): ReactElement {
           <p className="lg-standfirst">{doc.standfirst}</p>
           <p className="lg-updated">
             <span className="lg-updated-label">Last updated</span>
-            <time dateTime="2026-08-15">{LAST_UPDATED}</time>
+            <time dateTime={doc.updated.iso}>{doc.updated.text}</time>
           </p>
 
           <nav className="lg-toc" aria-labelledby="lg-toc-heading">

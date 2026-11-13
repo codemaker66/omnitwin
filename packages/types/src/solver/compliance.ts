@@ -5,13 +5,20 @@ import { SOLVER_ASSETS, SOLVER_ASSET_DIMENSIONS } from "./types.js";
 import { distanceToPoint } from "./geometry.js";
 
 // ---------------------------------------------------------------------------
-// Compliance — UK building regulation checks for generated layouts
+// Layout checks for generated layouts — planning settings, not regulations.
+//
+// These compare a generated layout against the solver's own planning settings
+// (aisle width, exit clearance, distance to an exit). They are not building-
+// standards or fire-safety checks and must never cite a standard as evidence:
+// Trades Hall is in Glasgow, where the Building (Scotland) Regulations and the
+// venue's fire risk assessment govern, and England's Approved Document B, the
+// US NFPA 101 and an unverified BS 9999 table are the wrong authority for it.
+// The violation wording therefore names the setting it used, never a code.
 // ---------------------------------------------------------------------------
 
 /**
- * Maximum travel distance to nearest fire exit (metres).
- * BS 9999:2017, Table 12 — single-direction travel, unsprinklered,
- * risk profile B2 (assembly use). Conservative value.
+ * Planning setting for the straight-line distance from a seat to the nearest
+ * exit (metres). A conservative planning default, not a cited limit.
  */
 const MAX_TRAVEL_DISTANCE_M = 18;
 
@@ -53,8 +60,7 @@ export function checkAisleWidths(
           `Aisle width ${gap.toFixed(2)}m between tables at ` +
           `(${a.position.x.toFixed(1)}, ${a.position.z.toFixed(1)}) and ` +
           `(${b.position.x.toFixed(1)}, ${b.position.z.toFixed(1)}) ` +
-          `is below minimum ${config.minAisleWidthM.toFixed(1)}m ` +
-          `(Approved Document B)`,
+          `is below the ${config.minAisleWidthM.toFixed(1)}m planning aisle setting`,
         );
       }
     }
@@ -98,14 +104,11 @@ export function checkFireExitClearance(
 }
 
 /**
- * Checks that every seated position is within the maximum travel
- * distance to at least one fire exit.
+ * Checks that every seated position is within the solver's planning
+ * distance (MAX_TRAVEL_DISTANCE_M) of at least one exit.
  *
- * BS 9999:2017, Table 12: 18m for single-direction travel in
- * unsprinklered assembly-use rooms (risk profile B2).
- *
- * Uses Euclidean distance as a conservative approximation
- * (actual travel distance along aisles would be longer).
+ * Uses Euclidean distance as an approximation (actual travel distance
+ * along aisles would be longer). A planning setting, not a cited limit.
  */
 export function checkMaxTravelDistance(
   placedObjects: readonly SolverPlacedObject[],
@@ -134,8 +137,7 @@ export function checkMaxTravelDistance(
       violations.push(
         `Seat at (${chair.position.x.toFixed(1)}, ${chair.position.z.toFixed(1)}) ` +
         `is ${minExitDist.toFixed(1)}m from nearest fire exit, ` +
-        `exceeding maximum travel distance ${String(MAX_TRAVEL_DISTANCE_M)}m ` +
-        `(BS 9999:2017 Table 12)`,
+        `beyond the ${String(MAX_TRAVEL_DISTANCE_M)}m planning distance setting`,
       );
     }
   }

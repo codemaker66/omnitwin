@@ -37,7 +37,7 @@ export const MIGRATIONS_FOLDER = resolve(API_ROOT, "drizzle");
 
 const JournalSchema = z.object({
   entries: z.array(z.object({ tag: z.string().min(1) })),
-}).passthrough();
+}).loose();
 
 export interface MigrationOutcome {
   /** Rows in the migrations ledger before and after this run. */

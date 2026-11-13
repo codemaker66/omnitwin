@@ -1,0 +1,304 @@
+/* ---------------------------------------------------------------------------
+   Supplier passes (A Door for Everyone Outside, stage 1).
+
+   The call board sits on the event-day page and takes that page's hallkeeper
+   register (--hk-*). The Issue pass sheet floats over the page in the
+   workspace register (data-register="ivory", with a forest decision panel),
+   the composition of the Enquiries desk. No hue is invented here: tone lives
+   in an edge, and the words carry the meaning on their own.
+--------------------------------------------------------------------------- */
+
+.supplier-passes-head > div { min-width: 0; }
+.supplier-passes-issue { margin-top: 12px; }
+.supplier-passes-issue:disabled { cursor: default; opacity: 0.55; }
+.supplier-passes-content { min-width: 0; }
+.supplier-passes-content > :first-child { margin-top: 0; }
+
+.supplier-passes-list {
+  display: grid;
+  gap: 10px;
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 0;
+}
+
+.supplier-passes-item {
+  align-items: start;
+  background: var(--hk-ivory-raised);
+  border: 1px solid var(--hk-line);
+  border-left: 4px solid var(--hk-line);
+  border-radius: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 16px;
+  justify-content: space-between;
+  padding: 14px 16px;
+}
+.supplier-passes-item[data-tone="settled"] { border-left-color: var(--hk-sage-deep); }
+.supplier-passes-item[data-tone="attention"] { border-left-color: var(--hk-copper); }
+.supplier-passes-list.is-withdrawn .supplier-passes-item { background: transparent; }
+
+.supplier-passes-body { flex: 1 1 280px; min-width: 0; }
+.supplier-passes-body h3 {
+  font-family: var(--hk-serif);
+  font-size: 1.12rem;
+  font-weight: 500;
+  margin: 4px 0 6px;
+  overflow-wrap: anywhere;
+}
+.event-day-section .supplier-passes-body p { color: var(--hk-ink-dim); font-size: 0.9rem; margin: 2px 0 0; overflow-wrap: anywhere; }
+.supplier-passes-body small { color: var(--hk-ink-faint); display: block; font-size: 0.78rem; margin-top: 8px; }
+
+/* Forest, not copper or sage, for the word: the edge carries the tone. */
+.supplier-passes-kicker {
+  color: var(--hk-forest);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.supplier-passes-question {
+  border-left: 2px solid var(--hk-copper);
+  margin: 10px 0 0;
+  padding: 2px 0 2px 12px;
+}
+.event-day-section .supplier-passes-question p { color: var(--hk-ink); font-size: 0.95rem; }
+.supplier-passes-question footer { color: var(--hk-ink-faint); font-size: 0.78rem; margin-top: 4px; }
+
+.event-day-section .supplier-passes-changed { color: var(--hk-ink); font-weight: 600; margin-top: 8px; }
+.event-day-section .supplier-passes-error { color: var(--hk-ink); font-weight: 600; margin-top: 8px; }
+.supplier-passes-notice { color: var(--hk-ink); font-weight: 600; margin: 10px 0 0; }
+
+.supplier-passes-actions { display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; }
+.supplier-passes-action {
+  align-items: center;
+  background: var(--hk-ivory-sunk);
+  border: 1px solid var(--hk-line);
+  border-radius: 8px;
+  color: var(--hk-forest);
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  gap: 6px;
+  min-height: 44px;
+  padding: 8px 14px;
+  transition: background-color var(--house-motion-hover) var(--house-ease-out), transform var(--house-motion-press) var(--house-ease-out);
+}
+.supplier-passes-action:hover:not(:disabled) { background: var(--hk-ivory); }
+.supplier-passes-action:active:not(:disabled) { transform: scale(0.97); }
+.supplier-passes-action:disabled { cursor: default; opacity: 0.55; }
+.supplier-passes-action:focus-visible { outline: var(--vv-focus-ring); outline-offset: var(--vv-focus-ring-offset); }
+
+.supplier-passes-group {
+  color: var(--hk-ink-dim);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  margin: 22px 0 0;
+  text-transform: uppercase;
+}
+
+.supplier-passes-legend { color: var(--hk-ink-faint); font-size: 0.8rem; margin: 14px 0 0; max-width: 70ch; }
+.supplier-passes-failed { align-items: center; display: flex; flex-wrap: wrap; gap: 8px 16px; }
+.event-day-section .supplier-passes-failed p { color: var(--hk-ink); font-weight: 600; margin: 0; }
+
+/* -- The sheet ------------------------------------------------------------ */
+
+.issue-pass-scrim {
+  background: var(--house-scrim);
+  display: flex;
+  inset: 0;
+  justify-content: flex-end;
+  position: fixed;
+  z-index: 1200;
+}
+
+.issue-pass-sheet {
+  animation: issue-pass-arrive var(--house-motion-reveal) var(--house-ease-out);
+  background: var(--reg-surface);
+  box-shadow: var(--house-shadow-overlay);
+  color: var(--reg-text-1);
+  display: flex;
+  flex-direction: column;
+  font-family: var(--house-sans);
+  height: 100%;
+  max-width: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  width: min(580px, 100%);
+}
+
+@keyframes issue-pass-arrive {
+  from { opacity: 0; transform: translateX(18px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .issue-pass-sheet { animation: none; }
+  .supplier-passes-action,
+  .issue-pass-button { transition: none; }
+}
+
+.issue-pass-header {
+  align-items: flex-start;
+  border-bottom: 1px solid var(--reg-rule);
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  padding: 22px 24px 18px;
+}
+.issue-pass-kicker {
+  color: var(--reg-text-2);
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  margin: 0 0 6px;
+  text-transform: uppercase;
+}
+.issue-pass-header h2 {
+  font-family: var(--house-serif);
+  font-size: clamp(1.5rem, 4vw, 1.9rem);
+  font-weight: 400;
+  line-height: 1.12;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.issue-pass-close {
+  align-items: center;
+  background: transparent;
+  border: 1px solid var(--reg-edge);
+  border-radius: var(--house-radius-pill);
+  color: var(--reg-text-1);
+  cursor: pointer;
+  display: inline-flex;
+  flex: 0 0 auto;
+  height: 44px;
+  justify-content: center;
+  width: 44px;
+}
+.issue-pass-close:hover:not(:disabled) { background: var(--reg-surface-hover); }
+.issue-pass-close:disabled { cursor: default; opacity: 0.55; }
+
+.issue-pass-body { display: grid; gap: 18px; padding: 20px 24px 28px; }
+.issue-pass-lede { font-size: 1rem; line-height: 1.55; margin: 0; }
+
+.issue-pass-group { border: 0; display: grid; gap: 12px; margin: 0; min-width: 0; padding: 0; }
+.issue-pass-group legend {
+  color: var(--reg-text-1);
+  font-family: var(--house-serif);
+  font-size: 1.2rem;
+  margin-bottom: 4px;
+  padding: 0;
+}
+
+.issue-pass-field { display: grid; gap: 6px; }
+.issue-pass-field > span,
+.issue-pass-field > label { color: var(--reg-text-2); font-size: 0.85rem; font-weight: 600; }
+.issue-pass-field small { color: var(--reg-text-2); font-size: 0.82rem; line-height: 1.45; }
+.issue-pass-field input,
+.issue-pass-field select,
+.issue-pass-field textarea {
+  background: var(--reg-raised);
+  border: 1px solid var(--reg-edge);
+  border-radius: var(--house-radius-control);
+  color: var(--reg-text-1);
+  font: inherit;
+  font-size: 1rem;
+  min-height: 48px;
+  padding: 10px 12px;
+  width: 100%;
+}
+.issue-pass-field textarea { font-family: var(--house-sans); line-height: 1.5; resize: vertical; }
+.issue-pass-field input:focus-visible,
+.issue-pass-field select:focus-visible,
+.issue-pass-field textarea:focus-visible,
+.issue-pass-button:focus-visible,
+.issue-pass-close:focus-visible,
+.issue-pass-part input:focus-visible {
+  outline: var(--vv-focus-ring);
+  outline-offset: var(--vv-focus-ring-offset);
+}
+
+.issue-pass-parts { display: grid; gap: 8px; list-style: none; margin: 0; padding: 0; }
+.issue-pass-part {
+  align-items: flex-start;
+  background: var(--reg-raised);
+  border: 1px solid var(--reg-rule);
+  border-radius: var(--house-radius-control);
+  cursor: pointer;
+  display: flex;
+  gap: 12px;
+  min-height: 48px;
+  padding: 12px;
+  transition: background-color var(--house-motion-hover) var(--house-ease-out);
+}
+.issue-pass-part:hover { background: var(--reg-surface-hover); }
+.issue-pass-part input { accent-color: var(--house-forest); flex: 0 0 auto; height: 22px; margin: 1px 0 0; width: 22px; }
+.issue-pass-part-text { display: grid; gap: 3px; min-width: 0; }
+.issue-pass-part-text strong { font-size: 0.98rem; overflow-wrap: anywhere; }
+.issue-pass-part-detail {
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  color: var(--reg-text-2);
+  display: -webkit-box;
+  font-size: 0.88rem;
+  line-height: 1.45;
+  overflow: hidden;
+}
+.issue-pass-part-meta { color: var(--reg-text-2); font-size: 0.8rem; font-weight: 600; }
+
+.issue-pass-note { color: var(--reg-text-2); font-size: 0.9rem; line-height: 1.5; margin: 0; }
+.issue-pass-status { color: var(--reg-text-1); font-weight: 600; margin: 0; min-height: 1.4em; }
+.issue-pass-error { color: var(--reg-alert); font-weight: 600; line-height: 1.5; margin: 0; }
+
+/* The decision panel: forest, as on the Enquiries desk. */
+.issue-pass-decision {
+  background: var(--reg-surface);
+  border-radius: 6px;
+  color: var(--reg-text-1);
+  display: grid;
+  gap: 10px;
+  padding: 18px 20px 20px;
+}
+.issue-pass-decision h3 { font-family: var(--house-serif); font-size: 1.25rem; font-weight: 400; margin: 0; }
+.issue-pass-decision p { color: var(--reg-text-1); font-size: 0.95rem; line-height: 1.55; margin: 0; }
+.issue-pass-decision .issue-pass-why { color: var(--reg-text-2); }
+.issue-pass-decision .issue-pass-button { justify-self: start; margin-top: 4px; }
+
+.issue-pass-row { display: flex; flex-wrap: wrap; gap: 10px; }
+.issue-pass-row.is-end { justify-content: flex-end; }
+
+.issue-pass-button {
+  align-items: center;
+  background: transparent;
+  border: 1px solid var(--reg-edge);
+  border-radius: var(--house-radius-control);
+  color: var(--reg-text-1);
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  font-size: 0.95rem;
+  font-weight: 600;
+  gap: 8px;
+  justify-content: center;
+  min-height: 48px;
+  padding: 0 18px;
+  transition: background-color var(--house-motion-hover) var(--house-ease-out), transform var(--house-motion-press) var(--house-ease-out);
+}
+.issue-pass-button:hover:not(:disabled) { background: var(--reg-surface-hover); }
+.issue-pass-button.is-primary { background: var(--reg-primary); border-color: var(--reg-primary); color: var(--reg-primary-ink); }
+.issue-pass-button.is-primary:hover:not(:disabled) { background: var(--reg-primary-hover); }
+.issue-pass-button:active:not(:disabled) { transform: scale(0.97); }
+.issue-pass-button:disabled { cursor: default; opacity: 0.6; }
+
+@media (max-width: 640px) {
+  .issue-pass-scrim { align-items: flex-end; }
+  .issue-pass-sheet { border-radius: 14px 14px 0 0; height: 94%; width: 100%; }
+  .issue-pass-header { padding: 18px 16px 14px; }
+  .issue-pass-body { padding: 16px 16px 24px; }
+  .issue-pass-decision .issue-pass-button,
+  .issue-pass-row .issue-pass-button { flex: 1 1 auto; justify-self: stretch; }
+}

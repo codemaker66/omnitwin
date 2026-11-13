@@ -6,15 +6,21 @@
 // when direct sun comes in at a window and falls on the floor. A window
 // admits the sun when it stands above that window's skyline (the roofs
 // across Glassford Street, hall-skyline.ts) and no further round than the
-// window's deep reveal allows: about 77° off the wall's normal for the wide
-// arched windows, 66° for the sashes (a 0.62 m reveal, measured on the
-// survey). All times are instants; the venue's clock is Europe/London.
+// window's reveal allows, as the hall draws it (hall-glazing.ts) and its
+// sun's shadow map sees it: the straight-through limit of its outer opening's
+// width over its depth from the room's plane to the outer face, about 71°
+// off the wall's normal for the arches (2.7 m through 0.92-0.95 m) and 52°
+// for the sashes (1.2 m through 0.92 m). (To 22 October the dial assumed a
+// 0.62 m reveal, 77° and 66°, while S2 drew the measured 0.92-0.98 m: the
+// times it gave and the sun the render drew disagreed at each span's ends.)
+// All times are instants; the venue's clock is Europe/London.
 // ---------------------------------------------------------------------------
 
 import { sunPosition, sunTimes, type SunTimes } from "../../lib/sky/ephemeris.js";
 import { msToWallInput, wallInputToMs, VENUE_TIME_ZONE } from "../../pages/diary/lib/board-time.js";
 import { HALL_OBSERVER, HALL_WINDOW_BEARING } from "./hall-site.js";
 import { HALL_WINDOW_SKYLINES, SKYLINE_AZIMUTH_END, SKYLINE_AZIMUTH_START, type HallWindowId } from "./hall-skyline.js";
+import { HALL_GLAZING, HALL_OPENINGS, HALL_SASH_OPENING_HALF_WIDTH, HALL_WALL_THICKNESS } from "./hall-spec.js";
 
 const MINUTE_MS = 60_000;
 /** Spacing of the drawn path, minutes. */
@@ -22,16 +28,37 @@ const PATH_STEP = 10;
 /** Spacing of the sun-on-the-floor search, minutes; edges are refined to the minute. */
 const FLOOR_STEP = 5;
 
-/** How far round from the wall's normal each window's reveal still admits the sun, degrees. */
-const REVEAL_LIMIT: Readonly<Record<HallWindowId, number>> = {
-  "arch-fireplace": 77,
-  "window-fireplace": 66,
-  "arch-centre": 77,
-  "window-end": 66,
-  "arch-end": 77,
-};
+/**
+ * A window's outer opening as the hall draws it (hall-glazing.ts): its width
+ * (an arch's own; a sash's masonry opening) and its depth from the room's
+ * plane to the outer face (the glazing's outer face, or the wall's where
+ * that is nearer: hall-glazing.ts revealOuterDepth), metres.
+ */
+export function windowReveal(window: HallWindowId): { readonly width: number; readonly depth: number } {
+  const glazing = HALL_GLAZING.find((entry) => entry.opening === window);
+  const opening = HALL_OPENINGS.find((entry) => entry.id === window);
+  if (glazing === undefined || opening === undefined) throw new Error(`No glazing for ${window}`);
+  const width = glazing.fanlight === null ? 2 * HALL_SASH_OPENING_HALF_WIDTH : opening.width;
+  const depth = -Math.max(glazing.outerDepth, -HALL_WALL_THICKNESS.window.thickness);
+  return { width, depth };
+}
 
-const WINDOW_IDS = Object.keys(REVEAL_LIMIT) as HallWindowId[];
+/** How far round from the wall's normal a window's reveal still admits the sun, degrees: atan(width / depth). */
+export function windowRevealLimit(window: HallWindowId): number {
+  const { width, depth } = windowReveal(window);
+  return (Math.atan2(width, depth) * 180) / Math.PI;
+}
+
+const WINDOW_IDS = Object.keys(HALL_WINDOW_SKYLINES) as HallWindowId[];
+
+/** windowRevealLimit for each window, worked out once. */
+const REVEAL_LIMIT: Readonly<Record<HallWindowId, number>> = {
+  "arch-fireplace": windowRevealLimit("arch-fireplace"),
+  "window-fireplace": windowRevealLimit("window-fireplace"),
+  "arch-centre": windowRevealLimit("arch-centre"),
+  "window-end": windowRevealLimit("window-end"),
+  "arch-end": windowRevealLimit("arch-end"),
+};
 
 /** The venue-local midnight that begins the day containing `at`. */
 export function hallDayStart(at: number): number {

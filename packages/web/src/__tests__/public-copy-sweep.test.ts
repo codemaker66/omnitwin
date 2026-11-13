@@ -81,6 +81,12 @@ const DIST_HANDOFF: readonly { readonly chunk: RegExp; readonly lane: string }[]
   { chunk: /^runtime-package-resolution-/u, lane: "Lane 4 — the planner's layers rail" },
   // "being prepared" — twin-copy.ts, the tour's unavailable line (GPU-scoped).
   { chunk: /^TwinPage-/u, lane: "Lane 3 / the 3D batch — the tour at /tour" },
+  // "being prepared" — SheetCheckPage.tsx's line for a printed sheet whose
+  // layout is not yet approved ("This room's layout is still being prepared.
+  // Ask the duty manager..."). It is the layout's real state for the hall team,
+  // not the tour's placeholder. First seen when CI began running this sweep on
+  // its own build (T-685, 5 November 2026).
+  { chunk: /^SheetCheckPage-/u, lane: "the hall team's paper check at /sheet-check" },
 ];
 
 /**
@@ -186,6 +192,43 @@ describe("public copy sweep — no engineering vocabulary on a public route", ()
   });
 });
 
+/**
+ * Claims the venue's own sources contradict (trust check, 28 October 2026),
+ * each with the source that does. Goal 07 forbids copy that claims what the
+ * venue has not verified.
+ */
+const CONTRADICTED: readonly { readonly text: string; readonly because: string }[] = [
+  {
+    text: "since 1791",
+    because: "the hall was first used in September 1794 (TheGlasgowStory; the venue's leaflet, \"Opened in 1794\"); 1791 is Robert Adam's design",
+  },
+  { text: "Six rooms", because: "the front door shows eight rooms; six is how many publish capacities" },
+];
+
+describe("public copy sweep — no claim the venue's own sources contradict", () => {
+  it.each(CONTRADICTED)("never says $text: $because", async ({ text }) => {
+    const offenders: string[] = [];
+    for (const relative of [...PUBLIC_COPY_SOURCES, "src/pages/landing/rite-copy.ts", "index.html"]) {
+      const body = withoutComments(await read(relative));
+      if (body.includes(text)) offenders.push(relative);
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it("counts the years the hall has stood lit from its first use, 1794", async () => {
+    const { HALL_LIT_YEARS } = await import("../pages/landing/rite-copy.js");
+    expect(HALL_LIT_YEARS).toBe(new Date().getFullYear() - 1794);
+    const { FRESH_HEADLINE_AFTER } = await import("../pages/fresh/fresh-copy.js");
+    expect(FRESH_HEADLINE_AFTER).toBe(`for ${String(new Date().getFullYear() - 1794)} years.`);
+  });
+
+  it("keeps the front door's meta description and the static tags one sentence", async () => {
+    const { HOME_META_DESCRIPTION } = await import("../pages/home-copy.js");
+    const html = await read("index.html");
+    expect(html.split(HOME_META_DESCRIPTION).length - 1).toBe(2);
+  });
+});
+
 describe("public copy sweep — every Enquire posts, none of them mails", () => {
   it.each(NO_MAILTO_SOURCES)("%s offers no mailto", async (relative) => {
     const body = withoutComments(await read(relative));
@@ -264,7 +307,10 @@ describe("public copy sweep — the built bundle", () => {
     if (files.length === 0) {
       // Vitest runs before `vite build` in CI's unit job, so `dist/` is absent
       // there and this says so rather than reporting a pass it did not earn.
-      // Run `pnpm --filter @omnitwin/web build` first to exercise it.
+      // Run `pnpm --filter @omnitwin/web build` first to exercise it. CI's
+      // Build job runs this file after its build with REQUIRE_WEB_DIST=1, where
+      // an empty dist/ is a failure (T-685).
+      expect(process.env["REQUIRE_WEB_DIST"], "the Build job must sweep the bundle it built").not.toBe("1");
       expect(existsSync(path.resolve("dist"))).toBe(false);
       return;
     }

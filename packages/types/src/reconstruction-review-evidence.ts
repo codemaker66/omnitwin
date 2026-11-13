@@ -84,13 +84,13 @@ const SceneAuthorityMapScopeSchema = z.discriminatedUnion("kind", [
   }).strict(),
   z.object({
     kind: z.literal("bounds_cvf"),
-    min: z.tuple([z.number().finite(), z.number().finite(), z.number().finite()]),
-    max: z.tuple([z.number().finite(), z.number().finite(), z.number().finite()]),
+    min: z.tuple([z.number(), z.number(), z.number()]),
+    max: z.tuple([z.number(), z.number(), z.number()]),
   }).strict(),
 ]).superRefine((scope, ctx) => {
   if (scope.kind === "twin_nodes" && new Set(scope.nodeIds).size !== scope.nodeIds.length) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["nodeIds"],
       message: "Scene Authority Map node IDs must be unique.",
     });
@@ -99,7 +99,7 @@ const SceneAuthorityMapScopeSchema = z.discriminatedUnion("kind", [
     for (const axis of [0, 1, 2] as const) {
       if (scope.min[axis] >= scope.max[axis]) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["max", axis],
           message: "Scene Authority Map bounds max must exceed min on every axis.",
         });
@@ -137,13 +137,13 @@ export const ReconstructionSceneAuthorityMapV0Schema = z.object({
   schemaVersion: z.literal(RECONSTRUCTION_SCENE_AUTHORITY_MAP_SCHEMA_VERSION),
   id: RuntimeManifestKeySchema,
   venueSlug: RuntimeSlugSchema,
-  generatedAt: z.string().datetime({ offset: true }),
+  generatedAt: z.iso.datetime({ offset: true }),
   regions: z.array(ReconstructionSceneAuthorityRegionV0Schema).min(1).max(2_000),
 }).strict().superRefine((map, ctx) => {
   const ids = map.regions.map((region) => region.id);
   if (new Set(ids).size !== ids.length) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["regions"],
       message: "Scene Authority Map region IDs must be unique.",
     });
@@ -216,7 +216,7 @@ export const ReconstructionReviewEvidenceArtifactRegistrationInputSchema = z.obj
   }
   if (parsed.data.venueSlug !== input.venueSlug) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["artifact", "venueSlug"],
       message: "Scene Authority Map venueSlug must match the registration scope.",
     });
@@ -227,7 +227,7 @@ export type ReconstructionReviewEvidenceArtifactRegistrationInput = z.infer<
 >;
 
 export const ReconstructionReviewEvidenceArtifactSchema = z.object({
-  id: z.string().uuid(),
+  id: z.uuid(),
   venueSlug: RuntimeSlugSchema,
   artifactKind: ReconstructionReviewEvidenceArtifactKindSchema,
   artifactId: RuntimeManifestKeySchema,
@@ -236,12 +236,12 @@ export const ReconstructionReviewEvidenceArtifactSchema = z.object({
   objectSha256: ReconstructionReleaseSha256Schema,
   sizeBytes: z.number().int().positive().max(4 * 1024 * 1024),
   schemaVersion: z.string().trim().min(1).max(120),
-  registeredBy: z.string().uuid(),
-  registeredAt: z.string().datetime({ offset: true }),
+  registeredBy: z.uuid(),
+  registeredAt: z.iso.datetime({ offset: true }),
 }).strict().superRefine((artifact, ctx) => {
   if (artifact.artifactDigest !== artifact.objectSha256) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["objectSha256"],
       message: "The immutable object digest must equal the canonical artifact digest.",
     });

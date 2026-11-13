@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent, type ReactElement } from "react";
-import { isValidOpportunityStageTransition } from "@omnitwin/types";
+import { isValidOpportunityStageTransition, type OpportunityLostTo } from "@omnitwin/types";
 import { Plus, X } from "lucide-react";
 import {
   addFollowUpTask, addOpportunityActivity, createOpportunity, getOpportunity, getPipeline, updateFollowUpTaskStatus,
@@ -11,8 +11,9 @@ import { useMediaQuery } from "../../hooks/use-media-query.js";
 import { useLatestRequest } from "../../hooks/use-latest-request.js";
 import { parsePoundsToMinor } from "../../lib/money-input.js";
 import { useAuthStore } from "../../stores/auth-store.js";
+import { useBoardClock } from "../../pages/hallkeeper/lib/use-board-clock.js";
 import { ActivityIndicator, ActivityStatus } from "../shared/Activity.js";
-import { deskGreeting, venueYear, type SummaryPart } from "./enquiries/enquiry-desk-format.js";
+import { deskGreeting, venueCalendarDate, venueYear, type SummaryPart } from "./enquiries/enquiry-desk-format.js";
 import { DealPanel, type DealDetail, type DealPanelProps, type DealSaving } from "./pipeline/DealPanel.js";
 import { PipelineLedger } from "./pipeline/PipelineLedger.js";
 import { PipelineOverview } from "./pipeline/PipelineOverview.js";
@@ -63,6 +64,9 @@ type DetailState =
 type Failure = DealPanelProps["failure"];
 
 /** "Couldn't save" in words that say what is and is not true afterwards. */
+/** A move refused because the deal is no longer where this screen read it. */
+const MOVED_ON_CODES: readonly string[] = ["INVALID_TRANSITION", "OPPORTUNITY_STAGE_CHANGED"];
+
 const FAILURE_WORDS: Readonly<Record<NonNullable<Failure>["where"], string>> = {
   step: "That did not save. The deal has not moved.",
   value: "The value did not save. It is as it was.",
@@ -90,7 +94,9 @@ export function PipelineDesk({ opportunityId = null, onOpportunityShown, onOpenP
   const wide = useMediaQuery(WIDE_DESK);
   const titleId = useId();
   const user = useAuthStore((state) => state.user);
-  const [nowMs] = useState(() => Date.now());
+  // The product's one clock, redrawn each whole minute, so a desk left open
+  // overnight groups its deals by the venue's today, not the day it opened.
+  const nowMs = useBoardClock(null);
   const [filter, setFilter] = useState<PipelineFilter>("all");
   const [list, setList] = useState<ListState>({ status: "loading" });
   const [loadingMore, setLoadingMore] = useState(false);
@@ -136,6 +142,18 @@ export function PipelineDesk({ opportunityId = null, onOpportunityShown, onOpenP
     setList({ status: "loading" });
     readList();
   }, [readList]);
+
+  // The server counts what is due by the venue's calendar day. When that day
+  // turns while the desk is open, the pipeline is read again, quietly, so the
+  // sentence's counts and the ledger's groups are of the same day.
+  const venueToday = venueCalendarDate(new Date(nowMs).toISOString());
+  const readOnDayRef = useRef(venueToday);
+  const shownCount = rows.length;
+  useEffect(() => {
+    if (readOnDayRef.current === venueToday) return;
+    readOnDayRef.current = venueToday;
+    readList(Math.max(PAGE, shownCount));
+  }, [venueToday, readList, shownCount]);
 
   const loadMore = (): void => {
     if (list.status !== "ready" || loadingMore) return;
@@ -267,11 +285,14 @@ export function PipelineDesk({ opportunityId = null, onOpportunityShown, onOpenP
       afterChange(id);
       return true;
     } catch (error: unknown) {
-      const reason = error instanceof ApiError && error.code === "INVALID_TRANSITION"
+      // The deal moved on since this screen read it: a move it no longer
+      // allows, or a colleague's move that landed first.
+      const movedOn = error instanceof ApiError && MOVED_ON_CODES.includes(error.code);
+      const reason = movedOn
         ? "That move is not open from this stage any more. The deal has been read again."
         : FAILURE_WORDS[where];
       setFailure({ where, message: reason });
-      if (error instanceof ApiError && error.code === "INVALID_TRANSITION") afterChange(id);
+      if (movedOn) afterChange(id);
       return false;
     } finally {
       setSaving(null);
@@ -283,9 +304,10 @@ export function PipelineDesk({ opportunityId = null, onOpportunityShown, onOpenP
       ? { status: "ready", detail: { ...state.detail, opportunity: next } } : state);
   };
 
-  const onMove = (to: string, reason: string | null): Promise<boolean> => attempt("step", "step", async () => {
+  const onMove = (to: string, reason: string | null, lostTo?: OpportunityLostTo): Promise<boolean> => attempt("step", "step", async () => {
     if (current === null) return;
-    const updated = await updateOpportunity(current.opportunity.id, { stage: to, note: reason });
+    // Who won rides the move to lost, with its reason, when it was said.
+    const updated = await updateOpportunity(current.opportunity.id, lostTo === undefined ? { stage: to, note: reason } : { stage: to, note: reason, lostTo });
     applyDeal(updated);
     setStampKey(Date.now());
     setAnnouncement(`${current.opportunity.title} is now ${dealStageWords(to).toLowerCase()}.`);

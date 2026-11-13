@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { useToolStore } from "../tool-store.js";
 import { useMeasurementStore } from "../measurement-store.js";
+import { useMarkupStore } from "../markup-store.js";
+import { useCatalogueStore } from "../catalogue-store.js";
+import { useSelectionStore } from "../selection-store.js";
+import { useGuidelineStore } from "../guideline-store.js";
 
 // ---------------------------------------------------------------------------
 // One authoritative tool mode, composed with the measurement store's own
@@ -12,6 +16,10 @@ import { useMeasurementStore } from "../measurement-store.js";
 beforeEach(() => {
   useToolStore.setState({ activeTool: "select", liveValue: null });
   useMeasurementStore.setState({ active: false, pendingPoint: null });
+  useMarkupStore.setState({ active: false, draftStroke: null });
+  useCatalogueStore.setState({ selectedItemId: null });
+  useSelectionStore.getState().clearSelection();
+  useGuidelineStore.setState({ active: false });
 });
 
 describe("tool-store", () => {
@@ -59,6 +67,47 @@ describe("tool-store", () => {
     useToolStore.getState().setTool("select");
     unsubscribe();
     expect(notifications).toBe(0);
+  });
+
+  // T-671 slice 5: the store is the only tool state (F-01, F-02). The toolbox
+  // kept its own Select/Add/Draw, so the deck's Done could put the pen down
+  // while the toolbox still held Draw, and D could not pick it up again.
+  it("holds the dock's tools: Add, Lay out, Measure and Draw", () => {
+    for (const tool of ["add", "layout", "measure", "draw", "select"] as const) {
+      useToolStore.getState().setTool(tool);
+      expect(useToolStore.getState().activeTool).toBe(tool);
+    }
+  });
+
+  it("picking up Draw arms the pen; putting it down disarms it", () => {
+    useToolStore.getState().setTool("draw");
+    expect(useMarkupStore.getState().active).toBe(true);
+    useToolStore.getState().setTool("add");
+    expect(useMarkupStore.getState().active).toBe(false);
+  });
+
+  it("picking up Draw puts down the piece in hand, the selection, the tape and the guidelines", () => {
+    useCatalogueStore.getState().selectItem("round-table-6ft");
+    useSelectionStore.getState().selectMultiple(["a", "b"]);
+    useGuidelineStore.getState().activate();
+    useToolStore.getState().setTool("measure");
+
+    useToolStore.getState().setTool("draw");
+
+    expect(useCatalogueStore.getState().selectedItemId).toBeNull();
+    expect(useSelectionStore.getState().selectedIds.size).toBe(0);
+    expect(useMeasurementStore.getState().active).toBe(false);
+    expect(useGuidelineStore.getState().active).toBe(false);
+  });
+
+  it("whatever puts the pen down elsewhere, the store follows, so D picks it up again", () => {
+    useToolStore.getState().setTool("draw");
+    useMarkupStore.getState().setActive(false);
+    expect(useToolStore.getState().activeTool).toBe("select");
+
+    useToolStore.getState().setTool("draw");
+    expect(useToolStore.getState().activeTool).toBe("draw");
+    expect(useMarkupStore.getState().active).toBe(true);
   });
 
   it("setLiveValue dedupes identical values", () => {

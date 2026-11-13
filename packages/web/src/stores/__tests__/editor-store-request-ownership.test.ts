@@ -6,15 +6,16 @@ import { useActionLogStore } from "../action-log-store.js";
 import { useSelectionStore } from "../selection-store.js";
 import { anonymousPlannerDraftKey } from "../../lib/anonymous-planner-draft.js";
 
+vi.mock("../../api/configuration-conflict.js", () => ({ parseRevisionConflict: vi.fn(() => null) }));
 vi.mock("../../api/configurations.js", () => ({
   getConfig: vi.fn(), getPublicConfig: vi.fn(), createPublicConfig: vi.fn(),
-  authBatchSave: vi.fn(), publicBatchSave: vi.fn(), parseRevisionConflict: vi.fn(() => null),
-}));
+  authBatchSave: vi.fn(), publicBatchSave: vi.fn(),}));
 vi.mock("../../api/spaces.js", () => ({ getSpace: vi.fn() }));
 vi.mock("../../api/action-log.js", () => ({
   postActionBatch: vi.fn(() => Promise.resolve({ accepted: 0, duplicates: 0 })),
 }));
 const configApi = vi.mocked(await import("../../api/configurations.js"));
+const conflictApi = vi.mocked(await import("../../api/configuration-conflict.js"));
 const spacesApi = vi.mocked(await import("../../api/spaces.js"));
 const actionApi = vi.mocked(await import("../../api/action-log.js"));
 
@@ -53,7 +54,7 @@ beforeEach(() => {
   store().reset();
   useActionLogStore.getState().reset();
   useSelectionStore.getState().clearSelection();
-  configApi.parseRevisionConflict.mockReturnValue(null);
+  conflictApi.parseRevisionConflict.mockReturnValue(null);
   spacesApi.getSpace.mockImplementation((_venue, id) => Promise.resolve(space(id)));
   actionApi.postActionBatch.mockResolvedValue({ accepted: 0, duplicates: 0 });
 });
@@ -61,7 +62,8 @@ beforeEach(() => {
 describe("configuration request ownership", () => {
   it("clears the previous configuration's save error and busy flag only after a new configuration commits", async () => {
     await open("A");
-    useEditorStore.setState({ isSaving: true, saveError: "A failed", saveConflict: { expectedRevision: 1, currentRevision: 2, message: "A changed" } });
+    useEditorStore.setState({ isSaving: true, saveError: "A failed", saveConflict: { expectedRevision: 1, currentRevision: 2, message: "A changed",
+      changedBy: null, changedAt: null, byYou: false, theirChange: null } });
     const next = deferred<Configuration>();
     configApi.getPublicConfig.mockReturnValueOnce(next.promise);
     const opening = store().loadConfiguration("B");
@@ -162,14 +164,14 @@ describe("configuration request ownership", () => {
       const log = useActionLogStore.getState();
       if (outcome === "success") pending.resolve({ objects: [placed("A")], revision: 2 });
       else {
-        if (outcome === "conflict") configApi.parseRevisionConflict.mockReturnValueOnce({ expectedRevision: 1, currentRevision: 3, message: "Old A conflict" });
+        if (outcome === "conflict") conflictApi.parseRevisionConflict.mockReturnValueOnce({ expectedRevision: 1, currentRevision: 3, message: "Old A conflict", changedBy: null, changedAt: null });
         pending.reject(new Error(`Old A ${outcome}`));
       }
       expect(await saving).toBe(false);
       expect(store()).toBe(current);
       expect(useSelectionStore.getState()).toBe(selected);
       expect(useActionLogStore.getState()).toBe(log);
-      configApi.parseRevisionConflict.mockReset().mockReturnValue(null);
+      conflictApi.parseRevisionConflict.mockReset().mockReturnValue(null);
   });
 
   it.each(["success", "failure"] as const)("allows B to save while A remains in flight without A's %s stopping B's save", async (outcome) => {

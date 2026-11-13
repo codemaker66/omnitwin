@@ -1,13 +1,28 @@
-import { create } from "zustand";
+import { create, type StateCreator } from "zustand";
 import type { Scene } from "three";
+import { isPlannerEditable, type ConfigurationReviewStatus } from "@omnitwin/types";
 import type { Space } from "../api/spaces.js";
 import type { PlacedObject, BatchObjectInput } from "../api/configurations.js";
 import * as configApi from "../api/configurations.js";
+import { parseRevisionConflict, type RevisionConflict } from "../api/configuration-conflict.js";
+import { ApiError } from "../api/client.js";
+import { reportFailure } from "../observability/failure-reports.js";
 import * as spacesApi from "../api/spaces.js";
 import {
+  discardPlannerDraft,
+  forgetPlannerDraft,
   persistAnonymousPlannerDraft,
+  plannerDraftBaseObjects,
+  plannerDraftKeyFor,
   readAnonymousPlannerDraft,
+  type AnonymousPlannerDraft,
 } from "../lib/anonymous-planner-draft.js";
+import { holdPlannerPageLock, isPlannerPageOpen, plannerPageId } from "../lib/planner-page-lock.js";
+import { signedOutOwnerFrom } from "../lib/planner-draft-storage.js";
+import { summariseLayoutChange, type LayoutChangeSummary } from "../lib/layout-change-summary.js";
+import { browserSaysOnline, readOnlineStatus, subscribeOnlineStatus } from "../lib/online-status.js";
+import { useAuthStore, type AuthUser } from "./auth-store.js";
+import { hasRole, VENUE_FLOOR_ROLES } from "../lib/role-capabilities.js";
 import { getCatalogueItem } from "../lib/catalogue.js";
 import { normalizeFurnitureScale } from "../lib/furniture-scale.js";
 import { isTableDressingApplicator } from "../lib/table-dressing.js";
@@ -17,6 +32,7 @@ import type { TableClothStyle, TableSettingStyle } from "../lib/placement.js";
 import {
   diffObjects,
   emptyHistory,
+  forgetHistoryIds,
   performRedo,
   performUndo,
   recordChange,
@@ -36,8 +52,10 @@ import { createActionEmitter } from "../lib/action-log.js";
 import { plannerActionContext } from "./planner-action-log.js";
 import { flushActionLog } from "./action-log-sync.js";
 import { postActionBatch } from "../api/action-log.js";
-import { isLayoutTimelineMutationLocked } from "../lib/layout-timeline-preview-lock.js";
+import { isLayoutTimelineMutationLocked, onLayoutTimelineMutationLockChange } from "../lib/layout-timeline-preview-lock.js";
 import { createOneShotHandoff } from "../lib/one-shot-handoff.js";
+import { changedBetween, locallyModifiedIds, rebaseOntoServer } from "../lib/layout-live/live-document.js";
+import { matchSavedLayout, serverHoldsLayout } from "../lib/saved-layout-content.js";
 
 // ---------------------------------------------------------------------------
 // Editor object — local representation with numeric transforms
@@ -168,12 +186,31 @@ export function editorToBatch(o: EditorObject): BatchObjectInput {
 
 interface EditorState {
   readonly configId: string | null;
+  /**
+   * What this layout is called, as the server has it. The API always returned
+   * it; the store dropped it, which is why the phone's top bar carried a
+   * hard-coded draft name. Null until a configuration loads, never a placeholder.
+   */
+  readonly configName: string | null;
+  /** The loaded layout is one of the venue's templates (a sample layout),
+   *  as the server says; false when it is not, or not said. */
+  readonly isTemplate: boolean;
   readonly spaceId: string | null;
   readonly venueId: string | null;
   readonly configRevision: number | null;
   readonly space: Space | null;
+  /** The last read of the open room's space failed, so `space` stays null
+   *  until another load: surfaces stop showing a working state for it. */
+  readonly spaceLoadFailed: boolean;
   readonly isPublicPreview: boolean;
   readonly objects: readonly EditorObject[];
+  /**
+   * The last document the server confirmed for this configuration (load,
+   * save echo, adopted refetch). Live co-editing rebases local edits from
+   * it; it is never sent anywhere. A restored anonymous draft keeps the
+   * server's objects here, not the draft's.
+   */
+  readonly baseObjects: readonly EditorObject[];
   readonly selectedObjectId: string | null;
   readonly isDirty: boolean;
   readonly isSaving: boolean;
@@ -188,7 +225,38 @@ interface EditorState {
    * and leaves the scene rendering.
    */
   readonly saveError: string | null;
-  readonly saveConflict: configApi.RevisionConflict | null;
+  /** The ApiError code of the save failure beside `saveError`
+   *  (NETWORK_ERROR, UNAUTHORIZED, CONFIG_LOCKED, REVISION_CONFLICT, ...);
+   *  null when there is none or the failure was not an API error. */
+  readonly saveErrorCode: string | null;
+  readonly saveConflict: EditorSaveConflict | null;
+  /** How many objects differ from `baseObjects` right now: changed, placed
+   *  or removed (objects, not edits). Kept live with every change. */
+  readonly pendingChanges: number;
+  /** `pendingChanges` as it was when the save in flight started, so
+   *  "Saving · 2 changes" never drops mid-request; null when not saving. */
+  readonly savingChanges: number | null;
+  /** The browser's network, from navigator.onLine and its online/offline
+   *  events. A save that fails for want of a network while this is false is
+   *  offline, not failed: no `saveError`, the work stays dirty. */
+  readonly isOnline: boolean;
+  /** The current unsaved work is stored on this device (localStorage) and
+   *  will be offered again after a reload. False when nothing is unsaved,
+   *  the browser refused the write, the layout is over the size cap, or a
+   *  pointer gesture's frames are still to be written at its end. */
+  readonly keptOnDevice: boolean;
+  /** The layout's review state as the server last said (load, live refetch,
+   *  the review panel); null for guest previews and before it is known. */
+  readonly reviewStatus: ConfigurationReviewStatus | null;
+  /** The server refused this layout's last save as CONFIG_LOCKED. Cleared by
+   *  a load, a successful save, or an editable review status. */
+  readonly reviewLockRefused: boolean;
+  /** Why this layout is view-only now, or null when it is editable.
+   *  "phase-preview": a frozen timeline phase is being previewed (edits are
+   *  blocked). "in-review": submitted or under review, or the server refused
+   *  a save as CONFIG_LOCKED (admins are never locked by status). The store
+   *  does not block edits for "in-review"; the server refuses the save. */
+  readonly lockReason: EditorLockReason | null;
   // Punch list #24: the live Three.js scene ref, set by SceneProvider
   // inside the Canvas. Needed by the ortho-capture utility which runs
   // outside the Canvas (in SaveSendPanel) to generate the floor plan
@@ -200,6 +268,34 @@ interface EditorState {
    * store. Cleared whenever a different document is loaded.
    */
   readonly history: EditorHistory<EditorObject>;
+  /** Unsaved work this device kept, restored as the layout opened (QoL D-01):
+   *  what the receipt says. Stays while it saves; the person's next change
+   *  (or another load) lets it go. Null when nothing was restored. */
+  readonly restoredFromDevice: RestoredWork | null;
+  /** Another layout opened in this page before this one's last changes
+   *  reached the server (QoL D-X3). Kept through that switch, the room
+   *  switch's reset included; the next change, or opening that layout again,
+   *  lets it go. */
+  readonly leftBehind: LeftBehindWork | null;
+}
+
+/** Work this device kept, as the restore receipt states it. */
+export interface RestoredWork {
+  /** Objects that differ from the server's copy: changed, placed or removed. */
+  readonly changes: number;
+  /** When the work was last kept here, so last edited. */
+  readonly editedAt: Date;
+}
+
+/** A layout whose unsaved work stayed behind when another one opened. */
+export interface LeftBehindWork {
+  readonly configId: string;
+  /** Its room, as the venue names it; null when not known. */
+  readonly roomName: string | null;
+  /** The work is kept on this device (false: it is lost, and the note says so). */
+  readonly kept: boolean;
+  /** Opening the layout again sends it: no conflict or review lock waits. */
+  readonly savesOnReturn: boolean;
 }
 
 interface EditorActions {
@@ -207,7 +303,9 @@ interface EditorActions {
    * Load a configuration by ID.
    *
    * The endpoint depends on `isAuthenticated`:
-   *   - true  → `getConfig()`        — auth path, enforces ownership/venue access
+   *   - true  → `getConfig()`        — auth path, enforces ownership/venue access;
+   *                                    a refusal (403) tries the public path, so a
+   *                                    preview a guest can open still opens
    *   - false → `getPublicConfig()`  — public path, only returns public previews
    *
    * Punch list #2 / #33: previously this always called `getPublicConfig()`,
@@ -243,11 +341,53 @@ interface EditorActions {
   readonly removeObject: (objectId: string) => void;
   readonly selectObject: (id: string) => void;
   readonly deselectObject: () => void;
-  /** Save to server. Uses public endpoint for preview configs, authenticated for claimed. */
-  readonly saveToServer: (isAuthenticated?: boolean) => Promise<boolean>;
-  /** Reload the server copy after an explicit conflict acknowledgement. */
+  /** Save to server. A claimed layout saves through the authenticated endpoint;
+   *  a public preview through the public one, unless the person is signed in
+   *  and on its venue's floor (or a platform admin), whom the authenticated
+   *  endpoint answers. `transport.keepalive` lets a save sent as the page
+   *  hides or closes outlive it. */
+  readonly saveToServer: (isAuthenticated?: boolean, transport?: configApi.BatchSaveTransport) => Promise<boolean>;
+  /** Reload the server copy after an explicit conflict acknowledgement.
+   *  This device's copy of the layout's unsaved work is discarded first, or
+   *  the reload would restore it over the version the person chose. */
   readonly reloadAfterConflict: (isAuthenticated?: boolean) => Promise<void>;
-  /** Dismiss the current save-error toast. */
+  /** "Show her version": reloadAfterConflict under a plain name (the
+   *  signed-in state is read from the auth store when not given). */
+  readonly showTheirVersion: (isAuthenticated?: boolean) => Promise<void>;
+  /**
+   * "Keep mine": save this document over the newer revision. The batch save
+   * is a full sync, so the base revision becomes the conflict's current one
+   * and the whole document goes; the other version stays on the server as
+   * its revision row (History). An object of mine their version no longer
+   * has is placed again (a new row), never dropped. The save reports a third
+   * version as a fresh conflict, live room or not. True when the save landed
+   * (the conflict is then cleared and the document on screen is what was
+   * kept); false with nothing to keep, when their version cannot be read, or
+   * when the save did not land (the conflict stays, and a newer one, an
+   * offline state or the save error says why).
+   */
+  readonly keepMine: (isAuthenticated?: boolean) => Promise<boolean>;
+  /** The review state the review panel read or set for this layout. */
+  readonly setReviewStatus: (configId: string, status: ConfigurationReviewStatus | null) => void;
+  /**
+   * Live co-editing: take a refetched server document. Clean → adopted
+   * wholesale; dirty → this client's edits rebased onto it object by object
+   * (rebaseOntoServer). Refused while a save is in flight or a pointer
+   * gesture owns the document ("busy" — retry after), and for a revision no
+   * newer than the one held ("stale"). While a conflict waits for the
+   * person's choice nothing is merged ("held"): a newer copy becomes the
+   * version they are shown and kept against, and this document stays as it is.
+   */
+  readonly adoptServerConfiguration: (config: configApi.Configuration, options?: AdoptOptions) => AdoptOutcome;
+  /**
+   * Live co-editing: a later remote write took these objects. Local state for
+   * each goes back to the server base and stays tied to it until this person
+   * edits the object again, so this client's saves never overwrite the
+   * later write with an older local value. Not an undoable change.
+   */
+  readonly yieldObjectsToRemote: (ids: readonly string[]) => void;
+  /** Dismiss the current save-error toast. A conflict is not dismissed with
+   *  it: only the person's choice (keepMine, showTheirVersion) ends one. */
   readonly clearSaveError: () => void;
   readonly reset: () => void;
   /**
@@ -272,6 +412,99 @@ interface EditorActions {
 }
 
 type EditorStore = EditorState & EditorActions;
+
+/** A save met a newer revision: the server's facts plus what this client
+ *  derived from the newer version it then read. */
+export interface EditorSaveConflict extends RevisionConflict {
+  /** The newer revision is this signed-in person's own (another tab or
+   *  device); false for guests and whenever the author is not known. */
+  readonly byYou: boolean;
+  /** What the newer revision changed against the version this editor was
+   *  working from (`baseObjects`); null when that version could not be read
+   *  or the server had moved on again by the time it was. */
+  readonly theirChange: LayoutChangeSummary | null;
+}
+
+export type EditorLockReason = "phase-preview" | "in-review";
+
+export interface AdoptOptions {
+  /** The 409 retry holds isSaving through its own refetch; only it may adopt then. */
+  readonly whileSaving?: boolean;
+  /** Ask for the autosave when rebased edits remain (default true). */
+  readonly requestSave?: boolean;
+}
+
+export type AdoptOutcome =
+  | { readonly status: "adopted" | "rebased"; readonly lostToRemoteDelete: readonly EditorObject[] }
+  | { readonly status: "stale" | "busy" | "ignored" | "held" };
+
+/** Live co-editing hooks, registered by the live client while connected. */
+export interface EditorLiveHooks {
+  /** Every local document change (gesture frames included), before → after. */
+  readonly onLocalChange: (before: readonly EditorObject[], after: readonly EditorObject[]) => void;
+  /** A save committed; idMap holds local-id → server-id for new placements. */
+  readonly onSaved: (revision: number, idMap: ReadonlyMap<string, string>) => void;
+}
+
+let liveHooks: EditorLiveHooks | null = null;
+/** "rebase": a 409 refetches, rebases and retries once (live co-editing).
+ *  "report": today's behaviour — surface the conflict and wait. */
+let conflictPolicy: "report" | "rebase" = "report";
+/** Depth of the 409 rebase-and-retry in progress: one retry per save. */
+let rebaseRetryDepth = 0;
+/** Objects a later remote write owns; kept equal to base until re-edited. */
+const yieldedIds = new Set<string>();
+
+/** Hooks are present only while in the live room. */
+export function setEditorLiveHooks(hooks: EditorLiveHooks | null): void {
+  liveHooks = hooks;
+}
+
+/** "rebase" while the live client is mounted — connected or reconnecting — so
+ *  a 409 during a dropped connection rebases instead of offering a reload
+ *  that would discard this person's work. */
+export function setEditorConflictPolicy(policy: "report" | "rebase"): void {
+  conflictPolicy = policy;
+}
+
+/** Whether a pointer gesture owns the open document right now (live
+ *  co-editing defers remote writes to the object being dragged). */
+export function isEditorGestureActive(): boolean {
+  return gestureOwnsCurrentDocument();
+}
+
+/** The objects currently yielded to a later remote write (tests, live UI). */
+export function editorYieldedIds(): ReadonlySet<string> {
+  return yieldedIds;
+}
+
+function notifyLocalChange(before: readonly EditorObject[], after: readonly EditorObject[]): void {
+  if (before === after) return;
+  if (yieldedIds.size > 0) {
+    const prior = new Map(before.map((object) => [object.id, object]));
+    for (const object of after) {
+      // Re-edited by this person: it is theirs again (their write is later).
+      if (yieldedIds.has(object.id) && prior.get(object.id) !== object) yieldedIds.delete(object.id);
+    }
+  }
+  liveHooks?.onLocalChange(before, after);
+}
+
+/** Keep yielded objects equal to the server's copy. */
+function snapYieldedToBase(objects: readonly EditorObject[], base: readonly EditorObject[]): readonly EditorObject[] {
+  if (yieldedIds.size === 0) return objects;
+  const baseById = new Map(base.map((object) => [object.id, object]));
+  const next: EditorObject[] = [];
+  for (const object of objects) {
+    if (!yieldedIds.has(object.id)) {
+      next.push(object);
+      continue;
+    }
+    const confirmed = baseById.get(object.id);
+    if (confirmed !== undefined) next.push(confirmed);
+  }
+  return next;
+}
 
 let localIdCounter = 0;
 
@@ -350,12 +583,27 @@ function gestureOwnsCurrentDocument(): boolean {
     && activeHistoryGesture.venueId === current.venueId;
 }
 
+/** A save was asked for while no bridge was listening (the load that
+ *  restores kept work finishes before the planner, and its bridge, shows). */
+let autosaveWaiting = false;
+
 /**
  * Register the auto-save scheduler (owned by EditorBridge) so undo/redo
- * can request a debounced save without the store importing the bridge.
+ * can request a debounced save without the store importing the bridge. A
+ * request made while none was registered is handed to the next one.
  */
 export function setEditorAutosaveRequester(requester: (() => void) | null): void {
   autosaveRequester = requester;
+  if (requester !== null && autosaveWaiting) {
+    autosaveWaiting = false;
+    requester();
+  }
+}
+
+/** Ask the bridge for the debounced save, now or as soon as one is listening. */
+function requestAutosave(): void {
+  if (autosaveRequester === null) autosaveWaiting = true;
+  else autosaveRequester();
 }
 
 function currentEpoch(): number {
@@ -486,12 +734,16 @@ function historyStepPatch(step: HistoryStep<EditorObject>): Partial<EditorState>
 
 const INITIAL_STATE: EditorState = {
   configId: null,
+  configName: null,
+  isTemplate: false,
   spaceId: null,
   venueId: null,
   configRevision: null,
   space: null,
+  spaceLoadFailed: false,
   isPublicPreview: false,
   objects: [],
+  baseObjects: [],
   selectedObjectId: null,
   isDirty: false,
   isSaving: false,
@@ -499,10 +751,27 @@ const INITIAL_STATE: EditorState = {
   isLoading: false,
   error: null,
   saveError: null,
+  saveErrorCode: null,
   saveConflict: null,
+  pendingChanges: 0,
+  savingChanges: null,
+  isOnline: readOnlineStatus(),
+  keptOnDevice: false,
+  reviewStatus: null,
+  reviewLockRefused: false,
+  lockReason: null,
   scene: null,
   history: emptyHistory<EditorObject>(),
+  restoredFromDevice: null,
+  leftBehind: null,
 };
+
+/** What every failed-for-conflict save says (v1 surfaces print it). */
+const CONFLICT_SAVE_ERROR = "This layout changed in another tab. Reload the server copy before saving again.";
+/** The server's own words for a conflict, for one this client finds itself. */
+const SERVER_CONFLICT_MESSAGE = "Layout changed on the server. Reload before saving again.";
+/** "Keep mine" could not read the version it would save over. */
+const KEEP_MINE_UNREAD_ERROR = "The newer version could not be read, so nothing was saved. Try again.";
 
 // A configuration ID alone cannot own an async result: A → B → A opens a
 // different editing session for A. Loads compete by request; saves/room reads
@@ -548,7 +817,245 @@ export function isCurrentEditorSession(session: EditorSession): boolean {
   return session.generation === configurationSession && session.configId === useEditorStore.getState().configId;
 }
 
-export const useEditorStore = create<EditorStore>((set, get) => ({
+// ---------------------------------------------------------------------------
+// Save facts derived on every write: one pass inside `set` (and the store's
+// external setState), so no subscriber ever sees a state whose count, device
+// copy or lock reason belongs to the previous document.
+// ---------------------------------------------------------------------------
+
+/** The newer server version a reported conflict was summarised from; kept
+ *  for "Keep mine", which saves over exactly that revision. */
+let conflictServerCopy: {
+  readonly session: number;
+  readonly configId: string;
+  readonly revision: number;
+  readonly objects: readonly EditorObject[];
+} | null = null;
+
+/** A "Keep mine" is under way (reading their version or saving): one at a time. */
+let keepMineInFlight = false;
+
+/** The sign-in another tab ended (forgetting its drafts): while this tab still
+ *  holds that very sign-in, it keeps nothing of theirs on this device. A new
+ *  sign-in is a new user object (ClerkAuthBridge), so it keeps work again. */
+let signedOutUser: AuthUser | null = null;
+
+function signedOutHere(): boolean {
+  const user = useAuthStore.getState().user;
+  return user !== null && user === signedOutUser;
+}
+
+/** Whose unsaved work this device would keep: the signed-in person, else a guest. */
+function draftOwner(): string | null {
+  return useAuthStore.getState().user?.id ?? null;
+}
+
+const DRAFT_FIELDS = [
+  "configId", "spaceId", "venueId", "configRevision", "isPublicPreview", "objects", "baseObjects", "isDirty",
+] as const satisfies readonly (keyof EditorState)[];
+
+function keepWorkOnDevice(state: EditorState): boolean {
+  if (signedOutHere()) return false;
+  return persistAnonymousPlannerDraft({
+    configId: state.configId,
+    spaceId: state.spaceId,
+    venueId: state.venueId,
+    configRevision: state.configRevision,
+    isPublicPreview: state.isPublicPreview,
+    objects: state.objects,
+    baseObjects: state.baseObjects,
+    isDirty: state.isDirty,
+    ownerUserId: draftOwner(),
+    writerPageId: plannerPageId(),
+  });
+}
+
+/** The newer version a conflict is against, when this client holds it. */
+function heldServerCopy(conflict: EditorSaveConflict, configId: string): readonly EditorObject[] | null {
+  return conflictServerCopy !== null
+    && conflictServerCopy.session === configurationSession
+    && conflictServerCopy.configId === configId
+    && conflictServerCopy.revision === conflict.currentRevision
+    ? conflictServerCopy.objects
+    : null;
+}
+
+/**
+ * The same conflict, now against a version the server moved on to while the
+ * person was choosing. Who made it and when belonged to the earlier version,
+ * so they become unknown; what changed is read afresh against `base`.
+ */
+function againstNewerVersion(
+  conflict: EditorSaveConflict,
+  revision: number,
+  base: readonly EditorObject[],
+  theirs: readonly EditorObject[],
+): EditorSaveConflict {
+  return {
+    ...conflict,
+    currentRevision: revision,
+    changedBy: null,
+    changedAt: null,
+    byYou: false,
+    theirChange: summariseLayoutChange(base, theirs),
+  };
+}
+
+function lockReasonFor(state: EditorState): EditorLockReason | null {
+  if (isLayoutTimelineMutationLocked()) return "phase-preview";
+  if (state.reviewLockRefused) return "in-review";
+  // The server lets the layout's own venue admin, and a platform admin, edit
+  // in every state (canOverrideReviewLock in require-editable-config); another
+  // venue's admin who owns the layout waits for its review like any planner.
+  const user = useAuthStore.getState().user;
+  if (user?.platformRole === "admin" || (user?.role === "admin" && user.venueId !== null && user.venueId === state.venueId)) return null;
+  return state.reviewStatus === "submitted" || state.reviewStatus === "under_review" ? "in-review" : null;
+}
+
+type DerivedSaveFacts = Pick<EditorState, "pendingChanges" | "savingChanges" | "keptOnDevice" | "lockReason">;
+
+function deriveSaveFacts(previous: EditorStore, next: EditorStore): DerivedSaveFacts {
+  const documentChanged = next.objects !== previous.objects || next.baseObjects !== previous.baseObjects;
+  const pendingChanges = documentChanged ? changedBetween(next.baseObjects, next.objects).size : next.pendingChanges;
+  const savingChanges = !next.isSaving
+    ? null
+    : !previous.isSaving || next.savingChanges === null ? pendingChanges : next.savingChanges;
+  let keptOnDevice = next.keptOnDevice;
+  if (DRAFT_FIELDS.some((field) => next[field] !== previous[field])) {
+    // A pointer gesture's frames are written once, at its end (endHistoryGesture):
+    // until then the copy here is older than the work on screen.
+    const deferred = next.isDirty && next.configId === previous.configId && gestureOwnsCurrentDocument();
+    keptOnDevice = deferred ? false : keepWorkOnDevice(next);
+  }
+  return { pendingChanges, savingChanges, keptOnDevice, lockReason: lockReasonFor(next) };
+}
+
+type EditorStoreUpdate = EditorStore | Partial<EditorStore> | ((state: EditorStore) => EditorStore | Partial<EditorStore>);
+
+/** The newest step on the undo timeline: it moves with every change the
+ *  person makes, undo and redo included, and stays put through a save. */
+function timelineTop(history: EditorHistory<EditorObject>): number {
+  return history.past.at(-1)?.seq ?? 0;
+}
+
+/**
+ * The restore receipt and the note about a layout left behind stay until the
+ * person's next change to the open layout. A write that sets either itself
+ * (a load) keeps what it set.
+ */
+function settledNotices(previous: EditorStore, next: EditorStore, patch: Partial<EditorStore>): Partial<EditorState> {
+  if (next.restoredFromDevice === null && next.leftBehind === null) return {};
+  if (next.configId === null || next.configId !== previous.configId) return {};
+  if (timelineTop(next.history) === timelineTop(previous.history)) return {};
+  return {
+    ...("restoredFromDevice" in patch ? {} : { restoredFromDevice: null }),
+    ...("leftBehind" in patch ? {} : { leftBehind: null }),
+  };
+}
+
+function withSaveFacts(initializer: StateCreator<EditorStore>): StateCreator<EditorStore> {
+  return (rawSet, get, api) => {
+    // Merging covers both of zustand's forms: a replace carries every field.
+    const setWithFacts = (update: EditorStoreUpdate): void => {
+      const previous = get();
+      const patch = typeof update === "function" ? update(previous) : update;
+      const next: EditorStore = { ...previous, ...patch };
+      rawSet({ ...next, ...settledNotices(previous, next, patch), ...deriveSaveFacts(previous, next) }, true);
+    };
+    api.setState = setWithFacts;
+    return initializer(setWithFacts, get, api);
+  };
+}
+
+function bumpLocalIdsPast(objects: readonly EditorObject[]): void {
+  for (const object of objects) {
+    const match = /^local-(\d+)$/u.exec(object.id);
+    if (match?.[1] !== undefined) localIdCounter = Math.max(localIdCounter, Number(match[1]));
+  }
+}
+
+/**
+ * Whether the signed-in routes answer this person for a public preview. It
+ * names no owner, so they admit only the floor at its venue and a platform
+ * admin (the API's canAccessResource; claim-new-draft-postgres.test.ts holds
+ * the refusal for everyone else).
+ */
+function signedInRoutesAnswerPreview(venueId: string | null): boolean {
+  const user = useAuthStore.getState().user;
+  if (user === null) return false;
+  if (user.platformRole === "admin") return true;
+  return venueId !== null && user.venueId === venueId && hasRole(VENUE_FLOOR_ROLES, user.role);
+}
+
+/**
+ * Which routes read and save the open layout. One a person owns goes through
+ * the signed-in routes. A public preview does so only for those they answer;
+ * anyone else, signed in or not, uses the public routes, as the guest who made
+ * it does. The choice used to follow the sign-in alone, so a signed-in client's
+ * every save to a preview was refused (audit editor-save-1).
+ */
+function usesSignedInRoutes(
+  layout: Pick<EditorState, "isPublicPreview" | "venueId">,
+  isAuthenticated: boolean | undefined,
+): boolean {
+  if (!layout.isPublicPreview) return true;
+  return isAuthenticated === true && signedInRoutesAnswerPreview(layout.venueId);
+}
+
+/**
+ * The read that opens a layout. A signed-in person's goes through the
+ * signed-in route, which refuses a public preview to anyone off its venue's
+ * floor. A guest could open that preview, so a refused read tries the public
+ * route before giving up, and gives the refusal when that has nothing either.
+ */
+async function readLayoutToOpen(
+  configId: string,
+  isAuthenticated: boolean | undefined,
+  handedOff: configApi.Configuration | null,
+): Promise<configApi.Configuration> {
+  if (isAuthenticated !== true) return handedOff ?? await configApi.getPublicConfig(configId);
+  try {
+    return await configApi.getConfig(configId);
+  } catch (refusal) {
+    if (!(refusal instanceof ApiError) || refusal.status !== 403) throw refusal;
+    try {
+      return handedOff ?? await configApi.getPublicConfig(configId);
+    } catch {
+      throw refusal;
+    }
+  }
+}
+
+/** The server's current copy of the layout, or null when it cannot be read. */
+async function readServerCopy(configId: string, useAuthPath: boolean): Promise<configApi.Configuration | null> {
+  try {
+    const config = useAuthPath ? await configApi.getConfig(configId) : await configApi.getPublicConfig(configId);
+    return config.id === configId ? config : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The unsaved work this device kept for the layout being opened. */
+function draftForLoad(config: configApi.Configuration, isAuthenticated: boolean | undefined): AnonymousPlannerDraft | null {
+  const expected = { spaceId: config.spaceId, venueId: config.venueId, baseRevision: config.revision };
+  const owner = isAuthenticated === true ? draftOwner() : null;
+  const own = owner === null ? null : readAnonymousPlannerDraft(config.id, { ...expected, ownerUserId: owner });
+  return own ?? (config.isPublicPreview ? readAnonymousPlannerDraft(config.id, expected) : null);
+}
+
+/**
+ * The draft, unless another open page wrote it: that page's in-progress work
+ * is its own to save, so this page opens the server's copy and leaves the
+ * draft where it is. Work a closed page left behind (or one the browser cannot
+ * vouch for either way) is the person's to pick up here.
+ */
+async function draftNotHeldElsewhere(draft: AnonymousPlannerDraft | null): Promise<AnonymousPlannerDraft | null> {
+  if (draft?.writerPageId === undefined || draft.writerPageId === plannerPageId()) return draft;
+  return await isPlannerPageOpen(draft.writerPageId) === true ? null : draft;
+}
+
+export const useEditorStore = create<EditorStore>()(withSaveFacts((set, get) => ({
   ...INITIAL_STATE,
 
   loadConfiguration: async (configId, isAuthenticated) => {
@@ -556,10 +1063,24 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     // Taken by every load, so a handoff never outlives the load it was for.
     const handedOff = publicConfigurationHandoff.take(configId);
     set({ isLoading: true, error: null });
+    // Another layout is opening in this page (QoL D-X3): the open one's
+    // unsaved work goes first, beside the read, for up to 2 s. Its autosave
+    // would otherwise wake to find this layout loaded and clean.
+    const leaving = get().configId;
+    const outgoing = leaving !== null && leaving !== configId ? saveBeforeLayoutChange() : null;
     try {
-      const config = isAuthenticated === true
-        ? await configApi.getConfig(configId)
-        : handedOff ?? await configApi.getPublicConfig(configId);
+      const [config, outgoingOutcome] = await Promise.all([
+        readLayoutToOpen(configId, isAuthenticated, handedOff),
+        outgoing,
+      ]);
+      if (request !== configurationLoadRequest) return;
+      // Neither saved nor kept here: it is lost with the switch, and the person
+      // is told. A save that landed after the outgoing check had looked (the
+      // route unmounting flushes too) means nothing was lost after all.
+      const stillUnsaved = get().configId === leaving && get().isDirty;
+      const lostOnLeaving = outgoingOutcome === "not-kept" && stillUnsaved ? leftBehindFor(get(), false) : null;
+      // Unsaved work this device kept (another open page's stays that page's).
+      const localDraft = await draftNotHeldElsewhere(draftForLoad(config, isAuthenticated));
       if (request !== configurationLoadRequest) return;
       // A GET may have captured its row before a concurrent save was accepted.
       // Reloading cannot roll an acknowledged revision (or newer local edits)
@@ -570,37 +1091,83 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         return;
       }
       const serverObjects = (config.objects ?? []).map(placedObjectToEditor);
-      const localDraft = config.isPublicPreview
-        ? readAnonymousPlannerDraft(config.id, {
-          spaceId: config.spaceId,
-          venueId: config.venueId,
-          baseRevision: config.revision,
-        })
+      // One edited from this revision restores as it is. One edited from any
+      // other revision restores onto the base it was edited from, at that
+      // revision, as a conflict the person settles before anything is saved:
+      // it never overwrites the newer copy, and nothing (no autosave, no live
+      // refetch) merges it. This load already holds their version.
+      const draftIsCurrent = localDraft !== null && localDraft.baseRevision === config.revision;
+      const draftBase = localDraft === null ? null : draftIsCurrent ? serverObjects : plannerDraftBaseObjects(localDraft);
+      // QoL D-X2: a save sent as the page closed can land unheard, leaving a
+      // kept copy a revision behind a server that already holds it. Only a
+      // copy with work the server lacks restores, so that is no conflict; nor
+      // is a copy that changes nothing.
+      const keptWork = localDraft !== null && draftBase !== null
+        && changedBetween(draftBase, localDraft.objects).size > 0
+        && !serverHoldsLayout(localDraft.objects, serverObjects, (id) => EDITOR_HISTORY_IDS.isLocalId(id))
+        ? localDraft
         : null;
-      const objects = localDraft?.objects ?? serverObjects;
-      const restoredAnonymousDraft = localDraft !== null;
+      const staleDraftBase = keptWork !== null && !draftIsCurrent ? draftBase : null;
+      const restoredDraft = keptWork;
+      const objects = restoredDraft?.objects ?? serverObjects;
+      if (restoredDraft !== null) bumpLocalIdsPast(restoredDraft.objects);
+      const loadConflict: EditorSaveConflict | null = restoredDraft === null || staleDraftBase === null ? null : {
+        expectedRevision: restoredDraft.baseRevision,
+        currentRevision: config.revision,
+        message: SERVER_CONFLICT_MESSAGE,
+        // A read of the layout does not say who made its revision, or when.
+        changedBy: null,
+        changedAt: null,
+        byYou: false,
+        // A draft ahead of the server is not behind a newer change of anyone's:
+        // what the server holds instead is unknown, not "their change".
+        theirChange: restoredDraft.baseRevision < config.revision
+          ? summariseLayoutChange(staleDraftBase, serverObjects)
+          : null,
+      };
       // G4: capture the outgoing timeline at the LAST moment before the
       // reset — a gesture landing during the awaits above advances the live
       // history, and a stale snapshot would lose it (reviewer HIGH).
       const previousHistory = get().history;
       const previousRevision = get().configRevision;
       const previousWasPublic = get().isPublicPreview;
+      // A kept copy that restores nothing has done its work.
+      if (localDraft !== null && restoredDraft === null) forgetPlannerDraft(localDraft);
+      const restoreBase = staleDraftBase ?? serverObjects;
+      const leftBehind = lostOnLeaving ?? get().leftBehind;
       configurationSession += 1;
+      yieldedIds.clear();
+      conflictServerCopy = loadConflict === null
+        ? null
+        : { session: configurationSession, configId: config.id, revision: config.revision, objects: serverObjects };
       set({
         configId: config.id,
+        configName: config.name,
+        isTemplate: config.isTemplate === true,
         spaceId: config.spaceId,
         venueId: config.venueId,
-        configRevision: config.revision,
+        configRevision: loadConflict === null ? config.revision : loadConflict.expectedRevision,
         isPublicPreview: config.isPublicPreview,
         objects,
-        isDirty: restoredAnonymousDraft,
+        baseObjects: staleDraftBase ?? serverObjects,
+        isDirty: restoredDraft !== null,
         isSaving: false,
-        saveError: null,
+        saveError: loadConflict === null ? null : CONFLICT_SAVE_ERROR,
+        saveErrorCode: loadConflict === null ? null : "REVISION_CONFLICT",
         lastSavedAt: config.updatedAt === undefined ? null : new Date(config.updatedAt),
         space: get().space?.id === config.spaceId && get().space?.venueId === config.venueId ? get().space : null,
         isLoading: false,
-        saveConflict: null,
-        history: emptyHistory<EditorObject>(),
+        saveConflict: loadConflict,
+        reviewStatus: config.reviewStatus ?? null,
+        reviewLockRefused: false,
+        // QoL D-01: restored work is one undo step back to the server's copy.
+        history: restoredDraft === null ? emptyHistory<EditorObject>() : restoreStep(restoreBase, restoredDraft.objects),
+        restoredFromDevice: restoredDraft === null ? null : {
+          changes: changedBetween(restoreBase, restoredDraft.objects).size,
+          editedAt: new Date(restoredDraft.updatedAtMs),
+        },
+        // Opening the layout left behind is what its note asked for.
+        leftBehind: leftBehind?.configId === config.id ? null : leftBehind,
       });
       // G4: config boundary — seal any open gesture from the previous
       // config's timeline, ship its unsent tail (the flush snapshots the
@@ -614,6 +1181,9 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       // Load space data (name, dimensions) for room geometry rendering.
       // venueId/spaceId are non-nullable on the wire — no guard needed.
       void get().loadSpace(config.venueId, config.spaceId);
+      // Work kept on this device was meant for the server: send it on, unless
+      // it waits for the person's choice.
+      if (restoredDraft !== null && loadConflict === null) requestAutosave();
     } catch (err) {
       if (request !== configurationLoadRequest) return;
       const message = err instanceof Error ? err.message : "Failed to load configuration";
@@ -624,14 +1194,18 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   loadSpace: async (venueId, spaceId) => {
     const session = configurationSession;
     const early = plannerSpaceHandoff.take(`${venueId}/${spaceId}`);
+    if (get().spaceLoadFailed) set({ spaceLoadFailed: false });
     try {
       const space = await (early === null
         ? spacesApi.getSpace(venueId, spaceId)
         : early.catch(() => spacesApi.getSpace(venueId, spaceId)));
       if (session !== configurationSession || get().spaceId !== spaceId || get().venueId !== venueId) return;
-      set({ space, spaceId, venueId });
+      set({ space, spaceId, venueId, spaceLoadFailed: false });
     } catch {
-      // Non-critical — space data is for display
+      // Space data is for display, but a surface waiting on it must stop
+      // showing a working state: say the read failed for this room.
+      if (session !== configurationSession || get().spaceId !== spaceId || get().venueId !== venueId) return;
+      set({ spaceLoadFailed: true });
     }
   },
 
@@ -644,8 +1218,10 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       // Keep its existing bounded recovery entry, but do not open it or return
       // a successful navigation result to the stale caller.
       try {
-        const stored = JSON.parse(localStorage.getItem(TRACKED_CONFIGS_KEY) ?? "[]") as { configId: string; createdAt: string }[];
-        stored.push({ configId: config.id, createdAt: new Date().toISOString() });
+        const stored = JSON.parse(localStorage.getItem(TRACKED_CONFIGS_KEY) ?? "[]") as { configId: string; createdAt: string; claimSecret?: string }[];
+        // The claim secret stays with this browser's own draft: it alone can
+        // claim the plan into an account (lib/planner-claim.ts).
+        stored.push({ configId: config.id, createdAt: new Date().toISOString(), ...(config.claimSecret === undefined ? {} : { claimSecret: config.claimSecret }) });
         const capped = stored.length > MAX_TRACKED_CONFIGS
           ? stored.slice(stored.length - MAX_TRACKED_CONFIGS)
           : stored;
@@ -655,16 +1231,24 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       }
       if (request !== configurationLoadRequest || shouldOpen?.() === false) throw new Error("A different layout was opened while this draft was being created.");
       configurationSession += 1;
+      yieldedIds.clear();
+      conflictServerCopy = null;
       set({
         configId: config.id,
+        configName: config.name,
+        isTemplate: config.isTemplate === true,
         spaceId: config.spaceId,
         venueId: config.venueId,
         configRevision: config.revision,
         isPublicPreview: true,
         objects: [],
+        baseObjects: [],
         isDirty: false,
         isSaving: false,
         saveError: null,
+        saveErrorCode: null,
+        reviewStatus: null,
+        reviewLockRefused: false,
         lastSavedAt: config.updatedAt === undefined ? null : new Date(config.updatedAt),
         space: get().space?.id === config.spaceId && get().space?.venueId === config.venueId ? get().space : null,
         isLoading: false,
@@ -718,6 +1302,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       isDirty: true,
       history: recordedHistory(s.history, s.selectedObjectId, s.objects, after) ?? s.history,
     });
+    notifyLocalChange(s.objects, after);
   },
 
   updateObject: (objectId, transform) => {
@@ -729,6 +1314,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       isDirty: true,
       history: recordedHistory(s.history, s.selectedObjectId, s.objects, after) ?? s.history,
     });
+    notifyLocalChange(s.objects, after);
   },
 
   moveObjectsByDelta: (ids, dx, dz) => {
@@ -746,6 +1332,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       isDirty: true,
       history: recordedHistory(s.history, s.selectedObjectId, s.objects, after) ?? s.history,
     });
+    notifyLocalChange(s.objects, after);
   },
 
   setObjectNotes: (objectId, notes) => {
@@ -757,10 +1344,11 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       isDirty: true,
       history: recordedHistory(s.history, s.selectedObjectId, s.objects, after) ?? s.history,
     });
+    notifyLocalChange(s.objects, after);
     // Notes never touch the placement store, so the bridge's scene
     // subscription cannot schedule the save — request it here, like
     // undo/redo do, or the note sits dirty until the next drag.
-    autosaveRequester?.();
+    requestAutosave();
   },
 
   setObjectDressing: (objectId, patch) => {
@@ -787,9 +1375,10 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       isDirty: true,
       history: recordedHistory(s.history, s.selectedObjectId, s.objects, after) ?? s.history,
     });
+    notifyLocalChange(s.objects, after);
     // Same as setObjectNotes: dressing text edits are editor-store-only
     // mutations; the scene bridge never sees them, so ask for the save.
-    autosaveRequester?.();
+    requestAutosave();
   },
 
   removeObject: (objectId) => {
@@ -803,155 +1392,215 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       selectedObjectId: s.selectedObjectId === objectId ? null : s.selectedObjectId,
       history: recordedHistory(s.history, s.selectedObjectId, s.objects, after, selectionAfter) ?? s.history,
     });
+    notifyLocalChange(s.objects, after);
   },
 
   selectObject: (id) => { set({ selectedObjectId: id }); },
   deselectObject: () => { set({ selectedObjectId: null }); },
 
-  saveToServer: async (isAuthenticated) => {
-    if (isLayoutTimelineMutationLocked()) return false;
-    // A mid-drag save would seal an incomplete action-log entry. Release or
-    // cancellation schedules the complete transaction through the same bridge.
-    if (gestureOwnsCurrentDocument()) return false;
-    const { configId, configRevision, objects, isSaving, isPublicPreview } = get();
-    if (configId === null || isSaving) return false;
-    const session = configurationSession;
-    // G4: a save is a gesture boundary — seal the open gesture into the log.
-    // Deliberately before the revision guard below: the local gesture
-    // happened regardless of whether this save can proceed.
-    actionEmitter.flush(get().history);
-    if (configRevision === null) {
-      set({
-        saveError: "Cannot save because the layout revision is missing. Reload the layout and try again.",
-        saveConflict: null,
-      });
-      return false;
-    }
-
-    // Determine save path: use authenticated endpoint if config is claimed
-    // (isPublicPreview=false) OR if caller explicitly says authenticated.
-    // Public preview configs always use the public endpoint.
-    const useAuthPath = !isPublicPreview || isAuthenticated === true;
-
-    set({ isSaving: true, saveError: null, saveConflict: null });
-    try {
-      const batch = objects.map(editorToBatch);
-      let saved: configApi.BatchSaveResponse;
-      if (useAuthPath) {
-        saved = await configApi.authBatchSave(configId, batch, configRevision);
-      } else {
-        saved = await configApi.publicBatchSave(configId, batch, configRevision);
-      }
-      // The server may have accepted the old document. It no longer owns this
-      // editor, its revision/history/selection, or its caller's saved feedback.
-      if (session !== configurationSession || get().configId !== configId) return false;
-      const serverObjects = saved.objects.map(placedObjectToEditor);
-      // Whole-history id remap: zip the local ids we sent (batch order)
-      // with the rows the server inserted (echoed updates-first, then
-      // inserts, each in input order). If they cannot be aligned the
-      // timeline can no longer be trusted — clear it rather than risk
-      // undo resurrecting rows under dead ids.
-      const sentLocalIds = objects.map((o) => o.id).filter((id) => EDITOR_HISTORY_IDS.isLocalId(id));
-      const sentServerIds = new Set(objects.map((o) => o.id).filter((id) => !EDITOR_HISTORY_IDS.isLocalId(id)));
-      const insertedIds = saved.objects.map((p) => p.id).filter((id) => !sentServerIds.has(id));
-      const idMap = new Map<string, string>();
-      const aligned = sentLocalIds.length === insertedIds.length;
-      if (aligned) {
-        sentLocalIds.forEach((localId, i) => {
-          const serverId = insertedIds[i];
-          if (serverId !== undefined) {
-            idMap.set(localId, serverId);
-          }
-        });
-      }
-      // The user may have kept editing while the request was in flight —
-      // remap the latest state, not the snapshot captured before the await.
-      const latest = get();
-      if (activeHistoryGesture !== null && gestureOwnsCurrentDocument()) {
-        if (aligned) {
-          const objectIds = new Map(activeHistoryGesture.objectIds);
-          for (const [original, current] of objectIds) objectIds.set(original, idMap.get(current) ?? current);
-          for (const [localId, serverId] of idMap) objectIds.set(localId, serverId);
-          activeHistoryGesture = { ...activeHistoryGesture, objectIds };
-        } else {
-          // An unalignable response cannot safely identify captured objects.
-          activeHistoryGesture = null;
-        }
-      }
-      const selection = useSelectionStore.getState();
-      if ([...selection.selectedIds].some((id) => idMap.has(id))) {
-        selection.selectMultiple([...selection.selectedIds].map((id) => idMap.get(id) ?? id));
-      }
-      // `serverObjects` echoes the batch as it was BEFORE the await, so
-      // adopting it wholesale reverts anything the operator did during the
-      // round trip — and `isDirty: false` then guarantees no autosave ever
-      // pushes that work again. Detect it by reference: Zustand replaces the
-      // array on every mutation, so an unchanged reference means nothing
-      // happened. The asymmetry is deliberate — a false positive costs one
-      // redundant save, a false negative silently loses the operator's work.
-      const editedInFlight = latest.objects !== objects;
-      const nextObjects = editedInFlight
-        ? latest.objects.map((object) => {
-            const serverId = idMap.get(object.id);
-            return serverId === undefined ? object : { ...object, id: serverId };
-          })
-        : serverObjects;
-      set({
-        objects: nextObjects,
-        history: aligned ? remapHistoryIds(latest.history, idMap) : emptyHistory<EditorObject>(),
-        selectedObjectId: latest.selectedObjectId === null
-          ? null
-          : idMap.get(latest.selectedObjectId) ?? latest.selectedObjectId,
-        configRevision: saved.revision,
-        isDirty: editedInFlight,
-        isSaving: false,
-        lastSavedAt: new Date(),
-        saveConflict: null,
-      });
-      // Same configuration, so the log's scope is unchanged and its unsent
-      // tail must survive to be flushed below — but an unaligned save just
-      // installed an EMPTY timeline, restarting gesture seqs at 1. Reset the
-      // seal cursor alone, or the recorder goes deaf for the rest of the
-      // session. Only on the unaligned branch: remapHistoryIds preserves
-      // seqs, so resetting there would re-emit sealed gestures as duplicates.
-      if (!aligned) actionEmitter.reset();
-      // G4 slice 3: the save boundary ships the log's unsent tail, anchored
-      // to the revision this save produced. Auth path only — the ingest
-      // endpoint is authenticated, and public-preview planning stays local.
-      if (useAuthPath) flushActionLogToServer(saved.revision);
-      return true;
-    } catch (err) {
-      if (session !== configurationSession || get().configId !== configId) return false;
-      const conflict = configApi.parseRevisionConflict(err);
-      if (conflict !== null) {
-        set({
-          isSaving: false,
-          saveError: "This layout changed in another tab. Reload the server copy before saving again.",
-          saveConflict: conflict,
-        });
-        return false;
-      }
-      const message = err instanceof Error ? err.message : "Save failed";
-      // Log the failing payload so we can see which field the server rejects.
-      // Safe to log — no PII in the placed-object batch.
-      // eslint-disable-next-line no-console
-      console.error("[editor-store] save failed:", message, { objects });
-      // Set saveError (NOT error) — leaving `error: null` keeps EditorPage's
-      // main render path alive, so the Canvas stays mounted and the user
-      // doesn't lose their in-progress layout.
-      set({ isSaving: false, saveError: message, saveConflict: null });
-      return false;
-    }
-  },
+  saveToServer: (isAuthenticated, transport) => saveDocument(isAuthenticated, false, transport),
 
   reloadAfterConflict: async (isAuthenticated) => {
     const configId = get().configId;
     if (configId === null) return;
-    set({ saveError: null, saveConflict: null });
+    // The person chose the server's version: this device's copy of their
+    // work would otherwise be restored over it by the load below.
+    discardPlannerDraft(configId, draftOwner());
+    conflictServerCopy = null;
+    set({ saveError: null, saveErrorCode: null, saveConflict: null });
     await get().loadConfiguration(configId, isAuthenticated);
   },
 
-  clearSaveError: () => { set({ saveError: null, saveConflict: null }); },
+  showTheirVersion: async (isAuthenticated) => {
+    await get().reloadAfterConflict(isAuthenticated ?? useAuthStore.getState().isAuthenticated);
+  },
+
+  keepMine: async (isAuthenticated) => {
+    // The same refusals as saveToServer, checked before the base moves.
+    if (keepMineInFlight || isLayoutTimelineMutationLocked() || gestureOwnsCurrentDocument()) return false;
+    const s = get();
+    if (s.saveConflict === null || s.configId === null || s.isSaving) return false;
+    const configId = s.configId;
+    const session = configurationSession;
+    const authenticated = isAuthenticated ?? useAuthStore.getState().isAuthenticated;
+    keepMineInFlight = true;
+    try {
+      let theirs = heldServerCopy(s.saveConflict, configId);
+      if (theirs === null) {
+        // Their version says which of my objects it no longer has, and so
+        // which the server must place again: without it nothing is saved.
+        const read = await readServerCopy(configId, usesSignedInRoutes(s, authenticated));
+        if (session !== configurationSession || get().configId !== configId) return false;
+        const pending = get().saveConflict;
+        if (pending === null) return false;
+        if (read === null || read.revision < pending.currentRevision) {
+          set({ saveError: KEEP_MINE_UNREAD_ERROR, saveErrorCode: null });
+          return false;
+        }
+        const objects = (read.objects ?? []).map(placedObjectToEditor);
+        conflictServerCopy = { session, configId, revision: read.revision, objects };
+        if (read.revision > pending.currentRevision) {
+          // The server moved on again: the person sees that version first.
+          set({ saveConflict: againstNewerVersion(pending, read.revision, get().baseObjects, objects) });
+          return false;
+        }
+        if (pending.theirChange === null) {
+          set({ saveConflict: { ...pending, theirChange: summariseLayoutChange(get().baseObjects, objects) } });
+        }
+        theirs = objects;
+      }
+      const current = get();
+      const conflict = current.saveConflict;
+      if (conflict === null) return false;
+      // An object of mine their version deleted would be dropped by the
+      // full-sync save (it rewrites only ids the server still has): it goes
+      // as a new placement instead. An object yielded to their later write
+      // is theirs, as it was on screen.
+      const theirsById = new Map(theirs.map((object) => [object.id, object]));
+      const rekeyed = new Map<string, string>();
+      const kept = current.objects.map((object) => {
+        const their = theirsById.get(object.id);
+        if (yieldedIds.has(object.id) && their !== undefined) return their;
+        if (EDITOR_HISTORY_IDS.isLocalId(object.id) || their !== undefined) return object;
+        const localId = `local-${String(++localIdCounter)}`;
+        rekeyed.set(object.id, localId);
+        return { ...object, id: localId };
+      });
+      yieldedIds.clear();
+      const selection = useSelectionStore.getState();
+      if ([...selection.selectedIds].some((id) => rekeyed.has(id))) {
+        selection.selectMultiple([...selection.selectedIds].map((id) => rekeyed.get(id) ?? id));
+      }
+      // The newer revision becomes this document's base: the full-sync save
+      // replaces it with this document, and pendingChanges (so savingChanges)
+      // counts exactly what that save changes on the server.
+      set({
+        configRevision: conflict.currentRevision,
+        baseObjects: theirs,
+        objects: kept,
+        history: remapHistoryIds(current.history, rekeyed),
+        selectedObjectId: current.selectedObjectId === null ? null : rekeyed.get(current.selectedObjectId) ?? current.selectedObjectId,
+        isDirty: true,
+      });
+      notifyLocalChange(current.objects, kept);
+      return await saveDocument(authenticated, true);
+    } finally {
+      keepMineInFlight = false;
+    }
+  },
+
+  setReviewStatus: (configId, status) => {
+    if (get().configId !== configId) return;
+    set({
+      reviewStatus: status,
+      ...(status !== null && isPlannerEditable(status) ? { reviewLockRefused: false } : {}),
+    });
+  },
+
+  clearSaveError: () => { set({ saveError: null, saveErrorCode: null }); },
+
+  adoptServerConfiguration: (config, options = {}) => {
+    const s = get();
+    if (config.id !== s.configId || config.isPublicPreview) return { status: "ignored" };
+    if (s.configRevision !== null && config.revision <= s.configRevision) return { status: "stale" };
+    if ((s.isSaving && options.whileSaving !== true) || gestureOwnsCurrentDocument()) return { status: "busy" };
+    const server = (config.objects ?? []).map(placedObjectToEditor);
+    const reviewFacts = {
+      reviewStatus: config.reviewStatus ?? s.reviewStatus,
+      // An editable status from the server lifts an earlier CONFIG_LOCKED refusal.
+      ...(config.reviewStatus !== undefined && isPlannerEditable(config.reviewStatus) ? { reviewLockRefused: false } : {}),
+    };
+    const pending = s.saveConflict;
+    if (pending !== null) {
+      // The person is choosing between this document and a newer version:
+      // nothing is merged into it while they do. A later version still
+      // arrives, as the one they will be shown and kept against.
+      if (config.revision > pending.currentRevision) {
+        conflictServerCopy = { session: configurationSession, configId: config.id, revision: config.revision, objects: server };
+        set({
+          saveConflict: againstNewerVersion(pending, config.revision, s.baseObjects, server),
+          configName: config.name,
+          ...reviewFacts,
+        });
+      }
+      return { status: "held" };
+    }
+    // Undo never replays this person's older values over another person's
+    // later change: forget the steps' parts for every object someone else
+    // changed. Seal the open gesture first so the action log keeps it.
+    actionEmitter.flush(s.history);
+    const history = forgetHistoryIds(s.history, changedBetween(s.baseObjects, server));
+    const modified = locallyModifiedIds(s.baseObjects, s.objects);
+    const hasLocalEdits = [...modified].some((id) => !yieldedIds.has(id))
+      || s.baseObjects.some((object) => !s.objects.some((local) => local.id === object.id));
+    if (!hasLocalEdits) {
+      yieldedIds.clear();
+      set({
+        objects: server,
+        baseObjects: server,
+        history,
+        // A rename by someone else arrives with the document (the phone's top bar reads it).
+        configName: config.name,
+        configRevision: config.revision,
+        isDirty: false,
+        saveError: null,
+        saveErrorCode: null,
+        ...reviewFacts,
+        lastSavedAt: config.updatedAt === undefined ? s.lastSavedAt : new Date(config.updatedAt),
+      });
+      conflictServerCopy = null;
+      return { status: "adopted", lostToRemoteDelete: [] };
+    }
+    const rebased = rebaseOntoServer({ server, base: s.baseObjects, local: s.objects, yielded: yieldedIds });
+    yieldedIds.clear();
+    set({
+      objects: rebased.objects,
+      baseObjects: server,
+      history,
+      configName: config.name,
+      configRevision: config.revision,
+      isDirty: true,
+      saveError: null,
+      saveErrorCode: null,
+      ...reviewFacts,
+    });
+    conflictServerCopy = null;
+    // The rebased edits still need to reach the server.
+    if (options.requestSave !== false) requestAutosave();
+    return { status: "rebased", lostToRemoteDelete: rebased.lostToRemoteDelete };
+  },
+
+  yieldObjectsToRemote: (ids) => {
+    if (ids.length === 0) return;
+    const s = get();
+    // While a conflict waits, this document is the person's version as it
+    // stands: a peer's later write reaches them as their version instead.
+    if (s.saveConflict !== null) return;
+    const baseById = new Map(s.baseObjects.map((object) => [object.id, object]));
+    const yielding = new Set(ids.filter((id) => baseById.has(id)));
+    if (yielding.size === 0) return;
+    for (const id of yielding) yieldedIds.add(id);
+    let changed = false;
+    const objects = s.objects.map((object) => {
+      if (!yielding.has(object.id)) return object;
+      const confirmed = baseById.get(object.id);
+      if (confirmed === undefined || confirmed === object) return object;
+      changed = true;
+      return confirmed;
+    });
+    // A yielded object this person had deleted comes back as the server's.
+    for (const id of yielding) {
+      if (s.objects.some((object) => object.id === id)) continue;
+      const confirmed = baseById.get(id);
+      if (confirmed !== undefined) {
+        objects.push(confirmed);
+        changed = true;
+      }
+    }
+    actionEmitter.flush(s.history);
+    const history = forgetHistoryIds(s.history, yielding);
+    if (changed || history !== s.history) set({ objects, history });
+  },
 
   reset: () => {
     configurationLoadRequest += 1;
@@ -960,10 +1609,17 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     plannerSpaceHandoff.clear();
     activeHistoryGesture = null;
     interactionEpoch++;
+    yieldedIds.clear();
     useCockpitStore.getState().setPlannedGuestCount(null);
+    conflictServerCopy = null;
+    layoutChangeAttempt = null;
+    autosaveWaiting = false;
     // Preserve the scene ref — reset clears editor data but the Three.js
     // scene is still alive in the Canvas. SceneProvider manages the ref.
-    set({ ...INITIAL_STATE, scene: get().scene });
+    // The network is the browser's, not the layout's: it survives too, and so
+    // does the note about a layout left behind (the slate's room switch resets
+    // between the layout it leaves and the one it opens).
+    set({ ...INITIAL_STATE, scene: get().scene, isOnline: get().isOnline, leftBehind: get().leftBehind });
     // INITIAL_STATE carries emptyHistory(), so gesture seqs restart at 1.
     // Without this the emitter's seal cursor stays at the old high-water
     // mark and silently drops every gesture that follows (action-log.ts:
@@ -977,6 +1633,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     const history = recordedHistory(s.history, s.selectedObjectId, s.objects, objects);
     if (history === null) return;
     set({ objects, isDirty: true, history });
+    notifyLocalChange(s.objects, objects);
   },
 
   undo: () => {
@@ -988,8 +1645,9 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     actionEmitter.afterUndo(s.history); // G4: seals the popped gesture + logs history.undo
     interactionEpoch++;
     set(historyStepPatch(step));
+    notifyLocalChange(s.objects, step.objects);
     useSelectionStore.getState().selectMultiple(step.selection);
-    autosaveRequester?.();
+    requestAutosave();
   },
 
   redo: () => {
@@ -1001,8 +1659,9 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     actionEmitter.afterRedo(step.history); // G4: logs history.redo
     interactionEpoch++;
     set(historyStepPatch(step));
+    notifyLocalChange(s.objects, step.objects);
     useSelectionStore.getState().selectMultiple(step.selection);
-    autosaveRequester?.();
+    requestAutosave();
   },
 
   bumpHistoryEpoch: () => {
@@ -1028,7 +1687,10 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     interactionEpoch++;
     if (ownsDocument) {
       actionEmitter.flush(get().history);
-      if (get().isDirty) autosaveRequester?.();
+      // The gesture's frames were not written as they came (deriveSaveFacts):
+      // keep the finished result on this device now.
+      set({ keptOnDevice: keepWorkOnDevice(get()) });
+      if (get().isDirty) requestAutosave();
     }
   },
 
@@ -1038,34 +1700,453 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   historyGestureIdMap: (token) => activeHistoryGesture?.token === token
     && gestureOwnsCurrentDocument() && !isLayoutTimelineMutationLocked()
     ? activeHistoryGesture.objectIds : null,
-}));
+})));
+
+/**
+ * The save itself. `keeping` is "Keep mine": it may run while the conflict it
+ * settles is pending (every other save waits for the person's choice), and a
+ * 409 during it is always reported as a fresh conflict, never rebased, even
+ * in the live room: a third version is the person's to see first.
+ */
+async function saveDocument(
+  isAuthenticated: boolean | undefined,
+  keeping: boolean,
+  transport?: configApi.BatchSaveTransport,
+): Promise<boolean> {
+  const get = useEditorStore.getState;
+  const set = useEditorStore.setState;
+  if (isLayoutTimelineMutationLocked()) return false;
+  // A mid-drag save would seal an incomplete action-log entry. Release or
+  // cancellation schedules the complete transaction through the same bridge.
+  if (gestureOwnsCurrentDocument()) return false;
+  const { configId, configRevision, objects, isSaving, isPublicPreview, venueId, saveConflict } = get();
+  if (configId === null || isSaving) return false;
+  // A conflict waits for the person's choice. Any other save could only meet
+  // it again (and, in the live room, merge what they have not chosen).
+  if (!keeping && saveConflict !== null) return false;
+  const session = configurationSession;
+  // G4: a save is a gesture boundary — seal the open gesture into the log.
+  // Deliberately before the revision guard below: the local gesture
+  // happened regardless of whether this save can proceed.
+  actionEmitter.flush(get().history);
+  if (configRevision === null) {
+    set({
+      saveError: "Cannot save because the layout revision is missing. Reload the layout and try again.",
+      saveErrorCode: null,
+    });
+    return false;
+  }
+
+  // The save path: the signed-in route for a layout someone owns, and for a
+  // public preview only when that route answers this person (usesSignedInRoutes).
+  const useAuthPath = usesSignedInRoutes({ isPublicPreview, venueId }, isAuthenticated);
+
+  // savingChanges is captured from pendingChanges here (deriveSaveFacts). A
+  // pending conflict stays until this save lands: only then is it settled.
+  set({ isSaving: true, saveError: null, saveErrorCode: null });
+  try {
+    const batch = objects.map(editorToBatch);
+    const save = useAuthPath ? configApi.authBatchSave : configApi.publicBatchSave;
+    const saved = transport === undefined
+      ? await save(configId, batch, configRevision)
+      : await save(configId, batch, configRevision, transport);
+    // The server may have accepted the old document. It no longer owns this
+    // editor, its revision/history/selection, or its caller's saved feedback.
+    if (session !== configurationSession || get().configId !== configId) return false;
+    const serverObjects = saved.objects.map(placedObjectToEditor);
+    // Whole-history id remap: zip the local ids we sent (batch order)
+    // with the rows the server inserted (echoed updates-first, then
+    // inserts, each in input order). If they cannot be aligned the
+    // timeline can no longer be trusted — clear it rather than risk
+    // undo resurrecting rows under dead ids.
+    const sentLocalIds = objects.map((o) => o.id).filter((id) => EDITOR_HISTORY_IDS.isLocalId(id));
+    const sentServerIds = new Set(objects.map((o) => o.id).filter((id) => !EDITOR_HISTORY_IDS.isLocalId(id)));
+    const insertedIds = saved.objects.map((p) => p.id).filter((id) => !sentServerIds.has(id));
+    const idMap = new Map<string, string>();
+    const aligned = sentLocalIds.length === insertedIds.length;
+    if (aligned) {
+      sentLocalIds.forEach((localId, i) => {
+        const serverId = insertedIds[i];
+        if (serverId !== undefined) {
+          idMap.set(localId, serverId);
+        }
+      });
+    }
+    // The user may have kept editing while the request was in flight —
+    // remap the latest state, not the snapshot captured before the await.
+    const latest = get();
+    if (activeHistoryGesture !== null && gestureOwnsCurrentDocument()) {
+      if (aligned) {
+        const objectIds = new Map(activeHistoryGesture.objectIds);
+        for (const [original, current] of objectIds) objectIds.set(original, idMap.get(current) ?? current);
+        for (const [localId, serverId] of idMap) objectIds.set(localId, serverId);
+        activeHistoryGesture = { ...activeHistoryGesture, objectIds };
+      } else {
+        // An unalignable response cannot safely identify captured objects.
+        activeHistoryGesture = null;
+      }
+    }
+    const selection = useSelectionStore.getState();
+    if ([...selection.selectedIds].some((id) => idMap.has(id))) {
+      selection.selectMultiple([...selection.selectedIds].map((id) => idMap.get(id) ?? id));
+    }
+    // `serverObjects` echoes the batch as it was BEFORE the await, so
+    // adopting it wholesale reverts anything the operator did during the
+    // round trip — and `isDirty: false` then guarantees no autosave ever
+    // pushes that work again. Detect it by reference: Zustand replaces the
+    // array on every mutation, so an unchanged reference means nothing
+    // happened. The asymmetry is deliberate — a false positive costs one
+    // redundant save, a false negative silently loses the operator's work.
+    const editedInFlight = latest.objects !== objects;
+    const nextObjects = editedInFlight
+      ? latest.objects.map((object) => {
+          const serverId = idMap.get(object.id);
+          return serverId === undefined ? object : { ...object, id: serverId };
+        })
+      : serverObjects;
+    set({
+      // A yielded object stays the server's: never resend an older local copy.
+      objects: snapYieldedToBase(nextObjects, serverObjects),
+      baseObjects: serverObjects,
+      history: aligned ? remapHistoryIds(latest.history, idMap) : emptyHistory<EditorObject>(),
+      selectedObjectId: latest.selectedObjectId === null
+        ? null
+        : idMap.get(latest.selectedObjectId) ?? latest.selectedObjectId,
+      configRevision: saved.revision,
+      isDirty: editedInFlight,
+      isSaving: false,
+      lastSavedAt: new Date(),
+      saveConflict: null,
+      saveErrorCode: null,
+      reviewLockRefused: false,
+      // Its work arrived after all: nothing of it is waiting here.
+      ...(latest.leftBehind?.configId === configId ? { leftBehind: null } : {}),
+    });
+    conflictServerCopy = null;
+    // Same configuration, so the log's scope is unchanged and its unsent
+    // tail must survive to be flushed below — but an unaligned save just
+    // installed an EMPTY timeline, restarting gesture seqs at 1. Reset the
+    // seal cursor alone, or the recorder goes deaf for the rest of the
+    // session. Only on the unaligned branch: remapHistoryIds preserves
+    // seqs, so resetting there would re-emit sealed gestures as duplicates.
+    if (!aligned) actionEmitter.reset();
+    // G4 slice 3: the save boundary ships the log's unsent tail, anchored
+    // to the revision this save produced. Auth path only — the ingest
+    // endpoint is authenticated, and public-preview planning stays local.
+    if (useAuthPath) flushActionLogToServer(saved.revision);
+    liveHooks?.onSaved(saved.revision, idMap);
+    return true;
+  } catch (err) {
+    if (session !== configurationSession || get().configId !== configId) return false;
+    const conflict = parseRevisionConflict(err);
+    if (conflict !== null) {
+      // Someone committed first. Read their version: in the live room this
+      // client rebases onto it and saves again (once); otherwise, and always
+      // during "Keep mine", it is kept to say what they changed. isSaving
+      // stays true through the read, so the live client's own refetch waits
+      // ("busy") instead of racing it.
+      const rebase = !keeping && conflictPolicy === "rebase" && useAuthPath && rebaseRetryDepth === 0;
+      if (rebase) rebaseRetryDepth += 1;
+      try {
+        const theirs = await readServerCopy(configId, useAuthPath);
+        if (session !== configurationSession || get().configId !== configId) return false;
+        // QoL D-X2, at save time: the newer revision can be this very document,
+        // from a save that landed unheard (sent as the page hid, or before a
+        // switch, then answered to a page or session that had moved on). That
+        // is this save done, not someone else's change.
+        if (theirs !== null && get().objects === objects && adoptAsSaved(theirs, objects, session)) return true;
+        if (rebase && theirs !== null) {
+          // Live co-editing: keep this person's edits on the objects they
+          // touched, take everything else from the newer copy.
+          const outcome = get().adoptServerConfiguration(theirs, { whileSaving: true, requestSave: false });
+          const held = get().configRevision;
+          const current = outcome.status === "adopted" || outcome.status === "rebased"
+            || (outcome.status === "stale" && held !== null && held >= theirs.revision);
+          if (current) {
+            set({ isSaving: false });
+            return get().isDirty ? await get().saveToServer(isAuthenticated, transport) : true;
+          }
+        }
+        // Summarise only the revision the 409 named: a copy the server has
+        // moved past again belongs to someone else's later change.
+        const theirObjects = theirs !== null && theirs.revision === conflict.currentRevision
+          ? (theirs.objects ?? []).map(placedObjectToEditor)
+          : null;
+        conflictServerCopy = theirObjects === null
+          ? null
+          : { session, configId, revision: conflict.currentRevision, objects: theirObjects };
+        const me = useAuthStore.getState().user?.id ?? null;
+        set({
+          isSaving: false,
+          saveError: CONFLICT_SAVE_ERROR,
+          saveErrorCode: "REVISION_CONFLICT",
+          saveConflict: {
+            ...conflict,
+            byYou: me !== null && conflict.changedBy?.userId === me,
+            theirChange: theirObjects === null ? null : summariseLayoutChange(get().baseObjects, theirObjects),
+          },
+        });
+        return false;
+      } finally {
+        if (rebase) rebaseRetryDepth -= 1;
+      }
+    }
+    const code = err instanceof ApiError ? err.code : null;
+    if (code === "NETWORK_ERROR" && (!get().isOnline || !browserSaysOnline())) {
+      // Offline, not failed: the work stays unsaved (and on this device);
+      // coming back online saves it. isOnline follows the browser's event.
+      set({ isSaving: false, saveError: null, saveErrorCode: null });
+      return false;
+    }
+    const message = err instanceof Error ? err.message : "Save failed";
+    // Log the failing payload so we can see which field the server rejects.
+    // Safe to log — no PII in the placed-object batch.
+    // The status only: the server's message may quote the layout's own words.
+    reportFailure("save-failed", { status: err instanceof ApiError && err.status > 0 ? err.status : "network" });
+    // eslint-disable-next-line no-console
+    console.error("[editor-store] save failed:", message, { objects });
+    // Set saveError (NOT error) — leaving `error: null` keeps EditorPage's
+    // main render path alive, so the Canvas stays mounted and the user
+    // doesn't lose their in-progress layout.
+    set({
+      isSaving: false,
+      saveError: message,
+      saveErrorCode: code,
+      ...(code === "CONFIG_LOCKED" ? { reviewLockRefused: true } : {}),
+    });
+    return false;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Leaving a layout (QoL D-01, D-X3). Restored work is one undo step; another
+// layout opening in this page gives the open one's unsaved work up to 2 s to
+// reach the server first, and what does not arrive stays on this device.
+// ---------------------------------------------------------------------------
+
+/**
+ * Take the server's copy as this document saved, when it holds exactly what
+ * this save sent: placed pieces take the ids the server gave them, so undo
+ * and the live room keep addressing them. False, changing nothing, otherwise.
+ */
+function adoptAsSaved(theirs: configApi.Configuration, sent: readonly EditorObject[], session: number): boolean {
+  const serverObjects = (theirs.objects ?? []).map(placedObjectToEditor);
+  const idMap = matchSavedLayout(sent, serverObjects, (id) => EDITOR_HISTORY_IDS.isLocalId(id));
+  if (idMap === null || session !== configurationSession) return false;
+  const latest = useEditorStore.getState();
+  const selection = useSelectionStore.getState();
+  if ([...selection.selectedIds].some((id) => idMap.has(id))) {
+    selection.selectMultiple([...selection.selectedIds].map((id) => idMap.get(id) ?? id));
+  }
+  useEditorStore.setState({
+    objects: serverObjects,
+    baseObjects: serverObjects,
+    history: remapHistoryIds(latest.history, idMap),
+    selectedObjectId: latest.selectedObjectId === null ? null : idMap.get(latest.selectedObjectId) ?? latest.selectedObjectId,
+    configRevision: theirs.revision,
+    configName: theirs.name,
+    isDirty: false,
+    isSaving: false,
+    lastSavedAt: theirs.updatedAt === undefined ? new Date() : new Date(theirs.updatedAt),
+    saveError: null,
+    saveErrorCode: null,
+    saveConflict: null,
+    reviewLockRefused: false,
+    ...(latest.leftBehind?.configId === theirs.id ? { leftBehind: null } : {}),
+  });
+  conflictServerCopy = null;
+  liveHooks?.onSaved(theirs.revision, idMap);
+  return true;
+}
+
+/** The undo label of work restored from this device. */
+const RESTORE_LABEL = "Restore changes kept on this device";
+
+/** Work kept on this device, restored as one undoable step from `base`. */
+function restoreStep(base: readonly EditorObject[], kept: readonly EditorObject[]): EditorHistory<EditorObject> {
+  interactionEpoch += 1;
+  return recordChange(emptyHistory<EditorObject>(), {
+    before: base,
+    after: kept,
+    label: RESTORE_LABEL,
+    epoch: interactionEpoch,
+    selectionBefore: [],
+    selectionAfter: [],
+  });
+}
+
+/** How long another layout waits for the open one's unsaved work. */
+export const LAYOUT_CHANGE_SAVE_MS = 2_000;
+
+/** Where the open layout's work stands as another one opens: on the server,
+ *  kept on this device (the note says so), or neither. */
+export type LayoutChangeOutcome = "saved" | "kept" | "not-kept";
+
+/** The last try for one document, so the slate's wait and the load after it
+ *  do not try twice for work nobody has changed since. */
+let layoutChangeAttempt: {
+  readonly session: number;
+  readonly objects: readonly EditorObject[];
+  readonly outcome: Promise<LayoutChangeOutcome>;
+} | null = null;
+
+function leftBehindFor(state: EditorState, kept: boolean): LeftBehindWork | null {
+  if (state.configId === null) return null;
+  return {
+    configId: state.configId,
+    roomName: state.space?.name ?? null,
+    kept,
+    savesOnReturn: kept && state.lockReason === null && state.saveConflict === null,
+  };
+}
+
+/** Resolve once no save is in flight for this session (or it has ended). */
+function saveSettled(session: number): Promise<void> {
+  if (!useEditorStore.getState().isSaving) return Promise.resolve();
+  return new Promise<void>((resolve) => {
+    const unsubscribe = useEditorStore.subscribe((state) => {
+      if (!state.isSaving || session !== configurationSession) {
+        unsubscribe();
+        resolve();
+      }
+    });
+  });
+}
+
+/** A save in flight finishes; then what is still unsaved goes, when it can. */
+async function sendOutgoingWork(session: number): Promise<void> {
+  await saveSettled(session);
+  if (session !== configurationSession) return;
+  const state = useEditorStore.getState();
+  // Offline, in review or waiting on the person's choice, a save could only fail.
+  if (!state.isDirty || !state.isOnline || state.saveConflict !== null || state.lockReason !== null) return;
+  const sent = await saveDocument(useAuthStore.getState().isAuthenticated, false);
+  // Another flush (the planner's route unmounting) can start the same save a
+  // moment before this one: that save carries the work, so wait for it.
+  if (!sent && session === configurationSession && useEditorStore.getState().isSaving) await saveSettled(session);
+}
+
+async function settleOutgoingWork(session: number, timeoutMs: number, keptAtStart: boolean): Promise<LayoutChangeOutcome> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<void>((resolve) => { timer = setTimeout(resolve, timeoutMs); });
+  try {
+    await Promise.race([sendOutgoingWork(session).catch(() => undefined), timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+  // Another load replaced the document meanwhile: its copy here is as it was.
+  if (session !== configurationSession) return keptAtStart ? "kept" : "not-kept";
+  const state = useEditorStore.getState();
+  if (!state.isDirty) return "saved";
+  if (!state.keptOnDevice) return "not-kept";
+  useEditorStore.setState({ leftBehind: leftBehindFor(state, true) });
+  return "kept";
+}
+
+/**
+ * Before another layout replaces the open one in this page: its unsaved work
+ * gets up to `timeoutMs` to reach the server (a save in flight first). Resolves
+ * "saved" when nothing is left unsaved; "kept" when the work stays on this
+ * device, noting it for the next layout to say; "not-kept" when it is neither,
+ * so the caller decides (the slate holds the switch; a load goes on and says
+ * the work is lost). Never rejects.
+ */
+export function saveBeforeLayoutChange(timeoutMs: number = LAYOUT_CHANGE_SAVE_MS): Promise<LayoutChangeOutcome> {
+  const state = useEditorStore.getState();
+  if (state.configId === null || !state.isDirty) return Promise.resolve("saved");
+  const session = configurationSession;
+  if (layoutChangeAttempt?.session === session && layoutChangeAttempt.objects === state.objects) {
+    return layoutChangeAttempt.outcome;
+  }
+  const outcome = settleOutgoingWork(session, timeoutMs, state.keptOnDevice);
+  layoutChangeAttempt = { session, objects: state.objects, outcome };
+  return outcome;
+}
+
+/**
+ * Close the open layout at a boundary in this page (the slate's room switch),
+ * as a load of another layout would: the open gesture is sealed into the
+ * action log and the log's unsent tail is sent against the last saved
+ * revision, then the editor resets. Its unsaved work should already have had
+ * its chance (saveBeforeLayoutChange); the device copy keeps what did not go.
+ */
+export function closeLayout(): void {
+  const state = useEditorStore.getState();
+  actionEmitter.flush(state.history);
+  if (state.configRevision !== null && !state.isPublicPreview) flushActionLogToServer(state.configRevision);
+  state.reset();
+}
+
+/** The page is going: write its unsaved work to this device now, a pointer
+ *  gesture's frames included (they are otherwise written at its end). */
+export function keepUnsavedWorkOnDevice(): void {
+  const state = useEditorStore.getState();
+  if (!state.isDirty || state.configId === null || signedOutHere()) return;
+  useEditorStore.setState({ keptOnDevice: keepWorkOnDevice(state) });
+}
 
 useEditorStore.subscribe((state, previous) => {
   // Attendance is session-only and belongs to the committed configuration.
   // View changes, failed loads, same-config reloads and furniture history must
   // preserve it; a different committed draft must not inherit the old target.
+  // (Keeping unsaved work on this device happens inside set: deriveSaveFacts.)
   if (state.configId !== previous.configId) {
     useCockpitStore.getState().setPlannedGuestCount(null);
   }
-  if (
-    state.configId === previous.configId
-    && state.spaceId === previous.spaceId
-    && state.venueId === previous.venueId
-    && state.configRevision === previous.configRevision
-    && state.isPublicPreview === previous.isPublicPreview
-    && state.objects === previous.objects
-    && state.isDirty === previous.isDirty
-  ) {
-    return;
-  }
+});
 
-  persistAnonymousPlannerDraft({
-    configId: state.configId,
-    spaceId: state.spaceId,
-    venueId: state.venueId,
-    configRevision: state.configRevision,
-    isPublicPreview: state.isPublicPreview,
-    objects: state.objects,
-    isDirty: state.isDirty,
+// The browser's network, for as long as the editor exists. Going offline
+// also explains a save that just failed for want of one: that is offline,
+// not a failure to show.
+subscribeOnlineStatus((online) => {
+  const state = useEditorStore.getState();
+  const explainedByOffline = !online && state.saveErrorCode === "NETWORK_ERROR";
+  useEditorStore.setState({
+    isOnline: online,
+    ...(explainedByOffline ? { saveError: null, saveErrorCode: null } : {}),
   });
 });
+if (useEditorStore.getState().isOnline !== readOnlineStatus()) {
+  useEditorStore.setState({ isOnline: readOnlineStatus() });
+}
+
+// A phase preview opening or closing changes why the layout is view-only.
+onLayoutTimelineMutationLockChange(() => {
+  useEditorStore.setState({});
+});
+
+/**
+ * Tabs share a layout's draft key. Another tab's clean save removes it and
+ * another tab's edits overwrite it; either way this tab's "kept on this
+ * device" must follow. Work this tab still holds unsaved is written back when
+ * another tab removed it. An overwrite is never answered with a write, or two
+ * tabs with unsaved work would rewrite each other without end.
+ */
+export function onPlannerDraftStorageChange(event: Pick<StorageEvent, "key" | "newValue">): void {
+  const signingOut = signedOutOwnerFrom(event);
+  if (signingOut !== null) {
+    // Another tab is signing this person out and forgetting their drafts:
+    // this tab keeps none of theirs here for the rest of this sign-in.
+    const user = useAuthStore.getState().user;
+    if (user?.id === signingOut) signedOutUser = user;
+    return;
+  }
+  const state = useEditorStore.getState();
+  if (state.configId === null) return;
+  const owner = draftOwner();
+  if (owner === null && !state.isPublicPreview) return;
+  if (event.key !== null && event.key !== plannerDraftKeyFor(state.configId, owner)) return;
+  const removed = event.key === null || event.newValue === null;
+  // A pointer gesture writes its result at its end (endHistoryGesture).
+  if (removed && state.isDirty && !gestureOwnsCurrentDocument() && !signedOutHere()) {
+    useEditorStore.setState({ keptOnDevice: keepWorkOnDevice(state) });
+    return;
+  }
+  if (state.keptOnDevice) useEditorStore.setState({ keptOnDevice: false });
+}
+
+if (typeof window !== "undefined") window.addEventListener("storage", onPlannerDraftStorageChange);
+
+// This page holds its lock for its lifetime, so another tab can tell its
+// in-progress drafts from those a closed page left behind.
+holdPlannerPageLock();

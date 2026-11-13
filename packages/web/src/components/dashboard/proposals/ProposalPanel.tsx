@@ -5,7 +5,9 @@ import type { DeskProposal, ProposalCommentRow, ProposalHistoryEntry, StaffPropo
 import type { Space } from "../../../api/spaces.js";
 import type { WrittenDraft } from "./proposal-memory.js";
 import { formatMinorAsCurrency } from "../../../lib/money-input.js";
-import { buildProposalCapacityGuidance, buildProposalCapacityNote, CAPACITY_STYLE_LABELS } from "../../../lib/proposal-capacity-note.js";
+import { buildProposalCapacityGuidance, CAPACITY_STYLE_LABELS } from "../../../lib/proposal-capacity-note.js";
+import { GENERIC_ESTIMATE_LABEL, publishedCapacityFor, publishedCapacityNote, publishedFormatForStyle } from "../../../lib/planner-truth.js";
+import { useTradesHallVenueStatus } from "../../../hooks/use-trades-hall-venue.js";
 import { ActivityIndicator, ActivityStatus } from "../../shared/Activity.js";
 import { commentAuthor } from "../../proposal/proposal-document-format.js";
 import { eventDateParts, eventLead, eventWeekday, venueMoment } from "../enquiries/enquiry-desk-format.js";
@@ -19,6 +21,8 @@ import { PriceList } from "./PriceList.js";
 import type { PriceListEvent, PriceListOffer } from "./price-list-format.js";
 import { getProposalEvent } from "../../../api/proposal-templates.js";
 import { AIMessageDraft } from "./AIMessageDraft.js";
+import { DepositPanel } from "./DepositPanel.js";
+import { ContractPanel } from "./ContractPanel.js";
 import { TemplatePicker, focusIsFree } from "./TemplatePicker.js";
 import { TemplateSave } from "./TemplateSave.js";
 import { applyTemplate, hasWords, type AppliedTemplate, type ApplyMode, type TemplateEvent } from "./template-format.js";
@@ -200,10 +204,18 @@ export function ProposalPanel(props: ProposalPanelProps): ReactElement {
     formRef.current = form;
     memory?.remember(written);
   }, [memory]);
+  // The words of the latest version, open or closed: words it reads the same
+  // as (numbers as a version reads them, so "120.5" is £120.50) are not lost,
+  // so no copy of them is kept. A late save's answer can land between a
+  // composer appearing and it remembering its words, so memory may still hold
+  // words a version now holds.
+  const latestPayload = props.latest.value?.payload ?? null;
   useLayoutEffect(() => {
     // Until the version to start from is read, nothing has yet moved on.
     if (start === "reading") return;
     const why = putAsideWords(proposal.status, composable, typeof start === "number" ? start : proposal.currentVersion);
+    const lost = (draft: ComposerDraft | null): ComposerDraft | null =>
+      draft !== null && latestPayload !== null && draftChanges(latestPayload, draft).length === 0 ? null : draft;
     let kept = false;
     const form = formRef.current;
     if (form !== null && form.start !== start) {
@@ -211,15 +223,15 @@ export function ProposalPanel(props: ProposalPanelProps): ReactElement {
       const written = memory?.recall() ?? null;
       const own = written !== null && written.composer === form.composer ? written : null;
       if (own !== null) memory?.remember(null);
-      kept = onComposerGone(form.composer, own?.draft ?? null, why);
+      kept = onComposerGone(form.composer, lost(own?.draft ?? null), why);
     }
     const left = memory?.recall() ?? null;
     if (left !== null && left.start !== start) {
       memory?.remember(null);
-      kept = onComposerGone(left.composer, left.draft, why) || kept;
+      kept = onComposerGone(left.composer, lost(left.draft), why) || kept;
     }
     if (kept) focusKeptRef.current = true;
-  }, [start, composable, proposal.status, proposal.currentVersion, memory, onComposerGone]);
+  }, [start, latestPayload, composable, proposal.status, proposal.currentVersion, memory, onComposerGone]);
   // Focus that was in the composer is lost with it: it goes to the words
   // kept, or else to what the next composer starts from, or, with no
   // composer, to the proposal's name. Never from wherever it has gone since.
@@ -303,6 +315,9 @@ export function ProposalPanel(props: ProposalPanelProps): ReactElement {
         )}
 
         <NextStep {...props} templateWork={templateWork} />
+        {/* Once accepted, the contract and the deposit (Plan 19 L5). */}
+        {proposal.status === "accepted" && <ContractPanel key={`contract-${proposal.id}`} proposal={proposal} />}
+        {proposal.status === "accepted" && <DepositPanel key={proposal.id} proposal={proposal} />}
         {start === "closed" ? <KeptDraft {...props} holder={null} /> : <Composer {...props} start={start} report={report} onGoing={onFormGoing} onTemplateWork={setTemplateWork} />}
         <LatestQuote {...props} />
         <Conversation {...props} />
@@ -1073,7 +1088,13 @@ function ComposerForm(props: ComposerFormProps): ReactElement {
 }
 
 /** `disabled` while a save is on its way: a note put in then would not be
- *  in the version, and the composer that saves makes way for the next. */
+ *  in the version, and the composer that saves makes way for the next.
+ *
+ *  The capacity note is client-facing, so what goes in is the venue's
+ *  published figure for the room and layout, with who stated it (planner-truth;
+ *  docs/engineering/planner-honest-numbers.md). Floor area ÷ generic spacing
+ *  (339 standing in a Grand Hall published at 250) stays on this staff
+ *  screen as an estimate and is never put in the note. */
 function CapacityGuidance({ spaces, disabled, onInsert }: {
   readonly spaces: PartRead<readonly Space[]>;
   readonly disabled: boolean;
@@ -1083,18 +1104,30 @@ function CapacityGuidance({ spaces, disabled, onInsert }: {
   const [spaceId, setSpaceId] = useState("");
   const [guests, setGuests] = useState("");
   const [style, setStyle] = useState<LayoutStyle>("dinner-rounds");
+  const space = rooms.find((room) => room.id === spaceId) ?? rooms[0] ?? null;
+  // Only Trades Hall's own rooms carry its figures, read by venue, not by room name.
+  const venueStatus = useTradesHallVenueStatus(space?.venueId ?? null);
   if (spaces.status === "loading" && rooms.length === 0) return <ActivityStatus>Reading the rooms for guidance…</ActivityStatus>;
   // Guidance is a help, never a condition: without rooms the note is written by hand.
-  if (rooms.length === 0) return null;
-  const space = rooms.find((room) => room.id === spaceId) ?? rooms[0] ?? null;
-  const area = space === null ? 0 : Number(space.widthM) * Number(space.lengthM);
+  if (space === null) return null;
+  const area = Number(space.widthM) * Number(space.lengthM);
   const guestCount = /^\d+$/u.test(guests.trim()) ? Number(guests.trim()) : 0;
-  const guidance = space !== null && area > 0 ? buildProposalCapacityGuidance(area, guestCount, style) : null;
+  const guidance = area > 0 ? buildProposalCapacityGuidance(area, guestCount, style) : null;
+  const published = publishedCapacityFor({
+    slug: space.slug,
+    tradesHall: venueStatus === "reading" ? null : venueStatus === "trades-hall",
+  });
+  const clientNote = published.kind === "reading" ? null : publishedCapacityNote({
+    published,
+    format: publishedFormatForStyle(style),
+    roomName: space.name,
+    guests: guestCount > 0 ? guestCount : null,
+  });
   return (
     <div className="pr-guidance">
-      <p className="pr-guidance__title">Capacity guidance, planning-grade, from the room's floor area</p>
+      <p className="pr-guidance__title">Capacity note, from the venue's published figures</p>
       <div className="pr-guidance__fields">
-        <select aria-label="Guidance room" data-testid="capacity-space" value={space?.id ?? ""} disabled={disabled}
+        <select aria-label="Guidance room" data-testid="capacity-space" value={space.id} disabled={disabled}
           onChange={(event) => { setSpaceId(event.target.value); }}>
           {rooms.map((room) => <option key={room.id} value={room.id}>{room.name}</option>)}
         </select>
@@ -1105,21 +1138,20 @@ function CapacityGuidance({ spaces, disabled, onInsert }: {
           {LAYOUT_STYLES.map((option) => <option key={option} value={option}>{CAPACITY_STYLE_LABELS[option]}</option>)}
         </select>
       </div>
-      {guidance !== null && space !== null && (
-        <>
-          <p className="enq-next__hint" data-testid="capacity-result">
-            Comfortable for around {guidance.comfortableCapacity} guests
-            {guidance.plannedSeats > 0 && `, ${String(guidance.plannedSeats)} asked for (${guidance.band.replace(/-/gu, " ")})`}
-            . Planning estimate only; a person checks it.
-          </p>
-          <div className="enq-actions">
-            <button type="button" className="enq-quiet" data-testid="capacity-insert" disabled={disabled}
-              onClick={() => { onInsert(buildProposalCapacityNote(space.name, guidance)); }}>
-              Insert into the capacity note
-            </button>
-          </div>
-        </>
+      {guidance !== null && (
+        <p className="enq-next__hint" data-testid="capacity-result">
+          {GENERIC_ESTIMATE_LABEL}: around {guidance.comfortableCapacity} guests
+          {guidance.plannedSeats > 0 && `, ${String(guidance.plannedSeats)} asked for (${guidance.band.replace(/-/gu, " ")})`}
+          {" · venue staff only · not the venue's published figure, and never put in the note."}
+        </p>
       )}
+      {clientNote === null && <ActivityStatus>Reading the venue's published figures…</ActivityStatus>}
+      <div className="enq-actions">
+        <button type="button" className="enq-quiet" data-testid="capacity-insert" disabled={disabled || clientNote === null}
+          onClick={() => { if (clientNote !== null) onInsert(clientNote); }}>
+          Insert into the capacity note
+        </button>
+      </div>
     </div>
   );
 }

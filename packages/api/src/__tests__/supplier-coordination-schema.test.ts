@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { getTableColumns, getTableName } from "drizzle-orm";
+import { getTableConfig, type PgTable } from "drizzle-orm/pg-core";
 import { z } from "zod";
 import {
   supplierAcknowledgements,
@@ -9,6 +10,32 @@ import {
   supplierCoordinationPacks,
   supplierCoordinationShareTokens,
 } from "../db/schema.js";
+import { migrationText, sqlWithoutComments } from "./migration-text.js";
+
+/** The ON DELETE action of the single-column key on `column`. */
+function onDeleteOf(table: PgTable, column: string): string | undefined {
+  const keys = getTableConfig(table).foreignKeys
+    .filter((key) => key.reference().columns.map((col) => col.name).join(",") === column);
+  expect(keys, `exactly one key on ${column}`).toHaveLength(1);
+  return keys[0]?.onDelete;
+}
+
+// What a supplier was told and what they confirmed must not be erasable by a
+// cascade (0095). The Postgres proof, on the migrated schema, is
+// supplier-records-kept-postgres.test.ts; these hold the schema and the SQL.
+describe("supplier records kept (0095)", () => {
+  it("declares a pass's handoff pack and a reply's pass as RESTRICT in the Drizzle schema", () => {
+    expect(onDeleteOf(supplierCoordinationPacks, "handoff_pack_id")).toBe("restrict");
+    expect(onDeleteOf(supplierAcknowledgements, "pack_id")).toBe("restrict");
+  });
+
+  it("rewrites both keys as ON DELETE RESTRICT in a journaled migration", async () => {
+    const sql = sqlWithoutComments(await migrationText("_supplier_records_kept"));
+    expect(sql).toMatch(/ADD CONSTRAINT "supplier_acknowledgements_pack_id_fkey"\s+FOREIGN KEY \("pack_id"\) REFERENCES "supplier_coordination_packs" \("id"\)\s+ON DELETE RESTRICT;/u);
+    expect(sql).toMatch(/ADD CONSTRAINT "supplier_coordination_packs_handoff_pack_id_fkey"\s+FOREIGN KEY \("handoff_pack_id"\) REFERENCES "handoff_packs" \("id"\)\s+ON DELETE RESTRICT;/u);
+    expect(sql).not.toMatch(/CASCADE/u);
+  });
+});
 
 const migrationSql = readFileSync(
   fileURLToPath(new URL("../../drizzle/0038_supplier_coordination.sql", import.meta.url)),

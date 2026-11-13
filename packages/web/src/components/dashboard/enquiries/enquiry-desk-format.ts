@@ -96,6 +96,10 @@ const SOURCE_WORDS: Readonly<Record<string, string>> = {
   planner: "From the planner",
   phone: "By phone",
   email: "By email",
+  // Migration 0100: a listing site's own enquiry form passing the lead on
+  // (Hitched, Bridebook), and an enquiry an AI assistant made for the person.
+  listing: "From a listing site",
+  assistant: "By an AI assistant",
 };
 
 /** How an enquiry reached the venue, in the desk's words; null where that is

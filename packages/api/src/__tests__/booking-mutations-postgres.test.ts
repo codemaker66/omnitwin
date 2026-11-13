@@ -5,6 +5,7 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import * as schema from "../db/schema.js";
 import { bookingMutationStateDigest, transitionBookingCore, updateBookingCore, type MutationActor } from "../services/booking-mutations.js";
+import { insertBoundBookings } from "../services/event-binding.js";
 
 // Never load .env or fall back to DATABASE_URL. This is Goal 12's migrated,
 // disposable local cluster; each test owns a separate venue and its rows.
@@ -40,12 +41,13 @@ describe.skipIf(target === undefined)("booking mutation concurrency on migrated 
     await db.insert(schema.users).values({ id: userId, venueId, name: "Fixture admin", email: `${userId}@booking.invalid`, role: "admin" });
     const actor: MutationActor = { id: userId, venueId, role: "admin", platformRole: "none" };
     const ids = Array.from({ length: count }, () => randomUUID()).sort();
-    const rows = await db.insert(schema.bookings).values(ids.map((id, index) => ({
+    // Holds and inks are written with their events, as every writer does (the bind).
+    const rows = await insertBoundBookings(db, ids.map((id, index) => ({
       id, venueId, spaceId, kind, title: `Fixture booking ${String(index)}`, createdBy: userId,
       startsAt: new Date("2030-01-10T10:00:00.000Z"), endsAt: new Date("2030-01-10T12:00:00.000Z"),
       ...(kind === "hold" ? { rank: index + 1, ownerUserId: userId, nextAction: "Confirm the fixture",
         decisionAt: new Date("2030-01-01T10:00:00.000Z"), nextActionDueAt: new Date("2030-01-01T09:00:00.000Z") } : {}),
-    }))).returning();
+    })));
     return { actor, venueId, spaceId, rows: rows.sort((left, right) => left.id.localeCompare(right.id)) };
   }
   type Fixture = Awaited<ReturnType<typeof fixture>>;
@@ -155,8 +157,8 @@ describe.skipIf(target === undefined)("booking mutation concurrency on migrated 
 
   it("keeps ink exclusion failures recoverable inside an owning transaction", async () => {
     const f = await fixture("ink"), row = first(f);
-    const [other] = await db.insert(schema.bookings).values({ venueId: f.venueId, spaceId: f.spaceId,
-      kind: "ink", title: "Other ink", startsAt: new Date("2030-01-10T13:00:00.000Z"), endsAt: new Date("2030-01-10T15:00:00.000Z") }).returning();
+    const [other] = await insertBoundBookings(db, [{ venueId: f.venueId, spaceId: f.spaceId,
+      kind: "ink", title: "Other ink", startsAt: new Date("2030-01-10T13:00:00.000Z"), endsAt: new Date("2030-01-10T15:00:00.000Z") }]);
     if (other === undefined) throw new Error("Missing other booking");
     await db.transaction(async tx => {
       expect(await updateBookingCore(tx, f.actor, row.id, { startsAt: other.startsAt.toISOString(), endsAt: other.endsAt.toISOString() }))

@@ -5,10 +5,13 @@ import {
   assertRequiredProductionEnv,
   getSentrySourceMapUploadConfig,
   resolveBuildSplatBaseUrl,
+  resolveSentryRelease,
   resolveWebClerkPublishableKey,
 } from "./src/lib/production-env";
 import { splatStagingPlugin } from "./src/lib/splat-staging-plugin";
 import { venueStructuredDataPlugin } from "./src/lib/venue-structured-data-plugin";
+import { routeDocumentsPlugin } from "./src/lib/route-documents-plugin";
+import { homeRoutePreloadPlugin } from "./src/lib/home-route-preload-plugin";
 
 // ---------------------------------------------------------------------------
 // Vite config — punch list #16 bundle splitting
@@ -34,7 +37,10 @@ export default defineConfig(({ mode }) => {
     : null;
   // The venue's schema.org description is written into index.html from the
   // shared venue truth (T-649), so it can never drift from the page's figures.
-  const plugins: PluginOption[] = [react(), venueStructuredDataPlugin()];
+  // Each public page also gets a titled copy of index.html, so crawlers that
+  // do not run JavaScript read its own title (src/lib/route-documents.ts).
+  // The home route's chunks are preloaded from index.html (home-route-preload-plugin.ts).
+  const plugins: PluginOption[] = [react(), venueStructuredDataPlugin(), homeRoutePreloadPlugin(), routeDocumentsPlugin()];
 
   // Captured splat tiles are staged outside the repository (roughly a gigabyte
   // across the eight Trades Hall rooms), so `public/` cannot hold them. In
@@ -68,7 +74,9 @@ export default defineConfig(({ mode }) => {
         filesToDeleteAfterUpload: "./dist/assets/**/*.map",
       },
       telemetry: false,
-      silent: true,
+      // Keep the upload result in the build log: a skipped or failed upload
+      // ships unreadable production stack traces, and silence would hide it.
+      silent: false,
       bundleSizeOptimizations: {
         excludeReplayCanvas: true,
         excludeReplayIframe: true,
@@ -92,12 +100,31 @@ export default defineConfig(({ mode }) => {
       // Vercel's deployment environment, so preview links can open splats
       // (T-639) while production keeps the founder hold. Empty outside Vercel.
       "import.meta.env.VITE_DEPLOY_ENV": JSON.stringify(env["VERCEL_ENV"] ?? ""),
+      // The release browser errors carry (resolveSentryRelease): an explicit
+      // VITE_SENTRY_RELEASE or SENTRY_RELEASE, else the commit Vercel built.
+      // Vite also copies this key into the import.meta.env object, which is
+      // what initBrowserSentry reads. Empty outside Vercel, which the SDK
+      // treats as no release.
+      "import.meta.env.VITE_SENTRY_RELEASE": JSON.stringify(resolveSentryRelease(env) ?? ""),
     },
     server: {
       // Transform the planner's static import graph when the dev server starts.
       // Otherwise its first navigation pays a long module-transform waterfall;
       // this does not load the route in the browser or affect production bundles.
-      warmup: { clientFiles: ["./src/pages/EditorPage.tsx"] },
+      // Warmup follows static imports only, so the planner's lazy entries are
+      // listed too: on a freshly started server these (the Assembly, the
+      // capture layer, its loader and its two workers' graphs) were the only
+      // modules the first captured-room navigation still had to transform.
+      warmup: {
+        clientFiles: [
+          "./src/pages/EditorPage.tsx",
+          "./src/floor/assembly/GrandAssembly.tsx",
+          "./src/components/scene/NativeSplatLayer.tsx",
+          "./src/lib/native-splat-loader.ts",
+          "./src/lib/native-splat-worker.ts",
+          "./src/lib/native-cpu-sort-worker.ts",
+        ],
+      },
     },
     worker: { format: "es" },
     optimizeDeps: {

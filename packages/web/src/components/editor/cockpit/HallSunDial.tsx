@@ -49,6 +49,12 @@ const DATE_INPUT_PATTERN = /^(\d{4})-\d{2}-\d{2}$/u;
  * the city round the hall and the skylines in its windows are drawn from it.
  */
 export const LIDAR_CREDIT = "Contains LiDAR data: Crown copyright Scottish Government and Fugro (2020)";
+/**
+ * The credit for the street lamps drawn round the hall at night: Glasgow City
+ * Council's open lighting positions, digitised on Ordnance Survey mapping (the
+ * OS clause is precautionary).
+ */
+export const STREET_LIGHT_CREDIT = "Street lighting: Glasgow City Council. Contains OS data © Crown copyright and database right 2026";
 export const OGL_URL = "https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/";
 
 /**
@@ -398,7 +404,7 @@ export function HallSunDial({ inline = false, maxHeight }: HallSunDialProps): Re
         ))}
       </div>
       <p className="hall-sun-dial__credit">
-        {LIDAR_CREDIT},{" "}
+        {LIDAR_CREDIT}. {STREET_LIGHT_CREDIT},{" "}
         <a href={OGL_URL} target="_blank" rel="noopener noreferrer">OGL v3.0</a>
       </p>
     </div>

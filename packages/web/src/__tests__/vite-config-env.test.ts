@@ -5,6 +5,7 @@ import {
   resolveWebClerkPublishableKey,
   PREVIEW_SPLAT_BASE_URL,
   resolveBuildSplatBaseUrl,
+  resolveSentryRelease,
 } from "../lib/production-env.js";
 
 describe("Vite production environment guard", () => {
@@ -76,6 +77,35 @@ describe("Vite production environment guard", () => {
       project: "web",
       release: "abc123",
     });
+  });
+
+  it("names the commit Vercel built when no explicit Sentry release is set", () => {
+    expect(resolveSentryRelease({ VERCEL_GIT_COMMIT_SHA: " 48677b82 " })).toBe("48677b82");
+  });
+
+  it("lets an explicit Sentry release win over the Vercel commit", () => {
+    expect(resolveSentryRelease({
+      VITE_SENTRY_RELEASE: "web@1.2.3",
+      SENTRY_RELEASE: "shared@1",
+      VERCEL_GIT_COMMIT_SHA: "48677b82",
+    })).toBe("web@1.2.3");
+    expect(resolveSentryRelease({ SENTRY_RELEASE: " shared@1 ", VERCEL_GIT_COMMIT_SHA: "48677b82" }))
+      .toBe("shared@1");
+    expect(resolveSentryRelease({ VITE_SENTRY_RELEASE: "   ", VERCEL_GIT_COMMIT_SHA: "48677b82" }))
+      .toBe("48677b82");
+  });
+
+  it("reports no release outside Vercel when none is set", () => {
+    expect(resolveSentryRelease({})).toBeUndefined();
+  });
+
+  it("uploads source maps under the same release the browser reports", () => {
+    expect(getSentrySourceMapUploadConfig({
+      SENTRY_AUTH_TOKEN: "sntrys_secret",
+      SENTRY_ORG: "venviewer",
+      SENTRY_PROJECT: "venviewer-web",
+      VERCEL_GIT_COMMIT_SHA: "48677b82",
+    })?.release).toBe("48677b82");
   });
 });
 

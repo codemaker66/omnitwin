@@ -111,18 +111,22 @@ export function computeCapacityIntelligence(
   };
 }
 
-/** SAFE, human-readable summary of a comfort band. */
+/**
+ * The band in words, as arithmetic against generic spacing: never "within"
+ * anything, never a capacity. The room's capacity is the venue's to state
+ * (planner-truth.ts); this is a staff aid (redteam fix-first 1 and 2).
+ */
 export function comfortBandLabel(band: ComfortBand): string {
   switch (band) {
     case "open":
       return "Open floor — no seating placed yet";
     case "spacious":
-      return "Spacious — generous room per guest";
+      return "Generous space per guest at generic spacing";
     case "comfortable":
-      return "Comfortable — within planning guidance";
+      return "At or above generic space per guest";
     case "tight":
-      return "Tight — below comfortable spacing, review circulation";
+      return "Below generic space per guest — review circulation";
     case "over-capacity":
-      return "Over comfortable planning capacity — review with the venue team";
+      return "Well below generic space per guest — review with the events team";
   }
 }

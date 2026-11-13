@@ -2,7 +2,9 @@ import "dotenv/config";
 import { inArray } from "drizzle-orm";
 import { type FloorPlanPoint, polygonBoundingBox, ACCESSORY_RULES } from "@omnitwin/types";
 import { validateEnv } from "../env.js";
+import { insertBoundBookings } from "../services/event-binding.js";
 import { createDb, isLocalDatabaseUrl } from "./client.js";
+import { GRAND_HALL_E57_INTERIOR } from "./grand-hall-e57.js";
 import { seedCanonicalAssets } from "./seed-canonical-assets.js";
 import {
   venues,
@@ -68,7 +70,9 @@ async function seed(): Promise<void> {
   if (venue === undefined) throw new Error("Failed to create venue");
   console.log(`  Venue: ${venue.name} (${venue.id})`);
 
-  // --- 2. Spaces (real dimensions from official Trades Hall website) ---
+  // --- 2. Spaces (real dimensions from official Trades Hall website; the
+  // Grand Hall's floor and clear height from its E57 laser scan, as
+  // production stores them: db/grand-hall-e57.ts) ---
   // Dataflow: we pick canonical source dimensions for each room, build the
   // rectangular polygon from them, then derive widthM/lengthM from the
   // polygon's bbox. The derived values equal the source by construction for
@@ -76,7 +80,7 @@ async function seed(): Promise<void> {
   // seed express the same polygon-is-source-of-truth invariant that the
   // write path enforces at runtime.
   const spaceData = [
-    { name: "Grand Hall", slug: "grand-hall", width: 21, length: 10.5, height: 7, sort: 0 },
+    { name: "Grand Hall", slug: "grand-hall", width: GRAND_HALL_E57_INTERIOR.widthM, length: GRAND_HALL_E57_INTERIOR.lengthM, height: GRAND_HALL_E57_INTERIOR.heightM, sort: 0 },
     { name: "Saloon", slug: "saloon", width: 12, length: 7, height: 5.4, sort: 1 },
     { name: "Reception Room", slug: "reception-room", width: 13.4, length: 11.2, height: 3.2, sort: 2 },
     { name: "Robert Adam Room", slug: "robert-adam-room", width: 9.7, length: 5.6, height: 2.18, sort: 3 },
@@ -451,7 +455,7 @@ async function seed(): Promise<void> {
     nextActionDueAt: new Date(decisionAt.getTime() - 7 * 24 * 60 * 60 * 1000),
   });
 
-  const insertedBookings = await db.insert(bookings).values([
+  const diaryWeek: (typeof bookings.$inferInsert)[] = [
     // --- Grand Hall ---------------------------------------------------------
     {
       venueId: venue.id, spaceId: grandHall, kind: "ink", title: "Chamber of Commerce conference",
@@ -559,8 +563,14 @@ async function seed(): Promise<void> {
       venueId: venue.id, spaceId: southGallery, kind: "ink", title: "Wedding photography overflow",
       eventType: "wedding", startsAt: bst(5, 12, 0), endsAt: bst(5, 23, 0), createdBy: adminUser.id, fixtureSource: FIXTURE_SOURCE,
     },
-  ]).returning();
-  console.log(`  Diary bookings: ${String(insertedBookings.length)} created (${weekLabel})`);
+  ];
+
+  // The bind (migration 0090): every hold and ink is written with its event,
+  // made the way the API makes one and marked as the seed's like the booking,
+  // in one transaction; then each event takes the status its bookings give
+  // it (services/event-binding.ts).
+  const insertedBookings = await insertBoundBookings(db, diaryWeek);
+  console.log(`  Diary bookings: ${String(insertedBookings.length)} created (${weekLabel}), each hold and confirmed booking with its event`);
 
   console.log("\nSeed complete.");
 }

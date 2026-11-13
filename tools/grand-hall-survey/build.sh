@@ -2,11 +2,20 @@
 # Rebuilds the Grand Hall's survey images and wall relief from the public scan.
 #
 #   bash tools/grand-hall-survey/build.sh <work-dir> [<publish-dir>]
+#   RELIEF=rebuild bash tools/grand-hall-survey/build.sh <work-dir> [<publish-dir>]
 #
 # Every step runs in <work-dir>; downloads and per-station depth maps already
 # there are kept. With <publish-dir> (normally
 # packages/web/public/rooms/grand-hall/survey-2026-07-11) the finished files
 # are copied there. See README.md for what each step measures.
+#
+# Run against the published survey, the build reproduces what is published:
+# the atlas's alpha (the window glass) is carried over from the published
+# atlas (pack-atlas.py --alpha-from; the best-view photograph's own glass mask
+# lost 2.1% of the glass, S4a) and the published walls-relief.bin stands, since
+# its glass mask is that same alpha (window-relief.py would remake it from the
+# new photograph's). check-atlas.py checks both. RELIEF=rebuild remakes the
+# relief from this build's photograph instead, a change to publish on purpose.
 set -euo pipefail
 
 SURVEY="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -30,32 +39,64 @@ step "Surfaces: the walls' and ceiling's measured positions"
 node "$SURVEY/render.mjs" "$SURVEY/views-walls.json" out-walls
 node "$SURVEY/render.mjs" "$SURVEY/views-ceiling.json" out-walls
 
-step "Projection: panoramas onto every surface"
-for wall in window door end fire; do python3 "$SURVEY/project-walls.py" "$wall"; done
+step "Walls: the corners' fins moved back onto their walls"
+python3 "$SURVEY/fix-corners.py" --positions-only
+
+step "Walls: each 40 mm block's sharpest station, and the depth where the best views agree"
+for wall in window door end fire; do python3 "$SURVEY/label-views.py" "$wall"; done
+
+step "Walls: coloured from those stations, seams levelled (2.5 mm and 5 mm orthophotos)"
+for wall in window door end fire; do python3 "$SURVEY/project-walls.py" "$wall" --labels; done
+
+# Where the sharpest view of a varnished portrait reflected the room over its
+# paint, the other views measure that veil; pack-atlas.py and project-detail.py
+# take it off (canvasveil.py lists the canvases).
+step "Walls: the portraits' canvases without their varnish veil"
+for wall in window door end fire; do python3 "$SURVEY/canvas-veil.py" "$wall"; done
+
+step "Projection: ceiling, dome and floor"
 python3 "$SURVEY/project-ceiling.py"
 python3 "$SURVEY/project-dome.py"
 python3 "$SURVEY/project-floor.py"
 
-# The windows' glass mask and layered depth are read from the walls as
-# projected, before the corners are corrected (the order the shipped files
-# were made in; the end arch reaches into the corner zone).
-step "Windows, then corners"
-python3 "$SURVEY/window-relief.py"
-python3 "$SURVEY/fix-corners.py"
+# The glass mask and the windows' layered depth are read from the window wall's
+# photograph and its rendered (uncorrected) positions.
+RELIEF="${RELIEF:-keep}"
+if [ "$RELIEF" = rebuild ] || [ -z "$PUBLISH" ]; then
+  step "Windows: glass mask and layered depth"
+  python3 "$SURVEY/window-relief.py"
+fi
 
 step "Packing for the web"
-python3 "$SURVEY/pack-atlas.py"
-python3 "$SURVEY/wall-depth.py" window door end fire
-node "$SURVEY/relief-mesh.mjs" proj/walls-relief.bin
+python3 "$SURVEY/pack-atlas.py" ${PUBLISH:+--alpha-from "$PUBLISH"}
+if [ "$RELIEF" = rebuild ] || [ -z "$PUBLISH" ]; then
+  python3 "$SURVEY/wall-depth.py" window door end fire
+  node "$SURVEY/relief-mesh.mjs" proj/walls-relief.bin
+else
+  cp "$PUBLISH/walls-relief.bin" proj/walls-relief.bin
+fi
+if [ -n "$PUBLISH" ]; then
+  RELIEF_FLAG=()
+  if [ "$RELIEF" = rebuild ]; then RELIEF_FLAG=(--relief-changed); fi
+  python3 "$SURVEY/check-atlas.py" proj "$PUBLISH" --json proj/check-atlas.json --alpha-pinned "${RELIEF_FLAG[@]}"
+fi
 python3 "$SURVEY/pack-overhead.py" proj
 python3 "$SURVEY/flatten-floor.py" proj/floor.npz proj/floor-flat.npz 120
 python3 "$SURVEY/pack-floor.py" proj/floor-flat.npz proj
+
+# The same best-view photographs at 2 mm, cut into the tiles the planner
+# streams where it looks closely at a wall (hall-detail.ts); the atlas's alpha
+# marks the window glass, which the tiles leave out.
+step "Walls at 2 mm: the detail tiles"
+for wall in window door end fire; do python3 "$SURVEY/project-detail.py" "$wall"; done
+python3 "$SURVEY/pack-detail.py" --atlas proj
 
 OUTPUTS=(walls-4096.webp walls-2048.webp walls-relief.bin ceiling-3072.webp ceiling-1536.webp
   dome-4096.webp dome-2048.webp floor-2560.webp floor-1280.webp)
 if [ -n "$PUBLISH" ]; then
   step "Publishing to $PUBLISH"
   for file in "${OUTPUTS[@]}"; do cp "proj/$file" "$PUBLISH/$file"; done
+  rm -rf "$PUBLISH/detail" && cp -r proj/detail "$PUBLISH/detail"
 fi
 step "Done"
-for file in "${OUTPUTS[@]}"; do printf '%s  %s\n' "$(sha256sum "proj/$file" | cut -c1-16)" "$file"; done
+for file in "${OUTPUTS[@]}" detail/index.json; do printf '%s  %s\n' "$(sha256sum "proj/$file" | cut -c1-16)" "$file"; done

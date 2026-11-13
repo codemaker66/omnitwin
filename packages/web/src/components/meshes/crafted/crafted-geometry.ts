@@ -1,4 +1,5 @@
 import {
+  BoxGeometry,
   BufferAttribute,
   BufferGeometry,
   CatmullRomCurve3,
@@ -9,15 +10,15 @@ import {
   Vector2,
   Vector3,
 } from "three";
-import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import { mergeGeometries, mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 
 // ---------------------------------------------------------------------------
 // Crafted furniture geometry
 //
-// Every helper returns an indexed geometry with exactly position, normal and
-// uv, so parts that share a material always merge (here, and again in the
-// instancing harvest). UVs are in metres; the shared textures carry their
+// Every helper returns an indexed geometry with exactly position, normal, uv
+// and ao (the baked occlusion, 1 where nothing was baked), so parts that
+// share a material always merge (here, and again in the instancing
+// harvest). UVs are in metres; the shared textures carry their
 // real tile size, so wood grain, weave and felt keep one texel density on
 // every part of every model.
 // ---------------------------------------------------------------------------
@@ -33,16 +34,22 @@ export function seeded(seed: number, index: number): number {
   return (h >>> 0) / 4294967296;
 }
 
-/** Keeps only position, normal and uv, indexed, so any two parts can merge. */
+/**
+ * Keeps only position, normal, uv and the baked occlusion (crafted-ao.ts),
+ * indexed, so any two parts can merge. A part the bake never saw is open.
+ */
 export function normalizeAttributes(source: BufferGeometry): BufferGeometry {
   let geometry = source;
   for (const name of Object.keys(geometry.attributes)) {
-    if (name !== "position" && name !== "normal" && name !== "uv") geometry.deleteAttribute(name);
+    if (name !== "position" && name !== "normal" && name !== "uv" && name !== "ao") geometry.deleteAttribute(name);
   }
   if (!geometry.hasAttribute("normal")) geometry.computeVertexNormals();
+  const count = geometry.getAttribute("position").count;
   if (!geometry.hasAttribute("uv")) {
-    const count = geometry.getAttribute("position").count;
     geometry.setAttribute("uv", new Float32BufferAttribute(new Float32Array(count * 2), 2));
+  }
+  if (!geometry.hasAttribute("ao")) {
+    geometry.setAttribute("ao", new Float32BufferAttribute(new Float32Array(count).fill(1), 1));
   }
   if (geometry.index === null) {
     const indexed = mergeVertices(geometry);
@@ -88,7 +95,15 @@ export function boxProjectUvs(geometry: BufferGeometry, grain: "x" | "y" | "z" =
   return geometry;
 }
 
-/** A box with rounded edges, centred on `centre`, metric UVs. */
+/**
+ * A box with rounded edges, centred on `centre`, metric UVs.
+ *
+ * Rounded as three's RoundedBoxGeometry rounds a unit box's grid (each
+ * vertex pushed to its corner's sphere, the normal from the vertex less half
+ * a segment), but in place on BoxGeometry's own indexed grid: three's goes
+ * through a non-indexed copy, and re-indexing that here cost 1.7 ms a box, so
+ * a cabinet of fifty boxes took 80 ms to build. Its UVs are replaced anyway.
+ */
 export function roundedBox(
   size: Vec3,
   radius: number,
@@ -96,8 +111,26 @@ export function roundedBox(
   options: { readonly segments?: number; readonly grain?: "x" | "y" | "z" } = {},
 ): BufferGeometry {
   const r = Math.max(0.0005, Math.min(radius, size[0] / 2 - 1e-4, size[1] / 2 - 1e-4, size[2] / 2 - 1e-4));
-  const geometry = new RoundedBoxGeometry(size[0], size[1], size[2], options.segments ?? 2, r);
-  geometry.translate(centre[0], centre[1], centre[2]);
+  const grid = (options.segments ?? 2) * 2 + 1;
+  const geometry = new BoxGeometry(1, 1, 1, grid, grid, grid);
+  const position = geometry.getAttribute("position");
+  const normal = geometry.getAttribute("normal");
+  const step = 0.5 / grid;
+  const [hx, hy, hz] = [size[0] / 2 - r, size[1] / 2 - r, size[2] / 2 - r];
+  for (let i = 0; i < position.count; i += 1) {
+    const sx = Math.sign(position.getX(i));
+    const sy = Math.sign(position.getY(i));
+    const sz = Math.sign(position.getZ(i));
+    let nx = position.getX(i) - sx * step;
+    let ny = position.getY(i) - sy * step;
+    let nz = position.getZ(i) - sz * step;
+    const length = Math.hypot(nx, ny, nz);
+    nx /= length;
+    ny /= length;
+    nz /= length;
+    position.setXYZ(i, hx * sx + nx * r + centre[0], hy * sy + ny * r + centre[1], hz * sz + nz * r + centre[2]);
+    normal.setXYZ(i, nx, ny, nz);
+  }
   return normalizeAttributes(boxProjectUvs(geometry, options.grain ?? "x"));
 }
 
@@ -186,7 +219,7 @@ function tryMerge(geometries: BufferGeometry[]): BufferGeometry | null {
 export function mergeParts(parts: readonly BufferGeometry[]): BufferGeometry {
   if (parts.length === 1) {
     const only = parts[0];
-    if (only !== undefined) return only;
+    if (only !== undefined) return normalizeAttributes(only);
   }
   const merged = tryMerge(parts.map(normalizeAttributes));
   for (const part of parts) part.dispose();

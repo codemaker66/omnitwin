@@ -1,0 +1,173 @@
+{
+ "version": 1,
+ "atlas": [
+  832,
+  640
+ ],
+ "files": {
+  "beyond-832.webp": {
+   "size": [
+    832,
+    640
+   ],
+   "bytes": 89412,
+   "sha256": "b5a274392ab076e0e2b31eb6dc8a71c1c400692c4d9dd75d93e470e7ae66482b"
+  },
+  "beyond-416.webp": {
+   "size": [
+    416,
+    320
+   ],
+   "bytes": 21164,
+   "sha256": "655ca4807a85ee7467c9b9061e0a9fa96d2dcadff4778f56624cf245ad1ecfc3"
+  }
+ },
+ "surfaces": [
+  {
+   "name": "saloon-floor",
+   "kind": "floor",
+   "rect": [
+    0,
+    0,
+    453,
+    288
+   ],
+   "map": {
+    "x0": 7.45,
+    "z0": 6.435,
+    "y": -0.043,
+    "ppm": 120,
+    "columns": "x from x0",
+    "rows": "z from z0"
+   },
+   "stations": [
+    "scan_048",
+    "scan_049",
+    "scan_050"
+   ],
+   "edit": "the floor the open Saloon leaf hid or darkened (18178 texels, x 9.2-11.3, z under 7.6): 16251 from the same boards 0.692 m further along z (6 teeth of 117 mm), colour matched, the rest from their nearest neighbours",
+   "stationsSeeing": {
+    "scan_048": 91275,
+    "scan_049": 103312,
+    "scan_050": 112914
+   },
+   "coverage": 0.9776,
+   "medianSrgb": [
+    167,
+    141,
+    109
+   ]
+  },
+  {
+   "name": "landing-floor",
+   "kind": "floor",
+   "rect": [
+    0,
+    296,
+    576,
+    221
+   ],
+   "map": {
+    "x0": -2.394,
+    "z0": 6.385,
+    "y": -0.046,
+    "ppm": 120,
+    "columns": "x from x0",
+    "rows": "z from z0"
+   },
+   "stations": [
+    "scan_018",
+    "scan_075",
+    "scan_076"
+   ],
+   "stationsSeeing": {
+    "scan_018": 115450,
+    "scan_075": 115512,
+    "scan_076": 103706
+   },
+   "coverage": 0.9385,
+   "medianSrgb": [
+    188,
+    193,
+    195
+   ]
+  },
+  {
+   "name": "end-door-lining",
+   "kind": "lining",
+   "rect": [
+    588,
+    0,
+    114,
+    581
+   ],
+   "map": {
+    "u0": 1.197500000000001,
+    "u1": 2.297500000000001,
+    "head": 2.35,
+    "depth": 1.14,
+    "ppm": 100,
+    "rows": "s: the lower-u jamb from the floor up, the head toward higher u, the higher-u jamb from the head down",
+    "columns": "t: depth behind the hall's face"
+   },
+   "stations": [
+    "scan_000",
+    "scan_048",
+    "scan_049"
+   ],
+   "stationsSeeing": {
+    "scan_000": 65829,
+    "scan_048": 66077,
+    "scan_049": 65391
+   },
+   "coverage": 0.999,
+   "medianSrgb": [
+    42,
+    20,
+    8
+   ]
+  },
+  {
+   "name": "main-door-lining",
+   "kind": "lining",
+   "rect": [
+    708,
+    0,
+    110,
+    615
+   ],
+   "map": {
+    "u0": 9.8375,
+    "u1": 11.2875,
+    "head": 2.35,
+    "depth": 1.09,
+    "ppm": 100,
+    "rows": "s: the lower-u jamb from the floor up, the head toward higher u, the higher-u jamb from the head down",
+    "columns": "t: depth behind the hall's face"
+   },
+   "stations": [
+    "scan_016",
+    "scan_017",
+    "scan_018",
+    "scan_019",
+    "scan_075",
+    "scan_076"
+   ],
+   "stationsSeeing": {
+    "scan_016": 27196,
+    "scan_017": 36578,
+    "scan_018": 42188,
+    "scan_019": 23218,
+    "scan_075": 15794,
+    "scan_076": 22084
+   },
+   "coverage": 0.7658,
+   "medianSrgb": [
+    42,
+    22,
+    14
+   ]
+  }
+ ],
+ "occlusion": "CPU distance maps from the dollhouse mesh, 1440 x 720 equirectangular, nearest of 3 x 3 cells"
+}

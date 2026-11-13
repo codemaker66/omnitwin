@@ -10,7 +10,8 @@ import {
 import { configurations, spaces, placedObjects } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { authenticate, isPlatformAdmin } from "../middleware/auth.js";
-import { requireEditableConfig } from "../middleware/require-editable-config.js";
+import { configLockedBody, editableAtWrite, lockHolds, requireEditableConfig } from "../middleware/require-editable-config.js";
+import { lockConflictOf, RETRY_ANSWER } from "../utils/sql-state.js";
 import { PaginationQuerySchema, paginate } from "../utils/pagination.js";
 import { canAccessResource, canManageVenue } from "../utils/query.js";
 import { configurationRevisionEtag } from "../lib/configuration-revision.js";
@@ -25,17 +26,17 @@ import { configurationRevisionEtag } from "../lib/configuration-revision.js";
 // test. Punch list #13.
 // ---------------------------------------------------------------------------
 
-const IdParam = z.object({ id: z.string().uuid() });
+const IdParam = z.object({ id: z.uuid() });
 
 const SummaryIdsQuery = z.object({
   ids: z.string()
     .transform((value) => [...new Set(value.split(","))])
-    .pipe(z.array(z.string().uuid()).min(1).max(100)),
+    .pipe(z.array(z.uuid()).min(1).max(100)),
 });
 
 const CreateConfigBody = z.object({
-  spaceId: z.string().uuid(),
-  venueId: z.string().uuid(),
+  spaceId: z.uuid(),
+  venueId: z.uuid(),
   name: z.string().trim().min(1).max(200),
   layoutStyle: LayoutStyleSchema,
   guestCount: z.number().int().nonnegative().default(0),
@@ -230,13 +231,12 @@ export async function configurationRoutes(
       return reply.status(400).send({ error: "Validation failed", code: "VALIDATION_ERROR", details: parsed.error.issues });
     }
 
-    // Only what the access check and metadata merge read; the response is the
-    // UPDATE's own RETURNING row. Skipping thumbnail_url keeps a metadata save
-    // from reading the stored data URL twice.
+    // Only what the access check reads; the response is the UPDATE's own
+    // RETURNING row. Skipping thumbnail_url keeps a metadata save from reading
+    // the stored data URL twice.
     const [config] = await db.select({
       userId: configurations.userId,
       venueId: configurations.venueId,
-      metadata: configurations.metadata,
     })
       .from(configurations)
       .where(and(eq(configurations.id, params.data.id), isNull(configurations.deletedAt)))
@@ -261,26 +261,54 @@ export async function configurationRoutes(
     if (parsed.data.visibility !== undefined) updateData["visibility"] = parsed.data.visibility;
     if (parsed.data.thumbnailUrl !== undefined) updateData["thumbnailUrl"] = parsed.data.thumbnailUrl;
     if (parsed.data.metadata !== undefined) {
-      // Preserve the .passthrough() contract declared on ConfigurationMetadataSchema:
+      // Preserve the .loose() contract declared on ConfigurationMetadataSchema:
       // unknown sibling keys (e.g. a future seatingChart or dietary flags) must
       // survive a partial PATCH that only updates `instructions`. Null clears the
-      // column outright; any object merges onto the existing blob.
-      if (parsed.data.metadata === null) {
-        updateData["metadata"] = null;
-      } else {
-        const existing = (config.metadata ?? {}) as Record<string, unknown>;
-        updateData["metadata"] = { ...existing, ...parsed.data.metadata };
-      }
+      // column outright (SQL NULL); an object merges onto the stored blob
+      // shallowly, each top-level key it carries replacing the stored one whole.
+      // The merge happens in the UPDATE itself, on the row as it stands: two
+      // saves of different keys at once (Event details' instructions, the
+      // planner's gangway review and event kind) once read the same old blob
+      // and the later write dropped the other's key. A stored value that is not
+      // an object (none is written today: a jsonb 'null' or an array put there
+      // from outside the route) starts again from {}, as the old read-and-spread
+      // did, instead of `||` wrapping it into an array.
+      updateData["metadata"] = parsed.data.metadata === null
+        ? null
+        : sql`(case when jsonb_typeof(${configurations.metadata}) = 'object' then ${configurations.metadata} else '{}'::jsonb end) || ${JSON.stringify(parsed.data.metadata)}::jsonb`;
     }
 
-    const [updated] = await db.update(configurations)
+    const rows = await db.update(configurations)
       .set(updateData)
-      .where(eq(configurations.id, params.data.id))
-      .returning();
+      .where(and(
+        eq(configurations.id, params.data.id),
+        isNull(configurations.deletedAt),
+        editableAtWrite(request.user, config.venueId),
+      ))
+      .returning()
+      .catch((error: unknown) => {
+        // A deadlock with a submit (it locks the row before migration 0058's
+        // global lock, which this write takes first): nothing was written.
+        const pgCode = lockConflictOf(error);
+        if (pgCode === null) throw error;
+        request.log.warn({ event: "configurations.patch.retry", configId: params.data.id, pgCode }, "layout write met a lock conflict");
+        return null;
+      });
+    if (rows === null) return reply.status(409).send(RETRY_ANSWER);
+    const [updated] = rows;
 
-    if (updated !== undefined) {
-      reply.header("ETag", configurationRevisionEtag(updated.revision));
+    if (updated === undefined) {
+      // A review begun since the check holds the layout, or it is gone (or
+      // its review moved on and back while this saved: try again).
+      const [now] = await db.select({ reviewStatus: configurations.reviewStatus })
+        .from(configurations)
+        .where(and(eq(configurations.id, params.data.id), isNull(configurations.deletedAt)))
+        .limit(1);
+      if (now === undefined) return reply.status(404).send({ error: "Configuration not found", code: "NOT_FOUND" });
+      return reply.status(409).send(lockHolds(request.user, config.venueId, now.reviewStatus)
+        ? configLockedBody(now.reviewStatus) : RETRY_ANSWER);
     }
+    reply.header("ETag", configurationRevisionEtag(updated.revision));
     return { data: updated };
   });
 

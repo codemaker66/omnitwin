@@ -140,10 +140,11 @@ describe("RotaView", () => {
     renderView();
     await screen.findByRole("heading", { name: "Rota", level: 1 });
     const consequence = "Publishes 2 shifts, 1 of them unfilled, and tells Morag Sinclair in the app. One of the shifts carries a warning.";
-    expect(screen.getByText(consequence)).toBeDefined();
+    // The heading is drawn before the week is read; the week says what publishing does.
+    expect(await screen.findByText(consequence)).toBeDefined();
     expect(screen.getByText("Callum Reid has no right-to-work check recorded, so 1 shift stays in draft until one is.")).toBeDefined();
 
-    fireEvent.click(screen.getByRole("button", { name: "Publish this week" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Publish this week" }));
     const question = screen.getByText("Publish the week of 5 October 2026?");
     // The question takes focus, so a second press of Enter cannot publish.
     expect(document.activeElement).toBe(question);
@@ -161,7 +162,7 @@ describe("RotaView", () => {
   it("lets the question go with Escape, and puts focus back on the button", async () => {
     renderView();
     await screen.findByRole("heading", { name: "Rota", level: 1 });
-    fireEvent.click(screen.getByRole("button", { name: "Publish this week" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Publish this week" }));
     fireEvent.keyDown(screen.getByText("Publish the week of 5 October 2026?"), { key: "Escape" });
     const button = await screen.findByRole("button", { name: "Publish this week" });
     await waitFor(() => { expect(document.activeElement).toBe(button); });
@@ -172,7 +173,7 @@ describe("RotaView", () => {
     mocks.publish.mockRejectedValue(new ApiError(409, "Something on this week changed a moment ago.", "WEEK_CHANGED"));
     renderView();
     await screen.findByRole("heading", { name: "Rota", level: 1 });
-    fireEvent.click(screen.getByRole("button", { name: "Publish this week" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Publish this week" }));
     fireEvent.click(screen.getByRole("button", { name: "Publish and tell 1 person" }));
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toBe("The week changed while you were looking at it. Here it is as it stands now; nothing was published.");
@@ -235,11 +236,12 @@ describe("RotaView", () => {
       shifts: [shift({ id: MORAG_SATURDAY.id, staffMemberId: MORAG, status: "published", publishedAt: "2026-10-01T09:00:00.000Z" })],
     }));
     renderView();
-    await screen.findByRole("heading", { name: "Rota", level: 1 });
+    // The heading shows while the week loads; wait for the week before saying what it lacks.
+    const morag = await screen.findByRole("button", { name: /^Morag Sinclair, Saturday 10 October/u });
     expect(screen.queryByRole("button", { name: "Publish this week" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Staff" })).toBeNull();
     expect(screen.queryByRole("button", { name: /^Add a shift/u })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: /^Morag Sinclair, Saturday 10 October/u }));
+    fireEvent.click(morag);
     const panel = screen.getByRole("complementary", { name: "Shift" });
     expect(within(panel).queryByRole("button", { name: "Save changes" })).toBeNull();
     expect(within(panel).getByText("08:30 to 16:00")).toBeDefined();

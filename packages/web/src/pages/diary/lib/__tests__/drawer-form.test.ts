@@ -5,10 +5,12 @@ import {
   formToConvertPayload,
   formToCreatePayload,
   formToUpdatePayload,
+  formToViewingPayload,
   hiddenFieldError,
   initialDrawerForm,
   initialPromotionForm,
   promotionPayload,
+  withConvertKind,
   type DrawerForm,
 } from "../drawer-form.js";
 
@@ -167,6 +169,63 @@ describe("formToConvertPayload", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// A viewing (migration 0100): a show-round, never a hold. Created from the
+// Diary it carries no hygiene, no option and no event type; booked for an
+// enquiry it posts BookViewingSchema, the room following the hold's rule.
+// ---------------------------------------------------------------------------
+
+describe("drawer form — a viewing (migration 0100)", () => {
+  it("creates a viewing with its host and nothing of a hold's, and no event type", () => {
+    const result = formToCreatePayload(holdForm({ kind: "viewing" }), VENUE);
+    expect(result.ok && result.payload).toEqual({
+      venueId: VENUE,
+      spaceId: SPACE,
+      kind: "viewing",
+      title: "MacLeod wedding",
+      startsAt: "2026-09-19T17:00:00.000Z",
+      endsAt: "2026-09-19T22:30:00.000Z",
+      ownerUserId: OWNER,
+    });
+  });
+
+  it("books a viewing for the enquiry from the visible form only", () => {
+    const result = formToViewingPayload(holdForm({ kind: "viewing", notes: "  Bring the floor plan.  " }), ENQUIRY);
+    expect(result.ok && result.payload).toEqual({
+      enquiryId: ENQUIRY,
+      spaceId: SPACE,
+      title: "MacLeod wedding",
+      startsAt: "2026-09-19T17:00:00.000Z",
+      endsAt: "2026-09-19T22:30:00.000Z",
+      ownerUserId: OWNER,
+      notes: "Bring the floor plan.",
+    });
+  });
+
+  it("asks for a room when the guest named none, as the hold does, and leaves the title to the enquiry", () => {
+    const roomless = formToViewingPayload(holdForm({ kind: "viewing", spaceId: "" }), ENQUIRY);
+    expect(roomless.ok ? null : roomless.fieldErrors).toEqual({ spaceId: "Choose a room." });
+    const untitled = formToViewingPayload(holdForm({ kind: "viewing", title: "  " }), ENQUIRY);
+    expect(untitled.ok && untitled.payload.title).toBeUndefined();
+    const inverted = formToViewingPayload(holdForm({ kind: "viewing", endsAt: "2026-09-19T17:00" }), ENQUIRY);
+    expect(inverted.ok ? null : inverted.fieldErrors).toEqual({ endsAt: "It must end after it starts." });
+  });
+
+  it("switches the enquiry's drawer between a hold and a viewing, shortening only an untouched evening", () => {
+    const enquiry = { id: ENQUIRY, spaceId: SPACE, name: "Fiona MacLeod", eventType: "wedding", preferredDate: "2026-09-19" };
+    const hold = initialDrawerForm({ kind: "convert", enquiry, ownerUserId: OWNER });
+    const viewing = withConvertKind(hold, "viewing");
+    expect([viewing.kind, viewing.startsAt, viewing.endsAt]).toEqual(["viewing", "2026-09-19T17:00", "2026-09-19T18:00"]);
+    // And back: the hold's evening again, everything typed kept.
+    const back = withConvertKind({ ...viewing, notes: "Kept." }, "hold");
+    expect([back.kind, back.endsAt, back.notes, back.title]).toEqual(["hold", "2026-09-19T23:00", "Kept.", hold.title]);
+    // Times the booker set stay as they are.
+    const set = withConvertKind({ ...hold, endsAt: "2026-09-19T22:00" }, "viewing");
+    expect(set.endsAt).toBe("2026-09-19T22:00");
+    expect(withConvertKind(hold, "hold")).toBe(hold);
+  });
+});
+
 describe("initialDrawerForm", () => {
   it("edit mode mirrors the booking in venue wall time", () => {
     const form = initialDrawerForm({ kind: "edit", booking: bookingEntry() });
@@ -214,6 +273,31 @@ describe("initialDrawerForm", () => {
     });
     expect(form.startsAt).toBe("2026-09-19T17:00");
     expect(form.endsAt).toBe("2026-09-19T23:00");
+  });
+
+  // time-dst-3: the evening window is 17:00 to 23:00 on the venue's clock
+  // (Europe/London), on a day of 25 hours or 23 hours too. Adding 17 and 23
+  // hours to local midnight opened Sun 25 Oct 2026 at 16:00–22:00 and Sun
+  // 28 Mar 2027 at 18:00–00:00.
+  const DAYS: readonly (readonly [string, string, string])[] = [
+    ["the clocks go back", "2026-10-25", "2026-10-24T23:00:00.000Z"],
+    ["the clocks go forward", "2027-03-28", "2027-03-28T00:00:00.000Z"],
+    ["an ordinary summer day", "2026-10-24", "2026-10-23T23:00:00.000Z"],
+    ["an ordinary winter day", "2027-03-27", "2027-03-27T00:00:00.000Z"],
+  ];
+
+  it.each(DAYS)("opens a new booking on the day %s at 17:00 to 23:00 on the venue's clock", (_day, date, midnightIso) => {
+    const form = initialDrawerForm({ kind: "create", spaceId: SPACE, dayStartMs: Date.parse(midnightIso), ownerUserId: OWNER });
+    expect([form.startsAt, form.endsAt]).toEqual([`${date}T17:00`, `${date}T23:00`]);
+  });
+
+  it.each(DAYS)("holds an enquiry's date on the day %s at 17:00 to 23:00 on the venue's clock", (_day, date) => {
+    const form = initialDrawerForm({
+      kind: "convert",
+      enquiry: { id: ENQUIRY, spaceId: SPACE, name: "Fiona MacLeod", eventType: "wedding", preferredDate: date },
+      ownerUserId: OWNER,
+    });
+    expect([form.startsAt, form.endsAt]).toEqual([`${date}T17:00`, `${date}T23:00`]);
   });
 });
 

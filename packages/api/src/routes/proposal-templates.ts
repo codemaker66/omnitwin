@@ -24,8 +24,8 @@ import { canManageCommercial } from "../utils/query.js";
 // templates are kept, so Remove can be undone.
 // ---------------------------------------------------------------------------
 
-const VenueIdParam = z.object({ venueId: z.string().uuid() });
-const TemplateIdParam = z.object({ venueId: z.string().uuid(), id: z.string().uuid() });
+const VenueIdParam = z.object({ venueId: z.uuid() });
+const TemplateIdParam = z.object({ venueId: z.uuid(), id: z.uuid() });
 
 const TEMPLATE_COLUMNS = {
   id: proposalTemplates.id,

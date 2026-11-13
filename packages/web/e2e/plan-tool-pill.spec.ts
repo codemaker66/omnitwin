@@ -33,6 +33,7 @@ test.describe("Stage S2 — the tool pill and the clearance ring", () => {
   // Wide enough for the pill's labels (they collapse to icons below 1280).
   test.use({ viewport: { width: 1680, height: 1000 } });
 
+  // The title is this case's identity in .github/gpu/browser-baseline.json; it keeps "five hands" though Scale has gone (QoL B-07).
   test("five hands, the Escape ladder, and a judged amber ring", async ({ page }, testInfo) => {
     // Boot + resolve choreography on a churned worker can exceed the default
     // 30s (the S1 lesson); the interactions themselves are fast.
@@ -44,7 +45,7 @@ test.describe("Stage S2 — the tool pill and the clearance ring", () => {
       void route.fulfill({ status: 404, body: "not in this spec" });
     });
 
-    await page.goto("/plan");
+    await page.goto("/plan?space=reception-room");
     await settleCockpit(page);
 
     // Interact only with a settled stage: the resolve choreography animates
@@ -60,12 +61,14 @@ test.describe("Stage S2 — the tool pill and the clearance ring", () => {
       )
       .toBe("fallback");
 
-    // The pill: five hands, Select in hand.
+    // The pill: four hands, Select in hand.
     const pill = page.getByTestId("planner-tool-pill");
     await expect(pill).toBeVisible();
-    for (const tool of ["select", "move", "rotate", "scale", "measure"]) {
+    for (const tool of ["select", "move", "rotate", "measure"]) {
       await expect(page.getByTestId(`planner-tool-${tool}`)).toBeVisible();
     }
+    // Catalogue pieces have real sizes, so Scale is gone (spec D10, QoL B-07).
+    await expect(page.getByTestId("planner-tool-scale")).toHaveCount(0);
     await expect(page.getByTestId("planner-tool-select")).toHaveAttribute("aria-pressed", "true");
 
     // Taking a hand by click.

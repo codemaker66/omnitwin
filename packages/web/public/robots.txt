@@ -31,8 +31,9 @@ Disallow: /fresh
 Disallow: /editor
 
 # Off the public surface: /pricing until billing exists (Blake, 26 September
-# 2026) and /demo, an internal sales deck. Both are admin-only behind the route
-# guard, which sends anyone else to sign in, and neither is in the sitemap.
+# 2026) and /demo, an internal sales deck. Both are admin-only and neither is in
+# the sitemap. /demo sends anyone else to sign in; /pricing tells them plainly
+# that subscriptions are not yet public, with a person to write to.
 Disallow: /pricing
 Disallow: /demo
 
@@ -45,12 +46,16 @@ Disallow: /legal/
 Disallow: /proposal/
 Disallow: /proposal-share/
 Disallow: /supplier-share/
+Disallow: /plan-view/
 Disallow: /plan
 Disallow: /blueprint
 Disallow: /v/
+# A staff member's preview of a proposal before it is sent.
+Disallow: /proposal-preview/
 
 # Signed-in, operational and account surfaces.
 Disallow: /hallkeeper/
+Disallow: /events
 Disallow: /diary
 Disallow: /dashboard
 Disallow: /ops/
@@ -60,5 +65,6 @@ Disallow: /login
 Disallow: /register
 Disallow: /oauth-consent
 Disallow: /onboard
+Disallow: /account/
 
 Sitemap: https://venviewer.com/sitemap.xml

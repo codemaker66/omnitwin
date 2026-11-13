@@ -249,19 +249,17 @@ test.describe("Find", () => {
     await find.getByRole("button", { name: "Close Find" }).click();
     await expect(find).toHaveCount(0);
 
-    // Sales works the pipeline but not the Clients desk (Blake's C2): its Find
-    // offers dates and pages, and never asks the client search.
+    // Sales works the pipeline and now the Clients desk too: Blake's C2
+    // question was open, and the approved People Book design (§6.7, 18 October
+    // 2026) gives sales the desk, so its Find asks the client search.
     const sales = await page.context().newPage();
     const salesSearches = await openWorkspace(sales, { role: "sales", path: "/dashboard?view=enquiries" });
     await sales.keyboard.press("Control+k");
     const salesFind = sales.getByRole("dialog", { name: "Find" });
-    await expect(salesFind.getByRole("combobox", { name: "Find" })).toHaveAttribute("placeholder", "A date or a page");
-    await expect(salesFind.getByText("Dates and pages.")).toBeVisible();
+    await expect(salesFind.getByRole("combobox", { name: "Find" })).toHaveAttribute("placeholder", "A name, a date or a page");
     await sales.keyboard.type("henderson");
-    await expect(salesFind.getByText("Nothing found for “henderson”.")).toBeVisible();
-    await sales.waitForTimeout(500);
-    expect(salesSearches.searches).toEqual([]);
-    await expect(salesFind.getByRole("option")).toHaveCount(0);
+    await expect(salesFind.getByRole("option", { name: /^Ailsa Henderson, contact/u })).toBeVisible();
+    expect(salesSearches.searches.at(-1)).toBe("henderson");
     await sales.close();
 
     // The header holds an admin's full row, the unread bell included, at every

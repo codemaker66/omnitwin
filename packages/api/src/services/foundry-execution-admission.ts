@@ -502,7 +502,7 @@ export async function admitFoundryExecution(
   admittedByUserIdInput: unknown,
 ): Promise<FoundryAdmittedExecution> {
   const requestResult = FoundryExecutionAdmissionRequestV0Schema.safeParse(requestInput);
-  const admittedByUserIdResult = z.string().uuid().safeParse(admittedByUserIdInput);
+  const admittedByUserIdResult = z.uuid().safeParse(admittedByUserIdInput);
   if (!requestResult.success || !admittedByUserIdResult.success) {
     throw new FoundryExecutionAdmissionError(
       "INVALID_ADMISSION_REQUEST",

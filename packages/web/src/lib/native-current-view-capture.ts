@@ -25,6 +25,7 @@ export async function captureNativeCurrentView(scene: Scene, camera: Camera): Pr
   const previousTarget = renderer.getRenderTarget();
   const previousFace = renderer.getActiveCubeFace();
   const previousMip = renderer.getActiveMipmapLevel();
+  const previousOutputs = renderer.getMRT();
   const previousAutoClear = renderer.autoClear;
   const previousXr = renderer.xr.enabled;
   try {
@@ -32,9 +33,12 @@ export async function captureNativeCurrentView(scene: Scene, camera: Camera): Pr
       renderer.autoClear = true;
       renderer.xr.enabled = false;
       renderer.setRenderTarget(target);
+      // Without any outputs a precompile job holds (as lib/ortho-capture.ts).
+      renderer.setMRT(null);
       withNativeSplatCapture(scene, camera, () => { renderer.render(scene, camera); });
     } finally {
       renderer.setRenderTarget(previousTarget, previousFace, previousMip);
+      renderer.setMRT(previousOutputs);
       renderer.autoClear = previousAutoClear;
       renderer.xr.enabled = previousXr;
     }

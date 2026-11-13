@@ -56,13 +56,13 @@ const EquipmentRecordSchema = z.object({
   reported_quantity: z.number().int().nonnegative().nullable(),
   quantity_status: z.string().min(1),
   storage_location: z.string().min(1).nullable().optional(),
-}).passthrough();
+}).loose();
 
 export const EquipmentIntakeSchema = z.object({
   record_kind: z.string().min(1),
   received_on: z.string().regex(/^\d{4}-\d{2}-\d{2}$/u),
   equipment_records: z.array(EquipmentRecordSchema).min(1),
-}).passthrough();
+}).loose();
 
 export type EquipmentIntake = z.infer<typeof EquipmentIntakeSchema>;
 
@@ -341,7 +341,7 @@ export function parseCliOptions(argv: readonly string[]): CliOptions {
   // A venue or an account is named by its id, checked before any query.
   const id = (key: string): string => {
     const value = required(key);
-    if (!z.string().uuid().safeParse(value).success) throw new Error(`--${key} must be an id (a UUID)`);
+    if (!z.uuid().safeParse(value).success) throw new Error(`--${key} must be an id (a UUID)`);
     return value;
   };
   const backupBranch = values.get("backup-branch")?.trim() ?? null;

@@ -1,5 +1,6 @@
 import {
   BufferGeometry,
+  Color,
   Matrix4,
   MeshBasicMaterial,
   MeshStandardMaterial,
@@ -97,7 +98,13 @@ export function materialAppearanceSignature(material: Material): string {
     material.transparent,
     material.opacity,
   ];
-  if (material instanceof MeshStandardMaterial) {
+  if (material.name.startsWith("crafted:")) {
+    // The crafted palette (components/meshes/crafted) is node materials,
+    // which are no MeshStandardMaterial: each palette entry is its own
+    // batch, by its name and the colour a placement ghost may have tinted.
+    const colour = "color" in material && material.color instanceof Color ? material.color.getHexString() : null;
+    parts.push(material.name, colour);
+  } else if (material instanceof MeshStandardMaterial) {
     parts.push(
       material.color.getHexString(),
       material.emissive.getHexString(),

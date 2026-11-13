@@ -11,7 +11,7 @@ import { UserIdSchema } from "./user.js";
 // issue, assignment, and board read payloads.
 // ---------------------------------------------------------------------------
 
-const UUID = z.string().uuid();
+const UUID = z.uuid();
 
 export const EventDayIssueIdSchema = UUID;
 export type EventDayIssueId = z.infer<typeof EventDayIssueIdSchema>;
@@ -56,9 +56,9 @@ export const EventDayIssueSchema = z.object({
   reportedBy: UserIdSchema.nullable(),
   assignedTo: UserIdSchema.nullable(),
   escalationNote: EventDaySafeTextSchema.nullable(),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
-  resolvedAt: z.string().datetime().nullable(),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
+  resolvedAt: z.iso.datetime().nullable(),
 }).strict();
 export type EventDayIssue = z.infer<typeof EventDayIssueSchema>;
 
@@ -70,8 +70,8 @@ export const TaskAssignmentSchema = z.object({
   assigneeLabel: z.string().trim().min(1).max(160).nullable(),
   roleLabel: z.string().trim().min(1).max(80).nullable(),
   status: TaskAssignmentStatusSchema,
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
 }).strict();
 export type TaskAssignment = z.infer<typeof TaskAssignmentSchema>;
 
@@ -84,7 +84,7 @@ export const TaskCompletionEventSchema = z.object({
   toStatus: OpsTaskStatusSchema,
   idempotencyKey: z.string().trim().min(1).max(160).nullable(),
   note: EventDaySafeTextSchema.nullable(),
-  createdAt: z.string().datetime(),
+  createdAt: z.iso.datetime(),
 }).strict();
 export type TaskCompletionEvent = z.infer<typeof TaskCompletionEventSchema>;
 
@@ -95,7 +95,7 @@ export const OpsStatusUpdateSchema = z.object({
   kind: OpsStatusUpdateKindSchema,
   message: EventDaySafeTextSchema,
   createdBy: UserIdSchema.nullable(),
-  createdAt: z.string().datetime(),
+  createdAt: z.iso.datetime(),
 }).strict();
 export type OpsStatusUpdate = z.infer<typeof OpsStatusUpdateSchema>;
 

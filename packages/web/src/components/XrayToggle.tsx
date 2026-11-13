@@ -1,12 +1,18 @@
 import { useEffect } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import { useXrayStore } from "../stores/xray-store.js";
+import { letter, usePlannerKeyBindings, type KeyBinding } from "../lib/planner-keys.js";
+
+const XRAY_KEYS: readonly KeyBinding[] = [{
+  keys: letter("x"),
+  run: () => { useXrayStore.getState().toggle(); },
+}];
 
 /**
  * X-Ray mode controller — R3F component (must be inside Canvas).
  *
  * Handles:
- * - X key shortcut to toggle x-ray mode
+ * - X toggles x-ray mode (through the planner's one keyboard owner)
  * - useFrame to advance the 200ms opacity fade and invalidate during transition
  *
  * This component renders nothing — it's a pure side-effect controller.
@@ -14,22 +20,9 @@ import { useXrayStore } from "../stores/xray-store.js";
 export function XrayToggle(): null {
   const { invalidate } = useThree();
 
-  // X key shortcut
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent): void {
-      // Ignore if typing in an input
-      const target = event.target;
-      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) return;
-      if (event.code !== "KeyX") return;
+  usePlannerKeyBindings(XRAY_KEYS);
 
-      useXrayStore.getState().toggle();
-      invalidate();
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => { window.removeEventListener("keydown", onKeyDown); };
-  }, [invalidate]);
-
-  // Invalidate when xray is toggled externally (e.g. toolbar button)
+  // Invalidate when xray is toggled (by X or a toolbar button)
   useEffect(() => {
     return useXrayStore.subscribe(() => { invalidate(); });
   }, [invalidate]);

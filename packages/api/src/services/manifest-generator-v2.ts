@@ -39,6 +39,12 @@ export interface ManifestObjectV2 {
    * = no note.
    */
   readonly notes?: string | null;
+  /** The planner's name for this piece ("Table 4"), from metadata.displayLabel. */
+  readonly displayLabel?: string | null;
+  /** The catalogue footprint and the placement's scale, to size a laid floor. */
+  readonly widthM?: number;
+  readonly depthM?: number;
+  readonly scale?: number;
 }
 
 /** One accessory rule, as loaded from the asset_accessories table. */
@@ -64,6 +70,8 @@ interface WorkingRow {
   positions: RowPosition[];
   /** Distinct notes collected from the source placements. */
   notes: string[];
+  /** The planner's names for the pieces ("Table 4"), and a laid floor's size. */
+  labels: string[];
 }
 
 export function manifestKey(row: Pick<WorkingRow, "phase" | "zone" | "name" | "afterDepth">): string {
@@ -100,61 +108,144 @@ export function generateManifestV2(
   };
 } {
   const bucket = new Map<string, WorkingRow>();
-
-  const chairsByGroup = new Map<string, number>();
-  for (const obj of objects) {
-    if (obj.assetCategory === "chair" && obj.groupId !== null) {
-      chairsByGroup.set(obj.groupId, (chairsByGroup.get(obj.groupId) ?? 0) + 1);
-    }
-  }
+  const groups = groupMembers(objects);
+  const seating = seatGroupedChairs(groups);
+  const floors = laidFloors(groups);
 
   for (const obj of objects) {
-    if (obj.assetCategory === "chair" && obj.groupId !== null) {
+    // A laid floor is one row of its panels, written below.
+    if (obj.groupId !== null && floors.has(obj.groupId)) continue;
+
+    const zone = classifyZoneV2(obj.positionX, obj.positionZ, room);
+    if (obj.assetCategory === "chair") {
+      // A chair seated at a table folds into that table's row. Any other
+      // chair (ungrouped, or in a group with no table: a ceremony row someone
+      // grouped) is listed as itself, so no chair ever leaves the sheet.
+      if (seating.seatedChairs.has(obj.id)) {
+        addAccessoriesForItem(bucket, obj, room, accessories);
+        continue;
+      }
+      addRow(bucket, {
+        phase: "furniture", zone, name: obj.assetName, category: "chair",
+        afterDepth: 0, isAccessory: false, qty: 1, source: obj,
+      });
       addAccessoriesForItem(bucket, obj, room, accessories);
       continue;
     }
 
-    const zone = classifyZoneV2(obj.positionX, obj.positionZ, room);
-    const parentPhase = defaultPhaseForCategory(obj.assetCategory);
-    const chairCount = obj.groupId !== null ? (chairsByGroup.get(obj.groupId) ?? 0) : 0;
-    const parentName = chairCount > 0
-      ? `${obj.assetName} with ${String(chairCount)} chairs`
-      : obj.assetName;
-
+    const chairCount = seating.chairsAtTable.get(obj.id) ?? 0;
     addRow(bucket, {
-      phase: parentPhase,
+      phase: defaultPhaseForCategory(obj.assetCategory),
       zone,
-      name: parentName,
+      name: chairCount > 0 ? `${obj.assetName} with ${String(chairCount)} chairs` : obj.assetName,
       category: obj.assetCategory,
       afterDepth: 0,
       isAccessory: false,
       qty: 1,
       source: obj,
     });
-
-    // Expand parent's accessories from the DB-loaded map.
     addAccessoriesForItem(bucket, obj, room, accessories);
   }
 
-  // Ungrouped chairs keep their own row + expand accessories.
-  for (const obj of objects) {
-    if (obj.assetCategory === "chair" && obj.groupId === null) {
-      const zone = classifyZoneV2(obj.positionX, obj.positionZ, room);
+  // Each laid floor: its panels in one row at the floor's middle, with the
+  // floor's size as the crew builds it.
+  for (const panels of floors.values()) {
+    const middle = {
+      x: panels.reduce((sum, panel) => sum + panel.positionX, 0) / panels.length,
+      z: panels.reduce((sum, panel) => sum + panel.positionZ, 0) / panels.length,
+    };
+    const zone = classifyZoneV2(middle.x, middle.z, room);
+    const label = laidFloorLabel(panels);
+    for (const panel of panels) {
       addRow(bucket, {
-        phase: "furniture",
-        zone,
-        name: obj.assetName,
-        category: "chair",
-        afterDepth: 0,
-        isAccessory: false,
-        qty: 1,
-        source: obj,
+        phase: defaultPhaseForCategory(panel.assetCategory), zone, name: panel.assetName,
+        category: panel.assetCategory, afterDepth: 0, isAccessory: false, qty: 1, source: panel, label,
       });
-      addAccessoriesForItem(bucket, obj, room, accessories);
+      addAccessoriesForItem(bucket, panel, room, accessories);
     }
   }
 
   return assemblePhases(bucket);
+}
+
+function groupMembers(objects: readonly ManifestObjectV2[]): Map<string, ManifestObjectV2[]> {
+  const groups = new Map<string, ManifestObjectV2[]>();
+  for (const obj of objects) {
+    if (obj.groupId === null) continue;
+    const members = groups.get(obj.groupId) ?? [];
+    members.push(obj);
+    groups.set(obj.groupId, members);
+  }
+  return groups;
+}
+
+/**
+ * Where each grouped chair is set (release audit hallkeeper-ops-3): at the
+ * nearest table in its group, so two tables grouped together each count only
+ * their own chairs rather than all of them. A chair in a group with no table
+ * is not seated, and is listed as itself. Ties go to the first table by id,
+ * so the same layout always gives the same sheet.
+ */
+function seatGroupedChairs(groups: ReadonlyMap<string, readonly ManifestObjectV2[]>): {
+  readonly chairsAtTable: ReadonlyMap<string, number>;
+  readonly seatedChairs: ReadonlySet<string>;
+} {
+  const chairsAtTable = new Map<string, number>();
+  const seatedChairs = new Set<string>();
+  for (const members of groups.values()) {
+    const tables = members.filter((member) => member.assetCategory === "table")
+      .sort((a, b) => a.id.localeCompare(b.id));
+    if (tables.length === 0) continue;
+    for (const chair of members.filter((member) => member.assetCategory === "chair")) {
+      let nearest = tables[0];
+      let nearestDistance = Number.POSITIVE_INFINITY;
+      for (const table of tables) {
+        const distance = (table.positionX - chair.positionX) ** 2 + (table.positionZ - chair.positionZ) ** 2;
+        if (distance < nearestDistance) {
+          nearest = table;
+          nearestDistance = distance;
+        }
+      }
+      if (nearest === undefined) continue;
+      chairsAtTable.set(nearest.id, (chairsAtTable.get(nearest.id) ?? 0) + 1);
+      seatedChairs.add(chair.id);
+    }
+  }
+  return { chairsAtTable, seatedChairs };
+}
+
+const DANCE_FLOOR_PANEL = /dance\s*floor\s*panel/iu;
+
+/** Groups that are one laid floor: every member a dance-floor panel. */
+function laidFloors(groups: ReadonlyMap<string, readonly ManifestObjectV2[]>): Map<string, readonly ManifestObjectV2[]> {
+  const floors = new Map<string, readonly ManifestObjectV2[]>();
+  for (const [groupId, members] of groups) {
+    if (members.length > 0 && members.every((member) => DANCE_FLOOR_PANEL.test(member.assetName))) floors.set(groupId, members);
+  }
+  return floors;
+}
+
+const CENTIMETRES = 100;
+
+/**
+ * A laid floor as the crew builds it: "Laid as one floor, 6 × 4 panels,
+ * 5.46 × 3.64 m" for a full rectangle of panels, "Laid as one floor" for any
+ * other shape. Sizes come from the catalogue footprint and the placement's
+ * scale; a quarter turn swaps a panel's width and depth.
+ */
+function laidFloorLabel(panels: readonly ManifestObjectV2[]): string {
+  const cell = (panel: ManifestObjectV2): string => `${String(Math.round(panel.positionX * CENTIMETRES))}|${String(Math.round(panel.positionZ * CENTIMETRES))}`;
+  const xs = new Set(panels.map((panel) => Math.round(panel.positionX * CENTIMETRES)));
+  const zs = new Set(panels.map((panel) => Math.round(panel.positionZ * CENTIMETRES)));
+  if (xs.size * zs.size !== panels.length || new Set(panels.map(cell)).size !== panels.length) return "Laid as one floor";
+  const grid = `Laid as one floor, ${String(xs.size)} × ${String(zs.size)} panels`;
+  const [first] = panels;
+  if (first?.widthM === undefined || first.depthM === undefined) return grid;
+  const quarterTurned = Math.abs(Math.sin(first.rotationY)) > 0.5;
+  const scale = first.scale ?? 1;
+  const alongX = (quarterTurned ? first.depthM : first.widthM) * scale;
+  const alongZ = (quarterTurned ? first.widthM : first.depthM) * scale;
+  return `${grid}, ${(alongX * xs.size).toFixed(2)} × ${(alongZ * zs.size).toFixed(2)} m`;
 }
 
 function addAccessoriesForItem(
@@ -196,6 +287,15 @@ interface AddRowArgs {
   source: ManifestObjectV2;
   /** If true, don't attach position (for accessories). */
   skipPosition?: boolean;
+  /** Overrides the source's own name for the row's labels (a laid floor's size). */
+  label?: string;
+}
+
+/** The label a row takes from one contributing placement. */
+function labelOf(args: AddRowArgs): string | null {
+  if (args.isAccessory) return null;
+  const label = (args.label ?? args.source.displayLabel ?? "").trim();
+  return label.length > 0 ? label : null;
 }
 
 function addRow(bucket: Map<string, WorkingRow>, args: AddRowArgs): void {
@@ -212,6 +312,7 @@ function addRow(bucket: Map<string, WorkingRow>, args: AddRowArgs): void {
       qty: args.qty,
       positions: [],
       notes: [],
+      labels: [],
     };
     if (args.skipPosition !== true) {
       row.positions.push({
@@ -222,6 +323,8 @@ function addRow(bucket: Map<string, WorkingRow>, args: AddRowArgs): void {
       });
     }
     mergeNote(row, args.source.notes);
+    const label = labelOf(args);
+    if (label !== null && !row.labels.includes(label)) row.labels.push(label);
     bucket.set(key, row);
   } else {
     existing.qty += args.qty;
@@ -234,6 +337,8 @@ function addRow(bucket: Map<string, WorkingRow>, args: AddRowArgs): void {
       });
     }
     mergeNote(existing, args.source.notes);
+    const label = labelOf(args);
+    if (label !== null && !existing.labels.includes(label)) existing.labels.push(label);
   }
 }
 
@@ -282,6 +387,7 @@ function assemblePhases(bucket: Map<string, WorkingRow>): {
           isAccessory: r.isAccessory,
           notes: r.notes.join(" · "),
           positions: [...r.positions],
+          ...(r.labels.length > 0 ? { labels: [...r.labels] } : {}),
         })),
       });
     }

@@ -11,6 +11,7 @@ import {
   isProposalEditable,
   ShortCodeSchema,
   PROPOSAL_STATUSES_REQUIRING_SENT_AT,
+  RecordProposalEngagementSchema,
   type EventPlanAudienceRole,
   type EventPlanChangeSurface,
   type ProposalCommentAuthorType,
@@ -38,9 +39,10 @@ import {
   venues,
 } from "../db/schema.js";
 import type { Database } from "../db/client.js";
+import { outerColumn } from "../utils/outer-column.js";
 import { authenticate, isPlatformAdmin } from "../middleware/auth.js";
 import { paginate } from "../utils/pagination.js";
-import { canManageCommercial, roleReadsInternalEvents } from "../utils/query.js";
+import { canManageCommercial, isVenueCommercialMember, roleReadsInternalEvents } from "../utils/query.js";
 import {
   PROPOSAL_STATES,
   canTransitionProposal,
@@ -54,6 +56,14 @@ import { COMMERCIAL_AUDIENCE_ROLES, notifyCommercialTeam, notifyVenueRoles } fro
 import { clientAnswerNotice, proposalDeskPath } from "../services/client-answer-notice.js";
 import { canRenderPersistedLayout } from "../services/layout-coordinate-space.js";
 import { moveDealWithProposal } from "../services/deal-stage-from-proposal.js";
+import {
+  countProposalView,
+  enquiryAnsweredByProposal,
+  funnelBrowserSignalsEnabled,
+  recordProposalEngagement,
+  stampFirstResponse,
+} from "../services/enquiry-funnel.js";
+import type { JwtUser } from "../middleware/auth.js";
 
 // ---------------------------------------------------------------------------
 // Proposal routes — T-427 phase 2.
@@ -73,21 +83,21 @@ import { moveDealWithProposal } from "../services/deal-stage-from-proposal.js";
 // certainty wording before anything is persisted.
 // ---------------------------------------------------------------------------
 
-const IdParam = z.object({ id: z.string().uuid() });
+const IdParam = z.object({ id: z.uuid() });
 
 const CreateProposalBody = z.object({
-  venueId: z.string().uuid(),
-  opportunityId: z.string().uuid().nullable().optional(),
-  enquiryId: z.string().uuid().nullable().optional(),
-  configurationId: z.string().uuid().nullable().optional(),
+  venueId: z.uuid(),
+  opportunityId: z.uuid().nullable().optional(),
+  enquiryId: z.uuid().nullable().optional(),
+  configurationId: z.uuid().nullable().optional(),
   title: z.string().trim().min(1).max(200),
 });
 
 const UpdateProposalBody = z.object({
   title: z.string().trim().min(1).max(200).optional(),
-  opportunityId: z.string().uuid().nullable().optional(),
-  enquiryId: z.string().uuid().nullable().optional(),
-  configurationId: z.string().uuid().nullable().optional(),
+  opportunityId: z.uuid().nullable().optional(),
+  enquiryId: z.uuid().nullable().optional(),
+  configurationId: z.uuid().nullable().optional(),
   /** Where the proposal stood on the screen the change was made from. */
   expectedStatus: z.enum(PROPOSAL_STATES).optional(),
 });
@@ -127,14 +137,14 @@ function selectDeskProposals(db: Pick<ProposalTransaction, "select">) {
   const latestQuote = (field: "totalMinor" | "currency") => sql`(
     SELECT ${proposalVersions.payload} -> 'quote' ->> ${field}
     FROM ${proposalVersions}
-    WHERE ${proposalVersions.proposalId} = ${proposals.id}
-      AND ${proposalVersions.version} = CASE WHEN ${proposals.status} IN ('draft', 'changes_requested')
-        THEN ${proposals.currentVersion} ELSE COALESCE(${proposals.sentVersion}, ${proposals.currentVersion}) END)`;
+    WHERE ${proposalVersions.proposalId} = ${outerColumn(proposals.id)}
+      AND ${proposalVersions.version} = CASE WHEN ${outerColumn(proposals.status)} IN ('draft', 'changes_requested')
+        THEN ${outerColumn(proposals.currentVersion)} ELSE COALESCE(${outerColumn(proposals.sentVersion)}, ${outerColumn(proposals.currentVersion)}) END)`;
   // The latest send: its stamp, or a move to "sent" recorded after it (a send
   // before sends were each stamped kept the first one's).
-  const lastSentAt = sql`GREATEST(${proposals.sentAt}, (
+  const lastSentAt = sql`GREATEST(${outerColumn(proposals.sentAt)}, (
     SELECT max(${proposalStatusHistory.createdAt}) FROM ${proposalStatusHistory}
-    WHERE ${proposalStatusHistory.proposalId} = ${proposals.id} AND ${proposalStatusHistory.toStatus} = 'sent'))`;
+    WHERE ${proposalStatusHistory.proposalId} = ${outerColumn(proposals.id)} AND ${proposalStatusHistory.toStatus} = 'sent'))`;
   // Whether its links agree as the link planner reads them: no deal, or its
   // deal live here with no enquiry but the deal's own. A layout change the
   // desk offers is then one the planner takes.
@@ -146,9 +156,9 @@ function selectDeskProposals(db: Pick<ProposalTransaction, "select">) {
     SELECT ${field === "id" ? configurations.id : spaces.name} FROM ${configurations}
     INNER JOIN ${spaces} ON ${spaces.id} = ${configurations.spaceId}
     WHERE ${configurations.id} = ${layoutId}
-      AND ${configurations.venueId} = ${proposals.venueId}
+      AND ${configurations.venueId} = ${outerColumn(proposals.venueId)}
       AND ${configurations.deletedAt} IS NULL
-      AND ${spaces.venueId} = ${proposals.venueId}
+      AND ${spaces.venueId} = ${outerColumn(proposals.venueId)}
       AND ${spaces.deletedAt} IS NULL)`;
   return db.select({
     ...getTableColumns(proposals),
@@ -175,17 +185,17 @@ function selectDeskProposals(db: Pick<ProposalTransaction, "select">) {
     linkOpenedAt: sql<string | null>`(
       SELECT to_char(max(${proposalShareTokens.lastViewedAt}) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
       FROM ${proposalShareTokens}
-      WHERE ${proposalShareTokens.proposalId} = ${proposals.id}
+      WHERE ${proposalShareTokens.proposalId} = ${outerColumn(proposals.id)}
         AND ${proposalShareTokens.lastViewedAt} >= ${lastSentAt})`,
     lastSentAt: sql<string | null>`to_char(${lastSentAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`,
     // Whether any of its links is the kind that records being opened; one sent
     // only with the older share code has none.
-    hasLink: sql<boolean>`EXISTS (SELECT 1 FROM ${proposalShareTokens} WHERE ${proposalShareTokens.proposalId} = ${proposals.id})`,
+    hasLink: sql<boolean>`EXISTS (SELECT 1 FROM ${proposalShareTokens} WHERE ${proposalShareTokens.proposalId} = ${outerColumn(proposals.id)})`,
     // Whether the client's link still opens, as presentedStatus decides it.
-    linkOpen: sql<boolean>`(${proposals.status} IN ('sent', 'changes_requested', 'accepted', 'declined', 'expired')
-      OR (${proposals.status} = 'archived' AND COALESCE((
+    linkOpen: sql<boolean>`(${outerColumn(proposals.status)} IN ('sent', 'changes_requested', 'accepted', 'declined', 'expired')
+      OR (${outerColumn(proposals.status)} = 'archived' AND COALESCE((
         SELECT ${proposalStatusHistory.fromStatus} FROM ${proposalStatusHistory}
-        WHERE ${proposalStatusHistory.proposalId} = ${proposals.id} AND ${proposalStatusHistory.toStatus} = 'archived'
+        WHERE ${proposalStatusHistory.proposalId} = ${outerColumn(proposals.id)} AND ${proposalStatusHistory.toStatus} = 'archived'
         ORDER BY ${proposalStatusHistory.createdAt} DESC LIMIT 1) = 'accepted', false)))`,
   })
     .from(proposals)
@@ -224,7 +234,7 @@ const DeskQuery = z.object({
 });
 
 const VersionParam = z.object({
-  id: z.string().uuid(),
+  id: z.uuid(),
   version: z.coerce.number().int().positive(),
 });
 
@@ -277,7 +287,7 @@ function toStaffCommentView(row: {
 
 type ProposalRow = typeof proposals.$inferSelect;
 
-interface ProposalEventContext {
+export interface ProposalEventContext {
   readonly eventId: string;
   readonly venueId: string;
   readonly handoffPackId: string | null;
@@ -285,7 +295,7 @@ interface ProposalEventContext {
 
 
 
-async function loadProposalEventContext(db: Database, proposal: ProposalRow): Promise<ProposalEventContext | null> {
+export async function loadProposalEventContext(db: Database, proposal: ProposalRow): Promise<ProposalEventContext | null> {
   if (proposal.configurationId === null) return null;
 
   const [linkedEvent] = await db
@@ -459,7 +469,9 @@ async function recordProposalLifecycleChange(
       sourceKind: input.sourceKind,
       sourceId: input.sourceId,
       lost: writing,
-      error: err instanceof Error ? err.message : String(err),
+      // `err`, not `err.message`: the logger's error serializer drops the
+      // query parameters a drizzle failure's message carries.
+      err,
     }, "proposal change committed but its announcement could not be written");
   }
 }
@@ -750,22 +762,25 @@ export async function proposalRoutes(
       return reply.status(400).send({ error: "Invalid ID", code: "VALIDATION_ERROR" });
     }
 
-    const [proposal] = await db.select().from(proposals)
-      .where(and(eq(proposals.id, params.data.id), isNull(proposals.deletedAt)))
-      .limit(1);
-    if (proposal === undefined) {
-      return reply.status(404).send({ error: "Proposal not found", code: "NOT_FOUND" });
-    }
-    if (!canManageCommercial(request.user, proposal.venueId)) {
-      return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
-    }
-    if (proposal.status === "accepted" && !isPlatformAdmin(request.user)) {
+    // The lock and the delete are one transaction on the held row (release
+    // audit proposals-2): an accepted proposal archived first is still the
+    // commercial record its acceptance made, and a client accepting while
+    // this runs either lands first (and locks it) or waits for the delete.
+    const outcome = await db.transaction(async (tx) => {
+      const proposal = await holdProposal(tx, params.data.id);
+      if (proposal === undefined) return "not_found" as const;
+      if (!canManageCommercial(request.user, proposal.venueId)) return "forbidden" as const;
+      if (!isPlatformAdmin(request.user) && await everAccepted(tx, proposal)) return "locked" as const;
+      await tx.update(proposals)
+        .set({ deletedAt: new Date(), updatedAt: new Date() })
+        .where(and(eq(proposals.id, proposal.id), isNull(proposals.deletedAt)));
+      return "deleted" as const;
+    });
+    if (outcome === "not_found") return reply.status(404).send({ error: "Proposal not found", code: "NOT_FOUND" });
+    if (outcome === "forbidden") return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
+    if (outcome === "locked") {
       return reply.status(422).send({ error: "Accepted proposals are a commercial record and cannot be deleted", code: "PROPOSAL_ACCEPTED_LOCKED" });
     }
-
-    await db.update(proposals)
-      .set({ deletedAt: new Date(), updatedAt: new Date() })
-      .where(eq(proposals.id, params.data.id));
 
     return reply.status(204).send();
   });
@@ -859,6 +874,7 @@ export async function proposalRoutes(
         changedBy: request.user.id,
         note: parsed.data.note ?? null,
       });
+      if (parsed.data.status === "sent") await stampSendAsFirstReply(tx, row, request.user);
       // Answered as its row on the desk now reads, read with the move: the
       // figure that stands and whether the client's link opens change with it.
       const [withFacts] = await selectDeskProposals(tx).where(eq(proposals.id, params.data.id)).limit(1);
@@ -908,11 +924,12 @@ export async function proposalRoutes(
     return { data: history };
   });
 
-  // GET /proposals/:id/comments — full conversation thread (staff view).
+  // GET /proposals/:id/comments — the conversation thread (staff view).
   //
   // Returns BOTH client posts (made through the share link) and staff
   // replies, in chronological order, so the dashboard timeline shows the
-  // whole conversation, each with the author recorded when it was written.
+  // conversation, each with the author recorded when it was written: the
+  // whole of it, or on a thread past 200 its newest 200.
   server.get("/:id/comments", { preHandler: [authenticate] }, async (request, reply) => {
     const params = IdParam.safeParse(request.params);
     if (!params.success) {
@@ -929,7 +946,9 @@ export async function proposalRoutes(
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 
-    const rows = await db.select({
+    // The newest two hundred, read in order: on a longer thread the oldest
+    // are the ones left out, never the client's latest words.
+    const newest = await db.select({
       id: proposalComments.id,
       kind: proposalComments.kind,
       authorName: proposalComments.authorName,
@@ -939,10 +958,10 @@ export async function proposalRoutes(
       createdAt: proposalComments.createdAt,
     }).from(proposalComments)
       .where(eq(proposalComments.proposalId, params.data.id))
-      .orderBy(proposalComments.createdAt)
+      .orderBy(desc(proposalComments.createdAt))
       .limit(200);
 
-    return { data: rows.map(toStaffCommentView) };
+    return { data: newest.reverse().map(toStaffCommentView) };
   });
 
   // POST /proposals/:id/comments — staff reply to the client conversation.
@@ -1104,6 +1123,9 @@ export async function proposalRoutes(
           note: "Client share link generated",
         });
       }
+      // The desk sends by link: a send here is the same reply /transition
+      // records (proposals-1).
+      if (updateData["sentAt"] !== undefined) await stampSendAsFirstReply(tx, updated, request.user);
 
       // Answered as its row on the desk now reads, the send included.
       const [withFacts] = await selectDeskProposals(tx).where(eq(proposals.id, proposal.id)).limit(1);
@@ -1113,6 +1135,19 @@ export async function proposalRoutes(
     if (result === "version") return reply.status(409).send(VERSION_CHANGED);
     if (result.proposal.status !== proposal.status) {
       await moveDealFor(db, result.proposal, result.proposal.status, request.user.id, request.log);
+      // The change feed hears of a send by link as of one by /transition.
+      await recordProposalLifecycleChange(db, result.proposal, {
+        actorUserId: request.user.id,
+        actorRole: toEventPlanAudienceRole(request.user.role),
+        actorLabel: request.user.email,
+        sourceKind: "proposal",
+        sourceId: result.proposal.id,
+        title: "Proposal status changed",
+        summary: `${result.proposal.title} moved from ${proposal.status} to ${result.proposal.status}.`,
+        affectedSurfaces: ["proposal"],
+        includeHallkeeperWhenHandoffExists: false,
+        logger: request.log,
+      });
     }
 
     return reply.status(201).send({
@@ -1480,6 +1515,36 @@ type ProposalRecord = typeof proposals.$inferSelect;
 type ProposalTransaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 
 /**
+ * A proposal sent is a reply Venviewer itself sends: the first reply to the
+ * enquiry it answers, unless an earlier one is recorded (migration 0100). Run
+ * inside the send's own transaction, by /transition and by a client link that
+ * sends it (release audit proposals-1). Another venue's enquiry is never
+ * stamped (stampFirstResponse keeps to the proposal's venue).
+ */
+async function stampSendAsFirstReply(tx: ProposalTransaction, proposal: ProposalRecord, user: JwtUser): Promise<void> {
+  const enquiryId = await enquiryAnsweredByProposal(tx, proposal);
+  if (enquiryId === null) return;
+  await stampFirstResponse(tx, {
+    enquiryId,
+    venueId: proposal.venueId,
+    at: "now",
+    // A Venviewer operator who sends it for the venue is not its team.
+    byUserId: isVenueCommercialMember(user, proposal.venueId) ? user.id : null,
+    channel: "proposal",
+  });
+}
+
+/** Whether a proposal is, or ever was, accepted: archiving keeps the record
+ *  an acceptance made, so the delete lock follows it (proposals-2). */
+async function everAccepted(tx: ProposalTransaction, proposal: ProposalRecord): Promise<boolean> {
+  if (proposal.status === "accepted") return true;
+  const [accepted] = await tx.select({ id: proposalStatusHistory.id }).from(proposalStatusHistory)
+    .where(and(eq(proposalStatusHistory.proposalId, proposal.id), eq(proposalStatusHistory.toStatus, "accepted")))
+    .limit(1);
+  return accepted !== undefined;
+}
+
+/**
  * The proposal's row, held until the transaction ends. Every move of a
  * proposal's status takes it first and compares it with the status the
  * request read, so an answer or a move that committed in between is never
@@ -1563,7 +1628,7 @@ async function presentedStatus(db: Database, proposal: ProposalRecord): Promise<
   return last?.from === "accepted" ? "accepted" : null;
 }
 
-async function resolveProposalShareToken(
+export async function resolveProposalShareToken(
   db: Database,
   token: string,
 ): Promise<{ shareToken: ShareTokenRecord; proposal: ProposalRecord; presented: string } | null> {
@@ -1586,7 +1651,7 @@ async function resolveProposalShareToken(
 /** The version a client's link shows: the one last sent. A version saved
  *  since is the team's draft until it is sent. A proposal answered before
  *  any version was saved was shown none. */
-function sentVersionOf(proposal: Pick<ProposalRecord, "sentVersion" | "currentVersion" | "status">): number | null {
+export function sentVersionOf(proposal: Pick<ProposalRecord, "sentVersion" | "currentVersion" | "status">): number | null {
   if (proposal.sentVersion !== null) return proposal.sentVersion;
   return proposal.status === "sent" && proposal.currentVersion >= 1 ? proposal.currentVersion : null;
 }
@@ -1852,11 +1917,49 @@ export async function proposalShareRoutes(
       return reply.status(404).send({ error: "Proposal not found", code: "NOT_FOUND" });
     }
 
-    await db.update(proposalShareTokens)
-      .set({ lastViewedAt: new Date() })
-      .where(eq(proposalShareTokens.id, resolved.shareToken.id));
+    // A visit, counted once per PROPOSAL_VIEW_VISIT_GAP_MINUTES (0100). A
+    // measure, never the page: if counting fails the client still reads it.
+    try {
+      await countProposalView(db, resolved.shareToken.id);
+    } catch (err) {
+      request.log.error({ event: "proposal.view_count_failed", proposalId: resolved.proposal.id, err }, "proposal view not counted");
+    }
 
     return { data: clientSafe };
+  });
+
+  // POST /proposal-share/:token/engagement — a moment on the proposal's page
+  // (a 30-second walk of the twin from it), attached to this proposal and
+  // nothing about the reader (migration 0100). Only for a link that opens a
+  // proposal shown to its client. The same moment within the repeat window is
+  // one, so a reload or a retry adds nothing. Answers 404 until
+  // ENQUIRY_FUNNEL_BROWSER_SIGNALS is "on", which waits for the privacy notice
+  // (see funnelBrowserSignalsEnabled).
+  server.post("/:token/engagement", {
+    config: { rateLimit: { max: 30, timeWindow: "1 hour" } },
+  }, async (request, reply) => {
+    // Off until the privacy page describes it: then there is nothing here.
+    if (!funnelBrowserSignalsEnabled()) {
+      return reply.status(404).send({ error: "Not found", code: "NOT_FOUND" });
+    }
+    const params = ShareTokenParam.safeParse(request.params);
+    if (!params.success) {
+      return reply.status(400).send({ error: "Invalid share token", code: "VALIDATION_ERROR" });
+    }
+    const parsed = RecordProposalEngagementSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: "Validation failed", code: "VALIDATION_ERROR", details: parsed.error.issues });
+    }
+    const resolved = await resolveProposalShareToken(db, params.data.token);
+    if (resolved === null || sentVersionOf(resolved.proposal) === null) {
+      return reply.status(404).send({ error: "Proposal not found", code: "NOT_FOUND" });
+    }
+    const recorded = await recordProposalEngagement(db, {
+      venueId: resolved.proposal.venueId,
+      proposalId: resolved.proposal.id,
+      kind: parsed.data.kind,
+    });
+    return { data: { recorded } };
   });
 
   server.post("/:token/comment", async (request, reply) => {
@@ -1864,7 +1967,7 @@ export async function proposalShareRoutes(
     if (!params.success) {
       return reply.status(400).send({ error: "Invalid share token", code: "VALIDATION_ERROR" });
     }
-    const parsed = CreateProposalCommentSchema.merge(ReadVersion).safeParse(request.body);
+    const parsed = CreateProposalCommentSchema.extend(ReadVersion.shape).safeParse(request.body);
     if (!parsed.success) {
       return reply.status(400).send({ error: "Validation failed", code: "VALIDATION_ERROR", details: parsed.error.issues });
     }
@@ -1976,7 +2079,10 @@ export async function proposalShareRoutes(
     if (!params.success) {
       return reply.status(400).send({ error: "Invalid share token", code: "VALIDATION_ERROR" });
     }
-    const parsed = CreateProposalCommentSchema.partial({ body: true, kind: true }).merge(ReadVersion).safeParse(request.body ?? {});
+    // zod 4 applies a default inside .partial(); an unsent kind stays unsent.
+    const parsed = CreateProposalCommentSchema.partial({ body: true, kind: true })
+      .extend({ kind: CreateProposalCommentSchema.shape.kind.unwrap().optional(), ...ReadVersion.shape })
+      .safeParse(request.body ?? {});
     if (!parsed.success) {
       return reply.status(400).send({ error: "Validation failed", code: "VALIDATION_ERROR", details: parsed.error.issues });
     }
@@ -2061,7 +2167,7 @@ export async function proposalShareRoutes(
 const RespondBody = z.object({
   action: z.enum(["accept", "request_changes"]),
   note: z.string().max(1000).nullable().optional(),
-}).merge(ReadVersion);
+}).extend(ReadVersion.shape);
 
 const RESPOND_ACTION_TO_STATUS: Record<"accept" | "request_changes", ProposalStatus> = {
   accept: "accepted",

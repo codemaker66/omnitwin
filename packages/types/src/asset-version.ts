@@ -421,7 +421,7 @@ function validateSupportedTradesHallRoom(
   if (venueSlug !== TRADES_HALL_VENUE_SLUG || roomSlug === null || roomSlug === undefined) return;
   if (isTradesHallRuntimeRoomSlug(roomSlug)) return;
   ctx.addIssue({
-    code: z.ZodIssueCode.custom,
+    code: "custom",
     path: [...path],
     message: "Unsupported Trades Hall room slug.",
   });
@@ -430,40 +430,40 @@ function validateSupportedTradesHallRoom(
 const R2ObjectKeySchema = z.string().trim().min(1).max(1024).superRefine((key, ctx) => {
   if (!isR2ObjectKeyShape(key)) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       message: "r2Key must be an object key, not a URL or root-relative path.",
     });
   }
   if (isForbiddenAssetFixtureKey(key)) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       message: "Fixture/demo asset keys cannot be registered as runtime assets.",
     });
   }
   if (runtimeFileExtensionForKey(key) === null) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       message: "Asset key has an unsupported file extension.",
     });
   }
 });
 
-const ExternalAssetUrlSchema = z.string().trim().url().max(2048).superRefine((url, ctx) => {
+const ExternalAssetUrlSchema = z.string().trim().check(z.url()).max(2048).superRefine((url, ctx) => {
   if (!url.startsWith("https://")) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       message: "externalUrl must use https.",
     });
   }
   if (isForbiddenAssetFixtureKey(url)) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       message: "Fixture/demo asset URLs cannot be registered as runtime assets.",
     });
   }
   if (runtimeFileExtensionForKey(url) === null) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       message: "External asset URL has an unsupported file extension.",
     });
   }
@@ -472,7 +472,7 @@ const ExternalAssetUrlSchema = z.string().trim().url().max(2048).superRefine((ur
 const FileNameSchema = z.string().trim().min(1).max(255).superRefine((fileName, ctx) => {
   if (fileName.includes("/") || fileName.includes("\\") || fileName === "." || fileName === "..") {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       message: "fileName must be a file name, not a path.",
     });
   }
@@ -496,7 +496,7 @@ export type RuntimePackageCompositionBasis = z.infer<
  * server-only; its digest binds the object location into package content.
  */
 export const RuntimePackageVisualAssetReceiptSchema = z.object({
-  assetVersionId: z.string().uuid(),
+  assetVersionId: z.uuid(),
   fileName: FileNameSchema,
   fileExt: z.enum([".sog", ".spz"]),
   sha256: RuntimePackageContentDigestSchema,
@@ -513,15 +513,15 @@ export const RuntimePackageManifestJsonSchema = z.object({
   roomSlug: RuntimeSlugSchema,
   packageType: z.literal("room-runtime"),
   assets: z.object({
-    primaryVisualAssetVersionId: z.string().uuid().nullable(),
-    visualAssetVersionIds: z.array(z.string().uuid()).min(1).max(MAX_RUNTIME_VISUAL_ASSET_COUNT).optional(),
+    primaryVisualAssetVersionId: z.uuid().nullable(),
+    visualAssetVersionIds: z.array(z.uuid()).min(1).max(MAX_RUNTIME_VISUAL_ASSET_COUNT).optional(),
     visualAssetReceipts: z.array(RuntimePackageVisualAssetReceiptSchema)
       .min(1)
       .max(MAX_RUNTIME_VISUAL_ASSET_COUNT)
       .optional(),
-    semanticMeshAssetVersionId: z.string().uuid().nullable(),
-    collisionAssetVersionId: z.string().uuid().nullable(),
-    pointCloudAssetVersionId: z.string().uuid().nullable(),
+    semanticMeshAssetVersionId: z.uuid().nullable(),
+    collisionAssetVersionId: z.uuid().nullable(),
+    pointCloudAssetVersionId: z.uuid().nullable(),
   }).strict(),
   compositionBasis: RuntimePackageCompositionBasisSchema.optional(),
   generatedAt: z.string().regex(ISO_DATE_TIME, "generatedAt must be an ISO datetime.").optional(),
@@ -534,7 +534,7 @@ export const RuntimePackageManifestJsonSchema = z.object({
   if (visualAssetVersionIds === undefined) {
     if (visualAssetReceipts !== undefined) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["assets", "visualAssetReceipts"],
         message: "Visual asset receipts require explicit ordered visual asset version ids.",
       });
@@ -544,7 +544,7 @@ export const RuntimePackageManifestJsonSchema = z.object({
 
   if (new Set(visualAssetVersionIds).size !== visualAssetVersionIds.length) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["assets", "visualAssetVersionIds"],
       message: "Visual asset version ids must not contain duplicates.",
     });
@@ -553,7 +553,7 @@ export const RuntimePackageManifestJsonSchema = z.object({
   const primaryVisualAssetVersionId = manifest.assets.primaryVisualAssetVersionId;
   if (primaryVisualAssetVersionId === null || !visualAssetVersionIds.includes(primaryVisualAssetVersionId)) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["assets", "visualAssetVersionIds"],
       message: "Visual asset version ids must include the non-null primary visual asset version id.",
     });
@@ -562,7 +562,7 @@ export const RuntimePackageManifestJsonSchema = z.object({
   if (visualAssetReceipts === undefined) return;
   if (visualAssetReceipts.length !== visualAssetVersionIds.length) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["assets", "visualAssetReceipts"],
       message: "Visual asset receipts must exactly match the ordered visual asset membership.",
     });
@@ -573,7 +573,7 @@ export const RuntimePackageManifestJsonSchema = z.object({
     visualAssetReceipts.length
   ) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["assets", "visualAssetReceipts"],
       message: "Visual asset receipts must not reuse one storage identity.",
     });
@@ -581,7 +581,7 @@ export const RuntimePackageManifestJsonSchema = z.object({
   for (let index = 0; index < visualAssetVersionIds.length; index += 1) {
     if (visualAssetReceipts[index]?.assetVersionId !== visualAssetVersionIds[index]) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["assets", "visualAssetReceipts", index, "assetVersionId"],
         message: "Visual asset receipts must preserve exact manifest order and identity.",
       });
@@ -672,7 +672,7 @@ export const RuntimePackageSchema = z.object({
   updatedAt: z.string(),
   primaryVisualAssetVersion: AssetVersionSchema.nullable(),
   primaryVisualAssetUrl: z.string().nullable(),
-  visualAssetUrls: z.array(z.string().url()),
+  visualAssetUrls: z.array(z.url()),
 });
 export type RuntimePackage = z.infer<typeof RuntimePackageSchema>;
 
@@ -693,13 +693,13 @@ export const ApprovedRoomRuntimeProfileSchema = z.object({
   venueSlug: RuntimeSlugSchema,
   roomSlug: RuntimeSlugSchema,
   profileId: ReviewedRuntimeProfileIdSchema,
-  visualAssetUrls: z.array(z.string().url())
+  visualAssetUrls: z.array(z.url())
     .min(1)
     .max(MAX_RUNTIME_VISUAL_ASSET_COUNT),
 }).strict().superRefine((profile, ctx) => {
   if (new Set(profile.visualAssetUrls).size !== profile.visualAssetUrls.length) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["visualAssetUrls"],
       message: "Approved runtime profile URLs must be unique.",
     });
@@ -708,7 +708,7 @@ export const ApprovedRoomRuntimeProfileSchema = z.object({
 export type ApprovedRoomRuntimeProfile = z.infer<typeof ApprovedRoomRuntimeProfileSchema>;
 
 export const RuntimePackagePreviewVisualAssetSchema = z.object({
-  assetVersionId: z.string().uuid(),
+  assetVersionId: z.uuid(),
   fileName: FileNameSchema,
   fileExt: z.enum([".sog", ".spz"]),
   sha256: RuntimePackageContentDigestSchema,
@@ -725,7 +725,7 @@ export type RuntimePackagePreviewVisualAsset = z.infer<
  */
 export const RuntimePackagePreviewSchema = z.object({
   scope: z.literal("exact_private_runtime_package_preview"),
-  runtimePackageId: z.string().uuid(),
+  runtimePackageId: z.uuid(),
   venueSlug: RuntimeSlugSchema,
   roomSlug: RuntimeSlugSchema,
   revision: z.number().int().positive(),
@@ -735,12 +735,12 @@ export const RuntimePackagePreviewSchema = z.object({
   evidenceStatus: AssetEvidenceStatusSchema,
   runtimeStatus: z.enum(["internal_ready", "published"]),
   reviewedProfileId: ReviewedRuntimeProfileIdSchema.nullable(),
-  issuedAt: z.string().datetime(),
+  issuedAt: z.iso.datetime(),
   visualAssets: z.array(RuntimePackagePreviewVisualAssetSchema).min(1).max(MAX_RUNTIME_VISUAL_ASSET_COUNT),
 }).strict().superRefine((preview, ctx) => {
   if (preview.evidenceStatus === "rejected") {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["evidenceStatus"],
       message: "Rejected evidence cannot be opened as a private runtime preview.",
     });
@@ -750,7 +750,7 @@ export const RuntimePackagePreviewSchema = z.object({
     preview.manifestJson.roomSlug !== preview.roomSlug
   ) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["manifestJson"],
       message: "Preview package and manifest venue/room identity must match.",
     });
@@ -761,7 +761,7 @@ export const RuntimePackagePreviewSchema = z.object({
       : [preview.manifestJson.assets.primaryVisualAssetVersionId]);
   if (declaredIds.length !== preview.visualAssets.length) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["visualAssets"],
       message: "Preview visual assets must exactly match the package manifest membership.",
     });
@@ -770,7 +770,7 @@ export const RuntimePackagePreviewSchema = z.object({
   const receipts = preview.manifestJson.assets.visualAssetReceipts;
   if (receipts === undefined || receipts.length !== preview.visualAssets.length) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["manifestJson", "assets", "visualAssetReceipts"],
       message: "Exact private previews require immutable receipts for every visual asset.",
     });
@@ -784,7 +784,7 @@ export const RuntimePackagePreviewSchema = z.object({
       asset.assetVersionId !== declaredIds[index]
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["visualAssets", index],
         message: "Preview visual assets must preserve exact manifest order and identity.",
       });
@@ -799,7 +799,7 @@ export const RuntimePackagePreviewSchema = z.object({
       receipt.sizeBytes !== asset.sizeBytes
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["visualAssets", index],
         message: "Preview visual asset metadata must match its immutable package receipt.",
       });
@@ -810,7 +810,7 @@ export type RuntimePackagePreview = z.infer<typeof RuntimePackagePreviewSchema>;
 
 export const RuntimeTransformArtifactSchema = z.object({
   id: z.string(),
-  runtimePackageId: z.string().uuid(),
+  runtimePackageId: z.uuid(),
   venueSlug: RuntimeSlugSchema,
   roomSlug: RuntimeSlugSchema,
   transformArtifactId: RuntimeManifestKeySchema,
@@ -822,7 +822,7 @@ export const RuntimeTransformArtifactSchema = z.object({
 }).strict().superRefine((row, ctx) => {
   if (row.transformArtifact.id !== row.transformArtifactId) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["transformArtifactId"],
       message: "transformArtifactId must match transformArtifact.id.",
     });
@@ -831,7 +831,7 @@ export const RuntimeTransformArtifactSchema = z.object({
 export type RuntimeTransformArtifact = z.infer<typeof RuntimeTransformArtifactSchema>;
 
 export const RegisterRuntimeTransformArtifactInputSchema = z.object({
-  runtimePackageId: z.string().uuid(),
+  runtimePackageId: z.uuid(),
   venueSlug: RuntimeSlugSchema,
   roomSlug: RuntimeSlugSchema,
   transformArtifact: TransformArtifactV0Schema,
@@ -841,7 +841,7 @@ export const RegisterRuntimeTransformArtifactInputSchema = z.object({
 
   if (!signedRuntimeTransformAlignmentMethods.has(body.transformArtifact.alignmentMethod)) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["transformArtifact", "alignmentMethod"],
       message: "Signed runtime transforms cannot use visual-only or unconstrained alignment methods.",
     });
@@ -852,7 +852,7 @@ export const RegisterRuntimeTransformArtifactInputSchema = z.object({
   );
   if (!hasReviewableEvidenceRef) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["transformArtifact", "provenance", "refs"],
       message: "Signed runtime transforms need a control network, landmark set, or review artifact reference.",
     });
@@ -861,34 +861,34 @@ export const RegisterRuntimeTransformArtifactInputSchema = z.object({
 export type RegisterRuntimeTransformArtifactInput = z.infer<typeof RegisterRuntimeTransformArtifactInputSchema>;
 
 export const RuntimeTransformArtifactQuerySchema = z.object({
-  runtimePackageId: z.string().uuid(),
+  runtimePackageId: z.uuid(),
 }).strict();
 export type RuntimeTransformArtifactQuery = z.infer<typeof RuntimeTransformArtifactQuerySchema>;
 
 export const RuntimeTransformArtifactRegistrationReportSchema = z
   .object({
     schemaVersion: z.literal("venviewer.runtime-transform-artifact-registration-report.v0"),
-    generatedAt: z.string().datetime(),
+    generatedAt: z.iso.datetime(),
     mode: z.enum(["dry_run", "registered"]),
-    apiUrl: z.string().url(),
+    apiUrl: z.url(),
     payloadFile: z.string().trim().min(1),
     payload: z.object({
       venueSlug: RuntimeSlugSchema,
       roomSlug: RuntimeSlugSchema,
-      runtimePackageId: z.string().uuid(),
+      runtimePackageId: z.uuid(),
       transformArtifactId: RuntimeManifestKeySchema,
       sourceFrame: RuntimeTransformFrameSchema,
       targetFrame: RuntimeTransformFrameSchema,
       alignmentMethod: RuntimeTransformAlignmentMethodSchema,
       provenanceState: RuntimeTransformProvenanceStateSchema,
-      residualRmseM: z.number().finite().nonnegative().nullable(),
+      residualRmseM: z.number().nonnegative().nullable(),
       landmarkCount: z.number().int().nonnegative(),
       reviewerId: z.string().trim().min(1).max(160),
       reviewerRole: z.string().trim().min(1).max(80),
     }).strict(),
     preflight: z.object({
-      payloadRuntimePackageId: z.string().uuid(),
-      latestRuntimePackageId: z.string().uuid().nullable(),
+      payloadRuntimePackageId: z.uuid(),
+      latestRuntimePackageId: z.uuid().nullable(),
       latestRuntimePackageRuntimeStatus: RuntimePackageStatusSchema.nullable(),
       latestRuntimePackageEvidenceStatus: AssetEvidenceStatusSchema.nullable(),
       runtimePackageMatchesLatest: z.boolean(),
@@ -898,8 +898,8 @@ export const RuntimeTransformArtifactRegistrationReportSchema = z
       runtimeTransformArtifactRowId: z.string().min(1),
       transformArtifactId: RuntimeManifestKeySchema,
       registeredBy: z.string().nullable(),
-      createdAt: z.string().datetime(),
-      updatedAt: z.string().datetime(),
+      createdAt: z.iso.datetime(),
+      updatedAt: z.iso.datetime(),
     }).strict().nullable(),
     guardrails: z.object({
       runtimePackageDriftAllowed: z.boolean(),
@@ -912,21 +912,21 @@ export const RuntimeTransformArtifactRegistrationReportSchema = z
   .superRefine((report, ctx) => {
     if (report.mode === "dry_run" && report.registration !== null) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["registration"],
         message: "Dry-run reports cannot include a registration row.",
       });
     }
     if (report.mode === "registered" && report.registration === null) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["registration"],
         message: "Registered reports must include the persisted runtime transform artifact row.",
       });
     }
     if (report.payload.runtimePackageId !== report.preflight.payloadRuntimePackageId) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["preflight", "payloadRuntimePackageId"],
         message: "Preflight payload runtime package id must match the report payload.",
       });
@@ -935,21 +935,21 @@ export const RuntimeTransformArtifactRegistrationReportSchema = z
       report.preflight.latestRuntimePackageId === report.preflight.payloadRuntimePackageId;
     if (report.preflight.runtimePackageMatchesLatest !== expectedMatch) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["preflight", "runtimePackageMatchesLatest"],
         message: "runtimePackageMatchesLatest must reflect payload/latest runtime package identity.",
       });
     }
     if (!expectedMatch && !report.preflight.runtimePackageDriftAllowed) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["preflight", "runtimePackageDriftAllowed"],
         message: "Runtime package drift reports require the explicit drift override.",
       });
     }
     if (report.guardrails.runtimePackageDriftAllowed !== report.preflight.runtimePackageDriftAllowed) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["guardrails", "runtimePackageDriftAllowed"],
         message: "Guardrail drift override must match preflight drift override.",
       });
@@ -959,7 +959,7 @@ export const RuntimeTransformArtifactRegistrationReportSchema = z
       report.registration.transformArtifactId !== report.payload.transformArtifactId
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["registration", "transformArtifactId"],
         message: "Registered transform artifact id must match the report payload transform artifact id.",
       });
@@ -985,17 +985,17 @@ export type RuntimeTransformArtifactRegistrationReportInspectionStatus = z.infer
 export const RuntimeTransformArtifactRegistrationReportInspectionSchema = z
   .object({
     schemaVersion: z.literal("venviewer.runtime-transform-artifact-registration-report-inspection.v0"),
-    generatedAt: z.string().datetime(),
+    generatedAt: z.iso.datetime(),
     inspectedReportFile: z.string().trim().min(1),
-    inspectedReportGeneratedAt: z.string().datetime().nullable(),
+    inspectedReportGeneratedAt: z.iso.datetime().nullable(),
     status: RuntimeTransformArtifactRegistrationReportInspectionStatusSchema,
     liveTransformRegistrationReady: z.boolean(),
     mode: z.enum(["dry_run", "registered"]).nullable(),
     venueSlug: RuntimeSlugSchema.nullable(),
     roomSlug: RuntimeSlugSchema.nullable(),
     transformArtifactId: RuntimeManifestKeySchema.nullable(),
-    reportRuntimePackageId: z.string().uuid().nullable(),
-    reportLatestRuntimePackageId: z.string().uuid().nullable(),
+    reportRuntimePackageId: z.uuid().nullable(),
+    reportLatestRuntimePackageId: z.uuid().nullable(),
     reportRuntimePackageMatchesLatest: z.boolean().nullable(),
     reportRuntimePackageDriftAllowed: z.boolean().nullable(),
     blockers: z.array(z.string().trim().min(1)),
@@ -1008,7 +1008,7 @@ export const RuntimeTransformArtifactRegistrationReportInspectionSchema = z
       inspection.status !== "ready_for_live_transform_registration"
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["status"],
         message: "Only ready_for_live_transform_registration inspections may set liveTransformRegistrationReady.",
       });
@@ -1016,14 +1016,14 @@ export const RuntimeTransformArtifactRegistrationReportInspectionSchema = z
     if (inspection.status === "ready_for_live_transform_registration") {
       if (!inspection.liveTransformRegistrationReady) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["liveTransformRegistrationReady"],
           message: "Ready inspections must set liveTransformRegistrationReady.",
         });
       }
       if (inspection.mode !== "dry_run") {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["mode"],
           message: "Ready inspections must come from dry-run reports.",
         });
@@ -1035,42 +1035,42 @@ export const RuntimeTransformArtifactRegistrationReportInspectionSchema = z
         inspection.inspectedReportGeneratedAt === null
       ) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["status"],
           message: "Ready inspections must include report target identity.",
         });
       }
       if (inspection.blockers.length !== 0) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["blockers"],
           message: "Ready inspections cannot include blockers.",
         });
       }
       if (inspection.reportRuntimePackageId === null) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["reportRuntimePackageId"],
           message: "Ready inspections must be scoped to a runtime package.",
         });
       }
       if (inspection.reportLatestRuntimePackageId !== inspection.reportRuntimePackageId) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["reportLatestRuntimePackageId"],
           message: "Ready inspections require the payload runtime package to match latest loadable package.",
         });
       }
       if (inspection.reportRuntimePackageMatchesLatest !== true) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["reportRuntimePackageMatchesLatest"],
           message: "Ready inspections require runtimePackageMatchesLatest true.",
         });
       }
       if (inspection.reportRuntimePackageDriftAllowed !== false) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["reportRuntimePackageDriftAllowed"],
           message: "Ready inspections cannot use runtime-package drift override.",
         });
@@ -1081,7 +1081,7 @@ export const RuntimeTransformArtifactRegistrationReportInspectionSchema = z
       inspection.blockers.length === 0
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["blockers"],
         message: "Not-ready inspections must include at least one blocker.",
       });
@@ -1089,21 +1089,21 @@ export const RuntimeTransformArtifactRegistrationReportInspectionSchema = z
     if (inspection.status === "registered_transform_report_verified") {
       if (inspection.liveTransformRegistrationReady) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["liveTransformRegistrationReady"],
           message: "Registered transform reports are audit evidence, not live-registration authorization.",
         });
       }
       if (inspection.mode !== "registered") {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["mode"],
           message: "Registered transform report inspections must cite registered mode.",
         });
       }
       if (inspection.blockers.length === 0) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["blockers"],
           message: "Registered transform report inspections must state why they are not live-registration-ready.",
         });
@@ -1112,14 +1112,14 @@ export const RuntimeTransformArtifactRegistrationReportInspectionSchema = z
     if (inspection.status === "invalid_report") {
       if (inspection.liveTransformRegistrationReady) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["liveTransformRegistrationReady"],
           message: "Invalid reports cannot be live-registration-ready.",
         });
       }
       if (inspection.blockers.length === 0) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["blockers"],
           message: "Invalid report inspections must include validation blockers.",
         });
@@ -1135,7 +1135,7 @@ export const PublicRoomRuntimeVisualSchema = z
     venueSlug: RuntimeSlugSchema,
     roomSlug: RuntimeSlugSchema,
     runtimeVisualAvailable: z.boolean(),
-    visualUrl: z.string().url().nullable(),
+    visualUrl: z.url().nullable(),
     visualLabel: z.string().min(1),
     safeCopy: z.string().min(1),
     humanReviewRequired: z.boolean(),
@@ -1144,7 +1144,7 @@ export const PublicRoomRuntimeVisualSchema = z
   .superRefine((value, ctx) => {
     if (value.runtimeVisualAvailable && value.visualUrl === null) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["visualUrl"],
         message: "visualUrl is required when a public runtime visual is available.",
       });
@@ -1152,7 +1152,7 @@ export const PublicRoomRuntimeVisualSchema = z
 
     if (!value.runtimeVisualAvailable && value.visualUrl !== null) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["visualUrl"],
         message: "visualUrl must be null when a public runtime visual is unavailable.",
       });
@@ -1163,7 +1163,7 @@ export type PublicRoomRuntimeVisual = z.infer<typeof PublicRoomRuntimeVisualSche
 export const RegisterAssetVersionInputSchema = z.object({
   venueSlug: RuntimeSlugSchema,
   roomSlug: RuntimeSlugSchema.nullable().optional(),
-  captureSessionId: z.string().uuid().nullable().optional(),
+  captureSessionId: z.uuid().nullable().optional(),
   assetKind: AssetKindSchema,
   sourceType: AssetSourceTypeSchema,
   fileName: FileNameSchema,
@@ -1183,7 +1183,7 @@ export const RegisterAssetVersionInputSchema = z.object({
   const externalUrl = body.externalUrl ?? null;
   if (r2Key === null && externalUrl === null) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["r2Key"],
       message: "Either r2Key or externalUrl is required.",
     });
@@ -1191,7 +1191,7 @@ export const RegisterAssetVersionInputSchema = z.object({
   const r2Extension = r2Key === null ? null : runtimeFileExtensionForKey(r2Key);
   if (r2Key !== null && r2Extension !== body.fileExt) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["fileExt"],
       message: "fileExt must match the r2Key extension.",
     });
@@ -1199,7 +1199,7 @@ export const RegisterAssetVersionInputSchema = z.object({
   const externalExtension = externalUrl === null ? null : runtimeFileExtensionForKey(externalUrl);
   if (externalUrl !== null && externalExtension !== body.fileExt) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["fileExt"],
       message: "fileExt must match the externalUrl extension.",
     });
@@ -1207,14 +1207,14 @@ export const RegisterAssetVersionInputSchema = z.object({
   const lowerFileName = body.fileName.toLowerCase();
   if (!lowerFileName.endsWith(body.fileExt)) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["fileName"],
       message: "fileName must end with fileExt.",
     });
   }
   if (!assetKindAllowsExtension(body.assetKind, body.fileExt)) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["fileExt"],
       message: `File extension ${body.fileExt} is not allowed for ${body.assetKind}.`,
     });
@@ -1225,10 +1225,10 @@ export type RegisterAssetVersionInput = z.infer<typeof RegisterAssetVersionInput
 export const RegisterRuntimePackageInputSchema = z.object({
   venueSlug: RuntimeSlugSchema,
   roomSlug: RuntimeSlugSchema,
-  primaryVisualAssetVersionId: z.string().uuid().nullable().optional(),
-  semanticMeshAssetVersionId: z.string().uuid().nullable().optional(),
-  collisionAssetVersionId: z.string().uuid().nullable().optional(),
-  pointCloudAssetVersionId: z.string().uuid().nullable().optional(),
+  primaryVisualAssetVersionId: z.uuid().nullable().optional(),
+  semanticMeshAssetVersionId: z.uuid().nullable().optional(),
+  collisionAssetVersionId: z.uuid().nullable().optional(),
+  pointCloudAssetVersionId: z.uuid().nullable().optional(),
   manifestJson: RuntimePackageManifestJsonSchema,
   evidenceStatus: AssetEvidenceStatusSchema.default("unverified"),
   runtimeStatus: RuntimePackageStatusSchema.default("draft"),
@@ -1237,14 +1237,14 @@ export const RegisterRuntimePackageInputSchema = z.object({
 
   if (body.manifestJson.venueSlug !== body.venueSlug) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["manifestJson", "venueSlug"],
       message: "Manifest venueSlug must match the package venueSlug.",
     });
   }
   if (body.manifestJson.roomSlug !== body.roomSlug) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["manifestJson", "roomSlug"],
       message: "Manifest roomSlug must match the package roomSlug.",
     });
@@ -1256,35 +1256,35 @@ export const RegisterRuntimePackageInputSchema = z.object({
   const pointCloudId = body.pointCloudAssetVersionId ?? null;
   if (body.manifestJson.assets.primaryVisualAssetVersionId !== primaryId) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["manifestJson", "assets", "primaryVisualAssetVersionId"],
       message: "Manifest primary visual asset id must match the package field.",
     });
   }
   if (body.manifestJson.assets.semanticMeshAssetVersionId !== semanticId) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["manifestJson", "assets", "semanticMeshAssetVersionId"],
       message: "Manifest semantic mesh asset id must match the package field.",
     });
   }
   if (body.manifestJson.assets.collisionAssetVersionId !== collisionId) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["manifestJson", "assets", "collisionAssetVersionId"],
       message: "Manifest collision asset id must match the package field.",
     });
   }
   if (body.manifestJson.assets.pointCloudAssetVersionId !== pointCloudId) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["manifestJson", "assets", "pointCloudAssetVersionId"],
       message: "Manifest point cloud asset id must match the package field.",
     });
   }
   if ((body.runtimeStatus === "internal_ready" || body.runtimeStatus === "published") && primaryId === null) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["primaryVisualAssetVersionId"],
       message: "A loadable runtime package requires a primary visual asset version.",
     });
@@ -1301,7 +1301,7 @@ export type CreateRuntimePackageRevisionInput = z.infer<
 >;
 
 export const RuntimePackageRevisionReceiptSchema = z.object({
-  packageId: z.string().uuid(),
+  packageId: z.uuid(),
   revision: z.number().int().positive(),
   contentDigest: RuntimePackageContentDigestSchema,
   created: z.boolean(),
@@ -1364,7 +1364,7 @@ export const RoomAssetStatusSchema = z.object({
   reviewedQaSafeCopy: z.string().min(1),
   captureControlStatus: ReviewedCaptureControlStatusSchema,
   captureControlSourceCount: z.number().int().nonnegative(),
-  latestCaptureControlSourceRecordId: z.string().uuid().nullable(),
+  latestCaptureControlSourceRecordId: z.uuid().nullable(),
   latestCaptureControlSourceId: z.string().nullable(),
   latestCaptureControlSourceClass: z.string().nullable(),
   latestCaptureControlPoseAuthorityLevel: z.string().nullable(),

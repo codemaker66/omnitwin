@@ -90,7 +90,7 @@ function vectorsNearlyEqual(left: readonly number[], right: readonly number[]): 
 }
 
 function addIssue(ctx: z.RefinementCtx, path: (string | number)[], message: string): void {
-  ctx.addIssue({ code: z.ZodIssueCode.custom, path, message });
+  ctx.addIssue({ code: "custom", path, message });
 }
 
 const IdentitySweepTupleSchema = z.tuple([
@@ -117,7 +117,7 @@ export const FoundryPhase1FaceDigestSchema = z
     ),
     face: FoundryPhase1CubefaceSchema,
     sha256: RuntimeSha256Schema,
-    byteLength: z.number().int().safe().positive(),
+    byteLength: z.number().int().int().positive(),
   })
   .strict();
 export type FoundryPhase1FaceDigest = z.infer<typeof FoundryPhase1FaceDigestSchema>;
@@ -223,7 +223,7 @@ export type FoundryPhase1IdentityReviewV0 = z.infer<
   typeof FoundryPhase1IdentityReviewV0Schema
 >;
 
-const CanonicalJsonObjectSchema = z.record(CanonicalJsonValueSchema);
+const CanonicalJsonObjectSchema = z.record(z.string(), CanonicalJsonValueSchema);
 export const FoundryPhase1ProbeEnvelopeV0Schema = z.union([
   z
     .object({
@@ -256,7 +256,7 @@ const E57InspectionMaterialFields = {
   inspectionId: RuntimeManifestKeySchema,
   identityReviewSha256: RuntimeSha256Schema,
   sourceE57Sha256: RuntimeSha256Schema,
-  sourceByteLength: z.number().int().safe().positive(),
+  sourceByteLength: z.number().int().int().positive(),
   probeOutputSha256: RuntimeSha256Schema,
   readMode: z.literal("read_only"),
   pointDataRead: z.literal(false),
@@ -273,7 +273,7 @@ const E57InspectionMaterialFields = {
     .strict(),
   scanCount: z.number().int().positive(),
   image2DCount: z.number().int().nonnegative(),
-  pointRecordCount: z.number().int().safe().nonnegative(),
+  pointRecordCount: z.number().int().int().nonnegative(),
   reviewedSweepIndices: IdentitySweepTupleSchema,
   faceDigests: z.array(FoundryPhase1FaceDigestSchema).length(30),
   inspectedAt: FoundryUtcInstantSchema,
@@ -354,7 +354,7 @@ export const FoundryPhase1ColmapSourceFileSchema = z
     role: FoundryPhase1ColmapSourceRoleSchema,
     relativePath: FoundryRelativePathSchema,
     sha256: RuntimeSha256Schema,
-    byteLength: z.number().int().safe().positive(),
+    byteLength: z.number().int().int().positive(),
   })
   .strict()
   .superRefine((file, ctx) => {
@@ -405,7 +405,7 @@ const ColmapInspectionMaterialFields = {
           modelName: z.string().trim().min(1).max(80),
           width: z.number().int().positive(),
           height: z.number().int().positive(),
-          parameters: z.array(z.number().finite()).min(1).max(32),
+          parameters: z.array(z.number()).min(1).max(32),
         })
         .strict(),
     )
@@ -543,7 +543,7 @@ export const FoundryPhase1CorrespondenceResidualV0Schema = z
     sweepIndex: z.number().int().min(0).max(49),
     predictedE57GlobalM: RuntimeVec3Schema,
     residualVectorM: RuntimeVec3Schema,
-    residualMeters: z.number().finite().nonnegative(),
+    residualMeters: z.number().nonnegative(),
   })
   .strict();
 export type FoundryPhase1CorrespondenceResidualV0 = z.infer<
@@ -553,11 +553,11 @@ export type FoundryPhase1CorrespondenceResidualV0 = z.infer<
 export const FoundryPhase1ResidualMetricsV0Schema = z
   .object({
     count: z.number().int().positive(),
-    meanMeters: z.number().finite().nonnegative(),
-    medianMeters: z.number().finite().nonnegative(),
-    rmseMeters: z.number().finite().nonnegative(),
-    p95Meters: z.number().finite().nonnegative(),
-    maxMeters: z.number().finite().nonnegative(),
+    meanMeters: z.number().nonnegative(),
+    medianMeters: z.number().nonnegative(),
+    rmseMeters: z.number().nonnegative(),
+    p95Meters: z.number().nonnegative(),
+    maxMeters: z.number().nonnegative(),
   })
   .strict();
 export type FoundryPhase1ResidualMetricsV0 = z.infer<
@@ -611,8 +611,8 @@ const ResidualEvaluationSchema = z
 const SimilarityTransformSchema = z
   .object({
     matrixColumnMajor: RuntimeTransformMatrix4dSchema,
-    scale: z.number().finite().positive(),
-    rotationDeterminant: z.number().finite(),
+    scale: z.number().positive(),
+    rotationDeterminant: z.number(),
   })
   .strict()
   .superRefine((transform, ctx) => {
@@ -940,7 +940,7 @@ const TransformProposalMaterialFields = {
       .strict(),
   ]),
   matrix: RuntimeTransformMatrix4dSchema,
-  scale: z.number().finite().positive(),
+  scale: z.number().positive(),
   residualMetrics: z
     .object({
       fit: FoundryPhase1ResidualMetricsV0Schema,

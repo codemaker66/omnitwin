@@ -15,6 +15,7 @@ import type { AgentTrajectory, DensityHeatmapCell, RouteConflict, SpaceDimension
 import { useCockpitStore, type CockpitBeam } from "../../stores/cockpit-store.js";
 import { useRoomDimensionsStore } from "../../stores/room-dimensions-store.js";
 import { useCockpitReplay } from "../../hooks/use-cockpit-replay.js";
+import { flowFiguresAllowed } from "../../lib/cockpit-flow-panel-model.js";
 import {
   buildFlowRibbonGeometry,
   densityPatchExtent,
@@ -41,6 +42,8 @@ import {
 } from "../../lib/cockpit-scene-overlay-model.js";
 
 import { annotationSafeArea, placeSceneAnnotations, rectanglesOverlap, type AnnotationMeasure, type AnnotationRect } from "../../lib/cockpit-scene-annotation-layout.js";
+import { useEscapeLayer } from "../../lib/planner-keys.js";
+import { CHROME_PRESENCE_ATTRIBUTES, CHROME_SETTLE_MS } from "../../stores/chrome-presence-store.js";
 import "./CockpitSceneAnnotations.css";
 
 // ---------------------------------------------------------------------------
@@ -431,6 +434,9 @@ function SceneAnnotations({ annotations }: { readonly annotations: readonly Scen
     dirty.current = true;
     invalidate();
   };
+  // An open annotation's details are a popover: Escape folds them and hands
+  // focus back to the annotation that opened them (dismiss does both).
+  useEscapeLayer("popover", { open: selected !== null, onEscape: dismiss });
 
   useEffect(() => {
     selectedRef.current = null;
@@ -455,10 +461,19 @@ function SceneAnnotations({ annotations }: { readonly annotations: readonly Scen
     observeBounds();
     // Portalled dialogs and translated docks can change without resizing.
     // Ignore our own layout writes, which otherwise create a perpetual loop.
+    let chromeSettled: number | undefined;
     const membership = new MutationObserver((records) => {
+      // A dock folded or cleared by the pointer goes only once its fade has
+      // run (T-680): measure again then, so the cards use the space it frees.
+      if (records.some((record) => record.target === canvas.ownerDocument.documentElement)) {
+        window.clearTimeout(chromeSettled);
+        chromeSettled = window.setTimeout(markDirty, CHROME_SETTLE_MS + 20);
+      }
       const relevant = records.some((record) => {
         if (rootRef.current?.contains(record.target) === true) return false;
         if (record.type === "childList") return true;
+        // A dock folding away or coming back (T-680) changes no size.
+        if (record.target === canvas.ownerDocument.documentElement) return true;
         return record.target instanceof Element
           && (record.target.closest(`${BLOCKING_UI}, ${MODAL_UI}`) !== null
             || record.target.querySelector(MODAL_UI) !== null);
@@ -469,11 +484,13 @@ function SceneAnnotations({ annotations }: { readonly annotations: readonly Scen
       childList: true, subtree: true, attributes: true,
       attributeFilter: ["style", "class", "hidden", "open", "aria-hidden", "data-visible"],
     });
+    membership.observe(canvas.ownerDocument.documentElement, { attributes: true, attributeFilter: [...CHROME_PRESENCE_ATTRIBUTES] });
     window.addEventListener("resize", markDirty);
     window.addEventListener("scroll", markDirty, true);
     return () => {
       observer?.disconnect();
       membership.disconnect();
+      window.clearTimeout(chromeSettled);
       window.removeEventListener("resize", markDirty);
       window.removeEventListener("scroll", markDirty, true);
     };
@@ -551,14 +568,12 @@ function SceneAnnotations({ annotations }: { readonly annotations: readonly Scen
 
   return <Html calculatePosition={HTML_ORIGIN} onOcclude={KEEP_SCREEN_LAYER_VISIBLE} zIndexRange={[18, 18]}>
     <div ref={rootRef} className="scene-annotations" style={{ width: size.width, height: size.height }} data-layout="packed"
-      onPointerDown={(event) => { event.stopPropagation(); }}
-      onKeyUp={(event) => { event.stopPropagation(); }}
-      onKeyDown={(event) => { event.stopPropagation(); if (event.key === "Escape") { event.preventDefault(); dismiss(); } }}>
+      onPointerDown={(event) => { event.stopPropagation(); }}>
       <svg className="scene-annotations__leaders" width={size.width} height={size.height} aria-hidden="true">
         {annotations.map((annotation) => <line key={annotation.id} stroke={annotation.color} ref={(element) => { if (element === null) lines.current.delete(annotation.id); else lines.current.set(annotation.id, element); }} />)}
       </svg>
-      <div ref={viewportRef} className="scene-annotations__viewport" role="region" aria-label="Scene planning annotations" tabIndex={0}>
-        <p className="scene-annotations__list-label">{annotations.length} planning annotations · scroll for all</p>
+      <div ref={viewportRef} className="scene-annotations__viewport" role="region" aria-label="Planning notes in the room" tabIndex={0}>
+        <p className="scene-annotations__list-label">{annotations.length === 1 ? "1 planning note" : `${String(annotations.length)} planning notes`} · scroll for all</p>
         <div ref={cardsRef} className="scene-annotations__cards">
           {annotations.map((annotation) => <div key={annotation.id} className="scene-annotations__card" style={{ "--annotation-color": annotation.color } as CSSProperties}
             ref={(element) => { if (element === null) cards.current.delete(annotation.id); else cards.current.set(annotation.id, element); dirty.current = true; }}>
@@ -573,7 +588,7 @@ function SceneAnnotations({ annotations }: { readonly annotations: readonly Scen
             </button>
             {selected === annotation.id && <>
               <p id={`${annotationId}-${annotation.id}`} className="scene-annotations__detail">{annotation.detail}</p>
-              <button type="button" className="scene-annotations__dismiss" onClick={dismiss}>Dismiss annotation details</button>
+              <button type="button" className="scene-annotations__dismiss" onClick={dismiss}>Close note</button>
             </>}
           </div>)}
         </div>
@@ -610,14 +625,18 @@ export function CockpitSceneOverlays({ renderGeometry = true }: { readonly rende
     () => (artifact === null ? [] : selectMoteTrajectories(artifact.trajectories, MAX_MOTES)),
     [artifact],
   );
+  // Density patches and conflict markers are figures the doors decide: with
+  // the doors placed mid-wall by assumption, neither is drawn (redteam
+  // fix-first 2). Routes and motes still show how guests would move.
+  const figuresAllowed = artifact !== null && flowFiguresAllowed(artifact);
   const densityCells = useMemo(
-    () => (artifact === null ? [] : selectDensityCells(artifact.densityHeatmap.cells, MAX_DENSITY)),
-    [artifact],
+    () => (artifact === null || !figuresAllowed ? [] : selectDensityCells(artifact.densityHeatmap.cells, MAX_DENSITY)),
+    [artifact, figuresAllowed],
   );
   const densityCellSizeM = artifact?.densityHeatmap.cellSizeM ?? DEFAULT_DENSITY_CELL_SIZE_M;
   const conflicts = useMemo(
-    () => (artifact === null ? [] : selectRouteConflicts(artifact.routeConflicts, artifact.routeConflicts.length)),
-    [artifact],
+    () => (artifact === null || !figuresAllowed ? [] : selectRouteConflicts(artifact.routeConflicts, artifact.routeConflicts.length)),
+    [artifact, figuresAllowed],
   );
 
   // Keep accessible warnings mounted when compact or moving views omit scene geometry.
@@ -648,7 +667,7 @@ export function CockpitSceneOverlays({ renderGeometry = true }: { readonly rende
     <group name="cockpit-scene-overlays">
       {showReplayLayers && (
         <>
-          {layers.densityHeatmap && (
+          {layers.densityHeatmap && figuresAllowed && (
             <DensityPatches
               cells={densityCells}
               cellSizeM={densityCellSizeM}

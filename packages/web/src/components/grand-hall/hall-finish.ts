@@ -6,8 +6,11 @@
 // software rasteriser (a virtual machine, a headless browser) takes them too,
 // and leaves out the reflection map and the chandeliers' lights, whose large
 // shaders it would compile and run on the CPU: a soft fill lights the
-// furniture instead. Read from the user agent and from the canvas's own
-// context; no probe context is created.
+// furniture instead. The walls' two-millimetre detail (hall-detail.ts) keeps
+// as many tiles on the GPU as the device's slots: 64 on a computer (89 MB),
+// 32 on a tablet (45 MB), 16 on a phone (22 MB), none on a software
+// rasteriser. Read from the user agent and from the canvas's own context; no
+// probe context is created.
 // ---------------------------------------------------------------------------
 
 import { useMemo } from "react";
@@ -20,9 +23,14 @@ export interface HallFinish {
   readonly photoQuality: number;
   /** The reflection environment and the chandeliers' own lights; otherwise a soft fill. */
   readonly liveLight: boolean;
+  /** Tiles of the walls' 2 mm detail held on the GPU (hall-detail.ts); 0 for none. */
+  readonly detailSlots: number;
 }
 
-export const FULL_HALL_FINISH: HallFinish = { photoQuality: 1, liveLight: true };
+/** Detail slots by device: each holds a 512 px tile and its mips, 1.39 MB. */
+export const HALL_DETAIL_SLOTS = { desktop: 64, tablet: 32, phone: 16 } as const;
+
+export const FULL_HALL_FINISH: HallFinish = { photoQuality: 1, liveLight: true, detailSlots: HALL_DETAIL_SLOTS.desktop };
 
 /** Whether a GPU renderer string names a software rasteriser. */
 export function isSoftwareRenderer(gpu: string | null): boolean {
@@ -30,8 +38,9 @@ export function isSoftwareRenderer(gpu: string | null): boolean {
 }
 
 export function hallFinish(formFactor: DeviceFormFactor, software: boolean): HallFinish {
-  if (software) return { photoQuality: 0.5, liveLight: false };
-  if (formFactor === "phone") return { photoQuality: 0.5, liveLight: true };
+  if (software) return { photoQuality: 0.5, liveLight: false, detailSlots: 0 };
+  if (formFactor === "phone") return { photoQuality: 0.5, liveLight: true, detailSlots: HALL_DETAIL_SLOTS.phone };
+  if (formFactor === "tablet") return { photoQuality: 1, liveLight: true, detailSlots: HALL_DETAIL_SLOTS.tablet };
   return FULL_HALL_FINISH;
 }
 

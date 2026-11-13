@@ -94,10 +94,11 @@ Keeping the Diary's own Ctrl/⌘K beside a global one was rejected: the same key
 
 ## Decisions left to Blake
 
-- **C2, who may search clients.** Sales and planners are still refused `/clients/search`; the 27 September
-  session left it on Blake's answer to C2 and this keeps that rule. Their Find covers dates, pages and
-  the board. If Blake gives sales the client record (C1's default lists Clients for sales), Find needs
-  no change beyond the role sets.
+- **C2, who may search clients: answered.** Blake approved the People Book design on 18 October, which
+  gives sales the client search. Its first slice (T-665) opens `/clients/search` to the commercial team
+  (`canReadClients`), sales included, and adds sales to the web's `CLIENT_SEARCH_ROLES`, so sales' Find
+  lists clients with no other change. Planners are still refused; their Find covers dates, pages and the
+  board.
 - **B3, the team's words.** The words each page is found by are a first list (`find-model.ts`,
   `PLACE_WORDS`); the team's own vocabulary should replace it.
 

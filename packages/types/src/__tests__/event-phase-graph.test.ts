@@ -7,8 +7,10 @@ import {
   EVENT_PHASE_TEMPLATE_KEYS,
   EVENT_STATUSES,
   EventPhaseGraphSchema,
+  EventSchema,
   PhaseLayoutSnapshotSchema,
   UpdateEventPhaseSchema,
+  UpdateEventSchema,
   defaultEventPhaseInputs,
 } from "../event-phase-graph.js";
 
@@ -35,6 +37,7 @@ describe("event phase graph contracts", () => {
       "executed",
       "closed",
       "cancelled",
+      "lost",
     ]);
   });
 
@@ -97,6 +100,25 @@ describe("event phase graph contracts", () => {
     });
     expect(parsed.status).toBe("draft");
     expect(parsed.guestCount).toBe(0);
+  });
+
+  it("reads an event stored with no name, and never writes one (the event-name ruling)", () => {
+    const stored = {
+      id: EVENT_ID, venueId: VENUE_ID, createdBy: null, name: "", eventType: "wedding", status: "draft",
+      startsAt: NOW, endsAt: null, guestCount: 0, clientName: null, notes: null, createdAt: NOW, updatedAt: NOW,
+    };
+    expect(EventSchema.parse(stored).name).toBe("");
+    expect(EventSchema.parse({ ...stored, name: "   " }).name).toBe("");
+    expect(EventSchema.safeParse({ ...stored, name: "x".repeat(201) }).success).toBe(false);
+    // Staff give it a name; nobody gives it an empty or blank one.
+    expect(CreateEventSchema.safeParse({ venueId: VENUE_ID, name: "Smith wedding" }).success).toBe(true);
+    expect(UpdateEventSchema.safeParse({ name: "Smith wedding" }).success).toBe(true);
+    for (const name of ["", "   "]) {
+      for (const result of [CreateEventSchema.safeParse({ venueId: VENUE_ID, name }), UpdateEventSchema.safeParse({ name })]) {
+        expect(result.success, JSON.stringify(name)).toBe(false);
+        expect(result.error?.issues.map((issue) => issue.path.join(".")), JSON.stringify(name)).toEqual(["name"]);
+      }
+    }
   });
 
   it("keeps layout variants linked to configurations without implying approval", () => {

@@ -69,7 +69,7 @@ const PROPERTY_NAME = /^[!-~]+$/u;
 
 const SourceIdentityBaseSchema = z.object({
   path: FoundryRelativePathSchema,
-  sizeBytes: z.number().int().safe().nonnegative(),
+  sizeBytes: z.number().int().int().nonnegative(),
   sha256: z.string().regex(SHA256_HEX),
 }).strict();
 
@@ -123,7 +123,7 @@ const InspectionSchema = z.object({
   ]),
 }).strict().superRefine((value, ctx) => {
   if ((value.state === "established") !== (value.category === "established")) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["category"], message: "inspection state and category must agree" });
+    ctx.addIssue({ code: "custom", path: ["category"], message: "inspection state and category must agree" });
   }
 });
 
@@ -192,7 +192,7 @@ export const FoundryGaussianPlyFactsV3Schema = z.object({
   gaussians: z.object({
     count: z.number().int().min(1).max(FOUNDRY_GAUSSIAN_PLY_VERTEX_MAX_COUNT),
     vertexStrideBytes: z.number().int().positive().max(FOUNDRY_GAUSSIAN_PLY_VERTEX_STRIDE_MAX_BYTES),
-    payloadBytes: z.number().int().safe().positive().max(FOUNDRY_GAUSSIAN_PLY_SOURCE_MAX_BYTES),
+    payloadBytes: z.number().int().int().positive().max(FOUNDRY_GAUSSIAN_PLY_SOURCE_MAX_BYTES),
     properties: z.array(PropertyFactsSchema).min(14).max(FOUNDRY_GAUSSIAN_PLY_PROPERTY_MAX_COUNT),
     sphericalHarmonics: z.object({
       degree: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3), z.literal(4)]),
@@ -220,10 +220,10 @@ export const FoundryGaussianPlyFactsV3Schema = z.object({
     }).strict(),
   }).strict(),
   container: z.object({
-    sourceSizeBytes: z.number().int().safe().positive().max(FOUNDRY_GAUSSIAN_PLY_SOURCE_MAX_BYTES),
+    sourceSizeBytes: z.number().int().int().positive().max(FOUNDRY_GAUSSIAN_PLY_SOURCE_MAX_BYTES),
     headerBytes: z.number().int().positive().max(FOUNDRY_GAUSSIAN_PLY_HEADER_MAX_BYTES),
     payloadOffsetBytes: z.number().int().positive().max(FOUNDRY_GAUSSIAN_PLY_HEADER_MAX_BYTES),
-    payloadBytes: z.number().int().safe().positive().max(FOUNDRY_GAUSSIAN_PLY_SOURCE_MAX_BYTES),
+    payloadBytes: z.number().int().int().positive().max(FOUNDRY_GAUSSIAN_PLY_SOURCE_MAX_BYTES),
     exactFileLengthVerified: z.literal(true),
     trailingBytes: z.literal(0),
   }).strict(),
@@ -237,7 +237,7 @@ export const FoundryGaussianPlyFactsV3Schema = z.object({
 }).strict().superRefine((facts, ctx) => {
   const { gaussians, container, header } = facts;
   if (header.comments.count + header.objInfo.count > FOUNDRY_GAUSSIAN_PLY_COMMENT_MAX_COUNT) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["header"], message: "Gaussian PLY comment and obj_info count exceeds the combined limit" });
+    ctx.addIssue({ code: "custom", path: ["header"], message: "Gaussian PLY comment and obj_info count exceeds the combined limit" });
   }
   if (
     container.headerBytes !== header.bytes ||
@@ -246,11 +246,11 @@ export const FoundryGaussianPlyFactsV3Schema = z.object({
     container.sourceSizeBytes !== container.headerBytes + container.payloadBytes ||
     gaussians.payloadBytes !== gaussians.count * gaussians.vertexStrideBytes
   ) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["container"], message: "Gaussian PLY container byte facts are inconsistent" });
+    ctx.addIssue({ code: "custom", path: ["container"], message: "Gaussian PLY container byte facts are inconsistent" });
   }
   const names = gaussians.properties.map((property) => property.name);
   if (new Set(names).size !== names.length) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["gaussians", "properties"], message: "Gaussian PLY property names must be unique" });
+    ctx.addIssue({ code: "custom", path: ["gaussians", "properties"], message: "Gaussian PLY property names must be unique" });
   }
   let expectedOffset = 0;
   for (const [ordinal, property] of gaussians.properties.entries()) {
@@ -259,12 +259,12 @@ export const FoundryGaussianPlyFactsV3Schema = z.object({
       property.ordinal !== ordinal || property.byteOffset !== expectedOffset ||
       property.canonicalType !== expectedScalarLayout[0] || property.byteWidth !== expectedScalarLayout[1]
     ) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["gaussians", "properties", ordinal], message: "Gaussian PLY scalar property layout is inconsistent" });
+      ctx.addIssue({ code: "custom", path: ["gaussians", "properties", ordinal], message: "Gaussian PLY scalar property layout is inconsistent" });
     }
     expectedOffset += property.byteWidth;
   }
   if (expectedOffset !== gaussians.vertexStrideBytes) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["gaussians", "vertexStrideBytes"], message: "Gaussian PLY property widths do not match the vertex stride" });
+    ctx.addIssue({ code: "custom", path: ["gaussians", "vertexStrideBytes"], message: "Gaussian PLY property widths do not match the vertex stride" });
   }
 
   const expectedNamedRoles = new Map<string, readonly [string, number | null]>([
@@ -287,23 +287,23 @@ export const FoundryGaussianPlyFactsV3Schema = z.object({
     const expected = expectedNamedRoles.get(property.name);
     if (expected === undefined) {
       if (property.role !== "extra" || property.roleIndex !== null) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["gaussians", "properties", ordinal], message: "Gaussian PLY extra property role is inconsistent" });
+        ctx.addIssue({ code: "custom", path: ["gaussians", "properties", ordinal], message: "Gaussian PLY extra property role is inconsistent" });
       }
     } else if (
       property.role !== expected[0] || property.roleIndex !== expected[1] ||
       property.canonicalType !== "float32" || property.byteWidth !== 4
     ) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["gaussians", "properties", ordinal], message: "Gaussian PLY named property role or scalar type is inconsistent" });
+      ctx.addIssue({ code: "custom", path: ["gaussians", "properties", ordinal], message: "Gaussian PLY named property role or scalar type is inconsistent" });
     }
   }
   for (const name of expectedNamedRoles.keys()) {
     if (!names.includes(name)) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["gaussians", "properties"], message: `Gaussian PLY required property is missing: ${name}` });
+      ctx.addIssue({ code: "custom", path: ["gaussians", "properties"], message: `Gaussian PLY required property is missing: ${name}` });
     }
   }
   const nonDcExpected = SH_NON_DC_COUNTS[gaussians.sphericalHarmonics.degree];
   if (gaussians.sphericalHarmonics.nonDcPropertyCount !== nonDcExpected) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["gaussians", "sphericalHarmonics"], message: "Gaussian PLY SH degree and property count disagree" });
+    ctx.addIssue({ code: "custom", path: ["gaussians", "sphericalHarmonics"], message: "Gaussian PLY SH degree and property count disagree" });
   }
   const normalProperties = gaussians.properties.filter((property) => property.role === "normal");
   const normalOffsets = ["nx", "ny", "nz"].map((name) =>
@@ -316,14 +316,14 @@ export const FoundryGaussianPlyFactsV3Schema = z.object({
       JSON.stringify(gaussians.normals.offsets) !== JSON.stringify(normalOffsets)
     ))
   ) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["gaussians", "normals"], message: "Gaussian PLY normal facts are inconsistent" });
+    ctx.addIssue({ code: "custom", path: ["gaussians", "normals"], message: "Gaussian PLY normal facts are inconsistent" });
   }
   const extraNames = gaussians.properties.filter((property) => property.role === "extra").map((property) => property.name);
   if (
     gaussians.extraProperties.count !== extraNames.length ||
     JSON.stringify(gaussians.extraProperties.names) !== JSON.stringify(extraNames)
   ) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["gaussians", "extraProperties"], message: "Gaussian PLY extra-property facts are inconsistent" });
+    ctx.addIssue({ code: "custom", path: ["gaussians", "extraProperties"], message: "Gaussian PLY extra-property facts are inconsistent" });
   }
 });
 export type FoundryGaussianPlyFactsV3 = z.infer<typeof FoundryGaussianPlyFactsV3Schema>;
@@ -336,10 +336,10 @@ const GaussianPlyAssetSchema = z.object({
   unknowns: z.array(UnknownFactSchema),
 }).strict().superRefine((asset, ctx) => {
   if ((asset.inspection.state === "established") !== (asset.facts !== null)) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["facts"], message: "Gaussian PLY facts must match inspection state" });
+    ctx.addIssue({ code: "custom", path: ["facts"], message: "Gaussian PLY facts must match inspection state" });
   }
   if (JSON.stringify(asset.unknowns) !== JSON.stringify(FOUNDRY_GAUSSIAN_PLY_UNKNOWNS)) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["unknowns"], message: "Gaussian PLY unknowns must match V3 coverage" });
+    ctx.addIssue({ code: "custom", path: ["unknowns"], message: "Gaussian PLY unknowns must match V3 coverage" });
   }
   if (asset.inspection.state === "established") {
     if (
@@ -348,7 +348,7 @@ const GaussianPlyAssetSchema = z.object({
       asset.inspection.coverage !== "complete_container_structure" ||
       asset.facts?.container.sourceSizeBytes !== asset.source.sizeBytes
     ) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["inspection"], message: "established Gaussian PLY inspection fields are inconsistent" });
+      ctx.addIssue({ code: "custom", path: ["inspection"], message: "established Gaussian PLY inspection fields are inconsistent" });
     }
     return;
   }
@@ -359,7 +359,7 @@ const GaussianPlyAssetSchema = z.object({
     expectedCategory === undefined || expectedCategory === "cancelled" ||
     asset.inspection.category !== expectedCategory || asset.inspection.coverage !== "none"
   ) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["inspection"], message: "failed Gaussian PLY inspection fields are inconsistent" });
+    ctx.addIssue({ code: "custom", path: ["inspection"], message: "failed Gaussian PLY inspection fields are inconsistent" });
   }
 });
 
@@ -476,7 +476,7 @@ function validateArtifact(value: ArtifactWithoutValidation, ctx: z.RefinementCtx
   const paths = value.assets.map((asset) => asset.source.path);
   const sorted = [...paths].sort(compareText);
   if (new Set(paths).size !== paths.length || paths.some((path, index) => path !== sorted[index])) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["assets"], message: "V3 asset paths must be unique and sorted" });
+    ctx.addIssue({ code: "custom", path: ["assets"], message: "V3 asset paths must be unique and sorted" });
   }
   const expectedSummary = value.state === "available"
     ? {
@@ -496,13 +496,13 @@ function validateArtifact(value: ArtifactWithoutValidation, ctx: z.RefinementCtx
         blockedSourceCount: value.affectedSources.length,
       };
   if (expectedSummary.untargetedFileCount < 0 || JSON.stringify(value.summary) !== JSON.stringify(expectedSummary)) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["summary"], message: "V3 summary does not match artifact contents" });
+    ctx.addIssue({ code: "custom", path: ["summary"], message: "V3 summary does not match artifact contents" });
   }
   if (value.state === "unavailable") {
     const blockedPaths = value.affectedSources.map((source) => source.path);
     const sortedBlocked = [...blockedPaths].sort(compareText);
     if (new Set(blockedPaths).size !== blockedPaths.length || blockedPaths.some((path, index) => path !== sortedBlocked[index])) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["affectedSources"], message: "V3 affected sources must be unique and sorted" });
+      ctx.addIssue({ code: "custom", path: ["affectedSources"], message: "V3 affected sources must be unique and sorted" });
     }
   }
   const usesPye57 = value.assets.some((asset) =>
@@ -510,10 +510,10 @@ function validateArtifact(value: ArtifactWithoutValidation, ctx: z.RefinementCtx
   );
   const expectedProbe = usesPye57 ? "local_pye57_read_only" : "none";
   if (value.policy.metadataProbe !== expectedProbe || value.policy.externalProcess !== expectedProbe) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["policy", "metadataProbe"], message: "V3 metadata probe policy contradicts attached E57 evidence" });
+    ctx.addIssue({ code: "custom", path: ["policy", "metadataProbe"], message: "V3 metadata probe policy contradicts attached E57 evidence" });
   }
   if (value.factsSha256 !== artifactDigest(value)) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["factsSha256"], message: "V3 facts digest does not match canonical payload" });
+    ctx.addIssue({ code: "custom", path: ["factsSha256"], message: "V3 facts digest does not match canonical payload" });
   }
 }
 

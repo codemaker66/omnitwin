@@ -56,7 +56,7 @@ export const FoundryPlanPreviewCapacityV0Schema = z
     gpuCount: z.number().int().nonnegative().max(128),
     perGpuVramGiB: z.number().nonnegative().max(1_000),
     scratchGiB: z.number().positive().max(1_000_000),
-    maximumInputBytes: z.number().int().safe().nonnegative(),
+    maximumInputBytes: z.number().int().int().nonnegative(),
   })
   .strict();
 
@@ -70,12 +70,12 @@ export const FoundryPlanPreviewLocalRouteV0Schema = z
 
 export const FoundryPlanPreviewCostBreakdownV0Schema = z
   .object({
-    computeUsd: z.number().finite().nonnegative(),
-    storageUsd: z.number().finite().nonnegative(),
-    egressUsd: z.number().finite().nonnegative(),
-    imageAndModelPullUsd: z.number().finite().nonnegative(),
-    retryAllowanceUsd: z.number().finite().nonnegative(),
-    safetyMarginUsd: z.number().finite().nonnegative(),
+    computeUsd: z.number().nonnegative(),
+    storageUsd: z.number().nonnegative(),
+    egressUsd: z.number().nonnegative(),
+    imageAndModelPullUsd: z.number().nonnegative(),
+    retryAllowanceUsd: z.number().nonnegative(),
+    safetyMarginUsd: z.number().nonnegative(),
   })
   .strict();
 
@@ -86,13 +86,13 @@ export const FoundryPlanPreviewEstimateSnapshotV0Schema = z
     expiresAt: FoundryUtcInstantSchema,
     sourceReference: z.string().trim().min(1).max(500),
     breakdown: FoundryPlanPreviewCostBreakdownV0Schema,
-    budgetCapUsd: z.number().finite().nonnegative(),
+    budgetCapUsd: z.number().nonnegative(),
   })
   .strict()
   .superRefine((snapshot, ctx) => {
     if (Date.parse(snapshot.observedAt) >= Date.parse(snapshot.expiresAt)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["expiresAt"],
         message: "provider estimate must expire after it was observed",
       });
@@ -125,7 +125,7 @@ export const FoundryPlanPreviewInputV0Schema = z
   .superRefine((input, ctx) => {
     if (input.localRoutes.length + input.remoteRoutes.length === 0) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["localRoutes"],
         message: "plan preview requires at least one local or cloud route",
       });
@@ -135,7 +135,7 @@ export const FoundryPlanPreviewInputV0Schema = z
     );
     if (new Set(routeIds).size !== routeIds.length) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["remoteRoutes"],
         message: "provider kind and adapter pairs must be unique",
       });
@@ -143,7 +143,7 @@ export const FoundryPlanPreviewInputV0Schema = z
     const roles = input.workerBindings.map((binding) => binding.role);
     if (new Set(roles).size !== roles.length) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["workerBindings"],
         message: "trusted worker roles must be unique",
       });
@@ -179,7 +179,7 @@ const FoundryPlanGateSchema = z
   .superRefine((gate, ctx) => {
     if ((gate.status === "clear") !== (gate.blockers.length === 0)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["status"],
         message: "a clear planning gate has no blockers; a blocked gate has at least one",
       });
@@ -191,7 +191,7 @@ const FoundryPlanGateSchema = z
       codes.some((code, index) => code !== sorted[index])
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["blockers"],
         message: "planning-gate blockers must be unique and sorted by code",
       });
@@ -224,8 +224,8 @@ const FoundryPlanPreviewSuppliedCostSchema = z
   .object({
     state: z.literal("calculated_from_supplied_snapshot"),
     currency: z.literal("USD"),
-    amountUsd: z.number().finite().nonnegative(),
-    budgetCapUsd: z.number().finite().nonnegative(),
+    amountUsd: z.number().nonnegative(),
+    budgetCapUsd: z.number().nonnegative(),
     sourceReference: z.string().trim().min(1).max(500),
     observedAt: FoundryUtcInstantSchema,
     expiresAt: FoundryUtcInstantSchema,
@@ -258,7 +258,7 @@ const FoundryPlanPreviewRouteBaseSchema = z
     heading: z.string().trim().min(1).max(160),
     status: z.enum(["plan_available", "blocked"]),
     plainLanguageStatus: z.string().trim().min(1).max(2_000),
-    inputBytes: z.number().int().safe().nonnegative(),
+    inputBytes: z.number().int().int().nonnegative(),
     capacity: FoundryPlanPreviewCapacityV0Schema.nullable(),
     blockers: z.array(FoundryPlanPreviewRouteBlockerSchema).max(10_000),
     jobSpecSha256: RuntimeSha256Schema.nullable(),
@@ -301,21 +301,21 @@ function validateRouteResult(
     codes.some((code, index) => code !== sorted[index])
   ) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["blockers"],
       message: "route blockers must be unique and sorted by code",
     });
   }
   if ((route.status === "plan_available") !== (route.blockers.length === 0)) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["status"],
       message: "an available plan has no blockers; a blocked plan has at least one",
     });
   }
   if (route.status === "plan_available" && route.jobSpecSha256 === null) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["jobSpecSha256"],
       message: "an available plan must bind its exact plan-only JobSpec",
     });
@@ -470,7 +470,7 @@ function validatePreviewPayload(
     cloudRouteIds.some((id, index) => id !== sortedCloudRouteIds[index])
   ) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["routes"],
       message: "preview routes must be sorted by provider kind and adapter ID",
     });
@@ -484,7 +484,7 @@ function validatePreviewPayload(
     )
   ) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["workerProfileSha256s"],
       message: "worker profile digests must be unique and sorted",
     });
@@ -502,7 +502,7 @@ function validatePreviewPayload(
       outputStageIds.mixedCandidates.length > 0
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["truthSeparation", "outputStageIds"],
         message: "a blocked preview cannot claim compiled output stages",
       });
@@ -515,7 +515,7 @@ function validatePreviewPayload(
       availableCount !== 0
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["planningGate"],
         message: "a blocked planning gate must withhold artifacts and block every route",
       });
@@ -528,7 +528,7 @@ function validatePreviewPayload(
     preview.truthSeparation.outputPlanningState !== "compiled"
   ) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["exactArtifacts"],
       message: "a clear planning gate must bind the exact compiled artifacts",
     });
@@ -539,7 +539,7 @@ function validatePreviewPayload(
     (preview.status === "all_routes_blocked") !== (availableCount === 0)
   ) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["status"],
       message: "preview status must match route availability",
     });
@@ -551,7 +551,7 @@ function validatePreviewPayload(
     !equalCanonical(recipe.options, preview.options)
   ) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["exactArtifacts"],
       message: "compiled artifacts must bind this preview's manifest, options, and recipe",
     });
@@ -564,7 +564,7 @@ function validatePreviewPayload(
     )
   ) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["truthSeparation", "outputStageIds"],
       message: "truth-layer stage lists must match the exact recipe outputs",
     });
@@ -577,7 +577,7 @@ function validatePreviewPayload(
       )
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["exactArtifacts"],
         message: "a recipe-only preview requires every incomplete route to stay blocked",
       });
@@ -589,7 +589,7 @@ function validatePreviewPayload(
     !equalCanonical(toFoundryPlanOnlyRecipe(recipe), dossier.request.recipe)
   ) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["exactArtifacts"],
       message: "the plan-only dossier must bind the exact compiled recipe",
     });
@@ -627,7 +627,7 @@ function validatePreviewPayload(
     })
   ) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["routes"],
       message: "route summaries must faithfully include every exact dossier candidate",
     });
@@ -652,7 +652,7 @@ export const FoundryPlanPreviewV0Schema =
       if (!parsed.success) return;
       if (preview.previewSha256 !== computeFoundryPlanPreviewSha256(parsed.data)) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["previewSha256"],
           message: "plan preview digest must match its exact payload",
         });

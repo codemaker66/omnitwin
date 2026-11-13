@@ -240,7 +240,8 @@ test.describe("Staff enquiries list paging", () => {
     await page.getByRole("button", { name: "Approve…" }).click();
     const confirm = page.getByRole("group", { name: "Approve Enquiry 56’s enquiry?" });
     // The room as the approval email names it; these enquiries asked no date.
-    await expect(confirm).toContainText("Approving emails enquiry56@paging.test to say the enquiry for the Grand Hall is approved.");
+    // The email takes the enquiry further and books nothing, and staff are told so.
+    await expect(confirm).toContainText("Approving emails enquiry56@paging.test to say you would like to take the enquiry for the Grand Hall further. It does not book or hold a date.");
     await confirm.getByRole("textbox").fill("Deposit invoice sent.");
     await confirm.getByRole("button", { name: "Approve and email" }).click();
     await expect(page.locator(".enq-panel .enq-chip")).toHaveText("Approved");

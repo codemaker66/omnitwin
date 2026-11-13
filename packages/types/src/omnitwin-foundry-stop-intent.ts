@@ -91,9 +91,7 @@ const CANONICAL_UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 const CANONICAL_IDEMPOTENCY_KEY = /^[a-z0-9][a-z0-9._:-]{7,159}$/u;
 
-export const FoundryStopIntentUuidSchema = z
-  .string()
-  .uuid()
+export const FoundryStopIntentUuidSchema = z.uuid()
   .regex(CANONICAL_UUID, "UUID must use canonical lowercase RFC form");
 
 export const FoundryStopIntentFencingTokenSchema = z
@@ -214,7 +212,7 @@ function addIssue(
   path: readonly (string | number)[],
   message: string,
 ): void {
-  ctx.addIssue({ code: z.ZodIssueCode.custom, path: [...path], message });
+  ctx.addIssue({ code: "custom", path: [...path], message });
 }
 
 function validateFoundryStopIntentPayload(

@@ -280,7 +280,7 @@ describe("authorize() middleware — admin route guards", () => {
   it("DELETE /venues/:id with planner role: rejected with 403", async () => {
     const token = mockToken({ id: "u1", email: "test@test.com", role: "planner", venueId: null });
     const res = await server.inject({
-      method: "DELETE", url: "/venues/00000000-0000-0000-0000-000000000001",
+      method: "DELETE", url: "/venues/00000000-0000-4000-8000-000000000001",
       headers: { authorization: `Bearer ${token}` },
     });
     expect(res.statusCode).toBe(403);
@@ -560,7 +560,7 @@ describe("old auth routes removed", () => {
 // ---------------------------------------------------------------------------
 
 describe("hallkeeper sheet auth requirement", () => {
-  const VALID_UUID = "00000000-0000-0000-0000-000000000099";
+  const VALID_UUID = "00000000-0000-4000-8000-000000000099";
 
   it("GET /hallkeeper/:id/v2 without auth: rejected with 401", async () => {
     const res = await server.inject({

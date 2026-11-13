@@ -1,6 +1,7 @@
 import { OPPORTUNITY_STAGE_TRANSITIONS, OpportunityStageSchema, type OpportunityStage } from "@omnitwin/types";
 import type { Activity, Opportunity, StageMove } from "../../../api/crm.js";
 import { formatMinorAsCurrency } from "../../../lib/money-input.js";
+import { lostToWords } from "../pricing/competitor-watch-format.js";
 import {
   eventDateLong, eventDateParts, relativeAge, venueCalendarDate, type StageTone, type SummaryPart,
 } from "../enquiries/enquiry-desk-format.js";
@@ -272,6 +273,9 @@ export interface TimelineMoment {
   readonly sentence: string;
   /** The words given with it: a close's reason, or a note's text. */
   readonly quote: string | null;
+  /** Who won a lost deal, when it was said, with any figure the client
+   *  gave, labelled as theirs and unverified. */
+  readonly detail?: string;
 }
 
 function moveSentence(move: StageMove): string {
@@ -291,12 +295,13 @@ function moveSentence(move: StageMove): string {
 /** A move nobody at the venue made (the client's own act on a proposal, say)
  *  is told in its note's words: "The client accepted the proposal (version
  *  2)." A move a person made names them, with their reason beneath. */
-function moveMoment(move: StageMove): { sentence: string; quote: string | null } {
+function moveMoment(move: StageMove): { sentence: string; quote: string | null; detail?: string } {
   const note = move.note === null ? "" : move.note.trim();
   // The old board wrote "Moved to X" as every move's note; it says nothing.
   const said = note === "" || /^Moved to /u.test(note) ? null : note;
-  if (move.changedByName === null && said !== null) return { sentence: said, quote: null };
-  return { sentence: moveSentence(move), quote: said };
+  const detail = move.lostTo === undefined || move.lostTo === null ? {} : { detail: lostToWords(move.lostTo) };
+  if (move.changedByName === null && said !== null) return { sentence: said, quote: null, ...detail };
+  return { sentence: moveSentence(move), quote: said, ...detail };
 }
 
 /** What happened to the deal, newest first: its stage moves with who made

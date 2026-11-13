@@ -17,7 +17,7 @@ import { findUnsupportedProposalClaim, MAX_LINE_ITEM_QUANTITY, ProposalFactsSche
 // claim guard, as a version's message is.
 // ---------------------------------------------------------------------------
 
-export const ProposalTemplateIdSchema = z.string().uuid();
+export const ProposalTemplateIdSchema = z.uuid();
 export type ProposalTemplateId = z.infer<typeof ProposalTemplateIdSchema>;
 
 export const MAX_TEMPLATE_LINES = 40;
@@ -76,7 +76,7 @@ function checkContent(content: { readonly message: string; readonly lines: reado
   const claim = findUnsupportedProposalClaim(content.message);
   if (claim !== null) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["message"],
       message: `Unsupported claim phrase "${claim}" is not allowed in client-facing proposal text`,
     });
@@ -84,14 +84,14 @@ function checkContent(content: { readonly message: string; readonly lines: reado
   content.lines.forEach((line, index) => {
     if (line.kind === "price_list" && line.quantity !== null && (line.ruleType === "per_head" || line.ruleType === "tiered")) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["lines", index, "quantity"],
         message: "A price a head or a tiered price takes the event's guests, so keeps no quantity",
       });
     }
   });
   if (content.message === "" && content.lines.length === 0) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["message"], message: "A template keeps a message or at least one line" });
+    ctx.addIssue({ code: "custom", path: ["message"], message: "A template keeps a message or at least one line" });
   }
 }
 
@@ -123,7 +123,7 @@ export type CreateProposalTemplateInput = z.input<typeof CreateProposalTemplateS
  *  1 to 9999 in UTC, so an offset past either end is refused, not failed on. */
 export const ReplaceProposalTemplateSchema = z.object({
   ...TemplateWriteShape,
-  expectedUpdatedAt: z.string().datetime({ offset: true }).refine((value) => {
+  expectedUpdatedAt: z.iso.datetime({ offset: true }).refine((value) => {
     const year = new Date(value).getUTCFullYear();
     return year >= 1 && year <= 9999;
   }, "must be a time from year 1 to 9999"),
@@ -147,8 +147,8 @@ export const ProposalTemplateSchema = z.object({
   /** False when the stored lines no longer parse: listed, to be removed,
    *  never used. Its message and lines are then empty. */
   readable: z.boolean(),
-  createdAt: z.string().datetime({ offset: true }),
-  updatedAt: z.string().datetime({ offset: true }),
+  createdAt: z.iso.datetime({ offset: true }),
+  updatedAt: z.iso.datetime({ offset: true }),
   /** Who last saved it; null when not known. */
   updatedByName: z.string().nullable(),
 });

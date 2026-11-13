@@ -14,7 +14,7 @@ import { CrowdAgentProfileTypeSchema, CrowdFlowScenarioTypeSchema, CrowdSimulato
 export const GUEST_FLOW_REPLAY_SCHEMA_VERSION = "venviewer.guest-flow-replay.v0";
 export const GUEST_FLOW_REPLAY_DIGEST_PREFIX = "venviewer.guest-flow-replay.v0\n";
 
-const UUID = z.string().uuid();
+const UUID = z.uuid();
 const SHA256_HEX = /^[a-f0-9]{64}$/;
 
 export const GuestFlowReplayIdSchema = UUID;
@@ -36,17 +36,20 @@ export const StaffLaneIdSchema = UUID;
 export type StaffLaneId = z.infer<typeof StaffLaneIdSchema>;
 
 export const GuestFlowPointSchema = z.object({
-  x: z.number().finite(),
-  y: z.number().finite(),
+  x: z.number(),
+  y: z.number(),
 }).strict();
 export type GuestFlowPoint = z.infer<typeof GuestFlowPointSchema>;
 
 export const GuestFlowTimedPointSchema = GuestFlowPointSchema.extend({
-  t: z.number().finite().nonnegative(),
+  t: z.number().nonnegative(),
 }).strict();
 export type GuestFlowTimedPoint = z.infer<typeof GuestFlowTimedPointSchema>;
 
-export const GuestFlowPolygonSchema = z.array(GuestFlowPointSchema).min(3);
+// Request ceilings for a scenario's geometry and lists: far above any room's,
+// they refuse a body built to make the parser work (one issue per element).
+export const GUEST_FLOW_MAX_POINTS = 1000;
+export const GuestFlowPolygonSchema = z.array(GuestFlowPointSchema).min(3).max(GUEST_FLOW_MAX_POINTS);
 export type GuestFlowPolygon = z.infer<typeof GuestFlowPolygonSchema>;
 
 export const GuestFlowObstacleSchema = z.object({
@@ -60,7 +63,7 @@ export const GuestFlowEntranceExitSchema = z.object({
   id: z.string().trim().min(1).max(120),
   label: z.string().trim().min(1).max(160),
   point: GuestFlowPointSchema,
-  widthM: z.number().finite().positive().nullable(),
+  widthM: z.number().positive().nullable(),
 }).strict();
 export type GuestFlowEntranceExit = z.infer<typeof GuestFlowEntranceExitSchema>;
 
@@ -68,19 +71,19 @@ export const GuestFlowDestinationSchema = z.object({
   id: z.string().trim().min(1).max(120),
   label: z.string().trim().min(1).max(160),
   point: GuestFlowPointSchema,
-  weight: z.number().finite().positive().default(1),
+  weight: z.number().positive().default(1),
 }).strict();
 export type GuestFlowDestination = z.infer<typeof GuestFlowDestinationSchema>;
 
 export const GuestFlowStaffLaneInputSchema = z.object({
   id: z.string().trim().min(1).max(120),
   label: z.string().trim().min(1).max(160),
-  line: z.array(GuestFlowPointSchema).min(2),
+  line: z.array(GuestFlowPointSchema).min(2).max(GUEST_FLOW_MAX_POINTS),
 }).strict();
 export type GuestFlowStaffLaneInput = z.infer<typeof GuestFlowStaffLaneInputSchema>;
 
 export const GuestFlowLayoutInputSchema = z.object({
-  configurationId: z.string().uuid().nullable(),
+  configurationId: z.uuid().nullable(),
   snapshotHash: z.string().regex(SHA256_HEX).nullable(),
   placedObjectCount: z.number().int().nonnegative(),
 }).strict();
@@ -105,13 +108,13 @@ export const GuestFlowReplayInputSchema = z.object({
   scenarioType: CrowdFlowScenarioTypeSchema,
   layout: GuestFlowLayoutInputSchema,
   roomPolygon: GuestFlowPolygonSchema,
-  obstacles: z.array(GuestFlowObstacleSchema),
-  entrances: z.array(GuestFlowEntranceExitSchema).min(1),
-  exits: z.array(GuestFlowEntranceExitSchema).min(1),
-  destinations: z.array(GuestFlowDestinationSchema).min(1),
-  staffLanes: z.array(GuestFlowStaffLaneInputSchema).default([]),
+  obstacles: z.array(GuestFlowObstacleSchema).max(500),
+  entrances: z.array(GuestFlowEntranceExitSchema).min(1).max(100),
+  exits: z.array(GuestFlowEntranceExitSchema).min(1).max(100),
+  destinations: z.array(GuestFlowDestinationSchema).min(1).max(200),
+  staffLanes: z.array(GuestFlowStaffLaneInputSchema).max(100).default([]),
   phase: GuestFlowPhaseInputSchema,
-  assumptions: z.array(GuestFlowAssumptionSchema),
+  assumptions: z.array(GuestFlowAssumptionSchema).max(100),
   agentCount: z.number().int().positive().max(500),
   seed: z.number().int().nonnegative(),
 }).strict();
@@ -127,17 +130,17 @@ export const AgentTrajectorySchema = z.object({
 export type AgentTrajectory = z.infer<typeof AgentTrajectorySchema>;
 
 export const DensityHeatmapCellSchema = z.object({
-  x: z.number().finite(),
-  y: z.number().finite(),
+  x: z.number(),
+  y: z.number(),
   count: z.number().int().nonnegative(),
-  density: z.number().finite().nonnegative(),
+  density: z.number().nonnegative(),
   level: z.enum(["low", "medium", "high"]),
 }).strict();
 export type DensityHeatmapCell = z.infer<typeof DensityHeatmapCellSchema>;
 
 export const DensityHeatmapSchema = z.object({
-  cellSizeM: z.number().finite().positive(),
-  maxDensity: z.number().finite().nonnegative(),
+  cellSizeM: z.number().positive(),
+  maxDensity: z.number().nonnegative(),
   cells: z.array(DensityHeatmapCellSchema),
 }).strict();
 export type DensityHeatmap = z.infer<typeof DensityHeatmapSchema>;
@@ -159,8 +162,8 @@ export const QueueZoneSchema = z.object({
   centre: GuestFlowPointSchema,
   estimatedAgents: z.number().int().nonnegative(),
   peakAgents: z.number().int().nonnegative().default(0),
-  estimatedWaitSeconds: z.number().finite().nonnegative().default(0),
-  serviceRatePerMinute: z.number().finite().positive().default(18),
+  estimatedWaitSeconds: z.number().nonnegative().default(0),
+  serviceRatePerMinute: z.number().positive().default(18),
 }).strict();
 export type QueueZone = z.infer<typeof QueueZoneSchema>;
 
@@ -187,8 +190,8 @@ export const GuestFlowScenarioSchema = z.object({
   status: z.enum(["draft", "ready", "archived"]).default("draft"),
   seed: z.number().int().nonnegative(),
   assumptions: z.array(GuestFlowAssumptionSchema),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
 }).strict();
 export type GuestFlowScenario = z.infer<typeof GuestFlowScenarioSchema>;
 
@@ -201,8 +204,8 @@ export const GuestFlowNavmeshInputSchema = z.object({
   roomPolygon: GuestFlowPolygonSchema,
   obstacles: z.array(GuestFlowObstacleSchema).default([]),
   blockedZones: z.array(GuestFlowBlockedZoneSchema).default([]),
-  agentRadiusM: z.number().finite().positive().default(0.35),
-  cellSizeM: z.number().finite().positive().default(1.25),
+  agentRadiusM: z.number().positive().default(0.35),
+  cellSizeM: z.number().positive().default(1.25),
 }).strict();
 export type GuestFlowNavmeshInput = z.infer<typeof GuestFlowNavmeshInputSchema>;
 
@@ -220,7 +223,7 @@ export type GuestFlowNavmeshCell = z.infer<typeof GuestFlowNavmeshCellSchema>;
 export const GuestFlowNavmeshEdgeSchema = z.object({
   from: z.string().trim().min(1).max(80),
   to: z.string().trim().min(1).max(80),
-  cost: z.number().finite().positive(),
+  cost: z.number().positive(),
 }).strict();
 export type GuestFlowNavmeshEdge = z.infer<typeof GuestFlowNavmeshEdgeSchema>;
 
@@ -235,13 +238,13 @@ export const GuestFlowNavmeshArtifactSchema = z.object({
   schemaVersion: z.literal("venviewer.guest-flow-navmesh.v0"),
   navmeshHash: z.string().regex(SHA256_HEX),
   algorithm: z.literal("grid_navmesh_fallback_v0"),
-  cellSizeM: z.number().finite().positive(),
-  agentRadiusM: z.number().finite().positive(),
+  cellSizeM: z.number().positive(),
+  agentRadiusM: z.number().positive(),
   roomBounds: z.object({
-    minX: z.number().finite(),
-    minY: z.number().finite(),
-    maxX: z.number().finite(),
-    maxY: z.number().finite(),
+    minX: z.number(),
+    minY: z.number(),
+    maxX: z.number(),
+    maxY: z.number(),
   }).strict(),
   cells: z.array(GuestFlowNavmeshCellSchema),
   adjacency: z.array(GuestFlowNavmeshEdgeSchema),
@@ -260,28 +263,28 @@ export const NavmeshVersionSchema = z.object({
   navmeshHash: z.string().regex(SHA256_HEX),
   algorithm: z.literal("grid_navmesh_fallback_v0"),
   inputHash: z.string().regex(SHA256_HEX),
-  cellSizeM: z.number().finite().positive(),
-  agentRadiusM: z.number().finite().positive(),
+  cellSizeM: z.number().positive(),
+  agentRadiusM: z.number().positive(),
   walkableCellCount: z.number().int().nonnegative(),
   blockedCellCount: z.number().int().nonnegative(),
   limitations: z.array(z.string().trim().min(1).max(240)),
-  createdAt: z.string().datetime(),
+  createdAt: z.iso.datetime(),
 }).strict();
 export type NavmeshVersion = z.infer<typeof NavmeshVersionSchema>;
 
 export const GuestFlowReplayMetricsSchema = z.object({
   agentCount: z.number().int().nonnegative(),
-  averageTravelDistanceM: z.number().finite().nonnegative(),
-  averageTravelTimeSeconds: z.number().finite().nonnegative(),
-  maxDensity: z.number().finite().nonnegative(),
+  averageTravelDistanceM: z.number().nonnegative(),
+  averageTravelTimeSeconds: z.number().nonnegative(),
+  maxDensity: z.number().nonnegative(),
   bottleneckScore: z.number().min(0).max(1),
   routeConflictCount: z.number().int().nonnegative(),
   densityHotspotCount: z.number().int().nonnegative(),
   navmeshCellCount: z.number().int().nonnegative().optional(),
   navmeshWalkableCellCount: z.number().int().nonnegative().optional(),
-  averageWalkingSpeedMps: z.number().finite().positive().optional(),
+  averageWalkingSpeedMps: z.number().positive().optional(),
   queueZoneCount: z.number().int().nonnegative().optional(),
-  maxQueueWaitSeconds: z.number().finite().nonnegative().optional(),
+  maxQueueWaitSeconds: z.number().nonnegative().optional(),
 }).strict();
 export type GuestFlowReplayMetrics = z.infer<typeof GuestFlowReplayMetricsSchema>;
 
@@ -327,8 +330,8 @@ export const StoredGuestFlowScenarioSchema = z.object({
   assumptions: z.array(GuestFlowAssumptionSchema),
   inputPayload: GuestFlowReplayInputSchema,
   createdBy: UUID.nullable(),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
 }).strict();
 export type StoredGuestFlowScenario = z.infer<typeof StoredGuestFlowScenarioSchema>;
 
@@ -341,14 +344,14 @@ export const StoredNavmeshVersionSchema = z.object({
   navmeshHash: z.string().regex(SHA256_HEX),
   inputHash: z.string().regex(SHA256_HEX),
   algorithm: z.literal("grid_navmesh_fallback_v0"),
-  cellSizeM: z.number().finite().positive(),
-  agentRadiusM: z.number().finite().positive(),
+  cellSizeM: z.number().positive(),
+  agentRadiusM: z.number().positive(),
   walkableCellCount: z.number().int().nonnegative(),
   blockedCellCount: z.number().int().nonnegative(),
   payload: GuestFlowNavmeshArtifactSchema,
   limitations: z.array(z.string().trim().min(1).max(240)).min(1),
   createdBy: UUID.nullable(),
-  createdAt: z.string().datetime(),
+  createdAt: z.iso.datetime(),
 }).strict();
 export type StoredNavmeshVersion = z.infer<typeof StoredNavmeshVersionSchema>;
 
@@ -371,7 +374,7 @@ export const StoredGuestFlowReplaySchema = z.object({
   metrics: GuestFlowReplayMetricsSchema,
   disclosureLabel: z.literal("Simulated guest flow - planning support"),
   createdBy: UUID.nullable(),
-  createdAt: z.string().datetime(),
+  createdAt: z.iso.datetime(),
 }).strict();
 export type StoredGuestFlowReplay = z.infer<typeof StoredGuestFlowReplaySchema>;
 

@@ -1425,12 +1425,79 @@ describe("CockpitBottom room layout timeline", () => {
     });
     expect(screen.queryByLabelText("Revenue: £28,750")).toBeNull();
     expect(screen.queryByText("Elaine & James")).toBeNull();
-    const clientSchedule = screen.getByLabelText("Your event schedule");
-    expect(clientSchedule.getAttribute("data-schedule-state")).toBe("none");
-    expect(within(clientSchedule).getByText("No event linked to this layout")).toBeTruthy();
-    expect(within(clientSchedule).getByText("You can keep working on your room plan.")).toBeTruthy();
+    if (nextUser === null) {
+      // Signed out with no event link: nothing to act on, so no card at all.
+      expect(screen.queryByLabelText("Your event schedule")).toBeNull();
+      expect(screen.queryByText("No event linked to this layout")).toBeNull();
+    } else {
+      const clientSchedule = screen.getByLabelText("Your event schedule");
+      expect(clientSchedule.getAttribute("data-schedule-state")).toBe("none");
+      expect(within(clientSchedule).getByText("No event linked to this layout")).toBeTruthy();
+      expect(within(clientSchedule).getByText("You can keep working on your room plan.")).toBeTruthy();
+    }
     expect(timelineApi.getRoomLayoutTimeline).toHaveBeenCalledTimes(1);
     expect(useLayoutTimelinePreviewStore.getState().mode).toBe("inactive");
+  });
+
+  describe("the client schedule card for people outside the venue floor", () => {
+    const EVENT_LINK = "/plan/cfg-1?eventId=11111111-1111-4111-8111-111111111111";
+
+    it("shows a signed-out visitor no 'No event linked' card on an ordinary plan", () => {
+      useAuthStore.getState().logout();
+      renderBottom("/plan/cfg-1");
+      expect(screen.queryByLabelText("Your event schedule")).toBeNull();
+      expect(screen.queryByText("No event linked to this layout")).toBeNull();
+      expect(document.querySelector(".cockpit-bottom")).toBeNull();
+      expect(timelineApi.getRoomLayoutTimeline).not.toHaveBeenCalled();
+    });
+
+    it("shows nothing while the sign-in check runs, so a visitor never sees it flash", () => {
+      useAuthStore.getState().setLoading(true);
+      renderBottom("/plan/cfg-1");
+      expect(screen.queryByLabelText("Your event schedule")).toBeNull();
+    });
+
+    it("shows the card once the check finds a signed-in client", () => {
+      useAuthStore.getState().setLoading(true);
+      renderBottom("/plan/cfg-1");
+      expect(screen.queryByLabelText("Your event schedule")).toBeNull();
+      act(() => {
+        useAuthStore.getState().setUser({ id: "client-1", email: "client@example.test", role: "client", platformRole: "none", venueId: null, name: "Client" });
+      });
+      const card = screen.getByLabelText("Your event schedule");
+      expect(within(card).getByText("No event linked to this layout")).toBeTruthy();
+    });
+
+    it("keeps the card for a signed-in account outside the floor, such as sales", () => {
+      useAuthStore.getState().setUser({ id: "sales-1", email: "sales@example.test", role: "sales", platformRole: "none", venueId: VENUE_ID, name: "Sales" });
+      renderBottom("/plan/cfg-1");
+      const card = screen.getByLabelText("Your event schedule");
+      expect(card.getAttribute("data-schedule-state")).toBe("none");
+      expect(within(card).getByText("No event linked to this layout")).toBeTruthy();
+    });
+
+    it("keeps the card for a signed-out visitor who came by an event link, with the way to sign in", () => {
+      useAuthStore.getState().logout();
+      renderBottom(EVENT_LINK);
+      const card = screen.getByLabelText("Your event schedule");
+      expect(card.getAttribute("data-schedule-state")).toBe("sign-in-required");
+      expect(within(card).getByText("Sign in to view your schedule")).toBeTruthy();
+      expect(timelineApi.getRoomLayoutTimeline).not.toHaveBeenCalled();
+    });
+
+    it("treats a blank event link as no link", () => {
+      useAuthStore.getState().logout();
+      renderBottom("/plan/cfg-1?eventId=%20");
+      expect(screen.queryByLabelText("Your event schedule")).toBeNull();
+    });
+
+    it("hides the card when a signed-in client signs out", () => {
+      useAuthStore.getState().setUser({ id: "client-1", email: "client@example.test", role: "client", platformRole: "none", venueId: null, name: "Client" });
+      renderBottom("/plan/cfg-1");
+      expect(screen.getByLabelText("Your event schedule")).toBeTruthy();
+      act(() => { useAuthStore.getState().logout(); });
+      expect(screen.queryByLabelText("Your event schedule")).toBeNull();
+    });
   });
 
   it("starts the internal read only after an anonymous user signs in with authority", async () => {
@@ -1612,6 +1679,34 @@ describe("CockpitBottom room layout timeline", () => {
     const dock = screen.getByTestId("cockpit-bottom");
     fireEvent.pointerDown(dock);
     fireEvent.keyDown(window, { key: " ", code: "Space" });
+    fireEvent.keyUp(window, { key: " ", code: "Space" });
+    expect(screen.getByRole("button", { name: /pause timeline/i })).toBeTruthy();
+  });
+
+  it("plays on a tap of Space, not on a hold, nor when the window lets the key go", async () => {
+    timelineApi.getRoomLayoutTimeline.mockResolvedValue(response([arrival, dinner]));
+    renderBottom();
+    await screen.findByRole("slider", { name: /scrub room layout/i });
+    fireEvent.pointerDown(screen.getByTestId("cockpit-bottom"));
+    const now = vi.spyOn(performance, "now").mockReturnValue(1_000);
+
+    const held = fireEvent.keyDown(window, { key: " ", code: "Space" });
+    expect(held).toBe(false);
+    expect(fireEvent.keyDown(window, { key: " ", code: "Space", repeat: true })).toBe(false);
+    now.mockReturnValue(1_500);
+    fireEvent.keyUp(window, { key: " ", code: "Space" });
+    expect(screen.queryByRole("button", { name: /pause timeline/i })).toBeNull();
+
+    now.mockReturnValue(2_000);
+    fireEvent.keyDown(window, { key: " ", code: "Space" });
+    const focus = vi.spyOn(document, "hasFocus").mockReturnValue(false);
+    act(() => { window.dispatchEvent(new Event("blur")); });
+    focus.mockRestore();
+    fireEvent.keyUp(window, { key: " ", code: "Space" });
+    expect(screen.queryByRole("button", { name: /pause timeline/i })).toBeNull();
+
+    fireEvent.keyDown(window, { key: " ", code: "Space" });
+    now.mockReturnValue(2_200);
     fireEvent.keyUp(window, { key: " ", code: "Space" });
     expect(screen.getByRole("button", { name: /pause timeline/i })).toBeTruthy();
   });

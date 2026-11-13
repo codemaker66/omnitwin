@@ -11,8 +11,8 @@
 //   the real sun's direction, so its phase and the tilt of its crescent are
 //   always right, with soft maria and a whisper of earthshine;
 // - stars after dusk, one per few hundred sky cells, steady (no twinkle: the
-//   planner never animates on its own), thinning into the city's warm glow
-//   along the night horizon.
+//   planner never animates on its own), thinning into the city's glow along
+//   the night horizon, the night look's violet (lib/sky/night-looks.ts).
 //
 // Branches skip the stars by day and the moon outside its disc, so a phone
 // pays little more than the gradient.
@@ -25,6 +25,7 @@ import {
   mx_noise_float, normalize, positionWorld, pow, smoothstep, sqrt, step, vec3, vec4,
 } from "three/tsl";
 import { hallSkyUniforms as u } from "./hall-sky-runtime.js";
+import { nightDither, streetLookUniforms } from "./hall-street-light.js";
 
 /** Radius of the sky sphere, metres (within the camera's far plane). */
 export const SKY_DOME_RADIUS = 600;
@@ -50,10 +51,15 @@ const skyColor = Fn(() => {
   // and pow of a negative base is undefined on the GPU (NaN).
   const sunSide = pow(clamp(dot(flatSun, flatDir).mul(0.5).add(0.5), 0, 1), 2.2);
   const horizon = mix(u.horizonAway, u.horizonSun, sunSide);
-  const height = pow(clamp(up, 0, 1), 0.42);
+  // Under the night look the skyline's band reaches higher, so from the
+  // street the blocks stand dark against a lighter sky, as in the references.
+  const nightAir = u.night.mul(streetLookUniforms.ambientWeight);
+  const height = pow(clamp(up, 0, 1), mix(float(0.42), float(0.9), nightAir));
   const sky = mix(horizon, u.zenith, height).toVar();
-  // Seen past the ground's edge: the horizon's haze, darkening.
-  sky.assign(mix(sky, horizon.mul(0.6), smoothstep(0.0, -0.18, up)));
+  // Seen past the ground's edge: the horizon's haze, darkening by day; at
+  // night it stays the skyline's colour, the colour the city's haze turns, so
+  // the model's edge dissolves into it seen from above.
+  sky.assign(mix(sky, horizon.mul(mix(float(0.6), float(1), nightAir)), smoothstep(0.0, -0.18, up)));
 
   // The glow around the sun.
   const cosSun = dot(dir, sun);
@@ -61,8 +67,10 @@ const skyColor = Fn(() => {
   const glow = pow(c, 5).mul(0.35).add(pow(c, 40).mul(0.7)).add(pow(c, 500).mul(1.6));
   sky.addAssign(u.glow.mul(u.glowStrength).mul(glow).mul(mix(1.0, 0.55, height)));
 
-  // The city's street light under a night sky.
-  sky.addAssign(vec3(0.16, 0.085, 0.04).mul(u.cityGlow).mul(exp(max(up, 0).mul(-7))));
+  // The city's glow under a night sky: the night look's (hall-street-light.ts),
+  // strongest along the skyline and, under the look, climbing a third of the
+  // way up, so the blocks stand dark against it.
+  sky.addAssign(streetLookUniforms.domeGlow.mul(u.night).mul(exp(max(up, 0).mul(mix(float(-7), float(-2.5), nightAir)))));
 
   // Stars: a few cells in a hundred hold one, at a fixed place in the cell.
   If(u.stars.greaterThan(0.001).and(up.greaterThan(0)), () => {
@@ -114,7 +122,8 @@ const skyColor = Fn(() => {
     sky.assign(mix(sky, sky.mul(0.82).add(face), disc));
   });
 
-  return vec4(sky, 1);
+  // At night a dither of a step or so keeps the dark gradient from banding.
+  return vec4(sky.mul(nightDither()), 1);
 });
 
 /** The sky's material: unlit, behind everything, never writing depth. */

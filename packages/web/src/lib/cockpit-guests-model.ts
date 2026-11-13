@@ -1,28 +1,26 @@
-import {
-  comfortBandLabel,
-  computeCapacityIntelligence,
-  inferSeatingStyle,
-  type ComfortBand,
-} from "./layout-capacity.js";
+import type { LayoutStyle } from "@omnitwin/types";
 import { CAPACITY_STYLE_LABELS } from "./proposal-capacity-note.js";
-import { roomStyleCapacities, styleFitSummary, type RoomStyleCapacity } from "./room-capacity.js";
+import { plannerLayoutStyle, publishedFormatForStyle, type PublishedFormat } from "./planner-truth.js";
+import { roomStyleEstimates, type RoomStyleEstimate } from "./room-capacity.js";
 import { seatingCountsFromPlacedItems } from "./seating-counts.js";
 import type { PlacedItem } from "./placement.js";
+import { countLabel } from "./count-label.js";
 
 // ---------------------------------------------------------------------------
-// cockpit-guests-model — the Guests lens's two real questions, answered from
-// the LIVE layout (Epic 0, fourth real lens panel):
+// cockpit-guests-model — what the Guests lens can say from the LIVE layout.
 //
 //   1. Seat sufficiency — is there a placed seat for every intended guest?
-//      (placed chairs vs the planner's guest count)
-//   2. Room comfort — is the room comfortable for that headcount, in the
-//      seating style on the floor? (the planning-grade capacity engine)
+//      (placed chairs against the planner's own guest count: arithmetic on the
+//      planner's inputs, not an occupancy question)
+//   2. Which of the venue's published formats the layout on the floor is read
+//      against (standing reception for "cocktail", dinner for both dinner
+//      styles), so the lens can lead with the venue's own figure.
+//   3. For venue staff only, floor area ÷ generic spacing in every style,
+//      labelled as an estimate and never as the room's capacity.
 //
-// Pure: no React, no API. Reuses the same seating tally and capacity engine the
-// planner HUD and proposal surfaces use, so every surface reads the room the
-// same way. SAFE: comfort figures are planning-grade estimates — human review
-// required; never an occupancy or fire-capacity statement. The panel keeps that
-// wording visible.
+// Pure: no React, no API. There is deliberately no comfort band, fit chip or
+// "within guidance" verdict here any more: a capacity is the venue's to state
+// (redteam fix-first 1).
 // ---------------------------------------------------------------------------
 
 export type SeatStatus = "unset" | "short" | "exact" | "spare";
@@ -35,22 +33,16 @@ export interface GuestsCapacityModel {
   /** seatsProvided − guestCount; null when no guest count is set. */
   readonly seatBalance: number | null;
   readonly seatStatus: SeatStatus;
-  /** Headcount the room is assessed against (guestCount ?? seatsProvided). */
-  readonly assessedHeadcount: number;
+  /** The style read from what is on the floor. */
+  readonly layoutStyle: LayoutStyle;
+  /** That style in words: "seated dinner on round tables". */
   readonly styleLabel: string;
+  /** The venue's published format the layout is read against, or null when
+   *  the venue publishes no figure for this style. */
+  readonly publishedFormat: PublishedFormat | null;
   readonly floorAreaM2: number;
-  /** Guests the room comfortably seats in this style. */
-  readonly comfortableCapacity: number;
-  /** Tightest planning capacity before over-capacity. */
-  readonly tightCapacity: number;
-  readonly band: ComfortBand;
-  readonly bandLabel: string;
-  /** Assessed headcount as a percentage of comfortable capacity. */
-  readonly utilizationPercent: number;
-  /** The room's capacity in every event style (comfortable/tight + fit vs guests). */
-  readonly styles: readonly RoomStyleCapacity[];
-  /** One-line SAFE fit summary across styles, or null when no guest count is set. */
-  readonly styleSummary: string | null;
+  /** Staff-only arithmetic: floor area ÷ generic spacing, every style. */
+  readonly estimates: readonly RoomStyleEstimate[];
 }
 
 export interface GuestsModelInput {
@@ -70,55 +62,47 @@ function seatStatusFor(guestCount: number | null, seatBalance: number | null): S
   return "spare";
 }
 
-/** Answer the Guests lens's seat-sufficiency + room-comfort questions. Pure. */
+/** What the Guests lens can say about the live layout. Pure. */
 export function buildGuestsCapacityModel(input: GuestsModelInput): GuestsCapacityModel {
   const seating = seatingCountsFromPlacedItems(input.placedItems);
   const seatsProvided = seating.chairs;
-  const style = inferSeatingStyle(seating);
+  const layoutStyle = plannerLayoutStyle(input.placedItems);
   const floorAreaM2 = Number.isFinite(input.roomWidthM) && Number.isFinite(input.roomLengthM)
     ? Math.max(0, input.roomWidthM) * Math.max(0, input.roomLengthM)
     : 0;
 
-  const normalisedGuestCount = input.guestCount !== null && Number.isFinite(input.guestCount) && input.guestCount > 0
+  const guestCount = input.guestCount !== null && Number.isFinite(input.guestCount) && input.guestCount > 0
     ? Math.floor(input.guestCount)
     : null;
-  const assessedHeadcount = normalisedGuestCount ?? seatsProvided;
-  const intel = computeCapacityIntelligence(floorAreaM2, assessedHeadcount, style);
-  const seatBalance = normalisedGuestCount !== null ? seatsProvided - normalisedGuestCount : null;
-  const styles = roomStyleCapacities(floorAreaM2, normalisedGuestCount);
-  const styleSummary = styleFitSummary(styles, normalisedGuestCount);
+  const seatBalance = guestCount !== null ? seatsProvided - guestCount : null;
 
   return {
-    guestCount: normalisedGuestCount,
+    guestCount,
     seatsProvided,
     seatBalance,
-    seatStatus: seatStatusFor(normalisedGuestCount, seatBalance),
-    assessedHeadcount,
-    styleLabel: CAPACITY_STYLE_LABELS[style],
-    floorAreaM2: intel.floorAreaM2,
-    comfortableCapacity: intel.comfortableCapacity,
-    tightCapacity: intel.tightCapacity,
-    band: intel.band,
-    bandLabel: comfortBandLabel(intel.band),
-    utilizationPercent: intel.utilizationPercent,
-    styles,
-    styleSummary,
+    seatStatus: seatStatusFor(guestCount, seatBalance),
+    layoutStyle,
+    styleLabel: CAPACITY_STYLE_LABELS[layoutStyle],
+    publishedFormat: publishedFormatForStyle(layoutStyle),
+    floorAreaM2,
+    estimates: roomStyleEstimates(floorAreaM2),
   };
 }
 
-/** Short SAFE sentence describing seat sufficiency for the panel. */
+/** Short sentence describing seat sufficiency for the panel. */
 export function seatSufficiencyLabel(model: GuestsCapacityModel): string {
   if (model.seatStatus === "unset") {
-    return `${String(model.seatsProvided)} seats placed. Set a guest count to check every guest has a seat.`;
+    return `${countLabel(model.seatsProvided, "seat")} placed. Set a guest count to check every guest has a seat.`;
   }
-  const guests = String(model.guestCount ?? 0);
+  const guestCount = model.guestCount ?? 0;
+  const guests = countLabel(guestCount, "guest");
   if (model.seatStatus === "short") {
     const short = Math.abs(model.seatBalance ?? 0);
-    return `Short ${String(short)} ${short === 1 ? "seat" : "seats"} for ${guests} guests — add seating or reduce the count.`;
+    return `Short ${countLabel(short, "seat")} for ${guests} — add seating or reduce the count.`;
   }
   if (model.seatStatus === "spare") {
     const spare = model.seatBalance ?? 0;
-    return `Every guest seated, with ${String(spare)} spare ${spare === 1 ? "seat" : "seats"} for ${guests} guests.`;
+    return `Every guest seated, with ${countLabel(spare, "spare seat")} for ${guests}.`;
   }
-  return `Exactly ${guests} seats for ${guests} guests — every guest seated.`;
+  return `Exactly ${countLabel(guestCount, "seat")} for ${guests} — every guest seated.`;
 }

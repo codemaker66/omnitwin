@@ -18,8 +18,19 @@ import {
 } from "../services/diary-commands.js";
 import { executeConversationCommand, type ConversationChanged } from "../services/conversation-commands.js";
 import type { MutationActor } from "../services/booking-mutations.js";
-import { runRequestEscalationPass } from "../services/requests.js";
+import { announcePromotionNotices } from "../services/hold-promotion.js";
+import { EscalationScheduler } from "../services/escalation-scheduler.js";
+import { installEscalationScheduler } from "../services/escalation-wake.js";
+import { pushForRequestEscalated, tell } from "../services/push-triggers.js";
 import { AuthMessage, resolveWsUser } from "./auto-save.js";
+import {
+  currentAuthority,
+  readCurrentSocketUser,
+  readCurrentSocketUsers,
+  startSignInDeadline,
+  type CurrentSocketUser,
+  type SocketSignInOptions,
+} from "./socket-identity.js";
 
 // ---------------------------------------------------------------------------
 // The Diary live channel (T-497; Canon §9/§15; goal 19 S2).
@@ -69,10 +80,17 @@ import { AuthMessage, resolveWsUser } from "./auto-save.js";
 
 const HEARTBEAT_INTERVAL_MS = 20_000; // Canon §15: app-level keepalive ~20s
 const STALE_AFTER_MS = 65_000; // three missed beats and the connection is gone
+/** The longest one connection lives (release audit events-diary-5). Its
+ *  person's role, venue and Clerk link are read again on every command and
+ *  every heartbeat; the cap also bounds a Clerk session ended without any
+ *  change to the database, by making the screen sign in again. Long enough
+ *  that a wall display reconnects about twice a day, not mid-shift: every
+ *  reconnect briefly drops the person from presence and fails any command
+ *  then in flight. */
+export const MAX_CONNECTION_AGE_MS = 12 * 60 * 60 * 1000;
 /** How often the request escalation sweep looks for an unanswered "now".
  *  Short against the shortest sensible venue window, cheap because the query
  *  is a partial index on exactly those rows. */
-const ESCALATION_SWEEP_INTERVAL_MS = 15_000;
 /** How much of the conversation stream a reconnecting screen is replayed
  *  before it is told to refetch its snapshot instead. */
 const REPLAY_LIMIT = 500;
@@ -96,19 +114,37 @@ export interface DiaryLiveUser {
   readonly platformRole?: PlatformRole;
 }
 
+/** What kind of screen a connection is (goal 19 S7): the wall display in
+ *  the corridor, a phone in a pocket, or a desk. Absent from an older client. */
+export type DiaryLiveDevice = "wall" | "phone" | "desk";
+export const DIARY_LIVE_DEVICES = ["wall", "phone", "desk"] as const;
+
 export interface DiaryLiveConnection {
   readonly socket: DiaryLiveSocket;
   readonly user: DiaryLiveUser;
+  /** The Clerk account it signed in with (null for a test-mode token): kept
+   *  here, never on `user`, which is sent in presence frames. */
+  readonly clerkId: string | null;
+  readonly connectedAtMs: number;
   /** False for a connection that only listens: every floor page keeps one
    *  open for requests and the unread count. It hears the frames its role
    *  may hear, but its person is not on the Diary, so it is not presence. */
   readonly present: boolean;
+  readonly device: DiaryLiveDevice | null;
   lastSeenMs: number;
 }
 
 export interface DiaryLiveJoinOptions {
   /** Defaults to true: the Diary and the Day Board are where people are. */
   readonly present?: boolean;
+  readonly device?: DiaryLiveDevice;
+  readonly clerkId?: string | null;
+}
+
+/** A person in the presence list, with every kind of screen they are on.
+ *  One person on the wall and on a phone is one entry with two devices. */
+export interface DiaryLivePresence extends DiaryLiveUser {
+  readonly devices: readonly DiaryLiveDevice[];
 }
 
 /**
@@ -134,7 +170,10 @@ export class DiaryLiveHub {
     const connection: DiaryLiveConnection = {
       socket,
       user,
+      clerkId: options.clerkId ?? null,
+      connectedAtMs: nowMs,
       present: options.present ?? true,
+      device: options.device ?? null,
       lastSeenMs: nowMs,
     };
     const set = this.#byVenue.get(venueId) ?? new Set<DiaryLiveConnection>();
@@ -169,13 +208,18 @@ export class DiaryLiveHub {
    *  from connections that are somewhere people are: a page that merely
    *  listens for requests does not put its person "here" (T-619's rule that
    *  the count names only colleagues who are there). */
-  presenceFor(venueId: string): readonly DiaryLiveUser[] {
-    const byUser = new Map<string, DiaryLiveUser>();
+  presenceFor(venueId: string): readonly DiaryLivePresence[] {
+    const byUser = new Map<string, { user: DiaryLiveUser; devices: Set<DiaryLiveDevice> }>();
     for (const connection of this.#byVenue.get(venueId) ?? []) {
       if (!connection.present) continue;
-      byUser.set(connection.user.userId, connection.user);
+      const entry = byUser.get(connection.user.userId) ?? { user: connection.user, devices: new Set<DiaryLiveDevice>() };
+      if (connection.device !== null) entry.devices.add(connection.device);
+      byUser.set(connection.user.userId, entry);
     }
-    return [...byUser.values()];
+    return [...byUser.values()].map(({ user, devices }) => ({
+      ...user,
+      devices: DIARY_LIVE_DEVICES.filter((device) => devices.has(device)),
+    }));
   }
 
   /** Send to every connection of the venue; a broken socket never breaks
@@ -240,12 +284,13 @@ export class DiaryLiveHub {
     }
   }
 
-  /** Close and remove connections silent for longer than the threshold. */
-  sweepStale(nowMs: number, staleAfterMs: number): number {
+  /** Close and remove connections silent for longer than the threshold,
+   *  and any older than `maxAgeMs` however busy (the screen signs in again). */
+  sweepStale(nowMs: number, staleAfterMs: number, maxAgeMs: number = Number.POSITIVE_INFINITY): number {
     let swept = 0;
     for (const [venueId, set] of this.#byVenue) {
       for (const connection of [...set]) {
-        if (nowMs - connection.lastSeenMs <= staleAfterMs) continue;
+        if (nowMs - connection.lastSeenMs <= staleAfterMs && nowMs - connection.connectedAtMs <= maxAgeMs) continue;
         try {
           connection.socket.close();
         } catch {
@@ -256,6 +301,23 @@ export class DiaryLiveHub {
       }
     }
     return swept;
+  }
+
+  /** Every connection with its venue, for the heartbeat's re-check. */
+  entries(): readonly { readonly venueId: string; readonly connection: DiaryLiveConnection }[] {
+    return [...this.#byVenue].flatMap(([venueId, set]) => [...set].map((connection) => ({ venueId, connection })));
+  }
+
+  /** Tell a connection it may no longer watch, close it and remove it. */
+  revoke(venueId: string, connection: DiaryLiveConnection): void {
+    if (this.#byVenue.get(venueId)?.has(connection) !== true) return;
+    this.#send([connection], { type: "error", code: "FORBIDDEN", message: "Your access to this venue's diary has changed" });
+    try {
+      connection.socket.close();
+    } catch {
+      // Already gone.
+    }
+    this.leave(venueId, connection);
   }
 
   /** Heartbeat ping to every connection (clients answer with any message). */
@@ -273,6 +335,9 @@ export class DiaryLiveHub {
 export const DiaryAuthMessage = AuthMessage.extend({
   presence: z.boolean().optional(),
   afterCursor: z.number().int().nonnegative().optional(),
+  /** Which kind of screen this is (S7), so the office can read "Wall
+   *  display live · Elaine's phone live". Absent from an older client. */
+  device: z.enum(DIARY_LIVE_DEVICES).optional(),
 });
 
 const IncomingLiveMessage = z.discriminatedUnion("type", [
@@ -528,7 +593,56 @@ function announceConversationChange(log: FastifyBaseLogger, actorUserId: string,
   });
 }
 
-export async function registerDiaryLive(server: FastifyInstance, db: Database): Promise<void> {
+/**
+ * Whether the person behind a Diary connection may still act there as they
+ * connected (release audit events-diary-5): the Clerk account they signed in
+ * with is still theirs, their role still reads the diary, and their role,
+ * venue and platform role are the ones they connected with. Any change ends
+ * the connection; the screen reconnects and signs in with what holds now.
+ */
+export function diaryAuthorityHolds(
+  current: CurrentSocketUser | null,
+  venueId: string,
+  user: Pick<DiaryLiveUser, "role" | "platformRole">,
+): boolean {
+  if (current === null) return false;
+  if (!DIARY_READ_ROLES.has(current.role) && current.platformRole !== "admin") return false;
+  return current.venueId === venueId && current.role === user.role && current.platformRole === (user.platformRole ?? "none");
+}
+
+/**
+ * The heartbeat's re-check: every connection against the users table, in one
+ * query. Only the connections read are judged, so one that joins meanwhile is
+ * never revoked for being absent from the read. A database error rejects (the
+ * caller logs and retries next beat) rather than revoking everyone on a blip.
+ */
+export async function recheckDiaryConnections(db: Pick<Database, "select">, hub: DiaryLiveHub): Promise<number> {
+  const entries = hub.entries();
+  if (entries.length === 0) return 0;
+  const rows = await readCurrentSocketUsers(db, entries.map(({ connection }) => connection.user.userId));
+  let revoked = 0;
+  for (const { venueId, connection } of entries) {
+    const current = currentAuthority(rows.get(connection.user.userId), { userId: connection.user.userId, clerkId: connection.clerkId });
+    if (diaryAuthorityHolds(current, venueId, connection.user)) continue;
+    hub.revoke(venueId, connection);
+    revoked += 1;
+  }
+  return revoked;
+}
+
+/** The person behind one connection, read again before a command. */
+async function connectionAuthorityHolds(db: Database, venueId: string, connection: DiaryLiveConnection): Promise<boolean> {
+  const current = await readCurrentSocketUser(db, { userId: connection.user.userId, clerkId: connection.clerkId }, { lock: false });
+  return diaryAuthorityHolds(current, venueId, connection.user);
+}
+
+const ACCESS_CHANGED = "Your access to this venue's diary has changed. Sign in again.";
+
+export async function registerDiaryLive(
+  server: FastifyInstance,
+  db: Database,
+  options: SocketSignInOptions = {},
+): Promise<void> {
   const hub = new DiaryLiveHub();
 
   const unsubscribe = subscribe("diary.changed", {
@@ -541,24 +655,31 @@ export async function registerDiaryLive(server: FastifyInstance, db: Database): 
   const unsubscribeRequestFrames = subscribeRequestFrames(hub);
   const unsubscribeConversationFrames = subscribeConversationFrames(hub, server.log);
 
+  let rechecking = false;
   const heartbeat = setInterval(() => {
     hub.pingAll();
-    hub.sweepStale(Date.now(), STALE_AFTER_MS);
+    hub.sweepStale(Date.now(), STALE_AFTER_MS, MAX_CONNECTION_AGE_MS);
+    // An offboarded, moved or demoted person's open screen stops hearing the
+    // venue within one beat (events-diary-5).
+    if (rechecking) return;
+    rechecking = true;
+    void recheckDiaryConnections(db, hub)
+      .catch((err: unknown) => { server.log.warn({ err }, "diary-live access re-check failed; retried next beat"); })
+      .finally(() => { rechecking = false; });
   }, HEARTBEAT_INTERVAL_MS);
   // Never hold the process open on its own (house convention — see the
   // shutdown grace timer in index.ts).
   heartbeat.unref();
 
-  // The escalation sweep. A short timer rather than a cron because the claim
-  // is a conditional UPDATE (escalated_at IS NULL) and the email carries its
-  // own idempotency key: two replicas sweeping together escalate once between
-  // them. An external cron can still call the endpoint; it is the same pass.
-  let sweeping = false;
-  const escalationSweep = setInterval(() => {
-    if (sweeping) return;
-    sweeping = true;
-    void runRequestEscalationPass(db, { logger: server.log })
-      .then((escalated) => {
+  // The escalation sweep, run by a scheduler that wakes only when something
+  // is due (S7; the 18 October outage: a 15-second poll kept Neon awake).
+  // The claim is a conditional UPDATE (escalated_at IS NULL) and the email
+  // carries its own idempotency key, so two replicas sweeping together still
+  // escalate once between them; the endpoint stays for an external cron.
+  const escalationScheduler = new EscalationScheduler({
+    db,
+    logger: server.log,
+    onEscalated: (escalated) => {
         for (const item of escalated) {
           const at = new Date().toISOString();
           emit(server.log, "request.changed", {
@@ -577,6 +698,7 @@ export async function registerDiaryLive(server: FastifyInstance, db: Database): 
           // path writes the notification row but the number on their nav sits
           // still until they navigate, and the two paths disagree about what
           // "escalated" feels like.
+          tell(pushForRequestEscalated(db, item.request, item.recipientUserIds, { logger: server.log }), server.log, "request.escalated");
           if (item.notificationIds.length > 0) {
             emit(server.log, "notification.created", {
               venueId: item.request.venueId,
@@ -591,19 +713,15 @@ export async function registerDiaryLive(server: FastifyInstance, db: Database): 
             });
           }
         }
-      })
-      .catch((error: unknown) => {
-        server.log.error({ err: error }, "request escalation sweep failed");
-      })
-      .finally(() => {
-        sweeping = false;
-      });
-  }, ESCALATION_SWEEP_INTERVAL_MS);
-  escalationSweep.unref();
+    },
+  });
+  escalationScheduler.start();
+  installEscalationScheduler(escalationScheduler);
 
   server.addHook("onClose", () => {
     clearInterval(heartbeat);
-    clearInterval(escalationSweep);
+    escalationScheduler.stop();
+    installEscalationScheduler(null);
     unsubscribe();
     unsubscribeRequestFrames();
     unsubscribeConversationFrames();
@@ -620,6 +738,17 @@ export async function registerDiaryLive(server: FastifyInstance, db: Database): 
       // D9: every frame carries the server's clock, direct sends included.
       if (socket.readyState === 1) socket.send(JSON.stringify({ ...payload, serverNowMs: Date.now() }));
     }
+
+    // A socket that has not begun to sign in by the deadline is closed: the
+    // hub's ping and stale sweep reach only sockets that have joined.
+    const cancelSignInDeadline = startSignInDeadline(
+      options,
+      () => connection !== null || authenticating || closed,
+      () => {
+        send({ type: "error", code: "UNAUTHORIZED", message: "Authenticate first" });
+        socket.close();
+      },
+    );
 
     socket.on("message", (raw: Buffer | string) => {
       let data: unknown;
@@ -676,7 +805,14 @@ export async function registerDiaryLive(server: FastifyInstance, db: Database): 
               role: user.userRole,
               platformRole: user.platformRole,
             };
-            connection = hub.join(venueId, socket, liveUser, Date.now(), { present: auth.data.presence !== false });
+            // The device (S7) rides along when the client names one; an
+            // older client's frame is read exactly as before.
+            const presenceOptions: DiaryLiveJoinOptions = auth.data.device === undefined
+              ? { present: auth.data.presence !== false }
+              : { present: auth.data.presence !== false, device: auth.data.device };
+            // The Clerk account it signed in with, for every later re-check.
+            const joinOptions: DiaryLiveJoinOptions = { ...presenceOptions, clerkId: user.clerkId ?? null };
+            connection = hub.join(venueId, socket, liveUser, Date.now(), joinOptions);
             server.log.info(
               { event: "diary-live.connections", venueId, connections: hub.connectionCount(venueId) },
               "diary-live.joined",
@@ -712,6 +848,7 @@ export async function registerDiaryLive(server: FastifyInstance, db: Database): 
 
       const commandActor = actor;
       const commandVenueId = venueId;
+      const commandConnection = connection;
       const commandUser = connection.user;
       if (commandActor === null || commandVenueId === null) return;
 
@@ -721,11 +858,20 @@ export async function registerDiaryLive(server: FastifyInstance, db: Database): 
         const { command } = message.data;
         void (async () => {
           try {
+            // The person as the database holds them now (events-diary-5).
+            if (!await connectionAuthorityHolds(db, commandVenueId, commandConnection)) {
+              send({ type: "conversation.ack", commandId: command.commandId, outcome: "rejected", replay: false,
+                status: 403, code: "FORBIDDEN", error: ACCESS_CHANGED });
+              hub.revoke(commandVenueId, commandConnection);
+              return;
+            }
             const execution = await executeConversationCommand(
               db,
               { ...commandActor, name: commandUser.name },
               commandVenueId,
               command,
+              undefined,
+              server.log,
             );
             send(execution.ack);
             if (execution.changed !== null) {
@@ -752,6 +898,13 @@ export async function registerDiaryLive(server: FastifyInstance, db: Database): 
       const { command } = message.data;
       void (async () => {
         try {
+          // The person as the database holds them now (events-diary-5).
+          if (!await connectionAuthorityHolds(db, commandVenueId, commandConnection)) {
+            send({ type: "diary.ack", commandId: command.commandId, outcome: "rejected", replay: false,
+              status: 403, code: "FORBIDDEN", error: ACCESS_CHANGED });
+            hub.revoke(commandVenueId, commandConnection);
+            return;
+          }
           const execution = await executeDiaryCommand(
             db,
             commandActor,
@@ -761,15 +914,17 @@ export async function registerDiaryLive(server: FastifyInstance, db: Database): 
           );
           send(execution.ack);
           // Commit → broadcast, on the SAME bus path REST mutations use, so
-          // every venue connection (sender included) sees one event stream.
+          // every venue connection (sender included) sees one event stream:
+          // the booking's venue's, which a platform admin's is not always.
           if (execution.changed !== null) {
             emit(server.log, "diary.changed", {
-              venueId: commandVenueId,
+              venueId: execution.changed.venueId,
               kind: execution.changed.kind,
               bookingId: execution.changed.bookingId,
               actorUserId: commandActor.id,
               at: new Date().toISOString(),
             });
+            announcePromotionNotices(server.log, execution.changed.notices);
           }
         } catch {
           send({
@@ -787,6 +942,7 @@ export async function registerDiaryLive(server: FastifyInstance, db: Database): 
 
     socket.on("close", () => {
       closed = true;
+      cancelSignInDeadline();
       if (connection !== null && venueId !== null) {
         hub.leave(venueId, connection);
         server.log.info(

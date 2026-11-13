@@ -614,15 +614,14 @@ test.describe("T-469 production-live route pass", () => {
 
     await page.goto(path);
     await expect(page.getByRole("heading", { name: "Florist coordination handoff" })).toBeVisible();
-    await page.getByLabel("Need clarification").check();
-    await expect(page.getByLabel("Clarification needed")).toBeVisible();
-    await page.getByLabel("Name").fill("Jordan Florist");
-    await page.getByLabel("Email").fill("jordan@petal.example");
-    await page.getByLabel("Clarification needed").fill("Please confirm the staff entrance load-in time.");
-    await page.getByRole("button", { name: "Send clarification request" }).click();
-    await expect(page.getByRole("heading", { name: "Latest response" })).toBeVisible();
+    await page.getByRole("button", { name: "Ask a question" }).click();
+    await expect(page.getByLabel("Your question")).toBeVisible();
+    await page.getByLabel("Your name").fill("Jordan Florist");
+    await page.getByLabel("Your question").fill("Please confirm the staff entrance load-in time.");
+    await page.getByRole("button", { name: "Send my question" }).click();
+    await expect(page.getByRole("heading", { name: "Your replies" })).toBeVisible();
     await expect(page.getByText("Please confirm the staff entrance load-in time.")).toBeVisible();
-    actionProofs.push("Supplier portal: clarification radio changes the textarea label, submit persists to the refreshed response state, and the response form closes.");
+    actionProofs.push("Supplier portal: Ask a question opens the question field, sending persists to the refreshed replies, and the question field closes.");
 
     await recordControlAudit(page, "supplier portal functional fixture", path);
     await recordAccessibilityState(page, problems, "supplier portal functional fixture", path, "desktop", 16);
@@ -645,7 +644,7 @@ test.describe("T-469 production-live route pass", () => {
       {
         name: "supplier-share-unavailable",
         path: `/supplier-share/not-a-real-token-${String(Date.now())}`,
-        heading: "This supplier link is not available",
+        heading: "This link no longer opens",
       },
     ] as const;
 

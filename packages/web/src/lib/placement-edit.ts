@@ -1,0 +1,383 @@
+import { seatBaseSlug } from "@omnitwin/types";
+import { toRenderSpace } from "../constants/scale.js";
+import { getCatalogueItem } from "./catalogue.js";
+import { isDiningTableItem } from "./furniture-semantics.js";
+import {
+  atVerdict,
+  createGhostWorld,
+  judgeGhost,
+  obstacleAt,
+  refusalChip,
+  type GhostObstacle,
+  type GhostWorld,
+} from "./ghost-truth.js";
+import {
+  computeRotatedFootprint,
+  expandIdsToGroupMembers,
+  generatePlacedId,
+  nextTableLabels,
+  settleMovedOnSurfaces,
+  tableLabelNumber,
+  type PlacedItem,
+} from "./placement.js";
+import { plannerFeatureEnabled } from "./planner-features.js";
+import { isSceneFurniturePlacement } from "./table-dressing.js";
+
+// ---------------------------------------------------------------------------
+// Editing basics (card-dock spec §18, Q-11): duplicate, copy, paste, select all.
+//
+// Pure plans over placed pieces. Each returns the pieces to add and an old to
+// new id map (so a caller can carry notes across), and the caller commits it
+// as one undo step. Copies get new ids, new group and set ids and, at dining
+// tables, the next table numbers. Where a copy lands is judged like any ghost:
+// pushed clear by up to 0.15 m, or refused with the reason.
+// ---------------------------------------------------------------------------
+
+/** Ctrl D's gap: a copy sits one aisle from its original. */
+export const DUPLICATE_GAP_M = 1.2;
+
+/** A shift across the floor, render-space. */
+export interface FloorOffset {
+  readonly dx: number;
+  readonly dz: number;
+}
+
+export interface EditOptions {
+  /** Number the copies' dining tables "Table N"; by default, as the tableNumbers switch says. */
+  readonly numberTables?: boolean;
+  readonly newId?: () => string;
+}
+
+export type EditPlan =
+  | {
+    readonly ok: true;
+    readonly items: readonly PlacedItem[];
+    /** Each copied piece's id, original to copy. */
+    readonly idMap: ReadonlyMap<string, string>;
+    /** Where the copies went, from the originals (for Ctrl D's repeat). */
+    readonly offset: FloorOffset;
+  }
+  | {
+    readonly ok: false;
+    readonly obstacle: GhostObstacle | null;
+    /** The refusal chip's words. */
+    readonly reason: string;
+  };
+
+/** The pieces an edit acts on: scene furniture, not dressing rows. */
+function pieces(items: readonly PlacedItem[]): readonly PlacedItem[] {
+  return items.filter((piece) => isSceneFurniturePlacement(piece));
+}
+
+/**
+ * The selected pieces made whole: a table brings its chairs, a trestle its
+ * set, and so on until nothing more joins (a chair added to a set's trestle
+ * may carry the trestle's group and not the set).
+ */
+export function wholeSelection(selectedIds: ReadonlySet<string>, placedItems: readonly PlacedItem[]): readonly PlacedItem[] {
+  let ids = new Set(selectedIds);
+  for (let size = -1; size !== ids.size;) {
+    size = ids.size;
+    ids = new Set([...ids, ...expandIdsToGroupMembers(ids, placedItems)]);
+  }
+  return pieces(placedItems.filter((piece) => ids.has(piece.id)));
+}
+
+/**
+ * Pieces split into what moves and changes as one: pieces sharing a set or a
+ * group, and every piece they share one with in turn, so a set's chairs stay
+ * with it whichever of its ids they carry.
+ */
+export function selectionUnits(selection: readonly PlacedItem[]): readonly (readonly PlacedItem[])[] {
+  const parent = new Map<string, string>();
+  const find = (key: string): string => {
+    let root = key;
+    for (let next = parent.get(root); next !== undefined && next !== root; next = parent.get(root)) root = next;
+    return root;
+  };
+  const join = (a: string, b: string): void => {
+    const rootA = find(a);
+    const rootB = find(b);
+    if (rootA !== rootB) parent.set(rootA, rootB);
+  };
+  for (const piece of selection) {
+    if (piece.setId !== undefined) join(`piece:${piece.id}`, `set:${piece.setId}`);
+    if (piece.groupId !== null) join(`piece:${piece.id}`, `group:${piece.groupId}`);
+  }
+  const byRoot = new Map<string, PlacedItem[]>();
+  for (const piece of selection) {
+    const root = find(`piece:${piece.id}`);
+    const unit = byRoot.get(root);
+    if (unit === undefined) byRoot.set(root, [piece]);
+    else unit.push(piece);
+  }
+  return [...byRoot.values()];
+}
+
+function isDiningTable(piece: PlacedItem): boolean {
+  const item = getCatalogueItem(piece.catalogueItemId);
+  return item !== undefined && isDiningTableItem(item);
+}
+
+/** The floor the pieces cover together: their rotated footprints' bounds, render-space. */
+export function footprintBounds(items: readonly PlacedItem[]): { readonly minX: number; readonly maxX: number; readonly minZ: number; readonly maxZ: number } | null {
+  let bounds: { minX: number; maxX: number; minZ: number; maxZ: number } | null = null;
+  for (const piece of pieces(items)) {
+    const item = getCatalogueItem(piece.catalogueItemId);
+    if (item === undefined) continue;
+    const { halfW, halfD } = computeRotatedFootprint(item, piece.rotationY, piece.scale);
+    const next = { minX: piece.x - halfW, maxX: piece.x + halfW, minZ: piece.z - halfD, maxZ: piece.z + halfD };
+    bounds = bounds === null ? next : {
+      minX: Math.min(bounds.minX, next.minX),
+      maxX: Math.max(bounds.maxX, next.maxX),
+      minZ: Math.min(bounds.minZ, next.minZ),
+      maxZ: Math.max(bounds.maxZ, next.maxZ),
+    };
+  }
+  return bounds;
+}
+
+/**
+ * Copies of these pieces shifted by an offset: new ids, a new group id for
+ * each group and a new set id for each set, and (when numbering) the next
+ * free table numbers at dining tables, lowest first. Unnumbered, a copied
+ * table never repeats its original's "Table N".
+ */
+export function clonePieces(
+  items: readonly PlacedItem[],
+  offset: FloorOffset,
+  placedItems: readonly PlacedItem[],
+  options: EditOptions = {},
+): { readonly items: readonly PlacedItem[]; readonly idMap: ReadonlyMap<string, string> } {
+  const newId = options.newId ?? generatePlacedId;
+  const source = pieces(items);
+  const groups = new Map<string, string>();
+  const sets = new Map<string, string>();
+  const numbering = options.numberTables ?? plannerFeatureEnabled("tableNumbers");
+  const labels = [...nextTableLabels(placedItems, numbering ? source.filter(isDiningTable).length : 0)];
+  const idMap = new Map<string, string>();
+  const copies = source.map((piece) => {
+    const id = newId();
+    idMap.set(piece.id, id);
+    let groupId: string | null = null;
+    if (piece.groupId !== null) {
+      groupId = groups.get(piece.groupId) ?? newId();
+      groups.set(piece.groupId, groupId);
+    }
+    let setId: string | undefined;
+    if (piece.setId !== undefined) {
+      setId = sets.get(piece.setId) ?? newId();
+      sets.set(piece.setId, setId);
+    }
+    let label = piece.label;
+    if (isDiningTable(piece)) label = numbering ? labels.shift() ?? "" : tableLabelNumber(piece.label) === null ? piece.label : "";
+    const copy: PlacedItem = { ...piece, id, x: piece.x + offset.dx, z: piece.z + offset.dz, groupId, label };
+    return setId === undefined ? copy : { ...copy, setId };
+  });
+  return { items: copies, idMap };
+}
+
+/**
+ * Where Ctrl D tries to put a copy, in order: the last offset this session,
+ * then one aisle (1.2 m) beyond the pieces' own footprint along the room's
+ * long axis, both ways, then along its short axis.
+ */
+export function duplicateOffsets(
+  selection: readonly PlacedItem[],
+  room: { readonly width: number; readonly length: number },
+  last: FloorOffset | null,
+): readonly FloorOffset[] {
+  const bounds = footprintBounds(selection);
+  if (bounds === null) return last === null ? [] : [last];
+  const gap = toRenderSpace(DUPLICATE_GAP_M);
+  const alongX = bounds.maxX - bounds.minX + gap;
+  const alongZ = bounds.maxZ - bounds.minZ + gap;
+  const xs: readonly FloorOffset[] = [{ dx: alongX, dz: 0 }, { dx: -alongX, dz: 0 }];
+  const zs: readonly FloorOffset[] = [{ dx: 0, dz: alongZ }, { dx: 0, dz: -alongZ }];
+  const standard = room.width >= room.length ? [...xs, ...zs] : [...zs, ...xs];
+  return last === null ? standard : [last, ...standard.filter((o) => o.dx !== last.dx || o.dz !== last.dz)];
+}
+
+/**
+ * Pieces where they would stand once moved: each settled on what is under
+ * it there (lib/placement settleMovedOnSurfaces), so they are judged, and
+ * set down, on a dance floor or a stage rather than in it.
+ */
+function standing(moved: readonly PlacedItem[], world: GhostWorld): readonly PlacedItem[] {
+  const moving = new Set(moved.map((piece) => piece.id));
+  return settleMovedOnSurfaces(moved, world.placedItems.filter((piece) => !moving.has(piece.id)));
+}
+
+/** Judges the shifted pieces where they would land; a push of up to 0.15 m is taken, as for any ghost. */
+function landing(source: readonly PlacedItem[], offset: FloorOffset, world: GhostWorld): { readonly offset: FloorOffset; readonly obstacle: GhostObstacle | null } | { readonly offset: null; readonly obstacle: GhostObstacle | null } {
+  const moved = standing(source.map((piece) => ({ ...piece, x: piece.x + offset.dx, z: piece.z + offset.dz })), world);
+  const verdict = judgeGhost(moved, world);
+  if (verdict.state === "refused") return { offset: null, obstacle: verdict.obstacle };
+  const landed = atVerdict(moved, verdict);
+  const first = landed[0];
+  const original = source[0];
+  if (first === undefined || original === undefined) return { offset, obstacle: null };
+  return { offset: { dx: first.x - original.x, dz: first.z - original.z }, obstacle: null };
+}
+
+function refused(obstacle: GhostObstacle | null): EditPlan {
+  return { ok: false, obstacle, reason: refusalChip(obstacle) };
+}
+
+/** Ctrl D: the selection, made whole, copied one pitch away where it first fits; refused with the reason when none does. */
+export function planDuplicate(
+  selectedIds: ReadonlySet<string>,
+  world: GhostWorld,
+  last: FloorOffset | null,
+  options: EditOptions = {},
+): EditPlan {
+  const source = wholeSelection(selectedIds, world.placedItems);
+  if (source.length === 0) return refused(null);
+  let firstRefusal: GhostObstacle | null = null;
+  for (const offset of duplicateOffsets(source, world.room, last)) {
+    const landed = landing(source, offset, world);
+    if (landed.offset === null) {
+      firstRefusal ??= landed.obstacle;
+      continue;
+    }
+    const clone = clonePieces(source, landed.offset, world.placedItems, options);
+    return { ok: true, items: settleMovedOnSurfaces(clone.items, world.placedItems), idMap: clone.idMap, offset: landed.offset };
+  }
+  return refused(firstRefusal);
+}
+
+/** What Ctrl C holds: the pieces as they were, and the centre a paste lands them about. */
+export interface PlannerClipboard {
+  readonly items: readonly PlacedItem[];
+  readonly centreX: number;
+  readonly centreZ: number;
+}
+
+/** Ctrl C: the selection made whole, with the centre of its footprint. Null when nothing is selected. */
+export function copyPieces(selectedIds: ReadonlySet<string>, placedItems: readonly PlacedItem[]): PlannerClipboard | null {
+  const source = wholeSelection(selectedIds, placedItems);
+  const bounds = footprintBounds(source);
+  if (source.length === 0 || bounds === null) return null;
+  return { items: source, centreX: (bounds.minX + bounds.maxX) / 2, centreZ: (bounds.minZ + bounds.maxZ) / 2 };
+}
+
+/** Ctrl V: the clipboard's pieces centred on the pointer's floor point (render-space). */
+export function planPaste(
+  clipboard: PlannerClipboard,
+  at: { readonly x: number; readonly z: number },
+  world: GhostWorld,
+  options: EditOptions = {},
+): EditPlan {
+  const asked = { dx: at.x - clipboard.centreX, dz: at.z - clipboard.centreZ };
+  const landed = landing(clipboard.items, asked, world);
+  if (landed.offset === null) return refused(landed.obstacle);
+  const clone = clonePieces(clipboard.items, landed.offset, world.placedItems, options);
+  return { ok: true, items: settleMovedOnSurfaces(clone.items, world.placedItems), idMap: clone.idMap, offset: landed.offset };
+}
+
+/** Ctrl A: every piece in the room. */
+export function allPieceIds(placedItems: readonly PlacedItem[]): readonly string[] {
+  return pieces(placedItems).map((piece) => piece.id);
+}
+
+/** A piece's kind for Ctrl Shift A: the same model, whatever its cloth (a white and a black round are both rounds). */
+function kindOf(piece: PlacedItem): string {
+  const item = getCatalogueItem(piece.catalogueItemId);
+  return item === undefined ? piece.catalogueItemId : seatBaseSlug(item.slug);
+}
+
+/** Ctrl Shift A: every piece of the selected pieces' kinds. */
+export function piecesOfKindIds(placedItems: readonly PlacedItem[], selectedIds: ReadonlySet<string>): readonly string[] {
+  const all = pieces(placedItems);
+  const kinds = new Set(all.filter((piece) => selectedIds.has(piece.id)).map(kindOf));
+  return all.filter((piece) => kinds.has(kindOf(piece))).map((piece) => piece.id);
+}
+
+// ---------------------------------------------------------------------------
+// Line up and Move (spec §18, Q-18; law 11, Q-47): the selection's pieces
+// moved where asked, whole groups and sets together, judged like any ghost.
+// Each returns the moved pieces (same ids) for one undo step, or a refusal
+// with its reason.
+// ---------------------------------------------------------------------------
+
+export type MovePlan =
+  | { readonly ok: true; readonly items: readonly PlacedItem[] }
+  | { readonly ok: false; readonly obstacle: GhostObstacle | null; readonly reason: string };
+
+function moveRefused(obstacle: GhostObstacle | null): MovePlan {
+  return { ok: false, obstacle, reason: refusalChip(obstacle) };
+}
+
+function shifted(items: readonly PlacedItem[], dx: number, dz: number): readonly PlacedItem[] {
+  return items.map((piece) => ({ ...piece, x: piece.x + dx, z: piece.z + dz }));
+}
+
+/** The selection made whole, split into what moves as one: each set, each group, each lone piece. */
+function units(selectedIds: ReadonlySet<string>, placedItems: readonly PlacedItem[]): readonly (readonly PlacedItem[])[] {
+  return selectionUnits(wholeSelection(selectedIds, placedItems));
+}
+
+/** Line up's refusal when there is nothing to line up against. */
+export const LINE_UP_NEEDS_TWO = "Line up needs two or more";
+
+/** Where a unit stands: its dining table's centre when it has one, else the centre of its footprint. */
+function anchorOf(unit: readonly PlacedItem[]): { readonly x: number; readonly z: number } | null {
+  const tables = unit.filter(isDiningTable);
+  if (tables.length > 0) {
+    return { x: tables.reduce((sum, t) => sum + t.x, 0) / tables.length, z: tables.reduce((sum, t) => sum + t.z, 0) / tables.length };
+  }
+  const bounds = footprintBounds(unit);
+  return bounds === null ? null : { x: (bounds.minX + bounds.maxX) / 2, z: (bounds.minZ + bounds.maxZ) / 2 };
+}
+
+/**
+ * Line up: the selected tables' centres onto one line along the axis they
+ * spread along most (the best-fit straight line: the mean of their other
+ * coordinate). Refused, with the reason, when any would then overlap.
+ * Needs two or more groups or pieces.
+ */
+export function planLineUp(selectedIds: ReadonlySet<string>, world: GhostWorld): MovePlan {
+  const moving = units(selectedIds, world.placedItems);
+  const anchors = moving.map(anchorOf);
+  if (moving.length < 2) return { ok: false, obstacle: null, reason: LINE_UP_NEEDS_TWO };
+  if (anchors.some((anchor) => anchor === null)) return moveRefused(null);
+  const points = anchors.filter((anchor): anchor is { readonly x: number; readonly z: number } => anchor !== null);
+  const spread = (values: readonly number[]): number => Math.max(...values) - Math.min(...values);
+  const alongX = spread(points.map((p) => p.x)) >= spread(points.map((p) => p.z));
+  const line = alongX
+    ? points.reduce((sum, p) => sum + p.z, 0) / points.length
+    : points.reduce((sum, p) => sum + p.x, 0) / points.length;
+  const lined = moving.map((unit, i) => {
+    const anchor = points[i] ?? { x: 0, z: 0 };
+    return alongX ? shifted(unit, 0, line - anchor.z) : shifted(unit, line - anchor.x, 0);
+  });
+  // Every piece at the height it would stand at on the line.
+  const stood = new Map(standing(lined.flat(), world).map((piece) => [piece.id, piece]));
+  const moved = lined.map((unit) => unit.map((piece) => stood.get(piece.id) ?? piece));
+
+  // Judged against everything else, the other moved pieces included.
+  const movingIds = new Set(moving.flat().map((piece) => piece.id));
+  const others = world.placedItems.filter((piece) => !movingIds.has(piece.id));
+  const after = createGhostWorld([...others, ...moved.flat()], world.room);
+  for (const unit of moved) {
+    const own = new Set(unit.map((piece) => piece.id));
+    if (judgeGhost(unit, after, { excludeIds: own }).state !== "fits") return moveRefused(obstacleAt(unit, after, own));
+  }
+  return { ok: true, items: moved.flat() };
+}
+
+/**
+ * Move, then tap the destination (law 11): the selection, made whole, with
+ * its footprint's centre on the floor point tapped. Pushed clear by up to
+ * 0.15 m like any ghost, or refused with the reason.
+ */
+export function planMove(selectedIds: ReadonlySet<string>, to: { readonly x: number; readonly z: number }, world: GhostWorld): MovePlan {
+  const source = wholeSelection(selectedIds, world.placedItems);
+  const bounds = footprintBounds(source);
+  if (source.length === 0 || bounds === null) return moveRefused(null);
+  const moved = standing(shifted(source, to.x - (bounds.minX + bounds.maxX) / 2, to.z - (bounds.minZ + bounds.maxZ) / 2), world);
+  const verdict = judgeGhost(moved, world, { excludeIds: new Set(source.map((piece) => piece.id)) });
+  if (verdict.state === "refused") return moveRefused(verdict.obstacle);
+  // The push can carry a piece onto or off a surface: settled again where it leaves them.
+  return { ok: true, items: standing(atVerdict(moved, verdict), world) };
+}

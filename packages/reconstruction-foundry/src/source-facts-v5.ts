@@ -56,7 +56,7 @@ export type UniversalSourceFactsV5ReceiptFileIdentity =
 
 const SourceIdentityBaseSchema = z.object({
   path: FoundryRelativePathSchema,
-  sizeBytes: z.number().int().safe().nonnegative(),
+  sizeBytes: z.number().int().int().nonnegative(),
   sha256: z.string().regex(SHA256_HEX),
 }).strict();
 
@@ -190,7 +190,7 @@ const RegistrationDocumentSourceSchema = SourceIdentityBaseSchema.extend({
 }).strict().superRefine((source, ctx) => {
   if (source.receiptCandidateInputTypes[0] !== source.inputType) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["receiptCandidateInputTypes"],
       message: "registration-document source must preserve its one exact receipt candidate",
     });
@@ -217,7 +217,7 @@ const RegistrationDocumentInspectionSchema = z.object({
 }).strict().superRefine((inspection, ctx) => {
   if ((inspection.state === "established") !== (inspection.category === "established")) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["category"],
       message: "registration-document inspection state and category must agree",
     });
@@ -225,7 +225,7 @@ const RegistrationDocumentInspectionSchema = z.object({
   if (inspection.state === "established") {
     if (inspection.code !== "CALIBRATION_TRAJECTORY_DOCUMENT_FACTS_ESTABLISHED") {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["code"],
         message: "established registration-document inspection must use the frozen success code",
       });
@@ -239,7 +239,7 @@ const RegistrationDocumentInspectionSchema = z.object({
     ] !== inspection.category
   ) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["code"],
       message: "failed registration-document inspection code and category must match the frozen failure registry",
     });
@@ -258,7 +258,7 @@ const RegistrationDocumentAssetSchema = z.object({
     : FOUNDRY_CALIBRATION_DOCUMENT_UNKNOWNS;
   if (JSON.stringify(asset.unknowns) !== JSON.stringify(expectedUnknowns)) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["unknowns"],
       message: "registration-document unknowns must match the frozen V5 input-family profile",
     });
@@ -266,7 +266,7 @@ const RegistrationDocumentAssetSchema = z.object({
   const facts = asset.facts;
   if ((asset.inspection.state === "established") !== (facts !== null)) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["facts"],
       message: "registration-document facts must match inspection state",
     });
@@ -289,7 +289,7 @@ const RegistrationDocumentAssetSchema = z.object({
       facts.container.sourceSha256 !== asset.source.sha256
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["inspection"],
         message: "established registration-document fields are inconsistent",
       });
@@ -312,7 +312,7 @@ const RegistrationDocumentAssetSchema = z.object({
     !failureCodeMatchesPath
   ) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["inspection"],
       message: "failed registration-document inspection must remain a neutral placeholder",
     });
@@ -357,14 +357,14 @@ const PolicySchema = z.object({
 
 const RegistrationDocumentLimitsSchema = z.record(
   z.string().trim().min(1).max(120),
-  z.number().int().safe().nonnegative(),
+  z.number().int().int().nonnegative(),
 ).superRefine((limits, ctx) => {
   if (
     stableCanonicalJson(limits) !==
       stableCanonicalJson(FOUNDRY_CALIBRATION_TRAJECTORY_SOURCE_FACTS_LIMITS)
   ) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       message: "registration-document limits must match the immutable inspector profile",
     });
   }
@@ -452,7 +452,7 @@ function validateArtifact(value: ArtifactWithoutValidation, ctx: z.RefinementCtx
     paths.some((path, index) => path !== sorted[index])
   ) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["assets"],
       message: "V5 asset paths must be unique and sorted",
     });
@@ -484,7 +484,7 @@ function validateArtifact(value: ArtifactWithoutValidation, ctx: z.RefinementCtx
     JSON.stringify(value.summary) !== JSON.stringify(expectedSummary)
   ) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["summary"],
       message: "V5 summary contradicts attached evidence",
     });
@@ -497,7 +497,7 @@ function validateArtifact(value: ArtifactWithoutValidation, ctx: z.RefinementCtx
       affectedPaths.some((path, index) => path !== affectedSorted[index])
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["affectedSources"],
         message: "V5 affected XBIN sources must be unique and sorted",
       });
@@ -515,14 +515,14 @@ function validateArtifact(value: ArtifactWithoutValidation, ctx: z.RefinementCtx
     value.policy.externalProcess !== expectedProbe
   ) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["policy", "metadataProbe"],
       message: "V5 metadata probe policy contradicts attached E57 evidence",
     });
   }
   if (value.factsSha256 !== artifactDigest(value)) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["factsSha256"],
       message: "V5 facts digest does not match canonical payload",
     });

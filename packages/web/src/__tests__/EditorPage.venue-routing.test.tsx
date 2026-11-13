@@ -52,6 +52,7 @@ vi.mock("../hooks/use-media-query.js", () => ({
   useIsNarrowViewport: () => false,
 }));
 
+vi.mock("../api/configuration-conflict.js", () => ({ parseRevisionConflict: vi.fn(() => null) }));
 vi.mock("../api/configurations.js", () => ({
   getPublicConfig: vi.fn(),
   getConfig: vi.fn(),
@@ -59,7 +60,6 @@ vi.mock("../api/configurations.js", () => ({
   createPublicConfig: vi.fn(),
   publicBatchSave: vi.fn(),
   authBatchSave: vi.fn(),
-  parseRevisionConflict: vi.fn(() => null),
   claimConfig: vi.fn(),
   submitGuestEnquiry: vi.fn(),
 }));
@@ -256,21 +256,21 @@ describe("EditorPage venue-scoped bootstrap", () => {
   });
 });
 
-// CARD A1 (G1a): the built Reception Room runtime package is the default /plan
-// experience. The anonymous draft path must open the Reception Room unless the
-// visitor explicitly asks for another space.
+// The Grand Hall is the default /plan experience (Blake, 26 Oct 2026,
+// superseding CARD A1's Reception Room). The anonymous draft path must open the
+// Grand Hall unless the visitor explicitly asks for another space.
 describe("EditorPage default /plan bootstrap", () => {
-  it("bootstraps the anonymous /plan draft into the Reception Room", async () => {
+  it("bootstraps the anonymous /plan draft into the Grand Hall", async () => {
     spacesMock.listVenues.mockResolvedValue([tradesHall]);
-    spacesMock.listSpaces.mockResolvedValue([grandHall, receptionRoom]);
-    configMock.createPublicConfig.mockResolvedValue(publicConfigFor(receptionRoom, "cfg-reception"));
+    spacesMock.listSpaces.mockResolvedValue([receptionRoom, grandHall]);
+    configMock.createPublicConfig.mockResolvedValue(publicConfigFor(grandHall, "cfg-grand"));
 
     renderEditor("/plan");
 
     await waitFor(() => {
-      expect(configMock.createPublicConfig).toHaveBeenCalledWith(receptionRoom.id);
+      expect(configMock.createPublicConfig).toHaveBeenCalledWith(grandHall.id);
     });
-    expect(configMock.createPublicConfig).not.toHaveBeenCalledWith(grandHall.id);
+    expect(configMock.createPublicConfig).not.toHaveBeenCalledWith(receptionRoom.id);
     await screen.findByTestId("created-route");
   });
 
@@ -283,18 +283,18 @@ describe("EditorPage default /plan bootstrap", () => {
 
     expect(screen.getByRole("heading", { name: "Opening the planner" })).toBeTruthy();
     expect(screen.getByRole("status").querySelector("[data-activity-indicator]")).not.toBeNull();
-    expect(screen.queryByRole("heading", { name: /Reception Room/ })).toBeNull();
+    expect(screen.queryByRole("heading", { name: /Grand Hall/ })).toBeNull();
   });
 
-  it("names the Reception Room once the bootstrap has resolved it", async () => {
+  it("names the Grand Hall once the bootstrap has resolved it", async () => {
     spacesMock.listVenues.mockResolvedValue([tradesHall]);
-    spacesMock.listSpaces.mockResolvedValue([grandHall, receptionRoom]);
+    spacesMock.listSpaces.mockResolvedValue([receptionRoom, grandHall]);
     // Freeze config creation so the resolved-room loading state stays visible.
     configMock.createPublicConfig.mockReturnValue(new Promise(() => { /* keep pending */ }));
 
     renderEditor("/plan");
 
-    expect(await screen.findByRole("heading", { name: "Opening the Reception Room planner" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Opening the Grand Hall planner" })).toBeTruthy();
   });
 
   it("ends opening activity when bootstrap fails", async () => {
@@ -337,15 +337,15 @@ describe("EditorPage default /plan bootstrap", () => {
     await screen.findByTestId("created-route");
   });
 
-  it("falls back to the Grand Hall when the venue has no reception-room space", async () => {
+  it("falls back to the Reception Room when the venue has no grand-hall space", async () => {
     spacesMock.listVenues.mockResolvedValue([tradesHall]);
-    spacesMock.listSpaces.mockResolvedValue([grandHall]);
-    configMock.createPublicConfig.mockResolvedValue(publicConfigFor(grandHall, "cfg-grand"));
+    spacesMock.listSpaces.mockResolvedValue([receptionRoom]);
+    configMock.createPublicConfig.mockResolvedValue(publicConfigFor(receptionRoom, "cfg-reception"));
 
     renderEditor("/plan");
 
     await waitFor(() => {
-      expect(configMock.createPublicConfig).toHaveBeenCalledWith(grandHall.id);
+      expect(configMock.createPublicConfig).toHaveBeenCalledWith(receptionRoom.id);
     });
     await screen.findByTestId("created-route");
   });

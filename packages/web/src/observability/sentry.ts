@@ -1,5 +1,7 @@
 import type { ErrorInfo } from "react";
-import type { ErrorEvent, Event } from "@sentry/react";
+import type { Breadcrumb, BreadcrumbHint, ErrorEvent, Event } from "@sentry/react";
+import { templateCapabilityPathsDeep } from "@omnitwin/types/capability-paths";
+import { redactHealthFreeText } from "@omnitwin/types/event-requirements";
 
 type SentryReactModule = typeof import("./sentry-sdk.js");
 
@@ -60,7 +62,7 @@ function safeEventUrl(url: string | undefined): string | undefined {
 
   try {
     const parsed = new URL(trimmed, "https://venviewer.local");
-    const pathOnly = parsed.pathname;
+    const pathOnly = withoutIds(parsed.pathname);
     if (parsed.origin === "https://venviewer.local" && trimmed.startsWith("/")) {
       return pathOnly;
     }
@@ -84,11 +86,145 @@ export function scrubSentryEvent(event: Event): Event {
   delete scrubbed.user;
   delete scrubbed.extra;
 
-  return scrubbed;
+  // A guest's allergy note typed into the planner can surface in an error
+  // message or a breadcrumb; it never leaves the browser (fix-first item 18).
+  // Nor does a share token or a guest layout's id, wherever the event quotes
+  // the page or a request: whoever reads the event could open the proposal,
+  // approve it or overwrite the layout (@omnitwin/types capability-paths).
+  // The event is plain data, so the scrubbed copy keeps its shape.
+  return templateCapabilityPathsDeep(redactHealthFreeText(scrubbed) as Event);
 }
 
 export function scrubSentryErrorEvent(event: ErrorEvent): ErrorEvent {
   return { ...scrubSentryEvent(event), type: undefined };
+}
+
+/** What replaces a query string, as the API's `withoutQuery` writes it, so a
+ *  reader can tell one existed. */
+export const REDACTED_QUERY_MARKER = "?[redacted]";
+/** What replaces a fragment that had no query before it. */
+export const REDACTED_FRAGMENT_MARKER = "#[redacted]";
+
+/**
+ * Cut a url's query and fragment and leave a marker in their place. Works for
+ * relative and absolute urls; a url with neither is returned unchanged. The
+ * search routes carry a client's name, email or phone in `?q=`, and a
+ * fragment can carry a sign-in token.
+ */
+export function withoutQuery(url: string): string {
+  const queryStart = url.indexOf("?");
+  const fragmentStart = url.indexOf("#");
+  if (queryStart !== -1 && (fragmentStart === -1 || queryStart < fragmentStart)) {
+    return `${url.slice(0, queryStart)}${REDACTED_QUERY_MARKER}`;
+  }
+  if (fragmentStart !== -1) return `${url.slice(0, fragmentStart)}${REDACTED_FRAGMENT_MARKER}`;
+  return url;
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
+/** A long opaque segment: a share or claim token. */
+const TOKEN = /^[A-Za-z0-9_-]{20,}$/u;
+/** Segments whose next one opens something to whoever holds it: an unclaimed guest layout's id, a shared plan's or a supplier's token. */
+const OPENS_NEXT: ReadonlySet<string> = new Set(["plan", "plan-view", "supplier-share", "configurations"]);
+
+/**
+ * A url with each id or token in its path replaced by `:id`. A guest layout's
+ * id is all it takes to open or overwrite it (the public configuration
+ * routes), and a shared plan's token is its whole lock, so neither leaves
+ * the browser. The query and fragment are left for withoutQuery.
+ */
+export function withoutIds(url: string): string {
+  const cut = url.search(/[?#]/u);
+  const path = cut === -1 ? url : url.slice(0, cut);
+  const segments = path.split("/");
+  const masked = segments.map((segment, index) => {
+    const previous = index > 0 ? segments[index - 1] : undefined;
+    if (segment === "") return segment;
+    if (UUID.test(segment) || TOKEN.test(segment) || (previous !== undefined && OPENS_NEXT.has(previous))) return ":id";
+    return segment;
+  });
+  return masked.join("/") + (cut === -1 ? "" : url.slice(cut));
+}
+
+/** The breadcrumb data keys that hold a url: fetch and xhr write `url`,
+ *  navigation writes `from` and `to`. */
+const BREADCRUMB_URL_KEYS: readonly string[] = ["url", "from", "to"];
+
+const DESCRIBED_CLASSES = 3;
+const DESCRIBED_CLASS_LENGTH = 40;
+
+const TAG_NAME = /^[a-z][a-z0-9-]{0,39}$/u;
+
+/**
+ * An element as "tag.class.class": what it is, never what it says. Read by
+ * shape, not `instanceof`: an element from another document (a frame) is not
+ * an instance of this window's Element.
+ */
+function describeElement(target: unknown): string | null {
+  if (typeof target !== "object" || target === null) return null;
+  const tagName: unknown = Reflect.get(target, "tagName");
+  if (typeof tagName !== "string" || !TAG_NAME.test(tagName.toLowerCase())) return null;
+  const classList: unknown = Reflect.get(target, "classList");
+  const names: unknown[] = typeof classList === "object" && classList !== null && Symbol.iterator in classList
+    ? Array.from(classList as Iterable<unknown>)
+    : [];
+  const classes = names
+    .filter((name): name is string => typeof name === "string" && name.length > 0)
+    .slice(0, DESCRIBED_CLASSES)
+    .map((name) => `.${name.slice(0, DESCRIBED_CLASS_LENGTH)}`);
+  return `${tagName.toLowerCase()}${classes.join("")}`;
+}
+
+/**
+ * A click or keypress breadcrumb (`ui.click`, `ui.input`), rewritten.
+ *
+ * The SDK's own message describes the element and its ancestors with their
+ * aria-label, title, name and alt, and on the staff pages those hold a
+ * client's name, phone number and email ("Call Aileen Fraser on 07700 …").
+ * Those values are free text inside a string with no escaping, so they cannot
+ * be cut out of it reliably. The message is thrown away instead and written
+ * again from the element the event names: its tag and its first few classes,
+ * which say which control it was and carry nothing a person typed. With no
+ * element to read, the breadcrumb is dropped.
+ */
+function interactionBreadcrumb(breadcrumb: Breadcrumb, hint: BreadcrumbHint | undefined): Breadcrumb | null {
+  let described: string | null;
+  try {
+    // The SDK's hint carries the DOM event, or now and then the element itself
+    // (its own handler allows for both). Reading a target can throw.
+    const event: unknown = hint?.["event"];
+    const isElement = typeof event === "object" && event !== null && typeof Reflect.get(event, "tagName") === "string";
+    const target: unknown = isElement || typeof event !== "object" || event === null ? event : Reflect.get(event, "target");
+    described = describeElement(target);
+  } catch {
+    described = null;
+  }
+  if (described === null) return null;
+  const rewritten: Breadcrumb = { ...breadcrumb, message: described };
+  delete rewritten.data;
+  return rewritten;
+}
+
+/**
+ * `beforeBreadcrumb`: the browser SDK's fetch and xhr breadcrumbs keep the
+ * whole request url in `data.url`, and navigation breadcrumbs the page urls
+ * in `data.from` and `data.to`. Each loses its query, fragment and ids. Console
+ * breadcrumbs are dropped: what the app logs can quote a layout's own words
+ * (a failed save logs the server's message and the pieces it carried). Clicks
+ * and keypresses are rewritten from the element itself (see above).
+ */
+export function scrubSentryBreadcrumb(breadcrumb: Breadcrumb, hint?: BreadcrumbHint): Breadcrumb | null {
+  if (breadcrumb.category === "console") return null;
+  if (breadcrumb.category?.startsWith("ui.") === true) return interactionBreadcrumb(breadcrumb, hint);
+  const data: Record<string, unknown> | undefined = breadcrumb.data;
+  if (data === undefined) return templateCapabilityPathsDeep(breadcrumb);
+  const scrubbed: Record<string, unknown> = { ...data };
+  for (const key of BREADCRUMB_URL_KEYS) {
+    const value = scrubbed[key];
+    if (typeof value === "string") scrubbed[key] = withoutIds(withoutQuery(value));
+  }
+  // Share tokens and guest layout ids, in the urls and the message.
+  return templateCapabilityPathsDeep({ ...breadcrumb, data: scrubbed });
 }
 
 async function startBrowserSentry(config: BrowserSentryConfig): Promise<void> {
@@ -100,6 +236,13 @@ async function startBrowserSentry(config: BrowserSentryConfig): Promise<void> {
     tracesSampleRate: config.tracesSampleRate,
     sendDefaultPii: false,
     beforeSend: scrubSentryErrorEvent,
+    beforeBreadcrumb: scrubSentryBreadcrumb,
+    // The SDK wraps every animation frame callback and event listener to tag
+    // what they throw: 1.5-2 % of the planner's main thread on a slowed phone
+    // (perf study, 25 Oct 2026). The global error handler still reports them.
+    integrations: (defaults) => defaults.map((integration) => (integration.name === "BrowserApiErrors"
+      ? Sentry.browserApiErrorsIntegration({ requestAnimationFrame: false, eventTarget: false })
+      : integration)),
   });
   initialized = true;
 }
@@ -130,5 +273,24 @@ export async function captureBoundaryError(error: Error, info: ErrorInfo): Promi
       scope.setContext("react", { componentStack });
     }
     Sentry.captureException(error);
+  });
+}
+
+/**
+ * A warning with tags only (the event scrubber drops `extra`): for failures the
+ * page lives through, such as a lost graphics device or a failed save
+ * (failure-reports.ts). Does nothing without a DSN.
+ */
+export async function captureWarning(message: string, tags: Readonly<Record<string, string>>): Promise<void> {
+  if (readBrowserSentryConfig(import.meta.env) === null || disabledAfterError) return;
+
+  await initBrowserSentry();
+  if (!initialized) return;
+
+  const Sentry = await loadSentryModule();
+  Sentry.withScope((scope) => {
+    scope.setLevel("warning");
+    for (const [name, value] of Object.entries(tags)) scope.setTag(name, value);
+    Sentry.captureMessage(message);
   });
 }

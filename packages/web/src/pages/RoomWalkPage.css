@@ -116,6 +116,11 @@
   font-size: 0.74rem;
   font-variant-numeric: tabular-nums;
   color: var(--stone-dim);
+  /* The pill sits low and centre, exactly where a visitor taps the floor in
+   * front of them on a phone (measured 16 Sep 2026 with CDP touch at 390x844:
+   * a tap at (195, 760) reached the pill, not the canvas). It reports; it
+   * does not take input. */
+  pointer-events: none;
 }
 
 .walk__foot {

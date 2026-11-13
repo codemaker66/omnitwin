@@ -21,8 +21,8 @@ import { canAdministerVenue, canReadDiary } from "../utils/query.js";
 // reads "Not confirmed" until a person does.
 // ---------------------------------------------------------------------------
 
-const VenueIdParam = z.object({ venueId: z.string().uuid() });
-const RuleIdParam = z.object({ venueId: z.string().uuid(), id: z.string().uuid() });
+const VenueIdParam = z.object({ venueId: z.uuid() });
+const RuleIdParam = z.object({ venueId: z.uuid(), id: z.uuid() });
 
 /** How many of the venue's event types the editor offers. */
 const EVENT_TYPE_LIMIT = 20;

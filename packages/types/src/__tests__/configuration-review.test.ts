@@ -15,8 +15,8 @@ import {
 // ---------------------------------------------------------------------------
 
 const VALID_UUID = "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d";
-const VALID_CONFIG_UUID = "d4e5f6a7-b8c9-4d0e-1f2a-3b4c5d6e7f80";
-const VALID_USER_UUID = "e5f6a7b8-c9d0-4e1f-2a3b-4c5d6e7f8091";
+const VALID_CONFIG_UUID = "d4e5f6a7-b8c9-4d0e-9f2a-3b4c5d6e7f80";
+const VALID_USER_UUID = "e5f6a7b8-c9d0-4e1f-aa3b-4c5d6e7f8091";
 const VALID_DATETIME = "2026-04-18T12:00:00.000Z";
 
 // ---------------------------------------------------------------------------
@@ -84,9 +84,9 @@ describe("VALID_CONFIGURATION_REVIEW_TRANSITIONS", () => {
     );
   });
 
-  it("changes_requested can → draft | withdrawn", () => {
+  it("changes_requested can → submitted | draft | withdrawn", () => {
     expect(VALID_CONFIGURATION_REVIEW_TRANSITIONS.changes_requested).toEqual(
-      ["draft", "withdrawn"],
+      ["submitted", "draft", "withdrawn"],
     );
   });
 
@@ -94,12 +94,20 @@ describe("VALID_CONFIGURATION_REVIEW_TRANSITIONS", () => {
     expect(VALID_CONFIGURATION_REVIEW_TRANSITIONS.approved).toEqual(["archived"]);
   });
 
-  it("rejected can → draft | archived", () => {
-    expect(VALID_CONFIGURATION_REVIEW_TRANSITIONS.rejected).toEqual(["draft", "archived"]);
+  it("rejected can → submitted | draft | archived", () => {
+    expect(VALID_CONFIGURATION_REVIEW_TRANSITIONS.rejected).toEqual(["submitted", "draft", "archived"]);
   });
 
-  it("withdrawn is terminal", () => {
-    expect(VALID_CONFIGURATION_REVIEW_TRANSITIONS.withdrawn).toEqual([]);
+  it("withdrawn can only → submitted", () => {
+    expect(VALID_CONFIGURATION_REVIEW_TRANSITIONS.withdrawn).toEqual(["submitted"]);
+  });
+
+  it("every state the planner may edit, but draft, leads back to submitted", () => {
+    // An edit the planner may make must have a way to reach the venue.
+    for (const s of CONFIGURATION_REVIEW_STATUSES) {
+      if (s === "draft" || !isPlannerEditable(s)) continue;
+      expect(VALID_CONFIGURATION_REVIEW_TRANSITIONS[s]).toContain("submitted");
+    }
   });
 
   it("archived is terminal", () => {
@@ -130,6 +138,12 @@ describe("isValidConfigurationReviewTransition", () => {
     expect(isValidConfigurationReviewTransition("rejected", "draft")).toBe(true);
   });
 
+  it("accepts submitting again from changes_requested, rejected and withdrawn", () => {
+    expect(isValidConfigurationReviewTransition("changes_requested", "submitted")).toBe(true);
+    expect(isValidConfigurationReviewTransition("rejected", "submitted")).toBe(true);
+    expect(isValidConfigurationReviewTransition("withdrawn", "submitted")).toBe(true);
+  });
+
   it("rejects skipping submitted (draft → approved)", () => {
     expect(isValidConfigurationReviewTransition("draft", "approved")).toBe(false);
   });
@@ -149,9 +163,9 @@ describe("isValidConfigurationReviewTransition", () => {
     expect(isValidConfigurationReviewTransition("approved", "draft")).toBe(false);
   });
 
-  it("rejects any transition from withdrawn (terminal)", () => {
+  it("rejects every transition from withdrawn but submitting again", () => {
     for (const s of CONFIGURATION_REVIEW_STATUSES) {
-      expect(isValidConfigurationReviewTransition("withdrawn", s)).toBe(false);
+      expect(isValidConfigurationReviewTransition("withdrawn", s)).toBe(s === "submitted");
     }
   });
 
@@ -167,15 +181,14 @@ describe("isValidConfigurationReviewTransition", () => {
 // ---------------------------------------------------------------------------
 
 describe("isTerminalReviewStatus", () => {
-  it("returns true for withdrawn and archived", () => {
-    expect(isTerminalReviewStatus("withdrawn")).toBe(true);
+  it("returns true for archived only", () => {
     expect(isTerminalReviewStatus("archived")).toBe(true);
   });
 
   it("returns false for all active statuses", () => {
     const active: ConfigurationReviewStatus[] = [
       "draft", "submitted", "under_review",
-      "approved", "rejected", "changes_requested",
+      "approved", "rejected", "changes_requested", "withdrawn",
     ];
     for (const s of active) {
       expect(isTerminalReviewStatus(s)).toBe(false);
@@ -188,17 +201,17 @@ describe("isTerminalReviewStatus", () => {
 // ---------------------------------------------------------------------------
 
 describe("isPlannerEditable", () => {
-  it("returns true for draft, changes_requested, rejected", () => {
+  it("returns true for draft, changes_requested, rejected, withdrawn", () => {
     expect(isPlannerEditable("draft")).toBe(true);
     expect(isPlannerEditable("changes_requested")).toBe(true);
     expect(isPlannerEditable("rejected")).toBe(true);
+    expect(isPlannerEditable("withdrawn")).toBe(true);
   });
 
-  it("returns false for submitted, under_review, approved, withdrawn, archived", () => {
+  it("returns false for submitted, under_review, approved, archived", () => {
     expect(isPlannerEditable("submitted")).toBe(false);
     expect(isPlannerEditable("under_review")).toBe(false);
     expect(isPlannerEditable("approved")).toBe(false);
-    expect(isPlannerEditable("withdrawn")).toBe(false);
     expect(isPlannerEditable("archived")).toBe(false);
   });
 });

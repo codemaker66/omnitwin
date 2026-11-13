@@ -6,13 +6,13 @@ import { deriveEditorSaveStatus } from "../lib/editor-save-status.js";
 // Editor store tests — mock API modules
 // ---------------------------------------------------------------------------
 
+vi.mock("../api/configuration-conflict.js", () => ({ parseRevisionConflict: vi.fn(() => null) }));
 vi.mock("../api/configurations.js", () => ({
   getPublicConfig: vi.fn(),
   getConfig: vi.fn(),
   createPublicConfig: vi.fn(),
   publicBatchSave: vi.fn(),
   authBatchSave: vi.fn(),
-  parseRevisionConflict: vi.fn(() => null),
   claimConfig: vi.fn(),
   submitGuestEnquiry: vi.fn(),
 }));
@@ -33,6 +33,8 @@ vi.mock("../api/action-log.js", () => ({
 }));
 
 const configMock = vi.mocked(await import("../api/configurations.js"));
+const conflictApi = vi.mocked(await import("../api/configuration-conflict.js"));
+const spacesMock = vi.mocked(await import("../api/spaces.js"));
 
 const { useEditorStore, editorToBatch } = await import("../stores/editor-store.js");
 const { useCockpitStore } = await import("../stores/cockpit-store.js");
@@ -254,6 +256,44 @@ describe("loadConfiguration", () => {
 
     expect(configMock.getConfig).toHaveBeenCalledWith("cfg-1");
     expect(configMock.getPublicConfig).not.toHaveBeenCalled();
+  });
+});
+
+describe("loadSpace", () => {
+  const space = {
+    id: "s-1", venueId: "v-1", name: "Grand Hall", slug: "grand-hall",
+    widthM: "21", lengthM: "10.5", heightM: "7", floorPlanOutline: [],
+  };
+
+  it("records a failed room read so nothing waits on it for ever, and clears it on the next read", async () => {
+    useEditorStore.setState({ spaceId: "s-1", venueId: "v-1", space: null });
+    spacesMock.getSpace.mockRejectedValueOnce(new Error("offline"));
+    await useEditorStore.getState().loadSpace("v-1", "s-1");
+    expect(useEditorStore.getState().space).toBeNull();
+    expect(useEditorStore.getState().spaceLoadFailed).toBe(true);
+
+    let resolve: (value: typeof space) => void = () => undefined;
+    spacesMock.getSpace.mockReturnValueOnce(new Promise((r) => { resolve = r; }));
+    const retry = useEditorStore.getState().loadSpace("v-1", "s-1");
+    // A new read is in flight: the failure no longer stands.
+    expect(useEditorStore.getState().spaceLoadFailed).toBe(false);
+    resolve(space);
+    await retry;
+    expect(useEditorStore.getState().space?.slug).toBe("grand-hall");
+    expect(useEditorStore.getState().spaceLoadFailed).toBe(false);
+  });
+
+  it("ignores a failed read for a room that is no longer open", async () => {
+    useEditorStore.setState({ spaceId: "s-2", venueId: "v-1", space: null });
+    spacesMock.getSpace.mockRejectedValueOnce(new Error("offline"));
+    await useEditorStore.getState().loadSpace("v-1", "s-1");
+    expect(useEditorStore.getState().spaceLoadFailed).toBe(false);
+  });
+
+  it("starts each editor session with no failed read", () => {
+    useEditorStore.setState({ spaceLoadFailed: true });
+    useEditorStore.getState().reset();
+    expect(useEditorStore.getState().spaceLoadFailed).toBe(false);
   });
 });
 
@@ -597,8 +637,10 @@ describe("saveToServer", () => {
       expectedRevision: 1,
       currentRevision: 2,
       message: "Layout changed on the server. Reload before saving again.",
+      changedBy: null,
+      changedAt: null,
     };
-    configMock.parseRevisionConflict.mockReturnValueOnce(conflict);
+    conflictApi.parseRevisionConflict.mockReturnValueOnce(conflict);
     configMock.publicBatchSave.mockRejectedValue(new Error("stale"));
 
     useEditorStore.setState({ configId: "cfg-1", configRevision: 1, isDirty: true, isPublicPreview: true });
@@ -612,7 +654,11 @@ describe("saveToServer", () => {
     expect(useEditorStore.getState().isDirty).toBe(true);
     expect(useEditorStore.getState().objects).toEqual(localObjects);
     expect(useEditorStore.getState().configRevision).toBe(1);
-    expect(useEditorStore.getState().saveConflict).toEqual(conflict);
+    // The guest route's copy could not be read (the mock answers nothing),
+    // so the conflict stands with no summary of their change.
+    expect(configMock.getPublicConfig).toHaveBeenCalledWith("cfg-1");
+    expect(useEditorStore.getState().saveConflict).toEqual({ ...conflict, byYou: false, theirChange: null });
+    expect(useEditorStore.getState().saveErrorCode).toBe("REVISION_CONFLICT");
     expect(useEditorStore.getState().saveError).toContain("changed in another tab");
   });
 

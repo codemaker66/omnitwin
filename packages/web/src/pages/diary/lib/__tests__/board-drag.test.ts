@@ -166,6 +166,17 @@ describe("ghostValidity", () => {
     expect(validity.reason).toContain("Graduation ball");
   });
 
+  it("warns a viewing that falls during an ink in its own words, never that it cannot be confirmed (migration 0100)", () => {
+    const validity = ghostValidity({ spaceId: LANE_B, startMs: T18, endMs: T18 + 3_600_000 }, env({ isViewing: true }), "viewing-1");
+    expect(validity).toEqual({
+      kind: "warning",
+      reason: "Falls during \"Graduation ball\" — the room is in use then. Choose another time, or let the guest know.",
+    });
+    // A viewing still drops where it is warned: it is never blocked.
+    const state = moveGhostTo(lifted({ blockId: "viewing-1" }), LANE_B, T18, env({ isViewing: true }));
+    expect(dropDrag(state, env({ isViewing: true })).effect).toBe("commit");
+  });
+
   it("blocks an ink overlapping another ink, naming it", () => {
     const validity = ghostValidity(
       { spaceId: LANE_B, startMs: T18, endMs: T23 },

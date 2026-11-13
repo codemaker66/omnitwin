@@ -5,24 +5,36 @@ import {
   users, configurations, enquiries, guestLeads,
 } from "../db/schema.js";
 import type { Database } from "../db/client.js";
+import { outerColumn } from "../utils/outer-column.js";
 import { authenticate, isPlatformAdmin } from "../middleware/auth.js";
-import { canManageCommercial, canManageVenue } from "../utils/query.js";
-import { contactProfile, searchClients } from "../services/client-search.js";
+import { canManageCommercial, canReadClients } from "../utils/query.js";
+import {
+  contactProfile, leadGivenToVenue, OUTER_GUEST_LEAD, searchClients, type GuestLeadColumns,
+} from "../services/client-search.js";
 
 // ---------------------------------------------------------------------------
 // Zod schemas
 // ---------------------------------------------------------------------------
 
 const SearchQuery = z.object({ q: z.string().trim().min(2).max(200) });
-const UserIdParam = z.object({ userId: z.string().uuid() });
-const LeadIdParam = z.object({ leadId: z.string().uuid() });
-const ContactIdParam = z.object({ contactId: z.string().uuid() });
+const UserIdParam = z.object({ userId: z.uuid() });
+const LeadIdParam = z.object({ leadId: z.uuid() });
+const ContactIdParam = z.object({ contactId: z.uuid() });
 
 /** The enquiries that are still live: new, in review, or approved. */
 const LIVE_ENQUIRY_STATES = ["submitted", "under_review", "approved"] as const;
 
+/** A lead row under the alias `gl`, for the subquery below. */
+const ALIASED_GUEST_LEAD: GuestLeadColumns = {
+  email: sql`gl.email`,
+  firstEnquiryId: sql`gl.first_enquiry_id`,
+  createdAt: sql`gl.created_at`,
+  updatedAt: sql`gl.updated_at`,
+};
+
 /** An enquiry as the Clients desk lists it: who, what, when, and the guest's
- *  lead, so a guest opens on their own profile. */
+ *  lead, so a guest opens on their own profile. The lead is the one given to
+ *  the enquiry's own venue, never another venue's (leadGivenToVenue). */
 const enquiryClientColumns = {
   id: enquiries.id,
   state: enquiries.state,
@@ -32,7 +44,8 @@ const enquiryClientColumns = {
   guestPhone: enquiries.guestPhone,
   guestName: enquiries.guestName,
   userId: enquiries.userId,
-  leadId: sql<string | null>`(SELECT id FROM guest_leads WHERE email = ${enquiries.guestEmail} LIMIT 1)`,
+  leadId: sql<string | null>`(SELECT gl.id FROM guest_leads gl WHERE gl.email = ${outerColumn(enquiries.guestEmail)}
+    AND ${leadGivenToVenue(ALIASED_GUEST_LEAD, outerColumn(enquiries.venueId))} LIMIT 1)`,
   eventType: enquiries.eventType,
   preferredDate: enquiries.preferredDate,
   createdAt: enquiries.createdAt,
@@ -48,15 +61,15 @@ export async function clientRoutes(
 ): Promise<void> {
   const { db } = opts;
 
-  // GET /clients/search?q=... — the venue floor, or a platform admin. Typo
-  // tolerant; see services/client-search.ts.
+  // GET /clients/search?q=... — the venue floor and sales (canReadClients), or
+  // a platform admin. Typo tolerant; see services/client-search.ts.
   server.get("/search", { preHandler: [authenticate] }, async (request, reply) => {
     const query = SearchQuery.safeParse(request.query);
     if (!query.success) {
       return reply.status(400).send({ error: "Query must be at least 2 characters", code: "VALIDATION_ERROR" });
     }
 
-    if (!canManageVenue(request.user, request.user.venueId ?? "")) {
+    if (!canReadClients(request.user, request.user.venueId ?? "")) {
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 
@@ -95,7 +108,7 @@ export async function clientRoutes(
       return reply.status(400).send({ error: "Invalid user ID", code: "VALIDATION_ERROR" });
     }
 
-    if (!canManageVenue(request.user, request.user.venueId ?? "")) {
+    if (!canReadClients(request.user, request.user.venueId ?? "")) {
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 
@@ -141,8 +154,8 @@ export async function clientRoutes(
     const configs = await db.select({
       id: configurations.id,
       name: configurations.name,
-      spaceName: sql<string>`(SELECT name FROM spaces WHERE id = ${configurations.spaceId})`,
-      objectCount: sql<number>`(SELECT count(*)::int FROM placed_objects WHERE configuration_id = ${configurations.id})`,
+      spaceName: sql<string>`(SELECT s.name FROM spaces s WHERE s.id = ${outerColumn(configurations.spaceId)})`,
+      objectCount: sql<number>`(SELECT count(*)::int FROM placed_objects po WHERE po.configuration_id = ${outerColumn(configurations.id)})`,
       createdAt: configurations.createdAt,
     })
       .from(configurations)
@@ -157,7 +170,7 @@ export async function clientRoutes(
       state: enquiries.state,
       eventType: enquiries.eventType,
       preferredDate: enquiries.preferredDate,
-      spaceName: sql<string>`(SELECT name FROM spaces WHERE id = ${enquiries.spaceId})`,
+      spaceName: sql<string>`(SELECT s.name FROM spaces s WHERE s.id = ${outerColumn(enquiries.spaceId)})`,
       // False when the guest named no room: spaceName is then where the
       // enquiry is filed, not what they asked for (migration 0079).
       roomChosen: enquiries.roomChosen,
@@ -184,24 +197,23 @@ export async function clientRoutes(
       return reply.status(400).send({ error: "Invalid lead ID", code: "VALIDATION_ERROR" });
     }
 
-    if (!canManageVenue(request.user, request.user.venueId ?? "")) {
+    if (!canReadClients(request.user, request.user.venueId ?? "")) {
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 
     const leadVenueId = request.user.venueId;
     const leadIsAdmin = isPlatformAdmin(request.user);
 
-    // Non-admin: verify this lead has enquiries at the hallkeeper's venue
-    // BEFORE returning any PII. See venueLeadFilter above — the join is on
-    // `guest_email` + `venue_id`; we deliberately don't require
-    // `user_id IS NULL` so that previously claimed enquiries still count
-    // toward "this lead has been in contact with our venue".
+    // Non-admin: verify this lead's name and phone were given to this venue
+    // BEFORE returning any PII. A lead names no venue, so another venue's
+    // enquiry under the same email is not enough (leadGivenToVenue). Claimed
+    // enquiries still count: `user_id IS NULL` is deliberately not required.
     if (!leadIsAdmin) {
-      const [hasRelation] = await db.select({ n: sql<number>`1` })
+      const [hasRelation] = leadVenueId === null ? [] : await db.select({ n: sql<number>`1` })
         .from(guestLeads)
         .where(and(
           eq(guestLeads.id, params.data.leadId),
-          sql`EXISTS (SELECT 1 FROM enquiries WHERE guest_email = ${guestLeads.email} AND venue_id = ${leadVenueId})`,
+          leadGivenToVenue(OUTER_GUEST_LEAD, leadVenueId),
         ))
         .limit(1);
       if (hasRelation === undefined) {
@@ -227,7 +239,7 @@ export async function clientRoutes(
       state: enquiries.state,
       eventType: enquiries.eventType,
       preferredDate: enquiries.preferredDate,
-      spaceName: sql<string>`(SELECT name FROM spaces WHERE id = ${enquiries.spaceId})`,
+      spaceName: sql<string>`(SELECT s.name FROM spaces s WHERE s.id = ${outerColumn(enquiries.spaceId)})`,
       roomChosen: enquiries.roomChosen,
       createdAt: enquiries.createdAt,
     })
@@ -247,7 +259,7 @@ export async function clientRoutes(
 
   // GET /clients/recent — last 20 enquiries with contact info
   server.get("/recent", { preHandler: [authenticate] }, async (request, reply) => {
-    if (!canManageVenue(request.user, request.user.venueId ?? "")) {
+    if (!canReadClients(request.user, request.user.venueId ?? "")) {
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 
@@ -267,7 +279,7 @@ export async function clientRoutes(
   // GET /clients/upcoming — the clients whose events come next: live
   // enquiries whose date is today or within the year ahead, soonest first.
   server.get("/upcoming", { preHandler: [authenticate] }, async (request, reply) => {
-    if (!canManageVenue(request.user, request.user.venueId ?? "")) {
+    if (!canReadClients(request.user, request.user.venueId ?? "")) {
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
     const upcoming = await db.select(enquiryClientColumns)

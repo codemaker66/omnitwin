@@ -1,6 +1,9 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import Fastify from "fastify";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { apiLoggerOptions } from "../observability/health-redaction.js";
+import type { EmailLogger } from "../services/email.js";
 import {
   newEnquiryNotification,
   enquiryApproved,
@@ -105,31 +108,50 @@ describe("enquiryApproved", () => {
 
   it("names the room, with its article, in the subject", async () => {
     const { subject } = await enquiryApproved(baseData);
-    expect(subject).toBe("Your enquiry for the Grand Hall has been approved");
+    expect(subject).toBe("Your enquiry for the Grand Hall: next steps");
   });
 
-  it("says the approval in one sentence: the room, the venue and the day as a person says it", async () => {
+  it("says the venue's answer in one paragraph: the room, the venue and the day as a person says it", async () => {
     const { html } = await enquiryApproved(baseData);
     expect(html).toContain(
-      "Your enquiry for the Grand Hall at Trades Hall Glasgow on Monday 15 June 2026 has been approved.",
+      "Thank you for your enquiry for the Grand Hall at Trades Hall Glasgow on Monday 15 June 2026. We have reviewed it and would like to take it further with you.",
     );
     // Never the stored ISO date.
     expect(html).not.toContain("2026-06-15");
   });
 
-  it("words 14 May 2027 as the Friday it is, with no comma", async () => {
+  it("words 14 May 2027 as the Friday it is, with no comma after the day", async () => {
     const { html } = await enquiryApproved({ ...baseData, eventDate: "2027-05-14" });
     expect(html).toContain(
-      "Your enquiry for the Grand Hall at Trades Hall Glasgow on Friday 14 May 2027 has been approved.",
+      "Thank you for your enquiry for the Grand Hall at Trades Hall Glasgow on Friday 14 May 2027. We have reviewed it and would like to take it further with you.",
     );
     expect(visibleText(html)).not.toContain("Friday,");
   });
 
   it("does not double an article the room's name already has", async () => {
     const { subject, html } = await enquiryApproved({ ...baseData, roomName: "The Saloon" });
-    expect(subject).toBe("Your enquiry for The Saloon has been approved");
-    expect(html).toContain("Your enquiry for The Saloon at Trades Hall Glasgow on Monday 15 June 2026 has been approved.");
+    expect(subject).toBe("Your enquiry for The Saloon: next steps");
+    expect(html).toContain("Thank you for your enquiry for The Saloon at Trades Hall Glasgow on Monday 15 June 2026. We have reviewed it and would like to take it further with you.");
     expect(html).not.toContain("the The Saloon");
+  });
+
+  // Saying yes to an enquiry holds nothing: a date is held or confirmed only
+  // in the Diary. The email once said "has been approved", which a guest reads
+  // as "booked", while the date stayed free for anyone else.
+  it("never reads as a booking: no 'approved', no date held or confirmed, and says plainly that it is not one", async () => {
+    for (const data of [baseData, { ...baseData, roomName: null, eventDate: null, configUrl: null }]) {
+      const { subject, html } = await enquiryApproved(data);
+      const text = `${subject} ${visibleText(html)}`;
+      expect(text).not.toMatch(/approv/iu);
+      // A claim, not the denial below: "your date is booked", "has been confirmed".
+      expect(text).not.toMatch(/\byour (?:date|booking|room|event)\b[^.:]*\b(?:is|has been)\s+(?:now\s+)?(?:booked|confirmed|reserved|held|secured)\b/iu);
+      expect(text).not.toMatch(/\b(?:has been|is now)\s+(?:booked|confirmed|reserved|held|secured)\b/iu);
+      // True whatever the Diary holds: no date, a provisional hold or a
+      // confirmed booking already made for this enquiry.
+      expect(visibleText(html)).toContain("This email does not book or hold a date. A date is booked only when we confirm it to you in writing.");
+      // "Go ahead" read as a promise of the room on the date; approval checks no availability.
+      expect(text).not.toMatch(/go ahead/iu);
+    }
   });
 
   it("includes config link", async () => {
@@ -145,27 +167,27 @@ describe("enquiryApproved", () => {
 
   it("names the venue, not a room, for a guest who chose none", async () => {
     const { subject, html } = await enquiryApproved({ ...baseData, roomName: null, configUrl: null });
-    expect(subject).toBe("Your enquiry at Trades Hall Glasgow has been approved");
-    expect(html).toContain("Your enquiry at Trades Hall Glasgow on Monday 15 June 2026 has been approved.");
+    expect(subject).toBe("Your enquiry at Trades Hall Glasgow: next steps");
+    expect(html).toContain("Thank you for your enquiry at Trades Hall Glasgow on Monday 15 June 2026. We have reviewed it and would like to take it further with you.");
     expect(html).not.toContain("Grand Hall");
   });
 
   it("leaves the day out when there is none, or none that is a real date, and still renders", async () => {
     for (const eventDate of [null, "", "not-a-date", "15/06/2026", "2027-02-29", "2027-13-01"]) {
       const { html } = await enquiryApproved({ ...baseData, eventDate });
-      expect(html, String(eventDate)).toContain("Your enquiry for the Grand Hall at Trades Hall Glasgow has been approved.");
+      expect(html, String(eventDate)).toContain("Thank you for your enquiry for the Grand Hall at Trades Hall Glasgow. We have reviewed it and would like to take it further with you.");
       if (eventDate !== null && eventDate !== "") expect(html, eventDate).not.toContain(eventDate);
     }
     const { html } = await enquiryApproved({ ...baseData, roomName: null, eventDate: null });
-    expect(html).toContain("Your enquiry at Trades Hall Glasgow has been approved.");
+    expect(html).toContain("Thank you for your enquiry at Trades Hall Glasgow. We have reviewed it and would like to take it further with you.");
   });
 
   it("is plain: a sentence-case heading, no praise and no exclamation marks", async () => {
     for (const data of [baseData, { ...baseData, roomName: null, eventDate: null, configUrl: null }]) {
       const { subject, html } = await enquiryApproved(data);
       const text = `${subject} ${visibleText(html)}`;
-      expect(html).toMatch(/<h\d[^>]*>Enquiry approved<\/h\d>/u);
-      expect(text).not.toContain("Enquiry Approved");
+      expect(html).toMatch(/<h\d[^>]*>Your enquiry<\/h\d>/u);
+      expect(text).not.toContain("Your Enquiry");
       expect(text).not.toContain("!");
       for (const praise of [/great/iu, /congrat/iu, /delighted/iu, /pleased/iu, /amazing/iu, /awesome/iu]) {
         expect(text).not.toMatch(praise);
@@ -533,6 +555,69 @@ describe("sendEmail — retry behaviour", () => {
     expect(db.rows[0]?.lastError).toContain("ECONNRESET");
   });
 
+  // notify-jobs-3: the provider accepted the email; only recording it failed.
+  // A database error carries no HTTP status, so it used to be taken for a
+  // network failure of the provider and the email was sent again.
+  function failingWhenRecording(status: "sent" | "failed"): ReturnType<typeof makeFakeDb> {
+    const db = makeFakeDb();
+    const update = db.update;
+    db.update = (table: unknown) => {
+      const chain = update(table);
+      return {
+        set: (patch: Partial<FakeRow>) => {
+          if (patch.status !== status) return chain.set(patch);
+          const failing: FakeUpdate = {
+            then: (onFulfilled, onRejected) => Promise.reject(
+              Object.assign(new Error("Connection terminated unexpectedly"), { code: "08006" }),
+            ).then(onFulfilled, onRejected),
+            returning: () => Promise.resolve([]),
+          };
+          return { where: () => failing };
+        },
+      };
+    };
+    return db;
+  }
+
+  it("sends once when the provider accepts but recording it as sent fails", async () => {
+    resendSendMock.mockResolvedValue({ data: { id: "msg-delivered" }, error: null });
+    const db = failingWhenRecording("sent");
+    const logger = makeCaptureLogger();
+
+    const ok = await sendEmail(basePayload, {
+      db: db as never,
+      idempotencyKey: "enquiry-approved:db-blip",
+      logger,
+      sleep: () => Promise.resolve(),
+    });
+
+    expect(resendSendMock).toHaveBeenCalledTimes(1);
+    expect(ok).toBe(true);
+    // The row is left pending for someone to reconcile, never marked failed:
+    // a failed row is one a replay would send again.
+    expect(db.rows[0]?.status).toBe("pending");
+    const unrecorded = logger.logs.find((l) => l.obj["event"] === "email.sent_unrecorded");
+    expect(unrecorded?.level).toBe("error");
+    expect(unrecorded?.obj["providerMessageId"]).toBe("msg-delivered");
+  });
+
+  it("asks the provider once when it refuses and recording the refusal fails", async () => {
+    resendSendMock.mockResolvedValue({ error: { statusCode: 422, message: "Invalid recipient" } });
+    const db = failingWhenRecording("failed");
+    const logger = makeCaptureLogger();
+
+    const ok = await sendEmail(basePayload, {
+      db: db as never,
+      idempotencyKey: "enquiry-approved:refused-db-blip",
+      logger,
+      sleep: () => Promise.resolve(),
+    });
+
+    expect(ok).toBe(false);
+    expect(resendSendMock).toHaveBeenCalledTimes(1);
+    expect(logger.logs.some((l) => l.obj["event"] === "email.failure_unrecorded")).toBe(true);
+  });
+
   it("retries a 429 rate-limit (transient) but not a 401 (permanent)", async () => {
     resendSendMock.mockResolvedValueOnce({ error: { statusCode: 429, message: "rate limited" } });
     resendSendMock.mockResolvedValueOnce({ data: { id: "msg-rl" }, error: null });
@@ -568,7 +653,7 @@ describe("sendEmail — structured logging shape", () => {
     __resetResendClientForTests();
   });
 
-  it("every log record includes event, idempotencyKey, and recipient", async () => {
+  it("every log record includes event and idempotencyKey, never the recipient", async () => {
     resendSendMock.mockResolvedValueOnce({ data: { id: "msg-1" }, error: null });
     const db = makeFakeDb();
     const logger = makeCaptureLogger();
@@ -582,7 +667,8 @@ describe("sendEmail — structured logging shape", () => {
     for (const entry of logger.logs) {
       expect(entry.obj).toHaveProperty("event");
       expect(entry.obj).toHaveProperty("idempotencyKey", "k-log-shape");
-      expect(entry.obj).toHaveProperty("recipient", "carol@example.com");
+      expect(entry.obj).not.toHaveProperty("recipient");
+      expect(JSON.stringify(entry)).not.toContain("carol@example.com");
     }
   });
 
@@ -596,5 +682,126 @@ describe("sendEmail — structured logging shape", () => {
     expect(sent).toBeDefined();
     expect(sent?.level).toBe("info");
     expect(sent?.obj["providerMessageId"]).toBe("msg-xyz");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The recipient's address never reaches the API's logs. Every path through
+// sendEmail runs against the API's own production logger configuration
+// (serializers and hooks), writing to a captured stream; the finished lines
+// must not hold the address, its local part or its domain. The address is the
+// audit row's (`email_sends.recipient`), keyed by the idempotencyKey a log
+// line does carry.
+// ---------------------------------------------------------------------------
+
+describe("sendEmail — the recipient's address stays out of the API log", () => {
+  const ADDRESS = "carol.hartley@hartley-family.example";
+  const payload = { to: ADDRESS, subject: "Your enquiry", html: "<p>Hello</p>" };
+  const noWait = (): Promise<void> => Promise.resolve();
+
+  function apiLogger(): { lines: string[]; log: EmailLogger; close: () => Promise<void> } {
+    const options = apiLoggerOptions("production");
+    if (options === false) throw new Error("production logs");
+    const lines: string[] = [];
+    const server = Fastify({ logger: { ...options, stream: { write: (line: string) => { lines.push(line); } } } });
+    return { lines, log: server.log, close: () => server.close() };
+  }
+
+  function expectNoAddress(lines: readonly string[]): void {
+    const text = lines.join("");
+    expect(text).not.toContain(ADDRESS);
+    expect(text).not.toContain("carol.hartley");
+    expect(text).not.toContain("hartley-family");
+    for (const line of lines) expect(JSON.parse(line)).not.toHaveProperty("recipient");
+  }
+
+  function eventsOf(lines: readonly string[]): string[] {
+    return lines.map((line) => String((JSON.parse(line) as { event?: unknown }).event));
+  }
+
+  beforeEach(() => {
+    resendSendMock.mockReset();
+    delete process.env["EMAIL_FROM"];
+    __resetResendClientForTests();
+  });
+
+  afterEach(() => {
+    delete process.env["RESEND_API_KEY"];
+    __resetResendClientForTests();
+  });
+
+  it("with no provider configured (dev mode)", async () => {
+    delete process.env["RESEND_API_KEY"];
+    const logger = apiLogger();
+    expect(await sendEmail(payload, { db: makeFakeDb() as never, idempotencyKey: "enquiry-acknowledged:e1", logger: logger.log })).toBe(true);
+    await logger.close();
+
+    expect(eventsOf(logger.lines)).toEqual(["email.dev_mode_skip"]);
+    expectNoAddress(logger.lines);
+  });
+
+  it("on a send, from the platform's default sender, and on its replay", async () => {
+    process.env["RESEND_API_KEY"] = "re_test_key";
+    resendSendMock.mockResolvedValueOnce({ data: { id: "msg-1" }, error: null });
+    const db = makeFakeDb();
+    const logger = apiLogger();
+    const options = { db: db as never, idempotencyKey: "enquiry-acknowledged:e2", logger: logger.log };
+    expect(await sendEmail(payload, options)).toBe(true);
+    expect(await sendEmail(payload, options)).toBe(true);
+    await logger.close();
+
+    expect(eventsOf(logger.lines)).toEqual(["email.default_sender", "email.sent", "email.dedup_skip"]);
+    expectNoAddress(logger.lines);
+    // The audit row still says who it went to.
+    expect(db.rows[0]?.recipient).toBe(ADDRESS);
+  });
+
+  it("when the provider refuses the address and quotes it, and on the replay that follows", async () => {
+    process.env["RESEND_API_KEY"] = "re_test_key";
+    resendSendMock
+      .mockResolvedValueOnce({ error: { statusCode: 422, message: `Invalid \`to\` field: ${ADDRESS} is not deliverable` } })
+      .mockResolvedValueOnce({ data: { id: "msg-2" }, error: null });
+    const db = makeFakeDb();
+    const logger = apiLogger();
+    const options = { db: db as never, idempotencyKey: "hold-reminder:b1:2026-10-03:t-3", logger: logger.log, sleep: noWait };
+    expect(await sendEmail(payload, options)).toBe(false);
+    expect(await sendEmail(payload, options)).toBe(true);
+    await logger.close();
+
+    expect(eventsOf(logger.lines)).toEqual([
+      "email.default_sender", "email.send_attempt_failed", "email.send_failed",
+      "email.retry_after_failure", "email.default_sender", "email.sent",
+    ]);
+    expectNoAddress(logger.lines);
+    expect(logger.lines.join("")).toContain("[email address] is not deliverable");
+  });
+
+  it("when the network fails on every attempt with the address in the error", async () => {
+    process.env["RESEND_API_KEY"] = "re_test_key";
+    process.env["EMAIL_FROM"] = "Trades Hall Glasgow <events@venue.example>";
+    resendSendMock.mockRejectedValue(new Error(`socket hang up while sending to ${ADDRESS}`));
+    const logger = apiLogger();
+    expect(await sendEmail(payload, { db: makeFakeDb() as never, idempotencyKey: "venue-team-invitation:i1", logger: logger.log, sleep: noWait })).toBe(false);
+    await logger.close();
+
+    expect(eventsOf(logger.lines)).toEqual([...Array<string>(5).fill("email.send_exception"), "email.send_failed"]);
+    expectNoAddress(logger.lines);
+  });
+
+  it("when the audit row cannot be written and the database quotes its parameters", async () => {
+    process.env["RESEND_API_KEY"] = "re_test_key";
+    const failingDb = {
+      insert: () => ({
+        values: () => Promise.reject(new Error(
+          `Failed query: insert into "email_sends" ("idempotency_key", "recipient") values ($1, $2)\nparams: k,${ADDRESS}`,
+        )),
+      }),
+    };
+    const logger = apiLogger();
+    expect(await sendEmail(payload, { db: failingDb as never, idempotencyKey: "request-escalation:r1:a1", logger: logger.log })).toBe(false);
+    await logger.close();
+
+    expect(eventsOf(logger.lines)).toEqual(["email.audit_insert_failed"]);
+    expectNoAddress(logger.lines);
   });
 });

@@ -29,8 +29,8 @@ let server: FastifyInstance;
 beforeAll(async () => { server = await buildServer(); });
 afterAll(async () => { await server.close(); });
 
-const VENUE_ID = "00000000-0000-0000-0000-000000000001";
-const OTHER_VENUE_ID = "00000000-0000-0000-0000-000000000002";
+const VENUE_ID = "00000000-0000-4000-8000-000000000001";
+const OTHER_VENUE_ID = "00000000-0000-4000-8000-000000000002";
 
 function token(role: string, venueId: string | null = VENUE_ID): string {
   return JSON.stringify({ id: `u-${role}`, email: `${role}@test.com`, role, venueId });

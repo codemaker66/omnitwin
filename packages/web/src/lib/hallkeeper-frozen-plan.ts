@@ -18,8 +18,11 @@ export type FrozenPlanResult = { readonly kind: "legacy" } | { readonly kind: "i
   | { readonly kind: "saved"; readonly plan: ProjectedFrozenPlan };
 
 /** Frozen catalogue dimensions and Three Y rotation, with +Z down on the page.
- * This matches the approved PDF; it does not infer chairs from bundle capacity. */
-export function savedFootprintCorners(object: Footprint): readonly PlanPoint[] {
+ * This matches the approved PDF; it does not infer chairs from bundle capacity.
+ * It reads only the footprint, so a visitor's view-only plan draws the same way. */
+export function savedFootprintCorners(
+  object: Pick<Footprint, "x" | "z" | "widthM" | "depthM" | "scale" | "rotationY">,
+): readonly PlanPoint[] {
   const w = object.widthM * object.scale / 2;
   const d = object.depthM * object.scale / 2;
   const c = Math.cos(object.rotationY); const s = Math.sin(object.rotationY);

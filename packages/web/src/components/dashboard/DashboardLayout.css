@@ -102,6 +102,8 @@
 .dashboard-layout-notifications { margin-top: 14px; padding-top: 16px; border-top: 1px solid #d3d8c7; }
 .dashboard-layout-main { min-height: calc(100dvh - 80px); background: #132b25; font-family: Inter, sans-serif; }
 .dashboard-layout-content { padding: 24px; }
+/* The wall display: the page is the whole screen (goal 19 S8). */
+.dashboard-layout-content--bare { padding: 0; min-height: 100dvh; background: #132b25; }
 /* The skip link and a change of view put focus on the workspace itself. The
    whole page is what changed, so it wears no ring (the browser's thin black
    one otherwise framed the entire workspace); the next Tab lands on the

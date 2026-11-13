@@ -193,6 +193,21 @@ describe("activeGuides", () => {
     expect(useSelectionStore.getState().activeGuides).toBe(empty);
   });
 
+  it("keeps the guides it has, without notifying, when a move reports the same ones again", () => {
+    useSelectionStore.getState().setActiveGuides([{ axis: "x", kind: "center", coord: 5, start: 0, end: 10 }]);
+    const shown = useSelectionStore.getState().activeGuides;
+    let notifications = 0;
+    const unsubscribe = useSelectionStore.subscribe(() => { notifications += 1; });
+    useSelectionStore.getState().setActiveGuides([{ axis: "x", kind: "center", coord: 5, start: 0, end: 10 }]);
+    expect(notifications).toBe(0);
+    expect(useSelectionStore.getState().activeGuides).toBe(shown);
+    // A guide that moved is drawn anew.
+    useSelectionStore.getState().setActiveGuides([{ axis: "x", kind: "center", coord: 5, start: 0, end: 11 }]);
+    unsubscribe();
+    expect(notifications).toBe(1);
+    expect(useSelectionStore.getState().activeGuides[0]?.end).toBe(11);
+  });
+
   it("clearSelection resets activeGuides", () => {
     const guides = [{ axis: "z" as const, kind: "edge" as const, coord: 3, start: 0, end: 8 }];
     useSelectionStore.getState().setActiveGuides(guides);

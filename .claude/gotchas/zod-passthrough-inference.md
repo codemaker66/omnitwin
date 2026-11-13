@@ -7,9 +7,10 @@ A default or transform can make a schema's input type differ from its parsed
 output. Check both sides before weakening a schema or adding an assertion.
 
 The current [API client](../../packages/web/src/api/client.ts) declares
-`ResponseSchema<T> = ZodType<T, ZodTypeDef, unknown>`: it accepts untrusted input
-and returns validated `T`. This fixes the older helper assumption that input and
-output must be identical. Prefer a precise boundary schema with the correct generic
+`ResponseSchema<T> = ZodType<T>`: under zod 4 the one-argument form takes `unknown`
+input, so it accepts untrusted input and returns validated `T`. This fixes the older
+helper assumption that input and output must be identical. For what else zod 4
+changed, see [zod4-semantics.md](zod4-semantics.md). Prefer a precise boundary schema with the correct generic
 input type; do not replace validation with `unknown` just to silence inference.
 
 Some metadata is intentionally transported as an opaque optional JSON value and

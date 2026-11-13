@@ -82,7 +82,7 @@ export type SkyPresetHint = z.infer<typeof SkyPresetHintSchema>;
 export const SKY_PRESET_SUNNY_MAX_CLOUD = 2 / 8;
 export const SKY_PRESET_OVERCAST_MIN_CLOUD = 6 / 8;
 
-const IsoUtcSchema = z.string().datetime();
+const IsoUtcSchema = z.iso.datetime();
 const FractionSchema = z.number().min(0).max(1).nullable();
 
 export const SkyCloudSchema = z.object({
@@ -134,7 +134,7 @@ export const SkyAttributionSchema = z.object({
   /** The credit line the source requires to be shown. */
   credit: z.string().min(1),
   licence: z.string().min(1),
-  licenceUrl: z.string().url(),
+  licenceUrl: z.url(),
 }).strict();
 export type SkyAttribution = z.infer<typeof SkyAttributionSchema>;
 
@@ -154,7 +154,7 @@ export const SkyProvenanceSchema = z.object({
 }).strict();
 
 export const VenueSkySchema = z.object({
-  venueId: z.string().uuid(),
+  venueId: z.uuid(),
   kind: SkyKindSchema,
   /** Human-readable source and product, e.g. the Met Office product and
    *  statistic used. */
@@ -193,16 +193,16 @@ export const VenueSkySchema = z.object({
   const validFrom = Date.parse(sky.validFrom);
   const validTo = Date.parse(sky.validTo);
   if (!(validFrom <= at && at <= validTo)) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["at"], message: "at must lie inside [validFrom, validTo]" });
+    ctx.addIssue({ code: "custom", path: ["at"], message: "at must lie inside [validFrom, validTo]" });
   }
   if (sky.kind === "forecast" && sky.degraded !== null) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["degraded"], message: "A forecast is never degraded" });
+    ctx.addIssue({ code: "custom", path: ["degraded"], message: "A forecast is never degraded" });
   }
   if (sky.kind === "normals" && sky.degraded === null) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["degraded"], message: "Normals must state why a forecast was not served" });
+    ctx.addIssue({ code: "custom", path: ["degraded"], message: "Normals must state why a forecast was not served" });
   }
   if ((sky.kind === "normals") !== (sky.climatology !== null)) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["climatology"], message: "Climatology appears with normals and only with normals" });
+    ctx.addIssue({ code: "custom", path: ["climatology"], message: "Climatology appears with normals and only with normals" });
   }
   const { probability, probabilityDefinition } = sky.precipitation;
   if (probability !== null) {
@@ -211,7 +211,7 @@ export const VenueSkySchema = z.object({
       : sky.kind === "normals" ? "share_of_days_with_at_least_1_mm" : null;
     if (probabilityDefinition === null || probabilityDefinition !== expected) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["precipitation", "probabilityDefinition"],
         message: "A precipitation probability must state the definition that matches its kind",
       });
@@ -223,6 +223,6 @@ export type VenueSky = z.infer<typeof VenueSkySchema>;
 /** Query for `GET /venues/:venueId/sky`. `at` is an ISO 8601 date-time with
  *  a zone designator; absent means now. */
 export const VenueSkyQuerySchema = z.object({
-  at: z.string().datetime({ offset: true }).optional(),
+  at: z.iso.datetime({ offset: true }).optional(),
 });
 export type VenueSkyQuery = z.infer<typeof VenueSkyQuerySchema>;

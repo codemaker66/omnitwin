@@ -1,8 +1,11 @@
 import { describe, it, expect } from "vitest";
 import {
   CANONICAL_ASSETS,
+  assetDisplayName,
   getCanonicalAssetById,
   getCanonicalAssetBySlug,
+  seatBaseSlug,
+  seatsFor,
 } from "../asset-catalogue.js";
 import { FURNITURE_CATEGORIES } from "../furniture.js";
 
@@ -120,5 +123,64 @@ describe("deterministic UUID stability", () => {
   it("banquet-chair has the known deterministic UUID", () => {
     const item = getCanonicalAssetBySlug("banquet-chair");
     expect(item?.id).toBe("4dfcae64-b6e3-54f8-817f-af041edab935");
+  });
+});
+
+describe("the names a guest reads (assetDisplayName)", () => {
+  const turini = getCanonicalAssetBySlug("burgess-turini-18-3");
+
+  it("reads the Turini by the planner's plain name, while its stock identity stays the maker's", () => {
+    expect(turini?.name).toBe("Burgess Turini 18/3");
+    expect(assetDisplayName(turini?.id ?? "", "Burgess Turini 18/3")).toBe("Velvet Banquet Chair");
+  });
+
+  it("keeps the stored name for items without a plain name and for items outside the catalogue", () => {
+    const round = getCanonicalAssetBySlug("round-table-6ft");
+    expect(assetDisplayName(round?.id ?? "", "6ft Round Table")).toBe("6ft Round Table");
+    expect(assetDisplayName("00000000-0000-4000-8000-000000000000", "A venue's own lectern")).toBe("A venue's own lectern");
+  });
+
+  it("never gives two different items the same name a guest reads", () => {
+    const shown = CANONICAL_ASSETS.map((asset) => asset.plainName ?? asset.name);
+    expect(new Set(shown).size).toBe(shown.length);
+    for (const asset of CANONICAL_ASSETS) {
+      if (asset.plainName !== undefined) {
+        // A plain name replaces a maker's reference; it is never the same words.
+        expect(asset.plainName).not.toBe(asset.name);
+        expect(asset.plainName).not.toMatch(/\d+\/\d+/u);
+      }
+    }
+  });
+});
+
+describe("seatsFor — seat truth", () => {
+  it("sets the 6 ft round for ten, eight to twelve", () => {
+    expect(seatsFor({ slug: "round-table-6ft" })).toEqual({ default: 10, min: 8, max: 12 });
+  });
+
+  it("gives every cloth and finish variant its base piece's seats", () => {
+    for (const asset of CANONICAL_ASSETS) {
+      const base = seatBaseSlug(asset.slug);
+      if (base === asset.slug) continue;
+      expect(getCanonicalAssetBySlug(base)).toBeDefined();
+      expect(seatsFor(asset)).toEqual(seatsFor({ slug: base }));
+    }
+  });
+
+  it("seats nobody at chairs, poseurs, service tables, staging or AV", () => {
+    for (const slug of ["burgess-turini-18-3", "poseur-table-white", "cake-cutting-table", "ceremony-table", "dancefloor-panel", "lectern"]) {
+      expect(seatsFor({ slug })).toBeNull();
+    }
+  });
+
+  it("only seats tables, and every range holds its default", () => {
+    for (const asset of CANONICAL_ASSETS) {
+      const seats = seatsFor(asset);
+      if (seats === null) continue;
+      expect(asset.category).toBe("table");
+      expect(seats.min).toBeGreaterThanOrEqual(1);
+      expect(seats.min).toBeLessThanOrEqual(seats.default);
+      expect(seats.default).toBeLessThanOrEqual(seats.max);
+    }
   });
 });

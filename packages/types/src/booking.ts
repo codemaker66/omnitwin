@@ -6,7 +6,8 @@ import { z } from "zod";
 // The Diary's commitment axis. A booking is space-time commitment truth:
 // prospect (never blocks), hold (ranked option-ladder pencil), ink (definite;
 // the only kind the DB exclusion constraint arbitrates), internal_block
-// (venue-generated unavailability). Two columns carry the lifecycle:
+// (venue-generated unavailability), viewing (a show-round: the room is in use
+// while someone is shown it; Canon §17 gap 3). Two columns carry the lifecycle:
 //
 //   kind    — what the commitment IS; mutates only on promotion
 //             (prospect→hold, prospect→ink, hold→ink)
@@ -24,21 +25,55 @@ import { z } from "zod";
 // nothing here encodes legal, licensing, fire, or occupancy determinations.
 // ---------------------------------------------------------------------------
 
-export const BookingIdSchema = z.string().uuid();
+export const BookingIdSchema = z.uuid();
 export type BookingId = z.infer<typeof BookingIdSchema>;
 
-export const TurnaroundRuleIdSchema = z.string().uuid();
+export const TurnaroundRuleIdSchema = z.uuid();
 export type TurnaroundRuleId = z.infer<typeof TurnaroundRuleIdSchema>;
 
-const IsoInstantSchema = z.string().datetime({ offset: true });
+const IsoInstantSchema = z.iso.datetime({ offset: true });
 
 // ---------------------------------------------------------------------------
 // Vocabulary
 // ---------------------------------------------------------------------------
 
-export const BOOKING_KINDS = ["prospect", "hold", "ink", "internal_block"] as const;
+export const BOOKING_KINDS = ["prospect", "hold", "ink", "internal_block", "viewing"] as const;
 export const BookingKindSchema = z.enum(BOOKING_KINDS);
 export type BookingKind = z.infer<typeof BookingKindSchema>;
+
+/**
+ * A viewing is a show-round (migration 0100, the enquiry funnel): someone is
+ * shown a room, so the room is in use for that time and the conflict engine
+ * says when it overlaps a confirmed booking or another viewing. It is never a
+ * commitment of the date: it makes no room busy or held on any public read,
+ * it is never promoted, and it belongs to the enquiry it was booked for (or to
+ * none, a walk-in booked from the Diary), never to an event
+ * (bookings_viewing_has_no_event). Show-rounds per booking, one of the
+ * funnel's leading measures, count the viewings booked for an enquiry.
+ */
+export const VIEWING_BOOKING_KIND = "viewing" as const satisfies BookingKind;
+
+/** Said wherever a viewing is offered an event: it is a show-round for an
+ *  enquiry, never part of an event (bookings_viewing_has_no_event). */
+export const VIEWING_HAS_NO_EVENT_MESSAGE = "A viewing is booked for an enquiry, not an event, so it takes no event.";
+
+/**
+ * Why a booking was lost, when the person marking it says (migration 0100).
+ * A short fixed list so the reasons can be counted month by month; the
+ * transition's note keeps the detail. Blake, 19 October 2026, chose the list
+ * plus the note, optional for now so the Diary's lost step keeps working.
+ */
+export const BOOKING_LOST_REASONS = [
+  "price",
+  "date_taken",
+  "room_unsuitable",
+  "chose_elsewhere",
+  "plans_changed",
+  "no_reply",
+  "other",
+] as const;
+export const BookingLostReasonSchema = z.enum(BOOKING_LOST_REASONS);
+export type BookingLostReason = z.infer<typeof BookingLostReasonSchema>;
 
 export const BOOKING_EXIT_STATES = ["released", "expired", "cancelled", "lost"] as const;
 export type BookingExitState = (typeof BOOKING_EXIT_STATES)[number];
@@ -100,10 +135,87 @@ export const ROOM_BLOCKING_BOOKING_KINDS = ["ink", "internal_block"] as const sa
  */
 export const ROOM_OPTION_BOOKING_KINDS = ["hold"] as const satisfies readonly BookingKind[];
 
+/**
+ * The public answer when Venviewer's diary holds nothing for a room on a date.
+ * It is deliberately not "free" (fix-first item 4, 16 October 2026): the
+ * Diary does not yet hold every venue's whole forward book, which still lives
+ * partly in other systems, email and paper, so an empty Diary day is a fact
+ * about the Diary, not about the room. The token says so itself, so an AI
+ * assistant that keeps only the word still cannot tell a person the room is
+ * available.
+ */
+export const PUBLIC_DAY_NO_BOOKING = "no_booking_on_our_diary_team_confirms";
+
 /** A room's public answer for one date, in precedence order: a confirmed
- *  booking or venue block beats a provisional option, which beats nothing. */
-export const PUBLIC_DAY_STATUSES = ["free", "held", "busy"] as const;
+ *  booking or venue block beats a provisional option, which beats nothing on
+ *  the Diary. */
+export const PUBLIC_DAY_STATUSES = [PUBLIC_DAY_NO_BOOKING, "held", "busy"] as const;
 export type PublicDayStatus = (typeof PUBLIC_DAY_STATUSES)[number];
+
+/**
+ * The one wording for each public date answer, used by the public MCP and by
+ * any web surface that shows a public date status, so the two can never say
+ * different things. They are shown only for a room whose forward book the
+ * venue has recorded as on the Diary (publicRoomAnswer below); every other
+ * room answers PUBLIC_ROOM_ASK_THE_TEAM. `label` is the short form for a calendar cell or a list;
+ * `meaning` is the full sentence an assistant can repeat to a person. Neither
+ * ever says "available" or "free": only the venue team confirms a date.
+ */
+export const PUBLIC_DAY_STATUS_WORDING: Readonly<Record<PublicDayStatus, {
+  readonly label: string;
+  readonly meaning: string;
+}>> = {
+  [PUBLIC_DAY_NO_BOOKING]: {
+    label: "Nothing on our diary — the team confirms",
+    meaning:
+      "Venviewer's diary for this venue shows no confirmed booking, closure or provisional option in this room on this date. "
+      + "The venue may hold bookings that are not on this diary yet, so this is not a confirmation: "
+      + "only the venue team can confirm a date, when you enquire.",
+  },
+  held: {
+    label: "Held — enquire",
+    meaning:
+      "Someone has a provisional option on this room for this date. A second option may be possible: "
+      + "contact the venue team to ask. Only the venue team can confirm a date, when you enquire.",
+  },
+  busy: {
+    label: "Booked",
+    meaning: "The room has a confirmed booking or a venue closure at some time on this date.",
+  },
+};
+
+/**
+ * A room's public answer until the venue has recorded that the room's whole
+ * forward book is on the Diary (Blake, 17 October 2026: "hide date status
+ * until checked"). The Diary still lacks bookings kept in other systems,
+ * email and paper, so for such a room no date is described as booked, held or
+ * empty: the answer is to ask the venue team. Recording and clearing that
+ * record belongs to the venue's admin or manager (forward-book.ts).
+ */
+export const PUBLIC_ROOM_ASK_THE_TEAM = "ask_the_team";
+
+/** What a public surface says about a room's dates: its date statuses
+ *  ("dates"), or only that the venue team answers ("ask_the_team"). */
+export const PUBLIC_ROOM_ANSWERS = ["dates", PUBLIC_ROOM_ASK_THE_TEAM] as const;
+export type PublicRoomAnswer = (typeof PUBLIC_ROOM_ANSWERS)[number];
+
+/** The one wording for a room whose dates are not shown, for the MCP and any
+ *  web surface, beside PUBLIC_DAY_STATUS_WORDING. */
+export const PUBLIC_ROOM_ASK_THE_TEAM_WORDING: Readonly<{ readonly label: string; readonly meaning: string }> = {
+  label: "Ask the team",
+  meaning:
+    "The venue team has not yet confirmed that Venviewer's diary holds every booking for this room, "
+    + "so this service says nothing about its dates. Ask the venue team about any date: they answer every enquiry themselves.",
+};
+
+/**
+ * The one rule every public surface applies before it shows a room's dates:
+ * only while the venue's record that the room's forward book is on the Diary
+ * stands. No record, or a cleared one, answers "ask_the_team".
+ */
+export function publicRoomAnswer(forwardBookCheckedAt: string | Date | null | undefined): PublicRoomAnswer {
+  return forwardBookCheckedAt === null || forwardBookCheckedAt === undefined ? PUBLIC_ROOM_ASK_THE_TEAM : "dates";
+}
 
 const ROOM_BLOCKING_KIND_SET: ReadonlySet<BookingKind> = new Set(ROOM_BLOCKING_BOOKING_KINDS);
 const ROOM_OPTION_KIND_SET: ReadonlySet<BookingKind> = new Set(ROOM_OPTION_BOOKING_KINDS);
@@ -121,9 +233,10 @@ export function bookingRoomStatus(booking: {
   return null;
 }
 
-/** The day's answer from the bookings that touch it: busy beats held beats free. */
+/** The day's answer from the bookings that touch it: busy beats held beats
+ *  nothing on the Diary. */
 export function publicDayStatus(effects: Iterable<"busy" | "held">): PublicDayStatus {
-  let status: PublicDayStatus = "free";
+  let status: PublicDayStatus = PUBLIC_DAY_NO_BOOKING;
   for (const effect of effects) {
     if (effect === "busy") return "busy";
     status = "held";
@@ -159,6 +272,8 @@ export const VALID_BOOKING_TRANSITIONS: Readonly<
   hold: ["ink", "released", "expired", "lost"],
   ink: ["cancelled"],
   internal_block: ["released"],
+  // A show-round that took place stays as it is; one called off is cancelled.
+  viewing: ["cancelled"],
   released: [],
   expired: [],
   cancelled: [],
@@ -177,27 +292,33 @@ export function isValidBookingTransition(from: BookingState, to: BookingState): 
 
 export const BookingSchema = z.object({
   id: BookingIdSchema,
-  venueId: z.string().uuid(),
-  spaceId: z.string().uuid(),
-  eventId: z.string().uuid().nullable(),
+  venueId: z.uuid(),
+  spaceId: z.uuid(),
+  eventId: z.uuid().nullable(),
   kind: BookingKindSchema,
   status: BookingLivenessSchema,
   state: BookingStateSchema,
-  title: z.string().min(1).max(200),
+  // As stored, which may be "" (see CalendarBookingEntrySchema, API-9): a
+  // write's reply that refused it failed after the write had landed.
+  title: z.string().max(200),
   eventType: z.string().max(80).nullable(),
   startsAt: IsoInstantSchema,
   endsAt: IsoInstantSchema,
   rank: z.number().int().min(1).nullable(),
   jointFlag: z.boolean(),
   decisionAt: IsoInstantSchema.nullable(),
-  ownerUserId: z.string().uuid().nullable(),
+  ownerUserId: z.uuid().nullable(),
   nextAction: z.string().max(500).nullable(),
   nextActionDueAt: IsoInstantSchema.nullable(),
-  seriesId: z.string().uuid().nullable(),
+  seriesId: z.uuid().nullable(),
   notes: z.string().max(2000).nullable(),
-  createdBy: z.string().uuid().nullable(),
+  createdBy: z.uuid().nullable(),
   /** Conversion provenance (T-496): the enquiry this booking was pencilled from. */
-  enquiryId: z.string().uuid().nullable(),
+  enquiryId: z.uuid().nullable(),
+  /** Why it was lost, when the person marking it said (migration 0100); only
+   *  ever set on a lost booking. Optional so a reader newer than the API it
+   *  talks to still parses an older API's bookings. */
+  lostReason: BookingLostReasonSchema.nullable().optional(),
   createdAt: IsoInstantSchema,
   updatedAt: IsoInstantSchema,
 });
@@ -221,16 +342,16 @@ const HOLD_REQUIREMENT_WORDS: Readonly<Record<string, string>> = {
 
 function addRequiredHoldIssue(ctx: z.RefinementCtx, field: string): void {
   ctx.addIssue({
-    code: z.ZodIssueCode.custom,
+    code: "custom",
     path: [field],
     message: `A provisional hold needs ${HOLD_REQUIREMENT_WORDS[field] ?? field}.`,
   });
 }
 
 const CreateBookingBaseSchema = z.object({
-  venueId: z.string().uuid(),
-  spaceId: z.string().uuid(),
-  eventId: z.string().uuid().optional(),
+  venueId: z.uuid(),
+  spaceId: z.uuid(),
+  eventId: z.uuid().optional(),
   kind: BookingKindSchema,
   title: z.string().trim().min(1).max(200),
   eventType: z.string().trim().min(1).max(80).optional(),
@@ -239,17 +360,17 @@ const CreateBookingBaseSchema = z.object({
   rank: z.number().int().min(1).optional(),
   jointFlag: z.boolean().optional(),
   decisionAt: IsoInstantSchema.optional(),
-  ownerUserId: z.string().uuid().optional(),
+  ownerUserId: z.uuid().optional(),
   nextAction: z.string().max(500).optional(),
   nextActionDueAt: IsoInstantSchema.optional(),
-  seriesId: z.string().uuid().optional(),
+  seriesId: z.uuid().optional(),
   notes: z.string().max(2000).optional(),
 });
 
 export const CreateBookingSchema = CreateBookingBaseSchema.superRefine((value, ctx) => {
   if (Date.parse(value.endsAt) <= Date.parse(value.startsAt)) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["endsAt"],
       message: "endsAt must be after startsAt — a booking occupies a real interval.",
     });
@@ -263,9 +384,16 @@ export const CreateBookingSchema = CreateBookingBaseSchema.superRefine((value, c
     if (value.nextActionDueAt === undefined) addRequiredHoldIssue(ctx, "nextActionDueAt");
   } else if (value.rank !== undefined) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["rank"],
       message: "Only a provisional hold has an option number.",
+    });
+  }
+  if (value.kind === VIEWING_BOOKING_KIND && value.eventId !== undefined) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["eventId"],
+      message: VIEWING_HAS_NO_EVENT_MESSAGE,
     });
   }
 });
@@ -279,8 +407,8 @@ export type CreateBookingInput = z.infer<typeof CreateBookingSchema>;
 export const UpdateBookingSchema = z
   .object({
     // Cross-lane move (the Board): a booking may change room, never lose one.
-    spaceId: z.string().uuid().optional(),
-    eventId: z.string().uuid().nullable().optional(),
+    spaceId: z.uuid().optional(),
+    eventId: z.uuid().nullable().optional(),
     title: z.string().trim().min(1).max(200).optional(),
     eventType: z.string().trim().min(1).max(80).nullable().optional(),
     startsAt: IsoInstantSchema.optional(),
@@ -288,10 +416,10 @@ export const UpdateBookingSchema = z
     rank: z.number().int().min(1).optional(),
     jointFlag: z.boolean().optional(),
     decisionAt: IsoInstantSchema.optional(),
-    ownerUserId: z.string().uuid().optional(),
+    ownerUserId: z.uuid().optional(),
     nextAction: z.string().trim().min(1).max(500).optional(),
     nextActionDueAt: IsoInstantSchema.optional(),
-    seriesId: z.string().uuid().nullable().optional(),
+    seriesId: z.uuid().nullable().optional(),
     notes: z.string().max(2000).nullable().optional(),
   })
   .strict()
@@ -302,7 +430,7 @@ export const UpdateBookingSchema = z
       Date.parse(value.endsAt) <= Date.parse(value.startsAt)
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["endsAt"],
         message: "endsAt must be after startsAt — a booking occupies a real interval.",
       });
@@ -317,7 +445,7 @@ export type UpdateBookingInput = z.infer<typeof UpdateBookingSchema>;
  *  lack any, and the owner defaults to whoever makes it provisional. */
 export const TransitionHoldSchema = z.object({
   decisionAt: IsoInstantSchema.optional(),
-  ownerUserId: z.string().uuid().optional(),
+  ownerUserId: z.uuid().optional(),
   nextAction: z.string().trim().min(1).max(500).optional(),
   nextActionDueAt: IsoInstantSchema.optional(),
   rank: z.number().int().min(1).optional(),
@@ -329,9 +457,15 @@ export const TransitionBookingSchema = z.object({
   toState: BookingStateSchema,
   note: z.string().max(2000).optional(),
   hold: TransitionHoldSchema.optional(),
+  /** Why it was lost (migration 0100). Optional: a lost step that names no
+   *  reason still records the loss. */
+  lostReason: BookingLostReasonSchema.optional(),
 }).refine((input) => input.hold === undefined || input.toState === "hold", {
   message: "Only a booking made provisional takes a hold's details.",
   path: ["hold"],
+}).refine((input) => input.lostReason === undefined || input.toState === "lost", {
+  message: "Only a booking marked lost takes a lost reason.",
+  path: ["lostReason"],
 });
 export type TransitionBookingInput = z.infer<typeof TransitionBookingSchema>;
 
@@ -343,8 +477,8 @@ export type TransitionBookingInput = z.infer<typeof TransitionBookingSchema>;
  */
 export const ConvertEnquirySchema = z
   .object({
-    enquiryId: z.string().uuid(),
-    spaceId: z.string().uuid().optional(),
+    enquiryId: z.uuid(),
+    spaceId: z.uuid().optional(),
     title: z.string().trim().min(1).max(200).optional(),
     eventType: z.string().trim().min(1).max(80).optional(),
     startsAt: IsoInstantSchema,
@@ -352,7 +486,7 @@ export const ConvertEnquirySchema = z
     rank: z.number().int().min(1).optional(),
     jointFlag: z.boolean().optional(),
     decisionAt: IsoInstantSchema,
-    ownerUserId: z.string().uuid(),
+    ownerUserId: z.uuid(),
     nextAction: z.string().trim().min(1).max(500),
     nextActionDueAt: IsoInstantSchema,
     notes: z.string().max(2000).optional(),
@@ -360,13 +494,42 @@ export const ConvertEnquirySchema = z
   .superRefine((value, ctx) => {
     if (Date.parse(value.endsAt) <= Date.parse(value.startsAt)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["endsAt"],
         message: "endsAt must be after startsAt — a booking occupies a real interval.",
       });
     }
   });
 export type ConvertEnquiryInput = z.infer<typeof ConvertEnquirySchema>;
+
+/**
+ * A viewing booked for an enquiry (migration 0100): a show-round of a room,
+ * owned by whoever hosts it (the owner defaults to the person booking it). The
+ * room defaults to the enquiry's when the guest chose one, the title to the
+ * enquiry's name. A viewing carries no hold's hygiene and takes no event, so
+ * it never changes where the enquiry's event stands.
+ */
+export const BookViewingSchema = z
+  .object({
+    enquiryId: z.uuid(),
+    spaceId: z.uuid().optional(),
+    title: z.string().trim().min(1).max(200).optional(),
+    startsAt: IsoInstantSchema,
+    endsAt: IsoInstantSchema,
+    ownerUserId: z.uuid().optional(),
+    notes: z.string().max(2000).optional(),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if (Date.parse(value.endsAt) <= Date.parse(value.startsAt)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["endsAt"],
+        message: "endsAt must be after startsAt — a booking occupies a real interval.",
+      });
+    }
+  });
+export type BookViewingInput = z.infer<typeof BookViewingSchema>;
 
 // ---------------------------------------------------------------------------
 // Turnaround rules — minimal v0 (per space + event type, minutes), shaped
@@ -375,8 +538,8 @@ export type ConvertEnquiryInput = z.infer<typeof ConvertEnquirySchema>;
 
 export const TurnaroundRuleSchema = z.object({
   id: TurnaroundRuleIdSchema,
-  venueId: z.string().uuid(),
-  spaceId: z.string().uuid().nullable(),
+  venueId: z.uuid(),
+  spaceId: z.uuid().nullable(),
   eventType: z.string().max(80).nullable(),
   name: z.string().min(1).max(200),
   minutes: z.number().int().nonnegative(),
@@ -410,14 +573,14 @@ export type TurnaroundRuleSetting = z.infer<typeof TurnaroundRuleSettingSchema>;
 export const TurnaroundRulesResponseSchema = z.object({
   rules: z.array(TurnaroundRuleSettingSchema),
   /** The venue's rooms, in the venue's own order. */
-  rooms: z.array(z.object({ id: z.string().uuid(), name: z.string() })),
+  rooms: z.array(z.object({ id: z.uuid(), name: z.string() })),
   /** Event types the venue's bookings and events use, most used first. */
   eventTypes: z.array(z.string()),
 });
 export type TurnaroundRulesResponse = z.infer<typeof TurnaroundRulesResponseSchema>;
 
 export const CreateTurnaroundRuleSchema = z.object({
-  spaceId: z.string().uuid().nullable(),
+  spaceId: z.uuid().nullable(),
   eventType: z.string().trim().min(1).max(80).nullable(),
   minutes: TurnaroundMinutesSchema,
 });
@@ -444,6 +607,9 @@ export const CALENDAR_CONFLICT_TYPES = [
   "ink_double_book",
   "hold_overlap",
   "insufficient_turnaround",
+  // A viewing in a room that is in use: a confirmed booking, its set-up or
+  // breakdown, or a house block (warning); another viewing (info).
+  "viewing_overlap",
 ] as const;
 export const CalendarConflictTypeSchema = z.enum(CALENDAR_CONFLICT_TYPES);
 export type CalendarConflictType = z.infer<typeof CalendarConflictTypeSchema>;
@@ -452,7 +618,7 @@ export const CalendarConflictSchema = z.object({
   id: z.string().min(1),
   type: CalendarConflictTypeSchema,
   severity: ConflictSeveritySchema,
-  spaceId: z.string().uuid(),
+  spaceId: z.uuid(),
   entryIds: z.tuple([z.string().min(1), z.string().min(1)]),
   explanation: z.string().min(1),
 });
@@ -485,17 +651,18 @@ const MAX_CALENDAR_RANGE_MS = MAX_CALENDAR_RANGE_DAYS * 24 * 60 * 60 * 1000;
 
 export const CalendarQuerySchema = z
   .object({
-    venueId: z.string().uuid(),
+    venueId: z.uuid(),
     from: IsoInstantSchema,
     to: IsoInstantSchema,
-    spaceIds: z.array(z.string().uuid()).min(1).optional(),
+    // A venue's rooms; far above any venue's count, it only refuses abuse.
+    spaceIds: z.array(z.uuid()).min(1).max(200).optional(),
   })
   .superRefine((value, ctx) => {
     const fromMs = Date.parse(value.from);
     const toMs = Date.parse(value.to);
     if (toMs <= fromMs) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["to"],
         message: "to must be after from.",
       });
@@ -503,7 +670,7 @@ export const CalendarQuerySchema = z
     }
     if (toMs - fromMs > MAX_CALENDAR_RANGE_MS) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["to"],
         message: `Calendar range must not exceed ${String(MAX_CALENDAR_RANGE_DAYS)} days.`,
       });
@@ -512,7 +679,7 @@ export const CalendarQuerySchema = z
 export type CalendarQuery = z.infer<typeof CalendarQuerySchema>;
 
 export const CalendarRoomSchema = z.object({
-  id: z.string().uuid(),
+  id: z.uuid(),
   name: z.string().min(1),
   slug: z.string().min(1),
   sortOrder: z.number().int(),
@@ -522,22 +689,27 @@ export type CalendarRoom = z.infer<typeof CalendarRoomSchema>;
 export const CalendarBookingEntrySchema = z.object({
   entryType: z.literal("booking"),
   id: BookingIdSchema,
-  spaceId: z.string().uuid(),
+  spaceId: z.uuid(),
   kind: BookingKindSchema,
   status: BookingLivenessSchema,
   state: BookingStateSchema,
-  title: z.string().min(1).max(200),
+  // What is stored, which may be "": rows written before #350 took a public
+  // enquiry's blank name as their title. Every writer refuses an empty title
+  // (Create/UpdateBookingSchema), so giving the booking one in the Diary is
+  // how such a row is put right; refusing it here failed the venue's whole
+  // range on GET /calendar instead (API-9).
+  title: z.string().max(200),
   eventType: z.string().max(80).nullable(),
   startsAt: IsoInstantSchema,
   endsAt: IsoInstantSchema,
   rank: z.number().int().min(1).nullable(),
   jointFlag: z.boolean(),
   decisionAt: IsoInstantSchema.nullable(),
-  ownerUserId: z.string().uuid().nullable(),
+  ownerUserId: z.uuid().nullable(),
   nextAction: z.string().max(500).nullable(),
   nextActionDueAt: IsoInstantSchema.nullable(),
-  eventId: z.string().uuid().nullable(),
-  seriesId: z.string().uuid().nullable(),
+  eventId: z.uuid().nullable(),
+  seriesId: z.uuid().nullable(),
   // --- Command Centre card face (C1) -------------------------------------
   // Optional so older servers and recorded fixtures stay valid (the
   // turnaroundRules contract); nullable because a booking may have no
@@ -559,10 +731,13 @@ export type CalendarBookingEntry = z.infer<typeof CalendarBookingEntrySchema>;
 /** Room-scoped, timed phases only — the Occupancy Footprint on a lane. */
 export const CalendarPhaseEntrySchema = z.object({
   entryType: z.literal("phase"),
-  id: z.string().uuid(),
-  spaceId: z.string().uuid(),
-  eventId: z.string().uuid(),
-  eventName: z.string().min(1),
+  id: z.uuid(),
+  spaceId: z.uuid(),
+  eventId: z.uuid(),
+  // As stored, trimmed, and at most an event's name: GET /calendar names an
+  // event stored without one by eventNameFor, and this read still takes "",
+  // since refusing it failed the venue's whole range once a phase was placed.
+  eventName: z.string().trim().max(200),
   name: z.string().min(1),
   startsAt: IsoInstantSchema,
   endsAt: IsoInstantSchema,
@@ -583,7 +758,7 @@ export type CalendarEntry = z.infer<typeof CalendarEntrySchema>;
  *  that do not exist yet (the When ribbon's hatched shoulders) — guidance
  *  for the team's own judgement, never an enforced gap. */
 export const CalendarTurnaroundRuleSchema = z.object({
-  spaceId: z.string().uuid().nullable(),
+  spaceId: z.uuid().nullable(),
   eventType: z.string().max(80).nullable(),
   name: z.string().min(1).max(200),
   minutes: z.number().int().nonnegative(),
@@ -662,7 +837,7 @@ export const CONTESTED_LIMIT = 20;
  *  booking, as the conflict engine's hold overlap counts them. Bookings that
  *  cross in a chain (A with B, B with C) are one contested time. */
 export const CalendarContestedDateSchema = z.object({
-  spaceId: z.string().uuid(),
+  spaceId: z.uuid(),
   /** The earliest start and latest end of the bookings in contest. */
   startsAt: IsoInstantSchema,
   endsAt: IsoInstantSchema,
@@ -688,7 +863,7 @@ export const CalendarContestedSchema = z.object({
 export type CalendarContested = z.infer<typeof CalendarContestedSchema>;
 
 export const CalendarResponseSchema = z.object({
-  venueId: z.string().uuid(),
+  venueId: z.uuid(),
   range: z.object({ from: IsoInstantSchema, to: IsoInstantSchema }),
   rooms: z.array(CalendarRoomSchema),
   entries: z.array(CalendarEntrySchema),

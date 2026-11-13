@@ -37,17 +37,18 @@ import { api } from "./client.js";
  * canonical `ConfigurationSheetSnapshotSchema`.
  */
 const SnapshotEnvelopeSchema = z.object({
-  id: z.string().uuid(),
-  configurationId: z.string().uuid(),
+  id: z.uuid(),
+  configurationId: z.uuid(),
   version: z.number().int().positive(),
-  payload: z.unknown(),
-  diagramUrl: z.string().url().nullable(),
-  pdfUrl: z.string().url().nullable(),
+  // Optional as under zod 3, which let an object omit an unknown-typed key.
+  payload: z.unknown().optional(),
+  diagramUrl: z.url().nullable(),
+  pdfUrl: z.url().nullable(),
   sourceHash: z.string().regex(/^[0-9a-f]{64}$/),
-  createdAt: z.string().datetime(),
-  createdBy: z.string().uuid().nullable(),
-  approvedAt: z.string().datetime().nullable(),
-  approvedBy: z.string().uuid().nullable(),
+  createdAt: z.iso.datetime(),
+  createdBy: z.uuid().nullable(),
+  approvedAt: z.iso.datetime().nullable(),
+  approvedBy: z.uuid().nullable(),
 });
 
 export type SnapshotEnvelope = z.infer<typeof SnapshotEnvelopeSchema>;
@@ -98,26 +99,26 @@ const GenericStatusResponseSchema = z.object({
 });
 
 const ReviewHistoryEntrySchema = z.object({
-  id: z.string().uuid(),
-  configurationId: z.string().uuid(),
+  id: z.uuid(),
+  configurationId: z.uuid(),
   fromStatus: ReviewStatusSchema,
   toStatus: ReviewStatusSchema,
   // Display name of the acting user. Never the raw UUID — see the
   // matching schema in @omnitwin/types/configuration-review for why.
   changedByName: z.string().nullable(),
   note: z.string().nullable(),
-  createdAt: z.string().datetime(),
+  createdAt: z.iso.datetime(),
 });
 
 export type ReviewHistoryEntry = z.infer<typeof ReviewHistoryEntrySchema>;
 
 const ReviewHistoryResponseSchema = z.object({
-  configurationId: z.string().uuid(),
+  configurationId: z.uuid(),
   entries: z.array(ReviewHistoryEntrySchema),
 });
 
 const AvailableTransitionsResponseSchema = z.object({
-  configurationId: z.string().uuid(),
+  configurationId: z.uuid(),
   currentStatus: ReviewStatusSchema,
   availableTransitions: z.array(ReviewStatusSchema),
   internalDemoReviewEligible: z.boolean().default(false),
@@ -130,15 +131,15 @@ const SnapshotResponseSchema = SnapshotEnvelopeSchema;
 // ---------------------------------------------------------------------------
 
 const ActiveReviewerSchema = z.object({
-  userId: z.string().uuid(),
+  userId: z.uuid(),
   displayName: z.string(),
-  lastSeenAt: z.string().datetime(),
+  lastSeenAt: z.iso.datetime(),
 });
 
 export type ActiveReviewer = z.infer<typeof ActiveReviewerSchema>;
 
 const ReviewViewersResponseSchema = z.object({
-  configurationId: z.string().uuid(),
+  configurationId: z.uuid(),
   viewers: z.array(ActiveReviewerSchema),
 });
 
@@ -151,9 +152,11 @@ const HeartbeatResponseSchema = z.object({
 // ---------------------------------------------------------------------------
 
 /**
- * Submit a configuration for review. Idempotent: if the layout is
- * identical to the latest snapshot, `created` returns false and the
- * existing snapshot is echoed back without a state transition.
+ * Submit a configuration for review. From a draft identical to the latest
+ * snapshot, `created` returns false and the existing snapshot is echoed
+ * back without a state transition. A layout the venue sent back, or its
+ * planner withdrew, always goes back to the venue: `created` says whether
+ * that made a new version.
  */
 export async function submitForReview(
   configId: string,
@@ -186,13 +189,17 @@ export async function startReview(configId: string): Promise<ConfigurationReview
   return res.reviewStatus;
 }
 
+/** A decision names the version it was judged on (`snapshotId`): the API
+ *  refuses it with 409 SNAPSHOT_CONFLICT once a newer one was submitted. */
 export async function approveLayout(
   configId: string,
   note?: string,
   notifyTeam?: boolean,
+  snapshotId?: string,
 ): Promise<{ notificationPolicy?: ReviewNotificationPolicy; reviewStatus: "approved"; snapshot: SnapshotEnvelope }> {
   const body = { ...(note !== undefined && note.trim().length > 0 ? { note: note.trim() } : {}),
-    ...(notifyTeam !== undefined ? { notifyTeam } : {}) };
+    ...(notifyTeam !== undefined ? { notifyTeam } : {}),
+    ...(snapshotId !== undefined ? { snapshotId } : {}) };
   const res = await api.post(
     `/configurations/${configId}/review/approve`,
     body,
@@ -205,6 +212,7 @@ export async function approveLayout(
 export async function rejectLayout(
   configId: string,
   note: string,
+  snapshotId?: string,
 ): Promise<ConfigurationReviewStatus> {
   const trimmed = note.trim();
   if (trimmed.length === 0) {
@@ -212,7 +220,7 @@ export async function rejectLayout(
   }
   const res = await api.post(
     `/configurations/${configId}/review/reject`,
-    { note: trimmed },
+    { note: trimmed, ...(snapshotId !== undefined ? { snapshotId } : {}) },
     undefined,
     GenericStatusResponseSchema,
   );
@@ -222,6 +230,7 @@ export async function rejectLayout(
 export async function requestChanges(
   configId: string,
   note: string,
+  snapshotId?: string,
 ): Promise<ConfigurationReviewStatus> {
   const trimmed = note.trim();
   if (trimmed.length === 0) {
@@ -229,7 +238,7 @@ export async function requestChanges(
   }
   const res = await api.post(
     `/configurations/${configId}/review/request-changes`,
-    { note: trimmed },
+    { note: trimmed, ...(snapshotId !== undefined ? { snapshotId } : {}) },
     undefined,
     GenericStatusResponseSchema,
   );
@@ -386,21 +395,21 @@ export interface PendingReviewEntry {
 }
 
 const PendingReviewEntrySchema = z.object({
-  id: z.string().uuid(),
+  id: z.uuid(),
   name: z.string(),
-  venueId: z.string().uuid(),
-  spaceId: z.string().uuid(),
-  userId: z.string().uuid().nullable(),
+  venueId: z.uuid(),
+  spaceId: z.uuid(),
+  userId: z.uuid().nullable(),
   reviewStatus: ReviewStatusSchema,
-  submittedAt: z.string().datetime().nullable(),
-  updatedAt: z.string().datetime(),
+  submittedAt: z.iso.datetime().nullable(),
+  updatedAt: z.iso.datetime(),
   guestCount: z.number().int().nonnegative(),
   // The desk's row facts (roadmap X2). An API from before them says nothing,
   // and the desk then shows none rather than a guess.
   spaceName: z.string().nullable().default(null),
   plannerName: z.string().nullable().default(null),
-  eventStartsAt: z.string().datetime().nullable().default(null),
-  stageSince: z.string().datetime().nullable().default(null),
+  eventStartsAt: z.iso.datetime().nullable().default(null),
+  stageSince: z.iso.datetime().nullable().default(null),
   stageByName: z.string().nullable().default(null),
 });
 

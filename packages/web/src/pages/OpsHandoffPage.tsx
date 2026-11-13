@@ -10,6 +10,7 @@ import "./OpsHandoffPage.css";
 import { DashboardLayout } from "../components/dashboard/DashboardLayout.js";
 import { ActivityIndicator } from "../components/shared/Activity.js";
 import { deviceZone, zoneNote } from "../components/hallkeeper/sheet-facts.js";
+import { canDraftWithAI } from "../lib/role-capabilities.js";
 import { useAuthStore } from "../stores/auth-store.js";
 import { useVenueTimezone } from "./hallkeeper/lib/use-venue-timezone.js";
 
@@ -107,6 +108,10 @@ export function OpsHandoffPage(): ReactElement {
   // is the pack's.
   const venueId = useAuthStore((store) => store.user?.venueId ?? null);
   const timeZone = useVenueTimezone(venueId);
+  // The AI draft is the venue team's tool, charged to their venue (T-656);
+  // the owner of a configuration who is not on the team reads the pack
+  // without it.
+  const canDraft = useAuthStore((store) => canDraftWithAI(store.user));
 
   const readyBundle = state.kind === "ready" ? state.bundle : null;
   const taskGroups = useMemo(
@@ -311,23 +316,25 @@ export function OpsHandoffPage(): ReactElement {
             <p>Staff review required.</p>
           </div>
         </div>
-        <div className="ops-handoff-ai-draft">
-          <AIDraftPanel
-            title="AI BEO / supplier draft"
-            useCase="beo_supplier_instruction_draft"
-            actionLabel="Draft handoff wording"
-            context={{
-              handoffPackId: bundle.pack.id,
-              summary: bundle.pack.summary,
-              version: bundle.pack.version,
-              pickListItems: bundle.pickListItems.length,
-              setupTasks: setupTasks.length,
-              roomFlipTasks: roomFlipTasks.length,
-              supplierInstructions: bundle.supplierInstructions.map((instruction) => instruction.title),
-              snapshotDiff: bundle.snapshotDiff.summary,
-            }}
-          />
-        </div>
+        {canDraft && (
+          <div className="ops-handoff-ai-draft">
+            <AIDraftPanel
+              title="AI BEO / supplier draft"
+              useCase="beo_supplier_instruction_draft"
+              actionLabel="Draft handoff wording"
+              context={{
+                handoffPackId: bundle.pack.id,
+                summary: bundle.pack.summary,
+                version: bundle.pack.version,
+                pickListItems: bundle.pickListItems.length,
+                setupTasks: setupTasks.length,
+                roomFlipTasks: roomFlipTasks.length,
+                supplierInstructions: bundle.supplierInstructions.map((instruction) => instruction.title),
+                snapshotDiff: bundle.snapshotDiff.summary,
+              }}
+            />
+          </div>
+        )}
         {/* The compiler writes provenance lines — snapshot hashes, a compiler
             digest — into the BEO body. They are real and worth keeping, but a
             64-character hash on the page a hallkeeper prints is developer

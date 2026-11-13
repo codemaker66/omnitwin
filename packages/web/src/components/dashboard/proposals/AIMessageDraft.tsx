@@ -1,10 +1,11 @@
 import { useEffect, useId, useRef, useState, type ReactElement } from "react";
 import { Sparkles } from "lucide-react";
-import { MAX_CLIENT_MESSAGE_LENGTH, findUnsupportedProposalClaim, type AIDraft, type ProposalMessageDraft } from "@omnitwin/types";
+import { AI_BUDGET_REACHED, AI_DRAFTS_UNAVAILABLE, MAX_CLIENT_MESSAGE_LENGTH, findUnsupportedProposalClaim, type AIDraft, type ProposalMessageDraft } from "@omnitwin/types";
 import { ApiError } from "../../../api/client.js";
 import { draftProposalMessage } from "../../../api/ai-assistant.js";
 import { markAIDraftsUnavailable, useAIDraftsAvailable } from "../../../hooks/use-ai-drafts-available.js";
 import { ActivityIndicator } from "../../shared/Activity.js";
+import { withheldWords } from "../../../lib/ai-draft-words.js";
 
 // ---------------------------------------------------------------------------
 // Draft the message with AI (roadmap X1, "Use in proposal"), under the
@@ -27,7 +28,9 @@ type Step =
   | { readonly kind: "failed" }
   | { readonly kind: "refused" }
   | { readonly kind: "nothing" }
-  | { readonly kind: "gone" };
+  | { readonly kind: "gone" }
+  // The provider is out of credit until the next grant (C1): not a failure to retry.
+  | { readonly kind: "unavailable" };
 
 /** What a draft was written from, in words: only what the AI was given. */
 export function drewOnWords(drewOn: DrewOn): string {
@@ -63,7 +66,7 @@ interface AIMessageDraftProps {
 }
 
 export function AIMessageDraft({ proposalId, canUse, onUse, onShown }: AIMessageDraftProps): ReactElement | null {
-  const available = useAIDraftsAvailable();
+  const available = useAIDraftsAvailable("proposal_draft");
   const [step, setStep] = useState<Step>({ kind: "idle" });
   // Said to a screen reader: the draft on its way, or ready where focus could not go.
   const [said, setSaid] = useState("");
@@ -113,10 +116,20 @@ export function AIMessageDraft({ proposalId, canUse, onUse, onShown }: AIMessage
       .catch((error: unknown) => {
         if (askNumber.current !== mine) return;
         setSaid("");
-        // Only the server's own word that AI is switched off takes it away for
-        // the visit; a proxy's or a deploy's 503 is a failure to try again.
-        if (error instanceof ApiError && error.status === 503 && error.code === "AI_ASSISTANT_DISABLED") {
+        // Only the server's own word takes AI away for the visit: that it is
+        // switched off, or that the venue's AI allowance for the month is
+        // used (T-656). A proxy's or a deploy's 503 is a failure to try again.
+        if (error instanceof ApiError && ((error.status === 503 && error.code === "AI_ASSISTANT_DISABLED")
+          || (error.status === 429 && error.code === AI_BUDGET_REACHED))) {
           setStep({ kind: "gone" });
+          markAIDraftsUnavailable("proposal_draft");
+          setFocusTo("said");
+          return;
+        }
+        // Out of credit until the next grant: every AI draft goes for the
+        // visit, and the booker is told to write this one by hand.
+        if (error instanceof ApiError && error.status === 503 && error.code === AI_DRAFTS_UNAVAILABLE) {
+          setStep({ kind: "unavailable" });
           markAIDraftsUnavailable();
           setFocusTo("said");
           return;
@@ -139,19 +152,26 @@ export function AIMessageDraft({ proposalId, canUse, onUse, onShown }: AIMessage
       });
   };
 
-  if (step.kind !== "gone" && available !== true) return null;
+  if (step.kind !== "gone" && step.kind !== "unavailable" && available !== true) return null;
 
   const drafting = step.kind === "drafting";
   const ready = step.kind === "ready" ? step : null;
   const draft = ready?.draft ?? null;
   const tooLong = draft !== null && draft.body.length > MAX_CLIENT_MESSAGE_LENGTH;
   const claim = draft === null ? null : findUnsupportedProposalClaim(draft.body);
+  // A price, availability or capacity the AI stated was taken out on the server (L6).
+  const withheld = draft === null ? null : withheldWords(draft.withheldCommitments);
   return (
     <div className="pr-ai" ref={cardRef} data-testid="ai-draft">
       <p className="vv-sr-only" role="status" data-testid="ai-draft-said">{said}</p>
       {step.kind === "gone" && (
         <p className="enq-next__hint" ref={saidRef} tabIndex={-1} data-testid="ai-draft-gone">
           AI drafts are not available now. The message is unchanged.
+        </p>
+      )}
+      {step.kind === "unavailable" && (
+        <p className="enq-next__hint" ref={saidRef} tabIndex={-1} data-testid="ai-draft-unavailable">
+          AI drafts are unavailable just now. Write this message by hand; drafts return on their own. The message is unchanged.
         </p>
       )}
       {step.kind === "refused" && (
@@ -191,6 +211,7 @@ export function AIMessageDraft({ proposalId, canUse, onUse, onShown }: AIMessage
           <p className="pr-ai__about" data-testid="ai-draft-from">{drewOnWords(ready.drewOn)}</p>
           <textarea className="pr-ai__body" aria-label="AI draft of the message" data-testid="ai-draft-body" rows={6} readOnly value={draft.body} />
           {draft.safeLanguageApplied && <p className="pr-ai__about">Unsupported certainty was taken out of it.</p>}
+          {withheld !== null && <p className="pr-ai__about" data-testid="ai-draft-withheld">{withheld}</p>}
           {claim !== null && (
             <p className="pr-ai__about" data-testid="ai-draft-claim">
               It includes "{claim}", which a proposal may not say. Change it before saving.

@@ -128,8 +128,8 @@ export const FoundryInspectSourcesInvocationV0Schema = z
     jobId: RuntimeManifestKeySchema,
     jobSpec: FoundryJobSpecV0Schema,
     jobSpecSha256: RuntimeSha256Schema,
-    executionId: z.string().uuid(),
-    attemptId: z.string().uuid(),
+    executionId: z.uuid(),
+    attemptId: z.uuid(),
     attemptOrdinal: z.literal(1),
     fencingToken: PositiveFenceSchema,
     stage: FoundryJobStageSchema,
@@ -162,7 +162,7 @@ export const FoundryInspectSourcesInvocationV0Schema = z
       stage.containerImage !== profile.containerImage
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["stage"],
         message:
           "inspect_sources must use the sealed local, CPU-only, no-network, non-resumable inspection profile",
@@ -185,7 +185,7 @@ export const FoundryInspectSourcesInvocationV0Schema = z
         stableCanonicalJson(toCanonicalJson(stage))
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["jobSpec"],
         message:
           "inspect_sources must bind one exact zero-cost local executable JobSpec containing only the sealed stage",
@@ -196,7 +196,7 @@ export const FoundryInspectSourcesInvocationV0Schema = z
       !isStrictlySortedUnique(stage.inputAssetIds)
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["stage", "inputAssetIds"],
         message: "inspect_sources input asset IDs must be non-empty, unique, and sorted",
       });
@@ -206,7 +206,7 @@ export const FoundryInspectSourcesInvocationV0Schema = z
         computeFoundryTrustedWorkerProfileSha256(profile)
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["workerProfileSha256"],
         message: "worker profile digest must match the exact reviewed profile",
       });
@@ -222,7 +222,7 @@ const InspectedSourceAssetV0Schema = z
     relativePath: FoundryRelativePathSchema,
     inputType: FoundryInputTypeSchema,
     mediaType: z.string().trim().min(1).max(160),
-    sizeBytes: z.number().int().safe().nonnegative(),
+    sizeBytes: z.number().int().int().nonnegative(),
     sha256: RuntimeSha256Schema,
     captureState: z.enum(["raw_capture", "official_export", "derived", "reference"]),
     accessState: z.enum([
@@ -262,8 +262,8 @@ const InspectSourcesReportPayloadObjectSchema = z
     executionBindingAuthority: z.literal("caller_bound_not_authorized"),
     jobId: RuntimeManifestKeySchema,
     jobSpecSha256: RuntimeSha256Schema,
-    executionId: z.string().uuid(),
-    attemptId: z.string().uuid(),
+    executionId: z.uuid(),
+    attemptId: z.uuid(),
     attemptOrdinal: z.literal(1),
     fencingToken: PositiveFenceSchema,
     stageId: z.literal("inspect_sources"),
@@ -307,7 +307,7 @@ const InspectSourcesReportPayloadSchema =
     const assetIds = report.assets.map((asset) => asset.assetId);
     if (!isStrictlySortedUnique(assetIds)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["assets"],
         message: "inspected source assets must be unique and sorted by asset ID",
       });
@@ -327,7 +327,7 @@ export const FoundryInspectSourcesReportV0Schema =
       const { reportSha256: _reportSha256, ...payload } = report;
       const parsed = InspectSourcesReportPayloadSchema.safeParse(payload);
       if (!parsed.success) {
-        for (const issue of parsed.error.issues) ctx.addIssue(issue);
+        for (const issue of parsed.error.issues) ctx.addIssue({ ...issue });
         return;
       }
       if (
@@ -335,7 +335,7 @@ export const FoundryInspectSourcesReportV0Schema =
           computeFoundryInspectSourcesReportSha256(parsed.data)
       ) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["reportSha256"],
           message: "source inspection report digest does not match its payload",
         });
@@ -350,7 +350,7 @@ const WorkerArtifactEntryV0Schema = z
     path: z.literal(FOUNDRY_INSPECT_SOURCES_REPORT_PATH),
     role: z.literal("source_inspection_report"),
     mediaType: z.literal("application/json"),
-    sizeBytes: z.number().int().safe().positive(),
+    sizeBytes: z.number().int().int().positive(),
     sha256: RuntimeSha256Schema,
     subjectSha256: RuntimeSha256Schema,
   })
@@ -364,8 +364,8 @@ const WorkerArtifactIndexPayloadObjectSchema = z
     executionBindingAuthority: z.literal("caller_bound_not_authorized"),
     jobId: RuntimeManifestKeySchema,
     jobSpecSha256: RuntimeSha256Schema,
-    executionId: z.string().uuid(),
-    attemptId: z.string().uuid(),
+    executionId: z.uuid(),
+    attemptId: z.uuid(),
     attemptOrdinal: z.literal(1),
     fencingToken: PositiveFenceSchema,
     stageId: z.literal("inspect_sources"),
@@ -402,7 +402,7 @@ export const FoundryWorkerArtifactIndexV0Schema =
       const { artifactIndexSha256: _artifactIndexSha256, ...payload } = index;
       const parsed = WorkerArtifactIndexPayloadObjectSchema.safeParse(payload);
       if (!parsed.success) {
-        for (const issue of parsed.error.issues) ctx.addIssue(issue);
+        for (const issue of parsed.error.issues) ctx.addIssue({ ...issue });
         return;
       }
       if (
@@ -410,7 +410,7 @@ export const FoundryWorkerArtifactIndexV0Schema =
           computeFoundryWorkerArtifactIndexSha256(parsed.data)
       ) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["artifactIndexSha256"],
           message: "worker artifact index digest does not match its payload",
         });

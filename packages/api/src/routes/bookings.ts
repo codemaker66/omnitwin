@@ -1,10 +1,14 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { and, asc, eq, isNull } from "drizzle-orm";
 import {
+  BookViewingSchema,
   ConvertEnquirySchema,
   CreateBookingSchema,
   TransitionBookingSchema,
   UpdateBookingSchema,
+  VIEWING_BOOKING_KIND,
+  holdsEmailAddress,
+  isBookingEnquiry,
   occasionLabel,
   type DiaryCommand,
 } from "@omnitwin/types";
@@ -21,6 +25,7 @@ import {
   ownerWorksAtVenue,
   pgErrorCode,
   PG_CHECK_VIOLATION,
+  PG_UNIQUE_VIOLATION,
   serializeBooking,
   transitionBookingCore,
   updateBookingCore,
@@ -32,6 +37,9 @@ import {
   executeDiaryCommand,
   realDiaryCommandDeps,
 } from "../services/diary-commands.js";
+import { announcePromotionNotices, loadPromotionDraft } from "../services/hold-promotion.js";
+import { bindBookingToEvent, syncEventStatus } from "../services/event-binding.js";
+import { lockLiveRoom } from "../services/room-liveness.js";
 import { canReadDiary } from "../utils/query.js";
 
 // ---------------------------------------------------------------------------
@@ -46,14 +54,26 @@ import { canReadDiary } from "../utils/query.js";
 // file only parses, delegates, publishes, and shapes replies.
 // ---------------------------------------------------------------------------
 
-const IdParam = z.object({ id: z.string().uuid() });
+const IdParam = z.object({ id: z.uuid() });
 
 /** GET /bookings reads exactly one enquiry's bookings: a missing, malformed,
  *  repeated or unknown parameter is a 400, never a wider read. */
-const EnquiryBookingsQuery = z.object({ enquiryId: z.string().uuid() }).strict();
+const EnquiryBookingsQuery = z.object({ enquiryId: z.uuid() }).strict();
 
 /** Far above the bookings any one enquiry holds; the list is never paged. */
 const ENQUIRY_BOOKINGS_LIMIT = 100;
+
+/** Booking titles are at most 200 characters and never empty (booking.ts). */
+const MAX_BOOKING_TITLE_LENGTH = 200;
+
+/** Who a hold made from an enquiry is titled after: the enquiry's name, or
+ *  its email when the name is blank. Public enquiries stored before
+ *  GuestEnquirySchema treated a blank name as no name can hold "" here, and
+ *  an empty title fails every Diary read for the venue. */
+export function enquiryTitleName(enquiry: { readonly name: string; readonly email: string }): string {
+  const name = enquiry.name.trim();
+  return name === "" ? enquiry.email.trim() : name;
+}
 
 function validationError(reply: FastifyReply, details: unknown): FastifyReply {
   return reply.status(400).send({
@@ -100,7 +120,7 @@ export { serializeBooking } from "../services/booking-mutations.js";
 // resend across EITHER transport replays the recorded outcome instead of
 // re-executing. Keyless requests take the exact pre-T-538 path.
 
-const IdempotencyKeyValue = z.string().uuid();
+const IdempotencyKeyValue = z.uuid();
 
 type IdempotencyHeader =
   | { readonly kind: "absent" }
@@ -155,6 +175,7 @@ async function runKeyedCommand(
       execution.changed.kind,
       execution.changed.bookingId,
     );
+    announcePromotionNotices(request.log, execution.changed.notices);
   }
   const http = ackToHttpReply(command.kind, execution.ack);
   return reply
@@ -242,6 +263,18 @@ export async function bookingRoutes(
     return { data: serializeBooking(row) };
   });
 
+  // The drafted email for a hold that has become 1st option (Blake, 26 Sep):
+  // composed for the person reading it, addressed to the client of record,
+  // and never sent from here. A person reads it and sends it themselves.
+  server.get("/:id/promotion-draft", { preHandler: [authenticate] }, async (request, reply) => {
+    reply.header("Cache-Control", "private, no-store");
+    const params = IdParam.safeParse(request.params);
+    if (!params.success) return validationError(reply, params.error.issues);
+    const result = await loadPromotionDraft(db, request.user, params.data.id);
+    if (!result.ok) return reply.status(result.status).send({ error: result.error, code: result.code });
+    return { data: result.draft };
+  });
+
   server.patch("/:id", { preHandler: [authenticate] }, async (request, reply) => {
     const params = IdParam.safeParse(request.params);
     if (!params.success) return validationError(reply, params.error.issues);
@@ -285,6 +318,7 @@ export async function bookingRoutes(
     const result = await transitionBookingCore(db, request.user, params.data.id, parsed.data);
     if (!result.ok) return sendDeny(reply, result);
     publishDiaryChanged(request, result.booking.venueId, result.changeKind, result.booking.id);
+    announcePromotionNotices(request.log, result.promotionNotices);
     return {
       data: serializeBooking(result.booking),
       // The Canon §3 human ping: promotions ride the response so the caller
@@ -297,9 +331,11 @@ export async function bookingRoutes(
   // hold, always hygienic — the schema requires the quartet. The enquiry's
   // own lifecycle is deliberately untouched: the commitment axis and the
   // enquiry axis stay independent (Canon §1); provenance lives on
-  // bookings.enquiry_id. REST-only for now: the tray conversion is not a
-  // board-latency surface, so it is deliberately NOT a ws command kind
-  // (architecture doc §13).
+  // bookings.enquiry_id. Since the bind (migration 0090) the hold is born
+  // with its event: the enquiry's event when it already has one, otherwise a
+  // new one (services/event-binding.ts). REST-only for now: the tray
+  // conversion is not a board-latency surface, so it is deliberately NOT a
+  // ws command kind (architecture doc §13).
   server.post("/from-enquiry", { preHandler: [authenticate] }, async (request, reply) => {
     const parsed = ConvertEnquirySchema.safeParse(request.body);
     if (!parsed.success) return validationError(reply, parsed.error.issues);
@@ -342,38 +378,80 @@ export async function bookingRoutes(
     }
 
     const occasion = occasionLabel(enquiry.eventType);
-    const fallbackTitle = `${enquiry.name}${occasion === null ? "" : ` — ${occasion}`}`;
-    const title = input.title ?? fallbackTitle.slice(0, 200);
+    const who = enquiryTitleName(enquiry);
+    const fallbackTitle = `${who}${occasion === null ? "" : ` — ${occasion}`}`;
+    // No client name for the event, which the Diary card and the handoff pack
+    // carry, when the enquiry's name is an email address (N7, A4): a guest who
+    // gave no name is filed under their email, and a name can hold another
+    // address (the email corrected since, or an address typed as a name).
+    const clientName = holdsEmailAddress(who) || who.toLowerCase() === enquiry.email.trim().toLowerCase() ? null : enquiry.name;
+    const title = input.title ?? fallbackTitle.slice(0, MAX_BOOKING_TITLE_LENGTH);
+    // A new event takes the hold's title unless it holds an email address,
+    // which eventNameFor counts as no title (the bind itself drops only an
+    // address cut at 200 characters, titleWithoutEnquiryEmail): the event is
+    // then named by its occasion and day.
+    const eventType = input.eventType ?? enquiry.eventType;
+    const startsAt = new Date(input.startsAt);
+    const endsAt = new Date(input.endsAt);
 
     try {
-      const [created]: (BookingRow | undefined)[] = await db
-        .insert(bookings)
-        .values({
+      // The bind: the hold joins the event this enquiry's other holds already
+      // have (a second room for the same wedding), or makes the enquiry's
+      // first event, in the hold's own transaction. The enquiry row is locked
+      // while it does, so two holds pencilled at once still share one event.
+      const created = await db.transaction(async (tx): Promise<BookingRow | "room_deleted" | null> => {
+        // The room as it stands now, held until this commits, so a room
+        // being deleted never takes the hold (admin-venues-3).
+        if (!(await lockLiveRoom(tx, enquiry.venueId, spaceId))) return "room_deleted";
+        const bound = await bindBookingToEvent(tx, {
           venueId: enquiry.venueId,
-          spaceId,
-          eventId: null,
-          kind: "hold",
-          status: "active",
           title,
-          eventType: input.eventType ?? enquiry.eventType,
-          startsAt: new Date(input.startsAt),
-          endsAt: new Date(input.endsAt),
-          rank: input.rank ?? null,
-          jointFlag: input.jointFlag ?? false,
-          decisionAt: new Date(input.decisionAt),
-          ownerUserId: input.ownerUserId,
-          nextAction: input.nextAction,
-          nextActionDueAt: new Date(input.nextActionDueAt),
-          seriesId: null,
-          notes: input.notes ?? null,
+          eventType,
+          startsAt,
+          endsAt,
           createdBy: request.user.id,
-          enquiryId: enquiry.id,
-        })
-        .returning();
-      if (created === undefined) {
-        return await reply
-          .status(500)
-          .send({ error: "Failed to convert the enquiry", code: "BOOKING_CREATE_FAILED" });
+          clientName,
+        }, { join: "enquiry", enquiryId: enquiry.id });
+        // The enquiry was read at this venue above; a mismatch here means it
+        // changed meanwhile, and nothing is written.
+        if (!bound.ok) return null;
+        const [row]: (BookingRow | undefined)[] = await tx
+          .insert(bookings)
+          .values({
+            venueId: enquiry.venueId,
+            spaceId,
+            eventId: bound.eventId,
+            kind: "hold",
+            status: "active",
+            title,
+            eventType,
+            startsAt,
+            endsAt,
+            rank: input.rank ?? null,
+            jointFlag: input.jointFlag ?? false,
+            decisionAt: new Date(input.decisionAt),
+            ownerUserId: input.ownerUserId,
+            nextAction: input.nextAction,
+            nextActionDueAt: new Date(input.nextActionDueAt),
+            seriesId: null,
+            notes: input.notes ?? null,
+            createdBy: request.user.id,
+            enquiryId: enquiry.id,
+          })
+          .returning();
+        // Thrown so the rollback takes a newly made event with it.
+        if (row === undefined) throw new Error("The enquiry's hold insert returned no row");
+        await syncEventStatus(tx, bound.eventId);
+        return row;
+      });
+      if (created === "room_deleted") {
+        return await reply.status(400).send({ error: "The space does not belong to this venue", code: "SPACE_VENUE_MISMATCH" });
+      }
+      if (created === null) {
+        return await reply.status(409).send({
+          error: "This enquiry changed while the hold was being made. Open it again and hold the date.",
+          code: "ENQUIRY_CHANGED",
+        });
       }
       publishDiaryChanged(request, created.venueId, "enquiry.converted", created.id);
       return await reply.status(201).send({ data: serializeBooking(created) });
@@ -384,6 +462,126 @@ export async function bookingRoutes(
           error: "Booking violates a database integrity rule",
           code: "BOOKING_INTEGRITY_VIOLATION",
         });
+      }
+      throw error;
+    }
+  });
+
+  // A viewing booked for an enquiry (migration 0100): a show-round of a room,
+  // hosted by its owner (by default whoever books it). Gated as the hold
+  // conversion is, by the Diary's write roles at the enquiry's venue. It
+  // takes no event, carries no hold's hygiene and never blocks a date: the
+  // conflict engine says when it overlaps a confirmed booking or another
+  // viewing. Show-rounds per booking, a funnel measure, counts these. The same
+  // viewing asked for twice (a double press, a retry) is booked once: the
+  // second answer is the first viewing (bookings_viewing_once).
+  server.post("/viewings", { preHandler: [authenticate] }, async (request, reply) => {
+    const parsed = BookViewingSchema.safeParse(request.body);
+    if (!parsed.success) return validationError(reply, parsed.error.issues);
+    const input = parsed.data;
+
+    const [enquiry] = await db
+      .select({
+        id: enquiries.id,
+        venueId: enquiries.venueId,
+        spaceId: enquiries.spaceId,
+        roomChosen: enquiries.roomChosen,
+        name: enquiries.name,
+        email: enquiries.email,
+        state: enquiries.state,
+        eventType: enquiries.eventType,
+      })
+      .from(enquiries)
+      .where(eq(enquiries.id, input.enquiryId))
+      .limit(1);
+    if (enquiry === undefined) {
+      return reply.status(404).send({ error: "Enquiry not found", code: "ENQUIRY_NOT_FOUND" });
+    }
+    if (!canWriteBookings(request.user, enquiry.venueId)) {
+      return reply.status(403).send({ error: "Forbidden", code: "FORBIDDEN" });
+    }
+    // A viewing is shown to someone asking to book a room: never for a draft
+    // nobody has sent, nor for a request that books nothing (workspace access,
+    // an enquiry about Venviewer itself).
+    if (enquiry.state === "draft" || !isBookingEnquiry(enquiry.eventType)) {
+      return reply.status(422).send({
+        error: "A viewing is booked for an enquiry asking to book a room.",
+        code: "NOT_A_BOOKING_ENQUIRY",
+      });
+    }
+    // The room the guest chose, or one someone chooses: never the room an
+    // enquiry that named none is only filed under (roadmap N6).
+    if (input.spaceId === undefined && !enquiry.roomChosen) {
+      return reply.status(400).send({
+        error: "Choose a room for this viewing. The guest did not choose one.",
+        code: "ROOM_NOT_CHOSEN",
+      });
+    }
+    const spaceId = input.spaceId ?? enquiry.spaceId;
+    const [space] = await db
+      .select({ id: spaces.id, venueId: spaces.venueId })
+      .from(spaces)
+      .where(and(eq(spaces.id, spaceId), isNull(spaces.deletedAt)))
+      .limit(1);
+    if (space === undefined || space.venueId !== enquiry.venueId) {
+      return reply.status(400).send({ error: "The space does not belong to this venue", code: "SPACE_VENUE_MISMATCH" });
+    }
+    const ownerUserId = input.ownerUserId ?? request.user.id;
+    if (!(await ownerWorksAtVenue(db, ownerUserId, enquiry.venueId))) {
+      return reply.status(OWNER_VENUE_MISMATCH.status).send({ error: OWNER_VENUE_MISMATCH.error, code: OWNER_VENUE_MISMATCH.code });
+    }
+
+    try {
+      // The room as it stands now, held until the viewing is written, so a
+      // room being deleted never takes it (admin-venues-3).
+      const created = await db.transaction(async (tx): Promise<BookingRow | "room_deleted" | undefined> => {
+        if (!(await lockLiveRoom(tx, enquiry.venueId, spaceId))) return "room_deleted";
+        const [row] = await tx
+          .insert(bookings)
+          .values({
+            // No event, ever: the column's default, and
+            // bookings_viewing_has_no_event refuses any other.
+            venueId: enquiry.venueId,
+            spaceId,
+            kind: VIEWING_BOOKING_KIND,
+            status: "active",
+            title: input.title ?? enquiryTitleName(enquiry).slice(0, MAX_BOOKING_TITLE_LENGTH),
+            eventType: null,
+            startsAt: new Date(input.startsAt),
+            endsAt: new Date(input.endsAt),
+            rank: null,
+            jointFlag: false,
+            ownerUserId,
+            notes: input.notes ?? null,
+            createdBy: request.user.id,
+            enquiryId: enquiry.id,
+          })
+          .returning();
+        return row;
+      });
+      if (created === "room_deleted") {
+        return await reply.status(400).send({ error: "The space does not belong to this venue", code: "SPACE_VENUE_MISMATCH" });
+      }
+      if (created === undefined) {
+        return await reply.status(500).send({ error: "Failed to book the viewing", code: "BOOKING_CREATE_FAILED" });
+      }
+      publishDiaryChanged(request, created.venueId, "booking.created", created.id);
+      return await reply.status(201).send({ data: serializeBooking(created) });
+    } catch (error) {
+      const code = pgErrorCode(error);
+      if (code === PG_UNIQUE_VIOLATION) {
+        const [booked] = await db.select().from(bookings).where(and(
+          eq(bookings.enquiryId, enquiry.id),
+          eq(bookings.spaceId, spaceId),
+          eq(bookings.startsAt, new Date(input.startsAt)),
+          eq(bookings.kind, VIEWING_BOOKING_KIND),
+          eq(bookings.status, "active"),
+          isNull(bookings.deletedAt),
+        )).limit(1);
+        if (booked !== undefined) return reply.status(200).send({ data: serializeBooking(booked) });
+      }
+      if (code === PG_CHECK_VIOLATION) {
+        return reply.status(400).send({ error: "Booking violates a database integrity rule", code: "BOOKING_INTEGRITY_VIOLATION" });
       }
       throw error;
     }

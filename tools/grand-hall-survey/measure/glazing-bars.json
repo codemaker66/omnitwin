@@ -1,0 +1,630 @@
+{
+ "method": "Writes the figures behind HALL_GLAZING (packages/web/src/components/grand-hall/hall-spec.ts):",
+ "windows": {
+  "arch-fireplace": {
+   "stations": [
+    "scan_042",
+    "scan_033",
+    "scan_032",
+    "scan_034"
+   ],
+   "glass_depth": -0.8988,
+   "bar_plane": -0.903,
+   "glass_bottom": 0.915,
+   "light_centre_from_opening": -0.003,
+   "verticals_from_opening": [
+    -0.1881,
+    0.1822
+   ],
+   "rows": [
+    0.9454,
+    1.5437,
+    2.1511,
+    2.7007,
+    3.2748
+   ],
+   "bars": [
+    {
+     "kind": "vertical",
+     "guess": 1.3425,
+     "triangulated": [
+      1.3354,
+      -0.9711
+     ],
+     "at": 1.3444,
+     "spread": 0.0058,
+     "stations": 3
+    },
+    {
+     "kind": "vertical",
+     "guess": 1.7125,
+     "triangulated": [
+      1.711,
+      -0.937
+     ],
+     "at": 1.7147,
+     "spread": 0.0171,
+     "stations": 4
+    },
+    {
+     "kind": "horizontal",
+     "guess": 0.95,
+     "triangulated": [
+      0.9485,
+      -0.8853
+     ],
+     "at": 0.9454,
+     "spread": 0.0109,
+     "stations": 4
+    },
+    {
+     "kind": "horizontal",
+     "guess": 1.56,
+     "triangulated": [
+      1.5387,
+      -0.793
+     ],
+     "at": 1.5437,
+     "spread": 0.0056,
+     "stations": 4
+    },
+    {
+     "kind": "horizontal",
+     "guess": 2.17,
+     "triangulated": [
+      2.143,
+      -0.8719
+     ],
+     "at": 2.1511,
+     "spread": 0.0096,
+     "stations": 4
+    },
+    {
+     "kind": "horizontal",
+     "guess": 2.72,
+     "triangulated": [
+      2.7053,
+      -0.914
+     ],
+     "at": 2.7007,
+     "spread": 0.0088,
+     "stations": 4
+    },
+    {
+     "kind": "horizontal",
+     "guess": 3.29,
+     "triangulated": [
+      3.2753,
+      -0.903
+     ],
+     "at": 3.2748,
+     "spread": 0.0098,
+     "stations": 3
+    }
+   ],
+   "vertical_widths": [
+    0.028,
+    0.014
+   ],
+   "paint_srgb": [
+    181,
+    172,
+    160
+   ],
+   "head": {
+    "transom": 3.762,
+    "lower_radials_deg": [
+     57,
+     122
+    ],
+    "upper_radials_deg": [
+     77,
+     100
+    ],
+    "ring_rims": [
+     0.516,
+     0.544,
+     0.636,
+     0.736,
+     0.756
+    ],
+    "ring_inner": 0.53,
+    "ring_outer": 0.746,
+    "piercings_deg": [
+     45,
+     54,
+     60,
+     64,
+     75,
+     81,
+     86,
+     96,
+     99,
+     105,
+     114,
+     122,
+     139
+    ],
+    "petal_top": 1.248
+   }
+  },
+  "window-fireplace": {
+   "stations": [
+    "scan_041",
+    "scan_030",
+    "scan_031",
+    "scan_024"
+   ],
+   "glass_depth": -0.8137,
+   "bar_plane": -0.8238,
+   "glass_bottom": 0.935,
+   "light_centre_from_opening": -0.0062,
+   "verticals_from_opening": [
+    -0.1947,
+    0.1823
+   ],
+   "rows": [
+    0.945,
+    1.5277,
+    2.126,
+    2.6402
+   ],
+   "bars": [
+    {
+     "kind": "vertical",
+     "guess": 5.4625,
+     "triangulated": [
+      5.4588,
+      -0.8222
+     ],
+     "at": 5.4578,
+     "spread": 0.0219,
+     "stations": 4
+    },
+    {
+     "kind": "vertical",
+     "guess": 5.8325,
+     "triangulated": [
+      5.8313,
+      -0.8138
+     ],
+     "at": 5.8348,
+     "spread": 0.0114,
+     "stations": 4
+    },
+    {
+     "kind": "horizontal",
+     "guess": 0.95,
+     "triangulated": [
+      0.939,
+      -0.8526
+     ],
+     "at": 0.945,
+     "spread": 0.0054,
+     "stations": 4
+    },
+    {
+     "kind": "horizontal",
+     "guess": 1.54,
+     "triangulated": [
+      1.5276,
+      -0.8254
+     ],
+     "at": 1.5277,
+     "spread": 0.0017,
+     "stations": 4
+    },
+    {
+     "kind": "horizontal",
+     "guess": 2.13,
+     "triangulated": [
+      2.1205,
+      -0.7991
+     ],
+     "at": 2.126,
+     "spread": 0.01,
+     "stations": 4
+    },
+    {
+     "kind": "horizontal",
+     "guess": 2.64,
+     "triangulated": [
+      2.6444,
+      -0.834
+     ],
+     "at": 2.6402,
+     "spread": 0.0077,
+     "stations": 4
+    }
+   ],
+   "vertical_widths": [
+    0.028,
+    0.028
+   ],
+   "paint_srgb": [
+    188,
+    181,
+    169
+   ],
+   "head": null
+  },
+  "arch-centre": {
+   "stations": [
+    "scan_039",
+    "scan_013",
+    "scan_022",
+    "scan_043"
+   ],
+   "glass_depth": -0.5688,
+   "bar_plane": -0.5566,
+   "glass_bottom": 0.915,
+   "light_centre_from_opening": -0.0088,
+   "verticals_from_opening": [
+    -0.1925,
+    0.175
+   ],
+   "rows": [
+    0.947,
+    1.5683,
+    2.1771,
+    2.7156,
+    3.2825
+   ],
+   "bars": [
+    {
+     "kind": "vertical",
+     "guess": 10.3525,
+     "triangulated": [
+      10.34,
+      -0.5566
+     ],
+     "at": 10.35,
+     "spread": 0.0157,
+     "stations": 4
+    },
+    {
+     "kind": "vertical",
+     "guess": 10.7225,
+     "triangulated": [
+      10.7073,
+      -0.5483
+     ],
+     "at": 10.7175,
+     "spread": 0.016,
+     "stations": 4
+    },
+    {
+     "kind": "horizontal",
+     "guess": 0.95,
+     "triangulated": [
+      0.9722,
+      -0.464
+     ],
+     "at": 0.947,
+     "spread": 0.019,
+     "stations": 4
+    },
+    {
+     "kind": "horizontal",
+     "guess": 1.56,
+     "triangulated": [
+      1.5767,
+      -0.7395
+     ],
+     "at": 1.5683,
+     "spread": 0.025,
+     "stations": 4
+    },
+    {
+     "kind": "horizontal",
+     "guess": 2.17,
+     "triangulated": [
+      2.1675,
+      -0.5273
+     ],
+     "at": 2.1771,
+     "spread": 0.0206,
+     "stations": 4
+    },
+    {
+     "kind": "horizontal",
+     "guess": 2.72,
+     "triangulated": [
+      2.7355,
+      -0.5909
+     ],
+     "at": 2.7156,
+     "spread": 0.0186,
+     "stations": 4
+    },
+    {
+     "kind": "horizontal",
+     "guess": 3.29,
+     "triangulated": [
+      3.2982,
+      -0.5793
+     ],
+     "at": 3.2825,
+     "spread": 0.0237,
+     "stations": 4
+    }
+   ],
+   "vertical_widths": [
+    0.018,
+    0.018
+   ],
+   "paint_srgb": [
+    149,
+    139,
+    124
+   ],
+   "head": {
+    "transom": 3.815,
+    "lower_radials_deg": [
+     59,
+     122
+    ],
+    "upper_radials_deg": [
+     99
+    ],
+    "ring_rims": [
+     0.462,
+     0.51,
+     0.6,
+     0.692,
+     0.712,
+     0.722
+    ],
+    "ring_inner": 0.486,
+    "ring_outer": 0.709,
+    "piercings_deg": [
+     37,
+     39,
+     56,
+     58,
+     75,
+     94,
+     102,
+     113,
+     124,
+     137,
+     148
+    ],
+    "petal_top": null
+   }
+  },
+  "window-end": {
+   "stations": [
+    "scan_038",
+    "scan_005",
+    "scan_006",
+    "scan_012"
+   ],
+   "glass_depth": -0.817,
+   "bar_plane": -0.8125,
+   "glass_bottom": 0.935,
+   "light_centre_from_opening": -0.0043,
+   "verticals_from_opening": [
+    -0.1893,
+    0.1808
+   ],
+   "rows": [
+    0.9534,
+    1.5409,
+    2.1189
+   ],
+   "bars": [
+    {
+     "kind": "vertical",
+     "guess": 15.2425,
+     "triangulated": [
+      15.2432,
+      -0.8125
+     ],
+     "at": 15.2432,
+     "spread": 0.005,
+     "stations": 4
+    },
+    {
+     "kind": "vertical",
+     "guess": 15.6125,
+     "triangulated": [
+      15.6112,
+      -0.8235
+     ],
+     "at": 15.6133,
+     "spread": 0.0111,
+     "stations": 4
+    },
+    {
+     "kind": "horizontal",
+     "guess": 0.95,
+     "triangulated": [
+      0.9564,
+      -0.7987
+     ],
+     "at": 0.9534,
+     "spread": 0.0062,
+     "stations": 4
+    },
+    {
+     "kind": "horizontal",
+     "guess": 1.54,
+     "triangulated": [
+      1.5321,
+      -0.35
+     ],
+     "at": 1.5409,
+     "spread": 0.025,
+     "stations": 4
+    },
+    {
+     "kind": "horizontal",
+     "guess": 2.13,
+     "triangulated": [
+      2.1328,
+      -0.8546
+     ],
+     "at": 2.1189,
+     "spread": 0.0441,
+     "stations": 4
+    }
+   ],
+   "vertical_widths": [
+    0.022,
+    0.026
+   ],
+   "paint_srgb": [
+    218,
+    207,
+    190
+   ],
+   "head": null
+  },
+  "arch-end": {
+   "stations": [
+    "scan_040",
+    "scan_004",
+    "scan_037",
+    "scan_044"
+   ],
+   "glass_depth": -0.8998,
+   "bar_plane": -0.8844,
+   "glass_bottom": 0.915,
+   "light_centre_from_opening": -0.0171,
+   "verticals_from_opening": [
+    -0.1998,
+    0.1657
+   ],
+   "rows": [
+    0.9593,
+    1.56,
+    2.1539,
+    2.714,
+    3.2851
+   ],
+   "bars": [
+    {
+     "kind": "vertical",
+     "guess": 19.3625,
+     "triangulated": [
+      19.3555,
+      -0.8228
+     ],
+     "at": 19.3527,
+     "spread": 0.0109,
+     "stations": 3
+    },
+    {
+     "kind": "vertical",
+     "guess": 19.7325,
+     "triangulated": [
+      19.7197,
+      -0.8844
+     ],
+     "at": 19.7182,
+     "spread": 0.0137,
+     "stations": 4
+    },
+    {
+     "kind": "horizontal",
+     "guess": 0.95,
+     "triangulated": [
+      0.9613,
+      -0.8583
+     ],
+     "at": 0.9593,
+     "spread": 0.0091,
+     "stations": 4
+    },
+    {
+     "kind": "horizontal",
+     "guess": 1.56,
+     "triangulated": [
+      1.5613,
+      -0.9363
+     ],
+     "at": 1.56,
+     "spread": 0.0034,
+     "stations": 4
+    },
+    {
+     "kind": "horizontal",
+     "guess": 2.17,
+     "triangulated": [
+      2.1402,
+      -0.8109
+     ],
+     "at": 2.1539,
+     "spread": 0.0274,
+     "stations": 4
+    },
+    {
+     "kind": "horizontal",
+     "guess": 2.72,
+     "triangulated": [
+      2.7206,
+      -0.9072
+     ],
+     "at": 2.714,
+     "spread": 0.0235,
+     "stations": 4
+    },
+    {
+     "kind": "horizontal",
+     "guess": 3.29,
+     "triangulated": [
+      3.2936,
+      -0.9059
+     ],
+     "at": 3.2851,
+     "spread": 0.0323,
+     "stations": 4
+    }
+   ],
+   "vertical_widths": [
+    0.008,
+    0.02
+   ],
+   "paint_srgb": [
+    151,
+    138,
+    122
+   ],
+   "head": {
+    "transom": 3.769,
+    "lower_radials_deg": [
+     60,
+     84
+    ],
+    "upper_radials_deg": [
+     80,
+     107
+    ],
+    "ring_rims": [
+     0.798
+    ],
+    "ring_inner": null,
+    "ring_outer": 0.798,
+    "piercings_deg": [
+     46,
+     58,
+     67,
+     76,
+     86,
+     96,
+     109,
+     114,
+     125,
+     150
+    ],
+    "petal_top": null
+   }
+  }
+ },
+ "paint_srgb_median": [
+  181,
+  172,
+  160
+ ]
+}

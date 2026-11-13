@@ -6,7 +6,7 @@ import { SpaceIdSchema } from "./space.js";
 // Pricing Rule ID — UUID v4
 // ---------------------------------------------------------------------------
 
-export const PricingRuleIdSchema = z.string().uuid();
+export const PricingRuleIdSchema = z.uuid();
 
 export type PricingRuleId = z.infer<typeof PricingRuleIdSchema>;
 
@@ -67,13 +67,13 @@ export const PricingRuleSchema = z.object({
   minHours: z.number().int().positive().max(MAX_HOURS).nullable(),
   minGuests: z.number().int().positive().max(MAX_GUESTS).nullable(),
   tiers: z.array(TierSchema).nullable(),
-  dayOfWeekModifiers: z.record(z.number().positive()).nullable(),
-  seasonalModifiers: z.record(z.number().positive()).nullable(),
+  dayOfWeekModifiers: z.record(z.string(), z.number().positive()).nullable(),
+  seasonalModifiers: z.record(z.string(), z.number().positive()).nullable(),
   validFrom: DateStringSchema.nullable(),
   validTo: DateStringSchema.nullable(),
   isActive: z.boolean(),
-  createdAt: z.string().datetime({ message: "createdAt must be an ISO 8601 datetime string" }),
-  updatedAt: z.string().datetime({ message: "updatedAt must be an ISO 8601 datetime string" }),
+  createdAt: z.iso.datetime({ message: "createdAt must be an ISO 8601 datetime string" }),
+  updatedAt: z.iso.datetime({ message: "updatedAt must be an ISO 8601 datetime string" }),
 });
 
 export type PricingRule = z.infer<typeof PricingRuleSchema>;
@@ -83,7 +83,7 @@ export type PricingRule = z.infer<typeof PricingRuleSchema>;
 // ---------------------------------------------------------------------------
 
 export const CreatePricingRuleSchema = z.object({
-  spaceId: z.string().uuid().nullable().optional(),
+  spaceId: z.uuid().nullable().optional(),
   name: z.string().trim().min(1).max(200),
   type: PricingTypeSchema,
   amount: z.number().nonnegative(),
@@ -91,8 +91,8 @@ export const CreatePricingRuleSchema = z.object({
   minHours: z.number().int().positive().nullable().optional(),
   minGuests: z.number().int().positive().nullable().optional(),
   tiers: z.array(TierSchema).nullable().optional(),
-  dayOfWeekModifiers: z.record(z.number().positive()).nullable().optional(),
-  seasonalModifiers: z.record(z.number().positive()).nullable().optional(),
+  dayOfWeekModifiers: z.record(z.string(), z.number().positive()).nullable().optional(),
+  seasonalModifiers: z.record(z.string(), z.number().positive()).nullable().optional(),
   validFrom: DateStringSchema.nullable().optional(),
   validTo: DateStringSchema.nullable().optional(),
   isActive: z.boolean().default(true),

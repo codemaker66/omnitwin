@@ -22,6 +22,7 @@ const pricing = await import("../pricing.js");
 const spaces = await import("../spaces.js");
 const uploads = await import("../uploads.js");
 const configurations = await import("../configurations.js");
+const { parseRevisionConflict } = await import("../configuration-conflict.js");
 const proposals = await import("../proposals.js");
 
 function jsonResponse(data: unknown, status = 200): Response {
@@ -243,11 +244,73 @@ describe("configurations response validation", () => {
       { expectedRevision: 1, currentRevision: 2 },
     );
 
-    expect(configurations.parseRevisionConflict(err)).toEqual({
+    // An older server sends neither who nor when: still a conflict, both unknown.
+    expect(parseRevisionConflict(err)).toEqual({
       expectedRevision: 1,
       currentRevision: 2,
       message: "Layout changed on the server. Reload before saving again.",
+      changedBy: null,
+      changedAt: null,
     });
+  });
+
+  it("reads who made the newer revision and when", () => {
+    const err = new ApiError(409, "Layout changed on the server. Reload before saving again.", "REVISION_CONFLICT", {
+      expectedRevision: 4,
+      currentRevision: 5,
+      changedBy: { userId: "u-elaine", name: "  Elaine  " },
+      changedAt: "2026-10-20T21:58:00.000Z",
+    });
+
+    const conflict = parseRevisionConflict(err);
+    expect(conflict?.changedBy).toEqual({ userId: "u-elaine", name: "Elaine" });
+    expect(conflict?.changedAt?.toISOString()).toBe("2026-10-20T21:58:00.000Z");
+  });
+
+  it("keeps the conflict when who or when is missing or malformed", () => {
+    const cases: readonly [unknown, unknown][] = [
+      [null, null],
+      [{ userId: null, name: null }, "not a date"],
+      [{ userId: 42, name: "" }, 1_700_000_000_000],
+      ["Elaine", { at: "21:58" }],
+    ];
+    for (const [changedBy, changedAt] of cases) {
+      const conflict = parseRevisionConflict(new ApiError(409, "changed", "REVISION_CONFLICT", {
+        expectedRevision: 1, currentRevision: 2, changedBy, changedAt,
+      }));
+      expect(conflict).toMatchObject({ expectedRevision: 1, currentRevision: 2, changedBy: null, changedAt: null });
+    }
+    // A guest's revision (no account) as the public route reports it: when, never who.
+    expect(parseRevisionConflict(new ApiError(409, "changed", "REVISION_CONFLICT", {
+      expectedRevision: 1, currentRevision: 2, changedBy: null, changedAt: "2026-10-20T21:58:00+01:00",
+    }))?.changedAt?.toISOString()).toBe("2026-10-20T20:58:00.000Z");
+  });
+
+  it("is not a revision conflict without the revisions themselves", () => {
+    expect(parseRevisionConflict(new ApiError(409, "changed", "REVISION_CONFLICT", {
+      changedBy: { userId: "u-elaine", name: "Elaine" }, changedAt: "2026-10-20T21:58:00.000Z",
+    }))).toBeNull();
+    expect(parseRevisionConflict(new ApiError(409, "locked", "CONFIG_LOCKED"))).toBeNull();
+  });
+
+  it("reads a layout's review status and survives one it does not know", async () => {
+    const row = { id: "c1", spaceId: "s1", venueId: "v1", userId: "u1", name: "Gala", isPublicPreview: false, revision: 3 };
+    fetchMock.mockResolvedValueOnce(jsonResponse({ data: { ...row, reviewStatus: "submitted" } }));
+    expect((await configurations.getConfig("c1")).reviewStatus).toBe("submitted");
+    fetchMock.mockResolvedValueOnce(jsonResponse({ data: { ...row, reviewStatus: "on_hold_for_a_future_state" } }));
+    const unknown = await configurations.getConfig("c1");
+    expect(unknown.reviewStatus).toBeUndefined();
+    expect(unknown.revision).toBe(3);
+  });
+
+  it("reads whether a layout is one of the venue's samples, and never fails a load over it", async () => {
+    const row = { id: "c1", spaceId: "s1", venueId: "v1", userId: "u1", name: "Gala", isPublicPreview: false, revision: 3 };
+    fetchMock.mockResolvedValueOnce(jsonResponse({ data: { ...row, isTemplate: true } }));
+    expect((await configurations.getConfig("c1")).isTemplate).toBe(true);
+    fetchMock.mockResolvedValueOnce(jsonResponse({ data: { ...row, isTemplate: "yes" } }));
+    const odd = await configurations.getConfig("c1");
+    expect(odd.isTemplate).toBeUndefined();
+    expect(odd.revision).toBe(3);
   });
 });
 

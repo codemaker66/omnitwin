@@ -8,6 +8,7 @@ import { constants as zlibConstants } from "node:zlib";
 import { getImageDecoderRuntime } from "@omnitwin/reconstruction-foundry";
 import { validateEnv, type Env } from "./env.js";
 import { createDbConnection } from "./db/client.js";
+import { readBuildTimestamp } from "./lib/build-stamp.js";
 import { loadBundledJournal, readMigrationReadiness } from "./db/migration-readiness.js";
 import { setAuthDb } from "./middleware/auth.js";
 import { createRateLimitIdentity } from "./middleware/rate-limit-identity.js";
@@ -24,32 +25,47 @@ import { actionLogRoutes } from "./routes/action-log.js";
 import { enquiryRoutes } from "./routes/enquiries.js";
 import { uploadRoutes } from "./routes/uploads.js";
 import { pricingRuleRoutes } from "./routes/pricing-rules.js";
+import { pricingDeskRoutes } from "./routes/pricing-desk.js";
+import { competitorWatchRoutes } from "./routes/competitor-watch.js";
 import { turnaroundRuleRoutes } from "./routes/turnaround-rules.js";
+import { forwardBookRoutes } from "./routes/forward-book.js";
 import { proposalTemplateRoutes } from "./routes/proposal-templates.js";
 import { proposalMessageDraftRoutes } from "./routes/proposal-message-draft.js";
+import { enquirySummaryDraftRoutes } from "./routes/enquiry-summary-draft.js";
 import { rotaRoutes } from "./routes/rota.js";
+import { venueTeamRoutes } from "./routes/venue-team.js";
 import { referenceLoadoutRoutes } from "./routes/reference-loadouts.js";
 import { referencePhotoRoutes } from "./routes/reference-photos.js";
 import { publicConfigRoutes } from "./routes/public-configs.js";
+import { publicPlanViewRoutes } from "./routes/public-plan-views.js";
 import { layoutRoutes } from "./routes/layouts.js";
 import { publicEnquiryRoutes } from "./routes/public-enquiries.js";
 import { drizzleQuizRunStore, publicQuizRunRoutes } from "./routes/public-quiz-runs.js";
+import { publicSheetCheckRoutes } from "./routes/public-sheet-check.js";
+import { resolveSheetPaperCheck } from "./services/sheet-paper-check.js";
 import { publicMcpRoutes } from "./routes/public-mcp.js";
 import { claimConfigRoutes } from "./routes/claim-config.js";
 import { clientRoutes } from "./routes/clients.js";
+import { dietaryMemoryRoutes } from "./routes/dietary-memory.js";
 import { authRoutes } from "./routes/auth.js";
 import { adminRoutes } from "./routes/admin.js";
 import { webhookRoutes } from "./routes/webhooks.js";
+import { stripeWebhookRoutes } from "./routes/stripe-webhook.js";
+import { proposalDepositRoutes, proposalShareDepositRoutes } from "./routes/deposits.js";
+import { proposalContractRoutes, proposalShareContractRoutes } from "./routes/contracts.js";
+import { depositPaymentsFrom } from "./services/payments/deposit-gateway.js";
 import { hallkeeperSheetRoutes } from "./routes/hallkeeper-sheet.js";
 import { configurationReviewRoutes } from "./routes/configuration-reviews.js";
 import { adminAssetRoutes, assetRoutes } from "./routes/assets.js";
 import { runtimePackagePreviewRoutes } from "./routes/runtime-package-previews.js";
 import { eventPhaseRoutes, eventRoutes } from "./routes/events.js";
 import { clientEventScheduleRoutes } from "./routes/client-event-schedule.js";
+import { clientHomeRoutes } from "./routes/client-home.js";
 import { windowProposalRoutes } from "./routes/window-proposals.js";
 import { roomDayRoutes } from "./routes/room-day.js";
 import { eventPlanLifecycleRoutes, notificationRoutes } from "./routes/event-plan-lifecycle.js";
 import { requestRoutes, venueRequestRoutes } from "./routes/requests.js";
+import { pushRoutes } from "./routes/push.js";
 import { venueObservationRoutes } from "./routes/observations.js";
 import { clientConversationRoutes, messageRoutes, threadRoutes, venueThreadRoutes } from "./routes/conversations.js";
 import { evidenceItemRoutes, evidencePackRoutes, reviewGateRoutes, truthModeRoutes } from "./routes/evidence-runtime.js";
@@ -58,8 +74,12 @@ import { opsHandoffRoutes } from "./routes/ops-handoff.js";
 import { supplierCoordinationRoutes, supplierShareRoutes } from "./routes/supplier-coordination.js";
 import { analyticsRoutes, eventRevenueRoutes, revenueScenarioRoutes } from "./routes/revenue-analytics.js";
 import { aiAssistantRoutes } from "./routes/ai-assistant.js";
+import { missingAccessLists } from "./services/ai-access.js";
+import { aiUsageRoutes } from "./routes/ai-usage.js";
+import { venueAllowanceMeter } from "./services/ai-usage.js";
 import { embedConfigRoutes, integrationRoutes, webhookOutboundRoutes } from "./routes/integrations.js";
 import { crmRoutes } from "./routes/crm.js";
+import { peopleRoutes } from "./routes/people.js";
 import { guestFlowReplayRoutes } from "./routes/guest-flow-replay.js";
 import { captureIntakeRoutes } from "./routes/capture-intake.js";
 import { eventArchitectRoutes } from "./routes/event-architect.js";
@@ -84,6 +104,7 @@ import { registerAutoSave } from "./ws/auto-save.js";
 import { registerDiaryLive } from "./ws/diary-live.js";
 import websocket from "@fastify/websocket";
 import { initSentry, buildSentryCapture } from "./observability/sentry.js";
+import { apiLoggerOptions } from "./observability/health-redaction.js";
 import { registerDefaultSubscribers } from "./observability/subscribers.js";
 import { registerSecurityHeaders } from "./middleware/security-headers.js";
 import { registerRequestId } from "./middleware/request-id.js";
@@ -138,11 +159,11 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   // edge overwrites the header, so the forgery buys nothing.
   // ---------------------------------------------------------------------------
   const server = Fastify({
-    logger: isDev
-      ? { level: "info", transport: { target: "pino-pretty", options: { translateTime: "HH:MM:ss", ignore: "pid,hostname" } } }
-      : isTest
-        ? false
-        : { level: "info" },
+    // Every logging mode scrubs guests' allergy notes from the finished line,
+    // logs request urls without their query string (a client's name, email or
+    // phone on the search routes) and errors without query parameters or pg
+    // `detail`/`where` (observability/health-redaction.ts and redact.ts).
+    logger: apiLoggerOptions(isDev ? "development" : isTest ? "test" : "production"),
     bodyLimit: 2_000_000,
     connectionTimeout: 30_000,
     requestTimeout: 60_000,
@@ -231,6 +252,14 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
       retryAfterSeconds: Math.ceil(context.ttl / 1000),
     }),
   });
+  // The plugin attaches itself to each route as it is added, and Fastify's
+  // not-found handler is not a route, so a path matching no route went
+  // unlimited: anyone could send any number. Such requests draw on the same
+  // budget as the rest, checked at the same point, before any body is read.
+  const limitUnmatched = server.rateLimit();
+  server.addHook("onRequest", async function limitUnmatchedPaths(request, reply) {
+    if (request.is404) await limitUnmatched.call(this, request, reply);
+  });
 
   // Response compression. Railway's edge forwards an encoded body as-is but
   // does not compress API responses itself, so layouts (130 KB for 300
@@ -298,6 +327,10 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   //      variable, so it CAN go stale: production reported a six-week-old SHA
   //      on 2026-09-01 because an 18 Aug GitHub-triggered deploy shipped an
   //      image stamped by hand in July.
+  // builtAt is a third source, and the only one the image owns outright: the
+  // Dockerfile writes the build time into a file inside the image (see
+  // lib/build-stamp.ts), because the BUILD_TIMESTAMP service variable is set by
+  // hand and sat at 24 September beside current commits.
   // NOTHING injects these in CI — an earlier version of this comment claimed
   // that, which is why all three fields read "dev"/"0.0.0" in production for
   // months. `npm_package_version` is unset in production because the start
@@ -310,7 +343,7 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
     return {
       version: process.env["APP_VERSION"] ?? process.env["npm_package_version"] ?? "0.0.0",
       gitSha: process.env["RAILWAY_GIT_COMMIT_SHA"] ?? process.env["GIT_SHA"] ?? "dev",
-      builtAt: process.env["BUILD_TIMESTAMP"] ?? "dev",
+      builtAt: readBuildTimestamp(),
       nodeEnv: env.NODE_ENV,
     };
   });
@@ -422,8 +455,14 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   // Inject DB into auth middleware for Clerk user lookups
   setAuthDb(db);
 
+  // T-656: every model call is held to its venue's monthly AI allowance and
+  // recorded in the AI usage ledger. One meter serves every AI route.
+  const aiUsage = venueAllowanceMeter(db, env, server.log);
+
   // --- Routes ---
   await server.register(venueRoutes, { db, prefix: "/venues" });
+  // Goal 19 S7: the devices that ask to be told.
+  await server.register(pushRoutes, { db, prefix: "/push" });
   // T-647: the weather over a venue: the Met Office forecast when it can be
   // served, otherwise the committed HadUK-Grid monthly normals for the venue's
   // 1 km cell (a venue in a cell with no file answers 503 SKY_UNAVAILABLE).
@@ -441,15 +480,32 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   await server.register(enquiryRoutes, { db, prefix: "/enquiries" });
   await server.register(uploadRoutes, { db, env, prefix: "/uploads" });
   await server.register(pricingRuleRoutes, { db, prefix: "/venues/:venueId/pricing" });
+  await server.register(pricingDeskRoutes, { db, prefix: "/venues/:venueId/pricing-desk" });
+  // The competitor watch (17 Oct 2026): a dated notebook beside the price list;
+  // nothing in it is read by the suggestions or sets a price.
+  await server.register(competitorWatchRoutes, { db, prefix: "/venues/:venueId/competitor-watch" });
   await server.register(turnaroundRuleRoutes, { db, prefix: "/venues/:venueId/turnaround-rules" });
+  // Which rooms' dates the public may read (Blake, 17 October 2026).
+  await server.register(forwardBookRoutes, { db, prefix: "/venues/:venueId/forward-book" });
   await server.register(proposalTemplateRoutes, { db, prefix: "/venues/:venueId/proposal-templates" });
   await server.register(rotaRoutes, { db, prefix: "/venues/:venueId/rota" });
+  // The venue team: venue administrators invite their own staff (Plan 19 L1).
+  await server.register(venueTeamRoutes, { db, prefix: "/venues/:venueId/team" });
   await server.register(referenceLoadoutRoutes, { db, prefix: "/venues/:venueId/spaces/:spaceId/loadouts" });
   await server.register(referencePhotoRoutes, { db, prefix: "/loadouts/:loadoutId/photos" });
   await server.register(publicConfigRoutes, { db, prefix: "/public" });
+  // A visitor's view-only links (fix-first item 11): the organiser makes and
+  // stops them with the plan's id; a recipient only reads through the token.
+  await server.register(publicPlanViewRoutes, { db, prefix: "/public" });
   await server.register(layoutRoutes, { db, prefix: "/layouts" });
   await server.register(publicEnquiryRoutes, { db, prefix: "/public" });
   await server.register(publicQuizRunRoutes, { store: drizzleQuizRunStore(db), prefix: "/public" });
+  // One Living Record: a printed sheet's QR asks "is this copy current?" —
+  // version state only, no sign-in, no content.
+  await server.register(publicSheetCheckRoutes, {
+    check: (query) => resolveSheetPaperCheck(db, query),
+    prefix: "/public",
+  });
   // T-649: the public, read-only MCP endpoint at /mcp (Blake, 8 Oct 2026:
   // "Yes, read-only" — venue facts, published capacities, free/held/busy
   // dates only; a date with only a provisional hold says "held, enquire").
@@ -457,6 +513,8 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   await server.register(claimConfigRoutes, { db, prefix: "/configurations" });
   await server.register(authRoutes, { prefix: "/auth" });
   await server.register(clientRoutes, { db, prefix: "/clients" });
+  // A client's remembered allergy notes, for their own account only.
+  await server.register(dietaryMemoryRoutes, { db, prefix: "/account/dietary-notes" });
   await server.register(adminRoutes, { db, prefix: "/admin" });
   await server.register(adminAssetRoutes, { db, env, prefix: "/admin/assets" });
   await server.register(runtimePackagePreviewRoutes, { db, env, prefix: "/admin/assets" });
@@ -470,8 +528,14 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
     prefix: "/admin/reconstruction-foundry/derivative-rights",
   });
   await server.register(webhookRoutes, { db, prefix: "/webhooks" });
+  // Deposits (Plan 19 L5): off without the Stripe variables; refused, with a
+  // logged reason, for any key that is not a test key (env.ts refuses it at
+  // startup first).
+  const depositPayments = depositPaymentsFrom(env);
+  if (depositPayments.status === "refused") server.log.error({ event: "stripe.payments_refused", reason: depositPayments.reason }, "Deposits are refused");
+  await server.register(stripeWebhookRoutes, { db, payments: depositPayments, prefix: "/webhooks" });
   await server.register(hallkeeperSheetRoutes, { db, prefix: "/hallkeeper" });
-  await server.register(configurationReviewRoutes, { db, env, prefix: "/configurations" });
+  await server.register(configurationReviewRoutes, { db, prefix: "/configurations" });
   await server.register(assetRoutes, { db, env, prefix: "/assets" });
   await server.register(publicReconstructionReleaseRoutes, {
     service: reconstructionFoundryService,
@@ -480,6 +544,7 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   await server.register(integrationRoutes, { db, prefix: "/integrations" });
   await server.register(embedConfigRoutes, { db, prefix: "/embed-configs" });
   await server.register(crmRoutes, { db, prefix: "/crm" });
+  await server.register(peopleRoutes, { db, prefix: "/people" });
   await server.register(guestFlowReplayRoutes, { db, prefix: "/guest-flow" });
   await server.register(captureIntakeRoutes, {
     inspectionPath: env.CAPTURE_INTAKE_INSPECTION_PATH,
@@ -492,6 +557,7 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   await server.register(roomLayoutTimelineRoutes, { db, prefix: "/calendar" });
   await server.register(eventRoutes, { db, prefix: "/events" });
   await server.register(clientEventScheduleRoutes, { db, prefix: "/events" });
+  await server.register(clientHomeRoutes, { db, prefix: "/client-home" });
   await server.register(windowProposalRoutes, { db, prefix: "/events" });
   await server.register(roomDayRoutes, { db, prefix: "/events" });
   await server.register(phaseLayoutSnapshotRoutes, { db, prefix: "/events" });
@@ -501,13 +567,14 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   await server.register(requestRoutes, { db, prefix: "/requests" });
   await server.register(venueObservationRoutes, { db, prefix: "/venues" });
   await server.register(venueThreadRoutes, { db, prefix: "/venues" });
+  await server.register(aiUsageRoutes, { db, env, prefix: "/venues" });
   await server.register(threadRoutes, { db, prefix: "/threads" });
   await server.register(messageRoutes, { db, prefix: "/messages" });
   await server.register(clientConversationRoutes, { db, prefix: "/events" });
   await server.register(eventDayEventRoutes, { db, prefix: "/events" });
   await server.register(eventMissionEventRoutes, { db, prefix: "/events" });
   await server.register(eventMissionRoutes, { db, prefix: "/event-missions" });
-  await server.register(eventArchitectRoutes, { db, env, prefix: "/event-architect" });
+  await server.register(eventArchitectRoutes, { db, env, aiUsage, prefix: "/event-architect" });
   await server.register(eventRevenueRoutes, { db, prefix: "/events" });
   await server.register(eventPhaseRoutes, { db, prefix: "/event-phases" });
   await server.register(eventDayOpsTaskRoutes, { db, prefix: "/ops-tasks" });
@@ -520,11 +587,24 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   await server.register(webhookOutboundRoutes, { db, prefix: "/webhooks" });
   await server.register(revenueScenarioRoutes, { db, prefix: "/revenue-scenarios" });
   await server.register(analyticsRoutes, { db, prefix: "/analytics" });
-  await server.register(aiAssistantRoutes, { env, prefix: "/ai" });
+  // C1: AI on without its allow lists fails closed (on for no venue). Said
+  // loudly at boot, not refused, so a forgotten variable never blocks a deploy.
+  const missingAiLists = missingAccessLists(env);
+  if (missingAiLists.length > 0) {
+    server.log.warn({ missing: missingAiLists }, `AI_ASSISTANT_ENABLED is true but ${missingAiLists.join(" and ")} ${missingAiLists.length === 1 ? "is" : "are"} unset: AI drafts are off for every venue until set (docs/operations/ai-pilot-switch-on.md)`);
+  }
+  await server.register(aiAssistantRoutes, { env, db, aiUsage, prefix: "/ai" });
   await server.register(proposalRoutes, { db, prefix: "/proposals" });
-  await server.register(proposalMessageDraftRoutes, { db, env, prefix: "/proposals" });
+  await server.register(proposalMessageDraftRoutes, { db, env, aiUsage, prefix: "/proposals" });
+  await server.register(enquirySummaryDraftRoutes, { db, env, aiUsage, prefix: "/enquiries" });
   await server.register(quoteRoutes, { db, prefix: "/quotes" });
   await server.register(proposalShareRoutes, { db, prefix: "/proposal-share" });
+  // Deposits on an accepted proposal (Plan 19 L5), Stripe test mode only.
+  await server.register(proposalDepositRoutes, { db, payments: depositPayments, prefix: "/proposals" });
+  await server.register(proposalShareDepositRoutes, { db, payments: depositPayments, prefix: "/proposal-share" });
+  // The contract and its simple electronic signature (Plan 19 L5).
+  await server.register(proposalContractRoutes, { db, prefix: "/proposals" });
+  await server.register(proposalShareContractRoutes, { db, prefix: "/proposal-share" });
   await server.register(supplierShareRoutes, { db, prefix: "/supplier-share" });
   await server.register(publicProposalRoutes, { db, prefix: "/public" });
 
@@ -535,7 +615,9 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   // WebSocketServer.close() dozens of times. Scoping retains the plugin-owned
   // upgrade-listener cleanup and gives the websocket server one close hook.
   await server.register(async (websocketScope) => {
-    await websocketScope.register(websocket);
+    // 1 MiB per message: a 500-object autosave batch is ~150 KB and a live-op
+    // frame is capped at 128 KB; ws's own default is 100 MiB.
+    await websocketScope.register(websocket, { options: { maxPayload: 1024 * 1024 } });
     await registerAutoSave(websocketScope, db);
     await registerDiaryLive(websocketScope, db);
   });

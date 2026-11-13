@@ -37,7 +37,7 @@ describe("apiError", () => {
 describe("specialised helpers", () => {
   it("validationError accepts Zod issues", () => {
     const e = validationError("invalid body", [
-      { code: "invalid_type", expected: "string", received: "number", path: ["name"], message: "expected string" },
+      { code: "invalid_type", expected: "string", path: ["name"], message: "expected string" },
     ]);
     expect(e.code).toBe("VALIDATION_ERROR");
     expect(Array.isArray(e.details)).toBe(true);

@@ -25,14 +25,14 @@ export type AIProposalStatus = (typeof AI_PROPOSAL_STATUSES)[number];
 /** The recorded operator event — who accepted the ghost, and when. */
 const ProposalAcceptanceSchema = z
   .object({
-    acceptedBy: z.string().uuid(),
+    acceptedBy: z.uuid(),
     acceptedTs: z.string().regex(ISO_DATE_TIME, "acceptedTs must be an ISO datetime."),
   })
   .strict();
 
 const ProposalBaseShape = {
-  id: z.string().uuid(),
-  configurationId: z.string().uuid(),
+  id: z.uuid(),
+  configurationId: z.uuid(),
   /** Human-readable why — surfaced verbatim next to the ghosts. */
   rationale: z.string().trim().min(1).max(2000),
   proposedActions: z
@@ -43,7 +43,7 @@ const ProposalBaseShape = {
       for (const [index, action] of actions.entries()) {
         if (action.actor.kind !== "ai") {
           ctx.addIssue({
-            code: z.ZodIssueCode.custom,
+            code: "custom",
             message: "proposed actions must carry an ai actor — an AI may not attribute work to anyone else",
             path: [index, "actor", "kind"],
           });

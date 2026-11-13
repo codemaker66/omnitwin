@@ -307,8 +307,8 @@ describe.skipIf(target === undefined)("quote permissions through real routes and
 
   // A line priced from the price list names its entry, which must be one of
   // the quote's own venue's: a removed entry is gone, and another venue's is
-  // refused like any other link across venues. That is the record's
-  // integrity, not who may act, so a platform admin is held to it too.
+  // not found there either. That is the record's integrity, not who may act,
+  // so a platform admin is held to it too.
   it.each(["sales", "platform_admin"])("keeps a quote's price-list entries at its venue for %s", async role => {
     const platform = role === "platform_admin";
     const f = await fixture(platform ? "admin" : role, platform, platform ? "admin" : "none");
@@ -327,8 +327,8 @@ describe.skipIf(target === undefined)("quote permissions through real routes and
     const before = await quotesAtVenue();
 
     const refusals: readonly (readonly [readonly string[], number, string])[] = [
-      [[foreign.id], 422, "VENUE_MISMATCH"],
-      [[own.id, foreign.id], 422, "VENUE_MISMATCH"],
+      [[foreign.id], 404, "NOT_FOUND"],
+      [[own.id, foreign.id], 404, "NOT_FOUND"],
       [[removed.id], 404, "NOT_FOUND"],
       [[randomUUID()], 404, "NOT_FOUND"],
     ];
@@ -353,6 +353,114 @@ describe.skipIf(target === undefined)("quote permissions through real routes and
       .toEqual([own.id, own.id]);
     expect((await add(own.id)).statusCode).toBe(201);
     expect((await stored(f)).lines.map((line) => line.pricingRuleId)).toEqual(expect.arrayContaining([null, own.id]));
+  });
+
+  // Another venue's live entry is answered exactly as an id nobody has or an
+  // entry this venue removed. Any difference in status, code or wording would
+  // let one venue's staff ask whether an id is in use at another venue.
+  it("answers another venue's price-list entry exactly as a missing one", async () => {
+    const f = await fixture("sales");
+    const [own, foreign, removed] = await db.insert(schema.pricingRules).values([
+      { venueId: f.venueId, name: "Grand Hall hire", type: "flat_rate", amount: "2400.00" },
+      { venueId: f.otherVenueId, name: "Another venue's hire", type: "flat_rate", amount: "1800.00" },
+      { venueId: f.venueId, name: "Removed hire", type: "flat_rate", amount: "900.00", deletedAt: new Date() },
+    ]).returning();
+    if (own === undefined || foreign === undefined || removed === undefined) throw new Error("Missing price list fixtures");
+    const make = (pricingRuleId: string) => server.inject({ method: "POST", url: "/quotes", headers: f.headers,
+      payload: { venueId: f.venueId, name: "Priced quote", currency: "GBP",
+        lineItems: [{ description: "Room hire", quantity: 1, unitAmountMinor: 240_000, pricingRuleId }] } });
+    const add = (pricingRuleId: string) => server.inject({ method: "POST", url: `/quotes/${f.quote.id}/line-items`, headers: f.headers,
+      payload: { description: "Room hire", quantity: 1, unitAmountMinor: 240_000, pricingRuleId } });
+    const answer = async (sent: ReturnType<typeof make>) => {
+      const response = await sent;
+      return { status: response.statusCode, body: response.json<unknown>() };
+    };
+    const quotesAtVenue = async () => (await db.select().from(schema.quotes).where(eq(schema.quotes.venueId, f.venueId))).length;
+    const before = await quotesAtVenue();
+
+    for (const send of [make, add]) {
+      const unknownId = await answer(send(randomUUID()));
+      const removedHere = await answer(send(removed.id));
+      const liveElsewhere = await answer(send(foreign.id));
+      expect(unknownId).toEqual({ status: 404, body: { error: "Price list entry not found", code: "NOT_FOUND" } });
+      expect(removedHere).toEqual(unknownId);
+      expect(liveElsewhere).toEqual(unknownId);
+    }
+    expect(await quotesAtVenue()).toBe(before);
+    expect((await stored(f)).lines).toHaveLength(1);
+
+    // The venue's own live entry is still taken on both paths.
+    expect((await make(own.id)).statusCode).toBe(201);
+    expect((await add(own.id)).statusCode).toBe(201);
+  });
+
+  // A line's total and the quote's are both held to the quote ceiling before
+  // anything is written (audit pricing-money-7). 30,000,000 x 100 is
+  // 3,000,000,000, past what the integer line_total_minor column holds, so a
+  // check after the insert never ran: the database refused the row and the
+  // request ended in a server error.
+  it("refuses a line past the quote ceiling before writing it, and keeps the quote as it was", async () => {
+    const f = await fixture("sales");
+    const add = (quantity: number, unitAmountMinor: number) => server.inject({ method: "POST", url: `/quotes/${f.quote.id}/line-items`,
+      headers: f.headers, payload: { description: "TEST ONLY equipment", quantity, unitAmountMinor } });
+    for (const [quantity, unitAmountMinor] of [[100, 30_000_000], [10_000, 100_000_000], [1, 99_999_001]] as const) {
+      const refused = await add(quantity, unitAmountMinor);
+      expect(refused.statusCode, refused.body).toBe(422);
+      expect(refused.json<{ code: string }>().code).toBe("QUOTE_TOTAL_EXCEEDS_LIMIT");
+    }
+    expect(await stored(f)).toMatchObject({ quote: { subtotalMinor: 1000, totalMinor: 1000 }, lines: [expect.objectContaining({ lineTotalMinor: 1000 })] });
+    expect((await stored(f)).lines).toHaveLength(1);
+    // A line that brings the quote exactly to the ceiling is kept.
+    const atCeiling = await add(1, 99_999_000);
+    expect(atCeiling.statusCode, atCeiling.body).toBe(201);
+    expect((await stored(f)).quote).toMatchObject({ subtotalMinor: 100_000_000, totalMinor: 100_000_000 });
+  });
+
+  // A venue admin's house override on quote moves stops short of undoing a
+  // client's acceptance: back to draft, the quote could be rewritten and
+  // deleted, which the record protection below keeps from a venue admin
+  // (audit pricing-money-5). A move out of superseded keeps the successor
+  // link that quotes_superseded_coherent refuses, so for anyone it is a
+  // refusal, never a server error.
+  function move(f: Fixture, status: string) {
+    return server.inject({ method: "POST", url: `/quotes/${f.quote.id}/transition`, headers: f.headers, payload: { status } });
+  }
+
+  it("keeps an accepted quote from a venue admin's moves, and its record from deletion", async () => {
+    const f = await fixture("admin");
+    await db.update(schema.quotes).set({ status: "accepted" }).where(eq(schema.quotes.id, f.quote.id));
+    for (const status of ["draft", "issued", "declined", "expired"]) {
+      const refused = await move(f, status);
+      expect(refused.statusCode, refused.body).toBe(422);
+      expect(refused.json<{ code: string }>().code).toBe("INVALID_TRANSITION");
+    }
+    expect((await remove(f)).statusCode).toBe(422);
+    expect(await stored(f)).toMatchObject({ quote: { status: "accepted", deletedAt: null, totalMinor: 1000 }, lines: [expect.objectContaining({ lineTotalMinor: 1000 })] });
+  });
+
+  it.each(["venue_admin", "platform_admin"])("refuses %s a move out of superseded without a server error", async (who) => {
+    const platform = who === "platform_admin";
+    const f = await fixture("admin", platform, platform ? "admin" : "none");
+    const [successor] = await db.insert(schema.quotes).values({ venueId: f.venueId, name: "TEST ONLY successor", createdBy: f.actorId,
+      status: "issued", currency: "GBP", subtotalMinor: 0, totalMinor: 0 }).returning();
+    if (successor === undefined) throw new Error("Missing successor fixture");
+    await db.update(schema.quotes).set({ status: "superseded", supersededByQuoteId: successor.id }).where(eq(schema.quotes.id, f.quote.id));
+    for (const status of ["issued", "draft", "accepted", "declined", "expired"]) {
+      const refused = await move(f, status);
+      expect(refused.statusCode, refused.body).toBe(422);
+      expect(refused.json<{ code: string }>().code).toBe("INVALID_TRANSITION");
+    }
+    expect((await stored(f)).quote).toMatchObject({ status: "superseded", supersededByQuoteId: successor.id });
+  });
+
+  // Whether a platform admin keeps this override is Blake's open decision 4
+  // (docs/state/goal-ledger-2026-10-24.md); until then it stands.
+  it("keeps the platform admin's override on an accepted quote while that decision is open", async () => {
+    const f = await fixture("admin", true, "admin");
+    await db.update(schema.quotes).set({ status: "accepted" }).where(eq(schema.quotes.id, f.quote.id));
+    const moved = await move(f, "draft");
+    expect(moved.statusCode, moved.body).toBe(200);
+    expect((await stored(f)).quote?.status).toBe("draft");
   });
 
   it("retains issued-record protection for venue admins and the existing platform override", async () => {

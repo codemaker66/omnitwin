@@ -105,7 +105,7 @@ export const ScenarioInstanceSimulatorRefSchema = z.object({
   simulatorName: CrowdSimulatorSourceNameSchema,
   simulatorVersion: z.string().trim().min(1).max(120).nullable(),
   simulatorHash: z.string().regex(SHA256_HEX).nullable(),
-  parameters: z.record(CanonicalJsonValueSchema),
+  parameters: z.record(z.string(), CanonicalJsonValueSchema),
 }).strict();
 export type ScenarioInstanceSimulatorRef = z.infer<
   typeof ScenarioInstanceSimulatorRefSchema
@@ -118,7 +118,7 @@ export const ScenarioInstanceSeedRefSchema = z.object({
 }).strict().superRefine((seedRef, ctx) => {
   if (seedRef.seedPolicy === "single_seed" && seedRef.seed === null) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["seed"],
       message: "single_seed policy requires seed.",
     });
@@ -126,7 +126,7 @@ export const ScenarioInstanceSeedRefSchema = z.object({
 
   if (seedRef.seedPolicy === "seed_set" && seedRef.seedSet.length < 2) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["seedSet"],
       message: "seed_set policy requires at least two seeds.",
     });
@@ -134,7 +134,7 @@ export const ScenarioInstanceSeedRefSchema = z.object({
 
   if (seedRef.seedPolicy === "no_seed_required" && (seedRef.seed !== null || seedRef.seedSet.length > 0)) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["seedPolicy"],
       message: "no_seed_required must not carry seed values.",
     });
@@ -190,7 +190,7 @@ export const ScenarioInstanceV0Schema = z.object({
     instance.simulator === null
   ) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["simulator"],
       message: "Simulation lifecycle states require simulator metadata.",
     });
@@ -201,7 +201,7 @@ export const ScenarioInstanceV0Schema = z.object({
     instance.metricsSummary.length === 0
   ) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["metricsSummary"],
       message: "Metrics-ready and replay-ready instances require metrics summary.",
     });
@@ -209,7 +209,7 @@ export const ScenarioInstanceV0Schema = z.object({
 
   if (instance.lifecycleState === "replay_ready" && !artifactTypes.has("trajectory")) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["artifactRefs"],
       message: "Replay-ready instances require a trajectory artifact reference.",
     });
@@ -217,7 +217,7 @@ export const ScenarioInstanceV0Schema = z.object({
 
   if (instance.witnessBlockRef !== null && instance.witnessBlockRef.refType !== "witness_block") {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["witnessBlockRef"],
       message: "witnessBlockRef must use refType witness_block.",
     });
@@ -228,7 +228,7 @@ export const ScenarioInstanceV0Schema = z.object({
     instance.routeModel.dataSufficiency !== "unsupported_request"
   ) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["routeModel", "dataSufficiency"],
       message: "Unsupported route models must emit unsupported_request.",
     });

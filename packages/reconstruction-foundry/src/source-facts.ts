@@ -63,13 +63,13 @@ function isJsonWhitespaceCode(code: number): boolean {
 
 const DecimalCountSchema = z.string().max(40).regex(DECIMAL_COUNT);
 const StableCodeSchema = z.string().regex(STABLE_CODE);
-const FiniteNumberSchema = z.number().finite();
+const FiniteNumberSchema = z.number();
 const Vector3Schema = z.tuple([FiniteNumberSchema, FiniteNumberSchema, FiniteNumberSchema]);
 
 export const UniversalSourceFactsReceiptFileIdentitySchema = z
   .object({
     path: FoundryRelativePathSchema,
-    sizeBytes: z.number().int().safe().nonnegative(),
+    sizeBytes: z.number().int().int().nonnegative(),
     sha256: z.string().regex(SHA256_HEX),
     detection: FoundryFileDetectionSchema,
   })
@@ -81,7 +81,7 @@ export type UniversalSourceFactsReceiptFileIdentity = z.infer<
 const SourceIdentityBaseSchema = z
   .object({
     path: FoundryRelativePathSchema,
-    sizeBytes: z.number().int().safe().nonnegative(),
+    sizeBytes: z.number().int().int().nonnegative(),
     sha256: z.string().regex(SHA256_HEX),
   })
   .strict();
@@ -123,7 +123,7 @@ const InspectionSchema = z
   .superRefine((inspection, ctx) => {
     if ((inspection.state === "established") !== (inspection.category === "established")) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["category"],
         message: "established state and category must agree",
       });
@@ -135,10 +135,10 @@ const E57FactsSchema = z
     signature: z.literal("ASTM-E57"),
     versionMajor: z.number().int().nonnegative(),
     versionMinor: z.number().int().nonnegative(),
-    physicalLengthBytes: z.number().int().safe().nonnegative(),
-    xmlPhysicalOffsetBytes: z.number().int().safe().nonnegative(),
-    xmlLogicalLengthBytes: z.number().int().safe().nonnegative(),
-    pageSizeBytes: z.number().int().safe().positive(),
+    physicalLengthBytes: z.number().int().int().nonnegative(),
+    xmlPhysicalOffsetBytes: z.number().int().int().nonnegative(),
+    xmlLogicalLengthBytes: z.number().int().int().nonnegative(),
+    pageSizeBytes: z.number().int().int().positive(),
     fileLengthMatchesHeader: z.boolean(),
     aggregateMetadata: z.lazy(() => E57AggregateMetadataSchema).nullable(),
   })
@@ -169,12 +169,12 @@ export const E57AggregateMetadataSchema = z
       utf8ByteCount: z.number().int().min(0).max(1_048_576),
     }).strict().superRefine((value, ctx) => {
       if (value.present !== (value.sha256 !== null) || (!value.present && value.utf8ByteCount !== 0)) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, message: "coordinate metadata presence fields disagree" });
+        ctx.addIssue({ code: "custom", message: "coordinate metadata presence fields disagree" });
       }
     }),
     declaredImageBlobByteTotal: DecimalCountSchema,
     declaredPointRecordTotal: DecimalCountSchema,
-    file: z.object({ byteSize: z.number().int().safe().nonnegative() }).strict(),
+    file: z.object({ byteSize: z.number().int().int().nonnegative() }).strict(),
     imageCount: z.number().int().min(0).max(1_000_000),
     imagePoseCounts: E57CountPairSchema,
     imageRepresentationCardinality: z.object({
@@ -201,14 +201,14 @@ export const E57AggregateMetadataSchema = z
   .strict()
   .superRefine((value, ctx) => {
     if (value.scanPoseCounts.absent + value.scanPoseCounts.present !== value.scanCount) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["scanPoseCounts"], message: "scan pose counts must equal scan count" });
+      ctx.addIssue({ code: "custom", path: ["scanPoseCounts"], message: "scan pose counts must equal scan count" });
     }
     if (value.imagePoseCounts.absent + value.imagePoseCounts.present !== value.imageCount) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["imagePoseCounts"], message: "image pose counts must equal image count" });
+      ctx.addIssue({ code: "custom", path: ["imagePoseCounts"], message: "image pose counts must equal image count" });
     }
     const cardinality = value.imageRepresentationCardinality;
     if (cardinality.absent + cardinality.multiple + cardinality.single !== value.imageCount) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["imageRepresentationCardinality"], message: "image representation cardinality must equal image count" });
+      ctx.addIssue({ code: "custom", path: ["imageRepresentationCardinality"], message: "image representation cardinality must equal image count" });
     }
     const representationDeclarations = value.imageRepresentationHistogram.reduce(
       (total, item) => total + item.declarationCount,
@@ -221,7 +221,7 @@ export const E57AggregateMetadataSchema = z
       representationDeclarations > representationMaximum
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["imageRepresentationHistogram"],
         message: "image representation histogram contradicts representation cardinality",
       });
@@ -231,10 +231,10 @@ export const E57AggregateMetadataSchema = z
       0n,
     );
     if (blobTotal !== BigInt(value.declaredImageBlobByteTotal) || blobTotal > BigInt(value.file.byteSize)) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["declaredImageBlobByteTotal"], message: "declared blob total must match the histogram and fit the file" });
+      ctx.addIssue({ code: "custom", path: ["declaredImageBlobByteTotal"], message: "declared blob total must match the histogram and fit the file" });
     }
     if (value.pointFieldCoverage.some((item) => item.scanCount > value.scanCount)) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["pointFieldCoverage"], message: "point-field coverage cannot exceed scan count" });
+      ctx.addIssue({ code: "custom", path: ["pointFieldCoverage"], message: "point-field coverage cannot exceed scan count" });
     }
     for (const [path, list, key] of [
       ["pointFieldCoverage", value.pointFieldCoverage, "field"],
@@ -243,7 +243,7 @@ export const E57AggregateMetadataSchema = z
     ] as const) {
       const labels = list.map((entry) => String(entry[key as keyof typeof entry]));
       if (new Set(labels).size !== labels.length || labels.some((label, index) => label !== [...labels].sort(compareText)[index])) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, path: [path], message: `${path} must be unique and sorted` });
+        ctx.addIssue({ code: "custom", path: [path], message: `${path} must be unique and sorted` });
       }
     }
   });
@@ -254,7 +254,7 @@ const GlbContainerFactsSchema = z
     magic: z.literal("glTF"),
     version: z.number().int().nonnegative(),
     declaredLengthBytes: z.number().int().nonnegative(),
-    observedLengthBytes: z.number().int().safe().nonnegative(),
+    observedLengthBytes: z.number().int().int().nonnegative(),
     fileLengthMatchesDeclaration: z.boolean(),
     firstChunkLengthBytes: z.number().int().nonnegative(),
     firstChunkTypeHex: z.string().regex(/^[a-f0-9]{8}$/u),
@@ -263,10 +263,10 @@ const GlbContainerFactsSchema = z
   .strict()
   .superRefine((facts, ctx) => {
     if (facts.fileLengthMatchesDeclaration !== (facts.declaredLengthBytes === facts.observedLengthBytes)) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["fileLengthMatchesDeclaration"], message: "GLB length comparison is inconsistent" });
+      ctx.addIssue({ code: "custom", path: ["fileLengthMatchesDeclaration"], message: "GLB length comparison is inconsistent" });
     }
     if (facts.firstChunkTypeIsJson !== (facts.firstChunkTypeHex === "4e4f534a")) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["firstChunkTypeIsJson"], message: "GLB first-chunk type comparison is inconsistent" });
+      ctx.addIssue({ code: "custom", path: ["firstChunkTypeIsJson"], message: "GLB first-chunk type comparison is inconsistent" });
     }
   });
 
@@ -318,26 +318,26 @@ const GlbJsonFactsSchema = z
     const sortedRequired = [...facts.extensionsRequired].sort(compareText);
     const sortedSemantics = [...facts.attributeSemantics].sort(compareText);
     if (facts.extensionsUsed.some((value, index) => value !== sortedUsed[index])) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["extensionsUsed"], message: "extension declarations must be sorted" });
+      ctx.addIssue({ code: "custom", path: ["extensionsUsed"], message: "extension declarations must be sorted" });
     }
     if (facts.extensionsRequired.some((value, index) => value !== sortedRequired[index])) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["extensionsRequired"], message: "required extension declarations must be sorted" });
+      ctx.addIssue({ code: "custom", path: ["extensionsRequired"], message: "required extension declarations must be sorted" });
     }
     if (
       new Set(facts.attributeSemantics).size !== facts.attributeSemantics.length ||
       facts.attributeSemantics.some((value, index) => value !== sortedSemantics[index])
     ) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["attributeSemantics"], message: "attribute semantics must be unique and sorted" });
+      ctx.addIssue({ code: "custom", path: ["attributeSemantics"], message: "attribute semantics must be unique and sorted" });
     }
     if (
       new Set(facts.primitiveModes.map((item) => item.mode)).size !== facts.primitiveModes.length ||
       facts.primitiveModes.some((item, index) => index > 0 && item.mode <= (facts.primitiveModes[index - 1]?.mode ?? -1))
     ) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["primitiveModes"], message: "primitive modes must be unique and sorted" });
+      ctx.addIssue({ code: "custom", path: ["primitiveModes"], message: "primitive modes must be unique and sorted" });
     }
     const uri = facts.uriDeclarations;
     if (BigInt(uri.total) !== BigInt(uri.buffers) + BigInt(uri.images) + BigInt(uri.other)) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["uriDeclarations", "total"], message: "URI declaration total is inconsistent" });
+      ctx.addIssue({ code: "custom", path: ["uriDeclarations", "total"], message: "URI declaration total is inconsistent" });
     }
   });
 
@@ -417,7 +417,7 @@ const ObjFactsSchema = z
       counts.other,
     ].reduce((total, value) => total + BigInt(value), 0n);
     if (classifiedLines !== BigInt(counts.logicalLines)) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["statementCounts", "logicalLines"], message: "OBJ logical-line count is inconsistent" });
+      ctx.addIssue({ code: "custom", path: ["statementCounts", "logicalLines"], message: "OBJ logical-line count is inconsistent" });
     }
     if (
       BigInt(facts.validVertexPositionCount) > BigInt(counts.vertexPosition) ||
@@ -425,14 +425,14 @@ const ObjFactsSchema = z
       BigInt(facts.validNormalCount) > BigInt(counts.normal) ||
       BigInt(facts.validFaceStatementCount) > BigInt(counts.face)
     ) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "valid OBJ statement counts exceed declared statement counts" });
+      ctx.addIssue({ code: "custom", message: "valid OBJ statement counts exceed declared statement counts" });
     }
     const sortedArities = [...facts.faceArities].sort((left, right) => left.arity - right.arity);
     if (
       new Set(facts.faceArities.map((item) => item.arity)).size !== facts.faceArities.length ||
       facts.faceArities.some((item, index) => item.arity !== sortedArities[index]?.arity)
     ) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["faceArities"], message: "face arities must be unique and sorted" });
+      ctx.addIssue({ code: "custom", path: ["faceArities"], message: "face arities must be unique and sorted" });
     }
     const arityFaces = facts.faceArities.reduce((total, item) => total + BigInt(item.faceCount), 0n);
     const arityCorners = facts.faceArities.reduce((total, item) => total + BigInt(item.arity) * BigInt(item.faceCount), 0n);
@@ -445,25 +445,25 @@ const ObjFactsSchema = z
       arityCorners !== BigInt(facts.validFaceCornerCount) ||
       arityTriangles !== BigInt(facts.fanTriangleEquivalentCount)
     ) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["faceArities"], message: "OBJ face aggregates are inconsistent" });
+      ctx.addIssue({ code: "custom", path: ["faceArities"], message: "OBJ face aggregates are inconsistent" });
     }
     if (faceIndexReferences < arityCorners || faceIndexReferences > (3n * arityCorners)) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["faceIndexReferences"], message: "OBJ face-index reference count is inconsistent" });
+      ctx.addIssue({ code: "custom", path: ["faceIndexReferences"], message: "OBJ face-index reference count is inconsistent" });
     }
     if ((facts.nativeCoordinateBounds !== null) !== (BigInt(facts.validVertexPositionCount) > 0n)) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["nativeCoordinateBounds"], message: "OBJ bounds presence must match valid positions" });
+      ctx.addIssue({ code: "custom", path: ["nativeCoordinateBounds"], message: "OBJ bounds presence must match valid positions" });
     }
     if (
       facts.nativeCoordinateBounds !== null &&
       facts.nativeCoordinateBounds.min.some((value, index) => value > (facts.nativeCoordinateBounds?.max[index] ?? value))
     ) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["nativeCoordinateBounds"], message: "OBJ bounds min cannot exceed max" });
+      ctx.addIssue({ code: "custom", path: ["nativeCoordinateBounds"], message: "OBJ bounds min cannot exceed max" });
     }
     if (
       facts.materialLibraryDeclarationCount !== counts.materialLibrary ||
       facts.materialUseDeclarationCount !== counts.useMaterial
     ) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["materialLibraryDeclarationCount"], message: "OBJ material declaration counts are inconsistent" });
+      ctx.addIssue({ code: "custom", path: ["materialLibraryDeclarationCount"], message: "OBJ material declaration counts are inconsistent" });
     }
   });
 
@@ -479,7 +479,7 @@ const SogWebpPlaneFactsSchema = z
       "shN_labels",
     ]),
     kind: z.enum(["per_gaussian", "sh_palette"]),
-    sizeBytes: z.number().int().safe().positive().max(FOUNDRY_SOG_WEBP_MEMBER_MAX_BYTES),
+    sizeBytes: z.number().int().int().positive().max(FOUNDRY_SOG_WEBP_MEMBER_MAX_BYTES),
     crc32Hex: z.string().regex(/^[a-f0-9]{8}$/u),
     width: z.number().int().min(1).max(16_384),
     height: z.number().int().min(1).max(16_384),
@@ -492,7 +492,7 @@ const SogFactsSchema = z
     format: z.literal("sog_v2_stored_zip"),
     inspectionCoverage: z.literal("stored_zip_meta_json_and_complete_webp_riff_structure"),
     version: z.literal(2),
-    count: z.number().int().safe().positive(),
+    count: z.number().int().int().positive(),
     antialias: z.object({
       declared: z.boolean(),
       declaredValue: z.boolean().nullable(),
@@ -509,12 +509,12 @@ const SogFactsSchema = z
       paletteCount: z.number().int().min(1).max(65_536).nullable(),
     }).strict(),
     container: z.object({
-      archiveSizeBytes: z.number().int().safe().positive(),
+      archiveSizeBytes: z.number().int().int().positive(),
       entryCount: z.number().int().min(1).max(FOUNDRY_SOG_ZIP_MAX_ENTRIES),
       centralDirectoryBytes: z.number().int().min(1).max(FOUNDRY_SOG_ZIP_MAX_CENTRAL_DIRECTORY_BYTES),
       archiveCommentBytes: z.number().int().min(0).max(65_535),
       metaJsonBytes: z.number().int().min(1).max(FOUNDRY_SOG_META_MAX_BYTES),
-      totalMemberUncompressedBytes: z.number().int().safe().positive(),
+      totalMemberUncompressedBytes: z.number().int().int().positive(),
       webpPlaneBytes: z.number().int().min(1).max(FOUNDRY_SOG_WEBP_AGGREGATE_MAX_BYTES),
       dataDescriptorCount: z.number().int().min(0).max(FOUNDRY_SOG_ZIP_MAX_ENTRIES),
       exactMemberSet: z.literal(true),
@@ -528,7 +528,7 @@ const SogFactsSchema = z
     sharedPerGaussianImage: z.object({
       width: z.number().int().min(1).max(16_384),
       height: z.number().int().min(1).max(16_384),
-      capacityPixels: z.number().int().safe().positive(),
+      capacityPixels: z.number().int().int().positive(),
       countFitsCapacity: z.literal(true),
     }).strict(),
     planes: z.array(SogWebpPlaneFactsSchema).min(5).max(7),
@@ -541,26 +541,26 @@ const SogFactsSchema = z
   .strict()
   .superRefine((facts, ctx) => {
     if (facts.antialias.declared !== (facts.antialias.declaredValue !== null)) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["antialias"], message: "SOG antialias declaration fields disagree" });
+      ctx.addIssue({ code: "custom", path: ["antialias"], message: "SOG antialias declaration fields disagree" });
     }
     if (facts.encodedMeansRange.mins.some((minimum, index) => minimum > (facts.encodedMeansRange.maxs[index] ?? minimum))) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["encodedMeansRange"], message: "encoded SOG means minima cannot exceed maxima" });
+      ctx.addIssue({ code: "custom", path: ["encodedMeansRange"], message: "encoded SOG means minima cannot exceed maxima" });
     }
     const hasHigherOrder = facts.sphericalHarmonics.higherOrderPresent;
     if (
       hasHigherOrder !== (facts.sphericalHarmonics.bands !== null) ||
       hasHigherOrder !== (facts.sphericalHarmonics.paletteCount !== null)
     ) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["sphericalHarmonics"], message: "SOG higher-order SH fields disagree" });
+      ctx.addIssue({ code: "custom", path: ["sphericalHarmonics"], message: "SOG higher-order SH fields disagree" });
     }
     const expectedRoles = hasHigherOrder
       ? ["means_l", "means_u", "scales", "quats", "sh0", "shN_centroids", "shN_labels"]
       : ["means_l", "means_u", "scales", "quats", "sh0"];
     if (JSON.stringify(facts.planes.map((plane) => plane.role)) !== JSON.stringify(expectedRoles)) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["planes"], message: "SOG plane roles must be complete and canonically ordered" });
+      ctx.addIssue({ code: "custom", path: ["planes"], message: "SOG plane roles must be complete and canonically ordered" });
     }
     if (facts.planes.some((plane) => plane.kind !== (plane.role === "shN_centroids" ? "sh_palette" : "per_gaussian"))) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["planes"], message: "SOG plane roles and kinds disagree" });
+      ctx.addIssue({ code: "custom", path: ["planes"], message: "SOG plane roles and kinds disagree" });
     }
     const planeBytes = facts.planes.reduce((total, plane) => total + plane.sizeBytes, 0);
     if (
@@ -569,7 +569,7 @@ const SogFactsSchema = z
       facts.container.entryCount !== facts.planes.length + 1 ||
       facts.container.dataDescriptorCount > facts.container.entryCount
     ) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["container"], message: "SOG container member totals are inconsistent" });
+      ctx.addIssue({ code: "custom", path: ["container"], message: "SOG container member totals are inconsistent" });
     }
     const shared = facts.sharedPerGaussianImage;
     if (
@@ -580,7 +580,7 @@ const SogFactsSchema = z
         (plane.width !== shared.width || plane.height !== shared.height)
       )
     ) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["sharedPerGaussianImage"], message: "SOG per-Gaussian image capacity is inconsistent" });
+      ctx.addIssue({ code: "custom", path: ["sharedPerGaussianImage"], message: "SOG per-Gaussian image capacity is inconsistent" });
     }
     const centroid = facts.planes.find((plane) => plane.role === "shN_centroids");
     if (hasHigherOrder) {
@@ -589,10 +589,10 @@ const SogFactsSchema = z
       const expectedWidth = bands === null ? null : foundrySogShCentroidWidth(bands);
       const expectedHeight = paletteCount === null ? null : Math.ceil(paletteCount / 64);
       if (centroid === undefined || centroid.width !== expectedWidth || centroid.height !== expectedHeight) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["planes"], message: "SOG SH centroid dimensions are inconsistent" });
+        ctx.addIssue({ code: "custom", path: ["planes"], message: "SOG SH centroid dimensions are inconsistent" });
       }
     } else if (centroid !== undefined) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["planes"], message: "SOG SH0 facts cannot include a centroid plane" });
+      ctx.addIssue({ code: "custom", path: ["planes"], message: "SOG SH0 facts cannot include a centroid plane" });
     }
   });
 
@@ -609,7 +609,7 @@ const E57AssetSchema = z
   .strict()
   .superRefine((asset, ctx) => {
     if ((asset.inspection.state === "established") !== (asset.facts !== null)) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["facts"], message: "E57 facts must match inspection state" });
+      ctx.addIssue({ code: "custom", path: ["facts"], message: "E57 facts must match inspection state" });
     }
     validateE57AssetConsistency(asset, ctx);
   });
@@ -626,7 +626,7 @@ const GlbAssetSchema = z
   .superRefine((asset, ctx) => {
     const complete = asset.facts.container !== null && asset.facts.json !== null;
     if ((asset.inspection.state === "established") !== complete) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["facts"], message: "GLB facts must match inspection state" });
+      ctx.addIssue({ code: "custom", path: ["facts"], message: "GLB facts must match inspection state" });
     }
     validateGlbAssetConsistency(asset, ctx);
   });
@@ -653,7 +653,7 @@ const ObjAssetSchema = z
   .strict()
   .superRefine((asset, ctx) => {
     if ((asset.inspection.state === "established") !== (asset.facts !== null)) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["facts"], message: "OBJ facts must match inspection state" });
+      ctx.addIssue({ code: "custom", path: ["facts"], message: "OBJ facts must match inspection state" });
     }
     validateObjAssetConsistency(asset, ctx);
   });
@@ -669,10 +669,10 @@ const SogAssetSchema = z
   .strict()
   .superRefine((asset, ctx) => {
     if ((asset.inspection.state === "established") !== (asset.facts !== null)) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["facts"], message: "SOG facts must match inspection state" });
+      ctx.addIssue({ code: "custom", path: ["facts"], message: "SOG facts must match inspection state" });
     }
     if (asset.facts !== null && asset.facts.container.archiveSizeBytes !== asset.source.sizeBytes) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["facts", "container", "archiveSizeBytes"], message: "SOG archive size must match its source identity" });
+      ctx.addIssue({ code: "custom", path: ["facts", "container", "archiveSizeBytes"], message: "SOG archive size must match its source identity" });
     }
     validateSogAssetConsistency(asset, ctx);
   });
@@ -792,7 +792,7 @@ function validateArtifact(value: ArtifactWithoutValidation, ctx: z.RefinementCtx
   const paths = value.assets.map((asset) => asset.source.path);
   const sortedPaths = [...paths].sort(compareText);
   if (new Set(paths).size !== paths.length || paths.some((path, index) => path !== sortedPaths[index])) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["assets"], message: "asset paths must be unique and sorted" });
+    ctx.addIssue({ code: "custom", path: ["assets"], message: "asset paths must be unique and sorted" });
   }
   const expectedSummary = value.state === "available"
     ? {
@@ -812,13 +812,13 @@ function validateArtifact(value: ArtifactWithoutValidation, ctx: z.RefinementCtx
         blockedSourceCount: value.affectedSources.length,
       };
   if (expectedSummary.untargetedFileCount < 0 || JSON.stringify(value.summary) !== JSON.stringify(expectedSummary)) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["summary"], message: "summary does not match artifact contents" });
+    ctx.addIssue({ code: "custom", path: ["summary"], message: "summary does not match artifact contents" });
   }
   if (value.state === "unavailable") {
     const blockedPaths = value.affectedSources.map((source) => source.path);
     const sortedBlockedPaths = [...blockedPaths].sort(compareText);
     if (new Set(blockedPaths).size !== blockedPaths.length || blockedPaths.some((path, index) => path !== sortedBlockedPaths[index])) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["affectedSources"], message: "affected sources must be unique and sorted" });
+      ctx.addIssue({ code: "custom", path: ["affectedSources"], message: "affected sources must be unique and sorted" });
     }
   }
   const hasAggregate = value.assets.some((asset) =>
@@ -827,13 +827,13 @@ function validateArtifact(value: ArtifactWithoutValidation, ctx: z.RefinementCtx
   const expectedProbe = hasAggregate ? "local_pye57_read_only" : "none";
   if (value.policy.metadataProbe !== expectedProbe || value.policy.externalProcess !== expectedProbe) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["policy", "metadataProbe"],
       message: "metadata probe policy must match attached E57 aggregate evidence",
     });
   }
   if (value.factsSha256 !== artifactDigest(value)) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["factsSha256"], message: "facts digest does not match canonical payload" });
+    ctx.addIssue({ code: "custom", path: ["factsSha256"], message: "facts digest does not match canonical payload" });
   }
 }
 
@@ -902,7 +902,7 @@ function validateExactUnknowns(
 ): void {
   if (!sameJson(actual, expected)) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["unknowns"],
       message: "unknown facts must match the canonical format coverage",
     });
@@ -916,7 +916,7 @@ function validateExactInspection(
 ): void {
   if (!sameJson(actual, expected)) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["inspection"],
       message: "inspection state must match the stable format outcome",
     });
@@ -950,7 +950,7 @@ function validateE57AssetConsistency(
     "E57_PHYSICAL_HEADER_PARSE_FAILED",
   ]);
   if (!allowed.has(asset.inspection.code)) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["inspection", "code"], message: "unrecognized E57 outcome code" });
+    ctx.addIssue({ code: "custom", path: ["inspection", "code"], message: "unrecognized E57 outcome code" });
     return;
   }
   validateExactInspection(
@@ -1004,7 +1004,7 @@ function validateGlbAssetConsistency(
   }
   const category = GLB_FAILURE_CATEGORY[asset.inspection.code];
   if (category === undefined) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["inspection", "code"], message: "unrecognized GLB outcome code" });
+    ctx.addIssue({ code: "custom", path: ["inspection", "code"], message: "unrecognized GLB outcome code" });
     return;
   }
   validateExactInspection(
@@ -1060,7 +1060,7 @@ function validateObjAssetConsistency(
     "OBJ_NUL_BYTE",
   ]);
   if (!allowed.has(asset.inspection.code)) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["inspection", "code"], message: "unrecognized OBJ outcome code" });
+    ctx.addIssue({ code: "custom", path: ["inspection", "code"], message: "unrecognized OBJ outcome code" });
     return;
   }
   validateExactInspection(
@@ -1096,7 +1096,7 @@ function validateSogAssetConsistency(
     FOUNDRY_SOG_SOURCE_FACTS_FAILURE_CATEGORY_BY_CODE as Readonly<Record<string, string>>
   )[asset.inspection.code];
   if (category === undefined || category === "cancelled") {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["inspection", "code"], message: "unrecognized or non-serializable SOG outcome code" });
+    ctx.addIssue({ code: "custom", path: ["inspection", "code"], message: "unrecognized or non-serializable SOG outcome code" });
     return;
   }
   validateExactInspection(

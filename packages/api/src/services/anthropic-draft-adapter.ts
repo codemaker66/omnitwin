@@ -1,22 +1,50 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
-import { AIAssistantStatusSchema, stableCanonicalJson, type AIAssistantStatus } from "@omnitwin/types";
+import { AIAssistantStatusSchema, stableCanonicalJson, type AIAssistantStatus, type AIUsageFeature } from "@omnitwin/types";
+import { AIDraftsUnavailableError, isOutOfCredit, type AIAccessPolicy } from "./ai-access.js";
 import type {
   AIGenerationAdapter,
   AIGenerationInput,
   AIStructuredGenerationAdapter,
   AIStructuredGenerationInput,
 } from "./ai-assistant.js";
+import {
+  ANTHROPIC_PRICE_TABLE,
+  anthropicOutcome,
+  failedCall,
+  meterAnthropicMessage,
+  reserveForAnthropicRequest,
+  undatedModel,
+  type AICallAttribution,
+  type AIUsageMeter,
+  type PriceTable,
+} from "./ai-usage.js";
 
 // ---------------------------------------------------------------------------
 // Claude, through Anthropic's own SDK, as an AI draft provider. The draft's
 // rules go in the system prompt and the venue's structured context goes in
 // the user turn inside <context> tags, so a client's words stay data rather
-// than instructions. A refusal or a cut-off answer is an error, never a
-// partial draft: the route reports it and nothing reaches the composer.
+// than instructions; the context is written with JSON's escapes for <, > and
+// &, so words that hold "</context>" cannot close it early. A refusal or a
+// cut-off answer is an error, never a partial draft: the route reports it and
+// nothing reaches the composer.
+//
+// A draft is written by the model that was asked, or not at all. Drafts are
+// sent without the server-side refusal fallback, so a model that declines is
+// a refusal the person sees, never a draft another model wrote in its place;
+// and an answer that says another model served it is refused all the same.
 //
 // It also answers in a given JSON shape (structured outputs) for typed event
-// briefs (T-650), with the same refusal and cut-off rules.
+// briefs (T-650), with the same refusal and cut-off rules. A brief still asks
+// for the refusal fallback: its answer is typed, checked field by field
+// against the contract and the engine's bounds, and recorded with the model
+// that served it, before a planner reviews it.
+//
+// Every call is metered (T-656): its worst case is reserved against the
+// venue's monthly allowance before it is sent (AIBudgetReachedError when it
+// does not fit, and nothing is sent), and its tokens and cost, priced from
+// the versioned table in ai-usage.ts, are recorded in the ledger after it,
+// whatever the answer was.
 // ---------------------------------------------------------------------------
 
 export const ANTHROPIC_PROVIDER = "anthropic";
@@ -49,37 +77,73 @@ export class AIDraftNotProducedError extends Error {
   }
 }
 
+/** The model asked did not write the answer: another did, in its place. The
+ *  ledger records the call as the asked model's refusal. */
+export class AIDraftFromAnotherModelError extends AIDraftNotProducedError {
+  constructor() {
+    super("Another model than the one asked answered, so there is no draft");
+    this.name = "AIDraftFromAnotherModelError";
+  }
+}
+
+/** The context as JSON that cannot close its own tags. A client's words can
+ *  hold "</context>"; written with JSON's escapes for <, > and & they read
+ *  the same to a JSON reader but cannot end the data early and pass as
+ *  instructions. */
+export function contextTagJson(context: AIGenerationInput["context"]): string {
+  return stableCanonicalJson(context)
+    .replaceAll("<", "\\u003c")
+    .replaceAll(">", "\\u003e")
+    .replaceAll("&", "\\u0026");
+}
+
 export type AnthropicDraftRequest = Anthropic.Beta.MessageCreateParamsNonStreaming;
+/** A message as the SDK returns it, with the request id it reads from the response. */
+export type AnthropicDraftReply = Anthropic.Beta.BetaMessage & { readonly _request_id?: string | null };
 export type AnthropicDraftSend = (
   request: AnthropicDraftRequest,
   options?: { readonly signal?: AbortSignal },
-) => Promise<Anthropic.Beta.BetaMessage>;
+) => Promise<AnthropicDraftReply>;
 
 function withServerFallback(model: string, request: AnthropicDraftRequest): AnthropicDraftRequest {
   if (!MODELS_WITH_SERVER_FALLBACK.has(model)) return request;
   return { ...request, betas: [SERVER_FALLBACK_BETA], fallbacks: "default" };
 }
 
+// Drafts carry no cache breakpoint: their rules (about 1,900 characters for a
+// proposal's message, under 1,000 for the other drafts) are below the 512-token
+// minimum Claude Opus 5.5 caches, and a shorter prefix silently never caches.
+// Nor do they ask for the server-side refusal fallback: a draft is the asked
+// model's words or none (see readAnthropicDraftText).
 export function buildAnthropicDraftRequest(model: string, input: AIGenerationInput): AnthropicDraftRequest {
-  return withServerFallback(model, {
+  return {
     model,
     max_tokens: MAX_TOKENS,
     output_config: { effort: "medium" },
     system: input.instructions,
     messages: [{
       role: "user",
-      content: `<context>\n${stableCanonicalJson(input.context)}\n</context>`,
+      content: `<context>\n${contextTagJson(input.context)}\n</context>`,
     }],
-  });
+  };
 }
 
-/** A request whose answer must match a JSON schema (structured outputs). */
+/**
+ * A request whose answer must match a JSON schema (structured outputs). A
+ * frozen system prompt long enough to cache (`cacheSystem`) carries a
+ * 5-minute cache breakpoint: everything before it (the system prompt and the
+ * route's fixed thinking, effort and format) is the same on every request,
+ * and everything that varies (the room, today's date, the description) is in
+ * the user turn after it.
+ */
 export function buildAnthropicStructuredRequest(model: string, input: AIStructuredGenerationInput): AnthropicDraftRequest {
   return withServerFallback(model, {
     model,
     max_tokens: MAX_TOKENS,
     output_config: { effort: "medium", format: { type: "json_schema", schema: input.schema } },
-    system: input.system,
+    system: input.cacheSystem
+      ? [{ type: "text", text: input.system, cache_control: { type: "ephemeral" } }]
+      : input.system,
     messages: [{ role: "user", content: input.prompt }],
   });
 }
@@ -105,8 +169,24 @@ export function readAnthropicStructuredAnswer(message: Anthropic.Beta.BetaMessag
   }
 }
 
-/** The draft's text, or an error when Claude declined or was cut off. */
-export function readAnthropicDraftText(message: Anthropic.Beta.BetaMessage): string {
+
+/**
+ * Whether a model other than the one asked wrote the answer: a server-side
+ * fallback served it (a `fallback_message` entry in `usage.iterations`, the
+ * API's own signal, or a `fallback` block where one model gave way to
+ * another), or the message names another model.
+ */
+export function servedByAnotherModel(message: Anthropic.Beta.BetaMessage, requestedModel: string): boolean {
+  if ((message.usage.iterations ?? []).some((entry) => entry.type === "fallback_message")) return true;
+  if (message.content.some((block) => block.type === "fallback")) return true;
+  // The model asked, or a dated snapshot of it ("claude-opus-5-5-20261001").
+  return undatedModel(message.model) !== undatedModel(requestedModel);
+}
+
+/** The draft's text, or an error when Claude declined, was cut off, or
+ *  another model than the one asked wrote it. */
+export function readAnthropicDraftText(message: Anthropic.Beta.BetaMessage, requestedModel: string): string {
+  if (servedByAnotherModel(message, requestedModel)) throw new AIDraftFromAnotherModelError();
   if (message.stop_reason === "refusal") {
     throw new AIDraftNotProducedError("Claude declined to write this draft");
   }
@@ -127,6 +207,9 @@ export class AnthropicAIGenerationAdapter implements AIGenerationAdapter, AIStru
   readonly status: AIAssistantStatus;
   private readonly model: string;
   private readonly send: AnthropicDraftSend;
+  private readonly usage: AIUsageMeter;
+  private readonly prices: PriceTable;
+  private readonly access: AIAccessPolicy | undefined;
 
   constructor(input: {
     readonly model: string;
@@ -134,6 +217,12 @@ export class AnthropicAIGenerationAdapter implements AIGenerationAdapter, AIStru
     readonly baseUrl?: string;
     /** The Console workspace to bill, needed when the key is not scoped to one. */
     readonly workspaceId?: string;
+    /** Reserves each call against its venue's allowance and records what it cost (T-656). */
+    readonly usage: AIUsageMeter;
+    /** Which venues and drafts are switched on (C1); every one unless given. */
+    readonly access?: AIAccessPolicy;
+    /** The prices calls are recorded at; the current table unless a test names another. */
+    readonly prices?: PriceTable;
     /** Replaces the network call, for tests. */
     readonly send?: AnthropicDraftSend;
   }) {
@@ -144,6 +233,9 @@ export class AnthropicAIGenerationAdapter implements AIGenerationAdapter, AIStru
       disabledReason: null,
     });
     this.model = input.model;
+    this.usage = input.usage;
+    this.prices = input.prices ?? ANTHROPIC_PRICE_TABLE;
+    this.access = input.access;
     if (input.send !== undefined) {
       this.send = input.send;
     } else {
@@ -160,13 +252,63 @@ export class AnthropicAIGenerationAdapter implements AIGenerationAdapter, AIStru
     }
   }
 
-  async generateText(input: AIGenerationInput): Promise<string> {
-    const message = await this.send(buildAnthropicDraftRequest(this.model, input));
-    return readAnthropicDraftText(message);
+  async generateText(input: AIGenerationInput, attribution: AICallAttribution): Promise<string> {
+    return this.metered(
+      buildAnthropicDraftRequest(this.model, input),
+      input.useCase,
+      attribution,
+      undefined,
+      (message) => readAnthropicDraftText(message, this.model),
+    );
   }
 
-  async generateStructured(input: AIStructuredGenerationInput): Promise<unknown> {
-    const message = await this.send(buildAnthropicStructuredRequest(this.model, input), { signal: input.signal });
-    return readAnthropicStructuredAnswer(message);
+  async generateStructured(input: AIStructuredGenerationInput, attribution: AICallAttribution): Promise<unknown> {
+    return this.metered(buildAnthropicStructuredRequest(this.model, input), input.useCase, attribution, input.signal, readAnthropicStructuredAnswer);
+  }
+
+  /**
+   * One call, held to the venue's allowance and recorded: refused with
+   * nothing reserved or sent where the venue or draft is not switched on
+   * (C1); reserve (or be refused, with nothing sent), send, record what came
+   * back, then read it. Every failure keeps its own error and the record
+   * never replaces it, but for the provider refusing for want of credit,
+   * which is said as AIDraftsUnavailableError.
+   */
+  private async metered<T>(
+    request: AnthropicDraftRequest,
+    feature: AIUsageFeature,
+    attribution: AICallAttribution,
+    signal: AbortSignal | undefined,
+    read: (message: Anthropic.Beta.BetaMessage) => T,
+  ): Promise<T> {
+    this.access?.assertAllowed(attribution.venueId, feature);
+    const hold = await this.usage.hold({
+      venueId: attribution.venueId,
+      userId: attribution.userId,
+      feature,
+      provider: ANTHROPIC_PROVIDER,
+      requestedModel: this.model,
+      priceTableVersion: this.prices.version,
+      reserveMicroUsd: reserveForAnthropicRequest(this.prices, request),
+    });
+    let message: AnthropicDraftReply;
+    try {
+      message = await this.send(request, { signal });
+    } catch (error) {
+      await hold.settle(failedCall(this.model, error));
+      if (isOutOfCredit(error)) throw new AIDraftsUnavailableError();
+      throw error;
+    }
+    const used = meterAnthropicMessage(this.prices, this.model, message);
+    let answer: T;
+    try {
+      answer = read(message);
+    } catch (error) {
+      const outcome = error instanceof AIDraftFromAnotherModelError ? "refusal" : anthropicOutcome(message, false);
+      await hold.settle({ ...used, outcome });
+      throw error;
+    }
+    await hold.settle({ ...used, outcome: anthropicOutcome(message, true) });
+    return answer;
   }
 }

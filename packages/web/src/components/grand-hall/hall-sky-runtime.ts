@@ -32,6 +32,16 @@ export const hallSkyUniforms = {
   glowStrength: uniform(0),
   stars: uniform(0),
   cityGlow: uniform(0),
+  /** The city's night, 0 above −3° of sun to 1 by −10° (sky-palette.ts). */
+  night: uniform(0),
+  /** The sun's true altitude, degrees (each street lamp switches at its own). */
+  sunAltitude: uniform(90),
+  /**
+   * Where the night's light comes from across the city, a horizontal unit
+   * vector: the moon while it stands more than about 5° up, otherwise the
+   * glow of George Square, the densest cluster of street lamps round the hall.
+   */
+  nightGlowDirection: uniform(new Vector3(0, 0, 1)),
   /**
    * The light the sun's shadow map is drawn for — the sun by day, the moon
    * at night (HallSunLight): unit vector toward it, and its direct
@@ -63,6 +73,9 @@ export function publishHallSky(sky: HallSky, moving: boolean): void {
   u.glowStrength.value = sky.palette.glowStrength;
   u.stars.value = sky.palette.stars;
   u.cityGlow.value = sky.palette.cityGlow;
+  u.night.value = sky.palette.night;
+  u.sunAltitude.value = sky.sun.trueAltitude;
+  u.nightGlowDirection.value.set(...sky.nightGlow);
   hallSkyState.sky = sky;
   hallSkyState.moving = moving;
   hallSkyState.version += 1;

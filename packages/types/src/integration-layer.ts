@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  boundedJsonObjectSchema,
   CanonicalJsonValueSchema,
   sha256Hex,
   stableCanonicalJson,
@@ -64,26 +65,31 @@ export type IntegrationEventDirection = z.infer<typeof IntegrationEventDirection
 export const IntegrationEventStatusSchema = z.enum(INTEGRATION_EVENT_STATUSES);
 export type IntegrationEventStatus = z.infer<typeof IntegrationEventStatusSchema>;
 
-export const IntegrationConnectionIdSchema = z.string().uuid();
+export const IntegrationConnectionIdSchema = z.uuid();
 export type IntegrationConnectionId = z.infer<typeof IntegrationConnectionIdSchema>;
 
-export const WebhookEndpointIdSchema = z.string().uuid();
+export const WebhookEndpointIdSchema = z.uuid();
 export type WebhookEndpointId = z.infer<typeof WebhookEndpointIdSchema>;
 
-export const ExternalCalendarLinkIdSchema = z.string().uuid();
+export const ExternalCalendarLinkIdSchema = z.uuid();
 export type ExternalCalendarLinkId = z.infer<typeof ExternalCalendarLinkIdSchema>;
 
-export const WebsiteEmbedConfigIdSchema = z.string().uuid();
+export const WebsiteEmbedConfigIdSchema = z.uuid();
 export type WebsiteEmbedConfigId = z.infer<typeof WebsiteEmbedConfigIdSchema>;
 
-export const EmailTemplateIdSchema = z.string().uuid();
+export const EmailTemplateIdSchema = z.uuid();
 export type EmailTemplateId = z.infer<typeof EmailTemplateIdSchema>;
 
-export const IntegrationEventIdSchema = z.string().uuid();
+export const IntegrationEventIdSchema = z.uuid();
 export type IntegrationEventId = z.infer<typeof IntegrationEventIdSchema>;
 
-export const IntegrationConfigSchema = z.record(CanonicalJsonValueSchema);
+export const IntegrationConfigSchema = z.record(z.string(), CanonicalJsonValueSchema);
 export type IntegrationConfig = z.infer<typeof IntegrationConfigSchema>;
+
+/** The most an integration's config, or a webhook test payload, may hold as
+ *  JSON when a client sends one. */
+export const INTEGRATION_CONFIG_MAX_BYTES = 32 * 1024;
+const IntegrationConfigInputSchema = boundedJsonObjectSchema(INTEGRATION_CONFIG_MAX_BYTES);
 
 export const IntegrationConnectionRecordSchema = z.object({
   id: IntegrationConnectionIdSchema,
@@ -95,10 +101,10 @@ export const IntegrationConnectionRecordSchema = z.object({
   credentialRef: z.string().trim().min(1).max(200).nullable(),
   config: IntegrationConfigSchema,
   healthStatus: SafePlanningWordingSchema,
-  lastCheckedAt: z.string().datetime().nullable(),
+  lastCheckedAt: z.iso.datetime().nullable(),
   createdBy: UserIdSchema.nullable(),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
 }).strict();
 export type IntegrationConnectionRecord = z.infer<typeof IntegrationConnectionRecordSchema>;
 
@@ -116,7 +122,7 @@ export const CreateIntegrationConnectionSchema = z.object({
   status: IntegrationConnectionStatusSchema.default("pending_setup"),
   credentialMode: IntegrationCredentialModeSchema.default("not_configured"),
   credentialRef: z.string().trim().min(1).max(200).nullable().optional(),
-  config: IntegrationConfigSchema.default({}),
+  config: IntegrationConfigInputSchema.default({}),
 }).strict();
 export type CreateIntegrationConnection = z.infer<typeof CreateIntegrationConnectionSchema>;
 
@@ -125,7 +131,7 @@ export const UpdateIntegrationConnectionSchema = z.object({
   status: IntegrationConnectionStatusSchema.optional(),
   credentialMode: IntegrationCredentialModeSchema.optional(),
   credentialRef: z.string().trim().min(1).max(200).nullable().optional(),
-  config: IntegrationConfigSchema.optional(),
+  config: IntegrationConfigInputSchema.optional(),
 }).strict();
 export type UpdateIntegrationConnection = z.infer<typeof UpdateIntegrationConnectionSchema>;
 
@@ -134,12 +140,12 @@ export const WebhookEndpointSchema = z.object({
   venueId: VenueIdSchema,
   integrationConnectionId: IntegrationConnectionIdSchema.nullable(),
   label: SafePlanningWordingSchema,
-  url: z.string().url(),
+  url: z.url(),
   eventTypes: z.array(z.string().trim().min(1).max(120)).min(1).max(30),
   status: WebhookEndpointStatusSchema,
   signingSecretRef: z.string().trim().min(1).max(200).nullable(),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
 }).strict();
 export type WebhookEndpoint = z.infer<typeof WebhookEndpointSchema>;
 
@@ -158,9 +164,9 @@ export const ExternalCalendarLinkSchema = z.object({
   externalCalendarId: z.string().trim().min(1).max(240),
   syncDirection: z.enum(["read_only", "write_outbound", "two_way"]),
   status: IntegrationConnectionStatusSchema,
-  lastSyncedAt: z.string().datetime().nullable(),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
+  lastSyncedAt: z.iso.datetime().nullable(),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
 }).strict();
 export type ExternalCalendarLink = z.infer<typeof ExternalCalendarLinkSchema>;
 
@@ -172,13 +178,13 @@ export const WebsiteEmbedConfigSchema = z.object({
   venueName: SafePlanningWordingSchema,
   roomName: SafePlanningWordingSchema.nullable(),
   ctaLabel: SafePlanningWordingSchema,
-  ctaUrl: z.string().url(),
+  ctaUrl: z.url(),
   safeMode: z.literal(true),
   analyticsMode: z.literal("stub"),
   status: z.enum(["draft", "active", "archived"]),
   createdBy: UserIdSchema.nullable(),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
 }).strict();
 export type WebsiteEmbedConfig = z.infer<typeof WebsiteEmbedConfigSchema>;
 
@@ -188,7 +194,7 @@ export const ClientSafeWebsiteEmbedConfigSchema = z.object({
   room: SafePlanningWordingSchema.nullable(),
   cta: z.object({
     label: SafePlanningWordingSchema,
-    url: z.string().url(),
+    url: z.url(),
   }).strict(),
   safeMode: z.literal(true),
   analytics: z.object({
@@ -203,7 +209,7 @@ export const CreateWebsiteEmbedConfigSchema = z.object({
   venueId: VenueIdSchema,
   roomId: SpaceIdSchema.nullable().optional(),
   ctaLabel: SafePlanningWordingSchema,
-  ctaUrl: z.string().url(),
+  ctaUrl: z.url(),
   safeMode: z.literal(true).default(true),
   status: z.enum(["draft", "active"]).default("draft"),
 }).strict();
@@ -218,8 +224,8 @@ export const EmailTemplateSchema = z.object({
   bodyTemplate: z.string().trim().min(1).max(6000),
   status: EmailTemplateStatusSchema,
   managedByCode: z.boolean(),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
 }).strict();
 export type EmailTemplate = z.infer<typeof EmailTemplateSchema>;
 
@@ -232,14 +238,14 @@ export const IntegrationEventSchema = z.object({
   status: IntegrationEventStatusSchema,
   payloadHash: z.string().regex(/^[a-f0-9]{64}$/),
   summary: SafePlanningWordingSchema,
-  createdAt: z.string().datetime(),
+  createdAt: z.iso.datetime(),
 }).strict();
 export type IntegrationEvent = z.infer<typeof IntegrationEventSchema>;
 
 export const WebhookOutboundTestInputSchema = z.object({
   venueId: VenueIdSchema,
   eventType: z.string().trim().min(1).max(120),
-  payload: IntegrationConfigSchema,
+  payload: IntegrationConfigInputSchema,
   signingSecretRef: z.string().trim().min(1).max(200).nullable().optional(),
 }).strict();
 export type WebhookOutboundTestInput = z.infer<typeof WebhookOutboundTestInputSchema>;

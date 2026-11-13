@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactElement } from "react";
 import { advance as advanceFrame, invalidate } from "@react-three/fiber";
-import type { Space } from "@omnitwin/types";
+import { TRADES_HALL_GRAND_HALL_DIMENSIONS, type Space } from "@omnitwin/types";
+import { GRAND_HALL_RENDER_DIMENSIONS } from "../constants/scale.js";
 import { PlannerScene } from "../components/editor/PlannerScene.js";
 import { useEditorStore } from "../stores/editor-store.js";
 import { usePlacementStore } from "../stores/placement-store.js";
@@ -10,15 +11,65 @@ import { useCockpitStore } from "../stores/cockpit-store.js";
 import { useBookmarkStore } from "../stores/bookmark-store.js";
 import { nativeFrameComposer } from "../lib/native-frame-composer.js";
 import { getNativeRenderer } from "../lib/native-renderer.js";
-import { getCatalogueItemBySlug } from "../lib/catalogue.js";
+import { nativePrecompileSettled } from "../lib/native-precompile.js";
+import { getCatalogueItem, getCatalogueItemBySlug } from "../lib/catalogue.js";
+import { usePlannerToolKeys } from "../lib/planner-keymap.js";
+import { plannerChromeRequested } from "../lib/planner-chrome-flag.js";
+import { ChromeShell } from "../components/planner-chrome/ChromeShell.js";
+import { useSelectionStore } from "../stores/selection-store.js";
+import { useCatalogueStore } from "../stores/catalogue-store.js";
+import { useToolStore } from "../stores/tool-store.js";
 import type { HallMoodName } from "../components/grand-hall/hall-mood.js";
 import "../App.css";
 
 // ---------------------------------------------------------------------------
 // Development fixture: the planner's own scene in the Grand Hall with a
 // furnished layout and no backend, for looking at the room and measuring its
-// frames. Compiled out of production builds with the other fixtures.
+// frames. It answers the keys as the planner does (its tool keys and Escape
+// order), so a keyboard walk can be recorded over the real room. Compiled out
+// of production builds with the other fixtures.
 // ---------------------------------------------------------------------------
+
+const RAD_TO_DEG = 180 / Math.PI;
+
+function isTable(catalogueItemId: string): boolean {
+  return getCatalogueItem(catalogueItemId)?.category === "table";
+}
+
+function selectTable(index = 0): string | null {
+  const placed = usePlacementStore.getState().placedItems;
+  const table = placed.filter((item) => isTable(item.catalogueItemId))[index];
+  if (table === undefined) return null;
+  const group = table.groupId === null ? [table.id] : placed.filter((item) => item.groupId === table.groupId).map((item) => item.id);
+  useSelectionStore.getState().selectMultiple(group);
+  return table.id;
+}
+
+function keyState(): LabKeyState {
+  const placed = usePlacementStore.getState();
+  const selected = useSelectionStore.getState().selectedIds;
+  const table = placed.placedItems.find((item) => selected.has(item.id) && isTable(item.catalogueItemId));
+  const seats = table === undefined || table.groupId === null ? 0 : placed.placedItems
+    .filter((item) => item.groupId === table.groupId && item.id !== table.id).length;
+  const tool = useToolStore.getState().activeTool;
+  return {
+    tool,
+    selected: selected.size,
+    placing: useCatalogueStore.getState().selectedItemId,
+    ghostTurnDeg: Math.round(placed.ghostRotation * RAD_TO_DEG),
+    table: table === undefined ? null : {
+      x: Math.round(table.x * 1000) / 1000,
+      z: Math.round(table.z * 1000) / 1000,
+      turnDeg: Math.round(table.rotationY * RAD_TO_DEG),
+      seats,
+    },
+    measuring: tool === "measure",
+    drawing: tool === "draw",
+  };
+}
+
+/** The Grand Hall's row as production stores it: 21.14 × 10.59 × 6.7 m, centred. */
+const LAB_HALL = TRADES_HALL_GRAND_HALL_DIMENSIONS;
 
 const LAB_SPACE: Space = {
   id: "00000000-0000-4000-8000-00000000a11b",
@@ -26,10 +77,15 @@ const LAB_SPACE: Space = {
   name: "Grand Hall",
   slug: "grand-hall",
   description: null,
-  widthM: "21",
-  lengthM: "10.5",
-  heightM: "7",
-  floorPlanOutline: [{ x: 0, y: 0 }, { x: 21, y: 0 }, { x: 21, y: 10.5 }, { x: 0, y: 10.5 }],
+  widthM: String(LAB_HALL.width),
+  lengthM: String(LAB_HALL.length),
+  heightM: String(LAB_HALL.height),
+  floorPlanOutline: [
+    { x: -LAB_HALL.width / 2, y: -LAB_HALL.length / 2 },
+    { x: LAB_HALL.width / 2, y: -LAB_HALL.length / 2 },
+    { x: LAB_HALL.width / 2, y: LAB_HALL.length / 2 },
+    { x: -LAB_HALL.width / 2, y: LAB_HALL.length / 2 },
+  ],
   meshUrl: null,
   thumbnailUrl: null,
   sortOrder: 0,
@@ -60,7 +116,8 @@ declare global {
       ready: () => boolean;
       /**
        * Steps the planner's frame loop `frames` times at 60 fps, waiting for the
-       * GPU after each: frames advance even while the page is hidden.
+       * GPU after each: frames advance even while the page is hidden. Each waits
+       * first for any precompile hold to lift, as the view's own frames do.
        */
       advance: (frames?: number) => Promise<void>;
       /**
@@ -73,8 +130,24 @@ declare global {
        * queries around every render pass (milliseconds; null where unsupported).
        */
       measureGpu: (frames?: number) => Promise<{ readonly frames: number; readonly meanMs: number; readonly p95Ms: number } | null>;
+      /** Selects the nth table and its chairs, as a click on it would (keyboard walks start here). */
+      selectTable: (index?: number) => string | null;
+      /** Takes a catalogue piece in hand, as a click on its tile would. */
+      pick: (catalogueSlug: string) => void;
+      /** What the keys have done: the tool, the selection, the piece in hand and the selected table. */
+      keyState: () => LabKeyState;
     };
   }
+}
+
+interface LabKeyState {
+  readonly tool: string;
+  readonly selected: number;
+  readonly placing: string | null;
+  readonly ghostTurnDeg: number;
+  readonly table: { readonly x: number; readonly z: number; readonly turnDeg: number; readonly seats: number } | null;
+  readonly measuring: boolean;
+  readonly drawing: boolean;
 }
 
 interface GpuQueue { readonly queue: { onSubmittedWorkDone(): Promise<void> } }
@@ -192,6 +265,8 @@ async function measureGpu(frames = 60): Promise<{ readonly frames: number; reado
 
 export function PlannerLabPage(): ReactElement {
   const [ready, setReady] = useState(false);
+  const [chrome] = useState(() => plannerChromeRequested(window.location.search));
+  usePlannerToolKeys();
 
   useEffect(() => {
     const requested = Number(new URLSearchParams(window.location.search).get("guests") ?? "160");
@@ -199,7 +274,9 @@ export function PlannerLabPage(): ReactElement {
     useEditorStore.setState({ space: LAB_SPACE, configId: "planner-lab" });
     // The drawn hall, not a capture: production keeps captures off.
     useCockpitStore.setState({ layerMode: "mesh" });
-    useRoomDimensionsStore.getState().setDimensions({ width: 21, length: 10.5, height: 7 });
+    // The room the planner sizes from the Grand Hall's geometry (pinned equal
+    // to roomGeometries["Grand Hall"] in constants/__tests__/scale.test.ts).
+    useRoomDimensionsStore.getState().setDimensions(GRAND_HALL_RENDER_DIMENSIONS);
     setReady(true);
     window.__plannerLab = {
       furnish,
@@ -233,6 +310,11 @@ export function PlannerLabPage(): ReactElement {
       advance: async (frames = 30) => {
         const started = performance.now();
         for (let frame = 0; frame < frames; frame++) {
+          // R3F's advance draws through the view's precompile hold, with the
+          // job's target and MRT still set (lib/native-precompile.ts): driven
+          // so, 25 pipelines failed on WebGPU (4 Nov 2026).
+          const native = window.__venPerf === undefined ? null : getNativeRenderer(window.__venPerf.gl);
+          if (native !== null) await nativePrecompileSettled(native);
           // A demand loop draws only what was asked for: ask for every frame.
           invalidate();
           advanceFrame(started + frame * (1000 / 60));
@@ -242,6 +324,12 @@ export function PlannerLabPage(): ReactElement {
       },
       measure,
       measureGpu,
+      selectTable,
+      pick: (catalogueSlug) => {
+        const item = getCatalogueItemBySlug(catalogueSlug);
+        if (item !== undefined) useCatalogueStore.getState().selectItem(item.id);
+      },
+      keyState,
     };
     const timer = window.setTimeout(() => { if (guests > 0) furnish(guests); }, 500);
     return () => {
@@ -249,6 +337,9 @@ export function PlannerLabPage(): ReactElement {
       delete window.__plannerLab;
     };
   }, []);
+
+  // `?chrome=v2`: the scene under the new chrome's zones, as the planner shows it (T-671).
+  if (chrome === "v2") return <ChromeShell room={ready ? <PlannerScene /> : null} />;
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "#0d0b09", display: "flex" }}>

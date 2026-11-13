@@ -1,0 +1,749 @@
+/* ---------------------------------------------------------------------------
+   The Team (Plan 19 L1), in the Rota's family: an ivory sheet with a tilted
+   edge on the sage ground, the copper plane for the two numbers, a forest
+   panel for the one next step (inviting), sage for an email that went out,
+   copper for a link still to share. Colours come from the register's --reg-*
+   names; the "You" chip and the chosen role's summary take named House tones.
+   --------------------------------------------------------------------------- */
+
+.team {
+  --team-pad: clamp(24px, 3vw, 44px);
+  box-sizing: border-box;
+  min-height: calc(100dvh - 80px);
+  padding: 24px;
+  color: var(--reg-text-1);
+  font-family: var(--house-sans);
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+.team :is(button, input, a):focus-visible,
+.team [tabindex="-1"]:focus-visible {
+  outline: var(--vv-focus-ring);
+  outline-offset: 2px;
+}
+
+.team [tabindex="-1"]:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* ---------------------------------------------------------------------------
+   The sheet and its head
+   --------------------------------------------------------------------------- */
+
+.team__sheet {
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  align-content: start;
+  gap: 32px;
+  box-sizing: border-box;
+  max-width: 1240px;
+  min-width: 0;
+  padding: 34px var(--team-pad) 48px;
+}
+
+.team__sheet::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--reg-surface);
+  clip-path: polygon(0 0, 100% 0, calc(100% - 14px) 100%, 0 100%);
+}
+
+.team__head {
+  min-width: 0;
+}
+
+.team__title {
+  margin: 0;
+  font: 400 clamp(38px, 3.6vw, 54px)/1.04 var(--house-serif);
+  letter-spacing: -0.022em;
+}
+
+.team__lede {
+  max-width: 60ch;
+  margin: 12px 0 0;
+  color: var(--reg-text-2);
+  font: 400 19px/1.5 var(--house-serif);
+  text-wrap: pretty;
+}
+
+.team__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 24px;
+  margin-top: 22px;
+}
+
+/* The two numbers, on the copper plane, breaking past the sheet's edge. */
+.team__plane {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  margin: 0 0 0 calc(-1 * var(--team-pad) - 12px);
+  padding: 12px 26px 12px calc(var(--team-pad) + 12px);
+}
+
+.team__plane::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--reg-surface);
+  clip-path: polygon(0 7%, 100% 0, calc(100% - 10px) 100%, 6px 100%);
+}
+
+.team__plane > div {
+  display: flex;
+  flex-direction: column-reverse;
+  justify-content: flex-end;
+  gap: 2px;
+  min-width: 118px;
+  padding: 6px 18px;
+  border-left: 1px solid color-mix(in srgb, var(--reg-text-2) 28%, transparent);
+}
+
+.team__plane > div:first-child {
+  padding-left: 0;
+  border-left: 0;
+}
+
+.team__plane dt {
+  color: var(--reg-text-2);
+  font-size: 14px;
+}
+
+.team__plane dd {
+  margin: 0;
+  color: var(--reg-text-1);
+  font-size: clamp(28px, 2.4vw, 38px);
+  font-weight: 300;
+  line-height: 1.04;
+  letter-spacing: -0.04em;
+  font-variant-numeric: tabular-nums;
+}
+
+.team__refreshing {
+  color: var(--reg-text-2);
+  font-size: 14px;
+}
+
+/* ---------------------------------------------------------------------------
+   Inviting someone: the forest panel
+   --------------------------------------------------------------------------- */
+
+.team-invite {
+  display: grid;
+  min-width: 0;
+}
+
+.team-invite__panel {
+  display: grid;
+  gap: 22px;
+  min-width: 0;
+  padding: 26px 28px 28px;
+  border-radius: 3px;
+  background: var(--reg-surface);
+  color: var(--reg-text-1);
+}
+
+.team-invite__title {
+  margin: 0;
+  font: 400 28px/1.15 var(--house-serif);
+  letter-spacing: -0.015em;
+}
+
+.team-field {
+  display: grid;
+  gap: 6px;
+  max-width: 540px;
+  min-width: 0;
+}
+
+.team-field__label {
+  padding: 0;
+  color: var(--reg-text-2);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.team-roles legend.team-field__label {
+  margin-bottom: 10px;
+}
+
+.team-field__input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: 46px;
+  padding: 0 14px;
+  border: 1px solid var(--reg-edge);
+  border-radius: 3px;
+  background: var(--reg-raised);
+  color: var(--reg-text-1);
+  font: 400 16px/1.2 var(--house-sans);
+}
+
+.team-field__input[aria-invalid="true"] {
+  border-color: var(--reg-alert);
+}
+
+.team-field__error {
+  margin: 0;
+  color: var(--reg-alert);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.45;
+}
+
+.team-field__hint {
+  margin: 0;
+  color: var(--reg-text-2);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+/* Each role with what it opens, so access is never granted unseen. */
+.team-roles {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.team-roles__options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.team-role {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  column-gap: 10px;
+  row-gap: 3px;
+  padding: 13px 14px 14px;
+  border: 1px solid var(--reg-rule);
+  border-radius: 3px;
+  background: var(--reg-raised);
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.team-role input {
+  grid-row: 1 / span 2;
+  width: 16px;
+  height: 16px;
+  margin: 4px 0 0;
+  accent-color: var(--reg-primary);
+}
+
+.team-role__label {
+  font: 400 18px/1.25 var(--house-serif);
+}
+
+.team-role__summary {
+  color: var(--reg-text-2);
+  font-size: 13.5px;
+  line-height: 1.4;
+}
+
+.team-role:has(input:checked) {
+  border-color: var(--reg-primary);
+  background: var(--reg-primary);
+  color: var(--reg-primary-ink);
+}
+
+.team-role:has(input:checked) .team-role__summary {
+  color: var(--house-ink-2);
+}
+
+.team-role:has(input:checked) input {
+  accent-color: var(--house-forest);
+}
+
+/* The card wears the ring, not the small radio inside it. */
+.team-role:has(input:focus-visible) {
+  outline: var(--vv-focus-ring);
+  outline-offset: 2px;
+}
+
+.team-role input:focus-visible {
+  outline: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .team-role:hover:not(:has(input:checked)) {
+    border-color: var(--reg-edge);
+    background: var(--reg-surface-hover);
+  }
+}
+
+.team-invite__send {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px 24px;
+  padding-top: 18px;
+  border-top: 1px solid var(--reg-rule);
+}
+
+.team-invite__consequence {
+  max-width: 56ch;
+  margin: 0;
+  color: var(--reg-text-2);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.team-invite__button {
+  min-height: 48px;
+  padding: 0 22px;
+  font-size: 15px;
+}
+
+.team-invite__failure {
+  margin: 0;
+  padding: 10px 14px;
+  border-left: 3px solid var(--reg-alert);
+  background: var(--reg-raised);
+  color: var(--reg-text-1);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+/* What became of the invitation, under the panel. The line stays mounted
+   (empty) so its announcement is heard; empty, it takes no room. */
+.team-outcome {
+  display: grid;
+  gap: 14px;
+  margin-top: 14px;
+  padding: 14px 18px 16px;
+  border-left: 3px solid var(--reg-edge);
+  background: var(--reg-raised);
+}
+
+.team-outcome[data-tone="settled"] {
+  border-left-color: var(--reg-settled);
+}
+
+.team-outcome[data-tone="attention"] {
+  border-left-color: var(--reg-attention);
+}
+
+.team-outcome--empty {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+
+.team-outcome__line {
+  max-width: 72ch;
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.team-outcome__line strong {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.team-signup {
+  display: grid;
+  gap: 6px;
+  max-width: 640px;
+}
+
+.team-signup__label {
+  color: var(--reg-text-2);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.team-signup__row {
+  display: flex;
+  gap: 10px;
+}
+
+.team-signup__field {
+  box-sizing: border-box;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--reg-edge);
+  border-radius: 3px;
+  background: var(--reg-surface);
+  color: var(--reg-text-1);
+  font: 400 15px/1.2 var(--house-sans);
+}
+
+.team-signup__failed {
+  margin: 0;
+  color: var(--reg-alert);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+/* ---------------------------------------------------------------------------
+   The two lists: waiting to join, and has access
+   --------------------------------------------------------------------------- */
+
+.team-section {
+  display: grid;
+  min-width: 0;
+}
+
+.team-section__title {
+  margin: 0;
+  font: 400 26px/1.15 var(--house-serif);
+  letter-spacing: -0.012em;
+}
+
+.team-list {
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.team-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px 20px;
+  padding: 14px 0;
+  border-top: 1px solid var(--reg-rule);
+}
+
+.team-row:last-child {
+  border-bottom: 1px solid var(--reg-rule);
+}
+
+.team-row__main {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.team-row__primary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  margin: 0;
+  font: 400 19px/1.3 var(--house-serif);
+  overflow-wrap: anywhere;
+}
+
+.team-row__you {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--house-sage-wash);
+  color: var(--house-sage-chip);
+  font: 600 12px/1.4 var(--house-sans);
+  letter-spacing: 0.02em;
+}
+
+.team-row__facts {
+  display: flex;
+  flex-wrap: wrap;
+  row-gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--reg-text-2);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.team-row__facts li {
+  display: inline-flex;
+  align-items: center;
+  overflow-wrap: anywhere;
+}
+
+/* A quiet dot between facts: drawn, so it is never read aloud. */
+.team-row__facts li + li::before {
+  content: "";
+  flex: 0 0 auto;
+  width: 3px;
+  height: 3px;
+  margin: 0 10px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.55;
+}
+
+.team-row__role {
+  color: var(--reg-text-1);
+  font-weight: 600;
+}
+
+.team-row__action {
+  justify-self: end;
+}
+
+.team-confirm {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 8px;
+  padding: 16px 18px;
+  border: 1px solid var(--reg-edge);
+  border-left: 3px solid var(--reg-attention);
+  border-radius: 3px;
+  background: var(--reg-raised);
+}
+
+.team-confirm__question {
+  margin: 0;
+  font: 400 21px/1.3 var(--house-serif);
+  overflow-wrap: anywhere;
+}
+
+.team-confirm__consequence {
+  margin: 0 0 4px;
+  color: var(--reg-text-2);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.team-confirm__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.team-empty {
+  margin: 10px 0 0;
+  color: var(--reg-text-2);
+  font: 400 17px/1.5 var(--house-serif);
+}
+
+.team-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  margin: 12px 0 0;
+  padding: 10px 14px;
+  border-left: 3px solid var(--reg-edge);
+  background: var(--reg-raised);
+  color: var(--reg-text-1);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.team__sheet > .team-notice {
+  margin: 0;
+}
+
+.team-notice[data-tone="alert"] {
+  border-left-color: var(--reg-alert);
+}
+
+.team-notice[data-tone="settled"] {
+  border-left-color: var(--reg-settled);
+}
+
+.team-state {
+  display: grid;
+  justify-items: start;
+  gap: 12px;
+  margin-top: 24px;
+  color: var(--reg-text-2);
+}
+
+.team-state__lead {
+  max-width: 56ch;
+  margin: 0;
+  color: var(--reg-text-1);
+  font: 400 19px/1.5 var(--house-serif);
+}
+
+.team-state__detail {
+  margin: 0;
+  font-size: 15px;
+}
+
+/* ---------------------------------------------------------------------------
+   Controls
+   --------------------------------------------------------------------------- */
+
+.team-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid var(--reg-edge);
+  border-radius: 3px;
+  background: transparent;
+  color: var(--reg-text-1);
+  font: 600 14px/1 var(--house-sans);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.team-button--primary {
+  border-color: var(--reg-primary);
+  background: var(--reg-primary);
+  color: var(--reg-primary-ink);
+}
+
+.team-button--alert {
+  border-color: var(--reg-alert);
+  color: var(--reg-alert);
+}
+
+.team-button--quiet {
+  min-height: 40px;
+  padding: 0 14px;
+  font-weight: 500;
+}
+
+.team-button:disabled,
+.team-button[aria-disabled="true"] {
+  cursor: default;
+  opacity: 0.6;
+}
+
+/* Working, it stays at full strength so its words and motion read. */
+.team-button[aria-busy="true"] {
+  cursor: progress;
+  opacity: 1;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .team-button:hover:not(:disabled):not([aria-disabled="true"]) {
+    background: var(--reg-surface-hover);
+  }
+
+  .team-button--primary:hover:not(:disabled):not([aria-disabled="true"]) {
+    border-color: var(--reg-primary-hover);
+    background: var(--reg-primary-hover);
+  }
+}
+
+.team-button:active:not(:disabled):not([aria-disabled="true"]) {
+  transform: scale(0.97);
+}
+
+.team-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--reg-text-1);
+  font: 500 14px/1.3 var(--house-sans);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--reg-text-1) 35%, transparent);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.team-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---------------------------------------------------------------------------
+   Narrower screens; a phone is flush
+   --------------------------------------------------------------------------- */
+
+@media (max-width: 1100px) {
+  .team-roles__options {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .team {
+    padding: 0;
+  }
+
+  .team__sheet {
+    --team-pad: 16px;
+    gap: 26px;
+    padding: 22px 16px 32px;
+  }
+
+  .team__sheet::before,
+  .team__plane::before {
+    clip-path: none;
+  }
+
+  .team__plane {
+    margin-left: calc(-1 * var(--team-pad));
+    padding-left: var(--team-pad);
+  }
+
+  .team__plane dd {
+    font-size: 26px;
+  }
+
+  .team-invite__panel {
+    margin: 0 calc(-1 * var(--team-pad));
+    padding: 22px 16px 24px;
+    border-radius: 0;
+  }
+
+  .team-roles__options {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .team-invite__send {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .team-invite__button {
+    width: 100%;
+  }
+
+  .team-signup__row {
+    flex-direction: column;
+  }
+
+  .team-signup__field {
+    font-size: 16px;
+  }
+
+  .team-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .team-row__action {
+    justify-self: start;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .team-button,
+  .team-role {
+    transition: none;
+  }
+
+  .team-button:active:not(:disabled):not([aria-disabled="true"]) {
+    transform: none;
+  }
+}

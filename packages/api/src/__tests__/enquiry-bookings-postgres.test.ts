@@ -8,6 +8,7 @@ import { z } from "zod";
 import { BOOKING_EXIT_STATES, BookingSchema, type Booking, type PlatformRole } from "@omnitwin/types";
 import * as schema from "../db/schema.js";
 import { bookingRoutes } from "../routes/bookings.js";
+import { insertBoundBookings } from "../services/event-binding.js";
 
 // ---------------------------------------------------------------------------
 // GET /bookings?enquiryId= on the migrated platform database (T-635): where an
@@ -124,7 +125,7 @@ describe.skipIf(target === undefined)("GET /bookings?enquiryId= through the real
     const staff = await v.actor("staff");
     const enquiryId = await v.enquiry();
     const neighbour = await v.enquiry();
-    await db.insert(schema.bookings).values(booking(v.venueId, v.rooms[0], "Held", { enquiryId }));
+    await insertBoundBookings(db, [booking(v.venueId, v.rooms[0], "Held", { enquiryId })]);
     for (const query of [
       "",
       "?enquiryId=",
@@ -161,7 +162,7 @@ describe.skipIf(target === undefined)("GET /bookings?enquiryId= through the real
     const elsewhere = await venue("refusals elsewhere");
     const client = await v.actor("client");
     const enquiryId = await v.enquiry(client.id);
-    await db.insert(schema.bookings).values(booking(v.venueId, v.rooms[0], "Held for the client", { enquiryId }));
+    await insertBoundBookings(db, [booking(v.venueId, v.rooms[0], "Held for the client", { enquiryId })]);
     const refused = [
       await elsewhere.actor("staff"),
       await elsewhere.actor("admin"),
@@ -185,8 +186,7 @@ describe.skipIf(target === undefined)("GET /bookings?enquiryId= through the real
     const v = await venue("readers");
     const elsewhere = await venue("readers elsewhere");
     const enquiryId = await v.enquiry();
-    const [held] = await db.insert(schema.bookings).values(booking(v.venueId, v.rooms[1], "Held", { enquiryId }))
-      .returning({ id: schema.bookings.id });
+    const [held] = await insertBoundBookings(db, [booking(v.venueId, v.rooms[1], "Held", { enquiryId })]);
     const readers = [
       ...await Promise.all((["admin", "manager", "staff", "hallkeeper", "sales"] as const).map((role) => v.actor(role))),
       await elsewhere.actor("staff", "admin"),
@@ -214,7 +214,11 @@ describe.skipIf(target === undefined)("GET /bookings?enquiryId= through the real
     // Two bookings start together; the one with the lower id comes first,
     // whichever was written first.
     const [lowId, highId] = [randomUUID(), randomUUID()].sort();
-    const rows = await db.insert(schema.bookings).values([
+    // A cross-venue link no writer makes any more: its event is the other
+    // venue's, named outright, because an enquiry joins only its own venue.
+    const [elsewhereEvent] = await db.insert(schema.events).values({ venueId: other.venueId, name: "Another venue's event" })
+      .returning({ id: schema.events.id });
+    const rows = await insertBoundBookings(db, [
       booking(v.venueId, room1, "Confirmed, the day after", {
         enquiryId, kind: "ink", rank: null, startsAt: new Date(DAY_ONE + DAY), endsAt: new Date(DAY_ONE + DAY + 6 * HOUR),
       }),
@@ -226,8 +230,8 @@ describe.skipIf(target === undefined)("GET /bookings?enquiryId= through the real
       ...BOOKING_EXIT_STATES.map((status) => booking(v.venueId, room0, `Exited: ${status}`, { enquiryId, status })),
       booking(v.venueId, room0, "Deleted", { enquiryId, deletedAt: new Date() }),
       booking(v.venueId, goneRoom, "In a room since deleted", { enquiryId }),
-      booking(other.venueId, other.rooms[0], "Another venue's, linked to this enquiry", { enquiryId }),
-    ]).returning({ id: schema.bookings.id, title: schema.bookings.title });
+      booking(other.venueId, other.rooms[0], "Another venue's, linked to this enquiry", { enquiryId, eventId: elsewhereEvent?.id }),
+    ]);
     await db.update(schema.spaces).set({ deletedAt: new Date() }).where(eq(schema.spaces.id, goneRoom));
     const idOf = (title: string): string | undefined => rows.find((row) => row.title === title)?.id;
 
@@ -257,7 +261,7 @@ describe.skipIf(target === undefined)("GET /bookings?enquiryId= through the real
     const staff = await v.actor("staff");
     const never = await v.enquiry();
     const lapsed = await v.enquiry();
-    await db.insert(schema.bookings).values([
+    await insertBoundBookings(db, [
       booking(v.venueId, v.rooms[0], "Released", { enquiryId: lapsed, status: "released" }),
       booking(v.venueId, v.rooms[0], "Deleted", { enquiryId: lapsed, deletedAt: new Date() }),
     ]);

@@ -20,8 +20,9 @@ import { venueRoutes } from "../routes/venues.js";
 const databaseUrl = process.env["VENVIEWER_ONBOARDING_TEST_DATABASE_URL"];
 if (databaseUrl !== undefined) {
   const target = new URL(databaseUrl);
+  // Loopback and this exact name are the safety; any port (CI serves 55476).
   if (!["postgres:", "postgresql:"].includes(target.protocol)
-    || target.hostname !== "127.0.0.1" || target.port !== "55478"
+    || target.hostname !== "127.0.0.1"
     || target.pathname !== "/venviewer_onboarding_test"
     || target.search !== "" || target.hash !== "") {
     throw new Error("Onboarding tests require their explicit isolated loopback database");
@@ -59,8 +60,10 @@ describe.skipIf(databaseUrl === undefined)("managed onboarding on isolated Postg
       max: 10, options: `-c search_path=${fixtureSchema} -c statement_timeout=30000` });
     await pool.query(`CREATE SCHEMA "${fixtureSchema}"`);
     await pool.query(await readFile(new URL("./fixtures/onboarding-postgres.sql", import.meta.url), "utf8"));
+    // 0086 adds the venue location columns every venue read now selects; the
+    // fixture's venues table predates it.
     for (const migration of ["0022_user_invitations.sql", "0037_onboarding_entitlements.sql",
-      "0043_platform_admin_scope.sql", "0070_client_onboarding_access.sql"]) {
+      "0043_platform_admin_scope.sql", "0070_client_onboarding_access.sql", "0086_venue_location.sql"]) {
       await pool.query(await readFile(new URL(`../../drizzle/${migration}`, import.meta.url), "utf8"));
     }
     db = drizzle(pool, { schema });
@@ -71,7 +74,7 @@ describe.skipIf(databaseUrl === undefined)("managed onboarding on isolated Postg
   }, 120000);
 
   beforeEach(async () => {
-    await pool.query("TRUNCATE onboarding_audit_events, onboarding_projects, workspace_entitlements, workspace_memberships, workspaces, organisations, user_invitations, users, venues");
+    await pool.query("TRUNCATE general_audit_log, onboarding_audit_events, onboarding_projects, workspace_entitlements, workspace_memberships, workspaces, organisations, user_invitations, users, venues");
     await pool.query("INSERT INTO venues(id, name, slug, address) VALUES ($1, 'Existing venue fixture', 'existing-venue', 'Synthetic fixture address'), ($2, 'Other venue fixture', 'other-venue', 'Other synthetic address')", [VENUE, OTHER_VENUE]);
     await pool.query("INSERT INTO users(id, email, name, role, platform_role) VALUES ($1, $2, $3, 'admin', 'admin')", [PLATFORM_ADMIN, platformUser.email, platformUser.name]);
   }, 30000);
@@ -414,6 +417,31 @@ describe.skipIf(databaseUrl === undefined)("managed onboarding on isolated Postg
     if (user === null) throw new Error("Expected invited user");
     await expectActiveMembership({ ...created, ownerMembership: { ...created.ownerMembership, invitationId: renewedInvitationId } }, user.id);
     expect((await pool.query("SELECT id FROM workspace_memberships")).rowCount).toBe(1);
+  });
+
+  it("refuses to lower a connected venue administrator's access, and changes nothing (admin-venues-2)", async () => {
+    const created = await createWorkspace();
+    const admin = await getUserByClerkId(db, CLERK_ID, EMAIL);
+    expect(admin).toMatchObject({ role: "admin", venueId: VENUE });
+    const before = await pool.query("SELECT role, venue_role, status, invitation_id, user_id FROM workspace_memberships ORDER BY id");
+    const invitations = await pool.query("SELECT id, role, status FROM user_invitations ORDER BY id");
+
+    for (const venueRole of ["staff", "hallkeeper"] as const) {
+      const lowered = await server.inject({ method: "POST", url: `/onboarding/workspaces/${created.workspace.id}/invitations`, headers: headers(),
+        payload: { staffInvites: [{ email: EMAIL, workspaceRole: venueRole, venueRole }] } });
+      expect(lowered.statusCode, lowered.body).toBe(409);
+      expect(lowered.json()).toEqual({
+        error: "This person is a venue administrator, and Manage access cannot lower an administrator's access. Nothing has changed.",
+        code: "ADMIN_DOWNGRADE_UNSUPPORTED",
+      });
+    }
+    expect((await pool.query("SELECT role, venue_role, status, invitation_id, user_id FROM workspace_memberships ORDER BY id")).rows).toEqual(before.rows);
+    expect((await pool.query("SELECT id, role, status FROM user_invitations ORDER BY id")).rows).toEqual(invitations.rows);
+    expect(await getUserByClerkId(db, CLERK_ID, EMAIL)).toEqual(admin);
+    // Saving the administrator as an administrator still renews nothing and answers as before.
+    const same = await server.inject({ method: "POST", url: `/onboarding/workspaces/${created.workspace.id}/invitations`, headers: headers(),
+      payload: { staffInvites: [{ email: EMAIL, workspaceRole: "admin", venueRole: "admin" }] } });
+    expect(same.statusCode, same.body).toBe(201);
   });
 
   it("cancels a pending invitation without creating account access", async () => {

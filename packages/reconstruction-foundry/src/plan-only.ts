@@ -45,7 +45,7 @@ const FoundryCapacitySchema = z
     gpuCount: z.number().int().nonnegative().max(128),
     perGpuVramGiB: z.number().nonnegative().max(1_000),
     scratchGiB: z.number().positive().max(1_000_000),
-    maximumInputBytes: z.number().int().safe().nonnegative(),
+    maximumInputBytes: z.number().int().int().nonnegative(),
   })
   .strict();
 
@@ -59,12 +59,12 @@ const FoundryLocalRouteSchema = z
 
 const FoundryCostBreakdownSchema = z
   .object({
-    computeUsd: z.number().finite().nonnegative(),
-    storageUsd: z.number().finite().nonnegative(),
-    egressUsd: z.number().finite().nonnegative(),
-    imageAndModelPullUsd: z.number().finite().nonnegative(),
-    retryAllowanceUsd: z.number().finite().nonnegative(),
-    safetyMarginUsd: z.number().finite().nonnegative(),
+    computeUsd: z.number().nonnegative(),
+    storageUsd: z.number().nonnegative(),
+    egressUsd: z.number().nonnegative(),
+    imageAndModelPullUsd: z.number().nonnegative(),
+    retryAllowanceUsd: z.number().nonnegative(),
+    safetyMarginUsd: z.number().nonnegative(),
   })
   .strict();
 
@@ -81,13 +81,13 @@ const FoundryRemoteRouteSchema = z
         expiresAt: FoundryUtcInstantSchema,
         sourceReference: z.string().trim().min(1).max(500),
         breakdown: FoundryCostBreakdownSchema,
-        budgetCapUsd: z.number().finite().nonnegative(),
+        budgetCapUsd: z.number().nonnegative(),
       })
       .strict()
       .superRefine((snapshot, ctx) => {
         if (Date.parse(snapshot.observedAt) >= Date.parse(snapshot.expiresAt)) {
           ctx.addIssue({
-            code: z.ZodIssueCode.custom,
+            code: "custom",
             path: ["expiresAt"],
             message: "provider estimate must expire after it was observed",
           });
@@ -111,7 +111,7 @@ export const FoundryPlanOnlyRequestV0Schema = z
   .superRefine((request, ctx) => {
     if (request.localRoutes.length + request.remoteRoutes.length === 0) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["localRoutes"],
         message: "plan request requires at least one local or remote route",
       });
@@ -121,7 +121,7 @@ export const FoundryPlanOnlyRequestV0Schema = z
     );
     if (new Set(routeIds).size !== routeIds.length) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["remoteRoutes"],
         message: "provider kind and adapter route pairs must be unique",
       });
@@ -134,9 +134,9 @@ const FoundryPlanCandidateSchema = z
     providerKind: FoundryProviderKindSchema,
     providerAdapterId: z.string().regex(/^[a-z0-9][a-z0-9._-]{0,119}$/u),
     status: z.enum(["viable_plan_only", "blocked_plan_only"]),
-    inputBytes: z.number().int().safe().nonnegative(),
-    estimatedCostUsd: z.number().finite().nonnegative(),
-    budgetCapUsd: z.number().finite().nonnegative(),
+    inputBytes: z.number().int().int().nonnegative(),
+    estimatedCostUsd: z.number().nonnegative(),
+    budgetCapUsd: z.number().nonnegative(),
     blockers: z.array(z.string().trim().min(1).max(500)).max(10_000),
     jobSpec: FoundryJobSpecV0Schema.nullable(),
     jobSpecSha256: z.string().regex(SHA256_PREFIXED).nullable(),
@@ -149,28 +149,28 @@ const FoundryPlanCandidateSchema = z
       candidate.blockers.some((blocker, index) => blocker !== sortedBlockers[index])
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["blockers"],
         message: "route blockers must be unique and sorted",
       });
     }
     if (candidate.status === "viable_plan_only" && candidate.blockers.length !== 0) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["status"],
         message: "a viable route cannot carry blockers",
       });
     }
     if (candidate.status === "blocked_plan_only" && candidate.blockers.length === 0) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["status"],
         message: "a blocked route requires at least one blocker",
       });
     }
     if (candidate.jobSpec === null !== (candidate.jobSpecSha256 === null)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["jobSpecSha256"],
         message: "job spec and its digest must either both be present or both be absent",
       });
@@ -184,7 +184,7 @@ const FoundryPlanCandidateSchema = z
       )
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["jobSpec"],
         message: "candidate must contain an exact non-dispatchable plan-only JobSpec",
       });
@@ -226,14 +226,14 @@ function validateDossierPayload(
     routeIds.some((route, index) => route !== sorted[index])
   ) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["candidates"],
       message: "plan candidates must have unique provider routes in sorted order",
     });
   }
   if (dossier.requestSha256 !== planRequestSha256(dossier.request)) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["requestSha256"],
       message: "plan dossier must bind its exact request",
     });
@@ -247,7 +247,7 @@ function validateDossierPayload(
     )
   ) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["ingestManifestSha256"],
       message: "every candidate must bind the reviewed ingest manifest",
     });
@@ -271,7 +271,7 @@ export const FoundryPlanOnlyDossierV0Schema = DossierPayloadObjectSchema.extend(
     if (!parsedPayload.success) return;
     if (dossier.dossierSha256 !== planDossierSha256(parsedPayload.data)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["dossierSha256"],
         message: "plan dossier digest must match its canonical payload",
       });

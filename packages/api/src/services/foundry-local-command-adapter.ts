@@ -97,7 +97,7 @@ const LocalAdapterBindingSchema = z
         binding.providerAdapterConfigurationSha256
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["providerAdapterConfigurationSha256"],
         message:
           "local runner and terminal enforcement must match the durable adapter configuration digest",
@@ -160,7 +160,7 @@ const DurableResourceMarkerSchema = DurableResourceMarkerContentSchema.extend({
       computeFoundryLocalSandboxResourceMarkerSha256(content)
   ) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["markerSha256"],
       message: "local sandbox resource marker digest mismatch",
     });
@@ -182,9 +182,9 @@ const LocalSandboxRequestCommandSchema = z
       "provider_checkpoint",
       "provider_stop",
     ]),
-    commandId: z.string().uuid(),
+    commandId: z.uuid(),
     commandSequence: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
-    claimToken: z.string().uuid(),
+    claimToken: z.uuid(),
     fencingToken: z.string().regex(/^[1-9][0-9]*$/u),
     providerCommandRef: FoundryProviderCommandRefSchema.nullable(),
     action: FoundryProviderActionV0Schema,
@@ -231,7 +231,7 @@ function addRequestBindingIssue(
   message: string,
 ): void {
   ctx.addIssue({
-    code: z.ZodIssueCode.custom,
+    code: "custom",
     path: [...path],
     message,
   });
@@ -513,7 +513,7 @@ export const FoundryLocalSandboxEnforcementReceiptV0Schema =
           (receipt.terminationIntent === "deadline")
       ) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["deadlineExceeded"],
           message: "deadline flag must match the durable termination reason",
         });
@@ -523,7 +523,7 @@ export const FoundryLocalSandboxEnforcementReceiptV0Schema =
           computeFoundryLocalSandboxEnforcementReceiptSha256(payload)
       ) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["receiptSha256"],
           message: "local sandbox enforcement receipt digest mismatch",
         });

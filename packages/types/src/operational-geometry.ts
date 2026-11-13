@@ -164,8 +164,8 @@ export type OperationalGeometryCoordinateFrame = z.infer<
 >;
 
 export const OperationalGeometryPoint2Schema = z.tuple([
-  z.number().finite(),
-  z.number().finite(),
+  z.number(),
+  z.number(),
 ]);
 export type OperationalGeometryPoint2 = z.infer<typeof OperationalGeometryPoint2Schema>;
 
@@ -184,7 +184,7 @@ export const OperationalGeometryLinearRingSchema = z
     const last = ring[ring.length - 1];
     if (first === undefined || last === undefined || first[0] !== last[0] || first[1] !== last[1]) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         message: "Operational GeoJSON polygon rings must be closed.",
       });
     }
@@ -288,7 +288,7 @@ export const OperationalGeometryDataSufficiencySchema = z
       dataSufficiency.missingInputRefs.length > 0
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["missingInputRefs"],
         message: "Sufficient operational geometry cannot list missing inputs.",
       });
@@ -296,7 +296,7 @@ export const OperationalGeometryDataSufficiencySchema = z
 
     if (dataSufficiency.status === "sufficient" && dataSufficiency.messageKey !== null) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["messageKey"],
         message: "Sufficient operational geometry cannot carry an insufficiency message key.",
       });
@@ -304,7 +304,7 @@ export const OperationalGeometryDataSufficiencySchema = z
 
     if (dataSufficiency.status !== "sufficient" && dataSufficiency.messageKey === null) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["messageKey"],
         message: "Insufficient operational geometry needs a stable message key.",
       });
@@ -315,7 +315,7 @@ export const OperationalGeometryDataSufficiencySchema = z
       dataSufficiency.reviewRole === null
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["reviewRole"],
         message: "Human-review data sufficiency outcomes need a review role.",
       });
@@ -326,7 +326,7 @@ export const OperationalGeometryDataSufficiencySchema = z
       dataSufficiency.reviewRole !== null
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["reviewRole"],
         message:
           "Only human-review data sufficiency outcomes may carry a review role.",
@@ -352,7 +352,7 @@ export const OperationalGeometryDataSufficiencyCheckRequestSchema = z
   .superRefine((request, ctx) => {
     if (request.routeDiscoveryMode !== "submitted_route" && request.submittedRouteRef !== null) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["submittedRouteRef"],
         message: "submittedRouteRef is only valid when routeDiscoveryMode is submitted_route.",
       });
@@ -377,7 +377,7 @@ export const OperationalGeometryDataSufficiencyFindingSchema = z
   .superRefine((finding, ctx) => {
     if (finding.status === "requires_human_review" && finding.reviewRole === null) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["reviewRole"],
         message: "Human-review data sufficiency findings need a review role.",
       });
@@ -385,7 +385,7 @@ export const OperationalGeometryDataSufficiencyFindingSchema = z
 
     if (finding.status !== "requires_human_review" && finding.reviewRole !== null) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["reviewRole"],
         message: "Only human-review data sufficiency findings may carry a review role.",
       });
@@ -457,7 +457,7 @@ export const OperationalGeoJsonFeatureSchema = z
   .superRefine((feature, ctx) => {
     if (feature.id !== feature.properties.featureId) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["properties", "featureId"],
         message: "Feature id and properties.featureId must match.",
       });
@@ -467,7 +467,7 @@ export const OperationalGeoJsonFeatureSchema = z
       OPERATIONAL_GEOMETRY_CLASS_GEOMETRY_TYPES[feature.properties.featureClass];
     if (!allowedGeometryTypes.includes(feature.geometry.type)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["geometry", "type"],
         message: `${feature.properties.featureClass} cannot use ${feature.geometry.type} geometry.`,
       });
@@ -480,7 +480,7 @@ export const OperationalGeoJsonFeatureSchema = z
       feature.properties.connectedFeatureIds.length < 2
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["properties", "connectedFeatureIds"],
         message: "Portal and connector features need at least two connected feature IDs.",
       });
@@ -492,7 +492,7 @@ export const OperationalGeoJsonFeatureSchema = z
       feature.properties.sourceObjectRefs.length === 0
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["properties", "sourceObjectRefs"],
         message: "Object-derived operational geometry needs a source object reference.",
       });
@@ -503,7 +503,7 @@ export const OperationalGeoJsonFeatureSchema = z
       feature.properties.dataSufficiency.status === "sufficient"
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["properties", "dataSufficiency", "status"],
         message: "Unknown or unverified areas cannot be marked data-sufficient.",
       });
@@ -544,7 +544,7 @@ export const OperationalGeoJsonFeatureCollectionV0Schema = z
     for (const [index, feature] of collection.features.entries()) {
       if (featureIds.has(feature.id)) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["features", index, "id"],
           message: `Duplicate operational geometry feature id: ${feature.id}`,
         });
@@ -553,7 +553,7 @@ export const OperationalGeoJsonFeatureCollectionV0Schema = z
 
       if (feature.properties.coordinateFrame !== collection.metadata.coordinateFrame) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["features", index, "properties", "coordinateFrame"],
           message: "Feature coordinate frame must match collection metadata.",
         });
@@ -561,7 +561,7 @@ export const OperationalGeoJsonFeatureCollectionV0Schema = z
 
       if (feature.properties.venueSlug !== collection.metadata.venueSlug) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["features", index, "properties", "venueSlug"],
           message: "Feature venue slug must match collection metadata.",
         });
@@ -569,7 +569,7 @@ export const OperationalGeoJsonFeatureCollectionV0Schema = z
 
       if (feature.properties.roomSlug !== collection.metadata.roomSlug) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["features", index, "properties", "roomSlug"],
           message: "Feature room slug must match collection metadata.",
         });

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isCalendarDate } from "./calendar-date.js";
 import { safePlanningLanguage } from "./evidence-runtime.js";
 import {
   EventArchitectAccessibilityRequirementSchema,
@@ -36,7 +37,6 @@ export const EVENT_BRIEF_MIN_GUESTS = 1;
 export const EVENT_BRIEF_MAX_GUESTS = 300;
 
 const BRIEF = EventArchitectBriefSchema.shape;
-const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/u;
 const CLOCK_TIME = /^(?:[01]\d|2[0-3]):[0-5]\d$/u;
 const QUOTE_MAX_LENGTH = 500;
 const NOTE_MAX_LENGTH = 500;
@@ -64,13 +64,11 @@ export const EVENT_BRIEF_DRAFT_FIELDS = [
 export const EventBriefDraftFieldSchema = z.enum(EVENT_BRIEF_DRAFT_FIELDS);
 export type EventBriefDraftField = z.infer<typeof EventBriefDraftFieldSchema>;
 
-/** A real calendar date written YYYY-MM-DD. */
-export function isCalendarDate(text: string): boolean {
-  if (!ISO_DATE.test(text)) return false;
-  const [year, month, day] = text.split("-").map(Number) as [number, number, number];
-  const date = new Date(Date.UTC(year, month - 1, day));
-  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
-}
+// A real calendar date written YYYY-MM-DD. It lives in calendar-date.ts, which
+// imports nothing, so the public enquiry schema can check a date without
+// bringing this module's schemas into the bundles that carry it. Still offered
+// from here, where its other readers already take it.
+export { isCalendarDate };
 
 /** A 24-hour clock time written HH:MM. */
 export function isClockTime(text: string): boolean {
@@ -91,7 +89,7 @@ export const EventBriefDraftValuesSchema = z.object({
   serviceModel: BRIEF.serviceModel.nullable(),
   accessibilityRequirements: z.array(EventArchitectAccessibilityRequirementSchema).max(3).superRefine((values, ctx) => {
     if (new Set(values).size !== values.length) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Each accessibility requirement appears once." });
+      ctx.addIssue({ code: "custom", message: "Each accessibility requirement appears once." });
     }
   }),
   planningPrompt: BRIEF.planningPrompt,
@@ -160,7 +158,7 @@ export const EventBriefDraftSchema = z.object({
   evidenceStatus: z.literal("unverified"),
   /** Nothing runs automatically: a person fills the form and generates. */
   runState: z.literal("not_run"),
-  generatedAt: z.string().datetime(),
+  generatedAt: z.iso.datetime(),
 }).strict().superRefine((draft, ctx) => {
   // A value held back as unsupported is left unset, never kept as a clamped
   // or substituted value beside it.
@@ -168,7 +166,7 @@ export const EventBriefDraftSchema = z.object({
     if (!holdsBackField(item)) continue;
     if (item.field !== null && item.field !== "accessibilityRequirements" && draft.brief[item.field] !== null) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["brief", item.field],
         message: `A field listed as unsupported (${item.field}) must be left unset.`,
       });
@@ -189,7 +187,7 @@ export type EventBriefExtractionSource = z.infer<typeof EventBriefExtractionSour
 
 const ExtractedText = z.string().max(4000).nullable();
 
-function extractedField<T extends z.ZodTypeAny>(value: T) {
+function extractedField<T extends z.ZodType>(value: T) {
   return z.object({
     value: value.nullable(),
     source: EventBriefExtractionSourceSchema,

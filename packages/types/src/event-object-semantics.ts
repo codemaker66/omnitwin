@@ -138,7 +138,7 @@ export const EventObjectOperationalSemanticsSchema = z.object({
     !reviewTriggers.has("unsupported_operational_footprint")
   ) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["humanReviewTriggers"],
       message: "Unsupported footprints must trigger operational footprint review.",
     });
@@ -149,7 +149,7 @@ export const EventObjectOperationalSemanticsSchema = z.object({
     !reviewTriggers.has("temporary_structure_review")
   ) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["humanReviewTriggers"],
       message: "Temporary structure status must trigger review.",
     });
@@ -160,7 +160,7 @@ export const EventObjectOperationalSemanticsSchema = z.object({
     !reviewTriggers.has("stage_platform_review")
   ) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["humanReviewTriggers"],
       message: "Stage or platform status must trigger review.",
     });
@@ -168,7 +168,7 @@ export const EventObjectOperationalSemanticsSchema = z.object({
 
   if (metadata.riggingRequirement !== "none" && !reviewTriggers.has("rigging_review")) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["humanReviewTriggers"],
       message: "Rigging requirement must trigger review.",
     });
@@ -181,7 +181,7 @@ export const EventObjectOperationalSemanticsSchema = z.object({
     !reviewTriggers.has("floor_loading_review")
   ) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["humanReviewTriggers"],
       message: "Floor-loading relevance must trigger review.",
     });
@@ -194,7 +194,7 @@ export const EventObjectOperationalSemanticsSchema = z.object({
     !reviewTriggers.has("heat_output_review")
   ) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["humanReviewTriggers"],
       message: "Heat-output relevance must trigger review.",
     });

@@ -121,7 +121,7 @@ const PermitPublicKeySchema = z
 const SourceBlobBindingSchema = z
   .object({
     kind: z.literal("source"),
-    sizeBytes: z.number().int().safe().positive().max(FOUNDRY_NORMALIZE_MESH_GLB_MAX_BYTES),
+    sizeBytes: z.number().int().int().positive().max(FOUNDRY_NORMALIZE_MESH_GLB_MAX_BYTES),
     sha256: z.string().regex(SHA256),
   })
   .strict();
@@ -129,7 +129,7 @@ const SourceBlobBindingSchema = z
 const CandidateBlobBindingSchema = z
   .object({
     kind: z.literal("candidate"),
-    sizeBytes: z.number().int().safe().positive().max(FOUNDRY_NORMALIZE_MESH_GLB_MAX_BYTES),
+    sizeBytes: z.number().int().int().positive().max(FOUNDRY_NORMALIZE_MESH_GLB_MAX_BYTES),
     sha256: z.string().regex(SHA256),
   })
   .strict();
@@ -137,7 +137,7 @@ const CandidateBlobBindingSchema = z
 const OutputBlobBindingSchema = z
   .object({
     kind: z.literal("output"),
-    sizeBytes: z.number().int().safe().positive().max(FOUNDRY_NORMALIZE_MESH_GLB_MAX_BYTES),
+    sizeBytes: z.number().int().int().positive().max(FOUNDRY_NORMALIZE_MESH_GLB_MAX_BYTES),
     sha256: z.string().regex(SHA256),
   })
   .strict();

@@ -1,11 +1,54 @@
-import { describe, it, expect } from "vitest";
+import { afterEach, describe, it, expect } from "vitest";
 import {
+  ackProgress,
+  enqueueProgress,
+  inRowOrder,
   isReplayStatusTerminal,
+  isSameQueuedTick,
+  listPendingProgress,
   opsStillNeedingReplay,
   partitionReplay,
+  progressQueueKey,
   resolveReplayDisposition,
   type QueuedProgressOp,
 } from "../progress-sync-queue.js";
+
+// Ticks belong to an event. A tick queued offline keeps its event, and a
+// tick queued before ticks carried one (no event, the old key) still clears.
+describe("queued ticks keep their event", () => {
+  const CONFIG = "cfg-queue-keys";
+  const ROW = "furniture|Centre|Round table|0";
+  const EVENT = "00000000-0000-4000-8000-0000000000e1";
+
+  afterEach(async () => {
+    for (const queued of await listPendingProgress()) await ackProgress(queued.configId, queued.rowKey, queued.eventId ?? null);
+  });
+
+  it("keys a tick with no event exactly as ops were keyed before events, and one with an event apart", () => {
+    expect(progressQueueKey(CONFIG, ROW, null)).toBe(`${CONFIG}:${ROW}`);
+    expect(progressQueueKey(CONFIG, ROW, undefined)).toBe(`${CONFIG}:${ROW}`);
+    expect(progressQueueKey(CONFIG, ROW, EVENT)).toBe(`${CONFIG}:${EVENT}:${ROW}`);
+  });
+
+  it("clears a tick queued with no event with a plain ack", async () => {
+    await enqueueProgress(CONFIG, ROW, true);
+    expect(await listPendingProgress()).toEqual([expect.objectContaining({ configId: CONFIG, rowKey: ROW, eventId: null, desiredChecked: true })]);
+    await ackProgress(CONFIG, ROW);
+    expect(await listPendingProgress()).toEqual([]);
+  });
+
+  it("keeps an event's tick apart from the eventless one for the same row, and clears it only with its event", async () => {
+    await enqueueProgress(CONFIG, ROW, true, EVENT);
+    await enqueueProgress(CONFIG, ROW, false);
+    expect((await listPendingProgress()).map((queued) => [queued.eventId, queued.desiredChecked]))
+      .toEqual(expect.arrayContaining([[EVENT, true], [null, false]]));
+
+    await ackProgress(CONFIG, ROW);
+    expect((await listPendingProgress()).map((queued) => queued.eventId)).toEqual([EVENT]);
+    await ackProgress(CONFIG, ROW, EVENT);
+    expect(await listPendingProgress()).toEqual([]);
+  });
+});
 
 // ---------------------------------------------------------------------------
 // progress-sync-queue — pure replay-decision logic
@@ -104,6 +147,61 @@ describe("partitionReplay", () => {
     const { replay, converged } = partitionReplay([], new Set(["x"]));
     expect(replay).toEqual([]);
     expect(converged).toEqual([]);
+  });
+});
+
+// The server keeps the last write it hears for a row, so a row's writes take
+// turns and a replay checks its tick is still the one queued.
+describe("a row's writes take turns", () => {
+  const EVENT = "00000000-0000-4000-8000-0000000000e1";
+
+  function gate(): { readonly opened: Promise<void>; readonly open: () => void } {
+    let open: () => void = () => undefined;
+    const opened = new Promise<void>((resolve) => { open = resolve; });
+    return { opened, open };
+  }
+
+  it("runs turns for one row in the order asked, each after the one before has settled", async () => {
+    const first = gate();
+    const seen: string[] = [];
+    const one = inRowOrder("cfg-turns", "r1", null, async () => { seen.push("first starts"); await first.opened; seen.push("first ends"); });
+    const two = inRowOrder("cfg-turns", "r1", null, () => { seen.push("second"); return Promise.resolve(); });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(seen).toEqual(["first starts"]);
+    first.open();
+    await Promise.all([one, two]);
+    expect(seen).toEqual(["first starts", "first ends", "second"]);
+  });
+
+  it("does not make another row, or the same row of another event's sheet, wait", async () => {
+    const held = gate();
+    const seen: string[] = [];
+    const blocked = inRowOrder("cfg-turns", "r1", null, async () => { await held.opened; seen.push("r1"); });
+    await inRowOrder("cfg-turns", "r2", null, () => { seen.push("r2"); return Promise.resolve(); });
+    await inRowOrder("cfg-turns", "r1", EVENT, () => { seen.push("r1 of the event"); return Promise.resolve(); });
+    expect(seen).toEqual(["r2", "r1 of the event"]);
+    held.open();
+    await blocked;
+    expect(seen).toEqual(["r2", "r1 of the event", "r1"]);
+  });
+
+  it("gives the turn's result back, and a turn that fails does not hold up the next", async () => {
+    const failed = inRowOrder("cfg-turns", "r1", null, () => Promise.reject(new Error("no signal")));
+    const next = inRowOrder("cfg-turns", "r1", null, () => Promise.resolve("sent"));
+    await expect(failed).rejects.toThrow("no signal");
+    await expect(next).resolves.toBe("sent");
+  });
+
+  it("knows a queued tick from the newer one that replaced it", () => {
+    const queued = op("r1", true);
+    expect(isSameQueuedTick({ ...queued }, queued)).toBe(true);
+    expect(isSameQueuedTick({ ...queued, desiredChecked: false }, queued)).toBe(false);
+    expect(isSameQueuedTick({ ...queued, queuedAt: "2026-04-18T10:00:05.000Z" }, queued)).toBe(false);
+    expect(isSameQueuedTick({ ...queued, rowKey: "r2" }, queued)).toBe(false);
+    expect(isSameQueuedTick({ ...queued, eventId: EVENT }, queued)).toBe(false);
+    // No event recorded and "no event" are the one queue entry.
+    expect(isSameQueuedTick({ ...queued, eventId: null }, queued)).toBe(true);
   });
 });
 

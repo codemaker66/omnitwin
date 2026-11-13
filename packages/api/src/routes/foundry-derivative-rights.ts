@@ -81,7 +81,7 @@ export interface FoundryDerivativeRightsRoutesOptions {
 
 function validationError(
   reply: FastifyReply,
-  issues: readonly z.ZodIssue[],
+  issues: readonly z.core.$ZodIssue[],
 ): FastifyReply {
   return reply.status(400).send({
     error: "Request validation failed.",
@@ -153,7 +153,7 @@ export async function adminFoundryDerivativeRightsRoutes(
       ) {
         return validationError(reply, [
           {
-            code: z.ZodIssueCode.custom,
+            code: "custom",
             path: ["evidenceBytesBase64"],
             message: "decoded evidence must contain between 1 byte and 4 MiB",
           },

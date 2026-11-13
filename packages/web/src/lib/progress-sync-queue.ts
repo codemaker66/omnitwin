@@ -14,17 +14,34 @@ import { openCache, type CacheHandle } from "./idb-cache.js";
 //   - On toggle, the HallkeeperPage attempts the PATCH immediately.
 //   - If the PATCH rejects (network error / 5xx), the operation is
 //     enqueued to IndexedDB under `{configId}:{rowKey}`.
-//   - A `flushPendingProgress` call (fired on `online` events + on
-//     mount) drains the queue by re-issuing each PATCH.
+//   - The open sheet drains the whole device's queue, every sheet's
+//     ticks, by re-issuing each PATCH: when a sheet is opened, when the
+//     device comes back online, when the page is shown again, and
+//     every QUEUE_RETRY_MS while anything still waits.
 //   - Successful re-issues delete the queue entry.
 //
 // The queue value shape is `{ configId, rowKey, desiredChecked,
 // queuedAt }`. Toggling the same row twice while offline collapses
 // to a single queued state (last-write-wins on the same IDB key).
+//
+// Order. The server keeps the last write it hears for a row and has no
+// way to tell an old one from a new one, so the order is this device's
+// to keep: every write for a row (a tap's PATCH, a queued tick's replay,
+// the queue entry being written or cleared) takes its turn through
+// `inRowOrder`. A tap the server takes retires whatever is still queued
+// for its row, and a replay first checks its tick is still the one
+// queued (`isSameQueuedTick`), so an older tick is never sent, or
+// cleared, in place of a newer one.
 // ---------------------------------------------------------------------------
 
 export interface QueuedProgressOp {
   readonly configId: string;
+  /**
+   * The event the sheet was opened for (its ?eventId=), so the tick replays
+   * into that event's ticks and no other's. Null or absent when the sheet
+   * named none — including every op queued before ticks belonged to events.
+   */
+  readonly eventId?: string | null;
   readonly rowKey: string;
   /**
    * The user's INTENT: `true` = should be checked, `false` = should
@@ -38,9 +55,28 @@ export interface QueuedProgressOp {
 const DB_NAME = "omnitwin-hallkeeper";
 const STORE_NAME = "progress-queue";
 
-function keyFor(configId: string, rowKey: string): string {
-  return `${configId}:${rowKey}`;
+/**
+ * How often an open sheet tries the queue again while any tick waits. A tick
+ * queued on a 5xx or a blip has no reconnect to wait for: the browser never
+ * went offline, so no "online" event will come. The Day Board's own queue
+ * keeps the same beat (`use-slot-observations.ts`).
+ */
+export const QUEUE_RETRY_MS = 30_000;
+
+/**
+ * How often an open sheet reads the shared checks again while it is in view,
+ * so another hallkeeper's ticks arrive without a reload. The Day Board's line
+ * for the same sheet ("12 of 43 checked") is read on the same beat.
+ */
+export const SHARED_CHECKS_REFRESH_MS = 60_000;
+
+/** The IndexedDB key of a queued tick. A tick with no event keeps the key ops
+ *  were stored under before ticks belonged to events, so an op already queued
+ *  on a device still acks: this format is load-bearing, change it never. */
+export function progressQueueKey(configId: string, rowKey: string, eventId: string | null | undefined): string {
+  return eventId === null || eventId === undefined ? `${configId}:${rowKey}` : `${configId}:${eventId}:${rowKey}`;
 }
+const keyFor = progressQueueKey;
 
 /**
  * Open the progress-queue cache. Lazy-instantiated once per module
@@ -58,9 +94,11 @@ export async function enqueueProgress(
   configId: string,
   rowKey: string,
   desiredChecked: boolean,
+  eventId: string | null = null,
 ): Promise<void> {
-  await queueCache().put(keyFor(configId, rowKey), {
+  await queueCache().put(keyFor(configId, rowKey, eventId), {
     configId,
+    eventId,
     rowKey,
     desiredChecked,
     queuedAt: new Date().toISOString(),
@@ -74,8 +112,46 @@ export async function listPendingProgress(): Promise<readonly QueuedProgressOp[]
 }
 
 /** Remove a queued entry after a successful replay. */
-export async function ackProgress(configId: string, rowKey: string): Promise<void> {
-  await queueCache().delete(keyFor(configId, rowKey));
+export async function ackProgress(configId: string, rowKey: string, eventId: string | null = null): Promise<void> {
+  await queueCache().delete(keyFor(configId, rowKey, eventId));
+}
+
+/**
+ * Is `now` the very tick `then` was when it was read from the queue? False
+ * once a newer tap on the row has replaced it: the queue holds one tick per
+ * row, so a replay asks this of a fresh listing before it sends or clears.
+ */
+export function isSameQueuedTick(now: QueuedProgressOp, then: QueuedProgressOp): boolean {
+  return keyFor(now.configId, now.rowKey, now.eventId) === keyFor(then.configId, then.rowKey, then.eventId)
+    && now.queuedAt === then.queuedAt && now.desiredChecked === then.desiredChecked;
+}
+
+/** Each row's line of writes: the last turn asked for, settled or not. */
+const rowTurns = new Map<string, Promise<void>>();
+
+/**
+ * Take a turn at one row of one sheet. Turns for the same row run one at a
+ * time, in the order they were asked for; other rows do not wait. A turn
+ * that fails does not hold up the next.
+ *
+ * `eventId` is the event whose ticks the write lands in, which for a tick
+ * queued before ticks carried an event is the open sheet's, not the absent
+ * one it was stored under.
+ */
+export function inRowOrder<T>(
+  configId: string,
+  rowKey: string,
+  eventId: string | null,
+  turn: () => Promise<T>,
+): Promise<T> {
+  const key = keyFor(configId, rowKey, eventId);
+  const run = (rowTurns.get(key) ?? Promise.resolve()).then(turn);
+  const settled = run.then(() => undefined, () => undefined);
+  rowTurns.set(key, settled);
+  void settled.then(() => {
+    if (rowTurns.get(key) === settled) rowTurns.delete(key);
+  });
+  return run;
 }
 
 /**

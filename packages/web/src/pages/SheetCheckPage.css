@@ -1,0 +1,155 @@
+/* ---------------------------------------------------------------------------
+ * Sheet check — the page a printed hallkeeper sheet's QR code opens.
+ *
+ * The desk composition at phone scale: sage ground, one ivory sheet on a pale
+ * tilted plane, an editorial serif answer and a light numeral for the version
+ * that matters. A current copy turns the sheet forest (the confirmation
+ * register); a superseded one keeps ivory with a brick edge. Every tone also
+ * says itself in words, so colour never carries the meaning alone.
+ * Tokens only: styles/house-tokens.css and styles/workspace.css.
+ * ------------------------------------------------------------------------- */
+
+.sheet-check {
+  min-height: 100vh;
+  min-height: 100dvh;
+  box-sizing: border-box;
+  display: grid;
+  place-items: center;
+  padding: 32px 16px 48px;
+  background: var(--house-ground);
+  color: var(--house-ink-1);
+  font-family: var(--house-sans);
+  position: relative;
+  overflow-x: hidden;
+}
+
+/* The pale plane behind the sheet: the desk's tilt, held still. */
+.sheet-check::before {
+  content: "";
+  position: absolute;
+  inset: 18% -10% auto -10%;
+  height: 46%;
+  background: var(--house-ground-plane);
+  transform: rotate(-3deg);
+  pointer-events: none;
+}
+
+.sheet-check__sheet {
+  position: relative;
+  box-sizing: border-box;
+  width: min(34rem, 100%);
+  padding: 28px 24px 22px 28px;
+  background: var(--reg-surface);
+  color: var(--reg-text-1);
+  border-left: 6px solid var(--sheet-check-edge, var(--house-slate-dot));
+  border-radius: var(--house-radius-key);
+  box-shadow: var(--house-shadow-lift);
+}
+
+.sheet-check__sheet[data-tone="current"] { --sheet-check-edge: var(--house-sage-lit); }
+.sheet-check__sheet[data-tone="superseded"] { --sheet-check-edge: var(--house-brick-text); }
+.sheet-check__sheet[data-tone="pending"] { --sheet-check-edge: var(--house-amber-mark); }
+
+.sheet-check__overline {
+  margin: 0 0 20px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--reg-text-2);
+}
+
+.sheet-check__numeral {
+  margin: 0 0 6px;
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+}
+
+.sheet-check__numeral-value {
+  font-family: var(--house-serif);
+  font-weight: 300;
+  font-size: clamp(4rem, 18vw, 5.75rem);
+  line-height: 0.95;
+  letter-spacing: -0.02em;
+  font-variant-numeric: lining-nums;
+}
+
+.sheet-check__numeral-caption {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--reg-text-2);
+}
+
+.sheet-check__headline {
+  margin: 0 0 10px;
+  font-family: var(--house-serif);
+  font-weight: 500;
+  font-size: clamp(1.875rem, 7.5vw, 2.5rem);
+  line-height: 1.08;
+  letter-spacing: -0.01em;
+}
+
+.sheet-check__sheet[data-tone="superseded"] .sheet-check__headline { color: var(--house-brick-text); }
+.sheet-check__sheet[data-tone="pending"] .sheet-check__headline { color: var(--house-amber-text); }
+
+.sheet-check__lede {
+  margin: 0 0 18px;
+  font-size: 1.0625rem;
+  line-height: 1.5;
+  color: var(--reg-text-1);
+}
+
+.sheet-check__claim {
+  margin: 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--reg-rule);
+  font-size: 0.9375rem;
+  line-height: 1.45;
+  color: var(--reg-text-2);
+}
+
+.sheet-check__checking {
+  margin: 0 0 18px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-family: var(--house-serif);
+  font-size: 1.5rem;
+  color: var(--reg-text-1);
+}
+
+.sheet-check__retry {
+  margin-top: 18px;
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0 20px;
+  border: 0;
+  border-radius: var(--house-radius-control);
+  background: var(--reg-primary);
+  color: var(--reg-primary-ink);
+  font: 600 1rem/1 var(--house-sans);
+  cursor: pointer;
+  transition:
+    background-color var(--house-motion-hover) var(--house-ease-out),
+    transform var(--house-motion-press) var(--house-ease-out);
+}
+
+.sheet-check__retry:hover { background: var(--reg-primary-hover); }
+.sheet-check__retry:active { transform: scale(0.98); }
+.sheet-check__retry:focus-visible {
+  outline: var(--vv-focus-ring);
+  outline-offset: var(--vv-focus-ring-offset);
+}
+
+.sheet-check__note {
+  margin: 22px 0 0;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--reg-text-2);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sheet-check__retry { transition: none; }
+  .sheet-check__retry:active { transform: none; }
+}

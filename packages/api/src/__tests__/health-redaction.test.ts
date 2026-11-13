@@ -1,0 +1,121 @@
+import { Writable } from "node:stream";
+import Fastify from "fastify";
+import { describe, expect, it } from "vitest";
+import { apiLoggerOptions, scrubApiSentryEvent } from "../observability/health-redaction.js";
+
+// ---------------------------------------------------------------------------
+// Guests' allergy notes never reach a log line or an error report
+// (fix-first item 18). The logger is exercised for real: a Fastify instance
+// built from the API's own logger options writes into a captured stream.
+// ---------------------------------------------------------------------------
+
+const NOTE = "Table 4: severe sesame allergy; one guest coeliac";
+const metadata = { instructions: { dietary: { vegetarian: 12, otherAllergies: NOTE } } };
+
+function capturedLogger(): { readonly lines: string[]; readonly server: ReturnType<typeof Fastify> } {
+  const lines: string[] = [];
+  const stream = new Writable({
+    write(chunk: Buffer, _encoding, done) { lines.push(chunk.toString("utf8")); done(); },
+  });
+  const options = apiLoggerOptions("production");
+  if (options === false) throw new Error("production must log");
+  return { lines, server: Fastify({ logger: { ...options, stream } }) };
+}
+
+describe("the API logger", () => {
+  it("logs in development and production, each with the redaction hook, and not under test", () => {
+    for (const mode of ["development", "production"] as const) {
+      const options = apiLoggerOptions(mode);
+      expect(options === false ? null : options.hooks?.streamWrite).toBeTypeOf("function");
+    }
+    expect(apiLoggerOptions("test")).toBe(false);
+  });
+
+  it("scrubs the note from a logged body, a database error and a plain message", async () => {
+    const { lines, server } = capturedLogger();
+    await server.ready();
+    const dbError = Object.assign(
+      new Error(`Failed query: update "configurations" set "metadata" = $1\nparams: ${JSON.stringify(metadata)}`),
+      { detail: `Failing row contains (${JSON.stringify(metadata)})`, code: "23514" },
+    );
+    server.log.info({ body: { metadata } }, "saving the layout");
+    server.log.error({ err: dbError }, "request errored");
+    server.log.warn(`otherAllergies=${NOTE.split(";")[0] ?? ""}; retrying`);
+    await server.close();
+
+    const output = lines.join("");
+    expect(output).not.toContain("sesame");
+    expect(output).not.toContain("coeliac");
+    expect(output).toContain("[redacted]");
+    // What the operator needs is still there.
+    expect(output).toContain("request errored");
+    expect(output).toContain("23514");
+    expect(output).toContain("\"vegetarian\":12");
+    for (const line of lines) expect(() => JSON.parse(line) as unknown).not.toThrow();
+  });
+});
+
+describe("the API's Sentry beforeSend", () => {
+  it("drops the body, query and credentials, and scrubs the note everywhere else", () => {
+    const event = {
+      message: `update failed: {"otherAllergies":"${NOTE}"}`,
+      exception: { values: [{ type: "DrizzleQueryError", value: `params: ${JSON.stringify(metadata)}` }] },
+      breadcrumbs: [{ category: "query", message: "insert", data: { params: [JSON.stringify(metadata)] } }],
+      extra: { metadata },
+      request: {
+        url: "https://api.example.test/configurations/x",
+        data: JSON.stringify(metadata),
+        query_string: "a=b",
+        headers: { authorization: "Bearer secret", cookie: "c=d", "user-agent": "test" } as Record<string, string>,
+      },
+    };
+    const scrubbed = scrubApiSentryEvent(event);
+    const text = JSON.stringify(scrubbed);
+    expect(text).not.toContain("sesame");
+    expect(text).not.toContain("secret");
+    expect(scrubbed.request.data).toBeUndefined();
+    expect(scrubbed.request.query_string).toBeUndefined();
+    expect(scrubbed.request.headers).toEqual({ "user-agent": "test" });
+    expect(scrubbed.exception.values[0]?.type).toBe("DrizzleQueryError");
+    expect(scrubbed.extra.metadata.instructions.dietary).toEqual({ vegetarian: 12, otherAllergies: "[redacted]" });
+  });
+
+  it("drops a guest plan's claim secret, which opens the plan's notes to whoever holds it", () => {
+    // The header every anonymous read and save of a plan made in that browser
+    // carries (routes/public-configs.ts), as Node names it and as it is sent.
+    for (const name of ["x-plan-claim-secret", "X-Plan-Claim-Secret"]) {
+      const scrubbed = scrubApiSentryEvent({
+        request: { headers: { [name]: "synthetic-claim-secret-0123456789abcdefghijklmnopq", "user-agent": "test" } },
+      });
+      expect(scrubbed.request.headers).toEqual({ "user-agent": "test" });
+    }
+  });
+
+  it("drops the cookies: the ones the SDK parses into request.cookies and the Cookie header, the session cookie among them", () => {
+    const session = "eyJhbGciOiJSUzI1NiJ9.eyJzaWQiOiJzZXNzX3N5bnRoZXRpYyJ9.c3ludGhldGljLXNpZ25hdHVyZQ";
+    const scrubbed = scrubApiSentryEvent({
+      request: {
+        cookies: { __session: session, vv_returning: "rt_synthetic_returning_visit" },
+        headers: { Cookie: `__session=${session}; vv_returning=rt_synthetic_returning_visit`, "user-agent": "test" },
+      },
+    });
+    expect(scrubbed.request).not.toHaveProperty("cookies");
+    expect(scrubbed.request.headers).toEqual({ "user-agent": "test" });
+    expect(JSON.stringify(scrubbed)).not.toContain(session);
+    expect(JSON.stringify(scrubbed)).not.toContain("rt_synthetic_returning_visit");
+  });
+
+  it.each([
+    ["Stripe-Signature", "t=1794355200,v1=5257a869e7ecebeda32affa62cdca3fa51cad7e77a0e56ff536d0ce8e108d8bd"],
+    ["Svix-Signature", "v1,g0hM9SsE+OTPJTGt/tmIKtSyZlE3uFJELVlNIOLJ1OE="],
+    ["Webhook-Signature", "v1,K5oZfzN95Z9UVu1EsfQmfVNQhnkZ2pj9o9NDN/H/pI4="],
+    ["Mcp-Session-Id", "3f1c9a52-7d4e-4b8a-9e61-0c2b5d8f7a14"],
+    ["Set-Cookie", "__session=synthetic-set-cookie-token; Path=/; HttpOnly"],
+  ])("drops %s, as it is sent and as Node names it", (header, value) => {
+    for (const name of [header, header.toLowerCase()]) {
+      const scrubbed = scrubApiSentryEvent({ request: { headers: { [name]: value, "user-agent": "test" } } });
+      expect(scrubbed.request.headers).toEqual({ "user-agent": "test" });
+      expect(JSON.stringify(scrubbed)).not.toContain(value);
+    }
+  });
+});

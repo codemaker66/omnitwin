@@ -7,7 +7,7 @@ import {
   isToolbarMuted,
   setToolbarMuted,
   toggleToolbarMute,
-} from "../../lib/toolbar-sounds.js";
+} from "../../lib/sound-registry.js";
 
 // ---------------------------------------------------------------------------
 // These tests verify the Toolbar's integration with tool stores,

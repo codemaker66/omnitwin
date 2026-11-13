@@ -25,13 +25,13 @@ import { useSelectionStore } from "../selection-store.js";
 // on top of this save path inherits it.
 // ---------------------------------------------------------------------------
 
+vi.mock("../../api/configuration-conflict.js", () => ({ parseRevisionConflict: vi.fn(() => null) }));
 vi.mock("../../api/configurations.js", () => ({
   getConfig: vi.fn(),
   getPublicConfig: vi.fn(),
   createPublicConfig: vi.fn(),
   authBatchSave: vi.fn(),
   publicBatchSave: vi.fn(),
-  parseRevisionConflict: vi.fn(() => null),
   updatePublicThumbnail: vi.fn(),
   claimConfig: vi.fn(),
   patchConfigMetadata: vi.fn(),

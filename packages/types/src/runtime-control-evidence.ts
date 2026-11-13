@@ -231,7 +231,7 @@ export const RuntimeControlLandmarkObservationSchema = z
     status: RuntimeControlLandmarkStatusSchema,
     sourcePoint: RuntimeControlPointObservationSchema.nullable(),
     targetPoint: RuntimeControlPointObservationSchema.nullable(),
-    residualM: z.number().finite().nonnegative().nullable(),
+    residualM: z.number().nonnegative().nullable(),
     reviewerRole: z.string().trim().min(1).max(120).nullable(),
     evidenceRefs: z.array(RuntimeControlEvidenceRefSchema).default([]),
     note: SafePlanningWordingSchema,
@@ -245,14 +245,14 @@ export const RuntimeControlLandmarkObservationSchema = z
     if (landmark.status === "candidate_visible_only") {
       if (hasSource || hasTarget || landmark.residualM !== null || landmark.reviewerRole !== null) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["status"],
           message: "Visible-only landmark candidates cannot carry coordinates, residuals, or reviewer roles.",
         });
       }
       if (landmark.evidenceRefs.length === 0) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["evidenceRefs"],
           message: "Visible-only landmark candidates need visual evidence references.",
         });
@@ -261,7 +261,7 @@ export const RuntimeControlLandmarkObservationSchema = z
 
     if (landmark.status === "source_coordinate_recorded" && !hasSource) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["sourcePoint"],
         message: "source_coordinate_recorded landmarks need a source point.",
       });
@@ -269,7 +269,7 @@ export const RuntimeControlLandmarkObservationSchema = z
 
     if (landmark.status === "target_coordinate_recorded" && !hasTarget) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["targetPoint"],
         message: "target_coordinate_recorded landmarks need a target point.",
       });
@@ -280,7 +280,7 @@ export const RuntimeControlLandmarkObservationSchema = z
       !hasPair
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["status"],
         message: "Paired or reviewed landmarks need both source and target coordinates.",
       });
@@ -288,7 +288,7 @@ export const RuntimeControlLandmarkObservationSchema = z
 
     if (landmark.residualM !== null && !hasPair) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["residualM"],
         message: "Landmark residuals require paired source and target coordinates.",
       });
@@ -297,14 +297,14 @@ export const RuntimeControlLandmarkObservationSchema = z
     if (landmark.status === "reviewed") {
       if (landmark.reviewerRole === null) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["reviewerRole"],
           message: "Reviewed landmark observations need a reviewer role.",
         });
       }
       if (landmark.residualM === null) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["residualM"],
           message: "Reviewed landmark observations need a residual.",
         });
@@ -320,7 +320,7 @@ export const RuntimeControlCoordinatePairObservationSchema = z
     landmarkId: RuntimeManifestKeySchema,
     sourcePoint: RuntimeControlPointObservationSchema,
     targetPoint: RuntimeControlPointObservationSchema,
-    residualM: z.number().finite().nonnegative(),
+    residualM: z.number().nonnegative(),
     reviewerRole: z.string().trim().min(1).max(120),
     evidenceRefs: z.array(RuntimeControlEvidenceRefSchema).min(1),
     note: SafePlanningWordingSchema,
@@ -351,15 +351,15 @@ export const RuntimeControlCoordinatePairIntakeV0Schema = z
     sourcePacketId: z.string().trim().min(1).max(160).regex(PACKET_ID),
     venueSlug: RuntimeSlugSchema,
     roomSlug: TradesHallRuntimeRoomSlugSchema,
-    runtimePackageId: z.string().uuid(),
-    recordedAt: z.string().datetime({ offset: true }),
+    runtimePackageId: z.uuid(),
+    recordedAt: z.iso.datetime({ offset: true }),
     recordedBy: z.string().trim().min(1).max(160),
     sourceFrame: RuntimeTransformFrameSchema,
     targetFrame: RuntimeTransformFrameSchema,
     qaStatus: z.enum(["human_reviewed", "accepted"]),
     coordinatePairs: z.array(RuntimeControlCoordinatePairObservationSchema).min(3),
-    residualRmseM: z.number().finite().nonnegative(),
-    maxResidualM: z.number().finite().nonnegative(),
+    residualRmseM: z.number().nonnegative(),
+    maxResidualM: z.number().nonnegative(),
     evidenceRefs: z.array(RuntimeControlEvidenceRefSchema).min(1),
     guardrails: z
       .object({
@@ -378,7 +378,7 @@ export const RuntimeControlCoordinatePairIntakeV0Schema = z
   .superRefine((intake, ctx) => {
     if (intake.sourceFrame === intake.targetFrame) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["targetFrame"],
         message: "Coordinate-pair intake must map between different frames.",
       });
@@ -388,7 +388,7 @@ export const RuntimeControlCoordinatePairIntakeV0Schema = z
     for (const [index, pair] of intake.coordinatePairs.entries()) {
       if (seenLandmarkIds.has(pair.landmarkId)) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["coordinatePairs", index, "landmarkId"],
           message: "Coordinate-pair intake cannot duplicate landmark ids.",
         });
@@ -397,14 +397,14 @@ export const RuntimeControlCoordinatePairIntakeV0Schema = z
 
       if (pair.sourcePoint.frame !== intake.sourceFrame) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["coordinatePairs", index, "sourcePoint", "frame"],
           message: "Coordinate-pair source frame must match intake source frame.",
         });
       }
       if (pair.targetPoint.frame !== intake.targetFrame) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["coordinatePairs", index, "targetPoint", "frame"],
           message: "Coordinate-pair target frame must match intake target frame.",
         });
@@ -416,14 +416,14 @@ export const RuntimeControlCoordinatePairIntakeV0Schema = z
     const computedMax = maxResidual(residuals);
     if (computedRmse !== null && !nearlyEqual(intake.residualRmseM, computedRmse)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["residualRmseM"],
         message: "Coordinate-pair residual RMSE must match the per-landmark residuals.",
       });
     }
     if (computedMax !== null && !nearlyEqual(intake.maxResidualM, computedMax)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["maxResidualM"],
         message: "Coordinate-pair max residual must match the per-landmark residuals.",
       });
@@ -439,8 +439,8 @@ export const RuntimeControlEvidencePacketV0Schema = z
     packetId: z.string().trim().min(1).max(160).regex(PACKET_ID),
     venueSlug: RuntimeSlugSchema,
     roomSlug: TradesHallRuntimeRoomSlugSchema,
-    runtimePackageId: z.string().uuid(),
-    recordedAt: z.string().datetime({ offset: true }),
+    runtimePackageId: z.uuid(),
+    recordedAt: z.iso.datetime({ offset: true }),
     recordedBy: z.string().trim().min(1).max(160),
     disposition: RuntimeControlEvidencePacketDispositionSchema,
     sourceFrame: RuntimeTransformFrameSchema,
@@ -473,7 +473,7 @@ export const RuntimeControlEvidencePacketV0Schema = z
   .superRefine((packet, ctx) => {
     if (packet.sourceFrame === packet.targetFrame) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["targetFrame"],
         message: "Control evidence packets must map between different frames.",
       });
@@ -484,7 +484,7 @@ export const RuntimeControlEvidencePacketV0Schema = z
     );
     if (!allowedAuthorities.includes(packet.intendedCaptureControl.poseAuthorityLevel)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["intendedCaptureControl", "poseAuthorityLevel"],
         message: "Intended capture-control source class cannot claim this pose authority.",
       });
@@ -496,7 +496,7 @@ export const RuntimeControlEvidencePacketV0Schema = z
     for (const [index, method] of packet.intendedCaptureControl.alignmentMethods.entries()) {
       if (!allowedMethods.includes(method)) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["intendedCaptureControl", "alignmentMethods", index],
           message: "Intended capture-control source class cannot claim this alignment method.",
         });
@@ -506,14 +506,14 @@ export const RuntimeControlEvidencePacketV0Schema = z
     for (const [index, landmark] of packet.landmarks.entries()) {
       if (landmark.sourcePoint !== null && landmark.sourcePoint.frame !== packet.sourceFrame) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["landmarks", index, "sourcePoint", "frame"],
           message: "Landmark source-point frame must match the packet source frame.",
         });
       }
       if (landmark.targetPoint !== null && landmark.targetPoint.frame !== packet.targetFrame) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["landmarks", index, "targetPoint", "frame"],
           message: "Landmark target-point frame must match the packet target frame.",
         });
@@ -529,7 +529,7 @@ export const RuntimeControlEvidencePacketV0Schema = z
 
     if (readyDisposition && reviewedLandmarks.length < 3) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["landmarks"],
         message: "Ready control evidence packets need at least three reviewed landmark observations.",
       });
@@ -537,7 +537,7 @@ export const RuntimeControlEvidencePacketV0Schema = z
 
     if (readyDisposition && packet.intendedCaptureControl.qaStatus !== "human_reviewed" && packet.intendedCaptureControl.qaStatus !== "accepted") {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["intendedCaptureControl", "qaStatus"],
         message: "Ready control evidence packets need human-reviewed or accepted QA status.",
       });
@@ -545,7 +545,7 @@ export const RuntimeControlEvidencePacketV0Schema = z
 
     if (readyDisposition && packet.blockers.length > 0) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["blockers"],
         message: "Ready control evidence packets cannot retain open blockers.",
       });
@@ -553,7 +553,7 @@ export const RuntimeControlEvidencePacketV0Schema = z
 
     if (!readyDisposition && packet.blockers.length === 0) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["blockers"],
         message: "Blocked control evidence packets must list at least one blocker.",
       });
@@ -561,7 +561,7 @@ export const RuntimeControlEvidencePacketV0Schema = z
 
     if (!readyDisposition && packet.requiredBeforeRegistration.length === 0) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["requiredBeforeRegistration"],
         message: "Blocked control evidence packets must list requirements before registration.",
       });
@@ -569,7 +569,7 @@ export const RuntimeControlEvidencePacketV0Schema = z
 
     if (packet.disposition === "accepted_for_transform_solve" && packet.targetTransformArtifactId === null) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["targetTransformArtifactId"],
         message: "Accepted transform-solve packets must name the target transform artifact id.",
       });
@@ -586,22 +586,22 @@ export const RuntimeControlLandmarkSetSummarySchema = z
     reviewedLandmarks: z.number().int().nonnegative(),
     sourceFrame: RuntimeTransformFrameSchema,
     targetFrame: RuntimeTransformFrameSchema,
-    residualRmseM: z.number().finite().nonnegative().nullable(),
-    maxResidualM: z.number().finite().nonnegative().nullable(),
+    residualRmseM: z.number().nonnegative().nullable(),
+    maxResidualM: z.number().nonnegative().nullable(),
     allNonRejectedLandmarksReviewed: z.boolean(),
   })
   .strict()
   .superRefine((summary, ctx) => {
     if (summary.nonRejectedLandmarks > summary.totalLandmarks) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["nonRejectedLandmarks"],
         message: "Non-rejected landmark count cannot exceed total landmark count.",
       });
     }
     if (summary.reviewedLandmarks > summary.nonRejectedLandmarks) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["reviewedLandmarks"],
         message: "Reviewed landmark count cannot exceed non-rejected landmark count.",
       });
@@ -609,7 +609,7 @@ export const RuntimeControlLandmarkSetSummarySchema = z
     if (summary.reviewedLandmarks === 0) {
       if (summary.residualRmseM !== null || summary.maxResidualM !== null) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["residualRmseM"],
           message: "Residual metrics require at least one reviewed landmark.",
         });
@@ -618,7 +618,7 @@ export const RuntimeControlLandmarkSetSummarySchema = z
     if (summary.reviewedLandmarks > 0) {
       if (summary.residualRmseM === null || summary.maxResidualM === null) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["residualRmseM"],
           message: "Reviewed landmark summaries need residual RMSE and max residual values.",
         });
@@ -629,7 +629,7 @@ export const RuntimeControlLandmarkSetSummarySchema = z
       (summary.reviewedLandmarks === summary.nonRejectedLandmarks)
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["allNonRejectedLandmarksReviewed"],
         message: "Review completeness flag must match reviewed and non-rejected landmark counts.",
       });
@@ -645,22 +645,22 @@ export const RuntimeControlCoordinatePairIntakeSummarySchema = z
     sourceFrame: RuntimeTransformFrameSchema,
     targetFrame: RuntimeTransformFrameSchema,
     qaStatus: z.enum(["human_reviewed", "accepted"]),
-    residualRmseM: z.number().finite().nonnegative(),
-    maxResidualM: z.number().finite().nonnegative(),
+    residualRmseM: z.number().nonnegative(),
+    maxResidualM: z.number().nonnegative(),
     reviewerRoles: z.array(z.string().trim().min(1).max(120)).min(1),
   })
   .strict()
   .superRefine((summary, ctx) => {
     if (summary.coordinatePairCount === 0) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["coordinatePairCount"],
         message: "Coordinate-pair intake summaries need at least one coordinate pair.",
       });
     }
     if (summary.sourceFrame === summary.targetFrame) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["targetFrame"],
         message: "Coordinate-pair intake summaries must map between different frames.",
       });
@@ -689,7 +689,7 @@ export const RuntimeControlCoordinatePairLandmarkRequestSchema = z
   .superRefine((request, ctx) => {
     if (request.sourceFrame === request.targetFrame) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["targetFrame"],
         message: "Coordinate-pair landmark requests must map between different frames.",
       });
@@ -698,7 +698,7 @@ export const RuntimeControlCoordinatePairLandmarkRequestSchema = z
       for (const observation of RUNTIME_CONTROL_COORDINATE_PAIR_REQUIRED_OBSERVATIONS) {
         if (!request.requiredObservations.includes(observation)) {
           ctx.addIssue({
-            code: z.ZodIssueCode.custom,
+            code: "custom",
             path: ["requiredObservations"],
             message: `Required landmark requests must include ${observation}.`,
           });
@@ -706,7 +706,7 @@ export const RuntimeControlCoordinatePairLandmarkRequestSchema = z
       }
     } else if (request.requiredObservations.length !== 0) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["requiredObservations"],
         message: "Non-required landmark requests cannot list required observations.",
       });
@@ -721,12 +721,12 @@ export const RuntimeControlCoordinatePairIntakeRequestV0Schema = z
     schemaVersion: z.literal(
       RUNTIME_CONTROL_COORDINATE_PAIR_INTAKE_REQUEST_V0_SCHEMA_VERSION,
     ),
-    generatedAt: z.string().datetime(),
+    generatedAt: z.iso.datetime(),
     sourcePacketRef: z.string().trim().min(1).max(320),
     sourcePacketId: z.string().trim().min(1).max(160).regex(PACKET_ID),
     venueSlug: RuntimeSlugSchema,
     roomSlug: TradesHallRuntimeRoomSlugSchema,
-    runtimePackageId: z.string().uuid(),
+    runtimePackageId: z.uuid(),
     status: RuntimeControlCoordinatePairIntakeRequestStatusSchema,
     sourceFrame: RuntimeTransformFrameSchema,
     targetFrame: RuntimeTransformFrameSchema,
@@ -754,7 +754,7 @@ export const RuntimeControlCoordinatePairIntakeRequestV0Schema = z
   .superRefine((request, ctx) => {
     if (request.sourceFrame === request.targetFrame) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["targetFrame"],
         message: "Coordinate-pair intake requests must map between different frames.",
       });
@@ -765,7 +765,7 @@ export const RuntimeControlCoordinatePairIntakeRequestV0Schema = z
     ).length;
     if (request.requiredCoordinatePairCount !== requiredCount) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["requiredCoordinatePairCount"],
         message: "Required coordinate-pair count must match required landmark requests.",
       });
@@ -774,14 +774,14 @@ export const RuntimeControlCoordinatePairIntakeRequestV0Schema = z
     for (const [index, landmark] of request.landmarkRequests.entries()) {
       if (landmark.sourceFrame !== request.sourceFrame) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["landmarkRequests", index, "sourceFrame"],
           message: "Landmark request source frame must match the request source frame.",
         });
       }
       if (landmark.targetFrame !== request.targetFrame) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["landmarkRequests", index, "targetFrame"],
           message: "Landmark request target frame must match the request target frame.",
         });
@@ -791,14 +791,14 @@ export const RuntimeControlCoordinatePairIntakeRequestV0Schema = z
     if (request.status === "coordinate_pairs_required") {
       if (request.requiredCoordinatePairCount < 3) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["requiredCoordinatePairCount"],
           message: "Coordinate-pair intake requests need at least three required landmark pairs.",
         });
       }
       if (request.blockers.length !== 0) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["blockers"],
           message: "Ready coordinate-pair intake requests cannot include blockers.",
         });
@@ -810,7 +810,7 @@ export const RuntimeControlCoordinatePairIntakeRequestV0Schema = z
       request.blockers.length === 0
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["blockers"],
         message: "Blocked coordinate-pair intake requests must include blockers.",
       });
@@ -825,13 +825,13 @@ export const RuntimeControlCoordinatePairIntakeInspectionV0Schema = z
     schemaVersion: z.literal(
       RUNTIME_CONTROL_COORDINATE_PAIR_INTAKE_INSPECTION_V0_SCHEMA_VERSION,
     ),
-    generatedAt: z.string().datetime(),
+    generatedAt: z.iso.datetime(),
     sourcePacketRef: z.string().trim().min(1).max(320),
     coordinatePairIntakeRef: z.string().trim().min(1).max(320).nullable(),
     sourcePacketId: z.string().trim().min(1).max(160).regex(PACKET_ID),
     venueSlug: RuntimeSlugSchema,
     roomSlug: TradesHallRuntimeRoomSlugSchema,
-    runtimePackageId: z.string().uuid(),
+    runtimePackageId: z.uuid(),
     status: RuntimeControlCoordinatePairIntakeInspectionStatusSchema,
     readyForReviewedPacketBuild: z.boolean(),
     sourcePacketSummary: RuntimeControlLandmarkSetSummarySchema,
@@ -855,7 +855,7 @@ export const RuntimeControlCoordinatePairIntakeInspectionV0Schema = z
   .superRefine((inspection, ctx) => {
     if (inspection.readyForReviewedPacketBuild !== (inspection.status === "ready_for_reviewed_packet_build")) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["readyForReviewedPacketBuild"],
         message: "Readiness flag must match ready_for_reviewed_packet_build status.",
       });
@@ -863,28 +863,28 @@ export const RuntimeControlCoordinatePairIntakeInspectionV0Schema = z
     if (inspection.status === "ready_for_reviewed_packet_build") {
       if (inspection.coordinatePairIntakeSummary === null) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["coordinatePairIntakeSummary"],
           message: "Ready coordinate-pair inspections need an intake summary.",
         });
       }
       if (inspection.blockers.length !== 0) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["blockers"],
           message: "Ready coordinate-pair inspections cannot include blockers.",
         });
       }
     } else if (inspection.blockers.length === 0) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["blockers"],
         message: "Blocked coordinate-pair inspections must include blockers.",
       });
     }
     if (inspection.status === "missing_intake_file" && inspection.coordinatePairIntakeRef !== null) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["coordinatePairIntakeRef"],
         message: "Missing-intake inspections cannot name an intake ref.",
       });
@@ -899,13 +899,13 @@ export const RuntimeControlCoordinatePairPacketBuildReportV0Schema = z
     schemaVersion: z.literal(
       RUNTIME_CONTROL_COORDINATE_PAIR_PACKET_BUILD_REPORT_V0_SCHEMA_VERSION,
     ),
-    generatedAt: z.string().datetime(),
+    generatedAt: z.iso.datetime(),
     sourcePacketRef: z.string().trim().min(1).max(320),
     coordinatePairIntakeRef: z.string().trim().min(1).max(320).nullable(),
     sourcePacketId: z.string().trim().min(1).max(160).regex(PACKET_ID),
     venueSlug: RuntimeSlugSchema,
     roomSlug: TradesHallRuntimeRoomSlugSchema,
-    runtimePackageId: z.string().uuid(),
+    runtimePackageId: z.uuid(),
     status: RuntimeControlCoordinatePairPacketBuildStatusSchema,
     reviewedPacketFile: z.string().trim().min(1).max(500).nullable(),
     sourcePacketSummary: RuntimeControlLandmarkSetSummarySchema,
@@ -930,21 +930,21 @@ export const RuntimeControlCoordinatePairPacketBuildReportV0Schema = z
     if (report.status === "packet_built") {
       if (report.reviewedPacket === null || report.reviewedPacketSummary === null) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["reviewedPacket"],
           message: "Successful coordinate-pair packet-build reports must include the reviewed packet.",
         });
       }
       if (report.blockers.length !== 0) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["blockers"],
           message: "Successful coordinate-pair packet-build reports cannot include blockers.",
         });
       }
       if (report.coordinatePairIntakeRef === null) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["coordinatePairIntakeRef"],
           message: "Successful coordinate-pair packet-build reports need the coordinate-pair intake ref.",
         });
@@ -954,21 +954,21 @@ export const RuntimeControlCoordinatePairPacketBuildReportV0Schema = z
     if (report.status !== "packet_built") {
       if (report.reviewedPacket !== null || report.reviewedPacketSummary !== null) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["reviewedPacket"],
           message: "Blocked coordinate-pair packet-build reports cannot include a reviewed packet.",
         });
       }
       if (report.reviewedPacketFile !== null) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["reviewedPacketFile"],
           message: "Blocked coordinate-pair packet-build reports cannot name a written reviewed packet file.",
         });
       }
       if (report.blockers.length === 0) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["blockers"],
           message: "Blocked coordinate-pair packet-build reports must include blockers.",
         });
@@ -978,21 +978,21 @@ export const RuntimeControlCoordinatePairPacketBuildReportV0Schema = z
     if (report.reviewedPacket !== null) {
       if (report.reviewedPacket.venueSlug !== report.venueSlug) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["reviewedPacket", "venueSlug"],
           message: "Reviewed packet venue must match the source packet venue.",
         });
       }
       if (report.reviewedPacket.roomSlug !== report.roomSlug) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["reviewedPacket", "roomSlug"],
           message: "Reviewed packet room must match the source packet room.",
         });
       }
       if (report.reviewedPacket.runtimePackageId !== report.runtimePackageId) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["reviewedPacket", "runtimePackageId"],
           message: "Reviewed packet runtime package must match the source packet runtime package.",
         });
@@ -1008,12 +1008,12 @@ export const RuntimeControlCaptureControlPayloadBuildReportV0Schema = z
     schemaVersion: z.literal(
       RUNTIME_CONTROL_CAPTURE_CONTROL_PAYLOAD_BUILD_REPORT_V0_SCHEMA_VERSION,
     ),
-    generatedAt: z.string().datetime(),
+    generatedAt: z.iso.datetime(),
     packetRef: z.string().trim().min(1).max(320),
     packetId: z.string().trim().min(1).max(160).regex(PACKET_ID),
     venueSlug: RuntimeSlugSchema,
     roomSlug: TradesHallRuntimeRoomSlugSchema,
-    runtimePackageId: z.string().uuid(),
+    runtimePackageId: z.uuid(),
     landmarkSetSummary: RuntimeControlLandmarkSetSummarySchema,
     status: RuntimeControlCaptureControlPayloadBuildStatusSchema,
     payloadFile: z.string().trim().min(1).max(500).nullable(),
@@ -1036,21 +1036,21 @@ export const RuntimeControlCaptureControlPayloadBuildReportV0Schema = z
     if (report.status === "blocked_current_packet") {
       if (report.payload !== null) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["payload"],
           message: "Blocked payload-build reports cannot include a capture-control payload.",
         });
       }
       if (report.payloadFile !== null) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["payloadFile"],
           message: "Blocked payload-build reports cannot name a written payload file.",
         });
       }
       if (report.blockers.length === 0) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["blockers"],
           message: "Blocked payload-build reports must include blockers.",
         });
@@ -1060,14 +1060,14 @@ export const RuntimeControlCaptureControlPayloadBuildReportV0Schema = z
     if (report.status === "payload_built") {
       if (report.payload === null) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["payload"],
           message: "Successful payload-build reports must include the capture-control payload.",
         });
       }
       if (report.blockers.length !== 0) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["blockers"],
           message: "Successful payload-build reports cannot include blockers.",
         });
@@ -1077,21 +1077,21 @@ export const RuntimeControlCaptureControlPayloadBuildReportV0Schema = z
     if (report.payload !== null) {
       if (report.payload.venueSlug !== report.venueSlug) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["payload", "venueSlug"],
           message: "Payload venue must match the source packet venue.",
         });
       }
       if (report.payload.roomSlug !== report.roomSlug) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["payload", "roomSlug"],
           message: "Payload room must match the source packet room.",
         });
       }
       if ((report.payload.runtimePackageId ?? null) !== report.runtimePackageId) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["payload", "runtimePackageId"],
           message: "Payload runtime package must match the source packet runtime package.",
         });
@@ -1105,7 +1105,7 @@ export type RuntimeControlCaptureControlPayloadBuildReportV0 = z.infer<
 export const RuntimeControlEvidenceChainStatusV0Schema = z
   .object({
     schemaVersion: z.literal(RUNTIME_CONTROL_EVIDENCE_CHAIN_STATUS_V0_SCHEMA_VERSION),
-    generatedAt: z.string().datetime(),
+    generatedAt: z.iso.datetime(),
     sourcePacketRef: z.string().trim().min(1).max(320),
     coordinatePairIntakeRequestRef: z.string().trim().min(1).max(320),
     coordinatePairIntakeInspectionRef: z.string().trim().min(1).max(320),
@@ -1115,7 +1115,7 @@ export const RuntimeControlEvidenceChainStatusV0Schema = z
     sourcePacketId: z.string().trim().min(1).max(160).regex(PACKET_ID),
     venueSlug: RuntimeSlugSchema,
     roomSlug: TradesHallRuntimeRoomSlugSchema,
-    runtimePackageId: z.string().uuid(),
+    runtimePackageId: z.uuid(),
     chainStatus: RuntimeControlEvidenceChainStatusSchema,
     sourcePacketSummary: RuntimeControlLandmarkSetSummarySchema,
     coordinatePairIntakeRequestStatus: RuntimeControlCoordinatePairIntakeRequestStatusSchema,
@@ -1149,14 +1149,14 @@ export const RuntimeControlEvidenceChainStatusV0Schema = z
     if (status.chainStatus === "chain_inconsistent") {
       if (status.consistencyIssues.length === 0) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["consistencyIssues"],
           message: "Inconsistent chain reports must include consistency issues.",
         });
       }
     } else if (status.consistencyIssues.length !== 0) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["consistencyIssues"],
         message: "Consistent chain reports cannot include consistency issues.",
       });
@@ -1164,7 +1164,7 @@ export const RuntimeControlEvidenceChainStatusV0Schema = z
 
     if (status.chainStatus !== "capture_control_payload_ready" && status.blockers.length === 0) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["blockers"],
         message: "Blocked chain reports must include blockers.",
       });
@@ -1173,14 +1173,14 @@ export const RuntimeControlEvidenceChainStatusV0Schema = z
     if (status.chainStatus === "capture_control_payload_ready") {
       if (!status.captureControlPayloadReady) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["captureControlPayloadReady"],
           message: "Ready chain reports must mark the capture-control payload ready.",
         });
       }
       if (status.blockers.length !== 0) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["blockers"],
           message: "Ready chain reports cannot include blockers.",
         });

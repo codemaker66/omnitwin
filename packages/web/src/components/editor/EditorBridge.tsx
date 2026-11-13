@@ -1,10 +1,23 @@
 import { useEffect, useRef } from "react";
-import { captureEditorSession, isCurrentEditorSession, useEditorStore, setEditorAutosaveRequester, type EditorObject, type EditorSession } from "../../stores/editor-store.js";
+import {
+  captureEditorSession,
+  isCurrentEditorSession,
+  keepUnsavedWorkOnDevice,
+  setEditorAutosaveRequester,
+  useEditorStore,
+  type EditorObject,
+  type EditorSession,
+} from "../../stores/editor-store.js";
+import type { BatchSaveTransport } from "../../api/configurations.js";
 import { usePlacementStore } from "../../stores/placement-store.js";
 import { useSelectionStore } from "../../stores/selection-store.js";
 import { useAuthStore } from "../../stores/auth-store.js";
 import type { PlacedItem } from "../../lib/placement.js";
 import { normalizeFurnitureScale } from "../../lib/furniture-scale.js";
+import { scheduleGangwayReviewRecord } from "../../lib/gangway-review-record.js";
+import { seededNote } from "../../lib/note-seeds.js";
+import { useLayoutLiveStore } from "../../stores/layout-live-store.js";
+import { composeWithOverlay, isRemotePlacementKey, type RemoteOverlay } from "../../lib/layout-live/live-document.js";
 
 // ---------------------------------------------------------------------------
 // EditorBridge — syncs editor-store ↔ placement-store bidirectionally
@@ -111,7 +124,8 @@ export function placedItemToEditor(item: PlacedItem, existing: EditorObject | un
     chairStyle: item.chairStyle ?? null,
     centerpiece: item.centerpiece ?? null,
     groupId: item.groupId,
-    notes: existing?.notes ?? "",
+    // A note an edit hands the piece in this write (Replace, lib/note-seeds), so piece and note are one undo step.
+    notes: seededNote(item.id) ?? existing?.notes ?? "",
   };
   const label = (item.label ?? "").trim();
   return label.length > 0 ? { ...base, label } : base;
@@ -124,22 +138,74 @@ function itemsMatch(a: readonly PlacedItem[], b: readonly EditorObject[]): boole
     const pa = a[i];
     const eb = b[i];
     if (pa === undefined || eb === undefined) return false;
-    if (pa.id !== eb.id) return false;
-    if (pa.x !== eb.positionX || pa.y !== eb.positionY || pa.z !== eb.positionZ) return false;
-    if (pa.rotationY !== eb.rotationY) return false;
-    // scale round-trips (see editorToPlacedItem). Omitting it here would let a
-    // resize compare "equal", so the bridge would push the pre-resize value
-    // back and then persist that revert.
-    if ((pa.scale ?? 1) !== eb.scale) return false;
-    if (pa.clothed !== eb.clothed) return false;
-    if (pa.clothStyle !== eb.clothStyle) return false;
-    if (pa.tableSetting !== eb.tableSetting) return false;
-    if ((pa.chairStyle ?? null) !== (eb.chairStyle ?? null)) return false;
-    if ((pa.centerpiece ?? null) !== (eb.centerpiece ?? null)) return false;
-    if (pa.groupId !== eb.groupId) return false;
-    if ((pa.label ?? "") !== (eb.label ?? "")) return false;
+    if (!itemMatchesObject(pa, eb)) return false;
   }
   return true;
+}
+
+/** One scene item against one editor object, across every mutable field. */
+function itemMatchesObject(pa: PlacedItem, eb: EditorObject): boolean {
+  if (pa.id !== eb.id) return false;
+  // A piece can become another in place (Fill sets a reused chair as the event's chair), and must reach the save.
+  if (pa.catalogueItemId !== eb.assetDefinitionId) return false;
+  if (pa.x !== eb.positionX || pa.y !== eb.positionY || pa.z !== eb.positionZ) return false;
+  if (pa.rotationY !== eb.rotationY) return false;
+  // scale round-trips (see editorToPlacedItem). Omitting it here would let a
+  // resize compare "equal", so the bridge would push the pre-resize value
+  // back and then persist that revert.
+  if ((pa.scale ?? 1) !== eb.scale) return false;
+  if (pa.clothed !== eb.clothed) return false;
+  if (pa.clothStyle !== eb.clothStyle) return false;
+  if (pa.tableSetting !== eb.tableSetting) return false;
+  if ((pa.chairStyle ?? null) !== (eb.chairStyle ?? null)) return false;
+  if ((pa.centerpiece ?? null) !== (eb.centerpiece ?? null)) return false;
+  if (pa.groupId !== eb.groupId) return false;
+  if ((pa.label ?? "") !== (eb.label ?? "")) return false;
+  return true;
+}
+
+/**
+ * Live co-editing: the scene shows the local document with other people's
+ * live ops on top (composeWithOverlay). When the scene changes, take back
+ * ONLY this person's edits: an item still showing a peer's state keeps the
+ * local document's object, a peer's unsaved placement is not this person's,
+ * and an object a peer deleted is still in the local document. Without this,
+ * every gesture would write the peer's prediction into the saved layout.
+ */
+export function decomposeSceneItems(
+  items: readonly PlacedItem[],
+  local: readonly EditorObject[],
+  overlay: RemoteOverlay,
+): EditorObject[] {
+  const localById = new Map(local.map((object) => [object.id, object]));
+  const seen = new Set<string>();
+  const result: EditorObject[] = [];
+  for (const item of items) {
+    const existing = localById.get(item.id);
+    const entry = overlay.get(item.id);
+    if (existing === undefined) {
+      if (entry === undefined) {
+        result.push(placedItemToEditor(item, undefined));
+      } else if (!isRemotePlacementKey(item.id) && entry.state !== null
+        && !itemMatchesObject(item, { ...entry.state, id: item.id })) {
+        // A peer's committed object this editor has not refetched yet, now
+        // moved by this person: the row exists, so it is theirs to save.
+        result.push(placedItemToEditor(item, entry.state));
+      }
+      // A peer's unsaved placement has no row yet; it cannot be edited here.
+      continue;
+    }
+    seen.add(item.id);
+    if (entry !== undefined && entry.state !== null && itemMatchesObject(item, { ...entry.state, id: item.id })) {
+      result.push(existing);
+      continue;
+    }
+    result.push(placedItemToEditor(item, existing));
+  }
+  for (const object of local) {
+    if (!seen.has(object.id) && overlay.get(object.id)?.state === null) result.push(object);
+  }
+  return result;
 }
 
 // Module-level mount counter — see the concurrency-model comment above.
@@ -165,6 +231,7 @@ export function __resetEditorBridgeMountCountForTests(): void {
 export function EditorBridge(): null {
   const editorObjects = useEditorStore((s) => s.objects);
   const configId = useEditorStore((s) => s.configId);
+  const overlay = useLayoutLiveStore((s) => s.overlay);
   const authState = useAuthStore((s) => s.isAuthenticated);
   const isAuthenticated = useRef(authState);
 
@@ -197,6 +264,12 @@ export function EditorBridge(): null {
     return () => { setEditorAutosaveRequester(null); };
   }, []);
 
+  // Back online with unsaved work: send it without waiting for a gesture.
+  useEffect(() => watchReconnectAutosave(() => isAuthenticated.current), []);
+
+  // The page hiding, closing or being left (QoL D-01): send what is unsaved.
+  useEffect(() => watchPlannerPageLeave(), []);
+
   // Track whether we're currently pushing from editor→placement to avoid feedback loops
   const syncing = useRef(false);
 
@@ -206,14 +279,16 @@ export function EditorBridge(): null {
     syncing.current = true;
 
     const currentPlaced = usePlacementStore.getState().placedItems;
-    if (!itemsMatch(currentPlaced, editorObjects)) {
+    // Other people's live ops are drawn on top; they never enter editor-store.
+    const shown = composeWithOverlay(editorObjects, overlay);
+    if (!itemsMatch(currentPlaced, shown)) {
       // Replace placement-store items with editor-store objects
-      const newItems = editorObjects.map(editorToPlacedItem);
+      const newItems = shown.map(editorToPlacedItem);
       usePlacementStore.setState({ placedItems: newItems });
     }
 
     syncing.current = false;
-  }, [editorObjects]);
+  }, [editorObjects, overlay]);
 
   // --- Placement → Editor: subscribe to placement-store changes ---
   useEffect(() => {
@@ -226,17 +301,23 @@ export function EditorBridge(): null {
       syncing.current = true;
 
       const editorState = useEditorStore.getState();
+      const liveOverlay = useLayoutLiveStore.getState().overlay;
       const existingById = new Map(editorState.objects.map((o) => [o.id, o]));
-      const newEditorObjects = state.placedItems.map((item) => placedItemToEditor(item, existingById.get(item.id)));
+      const newEditorObjects = liveOverlay.size === 0
+        ? state.placedItems.map((item) => placedItemToEditor(item, existingById.get(item.id)))
+        : decomposeSceneItems(state.placedItems, editorState.objects, liveOverlay);
+      const shown = composeWithOverlay(editorState.objects, liveOverlay);
 
       // Only update if actually different
-      if (!itemsMatch(state.placedItems, editorState.objects)) {
+      if (!itemsMatch(state.placedItems, shown)) {
         // Route through the store action so the change lands on the undo
         // timeline; successive drag frames coalesce by interaction epoch.
         editorState.replaceObjectsFromScene(newEditorObjects);
 
         // Schedule auto-save
         scheduleAutoSave(isAuthenticated.current);
+        // A signed-in layout's gangway review is kept with it once its pinches stay still (lib/gangway-review-record).
+        if (isAuthenticated.current) scheduleGangwayReviewRecord({ flush: flushAutoSave });
       }
 
       syncing.current = false;
@@ -259,14 +340,12 @@ export function EditorBridge(): null {
     return unsub;
   }, []);
 
-  // --- Cleanup: cancel pending auto-save on unmount to prevent timer leaks (F26) ---
+  // --- The planner's route unmounts: the waiting autosave goes now ---
+  // Cancelling it here (F26, a timer leak) dropped the last 3 s of edits
+  // whenever the person left the planner (QoL D-01, editor-save-2). Flushing
+  // clears the timer and sends what it was waiting to send.
   useEffect(() => {
-    return () => {
-      if (bridgeSaveTimer !== null) {
-        clearTimeout(bridgeSaveTimer);
-        bridgeSaveTimer = null;
-      }
-    };
+    return () => { void flushAutoSave(); };
   }, []);
 
   return null;
@@ -285,9 +364,40 @@ const AUTOSAVE_RETRY_MS = 400;
 
 /** Exported so the autosave contract can be tested by behaviour rather than
  *  by asserting on this module's source text. */
-export function scheduleAutoSave(isAuthenticated: boolean): void {
+/** Live co-editing: while someone else is in the layout, commit sooner, so
+ *  the room converges on the server's truth in well under a second and two
+ *  people rarely race the same revision. Null restores the solo debounce. */
+let autosaveDelayOverrideMs: number | null = null;
+
+export function setAutoSaveDelayOverride(delayMs: number | null): void {
+  autosaveDelayOverrideMs = delayMs;
+}
+
+/** A network that has just come back may drop again at once: wait a moment,
+ *  but not the full debounce, before sending what waited for it. */
+const AUTOSAVE_RECONNECT_MS = 1000;
+
+export function scheduleAutoSave(isAuthenticated: boolean, delayMs?: number): void {
   if (bridgeSaveTimer !== null) clearTimeout(bridgeSaveTimer);
-  bridgeSaveTimer = setTimeout(() => { attemptAutoSave(isAuthenticated); }, AUTOSAVE_DEBOUNCE_MS);
+  bridgeSaveTimer = setTimeout(
+    () => { attemptAutoSave(isAuthenticated); },
+    delayMs ?? autosaveDelayOverrideMs ?? AUTOSAVE_DEBOUNCE_MS,
+  );
+}
+
+/**
+ * Save again when the browser comes back online with unsaved work. While
+ * offline the autosave tick is skipped (it could only fail), so this is what
+ * sends the work that waited. A layout with a conflict waits for the person's
+ * choice, and a view-only one would only be refused again. Returns the
+ * unsubscribe.
+ */
+export function watchReconnectAutosave(isAuthenticated: () => boolean): () => void {
+  return useEditorStore.subscribe((state, previous) => {
+    if (!state.isOnline || previous.isOnline) return;
+    if (!state.isDirty || state.configId === null || state.saveConflict !== null || state.lockReason !== null) return;
+    scheduleAutoSave(isAuthenticated(), AUTOSAVE_RECONNECT_MS);
+  });
 }
 
 /** The debounce has already elapsed; decide what to do with the tick.
@@ -306,6 +416,12 @@ function attemptAutoSave(isAuthenticated: boolean): void {
     bridgeSaveTimer = setTimeout(() => { attemptAutoSave(isAuthenticated); }, AUTOSAVE_RETRY_MS);
     return;
   }
+  // Offline the save can only fail; watchReconnectAutosave sends it on return.
+  if (!state.isOnline) return;
+  // A conflict waits for the person's choice ("Keep mine" saves). Saving now
+  // could only meet it again: a request per edit, the conflict refetched and
+  // re-raised each time, and a guest's hourly save allowance spent on it.
+  if (state.saveConflict !== null) return;
   if (state.isDirty && state.configId !== null) {
     void state.saveToServer(isAuthenticated);
   }
@@ -324,6 +440,48 @@ async function settleInFlightSave(session: EditorSession): Promise<void> {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Leaving the page (QoL D-01, release audit editor-save-2). Hiding is the last
+// moment a page can count on (a phone switching apps, a tab closing): its
+// unsaved work goes then, as a keepalive request when small enough to outlive
+// the page, and again as the page goes if nothing sent it. A request a closing
+// tab cancels is not lost work: the device keeps the copy (and its next open
+// restores it, or finds the server already has it, D-X2). The browser is asked
+// to hold the page only for unsaved work this device does not keep.
+// ---------------------------------------------------------------------------
+
+/** Send the open layout's unsaved work as the page goes out of sight or away. */
+function saveAsPageLeaves(): void {
+  keepUnsavedWorkOnDevice();
+  const state = useEditorStore.getState();
+  if (!state.isDirty || state.configId === null || !state.isOnline) return;
+  void flushAutoSave({ keepalive: true });
+}
+
+/** Unsaved work that would be gone with the page: not kept on this device. */
+export function leaveLosesWork(state: Pick<ReturnType<typeof useEditorStore.getState>, "configId" | "isDirty" | "keptOnDevice">): boolean {
+  return state.configId !== null && state.isDirty && !state.keptOnDevice;
+}
+
+/** Listen for the page hiding, closing and unloading. Returns the unsubscribe. */
+export function watchPlannerPageLeave(): () => void {
+  const onVisibility = (): void => {
+    if (document.visibilityState === "hidden") saveAsPageLeaves();
+  };
+  const onPageHide = (): void => { saveAsPageLeaves(); };
+  const onBeforeUnload = (event: BeforeUnloadEvent): void => {
+    if (leaveLosesWork(useEditorStore.getState())) event.preventDefault();
+  };
+  document.addEventListener("visibilitychange", onVisibility);
+  window.addEventListener("pagehide", onPageHide);
+  window.addEventListener("beforeunload", onBeforeUnload);
+  return () => {
+    document.removeEventListener("visibilitychange", onVisibility);
+    window.removeEventListener("pagehide", onPageHide);
+    window.removeEventListener("beforeunload", onBeforeUnload);
+  };
+}
+
 /**
  * Cancel the pending auto-save debounce timer and immediately flush any
  * dirty state to the server. Punch list #32: called by SaveSendPanel before
@@ -339,7 +497,7 @@ async function settleInFlightSave(session: EditorSession): Promise<void> {
  * objects had never been pushed — reporting success over a stale layout is an
  * unfounded claim, not merely a bug.
  */
-export async function flushAutoSave(): Promise<boolean> {
+export async function flushAutoSave(transport?: BatchSaveTransport): Promise<boolean> {
   if (bridgeSaveTimer !== null) {
     clearTimeout(bridgeSaveTimer);
     bridgeSaveTimer = null;
@@ -349,7 +507,10 @@ export async function flushAutoSave(): Promise<boolean> {
   if (!isCurrentEditorSession(session)) return false;
   const state = useEditorStore.getState();
   if (state.isDirty && state.configId !== null) {
-    const saved = await state.saveToServer(useAuthStore.getState().isAuthenticated);
+    const authenticated = useAuthStore.getState().isAuthenticated;
+    const saved = transport === undefined
+      ? await state.saveToServer(authenticated)
+      : await state.saveToServer(authenticated, transport);
     return saved && isCurrentEditorSession(session);
   }
   return true;

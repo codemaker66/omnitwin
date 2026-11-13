@@ -20,6 +20,7 @@ import {
 import type { Database } from "../db/client.js";
 import { authenticate, isPlatformAdmin } from "../middleware/auth.js";
 import { emit } from "../observability/event-bus.js";
+import { pushForRequestLanded, tell, tellOfMessage } from "../services/push-triggers.js";
 import { canManageVenue } from "../utils/query.js";
 import {
   clientConversationSnapshot,
@@ -51,10 +52,10 @@ import {
 // route that changes it. Broadening means a new thread.
 // ---------------------------------------------------------------------------
 
-const VenueParam = z.object({ venueId: z.string().uuid() });
-const IdParam = z.object({ id: z.string().uuid() });
-const EventParam = z.object({ eventId: z.string().uuid() });
-const IdempotencyKeyHeader = z.string().uuid();
+const VenueParam = z.object({ venueId: z.uuid() });
+const IdParam = z.object({ id: z.uuid() });
+const EventParam = z.object({ eventId: z.uuid() });
+const IdempotencyKeyHeader = z.uuid();
 const AfterQuery = z.object({ after: z.coerce.number().int().min(0).default(0) }).strict();
 
 function validationError(reply: FastifyReply, details: unknown): FastifyReply {
@@ -101,7 +102,10 @@ export function withHeaderKey(request: FastifyRequest, reply: FastifyReply): { r
   return { body: { ...record, idempotencyKey: parsedHeader.data } };
 }
 
-function announceMessage(request: FastifyRequest, thread: Thread, message: Message): void {
+/** A message that has just committed: on the house bus, and to the person
+ *  whose request it answers. Never called for a replay. */
+function announceMessage(db: Database, request: FastifyRequest, thread: Thread, message: Message): void {
+  tellOfMessage(db, thread, message, request.log);
   emit(request.log, "conversation.changed", {
     venueId: thread.venueId,
     kind: "message.sent",
@@ -232,7 +236,7 @@ export async function threadRoutes(server: FastifyInstance, opts: { db: Database
 
     const result = await sendMessageCore(db, actorOf(request), params.data.id, parsed.data);
     if (isDeny(result)) return sendDeny(reply, result);
-    if (!result.replay) announceMessage(request, result.thread, result.message);
+    if (!result.replay) announceMessage(db, request, result.thread, result.message);
     return reply
       .status(result.replay ? 200 : 201)
       .header("idempotency-replay", String(result.replay))
@@ -288,7 +292,7 @@ export async function clientConversationRoutes(server: FastifyInstance, opts: { 
 
     const result = await sendClientMessageCore(db, actorOf(request), params.data.eventId, parsed.data);
     if (isDeny(result)) return sendDeny(reply, result);
-    if (!result.replay) announceMessage(request, result.thread, result.message);
+    if (!result.replay) announceMessage(db, request, result.thread, result.message);
     return reply
       .status(result.replay ? 200 : 201)
       .header("idempotency-replay", String(result.replay))
@@ -310,7 +314,12 @@ export async function clientConversationRoutes(server: FastifyInstance, opts: { 
 
     const result = await createClientRequestCore(db, actor, params.data.eventId, parsed.data);
     if (isDeny(result)) return sendDeny(reply, result);
-    if (!result.replay) announceRequest(request, "request.created", result.request, result.notificationIds);
+    if (!result.replay) {
+      announceRequest(request, "request.created", result.request, result.notificationIds);
+      // The floor's phones are told the same way as for a request raised on
+      // the venue route; the client who asked is never pushed, only told in product.
+      tell(pushForRequestLanded(db, result.request, { logger: request.log }), request.log, "request.landed");
+    }
     return reply
       .status(result.replay ? 200 : 201)
       .header("idempotency-replay", String(result.replay))

@@ -1,4 +1,5 @@
 import type { BufferGeometry } from "three";
+import { craftedDetail } from "./crafted-detail.js";
 import { gridSurface, type Vec3 } from "./crafted-geometry.js";
 
 // ---------------------------------------------------------------------------
@@ -20,6 +21,18 @@ export interface PoseurSize {
   readonly height: number;
 }
 
+/** How far out the feet stand, as a share of the top's radius: to the top's edge, as a stable base must. */
+const FOOT_REACH = 0.98;
+
+/**
+ * Where the cover's pockets stand on the floor, one on each foot, in plan:
+ * the legs stand on the diagonals, as far out as the feet reach.
+ */
+export function poseurFeet(size: PoseurSize): readonly (readonly [number, number])[] {
+  const d = (Math.min(size.width, size.depth) / 2) * FOOT_REACH * Math.SQRT1_2;
+  return [[d, d], [-d, d], [-d, -d], [d, -d]];
+}
+
 /**
  * A quarter superellipse from (0, 0) to (1, 1): upright where it leaves the
  * waist, flat where it reaches the rim. `m` near 1 is a cone, 2 an ellipse.
@@ -38,14 +51,13 @@ export function poseurCover(size: PoseurSize): BufferGeometry {
   const band = 0.014;
   const waist = radius * 0.42;
   const waistY = top * 0.59;
-  // The feet reach to the top's edge, as a stable base must.
-  const footReach = radius * 0.98;
+  const footReach = radius * FOOT_REACH;
   // Between the legs the fabric is drawn in, inside the straight line from
   // leg to leg (a chord is 0.71 of the reach), and its hem lifts in a
   // shallow arch.
   const faceReach = footReach * 0.62;
   const arch = 0.035;
-  const segments = 160;
+  const segments = craftedDetail().level === "full" ? 160 : 96;
 
   interface Ring {
     readonly radiusAt: (lobe: number) => number;

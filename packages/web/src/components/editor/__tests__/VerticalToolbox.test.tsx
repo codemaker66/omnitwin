@@ -7,6 +7,16 @@ import { useEditorStore } from "../../../stores/editor-store.js";
 import { usePlacementStore } from "../../../stores/placement-store.js";
 import { useSelectionStore } from "../../../stores/selection-store.js";
 import { useBookmarkStore } from "../../../stores/bookmark-store.js";
+import { useToolStore } from "../../../stores/tool-store.js";
+import { useMarkupStore } from "../../../stores/markup-store.js";
+import { usePlannerToolKeys } from "../../../lib/planner-keymap.js";
+import { setPlannerFeaturesForTesting } from "../../../lib/planner-features.js";
+
+/** The editor page's tool keys (A, D, M, V and the tools' Escapes), which reach the toolbox through the tool store. */
+function ToolKeys(): null {
+  usePlannerToolKeys();
+  return null;
+}
 
 // ---------------------------------------------------------------------------
 // VerticalToolbox undo/redo — must drive the editor-store history timeline
@@ -19,6 +29,7 @@ beforeEach(() => {
   useEditorStore.getState().reset();
   usePlacementStore.setState({ placedItems: [] });
   useSelectionStore.getState().clearSelection();
+  useToolStore.getState().setTool("select");
   useBookmarkStore.setState({
     bookmarks: [],
     pendingNavigationId: null,
@@ -38,6 +49,7 @@ afterEach(() => {
 function renderToolbox(): void {
   render(
     <MemoryRouter>
+      <ToolKeys />
       <VerticalToolbox />
     </MemoryRouter>,
   );
@@ -61,7 +73,8 @@ describe("VerticalToolbox undo buttons", () => {
     act(() => { useEditorStore.setState({ isSaving: false, saveError: "Network failed" }); });
     expect(screen.getByRole("button", { name: "Save failed - retry" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Save failed - retry" }).querySelector("[data-activity-indicator]")).toBeNull();
-    act(() => { useEditorStore.setState({ saveConflict: { expectedRevision: 2, currentRevision: 3, message: "Changed" } }); });
+    act(() => { useEditorStore.setState({ saveConflict: { expectedRevision: 2, currentRevision: 3, message: "Changed",
+      changedBy: null, changedAt: null, byYou: false, theirChange: null } }); });
     expect(screen.getByRole("button", { name: "Reload layout" })).toBeTruthy();
   });
 
@@ -79,16 +92,19 @@ describe("VerticalToolbox undo buttons", () => {
     expect(screen.queryByTestId("planner-onboarding-widget")).toBeNull();
   });
 
-  it("renders the laser diagram controls as a movable and minimizable widget", async () => {
+  it("renders the draw controls as a movable and minimizable widget, in the planner's word for them", async () => {
     renderToolbox();
 
-    fireEvent.click(screen.getByRole("button", { name: "Laser Diagram" }));
+    fireEvent.click(screen.getByRole("button", { name: "Draw" }));
 
     const panel = await screen.findByTestId("markup-panel");
     expect(panel.getAttribute("data-floating-widget-id")).toBe("planner-markup-panel");
     expect(panel.textContent).toContain("Draw notes");
-    expect(screen.getByRole("button", { name: "Move Laser diagram" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Minimize Laser diagram" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Move Draw tools" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Minimize Draw tools" })).toBeTruthy();
+    // QoL F-15: "Laser" is the retired name; nothing a person reads or hears says it.
+    const heard = [...document.body.querySelectorAll("*")].flatMap((node) => ["aria-label", "title"].map((name) => node.getAttribute(name) ?? ""));
+    expect([document.body.textContent ?? "", ...heard].join("\n")).not.toMatch(/laser/iu);
   });
 
   it("renders camera views as a movable widget and still requests bookmark navigation", async () => {
@@ -242,13 +258,58 @@ describe("VerticalToolbox Delete and the V shortcut", () => {
 
   it("returns to Select on V, and leaves Ctrl+V and typing alone", () => {
     renderToolbox();
-    fireEvent.keyDown(window, { code: "KeyD" });
+    fireEvent.keyDown(window, { code: "KeyD", key: "d" });
     expect(screen.getByRole("button", { name: /^Select & Move/u }).getAttribute("aria-pressed")).not.toBe("true");
 
-    fireEvent.keyDown(window, { code: "KeyV", ctrlKey: true });
+    fireEvent.keyDown(window, { code: "KeyV", key: "v", ctrlKey: true });
     expect(screen.getByRole("button", { name: /^Select & Move/u }).getAttribute("aria-pressed")).not.toBe("true");
 
-    fireEvent.keyDown(window, { code: "KeyV" });
+    fireEvent.keyDown(window, { code: "KeyV", key: "v" });
     expect(screen.getByRole("button", { name: /^Select & Move/u }).getAttribute("aria-pressed")).toBe("true");
+  });
+
+  // T-671 slice 5 (F-01, F-02): one tool store. The deck's Done puts the pen
+  // down through the markup store; the toolbox follows, and D takes it up again.
+  it("follows the one tool store: A opens the furniture panel, Esc closes it, D picks the pen back up after Done", () => {
+    renderToolbox();
+    fireEvent.keyDown(window, { code: "KeyA", key: "a" });
+    expect(screen.getByTestId("furniture-panel")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^Add Furniture/u }).getAttribute("aria-pressed")).toBe("true");
+    fireEvent.keyDown(window, { key: "Escape", code: "Escape" });
+    expect(screen.getByRole("button", { name: /^Add Furniture/u }).getAttribute("aria-pressed")).not.toBe("true");
+
+    fireEvent.keyDown(window, { code: "KeyD", key: "d" });
+    expect(screen.getByRole("button", { name: /^Draw\b/u }).getAttribute("aria-pressed")).toBe("true");
+    act(() => { useMarkupStore.getState().setActive(false); });
+    expect(screen.getByRole("button", { name: /^Draw\b/u }).getAttribute("aria-pressed")).not.toBe("true");
+    fireEvent.keyDown(window, { code: "KeyD", key: "d" });
+    expect(screen.getByRole("button", { name: /^Draw\b/u }).getAttribute("aria-pressed")).toBe("true");
+  });
+});
+
+describe("VerticalToolbox walls hint", () => {
+  afterEach(() => { setPlannerFeaturesForTesting(null); });
+
+  async function hoverWalls(hint: string): Promise<void> {
+    renderToolbox();
+    const walls = screen.getByRole("button", { name: "Show All Walls" });
+    fireEvent.mouseEnter(walls.parentElement ?? walls);
+    expect(await screen.findByText(hint)).toBeTruthy();
+  }
+
+  it("says a click on a wall toggles it while any click hides one", async () => {
+    setPlannerFeaturesForTesting({ wallClickAlt: false });
+    await hoverWalls("Show all walls. Click a wall to toggle it.");
+  });
+
+  it("says Alt-click once only an Alt-click hides a wall (decision 4)", async () => {
+    setPlannerFeaturesForTesting({ wallClickAlt: true });
+    await hoverWalls("Show all walls. Alt-click a wall to hide it.");
+  });
+
+  it("says Option-click on a Mac", async () => {
+    setPlannerFeaturesForTesting({ wallClickAlt: true });
+    vi.spyOn(navigator, "userAgent", "get").mockReturnValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 14_6) AppleWebKit/605.1.15 (KHTML, like Gecko)");
+    await hoverWalls("Show all walls. Option-click a wall to hide it.");
   });
 });

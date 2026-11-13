@@ -1,0 +1,1303 @@
+{
+ "schema": "venviewer.facade-survey.v1",
+ "title": "Openings, shopfronts and signs across Glassford Street and along Garth Street, read from Trades Hall's public 8K panoramas",
+ "licence": {
+  "panoramas": "Trades Hall Glasgow's public 8K panoramas (twin.venviewer.com/trades-hall, our own capture, 11 July 2026); every station used is checked against the manifest's SHA-256",
+  "model": "placed on the city model merchant-city-v2 (Contains LiDAR data: Crown copyright Scottish Government and Fugro (2020), OGL v3.0)",
+  "note": "No third-party data. What is lit at night is art direction: the panoramas show the bars' and shops' lights at blue hour and the offices dark; which windows light is the planner's choice, by a hash of each opening's id."
+ },
+ "method": "Each wall's photograph is rectified onto a plane through the city model's wall (the plane below) from the named stations' equirectangular panoramas (project.py's camera model; planner = (8.795 - X, Z - 0.045, Y + 4.963) of the E57 frame), at the resolution named, with a metre grid; each opening's rectangle is read from it by eye: u along the wall, h above the pavement (y -3.79). Where two stations see a feature, they agree within 0.7 m. Along Garth Street the stations see the walls at grazing angles, so positions there are good to about a metre.",
+ "walls": [
+  {
+   "id": "glassford-east",
+   "name": "Glassford Street, east side: the frontage across from the hall's windows",
+   "plane": {
+    "axis": "z",
+    "value": -24.7
+   },
+   "normal": [
+    0,
+    1
+   ],
+   "stations": [
+    "scan_145",
+    "scan_042",
+    "scan_041",
+    "scan_039",
+    "scan_038",
+    "scan_040",
+    "scan_006"
+   ]
+  },
+  {
+   "id": "garth-north",
+   "name": "Garth Street, north side",
+   "plane": {
+    "axis": "x",
+    "value": -5.25
+   },
+   "normal": [
+    1,
+    0
+   ],
+   "stations": [
+    "scan_145",
+    "scan_040"
+   ]
+  },
+  {
+   "id": "garth-end",
+   "name": "The building closing Garth Street, on Hutcheson Street",
+   "plane": {
+    "axis": "z",
+    "value": -82.6
+   },
+   "normal": [
+    0,
+    1
+   ],
+   "stations": [
+    "scan_145"
+   ]
+  }
+ ],
+ "features": [
+  {
+   "id": "76-glassford:f1-x7.44",
+   "wall": "glassford-east",
+   "kind": "window",
+   "use": "office",
+   "light": "office",
+   "u": [
+    6.95,
+    7.93
+   ],
+   "h": [
+    4.3,
+    6.3
+   ],
+   "source": "scan_145 (the front door, on the pavement; 11 July 2026, day) rectified onto the wall at 2.5 cm; scan_040 (blue hour) agrees on the bays"
+  },
+  {
+   "id": "76-glassford:f2-x7.44",
+   "wall": "glassford-east",
+   "kind": "window",
+   "use": "office",
+   "light": "office",
+   "u": [
+    6.95,
+    7.93
+   ],
+   "h": [
+    7.85,
+    9.88
+   ],
+   "source": "scan_145 (the front door, on the pavement; 11 July 2026, day) rectified onto the wall at 2.5 cm; scan_040 (blue hour) agrees on the bays"
+  },
+  {
+   "id": "76-glassford:f3-x7.44",
+   "wall": "glassford-east",
+   "kind": "window",
+   "use": "office",
+   "light": "office",
+   "u": [
+    6.95,
+    7.93
+   ],
+   "h": [
+    11.45,
+    13.5
+   ],
+   "source": "scan_145 (the front door, on the pavement; 11 July 2026, day) rectified onto the wall at 2.5 cm; scan_040 (blue hour) agrees on the bays"
+  },
+  {
+   "id": "76-glassford:f1-x9.88",
+   "wall": "glassford-east",
+   "kind": "window",
+   "use": "office",
+   "light": "office",
+   "u": [
+    9.38,
+    10.38
+   ],
+   "h": [
+    4.3,
+    6.3
+   ],
+   "source": "scan_145 (the front door, on the pavement; 11 July 2026, day) rectified onto the wall at 2.5 cm; scan_040 (blue hour) agrees on the bays"
+  },
+  {
+   "id": "76-glassford:f2-x9.88",
+   "wall": "glassford-east",
+   "kind": "window",
+   "use": "office",
+   "light": "office",
+   "u": [
+    9.38,
+    10.38
+   ],
+   "h": [
+    7.85,
+    9.88
+   ],
+   "source": "scan_145 (the front door, on the pavement; 11 July 2026, day) rectified onto the wall at 2.5 cm; scan_040 (blue hour) agrees on the bays"
+  },
+  {
+   "id": "76-glassford:f3-x9.88",
+   "wall": "glassford-east",
+   "kind": "window",
+   "use": "blind",
+   "light": "office",
+   "u": [
+    9.38,
+    10.38
+   ],
+   "h": [
+    11.45,
+    13.5
+   ],
+   "source": "scan_145 (the front door, on the pavement; 11 July 2026, day) rectified onto the wall at 2.5 cm; a blind window, stone in its frame"
+  },
+  {
+   "id": "76-glassford:f1-x12.25",
+   "wall": "glassford-east",
+   "kind": "window",
+   "use": "office",
+   "light": "office",
+   "u": [
+    11.75,
+    12.75
+   ],
+   "h": [
+    4.3,
+    6.3
+   ],
+   "source": "scan_145 (the front door, on the pavement; 11 July 2026, day) rectified onto the wall at 2.5 cm; scan_040 (blue hour) agrees on the bays"
+  },
+  {
+   "id": "76-glassford:f2-x12.25",
+   "wall": "glassford-east",
+   "kind": "window",
+   "use": "office",
+   "light": "office",
+   "u": [
+    11.75,
+    12.75
+   ],
+   "h": [
+    7.85,
+    9.88
+   ],
+   "source": "scan_145 (the front door, on the pavement; 11 July 2026, day) rectified onto the wall at 2.5 cm; scan_040 (blue hour) agrees on the bays"
+  },
+  {
+   "id": "76-glassford:f3-x12.25",
+   "wall": "glassford-east",
+   "kind": "window",
+   "use": "office",
+   "light": "office",
+   "u": [
+    11.75,
+    12.75
+   ],
+   "h": [
+    11.45,
+    13.5
+   ],
+   "source": "scan_145 (the front door, on the pavement; 11 July 2026, day) rectified onto the wall at 2.5 cm; scan_040 (blue hour) agrees on the bays"
+  },
+  {
+   "id": "76-glassford:f1-x14.72",
+   "wall": "glassford-east",
+   "kind": "window",
+   "use": "office",
+   "light": "office",
+   "u": [
+    14.25,
+    15.2
+   ],
+   "h": [
+    4.3,
+    6.3
+   ],
+   "source": "scan_145 (the front door, on the pavement; 11 July 2026, day) rectified onto the wall at 2.5 cm; scan_040 (blue hour) agrees on the bays"
+  },
+  {
+   "id": "76-glassford:f2-x14.72",
+   "wall": "glassford-east",
+   "kind": "window",
+   "use": "office",
+   "light": "office",
+   "u": [
+    14.25,
+    15.2
+   ],
+   "h": [
+    7.85,
+    9.88
+   ],
+   "source": "scan_145 (the front door, on the pavement; 11 July 2026, day) rectified onto the wall at 2.5 cm; scan_040 (blue hour) agrees on the bays"
+  },
+  {
+   "id": "76-glassford:f3-x14.72",
+   "wall": "glassford-east",
+   "kind": "window",
+   "use": "office",
+   "light": "office",
+   "u": [
+    14.25,
+    15.2
+   ],
+   "h": [
+    11.45,
+    13.5
+   ],
+   "source": "scan_145 (the front door, on the pavement; 11 July 2026, day) rectified onto the wall at 2.5 cm; scan_040 (blue hour) agrees on the bays"
+  },
+  {
+   "id": "74-glassford:f1-x17.34",
+   "wall": "glassford-east",
+   "kind": "window",
+   "use": "home",
+   "light": "home",
+   "u": [
+    16.88,
+    17.8
+   ],
+   "h": [
+    4.25,
+    6.25
+   ],
+   "source": "scan_145 (the front door, on the pavement; 11 July 2026, day) rectified onto the wall at 2.5 cm; a narrow house of flats (its roof lights in the dormer above)"
+  },
+  {
+   "id": "74-glassford:f2-x17.34",
+   "wall": "glassford-east",
+   "kind": "window",
+   "use": "home",
+   "light": "home",
+   "u": [
+    16.88,
+    17.8
+   ],
+   "h": [
+    7.8,
+    9.83
+   ],
+   "source": "scan_145 (the front door, on the pavement; 11 July 2026, day) rectified onto the wall at 2.5 cm; a narrow house of flats (its roof lights in the dormer above)"
+  },
+  {
+   "id": "74-glassford:f3-x17.34",
+   "wall": "glassford-east",
+   "kind": "window",
+   "use": "home",
+   "light": "home",
+   "u": [
+    16.88,
+    17.8
+   ],
+   "h": [
+    11.33,
+    13.4
+   ],
+   "source": "scan_145 (the front door, on the pavement; 11 July 2026, day) rectified onto the wall at 2.5 cm; a narrow house of flats (its roof lights in the dormer above)"
+  },
+  {
+   "id": "south-of-74:f1-x19.70",
+   "wall": "glassford-east",
+   "kind": "window",
+   "use": "home",
+   "light": "home",
+   "u": [
+    19.3,
+    20.099999999999998
+   ],
+   "h": [
+    4.5,
+    6.4
+   ],
+   "source": "scan_006 (day) through the end arch, rectified onto the wall at 2.5 cm; two bays seen, the rest behind its curtain"
+  },
+  {
+   "id": "south-of-74:f2-x19.70",
+   "wall": "glassford-east",
+   "kind": "window",
+   "use": "home",
+   "light": "home",
+   "u": [
+    19.3,
+    20.099999999999998
+   ],
+   "h": [
+    8.2,
+    10.0
+   ],
+   "source": "scan_006 (day) through the end arch, rectified onto the wall at 2.5 cm; two bays seen, the rest behind its curtain"
+  },
+  {
+   "id": "south-of-74:f3-x19.70",
+   "wall": "glassford-east",
+   "kind": "window",
+   "use": "home",
+   "light": "home",
+   "u": [
+    19.3,
+    20.099999999999998
+   ],
+   "h": [
+    11.5,
+    13.4
+   ],
+   "source": "scan_006 (day) through the end arch, rectified onto the wall at 2.5 cm; two bays seen, the rest behind its curtain"
+  },
+  {
+   "id": "south-of-74:f1-x22.20",
+   "wall": "glassford-east",
+   "kind": "window",
+   "use": "home",
+   "light": "home",
+   "u": [
+    21.8,
+    22.599999999999998
+   ],
+   "h": [
+    4.5,
+    6.4
+   ],
+   "source": "scan_006 (day) through the end arch, rectified onto the wall at 2.5 cm; two bays seen, the rest behind its curtain"
+  },
+  {
+   "id": "south-of-74:f2-x22.20",
+   "wall": "glassford-east",
+   "kind": "window",
+   "use": "home",
+   "light": "home",
+   "u": [
+    21.8,
+    22.599999999999998
+   ],
+   "h": [
+    8.2,
+    10.0
+   ],
+   "source": "scan_006 (day) through the end arch, rectified onto the wall at 2.5 cm; two bays seen, the rest behind its curtain"
+  },
+  {
+   "id": "south-of-74:f3-x22.20",
+   "wall": "glassford-east",
+   "kind": "window",
+   "use": "home",
+   "light": "home",
+   "u": [
+    21.8,
+    22.599999999999998
+   ],
+   "h": [
+    11.5,
+    13.4
+   ],
+   "source": "scan_006 (day) through the end arch, rectified onto the wall at 2.5 cm; two bays seen, the rest behind its curtain"
+  },
+  {
+   "id": "blane-valley:fascia",
+   "wall": "glassford-east",
+   "kind": "sign",
+   "light": "sign-teal",
+   "u": [
+    5.6,
+    16.6
+   ],
+   "h": [
+    3.4,
+    4.0
+   ],
+   "source": "scan_145 rectified at 2.5 cm for the outline; scan_040 and scan_038 (11 July, blue hour) for what is lit: the green fascia lit teal"
+  },
+  {
+   "id": "blane-valley:arch-1",
+   "wall": "glassford-east",
+   "kind": "shop",
+   "light": "pub",
+   "u": [
+    6.6,
+    8.3
+   ],
+   "h": [
+    1.0,
+    3.0
+   ],
+   "source": "scan_145 rectified at 2.5 cm for the outline; scan_040 and scan_038 (11 July, blue hour) for what is lit: the bar's arched windows lit warm"
+  },
+  {
+   "id": "blane-valley:arch-2",
+   "wall": "glassford-east",
+   "kind": "shop",
+   "light": "pub",
+   "u": [
+    9.0,
+    10.7
+   ],
+   "h": [
+    1.0,
+    3.0
+   ],
+   "source": "scan_145 rectified at 2.5 cm for the outline; scan_040 and scan_038 (11 July, blue hour) for what is lit: the bar's arched windows lit warm"
+  },
+  {
+   "id": "blane-valley:door",
+   "wall": "glassford-east",
+   "kind": "door",
+   "light": "pub",
+   "u": [
+    11.6,
+    13.1
+   ],
+   "h": [
+    0.0,
+    2.6
+   ],
+   "source": "scan_145 rectified at 2.5 cm for the outline; scan_040 and scan_038 (11 July, blue hour) for what is lit: the open door lit warm"
+  },
+  {
+   "id": "blane-valley:arch-4",
+   "wall": "glassford-east",
+   "kind": "shop",
+   "light": "pub",
+   "u": [
+    13.9,
+    15.5
+   ],
+   "h": [
+    1.0,
+    3.0
+   ],
+   "source": "scan_145 rectified at 2.5 cm for the outline; scan_040 and scan_038 (11 July, blue hour) for what is lit: the fourth arch, a round-windowed panel, dimmer"
+  },
+  {
+   "id": "bacchus:letters",
+   "wall": "glassford-east",
+   "kind": "sign",
+   "light": "sign-violet",
+   "u": [
+    -10.6,
+    -6.2
+   ],
+   "h": [
+    3.1,
+    3.9
+   ],
+   "source": "scan_145 rectified at 2.5 cm for the outline; scan_042, scan_041 and scan_039 (11 July, blue hour) for what is lit: the fascia's letters lit violet"
+  },
+  {
+   "id": "bacchus:corner-sign",
+   "wall": "glassford-east",
+   "kind": "sign",
+   "light": "sign-green",
+   "u": [
+    -6.0,
+    -5.6
+   ],
+   "h": [
+    3.1,
+    3.9
+   ],
+   "source": "scan_145 rectified at 2.5 cm for the outline; scan_042, scan_041 and scan_039 (11 July, blue hour) for what is lit: the corner sign lit green (it turns the corner into Garth Street)"
+  },
+  {
+   "id": "bacchus:doors",
+   "wall": "glassford-east",
+   "kind": "door",
+   "light": "bar",
+   "u": [
+    -15.55,
+    -14.05
+   ],
+   "h": [
+    0.25,
+    2.7
+   ],
+   "source": "scan_145 rectified at 2.5 cm for the outline; scan_042, scan_041 and scan_039 (11 July, blue hour) for what is lit: the glass doors lit from inside"
+  },
+  {
+   "id": "bacchus:green-glazing",
+   "wall": "glassford-east",
+   "kind": "shop",
+   "light": "glass-green",
+   "u": [
+    -10.25,
+    -7.9
+   ],
+   "h": [
+    0.4,
+    2.9
+   ],
+   "source": "scan_145 rectified at 2.5 cm for the outline; scan_042, scan_041 and scan_039 (11 July, blue hour) for what is lit: green glass lit from inside"
+  },
+  {
+   "id": "bacchus:f1-x-16.9",
+   "wall": "glassford-east",
+   "kind": "window",
+   "use": "blind",
+   "light": "office",
+   "u": [
+    -17.4,
+    -16.4
+   ],
+   "h": [
+    5.0,
+    7.0
+   ],
+   "source": "scan_145 (the front door, on the pavement; 11 July 2026, day) rectified onto the wall at 2.5 cm: a blind window, rendered over; never lit"
+  },
+  {
+   "id": "bacchus:f2-x-16.9",
+   "wall": "glassford-east",
+   "kind": "window",
+   "use": "blind",
+   "light": "office",
+   "u": [
+    -17.4,
+    -16.4
+   ],
+   "h": [
+    8.8,
+    10.8
+   ],
+   "source": "scan_145 (the front door, on the pavement; 11 July 2026, day) rectified onto the wall at 2.5 cm: a blind window, rendered over; never lit"
+  },
+  {
+   "id": "bacchus:f1-x-14.1",
+   "wall": "glassford-east",
+   "kind": "window",
+   "use": "blind",
+   "light": "office",
+   "u": [
+    -14.6,
+    -13.6
+   ],
+   "h": [
+    5.0,
+    7.0
+   ],
+   "source": "scan_145 (the front door, on the pavement; 11 July 2026, day) rectified onto the wall at 2.5 cm: a blind window, rendered over; never lit"
+  },
+  {
+   "id": "bacchus:f2-x-14.1",
+   "wall": "glassford-east",
+   "kind": "window",
+   "use": "blind",
+   "light": "office",
+   "u": [
+    -14.6,
+    -13.6
+   ],
+   "h": [
+    8.8,
+    10.8
+   ],
+   "source": "scan_145 (the front door, on the pavement; 11 July 2026, day) rectified onto the wall at 2.5 cm: a blind window, rendered over; never lit"
+  },
+  {
+   "id": "bacchus:f1-x-11.4",
+   "wall": "glassford-east",
+   "kind": "window",
+   "use": "blind",
+   "light": "office",
+   "u": [
+    -11.9,
+    -10.9
+   ],
+   "h": [
+    5.0,
+    7.0
+   ],
+   "source": "scan_145 (the front door, on the pavement; 11 July 2026, day) rectified onto the wall at 2.5 cm: a blind window, rendered over; never lit"
+  },
+  {
+   "id": "bacchus:f2-x-11.4",
+   "wall": "glassford-east",
+   "kind": "window",
+   "use": "blind",
+   "light": "office",
+   "u": [
+    -11.9,
+    -10.9
+   ],
+   "h": [
+    8.8,
+    10.8
+   ],
+   "source": "scan_145 (the front door, on the pavement; 11 July 2026, day) rectified onto the wall at 2.5 cm: a blind window, rendered over; never lit"
+  },
+  {
+   "id": "bacchus:f1-x-8.6",
+   "wall": "glassford-east",
+   "kind": "window",
+   "use": "blind",
+   "light": "office",
+   "u": [
+    -9.1,
+    -8.1
+   ],
+   "h": [
+    5.0,
+    7.0
+   ],
+   "source": "scan_145 (the front door, on the pavement; 11 July 2026, day) rectified onto the wall at 2.5 cm: a blind window, rendered over; never lit"
+  },
+  {
+   "id": "bacchus:f2-x-8.6",
+   "wall": "glassford-east",
+   "kind": "window",
+   "use": "blind",
+   "light": "office",
+   "u": [
+    -9.1,
+    -8.1
+   ],
+   "h": [
+    8.8,
+    10.8
+   ],
+   "source": "scan_145 (the front door, on the pavement; 11 July 2026, day) rectified onto the wall at 2.5 cm: a blind window, rendered over; never lit"
+  },
+  {
+   "id": "garth-block:f1-z-50.4",
+   "wall": "garth-north",
+   "kind": "window",
+   "use": "office",
+   "light": "office",
+   "u": [
+    -50.9,
+    -49.9
+   ],
+   "h": [
+    5.0,
+    6.9
+   ],
+   "source": "scan_145 rectified onto the wall (x -5.25) at 2.5 cm; scan_040 (blue hour) agrees on the teal sign within 0.7 m"
+  },
+  {
+   "id": "garth-block:f2-z-50.4",
+   "wall": "garth-north",
+   "kind": "window",
+   "use": "office",
+   "light": "office",
+   "u": [
+    -50.9,
+    -49.9
+   ],
+   "h": [
+    7.75,
+    9.75
+   ],
+   "source": "scan_145 rectified onto the wall (x -5.25) at 2.5 cm; scan_040 (blue hour) agrees on the teal sign within 0.7 m"
+  },
+  {
+   "id": "garth-block:f3-z-50.4",
+   "wall": "garth-north",
+   "kind": "window",
+   "use": "office",
+   "light": "office",
+   "u": [
+    -50.9,
+    -49.9
+   ],
+   "h": [
+    10.75,
+    12.9
+   ],
+   "source": "scan_145 rectified onto the wall (x -5.25) at 2.5 cm; scan_040 (blue hour) agrees on the teal sign within 0.7 m"
+  },
+  {
+   "id": "garth-block:f4-z-50.4",
+   "wall": "garth-north",
+   "kind": "window",
+   "use": "office",
+   "light": "office",
+   "u": [
+    -50.9,
+    -49.9
+   ],
+   "h": [
+    13.75,
+    15.75
+   ],
+   "source": "scan_145 rectified onto the wall (x -5.25) at 2.5 cm; scan_040 (blue hour) agrees on the teal sign within 0.7 m"
+  },
+  {
+   "id": "garth-block:f1-z-47.5",
+   "wall": "garth-north",
+   "kind": "window",
+   "use": "office",
+   "light": "office",
+   "u": [
+    -48.0,
+    -47.0
+   ],
+   "h": [
+    5.0,
+    6.9
+   ],
+   "source": "scan_145 rectified onto the wall (x -5.25) at 2.5 cm; scan_040 (blue hour) agrees on the teal sign within 0.7 m"
+  },
+  {
+   "id": "garth-block:f2-z-47.5",
+   "wall": "garth-north",
+   "kind": "window",
+   "use": "office",
+   "light": "office",
+   "u": [
+    -48.0,
+    -47.0
+   ],
+   "h": [
+    7.75,
+    9.75
+   ],
+   "source": "scan_145 rectified onto the wall (x -5.25) at 2.5 cm; scan_040 (blue hour) agrees on the teal sign within 0.7 m"
+  },
+  {
+   "id": "garth-block:f3-z-47.5",
+   "wall": "garth-north",
+   "kind": "window",
+   "use": "office",
+   "light": "office",
+   "u": [
+    -48.0,
+    -47.0
+   ],
+   "h": [
+    10.75,
+    12.9
+   ],
+   "source": "scan_145 rectified onto the wall (x -5.25) at 2.5 cm; scan_040 (blue hour) agrees on the teal sign within 0.7 m"
+  },
+  {
+   "id": "garth-block:f4-z-47.5",
+   "wall": "garth-north",
+   "kind": "window",
+   "use": "office",
+   "light": "office",
+   "u": [
+    -48.0,
+    -47.0
+   ],
+   "h": [
+    13.75,
+    15.75
+   ],
+   "source": "scan_145 rectified onto the wall (x -5.25) at 2.5 cm; scan_040 (blue hour) agrees on the teal sign within 0.7 m"
+  },
+  {
+   "id": "garth-block:f1-z-44.5",
+   "wall": "garth-north",
+   "kind": "window",
+   "use": "office",
+   "light": "office",
+   "u": [
+    -45.0,
+    -44.0
+   ],
+   "h": [
+    5.0,
+    6.9
+   ],
+   "source": "scan_145 rectified onto the wall (x -5.25) at 2.5 cm; scan_040 (blue hour) agrees on the teal sign within 0.7 m"
+  },
+  {
+   "id": "garth-block:f2-z-44.5",
+   "wall": "garth-north",
+   "kind": "window",
+   "use": "office",
+   "light": "office",
+   "u": [
+    -45.0,
+    -44.0
+   ],
+   "h": [
+    7.75,
+    9.75
+   ],
+   "source": "scan_145 rectified onto the wall (x -5.25) at 2.5 cm; scan_040 (blue hour) agrees on the teal sign within 0.7 m"
+  },
+  {
+   "id": "garth-block:f3-z-44.5",
+   "wall": "garth-north",
+   "kind": "window",
+   "use": "office",
+   "light": "office",
+   "u": [
+    -45.0,
+    -44.0
+   ],
+   "h": [
+    10.75,
+    12.9
+   ],
+   "source": "scan_145 rectified onto the wall (x -5.25) at 2.5 cm; scan_040 (blue hour) agrees on the teal sign within 0.7 m"
+  },
+  {
+   "id": "garth-block:f4-z-44.5",
+   "wall": "garth-north",
+   "kind": "window",
+   "use": "office",
+   "light": "office",
+   "u": [
+    -45.0,
+    -44.0
+   ],
+   "h": [
+    13.75,
+    15.75
+   ],
+   "source": "scan_145 rectified onto the wall (x -5.25) at 2.5 cm; scan_040 (blue hour) agrees on the teal sign within 0.7 m"
+  },
+  {
+   "id": "garth-block:f1-z-41.5",
+   "wall": "garth-north",
+   "kind": "window",
+   "use": "office",
+   "light": "office",
+   "u": [
+    -42.0,
+    -41.0
+   ],
+   "h": [
+    5.0,
+    6.9
+   ],
+   "source": "scan_145 rectified onto the wall (x -5.25) at 2.5 cm; scan_040 (blue hour) agrees on the teal sign within 0.7 m"
+  },
+  {
+   "id": "garth-block:f2-z-41.5",
+   "wall": "garth-north",
+   "kind": "window",
+   "use": "office",
+   "light": "office",
+   "u": [
+    -42.0,
+    -41.0
+   ],
+   "h": [
+    7.75,
+    9.75
+   ],
+   "source": "scan_145 rectified onto the wall (x -5.25) at 2.5 cm; scan_040 (blue hour) agrees on the teal sign within 0.7 m"
+  },
+  {
+   "id": "garth-block:f3-z-41.5",
+   "wall": "garth-north",
+   "kind": "window",
+   "use": "office",
+   "light": "office",
+   "u": [
+    -42.0,
+    -41.0
+   ],
+   "h": [
+    10.75,
+    12.9
+   ],
+   "source": "scan_145 rectified onto the wall (x -5.25) at 2.5 cm; scan_040 (blue hour) agrees on the teal sign within 0.7 m"
+  },
+  {
+   "id": "garth-block:f4-z-41.5",
+   "wall": "garth-north",
+   "kind": "window",
+   "use": "office",
+   "light": "office",
+   "u": [
+    -42.0,
+    -41.0
+   ],
+   "h": [
+    13.75,
+    15.75
+   ],
+   "source": "scan_145 rectified onto the wall (x -5.25) at 2.5 cm; scan_040 (blue hour) agrees on the teal sign within 0.7 m"
+  },
+  {
+   "id": "garth-block:f1-z-38.6",
+   "wall": "garth-north",
+   "kind": "window",
+   "use": "office",
+   "light": "office",
+   "u": [
+    -39.1,
+    -38.1
+   ],
+   "h": [
+    5.0,
+    6.9
+   ],
+   "source": "scan_145 rectified onto the wall (x -5.25) at 2.5 cm; scan_040 (blue hour) agrees on the teal sign within 0.7 m"
+  },
+  {
+   "id": "garth-block:f2-z-38.6",
+   "wall": "garth-north",
+   "kind": "window",
+   "use": "office",
+   "light": "office",
+   "u": [
+    -39.1,
+    -38.1
+   ],
+   "h": [
+    7.75,
+    9.75
+   ],
+   "source": "scan_145 rectified onto the wall (x -5.25) at 2.5 cm; scan_040 (blue hour) agrees on the teal sign within 0.7 m"
+  },
+  {
+   "id": "garth-block:f3-z-38.6",
+   "wall": "garth-north",
+   "kind": "window",
+   "use": "office",
+   "light": "office",
+   "u": [
+    -39.1,
+    -38.1
+   ],
+   "h": [
+    10.75,
+    12.9
+   ],
+   "source": "scan_145 rectified onto the wall (x -5.25) at 2.5 cm; scan_040 (blue hour) agrees on the teal sign within 0.7 m"
+  },
+  {
+   "id": "garth-block:f4-z-38.6",
+   "wall": "garth-north",
+   "kind": "window",
+   "use": "office",
+   "light": "office",
+   "u": [
+    -39.1,
+    -38.1
+   ],
+   "h": [
+    13.75,
+    15.75
+   ],
+   "source": "scan_145 rectified onto the wall (x -5.25) at 2.5 cm; scan_040 (blue hour) agrees on the teal sign within 0.7 m"
+  },
+  {
+   "id": "garth-block:f1-z-35.6",
+   "wall": "garth-north",
+   "kind": "window",
+   "use": "office",
+   "light": "office",
+   "u": [
+    -36.1,
+    -35.1
+   ],
+   "h": [
+    5.0,
+    6.9
+   ],
+   "source": "scan_145 rectified onto the wall (x -5.25) at 2.5 cm; scan_040 (blue hour) agrees on the teal sign within 0.7 m"
+  },
+  {
+   "id": "garth-block:f2-z-35.6",
+   "wall": "garth-north",
+   "kind": "window",
+   "use": "office",
+   "light": "office",
+   "u": [
+    -36.1,
+    -35.1
+   ],
+   "h": [
+    7.75,
+    9.75
+   ],
+   "source": "scan_145 rectified onto the wall (x -5.25) at 2.5 cm; scan_040 (blue hour) agrees on the teal sign within 0.7 m"
+  },
+  {
+   "id": "garth-block:f3-z-35.6",
+   "wall": "garth-north",
+   "kind": "window",
+   "use": "office",
+   "light": "office",
+   "u": [
+    -36.1,
+    -35.1
+   ],
+   "h": [
+    10.75,
+    12.9
+   ],
+   "source": "scan_145 rectified onto the wall (x -5.25) at 2.5 cm; scan_040 (blue hour) agrees on the teal sign within 0.7 m"
+  },
+  {
+   "id": "garth-block:f4-z-35.6",
+   "wall": "garth-north",
+   "kind": "window",
+   "use": "office",
+   "light": "office",
+   "u": [
+    -36.1,
+    -35.1
+   ],
+   "h": [
+    13.75,
+    15.75
+   ],
+   "source": "scan_145 rectified onto the wall (x -5.25) at 2.5 cm; scan_040 (blue hour) agrees on the teal sign within 0.7 m"
+  },
+  {
+   "id": "garth-block:teal-sign",
+   "wall": "garth-north",
+   "kind": "sign",
+   "light": "sign-teal",
+   "u": [
+    -56.8,
+    -50.6
+   ],
+   "h": [
+    4.0,
+    4.6
+   ],
+   "source": "scan_145 rectified onto the wall (x -5.25) at 2.5 cm; scan_040 (blue hour) agrees on the teal sign within 0.7 m: the sign lit teal at blue hour"
+  },
+  {
+   "id": "garth-block:shop",
+   "wall": "garth-north",
+   "kind": "shop",
+   "light": "pub",
+   "u": [
+    -56.0,
+    -51.0
+   ],
+   "h": [
+    0.6,
+    3.0
+   ],
+   "source": "scan_040 (blue hour) through the end arch: the shop under the teal sign lit warm"
+  },
+  {
+   "id": "garth-end:f1-x-7.5",
+   "wall": "garth-end",
+   "kind": "window",
+   "use": "office",
+   "light": "office",
+   "u": [
+    -8.05,
+    -6.95
+   ],
+   "h": [
+    5.2,
+    8.4
+   ],
+   "source": "scan_145 rectified onto its front (z -82.6) at 4 cm"
+  },
+  {
+   "id": "garth-end:f2-x-7.5",
+   "wall": "garth-end",
+   "kind": "window",
+   "use": "office",
+   "light": "office",
+   "u": [
+    -8.05,
+    -6.95
+   ],
+   "h": [
+    10.2,
+    13.6
+   ],
+   "source": "scan_145 rectified onto its front (z -82.6) at 4 cm"
+  },
+  {
+   "id": "garth-end:f1-x-5.5",
+   "wall": "garth-end",
+   "kind": "window",
+   "use": "office",
+   "light": "office",
+   "u": [
+    -6.05,
+    -4.95
+   ],
+   "h": [
+    5.2,
+    8.4
+   ],
+   "source": "scan_145 rectified onto its front (z -82.6) at 4 cm"
+  },
+  {
+   "id": "garth-end:f2-x-5.5",
+   "wall": "garth-end",
+   "kind": "window",
+   "use": "office",
+   "light": "office",
+   "u": [
+    -6.05,
+    -4.95
+   ],
+   "h": [
+    10.2,
+    13.6
+   ],
+   "source": "scan_145 rectified onto its front (z -82.6) at 4 cm"
+  },
+  {
+   "id": "garth-end:f1-x-3.0",
+   "wall": "garth-end",
+   "kind": "window",
+   "use": "office",
+   "light": "office",
+   "u": [
+    -3.55,
+    -2.45
+   ],
+   "h": [
+    5.2,
+    8.4
+   ],
+   "source": "scan_145 rectified onto its front (z -82.6) at 4 cm"
+  },
+  {
+   "id": "garth-end:f2-x-3.0",
+   "wall": "garth-end",
+   "kind": "window",
+   "use": "office",
+   "light": "office",
+   "u": [
+    -3.55,
+    -2.45
+   ],
+   "h": [
+    10.2,
+    13.6
+   ],
+   "source": "scan_145 rectified onto its front (z -82.6) at 4 cm"
+  },
+  {
+   "id": "garth-end:f1-x-0.4",
+   "wall": "garth-end",
+   "kind": "window",
+   "use": "office",
+   "light": "office",
+   "u": [
+    -0.9500000000000001,
+    0.15000000000000002
+   ],
+   "h": [
+    5.2,
+    8.4
+   ],
+   "source": "scan_145 rectified onto its front (z -82.6) at 4 cm"
+  },
+  {
+   "id": "garth-end:f2-x-0.4",
+   "wall": "garth-end",
+   "kind": "window",
+   "use": "office",
+   "light": "office",
+   "u": [
+    -0.9500000000000001,
+    0.15000000000000002
+   ],
+   "h": [
+    10.2,
+    13.6
+   ],
+   "source": "scan_145 rectified onto its front (z -82.6) at 4 cm"
+  },
+  {
+   "id": "garth-end:f1-x2.2",
+   "wall": "garth-end",
+   "kind": "window",
+   "use": "office",
+   "light": "office",
+   "u": [
+    1.6500000000000001,
+    2.75
+   ],
+   "h": [
+    5.2,
+    8.4
+   ],
+   "source": "scan_145 rectified onto its front (z -82.6) at 4 cm"
+  },
+  {
+   "id": "garth-end:f2-x2.2",
+   "wall": "garth-end",
+   "kind": "window",
+   "use": "office",
+   "light": "office",
+   "u": [
+    1.6500000000000001,
+    2.75
+   ],
+   "h": [
+    10.2,
+    13.6
+   ],
+   "source": "scan_145 rectified onto its front (z -82.6) at 4 cm"
+  },
+  {
+   "id": "garth-end:f1-x4.6",
+   "wall": "garth-end",
+   "kind": "window",
+   "use": "office",
+   "light": "office",
+   "u": [
+    4.05,
+    5.1499999999999995
+   ],
+   "h": [
+    5.2,
+    8.4
+   ],
+   "source": "scan_145 rectified onto its front (z -82.6) at 4 cm"
+  },
+  {
+   "id": "garth-end:f2-x4.6",
+   "wall": "garth-end",
+   "kind": "window",
+   "use": "office",
+   "light": "office",
+   "u": [
+    4.05,
+    5.1499999999999995
+   ],
+   "h": [
+    10.2,
+    13.6
+   ],
+   "source": "scan_145 rectified onto its front (z -82.6) at 4 cm"
+  },
+  {
+   "id": "garth-end:f1-x7.1",
+   "wall": "garth-end",
+   "kind": "window",
+   "use": "office",
+   "light": "office",
+   "u": [
+    6.55,
+    7.6499999999999995
+   ],
+   "h": [
+    5.2,
+    8.4
+   ],
+   "source": "scan_145 rectified onto its front (z -82.6) at 4 cm"
+  },
+  {
+   "id": "garth-end:f2-x7.1",
+   "wall": "garth-end",
+   "kind": "window",
+   "use": "office",
+   "light": "office",
+   "u": [
+    6.55,
+    7.6499999999999995
+   ],
+   "h": [
+    10.2,
+    13.6
+   ],
+   "source": "scan_145 rectified onto its front (z -82.6) at 4 cm"
+  }
+ ]
+}

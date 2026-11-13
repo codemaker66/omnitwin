@@ -42,12 +42,15 @@ describe("TwinViewerControls", () => {
     cleanup();
   });
 
-  it("opens the in-twin enquiry modal from the Enquire button", () => {
+  it("opens the in-twin enquiry modal from the Enquire button", async () => {
     renderControls();
     // No modal until asked.
     expect(screen.queryByTestId("twin-enquiry-form")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /enquire about hosting/i }));
-    expect(screen.getByTestId("twin-enquiry-form")).toBeTruthy();
+    // The form loads on demand (it is not on the twin's first load), then opens. Its
+    // first import also loads @omnitwin/types' enquiry schemas and zod, cold in this
+    // suite (about 1.4 s), so the wait is longer than the 1 s default.
+    expect(await screen.findByTestId("twin-enquiry-form", {}, { timeout: 5_000 })).toBeTruthy();
   });
 
   it("copies the link and announces it politely on share", async () => {

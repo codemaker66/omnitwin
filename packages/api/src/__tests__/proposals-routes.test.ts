@@ -7,6 +7,7 @@ import {
   canTransitionProposal,
   canTransitionQuote,
   getAvailableProposalTransitions,
+  getAvailableQuoteTransitions,
   isStructuralProposalTransition,
   isStructuralQuoteTransition,
   proposalRolePolicyKeys,
@@ -130,11 +131,35 @@ describe("proposal state machine role policy", () => {
   });
 
   it("quote machine: staff issue/supersede, clients accept/decline", () => {
-    expect(canTransitionQuote("draft", "issued", "staff")).toBe(true);
-    expect(canTransitionQuote("draft", "issued", "client")).toBe(false);
-    expect(canTransitionQuote("issued", "accepted", "client")).toBe(true);
-    expect(canTransitionQuote("issued", "superseded", "client")).toBe(false);
-    expect(canTransitionQuote("accepted", "issued", "staff")).toBe(false);
+    expect(canTransitionQuote("draft", "issued", "staff", false)).toBe(true);
+    expect(canTransitionQuote("draft", "issued", "client", false)).toBe(false);
+    expect(canTransitionQuote("issued", "accepted", "client", false)).toBe(true);
+    expect(canTransitionQuote("issued", "superseded", "client", false)).toBe(false);
+    expect(canTransitionQuote("accepted", "issued", "staff", false)).toBe(false);
+  });
+
+  // Audit pricing-money-5. The admin house override stops where a move can
+  // only fail in the database (leaving superseded keeps the successor link the
+  // quotes_superseded_coherent CHECK refuses) and, for a venue admin, where it
+  // would undo a client's acceptance. A platform admin's override on an
+  // accepted quote is Blake's open decision 4, so it stays as it was.
+  it("quote machine: no move leaves superseded, and a venue admin cannot undo an acceptance", () => {
+    for (const platformAdmin of [false, true]) {
+      for (const next of ["draft", "issued", "accepted", "declined", "expired"]) {
+        expect(canTransitionQuote("superseded", next, "admin", platformAdmin)).toBe(false);
+      }
+    }
+    for (const next of ["draft", "issued", "declined", "superseded", "expired"]) {
+      expect(canTransitionQuote("accepted", next, "admin", false)).toBe(false);
+      expect(canTransitionQuote("accepted", next, "admin", true)).toBe(true);
+    }
+    // The rest of the venue admin's override is unchanged pending the decision.
+    expect(canTransitionQuote("expired", "issued", "admin", false)).toBe(true);
+    expect(canTransitionQuote("draft", "issued", "admin", false)).toBe(true);
+    expect(canTransitionQuote("issued", "superseded", "admin", false)).toBe(true);
+    expect(getAvailableQuoteTransitions("accepted", "admin", false)).toEqual([]);
+    expect(getAvailableQuoteTransitions("superseded", "admin", true)).toEqual([]);
+    expect(getAvailableQuoteTransitions("issued", "staff", false)).toEqual(["accepted", "declined", "superseded", "expired"]);
   });
 });
 
@@ -325,6 +350,17 @@ describe("quote routes", () => {
 });
 
 describe("public proposal share route", () => {
+  // The older share-code path retires on a date (18 Oct 2026 by default);
+  // these cases read the path as it stands until then.
+  const sunset = process.env["LEGACY_PROPOSAL_SHARE_CODE_SUNSET"];
+  beforeAll(() => {
+    process.env["LEGACY_PROPOSAL_SHARE_CODE_SUNSET"] = "2099-01-01T00:00:00.000Z";
+  });
+  afterAll(() => {
+    if (sunset === undefined) delete process.env["LEGACY_PROPOSAL_SHARE_CODE_SUNSET"];
+    else process.env["LEGACY_PROPOSAL_SHARE_CODE_SUNSET"] = sunset;
+  });
+
   it("rejects malformed share codes at the validation boundary", async () => {
     const res = await server.inject({ method: "GET", url: "/public/proposals/ab" });
     expect(res.statusCode).toBe(400);
@@ -353,6 +389,28 @@ describe("public proposal share route", () => {
     });
     expect(res.statusCode).not.toBe(400);
     expect(res.statusCode).not.toBe(401);
+  });
+
+  it("answers 410 once the retirement date has passed, before reading the code or the database", async () => {
+    const saved = process.env["LEGACY_PROPOSAL_SHARE_CODE_SUNSET"];
+    process.env["LEGACY_PROPOSAL_SHARE_CODE_SUNSET"] = "2000-01-01T00:00:00.000Z";
+    try {
+      const malformed = await server.inject({ method: "GET", url: "/public/proposals/ab" });
+      expect(malformed.statusCode).toBe(410);
+      const body = JSON.parse(malformed.body) as { code: string };
+      expect(body.code).toBe("SHARE_CODE_RETIRED");
+      expect(malformed.headers["link"]).toContain("/proposal-share/");
+
+      const respond = await server.inject({
+        method: "POST",
+        url: "/public/proposals/abcdef/respond",
+        payload: { action: "approve" },
+      });
+      expect(respond.statusCode).toBe(410);
+    } finally {
+      if (saved === undefined) delete process.env["LEGACY_PROPOSAL_SHARE_CODE_SUNSET"];
+      else process.env["LEGACY_PROPOSAL_SHARE_CODE_SUNSET"] = saved;
+    }
   });
 });
 

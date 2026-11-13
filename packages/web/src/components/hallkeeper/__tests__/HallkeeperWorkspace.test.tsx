@@ -240,6 +240,29 @@ describe("HallkeeperWorkspace compact working views", () => {
 // hallkeeper's desk.
 // ---------------------------------------------------------------------------
 
+// Release audit hallkeeper-ops-3 / planner-qol E-13: the crew reads which
+// tables a row covers, finds a table by its number, and counts pieces.
+describe("HallkeeperWorkspace table numbers", () => {
+  const numbered = HallkeeperSheetV2Schema.parse({
+    ...sheet,
+    phases: [{ phase: "furniture", zones: [{ zone: "Centre", rows: [{
+      key: "furniture|Centre|6ft Round Table with 10 chairs|0", name: "6ft Round Table with 10 chairs", category: "table",
+      qty: 3, afterDepth: 0, isAccessory: false, notes: "", positions: [], labels: ["Table 1", "Table 2", "Table 3"],
+    }] }] }],
+  });
+
+  it("shows the tables a row covers beside where they go", () => {
+    mount({ data: numbered });
+    expect(setupPanel().getByText(/Tables 1–3/u)).toBeTruthy();
+  });
+
+  it("counts pieces to set, not manifest items", () => {
+    mount();
+    expect(screen.getAllByText("20 pieces to set").length).toBeGreaterThan(0);
+    expect(screen.queryByText(/manifest items/u)).toBeNull();
+  });
+});
+
 describe("HallkeeperWorkspace event time", () => {
   const diaryTiming = {
     eventStart: "2026-09-19T08:00:00.000Z",  // 09:00 Europe/London

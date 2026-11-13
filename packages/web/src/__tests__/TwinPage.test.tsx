@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import type { ReactElement } from "react";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { findUnsupportedProposalClaim, type TwinManifest } from "@omnitwin/types";
 import {
   allTwinCopy,
@@ -12,8 +13,10 @@ import {
   TWIN_MODE_WALK_LABEL,
   TWIN_RETRY_LABEL,
   TWIN_TITLE,
-  TWIN_WORK_IN_PROGRESS,
+  TWIN_TOUR_LABEL,
   twinNodeLabel,
+  twinOpeningViewLine,
+  twinViewpointAnnouncement,
 } from "../twin/twin-copy.js";
 import {
   TWIN_FIXTURE_MANIFEST,
@@ -104,11 +107,19 @@ function jsonResponse(data: unknown, status = 200): Response {
   } as Response;
 }
 
+/** The router's query string, where a test can wait on what the page wrote. */
+function LocationSearch(): ReactElement {
+  return <span data-testid="location-search">{useLocation().search}</span>;
+}
+
 function mount(): ReturnType<typeof render> {
   return render(
     <MemoryRouter initialEntries={["/venues/trades-hall/twin"]}>
       <Routes>
-        <Route path="/venues/:venueSlug/twin" element={<TwinPage />} />
+        <Route
+          path="/venues/:venueSlug/twin"
+          element={<><TwinPage /><LocationSearch /></>}
+        />
       </Routes>
     </MemoryRouter>,
   );
@@ -129,7 +140,7 @@ describe("TwinPage — loading state", () => {
     fetchMock.mockReturnValue(new Promise<Response>(() => undefined));
     mount();
     expect(screen.getByText(TWIN_LOADING_LINE)).toBeTruthy();
-    expect(screen.getByText(TWIN_WORK_IN_PROGRESS)).toBeTruthy();
+    expect(screen.getByText(TWIN_TOUR_LABEL)).toBeTruthy();
   });
 
   it("requests the manifest from the venue's slug under the default asset base", () => {
@@ -149,8 +160,9 @@ describe("TwinPage — error state", () => {
     fetchMock.mockRejectedValue(new Error("network down"));
     mount();
 
-    expect(await screen.findByText(TWIN_ERROR_LINE)).toBeTruthy();
-    expect(screen.getByText(TWIN_WORK_IN_PROGRESS)).toBeTruthy();
+    expect(await screen.findByText("The panorama tour couldn't load.")).toBeTruthy();
+    expect(TWIN_ERROR_LINE).toBe("The panorama tour couldn't load.");
+    expect(screen.getByText(TWIN_TOUR_LABEL)).toBeTruthy();
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
     fireEvent.click(screen.getByRole("button", { name: TWIN_RETRY_LABEL }));
@@ -178,13 +190,17 @@ describe("TwinPage — ready state", () => {
 
     const label = within(stage).getByTestId("twin-node-label");
     expect(label.querySelector(".vv-twin-node-label-text")?.textContent).toBe(twinNodeLabel("scan_000", validManifest.name));
-    expect(within(label).getByRole("status").textContent).toContain("Opening view…");
-    expect(label.querySelector("[data-activity-indicator]")).not.toBeNull();
+    // Nothing is on stage yet, so the stage itself names the wait through the
+    // shared Activity capsule; scan_000 is not a confirmed room.
+    const opening = within(stage).getByTestId("twin-load-shimmer");
+    expect(within(opening).getByRole("status").textContent).toBe(twinOpeningViewLine(null));
+    expect(opening.querySelector("[data-activity-indicator]")).not.toBeNull();
+    expect(within(label).queryByRole("status")).toBeNull();
     expect(screen.getByText(TWIN_DISCLOSURE)).toBeTruthy();
     // Fullscreen targets this application root, so the product-status strip
     // must be inside it instead of only in the surrounding route shell.
-    expect(within(screen.getByRole("application")).getByText(TWIN_WORK_IN_PROGRESS)).toBeTruthy();
-    expect(screen.getAllByText(TWIN_WORK_IN_PROGRESS)).toHaveLength(1);
+    expect(within(screen.getByRole("application")).getByText(TWIN_TOUR_LABEL)).toBeTruthy();
+    expect(screen.getAllByText(TWIN_TOUR_LABEL)).toHaveLength(1);
   });
 
   it("renders the disclosure exactly once on the page", async () => {
@@ -202,7 +218,8 @@ describe("TwinPage — document chrome and landmarks", () => {
     fetchMock.mockResolvedValue(jsonResponse(validManifest));
     const view = mount();
 
-    expect(document.title).toBe(TWIN_TITLE);
+    expect(document.title).toBe("Panorama tour — Trades Hall of Glasgow");
+    expect(TWIN_TITLE).toBe("Panorama tour — Trades Hall of Glasgow");
     await screen.findByTestId("twin-stage");
     view.unmount();
     expect(document.title).toBe("Previous title");
@@ -247,6 +264,15 @@ describe("TwinPage — view mode control (Phase 2, Task 5)", () => {
     // this test now watches: same behaviour under test (walk-only chrome
     // appears in walk and is gone in a mesh mode), a control that still ships.
     expect(screen.getByTestId("twin-quick-actions")).toBeTruthy();
+    // The walk writes its viewpoint into the address (?node=) from an effect
+    // that runs after the commit showing the stage, as a replace built from the
+    // address the page mounted with. A mode switch made before that lands is a
+    // push the pending replace then overwrites, so Dollhouse reverts to Walk:
+    // master runs 40279751773 and 40284359345 failed exactly so. Switch once
+    // the walk's own write is in the address.
+    await waitFor(() => {
+      expect(screen.getByTestId("location-search").textContent).toMatch(/[?&]node=/u);
+    });
 
     fireEvent.click(screen.getByRole("radio", { name: TWIN_MODE_DOLLHOUSE_LABEL }));
     // The switch is a navigation (?mode=dollhouse) that re-renders the whole
@@ -261,6 +287,29 @@ describe("TwinPage — view mode control (Phase 2, Task 5)", () => {
       ).toBe("true");
     }, { timeout: 5_000 });
     expect(screen.queryByTestId("twin-quick-actions")).toBeNull();
+  });
+});
+
+describe("twin copy — where the visitor stands", () => {
+  it("names a viewpoint by its room only where a person confirmed the room", () => {
+    // scan_046 is the Grand Hall's south end in twin-rooms.ts; scan_045, the
+    // published tour's entry, is not confirmed, so it keeps its number.
+    expect(twinNodeLabel("scan_046", "Trades Hall Glasgow")).toBe("Trades Hall Glasgow · Grand Hall");
+    expect(twinNodeLabel("scan_058", "Trades Hall Glasgow")).toBe("Trades Hall Glasgow · Saloon");
+    expect(twinNodeLabel("scan_045", "Trades Hall Glasgow")).toBe("Trades Hall Glasgow · Viewpoint 46");
+    expect(twinNodeLabel("entrance", "Trades Hall Glasgow")).toBe("Trades Hall Glasgow");
+  });
+
+  it("announces the room or the number on arrival, never a count of viewpoints", () => {
+    expect(twinViewpointAnnouncement("scan_046")).toBe("Grand Hall");
+    expect(twinViewpointAnnouncement("scan_045")).toBe("Viewpoint 46");
+    expect(twinViewpointAnnouncement("entrance")).toBe("");
+    for (const line of allTwinCopy()) expect(line).not.toMatch(/Viewpoint \d+ of \d+/u);
+  });
+
+  it("names the room it is opening only when the room is confirmed", () => {
+    expect(twinOpeningViewLine(null)).toBe("Loading the panorama…");
+    expect(twinOpeningViewLine("Grand Hall")).toBe("Loading the Grand Hall panorama…");
   });
 });
 

@@ -315,7 +315,6 @@ export function LightingLensPanel(): ReactElement {
   const imported = useLightingRigStore((state) => state.imported);
   const setCount = useLightingRigStore((state) => state.setCount);
   const clear = useLightingRigStore((state) => state.clear);
-  const reset = useLightingRigStore((state) => state.reset);
 
   const { patch, power } = useMemo(() => {
     const groups = rigGroupsForRig(counts, imported);
@@ -346,15 +345,16 @@ export function LightingLensPanel(): ReactElement {
       testId="lighting-lens-panel"
       footer={DMX_PLANNING_DISCLAIMER}
     >
-      <LensPanelSection label="Rig (editable)">
-        <p className="lens-panel__field-hint">Example rig · indicative channel footprints. Edit counts for your design.</p>
+      <LensPanelSection label="Rig">
+        <p className="lens-panel__field-hint">Add the fixtures your design uses. Channel footprints are typical for each family; import a fixture file for its own.</p>
         {LIGHTING_FIXTURE_FAMILIES.map((family) => (
           <RigField key={family} family={family} count={counts[family]} onCount={onCount} />
         ))}
-        <div className="lens-panel__share-buttons">
-          <button type="button" className="lens-panel__chip-link" onClick={() => { reset(); }} data-testid="rig-reset">Reset starter</button>
-          <button type="button" className="lens-panel__chip-link" onClick={() => { clear(); }} data-testid="rig-clear">Clear</button>
-        </div>
+        {patch.totalFixtures > 0 && (
+          <div className="lens-panel__share-buttons">
+            <button type="button" className="lens-panel__chip-link" onClick={() => { clear(); }} data-testid="rig-clear">Clear the rig</button>
+          </div>
+        )}
       </LensPanelSection>
 
       <GdtfImportSection />

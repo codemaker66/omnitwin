@@ -48,7 +48,7 @@ interface RunBuildRuntimeControlPacketFromCoordinatePairsOptions {
   ) => void;
 }
 
-function formatValidationIssues(issues: readonly { readonly path: readonly (string | number)[]; readonly message: string }[]): string {
+function formatValidationIssues(issues: readonly { readonly path: readonly PropertyKey[]; readonly message: string }[]): string {
   return issues
     .map((issue) => {
       const path = issue.path.length === 0 ? "<root>" : issue.path.map(String).join(".");

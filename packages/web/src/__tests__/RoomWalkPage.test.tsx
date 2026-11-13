@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
 // The walk page mounts a real R3F canvas through RoomSplatScene. That scene is
 // stubbed so the assertions are about what the PAGE says — the header count,
@@ -143,4 +145,26 @@ describe("RoomWalkPage delivery copy", () => {
 
     expect(window.__roomWalk).toEqual({ settled: 2, total: 11, complete: false, firstView: true });
   });
+});
+
+// Nothing floating over the room may swallow a tap. A real-touch probe found
+// the status pill catching taps on the floor in front of the visitor, so
+// tap-to-glide did nothing where people aim first. happy-dom does not load the
+// stylesheet, so this reads it directly.
+describe("the walk stylesheet", () => {
+  // Resolved from the vitest root (packages/web), not import.meta.url.
+  const css = readFileSync(resolve("src/pages/RoomWalkPage.css"), "utf8");
+
+  function ruleBody(selector: string): string {
+    const at = css.indexOf(`${selector} {`);
+    expect(at, `${selector} is missing from RoomWalkPage.css`).toBeGreaterThan(-1);
+    return css.slice(at, css.indexOf("}", at));
+  }
+
+  it.each([".walk__bar", ".walk__foot", ".walk__loading"])(
+    "%s lets a tap through to the room",
+    (selector) => {
+      expect(ruleBody(selector)).toMatch(/pointer-events:\s*none/u);
+    },
+  );
 });

@@ -5,7 +5,7 @@ import type { Database } from "../db/client.js";
 import { authenticate } from "../middleware/auth.js";
 import { loadClientEventSchedule } from "../services/client-event-schedule.js";
 
-const EventParamSchema = z.object({ eventId: z.string().uuid() });
+const EventParamSchema = z.object({ eventId: z.uuid() });
 
 export async function clientEventScheduleRoutes(server: FastifyInstance, options: { db: Database }): Promise<void> {
   server.get("/:eventId/client-schedule", { preHandler: [authenticate] }, async (request, reply) => {

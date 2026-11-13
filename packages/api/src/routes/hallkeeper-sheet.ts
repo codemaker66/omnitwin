@@ -4,21 +4,23 @@ import { eq, and, isNull } from "drizzle-orm";
 import type { Database } from "../db/client.js";
 import {
   configurations,
+  events,
   hallkeeperProgress,
 } from "../db/schema.js";
-import { assembleSheetDataV2, ApprovedSnapshotUnavailableError } from "../services/hallkeeper-sheet-v2-data.js";
+import { assembleSheetDataV2, ApprovedSnapshotUnavailableError, linkedEventIds } from "../services/hallkeeper-sheet-v2-data.js";
 import { generateSheetPdfV2 } from "../services/hallkeeper-pdf-v2.js";
 import { authenticate } from "../middleware/auth.js";
 import type { JwtUser } from "../middleware/auth.js";
-import { canAccessResource } from "../utils/query.js";
-import { resolveProgressMutation, checkedStateAfter } from "../lib/hallkeeper-progress.js";
+import { canAccessResource, canManageVenue } from "../utils/query.js";
+import { resolveProgressMutation, checkedStateAfter, progressEventFor } from "../lib/hallkeeper-progress.js";
 import { summarizeSheet } from "../lib/hallkeeper-summary.js";
+import { buildSheetPaperCheck } from "../services/sheet-paper-check.js";
 
 // ---------------------------------------------------------------------------
 // Hallkeeper sheet routes — v2 end-to-end
 //
 // Endpoints (all authenticated):
-//   GET   /hallkeeper/:configId/sheet     → portrait A4 PDF
+//   GET   /hallkeeper/:configId/sheet     → portrait A4 PDF, rendered per request
 //   GET   /hallkeeper/:configId/v2        → JSON HallkeeperSheetV2
 //   GET   /hallkeeper/:configId/summary   → ready-by time and rows checked
 //   GET   /hallkeeper/:configId/progress  → checked row keys
@@ -30,9 +32,17 @@ import { summarizeSheet } from "../lib/hallkeeper-summary.js";
 //   - Venue staff / hallkeepers for the config's venue
 //   - Admin
 // Anonymous access is blocked — punch list #4.
+//
+// The setup checklist (PATCH /progress) is the venue crew's record of its
+// own work, read on the Day Board: the layout's owner reads it, and only the
+// venue's floor (or a platform admin) ticks it (release audit tenancy-f-2).
+//
+// Paper that knows its version: both the JSON and the PDF carry a paper
+// check (services/sheet-paper-check.ts) — the link the printout's QR code
+// opens, which tells anyone holding the paper only whether it is current.
 // ---------------------------------------------------------------------------
 
-const ConfigIdParam = z.object({ configId: z.string().uuid() });
+const ConfigIdParam = z.object({ configId: z.uuid() });
 const DownloadQuery = z.object({ download: z.enum(["true", "false"]).default("false") });
 /** Which event the hallkeeper arrived from. A layout can be reused across
  *  events; without this the sheet has to guess which one's hour to print, and
@@ -40,7 +50,7 @@ const DownloadQuery = z.object({ download: z.enum(["true", "false"]).default("fa
  *  Optional: a sheet opened directly still renders, on the union of its links,
  *  and so does one carrying an eventId this configuration is not linked to —
  *  see `resolveTiming`, which is where that contract is enforced. */
-const SheetEventQuery = z.object({ eventId: z.string().uuid().optional() });
+const SheetEventQuery = z.object({ eventId: z.uuid().optional() });
 
 /** Ignore an unparseable eventId rather than 400 — the sheet is still useful
  *  without it, and a hallkeeper with a stale link should see the room, not an
@@ -84,10 +94,56 @@ async function loadConfigAuthPivot(
   return row === undefined ? null : row;
 }
 
+/** Whether an event is a live event of the layout's own venue. */
+async function isVenueEvent(db: Database, configId: string, eventId: string): Promise<boolean> {
+  const [row] = await db.select({ id: events.id })
+    .from(events)
+    .innerJoin(configurations, eq(configurations.venueId, events.venueId))
+    .where(and(eq(events.id, eventId), isNull(events.deletedAt), eq(configurations.id, configId)))
+    .limit(1);
+  return row !== undefined;
+}
+
+/** The event this request's ticks belong to (lib/hallkeeper-progress.ts
+ *  progressEventFor), and how many events the layout is linked to, so a
+ *  sheet keeping eventless ticks on a reused layout can say they count on no
+ *  Day Board. */
+async function progressEventOf(
+  db: Database,
+  configId: string,
+  query: unknown,
+): Promise<{ readonly eventId: string | null; readonly linkedEvents: number }> {
+  const requested = requestedEventId(query);
+  const [linked, requestedIsVenueEvent] = await Promise.all([
+    linkedEventIds(db, configId),
+    requested === null ? Promise.resolve(false) : isVenueEvent(db, configId, requested),
+  ]);
+  return {
+    eventId: progressEventFor({ linkedEventIds: linked, requestedEventId: requested, requestedIsVenueEvent }),
+    linkedEvents: linked.length,
+  };
+}
+
+/** One event's ticks on a layout, or the layout's eventless ticks — never
+ *  another event's. */
+function progressScope(configId: string, eventId: string | null) {
+  return and(
+    eq(hallkeeperProgress.configId, configId),
+    eventId === null ? isNull(hallkeeperProgress.eventId) : eq(hallkeeperProgress.eventId, eventId),
+  );
+}
+
+/**
+ * "read": the layout's owner or the venue's floor. "tick": the venue's floor
+ * only. A customer who owns the layout reads its checklist but never writes
+ * it: their tick would read on the Day Board as the crew's work, and their
+ * untick would erase it.
+ */
 async function requireConfigAccess(
   db: Database,
   configId: string,
   user: JwtUser,
+  access: "read" | "tick" = "read",
 ): Promise<
   | { ok: true }
   | { ok: false; status: 404 | 403; error: string; code: string }
@@ -96,7 +152,10 @@ async function requireConfigAccess(
   if (pivot === null) {
     return { ok: false, status: 404, error: "Configuration not found", code: "NOT_FOUND" };
   }
-  if (!canAccessResource(user, pivot.ownerId, pivot.venueId)) {
+  const allowed = access === "tick"
+    ? canManageVenue(user, pivot.venueId)
+    : canAccessResource(user, pivot.ownerId, pivot.venueId);
+  if (!allowed) {
     return { ok: false, status: 403, error: "Insufficient permissions", code: "FORBIDDEN" };
   }
   return { ok: true };
@@ -110,18 +169,18 @@ export async function hallkeeperSheetRoutes(
 
   const frontendUrl = process.env["FRONTEND_URL"] ?? null;
 
-  // GET /hallkeeper/:configId/sheet — pre-rendered CDN redirect OR on-demand render
+  // GET /hallkeeper/:configId/sheet — the PDF, rendered for this request
   //
-  // Fast path: if the latest approved snapshot has a `pdfUrl`, the
-  // PDF has been pre-rendered to R2. Return a 302 redirect to the
-  // CDN URL; the browser fetches bytes from the edge, not from our
-  // cpu-bound pdfkit event loop.
+  // Every copy is rendered when it is asked for, because each copy prints
+  // its own time ("v7, issued 16 Oct 14:02, printed 17 Oct 06:02") and a QR
+  // code carrying that time. Rendering costs a few hundred milliseconds of
+  // pdfkit per download, which a venue's handful of sheets a day affords.
   //
-  // Slow path: no pre-rendered PDF (R2 not configured / pre-render
-  // failed / snapshot not approved). Fall back to on-demand
-  // generation — the original behaviour. This keeps dev environments
-  // without R2 fully functional and gives us graceful degradation
-  // when the pre-render worker trips.
+  // PRIVACY: the sheet can carry free-text allergy and access notes, which
+  // are health data. It is never stored in a bucket and this route never
+  // redirects; the bytes leave only in this signed-in response, marked
+  // `private, no-store` so no shared cache keeps a copy. A legacy
+  // `snapshot.pdfUrl` left in the database is ignored.
   server.get("/:configId/sheet", { preHandler: [authenticate] }, async (request, reply) => {
     const params = ConfigIdParam.safeParse(request.params);
     if (!params.success) {
@@ -155,24 +214,14 @@ export async function hallkeeperSheetRoutes(
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 
-    // Fast-path: PDF from the same validated approved snapshot as the payload.
-    // The `download` query param is NOT honoured on the redirect path
-    // because Content-Disposition must be set by the CDN response;
-    // browsers opening the redirected URL render inline. To preserve
-    // download-mode for admin-triggered exports, we fall through to
-    // on-demand rendering when the caller asked for a download.
-    if (!isDownload) {
-      const cdn = result.approvedPdfUrl;
-      if (cdn !== null) {
-        return reply.redirect(cdn, 302);
-      }
-    }
-
-    const pdfBuffer = await generateSheetPdfV2(result.payload);
-    const filename = `hallkeeper-sheet-${result.payload.config.name.replace(/[^a-zA-Z0-9-_ ]/g, "").replace(/\s+/g, "-")}.pdf`;
+    const paperCheck = await buildSheetPaperCheck(baseUrl, params.data.configId, result.issue);
+    const payload = paperCheck === null ? result.payload : { ...result.payload, paperCheck };
+    const pdfBuffer = await generateSheetPdfV2(payload);
+    const filename = `hallkeeper-sheet-${payload.config.name.replace(/[^a-zA-Z0-9-_ ]/g, "").replace(/\s+/g, "-")}.pdf`;
 
     void reply
       .header("Content-Type", "application/pdf")
+      .header("Cache-Control", "private, no-store")
       .header("Content-Disposition", isDownload ? `attachment; filename="${filename}"` : "inline")
       .header("Content-Length", pdfBuffer.length)
       .send(pdfBuffer);
@@ -209,7 +258,8 @@ export async function hallkeeperSheetRoutes(
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 
-    return { data: result.payload };
+    const paperCheck = await buildSheetPaperCheck(baseUrl, params.data.configId, result.issue);
+    return { data: paperCheck === null ? result.payload : { ...result.payload, paperCheck } };
   });
 
   // GET /hallkeeper/:configId/summary — the Day Board's line about a sheet:
@@ -243,9 +293,12 @@ export async function hallkeeperSheetRoutes(
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 
+    // Tonight's ticks only: a layout reused from an earlier event must not
+    // arrive on the Day Board already counted as set.
+    const { eventId } = await progressEventOf(db, params.data.configId, request.query);
     const marks = await db.select({ rowKey: hallkeeperProgress.rowKey })
       .from(hallkeeperProgress)
-      .where(eq(hallkeeperProgress.configId, params.data.configId));
+      .where(progressScope(params.data.configId, eventId));
 
     return { data: summarizeSheet(params.data.configId, result.payload, marks.map((mark) => mark.rowKey)) };
   });
@@ -254,8 +307,9 @@ export async function hallkeeperSheetRoutes(
   // Progress endpoints — server-backed checkbox state
   //
   // The hallkeeper_progress table stores which rows are checked for a given
-  // config. GET returns all checked keys. Multiple hallkeepers share the same
-  // state — no localStorage isolation.
+  // config and event: both routes take the sheet's ?eventId= and keep to that
+  // event's ticks (progressEventOf). GET returns all checked keys. Multiple
+  // hallkeepers share the same state — no localStorage isolation.
   //
   // PATCH has two modes (see `resolveProgressMutation`):
   //   - `{ rowKey, checked }` → idempotent SET-STATE: force the row to
@@ -279,22 +333,26 @@ export async function hallkeeperSheetRoutes(
       return reply.status(gate.status).send({ error: gate.error, code: gate.code });
     }
 
+    const { eventId, linkedEvents } = await progressEventOf(db, params.data.configId, request.query);
     const rows = await db.select({
       rowKey: hallkeeperProgress.rowKey,
       checkedAt: hallkeeperProgress.checkedAt,
     })
       .from(hallkeeperProgress)
-      .where(eq(hallkeeperProgress.configId, params.data.configId));
+      .where(progressScope(params.data.configId, eventId));
 
     const checked: Record<string, string> = {};
     for (const row of rows) {
       checked[row.rowKey] = row.checkedAt.toISOString();
     }
 
-    return { data: { configId: params.data.configId, checked } };
+    // eventId is the scope these ticks belong to; the sheet pins it for its
+    // writes. linkedEvents lets it say when eventless ticks count on no board.
+    return { data: { configId: params.data.configId, eventId, linkedEvents, checked } };
   });
 
   // PATCH /hallkeeper/:configId/progress — set or toggle a row's check state
+  // (the venue's floor only; see requireConfigAccess)
   server.patch("/:configId/progress", { preHandler: [authenticate] }, async (request, reply) => {
     const params = ConfigIdParam.safeParse(request.params);
     if (!params.success) {
@@ -306,44 +364,40 @@ export async function hallkeeperSheetRoutes(
       return reply.status(400).send({ error: "Invalid body", code: "VALIDATION_ERROR", details: body.error.issues });
     }
 
-    const gate = await requireConfigAccess(db, params.data.configId, request.user);
+    const gate = await requireConfigAccess(db, params.data.configId, request.user, "tick");
     if (!gate.ok) {
       return reply.status(gate.status).send({ error: gate.error, code: gate.code });
     }
 
     const { configId } = params.data;
     const { rowKey, checked: desired } = body.data;
+    const { eventId } = await progressEventOf(db, configId, request.query);
 
     // Idempotent set-state path. Avoid select-then-insert races: two devices
     // replaying "checked: true" for the same row must converge, not surface a
-    // duplicate-key 500 from the unique (config_id, row_key) constraint.
+    // duplicate-key 500 from the unique (config_id, event_id, row_key) key.
     if (desired !== undefined) {
       if (desired) {
         await db.insert(hallkeeperProgress).values({
           configId,
+          eventId,
           rowKey,
           checkedBy: request.user.id,
         }).onConflictDoNothing({
-          target: [hallkeeperProgress.configId, hallkeeperProgress.rowKey],
+          target: [hallkeeperProgress.configId, hallkeeperProgress.eventId, hallkeeperProgress.rowKey],
         });
       } else {
         await db.delete(hallkeeperProgress)
-          .where(and(
-            eq(hallkeeperProgress.configId, configId),
-            eq(hallkeeperProgress.rowKey, rowKey),
-          ));
+          .where(and(progressScope(configId, eventId), eq(hallkeeperProgress.rowKey, rowKey)));
       }
 
-      return { data: { configId, rowKey, checked: desired } };
+      return { data: { configId, eventId, rowKey, checked: desired } };
     }
 
     // Legacy toggle path for older clients that omit `checked`.
     const [existing] = await db.select({ id: hallkeeperProgress.id })
       .from(hallkeeperProgress)
-      .where(and(
-        eq(hallkeeperProgress.configId, configId),
-        eq(hallkeeperProgress.rowKey, rowKey),
-      ))
+      .where(and(progressScope(configId, eventId), eq(hallkeeperProgress.rowKey, rowKey)))
       .limit(1);
 
     const exists = existing !== undefined;
@@ -352,6 +406,7 @@ export async function hallkeeperSheetRoutes(
     if (mutation === "insert") {
       await db.insert(hallkeeperProgress).values({
         configId,
+        eventId,
         rowKey,
         checkedBy: request.user.id,
       });
@@ -361,6 +416,6 @@ export async function hallkeeperSheetRoutes(
     }
     // mutation === "noop" → server already in the desired state; nothing to do.
 
-    return { data: { configId, rowKey, checked: checkedStateAfter(mutation, exists) } };
+    return { data: { configId, eventId, rowKey, checked: checkedStateAfter(mutation, exists) } };
   });
 }

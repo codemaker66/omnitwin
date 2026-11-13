@@ -7,6 +7,7 @@ import {
   convexPolygonsOverlap,
   convexPolygonDistance,
   convexPolygonClosestPoints,
+  convexPolygonPenetration,
   computeCirculation,
   circulationBandLabel,
   bandForGap,
@@ -130,6 +131,18 @@ describe("convexPolygonClosestPoints", () => {
   });
 });
 
+describe("convexPolygonPenetration", () => {
+  it("is how far two boxes overlap along their shallowest axis", () => {
+    expect(convexPolygonPenetration(footprintCorners(box("a", 0, 0)), footprintCorners(box("b", 0.4, 0)))).toBeCloseTo(0.6, 6);
+  });
+  it("is 0 for boxes that share an edge", () => {
+    expect(convexPolygonPenetration(footprintCorners(box("a", 0, 0)), footprintCorners(box("b", 1, 0)))).toBeCloseTo(0, 6);
+  });
+  it("is negative, the clear gap, for separated boxes", () => {
+    expect(convexPolygonPenetration(footprintCorners(box("a", 0, 0)), footprintCorners(box("b", 1.5, 0)))).toBeCloseTo(-0.5, 6);
+  });
+});
+
 describe("convexPolygonDistance", () => {
   it("is 0 for overlapping boxes", () => {
     expect(convexPolygonDistance(footprintCorners(box("a", 0, 0)), footprintCorners(box("b", 0.5, 0)))).toBe(0);
@@ -182,6 +195,27 @@ describe("computeCirculation", () => {
     expect(overlap.band).toBe("blocked");
     expect(overlap.blockedCount).toBe(1);
     expect(overlap.tightestGapM).toBe(0);
+  });
+
+  it("treats tables set edge to edge as one joined table, not an aisle", () => {
+    // A top table of three trestles end to end, rotated as the planner places
+    // them (rounding leaves their shared edges a hair apart or over), and a
+    // round table 1 m from the run's side.
+    const trestle = (id: string, cz: number): FurnitureFootprint => box(id, 0, cz, 1.83, 0.76, Math.PI / 2);
+    const r = computeCirculation([trestle("t1", -1.83), trestle("t2", 0), trestle("t3", 1.83), box("round", 1.88, 0)]);
+    expect(r.problemGaps).toHaveLength(0);
+    expect(r.blockedCount).toBe(0);
+    expect(r.tightestGapM).toBeCloseTo(1, 6);
+    expect(r.band).toBe("comfortable");
+    // t1–t3 and each trestle–round pair are aisles; the two joins are not.
+    expect(r.pairCount).toBe(4);
+  });
+
+  it("still blocks tables that overlap by more than a join", () => {
+    const r = computeCirculation([box("a", 0, 0), box("b", 0.99, 0)]); // 1 cm overlap
+    expect(r.band).toBe("blocked");
+    expect(r.blockedCount).toBe(1);
+    expect(r.tightestGapM).toBe(0);
   });
 
   it("surfaces the single tightest pair across many tables", () => {

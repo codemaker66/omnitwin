@@ -122,8 +122,49 @@
 .vv-notification-actions { display: flex; flex-wrap: wrap; gap: 4px; margin-left: -10px; }
 .vv-notification-failed { margin: 0 0 6px; color: var(--reg-alert); font-size: 0.84rem; }
 
+/* A promoted hold's drafted email, open in place under its notification
+   (PromotionDraft.tsx). A raised inset on the popover, not a second card. */
+.vv-draft {
+  display: grid;
+  gap: 8px;
+  margin: 4px 0 8px;
+  padding: 12px;
+  border: 1px solid var(--reg-edge);
+  border-radius: var(--house-radius-control);
+  background: var(--reg-raised);
+}
+.vv-draft-facts { display: grid; gap: 4px; margin: 0; }
+.vv-draft-facts > div { display: grid; grid-template-columns: 4.5rem 1fr; gap: 8px; }
+.vv-draft-facts dt { color: var(--reg-text-2); font-size: 0.8rem; font-weight: 600; }
+.vv-draft-facts dd { margin: 0; color: var(--reg-text-1); font-size: 0.84rem; line-height: 1.45; overflow-wrap: anywhere; }
+.vv-draft-label { color: var(--reg-text-2); font-size: 0.8rem; font-weight: 600; }
+.vv-draft-body {
+  width: 100%;
+  min-height: 12rem;
+  padding: 10px 12px;
+  border: 1px solid var(--reg-edge);
+  border-radius: var(--house-radius-control);
+  background: var(--reg-surface);
+  color: var(--reg-text-1);
+  font: inherit;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  resize: vertical;
+}
+.vv-draft-body:focus-visible,
+.vv-draft a.vv-notifications-button:focus-visible {
+  outline: 2px solid var(--reg-focus);
+  outline-offset: 2px;
+}
+.vv-draft-note { margin: 0; color: var(--reg-text-2); font-size: 0.82rem; line-height: 1.45; }
+.vv-draft-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-left: -10px; }
+.vv-draft-copied { color: var(--reg-text-2); font-size: 0.82rem; }
+/* The press: a small step down, never a swell. */
+.vv-draft .vv-notifications-button:active { transform: translateY(1px); }
+
 @media (prefers-reduced-motion: reduce) {
   .vv-notifications-trigger,
   .vv-notifications-button,
   .vv-notifications-chevron { transition: none; }
+  .vv-draft .vv-notifications-button:active { transform: none; }
 }

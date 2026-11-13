@@ -15,19 +15,106 @@ const migrationsFolder = join(apiRoot, "drizzle");
 export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/api-hot-paths-postgres.test.ts",
   "src/__tests__/client-search-postgres.test.ts",
+  // A guest lead is read only by the venue its name and phone were given to (audit enquiries-crm-4).
+  "src/__tests__/guest-lead-tenancy-postgres.test.ts",
+  // Per-row subqueries name the outer row by its table (utils/outer-column.ts).
+  "src/__tests__/correlated-subqueries-postgres.test.ts",
   "src/__tests__/booking-mutations-postgres.test.ts",
+  // A Diary move reaches its event: dates, phases, sheet times and retention (release audit batch A).
+  "src/__tests__/diary-move-reaches-event-postgres.test.ts",
+  "src/__tests__/hold-promotion-postgres.test.ts",
+  // The bind (migration 0090): zero holds or inks without an event.
+  "src/__tests__/booking-event-bind-postgres.test.ts",
   "src/__tests__/enquiry-bookings-postgres.test.ts",
+  // A booking stored with an empty title keeps its venue's Diary range readable (API-9).
+  "src/__tests__/calendar-untitled-booking-postgres.test.ts",
+  // ...and its client's schedule and the room's day, which the When ribbon reads.
+  "src/__tests__/client-schedule-untitled-booking-postgres.test.ts",
+  // An event made for an untitled booking is named by its occasion and day, never "" or an email.
+  "src/__tests__/event-name-at-creation-postgres.test.ts",
+  // ...and one stored with no name is read everywhere its name is read, and staff can rename it.
+  "src/__tests__/untitled-event-reads-postgres.test.ts",
   "src/__tests__/event-mutations-postgres.test.ts",
+  // The event-day board: a change needing acknowledgement stays listed however many follow it.
+  "src/__tests__/event-day-awaiting-acknowledgement-postgres.test.ts",
   "src/__tests__/db-client-local.test.ts",
   "src/__tests__/sheet-snapshot-retention-postgres.test.ts",
+  "src/__tests__/dietary-retention-postgres.test.ts",
+  "src/__tests__/remembered-dietary-notes-postgres.test.ts",
   "src/__tests__/quote-permissions-postgres.test.ts",
   "src/__tests__/proposal-permissions-postgres.test.ts",
   "src/__tests__/proposal-links-postgres.test.ts",
   "src/__tests__/proposal-next-version-postgres.test.ts",
+  // A long proposal thread reaches the desk with its newest messages (audit contract-n-4).
+  "src/__tests__/proposal-conversation-postgres.test.ts",
   "src/__tests__/placed-object-batch-postgres.test.ts",
+  // The review loop: a layout sent back, declined or withdrawn goes to the venue again; a stale move writes nothing.
+  "src/__tests__/configuration-review-loop-postgres.test.ts",
+  // A signed-in person's new plan: refused unclaimed, theirs once claimed (batch C).
+  "src/__tests__/claim-new-draft-postgres.test.ts",
+  // An anonymous save: what one piece, one save and one address may store.
+  "src/__tests__/guest-save-limits-postgres.test.ts",
+  // ...and how often: the planner's own pace through the whole app's rate limiter.
+  "src/__tests__/guest-save-pace-postgres.test.ts",
+  // Who can find and read a guest's plan: code lookups, and notes kept to the browser that made it.
+  "src/__tests__/guest-plan-privacy-postgres.test.ts",
   "src/__tests__/role-vocabulary-postgres.test.ts",
+  // An open socket acts with its person's current role: /ws/configurations saves and /ws/diary commands.
+  "src/__tests__/socket-identity-postgres.test.ts",
+  // A socket that never signs in is closed at a deadline, on both socket routes.
+  "src/__tests__/socket-sign-in-deadline-postgres.test.ts",
   "src/__tests__/public-mcp-postgres.test.ts",
+  "src/__tests__/sheet-paper-check-postgres.test.ts",
+  "src/__tests__/ai-usage-postgres.test.ts",
+  // A supplier's reply has a limit of its own: twenty an hour from one address, through the whole app.
+  "src/__tests__/supplier-reply-limit-postgres.test.ts",
+  // The People Book (migration 0098): the operator's read-only check of the backfill.
+  "src/__tests__/check-people-book-postgres.test.ts",
+  // Possible duplicates, and the marks that keep two people apart through merges.
+  "src/__tests__/people-duplicates-postgres.test.ts",
+  // The /people routes: people, their points and memberships, the mirrors, the kept-apart mark.
+  "src/__tests__/people-routes-postgres.test.ts",
+  // A public enquiry finds or makes its person; guest leads are written once.
+  "src/__tests__/people-enquiry-link-postgres.test.ts",
+  // ... and is kept, with no person, when finding its person fails.
+  "src/__tests__/people-enquiry-link-failure-postgres.test.ts",
+  // Merging two people: the preview, the merge, its record and the tombstone.
+  "src/__tests__/people-merge-postgres.test.ts",
+  // Deal writes during a merge or undo: never to the closed record, no deadlock, RETRY on a lock conflict.
+  "src/__tests__/opportunity-merge-race-postgres.test.ts",
+  // Two stage moves of one deal at once: one stands, the other writes nothing (audit dash-commercial-6).
+  "src/__tests__/deal-stage-race-postgres.test.ts",
+  // POST /public/enquiries against real constraints, on its own database (below).
+  "src/__tests__/public-enquiry-venue-slug-postgres.test.ts",
+  // ...and on the platform database: a deleted venue takes no enquiry (audit public-surface-7).
+  "src/__tests__/public-enquiry-intake-postgres.test.ts",
+  // Sixty guest plans and ten enquiries an hour from one address, through the whole app's limiter.
+  "src/__tests__/public-intake-limits-postgres.test.ts",
+  // The reference loadouts list: photo count and cover subqueries name their loadout (VENVIEWER-API-1).
+  "src/__tests__/reference-loadouts-postgres.test.ts",
+  // The chair sizes migration (0103): rewrites only from 0074's sizes, stops named, never blocks a layout save.
+  "src/__tests__/chair-sizes-migration-postgres.test.ts",
+  // Migration 0105: product writes share the foundry's global lock; the kill switch still excludes them (T-677).
+  "src/__tests__/foundry-product-lock-postgres.test.ts",
+  // The Grand Hall at its E57 interior and clear height (0106): one row, inert on replay, stops named, a chair against a long wall saves.
+  "src/__tests__/grand-hall-e57-migration-postgres.test.ts",
+  // The Truth Mode summary answers a layout's owner and venue floor only, and counts only their layouts.
+  "src/__tests__/truth-mode-summary-tenancy-postgres.test.ts",
+  // A pricing rule's dates are real calendar dates a date column holds: an impossible one is a 400, not a 500.
+  "src/__tests__/pricing-rule-dates-postgres.test.ts",
+  // Migration 0107: a venue manager's Ops review is stored as venue_manager; other roles and venues stay refused.
+  "src/__tests__/event-architect-ops-review-postgres.test.ts",
+  // A 200-character account name on the floor: taps, requests and their steps, the handover picker and the request's thread keep 160, never refuse.
+  "src/__tests__/floor-long-names-postgres.test.ts",
 ] as const;
+
+/**
+ * The venue-slug enquiry test's own database on the platform test cluster. It
+ * builds and drops a schema of its own there, never the migrated platform
+ * database, and skips without its variable, so this gate creates the database
+ * and passes the variable; the zero-skip check then fails a run where it skips.
+ */
+const PUBLIC_ENQUIRY_TEST_DATABASE = "venviewer_public_enquiry_test";
 
 export function requirePlatformTestDatabaseUrl(raw: string | undefined): string {
   if (raw === undefined || raw.trim() === "") {
@@ -40,6 +127,39 @@ export function requirePlatformTestDatabaseUrl(raw: string | undefined): string 
     throw new Error("Platform tests require their disposable 127.0.0.1:55477/venviewer_platform_test target without URL parameters");
   }
   return raw;
+}
+
+/** The validated platform target with its database replaced by the venue-slug
+ *  test's own: exactly the URL that file's guard accepts. */
+export function publicEnquiryTestDatabaseUrl(target: string): string {
+  const url = new URL(requirePlatformTestDatabaseUrl(target));
+  url.pathname = `/${PUBLIC_ENQUIRY_TEST_DATABASE}`;
+  return url.toString();
+}
+
+/** Creates the venue-slug test's database on the platform cluster when it is missing. */
+async function ensurePublicEnquiryDatabase(target: string): Promise<{ database: string; created: boolean }> {
+  const pool = new Pool({ connectionString: target, max: 1, application_name: "platform-db-public-enquiry-database",
+    connectionTimeoutMillis: 10000, options: "-c statement_timeout=60000" });
+  try {
+    const existing = await pool.query<{ present: boolean }>(
+      "SELECT EXISTS (SELECT 1 FROM pg_database WHERE datname = $1) AS present", [PUBLIC_ENQUIRY_TEST_DATABASE],
+    );
+    if (existing.rows[0]?.present === true) return { database: PUBLIC_ENQUIRY_TEST_DATABASE, created: false };
+    try {
+      // CREATE DATABASE takes no parameters; the name is this file's constant.
+      await pool.query(`CREATE DATABASE ${PUBLIC_ENQUIRY_TEST_DATABASE}`);
+    } catch (error) {
+      // duplicate_database: another run made it between the look and the create.
+      if (error instanceof Error && "code" in error && error.code === "42P04") {
+        return { database: PUBLIC_ENQUIRY_TEST_DATABASE, created: false };
+      }
+      throw error;
+    }
+    return { database: PUBLIC_ENQUIRY_TEST_DATABASE, created: true };
+  } finally {
+    await pool.end();
+  }
 }
 
 interface AppliedMigration { hash: string; created_at: string }
@@ -145,6 +265,7 @@ function runVitest(target: string, outputFile: string): Promise<{ code: number |
   const env = Object.fromEntries(Object.entries(process.env).filter(([name]) => name.toUpperCase() !== "DATABASE_URL"));
   env["NODE_ENV"] = "test";
   env["VENVIEWER_PLATFORM_TEST_DATABASE_URL"] = target;
+  env["VENVIEWER_PUBLIC_ENQUIRY_TEST_DATABASE_URL"] = publicEnquiryTestDatabaseUrl(target);
   return new Promise((resolveExit, reject) => {
     const child = spawn(process.execPath, [cli, "run", ...PLATFORM_POSTGRES_TEST_FILES,
       "--reporter=default", "--reporter=json", `--outputFile=${outputFile}`], {
@@ -177,6 +298,7 @@ export async function runPlatformPostgresTests(): Promise<void> {
     await Promise.all(PLATFORM_POSTGRES_TEST_FILES.map(file => access(join(apiRoot, file))));
     receipt["migration"] = await qualifyMigrations(target);
     await writeFile(join(outputDirectory, "migration.json"), `${JSON.stringify(receipt["migration"], null, 2)}\n`);
+    receipt["publicEnquiryDatabase"] = await ensurePublicEnquiryDatabase(target);
     receipt["stage"] = "tests";
     const reportPath = join(outputDirectory, "vitest.json");
     const execution = await runVitest(target, reportPath);

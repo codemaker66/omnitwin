@@ -173,7 +173,7 @@ const DecimalLexemeBaseSchema = z.string().min(1).max(
 const CsvDecimalLexemeSchema = DecimalLexemeBaseSchema.regex(CSV_DECIMAL_LEXEME);
 const JsonNumberLexemeSchema = DecimalLexemeBaseSchema.regex(JSON_NUMBER_LEXEME);
 const SourceContainerSchema = z.object({
-  sourceSizeBytes: z.number().int().safe().nonnegative().max(
+  sourceSizeBytes: z.number().int().int().nonnegative().max(
     FOUNDRY_CALIBRATION_TRAJECTORY_SOURCE_MAX_BYTES,
   ),
   sourceSha256: z.string().regex(SHA256),
@@ -213,10 +213,10 @@ function createDecimalSummarySchema(lexemeSchema: z.ZodString) {
   }).strict().superRefine((value, ctx) => {
   const nullable = [value.firstLexeme, value.lastLexeme, value.minimumLexeme, value.maximumLexeme];
   if (value.count === 0 && nullable.some((entry) => entry !== null)) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["count"], message: "zero count requires null lexeme bounds" });
+    ctx.addIssue({ code: "custom", path: ["count"], message: "zero count requires null lexeme bounds" });
   }
   if (value.count > 0 && nullable.some((entry) => entry === null)) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["count"], message: "positive count requires lexeme bounds" });
+    ctx.addIssue({ code: "custom", path: ["count"], message: "positive count requires lexeme bounds" });
   }
   if (
     value.integerLexemeCount > value.count ||
@@ -224,7 +224,7 @@ function createDecimalSummarySchema(lexemeSchema: z.ZodString) {
     value.exponentLexemeCount > value.count ||
     value.negativeZeroLexemeCount > value.count
   ) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["count"], message: "lexeme subtype counts exceed total" });
+    ctx.addIssue({ code: "custom", path: ["count"], message: "lexeme subtype counts exceed total" });
   }
   if (
     value.minimumLexeme !== null &&
@@ -233,7 +233,7 @@ function createDecimalSummarySchema(lexemeSchema: z.ZodString) {
     lexemeSchema.safeParse(value.maximumLexeme).success &&
     compareDecimalLexemes(value.minimumLexeme, value.maximumLexeme) > 0
   ) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["minimumLexeme"], message: "decimal bounds are reversed" });
+    ctx.addIssue({ code: "custom", path: ["minimumLexeme"], message: "decimal bounds are reversed" });
   }
   if (
     value.firstLexeme !== null &&
@@ -253,7 +253,7 @@ function createDecimalSummarySchema(lexemeSchema: z.ZodString) {
       compareDecimalLexemes(value.lastLexeme, value.maximumLexeme) > 0
     )
   ) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["firstLexeme"], message: "decimal boundary lexemes fall outside the declared range" });
+    ctx.addIssue({ code: "custom", path: ["firstLexeme"], message: "decimal boundary lexemes fall outside the declared range" });
   }
   });
 }
@@ -278,7 +278,7 @@ const CsvColumnSchema = z.object({
     value.emptyFieldCount + value.nonDecimalFieldCount + value.decimals.count !==
     value.observedFieldCount
   ) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["observedFieldCount"], message: "column counts are inconsistent" });
+    ctx.addIssue({ code: "custom", path: ["observedFieldCount"], message: "column counts are inconsistent" });
   }
 });
 
@@ -337,10 +337,10 @@ export const FoundryCalibrationTrajectoryCsvSourceFactsSchema = z.object({
     facts.columns.length !== facts.records.maximumFieldCount ||
     facts.columns.some((column, index) => column.ordinal !== index)
   ) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["records"], message: "CSV record and column facts are inconsistent" });
+    ctx.addIssue({ code: "custom", path: ["records"], message: "CSV record and column facts are inconsistent" });
   }
   if (facts.records.uniformFieldCount !== (facts.records.minimumFieldCount === facts.records.maximumFieldCount)) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["records", "uniformFieldCount"], message: "uniform field flag contradicts bounds" });
+    ctx.addIssue({ code: "custom", path: ["records", "uniformFieldCount"], message: "uniform field flag contradicts bounds" });
   }
   if (
     facts.fields.emptyCount > facts.fields.count ||
@@ -351,7 +351,7 @@ export const FoundryCalibrationTrajectoryCsvSourceFactsSchema = z.object({
       facts.fields.emptyCount ||
     facts.columns.reduce((total, column) => total + column.observedFieldCount, 0) !== facts.fields.count
   ) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["fields"], message: "CSV aggregate counts are inconsistent" });
+    ctx.addIssue({ code: "custom", path: ["fields"], message: "CSV aggregate counts are inconsistent" });
   }
   const minimumAggregateFieldCount =
     facts.records.count * facts.records.minimumFieldCount;
@@ -362,7 +362,7 @@ export const FoundryCalibrationTrajectoryCsvSourceFactsSchema = z.object({
     facts.fields.count > maximumAggregateFieldCount
   ) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["fields", "count"],
       message: "CSV aggregate field count contradicts record field-count bounds",
     });
@@ -377,7 +377,7 @@ export const FoundryCalibrationTrajectoryCsvSourceFactsSchema = z.object({
     )
   ) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["columns"],
       message: "CSV column observations contradict prefix-complete records",
     });
@@ -443,14 +443,14 @@ export const FoundryCalibrationTrajectoryJsonSourceFactsSchema = z.object({
     facts.structure.stringValueCount + facts.structure.numberCount +
     facts.structure.booleanCount + facts.structure.nullCount;
   if (scalarAndContainerCount !== facts.structure.valueCount) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["structure", "valueCount"], message: "JSON value counts are inconsistent" });
+    ctx.addIssue({ code: "custom", path: ["structure", "valueCount"], message: "JSON value counts are inconsistent" });
   }
   if (
     facts.structure.maximumDepth > facts.structure.valueCount ||
     (facts.structure.valueCount > 1 && facts.structure.maximumDepth < 2)
   ) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["structure", "maximumDepth"],
       message: "JSON maximum depth contradicts the complete value count",
     });
@@ -467,45 +467,45 @@ export const FoundryCalibrationTrajectoryJsonSourceFactsSchema = z.object({
             ? facts.structure.booleanCount
             : facts.structure.nullCount;
   if (rootKindCount < 1) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["root", "kind"], message: "JSON root kind contradicts structure counts" });
+    ctx.addIssue({ code: "custom", path: ["root", "kind"], message: "JSON root kind contradicts structure counts" });
   }
   if (
     facts.structure.objectMemberCount + facts.structure.arrayElementCount !==
     facts.structure.valueCount - 1
   ) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["structure"], message: "JSON tree edge counts are inconsistent" });
+    ctx.addIssue({ code: "custom", path: ["structure"], message: "JSON tree edge counts are inconsistent" });
   }
   if (
     facts.structure.maximumObjectMemberCount > facts.structure.objectMemberCount ||
     facts.structure.maximumArrayLength > facts.structure.arrayElementCount ||
     facts.structure.distinctObjectKeyCount > facts.structure.objectMemberCount
   ) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["structure"], message: "JSON container maxima exceed aggregate counts" });
+    ctx.addIssue({ code: "custom", path: ["structure"], message: "JSON container maxima exceed aggregate counts" });
   }
   if (
     facts.structure.stringValueCount !== facts.strings.valueCount ||
     facts.structure.numberCount !== facts.numbers.count
   ) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["structure"], message: "JSON scalar summaries are inconsistent" });
+    ctx.addIssue({ code: "custom", path: ["structure"], message: "JSON scalar summaries are inconsistent" });
   }
   if (
     facts.strings.valueCount === 0 !==
     (facts.strings.minimumCodeUnits === null && facts.strings.maximumCodeUnits === null)
   ) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["strings"], message: "JSON string bounds are inconsistent" });
+    ctx.addIssue({ code: "custom", path: ["strings"], message: "JSON string bounds are inconsistent" });
   }
   if (
     facts.strings.minimumCodeUnits !== null &&
     facts.strings.maximumCodeUnits !== null &&
     facts.strings.minimumCodeUnits > facts.strings.maximumCodeUnits
   ) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["strings"], message: "JSON string bounds are reversed" });
+    ctx.addIssue({ code: "custom", path: ["strings"], message: "JSON string bounds are reversed" });
   }
   if (facts.root.kind === "object" && facts.root.objectKeys === null) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["root", "objectKeys"], message: "object root requires keys" });
+    ctx.addIssue({ code: "custom", path: ["root", "objectKeys"], message: "object root requires keys" });
   }
   if (facts.root.kind !== "object" && facts.root.objectKeys !== null) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["root", "objectKeys"], message: "non-object root cannot expose keys" });
+    ctx.addIssue({ code: "custom", path: ["root", "objectKeys"], message: "non-object root cannot expose keys" });
   }
   if (
     facts.root.objectKeys !== null &&
@@ -515,13 +515,13 @@ export const FoundryCalibrationTrajectoryJsonSourceFactsSchema = z.object({
       facts.root.objectKeys.length > facts.structure.distinctObjectKeyCount
     )
   ) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["root", "objectKeys"], message: "object root keys contradict JSON structure counts" });
+    ctx.addIssue({ code: "custom", path: ["root", "objectKeys"], message: "object root keys contradict JSON structure counts" });
   }
   if (facts.root.kind === "array" && facts.root.arrayLength === null) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["root", "arrayLength"], message: "array root requires length" });
+    ctx.addIssue({ code: "custom", path: ["root", "arrayLength"], message: "array root requires length" });
   }
   if (facts.root.kind !== "array" && facts.root.arrayLength !== null) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["root", "arrayLength"], message: "non-array root cannot expose length" });
+    ctx.addIssue({ code: "custom", path: ["root", "arrayLength"], message: "non-array root cannot expose length" });
   }
   if (
     facts.root.arrayLength !== null &&
@@ -530,7 +530,7 @@ export const FoundryCalibrationTrajectoryJsonSourceFactsSchema = z.object({
       facts.root.arrayLength > facts.structure.arrayElementCount
     )
   ) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["root", "arrayLength"], message: "array root length exceeds JSON structure aggregates" });
+    ctx.addIssue({ code: "custom", path: ["root", "arrayLength"], message: "array root length exceeds JSON structure aggregates" });
   }
   if (
     (facts.structure.objectMemberCount === 0 &&
@@ -547,7 +547,7 @@ export const FoundryCalibrationTrajectoryJsonSourceFactsSchema = z.object({
         facts.structure.maximumArrayLength === 0))
   ) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["structure"],
       message: "JSON container zero/nonzero aggregates are inconsistent",
     });
@@ -580,7 +580,7 @@ export const FoundryCalibrationTrajectoryJsonSourceFactsSchema = z.object({
       facts.structure.distinctObjectKeyCount !== 0
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["root"],
         message: "empty-container and scalar JSON roots must describe exactly one root value",
       });
@@ -598,7 +598,7 @@ export type FoundryCalibrationTrajectorySourceFacts = z.infer<
 
 const SourceBindingSchema = z.object({
   sourceSha256: z.string().regex(SHA256),
-  sourceSizeBytes: z.number().int().safe().nonnegative(),
+  sourceSizeBytes: z.number().int().int().nonnegative(),
 }).strict();
 
 const FoundryCalibrationTrajectorySourceFactsFailureOutcomeSchema = SourceBindingSchema.extend({
@@ -611,7 +611,7 @@ const FoundryCalibrationTrajectorySourceFactsFailureOutcomeSchema = SourceBindin
     outcome.category
   ) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["code"],
       message: "calibration/trajectory failure code and category must match the frozen registry",
     });
@@ -624,14 +624,14 @@ const FoundryCalibrationTrajectorySourceFactsEstablishedOutcomeSchema = SourceBi
 }).strict().superRefine((outcome, ctx) => {
   if (outcome.sourceSizeBytes !== outcome.facts.container.sourceSizeBytes) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["sourceSizeBytes"],
       message: "established source binding size must match the inspected facts container",
     });
   }
   if (outcome.sourceSha256 !== outcome.facts.container.sourceSha256) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["sourceSha256"],
       message: "established source binding SHA-256 must match the inspected facts container",
     });

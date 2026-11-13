@@ -1,6 +1,7 @@
 import { type ReactElement } from "react";
 import { useSearchParams } from "react-router-dom";
 import { ShieldQuestion, Layers3, Eye, EyeOff } from "lucide-react";
+import { eventDisplayName } from "@omnitwin/types";
 import { ActivityIndicator, ActivityStatus } from "../../shared/Activity.js";
 import { useEditorStore } from "../../../stores/editor-store.js";
 import { useAuthStore } from "../../../stores/auth-store.js";
@@ -10,7 +11,8 @@ import { buildTopBarModel } from "../../../lib/cockpit-topbar-model.js";
 import { COCKPIT_OVERLAY_KEYS, type CockpitOverlayKey } from "../../../lib/cockpit-modes.js";
 import { useLinkedEvent, type LinkedEvent } from "../../../hooks/use-linked-event.js";
 import { useClientEventSchedule } from "../../../hooks/use-client-event-schedule.js";
-import { isCustomerRole } from "../../../lib/event-access.js";
+import { canReadInternalEventData, isCustomerRole } from "../../../lib/event-access.js";
+import { gaussianSplatsAvailable } from "../../../lib/splat-access.js";
 import "./CockpitTopBar.css";
 
 const OVERLAY_LABELS: Readonly<Record<CockpitOverlayKey, string>> = {
@@ -54,6 +56,7 @@ export function CockpitTopBar(): ReactElement {
   const saveError = useEditorStore((s) => s.saveError);
   const lastSavedAt = useEditorStore((s) => s.lastSavedAt);
   const user = useAuthStore((s) => s.user);
+  const staff = useAuthStore((s) => canReadInternalEventData(s));
   const runtimeAssetStatus = useCockpitStore((s) => s.runtimeAssetStatus);
   const layersOpen = useCockpitStore((s) => s.layersOpen);
   const overlayVisibility = useCockpitStore((s) => s.overlayVisibility);
@@ -83,8 +86,9 @@ export function CockpitTopBar(): ReactElement {
   const activePhase = linked.graph !== null
     ? (linked.graph.phases.find((phase) => phase.id === selectedPhaseId) ?? linked.graph.phases[0] ?? null)
     : null;
-  const customerEvent: EventCell = { kicker: "Your event", value: customerSchedule.data?.event.name
-    ?? (customerSchedule.status === "loading" ? "Loading event…" : customerSchedule.status === "none" ? "No event linked" : "Event unavailable") };
+  const customerEvent: EventCell = { kicker: "Your event", value: customerSchedule.data !== null
+    ? eventDisplayName(customerSchedule.data.event, customerSchedule.data.venue.timezone)
+    : customerSchedule.status === "loading" ? "Loading event…" : customerSchedule.status === "none" ? "No event linked" : "Event unavailable" };
   const event = !previewActive
     ? customer ? customerEvent : eventCell(linked, activePhase?.name ?? null)
     : previewMode === "schedule-gap" ? {
@@ -107,7 +111,7 @@ export function CockpitTopBar(): ReactElement {
     ? previewRuntime === null
       ? "Room preview unavailable"
       : "Frozen outline · historical capture unavailable"
-    : model.runtimeLabel;
+    : gaussianSplatsAvailable() ? model.runtimeLabel : "Photographed room · coming soon";
 
   return (
     <header
@@ -153,14 +157,15 @@ export function CockpitTopBar(): ReactElement {
         </span>
       </div>
 
-      <div
+      {/* The capture's state is an engineering fact: staff only (spec 4.3). */}
+      {staff && <div
         className="cockpit-topbar__cell cockpit-topbar__cell--runtime"
         data-testid="cockpit-runtime-chip"
         title={runtimeLabel}
       >
-        <span className="cockpit-topbar__kicker">Runtime asset</span>
+        <span className="cockpit-topbar__kicker">The room</span>
         <strong className="cockpit-topbar__value">{runtimeLabel}</strong>
-      </div>
+      </div>}
 
       <div className="cockpit-topbar__actions">
         <span className="cockpit-topbar__summary">{summaryLabel}</span>
@@ -168,7 +173,7 @@ export function CockpitTopBar(): ReactElement {
           <button
             type="button"
             className={layersOpen ? "cockpit-topbar__layers-btn is-open" : "cockpit-topbar__layers-btn"}
-            aria-label="Layers"
+            aria-label="Planning overlays"
             aria-haspopup="menu"
             aria-expanded={layersOpen}
             onClick={() => { useCockpitStore.getState().toggleLayers(); }}
@@ -176,8 +181,8 @@ export function CockpitTopBar(): ReactElement {
             <Layers3 size={18} aria-hidden="true" />
           </button>
           {layersOpen && (
-            <div className="cockpit-topbar__menu" role="menu" aria-label="Layers">
-              <p className="cockpit-topbar__menu-head">Scene overlays</p>
+            <div className="cockpit-topbar__menu" role="menu" aria-label="Planning overlays">
+              <p className="cockpit-topbar__menu-head">Planning overlays</p>
               {COCKPIT_OVERLAY_KEYS.map((key) => {
                 const visible = overlayVisibility[key];
                 return (

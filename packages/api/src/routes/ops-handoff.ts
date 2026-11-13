@@ -16,10 +16,10 @@ import {
   getOpsHandoffPackBundle,
 } from "../services/ops-compiler.js";
 
-const IdParam = z.object({ id: z.string().uuid() });
-const ConfigParam = z.object({ configId: z.string().uuid() });
+const IdParam = z.object({ id: z.uuid() });
+const ConfigParam = z.object({ configId: z.uuid() });
 const CompileBody = z.object({
-  eventId: z.string().uuid().nullable().optional(),
+  eventId: z.uuid().nullable().optional(),
   clientNotes: z.string().trim().max(4000).nullable().optional(),
 }).strict();
 

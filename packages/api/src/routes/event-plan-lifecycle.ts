@@ -27,8 +27,8 @@ import {
   serializeNotification,
 } from "../services/event-plan-lifecycle.js";
 
-const IdParam = z.object({ id: z.string().uuid() });
-const EventIdParam = z.object({ eventId: z.string().uuid() });
+const IdParam = z.object({ id: z.uuid() });
+const EventIdParam = z.object({ eventId: z.uuid() });
 const AcknowledgementListQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(500).default(200),
 }).strict();

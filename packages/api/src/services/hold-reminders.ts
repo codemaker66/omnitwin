@@ -267,7 +267,9 @@ export async function runHoldReminderPassOnHolds(
       outcome = ok ? "sent" : "failed";
     } catch (err) {
       logger?.error(
-        { event: "hold_reminder_failed", idempotencyKey, error: err instanceof Error ? err.message : String(err) },
+        // `err`, not `err.message`: the logger's error serializer drops the
+        // query parameters (the owner's email) a drizzle failure's message carries.
+        { event: "hold_reminder_failed", idempotencyKey, err },
         "hold reminder send threw",
       );
       outcome = "failed";

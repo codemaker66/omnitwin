@@ -58,6 +58,17 @@ describe("CATALOGUE_ITEMS", () => {
     }
   });
 
+  it("shows a guest's words, keeping a maker's model reference in the subtitle where staff can search it", () => {
+    // Integration check, 17 Oct 2026: the visitor's PDF listed "Burgess Turini
+    // 18/3". The planner, the PDF and the view-only link now say the same.
+    const turini = getCatalogueItemBySlug("burgess-turini-18-3");
+    expect(turini?.name).toBe("Velvet Banquet Chair");
+    expect(turini?.subtitle).toBe("Burgess Turini 18/3 · 42 × 58cm · seat height 44.5cm");
+    expect(CATALOGUE_ITEMS.some((item) => /\d+\/\d+/u.test(item.name))).toBe(false);
+    // Items named in plain words keep their name and subtitle as they were.
+    expect(getCatalogueItemBySlug("banquet-chair")).toMatchObject({ name: "Banquet Chair", subtitle: "Padded · stackable" });
+  });
+
   it("all items have valid categories", () => {
     const validCategories = new Set(FURNITURE_CATEGORIES);
     for (const item of CATALOGUE_ITEMS) {

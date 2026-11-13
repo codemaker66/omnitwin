@@ -15,6 +15,8 @@
 // vocabulary.
 // ---------------------------------------------------------------------------
 
+import { normalizeFurnitureScale } from "./furniture-scale.js";
+
 /** A point on the floor plane, metres. `x` is world-X, `z` is world-Z. */
 export interface Vec2 {
   readonly x: number;
@@ -31,8 +33,41 @@ export interface FurnitureFootprint {
   /** Size before rotation, metres (width = X, depth = Z). */
   readonly width: number;
   readonly depth: number;
-  /** Rotation about the vertical axis, radians. */
+  /**
+   * Rotation about the vertical axis, radians, turning X toward Z: the
+   * NEGATIVE of a placed piece's three.js `rotationY` (which turns X away
+   * from Z). Build footprints of placed pieces with footprintOfPlacement.
+   */
   readonly rotation: number;
+  /**
+   * The footprint's own convex outline, world-space metres, in place of its
+   * box: a table with its chairs, so a gap is measured chair back to chair
+   * back, where guests walk (circulation-scene).
+   */
+  readonly outline?: readonly Vec2[];
+}
+
+/**
+ * A placed piece's footprint, metres: its centre, scaled size and turn, in
+ * footprintCorners' convention. Three.js turns X toward −Z for a positive
+ * `rotationY`; footprints turn the other way, so the turn is negated here and
+ * only here.
+ */
+export function footprintOfPlacement(
+  placed: { readonly id: string; readonly x: number; readonly z: number; readonly rotationY: number; readonly scale?: number },
+  item: { readonly name: string; readonly width: number; readonly depth: number },
+  renderScale: number,
+): FurnitureFootprint {
+  const scale = normalizeFurnitureScale(placed.scale);
+  return {
+    id: placed.id,
+    label: item.name,
+    cx: placed.x / renderScale,
+    cz: placed.z / renderScale,
+    width: item.width * scale,
+    depth: item.depth * scale,
+    rotation: -placed.rotationY,
+  };
 }
 
 // Planning-grade walkway guidance (metres). Common event-planning rules of
@@ -45,6 +80,11 @@ export const CIRCULATION_AISLE = {
   /** Below this a gap is effectively impassable. */
   blockedM: 0.45,
 } as const;
+
+/** Tables whose footprints meet within this (gap or overlap) are set edge to
+ *  edge as one table, as trestles make a top table or a banquet run: the
+ *  seam is a join, not an aisle. */
+export const JOINED_TABLE_TOLERANCE_M = 0.005;
 
 export type CirculationBand = "open" | "generous" | "comfortable" | "tight" | "blocked";
 
@@ -62,7 +102,7 @@ export interface CirculationGap {
 }
 
 export interface CirculationReport {
-  /** Number of footprint pairs evaluated. */
+  /** Number of footprint pairs evaluated as aisles (joined tables are not). */
   readonly pairCount: number;
   /** Tightest gap between any two footprints, or null with fewer than 2. */
   readonly tightestGapM: number | null;
@@ -86,8 +126,9 @@ export interface CirculationReport {
 // Geometry primitives — exact for convex polygons.
 // ---------------------------------------------------------------------------
 
-/** The four corners of a footprint's oriented box, world-space, metres. */
+/** A footprint's convex outline, world-space, metres: its own, else the four corners of its oriented box. */
 export function footprintCorners(f: FurnitureFootprint): readonly Vec2[] {
+  if (f.outline !== undefined) return f.outline;
   const hw = f.width / 2;
   const hd = f.depth / 2;
   const cos = Math.cos(f.rotation);
@@ -133,6 +174,28 @@ export function polygonCentroid(poly: readonly Vec2[]): Vec2 {
   return { x: sx / n, z: sz / n };
 }
 
+/** The convex hull of points, metres, as a convex polygon (Andrew's monotone chain); collinear points dropped. */
+export function convexHull(points: readonly Vec2[]): readonly Vec2[] {
+  const sorted = [...points].sort((a, b) => a.x - b.x || a.z - b.z);
+  if (sorted.length <= 2) return sorted;
+  const cross = (o: Vec2, a: Vec2, b: Vec2): number => (a.x - o.x) * (b.z - o.z) - (a.z - o.z) * (b.x - o.x);
+  const chain = (ordered: readonly Vec2[]): Vec2[] => {
+    const out: Vec2[] = [];
+    for (const p of ordered) {
+      while (out.length >= 2) {
+        const last = out[out.length - 1];
+        const before = out[out.length - 2];
+        if (last === undefined || before === undefined || cross(before, last, p) > 0) break;
+        out.pop();
+      }
+      out.push(p);
+    }
+    out.pop();
+    return out;
+  };
+  return [...chain(sorted), ...chain([...sorted].reverse())];
+}
+
 /**
  * Separating Axis Theorem overlap test for two convex polygons. Returns true
  * when they intersect (including touching). Axes are the edge normals of both
@@ -164,6 +227,30 @@ function projectPolygon(poly: readonly Vec2[], axisX: number, axisZ: number): [n
     if (proj > max) max = proj;
   }
   return [min, max];
+}
+
+/**
+ * How far two convex polygons overlap along their shallowest separating-axis
+ * candidate, in metres: positive when they overlap, 0 when they share an
+ * edge, negative (the clear gap along that axis) when they are apart.
+ */
+export function convexPolygonPenetration(a: readonly Vec2[], b: readonly Vec2[]): number {
+  let shallowest = Infinity;
+  for (const poly of [a, b]) {
+    for (let i = 0; i < poly.length; i += 1) {
+      const p1 = poly[i];
+      const p2 = poly[(i + 1) % poly.length];
+      if (p1 === undefined || p2 === undefined) continue;
+      const length = Math.hypot(p2.x - p1.x, p2.z - p1.z);
+      if (length === 0) continue;
+      const axisX = -(p2.z - p1.z) / length;
+      const axisZ = (p2.x - p1.x) / length;
+      const [minA, maxA] = projectPolygon(a, axisX, axisZ);
+      const [minB, maxB] = projectPolygon(b, axisX, axisZ);
+      shallowest = Math.min(shallowest, Math.min(maxA, maxB) - Math.max(minA, minB));
+    }
+  }
+  return shallowest;
 }
 
 /** Exact minimum distance plus the witness points realizing it. */
@@ -243,7 +330,8 @@ export function bandForGap(gapM: number | null): CirculationBand {
 
 /**
  * Compute the circulation report for a set of footprints. Evaluates the exact
- * minimum gap between every pair and summarises the tightest aisle.
+ * minimum gap between every pair and summarises the tightest aisle. Pairs set
+ * edge to edge (within JOINED_TABLE_TOLERANCE_M) are joined, not evaluated.
  */
 export function computeCirculation(footprints: readonly FurnitureFootprint[]): CirculationReport {
   if (footprints.length < 2) {
@@ -273,9 +361,11 @@ export function computeCirculation(footprints: readonly FurnitureFootprint[]): C
       const ca = corners[i];
       const cb = corners[j];
       if (a === undefined || b === undefined || ca === undefined || cb === undefined) continue;
-      pairCount += 1;
       const closest = convexPolygonClosestPoints(ca, cb);
       const gapM = closest.distance;
+      // Tables set edge to edge are one table; their seam is not an aisle.
+      if (gapM <= JOINED_TABLE_TOLERANCE_M && convexPolygonPenetration(ca, cb) <= JOINED_TABLE_TOLERANCE_M) continue;
+      pairCount += 1;
 
       if (gapM < CIRCULATION_AISLE.blockedM) blockedCount += 1;
       else if (gapM < CIRCULATION_AISLE.tightM) tightCount += 1;
@@ -329,6 +419,6 @@ export function circulationBandLabel(band: CirculationBand): string {
     case "tight":
       return "Tight walkways — review circulation";
     case "blocked":
-      return "Furniture too close to pass between — venue review required";
+      return "Furniture too close to walk between — venue review required";
   }
 }

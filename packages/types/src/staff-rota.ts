@@ -14,7 +14,7 @@ import { z } from "zod";
 // docs/design/platform-2026-09-26/research/rota.md.
 // ---------------------------------------------------------------------------
 
-const IsoInstantSchema = z.string().datetime({ offset: true });
+const IsoInstantSchema = z.iso.datetime({ offset: true });
 const CalendarDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/u, "Use a date such as 2026-10-05")
   .refine((value) => {
     const [year, month, day] = value.split("-").map(Number);
@@ -106,7 +106,7 @@ export const STAFF_UNAVAILABILITY_MAX_DAYS = 366;
 export const RotaKeptWarningSchema = z.object({
   code: RotaWarningCodeSchema,
   reason: z.string().min(1).max(300),
-  byUserId: z.string().uuid().nullable(),
+  byUserId: z.uuid().nullable(),
   byName: z.string().nullable(),
   at: IsoInstantSchema,
 });
@@ -126,9 +126,9 @@ export type RotaIssue = z.infer<typeof RotaIssueSchema>;
 
 /** Everything a rota manager keeps about a person. */
 export const StaffRecordSchema = z.object({
-  id: z.string().uuid(),
-  venueId: z.string().uuid(),
-  userId: z.string().uuid().nullable(),
+  id: z.uuid(),
+  venueId: z.uuid(),
+  userId: z.uuid().nullable(),
   /** The linked account, when it still belongs to this venue. */
   account: z.object({ name: z.string(), email: z.string() }).nullable(),
   displayName: z.string().min(1).max(120),
@@ -149,7 +149,7 @@ export type StaffRecord = z.infer<typeof StaffRecordSchema>;
 
 /** What everyone who reads the rota sees of a person. */
 export const RotaPersonSchema = z.object({
-  id: z.string().uuid(),
+  id: z.uuid(),
   displayName: z.string().min(1).max(120),
   employmentType: StaffEmploymentTypeSchema,
   skills: z.array(RotaSkillSchema),
@@ -160,17 +160,17 @@ export const RotaPersonSchema = z.object({
 export type RotaPerson = z.infer<typeof RotaPersonSchema>;
 
 export const RotaShiftSchema = z.object({
-  id: z.string().uuid(),
-  venueId: z.string().uuid(),
+  id: z.uuid(),
+  venueId: z.uuid(),
   /** Null for a need nobody fills yet. */
-  staffMemberId: z.string().uuid().nullable(),
+  staffMemberId: z.uuid().nullable(),
   role: RotaSkillSchema,
   startsAt: IsoInstantSchema,
   endsAt: IsoInstantSchema,
   breakMinutes: z.number().int().min(0).max(ROTA_BREAK_MAX_MINUTES),
-  eventId: z.string().uuid().nullable(),
+  eventId: z.uuid().nullable(),
   eventName: z.string().nullable(),
-  spaceId: z.string().uuid().nullable(),
+  spaceId: z.uuid().nullable(),
   spaceName: z.string().nullable(),
   note: z.string().nullable(),
   status: RotaShiftStatusSchema,
@@ -186,8 +186,8 @@ export const RotaShiftSchema = z.object({
 export type RotaShift = z.infer<typeof RotaShiftSchema>;
 
 export const StaffUnavailabilitySchema = z.object({
-  id: z.string().uuid(),
-  staffMemberId: z.string().uuid(),
+  id: z.uuid(),
+  staffMemberId: z.uuid(),
   startsAt: IsoInstantSchema,
   endsAt: IsoInstantSchema,
   reason: StaffUnavailabilityReasonSchema,
@@ -205,7 +205,7 @@ export const RotaAccessSchema = z.enum(ROTA_ACCESS_LEVELS);
 export type RotaAccess = z.infer<typeof RotaAccessSchema>;
 
 export const RotaWeekSchema = z.object({
-  venueId: z.string().uuid(),
+  venueId: z.uuid(),
   /** The venue's zone; every day, time and check on the rota is in it. */
   timeZone: z.string().min(1),
   /** The Monday that starts the week, in the venue's zone. */
@@ -218,9 +218,9 @@ export const RotaWeekSchema = z.object({
   records: z.array(StaffRecordSchema),
   shifts: z.array(RotaShiftSchema),
   unavailability: z.array(StaffUnavailabilitySchema),
-  rooms: z.array(z.object({ id: z.string().uuid(), name: z.string() })),
+  rooms: z.array(z.object({ id: z.uuid(), name: z.string() })),
   /** Accounts of the venue's team that a record may be linked to. */
-  accounts: z.array(z.object({ id: z.string().uuid(), name: z.string(), email: z.string() })),
+  accounts: z.array(z.object({ id: z.uuid(), name: z.string(), email: z.string() })),
 });
 export type RotaWeek = z.infer<typeof RotaWeekSchema>;
 
@@ -246,25 +246,25 @@ function refineShiftTimes(
   if (value.startsAt === undefined || value.endsAt === undefined) return;
   const minutes = (Date.parse(value.endsAt) - Date.parse(value.startsAt)) / 60_000;
   if (!(minutes > 0)) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["endsAt"], message: "A shift ends after it starts." });
+    ctx.addIssue({ code: "custom", path: ["endsAt"], message: "A shift ends after it starts." });
     return;
   }
   if (minutes > ROTA_SHIFT_MAX_MINUTES) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["endsAt"], message: "A shift is at most 24 hours long." });
+    ctx.addIssue({ code: "custom", path: ["endsAt"], message: "A shift is at most 24 hours long." });
   }
   if (value.breakMinutes !== undefined && value.breakMinutes >= minutes) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["breakMinutes"], message: "The break is shorter than the shift." });
+    ctx.addIssue({ code: "custom", path: ["breakMinutes"], message: "The break is shorter than the shift." });
   }
 }
 
 const ShiftFieldsSchema = z.object({
-  staffMemberId: z.string().uuid().nullable(),
+  staffMemberId: z.uuid().nullable(),
   role: RotaSkillSchema,
   startsAt: IsoInstantSchema,
   endsAt: IsoInstantSchema,
   breakMinutes: z.number().int().min(0).max(ROTA_BREAK_MAX_MINUTES),
-  eventId: z.string().uuid().nullable(),
-  spaceId: z.string().uuid().nullable(),
+  eventId: z.uuid().nullable(),
+  spaceId: z.uuid().nullable(),
   note: NoteSchema,
 });
 
@@ -291,7 +291,7 @@ export type KeepRotaWarning = z.infer<typeof KeepRotaWarningSchema>;
 /** Publish exactly the drafts the person was shown, as they were shown. */
 export const PublishRotaWeekSchema = z.object({
   weekStart: CalendarDateSchema,
-  shifts: z.array(z.object({ id: z.string().uuid(), revision: z.number().int().min(1) }).strict()).min(1).max(1000),
+  shifts: z.array(z.object({ id: z.uuid(), revision: z.number().int().min(1) }).strict()).min(1).max(1000),
 }).strict();
 export type PublishRotaWeek = z.infer<typeof PublishRotaWeekSchema>;
 
@@ -300,7 +300,7 @@ const OptionalText = (max: number) => z.string().trim().max(max).nullable()
 
 const StaffFieldsSchema = z.object({
   displayName: z.string().trim().min(1, "Give their name").max(120),
-  email: z.string().trim().max(255).email("Check the email address").nullable()
+  email: z.string().trim().max(255).check(z.email("Check the email address")).nullable()
     .or(z.literal("").transform(() => null)),
   phone: OptionalText(40),
   employmentType: StaffEmploymentTypeSchema,
@@ -311,7 +311,7 @@ const StaffFieldsSchema = z.object({
   rightToWorkCheckedOn: CalendarDateSchema.nullable(),
   rightToWorkExpiresOn: CalendarDateSchema.nullable(),
   workingTimeOptOut: z.boolean(),
-  userId: z.string().uuid().nullable(),
+  userId: z.uuid().nullable(),
 });
 
 function refineRightToWork(
@@ -322,9 +322,9 @@ function refineRightToWork(
   const expires = value.rightToWorkExpiresOn;
   if (expires === undefined || expires === null) return;
   if (checked === null) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["rightToWorkExpiresOn"], message: "Record the check before its expiry." });
+    ctx.addIssue({ code: "custom", path: ["rightToWorkExpiresOn"], message: "Record the check before its expiry." });
   } else if (checked !== undefined && expires < checked) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["rightToWorkExpiresOn"], message: "The expiry comes after the check." });
+    ctx.addIssue({ code: "custom", path: ["rightToWorkExpiresOn"], message: "The expiry comes after the check." });
   }
 }
 
@@ -342,16 +342,16 @@ export type UpdateStaffMember = z.input<typeof UpdateStaffMemberSchema>;
 export type UpdateStaffMemberBody = z.output<typeof UpdateStaffMemberSchema>;
 
 export const CreateStaffUnavailabilitySchema = z.object({
-  staffMemberId: z.string().uuid(),
+  staffMemberId: z.uuid(),
   startsAt: IsoInstantSchema,
   endsAt: IsoInstantSchema,
   reason: StaffUnavailabilityReasonSchema,
   note: z.string().trim().min(1).max(300).nullable(),
 }).strict().superRefine((value, ctx) => {
   const days = (Date.parse(value.endsAt) - Date.parse(value.startsAt)) / 86_400_000;
-  if (!(days > 0)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["endsAt"], message: "The end comes after the start." });
+  if (!(days > 0)) ctx.addIssue({ code: "custom", path: ["endsAt"], message: "The end comes after the start." });
   else if (days > STAFF_UNAVAILABILITY_MAX_DAYS) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["endsAt"], message: "Enter at most a year at a time." });
+    ctx.addIssue({ code: "custom", path: ["endsAt"], message: "Enter at most a year at a time." });
   }
 });
 export type CreateStaffUnavailability = z.infer<typeof CreateStaffUnavailabilitySchema>;

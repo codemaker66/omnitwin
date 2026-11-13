@@ -16,7 +16,7 @@ import { VenueIdSchema } from "./venue.js";
 // certification claims.
 // ---------------------------------------------------------------------------
 
-const UUID = z.string().uuid();
+const UUID = z.uuid();
 
 export const EventPlanChangeIdSchema = UUID;
 export type EventPlanChangeId = z.infer<typeof EventPlanChangeIdSchema>;
@@ -98,8 +98,8 @@ export const EventPlanSchema = z.object({
   proposalId: ProposalIdSchema.nullable(),
   quoteId: QuoteIdSchema.nullable(),
   handoffPackId: HandoffPackIdSchema.nullable(),
-  currentSnapshotId: z.string().uuid().nullable(),
-  runtimePackageId: z.string().uuid().nullable(),
+  currentSnapshotId: z.uuid().nullable(),
+  runtimePackageId: z.uuid().nullable(),
   status: z.string().trim().min(1).max(60),
 }).strict();
 export type EventPlan = z.infer<typeof EventPlanSchema>;
@@ -115,12 +115,12 @@ export const PlanRevisionSchema = z.object({
   revision: z.number().int().positive(),
   summary: z.string().trim().min(1).max(500),
   createdBy: UserIdSchema.nullable(),
-  createdAt: z.string().datetime(),
+  createdAt: z.iso.datetime(),
 }).strict();
 export type PlanRevision = z.infer<typeof PlanRevisionSchema>;
 
 export const RuntimeAssetStateSchema = z.object({
-  runtimePackageId: z.string().uuid().nullable(),
+  runtimePackageId: z.uuid().nullable(),
   venueSlug: z.string().trim().min(1).max(100),
   roomSlug: z.string().trim().min(1).max(100),
   displayName: z.string().trim().min(1).max(200),
@@ -151,7 +151,7 @@ export const ChangeFeedItemSchema = z.object({
   audienceRoles: z.array(EventPlanAudienceRoleSchema).min(1),
   riskLevel: EventPlanRiskLevelSchema,
   requiresHallkeeperAcknowledgement: z.boolean(),
-  createdAt: z.string().datetime(),
+  createdAt: z.iso.datetime(),
 }).strict();
 export type ChangeFeedItem = z.infer<typeof ChangeFeedItemSchema>;
 
@@ -166,8 +166,8 @@ export const NotificationSchema = z.object({
   body: z.string().trim().min(1).max(1000),
   severity: EventPlanNotificationSeveritySchema,
   actionPath: z.string().trim().min(1).max(500).nullable(),
-  createdAt: z.string().datetime(),
-  readAt: z.string().datetime().nullable(),
+  createdAt: z.iso.datetime(),
+  readAt: z.iso.datetime().nullable(),
 }).strict();
 export type Notification = z.infer<typeof NotificationSchema>;
 
@@ -197,7 +197,7 @@ export const HallkeeperAcknowledgementSchema = z.object({
   acknowledgedBy: UserIdSchema,
   acknowledgedByRole: EventPlanAudienceRoleSchema,
   note: z.string().trim().min(1).max(1000).nullable(),
-  createdAt: z.string().datetime(),
+  createdAt: z.iso.datetime(),
 }).strict();
 export type HallkeeperAcknowledgement = z.infer<typeof HallkeeperAcknowledgementSchema>;
 

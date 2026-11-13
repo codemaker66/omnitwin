@@ -1,0 +1,126 @@
+# =============================================================================
+# VENVIEWER — Competitor page check (the competitor watch, 17 October 2026)
+# =============================================================================
+# Calls the deployed API's POST /admin/competitor-watch/page-checks, which
+# reads each competitor price page a venue's own people have recorded as
+# allowed (they read the site's terms and its robots.txt), at most once a
+# week per page. It obeys robots.txt, names itself with its own user agent,
+# keeps only a hash of the page's text and the date, never parses a price,
+# never reads a listing site or marketplace, and stops for four weeks on a
+# 401, 403 or 429. A changed page is flagged "Page changed: re-capture" on
+# that venue's Pricing desk for a person to act on.
+#
+# This workflow holds no database credential. It talks to the running API
+# over HTTPS with a service token of its own, so the API's checks and logs
+# apply and the hold-reminder token cannot run it.
+#
+# -----------------------------------------------------------------------------
+# THE SCHEDULE IS OFF until Blake approves it. Each venue's office can already
+# run the same check for its own set from the Pricing desk ("Check the pages
+# now"). GitHub runs a schedule only from the default branch.
+#
+# Operator steps, in order:
+#   1. Generate a token of at least 32 random characters (for example
+#      `openssl rand -base64 48`) and set it, byte for byte, in two places:
+#      the Railway API service's environment variable
+#      COMPETITOR_WATCH_CRON_TOKEN, and this repository's Actions secret of
+#      the same name. Optionally set the repository variable
+#      VENVIEWER_API_URL (the API origin, no trailing slash; default
+#      https://api.venviewer.com).
+#   2. Run this workflow by hand (Actions → Competitor page check → Run
+#      workflow) and read the summary.
+#   3. Only after Blake approves, uncomment the schedule below.
+#
+# Privacy: this repository is public, so anyone can read a run's log and
+# summary. They carry counts only: no venue, competitor, address or person.
+# The pages and their results are on each venue's Pricing desk, behind
+# sign-in.
+# =============================================================================
+
+name: Competitor page check
+
+on:
+  # Enabled only after Blake approves — see the steps above. Mondays 06:00
+  # UTC: the office sees any change at the start of the week. A page is never
+  # read more than once a week, whatever the schedule.
+  # schedule:
+  #   - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: competitor-page-check
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Page-check pass
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Run the page-check pass
+        env:
+          API_URL: ${{ vars.VENVIEWER_API_URL || 'https://api.venviewer.com' }}
+          CRON_TOKEN: ${{ secrets.COMPETITOR_WATCH_CRON_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${CRON_TOKEN}" ]; then
+            echo "::error title=COMPETITOR_WATCH_CRON_TOKEN is not set::The repository secret is missing, so the pass cannot authenticate. Nothing was read. Set the same value on the Railway API service and as this repository's Actions secret."
+            exit 1
+          fi
+          if [ "${#CRON_TOKEN}" -lt 32 ]; then
+            echo "::error title=COMPETITOR_WATCH_CRON_TOKEN is too short::The secret has fewer than 32 characters; the API refuses such a token. Nothing was read."
+            exit 1
+          fi
+
+          echo "Calling ${API_URL}/admin/competitor-watch/page-checks"
+
+          # The token travels in a header read from the environment and is
+          # never echoed. The body and the status are captured separately so
+          # a failure can name the API's reason without printing its payload.
+          if ! http_status=$(
+            curl -sS -o response.json -w '%{http_code}' \
+              --max-time 300 \
+              --retry 1 --retry-delay 10 --retry-connrefused \
+              -X POST "${API_URL}/admin/competitor-watch/page-checks" \
+              -H "Authorization: Bearer ${CRON_TOKEN}" \
+              -H "Content-Type: application/json" \
+              -d '{}'
+          ); then
+            echo "::error title=API unreachable::Could not reach ${API_URL}. Nothing was read."
+            exit 1
+          fi
+
+          if [ "${http_status}" != "200" ]; then
+            reason=$(jq -r '[.code, .error] | map(select(type == "string")) | join(": ")' response.json 2>/dev/null || true)
+            case "${http_status}" in
+              401) hint="The API did not accept the token. COMPETITOR_WATCH_CRON_TOKEN must be set on the Railway API service and match this repository's secret exactly." ;;
+              403) hint="The API read the request as a signed-in user without platform-admin rights." ;;
+              *) hint="The API refused or failed the pass." ;;
+            esac
+            echo "::error title=Page-check pass failed (HTTP ${http_status})::${hint} ${reason:-No reason given.}"
+            exit 1
+          fi
+
+          if ! jq -e '.data | (.pages | type == "number") and (.outcomes | type == "object")' response.json > /dev/null; then
+            echo "::error::The API answered 200 without a pass summary. Treating the run as failed."
+            exit 1
+          fi
+
+          # Counts only: the summary is public.
+          jq -r '
+            .data as $d
+            | "### Competitor page check",
+              "",
+              "| | |",
+              "|---|---|",
+              "| Pages due and allowed | \($d.pages) |",
+              ( $d.outcomes | to_entries | sort_by(.key)[] | "| \(.key | gsub("_"; " ")) | \(.value) |" ),
+              "",
+              "This repository is public, so this summary names no venue, competitor or page. Results are on each venue Pricing desk."
+          ' response.json > summary.md
+
+          cat summary.md
+          cat summary.md >> "${GITHUB_STEP_SUMMARY}"

@@ -1,8 +1,11 @@
 import type { FastifyInstance } from "fastify";
 import { randomUUID } from "node:crypto";
 import {
+  CONFIGURATION_REVIEW_STATUSES,
   ConfigurationReviewStatusSchema,
   PlatformRoleSchema,
+  canJoinLayoutLive,
+  isLiveClientFrameType,
   isPlannerEditable,
   type PlatformRole,
 } from "@omnitwin/types";
@@ -12,19 +15,33 @@ import {
   configurationLayoutRevisions,
   configurations,
   placedObjects,
+  users,
 } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { clerkTokenVerificationOptions, getUserByClerkId } from "../middleware/auth.js";
 import { resolveVerifiedClerkEmailWithFallback } from "../middleware/clerk-email.js";
+import { canOverrideReviewLock } from "../middleware/require-editable-config.js";
+import { emit, subscribe } from "../observability/event-bus.js";
+import { LayoutLiveHub, type LayoutLiveConnection } from "./layout-live.js";
+import {
+  currentAuthority,
+  readCurrentSocketUser,
+  readCurrentSocketUsers,
+  startSignInDeadline,
+  type SocketSignInOptions,
+} from "./socket-identity.js";
 
 const FLUSH_DEBOUNCE_MS = 500;
-const EDITABLE_REVIEW_STATUSES = ["draft", "changes_requested", "rejected"] as const;
+/** Live co-editing heartbeat: the Diary's cadence (Canon §15). */
+const LIVE_HEARTBEAT_INTERVAL_MS = 20_000;
+/** The review lock as the write's own condition: the shared editable set, never a copy of it. */
+const EDITABLE_REVIEW_STATUSES = CONFIGURATION_REVIEW_STATUSES.filter(isPlannerEditable);
 
 export const ObjectDataSchema = z.object({
-  id: z.string().uuid().optional(),
-  assetId: z.string().uuid(),
-  position: z.object({ x: z.number().finite(), y: z.number().finite(), z: z.number().finite() }),
-  rotation: z.object({ x: z.number().finite(), y: z.number().finite(), z: z.number().finite() }),
+  id: z.uuid().optional(),
+  assetId: z.uuid(),
+  position: z.object({ x: z.number(), y: z.number(), z: z.number() }),
+  rotation: z.object({ x: z.number(), y: z.number(), z: z.number() }),
   scale: z.number().positive(),
   sortOrder: z.number().int().nonnegative().optional(),
   clothed: z.boolean().optional(),
@@ -42,7 +59,7 @@ export const UpdateObjectsMessage = z.object({
 export const DeleteObjectMessage = z.object({
   type: z.literal("delete_object"),
   expectedRevision: z.number().int().min(1),
-  objectId: z.string().uuid(),
+  objectId: z.uuid(),
 });
 
 export const AuthMessage = z.object({
@@ -69,6 +86,10 @@ export interface WsUser {
   readonly userRole: string;
   readonly platformRole: PlatformRole;
   readonly userVenueId: string | null;
+  /** The Clerk account the socket signed in with (absent or null for a
+   *  test-mode token). A write re-reads the user row and refuses one no
+   *  longer linked to it (socket-identity.ts). */
+  readonly clerkId?: string | null;
 }
 
 interface AutoSaveConfiguration {
@@ -98,8 +119,9 @@ function canManageConfiguration(user: WsUser, config: AutoSaveConfiguration): bo
   return hasVenueRole && user.userVenueId !== null && config.venueId === user.userVenueId;
 }
 
-function canBypassReviewLock(user: WsUser): boolean {
-  return user.platformRole === "admin" || user.userRole === "admin";
+/** The layout's own venue admin, or a platform admin, as on the REST lock. */
+function canBypassReviewLock(user: WsUser, venueId: string): boolean {
+  return canOverrideReviewLock({ role: user.userRole, venueId: user.userVenueId, platformRole: user.platformRole }, venueId);
 }
 
 export function assessAutoSaveConfiguration(
@@ -110,7 +132,7 @@ export function assessAutoSaveConfiguration(
   if (!canManageConfiguration(user, config)) return { status: "forbidden" };
 
   const reviewStatus = ConfigurationReviewStatusSchema.safeParse(config.reviewStatus);
-  if (!canBypassReviewLock(user) && (!reviewStatus.success || !isPlannerEditable(reviewStatus.data))) {
+  if (!canBypassReviewLock(user, config.venueId) && (!reviewStatus.success || !isPlannerEditable(reviewStatus.data))) {
     return { status: "locked", reviewStatus: config.reviewStatus };
   }
 
@@ -198,6 +220,7 @@ const MockWsTokenSchema = z.object({
   role: z.string().min(1),
   platformRole: PlatformRoleSchema.default("none"),
   venueId: z.string().nullable().optional().default(null),
+  clerkId: z.string().min(1).nullable().optional().default(null),
 });
 
 export async function resolveWsUser(
@@ -214,6 +237,7 @@ export async function resolveWsUser(
         userRole: parsed.data.role,
         platformRole: parsed.data.platformRole,
         userVenueId: parsed.data.venueId,
+        clerkId: parsed.data.clerkId,
       };
     } catch {
       return null;
@@ -239,6 +263,7 @@ export async function resolveWsUser(
       userRole: dbUser.role,
       platformRole: dbUser.platformRole,
       userVenueId: dbUser.venueId,
+      clerkId: payload.sub,
     };
   } catch {
     return null;
@@ -254,7 +279,7 @@ function configAccessCondition(user: WsUser): SQL {
 }
 
 function metadataForObject(object: ObjectData, existing: unknown = null): Record<string, unknown> | null {
-  const parsedExisting = z.record(z.unknown()).safeParse(existing);
+  const parsedExisting = z.record(z.string(), z.unknown()).safeParse(existing);
   const metadata: Record<string, unknown> = parsedExisting.success ? { ...parsedExisting.data } : {};
   if (object.clothed !== undefined) metadata["clothed"] = object.clothed;
   if (object.clothStyle !== undefined) metadata["clothStyle"] = object.clothStyle;
@@ -278,25 +303,41 @@ async function loadAutoSaveConfiguration(
   return config ?? null;
 }
 
+/**
+ * The socket's user as the database holds them now, held FOR SHARE to the end
+ * of the caller's transaction, or null when they may no longer write
+ * (release audit configs-4): an offboarded, moved or demoted person's open
+ * socket, or a venue admin's after demotion, writes with the role they hold
+ * now, never the one they connected with.
+ */
+async function currentWsUser(tx: Pick<Database, "select">, user: WsUser): Promise<WsUser | null> {
+  const clerkId = user.clerkId ?? null;
+  const current = await readCurrentSocketUser(tx, { userId: user.userId, clerkId }, { lock: true });
+  if (current === null) return null;
+  return { userId: user.userId, userRole: current.role, platformRole: current.platformRole, userVenueId: current.venueId, clerkId };
+}
+
 export async function persistAutoSaveSnapshot(
   db: Database,
   configId: string,
-  user: WsUser,
+  connected: WsUser,
   snapshot: AutoSaveSnapshot,
 ): Promise<AutoSavePersistResult> {
-  const initial = await loadAutoSaveConfiguration(db, configId);
-  if (initial === null) return { status: "not_found" };
-  const assessment = assessAutoSaveConfiguration(user, initial, snapshot.expectedRevision);
-  if (assessment.status !== "ok") return assessment;
-
   return db.transaction(async (tx) => {
+    const user = await currentWsUser(tx, connected);
+    if (user === null) return { status: "forbidden" };
+    const initial = await loadAutoSaveConfiguration(tx, configId);
+    if (initial === null) return { status: "not_found" };
+    const assessment = assessAutoSaveConfiguration(user, initial, snapshot.expectedRevision);
+    if (assessment.status !== "ok") return assessment;
+
     const conditions: SQL[] = [
       eq(configurations.id, configId),
       eq(configurations.revision, snapshot.expectedRevision),
       isNull(configurations.deletedAt),
       configAccessCondition(user),
     ];
-    if (!canBypassReviewLock(user)) {
+    if (!canBypassReviewLock(user, initial.venueId)) {
       conditions.push(inArray(configurations.reviewStatus, EDITABLE_REVIEW_STATUSES));
     }
 
@@ -405,9 +446,96 @@ export function shouldScheduleBufferedFlush(
   return result?.status === "saved" && pendingCount > 0;
 }
 
-export async function registerAutoSave(server: FastifyInstance, db: Database): Promise<void> {
+/**
+ * The live room this authenticated user may join for this layout, or null.
+ * Owner and venue floor only (canJoinLayoutLive); customers get nothing new.
+ * Reads the configuration and the user's display name — the hub itself never
+ * touches the database.
+ */
+export async function resolveLayoutLiveUser(
+  db: Database,
+  configId: string,
+  user: WsUser,
+): Promise<{ readonly userId: string; readonly name: string; readonly role: string } | null> {
+  const [config] = await db.select({ userId: configurations.userId, venueId: configurations.venueId })
+    .from(configurations)
+    .where(and(eq(configurations.id, configId), isNull(configurations.deletedAt)))
+    .limit(1);
+  if (config === undefined) return null;
+  const admitted = canJoinLayoutLive(
+    { userId: user.userId, role: user.userRole, venueId: user.userVenueId, platformRole: user.platformRole },
+    { ownerUserId: config.userId, venueId: config.venueId },
+  );
+  if (!admitted) return null;
+  const [profile] = await db.select({ name: users.name }).from(users).where(eq(users.id, user.userId)).limit(1);
+  const name = profile?.name.trim() ?? "";
+  return { userId: user.userId, name: name.length > 0 ? name.slice(0, 120) : "Colleague", role: user.userRole };
+}
+
+/**
+ * The periodic access re-check: every connection in every live room is
+ * checked against the user's CURRENT role and venue and the layout's current
+ * owner, venue and deletion state, and revoked if no longer admitted. Two
+ * queries per room. A database error rejects (the caller logs and retries
+ * next beat) rather than revoking everyone on a blip.
+ */
+export async function revalidateLayoutLiveRooms(db: Database, hub: LayoutLiveHub): Promise<number> {
+  let revoked = 0;
+  for (const [configId, connections] of hub.rooms()) {
+    const [config] = await db.select({ userId: configurations.userId, venueId: configurations.venueId })
+      .from(configurations)
+      .where(and(eq(configurations.id, configId), isNull(configurations.deletedAt)))
+      .limit(1);
+    const rows = await readCurrentSocketUsers(db, connections.map((connection) => connection.user.userId));
+    for (const connection of connections) {
+      // An unlinked Clerk account (offboarded) is revoked like a missing row.
+      const user = currentAuthority(rows.get(connection.user.userId), { userId: connection.user.userId, clerkId: connection.clerkId });
+      const admitted = config !== undefined && user !== null && canJoinLayoutLive(
+        { userId: connection.user.userId, role: user.role, venueId: user.venueId, platformRole: user.platformRole },
+        { ownerUserId: config.userId, venueId: config.venueId },
+      );
+      if (!admitted) {
+        hub.revoke(connection);
+        revoked += 1;
+      }
+    }
+  }
+  return revoked;
+}
+
+export async function registerAutoSave(
+  server: FastifyInstance,
+  db: Database,
+  options: SocketSignInOptions = {},
+): Promise<void> {
+  // Live co-editing v1: presence and live ops ride this socket after auth.
+  const hub = new LayoutLiveHub();
+  const unsubscribeLayoutChanged = subscribe("layout.changed", {
+    name: "layout-live-hub",
+    handle: (payload) => {
+      hub.announceCommit(payload.configId, payload.revision, payload.actorUserId);
+    },
+  });
+  let revalidating = false;
+  const heartbeat = setInterval(() => {
+    hub.pingAll();
+    hub.sweepStale();
+    // Re-check every member against the database: a role change, a move to
+    // another venue or a deleted layout ends live access within one beat.
+    if (revalidating) return;
+    revalidating = true;
+    void revalidateLayoutLiveRooms(db, hub)
+      .catch((err: unknown) => { server.log.warn({ err }, "layout-live access re-check failed; retried next beat"); })
+      .finally(() => { revalidating = false; });
+  }, LIVE_HEARTBEAT_INTERVAL_MS);
+  heartbeat.unref();
+  server.addHook("onClose", () => {
+    clearInterval(heartbeat);
+    unsubscribeLayoutChanged();
+  });
+
   server.get("/ws/configurations/:configId", { websocket: true }, async (socket, request) => {
-    const parsedParams = z.object({ configId: z.string().uuid() }).safeParse(request.params);
+    const parsedParams = z.object({ configId: z.uuid() }).safeParse(request.params);
     if (!parsedParams.success) {
       socket.send(JSON.stringify({ type: "error", code: "VALIDATION_ERROR", message: "Invalid configId" }));
       socket.close();
@@ -420,10 +548,23 @@ export async function registerAutoSave(server: FastifyInstance, db: Database): P
     let flushInFlight: Promise<void> | null = null;
     let authenticatedUser: WsUser | null = null;
     let authenticationInFlight = false;
+    let liveConnection: LayoutLiveConnection | null = null;
+    let closed = false;
 
     function send(payload: Record<string, unknown>): void {
       if (socket.readyState === 1) socket.send(JSON.stringify(payload));
     }
+
+    // A socket that has not begun to sign in by the deadline is closed: the
+    // hub's ping and stale sweep reach only sockets that have joined a room.
+    const cancelSignInDeadline = startSignInDeadline(
+      options,
+      () => authenticatedUser !== null || authenticationInFlight || closed,
+      () => {
+        send({ type: "error", code: "UNAUTHORIZED", message: "Authentication required" });
+        socket.close();
+      },
+    );
 
     async function performFlush(notify: boolean): Promise<void> {
       if (flushTimer !== null) clearTimeout(flushTimer);
@@ -436,6 +577,24 @@ export async function registerAutoSave(server: FastifyInstance, db: Database): P
 
       try {
         const result = await buffer.flush((snapshot) => persistAutoSaveSnapshot(db, configId, user, snapshot));
+        if (result?.status === "forbidden") {
+          // The person may no longer write this layout as the database holds
+          // them now (configs-4): the socket ends here, its buffer with it.
+          // A reconnect authenticates afresh.
+          authenticatedUser = null;
+          send({ ...autoSaveErrorPayload(result), pendingObjectCount: buffer.pendingCount });
+          socket.close();
+          return;
+        }
+        if (result?.status === "saved") {
+          emit(request.log, "layout.changed", {
+            configId,
+            revision: result.revision,
+            actorUserId: user.userId,
+            source: "websocket_autosave",
+            at: new Date().toISOString(),
+          });
+        }
         if (shouldScheduleBufferedFlush(result, buffer.pendingCount)) scheduleFlush();
         if (!notify || result === null) return;
         if (result.status === "saved") {
@@ -507,12 +666,37 @@ export async function registerAutoSave(server: FastifyInstance, db: Database): P
           }
           authenticatedUser = resolved;
           send({ type: "authenticated" });
+          // Live co-editing: join the layout's room when this user may. A
+          // refusal is silent — the auto-save protocol is unchanged for them.
+          void resolveLayoutLiveUser(db, configId, resolved).then((liveUser) => {
+            if (liveUser === null || closed || socket.readyState !== 1) return;
+            liveConnection = hub.join(configId, socket, liveUser, resolved.clerkId ?? null);
+          }).catch((err: unknown) => {
+            request.log.warn({ err, configId }, "layout-live join failed");
+          });
         }).catch((err: unknown) => {
           authenticationInFlight = false;
           request.log.warn({ err }, "WebSocket authentication failed");
           send({ type: "error", code: "UNAUTHORIZED", message: "Invalid token" });
           socket.close();
         });
+        return;
+      }
+
+      if (liveConnection !== null) hub.touch(liveConnection);
+      const frameType = typeof data === "object" && data !== null ? (data as { readonly type?: unknown }).type : undefined;
+      if (isLiveClientFrameType(frameType)) {
+        // Ephemeral frames never reach the write buffer. Without a live room
+        // (not admitted, or still joining) they are dropped silently.
+        if (liveConnection !== null) {
+          const byteLength = typeof raw === "string" ? Buffer.byteLength(raw) : raw.length;
+          try {
+            hub.handleClientFrame(liveConnection, data, byteLength);
+          } catch (err) {
+            // Never let one frame take the socket (or the process) down.
+            request.log.warn({ err, configId }, "layout-live frame dropped");
+          }
+        }
         return;
       }
 
@@ -561,6 +745,12 @@ export async function registerAutoSave(server: FastifyInstance, db: Database): P
     });
 
     socket.on("close", () => {
+      closed = true;
+      cancelSignInDeadline();
+      if (liveConnection !== null) {
+        hub.leave(liveConnection);
+        liveConnection = null;
+      }
       if (flushTimer !== null) clearTimeout(flushTimer);
       if (authenticatedUser !== null && buffer.pendingCount > 0) void flush(false);
     });

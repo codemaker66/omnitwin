@@ -22,8 +22,8 @@ import type { RequestActor } from "../services/requests.js";
 // choice. A replay answers 200 with the first fact and announces nothing.
 // ---------------------------------------------------------------------------
 
-const VenueParam = z.object({ venueId: z.string().uuid() });
-const IdempotencyKeyHeader = z.string().uuid();
+const VenueParam = z.object({ venueId: z.uuid() });
+const IdempotencyKeyHeader = z.uuid();
 
 function validationError(reply: FastifyReply, details: unknown): FastifyReply {
   return reply.status(400).send({ error: "Validation failed", code: "VALIDATION_ERROR", details });

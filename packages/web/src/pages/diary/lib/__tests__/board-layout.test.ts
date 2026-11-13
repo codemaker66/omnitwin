@@ -163,6 +163,42 @@ describe("laneGaps — the dimensioned changeovers", () => {
     expect(gaps[0]?.minutes).toBe(30);
     expect(gaps[0]?.tight).toBe(false);
   });
+
+  it("a viewing between two confirmed functions is no changeover neighbour, so their short gap still shows (migration 0100)", () => {
+    const first = bookingEntry({
+      startsAt: "2026-09-18T10:00:00.000Z",
+      endsAt: "2026-09-18T12:00:00.000Z",
+    });
+    const viewing = bookingEntry({
+      kind: "viewing", state: "viewing",
+      startsAt: "2026-09-18T12:15:00.000Z",
+      endsAt: "2026-09-18T12:45:00.000Z",
+    });
+    const second = bookingEntry({
+      startsAt: "2026-09-18T13:00:00.000Z",
+      endsAt: "2026-09-18T18:00:00.000Z",
+    });
+    const gaps = laneGaps(laneFor([first, viewing, second]).blocks, RULES, SPACE);
+    // One gap, ink into ink, measured and short, as the server's turnaround
+    // check measures it; not two unchecked gaps either side of the viewing.
+    expect(gaps).toHaveLength(1);
+    expect(gaps[0]).toMatchObject({
+      id: `${first.id}:${second.id}`, minutes: 60, guidelineMinutes: 90, tight: true, checked: true,
+    });
+  });
+
+  it("a viewing beside one function makes no changeover of its own", () => {
+    const first = bookingEntry({
+      startsAt: "2026-09-18T10:00:00.000Z",
+      endsAt: "2026-09-18T12:00:00.000Z",
+    });
+    const viewing = bookingEntry({
+      kind: "viewing", state: "viewing",
+      startsAt: "2026-09-18T12:30:00.000Z",
+      endsAt: "2026-09-18T13:30:00.000Z",
+    });
+    expect(laneGaps(laneFor([first, viewing]).blocks, RULES, SPACE)).toHaveLength(0);
+  });
 });
 
 describe("laneUtilisation — booked share, pure arithmetic", () => {
@@ -202,6 +238,20 @@ describe("laneUtilisation — booked share, pure arithmetic", () => {
 
   it("an empty lane is 0 percent, never NaN", () => {
     expect(laneUtilisation([], RANGE)).toBe(0);
+  });
+
+  it("never counts a viewing as booked time: it makes no date look busy (migration 0100)", () => {
+    const viewing = bookingEntry({
+      kind: "viewing", state: "viewing",
+      startsAt: "2026-09-18T10:00:00.000Z",
+      endsAt: "2026-09-18T16:00:00.000Z",
+    });
+    const dinner = bookingEntry({
+      startsAt: "2026-09-18T18:00:00.000Z",
+      endsAt: "2026-09-18T22:00:00.000Z",
+    });
+    expect(laneUtilisation(layoutLane([viewing], SPACE).blocks, RANGE)).toBe(0);
+    expect(laneUtilisation(layoutLane([viewing, dinner], SPACE).blocks, RANGE)).toBeCloseTo(4 / 24, 5);
   });
 });
 

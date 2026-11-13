@@ -33,6 +33,16 @@ export interface EventConversation {
   readonly refresh: () => void;
 }
 
+/** Messages already shown with the ones just read: each once (by id), in
+ *  cursor order, so one that arrives after a later one (a refresh racing the
+ *  poll, say) takes its place rather than going to the end. */
+export function mergeByCursor(current: readonly Message[], incoming: readonly Message[]): readonly Message[] {
+  const known = new Set(current.map((message) => message.id));
+  const fresh = incoming.filter((message) => !known.has(message.id));
+  if (fresh.length === 0) return current;
+  return [...current, ...fresh].sort((left, right) => left.cursor - right.cursor);
+}
+
 function visible(): boolean {
   return typeof document === "undefined" || document.visibilityState === "visible";
 }
@@ -67,11 +77,7 @@ export function useEventConversation(
         observeServerNow(snapshot.serverNowMs);
         setThreads(snapshot.threads);
         if (snapshot.messages.length > 0) {
-          setMessages((current) => {
-            const known = new Set(current.map((message) => message.id));
-            const fresh = snapshot.messages.filter((message) => !known.has(message.id));
-            return fresh.length === 0 ? current : [...current, ...fresh];
-          });
+          setMessages((current) => mergeByCursor(current, snapshot.messages));
         }
         if (snapshot.cursor > cursorRef.current) {
           cursorRef.current = snapshot.cursor;

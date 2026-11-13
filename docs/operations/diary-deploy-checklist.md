@@ -99,6 +99,14 @@ Complete, from `packages/api/src/env.ts`. **A miss crashes boot behind Railway's
 
 **All-or-nothing groups — a *partially* set group crashes boot even though each member is individually optional:** legacy uploads (all 5: `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME`, `R2_PUBLIC_URL`); runtime profiles (all 4, above); Foundry (all 6: `FOUNDRY_R2_ACCOUNT_ID`, `FOUNDRY_R2_ACCESS_KEY_ID`, `FOUNDRY_R2_SECRET_ACCESS_KEY`, `FOUNDRY_R2_CANDIDATE_BUCKET`, `FOUNDRY_R2_RELEASE_BUCKET`, `FOUNDRY_R2_PUBLIC_URL`); AI assistant (if `AI_ASSISTANT_ENABLED="true"` then provider, model and API key are required, and a base URL too unless the provider is `anthropic`, which calls Claude through Anthropic's SDK; `AI_ASSISTANT_WORKSPACE_ID` is needed only for a Console key not scoped to a workspace).
 
+**AI allowance and price table (T-656):**
+
+- `AI_VENUE_MONTHLY_BUDGET_USD` is optional. It is each venue's AI allowance for a UTC month, in US dollars from 0.01 to 100000, and $50 when unset. A value outside that range, or not a number, crashes boot.
+- With `AI_ASSISTANT_PROVIDER=anthropic`, `AI_ASSISTANT_MODEL` must be a model in the usage price table (`ANTHROPIC_PRICE_TABLE` in `packages/api/src/services/ai-usage.ts`). Otherwise AI stays off, and `/ai/status` says why.
+- Any other provider is the bespoke gateway. It reports no usage, so every call is charged an estimate of about $0.90 (about 55 calls a venue a month at the default).
+- **[OWNER] Before switching AI on:** set a spend limit on the Anthropic Console workspace the key belongs to. It is the hard backstop behind the per-venue allowance.
+- See [AI usage and billing](../engineering/ai-usage-and-billing.md).
+
 **Boots fine but is broken — not schema-enforced:** `CORS_ORIGINS` (defaults to localhost only; without production origins the browser cannot call the API), `CLERK_PUBLISHABLE_KEY`, `RESEND_API_KEY` (email silently logs to console), `EMAIL_FROM`.
 
 **Read by nothing** (present in examples/RUNBOOK but ignored): `JWT_SECRET`, `STRIPE_*`. `GIT_SHA` / `BUILD_TIMESTAMP` are read only by `/health/version` and are never set — see §9.

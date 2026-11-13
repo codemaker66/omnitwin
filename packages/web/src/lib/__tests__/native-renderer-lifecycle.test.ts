@@ -71,6 +71,35 @@ describe("native renderer ownership", () => {
     expect(onError).not.toHaveBeenCalled();
   });
 
+  it("retires a running renderer only once its resources are actually released", async () => {
+    const released = deferred();
+    const dispose = vi.fn(() => released.promise);
+    const owner = createNativeRendererLifecycle({ initialize: () => Promise.resolve(), dispose, onReady: vi.fn(), onError: vi.fn() });
+    await owner.settled;
+    let retired = false;
+    const retirement = owner.retire().then(() => { retired = true; });
+    await Promise.resolve();
+    expect(dispose).toHaveBeenCalledExactlyOnceWith(true);
+    expect(retired).toBe(false);
+    released.resolve();
+    await retirement;
+    expect(retired).toBe(true);
+    await owner.retire();
+    expect(dispose).toHaveBeenCalledOnce();
+  });
+
+  it("retires a renderer still initializing after its init settles, without announcing it ready", async () => {
+    const pending = deferred();
+    const dispose = vi.fn(() => Promise.resolve());
+    const onReady = vi.fn();
+    const owner = createNativeRendererLifecycle({ initialize: () => pending.promise, dispose, onReady, onError: vi.fn() });
+    const retirement = owner.retire();
+    pending.resolve();
+    await retirement;
+    expect(dispose).toHaveBeenCalledExactlyOnceWith(true);
+    expect(onReady).not.toHaveBeenCalled();
+  });
+
   it("releases the initialized device if installing the ready scene throws", async () => {
     const error = new Error("Scene attachment failed");
     const dispose = vi.fn(() => Promise.resolve());

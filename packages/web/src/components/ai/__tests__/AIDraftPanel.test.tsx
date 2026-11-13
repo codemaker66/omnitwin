@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { AIDraft, AIAssistantStatus } from "@omnitwin/types";
+import { ApiError } from "../../../api/client.js";
 
 const { getAIAssistantStatusMock, createAIDraftMock } = vi.hoisted(() => ({
   getAIAssistantStatusMock: vi.fn(),
@@ -83,6 +84,79 @@ describe("AIDraftPanel", () => {
     expect(document.querySelector("[data-activity-indicator]")).toBeNull();
     if (outcome === "failure") expect(screen.getByRole("alert")).toBeDefined();
     else expect(screen.getByDisplayValue(draft().body)).toBeDefined();
+  });
+
+  // T-656: a venue whose AI allowance for the month is used is told so in the
+  // panel's own words for any failure, and carries on by hand.
+  it("answers a used monthly allowance (429 AI_BUDGET_REACHED) calmly, as any failure", async () => {
+    getAIAssistantStatusMock.mockResolvedValue(configuredStatus());
+    createAIDraftMock.mockRejectedValue(new ApiError(429, "This venue's AI allowance for the month is used", "AI_BUDGET_REACHED"));
+    render(<AIDraftPanel title="Draft" useCase="enquiry_summary" context={{ guests: 90 }} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Generate draft" }));
+    expect((await screen.findByRole("alert")).textContent).toBe("AI draft generation is unavailable. Continue with manual review.");
+    expect(screen.getByRole<HTMLButtonElement>("button", { name: "Generate draft" }).disabled).toBe(false);
+    expect(document.querySelector("[data-activity-indicator]")).toBeNull();
+    expect(screen.queryByRole("textbox")).toBeNull();
+  });
+
+  // C1: each draft is switched on apart, so the panel asks about its own.
+  it("asks whether its own draft is switched on, and shows nothing for one that is not", async () => {
+    getAIAssistantStatusMock.mockResolvedValue({ configured: false, provider: null, model: null, disabledReason: "This AI draft is not switched on." });
+    const { container } = render(<AIDraftPanel title="BEO wording" useCase="beo_supplier_instruction_draft" context={{ guests: 90 }} />);
+    await waitFor(() => { expect(getAIAssistantStatusMock).toHaveBeenCalledWith("beo_supplier_instruction_draft"); });
+    expect(container.innerHTML).toBe("");
+  });
+
+  // C1: out of credit until the next grant is said as such, and the work goes on by hand.
+  it("tells staff to write by hand when the provider is out of credit (503 AI_DRAFTS_UNAVAILABLE)", async () => {
+    getAIAssistantStatusMock.mockResolvedValue(configuredStatus());
+    createAIDraftMock.mockRejectedValue(new ApiError(503, "AI drafts are unavailable just now.", "AI_DRAFTS_UNAVAILABLE"));
+    render(<AIDraftPanel title="Draft" useCase="enquiry_summary" context={{ guests: 90 }} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Generate draft" }));
+    expect((await screen.findByRole("alert")).textContent)
+      .toBe("AI drafts are unavailable just now. Write this one by hand; drafts return on their own.");
+  });
+
+  // Release audit ai-1: a draft whose context the server builds from its own
+  // record (an enquiry's summary) is asked for by that request alone; the
+  // screen's context route is never called.
+  it("asks a server-built draft by its own request, never sending a context to /ai/drafts", async () => {
+    getAIAssistantStatusMock.mockResolvedValue(configuredStatus());
+    const request = vi.fn(() => Promise.resolve({ ...draft(), useCase: "enquiry_summary" as const, body: "A wedding for 150." }));
+    render(<AIDraftPanel title="Enquiry summary" useCase="enquiry_summary" actionLabel="Draft summary" request={request} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Draft summary" }));
+    expect(await screen.findByDisplayValue("A wedding for 150.")).toBeDefined();
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(createAIDraftMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [new ApiError(422, "No event details", "NOTHING_TO_DRAFT_FROM"), "There is nothing to draft from yet: no event details or words from the guest. Continue with manual review."],
+    [new ApiError(404, "Enquiry not found", "NOT_FOUND"), "A draft is made only for the venue you work at. Continue with manual review."],
+    [new ApiError(502, "AI draft generation failed", "AI_DRAFT_GENERATION_FAILED"), "The draft could not be written. Continue with manual review."],
+  ])("says why a server-built draft did not come (%s)", async (error, words) => {
+    getAIAssistantStatusMock.mockResolvedValue(configuredStatus());
+    const request = vi.fn(() => Promise.reject(error));
+    render(<AIDraftPanel title="Enquiry summary" useCase="enquiry_summary" actionLabel="Draft summary" request={request} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Draft summary" }));
+    expect((await screen.findByRole("alert")).textContent).toBe(words);
+  });
+
+  // Plan 19, L6: a price, availability or capacity the AI stated was taken out
+  // on the server, and the panel says so.
+  it("says what was taken out of the draft, and nothing when nothing was", async () => {
+    getAIAssistantStatusMock.mockResolvedValue(configuredStatus());
+    createAIDraftMock.mockResolvedValueOnce({ ...draft(), withheldCommitments: ["capacity"] });
+    render(<AIDraftPanel title="Draft" useCase="truth_mode_explanation" context={{ selectedTarget: "Grand Hall" }} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Generate draft" }));
+    expect((await screen.findByTestId("ai-draft-withheld")).textContent)
+      .toBe("Wording that seemed to say how many a room holds was taken out, as only the team confirms that.");
+    cleanup();
+    createAIDraftMock.mockResolvedValueOnce(draft());
+    render(<AIDraftPanel title="Draft" useCase="truth_mode_explanation" context={{ selectedTarget: "Grand Hall" }} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Generate draft" }));
+    expect(await screen.findByDisplayValue(draft().body)).toBeDefined();
+    expect(screen.queryByTestId("ai-draft-withheld")).toBeNull();
   });
 
   it("renders nothing and never offers generation when no provider is configured", async () => {

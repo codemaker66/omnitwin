@@ -104,15 +104,16 @@ describe("App", () => {
     expect(props["dpr"]).toBe(2);
   });
 
-  it("renders the generated-stand-in disclosure outside the Canvas for instanced furniture", () => {
+  // Blake, 26 Oct 2026: nobody sees the stand-in line (T-674, QoL F-15).
+  it("shows nobody a generated-stand-in line, even with instanced stand-in furniture placed", () => {
     usePlacementStore.setState({
       placedItems: [createPlacedItem(catalogueId("trestle-4ft"), 0, 0)],
     });
 
     render(<App />);
 
-    expect(screen.getByTestId("generated-furniture-proxy-badge").textContent)
-      .toBe("AI-generated furniture proxy · visual stand-in · not measured");
+    expect(screen.queryByTestId("generated-furniture-proxy-badge")).toBeNull();
+    expect(screen.queryByText(/AI-generated furniture/u)).toBeNull();
   });
 
   it("does not describe an imported furniture model as a generated component proxy", () => {
