@@ -8,7 +8,7 @@
 #      from layouts and their event sheets, as the privacy policy promises
 #   4. Remembered allergy notes unused for the period the client agreed to
 #   5. Engagement events past the enquiry funnel's retention (migration 0100)
-#   6. Field web vitals older than 90 days (goal 07, migration 0108)
+#   6. Field web vitals older than 90 days (goal 07, migration 0109)
 #
 # Each pass runs even when an earlier one fails; the job then fails.
 #

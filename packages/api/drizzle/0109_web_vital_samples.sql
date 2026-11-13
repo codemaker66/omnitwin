@@ -1,7 +1,8 @@
 -- Field web vitals (goal 07; the cloud office-desk session, 28 October 2026).
--- Written as 0106; renumbered 0108 (journal idx 105) at its merge slot on
--- 12 November 2026, after 0107, with a `when` later than every entry merged
--- before it, so the migrator does not skip it.
+-- Written as 0106; renumbered 0108 on 12 November 2026 and 0109 (journal idx
+-- 106) on 13 November, after #287's 0108_decisions, with a `when` (13 November
+-- 07:00 UTC) later than every entry merged before it, so the migrator does not
+-- skip it.
 --
 -- Goal 07 judges the front of house on Core Web Vitals at the 75th percentile
 -- on production, by device class, and nothing recorded them. A sampled page

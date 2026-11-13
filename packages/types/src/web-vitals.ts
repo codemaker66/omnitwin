@@ -117,7 +117,7 @@ export function isWebVitalPage(page: string): page is WebVitalPage {
 }
 
 /**
- * The shape the database checks a page against (0108's page_shape): "/", or
+ * The shape the database checks a page against (0109's page_shape): "/", or
  * segments that are words in lowercase and hyphens, a `:param` or `*`. It
  * refuses digits (ids, dates, most codes) and long tokens, but not every
  * short code spelled in letters; the list above is what the API accepts.

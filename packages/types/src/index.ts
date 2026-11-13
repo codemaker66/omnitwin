@@ -1067,6 +1067,8 @@ export {
   type EnquirySource,
 } from "./enquiry.js";
 
+export { eventDisplayName, eventNameFor, eventTitleFor, holdsEmailAddress, type EventNameInput, type NamedEvent } from "./event-name.js";
+
 export {
   PricingRuleIdSchema,
   SUPPORTED_CURRENCIES,
@@ -2639,3 +2641,4 @@ export * from "./crowded-day.js";
 export * from "./deposits.js";
 export * from "./contracts.js";
 export * from "./reference-loadouts.js";
+export * from "./decision.js";
