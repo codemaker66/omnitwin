@@ -1,6 +1,6 @@
 // ---------------------------------------------------------------------------
 // The body of every placeable piece: its feet, its mass and the parts that
-// ring when it lands (T-677).
+// ring when it lands (T-700).
 //
 // The modal renderer (task 6) strikes each foot into the surface and lets the
 // piece's parts sound. Feet are in metres in the piece's own frame at

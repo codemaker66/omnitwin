@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// The modal set-down renderer (T-677): one piece landing on the surface under
+// The modal set-down renderer (T-700): one piece landing on the surface under
 // each of its feet, heard from where the listener stands, in plain arithmetic.
 //
 // Each foot strikes its surface with a force pulse, 1 - cos over its contact

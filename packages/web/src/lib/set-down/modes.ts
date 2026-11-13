@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// The modes a set-down rings, and how long each foot strikes (T-677).
+// The modes a set-down rings, and how long each foot strikes (T-700).
 //
 // Every resonant part of a piece, and every surface under it, is a set of
 // modes: a frequency, a 60 dB decay time and a gain. A part's frequencies come

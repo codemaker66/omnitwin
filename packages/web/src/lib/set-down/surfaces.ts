@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// The surfaces a piece can land on, and how each one answers (T-677).
+// The surfaces a piece can land on, and how each one answers (T-700).
 //
 // A set-down is the piece's own resonant parts struck through its feet, heard
 // through the surface under them: a bank of board modes, sometimes a low

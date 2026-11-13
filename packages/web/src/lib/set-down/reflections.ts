@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// The first reflections off a room's walls, floor and ceiling (T-677).
+// The first reflections off a room's walls, floor and ceiling (T-700).
 //
 // The image-source method: a sound reflected by a flat surface arrives as if
 // from the source's mirror image behind it. First order mirrors the source in

@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// The late reverberant tail of a room (T-677).
+// The late reverberant tail of a room (T-700).
 //
 // The tail is the room's impulse response after its first reflections: noise
 // whose every frequency dies away at the room's reverberation time there. A
