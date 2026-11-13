@@ -20,11 +20,10 @@ const LIFT_M = 0.012;
 /** The top bar's ink on the night (--hud-night-ink). */
 const LINE_COLOUR = "#ece7dd";
 const RING_SEGMENTS = 128;
-const FLAT: readonly [number, number, number] = [-Math.PI / 2, 0, 0];
 
 function Line({ width, depth, x, z }: { readonly width: number; readonly depth: number; readonly x: number; readonly z: number }): ReactElement {
   return (
-    <mesh position={[x, 0, z]} rotation={FLAT} raycast={() => undefined}>
+    <mesh position={[x, 0, z]} rotation={[-Math.PI / 2, 0, 0]} raycast={() => undefined}>
       <planeGeometry args={[width, depth]} />
       <meshBasicMaterial color={LINE_COLOUR} toneMapped={false} depthWrite={false} />
     </mesh>
@@ -37,7 +36,7 @@ function Mark({ mark }: { readonly mark: ChosenMark }): ReactElement {
   if (mark.kind === "ring") {
     const radius = mark.radius * RENDER_SCALE;
     return (
-      <mesh position={position} rotation={FLAT} raycast={() => undefined}>
+      <mesh position={position} rotation={[-Math.PI / 2, 0, 0]} raycast={() => undefined}>
         <ringGeometry args={[radius - line / 2, radius + line / 2, RING_SEGMENTS]} />
         <meshBasicMaterial color={LINE_COLOUR} toneMapped={false} depthWrite={false} />
       </mesh>
