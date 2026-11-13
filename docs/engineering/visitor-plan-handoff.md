@@ -12,9 +12,15 @@ An anonymous plan's configuration id is its edit capability.
 `/plan/:shortCode` resolves to the same plan. So nothing given to a third party
 may carry the id, the short code or the planner URL.
 
-Unclaimed public previews with no linked enquiry are hard-deleted after 72 hours
-(`services/cleanup.ts`, daily via `cleanup.yml`), unless a view-only link to
-them is still working (below).
+An unclaimed public preview is hard-deleted once it has gone more than 72 hours
+without a save (`services/cleanup.ts`, daily via `cleanup.yml`), unless it is
+in somebody's work or a view-only link to it is still working (below). In
+somebody's work means any row that points at it other than its own pieces: an
+enquiry, an event link, a proposal, a review, an approved sheet and the rest of
+`PLAN_KEPT_BY`. `preview-sweep-kept-postgres.test.ts` reads every foreign key
+into `configurations` from the migrated catalogue and fails when a new one has
+not been given a meaning, so a new table that points at a plan cannot be
+swept away unnoticed.
 
 ## The PDF (round 1)
 

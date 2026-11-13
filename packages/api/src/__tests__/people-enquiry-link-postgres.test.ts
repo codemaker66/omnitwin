@@ -227,6 +227,20 @@ describe.skipIf(PLATFORM_TARGET === undefined)("a public enquiry and the People 
     expect(await phoneOf(person)).toEqual({ phone: null, points: 0 });
   });
 
+  // Audit enquiries-crm-6: the deal's title is the occasion and the guest's
+  // name, and opportunities.title holds 200 characters.
+  it("makes the deal for a guest whose name is as long as the form takes, its title within the column", async () => {
+    const name = `TEST ONLY ${"Fiona Macleod-Grant ".repeat(10)}`.slice(0, 200);
+    expect(name).toHaveLength(200);
+    const enquiryId = enquiryIdOf(await enquire(f.venueId, { email: `long.name.${run}@example.test`, name }));
+
+    const res = await f.server.inject({ method: "POST", url: `/crm/from-enquiry/${enquiryId}`, headers: f.bearer("staff") });
+    expect(res.statusCode, res.body).toBe(201);
+    const title = res.json<{ data: { opportunity: { title: string } } }>().data.opportunity.title;
+    expect(title.length).toBeLessThanOrEqual(200);
+    expect(title.startsWith("Wedding — TEST ONLY Fiona Macleod-Grant")).toBe(true);
+  });
+
   // Review Focus 2.
   it("links a returning guest who types their email differently, and makes nobody new", async () => {
     const aileen = await f.addPerson({ name: "Aileen Murray", emails: ["aileen.murray@example.test"], phones: ["07700 900123"] });

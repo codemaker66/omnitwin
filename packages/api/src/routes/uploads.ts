@@ -140,11 +140,16 @@ async function getS3Client(env: Env): Promise<S3ClientType> {
       accessKeyId: env.R2_ACCESS_KEY_ID ?? "",
       secretAccessKey: env.R2_SECRET_ACCESS_KEY ?? "",
     },
+    // The SDK's default adds a CRC32 of the request body to every PutObject.
+    // A presigned URL is signed before the browser sends any bytes, so that
+    // checksum would be the checksum of nothing and the store would refuse
+    // the real file.
+    requestChecksumCalculation: "WHEN_REQUIRED",
   });
   return cachedS3;
 }
 
-async function createPresignedUrl(
+export async function createPresignedUrl(
   env: Env,
   key: string,
   contentType: AllowedContentType,

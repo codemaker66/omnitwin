@@ -411,7 +411,12 @@ describe("non-production environments are permissive", () => {
 });
 
 describe("AI assistant provider configuration", () => {
-  const base = { DATABASE_URL: "postgresql://user:pass@host/db", AI_ASSISTANT_ENABLED: "true" };
+  const base = {
+    DATABASE_URL: "postgresql://user:pass@host/db",
+    AI_ASSISTANT_ENABLED: "true",
+    AI_ASSISTANT_VENUE_IDS: "00000000-0000-4000-8000-000000000c01",
+    AI_ASSISTANT_FEATURES: "proposal_draft",
+  };
 
   it("accepts the Anthropic provider with a model and key, and no base URL", () => {
     const env = validateEnv({
@@ -444,6 +449,50 @@ describe("AI assistant provider configuration", () => {
 
   it("asks for nothing while AI is off", () => {
     expect(() => validateEnv({ DATABASE_URL: base.DATABASE_URL, AI_ASSISTANT_PROVIDER: "anthropic" })).not.toThrow();
+  });
+});
+
+describe("which venues and drafts AI is switched on for (C1)", () => {
+  const on = {
+    DATABASE_URL: "postgresql://user:pass@host/db",
+    AI_ASSISTANT_ENABLED: "true",
+    AI_ASSISTANT_PROVIDER: "anthropic",
+    AI_ASSISTANT_MODEL: "claude-opus-5-5",
+    AI_ASSISTANT_API_KEY: "test-key-not-real",
+  };
+  const VENUE = "00000000-0000-4000-8000-000000000C01";
+
+  it("starts with AI on but a list unset, failing closed rather than blocking the deploy (services/ai-access.ts)", () => {
+    expect(validateEnv({ ...on, AI_ASSISTANT_FEATURES: "proposal_draft" }).AI_ASSISTANT_VENUE_IDS).toBeUndefined();
+    expect(validateEnv({ ...on, AI_ASSISTANT_VENUE_IDS: VENUE }).AI_ASSISTANT_FEATURES).toBeUndefined();
+    expect(() => validateEnv(on)).not.toThrow();
+  });
+
+  it("reads each list as comma-separated values, trimmed, ids in lower case, repeats dropped", () => {
+    const env = validateEnv({
+      ...on,
+      AI_ASSISTANT_VENUE_IDS: ` ${VENUE}, ${VENUE.toLowerCase()} ,00000000-0000-4000-8000-000000000c02`,
+      AI_ASSISTANT_FEATURES: "proposal_draft, enquiry_summary,event_brief,",
+    });
+    expect(env.AI_ASSISTANT_VENUE_IDS).toEqual(["00000000-0000-4000-8000-000000000c01", "00000000-0000-4000-8000-000000000c02"]);
+    expect(env.AI_ASSISTANT_FEATURES).toEqual(["proposal_draft", "enquiry_summary", "event_brief"]);
+  });
+
+  it("REFUSES a list that is empty, names something that is not a venue id, or a draft that does not exist", () => {
+    expect(() => validateEnv({ ...on, AI_ASSISTANT_VENUE_IDS: " , ", AI_ASSISTANT_FEATURES: "proposal_draft" }))
+      .toThrow(/AI_ASSISTANT_VENUE_IDS/u);
+    expect(() => validateEnv({ ...on, AI_ASSISTANT_VENUE_IDS: "*", AI_ASSISTANT_FEATURES: "proposal_draft" }))
+      .toThrow(/AI_ASSISTANT_VENUE_IDS/u);
+    expect(() => validateEnv({ ...on, AI_ASSISTANT_VENUE_IDS: "trades-hall", AI_ASSISTANT_FEATURES: "proposal_draft" }))
+      .toThrow(/AI_ASSISTANT_VENUE_IDS/u);
+    expect(() => validateEnv({ ...on, AI_ASSISTANT_VENUE_IDS: VENUE, AI_ASSISTANT_FEATURES: "proposal_draft,everything" }))
+      .toThrow(/AI_ASSISTANT_FEATURES/u);
+  });
+
+  it("checks the lists' shape while AI is off, so a mistake shows before switch-on", () => {
+    expect(() => validateEnv({ DATABASE_URL: on.DATABASE_URL, AI_ASSISTANT_VENUE_IDS: "trades-hall" })).toThrow(/AI_ASSISTANT_VENUE_IDS/u);
+    expect(validateEnv({ DATABASE_URL: on.DATABASE_URL, AI_ASSISTANT_VENUE_IDS: VENUE, AI_ASSISTANT_FEATURES: "event_brief" }))
+      .toMatchObject({ AI_ASSISTANT_ENABLED: "false", AI_ASSISTANT_FEATURES: ["event_brief"] });
   });
 });
 

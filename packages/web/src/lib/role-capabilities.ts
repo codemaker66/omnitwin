@@ -231,6 +231,35 @@ export function compilesHandoffPack(
   return layout.venueId !== null && user.venueId === layout.venueId && hasRole(VENUE_FLOOR_ROLES, user.role);
 }
 
+/**
+ * Whether this person makes the venue's moves on an enquiry at this venue:
+ * starting its review, approving or declining it, marking a request done and
+ * reopening it. `PATCH /enquiries/:id/status` makes them only for the venue's
+ * triage roles (`canTransition`, state-machines/enquiry.ts: the floor and the
+ * commercial team, which are VENUE_MEMBER_ROLES) and, being the venue's moves
+ * and not the customer's, only at the enquiry's own venue (`canManageVenue`
+ * or `canManageCommercial`), which a platform admin passes everywhere. A
+ * planner or client reading their own enquiry is offered none of them.
+ */
+export function movesEnquiry(
+  user: { readonly role: string; readonly venueId: string | null; readonly platformRole: string } | null,
+  enquiryVenueId: string,
+): boolean {
+  if (user === null || !hasRole(VENUE_MEMBER_ROLES, user.role)) return false;
+  return user.platformRole === "admin" || user.venueId === enquiryVenueId;
+}
+
+/**
+ * Who records an Event Architect Ops review at their venue: the API's
+ * `requireOpsReviewAuthority` (routes/event-architect.ts) answers from this
+ * one list in @omnitwin/types, so the two cannot drift. The venue's staff,
+ * hallkeepers, managers and administrators each record under their own
+ * authority (venue_staff, venue_hallkeeper, venue_manager, venue_admin), and
+ * a platform admin at any venue. Managers record reviews too (Blake, 11
+ * November 2026: "Yes, managers too").
+ */
+export { EVENT_ARCHITECT_OPS_REVIEW_ROLES as OPS_REVIEW_ROLES } from "@omnitwin/types/event-architect-ops-reviewers";
+
 // ---------------------------------------------------------------------------
 // The staff rota (T-637 slice B). A block of its own, with its own drift test
 // (__tests__/rota-capabilities.test.ts), because the rota answers three ways
