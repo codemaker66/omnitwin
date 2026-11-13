@@ -118,14 +118,17 @@ test("the crest and \\ clear the new chrome to the hall, and \\, Esc or the cres
   await expect(hide.locator("img")).toHaveAttribute("src", CREST_IMAGE);
   await expect(dock).toBeVisible();
   await expect(title).toBeVisible();
-  // The room has drawn its first frame before any measure is taken.
+  // The room has drawn its first frame and the layout's assembly has come to
+  // rest before any measure is taken: while it plays (its Skip is up) the
+  // door's card waits, as it does for any piece in motion.
+  await expect(page.getByRole("button", { name: /^Skip( to the end)?$/u })).toHaveCount(0, { timeout: 60_000 });
   await page.waitForTimeout(1500);
   const crestAtRest = await boxOf(hide);
   const slateAtRest = await boxOf(page.locator(".pc-slate"));
   const doorCard = page.getByTestId("door-clear-notice");
   // The seed sets a table in a door's way, so the door's card is up: assert it,
   // or the check below that the room takes its place would never run.
-  await expect(doorCard).toBeVisible();
+  await expect(doorCard).toBeVisible({ timeout: 10_000 });
   const doorAtRest = await boxOf(doorCard);
   const atRest = await chromeShare(page);
   await frame(page, "01-at-rest");
