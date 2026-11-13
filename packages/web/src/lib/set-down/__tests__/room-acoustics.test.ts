@@ -9,6 +9,7 @@ import {
   reverberantGain,
   reverberationTimes,
   roomAcousticsFor,
+  roomConstant,
   roomState,
 } from "../room-acoustics.js";
 import { ROOM_ACOUSTICS, ROOM_PLANS, UNCALIBRATED, domeGeometry, type RoomAcoustics, type RoomSlug } from "../rooms.js";
@@ -383,6 +384,15 @@ describe("room state", () => {
     const ratio = Math.sqrt((surfaceA + 4 * m * 3000) / (surfaceA + 4 * m * 300));
     expect(reverberantGain(small, NO_CONTENTS) / reverberantGain(large, NO_CONTENTS)).toBeCloseTo(ratio, 9);
     expect(ratio).toBeGreaterThan(1.1);
+    // The exported room constant itself, which the listening page reads.
+    const meanAlpha = surfaceA / 500;
+    expect(roomConstant(small, NO_CONTENTS)).toBeCloseTo((surfaceA + 4 * m * 300) / (1 - meanAlpha), 9);
+    expect(roomConstant(large, NO_CONTENTS)).toBeCloseTo((surfaceA + 4 * m * 3000) / (1 - meanAlpha), 9);
+    // And the empty Grand Hall's, which every reverberant gain is relative to.
+    expect(reverberantGain(small, NO_CONTENTS)).toBeCloseTo(
+      Math.sqrt(roomConstant(GRAND_HALL, NO_CONTENTS) / roomConstant(small, NO_CONTENTS)),
+      9,
+    );
   });
 
   it("lowers every room's reverberant gain as contents are added", () => {

@@ -254,12 +254,14 @@ export function reverberationTimes(room: RoomAcoustics, contents: BandValues): B
 
 /**
  * The room constant R = A / (1 - mean alpha) at 1 kHz, in m2. A is the
- * equivalent absorption area including the air's 4 m V, as in the Eyring time
- * above; the mean alpha is the surfaces' and contents' alone, since the air
- * takes nothing at a reflection. In the empty Grand Hall the air is about 7 %
- * of A at 1 kHz.
+ * equivalent absorption area including the air's 4 m V (ruling R49), as in
+ * the Eyring time above; the mean alpha is the surfaces' and contents' alone,
+ * since the air takes nothing at a reflection. In the empty Grand Hall the air
+ * is about 7 % of A at 1 kHz. reverberantGain is built on it; anything else
+ * that needs a room's diffuse-field level (the listening page's room send,
+ * the registry's) calls this rather than a copy, so it keeps the 4 m V term.
  */
-function roomConstant(room: RoomAcoustics, contents: BandValues): number {
+export function roomConstant(room: RoomAcoustics, contents: BandValues): number {
   const { areaM2, absorption } = surfaceTotals(room);
   const surfaces = absorption[ONE_KHZ] + Math.max(0, finite(contents[ONE_KHZ]));
   const air = 4 * AIR_ATTENUATION_PER_M[ONE_KHZ] * Math.max(0, finite(room.volumeM3));

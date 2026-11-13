@@ -82,9 +82,10 @@ export const UNCALIBRATED: BandValues = [1, 1, 1, 1, 1, 1, 1];
  * outlines. The 125 Hz factor is 1 wherever the room's Schroeder frequency is
  * above that octave's lower edge, where rays say nothing about a modal
  * response (ruling R39): every room but the Grand Hall. The Robert Adam
- * Room's 250 and 500 Hz factors (1.261, 1.156) are its box's: absorbing floor
- * and ceiling between hard walls, 22.9 x 6.1 m, a longer flutter than the real
- * room's two sections allow (README.md, "What stays uncertain"). The
+ * Room's 250 and 500 Hz factors (1.261, 1.156) are kept (ruling R59): its
+ * absorption sits on the floor and ceiling between hard walls, and Fitzroy's
+ * formula for uneven absorption, independent of the tracer, puts those bands
+ * at 1.365 and 1.086 x Eyring (README.md, "What stays uncertain"). The
  * galleries' 1-8 kHz bands sit at the clamp: their tracer reads 1.35-1.57 x
  * Eyring there, an upper bound for an unsurveyed attic section (README.md,
  * "Difference explained"). After any change to a room's surfaces, export,

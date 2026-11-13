@@ -393,7 +393,12 @@ So the gap is Sanssouci's furnishings and fittings, as far as the data go: the u
 
 - **The Saloon below 500 Hz.** The model gives 0.97 s at 125 Hz and 1.29 s at 250 Hz, against about 1.5 and 2.1 s read off Benrath's figure. If the empty Saloon's low echo sounds thin, the panelling row's 0.28 / 0.22 at 125 / 250 Hz (just under every cited row at 125 Hz) is the lever.
 - **The empty Saloon's mid ring of about 2.4 s.** Benrath supports it; Sanssouci, furnished, is half of it. If the room sounds too live, the missing absorbers are furnishings the survey did not record.
-- **The Robert Adam Room's 250 and 500 Hz.** The tracer reads its box 1.26 and 1.16 times Eyring there, so the factors lengthen those bands by 26 % and 16 %. The box is 22.9 × 6.1 m, a corridor with absorbing floor and ceiling between hard walls. The real room is two sections about 11 m across, with piers and a curved wall that would break up the flutter along the box. So these two bands may ring longer in the model than in the room.
+- **The Robert Adam Room's low-mid ring (250 and 500 Hz).** The tracer reads its box 1.261 and 1.156 times Eyring there, so the factors lengthen those bands by 26 % and 16 %. They are kept (ruling R59), because an estimate independent of the tracer finds the same effect:
+  - **Why.** The room's absorption sits on its floor and ceiling (mean α 0.130 at 250 Hz and 0.100 at 500 Hz) between hard plaster walls (0.041 and 0.056). That uneven spread is what Eyring's formula leaves out.
+  - **The check.** Fitzroy's formula (1959) for absorption spread unevenly between the three pairs of opposite surfaces, applied to rooms.json's surfaces: floor and ceiling as one pair, and the walls' area and absorption split between the box's sides and ends as 2Lh : 2Wh. It gives Fitzroy ÷ Eyring = **1.365 at 250 Hz and 1.086 at 500 Hz**, with air left out of both. Against rooms.json's Eyring with air, as the ruling first worked it, it gives 1.379 and 1.113.
+  - **How the tracer compares.** Fitzroy is the classic upper estimate for this case. The tracer sits below it at 250 Hz and 6 % above it at 500 Hz, where the 22.9 m box's length may add a little: the real room is two sections about 11 m across, with piers and a curved wall.
+  - **The other rooms.** At 250 Hz Fitzroy ÷ Eyring is 1.00–1.12 there, as their walls absorb as much as their floors and ceilings or more, and their fitted 250 Hz factors are 1.009–1.068.
+  - **What to listen for.** If the Robert Adam Room's low-mid ring sounds too long or too boomy, these two factors are the lever.
 - **The galleries' 1–4 kHz**, held at the clamp (above).
 - **The Grand Hall's curtains** (31 m² of velour, EST) carry a third of its 1 kHz absorption.
 
