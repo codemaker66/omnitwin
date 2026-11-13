@@ -31,7 +31,7 @@ Wall faces, plain wall band (0.6-1.8 m, five sections, 1 cm samples; RANSAC then
 
 | Face | E57 offset | Angle to the axis | Support per level | rms |
 | --- | --- | --- | --- | --- |
-| window wall (bare at X 11.26-11.60 only) | Y 13.562 | not measured | 0.33 m | 0.8 mm |
+| window wall (bare at X 11.26-11.60 only) | Y 13.562 | not measured (see below) | 0.33 m | 0.8 mm |
 | west wall, window part | X 11.279 at Y 10.625 | -1.01 deg | 5.42 m | 2.4 mm |
 | stub wall, west | Y 7.672 | +0.60 deg | 1.31 m | 2.4 mm |
 | west wall, inner part | X 12.731 | +0.11 deg | 5.15 m | 4.8 mm |
@@ -48,7 +48,15 @@ Wall faces, plain wall band (0.6-1.8 m, five sections, 1 cm samples; RANSAC then
 The skirting stands 1-2 cm proud to 0.30 m. The wall's top band (2.2-2.36 m) repeats the offsets within
 7 mm, except over the west wardrobe, where the wall (Y 1.145) is 17 mm behind its doors' plane. The outline is drawn
 axis-parallel except that west wall, which is 10.4 cm out of parallel over its length and is drawn as
-measured. The window wall's direction could not be measured (0.34 m of bare wall).
+measured.
+
+The window wall's direction could not be measured (0.34 m of bare wall), and it is drawn parallel to the
+E57 X axis. That is an assumption with evidence against it: the pelmet over the curtains is a straight
+line at -0.57 degrees to the axis (`05_elev.py h north 3.00`: 0.21 m in front of Y 13.56 at X 11.45,
+0.30 m at X 20.45), and the drapes' fronts drift the same way by 4 cm. If the wall is parallel to its
+pelmet, its east end is at Y 13.47, 9 cm nearer the room than drawn. The window part is skew in other
+ways too: its west wall is at -1.01 degrees, and the downstand face at the junction runs from Y 7.595
+(X 12.9) to 7.52 (X 19.0), 7.5 cm south of the west stub wall's plane.
 
 Columns (four faces each, 0.6-1.8 m): north, centre E57 (14.799, 7.211), 0.284 x 0.279 m; south,
 (14.767, 2.966), 0.268 x 0.306 m; 81-87 % of their perimeter lies on axis-parallel faces and the cube
@@ -96,9 +104,12 @@ were tried and dropped: the drapes' stripes are stronger than the frames.
 
 - Depth: on the plane Y 13.80 the daylight opening's head and the sill lines sit at the same height from
   stations 1.9 m and 3.8-5.0 m away (a line 10 cm off that plane would move 2.8 cm between them), so the
-  frame is 0.24 +-0.04 m behind the wall face.
-- Heights: head 2.58 m (2.56-2.62 over the four windows; the second also shows a thin bright line at
-  2.69 m, taken as light over its top rail); glass sill 1.00 m; window board 0.93-0.95 m, its nosing
+  frame is about 0.24 m behind the wall face as drawn. An automatic reading (`07_window_edges.py heads`)
+  agrees for the second window (2.609-2.624 m from five stations 1.9 to 4.5 m away, one outlier at 2.541:
+  within about 2 cm of that plane); on the others it scatters by 7-50 mm between stations and would put
+  the frames 0.03-0.12 m further back. Carried as 0.24 m, -0.04 to +0.12.
+- Heights: head 2.58 m (2.54-2.62 by eye over the four windows; 2.56, 2.61, 2.59 and 2.57 automatically;
+  the second also shows a thin bright line at 2.69 m, taken as light over its top rail); glass sill 1.00 m; window board 0.93-0.95 m, its nosing
   about 0.06 m behind the wall face.
 - Along the wall: west glazing edges at X 14.25 (second window, from scan_136 at 54 degrees) and 16.47
   (third, from scan_135 at 56 degrees), so the pitch is 2.22 m. The second window's glass is seen as far

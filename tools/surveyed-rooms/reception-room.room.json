@@ -291,7 +291,7 @@
         "name": "Window wall (four windows behind sheers and drapes)",
         "kind": "solid",
         "height": 3.126,
-        "note": "E57 Y = 13.562, facing 281.1 deg true. The bare face is seen only at the west end (X 11.26..11.60, 0.33 m per level, rms 0.8 mm; a tape line from the stub wall there gives 13.561). Its direction is not measured: it is drawn parallel to the E57 X axis. Elsewhere sheers and drapes hang 0.14-0.18 m in front of it, from a track under the cornice (2.89 m) to the floor. Skirting line Y 13.545."
+        "note": "E57 Y = 13.562, facing 281.1 deg true. The bare face is seen only at the west end (X 11.26..11.60, 0.33 m per level, rms 0.8 mm; a tape line from the stub wall there gives 13.561). Its direction is NOT measured: it is drawn parallel to the E57 X axis. The pelmet over the curtains (soffit 2.89 m) is not parallel to that axis: its face is 0.21 m in front of Y 13.56 at X 11.45 and 0.30 m at X 20.45 (-0.57 deg, a straight line), and the drapes' fronts drift the same way by 4 cm. If the wall is parallel to its pelmet, its east end is at Y 13.47, 9 cm nearer the room than drawn, and the glass depths below shrink or grow with it. Sheers and drapes hang 0.14-0.18 m in front of the wall from a track under the pelmet to the floor. Skirting line Y 13.545 at the west end."
       },
       {
         "id": "west-outer",
@@ -377,7 +377,7 @@
         "planes": [
           {
             "depth": 0.24,
-            "note": "E57 Y 13.80 +-0.04: on this plane the head and sill lines keep their height between near and far stations."
+            "note": "E57 Y 13.80: on this plane the head and sill lines keep their height, by eye, between near and far stations. Tolerance -0.04 to +0.12 m."
           }
         ],
         "note": "Clear glass in a white frame behind a sheer; a drape overlaps each side of it as scanned (the gaps between drapes are about 1.25-1.4 m)."
@@ -410,12 +410,12 @@
         "planes": [
           {
             "depth": 0.24,
-            "note": "E57 Y 13.80 +-0.04: on this plane the head and sill lines keep their height between near and far stations."
+            "note": "E57 Y 13.80: on this plane the head and sill lines keep their height, by eye, between near and far stations. Tolerance -0.04 to +0.12 m."
           }
         ],
         "note": "Clear glass in a white frame behind a sheer; a drape overlaps each side of it as scanned (the gaps between drapes are about 1.25-1.4 m)."
       },
-      "note": "Behind sheers and drapes; the mesh holds only curtain, so this is read from the native cube faces re-projected on the plane Y 13.80. Measured: the daylight opening's head 2.58 m and glass sill 1.00 m (window board 0.93-0.95 m), each at the same height from stations 1.9 m and 3.8-5.0 m away, which puts the frame 0.24 +-0.04 m behind the wall face; west glazing edges at E57 X 14.25 (this window, from scan_136) and 16.47 (the third, from scan_135), a pitch of 2.22 m. Inferred: the width. Every east jamb is hidden by a drape; this window's glass is seen as far east as X 15.87 (scan_139), so it is at least 1.62 m wide and the piers at most 0.60 m. The first and fourth windows are placed by the pitch alone (the first's glass is seen from X 12.15 to at least 13.47, the fourth's from 18.87 to 20.24, between their drapes)."
+      "note": "Behind sheers and drapes; the mesh holds only curtain, so this is read from the native cube faces re-projected on the plane Y 13.80. Measured: the daylight opening's head 2.58 m and glass sill 1.00 m (window board 0.93-0.95 m), each at the same height from stations 1.9 m and 3.8-5.0 m away, which puts the frame about 0.24 m behind the wall face (0.20-0.36: see the residuals); west glazing edges at E57 X 14.25 (this window, from scan_136) and 16.47 (the third, from scan_135), a pitch of 2.22 m. Inferred: the width. Every east jamb is hidden by a drape; this window's glass is seen as far east as X 15.87 (scan_139), so it is at least 1.62 m wide and the piers at most 0.60 m. The first and fourth windows are placed by the pitch alone (the first's glass is seen from X 12.15 to at least 13.47, the fourth's from 18.87 to 20.24, between their drapes)."
     },
     {
       "id": "window-3",
@@ -443,7 +443,7 @@
         "planes": [
           {
             "depth": 0.24,
-            "note": "E57 Y 13.80 +-0.04: on this plane the head and sill lines keep their height between near and far stations."
+            "note": "E57 Y 13.80: on this plane the head and sill lines keep their height, by eye, between near and far stations. Tolerance -0.04 to +0.12 m."
           }
         ],
         "note": "Clear glass in a white frame behind a sheer; a drape overlaps each side of it as scanned (the gaps between drapes are about 1.25-1.4 m)."
@@ -476,7 +476,7 @@
         "planes": [
           {
             "depth": 0.24,
-            "note": "E57 Y 13.80 +-0.04: on this plane the head and sill lines keep their height between near and far stations."
+            "note": "E57 Y 13.80: on this plane the head and sill lines keep their height, by eye, between near and far stations. Tolerance -0.04 to +0.12 m."
           }
         ],
         "note": "Clear glass in a white frame behind a sheer; a drape overlaps each side of it as scanned (the gaps between drapes are about 1.25-1.4 m)."
@@ -591,14 +591,14 @@
           ],
           [
             3.073,
-            -0.2
+            -0.16
           ],
           [
             -3.329,
-            -0.2
+            -0.235
           ]
         ],
-        "note": "The inner part's lowest ceiling, a frame about the two coffers. Its north edge is the downstand's face at E57 Y 7.56 (from 2.42 m up to the window part's cornice), between the two stub walls."
+        "note": "The inner part's lowest ceiling, a frame about the two coffers. Its north edge is the downstand's face (from 2.42 m up to the window part's cornice), which is not parallel to the axis: E57 Y 7.595 at X 12.9, 7.57 at X 16.1, 7.52 at X 19.0 (05_elev.py, 2 cm raster), 7.5 cm south of the west stub wall's plane and meeting the east stub wall's."
       },
       {
         "id": "south-strip",
@@ -968,7 +968,7 @@
         "kind": "fit-max",
         "value": 1.01,
         "unit": "deg",
-        "note": "The window part's west wall, drawn as measured (10.4 cm over its 5.89 m). The other long walls: east -0.42, south -0.28, inner walls +0.11 and +0.14: up to 1.4 cm from the drawn axis-parallel line at a wall's ends. The window wall's own direction is not measured."
+        "note": "The window part's west wall, drawn as measured (10.4 cm over its 5.89 m). The other long walls: east -0.42, south -0.28, inner walls +0.11 and +0.14: up to 1.4 cm from the drawn axis-parallel line at a wall's ends. The window wall's own direction is not measured (its pelmet runs at -0.57 deg: up to 9 cm at its east end)."
       },
       {
         "quantity": "independent check: station-fan line fits against the plan-section fits (14 faces)",
@@ -982,7 +982,7 @@
         "kind": "check",
         "value": 0.009,
         "unit": "m",
-        "note": "34 lines over four dimensions, outside the inner east wall's bulge. The whole length cannot be taped in one line; a line to a sheer fold in the window wall's plane gives 12.38-12.39 m against the outline's 12.400 m."
+        "note": "36 lines over four dimensions, outside the inner east wall's bulge. The whole length cannot be taped in one line; a line to a sheer fold in the window wall's plane gives 12.38-12.39 m against the outline's 12.400 m."
       },
       {
         "quantity": "inner east wall: bulge between E57 Y 4.6 and 5.6",
@@ -1028,16 +1028,16 @@
       {
         "quantity": "windows: glass plane's depth behind the wall face",
         "kind": "tolerance",
-        "value": 0.04,
+        "value": 0.1,
         "unit": "m",
-        "note": "From the head and sill lines keeping their height between stations 1.9 m and 3.8-5.0 m away (1 cm of reading is 4 cm of depth)."
+        "note": "By eye the head and sill lines keep their height on the plane Y 13.80 between stations 1.9 m and 3.8-5.0 m away (1 cm of reading is 4 cm of depth). An automatic reading (07_window_edges.py heads) has the second window's head at 2.609-2.624 m from five stations 1.9 to 4.5 m away, so that frame is within about 2 cm of Y 13.80; on the other three it scatters by 7-50 mm between stations and would put the frames 0.03-0.12 m further back; not resolved. The window wall's unmeasured direction adds up to 9 cm at the east end."
       },
       {
         "quantity": "windows: sill and head heights",
         "kind": "tolerance",
-        "value": 0.03,
+        "value": 0.05,
         "unit": "m",
-        "note": "Through a sheer, 4 mm crops."
+        "note": "Through a sheer, 2.5-4 mm crops; the head reads 2.54-2.62 m by eye over the four windows and 2.56, 2.61, 2.59 and 2.57 m automatically (it may differ from window to window), and up to 2.65 m if the frames lie further back."
       },
       {
         "quantity": "windows: west glazing edges of the second and third",

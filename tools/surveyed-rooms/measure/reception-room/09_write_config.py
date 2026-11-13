@@ -44,7 +44,7 @@ SEGS = [
     ("east-outer", "East wall, window part", FIELD, "E57 X = 20.893 (rms 2.8 mm; -0.42 deg, 2.7 cm over its run, drawn axis-parallel). Two wall lights."),
     ("north-return", "Return to the north-east pier", FIELD, "0.217 m step at E57 Y 12.51."),
     ("north-pier", "North-east pier", FIELD, "E57 X = 20.676, Y 12.51..13.562. Its last 0.3 m is behind the drapes' stack."),
-    ("window", "Window wall (four windows behind sheers and drapes)", FIELD, "E57 Y = 13.562, facing 281.1 deg true. The bare face is seen only at the west end (X 11.26..11.60, 0.33 m per level, rms 0.8 mm; a tape line from the stub wall there gives 13.561). Its direction is not measured: it is drawn parallel to the E57 X axis. Elsewhere sheers and drapes hang 0.14-0.18 m in front of it, from a track under the cornice (2.89 m) to the floor. Skirting line Y 13.545."),
+    ("window", "Window wall (four windows behind sheers and drapes)", FIELD, "E57 Y = 13.562, facing 281.1 deg true. The bare face is seen only at the west end (X 11.26..11.60, 0.33 m per level, rms 0.8 mm; a tape line from the stub wall there gives 13.561). Its direction is NOT measured: it is drawn parallel to the E57 X axis. The pelmet over the curtains (soffit 2.89 m) is not parallel to that axis: its face is 0.21 m in front of Y 13.56 at X 11.45 and 0.30 m at X 20.45 (-0.57 deg, a straight line), and the drapes' fronts drift the same way by 4 cm. If the wall is parallel to its pelmet, its east end is at Y 13.47, 9 cm nearer the room than drawn, and the glass depths below shrink or grow with it. Sheers and drapes hang 0.14-0.18 m in front of the wall from a track under the pelmet to the floor. Skirting line Y 13.545 at the west end."),
     ("west-outer", "West wall, window part", FIELD, "Drawn as measured, not axis-parallel: E57 X 11.227 at the window wall to 11.331 at Y 7.672 (-1.01 deg, rms 2.4 mm; the station fans give -0.99). A roll-down screen's housing under the cornice (Y 9.45..11.85, 2.78-2.97 m), two wall lights, a wifi access point (Y 8.75, 0.55 m)."),
     ("stub-west", "South wall of the window part, west of the opening", FIELD, "E57 Y = 7.672, X 11.331..12.731 (rms 2.4 mm)."),
     ("west-inner", "West wall, inner part", SOFFIT, "E57 X = 12.731 (rms 4.8 mm, 0.11 deg). Carries the door to the corridor; two wall lights, a fire alarm call point (Y 3.05, 1.2 m)."),
@@ -59,7 +59,7 @@ area = abs(sum(verts[i][0] * verts[(i + 1) % 16][1] - verts[(i + 1) % 16][0] * v
 # west glazing edges of the second and third windows; the width is the least the photographs allow.
 W_PITCH, W_WIDTH, W2_WEST = 2.22, 1.62, 14.25
 W_NOTE = ("Behind sheers and drapes; the mesh holds only curtain, so this is read from the native cube faces re-projected on the plane Y 13.80. "
-          "Measured: the daylight opening's head 2.58 m and glass sill 1.00 m (window board 0.93-0.95 m), each at the same height from stations 1.9 m and 3.8-5.0 m away, which puts the frame 0.24 +-0.04 m behind the wall face; "
+          "Measured: the daylight opening's head 2.58 m and glass sill 1.00 m (window board 0.93-0.95 m), each at the same height from stations 1.9 m and 3.8-5.0 m away, which puts the frame about 0.24 m behind the wall face (0.20-0.36: see the residuals); "
           "west glazing edges at E57 X 14.25 (this window, from scan_136) and 16.47 (the third, from scan_135), a pitch of 2.22 m. "
           "Inferred: the width. Every east jamb is hidden by a drape; this window's glass is seen as far east as X 15.87 (scan_139), so it is at least 1.62 m wide and the piers at most 0.60 m. "
           "The first and fourth windows are placed by the pitch alone (the first's glass is seen from X 12.15 to at least 13.47, the fourth's from 18.87 to 20.24, between their drapes).")
@@ -71,7 +71,7 @@ for k in range(4):
         "width": W_WIDTH, "sill": 0.93, "head": 2.58, "glazing": "sheer", "dressing": "curtains-and-sheers", "stateInScan": "closed",
         "reveal": {"depth": 0.24},
         "glass": {"width": W_WIDTH, "sill": 1.0, "head": 2.58, "headShape": "square",
-                  "planes": [{"depth": 0.24, "note": "E57 Y 13.80 +-0.04: on this plane the head and sill lines keep their height between near and far stations."}],
+                  "planes": [{"depth": 0.24, "note": "E57 Y 13.80: on this plane the head and sill lines keep their height, by eye, between near and far stations. Tolerance -0.04 to +0.12 m."}],
                   "note": "Clear glass in a white frame behind a sheer; a drape overlaps each side of it as scanned (the gaps between drapes are about 1.25-1.4 m)."},
         "note": W_NOTE if k == 1 else "As window-2, placed by the 2.22 m pitch%s. See window-2's note." % ("" if k == 2 else " (not measured directly)"),
     })
@@ -115,8 +115,8 @@ room = {
         "kind": "stepped", "height": FIELD, "heightRange": [3.115, 3.135],
         "regions": [
             {"id": "inner-soffit", "kind": "soffit", "height": SOFFIT, "heightRange": [2.41, 2.43],
-             "outline": [pl(WI, SW), pl(RET, SW), pl(RET, SE), pl(EI, SE), pl(EI, PS), pl(PW, PS), pl(PW, 7.56), pl(WI, 7.56)],
-             "note": "The inner part's lowest ceiling, a frame about the two coffers. Its north edge is the downstand's face at E57 Y 7.56 (from 2.42 m up to the window part's cornice), between the two stub walls."},
+             "outline": [pl(WI, SW), pl(RET, SW), pl(RET, SE), pl(EI, SE), pl(EI, PS), pl(PW, PS), pl(PW, 7.52), pl(WI, 7.595)],
+             "note": "The inner part's lowest ceiling, a frame about the two coffers. Its north edge is the downstand's face (from 2.42 m up to the window part's cornice), which is not parallel to the axis: E57 Y 7.595 at X 12.9, 7.57 at X 16.1, 7.52 at X 19.0 (05_elev.py, 2 cm raster), 7.5 cm south of the west stub wall's plane and meeting the east stub wall's."},
             {"id": "south-strip", "kind": "soffit", "height": STRIP, "heightRange": [2.505, 2.525],
              "outline": [pl(WI, SW), pl(RET, SW), pl(RET, SE), pl(18.05, SE), pl(18.05, 2.725), pl(WI, 2.725)],
              "note": "A band 0.095 m higher than the soffit in front of the wardrobes, to E57 X 18.05 and Y 2.725 (6.5 m2). Three downlights."},
@@ -171,17 +171,17 @@ room = {
                     "the venue's Reception Room plan (its three labels only; private, not copied)"],
         "residuals": [
             {"quantity": "wall face lines, plain wall band 0.6-1.8 m (14 faces)", "kind": "fit-rms", "value": 0.0075, "unit": "m", "note": "Largest per-face inlier rms (the south wall's west plane); others 0.2-7.2 mm."},
-            {"quantity": "walls' deviation from the E57 axes", "kind": "fit-max", "value": 1.01, "unit": "deg", "note": "The window part's west wall, drawn as measured (10.4 cm over its 5.89 m). The other long walls: east -0.42, south -0.28, inner walls +0.11 and +0.14: up to 1.4 cm from the drawn axis-parallel line at a wall's ends. The window wall's own direction is not measured."},
+            {"quantity": "walls' deviation from the E57 axes", "kind": "fit-max", "value": 1.01, "unit": "deg", "note": "The window part's west wall, drawn as measured (10.4 cm over its 5.89 m). The other long walls: east -0.42, south -0.28, inner walls +0.11 and +0.14: up to 1.4 cm from the drawn axis-parallel line at a wall's ends. The window wall's own direction is not measured (its pelmet runs at -0.57 deg: up to 9 cm at its east end)."},
             {"quantity": "independent check: station-fan line fits against the plan-section fits (14 faces)", "kind": "check", "value": 0.0014, "unit": "m", "note": "Largest difference of offset; angles agree within 0.03 deg on the long walls."},
-            {"quantity": "independent check: tape lines against the fitted outline", "kind": "check", "value": 0.009, "unit": "m", "note": "34 lines over four dimensions, outside the inner east wall's bulge. The whole length cannot be taped in one line; a line to a sheer fold in the window wall's plane gives 12.38-12.39 m against the outline's 12.400 m."},
+            {"quantity": "independent check: tape lines against the fitted outline", "kind": "check", "value": 0.009, "unit": "m", "note": "36 lines over four dimensions, outside the inner east wall's bulge. The whole length cannot be taped in one line; a line to a sheer fold in the window wall's plane gives 12.38-12.39 m against the outline's 12.400 m."},
             {"quantity": "inner east wall: bulge between E57 Y 4.6 and 5.6", "kind": "fit-max", "value": 0.028, "unit": "m", "note": "Found by the tape lines; the wall is drawn as one plane."},
             {"quantity": "floor plane", "kind": "fit-rms", "value": 0.009, "unit": "m", "note": "Plumb lines; 6.5 mm area-weighted. The two fits agree at the origin within 0.5 mm and differ in slope (2.5 and 3.8 mm/m along Y)."},
             {"quantity": "floor fall, window wall to south wall", "kind": "fit-max", "value": 0.047, "unit": "m", "note": "3.8 mm/m over 12.4 m by plumb lines (31 mm by the area-weighted fit). The planner's floor is flat, at the centre's level."},
             {"quantity": "ceiling parts: raster medians against plumb-line means", "kind": "check", "value": 0.004, "unit": "m", "note": "3.126/3.125, 2.822/2.822, 2.825/2.824, 2.419/2.415-2.424, 2.514/2.515."},
             {"quantity": "columns' faces", "kind": "fit-rms", "value": 0.0068, "unit": "m"},
             {"quantity": "door edges", "kind": "tolerance", "value": 0.02, "unit": "m", "note": "2 cm depth rasters and 6-8 mm photo crops, edges judged by eye."},
-            {"quantity": "windows: glass plane's depth behind the wall face", "kind": "tolerance", "value": 0.04, "unit": "m", "note": "From the head and sill lines keeping their height between stations 1.9 m and 3.8-5.0 m away (1 cm of reading is 4 cm of depth)."},
-            {"quantity": "windows: sill and head heights", "kind": "tolerance", "value": 0.03, "unit": "m", "note": "Through a sheer, 4 mm crops."},
+            {"quantity": "windows: glass plane's depth behind the wall face", "kind": "tolerance", "value": 0.1, "unit": "m", "note": "By eye the head and sill lines keep their height on the plane Y 13.80 between stations 1.9 m and 3.8-5.0 m away (1 cm of reading is 4 cm of depth). An automatic reading (07_window_edges.py heads) has the second window's head at 2.609-2.624 m from five stations 1.9 to 4.5 m away, so that frame is within about 2 cm of Y 13.80; on the other three it scatters by 7-50 mm between stations and would put the frames 0.03-0.12 m further back; not resolved. The window wall's unmeasured direction adds up to 9 cm at the east end."},
+            {"quantity": "windows: sill and head heights", "kind": "tolerance", "value": 0.05, "unit": "m", "note": "Through a sheer, 2.5-4 mm crops; the head reads 2.54-2.62 m by eye over the four windows and 2.56, 2.61, 2.59 and 2.57 m automatically (it may differ from window to window), and up to 2.65 m if the frames lie further back."},
             {"quantity": "windows: west glazing edges of the second and third", "kind": "tolerance", "value": 0.02, "unit": "m", "note": "One station each; the pitch between them is insensitive to the glass depth (1.4 cm per 10 cm)."},
             {"quantity": "windows: width", "kind": "tolerance", "value": 0.15, "unit": "m", "note": "NOT measured: 1.62 m is the least the photographs allow; the east jambs are hidden by the drapes. It may be up to about 1.9 m."},
             {"quantity": "the venue's plan labels against the scan", "kind": "check", "value": 0.4, "unit": "m", "note": "9.6 against 9.60-9.63 m; 7.3 against 7.266 m; 12 against 12.071 m (east) and 12.400 m (west)."},
