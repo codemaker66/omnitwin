@@ -142,6 +142,48 @@ function sentNote(object: BatchObject): string | null {
   return typeof note === "string" && note !== "" ? note : null;
 }
 
+/** The note a stored row holds, if any: in its metadata, where #389 keeps it. */
+function noteOfRow(row: WirePlacedObject): string | null {
+  const note = row.metadata?.["notes"];
+  return typeof note === "string" && note !== "" ? note : null;
+}
+
+/**
+ * The notes the stored rows hold, by row id, read from and written to each
+ * row's metadata, as #389 keeps them: so every save that writes a row writes
+ * its note, whichever route and rule it went by, and a later read or answer
+ * withholds exactly what is stored (delta review of #388 at 7a51b6e4, X5). A
+ * spec writes one here as staff would by the single-piece route, which makes
+ * no new revision.
+ */
+class StoredNotes {
+  constructor(private readonly layouts: ReadonlyMap<string, StoredLayout>) {}
+
+  private where(id: string): { readonly layout: StoredLayout; readonly index: number; readonly row: WirePlacedObject } | null {
+    for (const layout of this.layouts.values()) {
+      const index = layout.objects.findIndex((object) => object.id === id);
+      const row = layout.objects[index];
+      if (row !== undefined) return { layout, index, row };
+    }
+    return null;
+  }
+
+  get(id: string): string | undefined {
+    const at = this.where(id);
+    return at === null ? undefined : noteOfRow(at.row) ?? undefined;
+  }
+
+  has(id: string): boolean {
+    return this.get(id) !== undefined;
+  }
+
+  set(id: string, note: string): void {
+    const at = this.where(id);
+    if (at === null) throw new Error(`No stored row ${id} to write a note on`);
+    at.layout.objects[at.index] = { ...at.row, metadata: { ...(at.row.metadata ?? {}), notes: note } };
+  }
+}
+
 /** The database keeps positions to the millimetre and turns to 5 places. */
 function fixed(value: number, places: number): string {
   return value.toFixed(places);
@@ -162,15 +204,16 @@ export class PlannerSaveServer {
   /** While true, a batch save never arrives (the connection drops it). */
   dropSaves = false;
   /**
-   * Notes on rows, by row id, that a reader without the plan's claim secret
-   * is not shown: the API's rules for them (packages/api/src/routes/
-   * public-configs.ts). Such a reader gets the row marked noteHeld and without
-   * its note. A public save not taken as the whole truth (PublicSaveRules: from
-   * such a reader, or from the maker without saying it read the notes) keeps
-   * the note of a row it sends without one, and is refused if it leaves the row
-   * out (409 HELD_PIECE_OMITTED). Empty, the server answers as it always did.
+   * The notes on the stored rows, by row id (StoredNotes), with the API's
+   * rules for them (packages/api/src/routes/public-configs.ts). A reader
+   * without the plan's claim secret gets each such row marked noteHeld and
+   * without its note. A public save not taken as the whole truth
+   * (PublicSaveRules: from such a reader, or from the maker without saying it
+   * read the notes) keeps the note of a row it sends without one, and is
+   * refused if it leaves the row out (409 HELD_PIECE_OMITTED). A row holding
+   * no note is answered as it always was.
    */
-  readonly heldNotes = new Map<string, string>();
+  readonly heldNotes = new StoredNotes(this.layouts);
   /** While true, the signed-in read refuses a public preview (403), as the API does for anyone off its venue's floor. */
   previewsOffTheFloor = false;
 
@@ -201,17 +244,20 @@ export class PlannerSaveServer {
   }
 
   /**
-   * The layout's rows as a reader gets them: `marked`, a held note is only
-   * marked, except on the rows in `sentHere`, whose note the answering save
-   * itself sent (the API gives a note back only there); otherwise it is there.
+   * The layout's rows as a reader gets them: `marked`, a stored note is only
+   * marked, except in a save's answer (`answering`: the note each piece it
+   * sent with an id sent) on a row whose note that save itself sent, and on a
+   * row it placed, which holds what was sent (#389 withoutUnsentNotes);
+   * otherwise each row is as stored.
    */
-  private rows(layout: StoredLayout, marked: boolean, sentHere: ReadonlySet<string> = new Set<string>()): readonly WirePlacedObject[] {
-    if (this.heldNotes.size === 0) return layout.objects;
+  private rows(layout: StoredLayout, marked: boolean, answering: ReadonlyMap<string, string | null> | null = null): readonly WirePlacedObject[] {
+    if (!marked) return layout.objects;
     return layout.objects.map((object) => {
-      const note = this.heldNotes.get(object.id);
-      if (note === undefined) return object;
+      const note = noteOfRow(object);
+      if (note === null) return object;
+      if (answering !== null && (!answering.has(object.id) || answering.get(object.id) === note)) return object;
       const rest = Object.fromEntries(Object.entries(object.metadata ?? {}).filter(([key]) => key !== "notes"));
-      return { ...object, metadata: marked && !sentHere.has(object.id) ? { ...rest, noteHeld: true } : { ...rest, notes: note } };
+      return { ...object, metadata: { ...rest, noteHeld: true } };
     });
   }
 
@@ -237,14 +283,19 @@ export class PlannerSaveServer {
     }
     const batch = body["objects"].map(asBatchObject);
     const sent = new Set(batch.flatMap((object) => (object.id === undefined ? [] : [object.id])));
-    if (settle && layout.objects.some((object) => this.heldNotes.has(object.id) && !sent.has(object.id))) {
+    // The notes the stored rows hold, which this save replaces.
+    const stored = new Map(layout.objects.flatMap((object) => {
+      const note = noteOfRow(object);
+      return note === null ? [] : [[object.id, note] as const];
+    }));
+    if (settle && [...stored.keys()].some((id) => !sent.has(id))) {
       return { status: 409, json: { error: HELD_PIECE_OMITTED_SENTENCE, code: "HELD_PIECE_OMITTED" } };
     }
     // From such a save, a stored piece's note is kept when the piece says
     // nothing of it, and changed or cleared only by a save that names the note
     // it replaces; any other change is refused (the API's settledNotes).
     if (settle && batch.some((object) => {
-      const held = object.id === undefined ? undefined : this.heldNotes.get(object.id);
+      const held = object.id === undefined ? undefined : stored.get(object.id);
       if (held === undefined) return false;
       const note = sentNote(object);
       return note !== held && object.replacesNote !== held && (note !== null || object.replacesNote !== undefined);
@@ -259,32 +310,25 @@ export class PlannerSaveServer {
       ...updates.map((object) => [object, object.id ?? this.mint("row")] as const),
       ...inserts.map((object) => [object, this.mint("row")] as const),
     ];
+    // A piece settled as sending nothing of its stored note keeps it, in the row (settledNotes); any other is stored as sent.
+    const settledMetadata = (object: BatchObject, id: string): Record<string, unknown> | null => {
+      const held = settle ? stored.get(id) : undefined;
+      if (held === undefined || sentNote(object) !== null || object.replacesNote !== undefined) return object.metadata ?? null;
+      return { ...(object.metadata ?? {}), notes: held };
+    };
     const row = (object: BatchObject, id: string): WirePlacedObject => ({
       id, configurationId: layout.id, assetDefinitionId: object.assetDefinitionId,
       positionX: fixed(object.positionX, 3), positionY: fixed(object.positionY, 3), positionZ: fixed(object.positionZ, 3),
       rotationX: fixed(object.rotationX, 5), rotationY: fixed(object.rotationY, 5), rotationZ: fixed(object.rotationZ, 5),
-      scale: fixed(object.scale, 3), sortOrder: object.sortOrder, metadata: object.metadata ?? null,
+      scale: fixed(object.scale, 3), sortOrder: object.sortOrder, metadata: settledMetadata(object, id),
     });
     layout.objects = placed.map(([object, id]) => row(object, id));
-    // Such a reader's notes are the server's to hold like any other: kept from
-    // every reader but the plan's maker, and given back only in the answer to
-    // the save that sent them.
-    const sentHere = new Set<string>();
-    if (settle) {
-      for (const [object, id] of placed) {
-        const note = sentNote(object);
-        if (note !== null) {
-          this.heldNotes.set(id, note);
-          sentHere.add(id);
-        } else if (object.replacesNote !== undefined && object.replacesNote === this.heldNotes.get(id)) {
-          this.heldNotes.delete(id);
-        }
-      }
-    }
     layout.revision += 1;
     layout.updatedAt = new Date().toISOString();
     this.saves.push({ configId: layout.id, expectedRevision, objectCount: batch.length });
-    return { status: 200, json: { data: { objects: this.rows(layout, withhold, sentHere), revision: layout.revision } } };
+    // A reader other than the plan's maker is given back a note only where this save itself sent that very note.
+    const answering = new Map(batch.flatMap((object) => (object.id === undefined ? [] : [[object.id, sentNote(object)] as const])));
+    return { status: 200, json: { data: { objects: this.rows(layout, withhold, answering), revision: layout.revision } } };
   }
 
   private async answer(route: Route): Promise<void> {
