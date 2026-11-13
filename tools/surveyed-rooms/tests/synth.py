@@ -125,6 +125,19 @@ def write_gh_inputs(data, depth_size=64, pano=(2048, 1024)):
     write_panoramas(data, GH_STATIONS, *pano, gh_sky)
 
 
+def write_gh_canvas_field(path, name="end-portrait", box=(497, 954, 915, 1213)):
+    """A canvas field as canvas-veil.py writes it (proj/canvas-<wall>.npz): the canvas's rows and
+    columns on the wall's 5 mm grid, its extent there, a gain a and a colour b in linear light.
+    The mini Grand Hall's own measurement makes none (too few of its stations see the whole
+    canvas through 64-texel depth maps), so this one stands in to exercise the application."""
+    r0, r1, c0, c1 = box
+    yy, xx = np.mgrid[0:r1 - r0, 0:c1 - c0]
+    a = (0.8 + 0.15 * np.sin(xx / 37.0) * np.cos(yy / 29.0)).astype(np.float32)
+    b = np.stack([0.02 + 0.01 * np.sin(yy / 41.0), 0.015 + 0.01 * np.cos(xx / 53.0), np.full(a.shape, 0.01)], -1).astype(np.float32)
+    np.savez_compressed(path, names=np.array([name]), **{f"{name}.box": np.array(box, np.int32),
+                        f"{name}.extent": np.array([r0 - 0.3, r1 - 0.7, c0 - 0.3, c1 - 0.7], np.float64), f"{name}.a": a, f"{name}.b": b})
+
+
 def write_gh_detail(room, proj, names, rng):
     """proj/detail-<wall>.npy for walls whose 2 mm photograph the test does not project: an image
     of the detail grid's own size (pack-detail.py refuses any other), smooth with a little grain."""
