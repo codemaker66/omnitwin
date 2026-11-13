@@ -11,12 +11,14 @@
 -- value and its rating. How the page was reached is not kept (dropped on
 -- 12 November: the privacy page does not mention it). Nothing names or follows
 -- the visitor. A row keeps only the day it arrived (the UTC day, whatever the
--- session's time zone), not the moment. That removes the exact time, but row
--- order, each row's inserting transaction id (xmin, which any reader of the
--- table can see) and the database's restore history still follow arrival, so
--- on its own it does not stop a row being matched to a hosting provider's
--- request log. Rows go after 90 days (the nightly cleanup); the index beside the key,
--- on the day, serves that cleanup and the p75 report.
+-- session's time zone), not the moment. The day alone would leave row order,
+-- each row's inserting transaction id (xmin, which any reader of the table can
+-- see) and the database's restore history following arrival, so the API
+-- writes rows in shuffled hourly batches of at least ten reports of one device
+-- class, day and set of vitals, one transaction each (createWebVitalsBatch),
+-- and no row can be paired with a hosting provider's request log. Rows go
+-- after 90 days (the nightly cleanup); the index beside the key, on the day,
+-- serves that cleanup and the p75 report.
 --
 -- Additive only: one new table, no change to existing rows. The file is one
 -- transaction; a failed statement leaves the database as it was.

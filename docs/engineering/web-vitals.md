@@ -69,15 +69,38 @@ back/forward cache is measured again:
   carries no cookie, token or `Referer` (the page's address names a share token or a
   plan's code), whatever the site's Referrer-Policy.
 - **What is stored:** the API stores one row per vital: page, device, metric, value
-  and rating, with only the UTC day it arrived, not the moment
-  (`date_trunc('day', now(), 'UTC')`, whatever the session's time zone). It stores no
-  address, user agent, identifier or session, and nothing is stored on the device.
-  The day alone does not make a row unmatchable: rows still sit in arrival order,
-  each carries the id of the transaction that inserted it (`xmin`, which anyone who
-  can read the table can see, rising with time), and the database's restore history
-  follows arrival, so with the host's request log (below) a row could in principle be
-  paired with the request that brought it. A once-a-day shuffled insert in one
-  transaction, or daily aggregates, would remove that; neither is built.
+  and rating, with only the UTC day it arrived, not the moment (the column's default
+  is `date_trunc('day', now(), 'UTC')`, whatever the session's time zone). It stores
+  no address, user agent, identifier or session, and nothing is stored on the device.
+- **Written in shuffled batches** (Blake, 13 November 2026), so no stored row can be
+  paired with the one request that brought it. The day alone would not do that:
+  rows written as they arrive sit in arrival order, each carries the id of the
+  transaction that inserted it (`xmin`, which anyone who can read the table can see,
+  rising with time), and the database's restore history follows arrival. Instead:
+  - the route holds each checked report in memory, with nothing about who sent it,
+    and its UTC day (`createWebVitalsBatch`);
+  - it groups them by everything a row and the host's request log can both tell
+    apart: the page (a share page's own API call, logged with its token seconds
+    before the report, names it), the device class (the log's user agent says
+    roughly which), the UTC day (each row keeps it), and which vitals the report
+    carries (a browser engine's own: CLS comes only from Chromium, so a lone
+    Android phone among iPhones would hold the batch's only CLS row);
+  - once an hour it writes every group that holds at least ten reports
+    (`WEB_VITALS_BATCH_MIN_REPORTS`), every row in random order and all in one
+    transaction (bounded to 15 seconds), so the batch shares one `xmin` and its
+    rows' positions say nothing of their order of arrival;
+  - with the host's request log (below), a row can then be narrowed only to the ten
+    or more reports of its group, never to one. Ten reports, not ten people: one
+    visitor's repeated loads of a page count as many, and someone who posts reports
+    on purpose to fill a group around another visitor's could single that one out.
+  - A group of today holding fewer than ten waits for a later hour; one of an
+    earlier day can no longer grow and is dropped. When the API stops (every deploy:
+    Railway's SIGTERM closes the server, within its 25-second grace), what reaches
+    ten is written and the rest is dropped, and a crash loses all that is held. A
+    batch the database refuses, or that takes over 15 seconds, is dropped, and its
+    places under the daily ceiling are given back. So a page opened fewer than ten
+    times a day by one kind of device and browser (most share pages, a tablet) is
+    never measured: its p75 needs a busier page.
   Rows go after `WEB_VITAL_RETENTION_DAYS` (90) in the nightly cleanup.
 - **What the server sees:** like any request, the report reaches the API from the
   visitor's internet address. The route writes no access line (`logLevel: "warn"`,

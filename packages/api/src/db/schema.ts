@@ -6859,10 +6859,10 @@ export const venueEngagementEvents = pgTable("venue_engagement_events", {
 // One row per vital of a sampled page load: the route's pattern (never an
 // address), a device class, the value and its rating; not how the page was
 // reached. Nothing about the visitor. Only the UTC day it arrived, not the
-// moment (row order, xmin and the database's restore history still follow
-// arrival, so this alone does not stop a match with a host's request log).
-// Kept WEB_VITAL_RETENTION_DAYS, then removed by the nightly cleanup.
-// Written only by routes/public-web-vitals.ts.
+// moment, and written in shuffled hourly batches (createWebVitalsBatch), so
+// neither row order, xmin nor restore history pairs a row with a host's
+// request log. Kept WEB_VITAL_RETENTION_DAYS, then removed by the nightly
+// cleanup. Written only by routes/public-web-vitals.ts, through its batch.
 // ---------------------------------------------------------------------------
 
 export const webVitalSamples = pgTable("web_vital_samples", {
