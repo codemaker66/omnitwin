@@ -7,6 +7,8 @@ import { DashboardLayout, forgetKnownVenueNames, type DashboardView } from "../D
 import { InventoryNavigationGuard } from "../inventory/InventoryNavigationGuard.js";
 import { ProtectedRoute } from "../../auth/ProtectedRoute.js";
 import { forgetProposalMemory, proposalsWithWords, recallDraft, rememberDraft, updateKept } from "../proposals/proposal-memory.js";
+import { PLATFORM_ROLES, USER_ROLES } from "@omnitwin/types";
+import { opensDiary } from "../../../lib/role-capabilities.js";
 
 const mocks = vi.hoisted(() => ({
   venue: vi.fn(), signOut: vi.fn(), bypass: vi.fn(), unreadCount: vi.fn(), subscribe: vi.fn(),
@@ -711,5 +713,32 @@ describe("DashboardLayout orientation", () => {
     render(<MemoryRouter initialEntries={["/hallkeeper/today"]}><DashboardLayout mainLabel="The Day Board"><h1>Today</h1></DashboardLayout></MemoryRouter>);
     await screen.findByText("Trades Hall");
     expect(screen.getByRole("link", { name: "Venviewer" }).getAttribute("href")).toBe("/hallkeeper/today");
+  });
+});
+
+// The route admits whoever opensDiary admits (router.tsx); the header link and
+// Find must offer the Diary to exactly those people, or a platform admin with a
+// planner role is let in but never shown the way (#295's review, D1).
+describe("the Diary is offered exactly to whom its route admits", () => {
+  const cases = USER_ROLES.flatMap((role) => PLATFORM_ROLES.map((platformRole) => ({
+    role, platformRole, offered: opensDiary({ role, platformRole }),
+  })));
+
+  it("covers both answers, including a planner who is a platform admin", () => {
+    expect(cases.some((c) => c.offered) && cases.some((c) => !c.offered)).toBe(true);
+    expect(cases.find((c) => c.role === "planner" && c.platformRole === "admin")?.offered).toBe(true);
+    expect(cases.find((c) => c.role === "planner" && c.platformRole === "none")?.offered).toBe(false);
+  });
+
+  it.each(cases)("$role with platform role $platformRole: offered $offered", async ({ role, platformRole, offered }) => {
+    useAuthStore.getState().setUser({ ...admin, role, platformRole });
+    renderShell();
+    await screen.findByText(/Trades Hall|Venviewer Platform/u);
+    expect(screen.queryByRole("link", { name: "Diary" }) !== null).toBe(offered);
+    fireEvent.click(screen.getByRole("button", { name: "Find" }));
+    // Find lists a page as "<name>, page, <note>"; with nothing to offer it draws no list.
+    const find = await screen.findByRole("dialog", { name: "Find" });
+    const found = within(find).queryByRole("listbox", { name: "Found" });
+    expect(found !== null && within(found).queryByRole("option", { name: /^Diary, page/u }) !== null).toBe(offered);
   });
 });

@@ -1,6 +1,6 @@
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { Component, lazy, Suspense } from "react";
-import { useAuthStore } from "../../stores/auth-store.js";
+import { useAuthStore, type AuthUser } from "../../stores/auth-store.js";
 import type { ReactNode } from "react";
 import { ActivityIndicator } from "../shared/Activity.js";
 import { authRouteWithReturnTo } from "../../lib/auth-return.js";
@@ -89,10 +89,13 @@ function RouteState({ label, children }: { readonly label: string; readonly chil
 interface ProtectedRouteProps {
   readonly children: ReactNode;
   readonly allowedRoles?: readonly string[];
+  /** Who the page admits, when that is more than a role list (a platform
+   *  admin as well): the same rule its navigation offers the page by. */
+  readonly admits?: (user: AuthUser) => boolean;
   readonly requiredPlatformRole?: "admin" | "operator";
 }
 
-export function ProtectedRoute({ children, allowedRoles, requiredPlatformRole }: ProtectedRouteProps): React.ReactElement {
+export function ProtectedRoute({ children, allowedRoles, admits, requiredPlatformRole }: ProtectedRouteProps): React.ReactElement {
   const { isAuthenticated, isLoading, user } = useAuthStore();
   const location = useLocation();
 
@@ -111,7 +114,7 @@ export function ProtectedRoute({ children, allowedRoles, requiredPlatformRole }:
     return <Navigate to={authRouteWithReturnTo("/login", location.pathname + location.search + location.hash)} replace />;
   }
 
-  if (allowedRoles !== undefined && user !== null && !allowedRoles.includes(user.role)) {
+  if (user !== null && ((allowedRoles !== undefined && !allowedRoles.includes(user.role)) || (admits !== undefined && !admits(user)))) {
     return (
       <RouteState label="Workspace access denied">
         <section className="vv-state-panel" role="alert">
