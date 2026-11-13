@@ -1460,6 +1460,9 @@ describe("EventDayOpsPage", () => {
       interface Order {
         readonly fates: readonly Fate[];
         readonly schedule: readonly string[];
+        /** The server applies the replay when it is answered, not when it is
+         *  sent: after a later press that may have landed meanwhile. */
+        readonly lateReplay?: boolean;
       }
       const PRESSES = [
         { label: "Start", status: "in_progress" },
@@ -1514,24 +1517,33 @@ describe("EventDayOpsPage", () => {
         return `${fates}: ${order.schedule.map(words).join(", ")}`;
       }
 
-      function boardAt(status: OpsTask["status"]): EventDayOpsBoard {
-        const board = boardFixture();
-        return board.handoffPack === null ? board : { ...board, handoffPack: { ...board.handoffPack, opsTasks: [task(status)] } };
-      }
-
       /** The API, as services/event-day-ops.ts answers it: a press meets its
        *  own fate on its first send and lands on a replay (the connection is
        *  back); a key already recorded changes nothing, and neither does the
-       *  status the task already holds. What lands is applied as it is sent,
-       *  so the server takes requests in the order they were sent. */
-      function fakeServer(fateOf: (status: string) => Fate) {
+       *  status the task already holds; each write moves the task's
+       *  updatedAt on. What lands is applied as it is sent, so the server
+       *  takes requests in the order they were sent, except a replay the
+       *  order holds back (lateReplay), which is applied when answered. */
+      function fakeServer(fateOf: (status: string) => Fate, lateReplay: boolean) {
         let status: OpsTask["status"] = "todo";
+        let writes = 0;
+        const current = (): OpsTask => ({ ...task(status), updatedAt: new Date(Date.parse(NOW) + writes * 1000).toISOString() });
         const recorded = new Set<string>();
         const sentOnce = new Set<string>();
+        let requests = 0;
+        const apply = (key: string, next: OpsTask["status"]): OpsTask => {
+          if (!recorded.has(key) && next !== status) {
+            status = next;
+            writes += 1;
+            recorded.add(key);
+          }
+          return current();
+        };
         interface Sent { readonly status: string; readonly replay: boolean; readonly answer: () => void }
         const onTheirWay: Sent[] = [];
         mockUpdateOpsTaskStatus.mockImplementation((_taskId: string, input: UpdateOpsTaskStatusInput) =>
           new Promise<OpsTask>((resolve, reject) => {
+            requests += 1;
             const key = input.idempotencyKey ?? "";
             const replay = sentOnce.has(key);
             sentOnce.add(key);
@@ -1541,17 +1553,18 @@ describe("EventDayOpsPage", () => {
               answer = () => { reject(new ApiError(503, "Unavailable", "SERVICE_UNAVAILABLE")); };
             } else if (fate === "refused") {
               answer = () => { reject(new ApiError(403, "Forbidden", "FORBIDDEN")); };
+            } else if (replay && lateReplay) {
+              answer = () => { resolve(apply(key, input.status)); };
             } else {
-              if (!recorded.has(key) && input.status !== status) {
-                status = input.status;
-                recorded.add(key);
-              }
-              const updated = task(status);
+              const updated = apply(key, input.status);
               answer = () => { resolve(updated); };
             }
             onTheirWay.push({ status: input.status, replay, answer });
           }));
-        mockGetEventDayOpsBoard.mockImplementation(() => Promise.resolve(boardAt(status)));
+        mockGetEventDayOpsBoard.mockImplementation(() => {
+          const board = boardFixture();
+          return Promise.resolve(board.handoffPack === null ? board : { ...board, handoffPack: { ...board.handoffPack, opsTasks: [current()] } });
+        });
         const answerWhere = (matches: (sent: Sent) => boolean): void => {
           const index = onTheirWay.findIndex(matches);
           if (index >= 0) onTheirWay.splice(index, 1)[0]?.answer();
@@ -1559,6 +1572,10 @@ describe("EventDayOpsPage", () => {
         return {
           status: () => status,
           waiting: () => onTheirWay.length,
+          /** Every request sent, replays and any second send included. */
+          requests: () => requests,
+          /** The keys sent: one per press, and one more for each status sent again. */
+          keys: () => sentOnce.size,
           /** The first send of the press with this status, if it is on its way. */
           answerPress: (pressed: string): void => { answerWhere((sent) => !sent.replay && sent.status === pressed); },
           answerReplay: (): void => { answerWhere((sent) => sent.replay); },
@@ -1572,15 +1589,15 @@ describe("EventDayOpsPage", () => {
         }
       }
 
-      it("runs every order", () => {
-        expect(schedules(2)).toHaveLength(12);
-        expect(ORDERS).toHaveLength(9 * 12 + 27 * 2);
-      });
-
-      it.each(ORDERS.map((order) => [nameOf(order), order] as const))("%s", async (_name, order) => {
+      /** Plays an order through the page and the stand-in server, then lets
+       *  the connection back for good. */
+      async function runOrder(order: Order): Promise<{
+        readonly server: ReturnType<typeof fakeServer>;
+        readonly queue: ReturnType<typeof createEventDayQueue>;
+      }> {
         const queue = await realQueue();
         const fateByStatus = new Map<string, Fate>(order.fates.map((fate, index) => [PRESSES[index]?.status ?? "", fate]));
-        const server = fakeServer((status) => fateByStatus.get(status) ?? "lands");
+        const server = fakeServer((status) => fateByStatus.get(status) ?? "lands", order.lateReplay === true);
         renderPage();
         await screen.findByText("Set 12 x Round Table");
 
@@ -1606,12 +1623,49 @@ describe("EventDayOpsPage", () => {
         await answer(server.answerAll);
         await online();
         await answer(server.answerAll);
+        return { server, queue };
+      }
 
-        const standing = order.fates.map((fate, index) => (fate === "refused" ? null : PRESSES[index]?.status ?? null))
+      it("runs every order", () => {
+        expect(schedules(2)).toHaveLength(12);
+        expect(ORDERS).toHaveLength(9 * 12 + 27 * 2);
+      });
+
+      // The requests each order sent before the page could send a status
+      // again (measured at 0bbaf5d9), one digit per order of ORDERS: the
+      // second send must reach none of them.
+      const REQUESTS_BEFORE =
+        "222222222222333333333333222222222222222333222222333444333333333333333333222222222222333333333333"
+        + "222222222222334433334444334433435443435454435444334433334444334433";
+
+      it.each(ORDERS.map((order, index) => [nameOf(order), order, index] as const))("%s", async (_name, order, index) => {
+        const { server, queue } = await runOrder(order);
+        expect(server.requests()).toBe(Number(REQUESTS_BEFORE[index]));
+        expect(server.keys()).toBe(order.fates.length);
+
+        const standing = order.fates.map((fate, at) => (fate === "refused" ? null : PRESSES[at]?.status ?? null))
           .filter((status): status is OpsTask["status"] => status !== null)
           .at(-1) ?? "todo";
         expect(server.waiting()).toBe(0);
         expect(server.status()).toBe(standing);
+        expect(await queue.list()).toEqual([]);
+      });
+
+      // #418 B2, as the release lead ruled: a replay the server applies after
+      // a later press that has already landed. The page sends that later
+      // status again, once, under a fresh key, so the server ends on what
+      // was pressed last.
+      it("sends the latest status again when an older replay was applied after it landed", async () => {
+        const order: Order = { fates: ["fails", "lands"], schedule: ["p0", "a0", "d", "p1", "a1", "r"], lateReplay: true };
+        // The same order with the replay applied as it was sent: one of the 162.
+        const inSendOrder = ORDERS.findIndex((other) => other.lateReplay !== true
+          && other.fates.join() === order.fates.join() && other.schedule.join() === order.schedule.join());
+        const { server, queue } = await runOrder(order);
+
+        expect(server.status()).toBe("done");
+        expect(statusesSent()).toEqual(["in_progress", "in_progress", "done", "done"]);
+        expect(server.requests()).toBe(Number(REQUESTS_BEFORE[inSendOrder]) + 1);
+        expect(server.keys()).toBe(order.fates.length + 1);
         expect(await queue.list()).toEqual([]);
       });
     });

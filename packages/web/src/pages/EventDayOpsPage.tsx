@@ -220,6 +220,8 @@ function makeIdempotencyKey(taskId: string, status: OpsTaskStatus): string {
 interface TaskPress {
   readonly input: { readonly status: OpsTaskStatus; readonly idempotencyKey: string };
   outcome: "sending" | "landed" | "unsent" | "refused";
+  /** Once it has landed: the task's updatedAt in the server's answer. */
+  landedAt?: string;
 }
 
 /** The presses made on this page, task by task, oldest first. */
@@ -271,8 +273,9 @@ async function replayQueuedTaskStatus(presses: TaskPresses, op: QueuedTaskStatus
     return;
   }
   if (press !== undefined) press.outcome = "sending";
+  let answer: OpsTask;
   try {
-    await updateOpsTaskStatus(op.opsTaskId, op.input);
+    answer = await updateOpsTaskStatus(op.opsTaskId, op.input);
   } catch (err) {
     if (isRetriableError(err)) {
       if (press !== undefined) press.outcome = "unsent";
@@ -282,8 +285,53 @@ async function replayQueuedTaskStatus(presses: TaskPresses, op: QueuedTaskStatus
     if (press !== undefined) await refusePress(presses, op.opsTaskId, press);
     return;
   }
-  if (press !== undefined) press.outcome = "landed";
+  if (press !== undefined) {
+    press.outcome = "landed";
+    press.landedAt = answer.updatedAt;
+  }
   await ack();
+  // Only this page's own press: a row another page wrote may be the later word.
+  if (press === undefined) return;
+  const overtaken = overtakenBy(presses, op.opsTaskId, press, answer);
+  if (overtaken !== undefined) await sendAgain(presses, op.opsTaskId, overtaken);
+}
+
+/** The later press here that this replay overtook on the server, if any:
+ *  the latest press, a different one that had already landed, while the
+ *  replay's own answer shows the replayed status written after that press's
+ *  answer. The reply carries no idempotentReplay flag (the API sends the
+ *  task alone), so the answer's status and updatedAt stand for it: a replay
+ *  the server dedupes answers with the task as it stands, which shows the
+ *  later status or no later write. Nothing is sent again for a latest press
+ *  that is unsent (it is queued), refused (it has no word), or still on its
+ *  way (the limit named at taskPresses). */
+function overtakenBy(presses: TaskPresses, opsTaskId: string, replayed: TaskPress, answer: OpsTask): TaskPress | undefined {
+  const latest = standingPress(presses, opsTaskId);
+  if (latest === undefined || latest === replayed || latest.outcome !== "landed" || latest.landedAt === undefined) return undefined;
+  if (answer.status !== replayed.input.status || latest.input.status === answer.status) return undefined;
+  return Date.parse(answer.updatedAt) > Date.parse(latest.landedAt) ? latest : undefined;
+}
+
+/** Sends an overtaken press's status again, once, under a fresh key (#418
+ *  B2): the server holds the older status, and the latest press's own key
+ *  is already recorded there, so only a new key writes it again. The send
+ *  is a press of its own on this page, kept and settled like any other. */
+async function sendAgain(presses: TaskPresses, opsTaskId: string, overtaken: TaskPress): Promise<void> {
+  const status = overtaken.input.status;
+  const again: TaskPress = { input: { status, idempotencyKey: makeIdempotencyKey(opsTaskId, status) }, outcome: "sending" };
+  presses.set(opsTaskId, [...(presses.get(opsTaskId) ?? []), again]);
+  try {
+    const answer = await updateOpsTaskStatus(opsTaskId, again.input);
+    again.outcome = "landed";
+    again.landedAt = answer.updatedAt;
+  } catch (err) {
+    if (!isRetriableError(err)) {
+      await refusePress(presses, opsTaskId, again);
+      return;
+    }
+    again.outcome = "unsent";
+    if (standingPress(presses, opsTaskId) === again) await enqueueEventDayTaskStatus(opsTaskId, again.input);
+  }
 }
 
 function updateTaskInBoard(board: EventDayOpsBoard, updated: OpsTask): EventDayOpsBoard {
@@ -404,9 +452,12 @@ export function EventDayOpsPage(): ReactElement {
   // so only that press is queued or replayed, a queued row is acked only
   // while it still holds the press being acked, this page supersedes only
   // rows it pressed itself, and a row another page wrote is replayed as it
-  // was written. Limits: the server is taken to apply requests in the order
-  // they were sent; a reload forgets these presses; and two pages over one
-  // queue do not know each other's order (the row holds whichever wrote last).
+  // was written. A replay the server applied after a later press here that
+  // had already landed is seen in the replay's answer, and that later status
+  // is sent once more under a fresh key (sendAgain). Limits: a reload forgets
+  // these presses; two pages over one queue do not know each other's order
+  // (the row holds whichever wrote last); and a replay applied after a later
+  // press whose own answer comes back after the replay's is not caught.
   const taskPresses = useRef<TaskPresses>(new Map());
 
   // The room's acknowledgements are read beside the board, never in front of
@@ -719,6 +770,7 @@ export function EventDayOpsPage(): ReactElement {
     void updateOpsTaskStatus(task.id, input)
       .then((updated) => {
         press.outcome = "landed";
+        press.landedAt = updated.updatedAt;
         setState((prev) => prev.kind === "ready" ? { kind: "ready", board: updateTaskInBoard(prev.board, updated) } : prev);
         setNotice("Task status updated.");
         void refreshBoard();
