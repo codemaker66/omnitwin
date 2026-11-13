@@ -1,10 +1,10 @@
 # The planner's kit: what an event planner can do alone, and free, at any venue
 
-Design for Blake's approval, 13 November 2026. Ledger row T-719, lane L4 of the 2027 build
-([the plan](2026-11-13-platform-plan-design.md), section 10 item 5: to "Are event planners a 2027 goal?" Blake
-answered "Asap"). **Nothing here is built, and no product code is written before he approves this design.** A
-mock-up of four screens goes with it as a private page, kept outside the repository; Blake judges it. Nobody has
-yet watched a planner use any of this.
+**Approved by Blake on 13 November 2026**; his four answers are in section 7. Ledger row T-719, lane L4 of the
+2027 build ([the plan](2026-11-13-platform-plan-design.md), section 10 item 5: to "Are event planners a 2027
+goal?" Blake answered "Asap"). **Nothing here is built yet.** The build plan comes next, then the build with
+tests first. A mock-up of four screens goes with this design as a private page, kept outside the repository;
+he judged its look the same day. Nobody has yet watched a planner use any of this.
 
 ## 1. Intent, and why
 
@@ -340,20 +340,26 @@ adds one optional column to plans and two seeded rows; its rollback removes them
 is its own pull request in its own merge slot, numbered at merge. The deletion job joins the nightly clean-up
 that exists, and moves to the plumbing's queue when that lands.
 
-## 7. What only Blake decides
+## 7. What Blake decided, and what still waits on him
 
-1. **This design**, and approach B.
-2. **The look**: the mock-up of four screens.
-3. **The "done when"** in section 8, since the plan has none for this lane.
-4. **Who gets it first, and when names may be kept on Venviewer's servers.** Recommended: five invited planners
-   first, working on their own devices, where no name reaches us; accounts that keep names, and sign-up for
-   everyone, once the solicitor has read the planner's terms and the page for guests.
-5. When they are built, the words on the venue's page about Venviewer for venues.
+Decided by Blake on 13 November 2026, by button. His answers are verbatim.
+
+| Question | His answer |
+|---|---|
+| Do you approve the design: a planner owns their own event at any venue (approach B)? | "Approve it (Recommended)" |
+| Is the look of the mock-up's four screens right to build on? | "Yes, build on it (Recommended)" |
+| Is the test in section 8 the right test for the kit being done? | "Yes, that test (Recommended)" |
+| Who gets the kit first, and when may guests' names be kept on Venviewer's servers? | "Five invited planners (Recommended)". They work on their own devices, where no guest's name reaches us. Accounts that keep names, and sign-up for everyone, open after a solicitor has read the terms |
+
+Still his, when they are built: the first version of the planner's terms and of the page for guests, before
+anyone outside sees them; and the words on the venue's page about Venviewer for venues.
 
 Two notes from T-687's owner also wait on him, with that work and not with this: whether guests are ever shown a
 drawn plan, and how the planner's letter asks about diets before guests can give their own.
 
 ## 8. Done when
+
+Approved by Blake on 13 November 2026 as this lane's test, since the plan had none.
 
 *Done when* five planners who have never seen it each take their own real list of a hundred or more names from a
 first visit to a printed table plan, alone, in under fifteen minutes and in no more than ten clicks and three
