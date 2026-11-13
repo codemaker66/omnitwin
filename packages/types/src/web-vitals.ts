@@ -49,10 +49,12 @@ export type WebVitalRating = (typeof WEB_VITAL_RATINGS)[number];
  * and a 1/60 s clock's land on steps that most ordinary values share too.
  * Event timing is already rounded to 8 ms in every engine. CLS comes only from
  * Chromium and is a score of how far things moved, not a clock's reading, and
- * a shift's score follows the screen's own size: at a thousandth it could name
- * a screen that an in-app browser's user agent names too, so it is kept in
- * hundredths, where screens of a kind score alike (#309's second round-4
- * review). Each step is still far finer than goal 07's targets (CLS 0.1).
+ * a shift's score follows the screen's own size, which an in-app browser's
+ * user agent can name. In hundredths a shift gives about half as many
+ * distinct values across screens as in thousandths; one whose score sits near
+ * a step's edge still splits ordinary screens, so a CLS value can stand alone
+ * in its group (docs/engineering/web-vitals.md names it among the residuals).
+ * Each step is still far finer than goal 07's targets (CLS 0.1).
  */
 export const WEB_VITAL_STEPS: Readonly<Record<WebVitalName, number>> = {
   LCP: 10,
@@ -212,7 +214,8 @@ export type WebVitalsReport = z.infer<typeof WebVitalsReportSchema>;
  * many vitals, their digits and their ratings ("needs-improvement" is longer
  * than "good"), its page and its device class. The browser pads every report
  * with trailing spaces to this size, which JSON ignores, and the API refuses
- * any other. The longest report the schema allows is about 320 bytes.
+ * any other. The longest report the browser sends is about 320 bytes, and any
+ * the schema accepts stays under 400.
  */
 export const WEB_VITALS_REPORT_BYTES = 512;
 

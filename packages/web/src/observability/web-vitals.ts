@@ -17,8 +17,9 @@ import { webVitalsSampleRate, type WebVitalsEnv } from "./web-vitals-rate.js";
 // and TTFB of the page it landed on, as Google's web-vitals library measures
 // them, to POST /public/web-vitals: each vital once, sent when the page is
 // next hidden after it is measured (so usually one request, and another for a
-// vital first measured after a hide), and measured again for a page restored
-// from the back/forward cache.
+// vital first measured after a hide). A page restored from the back/forward
+// cache, prerendered, or restored after a discard is not measured
+// (UNMEASURED_LOADS), and every report is padded to one size.
 //
 // What leaves the browser is the landing route's pattern (the router's own
 // "/proposal-share/:token", never the address, so a share token or a layout's
@@ -83,9 +84,13 @@ function isReported(name: Metric["name"]): name is WebVitalName {
   return (WEB_VITAL_NAMES as readonly string[]).includes(name);
 }
 
-/** Loads that are not measured: restored from the back/forward cache,
- *  prerendered, or restored after the browser discarded the page. Their TTFB
- *  is 0 and their LCP a frame or two, values no ordinary load has. */
+/** Loads that are not measured. A page restored from the back/forward cache,
+ *  or prerendered, reports a TTFB of 0 and an LCP of a frame or two, values
+ *  few ordinary loads have, and made its requests long before its report or
+ *  not at all, which sets it apart in the host's log. A page the browser
+ *  restored after discarding it is a load the visitor did not start. (A
+ *  document from the browser's own cache also reports a TTFB near 0: a value
+ *  rare in its group, which the doc names among the residuals.) */
 const UNMEASURED_LOADS: ReadonlySet<Metric["navigationType"]> = new Set<Metric["navigationType"]>(["back-forward-cache", "prerender", "restore"]);
 
 export interface WebVitalsReporter {
@@ -116,10 +121,8 @@ export function createWebVitalsReporter(landingPage: string, device: WebVitalDev
     add: (metric) => {
       if (!isReported(metric.name) || sent.has(metric.id)) return;
       if (left && metric.name !== "TTFB") return;
-      // A page restored from the back/forward cache, or prerendered, or
-      // restored after the browser discarded it, reports a TTFB of 0 and an
-      // LCP of a frame or two: values no ordinary load has, which would tie
-      // its rows to each other and to its request (#309's round-4 review).
+      // Restored, prerendered and discarded-then-restored loads are not
+      // measured (UNMEASURED_LOADS; #309's round-4 reviews).
       if (UNMEASURED_LOADS.has(metric.navigationType)) return;
       held.set(metric.name, {
         id: metric.id,

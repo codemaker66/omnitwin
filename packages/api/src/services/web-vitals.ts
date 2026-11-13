@@ -194,8 +194,11 @@ export interface WebVitalsBatch {
    * under way. If it is still unfinished, an hourly flush writes nothing but
    * drops an earlier day's groups, and a closing one drops all it holds.
    * Resolves to how many samples were written. Rejects when the database
-   * refuses the batch, which is then dropped, or when the write is unfinished
-   * after its bound: it may still be stored, and is never tried again.
+   * refuses the batch (it is dropped); when the write is unfinished after its
+   * bound (it may still be stored, and is never tried again); when the write
+   * before is still unfinished (an hourly flush writes nothing, a closing one
+   * drops all it holds); or when a close has too little of its bound left to
+   * start a write (what it would have written is dropped).
    */
   readonly flush: (options?: { readonly closing?: boolean }) => Promise<number>;
   /** How many samples are held now. */
@@ -249,8 +252,10 @@ async function settlesWithin(promise: Promise<unknown>, ms: number): Promise<boo
  * its precision: it keeps only the UTC day it arrived. A group short of the
  * minimum waits, for the rest of its day if it must, and a restart (every
  * deploy) drops what is held, so a page opened only a few times a day may
- * never be written. At most one day's ceiling of reports is held per process,
- * up to four samples each, even while a write is stuck. A write stuck on a
+ * never be written. What is held stays within about one day's ceiling of
+ * reports per process, up to four samples each, even while a write is stuck:
+ * the day before's too until the first hourly flush after midnight, and a
+ * stuck write's own batch beside them. A write stuck on a
  * stalled connection of the server's own pool still holds that connection:
  * the close gives up waiting at its bound, and the pool's own close then waits
  * until the API's 25-second stop ends the process.

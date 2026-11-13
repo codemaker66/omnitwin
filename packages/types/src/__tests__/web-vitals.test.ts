@@ -98,8 +98,8 @@ describe("a vital's step", () => {
   });
 
   it("keeps CLS in hundredths, the same number for every value of one step", () => {
-    // One shift's score on screens of different sizes (#309's second round-4
-    // review): at a thousandth each would keep its own, in hundredths they meet.
+    // Every value within one hundredth's step is kept as the same number
+    // exactly; a thousandth would keep each its own.
     expect([0.0384615, 0.03807, 0.04167, 0.0432].map((value) => stepWebVitalValue("CLS", value))).toEqual([0.04, 0.04, 0.04, 0.04]);
     expect(stepWebVitalValue("CLS", 0.004)).toBe(0);
     expect(stepWebVitalValue("CLS", 0.25)).toBe(0.25);
@@ -136,11 +136,14 @@ describe("a vital's step", () => {
 describe("a report on the wire", () => {
   it("is always the same number of bytes, whatever it carries, and reads back as itself", () => {
     const longestPage = [...WEB_VITAL_PAGES].sort((a, b) => b.length - a.length)[0] ?? "/";
+    // The longest the schema accepts: the longest page and device, and numbers
+    // in their longest written form (the browser's own run to about 320 bytes).
+    const longest = 1.2345678901234567e-7;
     const largest = { v: 1, page: longestPage, device: "desktop", metrics: [
-      { name: "LCP", value: 600_000, rating: "needs-improvement" },
-      { name: "INP", value: 600_000, rating: "needs-improvement" },
-      { name: "CLS", value: 99.999, rating: "needs-improvement" },
-      { name: "TTFB", value: 600_000, rating: "needs-improvement" },
+      { name: "LCP", value: longest, rating: "needs-improvement" },
+      { name: "INP", value: longest, rating: "needs-improvement" },
+      { name: "CLS", value: longest, rating: "needs-improvement" },
+      { name: "TTFB", value: longest, rating: "needs-improvement" },
     ] };
     expect(WebVitalsReportSchema.safeParse(largest).success).toBe(true);
     const smallest = { v: 1, page: "/", device: "phone", metrics: [{ name: "CLS", value: 0, rating: "good" }] };
@@ -151,7 +154,7 @@ describe("a report on the wire", () => {
       expect(JSON.parse(padded)).toEqual(body);
     }
     // Room to spare: nothing the schema takes is too long to pad.
-    expect(JSON.stringify(largest).length).toBeLessThan(WEB_VITALS_REPORT_BYTES - 100);
+    expect(JSON.stringify(largest).length).toBeLessThan(400);
   });
 
   it("refuses to pad what is too long, or anything but printable ASCII", () => {

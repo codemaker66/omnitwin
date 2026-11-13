@@ -42,10 +42,13 @@ trailing spaces to the same 512 bytes (`WEB_VITALS_REPORT_BYTES`, below):
 - **Each measurement once.** The library reports CLS and INP again whenever a page
   is shown and hidden again; the reporter sends each of its metric ids once, so one
   page load is one row per vital and a tab-switcher is not weighed twice in the p75.
-  A page restored from the back/forward cache, prerendered, or restored after the
-  browser discarded it is not measured (`UNMEASURED_LOADS`): its TTFB of 0 and LCP of
-  a frame or two are values no ordinary load has, which would tie its rows to each
-  other and to its request. The p75s leave those loads out. The
+  A page restored from the back/forward cache, or prerendered, is not measured
+  (`UNMEASURED_LOADS`): its TTFB of 0 and LCP of a frame or two are values few
+  ordinary loads have, and it made its requests long before its report or not at
+  all, which sets it apart in the host's log. Nor is a page the browser restored
+  after discarding it, a load the visitor did not start. The p75s leave those loads
+  out. A document from the browser's own cache also reports a TTFB near 0, a value
+  rare in its group (below). The
   cost: CLS and INP are kept at their values when the page is first hidden, and what
   happens after a visitor returns to the tab is not counted. Chrome's field data
   (CrUX) follows a page's whole life, so these two p75s read lower than CrUX's for the
@@ -68,16 +71,18 @@ trailing spaces to the same 512 bytes (`WEB_VITALS_REPORT_BYTES`, below):
   value in ten is. Event timing is rounded to 8 ms in every engine already. CLS is not
   a clock's reading but a score of how far things moved, and one shift's score
   follows the screen's size. Chrome's own user agent no longer names the phone, but
-  an in-app browser's (Android's WebView) does, so at a thousandth a score could
-  name a screen the log names too; CLS is kept in hundredths, where screens of a kind
-  score alike, ten times finer than goal 07's 0.1 target. An unusual shift on an
-  unusual screen may still stand apart.
+  an in-app browser's (Android's WebView) does. In hundredths, ten times finer than
+  goal 07's 0.1 target, a shift gives about half as many distinct values across
+  screens as in thousandths, but one whose score sits near a step's edge still
+  splits ordinary screens: a CLS row whose screen the log's user agent names can
+  stand alone in its group (a residual, below).
 - **One size on the wire.** The host's request log records each request's size, and
   a report's length would otherwise follow what it carries: how many vitals, their
   digits and ratings ("needs-improvement" is longer than "good"), its page and device
   class (#309's round-4 review). The browser pads every report with trailing spaces,
-  which JSON ignores, to `WEB_VITALS_REPORT_BYTES` (512; the longest report the schema
-  allows is about 330), and the API refuses a report of any other length, measuring
+  which JSON ignores, to `WEB_VITALS_REPORT_BYTES` (512; the longest report the browser
+  sends is about 320, and any the schema accepts stays under 400), and the API
+  refuses a report of any other length, measuring
   the body it received rather than its Content-Length, which a proxy may drop.
 - **The four vitals** are measured by Google's `web-vitals` library (6.2.3): LCP,
   INP, CLS and TTFB, each with its rating. LCP, INP and CLS are taken at every
@@ -102,8 +107,9 @@ trailing spaces to the same 512 bytes (`WEB_VITALS_REPORT_BYTES`, below):
   'UTC')`, whatever the session's time zone) serves only rows written by hand. It
   stores no address, user agent, identifier or session, and nothing about the
   measurement is stored on the device.
-- **Written in shuffled batches** (Blake, 13 November 2026), so that a stored row
-  cannot be paired with the one request that brought it. The day alone would not do that:
+- **Written in shuffled batches** (Blake, 13 November 2026), so that, on what a row
+  shares with the host's request log, it narrows only to its group of ten or more,
+  short of the residuals named below. The day alone would not do that:
   rows written as they arrive sit in arrival order, each carries the id of the
   transaction that inserted it (`xmin`, which anyone who can read the table can see,
   rising with time), and the database's restore history follows arrival. Instead:
@@ -123,7 +129,8 @@ trailing spaces to the same 512 bytes (`WEB_VITALS_REPORT_BYTES`, below):
   - on what a row shares with the host's request log (below), it then narrows only
     to the ten or more samples of its group, short of the residuals named in this
     section: a value rare in its group (a 100 ms clock's whole hundreds, a load far
-    slower than the rest), which values go together, and decoys. A row carries nothing that joins it
+    slower than the rest, a TTFB near 0 from the browser's own cache, a CLS whose
+    screen the log's user agent names), which values go together, and decoys. A row carries nothing that joins it
     to its report's other vitals, so a report's samples may be written apart: an
     Android phone's TTFB with nine iPhones' today, its CLS once nine more Android
     phones have come. One shuffle spans the whole batch, across its groups, so a
@@ -185,8 +192,8 @@ trailing spaces to the same 512 bytes (`WEB_VITALS_REPORT_BYTES`, below):
   logs) record every request's address, user agent, path and time, these included,
   as they do for every request, and its sizes and duration (`rxBytes`, `txBytes`,
   `totalDuration`). No code here changes that, so the privacy page says so. A
-  report's size is the same for every report, and its answer the same 204, so those
-  say nothing of what it carried.
+  report's size is the same for every report, and every report that is kept was
+  answered the same 204, so those say nothing of what a stored row carried.
 
 ## Two switches, both off today
 

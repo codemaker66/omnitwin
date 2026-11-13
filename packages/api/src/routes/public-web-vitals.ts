@@ -74,8 +74,9 @@ export async function publicWebVitalsRoutes(server: FastifyInstance, opts: Publi
       await batch.flush({ closing });
     } catch (error) {
       // Nothing of any visitor is in this line: the batch never holds one. The
-      // error says whether the database refused the batch (dropped), or the
-      // write was unfinished at its bound (it may still be stored).
+      // error says which: the database refused the batch (dropped), the write
+      // was unfinished at its bound (it may still be stored), the write before
+      // was still unfinished, or a close had too little time left to write.
       server.log.error({ err: error }, "Web vitals: a batch write failed or was given up on");
     }
   };

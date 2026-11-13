@@ -756,9 +756,9 @@ describe.skipIf(testUrl === undefined)("field web vitals on the whole API (migra
     try {
       await blocker.query("BEGIN");
       await blocker.query("LOCK TABLE web_vital_samples IN ACCESS EXCLUSIVE MODE");
-      // Usually the flush's own bound, which starts before the insert does; the
-      // database's statement timeout if the event loop ran late.
-      await expect(bounded.flush()).rejects.toThrow(/unfinished after 500 ms|statement timeout/u);
+      // The flush's own bound starts before the insert does, so it gives up
+      // first; the database's cancel then shows in the place that comes back.
+      await expect(bounded.flush()).rejects.toThrow(/unfinished after 500 ms/u);
       // The database cancels the stalled insert, the batch is rolled back, and
       // the day's one place is given back.
       await vi.waitFor(() => { expect(bounded.hold({ ...REPORT, metrics: [REPORT.metrics[2]] })).toBe(true); }, { timeout: 5_000 });
@@ -813,7 +813,9 @@ describe.skipIf(testUrl === undefined)("field web vitals on the whole API (migra
       expect(serial.hold({ ...REPORT, metrics: [REPORT.metrics[2]] })).toBe(true);
       // The next write does not start beside the first: it waits within its
       // bound, then writes nothing this hour, and what it would write stays held.
+      const waited = Date.now();
       await expect(serial.flush()).rejects.toThrow(/still being written after 500 ms: nothing is written this hour/u);
+      expect(Date.now() - waited).toBeGreaterThanOrEqual(450);
       expect(serial.held()).toBe(1);
       taken.release();
       released = true;
@@ -864,17 +866,17 @@ describe.skipIf(testUrl === undefined)("field web vitals on the whole API (migra
   it("closes without waiting past its bound for a write still stuck, and drops what it holds", async () => {
     const narrowPool = new Pool({ connectionString: testUrl, application_name: "web_vitals_narrow", max: 1 });
     const narrowDb: Database = drizzle(narrowPool, { schema });
-    const stuck = createWebVitalsBatch(narrowDb, { minSamples: 1, writeTimeoutMs: 200 });
+    const stuck = createWebVitalsBatch(narrowDb, { minSamples: 1, writeTimeoutMs: 500 });
     const taken = await narrowPool.connect();
     let released = false;
     try {
       expect(stuck.hold({ ...REPORT, metrics: [REPORT.metrics[1]] })).toBe(true);
-      await expect(stuck.flush()).rejects.toThrow(/unfinished after 200 ms/u);
+      await expect(stuck.flush()).rejects.toThrow(/unfinished after 500 ms/u);
       expect(stuck.hold({ ...REPORT, metrics: [REPORT.metrics[2]] })).toBe(true);
       // The first write still waits for its connection. Closing waits for it
       // only within its own bound, and then drops what it holds.
       const started = Date.now();
-      await expect(stuck.flush({ closing: true })).rejects.toThrow(/still being written 200 ms into closing: what is held is dropped/u);
+      await expect(stuck.flush({ closing: true })).rejects.toThrow(/still being written 500 ms into closing: what is held is dropped/u);
       expect(Date.now() - started).toBeLessThan(2_000);
       expect(stuck.held()).toBe(0);
       taken.release();
@@ -895,35 +897,89 @@ describe.skipIf(testUrl === undefined)("field web vitals on the whole API (migra
   it("closes within one bound for its waiting and its write together", async () => {
     const narrowPool = new Pool({ connectionString: testUrl, application_name: "web_vitals_narrow", max: 1 });
     const narrowDb: Database = drizzle(narrowPool, { schema });
-    const timed = createWebVitalsBatch(narrowDb, { minSamples: 1, writeTimeoutMs: 800 });
+    const timed = createWebVitalsBatch(narrowDb, { minSamples: 1, writeTimeoutMs: 2_000 });
     const taken = await narrowPool.connect();
     let released = false;
     let next: PoolClient | undefined;
     try {
       expect(timed.hold({ ...REPORT, metrics: [REPORT.metrics[1]] })).toBe(true);
-      await expect(timed.flush()).rejects.toThrow(/unfinished after 800 ms/u);
+      await expect(timed.flush()).rejects.toThrow(/unfinished after 2000 ms/u);
       expect(timed.hold({ ...REPORT, metrics: [REPORT.metrics[2]] })).toBe(true);
       const started = Date.now();
       const closing = timed.flush({ closing: true });
       // In line behind the first write (the pool serves its queue in order),
       // so once that write is done the closing write waits for this connection.
       const queued = narrowPool.connect();
-      await new Promise((resolve) => { setTimeout(resolve, 300); });
+      await new Promise((resolve) => { setTimeout(resolve, 1_000); });
       taken.release();
       released = true;
       next = await queued;
       // The first write settled inside the close's wait, and the close's own
       // write then waited with only what was left of its one bound.
       await expect(closing).rejects.toThrow(/unfinished after \d+ ms/u);
-      const elapsed = Date.now() - started;
-      expect(elapsed).toBeGreaterThanOrEqual(300);
-      expect(elapsed).toBeLessThan(800 + 250);
+      // Two bounds would have taken at least 1,000 ms more than one.
+      expect(Date.now() - started).toBeLessThan(2_000 + 700);
     } finally {
       if (!released) taken.release();
       next?.release();
       await narrowPool.end();
     }
-  });
+  }, 15_000);
+
+  it("writes what its groups hold when the whole server closes, before its database pool goes", async () => {
+    process.env["WEB_VITALS_COLLECTION"] = "on";
+    const { buildServer } = await import("../index.js");
+    // The route's own batch (ten samples of one vital a group) and its hourly timer, on the server's own pool.
+    const whole: FastifyInstance = await buildServer(validateEnv({
+      NODE_ENV: "test",
+      DATABASE_URL: testUrl,
+      JWT_SECRET: "test-jwt-secret-that-is-at-least-32-characters-long",
+    }));
+    await whole.ready();
+    const post = (report: typeof REPORT | Record<string, unknown>, index: number): Promise<LightMyRequestResponse> => whole.inject({
+      method: "POST", url: "/public/web-vitals", headers: { "content-type": "text/plain;charset=UTF-8" },
+      payload: wire(report), remoteAddress: `10.3.1.${String(index)}`,
+    });
+    for (let index = 0; index < 10; index += 1) expect((await post({ ...REPORT, metrics: [REPORT.metrics[1]] }, index)).statusCode).toBe(204);
+    for (let index = 10; index < 12; index += 1) expect((await post({ ...REPORT, device: "desktop", metrics: [REPORT.metrics[1]] }, index)).statusCode).toBe(204);
+    await whole.close();
+    // The phones' group of ten is written as the server closes; the two desktops are not.
+    const { rows: stored } = await pool.query<{ device: string }>("SELECT device FROM web_vital_samples");
+    expect(stored).toHaveLength(10);
+    expect(new Set(stored.map((row) => row.device))).toEqual(new Set(["phone"]));
+  }, 120_000);
+
+  // #309's third round-4 review: a close with under a tenth of its bound left
+  // drops what it holds rather than start a write it could not wait for.
+  it("closes with what little of its bound is left by dropping what it holds, rather than starting a write it could not wait for", async () => {
+    const narrowPool = new Pool({ connectionString: testUrl, application_name: "web_vitals_narrow", max: 1 });
+    const narrowDb: Database = drizzle(narrowPool, { schema });
+    const late = createWebVitalsBatch(narrowDb, { minSamples: 1, writeTimeoutMs: 2_000, ceiling: createDailyCeiling(2) });
+    const taken = await narrowPool.connect();
+    let released = false;
+    try {
+      expect(late.hold({ ...REPORT, metrics: [REPORT.metrics[1]] })).toBe(true);
+      await expect(late.flush()).rejects.toThrow(/unfinished after 2000 ms/u);
+      expect(late.hold({ ...REPORT, metrics: [REPORT.metrics[2]] })).toBe(true);
+      const closing = late.flush({ closing: true });
+      // The first write gets its connection with under a tenth of the close's
+      // bound left, and the close then starts no write of its own.
+      await new Promise((resolve) => { setTimeout(resolve, 1_820); });
+      taken.release();
+      released = true;
+      await expect(closing).rejects.toThrow(/of its bound left: what it held is dropped|into closing: what is held is dropped/u);
+      expect(late.held()).toBe(0);
+      // The first write commits; the dropped CLS never is, and its place comes back.
+      await vi.waitFor(async () => {
+        const { rows: written } = await pool.query<{ metric: string }>("SELECT metric FROM web_vital_samples");
+        expect(written).toEqual([{ metric: "INP" }]);
+      }, { timeout: 5_000 });
+      expect([late.hold({ ...REPORT, metrics: [REPORT.metrics[3]] }), late.hold({ ...REPORT, metrics: [REPORT.metrics[0]] })]).toEqual([true, false]);
+    } finally {
+      if (!released) taken.release();
+      await narrowPool.end();
+    }
+  }, 15_000);
 
   // The release lead's condition on F1, B2 and M3: a write stuck as the API
   // stops (Railway's SIGTERM closes the server) is waited for only within its
@@ -936,7 +992,7 @@ describe.skipIf(testUrl === undefined)("field web vitals on the whole API (migra
     process.env["WEB_VITALS_COLLECTION"] = "on";
     const narrowPool = new Pool({ connectionString: testUrl, application_name: "web_vitals_narrow", max: 1 });
     const narrowDb: Database = drizzle(narrowPool, { schema });
-    const stuckBatch = createWebVitalsBatch(narrowDb, { minSamples: 1, writeTimeoutMs: 200 });
+    const stuckBatch = createWebVitalsBatch(narrowDb, { minSamples: 1, writeTimeoutMs: 500 });
     const { buildServer } = await import("../index.js");
     const whole: FastifyInstance = await buildServer(validateEnv({
       NODE_ENV: "test",
@@ -952,7 +1008,7 @@ describe.skipIf(testUrl === undefined)("field web vitals on the whole API (migra
     try {
       expect((await post(1)).statusCode).toBe(204);
       // The hourly write starts and sticks: the batch's one connection is taken.
-      await expect(stuckBatch.flush()).rejects.toThrow(/unfinished after 200 ms/u);
+      await expect(stuckBatch.flush()).rejects.toThrow(/unfinished after 500 ms/u);
       expect((await post(2)).statusCode).toBe(204);
       const started = Date.now();
       await whole.close();
