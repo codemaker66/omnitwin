@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   detectCalendarConflicts,
+  detectCalendarConflictsInDetail,
+  measuredChangeovers,
   type ConflictBookingInput,
   type ConflictPhaseInput,
   type ConflictTurnaroundRuleInput,
@@ -598,19 +600,20 @@ describe("one event's days in a room", () => {
     ]);
   });
 
-  // T-695 review Z2. Which changeovers are measured, as an invariant. The
-  // occupancies are taken in start order, and each is measured against the
-  // room's last occupants before it: of those that started before it, the
-  // ones with the furthest end. It is not measured when it starts before that
-  // end (an overlap) or when every one of those last occupants is its own
-  // event (its set stays). Otherwise it is measured from that end, and named
-  // by the last of them in start order that is not its own event.
+  // T-695 review Z2, Z7. Which changeovers are measured, as an invariant.
+  // Each occupancy is measured from the latest end among other owners'
+  // occupancies that had left by its start (ended at or before it), unless an
+  // occupancy of its own event began at or after that end (its set has stayed
+  // since). Of several that left at that instant, the one that began last
+  // names it, then the greatest id. An owner is an event, or a booking without
+  // one. The suite at the end of this file checks the engine against the rule
+  // written plainly, on random arrangements.
   //
-  // Where each occupancy's neighbour in start order ends at least as late as
-  // everything before it, that neighbour is the room's last occupant, and the
-  // result is what comparing neighbours gave. Every case above this one is of
-  // that kind, and none of their expectations changed with Z2. The cases
-  // below are not: a booking or phase outlasts the occupancy beside the next.
+  // Where the occupancies follow one another without overlapping, each is
+  // measured from its neighbour in start order, or not at all when that is its
+  // own event, which is what comparing neighbours gave. No expectation above
+  // this point changed with Z2 or Z7. The cases below are not of that kind: a
+  // booking or phase outlasts the occupancy beside the next, or overlaps it.
 
   // Another event's phase spans both of an event's pieces, so the pieces part
   // (Y1) and the evening sits inside the phase. The after-party follows the
@@ -664,6 +667,151 @@ describe("one event's days in a room", () => {
       const report = detect({ bookings: [dinner, build], phases: [setUp], turnaroundRules: [rule({ minutes: 120 })] });
       expect(report.conflicts.map((c) => c.id), `dinner from ${dinnerStarts}`).toEqual(["insufficient_turnaround:dinner:fair-build"]);
       expect(report.conflicts[0]?.explanation).toContain("Only 60 minutes");
+    }
+  });
+
+  // T-695 review Z7. The rule is continuous: a dinner that leaves five minutes
+  // before the fair's set-up must be cleared before the build as much as one
+  // that leaves with it or five minutes after. d3424d62 measured nothing when
+  // the dinner left first, as it looked only at the room's last occupants.
+  it("measures the changeover from another booking that leaves just before, with or just after an event's earlier piece, whichever began first", () => {
+    for (const [dinnerEnds, minutes] of [
+      ["2026-09-18T22:25:00.000Z", 65],
+      ["2026-09-18T22:30:00.000Z", 60],
+      ["2026-09-18T22:35:00.000Z", 55],
+    ] as const) {
+      for (const [dinnerStarts, setUpStarts] of [
+        ["2026-09-18T19:00:00.000Z", "2026-09-18T17:00:00.000Z"],
+        ["2026-09-18T17:00:00.000Z", "2026-09-18T19:00:00.000Z"],
+      ] as const) {
+        const dinner = booking({ id: "dinner", title: "Dinner", eventId: "event-dinner",
+          startsAt: at(dinnerStarts), endsAt: at(dinnerEnds) });
+        const setUp = phase({ id: "fair-setup", eventId: "event-fair", eventName: "Fair",
+          startsAt: at(setUpStarts), endsAt: at("2026-09-18T22:30:00.000Z") });
+        const build = booking({ id: "fair-build", title: "Fair build", eventId: "event-fair",
+          startsAt: at("2026-09-18T23:30:00.000Z"), endsAt: at("2026-09-19T05:00:00.000Z") });
+        const report = detect({ bookings: [dinner, build], phases: [setUp], turnaroundRules: [rule({ minutes: 120 })] });
+        const label = `dinner ${dinnerStarts.slice(11, 16)} to ${dinnerEnds.slice(11, 16)}Z, set-up from ${setUpStarts.slice(11, 16)}Z`;
+        expect(report.conflicts.map((c) => c.id), label).toEqual(["insufficient_turnaround:dinner:fair-build"]);
+        expect(report.conflicts[0]?.explanation, label).toContain(`Only ${String(minutes)} minutes`);
+      }
+    }
+  });
+
+  // The decisions feature reads whose an uncovered changeover is: the
+  // occupancy the build is measured from is the one before it.
+  it("names the occupancy it measures from as the one before an uncovered changeover", () => {
+    const dinner = booking({ id: "dinner", title: "Dinner", eventId: "event-dinner",
+      startsAt: at("2026-09-18T19:00:00.000Z"), endsAt: at("2026-09-18T22:25:00.000Z") });
+    const setUp = phase({ id: "fair-setup", eventId: "event-fair", eventName: "Fair",
+      startsAt: at("2026-09-18T17:00:00.000Z"), endsAt: at("2026-09-18T22:30:00.000Z") });
+    const build = booking({ id: "fair-build", title: "Fair build", eventId: "event-fair",
+      startsAt: at("2026-09-18T23:30:00.000Z"), endsAt: at("2026-09-19T05:00:00.000Z") });
+    const { report, uncoveredGaps } = detectCalendarConflictsInDetail({
+      bookings: [dinner, build], phases: [setUp], turnaroundRules: [], timeZone: "Europe/London",
+    });
+    expect(uncoveredGaps).toEqual([{ spaceId: SPACE_A, before: ["dinner"], after: ["fair-build"] }]);
+    expect(report.checks.turnaround.uncoveredPairCount).toBe(1);
+  });
+
+  // Two other clients back to back inside another event's long build: the
+  // build is still in the room, but the conference must be cleared before the
+  // ceremony. 4aeb7a78 measured it; d3424d62 did not.
+  it("measures the changeover between two other clients back to back inside another event's phase", () => {
+    const build = phase({ id: "x-build", eventId: "event-x", eventName: "Exhibition",
+      startsAt: at("2026-09-18T07:00:00.000Z"), endsAt: at("2026-09-18T22:00:00.000Z") });
+    const conference = booking({ id: "conf", title: "Conference", eventId: "event-a",
+      startsAt: at("2026-09-18T08:00:00.000Z"), endsAt: at("2026-09-18T11:00:00.000Z") });
+    const ceremony = booking({ id: "ceremony", title: "Ceremony", eventId: "event-b",
+      startsAt: at("2026-09-18T11:15:00.000Z"), endsAt: at("2026-09-18T17:00:00.000Z") });
+    const report = detect({ bookings: [conference, ceremony], phases: [build], turnaroundRules: [rule({ minutes: 60 })] });
+    expect(report.conflicts.map((c) => c.id)).toEqual(["insufficient_turnaround:conf:ceremony"]);
+    expect(report.conflicts[0]?.explanation).toContain("Only 15 minutes");
+  });
+
+  // The same inside one event's phase: an evening and then an after-party.
+  it("measures the changeover from an event's evening to an after-party, both inside another event's phase", () => {
+    const build = phase({ id: "x-build", eventId: "event-x", eventName: "Exhibition",
+      startsAt: at("2026-09-18T08:00:00.000Z"), endsAt: at("2026-09-18T22:00:00.000Z") });
+    const evening = booking({ id: "e-pm", title: "Gala", eventId: "event-e",
+      startsAt: at("2026-09-18T17:00:00.000Z"), endsAt: at("2026-09-18T21:00:00.000Z") });
+    const afterParty = booking({ id: "after", title: "After-party",
+      startsAt: at("2026-09-18T21:30:00.000Z"), endsAt: at("2026-09-18T23:30:00.000Z") });
+    const report = detect({ bookings: [evening, afterParty], phases: [build], turnaroundRules: [rule({ minutes: 60 })] });
+    expect(report.conflicts.map((c) => c.id)).toEqual(["insufficient_turnaround:e-pm:after"]);
+    expect(report.conflicts[0]?.explanation).toContain("Only 30 minutes");
+  });
+
+  // "Had left by its start" includes leaving as it starts: the dinner is
+  // measured from the strike that ends as it begins (0 minutes). A minute
+  // earlier the strike is still in the room, so the dinner overlaps it and is
+  // measured from the lunch, which had left.
+  it("measures from an occupancy that leaves as the next begins, and not from one still in the room", () => {
+    for (const [dinnerStarts, expected, minutes] of [
+      ["2026-09-18T11:59:00.000Z", "insufficient_turnaround:a-lunch:c-dinner", 119],
+      ["2026-09-18T12:00:00.000Z", "insufficient_turnaround:b-strike:c-dinner", 0],
+      ["2026-09-18T12:01:00.000Z", "insufficient_turnaround:b-strike:c-dinner", 1],
+    ] as const) {
+      const lunch = booking({ id: "a-lunch", title: "Lunch", eventId: "event-a",
+        startsAt: at("2026-09-18T08:00:00.000Z"), endsAt: at("2026-09-18T10:00:00.000Z") });
+      const strike = phase({ id: "b-strike", eventId: "event-b", eventName: "Fair", name: "Strike",
+        startsAt: at("2026-09-18T09:00:00.000Z"), endsAt: at("2026-09-18T12:00:00.000Z") });
+      const dinner = booking({ id: "c-dinner", title: "Dinner", eventId: "event-c",
+        startsAt: at(dinnerStarts), endsAt: at("2026-09-18T18:00:00.000Z") });
+      const report = detect({ bookings: [lunch, dinner], phases: [strike], turnaroundRules: [rule({ minutes: 180 })] });
+      expect(report.conflicts.map((c) => c.id), `dinner from ${dinnerStarts}`).toEqual([expected]);
+      expect(report.conflicts[0]?.explanation, `dinner from ${dinnerStarts}`).toContain(`Only ${String(minutes)} minutes`);
+    }
+  });
+
+  // "Began at or after that end" includes beginning as it ends: a set-up that
+  // comes in as the dinner leaves is measured from the dinner, and the fair's
+  // set stays from then on, so its build is not. A set-up that comes in a
+  // minute earlier overlaps the dinner, so the build is measured from it.
+  it("measures another client's changeover once, at the event's first piece that begins after it leaves", () => {
+    for (const [setUpStarts, expected, minutes] of [
+      ["2026-09-18T20:59:00.000Z", "insufficient_turnaround:dinner:fair-build", 150],
+      ["2026-09-18T21:00:00.000Z", "insufficient_turnaround:dinner:fair-setup", 0],
+      ["2026-09-18T21:01:00.000Z", "insufficient_turnaround:dinner:fair-setup", 1],
+    ] as const) {
+      const dinner = booking({ id: "dinner", title: "Dinner", eventId: "event-dinner",
+        startsAt: at("2026-09-18T17:00:00.000Z"), endsAt: at("2026-09-18T21:00:00.000Z") });
+      const setUp = phase({ id: "fair-setup", eventId: "event-fair", eventName: "Fair",
+        startsAt: at(setUpStarts), endsAt: at("2026-09-18T22:30:00.000Z") });
+      const build = booking({ id: "fair-build", title: "Fair build", eventId: "event-fair",
+        startsAt: at("2026-09-18T23:30:00.000Z"), endsAt: at("2026-09-19T05:00:00.000Z") });
+      const report = detect({ bookings: [dinner, build], phases: [setUp], turnaroundRules: [rule({ minutes: 180 })] });
+      expect(report.conflicts.map((c) => c.id), `set-up from ${setUpStarts}`).toEqual([expected]);
+      expect(report.conflicts[0]?.explanation, `set-up from ${setUpStarts}`).toContain(`Only ${String(minutes)} minutes`);
+    }
+  });
+
+  // Other clients that leave at the same instant: the one that began last
+  // names the changeover, and of two that began together the greater id, in
+  // whatever order the rows arrive. The event's own set-up, which leaves with
+  // them and began last of all, is passed over.
+  it("names a changeover from occupants that leave together by the one that began last, in any input order", () => {
+    for (const [barStarts, named] of [
+      ["2026-09-18T19:00:00.000Z", "bar-strike"],
+      ["2026-09-18T17:00:00.000Z", "dinner"],
+    ] as const) {
+      const dinner = booking({ id: "dinner", title: "Dinner", eventId: "event-dinner",
+        startsAt: at("2026-09-18T17:00:00.000Z"), endsAt: at("2026-09-18T22:30:00.000Z") });
+      const barStrike = phase({ id: "bar-strike", eventId: "event-bar", eventName: "Bar", name: "Strike",
+        startsAt: at(barStarts), endsAt: at("2026-09-18T22:30:00.000Z") });
+      const setUp = phase({ id: "fair-setup", eventId: "event-fair", eventName: "Fair",
+        startsAt: at("2026-09-18T20:00:00.000Z"), endsAt: at("2026-09-18T22:30:00.000Z") });
+      const build = booking({ id: "fair-build", title: "Fair build", eventId: "event-fair",
+        startsAt: at("2026-09-18T23:30:00.000Z"), endsAt: at("2026-09-19T05:00:00.000Z") });
+      for (const bookings of [[dinner, build], [build, dinner]]) {
+        for (const phases of [[barStrike, setUp], [setUp, barStrike]]) {
+          const label = `bar from ${barStarts}, ${bookings.map((row) => row.id).join(",")} ${phases.map((row) => row.id).join(",")}`;
+          const ruled = detect({ bookings, phases, turnaroundRules: [rule({ minutes: 120 })] });
+          expect(ruled.conflicts.map((c) => c.id), label).toEqual([`insufficient_turnaround:${named}:fair-build`]);
+          const { uncoveredGaps } = detectCalendarConflictsInDetail({ bookings, phases, turnaroundRules: [], timeZone: "Europe/London" });
+          expect(uncoveredGaps, label).toEqual([{ spaceId: SPACE_A, before: [named], after: ["fair-build"] }]);
+        }
+      }
     }
   });
 });
@@ -801,5 +949,151 @@ describe("viewing overlap (migration 0100)", () => {
     const forward = detect({ bookings: rows });
     expect(detect({ bookings: [...rows].reverse() })).toEqual(forward);
     expect(forward.conflicts.filter((conflict) => conflict.type === "viewing_overlap")).toHaveLength(5);
+  });
+});
+
+// T-695 review Z7. The changeover rule written a second time, as plainly as
+// it can be: for each occupancy, scan every other one, with no running state
+// and nothing shared with the engine, which keeps running state for speed. A
+// disagreement on any arrangement is a bug in one of the two.
+describe("the changeover rule, read plainly, against the engine", () => {
+  interface Held {
+    readonly id: string;
+    readonly eventId: string | null;
+    readonly startMs: number;
+    readonly endMs: number;
+  }
+
+  interface PlainReading {
+    readonly changeovers: string[];
+    /** Occupancies passed over because their event's set had stayed. */
+    readonly setStayed: number;
+    /** Changeovers whose latest leavers were two or more, left together. */
+    readonly leftTogether: number;
+  }
+
+  function plainChangeovers(occupancies: readonly Held[]): PlainReading {
+    const sameOwner = (a: Held, b: Held): boolean =>
+      a.eventId === null || b.eventId === null ? a.id === b.id : a.eventId === b.eventId;
+    const changeovers: string[] = [];
+    let setStayed = 0;
+    let leftTogether = 0;
+    for (const next of occupancies) {
+      const gone = occupancies.filter((other) => !sameOwner(other, next) && other.endMs <= next.startMs);
+      if (gone.length === 0) continue;
+      const leftAt = Math.max(...gone.map((other) => other.endMs));
+      const lastToLeave = gone.filter((other) => other.endMs === leftAt);
+      const latestStart = Math.max(...lastToLeave.map((other) => other.startMs));
+      const namedIds = lastToLeave
+        .filter((other) => other.startMs === latestStart)
+        .map((other) => other.id)
+        .sort();
+      const named = namedIds[namedIds.length - 1];
+      const stayed = next.eventId !== null && occupancies.some((own) =>
+        own !== next && own.eventId === next.eventId && own.startMs >= leftAt && own.startMs < next.startMs);
+      if (stayed) {
+        setStayed += 1;
+        continue;
+      }
+      if (lastToLeave.length > 1) leftTogether += 1;
+      changeovers.push(`${String(named)}>${next.id}`);
+    }
+    return { changeovers: changeovers.sort(), setStayed, leftTogether };
+  }
+
+  // Park and Miller's generator: a fixed seed gives the same arrangements on
+  // every run, and a failure prints its arrangement.
+  function seeded(seed: number): () => number {
+    let state = seed;
+    return () => {
+      state = (state * 48_271) % 2_147_483_647;
+      return (state - 1) / 2_147_483_646;
+    };
+  }
+
+  function shuffled<T>(items: readonly T[], random: () => number): T[] {
+    const out = [...items];
+    for (let i = out.length - 1; i > 0; i -= 1) {
+      const j = Math.floor(random() * (i + 1));
+      const a = out[i];
+      const b = out[j];
+      if (a === undefined || b === undefined) continue;
+      out[i] = b;
+      out[j] = a;
+    }
+    return out;
+  }
+
+  const UNIT_MS = 30 * 60_000;
+
+  // Three to six occupancies on a coarse half-hour grid, so overlaps, touching
+  // ends, nesting, tied ends and shared starts are common; two or three owners
+  // (an event, or bookings without one); ids shuffled against times, so ties
+  // fall to the id either way. One event's occupancies never overlap or touch,
+  // as buildOccupancies joins those.
+  function arrangement(random: () => number): Held[] {
+    const pick = (n: number): number => Math.floor(random() * n);
+    for (;;) {
+      const owners = Array.from({ length: 2 + pick(2) }, (_, index) => (pick(4) === 0 ? null : `event-${String(index)}`));
+      const ids = shuffled(["a", "b", "c", "d", "e", "f"].slice(0, 3 + pick(4)), random);
+      const held = ids.map((id) => {
+        const startMs = pick(10) * UNIT_MS;
+        return { id, eventId: owners[pick(owners.length)] ?? null, startMs, endMs: startMs + (1 + pick(4)) * UNIT_MS };
+      });
+      const apart = held.every((a) => held.every((b) =>
+        a === b || a.eventId === null || a.eventId !== b.eventId || a.endMs < b.startMs || b.endMs < a.startMs));
+      const owned = new Set(held.map((one) => one.eventId ?? `booking:${one.id}`));
+      if (apart && owned.size >= 2) return held;
+    }
+  }
+
+  it("agrees with the engine on 5,000 seeded random arrangements, given in shuffled order", () => {
+    const random = seeded(20_261_113);
+    const disagreements: string[] = [];
+    const shapes = {
+      overlapping: 0, touching: 0, nested: 0, tiedEnds: 0, sameStart: 0, oneEventTwice: 0, withoutEvent: 0,
+      measured: 0, setStayed: 0, leftTogether: 0,
+    };
+    for (let n = 0; n < 5_000; n += 1) {
+      const held = arrangement(random);
+      const plain = plainChangeovers(held);
+      const engine = measuredChangeovers(shuffled(held, random))
+        .map(({ before, after }) => `${before.id}>${after.id}`)
+        .sort();
+      if (engine.join(" ") !== plain.changeovers.join(" ")) {
+        disagreements.push(`${JSON.stringify(held)}: plain [${plain.changeovers.join(" ")}], engine [${engine.join(" ")}]`);
+      }
+      const pairs = held.flatMap((a) => held.filter((b) => b !== a).map((b) => [a, b] as const));
+      if (pairs.some(([a, b]) => a.startMs < b.endMs && b.startMs < a.endMs)) shapes.overlapping += 1;
+      if (pairs.some(([a, b]) => a.endMs === b.startMs)) shapes.touching += 1;
+      if (pairs.some(([a, b]) => a.startMs <= b.startMs && b.endMs <= a.endMs)) shapes.nested += 1;
+      if (pairs.some(([a, b]) => a.endMs === b.endMs)) shapes.tiedEnds += 1;
+      if (pairs.some(([a, b]) => a.startMs === b.startMs)) shapes.sameStart += 1;
+      if (pairs.some(([a, b]) => a.eventId !== null && a.eventId === b.eventId)) shapes.oneEventTwice += 1;
+      if (held.some((one) => one.eventId === null)) shapes.withoutEvent += 1;
+      if (plain.changeovers.length > 0) shapes.measured += 1;
+      if (plain.setStayed > 0) shapes.setStayed += 1;
+      if (plain.leftTogether > 0) shapes.leftTogether += 1;
+    }
+    expect(disagreements.slice(0, 3), `${String(disagreements.length)} disagreements`).toEqual([]);
+    for (const [shape, count] of Object.entries(shapes)) {
+      expect(count, `arrangements with ${shape}`).toBeGreaterThan(100);
+    }
+  });
+
+  it("reads the review's arrangements as the engine's report does", () => {
+    const at = (iso: string): number => new Date(iso).getTime();
+    // The near-tie: the dinner leaves at 22:25Z, the fair's set-up at 22:30Z.
+    expect(plainChangeovers([
+      { id: "fair-setup", eventId: "event-fair", startMs: at("2026-09-18T17:00:00Z"), endMs: at("2026-09-18T22:30:00Z") },
+      { id: "dinner", eventId: "event-dinner", startMs: at("2026-09-18T19:00:00Z"), endMs: at("2026-09-18T22:25:00Z") },
+      { id: "fair-build", eventId: "event-fair", startMs: at("2026-09-18T23:30:00Z"), endMs: at("2026-09-19T05:00:00Z") },
+    ]).changeovers).toEqual(["dinner>fair-build"]);
+    // Two clients back to back inside another event's build.
+    expect(plainChangeovers([
+      { id: "x-build", eventId: "event-x", startMs: at("2026-09-18T07:00:00Z"), endMs: at("2026-09-18T22:00:00Z") },
+      { id: "conf", eventId: "event-a", startMs: at("2026-09-18T08:00:00Z"), endMs: at("2026-09-18T11:00:00Z") },
+      { id: "ceremony", eventId: "event-b", startMs: at("2026-09-18T11:15:00Z"), endMs: at("2026-09-18T17:00:00Z") },
+    ]).changeovers).toEqual(["conf>ceremony"]);
   });
 });

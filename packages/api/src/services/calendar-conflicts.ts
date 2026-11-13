@@ -286,6 +286,84 @@ function buildOccupancies(
   return occupancies;
 }
 
+/** What the turnaround check needs of an occupancy. */
+export interface ChangeoverOccupancy {
+  readonly id: string;
+  /** Its event; null for a booking without one, which is its own owner. */
+  readonly eventId: string | null;
+  readonly startMs: number;
+  readonly endMs: number;
+}
+
+/** One changeover the turnaround check measures: `after` from `before`. */
+export interface Changeover<T extends ChangeoverOccupancy> {
+  readonly before: T;
+  readonly after: T;
+}
+
+/** Whose an occupancy is: its event's, or a booking's own without one. */
+function ownerOf(occupancy: ChangeoverOccupancy): string {
+  return occupancy.eventId === null ? `booking:${occupancy.id}` : `event:${occupancy.eventId}`;
+}
+
+/** Whether `a` comes ahead of `b` to name a changeover: it left later, or,
+ *  leaving together, began later, or, beginning together too, has the
+ *  greater id. */
+function namesBefore(a: ChangeoverOccupancy, b: ChangeoverOccupancy): boolean {
+  if (a.endMs !== b.endMs) return a.endMs > b.endMs;
+  if (a.startMs !== b.startMs) return a.startMs > b.startMs;
+  return a.id > b.id;
+}
+
+/**
+ * The changeovers the turnaround check measures in one room (T-695 review
+ * Z2, Z7). The rule: each occupancy is measured from the latest end among
+ * other owners' occupancies that had left by its start (ended at or before
+ * it), unless an occupancy of its own event began at or after that end, as
+ * the event's set has then stayed in the room since. Whoever is still in the
+ * room when it begins overlaps it and is passed over, so a booking inside
+ * another event's long phase is measured from whoever left before it. Of
+ * several that left at that latest instant, the one that began last names
+ * the changeover, and of those that also began together the greatest id, so
+ * the same occupancies in any order give the same changeovers.
+ *
+ * Cost: two sorts and one pass, O(n log n) for n occupancies. Of those that
+ * have left, keeping the one that names first and the first of another owner
+ * than its is enough: whoever comes next, one of the two is the latest of the
+ * others. An event's latest earlier occupancy tells whether its set stayed,
+ * as one event's occupancies never overlap or touch.
+ */
+export function measuredChangeovers<T extends ChangeoverOccupancy>(occupancies: readonly T[]): Changeover<T>[] {
+  const byStart = [...occupancies].sort(chronological);
+  const byEnd = [...occupancies].sort((a, b) => a.endMs - b.endMs);
+  const changeovers: Changeover<T>[] = [];
+  let first: T | undefined;
+  let firstOfAnotherOwner: T | undefined;
+  let leftCount = 0;
+  const lastStartOfEvent = new Map<string, number>();
+  for (const next of byStart) {
+    let left = byEnd[leftCount];
+    while (left !== undefined && left.endMs <= next.startMs) {
+      if (first === undefined || namesBefore(left, first)) {
+        if (first !== undefined && ownerOf(first) !== ownerOf(left)) firstOfAnotherOwner = first;
+        first = left;
+      } else if (ownerOf(left) !== ownerOf(first)
+        && (firstOfAnotherOwner === undefined || namesBefore(left, firstOfAnotherOwner))) {
+        firstOfAnotherOwner = left;
+      }
+      leftCount += 1;
+      left = byEnd[leftCount];
+    }
+    const before = first !== undefined && ownerOf(first) !== ownerOf(next) ? first : firstOfAnotherOwner;
+    const ownLastStartMs = next.eventId === null ? undefined : lastStartOfEvent.get(next.eventId);
+    if (next.eventId !== null) lastStartOfEvent.set(next.eventId, next.startMs);
+    if (before === undefined) continue;
+    if (ownLastStartMs !== undefined && ownLastStartMs >= before.endMs) continue;
+    changeovers.push({ before, after: next });
+  }
+  return changeovers;
+}
+
 /**
  * Detect calendar conflicts for one venue's data. Deterministic: the same
  * input (in any order) yields the same report, conflicts sorted by id.
@@ -381,31 +459,15 @@ export function detectCalendarConflictsInDetail(input: DetectCalendarConflictsIn
 
     // --- insufficient turnaround (warning) ----------------------------------
     const spacePhases = input.phases.filter((row) => row.spaceId === spaceId);
-    const occupancies = buildOccupancies(spaceInks, spacePhases, input.timeZone).sort((a, b) =>
-      a.startMs !== b.startMs ? a.startMs - b.startMs : a.id < b.id ? -1 : 1,
-    );
+    const occupancies = buildOccupancies(spaceInks, spacePhases, input.timeZone);
 
-    // Each occupancy is measured against the room's last occupants before it:
-    // of those that started before it, the ones with the furthest end. That
-    // need not be its neighbour, as a booking or phase can outlast the
-    // occupancies that start inside it (T-695 review Z2). An occupancy that
-    // starts before that end overlaps it and has no changeover; two confirmed
-    // bookings are reported as a double booking above. When every last
-    // occupant is its own event, its set stays and there is no changeover
-    // either; otherwise it is measured from the last of them that is not.
-    let lastOccupants: Occupancy[] = [];
-    for (const next of occupancies) {
-      const lastEndMs = lastOccupants[0]?.endMs;
-      let current: Occupancy | undefined;
-      if (lastEndMs !== undefined && next.startMs >= lastEndMs) {
-        for (let i = lastOccupants.length - 1; i >= 0 && current === undefined; i -= 1) {
-          const held = lastOccupants[i];
-          if (held !== undefined && (held.eventId === null || held.eventId !== next.eventId)) current = held;
-        }
-      }
-      if (lastEndMs === undefined || next.endMs > lastEndMs) lastOccupants = [next];
-      else if (next.endMs === lastEndMs) lastOccupants.push(next);
-      if (current === undefined) continue;
+    // Each occupancy is measured from the last of the room's other occupants
+    // to leave before it began (measuredChangeovers states the rule), which
+    // need not be its neighbour (T-695 review Z2, Z7). One still in the room
+    // when it begins overlaps it and is no changeover. Two confirmed bookings
+    // that overlap are reported as a double booking above; nothing reports a
+    // phase that overlaps a booking or another event's phase.
+    for (const { before: current, after: next } of measuredChangeovers(occupancies)) {
       const gapMs = next.startMs - current.endMs;
       turnaroundPairCount += 1;
       const applicable = resolveTurnaroundRule(input.turnaroundRules, spaceId, next.eventType);
