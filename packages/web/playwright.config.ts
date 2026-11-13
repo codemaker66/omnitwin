@@ -67,6 +67,18 @@ export default defineConfig({
     baseURL: BASE_URL,
     trace: "on-first-retry",
     screenshot: "only-on-failure",
+    // The planner asks a new, empty layout what the event is (T-674,
+    // lib/event-kind-record). Every case starts on a device that has been told
+    // not to ask (the `?event-question=off` record), so the question never
+    // stands between a case and the room it tests; the picker's own cases
+    // turn it back on with `?event-question=on`.
+    storageState: {
+      cookies: [],
+      origins: [{
+        origin: new URL(BASE_URL).origin,
+        localStorage: [{ name: "venviewer.planner.eventKind", value: JSON.stringify({ version: 1, entries: [], quiet: true }) }],
+      }],
+    },
   },
 
   projects: [

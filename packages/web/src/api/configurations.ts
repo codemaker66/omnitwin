@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ConfigurationReviewStatusSchema, type EventInstructions, type GangwayReview, type GuestEnquiry } from "@omnitwin/types";
+import { ConfigurationReviewStatusSchema, type EventInstructions, type GangwayReview, type GuestEnquiry, type PlannerEventKindSchema } from "@omnitwin/types";
 import { api } from "./client.js";
 
 // ---------------------------------------------------------------------------
@@ -237,14 +237,18 @@ export async function authBatchSave(
 // phase deadlines, access notes. Persists to the configurations.metadata
 // JSONB column via the auth PATCH endpoint. Each key sent replaces the stored
 // one whole and the others are kept (a shallow merge on the server). No single
-// key can be removed: the server refuses null for these keys, and only a null
-// for the whole value clears the column, every key with it.
+// key can be removed: the server refuses null for instructions and
+// gangwayReview, and only a null for the whole value clears the column, every
+// key with it. An eventKind of null is an answer, not a removal: the person
+// skipped the question (lib/event-kind-record).
 // ---------------------------------------------------------------------------
 
 export interface ConfigMetadataInput {
   readonly instructions?: EventInstructions;
   /** The layout's gangway review, as lib/gangway-review-record writes it. */
   readonly gangwayReview?: GangwayReview;
+  /** The kind of event the layout is for, as the planner asks it on first open; null when skipped (lib/event-kind-record). */
+  readonly eventKind?: z.infer<typeof PlannerEventKindSchema> | null;
 }
 
 const PatchConfigResponseSchema = z.object({ id: z.string() }).loose();

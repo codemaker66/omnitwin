@@ -885,6 +885,24 @@
       ],
       "expectedStatus": "passed",
       "limits": "This is reviewed inventory admission, not execution evidence. The case replaces the retired identity 1b07f1b6eeb3a7bdbe8c-0ea22414db33ce2b5918 one for one, so the totals are unchanged; it was absent from sourceRunId, sourceReports and the earlier admissions, and every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
+    },
+    {
+      "date": "2026-11-13",
+      "reason": "Re-admitted on 13 November 2026 with five cases against master's 421-case baseline: the release lead's review of 072bf704 asked for an Escape over the Grand Hall's welcome (P7) and a signed-in layout's metadata write (R7) to be proven in the browser. Re-admitted with three on 12 November, after #253's blocker #249 closed and master took the E12 event chair (6fab419d); first admitted on #253's branch on 26 October, against 405. The planner's first-open event question (PR #253, T-674, Blake 26 October 2026): three ordinary cases open a new, empty guest layout on a booted planner with the backend stubbed. On the uncaptured room, with ?event-question=on the layout asks 'What are you planning?' with the Wedding panel in hand; the 2 key answers a corporate event, the receipt says what it set up, and Lay out then asks for theatre rows; a wedding picked with a click is kept on the device, so a reload opens the layout without asking and names its event beside the room's name. On the Grand Hall, whose welcome stands over the question while the captured hall's requests are held, 'Open planner' hands the question back with the first panel in hand and showing it, and 2 answers. The rest of the suite runs on a device told not to ask, through the default storageState in playwright.config.ts, so no other identity or status changes.",
+      "sourceCommit": "42de8b8fb82cffff82a65eeb9ebf8f6344def25b",
+      "sourceFile": "packages/web/e2e/plan-event-kind.spec.ts",
+      "sourceFileGitBlobSha256": "164e4590f10e098f9618efdc2d4a760442e7ffd4c4e479f6a50644a3f1bbafe2",
+      "inventoryCommand": "pnpm --filter @omnitwin/web exec playwright test e2e/plan-event-kind.spec.ts --list --project=chromium --update-snapshots=none --reporter=json",
+      "inventorySha256": "4753a9824e829bb7adbf7216ab3cec01cf9a1e51335a831c6774db4bd66f3476",
+      "caseIds": [
+        "6b097722dcdc7ba760e2-11eb910a698057511a96",
+        "6b097722dcdc7ba760e2-26babb6d496d0ab8daab",
+        "6b097722dcdc7ba760e2-61a5258d9539abd77b65",
+        "6b097722dcdc7ba760e2-679373a4f8959d3607fb",
+        "6b097722dcdc7ba760e2-cea9c94e4fcf1d1566ad"
+      ],
+      "expectedStatus": "passed",
+      "limits": "This is reviewed inventory admission, not execution evidence. These five cases were absent from sourceRunId, sourceReports and the earlier admissions; they stub the API before transport and run in hosted Chromium, so they prove the question, its number key, Lay out's starting shape, a guest's answer kept on the device, the panel in hand after the Grand Hall's welcome, an Escape meant for that welcome leaving the question asking, and the PATCH a signed-in layout's answer sends, not the API's own write, a real phone, the captured hall or the look; every current case still requires execution in the hosted browser gate. The listing covers this one spec file, so a re-listing reproduces these identities, not this hash."
     }
   ],
   "cases": [
@@ -5380,6 +5398,61 @@
       "suitePath": [
         "living-timetable-offline-steps.spec.ts",
         "A request step pressed with no connection"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "6b097722dcdc7ba760e2-cea9c94e4fcf1d1566ad",
+      "file": "plan-event-kind.spec.ts",
+      "title": "a new layout asks what the event is, and a corporate event lays out rows of seats",
+      "suitePath": [
+        "plan-event-kind.spec.ts",
+        "the first-open event question"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "6b097722dcdc7ba760e2-11eb910a698057511a96",
+      "file": "plan-event-kind.spec.ts",
+      "title": "the answer is kept, so the layout opens again without asking and names its event",
+      "suitePath": [
+        "plan-event-kind.spec.ts",
+        "the first-open event question"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "6b097722dcdc7ba760e2-61a5258d9539abd77b65",
+      "file": "plan-event-kind.spec.ts",
+      "title": "after the Grand Hall's welcome, the first panel is in hand and the keys answer",
+      "suitePath": [
+        "plan-event-kind.spec.ts",
+        "the first-open event question"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "6b097722dcdc7ba760e2-26babb6d496d0ab8daab",
+      "file": "plan-event-kind.spec.ts",
+      "title": "an Escape that dismisses the Grand Hall's welcome leaves the question asking, and Enter answers it",
+      "suitePath": [
+        "plan-event-kind.spec.ts",
+        "the first-open event question"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "6b097722dcdc7ba760e2-679373a4f8959d3607fb",
+      "file": "plan-event-kind.spec.ts",
+      "title": "a signed-in planner's own layout keeps the answer in its metadata, written as it is given",
+      "suitePath": [
+        "plan-event-kind.spec.ts",
+        "the first-open event question"
       ],
       "project": "chromium",
       "expectedStatus": "passed"

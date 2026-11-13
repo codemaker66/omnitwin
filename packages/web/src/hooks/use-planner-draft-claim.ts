@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { claimTrackedDraft, trackedClaimSecret, type DraftClaim } from "../lib/planner-claim.js";
+import { layoutClaimedEventKind } from "../lib/event-kind-record.js";
 import { useAuthStore } from "../stores/auth-store.js";
 import { captureEditorSession, isCurrentEditorSession, useEditorStore } from "../stores/editor-store.js";
 
@@ -39,6 +40,8 @@ export function claimOpenDraft(configId: string, userId: string | null): Promise
     const auth = useAuthStore.getState();
     if (outcome !== "claimed" || !isCurrentEditorSession(session) || !auth.isAuthenticated || (auth.user?.id ?? null) !== userId) return outcome;
     useEditorStore.setState({ isPublicPreview: false });
+    // The event's answer, given while it was a guest's draft, now belongs with the layout (T-674).
+    layoutClaimedEventKind(configId);
     void useEditorStore.getState().saveToServer(true);
     return outcome;
   }).finally(() => { pendingClaims.delete(key); });

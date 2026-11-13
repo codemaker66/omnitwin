@@ -14,6 +14,7 @@ import { useEditorStore } from "../../../../stores/editor-store.js";
 import { useAuthStore } from "../../../../stores/auth-store.js";
 import { useAutoFillRequestStore } from "../../../../stores/auto-fill-request-store.js";
 import { useCockpitStore } from "../../../../stores/cockpit-store.js";
+import { usePlannerEventStore } from "../../../../stores/planner-event-store.js";
 import { floorNames } from "../../../../lib/floor-names.js";
 import { PLANNER_TOOLBAR_COMMAND_EVENT, readPlannerToolbarCommand } from "../../../../lib/planner-toolbar-events.js";
 import { registerEscapeLayer } from "../../../../lib/planner-keys.js";
@@ -58,6 +59,7 @@ afterEach(() => {
   cleanup();
   useLayoutTimelinePreviewStore.getState().clear();
   useEditorStore.getState().reset();
+  usePlannerEventStore.getState().setEventKind(null);
   vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllEnvs();
@@ -201,6 +203,20 @@ describe("SelectedFurnitureInspector's empty floor (A-15)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Lay out tables and seats for your guests" }));
     expect(request).toHaveBeenCalledWith("dinner-rounds");
     expect(useCockpitStore.getState().activeMode).toBe("guests");
+  });
+
+  it("names the event once the planner knows it, and Lay out takes the event's shape (T-674)", () => {
+    useEditorStore.setState({ space: null });
+    usePlannerEventStore.getState().setEventKind("wedding");
+    render(<SelectedFurnitureInspector />);
+    expect(screen.getByText("Nothing on the floor yet. Add a table, or lay out round tables for your wedding.")).toBeDefined();
+    cleanup();
+    usePlannerEventStore.getState().setEventKind("corporate");
+    render(<SelectedFurnitureInspector />);
+    expect(screen.getByText("Nothing on the floor yet. Add a table, or lay out rows of seats for your event.")).toBeDefined();
+    const request = vi.spyOn(useAutoFillRequestStore.getState(), "request");
+    fireEvent.click(screen.getByRole("button", { name: "Lay out rows of seats for your guests" }));
+    expect(request).toHaveBeenCalledWith("theatre");
   });
 });
 
