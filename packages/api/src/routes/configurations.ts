@@ -261,17 +261,21 @@ export async function configurationRoutes(
     if (parsed.data.visibility !== undefined) updateData["visibility"] = parsed.data.visibility;
     if (parsed.data.thumbnailUrl !== undefined) updateData["thumbnailUrl"] = parsed.data.thumbnailUrl;
     if (parsed.data.metadata !== undefined) {
-      // Preserve the .passthrough() contract declared on ConfigurationMetadataSchema:
+      // Preserve the .loose() contract declared on ConfigurationMetadataSchema:
       // unknown sibling keys (e.g. a future seatingChart or dietary flags) must
       // survive a partial PATCH that only updates `instructions`. Null clears the
-      // column outright; any object merges onto the stored blob, key by key.
+      // column outright (SQL NULL); an object merges onto the stored blob
+      // shallowly, each top-level key it carries replacing the stored one whole.
       // The merge happens in the UPDATE itself, on the row as it stands: two
       // saves of different keys at once (Event details' instructions, the
       // planner's gangway review and event kind) once read the same old blob
-      // and the later write dropped the other's key.
+      // and the later write dropped the other's key. A stored value that is not
+      // an object (none is written today: a jsonb 'null' or an array put there
+      // from outside the route) starts again from {}, as the old read-and-spread
+      // did, instead of `||` wrapping it into an array.
       updateData["metadata"] = parsed.data.metadata === null
         ? null
-        : sql`coalesce(${configurations.metadata}, '{}'::jsonb) || ${JSON.stringify(parsed.data.metadata)}::jsonb`;
+        : sql`(case when jsonb_typeof(${configurations.metadata}) = 'object' then ${configurations.metadata} else '{}'::jsonb end) || ${JSON.stringify(parsed.data.metadata)}::jsonb`;
     }
 
     const rows = await db.update(configurations)
