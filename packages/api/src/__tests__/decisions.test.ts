@@ -189,3 +189,14 @@ describe("a turnaround the move makes longer, under another name (T-695 review o
     expect(diary(before)).toEqual(["dinner>set-up 30"]);
   });
 });
+
+describe("what a consequence concerns (T-695 review of #400, Y5)", () => {
+  // The other bookings or phases it concerns: never the move's own set-up.
+  it("names the lunch a carried set-up now follows, not the set-up", () => {
+    const lunch = bookingRow("lunch", "lunch-event", day(9, 11), day(9, 13));
+    const wedding = bookingRow("wedding", "wedding-event", day(10, 14), day(10, 18));
+    const setUp = timedPhase("set-up", "wedding-event", day(9, 14), day(9, 15));
+    const found = moveConsequences(held([lunch, wedding], [setUp], 60), wedding, { startsAt: day(10, 13), endsAt: day(10, 17) });
+    expect(found.map((consequence) => [consequence.kind, consequence.concerns])).toEqual([["insufficient_turnaround", ["lunch"]]]);
+  });
+});

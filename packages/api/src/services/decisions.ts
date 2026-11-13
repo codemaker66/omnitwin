@@ -507,7 +507,8 @@ export function moveConsequences(world: Neighbourhood, booking: BookingRow, to: 
       kind: conflict.type,
       severity: conflict.severity,
       summary: clip(consequenceSummary(conflict, next, ours, wasMinutes)),
-      concerns: conflict.entryIds.filter((id) => id !== booking.id).slice(0, 20),
+      // The others it concerns: neither the booking nor a phase moving with it.
+      concerns: conflict.entryIds.filter((id) => !ours.has(id)).slice(0, 20),
     });
   }
   // A room closed then. The conflict engine does not weigh a closure against a
