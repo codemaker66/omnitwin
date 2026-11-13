@@ -373,7 +373,7 @@ describe("timeAtFrequency", () => {
 });
 
 describe("tailSlices", () => {
-  it.each(RATES)("works in bounded steps at %i Hz, the setup a step of its own, and returns the same tail as renderRoomTail", (rate) => {
+  it.each(RATES)("works in bounded steps at %i Hz, the setup in steps of its own (two at 96 kHz), and returns the same tail as renderRoomTail", (rate) => {
     const whole = rate === RATE ? tail : renderRoomTail(RT, { ...OPTIONS, sampleRate: rate });
     const slices = tailSlices(RT, { ...OPTIONS, sampleRate: rate });
     const steps: number[] = [];
@@ -384,9 +384,11 @@ describe("tailSlices", () => {
     }
     const sliced: Stereo = step.value;
     expect(steps.length).toBeGreaterThanOrEqual(7);
-    // The first step sets the synthesis up and covers no samples (ruling R72); every later one covers some.
-    expect(steps[0]).toBe(0);
-    for (const samples of steps.slice(1)) {
+    // The first steps set the synthesis up, one for each 1,024 bins of its frame, and cover no samples (ruling R72):
+    // one at 44.1 and 48 kHz (1,024 bins), two at 96 kHz (2,048). Every later step covers some.
+    const setupSteps = steps.findIndex((samples) => samples > 0);
+    expect(setupSteps).toBe(rate === 96000 ? 2 : 1);
+    for (const samples of steps.slice(setupSteps)) {
       expect(samples).toBeGreaterThan(0);
       expect(samples).toBeLessThanOrEqual(TAIL_STEP_SAMPLES);
     }

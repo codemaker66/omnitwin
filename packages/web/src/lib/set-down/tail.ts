@@ -33,6 +33,12 @@ export interface Stereo {
 
 /** The most samples of one channel any step of `tailSlices` covers. */
 export const TAIL_STEP_SAMPLES = 8192;
+/**
+ * The synthesis's setup works out each bin's decay and starting phases this
+ * many bins a step: one step for a 48 kHz frame's 1,024 bins, four for
+ * 192 kHz's 4,096, each well inside an idle slice (ruling R72).
+ */
+const SETUP_BINS_PER_STEP = 1024;
 
 const SPEED_OF_SOUND_M_PER_S = 343;
 const ONSET_MIN_S = 0.012;
@@ -210,11 +216,13 @@ function* synthesisSteps(
     decayPerHop[k] = Math.exp((-rate * hop) / sampleRate);
     phaseLeft[k] = Math.floor(randomLeft() * PHASES);
     phaseRight[k] = Math.floor(randomRight() * PHASES);
+    if (k % SETUP_BINS_PER_STEP === 0) yield 0;
   }
   const re = new Float64Array(frame);
   const im = new Float64Array(frame);
-  // The setup (the window, each bin's decay and phases) is a step of its own and covers no samples: at 192 kHz it
-  // and the first frame together took longer than an idle slice (ruling R72).
+  // The setup (the window, each bin's decay and phases) takes steps of its own that cover no samples: at 192 kHz,
+  // with the first frame, it took longer than an idle slice, and as one step of its own still about 4 ms (ruling
+  // R72). The yields draw nothing, so the tail is the same however it is stepped.
   yield 0;
   const length = left.length;
   let framesInStep = 0;
@@ -278,11 +286,12 @@ function* finishSteps(channel: Float32Array, start: number, sampleRate: number):
 
 /**
  * Renders the tail in steps, so it can be driven in idle slices. The first
- * step is the synthesis's setup and covers no samples; each later one covers
- * at most TAIL_STEP_SAMPLES samples of each channel (a few frames, or a chunk
- * of the normalising) and yields how many it covered. The number of steps
- * grows with the tail's length. The last call returns the finished tail,
- * identical to `renderRoomTail`'s for the same options.
+ * steps are the synthesis's setup and cover no samples (one at 44.1 and
+ * 48 kHz, two at 96 kHz, four at 192 kHz); each later one covers at most
+ * TAIL_STEP_SAMPLES samples of each channel (a few frames, or a chunk of the
+ * normalising) and yields how many it covered. The number of steps grows with
+ * the tail's length. The last call returns the finished tail, identical to
+ * `renderRoomTail`'s for the same options.
  */
 export function* tailSlices(
   rt: BandValues,
