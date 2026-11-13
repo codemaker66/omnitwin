@@ -1,16 +1,14 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { CRAFTED_FURNITURE_SLUGS } from "../../../components/meshes/crafted/crafted-slugs.js";
-import { computeBoundingBox, roomGeometries } from "../../../data/room-geometries.js";
 import { PLANNER_TOUCH_DB } from "../../planner-sound-recipes.js";
 import { seededRandom } from "../../planner-sound-render.js";
 import { bandEnergy, brightnessHz, octaveBandpassSteep, onsetTimesMs, schroederT20 } from "../analysis.js";
 import { bodyFor, type BodyPart, type PartKind } from "../bodies.js";
 import { LOSS, contactSeconds, knockSeconds, partModes, surfaceModes } from "../modes.js";
-import { earlyReflections, reflectionRoomFor, type Reflection } from "../reflections.js";
+import type { Reflection } from "../reflections.js";
 import { SET_DOWN_TOUCH_DB, SET_DOWN_TOUCH_LOUDNESS_DB, footSchedule, renderSetDown, type SetDownInput, type SetDownRender } from "../render.js";
-import { ROOM_ACOUSTICS } from "../rooms.js";
-import { SURFACES, floorKindForRoom, surfaceResponse, type SurfaceKind } from "../surfaces.js";
-import { SR, clickShare, energy, inputFor, loudness, setDown } from "./set-down-kit.js";
+import { SURFACES, floorKindForRoom, surfaceResponse, type SurfaceKind, type SurfaceResponse } from "../surfaces.js";
+import { SR, clickShare, energy, inputFor, loudness, sameSamples, setDown } from "./set-down-kit.js";
 
 /** Every surface a piece can stand on (ruling R7), each resolved for the Grand Hall. */
 const SURFACE_KINDS: readonly SurfaceKind[] = [
@@ -97,7 +95,7 @@ describe("loss factors and modes", () => {
     expect(lowest).toBeLessThan(529 * 1.02);
   });
 
-  it("keeps a piece's own modes from play to play, moving each by at most 1.5 %", () => {
+  it("keeps a piece's own modes from play to play: two plays put each mode within 3.1 % of the other", () => {
     const part: BodyPart = { kind: "mdf-top", lengthM: 1.83, thicknessM: 0.025, share: 0.7 };
     const a = partModes(part, seededRandom(1));
     const b = partModes(part, seededRandom(2));
@@ -194,7 +192,7 @@ describe("contact times", () => {
 });
 
 describe("every crafted piece on every surface", () => {
-  it.each(CRAFTED_FURNITURE_SLUGS)("renders %s: finite, unclipped, in band, under 14 kHz and the same for the same seed", (slug) => {
+  it.each(CRAFTED_FURNITURE_SLUGS)("renders %s: finite, unclipped, in band and unlimited, under 14 kHz and the same for the same seed", (slug) => {
     for (const kind of SURFACE_KINDS) {
       const render = setDown(slug, kind);
       const again = setDown(slug, kind);
@@ -212,12 +210,15 @@ describe("every crafted piece on every surface", () => {
       expect(clipped, `${slug} on ${kind}`).toBe(false);
       expect(render.peakDb, `${slug} on ${kind}`).toBeGreaterThanOrEqual(-32);
       expect(render.peakDb, `${slug} on ${kind}`).toBeLessThanOrEqual(-6);
+      // The safety limiter holds no catalogue play: each lands in the window on the level rule alone (ruling R42).
+      expect(render.limitDb, `${slug} on ${kind}`).toBe(0);
       // Centred with no reflections, both channels are the mono source the peak is read from.
       expect(render.peakDb).toBeCloseTo(peakOf(render), 4);
       const above = bandEnergy(render.left, SR, 14000, SR / 2) / energy(render.left);
       expect(above, `${slug} on ${kind}`).toBeLessThan(0.005);
-      expect(again.left).toEqual(render.left);
-      expect(again.right).toEqual(render.right);
+      // Bit for bit, compared as bytes (ruling R52).
+      expect(sameSamples(again.left, render.left), `${slug} on ${kind}`).toBe(true);
+      expect(sameSamples(again.right, render.right), `${slug} on ${kind}`).toBe(true);
     }
   });
 });
@@ -277,6 +278,42 @@ describe("what each surface does to a Chiavari", () => {
       });
       expect(after, `seed ${String(seed)}`).toBeLessThan(landing);
     }
+  });
+});
+
+describe("a surface's high cut and hardness, as they reach the render (ruling R52)", () => {
+  const oak = SURFACES["oak-boards-joists"];
+  /** `slug` set down on oak with `patch` applied to the surface under every foot. */
+  const onOak = (slug: string, patch: Partial<SurfaceResponse>, seed: number): SetDownRender => {
+    const input = inputFor(slug, "oak-boards-joists", { seed });
+    const surface: SurfaceResponse = { ...oak, ...patch };
+    return renderSetDown({ ...input, surfaces: input.surfaces.map(() => surface) });
+  };
+  /** The 4 kHz octave's energy once the landing is over (from 60 ms), where only the modes still ring. */
+  const ringAt4k = (render: SetDownRender): number => energy(octaveBandpassSteep(render.left, 4000, SR).subarray(Math.round(0.06 * SR)));
+  /** How long the 1 kHz octave rings. */
+  const ringAt1k = (render: SetDownRender): number => schroederT20(octaveBandpassSteep(render.left, 1000, SR), SR);
+
+  // The cut weights the modes, not the struck spot's click or the knocks: those own everything above 2.5 kHz in
+  // a hard landing's first 50 ms (a Chiavari's share there moves by under 8 % with the cut), so it is read once the
+  // click is over, where a banquet chair's steel frame still rings at 3-6 kHz. Carpet's own 2.5 kHz cut does almost
+  // nothing: its 45 ms contact leaves nothing that high to cut (the energy above 2.5 kHz moves by under 2 %).
+  it.each(SEEDS)("takes the top off a piece's ring under a 2.5 kHz high cut: a banquet chair's 4 kHz octave after its landing falls below half of oak's (seed %i)", (seed) => {
+    const open = onOak("banquet-chair", {}, seed);
+    const cut = onOak("banquet-chair", { highCutHz: 2500 }, seed);
+    expect(ringAt4k(open)).toBeGreaterThan(0);
+    expect(ringAt4k(cut)).toBeLessThan(0.5 * ringAt4k(open));
+  });
+
+  it.each(SEEDS)("dulls and damps a landing on a softer surface: at hardness 0.3 a Chiavari clicks under a quarter as much and is darker, and a round table's 1 kHz rings under 0.6 of its time (seed %i)", (seed) => {
+    const hard = onOak("chiavari-chair", {}, seed);
+    const soft = onOak("chiavari-chair", { hardness: 0.3 }, seed);
+    expectSounding(soft);
+    expect(clickShare(soft.left, 50, 2000)).toBeLessThan(0.25 * clickShare(hard.left, 50, 2000));
+    expect(brightnessHz(soft.left, SR)).toBeLessThan(0.8 * brightnessHz(hard.left, SR));
+    const round = ringAt1k(onOak("round-table-6ft-white", {}, seed));
+    expect(round).toBeGreaterThan(0);
+    expect(ringAt1k(onOak("round-table-6ft-white", { hardness: 0.3 }, seed))).toBeLessThan(0.6 * round);
   });
 });
 
@@ -551,7 +588,21 @@ describe("the space", () => {
     const absurd: Reflection = { ...late, delaySeconds: 1e9 };
     const render = setDown("chiavari-chair", "oak-boards-joists", { reflections: [late, absurd] });
     expect(render.left.length).toBe(dry.left.length);
-    expect(render.left).toEqual(dry.left);
+    expect(sameSamples(render.left, dry.left)).toBe(true);
+  });
+
+  it("holds the direct gain to 0..1, its contract, so no gain takes a play past the -6 dBFS window (ruling R53)", () => {
+    const full = setDown("bar-counter", "oak-boards-joists", { speed: 10 });
+    expect(full.peakDb).toBeLessThanOrEqual(-6);
+    for (const gain of [1.5, 4, Number.POSITIVE_INFINITY]) {
+      const loud = setDown("bar-counter", "oak-boards-joists", { speed: 10, gain });
+      expect(sameSamples(loud.left, full.left), String(gain)).toBe(true);
+      expect(loud.peakDb, String(gain)).toBe(full.peakDb);
+    }
+    const silent = setDown("bar-counter", "oak-boards-joists", { speed: 10, gain: -1 });
+    expect(silent.left.every((sample) => sample === 0)).toBe(true);
+    // A gain that is not a number is taken as 1.
+    expect(sameSamples(setDown("bar-counter", "oak-boards-joists", { speed: 10, gain: Number.NaN }).left, full.left)).toBe(true);
   });
 });
 
@@ -562,7 +613,7 @@ describe("surfaces under the feet", () => {
     const copies: SetDownInput = { ...shared, surfaces: shared.surfaces.map(() => ({ ...response })) };
     const a = renderSetDown(shared);
     const b = renderSetDown(copies);
-    expect(b.left).toEqual(a.left);
+    expect(sameSamples(b.left, a.left)).toBe(true);
   });
 });
 
@@ -592,26 +643,4 @@ describe("pieces with no crafted body", () => {
   });
 });
 
-describe("cost", () => {
-  it("renders one set-down in the Grand Hall in a median under 15 ms", () => {
-    const geometry = roomGeometries["Grand Hall"];
-    expect(geometry).toBeDefined();
-    if (geometry === undefined) return;
-    const box = computeBoundingBox(geometry.wallPolygon);
-    const centre = { x: (box.minX + box.maxX) / 2, z: (box.minZ + box.maxZ) / 2 };
-    const reflections = earlyReflections(
-      reflectionRoomFor(ROOM_ACOUSTICS["grand-hall"], geometry),
-      { x: centre.x + 2, y: 0, z: centre.z + 1 },
-      { position: { x: centre.x - 1, y: 1.6, z: centre.z - 1 }, right: { x: 1, y: 0, z: 0 } },
-    );
-    expect(reflections.length).toBeGreaterThan(3);
-    const input = inputFor("chiavari-chair", "oak-boards-joists", { reflections, gain: 0.5, azimuthRad: 0.4 });
-    renderSetDown(input);
-    const times = Array.from({ length: 10 }, (_, i) => {
-      const start = performance.now();
-      renderSetDown({ ...input, seed: 50 + i });
-      return performance.now() - start;
-    });
-    expect(median(times)).toBeLessThan(15);
-  });
-});
+// A render's cost is timed in render-figures.test.ts, on a named machine, not here (ruling R52).
