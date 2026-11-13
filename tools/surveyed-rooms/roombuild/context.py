@@ -20,14 +20,14 @@ GATES = {
     "B7": "method revision 2: corner statistics ignore openings",
     "B8": "wall shorter than 2.0 m: corner intrusions take reference 0",
     "B9": "reflex corner: no intrusion clearing at that end",
-    "B10": "glazing other than clear: glass mask from the measured outline and planes",
+    "B10": "glazing other than clear: glass mask from the measured outline and planes; every detail tile kept",
     "B11": "segmental head in the clear colour test",
     "B14": "no atlas placement: strips packed on shelves",
     "B16": "ceiling relief from the view up at the ceiling",
     "B17": "floor refills skipped: no refill.shift",
     "B18": "outline not a rectangle: floor texels outside it masked",
     "B19": "boards run along z: refills roll along rows",
-    "B20": "patch copied from another wall",
+    "B20": "patch copied from another wall (the atlas and the detail tiles)",
     "B21": "test-only depth-map size (SURVEYED_ROOMS_TEST_DEPTH_SIZE)",
     "B22": "node modules from another checkout (SURVEYED_ROOMS_NODE_ROOT): its meshoptimizer meshes the relief",
 }
@@ -125,6 +125,25 @@ class Room:
         """The wall's inward normal as a (1, 3) float array, with no -0.0."""
         nX, nY = w["normalE57"]
         return np.array([[nX + 0.0, nY + 0.0, 0.0]])
+
+    def wall_frames(self):
+        """bestview.WALLS for this room, by survey name: where each wall's elevation starts (the
+        views' anchor), its u axis and its inward normal in the E57 plan (no -0.0), its length."""
+        out = {}
+        for w in self.order:
+            (aX, aY), (uX, uY), (nX, nY) = w["anchorE57"], w["uE57"], w["normalE57"]
+            out[w["name"]] = dict(start=(aX + 0.0, aY + 0.0), u=(uX + 0.0, uY + 0.0), n=(nX + 0.0, nY + 0.0), length=w["length"])
+        return out
+
+    def canvases(self):
+        """canvasveil.CANVASES for this room: the `canvas` edits by wall (survey name), in config
+        order, each (id, (u0, u1, v0, v1), whether the veil is taken off)."""
+        out = {}
+        for e in self.cfg["edits"]:
+            if e["type"] == "canvas":
+                box = (e["u"][0], e["u"][1], e["v"][0], e["v"][1])
+                out.setdefault(self.wmap[e["wall"]]["name"], []).append((e["id"], box, bool(e.get("veil", True))))
+        return out
 
     # --- survey files ------------------------------------------------------------------------
     def views(self):
@@ -297,9 +316,17 @@ class Room:
             out.append("survey.projection.dome is missing")
         if cfg["ceiling"].get("domes") and "domePhoto" not in survey:
             out.append("survey.domePhoto is missing")
-        for name in ("floorPhoto", "atlas", "relief", "outputs", "publish", "ceilingView"):
+        for name in ("floorPhoto", "atlas", "relief", "detail", "outputs", "publish", "ceilingView"):
             if name not in survey:
                 out.append(f"survey.{name} is missing")
+        detail = survey.get("detail")
+        if detail and detail["tile"] <= 2 * detail["gutter"]:
+            out.append(f"survey.detail: a tile of {detail['tile']} texels leaves nothing inside two gutters of {detail['gutter']}")
+        if "atlas" in survey and survey["atlas"].get("alphaFrom") and "placement" not in survey["atlas"]:
+            out.append("survey.atlas.alphaFrom keeps a published atlas's alpha, so the strips need survey.atlas.placement (where they were published)")
+        ids = [e["id"] for e in cfg["edits"] if e["type"] == "canvas"]
+        if len(ids) != len(set(ids)):
+            out.append("canvas edits: an id is used twice (canvas-<wall>.npz keys its fields by id)")
         if "floorPhoto" in survey and "floor" not in survey.get("projection", {}):
             out.append("survey.projection.floor is missing")
         if "relief" in survey:
@@ -331,4 +358,6 @@ class Room:
                 out.append("survey.outputs.ceilingRelief is missing")
             if not outputs.get("relief"):
                 out.append("survey.outputs.relief is missing")
+            if not outputs.get("detail"):
+                out.append("survey.outputs.detail is missing")
         return out

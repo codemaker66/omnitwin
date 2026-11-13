@@ -55,6 +55,9 @@ GH = legacy.SURVEY
 MANIFEST_ENV = "SURVEYED_ROOMS_MANIFEST"   # the twin's manifest.json, for --static
 ALIAS = {"fire": "fireplace"}
 INPUTS = ("data/manifest.json", "data/dollhouse.glb", "data/pano8k/", "data/mesh/")
+# The walls' scripts write a report beside each result with the run's timings and memory in it.
+RUN_REPORTS = re.compile(r"^proj/(labels|composite|canvas|detail)-[\w-]+[.]json$")
+VOLATILE = ("seconds", "peak_mb", "memory_mb")
 NEW_ONLY = ("room.json", "views/", "build/")
 
 
@@ -175,9 +178,15 @@ def static(room_path, manifest_path):
         raise SystemExit("--manifest must be a file named manifest.json (project.stations reads DATA/manifest.json)")
 
     # --- stations, occluders, projection arguments ---------------------------------------------
-    ns = legacy.old_function(os.path.join(GH, "project.py"), ["stations"],
+    ns = legacy.old_function(os.path.join(GH, "project.py"), ["stations", "STATION_IDS"],
                              {"os": os, "json": json, "np": np, "DATA": os.path.dirname(os.path.abspath(manifest_path))})
+    c.same("project.py STATION_IDS as written (the Grand Hall's own range)", None, ns["STATION_IDS"])
     old_st, new_st = ns["stations"](), room.stations(manifest_path)
+    hooks = legacy.best_view_values(room)
+    ns["STATION_IDS"] = hooks["project"]["STATION_IDS"]
+    seam_st = ns["stations"]()
+    c.true("project.stations() with the room's STATION_IDS = project.stations() as written, bit for bit", len(old_st) == len(seam_st) and all(
+        a["id"] == b["id"] and bits(a["t"]) == bits(b["t"]) and bits(a["gain"]) == bits(b["gain"]) for a, b in zip(old_st, seam_st)), f"{len(seam_st)} stations")
     c.same("project.stations() ids = config stations in manifest order", [s["id"] for s in old_st], [s["id"] for s in new_st])
     c.true("project.stations() t and gain, bit for bit", len(old_st) == len(new_st) and all(
         bits(a["t"]) == bits(b["t"]) and bits(a["gain"]) == bits(b["gain"]) for a, b in zip(old_st, new_st)), f"{len(new_st)} stations")
@@ -321,8 +330,59 @@ def static(room_path, manifest_path):
     c.same("pack-atlas.py strip widths ceil(LENGTH * PPM)", [int(np.ceil(pa["LENGTH"][k] * pa["PPM"])) for k in ("window", "door", "end", "fire")],
            [s["w"] for s in lay["strips"]])
     c.same("pack-atlas.py fill passes, pack-overhead.py fill passes", [40, 200], [atlas_step.FILL_PASSES, load_overhead_passes()])
-    # --- outputs -----------------------------------------------------------------------------------------
+    # --- the walls' best view: every global the driver points at the room ----------------------------
+    bv, cvc, pdc, pkc = const("bestview.py"), const("canvasveil.py"), const("project-detail.py"), const("pack-detail.py")
+    for name, value in hooks["bestview"].items():
+        c.same(f"bestview.py {name} = the room's", bv[name], value)
+    for name in ("window", "door", "end", "fire"):
+        f, g = bv["WALLS"][name], hooks["bestview"]["WALLS"][name]
+        c.same(f"bestview.py wall_vectors({name}): origin, u, n as float arrays (bit for bit)",
+               [np.array([f["start"][0], f["start"][1], bv["FLOOR"]]), np.array([f["u"][0], f["u"][1], 0.0]), np.array([f["n"][0], f["n"][1], 0.0])],
+               [np.array([g["start"][0], g["start"][1], hooks["bestview"]["FLOOR"]]), np.array([g["u"][0], g["u"][1], 0.0]), np.array([g["n"][0], g["n"][1], 0.0])])
+    c.same("bestview.py WALLS order = label-views.py's and canvas-veil.py's wall choices", list(bv["WALLS"]), [w["name"] for w in room.order])
+    c.same("project-walls.py NORMALS order = its wall choices", list(pw["NORMALS"]), [w["name"] for w in room.order])
+    c.same("project.py VIEWS as written = its own folder (the committed views, compared below)", "VIEWS = HERE",
+           re.search(r"^VIEWS = HERE\b", pj_text, re.M).group(0))
+    for name, value in legacy.canvasveil_values(room).items():
+        c.same(f"canvasveil.py {name} = the room's", cvc[name], value)
+    for name, value in legacy.project_detail_values(room).items():
+        c.same(f"project-detail.py {name} = the room's", [tuple(x) for x in pdc[name]] if name == "PATCHES" else pdc[name], value)
+    c.same("project-detail.py PATCHES = pack-atlas.py PATCHES", [tuple(x) for x in pdc["PATCHES"]], [tuple(x) for x in pa["PATCHES"]])
+    for name, value in legacy.pack_detail_values(room).items():
+        c.same(f"pack-detail.py {name} = the room's", pkc[name], value)
+    c.same("pack-atlas.py fill passes on the 2.5 mm orthophoto (40 * scale)", "fill_sparse(img, valid, 40 * scale)",
+           re.search(r"fill_sparse\(img, valid, 40 \* scale\)", text(os.path.join(GH, "pack-atlas.py"))).group(0))
+    # --- the steps and their order ---------------------------------------------------------------------
     build_sh = text(os.path.join(GH, "build.sh"))
+    old_steps = []
+    for script in re.findall(r'"\$SURVEY/([\w-]+\.(?:py|mjs))"', build_sh):
+        if script not in old_steps and script != "check-atlas.py":          # check-atlas.py: only when publishing
+            old_steps.append(script)
+    driver = load_path("build_room", os.path.join(HERE, "build-room.py"))
+    alias = {"inputs": "fetch_inputs.py", "dump-mesh.mjs": "dump-mesh.mjs", "render-depth-room.mjs": "render-depth.mjs", "render.mjs": "render.mjs", "corners": "fix-corners.py",
+             "labels": "label-views.py", "wall-photo": "project-walls.py", "canvases": "canvas-veil.py", "project-ceiling": "project-ceiling.py",
+             "project-dome": "project-dome.py", "project-floor": "project-floor.py", "windows": "window-relief.py", "atlas": "pack-atlas.py",
+             "wall-depth": "wall-depth.py", "relief-mesh-room.mjs": "relief-mesh.mjs", "overhead": "pack-overhead.py",
+             "flatten-floor": "flatten-floor.py", "pack-floor": "pack-floor.py", "detail": "project-detail.py", "pack-detail": "pack-detail.py"}
+    new_steps = []
+    for step in driver.STEPS[1:-1]:
+        for argv in driver.commands(room)[step]:
+            key = argv[4] if driver.STEP_PY in argv else os.path.basename(argv[1])
+            if alias[key] not in new_steps:
+                new_steps.append(alias[key])
+    c.same("build.sh's scripts, in order = the driver's steps, in order", old_steps, new_steps)
+    c.same("build.sh flags: fix-corners.py --positions-only, project-walls.py --labels, pack-detail.py --atlas proj",
+           [True, True, True], [bool(re.search(p, build_sh)) for p in (r'fix-corners\.py" --positions-only', r'project-walls\.py" "\$wall" --labels', r'pack-detail\.py" --atlas proj')])
+    c.same("build.sh walls with canvases (canvas-veil.py runs for all four; these write a field)", sorted(cvc["CANVASES"]),
+           sorted(argv[6] for argv in driver.commands(room)["walls"] if argv[4] == "canvases"))
+    c.same("build.sh against the published survey: pack-atlas.py --alpha-from, as survey.atlas.alphaFrom", "published" if "--alpha-from \"$PUBLISH\"" in build_sh else None,
+           survey["atlas"].get("alphaFrom"))
+    pin = driver.commands(room, "PUBLISHED")
+    c.same("publishing: the atlas takes --alpha-from, the relief stands, check-atlas.py --alpha-pinned runs (build.sh RELIEF=keep)",
+           [["--alpha-from", "PUBLISHED"], ["check-atlas.py", "proj", "PUBLISHED", "--json", "proj/check-atlas.json", "--alpha-pinned"]],
+           [pin["atlas"][0][-2:], [os.path.basename(pin["relief"][0][3]), *pin["relief"][0][4:]] if len(pin["relief"]) == 1 else pin["relief"]])
+    c.same("build.sh publishes proj/detail = survey.outputs.detail", re.search(r'cp -r proj/(\w+) "\$PUBLISH/detail"', build_sh).group(1), publish_step.detail_folder(room))
+    # --- outputs -----------------------------------------------------------------------------------------
     old_outputs = re.search(r"OUTPUTS=\(([^)]*)\)", build_sh, re.S).group(1).split()
     c.same("build.sh OUTPUTS = survey.outputs, in order", old_outputs, publish_step.output_files(room))
     sizes = dict(walls=[(pa["SIZE"], pa["SIZE"]), tuple(int(x) for x in re.search(r"out\.resize\(\((\d+), (\d+)\)", text(os.path.join(GH, "pack-atlas.py"))).groups())])
@@ -441,8 +501,25 @@ def compare_file(rel, a, b):
                 y = json.load(f)
         except ValueError:
             return "bytes differ (not JSON)"
+        if RUN_REPORTS.match(rel):
+            x, y = without_run_facts(x), without_run_facts(y)
+            return None if x == y else "differ beyond timings and memory: " + first_json_diff(x, y)
         return f"bytes differ; parsed {'identical' if x == y else 'differ: ' + first_json_diff(x, y)}"
     return "bytes differ"
+
+
+def without_run_facts(value):
+    """A run report less its timings and memory, which differ from run to run."""
+    if isinstance(value, dict):
+        return {k: without_run_facts(v) for k, v in value.items() if k not in VOLATILE}
+    if isinstance(value, list):
+        return [without_run_facts(v) for v in value]
+    return value
+
+
+def stable_json_sha(path):
+    with open(path, encoding="utf-8") as f:
+        return sha256_bytes(json.dumps(without_run_facts(json.load(f)), sort_keys=True).encode("utf-8"))
 
 
 def first_json_diff(a, b, path="$"):
@@ -470,6 +547,8 @@ def digest_tree(root):
         if rel.endswith(".npz"):
             entry["arrays"] = {k: dict(dtype=str(v.dtype), shape=list(v.shape), sha256=sha256_bytes(bits(v)))
                                for k, v in npz_arrays(path).items()}
+        if RUN_REPORTS.match(rel):
+            entry["stable"] = stable_json_sha(path)
         out[rel] = entry
     return out
 
@@ -541,12 +620,14 @@ def compare_trees(old, new, published=None):
                 arrays = npz_arrays(new_files[rel])
                 bad = [k for k, v in d["arrays"].items() if k not in arrays or v["sha256"] != sha256_bytes(bits(arrays[k]))]
                 detail = f"arrays differ: {bad}" if bad else "arrays identical, bytes differ (npz container)"
+            if not same and "stable" in d:
+                detail = None if d["stable"] == stable_json_sha(new_files[rel]) else "differs beyond timings and memory"
         else:
             detail = compare_file(rel, old_files[rel], new_files[rel])
         rows.append((rel, "identical" if detail is None else "different", detail or ""))
     if published:
-        for name in sorted(os.listdir(published)):
-            target = sha256_file(os.path.join(published, name))
+        for name, path in sorted(walk(published).items()):
+            target = sha256_file(path)
             for label, files, digest in (("old", old_files, old_digest), ("new", new_files, None)):
                 rel = f"proj/{name}"
                 if rel not in files:

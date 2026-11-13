@@ -343,6 +343,9 @@ def check_edits(rep, room, wmap, openings):
             rep.error(f"{label}: u {u0:.3f}..{u1:.3f} is not inside wall {w['id']} (0..{w['length']:.3f})")
         if not (-TOL <= v0 < v1 <= w["height"] + TOL):
             rep.error(f"{label}: v {v0}..{v1} is not inside wall {w['id']} (0..{w['height']})")
+        if e["type"] == "canvas":
+            rep.fact(f"{label} {w['id']:<10} u {u0:7.3f}..{u1:7.3f}  v {v0}..{v1}  {e['id']}")
+            continue
         if e["type"] == "patch":
             src_wall = w
             if e["mode"] == "copy":
@@ -605,7 +608,7 @@ def check_survey(rep, room, wmap):
     if outputs:
         names = [o["file"] for key in ("walls", "ceiling", "floor") for o in outputs.get(key, [])]
         names += [o["file"] for files in outputs.get("domes", {}).values() for o in files]
-        names += [outputs[key] for key in ("relief", "ceilingRelief", "manifest") if outputs.get(key)]
+        names += [outputs[key] for key in ("relief", "ceilingRelief", "detail", "manifest") if outputs.get(key)]
         for name in sorted({n for n in names if names.count(n) > 1}):
             rep.error(f"survey.outputs: {name} is named twice")
         for dome in outputs.get("domes", {}):

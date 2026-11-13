@@ -362,15 +362,16 @@ def prove_values(room, repo):
              [float(re.search(r"latitude: (-?[0-9.]+)", st).group(1)), float(re.search(r"longitude: (-?[0-9.]+)", st).group(1)),
               ts_number(st, "HALL_WINDOW_BEARING"), ts_number(st, "HALL_PAVEMENT_Y")],
              [site["observer"]["latitude"], site["observer"]["longitude"], site["minusZBearingTrue"], site["pavementY"]])
-    sun = text(os.path.join(web, "hall-sun-times.ts"))
-    block = re.search(r"REVEAL_LIMIT[^=]*= \{(.*?)\};", sun, re.S).group(1)
-    led.same("hall-sun-times.ts REVEAL_LIMIT", {k: float(v) for k, v in re.findall(r'"([\w-]+)": (\d+)', block)},
-             {o["id"]: o["reveal"]["sunLimitDeg"] for o in room["openings"] if o["kind"] == "window"})
+    # No longer compared, because master's web model no longer holds the number: reveal.sunLimitDeg
+    # (hall-sun-times.ts now works each window's limit out, windowRevealLimit) and the main door
+    # recess's leafPlane and opening (hall-walls.ts no longer has DOOR_RECESS, LEAF_PLANE,
+    # MODELLED_DOOR). The survey build reads neither; the recess itself is checked against
+    # wall-depth.py above.
     depth = float(re.search(r"REVEAL_DEPTH=([0-9.]+)", text(os.path.join(gh, "skyline", "final.py"))).group(1))
     led.same("skyline/final.py REVEAL_DEPTH = each window's reveal depth", [depth] * 5,
              [o["reveal"]["depth"] for o in room["openings"] if o["kind"] == "window"])
-    led.same("hall-section.ts SECTION_THICKNESS = window wall thickness",
-             ts_number(text(os.path.join(web, "hall-section.ts")), "SECTION_THICKNESS"), seg["window"]["thickness"])
+    led.same("hall-spec.ts HALL_WALL_THICKNESS.window = window wall thickness",
+             float(re.search(r"HALL_WALL_THICKNESS\b.*?\bwindow: \{\s*thickness: ([0-9.]+)", spec, re.S).group(1)), seg["window"]["thickness"])
     sk = text(os.path.join(gh, "skyline", "skyline.py"))
     led.same("skyline.py Z_OUT = window face - thickness (to 1 um)", float(re.search(r"Z_OUT = (-?[0-9.]+)", sk).group(1)),
              round(wmap["window"]["origin"][1] - seg["window"]["thickness"], 6))
@@ -382,11 +383,6 @@ def prove_values(room, repo):
     fl = text(os.path.join(web, "hall-floor.ts"))
     led.same("hall-floor.ts FLOOR_BOARD_WIDTH, FLOOR_SEAM", [ts_number(fl, "FLOOR_BOARD_WIDTH"), ts_number(fl, "FLOOR_SEAM")],
              [room["floor"]["boardWidth"], room["floor"]["seam"]])
-    hw_ = text(os.path.join(web, "hall-walls.ts"))
-    led.same("hall-walls.ts DOOR_RECESS, LEAF_PLANE", [ts_number(hw_, "DOOR_RECESS"), ts_number(hw_, "LEAF_PLANE")],
-             [-recess["depth"], -recess["leafPlane"]])
-    led.same("hall-walls.ts MODELLED_DOOR = the recess's opening", re.search(r'MODELLED_DOOR = "([\w-]+)"', hw_).group(1),
-             recess["u"][0]["opening"])
     at = text(os.path.join(web, "hall-atlas.ts"))
     led.same("hall-atlas.ts WALL_ATLAS_SIZE, V_MIN, V_MAX",
              [ts_number(at, "WALL_ATLAS_SIZE"), ts_number(at, "WALL_ATLAS_V_MIN"), ts_number(at, "WALL_ATLAS_V_MAX")],
@@ -417,6 +413,26 @@ def prove_values(room, repo):
     sizes = [[int(a), int(b)] for a, b in re.findall(r"\((\d+), (\d+)\)", re.search(r"for size in \[(.*?)\]:", pf_text).group(1))]
     led.same("pack-floor.py files and sizes", [[f"floor-{s[0]}.webp", s] for s in sizes], [[f["file"], f["size"]] for f in out["floor"]])
     led.same("survey.outputs.manifest: no survey.json in the Grand Hall's folder", None, out.get("manifest"))
+
+    # --- the walls' best view: the canvases, the detail tiles, the published alpha ------------
+    cv = py_constants(os.path.join(gh, "canvasveil.py"))
+    alias_back = {v: k for k, v in alias.items()}
+    canvases = {}
+    for e in room["edits"]:
+        if e["type"] == "canvas":
+            canvases.setdefault(alias_back.get(e["wall"], e["wall"]), []).append([e["id"], e["u"] + e["v"], e.get("veil", True)])
+    led.same("canvasveil.py CANVASES = canvas edits", {k: [[n, list(box), on] for n, box, on in v] for k, v in cv["CANVASES"].items()}, canvases)
+    pd = py_constants(os.path.join(gh, "project-detail.py"))
+    pk = py_constants(os.path.join(gh, "pack-detail.py"))
+    detail = room["survey"]["detail"]
+    for name, consts in (("project-detail.py", pd), ("pack-detail.py", pk)):
+        led.same(f"{name} TEXEL, TILE, GUTTER", [consts["TEXEL"], consts["TILE"], consts["GUTTER"]], [detail["texel"], detail["tile"], detail["gutter"]])
+    led.same("pack-detail.py QUALITY", pk["QUALITY"], detail["quality"])
+    led.same("project-detail.py PATCHES = pack-atlas.py PATCHES", pd["PATCHES"], pa["PATCHES"])
+    led.same("build.sh publishes the detail folder = survey.outputs.detail",
+             re.search(r'cp -r proj/(\w+) "\$PUBLISH/detail"', build_sh).group(1), out["detail"])
+    led.same("build.sh pack-atlas.py --alpha-from the published survey = survey.atlas.alphaFrom",
+             "published" if '--alpha-from "$PUBLISH"' in build_sh else None, atlas.get("alphaFrom"))
     return led.print()
 
 

@@ -22,11 +22,14 @@ FACES = [((1, 0, 0), (0, 0, 1)), ((-1, 0, 0), (0, 0, 1)), ((0, 1, 0), (0, 0, 1))
          ((0, -1, 0), (0, 0, 1)), ((0, 0, 1), (0, 1, 0)), ((0, 0, -1), (0, 1, 0))]
 # The Grand Hall's interior box in E57 (hall-spec.ts faces; floor and ceiling).
 GH_BOX = (-1.7725, 19.3625, -10.258, 0.332, 0.045, 6.745)
-# Three stations in the hall and one outside it (the Saloon): both builds must drop that one.
+# Five stations in the hall and one outside it (the Saloon): both builds must drop that one.
+# Four of the five stand within 16 m of the end wall, the fewest views a canvas's veil needs.
 GH_STATIONS = [
     dict(id="scan_000", t=[0.5, -5.0, 1.5], gain=1.0),
     dict(id="scan_001", t=[8.8, -5.0, 1.55], gain=1.1),
     dict(id="scan_002", t=[17.0, -2.0, 1.5], gain=0.95),
+    dict(id="scan_003", t=[5.0, -7.5, 1.6], gain=1.05),
+    dict(id="scan_004", t=[12.0, -3.0, 1.45], gain=0.9),
     dict(id="scan_049", t=[-6.0, 7.0, 1.5], gain=1.0),
 ]
 
@@ -106,17 +109,37 @@ def write_panoramas(data, stations, W, H, colour):
 
 
 def gh_sky(s, dirs):
-    """A smooth panorama for the mini Grand Hall (no scene: only the code paths matter)."""
+    """A panorama for the mini Grand Hall (no scene: only the code paths matter): smooth light with
+    a grain of its own per station, so that blocks have texture to rank, sweep and level."""
     az = np.arctan2(dirs[..., 1], dirs[..., 0])
     el = np.arcsin(np.clip(dirs[..., 2], -1, 1))
     k = int(s["id"][5:])
-    return np.stack([0.35 + 0.2 * np.sin(3 * az + k), 0.3 + 0.15 * np.cos(2 * el), 0.25 + 0.1 * np.sin(az + el)], -1)
+    smooth = np.stack([0.35 + 0.2 * np.sin(3 * az + k), 0.3 + 0.15 * np.cos(2 * el), 0.25 + 0.1 * np.sin(az + el)], -1)
+    grain = np.random.default_rng(20261113 + k).random(az.shape) - 0.5
+    return smooth * (1 + (0.5 - 0.06 * k) * grain[..., None])
 
 
-def write_gh_inputs(data, depth_size=64, pano=(256, 128)):
+def write_gh_inputs(data, depth_size=64, pano=(2048, 1024)):
     write_manifest(data, GH_STATIONS)
     write_depth_maps(data, GH_STATIONS, depth_size, lambda o, d: box_distance(o, d, GH_BOX))
     write_panoramas(data, GH_STATIONS, *pano, gh_sky)
+
+
+def write_gh_detail(room, proj, names, rng):
+    """proj/detail-<wall>.npy for walls whose 2 mm photograph the test does not project: an image
+    of the detail grid's own size (pack-detail.py refuses any other), smooth with a little grain."""
+    d, atlas = room["survey"]["detail"], room["survey"]["atlas"]
+    unique = d["tile"] - 2 * d["gutter"]
+    pitch = unique * d["texel"]
+    walls = {w["name"]: w for w in roomlib.walls(room)}
+    for name in names:
+        ncols = int(np.ceil(walls[name]["length"] / pitch - 1e-9))
+        nrows = int(np.ceil((atlas["vRange"][1] - atlas["vRange"][0]) / pitch - 1e-9))
+        h, w = nrows * unique + 2 * d["gutter"], ncols * unique + 2 * d["gutter"]
+        yy, xx = np.mgrid[0:h, 0:w]
+        img = np.stack([120 + 60 * np.sin(xx / 211.0), 110 + 50 * np.cos(yy / 173.0), 90 + 40 * np.sin((xx + yy) / 97.0)], -1)
+        img += rng.integers(-3, 4, size=(h, w, 1))
+        np.save(os.path.join(proj, f"detail-{name}.npy"), np.clip(img, 0, 255).astype(np.uint8))
 
 
 # --- the mini Grand Hall's walls ---------------------------------------------------------------------

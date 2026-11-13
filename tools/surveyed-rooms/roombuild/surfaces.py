@@ -1,5 +1,6 @@
-"""Projection onto the walls, the ceiling, the domes and the floor: project-walls.py,
-project-ceiling.py, project-dome.py and project-floor.py driven by a room config.
+"""Projection onto the ceiling, the domes and the floor: project-ceiling.py, project-dome.py and
+project-floor.py driven by a room config. (The walls take the sharpest photograph instead of this
+weighted blend: roombuild/walls.py.)
 
 Each function is the old script's statements with its Grand Hall literals replaced by config
 values. The projection itself is tools/grand-hall-survey/project.py, imported (legacy.project()).
@@ -20,35 +21,6 @@ import numpy as np
 import roomlib
 
 from . import legacy
-
-
-def project_wall(room, name):
-    """project-walls.py <name>: every elevation tile of one wall."""
-    pj = legacy.use_occluders(room.occluder_tuples())
-    wall = room.by_name[name]
-    views = room.tiles(wall)
-    t0 = time.time()
-    tiles = []
-    pts_all = []
-    for v in views:
-        w, h = v['pixels']
-        P = np.fromfile(f"out-walls/{v['name']}.position.f32", dtype=np.float32).reshape(h, w, 4)[::-1]
-        valid = P[..., 3] > 0.5
-        tiles.append((v, valid))
-        pts_all.append(P[valid][:, :3].astype(np.float64))
-    pts = np.concatenate(pts_all)
-    nrm = np.tile(room.normal3(wall), (len(pts), 1))
-    rgb, ws = pj.project(pts, nrm, room.stations(), **room.projection('walls'))
-    offset = 0
-    for (v, valid), p in zip(tiles, pts_all):
-        w, h = v['pixels']
-        img = np.zeros((h, w, 3), np.float32)
-        img[valid] = rgb[offset:offset + len(p)]
-        weight = np.zeros((h, w), np.float32)
-        weight[valid] = ws[offset:offset + len(p)]
-        offset += len(p)
-        np.savez_compressed(f"proj/{v['name']}.npz", rgb=img, weight=weight, valid=valid)
-    print(name, 'texels', len(pts), 'uncovered', int((ws == 0).sum()), round(time.time() - t0, 1), 's', flush=True)
 
 
 def project_ceiling(room):

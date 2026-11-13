@@ -2464,6 +2464,12 @@
       "holdFloor": 0.04,
       "holdCeiling": 5.475
     },
+    "detail": {
+      "texel": 0.002,
+      "tile": 512,
+      "gutter": 8,
+      "quality": 86
+    },
     "ceilingRelief": {
       "container": "GHR1",
       "id": "ceiling",
@@ -2525,6 +2531,7 @@
           ]
         }
       ],
+      "detail": "detail",
       "manifest": "survey.json"
     }
   },

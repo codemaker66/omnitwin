@@ -49,20 +49,31 @@ def node_ready():
 
 
 class Atlas(unittest.TestCase):
-    def test_fill_and_patches_match_pack_atlas(self):
-        pa = old("pack-atlas.py", ["SRC_PPM", "SRC_TOP", "fill", "px", "patch"])
+    def test_fills_are_pack_atlas_own_and_patches_match(self):
+        pa = old("pack-atlas.py", ["SRC_PPM", "SRC_TOP", "fill", "fill_sparse", "px", "patch"])
+        own = legacy.pack_atlas_functions()
         rng = np.random.default_rng(1)
         img = (rng.random((1410, 4228, 3)) * 255).astype(np.float32)
         valid = rng.random((1410, 4228)) > 0.01
         valid[:, 100:140] = False
-        a, b = pa["fill"](img, valid), atlas.fill(img, valid)
-        self.assertTrue(same(a, b))
+        a = pa["fill"](img, valid)
+        self.assertTrue(same(a, own["fill"](img, valid, atlas.FILL_PASSES)))
+        self.assertTrue(same(pa["fill_sparse"](img, valid, 80), own["fill_sparse"](img, valid, 2 * atlas.FILL_PASSES)))
+        self.assertFalse(same(a, img), "the fill changed nothing")
         for wall, u0, u1, v0, v1, mode, arg in GH.patches("photo"):
             x, y = a.copy(), a.copy()
             x = pa["patch"](x, u0, u1, v0, v1, mode, arg, wall["length"])
             y = atlas.patch(y, u0, u1, v0, v1, mode, arg, wall["length"], 10, 200.0, 7.0)
             self.assertTrue(same(x, y), f"patch on {wall['id']} {mode}")
             self.assertFalse(same(x, a), "the patch changed nothing")
+        # at the 2.5 mm orthophoto's scale, as pack-atlas.py calls it (feather and ppm doubled), on the shorter walls
+        fine = (rng.random((2820, 4236, 3)) * 255).astype(np.float32)
+        for wall, u0, u1, v0, v1, mode, arg in GH.patches("photo"):
+            if wall["length"] < 15:
+                x = pa["patch"](fine.copy(), u0, u1, v0, v1, mode, arg, wall["length"], feather=20, ppm=400.0)
+                y = atlas.patch(fine.copy(), u0, u1, v0, v1, mode, arg, wall["length"], 20, 400.0, 7.0)
+                self.assertTrue(same(x, y), f"2.5 mm patch on {wall['id']} {mode}")
+                self.assertFalse(same(x, fine), "the patch changed nothing")
 
     def test_copy_patch_takes_the_other_wall(self):
         rng = np.random.default_rng(2)

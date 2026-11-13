@@ -104,7 +104,7 @@
         "name": "Window wall (Glassford Street)",
         "kind": "solid",
         "height": 6.7,
-        "thickness": 0.62,
+        "thickness": 0.95,
         "survey": { "anchorE57": [19.36, -10.255], "tiles": 4, "note": "wall-views.py renders from X 19.36, Y -10.255: 2.5 mm and 3 mm off the corner (19.3625, -10.258)." }
       },
       {
@@ -184,12 +184,12 @@
     },
     {
       "id": "door-end", "wall": "door", "kind": "door", "headShape": "square",
-      "centreE57": [-0.025, 0.332], "width": 1.08, "sill": 0, "head": 2.35,
+      "centreE57": [-0.025, 0.332], "width": 1.1, "sill": 0, "head": 2.35,
       "glazing": "none", "stateInScan": "open"
     },
     {
       "id": "door-main", "wall": "door", "kind": "door", "headShape": "square",
-      "centreE57": [8.79, 0.332], "width": 1.43, "sill": 0, "head": 2.35,
+      "centreE57": [8.79, 0.332], "width": 1.45, "sill": 0, "head": 2.35,
       "glazing": "none", "stateInScan": "open",
       "note": "Under the clock. hall-walls.ts models its closed mahogany leaves in the relief's recess."
     },
@@ -264,7 +264,9 @@
     { "type": "floor-refill", "centre": [-0.13, -4.41], "radius": 0.85, "note": "A station in a window bay or doorway: no neighbour sees the floor round its tripod well." },
     { "type": "floor-refill", "centre": [9.02, -4.1], "radius": 0.85, "note": "As above." },
     { "type": "floor-refill", "centre": [-0.13, 4.93], "radius": 0.7, "note": "As above." },
-    { "type": "floor-refill", "centre": [8.85, 4.93], "radius": 0.7, "note": "As above." }
+    { "type": "floor-refill", "centre": [8.85, 4.93], "radius": 0.7, "note": "As above." },
+    { "type": "canvas", "id": "fire-portrait", "wall": "fireplace", "u": [4.489, 6.116], "v": [1.911, 4.364], "veil": true, "note": "The portrait over the fireplace: scan_034 photographed it at 2.2 mm a pixel with a veil of reflected light over its lower canvas (canvasveil.py CANVASES)." },
+    { "type": "canvas", "id": "end-portrait", "wall": "end", "u": [4.569, 6.069], "v": [2.226, 4.521], "veil": true, "note": "The end wall's portrait: returned to scan_044's photograph on its lower canvas, a veil taken off its upper canvas." }
   ],
   "occluders": [
     { "id": "chandelier-dome-body", "shape": "vertical-cylinder", "centreE57": [8.767, -4.958], "radius": 0.9, "zE57": [3.95, 6.35], "fitting": "chandelier-dome" },
@@ -279,7 +281,7 @@
     { "id": "chandelier-end-window-stem", "shape": "vertical-cylinder", "centreE57": [2.102, -7.686], "radius": 0.12, "zE57": [5.3, 6.8], "fitting": "chandelier-end-window" }
   ],
   "survey": {
-    "publish": { "folder": "packages/web/public/rooms/grand-hall/survey-2026-07-11", "revision": 3 },
+    "publish": { "folder": "packages/web/public/rooms/grand-hall/survey-2026-07-11", "revision": 7 },
     "projection": {
       "walls": { "cosMin": 0.2, "pCos": 4.0, "qDist": 3.0, "maxDist": 16.0 },
       "ceiling": { "cosMin": 0.15, "pCos": 4.0, "qDist": 3.0, "maxDist": 16.0 },
@@ -316,6 +318,7 @@
       "ppm": { "pixels": 2048, "span": 10.59 },
       "vRange": [-0.02, 6.72],
       "featherTexels": 10,
+      "alphaFrom": "published",
       "placement": [
         { "wall": "window", "column": 0, "row": 0 },
         { "wall": "door", "column": 0, "row": 1 },
@@ -333,12 +336,14 @@
       "holdFloor": 0.04,
       "holdCeiling": 6.66
     },
+    "detail": { "texel": 0.002, "tile": 512, "gutter": 8, "quality": 86 },
     "outputs": {
       "walls": [{ "file": "walls-4096.webp", "size": [4096, 4096] }, { "file": "walls-2048.webp", "size": [2048, 2048] }],
       "relief": "walls-relief.bin",
       "ceiling": [{ "file": "ceiling-3072.webp", "size": [3072, 1536] }, { "file": "ceiling-1536.webp", "size": [1536, 768] }],
       "domes": { "dome": [{ "file": "dome-4096.webp", "size": [4096, 768] }, { "file": "dome-2048.webp", "size": [2048, 384] }] },
       "floor": [{ "file": "floor-2560.webp", "size": [2560, 1280] }, { "file": "floor-1280.webp", "size": [1280, 640] }],
+      "detail": "detail",
       "manifest": null
     }
   },

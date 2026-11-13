@@ -136,8 +136,8 @@ def flat(U, V):
     return np.zeros(U.shape), np.ones(U.shape, bool)
 
 
-def step(work, name):
-    r = subprocess.run([sys.executable, "-X", "utf8", STEP_PY, name, "room.json"], cwd=work, env=ENV,
+def step(work, name, *args):
+    r = subprocess.run([sys.executable, "-X", "utf8", STEP_PY, name, "room.json", *args], cwd=work, env=ENV,
                        capture_output=True, text=True, encoding="utf-8", errors="replace")
     if r.returncode != 0:
         raise AssertionError(f"step {name} failed:\n{r.stdout[-3000:]}\n{r.stderr[-3000:]}")
@@ -429,9 +429,22 @@ class NotAxisAligned(unittest.TestCase):
         self.assertLess(float(np.abs(along[fin] - self.U[fin]).max()), 1e-5)      # same place along it
         self.assertTrue(np.array_equal(fixed[fin][:, 2], self.P[fin][:, 2]))       # and up it
         self.assertIn("chamfer left fin rows 100", self.log)
+
+    def test_labelled_and_coloured_from_the_moved_positions(self):
+        """The best-view method on a wall that is not axis-aligned: its frame comes from the wall's
+        own u and normal, and the fin's texels are labelled and coloured where the corners step put them."""
+        step(self.work, "labels", "chamfer")
+        step(self.work, "wall-photo", "chamfer")
+        (v,) = self.room.tiles(self.wall)
+        fin = (self.U >= FIN["s"][0]) & (self.U <= FIN["s"][1]) & (self.V >= FIN["v"][0]) & (self.V <= FIN["v"][1])
+        labels = np.load(os.path.join(self.work, "proj", "labels-chamfer.npz"))
+        self.assertGreater(float((labels["texel_label"][fin] >= 0).mean()), 0.9)
         npz = np.load(os.path.join(self.work, "proj", f"{v['name']}.npz"))
-        self.assertGreater(float((npz["weight"][fin] > 0).mean()), 0.9)           # re-projected from the panoramas
+        self.assertGreater(float((npz["weight"][fin] > 0).mean()), 0.9)           # coloured from the panoramas
         self.assertFalse(np.allclose(npz["rgb"][fin], 0.4))
+        fine = np.load(os.path.join(self.work, "proj", f"{v['name']}.fine.npz"))
+        self.assertEqual(fine["rgb8"].shape[:2], (2 * fin.shape[0], 2 * fin.shape[1]))
+        self.assertGreater(float(fine["valid"][::2, ::2][fin].mean()), 0.9)
 
 
 # --- B19: the floor refills' roll direction -------------------------------------------------------------------

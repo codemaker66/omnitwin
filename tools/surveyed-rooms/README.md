@@ -111,7 +111,7 @@ statistics.
 
     python -X utf8 tools/surveyed-rooms/build-room.py <room.json> <work-dir> [--publish DIR]
         [--from STEP] [--to STEP] [--inputs-from DIR [--reuse-depth]] [--twin URL] [--plan]
-        [--expect-legacy]
+        [--expect-legacy] [--relief keep|rebuild] [--list] [--only ID] [--resume]
     bash tools/surveyed-rooms/build-room.sh <room.json> <work-dir> [<publish-dir>]
 
 | # | Step | Runs (in the work directory) | The Grand Hall's script |
@@ -120,14 +120,46 @@ statistics.
 | 1 | inputs | `roombuild/step.py inputs`, `dump-mesh.mjs` | `fetch_inputs.py`, `dump-mesh.mjs` |
 | 2 | depth | `render-depth-room.mjs build/stations.json 1024 data/depth1024` | `render-depth.mjs` |
 | 3 | surfaces | `render.mjs views/views-walls.json out-walls`, and the ceiling's | `render.mjs` |
-| 4 | project | `step.py project-wall <name>` per wall, `project-ceiling`, `project-dome <id>`, `project-floor` | `project-*.py` |
-| 5 | windows | `step.py windows`: the masks, the layers and `build/glass.json` (with the scan check) | `window-relief.py` |
-| 6 | corners | `step.py corners` | `fix-corners.py` |
-| 7 | atlas | `step.py atlas` | `pack-atlas.py` |
-| 8 | relief | `step.py wall-depth`, `relief-mesh-room.mjs build/relief-walls.json`; with a ceiling relief, `step.py ceiling-relief` and its GHR1 | `wall-depth.py`, `relief-mesh.mjs` |
-| 9 | overhead | `step.py overhead proj` | `pack-overhead.py` |
-| 10 | floor | `step.py flatten-floor`, `step.py pack-floor` | `flatten-floor.py`, `pack-floor.py` |
-| 11 | publish | `build/survey.json`; with `--publish`, the outputs (DIR must be `survey.publish.folder`) | the tail of `build.sh` |
+| 4 | corners | `step.py corners`: the corners' fins moved back onto their walls (`out-walls/*.fixed.f32`) | `fix-corners.py --positions-only` |
+| 5 | labels | `step.py labels <wall>` per wall: each block's sharpest station (`proj/labels-<wall>.npz`) | `label-views.py` |
+| 6 | walls | `step.py wall-photo <wall>` per wall: the 2.5 mm and 5 mm orthophotos, seams levelled; then `step.py canvases <wall>` for each wall with a `canvas` edit | `project-walls.py --labels`, `canvas-veil.py` |
+| 7 | project | `step.py project-ceiling`, `project-dome <id>`, `project-floor` | `project-ceiling.py`, `project-dome.py`, `project-floor.py` |
+| 8 | windows | `step.py windows`: the masks, the layers and `build/glass.json` (with the scan check) | `window-relief.py` |
+| 9 | atlas | `step.py atlas` | `pack-atlas.py` |
+| 10 | relief | `step.py wall-depth`, `relief-mesh-room.mjs build/relief-walls.json`; with a ceiling relief, `step.py ceiling-relief` and its GHR1 | `wall-depth.py`, `relief-mesh.mjs` |
+| 11 | overhead | `step.py overhead proj` | `pack-overhead.py` |
+| 12 | floor | `step.py flatten-floor`, `step.py pack-floor` | `flatten-floor.py`, `pack-floor.py` |
+| 13 | detail | `step.py detail <wall>` per wall, then `step.py pack-detail`: the walls at `survey.detail`'s texel, cut into tiles with `detail/index.json` | `project-detail.py`, `pack-detail.py` |
+| 14 | publish | `build/survey.json`; with `--publish`, the outputs and the detail folder (DIR must be `survey.publish.folder`) | the tail of `build.sh` |
+
+The order is `build.sh`'s, and `prove-build-identity.py --static` compares the two lists.
+
+### How the walls are coloured
+
+The walls take each part's colour from the one panorama that photographed it most sharply, as the
+Grand Hall's do (`tools/grand-hall-survey/README.md`, "The walls: the sharpest photograph"); the
+ceiling, domes and floor keep the weighted blend. Nothing of that method is copied into this
+folder. `roombuild/walls.py` points the Grand Hall scripts' own globals at the room's values
+(`roombuild/legacy.py`) and runs each script's `main()`, one process per wall:
+
+| The script reads | From the config |
+| --- | --- |
+| `project.VIEWS`, `project.STATION_IDS`, `project.CHANDELIERS` | the work directory's `views/`, `stations`, `occluders` |
+| `bestview.WALLS`, `SRC_TOP`, `FLOOR`, `COS_MIN`, `MAX_DIST` | each wall's survey name, anchor, u axis, normal and length; `wallViews.heightRange[1]`; `transform.floorZ`; `projection.walls.cosMin` and `maxDist` |
+| `project-walls.NORMALS` (its wall names) | the walls in order |
+| `canvasveil.CANVASES`, `PITCH` | the `canvas` edits; one elevation texel |
+| `project-detail` and `pack-detail`: `TEXEL`, `TILE`, `GUTTER`, `PPM`, `V_MIN`, `V_MAX`, `ROW`, `LENGTH`, `PATCHES`, `NAME`, `ATLAS`, `GLASS_STRIPS` | `survey.detail`, the atlas's layout, the photo patches, the wall ids, `outputs.walls[0]`, the strips of the walls with clear glazing |
+
+A global that is no longer in its script stops the build (`legacy.point`). `projection.walls.pCos`
+and `qDist` belong to the blend and are no longer read for walls. The method counts in elevation
+texels (a block is 8 x 8, seams feather over 8 and blend over 24), so `wallViews.ppm` 200 gives the
+Grand Hall's 40 mm blocks. A `canvas` edit names a varnished canvas (`id`, `wall`, `u`, `v`, and
+`veil: false` to return it to its photograph's level only); a room without one runs no canvas step.
+
+Two pieces are still ports, because their scripts are flat and built round the Grand Hall's four
+walls: `roombuild/corners.py` (`fix-corners.py`, with four gates inside its loop) and
+`roombuild/atlas.py` (`pack-atlas.py`'s body; its `fill` and `fill_sparse` are taken from the
+script's source and `canvasveil.py` is imported). T2 runs both against their scripts.
 
 Inputs and depth maps already in the work directory are kept. `--inputs-from` hard-links (or
 copies) another work directory's manifest, mesh, mesh dump and this room's panoramas; the inputs
@@ -138,14 +170,44 @@ taken from another tree is listed in `build/linked.json` and in `survey.json`, a
 `prove-build-identity.py` reports those files as linked, never as identical.
 
 `--from`/`--to` run a span of steps (the check always runs, and refuses if the views changed
-under rendered surfaces). `--from windows` or `--from corners` is refused while a wall uses the
-clear colour test, because the corners step rewrites `proj/wall-*.npz` in place; restart from
-`project`. Editing patches on a built room is `--from atlas`. Changing a window, its glass block,
-the walls or the wall views needs `--from windows` (`--from project` with clear glazing): the
-windows step records a digest of those facts in `build/glass.json`, and the atlas and relief
-steps refuse masks made from other facts. It also deletes the masks of walls that no longer have
-glazing. Every step's command, time, exit status and the digests of the files it wrote are
-appended to `build/steps.json`.
+under rendered surfaces). No step rewrites another's files, so any step can be the start.
+Editing patches on a built room is `--from atlas` (the detail tiles repeat them, and the run goes
+on to `detail`); a `canvas` edit is `--from walls`. Changing a window, its glass block, the walls
+or the wall views needs `--from windows`: the windows step records a digest of those facts in
+`build/glass.json`, and the atlas and relief steps refuse masks made from other facts. It also
+deletes the masks of walls that no longer have glazing. Every step's command, time, exit status
+and the digests of the files it wrote are appended to `build/steps.json`.
+
+The walls' steps run on four threads (`SURVEY_THREADS`) at below-normal priority, hold one
+panorama at a time, and pause between stations while the file `SURVEY_PAUSE_FILE` names exists.
+A wall's labels are the build's longest sub-command (the Grand Hall's README gives about 40
+minutes for its four walls on four cores, most of it the two long ones).
+
+**One sub-command at a time.** A build is a list of sub-commands, each one process: a wall's
+labels, a wall's photographs, the ceiling's projection. `--list` prints them with their ids,
+`<step>:<n>` counted from 1 within the step (`labels:3` is the third wall's labels; `publish:1`
+is the record), and writes nothing. `--only ID` runs exactly one, after the check and whatever its
+step needs first (the inputs' links, the relief's job files), and records it in
+`build/steps.json` like any other. `--resume` skips a sub-command whose last record ended with
+exit 0 for the same command and the same config, when nothing it may depend on has run since
+(any earlier step's sub-command, and the earlier ones of its own step unless it is one per wall or
+surface) and every file it wrote is still there with the recorded size and SHA-256. A build
+stopped anywhere, by a failure or by its caller, so picks up at the first sub-command that is not
+done; `--list --resume` shows which those are. A changed config skips nothing, because the build
+cannot tell which steps a change reaches: the check and each step's own refusals run as ever, and
+`--from` says where to start. So a caller that may not hold a shared machine for a whole build
+runs `--only` for each id in turn, or lets a `--resume` run be stopped between sub-commands, and
+takes its lock round each call; the driver knows nothing of locks. Two cautions: the depth maps
+and the surfaces are each one sub-command for the whole room, and a patch copied from another
+wall (B20) rewrites its wall's detail image, so `--resume` projects that wall's detail again.
+
+**Publishing.** `--publish DIR` copies `survey.outputs` and replaces `DIR/detail` whole. A config
+with `survey.atlas.alphaFrom: "published"` (the Grand Hall) is published as `build.sh` publishes
+it: `step.py atlas --alpha-from DIR` keeps the alpha of the atlas already in DIR (its glazing was
+measured against that glass), the relief in DIR stands unless `--relief rebuild`, and
+`check-atlas.py` must pass before anything is copied. Without `--publish` the same config builds
+its own glass and relief, which is the identity run below. Other rooms' alpha is always their
+own glass mask.
 
 `SURVEYED_ROOMS_TEST_DEPTH_SIZE` (tests only) shrinks the depth maps (gate B21);
 `SURVEYED_ROOMS_NODE_ROOT` meshes the relief with another checkout's meshoptimizer (gate B22).
@@ -153,11 +215,15 @@ Both are recorded in the ledger, and `--publish` refuses either. `survey.json` r
 meshoptimizer version that simplified each GHR1 file. `--publish` also refuses glass that the
 scan disagrees with.
 
-The Grand Hall's scripts in `tools/grand-hall-survey` are unchanged and still build it with
-`build.sh`. The new steps import `project.py`, `window-relief.py`'s and `wall-depth.py`'s helpers
-and `fetch_inputs.py`, call `dump-mesh.mjs`, `render.mjs`, `surface-offset.mjs` and
-`page-server.mjs`, and port the rest of the scripts' statements with their literals replaced by
-config values.
+The Grand Hall's scripts in `tools/grand-hall-survey` still build it with `build.sh`. Three of them
+carry a seam for this driver, each with its old value as the default: `project.py` (`VIEWS`, the
+folder `load_views` reads; `STATION_IDS`, a room's stations in place of scan 0 to 48), `bestview.py`
+(`COS_MIN`, `MAX_DIST`, the two limits `visibility` held as literals) and `pack-detail.py` (`ATLAS`,
+the atlas file's name; `GLASS_STRIPS`, the glazed walls' strips, where it assumed the window wall
+at the atlas's origin; its wall loop reads `LENGTH`). The steps import `project.py`, run the
+walls' scripts whole (above), use `window-relief.py`'s and `wall-depth.py`'s helpers and
+`fetch_inputs.py`, call `dump-mesh.mjs`, `render.mjs`, `surface-offset.mjs` and `page-server.mjs`,
+and port the rest of the scripts' statements with their literals replaced by config values.
 
 ### Gates and the ledger
 
@@ -173,14 +239,14 @@ gates a config opens, computed before any work; `--plan` prints them and writes 
 | B7 | `methodRevision` ≥ 2 | corner statistics ignore window and arch openings and open doors |
 | B8 | a wall is shorter than 2.0 m | corner intrusions take reference 0 |
 | B9 | a wall end is a reflex corner | no intrusion clearing at that end |
-| B10 | glazing other than clear | the glass mask from `opening.glass` (any of its planes), two planes honoured, checked against the scan |
+| B10 | glazing other than clear | the glass mask from `opening.glass` (any of its planes), two planes honoured, checked against the scan; the wall keeps every detail tile (a wall with clear glazing leaves out the tiles that are all glass, where the planner shows the city) |
 | B11 | a clear window with a segmental head | the colour test with a segmental outline |
 | B14 | no `atlas.placement` | strips packed on shelves (next-fit, then first-fit decreasing), 8-texel gutters repeating the edges |
 | B16 | `survey.ceilingRelief` | the ceiling's height field, meshed as a GHR1 entry |
 | B17 | `floorPhoto` without `refill.shift` | floor refills skipped |
 | B18 | the outline is not a rectangle | floor texels outside it leave the floor mask |
 | B19 | boards run along z | refills roll along rows |
-| B20 | a `copy` patch | the patch is taken from another wall, after every wall's own edits |
+| B20 | a `copy` patch | the patch is taken from another wall, after every wall's own edits, in the atlas (which then holds every wall's orthophoto at once) and in the detail images (`roombuild/walls.py`) |
 | B21 | `SURVEYED_ROOMS_TEST_DEPTH_SIZE` is set | test-sized depth maps (never published) |
 | B22 | `SURVEYED_ROOMS_NODE_ROOT` is set | another checkout's meshoptimizer meshes the relief (never published) |
 

@@ -3,9 +3,10 @@ Grand Hall script:
 
     python -X utf8 roombuild/step.py <step> <room.json> [args]
 
-Steps: inputs [base-url] | project-wall <name> | project-ceiling | project-dome <id> |
-project-floor | windows | corners | atlas | wall-depth | ceiling-relief | overhead [out-dir] |
-flatten-floor <in.npz> <out.npz> <ppm> | pack-floor <in.npz> <out-dir>
+Steps: inputs [base-url] | corners | labels <wall> | wall-photo <wall> | canvases <wall> |
+project-ceiling | project-dome <id> | project-floor | windows | atlas [--alpha-from <dir>] |
+wall-depth | ceiling-relief | overhead [out-dir] | flatten-floor <in.npz> <out.npz> <ppm> |
+pack-floor <in.npz> <out-dir> | detail <wall> | pack-detail
 """
 import os
 import sys
@@ -14,7 +15,7 @@ ROOMS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOMS not in sys.path:
     sys.path.insert(0, ROOMS)
 
-from roombuild import atlas, corners, floor, inputs, overhead, relief, surfaces, windows  # noqa: E402
+from roombuild import atlas, corners, floor, inputs, overhead, relief, surfaces, walls, windows  # noqa: E402
 from roombuild.context import Room  # noqa: E402
 
 
@@ -25,8 +26,16 @@ def main():
     room = Room(room_json, os.getcwd())
     if step == 'inputs':
         inputs.run(room, *args)
-    elif step == 'project-wall':
-        surfaces.project_wall(room, args[0])
+    elif step == 'labels':
+        walls.labels(room, args[0])
+    elif step == 'wall-photo':
+        walls.photographs(room, args[0])
+    elif step == 'canvases':
+        walls.canvases(room, args[0])
+    elif step == 'detail':
+        walls.detail(room, args[0])
+    elif step == 'pack-detail':
+        walls.pack_detail(room)
     elif step == 'project-ceiling':
         surfaces.project_ceiling(room)
     elif step == 'project-dome':
@@ -38,7 +47,7 @@ def main():
     elif step == 'corners':
         corners.run(room)
     elif step == 'atlas':
-        atlas.run(room)
+        atlas.run(room, *args)
     elif step == 'wall-depth':
         relief.walls(room)
     elif step == 'ceiling-relief':

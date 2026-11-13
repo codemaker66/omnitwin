@@ -1,11 +1,14 @@
-"""Removes the neighbouring walls' fittings from each wall's corners: fix-corners.py driven by a
-room config.
+"""Removes the neighbouring walls' fittings from each wall's corners: fix-corners.py
+--positions-only driven by a room config.
 
 Per row, a proud run that starts within REACH of a corner and ends before CLEAR is a fin of the
 adjacent wall: its texels move back onto this wall (the row's depth just beyond it, the median over
-REF), are re-projected there, and the corrected positions are saved for the relief step
-(out-walls/<view>.fixed.f32). Every tile's .fixed.f32 is written and every npz re-saved, as the
-old script does. The body is fix-corners.py's; the gates the Grand Hall never opens:
+REF), and the corrected positions are saved (out-walls/<view>.fixed.f32) for the labels, the
+photographs and the relief, which colour and measure the wall from them. Every tile's .fixed.f32
+is written, as the old script does. This is a port, not a call: fix-corners.py is one flat script
+with the Grand Hall's planes in it, and four gates sit inside its loop here. The body is
+fix-corners.py's with --positions-only (its re-projection of the fins belongs to the blend the
+walls no longer use); the gates the Grand Hall never opens:
   B5  a wall shorter than 2 x REF[1] gets no fin search (.fixed.f32 = its positions);
   B6  no fin search at a reflex corner (the outline steps out there: no adjacent wall in view);
   B7  methodRevision >= 2: REF and CLEAR statistics ignore texels inside window and arch
@@ -15,8 +18,6 @@ old script does. The body is fix-corners.py's; the gates the Grand Hall never op
 import warnings
 
 import numpy as np
-
-from . import legacy
 
 REACH, CLEAR, REF = 0.35, 0.42, (0.45, 0.55)
 
@@ -45,10 +46,8 @@ def open_mask(room, wall, shape, ppm, top):
 
 
 def run(room):
-    pj = legacy.use_occluders(room.occluder_tuples())
     PPM = float(room.survey['wallViews']['ppm'])
     TOP = room.survey['wallViews']['heightRange'][1]
-    kw = room.projection('walls')
     for wall in room.order:
         tiles = sorted(room.tiles(wall), key=lambda v: v['tile'])
         aligned = room.aligned(wall)
@@ -98,10 +97,7 @@ def run(room):
             pts[:, axis] = plane + sign * target[idx]
         else:                                                                     # B4
             pts += room.normal3(wall) * (target[idx] - D[idx]).astype(np.float64)[:, None]
-        nrm = np.tile(room.normal3(wall), (len(pts), 1))
-        if len(pts):
-            rgb, ws = pj.project(pts, nrm, room.stations(), **kw)
-        # Write corrected positions per tile and patch the projected colours.
+        # Write corrected positions per tile.
         offset = 0
         for t, v in enumerate(tiles):
             w, h = v['pixels']
@@ -115,13 +111,5 @@ def run(room):
                 shift = (target[:, sl][r, c] - D[:, sl][r, c])[:, None] * room.normal3(wall)[:, :3]
                 Pt[r, c, :3] = (Pt[r, c, :3] + shift).astype(np.float32)
             Pt[::-1].astype(np.float32).tofile(f"out-walls/{v['name']}.fixed.f32")
-            npz = dict(np.load(f"proj/{v['name']}.npz"))
-            if len(r):
-                # project() returned colours in idx order; pick this tile's.
-                lookup = {k: i for i, k in enumerate(np.ravel_multi_index(idx, D.shape))}
-                order = np.array([lookup[k] for k in np.ravel_multi_index((r, c + offset), D.shape)])
-                npz['rgb'][r, c] = rgb[order]
-                npz['weight'][r, c] = ws[order]
-            np.savez_compressed(f"proj/{v['name']}.npz", **npz)
             offset += w
-        print(wall['name'], 'reprojected', len(pts), flush=True)
+        print(wall['name'], 'moved', len(pts), flush=True)
