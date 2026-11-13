@@ -1,7 +1,7 @@
 # Browser release verification
 
-The reviewed browser inventory has 424 cases. Four hosted CPU shards execute
-419 cases; the five Twin performance cases execute on the existing RTX 4090
+The reviewed browser inventory has 426 cases. Four hosted CPU shards execute
+421 cases; the five Twin performance cases execute on the existing RTX 4090
 through WSL D3D12. The final hosted job reconciles every case against the
 reviewed inventory, including the original skips and expected failures.
 
@@ -190,17 +190,21 @@ rooms and on every room's bar, and a slot opened under its own room to its sheet
 (`day-board.spec.ts`). The other three Day Board cases keep their identities.
 The totals are unchanged.
 
-On 12 November 2026 the planner's first-open event question is admitted again,
-against this 421-case baseline (PR #253, T-674; first admitted on that branch on
-26 October, against 405). Three ordinary cases: a new, empty layout on a booted
-planner with the API stubbed asks what the event is, the 2 key answers a
-corporate event and Lay out then starts from theatre rows; a wedding picked with
-a click is kept on the device, so a reload opens the layout without asking and
-names its event; and on the Grand Hall the welcome hands the question back with
-the first panel in hand and showing it (`plan-event-kind.spec.ts`). The rest of
-the suite runs on a device told not to ask, through the default `storageState`
-in `playwright.config.ts`, so no other identity or status changes; this changes
-the inventory from 421 to 424 and the CPU partition from 416 to 419.
+On 13 November 2026 the planner's first-open event question is admitted again,
+with five cases against this 421-case baseline (PR #253, T-674; first admitted
+on that branch on 26 October, against 405, and again with three on 12 November).
+Five ordinary cases: a new, empty layout on a booted planner with the API
+stubbed asks what the event is, the 2 key answers a corporate event and Lay out
+then starts from theatre rows; a wedding picked with a click is kept on the
+device, so a reload opens the layout without asking and names its event; on the
+Grand Hall the welcome hands the question back with the first panel in hand and
+showing it; an Escape that dismisses that welcome on a page nobody has touched
+leaves the question asking, and Enter answers it; and a signed-in planner's own
+layout writes its answer into the layout's metadata, the PATCH body asserted
+(`plan-event-kind.spec.ts`). The rest of the suite runs on a device told not to
+ask, through the default `storageState` in `playwright.config.ts`, so no other
+identity or status changes; this changes the inventory from 421 to 426 and the
+CPU partition from 416 to 421.
 
 The 30 September admission follows Blake's replacement of the Craft quiz with
 The Amissing Book (T-641). The old quiz's 26 threshold, questionnaire and result
