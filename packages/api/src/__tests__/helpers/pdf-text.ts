@@ -24,6 +24,13 @@ export interface PdfLine {
   /** Where the run ends, after any rotation the page applied. */
   readonly x2: number;
   readonly y2: number;
+  /** The fill colour the run is shown in ("#8a3522"), or null where the page set none. */
+  readonly color: string | null;
+}
+
+/** An RGB fill as pdfkit writes it ("0.5411764705882353 0.20784313725490197 0.13333333333333333"), as "#8a3522". */
+function hexColour(red: string, green: string, blue: string): string {
+  return `#${[red, green, blue].map((part) => Math.round(Number(part) * 255).toString(16).padStart(2, "0")).join("")}`;
 }
 
 /** A PDF matrix [a b c d e f]; a point maps as (a·x + c·y + e, b·x + d·y + f). */
@@ -171,12 +178,22 @@ export function pdfPages(buf: Buffer): PdfLine[][] {
     const content = pdfStream(objects.get(refOf(page, "Contents") ?? "") ?? "");
     const lines: PdfLine[] = [];
     let ctm: Matrix = IDENTITY;
-    const saved: Matrix[] = [];
-    for (const op of content.matchAll(/(?<![\w/])([qQ])(?![\w])|(-?[\d.]+) (-?[\d.]+) (-?[\d.]+) (-?[\d.]+) (-?[\d.]+) (-?[\d.]+) cm|\bBT\b([\s\S]*?)\bET\b/gu)) {
-      if (op[1] === "q") { saved.push(ctm); continue; }
-      if (op[1] === "Q") { ctm = saved.pop() ?? IDENTITY; continue; }
+    let fill: string | null = null;
+    const saved: { readonly ctm: Matrix; readonly fill: string | null }[] = [];
+    for (const op of content.matchAll(/(?<![\w/])([qQ])(?![\w])|(-?[\d.]+) (-?[\d.]+) (-?[\d.]+) (-?[\d.]+) (-?[\d.]+) (-?[\d.]+) cm|\bBT\b([\s\S]*?)\bET\b|([\d.]+) ([\d.]+) ([\d.]+) scn\b/gu)) {
+      if (op[1] === "q") { saved.push({ ctm, fill }); continue; }
+      if (op[1] === "Q") {
+        const state = saved.pop();
+        ctm = state?.ctm ?? IDENTITY;
+        fill = state?.fill ?? null;
+        continue;
+      }
       if (op[2] !== undefined) {
         ctm = concat([Number(op[2]), Number(op[3]), Number(op[4]), Number(op[5]), Number(op[6]), Number(op[7])], ctm);
+        continue;
+      }
+      if (op[9] !== undefined) {
+        fill = hexColour(op[9], op[10] ?? "", op[11] ?? "");
         continue;
       }
       const body = op[8] ?? "";
@@ -198,12 +215,18 @@ export function pdfPages(buf: Buffer): PdfLine[][] {
           }
           const [startX, startY] = apply(ctm, x, y);
           const [endX, endY] = apply(ctm, x + width, y);
-          lines.push({ text, x: startX, y: startY, x2: endX, y2: endY, size, font: font.base, width });
+          lines.push({ text, x: startX, y: startY, x2: endX, y2: endY, size, font: font.base, width, color: fill });
         }
       }
     }
     return lines;
   });
+}
+
+/** Each page's content stream, inflated, as latin1 text: its drawing operators in order. */
+export function pdfPageContents(buf: Buffer): string[] {
+  const objects = objectsOf(buf);
+  return pageIds(objects).map((id) => pdfStream(objects.get(refOf(objects.get(id) ?? "", "Contents") ?? "") ?? ""));
 }
 
 export interface PdfRule {
@@ -212,9 +235,11 @@ export interface PdfRule {
   readonly x2: number;
   /** Height, PDF points from the page's bottom (as a text line's baseline). */
   readonly y: number;
+  /** The stroke's width when set right after the segment (a rule's own), else null. */
+  readonly weight: number | null;
 }
 
-const STRAIGHT_STROKE = /(?<![\w/])([qQ])(?![\w])|(-?[\d.]+) (-?[\d.]+) (-?[\d.]+) (-?[\d.]+) (-?[\d.]+) (-?[\d.]+) cm|(-?[\d.]+) (-?[\d.]+) m\s+(-?[\d.]+) (-?[\d.]+) l\s+(?!-?[\d.]+ -?[\d.]+ l)/gu;
+const STRAIGHT_STROKE = /(?<![\w/])([qQ])(?![\w])|(-?[\d.]+) (-?[\d.]+) (-?[\d.]+) (-?[\d.]+) (-?[\d.]+) (-?[\d.]+) cm|(-?[\d.]+) (-?[\d.]+) m\s+(-?[\d.]+) (-?[\d.]+) l\s+(?!-?[\d.]+ -?[\d.]+ l)(?:([\d.]+) w)?/gu;
 
 /**
  * Every horizontal line drawn as one segment, page by page: the sheet's
@@ -236,7 +261,7 @@ export function pdfRules(buf: Buffer): PdfRule[][] {
       }
       const [x1, y1] = apply(ctm, Number(op[8]), Number(op[9]));
       const [x2, y2] = apply(ctm, Number(op[10]), Number(op[11]));
-      if (Math.abs(y1 - y2) < 0.01) rules.push({ x: Math.min(x1, x2), x2: Math.max(x1, x2), y: y1 });
+      if (Math.abs(y1 - y2) < 0.01) rules.push({ x: Math.min(x1, x2), x2: Math.max(x1, x2), y: y1, weight: op[12] === undefined ? null : Number(op[12]) });
     }
     return rules;
   });

@@ -2,6 +2,7 @@ import {
   accessNeeds,
   allergyFacts,
   buildProtectedPremisesSummary,
+  careTables,
   formatTableLabels,
   otherMeals,
   sheetNoteMarkers,
@@ -13,21 +14,25 @@ import {
   type HallkeeperSheetV2,
   type ProtectedPremisesLine,
   type SetupItem,
+  type SetupStep,
   type StoreGroup,
 } from "@omnitwin/types";
 import { paragraphUnits, type Flow, type Unit } from "./flow.js";
-import { WALL_BAND, drawMarker, drawScaleBar, drawSheetPlan } from "./plan-drawing.js";
+import { WALL_BAND, drawMarker, drawScaleBar, drawSheetPlan, planNamesLeftOff } from "./plan-drawing.js";
 import {
   INK, PAGE, TYPE,
-  blockHeight, drawBlock, drawLine, hairline, lineHeight, textWidth, upright, wrapLines,
+  balancedLines, blockHeight, drawBlock, drawLine, hairline, lineHeight, textWidth, upright, wrapLines,
   type Doc, type TextStyle,
 } from "./style.js";
 
 // ---------------------------------------------------------------------------
-// The sheet's blocks, in the order a hallkeeper reads them: the brief (who,
-// when, what to keep in view, the day in order, what to fetch, the planner's
-// words), then the room (the plan, the setup step by step, the sign-off),
-// then Martyn's Law prompts. Each block asks the flow for its room first.
+// The sheet's blocks, in the order a hallkeeper reads them (A, then D:
+// docs/superpowers/specs/2026-11-06-hallkeeper-sheet-a-d-f-design.md). Page 1
+// is the brief in two columns: the room, who to call, the day in order and the
+// planner's words; beside them what to keep in view and what to fetch. Page 2
+// opens the setup to tick: a progress rail, the steps beside a rail of what to
+// keep in view, the sign-off, then Martyn's Law prompts. Each block asks the
+// flow for its room.
 // ---------------------------------------------------------------------------
 
 const X = PAGE.margin;
@@ -90,19 +95,30 @@ function drawQr(doc: Doc, rows: readonly string[], x: number, y: number, size: n
   doc.fill("#000000").restore();
 }
 
+/** "Saturday 24 October · Grand Hall · Dinner rounds", with the guest count when asked for. */
+function ledeWords(sheet: HallkeeperSheetV2, withGuests: boolean): string {
+  const when = sheet.timing === null ? "Date not set" : longDay(sheet.timing.eventStart, sheet.venue.timezone);
+  const count = sheet.config.guestCount;
+  const guests = withGuests && count > 0 ? `${String(count)} ${count === 1 ? "guest" : "guests"}` : null;
+  return [when, sheet.space.name, guests, layoutWords(sheet.config.layoutStyle)].filter((part): part is string => part !== null).join(" · ");
+}
+
+/** Who approved this copy and which copy it is; before approval, that it is a draft. */
+function statusOf(sheet: HallkeeperSheetV2, copyLine: string): { readonly text: string; readonly style: TextStyle } {
+  return sheet.approval === null
+    ? { text: `${copyLine} · not yet approved. Check with the duty manager before setting up.`, style: TYPE.statusAlert }
+    : { text: `Approved by ${sheet.approval.approverName} · ${copyLine}`, style: TYPE.status };
+}
+
 export function header(flow: Flow, sheet: HallkeeperSheetV2, marks: CopyMarks): void {
   const { doc } = flow;
   const textW = W - QR_SIZE - 18;
   const top = flow.y;
-  const timeZone = sheet.venue.timezone;
   drawLine(doc, TYPE.overline, oneLine(doc, TYPE.overline, `Hallkeeper sheet · ${sheet.venue.name}`, textW), X, top);
   let y = drawBlock(doc, TYPE.title, sheet.config.name, X, top + 11, textW);
-  const when = sheet.timing === null ? "Date not set" : longDay(sheet.timing.eventStart, timeZone);
-  y = drawBlock(doc, TYPE.lede, `${when} · ${sheet.space.name} · ${layoutWords(sheet.config.layoutStyle)}`, X, y + 3, textW);
-  const status = sheet.approval === null
-    ? `${marks.copyLine} · not yet approved. Check with the duty manager before setting up.`
-    : `Approved by ${sheet.approval.approverName} · ${marks.copyLine}`;
-  y = drawBlock(doc, sheet.approval === null ? TYPE.statusAlert : TYPE.status, status, X, y + 6, textW);
+  y = drawBlock(doc, TYPE.lede, ledeWords(sheet, false), X, y + 3, textW);
+  const status = statusOf(sheet, marks.copyLine);
+  y = drawBlock(doc, status.style, status.text, X, y + 6, textW);
   if (marks.qr !== null) {
     y = drawBlock(doc, TYPE.small, marks.caption, X, y + 2, textW);
     drawQr(doc, marks.qr, X + W - QR_SIZE, top - 2, QR_SIZE);
@@ -128,12 +144,12 @@ function factsOf(sheet: HallkeeperSheetV2): Fact[] {
     ? { label: "Ready by", value: "—", caption: "No booking holds this room yet", tone: "alert" }
     : timing.setupBy === null
       ? { label: "Ready by", value: "—", caption: "No changeover time for this room", tone: "alert" }
-      : { label: "Ready by", value: clock(timing.setupBy, timeZone), caption: timing.bufferMinutes === null ? "" : `${String(timing.bufferMinutes)} min before the start`, tone: "accent" };
+      : { label: "Ready by", value: clock(timing.setupBy, timeZone), caption: timing.bufferMinutes === null ? "" : `${String(timing.bufferMinutes)} min before guests come in`, tone: "accent" };
   return [
     ready,
     timing === null
-      ? { label: "Starts", value: "—", caption: "Confirm the time first", tone: "plain" }
-      : { label: "Starts", value: clock(timing.eventStart, timeZone), caption: `${shortDay(timing.eventStart, timeZone)} · ${venueZoneLabel(timeZone)}`, tone: "plain" },
+      ? { label: "Guests in", value: "—", caption: "Confirm the time first", tone: "plain" }
+      : { label: "Guests in", value: clock(timing.eventStart, timeZone), caption: `${shortDay(timing.eventStart, timeZone)} · ${venueZoneLabel(timeZone)}`, tone: "plain" },
     { label: "Guests", value: String(sheet.config.guestCount), caption: layoutWords(sheet.config.layoutStyle), tone: "plain" },
     { label: "Room", value: sheet.space.name, caption: `${metres(sheet.space.widthM)} × ${metres(sheet.space.lengthM)} m · ${metres(sheet.space.heightM)} m high`, tone: "plain", name: true },
   ];
@@ -170,98 +186,212 @@ export function facts(flow: Flow, sheet: HallkeeperSheetV2): void {
   flow.y = bottom + 12;
 }
 
-// -------------------------------------------------------- keep in view ----
+// ------------------------------------------------- what to keep in view ----
 
-interface KeptLine { readonly style: TextStyle; readonly text: string; readonly gap: number }
-interface KeptColumn { readonly label: string; readonly alert: boolean; readonly lines: readonly KeptLine[] }
+type DayContact = NonNullable<NonNullable<HallkeeperSheetV2["instructions"]>["dayOfContact"]>;
+
+/** One care fact: its place set apart from its words when the planner wrote "place: words". */
+interface CareLine { readonly place: string | null; readonly words: string }
+
+/** A note's sentences: a break after ".", "!" or "?" where a capital or a digit follows. */
+function sentences(text: string): string[] {
+  return text.split(/(?<=[.!?])\s+(?=[\p{Lu}\p{N}])/u).map((part) => part.trim()).filter((part) => part.length > 0);
+}
+
+/**
+ * "Table 5, seat 4: severe peanut allergy." as its place and its words. Only a
+ * colon that ends a short place, a space after it, sets the place apart; a
+ * clock time ("out at 21:15") or a link ("https://") keeps the sentence whole.
+ */
+function careLine(sentence: string): CareLine {
+  const split = /^(.{1,40}?):\s+(\S.*)$/su.exec(sentence);
+  const place = split?.[1]?.trim() ?? "";
+  const words = split?.[2]?.trim() ?? "";
+  return place.length > 0 && words.length > 0 ? { place, words } : { place: null, words: sentence };
+}
+
+interface CareFacts {
+  /** The allergy notes, then the access needs: one fact a line, in the words Keep in view uses on screen. */
+  readonly lines: readonly CareLine[];
+  /** The meals made for allergens: "2 nut-free and 6 gluten-free meals". */
+  readonly counts: string | null;
+  /** "Other meals: 14 vegetarian · 4 vegan". */
+  readonly meals: string | null;
+  readonly contact: DayContact | null;
+  /** The Martyn's Law lead on duty: "Callum Reid · Duty manager". */
+  readonly onDuty: string | null;
+}
+
+function careFacts(sheet: HallkeeperSheetV2): CareFacts {
+  const instructions = sheet.instructions;
+  const allergies = allergyFacts(instructions?.dietary ?? null);
+  const meals = otherMeals(instructions?.dietary ?? null);
+  const leadName = instructions?.protectedPremises?.dutyLead?.name?.trim() ?? "";
+  const leadRole = instructions?.protectedPremises?.dutyLead?.role?.trim() ?? "";
+  return {
+    lines: [
+      ...sentences(allergies?.notes ?? "").map((sentence) => careLine(sentence)),
+      ...accessNeeds(instructions?.accessibility ?? null).flatMap((need) => sentences(need)).map((sentence) => careLine(sentence)),
+    ],
+    counts: allergies === null || allergies.counts.length === 0 ? null : `${allergies.counts.join(" and ")} ${allergies.noun}`,
+    meals: meals === null ? null : `Other meals: ${meals}`,
+    contact: instructions?.dayOfContact ?? null,
+    onDuty: leadName.length === 0 ? null : leadRole.length === 0 ? leadName : `${leadName} · ${leadRole}`,
+  };
+}
+
+const PANEL_PAD = 11;
+
+/** How a tinted panel looks: its wash, and the bar down its left edge, if any. */
+interface PanelLook { readonly fill: string; readonly bar: string | null }
+const BRICK_PANEL: PanelLook = { fill: INK.brickWash, bar: INK.alert };
+const RAIL_PANEL: PanelLook = { fill: INK.rail, bar: null };
+
+/** How far each slice's wash reaches under the next, so no seam shows where they meet. */
+const SLICE_OVERLAP = 0.5;
+
+/**
+ * A slice of a tinted panel: its share of the wash and the bar, then what it
+ * draws. Slices stack without gaps, so a panel can run on overleaf.
+ */
+function panelUnit(doc: Doc, look: PanelLook, x: number, width: number, height: number, draw: (y: number) => void, need?: number): Unit {
+  return {
+    height,
+    ...(need === undefined ? {} : { need }),
+    draw: (y) => {
+      doc.save().rect(x, y, width, height + SLICE_OVERLAP).fill(look.fill).restore();
+      if (look.bar !== null) doc.save().rect(x, y, 2.6, height + SLICE_OVERLAP).fill(look.bar).restore();
+      draw(y);
+    },
+  };
+}
+
+/** Words inside a panel, one slice a line, the lines evened out; `after` is the space below the last line. */
+function panelText(doc: Doc, look: PanelLook, style: TextStyle, text: string, x: number, width: number, after = 0): Unit[] {
+  const height = lineHeight(doc, style, text);
+  const lines = balancedLines(doc, style, text, width - PANEL_PAD * 2);
+  return lines.map((line, index) => panelUnit(doc, look, x, width, height + (index === lines.length - 1 ? after : 0), (y) => {
+    drawLine(doc, style, line, x + PANEL_PAD, y);
+  }));
+}
+
+/** An overline inside a panel, kept with the line below it. */
+function panelHeading(doc: Doc, look: PanelLook, style: TextStyle, label: string, x: number, width: number, above: number): Unit {
+  const height = above + 13;
+  return panelUnit(doc, look, x, width, height, (y) => { drawLine(doc, style, label, x + PANEL_PAD, y + above); }, height + 14);
+}
+
+/** The space that closes a panel. */
+function panelEnd(doc: Doc, look: PanelLook, x: number, width: number): Unit {
+  return panelUnit(doc, look, x, width, PANEL_PAD, () => undefined);
+}
 
 const NONE_RECORDED = "None recorded on this sheet";
 
-function keptColumns(sheet: HallkeeperSheetV2): KeptColumn[] {
-  const ins = sheet.instructions;
-  const needs = accessNeeds(ins?.accessibility ?? null);
-  const allergies = allergyFacts(ins?.dietary ?? null);
-  const meals = otherMeals(ins?.dietary ?? null);
-  const contact = ins?.dayOfContact ?? null;
-  const allergyLines: KeptLine[] = [];
-  if (allergies === null) allergyLines.push({ style: TYPE.bodyQuiet, text: NONE_RECORDED, gap: 2 });
-  else {
-    if (allergies.counts.length > 0) allergyLines.push({ style: TYPE.strong, text: `${allergies.counts.join(" and ")} ${allergies.noun}`, gap: 2 });
-    if (allergies.notes !== null) allergyLines.push({ style: TYPE.body, text: allergies.notes, gap: 4 });
+/** Space below each care fact. */
+const CARE_GAP = 3;
+
+/** Keep in view's care as slices for a lane: the allergies and access needs, one fact a line, then the meals. */
+function careUnits(doc: Doc, sheet: HallkeeperSheetV2, look: PanelLook, x: number, width: number): Unit[] {
+  const care = careFacts(sheet);
+  const units: Unit[] = [panelHeading(doc, look, TYPE.overlineAlert, "Keep in view", x, width, PANEL_PAD)];
+  if (care.lines.length === 0 && care.counts === null) units.push(...panelText(doc, look, TYPE.bodyQuiet, NONE_RECORDED, x, width, 4));
+  for (const line of care.lines) {
+    if (line.place !== null) units.push(...panelText(doc, look, TYPE.carePlace, line.place, x, width));
+    units.push(...panelText(doc, look, TYPE.careWords, line.words, x, width, CARE_GAP));
   }
-  if (meals !== null) allergyLines.push({ style: TYPE.bodyDim, text: `Other meals: ${meals}`, gap: 0 });
-  const contactLines: KeptLine[] = contact === null
-    ? [{ style: TYPE.bodyQuiet, text: "None on this sheet", gap: 0 }]
-    : [
-        { style: TYPE.contactName, text: contact.name, gap: 1 },
-        ...(contact.role.trim().length > 0 ? [{ style: TYPE.bodyDim, text: contact.role.trim(), gap: 3 }] : []),
-        ...(contact.phone.trim().length > 0 ? [{ style: TYPE.phone, text: contact.phone.trim(), gap: 1 }] : []),
-        ...(contact.email.trim().length > 0 ? [{ style: TYPE.bodyDim, text: contact.email.trim(), gap: 0 }] : []),
-      ];
-  return [
-    { label: "Access needs", alert: needs.length > 0, lines: needs.length === 0 ? [{ style: TYPE.bodyQuiet, text: NONE_RECORDED, gap: 0 }] : needs.map((need) => ({ style: TYPE.body, text: need, gap: 2 })) },
-    { label: "Allergies", alert: allergies !== null, lines: allergyLines },
-    { label: "Day-of contact", alert: false, lines: contactLines },
-  ];
+  if (care.counts !== null) units.push(...panelText(doc, look, TYPE.strong, care.counts, x, width, 2));
+  if (care.meals !== null) units.push(...panelText(doc, look, TYPE.bodyDim, care.meals, x, width, 2));
+  return units;
 }
 
-const KEEP_PAD = 12;
-const KEEP_GAP = 16;
-const KEEP_HEAD = 20;
-/** Above this the three columns would crowd a page; they stack and flow instead. */
-const KEEP_MAX_PANEL = 300;
+const NO_CONTACT = "None on this sheet";
 
-export function keepInView(flow: Flow, sheet: HallkeeperSheetV2): void {
-  const { doc } = flow;
-  const columns = keptColumns(sheet);
-  const columnW = (W - KEEP_PAD * 2 - KEEP_GAP * 2) / 3;
-  const heights = columns.map((column) => column.lines.reduce((sum, line) => sum + blockHeight(doc, line.style, line.text, columnW) + line.gap, 0));
-  const panelH = KEEP_HEAD + Math.max(...heights) + KEEP_PAD;
-
-  if (panelH <= KEEP_MAX_PANEL) {
-    flow.ensure(panelH);
-    const top = flow.y;
-    doc.save().rect(X, top, W, panelH).fill(INK.panel).restore();
-    doc.save().rect(X, top, 2.6, panelH).fill(INK.forest).restore();
-    drawLine(doc, TYPE.overlineAccent, "Keep in view", X, top + 9, { width: W - KEEP_PAD, to: "right" });
-    for (const [index, column] of columns.entries()) {
-      const x = X + KEEP_PAD + index * (columnW + KEEP_GAP);
-      drawLine(doc, column.alert ? TYPE.overlineAlert : TYPE.overline, column.label, x, top + 9);
-      let y = top + KEEP_HEAD;
-      for (const line of column.lines) y = drawBlock(doc, line.style, line.text, x, y, columnW) + line.gap;
-    }
-    flow.y = top + panelH + 16;
-    return;
+/**
+ * Who to call on the day and who is on duty, as slices for the rail beside
+ * the setup: the name, role and phone a crew calls. The email stays with the
+ * contact on page 1.
+ */
+function contactUnits(doc: Doc, sheet: HallkeeperSheetV2, look: PanelLook, x: number, width: number): Unit[] {
+  const care = careFacts(sheet);
+  const units: Unit[] = [panelHeading(doc, look, TYPE.overline, "Call on the day", x, width, 8)];
+  const contact = care.contact;
+  if (contact === null) {
+    units.push(...panelText(doc, look, TYPE.bodyQuiet, NO_CONTACT, x, width, 2));
+  } else {
+    units.push(...panelText(doc, look, TYPE.contactName, contact.name, x, width, 1));
+    if (contact.role.trim().length > 0) units.push(...panelText(doc, look, TYPE.bodyDim, contact.role.trim(), x, width, 2));
+    if (contact.phone.trim().length > 0) units.push(...panelText(doc, look, TYPE.phoneLarge, contact.phone.trim(), x, width, 1));
   }
-
-  // Stacked: each column runs full width and may cross a page; the forest
-  // rule runs beside every line so the block still reads as one.
-  // Each segment reaches into the gap below it, so consecutive lines join up.
-  const bar = (top: number, height: number): void => { doc.save().rect(X, top, 2.6, height + 4).fill(INK.forest).restore(); };
-  flow.ensure(40);
-  drawLine(doc, TYPE.overlineAccent, "Keep in view", X + KEEP_PAD, flow.y);
-  flow.y += 14;
-  for (const column of columns) {
-    flow.ensure(12 + lineHeight(doc, column.lines[0]?.style ?? TYPE.body));
-    bar(flow.y, 12);
-    drawLine(doc, column.alert ? TYPE.overlineAlert : TYPE.overline, column.label, X + KEEP_PAD, flow.y + 2);
-    flow.y += 12;
-    for (const line of column.lines) {
-      flow.paragraph(line.style, line.text, X + KEEP_PAD, W - KEEP_PAD, bar);
-      flow.y += line.gap;
-    }
-    flow.y += 6;
+  if (care.onDuty !== null) {
+    units.push(panelHeading(doc, look, TYPE.overline, "On duty", x, width, 8));
+    units.push(...panelText(doc, look, TYPE.body, care.onDuty, x, width));
   }
-  flow.y += 12;
+  return units;
+}
+
+type ContactLine = readonly [style: TextStyle, text: string, after: number];
+
+/** Lines stacked in a column, top to bottom; drawn when `draw` is set. Returns their height. */
+function stackLines(doc: Doc, lines: readonly ContactLine[], x: number, y: number, width: number, draw: boolean): number {
+  let cursor = y;
+  for (const [style, text, after] of lines) {
+    cursor = (draw ? drawBlock(doc, style, text, x, cursor, width) : cursor + blockHeight(doc, style, text, width)) + after;
+  }
+  return cursor - y;
+}
+
+/** Page 1's people, under the room: who to call on the day beside who is on duty. */
+function contactsUnit(doc: Doc, sheet: HallkeeperSheetV2, x: number, width: number): Unit {
+  const contact = sheet.instructions?.dayOfContact ?? null;
+  const lead = sheet.instructions?.protectedPremises?.dutyLead ?? null;
+  const present = (lines: readonly ContactLine[]): ContactLine[] => lines.filter(([, text]) => text.length > 0);
+  const call = contact === null ? [[TYPE.bodyQuiet, NO_CONTACT, 0] as const] : present([
+    [TYPE.contactName, contact.name.trim(), 1],
+    [TYPE.bodyDim, contact.role.trim(), 2],
+    [TYPE.phoneLarge, contact.phone.trim(), 1],
+    [TYPE.label, contact.email.trim(), 0],
+  ]);
+  const leadName = lead?.name?.trim() ?? "";
+  // The Martyn's Law lead on duty, when one is entered.
+  const duty = leadName.length === 0 ? [] : present([[TYPE.contactName, leadName, 1], [TYPE.bodyDim, lead?.role?.trim() ?? "", 0]]);
+  const callW = Math.round(width * 0.62);
+  const dutyX = x + callW + 14;
+  const dutyW = width - callW - 14;
+  const height = 14 + Math.max(stackLines(doc, call, x, 0, callW, false), stackLines(doc, duty, dutyX, 0, dutyW, false)) + 2;
+  return {
+    height,
+    before: 14,
+    draw: (y) => {
+      drawLine(doc, TYPE.overline, "Call on the day", x, y);
+      stackLines(doc, call, x, y + 14, callW, true);
+      if (duty.length === 0) return;
+      drawLine(doc, TYPE.overline, "On duty", dutyX, y);
+      stackLines(doc, duty, dutyX, y + 14, dutyW, true);
+    },
+  };
 }
 
 // ------------------------------------------------ the day and the store ----
 
 const TIME_W = 38;
 const LATE = "After the room's ready-by time";
+/** A day line's date and detail when they share its title's line: the title's size, so one baseline. */
+const DAY_DATE_INLINE: TextStyle = { ...TYPE.dayTitle, face: "Inter-Medium", color: INK.accent };
+const DAY_DETAIL_INLINE: TextStyle = { ...TYPE.dayTitle, color: INK.secondary };
 
-function dayLineHeight(doc: Doc, line: DayLine, width: number): number {
+/** The line's title, date and detail as runs on one line beside its time, or null when they do not fit there. */
+function dayRuns(doc: Doc, line: DayLine, timeZone: string, textW: number): readonly (readonly [TextStyle, string])[] | null {
+  if (line.late) return null;
+  const runs: (readonly [TextStyle, string])[] = [[line.emphasis ? TYPE.dayTitleStrong : TYPE.dayTitle, line.title]];
+  if (line.otherDay) runs.push([DAY_DATE_INLINE, ` · ${shortDay(line.at, timeZone)}`]);
+  if (line.detail !== null) runs.push([DAY_DETAIL_INLINE, ` · ${line.detail}`]);
+  return runs.reduce((sum, [style, text]) => sum + textWidth(doc, style, text), 0) <= textW ? runs : null;
+}
+
+function dayLineHeight(doc: Doc, line: DayLine, timeZone: string, width: number): number {
   const textW = width - TIME_W;
+  if (dayRuns(doc, line, timeZone, textW) !== null) return Math.max(lineHeight(doc, TYPE.dayTitle), lineHeight(doc, TYPE.time)) + 4;
   let height = blockHeight(doc, line.emphasis ? TYPE.dayTitleStrong : TYPE.dayTitle, line.title, textW);
   if (line.otherDay) height += lineHeight(doc, TYPE.detailAccent);
   if (line.detail !== null) height += 0.5 + blockHeight(doc, TYPE.detail, line.detail, textW);
@@ -272,6 +402,15 @@ function dayLineHeight(doc: Doc, line: DayLine, width: number): number {
 function drawDayLine(doc: Doc, line: DayLine, timeZone: string, x: number, y: number, width: number): void {
   const textW = width - TIME_W;
   drawLine(doc, line.emphasis ? TYPE.timeAccent : TYPE.time, clock(line.at, timeZone), x, y);
+  const runs = dayRuns(doc, line, timeZone, textW);
+  if (runs !== null) {
+    let left = x + TIME_W;
+    for (const [style, text] of runs) {
+      drawLine(doc, style, text, left, y);
+      left += textWidth(doc, style, text);
+    }
+    return;
+  }
   let cursor = drawBlock(doc, line.emphasis ? TYPE.dayTitleStrong : TYPE.dayTitle, line.title, x + TIME_W, y, textW);
   if (line.otherDay) cursor = drawLine(doc, TYPE.detailAccent, shortDay(line.at, timeZone), x + TIME_W, cursor);
   if (line.detail !== null) cursor = drawBlock(doc, TYPE.detail, line.detail, x + TIME_W, cursor + 0.5, textW);
@@ -279,18 +418,19 @@ function drawDayLine(doc: Doc, line: DayLine, timeZone: string, x: number, y: nu
 }
 
 const QTY_W = 26;
+/** Space under each store line, and above each group after the first. */
+const STORE_ROW_GAP = 1.2;
+const STORE_GROUP_GAP = 4;
+/** A store group's name, over its lines. */
+const STORE_TITLE_H = 11;
 
 function storeRowHeight(doc: Doc, name: string, width: number): number {
-  return blockHeight(doc, TYPE.itemPlain, name, width - QTY_W - 8) + 2.5;
-}
-
-function storeGroupHeight(doc: Doc, group: StoreGroup, width: number): number {
-  return 12 + group.items.reduce((sum, item) => sum + storeRowHeight(doc, item.name, width), 0) + 6;
+  return blockHeight(doc, TYPE.itemPlain, name, width - QTY_W - 8) + STORE_ROW_GAP;
 }
 
 function drawStoreRow(doc: Doc, name: string, qty: number, x: number, y: number, width: number): number {
   drawLine(doc, TYPE.qty, String(qty), x, y - 0.6, { width: QTY_W, to: "right" });
-  return drawBlock(doc, TYPE.itemPlain, name, x + QTY_W + 8, y, width - QTY_W - 8) + 2.5;
+  return drawBlock(doc, TYPE.itemPlain, name, x + QTY_W + 8, y, width - QTY_W - 8) + STORE_ROW_GAP;
 }
 
 const NO_TIMES = "No times recorded yet. Confirm them with the duty manager.";
@@ -312,18 +452,6 @@ function briefParts(sheet: HallkeeperSheetV2): BriefParts {
   return { timeZone: sheet.venue.timezone, day: sheetRunningOrder(sheet), store: sheetStoreList(sheet), notes };
 }
 
-function dayColumnHeight(doc: Doc, parts: BriefParts, width: number): number {
-  return 14 + (parts.day.length === 0 ? blockHeight(doc, TYPE.bodyQuiet, NO_TIMES, width) : parts.day.reduce((sum, line) => sum + dayLineHeight(doc, line, width), 0));
-}
-
-function notesColumnHeight(doc: Doc, parts: BriefParts, width: number): number {
-  return parts.notes.reduce((sum, [, text]) => sum + 14 + 13 + blockHeight(doc, TYPE.paragraph, text, width), 0);
-}
-
-function storeColumnHeight(doc: Doc, parts: BriefParts, width: number): number {
-  return 14 + (parts.store.length === 0 ? lineHeight(doc, TYPE.bodyQuiet) : parts.store.reduce((sum, group) => sum + storeGroupHeight(doc, group, width), 0));
-}
-
 const DAY_HEADING = "The day, in order";
 const STORE_HEADING = "From the store";
 
@@ -336,8 +464,8 @@ function dayUnits(doc: Doc, parts: BriefParts, x: number, width: number): Unit[]
     } }];
   }
   return [
-    { height: 14, need: 14 + dayLineHeight(doc, firstLine, width), draw: (y) => { drawLine(doc, TYPE.overline, DAY_HEADING, x, y); } },
-    ...parts.day.map((line): Unit => ({ height: dayLineHeight(doc, line, width), draw: (y) => { drawDayLine(doc, line, parts.timeZone, x, y, width); } })),
+    { height: 14, need: 14 + dayLineHeight(doc, firstLine, parts.timeZone, width), draw: (y) => { drawLine(doc, TYPE.overline, DAY_HEADING, x, y); } },
+    ...parts.day.map((line): Unit => ({ height: dayLineHeight(doc, line, parts.timeZone, width), draw: (y) => { drawDayLine(doc, line, parts.timeZone, x, y, width); } })),
   ];
 }
 
@@ -364,9 +492,9 @@ function storeUnits(doc: Doc, parts: BriefParts, x: number, width: number): Unit
   return parts.store.flatMap((group, index): Unit[] => {
     const lead = index === 0 ? 14 : 0;
     const title: Unit = {
-      height: lead + 12,
-      need: lead + 12 + storeRowHeight(doc, group.items[0]?.name ?? "", width),
-      ...(index === 0 ? {} : { before: 6 }),
+      height: lead + STORE_TITLE_H,
+      need: lead + STORE_TITLE_H + storeRowHeight(doc, group.items[0]?.name ?? "", width),
+      ...(index === 0 ? {} : { before: STORE_GROUP_GAP }),
       draw: (y) => {
         if (index === 0) drawLine(doc, TYPE.overline, STORE_HEADING, x, y);
         drawLine(doc, TYPE.storeGroup, group.title, x, y + lead);
@@ -377,26 +505,100 @@ function storeUnits(doc: Doc, parts: BriefParts, x: number, width: number): Unit
   });
 }
 
+/** The height units take in a lane, the space above each included. */
+function unitsHeight(units: readonly Unit[]): number {
+  return units.reduce((sum, unit) => sum + (unit.before ?? 0) + unit.height, 0);
+}
+
+/** The units with space above the first, which a page's top drops. */
+function spaced(units: readonly Unit[], before: number): Unit[] {
+  const [first, ...rest] = units;
+  return first === undefined ? [] : [{ ...first, before }, ...rest];
+}
+
+/** The height notesFlowing takes for the planner's notes across the page. */
+function notesFlowingHeight(doc: Doc, parts: BriefParts): number {
+  if (parts.notes.length === 0) return 0;
+  return parts.notes.reduce((sum, [, text]) => sum + 13 + blockHeight(doc, TYPE.paragraph, text, W) + 8, 0) + 10;
+}
+
 /**
- * The rest of the brief: the day in order beside what to bring from the
- * store, each column free to carry on overleaf by itself. The planner's
- * notes sit under the day when that keeps the brief no longer than the
- * store or this page already make it; otherwise they follow full width.
+ * Where the planner's notes would stand on page 1, saying where they are
+ * instead: on the page the setup opens, when that page is already known.
  */
-export function brief(flow: Flow, sheet: HallkeeperSheetV2): void {
+function notesPointerUnit(doc: Doc, parts: BriefParts, x: number, width: number, page: number | null): Unit {
+  const heading = parts.notes[0]?.[0] ?? "From the planner";
+  const where = page === null ? "With the setup, above its steps." : `On page ${String(page)}, above the setup's steps.`;
+  return {
+    height: 13 + blockHeight(doc, TYPE.bodyDim, where, width),
+    before: 14,
+    draw: (y) => {
+      drawLine(doc, TYPE.overline, heading, x, y);
+      drawBlock(doc, TYPE.bodyDim, where, x, y + 13, width);
+    },
+  };
+}
+
+/** A column of page 1: where it stands and how tall its units run. */
+interface Column { readonly x: number; readonly width: number; readonly height: number }
+
+/**
+ * Page 1's word on where the planner's notes went, in the first column that
+ * still has room for it on this page, or null when neither has. It names the
+ * page when both columns end on this one, since the setup then opens the next.
+ */
+function notesPointer(doc: Doc, parts: BriefParts, room: number, columns: readonly [Column, Column]): { readonly lane: 0 | 1; readonly unit: Unit } | null {
+  const next = doc.bufferedPageRange().count + 1;
+  for (const lane of [0, 1] as const) {
+    const own = columns[lane];
+    const other = columns[lane === 0 ? 1 : 0];
+    const unit = notesPointerUnit(doc, parts, own.x, own.width, other.height <= room ? next : null);
+    if (own.height + unitsHeight([unit]) <= room) return { lane, unit };
+  }
+  return null;
+}
+
+/**
+ * Where the planner's notes still have to print once page 1 is set: nowhere
+ * ("none": page 1 printed them, or there are none); after the setup's rail,
+ * where page 1 says they are ("after-rail"); or leading the setup page under
+ * its head, the first words after page 1, when page 1 had no room even to
+ * say where they went ("leading").
+ */
+export type PlannerNotesLeft = "none" | "after-rail" | "leading";
+
+/**
+ * Page 1 under the facts (A), two columns that each run on by themselves:
+ * the room, who to call and who is on duty, then the day in order; beside
+ * them what to keep in view, then what to bring from the store. The
+ * planner's notes follow the day when that keeps the page no longer, or run
+ * full width below when they fit there. When this page has no room for them
+ * they open the setup page instead: after its rail when a column here has
+ * room to say so, else leading it. A layout with nothing placed has no setup
+ * page to open, so its notes run on below the columns.
+ */
+export function brief(flow: Flow, sheet: HallkeeperSheetV2): PlannerNotesLeft {
   const { doc } = flow;
   const parts = briefParts(sheet);
-  const leftW = W * 0.54;
-  const gutter = 22;
+  const leftW = Math.round(W * PLAN_SHARE);
+  const gutter = 18;
   const rightX = X + leftW + gutter;
   const rightW = W - leftW - gutter;
-  const dayH = dayColumnHeight(doc, parts, leftW);
-  const storeH = storeColumnHeight(doc, parts, rightW);
-  const notesBeside = parts.notes.length > 0 && dayH + notesColumnHeight(doc, parts, leftW) <= Math.max(storeH, flow.room);
-  const left = [...dayUnits(doc, parts, X, leftW), ...(notesBeside ? notesUnits(doc, parts, X, leftW) : [])];
-  flow.lanes([left, storeUnits(doc, parts, rightX, rightW)], (top, bottom) => { upright(doc, X + leftW + gutter / 2, top, bottom - 5); });
+  const left = [roomUnit(doc, sheet, X, leftW), contactsUnit(doc, sheet, X, leftW), ...spaced(dayUnits(doc, parts, X, leftW), 18)];
+  const right = [...careUnits(doc, sheet, BRICK_PANEL, rightX, rightW), panelEnd(doc, BRICK_PANEL, rightX, rightW), ...spaced(storeUnits(doc, parts, rightX, rightW), 18)];
+  const leftH = unitsHeight(left);
+  const rightH = unitsHeight(right);
+  const notes = notesUnits(doc, parts, X, leftW);
+  const beside = notes.length > 0 && leftH + unitsHeight(notes) <= Math.max(rightH, flow.room);
+  const fitsBelow = notes.length > 0 && !beside && Math.max(leftH, rightH) + 14 + notesFlowingHeight(doc, parts) <= flow.room;
+  const deferred = notes.length > 0 && !beside && !fitsBelow && sheetSetupSteps(sheet).length > 0;
+  const pointer = deferred ? notesPointer(doc, parts, flow.room, [{ x: X, width: leftW, height: leftH }, { x: rightX, width: rightW, height: rightH }]) : null;
+  if (beside) left.push(...notes);
+  if (pointer !== null) (pointer.lane === 0 ? left : right).push(pointer.unit);
+  flow.lanes([left, right]);
   flow.y += 14;
-  if (!notesBeside) notesFlowing(flow, parts);
+  if (notes.length > 0 && !beside && !deferred) notesFlowing(flow, parts);
+  return !deferred ? "none" : pointer !== null ? "after-rail" : "leading";
 }
 
 /**
@@ -408,13 +610,13 @@ function ruleAbove(flow: Flow): void {
   if (flow.y > flow.top) hairline(flow.doc, X, flow.y - 8, X + W);
 }
 
-/** The planner's notes full width, a paragraph free to cross pages. */
-function notesFlowing(flow: Flow, parts: BriefParts): void {
+/** The planner's notes full width, a paragraph free to cross pages; `rule` sets a rule over them unless something above already closes. */
+function notesFlowing(flow: Flow, parts: BriefParts, rule = true): void {
   const { doc } = flow;
   if (parts.notes.length === 0) return;
   for (const [index, [heading, text]] of parts.notes.entries()) {
     flow.ensure(13 + lineHeight(doc, TYPE.paragraph) * Math.min(2, wrapLines(doc, TYPE.paragraph, text, W).length));
-    if (index === 0) ruleAbove(flow);
+    if (index === 0 && rule) ruleAbove(flow);
     drawLine(doc, TYPE.overline, heading, X, flow.y);
     flow.y += 13;
     flow.paragraph(TYPE.paragraph, text, X, W);
@@ -423,7 +625,7 @@ function notesFlowing(flow: Flow, parts: BriefParts): void {
   flow.y += 10;
 }
 
-// ------------------------------------------------------------- the room ----
+// ------------------------------------------- the room, beside care (A) ----
 
 /** A data:image/... URL's bytes, or null. */
 function diagramBytes(url: string | null): Buffer | null {
@@ -435,88 +637,48 @@ function diagramBytes(url: string | null): Buffer | null {
 }
 
 const NO_PLAN = "No plan was saved with this layout. Set the room from the list.";
-const LEGEND_SIDE = 130;
+/** The dashed box that says so: room for its one line. */
+const NO_PLAN_H = 50;
+/** Page 1 gives the room this share of its width; Keep in view takes the rest. */
+const PLAN_SHARE = 0.6;
+const PLAN_MAX_H = 260;
 
-const LEGEND_STYLE: TextStyle = { ...TYPE.note, size: 8.6 };
-const LEGEND_GAP = 14;
-/** Room the scale bar and caption need beside the legend. */
-const LEGEND_MIN = 34;
-type LegendEntry = readonly [string, number];
-
-/** Beneath the plan the legend leaves room for the scale bar; overleaf it has the page. */
-function legendColumnW(besidePlan: boolean): number {
-  return (W - (besidePlan ? LEGEND_SIDE : 0) - LEGEND_GAP) / 2;
+/** The plan's span in metres: its outline's, or the room's own size without one. */
+function planSpan(sheet: HallkeeperSheetV2): { readonly width: number; readonly length: number } {
+  const plan = sheet.floorPlan ?? null;
+  if (plan === null) return { width: sheet.space.widthM, length: sheet.space.lengthM };
+  const xs = plan.outline.map((point) => point.x);
+  const zs = plan.outline.map((point) => point.z);
+  return { width: Math.max(...xs) - Math.min(...xs), length: Math.max(...zs) - Math.min(...zs) };
 }
 
-function legendEntryHeight(doc: Doc, note: string, columnW: number): number {
-  return blockHeight(doc, LEGEND_STYLE, note, columnW - 14) + 3;
-}
-
-function legendHeight(doc: Doc, entries: readonly LegendEntry[]): number {
-  const columnW = legendColumnW(true);
-  const half = Math.ceil(entries.length / 2);
-  const column = (part: readonly LegendEntry[]): number => part.reduce((sum, [note]) => sum + legendEntryHeight(doc, note, columnW), 0);
-  return Math.max(LEGEND_MIN, column(entries.slice(0, half)), column(entries.slice(half)));
+/** The height the plan takes at `width`, the band for the wall names included. */
+function planHeight(sheet: HallkeeperSheetV2, width: number, max: number): number {
+  const span = planSpan(sheet);
+  return Math.min((width - WALL_BAND * 2) * (span.length / span.width), max) + WALL_BAND * 2;
 }
 
 /**
- * The plan's numbered notes in two columns from `top`. When they fit, the
- * columns split evenly; when they don't, each page fills the first column,
- * then the second, and the rest carries on overleaf in reading order.
- * Returns the y below the last note and whether it ran onto a new page.
+ * What the plan shows, in words: where it comes from and what its marks mean,
+ * then any planner's name the drawing had no room for. Table numbers explain
+ * themselves.
  */
-function drawLegend(flow: Flow, entries: readonly LegendEntry[], top: number): { bottom: number; turned: boolean } {
-  const { doc } = flow;
-  let rest = entries;
-  let pageTop = top;
-  let turned = false;
-  let bottom = top;
-  while (rest.length > 0) {
-    const columnW = legendColumnW(!turned);
-    const room = flow.bottom - pageTop;
-    const height = (entry: LegendEntry): number => legendEntryHeight(doc, entry[0], columnW);
-    const total = (part: readonly LegendEntry[]): number => part.reduce((sum, entry) => sum + height(entry), 0);
-    const half = Math.ceil(rest.length / 2);
-    let columns: LegendEntry[][];
-    if (Math.max(total(rest.slice(0, half)), total(rest.slice(half))) <= room) {
-      columns = [rest.slice(0, half), rest.slice(half)];
-    } else {
-      columns = [[], []];
-      let next = 0;
-      for (const column of columns) {
-        let used = 0;
-        for (let entry = rest[next]; entry !== undefined && used + height(entry) <= room; entry = rest[next]) {
-          used += height(entry);
-          column.push(entry);
-          next++;
-        }
-      }
-      // A fresh page always takes at least one note, so the loop moves on.
-      const [only] = rest;
-      if (next === 0 && turned && only !== undefined) columns[0]?.push(only);
-    }
-    for (const [index, part] of columns.entries()) {
-      const x = X + index * (columnW + LEGEND_GAP);
-      let y = pageTop;
-      for (const [note, number] of part) {
-        drawMarker(doc, number, x + 5, y + 5, 4.6);
-        y = drawBlock(doc, LEGEND_STYLE, note, x + 14, y, columnW - 14) + 3;
-      }
-      bottom = Math.max(bottom, y);
-    }
-    rest = rest.slice(columns.reduce((sum, part) => sum + part.length, 0));
-    if (rest.length > 0) {
-      flow.newPage();
-      pageTop = flow.top;
-      bottom = pageTop;
-      turned = true;
-    }
-  }
-  return { bottom, turned };
+function planCaption(notes: boolean, rings: boolean, leftOff: readonly string[]): string {
+  return [
+    "Drawn from the saved layout, looking down.",
+    notes ? "Copper numbers: notes, with the setup." : null,
+    rings ? "Brick rings: keep in view." : null,
+    namesLeftOff(leftOff),
+  ].filter((part): part is string => part !== null).join(" ");
 }
 
-export function room(flow: Flow, sheet: HallkeeperSheetV2): void {
-  const { doc } = flow;
+/** The planner's names a plan had no room for, in words for under it, or null when it named them all. */
+function namesLeftOff(leftOff: readonly string[]): string | null {
+  return leftOff.length > 0 ? `Too small to name here: ${leftOff.join(", ")}.` : null;
+}
+
+/** The room as one unit for a lane: its heading, the plan (or the picture), the scale bar and the caption. */
+function roomUnit(doc: Doc, sheet: HallkeeperSheetV2, x: number, width: number): Unit {
   const plan = sheet.floorPlan ?? null;
   // The saved plan is drawn whenever there is one (planner-qol E-X4): a
   // thumbnail is a picture taken at some earlier save and can show an older
@@ -524,74 +686,69 @@ export function room(flow: Flow, sheet: HallkeeperSheetV2): void {
   // layout saved with no plan at all.
   const diagram = plan === null ? diagramBytes(sheet.diagramUrl) : null;
   const markers = sheetNoteMarkers(sheet);
-  const legend = diagram === null ? [...markers.entries()].sort((a, b) => a[1] - b[1]) : [];
-  const legendH = plan !== null && diagram === null ? legendHeight(doc, legend) : 0;
-  const xs = plan?.outline.map((point) => point.x) ?? [];
-  const zs = plan?.outline.map((point) => point.z) ?? [];
-  const span = plan === null
-    ? { width: sheet.space.widthM, length: sheet.space.lengthM }
-    : { width: Math.max(...xs) - Math.min(...xs), length: Math.max(...zs) - Math.min(...zs) };
-  const fullH = plan !== null || diagram !== null
-    ? Math.min((W - WALL_BAND * 2) * (span.length / span.width), 280) + WALL_BAND * 2
-    : 70;
-  // A legend too long to share any page with the plan flows on from beneath
-  // it, so only its first lines need to fit beside the scale bar here.
-  const legendFits = 14 + fullH + 6 + legendH + 16 <= flow.pageRoom;
-  const overhead = 14 + 6 + (legendFits ? legendH : LEGEND_MIN) + 16;
-
-  let planH = fullH;
-  if (flow.room < overhead + fullH) {
-    if (plan !== null && diagram === null && flow.room - overhead >= 190) planH = flow.room - overhead;
-    else flow.newPage();
-  }
-  ruleAbove(flow);
-
-  drawLine(doc, TYPE.overline, `The room · ${sheet.space.name}`, X, flow.y);
-  flow.y += 14;
-  const box = { x: X, y: flow.y, width: W, height: planH };
-  let drawn: { pointsPerMetre: number; named: boolean } | null = null;
-  let pictured = false;
-  if (diagram !== null) {
-    try {
-      doc.image(diagram, box.x, box.y, { fit: [box.width, box.height], align: "center", valign: "center" });
-      doc.save().rect(box.x, box.y, box.width, box.height).lineWidth(0.5).strokeColor(INK.rule).stroke().restore();
-      pictured = true;
-    } catch {
-      pictured = false;
-    }
-  }
-  if (!pictured && plan !== null) drawn = drawSheetPlan(doc, plan, box, markers);
-  if (!pictured && plan === null) {
-    doc.save().rect(box.x, box.y, box.width, box.height).lineWidth(0.6).dash(2, { space: 2 }).strokeColor(INK.ruleStrong).stroke().undash().restore();
-    drawLine(doc, TYPE.bodyDim, NO_PLAN, box.x, box.y + box.height / 2 - 5, { width: box.width, to: "center" });
-  }
-  flow.y += planH + 6;
-
-  if (drawn !== null) {
-    const top = flow.y;
-    drawScaleBar(doc, drawn.pointsPerMetre, X + W, top + 6);
-    const caption = drawn.named ? "Drawn from the saved layout, looking down. Numbers are the planner's table names." : "Drawn from the saved layout, looking down.";
-    const captionW = LEGEND_SIDE - 10;
-    const lines = wrapLines(doc, TYPE.small, caption, captionW);
-    let y = top + 12;
-    for (const line of lines) y = drawLine(doc, TYPE.small, line, X + W - captionW, y, { width: captionW, to: "right" });
-    const placed = drawLegend(flow, legend, top);
-    flow.y = (placed.turned ? placed.bottom : Math.max(top + LEGEND_MIN, placed.bottom)) + 16;
-  } else {
-    flow.y += 10;
-  }
+  const ringed = careTables(sheet);
+  const planH = plan !== null || diagram !== null ? planHeight(sheet, width, PLAN_MAX_H) : NO_PLAN_H;
+  const leftOff = plan === null ? [] : planNamesLeftOff(doc, plan, width, planH, markers);
+  const caption = plan === null ? null : planCaption(markers.size > 0, ringed.size > 0, leftOff);
+  const captionW = width - 96;
+  const captionH = caption === null ? 0 : Math.max(14, blockHeight(doc, TYPE.small, caption, captionW)) + 4;
+  return {
+    height: 14 + planH + 6 + captionH,
+    draw: (y) => {
+      drawLine(doc, TYPE.overline, `The room · ${sheet.space.name}`, x, y);
+      const box = { x, y: y + 14, width, height: planH };
+      let pictured = false;
+      if (diagram !== null) {
+        try {
+          doc.image(diagram, box.x, box.y, { fit: [box.width, box.height], align: "center", valign: "center" });
+          doc.save().rect(box.x, box.y, box.width, box.height).lineWidth(0.5).strokeColor(INK.rule).stroke().restore();
+          pictured = true;
+        } catch {
+          pictured = false;
+        }
+      }
+      if (!pictured && plan !== null) {
+        const drawn = drawSheetPlan(doc, plan, box, markers, ringed, true);
+        if (caption !== null) {
+          const top = box.y + planH + 6;
+          drawScaleBar(doc, drawn.pointsPerMetre, x + width, top + 6);
+          drawBlock(doc, TYPE.small, caption, x, top, captionW);
+        }
+      }
+      if (!pictured && plan === null) {
+        doc.save().rect(box.x, box.y, box.width, box.height).lineWidth(0.6).dash(2, { space: 2 }).strokeColor(INK.ruleStrong).stroke().undash().restore();
+        drawBlock(doc, TYPE.bodyDim, NO_PLAN, box.x + 12, box.y + (box.height - blockHeight(doc, TYPE.bodyDim, NO_PLAN, box.width - 24)) / 2, box.width - 24);
+      }
+    },
+  };
 }
 
-// ---------------------------------------------------------- setup steps ----
+// ------------------------------------------------ the setup, to tick (D) ----
 
 const CHECK = 10.5;
+/** Room the step numerals take, left of each step's name and lines. */
+const STEP_INDENT = 30;
+/** A line taller than this sets its notes line by line, free to run on overleaf. */
+const ROW_WHOLE_MAX = 220;
+/** Page 2 gives the rail beside the steps this share of its width. */
+const RAIL_SHARE = 0.29;
 
-interface RowGeometry { readonly nameX: number; readonly nameW: number; readonly whereW: number }
+interface RowGeometry {
+  readonly left: number;
+  readonly right: number;
+  readonly nameX: number;
+  readonly nameW: number;
+  readonly whereX: number;
+  readonly whereW: number;
+}
 
-function rowGeometry(): RowGeometry {
-  const whereW = Math.min(200, W * 0.36);
-  const nameX = X + CHECK + 8 + QTY_W + 8;
-  return { nameX, nameW: X + W - whereW - 10 - nameX, whereW };
+/** One grid for every line of every step: tick box, count, item, place. */
+function rowGeometry(x: number, width: number): RowGeometry {
+  const left = x + STEP_INDENT;
+  const right = x + width;
+  const whereW = Math.min(150, (width - STEP_INDENT) * 0.32);
+  const nameX = left + CHECK + 8 + QTY_W + 8;
+  return { left, right, nameX, nameW: right - whereW - 10 - nameX, whereX: right - whereW, whereW };
 }
 
 function chairsText(item: SetupItem): string | null {
@@ -617,19 +774,24 @@ function nameLayout(doc: Doc, item: SetupItem, nameW: number): { lines: readonly
   return { lines, chairsInline: chairs === null || textWidth(doc, style, last) + 8 + textWidth(doc, CHAIRS_STYLE, chairs) <= nameW };
 }
 
+/** A line's height: its item column (name, chairs, notes) or its place column, whichever runs longer. */
 function setupRowHeight(doc: Doc, item: SetupItem, geometry: RowGeometry, markers: ReadonlyMap<string, number>): number {
   const style = item.accessory ? TYPE.itemPlain : TYPE.item;
   const { lines, chairsInline } = nameLayout(doc, item, geometry.nameW);
-  let height = lines.length * lineHeight(doc, style) + (chairsInline ? 0 : lineHeight(doc, CHAIRS_STYLE));
-  height = Math.max(height, blockHeight(doc, TYPE.where, whereText(item), geometry.whereW));
-  for (const note of item.notes) height += 1.5 + blockHeight(doc, TYPE.note, note, geometry.nameW - (markers.has(note) ? 12 : 0));
-  return Math.max(height, CHECK) + 8;
+  let itemH = lines.length * lineHeight(doc, style) + (chairsInline ? 0 : lineHeight(doc, CHAIRS_STYLE));
+  for (const note of item.notes) itemH += 1.5 + blockHeight(doc, TYPE.note, note, geometry.nameW - (markers.has(note) ? 12 : 0));
+  const whereH = 1.2 + blockHeight(doc, TYPE.where, whereText(item), geometry.whereW);
+  return Math.max(itemH, whereH, CHECK) + 8;
+}
+
+function sortedNotes(item: SetupItem, markers: ReadonlyMap<string, number>): string[] {
+  return [...item.notes].sort((a, b) => (markers.get(a) ?? Infinity) - (markers.get(b) ?? Infinity));
 }
 
 function drawSetupRow(doc: Doc, item: SetupItem, y: number, geometry: RowGeometry, markers: ReadonlyMap<string, number>): void {
   const style = item.accessory ? TYPE.itemPlain : TYPE.item;
-  doc.save().roundedRect(X, y + 0.5, CHECK, CHECK, 1.2).lineWidth(0.8).strokeColor(INK.secondary).stroke().restore();
-  drawLine(doc, TYPE.qty, String(item.qty), X + CHECK + 8, y - 0.2, { width: QTY_W, to: "right" });
+  doc.save().roundedRect(geometry.left, y + 0.5, CHECK, CHECK, 1.2).lineWidth(0.8).strokeColor(INK.secondary).stroke().restore();
+  drawLine(doc, TYPE.qty, String(item.qty), geometry.left + CHECK + 8, y - 0.2, { width: QTY_W, to: "right" });
   const { lines, chairsInline } = nameLayout(doc, item, geometry.nameW);
   let cursor = y;
   for (const line of lines) cursor = drawLine(doc, style, line, geometry.nameX, cursor);
@@ -638,81 +800,276 @@ function drawSetupRow(doc: Doc, item: SetupItem, y: number, geometry: RowGeometr
     if (chairsInline) drawLine(doc, CHAIRS_STYLE, chairs, geometry.nameX + textWidth(doc, style, lines[lines.length - 1] ?? "") + 8, cursor - lineHeight(doc, style) + 1.2);
     else cursor = drawLine(doc, CHAIRS_STYLE, chairs, geometry.nameX, cursor);
   }
-  const whereLines = wrapLines(doc, TYPE.where, whereText(item), geometry.whereW);
-  let whereY = y + 1.2;
-  for (const line of whereLines) whereY = drawLine(doc, TYPE.where, line, X + W - geometry.whereW, whereY, { width: geometry.whereW, to: "right" });
-  const ordered = [...item.notes].sort((a, b) => (markers.get(a) ?? Infinity) - (markers.get(b) ?? Infinity));
-  for (const note of ordered) {
+  drawBlock(doc, TYPE.where, whereText(item), geometry.whereX, y + 1.2, geometry.whereW);
+  for (const note of sortedNotes(item, markers)) {
     const number = markers.get(note);
     if (number !== undefined) drawMarker(doc, number, geometry.nameX + 4.2, cursor + 7.5, 4.2);
     cursor = drawBlock(doc, TYPE.note, note, geometry.nameX + (number === undefined ? 0 : 12), cursor + 1.5, geometry.nameW - (number === undefined ? 0 : 12));
   }
 }
 
-/** A line whose notes run longer than a page: the line itself, then its notes line by line across pages. */
-function tallSetupRow(flow: Flow, item: SetupItem, geometry: RowGeometry, markers: ReadonlyMap<string, number>): void {
-  const { doc } = flow;
-  const bare: SetupItem = { ...item, notes: [] };
-  const head = setupRowHeight(doc, bare, geometry, markers) - 8;
-  flow.ensure(head + lineHeight(doc, TYPE.note) * 2);
-  drawSetupRow(doc, bare, flow.y, geometry, markers);
-  flow.y += head;
-  const ordered = [...item.notes].sort((a, b) => (markers.get(a) ?? Infinity) - (markers.get(b) ?? Infinity));
-  for (const note of ordered) {
-    const number = markers.get(note);
-    const indent = number === undefined ? 0 : 12;
-    flow.y += 1.5;
-    flow.ensure(lineHeight(doc, TYPE.note));
-    if (number !== undefined) drawMarker(doc, number, geometry.nameX + 4.2, flow.y + 6, 4.2);
-    flow.paragraph(TYPE.note, note, geometry.nameX + indent, geometry.nameW - indent);
-  }
-  flow.y += 8;
+/** One note under its line, a unit a printed line, its number on the first. */
+function noteLineUnits(doc: Doc, note: string, number: number | undefined, geometry: RowGeometry): Unit[] {
+  const indent = number === undefined ? 0 : 12;
+  const height = lineHeight(doc, TYPE.note);
+  const lines = wrapLines(doc, TYPE.note, note, geometry.nameW - indent);
+  return lines.map((line, index): Unit => ({
+    height: height + (index === 0 ? 1.5 : 0),
+    draw: (y) => {
+      const top = y + (index === 0 ? 1.5 : 0);
+      if (index === 0 && number !== undefined) drawMarker(doc, number, geometry.nameX + 4.2, top + 6, 4.2);
+      drawLine(doc, TYPE.note, line, geometry.nameX + indent, top);
+    },
+  }));
 }
 
-export function setupSteps(flow: Flow, sheet: HallkeeperSheetV2): void {
-  const { doc } = flow;
-  const timeZone = sheet.venue.timezone;
-  const steps = sheetSetupSteps(sheet);
+/** A setup line as units: whole when it fits, else the line, then its notes line by line. */
+function rowUnits(doc: Doc, item: SetupItem, geometry: RowGeometry, markers: ReadonlyMap<string, number>): Unit[] {
+  const rule = (bottom: number): void => { hairline(doc, geometry.nameX, bottom - 3.5, geometry.right, INK.rule, 0.4); };
+  const height = setupRowHeight(doc, item, geometry, markers);
+  if (height <= ROW_WHOLE_MAX) {
+    return [{ height, draw: (y) => { drawSetupRow(doc, item, y, geometry, markers); rule(y + height); } }];
+  }
+  const bare: SetupItem = { ...item, notes: [] };
+  const head = setupRowHeight(doc, bare, geometry, markers) - 8;
+  return [
+    { height: head, need: head + lineHeight(doc, TYPE.note) * 2, draw: (y) => { drawSetupRow(doc, bare, y, geometry, markers); } },
+    ...sortedNotes(item, markers).flatMap((note) => noteLineUnits(doc, note, markers.get(note), geometry)),
+    { height: 8, draw: (y) => { rule(y + 8); } },
+  ];
+}
+
+const STEP_LATE = "after the room's ready-by time";
+
+function deadlineWords(deadline: NonNullable<SetupStep["deadline"]>, timeZone: string): string {
+  return `by ${deadline.otherDay ? `${shortDay(deadline.at, timeZone)} ` : ""}${clock(deadline.at, timeZone)}`;
+}
+
+/** A step's head: its numeral alone in the margin, its name, its deadline in copper, the reason beneath. */
+function stepHeadUnit(doc: Doc, step: SetupStep, index: number, timeZone: string, x: number, width: number, keep: number): Unit {
+  const reason = [step.deadline?.reason ?? null, step.deadline?.late === true ? STEP_LATE : null].filter((part): part is string => part !== null).join(" · ");
+  const deadline = step.deadline === null ? null : deadlineWords(step.deadline, timeZone);
+  const deadlineStyle = step.deadline?.late === true ? TYPE.stepDeadlineAlert : TYPE.stepDeadline;
+  const reasonW = width - STEP_INDENT;
+  const reasonH = reason.length === 0 ? 0 : blockHeight(doc, TYPE.stepReason, reason, reasonW) + 2;
+  const height = 22 + reasonH + 9;
+  return {
+    height,
+    need: height + keep,
+    draw: (y) => {
+      drawLine(doc, TYPE.stepNumeral, String(index + 1), x, y - 7);
+      const deadlineW = deadline === null ? 0 : textWidth(doc, deadlineStyle, deadline) + 12;
+      drawLine(doc, TYPE.stepName, oneLine(doc, TYPE.stepName, step.label, width - STEP_INDENT - deadlineW), x + STEP_INDENT, y);
+      if (deadline !== null) drawLine(doc, deadlineStyle, deadline, x, y + 1.5, { width, to: "right" });
+      if (reason.length > 0) drawBlock(doc, TYPE.stepReason, reason, x + STEP_INDENT, y + 21, reasonW);
+      hairline(doc, x + STEP_INDENT, y + height - 4, x + width, INK.ruleStrong, 0.6);
+    },
+  };
+}
+
+const PLAN_NOTES_HEADING = "Notes on the plan";
+
+/**
+ * The plan's numbered notes that no setup line carries, so every number on
+ * the plan can still be looked up. The manifest normally carries each one
+ * under its item; this keeps a note whose piece it lost.
+ */
+function planNoteUnits(doc: Doc, steps: readonly SetupStep[], markers: ReadonlyMap<string, number>, geometry: RowGeometry): Unit[] {
+  const printed = new Set(steps.flatMap((step) => step.items.flatMap((item) => item.notes)));
+  const loose = [...markers].filter(([note]) => !printed.has(note)).sort((a, b) => a[1] - b[1]);
+  if (loose.length === 0) return [];
+  const heading: Unit = { height: 16, need: 16 + lineHeight(doc, TYPE.note) * 2, draw: (y) => { drawLine(doc, TYPE.overline, PLAN_NOTES_HEADING, geometry.nameX, y + 2); } };
+  return [heading, ...loose.flatMap(([note, number]) => [...noteLineUnits(doc, note, number, geometry), { height: 4, draw: () => undefined }])];
+}
+
+function stepUnits(doc: Doc, sheet: HallkeeperSheetV2, steps: readonly SetupStep[], x: number, width: number): Unit[] {
   const markers = sheetNoteMarkers(sheet);
-  const geometry = rowGeometry();
-  const firstRow = steps[0]?.items[0];
-  flow.ensure(24 + 30 + (firstRow === undefined ? 16 : setupRowHeight(doc, firstRow, geometry, markers)));
-  drawLine(doc, TYPE.section, "Setup, in order", X, flow.y);
-  drawLine(doc, TYPE.label, "Tick each line as it is done. Where each item goes is on the plan.", X + textWidth(doc, TYPE.section, "Setup, in order") + 12, flow.y + 5);
-  flow.y += 24;
+  const geometry = rowGeometry(x, width);
+  return [
+    ...steps.flatMap((step, index): Unit[] => {
+      const rows = step.items.flatMap((item) => rowUnits(doc, item, geometry, markers));
+      // A step starts where its head and its first three lines (or all, if fewer) fit.
+      const keep = rows.slice(0, 3).reduce((sum, unit) => sum + unit.height, 0);
+      return [stepHeadUnit(doc, step, index, sheet.venue.timezone, x, width, keep), ...rows, { height: 12, draw: () => undefined }];
+    }),
+    ...planNoteUnits(doc, steps, markers, geometry),
+  ];
+}
+
+/** A ring on the setup's rail: its mark, its name, its time, and whether that time is after the room's ready-by time. */
+interface Station { readonly kind: "step" | "ready" | "guests"; readonly mark: string; readonly label: string; readonly time: string; readonly late: boolean }
+
+/** A step's time on the rail, as its head gives it: with the weekday when it falls on another day ("Fri 16:00"). */
+function railTime(deadline: NonNullable<SetupStep["deadline"]>, timeZone: string): string {
+  const day = deadline.otherDay ? `${new Date(deadline.at).toLocaleDateString("en-GB", { weekday: "short", timeZone })} ` : "";
+  return `${day}${clock(deadline.at, timeZone)}`;
+}
+
+function railStations(sheet: HallkeeperSheetV2, steps: readonly SetupStep[]): Station[] {
+  const timeZone = sheet.venue.timezone;
+  const timing = sheet.timing;
+  return [
+    ...steps.map((step, index): Station => ({
+      kind: "step", mark: String(index + 1), label: step.label,
+      time: step.deadline === null ? "" : railTime(step.deadline, timeZone), late: step.deadline?.late === true,
+    })),
+    { kind: "ready", mark: "", label: "Room ready", time: timing === null || timing.setupBy === null ? "—" : clock(timing.setupBy, timeZone), late: false },
+    { kind: "guests", mark: "", label: "Guests in", time: timing === null ? "—" : clock(timing.eventStart, timeZone), late: false },
+  ];
+}
+
+/** A step due after the room's ready-by time: its rail time in brick, and under it the word, which a mono print keeps. */
+const RAIL_TIME_LATE: TextStyle = { ...TYPE.railTime, color: INK.alert };
+const RAIL_LATE: TextStyle = { ...TYPE.railLabel, face: "Inter-SemiBold", color: INK.alert };
+
+const RAIL_H = 80;
+/** The line "late" takes under the times, whole however long the time beside it ("Sun 08:00"). */
+const RAIL_LATE_H = 13;
+
+/** How tall the rail stands: a line more when any step is late. */
+function railHeight(sheet: HallkeeperSheetV2, steps: readonly SetupStep[]): number {
+  return RAIL_H + (railStations(sheet, steps).some((station) => station.late) ? RAIL_LATE_H : 0);
+}
+
+/** The setup at a glance: a ring per step, then the room ready and the guests in. The rings are empty; nothing is done when the sheet prints. */
+function progressRail(flow: Flow, sheet: HallkeeperSheetV2, steps: readonly SetupStep[]): void {
+  const { doc } = flow;
+  const top = flow.y;
+  drawLine(doc, TYPE.overline, "Setup, in order", X, top);
+  drawLine(doc, TYPE.label, "Tick each line as it is done.", X, top - 0.6, { width: W, to: "right" });
+  const stations = railStations(sheet, steps);
+  const span = W / stations.length;
+  const lineY = top + 30;
+  hairline(doc, X + span / 2, lineY, X + W - span / 2, INK.ruleStrong, 0.8);
+  for (const [index, station] of stations.entries()) {
+    const cx = X + span * (index + 0.5);
+    const radius = station.kind === "ready" ? 12.5 : 10;
+    const stroke = station.kind === "ready" ? INK.accent : station.kind === "guests" ? INK.ruleStrong : INK.secondary;
+    doc.save().circle(cx, lineY, radius).lineWidth(station.kind === "ready" ? 1.6 : 0.9).fillAndStroke(INK.panel, stroke).restore();
+    if (station.mark.length > 0) drawLine(doc, TYPE.railMark, station.mark, cx - span / 2, lineY - 6.2, { width: span, to: "center" });
+    const labelStyle = station.kind === "ready" ? TYPE.railLabelAccent : TYPE.railLabel;
+    drawLine(doc, labelStyle, oneLine(doc, labelStyle, station.label, span - 6), cx - span / 2, lineY + 17, { width: span, to: "center" });
+    if (station.time.length > 0) {
+      const style = station.late ? RAIL_TIME_LATE : station.kind === "guests" ? TYPE.railTimeQuiet : TYPE.railTime;
+      drawLine(doc, style, oneLine(doc, style, station.time, span - 4), cx - span / 2, lineY + 29, { width: span, to: "center" });
+      if (station.late) drawLine(doc, RAIL_LATE, "late", cx - span / 2, lineY + 43, { width: span, to: "center" });
+    }
+  }
+  const height = railHeight(sheet, steps);
+  hairline(doc, X, top + height - 8, X + W, INK.rule, 0.5);
+  flow.y = top + height;
+}
+
+/**
+ * The small plan at the foot of the rail, for the crew handed the setup page
+ * alone: the room with the care tables ringed and the planner's names set as
+ * page 1 sets them, on a piece or beside it, and any it has no room for named
+ * under it.
+ */
+function railPlanUnit(doc: Doc, sheet: HallkeeperSheetV2, x: number, width: number): Unit | null {
+  const plan = sheet.floorPlan ?? null;
+  if (plan === null) return null;
+  const inner = width - PANEL_PAD * 2;
+  const height = planHeight(sheet, inner, 200);
+  const markers = new Map<string, number>();
+  const caption = namesLeftOff(planNamesLeftOff(doc, plan, inner, height, markers));
+  const captionH = caption === null ? 0 : blockHeight(doc, TYPE.small, caption, inner) + 4;
+  return panelUnit(doc, RAIL_PANEL, x, width, height + 10 + captionH, (y) => {
+    drawSheetPlan(doc, plan, { x: x + PANEL_PAD, y: y + 6, width: inner, height }, markers, careTables(sheet), true);
+    if (caption !== null) drawBlock(doc, TYPE.small, caption, x + PANEL_PAD, y + 10 + height, inner);
+  });
+}
+
+/** A brief that ran on overleaf and filled less than this share of that page leaves the rest to the setup. */
+const SPILL_SHARE = 0.4;
+
+/**
+ * The head of the setup's own page, for the crew handed it alone: which
+ * event, when, where and for how many, and whether this copy is approved.
+ * Page 1 keeps the paper check's code; every page's footer names the copy.
+ */
+function setupHeader(flow: Flow, sheet: HallkeeperSheetV2, copyLine: string): void {
+  const { doc } = flow;
+  const top = flow.y;
+  drawLine(doc, TYPE.overline, oneLine(doc, TYPE.overline, `Hallkeeper sheet · ${sheet.venue.name}`, W), X, top);
+  let y = drawBlock(doc, TYPE.runningTitle, sheet.config.name, X, top + 11, W);
+  y = drawBlock(doc, TYPE.lede, ledeWords(sheet, true), X, y + 2, W);
+  const status = statusOf(sheet, copyLine);
+  y = drawBlock(doc, status.style, status.text, X, y + 4, W);
+  hairline(doc, X, y + 8, X + W, INK.ruleStrong, 0.7);
+  flow.y = y + 20;
+}
+
+/**
+ * Page 2 (D): the setup to tick. A setup that fits whole under the brief on
+ * page 1 stays there, its steps full width, Keep in view already in sight.
+ * Otherwise it opens a page, so the crew can be handed the setup alone: its
+ * head, the progress rail, then the steps beside a rail of what to keep in
+ * view, who to call and the small plan. The planner's notes page 1 had no
+ * room for come after the rail where page 1 points to them, or first, under
+ * the head, when page 1 could not point. When the brief itself ran on
+ * overleaf and left most of that page empty, the setup starts there instead
+ * of a page later. A layout with nothing placed says so where it stands.
+ */
+export function setupPage(flow: Flow, sheet: HallkeeperSheetV2, copyLine: string, plannerNotes: PlannerNotesLeft = "none"): void {
+  const { doc } = flow;
+  const steps = sheetSetupSteps(sheet);
   if (steps.length === 0) {
-    drawLine(doc, TYPE.bodyQuiet, "Nothing is placed in this layout yet.", X, flow.y);
-    flow.y += 26;
+    if (plannerNotes !== "none") notesFlowing(flow, briefParts(sheet));
+    flow.ensure(40);
+    ruleAbove(flow);
+    drawLine(doc, TYPE.overline, "Setup, in order", X, flow.y);
+    drawLine(doc, TYPE.bodyQuiet, "Nothing is placed in this layout yet.", X, flow.y + 14);
+    flow.y += 40;
+    // The plan's numbers still need their words when no line carries them.
+    const loose = planNoteUnits(doc, [], sheetNoteMarkers(sheet), { left: X, right: X + W, nameX: X, nameW: W, whereX: X + W, whereW: 0 });
+    if (loose.length > 0) {
+      flow.lanes([loose]);
+      flow.y += 12;
+    }
     return;
   }
-  for (const [index, step] of steps.entries()) {
-    // A step starts where its heading and its first three lines (or all, if fewer) fit.
-    flow.ensure(25 + step.items.slice(0, 3).reduce((sum, item) => sum + setupRowHeight(doc, item, geometry, markers), 0));
-    const top = flow.y;
-    drawLine(doc, TYPE.step, String(index + 1), X, top - 4);
-    drawLine(doc, { ...TYPE.section, size: 13 }, step.label, X + 18, top);
-    if (step.deadline !== null) {
-      const words = `done by ${step.deadline.otherDay ? `${shortDay(step.deadline.at, timeZone)} ` : ""}${clock(step.deadline.at, timeZone)}${step.deadline.reason === null ? "" : ` · ${step.deadline.reason}`}${step.deadline.late ? " · after the ready-by time" : ""}`;
-      const style: TextStyle = { face: "Inter-Medium", size: 8.4, color: step.deadline.late ? INK.alert : INK.secondary, tnum: true };
-      const rightW = W - 18 - textWidth(doc, { ...TYPE.section, size: 13 }, step.label) - 24;
-      drawLine(doc, style, oneLine(doc, style, words, rightW), X, top + 3.5, { width: W, to: "right" });
-    }
-    flow.y = top + 19;
-    hairline(doc, X, flow.y, X + W, INK.ruleStrong, 0.6);
-    flow.y += 6;
-    for (const item of step.items) {
-      const height = setupRowHeight(doc, item, geometry, markers);
-      if (height <= flow.pageRoom) {
-        flow.ensure(height);
-        drawSetupRow(doc, item, flow.y, geometry, markers);
-        flow.y += height;
-      } else {
-        tallSetupRow(flow, item, geometry, markers);
-      }
-      hairline(doc, geometry.nameX, flow.y - 3.5, X + W, INK.rule, 0.4);
-    }
-    flow.y += 10;
+  const whole = stepUnits(doc, sheet, steps, X, W);
+  if (plannerNotes === "none" && doc.bufferedPageRange().count === 1 && flow.y + railHeight(sheet, steps) + unitsHeight(whole) <= flow.bottom) {
+    ruleAbove(flow);
+    progressRail(flow, sheet, steps);
+    flow.lanes([whole]);
+    flow.y += 12;
+    return;
   }
+  const spilled = doc.bufferedPageRange().count > 1 && flow.y - flow.top <= flow.pageRoom * SPILL_SHARE;
+  if (spilled) {
+    ruleAbove(flow);
+  } else {
+    if (flow.y > flow.top) flow.newPage();
+    setupHeader(flow, sheet, copyLine);
+  }
+  const railW = Math.round(W * RAIL_SHARE);
+  const gutter = 16;
+  const stepsW = W - railW - gutter;
+  const railX = X + stepsW + gutter;
+  const stepsLane = stepUnits(doc, sheet, steps, X, stepsW);
+  if (plannerNotes === "leading") {
+    // Page 1 had no room to say where the planner's notes went, so they come
+    // first here, under the head; the rail then keeps with the first step.
+    notesFlowing(flow, briefParts(sheet), false);
+    flow.ensure(railHeight(sheet, steps) + (stepsLane[0]?.need ?? stepsLane[0]?.height ?? 0));
+    ruleAbove(flow);
+  }
+  progressRail(flow, sheet, steps);
+  // The planner's notes page 1 pointed to: across the page, before the first step.
+  if (plannerNotes === "after-rail") notesFlowing(flow, briefParts(sheet));
+  const railPlan = railPlanUnit(doc, sheet, railX, railW);
+  flow.lanes([
+    stepsLane,
+    [
+      ...careUnits(doc, sheet, RAIL_PANEL, railX, railW),
+      ...contactUnits(doc, sheet, RAIL_PANEL, railX, railW),
+      ...(railPlan === null ? [] : [railPlan]),
+      panelEnd(doc, RAIL_PANEL, railX, railW),
+    ],
+  ]);
+  flow.y += 12;
 }
 
 // ------------------------------------------------------------- sign off ----
