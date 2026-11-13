@@ -186,6 +186,8 @@ describe("buildRibbonDay", () => {
     // A title, even beside an event name, is the booking's own.
     expect(ribbonBookingTitle("Speeches", "Chamber dinner", "Untitled booking")).toBe("Speeches");
     expect(ribbonBookingTitle("", undefined, "Untitled booking")).toBe("Untitled booking");
+    // Shown without the spaces it was stored with (GET /calendar keeps a title as stored).
+    expect(ribbonBookingTitle("  Speeches ", "Chamber dinner", "Untitled booking")).toBe("Speeches");
   });
 
   it("no booking carries the plan's eventId → null (the not-in-the-Diary state)", () => {

@@ -22,7 +22,10 @@ const HomeVenueSchema = z.object({
 
 export const ClientHomeEventSchema = z.object({
   id: EventIdSchema,
-  name: z.string().trim().min(1).max(200),
+  // As stored, trimmed: "" for an event made before eventNameFor named every
+  // new one; the home shows it as eventDisplayName names it. Refusing it here
+  // failed the person's whole home, every other event and plan with it.
+  name: z.string().trim().max(200),
   eventType: z.string().trim().max(80).nullable(),
   startsAt: z.iso.datetime().nullable(),
   endsAt: z.iso.datetime().nullable(),
