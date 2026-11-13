@@ -458,8 +458,13 @@ export function moveConsequences(world: Neighbourhood, booking: BookingRow, to: 
   const keys = apartKeysOf(world, booking, carried);
   const now = weighedApart(world, booking, carried, keys);
   const then = weighedApart(next, booking, carried, keys);
-  const before = detectCalendarConflictsInDetail({ bookings: now.bookings, phases: now.phases, turnaroundRules: now.rules, timeZone: now.timeZone }).report;
-  const after = detectCalendarConflictsInDetail({ bookings: then.bookings, phases: then.phases, turnaroundRules: then.rules, timeZone: then.timeZone });
+  // Kept apart, the rest of the event is still the event's: where a piece of
+  // it is already in the room, the moved block is no new arrival, as the
+  // Diary has it (T-695 review of #400, Y1).
+  const eventOfKey = new Map<string, string>();
+  if (booking.eventId !== null) for (const key of keys.values()) eventOfKey.set(key, booking.eventId);
+  const before = detectCalendarConflictsInDetail({ bookings: now.bookings, phases: now.phases, turnaroundRules: now.rules, timeZone: now.timeZone, eventOfKey }).report;
+  const after = detectCalendarConflictsInDetail({ bookings: then.bookings, phases: then.phases, turnaroundRules: then.rules, timeZone: then.timeZone, eventOfKey });
   // The event's own entries need no turnaround between them: the engine never weighs that gap.
   const ownEvent = new Set(booking.eventId === null ? [booking.id] : [
     ...world.bookings.filter((entry) => entry.eventId === booking.eventId).map((entry) => entry.id),

@@ -811,6 +811,25 @@ describe.skipIf(target === undefined)("prepared decisions on migrated PostgreSQL
       expect(asked.json()).toMatchObject({ code: "DECISION_UNREADABLE" });
     });
 
+    it("prepares no turnaround for a ceremony moved onto its own event's set-up, which the room already holds after lunch", async () => {
+      // T-695 review of #400, Y1: the decision weighed the ceremony from the
+      // lunch, 60 minutes, while the Diary has the wedding 30 minutes after
+      // lunch before the move and after it.
+      const v = await venue();
+      await turnaround(v, 120);
+      await ink(v, "Lunch", at(12, 12, 30), at(13, 12, 30));
+      const ceremony = await entry(v, "ink", "Crawford ceremony", at(10, 12), at(12, 12));
+      if (ceremony.eventId === null) throw new Error("the ceremony has no event");
+      // The reception's set-up starts after the ceremony ends, so it stays where it is.
+      await phase(ceremony.eventId, v.spaceId, at(14, 12), 120);
+      const made = await app.inject({ method: "POST", url: "/decisions/booking-time-moves", headers: as(v.staff),
+        payload: { bookingId: ceremony.id, startsAt: at(14, 12, 30).toISOString(), endsAt: at(16, 12, 30).toISOString() } });
+      expect(made.statusCode).toBe(201);
+      const decision = DecisionSchema.parse(made.json<{ data: unknown }>().data);
+      expect(move(decision)?.consequences).toEqual([]);
+      expect(decision).toMatchObject({ recommendedOptionId: "move", question: null });
+    });
+
     it("answers a failed decision's retry as the first time, refusal and all", async () => {
       const v = await venue();
       const id = await ink(v, "Crawford wedding", at(14), at(18));

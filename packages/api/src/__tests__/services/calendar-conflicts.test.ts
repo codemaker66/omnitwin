@@ -970,14 +970,22 @@ describe("the changeover rule, read plainly, against the engine", () => {
     readonly setStayed: number;
     /** Changeovers whose latest leavers were two or more, left together. */
     readonly leftTogether: number;
+    /** Of those passed over, the ones whose event's set was in the room only
+     *  through a piece still there as they began (only ever under another key). */
+    readonly setInRoom: number;
   }
 
-  function plainChangeovers(occupancies: readonly Held[]): PlainReading {
+  // A caller may keep one event's pieces apart under keys of its own (a
+  // prepared decision keeps the moved booking's block apart from the rest of
+  // its event), and say which event each key is: `eventOf`. A key is still its
+  // own owner to measure from; whether the event's set stayed asks the event.
+  function plainChangeovers(occupancies: readonly Held[], eventOf: (eventId: string) => string = (eventId) => eventId): PlainReading {
     const sameOwner = (a: Held, b: Held): boolean =>
       a.eventId === null || b.eventId === null ? a.id === b.id : a.eventId === b.eventId;
     const changeovers: string[] = [];
     let setStayed = 0;
     let leftTogether = 0;
+    let setInRoom = 0;
     for (const next of occupancies) {
       const gone = occupancies.filter((other) => !sameOwner(other, next) && other.endMs <= next.startMs);
       if (gone.length === 0) continue;
@@ -989,16 +997,24 @@ describe("the changeover rule, read plainly, against the engine", () => {
         .map((other) => other.id)
         .sort();
       const named = namedIds[namedIds.length - 1];
-      const stayed = next.eventId !== null && occupancies.some((own) =>
-        own !== next && own.eventId === next.eventId && own.startMs >= leftAt && own.startMs < next.startMs);
-      if (stayed) {
+      // Some piece of its event that began before it did came into the room
+      // after the last other owner left, or is still there as it begins (one
+      // event's pieces under one key never are). One that began with it came
+      // in with it, and did not stay before it.
+      const event = next.eventId === null ? null : eventOf(next.eventId);
+      const ownBefore = occupancies.filter((own) =>
+        own !== next && own.eventId !== null && event !== null && eventOf(own.eventId) === event && own.startMs < next.startMs);
+      const cameIn = ownBefore.some((own) => own.startMs >= leftAt);
+      const stillThere = ownBefore.some((own) => own.endMs >= next.startMs);
+      if (cameIn || stillThere) {
         setStayed += 1;
+        if (!cameIn) setInRoom += 1;
         continue;
       }
       if (lastToLeave.length > 1) leftTogether += 1;
       changeovers.push(`${String(named)}>${next.id}`);
     }
-    return { changeovers: changeovers.sort(), setStayed, leftTogether };
+    return { changeovers: changeovers.sort(), setStayed, leftTogether, setInRoom };
   }
 
   // Park and Miller's generator: a fixed seed gives the same arrangements on
@@ -1074,6 +1090,57 @@ describe("the changeover rule, read plainly, against the engine", () => {
       if (plain.changeovers.length > 0) shapes.measured += 1;
       if (plain.setStayed > 0) shapes.setStayed += 1;
       if (plain.leftTogether > 0) shapes.leftTogether += 1;
+    }
+    expect(disagreements.slice(0, 3), `${String(disagreements.length)} disagreements`).toEqual([]);
+    for (const [shape, count] of Object.entries(shapes)) {
+      expect(count, `arrangements with ${shape}`).toBeGreaterThan(100);
+    }
+  });
+
+  // As arrangement(), with two events each kept apart under keys of their own
+  // (T-695 review of #400, Y1): pieces under one key never overlap or touch,
+  // as buildOccupancies joins those, but pieces of one event under different
+  // keys may, and may begin together.
+  const KEPT_APART: ReadonlyMap<string, string> = new Map([["event-0~a", "event-0"], ["event-0~b", "event-0"], ["event-1~a", "event-1"]]);
+  const eventOfKey = (eventId: string): string => KEPT_APART.get(eventId) ?? eventId;
+  const KEYS = ["event-0", "event-0~a", "event-0~b", "event-1", "event-1~a", null] as const;
+
+  function keptApartArrangement(random: () => number): Held[] {
+    const pick = (n: number): number => Math.floor(random() * n);
+    for (;;) {
+      const ids = shuffled(["a", "b", "c", "d", "e", "f"].slice(0, 3 + pick(4)), random);
+      const held = ids.map((id) => {
+        const startMs = pick(10) * UNIT_MS;
+        return { id, eventId: KEYS[pick(KEYS.length)] ?? null, startMs, endMs: startMs + (1 + pick(4)) * UNIT_MS };
+      });
+      const apart = held.every((a) => held.every((b) =>
+        a === b || a.eventId === null || a.eventId !== b.eventId || a.endMs < b.startMs || b.endMs < a.startMs));
+      const owned = new Set(held.map((one) => one.eventId ?? `booking:${one.id}`));
+      if (apart && owned.size >= 2) return held;
+    }
+  }
+
+  it("agrees with the engine on 5,000 seeded random arrangements with an event kept apart under several keys", () => {
+    const random = seeded(20_261_114);
+    const disagreements: string[] = [];
+    const shapes = { apartOverlapping: 0, apartTouching: 0, apartSameStart: 0, setStayedThroughAnotherKey: 0, setInRoom: 0, measured: 0 };
+    for (let n = 0; n < 5_000; n += 1) {
+      const held = keptApartArrangement(random);
+      const plain = plainChangeovers(held, eventOfKey);
+      const engine = measuredChangeovers(shuffled(held, random), eventOfKey)
+        .map(({ before, after }) => `${before.id}>${after.id}`)
+        .sort();
+      if (engine.join(" ") !== plain.changeovers.join(" ")) {
+        disagreements.push(`${JSON.stringify(held)}: plain [${plain.changeovers.join(" ")}], engine [${engine.join(" ")}]`);
+      }
+      const apartPairs = held.flatMap((a) => held.filter((b) => b !== a && a.eventId !== null && b.eventId !== null
+        && a.eventId !== b.eventId && eventOfKey(a.eventId) === eventOfKey(b.eventId)).map((b) => [a, b] as const));
+      if (apartPairs.some(([a, b]) => a.startMs < b.endMs && b.startMs < a.endMs)) shapes.apartOverlapping += 1;
+      if (apartPairs.some(([a, b]) => a.endMs === b.startMs)) shapes.apartTouching += 1;
+      if (apartPairs.some(([a, b]) => a.startMs === b.startMs)) shapes.apartSameStart += 1;
+      if (plain.setStayed > plainChangeovers(held).setStayed) shapes.setStayedThroughAnotherKey += 1;
+      if (plain.setInRoom > 0) shapes.setInRoom += 1;
+      if (plain.changeovers.length > 0) shapes.measured += 1;
     }
     expect(disagreements.slice(0, 3), `${String(disagreements.length)} disagreements`).toEqual([]);
     for (const [shape, count] of Object.entries(shapes)) {
