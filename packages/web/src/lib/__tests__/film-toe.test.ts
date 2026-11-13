@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { CustomToneMapping } from "three";
 import {
   DEFAULT_FILM_TOE, NEUTRAL_TOE, clampFilmToe, filmCurve, filmToe, filmToeFromSearch, filmToeOffset,
-  photographToneMapping, registerPhotographToneMapping, setFilmToe,
+  photographToneMapping, registerPhotographToneMapping, setFilmToe, toeCurvatureFor,
 } from "../film-toe.js";
 
 type Colour = [number, number, number];
@@ -63,6 +63,50 @@ describe("the photographed room's film toe", () => {
     expect(worst).toBeLessThan(1e-12);
   });
 
+  it("is Khronos PBR Neutral at Neutral's toe for a colour the grade pushed out of range too", () => {
+    // The planner's grade saturates in linear light (Evening: 1.02), which
+    // takes a zero channel of a saturated colour under zero before the curve.
+    const next = seeded(422);
+    let worst = 0;
+    let underZero = 0;
+    for (let i = 0; i < 20000; i += 1) {
+      const colour: Colour = [next() * 1.3 - 0.1, next() * 1.3 - 0.1, next() * 1.3 - 0.1];
+      if (Math.min(colour[0], colour[1], colour[2]) < 0) underZero += 1;
+      for (const exposure of EXPOSURES) {
+        const ours = filmCurve(colour, exposure, NEUTRAL_TOE);
+        const theirs = khronosNeutral(colour, exposure);
+        worst = Math.max(worst, Math.abs(ours[0] - theirs[0]), Math.abs(ours[1] - theirs[1]), Math.abs(ours[2] - theirs[2]));
+      }
+    }
+    expect(underZero).toBeGreaterThan(1000);
+    expect(worst).toBeLessThan(1e-12);
+  });
+
+  it("leaves a colour with a channel under zero as it arrived at toe 0, and gives it Neutral's light in proportion to the toe", () => {
+    const colour: Colour = [-0.01, 0.2, 0.5];
+    expect(filmCurve(colour, 1, 0)).toEqual(colour);
+    const neutral = khronosNeutral(colour, 1);
+    const half = filmCurve(colour, 1, NEUTRAL_TOE / 2);
+    for (const channel of [0, 1, 2] as const) {
+      expect(half[channel]).toBeCloseTo((colour[channel] + neutral[channel]) / 2, 12);
+    }
+    expect(filmToeOffset(-0.01, NEUTRAL_TOE)).toBeCloseTo(-0.01 - 6.25 * 0.0001, 15);
+  });
+
+  it("meets zero without a step from either side, at every toe", () => {
+    for (const toe of [0, 0.01, 0.02, NEUTRAL_TOE]) {
+      expect(filmToeOffset(0, toe)).toBe(0);
+      expect(Math.abs(filmToeOffset(-1e-9, toe))).toBeLessThan(2e-9);
+      expect(Math.abs(filmToeOffset(1e-9, toe))).toBeLessThan(2e-9);
+    }
+  });
+
+  it("bends with Neutral's own 6.25 at Neutral's toe, and stays finite with no toe", () => {
+    expect(toeCurvatureFor(NEUTRAL_TOE)).toBe(6.25);
+    expect(toeCurvatureFor(0.02)).toBeCloseTo(12.5, 12);
+    expect(Number.isFinite(toeCurvatureFor(0))).toBe(true);
+  });
+
   it("draws with Neutral's toe by default, so the hall's look does not move until a toe is chosen", () => {
     expect(DEFAULT_FILM_TOE).toBe(NEUTRAL_TOE);
   });
@@ -86,7 +130,9 @@ describe("the photographed room's film toe", () => {
     expect(filmCurve([0.05, 0.05, 0.05], 1, NEUTRAL_TOE)[0]).toBeCloseTo(0.015625, 12);
   });
 
-  it("never brightens a colour under every toe's shoulder as the toe deepens, and never takes more than the toe", () => {
+  it("never brightens a colour in range under every toe's shoulder as the toe deepens, and never takes more than the toe", () => {
+    // A colour with a channel under zero is the one the toe adds light to, as
+    // Neutral does; these colours are all in range.
     // In the shoulder Neutral mixes a highlight toward white by an amount that
     // moves with the toe, so a dark channel of a bright colour may rise there.
     // The shoulder starts at 0.8 less the toe after the toe is taken, and a

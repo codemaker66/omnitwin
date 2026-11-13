@@ -17,6 +17,12 @@
 // (from 0.76 at Neutral's toe). The renderer calls the curve through its usual
 // tone-mapping path, after the pipeline's grade and vignette and with the
 // mood's exposure, which is where a toe is exact for every mood.
+//
+// The grade's saturation can take a channel of a saturated colour under zero.
+// Neutral answers such a colour by adding light (its quadratic, run below
+// zero), so this curve gives that answer in proportion to the toe: all of it
+// at Neutral's toe, where the two then agree for every colour, and none at
+// toe 0, where every colour under the shoulder is left alone.
 // ---------------------------------------------------------------------------
 
 import { CustomToneMapping } from "three";
@@ -33,9 +39,22 @@ export const DEFAULT_FILM_TOE = NEUTRAL_TOE;
 const SHOULDER_PEAK = 0.8;
 /** How far a compressed highlight moves toward white (Neutral's own figure). */
 const DESATURATION = 0.15;
+/** How steeply Neutral's own toe bends: its 6.25, which is 1 / (4 x 0.04). */
+const NEUTRAL_CURVATURE = 6.25;
 
-/** The toe the curve draws with now; the shader reads it every frame. */
+/**
+ * How steeply a toe bends under twice its depth: 1 / (4 x toe), Neutral's
+ * 6.25 exactly at Neutral's toe. A toe of none bends nowhere, so the figure
+ * only has to stay finite there.
+ */
+export function toeCurvatureFor(toe: number): number {
+  return 1 / (4 * Math.max(toe, 1e-6));
+}
+
+/** The toe the curve draws with now; the shader reads it every frame. Set it with `setFilmToe`. */
 export const filmToe = uniform(DEFAULT_FILM_TOE);
+/** That toe's curvature, worked out here so the default draws with Neutral's own 6.25 exactly. */
+const toeCurvature = uniform(toeCurvatureFor(DEFAULT_FILM_TOE));
 
 /** A toe held to the range the curve is defined for; the default for a value that is not a number. */
 export function clampFilmToe(toe: number): number {
@@ -44,7 +63,9 @@ export function clampFilmToe(toe: number): number {
 
 /** Sets the toe the curve draws with. */
 export function setFilmToe(toe: number): void {
-  filmToe.value = clampFilmToe(toe);
+  const held = clampFilmToe(toe);
+  filmToe.value = held;
+  toeCurvature.value = toeCurvatureFor(held);
 }
 
 /** `?toe=0.02` in a page address: a toe to look with, or null when the address asks for none. */
@@ -55,10 +76,14 @@ export function filmToeFromSearch(search: string): number | null {
   return Number.isFinite(toe) ? clampFilmToe(toe) : null;
 }
 
-/** What the curve takes from every channel of a colour whose least channel is `least`. */
+/**
+ * What the curve takes from every channel of a colour whose least channel is
+ * `least`. Under zero it is Neutral's own answer in proportion to the toe (a
+ * negative figure: light is added); from zero to twice the toe, the toe's bend.
+ */
 export function filmToeOffset(least: number, toe: number): number {
-  const x = Math.max(least, 0);
-  return x < 2 * toe ? x - (x * x) / (4 * toe) : toe;
+  if (least < 0) return (toe / NEUTRAL_TOE) * (least - NEUTRAL_CURVATURE * least * least);
+  return least < 2 * toe ? least - (least * least) / (4 * toe) : toe;
 }
 
 /** The curve on plain numbers: the shader's twin, for tests and tools. */
@@ -83,19 +108,24 @@ export function filmCurve(colour: readonly [number, number, number], exposure: n
 }
 
 /**
- * The curve as shader nodes. Both branches are computed and one is chosen, so
- * the guards below only keep the unchosen branch finite.
+ * The curve as shader nodes, each step in the order three's own Neutral takes
+ * it (nodes/display/ToneMappingFunctions.js), so the default toe computes what
+ * Neutral computes, step for step. Every branch is computed and one is chosen,
+ * so the guards below only keep an unchosen branch finite.
  */
 function curveNodes(colour: Node<"vec3">, exposure: Node<"float">): Node<"vec3"> {
   const exposed = colour.mul(exposure);
-  const least = max(min(exposed.r, min(exposed.g, exposed.b)), 0);
-  const curved = least.sub(least.mul(least).div(max(filmToe, 1e-6).mul(4)));
-  const offset = select(least.lessThan(filmToe.mul(2)), curved, filmToe);
+  const least = min(exposed.r, min(exposed.g, exposed.b));
+  const square = least.mul(least);
+  const underZero = least.sub(square.mul(NEUTRAL_CURVATURE)).mul(filmToe.div(NEUTRAL_TOE));
+  const withinToe = least.sub(square.mul(toeCurvature));
+  const bend = select(least.lessThan(float(0)), underZero, withinToe);
+  const offset = select(least.lessThan(filmToe.mul(2)), bend, filmToe);
   const lifted = exposed.sub(offset);
   const start = float(SHOULDER_PEAK).sub(filmToe);
   const peak = max(lifted.r, max(lifted.g, lifted.b));
   const d = float(1).sub(start);
-  const newPeak = float(1).sub(d.mul(d).div(max(peak.add(d).sub(start), 1e-4)));
+  const newPeak = float(1).sub(d.mul(d).div(max(peak.add(d.sub(start)), 1e-4)));
   const rolled = lifted.mul(newPeak.div(max(peak, 1e-4)));
   const grey = float(1).sub(float(1).div(float(DESATURATION).mul(peak.sub(newPeak)).add(1)));
   return select(peak.lessThan(start), lifted, mix(rolled, vec3(newPeak), grey));
