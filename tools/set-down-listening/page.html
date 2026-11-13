@@ -19,7 +19,9 @@
     --plane-ink: #3e3528;
     --plane-number: #14302a;
     --plane-track: #3e35281f;
-    --plane-ghost: #3e352873;
+    /* The empty room's mark on each band: solid plane ink, 5.3:1 against the track (3:1 needed). */
+    --plane-ghost: #3e3528;
+    --plane-clear: #14302a00;
     --forest: #264337;
     --forest-ink-1: #f2eee1;
     --forest-ink-2: #d0d9cd;
@@ -52,7 +54,9 @@
       --plane-ink: #3e3528;
       --plane-number: #14302a;
       --plane-track: #3e352826;
-      --plane-ghost: #3e35288c;
+      /* 4.2:1 against the dark track. */
+      --plane-ghost: #3e3528;
+      --plane-clear: #14302a00;
       --forest: #13261e;
       --forest-ink-1: #f2eee1;
       --forest-ink-2: #d0d9cd;
@@ -80,7 +84,8 @@
     --plane-ink: #3e3528;
     --plane-number: #14302a;
     --plane-track: #3e352826;
-    --plane-ghost: #3e35288c;
+    --plane-ghost: #3e3528;
+    --plane-clear: #14302a00;
     --forest: #13261e;
     --forest-ink-1: #f2eee1;
     --forest-ink-2: #d0d9cd;
@@ -215,7 +220,7 @@
   .band .value { font-weight: 600; color: var(--plane-number); }
   .track { position: relative; height: 12px; border-radius: 2px; background: var(--plane-track); overflow: hidden; }
   /* Each band drawn as its own decay: full at the strike, gone at its reverberation time. */
-  .bar { position: absolute; top: 0; bottom: 0; left: 0; background: linear-gradient(90deg, var(--plane-number) 0%, var(--plane-number) 15%, #14302a00 100%); }
+  .bar { position: absolute; top: 0; bottom: 0; left: 0; background: linear-gradient(90deg, var(--plane-number) 0%, var(--plane-number) 15%, var(--plane-clear) 100%); }
   .ghost { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--plane-ghost); }
   .axis { position: relative; height: 18px; margin: 4px 64px 0 64px; font-size: 11.5px; }
   .axis span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
@@ -258,6 +263,8 @@
 
   :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
   .panel :focus-visible { outline-color: var(--focus-forest); }
+  /* On the copper plane the ring is the forest numeral: 7.5:1 light, 6.0:1 dark. */
+  .plane :focus-visible { outline-color: var(--plane-number); }
 
   /* Reduced motion: a press still shows, by colour alone. */
   @media (prefers-reduced-motion: reduce) {
@@ -331,13 +338,14 @@
         <div><dt>Peak, full level</dt><dd id="peak-db">&mdash;</dd></div>
         <div id="limit-row" hidden><dt>Limiter</dt><dd id="limit-db"></dd></div>
         <div><dt>Tail render</dt><dd id="tail-ms">&mdash;</dd></div>
+        <div id="wait-row" hidden><dt>Waited</dt><dd id="wait-ms"></dd></div>
       </dl>
     </section>
   </div>
 
   <footer class="notes">
     <p id="save-status" role="status"></p>
-    <p>Sound starts with your first tap. On an iPhone the ring switch silences this page, as it will the planner.</p>
+    <p id="audio-status">Sound starts with your first tap. On an iPhone the ring switch silences this page, as it will the planner.</p>
   </footer>
 </div>
 

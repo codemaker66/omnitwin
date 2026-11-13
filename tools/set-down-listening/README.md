@@ -1,4 +1,6 @@
-# The set-down listening page (T-677)
+# The set-down listening page (T-700)
+
+The set-down sound was T-677 until 13 November 2026.
 
 A single page on which the planner's set-down sounds can be heard before they
 are wired into the planner. It is built from the engine itself
@@ -46,10 +48,14 @@ The graph mirrors the registry's planner graph: each voice into a dry gain
 and a send to a `ConvolverNode` holding `renderRoomTail`'s tail for the room
 as dressed, a master at `PLANNER_SOUND_DEFAULT_LEVEL`, the registry's
 `PLANNER_LIMITER` compressor (knee 0) and the trim that takes back its makeup
-gain. The tail is rendered in idle slices of at most 4 ms when the room or
-its dressing changes (the slider is gathered for 250 ms) and cross-faded in
-over 120 ms. Each set-down starts so that its audible onset (`onsetSeconds`)
-lands one frame after the press, less the output latency, never in the past.
+gain. The tail is made at the context's own rate as soon as the context
+exists, and at once when the room changes; the dressing slider is gathered
+for 250 ms and its tail made in idle slices of at most 4 ms. A new tail is
+cross-faded in over 100 ms, and the old one let go after 150 ms (R62). Each
+set-down starts so that its audible onset (`onsetSeconds`) lands one frame
+after the press, less the output latency, never in the past, and never
+before the limiter has run 0.25 s (R63). A press that had to wait for a tail
+or for the limiter says so, in ms.
 
 ## Choices the page makes that the planner's tasks will own
 
@@ -68,10 +74,31 @@ lands one frame after the press, less the output latency, never in the past.
   across the layout, eight in all, 85–110 ms apart (seeded), each 1 dB
   softer. Each landing is heard from the chosen distance on the line to a
   listener at the room's end (Task 12's ear rule, at least 2 m), on the
-  room's floor.
+  room's floor. The ear stays 1.6 m up for every voice; only its place on the
+  floor follows that line (R61).
 - **The galleries' walls.** The planner draws the galleries from the
   space's outline in the database; the web package has no drawn geometry for
   them, so their reflections come off the surveyed 11.5 × 4.1 × 2.8 m room.
+
+## What to listen for in the ear test
+
+- **Each piece as itself on each surface:** a Chiavari's click on oak boards, the
+  hollow boom of a deck, the muffled set-down on the galleries' carpet, the clank
+  of folding legs.
+- **Each room's echo as it fills:** drag the dressing from empty to the dinner and
+  set a piece down again; the echo should shorten and drop in level.
+- **The echo's level is an estimate.** The send carries the whole render, its
+  early reflections included, while diffuse-field theory's 4W/R already counts
+  reflected energy, so the echo leans about 1-2 dB toward "too much" (EST, ruling
+  R64). If it sounds a little too wet, this is the likely cause; Task 13 decides
+  whether the send takes the direct part only.
+- **The Robert Adam Room's low-mid ring at 250-500 Hz.** Its fitted factors (1.26
+  at 250 Hz, 1.16 at 500 Hz) are the non-uniform-absorption effect of a room whose
+  absorption sits on its floor and ceiling (ruling R59). Listen for whether that
+  ring sounds like the room or like a fault.
+- **The first press** waits until the limiter has run 0.25 s (ruling R63), so
+  every play is heard at its true level; the readout shows that wait, and any
+  wait for a tail still being made.
 
 ## Device figures
 
@@ -80,8 +107,12 @@ With the `db` capability, each device keeps one document at
 screen's size: the user agent, the screen size, the context's sample rate,
 the date, and per piece the last 20 render times in milliseconds, with the
 last 20 tail render times. It is read once when the store arrives and written
-once per 1.5 s pause, one write at a time. Without the capability the page
-works the same and says that it does not save.
+once per 1.5 s pause, one write at a time. If the store has not answered in
+10 s the page says so, and keeps waiting. An `unavailable` write is
+transient: the next change tries again after a pause that doubles from 2 s to
+at most 60 s. A full store, or any other refusal, stops saving for the visit.
+Without the capability the page works the same and says that it does not
+save.
 
 ## Measured on Blake's phone
 

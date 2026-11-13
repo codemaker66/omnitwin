@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// The listening page for the set-downs (T-677, Task 9).
+// The listening page for the set-downs (T-700, Task 9; numbered T-677 until 13 Nov 2026).
 //
 // Blake hears the set-down engine here before it is wired into the planner,
 // on laptop speakers, earbuds and his phone. Every sound is rendered by the
@@ -121,8 +121,11 @@ const REFERENCE_DISTANCE_M = 2;
  * directivity Q = 2 on the floor gives a reverberant energy 16 pi r^2 / (Q R)
  * times its direct energy at r. At the 2 m reference that is 32 pi / R. The
  * tail has unit energy per channel, so a send of sqrt(32 pi / R) makes the
- * convolved echo carry that energy; R / R_ref is reverberantGain's square,
- * with R_ref the empty Grand Hall's room constant at 1 kHz.
+ * convolved echo carry that energy. reverberantGain's square is R_ref / R,
+ * with R_ref the empty Grand Hall's room constant at 1 kHz, so
+ * REVERB_SEND x reverberantGain = sqrt(32 pi / R_ref) x sqrt(R_ref / R) =
+ * sqrt(32 pi / R) for any room. The send carries the whole render, early
+ * reflections included, which biases the echo about 1-2 dB high (R64, EST).
  */
 const REVERB_SEND = Math.sqrt((32 * Math.PI) / emptyHallRoomConstant());
 
@@ -140,8 +143,16 @@ function emptyHallRoomConstant(): number {
 // --- The audio graph (mirroring lib/sound-registry.ts's planner graph) ------------------------------
 
 const MASTER_LEVEL = PLANNER_SOUND_DEFAULT_LEVEL;
-/** The room tail's cross-fade when the room or its dressing changes. */
-const CROSSFADE_S = 0.12;
+/** The room tail's cross-fade when the room or its dressing changes, and when the old convolver is let go (R62, plan Task 13). */
+const CROSSFADE_S = 0.1;
+const CROSSFADE_RELEASE_S = 0.15;
+/**
+ * A fresh compressor holds a sound down by up to -6.8 dB for its first
+ * 125 ms, so nothing plays before the limiter has run this long on the
+ * context's clock (R63). It mirrors sound-registry.ts's unexported
+ * PLANNER_LIMITER_WARMUP_SECONDS.
+ */
+const LIMITER_WARMUP_S = 0.25;
 /** A frame: the press shows on the next one, so the sound is aimed there. */
 const FRAME_S = 1 / 60;
 const TAIL_SEED = 1;
@@ -173,6 +184,10 @@ function optional<T>(value: T): T | undefined {
 }
 
 let audio: AudioGraph | null = null;
+/** Set once making the graph has failed, so it is not tried again on every gesture. */
+let audioFailed = false;
+/** What the current gesture has spent finishing a tail before it could play, in ms. */
+let tailWaitMs = 0;
 
 function makeGraph(): AudioGraph | null {
   const Context = optional(window.AudioContext);
@@ -208,9 +223,12 @@ function makeGraph(): AudioGraph | null {
 /** The graph, made inside the first gesture, and resumed on every gesture until it runs. */
 function arm(): AudioGraph | null {
   if (audio === null) {
+    if (audioFailed) return null;
     audio = makeGraph();
     if (audio === null) {
-      ui.saveStatus.textContent = "This browser has no Web Audio, so nothing can play here.";
+      audioFailed = true;
+      ui.page.dataset.audio = "failed";
+      ui.audioStatus.textContent = "This browser could not start Web Audio, so nothing can play here.";
       return null;
     }
     const graph = audio;
@@ -218,7 +236,8 @@ function arm(): AudioGraph | null {
       ui.page.dataset.audio = graph.context.state;
     });
     ui.page.dataset.audio = graph.context.state;
-    useTail();
+    // The tail at the context's own rate, at once: a ConvolverNode takes no other rate.
+    finishTail();
   }
   // A touch's pointerdown is not yet a gesture to the browser; the click that follows it resumes.
   if (audio.context.state !== "running") audio.context.resume().catch(() => undefined);
@@ -252,7 +271,7 @@ function installTail(graph: AudioGraph, tail: Stereo, key: string): void {
       graph.bus.disconnect(old.convolver);
       old.convolver.disconnect();
       old.fade.disconnect();
-    }, (CROSSFADE_S + 0.1) * 1000);
+    }, CROSSFADE_RELEASE_S * 1000);
   }
   graph.wet = { convolver, fade, key };
 }
@@ -269,13 +288,15 @@ interface Voice {
 /**
  * Starts each voice so that its audible onset lands where it is aimed: the
  * press shows on the next frame, the output adds its latency, and the render
- * starts `onsetSeconds` before its onset. Never in the past.
+ * starts `onsetSeconds` before its onset. Never in the past, and never before
+ * the limiter has warmed up (R63). Returns how long the limiter held the
+ * play back, in seconds.
  */
-function playVoices(graph: AudioGraph, voices: readonly Voice[]): void {
+function playVoices(graph: AudioGraph, voices: readonly Voice[]): number {
   const { context } = graph;
   const latency = context.outputLatency > 0 ? context.outputLatency : context.baseLatency;
   const lead = Math.max(0, FRAME_S - (Number.isFinite(latency) ? latency : 0));
-  const now = context.currentTime;
+  const now = Math.max(context.currentTime, LIMITER_WARMUP_S);
   for (const voice of voices) {
     const { render } = voice;
     const buffer = context.createBuffer(2, render.left.length, render.sampleRate);
@@ -304,6 +325,7 @@ function playVoices(graph: AudioGraph, voices: readonly Voice[]): void {
     graph.voices += 1;
   }
   ui.page.dataset.voices = String(graph.voices);
+  return now - context.currentTime;
 }
 
 // --- The room's tail, rendered in idle slices -----------------------------------------------------
@@ -383,13 +405,21 @@ function useTail(): void {
   installTail(audio, builtTail.stereo, builtTail.key);
 }
 
+/** Finishes the current room's tail now, rather than in idle time; the work is added to the gesture's wait. */
+function finishTail(): void {
+  requestTail();
+  const job = tailJob;
+  if (job === null) return;
+  const begin = performance.now();
+  for (let done = false; !done; ) done = stepTail(job);
+  tailWaitMs += performance.now() - begin;
+}
+
 /** Makes sure the current tail is on the graph before a set-down plays, finishing it now if it is not. */
 function tailNow(graph: AudioGraph): void {
   const want = wantedTail();
   if (graph.wet?.key === want.key && builtTail?.sampleRate === want.sampleRate) return;
-  requestTail();
-  const job = tailJob;
-  if (job !== null) for (let done = false; !done; ) done = stepTail(job);
+  finishTail();
   useTail();
 }
 
@@ -452,6 +482,7 @@ function renderAt(body: SetDownBody, surface: SurfaceKind, kind: "drop" | "settl
   });
   const ms = performance.now() - begin;
   seed += 1;
+  // Stand-in for Task 12's directPath (gain = min(1, 2 / distance)); replace when it lands.
   return { render, ms, directGain: Math.min(1, REFERENCE_DISTANCE_M / Math.max(distance(source, ear), 1e-6)) };
 }
 
@@ -466,18 +497,23 @@ function playPiece(kind: "drop" | "settle"): void {
   const ear: Vec3 = { x: -across / 2, y: EAR_HEIGHT_M, z: 0 };
   const surface = surfaceKindForSupport(SUPPORT_SLUG[state.support], state.room);
   const { render, ms, directGain } = renderAt(bodyFor(state.slug), surface, kind, source, ear, graph.context.sampleRate);
-  playVoices(graph, [{ render, offsetSeconds: 0, levelDb: 0, directGain, send: REVERB_SEND * currentRoom().state.reverberantGain }]);
+  const held = playVoices(graph, [{ render, offsetSeconds: 0, levelDb: 0, directGain, send: REVERB_SEND * currentRoom().state.reverberantGain }]);
   timings.recordSetDown(state.slug, ms);
   showRender(render, ms, 1);
+  showWait(held);
 }
 
-/** Lay out's cascade (spec section 6; Task 12's plan): eight voices, tables first, about 0.1 s apart, each 1 dB softer. */
+/**
+ * Lay out's cascade (spec section 6; Task 12's plan): eight voices, tables
+ * first, about 0.1 s apart, each 1 dB softer. Stand-in for Task 12's
+ * planCascade; replace when it lands.
+ */
 const CASCADE_VOICES = 8;
 const CASCADE_GAP_S = 0.085;
 const CASCADE_GAP_SPREAD_S = 0.025;
 const CASCADE_STEP_DB = -1;
 
-/** One piece of each table family first, then chairs spread across the layout, so the cascade sweeps the room. */
+/** One piece of each table family first, then chairs spread across the layout, so the cascade sweeps the room (stand-in for planCascade). */
 function cascadePieces(items: readonly PlacedItem[]): readonly { readonly item: PlacedItem; readonly slug: string }[] {
   const tables: { item: PlacedItem; slug: string }[] = [];
   const chairs: { item: PlacedItem; slug: string }[] = [];
@@ -503,7 +539,8 @@ function cascadePieces(items: readonly PlacedItem[]): readonly { readonly item: 
 /**
  * "Lay out a dinner": the reference dinner's cascade, each piece heard from
  * the chosen distance on the line to a listener standing at the room's end
- * (Task 12's ear rule, held to 2 m at the nearest), on the room's floor.
+ * (Task 12's ear rule, held to 2 m at the nearest), on the room's floor. The
+ * ear's placement is a stand-in for Task 12's earFor; replace when it lands.
  */
 function playCascade(): void {
   const graph = arm();
@@ -522,10 +559,15 @@ function playCascade(): void {
   let last: SetDownRender | null = null;
   for (const [index, { item, slug }] of cascadePieces(referenceDinner(state.room)).entries()) {
     const source: Vec3 = { x: toRealWorld(item.x), y: 0, z: toRealWorld(item.z) };
+    // R61: the ear stays at EAR_HEIGHT_M for every voice, so the floor's reflection is a standing listener's.
+    // Only its place on the floor follows the line towards the listener, far enough along it that the ear is
+    // `reach` from the landing.
     const away = distance(viewer, source);
     const reach = Math.min(Math.max(away, REFERENCE_DISTANCE_M), state.distanceM);
-    const k = away > 1e-6 ? reach / away : 0;
-    const ear: Vec3 = { x: source.x + (viewer.x - source.x) * k, y: source.y + (viewer.y - source.y) * k, z: source.z + (viewer.z - source.z) * k };
+    const along = Math.sqrt(Math.max(0, reach ** 2 - (EAR_HEIGHT_M - source.y) ** 2));
+    const flat = Math.hypot(viewer.x - source.x, viewer.z - source.z);
+    const k = flat > 1e-6 ? along / flat : 0;
+    const ear: Vec3 = { x: source.x + (viewer.x - source.x) * k, y: EAR_HEIGHT_M, z: source.z + (viewer.z - source.z) * k };
     const { render, ms, directGain } = renderAt(bodyFor(slug), surface, "drop", source, ear, graph.context.sampleRate);
     if (index > 0) offset += CASCADE_GAP_S + CASCADE_GAP_SPREAD_S * random();
     voices.push({ render, offsetSeconds: offset, levelDb: CASCADE_STEP_DB * index, directGain, send });
@@ -534,8 +576,9 @@ function playCascade(): void {
     last = render;
     lastMs = ms;
   }
-  playVoices(graph, voices);
+  const held = playVoices(graph, voices);
   if (last !== null) showRender(last, lastMs, voices.length, total);
+  showWait(held);
 }
 
 // --- Device figures (the artifact's `db` capability) ------------------------------------------------
@@ -563,6 +606,25 @@ declare global {
 
 const KEEP_PER_LIST = 20;
 const WRITE_PAUSE_MS = 1500;
+/**
+ * The store may never answer, not even with an error (artifact-capabilities
+ * 0.2.96, db.d.ts: "time-limit loading"), so the first read is given this
+ * long before the page says it is not answering, and is still waited for.
+ */
+const LOAD_LIMIT_MS = 10_000;
+/** After an `unavailable` write, the next change waits this long, doubling to the most below. */
+const BACKOFF_FIRST_MS = 2000;
+const BACKOFF_MOST_MS = 60_000;
+
+const SAVE_WORDS = {
+  waiting: "Checking whether render times can be saved with the page…",
+  slow: "Render times can't be saved yet: the page's store isn't answering. They stay on this screen meanwhile.",
+  saved: "Render times on this device are saved with the page.",
+  none: "Render times stay on this screen: this view does not save them.",
+  retrying: "Render times couldn't be saved just now; the next one tries again.",
+  full: "The page's store is full, so render times are no longer saved.",
+  failed: "Render times could not be saved from this view.",
+} as const;
 
 function errorCode(error: unknown): string {
   if (typeof error === "object" && error !== null && "code" in error && typeof error.code === "string") return error.code;
@@ -590,7 +652,9 @@ function deviceKey(screenSize: string): string {
 /**
  * This device's render times, kept in one document at `timings/<device>`:
  * read once when the store arrives, then written once per pause, one write
- * at a time, never from the render itself.
+ * at a time, never from the render itself. An `unavailable` write is
+ * transient: the next change tries again after a growing pause. A full store
+ * or any other refusal stops saving for the visit.
  */
 class DeviceTimings {
   private readonly screenSize = `${String(Math.min(screen.width, screen.height))}x${String(Math.max(screen.width, screen.height))}`;
@@ -600,7 +664,8 @@ class DeviceTimings {
   private dirty = false;
   private writing = false;
   private timer: number | null = null;
-  private retried = false;
+  private backoffMs = 0;
+  private notBefore = 0;
 
   recordSetDown(slug: string, ms: number): void {
     this.setDown[slug] = kept(this.setDown[slug] ?? [], ms);
@@ -614,23 +679,35 @@ class DeviceTimings {
 
   async connect(): Promise<void> {
     const runtime = window.claude;
-    const db = runtime === undefined ? null : await runtime.use("db").catch(() => null);
-    if (db === null) {
-      ui.saveStatus.textContent = "Render times stay on this screen: this view does not save them.";
+    if (runtime === undefined) {
+      ui.saveStatus.textContent = SAVE_WORDS.none;
       return;
     }
-    const doc = db.doc(`timings/${deviceKey(this.screenSize)}`);
+    ui.saveStatus.textContent = SAVE_WORDS.waiting;
+    const limit = window.setTimeout(() => {
+      ui.saveStatus.textContent = SAVE_WORDS.slow;
+    }, LOAD_LIMIT_MS);
     try {
-      const snapshot = await doc.get();
-      const saved = snapshot.exists ? snapshot.data() : undefined;
-      if (saved !== undefined) this.merge(saved);
-    } catch (error) {
-      this.failed(errorCode(error));
-      return;
+      const db = await runtime.use("db").catch(() => null);
+      if (db === null) {
+        ui.saveStatus.textContent = SAVE_WORDS.none;
+        return;
+      }
+      const doc = db.doc(`timings/${deviceKey(this.screenSize)}`);
+      try {
+        const snapshot = await doc.get();
+        const saved = snapshot.exists ? snapshot.data() : undefined;
+        if (saved !== undefined) this.merge(saved);
+      } catch (error) {
+        this.failed(errorCode(error));
+        return;
+      }
+      this.document = doc;
+      ui.saveStatus.textContent = SAVE_WORDS.saved;
+      if (this.dirty) this.schedule();
+    } finally {
+      window.clearTimeout(limit);
     }
-    this.document = doc;
-    ui.saveStatus.textContent = "Render times on this device are saved with the page.";
-    if (this.dirty) this.schedule();
   }
 
   private merge(saved: Record<string, unknown>): void {
@@ -648,13 +725,15 @@ class DeviceTimings {
     this.schedule();
   }
 
+  /** One write after the pause, or after the backoff if an `unavailable` set one. */
   private schedule(): void {
     if (this.document === null) return;
     if (this.timer !== null) window.clearTimeout(this.timer);
+    const wait = Math.max(WRITE_PAUSE_MS, this.notBefore - Date.now());
     this.timer = window.setTimeout(() => {
       this.timer = null;
       void this.write();
-    }, WRITE_PAUSE_MS);
+    }, wait);
   }
 
   private async write(): Promise<void> {
@@ -675,13 +754,17 @@ class DeviceTimings {
         setDown: this.setDown,
         tail: this.tail,
       });
-      this.retried = false;
+      if (this.backoffMs > 0) ui.saveStatus.textContent = SAVE_WORDS.saved;
+      this.backoffMs = 0;
+      this.notBefore = 0;
     } catch (error) {
       const code = errorCode(error);
-      if (code === "unavailable" && !this.retried) {
-        this.retried = true;
+      if (code === "unavailable") {
+        // Transient: keep what is unsaved, and let the next real change try again after a growing pause.
         this.dirty = true;
-        window.setTimeout(() => { void this.write(); }, 1000 + Math.random() * 1000);
+        this.backoffMs = this.backoffMs === 0 ? BACKOFF_FIRST_MS : Math.min(BACKOFF_MOST_MS, this.backoffMs * 2);
+        this.notBefore = Date.now() + this.backoffMs;
+        ui.saveStatus.textContent = SAVE_WORDS.retrying;
       } else {
         this.failed(code);
       }
@@ -692,8 +775,7 @@ class DeviceTimings {
 
   private failed(code: string): void {
     this.document = null;
-    ui.saveStatus.textContent =
-      code === "quota_exceeded" ? "The page's store is full, so render times are no longer saved." : "Render times could not be saved from this view.";
+    ui.saveStatus.textContent = code === "quota_exceeded" ? SAVE_WORDS.full : SAVE_WORDS.failed;
   }
 }
 
@@ -730,7 +812,10 @@ const ui = {
   limitRow: element("limit-row", HTMLDivElement),
   limitDb: element("limit-db", HTMLElement),
   tailMs: element("tail-ms", HTMLElement),
+  waitRow: element("wait-row", HTMLDivElement),
+  waitMs: element("wait-ms", HTMLElement),
   saveStatus: element("save-status", HTMLParagraphElement),
+  audioStatus: element("audio-status", HTMLParagraphElement),
 };
 
 const timings = new DeviceTimings();
@@ -779,7 +864,8 @@ function drawRooms(): void {
         if (state.room === room) return;
         state.room = room;
         drawAll();
-        requestTail();
+        // A new room's tail is made at once; only the dressing slider is gathered first.
+        finishTail();
       }),
     ),
   );
@@ -868,7 +954,7 @@ function drawEcho(): void {
     ticks.push(tick);
   }
   ui.rtAxis.replaceChildren(...ticks);
-  ui.tailLevel.textContent = `The echo's level is ${signed(gainToDb(room.reverberantGain), 1)} dB against the empty Grand Hall's. The faint mark on each band is this room empty.`;
+  ui.tailLevel.textContent = `The echo's level is ${signed(gainToDb(room.reverberantGain), 1)} dB against the empty Grand Hall's. The mark on each band is this room empty.`;
 }
 
 function dressedRt(): number {
@@ -884,6 +970,15 @@ function showRender(render: SetDownRender, ms: number, count: number, totalMs?: 
   ui.peakDb.textContent = `${signed(render.peakDb, 1)} dBFS`;
   ui.limitRow.hidden = render.limitDb === 0;
   ui.limitDb.textContent = `${render.limitDb.toFixed(1)} dB`;
+}
+
+/** What the press waited for before it could play: a tail still being made, and the limiter's warm-up (R63). */
+function showWait(limiterSeconds: number): void {
+  const parts: string[] = [];
+  if (tailWaitMs >= 0.5) parts.push(`${tailWaitMs.toFixed(0)} ms for the tail`);
+  if (limiterSeconds > 0.0005) parts.push(`${(limiterSeconds * 1000).toFixed(0)} ms for the limiter to settle`);
+  ui.waitRow.hidden = parts.length === 0;
+  ui.waitMs.textContent = parts.join(", ");
 }
 
 function drawAll(): void {
@@ -933,8 +1028,12 @@ function wire(): void {
   onPress(ui.move, () => { playPiece("settle"); });
   onPress(ui.layOut, playCascade);
   // Any first gesture makes the context; each later one resumes it if the browser suspended it.
+  // A gesture begins with a pointerdown or a keydown, which starts its count of time spent finishing a tail.
   for (const type of ["pointerdown", "keydown", "touchend", "click"] as const) {
-    document.addEventListener(type, () => { arm(); }, { capture: true });
+    document.addEventListener(type, () => {
+      if (type === "pointerdown" || type === "keydown") tailWaitMs = 0;
+      arm();
+    }, { capture: true });
   }
 }
 
