@@ -43,6 +43,13 @@ interface PlannerHudState {
   readonly sheet: HudSheet | null;
   /** The plan went to the events team from this screen. */
   readonly sent: boolean;
+  /**
+   * The first screen ("What are you planning?") has been answered or put
+   * aside. Kept for the page, not the layout: once someone has said "an empty
+   * hall", a new layout does not ask again until the page is opened afresh.
+   */
+  readonly firstOpenDone: boolean;
+  readonly finishFirstOpen: () => void;
   readonly openSheet: (sheet: HudSheet) => void;
   /** The same sheet again closes it; another replaces it. */
   readonly toggleSheet: (sheet: HudSheet) => void;
@@ -55,6 +62,8 @@ interface PlannerHudState {
 export const usePlannerHudStore = create<PlannerHudState>()((set, get) => ({
   sheet: null,
   sent: false,
+  firstOpenDone: false,
+  finishFirstOpen: () => { if (!get().firstOpenDone) set({ firstOpenDone: true }); },
   openSheet: (sheet) => { set({ sheet }); },
   toggleSheet: (sheet) => { set({ sheet: get().sheet === sheet ? null : sheet }); },
   closeSheet: () => { if (get().sheet !== null) set({ sheet: null }); },

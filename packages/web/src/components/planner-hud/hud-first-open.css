@@ -1,0 +1,268 @@
+/* ---------------------------------------------------------------------------
+ * THE FIRST SCREEN (FirstOpen.tsx): "What are you planning?", centred over
+ * the room, with three large upright answers and one quiet way past them.
+ *
+ * Values come only from the --hud-* properties a skin sets (hud-skins.css).
+ * The question is lettered on the room itself, as the journey's next move is,
+ * and the answers are cards of the hand's own make, larger: the screen is the
+ * planner already, not a page in front of it. Nothing blurs the room.
+ *
+ * Entry: the question and then each answer fade in and rise 8 px, 40 ms
+ * apart, by @starting-style and transitions alone; under reduced motion they
+ * are simply there.
+ * ------------------------------------------------------------------------- */
+
+/* While it shows, the hand, the seals and the piece card stand aside; the plaque, the journey and the view stay. */
+.hud-root[data-first-open="true"] .hud-station--hand,
+.hud-root[data-first-open="true"] .hud-station--seals,
+.hud-root[data-first-open="true"] .hud-station--piece {
+  visibility: hidden;
+  opacity: 0;
+}
+
+.hud-first-open {
+  --hud-first-open-card-w: clamp(208px, 17vw, 272px);
+  --hud-first-open-delay: 0ms;
+  position: absolute;
+  inset: 0;
+  z-index: 25;
+  display: grid;
+  place-items: center;
+  padding: 132px var(--hud-gutter) var(--hud-gutter);
+  overflow: auto;
+  pointer-events: none;
+}
+
+.hud-first-open__stage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 28px;
+  pointer-events: auto;
+}
+
+.hud-first-open__title {
+  margin: 0;
+  color: var(--hud-on-room);
+  font-family: var(--hud-font-display);
+  font-size: clamp(32px, 3.4vw, 48px);
+  font-weight: 400;
+  line-height: 1.1;
+  text-align: center;
+  text-wrap: balance;
+  text-shadow: 0 2px 18px rgb(0 0 0 / 0.85), 0 0 3px rgb(0 0 0 / 0.6);
+}
+
+.hud-first-open__answers {
+  display: flex;
+  justify-content: center;
+  gap: 20px;
+}
+
+.hud-first-open__answer {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 14px;
+  width: var(--hud-first-open-card-w);
+  padding: 10px 10px 20px;
+  border: 1px solid var(--hud-edge);
+  border-radius: var(--hud-radius-card);
+  background: linear-gradient(var(--hud-ground-top), var(--hud-ground-bottom));
+  box-shadow: inset 0 1px 0 var(--hud-edge-lit), var(--hud-shadow);
+  text-align: center;
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+}
+
+.hud-first-open__answer:active {
+  scale: 0.97;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .hud-first-open__answer:hover {
+    border-color: var(--hud-accent-bright);
+    box-shadow: inset 0 1px 0 var(--hud-edge-lit), 0 0 0 1px var(--hud-accent), 0 0 34px -8px var(--hud-lit), var(--hud-shadow);
+  }
+}
+
+.hud-first-open__art {
+  display: block;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border-radius: calc(var(--hud-radius-card) - 2px);
+  background: var(--hud-mat);
+  box-shadow: inset 0 0 0 1px var(--hud-mat-edge);
+}
+
+.hud-first-open__art img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  scale: 1.18;
+  mix-blend-mode: multiply;
+  pointer-events: none;
+}
+
+.hud-first-open__words {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 6px;
+}
+
+.hud-first-open__name {
+  color: var(--hud-ink);
+  font-family: var(--hud-font-display);
+  font-size: 26px;
+  font-weight: 500;
+  font-variant-caps: var(--hud-caps);
+  letter-spacing: var(--hud-caps-spacing);
+  line-height: 1.1;
+}
+
+.hud-first-open__line {
+  color: var(--hud-ink-quiet);
+  font-size: 15px;
+  line-height: 1.35;
+  text-wrap: balance;
+}
+
+/* The quiet way past: plain words, still a key of full height. */
+.hud-first-open__aside {
+  min-height: 44px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: var(--hud-radius-key);
+  background: none;
+  color: var(--hud-on-room);
+  font-size: 16px;
+  text-decoration: underline;
+  text-decoration-color: var(--hud-on-room-accent);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 5px;
+  text-shadow: 0 1px 12px rgb(0 0 0 / 0.9), 0 0 2px rgb(0 0 0 / 0.7);
+  cursor: pointer;
+}
+
+.hud-first-open__aside:active {
+  scale: 0.97;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .hud-first-open__aside:hover {
+    color: var(--hud-on-room-accent);
+  }
+}
+
+/* -- Motion ---------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: no-preference) {
+  .hud-root .hud-station--hand,
+  .hud-root .hud-station--seals,
+  .hud-root .hud-station--piece {
+    transition: opacity 180ms var(--hud-ease), visibility 0s;
+  }
+
+  .hud-root[data-first-open="true"] .hud-station--hand,
+  .hud-root[data-first-open="true"] .hud-station--seals,
+  .hud-root[data-first-open="true"] .hud-station--piece {
+    transition: opacity 120ms var(--hud-ease), visibility 0s linear 120ms;
+  }
+
+  .hud-first-open__title,
+  .hud-first-open__answer,
+  .hud-first-open__aside {
+    /* The delay is the entry's alone: a press and a change of light answer at once. */
+    transition:
+      opacity 260ms var(--hud-ease) var(--hud-first-open-delay),
+      translate 260ms var(--hud-ease) var(--hud-first-open-delay),
+      scale var(--hud-press) var(--hud-ease),
+      color var(--hud-press) var(--hud-ease),
+      border-color var(--hud-press) var(--hud-ease),
+      box-shadow 160ms var(--hud-ease);
+  }
+
+  .hud-first-open__answer:nth-child(1) { --hud-first-open-delay: 40ms; }
+  .hud-first-open__answer:nth-child(2) { --hud-first-open-delay: 80ms; }
+  .hud-first-open__answer:nth-child(3) { --hud-first-open-delay: 120ms; }
+  .hud-first-open__aside { --hud-first-open-delay: 160ms; }
+
+  @starting-style {
+    .hud-first-open__title,
+    .hud-first-open__answer,
+    .hud-first-open__aside {
+      opacity: 0;
+      translate: 0 8px;
+    }
+  }
+}
+
+/* -- Laptops --------------------------------------------------------------- */
+
+@media (max-width: 1366px), (max-height: 800px) {
+  .hud-first-open {
+    --hud-first-open-card-w: clamp(184px, 15.5vw, 232px);
+    padding-top: 120px;
+  }
+
+  .hud-first-open__stage {
+    gap: 22px;
+  }
+
+  .hud-first-open__name {
+    font-size: 24px;
+  }
+}
+
+/* -- Phones: the answers stack, each picture at its left ------------------- */
+
+@media (max-width: 767px) {
+  .hud-first-open {
+    place-items: start stretch;
+    padding: calc(160px + env(safe-area-inset-top, 0px)) var(--hud-gutter) calc(var(--hud-gutter) + env(safe-area-inset-bottom, 0px));
+  }
+
+  .hud-first-open__stage {
+    align-items: stretch;
+    gap: 16px;
+  }
+
+  .hud-first-open__title {
+    font-size: 28px;
+  }
+
+  .hud-first-open__answers {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .hud-first-open__answer {
+    display: grid;
+    grid-template-columns: 84px minmax(0, 1fr);
+    align-items: center;
+    gap: 14px;
+    width: 100%;
+    min-height: 96px;
+    padding: 6px 14px 6px 6px;
+    text-align: left;
+  }
+
+  .hud-first-open__art {
+    width: 84px;
+  }
+
+  .hud-first-open__words {
+    padding: 0;
+  }
+
+  .hud-first-open__name {
+    font-size: 22px;
+  }
+
+  .hud-first-open__aside {
+    align-self: center;
+  }
+}

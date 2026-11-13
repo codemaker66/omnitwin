@@ -588,8 +588,9 @@ export function useRoomTone(): RoomTone {
 // (the horizon, Send, Present, an act); Full adds the small sounds of the hand.
 // The speaker in the chrome's utilities chooses Off, Quiet or Full and a level,
 // kept on this device; Shift M mutes and unmutes, the master falling away over
-// 30 ms. Off until chosen, as every sound here is: Blake's decision D1 may make
-// Quiet the default, and it is PLANNER_SOUND_DEFAULT_MODE alone.
+// 30 ms. Off until chosen, as every sound here is, except on the planner HUD,
+// where Blake's decision D1 makes Quiet the page's default until someone
+// chooses (setPlannerSoundPageDefault); PLANNER_SOUND_DEFAULT_MODE is the rest.
 //
 // Each sound is rendered from its recipe by lib/planner-sound-render.ts and
 // played as exactly those samples (the bus's 6 kHz low-pass is in the render):
@@ -606,7 +607,11 @@ export function useRoomTone(): RoomTone {
 
 export type PlannerSoundMode = "off" | "quiet" | "full";
 
-/** Decision D1 is Blake's. Until he answers, the planner is silent until someone chooses. */
+/**
+ * Off until someone chooses, everywhere but the planner HUD: Blake answered
+ * D1 with Quiet by default for the new screen, which sets it for its page with
+ * setPlannerSoundPageDefault and keeps nothing until someone chooses.
+ */
 export const PLANNER_SOUND_DEFAULT_MODE: PlannerSoundMode = "off";
 export const PLANNER_SOUND_DEFAULT_LEVEL = 0.6;
 
@@ -669,6 +674,10 @@ function readPlannerSoundSettings(): PlannerSoundSettings {
 let plannerSettings: PlannerSoundSettings | null = null;
 /** The last audible choice, so Shift M brings back what was muted. */
 let plannerLastAudible: Exclude<PlannerSoundMode, "off"> = "quiet";
+/** The mode in use is a screen's default for this page, not a choice kept on this device. */
+let plannerModeIsPageDefault = false;
+/** Someone chose a mode on this page (kept or not: a blocked store keeps nothing). */
+let plannerModeChosen = false;
 const plannerListeners = new Set<() => void>();
 
 export function getPlannerSoundSettings(): PlannerSoundSettings {
@@ -684,7 +693,8 @@ export function subscribePlannerSound(listener: () => void): () => void {
 function keepPlannerSoundSettings(next: PlannerSoundSettings): void {
   plannerSettings = next;
   try {
-    deviceStorage()?.setItem(PLANNER_SOUND_STORAGE_KEY, next.mode);
+    // A page's default is not a choice: a level set under it keeps the level only.
+    if (!plannerModeIsPageDefault) deviceStorage()?.setItem(PLANNER_SOUND_STORAGE_KEY, next.mode);
     deviceStorage()?.setItem(PLANNER_SOUND_LEVEL_KEY, String(next.level));
   } catch {
     // Kept for this page only.
@@ -876,10 +886,45 @@ function fadeMasterTo(target: number): void {
 
 export function setPlannerSoundMode(mode: PlannerSoundMode): void {
   const current = getPlannerSoundSettings();
-  if (current.mode === mode) return;
+  // Choosing the mode a page's default already set still keeps it, as a choice.
+  const wasPageDefault = plannerModeIsPageDefault;
+  plannerModeIsPageDefault = false;
+  plannerModeChosen = true;
+  if (current.mode === mode && !wasPageDefault) return;
   if (mode !== "off") plannerLastAudible = mode;
   keepPlannerSoundSettings({ ...current, mode });
+  if (current.mode !== mode) fadeMasterTo(mode === "off" ? 0 : current.level);
+}
+
+/** A mode this device has kept from someone's choice, or null. */
+function keptPlannerSoundMode(): PlannerSoundMode | null {
+  try {
+    const kept = deviceStorage()?.getItem(PLANNER_SOUND_STORAGE_KEY) ?? null;
+    return isPlannerSoundMode(kept) ? kept : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * A screen's own default for this page, used only where nobody has chosen: on
+ * a device that keeps no choice and before anyone chooses here. Nothing is
+ * written, so a device that never chose follows the default if it changes,
+ * and a choice, once made, always wins. The planner HUD sets Quiet this way
+ * (Blake, decision D1: Quiet by default, its setting only in a menu), while
+ * PLANNER_SOUND_DEFAULT_MODE stays the default everywhere else. Returns
+ * whether the default was taken.
+ */
+export function setPlannerSoundPageDefault(mode: PlannerSoundMode): boolean {
+  if (plannerModeChosen || keptPlannerSoundMode() !== null) return false;
+  const current = getPlannerSoundSettings();
+  plannerModeIsPageDefault = true;
+  if (current.mode === mode) return true;
+  if (mode !== "off") plannerLastAudible = mode;
+  plannerSettings = { ...current, mode };
+  for (const listener of [...plannerListeners]) listener();
   fadeMasterTo(mode === "off" ? 0 : current.level);
+  return true;
 }
 
 export function setPlannerSoundLevel(level: number): void {
@@ -983,5 +1028,7 @@ export function __resetPlannerSoundForTests(): void {
   plannerPolicy = new PlannerSoundPolicy();
   plannerSettings = null;
   plannerLastAudible = "quiet";
+  plannerModeIsPageDefault = false;
+  plannerModeChosen = false;
   plannerBufferCache.clear();
 }

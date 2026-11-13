@@ -1,11 +1,14 @@
 import { useEffect, useState, type ReactElement, type ReactNode } from "react";
 import { setPlannerChromeFeatures, type PlannerFeatureOverrides } from "../../lib/planner-features.js";
-import { hudSkinRequested } from "../../stores/planner-hud-store.js";
+import { hudSkinRequested, type HudSkin } from "../../stores/planner-hud-store.js";
+import { FirstOpen, useFirstOpenShowing } from "./FirstOpen.js";
 import { Hand } from "./Hand.js";
 import { HudFactsProvider } from "./hud-facts.js";
+import { HudNotices } from "./HudNotices.js";
 import { Journey } from "./Journey.js";
 import { PieceCard } from "./PieceCard.js";
 import { Seals } from "./Seals.js";
+import { useHudSound } from "./use-hud-sound.js";
 import { ViewStation } from "./ViewStation.js";
 import "./hud.css";
 import "./hud-skins.css";
@@ -54,22 +57,36 @@ export function HudFrame({ room, plaque, eventGuests, notices, sheets }: HudFram
     setPlannerChromeFeatures(HUD_FEATURES);
     return () => { setPlannerChromeFeatures({}); };
   }, []);
+  useHudSound();
 
+  // The facts sit outside the root: whether the first screen shows is one of them, and the root says so.
   return (
-    <div className="hud-root" data-hud-skin={skin} data-testid="planner-hud">
+    <HudFactsProvider eventGuests={eventGuests}>
+      <HudRoot skin={skin} room={room} plaque={plaque} notices={notices} sheets={sheets} />
+    </HudFactsProvider>
+  );
+}
+
+interface HudRootProps extends Omit<HudFrameProps, "eventGuests"> {
+  readonly skin: HudSkin;
+}
+
+function HudRoot({ skin, room, plaque, notices, sheets }: HudRootProps): ReactElement {
+  const firstOpen = useFirstOpenShowing();
+  return (
+    <div className="hud-root" data-hud-skin={skin} data-first-open={firstOpen ? "true" : undefined} data-testid="planner-hud">
       <main id="main-content" className="hud-room" aria-label="The room">{room}</main>
-      <HudFactsProvider eventGuests={eventGuests}>
-        <div className="hud-stations">
-          <div className="hud-station hud-station--plaque">{plaque}</div>
-          <div className="hud-station hud-station--journey"><Journey /></div>
-          <div className="hud-station hud-station--view"><ViewStation /></div>
-          <div className="hud-station hud-station--seals"><Seals /></div>
-          <div className="hud-station hud-station--piece"><PieceCard /></div>
-          <div className="hud-station hud-station--notices">{notices}</div>
-          <div className="hud-station hud-station--hand"><Hand /></div>
-        </div>
-        {sheets}
-      </HudFactsProvider>
+      <div className="hud-stations">
+        <div className="hud-station hud-station--plaque">{plaque}</div>
+        <div className="hud-station hud-station--journey"><Journey /></div>
+        <div className="hud-station hud-station--view"><ViewStation /></div>
+        <div className="hud-station hud-station--seals"><Seals /></div>
+        <div className="hud-station hud-station--piece"><PieceCard /></div>
+        <div className="hud-station hud-station--notices"><HudNotices />{notices}</div>
+        <div className="hud-station hud-station--hand"><Hand /></div>
+      </div>
+      {firstOpen ? <FirstOpen /> : null}
+      {sheets}
     </div>
   );
 }
