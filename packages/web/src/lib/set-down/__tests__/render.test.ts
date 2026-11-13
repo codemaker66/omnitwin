@@ -352,14 +352,23 @@ describe("what each piece is made of", () => {
   /** The energy in 1-3.2 kHz over 35-70 ms, where the legs rattle. */
   const rattleBand = (render: SetDownRender): number => bandEnergy(render.left.subarray(Math.round(0.035 * SR), Math.round(0.07 * SR)), SR, 1000, 3200);
 
+  /** How far the rattle lifts 1-3.2 kHz over 35-70 ms, in dB, against the same set-down without it. */
+  const rattleRise = (slug: string, seed: number): number => {
+    const input = inputFor(slug, "oak-boards-joists", { seed });
+    expect(input.body.legRattle).toBe(true);
+    const rattling = renderSetDown(input);
+    const still = renderSetDown({ ...input, body: { ...input.body, legRattle: false } });
+    return 10 * Math.log10(rattleBand(rattling) / rattleBand(still));
+  };
+
   it.each(["mic-stand", "round-table-6ft-white", "trestle-6ft"])("rattles %s's folding legs at least 6 dB over the same set-down without them, seeds 1-8 (ruling R44)", (slug) => {
-    for (let seed = 1; seed <= 8; seed += 1) {
-      const input = inputFor(slug, "oak-boards-joists", { seed });
-      expect(input.body.legRattle).toBe(true);
-      const rattling = renderSetDown(input);
-      const still = renderSetDown({ ...input, body: { ...input.body, legRattle: false } });
-      expect(10 * Math.log10(rattleBand(rattling) / rattleBand(still)), `seed ${String(seed)}`).toBeGreaterThanOrEqual(6);
-    }
+    for (let seed = 1; seed <= 8; seed += 1) expect(rattleRise(slug, seed), `seed ${String(seed)}`).toBeGreaterThanOrEqual(6);
+  });
+
+  it("rattles the projector screen's legs by a median of 6 dB and every seed by 3 dB, seeds 1-8 (ruling R69)", () => {
+    const rises = [1, 2, 3, 4, 5, 6, 7, 8].map((seed) => rattleRise("projector-screen", seed));
+    for (const [i, rise] of rises.entries()) expect(rise, `seed ${String(i + 1)}`).toBeGreaterThanOrEqual(3);
+    expect(median(rises)).toBeGreaterThanOrEqual(6);
   });
 
   it("rings a steel mic stand at 1 kHz for 0.2 s and more, seeds 1-8 (ruling R44)", () => {
