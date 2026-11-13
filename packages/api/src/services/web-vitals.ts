@@ -215,6 +215,10 @@ export interface WebVitalsBatchOptions {
   /** Rows per insert statement (tests make a batch span several). */
   readonly rowsPerInsert?: number;
   readonly writeTimeoutMs?: number;
+  /** The clock a close's one bound is measured on, in milliseconds:
+   *  `performance.now` by default, which a change of the wall clock cannot
+   *  stretch or cut (tests move it to reach the bound's last tenth). */
+  readonly monotonicNow?: () => number;
 }
 
 /** Fisher-Yates, in place: every order equally likely, given a fair draw. */
@@ -267,6 +271,7 @@ export function createWebVitalsBatch(db: Database, options: WebVitalsBatchOption
   const randomInt = options.randomInt ?? ((bound: number) => cryptoRandomInt(bound));
   const rowsPerInsert = options.rowsPerInsert ?? BATCH_INSERT_ROWS;
   const writeTimeoutMs = options.writeTimeoutMs ?? WEB_VITALS_BATCH_WRITE_TIMEOUT_MS;
+  const monotonicNow = options.monotonicNow ?? ((): number => performance.now());
   const held = new Map<string, HeldGroup>();
   /** The write under way, until its transaction settles, either way. */
   let inFlight: Promise<void> | null = null;
@@ -341,9 +346,9 @@ export function createWebVitalsBatch(db: Database, options: WebVitalsBatchOption
     },
     flush: async (flushOptions = {}) => {
       const closing = flushOptions.closing === true;
-      const started = Date.now();
+      const started = monotonicNow();
       // A closing flush has one bound for its waiting and its write together.
-      const left = (): number => (closing ? writeTimeoutMs - (Date.now() - started) : writeTimeoutMs);
+      const left = (): number => (closing ? writeTimeoutMs - (monotonicNow() - started) : writeTimeoutMs);
       // One write at a time, and a flush waits for the one under way only
       // within its bound: a write stuck on a stalled connection may never
       // settle, and must hold neither the server's close nor the day's
@@ -355,8 +360,9 @@ export function createWebVitalsBatch(db: Database, options: WebVitalsBatchOption
           held.clear();
           throw new Error(`A web vitals batch was still being written ${String(writeTimeoutMs)} ms into closing: what is held is dropped`);
         }
-        // An earlier day's groups can no longer grow and still go, so what is
-        // held stays within one day's ceiling for as long as the write is stuck.
+        // An earlier day's groups can no longer grow and still go, so for as
+        // long as the write is stuck what is held stays within one day's
+        // ceiling, beside the stuck write's own batch.
         const day = Math.floor(now() / DAY_MS);
         for (const [key, group] of held) {
           if (group.day < day) {
