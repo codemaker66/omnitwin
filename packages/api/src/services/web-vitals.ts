@@ -1,5 +1,5 @@
-import { createHmac, randomBytes } from "node:crypto";
-import { sql } from "drizzle-orm";
+import { createHmac, randomBytes, randomInt as cryptoRandomInt } from "node:crypto";
+import { sql, type SQL } from "drizzle-orm";
 import {
   WEB_VITAL_P75_TARGETS,
   WEB_VITAL_RETENTION_DAYS,
@@ -28,7 +28,7 @@ export function webVitalsCollectionEnabled(env: NodeJS.ProcessEnv = process.env)
 }
 
 /**
- * The most reports the server keeps in a day (UTC), from every source
+ * The most reports one server process keeps in a day (UTC), from every source
  * together. Anyone can post a report, and the per-address limit alone would
  * let a handful of addresses fill the table for the 90 days it is kept. Set
  * well above what sampling one venue's pages should need; when it is reached
@@ -36,26 +36,47 @@ export function webVitalsCollectionEnabled(env: NodeJS.ProcessEnv = process.env)
  */
 export const WEB_VITALS_DAILY_REPORT_CEILING = 5_000;
 
+/** A place under the day's ceiling: the UTC day it was taken on. */
+export type CeilingPlace = number;
+
 export interface DailyCeiling {
-  /** Counts one more report today; false once the day's ceiling is reached. */
-  readonly admit: () => boolean;
+  /** Takes one of today's places for a report: the place, or null once they
+   *  are all taken. */
+  readonly admit: () => CeilingPlace | null;
+  /** Gives back the place of a report that was not kept (its insert failed).
+   *  A place taken on an earlier day went with that day's count. */
+  readonly release: (place: CeilingPlace) => void;
 }
 
-/** One server's count of the day's reports; it starts again at midnight UTC
- *  (and on a restart, which only ever lets fewer through in a day than two). */
+/**
+ * This process's count of the day's reports, from midnight UTC. Each process
+ * counts for itself and from nothing: a restart (every deploy) starts the
+ * day's count again, and each replica keeps its own, so a day can keep up to
+ * the ceiling once for every process that ran that day. A report holds its
+ * place only if it is kept: a failed insert gives it back.
+ */
 export function createDailyCeiling(limit: number, now: () => number = Date.now): DailyCeiling {
   let day = Number.NaN;
   let count = 0;
+  const rollOver = (): void => {
+    const today = Math.floor(now() / 86_400_000);
+    if (today !== day) {
+      day = today;
+      count = 0;
+    }
+  };
   return {
     admit: () => {
-      const today = Math.floor(now() / 86_400_000);
-      if (today !== day) {
-        day = today;
-        count = 0;
-      }
-      if (count >= limit) return false;
+      rollOver();
+      if (count >= limit) return null;
       count += 1;
-      return true;
+      return day;
+    },
+    release: (place) => {
+      rollOver();
+      // Yesterday's place went with yesterday's count: giving it back after
+      // midnight must free none of today's.
+      if (place === day && count > 0) count -= 1;
     },
   };
 }
@@ -87,18 +108,187 @@ export function createAddressKey(secret: () => Buffer = () => randomBytes(32)): 
   };
 }
 
-/** One row per vital of a report. Returns how many were kept. */
-export async function recordWebVitals(db: Database, report: WebVitalsReport): Promise<number> {
-  const rows = await db.insert(webVitalSamples)
-    .values(report.metrics.map((metric) => ({
+/**
+ * The fewest reports of one group a batch is written with (Blake, 13 November
+ * 2026: shuffled hourly batches). A group is everything a stored row and the
+ * host's request log can both tell apart: the page (a share page's own API
+ * call, logged with its token just before the report, names it), the device
+ * class (a user agent says roughly which), the UTC day it arrived (a row keeps
+ * it), and which vitals it carries (a browser engine's own: CLS comes only
+ * from Chromium, so a lone Android phone among iPhones would hold the batch's
+ * only CLS row). With at least this many in every group written, a row can be
+ * narrowed only to that many reports, never to one. Reports, not people: one
+ * visitor's repeated loads, or reports posted on purpose to fill a group,
+ * count as many.
+ */
+export const WEB_VITALS_BATCH_MIN_REPORTS = 10;
+
+/** How often the route writes the held reports (and once more as it closes). */
+export const WEB_VITALS_BATCH_EVERY_MS = 60 * 60_000;
+
+/** The longest one batch's write may take before it counts as failed, well
+ *  inside the API's 25-second shutdown grace: a stalled database must not
+ *  hold back every later write, or the server's close, for good. */
+export const WEB_VITALS_BATCH_WRITE_TIMEOUT_MS = 15_000;
+
+/** Rows per insert statement: PostgreSQL takes at most 65,535 bind
+ *  parameters, and a row has six. */
+const BATCH_INSERT_ROWS = 5_000;
+
+const DAY_MS = 86_400_000;
+
+interface HeldReport {
+  readonly report: WebVitalsReport;
+  /** Its place under the day's ceiling, which is the UTC day it arrived. */
+  readonly place: CeilingPlace;
+}
+
+interface HeldGroup {
+  /** The UTC day its reports arrived (a day number). */
+  readonly day: CeilingPlace;
+  readonly reports: HeldReport[];
+}
+
+/** One page, one device class, one arrival day and one set of vitals
+ *  (WEB_VITALS_BATCH_MIN_REPORTS). */
+function groupOf(report: WebVitalsReport, place: CeilingPlace): string {
+  const vitals = report.metrics.map((metric) => metric.name).sort().join("+");
+  return `${report.page}|${report.device}|${String(place)}|${vitals}`;
+}
+
+export interface WebVitalsBatch {
+  /** Holds a report, without anything about who sent it, until its batch is
+   *  written. False once the day's ceiling is reached: nothing is held. */
+  readonly hold: (report: WebVitalsReport) => boolean;
+  /**
+   * Writes every group that holds at least the minimum, all its rows in
+   * random order and all in one transaction, so neither row order nor the
+   * inserting transaction's id (xmin) follows arrival. A group of today with
+   * fewer waits for a later write; one of an earlier day can no longer grow
+   * and is dropped, as is every group short of the minimum when closing.
+   * Resolves to how many reports were written; rejects when the write fails,
+   * after dropping that batch and giving back its places.
+   */
+  readonly flush: (options?: { readonly closing?: boolean }) => Promise<number>;
+  /** How many reports are held now. */
+  readonly held: () => number;
+}
+
+export interface WebVitalsBatchOptions {
+  readonly minReports?: number;
+  /** The clock for the day; the default ceiling counts on it too. */
+  readonly now?: () => number;
+  readonly ceiling?: DailyCeiling;
+  /** A whole number from 0 up to, not including, `bound`; crypto's by default. */
+  readonly randomInt?: (bound: number) => number;
+  /** Rows per insert statement (tests make a batch span several). */
+  readonly rowsPerInsert?: number;
+  readonly writeTimeoutMs?: number;
+}
+
+/** Fisher-Yates, in place: every order equally likely, given a fair draw. */
+export function shuffleInPlace(items: unknown[], randomInt: (bound: number) => number): void {
+  for (let index = items.length - 1; index > 0; index -= 1) {
+    const other = randomInt(index + 1);
+    const item = items[index];
+    const swapped = items[other];
+    if (item === undefined || swapped === undefined) continue;
+    items[index] = swapped;
+    items[other] = item;
+  }
+}
+
+/**
+ * The field web vitals' one writer. Reports wait in memory (never with the
+ * address, which the route does not hand over) and are written in shuffled
+ * batches, so a stored row cannot be paired with the request that brought it
+ * by its position, its transaction or its time: it keeps only the UTC day it
+ * arrived. A group short of the minimum waits, for the rest of its day if it
+ * must, and a restart (every deploy) drops what is held, so a page opened only
+ * a few times a day may never be written.
+ */
+export function createWebVitalsBatch(db: Database, options: WebVitalsBatchOptions = {}): WebVitalsBatch {
+  const minReports = options.minReports ?? WEB_VITALS_BATCH_MIN_REPORTS;
+  const now = options.now ?? Date.now;
+  const ceiling = options.ceiling ?? createDailyCeiling(WEB_VITALS_DAILY_REPORT_CEILING, now);
+  const randomInt = options.randomInt ?? ((bound: number) => cryptoRandomInt(bound));
+  const rowsPerInsert = options.rowsPerInsert ?? BATCH_INSERT_ROWS;
+  const writeTimeoutMs = options.writeTimeoutMs ?? WEB_VITALS_BATCH_WRITE_TIMEOUT_MS;
+  const held = new Map<string, HeldGroup>();
+  let writing: Promise<number> | null = null;
+
+  async function write(batch: readonly HeldReport[]): Promise<number> {
+    const rows = batch.flatMap(({ report, place }) => report.metrics.map((metric) => ({
       page: report.page,
       device: report.device,
       metric: metric.name,
       value: metric.value,
       rating: metric.rating,
-    })))
-    .returning({ id: webVitalSamples.id });
-  return rows.length;
+      recordedAt: new Date(place * DAY_MS),
+    })));
+    shuffleInPlace(rows, randomInt);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timedOut = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => { reject(new Error(`Web vitals batch write took over ${String(writeTimeoutMs)} ms`)); }, writeTimeoutMs);
+    });
+    try {
+      // The database bounds its own statements too; a stalled connection is
+      // bounded by the timer. A write that commits after the timer is not
+      // tried again, so nothing is stored twice.
+      await Promise.race([
+        db.transaction(async (tx) => {
+          await tx.execute(sql.raw(`SET LOCAL statement_timeout = ${String(Math.trunc(writeTimeoutMs))}`));
+          for (let start = 0; start < rows.length; start += rowsPerInsert) {
+            await tx.insert(webVitalSamples).values(rows.slice(start, start + rowsPerInsert));
+          }
+        }),
+        timedOut,
+      ]);
+      return batch.length;
+    } catch (error) {
+      // Not kept, so it leaves the day's allowance as it was.
+      for (const { place } of batch) ceiling.release(place);
+      throw error;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  return {
+    hold: (report) => {
+      const place = ceiling.admit();
+      if (place === null) return false;
+      const key = groupOf(report, place);
+      const group = held.get(key) ?? { day: place, reports: [] };
+      group.reports.push({ report, place });
+      held.set(key, group);
+      return true;
+    },
+    flush: async (flushOptions = {}) => {
+      // One write at a time: a later flush takes what is held after it.
+      while (writing !== null) await writing.catch(() => undefined);
+      const today = Math.floor(now() / DAY_MS);
+      const batch: HeldReport[] = [];
+      for (const [key, group] of held) {
+        if (group.reports.length >= minReports) {
+          batch.push(...group.reports);
+          held.delete(key);
+        } else if (flushOptions.closing === true || group.day < today) {
+          // Short of the minimum and unable to grow: never written.
+          held.delete(key);
+        }
+      }
+      if (batch.length === 0) return 0;
+      const pending = write(batch);
+      writing = pending;
+      try {
+        return await pending;
+      } finally {
+        writing = null;
+      }
+    },
+    held: () => [...held.values()].reduce((total, group) => total + group.reports.length, 0),
+  };
 }
 
 /** The nightly retention pass: every sample older than
@@ -123,9 +313,22 @@ export interface WebVitalP75 {
 }
 
 /**
- * The 75th percentile of each vital over the last `days`, by device class
- * across every page and by device class and page, as goal 07 judges them.
- * Read-only; the samples are a measure, not a guarantee (anyone can post one).
+ * Where a window of the last `days` UTC days begins, today included: the UTC
+ * midnight `days - 1` days before today's. Counted in hours: an interval of
+ * days follows the session's time zone, so across a change of clocks it would
+ * start an hour off midnight and drop (or add) a whole day of rows, which are
+ * stored at UTC midnight.
+ */
+export function webVitalsWindowStart(days: number, now: SQL = sql`now()`): SQL {
+  return sql`date_trunc('day', ${now}, 'UTC') - make_interval(hours => ${24 * (days - 1)})`;
+}
+
+/**
+ * The 75th percentile of each vital over the last `days` UTC days, today
+ * included (a row keeps only its day, so a window of "the last 28 days" is
+ * today and the 27 whole days before it), by device class across every page
+ * and by device class and page, as goal 07 judges them. Read-only; the
+ * samples are a measure, not a guarantee (anyone can post one).
  */
 export async function webVitalsP75(db: Database, days: number): Promise<WebVitalP75[]> {
   const v = webVitalSamples;
@@ -138,7 +341,7 @@ export async function webVitalsP75(db: Database, days: number): Promise<WebVital
     p75: sql<number>`percentile_cont(0.75) WITHIN GROUP (ORDER BY ${v.value})`.mapWith(Number),
   })
     .from(v)
-    .where(sql`${v.recordedAt} >= now() - make_interval(days => ${days})`)
+    .where(sql`${v.recordedAt} >= ${webVitalsWindowStart(days)}`)
     .groupBy(sql`GROUPING SETS ((${v.metric}, ${v.device}), (${v.metric}, ${v.device}, ${v.page}))`)
     .orderBy(v.metric, v.device, sql`${v.page} NULLS FIRST`);
   return rows.map((row) => {

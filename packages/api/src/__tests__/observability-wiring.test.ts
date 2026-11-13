@@ -1,7 +1,7 @@
 import { Writable } from "node:stream";
 import Fastify from "fastify";
 import { describe, expect, it } from "vitest";
-import type { ErrorEvent } from "@sentry/node";
+import { NodeClient, createTransport, defaultStackParser, eventFiltersIntegration, type ErrorEvent } from "@sentry/node";
 import { HEALTH_REDACTING_LOG_HOOKS, apiLoggerOptions } from "../observability/health-redaction.js";
 import {
   REDACTED_PARAMS_MARKER,
@@ -84,13 +84,29 @@ describe("the API's Sentry options", () => {
     expect(options.beforeBreadcrumb).toBe(scrubBreadcrumb);
   });
 
-  it("leave the page-speed reports out of tracing, whatever the method in the transaction's name", () => {
+  it("leave the page-speed reports out of tracing: the SDK's own filter drops them, and nothing else", () => {
     expect(options.ignoreTransactions).toEqual([WEB_VITALS_TRANSACTION]);
-    // The SDK drops a transaction whose name contains a string pattern.
-    const ignored = (name: string): boolean => (options.ignoreTransactions ?? [])
-      .some((pattern) => (typeof pattern === "string" ? name.includes(pattern) : pattern.test(name)));
-    expect(ignored("POST /public/web-vitals")).toBe(true);
-    expect(ignored("POST /public/enquiries")).toBe(false);
+    // The SDK's own event filter (one of its default integrations), handed
+    // these options as Sentry.init hands them a client's: not a copy of its
+    // matching. Its Fastify integration names the route "POST /public/web-vitals"
+    // (probed on @sentry/node 10.60.0 and fastify 5, 12 November 2026); a raw
+    // url or a mounted prefix is dropped the same way.
+    const filter = eventFiltersIntegration();
+    const client = new NodeClient({
+      ...options,
+      integrations: [],
+      stackParser: defaultStackParser,
+      // Nothing leaves the test: the transport answers every envelope itself.
+      transport: (transportOptions) => createTransport(transportOptions, () => Promise.resolve({})),
+    });
+    const kept = (transaction: string): boolean =>
+      filter.processEvent?.({ type: "transaction", transaction }, {}, client) !== null;
+    for (const name of ["POST /public/web-vitals", "/public/web-vitals", "POST /api/public/web-vitals"]) {
+      expect(kept(name), name).toBe(false);
+    }
+    for (const name of ["POST /public/enquiries", "POST /public/quiz-runs", "GET /public/venues/:slug"]) {
+      expect(kept(name), name).toBe(true);
+    }
   });
 
   it("name SENTRY_ENVIRONMENT over NODE_ENV when it is set", () => {

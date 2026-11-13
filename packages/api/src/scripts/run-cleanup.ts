@@ -25,6 +25,8 @@
 // repository. Neither touches object storage (PR #130 stopped storing sheet
 // PDFs), so the job needs only DATABASE_URL.
 //
+// Each pass runs even when an earlier one fails, and the job then exits 1.
+//
 // Exit codes: 0 = success, 1 = error
 // ---------------------------------------------------------------------------
 
@@ -52,40 +54,80 @@ export interface ScheduledCleanupResult {
   readonly webVitalSamplesRemoved: number;
 }
 
-/** Every scheduled pass, in order. Each log line carries counts only. */
+/**
+ * Every scheduled pass, in order. Each log line carries counts only. A pass
+ * runs even when one before it failed, so one broken pass never holds back
+ * another's retention promise (the allergy notes', the web vitals' 90 days);
+ * the job still fails, after the last pass, with the failure (or, when
+ * several failed, an AggregateError of them all).
+ */
 export async function runScheduledCleanup(
   db: Database,
   log: (line: string) => void = (line) => { console.log(line); },
 ): Promise<ScheduledCleanupResult> {
-  const deletedConfigs = await cleanupPreviewConfigurations(db);
-  log(`[cleanup] Deleted ${String(deletedConfigs)} stale preview configuration(s)`);
+  const failures: unknown[] = [];
+  async function pass<T>(name: string, run: () => Promise<T>): Promise<T | undefined> {
+    try {
+      return await run();
+    } catch (error) {
+      failures.push(error);
+      // The pass's name only: an error may hold what it was removing.
+      log(`[cleanup] The ${name} pass failed; the passes after it still run`);
+      return undefined;
+    }
+  }
 
-  const deletedFiles = await cleanupOrphanedFiles(db);
-  log(`[cleanup] Deleted ${String(deletedFiles)} orphaned file(s)`);
+  const deletedConfigs = await pass("stale preview configuration", async () => {
+    const count = await cleanupPreviewConfigurations(db);
+    log(`[cleanup] Deleted ${String(count)} stale preview configuration(s)`);
+    return count;
+  });
 
-  const lapsed = await removeLapsedDietaryNotes(db);
-  log(`[cleanup] Removed the allergy note from ${String(lapsed.layouts)} layout(s) and ${String(lapsed.sheets)} event sheet(s) past their retention, and from ${String(lapsed.actionLog)} logged change(s)`);
-  log(`[cleanup] Removed the notes on single pieces from ${String(lapsed.pieceNotes.layouts)} layout(s) past their retention`);
+  const deletedFiles = await pass("orphaned file", async () => {
+    const count = await cleanupOrphanedFiles(db);
+    log(`[cleanup] Deleted ${String(count)} orphaned file(s)`);
+    return count;
+  });
 
-  const remembered = await removeUnusedRememberedNotes(db);
-  log(`[cleanup] Removed ${String(remembered.removed)} remembered allergy note(s) unused for the agreed period`);
+  const lapsed = await pass("allergy note retention", async () => {
+    const result = await removeLapsedDietaryNotes(db);
+    log(`[cleanup] Removed the allergy note from ${String(result.layouts)} layout(s) and ${String(result.sheets)} event sheet(s) past their retention, and from ${String(result.actionLog)} logged change(s)`);
+    log(`[cleanup] Removed the notes on single pieces from ${String(result.pieceNotes.layouts)} layout(s) past their retention`);
+    return result;
+  });
 
-  const engagementEventsRemoved = await removeExpiredEngagementEvents(db);
-  log(`[cleanup] Removed ${String(engagementEventsRemoved)} engagement event(s) past their retention period`);
+  const remembered = await pass("remembered allergy note", async () => {
+    const result = await removeUnusedRememberedNotes(db);
+    log(`[cleanup] Removed ${String(result.removed)} remembered allergy note(s) unused for the agreed period`);
+    return result;
+  });
 
-  const webVitalSamplesRemoved = await removeExpiredWebVitalSamples(db);
-  log(`[cleanup] Removed ${String(webVitalSamplesRemoved)} web vital sample(s) past their retention period`);
+  const engagementEventsRemoved = await pass("engagement event retention", async () => {
+    const count = await removeExpiredEngagementEvents(db);
+    log(`[cleanup] Removed ${String(count)} engagement event(s) past their retention period`);
+    return count;
+  });
 
+  const webVitalSamplesRemoved = await pass("web vital retention", async () => {
+    const count = await removeExpiredWebVitalSamples(db);
+    log(`[cleanup] Removed ${String(count)} web vital sample(s) past their retention period`);
+    return count;
+  });
+
+  if (failures.length === 1) throw failures[0];
+  if (failures.length > 1) throw new AggregateError(failures, `${String(failures.length)} cleanup passes failed`);
+
+  // Every pass ran, so every count is here.
   return {
-    deletedConfigs,
-    deletedFiles,
-    lapsedNoteLayouts: lapsed.layouts,
-    lapsedNoteSheets: lapsed.sheets,
-    loggedNotesRemoved: lapsed.actionLog,
-    lapsedPieceNoteLayouts: lapsed.pieceNotes.layouts,
-    rememberedNotesRemoved: remembered.removed,
-    engagementEventsRemoved,
-    webVitalSamplesRemoved,
+    deletedConfigs: deletedConfigs ?? 0,
+    deletedFiles: deletedFiles ?? 0,
+    lapsedNoteLayouts: lapsed?.layouts ?? 0,
+    lapsedNoteSheets: lapsed?.sheets ?? 0,
+    loggedNotesRemoved: lapsed?.actionLog ?? 0,
+    lapsedPieceNoteLayouts: lapsed?.pieceNotes.layouts ?? 0,
+    rememberedNotesRemoved: remembered?.removed ?? 0,
+    engagementEventsRemoved: engagementEventsRemoved ?? 0,
+    webVitalSamplesRemoved: webVitalSamplesRemoved ?? 0,
   };
 }
 

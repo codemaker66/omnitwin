@@ -58,13 +58,19 @@ export const KLM = {
   readToForm: 20,
 };
 
+/** A date about seven months ahead, as a couple would ask about, and never
+ *  one the form refuses as past, whenever the script runs. */
+function dateAhead(days = 210) {
+  return new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
+}
+
 /** What a person types, as Elaine's client would (fictional). The guests
  *  field opens holding a suggested count, which they clear first. */
 const ANSWERS = {
   occasion: "Wedding",
   clearGuests: 3,
   guests: "120",
-  date: "2027-06-12",
+  date: dateAhead(),
   name: "Morag Henderson",
   email: "morag.henderson@example.com",
 };
@@ -95,7 +101,9 @@ async function main() {
     ...(CHROMIUM === null ? {} : { executablePath: CHROMIUM }),
     ...(proxyServer === undefined || proxyServer === "" ? {} : { proxy: { server: proxyServer, bypass: "127.0.0.1,localhost" } }),
   });
-  const context = await browser.newContext({ ...devices["iPhone 13"], reducedMotion: "reduce" });
+  // No service worker: a request one made would pass the interception below,
+  // and a run against production would then send a real enquiry.
+  const context = await browser.newContext({ ...devices["iPhone 13"], reducedMotion: "reduce", serviceWorkers: "block" });
   const page = await context.newPage();
   const cdp = await context.newCDPSession(page);
   await cdp.send("Network.enable");
