@@ -148,7 +148,7 @@ folder. `roombuild/walls.py` points the Grand Hall scripts' own globals at the r
 | `bestview.WALLS`, `SRC_TOP`, `FLOOR`, `COS_MIN`, `MAX_DIST` | each wall's survey name, anchor, u axis, normal and length; `wallViews.heightRange[1]`; `transform.floorZ`; `projection.walls.cosMin` and `maxDist` |
 | `project-walls.NORMALS` (its wall names) | the walls in order |
 | `canvasveil.CANVASES`, `PITCH` | the `canvas` edits; one elevation texel |
-| `project-detail` and `pack-detail`: `TEXEL`, `TILE`, `GUTTER`, `PPM`, `V_MIN`, `V_MAX`, `ROW`, `LENGTH`, `PATCHES`, `NAME`, `ATLAS`, `GLASS_STRIPS` | `survey.detail`, the atlas's layout, the photo patches, the wall ids, `outputs.walls[0]`, the strips of the walls with clear glazing |
+| `project-detail` and `pack-detail`: `TEXEL`, `TILE`, `GUTTER`, `PPM`, `V_MIN`, `V_MAX`, `ROW`, `LENGTH`, `PATCHES`, `SRC_COLUMNS`, `NAME`, `ATLAS`, `GLASS_STRIPS` | `survey.detail`, the atlas's layout, the photo patches, the walls with narrow tiles (B23), the wall ids, `outputs.walls[0]`, the strips of the walls with clear glazing |
 
 A global that is no longer in its script stops the build (`legacy.point`). `projection.walls.pCos`
 and `qDist` belong to the blend and are no longer read for walls. The method counts in elevation
@@ -215,12 +215,13 @@ Both are recorded in the ledger, and `--publish` refuses either. `survey.json` r
 meshoptimizer version that simplified each GHR1 file. `--publish` also refuses glass that the
 scan disagrees with.
 
-The Grand Hall's scripts in `tools/grand-hall-survey` still build it with `build.sh`. Three of them
+The Grand Hall's scripts in `tools/grand-hall-survey` still build it with `build.sh`. Four of them
 carry a seam for this driver, each with its old value as the default: `project.py` (`VIEWS`, the
 folder `load_views` reads; `STATION_IDS`, a room's stations in place of scan 0 to 48), `bestview.py`
-(`COS_MIN`, `MAX_DIST`, the two limits `visibility` held as literals) and `pack-detail.py` (`ATLAS`,
+(`COS_MIN`, `MAX_DIST`, the two limits `visibility` held as literals), `pack-detail.py` (`ATLAS`,
 the atlas file's name; `GLASS_STRIPS`, the glazed walls' strips, where it assumed the window wall
-at the atlas's origin; its wall loop reads `LENGTH`). The steps import `project.py`, run the
+at the atlas's origin; its wall loop reads `LENGTH`) and `project-detail.py` (`SRC_COLUMNS`, empty:
+the orthophoto columns of a wall whose tiles are narrower than its rounded length, B23). The steps import `project.py`, run the
 walls' scripts whole (above), use `window-relief.py`'s and `wall-depth.py`'s helpers and
 `fetch_inputs.py`, call `dump-mesh.mjs`, `render.mjs`, `surface-offset.mjs` and `page-server.mjs`,
 and port the rest of the scripts' statements with their literals replaced by config values.
@@ -247,11 +248,12 @@ gates a config opens, computed before any work; `--plan` prints them and writes 
 | B18 | the outline is not a rectangle | floor texels outside it leave the floor mask |
 | B19 | boards run along z | refills roll along rows |
 | B20 | a `copy` patch | the patch is taken from another wall, after every wall's own edits, in the atlas (which then holds every wall's orthophoto at once) and in the detail images (`roombuild/walls.py`) |
+| B23 | a wall's tiles are narrower than its rounded length | each tile's width is rounded on its own, so the tiles can add up to fewer columns than `round(length x ppm)` (the Saloon's fireplace wall: 1556 against 1557). The Grand Hall's scripts count the wall's right end, its relief's width and its atlas crop from the rounded length, which lies inside its tiles (4227 of 4228); such a wall ends at its tiles' last column instead, in the corners, the relief, the atlas and the detail's mapping onto the atlas |
 | B21 | `SURVEYED_ROOMS_TEST_DEPTH_SIZE` is set | test-sized depth maps (never published) |
 | B22 | `SURVEYED_ROOMS_NODE_ROOT` is set | another checkout's meshoptimizer meshes the relief (never published) |
 
 The Grand Hall opens none. The Saloon opens B5 (4 returns), B8 (4 returns), B6 and B9 (8 reflex
-ends), B7, B10 (3 bays), B14 (a 4096 × 2304 atlas), B16, B17 and B18.
+ends), B7, B10 (3 bays), B14 (a 4096 × 2304 atlas), B16, B17, B18 and B23 (the fireplace wall).
 
 ## Proofs
 

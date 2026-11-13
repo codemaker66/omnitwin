@@ -60,7 +60,9 @@ def run(room):
         valid = P[..., 3] > 0.5
         D = np.where(valid, room.depth(wall, P), np.nan)
         H, Wd = D.shape
-        width = int(round(wall['length'] * PPM))
+        # fix-corners.py counts the right end back from the wall's rounded length, one column inside
+        # the Grand Hall's tiles (4227 of 4228). Tiles narrower than that (B23) end the wall themselves.
+        width = min(int(round(wall['length'] * PPM)), Wd)
         fin = np.zeros(D.shape, bool)
         target = np.full(D.shape, np.nan, np.float32)
         short = wall['length'] < 2 * REF[1]                                   # B5

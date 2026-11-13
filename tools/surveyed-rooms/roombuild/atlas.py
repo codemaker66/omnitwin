@@ -219,7 +219,9 @@ def run(room, *args):
     for s in lay['strips']:
         wall = s['wall']
         img, scale = held.pop(wall['id']) if copies else _prepare(room, wall, patches, feather, SRC_PPM, SRC_TOP, pa, linear_to_srgb)
-        width_src = int(round(wall['length'] * SRC_PPM))
+        # pack-atlas.py crops the wall's rounded length, inside the Grand Hall's tiles; tiles narrower
+        # than that (B23) are cropped whole (legacy.project_detail_values tells project-detail.py so)
+        width_src = min(int(round(wall['length'] * SRC_PPM)), img.shape[1] // scale)
         r_top = int(round((SRC_TOP - V_MAX) * SRC_PPM)); r_bot = int(round((SRC_TOP - V_MIN) * SRC_PPM))
         crop = img[r_top * scale:r_bot * scale, :width_src * scale]
         shape = crop.shape

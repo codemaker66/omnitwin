@@ -181,7 +181,9 @@ def project_detail_values(room):
                 PATCHES=[(p[0]['name'], *p[1:]) for p in room.patches('photo') if p[5] != 'copy'],
                 # featherTexels 0 (hard seams in the atlas): the script's ramp divides by the feather
                 PATCH_FEATHER=feather / ppm if feather > 0 else 1e-9,
-                FILL_REACH=atlas_step.FILL_PASSES / ppm)
+                FILL_REACH=atlas_step.FILL_PASSES / ppm,
+                # B23: the atlas crops such a wall's tiles whole, so the detail maps onto that many columns
+                SRC_COLUMNS=room.narrow_walls())
 
 
 def project_detail(room):

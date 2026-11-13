@@ -116,7 +116,7 @@ def gh_sky(s, dirs):
     k = int(s["id"][5:])
     smooth = np.stack([0.35 + 0.2 * np.sin(3 * az + k), 0.3 + 0.15 * np.cos(2 * el), 0.25 + 0.1 * np.sin(az + el)], -1)
     grain = np.random.default_rng(20261113 + k).random(az.shape) - 0.5
-    return smooth * (1 + (0.5 - 0.06 * k) * grain[..., None])
+    return smooth * (1 + (0.5 - 0.06 * (k % 5)) * grain[..., None])
 
 
 def write_gh_inputs(data, depth_size=64, pano=(2048, 1024)):

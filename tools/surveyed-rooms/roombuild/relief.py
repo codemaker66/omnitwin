@@ -153,11 +153,13 @@ def walls(room):
         r_floor = int(round((TOP - rel['holdFloor']) * PPM)); D[r_floor:] = D[r_floor - 1]
         r_ceiling = int(round((TOP - rel['holdCeiling']) * PPM)); D[:r_ceiling] = D[r_ceiling]
         end = int(END_BAND * PPM)
-        width_px = int(round(length * PPM))
+        h, w = D.shape
+        # wall-depth.py takes the wall's rounded length for its width, inside the Grand Hall's tiles;
+        # tiles narrower than that (B23) end the wall themselves.
+        width_px = min(int(round(length * PPM)), w)
         D[:, :end] = np.clip(D[:, :end], *END_CLAMP)
         D[:, width_px - end:width_px] = np.clip(D[:, width_px - end:width_px], *END_CLAMP)
-        h, w = D.shape
-        width = int(round(length * PPM))
+        width = min(int(round(length * PPM)), w)
         D = D[:, :width]
         h2, w2 = h // 2, width // 2
         D2 = D[:h2 * 2, :w2 * 2].reshape(h2, 2, w2, 2).mean(axis=(1, 3)).astype(np.float32)

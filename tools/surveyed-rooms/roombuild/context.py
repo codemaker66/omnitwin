@@ -28,6 +28,7 @@ GATES = {
     "B18": "outline not a rectangle: floor texels outside it masked",
     "B19": "boards run along z: refills roll along rows",
     "B20": "patch copied from another wall (the atlas and the detail tiles)",
+    "B23": "elevation tiles narrower than the wall's rounded length: the wall ends at its tiles' last column",
     "B21": "test-only depth-map size (SURVEYED_ROOMS_TEST_DEPTH_SIZE)",
     "B22": "node modules from another checkout (SURVEYED_ROOMS_NODE_ROOT): its meshoptimizer meshes the relief",
 }
@@ -77,6 +78,7 @@ class Room:
         self.lod = cfg["source"]["panoramas"]["size"]
         self._views = None
         self._stations = None
+        self._columns = None
 
     # --- geometry -------------------------------------------------------------------------
     def to_e57_np(self, x, z):
@@ -125,6 +127,23 @@ class Room:
         """The wall's inward normal as a (1, 3) float array, with no -0.0."""
         nX, nY = w["normalE57"]
         return np.array([[nX + 0.0, nY + 0.0, 0.0]])
+
+    def tile_columns(self, w):
+        """Texel columns of a wall's elevation: its tiles' widths added up (each tile's width is
+        rounded on its own, so the sum can fall short of the wall's rounded length)."""
+        if self._columns is None:
+            self._columns = {}
+            for v in roomlib.wall_views(self.cfg):
+                self._columns[v["wall"]] = self._columns.get(v["wall"], 0) + v["pixels"][0]
+        return self._columns[w["name"]]
+
+    def rounded_columns(self, w):
+        """A wall's length in elevation texels as the Grand Hall's scripts count it: int(round(length x ppm))."""
+        return int(round(w["length"] * float(self.survey["wallViews"]["ppm"])))
+
+    def narrow_walls(self):
+        """{survey name: tile columns} of the walls whose tiles are narrower than their rounded length (gate B23)."""
+        return {w["name"]: self.tile_columns(w) for w in self.order if self.tile_columns(w) < self.rounded_columns(w)}
 
     def wall_frames(self):
         """bestview.WALLS for this room, by survey name: where each wall's elevation starts (the
@@ -257,6 +276,8 @@ class Room:
                 add("B5", f"wall {w['id']}", f"{w['length']:.3f} m")
             if w["length"] < INTRUSION_REACH:
                 add("B8", f"wall {w['id']}", f"{w['length']:.3f} m")
+            if self.tile_columns(w) < self.rounded_columns(w):
+                add("B23", f"wall {w['id']}", f"{self.tile_columns(w)} columns, {self.rounded_columns(w)} rounded")
             left, right = self.ends_reflex(w)
             for end, reflex in (("left", left), ("right", right)):
                 if reflex:
