@@ -145,6 +145,9 @@ describe("the API's errors in Sentry", () => {
    *  object its routes read, kept (not copied) so the test can show that
    *  scrubbing a report never changes what a route reads. */
   const received: IncomingHttpHeaders[] = [];
+  /** Each transaction as the SDK built it, before the API's scrubber ran:
+   *  its request, and its trace's and spans' attributes, as JSON. */
+  const built: string[] = [];
   let ingest: Server;
   let server: FastifyInstance;
   let base = "";
@@ -176,7 +179,19 @@ describe("the API's errors in Sentry", () => {
     vi.stubEnv("HTTP_PROXY", "");
     // As index.ts: Sentry before Fastify, so its instrumentation sees the server.
     await initSentry(env);
-    flush = (await import("@sentry/node")).flush;
+    const Sentry = await import("@sentry/node");
+    flush = Sentry.flush;
+    // After the SDK's own processors, before beforeSendTransaction. Only the
+    // plain parts are copied: the event still holds the SDK's scopes then,
+    // and a hook that threw would drop the event.
+    Sentry.getClient()?.on("postprocessEvent", (event) => {
+      if (event.type !== "transaction") return;
+      try {
+        built.push(JSON.stringify({ request: event.request, trace: event.contexts?.trace?.data, spans: event.spans?.map((span) => span.data) }));
+      } catch {
+        built.push("{}");
+      }
+    });
 
     const loggerOptions = apiLoggerOptions("production");
     if (loggerOptions === false) throw new Error("production logs");
@@ -324,18 +339,24 @@ describe("the API's errors in Sentry", () => {
       expect(headers["x-forwarded-for"]).toBe(VISITOR_IP);
       expect(headers["x-real-ip"]).toBe(SECOND_ADDRESS);
     }
-    // Not vacuous: the header beside them, which nothing scrubs, reached every
-    // slot a credential header would: each event's and each transaction's
-    // request headers, and the header attribute on each transaction's trace.
+    // Not vacuous: the header beside them, which nothing scrubs from an error
+    // event, reached each event's request headers. The SDK put it on each of
+    // the API's transactions too, in their request headers and as their
+    // trace's header attribute, before the scrubber ran; the scrubber then
+    // left a transaction no request header at all, credential or not (Blake,
+    // 13 November 2026: "Strip browser details, say so").
     expect(events.length).toBeGreaterThanOrEqual(3);
     expect(transactions.length).toBeGreaterThanOrEqual(4);
     const name = (event: SentEvent): string => event.transaction ?? event.exception?.values?.[0]?.value ?? "?";
-    expect([...events, ...transactions]
+    expect(events
       .filter(({ event }) => event.request?.headers?.[CONTROL_HEADER] !== CONTROL)
       .map(({ event }) => `${name(event)}: ${JSON.stringify(event.request)}`)).toEqual([]);
+    expect(built.filter((event) => event.includes(`"${CONTROL_HEADER}":"${CONTROL}"`) && event.includes(`"${headerAttribute(CONTROL_HEADER)}":"${CONTROL}"`)).length)
+      .toBeGreaterThanOrEqual(transactions.length);
     expect(transactions
-      .filter(({ event }) => event.contexts?.trace?.data?.[headerAttribute(CONTROL_HEADER)] !== CONTROL)
-      .map(({ event }) => `${name(event)}: ${JSON.stringify(event.contexts?.trace?.data)}`)).toEqual([]);
+      .filter(({ event }) => event.request?.headers !== undefined
+        || Object.keys(event.contexts?.trace?.data ?? {}).some((key) => key.toLowerCase().startsWith("http.request.header.")))
+      .map(({ event }) => `${name(event)}: ${JSON.stringify(event.request)} ${JSON.stringify(event.contexts?.trace?.data)}`)).toEqual([]);
     // The slots that would hold them: no parsed cookies on any event or
     // transaction, and no credential or address header's attribute on any
     // trace or span, even one the SDK filled with "[Filtered]".

@@ -71,8 +71,15 @@ describe("the API's timing records (the real SDK and server)", () => {
     flush = Sentry.flush;
     // After the SDK's own processors (its request data among them), before
     // the API's beforeSendTransaction, which then changes the same object.
+    // Only the plain parts are copied: the event still holds the SDK's scopes
+    // then, and a hook that threw would drop the event.
     Sentry.getClient()?.on("postprocessEvent", (event) => {
-      if (event.type === "transaction") built.push(JSON.stringify(event));
+      if (event.type !== "transaction") return;
+      try {
+        built.push(JSON.stringify({ request: event.request, trace: event.contexts?.trace?.data, spans: event.spans?.map((span) => span.data) }));
+      } catch {
+        built.push("{}");
+      }
     });
 
     server = Fastify();
