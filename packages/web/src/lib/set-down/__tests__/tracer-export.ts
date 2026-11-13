@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// The rooms as the offline ray tracer reads them (T-677, Task 7):
+// The rooms as the offline ray tracer reads them (T-700, Task 7):
 // tools/set-down-acoustics/rooms.json, built from rooms.ts and
 // room-acoustics.ts. export-rooms.test.ts writes it (EXPORT=1) and, on every
 // run, checks that the committed file still equals this export, so the trace
@@ -26,9 +26,6 @@ type Surface = RoomAcoustics["surfaces"][number];
  * area, so it is left out of the walls' extent when a prism is sized to them.
  */
 export const HUNG_FABRICS: ReadonlySet<SurfaceMaterialId> = new Set(["velour-drape", "sheer-curtain"]);
-
-/** The Grand Hall's dome is its plaster-on-masonry ceiling (rooms.ts); its flat ceiling is plaster on lath. */
-const DOME_MATERIAL: SurfaceMaterialId = "plaster-masonry";
 
 export interface Prism {
   readonly lengthM: number;
@@ -85,10 +82,10 @@ export function tracerPrism(slug: RoomSlug): Prism {
   };
 }
 
-/** The prism part a surface's absorption goes on, by its role and, for a domed room's ceiling, its material. */
+/** The prism part a surface's absorption goes on, by its role and, in a domed room, the dome's own marker (rooms.ts). */
 export function partOf(surface: Surface, hasDome: boolean): PrismPart {
   if (surface.role === "floor") return "floor";
-  if (surface.role === "ceiling") return hasDome && surface.material === DOME_MATERIAL ? "dome" : "ceiling";
+  if (surface.role === "ceiling") return hasDome && surface.dome === true ? "dome" : "ceiling";
   return "walls";
 }
 

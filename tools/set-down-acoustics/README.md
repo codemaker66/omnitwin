@@ -1,14 +1,16 @@
-# Set-down acoustics: the offline ray tracer (T-677)
+# Set-down acoustics: the offline ray tracer (T-700)
 
-The planner's set-down sound rings with each room's echo. That echo comes from Eyring's formula with air absorption, multiplied per band by a calibration (`packages/web/src/lib/set-down/room-acoustics.ts`, `rooms.ts`). This folder holds the independent check on that model: a ray tracer of each Trades Hall room.
+The planner's set-down sound rings with each room's echo. That echo comes from Eyring's formula with air absorption, multiplied per band by a calibration (`packages/web/src/lib/set-down/room-acoustics.ts`, `rooms.ts`). This folder holds the independent check on that model: a ray tracer.
 
-The tracer proves itself on textbook cases first. Then it traces each room empty, half dressed and fully dressed. The calibration factors in `rooms.ts` are fitted to its empty traces, and `calibration.test.ts` holds the model to all three dressings.
+**What it checks, and what it does not** (ruling R50). Each room is traced as a box with the model's volume and surface areas (the Grand Hall with a spherical cap of the scanned dome's volume), with the model's own absorption. So the check tests Eyring's diffuse-field assumption: how far a room of that volume, those areas and that absorption departs from the formula. It does not test the absorption data, and it does not test the rooms' real outlines. The data are checked separately, against measured rooms ([Plausibility](#plausibility-against-measured-rooms-ruling-r51)).
+
+The tracer proves itself on textbook cases first. Then it traces each room empty, half laid and fully laid for the reference dinner. The calibration factors in `rooms.ts` are **fitted on empty**, so the model meets the tracer there by construction. `calibration.test.ts` holds it **within 15 % half and fully laid**, and holds its change with fullness within 15 % of the tracer's.
 
 | File | What it is |
 |---|---|
 | `raytrace.py` | The tracer (numpy only), with its self-test. |
 | `rooms.json` | The rooms as the model has them, exported from `rooms.ts` and `room-acoustics.ts`. |
-| `results.json` | The tracer's T20 per band for each room and dressing, its fits' r², a second seed, and a record of the run (`trace`: the rooms.json it read, its batch size and numpy). |
+| `results.json` | The tracer's T20 per band for each room and dressing, its fits' r², a second seed, and a record of the run (`trace`: the sha256 of the rooms.json it read and of the raytrace.py that ran, its batch size and numpy). |
 
 ## Running it
 
@@ -26,6 +28,8 @@ The tracer proves itself on textbook cases first. Then it traces each room empty
    python raytrace.py --selftest
    python -u raytrace.py rooms.json results.json
    ```
+
+   Heavy CPU results are double-run on the build PC, where silent corruption has happened before: trace twice, into two files, and keep the result only if the two are byte-identical. The seeds are fixed, so a sound computation repeats itself to the bit.
 
 3. **Fit.** Write the factors the run prints (`calibration (tracer empty / Eyring empty)`) into `TRACER_CALIBRATION` in `rooms.ts`.
 
@@ -51,43 +55,34 @@ None of these exist elsewhere, and none is needed elsewhere.
 - The full run takes about 40 minutes of tracing on that PC, most of it in the galleries (about 3.5 minutes a trace at 2,000,000 rays).
 - results.json is written only if every check passes: the self-test, the dome check, the seed agreement, and a T20 fit in every band.
 
-## Provenance: which rooms a trace is of (ruling R38)
+## Provenance: which rooms, and which tracer, a trace is of (rulings R38 and R50)
 
 The chain from the model to the factors is checked at every link, so a stale file fails a test instead of passing quietly.
 
 - **The export.** `export-rooms.test.ts` always compares the committed rooms.json, value for value, with the export the model gives now. A changed room fails it until rooms.json is re-exported.
-- **The trace.** results.json's `trace.roomsSha256` is the sha256 of the rooms.json the tracer read, with CRLF line ends read as LF so that a Windows checkout hashes as the committed file does. `calibration.test.ts` checks it against the committed rooms.json. A re-export without a retrace fails it.
+- **The trace.** results.json's `trace.roomsSha256` is the sha256 of the rooms.json the tracer read, and `trace.raytraceSha256` that of the raytrace.py that ran. Both are hashed with CRLF line ends read as LF, so a Windows checkout and a Linux one hash alike, and both are taken before tracing starts. `calibration.test.ts` checks each against the committed file. A re-export without a retrace fails it, and so does any edit to raytrace.py, its comments included, until the rooms are retraced.
 - **The fit.** `room-acoustics.test.ts` checks that the factors in `rooms.ts` equal the fit from results.json.
 
-**The one-off stamp.** The trace committed in f8e30804 ran before the tracer recorded its metadata. That trace was read from that commit's rooms.json, which re-exported byte for byte. Its record was added afterwards, and only the record, by:
-
-```
-python raytrace.py --stamp f8e30804 rooms.json results.json
-```
-
-- `--stamp` refuses unless rooms.json is the file at that commit (the file the trace read), and unless results.json's traces are that commit's.
-- It writes `trace.stamped` to say the record came later.
-- It was tested against both refusals (a rooms.json changed by one digit, a trace changed in one figure) and against a repeat, which reproduced the stamp byte for byte.
-- A normal run writes the record itself, so the step is never needed again.
+The 28 October trace ran before the tracer recorded its metadata, and a one-off `--stamp` step (c75a1076) added its rooms.json hash afterwards. The 13 November retrace records everything itself, so the step and its code are gone.
 
 ## What it traces
 
-### The rooms as prisms
+### The rooms as boxes
 
-Each room is a prism of its plan rectangle. Its height is the model's volume (less the Grand Hall's dome) over the floor's area, so the prism keeps the model's volume exactly.
+Each room is a box (a prism of a rectangle). Its height is the model's volume (less the Grand Hall's dome) over the floor's area, so the box keeps the model's volume exactly, and its floor, ceiling and wall areas are the model's too. Its outline is not the room's.
 
 | Room | Prism (length x width x height) | Rule |
 |---|---|---|
 | Grand Hall | 21.135 x 10.590 x 6.700 m, plus the dome | its plan |
-| Saloon | 11.800 x 7.100 x 5.700 m | its plan |
-| Robert Adam Room | 22.849 x 6.127 x 2.626 m | two-part room |
-| Reception Room | 14.138 x 7.073 x 2.800 m | two-part room |
+| Saloon | 11.800 x 7.100 x 5.600 m | its plan |
+| Robert Adam Room | 22.927 x 6.106 x 2.705 m | two-part room |
+| Reception Room | 14.138 x 7.073 x 2.890 m | two-part room |
 | North and South Galleries | 11.500 x 4.100 x 2.800 m | its plan |
 
 **The two-part rooms.**
 
 - The Reception Room's traced L becomes a rectangle of equal area (100 m²) that also keeps the L's perimeter, so its wall area stays the model's.
-- The Robert Adam Room's two sections (11.2 x 7.6 x 2.9 m open to 9.8 x 5.6 x 2.2 m) are treated the same way. `ROOM_PLANS` holds only the main part of each of these rooms, and a prism of that part alone would lose about a quarter of the Robert Adam Room's surface.
+- The Robert Adam Room's two sections (11.2 x 7.6 m under a 3.03 m mean ceiling, open to 9.8 x 5.6 x 2.2 m) are treated the same way. `ROOM_PLANS` holds only the main part of each of these rooms, and a prism of that part alone would lose about a quarter of the Robert Adam Room's surface.
 - So the rectangle has the floor's area (140 m²) and the walls' perimeter.
 - In both rooms, volume, floor, ceiling and wall areas are the model's.
 - What is lost is each room's real outline: the arm of the L, and the step between the Adam Room's two ceilings.
@@ -101,7 +96,7 @@ Each room is a prism of its plan rectangle. Its height is the model's volume (le
 
 ### Materials
 
-- **The floor, the ceiling plane and the dome** each take their own material's α.
+- **The floor, the ceiling plane and the dome** each take their own material's α. The dome is the surface `rooms.ts` marks `dome: true`; since 13 November it takes the plaster-on-lath row like the coffered ceiling round it (EST: no source gives its construction; ruling R49).
 - **The walls are one mixture.** Every wall and opening material (panelling, plaster, glazing, doors, and the hung curtains, sheers and drapes) is spread over all four walls, by area share.
   - The mixture is the walls' total absorption divided by the prism's wall area.
   - The model counts hung fabric on top of the wall it hangs in front of, so this keeps the model's absorption exactly.
@@ -140,7 +135,7 @@ Reflection is hybrid: with probability s it is Lambertian (cosine-weighted about
 
 ## Self-test
 
-`python raytrace.py --selftest` exits non-zero on any failure. Figures from 28 Oct 2026 (`D:/claude/furniture-sound-20261027/task7/selftest-2.txt`, 171 s); checks 1–4 gave the same figures in the run that wrote results.json:
+`python raytrace.py --selftest` exits non-zero on any failure. Figures from the 13 November run that wrote results.json, the same to every printed digit as the 28 October self-test's (both of that day's runs printed them alike):
 
 1. **Uniform diffuse cube** (10 m, α 0.2 on every face, s 1, no air, 20,000 rays).
    - T20 1.2489 s against Eyring's 0.161V ÷ (−S ln(1 − α)) = 1.2025 s: **+3.86 %** (limit 5 %). r² 0.99927 (limit 0.99).
@@ -174,131 +169,131 @@ For each room and band: calibration = tracer empty T20 ÷ Eyring empty (uncalibr
   - Below the Schroeder frequency a room's response is a set of separate modes, and rays say nothing about it.
   - Only the Grand Hall is big enough to keep its 125 Hz fit:
 
-    | Room | Schroeder frequency |
+    | Room | Schroeder frequency (13 Nov trace) |
     |---|---|
-    | Grand Hall | 65.0 Hz |
-    | Reception Room | 93.4 Hz |
-    | Saloon | 94.7 Hz |
+    | Grand Hall | 61.2 Hz |
+    | Saloon | 92.4 Hz |
+    | Reception Room | 92.5 Hz |
     | North and South Galleries | 121.7 Hz |
-    | Robert Adam Room | 150.7 Hz |
+    | Robert Adam Room | 124.5 Hz |
 
   - `fittedCalibration` (`tracer-results.ts`) and `calibration_factor` (`raytrace.py`) apply the same rule, and `calibration.test.ts` tests it.
-  - In the tables below, the model's 125 Hz in those rooms is therefore Eyring's own figure, 3–10 % from the tracer. The test does not hold that band.
+  - In the tables below, the model's 125 Hz in those rooms is therefore Eyring's own figure: 3.6–8.8 % under the tracer, and 30 % under it in the Robert Adam Room, whose box is far from diffuse at 125 Hz (absorbing floor and ceiling between hard walls). The test does not hold that band.
 - The factors are in `rooms.ts` (`TRACER_CALIBRATION`). `room-acoustics.test.ts` checks that they equal the fit from results.json.
-- `calibration.test.ts` holds the calibrated model to the tracer from 250 Hz to 8 kHz, empty, half and fully dressed:
-  - within 15 % in every band, except the galleries' non-diffuse bands below;
-  - its change with fullness, the model's dressed ÷ empty against the tracer's, within 15 % in every room and band, the galleries' included. The worst cases are 2.8 % in the big rooms and 10.6 % in the galleries (dressed, 2 kHz).
+- **Fitted on empty; within 15 % half and fully laid.** Because each factor is tracer empty ÷ Eyring empty, the empty model meets the tracer by construction: to the factor's rounding, under 0.1 %, wherever the clamp does not bind. `calibration.test.ts` says so in a test of its own. The real checks, 250 Hz to 8 kHz, are:
+  - the model within 15 % of the tracer half and fully laid in every band, except the galleries' non-diffuse bands below;
+  - its change with fullness, the model's half or dressed ÷ empty against the tracer's, within 15 % in every room and band, the galleries' included.
 
-R29's second, dressed factor was not needed. With the empty calibration alone, the four big rooms' half and dressed states stay within 2.7 % of the tracer from 250 Hz to 8 kHz (tables below). R29 does not apply to the galleries (ruling R32).
+R29's second, dressed factor was not needed. With the empty calibration alone, the four big rooms' half and dressed states stay within 5.1 % of the tracer from 250 Hz to 8 kHz: the Robert Adam Room half laid at 250 Hz, every other within 1.9 % (tables below). R29 does not apply to the galleries (ruling R32).
 
 T20 per octave band in seconds, from seed 1. "Model" is the planner's figure: uncalibrated Eyring times the calibration. Seed 2's empty and dressed traces sit under each table.
 
 ### Grand Hall
 
-200,000 rays a band. Calibration: 1.041, 1.030, 1.020, 1.009, 1.007, 1.008, 1.006.
+200,000 rays a band. Calibration: 1.067, 1.038, 1.023, 1.009, 1.008, 1.007, 1.006.
 
 | Dressing | | 125 | 250 | 500 | 1k | 2k | 4k | 8k |
 |---|---|---|---|---|---|---|---|---|
-| empty | tracer T20 (s) | 1.639 | 1.961 | 2.314 | 2.559 | 2.518 | 1.960 | 1.044 |
-| | model (s) | 1.638 | 1.960 | 2.314 | 2.557 | 2.519 | 1.961 | 1.043 |
-| | model / tracer | -0.0 % | -0.0 % | +0.0 % | -0.0 % | +0.0 % | +0.0 % | -0.0 % |
-| | Eyring, uncalibrated (s) | 1.574 | 1.903 | 2.269 | 2.535 | 2.501 | 1.945 | 1.037 |
+| empty | tracer T20 (s) | 1.453 | 1.760 | 2.144 | 2.536 | 2.465 | 1.924 | 1.036 |
+| | model (s) | 1.453 | 1.761 | 2.144 | 2.535 | 2.466 | 1.925 | 1.036 |
+| | model / tracer | -0.0 % | +0.0 % | +0.0 % | -0.0 % | +0.0 % | +0.0 % | +0.0 % |
+| | Eyring, uncalibrated (s) | 1.361 | 1.697 | 2.096 | 2.512 | 2.446 | 1.912 | 1.030 |
 | | r² | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 |
-| half | tracer T20 (s) | 1.582 | 1.857 | 2.078 | 2.178 | 2.095 | 1.685 | 0.956 |
-| | model (s) | 1.585 | 1.857 | 2.066 | 2.161 | 2.081 | 1.685 | 0.959 |
-| | model / tracer | +0.2 % | +0.0 % | -0.6 % | -0.8 % | -0.7 % | -0.0 % | +0.4 % |
-| | Eyring, uncalibrated (s) | 1.522 | 1.803 | 2.026 | 2.142 | 2.067 | 1.672 | 0.954 |
+| half | tracer T20 (s) | 1.402 | 1.673 | 1.941 | 2.154 | 2.055 | 1.661 | 0.955 |
+| | model (s) | 1.410 | 1.677 | 1.928 | 2.144 | 2.044 | 1.658 | 0.953 |
+| | model / tracer | +0.6 % | +0.2 % | -0.7 % | -0.4 % | -0.5 % | -0.2 % | -0.1 % |
+| | Eyring, uncalibrated (s) | 1.322 | 1.615 | 1.885 | 2.125 | 2.028 | 1.646 | 0.948 |
 | | r² | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 |
-| dressed | tracer T20 (s) | 1.534 | 1.768 | 1.883 | 1.889 | 1.785 | 1.482 | 0.890 |
-| | model (s) | 1.534 | 1.764 | 1.863 | 1.866 | 1.767 | 1.473 | 0.886 |
-| | model / tracer | -0.0 % | -0.3 % | -1.1 % | -1.2 % | -1.0 % | -0.6 % | -0.4 % |
-| | Eyring, uncalibrated (s) | 1.474 | 1.713 | 1.827 | 1.849 | 1.755 | 1.461 | 0.881 |
-| | r² | 1.0000 | 1.0000 | 0.9999 | 0.9999 | 1.0000 | 1.0000 | 1.0000 |
-| empty, seed 2 | T20 (s) | 1.632 | 1.951 | 2.306 | 2.554 | 2.514 | 1.952 | 1.043 |
-| | seed 2 / seed 1 | 0.40 % | 0.50 % | 0.32 % | 0.20 % | 0.14 % | 0.40 % | 0.11 % |
-| dressed, seed 2 | T20 (s) | 1.541 | 1.779 | 1.893 | 1.899 | 1.796 | 1.482 | 0.886 |
-| | seed 2 / seed 1 | 0.44 % | 0.60 % | 0.54 % | 0.52 % | 0.60 % | 0.04 % | 0.46 % |
+| dressed | tracer T20 (s) | 1.371 | 1.608 | 1.782 | 1.882 | 1.766 | 1.466 | 0.885 |
+| | model (s) | 1.370 | 1.599 | 1.749 | 1.853 | 1.740 | 1.452 | 0.881 |
+| | model / tracer | -0.1 % | -0.5 % | -1.8 % | -1.5 % | -1.5 % | -1.0 % | -0.5 % |
+| | Eyring, uncalibrated (s) | 1.284 | 1.541 | 1.710 | 1.837 | 1.726 | 1.442 | 0.876 |
+| | r² | 0.9999 | 1.0000 | 1.0000 | 0.9999 | 1.0000 | 1.0000 | 0.9999 |
+| empty, seed 2 | T20 (s) | 1.455 | 1.768 | 2.149 | 2.528 | 2.459 | 1.928 | 1.040 |
+| | seed 2 / seed 1 | 0.12 % | 0.41 % | 0.23 % | 0.28 % | 0.26 % | 0.17 % | 0.32 % |
+| dressed, seed 2 | T20 (s) | 1.369 | 1.613 | 1.782 | 1.879 | 1.766 | 1.471 | 0.876 |
+| | seed 2 / seed 1 | 0.18 % | 0.27 % | 0.02 % | 0.16 % | 0.02 % | 0.32 % | 1.04 % |
 
 
 ### Saloon
 
-200,000 rays a band. Calibration: 1.000, 1.023, 1.019, 1.012, 1.008, 1.008, 1.004.
+200,000 rays a band. Calibration: 1.000, 1.024, 1.019, 1.012, 1.010, 1.006, 1.006.
 
 | Dressing | | 125 | 250 | 500 | 1k | 2k | 4k | 8k |
 |---|---|---|---|---|---|---|---|---|
-| empty | tracer T20 (s) | 1.071 | 1.366 | 2.120 | 2.606 | 2.734 | 2.043 | 1.063 |
-| | model (s) | 1.039 | 1.366 | 2.121 | 2.605 | 2.734 | 2.043 | 1.063 |
-| | model / tracer | -3.0 % | -0.0 % | +0.0 % | -0.0 % | +0.0 % | +0.0 % | +0.0 % |
-| | Eyring, uncalibrated (s) | 1.039 | 1.335 | 2.081 | 2.574 | 2.713 | 2.027 | 1.059 |
+| empty | tracer T20 (s) | 1.002 | 1.292 | 2.005 | 2.589 | 2.641 | 1.984 | 1.049 |
+| | model (s) | 0.965 | 1.292 | 2.005 | 2.588 | 2.641 | 1.983 | 1.049 |
+| | model / tracer | -3.7 % | +0.0 % | -0.0 % | -0.0 % | +0.0 % | -0.0 % | -0.0 % |
+| | Eyring, uncalibrated (s) | 0.965 | 1.262 | 1.967 | 2.557 | 2.615 | 1.971 | 1.043 |
 | | r² | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 |
-| half | tracer T20 (s) | 1.045 | 1.311 | 1.900 | 2.181 | 2.210 | 1.733 | 0.975 |
-| | model (s) | 1.014 | 1.310 | 1.899 | 2.178 | 2.207 | 1.733 | 0.972 |
-| | model / tracer | -3.0 % | -0.1 % | -0.0 % | -0.1 % | -0.1 % | +0.0 % | -0.4 % |
-| | Eyring, uncalibrated (s) | 1.014 | 1.280 | 1.864 | 2.153 | 2.190 | 1.720 | 0.968 |
+| half | tracer T20 (s) | 0.978 | 1.249 | 1.815 | 2.170 | 2.150 | 1.697 | 0.960 |
+| | model (s) | 0.943 | 1.241 | 1.802 | 2.160 | 2.139 | 1.684 | 0.959 |
+| | model / tracer | -3.5 % | -0.6 % | -0.8 % | -0.4 % | -0.5 % | -0.8 % | -0.1 % |
+| | Eyring, uncalibrated (s) | 0.943 | 1.212 | 1.768 | 2.135 | 2.118 | 1.674 | 0.953 |
 | | r² | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 |
-| dressed | tracer T20 (s) | 1.024 | 1.268 | 1.729 | 1.880 | 1.857 | 1.513 | 0.901 |
-| | model (s) | 0.990 | 1.258 | 1.718 | 1.868 | 1.845 | 1.501 | 0.894 |
-| | model / tracer | -3.3 % | -0.8 % | -0.7 % | -0.7 % | -0.7 % | -0.8 % | -0.8 % |
-| | Eyring, uncalibrated (s) | 0.990 | 1.230 | 1.686 | 1.846 | 1.831 | 1.490 | 0.890 |
+| dressed | tracer T20 (s) | 0.958 | 1.205 | 1.655 | 1.863 | 1.808 | 1.478 | 0.885 |
+| | model (s) | 0.922 | 1.194 | 1.634 | 1.850 | 1.792 | 1.460 | 0.882 |
+| | model / tracer | -3.8 % | -0.9 % | -1.3 % | -0.7 % | -0.9 % | -1.2 % | -0.4 % |
+| | Eyring, uncalibrated (s) | 0.922 | 1.166 | 1.604 | 1.828 | 1.774 | 1.452 | 0.876 |
 | | r² | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 |
-| empty, seed 2 | T20 (s) | 1.070 | 1.367 | 2.116 | 2.604 | 2.733 | 2.040 | 1.062 |
-| | seed 2 / seed 1 | 0.10 % | 0.07 % | 0.21 % | 0.07 % | 0.03 % | 0.14 % | 0.07 % |
-| dressed, seed 2 | T20 (s) | 1.024 | 1.263 | 1.725 | 1.878 | 1.855 | 1.508 | 0.900 |
-| | seed 2 / seed 1 | 0.06 % | 0.42 % | 0.25 % | 0.12 % | 0.15 % | 0.30 % | 0.06 % |
+| empty, seed 2 | T20 (s) | 1.001 | 1.295 | 2.011 | 2.587 | 2.638 | 1.988 | 1.049 |
+| | seed 2 / seed 1 | 0.06 % | 0.26 % | 0.26 % | 0.06 % | 0.11 % | 0.23 % | 0.07 % |
+| dressed, seed 2 | T20 (s) | 0.955 | 1.201 | 1.664 | 1.875 | 1.819 | 1.483 | 0.883 |
+| | seed 2 / seed 1 | 0.40 % | 0.31 % | 0.53 % | 0.64 % | 0.62 % | 0.31 % | 0.23 % |
 
 
 ### Robert Adam Room
 
-200,000 rays a band. Calibration: 1.000, 1.076, 1.070, 1.050, 1.044, 1.041, 1.031.
+200,000 rays a band. Calibration: 1.000, 1.261, 1.156, 1.062, 1.049, 1.042, 1.026.
 
 | Dressing | | 125 | 250 | 500 | 1k | 2k | 4k | 8k |
 |---|---|---|---|---|---|---|---|---|
-| empty | tracer T20 (s) | 2.087 | 2.462 | 2.197 | 2.170 | 1.944 | 1.555 | 0.877 |
-| | model (s) | 1.869 | 2.462 | 2.198 | 2.171 | 1.945 | 1.555 | 0.877 |
-| | model / tracer | -10.4 % | -0.0 % | +0.0 % | +0.0 % | +0.0 % | -0.0 % | -0.0 % |
-| | Eyring, uncalibrated (s) | 1.869 | 2.288 | 2.054 | 2.068 | 1.863 | 1.494 | 0.850 |
-| | r² | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 |
-| half | tracer T20 (s) | 1.916 | 2.221 | 1.901 | 1.811 | 1.616 | 1.333 | 0.798 |
-| | model (s) | 1.779 | 2.267 | 1.919 | 1.806 | 1.603 | 1.328 | 0.798 |
-| | model / tracer | -7.2 % | +2.1 % | +1.0 % | -0.3 % | -0.8 % | -0.4 % | +0.0 % |
-| | Eyring, uncalibrated (s) | 1.779 | 2.106 | 1.794 | 1.720 | 1.536 | 1.275 | 0.774 |
-| | r² | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 |
-| dressed | tracer T20 (s) | 1.832 | 2.060 | 1.708 | 1.576 | 1.398 | 1.182 | 0.745 |
-| | model (s) | 1.696 | 2.099 | 1.702 | 1.543 | 1.360 | 1.156 | 0.731 |
-| | model / tracer | -7.4 % | +1.9 % | -0.4 % | -2.1 % | -2.7 % | -2.2 % | -1.9 % |
-| | Eyring, uncalibrated (s) | 1.696 | 1.951 | 1.591 | 1.470 | 1.303 | 1.110 | 0.709 |
-| | r² | 0.9999 | 1.0000 | 0.9999 | 0.9999 | 1.0000 | 1.0000 | 1.0000 |
-| empty, seed 2 | T20 (s) | 2.086 | 2.452 | 2.195 | 2.168 | 1.945 | 1.558 | 0.874 |
-| | seed 2 / seed 1 | 0.08 % | 0.41 % | 0.11 % | 0.09 % | 0.04 % | 0.14 % | 0.30 % |
-| dressed, seed 2 | T20 (s) | 1.842 | 2.072 | 1.714 | 1.578 | 1.400 | 1.186 | 0.740 |
-| | seed 2 / seed 1 | 0.57 % | 0.58 % | 0.35 % | 0.16 % | 0.13 % | 0.31 % | 0.72 % |
+| empty | tracer T20 (s) | 1.466 | 1.683 | 1.782 | 2.132 | 1.990 | 1.582 | 0.900 |
+| | model (s) | 1.021 | 1.683 | 1.782 | 2.133 | 1.991 | 1.582 | 0.900 |
+| | model / tracer | -30.4 % | -0.0 % | -0.0 % | +0.0 % | +0.0 % | -0.0 % | +0.0 % |
+| | Eyring, uncalibrated (s) | 1.021 | 1.334 | 1.541 | 2.008 | 1.898 | 1.518 | 0.878 |
+| | r² | 0.9995 | 0.9998 | 0.9999 | 1.0000 | 1.0000 | 1.0000 | 1.0000 |
+| half | tracer T20 (s) | 1.323 | 1.523 | 1.574 | 1.789 | 1.652 | 1.360 | 0.822 |
+| | model (s) | 0.993 | 1.601 | 1.608 | 1.790 | 1.644 | 1.353 | 0.820 |
+| | model / tracer | -25.0 % | +5.1 % | +2.1 % | +0.1 % | -0.5 % | -0.5 % | -0.2 % |
+| | Eyring, uncalibrated (s) | 0.993 | 1.269 | 1.391 | 1.686 | 1.568 | 1.298 | 0.799 |
+| | r² | 0.9993 | 0.9998 | 0.9999 | 1.0000 | 1.0000 | 1.0000 | 1.0000 |
+| dressed | tracer T20 (s) | 1.296 | 1.475 | 1.468 | 1.578 | 1.440 | 1.210 | 0.761 |
+| | model (s) | 0.966 | 1.526 | 1.464 | 1.540 | 1.397 | 1.179 | 0.751 |
+| | model / tracer | -25.5 % | +3.5 % | -0.3 % | -2.4 % | -3.0 % | -2.5 % | -1.3 % |
+| | Eyring, uncalibrated (s) | 0.966 | 1.210 | 1.266 | 1.450 | 1.332 | 1.132 | 0.732 |
+| | r² | 0.9992 | 0.9996 | 0.9998 | 0.9999 | 0.9999 | 1.0000 | 1.0000 |
+| empty, seed 2 | T20 (s) | 1.482 | 1.694 | 1.787 | 2.129 | 1.988 | 1.582 | 0.895 |
+| | seed 2 / seed 1 | 1.05 % | 0.64 % | 0.27 % | 0.17 % | 0.12 % | 0.01 % | 0.59 % |
+| dressed, seed 2 | T20 (s) | 1.323 | 1.493 | 1.482 | 1.587 | 1.448 | 1.215 | 0.762 |
+| | seed 2 / seed 1 | 2.07 % | 1.22 % | 0.93 % | 0.54 % | 0.58 % | 0.45 % | 0.16 % |
 
 
 ### Reception Room
 
-200,000 rays a band. Calibration: 1.000, 1.007, 0.996, 0.990, 0.987, 0.987, 0.983.
+200,000 rays a band. Calibration: 1.000, 1.009, 1.000, 0.992, 0.991, 0.989, 0.987.
 
 | Dressing | | 125 | 250 | 500 | 1k | 2k | 4k | 8k |
 |---|---|---|---|---|---|---|---|---|
-| empty | tracer T20 (s) | 0.611 | 1.170 | 1.022 | 0.903 | 0.735 | 0.613 | 0.470 |
-| | model (s) | 0.588 | 1.170 | 1.021 | 0.903 | 0.735 | 0.613 | 0.469 |
-| | model / tracer | -3.8 % | -0.0 % | -0.0 % | +0.0 % | +0.0 % | +0.0 % | -0.0 % |
-| | Eyring, uncalibrated (s) | 0.588 | 1.161 | 1.025 | 0.913 | 0.744 | 0.621 | 0.478 |
+| empty | tracer T20 (s) | 0.619 | 1.197 | 1.053 | 0.931 | 0.757 | 0.629 | 0.480 |
+| | model (s) | 0.597 | 1.197 | 1.053 | 0.931 | 0.757 | 0.629 | 0.480 |
+| | model / tracer | -3.5 % | -0.0 % | +0.0 % | -0.0 % | +0.0 % | +0.0 % | +0.0 % |
+| | Eyring, uncalibrated (s) | 0.597 | 1.186 | 1.053 | 0.938 | 0.764 | 0.636 | 0.486 |
 | | r² | 0.9998 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 |
-| half | tracer T20 (s) | 0.592 | 1.111 | 0.936 | 0.805 | 0.658 | 0.559 | 0.442 |
-| | model (s) | 0.574 | 1.103 | 0.928 | 0.802 | 0.654 | 0.555 | 0.434 |
-| | model / tracer | -3.1 % | -0.7 % | -0.8 % | -0.3 % | -0.5 % | -0.7 % | -1.7 % |
-| | Eyring, uncalibrated (s) | 0.574 | 1.095 | 0.932 | 0.811 | 0.663 | 0.562 | 0.442 |
-| | r² | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 |
-| dressed | tracer T20 (s) | 0.582 | 1.058 | 0.861 | 0.726 | 0.597 | 0.515 | 0.412 |
-| | model (s) | 0.561 | 1.043 | 0.850 | 0.721 | 0.588 | 0.506 | 0.403 |
-| | model / tracer | -3.6 % | -1.4 % | -1.3 % | -0.7 % | -1.5 % | -1.8 % | -2.0 % |
-| | Eyring, uncalibrated (s) | 0.561 | 1.036 | 0.853 | 0.728 | 0.596 | 0.513 | 0.410 |
-| | r² | 0.9999 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 0.9999 |
-| empty, seed 2 | T20 (s) | 0.608 | 1.171 | 1.022 | 0.903 | 0.732 | 0.610 | 0.470 |
-| | seed 2 / seed 1 | 0.46 % | 0.15 % | 0.00 % | 0.02 % | 0.33 % | 0.47 % | 0.06 % |
-| dressed, seed 2 | T20 (s) | 0.584 | 1.057 | 0.864 | 0.728 | 0.600 | 0.519 | 0.413 |
-| | seed 2 / seed 1 | 0.46 % | 0.04 % | 0.34 % | 0.39 % | 0.52 % | 0.72 % | 0.41 % |
+| half | tracer T20 (s) | 0.595 | 1.133 | 0.960 | 0.828 | 0.674 | 0.571 | 0.447 |
+| | model (s) | 0.583 | 1.129 | 0.958 | 0.827 | 0.675 | 0.570 | 0.445 |
+| | model / tracer | -2.0 % | -0.4 % | -0.2 % | -0.1 % | +0.1 % | -0.1 % | -0.6 % |
+| | Eyring, uncalibrated (s) | 0.583 | 1.119 | 0.958 | 0.834 | 0.681 | 0.576 | 0.450 |
+| | r² | 0.9999 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 |
+| dressed | tracer T20 (s) | 0.584 | 1.078 | 0.883 | 0.746 | 0.612 | 0.525 | 0.419 |
+| | model (s) | 0.570 | 1.069 | 0.877 | 0.743 | 0.607 | 0.520 | 0.413 |
+| | model / tracer | -2.5 % | -0.8 % | -0.6 % | -0.3 % | -0.8 % | -0.9 % | -1.3 % |
+| | Eyring, uncalibrated (s) | 0.570 | 1.059 | 0.877 | 0.749 | 0.613 | 0.526 | 0.419 |
+| | r² | 0.9999 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 |
+| empty, seed 2 | T20 (s) | 0.615 | 1.194 | 1.050 | 0.929 | 0.754 | 0.627 | 0.481 |
+| | seed 2 / seed 1 | 0.57 % | 0.28 % | 0.28 % | 0.26 % | 0.41 % | 0.29 % | 0.17 % |
+| dressed, seed 2 | T20 (s) | 0.587 | 1.075 | 0.881 | 0.747 | 0.614 | 0.528 | 0.422 |
+| | seed 2 / seed 1 | 0.50 % | 0.27 % | 0.15 % | 0.19 % | 0.38 % | 0.65 % | 0.69 % |
 
 
 ### North and South Galleries (one trace, results.json's `sameRoomAs`)
@@ -367,6 +362,54 @@ The calibration stops at its 1.3 clamp, so in those bands the planner's model si
 - The model stays at 1.3 times Eyring, inside the range the tracer allows.
 - A measured T20 in a gallery (a balloon burst or a sweep, ISO 3382-1) would settle it.
 
+## Plausibility against measured rooms (ruling R51)
+
+No reverberation time has been measured in any Trades Hall room. So each room is set beside the nearest measured room found, in the state that room was measured in, with the model in the matching state where there is one. The rows whose states match are tested in `calibration.test.ts`. Where they cannot be matched, the gap is recorded in numbers. What stays uncertain is named for Blake's ear test at the end.
+
+"Mid" is the mean of 500 Hz, 1 kHz and 2 kHz, as these papers report a room. The model's figures are the calibrated ones of the 13 November trace.
+
+| Room | Comparator: source and state | The model, matching state | Tolerance | Verdict |
+|---|---|---|---|---|
+| Grand Hall, 1,550 m³ | **La Redoute, Bad Godesberg** (1790–92): 1,450 m³, 17.3 × 11.6 × 7.2 m, a polished stone floor, plastered masonry walls, a gypsum plaster ceiling. **Empty and unseated**: T30 3.5 / 3.2 / 2.9 s at 500 Hz / 1 kHz / 2 kHz, mid 3.2 s (Lorenz-Kierakiewitz, DAGA 2020, Table 1). | Empty: mid 2.38 s. | Below 3.2 s, because the hall's oak boards on joists, mahogany dado, half-panelled walls and velour curtains all absorb more than stone and plaster. Also inside the 2.0–3.8 s plausibility band on (500 Hz + 1 kHz) ÷ 2. **Tested.** | Holds. |
+| | **Sanssouci, the marble hall** (1747): 1,150 m³, oval, Carrara marble and a stucco dome. **Two people present**: T30 mid 2.4 s (Lorenz-Kierakiewitz, DAS-DAGA 2025, Tables 1 and 2). | Empty: mid 2.38 s. | Not tested: harder finishes, a smaller room and a different state. | Consistent: a smaller, harder room measures about the hall's model. |
+| Saloon, 469 m³ | **Schloss Benrath, the western and eastern Gartensaal** (mid-18th century): parquet floors and wood-panelled walls, preserved in almost their original state. **Unoccupied**: T30 2.4 and 2.5 s (Graef, Lorenz-Kierakiewitz, Pfändner and Wagner, DAGA 2018, Table 1). The table calls these the 125 Hz–4 kHz mean, but its Fig. 4 gives them as the 500 Hz–2 kHz mean (about 2.37 and 2.53 s, read off the figure), and its low bands fall to about 2.1 s at 250 Hz and 1.5 s at 125 Hz. The volume is not stated: its 1 kHz G (+22.9 and +23.2 dB by theory) and T30 put it near 400 m³ by the diffuse-field relation G = 10 lg(100/r² + 31200 T/V) at r = 10 m (inferred). | Empty: mid 2.41 s; 0.97 s at 125 Hz and 1.29 s at 250 Hz. | Within 20 % of 2.45 s: about 5 % for the volumes, the rest for finishes neither paper nor survey pins down. The model's first-trace figure (2.49 s) was known when this was set. **Tested.** | Holds in the mid band (2.41 s against 2.45 s, −1.6 %). Below 500 Hz the model is drier than Benrath's halls (1.29 against about 2.1 s at 250 Hz): named for the ear test. |
+| | **Sanssouci, the concert room** (1747): 515 m³, 10.1 × 8.2 × 6.12 m, panelled, with mirrors, paintings in the walls, gilding, a chandelier, its original furnishings and a 2.2 m sisal runner. **Two people present**: T30 mid 1.25 s, EDT 1.3 s (DAS-DAGA 2025, Tables 1 and 2). | Empty: mid 2.41 s; laid for 60: 1.76 s. | The states cannot be matched: a furnished room with two people against an unpeopled one. Not tested; the gap is below. | A gap of 25.1 m² of absorption, explained below by furnishings the Saloon's model has no source for. |
+| Robert Adam Room, 379 m³ | **The Franz-Marc-Raum, Kloster Benediktbeuern**: about 220 m³ (about 9.8 × 5.9 × 3.8 m), a wooden parquet floor, a stucco ceiling and smooth walls, with no significant sound-absorbing surfaces. **Set with chairs** for meetings (its photograph); occupancy not stated. T between about 1.5 and 1.9 s, rising towards low frequencies; no metric or standard stated (Späh, Zhou, Zhang and Neumann, DAGA 2023; translated). | Empty: mid 1.97 s; laid for 60: 1.47 s. | Not tested: the state, the metric and the bands are not given. | Consistent in order: a hard plastered room with a timber floor of about this size rings 1.5–2 s. The model's low bands now fall, where the comparator's rise. |
+| Reception Room, 289 m³ | **Sanssouci, the audience room**: 315 m³, 10.1 × 5.4 × 6.16 m, upholstered textile wall coverings. **Two people present**: T30 mid 0.75 s (DAS-DAGA 2025, Tables 1 and 2). | Empty: mid 0.91 s; laid for 60: 0.74 s. | Not tested: textile walls against plasterboard, and a furnished room. | Consistent: the model is longer, as plasterboard walls absorb less than textile coverings. |
+| North and South Galleries, 132 m³ each | **None found.** No measured, small, carpeted meeting room was found in the search below. | Empty: mid 0.78 s; laid for 40: 0.63 s. | — | Open. Their upper bands rest on the clamp (above); named for the ear test. |
+
+### The Saloon against Sanssouci's concert room: the gap in numbers
+
+Sanssouci's 1.25 s, by Eyring with air over 500 Hz–2 kHz, means a mean absorption coefficient of 0.151 over its 389.6 m² of surface: 58.7 m² of absorption. For the Saloon to ring 1.25 s, in its own 469.2 m³ and 379.2 m², it would need 53.7 m². The model has 28.6 m² empty and 39.0 m² laid for 60. The gap is 25.1 m² empty and 14.7 m² laid.
+
+What could account for it:
+- **Two people** add about 1 m² at those bands (the model's seated-adult row), and the sisal runner about as much again, by the paper's own estimate ("comparable to one to two persons extra").
+- **Furnishings**: Sanssouci keeps its original furnishings. 25.1 m² is about 28 m² of heavy velour, or about 111 upholstered chairs (the model's row for one). The Saloon's survey records a chandelier, a needlework firescreen and backlit stained glass, and mentions no curtains or upholstery.
+- **Panelling and paintings**: Rococo boiserie and canvas set in the walls can absorb more at mid frequencies than thick mahogany panels on battens. The model's panelling row (0.12 / 0.09 / 0.08) would need roughly doubling over the Saloon's 129 m² of panelling to close half the gap. No measurement supports either.
+
+So the gap is Sanssouci's furnishings and fittings, as far as the data go: the unoccupied, panelled, parquet-floored Benrath halls of about the Saloon's size measure 2.4–2.5 s, as the model does.
+
+### What stays uncertain, for Blake's ear test
+
+- **The Saloon below 500 Hz.** The model gives 0.97 s at 125 Hz and 1.29 s at 250 Hz, against about 1.5 and 2.1 s read off Benrath's figure. If the empty Saloon's low echo sounds thin, the panelling row's 0.28 / 0.22 at 125 / 250 Hz (just under every cited row at 125 Hz) is the lever.
+- **The empty Saloon's mid ring of about 2.4 s.** Benrath supports it; Sanssouci, furnished, is half of it. If the room sounds too live, the missing absorbers are furnishings the survey did not record.
+- **The Robert Adam Room's 250 and 500 Hz.** The tracer reads its box 1.26 and 1.16 times Eyring there, so the factors lengthen those bands by 26 % and 16 %. The box is 22.9 × 6.1 m, a corridor with absorbing floor and ceiling between hard walls. The real room is two sections about 11 m across, with piers and a curved wall that would break up the flutter along the box. So these two bands may ring longer in the model than in the room.
+- **The galleries' 1–4 kHz**, held at the clamp (above).
+- **The Grand Hall's curtains** (31 m² of velour, EST) carry a third of its 1 kHz absorption.
+
+### The literature search (13 November)
+
+A bounded search (well under the hour allowed) of DAGA, Institute of Acoustics, Forum Acusticum and journal papers, for a measured, panelled room of 300–800 m³, unfurnished or event-dressed, beyond those above. Every figure used here was read in the paper itself.
+- **Found:** Schloss Benrath's Gartensäle (DAGA 2018), now the Saloon's tested comparator, and the Franz-Marc-Raum (DAGA 2023), the Robert Adam Room's.
+- **Read and rejected:**
+  - the Forum Heimat at Benediktbeuern, 834 m³, vaulted and hard;
+  - the large Sitzungssaal at Schloss Deichmannsaue, about 1,084 m³, with its figures only in a plot;
+  - the rooms of the Caserta royal palace, 4,700 m³ and more;
+  - a Renaissance hall of 5,000 m³;
+  - a university meeting room of 1,380 m³, whose figures are calculated.
+- **Not retrievable:** Templeton's "Acoustics of Ceremonial Halls" (IOA Proceedings 22, 2000) and Vondrášek's surveys of Czech music rooms.
+- **Still none found** for the Holywell Music Room, the Bath and Edinburgh Assembly Rooms, a livery hall or a council chamber, nor for a small carpeted meeting room.
+
 ## What the tracer does not model
 
 - **The rooms' real outlines:** the prisms above, the Reception Room's L, and the Robert Adam Room's two ceilings.
@@ -392,3 +435,24 @@ The calibration stops at its 1.3 clamp, so in those bands the planner's model si
   - 8 kHz and the change with fullness joined the tests.
   - The self-test gained checks 5 and 6 and Kuttruff's bound on check 1, and passed.
   - Two committed traces were rerun and matched to the bit (`bit-for-bit.txt`).
+
+- **13 Nov 2026 (the #416 review's fix round, rulings R49 and R50).** A full retrace after R49's changes to the rooms, with the same rays and seeds.
+  - **What changed in the rooms.**
+    - The Robert Adam Room's two ceilings and the Grand Hall's dome became plaster on lath, and that row became James's "plaster on lath, deep air space".
+    - The Grand Hall's dado lost only each opening's part of its band, about 10 m² more panelling.
+    - The Saloon's, the Robert Adam Room's lower section's and the Reception Room's heights became the survey mesh's area means: 5.60, 3.03 and 2.89 m, from 5.7, 2.9 and 2.8 m.
+  - **The self-test passed**, the same to every printed digit as on 28 October.
+  - **The double run.** Two processes traced the committed rooms.json at once. Their results.json were byte-identical (sha256 f170af08…04afa8), and their logs agreed line for line apart from the timings and the output file's name.
+  - **The galleries' export did not change**, and their traces repeated 28 October's exactly.
+  - **Timing.** 37 minutes of tracing (2,226 s), with no pause for a gate.
+  - **What moved**, empty, calibrated, (500 Hz + 1 kHz) ÷ 2, before and after:
+
+    | Room | Mid band | 250 Hz |
+    |---|---|---|
+    | Grand Hall | 2.44 to 2.34 s | 1.96 to 1.76 s |
+    | Saloon | 2.36 to 2.30 s | 1.37 to 1.29 s |
+    | Robert Adam Room | 2.18 to 1.96 s | 2.46 to 1.68 s |
+    | Reception Room | 0.96 to 0.99 s | 1.17 to 1.20 s |
+    | North and South Galleries | 0.89 s, unchanged | 1.10 s, unchanged |
+
+  - **The provenance check.** trace{} now records raytrace.py's sha256 beside rooms.json's, and `--stamp` is gone.

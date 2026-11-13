@@ -1,20 +1,22 @@
 #!/usr/bin/env python3
-"""Offline ray tracer for the set-down engine's rooms (T-677, Task 7).
+"""Offline ray tracer for the set-down engine's rooms (T-700, Task 7).
 
 It is the independent check on the planner's room model: Eyring with air,
 times a per-band calibration (packages/web/src/lib/set-down/room-acoustics.ts).
-It traces each Trades Hall room as a prism of the model's volume and surfaces
-(the Grand Hall with its dome as a spherical cap), empty, half dressed and
-fully dressed, and fits T20 to each band's Schroeder curve. It proves itself on
-textbook cases first (--selftest), on every run.
+It traces each Trades Hall room as a box with the model's volume and surface
+areas (the Grand Hall with a spherical cap of the scanned dome's volume),
+empty, half dressed and fully dressed, and fits T20 to each band's Schroeder
+curve. So it checks Eyring's diffuse-field assumption on those boxes, with the
+model's own absorption: not the absorption data, and not the rooms' real
+outlines. It proves itself on textbook cases first (--selftest), on every run.
 
     python raytrace.py --selftest [rooms.json]
     python raytrace.py rooms.json results.json [--pause-while FILE]
-    python raytrace.py --stamp COMMIT rooms.json results.json
 
-numpy only (and git, for --stamp). Run it with `python`, not `python -I`: numpy lives in the user
-site-packages. See README.md for the model, its simplifications and the
-figures of the last run.
+numpy only. Run it with `python`, not `python -I`: numpy lives in the user
+site-packages. results.json records the sha256 of the rooms.json it traced and
+of this file (ruling R50), so editing either means a retrace. See README.md for
+the model, its simplifications and the figures of the last run.
 """
 
 from __future__ import annotations
@@ -24,7 +26,6 @@ import hashlib
 import json
 import math
 import os
-import subprocess
 import sys
 import time
 from dataclasses import dataclass, field
@@ -744,14 +745,25 @@ def trace_one_room(slug: str, room: dict, air: np.ndarray, rays: int) -> tuple[d
     return result, ok
 
 
-def rooms_sha256(content: bytes) -> str:
-    """sha256 of rooms.json with CRLF line ends read as LF, so a Windows checkout hashes as the committed file does."""
+def lf_sha256(content: bytes) -> str:
+    """sha256 with CRLF line ends read as LF, so a Windows checkout hashes as the committed (LF) file does."""
     return hashlib.sha256(content.replace(b"\r\n", b"\n")).hexdigest()
 
 
-def trace_metadata(rooms_content: bytes) -> dict:
-    """What results.json records of the run that wrote it (ruling R38)."""
-    return {"roomsSha256": rooms_sha256(rooms_content), "batch": BATCH, "numpy": np.__version__}
+def tracer_sha256() -> str:
+    """This file's own lf_sha256: the code that wrote a results.json (ruling R50)."""
+    with open(os.path.abspath(__file__), "rb") as handle:
+        return lf_sha256(handle.read())
+
+
+def trace_metadata(rooms_content: bytes, raytrace_sha256: str) -> dict:
+    """What results.json records of the run that wrote it (rulings R38 and R50)."""
+    return {
+        "roomsSha256": lf_sha256(rooms_content),
+        "raytraceSha256": raytrace_sha256,
+        "batch": BATCH,
+        "numpy": np.__version__,
+    }
 
 
 def read_rooms(rooms_path: str) -> tuple[bytes, dict]:
@@ -766,52 +778,11 @@ def write_results(results_path: str, results: dict) -> None:
         handle.write("\n")
 
 
-def git_blob(path: str, commit: str) -> bytes | None:
-    """The file at `path` as `commit` holds it, or None if git cannot show it."""
-    folder, name = os.path.split(os.path.abspath(path))
-    shown = subprocess.run(["git", "show", f"{commit}:./{name}"], cwd=folder, capture_output=True, check=False)
-    return shown.stdout if shown.returncode == 0 else None
-
-
-def stamp(commit: str, rooms_path: str, results_path: str) -> bool:
-    """Adds the trace metadata to a results.json written before the tracer recorded it, and nothing else.
-
-    A one-off step (ruling R38). It refuses unless rooms.json is the file the
-    trace read, which `commit` (the commit that holds the trace) records, and
-    unless results.json is that commit's trace, so the hash it writes is the
-    hash of the rooms that were traced.
-    """
-    rooms_content, _ = read_rooms(rooms_path)
-    committed_rooms = git_blob(rooms_path, commit)
-    # The commit's trace is the results.json beside its rooms.json, wherever the file to stamp lives.
-    committed_results = git_blob(os.path.join(os.path.dirname(os.path.abspath(rooms_path)), "results.json"), commit)
-    if committed_rooms is None or committed_results is None:
-        print(f"--stamp refused: git cannot show rooms.json and results.json at {commit}")
-        return False
-    if rooms_sha256(committed_rooms) != rooms_sha256(rooms_content):
-        print(f"--stamp refused: rooms.json differs from {commit}'s, the file the trace read")
-        return False
-    with open(results_path, encoding="utf-8") as handle:
-        results = json.load(handle)
-    traced = {key: value for key, value in results.items() if key != "trace"}
-    if traced != json.loads(committed_results.decode("utf-8")):
-        print(f"--stamp refused: results.json's traces differ from {commit}'s")
-        return False
-    metadata = {
-        **trace_metadata(rooms_content),
-        "stamped": f"added after the trace by raytrace.py --stamp {commit}: rooms.json and the traces matched "
-                   f"{commit}'s, and the trace ran with this BATCH and numpy",
-    }
-    if "trace" in results and results["trace"] != metadata:
-        print("--stamp refused: results.json already records different trace metadata")
-        return False
-    write_results(results_path, {"trace": metadata, **traced})
-    print(f"stamped {results_path}: rooms.json sha256 {metadata['roomsSha256']}, batch {BATCH}, numpy {np.__version__}")
-    return True
-
-
 def run_rooms(rooms_path: str, results_path: str) -> bool:
+    # Both hashes are taken before tracing, so they name the files the run actually read and ran.
+    raytrace_sha256 = tracer_sha256()
     rooms_content, exported = read_rooms(rooms_path)
+    print(f"rooms.json sha256 {lf_sha256(rooms_content)}; raytrace.py sha256 {raytrace_sha256} (LF)")
     air = np.array(exported["airAttenuationPerM"])
     if list(exported["bandsHz"]) != list(BANDS_HZ):
         raise ValueError("rooms.json bands differ from the tracer's")
@@ -833,7 +804,7 @@ def run_rooms(rooms_path: str, results_path: str) -> bool:
         ok &= room_ok
 
     if ok:
-        write_results(results_path, {"trace": trace_metadata(rooms_content), **results})
+        write_results(results_path, {"trace": trace_metadata(rooms_content, raytrace_sha256), **results})
         print(f"\nwrote {results_path}")
     else:
         print("\na check failed: results.json not written")
@@ -846,12 +817,7 @@ def main() -> int:
     parser.add_argument("rooms", nargs="?", help="rooms.json from the exporter")
     parser.add_argument("results", nargs="?", help="results.json to write")
     parser.add_argument("--pause-while", metavar="FILE", help="wait between batches while FILE exists")
-    parser.add_argument("--stamp", metavar="COMMIT", help="only add the trace metadata to results.json (see README)")
     args = parser.parse_args()
-    if args.stamp is not None:
-        if args.rooms is None or args.results is None:
-            parser.error("--stamp needs rooms.json and results.json")
-        return 0 if stamp(args.stamp, args.rooms, args.results) else 1
     if not args.selftest and (args.rooms is None or args.results is None):
         parser.error("give rooms.json and results.json, or --selftest")
     global PAUSE_FILE

@@ -42,7 +42,18 @@ describe("acoustic data", () => {
     expect(FABRIC_FACE_PER_M2).toEqual(SURFACE_ABSORPTION["velour-drape"]);
   });
 
-  it("uses the research 8 kHz figures where given and repeats 4 kHz elsewhere", () => {
+  it("holds plaster on lath at James's 'plaster on lath, deep air space', its 8 kHz the 4 kHz value (R49)", () => {
+    expect(SURFACE_ABSORPTION["plaster-lath"]).toEqual([0.2, 0.15, 0.1, 0.05, 0.05, 0.05, 0.05]);
+    expect(rowOf("plaster-lath")).toMatch(/TEXTBOOK James p\.5 "Plaster on lath, deep air space"/);
+  });
+
+  it("names a primary source on every row, never the research digest it was gathered in", () => {
+    for (const line of sourceText.split("\n")) {
+      expect(line).not.toMatch(/research|acoustic-data\.md/i);
+    }
+  });
+
+  it("uses its 8 kHz estimates where set and repeats 4 kHz elsewhere", () => {
     expect(SURFACE_ABSORPTION["oak-boards-joists"][6]).toBe(0.08);
     expect(SURFACE_ABSORPTION["parquet-timber-subfloor"][6]).toBe(0.08);
     expect(SURFACE_ABSORPTION["plaster-masonry"][6]).toBe(0.06);

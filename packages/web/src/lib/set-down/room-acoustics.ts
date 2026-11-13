@@ -1,6 +1,6 @@
 // ---------------------------------------------------------------------------
 // How long each room rings, from its surfaces and what has been placed in it
-// (T-677).
+// (T-700).
 //
 // Eyring's formula with air absorption gives each band's reverberation time
 // from the room's surfaces (rooms.ts) plus the absorption of its furniture.
@@ -252,12 +252,19 @@ export function reverberationTimes(room: RoomAcoustics, contents: BandValues): B
   return [band(0), band(1), band(2), band(3), band(4), band(5), band(6)];
 }
 
-/** The room constant R = A / (1 - mean alpha) at 1 kHz, in m2. */
+/**
+ * The room constant R = A / (1 - mean alpha) at 1 kHz, in m2. A is the
+ * equivalent absorption area including the air's 4 m V, as in the Eyring time
+ * above; the mean alpha is the surfaces' and contents' alone, since the air
+ * takes nothing at a reflection. In the empty Grand Hall the air is about 7 %
+ * of A at 1 kHz.
+ */
 function roomConstant(room: RoomAcoustics, contents: BandValues): number {
   const { areaM2, absorption } = surfaceTotals(room);
-  const total = absorption[ONE_KHZ] + Math.max(0, finite(contents[ONE_KHZ]));
-  const mean = meanAbsorption(total, areaM2);
-  return Math.max(1e-6, total / (1 - mean));
+  const surfaces = absorption[ONE_KHZ] + Math.max(0, finite(contents[ONE_KHZ]));
+  const air = 4 * AIR_ATTENUATION_PER_M[ONE_KHZ] * Math.max(0, finite(room.volumeM3));
+  const mean = meanAbsorption(surfaces, areaM2);
+  return Math.max(1e-6, (surfaces + air) / (1 - mean));
 }
 
 const NO_CONTENTS: BandValues = [0, 0, 0, 0, 0, 0, 0];
@@ -266,7 +273,8 @@ let referenceRoomConstant: number | null = null;
 /**
  * The reverberant field's level against the empty Grand Hall's, as an
  * amplitude: sqrt(4 / R) / sqrt(4 / R_ref) at 1 kHz, where R = A / (1 - mean
- * alpha). The diffuse field's energy density goes as 4 / R, so:
+ * alpha) and A includes the air. The diffuse field's energy density goes as
+ * 4 / R, so:
  *   - the empty Grand Hall is 1;
  *   - added contents raise R and lower any room's value;
  *   - a small, lightly absorbing room has less total absorption than the
