@@ -18,10 +18,11 @@
 //   - Every processor named below is one actually in use.
 // ---------------------------------------------------------------------------
 
-import { useEffect, type ReactElement } from "react";
+import { useEffect, useState, type ReactElement } from "react";
 import { CONTRACT_CONSENT_STATEMENT, DIETARY_MEMORY_CONSENT, DIETARY_MEMORY_MONTHS_UNUSED, DIETARY_NOTE_RETENTION } from "@omnitwin/types";
 import { REMEMBERED_NOTES_PATH } from "../lib/dietary-memory.js";
 import { ROUTE_DOCUMENTS } from "../lib/route-documents.js";
+import { measurementDeclined, setMeasurementDeclined } from "../observability/measurement-choice.js";
 import "./LegalPage.css";
 
 interface LegalPageProps {
@@ -49,7 +50,9 @@ type LegalBlock =
   | { readonly kind: "p"; readonly text: string }
   | { readonly kind: "list"; readonly items: readonly string[] }
   | { readonly kind: "defs"; readonly items: readonly LegalDefinition[] }
-  | { readonly kind: "links"; readonly items: readonly LegalLink[] };
+  | { readonly kind: "links"; readonly items: readonly LegalLink[] }
+  /** The "Don't measure my visits" switch the page-speed paragraph promises. */
+  | { readonly kind: "measurement-choice" };
 
 interface LegalSection {
   readonly id: string;
@@ -102,8 +105,11 @@ const ACCESSIBILITY_UPDATED = { text: "8 November 2026", iso: "2026-11-08" } as 
  *  for deposits, and said what a contract's signature record keeps (Plan 19 L5);
  *  and on 8 November, when it said that clients and planners sign in as well as
  *  venue staff, that the site serves its own typefaces, and that Resend also
- *  carries the acknowledgement sent to the guest (v1.0 final review). */
-const PRIVACY_UPDATED = { text: "8 November 2026", iso: "2026-11-08" } as const;
+ *  carries the acknowledgement sent to the guest (v1.0 final review); and on
+ *  13 November, when it described the page-speed measurements, their lawful
+ *  basis and the "Don't measure my visits" switch (T-685). This is the day
+ *  that goes live: re-date it if the merge slips to another day. */
+const PRIVACY_UPDATED = { text: "13 November 2026", iso: "2026-11-13" } as const;
 
 /** The allergy note's keeping period, from the one definition the API's
  *  retention pass and the planner also read. */
@@ -264,6 +270,20 @@ const PRIVACY: LegalDocument = {
                 "When something goes wrong in the browser or on the server, our error-monitoring service records technical details about the failure. That can include the page you were on and the technical state of the application at the time.",
             },
             {
+              term: "How fast our pages are",
+              detail:
+                "When you open one of our pages, your browser may measure how quickly it loaded and responded, and how much its content shifted as it loaded (four measurements, each rated good, needs improvement or poor), and send them to us with the kind of page (for example \"a proposal\") and whether it was opened on a phone, tablet or computer. "
+                + "It does not send the address of the page you opened, anything you typed, or any identifier, and nothing is stored on your device for it. Like any request, it reaches us from your internet address. We do not keep that with the measurements, and our own server does not log it; our hosting provider's standard request logs record it, as they do for every request (see \"Server and request logs\"). "
+                + "We keep each measurement with only the day it arrived, use them only to make the site faster, and delete them after 90 days. "
+                + "If your browser sends Global Privacy Control or Do Not Track, your visit is not measured, and anything that arrives with either signal is discarded. On any browser you can also turn it off with the \"Don't measure my visits\" switch on this page. That choice is kept in this browser on this device until the browser clears our site's data (Safari does this after about a week without a visit), so you may need to set it again.",
+            },
+          ],
+        },
+        { kind: "measurement-choice" },
+        {
+          kind: "defs",
+          items: [
+            {
               term: "Dietary and allergy notes for an event",
               detail:
                 "When an event is planned with the venue, its layout can record how many guests need each kind of meal (vegetarian, vegan, gluten-free, nut-free, halal, kosher) and a short note about other allergies. The note is health information. It is read by the venue's events team and the staff preparing the room, and it is printed on the event sheets they work from. Please give allergens and numbers, not guests' names. The note is kept out of our server logs and error reports. "
@@ -331,6 +351,11 @@ const PRIVACY: LegalDocument = {
                 "Article 6(1)(f), legitimate interests: protecting the site from abuse, spam and bulk harvesting, and diagnosing faults so that the service stays available.",
             },
             {
+              term: "Measuring how fast our pages are",
+              detail:
+                "Article 6(1)(f): our legitimate interest in a fast, working site. You can object at any time with the \"Don't measure my visits\" switch (see \"How fast our pages are\").",
+            },
+            {
               term: "Venue staff accounts",
               detail:
                 "Article 6(1)(b) where an account is part of someone's contract with the venue, and Article 6(1)(f) — our legitimate interest in controlling who can see enquiry records — otherwise.",
@@ -348,7 +373,7 @@ const PRIVACY: LegalDocument = {
           items: [
             "We do not sell, rent or trade personal information.",
             "We do not use your enquiry to add you to a marketing list, and this service sends no marketing email. If that ever changes we would ask for your consent first, and you could withdraw it at any time.",
-            "We run no analytics product and set no advertising or tracking cookies. There are no advertising networks in this site.",
+            "We run no third-party analytics product and set no advertising or tracking cookies. There are no advertising networks in this site.",
             "We make no decisions about you by automated means that produce legal effects or similarly significant effects, and we do not profile you.",
           ],
         },
@@ -374,6 +399,11 @@ const PRIVACY: LegalDocument = {
               term: "Local storage preferences",
               detail:
                 "Your light or dark theme choice, and similar view preferences, are stored by your browser on your own device. They are not transmitted to us and are not used to identify you.",
+            },
+            {
+              term: "Your page-speed choice",
+              detail:
+                "If you use the \"Don't measure my visits\" switch, your browser keeps that choice on your device so we can respect it on later visits (see \"How fast our pages are\"). It is never sent to us.",
             },
             {
               // Self-hosted since 777e3985 (index.html, src/styles/fonts). The
@@ -1065,8 +1095,35 @@ function storedTheme(): "dark" | "light" | undefined {
 // Rendering
 // ---------------------------------------------------------------------------
 
+/** "Don't measure my visits" (observability/measurement-choice.ts). */
+function MeasurementChoice(): ReactElement {
+  const [declined, setDeclined] = useState(measurementDeclined);
+  // Whether the browser kept the last choice for later visits.
+  const [kept, setKept] = useState(true);
+  const toggle = (): void => {
+    setKept(setMeasurementDeclined(!declined));
+    // Read back: a browser that refuses its storage altogether stays declined.
+    setDeclined(measurementDeclined());
+  };
+  const status = !declined
+    ? "Your visits may be measured, as described above."
+    : kept
+      ? "Your visits in this browser are not measured."
+      : "This browser would not let us keep your choice, so it holds only until you leave this page.";
+  return (
+    <p className="lg-p lg-choice">
+      <button type="button" className="lg-choice-button" aria-pressed={declined} onClick={toggle}>
+        {"Don't measure my visits"}
+      </button>
+      <span className="lg-choice-state" role="status">{status}</span>
+    </p>
+  );
+}
+
 function LegalBlockView({ block }: { readonly block: LegalBlock }): ReactElement {
   switch (block.kind) {
+    case "measurement-choice":
+      return <MeasurementChoice />;
     case "p":
       return <p className="lg-p">{block.text}</p>;
     case "list":

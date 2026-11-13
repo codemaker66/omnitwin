@@ -226,12 +226,22 @@ without consent only with clear information and a simple, free way to object. Bl
 decision of 19 October 2026 for the enquiry funnel's browser signals applies here
 too: keep nothing until the privacy page describes it.
 
-**The way to object is not built yet.** Global Privacy Control and Do Not Track are
-honoured, but Safari, and so every browser on an iPhone, sends neither, so most phone
-visitors would have no way to object. Before switching on, the privacy page needs one
-that works everywhere, for example a "Don't measure my visits" control whose stored
-choice `shouldReportWebVitals` checks. That is for the solicitor and Blake to settle;
-it is not in this change (#355 adds it).
+**The way to object** (T-685, 6 November 2026). Global Privacy Control and Do Not
+Track are honoured, but Safari, and so every browser on an iPhone, sends neither. The
+privacy page therefore carries a "Don't measure my visits" switch
+(`observability/measurement-choice.ts`, rendered in `LegalPage.tsx`). The choice is
+kept in the browser under `venviewer.measurement.declined`, and
+`shouldReportWebVitals` refuses while it is set. A browser that will not let the site
+read its storage at all counts as declined and is never measured; one that will not
+keep the choice (storage full) keeps it for the visit, and the switch says so rather
+than claiming it was kept (`setMeasurementDeclined` writes, then reads back). The
+reporter reads it again at every send, so pressing the switch also stops the page
+load in progress (the privacy page is itself measured), and so does a press in
+another tab before this one is hidden. Safari's tracking prevention clears script
+storage after about seven days without a visit, so there the choice can lapse; the
+paragraph says so, and the page's storage list names the choice ("Your page-speed
+choice"). Blake chose the switch's place: on the privacy page, which every public
+page links to, not in every footer.
 
 **To switch on**, in one release:
 1. check the database first: `web_vital_samples` has no `navigation_type` column,
@@ -240,18 +250,44 @@ it is not in this change (#355 adds it).
    was edited before landing and renumbered (0106 in October, 0108, then
    `0109_web_vital_samples` on 13 November), so a database that ran an earlier copy
    of #309 keeps the old table. Production never ran any of them;
-2. merge #355, which adds the privacy page's paragraph ("How fast our pages are", the
-   wording approved on 12 November 2026) and the "Don't measure my visits" switch, a
-   way to object that works on an iPhone (above);
+2. merge #355, the privacy page's paragraph ("How fast our pages are", below) and the
+   "Don't measure my visits" switch, a way to object that works on an iPhone
+   (above), re-dating the policy to the day it goes live;
 3. set `WEB_VITALS_COLLECTION=on` on the API;
 4. build the web with a sample rate **below 1** (0.5 to start): the page says a
    browser "may" measure a page load, so only a sample of them is measured, and the
    code treats 1 or more as off. Measuring every page load needs that description
    changed first.
 
-The privacy page's wording is #355's (`LegalPage.tsx`). The October draft that stood
-here said the address was not logged, which is untrue: the host's request logs
-record it (above).
+The privacy page's paragraph. Blake approved the first wording on 6 November 2026 and
+the solicitor approved it (Blake, 12 November). On 12 November a check of every claim
+against the code found sentences untrue of the real system (the hosting provider's
+request logs record every request's address; Safari clears the stored choice; one of
+the four is a layout-shift score, not a time), and Blake approved the corrected
+wording the same day ("everything is approved and have full permissions"). On
+13 November the release lead's review found three more places to make exact, and
+Blake approved all three ("Apply all three (Recommended)"): the Global Privacy
+Control and Do Not Track sentence (the server also discards a report whose signal the
+page could not see), a lawful basis under "Why we use it, and our lawful basis"
+(Article 6(1)(f), with "We run no third-party analytics product" under "What we do
+not do"), and the rating and the day kept beside each measurement:
+
+> **How fast our pages are.** When you open one of our pages, your browser may measure
+> how quickly it loaded and responded, and how much its content shifted as it loaded
+> (four measurements, each rated good, needs improvement or poor), and send them to us
+> with the kind of page (for example "a proposal") and whether it was opened on a
+> phone, tablet or computer. It does not send the address of the page you opened,
+> anything you typed, or any identifier, and nothing is stored on your device for it.
+> Like any request, it reaches us from your internet address. We do not keep that with
+> the measurements, and our own server does not log it; our hosting provider's standard
+> request logs record it, as they do for every request (see "Server and request
+> logs"). We keep each measurement with only the day it arrived, use them only to make
+> the site faster, and delete them after 90 days. If your browser sends Global Privacy
+> Control or Do Not Track, your visit is not measured, and anything that arrives with
+> either signal is discarded. On any browser you can also turn it off with the "Don't
+> measure my visits" switch on this page. That choice is kept in this browser on this
+> device until the browser clears our site's data (Safari does this after about a week
+> without a visit), so you may need to set it again.
 
 **Limits.** Anyone can post a report, so the limiter bounds an address to 60 a minute
 in each server process and a daily ceiling (`WEB_VITALS_DAILY_REPORT_CEILING`, 5,000

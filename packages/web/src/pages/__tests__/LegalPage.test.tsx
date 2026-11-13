@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { measurementDeclined, setMeasurementDeclined } from "../../observability/measurement-choice.js";
 import {
   DIETARY_MEMORY_CONSENT,
   DIETARY_MEMORY_MONTHS_UNUSED,
@@ -79,12 +80,16 @@ describe("every document", () => {
   it.each(TYPES)("shows a machine-readable last-updated date — %s", (type) => {
     render(<LegalPage type={type} />);
     const time = document.querySelector("time");
-    // Each document carries its own date: the privacy policy and the
-    // accessibility statement changed in the v1.0 final review; the terms
-    // changed on 11 November, when the Grand Hall's dimensions became measured.
+    // Each document carries its own date: the accessibility statement changed
+    // in the v1.0 final review; the terms on 11 November, when the Grand Hall's
+    // dimensions became measured; the privacy policy on 13 November, when it
+    // described the page-speed measurements, their lawful basis and their
+    // switch (T-685).
     const expected = type === "terms"
       ? { iso: "2026-11-11", text: "11 November 2026" }
-      : { iso: "2026-11-08", text: "8 November 2026" };
+      : type === "privacy"
+        ? { iso: "2026-11-13", text: "13 November 2026" }
+        : { iso: "2026-11-08", text: "8 November 2026" };
     expect(time?.getAttribute("datetime")).toBe(expected.iso);
     expect(time?.textContent).toBe(expected.text);
   });
@@ -116,6 +121,68 @@ describe("every document", () => {
 });
 
 describe("the privacy policy", () => {
+  // T-685: before the page-speed timings may be switched on, the page says what
+  // they are and offers a way to object that works on every browser.
+  it("says what the page-speed measurements are, and its switch turns them off in this browser", () => {
+    render(<LegalPage type="privacy" />);
+    const page = document.body.textContent ?? "";
+    expect(page).toContain("How fast our pages are");
+    expect(page).toContain("delete them after 90 days");
+    expect(page).toContain("It does not send the address of the page you opened");
+    // Only what is true of the real system (12 November 2026): one of the four
+    // is a layout score, not a time; the host's own request logs record the
+    // address; and Safari clears the stored choice.
+    expect(page).toContain("how much its content shifted as it loaded (four measurements, each rated good, needs improvement or poor)");
+    expect(page).not.toContain("four timings");
+    expect(page).toContain("our own server does not log it; our hosting provider's standard request logs record it");
+    expect(page).not.toContain("we do not keep that with the timings or log it");
+    expect(page).toContain("until the browser clears our site's data (Safari does this after about a week without a visit)");
+    // 13 November (Blake: "Apply all three"): what is kept, the GPC and DNT
+    // sentence as the code keeps it (a signal only the server sees discards
+    // the report), and a lawful basis, with no claim of running no analytics.
+    expect(page).toContain("We keep each measurement with only the day it arrived");
+    expect(page).toContain("your visit is not measured, and anything that arrives with either signal is discarded");
+    expect(page).not.toContain("nothing is measured or sent");
+    expect(page).toContain("Measuring how fast our pages are");
+    expect(page).toContain("Article 6(1)(f): our legitimate interest in a fast, working site.");
+    expect(page).toContain("We run no third-party analytics product");
+    expect(page).not.toContain("We run no analytics product");
+    // The storage list names what the switch keeps.
+    expect(page).toContain("Your page-speed choice");
+    const button = screen.getByRole("button", { name: "Don't measure my visits" });
+    expect(button.getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(button);
+    expect(button.getAttribute("aria-pressed")).toBe("true");
+    expect(measurementDeclined()).toBe(true);
+    expect(screen.getByRole("status").textContent).toBe("Your visits in this browser are not measured.");
+    fireEvent.click(button);
+    expect(measurementDeclined()).toBe(false);
+  });
+
+  it("says plainly when the browser would not keep the choice, rather than claiming it was kept", () => {
+    // A stand-in that reads but will not write (storage full), put back after:
+    // a spy on happy-dom's localStorage is not restored and leaks into later tests.
+    const real = window.localStorage;
+    const kept = new Map<string, string>();
+    Object.defineProperty(window, "localStorage", {
+      configurable: true,
+      value: {
+        getItem: (key: string) => kept.get(key) ?? null,
+        setItem: () => { throw new Error("QuotaExceededError"); },
+        removeItem: (key: string) => { kept.delete(key); },
+      },
+    });
+    try {
+      render(<LegalPage type="privacy" />);
+      fireEvent.click(screen.getByRole("button", { name: "Don't measure my visits" }));
+      expect(screen.getByRole("status").textContent)
+        .toBe("This browser would not let us keep your choice, so it holds only until you leave this page.");
+    } finally {
+      Object.defineProperty(window, "localStorage", { configurable: true, value: real });
+      setMeasurementDeclined(false);
+    }
+  });
+
   it("says what the dietary note is, who reads it, that logs leave it out, and how long it is kept", () => {
     const text = textOf("privacy");
     expect(text).toContain("Dietary and allergy notes for an event");

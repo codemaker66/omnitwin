@@ -10,6 +10,7 @@ import {
   type WebVitalSample,
 } from "@omnitwin/types";
 import type { LandingRoute } from "./landing-route.js";
+import { measurementDeclined } from "./measurement-choice.js";
 import { webVitalsSampleRate, type WebVitalsEnv } from "./web-vitals-rate.js";
 
 // ---------------------------------------------------------------------------
@@ -39,6 +40,8 @@ export interface ReportingBrowser {
   readonly webdriver?: boolean;
   readonly doNotTrack?: string | null;
   readonly globalPrivacyControl?: boolean;
+  /** "Don't measure my visits", chosen on the privacy page and kept on this device. */
+  readonly measurementDeclined?: boolean;
 }
 
 /** Whether this page load reports: sampled in, not automated, not objected to. */
@@ -47,6 +50,8 @@ export function shouldReportWebVitals(rate: number, browser: ReportingBrowser, r
   // Playwright and other drivers measure the test machine, not a visitor.
   if (browser.webdriver === true) return false;
   if (browser.globalPrivacyControl === true || browser.doNotTrack === "1") return false;
+  // The way to object on any browser, Safari's included (measurement-choice.ts).
+  if (browser.measurementDeclined === true) return false;
   return random() < rate;
 }
 
@@ -203,16 +208,26 @@ export interface StartWebVitalsOptions {
 
 /** Starts measuring this page load if it reports at all. Returns whether it does. */
 export async function startWebVitals(options: StartWebVitalsOptions): Promise<boolean> {
-  const browser = navigator as Navigator & ReportingBrowser;
+  const signals = navigator as Navigator & ReportingBrowser;
+  const browser: ReportingBrowser = {
+    webdriver: signals.webdriver,
+    doNotTrack: signals.doNotTrack,
+    globalPrivacyControl: signals.globalPrivacyControl,
+    measurementDeclined: measurementDeclined(),
+  };
   if (!shouldReportWebVitals(webVitalsSampleRate(options.env), browser, options.random)) {
     options.landing.stop();
     return false;
   }
   const coarse = typeof window.matchMedia === "function" && window.matchMedia("(pointer: coarse)").matches;
+  const send = options.send ?? ((body: string) => { sendWebVitals(body); });
   const reporter = createWebVitalsReporter(
     routePattern(options.landing.paths),
     deviceClass(Math.min(window.screen.width, window.screen.height), coarse),
-    options.send ?? ((body) => { sendWebVitals(body); }),
+    // The visitor may press "Don't measure my visits" while this load is
+    // measured, on the privacy page itself, or in another tab before this one
+    // is hidden: from then on nothing is sent, this load's values included.
+    (body) => { if (!measurementDeclined()) send(body); },
   );
   followLandingPage(options.landing, reporter);
   const { onCLS, onINP, onLCP, onTTFB } = await import("web-vitals");
@@ -222,7 +237,17 @@ export async function startWebVitals(options: StartWebVitalsOptions): Promise<bo
   onCLS(reporter.add, { reportAllChanges: true });
   onTTFB(reporter.add);
   // The library settles its vitals when the page is hidden, which is also the
-  // last moment a phone reliably runs anything; send then.
-  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") reporter.flush(); });
+  // last moment a phone reliably runs anything; send then. Once the visitor has
+  // said not to measure, stop listening and stop following the route.
+  const onHidden = (): void => {
+    if (document.visibilityState !== "hidden") return;
+    if (measurementDeclined()) {
+      document.removeEventListener("visibilitychange", onHidden);
+      options.landing.stop();
+      return;
+    }
+    reporter.flush();
+  };
+  document.addEventListener("visibilitychange", onHidden);
   return true;
 }

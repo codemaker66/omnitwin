@@ -1,0 +1,76 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { MEASUREMENT_DECLINED_KEY, measurementDeclined, setMeasurementDeclined } from "../measurement-choice.js";
+
+// ---------------------------------------------------------------------------
+// "Don't measure my visits" (T-685): the privacy page's way to object to the
+// page-speed measurements, kept in this browser; for this visit where the
+// browser will not keep it; and never measuring where storage is refused.
+// ---------------------------------------------------------------------------
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  setMeasurementDeclined(false);
+  window.localStorage.clear();
+});
+
+const refuse = (): never => { throw new Error("blocked"); };
+
+/** Puts a stand-in for this browser's storage in place for one test, and the
+ *  real one back after (as planner-features.test.ts does): a spy on happy-dom's
+ *  localStorage is not restored by vi.restoreAllMocks, and leaks into later tests. */
+function withStorage(stand: Pick<Storage, "getItem" | "setItem" | "removeItem">, run: () => void): void {
+  const real = window.localStorage;
+  Object.defineProperty(window, "localStorage", { configurable: true, value: stand });
+  try {
+    run();
+  } finally {
+    Object.defineProperty(window, "localStorage", { configurable: true, value: real });
+  }
+}
+
+describe("the measurement choice", () => {
+  it("measures by default, until the visitor says not to", () => {
+    expect(measurementDeclined()).toBe(false);
+  });
+
+  it("keeps the choice in this browser, says it did, and forgets it when undone", () => {
+    expect(setMeasurementDeclined(true)).toBe(true);
+    expect(window.localStorage.getItem(MEASUREMENT_DECLINED_KEY)).toBe("1");
+    expect(measurementDeclined()).toBe(true);
+    expect(setMeasurementDeclined(false)).toBe(true);
+    expect(window.localStorage.getItem(MEASUREMENT_DECLINED_KEY)).toBeNull();
+    expect(measurementDeclined()).toBe(false);
+  });
+
+  it("honours a choice stored on an earlier visit", () => {
+    window.localStorage.setItem(MEASUREMENT_DECLINED_KEY, "1");
+    expect(measurementDeclined()).toBe(true);
+  });
+
+  it("still honours the choice for this visit where storage fails, as in a private window", () => {
+    withStorage({ getItem: refuse, setItem: refuse, removeItem: refuse }, () => {
+      expect(() => { setMeasurementDeclined(true); }).not.toThrow();
+      expect(measurementDeclined()).toBe(true);
+    });
+  });
+
+  it("never measures a browser that will not let the site read its storage at all", () => {
+    withStorage({ getItem: refuse, setItem: refuse, removeItem: refuse }, () => {
+      expect(measurementDeclined()).toBe(true);
+    });
+  });
+
+  it("says when the browser would not keep the choice (storage full): it holds for this visit only", () => {
+    const kept = new Map<string, string>();
+    withStorage({
+      getItem: (key) => kept.get(key) ?? null,
+      setItem: () => { throw new Error("QuotaExceededError"); },
+      removeItem: (key) => { kept.delete(key); },
+    }, () => {
+      expect(setMeasurementDeclined(true)).toBe(false);
+      expect(measurementDeclined()).toBe(true);
+      // Nothing was kept, so the next visit is measured unless the visitor says again.
+      expect(kept.size).toBe(0);
+    });
+  });
+});
