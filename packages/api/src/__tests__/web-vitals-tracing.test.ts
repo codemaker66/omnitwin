@@ -74,8 +74,9 @@ describe("API tracing of the page-speed reports (the real SDK, route and server)
     connection = createDbConnection("postgresql://127.0.0.1:9/never_connected");
     server = Fastify();
     await server.register(publicWebVitalsRoutes, { prefix: "/public", db: connection.db });
-    await server.register(async (control) => {
+    await server.register((control, _options, done) => {
       control.post("/control/:slug", (_request, reply) => reply.status(204).send());
+      done();
     }, { prefix: "/public" });
     await server.listen({ port: 0, host: "127.0.0.1" });
     base = `http://127.0.0.1:${String((server.server.address() as AddressInfo).port)}`;
