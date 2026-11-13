@@ -36,14 +36,13 @@ import type { PeopleTx } from "./people-records.js";
 // the time a test gives) minus 24 months, counted by the database
 // (`interval '1 month'` times 24), not 730 days.
 //
-// Who is looked at is decided in SQL from their own records (their
-// enquiries, linked or sent from an address only they hold, their deals, the
-// events of those and of the organisations and households they lead or
-// belong to): someone in touch through those, and
-// someone kept for a booking or a contract with nothing left to remove, is
-// never a candidate, so they cannot crowd the front of the queue night after
-// night. The step then checks everything of theirs (lastInTouch, keptRecord),
-// which can still keep a few.
+// Who is looked at is decided in one SQL query from each person's own
+// records, by the erasure's own rule of what is theirs (lapsedPeople):
+// someone in touch through those, and someone kept for a booking or a
+// contract with nothing left to remove, is never a candidate, so they cannot
+// crowd the front of the queue night after night. The step then checks
+// everything of theirs, the records merged into them included (lastInTouch,
+// keptRecord), which can still keep a few.
 //
 // One person or enquiry failing is counted (its SQLSTATE only) and the rest
 // go on; the next night tries it again. A night acts on at most
@@ -163,78 +162,146 @@ function livePerson(alias: string): SQL {
   return sql.raw(`${alias}."deleted_at" is null and ${alias}."merged_into_id" is null and ${alias}."erased_at" is null`);
 }
 
-/** The person's own records, from the outer `contacts` row, as
- *  findPersonRecords finds them: their enquiries are those linked to them and
- *  those linked to nobody from an address only they hold at the venue (on
- *  their record, among their emails, or on an enquiry linked to them). The
- *  records merged into them are left to the step, which follows the chain. */
-function ownRecords(): { linked: SQL; deals: SQL; events: SQL; proposals: SQL } {
-  const id = outerColumn(contacts.id);
-  const venue = outerColumn(contacts.venueId);
-  const addresses = sql`select own."address" from (
-      select lower(oc."email") as "address" from "contacts" as oc where oc."id" = ${id}
-      union select lower(op."value") from "contact_points" as op where op."contact_id" = ${id} and op."kind" = 'email'
-      union select lower(oe."email") from "enquiries" as oe where oe."contact_id" = ${id}
-      union select lower(og."guest_email") from "enquiries" as og where og."contact_id" = ${id}
-    ) as own
-    where own."address" is not null
-      and not exists (select 1 from "contacts" as rc where rc."venue_id" = ${venue} and rc."id" <> ${id} and ${livePerson("rc")}
-        and lower(rc."email") = own."address")
-      and not exists (select 1 from "contact_points" as rp join "contacts" as rpc on rpc."id" = rp."contact_id"
-        where rp."venue_id" = ${venue} and rp."kind" = 'email' and rp."contact_id" <> ${id} and ${livePerson("rpc")}
-          and lower(rp."value") = own."address")`;
-  const linked = sql`select e."id" from "enquiries" as e where e."venue_id" = ${venue} and (e."contact_id" = ${id}
-    or (e."contact_id" is null and (lower(e."email") in (${addresses}) or lower(e."guest_email") in (${addresses}))))`;
-  const deals = sql`select o."id" from "opportunities" as o where o."primary_contact_id" = ${id}`;
-  const accounts = sql`select ca."id" from "client_accounts" as ca where ca."primary_contact_id" = ${id}
-    union select m."client_account_id" from "account_memberships" as m
-      join "client_accounts" as hh on hh."id" = m."client_account_id"
-      where m."contact_id" = ${id} and hh."kind" = 'household'`;
-  const events = sql`select ev."id" from "events" as ev where ev."opportunity_id" in (${deals}) or ev."client_account_id" in (${accounts})
-    union select bk."event_id" from "bookings" as bk where bk."enquiry_id" in (${linked}) and bk."event_id" is not null`;
-  const proposals = sql`select p."id" from "proposals" as p where p."enquiry_id" in (${linked}) or p."opportunity_id" in (${deals})`;
-  return { linked, deals, events, proposals };
+/** One row of lapsedPeople. */
+interface LapsedRow extends Record<string, unknown> {
+  readonly id: string;
+  readonly venueId: string;
+  /** Out of touch by their own records. */
+  readonly lapsed: boolean;
+  /** A booking, a contract or a deposit of theirs keeps them. */
+  readonly kept: boolean;
+  /** An enquiry of theirs that never became a booking or a contract is left. */
+  readonly spare: boolean;
 }
 
-/** Kept by their own records: a live booking, a contract or a deposit. */
-function keptByOwnRecords(): SQL {
-  const own = ownRecords();
-  return sql`(
-    exists (select 1 from "bookings" as kb where (kb."enquiry_id" in (${own.linked}) or kb."event_id" in (${own.events})) and ${liveBooking("kb")})
-    or exists (select 1 from "proposal_contract_versions" as cv where cv."proposal_id" in (${own.proposals}))
-    or exists (select 1 from "proposal_deposit_requests" as dr where dr."proposal_id" in (${own.proposals}) or dr."event_id" in (${own.events}))
-  )`;
-}
-
-/** An enquiry of theirs (linked to them, or unlinked from their own
- *  address) that never became a booking or a contract. */
-function spareEnquiry(): SQL {
-  return sql`exists (
-    select 1 from "enquiries" as se where se."id" in (${ownRecords().linked})
-      and not exists (select 1 from "bookings" as sb where sb."enquiry_id" = se."id" and ${liveBooking("sb")})
-      and not exists (select 1 from "bookings" as sb0 join "bookings" as sb1 on sb1."event_id" = sb0."event_id"
-        where sb0."enquiry_id" = se."id" and ${liveBooking("sb1")})
-      and not exists (select 1 from "proposals" as sp join "proposal_contract_versions" as scv on scv."proposal_id" = sp."id"
-        where sp."enquiry_id" = se."id")
-      and not exists (select 1 from "proposals" as sp2 join "proposal_deposit_requests" as sdr on sdr."proposal_id" = sp2."id"
-        where sp2."enquiry_id" = se."id")
-  )`;
-}
-
-/** The last contact their own records show (lastInTouch, from SQL). */
-function ownLastContact(): SQL {
-  const own = ownRecords();
-  const id = outerColumn(contacts.id);
-  return sql`greatest(
-    coalesce(${outerColumn(contacts.lastContactAt)}, ${outerColumn(contacts.createdAt)}),
-    (select max(greatest(e2."created_at", e2."updated_at")) from "enquiries" as e2 where e2."id" in (${own.linked})),
-    (select max(greatest(o2."created_at", o2."updated_at")) from "opportunities" as o2 where o2."primary_contact_id" = ${id}),
-    (select max(a."created_at") from "activities" as a where a."opportunity_id" in (${own.deals})),
-    (select max(greatest(p2."created_at", p2."updated_at", p2."sent_at")) from "proposals" as p2 where p2."id" in (${own.proposals})),
-    (select max(pc."created_at") from "proposal_comments" as pc where pc."proposal_id" in (${own.proposals})),
-    (select max(greatest(b2."created_at", b2."updated_at")) from "bookings" as b2
-      where b2."enquiry_id" in (${own.linked}) or b2."event_id" in (${own.events}))
-  )`;
+/**
+ * Every person whose own record is past the cutoff, oldest first, with what
+ * their own records show, each set read once per person (lateral): the last
+ * contact, whether a booking or a contract keeps them, and whether an
+ * enquiry of theirs that never became one is left to remove. "Theirs" is
+ * findPersonRecords' rule (people-erasure.ts), from the person's own row:
+ *   - their addresses that no other live person at the venue holds;
+ *   - their enquiries: linked to them, or linked to nobody from one of those;
+ *   - their deals: led by them, or made from their enquiries and led by no
+ *     other live person. A deal made from their enquiries that another live
+ *     person leads is that person's ("near"): it counts only as contact;
+ *   - their accounts, the proposals of their enquiries and deals (one on a
+ *     near deal is near), and the events of their deals, accounts and
+ *     proposals' layouts and of their enquiries' holds, but never a near
+ *     deal's event, nor a booking pencilled from their enquiry onto one.
+ * The records merged into them are left to the step, which follows the
+ * chain: it can only find more of theirs, so nobody this reads as kept or in
+ * touch is someone the step would take.
+ */
+function lapsedPeople(cutoff: Date): SQL {
+  const at = sql`${cutoff.toISOString()}::timestamptz`;
+  return sql`
+    select c."id", c."venue_id" as "venueId", (t."last_contact" < ${at}) as "lapsed", t."kept", t."spare"
+    from "contacts" as c
+    cross join lateral (
+      select coalesce(array_agg(own."address"), '{}'::text[]) as "list" from (
+        select lower(oc."email") as "address" from "contacts" as oc where oc."id" = c."id"
+        union select lower(op."value") from "contact_points" as op where op."contact_id" = c."id" and op."kind" = 'email'
+        union select lower(oe."email") from "enquiries" as oe where oe."contact_id" = c."id"
+        union select lower(og."guest_email") from "enquiries" as og where og."contact_id" = c."id"
+      ) as own
+      where own."address" is not null
+        and not exists (select 1 from "contacts" as rc where rc."venue_id" = c."venue_id" and rc."id" <> c."id"
+          and ${livePerson("rc")} and lower(rc."email") = own."address")
+        and not exists (select 1 from "contact_points" as rp join "contacts" as rpc on rpc."id" = rp."contact_id"
+          where rp."venue_id" = c."venue_id" and rp."kind" = 'email' and rp."contact_id" <> c."id" and ${livePerson("rpc")}
+            and lower(rp."value") = own."address")
+    ) as addr
+    cross join lateral (
+      select array(
+        select e."id" from "enquiries" as e where e."contact_id" = c."id"
+        union
+        select u."id" from "enquiries" as u
+        where cardinality(addr."list") > 0 and u."venue_id" = c."venue_id" and u."contact_id" is null
+          and (lower(u."email") = any(addr."list") or lower(u."guest_email") = any(addr."list"))
+      ) as "ids"
+    ) as linked
+    cross join lateral (
+      select coalesce(array_agg(d."id") filter (where not d."near"), '{}'::uuid[]) as "own",
+             coalesce(array_agg(d."id") filter (where d."near"), '{}'::uuid[]) as "near"
+      from (
+        select o."id", (o."primary_contact_id" is not null and o."primary_contact_id" <> c."id" and exists (
+          select 1 from "contacts" as ol where ol."id" = o."primary_contact_id" and ${livePerson("ol")})) as "near"
+        from "opportunities" as o
+        where o."venue_id" = c."venue_id" and (o."primary_contact_id" = c."id" or o."source_enquiry_id" = any(linked."ids"))
+      ) as d
+    ) as deals
+    cross join lateral (
+      select array(
+        select ca."id" from "client_accounts" as ca where ca."venue_id" = c."venue_id" and ca."primary_contact_id" = c."id"
+        union
+        select m."client_account_id" from "account_memberships" as m
+          join "client_accounts" as hh on hh."id" = m."client_account_id"
+          where m."contact_id" = c."id" and hh."kind" = 'household'
+      ) as "ids"
+    ) as accounts
+    cross join lateral (
+      select coalesce(array_agg(p."id") filter (where p."opportunity_id" is null or p."opportunity_id" = any(deals."own")), '{}'::uuid[]) as "own",
+             coalesce(array_agg(p."id"), '{}'::uuid[]) as "all",
+             coalesce(array_agg(p."configuration_id") filter (
+               where (p."opportunity_id" is null or p."opportunity_id" = any(deals."own")) and p."configuration_id" is not null
+             ), '{}'::uuid[]) as "layouts"
+      from "proposals" as p
+      where p."venue_id" = c."venue_id" and (p."enquiry_id" = any(linked."ids") or p."opportunity_id" = any(deals."own" || deals."near"))
+    ) as props
+    cross join lateral (
+      select array(
+        select ne."id" from "events" as ne
+        where ne."opportunity_id" = any(deals."near") and not coalesce(ne."client_account_id" = any(accounts."ids"), false)
+      ) as "ids"
+    ) as near_events
+    cross join lateral (
+      select array(
+        select ev."id" from "events" as ev
+        where ev."venue_id" = c."venue_id" and (ev."opportunity_id" = any(deals."own") or ev."client_account_id" = any(accounts."ids"))
+        union
+        select ecl."event_id" from "event_configuration_links" as ecl join "events" as le on le."id" = ecl."event_id"
+        where le."venue_id" = c."venue_id" and ecl."configuration_id" = any(props."layouts")
+        union
+        select bk."event_id" from "bookings" as bk
+        where bk."enquiry_id" = any(linked."ids") and bk."event_id" is not null and not (bk."event_id" = any(near_events."ids"))
+      ) as "ids"
+    ) as own_events
+    cross join lateral (
+      select
+        greatest(
+          coalesce(c."last_contact_at", c."created_at"),
+          (select max(greatest(e2."created_at", e2."updated_at")) from "enquiries" as e2 where e2."id" = any(linked."ids")),
+          (select max(greatest(o2."created_at", o2."updated_at")) from "opportunities" as o2 where o2."id" = any(deals."own" || deals."near")),
+          (select max(a."created_at") from "activities" as a where a."opportunity_id" = any(deals."own" || deals."near")),
+          (select max(greatest(p2."created_at", p2."updated_at", p2."sent_at")) from "proposals" as p2 where p2."id" = any(props."all")),
+          (select max(pc."created_at") from "proposal_comments" as pc where pc."proposal_id" = any(props."all")),
+          (select max(greatest(b2."created_at", b2."updated_at")) from "bookings" as b2
+            where b2."enquiry_id" = any(linked."ids") or b2."event_id" = any(own_events."ids" || near_events."ids"))
+        ) as "last_contact",
+        (
+          exists (select 1 from "bookings" as kb
+            where (kb."event_id" = any(own_events."ids")
+                or (kb."enquiry_id" = any(linked."ids") and (kb."event_id" is null or not (kb."event_id" = any(near_events."ids")))))
+              and ${liveBooking("kb")})
+          or exists (select 1 from "proposal_contract_versions" as cv where cv."proposal_id" = any(props."own"))
+          or exists (select 1 from "proposal_deposit_requests" as dr
+            where dr."proposal_id" = any(props."own") or dr."event_id" = any(own_events."ids"))
+        ) as "kept",
+        exists (
+          select 1 from unnest(linked."ids") as se("id")
+          where not exists (select 1 from "bookings" as sb where sb."enquiry_id" = se."id" and ${liveBooking("sb")}
+              and (sb."event_id" is null or not (sb."event_id" = any(near_events."ids"))))
+            and not exists (select 1 from "bookings" as sb0 join "bookings" as sb1 on sb1."event_id" = sb0."event_id"
+              where sb0."enquiry_id" = se."id" and not (sb0."event_id" = any(near_events."ids")) and ${liveBooking("sb1")})
+            and not exists (select 1 from "proposals" as sp join "proposal_contract_versions" as scv on scv."proposal_id" = sp."id"
+              where sp."enquiry_id" = se."id" and not coalesce(sp."opportunity_id" = any(deals."near"), false))
+            and not exists (select 1 from "proposals" as sp2 join "proposal_deposit_requests" as sdr on sdr."proposal_id" = sp2."id"
+              where sp2."enquiry_id" = se."id" and not coalesce(sp2."opportunity_id" = any(deals."near"), false))
+        ) as "spare"
+    ) as t
+    where c."erased_at" is null and c."merged_into_id" is null and coalesce(c."last_contact_at", c."created_at") < ${at}
+    order by coalesce(c."last_contact_at", c."created_at"), c."id"`;
 }
 
 /** A person whose own record is older than the cutoff: the cheap test, before
@@ -244,26 +311,6 @@ function personDue(cutoff: Date): SQL {
     isNull(contacts.erasedAt),
     isNull(contacts.mergedIntoId),
     before(sql`coalesce(${outerColumn(contacts.lastContactAt)}, ${outerColumn(contacts.createdAt)})`, cutoff),
-  ) ?? sql`false`;
-}
-
-/** A person to look at tonight: due, out of touch by their own records, and
- *  not kept with nothing left to remove. */
-function personCandidate(cutoff: Date): SQL {
-  return and(
-    personDue(cutoff),
-    before(ownLastContact(), cutoff),
-    sql`not (${keptByOwnRecords()} and not ${spareEnquiry()})`,
-  ) ?? sql`false`;
-}
-
-/** Due and kept with nothing left to remove: listed, never looked at. */
-function personKeptAlready(cutoff: Date): SQL {
-  return and(
-    personDue(cutoff),
-    before(ownLastContact(), cutoff),
-    keptByOwnRecords(),
-    sql`not ${spareEnquiry()}`,
   ) ?? sql`false`;
 }
 
@@ -403,13 +450,13 @@ async function runSteps(input: {
     return outer === null ? read(db) : read(outer);
   }
 
-  // Kept with nothing left to remove: listed for the six-year rule, not looked at.
-  const keptAlready = await candidates((reader) => reader.select({ venueId: contacts.venueId, personId: contacts.id }).from(contacts)
-    .where(personKeptAlready(cutoff))
-    .orderBy(asc(contacts.venueId), asc(contacts.id)));
-  const duePeople = await candidates((reader) => reader.select({ id: contacts.id }).from(contacts)
-    .where(personCandidate(cutoff))
-    .orderBy(asc(sql`coalesce(${outerColumn(contacts.lastContactAt)}, ${outerColumn(contacts.createdAt)})`), asc(contacts.id)));
+  // Out of touch by their own records. Kept with nothing left to remove:
+  // listed for the six-year rule, not looked at. The rest are tonight's queue.
+  const lapsed = (await (outer === null ? db.execute<LapsedRow>(lapsedPeople(cutoff)) : outer.execute<LapsedRow>(lapsedPeople(cutoff))))
+    .rows.filter((row) => row.lapsed);
+  const keptAlready: KeptPerson[] = lapsed.filter((row) => row.kept && !row.spare)
+    .map((row) => ({ venueId: row.venueId, personId: row.id }));
+  const duePeople = lapsed.filter((row) => !(row.kept && !row.spare));
   let peopleActedOn = 0;
   let peopleLooked = 0;
   for (const candidate of duePeople) {

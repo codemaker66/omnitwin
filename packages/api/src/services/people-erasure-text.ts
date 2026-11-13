@@ -52,10 +52,12 @@ export function namesToErase(values: readonly (string | null | undefined)[]): re
   return [...seen].sort((a, b) => b.length - a.length || (a < b ? -1 : a > b ? 1 : 0));
 }
 
-/** A cheap SQL-side test before the exact one: does the text hold any of the
- *  names, in any case, anywhere? Every row withoutNames would change passes. */
+/** LIKE patterns for a cheap SQL-side test before the exact one: does the
+ *  text hold any of the names, anywhere? The caller lowers both sides in the
+ *  database (`lower(column) like lower(pattern)`), so one case mapping applies
+ *  to both, and every row withoutNames would change passes. */
 export function mentionPatterns(names: readonly string[]): readonly string[] {
-  return names.map((name) => `%${name.toLowerCase().replace(/[\\%_]/gu, "\\$&").replace(/ /gu, "%")}%`);
+  return names.map((name) => `%${name.replace(/[\\%_]/gu, "\\$&").replace(/ /gu, "%")}%`);
 }
 
 function wholeWords(names: readonly string[], flags: string): RegExp | null {

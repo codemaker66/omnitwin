@@ -384,18 +384,29 @@ function idsOf(rows: readonly { readonly id: string | null }[]): readonly string
   return distinct(rows.flatMap((row) => (row.id === null ? [] : [row.id])));
 }
 
+/** Bookings that are theirs: on their events, or pencilled from their
+ *  enquiries onto no event or onto an event that is not another live
+ *  person's deal's. One rule for finding, locking and the booking guard. */
+function ownBookings(enquiryIds: readonly string[], eventIds: readonly string[], nearEventIds: readonly string[]): SQL {
+  return or(
+    among(bookings.eventId, eventIds),
+    allOf(among(bookings.enquiryId, enquiryIds), or(isNull(bookings.eventId), notAmong(bookings.eventId, nearEventIds)) ?? sql`true`),
+  ) ?? sql`false`;
+}
+
 /** The deals, proposals, events and bookings around the enquiries and
  *  accounts, theirs locked: a booking writer locks its enquiry or takes a key
  *  lock on its event, so it waits for this transaction, or finished first.
- *  Another live person's deal made from their enquiry is that person's, and
- *  is only read, for the names. */
+ *  Another live person's deal made from their enquiry is that person's, with
+ *  its proposals, events and bookings, and is only read, for the names. */
 async function around(tx: PeopleTx, base: RecordsBase): Promise<ErasureRecords> {
   const enquiryIds = base.enquiries.map((row) => row.id);
   const deals = await tx.select({ id: opportunities.id, lead: opportunities.primaryContactId }).from(opportunities).where(allOf(
     eq(opportunities.venueId, base.venueId),
     or(among(opportunities.primaryContactId, base.ids), among(opportunities.sourceEnquiryId, enquiryIds)) ?? sql`false`,
   )).for("update");
-  const theirs = new Set(base.ids);
+  // Theirs: the person erased, or the kept person whose enquiries go.
+  const theirs = new Set([...base.ids, ...base.writers]);
   const leads = distinct(deals.flatMap((deal) => (deal.lead === null || theirs.has(deal.lead) ? [] : [deal.lead])));
   const liveLeads = new Set(leads.length === 0 ? [] : (await tx.select({ id: contacts.id }).from(contacts)
     .where(allOf(inArray(contacts.id, [...leads]), liveContact()))).map((row) => row.id));
@@ -403,6 +414,7 @@ async function around(tx: PeopleTx, base: RecordsBase): Promise<ErasureRecords> 
   const dealIds = deals.filter((deal) => !othersDeal(deal.lead)).map((deal) => deal.id);
   const nearDealIds = deals.filter((deal) => othersDeal(deal.lead)).map((deal) => deal.id);
   const ownDeals = new Set(dealIds);
+  const onOwnDeal = (dealId: string | null): boolean => dealId === null || ownDeals.has(dealId);
 
   // A proposal made for a deal carries the deal's enquiry (proposal-links.ts),
   // so the deal decides whose it is.
@@ -411,12 +423,9 @@ async function around(tx: PeopleTx, base: RecordsBase): Promise<ErasureRecords> 
       eq(proposals.venueId, base.venueId),
       or(among(proposals.enquiryId, enquiryIds), among(proposals.opportunityId, [...dealIds, ...nearDealIds])) ?? sql`false`,
     )).for("update");
-  const onOwnDeal = (dealId: string | null): boolean => dealId === null || ownDeals.has(dealId);
   const proposalIds = proposalRows.filter((row) => onOwnDeal(row.dealId)).map((row) => row.id);
   const nearProposalIds = proposalRows.filter((row) => !onOwnDeal(row.dealId)).map((row) => row.id);
 
-  const booked = await tx.selectDistinct({ id: bookings.eventId }).from(bookings)
-    .where(allOf(among(bookings.enquiryId, enquiryIds), isNotNull(bookings.eventId)));
   const evented = await tx.select({ id: events.id, dealId: events.opportunityId, accountId: events.clientAccountId }).from(events).where(allOf(
     eq(events.venueId, base.venueId),
     or(among(events.opportunityId, [...dealIds, ...nearDealIds]), among(events.clientAccountId, base.accountIds)) ?? sql`false`,
@@ -430,19 +439,34 @@ async function around(tx: PeopleTx, base: RecordsBase): Promise<ErasureRecords> 
     .where(allOf(inArray(eventConfigurationLinks.configurationId, layouts), eq(events.venueId, base.venueId)));
   const ownLayouts = new Set(proposalRows.flatMap((row) => (onOwnDeal(row.dealId) && row.layoutId !== null ? [row.layoutId] : [])));
   const accounts = new Set(base.accountIds);
+  const ownEvent = (event: { readonly dealId: string | null; readonly accountId: string | null }): boolean =>
+    (event.accountId !== null && accounts.has(event.accountId)) || onOwnDeal(event.dealId);
+  // The event a hold from their enquiry was pencilled onto is theirs, unless
+  // it is the event of another live person's deal.
+  const othersEvents = new Set(evented.filter((event) => !ownEvent(event)).map((event) => event.id));
+  const booked = await tx.selectDistinct({ id: bookings.eventId }).from(bookings)
+    .where(allOf(among(bookings.enquiryId, enquiryIds), isNotNull(bookings.eventId)));
   const eventIds = idsOf([
-    ...booked,
-    ...evented.filter((event) => (event.accountId !== null && accounts.has(event.accountId)) || onOwnDeal(event.dealId)),
+    ...booked.filter((row) => row.id !== null && !othersEvents.has(row.id)),
+    ...evented.filter(ownEvent),
     ...laidOut.filter((link) => ownLayouts.has(link.layoutId)),
   ]);
   const ownEvents = new Set(eventIds);
-  const nearEventIds = idsOf([...evented, ...laidOut]).filter((id) => !ownEvents.has(id));
+  const nearEventIds = idsOf([...evented, ...laidOut, ...booked]).filter((id) => !ownEvents.has(id));
   if (eventIds.length > 0) await tx.select({ id: events.id }).from(events).where(inArray(events.id, [...eventIds])).for("update");
-  const bookingRows = await tx.select({ id: bookings.id }).from(bookings)
-    .where(or(among(bookings.enquiryId, enquiryIds), among(bookings.eventId, eventIds)))
-    .for("update");
-  const bookingIds = bookingRows.map((row) => row.id);
-  const ownBookings = new Set(bookingIds);
+  // A decision is executed by locking it, then its booking (decisions.ts):
+  // the decisions on their bookings are locked first here too, so an
+  // erasure and an approval never wait on each other in a circle.
+  const ownBooking = ownBookings(enquiryIds, eventIds, nearEventIds);
+  const bookingIds = (await tx.select({ id: bookings.id }).from(bookings).where(ownBooking)).map((row) => row.id);
+  if (bookingIds.length > 0) {
+    await tx.select({ id: decisions.id }).from(decisions)
+      .where(allOf(eq(decisions.subjectKind, "booking"), inArray(decisions.subjectId, [...bookingIds])))
+      .orderBy(decisions.id)
+      .for("update");
+  }
+  const locked = await tx.select({ id: bookings.id }).from(bookings).where(ownBooking).for("update");
+  const ownBookingIds = new Set(locked.map((row) => row.id));
   const nearBookings = nearEventIds.length === 0 ? [] : await tx.select({ id: bookings.id }).from(bookings)
     .where(inArray(bookings.eventId, [...nearEventIds]));
   return {
@@ -450,12 +474,12 @@ async function around(tx: PeopleTx, base: RecordsBase): Promise<ErasureRecords> 
     dealIds,
     proposalIds,
     eventIds,
-    bookingIds,
+    bookingIds: [...ownBookingIds],
     nearby: {
       dealIds: nearDealIds,
       proposalIds: nearProposalIds,
       eventIds: nearEventIds,
-      bookingIds: nearBookings.map((row) => row.id).filter((id) => !ownBookings.has(id)),
+      bookingIds: nearBookings.map((row) => row.id).filter((id) => !ownBookingIds.has(id)),
     },
   };
 }
@@ -560,7 +584,7 @@ export async function findEnquiryRecords(
 export async function keptRecord(tx: PeopleTx, records: ErasureRecords): Promise<ErasureRefusal | null> {
   const enquiryIds = records.enquiries.map((row) => row.id);
   const [booked] = await tx.select({ id: bookings.id }).from(bookings).where(allOf(
-    or(among(bookings.enquiryId, enquiryIds), among(bookings.eventId, records.eventIds)) ?? sql`false`,
+    ownBookings(enquiryIds, records.eventIds, records.nearby.eventIds),
     isNull(bookings.deletedAt),
     or(eq(bookings.kind, "ink"), allOf(eq(bookings.kind, "hold"), eq(bookings.status, "active"))) ?? sql`false`,
   )).limit(1);
@@ -586,26 +610,32 @@ function later(...times: readonly (Date | null | undefined)[]): Date | null {
  * The last time we were in touch about anything of theirs: the People Book's
  * last contact (or the record's creation), and every enquiry, deal, activity
  * note, proposal (made, changed or sent), client comment or answer, and Diary
- * booking of theirs. A staff edit to the person's own record is not contact
+ * booking of theirs, or of a deal made from their enquiry that another live
+ * person now leads. A staff edit to the person's own record is not contact
  * and does not count.
  */
 export async function lastInTouch(tx: PeopleTx, records: ErasureRecords): Promise<Date | null> {
   const enquiryIds = records.enquiries.map((row) => row.id);
+  // A deal another live person leads that was made from their enquiry is
+  // contact about it too: work on it keeps the enquiry and its person.
+  const dealIds = [...records.dealIds, ...records.nearby.dealIds];
+  const proposalIds = [...records.proposalIds, ...records.nearby.proposalIds];
+  const bookingIds = [...records.bookingIds, ...records.nearby.bookingIds];
   const [person] = records.ids.length === 0 ? [] : await tx.select({ contact: max(contacts.lastContactAt), made: max(contacts.createdAt) })
     .from(contacts).where(inArray(contacts.id, [...records.ids]));
   const [asked] = enquiryIds.length === 0 ? [] : await tx.select({ made: max(enquiries.createdAt), changed: max(enquiries.updatedAt) })
     .from(enquiries).where(inArray(enquiries.id, enquiryIds));
-  const [deal] = records.dealIds.length === 0 ? [] : await tx.select({ made: max(opportunities.createdAt), changed: max(opportunities.updatedAt) })
-    .from(opportunities).where(inArray(opportunities.id, [...records.dealIds]));
-  const [note] = records.dealIds.length === 0 ? [] : await tx.select({ made: max(activities.createdAt) })
-    .from(activities).where(inArray(activities.opportunityId, [...records.dealIds]));
-  const [proposal] = records.proposalIds.length === 0 ? [] : await tx.select({
+  const [deal] = dealIds.length === 0 ? [] : await tx.select({ made: max(opportunities.createdAt), changed: max(opportunities.updatedAt) })
+    .from(opportunities).where(inArray(opportunities.id, dealIds));
+  const [note] = dealIds.length === 0 ? [] : await tx.select({ made: max(activities.createdAt) })
+    .from(activities).where(inArray(activities.opportunityId, dealIds));
+  const [proposal] = proposalIds.length === 0 ? [] : await tx.select({
     made: max(proposals.createdAt), changed: max(proposals.updatedAt), sent: max(proposals.sentAt),
-  }).from(proposals).where(inArray(proposals.id, [...records.proposalIds]));
-  const [answer] = records.proposalIds.length === 0 ? [] : await tx.select({ made: max(proposalComments.createdAt) })
-    .from(proposalComments).where(inArray(proposalComments.proposalId, [...records.proposalIds]));
-  const [booking] = records.bookingIds.length === 0 ? [] : await tx.select({ made: max(bookings.createdAt), changed: max(bookings.updatedAt) })
-    .from(bookings).where(inArray(bookings.id, [...records.bookingIds]));
+  }).from(proposals).where(inArray(proposals.id, proposalIds));
+  const [answer] = proposalIds.length === 0 ? [] : await tx.select({ made: max(proposalComments.createdAt) })
+    .from(proposalComments).where(inArray(proposalComments.proposalId, proposalIds));
+  const [booking] = bookingIds.length === 0 ? [] : await tx.select({ made: max(bookings.createdAt), changed: max(bookings.updatedAt) })
+    .from(bookings).where(inArray(bookings.id, bookingIds));
   return later(
     person?.contact, person?.made, asked?.made, asked?.changed, deal?.made, deal?.changed, note?.made,
     proposal?.made, proposal?.changed, proposal?.sent, answer?.made, booking?.made, booking?.changed,
@@ -722,7 +752,7 @@ export async function removeEnquiryRecords(tx: PeopleTx, records: ErasureRecords
       eq(eventPlanChanges.actorRole, "client"),
       isNotNull(eventPlanChanges.proposalId),
       notAmong(eventPlanChanges.proposalId, records.proposalIds),
-      or(...mentionPatterns(names).map((pattern) => sql`lower(${eventPlanChanges.actorLabel}) like ${pattern}`)) ?? sql`false`,
+      or(...mentionPatterns(names).map((pattern) => sql`lower(${eventPlanChanges.actorLabel}) like lower(${pattern})`)) ?? sql`false`,
     ));
   const answeredAsThem = labelled.filter((row) => withoutNames(row.label, names) !== row.label);
   const elsewhereProposalIds = distinct([
@@ -789,9 +819,13 @@ export async function removeEnquiryRecords(tx: PeopleTx, records: ErasureRecords
     { table: "proposals", columns: { title: 200, accepted_name: 200 }, where: among(proposals.id, proposalIds) },
     { table: "proposal_comments", columns: { body: null },
       where: allOf(among(proposalComments.proposalId, workProposalIds), eq(proposalComments.authorType, "staff")) },
+    // A client's words on a proposal that is not theirs (another person's
+    // deal from their enquiry, or one they answered on): an acceptance's
+    // approval note carries the name they typed, with or without an address.
     { table: "proposal_comments", columns: { author_name: 200, body: null },
-      where: among(proposalComments.id, [...othersComments, ...signedAsThem, ...signedElsewhere.map((row) => row.id)]) },
-    { table: "proposal_status_history", columns: { note: null }, where: among(proposalStatusHistory.proposalId, workProposalIds) },
+      where: allOf(among(proposalComments.proposalId, [...nearby.proposalIds, ...elsewhereProposalIds]), eq(proposalComments.authorType, "client")) },
+    { table: "proposal_comments", columns: { author_name: 200, body: null }, where: among(proposalComments.id, [...othersComments, ...signedAsThem]) },
+    { table: "proposal_status_history", columns: { note: null }, where: among(proposalStatusHistory.proposalId, proposalIds) },
     { table: "bookings", columns: { title: 200, notes: null, next_action: 500 }, where: among(bookings.id, bookingIds) },
     { table: "events", columns: { name: 200, client_name: 200, notes: null }, where: among(events.id, eventIds) },
     { table: "event_phases", columns: { notes: null }, where: among(eventPhases.eventId, eventIds) },
@@ -872,21 +906,26 @@ async function withoutAgreements(tx: PeopleTx, proposalIds: readonly string[]): 
 }
 
 /** A decision's reason is free text the asker gave, and can only be erased
- *  whole (migration 0108). On their own bookings it goes; on another
- *  person's, when it names them. Returns the decisions whose reason went. */
+ *  whole (migration 0108). On a booking pencilled from the enquiries that go
+ *  it always goes; on any other booking of their events, or of another
+ *  person's deal made from their enquiry, when it names them. Nothing goes
+ *  when only a kept person's spare enquiries leave. Returns the decisions
+ *  whose reason went. */
 async function eraseDecisionReasons(tx: PeopleTx, records: ErasureRecords, names: readonly string[]): Promise<readonly string[]> {
+  const keptPerson = records.ids.length === 0 && records.writers.length > 0;
   const bookingIds = [...records.bookingIds, ...records.nearby.bookingIds];
-  if (names.length === 0 || bookingIds.length === 0) return [];
-  const given = await tx.select({ id: decisions.id, bookingId: decisions.subjectId, reason: decisions.reason }).from(decisions)
+  if (keptPerson || bookingIds.length === 0) return [];
+  const given = await tx.select({ id: decisions.id, reason: decisions.reason, enquiryId: bookings.enquiryId }).from(decisions)
+    .innerJoin(bookings, eq(bookings.id, decisions.subjectId))
     .where(allOf(
       eq(decisions.venueId, records.venueId),
       eq(decisions.subjectKind, "booking"),
       inArray(decisions.subjectId, bookingIds),
       isNotNull(decisions.reason),
-    ))
-    .for("update");
-  const own = new Set(records.bookingIds);
-  const erased = given.filter((row) => own.has(row.bookingId) || withoutNames(row.reason, names) !== row.reason).map((row) => row.id);
+    ));
+  const leaving = new Set(records.enquiries.map((row) => row.id));
+  const erased = given.filter((row) => (row.enquiryId !== null && leaving.has(row.enquiryId))
+    || withoutNames(row.reason, names) !== row.reason).map((row) => row.id);
   if (erased.length > 0) await tx.update(decisions).set({ reason: null }).where(inArray(decisions.id, erased));
   return erased;
 }

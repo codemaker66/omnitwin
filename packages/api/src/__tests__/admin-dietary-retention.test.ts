@@ -43,7 +43,7 @@ beforeEach(() => {
   removeLapsedDietaryNotes.mockReset();
   removeUnusedRememberedNotes.mockReset();
   eraseLapsedPeople.mockReset();
-  eraseLapsedPeople.mockResolvedValue({ dryRun: false, people: 2, keptForBooking: 1, enquiries: 3 });
+  eraseLapsedPeople.mockResolvedValue({ dryRun: false, people: 2, keptForBooking: 1, enquiries: 3, deferred: { people: 4, enquiries: 1 }, outOfTime: false });
 });
 
 const token = (payload: Record<string, unknown>): string => JSON.stringify(payload);
@@ -105,7 +105,7 @@ describe("POST /admin/cleanup", () => {
     expect(body.message).toContain("removed the allergy note from 2 layout(s) and 3 event sheet(s) past their retention, and from 5 logged change(s)");
     expect(body.message).toContain("removed the notes on single pieces from 1 layout(s)");
     expect(body.message).toContain("removed 1 remembered note(s) unused for the agreed period");
-    expect(body.message).toContain("erased 2 person(s) and 3 enquiry(ies) 24 months after the last contact");
+    expect(body.message).toContain("erased 2 person(s) and 3 enquiry(ies) 24 months after the last contact, leaving 5 for another run");
     expect(eraseLapsedPeople.mock.calls[0]?.[1]).toBeUndefined();
     expect(removeUnusedRememberedNotes.mock.calls[0]?.[1]).toBeUndefined();
     // The real pass: no dry run and no storage step.

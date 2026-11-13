@@ -52,7 +52,7 @@ describe("taking an erased person's names out of kept text", () => {
       .toEqual(["morag@example.test", "Morag Smith"]);
   });
 
-  it("builds a pre-filter that every match passes, with LIKE's own characters escaped", () => {
-    expect(mentionPatterns(["Morag Smith", "100%_jo@x.test"])).toEqual(["%morag%smith%", "%100\\%\\_jo@x.test%"]);
+  it("builds a pre-filter that every match passes, with LIKE's own characters escaped and the case left to the database", () => {
+    expect(mentionPatterns(["Morag Smith", "100%_jo@x.test"])).toEqual(["%Morag%Smith%","%100\\%\\_jo@x.test%"]);
   });
 });

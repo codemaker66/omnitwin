@@ -53,7 +53,7 @@ bookings: only the erased person's name leaves it.
 | `event_plan_changes` | the client's name (`actor_label`) and words copied into the event's change feed | `source_kind` `proposal_comment` (the comment's id) or `proposal_response` (the proposal's id); a client change on someone else's proposal labelled with their name (an acceptance they typed it into); other changes on their events | the copies of their own proposals' answers deleted; the rest lose the name, a client's label included (a member of staff's label stays) |
 | `opportunities`, `opportunity_status_history`, `activities` | deal title ("Wedding — Morag Smith"), next action, the note written when the deal moved stage (closing one requires it), activity notes | by `primary_contact_id` or `source_enquiry_id` | name taken out |
 | `bookings`, `events`, `event_phases` | Diary titles, event name, client name, notes, phase notes | from their enquiries; on their deals', households' and organisations' events, and on events made from their proposal's layout (`event_configuration_links`) | name taken out (a booking the venue keeps refuses the route) |
-| `decisions` | the reason given for a prepared decision about a booking (free text) | `subject_kind = 'booking'` and `subject_id` one of their bookings | erased (set to null): the only change a decision allows (migration 0108). On another person's booking, erased when it names them |
+| `decisions` | the reason given for a prepared decision about a booking (free text) | `subject_kind = 'booking'` and `subject_id` one of their bookings, or a booking of a deal another live person leads that was made from their enquiry | erased (set to null), the only change a decision allows (migration 0108): always on a booking pencilled from their enquiries; on the other bookings, when it names them |
 | `proposal_contract_versions`, `proposal_contract_signatures` | the client's name and email in the contract, the signer's name, email and browser | on their proposals | **kept**: a contract is kept with the booking's records for six years and no statement can change it (migration 0104). The route refuses (`PERSON_HAS_CONTRACT`) |
 | `proposal_deposit_requests`, `deposit_payments` | the deposit and its payment record | on their proposals or events | **kept** for six years with the booking's records; the route refuses |
 | `quotes`, `follow_up_tasks` | staff-written text that may name the person | by `enquiry_id`, `proposal_id` or the deal | **by hand**: read the text |
@@ -85,7 +85,8 @@ keeps the erased person past the privacy page's promise that backups lose them w
   `source_system` and `source_id` to null. A household another live member stays in is that member's: if the
   erased person led it, make the other member its main contact; take only the erased person's name out of its
   name and notes.
-- **Decision reasons:** on their bookings, set `decisions.reason` to null (nothing else in a decision can change).
+- **Decision reasons:** on bookings pencilled from their enquiries, and on any other booking where the reason names them,
+  set `decisions.reason` to null (nothing else in a decision can change).
 - **Merge snapshots that mention them:**
   - in `person`, keep `id` and the timestamps, and set the other fields to null or `'Erased'`;
   - set `contactPoints` and `survivorFilled` to `[]`, and each membership's `roleLabel` to null.
@@ -139,17 +140,22 @@ record merged into someone else answers `MERGED` with who to erase instead) eras
 - their full name and addresses, wherever they appear as whole words in the text the venue keeps: deal titles, next
   actions and stage notes, activity notes, Diary bookings and their events (name, client name, notes, phase notes),
   proposal titles and the versions sent (title and message; another person's proposal with a contract or deposit
-  keeps its versions), staff comments and status notes, change feed entries and notices; and the reason given for
-  a decision on their bookings is erased. A full name is two words or more; it matches as written, in every casing
+  keeps its versions), staff comments and status notes, change feed entries and notices. The reason given for a
+  decision is erased on a booking pencilled from their enquiries, and on their other bookings and the nearby deal's
+  where it names them. A full name is two words or more; it matches as written, in every casing
   it was written in ("isla erasable" typed into an enquiry as well as "Isla Erasable" on the record); an address
   matches in any case. A full name another live person at the venue also goes by is left: that text may be theirs.
+  Their answers on someone else's proposal are found by their address or by their full name on the client's change
+  in the feed, so a client who is not in the People Book and has the same full name loses it there too.
 
 It answers with the counts and writes a `people.erased` row to `general_audit_log` with them (no names).
 
 It refuses, changing nothing:
 - `PERSON_HAS_BOOKING`: a confirmed booking, or a live provisional one, from one of their enquiries or on an event
   of theirs (an event one of their enquiries was booked into, even when the date was confirmed on the event itself;
-  the event of a deal, or an organisation, they are the main contact for; the event of a household they belong to).
+  the event of a deal, or an organisation, they are the main contact for; the event of a household they belong to;
+  an event made from their proposal's layout). A booking on the event of a deal another live person leads is that
+  person's, even when it was pencilled from their enquiry.
   A released or lost hold is not a booking;
 - `PERSON_HAS_CONTRACT`: a contract prepared or signed, or a deposit requested, on a proposal of theirs;
 - `RETRY`: someone changed one of their records at the same moment; try again.
@@ -173,8 +179,9 @@ The nightly cleanup (`scripts/run-cleanup.ts`, `services/people-retention.ts`) r
 - for every person we have not been in touch with for 24 calendar months (the run's time minus 24 months, counted
   by the database: 1 March 2028 reaches back to 1 March 2026, 731 days). "In touch" is any contact about anything of theirs: the People Book's last contact, and their
   enquiries, deals, activity notes, proposals (made, changed or sent), client comments and answers, and Diary
-  bookings. Their enquiries are those linked to them and those linked to nobody from an address only they hold. An
-  edit to their record alone does not count;
+  bookings, and work on a deal another live person leads that was made from their enquiry. Their enquiries are those
+  linked to them and those linked to nobody from an address only they hold. An edit to their record alone does not
+  count;
 - for a person kept for a booking or a contract: their enquiries that never became one are deleted, and the person
   is kept, never half-erased;
 - for every enquiry linked to nobody, sent from an address no live person at its venue holds, last touched more
